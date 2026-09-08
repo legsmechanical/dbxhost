@@ -2091,6 +2091,38 @@ static inline void accumulate_sends(int slot, const int16_t *fx_buf,
                         shadow_chain_slots[slot].send_b, send_accum);
 }
 
+/*
+ * A slot's MODULE BUSES into the same send accumulators, at the same point in
+ * the signal path as the slot's own send.
+ *
+ * A SEPARATE call rather than more of accumulate_sends because the audio is not
+ * ours: a bus's post-insert buffer lives inside the chain instance and reaches
+ * the shim by no other route — render_block hands back only the summed slot
+ * output, with the buses already folded into it. So the accumulators go DOWN
+ * and the contribution comes back.
+ *
+ * ⚠ CALLED FROM ALL THREE MIX PATHS, and that is the point of hoisting it into
+ * a helper. The shim accumulates a slot's sends in three places (the paths
+ * differ in how the mailbox is built, not in what a slot owes the send buses),
+ * and a bus that sent in one mode and not another would be the "check fx3/fx4
+ * too" bug in a new costume — audible only in whichever mode the user happened
+ * to be in.
+ *
+ * Post-fader, with the SAME gain accumulate_sends uses, so a muted or
+ * soloed-out slot sends nothing from its buses either. NULL-checked: a chain
+ * DSP without bus support does not export the symbol.
+ */
+static inline void accumulate_bus_sends(int slot,
+                                        int32_t send_accum[][FRAMES_PER_BLOCK * 2]) {
+    if (!shadow_chain_drain_sends) return;
+    int32_t *accum_ptrs[SEND_BUS_COUNT];
+    for (int b = 0; b < SEND_BUS_COUNT; b++) accum_ptrs[b] = send_accum[b];
+    float sgain = shadow_effective_volume(slot) * shadow_chain_slots[slot].fade.gain;
+    shadow_chain_drain_sends(shadow_chain_slots[slot].instance,
+                             accum_ptrs, SEND_BUS_COUNT,
+                             FRAMES_PER_BLOCK, sgain);
+}
+
 /* ── mix_buf phase timers ────────────────────────────────────────────────────
  *
  * `mix_buf` is ONE number in the spi_timing line and it is the biggest one:
@@ -2679,6 +2711,7 @@ static void shadow_inprocess_mix_from_buffer(void) {
                     if (i & 1) shadow_fade_advance(s);
                 }
                 accumulate_sends(s, fx_buf, send_accum);
+                accumulate_bus_sends(s, send_accum);
             }
             /* (The old "inactive slot, Move>Slot on: pass Link Audio through at
              * unity" branch lived here. With Move>Slot retired the Move FX bus
@@ -2727,6 +2760,7 @@ skip_la_rebuild:
                     if (i & 1) shadow_fade_advance(s);
                 }
                 accumulate_sends(s, fx_buf, send_accum);
+                accumulate_bus_sends(s, send_accum);
             } else if (shadow_slot_deferred_valid[s]) {
                 /* Fallback: FX not deferred — run inline (legacy path) */
                 if (shadow_slot_fx_idle[s] && shadow_slot_idle[s]) continue;
@@ -2788,6 +2822,7 @@ skip_la_rebuild:
                     if (i & 1) shadow_fade_advance(s);
                 }
                 accumulate_sends(s, fx_buf, send_accum);
+                accumulate_bus_sends(s, send_accum);
             }
         }
     }

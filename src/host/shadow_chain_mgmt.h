@@ -337,6 +337,19 @@ int shadow_master_fx_captures_cc(uint8_t cc);
 
 /* --- Send FX --- */
 void shadow_send_fx_slot_unload(int bus, int slot);
+/*
+ * Drain a chain slot's MODULE BUSES into the global send accumulators.
+ *
+ * NULL until a chain DSP exporting it is loaded — test before every call. The
+ * bus buffers live inside the chain instance and never reach the shim any other
+ * way: render_block hands back only the summed slot output.
+ *
+ * Called once per slot per frame, AFTER that slot's render and with its
+ * post-fader gain, so a muted or soloed-out slot (gain 0) sends nothing.
+ */
+extern void (*shadow_chain_drain_sends)(void *instance, int32_t *const *accum,
+                                        int n_sends, int frames, float slot_gain);
+
 void shadow_send_fx_unload_all(void);
 int shadow_send_fx_slot_load(int bus, int slot, const char *dsp_path);
 

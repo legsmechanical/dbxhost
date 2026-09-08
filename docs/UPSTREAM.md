@@ -57,6 +57,19 @@ Those 10 commits touch **no** `src/` or `schwung-manager/` file, so nothing was 
 > catalog edits made in this fork do nothing. Shipping a module means a public repo, a release, and
 > an upstream PR — not a commit here.
 
+## Module buses (#453) — ported, with three named divergences
+
+Piece 1 (the module-facing half) is in as of 2026-09-08. The contract a module speaks is
+IDENTICAL to upstream's, deliberately: `split_voices`, `move_plugin_render_split`, `bus<N>:` keys,
+`default_buses`. A module written for either host runs on both.
+
+This fork differs in three host-internal ways, none visible to a module, all pinned by tests:
+`BUS_FX_SLOTS` separate from `MAX_AUDIO_FX`; `chain_drain_sends` taking int32 accumulators and a
+float gain; and ONE producer of a bus send key rather than upstream's two. Full reasoning in
+[`MODULE_BUSES.md`](MODULE_BUSES.md).
+
+Pieces 2 (send-FX chain editing) and 3 (the async FX load ring) are NOT ported.
+
 ## Keep-list — paths this fork owns
 
 Divergence is concentrated, and these are the files where an upstream change is most likely to

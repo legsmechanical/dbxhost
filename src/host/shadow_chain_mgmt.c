@@ -47,6 +47,10 @@ const plugin_api_v2_t *shadow_plugin_v2 = NULL;
 void (*shadow_chain_set_inject_audio)(void *instance, int16_t *buf, int frames) = NULL;
 void (*shadow_chain_set_external_fx_mode)(void *instance, int mode) = NULL;
 void (*shadow_chain_process_fx)(void *instance, int16_t *buf, int frames) = NULL;
+/* NULL until a chain DSP that exports chain_drain_sends is loaded, so every
+ * call site must test it. An older module simply has no buses to drain. */
+void (*shadow_chain_drain_sends)(void *instance, int32_t *const *accum,
+                                 int n_sends, int frames, float slot_gain) = NULL;
 int (*shadow_chain_fx_requires_continuous)(void *instance) = NULL;
 host_api_v1_t shadow_host_api;
 
@@ -1443,6 +1447,8 @@ int shadow_inprocess_load_chain(void) {
         dlsym(shadow_dsp_handle, "chain_set_external_fx_mode");
     shadow_chain_process_fx = (void (*)(void *, int16_t *, int))
         dlsym(shadow_dsp_handle, "chain_process_fx");
+    shadow_chain_drain_sends = (void (*)(void *, int32_t *const *, int, int, float))
+        dlsym(shadow_dsp_handle, "chain_drain_sends");
     shadow_chain_fx_requires_continuous = (int (*)(void *))
         dlsym(shadow_dsp_handle, "chain_fx_requires_continuous");
 
