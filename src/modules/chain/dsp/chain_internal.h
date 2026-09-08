@@ -42,6 +42,7 @@
 #include "host/voice_send_source.h"
 #include "host/bus_route.h"
 #include "host/chain_key_index.h"
+#include "host/json_compact.h"
 #include "../../../host/unified_log.h"
 #include "../../../host/shadow_constants.h"
 

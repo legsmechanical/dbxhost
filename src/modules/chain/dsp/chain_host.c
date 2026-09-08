@@ -5,6 +5,7 @@
  */
 
 #include "chain_internal.h"
+#include "host/split_voices_parse.h"
 
 
 /* ============================================================================
@@ -59,6 +60,14 @@ static void* v2_create_instance(const char *module_dir, const char *config_json)
 
     strncpy(inst->module_dir, module_dir, MAX_PATH_LEN - 1);
 
+    /* ⚠ voice_bus[] MUST start at BUS_MIX_MAIN, and calloc does not do it: 0 is
+     * bus 1's own index, so a zeroed map puts every voice on bus 1 the moment
+     * the buses allocate. chain_reset_voice_bus is a loop for the same reason —
+     * BUS_MIX_MAIN is -1 and a 0xFF byte-fill only reads back as -1 by
+     * two's-complement luck. */
+    inst->synth_render_split = NULL;
+    chain_reset_voice_bus(inst);
+
     /* Channel fields default to "absent" — getters return empty length until
      * a patch sets them, so callers won't clobber the shim's slot config. */
     inst->loaded_receive_channel = PATCH_CHANNEL_UNSET;
@@ -95,6 +104,14 @@ static void v2_destroy_instance(void *instance) {
     v2_synth_panic(inst);
     v2_unload_all_audio_fx(inst);
     v2_unload_synth(inst);
+
+    /* ⚠⚠ ORDER IS LOAD-BEARING: the worker is JOINED first, and only then is
+     * what it owns released. Freeing a bus's buffer or dlclosing its FX while
+     * the worker is still running is a use-after-free on a thread we no longer
+     * control — chain_bus_release_all says so at its own declaration, and this
+     * is the one call site that has to honour it. */
+    chain_bus_worker_stop(inst);
+    chain_bus_release_all(inst);
 
     free(inst);
 }
@@ -148,6 +165,20 @@ void v2_unload_synth(chain_instance_t *inst) {
     inst->mod_param_refresh_ms_synth = 0;
     inst->synth_default_forward_channel = -1;
     inst->synth_bypassed = 0;
+
+    /* The DECLARED voice list belongs to the module that is leaving, so it goes
+     * with it: an id left over would name a voice in a list that no longer
+     * exists, and the derived map would point at a render buffer nothing fills.
+     *
+     * ⭑ The BUSES' STORED ids are deliberately NOT touched. They are the
+     * configuration; an id the next module does not declare becomes a counted
+     * ORPHAN and comes back if this module does. Clearing them here would make
+     * swapping a module destroy the kit silently. */
+    inst->synth_render_split = NULL;
+    memset(inst->synth_split_voice_ids, 0, sizeof(inst->synth_split_voice_ids));
+    inst->synth_split_voice_count = 0;
+    chain_reset_voice_bus(inst);
+    for (int b = 0; b < SLOT_BUSES; b++) inst->buses[b].orphan_count = 0;
 }
 
 /* V2 unload all audio FX */
@@ -426,6 +457,24 @@ int v2_load_synth(chain_instance_t *inst, const char *module_name) {
         return -1;
     }
 
+    /*
+     * The OPTIONAL per-voice render, discovered by dlsym.
+     *
+     * ⚠ A SEPARATE EXPORTED SYMBOL, NOT A FIELD ON plugin_api_v2_t, and
+     * deliberately: appending to that struct once boot-looped a device, because
+     * a module built against the shorter version leaves the host reading past
+     * the end of what it allocated. A dlsym'd symbol is absent-or-present with
+     * no ABI question at all, so an older module simply has no split render and
+     * every voice goes to Main.
+     *
+     * The module is switched between this and render_block AT RUNTIME, PER
+     * FRAME, by whether any voice is currently assigned to a bus — so the two
+     * must be state-compatible: same voice allocator, same envelope/LFO/phase.
+     */
+    void (*render_split_fn)(void *, int16_t *const *, int, int16_t *, int) =
+        (void (*)(void *, int16_t *const *, int, int16_t *, int))
+            dlsym(handle, "move_plugin_render_split");
+
     /* V2 API required */
     move_plugin_init_v2_fn init_v2 = (move_plugin_init_v2_fn)dlsym(handle, MOVE_PLUGIN_INIT_V2_SYMBOL);
     if (!init_v2) {
@@ -486,6 +535,7 @@ int v2_load_synth(chain_instance_t *inst, const char *module_name) {
     inst->synth_plugin_v2 = api;
     inst->synth_instance = synth_inst;
     strncpy(inst->current_synth_module, module_name, MAX_NAME_LEN - 1);
+    inst->synth_render_split = render_split_fn;
 
     /* Parse chain_params from module.json for type info */
     if (parse_chain_params(synth_path, inst->synth_params, &inst->synth_param_count) < 0) {
@@ -495,10 +545,48 @@ int v2_load_synth(chain_instance_t *inst, const char *module_name) {
         inst->synth_handle = NULL;
         inst->synth_plugin_v2 = NULL;
         inst->synth_instance = NULL;
+        /* ⚠ Resolved against the handle just CLOSED — a stale pointer here is a
+         * call into an unmapped text segment on the SPI callback. */
+        inst->synth_render_split = NULL;
         inst->current_synth_module[0] = '\0';
         return -1;
     }
     inst->mod_param_refresh_ms_synth = 0;
+
+    /*
+     * ---- THE MODULE'S DECLARED VOICES ------------------------------------
+     *
+     * AFTER parse_chain_params, and it has to be: the range a per-voice send
+     * level is mapped from comes out of inst->synth_params, so reading the
+     * declaration first would find no metadata and refuse every send.
+     */
+    memset(inst->synth_split_voice_ids, 0, sizeof(inst->synth_split_voice_ids));
+    inst->synth_split_voice_count = 0;
+    chain_reset_voice_bus(inst);
+    if (inst->synth_plugin_v2 && inst->synth_instance && inst->synth_plugin_v2->get_param) {
+        char split_buf[4096];
+        split_buf[0] = '\0';
+        int got = inst->synth_plugin_v2->get_param(inst->synth_instance,
+                                                   "split_voices", split_buf, sizeof(split_buf));
+        /* got <= 0 means the key was not served: this module cannot split. That
+         * is a real answer, and a different one from a read that did not
+         * complete — which cannot happen here, because this is a direct
+         * in-process call on a stack buffer. */
+        if (got > 0) {
+            /* ⚠ Defensive: NOTHING NUL-terminates split_buf after the plugin
+             * call. A module writing exactly sizeof(split_buf) bytes with no
+             * terminator would send the parser's strstr/strchr scan off the end
+             * of this stack frame. */
+            split_buf[sizeof(split_buf) - 1] = '\0';
+            inst->synth_split_voice_count =
+                split_voices_parse(split_buf, inst->synth_split_voice_ids,
+                                   SPLIT_VOICES_MAX, SPLIT_VOICE_ID_LEN);
+        }
+    }
+    /* A voice id resolves against whatever module is loaded NOW, so the derived
+     * map is rebuilt here as well as on every assignment change. The buses'
+     * stored ids survive the swap untouched — see v2_unload_synth. */
+    chain_bus_rebuild_voice_map(inst);
 
     /* Parse default_forward_channel from capabilities in module.json */
     inst->synth_default_forward_channel = -1;  /* Default: no forwarding preference */
@@ -675,6 +763,33 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
         parse_debug_log(dbg);
     }
 
+    /*
+     * ---- "bus<N>:" and "buses:" ------------------------------------------
+     *
+     * FIRST, and the position is the whole point: "bus1:fx2:mix" CONTAINS
+     * "fx2:", so any later prefix match on the slot's own FX ladder would hand
+     * a bus insert's parameter to the TRACK's second FX — a write that lands on
+     * a different running module and says nothing.
+     *
+     * Routing goes through bus_route.h with SLOT_BUSES passed in, so an
+     * out-of-range index falls through here rather than being clamped onto bus
+     * 0. That is the defect master_fx_key.h exists to prevent: its handler had
+     * an else-branch, and an unmatched "fx5:cutoff" was not dropped but routed
+     * into slot 0 with a garbage param key.
+     */
+    {
+        int b = -1;
+        const char *rest = NULL;
+        if (bus_route_param_key(key, SLOT_BUSES, &b, &rest)) {
+            chain_bus_set_param(inst, b, rest, val);
+            return;
+        }
+        if (strncmp(key, "buses:", 6) == 0) {
+            chain_bus_slot_set_param(inst, key + 6, val);
+            return;
+        }
+    }
+
     /* Per-component bypass flags. Handled BEFORE the prefix routes below
      * so we don't forward "bypassed" down to the sub-plugin's set_param. */
     if (strcmp(key, "synth:bypassed") == 0) {
@@ -788,6 +903,14 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
         memset(inst->lfos, 0, sizeof(inst->lfos));
         memset(inst->lfo_base_values, 0, sizeof(inst->lfo_base_values));
         memset(inst->lfo_base_valid, 0, sizeof(inst->lfo_base_valid));
+        /*
+         * The buses go too, and for exactly the reason the LFOs do: bus config
+         * is per-SLOT state, not per-module. A set switch clears every slot
+         * through here, so leaving it would keep a bus assigned to the voices
+         * of a module that is no longer loaded — still allocated, still
+         * feeding whatever its sends point at.
+         */
+        chain_bus_clear_all(inst);
         inst->current_patch = -1;
         inst->dirty = 0;
         malloc_trim(0);
@@ -1302,6 +1425,20 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
 static int v2_get_param(void *instance, const char *key, char *buf, int buf_len) {
     chain_instance_t *inst = (chain_instance_t *)instance;
     if (!inst) return -1;
+
+    /* "bus<N>:" / "buses:", ahead of everything for the same reason as the
+     * set_param side: "bus1:fx2:mix" must not reach the slot's own fx2 route.
+     * chain_bus_get_param answers -1 for a read it cannot complete, which the
+     * param channel presents as "did not complete" — the caller retries rather
+     * than caching a verdict. */
+    {
+        int b = -1;
+        const char *rest = NULL;
+        if (bus_route_param_key(key, SLOT_BUSES, &b, &rest))
+            return chain_bus_get_param(inst, b, rest, buf, buf_len);
+        if (strncmp(key, "buses:", 6) == 0)
+            return chain_bus_slot_get_param(inst, key + 6, buf, buf_len);
+    }
 
     /* Per-component bypass flags. Handled BEFORE the prefix routes below
      * so we return our cached flag instead of forwarding to the sub-plugin. */
@@ -2367,17 +2504,156 @@ static void v2_render_block(void *instance, int16_t *out_interleaved_lr, int fra
     /* Process MIDI FX tick (for arpeggiator timing) */
     v2_tick_midi_fx(inst, frames);
 
+    /*
+     * ---- MODULE BUSES ----------------------------------------------------
+     *
+     * A module that exports move_plugin_render_split renders each declared
+     * voice into its own buffer, so a subset of them can be summed into a BUS
+     * and run through that bus's own insert chain before joining the slot.
+     *
+     * The module is switched between render_split and render_block PER FRAME,
+     * by whether any voice is currently assigned to a bus — assigning one on
+     * the UI flips the entry point mid-stream with no reload, which is why the
+     * two must share voice allocator, envelope and phase state.
+     */
+    int16_t *bus_bufs[SLOT_BUSES];
+    for (int b = 0; b < SLOT_BUSES; b++) bus_bufs[b] = NULL;
+    uint32_t active_bus_mask = 0;
+    int n_active = 0;
+    /* Reset EVERY frame and before any early return: a stale mask would keep
+     * reporting the last frame a bus was heard on, forever. */
+    inst->bus_rendered_mask = 0;
+    /* voice_out[] below is a SPLIT_VOICES_MAX stack array on the SPI callback,
+     * and synth_split_voice_count's bound lives in another file
+     * (split_voices_parse.h). Clamp locally so a bad count from that path is a
+     * dropped voice here, never a stack overflow. */
+    int nv = inst->synth_split_voice_count;
+    if (nv > SPLIT_VOICES_MAX) nv = SPLIT_VOICES_MAX;
+    if (inst->synth_render_split && inst->synth_instance && nv > 0) {
+        /* ⚠ ACQUIRE, pairing with the worker's RELEASE store when it publishes
+         * a buffer. A plain load orders nothing: this thread could see a
+         * non-NULL pointer whose calloc'd zeroes are not yet visible, and
+         * render into memory it then reads as garbage. */
+        for (int b = 0; b < SLOT_BUSES; b++)
+            bus_bufs[b] = __atomic_load_n(&inst->buses[b].buf, __ATOMIC_ACQUIRE);
+        n_active = bus_mix_active_mask(inst->voice_bus, nv,
+                                       SLOT_BUSES, bus_bufs, &active_bus_mask);
+        inst->bus_rendered_mask = active_bus_mask;
+        /*
+         * ⚠ PER-VOICE SENDS ARE NOT WIRED IN THIS SLICE, DELIBERATELY, AND THE
+         * ABSENCE IS WHOLE RATHER THAN PARTIAL.
+         *
+         * The machinery is ported and unit-tested — bus_mix's solo partition
+         * (bus_mix_solo_mask / bus_mix_build_table_split), the module-owned
+         * level cache (chain_voice_sends_load / _poll / _touch), and
+         * voice_send_buf[] — but NOTHING CALLS IT, on purpose. A voice's send
+         * only becomes audible in the DRAIN that folds bus and voice audio into
+         * the slot's send buses, and that drain lands on this fork's own
+         * send-FX path, which is where it has diverged most.
+         *
+         * So the choice here was between a coherent absence and a half-live
+         * cache: calling _load and _touch without _poll gives a cache that is
+         * filled and invalidated but never refreshed, and calling _poll without
+         * the drain spends get_param round trips ON THE SPI CALLBACK for values
+         * nothing reads. Neither is worth having. When the drain lands, all
+         * four go in together — _poll FIRST, before the solo mask, or the
+         * partition decides this frame from last frame's answer and a send
+         * raised from zero is inaudible for an extra frame.
+         *
+         * Until then a voice's audio reaches its bus and that bus's inserts,
+         * which is the whole of what this slice claims.
+         */
+    }
+
     /* Always render so synth state advances (envelopes, LFOs, phases).
      * If bypassed, zero the buffer afterward — downstream FX still see
      * silence as input but the synth's internal time doesn't freeze, so
      * unbypass resumes cleanly without a burst. */
-    if (inst->synth_plugin_v2 && inst->synth_instance && inst->synth_plugin_v2->render_block) {
+    if (n_active > 0) {
+        /* The split render ACCUMULATES, so its destinations are cleared first —
+         * main, and ONLY the distinct bus buffers the mask names. An allocated
+         * but unrouted bus is never touched, which is what keeps an unused bus
+         * free. */
+        memset(out_interleaved_lr, 0, frames * 2 * sizeof(int16_t));
+        for (int b = 0; b < SLOT_BUSES; b++) {
+            /* Clearing `frames` samples of a BUS_BUF_SAMPLES-capacity buffer,
+             * never the reverse — frames is clamped above against the same
+             * name the allocator sizes with. */
+            if ((active_bus_mask & (1u << b)) && bus_bufs[b])
+                memset(bus_bufs[b], 0, frames * 2 * sizeof(int16_t));
+        }
+
+        /* Entries ALIAS deliberately: voices sharing a bus get the same
+         * pointer, so their sum happens inside the module's own accumulating
+         * render with no mixing pass of ours at all. */
+        int16_t *voice_out[SPLIT_VOICES_MAX];
+        bus_mix_build_table(voice_out, nv, inst->voice_bus,
+                            out_interleaved_lr, bus_bufs, SLOT_BUSES);
+        inst->synth_render_split(inst->synth_instance, voice_out,
+                                 nv, out_interleaved_lr, frames);
+
+        /* Per-bus inserts, in series, with the main chain's bypass discipline:
+         * always process so delay lines and reverb tails keep advancing, and
+         * restore the dry on a bypassed position so unbypass resumes cleanly. */
+        for (int b = 0; b < SLOT_BUSES; b++) {
+            if (!(active_bus_mask & (1u << b)) || !bus_bufs[b]) continue;
+            slot_bus_t *bus = &inst->buses[b];
+            /*
+             * ⚠⚠ THE SECOND GATE, and it is not optional. `buf`'s acquire above
+             * orders `buf` AND NOTHING ELSE — every field read below is written
+             * by the worker AFTER buf is published. Without this, those are
+             * plain reads of another thread's in-flight stores: a half-written
+             * fx_instances[] entry called through, or an fx_count naming a
+             * position whose plugin pointer is not visible yet.
+             *
+             * Shut means the worker is reconciling this bus, and the bus plays
+             * DRY for those frames rather than through a chain being rebuilt
+             * underneath it. Read THROUGH bus_fx_ready(), never as a boolean —
+             * the boolean version could be resurrected by a preempted worker,
+             * putting process_block in a race with the next reconcile's
+             * destroy_instance and dlclose.
+             */
+            if (!bus_fx_ready(bus)) continue;
+            for (int i = 0; i < bus->fx_count && i < BUS_FX_SLOTS; i++) {
+                int bypassed = bus->fx_bypassed[i];
+                /* Sized off the bus buffer's own capacity name, not a second
+                 * literal that could drift from it. */
+                int16_t fx_dry[BUS_BUF_SAMPLES];
+                if (bypassed)
+                    memcpy(fx_dry, bus_bufs[b], frames * 2 * sizeof(int16_t));
+                if (bus->fx_plugins_v2[i] && bus->fx_instances[i] &&
+                    bus->fx_plugins_v2[i]->process_block) {
+                    bus->fx_plugins_v2[i]->process_block(bus->fx_instances[i],
+                                                         bus_bufs[b], frames);
+                }
+                if (bypassed)
+                    memcpy(bus_bufs[b], fx_dry, frames * 2 * sizeof(int16_t));
+            }
+        }
+
+        /* Buses sum into main BEFORE the slot's own FX, so a slot compressor
+         * sees the whole kit. It is also before the external_fx_mode return
+         * below: a bus's audio is part of the slot's synth output and would
+         * simply vanish from it otherwise, and the bus inserts have nowhere
+         * else they could run — the shim's chain_process_fx only ever sees the
+         * summed buffer. */
+        for (int b = 0; b < SLOT_BUSES; b++) {
+            if (!(active_bus_mask & (1u << b)) || !bus_bufs[b]) continue;
+            bus_mix_accumulate(out_interleaved_lr, bus_bufs[b], frames * 2);
+        }
+    } else if (inst->synth_plugin_v2 && inst->synth_instance && inst->synth_plugin_v2->render_block) {
         inst->synth_plugin_v2->render_block(inst->synth_instance, out_interleaved_lr, frames);
     } else {
         memset(out_interleaved_lr, 0, frames * 2 * sizeof(int16_t));
     }
     if (inst->synth_bypassed) {
         memset(out_interleaved_lr, 0, frames * 2 * sizeof(int16_t));
+        /* Main is silenced above, but the bus buffers still hold this frame's
+         * post-insert audio. Clear the MASK, not the buffers: the inserts
+         * already ran this frame (unconditionally, the same discipline as the
+         * main chain), so their tails have advanced — zeroing the mask only
+         * stops anything downstream from reading them this frame. */
+        inst->bus_rendered_mask = 0;
     }
 
     /* In external_fx_mode, output raw synth only — skip inject and FX.
