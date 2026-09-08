@@ -474,14 +474,16 @@ void chain_mod_clear_source(void *ctx, const char *source_id) {
 int chain_mod_refresh_target_param_cache(chain_instance_t *inst, const char *target) {
     if (!inst || !target) return -1;
 
-    char buf[SHADOW_PARAM_VALUE_LEN];
+    char *buf = inst->param_refresh_buf;
     int result = -1;
-    chain_param_info_t parsed[MAX_CHAIN_PARAMS];
+    /* The instance's staging buffer, not a local: this is reached from the SPI
+     * callback and the array is ~1.1 MB. See its declaration. */
+    chain_param_info_t *parsed = inst->param_refresh_scratch;
     int parsed_count = -1;
 
     if (strcmp(target, "synth") == 0) {
         if (inst->synth_plugin_v2 && inst->synth_instance && inst->synth_plugin_v2->get_param) {
-            result = inst->synth_plugin_v2->get_param(inst->synth_instance, "chain_params", buf, sizeof(buf));
+            result = inst->synth_plugin_v2->get_param(inst->synth_instance, "chain_params", buf, SHADOW_PARAM_VALUE_LEN);
         }
         /* ⚠ NOT `result <= 0`. A module answering the two characters "[]" — one
          * that reads its chain_params from a file that is not installed —
@@ -505,7 +507,7 @@ int chain_mod_refresh_target_param_cache(chain_instance_t *inst, const char *tar
 
         if (inst->fx_is_v2[fx_slot] && inst->fx_plugins_v2[fx_slot] &&
             inst->fx_instances[fx_slot] && inst->fx_plugins_v2[fx_slot]->get_param) {
-            result = inst->fx_plugins_v2[fx_slot]->get_param(inst->fx_instances[fx_slot], "chain_params", buf, sizeof(buf));
+            result = inst->fx_plugins_v2[fx_slot]->get_param(inst->fx_instances[fx_slot], "chain_params", buf, SHADOW_PARAM_VALUE_LEN);
         }
         /* ⚠ NOT `result <= 0`. A module answering the two characters "[]" — one
          * that reads its chain_params from a file that is not installed —
@@ -534,7 +536,7 @@ int chain_mod_refresh_target_param_cache(chain_instance_t *inst, const char *tar
         result = inst->midi_fx_plugins[midi_fx_slot]->get_param(inst->midi_fx_instances[midi_fx_slot],
                                                                 "chain_params",
                                                                 buf,
-                                                                sizeof(buf));
+                                                                SHADOW_PARAM_VALUE_LEN);
         /* ⚠ NOT `result <= 0`. A module answering the two characters "[]" — one
          * that reads its chain_params from a file that is not installed —
          * passes that test, parses to a count of ZERO, and the store below then

@@ -393,6 +393,31 @@ typedef struct chain_instance {
      * (loopers, modulated delays) keep advancing internal time during silence. */
     int fx_requires_continuous[MAX_AUDIO_FX];
     
+    /*
+     * Scratch for chain_mod_refresh_target_param_cache's parse.
+     *
+     * ⚠⚠ ON THE INSTANCE BECAUSE IT WAS A 1.11 MB STACK FRAME. That function
+     * held `chain_param_info_t parsed[MAX_CHAIN_PARAMS]` as a LOCAL — 256
+     * entries, each carrying options[MAX_ENUM_OPTIONS][32] — and it is reached
+     * from the SPI callback (knob_find_param, from chain_midi.c's CC path and
+     * chain_host.c's set_param) on a cache miss. It was by far the largest
+     * frame in the chain DSP: the next is ~4.4 KB, so this was 250x anything
+     * else, on a thread whose stack size we do not own.
+     *
+     * The buffer cannot simply go away: the parse writes as it goes, so parsing
+     * straight into the destination would leave PARTIAL entries behind a stale
+     * count if it failed midway. It is staged and committed only on success —
+     * that is load-bearing, and this field is where it stages.
+     *
+     * Not `static`: one instance per slot, all on the same thread today, but a
+     * shared buffer would be a latent aliasing bug the moment anything reaches
+     * it from anywhere else.
+     */
+    chain_param_info_t param_refresh_scratch[MAX_CHAIN_PARAMS];
+    /* The read target that goes with it — a whole param-channel value (64 KB),
+     * and the other half of that frame. Same single-writer reasoning. */
+    char param_refresh_buf[SHADOW_PARAM_VALUE_LEN];
+
     /* Synth load error message */
     char synth_load_error[256];
 } chain_instance_t;
