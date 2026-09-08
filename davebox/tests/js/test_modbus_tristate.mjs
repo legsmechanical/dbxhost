@@ -203,6 +203,32 @@ step('a group past the cap writes NOTHING rather than a key the host refuses', (
     eq(writes.length, 0, 'no write');
 });
 
+/* ---- A SLOT CHANGE MUST NOT SHOW THE PREVIOUS TRACK'S BUSES ------------ */
+
+step('a slot change DISCARDS the cache — last-good is only good for its own slot', () => {
+    const st = M.modBusInitState();
+    answers = { 'synth:split_voices': VOICES, 'buses:config': CONFIG };
+    M.modBusRefreshSplit(st, 0); M.modBusRefreshConfig(st, 0);
+    eq(M.modBusCount(st), 2, 'slot 0 has two');
+    /* Track 2, and its read does not complete. The keep-last-good rule would
+     * otherwise draw slot 0`s buses under slot 1`s name — a wrong answer that
+     * looks exactly like a right one, which is worse than "Reading...". */
+    answers = { 'synth:split_voices': null, 'buses:config': null };
+    M.modBusRefreshConfig(st, 1);
+    eq(st.config.unresolved, true, 'unresolved on the new slot');
+    eq(M.modBusCount(st), -1, 'no count claimed for the new slot');
+});
+
+step('...and the split does not carry the previous module`s voices either', () => {
+    const st = M.modBusInitState();
+    answers = { 'synth:split_voices': VOICES };
+    M.modBusRefreshSplit(st, 0);
+    eq(M.modBusDoorState(st), 'open', 'slot 0 splits');
+    answers = { 'synth:split_voices': null };
+    M.modBusRefreshSplit(st, 1);
+    eq(M.modBusDoorState(st), 'unknown', 'slot 1 is unknown, not open');
+});
+
 step('the read cost is ONE round trip per refresh, not per voice or per group', () => {
     const st = M.modBusInitState();
     let reads = 0;

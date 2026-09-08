@@ -31,6 +31,10 @@ import {
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
     slotIndex, moveBusForChannel, moveBusComp, moveBusPrefix,
 } from './ui_engine.mjs';
+/* MODULE buses — a splittable module's voice groups. ⚠ NOT davebox's `S.bus`,
+ * which is a MIXER POSITION; ui_modbus.mjs's header says why the source keeps
+ * them apart even though the screens never collide. */
+import * as ModBus from './ui_modbus.mjs';
 /* davebox's GLOBAL state. Sound mode keeps its own `S`, so this is imported
  * under a different name deliberately — the two are easy to confuse, and
  * confusing them is exactly what broke the bypass gesture. Used only for the
@@ -261,6 +265,11 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
       VIEW_PRESET_SRC = 3, VIEW_PRESET_LIST = 4, VIEW_PRESET_BAKED = 5,
       VIEW_MENU = 6, VIEW_FILE = 7, VIEW_SLOTCFG = 8, VIEW_BUSES = 9,
       VIEW_PATCHES = 10,
+      /* MODULE BUSES (#453 piece 1): the list of a splittable module's voice
+       * groups. Only reachable when the loaded module DECLARES voices — the
+       * door's tri-state lives in ui_modbus.mjs. Numbered clear of the block
+       * above so inserting a view there cannot silently renumber it. */
+      VIEW_MODBUS = 30,
       /* P7: the knob and LFO editors, absorbed from the host (they were
        * overlay services in P5). Sub-screens of slot settings. */
       VIEW_KNOBS = 11, VIEW_KNOB_TARGET = 12, VIEW_KNOB_PARAM = 13,
@@ -709,6 +718,11 @@ const S = {
     slotRows: [],               /* the active settings row set */
     capFx34: false,
     capSends: false,
+    /* The module-bus cache. Its resting state is UNRESOLVED, never "none" —
+     * modBusInitState is the only correct way to build one, because a plain
+     * {} would read as a resolved slot with no buses. */
+    modBus: ModBus.modBusInitState(),
+    modBusIdx: 0,
     slotCfgIdx: 0,
     slotCfgVals: [],            /* live values, index-aligned with slotRows */
     slotCfgEditing: false,
@@ -2920,6 +2934,22 @@ function buildPickRows() {
          * user-facing text — the store is still the host's patches/ dir. */
         /* 'LFOs', not 'Sound Control' (Josh, 2026-09-04): the Knobs row moved
          * to the MACROS bank, so the LFOs are all that is behind this door. */
+        /* ⭐ BUSES — only for a module that actually SPLITS, and the gate is a
+         * TRI-STATE, not a boolean (ModBus.modBusDoorState):
+         *
+         *   'open'     the module declares voices — offer the door
+         *   'absent'   it answered and declares none — never offer it
+         *   'unknown'  the read did not complete — offer nothing YET
+         *
+         * ⚠⚠ 'unknown' MUST NOT be treated as 'absent'. probeCaps' `has()`
+         * helper collapses the two, and doing that here would let ONE timed-out
+         * read on entry tell the user this module has no buses, permanently and
+         * with nothing on screen to contradict it. The refresh runs on the next
+         * entry, so an unknown resolves itself rather than latching.
+         *
+         * Placed with the other doors and before Presets, which stays last. */
+        if (ModBus.modBusDoorState(S.modBus) === 'open')
+            rows.push({ kind: 'modbus', label: ModBus.MODBUS_LABEL });
         rows.push({ kind: 'settings', label: 'LFOs' });
         rows.push({ kind: 'config',   label: 'Config' });
         rows.push({ kind: 'patches',  label: 'Presets' });
@@ -2961,6 +2991,14 @@ function probeCaps() {
     S.capFx34  = has(engineGet(S.slot, 'fx3', 'bypassed')) ||
                  has(engineGet(S.slot, 'fx4', 'bypassed'));
     S.capSends = has(engineGetSlotParam(S.slot, 'send_a'));
+    /* ⚠⚠ NOT THROUGH `has()`. That helper is `v !== null && v !== undefined &&
+     * v !== ''`, which collapses "the read did not finish" into "the module
+     * declares none" — harmless for send_a, where the next entry re-probes, and
+     * NOT harmless here, because this answer decides whether a DOOR exists.
+     * modBusRefreshSplit keeps the three answers apart; buildPickRows offers the
+     * row only on 'open'. One round trip, on entry and retarget, beside the
+     * three already here. */
+    ModBus.modBusRefreshSplit(S.modBus, S.slot);
     S.blockRows = [];
     for (let i = 0; i < BLOCKS.length; i++) {
         const c = BLOCKS[i].comp;
@@ -2972,7 +3010,8 @@ function probeCaps() {
      * entry and on every retarget — assigning here would swap the rows out from
      * under an open Config list on a track change. The sends gate that used to
      * live here now applies to the top-level LEVEL rows (see buildPickRows). */
-    log('caps: fx34=' + (S.capFx34 ? 1 : 0) + ' sends=' + (S.capSends ? 1 : 0));
+    log('caps: fx34=' + (S.capFx34 ? 1 : 0) + ' sends=' + (S.capSends ? 1 : 0) +
+        ' buses=' + ModBus.modBusDoorState(S.modBus));
 }
 
 /* ---- slot settings: read, edit, persist ---- */
@@ -3086,6 +3125,39 @@ function drainSlotWrites() {
         if (w.chain) { engineSetChainParam(w.slot, w.key, String(w.val)); continue; }
         engineSetSlotParam(w.slot, w.key, w.int ? String(w.val) : w.val.toFixed(3));
     }
+}
+
+/* ---- MODULE BUSES: the group list ---------------------------------------
+ *
+ * Rows come from bus_model (via ModBus.modBusRows) so this screen and the
+ * writes cannot disagree about what a slot holds or what it is called. The
+ * value column carries the insert summary and both send levels.
+ *
+ * ⚠ AN UNRESOLVED CONFIG DRAWS "Reading...", NOT AN EMPTY LIST. An empty list
+ * is a claim — "this slot has no buses" — and a read that did not complete
+ * makes no claim at all. The two look the same for one frame and must never be
+ * the same on screen.
+ */
+function renderModBus() {
+    const cfg = S.modBus && S.modBus.config;
+    if (!cfg || cfg.unresolved) {
+        renderInChain([{ label: 'Reading...', hdr: true }], 0);
+        return;
+    }
+    const rows = ModBus.modBusRows(S.modBus, engineModuleAbbrev);
+    if (!rows.length) {
+        /* Resolved and genuinely empty is a real state: the module splits, but
+         * nothing has been grouped yet. The New row below is the way out of it,
+         * so this only shows if even that is gone (the cap), which cannot
+         * happen at zero — kept as an honest fallback rather than a blank. */
+        renderInChain([{ label: 'No buses', hdr: true }], 0);
+        return;
+    }
+    renderInChain(rows.map((r) => (r.kind === 'new'
+        ? { label: ModBus.modBusRowLabel(r), hdr: true, chevron: true }
+        : { label: ModBus.modBusRowLabel(r), hdr: true,
+            value: ModBus.modBusRowValue(r), chevron: true })),
+        S.modBusIdx);
 }
 
 function renderSlotCfg() {
@@ -3573,6 +3645,12 @@ const VIEW_TREE = {
     /* The MACROS page is a root: its assign screens float over it. */
     [VIEW_MACROS]:      { parent: null,            float: false, crumb: () => 'Macros' },
     [VIEW_KNOBS]:       { parent: VIEW_MACROS,     float: true,  crumb: () => 'Knobs' },
+    /* MODULE BUSES. A pure step-up: Back does nothing but leave — every edit
+     * on the list has already landed, so there is no audition to revert and no
+     * parent to re-open with state. The crumb is the label, so renaming the
+     * feature renames the breadcrumb with it. */
+    [VIEW_MODBUS]:      { parent: VIEW_BLOCKS,     float: true,  backPure: true,
+                          crumb: () => ModBus.MODBUS_LABEL },
     [VIEW_LFO]:         { parent: VIEW_SLOTCFG,    float: true,
                           crumb: () => 'LFO ' + (S.lfoNum + 1) },
     [VIEW_KNOBLEGS]:    { parent: VIEW_KNOBS,      float: true,
@@ -5742,6 +5820,17 @@ function runActionBody(a) {
          * reach by itself. One action, next tick, after discovery is queued. */
         if (a.then) S.pendingAction = a.then;
     }
+    else if (a.t === 'modbus') {
+        /* TWO round trips, once, on entry — the voice list and the config.
+         * Everything the screens draw comes off this cache; a screen reading
+         * per row would be SLOT_BUSES x SPLIT_VOICES_MAX round trips at ~2.9 ms
+         * each. Pinned by davebox/tests/js/test_modbus_tristate.mjs. */
+        ModBus.modBusRefreshSplit(S.modBus, S.slot);
+        ModBus.modBusRefreshConfig(S.modBus, S.slot);
+        S.modBusIdx = 0;
+        S.view = VIEW_MODBUS;
+        S.dirty = true;
+    }
     else if (a.t === 'view')    { S.view = a.view | 0; S.dirty = true; }
     else if (a.t === 'instrrow') {
         /* The sound menu on its INSTRUMENT row (the follow's landing from an
@@ -6677,6 +6766,11 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * the clip banks — without this the screen would fall back mid-
              * scroll, 2s after entry, while the cursor is still moving. */
             if (!soundIsGlobal() && !S.enterSession) armBankDisplay();
+        } else if (S.view === VIEW_MODBUS) {
+            /* Drawn from the cache, so moving the cursor costs no round trip.
+             * listMove is the shared clamp every other list here uses. */
+            const n = ModBus.modBusRows(S.modBus, engineModuleAbbrev).length;
+            if (n > 0) S.modBusIdx = listMove(n, S.modBusIdx, delta);
         } else if (S.view === VIEW_SLOTCFG) {
             slotCfgStep(delta);
         } else if (S.view === VIEW_KNOBS) {
@@ -7001,6 +7095,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'patches') {
             S.pendingAction = { t: 'patchlist' };   /* store listing — tick only */
+        }
+        else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
+                 S.pickRows[S.pickRow].kind === 'modbus') {
+            /* Reads the slot's bus config — TICK ONLY. A get_param from an
+             * input callback silently returns null (davebox/CLAUDE.md), and a
+             * null here is indistinguishable from "this slot has no buses". */
+            S.pendingAction = { t: 'modbus' };
         }
         else if (S.view === VIEW_PATCHES) {
             if (S.patchConfirm) {
@@ -9624,6 +9725,7 @@ export function soundRender() {
     else if (S.view === VIEW_PRESET_BAKED) renderPresetBaked();
     else if (S.view === VIEW_MENU) renderMenu();
     else if (S.view === VIEW_FILE) renderFile();
+    else if (S.view === VIEW_MODBUS) renderModBus();
     else if (S.view === VIEW_SLOTCFG) renderSlotCfg();
     else if (S.view === VIEW_KNOBS) renderKnobs();
     else if (S.view === VIEW_KNOBLEGS) renderKnobLegs();

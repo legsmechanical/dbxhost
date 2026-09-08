@@ -104,6 +104,12 @@ export function modBusInitState() {
  * See [[schwung-performance-and-snappy-ui-are-a-priority]].
  */
 export function modBusRefreshSplit(st, slot) {
+    /* Same rule, and here it is automatic: the parse REPLACES the cache
+     * unconditionally, so a failed read on a new slot lands as 'unknown' rather
+     * than carrying the previous module's voice list forward. Stated because
+     * the config's sibling above needs an explicit discard and a reader will
+     * ask why this one does not. */
+    if (st.slot !== slot) st.config = { unresolved: true, buses: [], mainSends: [] };
     const raw = engineGetChainParam(slot, 'synth:split_voices');
     st.slot = slot;
     st.split = BusModel.parseSplitVoices(raw);
@@ -119,13 +125,22 @@ export function modBusRefreshSplit(st, slot) {
  * claim the slot never made — every time a read was slow.
  */
 export function modBusRefreshConfig(st, slot) {
+    /* ⚠⚠ LAST-GOOD IS ONLY GOOD FOR THE SAME SLOT. Keeping a stale list across a
+     * TRACK CHANGE would draw the previous track's buses under this track's
+     * name — a wrong answer that looks exactly like a right one, which is worse
+     * than the "Reading..." it would replace. So a slot change discards first,
+     * and only then does the unresolved-keeps-last-good rule apply. */
+    if (st.slot !== slot) {
+        st.config = { unresolved: true, buses: [], mainSends: [] };
+        st.split = { unresolved: true, voices: [] };
+    }
     const raw = engineGetChainParam(slot, 'buses:config');
     const parsed = BusModel.parseBusesConfig(raw);
     st.slot = slot;
     if (!parsed.unresolved) st.config = parsed;
     else if (!st.config || st.config.unresolved) st.config = parsed;
-    /* else: keep the last good one, and let the caller decide whether a stale
-     * list is better than none. It is: every row in it was true a moment ago. */
+    /* else: keep the last good one — every row in it was true a moment ago, and
+     * an empty list is a claim the slot never made. */
     return st.config;
 }
 
@@ -165,6 +180,17 @@ export function modBusDoorState(st) {
 export function modBusRows(st, abbrev) {
     return BusModel.busListRows(st ? st.config : null, abbrev);
 }
+
+/*
+ * A row's LABEL and its VALUE column, straight from the model.
+ *
+ * Wrapped rather than imported at each screen so there is ONE place a row
+ * becomes text: the orphan mark ("!") is part of the LABEL because it is a fact
+ * about the group rather than about its sends, and it has to survive the value
+ * column being truncated.
+ */
+export function modBusRowLabel(row) { return BusModel.busRowLabel(row); }
+export function modBusRowValue(row) { return BusModel.busRowValue(row); }
 
 /** How many groups this slot has; -1 for an unresolved read, never 0. */
 export function modBusCount(st) {
