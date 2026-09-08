@@ -67,9 +67,35 @@ TAG = os.environ['UPSTREAM_TAG']
 # a blanket — an exemption that does not say why is indistinguishable from one
 # somebody forgot to remove.
 EXEMPT = {
-  'show_value':  'canvas overlay chrome — davebox harvests the bank structure and '
-                 'draws its own screens rather than hosting a module CANVAS',
-  'show_footer': 'canvas overlay chrome — same reason as show_value',
+  # ⚠ NOT a place for "we haven't done it yet" — that is KNOWN. EXEMPT means the
+  # key is not a contract obligation for this fork at all.
+  'frames': "NAME COLLISION, not a contract key. The doc block declaring `frames` "
+            "(MODULES.md, 'Generating a widget from sprite art') is the INPUT to an "
+            "OFFLINE generator — `node tools/param-pages/widget_gen.mjs` — and a module "
+            "ships the generated drawCell, never `frames` itself. Nothing reads it at "
+            "runtime. The only upstream hit is `o.frames` in param_pages/styles/index.mjs, "
+            "an unrelated style-DSL callback that happens to share the name. "
+            "(Advisor review, 2026-09-07, after I reported it as a real gap: it is not. "
+            "sprite_rle.mjs and styles/ are imported by NOTHING in upstream src/, so the "
+            "fork lacking them costs a module nothing.)",
+
+  # ── EXAMPLE VALUES, not contract fields ──────────────────────────────────
+  # ⚠⚠ THE ONE THING THIS CHECK CANNOT DO. The universe is `"name":` shapes
+  # inside fenced examples, and that cannot tell a CONTRACT FIELD from a key the
+  # example INVENTED — a level id, a voice id, a param the sample module made up:
+  #     "levels": { "pads": {...}, "pad_settings": {...} }
+  # `pads` is a module's own choice; `split_voices` is the contract. Both are
+  # `"word":` in a fence. Frequency does not separate them either — measured, the
+  # four real gaps occur ONCE each and this noise occurs one to three times, so a
+  # threshold would drop the signal and keep the noise.
+  # So triage is human, once per key, here — and that is the check's actual
+  # promise: not "it knows what a contract key is", but "nothing new reaches the
+  # docs without someone deciding". Keep the reasons; they are the whole value.
+  'pads':          'a LEVEL ID in the voice-poc example, not a field',
+  'pad_settings':  'a LEVEL ID in a davebox-facing example, not a field',
+  'snare':         'a VOICE ID in the split-voices example, not a field',
+  'notes':         'an example param key, not a contract field',
+  'output_level':  'an example param key (viz.mjs cites it as a naming convention)',
 }
 
 def sh(*a, cwd=None):
@@ -104,15 +130,38 @@ def readall(root):
         for f in fs:
             if f.endswith(('.mjs', '.js')):
                 out.append(open(os.path.join(d, f), errors='ignore').read())
-    return '\n'.join(out)
+    # ⚠ Strip comment lines. This codebase JSDocs param keys as `key` constantly,
+    # and the matcher's quote class includes the backtick — so a key MENTIONED in a
+    # comment would read as honoured. No key relies on this today (checked); the
+    # stripping is so a future one cannot pass silently.
+    body = []
+    for line in '\n'.join(out).splitlines():
+        t = line.lstrip()
+        if t.startswith(('//', '*', '/*')): continue
+        body.append(line)
+    return '\n'.join(body)
 
 trees = {'davebox/ui': readall('davebox/ui'),
          'src/shared': readall('src/shared'),
          'src/shadow': readall('src/shadow')}
 fork = '\n'.join(trees.values())
 
-if not universe or not upstream or not all(trees.values()):
-    print('FAIL: a tree or the doc universe read EMPTY — this check would pass on anything')
+if not upstream or not all(trees.values()):
+    print('FAIL: a tree read EMPTY — this check would pass on anything')
+    sys.exit(1)
+# ⚠ EMPTY IS NOT THE ONLY FALSE PASS. If upstream renames or moves one of the three
+# docs, `git show` returns '' and the universe merely SHRINKS — every gap silently
+# stops being asked about and the run still says PASS. So each doc must contribute,
+# and the total has a floor. Raise the floor when upstream's contract grows.
+UNIVERSE_FLOOR = 140          # 158 at v1.3.0
+for f in DOCS:
+    if not fenced(show(f)).strip():
+        print(f'FAIL: {f} contributed NO fenced examples — moved, renamed, or reformatted.')
+        print('      Fix the path; do not lower the floor to make this pass.')
+        sys.exit(1)
+if len(universe) < UNIVERSE_FLOOR:
+    print(f'FAIL: universe is {len(universe)} keys, floor is {UNIVERSE_FLOOR} — the docs moved')
+    print('      or the fence parser broke. A shrunken universe passes while asking nothing.')
     sys.exit(1)
 
 def uses(blob, k):
@@ -145,10 +194,6 @@ KNOWN = {
   'voices':        '#453 buses/sends — bus membership is by voice id',
   'default_buses': '#453 buses/sends — a module declaring a bus it ships with (#464)',
   'default_fx':    '#460/#463 — a module declaring the FX behind it, and a factory preset',
-  'frames':        'a module\'s CUSTOM ANIMATED WIDGET (MODULES.md "custom:mymeter" example). '
-                   'The fork lacks BOTH sprite_rle.mjs and the whole styles/ directory, so a '
-                   'module shipping a sprite widget draws nothing here. Found 2026-09-07 by '
-                   'this check; on no board item before that.',
 }
 
 gaps = sorted(k for k in universe
@@ -163,10 +208,17 @@ if closed_gaps:
 print(f'  ok   — {len(KNOWN)} known gaps still open, each naming the work that closes it')
 gaps = new_gaps
 
+# Two ways an exemption rots, and the first version only caught one. An entry the
+# fork HONOURS is not an exemption, it is a leftover — and it would have hidden the
+# fact that this fork's host half does read show_value/show_footer and does host
+# module canvases, which is why both inherited entries were deleted (2026-09-07).
 stale = [k for k in EXEMPT if not uses(upstream, k)]
-if stale:
-    print('FAIL: exemptions upstream no longer reads: ' + ', '.join(sorted(stale)))
-    print('      Remove them; a stale exemption is where the next real gap hides.')
+honoured = [k for k in EXEMPT if uses(fork, k)]
+if stale or honoured:
+    if stale:    print('FAIL: exemptions upstream no longer reads: ' + ', '.join(sorted(stale)))
+    if honoured: print('FAIL: exemptions this fork ALREADY honours (not exemptions): '
+                       + ', '.join(sorted(honoured)))
+    print('      A stale exemption is where the next real gap hides.')
     sys.exit(1)
 print(f'  ok   — every exemption still names a key upstream reads ({len(EXEMPT)})')
 
