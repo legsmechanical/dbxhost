@@ -21,9 +21,12 @@
  *
  * ⭐ SO: the KEYS stay `bus<N>:` — that is the module contract the DSP and every
  * module author speak (`default_buses`, `bus1:fx2`, `bus2:send1`), and renaming
- * them would fork the contract. Only the USER-FACING WORD differs, and it is
- * MODBUS_LABEL below — one constant, so changing davebox's word for it is a
- * one-line edit and never a hunt through screens.
+ * them would fork the contract.
+ *
+ * ⚠ THE SEPARATION IS A SOURCE-LEVEL ONE, NOT A SCREEN-LEVEL ONE. This file is
+ * modbus and its symbols are modBus* so the two ideas cannot be confused where
+ * they are both written down. On the DISPLAY they never collide, because
+ * davebox does not use the word for mixer strips at all — see MODBUS_LABEL.
  *
  * ================= WHY THIS FILE IS DATA-ONLY ==============================
  *
@@ -37,14 +40,27 @@ import * as BusModel from '/data/UserData/schwung/shared/bus_model.mjs';
 import { engineGetChainParam, engineSetChainParam } from './ui_engine.mjs';
 
 /*
- * davebox's word for a module bus. ONE constant, deliberately.
+ * davebox's word for a module bus, on screen. ONE constant, deliberately.
  *
- * "Voice Groups" rather than "Buses" because of the collision above, and
- * rather than "Splits" because a split is the ACT and a group is the THING.
- * ⚠ Josh has not ruled on this word; it is a placeholder chosen to be
- * unambiguous, and it is one edit to change.
+ * ⭑ IT IS "Buses", and the collision above does NOT reach it — that was my
+ * error, corrected by Josh and then by grep. davebox's UI says the word "bus"
+ * to the user EXACTLY ONCE in the whole module: `bus moved: FX kept`, the
+ * snapshot-recall warning in ui_devsnap.mjs. Every other occurrence is a
+ * console.log, a comment, a key format, or an identifier. The mixer strips are
+ * presented by their own names and their level rows (Volume, Send A/B, Mute,
+ * Solo) — no screen calls them buses.
+ *
+ * So the user-facing word was never taken, and inventing a davebox-only
+ * synonym ("Voice Groups", which this was for one commit) would have cost a
+ * translation every time someone read a module's own documentation — where
+ * these are buses, because `default_buses` is what the module declares.
+ *
+ * The collision is real in the CODE, which is why this file is ui_modbus and
+ * its symbols are modBus*: `S.bus` is a mixer position and VIEW_BUSES is the
+ * master strip's screen. Keep that separation in the source; it does not need
+ * to reach the display.
  */
-export const MODBUS_LABEL = 'Voice Groups';
+export const MODBUS_LABEL = 'Buses';
 
 /* ==========================================================================
  * THE TRI-STATE, which is the whole reason this file exists
