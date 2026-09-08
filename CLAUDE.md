@@ -764,6 +764,9 @@ very modules davebox imports across the seam. `rebuild.py` walks `CODE_SUFFIX` e
 - `docs/UI_LANGUAGE.md` — **Normative OLED UI spec**: the 128×64 cell grid, fonts, header/list/picker/dialog shapes, selection grammar, LED vocabulary, input grammar. Read before building or rebuilding any screen.
 - `docs/PRIMARY_SURFACE.md` — **Primary surface + service stack** (P4a): the toggle-gated
   ownership inversion — derived claims, `host_register_primary`, `host_open_service`.
+- `docs/MODULE_BUSES.md` — **module buses (#453 piece 1)**: the cross-host contract, what a
+  module owes BOTH stock and davebox, this fork's three deliberate divergences, and the
+  `split_voices` tri-state. Read before touching anything bus-shaped.
 - `docs/API.md` — JS API reference (display, MIDI, host fns, LED colors)
 - `docs/MODULES.md` — Module development guide (module.json, capabilities, tool_config, DSP API, Signal Chain integration, Remote UI `web_ui.html` + `schwungRemote` postMessage)
 - `docs/LOGGING.md` — Unified logging
