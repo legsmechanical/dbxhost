@@ -106,7 +106,8 @@
 
 #define SEQ8_LOG_PATH           "/data/UserData/schwung/" SEQ8_STATE_PREFIX ".log"
 /* Chunk size for the chunked state readback. Must leave room for the caller's
- * NUL inside the shadow parameter transport (SHADOW_PARAM_VALUE_LEN, 64 KB);
+ * NUL inside the shadow parameter transport (SHADOW_PARAM_VALUE_LEN, 128 KB
+ * since the v1.3.0 port of upstream #444; it was 64 KB when this was written);
  * kept well under it so a smaller caller buffer is the binding limit instead
  * and the protocol does not depend on the transport's exact size. */
 #define SEQ8_STATE_CHUNK_MAX 32768u
@@ -1258,8 +1259,10 @@ typedef struct {
 
     /* Per-parameter automation (Front 3). Resident pool — see
      * seq8_param_auto.c for the model. Serialized as a section of the one
-     * project state file; the 64 KB param transport that used to cap that
-     * file is now chunked (see "state_chunk_" in get_param). */
+     * project state file; the param transport that used to cap that file is
+     * now chunked (see "state_chunk_" in get_param). ⚠ That transport is 128 KB
+     * since the #444 port, not the 64 KB this used to say — the chunking is
+     * what makes the number not matter, which is the point. */
     pa_entry_t pa_entries[PA_MAX_ENTRIES];
     char       pa_targets[PA_MAX_TARGETS][PA_TARGET_LEN];
     uint8_t    pa_dirty;          /* automation changed since the last save */
@@ -5817,7 +5820,8 @@ static int seq8_remote_snapshot(seq8_instance_t *inst, char *out, int out_len) {
     #define APP(...) do { if (n < out_len) n += snprintf(out + n, out_len - n, __VA_ARGS__); } while (0)
 
     /* Tail headroom (bytes). The variable-length fields (rui_dnotes, rui_notes)
-     * can in a pathological session exceed the 64 KB buffer; if they
+     * can in a pathological session exceed the buffer (64 KB when this was
+     * written; 128 KB since the #444 port); if they
      * truncate mid-token the closing quote+brace never get written, the JSON is
      * invalid, and the manager drops the whole snapshot silently — bricking the
      * remote editor for that clip until it is thinned on-device. Every unbounded
@@ -6145,8 +6149,9 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     /* state_chunk_<n>: the project state in transport-sized pieces.
      *
      * The whole blob cannot be handed over in one get_param — under SA the
-     * value crosses the shadow parameter transport, whose buffer is 64 KB,
-     * and a full project of notes alone approaches that before automation is
+     * value crosses the shadow parameter transport, whose buffer is 128 KB
+     * since the #444 port (64 KB when this was written), and a full project of
+     * notes alone approached that before automation is
      * counted. Truncating there is silent data loss (the reader parses with
      * strstr and a cut blob loads as a smaller project), so instead the caller
      * asks for chunk 0, 1, 2 … until it gets an empty one, and concatenates.
@@ -6245,11 +6250,17 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
             /* The blob does not fit the CALLER's buffer. Truncating here is
              * silent data loss: JS writes whatever it receives straight to the
              * project file, and readers parse with strstr, so a cut blob loads
-             * as a smaller project with no error anywhere. The transport is the
-             * binding limit, not state_buf — under SA, host_module_get_param
-             * routes through shadow_get_param, whose value field is
-             * SHADOW_PARAM_VALUE_LEN (65536), while state_buf is 131072. A
-             * project between those two sizes serialized fine and arrived cut.
+             * as a smaller project with no error anywhere. Under SA,
+             * host_module_get_param routes through shadow_get_param, whose
+             * value field is SHADOW_PARAM_VALUE_LEN.
+             * ⚠ That WAS 65536 against a state_buf of 131072, so the transport
+             * was the binding limit and a project between those two sizes
+             * serialized fine and arrived cut. The v1.3.0 port of upstream #444
+             * raised the transport to 131072, so the two are now EQUAL and that
+             * particular gap is closed. The check stays regardless: it is
+             * written against the CALLER's out_len at runtime, never against
+             * either constant, which is why it survived the constant changing
+             * underneath it. Do not "simplify" it away on today's numbers.
              * Take the same escape the >state_buf overflow above takes: write
              * the file synchronously ourselves and hand JS an empty string,
              * which it treats as "nothing to save". */

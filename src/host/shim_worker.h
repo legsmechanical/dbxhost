@@ -30,7 +30,17 @@
 #define SHIM_FLAG_ALIGN_DUMP     (1u << 9)  /* align_dump_trigger */
 #define SHIM_FLAG_MAIN_FX_DUMP   (1u << 10) /* main_fx_dump_trigger */
 
+#include "param_slow.h"   /* param_slow_t, for the extern below */
+
 extern volatile uint32_t shim_debug_flags;
+
+/*
+ * Attribution for a param serve that ate the frame. PRODUCED on the SPI
+ * callback (shadow_chain_mgmt.c's pserve_emit, which also defines it), drained
+ * and logged HERE on the worker — the callback may neither format nor log.
+ * See param_slow.h for why this is always on rather than behind an arming flag.
+ */
+extern param_slow_t shim_param_slow;
 
 /* Atomically test-and-clear a one-shot flag. Returns nonzero if it was set. */
 static inline int shim_debug_flag_consume(uint32_t bit) {

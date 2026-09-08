@@ -22,6 +22,7 @@
 #include "unified_log.h"
 #include "host/schwung_paths.h"
 #include "schwung_trace.h"   /* Phase 2b: emit param.serve as a child of the JS param.get span */
+#include "param_slow.h"      /* attribute a serve that ate the frame — header-only */
 
 /* ============================================================================
  * Globals
@@ -2926,11 +2927,55 @@ void shadow_master_fx_lfo_tick(int frames) {
 /* param.serve span context: emitted on every return path of the handler below
  * via __attribute__((cleanup)), parented to the JS param.get span propagated
  * through the param SHM. No-op when tracing is off (ps.on == 0). */
-typedef struct { uint32_t nid; int on; uint64_t t0, trace_id, parent_id; } pserve_span_t;
+/*
+ * DEFINED HERE, not beside the other shim globals in shim_worker.c, because
+ * this one runs the other way: the SPI callback in this file is the PRODUCER
+ * and the worker is only the consumer. (Upstream gives the same reason; in
+ * this fork it is also forced — shadow_chain_mgmt.c does not include
+ * shim_worker.h at all, the slimming having removed the other users.)
+ *
+ * Threshold set STATICALLY rather than by a runtime init: a zero threshold
+ * means "record everything" to param_slow_record, so an init call would leave
+ * a boot window in which the 4-entry ring fills with ordinary ~10us serves —
+ * and the ring drops oldest, so the one slow serve during boot (a cold cache
+ * is where the 111 ms kit load lives) is exactly the one that would be evicted.
+ */
+param_slow_t shim_param_slow = { .threshold_us = PARAM_SLOW_THRESHOLD_US };
+
+typedef struct {
+    uint32_t nid; int on; uint64_t t0, trace_id, parent_id;
+    /* Always-on half — see pserve_emit. Separate from `t0` because that one
+     * only exists when tracing is armed, and this measurement must not be. */
+    struct timespec  w0;
+    shadow_param_t  *sp;
+    uint8_t          req_type;
+} pserve_span_t;
 static void pserve_emit(pserve_span_t *ps) {
     if (ps->on)
         schwung_trace_span_explicit(ps->nid, ps->t0, schwung_trace_now_ns(),
                                     ps->trace_id, ps->parent_id);
+
+    /* The attribution is deliberately NOT behind a debug flag. A module doing
+     * blocking work in set_param is the steady state — upstream's 2026-08 audit
+     * found ~150 confirmed violations across 113 catalogued modules, several
+     * carrying comments asserting the opposite — so the question is never
+     * "shall we go looking", it is "which key was it this time", and a flag you
+     * must arm first is a flag nobody has armed when the glitch happens. Cost
+     * is two vDSO clock reads on a 2902us frame, and past the threshold one
+     * bounded string copy. No formatting and no logging here: the worker does
+     * both, because the callback may do neither. */
+    if (!ps->sp) return;
+    struct timespec w1;
+    clock_gettime(CLOCK_MONOTONIC, &w1);
+    uint64_t us = (uint64_t)(w1.tv_sec - ps->w0.tv_sec) * 1000000ull
+                + (uint64_t)(w1.tv_nsec - ps->w0.tv_nsec) / 1000ull;
+    if (us < PARAM_SLOW_THRESHOLD_US) return;
+    if (us > 0xFFFFFFFFull) us = 0xFFFFFFFFull;
+
+    /* SHADOW_PARAM_REQ: 1 = set, 2 = get. Read from the REQUEST rather than
+     * from the response, which a GET has already overwritten by now. */
+    param_slow_record(&shim_param_slow, ps->sp->key, ps->sp->slot,
+                      ps->req_type == 1, (uint32_t)us);
 }
 
 /* Handle a per-FX-slot param request (everything after the slot prefix is
@@ -3047,7 +3092,9 @@ void shadow_inprocess_handle_param_request(void) {
 
     /* Span the actual servicing of this request (all return paths below),
      * correlated to the JS param.get span via the SHM-propagated context. */
-    pserve_span_t _ps __attribute__((cleanup(pserve_emit))) = {0, 0, 0, 0, 0};
+    pserve_span_t _ps __attribute__((cleanup(pserve_emit))) =
+        {0, 0, 0, 0, 0, {0, 0}, shadow_param, req_type};
+    clock_gettime(CLOCK_MONOTONIC, &_ps.w0);
     if (atomic_load_explicit(&schwung_trace_on, memory_order_relaxed)) {
         static uint32_t s_pserve_nid = 0;       /* SPI thread only → no init race */
         if (!s_pserve_nid) s_pserve_nid = schwung_trace_intern("param.serve");

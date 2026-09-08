@@ -742,8 +742,14 @@ typedef struct chain_instance {
      * it from anywhere else.
      */
     chain_param_info_t param_refresh_scratch[MAX_CHAIN_PARAMS];
-    /* The read target that goes with it — a whole param-channel value (64 KB),
-     * and the other half of that frame. Same single-writer reasoning. */
+    /* The read target that goes with it — a whole param-channel value, and the
+     * other half of that frame. Same single-writer reasoning.
+     * ⚠ 128 KB since the v1.3.0 port of upstream #444, not 64 KB. It is sized
+     * from SHADOW_PARAM_VALUE_LEN, so it grows with the param contract: +64 KB
+     * per instance, and this fork calloc's one per slot with SHADOW_UI_SLOTS=8
+     * (upstream has 4), i.e. +512 KiB of HEAP. Heap, not stack — that is the
+     * whole point of the field, and why raising the contract was safe here
+     * while it would not have been before b96b5d0f. */
     char param_refresh_buf[SHADOW_PARAM_VALUE_LEN];
 
     /* Synth load error message */

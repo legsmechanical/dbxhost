@@ -594,7 +594,8 @@ static uint32_t pa_entry_tick(const pa_entry_t *e, uint32_t ct, uint32_t clip_ti
 /*                                                                      */
 /* What made a second file tempting was the READBACK leg: the blob       */
 /* reaches JS through the shadow parameter transport, whose value field  */
-/* is 64 KB, and a heavy project already spends most of that. The answer  */
+/* is 128 KB since the #444 port -- 64 KB when this was written, and a    */
+/* heavy project already spent most of that. The answer                   */
 /* is to fix the leg rather than route around it — get_param serves the  */
 /* state in chunks (see "state_chunk_" in seq8.c), so the ceiling is per  */
 /* chunk instead of per project, for notes as much as automation.        */

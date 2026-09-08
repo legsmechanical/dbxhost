@@ -26,6 +26,41 @@ The SPI callback has ~900µs budget. Any file I/O can spike to 78ms when the dis
 
 **Instead:** Use a lock-free snapshot struct and a background thread that drains it on a timer (e.g., every 5 seconds). See `schwung_shim.c` SPI timing implementation.
 
+#### `param-slow` — the detector for this rule, and it is ALWAYS ON
+
+Ported from upstream #468. Every switch elsewhere in this fork is armed by
+touching a file; **this one has none.** When a param serve exceeds 1000 µs the
+shim worker logs, at WARN:
+
+```
+param-slow: set slot 0 synth:module took 124.825 ms on the SPI callback — the module is doing blocking work in its entry point
+```
+
+**Why it is not armed like everything else.** A module's entry points ARE the
+SPI callback, and the ecosystem does not know it — upstream's 2026-08 audit
+found ~150 confirmed violations across 113 catalogued modules, *several carrying
+comments asserting the opposite*. So a module blocking in `set_param` is the
+steady state, not an anomaly. The question is never "shall we go looking", it is
+**"which key was it this time"** — and a flag you must arm first is a flag
+nobody has armed at the moment the glitch happens. The same defect cost a full
+diagnosis session twice for want of a name: overtake's `dlopen`
+(param stage 7 µs → 11513 µs) and **dr32's kit load inside `synth:state`**
+(7 µs → 20051 µs).
+
+Cost is two vDSO clock reads per serve and, past the threshold, one bounded
+string copy. **No formatting and no logging on the callback** — the worker does
+both at 1 Hz, which is Rule 1 applied to the detector itself. Loss is by
+construction (the callback cannot wait for a consumer) but never silent:
+overwritten entries are counted and reported.
+
+`src/host/param_slow.h` · `tests/host/test_param_slow.sh`
+
+⚠ **A single blown frame is INVISIBLE to the SPI frame tally.** `backlog` and
+`frames / irq` are 1 Hz aggregates, so an overrun that drains immediately never
+appears — a 20 ms serve produced **zero `LATE` lines** across a whole session.
+What catches it is `spi_timing`'s `Pre(us): … param=avg/max` (`param=7/20051`).
+Reach for that, not the tally, for a one-frame stall.
+
 ### 2. Reset scheduling before exec
 
 The shim runs via LD_PRELOAD inside MoveOriginal's threads (FIFO 70). Any forked child inherits this priority.

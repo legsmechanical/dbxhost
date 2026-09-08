@@ -82,7 +82,11 @@
  * site had to be found by reading rather than by building. 1024 leaves headroom
  * for another doubling and costs nothing: the segment is page-granular anyway. */
 #define SHADOW_UI_BUFFER_SIZE     1024
-#define SHADOW_PARAM_BUFFER_SIZE  65664  /* Large buffer for complex ui_hierarchy */
+/* The param segment: SHADOW_PARAM_VALUE_LEN plus shadow_param_t's header,
+ * rounded up to a page with room to spare. A container with headroom, like
+ * CONTROL_BUFFER_SIZE above -- the `<=` assert below means growing the struct
+ * is free and only SHRINKING this fails the build. */
+#define SHADOW_PARAM_BUFFER_SIZE  133120
 #define SHADOW_MIDI_OUT_BUFFER_SIZE 512  /* MIDI out buffer from shadow UI (128 packets) */
 #define SHADOW_MIDI_DSP_BUFFER_SIZE 512  /* MIDI to DSP buffer from shadow UI (128 packets) */
 /* MIDI inject ring capacity is SHADOW_MIDI_INJECT_SLOTS (defined with the
@@ -107,7 +111,31 @@
 #define SHADOW_UI_SLOTS 8
 #define SHADOW_UI_NAME_LEN 64
 #define SHADOW_PARAM_KEY_LEN 64
-#define SHADOW_PARAM_VALUE_LEN 65536  /* 64KB for large ui_hierarchy and state */
+/* 128KB. A module's chain_params and ui_hierarchy each travel through one of
+ * these, and the chain host REJECTS a module whose answer does not fit
+ * (chain_host.c, "UI buffer overflow") -- so this is the ceiling on how much
+ * of an instrument a module may publish. 64KB was not enough for a real
+ * synth: a Waldorf microQ reaches 79% of it with 286 of its 449 parameters,
+ * having already dropped half of both modulation matrices, because every
+ * matrix slot repeats its own 58-entry destination list.
+ *
+ * The cost is one page-aligned SHM segment growing by 64KB, plus the handful
+ * of STATIC buffers sized from this. Before raising it again, check that none
+ * of those buffers has become a local: chain_mod_refresh_target_param_cache
+ * used to put this and a 1.05MB chain_param_info_t array on the stack of a
+ * function called from the SPI callback.
+ *
+ * RESIZING IS A LAYOUT CHANGE, handled like SHADOW_UI_MIDI_BYTES (#358) and
+ * SHADOW_MIDI_OUT_BUFFER_SIZE (#361) above: shadow_shm_map() fstats on attach
+ * and refuses a stale short segment rather than handing back a mapping whose
+ * tail is SIGBUS. Deploy the shim and shadow_ui together, as install-sa.sh
+ * does. Growing is the safe direction for the other order too.
+ *
+ * ⚠ FORK NOTE: this also raises davebox's state-blob ceiling, which is the
+ * PARAM TRANSPORT and not `state_buf` -- the limit that once truncated a
+ * project mid-note and reloaded it smaller. The chunked writer stays; this
+ * just moves the wall. */
+#define SHADOW_PARAM_VALUE_LEN 131072
 #define SHADOW_SCREENREADER_TEXT_LEN 8192  /* Max text length for screen reader messages */
 
 /* ============================================================================

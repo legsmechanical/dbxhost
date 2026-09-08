@@ -29,6 +29,15 @@ Arm it with `touch /data/UserData/dbx-host/debug_log_on` — **in that tree**, n
 ⭑ **Take a CONTROL reading.** Capture state when HEALTHY as well as when broken before believing any
 fingerprint — a single sample supported an entire wrong theory on 2026-08-15.
 
+## `param-slow` — always on, needs no switch
+
+One WARN line names the key when a param serve overruns the audio budget
+(`param-slow: set slot 0 synth:module took 124.825 ms on the SPI callback`).
+Unlike everything below it there is nothing to arm, and it is never noise —
+it fires only when a frame has already been eaten. Rationale, cost and the
+reason the SPI frame tally cannot see the same event:
+[`REALTIME_SAFETY.md`](REALTIME_SAFETY.md#1-no-blocking-io-in-spi-callback-path).
+
 ## Quick Start
 
 ### Enable Logging
