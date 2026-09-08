@@ -602,6 +602,30 @@ static void seq8_load_state(seq8_instance_t *inst) {
          * load, silently (the one data-losing edge of adding a route). */
         inst->tracks[t].pfx.route = (uint8_t)clamp_i(
             json_get_int(buf, key, ROUTE_SCHWUNG), ROUTE_SCHWUNG, ROUTE_NONE);
+        /* ⚠ A track's route lives in TWO places, and a drum track is emitted
+         * from the SECOND one. Every drum note -- pad press and sequencer
+         * playback alike -- goes out through drum_lane_pfx[lane], which carries
+         * its own `route`; tracks[t].pfx.route is what get_param answers and
+         * what the Instrument row draws. Restoring only the track copy leaves
+         * the lanes holding whatever create_instance put there, which for
+         * tracks 1-4 is ROUTE_MOVE.
+         *
+         * That is a silent, load-only split-brain: the editor opens the right
+         * Schwung instrument and the row reads correctly, while the pads and the
+         * sequencer keep playing the Move instrument -- and nothing logs. It
+         * survived a long hunt because it needs a RELOAD (the live setter in
+         * sp_track_config.c DOES fan out, so picking an instrument looks fine),
+         * a track in DRUM mode, and one of tracks 1-4.
+         *
+         * Diagnosed on hardware 2026-09-08 from a project whose t0_rt was a
+         * correctly-saved 0 while the shim logged MIDI injections to Move.
+         *
+         * `slot` needs no such line: it is never loaded here (see below), so the
+         * lanes keep the init value the track itself still has. `midi_to` is
+         * fanned out at its own load below -- the asymmetry between those two
+         * and this one IS the bug. Keep all three together. */
+        { int _rl; for (_rl = 0; _rl < DRUM_LANES; _rl++)
+            inst->tracks[t].drum_lane_pfx[_rl].route = inst->tracks[t].pfx.route; }
 
         /* The slot is NOT loaded. It is the track index, set at init and never
          * varied, so a stored `t%d_sl` can only disagree with the model — and
