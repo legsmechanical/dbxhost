@@ -483,7 +483,15 @@ int chain_mod_refresh_target_param_cache(chain_instance_t *inst, const char *tar
         if (inst->synth_plugin_v2 && inst->synth_instance && inst->synth_plugin_v2->get_param) {
             result = inst->synth_plugin_v2->get_param(inst->synth_instance, "chain_params", buf, sizeof(buf));
         }
-        if (result <= 0) return -1;
+        /* ⚠ NOT `result <= 0`. A module answering the two characters "[]" — one
+         * that reads its chain_params from a file that is not installed —
+         * passes that test, parses to a count of ZERO, and the store below then
+         * sets param_count = 0, WIPING the table already parsed from the
+         * module's own module.json. It is the same defect as the get_param
+         * routes in chain_host.c (fixed in 8c6abeb9) and worse: those served a
+         * bad answer, this DESTROYS a good one, and the modulation bus then has
+         * no type for any parameter. */
+        if (!chain_params_answer_is_useful(buf, result)) return -1;
         parsed_count = parse_chain_params_array_json(buf, parsed, MAX_CHAIN_PARAMS);
         if (parsed_count < 0) return -1;
         memcpy(inst->synth_params, parsed, sizeof(chain_param_info_t) * (size_t)parsed_count);
@@ -499,7 +507,15 @@ int chain_mod_refresh_target_param_cache(chain_instance_t *inst, const char *tar
             inst->fx_instances[fx_slot] && inst->fx_plugins_v2[fx_slot]->get_param) {
             result = inst->fx_plugins_v2[fx_slot]->get_param(inst->fx_instances[fx_slot], "chain_params", buf, sizeof(buf));
         }
-        if (result <= 0) return -1;
+        /* ⚠ NOT `result <= 0`. A module answering the two characters "[]" — one
+         * that reads its chain_params from a file that is not installed —
+         * passes that test, parses to a count of ZERO, and the store below then
+         * sets param_count = 0, WIPING the table already parsed from the
+         * module's own module.json. It is the same defect as the get_param
+         * routes in chain_host.c (fixed in 8c6abeb9) and worse: those served a
+         * bad answer, this DESTROYS a good one, and the modulation bus then has
+         * no type for any parameter. */
+        if (!chain_params_answer_is_useful(buf, result)) return -1;
         parsed_count = parse_chain_params_array_json(buf, parsed, MAX_CHAIN_PARAMS);
         if (parsed_count < 0) return -1;
         memcpy(inst->fx_params[fx_slot], parsed, sizeof(chain_param_info_t) * (size_t)parsed_count);
@@ -519,7 +535,15 @@ int chain_mod_refresh_target_param_cache(chain_instance_t *inst, const char *tar
                                                                 "chain_params",
                                                                 buf,
                                                                 sizeof(buf));
-        if (result <= 0) return -1;
+        /* ⚠ NOT `result <= 0`. A module answering the two characters "[]" — one
+         * that reads its chain_params from a file that is not installed —
+         * passes that test, parses to a count of ZERO, and the store below then
+         * sets param_count = 0, WIPING the table already parsed from the
+         * module's own module.json. It is the same defect as the get_param
+         * routes in chain_host.c (fixed in 8c6abeb9) and worse: those served a
+         * bad answer, this DESTROYS a good one, and the modulation bus then has
+         * no type for any parameter. */
+        if (!chain_params_answer_is_useful(buf, result)) return -1;
         parsed_count = parse_chain_params_array_json(buf, parsed, MAX_CHAIN_PARAMS);
         if (parsed_count < 0) return -1;
         memcpy(inst->midi_fx_params[midi_fx_slot], parsed, sizeof(chain_param_info_t) * (size_t)parsed_count);

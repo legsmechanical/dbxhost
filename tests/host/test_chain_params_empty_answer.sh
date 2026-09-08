@@ -26,6 +26,9 @@ cd "$(dirname "$0")/../.."
 #         three upstream names would leave the bug on fx2/fx3/fx4/midi_fx2 —
 #         i.e. depending on which block the user opened.
 #
+#   PIN   that the MODULATION CACHE uses it too — its failure is destructive
+#         rather than merely wrong (it wipes the parsed table).
+#
 #   PIN   that the C copy the run half compiles has not drifted from the real
 #         definition in chain_internal.h. That header cannot be included in a
 #         host test — it pulls in the chain instance, the plugin ABIs and
@@ -86,5 +89,21 @@ stale=$(awk '/strcmp\(subkey, "chain_params"\) == 0/{w=14} w&&w--' "$C" \
 body() { awk "/int chain_params_answer_is_useful\(/,/^}/" "$1" | tr -s '[:space:]' ' '; }
 [ "$(body "$H")" = "$(body "$T")" ] \
   || fail "the copy in $T has drifted from the definition in $H — the run half is testing something the host does not do"
+
+# 4. THE MODULATION CACHE takes the same answer, and its failure is WORSE.
+#
+#    chain_mod_refresh_target_param_cache re-reads chain_params to refresh the
+#    type table the modulation bus uses. Its old test was `result <= 0`, which
+#    "[]" passes: the parse then yields a count of ZERO and the store sets
+#    param_count = 0, WIPING the table already parsed from the module's own
+#    module.json. The get_param routes served a bad answer; this DESTROYS a good
+#    one. Three targets — synth, fx, midi_fx — and all three must use it.
+M=src/modules/chain/dsp/chain_mod.c
+mod_sites=$(command grep -c 'if (!chain_params_answer_is_useful(buf, result)) return -1;' "$M" || true)
+[ "$mod_sites" = 3 ] \
+  || fail "expected 3 guarded refresh targets in $M (synth / fx / midi_fx), found $mod_sites"
+# And the old spelling must not survive in that function.
+command grep -q 'if (result <= 0) return -1;' "$M" \
+  && fail "a modulation-cache target still returns on \`result <= 0\` — an empty array would wipe the parsed param table"
 
 echo "PASS: an empty chain_params answer falls back to module.json, on every route"
