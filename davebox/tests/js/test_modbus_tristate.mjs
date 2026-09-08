@@ -245,6 +245,86 @@ step('the read cost is ONE round trip per refresh, not per voice or per group', 
     M.modBusRows(st); M.modBusVoiceRows(st, 0); M.modBusSendValue(st, 0, 1);
 });
 
+/* ---- WHAT THE SCREENS DEPEND ON ---------------------------------------- */
+
+step('only a BUS row has a menu — the New row would be a click that does nothing', () => {
+    const st = M.modBusInitState();
+    answers = { 'buses:config': CONFIG };
+    M.modBusRefreshConfig(st, 0);
+    const rows = M.modBusRows(st);
+    const bus = rows.find((r) => r.kind === 'bus');
+    const nw  = rows.find((r) => r.kind === 'new');
+    eq(M.modBusActionItems(bus).map((i) => i.id),
+       ['voices', 'chain', 'send1', 'send2', 'rename', 'delete'], 'bus menu');
+    eq(M.modBusActionItems(nw).length, 0, 'New has no menu');
+});
+
+step('a voice row says WHOSE it is — mine, another bus by NAME, or an orphan mark', () => {
+    const st = M.modBusInitState();
+    answers = { 'synth:split_voices': VOICES, 'buses:config': CONFIG };
+    M.modBusRefreshSplit(st, 0); M.modBusRefreshConfig(st, 0);
+    const rows = M.modBusVoiceRows(st, 0);
+    const by = (id) => rows.find((r) => r.id === id);
+    eq(M.modBusVoiceRowValue(by('bd'), st), '*', 'this bus`s');
+    /* The NAME, so taking it is an informed choice rather than a surprise. */
+    eq(M.modBusVoiceRowValue(by('chh'), st), 'Hats', 'another bus`s');
+    eq(M.modBusVoiceRowValue(by('sd'), st), '', 'on Main');
+    eq(M.modBusVoiceRowValue(by('gone'), st), '!', 'the orphan');
+});
+
+step('a NEW bus fills the lowest HOLE — so landing on it must go by index, not position', () => {
+    const st = M.modBusInitState();
+    answers = { 'buses:config': CONFIG };
+    M.modBusRefreshConfig(st, 0);
+    /* The hole is bus 2 (index 1), and the present ones are 1 and 3. So the new
+       bus is index 1 and its ROW is in the MIDDLE of the list, not at the end.
+       A screen that landed the cursor on the last row would name bus 3. */
+    eq(M.modBusFirstFree(st), 1, 'the hole is filled before the tail');
+    const rows = M.modBusRows(st);
+    const positions = rows.filter((r) => r.kind === 'bus').map((r) => r.index);
+    eq(positions, [0, 2], 'present rows');
+    if (positions[positions.length - 1] === M.modBusFirstFree(st))
+        throw new Error('this fixture cannot catch the bug it exists for');
+});
+
+step('creating writes create on the FREE index and nothing else', () => {
+    const st = M.modBusInitState();
+    answers = { 'buses:config': CONFIG };
+    M.modBusRefreshConfig(st, 0);
+    writes.length = 0;
+    eq(M.modBusCreate(st, 0), 1, 'the index it claimed');
+    eq(writes, [['bus2:create', '1']], 'one write, 1-based');
+});
+
+step('deleting writes delete on that bus and nothing else', () => {
+    const st = M.modBusInitState();
+    answers = { 'buses:config': CONFIG };
+    M.modBusRefreshConfig(st, 0);
+    writes.length = 0;
+    M.modBusDelete(st, 0, 2);
+    eq(writes, [['bus3:delete', '1']], 'one write');
+});
+
+step('renaming writes the name on that bus', () => {
+    const st = M.modBusInitState();
+    answers = { 'buses:config': CONFIG };
+    M.modBusRefreshConfig(st, 0);
+    writes.length = 0;
+    M.modBusRename(st, 0, 0, 'Kit');
+    eq(writes, [['bus1:name', 'Kit']], 'one write');
+});
+
+step('a full slot offers no New row — a click that does nothing is not shipped', () => {
+    const st = M.modBusInitState();
+    const full = { buses: [], main_sends: [0, 0] };
+    for (let i = 0; i < 8; i++)
+        full.buses.push({ present: 1, name: 'B' + i, orphans: 0, voices: [], sends: [0, 0], fx: [] });
+    answers = { 'buses:config': JSON.stringify(full) };
+    M.modBusRefreshConfig(st, 0);
+    eq(M.modBusRows(st).some((r) => r.kind === 'new'), false, 'no New row');
+    eq(M.modBusFirstFree(st), -1, 'nothing free');
+});
+
 console.log(failed ? 'FAIL test_modbus_tristate' : 'PASS test_modbus_tristate');
 process.exit(failed);
 }

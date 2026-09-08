@@ -270,6 +270,10 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
        * door's tri-state lives in ui_modbus.mjs. Numbered clear of the block
        * above so inserting a view there cannot silently renumber it. */
       VIEW_MODBUS = 30,
+      /* One bus's actions (voices / inserts / sends / rename / delete), and its
+       * voice multi-select. Only a BUS row has a menu — the New row creates and
+       * a list must never carry a row that answers a click by doing nothing. */
+      VIEW_MODBUS_GROUP = 31, VIEW_MODBUS_VOICES = 32,
       /* P7: the knob and LFO editors, absorbed from the host (they were
        * overlay services in P5). Sub-screens of slot settings. */
       VIEW_KNOBS = 11, VIEW_KNOB_TARGET = 12, VIEW_KNOB_PARAM = 13,
@@ -723,6 +727,12 @@ const S = {
      * {} would read as a resolved slot with no buses. */
     modBus: ModBus.modBusInitState(),
     modBusIdx: 0,
+    modBusGroup: -1,        /* which bus VIEW_MODBUS_GROUP is editing */
+    modBusActIdx: 0,
+    modBusEditing: false,   /* a send row is taking the jog */
+    modBusVoiceIdx: 0,
+    modBusConfirm: null,    /* { t: 'delete' } while the modal is up */
+    modBusConfirmIdx: 0,
     slotCfgIdx: 0,
     slotCfgVals: [],            /* live values, index-aligned with slotRows */
     slotCfgEditing: false,
@@ -3138,6 +3148,23 @@ function drainSlotWrites() {
  * makes no claim at all. The two look the same for one frame and must never be
  * the same on screen.
  */
+/* The bus VIEW_MODBUS_GROUP is on, or null. One lookup, because four call
+ * sites indexing config.buses by hand is four chances to read a hole. */
+function modBusCur() {
+    const cfg = S.modBus && S.modBus.config;
+    if (!cfg || cfg.unresolved) return null;
+    const b = cfg.buses[S.modBusGroup];
+    return (b && b.present) ? b : null;
+}
+function modBusGroupName() { const b = modBusCur(); return b ? b.name : 'Bus'; }
+
+/* The row object the model's helpers take — the LIST row, not the raw config
+ * entry, so busSendValue and busActionItems see what they expect. */
+function modBusCurRow() {
+    const rows = ModBus.modBusRows(S.modBus, engineModuleAbbrev);
+    return rows.find((r) => r.kind === 'bus' && r.index === S.modBusGroup) || null;
+}
+
 function renderModBus() {
     const cfg = S.modBus && S.modBus.config;
     if (!cfg || cfg.unresolved) {
@@ -3158,6 +3185,54 @@ function renderModBus() {
         : { label: ModBus.modBusRowLabel(r), hdr: true,
             value: ModBus.modBusRowValue(r), chevron: true })),
         S.modBusIdx);
+}
+
+/* ---- one bus's actions --------------------------------------------------
+ *
+ * The items come from bus_model, so this screen cannot offer an action the
+ * writes do not implement. Sends are int rows edited in place (the same
+ * two-stage click davebox uses everywhere: click to take the jog, click to
+ * release it); the rest are doors.
+ */
+function renderModBusGroup() {
+    const row = modBusCurRow();
+    if (!row) { renderInChain([{ label: 'Reading...', hdr: true }], 0); return; }
+    if (S.modBusConfirm) {
+        renderInChain([
+            { label: 'Delete ' + row.name + '?', hdr: true },
+            { label: 'Cancel', hdr: true },
+            { label: 'Delete', hdr: true },
+        ], S.modBusConfirmIdx + 1);
+        return;
+    }
+    const items = ModBus.modBusActionItems(row);
+    renderInChain(items.map((it, i) => (it.type === 'int'
+        ? { label: it.label, hdr: true,
+            value: String(ModBus.modBusSendValueForRow(row, it.id)),
+            editing: i === S.modBusActIdx && S.modBusEditing }
+        : { label: it.label, hdr: true, chevron: true })),
+        S.modBusActIdx);
+}
+
+/* ---- a bus's voices -----------------------------------------------------
+ *
+ * Every voice the module declares, then every id this bus holds that no longer
+ * resolves. The value column says WHOSE a voice is — "*" for this one, another
+ * bus's NAME when it belongs to one — so assigning is an informed choice
+ * rather than a surprise: a voice renders into exactly one buffer, so taking it
+ * MOVES it.
+ *
+ * ⚠ An orphan is a ROW, not a hidden count. Its id is all that is left of it
+ * and clearing it is the only thing that clears the count, so it has to be
+ * reachable.
+ */
+function renderModBusVoices() {
+    const rows = ModBus.modBusVoiceRows(S.modBus, S.modBusGroup);
+    if (!rows.length) { renderInChain([{ label: 'Reading...', hdr: true }], 0); return; }
+    renderInChain(rows.map((r) => ({
+        label: r.label, hdr: true,
+        value: ModBus.modBusVoiceRowValue(r, S.modBus),
+    })), S.modBusVoiceIdx);
 }
 
 function renderSlotCfg() {
@@ -3651,6 +3726,12 @@ const VIEW_TREE = {
      * feature renames the breadcrumb with it. */
     [VIEW_MODBUS]:      { parent: VIEW_BLOCKS,     float: true,  backPure: true,
                           crumb: () => ModBus.MODBUS_LABEL },
+    /* ⚠ NOT backPure: both close an edit or a modal FIRST, so Back is not a
+     * pure step-up and they keep their own branches. */
+    [VIEW_MODBUS_GROUP]:  { parent: VIEW_MODBUS, float: true,
+                            crumb: () => modBusGroupName() },
+    [VIEW_MODBUS_VOICES]: { parent: VIEW_MODBUS_GROUP, float: true,
+                            crumb: () => 'Voices' },
     [VIEW_LFO]:         { parent: VIEW_SLOTCFG,    float: true,
                           crumb: () => 'LFO ' + (S.lfoNum + 1) },
     [VIEW_KNOBLEGS]:    { parent: VIEW_KNOBS,      float: true,
@@ -5820,6 +5901,31 @@ function runActionBody(a) {
          * reach by itself. One action, next tick, after discovery is queued. */
         if (a.then) S.pendingAction = a.then;
     }
+    else if (a.t === 'modbuscreate') {
+        const at = ModBus.modBusCreate(S.modBus, S.slot);
+        ModBus.modBusRefreshConfig(S.modBus, S.slot);
+        if (at >= 0) {
+            /* Land ON the bus just made, by INDEX rather than by list position:
+             * a new bus fills the lowest hole, so its row is not the last one. */
+            const rows = ModBus.modBusRows(S.modBus, engineModuleAbbrev);
+            const at2 = rows.findIndex((r) => r.kind === 'bus' && r.index === at);
+            if (at2 >= 0) S.modBusIdx = at2;
+        }
+        S.dirty = true;
+    }
+    else if (a.t === 'modbusdelete') {
+        ModBus.modBusDelete(S.modBus, S.slot, a.group | 0);
+        ModBus.modBusRefreshConfig(S.modBus, S.slot);
+        S.view = VIEW_MODBUS;
+        const n = ModBus.modBusRows(S.modBus, engineModuleAbbrev).length;
+        if (S.modBusIdx >= n) S.modBusIdx = Math.max(0, n - 1);
+        S.dirty = true;
+    }
+    else if (a.t === 'modbusvoice') {
+        ModBus.modBusToggleVoice(S.modBus, S.slot, a.group | 0, a.id);
+        ModBus.modBusRefreshConfig(S.modBus, S.slot);
+        S.dirty = true;
+    }
     else if (a.t === 'modbus') {
         /* TWO round trips, once, on entry — the voice list and the config.
          * Everything the screens draw comes off this cache; a screen reading
@@ -6771,6 +6877,38 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * listMove is the shared clamp every other list here uses. */
             const n = ModBus.modBusRows(S.modBus, engineModuleAbbrev).length;
             if (n > 0) S.modBusIdx = listMove(n, S.modBusIdx, delta);
+        } else if (S.view === VIEW_MODBUS_GROUP) {
+            const row = modBusCurRow();
+            if (S.modBusConfirm) {
+                S.modBusConfirmIdx = Math.max(0, Math.min(1, S.modBusConfirmIdx + delta));
+            } else if (S.modBusEditing && row) {
+                /* A send rides the jog in place. SEND_LEVEL_STEP, not 1: a
+                 * detent per unit makes a full sweep 127 turns, which is the
+                 * step the model already chose for exactly this row. */
+                const items = ModBus.modBusActionItems(row);
+                const it = items[S.modBusActIdx];
+                if (it && it.type === 'int') {
+                    const cur = ModBus.modBusSendValueForRow(row, it.id);
+                    ModBus.modBusSetSend(S.modBus, S.slot, S.modBusGroup,
+                                         it.id === 'send2' ? 2 : 1,
+                                         cur + delta * ModBus.SEND_LEVEL_STEP);
+                    /* Optimistic, so the row moves on the first detent rather
+                     * than a round trip later — the engine is the authority and
+                     * the next refresh reconciles. */
+                    const b = modBusCur();
+                    if (b && b.sends) {
+                        const at = it.id === 'send2' ? 1 : 0;
+                        b.sends[at] = Math.max(0, Math.min(ModBus.SEND_LEVEL_MAX,
+                            cur + delta * ModBus.SEND_LEVEL_STEP));
+                    }
+                }
+            } else if (row) {
+                S.modBusActIdx = listMove(ModBus.modBusActionItems(row).length,
+                                          S.modBusActIdx, delta);
+            }
+        } else if (S.view === VIEW_MODBUS_VOICES) {
+            const n = ModBus.modBusVoiceRows(S.modBus, S.modBusGroup).length;
+            if (n > 0) S.modBusVoiceIdx = listMove(n, S.modBusVoiceIdx, delta);
         } else if (S.view === VIEW_SLOTCFG) {
             slotCfgStep(delta);
         } else if (S.view === VIEW_KNOBS) {
@@ -7096,6 +7234,70 @@ export function soundOnCC(d1, d2, decodeDelta) {
                  S.pickRows[S.pickRow].kind === 'patches') {
             S.pendingAction = { t: 'patchlist' };   /* store listing — tick only */
         }
+        else if (S.view === VIEW_MODBUS) {
+            const rows = ModBus.modBusRows(S.modBus, engineModuleAbbrev);
+            const r = rows[S.modBusIdx];
+            if (r && r.kind === 'new') {
+                /* Create, then re-read: the engine assigns the index (the
+                 * lowest FREE one, which is a hole before it is the tail), so
+                 * believing a local guess would name the wrong bus on the very
+                 * next screen. Write and refresh are both tick work. */
+                S.pendingAction = { t: 'modbuscreate' };
+            } else if (r && r.kind === 'bus') {
+                S.modBusGroup = r.index;
+                S.modBusActIdx = 0;
+                S.modBusEditing = false;
+                S.modBusConfirm = null;
+                S.view = VIEW_MODBUS_GROUP;
+                S.dirty = true;
+            }
+        }
+        else if (S.view === VIEW_MODBUS_GROUP) {
+            const row = modBusCurRow();
+            if (S.modBusConfirm) {
+                const del = S.modBusConfirmIdx === 1;
+                S.modBusConfirm = null;
+                if (del) S.pendingAction = { t: 'modbusdelete', group: S.modBusGroup };
+                else S.dirty = true;
+            } else if (row) {
+                const it = ModBus.modBusActionItems(row)[S.modBusActIdx];
+                if (!it) { /* nothing */ }
+                else if (it.type === 'int') S.modBusEditing = !S.modBusEditing;
+                else if (it.id === 'voices') {
+                    S.modBusVoiceIdx = 0;
+                    S.view = VIEW_MODBUS_VOICES; S.dirty = true;
+                }
+                else if (it.id === 'rename') {
+                    openTextEntry({
+                        title: 'RENAME',
+                        initialText: row.name,
+                        onConfirm: (txt) => {
+                            ModBus.modBusRename(S.modBus, S.slot, S.modBusGroup, txt);
+                            const b = modBusCur();
+                            if (b) b.name = String(txt);
+                            S.dirty = true;
+                        },
+                        onCancel: () => { S.dirty = true; },
+                    });
+                }
+                else if (it.id === 'delete') {
+                    S.modBusConfirm = { t: 'delete' };
+                    S.modBusConfirmIdx = 0;
+                    S.dirty = true;
+                }
+                /* 'chain' (the inserts) is not wired yet — it gets davebox's
+                 * block-row grammar, and until it does this row must do
+                 * NOTHING rather than half-open something. */
+            }
+        }
+        else if (S.view === VIEW_MODBUS_VOICES) {
+            const rows = ModBus.modBusVoiceRows(S.modBus, S.modBusGroup);
+            const r = rows[S.modBusVoiceIdx];
+            /* The write is 1 or 2 round trips (the old owner gives the voice up
+             * first), then a re-read: the orphan count and every row's owner
+             * are derived, so guessing them locally would drift. */
+            if (r) S.pendingAction = { t: 'modbusvoice', group: S.modBusGroup, id: r.id };
+        }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'modbus') {
             /* Reads the slot's bus config — TICK ONLY. A get_param from an
@@ -7370,7 +7572,15 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.dirty = true;
             return true;
         }
-        if (S.view === VIEW_SLOTCFG) {
+        if (S.view === VIEW_MODBUS_GROUP) {
+            /* Two stages, the same shape slot settings has: close the modal or
+             * the send edit first, and only then leave the screen. */
+            if (S.modBusConfirm) S.modBusConfirm = null;
+            else if (S.modBusEditing) S.modBusEditing = false;
+            else { S.view = VIEW_MODBUS; S.dirty = true; }
+        } else if (S.view === VIEW_MODBUS_VOICES) {
+            S.view = VIEW_MODBUS_GROUP; S.dirty = true;
+        } else if (S.view === VIEW_SLOTCFG) {
             if (S.slotCfgEditing) S.slotCfgEditing = false;   /* leave edit first */
             else closeSlotCfg();
         } else if (S.view === VIEW_KNOBLEGS) {
@@ -9726,6 +9936,8 @@ export function soundRender() {
     else if (S.view === VIEW_MENU) renderMenu();
     else if (S.view === VIEW_FILE) renderFile();
     else if (S.view === VIEW_MODBUS) renderModBus();
+    else if (S.view === VIEW_MODBUS_GROUP) renderModBusGroup();
+    else if (S.view === VIEW_MODBUS_VOICES) renderModBusVoices();
     else if (S.view === VIEW_SLOTCFG) renderSlotCfg();
     else if (S.view === VIEW_KNOBS) renderKnobs();
     else if (S.view === VIEW_KNOBLEGS) renderKnobLegs();

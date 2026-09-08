@@ -62,6 +62,12 @@ import { engineGetChainParam, engineSetChainParam } from './ui_engine.mjs';
  */
 export const MODBUS_LABEL = 'Buses';
 
+/* Re-exported from the model so a screen never re-derives a cap or a step.
+ * SEND_LEVEL_STEP is 4 deliberately: a detent per unit makes a full sweep 127
+ * turns of the jog, which is not a level anyone can ride. */
+export const SEND_LEVEL_MAX = BusModel.SEND_LEVEL_MAX;
+export const SEND_LEVEL_STEP = BusModel.SEND_LEVEL_STEP;
+
 /* ==========================================================================
  * THE TRI-STATE, which is the whole reason this file exists
  * ==========================================================================
@@ -202,6 +208,28 @@ export function modBusVoiceRows(st, groupIndex) {
     if (!st || !st.split || st.split.unresolved) return [];
     return BusModel.voiceRows(st.config, st.split.voices, groupIndex);
 }
+
+/*
+ * One bus's action menu, and the value a send row shows.
+ *
+ * ONLY a bus has a menu — the New row creates, and a list must never carry a
+ * row that answers a click by doing nothing. modBusActionItems answers [] for
+ * anything else, which is what keeps that true.
+ */
+export function modBusActionItems(row) { return BusModel.busActionItems(row); }
+export function modBusSendValueForRow(row, id) { return BusModel.busSendValue(row, id); }
+
+/*
+ * A voice row's value column: whose it is. "*" for this bus, another bus's NAME
+ * when it belongs to one (so moving it is informed), "!" for an orphan, and
+ * nothing for a voice on Main.
+ */
+export function modBusVoiceRowValue(row, st) {
+    return BusModel.voiceRowValue(row, st ? st.config : null);
+}
+
+/** The lowest free bus index, or -1 — what the New row acts on. */
+export function modBusFirstFree(st) { return BusModel.firstFreeBus(st ? st.config : null); }
 
 /* ==========================================================================
  * THE WRITES
