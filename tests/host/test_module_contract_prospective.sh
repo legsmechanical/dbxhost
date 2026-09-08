@@ -191,7 +191,6 @@ control(not uses(upstream, 'chainable'),
 # KNOWN means "davebox should, and here is the ticket".
 KNOWN = {
   'split_voices':  '#453 buses/sends — the module ABI (Josh: IN, routing AND davebox UI)',
-  'default_buses': '#453 buses/sends — a module declaring a bus it ships with (#464)',
 }
 
 gaps = sorted(k for k in universe
