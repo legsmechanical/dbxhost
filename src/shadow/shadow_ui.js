@@ -37,6 +37,7 @@ import {
 } from '/data/UserData/schwung/shared/chain_ui_views.mjs';
 
 import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
+import * as BusModel from '/data/UserData/schwung/shared/bus_model.mjs';
 /* Snapshot / recall — the PURE half (parsers, the restore planner, the bulk
  * packing). The host bindings below drive it; dAVEBOx owns the gesture. */
 import { parseSlotSnapshot, parseBusSnapshot, planRestore, batchWrites, bulkEncodeItems, scopeForWrites }
@@ -5211,6 +5212,16 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
     const patch = {
         custom_name: name,
         input: "both",
+        /* DECLARED HERE, filled in below, and the position is the point: an
+         * object keeps a key's insertion position when it is reassigned, so
+         * naming them ahead of every component puts them ahead of every opaque
+         * `state` blob in the stringified document. bus_parse_section scans the
+         * WHOLE document for "buses" and "main_sends" and takes the first hit,
+         * so a module that stores a key by either name cannot answer for the
+         * slot. JSON.stringify drops an undefined value, so a slot with no
+         * buses still writes neither key. */
+        main_sends: undefined,
+        buses: undefined,
         synth: null,
         audio_fx: []
     };
@@ -5385,6 +5396,60 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
             }
         } catch (e) {
             /* Ignore parse errors */
+        }
+    }
+
+    /*
+     * ---- BUSES ------------------------------------------------------------
+     *
+     * The producer half of the bus file format. chain_patch.c reads "buses"
+     * and "main_sends" out of a saved slot, and until this block nothing wrote
+     * them — which is worse than "buses do not persist": patch_info_t is zeroed
+     * before the parse, so a document without the key arrives at
+     * chain_bus_apply_patch as SLOT_BUSES absent buses and it RESETS all of
+     * them. Loading any preset, or changing sets, would destroy a live bus kit
+     * mid-session and say nothing.
+     *
+     * A FAILED READ BAILS THE WHOLE SAVE. Everywhere else in this function that
+     * is the bail-if-empty rule for autosave only; here it applies to an
+     * explicit save too, because the document we would otherwise write is not
+     * merely missing a field — it is a document that DELETES the user's buses
+     * the next time it is loaded. `""` is different and is not a failure: it is
+     * a chain host that serves no bus keys at all, and it emits nothing.
+     */
+    const busRaw = getSlotStateWithRetry(slotIndex, "buses:config");
+    if (busRaw !== "") {
+        const busCfg = BusModel.parseBusesConfig(busRaw);
+        if (busCfg.unresolved) {
+            debugLog("buildSlotPatchJson: slot " + slotIndex +
+                     " buses:config read FAILED — bailing (a document with no " +
+                     "\"buses\" key WIPES them on load)");
+            return null;
+        }
+        let busStateFailed = false;
+        const fields = BusModel.busPatchFields(busCfg, (b, k) => {
+            const raw = getSlotStateWithRetry(slotIndex,
+                                              "bus" + (b + 1) + ":fx" + (k + 1) + ":state");
+            if (raw === null) {
+                /* The same tri-state rule the component saves use: null is a
+                 * read that did not complete, "" is an insert that serves no
+                 * state. Only the first may cost us the save. */
+                if (bailIfEmpty) busStateFailed = true;
+                return undefined;
+            }
+            if (!raw) return undefined;
+            try { return JSON.parse(raw); } catch (e) { return raw; }
+        });
+        if (busStateFailed) {
+            debugLog("buildSlotPatchJson: slot " + slotIndex +
+                     " bus insert state read FAILED — bailing");
+            return null;
+        }
+        if (fields) {
+            /* main_sends FIRST: bus_parse_section scans the whole document for
+             * it, and an insert's opaque state could carry the same key. */
+            patch.main_sends = fields.main_sends;
+            patch.buses = fields.buses;
         }
     }
 

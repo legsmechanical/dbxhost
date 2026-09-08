@@ -336,47 +336,56 @@ eq("an unresolved config declares no params",
 eq("an unresolved config lists no rows either -- the one refusal",
    M.busListRows({ unresolved: true }).length, 0);
 
-/* ---- THE TWO SPELLINGS OF A SEND KEY --------------------------------- */
+/* ---- ONE SPELLING OF A SEND KEY, NOT TWO ----------------------------- */
 
-/* busSendKey (shadow_ui.js, the LIST path) and busSendGridRealKey (here, the
-   GRID path) produce the same two real keys from different arguments -- a row
-   object and a flat grid key. A comment saying they must agree, with nothing
-   joining them, is the duplication it claims to have closed, so busSendKey is
-   LIFTED out of shadow_ui.js and the two are run against every row of a slot.
-   Getting this wrong edits the wrong bus, silently. */
+/* ⚠ FORK DIVERGENCE FROM UPSTREAMS VERSION OF THIS TEST, and it is a
+   STRONGER check rather than a relaxed one.
+
+   Upstream keeps TWO producers of a bus send key: busSendGridRealKey here (the
+   GRID path, addressed by a flat key) and busSendKey in shadow_ui.js (the LIST
+   path, addressed by a row object). Its test LIFTS the second out of the file
+   and runs the two against every row, because a spelling that disagrees edits
+   the wrong bus in silence.
+
+   This fork has no second producer and must never grow one. The bus list UI
+   here resolves its keys through the model — sendGridKey + busSendGridRealKey —
+   so the two paths cannot disagree, because there is only one. That is the
+   lesson this campaign already paid for: a mechanism that lives in one place
+   cannot be half-ported.
+
+   So the invariant pinned here is the ABSENCE of a rival spelling. This is
+   killable: define a busSendKey in shadow_ui.js and it fails. It is NOT a
+   "skip because the UI is not built yet" — it stays true and stays meaningful
+   after the bus UI lands. */
 {
   const src = fs.readFileSync("src/shadow/shadow_ui.js", "utf8");
-  const at = src.indexOf("function busSendKey(");
-  if (at < 0) fail("busSendKey is gone from shadow_ui.js");
-  else {
-    const end = src.indexOf("\n}\n", at);
-    const busSendKey = new Function(
-      "return " + src.slice(at, end + 2))();
-    const cfg = M.parseBusesConfig(JSON.stringify({
-      buses: [
-        { present: 1, name: "Kick", orphans: 0, voices: [], sends: [0, 0], fx: [] },
-        { present: 0, name: "Bus 2", orphans: 0, voices: [], sends: [0, 0], fx: [] },
-        { present: 1, name: "Hats", orphans: 0, voices: [], sends: [0, 0], fx: [] },
-        { present: 1, name: "Perc", orphans: 0, voices: [], sends: [0, 0], fx: [] }],
-      main_sends: [0, 0] }));
-    const rows = M.busListRows(cfg).filter((r) => r.kind === "bus");
-    let checked = 0;
-    for (const row of rows) {
-      for (let n = 1; n <= M.BUS_SENDS; n++) {
-        const viaGrid = M.busSendGridRealKey(M.sendGridKey(row, n));
-        const viaList = busSendKey(row, "send" + n);
-        eq("the two paths agree on " + row.name + " send " + n, viaGrid, viaList);
-        checked++;
-      }
-    }
-    /* Every present bus plus Main, both sends -- and the HOLE at bus 2 is what
-       makes this worth running: a path that renumbered would send Hats` level
-       to bus 2. */
-    eq("every row of a holed slot was compared", checked,
-       (rows.length) * M.BUS_SENDS);
-    eq("...and the hole did not renumber",
-       M.busSendGridRealKey(M.sendGridKey(rows[1], 1)), "bus3:send1");
-  }
+  if (/function\s+busSendKey\s*\(/.test(src))
+    fail("shadow_ui.js defines its own busSendKey — a SECOND spelling of a bus " +
+         "send key. Resolve the list path through BusModel.sendGridKey + " +
+         "busSendGridRealKey instead, or this fork inherits the exact " +
+         "wrong-bus-in-silence bug upstreams two-path test exists to catch");
+  /* POSITIVE CONTROL: the matcher above must actually be able to see such a
+     definition, or the assertion passes for the wrong reason. */
+  if (!/function\s+busSendKey\s*\(/.test("function busSendKey(row, which) {"))
+    fail("the busSendKey matcher cannot see a definition — this check is inert");
+
+  /* And the one surviving producer still has to be right about a HOLED slot,
+     which is the case that renumbers when a path gets it wrong. */
+  const cfg = M.parseBusesConfig(JSON.stringify({
+    buses: [
+      { present: 1, name: "Kick", orphans: 0, voices: [], sends: [0, 0], fx: [] },
+      { present: 0, name: "Bus 2", orphans: 0, voices: [], sends: [0, 0], fx: [] },
+      { present: 1, name: "Hats", orphans: 0, voices: [], sends: [0, 0], fx: [] },
+      { present: 1, name: "Perc", orphans: 0, voices: [], sends: [0, 0], fx: [] }],
+    main_sends: [0, 0] }));
+  const rows = M.busListRows(cfg).filter((r) => r.kind === "bus");
+  eq("three present buses", rows.length, 3);
+  eq("the hole did not renumber",
+     M.busSendGridRealKey(M.sendGridKey(rows[1], 1)), "bus3:send1");
+  eq("...on send B too",
+     M.busSendGridRealKey(M.sendGridKey(rows[1], 2)), "bus3:send2");
+  eq("...and the last bus keeps its own number",
+     M.busSendGridRealKey(M.sendGridKey(rows[2], 1)), "bus4:send1");
 }
 
 
@@ -584,7 +593,22 @@ check() {   # <name-in-js> <name-in-c> <c-header>
   fi
 }
 check SLOT_BUSES     SLOT_BUSES             src/modules/chain/dsp/chain_internal.h
-check BUS_FX_SLOTS   MAX_AUDIO_FX           src/modules/chain/dsp/chain_internal.h
+# ⚠ FORK DIVERGENCE: upstream mirrors the JS BUS_FX_SLOTS against MAX_AUDIO_FX,
+# because there a bus chain and a slot chain share one cap (8). They do NOT here
+# — a slot chain is 4 and a bus chain is 8, so the C name to mirror is
+# BUS_FX_SLOTS. Pointing this at MAX_AUDIO_FX would demand the two forever agree
+# and re-open the 60-site widening the separate cap exists to avoid.
+check BUS_FX_SLOTS   BUS_FX_SLOTS           src/modules/chain/dsp/chain_internal.h
+# And the divergence itself is pinned, so a later "tidy-up" collapsing the two
+# names has to argue with a test rather than silently truncate a module's bus.
+c_fx=$(c_val src/modules/chain/dsp/chain_internal.h MAX_AUDIO_FX)
+c_bus=$(c_val src/modules/chain/dsp/chain_internal.h BUS_FX_SLOTS)
+if [ "$c_fx" = "$c_bus" ]; then
+  echo "FAIL: MAX_AUDIO_FX ($c_fx) and BUS_FX_SLOTS ($c_bus) are equal — if the" \
+       "slot chain was deliberately widened, say so here; if they were collapsed" \
+       "by accident, a bus chain just lost or gained positions" >&2
+  fail=1
+fi
 check BUS_SENDS      BUS_MIX_SENDS          src/host/bus_mix.h
 check SEND_LEVEL_MAX BUS_MIX_SEND_LEVEL_MAX src/host/bus_mix.h
 check SPLIT_VOICES_MAX SPLIT_VOICES_MAX     src/modules/chain/dsp/chain_internal.h
