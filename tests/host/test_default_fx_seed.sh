@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+#
+# default_fx: a module says what belongs in the chain behind it.
+# Ported from upstream #460 (+#463's factory preset), 2026-09-07.
+#
+# A drum module voiced through a bus compressor has had two bad options -- keep
+# the effect INSIDE the module (a second, worse copy of what the slot chain
+# provides, reachable only from in there and persisted by hand), or make the
+# user add it after every load, where it is not part of the sound.
+#
+# The whole design is in WHEN it fires:
+#
+#  - on an INTERACTIVE PICK only. Every restore path -- boot, set change, patch
+#    load -- reconstructs a chain the user has already shaped, so seeding there
+#    would put back an effect they deleted, every boot, with no way to refuse it.
+#  - into an EMPTY FX section only. A slot carrying effects has been shaped by
+#    somebody, and appending rewrites their signal path silently.
+#  - never on a FAILED read of the count. Seeding because a read did not
+#    complete is how a chain gets a module appended to it for no reason.
+#
+# ⚠ THE FORK-SPECIFIC PART. Upstream bounds the declaration with CHAIN_CAP.fx
+# (MAX_FX = 2). This fork has no MAX_FX at all and carries FOUR audio-FX blocks
+# (the fork-only fx3/fx4 divergence, see CLAUDE.md). So the cap here is DERIVED
+# from CHAIN_COMPONENTS, and this test pins that it is derived rather than
+# written down: a literal 2 would silently truncate a module's declaration, and
+# a literal 4 would rot the day the block count moves. CLAUDE.md's standing
+# warning is exactly this -- "any change to FX-block handling must be checked at
+# fx3/fx4 too - they are easy to miss".
+set -euo pipefail
+
+cd "$(dirname "$0")/../.."
+UI="src/shadow/shadow_ui.js"
+[ -f "$UI" ] || { echo "FAIL: cannot find $UI"; exit 1; }
+
+node --input-type=module -e '
+import { readFileSync } from "node:fs";
+const src = readFileSync(process.argv[1], "utf8");
+let bad = 0;
+const fail = (m) => { console.log("FAIL: " + m); bad = 1; };
+const ok = (m) => console.log("  ok  " + m);
+const grab = (n) => {
+  const m = src.match(new RegExp("^function " + n + "\\([^)]*\\)\\s*\\{[^]*?^}", "m"));
+  if (!m) { fail("could not lift " + n + "()"); process.exit(1); }
+  return m[0];
+};
+
+/* The real CHAIN_COMPONENTS, lifted from source -- so the cap this test sees is
+   the one the fork actually ships, not a number restated here. */
+const ccm = src.match(/^const CHAIN_COMPONENTS = \[[^]*?^\];/m);
+if (!ccm) { fail("could not lift CHAIN_COMPONENTS"); process.exit(1); }
+const FX_BLOCKS = (ccm[0].match(/key:\s*"fx\d+"/g) || []).length;
+
+function rig(meta, fxCount) {
+  const body = [
+    ccm[0],
+    "let writes = [];",
+    "const META = " + JSON.stringify(meta) + ";",
+    "function host_get_module_metadata() { return META; }",
+    "function getSlotParam(slot, key) { return " + JSON.stringify(fxCount) + "; }",
+    "function setSlotParam(slot, key, val) { writes.push(key + \"=\" + val); return true; }",
+    "function debugLog() {}",
+    grab("chainFxCap"), grab("moduleDefaultFx"), grab("seedDefaultFxForSlot"),
+    "return { seed: (id) => seedDefaultFxForSlot(0, id), writes,",
+    "         decl: (id) => moduleDefaultFx(id), cap: chainFxCap() };",
+  ].join("\n");
+  return new Function(body)();
+}
+
+const DECL = { capabilities: { default_fx: [
+  { module: "clap", params: { plugin_id: "PurestDrive" } },
+] } };
+
+/* An empty chain seeds, and the params land on the position just written. */
+{
+  const r = rig(DECL, "0");
+  if (r.seed("dr32") !== 1) fail("an empty FX section did not seed");
+  if (JSON.stringify(r.writes) !==
+      JSON.stringify(["fx1:module=clap", "fx1:plugin_id=PurestDrive"])) {
+    fail("seed wrote " + JSON.stringify(r.writes));
+  }
+  ok("an empty FX section is seeded, module first then its params");
+}
+
+/* A chain that already holds anything is LEFT ALONE. */
+{
+  const r = rig(DECL, "1");
+  if (r.seed("dr32") !== 0 || r.writes.length) {
+    fail("seeded into a chain that already held an effect: " + JSON.stringify(r.writes));
+  }
+  ok("a non-empty FX section is left alone");
+}
+
+/* A FAILED read is not a zero. */
+for (const answer of [null, undefined, ""]) {
+  const r = rig(DECL, answer);
+  if (r.seed("dr32") !== 0 || r.writes.length) {
+    fail("seeded on a " + JSON.stringify(answer) + " count read -- a read that did "
+         + "not complete is not an empty chain");
+  }
+}
+ok("a failed count read declines rather than seeding");
+
+/* A module that declares nothing costs nothing and writes nothing. */
+for (const meta of [{}, { capabilities: {} }, { capabilities: { default_fx: "clap" } },
+                    { capabilities: { default_fx: [{}, { module: "" }] } }, null]) {
+  const r = rig(meta, "0");
+  if (r.seed("x") !== 0 || r.writes.length) {
+    fail("a module declaring " + JSON.stringify(meta) + " produced writes");
+  }
+}
+ok("no declaration, a malformed one, or entries with no module: nothing written");
+
+/* ---- THE CAP IS DERIVED, and that is this fork'"'"'s divergence -------------- */
+{
+  const many = { capabilities: { default_fx:
+    Array.from({ length: 20 }, (_, i) => ({ module: "m" + i })) } };
+  const r = rig(many, "0");
+  if (r.cap !== FX_BLOCKS) {
+    fail("chainFxCap() says " + r.cap + " but CHAIN_COMPONENTS declares "
+         + FX_BLOCKS + " fx blocks -- the cap must be DERIVED from the chain, "
+         + "never written down beside it");
+  }
+  if (r.decl("x").length !== FX_BLOCKS) {
+    fail("a 20-entry declaration resolved to " + r.decl("x").length
+         + ", expected the fork'"'"'s " + FX_BLOCKS + "-block cap");
+  }
+  /* ⚠ The number itself, so that a change to the block count is a deliberate
+     edit here rather than a silent widening. Upstream ships 2; this fork ships
+     4, and a module declaring 3 or 4 effects is truncated on stock and whole
+     here -- which is correct, and is the reason the cap cannot be a literal. */
+  if (FX_BLOCKS !== 4) {
+    fail("this fork has carried FOUR audio-FX blocks (fx1..fx4); CHAIN_COMPONENTS "
+         + "now declares " + FX_BLOCKS + ". If that is deliberate, update this test "
+         + "and check every fx3/fx4 site CLAUDE.md warns about.");
+  }
+  ok("the cap is DERIVED from CHAIN_COMPONENTS (4 blocks here, 2 upstream)");
+}
+
+/* ---- THE FACTORY PRESET, which is the point of declaring an FX at all -- */
+{
+  const DECL_P = { capabilities: { default_fx: [
+    { module: "clap", params: { plugin_id: "Galactic" }, preset: "Big Room" },
+  ] } };
+  const r = rig(DECL_P, "0");
+  r.seed("dr32");
+
+  /* ORDER IS LOAD-BEARING: module, then params, then the preset. A preset is a
+     whole state and overwrites anything written after it; plugin_id has to
+     land first or there is no plugin for the preset to name. */
+  if (JSON.stringify(r.writes) !== JSON.stringify(
+        ["fx1:module=clap", "fx1:plugin_id=Galactic", "fx1:preset_name=Big Room"])) {
+    fail("preset seeding wrote " + JSON.stringify(r.writes));
+  }
+
+  /* A module can only name a preset it SHIPS. A user preset is dialled in
+     afterwards and its name is unknowable at authoring time, so nothing here
+     may reach for the <prefix>:state blob. */
+  if (r.writes.some((w) => w.indexOf(":state=") >= 0)) {
+    fail("seeding touched a user preset state blob: " + JSON.stringify(r.writes));
+  }
+
+  /* params alone, with no preset, is a complete declaration. */
+  const q = rig({ capabilities: { default_fx: [
+    { module: "clap", params: { plugin_id: "Galactic" } } ] } }, "0");
+  q.seed("dr32");
+  if (JSON.stringify(q.writes) !== JSON.stringify(
+        ["fx1:module=clap", "fx1:plugin_id=Galactic"])) {
+    fail("params without a preset wrote " + JSON.stringify(q.writes));
+  }
+  ok("preset: the module factory preset, applied after the params it depends on");
+}
+
+/* metadata handed over as a JSON STRING is parsed -- the binding has returned
+   both shapes across versions, and a string would otherwise read as "declares
+   nothing" rather than as an error. */
+{
+  const r = rig(JSON.stringify(DECL), "0");
+  if (r.seed("dr32") !== 1) fail("metadata delivered as a JSON string was not parsed");
+  ok("metadata as a JSON string is parsed");
+}
+
+/* ---- THE CALL SITE, which is the actual design ------------------------ */
+{
+  const m = src.match(/^function applyComponentSelectionConfirmed\([^)]*\)\s*\{[^]*?^}/m);
+  if (!m) fail("could not find applyComponentSelectionConfirmed");
+  else {
+    if (!/seedDefaultFxForSlot\(/.test(m[0])) {
+      fail("the interactive pick never seeds -- default_fx would be inert");
+    }
+    if (!/comp\.key === "synth"/.test(m[0])) {
+      fail("the seed is not gated on the SYNTH position; an audio FX pick would "
+           + "seed the chain it was just added to");
+    }
+  }
+  /* AND NOWHERE ELSE. A restore path that seeded would put back an effect the
+     user deleted, on every boot. */
+  const sites = [...src.matchAll(/seedDefaultFxForSlot\(/g)].length;
+  if (sites !== 2) {   /* the definition, and the single call */
+    fail("seedDefaultFxForSlot appears " + sites + " times; it must be defined "
+         + "once and called from the interactive pick ALONE -- a restore path "
+         + "that seeds re-adds an effect the user removed");
+  }
+  ok("seeded from the interactive synth pick, and from nowhere else");
+}
+
+if (bad) process.exit(1);
+console.log("PASS");
+' "$UI"

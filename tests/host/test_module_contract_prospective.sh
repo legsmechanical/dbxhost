@@ -193,7 +193,6 @@ KNOWN = {
   'split_voices':  '#453 buses/sends — the module ABI (Josh: IN, routing AND davebox UI)',
   'voices':        '#453 buses/sends — bus membership is by voice id',
   'default_buses': '#453 buses/sends — a module declaring a bus it ships with (#464)',
-  'default_fx':    '#460/#463 — a module declaring the FX behind it, and a factory preset',
 }
 
 gaps = sorted(k for k in universe

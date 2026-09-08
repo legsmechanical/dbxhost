@@ -3506,6 +3506,101 @@ function isLineInConsumerModule(moduleId) {
     return v;
 }
 
+/*
+ * ============================================================================
+ * default_fx — a module says what belongs in the chain behind it   (upstream
+ * #460, extended by #463; ported 2026-09-07)
+ * ============================================================================
+ *
+ *   "capabilities": { "default_fx": [
+ *       { "module": "clap", "params": { "plugin_id": "Galactic" },
+ *         "preset": "Big Room" } ] }
+ *
+ * A drum module voiced through a bus compressor has otherwise no way to ship
+ * that: the effect either lives INSIDE the module — a second, worse copy of
+ * what the slot chain already provides, reachable only from in there and
+ * persisted by hand — or the user adds it after every load and it is not part
+ * of the sound.
+ *
+ * ⭐ THE DESIGN IS ENTIRELY *WHEN* IT FIRES, and all three rules are load-bearing:
+ *
+ *  · ON AN INTERACTIVE PICK AND NOWHERE ELSE. Not boot, not a set change, not a
+ *    patch load — those reconstruct a chain the user has already shaped, so
+ *    seeding there puts back an effect they deleted, on every boot, with no way
+ *    to refuse it permanently. A default is an opening position, not a policy.
+ *  · INTO AN EMPTY FX SECTION ONLY. A slot carrying effects has been shaped by
+ *    somebody and appending rewrites their signal path silently.
+ *  · ON AN EXPLICIT ZERO ONLY. Anything that is not a definite zero declines, so
+ *    a read that did not complete cannot append a module to somebody's chain.
+ *
+ * What lands is an ORDINARY INSERT: editable, removable, saved by the same
+ * autosave. Nothing marks it as the module's, because a position that could not
+ * be removed would be a worse version of the in-module effect this replaces.
+ */
+
+/* ⚠ THE CAP IS DERIVED, NOT A LITERAL. Upstream bounds this with CHAIN_CAP.fx
+ * (MAX_FX = 2); this fork has no MAX_FX at all and carries FOUR audio-FX blocks
+ * (the fork-only fx3/fx4 divergence). A hardcoded 2 would silently truncate a
+ * module's declaration here, and a hardcoded 4 would break the day the count
+ * moves — CHAIN_COMPONENTS is the one place the fork states it. */
+function chainFxCap() {
+    return CHAIN_COMPONENTS.filter((c) => /^fx\d+$/.test(c.key)).length;
+}
+
+function moduleDefaultFx(moduleId) {
+    if (!moduleId) return [];
+    let meta = null;
+    try {
+        if (typeof host_get_module_metadata === "function") meta = host_get_module_metadata(moduleId);
+    } catch (e) { return []; }
+    if (typeof meta === "string") {
+        try { meta = JSON.parse(meta); } catch (e) { return []; }
+    }
+    const list = meta && meta.capabilities && meta.capabilities.default_fx;
+    if (!Array.isArray(list)) return [];
+    /* Bounded by the section cap, so a module cannot declare a chain longer than
+     * the slot can hold and have the tail vanish without a word. */
+    return list.filter((e) => e && typeof e.module === "string" && e.module)
+               .slice(0, chainFxCap());
+}
+
+/* Returns how many positions were seeded (0 when it declined), so the caller can
+ * decide whether the chain needs re-reading rather than re-reading always. */
+function seedDefaultFxForSlot(slotIndex, moduleId) {
+    const wanted = moduleDefaultFx(moduleId);
+    if (!wanted.length) return 0;
+
+    /* The DSP's own count, not the cached model: this runs right after a synth
+     * write, and the cached chain is the one from before it. */
+    const held = parseInt(getSlotParam(slotIndex, "fx_count"), 10);
+    if (!Number.isFinite(held) || held !== 0) return 0;
+
+    let seeded = 0;
+    for (const entry of wanted) {
+        const key = `fx${seeded + 1}`;
+        if (!setSlotParam(slotIndex, `${key}:module`, entry.module)) break;
+        seeded++;
+        if (entry.params && typeof entry.params === "object") {
+            for (const pk in entry.params) {
+                setSlotParam(slotIndex, `${key}:${pk}`, String(entry.params[pk]));
+            }
+        }
+        /* THE FACTORY PRESET, APPLIED LAST — a preset is a whole state, so
+         * anything written after it is overwritten by it, and `plugin_id` in
+         * particular has to land FIRST for a host like Airwindows where the
+         * preset only means something once the plugin behind it is chosen.
+         * By NAME, not index: a module's preset list is its own and reorders
+         * between versions, so an index would quietly name a different sound.
+         * Factory only — a user preset is dialled in afterwards and its name is
+         * unknowable when the module is authored. */
+        if (entry.preset) {
+            setSlotParam(slotIndex, `${key}:preset_name`, String(entry.preset));
+        }
+    }
+    if (seeded) debugLog(`default_fx: seeded ${seeded} position(s) for ${moduleId}`);
+    return seeded;
+}
+
 /* The slots' synth module ids, for the feedback guard. A round-trip each, and
  * the guard used to ask all eight every pass — measured on device (keyed
  * OTLP trace, 2026-09-02): ~130 reads a second at idle, the largest single
@@ -8645,6 +8740,14 @@ function applyComponentSelectionConfirmed(slotIndex, paramKey, moduleId, comp) {
             print(2, 50, "Failed to apply", 1);
         }
 
+    }
+
+    /* A SYNTH the user just picked may declare the effects that belong behind it.
+     * ⭐ ONLY HERE — this is the interactive pick; every restore path
+     * reconstructs a chain that has already been shaped. See moduleDefaultFx.
+     * Before the reload below, so the refreshed config carries what was seeded. */
+    if (moduleId && comp && comp.key === "synth") {
+        seedDefaultFxForSlot(slotIndex, moduleId);
     }
 
     /* Force sync chainConfigs from DSP and reset caches after module change.
