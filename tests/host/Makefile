@@ -35,6 +35,7 @@ DEPFLAGS = -MMD -MP -MF $@.d
 BUILD_DIR = ../../build/tests/host
 
 TARGETS = $(BUILD_DIR)/test_timespec_delta \
+          $(BUILD_DIR)/test_split_voices_parse \
           $(BUILD_DIR)/test_midi_coalesce \
           $(BUILD_DIR)/test_ui_midi_policy \
           $(BUILD_DIR)/test_midi_inject_writer \
