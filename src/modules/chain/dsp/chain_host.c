@@ -1678,7 +1678,9 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
             /* Try plugin's own chain_params handler first */
             if (inst->synth_plugin_v2 && inst->synth_instance && inst->synth_plugin_v2->get_param) {
                 int result = inst->synth_plugin_v2->get_param(inst->synth_instance, subkey, buf, buf_len);
-                if (result > 0) return result;  /* Plugin provided chain_params */
+                /* NOT `result > 0`: an empty array is not an answer — see
+                 * chain_params_answer_is_useful. */
+                if (chain_params_answer_is_useful(buf, result)) return result;
             }
             /* Fall back to parsed module.json data */
             if (inst->synth_param_count > 0) {
@@ -1758,7 +1760,7 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
             /* Try plugin's own chain_params handler first */
             if (inst->fx_is_v2[0] && inst->fx_plugins_v2[0] && inst->fx_instances[0] && inst->fx_plugins_v2[0]->get_param) {
                 int result = inst->fx_plugins_v2[0]->get_param(inst->fx_instances[0], subkey, buf, buf_len);
-                if (result > 0) return result;
+                if (chain_params_answer_is_useful(buf, result)) return result;
             }
             /* Fall back to parsed module.json data */
             if (inst->fx_param_counts[0] > 0) {
@@ -1840,7 +1842,7 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
             /* Try plugin's own chain_params handler first */
             if (inst->fx_is_v2[1] && inst->fx_plugins_v2[1] && inst->fx_instances[1] && inst->fx_plugins_v2[1]->get_param) {
                 int result = inst->fx_plugins_v2[1]->get_param(inst->fx_instances[1], subkey, buf, buf_len);
-                if (result > 0) return result;
+                if (chain_params_answer_is_useful(buf, result)) return result;
             }
             /* Fall back to parsed module.json data */
             if (inst->fx_param_counts[1] > 0) {
@@ -1922,7 +1924,7 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
             /* Try plugin's own chain_params handler first */
             if (inst->fx_is_v2[2] && inst->fx_plugins_v2[2] && inst->fx_instances[2] && inst->fx_plugins_v2[2]->get_param) {
                 int result = inst->fx_plugins_v2[2]->get_param(inst->fx_instances[2], subkey, buf, buf_len);
-                if (result > 0) return result;
+                if (chain_params_answer_is_useful(buf, result)) return result;
             }
             /* Fall back to parsed module.json data */
             if (inst->fx_param_counts[2] > 0) {
@@ -2004,7 +2006,7 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
             /* Try plugin's own chain_params handler first */
             if (inst->fx_is_v2[3] && inst->fx_plugins_v2[3] && inst->fx_instances[3] && inst->fx_plugins_v2[3]->get_param) {
                 int result = inst->fx_plugins_v2[3]->get_param(inst->fx_instances[3], subkey, buf, buf_len);
-                if (result > 0) return result;
+                if (chain_params_answer_is_useful(buf, result)) return result;
             }
             /* Fall back to parsed module.json data */
             if (inst->fx_param_counts[3] > 0) {
@@ -2084,7 +2086,7 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
             /* Try plugin's own chain_params handler first */
             if (inst->midi_fx_plugins[0] && inst->midi_fx_instances[0] && inst->midi_fx_plugins[0]->get_param) {
                 int result = inst->midi_fx_plugins[0]->get_param(inst->midi_fx_instances[0], subkey, buf, buf_len);
-                if (result > 0) return result;
+                if (chain_params_answer_is_useful(buf, result)) return result;
             }
             /* Fall back to parsed module.json data */
             if (inst->midi_fx_param_counts[0] > 0) {
@@ -2161,7 +2163,7 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
             /* Try plugin's own chain_params handler first */
             if (inst->midi_fx_plugins[1] && inst->midi_fx_instances[1] && inst->midi_fx_plugins[1]->get_param) {
                 int result = inst->midi_fx_plugins[1]->get_param(inst->midi_fx_instances[1], subkey, buf, buf_len);
-                if (result > 0) return result;
+                if (chain_params_answer_is_useful(buf, result)) return result;
             }
             /* Fall back to parsed module.json data */
             if (inst->midi_fx_param_counts[1] > 0) {

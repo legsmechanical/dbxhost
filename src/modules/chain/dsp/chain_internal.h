@@ -397,6 +397,39 @@ typedef struct chain_instance {
     char synth_load_error[256];
 } chain_instance_t;
 
+/*
+ * Is a plugin's chain_params answer worth serving, or should the module.json
+ * fallback beneath it run?
+ *
+ * THE BUG THIS FIXES IS SILENT AND USER-VISIBLE. A module that reads its
+ * chain_params from a JSON file at runtime answers the two characters "[]"
+ * when that file is not installed — which it is not, in a shipped tarball.
+ * Length 2 is > 0, so the host took it as an answer, discarded the parameter
+ * declarations it had ALREADY parsed out of that module's own module.json, and
+ * served "[]". The Shadow UI then had no type for any of those params and drove
+ * every one as a float 0..1: an int wrote a fraction its atoi read as 0, an
+ * enum took option 0. It presents as "i could see the values change, but when i
+ * release, it reset to the default" — which sounds like an edit/commit bug and
+ * is actually a metadata bug two layers away.
+ *
+ * An empty array is therefore treated as NO answer, and the fallback runs. A
+ * plugin that genuinely has no parameters loses nothing: the fallback finds no
+ * parsed params either and the caller returns -1, which the UI reads exactly as
+ * it read "[]".
+ *
+ * Pure scan over a caller-owned buffer — no allocation, no I/O — because all
+ * three routes are serviced from the SPI callback.
+ */
+static inline int chain_params_answer_is_useful(const char *buf, int result) {
+    if (result <= 0 || !buf) return 0;
+    for (int i = 0; i < result && buf[i]; i++) {
+        char c = buf[i];
+        if (c == '[' || c == ']' || c == ' ' || c == '\t' || c == '\n' || c == '\r') continue;
+        return 1;
+    }
+    return 0;
+}
+
 #define CHAIN_INTERNAL __attribute__((visibility("hidden")))
 
 /* Get current time in milliseconds (for knob acceleration) */
