@@ -417,8 +417,8 @@ typedef struct chain_instance {
  * parsed params either and the caller returns -1, which the UI reads exactly as
  * it read "[]".
  *
- * Pure scan over a caller-owned buffer — no allocation, no I/O — because all
- * three routes are serviced from the SPI callback.
+ * Pure scan over a caller-owned buffer — no allocation, no I/O — because every
+ * one of those routes is serviced from the SPI callback.
  */
 static inline int chain_params_answer_is_useful(const char *buf, int result) {
     if (result <= 0 || !buf) return 0;
