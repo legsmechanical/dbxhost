@@ -89,15 +89,30 @@
  * bitmask in bus_mix_active_mask is a uint32_t, so 32 is the hard ceiling.
  *
  * ⚠ IT IS NOT FREE, and the cost is not the audio buffers (512 bytes each, on
- * demand). It is bus_config_t (~9.6 KB), embedded SLOT_BUSES times in
- * patch_info_t, which is embedded MAX_PATCHES times in chain_instance_t — see
- * the MAX_PATCHES warning above, which this compounds. Measured for this fork:
- * 0 -> 8 buses adds ~79 KB per patch_info_t, so ~2.5 MB per chain instance and
- * ~10 MB across four slots (~5 MB -> ~7.5 MB per instance). The other half is
- * the SPI callback's STACK: v2_set_param's load_file route holds a
- * patch_info_t local, whose frame grows by that same ~79 KB. Upstream measured
- * its own 4 -> 8 as 194 KB -> 232 KB of frame; ⚠ THE STACK IS THE HALF THAT
- * FAILS HARD, so re-measure both before raising this again. */
+ * demand). It is bus_config_t, embedded SLOT_BUSES times in patch_info_t, which
+ * is embedded MAX_PATCHES times in chain_instance_t — see the MAX_PATCHES
+ * warning above, which this compounds.
+ *
+ * MEASURED for this fork, aarch64, -O3, via sizes emitted as linker symbols by
+ * the cross-compiler (so these are the TARGET ABI's numbers, not the host's):
+ *
+ *     bus_config_t          9,844 B
+ *     patch_info_t        168,504 -> 247,264 B   (+76.9 KB)
+ *     chain_instance_t     12.85  ->  15.36 MB   (+2.50 MB, x4 slots = +10.0 MB)
+ *
+ * ⭑ IT COSTS NO STACK AT ALL HERE, and that is a real difference from upstream
+ * rather than luck. Upstream's copy of this warning says the SPI callback's
+ * frame grows with it, because THERE v2_set_param's load_file route holds a
+ * patch_info_t local. THIS FORK ALREADY MOVED THAT TO THE HEAP, deliberately —
+ * see the "Heap, not stack" comment at chain_host.c's load_file route. Verified
+ * with -fstack-usage across every chain TU: no frame moved by a single byte
+ * between the pre-bus tree and this one, and chain_bus.c's own largest frame is
+ * 832 B.
+ *
+ * So re-measure the HEAP before raising this again; the stack is not the
+ * constraint in this tree. (⚠ Unrelated and pre-existing: the largest frame in
+ * the chain DSP is chain_mod_refresh_target_param_cache at ~1.11 MB — see the
+ * worklog.) */
 #define SLOT_BUSES 8
 _Static_assert(SLOT_BUSES > 0 && SLOT_BUSES <= BUS_MIX_MAX_BUSES,
                "SLOT_BUSES must fit bus_mix_active_mask's uint32_t");
@@ -272,19 +287,20 @@ typedef struct {
  * How much opaque state ONE BUS FX POSITION may carry in a patch file, and why
  * it is a thousandth of MAX_FX_STATE_LEN rather than the same number.
  *
- * A patch_info_t is a STACK local in v2_set_param's "load_file" route — i.e.
- * on the SPI callback's stack — and already ~160 KB here. Buses add
- * SLOT_BUSES * BUS_FX_SLOTS more state buffers, which at MAX_FX_STATE_LEN
- * would be another ~1 MB on that stack. 1 KB keeps the addition to ~64 KB.
+ * ⚠ Upstream's version of this note says a patch_info_t is a STACK local in
+ * v2_set_param's "load_file" route. It is NOT in this fork — that allocation is
+ * on the heap on purpose (see chain_host.c's load_file route), so the stack
+ * argument for a small cap does not apply here. The HEAP argument does, and it
+ * is the larger one anyway.
  *
- * ⚠ THE STACK IS THE SMALLER HALF OF THE COST. chain_instance_t embeds
+ * chain_instance_t embeds
  * patch_info_t patches[MAX_PATCHES], so every byte bus_config_t grows is
- * multiplied by 32 and lives on the heap for the life of the slot: ~79 KB of
- * bus config per patch is ~2.5 MB per chain instance and ~10 MB across four
- * slots, on top of what patches[] already costs (see the MAX_PATCHES warning
- * at the top of this file). At MAX_FX_STATE_LEN it would have been ~16 MB per
- * slot. Anyone raising this number must re-check that multiplier, not only the
- * stack frame.
+ * multiplied by 32 and lives on the heap for the life of the slot: a MEASURED
+ * +76.9 KB of bus config per patch is +2.50 MB per chain instance and ~10 MB
+ * across four slots, on top of what patches[] already costs (see the
+ * MAX_PATCHES warning at the top of this file). At MAX_FX_STATE_LEN it would
+ * have been ~16 MB per slot. Anyone raising this number must re-check that
+ * multiplier.
  *
  * It is not a truncation: v2_parse_patch_file drops a state that does not fit
  * and the field is left empty, so an over-long bus FX state comes back at the
