@@ -325,6 +325,54 @@ step('a full slot offers no New row — a click that does nothing is not shipped
     eq(M.modBusFirstFree(st), -1, 'nothing free');
 });
 
+/* ---- THE INSERT CHAIN --------------------------------------------------- */
+
+const FXCFG = JSON.stringify({
+    buses: [{ present: 1, name: 'Drums', orphans: 0, voices: [], sends: [0, 0],
+              fx: [{ module: 'tapescam', bypassed: 0 }, { module: '', bypassed: 0 },
+                   { module: 'psxverb', bypassed: 0 }] }],
+    main_sends: [0, 0],
+});
+
+step('an EMPTY chain is ONE `+`, not eight rows of nothing', () => {
+    const st = M.modBusInitState();
+    answers = { 'buses:config': CONFIG };
+    M.modBusRefreshConfig(st, 0);
+    const rows = M.modBusChainRows(st, 0);      /* Drums has no fx */
+    eq(rows.map((r) => r.kind), ['add'], 'one add row');
+});
+
+step('a HOLE keeps its row and is not compacted away', () => {
+    const st = M.modBusInitState();
+    answers = { 'buses:config': FXCFG };
+    M.modBusRefreshConfig(st, 0);
+    const rows = M.modBusChainRows(st, 0);
+    /* Positions up to the LAST loaded, then a `+`. The hole at 2 keeps its
+       place, because the config is never compacted and neither may the picture
+       of it — compacting would renumber every insert behind it. */
+    eq(rows.map((r) => r.id), ['fx1', 'fx2', 'fx3', 'add_fx'], 'rows');
+    eq(rows[1].module, '', 'the hole holds nothing');
+    eq(rows[2].module, 'psxverb', 'and the one behind it kept its index');
+});
+
+step('an insert key IS the DSP prefix — which is what lets openBlock serve it', () => {
+    eq(M.modBusInsertKey(0, 1), 'bus1:fx2', 'key');
+    eq(M.modBusParseInsertKey('bus1:fx2'), { bus: 0, fx: 1 }, 'round trip');
+    /* Out of range answers null so an impossible position is never handed to
+       the host as a real one. */
+    eq(M.modBusInsertKey(99, 0), null, 'bus past the cap');
+    eq(M.modBusInsertKey(0, 99), null, 'position past the cap');
+    /* And a SLOT chain key is not a bus key — the two namespaces must not
+       collide, or an edit lands on the track's own FX. */
+    eq(M.modBusParseInsertKey('fx2'), null, 'a slot key is not a bus key');
+    eq(M.modBusParseInsertKey('master_fx:fx2'), null, 'nor a master key');
+});
+
+step('a chain read that has not resolved offers NO rows rather than an empty chain', () => {
+    const st = M.modBusInitState();
+    eq(M.modBusChainRows(st, 0).length, 0, 'rows');
+});
+
 console.log(failed ? 'FAIL test_modbus_tristate' : 'PASS test_modbus_tristate');
 process.exit(failed);
 }

@@ -274,6 +274,7 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
        * voice multi-select. Only a BUS row has a menu — the New row creates and
        * a list must never carry a row that answers a click by doing nothing. */
       VIEW_MODBUS_GROUP = 31, VIEW_MODBUS_VOICES = 32,
+      VIEW_MODBUS_CHAIN = 33,   /* a bus's insert positions, as block rows */
       /* P7: the knob and LFO editors, absorbed from the host (they were
        * overlay services in P5). Sub-screens of slot settings. */
       VIEW_KNOBS = 11, VIEW_KNOB_TARGET = 12, VIEW_KNOB_PARAM = 13,
@@ -731,6 +732,7 @@ const S = {
     modBusActIdx: 0,
     modBusEditing: false,   /* a send row is taking the jog */
     modBusVoiceIdx: 0,
+    modBusChainIdx: 0,
     modBusConfirm: null,    /* { t: 'delete' } while the modal is up */
     modBusConfirmIdx: 0,
     slotCfgIdx: 0,
@@ -3226,6 +3228,28 @@ function renderModBusGroup() {
  * and clearing it is the only thing that clears the count, so it has to be
  * reachable.
  */
+/* ---- a bus's INSERTS -----------------------------------------------------
+ *
+ * davebox's block-row grammar, scoped to the bus: Click enters the loaded
+ * module's editor, Shift+Click changes it, and a `+` adds. That is deliberately
+ * the SAME grammar the track's own FX rows use — stock draws this as a
+ * horizontal chain diagram, and the davebox equivalent of a chain is its rows.
+ *
+ * ⚠ POSITIONAL, so the list is the occupied positions plus ONE `+` — not eight
+ * rows of "--". A hole left by a removed insert keeps its row and reads "--",
+ * because the config is never compacted and neither may the picture of it.
+ */
+function renderModBusChain() {
+    const rows = ModBus.modBusChainRows(S.modBus, S.modBusGroup);
+    if (!rows.length) { renderInChain([{ label: 'Reading...', hdr: true }], 0); return; }
+    renderInChain(rows.map((c) => (c.kind === 'add'
+        ? { label: '+ Add effect', hdr: true }
+        : { label: c.label, hdr: true,
+            value: c.module ? (engineModuleAbbrev(c.module) || c.module) : '--',
+            chevron: !!c.module })),
+        S.modBusChainIdx);
+}
+
 function renderModBusVoices() {
     const rows = ModBus.modBusVoiceRows(S.modBus, S.modBusGroup);
     if (!rows.length) { renderInChain([{ label: 'Reading...', hdr: true }], 0); return; }
@@ -3732,6 +3756,8 @@ const VIEW_TREE = {
                             crumb: () => modBusGroupName() },
     [VIEW_MODBUS_VOICES]: { parent: VIEW_MODBUS_GROUP, float: true,
                             crumb: () => 'Voices' },
+    [VIEW_MODBUS_CHAIN]:  { parent: VIEW_MODBUS_GROUP, float: true, backPure: true,
+                            crumb: () => 'Inserts' },
     [VIEW_LFO]:         { parent: VIEW_SLOTCFG,    float: true,
                           crumb: () => 'LFO ' + (S.lfoNum + 1) },
     [VIEW_KNOBLEGS]:    { parent: VIEW_KNOBS,      float: true,
@@ -5901,6 +5927,11 @@ function runActionBody(a) {
          * reach by itself. One action, next tick, after discovery is queued. */
         if (a.then) S.pendingAction = a.then;
     }
+    else if (a.t === 'modbusadd') {
+        /* The picker for one bus insert. Same catalogue as a chain FX block —
+         * openBrowse maps the key onto the fx spec. */
+        openBrowse(a.comp);
+    }
     else if (a.t === 'modbuscreate') {
         const at = ModBus.modBusCreate(S.modBus, S.slot);
         ModBus.modBusRefreshConfig(S.modBus, S.slot);
@@ -6079,8 +6110,14 @@ function openBrowse(comp, prompt) {
         if (bi >= 0) S.blockIdx = bi;
     }
     /* A bus component is `master_fx:fx2` etc; it browses the same audio-FX
-     * catalogue as a chain FX block, so map it onto that spec. */
-    const spec = COMPONENTS[S.comp] || (S.bus ? COMPONENTS.fx1 : null);
+     * catalogue as a chain FX block, so map it onto that spec.
+     *
+     * ⭑ A MODULE-BUS insert (`bus<N>:fx<K>`) is the third such shape and is NOT
+     * covered by `S.bus`, which is a MIXER position and is null on a chain
+     * track. Without this it browsed an empty catalogue — a picker that opens
+     * on nothing, which reads as "there are no effects". */
+    const spec = COMPONENTS[S.comp]
+        || (S.bus || ModBus.modBusParseInsertKey(S.comp) ? COMPONENTS.fx1 : null);
     const found = spec ? engineListModules(specKeyFor(S.comp)) : [];
     /* [ none ] first, and the cursor never resting on it, are one decision —
      * see buildBrowseList, which owns both and is pinned by tests. */
@@ -6909,6 +6946,9 @@ export function soundOnCC(d1, d2, decodeDelta) {
         } else if (S.view === VIEW_MODBUS_VOICES) {
             const n = ModBus.modBusVoiceRows(S.modBus, S.modBusGroup).length;
             if (n > 0) S.modBusVoiceIdx = listMove(n, S.modBusVoiceIdx, delta);
+        } else if (S.view === VIEW_MODBUS_CHAIN) {
+            const n = ModBus.modBusChainRows(S.modBus, S.modBusGroup).length;
+            if (n > 0) S.modBusChainIdx = listMove(n, S.modBusChainIdx, delta);
         } else if (S.view === VIEW_SLOTCFG) {
             slotCfgStep(delta);
         } else if (S.view === VIEW_KNOBS) {
@@ -7285,9 +7325,30 @@ export function soundOnCC(d1, d2, decodeDelta) {
                     S.modBusConfirmIdx = 0;
                     S.dirty = true;
                 }
-                /* 'chain' (the inserts) is not wired yet — it gets davebox's
-                 * block-row grammar, and until it does this row must do
-                 * NOTHING rather than half-open something. */
+                else if (it.id === 'chain') {
+                    S.modBusChainIdx = 0;
+                    S.view = VIEW_MODBUS_CHAIN; S.dirty = true;
+                }
+            }
+        }
+        else if (S.view === VIEW_MODBUS_CHAIN) {
+            const rows = ModBus.modBusChainRows(S.modBus, S.modBusGroup);
+            const c = rows[S.modBusChainIdx];
+            if (c) {
+                const key = ModBus.modBusInsertKey(S.modBusGroup,
+                    c.kind === 'add' ? rows.length - 1 : c.index);
+                /* The key IS the DSP prefix, so the ordinary block path serves a
+                 * bus insert unchanged: openBlock reads `<key>:module` and the
+                 * editor reads `<key>:ui_hierarchy`, both of which chain_bus.c
+                 * answers. Queued — discovery reads, so it is tick work. */
+                if (!key) { /* out of range: do nothing rather than guess */ }
+                else if (c.kind === 'add' || !c.module) {
+                    S.pendingAction = { t: 'modbusadd', comp: key };
+                } else if (S.shiftHeld) {
+                    S.pendingAction = { t: 'modbusadd', comp: key };   /* change */
+                } else {
+                    S.pendingAction = { t: 'open', comp: key };
+                }
             }
         }
         else if (S.view === VIEW_MODBUS_VOICES) {
@@ -9938,6 +9999,7 @@ export function soundRender() {
     else if (S.view === VIEW_MODBUS) renderModBus();
     else if (S.view === VIEW_MODBUS_GROUP) renderModBusGroup();
     else if (S.view === VIEW_MODBUS_VOICES) renderModBusVoices();
+    else if (S.view === VIEW_MODBUS_CHAIN) renderModBusChain();
     else if (S.view === VIEW_SLOTCFG) renderSlotCfg();
     else if (S.view === VIEW_KNOBS) renderKnobs();
     else if (S.view === VIEW_KNOBLEGS) renderKnobLegs();

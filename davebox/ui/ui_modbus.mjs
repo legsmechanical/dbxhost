@@ -228,6 +228,40 @@ export function modBusVoiceRowValue(row, st) {
     return BusModel.voiceRowValue(row, st ? st.config : null);
 }
 
+/*
+ * One bus's insert positions, as rows: every position up to the last loaded
+ * one, then a `+`.
+ *
+ * POSITIONAL AND NEVER COMPACTED — a hole in the middle stays a hole and reads
+ * "--", because bus_emit_config does not compact and neither may the picture of
+ * it. And an EMPTY chain is one `+`, not BUS_FX_SLOTS rows of nothing.
+ */
+export function modBusChainRows(st, groupIndex) {
+    const cfg = st && st.config;
+    if (!cfg || cfg.unresolved) return [];
+    const b = cfg.buses[groupIndex];
+    if (!b || !b.present) return [];
+    return BusModel.busChainComponents(b.fx);
+}
+
+/*
+ * The component key of one insert — "bus1:fx2".
+ *
+ * ⭐ IT IS THE DSP PREFIX AND THE EDITOR'S COMPONENT KEY AT THE SAME TIME, which
+ * is what lets davebox's existing block-row path address a bus insert with no
+ * mapping of its own: openBlock reads `<key>:module` and the editor reads
+ * `<key>:ui_hierarchy`, and chain_bus.c serves exactly those. Null outside the
+ * caps, so an out-of-range key is never handed to the host as a real position.
+ */
+export function modBusInsertKey(groupIndex, fxIndex) {
+    return BusModel.busComponentKey(groupIndex, fxIndex);
+}
+
+/** { bus, fx } 0-based for a "bus<N>:fx<K>" component key, or null. */
+export function modBusParseInsertKey(componentKey) {
+    return BusModel.parseBusComponentKey(componentKey);
+}
+
 /** The lowest free bus index, or -1 — what the New row acts on. */
 export function modBusFirstFree(st) { return BusModel.firstFreeBus(st ? st.config : null); }
 
