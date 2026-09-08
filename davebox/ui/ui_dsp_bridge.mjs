@@ -883,7 +883,8 @@ export function pollDSP() {
      * also refuses to serve chunk 0 in that condition; both belts stay.
      *
      * ⚠ Chunked because a single get_param crosses the shadow parameter
-     * transport, whose value buffer is 64 KB, and a full project of notes alone
+     * transport, whose value buffer is 128 KB since the #444 port (64 KB when
+     * this was written), and a full project of notes alone
      * approaches that before automation is counted. The old single-shot fetch
      * silently TRUNCATED there and this function wrote the cut blob straight to
      * disk, where it reloaded as a quietly smaller project.
