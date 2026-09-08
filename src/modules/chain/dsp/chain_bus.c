@@ -1183,3 +1183,104 @@ void chain_voice_sends_poll(chain_instance_t *inst, int n_voices)
     }
     inst->voice_send_poll_cursor = cursor;
 }
+
+/*
+ * ============================================================================
+ * chain_drain_sends — a slot's BUS audio into the shim's global send buses
+ * ============================================================================
+ *
+ * The bus buffers live inside this instance and the shim cannot see them: it
+ * receives only the slot's SUMMED output from render_block. So the shim hands
+ * its own send accumulators down here, once per frame after the render, and
+ * this walks the buses that actually rendered and adds each one's contribution.
+ *
+ * ⚠⚠ TWO DELIBERATE DIVERGENCES FROM UPSTREAM'S SIGNATURE, both because this
+ * fork's shim is shaped differently and bending it to upstream would be worse:
+ *
+ *   int32_t accumulators, not int16_t. accumulate_sends() in schwung_shim.c
+ *   sums into int32 for headroom and clamps ONCE at the end. Draining into
+ *   int16 here would saturate twice — a second, earlier clip the mixer cannot
+ *   see — so the scaling below matches bus_mix_send's arithmetic exactly and
+ *   accumulates without a clamp, leaving the single clamp where it already is.
+ *
+ *   a float gain, not 0..127. The shim's fader IS a float
+ *   (shadow_effective_volume * fade.gain) and accumulate_sends_ex already takes
+ *   one; quantising it to 127 steps here and back would add a rounding step
+ *   nothing asked for.
+ *
+ * POST-FADER, which is not an optimisation but the rule: mute and solo arrive
+ * as gain 0, and a muted slot that went on feeding the reverb is a bug nobody
+ * can find from the mixer.
+ */
+void chain_drain_sends(void *instance, int32_t *const *accum, int n_sends,
+                       int frames, float slot_gain) {
+    chain_instance_t *inst = (chain_instance_t *)instance;
+    if (!inst || !accum || n_sends <= 0 || frames <= 0) return;
+    /* The same clamp v2_render_block applies, for the same reason: the bus
+     * buffers hold BUS_BUF_SAMPLES and nothing below re-checks `frames`. */
+    if (frames > FRAMES_PER_BLOCK) frames = FRAMES_PER_BLOCK;
+    if (!(slot_gain > 0.0f)) return;      /* a closed fader sends nothing */
+    /* The caller's count wins when it is SMALLER; our arrays cap it when it is
+     * larger — an older shim asking for fewer sends than we carry gets the ones
+     * it asked for rather than a write past the end of its table. */
+    int ns = (n_sends < BUS_MIX_SENDS) ? n_sends : BUS_MIX_SENDS;
+
+    for (int b = 0; b < SLOT_BUSES; b++) {
+        /* THIS FRAME's answer. "has a buffer" is not "was rendered": a bus
+         * whose last voice moved to Main keeps its buffer, and draining on
+         * buf != NULL would send its final 128 frames forever — a drone with
+         * no note behind it. */
+        if (!(inst->bus_rendered_mask & (1u << b))) continue;
+        /* Plain load, NOT the __ATOMIC_ACQUIRE v2_render_block uses on the same
+         * field: sound only because bus_rendered_mask names this bus for this
+         * frame, and that bit is set only after that acquire load returned
+         * non-NULL, on this same thread, earlier in the same frame. Anyone
+         * hoisting this pattern elsewhere needs that ordering or the acquire. */
+        const int16_t *buf = inst->buses[b].buf;
+        if (!buf) continue;               /* the mask should preclude it; total and cheap */
+        for (int sd = 0; sd < ns; sd++) {
+            if (!accum[sd]) continue;
+            int lvl = inst->buses[b].send_level[sd];
+            if (lvl <= 0) continue;
+            if (lvl > BUS_MIX_SEND_LEVEL_MAX) lvl = BUS_MIX_SEND_LEVEL_MAX;
+            const float g = ((float)lvl / (float)BUS_MIX_SEND_LEVEL_MAX) * slot_gain;
+            for (int i = 0; i < frames * 2; i++)
+                accum[sd][i] += (int32_t)lrintf((float)buf[i] * g);
+        }
+    }
+
+    /*
+     * PER-VOICE SENDS, into the SAME accumulators the buses just fed.
+     *
+     * Taken here rather than inside v2_render_block for one reason that is not
+     * a preference: `accum` does not exist there. The shim owns the global send
+     * buses and hands them to this call, after the render, together with the
+     * slot's gain — so this is the only point at which a per-voice send can be
+     * both taken from the voice's own audio AND scaled by the fader.
+     *
+     * POST-FADER like the per-bus send above, and for the same reason: mute and
+     * solo arrive as gain 0, and a muted slot still feeding the reverb is a bug
+     * nobody could find from the mixer. PRE-INSERT is the half that differs —
+     * voice_send_buf[i] is what the MODULE rendered, before the bus's chain ran
+     * on the sum.
+     *
+     * The mask is THIS frame's (v2_render_block clears it on every path,
+     * bypass included), so a voice whose level was just zeroed stops sending
+     * immediately rather than draining a stale pool slot forever.
+     */
+    if (inst->voice_send_mask) {
+        for (int i = 0; i < SPLIT_VOICES_MAX; i++) {
+            if (!(inst->voice_send_mask & (1u << i))) continue;
+            for (int sd = 0; sd < ns; sd++) {
+                if (!accum[sd]) continue;
+                int lvl = (int)inst->voice_send[i][sd];
+                if (lvl <= 0) continue;
+                if (lvl > BUS_MIX_SEND_LEVEL_MAX) lvl = BUS_MIX_SEND_LEVEL_MAX;
+                const float g = ((float)lvl / (float)BUS_MIX_SEND_LEVEL_MAX) * slot_gain;
+                const int16_t *vb = inst->voice_send_buf[i];
+                for (int n = 0; n < frames * 2; n++)
+                    accum[sd][n] += (int32_t)lrintf((float)vb[n] * g);
+            }
+        }
+    }
+}

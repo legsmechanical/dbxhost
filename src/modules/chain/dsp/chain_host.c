@@ -587,6 +587,10 @@ int v2_load_synth(chain_instance_t *inst, const char *module_name) {
      * map is rebuilt here as well as on every assignment change. The buses'
      * stored ids survive the swap untouched — see v2_unload_synth. */
     chain_bus_rebuild_voice_map(inst);
+    /* AFTER parse_chain_params above, and it must be: the range a per-voice
+     * send level is mapped from comes out of inst->synth_params, so a load that
+     * read the declaration first would find no metadata and refuse every send. */
+    chain_voice_sends_load(inst);
 
     /* Parse default_forward_channel from capabilities in module.json */
     inst->synth_default_forward_channel = -1;  /* Default: no forwarding preference */
@@ -1005,6 +1009,12 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
             if (inst->synth_plugin_v2 && inst->synth_instance && inst->synth_plugin_v2->set_param) {
                 inst->synth_plugin_v2->set_param(inst->synth_instance, subkey, val);
             }
+            /* A write that LOOKS like one of the module's declared per-voice
+             * send keys arms a full re-read next frame. It does NOT set a level
+             * from `val`: the module is still the authority — it may clamp, and
+             * the key may be a focus alias naming a voice we cannot resolve —
+             * so this says "ask again now", never "the answer is". */
+            chain_voice_sends_touch(inst, subkey);
             inst->dirty = 1;
         }
     }
@@ -2523,6 +2533,12 @@ static void v2_render_block(void *instance, int16_t *out_interleaved_lr, int fra
     /* Reset EVERY frame and before any early return: a stale mask would keep
      * reporting the last frame a bus was heard on, forever. */
     inst->bus_rendered_mask = 0;
+    /* Same rule, same reason: a stale solo mask would keep draining the last
+     * frame a voice was heard on, forever, out of a pool slot nothing is
+     * writing any more. */
+    inst->voice_send_mask = 0;
+    uint32_t solo_mask = 0;
+    int n_solo = 0;
     /* voice_out[] below is a SPLIT_VOICES_MAX stack array on the SPI callback,
      * and synth_split_voice_count's bound lives in another file
      * (split_voices_parse.h). Clamp locally so a bad count from that path is a
@@ -2539,37 +2555,25 @@ static void v2_render_block(void *instance, int16_t *out_interleaved_lr, int fra
         n_active = bus_mix_active_mask(inst->voice_bus, nv,
                                        SLOT_BUSES, bus_bufs, &active_bus_mask);
         inst->bus_rendered_mask = active_bus_mask;
-        /*
-         * ⚠ PER-VOICE SENDS ARE NOT WIRED IN THIS SLICE, DELIBERATELY, AND THE
-         * ABSENCE IS WHOLE RATHER THAN PARTIAL.
-         *
-         * The machinery is ported and unit-tested — bus_mix's solo partition
-         * (bus_mix_solo_mask / bus_mix_build_table_split), the module-owned
-         * level cache (chain_voice_sends_load / _poll / _touch), and
-         * voice_send_buf[] — but NOTHING CALLS IT, on purpose. A voice's send
-         * only becomes audible in the DRAIN that folds bus and voice audio into
-         * the slot's send buses, and that drain lands on this fork's own
-         * send-FX path, which is where it has diverged most.
-         *
-         * So the choice here was between a coherent absence and a half-live
-         * cache: calling _load and _touch without _poll gives a cache that is
-         * filled and invalidated but never refreshed, and calling _poll without
-         * the drain spends get_param round trips ON THE SPI CALLBACK for values
-         * nothing reads. Neither is worth having. When the drain lands, all
-         * four go in together — _poll FIRST, before the solo mask, or the
-         * partition decides this frame from last frame's answer and a send
-         * raised from zero is inaudible for an extra frame.
-         *
-         * Until then a voice's audio reaches its bus and that bus's inserts,
-         * which is the whole of what this slice claims.
-         */
+        /* Refresh a bounded slice of the module's own send levels FIRST — the
+         * mask below is computed from that cache, so polling after it would
+         * decide this frame's partition from LAST frame's answer, and a send
+         * raised from zero would be inaudible for one extra frame. */
+        chain_voice_sends_poll(inst, nv);
+        n_solo = bus_mix_solo_mask(&inst->voice_send[0][0], nv,
+                                   BUS_MIX_SENDS, &solo_mask);
+        inst->voice_send_mask = solo_mask;
     }
 
     /* Always render so synth state advances (envelopes, LFOs, phases).
      * If bypassed, zero the buffer afterward — downstream FX still see
      * silence as input but the synth's internal time doesn't freeze, so
      * unbypass resumes cleanly without a burst. */
-    if (n_active > 0) {
+    /* `|| n_solo > 0` is NOT defensive: a 32-pad rack with a send on every pad
+     * and NOT ONE BUS is the reference case for per-voice sends, and gating on
+     * n_active alone would take the plain render_block path and never take a
+     * send at all. */
+    if (n_active > 0 || n_solo > 0) {
         /* The split render ACCUMULATES, so its destinations are cleared first —
          * main, and ONLY the distinct bus buffers the mask names. An allocated
          * but unrouted bus is never touched, which is what keeps an unused bus
@@ -2582,15 +2586,46 @@ static void v2_render_block(void *instance, int16_t *out_interleaved_lr, int fra
             if ((active_bus_mask & (1u << b)) && bus_bufs[b])
                 memset(bus_bufs[b], 0, frames * 2 * sizeof(int16_t));
         }
+        /* And ONLY the pool slots the solo mask names, for the same reason:
+         * clearing all SPLIT_VOICES_MAX would spend 16 KB a frame on a feature
+         * nobody switched on. */
+        for (int i = 0; i < SPLIT_VOICES_MAX; i++) {
+            if (solo_mask & (1u << i))
+                memset(inst->voice_send_buf[i], 0, frames * 2 * sizeof(int16_t));
+        }
 
         /* Entries ALIAS deliberately: voices sharing a bus get the same
          * pointer, so their sum happens inside the module's own accumulating
          * render with no mixing pass of ours at all. */
         int16_t *voice_out[SPLIT_VOICES_MAX];
-        bus_mix_build_table(voice_out, nv, inst->voice_bus,
-                            out_interleaved_lr, bus_bufs, SLOT_BUSES);
+        bus_mix_build_table_split(voice_out, nv, inst->voice_bus,
+                                  out_interleaved_lr, bus_bufs, SLOT_BUSES,
+                                  solo_mask, &inst->voice_send_buf[0][0],
+                                  BUS_BUF_SAMPLES);
         inst->synth_render_split(inst->synth_instance, voice_out,
                                  nv, out_interleaved_lr, frames);
+
+        /*
+         * Fold each solo-buffered voice back into the destination it would have
+         * had. AFTER the render and BEFORE the inserts, which is the whole
+         * point: the voice's send is taken from its OWN pre-insert audio (in
+         * chain_drain_sends, out of the same pool slot), and its audio still
+         * has to reach its bus and run through that bus's chain exactly as an
+         * unsent voice's does.
+         *
+         * bus_mix_voice_dest, not a second copy of the routing: the fold-back
+         * and the table build must agree about where a voice belongs, or the
+         * audio lands somewhere its send was not taken from.
+         */
+        if (solo_mask) {
+            for (int i = 0; i < nv; i++) {
+                if (!(solo_mask & (1u << i))) continue;
+                int16_t *dest = bus_mix_voice_dest(i, inst->voice_bus,
+                                                   out_interleaved_lr,
+                                                   bus_bufs, SLOT_BUSES);
+                bus_mix_accumulate(dest, inst->voice_send_buf[i], frames * 2);
+            }
+        }
 
         /* Per-bus inserts, in series, with the main chain's bypass discipline:
          * always process so delay lines and reverb tails keep advancing, and
@@ -2654,6 +2689,9 @@ static void v2_render_block(void *instance, int16_t *out_interleaved_lr, int fra
          * main chain), so their tails have advanced — zeroing the mask only
          * stops anything downstream from reading them this frame. */
         inst->bus_rendered_mask = 0;
+        /* Same for the per-voice pool: the slots still hold this frame's audio
+         * and chain_drain_sends does not know about synth_bypassed. */
+        inst->voice_send_mask = 0;
     }
 
     /* In external_fx_mode, output raw synth only — skip inject and FX.
