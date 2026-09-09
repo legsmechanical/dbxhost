@@ -4,35 +4,239 @@
  * standalone — relies on seq8.c's prior type/decl context. */
 /* --- State persistence (Option C: cold-boot recovery) ------------------- */
 
+/* --- JSON key index ----------------------------------------------------
+ * Every getter below used to strstr() from the START of the whole buffer, so
+ * a load cost O(keys x filesize). Measured 2026-09-08 on this tree:
+ * seq8_load_state issues 14,931 full-buffer scans, and the count is fixed by
+ * the loop bounds (NUM_TRACKS x NUM_CLIPS), NOT by content — so a brand-new
+ * EMPTY project scanned 64.9 MB to parse its own 4.4 KB file, and 95-97% of
+ * seq8_load_state's time was inside strstr. All of it on the SPI callback.
+ * (`param-slow` named it on device as overtake_dsp:state_load, 7.8-38.9 ms
+ * against a 2.9 ms audio block.)
+ *
+ * This is one pass that records where each `"name":` occurs; the getters then
+ * probe a hash table instead of rescanning.
+ *
+ * ⚠⚠ EQUIVALENCE WITH strstr IS THE WHOLE CONTRACT, and it is subtler than it
+ * looks. strstr finds the FIRST occurrence of `"name":` ANYWHERE, including
+ * inside a value — so the index must register every such position, keep the
+ * FIRST for a repeated name, and must not "parse" its way past one.
+ * That is why the scan below restarts at every opening quote (i+1) rather
+ * than skipping to the end of the string it just read: on `"a"b":1` the
+ * skipping version misses `"b":` and strstr does not. Since every needle is
+ * `"<key>":` and no key contains a quote, "the first quote after position i"
+ * IS the needle's closing quote, so scanning from each quote position gives
+ * exactly strstr's match set.
+ *
+ * Anything unexpected (overflow, an unterminated string) sets buf = NULL and
+ * every getter falls back to strstr, so the index is never load-bearing for
+ * correctness. Under SEQ8_TESTING each lookup is cross-checked against the
+ * strstr it replaces and a disagreement aborts — the whole suite therefore
+ * runs both implementations and compares.
+ *
+ * Single-threaded by construction: seq8_load_state runs on the SPI callback
+ * only, one instance at a time. */
+#define JIDX_CAP       2048   /* power of two; real files carry 324-451 keys */
+#define JIDX_MAX_KEYS  1024   /* load factor 0.5 — beyond this, fall back */
+#define JIDX_MAX_NAME    63   /* a longer name cannot be a needle: the getters
+                               * build them with snprintf into char[64]/[48] */
+
+typedef struct {
+    const char *name;   /* into the state buffer; NOT nul-terminated */
+    const char *val;    /* first char after the ':' */
+    uint16_t    nlen;
+} jidx_ent_t;
+
+static struct {
+    const char *buf;    /* the buffer this index describes; NULL = unusable */
+    int         count;
+    jidx_ent_t  slot[JIDX_CAP];
+} g_jidx;
+
+static uint32_t jidx_hash(const char *s, uint16_t n) {
+    uint32_t h = 2166136261u;   /* FNV-1a */
+    uint16_t i;
+    for (i = 0; i < n; i++) { h ^= (uint8_t)s[i]; h *= 16777619u; }
+    return h;
+}
+
+/* First writer wins, matching strstr's first-occurrence semantics. */
+static void jidx_insert(const char *name, uint16_t nlen, const char *val) {
+    uint32_t i = jidx_hash(name, nlen) & (JIDX_CAP - 1);
+    for (;;) {
+        jidx_ent_t *e = &g_jidx.slot[i];
+        if (!e->name) {
+            e->name = name; e->nlen = nlen; e->val = val;
+            g_jidx.count++;
+            return;
+        }
+        if (e->nlen == nlen && !memcmp(e->name, name, nlen)) return;  /* keep the first */
+        i = (i + 1) & (JIDX_CAP - 1);
+    }
+}
+
+/* Invalidate BEFORE the buffer is freed. A freed pointer can be handed back by
+ * the next malloc, and a stale g_jidx.buf would then alias a DIFFERENT buffer
+ * and answer every lookup with garbage — silently, into a loaded project.
+ * Every free of the state buffer goes through seq8_load_buf_free() for this
+ * reason; do not add a bare free(). */
+static void jidx_release(void) {
+    g_jidx.buf = NULL;
+    g_jidx.count = 0;
+}
+
+static void seq8_load_buf_free(char *buf) {
+    jidx_release();
+    free(buf);
+}
+
+static void jidx_build(const char *buf) {
+    const char *p = buf;
+    jidx_release();
+    memset(g_jidx.slot, 0, sizeof g_jidx.slot);
+    while (*p) {
+        if (*p != '"') { p++; continue; }
+        {
+            const char *ns = p + 1;
+            const char *ne = ns;
+            int n = 0;
+            while (*ne && *ne != '"' && n <= JIDX_MAX_NAME) { ne++; n++; }
+            if (*ne == '"' && ne[1] == ':' && n > 0 && n <= JIDX_MAX_NAME) {
+                if (g_jidx.count >= JIDX_MAX_KEYS) { jidx_release(); return; }
+                jidx_insert(ns, (uint16_t)n, ne + 2);
+            }
+        }
+        p++;   /* restart at the NEXT quote position — see the note above */
+    }
+    g_jidx.buf = buf;
+}
+
+/* 1 = the index is usable and *out_val is the value pointer (NULL if the key
+ * is genuinely absent). 0 = not usable; the caller must strstr. */
+static int jidx_lookup(const char *buf, const char *key, const char **out_val) {
+    uint16_t nlen;
+    uint32_t i;
+    size_t kl;
+    if (g_jidx.buf != buf) return 0;
+    kl = strlen(key);
+    if (kl == 0 || kl > JIDX_MAX_NAME) return 0;
+    nlen = (uint16_t)kl;
+    i = jidx_hash(key, nlen) & (JIDX_CAP - 1);
+    for (;;) {
+        const jidx_ent_t *e = &g_jidx.slot[i];
+        if (!e->name) { *out_val = NULL; return 1; }
+        if (e->nlen == nlen && !memcmp(e->name, key, nlen)) { *out_val = e->val; return 1; }
+        i = (i + 1) & (JIDX_CAP - 1);
+    }
+}
+
+#ifdef SEQ8_TESTING
+/* Counts every lookup that had to fall back to a full-buffer strstr. On a
+ * well-formed project file this must be ZERO: a non-zero count means the
+ * index went unusable and the O(keys x filesize) behaviour is silently back.
+ * Pinned by test_jidx_equivalence.c — the correctness tests cannot see this,
+ * because falling back is CORRECT, just catastrophically slow. */
+static long jidx_fallbacks = 0;
+/* The index must answer exactly what the strstr it replaced would have.
+ * `got` is the value pointer the getter is about to use (or NULL); `needle`
+ * is the literal string the old code searched for. */
+static long jidx_xchecks = 0;
+static void jidx_xcheck(const char *buf, const char *needle, const char *got) {
+    const char *s = strstr(buf, needle);
+    const char *want = s ? s + strlen(needle) : NULL;
+    if (want != got) {
+        fprintf(stderr, "JIDX MISMATCH needle=%s index=%p strstr=%p\n",
+                needle, (const void *)got, (const void *)want);
+        abort();
+    }
+    jidx_xchecks++;
+}
+#define JIDX_XCHECK(buf, needle, got) jidx_xcheck((buf), (needle), (got))
+/* Builds the needle itself, so the shipped build never formats one. */
+#define JIDX_XCHECK_KEY(buf, key, fmt, got) do { \
+    char _n[80]; snprintf(_n, sizeof(_n), (fmt), (key)); \
+    jidx_xcheck((buf), _n, (got)); \
+} while (0)
+#define JIDX_FELL_BACK() (jidx_fallbacks++)
+#else
+#define JIDX_XCHECK(buf, needle, got) ((void)0)
+#define JIDX_XCHECK_KEY(buf, key, fmt, got) ((void)0)
+#define JIDX_FELL_BACK() ((void)0)
+#endif
+
+
 static int json_get_int(const char *buf, const char *key, int def) {
-    char search[64];
-    snprintf(search, sizeof(search), "\"%s\":", key);
-    const char *p = strstr(buf, search);
+    const char *p;
+    /* ⚠ The needle is built ONLY where it is used. Building it eagerly cost
+     * ~12,400 snprintf calls per load — half of all snprintf traffic — for a
+     * string the index path never reads. */
+    if (jidx_lookup(buf, key, &p)) {
+        JIDX_XCHECK_KEY(buf, key, "\"%s\":", p);
+    } else {
+        char search[64];
+        JIDX_FELL_BACK();
+        snprintf(search, sizeof(search), "\"%s\":", key);
+        p = strstr(buf, search);
+        if (p) p += strlen(search);
+    }
     if (!p) return def;
-    p += strlen(search);
     while (*p == ' ') p++;
     return my_atoi(p);
 }
 
 static uint32_t json_get_uint(const char *buf, const char *key, uint32_t def) {
-    char search[64];
-    snprintf(search, sizeof(search), "\"%s\":", key);
-    const char *p = strstr(buf, search);
+    const char *p;
+    if (jidx_lookup(buf, key, &p)) {
+        JIDX_XCHECK_KEY(buf, key, "\"%s\":", p);
+    } else {
+        char search[64];
+        JIDX_FELL_BACK();
+        snprintf(search, sizeof(search), "\"%s\":", key);
+        p = strstr(buf, search);
+        if (p) p += strlen(search);
+    }
     if (!p) return def;
-    p += strlen(search);
     while (*p == ' ') p++;
     uint32_t v = 0;
     while (*p >= '0' && *p <= '9') { v = v * 10u + (uint32_t)(*p++ - '0'); }
     return v;
 }
 
+/* The string getters search for `"key":"` — a needle one char longer than the
+ * index's. The index answers for `"key":`, so:
+ *   absent from the index  -> `"key":` does not occur at all, so neither does
+ *                             `"key":"`; the caller returns untouched.
+ *   present, value is `"`  -> use it (the common case).
+ *   present, value is NOT  -> fall back to strstr. A LATER `"key":"` could
+ *                             still exist (the index keeps the FIRST `"key":`,
+ *                             which is not necessarily the first quoted one),
+ *                             and silently returning "absent" there would
+ *                             diverge from the code this replaces.
+ * Returns 1 with *out set past the opening quote, or 0 for "nothing to do". */
+static int json_str_value(const char *buf, const char *key, const char **out) {
+    char search[64];
+    const char *p;
+    if (jidx_lookup(buf, key, &p)) {
+        if (!p) return 0;                    /* genuinely absent */
+        if (*p == '"') {
+            *out = p + 1;
+            JIDX_XCHECK_KEY(buf, key, "\"%s\":\"", *out);
+            return 1;
+        }
+        /* fall through to strstr */
+    }
+    JIDX_FELL_BACK();
+    snprintf(search, sizeof(search), "\"%s\":\"", key);
+    p = strstr(buf, search);
+    if (!p) return 0;
+    *out = p + strlen(search);
+    return 1;
+}
+
 static void json_get_steps(const char *buf, const char *key,
                             uint8_t *steps, int n) {
-    char search[64];
-    snprintf(search, sizeof(search), "\"%s\":\"", key);
-    const char *p = strstr(buf, search);
-    if (!p) return;
-    p += strlen(search);
+    const char *p;
+    if (!json_str_value(buf, key, &p)) return;
     int i;
     for (i = 0; i < n && *p && *p != '"'; i++, p++)
         steps[i] = (*p == '1') ? 1 : 0;
@@ -42,11 +246,8 @@ static void json_get_steps(const char *buf, const char *key,
  * Entries not present in the sparse string are left unchanged. */
 static void json_get_sparse_int(const char *buf, const char *key,
                                 int *out, int count) {
-    char search[64];
-    snprintf(search, sizeof(search), "\"%s\":\"", key);
-    const char *p = strstr(buf, search);
-    if (!p) return;
-    p += strlen(search);
+    const char *p;
+    if (!json_str_value(buf, key, &p)) return;
     while (*p && *p != '"') {
         int sidx = 0;
         while (*p >= '0' && *p <= '9') sidx = sidx * 10 + (*p++ - '0');
@@ -59,6 +260,48 @@ static void json_get_sparse_int(const char *buf, const char *key,
         if (sidx >= 0 && sidx < count) out[sidx] = val * sign;
         if (*p == ';') p++;
     }
+}
+
+/* Value pointer for a STRING-valued key (past the opening quote), or NULL.
+ * The index-backed equivalent of the bare `strstr(buf, "\"key\":\"")` that
+ * seq8_load_state used to open-code at six sites — several of them existence
+ * probes nested track x clip x lane deep, i.e. thousands of whole-file scans
+ * to answer "is this key present". */
+static const char *json_str_at(const char *buf, const char *key) {
+    const char *p;
+    return json_str_value(buf, key, &p) ? p : NULL;
+}
+
+/* --- Cheap key builder for the load path's hot loops --------------------
+ * These keys are literals concatenated with small non-negative ints, and the
+ * loops that build them are 8 tracks x 16 clips x 32 lanes deep. snprintf
+ * dominated what was left of the load once the strstr rescanning was gone:
+ * 15,484 calls per load of the real project-25 file, ~50% of
+ * seq8_load_state. This is the same defect class as the index it sits next
+ * to — not misplaced work, just the same cheap thing tens of thousands of
+ * times.
+ *
+ * ⚠ A mis-built key does not crash: it reads as ABSENT, and the setting it
+ * names silently keeps its default in the user's project. tests/test_key_builder.c
+ * therefore pins kb() against snprintf EXHAUSTIVELY, over every shape and
+ * every index the loader can pass. */
+static char *kb_put(char *p, const char *s) { while (*s) *p++ = *s++; return p; }
+static char *kb_num(char *p, int v) {          /* 0..999, exactly as %d prints */
+    if (v >= 100) { *p++ = (char)('0' + v / 100); v %= 100;
+                    *p++ = (char)('0' + v / 10);  *p++ = (char)('0' + v % 10); }
+    else if (v >= 10) { *p++ = (char)('0' + v / 10); *p++ = (char)('0' + v % 10); }
+    else *p++ = (char)('0' + v);
+    return p;
+}
+/* "<l1><i1><l2><i2><l3>[<i3>][<l4>]" — i3 < 0 omits it, l4 NULL omits it. */
+static void kb(char *out, const char *l1, int i1, const char *l2, int i2,
+               const char *l3, int i3, const char *l4) {
+    char *p = out;
+    p = kb_put(p, l1); p = kb_num(p, i1);
+    p = kb_put(p, l2); p = kb_num(p, i2);
+    p = kb_put(p, l3); if (i3 >= 0) p = kb_num(p, i3);
+    if (l4) p = kb_put(p, l4);
+    *p = '\0';
 }
 
 static void ensure_parent_dir(const char *path) {
@@ -89,11 +332,8 @@ static void write_step_hex_arr(FILE *fp, const char *key,
 
 static void parse_step_hex_arr(const char *buf, const char *key,
                                uint8_t *arr, uint16_t len, int max_val) {
-    char search[48];
-    snprintf(search, sizeof(search), "\"%s\":\"", key);
-    const char *p = strstr(buf, search);
-    if (!p) return;
-    p += strlen(search);
+    const char *p;
+    if (!json_str_value(buf, key, &p)) return;
     int i;
     for (i = 0; i < (int)len && *p && *p != '"'; i++) {
         int hi = -1, lo = -1;
@@ -541,8 +781,10 @@ static void seq8_load_state(seq8_instance_t *inst) {
     if (!buf) { fclose(fp); return; }
     size_t n = fread(buf, 1, (size_t)fsz, fp);
     fclose(fp);
-    if (!n) { free(buf); remove(inst->state_path); return; }
+    if (!n) { seq8_load_buf_free(buf); remove(inst->state_path); return; }
     buf[n] = '\0';
+    /* One pass, so the ~15k getter lookups below stop rescanning the file. */
+    jidx_build(buf);
 
     /* Version gate: only v=36 accepted. Clear Session sentinel (v=0) is silently
      * wiped. Genuine old-format files (v>0 && v!=36) defer deletion behind a JS
@@ -556,7 +798,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
     {
         int sv = json_get_int(buf, "v", -1);
         if (sv != 36) {
-            free(buf);
+            seq8_load_buf_free(buf);
             pa_reset_all(inst);
             if (sv > 0 && !inst->state_version_mismatch) {
                 inst->state_version_mismatch = 1;
@@ -696,11 +938,10 @@ static void seq8_load_state(seq8_instance_t *inst) {
 
             /* note list: "tick:pitch:vel:gate;" */
             {
-                char search[40];
-                snprintf(search, sizeof(search), "\"t%dc%d_n\":\"", t, c);
-                const char *p = strstr(buf, search);
+                char nkey[32];
+                snprintf(nkey, sizeof(nkey), "t%dc%d_n", t, c);
+                const char *p = json_str_at(buf, nkey);
                 if (p) {
-                    p += strlen(search);
                     /* Accept any tick within storage capacity. Notes outside the
                      * loop window are preserved; clip_len bound would drop them. */
                     uint32_t max_tick = (uint32_t)SEQ_STEPS * cl->ticks_per_step;
@@ -739,11 +980,10 @@ static void seq8_load_state(seq8_instance_t *inst) {
     /* Snapshots */
     {
         int n;
-        char search[32], skey[12];
+        char skey[12];
         for (n = 0; n < 16; n++) {
-            snprintf(search, sizeof(search), "\"sn%d_m\":\"", n);
-            if (!strstr(buf, search)) continue;
             snprintf(skey, sizeof(skey), "sn%d_m", n);
+            if (!json_str_at(buf, skey)) continue;
             json_get_steps(buf, skey, inst->snap_mute[n], NUM_TRACKS);
             snprintf(skey, sizeof(skey), "sn%d_s", n);
             json_get_steps(buf, skey, inst->snap_solo[n], NUM_TRACKS);
@@ -794,7 +1034,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
               snprintf(key, sizeof(key), "t%dl%dr2rt", t, l);
               tr_r->drum_repeat2_rate_idx[l] = (uint8_t)clamp_i(json_get_int(buf, key, 2), 0, 7);
               for (s = 0; s < 8; s++) {
-                  snprintf(key, sizeof(key), "t%dl%drvs%d", t, l, s);
+                  kb(key, "t", t, "l", l, "rvs", s, NULL);
                   /* Absolute 1..127, 255 = Thru (default). Legacy percent saves:
                    * 100% meant "unscaled held-pad vel" = Thru exactly; other
                    * percents (and anything >127) clamp into the absolute range.
@@ -807,7 +1047,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
                       else _gl = clamp_i(_gl, 1, 127);
                       tr_r->drum_repeat_vel_scale[l][s] = (uint8_t)_gl;
                   }
-                  snprintf(key, sizeof(key), "t%dl%drn%d", t, l, s);
+                  kb(key, "t", t, "l", l, "rn", s, NULL);
                   tr_r->drum_repeat_nudge[l][s] = (int8_t)clamp_i(json_get_int(buf, key, 0), -50, 50);
               }
           }
@@ -870,10 +1110,9 @@ static void seq8_load_state(seq8_instance_t *inst) {
           for (_ca2 = 0; _ca2 < NUM_CLIPS; _ca2++) {
               at_auto_t *_ata = &inst->tracks[_ta].clip_at_auto[_ca2];
               for (_la = 0; _la < AT_MAX_LANES; _la++) {
-                  snprintf(_ats, sizeof(_ats), "\"t%dc%dat%d\":\"", _ta, _ca2, _la);
-                  const char *_qp = strstr(buf, _ats);
+                  kb(_ats, "t", _ta, "c", _ca2, "at", _la, NULL);
+                  const char *_qp = json_str_at(buf, _ats);
                   if (!_qp) continue;
-                  _qp += strlen(_ats);
                   int _pp = 0;
                   while (*_qp >= '0' && *_qp <= '9') _pp = _pp * 10 + (*_qp++ - '0');
                   if (*_qp != '|') continue;
@@ -962,7 +1201,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
             {
                 int _i;
                 for (_i = 0; _i < 8; _i++) {
-                    snprintf(key, sizeof(key), "t%dc%d_arsv%d", t, c, _i);
+                    kb(key, "t", t, "c", c, "_arsv", _i, NULL);
                     /* Absolute velocity / Thru; legacy 5-state levels map up (see tasv). */
                     {
                         int _lv = json_get_int(buf, key, 255);
@@ -970,7 +1209,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
                         else if (_lv > 127) _lv = 255;
                         p2->seq_arp_step_vel[_i] = (uint8_t)_lv;
                     }
-                    snprintf(key, sizeof(key), "t%dc%d_arsi%d", t, c, _i);
+                    kb(key, "t", t, "c", c, "_arsi", _i, NULL);
                     p2->seq_arp_step_int[_i] = (int8_t)clamp_i(json_get_int(buf, key, 0), -24, 24);
                 }
             }
@@ -1002,8 +1241,10 @@ static void seq8_load_state(seq8_instance_t *inst) {
                 drum_lane_t *dl = &inst->tracks[t].drum_clips[c]->lanes[l];
                 clip_t *dlc = &dl->clip;
                 char search[48];
-                snprintf(search, sizeof(search), "\"t%dc%dl%d_n\":\"", t, c, l);
-                if (!strstr(buf, search)) continue;
+                const char *lane_notes;
+                kb(search, "t", t, "c", c, "l", l, "_n");
+                lane_notes = json_str_at(buf, search);
+                if (!lane_notes) continue;
                 snprintf(key, sizeof(key), "t%dc%dl%d_mn", t, c, l);
                 dl->midi_note = (uint8_t)clamp_i(
                     json_get_int(buf, key, DRUM_BASE_NOTE + l), 0, 127);
@@ -1028,8 +1269,10 @@ static void seq8_load_state(seq8_instance_t *inst) {
                     dlc->ticks_per_step = valid ? (uint16_t)raw_tps : TICKS_PER_STEP;
                 }
                 {
-                    const char *p = strstr(buf, search);
-                    p += strlen(search);
+                    /* Reuse the pointer the presence probe above already found.
+                     * The old code re-scanned and then dereferenced WITHOUT a
+                     * NULL check, safe only because the probe guaranteed a hit. */
+                    const char *p = lane_notes;
                     /* Accept any tick within storage capacity. Notes outside the
                      * loop window are preserved; length bound would drop them. */
                     uint32_t max_tick = (uint32_t)SEQ_STEPS * dlc->ticks_per_step;
@@ -1137,11 +1380,10 @@ static void seq8_load_state(seq8_instance_t *inst) {
                 snprintf(k, sizeof(k), "t%dc%d_cwhn", t, c);
                 json_get_steps(buf, k, _cl->cond_when, NUM_TRACKS);
                 /* octave: 8 space-separated signed ints, clamp -4..+4 */
-                snprintf(k, sizeof(k), "\"t%dc%d_coct\":\"", t, c);
+                snprintf(k, sizeof(k), "t%dc%d_coct", t, c);
                 {
-                    const char *p = strstr(buf, k);
+                    const char *p = json_str_at(buf, k);
                     if (p) {
-                        p += strlen(k);
                         for (ci = 0; ci < NUM_TRACKS && *p && *p != '"'; ci++) {
                             while (*p == ' ') p++;
                             int sign = 1;
@@ -1191,7 +1433,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
     /* Automation. Resets the store first, so a project without a "pa" section
      * ends up with no automation rather than inheriting the last project's. */
     pa_parse(inst, buf, n);
-    free(buf);
+    seq8_load_buf_free(buf);
     /* Build step arrays from loaded notes[] for display/edit compat */
     for (t = 0; t < NUM_TRACKS; t++)
         for (c = 0; c < NUM_CLIPS; c++)
