@@ -1162,9 +1162,12 @@ export function createController(io = {}) {
      * Reported from hardware as "my next knob move is from the pre-restore
      * state".
      *
-     * A preset Load does not need this only because it comes back through the
-     * browser, and the re-entry replans and re-warms. A recall happens under
-     * your hands with no re-entry at all.
+     * ⚠ CORRECTED (#451): this used to say "a preset Load does not need this
+     * only because it comes back through the browser". True of a preset VIEW,
+     * which re-enters the grid and so replans and re-warms — and FALSE of an
+     * in-grid preset PAGE, which never leaves. That page drops the same two
+     * maps directly; see stepPreset. A recall needs it for the original
+     * reason: it happens under your hands with no re-entry at all.
      *
      * Drops the same three maps a child-instance change drops, for the same
      * reason and with the same caveat: `pendingWrite` is deliberately FLUSHED
@@ -2709,6 +2712,15 @@ export function createController(io = {}) {
         if (next >= st.count) next = 0;
         if (next === st.index) return false;
         st.index = next;
+        /*
+         * A PENDING KNOB WRITE BELONGS TO THE PRESET YOU ARE LEAVING (#451).
+         *
+         * Flushed BEFORE the index write, never after: writes land in order,
+         * so a tweak still in flight would otherwise be applied on top of the
+         * preset that had just replaced it — one knob of the old sound stamped
+         * onto the new one.
+         */
+        flushDueWritesUnconditionally();
         setParam(fullKey(p.listParam), String(next));
         /* Hold off the read cursor for the same reason a turned knob does: a
          * read issued before this write lands after it. */
@@ -2721,6 +2733,33 @@ export function createController(io = {}) {
          * immediate read: the module may still be loading it, and every detent
          * re-arms so a fast spin costs one read rather than one per step. */
         armContractSettle();
+        /*
+         * AND EVERY CACHED VALUE NOW DESCRIBES THE PRESET YOU JUST LEFT (#451).
+         *
+         * Loading a preset changes every parameter at once, but this only
+         * re-read the NAME, so the knob pages kept the numbers from before.
+         * Nothing reads on the draw path — values arrive on touch-down, on the
+         * rotation, or in the entry warm — and `onKnobTurn` steps FROM the
+         * cached value, so the first knob move after choosing a preset departed
+         * from the PREVIOUS preset's number and wrote it back over the one just
+         * loaded. Reported from hardware upstream as "after changing a preset
+         * the knob turns from the last value, not the preset's".
+         *
+         * ⚠ `revalue()` is deliberately NOT used. It re-warms the CURRENT page,
+         * and the current page is the browser: a fast spin down a preset list
+         * would pay a page of reads per detent for values nobody is looking at,
+         * and the module may still be loading the preset it was asked for.
+         * Dropping the maps costs nothing, and the read cursor and the entry
+         * warm refill them when a knobs page is actually reached.
+         *
+         * ⭑ Same defect as the snapshot recall, through a different door — see
+         * revalue(), whose comment asserted a preset load did not need it
+         * because it "comes back through the browser". True of a preset VIEW,
+         * which re-enters and replans; false of an in-grid preset PAGE, which
+         * never leaves.
+         */
+        s.values = Object.create(null);
+        s.knobStates = Object.create(null);
         /* Throttled exactly as a turned knob is: a fast spin down a 2427-preset
          * list is hundreds of announcements a second, which no one can follow
          * and which competes with the redraw for the same tick. */
