@@ -152,21 +152,30 @@ static void jidx_xcheck(const char *buf, const char *needle, const char *got) {
     jidx_xchecks++;
 }
 #define JIDX_XCHECK(buf, needle, got) jidx_xcheck((buf), (needle), (got))
+/* Builds the needle itself, so the shipped build never formats one. */
+#define JIDX_XCHECK_KEY(buf, key, fmt, got) do { \
+    char _n[80]; snprintf(_n, sizeof(_n), (fmt), (key)); \
+    jidx_xcheck((buf), _n, (got)); \
+} while (0)
 #define JIDX_FELL_BACK() (jidx_fallbacks++)
 #else
 #define JIDX_XCHECK(buf, needle, got) ((void)0)
+#define JIDX_XCHECK_KEY(buf, key, fmt, got) ((void)0)
 #define JIDX_FELL_BACK() ((void)0)
 #endif
 
 
 static int json_get_int(const char *buf, const char *key, int def) {
-    char search[64];
     const char *p;
-    snprintf(search, sizeof(search), "\"%s\":", key);
+    /* ⚠ The needle is built ONLY where it is used. Building it eagerly cost
+     * ~12,400 snprintf calls per load — half of all snprintf traffic — for a
+     * string the index path never reads. */
     if (jidx_lookup(buf, key, &p)) {
-        JIDX_XCHECK(buf, search, p);
+        JIDX_XCHECK_KEY(buf, key, "\"%s\":", p);
     } else {
+        char search[64];
         JIDX_FELL_BACK();
+        snprintf(search, sizeof(search), "\"%s\":", key);
         p = strstr(buf, search);
         if (p) p += strlen(search);
     }
@@ -176,13 +185,13 @@ static int json_get_int(const char *buf, const char *key, int def) {
 }
 
 static uint32_t json_get_uint(const char *buf, const char *key, uint32_t def) {
-    char search[64];
     const char *p;
-    snprintf(search, sizeof(search), "\"%s\":", key);
     if (jidx_lookup(buf, key, &p)) {
-        JIDX_XCHECK(buf, search, p);
+        JIDX_XCHECK_KEY(buf, key, "\"%s\":", p);
     } else {
+        char search[64];
         JIDX_FELL_BACK();
+        snprintf(search, sizeof(search), "\"%s\":", key);
         p = strstr(buf, search);
         if (p) p += strlen(search);
     }
@@ -204,19 +213,20 @@ static uint32_t json_get_uint(const char *buf, const char *key, uint32_t def) {
  *                             and silently returning "absent" there would
  *                             diverge from the code this replaces.
  * Returns 1 with *out set past the opening quote, or 0 for "nothing to do". */
-static int json_str_value(const char *buf, const char *key,
-                          const char *search, const char **out) {
+static int json_str_value(const char *buf, const char *key, const char **out) {
+    char search[64];
     const char *p;
     if (jidx_lookup(buf, key, &p)) {
         if (!p) return 0;                    /* genuinely absent */
         if (*p == '"') {
             *out = p + 1;
-            JIDX_XCHECK(buf, search, *out);
+            JIDX_XCHECK_KEY(buf, key, "\"%s\":\"", *out);
             return 1;
         }
         /* fall through to strstr */
     }
     JIDX_FELL_BACK();
+    snprintf(search, sizeof(search), "\"%s\":\"", key);
     p = strstr(buf, search);
     if (!p) return 0;
     *out = p + strlen(search);
@@ -225,10 +235,8 @@ static int json_str_value(const char *buf, const char *key,
 
 static void json_get_steps(const char *buf, const char *key,
                             uint8_t *steps, int n) {
-    char search[64];
     const char *p;
-    snprintf(search, sizeof(search), "\"%s\":\"", key);
-    if (!json_str_value(buf, key, search, &p)) return;
+    if (!json_str_value(buf, key, &p)) return;
     int i;
     for (i = 0; i < n && *p && *p != '"'; i++, p++)
         steps[i] = (*p == '1') ? 1 : 0;
@@ -238,10 +246,8 @@ static void json_get_steps(const char *buf, const char *key,
  * Entries not present in the sparse string are left unchanged. */
 static void json_get_sparse_int(const char *buf, const char *key,
                                 int *out, int count) {
-    char search[64];
     const char *p;
-    snprintf(search, sizeof(search), "\"%s\":\"", key);
-    if (!json_str_value(buf, key, search, &p)) return;
+    if (!json_str_value(buf, key, &p)) return;
     while (*p && *p != '"') {
         int sidx = 0;
         while (*p >= '0' && *p <= '9') sidx = sidx * 10 + (*p++ - '0');
@@ -262,10 +268,8 @@ static void json_get_sparse_int(const char *buf, const char *key,
  * probes nested track x clip x lane deep, i.e. thousands of whole-file scans
  * to answer "is this key present". */
 static const char *json_str_at(const char *buf, const char *key) {
-    char search[64];
     const char *p;
-    snprintf(search, sizeof(search), "\"%s\":\"", key);
-    return json_str_value(buf, key, search, &p) ? p : NULL;
+    return json_str_value(buf, key, &p) ? p : NULL;
 }
 
 static void ensure_parent_dir(const char *path) {
@@ -296,10 +300,8 @@ static void write_step_hex_arr(FILE *fp, const char *key,
 
 static void parse_step_hex_arr(const char *buf, const char *key,
                                uint8_t *arr, uint16_t len, int max_val) {
-    char search[48];
     const char *p;
-    snprintf(search, sizeof(search), "\"%s\":\"", key);
-    if (!json_str_value(buf, key, search, &p)) return;
+    if (!json_str_value(buf, key, &p)) return;
     int i;
     for (i = 0; i < (int)len && *p && *p != '"'; i++) {
         int hi = -1, lo = -1;
