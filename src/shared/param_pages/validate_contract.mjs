@@ -282,6 +282,47 @@ export function validateContract({ id, hierarchy, chainParams, capabilities } = 
         }
     }
 
+    /* ---- a gate declared where nothing reads it ---------------------------- */
+
+    /*
+     * `visible_if` is a LEVEL-entry field. The planner reads it off the level's
+     * own `params` (isHiddenParam in page_plan.mjs) and nowhere else, so the
+     * same key carrying `visible_if` in chain_params and NOT on the level hides
+     * nothing — every gated cell is drawn, with no error and nothing in a log.
+     *
+     * An easy mistake, because chain_params is where a param's other metadata
+     * lives. Upstream reports it cost a module author a day: eight FX types'
+     * controls all on screen at once, and three LFO pages holding one knob
+     * each. (#445)
+     */
+    {
+        const gatedInLevels = new Set();
+        for (const lvl of Object.values((hierarchy && hierarchy.levels) || {})) {
+            for (const item of (lvl && lvl.params) || []) {
+                /* ⚠ `item.key` ONLY — deliberately NARROWER than upstream's
+                 * `item.key || item.param`. The planner reads a level entry's
+                 * key through keyOf(), which accepts a string or `.key` and
+                 * NEVER `.param` (identical in both trees, checked). So an
+                 * entry spelled `{param: "x", visible_if: …}` gates nothing —
+                 * and counting it here as "gated on the level" would silence
+                 * the very warning this block exists to raise. Broader is not
+                 * safer when the thing you are modelling is narrower. */
+                const key = item && item.key;
+                if (key && item.visible_if) gatedInLevels.add(String(key));
+            }
+        }
+        const orphaned = cp
+            .filter((p) => p && p.key && p.visible_if && !gatedInLevels.has(String(p.key)))
+            .map((p) => p.key);
+        if (orphaned.length) {
+            add("warn", "visible-if-not-on-level",
+                `${orphaned.length} chain_params declare visible_if that no level entry ` +
+                `mirrors, so nothing is hidden: ` +
+                `${orphaned.slice(0, 6).join(", ")}${orphaned.length > 6 ? ", …" : ""}. ` +
+                `The planner reads visible_if from the level's params entries.`);
+        }
+    }
+
     /* ---- metadata gaps ---------------------------------------------------- */
 
     const index = buildMetaIndex({ hierarchy, chainParams: cp });
