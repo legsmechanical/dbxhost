@@ -52,6 +52,9 @@ globalThis.move_midi_internal_send = () => {};
 globalThis.set_led = () => {};
 globalThis.shadow_get_ui_flags = () => 0;
 globalThis.host_register_primary = () => true;
+/* A synth pick now asks the host to seed that module's declared `default_fx` /
+ * `default_buses` (applyModulePick -> host_seed_module_defaults). */
+globalThis.host_seed_module_defaults = () => [0, 0];
 globalThis.host_open_service = () => {};
 globalThis.host_close_service = () => {};
 globalThis.host_ext_midi_remap_clear = () => {};

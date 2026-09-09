@@ -3565,6 +3565,205 @@ function moduleDefaultFx(moduleId) {
                .slice(0, chainFxCap());
 }
 
+/*
+ * `capabilities.default_buses: [{ name, voices, fx: [...] }]`   (upstream #464,
+ * with #466/#467 folded in — ported at v1.3.0)
+ *
+ * A module that ships its own effects can hand them over as a BUS rather than
+ * bake them in. dr32 is the case, and it is ours: its Drum Bus was four stages
+ * in series over the whole kit, and shipping that as one insert loses the only
+ * thing anyone wants from it — swapping just the compressor, or putting a drive
+ * between two stages. A container of positions is the point. (We REMOVED that
+ * always-on Drum Bus in schwung-dr32 7da1f5f precisely because there was no
+ * honest way to ship it; this is the way.)
+ *
+ * A BUS AND NOT THE SLOT CHAIN, and the difference is real rather than
+ * cosmetic. A bus catches the VOICES; the slot chain catches the synth's whole
+ * output, including any returns it sums internally. And a bus keeps the
+ * module's own glue out of the slot positions the user wants for their effects.
+ *
+ * `voices: "*"` means every voice the synth publishes — the "everything, by
+ * default" routing. A list of ids means those, for a module that wants its kick
+ * glued and its hats left alone.
+ *
+ * Same rules as default_fx, for the same reasons: interactive pick only, and
+ * only into a slot that has NO buses yet. A slot with buses has been arranged
+ * by somebody, and adding to it silently re-routes their voices.
+ */
+function moduleDefaultBuses(moduleId) {
+    if (!moduleId) return [];
+    let meta = null;
+    try {
+        if (typeof host_get_module_metadata === "function") meta = host_get_module_metadata(moduleId);
+    } catch (e) { return []; }
+    if (typeof meta === "string") {
+        try { meta = JSON.parse(meta); } catch (e) { return []; }
+    }
+    const list = meta && meta.capabilities && meta.capabilities.default_buses;
+    if (!Array.isArray(list)) return [];
+    /* NOT capped here. The seeding loop breaks at SLOT_BUSES, and a second cap
+     * in front of it is a branch no mutation can kill — upstream wrote one and
+     * removed it for exactly that reason. */
+    return list.filter((b) => b && typeof b === "object");
+}
+
+let pendingBusInsertWrites = [];
+const BUS_INSERT_WRITE_TRIES = 120;   /* ~2s at the 60Hz tick */
+
+function queueBusInsertParams(slotIndex, pos, entry) {
+    const params = (entry.params && typeof entry.params === "object") ? entry.params : null;
+    if (!params && !entry.preset) return;
+    pendingBusInsertWrites.push({
+        slot: slotIndex, pos, module: entry.module,
+        params, preset: entry.preset ? String(entry.preset) : "",
+        tries: 0,
+    });
+}
+
+/*
+ * One pass over the queue. Called from the tick.
+ *
+ * The readiness test is the position reporting the module we ASKED FOR, not
+ * merely reporting something: a position being reloaded answers with the
+ * outgoing module until the worker installs, and writing this module's params
+ * into that one would set parameters on somebody else's plugin.
+ */
+function flushPendingBusInsertWrites() {
+    if (!pendingBusInsertWrites.length) return;
+    const keep = [];
+    for (const w of pendingBusInsertWrites) {
+        const got = getSlotParam(w.slot, `${w.pos}:module`);
+        /* null is "the read did not complete" and "" is "nothing there yet" —
+         * neither is a reason to give up, only to wait. */
+        if (got !== w.module) {
+            if (++w.tries < BUS_INSERT_WRITE_TRIES) keep.push(w);
+            else debugLog(`default_buses: ${w.pos} never reported ${w.module}; params dropped`);
+            continue;
+        }
+        if (w.params) {
+            for (const pk in w.params) {
+                setSlotParam(w.slot, `${w.pos}:${pk}`, String(w.params[pk]));
+            }
+        }
+        /* Last, for the reason default_fx applies it last: a preset is a whole
+         * state and overwrites anything written after it. */
+        if (w.preset) setSlotParam(w.slot, `${w.pos}:preset_name`, w.preset);
+        debugLog(`default_buses: applied queued params to ${w.pos}`);
+    }
+    pendingBusInsertWrites = keep;
+}
+
+function seedDefaultBusesForSlot(slotIndex, moduleId) {
+    const wanted = moduleDefaultBuses(moduleId);
+    if (!wanted.length) return 0;
+
+    /* Only into a slot with NO buses. Read through the model rather than a raw
+     * param so an unresolved config answers -1 and declines — busCount returns
+     * -1 for "the read did not complete", never 0, exactly so this can tell the
+     * two apart. */
+    const cfg = BusModel.parseBusesConfig(getSlotParam(slotIndex, "buses:config"));
+    if (BusModel.busCount(cfg) !== 0) return 0;
+
+    /*
+     * The voices the synth publishes.
+     *
+     * DECLINING ON EMPTY CARRIES THE TRI-STATE HERE, rather than a test of its
+     * own. parseSplitVoices answers `unresolved: true` only for null/undefined,
+     * and always with `voices: []` alongside it — so an explicit unresolved
+     * check is a branch nothing can kill, and upstream wrote one and removed it.
+     * Both roads lead to the same place and the same place is right: a read that
+     * did not complete must not create a bus with nothing routed into it, and
+     * neither must a synth that genuinely splits into nothing.
+     */
+    const sv = BusModel.parseSplitVoices(getSlotParam(slotIndex, "synth:split_voices"));
+    const allIds = ((sv && sv.voices) || []).map((v) => v && v.id).filter((x) => x);
+    if (!allIds.length) return 0;
+
+    let made = 0;
+    for (const decl of wanted) {
+        const at = made;   /* buses are positional; we are filling an empty set */
+        if (at >= BusModel.SLOT_BUSES) break;
+        const bus = `bus${at + 1}`;
+        if (!setSlotParam(slotIndex, `${bus}:create`, "1")) break;
+
+        const ids = (decl.voices === "*" || decl.voices === undefined)
+            ? allIds
+            : (Array.isArray(decl.voices) ? decl.voices.filter((v) => allIds.indexOf(v) >= 0) : []);
+        /* ONE write, the whole list: every bus<N>:voices write is a replace, so
+         * the write has to carry the complete membership. */
+        if (ids.length) setSlotParam(slotIndex, `${bus}:voices`, ids.join(","));
+        if (decl.name) setSlotParam(slotIndex, `${bus}:name`, String(decl.name));
+
+        const fx = Array.isArray(decl.fx) ? decl.fx : [];
+        let k = 0;
+        for (const entry of fx) {
+            if (!entry || typeof entry.module !== "string" || !entry.module) continue;
+            if (k >= BusModel.BUS_FX_SLOTS) break;
+            const pos = `${bus}:fx${k + 1}`;
+            if (!setSlotParam(slotIndex, `${pos}:module`, entry.module)) break;
+            k++;
+            /*
+             * THE PARAMS ARE QUEUED, NOT WRITTEN. A bus insert loads on the
+             * WORKER — chain_bus.c does the dlopen and create_instance off the
+             * RT thread — and its set_param drops anything that arrives before
+             * the instance exists. ⚠ VERIFIED IN THIS FORK, not inherited:
+             * chain_bus.c:396-400 carries the same rule verbatim, "A write
+             * during a reconcile is dropped rather than queued: the UI re-sends
+             * on the next detent".
+             *
+             * A human turning a knob re-sends seconds later and never notices.
+             * Seeding writes microseconds later, so every param was dropped and
+             * four declared inserts all came up as the module's default — four
+             * boxes reading "Crunch". Reported from hardware upstream, and
+             * INTERMITTENT, because a reload lands the same writes after the
+             * load and works: the worst shape a race can have.
+             *
+             * The slot chain does not need this. chain_host.c loads an audio FX
+             * on the SPI callback, so default_fx's writes land on a plugin that
+             * already exists.
+             */
+            queueBusInsertParams(slotIndex, pos, entry);
+        }
+        made++;
+    }
+    if (made) debugLog(`default_buses: created ${made} bus(es) for ${moduleId}`);
+    return made;
+}
+
+/*
+ * MODULE-DECLARED DEFAULTS, FOR EVERY CONSUMER — not only the host's own picker.
+ *
+ * ⚠⚠ THIS BINDING EXISTS BECAUSE BOTH FEATURES WERE DEAD IN THIS FORK. Both
+ * seedings hang off applyComponentSelectionConfirmed, which is the HOST's
+ * component picker. davebox — the only UI this fork actually ships — picks
+ * modules through its own applyModulePick -> engineLoadModule, a bare
+ * `shadow_set_param(slot, comp + ':module', id)`, and never goes near that
+ * hook. So `default_fx` shipped here for months and, verified on device
+ * 2026-09-08, had NEVER LOGGED A SINGLE LINE. `default_buses` was inert on
+ * arrival for the same reason.
+ *
+ * ⭑ It is a BINDING rather than a copy in davebox for the reason the 09-07
+ * audit landed on: a shared split drawn around DATA loses BEHAVIOUR, and the
+ * answer is to move the mechanism somewhere both consumers reach rather than
+ * to port it twice and watch the copies drift. The seeding, its guards and its
+ * queue stay in ONE place; a consumer only says "an interactive pick just
+ * happened".
+ *
+ * INTERACTIVE PICKS ONLY. Both seedings guard themselves (an empty chain, a
+ * slot with no buses), but the caller still has to be a deliberate choice —
+ * never a project load or a reconstruction, which would re-seed a chain
+ * somebody has already shaped.
+ *
+ * Returns [fxSeeded, busesCreated] so a caller can decide whether to re-read.
+ */
+globalThis.host_seed_module_defaults = function(slot, moduleId) {
+    const s = slot | 0;
+    if (s < 0 || s >= SHADOW_UI_SLOTS || !moduleId) return [0, 0];
+    const fx = seedDefaultFxForSlot(s, String(moduleId));
+    const buses = seedDefaultBusesForSlot(s, String(moduleId));
+    return [fx, buses];
+};
+
 /* Returns how many positions were seeded (0 when it declined), so the caller can
  * decide whether the chain needs re-reading rather than re-reading always. */
 function seedDefaultFxForSlot(slotIndex, moduleId) {
@@ -8813,6 +9012,7 @@ function applyComponentSelectionConfirmed(slotIndex, paramKey, moduleId, comp) {
      * Before the reload below, so the refreshed config carries what was seeded. */
     if (moduleId && comp && comp.key === "synth") {
         seedDefaultFxForSlot(slotIndex, moduleId);
+        seedDefaultBusesForSlot(slotIndex, moduleId);
     }
 
     /* Force sync chainConfigs from DSP and reset caches after module change.
@@ -17515,6 +17715,11 @@ globalThis.tick = function() {
             _upgradeOverlayText = null;
         }
     }
+
+    /* Params for a bus insert that was still loading when it was seeded. Costs
+     * one read per waiting position and nothing at all once the queue drains,
+     * which it does within a second of a pick. */
+    flushPendingBusInsertWrites();
 
     /* Continuous feedback guard: bypass Line In slots while speaker-feedback risk
      * is present (boot or headphones unplugged), un-bypass when safe, and raise

@@ -172,6 +172,64 @@ Use `defaults` to pass initial parameters to DSP plugins at load time:
 }
 ```
 
+## Declaring a bus your module ships with
+
+`capabilities.default_buses` hands your own effects over as a BUS — a container
+of ordinary inserts — rather than baking them in:
+
+```json
+"capabilities": {
+  "default_buses": [{
+    "name": "Drum Bus",
+    "voices": "*",
+    "fx": [
+      { "module": "dr32-fx", "params": { "effect": "Crunch" } },
+      { "module": "clap", "params": { "plugin_id": "Pop3" }, "preset": "Glue" }
+    ]
+  }]
+}
+```
+
+Shipping a multi-stage effect as ONE insert loses the only thing anyone wants
+from it: swapping just the compressor, or putting a drive between two stages. As
+a bus, every stage is a normal chain position — reorderable, bypassable with
+`Mute`+`Jog Click`, an LFO target, swappable, removable.
+
+**A bus, not the slot chain, and the difference is real.** A bus catches the
+VOICES; the slot chain catches your whole output including anything you sum
+internally. A bus also keeps your glue out of the slot positions the user wants
+for their own effects.
+
+**A bus returns BEFORE `fx1`**, so the user's slot effects see the glued result
+— and sends are tapped post-insert, so a bus feeding Send A sends the glued
+signal rather than the raw voices.
+
+`voices: "*"` routes every voice you publish in `split_voices`. A list routes
+those; an id you do not publish is dropped rather than written, since each
+`bus<N>:voices` write is a whole-list replace and the host would otherwise keep
+it as an orphan.
+
+Same rules as `default_fx`: it fires on an interactive pick only, and only into
+a slot with **no buses**. A slot that has buses has been arranged by somebody,
+and adding to it silently re-routes their voices.
+
+**Shipping several effects from one binary is the normal case.** Airwindows does
+it — one `.so`, 500+ effects, chosen by `plugin_id`. `plugin_api_v2` is
+multi-instance, so declaring the same module four times with a different
+`effect` each is four ordinary instances of one file.
+
+⚠ **The params for a declared insert are QUEUED, not written immediately, and a
+module author does not have to care — but should know why the values appear a
+frame or two late.** A bus insert is loaded by the bus WORKER (`chain_bus.c`,
+off the RT thread) and its `set_param` drops anything arriving before the
+instance exists. Seeding writes microseconds after the create, so without the
+queue every declared param was dropped and each insert came up as its module's
+default. The host retries for ~2 s and then gives up with a log line.
+
+⭑ **This fork carries `SLOT_BUSES = 8`** where upstream has 4, so a module may
+declare more buses here — but declare for the smaller number if the module is
+meant to work on both, since the seeding loop simply stops at the host's cap.
+
 ## Per-Module Settings
 
 A module that wants user-configurable settings exposed in the

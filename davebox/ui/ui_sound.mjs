@@ -6148,6 +6148,31 @@ function applyModulePick(mod) {
      * module id. Same key, different currency — loading a bus by id silently
      * does nothing, which is the kind of failure you debug for an hour. */
     engineLoadModule(S.slot, S.comp, S.bus ? (mod.path || '') : mod.id);
+    /*
+     * A module gets to bring its own chain and its own buses — `default_fx`
+     * and `default_buses` in its module.json.
+     *
+     * ⚠⚠ THIS CALL IS WHY EITHER FEATURE WORKS AT ALL HERE. The host seeds
+     * them from its OWN component picker, which this UI never uses: davebox
+     * picks through this function. Verified on device 2026-09-08 —
+     * `default_fx` had shipped in this fork for months and never logged a
+     * single line, because nothing reached the hook. See the binding in
+     * shadow_ui.js for why the mechanism stayed there rather than being
+     * copied here.
+     *
+     * SYNTH POSITION ONLY, and not a bus insert: a module declaring a bus,
+     * seeded while you are picking an insert FOR a bus, would build buses
+     * underneath the one being edited. Both seedings also decline on their
+     * own (a chain that is not empty, a slot that already has buses), so this
+     * is the outer of two guards, not the only one.
+     *
+     * HERE rather than in engineLoadModule, which is a bare param write used
+     * by reconstruction paths too — seeding from there would re-seed a chain
+     * on every project load and silently rebuild what somebody had removed.
+     */
+    if (!S.bus && S.comp === 'synth' && mod.id) {
+        host_seed_module_defaults(S.slot, mod.id);
+    }
     GS.instrAbbrevAt = 0;                 /* the header's [instrument] re-reads next tick */
     /* The chain host instantiates asynchronously — discovering immediately
      * returns null metadata and the module looks empty. */
