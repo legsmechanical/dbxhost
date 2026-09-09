@@ -33,8 +33,18 @@ fingerprint — a single sample supported an entire wrong theory on 2026-08-15.
 
 One WARN line names the key when a param serve overruns the audio budget
 (`param-slow: set slot 0 synth:module took 124.825 ms on the SPI callback`).
-Unlike everything below it there is nothing to arm, and it is never noise —
-it fires only when a frame has already been eaten. Rationale, cost and the
+Unlike everything below it there is nothing to arm.
+
+⚠ **It is NOT true that "it fires only when a frame has already been eaten",
+and this file said so until 2026-09-08.** The threshold is **1000 µs** and an
+audio block is **2.9 ms**, so every WARN between those two is a serve that came
+CLOSE to the budget without blowing it. Measured on device: davebox's
+`get synth:state` recurs at ~1.02-1.07 ms every ~5 s in ordinary use — real,
+worth knowing, and not a dropped frame. Read a WARN as **"this key is in the
+same order of magnitude as the budget"**, and the multi-millisecond ones as the
+frame-eaters they are. ⭑ The fix for a chatty key is to make the serve cheaper,
+never to raise the threshold — raising it hides the near-misses that are the
+early warning. Rationale, cost and the
 reason the SPI frame tally cannot see the same event:
 [`REALTIME_SAFETY.md`](REALTIME_SAFETY.md#1-no-blocking-io-in-spi-callback-path).
 

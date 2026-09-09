@@ -32,6 +32,15 @@ Ported from upstream #468. Every switch elsewhere in this fork is armed by
 touching a file; **this one has none.** When a param serve exceeds 1000 µs the
 shim worker logs, at WARN:
 
+⚠ **The threshold sits BELOW the 2.9 ms block period, deliberately — so a WARN
+is not proof a frame was lost.** Between 1.0 ms and 2.9 ms the serve was close
+to the budget and got away with it; past 2.9 ms it did not. Both are worth
+naming, but they are different claims, and conflating them was an error in
+`LOGGING.md` until 2026-09-08 (it asserted the detector "is never noise" and
+"fires only when a frame has already been eaten"). ⭑ Make a chatty key cheaper;
+do not raise the threshold, which would hide exactly the near-misses that give
+warning before a key becomes a frame-eater.
+
 ```
 param-slow: set slot 0 synth:module took 124.825 ms on the SPI callback — the module is doing blocking work in its entry point
 ```
