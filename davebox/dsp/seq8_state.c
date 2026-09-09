@@ -272,6 +272,38 @@ static const char *json_str_at(const char *buf, const char *key) {
     return json_str_value(buf, key, &p) ? p : NULL;
 }
 
+/* --- Cheap key builder for the load path's hot loops --------------------
+ * These keys are literals concatenated with small non-negative ints, and the
+ * loops that build them are 8 tracks x 16 clips x 32 lanes deep. snprintf
+ * dominated what was left of the load once the strstr rescanning was gone:
+ * 15,484 calls per load of the real project-25 file, ~50% of
+ * seq8_load_state. This is the same defect class as the index it sits next
+ * to — not misplaced work, just the same cheap thing tens of thousands of
+ * times.
+ *
+ * ⚠ A mis-built key does not crash: it reads as ABSENT, and the setting it
+ * names silently keeps its default in the user's project. tests/test_key_builder.c
+ * therefore pins kb() against snprintf EXHAUSTIVELY, over every shape and
+ * every index the loader can pass. */
+static char *kb_put(char *p, const char *s) { while (*s) *p++ = *s++; return p; }
+static char *kb_num(char *p, int v) {          /* 0..999, exactly as %d prints */
+    if (v >= 100) { *p++ = (char)('0' + v / 100); v %= 100;
+                    *p++ = (char)('0' + v / 10);  *p++ = (char)('0' + v % 10); }
+    else if (v >= 10) { *p++ = (char)('0' + v / 10); *p++ = (char)('0' + v % 10); }
+    else *p++ = (char)('0' + v);
+    return p;
+}
+/* "<l1><i1><l2><i2><l3>[<i3>][<l4>]" — i3 < 0 omits it, l4 NULL omits it. */
+static void kb(char *out, const char *l1, int i1, const char *l2, int i2,
+               const char *l3, int i3, const char *l4) {
+    char *p = out;
+    p = kb_put(p, l1); p = kb_num(p, i1);
+    p = kb_put(p, l2); p = kb_num(p, i2);
+    p = kb_put(p, l3); if (i3 >= 0) p = kb_num(p, i3);
+    if (l4) p = kb_put(p, l4);
+    *p = '\0';
+}
+
 static void ensure_parent_dir(const char *path) {
     char tmp[256];
     char *p;
@@ -1002,7 +1034,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
               snprintf(key, sizeof(key), "t%dl%dr2rt", t, l);
               tr_r->drum_repeat2_rate_idx[l] = (uint8_t)clamp_i(json_get_int(buf, key, 2), 0, 7);
               for (s = 0; s < 8; s++) {
-                  snprintf(key, sizeof(key), "t%dl%drvs%d", t, l, s);
+                  kb(key, "t", t, "l", l, "rvs", s, NULL);
                   /* Absolute 1..127, 255 = Thru (default). Legacy percent saves:
                    * 100% meant "unscaled held-pad vel" = Thru exactly; other
                    * percents (and anything >127) clamp into the absolute range.
@@ -1015,7 +1047,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
                       else _gl = clamp_i(_gl, 1, 127);
                       tr_r->drum_repeat_vel_scale[l][s] = (uint8_t)_gl;
                   }
-                  snprintf(key, sizeof(key), "t%dl%drn%d", t, l, s);
+                  kb(key, "t", t, "l", l, "rn", s, NULL);
                   tr_r->drum_repeat_nudge[l][s] = (int8_t)clamp_i(json_get_int(buf, key, 0), -50, 50);
               }
           }
@@ -1078,7 +1110,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
           for (_ca2 = 0; _ca2 < NUM_CLIPS; _ca2++) {
               at_auto_t *_ata = &inst->tracks[_ta].clip_at_auto[_ca2];
               for (_la = 0; _la < AT_MAX_LANES; _la++) {
-                  snprintf(_ats, sizeof(_ats), "t%dc%dat%d", _ta, _ca2, _la);
+                  kb(_ats, "t", _ta, "c", _ca2, "at", _la, NULL);
                   const char *_qp = json_str_at(buf, _ats);
                   if (!_qp) continue;
                   int _pp = 0;
@@ -1169,7 +1201,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
             {
                 int _i;
                 for (_i = 0; _i < 8; _i++) {
-                    snprintf(key, sizeof(key), "t%dc%d_arsv%d", t, c, _i);
+                    kb(key, "t", t, "c", c, "_arsv", _i, NULL);
                     /* Absolute velocity / Thru; legacy 5-state levels map up (see tasv). */
                     {
                         int _lv = json_get_int(buf, key, 255);
@@ -1177,7 +1209,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
                         else if (_lv > 127) _lv = 255;
                         p2->seq_arp_step_vel[_i] = (uint8_t)_lv;
                     }
-                    snprintf(key, sizeof(key), "t%dc%d_arsi%d", t, c, _i);
+                    kb(key, "t", t, "c", c, "_arsi", _i, NULL);
                     p2->seq_arp_step_int[_i] = (int8_t)clamp_i(json_get_int(buf, key, 0), -24, 24);
                 }
             }
@@ -1210,7 +1242,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
                 clip_t *dlc = &dl->clip;
                 char search[48];
                 const char *lane_notes;
-                snprintf(search, sizeof(search), "t%dc%dl%d_n", t, c, l);
+                kb(search, "t", t, "c", c, "l", l, "_n");
                 lane_notes = json_str_at(buf, search);
                 if (!lane_notes) continue;
                 snprintf(key, sizeof(key), "t%dc%dl%d_mn", t, c, l);
