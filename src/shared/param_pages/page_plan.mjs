@@ -269,17 +269,55 @@ function levelNameToPrefix(name) {
     return (words[0].slice(0, 4) + words.slice(1).map((w) => w[0].toUpperCase()).join("")).slice(0, 6);
 }
 
+/*
+ * The last (parts -> fingerprint), compared by IDENTITY (#447).
+ *
+ * Hashing stringifies the whole contract and walks every character of it, and
+ * planPages runs on every detent of a gating knob (replanIfCondition). On those
+ * re-plans the contract has not changed at all — only a VALUE has — and
+ * `hierarchy` and `chainParams` are the very objects the previous plan used:
+ * the controller assigns them whole from parse() on a read and never mutates
+ * them in place (verified in page_controller.mjs — only `s.hierarchy = ...`
+ * and `s.chainParams = ...`, never a field write). Same objects, same bytes,
+ * so re-hashing them is pure waste.
+ *
+ * Waste that scales with the contract: upstream measured a 94 KB one at
+ * ~0.78 ms in node, and the device runs QuickJS on an A72 where a
+ * 94,000-iteration charCodeAt loop is far slower. Turning a filter-type knob
+ * through its values paid that per detent, and the screen stalled.
+ *
+ * ⚠ IDENTITY, NOT EQUALITY, and that is the whole safety argument: a re-read
+ * parses NEW objects, so a contract that really did change (a module
+ * republishing its options once a ROM is known) arrives as a different object
+ * and is hashed. Equality would be both slower and wrong-in-the-other-
+ * direction.
+ */
+let fingerprintMemo = null;
+
 /* FNV-1a over the declared contract. The page set is rebuilt when this changes:
  * module swap, an is_loading→ready re-fetch that rewrites the tree (Virus,
  * minijv expansions), or a mode change. */
 function fingerprintOf(parts) {
+    /* ⓘ The length check is belt-and-braces: there is exactly ONE call site and
+     * it always passes a 3-tuple, so removing it survives the test — verified,
+     * not assumed. It is kept because `every` on a SHORTER memo would compare
+     * only the first N and return a stale hash for a longer contract, and the
+     * day a second call site appears that is not a failure anyone would see. */
+    if (fingerprintMemo && fingerprintMemo.parts.length === parts.length &&
+        fingerprintMemo.parts.every((part, i) => part === parts[i])) {
+        return fingerprintMemo.value;
+    }
     let h = 0x811c9dc5;
     const s = JSON.stringify(parts);
     for (let i = 0; i < s.length; i++) {
         h ^= s.charCodeAt(i);
         h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
     }
-    return h.toString(16);
+    const value = h.toString(16);
+    /* One entry, holding one contract's objects alive — the same ones the
+     * controller is already holding in `s.hierarchy` / `s.chainParams`. */
+    fingerprintMemo = { parts: parts.slice(), value };
+    return value;
 }
 
 function chunk(arr, size) {
