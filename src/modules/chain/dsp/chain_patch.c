@@ -1326,13 +1326,32 @@ int v2_parse_patch_file(chain_instance_t *inst, const char *path, patch_info_t *
                     const char *sv = state_colon + 1;
                     while (*sv == ' ' || *sv == '\t' || *sv == '\n') sv++;
                     if (*sv == '{') {
-                        /* Extract state as JSON object (string-aware span). */
+                        /*
+                         * Extract the state object COMPACTED, never as the raw
+                         * pretty-printed file slice (#421).
+                         *
+                         * slot_N.json is written by JSON.stringify(w, null, 2),
+                         * so the stored text says `"key": "` while a module
+                         * emitted — and parses — `"key":"`. A whitespace-exact
+                         * matcher then misses SILENTLY, while the tolerant
+                         * number parsers beside it keep landing: the headline
+                         * fields restore and the payload vanishes, which reads
+                         * as "the module lost my edits on set reload".
+                         *
+                         * ⚠ state_fits is KEPT and still measures the RAW span:
+                         * it is this fork's guard and it logs. Compacting only
+                         * ever shrinks, so a raw length that fits guarantees the
+                         * compact one does.
+                         */
                         const char *end = json_object_end(sv);
                         if (end) {
                             int len = end - sv + 1;
                             if (len > 0 && state_fits(inst, "synth", len, MAX_SYNTH_STATE_LEN)) {
-                                strncpy(patch->synth_state, sv, len);
-                                patch->synth_state[len] = '\0';
+                                if (json_object_compact_copy(patch->synth_state,
+                                                             sizeof(patch->synth_state),
+                                                             sv) < 0) {
+                                    patch->synth_state[0] = '\0';
+                                }
                             }
                         }
                     } else if (*sv == '"') {
@@ -1446,9 +1465,16 @@ int v2_parse_patch_file(chain_instance_t *inst, const char *path, patch_info_t *
                                     if (se && se <= params_end) {
                                         int slen = se - state_start + 1;
                                         if (slen > 0 && state_fits(inst, "audio_fx", slen, MAX_FX_STATE_LEN)) {
-                                            strncpy(cfg->state, state_start, slen);
-                                            cfg->state[slen] = '\0';
-                                            parse_debug_log("[parse] Extracted audio_fx state object");
+                                            /* Compacted, never the raw pretty
+                                             * file slice — see the synth site
+                                             * above and json_compact.h. */
+                                            if (json_object_compact_copy(cfg->state,
+                                                                         sizeof(cfg->state),
+                                                                         state_start) < 0) {
+                                                cfg->state[0] = '\0';
+                                            } else {
+                                                parse_debug_log("[parse] Extracted audio_fx state object");
+                                            }
                                         }
                                     }
                                 } else if (*sv == '"') {
@@ -1651,9 +1677,20 @@ int v2_parse_patch_file(chain_instance_t *inst, const char *path, patch_info_t *
                                         if (se && se <= params_end) {
                                             int slen = se - state_start + 1;
                                             if (slen > 0 && state_fits(inst, "midi_fx", slen, MAX_FX_STATE_LEN)) {
-                                                strncpy(cfg->state, state_start, slen);
-                                                cfg->state[slen] = '\0';
-                                                parse_debug_log("[parse] Extracted midi_fx state object");
+                                                /* Compacted, never the raw
+                                                 * pretty file slice — see the
+                                                 * synth site and json_compact.h.
+                                                 * ⚠ THIS FORK HAS A THIRD SITE
+                                                 * where upstream has two: MIDI
+                                                 * FX are fork-only. The ported
+                                                 * test found it; I had not. */
+                                                if (json_object_compact_copy(cfg->state,
+                                                                             sizeof(cfg->state),
+                                                                             state_start) < 0) {
+                                                    cfg->state[0] = '\0';
+                                                } else {
+                                                    parse_debug_log("[parse] Extracted midi_fx state object");
+                                                }
                                             }
                                         }
                                     } else if (*sv == '"') {
