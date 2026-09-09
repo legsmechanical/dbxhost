@@ -77,7 +77,20 @@ if [ -z "$CROSS_PREFIX" ] && [ ! -f "/.dockerenv" ]; then
         echo "Rebuilding Docker image..."
         docker build --pull -t "$IMAGE_NAME" "$REPO_ROOT"
         echo ""
-    elif ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
+    elif ! docker run --rm "$IMAGE_NAME" true >/dev/null 2>&1; then
+        # ⚠⚠ RUN IT, DO NOT `docker image inspect` IT. Proven 2026-09-09, five
+        # attempts out of five: `docker image inspect` reports a PRESENT,
+        # listed, runnable image as missing, while `docker run` on that same
+        # image at that same moment succeeds. In the DR32 repo that false
+        # negative fell through to a DIFFERENT builder image and silently
+        # switched compiler (12.2 -> 11.4) for three shipped commits; it had
+        # been tolerated for months as a "full disk" flake, with 20 GB free.
+        #
+        # This fork names ONE image, so a false negative here only costs a
+        # surprise rebuild rather than a wrong toolchain — but a surprise
+        # rebuild pulls the base again, which is the same exposure by a
+        # different door. Running the image tests presence AND capability in
+        # one go, and cannot lie the same way.
         echo "Building Docker image (first time only)..."
         docker build -t "$IMAGE_NAME" "$REPO_ROOT"
         echo ""
