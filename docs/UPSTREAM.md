@@ -11,8 +11,8 @@ whole discipline — a **watermark** plus a short table, replacing the 11-patch 
 
 | | |
 |---|---|
-| **Last upstream commit reviewed** | `a25af5b8` — *release 1.2.0 (#417)*, 2026-09-04 |
-| **Reviewed on** | 2026-09-05 (survey: `_worklogs/specs/upstream-1.2.0-survey.md`; the 08-29 backport series covered up to v1.1.0) |
+| **Last upstream commit reviewed** | `aa4d8f33` — *release 1.3.1 (#473)*, 2026-09-08 |
+| **Reviewed on** | 2026-09-08 (survey: `_worklogs/specs/upstream-1.3.0-survey.md`; 1.3.0 → 1.3.1 is 2 commits, one real) |
 | **Merge base** | `a46f32b2` — *Merge pull request #179: bump host to 0.11.6*, 2026-07-19 |
 
 To advance it:
@@ -57,6 +57,49 @@ Those 10 commits touch **no** `src/` or `schwung-manager/` file, so nothing was 
 > catalog edits made in this fork do nothing. Shipping a module means a public repo, a release, and
 > an upstream PR — not a commit here.
 
+### Reviewed 2026-09-08 — v1.2.0 → v1.3.1
+
+| Upstream | What | Decision |
+|---|---|---|
+| `45f728b8` | **#444** param contract to 128 KB, and the 1.2 MB frame off the callback stack | **Ported** (`6d704fe3`) — the CONSTANTS only. See the divergence below. |
+| `bde219c5` | **#468** `param-slow`: name the key when a param serve eats the frame | **Ported** (`4b6b3032`), wiring adapted. Verified firing on hardware. |
+| `b27cd8d4`, `52435f70` | **#464** `default_buses` + **#467** its queued-params fix | **Ported together** (`19005d7e`) — never #464 alone; see below. |
+| `f97d5548` | **#466** a bus insert can say what it IS (`display_name` polling) | **NOT ported — no target.** See the divergence below. |
+| `acad35ab` | **#472** a widget whose canvas.js failed to load was recorded as loaded | **NOT ported — no target.** This fork has no `ensureComponentWidgets` / `widgetModuleLoaded` latch; its canvas path is `resolveCanvasScriptPath` / `resolveOverlayFromGlobals`. ⚠ Absence of their symbols is NOT proof we lack the DEFECT; open on the board. |
+
+### Divergences taken in this window — each deliberate, each pinned
+
+**#444: we kept OUR fix for the 1.2 MB frame and took only the constants.** Upstream made
+`chain_mod_refresh_target_param_cache`'s two buffers file-scope `static`; this fork had already
+moved them onto the INSTANCE in `b96b5d0f`. Ours is stronger — a static is shared across all chain
+instances, and this fork runs `SHADOW_UI_SLOTS = 8` against upstream's 4 — so porting upstream's
+version would have been a silent regression to a shared scratch buffer. That prior fix is also
+what makes the raise safe: the buffer grows +64 KB per instance, but it is a member of a `calloc`'d
+instance, i.e. **+512 KiB of HEAP, not stack**. `tests/host/test_param_buffers_not_on_stack.sh` is
+ported and ADAPTED: it exempts by REGION (struct vs function body), because chain_internal.h is
+not declaration-only and a file-wide exemption could hide a real stack frame.
+
+**#464: the seeding needed a BINDING here, and that is a fork-only file.** Upstream seeds
+`default_fx` / `default_buses` from `applyComponentSelectionConfirmed`, its own component picker.
+davebox — the only UI this fork ships — picks through `applyModulePick` and never reaches it, so
+**`default_fx` had shipped here for months without ever firing once** and `default_buses` was inert
+on arrival. `globalThis.host_seed_module_defaults` (fork-only) is what both consumers reach;
+davebox calls it from its pick. Upstream needs no such binding and should not be offered one.
+⚠ Both seeding tests now enumerate WHERE the seeding is called from and additionally read
+`davebox/ui/ui_sound.mjs`, because seeding from a restore path would re-create buses the user
+deleted on every boot.
+
+**#466: no target, and the gap it leaves is now REAL here.** Upstream polls `display_name` for the
+inserts of the open bus so several instances of one binary do not all read as the same three
+letters. That lives in its bus chain editor (`VIEWS.BUS_CHAIN`, `shadow_ui_buses.mjs`), which this
+fork does not have — davebox's `ui_modbus.mjs` is the bus UI, and it reads `display_name` NOWHERE.
+Since `default_buses` explicitly encourages shipping several effects from one binary, four
+Airwindows instances in a bus now label identically. Open on the board.
+
+**`SLOT_BUSES = 8` against upstream's 4.** Pre-existing, restated here because `default_buses`
+makes it module-visible: a module may declare more buses on this fork, and the seeding loop simply
+stops at the host's cap. Documented in `MODULES.md` for authors targeting both.
+
 ## Module buses (#453) — ported, with three named divergences
 
 Piece 1 (the module-facing half) is in as of 2026-09-08. The contract a module speaks is
@@ -68,7 +111,8 @@ This fork differs in three host-internal ways, none visible to a module, all pin
 float gain; and ONE producer of a bus send key rather than upstream's two. Full reasoning in
 [`MODULE_BUSES.md`](MODULE_BUSES.md).
 
-Pieces 2 (send-FX chain editing) and 3 (the async FX load ring) are NOT ported.
+`default_buses` (#464, with #466/#467) landed 2026-09-08 — see the window above for its
+divergences. Pieces 2 (send-FX chain editing) and 3 (the async FX load ring) are NOT ported.
 
 ## Keep-list — paths this fork owns
 
