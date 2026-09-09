@@ -277,13 +277,38 @@ const DRUMBUS = { capabilities: { default_buses: [{
   if (!m || !/seedDefaultBusesForSlot\(/.test(m[0])) {
     fail("the interactive pick never seeds buses -- default_buses would be inert");
   }
+  /* WHERE it is called from, not merely how many times -- the invariant is
+   * about the CALLER. A restore path that seeds re-creates buses the user deleted,
+   * on every boot.
+   *
+   * host_seed_module_defaults is the binding davebox calls; it exists because
+   * the host own picker is not the one this fork ships. Guarded on the davebox
+   * side below, since that is where a second caller would appear.
+   * ⚠ NO APOSTROPHES IN THIS BLOCK -- the node script is single-quoted. */
+  const bindingIdx = src.indexOf("globalThis.host_seed_module_defaults");
+  if (bindingIdx < 0) fail("the host_seed_module_defaults binding is gone -- davebox cannot seed");
+  if (!src.slice(bindingIdx, bindingIdx + 900).includes("seedDefaultBusesForSlot(")) fail("the binding does not call seedDefaultBusesForSlot");
   const sites = [...src.matchAll(/seedDefaultBusesForSlot\(/g)].length;
-  if (sites !== 2) {
-    fail("seedDefaultBusesForSlot appears " + sites + " times; defined once and called "
-         + "from the interactive pick ALONE -- a restore path that seeds re-creates "
-         + "buses the user deleted, on every boot");
+  if (sites !== 3) {
+    fail("seedDefaultBusesForSlot appears " + sites + " times; expected 3 -- the definition, the "
+         + "interactive pick, and the davebox binding. Anything else is a restore path, and "
+         + "one that seeds re-creates buses the user deleted, on every boot");
   }
-  ok("seeded from the interactive synth pick, and from nowhere else");
+  ok("seeded from the interactive pick and the davebox binding, and from nowhere else");
+
+  /* THE DAVEBOX SIDE. The binding is only as safe as its caller, and davebox is
+   * where a second call would be added -- from a project-load path, which is
+   * exactly the boot re-seed this guards. */
+  const dbx = readFileSync("davebox/ui/ui_sound.mjs", "utf8");
+  const dbxSites = [...dbx.matchAll(/host_seed_module_defaults\(/g)].length;
+  const pickIdx = dbx.indexOf("function applyModulePick(");
+  if (pickIdx < 0) fail("could not find the davebox applyModulePick()");
+  const inPick = dbx.slice(pickIdx, pickIdx + 2200).includes("host_seed_module_defaults(");
+  if (dbxSites !== 1 || !inPick) {
+    fail("davebox calls host_seed_module_defaults " + dbxSites + " time(s), inPick=" + inPick
+         + " -- it must be the interactive pick ALONE");
+  }
+  ok("davebox seeds from applyModulePick alone");
 }
 
 if (bad) process.exit(1);

@@ -79,6 +79,13 @@ globalThis.host_ext_midi_remap_clear = () => {};
 globalThis.host_ext_midi_remap_set = () => {};
 globalThis.host_ext_midi_remap_enable = () => {};
 globalThis.shadow_get_shift_held = () => 0;
+/* A synth pick now asks the host to seed that module's declared `default_fx` /
+ * `default_buses` (applyModulePick -> host_seed_module_defaults). Recorded
+ * rather than ignored: this rig drives the real pick gesture, so it is the
+ * cheapest place to prove davebox REACHES the seeding at all — which it did
+ * not until 2026-09-08, when default_fx was found never to have fired here. */
+globalThis.__seedCalls = [];
+globalThis.host_seed_module_defaults = (slot, id) => { globalThis.__seedCalls.push([slot | 0, String(id)]); return [0, 0]; };
 
 async function main() {
 const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
@@ -177,6 +184,29 @@ step('⭑ picking a generator moves the ROUTE to Schwung, and loads the module',
     const rw = routeWrites(0);
     if (rw.length !== 1 || !/=schwung$/.test(rw[0]))
         throw new Error('t0_route written ' + rw.length + ' times: ' + JSON.stringify(rw));
+});
+
+step('⭑⭑ ...and the pick REACHES the host\'s module-defaults seeding', () => {
+    /*
+     * A module gets to bring its own chain and buses (`default_fx` /
+     * `default_buses`), and the host seeds them — from ITS OWN component
+     * picker, which this UI never uses. davebox picks through applyModulePick,
+     * so until 2026-09-08 neither feature could fire here at all: `default_fx`
+     * had shipped in this fork for months and, checked on the device, had
+     * NEVER LOGGED A SINGLE LINE.
+     *
+     * ⚠ THE ASSERTION LIVES IN THIS RIG ON PURPOSE. The host's own test lifts
+     * the seeding functions out of shadow_ui.js and CALLS them — which tests
+     * the function, not the path, and passed happily while the feature was
+     * dead. This rig drives the real gesture (sound menu, Shift+click, jog,
+     * click), so it is the one place that can tell whether davebox ARRIVES.
+     */
+    const calls = globalThis.__seedCalls.filter(([, id]) => id === 'nusaw');
+    if (calls.length !== 1)
+        throw new Error('seeded ' + calls.length + ' times for nusaw: ' +
+                        JSON.stringify(globalThis.__seedCalls));
+    if (calls[0][0] !== 0)
+        throw new Error('seeded the wrong slot: ' + JSON.stringify(calls[0]));
 });
 
 step('⚠ ...and the route write does not share a callback with another t0_ write', () => {

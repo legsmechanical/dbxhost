@@ -3730,6 +3730,40 @@ function seedDefaultBusesForSlot(slotIndex, moduleId) {
     return made;
 }
 
+/*
+ * MODULE-DECLARED DEFAULTS, FOR EVERY CONSUMER — not only the host's own picker.
+ *
+ * ⚠⚠ THIS BINDING EXISTS BECAUSE BOTH FEATURES WERE DEAD IN THIS FORK. Both
+ * seedings hang off applyComponentSelectionConfirmed, which is the HOST's
+ * component picker. davebox — the only UI this fork actually ships — picks
+ * modules through its own applyModulePick -> engineLoadModule, a bare
+ * `shadow_set_param(slot, comp + ':module', id)`, and never goes near that
+ * hook. So `default_fx` shipped here for months and, verified on device
+ * 2026-09-08, had NEVER LOGGED A SINGLE LINE. `default_buses` was inert on
+ * arrival for the same reason.
+ *
+ * ⭑ It is a BINDING rather than a copy in davebox for the reason the 09-07
+ * audit landed on: a shared split drawn around DATA loses BEHAVIOUR, and the
+ * answer is to move the mechanism somewhere both consumers reach rather than
+ * to port it twice and watch the copies drift. The seeding, its guards and its
+ * queue stay in ONE place; a consumer only says "an interactive pick just
+ * happened".
+ *
+ * INTERACTIVE PICKS ONLY. Both seedings guard themselves (an empty chain, a
+ * slot with no buses), but the caller still has to be a deliberate choice —
+ * never a project load or a reconstruction, which would re-seed a chain
+ * somebody has already shaped.
+ *
+ * Returns [fxSeeded, busesCreated] so a caller can decide whether to re-read.
+ */
+globalThis.host_seed_module_defaults = function(slot, moduleId) {
+    const s = slot | 0;
+    if (s < 0 || s >= SHADOW_UI_SLOTS || !moduleId) return [0, 0];
+    const fx = seedDefaultFxForSlot(s, String(moduleId));
+    const buses = seedDefaultBusesForSlot(s, String(moduleId));
+    return [fx, buses];
+};
+
 /* Returns how many positions were seeded (0 when it declined), so the caller can
  * decide whether the chain needs re-reading rather than re-reading always. */
 function seedDefaultFxForSlot(slotIndex, moduleId) {
