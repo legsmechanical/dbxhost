@@ -6686,7 +6686,21 @@ function handleMasterFxSettingsAction(key) {
     if (key === "help") {
         if (!helpContent) {
             try {
-                const raw = host_read_file("/data/UserData/schwung/shared/help_content.json");
+                /*
+                 * THIS install's help, not stock's.
+                 *
+                 * Both trees ship a shared/help_content.json and they are
+                 * different files -- ours is the one this build's own edits
+                 * land in, and reading the literal meant every one of them was
+                 * invisible while stock's copy was displayed instead. Found
+                 * 2026-09-09 by adding a Module Lists entry, deploying it, and
+                 * noticing the device had two files of different sizes.
+                 *
+                 * The shared-module IMPORT prefix a few hundred lines up is a
+                 * different thing and is correctly left alone: shadow_ui.c's
+                 * loader rewrites that one. Nothing rewrites a data path.
+                 */
+                const raw = host_read_file(HOST_STATE_ROOT + "/shared/help_content.json");
                 if (raw) {
                     helpContent = JSON.parse(raw);
                     /* Append core version to Schwung title */
@@ -6727,7 +6741,15 @@ function handleMasterFxSettingsAction(key) {
                 if (oldIdx >= 0) helpContent.sections.splice(oldIdx, 1);
 
                 /* Build a map of help.json content keyed by module directory */
-                const MODULES_DIR = "/data/UserData/schwung/modules";
+                /*
+                 * THIS install's modules. The shared categories (audio_fx,
+                 * midi_fx, overtake, sound_generators) are SYMLINKS to stock's
+                 * from here, so this still sees everything stock has -- plus
+                 * the ones this fork owns outright (chain, and the tools split
+                 * where ours are real dirs), whose help.json the stock literal
+                 * could never reach.
+                 */
+                const MODULES_DIR = HOST_STATE_ROOT + "/modules";
                 const helpMap = {};
                 const entries = os.readdir(MODULES_DIR) || [];
                 const dirList = entries[0];
