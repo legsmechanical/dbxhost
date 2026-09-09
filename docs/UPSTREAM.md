@@ -65,7 +65,7 @@ Those 10 commits touch **no** `src/` or `schwung-manager/` file, so nothing was 
 | `bde219c5` | **#468** `param-slow`: name the key when a param serve eats the frame | **Ported** (`4b6b3032`), wiring adapted. Verified firing on hardware. |
 | `b27cd8d4`, `52435f70` | **#464** `default_buses` + **#467** its queued-params fix | **Ported together** (`19005d7e`) — never #464 alone; see below. |
 | `f97d5548` | **#466** a bus insert can say what it IS (`display_name` polling) | **PORTED `84845932`** — davebox consumer, scoped to the open bus and refreshed on ENTRY (upstream polls, to drive announcements we do not have). ⚠ Contract-honouring only: NO module implements the key, here or upstream. |
-| `acad35ab` | **#472** a widget whose canvas.js failed to load was recorded as loaded | **NOT ported — no target.** This fork has no `ensureComponentWidgets` / `widgetModuleLoaded` latch; its canvas path is `resolveCanvasScriptPath` / `resolveOverlayFromGlobals`. ⚠ Absence of their symbols is NOT proof we lack the DEFECT; open on the board. |
+| `acad35ab` | **#472** a widget whose canvas.js failed to load was recorded as loaded | **Not portable as written, but THE DEFECT WAS HERE — fixed `3cb8b664`.** No `ensureComponentWidgets`/`widgetModuleLoaded` latch, so their patch had no target; the same defect lived in the CARD cache, keyed on the module's raw declaration and outliving every `load()`. Two modules using the same obvious filename shared an entry, and a failed load never retried. ⚠ "Their symbol is absent" ruled out a same-named latch, not the same defect — the row said NOT PORTED for a month while the bug sat here. |
 
 ### Divergences taken in this window — each deliberate, each pinned
 
