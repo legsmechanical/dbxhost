@@ -84,7 +84,7 @@ if ! command -v "${CROSS_PREFIX}gcc" >/dev/null 2>&1; then
     echo "Cross compiler not found, building via Docker..."
     docker build -t davebox-builder -f Dockerfile .
     docker run --rm -v "$PROJECT_DIR:/build" -w /build davebox-builder \
-        bash -c "SKIP_BUNDLE=1 CROSS_PREFIX=aarch64-linux-gnu- ./scripts/build_sound.sh"
+        bash -c "SKIP_BUNDLE=1 CROSS_PREFIX=aarch64-linux-gnu- EXPECT_GCC='${EXPECT_GCC:-}' ./scripts/build_sound.sh"
     exit $?
 fi
 
@@ -150,5 +150,40 @@ NM_BIN="${CROSS_PREFIX}nm"
 command -v "$NM_BIN" >/dev/null 2>&1 || NM_BIN="nm"
 "$NM_BIN" -D "dist/${MODULE_ID}/dsp.so" 2>/dev/null \
     | grep -o 'GLIBC_[0-9.]*' | sort -u || true
+
+# ---- WHICH COMPILER ACTUALLY MADE THIS -------------------------------------
+# gcc writes its version into the artifact's .comment section, always and for
+# free — so this needs no change to how anything is built, no stamp of our own,
+# and it does not affect byte-identity. It is READ, not added.
+#
+# ⚠⚠ WHY IT IS WORTH ASSERTING. A hash proves two artifacts match; it cannot
+# say they were made the same way. The DR32 session shipped three commits built
+# by gcc 11.4 while reporting them as the verified 12.2 build, because its
+# builder-image selection fell through to a different image. Root cause (proven
+# 2026-09-09, 5 attempts out of 5): `docker image inspect` FALSE-NEGATIVES on a
+# present, listed, runnable image, while `docker run <image>` on the same image
+# at the same moment succeeds.
+#
+# This fork cannot fall through — it names one image — but the same assertion
+# also catches an image rebuilt on a moved base and a container run by hand,
+# and costs one grep. Bump EXPECT_GCC deliberately when the toolchain moves;
+# a surprise is exactly what this exists to make loud.
+# ⚠ Defaulted with :- so an EMPTY forward from the outer pass still lands on
+# the default. The outer pass exits straight after `docker run`, so THIS runs
+# inside the container — an override that is not forwarded on that command line
+# never arrives, which is how the first negative control of this very check
+# passed while demanding a compiler that was not used.
+EXPECT_GCC="${EXPECT_GCC:-12.2.0}"
+_got_gcc="$(strings "dist/${MODULE_ID}/dsp.so" 2>/dev/null | grep -m1 -oE '^GCC: \(.*\) [0-9.]+' | grep -oE '[0-9.]+$' || true)"
+if [ -z "$_got_gcc" ]; then
+    echo "Error: dist/${MODULE_ID}/dsp.so carries no GCC version — cannot verify the toolchain" >&2
+    exit 1
+fi
+if [ "$_got_gcc" != "$EXPECT_GCC" ]; then
+    echo "Error: built with gcc $_got_gcc, expected $EXPECT_GCC." >&2
+    echo "       The builder image is not the one this build assumes." >&2
+    exit 1
+fi
+echo "Toolchain verified: gcc $_got_gcc"
 
 echo "=== Built dist/${MODULE_ID} ==="
