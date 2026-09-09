@@ -134,4 +134,31 @@ if command grep -q 'are delivered exclusively to the loaded module' "$docs"; the
 fi
 echo "  ok  docs describe the opt-in"
 
+# ---- the claim key survives a shim-side drop (upstream #443) -----------------
+# The SHIM clears claim_cc_bits when the shadow display closes, on an edge in
+# the SPI callback that runs no JS. `ccClaimKey` is therefore a MIRROR OF STATE
+# ANOTHER PROCESS OWNS, and that key is the only thing deciding whether the
+# claim is ever restated. Leave a claim view, dismiss the display, come back to
+# the same view and slot: the key is unchanged, the reconcile early-returns, and
+# the module's buttons go to Move for the rest of the session.
+rec=$(sed -n '/^function reconcileCcClaim() {/,/^}/p' "$ui_js")
+echo "$rec" | command grep -q 'shadow_get_display_mode' \
+  || fail "reconcileCcClaim's key does not consult the display mode -- the shim clears claim_cc_bits on the display-close edge without telling JS, so the claim is never restated on the way back in"
+echo "$rec" | command grep -A3 'const key = onScreen' | command grep -q 'displayOn' \
+  || fail "the display mode is read in reconcileCcClaim but not folded into the key -- reading it changes nothing on its own"
+# The subject the key is tracking. If the shim ever stops clearing on that edge,
+# this guard is obsolete rather than wrong, and should be deleted, not loosened.
+command grep -q 'prev_display_mode && !shadow_display_mode' "$shim" \
+  || fail "the shim no longer clears the claim on the display-close edge -- the display mode in the JS key now guards nothing; delete it rather than keep it"
+[ "$(command grep -c '^CC_CLAIM_VIEWS\[' "$ui_js")" -ge 1 ] \
+  || fail "CC_CLAIM_VIEWS is empty -- the claim can never be armed"
+# ⚠ NOT PORTED FROM UPSTREAM'S VERSION OF THIS TEST, deliberately: it also
+# asserts `enterGlobalSettings` routes through `enterGlobalSettingsGrid`, which
+# is the jump-flag-onto-a-claim-view path that made the bug reachable THERE.
+# This fork has no enterGlobalSettingsGrid -- enterGlobalSettings lands on
+# VIEWS.GLOBAL_SETTINGS -- so asserting it would either fail or invite someone
+# to invent the function to satisfy it. The defect does not depend on that path:
+# any re-entry onto the SAME claim view leaves the key unchanged.
+echo "  ok  the claim key turns on the display mode, the flag the shim actually clears"
+
 echo "PASS: test_claims_ccs"
