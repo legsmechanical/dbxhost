@@ -12472,8 +12472,32 @@ function reconcileCcClaim() {
     const onGrid = view === VIEWS.PARAM_PAGES && paramPagesActive();
     const slot = onGrid ? paramPagesSlot() : hierEditorSlot;
     const comp = onGrid ? paramPagesComponent() : hierEditorComponent;
+    /*
+     * THE DISPLAY MODE IS PART OF THE IDENTITY, because THE SHIM CLEARS THE
+     * CLAIM AND DOES NOT TELL US (upstream #443).
+     *
+     * `shadow_display_mode` drops from several sites inside the SPI callback,
+     * and the shim memsets `claim_cc_bits` on that edge (schwung_shim.c, the
+     * `prev_display_mode && !shadow_display_mode` block). None of those runs
+     * any JS. So `ccClaimKey` below is a MIRROR OF STATE ANOTHER PROCESS OWNS:
+     * after a dismiss it still says "claimed" while the shim holds nothing,
+     * the claim is never restated on the way back in, and the module's buttons
+     * go to Move for the rest of the session.
+     *
+     * ⚠ Without this the save was INCIDENTAL. Most re-entries land on a
+     * non-claim view, which empties the key and re-arms it; the paths that
+     * land straight back on a claim view were kept apart only by the slot and
+     * component halves of this tuple happening to differ. A real invariant
+     * resting on a coincidence, with nothing at either site saying so.
+     *
+     * Reading it is an SHM byte, not an IPC round-trip, so it costs nothing on
+     * the gate it guards — unlike the module-id read below, which is why that
+     * one stays behind the gate and this one widens it.
+     */
+    const displayOn = (typeof shadow_get_display_mode === "function")
+        ? shadow_get_display_mode() : 1;
     const key = onScreen
-        ? (view + "|" + coRunView + "|" + slot + "|" + comp)
+        ? (view + "|" + coRunView + "|" + slot + "|" + comp + "|" + displayOn)
         : "";
     if (key === ccClaimKey) return;
     /* THE READ COMES FIRST, AND null IS NOT AN ANSWER (upstream #435).
