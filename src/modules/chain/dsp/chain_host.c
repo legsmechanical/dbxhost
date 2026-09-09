@@ -915,6 +915,31 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
          * feeding whatever its sends point at.
          */
         chain_bus_clear_all(inst);
+        /*
+         * And the knob mappings, for the third time and the same reason: they
+         * are per-SLOT state, not per-module, so unloading everything they
+         * could point at leaves a knob "assigned" to a component that no
+         * longer exists.
+         *
+         * This is the only reset such a mapping gets. Two-pass set switching
+         * calls load_file only when the new Set has SAVED slot state; an
+         * EMPTY Set has none, so pass 2 never runs for that slot -- and a
+         * knob assigned in the old Set kept reading as assigned, and kept
+         * forwarding to whatever now occupied that position.
+         *
+         * The count goes too. Zeroing the array alone would leave
+         * knob_mapping_count claiming entries that are now all-zero, which is
+         * iterable garbage rather than "no mappings".
+         *
+         * Safe to zero rather than preserve, on the same grounds as the LFOs
+         * above: a patch load ASSIGNS the whole array (chain_patch.c's
+         * `memcpy(inst->knob_mappings, patch->knob_mappings, ...)` with the
+         * count set from the patch), so nothing a patch defines can be lost
+         * by clearing first. If that memcpy ever becomes a merge, this stops
+         * being safe -- which is why the test pins it.
+         */
+        memset(inst->knob_mappings, 0, sizeof(inst->knob_mappings));
+        inst->knob_mapping_count = 0;
         inst->current_patch = -1;
         inst->dirty = 0;
         malloc_trim(0);
