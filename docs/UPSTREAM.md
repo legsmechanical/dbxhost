@@ -2,6 +2,36 @@
 
 How this fork stays aware of `charlesvestal/schwung` now that it no longer rebases onto it.
 
+## 🔴 Before you port ANYTHING: name the dAVEBOx screen
+
+**The point of watching upstream is to take what is useful TO DAVEBOX and make it work FOR
+DAVEBOX** (Josh, 2026-09-09). dAVEBOx is the product; the host exists to serve it.
+
+**Answer this in one line before writing code:**
+
+> Which dAVEBOx screen shows this, and what does the user press to get there?
+
+If the answer names a HOST screen — the chain editor, `enterComponentSelect`, Global Settings,
+the host help viewer — **stop**. Find dAVEBOx's own equivalent first. A host-side change is
+right only when it is PLUMBING that dAVEBOx calls into; never when it is the surface itself.
+
+dAVEBOx's own hooks, for the common cases:
+
+| upstream puts it in | dAVEBOx's actual surface |
+|---|---|
+| `enterComponentSelect` / the swap picker | `openBrowse` + `buildBrowseList` + `applyModulePick` (`davebox/ui/ui_sound.mjs`) |
+| the host knob grid's trailing pages | dAVEBOx draws its own editor — `ui_sound.mjs` |
+| Global Settings rows | `davebox/ui/ui_menu.mjs` |
+| the host help viewer | ⚠ dAVEBOx has NO help screen — building one is its own decision |
+| text entry / dialogs | `davebox/ui/ui_dialogs.mjs` (shared keyboard, already used) |
+
+⚠⚠ **Every test can pass on the wrong surface.** Tests ask whether the code is WIRED, not
+whether the screen is REACHED. #378 was ported into the host chain editor across four commits —
+tested, mutation-checked, deployed, and invisible, because a dAVEBOx session never opens that
+editor. `default_fx` cost months the same way: `ui_sound.mjs` records that it "never logged a
+single line, because nothing reached the hook — the host seeds them from its OWN component
+picker, which this UI never uses."
+
 `upstream` is **fetch-only**. This fork does not replay its history onto upstream's; it reviews
 upstream's new commits, takes what is worth taking, and records the decision here. That is the
 whole discipline — a **watermark** plus a short table, replacing the 11-patch series and its
