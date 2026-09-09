@@ -943,6 +943,32 @@ export function createController(io = {}) {
         /* A different component may well implement is_loading even if the last
          * one did not, so the latch is per-component, not per-session. */
         if (!sameComponent) s.isLoadingSupported = null;
+        /*
+         * Card drawers are dropped on EVERY load, not just a component change,
+         * and both halves of that matter.
+         *
+         * ⚠⚠ THE KEY IS THE MODULE'S RAW DECLARATION ("card.js#draw"), not the
+         * path it resolves to. Two modules may reasonably declare the same
+         * string — it is the obvious thing to call the file — and the consumer
+         * resolves it against whichever module is LOADED. Keeping the entry
+         * across a load would hand the second module the FIRST one's drawer:
+         * a picture from another module, under this one's knob, with nothing
+         * anywhere reporting a problem. A component change is not enough of a
+         * guard either, because a module can be swapped inside one slot and
+         * component, which `sameComponent` reads as unchanged.
+         *
+         * ⭑ And it makes a FAILED load recoverable. A cached null is never
+         * retried by design (see warmCard) — right for a missing file, wrong
+         * for a load that failed once and would now succeed, which otherwise
+         * stays failed for the whole session with no way back. Leaving the
+         * view and returning is the state transition that fixes it; upstream's
+         * #472 was the same defect with that transition left closed.
+         *
+         * Cost is one evaluation per view entry per declaring parameter, which
+         * is what warmCard's "off the draw path" rule is actually protecting —
+         * it exists to stop a load per FRAME of a knob turn, not per entry.
+         */
+        s.cardFns = {};
         /* Likewise "we gave up on this one" — a new component gets a clean
          * slate, and the retry budget below is already per-component. */
         if (!sameComponent) s.contractGaveUp = false;
