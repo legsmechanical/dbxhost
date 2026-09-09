@@ -231,7 +231,18 @@ function collectDeclared(keys, metaIndex, invalid) {
              * Such a role is also NOT claimed, so its own cell still draws as
              * an ordinary control. It informs the picture; it is not part of it.
              */
-            if (v.role) g.roles[v.role] = { key, slot, span: v.span !== false };
+            /* `viz` is retained because the group's extra_keys are read back
+             * off it below (`declaredExtraKeys(r.viz)`). A role stored without
+             * it made that lookup return null for EVERY member, so a GROUP
+             * could never carry extra_keys at all — while the comment there
+             * said it could. Silent both ways: nothing is missing from the
+             * contract, and the widget just draws its "no answer" state
+             * forever, which reads as a broken widget rather than as a value
+             * that never arrived. (#446)
+             * ⓘ Only this site needs it. The OVERRIDE path below also builds
+             * `g.roles`, and never reads extra_keys off them — checked, not
+             * assumed, because a donor's site count is not this fork's. */
+            if (v.role) g.roles[v.role] = { key, slot, span: v.span !== false, viz: v };
             if (v.kind && !g.kind) g.kind = v.kind;
         } else if (v.kind) {
             /*

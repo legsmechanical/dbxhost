@@ -826,7 +826,23 @@ export function planPages({ hierarchy, chainParams, mode, visible, unresolved,
          * "Patch" / "Console" / "BOOM"; one consistent name for "where you land"
          * beats each module's own word for it. */
         const isRoot = levelKey === rootKey;
-        const base = isRoot ? "Main" : nameOf(levelKey, lvl);
+        /*
+         * `subtitle` is the OPT-IN exception: "Main - <subtitle>" (#446).
+         *
+         * The walk root's grid page is fixed to "Main" so that modules do not
+         * each open on their own word for "where you land". That leaves a
+         * module which splits one level per page unable to name its landing
+         * page at all — three ADSR rows drawing the same graphic under the same
+         * four labels, with the header the only thing telling them apart.
+         *
+         * ⚠ Deliberately NOT `name`: reading the level's own label here would
+         * rename the landing page of every module, which is the thing the rule
+         * above exists to prevent. A module must ask.
+         */
+        const subtitle = isRoot && lvl && typeof lvl.subtitle === "string"
+            ? lvl.subtitle.trim() : "";
+        const base = isRoot ? (subtitle ? `Main - ${subtitle}` : "Main")
+                            : nameOf(levelKey, lvl);
         const title = prefix ? `${prefix}/${base}` : base;
 
         /* Preset browser first — decided 2026-07-26. A level is routinely both
