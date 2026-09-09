@@ -25,6 +25,26 @@ fi
 echo "=== Building dAVEBOx ==="
 echo "Compiler: ${CROSS_PREFIX}gcc"
 
+# ⚠⚠ WIPE, don't just ensure. install_sound.sh ships `dist/${MODULE_ID}/*`
+# WHOLESALE, so anything this directory has ever held goes to the device —
+# a renamed bundle, a file whose source was deleted, an artifact from a build
+# of a different shape. Nothing warns: the build prints its usual success and
+# the stale file rides along under a manifest that counts it as ours.
+# Found 2026-09-08 by the DR32 session hitting the same class one door over —
+# a tracked `build/obj/*.o` survived its source's deletion and got LINKED into
+# the shipped dsp.so, silently, because a shared-library link need not resolve
+# undefined symbols. Different mechanism, same rule: a build output directory
+# is derived state, so REGENERATE it rather than accumulate into it.
+# Safe to delete: dist/ is gitignored (0 tracked files) and every artifact
+# below is rewritten by this script.
+# ⚠⚠ ONLY ON THE OUTER PASS. This script RE-RUNS ITSELF inside Docker with
+# SKIP_BUNDLE=1 on the same mounted volume (see the docker run below), so an
+# unguarded wipe here executes TWICE and the second one deletes the ui.js the
+# host just bundled — leaving a module with no UI, from a build that exits 0
+# and prints its usual success. Caught by a decoy file, not by reading it.
+if [ -z "$SKIP_BUNDLE" ]; then
+    rm -rf "dist/${MODULE_ID}"
+fi
 mkdir -p "dist/${MODULE_ID}"
 
 echo "Compiling DSP..."
