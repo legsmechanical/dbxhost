@@ -3245,7 +3245,13 @@ function renderModBusChain() {
     renderInChain(rows.map((c) => (c.kind === 'add'
         ? { label: '+ Add effect', hdr: true }
         : { label: c.label, hdr: true,
-            value: c.module ? (engineModuleAbbrev(c.module) || c.module) : '--',
+            /* The insert's OWN name first — several effects can ship in one
+             * binary, and then the abbreviation is the same on every box. Falls
+             * back to the abbreviation when the module does not answer. */
+            value: c.module
+                ? (ModBus.modBusInsertName(S.modBus, S.modBusGroup, c.index)
+                   || engineModuleAbbrev(c.module) || c.module)
+                : '--',
             chevron: !!c.module })),
         S.modBusChainIdx);
 }
@@ -8024,6 +8030,27 @@ export function soundTick() {
      * restore would land on a track the user never opened. */
     if (S.view === VIEW_FILE) tickFilepathPreview(S.fileState, FILE_BROWSER_PARAM_IO);
     else if (S.fileState) leaveFileBrowser();
+
+    /* ⭑ THE OPEN BUS'S INSERT NAMES — several effects can share one binary, so
+     * the module abbreviation is not the effect's name. See ui_modbus.mjs.
+     *
+     * ⭐ Asked HERE, by the same "ask the screen, not the door" rule the browser
+     * close above is written to: the chain screen has three ways in — its menu
+     * row, Back from an insert's editor, and Back from the picker after a swap
+     * — and THE LAST TWO ARE EXACTLY WHEN THE NAME CHANGED. A guard bolted to
+     * the menu row would see only the door somebody remembered, and the label
+     * would stay on the effect the user just replaced.
+     *
+     * The latch is (slot, bus), and leaving the screen drops it, so this is
+     * <= BUS_FX_SLOTS reads on ENTRY and ZERO per tick while it sits open. */
+    if (S.view === VIEW_MODBUS_CHAIN) {
+        if (!ModBus.modBusNamesFresh(S.modBus, S.slot, S.modBusGroup)) {
+            ModBus.modBusRefreshInsertNames(S.modBus, S.slot, S.modBusGroup);
+            S.dirty = true;
+        }
+    } else {
+        ModBus.modBusInvalidateNames(S.modBus);
+    }
 
     /* ⭑ AHEAD of discovery: when the editor is on, davebox's own bank model is
      * not what is being drawn, and running both would pay for two contracts. */

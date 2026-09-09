@@ -143,6 +143,9 @@ export function modBusRefreshConfig(st, slot) {
     const raw = engineGetChainParam(slot, 'buses:config');
     const parsed = BusModel.parseBusesConfig(raw);
     st.slot = slot;
+    /* The names hang off the config: if the config moved, the module behind a
+     * position may have too, so the cached labels are no longer answers. */
+    st.namesFor = null;
     if (!parsed.unresolved) st.config = parsed;
     else if (!st.config || st.config.unresolved) st.config = parsed;
     /* else: keep the last good one — every row in it was true a moment ago, and
@@ -242,6 +245,63 @@ export function modBusChainRows(st, groupIndex) {
     const b = cfg.buses[groupIndex];
     if (!b || !b.present) return [];
     return BusModel.busChainComponents(b.fx);
+}
+
+/*
+ * INSERT DISPLAY NAMES — what the effect calls ITSELF, not what its binary is.
+ *
+ * ⭐ WHY: shipping several effects from ONE binary is the normal case — the
+ * docs `default_buses` added say so, and Airwindows is one `.so` carrying 500+
+ * effects chosen by `plugin_id`. Declare four of them in a bus and every box
+ * reads the SAME module abbreviation over "FX 1".."FX 4", so the user cannot
+ * tell the compressor from the drive. `<comp>:display_name` is the instance's
+ * own name for itself.
+ *
+ * ⚠ SCOPED TO THE OPEN BUS AND REFRESHED ON ENTRY, not polled. Upstream (#466)
+ * polls the open bus once a second, because ITS copy of this read also drives
+ * change-based ANNOUNCEMENTS (key detection) — a feature this fork does not
+ * have. For LABELLING, the name changes only when the insert's module or its
+ * plugin_id changes, and both are gestures that leave and re-enter this screen.
+ * Polling every bus would be SLOT_BUSES x BUS_FX_SLOTS round trips a second at
+ * ~2.9 ms each; this is <= BUS_FX_SLOTS reads when the screen opens.
+ * [[schwung-param-roundtrip-is-the-cost]]
+ */
+export function modBusRefreshInsertNames(st, slot, groupIndex) {
+    if (!st) return;
+    /* A name belongs to one slot AND one bus. Keeping them across either would
+     * label THIS bus's boxes with the last one's — a wrong answer that looks
+     * exactly like a right one, the same rule modBusRefreshConfig follows. */
+    st.names = {};
+    st.namesFor = slot + ':' + groupIndex;
+    const cfg = st.config;
+    if (!cfg || cfg.unresolved) { st.namesFor = null; return; }
+    const b = cfg.buses && cfg.buses[groupIndex];
+    if (!b || !b.present) return;
+    for (const c of BusModel.busChainComponents(b.fx)) {
+        if (c.kind === 'add' || !c.module) continue;
+        const comp = BusModel.busComponentKey(groupIndex, c.index);
+        if (!comp) continue;
+        const name = engineGetChainParam(slot, comp + ':display_name');
+        /* ⚠ An UNRESOLVED read must not become a label. Leaving the entry out
+         * falls back to the abbreviation — wrong-but-honest; caching '' would
+         * draw an empty value column and read as "this insert has no effect". */
+        if (name) st.names[comp] = String(name);
+    }
+}
+
+/** Drop the cache so the next entry re-reads. */
+export function modBusInvalidateNames(st) { if (st) st.namesFor = null; }
+
+/** Has this (slot, bus) been read yet? The entry latch, so the tick asks once. */
+export function modBusNamesFresh(st, slot, groupIndex) {
+    return !!(st && st.namesFor === slot + ':' + groupIndex);
+}
+
+/** The insert's own name, or '' to fall back to the module abbreviation. */
+export function modBusInsertName(st, groupIndex, fxIndex) {
+    if (!st || !st.names) return '';
+    const comp = BusModel.busComponentKey(groupIndex, fxIndex);
+    return (comp && st.names[comp]) || '';
 }
 
 /*
