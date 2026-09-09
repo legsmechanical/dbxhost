@@ -3458,6 +3458,22 @@ static void init_shadow_shm(void)
         shadow_control->read_idx = 0;
         shadow_control->ui_slot = 0;
         shadow_control->ui_flags = 0;
+        /*
+         * pad_block is cleared at init because /dev/shm OUTLIVES us.
+         *
+         * The segment is deliberately not zeroed (see the comment above --
+         * shadow_poc owns the state), so a pad_block left raised by a shadow_ui
+         * that exited without lowering it survives every restart, including
+         * restart_move.sh, and there is nothing a user can do about it: pads go
+         * dead in the Schwung UI and work fine the moment they are back on a
+         * Move track, so it does not read as an input filter at all. Upstream
+         * saw exactly one "pad_block ON" and no OFF in a device log, the byte
+         * stuck for thirteen hours across two shim inits.
+         *
+         * Safe unconditionally: at init nothing is on screen to have claimed
+         * the pads, and whoever wants them raises the flag again on its way up.
+         */
+        shadow_control->pad_block = 0;
         /* Standalone session: raise the open-tool command so this host boots
          * straight into one module instead of its menu.
          *
@@ -7283,6 +7299,22 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
         static int prev_display_mode = 0;
         if (prev_display_mode && !shadow_display_mode) {
             if (shadow_control) memset((void *)shadow_control->claim_cc_bits, 0, sizeof(shadow_control->claim_cc_bits));
+            /*
+             * The pad block goes too, and for the reason this edge exists: it
+             * only means anything while a module's UI is on screen, and the
+             * shim enforces it INSIDE the shadow_display_mode branch below --
+             * so a shadow_ui that left without lowering it strands pads that
+             * look dead only in the Schwung UI.
+             *
+             * ⚠ NOT the same call as the claim latch two lines up, which must
+             * NOT be cleared here. A withheld BUTTON press owes Move a release,
+             * so dropping its latch mid-hold hands Move a lone button-up for a
+             * key it never saw go down (upstream #435; Delete being the
+             * destructive member of that trio). A withheld PAD note owes
+             * nothing worse than an unmatched note-off, which Move ignores.
+             * The asymmetry is the whole reason one is dropped and one is not.
+             */
+            if (shadow_control) shadow_control->pad_block = 0;
             /* A BUTTON STILL HELD KEEPS ITS LATCH (upstream #435). Clearing
              * the whole array here looks like the tidy thing and is a
              * stuck-button bug: that press was withheld from Move, so
