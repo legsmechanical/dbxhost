@@ -369,6 +369,10 @@ if needs_rebuild build/schwung-shim.so \
         $SHIM_DEFINES \
         $SHIM_INCLUDES \
         $SHIM_LIBS
+    # ⭐ READ THE ARTIFACT. A -shared link accepts undefined symbols, so this is
+    # the only place a missing source, a deleted macro or a typo for a real
+    # function is caught before the device. See scripts/check-artifact.sh.
+    "$REPO_ROOT/scripts/check-artifact.sh" build/schwung-shim.so "${CROSS_PREFIX}nm"
 else
     echo "Skipping shim (up to date)"
 fi

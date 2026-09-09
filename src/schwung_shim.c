@@ -7522,10 +7522,29 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                              * in this same frame and must route the release the
                              * same way it routed the press. */
                         }
-                        /* Filter Menu unless long-press mode dismisses shadow on tap */
-                        if (d1 == CC_MENU && !LONG_PRESS_ACTIVE()) {
-                            filter = 1;
-                        }
+                        /*
+                         * ⚠ THE MENU FILTER IS GONE, and it had already stopped
+                         * existing — this only ever looked like code.
+                         *
+                         * It read `if (d1 == CC_MENU && !LONG_PRESS_ACTIVE())`.
+                         * LONG_PRESS_ACTIVE() was a MACRO, and since
+                         * 5bb3f2de ("make long press always-on, remove
+                         * setting", 2026-04-15) it was literally `1` — so the
+                         * condition was always FALSE and Menu was never
+                         * filtered here. Then 40d223b4 (2026-08-09) deleted the
+                         * macro and eda30af1 re-introduced the CALL, so the
+                         * constant became an implicit declaration of a function
+                         * that does not exist: `U LONG_PRESS_ACTIVE` in the
+                         * shipped .so, which a `-shared` link is allowed to
+                         * carry and which would fail only when called.
+                         *
+                         * Removed rather than re-defined: under the macro's own
+                         * value this branch could never run, so deleting it is
+                         * behaviour-identical and takes the undefined call with
+                         * it. Long press is always on; Menu is not filtered
+                         * here. See tests/host/test_artifact_symbols.sh, which
+                         * is what found this.
+                         */
                         /* Filter knob CCs when shift held */
                         if (d1 >= CC_KNOB1 && d1 <= CC_KNOB8) {
                             filter = 1;

@@ -83,8 +83,13 @@ fi
 if ! command -v "${CROSS_PREFIX}gcc" >/dev/null 2>&1; then
     echo "Cross compiler not found, building via Docker..."
     docker build -t davebox-builder -f Dockerfile .
-    docker run --rm -v "$PROJECT_DIR:/build" -w /build davebox-builder \
-        bash -c "SKIP_BUNDLE=1 CROSS_PREFIX=aarch64-linux-gnu- EXPECT_GCC='${EXPECT_GCC:-}' ./scripts/build_sound.sh"
+    # ⚠ The shared build gates live in the REPO ROOT's scripts/, which is
+    # OUTSIDE this mount — only davebox is mounted at /build. Mount them too
+    # rather than keeping a second copy: a duplicated gate is a gate that
+    # drifts. DBX_SCRIPTS is what the inner pass looks for.
+    docker run --rm -v "$PROJECT_DIR:/build" \
+        -v "$(cd "$PROJECT_DIR/.." && pwd)/scripts:/dbxscripts:ro" -w /build davebox-builder \
+        bash -c "SKIP_BUNDLE=1 CROSS_PREFIX=aarch64-linux-gnu- EXPECT_GCC='${EXPECT_GCC:-}' DBX_SCRIPTS=/dbxscripts ./scripts/build_sound.sh"
     exit $?
 fi
 
@@ -185,5 +190,16 @@ if [ "$_got_gcc" != "$EXPECT_GCC" ]; then
     exit 1
 fi
 echo "Toolchain verified: gcc $_got_gcc"
+
+# ⭐ READ THE ARTIFACT for symbols it references but does not contain. A module
+# is a -shared object, so the link accepts them and the failure arrives at
+# dlopen on the device. Same gate the host build runs; see
+# ../scripts/check-artifact.sh for why it is one check and not four.
+# DBX_SCRIPTS is set when this pass runs inside the container (where the repo
+# root is not mounted); outside, the scripts sit beside the davebox tree.
+# ⚠ NOT skipped when absent — a gate that quietly does not run is the failure
+# it exists to prevent.
+DBX_SCRIPTS="${DBX_SCRIPTS:-$PROJECT_DIR/../scripts}"
+"$DBX_SCRIPTS/check-artifact.sh" "dist/${MODULE_ID}/dsp.so" "$NM_BIN"
 
 echo "=== Built dist/${MODULE_ID} ==="
