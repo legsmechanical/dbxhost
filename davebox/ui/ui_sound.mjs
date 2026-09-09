@@ -60,6 +60,7 @@ import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationRegisterSeqApply, automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
          automationClearKey, automationEntriesFor } from './ui_automation.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
+import * as ModuleLists from '/data/UserData/schwung/shared/module_lists.mjs';
 import { MoveKnob1, Red, White } from '/data/UserData/schwung/shared/constants.mjs';
 import { showActionPopup, showActionPopupFor } from './ui_persistence.mjs';
 import { writeSidecar } from './ui_persistence.mjs';
@@ -5989,6 +5990,8 @@ function runActionBody(a) {
     else if (a.t === 'browse')  openBrowse(a.comp, a.prompt);
     else if (a.t === 'instrpick') openInstrPicker();
     else if (a.t === 'load')    loadSelected();
+    else if (a.t === 'listcycle')  cycleListFilter();
+    else if (a.t === 'listtoggle') toggleListMembership();
     else if (a.t === 'presets') openPresets();
     else if (a.t === 'usrlist') openUserPresets();
     else if (a.t === 'baked')   openBaked();
@@ -6106,6 +6109,75 @@ function runDiscovery() {
 
 /* ---- module browser (per block) ---- */
 
+/* ---- module lists, in DAVEBOX's browser ---------------------------------
+ *
+ * Upstream (#378) puts this on the host's chain editor and its swap picker.
+ * dAVEBOx never opens either -- it picks through openBrowse/applyModulePick --
+ * so the whole feature lives HERE instead. Only the MODEL is shared
+ * (src/shared/module_lists.mjs, pure and node-tested); every surface below is
+ * dAVEBOx's own.
+ *
+ * The file is shared with stock on purpose (Josh, 2026-09-09): one Favorites
+ * list for both, at the path stock >= 1.1.0 already writes.
+ */
+const LIST_ROW_ID = '__list_filter__';
+
+let mlState = null;        /* { version, lists } once loaded */
+let mlReadOnly = false;    /* corrupt OR newer-than-us: never write */
+let mlWhy = '';            /* why, for the announcement */
+/* The active filter. Module-scoped so it PERSISTS across browses -- opening
+ * the picker already on Favorites is the entire workflow win -- but not on
+ * disk, because a filter you do not remember choosing is a trap next boot. */
+let mlFilter = null;
+
+function mlPath() { return ModuleLists.listsPathFor('/data/UserData/schwung'); }
+
+const mlIo = {
+    readFile: (f) => (typeof host_read_file === 'function' ? host_read_file(f) : null),
+    writeFile: (f, body) => (typeof host_write_file === 'function' ? host_write_file(f, body) : false),
+};
+
+function mlLoad() {
+    const r = ModuleLists.loadLists(mlIo, mlPath());
+    mlState = r.state;
+    /* Two different refusals, one "do not write". Kept apart in the message:
+     * corrupt means the lists shown are NOT the user's (we seeded a default),
+     * newer means they ARE and a newer Schwung owns the file. */
+    mlReadOnly = !!(r.corrupt || r.newer);
+    mlWhy = r.corrupt ? ' (file unreadable)' : (r.newer ? ' (newer Schwung owns it)' : '');
+}
+
+function mlEnsure() { if (!mlState) mlLoad(); }
+
+function mlSave() {
+    if (!mlState || mlReadOnly) return false;
+    return ModuleLists.saveLists(mlIo, mlState, mlPath());
+}
+
+/* The real module ids among browse rows -- not `[ none ]` (empty id) and not
+ * the filter row. Written once because both callers need the same answer. */
+function mlRealIds(rows) {
+    return (rows || [])
+        .filter(m => m && m.id && m.id !== LIST_ROW_ID)
+        .map(m => moduleIdOf(m.path || m.id));
+}
+
+/* Which lists this catalogue could usefully filter to. Lists are global, so
+ * without this an FX browse could land on a synth-only list and draw a screen
+ * with nothing on it. */
+function mlEligible(rows) {
+    mlEnsure();
+    return ModuleLists.listsWithAnyOf(mlState, mlRealIds(rows));
+}
+
+function mlIsMember(mod) {
+    if (!mod || !mod.id || mod.id === LIST_ROW_ID) return false;
+    mlEnsure();
+    const id = moduleIdOf(mod.path || mod.id);
+    const name = mlFilter || ModuleLists.FAVORITES;
+    return ModuleLists.isMember(mlState, name, id);
+}
+
 /* `idx` retargets the block first. Shift+click arrives from the block PICKER,
  * where S.comp still names whichever block was last opened — browsing without
  * this would offer modules for the wrong component and load into it. */
@@ -6125,11 +6197,46 @@ function openBrowse(comp, prompt) {
     const spec = COMPONENTS[S.comp]
         || (S.bus || ModBus.modBusParseInsertKey(S.comp) ? COMPONENTS.fx1 : null);
     const found = spec ? engineListModules(specKeyFor(S.comp)) : [];
+
+    /*
+     * Drop a filter this catalogue cannot honour BEFORE using it. Lists are
+     * global, so the Favorites you set browsing synths may hold no audio FX at
+     * all -- and a sticky filter that opens an empty picker reads as "there
+     * are no effects", which is the same wrong conclusion the module-bus bug
+     * above produced.
+     */
+    if (mlFilter && mlEligible(found).indexOf(mlFilter) < 0) mlFilter = null;
+    let catalogue = found;
+    if (mlFilter) {
+        mlEnsure();
+        const kept = ModuleLists.filterIds(mlState, mlRealIds(found), mlFilter);
+        /* null = the list vanished under us. Never the identity (see
+         * filterIds) -- show everything, which is what All would show. */
+        if (kept === null) { mlFilter = null; }
+        else {
+            const keep = Object.create(null);
+            for (const id of kept) keep[id] = true;
+            catalogue = found.filter(m => keep[moduleIdOf(m.path || m.id)]);
+        }
+    }
+
     /* [ none ] first, and the cursor never resting on it, are one decision —
      * see buildBrowseList, which owns both and is pinned by tests. */
-    const picked = buildBrowseList(found, engineLoadedModule(S.slot, S.comp));
-    S.browseList = picked.list;
-    S.browseIdx = picked.idx;
+    const picked = buildBrowseList(catalogue, engineLoadedModule(S.slot, S.comp));
+    /*
+     * The filter row goes in at 0, AFTER buildBrowseList has placed its cursor,
+     * so that function keeps owning [ none ] and the cursor rule and this only
+     * shifts the result by one.
+     *
+     * ⚠ The cursor must then never REST here, for exactly the reason it never
+     * rests on [ none ]: at index 0 with the cursor defaulting there, one click
+     * would change the filter instead of choosing a module. Same shape of trap
+     * that wiped two slots in phase-1 testing.
+     */
+    S.browseList = [{ id: LIST_ROW_ID, name: 'List: ' + (mlFilter || 'All') }].concat(picked.list);
+    S.browseIdx = picked.idx + 1;
+    if (S.browseIdx >= S.browseList.length) S.browseIdx = S.browseList.length - 1;
+    if (S.browseIdx <= 0) S.browseIdx = Math.min(1, S.browseList.length - 1);
     S.browsePrompt = prompt || '';
     S.view = VIEW_BROWSE;
     S.dirty = true;
@@ -6139,7 +6246,70 @@ function openBrowse(comp, prompt) {
 function loadSelected() {
     const mod = S.browseList[S.browseIdx];
     if (!mod) return;
+    /* The filter row is a CONTROL, not a module. Guarded here as well as at
+     * the click site because applyModulePick would otherwise write its
+     * synthetic id into the slot as a module name. */
+    if (mod.id === LIST_ROW_ID) return;
     applyModulePick(mod);
+}
+
+/* Click on the filter row: All -> each eligible list -> All.
+ *
+ * Re-opens the browse rather than editing S.browseList in place, so the
+ * catalogue, the cursor rule and [ none ] all come from the one function that
+ * owns them. The cursor is put BACK on the filter row afterwards: reopening
+ * places it on a module for a fresh open, and moving the user off after one
+ * click would mean jogging to the top for every step of the cycle. */
+function cycleListFilter() {
+    const spec = COMPONENTS[S.comp]
+        || (S.bus || ModBus.modBusParseInsertKey(S.comp) ? COMPONENTS.fx1 : null);
+    /* The UNFILTERED catalogue, deliberately: cycling from the filtered one
+     * would shrink the eligible set at every step until only All remained. */
+    const found = spec ? engineListModules(specKeyFor(S.comp)) : [];
+    mlFilter = ModuleLists.nextFilter(mlFilter, mlEligible(found));
+    openBrowse(null, S.browsePrompt);
+    S.browseIdx = 0;
+    S.dirty = true;
+    log('browse: list filter -> ' + (mlFilter || 'All'));
+}
+
+/* Shift+click on a module row: file it into the list currently being filtered
+ * to, or into Favorites when the filter is All.
+ *
+ * Writes IMMEDIATELY -- there is no Save row, because a toggle that needs
+ * confirming is a toggle that will be lost. */
+function toggleListMembership() {
+    const mod = S.browseList[S.browseIdx];
+    if (!mod || !mod.id || mod.id === LIST_ROW_ID) return;
+    mlEnsure();
+    const listName = mlFilter || ModuleLists.FAVORITES;
+    const id = moduleIdOf(mod.path || mod.id);
+    const now = ModuleLists.toggleMembership(mlState, listName, id);
+    /* null = the toggle touched NOTHING. Announcing a removal for that would
+     * report a result that did not happen. */
+    if (now === null) { S.browsePrompt = 'no list'; S.dirty = true; return; }
+    if (!mlSave()) {
+        /* Put the model back: a checkbox the file disagrees with silently
+         * undoes itself on the next open, having said it worked. */
+        ModuleLists.toggleMembership(mlState, listName, id);
+        S.browsePrompt = 'not saved' + mlWhy;
+        S.dirty = true;
+        return;
+    }
+    S.browsePrompt = (now ? '+ ' : '- ') + listName;
+    /*
+     * Removing the module you are LOOKING AT while filtered to that list means
+     * the row must go. Rebuild rather than leave a row the filter now excludes
+     * -- the alternative is a list that disagrees with its own filter until the
+     * next open.
+     */
+    if (!now && mlFilter === listName) {
+        const keepIdx = S.browseIdx;
+        openBrowse(null, S.browsePrompt);
+        S.browseIdx = Math.min(keepIdx, S.browseList.length - 1);
+        if (S.browseIdx <= 0) S.browseIdx = Math.min(1, S.browseList.length - 1);
+    }
+    S.dirty = true;
 }
 
 /* Apply a module choice — including the `[ none ]` row, which is how a module is
@@ -7435,7 +7605,16 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * where "what is in this block" is the question being asked. */
             S.pendingAction = { t: S.shiftHeld ? 'browse' : 'open', comp: S.pickRows[S.pickRow].comp };
         }
-        else if (S.view === VIEW_BROWSE)      S.pendingAction = { t: 'load' };
+        else if (S.view === VIEW_BROWSE) {
+            const row = S.browseList[S.browseIdx];
+            if (row && row.id === LIST_ROW_ID) S.pendingAction = { t: 'listcycle' };
+            /* Shift+click FILES the module, plain click loads it. Same split
+             * the block picker makes: the modifier buys the rarer, structural
+             * action, and it means the whole feature needs no screen of its
+             * own -- which matters here, where the browser IS the surface. */
+            else if (S.shiftHeld)                 S.pendingAction = { t: 'listtoggle' };
+            else                                  S.pendingAction = { t: 'load' };
+        }
         /* An EMPTY block has no presets to offer, and its editor's whole job is
          * "pick something" — so click there still means the module browser. */
         else if (S.view === VIEW_EDIT)
@@ -8588,7 +8767,11 @@ function renderBrowse() {
     /* ⚠ The prompt (why the browser opened) rides the header band, which the
      * crumb bar now owns — so an EMPTY-block browse says so in the crumb rather
      * than over the backdrop. */
-    renderInChain(S.browseList.map(m => String(m.name)), S.browseIdx);
+    /* A member of the list in play is marked with a leading dot. Not a
+     * checkbox: these rows are modules you LOAD, and a checkbox would say the
+     * click toggles them when the click loads them. */
+    renderInChain(S.browseList.map(m => (mlIsMember(m) ? '\u00b7' : '') + String(m.name)),
+                  S.browseIdx);
 }
 
 /* ── hosting a module's OWN canvas UI ──────────────────────────────────────
