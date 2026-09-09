@@ -1,0 +1,35 @@
+# Unversioned undefined symbols an artifact is ALLOWED to carry.
+#
+# A shared library may reference names it does not contain; the link cannot
+# tell you, and the failure arrives at dlopen or at first call. So the build
+# reads its own artifact and fails on anything not listed here BY NAME.
+#
+# Versioned symbols (foo@GLIBC_2.17) are never listed: the version tag means a
+# specific shared library owns them and the loader will resolve them.
+#
+# ⚠ ADD A LINE ONLY FOR A SYMBOL SOMETHING ELSE GENUINELY PROVIDES AT RUNTIME,
+# and say who. An entry added to make a build pass is how this check becomes
+# decoration. Two real defects were found by this list being empty of them:
+# `tts_save_config` (a copy-paste slip for flite_save_config, which would have
+# crashed on a TTS speed change) and `LONG_PRESS_ACTIVE` (a macro deleted in
+# 40d223b4 while a call to it survived).
+
+# --- toolchain internals, emitted into every gcc artifact ---
+__gmon_start__
+_ITM_registerTMCloneTable
+_ITM_deregisterTMCloneTable
+
+# --- espeak-ng and flite: the TTS engines are loaded as shared libraries at
+# --- runtime, so the shim references their entry points without linking them.
+espeak_Initialize
+espeak_SetParameter
+espeak_SetSynthCallback
+espeak_SetVoiceByName
+espeak_Synchronize
+espeak_Synth
+espeak_Terminate
+delete_wave
+feat_set_float
+flite_init
+flite_text_to_wave
+register_cmu_us_kal

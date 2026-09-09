@@ -421,7 +421,7 @@ void flite_tts_set_speed(float speed) {
     }
 
     flite_clear_buffer();
-    tts_save_config();
+    flite_save_config();
 }
 
 void flite_tts_set_pitch(float pitch_hz) {
@@ -438,7 +438,7 @@ void flite_tts_set_pitch(float pitch_hz) {
     }
 
     flite_clear_buffer();
-    tts_save_config();
+    flite_save_config();
 }
 
 static void flite_clear_buffer(void) {
