@@ -9,6 +9,7 @@
 
 #define _GNU_SOURCE
 #include "shadow_sampler.h"
+#include "sampler_wav_trim.h"
 #include "shadow_transport.h"
 #include "shim_worker.h"
 #include <semaphore.h>
@@ -181,6 +182,12 @@ static void chown_to_ableton_recursive(const char *path) {
 /* ============================================================================
  * WAV, ring buffer, recording, audio capture, MIDI clock
  * ============================================================================ */
+
+/* The trim's write callback. This fork has no paced writer (upstream passes
+ * one for its stems); a plain fwrite is the whole contract. */
+static size_t sampler_trim_fwrite(FILE *f, const void *buf, size_t n) {
+    return fwrite(buf, 1, n, f);
+}
 
 static void sampler_write_wav_header(FILE *f, uint32_t data_size) {
     sampler_wav_header_t header;
@@ -607,7 +614,26 @@ void sampler_worker_prepare(void) {
         }
     }
 
-    sampler_wav_file = fopen(sampler_current_recording, "wb");
+    /*
+     * "w+b", NOT "wb" — READABLE, because the preroll trim reads this file back
+     * (#430).
+     *
+     * ⚠⚠ THE TRIM WAS A NO-OP AND EVERY SIGNAL SAID IT HAD WORKED. On stop the
+     * finalize copies the take down over the count-in, then ftruncates. `fread`
+     * on a write-only stream returns 0, so the copy loop broke on its FIRST
+     * pass before a byte moved — and the ftruncate ran anyway, cutting the
+     * preroll's worth of bytes off the END of a file whose front was untouched.
+     * What landed on the card was the count-in, at exactly the right duration,
+     * with the take's tail missing. The log still said "trimmed N preroll
+     * frames": the caller prints that on a return the function makes whether or
+     * not it copied anything.
+     *
+     * ⭑ Upstream fixed this by extracting the body into sampler_wav_trim.h,
+     * which this fork cannot use as-is — it has no stems and no paced writer,
+     * so the refactor has nothing to share. The DEFECT is the mode, and that is
+     * what is ported. tests/host/test_sampler_wav_open_mode.sh pins it.
+     */
+    sampler_wav_file = fopen(sampler_current_recording, "w+b");
     if (!sampler_wav_file) {
         char msg[300];
         snprintf(msg, sizeof(msg), "Sampler: failed to open WAV file: %s",
@@ -750,53 +776,35 @@ void sampler_worker_finalize(void) {
     pthread_join(sampler_writer_thread, NULL);
     sampler_writer_running = 0;
 
-    /* Trim preroll frames from the front of the WAV file.
-     * The file contains [preroll audio | actual recording].
-     * We rewrite it to contain only [actual recording]. */
+    /*
+     * Trim the preroll off the FRONT of the WAV.
+     *
+     * The body lives in sampler_wav_trim.h so tests/host can run it against a
+     * real file — including the case that made this feature a no-op, which was
+     * the FILE MODE and not the arithmetic (#430; see the fopen above).
+     *
+     * ⚠⚠ IT HAS NEVER ONCE RUN SUCCESSFULLY HERE, so its arithmetic was
+     * unexercised too — which is why this is the shared, tested helper rather
+     * than the inline loop it replaces. The helper also refuses to ftruncate
+     * after a short read: the old code truncated regardless, which is how a
+     * failed copy still removed the preroll's worth of bytes from the END.
+     */
     if (sampler_wav_file && sampler_preroll_frames_captured > 0) {
-        uint32_t preroll_bytes = sampler_preroll_frames_captured * SAMPLER_NUM_CHANNELS * (SAMPLER_BITS_PER_SAMPLE / 8);
-        uint32_t total_bytes = sampler_samples_written * SAMPLER_NUM_CHANNELS * (SAMPLER_BITS_PER_SAMPLE / 8);
-
-        if (preroll_bytes < total_bytes) {
-            uint32_t keep_bytes = total_bytes - preroll_bytes;
-            uint32_t keep_frames = sampler_samples_written - sampler_preroll_frames_captured;
-
-            /* Read the portion we want to keep into a temp buffer */
-            size_t header_size = sizeof(sampler_wav_header_t);
-            fseek(sampler_wav_file, header_size + preroll_bytes, SEEK_SET);
-
-            /* Process in chunks to limit memory usage */
-            #define TRIM_CHUNK_SIZE (44100 * 2 * 2)  /* ~1 second */
-            int16_t *chunk = malloc(TRIM_CHUNK_SIZE);
-            if (chunk) {
-                uint32_t remaining = keep_bytes;
-                uint32_t read_offset = header_size + preroll_bytes;
-                uint32_t write_offset = header_size;
-
-                while (remaining > 0) {
-                    uint32_t to_copy = remaining < TRIM_CHUNK_SIZE ? remaining : TRIM_CHUNK_SIZE;
-                    fseek(sampler_wav_file, read_offset, SEEK_SET);
-                    size_t got = fread(chunk, 1, to_copy, sampler_wav_file);
-                    if (got == 0) break;
-                    fseek(sampler_wav_file, write_offset, SEEK_SET);
-                    fwrite(chunk, 1, got, sampler_wav_file);
-                    read_offset += got;
-                    write_offset += got;
-                    remaining -= got;
-                }
-                free(chunk);
-
-                /* Truncate the file and update header */
-                ftruncate(fileno(sampler_wav_file), header_size + keep_bytes);
-                sampler_samples_written = keep_frames;
-
-                char tmsg[128];
-                snprintf(tmsg, sizeof(tmsg), "Sampler: trimmed %u preroll frames (%.1fms)",
-                         sampler_preroll_frames_captured,
-                         (float)sampler_preroll_frames_captured / SAMPLER_SAMPLE_RATE * 1000.0f);
-                s_host.log(tmsg);
-            }
-            #undef TRIM_CHUNK_SIZE
+        unsigned frames = (unsigned)sampler_samples_written;
+        if (sampler_wav_trim_front_impl(
+                sampler_wav_file,
+                sizeof(sampler_wav_header_t),
+                (unsigned)(SAMPLER_NUM_CHANNELS * (SAMPLER_BITS_PER_SAMPLE / 8)),
+                (unsigned)sampler_preroll_frames_captured,
+                &frames,
+                sampler_trim_fwrite,
+                s_host.log)) {
+            sampler_samples_written = (uint32_t)frames;
+            char tmsg[128];
+            snprintf(tmsg, sizeof(tmsg), "Sampler: trimmed %u preroll frames (%.1fms)",
+                     sampler_preroll_frames_captured,
+                     (float)sampler_preroll_frames_captured / SAMPLER_SAMPLE_RATE * 1000.0f);
+            s_host.log(tmsg);
         }
     }
 
