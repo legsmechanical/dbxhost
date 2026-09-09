@@ -64,7 +64,7 @@ Those 10 commits touch **no** `src/` or `schwung-manager/` file, so nothing was 
 | `45f728b8` | **#444** param contract to 128 KB, and the 1.2 MB frame off the callback stack | **Ported** (`6d704fe3`) — the CONSTANTS only. See the divergence below. |
 | `bde219c5` | **#468** `param-slow`: name the key when a param serve eats the frame | **Ported** (`4b6b3032`), wiring adapted. Verified firing on hardware. |
 | `b27cd8d4`, `52435f70` | **#464** `default_buses` + **#467** its queued-params fix | **Ported together** (`19005d7e`) — never #464 alone; see below. |
-| `f97d5548` | **#466** a bus insert can say what it IS (`display_name` polling) | **NOT ported — no target.** See the divergence below. |
+| `f97d5548` | **#466** a bus insert can say what it IS (`display_name` polling) | **PORTED `84845932`** — davebox consumer, scoped to the open bus and refreshed on ENTRY (upstream polls, to drive announcements we do not have). ⚠ Contract-honouring only: NO module implements the key, here or upstream. |
 | `acad35ab` | **#472** a widget whose canvas.js failed to load was recorded as loaded | **NOT ported — no target.** This fork has no `ensureComponentWidgets` / `widgetModuleLoaded` latch; its canvas path is `resolveCanvasScriptPath` / `resolveOverlayFromGlobals`. ⚠ Absence of their symbols is NOT proof we lack the DEFECT; open on the board. |
 
 ### Divergences taken in this window — each deliberate, each pinned
@@ -89,12 +89,20 @@ davebox calls it from its pick. Upstream needs no such binding and should not be
 `davebox/ui/ui_sound.mjs`, because seeding from a restore path would re-create buses the user
 deleted on every boot.
 
-**#466: no target, and the gap it leaves is now REAL here.** Upstream polls `display_name` for the
-inserts of the open bus so several instances of one binary do not all read as the same three
-letters. That lives in its bus chain editor (`VIEWS.BUS_CHAIN`, `shadow_ui_buses.mjs`), which this
-fork does not have — davebox's `ui_modbus.mjs` is the bus UI, and it reads `display_name` NOWHERE.
-Since `default_buses` explicitly encourages shipping several effects from one binary, four
-Airwindows instances in a bus now label identically. Open on the board.
+**#466: PORTED as davebox's own consumer (`84845932`), with a deliberately different SCOPING.**
+Upstream polls the open bus once a second; that poll also drives change-based ANNOUNCEMENTS (key
+detection), which this fork does not have. For LABELLING the name only changes when the insert's
+module or its `plugin_id` changes — both gestures that leave and re-enter the screen — so davebox
+refreshes on ENTRY behind a (slot, bus) latch: ≤ `BUS_FX_SLOTS` reads when the chain screen opens,
+zero per tick while it sits, never a sweep of `SLOT_BUSES × BUS_FX_SLOTS` at ~2.9 ms a round trip.
+
+⚠⚠ **It is CONTRACT-HONOURING, not a live fix, and the earlier entry here claimed otherwise.**
+**No module implements `display_name` — not one `.so` in this fork's module tree, and not one in
+upstream's**, where the key appears only in the two CONSUMERS (`shadow_ui.js`,
+`shadow_ui_buses.mjs`). That includes `clap`, which IS the Airwindows module (`abbrev: "AW"`, 500+
+plugins via `plugin_id`) and the exact case the gap was written about. So four Airwindows inserts
+still label identically, and closing that needs **clap to SERVE the key** — upstream's module, so a
+PR there rather than a fork change ([[schwung-only-what-we-originated]]). Filed on the board.
 
 **`SLOT_BUSES = 8` against upstream's 4.** Pre-existing, restated here because `default_buses`
 makes it module-visible: a module may declare more buses on this fork, and the seeding loop simply
