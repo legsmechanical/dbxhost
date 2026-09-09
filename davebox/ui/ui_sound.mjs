@@ -7116,7 +7116,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * a browser rooted at undefined. */
             /* ⚠⚠ NOT `S.cpMap[bare]`. cpMap holds chain_params ONLY, and a
              * module is free to declare its file inline on a level instead —
-             * DR32 does, so `sample_move` is not in cpMap and never was, and
+             * DR32 does, so its file key is not in cpMap and never was, and
              * this branch fell through to the silent return below. Shift+click
              * did nothing on the one module the gesture was written for.
              * `authoritativeMeta` is the lookup the menu already uses: cpMap
@@ -9765,12 +9765,17 @@ function openWavEditor(fullKey, meta, divedFrom) {
             metaOf: (bare) => authoritativeMeta(bare, cp, S.levels),
             buildKey: (bare) => `${S.comp}:${bare}`,
             /* ⚠⚠ THE SIBLING IS ON THIS INSTANCE, not on the component. A
-             * marker on a child level names its file by a BARE key — DR32's
-             * pads declare `"filepath_param": "sample_move"` — while the
-             * parameter that exists on the wire is `pad05_sample_move`.
-             * Scoping to the component alone asked for `synth:sample_move`,
-             * read empty, and the screen said "no sample linked" for a pad
-             * that was loaded and audibly playing. Reported from the device. */
+             * marker on a child level names its file by a BARE key — at the
+             * time DR32's pads declared `"filepath_param": "sample_move"` —
+             * while the parameter that exists on the wire is
+             * `pad05_sample_move`. Scoping to the component alone asked for
+             * `synth:sample_move`, read empty, and the screen said "no sample
+             * linked" for a pad that was loaded and audibly playing. Reported
+             * from the device.
+             * ⓘ DR32 has since renamed the declaration to `sample` (the
+             * Move/User browser cells collapsed into one); `sample_move`
+             * remains a live alias in its param handler. The SPELLING is
+             * incidental — the bug was the SCOPE, and that is unchanged. */
             siblingKey: (bare) => wavSiblingKey(fullKey, (meta && meta.key) || '',
                                                 bare, S.comp),
             exists: (path) => {

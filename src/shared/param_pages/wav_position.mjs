@@ -407,9 +407,10 @@ export function joinWavPath(base, leaf) {
  * The wire key of a SIBLING parameter on the same instance.
  *
  * ⚠⚠ THE CHILD INDEX IS THE WHOLE PROBLEM. A marker on a child level declares
- * its file by a BARE key — DR32's pads say `"filepath_param": "sample_move"` —
- * but the parameter that actually exists on the wire is `pad05_sample_move`.
- * Scoping the declared key to the component alone asks for `synth:sample_move`,
+ * its file by a BARE key — DR32's pads said `"filepath_param": "sample_move"`
+ * when this was written, and now say `"sample"` — but the parameter that
+ * actually exists on the wire is `pad05_<that key>`. Scoping the declared key
+ * to the component alone asks for `synth:<that key>`,
  * which no module serves: the read comes back empty and the screen reports "no
  * sample linked" for a pad that is loaded and audibly playing.
  *
@@ -422,7 +423,7 @@ export function joinWavPath(base, leaf) {
  *
  * @param {string} markerFullKey  the marker as addressed, e.g. "synth:pad05_start"
  * @param {string} ownBare        what the marker calls itself, e.g. "start"
- * @param {string} declaredBare   the sibling it names, e.g. "sample_move"
+ * @param {string} declaredBare   the sibling it names, e.g. "sample"
  * @param {string} prefix         the component, e.g. "synth"
  */
 export function wavSiblingKey(markerFullKey, ownBare, declaredBare, prefix) {
@@ -447,7 +448,7 @@ export function wavSiblingKey(markerFullKey, ownBare, declaredBare, prefix) {
      * Both shapes are in the fleet and `param_meta` produces the second on
      * purpose. mrdrums declares each pad separately, so `p05_start` names
      * `"filepath_param": "p05_sample_path"` — already carrying the instance —
-     * while dr32's child level says `"sample_move"` and means "this pad's".
+     * while dr32's child level says `"sample"` and means "this pad's".
      * Prefixing the first gave `p05_p05_sample_path`, which reads empty, which
      * the screen reports as "no sample linked".
      *

@@ -456,6 +456,17 @@ step('⭐⭐ A CHILD LEVEL: the marker finds ITS OWN pad\'s sample', () => {
      * that invents the spelling proves the arithmetic against a convention no
      * module uses — the exact failure this whole step was written for, one
      * level down. Both come from the module's file now. */
+    /* ⚠ The bare key below is `sample_move`, and DR32 now declares `sample`
+     * (`src/module.json`, renamed when the Move/User browser cells collapsed
+     * into one). That is NOT a stale test: the keys come from
+     * `tests/fixtures/dr32-contract.json`, a CAPTURED contract, and the test
+     * must agree with the fixture it reads or `metaOf` misses and every
+     * assertion below fails for the wrong reason — which is exactly what
+     * happened when this was "tidied" to `sample` on 2026-09-08.
+     * The mechanism under test is the child-index arithmetic, not the spelling.
+     * ⭑ Nothing is broken on device either way: `sample_move` remains a live
+     * alias in DR32's param handler (`dsp/dr32_params.c`). Refresh the fixture
+     * and this key together, or neither. */
     const PADS = DR32.ui_hierarchy.levels.pads;
     const PAD_META = DR32_INDEX.get('start');
     const K_START = resolveChildKey(PADS, 4, 'start');        /* pad4_start */
