@@ -5810,9 +5810,20 @@ function macroCells(track, live) {
             if (!midiTargetOnRoute(m.target, t)) { cells.push(unassigned()); continue; }
             cell = midiCellFor(m.target, midiVal(t, m.target));
         } else {
-            const ec = live ? S.macCells[i] : null;
+            /* ⚠⚠ TWO CACHES, ONE DISPLAY. `macCells/macVals` are the PLAIN
+             * path's; `macLegCells/macLegVals` are the v-driven path's, filled
+             * per leg. Travel: Full made a ONE-leg knob v-driven, so its seed
+             * moved to the leg cache — and this read, which only knew the plain
+             * one, found nothing and drew the "--" placeholder. On the device
+             * that is the knob VANISHING from the page while still working
+             * perfectly, which is exactly what Josh saw within minutes of
+             * getting the build (2026-09-10). The knob's identity does not
+             * change with its travel, so the display takes whichever cache
+             * holds it. */
+            const ec = live ? (S.macCells[i] || (S.macLegCells[i] && S.macLegCells[i][0]) || null) : null;
             if (ec && ec.vanished) { cells.push(unassigned()); continue; }
-            const v = live ? S.macVals[i] : null;
+            const v = live ? (S.macVals[i] != null ? S.macVals[i]
+                              : (S.macLegVals[i] ? S.macLegVals[i][0] : null)) : null;
             if (!ec || v == null) {
                 cell = { kind: 'valsq', label: ec ? upper(ec.short) : k,
                          name: ec ? upper(ec.label) : k, text: '--' };

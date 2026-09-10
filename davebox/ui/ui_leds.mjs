@@ -92,21 +92,21 @@ export function stepSaveFlashOn() {
 
 export function updateStepLEDs() {
     if (!S.ledInitComplete) return;
+    /* ⭐⭐ THE SAVE FLASH OWNS THE ROW OUTRIGHT (Josh, 2026-09-10: "blink works,
+     * but it'd be good to do a double blink like mute snapshot does").
+     *
+     * It always WAS two blinks — 425 ms in 106 ms phases is on/off/on/off. What
+     * differed was what the OFF phase showed: on the snapshot layer this
+     * function repainted the slot colours into it, so the eye read one green
+     * pulse against a bright row rather than two against a dark one. Mute's
+     * save looks like two blinks because the row under IT is mostly dark.
+     * Standing down for the whole flash — and letting updateTrackLEDs paint
+     * both halves, green then dark — makes every screen show the same gesture,
+     * which is what "consistent with mute's implementation" has to mean. */
+    if (stepSaveFlashLive()) return;
     /* THE SNAPSHOT LAYER in track view: the 16 steps show the track's slots
      * (session view paints the same through updateSceneMapLEDs). */
     if (devSnapOpen() && !S.sessionView) {
-        /* ⭐⭐ THE SAVE FLASH OWNS THE ROW WHILE IT RUNS (Josh: "we need the
-         * visual elements on the different snapshots to be consistent with
-         * mute's implementation — all steps blink to confirm save").
-         *
-         * ⚠⚠ The flash was never MISSING: updateTrackLEDs has painted all
-         * sixteen for months. It was being ERASED — this branch repaints the
-         * layer's own slot colours every single tick, so the two passes fought
-         * and the layer won often enough that no blink was visible. Mute's
-         * save looks right for exactly one reason: the screen underneath it
-         * does NOT repaint the row every tick, so the identical flash survives.
-         * Standing down here is what makes the two consistent. */
-        if (stepSaveFlashOn()) return;
         for (let i = 0; i < 16; i++) setLED(16 + i, devSnapLedFor(i, { filled: Cyan, white: White, dim: DarkGrey, off: LED_OFF }));
         return;
     }
@@ -888,14 +888,15 @@ export function updateTrackLEDs() {
 
     /* Hold-save double-blink: override step button LEDs in any view */
     if (stepSaveFlashLive()) {
-        if (stepSaveFlashOn()) {
-            /* GREEN, not white (Josh: "a more readable colour for state saves —
-             * suggests GREEN"). White is also what the snapshot layer paints a
-             * slot it HAS something in, so a white confirmation over a white
-             * row said nothing; green is unambiguous on all three step-slot
-             * surfaces. */
-            for (let i = 0; i < 16; i++) setLED(16 + i, Green);
-        }
+        /* GREEN, not white (Josh: "a more readable colour for state saves —
+         * suggests GREEN"). White is also what the snapshot layer paints a slot
+         * it HAS something in, so a white confirmation over a white row said
+         * nothing; green is unambiguous on all three step-slot surfaces.
+         * ⭑ BOTH halves are painted, so the off phase is DARK rather than
+         * whatever the screen happens to hold — that is what makes it read as
+         * two blinks everywhere instead of only where the row is already dark. */
+        const c = stepSaveFlashOn() ? Green : LED_OFF;
+        for (let i = 0; i < 16; i++) setLED(16 + i, c);
     }
 }
 

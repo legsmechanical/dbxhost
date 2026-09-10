@@ -1295,6 +1295,28 @@ step('⭑ the K-list row says what a mapped knob DRIVES, and a plain one still n
     GS.trackMacros[2][0] = null; GS.trackMacros[2][1] = null;
 });
 
+step('⭐⭐ a FULL-TRAVEL knob still DRAWS — it keeps its parameter\'s name and value', () => {
+    /* Josh, on the device, minutes after the build: "switching to full travel
+     * makes the knob disappear on the oled (it still works fine and does
+     * indeed have full travel, though)". Travel moved a one-leg knob onto the
+     * v-driven path, whose seed fills a DIFFERENT cache — and the page read
+     * only the plain one, so it drew the "--" placeholder over a knob that was
+     * working. Travel is a feel change, never an identity change. */
+    ASSIGN['synth:cutoff'] = '0.5000';
+    GS.trackMacros[2][0] = { v: null, legs: [
+        { kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.2, hi: 0.8, travel: 'full' }] };
+    snd.soundSetViewForTest(VIEW_MACROS); ticks(12);
+    const cell = M().drawn[0];
+    assert(cell && cell.text !== '--',
+           '⭑ the knob drew as UNASSIGNED — it vanished from the page, got ' + JSON.stringify(cell));
+    assert(/CTFF|CUTOFF/i.test((cell.label || '') + (cell.name || '')),
+           'and it still names its parameter, got ' + JSON.stringify([cell.label, cell.name]));
+    /* ⚠ CONTROL: the same knob on BOUNDED has always drawn — if this ever
+     * fails the two caches have drifted the other way. */
+    GS.trackMacros[2][0].legs[0].travel = undefined;
+    ticks(12);
+    assert(M().drawn[0] && M().drawn[0].text !== '--', 'the bounded knob draws too');
+});
 step('⭐ the TRAVEL row toggles by the real gesture, survives the sidecar, and defaults BOUNDED', () => {
     GS.trackMacros[2][0] = { v: null, legs: [
         { kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.2, hi: 0.8 }] };

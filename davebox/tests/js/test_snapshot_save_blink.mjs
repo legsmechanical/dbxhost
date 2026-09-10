@@ -131,6 +131,7 @@ await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const snap = await import('../../ui/ui_devsnap.mjs');
 const { Green } = await import('/data/UserData/schwung/shared/constants.mjs');
+const ledsMod = await import('../../ui/ui_leds.mjs');
 
 let failed = 0;
 const ok = (l) => console.log(`  ok   — ${l}`);
@@ -162,29 +163,39 @@ step('setup: the snapshot layer is open over a track view', () => {
     if (!snap.devSnapOpen()) throw new Error('rig: layer not open');
 });
 
-step('⭐⭐ a SAVE blinks: all sixteen go GREEN, and the layer comes back — that alternation IS the blink', () => {
+step('⭐⭐ a SAVE is TWO blinks: green, dark, green, dark — the same gesture Mute\'s save makes', () => {
+    /* Josh, 2026-09-10: "blink works, but it'd be good to do a double blink
+     * like mute snapshot does". It always WAS two blinks (425 ms in 106 ms
+     * phases); what differed was the OFF phase — the snapshot layer repainted
+     * its slot colours into it, so the eye read one green pulse against a
+     * bright row instead of two against a dark one. Both halves are painted
+     * now, so the gesture is identical on every screen. */
     snap.devSnapSave(0);
-    let green = 0, layer = 0, mixed = 0;
-    for (let k = 0; k < 40; k++) {
+    /* ⚠ Classify by COLOUR, not by count: setLED caches, so a phase that only
+     * has to change some of the sixteen sends only those. And stop when the
+     * flash does — the layer repainting afterwards is correct, not noise. */
+    const phases = [];
+    for (let k = 0; k < 80 && ledsMod.stepSaveFlashLive(); k++) {
         const r = tickRow();
-        if (allGreen(r)) green++;
-        else if (r.count >= 16 && r.colours.indexOf(Green) < 0) layer++;
-        else if (r.colours.indexOf(Green) >= 0 && r.colours.length > 1) mixed++;
+        if (!r.count) continue;
+        if (r.colours.length === 1 && r.colours[0] === Green) phases.push('green');
+        else if (r.colours.length === 1 && r.colours[0] === 0) phases.push('dark');
+        else phases.push('other:' + JSON.stringify(r.colours));
     }
-    if (!green) throw new Error('⭑ no tick painted all sixteen GREEN — the confirmation never showed');
-    if (!layer) throw new Error('⭑ the row never returned to the layer — a solid block, not a blink '
-        + '(standing the layer down for the WHOLE flash does exactly this)');
-    /* ⚠⚠ THE ASSERTION THAT EARNS ITS KEEP. Without it this step passes with
-     * the two passes FIGHTING — the layer painting its slot colours and the
-     * flash painting green over them in the same tick — because the net effect
-     * still ends green and the rig cannot see a frame the panel never showed.
-     * A tick that paints BOTH is the fight, and it is what the ON-phase yield
-     * removes. (Verified: mutating that yield away fails HERE and nowhere
-     * else — the rest of this file stayed green through it.) */
-    if (mixed) throw new Error('⭑ ' + mixed + ' tick(s) painted the layer AND the flash — the two '
-        + 'passes are fighting over the row; the ON-phase yield is what stops that');
+    /* ⚠ Trim a trailing paint from the boundary tick: the flash can end DURING
+     * the tick the loop admitted, and the layer taking its row back is correct
+     * behaviour, not something interfering mid-gesture. */
+    while (phases.length && phases[phases.length - 1].indexOf('other') === 0) phases.pop();
+    const seq = phases.filter((p, i) => p !== phases[i - 1]);   /* collapse runs */
+    const greens = seq.filter((p) => p === 'green').length;
+    if (greens < 2)
+        throw new Error('⭑ ' + greens + ' green phase(s) — a DOUBLE blink is two, got ' + JSON.stringify(seq));
+    if (!seq.some((p) => p === 'dark'))
+        throw new Error('⭑ the off phase never went dark — against a bright row two blinks read as one: '
+            + JSON.stringify(seq));
+    if (seq.some((p) => p.indexOf('other') === 0))
+        throw new Error('⭑ something else painted the row DURING the flash: ' + JSON.stringify(seq));
 });
-
 step('⚠ CONTROL: with no save in flight the layer owns the row, and nothing is green', () => {
     S.stepSaveFlashStartTick = -1; S.stepSaveFlashEndTick = -1;
     let green = 0;
