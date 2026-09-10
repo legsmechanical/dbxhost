@@ -3912,15 +3912,158 @@ function instrPickerCycleList() {
     if (!p || p.label !== 'Instrument' || !Array.isArray(p.rows)) return false;
     const r = p.rows[p.sel];
     if (!r || !r.listRow) return false;
-    const all = genScanForTest ? genScanForTest() : engineListModules(specKeyFor('synth'));
-    mlFilter = ModuleLists.nextFilter(mlFilter, mlEligible(all));
-    openInstrPicker();
-    /* Stay ON the row being cycled: reopening places the cursor on an
-     * instrument for a fresh open, and moving the user off after one click
-     * would mean jogging back to the top for every step. */
-    if (S.enumPick) S.enumPick.sel = 0;
-    S.dirty = true;
+    /*
+     * The row opens a MENU rather than cycling blind.
+     *
+     * A click that silently advances a filter tells you nothing about what
+     * else exists: Josh had the row on screen and still had "no way to add
+     * modules to lists or create them", because both were hidden behind a
+     * Shift+Click nobody announces. Everything the feature can do is now a
+     * VISIBLE row.
+     *
+     * The generator under the cursor when the menu opened is remembered, so
+     * the first row can act on it by name.
+     */
+    openListMenu(instrPickerSelectedGen(p));
     return true;
+}
+
+/* The generator the cursor was on before the menu opened, or null. Used to
+ * name the Add/Remove row -- a menu that says "Add NuSaw to Favorites" needs
+ * no explanation, and one that says "Add to list" needs a paragraph. */
+function instrPickerSelectedGen(p) {
+    if (!p || !Array.isArray(p.rows)) return null;
+    /* Walk back from the filter row to the last generator the cursor passed.
+     * `mlMenuGen` is set on every jog through the picker. */
+    return mlMenuGen || null;
+}
+
+/*
+ * The Lists menu: everything module lists can do, as rows.
+ *
+ * Built as its own enum picker whose `from` is the Instrument picker's own
+ * `from`, NOT VIEW_ENUM: nesting one picker inside another leaves Back
+ * stepping into a screen that has already been torn down.
+ */
+function openListMenu(gen) {
+    mlEnsure();
+    const lists = (mlState && mlState.lists) || [];
+    const rows = [];
+    const active = mlFilter || ModuleLists.FAVORITES;
+    if (gen) {
+        const id = moduleIdOf(gen.path || gen.id);
+        const isIn = ModuleLists.isMember(mlState, active, id);
+        rows.push({ act: 'toggle', gen,
+                    label: (isIn ? 'Remove ' : 'Add ') + String(gen.name || gen.id) });
+    }
+    rows.push({ divider: true });
+    rows.push({ act: 'filter', name: null, label: (mlFilter ? '  ' : '\u00b7') + 'All' });
+    for (const l of lists) {
+        rows.push({ act: 'filter', name: l.name,
+                    label: (mlFilter === l.name ? '\u00b7' : '  ') + l.name +
+                           '  (' + l.modules.length + ')' });
+    }
+    rows.push({ divider: true });
+    rows.push({ act: 'new', label: 'New List...' });
+    /* Favorites cannot be renamed or deleted -- the rows are ABSENT rather
+     * than present and refusing, the same way a position with nowhere to go is
+     * not offered Move Left. Clear is allowed on it. */
+    if (mlFilter && !ModuleLists.isProtected(mlFilter)) {
+        rows.push({ act: 'rename', label: 'Rename ' + mlFilter });
+        rows.push({ act: 'delete', label: 'Delete ' + mlFilter });
+    }
+    rows.push({ act: 'clear', label: 'Clear ' + active });
+
+    const prevFrom = S.enumPick ? S.enumPick.from : S.view;
+    openEnumPicker('Lists', rows.map(r => r.divider ? { divider: true } : r.label),
+                   rows.findIndex(r => !r.divider), (i) => commitListMenu(rows[i]));
+    if (S.enumPick) { S.enumPick.rows = rows; S.enumPick.from = prevFrom; S.enumPick.gen = gen; }
+    S.dirty = true;
+}
+
+/* Track the generator under the cursor, so the Lists menu can name it. Set on
+ * every move through the Instrument picker rather than derived afterwards --
+ * once the menu is open, the picker's rows are gone. */
+let mlMenuGen = null;
+
+/*
+ * Apply a Lists-menu row.
+ *
+ * Every write BRANCHES on mlSave(): a save that failed must never be reported
+ * as done, or the list comes back on the next open having said it worked.
+ */
+/* Apply the Lists-menu row under the cursor, ahead of closeEnumPicker. Answers
+ * false when the picker on screen is not the Lists menu. */
+function listMenuClick() {
+    const p = S.enumPick;
+    if (!p || p.label !== 'Lists' || !Array.isArray(p.rows)) return false;
+    commitListMenu(p.rows[p.sel]);
+    return true;
+}
+
+function commitListMenu(r) {
+    if (!r || r.divider) { openInstrPicker(); return; }
+    mlEnsure();
+    const active = mlFilter || ModuleLists.FAVORITES;
+
+    if (r.act === 'filter') { mlFilter = r.name; openInstrPicker(); return; }
+
+    if (r.act === 'toggle') {
+        const id = moduleIdOf(r.gen.path || r.gen.id);
+        const now = ModuleLists.toggleMembership(mlState, active, id);
+        if (now !== null && !mlSave()) ModuleLists.toggleMembership(mlState, active, id);
+        openInstrPicker();
+        return;
+    }
+
+    if (r.act === 'clear') {
+        const res = ModuleLists.clearList(mlState, active);
+        if (res.ok) mlSave();
+        openInstrPicker();
+        return;
+    }
+
+    if (r.act === 'delete') {
+        const gone = mlFilter;
+        const res = ModuleLists.deleteList(mlState, gone);
+        if (res.ok && !mlSave()) ModuleLists.createList(mlState, gone);
+        else if (res.ok) mlFilter = null;   /* the filter it named is gone */
+        openInstrPicker();
+        return;
+    }
+
+    if (r.act === 'new' || r.act === 'rename') {
+        const renaming = (r.act === 'rename') ? mlFilter : '';
+        openTextEntry({
+            title: renaming ? 'Rename List' : 'New List',
+            initialText: renaming || '',
+            onConfirm: (text) => {
+                const name = String(text || '').trim();
+                /* Empty cancels. Backing out by clearing the field is a normal
+                 * way to change your mind, not an error to scold. */
+                if (!name) { openInstrPicker(); return; }
+                const res = renaming
+                    ? ModuleLists.renameList(mlState, renaming, name)
+                    : ModuleLists.createList(mlState, name);
+                if (!res.ok) { openInstrPicker(); return; }
+                if (!mlSave()) {
+                    /* Undo: a list that reappears on the next open, having been
+                     * announced as created, is worse than one that never did. */
+                    if (renaming) ModuleLists.renameList(mlState, name, renaming);
+                    else ModuleLists.deleteList(mlState, name);
+                    openInstrPicker();
+                    return;
+                }
+                /* Land ON what you just made -- creating a list to file into
+                 * and then having to find it is the same jog twice. */
+                mlFilter = name;
+                openInstrPicker();
+            },
+            onCancel: () => { openInstrPicker(); },
+        });
+        return;
+    }
+    openInstrPicker();
 }
 
 function instrPickerToggleList() {
@@ -7257,6 +7400,17 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.knobTargetIdx = listMove(S.knobTargets.length, S.knobTargetIdx, delta);
         } else if (S.view === VIEW_ENUM) {
             if (S.enumPick) S.enumPick.sel = enumStep(S.enumPick, delta);
+            /* Remember the last GENERATOR the cursor rested on, so the Lists
+             * menu can name it ("Add NuSaw to Favorites"). Recorded on the JOG
+             * because that is how the cursor reaches a generator -- you pass
+             * over it on the way to the List row, you do not click it. */
+            {
+                const pk = S.enumPick;
+                if (pk && pk.label === 'Instrument' && Array.isArray(pk.rows)) {
+                    const cur = pk.rows[pk.sel];
+                    if (cur && cur.gen) mlMenuGen = cur.gen;
+                }
+            }
         } else if (S.view === VIEW_KNOB_PARAM) {
             S.knobParamIdx = listMove(S.knobParams.length, S.knobParamIdx, delta);
         } else if (S.view === VIEW_LFO) {
@@ -7443,6 +7597,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * closeTextEntry() unconditionally.
              */
             if (instrPickerCycleList()) return true;
+            /*
+             * The Lists MENU's rows act in place too, and for the same reason:
+             * they reopen the Instrument picker, and closeEnumPicker's trailing
+             * `S.enumPick = null` would tear the fresh one down. Handled here,
+             * ahead of the close, exactly as the filter row is.
+             */
+            if (listMenuClick()) return true;
             closeEnumPicker(true); return true;
         }
         if (S.view === VIEW_SLOTCFG) {

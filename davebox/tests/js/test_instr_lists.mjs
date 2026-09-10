@@ -83,6 +83,8 @@ const A = await import('../../ui/ui_automation.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
 const { MoveNoteSession } = await import('../../ui/ui_constants.mjs');
 const { MoveShift } = await import('/data/UserData/schwung/shared/constants.mjs');
+const _te = await import('/data/UserData/schwung/shared/text_entry.mjs');
+const textEntryActive = () => _te.isTextEntryActive();
 
 /* Every module write, tagged with the callback it was made from — the ordering
  * is half of what this test is for. */
@@ -188,18 +190,47 @@ step('the filed generator is MARKED on screen', () => {
         throw new Error('no member mark: ' + JSON.stringify(o.filter(x => typeof x === 'string' && x.indexOf('NuSaw') >= 0)));
 });
 
-step('clicking the List row FILTERS to Favorites', () => {
+step('clicking the List row opens the LISTS MENU, with every action visible', () => {
     jogTo(0);
     cc(3, 127); cc(3, 0);
     ticks(2);
     const p = snd.soundEnumPickForTest();
-    if (!p) throw new Error('the picker closed instead of cycling');
-    if (p.options[0] !== 'List: Favorites')
-        throw new Error('row 0 is ' + JSON.stringify(p.options[0]) + ', want "List: Favorites"');
-    const hasObxd = p.options.some(x => typeof x === 'string' && x.indexOf('OB-Xd') >= 0);
-    if (hasObxd) throw new Error('OB-Xd is not in Favorites but survived the filter: ' + JSON.stringify(p.options));
-    const hasNusaw = p.options.some(x => typeof x === 'string' && x.indexOf('NuSaw') >= 0);
-    if (!hasNusaw) throw new Error('NuSaw IS in Favorites but was filtered out');
+    if (!p) throw new Error('the picker closed instead of opening the menu');
+    const flat = p.options.map(o => (typeof o === 'string' ? o : '<div>'));
+    /* The two things Josh could not find. If either disappears, the feature is
+     * back to being a hidden Shift+Click nobody announces. */
+    if (!flat.some(x => x.indexOf('New List') >= 0))
+        throw new Error('no way to CREATE a list: ' + JSON.stringify(flat));
+    if (!flat.some(x => x.indexOf('NuSaw') >= 0))
+        throw new Error('no way to ADD/REMOVE the generator: ' + JSON.stringify(flat));
+    if (!flat.some(x => x.indexOf('All') >= 0) || !flat.some(x => x.indexOf('Favorites') >= 0))
+        throw new Error('the lists themselves are not offered: ' + JSON.stringify(flat));
+});
+
+step('the menu names the generator the cursor was on, and its member COUNT', () => {
+    const flat = snd.soundEnumPickForTest().options.map(o => (typeof o === 'string' ? o : '<div>'));
+    /* NuSaw was filed above, so the row must offer to REMOVE it, not add it --
+     * a menu that says "Add" for something already in the list is lying. */
+    if (!flat.some(x => x.indexOf('Remove NuSaw') >= 0))
+        throw new Error('the row does not reflect current membership: ' + JSON.stringify(flat));
+    if (!flat.some(x => /Favorites\s+\(1\)/.test(x)))
+        throw new Error('Favorites does not show its count: ' + JSON.stringify(flat));
+});
+
+step('choosing Favorites from the menu FILTERS the picker', () => {
+    const p = snd.soundEnumPickForTest();
+    const want = p.options.findIndex(o => typeof o === 'string' && o.indexOf('Favorites') >= 0);
+    jogTo(want);
+    cc(3, 127); cc(3, 0);
+    ticks(2);
+    const q = snd.soundEnumPickForTest();
+    if (!q) throw new Error('the picker closed instead of filtering');
+    if (q.options[0] !== 'List: Favorites')
+        throw new Error('row 0 is ' + JSON.stringify(q.options[0]) + ', want "List: Favorites"');
+    if (q.options.some(x => typeof x === 'string' && x.indexOf('OB-Xd') >= 0))
+        throw new Error('OB-Xd is not in Favorites but survived the filter');
+    if (!q.options.some(x => typeof x === 'string' && x.indexOf('NuSaw') >= 0))
+        throw new Error('NuSaw IS in Favorites but was filtered out');
 });
 
 step('Move rows and None are NEVER filtered', () => {
@@ -210,15 +241,16 @@ step('Move rows and None are NEVER filtered', () => {
     }
 });
 
-step('cycling again returns to All', () => {
+step('⭑ New List opens the keyboard — the way you CREATE a list', () => {
     jogTo(0);
-    cc(3, 127); cc(3, 0);
-    ticks(2);
-    const p = snd.soundEnumPickForTest();
-    if (p.options[0] !== 'List: All')
-        throw new Error('row 0 is ' + JSON.stringify(p.options[0]) + ', want "List: All"');
-    if (!p.options.some(x => typeof x === 'string' && x.indexOf('OB-Xd') >= 0))
-        throw new Error('OB-Xd did not come back under All');
+    cc(3, 127); cc(3, 0); ticks(2);          /* open the Lists menu */
+    const m = snd.soundEnumPickForTest();
+    const ni = m.options.findIndex(o => typeof o === 'string' && o.indexOf('New List') >= 0);
+    if (ni < 0) throw new Error('New List is not on the menu');
+    jogTo(ni);
+    cc(3, 127); cc(3, 0); ticks(2);
+    if (!textEntryActive())
+        throw new Error('New List did not open the keyboard — there is still no way to create a list');
 });
 
 closeInstr();
