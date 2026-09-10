@@ -785,6 +785,15 @@ const S = {
     /* The LEG list (VIEW_KNOBLEGS): the cursor over its rows, which leg the
      * target picker is about to write (-1 = APPEND a new one), and whether a
      * Lo/Hi row is being turned. */
+    /* WHICH DOOR a bus screen was opened by (2026-09-10). null = the session
+     * FX list, the original and still the common case; a TRACK door records
+     * where to put you back.
+     * ⚠⚠ The comment on leaveBus records why this is a RECORD and not an
+     * inference: a bus briefly had two doors before, the code worked out which
+     * one from `S.slot`, and slot 0 is a VALID slot — so Back from a Master FX
+     * effect landed on track 1's sound page. The door is stated by whoever
+     * opens it, never derived. */
+    busDoor: null,
     knobLegRow: 0,
     knobLegIdx: -1,
     knobLegEditing: false,
@@ -878,6 +887,7 @@ export function soundPickStateForTest() {
      * checked here, not on the global: the global is already false by then, and
      * it is this re-read that would resurrect it. */
     return { kinds: S.pickRows.map(r => r.kind), comps: S.pickRows.map(r => r.comp || null),
+             labels: S.pickRows.map(r => r.label || null),
              row: S.pickRow, view: S.view, shift: S.shiftHeld,
              enumPick: S.enumPick ? S.enumPick.label : null };
 }
@@ -915,6 +925,11 @@ export function soundQueueDiscoverForTest(n) { S.pendingDiscover = n | 0; }
 export function soundBusLevelEditingForTest(v) {
     if (v !== undefined) S.busLevelEditing = !!v;
     return S.busLevelEditing;
+}
+/* WHICH bus screen is up, and which door it was opened by — the pair a Back
+ * test has to distinguish (see leaveBus). null = not on a bus. */
+export function soundBusForTest() {
+    return S.bus ? { id: S.bus.id, kind: S.bus.kind, door: S.busDoor ? S.busDoor.kind : null } : null;
 }
 export function soundPendingActionForTest() { return S.pendingAction; }
 export function soundQueueActionForTest(a) { S.pendingAction = a; }
@@ -2825,7 +2840,8 @@ export function soundEnterBuses() {
     log('buses: open');
 }
 
-function enterBus(bus) {
+function enterBus(bus, door) {
+    S.busDoor = door || null;
     S.bus = bus;
     S.slot = 0;
     S.blockIdx = 0;
@@ -2847,7 +2863,26 @@ function leaveBus() {
      * one level up is out of sound mode entirely — sending it to VIEW_BUSES would
      * drop you into the session's Master/Send list, which you never asked for. */
     if (S.bus && S.bus.kind === 'move') { soundExit(); return; }
+    /* ⭐ THE SECOND DOOR (Josh, 2026-09-10): "shift+click on send a/b should
+     * land you on the corresponding send fx menu. from there, back should take
+     * you back to the track's sound menu." So Back follows the DOOR, which the
+     * opener stated — never `S.slot`, which is what made this ambiguous last
+     * time (see above). */
+    const door = S.busDoor;
+    S.busDoor = null;
     S.bus = null;
+    if (door && door.kind === 'track') {
+        S.slot = door.slot;
+        S.blockIdx = door.block | 0;
+        S.view = VIEW_BLOCKS;
+        refreshBlockNames();
+        /* Back onto the row you left from, so the send you were setting is
+         * still under the cursor. The list is rebuilt, so clamp. */
+        const rows = S.pickRows || [];
+        S.pickRow = Math.max(0, Math.min(rows.length - 1, door.row | 0));
+        S.dirty = true;
+        return;
+    }
     S.view = VIEW_BUSES;
     S.dirty = true;
 }
@@ -6432,7 +6467,7 @@ function runAction(a) {
 
 function runActionBody(a) {
     if (a.t === 'names')        refreshBlockNames();
-    else if (a.t === 'bus')     enterBus(a.bus);
+    else if (a.t === 'bus')     enterBus(a.bus, a.door);
     else if (a.t === 'leavebus') leaveBus();
     else if (a.t === 'retarget') {
         retargetOpen(a.picker);
@@ -7950,7 +7985,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
             if (c && p) commitLfoTarget(c.key, p.key);
         }
         else if (S.view === VIEW_BUSES) {
-            S.pendingAction = { t: 'bus', bus: FX_BUSES[S.busIdx] };
+            S.pendingAction = { t: 'bus', bus: FX_BUSES[S.busIdx], door: { kind: 'session' } };
         }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'trackto') {
@@ -7987,7 +8022,21 @@ export function soundOnCC(d1, d2, decodeDelta) {
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'buslevel') {
             const _r = S.pickRows[S.pickRow];
-            if (_r.spec.toggle) {
+            /* ⭐ SHIFT+CLICK A SEND = ITS FX MENU (Josh, 2026-09-10). The row
+             * sets how much of THIS track goes to that send; Shift+click walks
+             * to what the send DOES with it. Plain click still edits the level,
+             * so the gesture adds a door without spending one.
+             * ⚠ Only the sends: Volume/Pan/Mute/Solo have nothing behind them,
+             * and a bus this track cannot address (no send buses on this host)
+             * has no row here at all — capSends gates the row itself. */
+            const _sendBus = (_r.spec.key === 'send_a' || _r.spec.key === 'send_b')
+                ? FX_BUSES.find(b => b.id === (_r.spec.key === 'send_a' ? 'sendA' : 'sendB'))
+                : null;
+            if (S.shiftHeld && _sendBus) {
+                S.pendingAction = { t: 'bus', bus: _sendBus,
+                                    door: { kind: 'track', slot: S.slot,
+                                            block: S.blockIdx, row: S.pickRow } };
+            } else if (_r.spec.toggle) {
                 /* A 0/1 value has nothing to scrub, so the click IS the edit.
                  * Written as an int: the host parses these with atoi, and a
                  * "1.000" in the set's meta file would read as a level. */

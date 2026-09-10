@@ -17,6 +17,10 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Shift + click a send to see what it feeds.** From a track's sound menu,
+  Shift + click **Send A** or **Send B** to jump straight into that send's FX
+  menu; Back returns you to the track's menu with the cursor still on the send.
+  A plain click still edits the send level.
 - **The count-in behaves itself.** The step buttons now flash *on* the beat
   instead of drifting out of step with the count. Two things that quietly never
   worked come with it: a note played in the last moment of the count-in is kept

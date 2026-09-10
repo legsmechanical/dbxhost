@@ -1323,6 +1323,13 @@ eight knobs are the track's **levels** (Volume, Pan, Send A, Send B), exactly
 as on the SOUND + CONFIG card. Module Level is reachable as a macro target. They stay live there so you can
 balance the sound while you navigate it.
 
+### From a send to what it feeds
+
+The **Send A** and **Send B** rows in a track's sound menu set how much of that
+track goes to each send. **Shift + click** one and you land in that send's own
+FX menu — the effects the send is feeding — and **Back** brings you straight
+home to the track's sound menu, with the cursor still on the send you left.
+
 ### The MACROS bank
 
 The knob assignments live on their own bank, **MACROS**, one step past
