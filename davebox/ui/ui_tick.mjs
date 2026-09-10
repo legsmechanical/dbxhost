@@ -41,7 +41,7 @@ import { _padDispatchMutedNow, computePadNoteMap, syncDrumLaneSteps, syncDrumLan
 import { effectiveClip, updateStepLEDs, updateSessionLEDs, updateTrackLEDs, flashAtRate,
     invalidateLEDCache, trackColor, setPaletteEntryRGB, reapplyPalette, forceRedraw,
     updatePerfModeLEDs, altIndicatorActive, clearAllLEDs, installFlagsWrap, removeFlagsWrap,
-    buildLedInitQueue, drainLedInit } from './ui_leds.mjs';
+    buildLedInitQueue, drainLedInit, shiftClaimedByGesture } from './ui_leds.mjs';
 import { schSlotForTrack, schSlotsForTrack, schSlotMasksAllTracks } from './ui_corun.mjs';
 import { pollPendingExport } from './ui_export.mjs';
 import { drawUI, sessMixerVisible, refreshInstrAbbrev } from './ui_render.mjs';
@@ -1833,7 +1833,10 @@ export function _tickImpl() {
         setButtonLED(MoveRight, S.sessionView ? LED_OFF : 16);
         /* Shift-flash: buttons with a Shift-modified function blink 16/OFF while Shift is held.
          * Sample uses DarkGrey/OFF since index 16 (RoyalBlue) shows wrong on that button. */
-        if (S.shiftHeld) {
+        /* ⭑ Not while another gesture owns Shift — Capture's snapshot layer
+         * above all (Josh, 2026-09-10). Advertising the general shortcuts over
+         * a gesture that does not use them is a promise the press will break. */
+        if (S.shiftHeld && !shiftClaimedByGesture()) {
             const _sf  = (Math.floor(S.clockMs / 220) % 2) ? 16 : LED_OFF;
             setButtonLED(MoveNoteSession, _sf);
             /* Shift+Rec = Live Merge; blink Rec only while merge is idle (an

@@ -75,6 +75,27 @@ export function trackDimColor(t) { return TRACK_DIM_COLORS[t]; }
  * later. ⭑ ONE owner, because TWO passes paint the step row and both have to
  * agree — updateTrackLEDs draws the flash, and updateStepLEDs has to stand out
  * of its way (see the snapshot branch below). */
+/* ⭐⭐ SHIFT IS NOT ALWAYS THE GENERAL MODIFIER (Josh, 2026-09-10).
+ *
+ * "when capture is held, shift shouldn't trigger any general shift functions
+ * (or the led changes associated with them) — shift should only work on the
+ * step buttons for capture."
+ *
+ * The step row and the button icons already dropped their Shift hints while
+ * Mute/Delete/Copy/Loop were held, because those form a different compound
+ * gesture — which is exactly why MUTE snapshots looked right and Capture's did
+ * not. Capture was simply missing from the list, so holding Shift over the
+ * snapshot layer advertised the general shortcuts on top of the slots you were
+ * trying to save into. The INPUT was always correct (ui_input_pads takes the
+ * snapshot branch first); only the lights lied.
+ *
+ * ⭑ `captureHeld` AND the open layer: the hold arms before the layer opens, and
+ * the layer is what survives to the release. */
+export function shiftClaimedByGesture() {
+    return !!(S.muteHeld || S.deleteHeld || S.copyHeld || S.loopHeld ||
+              S.captureHeld || devSnapOpen());
+}
+
 export function stepSaveFlashLive() {
     return S.stepSaveFlashEndTick >= 0 && S.stepSaveFlashStartTick >= 0 &&
            S.clockMs < S.stepSaveFlashEndTick;
@@ -190,7 +211,7 @@ export function updateStepLEDs() {
      * Exception: when another modifier is also held (Shift+Mute/Delete/Copy/Loop forms
      * a different compound gesture), the step row no longer carries the shift-shortcut
      * semantic — drop the hint overlay so the step grid stays visible. */
-    const _compoundHeld = S.muteHeld || S.deleteHeld || S.copyHeld || S.loopHeld;
+    const _compoundHeld = shiftClaimedByGesture();
     if (S.shiftHeld && !_compoundHeld) {
         const _kt = S.knobTouched;
         const _knobShiftMode =
@@ -479,7 +500,12 @@ export function updateTrackLEDs() {
         const _knobShiftMode =
             (S.activeBank === 0 && (_kt === 1 || _kt === 2)) ||
             (S.activeBank === 7 && _kt === 1);
-        const _compoundHeld = S.muteHeld || S.deleteHeld || S.copyHeld || S.loopHeld;
+        /* ⚠ THE SECOND COPY of this rule (the step ICONS; the first is in
+         * updateStepLEDs for the step LIGHTS). They are one rule about one
+         * gesture and drifted apart — fixing only the lights left the icons
+         * still advertising the general shortcuts over the snapshot layer,
+         * which is half of what Josh reported. One predicate now. */
+        const _compoundHeld = shiftClaimedByGesture();
         for (let i = 0; i < 16; i++) {
             let color;
             {
@@ -511,8 +537,7 @@ export function updateTrackLEDs() {
     /* Step button main LEDs (notes 16-31): shift overlay in session view only.
      * Track view is handled by updateStepLEDs (early return keeps MIDI traffic low).
      * Suppressed when a compound modifier is held (Shift+Mute/Delete/Copy/Loop). */
-    if (S.sessionView && S.shiftHeld &&
-        !(S.muteHeld || S.deleteHeld || S.copyHeld || S.loopHeld)) {
+    if (S.sessionView && S.shiftHeld && !shiftClaimedByGesture()) {
         for (let i = 0; i < 16; i++) {
             let on = i === 1 || (i >= 4 && i <= 6) || i === 8; /* shared shortcuts only — Step3 (Edit Slot/Synth) is Track View only */
             if (i === 0) on = true; /* Step1 = project picker */
@@ -876,7 +901,7 @@ export function updateTrackLEDs() {
      * colour, so the row said "eight greys" as often as it said which track was
      * which — the colour is the whole point of the hint, and half the duty cycle
      * was spending it on nothing. */
-    if (!S.sessionView && S.shiftHeld && S.shiftTrackLEDActive) {
+    if (!S.sessionView && S.shiftHeld && S.shiftTrackLEDActive && !shiftClaimedByGesture()) {
         const _ttPhase = (Math.floor(S.clockMs / 220) % 2) === 1;
         for (let i = 0; i < NUM_TRACKS; i++) {
             const color = (i === S.activeTrack)

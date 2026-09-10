@@ -17,6 +17,10 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Holding Capture keeps Shift to itself.** While the snapshot layer is up,
+  Shift no longer lights the general shortcut hints on the step buttons and
+  icons — the row stays showing your snapshot slots, in both track and session
+  view. Saving with Shift+step worked all along; only the lights were wrong.
 - **New projects get a random key and scale again.** They had been arriving in
   A minor every time. The key was being chosen correctly all along — it was
   applied a moment before the project's state loaded, and the load put the

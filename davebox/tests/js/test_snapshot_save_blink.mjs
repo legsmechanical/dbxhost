@@ -124,7 +124,11 @@ globalThis.move_midi_internal_send = (a) => { if ((a[1] & 0xF0) === 0x90) leds[a
  * in — which is exactly how the first version of this passed while solid.
  */
 let ledTrace = [];
-globalThis.move_midi_internal_send = (m) => { const a = Array.from(m); if (a.length >= 4) ledTrace.push([a[2], a[3]]); return true; };
+/* ⚠⚠ NOTES AND CCs SHARE THE NUMBERS 16..31: setLED sends NoteOn for the step
+ * LIGHTS, setButtonLED sends CC for the step ICONS. A trace that keeps only
+ * (id, colour) conflates two surfaces — which is how a probe here reported the
+ * icons as step lights. Keep the status byte. */
+globalThis.move_midi_internal_send = (m) => { const a = Array.from(m); if (a.length >= 4) ledTrace.push([a[2], a[3], a[1] & 0xF0]); return true; };
 
 async function main() {
 await import('../../ui/ui.js');
@@ -132,6 +136,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 const snap = await import('../../ui/ui_devsnap.mjs');
 const { Green } = await import('/data/UserData/schwung/shared/constants.mjs');
 const ledsMod = await import('../../ui/ui_leds.mjs');
+const { LightGrey } = await import('/data/UserData/schwung/shared/constants.mjs');
 
 let failed = 0;
 const ok = (l) => console.log(`  ok   — ${l}`);
@@ -201,6 +206,41 @@ step('⚠ CONTROL: with no save in flight the layer owns the row, and nothing is
     let green = 0;
     for (let k = 0; k < 12; k++) if (allGreen(tickRow())) green++;
     if (green) throw new Error('the row went green with no save — the flash is not gated on a save');
+});
+
+step('⭐⭐ SHIFT OVER THE SNAPSHOT LAYER shows the SLOTS, not the general shortcuts', () => {
+    /* Josh, 2026-09-10: "holding shift to save a param snapshot in session view
+     * shows the shift function leds on the knobs rather than the snapshot leds
+     * … in track view, shift to save snapshot lights the general shift shortcut
+     * icons, which it shouldn't. also, when capture is held, shift shouldn't
+     * trigger any general shift functions (or the led changes associated with
+     * them)."
+     *
+     * The INPUT was always right — ui_input_pads takes the snapshot branch
+     * first, so Shift+step saves. Only the lights lied, and they lied because
+     * Capture was missing from the list of gestures that CLAIM Shift (Mute,
+     * Delete, Copy and Loop were all on it — which is exactly why mute
+     * snapshots looked correct and this did not). */
+    S.captureHeld = true; S.shiftHeld = true;
+    ledTrace = [];
+    for (let k = 0; k < 4; k++) { S.tickCount++; globalThis.tick(); }
+    const shortcutGrey = ledTrace.filter(([n, c]) => n >= 16 && n <= 31 && c === LightGrey);  /* NOTES or CCs: neither belongs here */
+    if (shortcutGrey.length)
+        throw new Error('⭑ the shift-shortcut overlay painted over the snapshot slots: '
+            + JSON.stringify(shortcutGrey.slice(0, 4)));
+
+    /* ⚠ CONTROL: with the layer closed and Capture up, Shift MUST still paint
+     * its shortcuts — the point is to stop advertising them during a gesture
+     * that ignores them, not to remove the feature. */
+    S.captureHeld = false;
+    snap.devSnapLeave();
+    S.sessionView = true;                       /* the overlay's own view */
+    ledTrace = [];
+    for (let k = 0; k < 4; k++) { S.tickCount++; globalThis.tick(); }
+    const back = ledTrace.filter(([n, c]) => n >= 16 && n <= 31 && c === LightGrey);
+    S.sessionView = false; S.shiftHeld = false;
+    if (!back.length)
+        throw new Error('⭑ CONTROL FAILED: plain Shift no longer shows its shortcuts at all');
 });
 
 process.exit(failed);
