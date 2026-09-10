@@ -1042,22 +1042,87 @@ step('⭑⭑ `+ Add target` ADDS a leg — it does not replace the first (the th
     assert(snd.soundViewForTest() === VIEW_KNOBLEGS, 'and the commit lands back on the LEG list, view ' + snd.soundViewForTest());
     assert(legRows().length === 7, 'two legs = 6 rows + add, got ' + JSON.stringify(legRowLabels()));
 });
-step('⭑ a Lo row: click to edit, jog to move — and the TARGET does not move (Josh §6.2)', () => {
-    /* Cursor to leg 2's Lo (rows: leg,lo,hi, leg,lo,hi, add -> index 4). */
+step('⭑⭑ a Lo row: click to edit, jog to move — and the TARGET MOVES NOW (Josh, 2026-09-10, REVERSING §6.2)', () => {
+    /* Cursor to leg 2's Lo (rows: leg,lo,hi, leg,lo,hi, add -> index 4).
+     * ⚠ This step used to pin the OPPOSITE ("the target does not move"). The
+     * ruling changed, so the pin changed with it — the invariant being kept is
+     * "what the ruling says", not the old assertion. */
     S_setLegRow(4);
     assert(legRows()[4].kind === 'lo', 'on leg 2 Lo, got ' + legRows()[4].kind);
+    ticks(6);                                           /* SEEDED: v read, both legs' values in */
+    const v0 = GS.trackMacros[2][0].v;
     writes = [];
     click();                                            /* enter the edit */
     for (let i = 0; i < 20; i++) jog(1);                /* +20% */
     const legs = legsOf(GS.trackMacros[2][0]);
     assert(Math.abs(legs[1].lo - 0.20) < 0.001, 'Lo moved to 20%, got ' + legs[1].lo);
     assert(legRows()[4].value === '20%', 'and the row says so, got ' + legRows()[4].value);
-    ticks(2);
-    assert(!writes.some(w => w.key === 'slot:volume'),
-           '⭑ the TARGET did not move — a range takes effect on the NEXT turn, got ' + JSON.stringify(writes));
+    /* ⭑ ONE tick is the assertion. The apply waits for a SEEDED mapping, so if
+     * a range edit still dropped the cached cells and values (it did, until
+     * 09-10 — every detent forced a full re-seed) this write could not be here
+     * yet: the re-seed alone costs several ticks at two reads apiece. */
+    ticks(1);
+    const w = lastWrite('slot:volume');
+    const want = (0.2 + v0 * (1 - 0.2)) * SLOT_LEVEL_MAX;
+    assert(w != null && Math.abs(parseFloat(w) - want) < 0.01,
+           '⭑ the level moved to lo + v·(hi−lo) = ' + want.toFixed(3) + ', got ' + w);
+    assert(Math.abs(GS.trackMacros[2][0].v - v0) < 1e-9,
+           '⭑⭑ and `v` did NOT move — the knob stays where the hand left it, got ' + GS.trackMacros[2][0].v);
+    assert(!writes.some(w2 => w2.key === 'synth:cutoff'),
+           '⭑ the OTHER leg, whose range did not change, wrote nothing — got ' + JSON.stringify(writes));
     back();                                             /* leave the edit */
     for (let i = 0; i < 10; i++) jog(1);
     assert(Math.abs(legsOf(GS.trackMacros[2][0])[1].lo - 0.20) < 0.001, 'Back left the edit: the jog is the cursor again');
+});
+step('⭑⭑ ONE leg: a range edit CLAMPS the value in NOW — and leaves it alone when it is already inside', () => {
+    /* A one-leg mapping has no `v` (it is the plain path plus a clamp), so
+     * "apply now" can only mean one thing: what is already there comes into
+     * the new bounds. The control comes FIRST — a value inside the range must
+     * not be written at all, or "it applied" would just mean "it writes on
+     * every range edit".
+     * ⚠ This step and the next borrow K1; both restore the two-leg mapping the
+     * steps below them are written against (the rig carries state forward). */
+    const KEEP = GS.trackMacros[2][0];
+    ASSIGN['synth:cutoff'] = '0.3000';
+    GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 }] };
+    ticks(6);
+    S_setLegRow(2);                                     /* one leg -> rows leg,lo,hi,add */
+    assert(legRows()[2].kind === 'hi', 'on Hi, got ' + legRows()[2].kind);
+    writes = [];
+    click();
+    for (let i = 0; i < 50; i++) jog(-1);               /* Hi 100% -> 50%, still above 0.30 */
+    ticks(2);
+    assert(!wrote('synth:cutoff').length,
+           '⭑ CONTROL: 0.30 is inside 0..0.50, so nothing is written — got ' + JSON.stringify(writes));
+    for (let i = 0; i < 30; i++) jog(-1);               /* Hi -> 20%, now BELOW the value */
+    ticks(2);
+    const w = lastWrite('synth:cutoff');
+    assert(w != null && Math.abs(parseFloat(w) - 0.20) < 0.01,
+           '⭑ once Hi passes under it, the value comes IN to 0.20 immediately — got ' + w);
+    back();
+    GS.trackMacros[2][0] = KEEP; ticks(2);
+});
+step('⭑ an INVERTED one-leg range clamps to the ORDERED bounds — the bounds do not invert, the direction does', () => {
+    /* ⚠ On a DIFFERENT parameter on purpose: the step above left synth:cutoff
+     * cached at what it wrote, and a re-range reads the CACHE, not ASSIGN — so
+     * re-using it would compare a value the knob already holds and write
+     * nothing. A fresh key forces the seed to read. */
+    const KEEP = GS.trackMacros[2][0];
+    ASSIGN['fx2:room_size'] = '20';                     /* the top of 0.5..20 */
+    GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'fx2', key: 'room_size', lo: 0.6, hi: 0.2 }] };
+    ticks(8);                                           /* metadata + value */
+    writes = [];
+    S_setLegRow(1);                                     /* Lo */
+    assert(legRows()[1].kind === 'lo', 'on Lo, got ' + legRows()[1].kind);
+    click();
+    for (let i = 0; i < 10; i++) jog(-1);               /* Lo 60% -> 50% */
+    ticks(2);
+    const w = lastWrite('fx2:room_size');
+    const want = 0.5 + 0.5 * 19.5;                      /* the ORDERED top bound, 0.5 of 0.5..20 */
+    assert(w != null && Math.abs(parseFloat(w) - want) < 0.3,
+           'clamped to the ordered top bound (' + want.toFixed(2) + '), not to hi=0.2 — got ' + w);
+    back();
+    GS.trackMacros[2][0] = KEEP; ticks(2);
 });
 step('⭑ an INVERTED range can be dialled in: Hi below Lo is allowed, the two bounds are independent (§6.4)', () => {
     S_setLegRow(5);                                     /* leg 2's Hi */
