@@ -785,6 +785,15 @@ const S = {
     /* The LEG list (VIEW_KNOBLEGS): the cursor over its rows, which leg the
      * target picker is about to write (-1 = APPEND a new one), and whether a
      * Lo/Hi row is being turned. */
+    /* WHICH DOOR a bus screen was opened by (2026-09-10). null = the session
+     * FX list, the original and still the common case; a TRACK door records
+     * where to put you back.
+     * ⚠⚠ The comment on leaveBus records why this is a RECORD and not an
+     * inference: a bus briefly had two doors before, the code worked out which
+     * one from `S.slot`, and slot 0 is a VALID slot — so Back from a Master FX
+     * effect landed on track 1's sound page. The door is stated by whoever
+     * opens it, never derived. */
+    busDoor: null,
     knobLegRow: 0,
     knobLegIdx: -1,
     knobLegEditing: false,
@@ -878,6 +887,7 @@ export function soundPickStateForTest() {
      * checked here, not on the global: the global is already false by then, and
      * it is this re-read that would resurrect it. */
     return { kinds: S.pickRows.map(r => r.kind), comps: S.pickRows.map(r => r.comp || null),
+             labels: S.pickRows.map(r => r.label || null),
              row: S.pickRow, view: S.view, shift: S.shiftHeld,
              enumPick: S.enumPick ? S.enumPick.label : null };
 }
@@ -915,6 +925,11 @@ export function soundQueueDiscoverForTest(n) { S.pendingDiscover = n | 0; }
 export function soundBusLevelEditingForTest(v) {
     if (v !== undefined) S.busLevelEditing = !!v;
     return S.busLevelEditing;
+}
+/* WHICH bus screen is up, and which door it was opened by — the pair a Back
+ * test has to distinguish (see leaveBus). null = not on a bus. */
+export function soundBusForTest() {
+    return S.bus ? { id: S.bus.id, kind: S.bus.kind, door: S.busDoor ? S.busDoor.kind : null } : null;
 }
 export function soundPendingActionForTest() { return S.pendingAction; }
 export function soundQueueActionForTest(a) { S.pendingAction = a; }
@@ -2825,7 +2840,8 @@ export function soundEnterBuses() {
     log('buses: open');
 }
 
-function enterBus(bus) {
+function enterBus(bus, door) {
+    S.busDoor = door || null;
     S.bus = bus;
     S.slot = 0;
     S.blockIdx = 0;
@@ -2847,7 +2863,26 @@ function leaveBus() {
      * one level up is out of sound mode entirely — sending it to VIEW_BUSES would
      * drop you into the session's Master/Send list, which you never asked for. */
     if (S.bus && S.bus.kind === 'move') { soundExit(); return; }
+    /* ⭐ THE SECOND DOOR (Josh, 2026-09-10): "shift+click on send a/b should
+     * land you on the corresponding send fx menu. from there, back should take
+     * you back to the track's sound menu." So Back follows the DOOR, which the
+     * opener stated — never `S.slot`, which is what made this ambiguous last
+     * time (see above). */
+    const door = S.busDoor;
+    S.busDoor = null;
     S.bus = null;
+    if (door && door.kind === 'track') {
+        S.slot = door.slot;
+        S.blockIdx = door.block | 0;
+        S.view = VIEW_BLOCKS;
+        refreshBlockNames();
+        /* Back onto the row you left from, so the send you were setting is
+         * still under the cursor. The list is rebuilt, so clamp. */
+        const rows = S.pickRows || [];
+        S.pickRow = Math.max(0, Math.min(rows.length - 1, door.row | 0));
+        S.dirty = true;
+        return;
+    }
     S.view = VIEW_BUSES;
     S.dirty = true;
 }
@@ -3367,6 +3402,11 @@ function knobLegRows() {
         rows.push({ kind: 'leg', leg: j, label: legShortName(leg), hdr: true, value: knobAsnLabel(a) });
         rows.push({ kind: 'lo', leg: j, label: ' Lo', value: Math.round(leg.lo * 100) + '%' });
         rows.push({ kind: 'hi', leg: j, label: ' Hi', value: Math.round(leg.hi * 100) + '%' });
+        /* TRAVEL, under the two bounds it qualifies (Josh, 2026-09-10). Two
+         * states, so the click IS the edit — the slot-settings idiom for a
+         * toggle; the jog also flips it while the row is being edited. */
+        rows.push({ kind: 'travel', leg: j, label: ' Travel',
+                    value: legFullTravel(leg) ? 'Full' : 'Bounded' });
     }
     rows.push({ kind: 'add', label: '+ Add target', value: '' });
     return rows;
@@ -3383,6 +3423,23 @@ function openKnobLegs() {
 /* Move a leg's Lo or Hi by `delta` hundredths, clamped to 0..1. ⭑ lo > hi is
  * allowed and is the INVERTED leg (Josh §6.4), so the two bounds never push
  * each other around — they are independent. */
+/* Flip one leg between Full and Bounded. The caches hang off the mapping's
+ * SHAPE, and travel changes which law reads them, so they go — and `v` is
+ * dropped with them: a bounded leg never had one, and a full leg must seed it
+ * from where the target actually IS or the first turn would jump. */
+function knobLegTravelToggle(row) {
+    const mp = macroMapping(S.knobIdx);
+    const leg = macroLegs(mp)[row.leg];
+    if (!leg) return;
+    if (legFullTravel(leg)) delete leg.travel; else leg.travel = 'full';
+    if (mp) mp.v = null;
+    S.macCells[S.knobIdx] = null; S.macVals[S.knobIdx] = null;
+    S.macLegCells[S.knobIdx] = null; S.macLegVals[S.knobIdx] = null;
+    S.macAnchorVal[S.knobIdx] = null;
+    S.knobAccum[S.knobIdx] = 0; S.macLastDir[S.knobIdx] = 0;
+    writeSidecar();
+    S.dirty = true;
+}
 const LEG_RANGE_STEP = 0.01;
 function knobLegRangeTurn(row, delta) {
     const mp = macroMapping(S.knobIdx);
@@ -4688,6 +4745,31 @@ function macroTarget(i, track) { return macroLeg0(macroMapping(i, track)); }
  *      (Josh, 2026-09-10, reversing §6.2), applied by macroTick's range pass
  *      at `lo + v·(hi − lo)` with `v` held still. */
 function macroMulti(mp) { return macroLegs(mp).length > 1; }
+/* ── TRAVEL (Josh, 2026-09-10) ─────────────────────────────────────────────
+ * "any way to add a Travel title to the macro setup alongside hi/lo that goes
+ * from full to bounded" — so the trade is per LEG instead of one law for the
+ * whole fork.
+ *
+ *   BOUNDED (the default, and what every existing knob keeps): the knob steps
+ *     the target the target's OWN way — two detents a voice, four an enum step
+ *     — and the range is a wall it stops at. Small range, small travel.
+ *   FULL: the knob's whole physical sweep crosses lo..hi, which is the `v`
+ *     machinery a multi-leg knob already uses.
+ *
+ * ⚠⚠ FULL IS THE SLOW-KNOB TRAP MADE OPTIONAL, and that is the point. Driving
+ * an 8-value enum through 255 knob positions means ~32 detents per step and
+ * every small turn does nothing — right for a filter, wrong for Voices. It is
+ * now the user's call per leg rather than mine for everyone.
+ * → [[schwung-canvaskit-continuous-cell-default-is-the-slow-law]] */
+function legFullTravel(leg) { return !!leg && leg.travel === 'full'; }
+/* Does this mapping run on `v` — the knob's own position — rather than on the
+ * target's steps? TWO reasons it can: more than one leg (they must agree on
+ * something, and `v` is it), or a leg the user set to FULL travel.
+ * ⚠ Deliberately NOT the same question as macroMulti, which stays "does this
+ * knob drive more than one thing" — that is a DISPLAY identity (the MAC slug,
+ * the percentage read-out) and a one-leg knob keeps its parameter's name and
+ * value however it travels. */
+function macroVDriven(mp) { return macroMulti(mp) || macroLegs(mp).some(legFullTravel); }
 /* A leg that does not use its target's whole range. ⭑ On a ONE-leg mapping
  * this is NOT the `v` machinery — see the turn law: a single ranged leg is the
  * PLAIN path plus a clamp, so it keeps the plain path's FEEL (two detents a
@@ -5379,7 +5461,7 @@ function macroTick() {
      * time — after that `v` is the authority and nothing here reads again. */
     for (let i = 0; i < 8 && reads < MACRO_READS_PER_TICK; i++) {
         const mp = store[i];
-        if (!macroMulti(mp)) continue;
+        if (!macroVDriven(mp)) continue;
         const legs = mp.legs;
         /* macroShapeSync above has already dropped these if the mapping
          * changed, so allocating is all that is left. */
@@ -5427,7 +5509,7 @@ function macroTick() {
     }
     for (let i = 0; i < 8 && reads < MACRO_READS_PER_TICK; i++) {
         const m = macroLeg0(store[i]);
-        if (!m || m.kind !== 'chain' || macroMulti(store[i])) continue;
+        if (!m || m.kind !== 'chain' || macroVDriven(store[i])) continue;
         if (!S.knobMeta[m.comp]) {
             let list = [];
             try { list = JSON.parse(engineGet(S.slot, m.comp, 'chain_params') || '[]') || []; }
@@ -5468,7 +5550,7 @@ function macroTick() {
         if (!S.macApplyRange[i] || !S.macApplyRange[i].length) continue;
         const mp = store[i];
         if (!mp) { S.macApplyRange[i] = null; continue; }
-        if (macroMulti(mp)) {
+        if (macroVDriven(mp)) {
             if (mp.v == null || macroLegsUnseeded(i, mp)) continue;     /* wait for the seed */
             const legs = mp.legs, cells = S.macLegCells[i] || [];
             for (const j of S.macApplyRange[i]) {
@@ -5507,7 +5589,7 @@ function macroTick() {
     for (let i = 0; i < 8; i++) {
         if (!S.knobAccum[i]) continue;
         const mp = store[i];
-        if (macroMulti(mp)) {
+        if (macroVDriven(mp)) {
             /* THE MAPPED TURN. The knob's own travel law — the float law, 255
              * positions at 2 detents — applied to `v`, then every leg written
              * through its range. Each leg records its own lane (ruling A). */
@@ -5628,7 +5710,7 @@ function macroPollTick() {
          * slow turn on a coarse anchor (one detent every 300 ms) would then
          * lose its progress between detents and never advance. Our own write
          * is remembered in macAnchorVal, so it reads as "no change". */
-        if (macroMulti(store[i])) {
+        if (macroVDriven(store[i])) {
             const mp = store[i];
             if (i === S.touchedIdx || (GS.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
             const j = macroAnchorIdx(mp);
@@ -5736,6 +5818,48 @@ function macroCells(track, live) {
                          name: ec ? upper(ec.label) : k, text: '--' };
             } else {
                 cell = toRenderCell(ec, v);
+                /* ⭐ THE DIAL SHOWS THE KNOB, NOT THE PARAMETER (Josh,
+                 * 2026-09-10: "the knob on oled should always [match the]
+                 * direction of turns to match the physical knob — e.g. when
+                 * the range is inverted, the knob shouldn't turn in reverse on
+                 * the oled, b/c the physical knob doesn't actually turn in
+                 * reverse").
+                 *
+                 * A ranged one-leg macro drives its target through a WINDOW of
+                 * that target's range, and toRenderCell knows only the target —
+                 * so it drew the PARAMETER's position, which on an inverted leg
+                 * (lo > hi) falls as your hand rises. `legNormToV` is already
+                 * the inverse map the seed uses, and it inverts for lo > hi,
+                 * so the dial now rises with the hand in both directions and a
+                 * small window uses the whole dial instead of a sliver of it.
+                 * ⭑ The TEXT is untouched: the number is the parameter's, and
+                 * it is the parameter you are setting.
+                 * ⚠ This is the DISPLAY half only. How far a detent travels —
+                 * the other half of Josh's note ("full physical range against a
+                 * limited resolution") — is the TURN LAW, and that is the
+                 * slow-knob trap the one-leg law was written against
+                 * ([[schwung-canvaskit-continuous-cell-default-is-the-slow-law]]).
+                 * It is not changed here; it needs his ruling. */
+                /* ⭐ A FULL-TRAVEL leg is driven by `v`, and `v` IS the knob's
+                 * position — so the dial is `v` directly, whatever the range.
+                 * (The knob keeps its parameter's NAME and value: travel
+                 * changes the feel, not the identity. See macroVDriven.) */
+                if (cell && legFullTravel(m) && mp && mp.v != null) {
+                    if (cell.norm != null) cell.norm = mp.v;
+                    if (cell.signed != null) cell.signed = Math.max(-1, Math.min(1, (mp.v - 0.5) * 2));
+                }
+                else if (cell && legRanged(m) && ec.max > ec.min) {
+                    const _pn = (v - ec.min) / (ec.max - ec.min);
+                    const _kv = legNormToV(m, _pn);
+                    if (_kv != null) {
+                        if (cell.norm != null) cell.norm = _kv;
+                        if (cell.signed != null) cell.signed = Math.max(-1, Math.min(1, (_kv - 0.5) * 2));
+                        if (cell.modNorm != null && cell.modulated) {
+                            const _mv = legNormToV(m, cell.modNorm);
+                            if (_mv != null) cell.modNorm = _mv;
+                        }
+                    }
+                }
             }
         }
         if (live && macroLive(m)) {
@@ -6432,7 +6556,7 @@ function runAction(a) {
 
 function runActionBody(a) {
     if (a.t === 'names')        refreshBlockNames();
-    else if (a.t === 'bus')     enterBus(a.bus);
+    else if (a.t === 'bus')     enterBus(a.bus, a.door);
     else if (a.t === 'leavebus') leaveBus();
     else if (a.t === 'retarget') {
         retargetOpen(a.picker);
@@ -7664,7 +7788,10 @@ export function soundOnCC(d1, d2, decodeDelta) {
             const rows = knobLegRows();
             /* While a Lo/Hi row is being EDITED the jog is the value, not the
              * cursor — the slot-settings idiom, so nothing new to learn. */
-            if (S.knobLegEditing) knobLegRangeTurn(rows[S.knobLegRow], delta);
+            if (S.knobLegEditing && rows[S.knobLegRow] && rows[S.knobLegRow].kind === 'travel') {
+                if (delta) knobLegTravelToggle(rows[S.knobLegRow]);
+            }
+            else if (S.knobLegEditing) knobLegRangeTurn(rows[S.knobLegRow], delta);
             else S.knobLegRow = listMove(rows.length, S.knobLegRow, delta);
         } else if (S.view === VIEW_KNOB_TARGET) {
             S.knobTargetIdx = listMove(S.knobTargets.length, S.knobTargetIdx, delta);
@@ -7915,6 +8042,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
                 if (S.shiftHeld) knobLegRemove(row.leg);
                 else { S.knobLegIdx = row.leg; S.pendingAction = { t: 'knobtarget' }; }
             }
+            else if (row && row.kind === 'travel') knobLegTravelToggle(row);
             else S.knobLegEditing = !S.knobLegEditing;
         }
         else if (S.view === VIEW_KNOB_TARGET) {
@@ -7950,7 +8078,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
             if (c && p) commitLfoTarget(c.key, p.key);
         }
         else if (S.view === VIEW_BUSES) {
-            S.pendingAction = { t: 'bus', bus: FX_BUSES[S.busIdx] };
+            S.pendingAction = { t: 'bus', bus: FX_BUSES[S.busIdx], door: { kind: 'session' } };
         }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'trackto') {
@@ -7987,7 +8115,21 @@ export function soundOnCC(d1, d2, decodeDelta) {
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'buslevel') {
             const _r = S.pickRows[S.pickRow];
-            if (_r.spec.toggle) {
+            /* ⭐ SHIFT+CLICK A SEND = ITS FX MENU (Josh, 2026-09-10). The row
+             * sets how much of THIS track goes to that send; Shift+click walks
+             * to what the send DOES with it. Plain click still edits the level,
+             * so the gesture adds a door without spending one.
+             * ⚠ Only the sends: Volume/Pan/Mute/Solo have nothing behind them,
+             * and a bus this track cannot address (no send buses on this host)
+             * has no row here at all — capSends gates the row itself. */
+            const _sendBus = (_r.spec.key === 'send_a' || _r.spec.key === 'send_b')
+                ? FX_BUSES.find(b => b.id === (_r.spec.key === 'send_a' ? 'sendA' : 'sendB'))
+                : null;
+            if (S.shiftHeld && _sendBus) {
+                S.pendingAction = { t: 'bus', bus: _sendBus,
+                                    door: { kind: 'track', slot: S.slot,
+                                            block: S.blockIdx, row: S.pickRow } };
+            } else if (_r.spec.toggle) {
                 /* A 0/1 value has nothing to scrub, so the click IS the edit.
                  * Written as an int: the host parses these with atoi, and a
                  * "1.000" in the set's meta file would read as a level. */

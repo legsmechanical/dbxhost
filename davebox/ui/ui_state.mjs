@@ -567,12 +567,16 @@ export const S = {
     recordCountingIn: false,
     mergeCountingIn: false,   /* Live Merge count-in in progress — drives the same count-in LED flash as recordCountingIn; cleared in pollDSP when the DSP count_in flips 0 */
     recordArmedTrack: -1,
-    countInStartTick: -1,
-    countInBeatStartTick: -1,
-    countInQuarterTicks: 0,
+    countInStartMs: -1,
+    countInBeatStartMs: -1,
+    countInQuarterMs: 0,
     countInDspPrev: false,
     playingPrev: false,
-    transportStartTick: 0,
+    /* A brand-new project's random key/scale, read from its one-shot note and
+     * held until AFTER the state load — the load writes the DSP's defaults
+     * (A minor) over anything applied before it. Cleared as it is applied. */
+    newProjectSeed: null,
+    transportStartMs: 0,
     _recNoteOns: [],
     _recNoteOffs: [],
     currentSetUuid: '',
@@ -864,9 +868,7 @@ export const S = {
     stepRecDidWrite: false,          /* first write flips undoAvailable once */
     recordScheduledStopTarget: -1,
     pendingScheduledDisarm: false,
-    pendingPrerollNote: null,       /* drum only: { track, lane, laneNote, vel, pressedAtTick, countInStart } */
-    pendingPrerollNotes: [],        /* melodic chord: [{track, clip, pitch, vel, pressedAtTick, countInStart, releasedAtTick?}] */
-    pendingPrerollToggleQueue: [],  /* remaining chord notes queued for step_0_toggle, one per tick */
+    pendingPrerollNote: null,       /* drum only: { track, lane, laneNote, vel, pressedAtMs, countInStart } */
     pendingPrerollGate: null,       /* { isDrum, track, lane/clip, gate } — sent the tick after last _step_0_toggle */
     pendingClearLengthTrack: -1, /* deferred length-reset after clip clear (avoids coalescing with clear cmd) */
     pendingClearLengthClip: -1,

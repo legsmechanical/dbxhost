@@ -774,6 +774,79 @@ step('⭑⭑ THREE legs on one knob: ONE turn writes all three through their own
     assert(Math.abs(rs - want) < 0.3, 'leg 2 lands inside ITS range (' + want.toFixed(1) + '), got ' + rs);
     assert(rs > 10, '…and nowhere near where an ignored range would put it (~5.3), got ' + rs);
 });
+step('⭐⭐ THE DIAL FOLLOWS THE HAND: an INVERTED range no longer draws the knob running backwards', () => {
+    /* Josh, 2026-09-10: "when the range is inverted, the knob shouldn't turn in
+     * reverse on the oled — b/c the physical knob doesn't actually turn in
+     * reverse." The dial shows the KNOB's position in its window, not the
+     * parameter's position in its range. */
+    ASSIGN['synth:cutoff'] = '0.9000';
+    GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.9, hi: 0.1 }] };
+    snd.soundSetViewForTest(VIEW_MACROS); ticks(8);
+    const atBottom = M().drawn[0].norm;        /* param 0.9 == lo == the knob at its BOTTOM */
+    assert(atBottom != null && atBottom < 0.1,
+           'knob at the bottom of an inverted range draws near 0, got ' + atBottom);
+    ASSIGN['synth:cutoff'] = '0.1000';         /* as a turn UP would leave it */
+    ticks(10);
+    const atTop = M().drawn[0].norm;
+    assert(atTop != null && atTop > 0.9,
+           '⭑ and at the TOP it draws near 1 — the dial rose while the parameter FELL, got ' + atTop);
+});
+step('⭐ a PARTIAL range uses the whole dial, and a WHOLE-range leg is unchanged (the control)', () => {
+    /* ⚠ A FRESH TARGET on purpose. Re-ranging the leg above would keep the
+     * mapping's IDENTITY, so the cached value survives — and the range edit
+     * then CLAMPS that cached value into the new window before this step could
+     * read it (my own 09-10 change, working as designed). A different key
+     * forces the seed to read ASSIGN, which is what this step is about. */
+    ASSIGN['fx2:room_size'] = '8.3';           /* 0.4 of 0.5..20 */
+    GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'fx2', key: 'room_size', lo: 0.2, hi: 0.6 }] };
+    snd.soundSetViewForTest(VIEW_MACROS); ticks(10);
+    const mid = M().drawn[0].norm;
+    assert(mid != null && Math.abs(mid - 0.5) < 0.03,
+           'the middle of the window is the middle of the dial, got ' + mid);
+    /* ⚠ THE CONTROL: an UNRANGED leg must draw EXACTLY as it always did — the
+     * parameter's own position — or this change has quietly re-scaled every
+     * ordinary macro on the page. */
+    /* Back to a key this fixture actually declares — switching component IS an
+     * identity change, so the cache drops and the seed reads ASSIGN. */
+    ASSIGN['synth:cutoff'] = '0.4000';
+    GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 }] };
+    ticks(10);
+    const plain = M().drawn[0].norm;
+    assert(plain != null && Math.abs(plain - 0.4) < 0.03,
+           'a whole-range leg still draws the parameter, got ' + plain);
+});
+step('⭐⭐ TRAVEL: FULL sweeps the window across the whole knob; BOUNDED keeps the target\'s own step', () => {
+    /* Josh, 2026-09-10: "a Travel title alongside hi/lo that goes from full to
+     * bounded". The two laws differ in FEEL, so the test is a feel test: the
+     * same small turn, on the same window, moving a different distance.
+     *
+     * `voices` is 1..8 declaring step 1 — the case where the difference is
+     * loudest, and the reason the choice is the user's and not mine. */
+    ASSIGN['synth:voices'] = '4';
+    GS.trackMacros[2][0] = { v: null, legs: [
+        { kind: 'chain', comp: 'synth', key: 'voices', lo: 0.25, hi: 0.75 }] };
+    snd.soundSetViewForTest(VIEW_MACROS); ticks(8);
+    writes = [];
+    turnBy(0, 2); ticks(2);
+    assert(lastWrite('synth:voices') === '5',
+           'BOUNDED: two detents is one voice, got ' + lastWrite('synth:voices'));
+
+    /* The same leg, set to FULL. Two detents is now a fraction of the whole
+     * sweep, so the SAME turn must move LESS — that is the trade. */
+    GS.trackMacros[2][0] = { v: null, legs: [
+        { kind: 'chain', comp: 'synth', key: 'voices', lo: 0.25, hi: 0.75, travel: 'full' }] };
+    ASSIGN['synth:voices'] = '4';
+    ticks(10);                                       /* re-seed, and seed v from where it sits */
+    writes = [];
+    turnBy(0, 2); ticks(2);
+    assert(!wrote('synth:voices').length,
+           '⭐ FULL: the same two detents move nothing yet — 255 positions across four values is the '
+           + 'trade the user is choosing, got ' + JSON.stringify(writes));
+    /* ...and a BIG turn crosses the window and stops at its top (voices 6). */
+    for (let n = 0; n < 6; n++) { turnBy(0, 63); ticks(1); }
+    assert(lastWrite('synth:voices') === '6',
+           'FULL: a full sweep lands on the top of the window (6 of 1..8), got ' + lastWrite('synth:voices'));
+});
 step('⭑⭑ RULING A: a mapped turn records EVERY leg on its own lane — there is no macro lane', () => {
     GS.playing = true; auto.automationNoteWrite();
     GS.trackMacros[2][0] = { v: 0.1, legs: [
@@ -1016,14 +1089,16 @@ step('⭑ THE DOOR RULE on the K-list: an EMPTY knob goes straight to choosing, 
 });
 step('⭑ the leg list shows each leg with its Lo and Hi, then `+ Add target`', () => {
     const rows = legRows();
-    assert(rows.length === 4, 'one leg = 3 rows + add, got ' + JSON.stringify(legRowLabels()));
+    assert(rows.length === 5, 'one leg = 4 rows (target, Lo, Hi, Travel) + add, got ' + JSON.stringify(legRowLabels()));
     assert(rows[0].kind === 'leg' && /Syn>cutoff/.test(rows[0].value), 'the leg names its target, got ' + rows[0].value);
     assert(rows[1].kind === 'lo' && rows[1].value === '0%', 'Lo, got ' + rows[1].value);
     assert(rows[2].kind === 'hi' && rows[2].value === '100%', 'Hi, got ' + rows[2].value);
-    assert(rows[3].kind === 'add' && rows[3].label === '+ Add target', 'the add row, got ' + rows[3].label);
+    assert(rows[3].kind === 'travel' && rows[3].value === 'Bounded',
+           '⭐ Travel, defaulting to Bounded (Josh, 2026-09-10), got ' + rows[3].value);
+    assert(rows[4].kind === 'add' && rows[4].label === '+ Add target', 'the add row, got ' + rows[4].label);
 });
 step('⭑⭑ `+ Add target` ADDS a leg — it does not replace the first (the thing Shift+touch could never do)', () => {
-    for (let i = 0; i < 3; i++) jog(1);                 /* onto + Add target */
+    for (let i = 0; i < 4; i++) jog(1);                 /* onto + Add target */
     click(); ticks(1);
     assert(snd.soundViewForTest() === 12, 'the target picker, view ' + snd.soundViewForTest());
     const targets = snd.soundKnobTargetsForTest();
@@ -1040,15 +1115,15 @@ step('⭑⭑ `+ Add target` ADDS a leg — it does not replace the first (the th
     assert(legs[1].kind === 'level' && legs[1].key === 'volume', 'the second is the one just picked');
     assert(legs[1].lo === 0 && legs[1].hi === 1, 'a new leg starts at whole range');
     assert(snd.soundViewForTest() === VIEW_KNOBLEGS, 'and the commit lands back on the LEG list, view ' + snd.soundViewForTest());
-    assert(legRows().length === 7, 'two legs = 6 rows + add, got ' + JSON.stringify(legRowLabels()));
+    assert(legRows().length === 9, 'two legs = 8 rows + add, got ' + JSON.stringify(legRowLabels()));
 });
 step('⭑⭑ a Lo row: click to edit, jog to move — and the TARGET MOVES NOW (Josh, 2026-09-10, REVERSING §6.2)', () => {
-    /* Cursor to leg 2's Lo (rows: leg,lo,hi, leg,lo,hi, add -> index 4).
+    /* Cursor to leg 2's Lo (rows: leg,lo,hi,travel ×2 then add -> index 5).
      * ⚠ This step used to pin the OPPOSITE ("the target does not move"). The
      * ruling changed, so the pin changed with it — the invariant being kept is
      * "what the ruling says", not the old assertion. */
-    S_setLegRow(4);
-    assert(legRows()[4].kind === 'lo', 'on leg 2 Lo, got ' + legRows()[4].kind);
+    S_setLegRow(5);
+    assert(legRows()[5].kind === 'lo', 'on leg 2 Lo, got ' + legRows()[5].kind);
     ticks(6);                                           /* SEEDED: v read, both legs' values in */
     const v0 = GS.trackMacros[2][0].v;
     writes = [];
@@ -1056,7 +1131,7 @@ step('⭑⭑ a Lo row: click to edit, jog to move — and the TARGET MOVES NOW (
     for (let i = 0; i < 20; i++) jog(1);                /* +20% */
     const legs = legsOf(GS.trackMacros[2][0]);
     assert(Math.abs(legs[1].lo - 0.20) < 0.001, 'Lo moved to 20%, got ' + legs[1].lo);
-    assert(legRows()[4].value === '20%', 'and the row says so, got ' + legRows()[4].value);
+    assert(legRows()[5].value === '20%', 'and the row says so, got ' + legRows()[5].value);
     /* ⭑ ONE tick is the assertion. The apply waits for a SEEDED mapping, so if
      * a range edit still dropped the cached cells and values (it did, until
      * 09-10 — every detent forced a full re-seed) this write could not be here
@@ -1086,7 +1161,7 @@ step('⭑⭑ ONE leg: a range edit CLAMPS the value in NOW — and leaves it alo
     ASSIGN['synth:cutoff'] = '0.3000';
     GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 }] };
     ticks(6);
-    S_setLegRow(2);                                     /* one leg -> rows leg,lo,hi,add */
+    S_setLegRow(2);                                     /* one leg -> rows leg,lo,hi,travel,add */
     assert(legRows()[2].kind === 'hi', 'on Hi, got ' + legRows()[2].kind);
     writes = [];
     click();
@@ -1125,8 +1200,8 @@ step('⭑ an INVERTED one-leg range clamps to the ORDERED bounds — the bounds 
     GS.trackMacros[2][0] = KEEP; ticks(2);
 });
 step('⭑ an INVERTED range can be dialled in: Hi below Lo is allowed, the two bounds are independent (§6.4)', () => {
-    S_setLegRow(5);                                     /* leg 2's Hi */
-    assert(legRows()[5].kind === 'hi', 'on Hi, got ' + legRows()[5].kind);
+    S_setLegRow(6);                                     /* leg 2's Hi */
+    assert(legRows()[6].kind === 'hi', 'on Hi, got ' + legRows()[6].kind);
     click();
     for (let i = 0; i < 95; i++) jog(-1);               /* 100% -> 5%, well under Lo's 20% */
     const legs = legsOf(GS.trackMacros[2][0]);
@@ -1135,8 +1210,8 @@ step('⭑ an INVERTED range can be dialled in: Hi below Lo is allowed, the two b
     back();
 });
 step('⭑ a plain click on a leg RE-POINTS it and KEEPS its range', () => {
-    S_setLegRow(3);                                     /* leg 2 */
-    assert(legRows()[3].kind === 'leg', 'on the leg row, got ' + legRows()[3].kind);
+    S_setLegRow(4);                                     /* leg 2 */
+    assert(legRows()[4].kind === 'leg', 'on the leg row, got ' + legRows()[4].kind);
     click(); ticks(1);
     const targets = snd.soundKnobTargetsForTest();
     const ti = targets.findIndex(t => t.name === 'nusaw');
@@ -1159,18 +1234,18 @@ step('⭑ a plain click on a leg RE-POINTS it and KEEPS its range', () => {
            '⭑ and KEPT its 20..5% range — a range belongs to the KNOB, got ' + legs[1].lo + '..' + legs[1].hi);
 });
 step('⭑ Shift + click a leg REMOVES it; removing the last leg leaves the knob UNASSIGNED', () => {
-    S_setLegRow(3);
+    S_setLegRow(4);
     shift(true); click(); shift(false); ticks(1);
     const legs = legsOf(GS.trackMacros[2][0]);
     assert(legs.length === 1 && legs[0].key === 'cutoff', 'leg 2 gone, leg 1 kept, got ' + JSON.stringify(legs));
-    assert(legRows().length === 4, 'the list shrank, got ' + JSON.stringify(legRowLabels()));
+    assert(legRows().length === 5, 'the list shrank back to one leg, got ' + JSON.stringify(legRowLabels()));
     S_setLegRow(0);
     shift(true); click(); shift(false); ticks(1);
     assert(GS.trackMacros[2][0] === null, 'the last leg removed leaves the slot null, got ' + JSON.stringify(GS.trackMacros[2][0]));
     ticks(2);
     assert(M().drawn[0].text === '--', 'and the page reads `--` again, got ' + JSON.stringify(M().drawn[0]));
 });
-step('⭑ the leg list RENDERS — three legs is 10 rows and the screen still draws (structure is not pixels)', () => {
+step('⭑ the leg list RENDERS — three legs is 13 rows and the screen still draws (structure is not pixels)', () => {
     /* ⚠ Every other assertion here reads knobLegRows(), which is a description
      * of the screen, not the screen. Ten rows is more than the list shows at
      * once, so this is the one that would catch a list that silently draws
@@ -1186,7 +1261,7 @@ step('⭑ the leg list RENDERS — three legs is 10 rows and the screen still dr
     for (let i = 0; i < 0; i++) jog(1);
     click(); ticks(1);                                  /* the assigned knob ENTERS */
     assert(snd.soundViewForTest() === VIEW_KNOBLEGS, 'on the leg list, view ' + snd.soundViewForTest());
-    assert(legRows().length === 10, 'three legs = 9 rows + add, got ' + legRows().length);
+    assert(legRows().length === 13, 'three legs = 12 rows + add, got ' + legRows().length);
     px.length = 0; fills.length = 0;
     draw();
     assert(px.length + fills.length > 40, 'the leg list drew something, got ' + (px.length + fills.length));
@@ -1220,6 +1295,31 @@ step('⭑ the K-list row says what a mapped knob DRIVES, and a plain one still n
     GS.trackMacros[2][0] = null; GS.trackMacros[2][1] = null;
 });
 
+step('⭐ the TRAVEL row toggles by the real gesture, survives the sidecar, and defaults BOUNDED', () => {
+    GS.trackMacros[2][0] = { v: null, legs: [
+        { kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.2, hi: 0.8 }] };
+    snd.soundSetViewForTest(VIEW_MACROS); ticks(3);
+    click(); ticks(1);                                /* K-list */
+    snd.soundSetLegRowForTest(0);
+    click(); ticks(2);                                /* the assigned knob ENTERS its legs */
+    assert(snd.soundViewForTest() === 20, 'on the leg list, view ' + snd.soundViewForTest());
+    const rowIdx = legRows().findIndex(r => r.kind === 'travel');
+    assert(rowIdx === 3, 'Travel sits under Lo and Hi, at index 3 — got ' + rowIdx);
+    S_setLegRow(rowIdx);
+    assert(legRows()[rowIdx].value === 'Bounded', 'defaults to Bounded, got ' + legRows()[rowIdx].value);
+    sidecars = [];
+    click(); ticks(2);                                /* the click IS the edit for a two-state row */
+    assert(legRows()[rowIdx].value === 'Full', 'the click flipped it, got ' + legRows()[rowIdx].value);
+    assert(legsOf(GS.trackMacros[2][0])[0].travel === 'full', 'and the store carries it');
+    const mac = lastMac();
+    assert(mac && mac[2] && mac[2][0] && mac[2][0].legs[0].travel === 'full',
+           '⭑ and it went to the SIDECAR — a feel setting that does not survive a reload is a bug, got '
+           + JSON.stringify(mac && mac[2] && mac[2][0]));
+    click(); ticks(2);
+    assert(legRows()[rowIdx].value === 'Bounded', 'and back again');
+    assert(legsOf(GS.trackMacros[2][0])[0].travel === undefined,
+           'Bounded is the ABSENCE of the field, so an old sidecar reads as Bounded');
+});
 /* ---- retirements ----------------------------------------------------------- */
 step('⚠ RETIRED: Sound Control has no Knobs row; the old HUD/forwarding machinery and the chain-store knob writes are gone', () => {
     const src = readFileSync('ui/ui_sound.mjs', 'utf8');

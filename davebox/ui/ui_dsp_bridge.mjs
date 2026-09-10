@@ -738,8 +738,8 @@ export function pollDSP() {
     if (S.countInDspPrev && !countInDspActive) {
         if (S.playing) {
             S.recordCountingIn    = false;
-            S.countInStartTick    = -1;
-            S.countInQuarterTicks = 0;
+            S.countInStartMs    = -1;
+            S.countInQuarterMs = 0;
         }
         S.mergeCountingIn = false;
     }
@@ -747,7 +747,7 @@ export function pollDSP() {
 
     /* Transport transitions */
     if (!S.playingPrev && S.playing) {
-        S.transportStartTick = S.clockMs;
+        S.transportStartMs = S.clockMs;
         /* Focused-clip-by-default on transport start: only the clip the user
          * is currently *viewing* in Track View auto-launches. Session View
          * launches whatever is already queued — explicit launch by the user.
@@ -1486,6 +1486,12 @@ export function restoreUiSidecar(applyDefaultsNow) {
              * Absent or unreadable → whole range, which is the old shape. */
             const _n = (x, d) => (typeof x === 'number' && isFinite(x)) ? Math.max(0, Math.min(1, x)) : d;
             _l.lo = _n(_e.lo, 0); _l.hi = _n(_e.hi, 1);
+            /* TRAVEL (Josh, 2026-09-10): 'full' = the knob's whole sweep
+             * crosses lo..hi; anything else (and absent, which is every
+             * sidecar written before today) = 'bounded', the target's own feel
+             * with the range as a wall. READING is the migration, exactly as
+             * it was for lo/hi — no version bump. */
+            if (_e.travel === 'full') _l.travel = 'full';
             return _l;
         };
         for (let _t = 0; _t < NUM_TRACKS; _t++) S.trackMacros[_t] = null;
@@ -1625,6 +1631,33 @@ function consumeNewProjectSeed() {
     S.padScale = scale;
     host_module_set_param('key', String(key));
     host_module_set_param('scale', String(scale));
+    /* ⭐⭐ AND HOLD ON TO THEM, because applying here is NOT enough — this runs
+     * BEFORE the project's state load, and the load puts the DSP's defaults
+     * back over the top. The defaults are key 9, scale 1 (seq8.c:4467), which
+     * is A minor — which is why every new project came up in A minor while the
+     * randomiser, the note and this consumer were all working perfectly
+     * (Josh, 2026-09-10: "they always land on a minor"; nine projects in a row,
+     * and the device log has the seed at 15:33:44.236 and the state_load at
+     * 15:33:45.204).
+     * The note is still read and deleted exactly once, here. Only the APPLY is
+     * deferred, and it is re-applied at the load barrier in ui_tick. */
+    S.newProjectSeed = { key, scale };
+}
+
+/* Re-apply a brand-new project's random key/scale AFTER its state load, which
+ * would otherwise have just written the defaults over them. One-shot: the
+ * stash is cleared, so a later load of a project the user has since tuned
+ * cannot re-randomise it. */
+export function applyNewProjectSeed() {
+    const seed = S.newProjectSeed;
+    if (!seed) return false;
+    S.newProjectSeed = null;
+    S.padKey = seed.key;
+    S.padScale = seed.scale;
+    host_module_set_param('key', String(seed.key));
+    host_module_set_param('scale', String(seed.scale));
+    computePadNoteMap();          /* the pads are built from key+scale */
+    return true;
 }
 
 export function syncClipsFromDsp() {

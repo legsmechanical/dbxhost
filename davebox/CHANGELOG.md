@@ -17,6 +17,35 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **New projects get a random key and scale again.** They had been arriving in
+  A minor every time. The key was being chosen correctly all along — it was
+  applied a moment before the project's state loaded, and the load put the
+  defaults straight back over it.
+- **Saving a snapshot blinks all sixteen steps, in green.** The confirmation
+  used to be white — the same white the snapshot row already uses for a filled
+  slot — so on that screen it barely registered. It now blinks green, the way
+  saving a mute state does.
+- **Travel: Full or Bounded, per target.** Each of a knob's targets now has a
+  **Travel** row under its Lo and Hi. **Bounded** (the default, unchanged
+  behaviour) keeps that parameter's own feel and stops at the range; **Full**
+  spreads the range across the knob's entire sweep. Full suits a filter; Bounded
+  suits anything with a few values, where a full sweep would waste most of the
+  turn.
+- **The on-screen knob follows your hand.** A macro knob with an inverted
+  range used to draw its dial running backwards while you turned forwards; now
+  the dial always rises with the knob. A knob set to a narrow range also uses
+  the whole dial instead of a sliver of it. The number still reads the
+  parameter's own value.
+- **Shift + click a send to see what it feeds.** From a track's sound menu,
+  Shift + click **Send A** or **Send B** to jump straight into that send's FX
+  menu; Back returns you to the track's menu with the cursor still on the send.
+  A plain click still edits the send level.
+- **The count-in behaves itself.** The step buttons now flash *on* the beat
+  instead of drifting out of step with the count. Two things that quietly never
+  worked come with it: a note played in the last moment of the count-in is kept
+  and lands on the one (external keyboards included, which were always dropped),
+  and a note played during the count-in is recorded at the length you actually
+  held it rather than the shortest possible note.
 - **The level overlay is back on sound screens.** Shift + volume always moved
   the track's level in the sound menu and the module editors, but the card
   showing you the number never appeared there. Four other things that had gone

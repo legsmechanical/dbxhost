@@ -465,7 +465,7 @@ function _onPadPressTrackView(status, d1, d2) {
                         const recVel = tvo > 0 ? tvo : vel;
                         S.pendingPrerollNote = { track: t, lane: lane, laneNote: laneNote,
                                                  vel: recVel, isDrum: true,
-                                                 pressedAtTick: S.tickCount, countInStart: S.countInStartTick };
+                                                 pressedAtMs: nowMs(), countInStart: S.countInStartMs };
                     }
                     /* Phase 1 / Bundle 2C-Rpt1+Rpt2: lane-swap-while-holding-a-rate-pad.
                      * On patched Schwung drum_pad_event has called
@@ -1833,13 +1833,7 @@ export function _onPadRelease(status, d1, d2) {
         if (S.pendingPrerollNote !== null) {
             const _prRelPitch = S.pendingPrerollNote.laneNote;
             if (_prRelPitch === pitch)
-                S.pendingPrerollNote.releasedAtTick = S.tickCount;
-        }
-        for (let _pri = 0; _pri < S.pendingPrerollNotes.length; _pri++) {
-            if (S.pendingPrerollNotes[_pri].pitch === pitch) {
-                S.pendingPrerollNotes[_pri].releasedAtTick = S.tickCount;
-                break;
-            }
+                S.pendingPrerollNote.releasedAtMs = nowMs();
         }
         padPitch[padIdx] = -1;
         if (!S.sessionView) {

@@ -2501,8 +2501,8 @@ function _onCC_transport(d1, d2) {
         }
         const _bpm = (S.bpmMirror > 0 && isFinite(S.bpmMirror)) ? S.bpmMirror : 120;
         S.mergeCountingIn      = true;
-        S.countInBeatStartTick = nowMs();
-        S.countInQuarterTicks = 60000 / _bpm;          /* a quarter note, in ms (the name is historical) */
+        S.countInBeatStartMs = nowMs();
+        S.countInQuarterMs = 60000 / _bpm;          /* a quarter note, in ms (the name is historical) */
         const _solo = S.mergeNoticeSingleTrack;
         if (_solo < 0) {
             S.mergeSingleTrack = -1;
@@ -2620,11 +2620,9 @@ function _onCC_transport(d1, d2) {
             S.recordArmedLive     = false;      /* count-in take: page-end stop */
             S.recordCountingIn    = true;
             S.recordArmedTrack    = S.activeTrack;
-            S.countInStartTick    = S.tickCount;
-            S.countInBeatStartTick = nowMs();
-            S.countInQuarterTicks = 60000 / bpm;          /* a quarter note, in ms (the name is historical) */
-            S.pendingPrerollNotes       = [];
-            S.pendingPrerollToggleQueue = [];
+            S.countInStartMs    = nowMs();
+            S.countInBeatStartMs = nowMs();
+            S.countInQuarterMs = 60000 / bpm;          /* a quarter note, in ms (the name is historical) */
             host_module_set_param('record_count_in', String(S.activeTrack));
             noteUndoUnit(); S.undoSeqArpSnapshot = null;
             setButtonLED(MoveRec, Red);
