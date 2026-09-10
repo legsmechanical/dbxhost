@@ -26,7 +26,7 @@ import {
 
 import { S, standDownBankDisplay } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { tickPrefetch, dget } from './ui_dsp_bridge.mjs';
+import { tickPrefetch, dget, applyNewProjectSeed } from './ui_dsp_bridge.mjs';
 import { daveBoxTick, bannerDaveSync } from './ui_daves.mjs';
 import { devSnapOpen, devSnapEnter, devSnapTick, DEVSNAP_HOLD_MS } from './ui_devsnap.mjs';
 import { automationTick, automationPollWarnings } from './ui_automation.mjs';
@@ -792,6 +792,11 @@ export function _tickImpl() {
             }
             restoreUiSidecar(true);
             computePadNoteMap();
+            /* ⭐ AFTER the load, not before it: a brand-new project's random
+             * key/scale is applied here because the state load immediately
+             * above has just written the DSP's defaults over the copy the sync
+             * applied. See applyNewProjectSeed. */
+            applyNewProjectSeed();
             S.stateLoading = false;
             /* Load completion is an INPUT-STATE BARRIER for touch state. The
              * resync above blocks the tick for seconds, the shim's UI MIDI

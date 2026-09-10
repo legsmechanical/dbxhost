@@ -17,6 +17,10 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **New projects get a random key and scale again.** They had been arriving in
+  A minor every time. The key was being chosen correctly all along — it was
+  applied a moment before the project's state loaded, and the load put the
+  defaults straight back over it.
 - **Saving a snapshot blinks all sixteen steps, in green.** The confirmation
   used to be white — the same white the snapshot row already uses for a filled
   slot — so on that screen it barely registered. It now blinks green, the way

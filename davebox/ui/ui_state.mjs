@@ -572,6 +572,10 @@ export const S = {
     countInQuarterMs: 0,
     countInDspPrev: false,
     playingPrev: false,
+    /* A brand-new project's random key/scale, read from its one-shot note and
+     * held until AFTER the state load — the load writes the DSP's defaults
+     * (A minor) over anything applied before it. Cleared as it is applied. */
+    newProjectSeed: null,
     transportStartMs: 0,
     _recNoteOns: [],
     _recNoteOffs: [],
