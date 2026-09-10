@@ -3402,6 +3402,11 @@ function knobLegRows() {
         rows.push({ kind: 'leg', leg: j, label: legShortName(leg), hdr: true, value: knobAsnLabel(a) });
         rows.push({ kind: 'lo', leg: j, label: ' Lo', value: Math.round(leg.lo * 100) + '%' });
         rows.push({ kind: 'hi', leg: j, label: ' Hi', value: Math.round(leg.hi * 100) + '%' });
+        /* TRAVEL, under the two bounds it qualifies (Josh, 2026-09-10). Two
+         * states, so the click IS the edit — the slot-settings idiom for a
+         * toggle; the jog also flips it while the row is being edited. */
+        rows.push({ kind: 'travel', leg: j, label: ' Travel',
+                    value: legFullTravel(leg) ? 'Full' : 'Bounded' });
     }
     rows.push({ kind: 'add', label: '+ Add target', value: '' });
     return rows;
@@ -3418,6 +3423,23 @@ function openKnobLegs() {
 /* Move a leg's Lo or Hi by `delta` hundredths, clamped to 0..1. ⭑ lo > hi is
  * allowed and is the INVERTED leg (Josh §6.4), so the two bounds never push
  * each other around — they are independent. */
+/* Flip one leg between Full and Bounded. The caches hang off the mapping's
+ * SHAPE, and travel changes which law reads them, so they go — and `v` is
+ * dropped with them: a bounded leg never had one, and a full leg must seed it
+ * from where the target actually IS or the first turn would jump. */
+function knobLegTravelToggle(row) {
+    const mp = macroMapping(S.knobIdx);
+    const leg = macroLegs(mp)[row.leg];
+    if (!leg) return;
+    if (legFullTravel(leg)) delete leg.travel; else leg.travel = 'full';
+    if (mp) mp.v = null;
+    S.macCells[S.knobIdx] = null; S.macVals[S.knobIdx] = null;
+    S.macLegCells[S.knobIdx] = null; S.macLegVals[S.knobIdx] = null;
+    S.macAnchorVal[S.knobIdx] = null;
+    S.knobAccum[S.knobIdx] = 0; S.macLastDir[S.knobIdx] = 0;
+    writeSidecar();
+    S.dirty = true;
+}
 const LEG_RANGE_STEP = 0.01;
 function knobLegRangeTurn(row, delta) {
     const mp = macroMapping(S.knobIdx);
@@ -4723,6 +4745,31 @@ function macroTarget(i, track) { return macroLeg0(macroMapping(i, track)); }
  *      (Josh, 2026-09-10, reversing §6.2), applied by macroTick's range pass
  *      at `lo + v·(hi − lo)` with `v` held still. */
 function macroMulti(mp) { return macroLegs(mp).length > 1; }
+/* ── TRAVEL (Josh, 2026-09-10) ─────────────────────────────────────────────
+ * "any way to add a Travel title to the macro setup alongside hi/lo that goes
+ * from full to bounded" — so the trade is per LEG instead of one law for the
+ * whole fork.
+ *
+ *   BOUNDED (the default, and what every existing knob keeps): the knob steps
+ *     the target the target's OWN way — two detents a voice, four an enum step
+ *     — and the range is a wall it stops at. Small range, small travel.
+ *   FULL: the knob's whole physical sweep crosses lo..hi, which is the `v`
+ *     machinery a multi-leg knob already uses.
+ *
+ * ⚠⚠ FULL IS THE SLOW-KNOB TRAP MADE OPTIONAL, and that is the point. Driving
+ * an 8-value enum through 255 knob positions means ~32 detents per step and
+ * every small turn does nothing — right for a filter, wrong for Voices. It is
+ * now the user's call per leg rather than mine for everyone.
+ * → [[schwung-canvaskit-continuous-cell-default-is-the-slow-law]] */
+function legFullTravel(leg) { return !!leg && leg.travel === 'full'; }
+/* Does this mapping run on `v` — the knob's own position — rather than on the
+ * target's steps? TWO reasons it can: more than one leg (they must agree on
+ * something, and `v` is it), or a leg the user set to FULL travel.
+ * ⚠ Deliberately NOT the same question as macroMulti, which stays "does this
+ * knob drive more than one thing" — that is a DISPLAY identity (the MAC slug,
+ * the percentage read-out) and a one-leg knob keeps its parameter's name and
+ * value however it travels. */
+function macroVDriven(mp) { return macroMulti(mp) || macroLegs(mp).some(legFullTravel); }
 /* A leg that does not use its target's whole range. ⭑ On a ONE-leg mapping
  * this is NOT the `v` machinery — see the turn law: a single ranged leg is the
  * PLAIN path plus a clamp, so it keeps the plain path's FEEL (two detents a
@@ -5414,7 +5461,7 @@ function macroTick() {
      * time — after that `v` is the authority and nothing here reads again. */
     for (let i = 0; i < 8 && reads < MACRO_READS_PER_TICK; i++) {
         const mp = store[i];
-        if (!macroMulti(mp)) continue;
+        if (!macroVDriven(mp)) continue;
         const legs = mp.legs;
         /* macroShapeSync above has already dropped these if the mapping
          * changed, so allocating is all that is left. */
@@ -5462,7 +5509,7 @@ function macroTick() {
     }
     for (let i = 0; i < 8 && reads < MACRO_READS_PER_TICK; i++) {
         const m = macroLeg0(store[i]);
-        if (!m || m.kind !== 'chain' || macroMulti(store[i])) continue;
+        if (!m || m.kind !== 'chain' || macroVDriven(store[i])) continue;
         if (!S.knobMeta[m.comp]) {
             let list = [];
             try { list = JSON.parse(engineGet(S.slot, m.comp, 'chain_params') || '[]') || []; }
@@ -5503,7 +5550,7 @@ function macroTick() {
         if (!S.macApplyRange[i] || !S.macApplyRange[i].length) continue;
         const mp = store[i];
         if (!mp) { S.macApplyRange[i] = null; continue; }
-        if (macroMulti(mp)) {
+        if (macroVDriven(mp)) {
             if (mp.v == null || macroLegsUnseeded(i, mp)) continue;     /* wait for the seed */
             const legs = mp.legs, cells = S.macLegCells[i] || [];
             for (const j of S.macApplyRange[i]) {
@@ -5542,7 +5589,7 @@ function macroTick() {
     for (let i = 0; i < 8; i++) {
         if (!S.knobAccum[i]) continue;
         const mp = store[i];
-        if (macroMulti(mp)) {
+        if (macroVDriven(mp)) {
             /* THE MAPPED TURN. The knob's own travel law — the float law, 255
              * positions at 2 detents — applied to `v`, then every leg written
              * through its range. Each leg records its own lane (ruling A). */
@@ -5663,7 +5710,7 @@ function macroPollTick() {
          * slow turn on a coarse anchor (one detent every 300 ms) would then
          * lose its progress between detents and never advance. Our own write
          * is remembered in macAnchorVal, so it reads as "no change". */
-        if (macroMulti(store[i])) {
+        if (macroVDriven(store[i])) {
             const mp = store[i];
             if (i === S.touchedIdx || (GS.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
             const j = macroAnchorIdx(mp);
@@ -5793,7 +5840,15 @@ function macroCells(track, live) {
                  * slow-knob trap the one-leg law was written against
                  * ([[schwung-canvaskit-continuous-cell-default-is-the-slow-law]]).
                  * It is not changed here; it needs his ruling. */
-                if (cell && legRanged(m) && ec.max > ec.min) {
+                /* ⭐ A FULL-TRAVEL leg is driven by `v`, and `v` IS the knob's
+                 * position — so the dial is `v` directly, whatever the range.
+                 * (The knob keeps its parameter's NAME and value: travel
+                 * changes the feel, not the identity. See macroVDriven.) */
+                if (cell && legFullTravel(m) && mp && mp.v != null) {
+                    if (cell.norm != null) cell.norm = mp.v;
+                    if (cell.signed != null) cell.signed = Math.max(-1, Math.min(1, (mp.v - 0.5) * 2));
+                }
+                else if (cell && legRanged(m) && ec.max > ec.min) {
                     const _pn = (v - ec.min) / (ec.max - ec.min);
                     const _kv = legNormToV(m, _pn);
                     if (_kv != null) {
@@ -7733,7 +7788,10 @@ export function soundOnCC(d1, d2, decodeDelta) {
             const rows = knobLegRows();
             /* While a Lo/Hi row is being EDITED the jog is the value, not the
              * cursor — the slot-settings idiom, so nothing new to learn. */
-            if (S.knobLegEditing) knobLegRangeTurn(rows[S.knobLegRow], delta);
+            if (S.knobLegEditing && rows[S.knobLegRow] && rows[S.knobLegRow].kind === 'travel') {
+                if (delta) knobLegTravelToggle(rows[S.knobLegRow]);
+            }
+            else if (S.knobLegEditing) knobLegRangeTurn(rows[S.knobLegRow], delta);
             else S.knobLegRow = listMove(rows.length, S.knobLegRow, delta);
         } else if (S.view === VIEW_KNOB_TARGET) {
             S.knobTargetIdx = listMove(S.knobTargets.length, S.knobTargetIdx, delta);
@@ -7984,6 +8042,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
                 if (S.shiftHeld) knobLegRemove(row.leg);
                 else { S.knobLegIdx = row.leg; S.pendingAction = { t: 'knobtarget' }; }
             }
+            else if (row && row.kind === 'travel') knobLegTravelToggle(row);
             else S.knobLegEditing = !S.knobLegEditing;
         }
         else if (S.view === VIEW_KNOB_TARGET) {

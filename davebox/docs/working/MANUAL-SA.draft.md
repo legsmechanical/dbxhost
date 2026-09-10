@@ -1323,6 +1323,14 @@ eight knobs are the track's **levels** (Volume, Pan, Send A, Send B), exactly
 as on the SOUND + CONFIG card. Module Level is reachable as a macro target. They stay live there so you can
 balance the sound while you navigate it.
 
+**Travel** sits under Lo and Hi and has two settings. **Bounded** (the default,
+and how every knob has always behaved) keeps the parameter's own feel — two
+clicks a voice, four a waveform — and simply stops at the range you set.
+**Full** spreads the range across the knob's whole sweep instead, so a narrow
+range gets the entire travel of the knob. Full is lovely on a filter and wrong
+on anything with only a handful of values, where a whole turn is a few steps and
+small movements do nothing — which is why it's a choice, per target.
+
 ### From a send to what it feeds
 
 The **Send A** and **Send B** rows in a track's sound menu set how much of that

@@ -1486,6 +1486,12 @@ export function restoreUiSidecar(applyDefaultsNow) {
              * Absent or unreadable → whole range, which is the old shape. */
             const _n = (x, d) => (typeof x === 'number' && isFinite(x)) ? Math.max(0, Math.min(1, x)) : d;
             _l.lo = _n(_e.lo, 0); _l.hi = _n(_e.hi, 1);
+            /* TRAVEL (Josh, 2026-09-10): 'full' = the knob's whole sweep
+             * crosses lo..hi; anything else (and absent, which is every
+             * sidecar written before today) = 'bounded', the target's own feel
+             * with the range as a wall. READING is the migration, exactly as
+             * it was for lo/hi — no version bump. */
+            if (_e.travel === 'full') _l.travel = 'full';
             return _l;
         };
         for (let _t = 0; _t < NUM_TRACKS; _t++) S.trackMacros[_t] = null;

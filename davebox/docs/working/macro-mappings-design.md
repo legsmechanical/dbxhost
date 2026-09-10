@@ -145,6 +145,19 @@ What A costs, stated so it is not rediscovered as a bug:
 6. Leg kinds — **all of them**: chain, level, MIDI and bank (`seq:`). A leg is today's target
    record plus two numbers; nothing is kind-specific.
 
+7. **TRAVEL — Josh, 2026-09-10** ("any way to add a Travel title to the macro setup alongside
+   hi/lo that goes from full to bounded"). A per-LEG choice of turn law, defaulting to today's:
+   · **bounded** (absent field): the plain path plus a clamp — the target's own step, the range
+     as a wall. Every sidecar written before 09-10 reads as this, so nothing changes underfoot.
+   · **full**: the leg is driven by `v`, the same machinery a multi-leg knob uses, so the knob's
+     whole sweep crosses lo..hi.
+   ⚠⚠ This makes the SLOW-KNOB TRAP optional rather than forbidden: full travel on an 8-value
+   enum is ~32 detents a step. That is the whole reason it is the user's call per leg and not a
+   law — and why the default had to stay bounded.
+   ⭑ `macroVDriven()` is the predicate the turn law, the seed, the poll and the range-apply now
+   ask. `macroMulti()` stays "more than one leg" and remains the DISPLAY identity, so a one-leg
+   full-travel knob keeps its parameter's name and value and only the dial follows `v`.
+
 Decisions NOT put to Josh (mine, each pinned in a test rather than left as prose):
 
 - **Seeding `v`** when a slot first becomes multi-leg or ranged: inverse-map the FIRST leg's

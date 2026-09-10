@@ -17,6 +17,12 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Travel: Full or Bounded, per target.** Each of a knob's targets now has a
+  **Travel** row under its Lo and Hi. **Bounded** (the default, unchanged
+  behaviour) keeps that parameter's own feel and stops at the range; **Full**
+  spreads the range across the knob's entire sweep. Full suits a filter; Bounded
+  suits anything with a few values, where a full sweep would waste most of the
+  turn.
 - **The on-screen knob follows your hand.** A macro knob with an inverted
   range used to draw its dial running backwards while you turned forwards; now
   the dial always rises with the knob. A knob set to a narrow range also uses
