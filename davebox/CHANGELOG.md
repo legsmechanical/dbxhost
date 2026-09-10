@@ -17,6 +17,12 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **The level overlay is back on sound screens.** Shift + volume always moved
+  the track's level in the sound menu and the module editors, but the card
+  showing you the number never appeared there. Four other things that had gone
+  quiet come back with it: the preset audition preview, the pad-tap window, the
+  sound page's idle refresh, and the knob-follows-your-hand rule while a page
+  is polling.
 - **A Dave in the window.** Flip **Daves** to On in the global menu (it sits
   just above Open Your Dave Box; off by default) and, while the transport
   runs, the dAVEBOx banner in Session view becomes a window: one of your

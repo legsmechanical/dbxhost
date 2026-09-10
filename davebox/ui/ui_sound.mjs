@@ -2397,7 +2397,7 @@ function doChainPatchDelete(index) {
 /* Post-mutation re-list once the DSP has had time to touch the files. */
 function tickChainPatches() {
     if (S.patchRelistAt < 0) return;
-    if (S.clockMs < S.patchRelistAt) return;
+    if (GS.clockMs < S.patchRelistAt) return;
     S.patchRelistAt = -1;
     if (S.view !== VIEW_PATCHES) return;
     S.patchNames = host_patch_list();
@@ -5522,7 +5522,7 @@ function macroPollTick() {
          * is remembered in macAnchorVal, so it reads as "no change". */
         if (macroMulti(store[i])) {
             const mp = store[i];
-            if (i === S.touchedIdx || (S.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
+            if (i === S.touchedIdx || (GS.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
             const j = macroAnchorIdx(mp);
             if (j < 0 || !S.macLegCells[i]) continue;
             const leg = mp.legs[j], c = S.macLegCells[i][j];
@@ -5541,7 +5541,7 @@ function macroPollTick() {
          * bus-pan macro "records and plays back but the widget never moves"
          * — the levels were seeded once and never re-read). */
         if (m && m.kind === 'level') {
-            if (i === S.touchedIdx || (S.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
+            if (i === S.touchedIdx || (GS.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
             if (levelPollOne(macroLevelIdx(m))) S.dirty = true;
             S.macPoll = i + 1;
             break;
@@ -5552,7 +5552,7 @@ function macroPollTick() {
          * accumulator: that remainder never clears on its own, and skipping
          * on it silenced every knob but the first once turned (Josh,
          * 2026-09-03: "only the 1st macro widget is visualizing"). */
-        if (i === S.touchedIdx || (S.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
+        if (i === S.touchedIdx || (GS.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
         const v = parseValue(cell, engineGet(S.slot, m.comp, m.key));
         if (v !== S.macVals[i]) { S.macVals[i] = v; S.dirty = true; }
         S.macPoll = i + 1;
@@ -6255,7 +6255,7 @@ function dropBakedNames() {
  * run an order of magnitude harder: minijv's 4096 presets go from ~22s to ~4s,
  * and the audible riffle through every preset shortens with it. */
 function bakedScanRate() {
-    return S.playing ? BAKED_SCAN_PER_TICK : BAKED_SCAN_PER_TICK_IDLE;
+    return GS.playing ? BAKED_SCAN_PER_TICK : BAKED_SCAN_PER_TICK_IDLE;
 }
 
 function stepBakedScan() {
@@ -8782,7 +8782,7 @@ export function soundTick() {
     /* Debounced audition — fires once its deadline passes; a row with no
      * sound of its own (the save row) lets the deadline lapse and falls to the
      * restore branch on the next tick. */
-    if (S.previewAt >= 0 && S.clockMs >= S.previewAt) {
+    if (S.previewAt >= 0 && GS.clockMs >= S.previewAt) {
         S.previewAt = -1;
         if (S.previewIdx >= 0) {
             if (S.view === VIEW_PRESET_BAKED) applyBaked(S.previewIdx);
@@ -8829,7 +8829,7 @@ export function soundTick() {
          * Every OTHER tick: a few ms of granularity is imperceptible and halves
          * the cost of a drum roll, which re-arms this on every hit. The window
          * itself is a millisecond deadline (PAD_WATCH_MS). */
-        const expired = S.clockMs >= S.padWatchUntil;
+        const expired = GS.clockMs >= S.padWatchUntil;
         S.padWatchPhase ^= 1;
         /* A module may vouch without publishing a selection (press declared,
          * select not). There is then nothing to watch, so fall back to one
@@ -8900,8 +8900,8 @@ export function soundTick() {
      * second set of ~2.6 ms round-trips for numbers nothing renders. Param
      * reads — not draw CPU — are the expensive half of a hosted frame. */
     if (S.view === VIEW_EDIT && !S.hosted && S.banks.length && !S.pendingWrites.length &&
-        (S.clockMs - S.lastIdlePollMs) >= POLL_IDLE_MS) {
-        S.lastIdlePollMs = S.clockMs;
+        (GS.clockMs - S.lastIdlePollMs) >= POLL_IDLE_MS) {
+        S.lastIdlePollMs = GS.clockMs;
         pollValues(false);
     }
 }
@@ -10660,7 +10660,7 @@ export function soundRender() {
             !soundIsGlobal() && !S.enterSession &&
             !S.instrEditing && !S.busLevelEditing &&
             S.touchedIdx < 0 && !S.volTouched &&
-            !(S.volShownUntil >= 0 && S.clockMs <= S.volShownUntil) &&
+            !(S.volShownUntil >= 0 && GS.clockMs <= S.volShownUntil) &&
             !bankCardVisible())
         return false;
     if (S.view === VIEW_PROMPT) renderPrompt();
@@ -10707,6 +10707,6 @@ export function soundRender() {
     }
     /* The level readout wins: it is the same box in the same place, and the
      * volume knob is a deliberate second gesture on top of this one. */
-    if (S.volShownUntil >= 0 && S.clockMs <= S.volShownUntil) drawVolReadout();
+    if (S.volShownUntil >= 0 && GS.clockMs <= S.volShownUntil) drawVolReadout();
     return true;
 }

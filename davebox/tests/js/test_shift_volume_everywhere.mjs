@@ -59,7 +59,13 @@ for (const fn of ['host_read_file', 'host_file_exists', 'host_ensure_dir', 'host
     globalThis[fn] = () => (fn.indexOf('read') >= 0 || fn.indexOf('get') >= 0 ? '' : 0);
 globalThis.clear_screen = () => {}; globalThis.print = () => {}; globalThis.pixel_print = () => {};
 globalThis.text_width = (t) => String(t).length * 6; globalThis.fill_rect = () => {};
-globalThis.draw_rect = () => {}; globalThis.draw_line = () => {}; globalThis.set_pixel = () => {};
+let cardDraws = 0;
+/* drawLevelCard's own outline — the ONE mark unique to the level card
+ * (ui_movy.drawLevelCard: w=100 h=22 at x=14 y=21). Text is no use as the
+ * observable: the card's font paints through mvPrint, not print(), so a probe
+ * looking for "LEVEL" reports nothing on a screen that is drawing it. */
+globalThis.draw_rect = (x, y, w, h) => { if (x === 14 && y === 21 && w === 100 && h === 22) cardDraws++; };
+globalThis.draw_line = () => {}; globalThis.set_pixel = () => {};
 globalThis.stipple_rect = () => {}; globalThis.flush_display = () => {};
 globalThis.shadow_get_ui_flags = () => 0; globalThis.shadow_get_shift_held = () => 0;
 
@@ -70,6 +76,7 @@ await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const { BANKS, BANK_MACROS, BANK_AUTOMATION } = await import('../../ui/ui_constants.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
+const rend = await import('../../ui/ui_render.mjs');
 
 const cc    = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 const shift = (on) => cc(49, on ? 127 : 0);
@@ -103,6 +110,15 @@ function assertGesture(label, expectKey, expectSlot) {
     if (k !== expectKey) throw new Error(label + ': wrote ' + k + ', expected ' + expectKey);
     if (expectSlot != null && sl !== expectSlot) throw new Error(label + ': wrote slot ' + sl + ', expected ' + expectSlot);
     if (!(parseFloat(v) > 1.0)) throw new Error(label + ': level did not rise: ' + v);
+    /* ⭑⭑ AND THE CARD. Josh, 2026-09-10: "track volume changes but there's no
+     * overlay" — the write landing is only half the gesture, and this file
+     * asserted only that half, so nine screens were green while two of them
+     * showed nothing. The read-out is drawn by whichever owner consumed the
+     * turn (sound mode's own drawVolReadout, or drawTrackVolCard elsewhere);
+     * the user cannot tell them apart and neither does this. */
+    cardDraws = 0;
+    rend.drawUI();
+    if (!cardDraws) throw new Error(label + ': the level CARD did not draw (the write landed, the overlay did not)');
     ENGINE['slot:volume'] = '1.000'; ENGINE['move_fx:1:volume'] = '1.000';
     if (swallowed) throw new Error(label + ': a stage threw: ' + swallowed);
 }
@@ -183,6 +199,38 @@ step('8. the enum picker over a card', () => {
     if (snd.soundViewForTest() !== 17) throw new Error('rig: picker not open, view ' + snd.soundViewForTest());
     assertGesture('enum picker', 'slot:volume', T);
     cc(51, 127); cc(51, 0); ticks(2);
+});
+
+/* ⭑⭑ THE OWNER THE DEVICE ACTUALLY USES (Josh, 2026-09-10).
+ *
+ * The gesture has two owners and the states above all exercised the OUTER one
+ * (ui_input_cc's drain, which arms drawTrackVolCard). On a sound screen the
+ * device takes the INNER one: sound mode consumes the CC and draws its own
+ * read-out. That half had NO test, and it was broken — `S.clockMs` in
+ * ui_sound.mjs is a field of sound mode's own state object, which has no clock,
+ * so the draw condition was `undefined <= n`: permanently false. The write
+ * landed, the overlay never appeared, and nine green states above said nothing
+ * about it because they never reached this owner.
+ *
+ * So this step calls sound mode's handler directly. That is not a shortcut
+ * around the real path — it IS the path the device takes; the top-level rig
+ * simply happens to route the same stimulus to the other owner. */
+step('11. sound mode\'s OWN owner: it consumes the turn AND draws its own read-out', () => {
+    const dec = (v) => (v < 64 ? v : v - 128);
+    snd.soundExit(); ticks(2);
+    snd.soundEnter(T, T); ticks(4);
+    if (!snd.soundActive() && !snd.soundOpen()) throw new Error('rig: sound mode not up');
+    writes = [];
+    snd.soundOnCC(49, 127, dec);                   /* Shift, through sound mode's own tracker */
+    const took = snd.soundOnCC(79, 3, dec);        /* the turn */
+    ticks(2);
+    if (!took) throw new Error('sound mode DECLINED the turn — this step no longer drives the inner owner, so it proves nothing');
+    if (!levelWrites().length) throw new Error('the level did not move: ' + JSON.stringify(writes.slice(0, 4)));
+    cardDraws = 0;
+    rend.drawUI();
+    if (!cardDraws) throw new Error('⭑ the write landed and the CARD did not draw — Josh\'s exact report');
+    snd.soundOnCC(49, 0, dec);
+    ENGINE['slot:volume'] = '1.000';
 });
 
 step('9. a MOVE-routed track\'s cards write its BUS strip volume', () => {

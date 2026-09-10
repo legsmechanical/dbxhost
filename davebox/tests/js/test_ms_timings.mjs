@@ -40,13 +40,51 @@ step('no tick-counted name survives in any of the touched files', () => {
         for (const g of GONE)
             if (all[f].includes(g)) throw new Error(`${f} still mentions ${g}`);
 });
-step('deadlines are compared against the clock, not the tick count', () => {
+/* ⚠⚠⚠ THIS STEP ONCE ENFORCED THE BUG IT WAS WRITTEN TO PREVENT (fixed
+ * 2026-09-10). It matched the NAME `S.clockMs` and concluded "compared against
+ * the clock". In `ui_sound.mjs` that name is a field of SOUND MODE'S OWN state
+ * object — the second `S` ([[schwung-davebox-two-state-objects]]) — which has
+ * no clock at all. Every one of these five comparisons was therefore
+ * `undefined <= n`, i.e. permanently FALSE: the volume read-out never drew, the
+ * preset audition never fired, the pad watch never expired and the idle poll
+ * never ran. Green the whole time, because the string was there.
+ * Josh found it by hand: "track volume changes but there's no overlay."
+ *
+ * The names below now read GS — davebox's real state, where the tick writes the
+ * clock. ⭑ And the pin that actually protects this is NOT here: it is the
+ * behavioural one in test_shift_volume_everywhere.mjs, which draws the frame
+ * and demands the card. A name pin cannot see which object it is naming. */
+step('deadlines are compared against the LIVE clock — the one the tick writes, on the object that has it', () => {
     const s = all['ui/ui_sound.mjs'];
-    if (!s.includes('S.clockMs <= S.volShownUntil')) throw new Error('vol readout');
-    if (!s.includes('S.clockMs < S.patchRelistAt')) throw new Error('patch relist');
-    if (!s.includes('S.clockMs >= S.previewAt')) throw new Error('preview');
-    if (!s.includes('S.clockMs >= S.padWatchUntil')) throw new Error('pad watch');
-    if (!s.includes('(S.clockMs - S.lastIdlePollMs) >= POLL_IDLE_MS')) throw new Error('idle poll');
+    if (!s.includes('GS.clockMs <= S.volShownUntil')) throw new Error('vol readout');
+    if (!s.includes('GS.clockMs < S.patchRelistAt')) throw new Error('patch relist');
+    if (!s.includes('GS.clockMs >= S.previewAt')) throw new Error('preview');
+    if (!s.includes('GS.clockMs >= S.padWatchUntil')) throw new Error('pad watch');
+    if (!s.includes('(GS.clockMs - S.lastIdlePollMs) >= POLL_IDLE_MS')) throw new Error('idle poll');
+    /* ui_render's `S` IS davebox's state — one object there, so it is correct. */
     if (!all['ui/ui_render.mjs'].includes('S.clockMs > S.tvCardUntil')) throw new Error('vol card');
+});
+/* The SCAN that catches the next one of these: any field read off sound mode's
+ * own `S` that the object never declares and nothing ever assigns is an
+ * `undefined` waiting to poison a comparison. A table catches a wrong value;
+ * only a scan catches a second source. */
+step('⭑⭑ sound mode reads NO field its own state object does not have', () => {
+    const src = all['ui/ui_sound.mjs'];
+    /* Comments mention `S.activeBank` and friends as prose — strip them, or the
+     * scan reports the documentation. */
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+    const i = code.indexOf('const S = {');
+    const j = code.indexOf('\n};', i);
+    if (i < 0 || j < 0) throw new Error('could not find sound mode\'s state literal');
+    const lit = code.slice(i, j);
+    const declared = new Set([...lit.matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1]));
+    const assigned = new Set([...code.matchAll(/\bS\.(\w+)\s*=[^=]/g)].map((m) => m[1]));
+    const body = code.slice(0, i) + code.slice(j);
+    const unknown = [...new Set([...body.matchAll(/\bS\.(\w+)\b/g)].map((m) => m[1]))]
+        .filter((f) => !declared.has(f) && !assigned.has(f));
+    if (unknown.length)
+        throw new Error('read off sound mode\'s S but never declared or assigned there — '
+            + 'these are undefined, and an undefined in a comparison is silently false: '
+            + unknown.join(', '));
 });
 process.exit(failed);
