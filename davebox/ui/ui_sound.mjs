@@ -3850,7 +3850,19 @@ function openInstrPicker() {
             gens = allGens.filter(g => keep[moduleIdOf(g.path || g.id)]);
         }
     }
-    const rows = instrPickerRows(GS.trackRoute, S.track, gens);
+    let rows = instrPickerRows(GS.trackRoute, S.track, gens);
+    /*
+     * Under a LIST, the picker shows that list and nothing else.
+     *
+     * Upstream never filters its synthetic rows, and that is right for a picker
+     * whose non-module rows are None / Move Left / Move Right -- controls you
+     * always need. Here they are Move 1-4, sixteen MIDI channels and the
+     * track-follow rows: twenty-odd entries that are exactly the jog a filter
+     * exists to remove (Josh, 2026-09-09: "the non-schwung instruments
+     * shouldn't show up on the list"). `All` is one click away and brings them
+     * straight back, so nothing becomes unreachable.
+     */
+    if (mlFilter) rows = rows.filter(r => !!r.gen);
     /* The filter row leads, above None and its divider: it is the control that
      * says what the rest of the screen is showing, so it reads first. */
     rows.unshift({ listRow: true, label: 'List: ' + (mlFilter || 'All') });
@@ -3863,13 +3875,25 @@ function openInstrPicker() {
     /* Never the filter row: opening with the cursor on a control means the
      * first click changes the filter instead of choosing an instrument. */
     if (cur < 0) cur = rows.findIndex(r => !r.divider && !r.listRow);
+    /*
+     * ⚠ The screen this picker FLOATS OVER, captured before openEnumPicker
+     * overwrites it.
+     *
+     * openEnumPicker records `from: S.view`, and every reopen here happens
+     * while S.view is ALREADY VIEW_ENUM (a Lists-menu row acting, a toggle
+     * rebuilding). Left alone, the picker becomes its own parent: soundStackDepth
+     * walks enum -> enum -> enum and draws one more nested box on every trip
+     * through the menu, and Back has a chain that never terminates. Reported
+     * from the device as "the pop-up shows as multiple layers".
+     */
+    const floatOver = (S.view === VIEW_ENUM && S.enumPick) ? S.enumPick.from : S.view;
     openEnumPicker('Instrument',
                    rows.map(r => r.divider ? { divider: true }
                        : (r.gen && mlIsMember(r.gen) ? '\u00b7' + r.label : r.label)),
                    cur < 0 ? 0 : cur, (i) => commitInstrPick(rows[i]));
     /* The picker keeps the ROWS, not just their labels: the shift-click toggle
      * needs the `gen` behind the cursor, and the labels alone have lost it. */
-    if (S.enumPick) S.enumPick.rows = rows;
+    if (S.enumPick) { S.enumPick.rows = rows; S.enumPick.from = floatOver; }
 }
 function commitInstrPick(r) {
     if (!r || r.divider) return;

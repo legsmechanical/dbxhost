@@ -250,12 +250,49 @@ step('choosing Favorites from the menu FILTERS the picker', () => {
         throw new Error('NuSaw IS in Favorites but was filtered out');
 });
 
-step('Move rows and None are NEVER filtered', () => {
-    const o = snd.soundEnumPickForTest().options;
-    for (const must of ['None', 'Move 1']) {
-        if (o.indexOf(must) < 0)
-            throw new Error(must + ' was filtered away — it is not a module: ' + JSON.stringify(o.slice(0, 6)));
+step('⭑ under a LIST, only that list shows — no Move, MIDI or None', () => {
+    const o = snd.soundEnumPickForTest().options.filter(x => typeof x === 'string');
+    for (const gone of ['None', 'Move 1', 'Move 4']) {
+        if (o.indexOf(gone) >= 0)
+            throw new Error(gone + ' survived the filter — twenty-odd non-module rows are exactly the jog a filter removes: '
+                            + JSON.stringify(o));
     }
+    if (o.some(x => /MIDI Ch/.test(x)))
+        throw new Error('MIDI channels survived the filter: ' + JSON.stringify(o));
+    /* Still reachable: All is one click away. */
+    if (o[0] !== 'List: Favorites') throw new Error('the List row is gone: ' + JSON.stringify(o));
+});
+
+step('⭑ ...and All brings them straight back', () => {
+    jogTo(0); cc(3, 127); cc(3, 0); ticks(2);        /* Lists menu */
+    const m = snd.soundEnumPickForTest();
+    jogTo(m.options.findIndex(x => typeof x === 'string' && x.indexOf('All') >= 0));
+    cc(3, 127); cc(3, 0); ticks(2);
+    const o = snd.soundEnumPickForTest().options.filter(x => typeof x === 'string');
+    for (const back of ['None', 'Move 1']) {
+        if (o.indexOf(back) < 0)
+            throw new Error(back + ' did not come back under All: ' + JSON.stringify(o.slice(0, 8)));
+    }
+});
+
+step('⭑ the overlay does NOT nest — stack depth is stable across the menu', () => {
+    /* From a FRESH picker. Measuring mid-session is worthless: the depth walk
+     * is guard-capped, so by the time earlier steps have been through the menu
+     * a broken build has already saturated and reads stable. That is exactly
+     * how the first version of this pin passed with the fix reverted. */
+    resetUi();
+    openInstr();
+    const d0 = snd.soundStackDepth();
+    for (let i = 0; i < 3; i++) {
+        jogTo(0); cc(3, 127); cc(3, 0); ticks(2);    /* into the Lists menu */
+        const m = snd.soundEnumPickForTest();
+        jogTo(m.options.findIndex(x => typeof x === 'string' && x.indexOf('All') >= 0));
+        cc(3, 127); cc(3, 0); ticks(2);              /* back out to the picker */
+    }
+    const d1 = snd.soundStackDepth();
+    if (d1 !== d0)
+        throw new Error('the pop-up gained ' + (d1 - d0) + ' layer(s) over three trips — '
+                        + 'reopening the picker made it its own parent (depth ' + d0 + ' -> ' + d1 + ')');
 });
 
 step('⭑ New List opens the keyboard — the way you CREATE a list', () => {
