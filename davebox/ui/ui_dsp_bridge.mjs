@@ -738,8 +738,8 @@ export function pollDSP() {
     if (S.countInDspPrev && !countInDspActive) {
         if (S.playing) {
             S.recordCountingIn    = false;
-            S.countInStartTick    = -1;
-            S.countInQuarterTicks = 0;
+            S.countInStartMs    = -1;
+            S.countInQuarterMs = 0;
         }
         S.mergeCountingIn = false;
     }
@@ -747,7 +747,7 @@ export function pollDSP() {
 
     /* Transport transitions */
     if (!S.playingPrev && S.playing) {
-        S.transportStartTick = S.clockMs;
+        S.transportStartMs = S.clockMs;
         /* Focused-clip-by-default on transport start: only the clip the user
          * is currently *viewing* in Track View auto-launches. Session View
          * launches whatever is already queued — explicit launch by the user.

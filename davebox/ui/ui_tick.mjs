@@ -313,6 +313,22 @@ export function requestSessionExit() {
     return true;
 }
 
+/* A note played DURING the count-in lands on the one, and its length is how
+ * long you held it — expressed in the DSP's ticks.
+ *
+ * ⚠⚠ BOTH ARGUMENTS ARE MILLISECONDS, and that is the whole point of this
+ * function existing. The count-in is one bar = 384 DSP ticks, so the ratio of
+ * "how long you held" to "how long the bar took" IS the gate. Inline, the two
+ * sites read `S.transportStartMs - pr.countInStart` and `released - pressed`
+ * off fields that had drifted onto DIFFERENT UNITS — milliseconds minus a TICK
+ * COUNT — which made the ratio ~0.0002, so every preroll note came out at the
+ * minimum gate of 1 whatever you played (found 2026-09-10). A named function
+ * with one unit in its contract is harder to feed the wrong thing. */
+export function prerollGateTicks(countInDurMs, pressedDurMs, maxTicks) {
+    const dspPerMs = countInDurMs > 0 ? 384 / countInDurMs : 4;
+    return Math.max(1, Math.min(maxTicks, Math.round(pressedDurMs * dspPerMs)));
+}
+
 export function _tickImpl() {
     /* ⭑⭑ STUCK-MODIFIER RECONCILE — heal a Shift release that never arrived.
      *
@@ -1559,7 +1575,15 @@ export function _tickImpl() {
                 if (_mbc !== S.metroPrevBeat) {
                     S.metroPrevBeat = _mbc;
                     playMetronomeClick();
-                    if (S.recordCountingIn) S.countInBeatStartTick = S.tickCount;
+                    /* ⚠ Re-phase the count-in blink ON the beat. This wrote
+                     * S.tickCount into a field every reader subtracts from
+                     * S.clockMs — a tick COUNT minus MILLISECONDS — so the
+                     * first metronome beat knocked the blink permanently out
+                     * of phase and it never lined up with the count again
+                     * (Josh, 2026-09-10: "count-in blink on the step buttons
+                     * out of sync"). The period was always right, which is why
+                     * it looked like drift rather than a unit bug. */
+                    if (S.recordCountingIn) S.countInBeatStartMs = nowMs();
                 }
             }
         }
@@ -1822,9 +1846,9 @@ export function _tickImpl() {
             if (S.loopHeld || S.perfViewLocked) updatePerfModeLEDs();
             else updateSceneMapLEDs();
             /* Scene-merge count-in flash overrides the scene grid for the lead-in bar. */
-            if (S.mergeCountingIn && S.countInQuarterTicks > 0) {
-                const elapsed  = S.clockMs - S.countInBeatStartTick;
-                const flashOn  = (elapsed % S.countInQuarterTicks) < (S.countInQuarterTicks / 8);
+            if (S.mergeCountingIn && S.countInQuarterMs > 0) {
+                const elapsed  = S.clockMs - S.countInBeatStartMs;
+                const flashOn  = (elapsed % S.countInQuarterMs) < (S.countInQuarterMs / 8);
                 const flashClr = flashOn ? White : LED_OFF;
                 for (let _i = 0; _i < 16; _i++) setLED(16 + _i, flashClr);
             }
@@ -1832,9 +1856,9 @@ export function _tickImpl() {
             updateStepLEDs();
             /* Count-in flash: blink all step buttons white at quarter-note rate
              * (recording count-in, or a Track-View solo-merge count-in). */
-            if (((S.recordArmed && S.recordCountingIn) || S.mergeCountingIn) && S.countInQuarterTicks > 0) {
-                const elapsed  = S.clockMs - S.countInBeatStartTick;
-                const flashOn  = (elapsed % S.countInQuarterTicks) < (S.countInQuarterTicks / 8);
+            if (((S.recordArmed && S.recordCountingIn) || S.mergeCountingIn) && S.countInQuarterMs > 0) {
+                const elapsed  = S.clockMs - S.countInBeatStartMs;
+                const flashOn  = (elapsed % S.countInQuarterMs) < (S.countInQuarterMs / 8);
                 const flashClr = flashOn ? White : LED_OFF;
                 for (let _i = 0; _i < 16; _i++) setLED(16 + _i, flashClr);
             }
@@ -1929,16 +1953,15 @@ export function _tickImpl() {
             const pr = S.pendingPrerollNote;
             const _prLive = S.liveActiveNotes.has(pr.laneNote);
             if (pr.isDrum) {
-                const elapsed = S.clockMs - S.transportStartTick;
+                const elapsed = S.clockMs - S.transportStartMs;
                 /* Wait for note released AND one step elapsed (skip first loop pass to avoid double-trigger) */
                 if (!_prLive && elapsed >= 15000 / Math.max(20, S.bpm || 120)) {
                     S.pendingPrerollNote = null;
                     const _ls = S.drumLaneLoopStart[pr.track] | 0;
                     if (S.drumLaneSteps[pr.track][pr.lane][_ls] === '0') {
-                        const countInDur = S.transportStartTick - pr.countInStart;
-                        const dspPerJs = countInDur > 0 ? 384 / countInDur : 4;
-                        const pressedDur = (pr.releasedAtTick || S.tickCount) - pr.pressedAtTick;
-                        const gate = Math.max(1, Math.min(tps * 16, Math.round(pressedDur * dspPerJs)));
+                        const gate = prerollGateTicks(S.transportStartMs - pr.countInStart,
+                                                      (pr.releasedAtMs || S.clockMs) - pr.pressedAtMs,
+                                                      tps * 16);
                         host_module_set_param('t' + pr.track + '_l' + pr.lane + '_step_' + _ls + '_toggle', String(pr.vel));
                         S.pendingPrerollGate = { isDrum: true, track: pr.track, lane: pr.lane, gate };
                         S.drumLaneSteps[pr.track][pr.lane][_ls] = '1';
@@ -1961,17 +1984,15 @@ export function _tickImpl() {
                 S.pendingPrerollGate        = null;
             } else {
             const _prLive = pns.some(function(n) { return S.liveActiveNotes.has(n.pitch); });
-            const elapsed = S.clockMs - S.transportStartTick;
+            const elapsed = S.clockMs - S.transportStartMs;
             /* Wait for all chord notes released AND one step elapsed (a 16th at tempo) */
             if (!_prLive && elapsed >= 15000 / Math.max(20, S.bpm || 120)) {
                 S.pendingPrerollNotes = [];
                 const _ls = S.clipLoopStart[pr.track][pr.clip] | 0;
                 if (S.clipSteps[pr.track][pr.clip][_ls] === 0) {
-                    const countInDur = S.transportStartTick - pr.countInStart;
-                    const dspPerJs   = countInDur > 0 ? 384 / countInDur : 4;
-                    const lastRel    = pns.reduce(function(m, n) { return Math.max(m, n.releasedAtTick || S.tickCount); }, 0);
-                    const pressedDur = lastRel - pr.pressedAtTick;
-                    const gate       = Math.max(1, Math.min(tps * 16, Math.round(pressedDur * dspPerJs)));
+                    const lastRel    = pns.reduce(function(m, n) { return Math.max(m, n.releasedAtMs || S.clockMs); }, 0);
+                    const gate       = prerollGateTicks(S.transportStartMs - pr.countInStart,
+                                                        lastRel - pr.pressedAtMs, tps * 16);
                     host_module_set_param('t' + pr.track + '_c' + pr.clip + '_step_' + _ls + '_toggle', pr.pitch + ' ' + pr.vel);
                     if (pns.length === 1) {
                         S.pendingPrerollGate = { isDrum: false, track: pr.track, clip: pr.clip, gate };

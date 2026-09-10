@@ -17,6 +17,12 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **The count-in behaves itself.** The step buttons now flash *on* the beat
+  instead of drifting out of step with the count. Two things that quietly never
+  worked come with it: a note played in the last moment of the count-in is kept
+  and lands on the one (external keyboards included, which were always dropped),
+  and a note played during the count-in is recorded at the length you actually
+  held it rather than the shortest possible note.
 - **The level overlay is back on sound screens.** Shift + volume always moved
   the track's level in the sound menu and the module editors, but the card
   showing you the number never appeared there. Four other things that had gone

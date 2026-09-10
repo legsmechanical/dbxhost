@@ -38,8 +38,8 @@ export function disarmRecord() {
     S.recordPendingPage    = false;
     S.recordCountingIn     = false;
     S.recordArmedTrack     = -1;
-    S.countInStartTick    = -1;
-    S.countInQuarterTicks = 0;
+    S.countInStartMs    = -1;
+    S.countInQuarterMs = 0;
     _recordingNoteTrack.clear();
     S._recNoteOns.length   = 0;
     S._recNoteOffs.length  = 0;
@@ -116,13 +116,13 @@ export function recordNoteOff(pitch, ext) {
  *     recording transition, landing at ~loop_start / "the one");
  *   - counting in, earlier       -> drop (warm-up noise).
  * Mirrors seq8.c on_midi is_preroll (count_in_ticks <= PPQN/2). Count-in is a
- * fixed 1 bar (4 * countInQuarterTicks); we estimate its end from
- * countInStartTick since JS drives it and both sides track the same BPM. */
+ * fixed 1 bar (4 * countInQuarterMs); we estimate its end from
+ * countInStartMs since JS drives it and both sides track the same BPM. */
 export function extCountInCapture() {
     if (!S.recordCountingIn) return true;
-    if (S.countInQuarterTicks <= 0 || S.countInStartTick < 0) return true;
-    const endTick = S.countInStartTick + 4 * S.countInQuarterTicks;  /* 1 bar */
-    return (endTick - S.tickCount) <= (S.countInQuarterTicks >> 1);   /* final 1/8 */
+    if (S.countInQuarterMs <= 0 || S.countInStartMs < 0) return true;
+    const endMs = S.countInStartMs + 4 * S.countInQuarterMs;   /* 1 bar */
+    return (endMs - nowMs()) <= (S.countInQuarterMs / 2);      /* final 1/8 */
 }
 
 
