@@ -17,6 +17,10 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Saving a snapshot blinks all sixteen steps, in green.** The confirmation
+  used to be white — the same white the snapshot row already uses for a filled
+  slot — so on that screen it barely registered. It now blinks green, the way
+  saving a mute state does.
 - **Travel: Full or Bounded, per target.** Each of a knob's targets now has a
   **Travel** row under its Lo and Hi. **Bounded** (the default, unchanged
   behaviour) keeps that parameter's own feel and stops at the range; **Full**

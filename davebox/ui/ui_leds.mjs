@@ -71,11 +71,42 @@ export function trackDimColor(t) { return TRACK_DIM_COLORS[t]; }
  * receiving the track's channel) and Move co-run (single paired track) so the
  * blink rate, colors, and force cadence stay in one place. */
 
+/* The hold-save confirmation flash: live from the save until STEP_SAVE_FLASH_MS
+ * later. ⭑ ONE owner, because TWO passes paint the step row and both have to
+ * agree — updateTrackLEDs draws the flash, and updateStepLEDs has to stand out
+ * of its way (see the snapshot branch below). */
+export function stepSaveFlashLive() {
+    return S.stepSaveFlashEndTick >= 0 && S.stepSaveFlashStartTick >= 0 &&
+           S.clockMs < S.stepSaveFlashEndTick;
+}
+/* ⭑ The ON half of it. The flash BLINKS — it paints on one half of each 106 ms
+ * phase and leaves the other half to whatever the screen normally shows, and
+ * that alternation IS the confirmation. So a screen standing out of its way
+ * must stand down for the ON half ONLY: yielding for the whole duration leaves
+ * the off phase with nothing to paint, the row holds the flash colour, and a
+ * blink becomes a solid block. (It did — caught in a rig before it shipped.) */
+export function stepSaveFlashOn() {
+    return stepSaveFlashLive() &&
+           Math.floor((S.clockMs - S.stepSaveFlashStartTick) / 106) % 2 === 0;
+}
+
 export function updateStepLEDs() {
     if (!S.ledInitComplete) return;
     /* THE SNAPSHOT LAYER in track view: the 16 steps show the track's slots
      * (session view paints the same through updateSceneMapLEDs). */
     if (devSnapOpen() && !S.sessionView) {
+        /* ⭐⭐ THE SAVE FLASH OWNS THE ROW WHILE IT RUNS (Josh: "we need the
+         * visual elements on the different snapshots to be consistent with
+         * mute's implementation — all steps blink to confirm save").
+         *
+         * ⚠⚠ The flash was never MISSING: updateTrackLEDs has painted all
+         * sixteen for months. It was being ERASED — this branch repaints the
+         * layer's own slot colours every single tick, so the two passes fought
+         * and the layer won often enough that no blink was visible. Mute's
+         * save looks right for exactly one reason: the screen underneath it
+         * does NOT repaint the row every tick, so the identical flash survives.
+         * Standing down here is what makes the two consistent. */
+        if (stepSaveFlashOn()) return;
         for (let i = 0; i < 16; i++) setLED(16 + i, devSnapLedFor(i, { filled: Cyan, white: White, dim: DarkGrey, off: LED_OFF }));
         return;
     }
@@ -856,11 +887,14 @@ export function updateTrackLEDs() {
     }
 
     /* Hold-save double-blink: override step button LEDs in any view */
-    if (S.stepSaveFlashEndTick >= 0 && S.clockMs < S.stepSaveFlashEndTick &&
-            S.stepSaveFlashStartTick >= 0) {
-        const elapsed = S.clockMs - S.stepSaveFlashStartTick;
-        if (Math.floor(elapsed / 106) % 2 === 0) {
-            for (let i = 0; i < 16; i++) setLED(16 + i, White);
+    if (stepSaveFlashLive()) {
+        if (stepSaveFlashOn()) {
+            /* GREEN, not white (Josh: "a more readable colour for state saves —
+             * suggests GREEN"). White is also what the snapshot layer paints a
+             * slot it HAS something in, so a white confirmation over a white
+             * row said nothing; green is unambiguous on all three step-slot
+             * surfaces. */
+            for (let i = 0; i < 16; i++) setLED(16 + i, Green);
         }
     }
 }
