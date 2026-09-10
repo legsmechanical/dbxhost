@@ -774,6 +774,47 @@ step('⭑⭑ THREE legs on one knob: ONE turn writes all three through their own
     assert(Math.abs(rs - want) < 0.3, 'leg 2 lands inside ITS range (' + want.toFixed(1) + '), got ' + rs);
     assert(rs > 10, '…and nowhere near where an ignored range would put it (~5.3), got ' + rs);
 });
+step('⭐⭐ THE DIAL FOLLOWS THE HAND: an INVERTED range no longer draws the knob running backwards', () => {
+    /* Josh, 2026-09-10: "when the range is inverted, the knob shouldn't turn in
+     * reverse on the oled — b/c the physical knob doesn't actually turn in
+     * reverse." The dial shows the KNOB's position in its window, not the
+     * parameter's position in its range. */
+    ASSIGN['synth:cutoff'] = '0.9000';
+    GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.9, hi: 0.1 }] };
+    snd.soundSetViewForTest(VIEW_MACROS); ticks(8);
+    const atBottom = M().drawn[0].norm;        /* param 0.9 == lo == the knob at its BOTTOM */
+    assert(atBottom != null && atBottom < 0.1,
+           'knob at the bottom of an inverted range draws near 0, got ' + atBottom);
+    ASSIGN['synth:cutoff'] = '0.1000';         /* as a turn UP would leave it */
+    ticks(10);
+    const atTop = M().drawn[0].norm;
+    assert(atTop != null && atTop > 0.9,
+           '⭑ and at the TOP it draws near 1 — the dial rose while the parameter FELL, got ' + atTop);
+});
+step('⭐ a PARTIAL range uses the whole dial, and a WHOLE-range leg is unchanged (the control)', () => {
+    /* ⚠ A FRESH TARGET on purpose. Re-ranging the leg above would keep the
+     * mapping's IDENTITY, so the cached value survives — and the range edit
+     * then CLAMPS that cached value into the new window before this step could
+     * read it (my own 09-10 change, working as designed). A different key
+     * forces the seed to read ASSIGN, which is what this step is about. */
+    ASSIGN['fx2:room_size'] = '8.3';           /* 0.4 of 0.5..20 */
+    GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'fx2', key: 'room_size', lo: 0.2, hi: 0.6 }] };
+    snd.soundSetViewForTest(VIEW_MACROS); ticks(10);
+    const mid = M().drawn[0].norm;
+    assert(mid != null && Math.abs(mid - 0.5) < 0.03,
+           'the middle of the window is the middle of the dial, got ' + mid);
+    /* ⚠ THE CONTROL: an UNRANGED leg must draw EXACTLY as it always did — the
+     * parameter's own position — or this change has quietly re-scaled every
+     * ordinary macro on the page. */
+    /* Back to a key this fixture actually declares — switching component IS an
+     * identity change, so the cache drops and the seed reads ASSIGN. */
+    ASSIGN['synth:cutoff'] = '0.4000';
+    GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 }] };
+    ticks(10);
+    const plain = M().drawn[0].norm;
+    assert(plain != null && Math.abs(plain - 0.4) < 0.03,
+           'a whole-range leg still draws the parameter, got ' + plain);
+});
 step('⭑⭑ RULING A: a mapped turn records EVERY leg on its own lane — there is no macro lane', () => {
     GS.playing = true; auto.automationNoteWrite();
     GS.trackMacros[2][0] = { v: 0.1, legs: [

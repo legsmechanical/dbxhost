@@ -17,6 +17,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **The on-screen knob follows your hand.** A macro knob with an inverted
+  range used to draw its dial running backwards while you turned forwards; now
+  the dial always rises with the knob. A knob set to a narrow range also uses
+  the whole dial instead of a sliver of it. The number still reads the
+  parameter's own value.
 - **Shift + click a send to see what it feeds.** From a track's sound menu,
   Shift + click **Send A** or **Send B** to jump straight into that send's FX
   menu; Back returns you to the track's menu with the cursor still on the send.

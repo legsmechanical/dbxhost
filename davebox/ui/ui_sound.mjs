@@ -5771,6 +5771,40 @@ function macroCells(track, live) {
                          name: ec ? upper(ec.label) : k, text: '--' };
             } else {
                 cell = toRenderCell(ec, v);
+                /* ⭐ THE DIAL SHOWS THE KNOB, NOT THE PARAMETER (Josh,
+                 * 2026-09-10: "the knob on oled should always [match the]
+                 * direction of turns to match the physical knob — e.g. when
+                 * the range is inverted, the knob shouldn't turn in reverse on
+                 * the oled, b/c the physical knob doesn't actually turn in
+                 * reverse").
+                 *
+                 * A ranged one-leg macro drives its target through a WINDOW of
+                 * that target's range, and toRenderCell knows only the target —
+                 * so it drew the PARAMETER's position, which on an inverted leg
+                 * (lo > hi) falls as your hand rises. `legNormToV` is already
+                 * the inverse map the seed uses, and it inverts for lo > hi,
+                 * so the dial now rises with the hand in both directions and a
+                 * small window uses the whole dial instead of a sliver of it.
+                 * ⭑ The TEXT is untouched: the number is the parameter's, and
+                 * it is the parameter you are setting.
+                 * ⚠ This is the DISPLAY half only. How far a detent travels —
+                 * the other half of Josh's note ("full physical range against a
+                 * limited resolution") — is the TURN LAW, and that is the
+                 * slow-knob trap the one-leg law was written against
+                 * ([[schwung-canvaskit-continuous-cell-default-is-the-slow-law]]).
+                 * It is not changed here; it needs his ruling. */
+                if (cell && legRanged(m) && ec.max > ec.min) {
+                    const _pn = (v - ec.min) / (ec.max - ec.min);
+                    const _kv = legNormToV(m, _pn);
+                    if (_kv != null) {
+                        if (cell.norm != null) cell.norm = _kv;
+                        if (cell.signed != null) cell.signed = Math.max(-1, Math.min(1, (_kv - 0.5) * 2));
+                        if (cell.modNorm != null && cell.modulated) {
+                            const _mv = legNormToV(m, cell.modNorm);
+                            if (_mv != null) cell.modNorm = _mv;
+                        }
+                    }
+                }
             }
         }
         if (live && macroLive(m)) {
