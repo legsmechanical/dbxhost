@@ -17,6 +17,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **A macro's range applies as you set it.** Turning **Lo** or **Hi** on a
+  knob's target now moves that parameter while you turn, instead of waiting for
+  the next turn of the knob — so you can hear the range you are dialling in.
+  The knob's own position does not move, and the knob's other targets are not
+  touched.
 - **A Dave in the window.** Flip **Daves** to On in the global menu (it sits
   just above Open Your Dave Box; off by default) and, while the transport
   runs, the dAVEBOx banner in Session view becomes a window: one of your

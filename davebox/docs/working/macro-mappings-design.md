@@ -121,8 +121,24 @@ What A costs, stated so it is not rediscovered as a bug:
 
 1. §4 — **A: record the LEGS.** Every leg records its own lane; no macro lane, no `mac:` kind.
    (He rejected both the split and B.)
-2. Re-ranging a leg — **it does NOT move the target now.** A range edit takes effect on the
-   NEXT turn of that knob. (The proposal was "apply now"; he unticked it.)
+2. Re-ranging a leg — ~~**it does NOT move the target now.**~~ **REVERSED by Josh on
+   2026-09-10: a range edit APPLIES IMMEDIATELY**, matching upstream. (His 09-05 ruling was
+   "it takes effect on the NEXT turn"; the proposal he unticked then is what he asked for now.)
+   What "immediately" means differs by shape, and both are pinned in `test_macros_bank.mjs`:
+   · **multi** — `v` is held STILL and the re-ranged leg alone is re-written at
+     `lo + v·(hi − lo)`. ⚠ Only that leg: a sibling whose range did not change is sitting
+     wherever automation or a direct edit left it, and re-writing it would YANK it to the
+     knob's position. (Written all-legs first; the step's own control caught it.)
+   · **one leg** — there is no `v` (the plain path plus a clamp), so applying means CLAMPING
+     the value into the new bounds: inside the range nothing is written at all.
+   The write is issued from `macroTick`'s range pass, never from the Lo/Hi turn handler,
+   because only the tick knows the mapping is SEEDED — an unseeded prev reaches the
+   automation owner as `''`, which reads as the parameter's minimum and rests the lane in the
+   wrong place.
+   ⭑ It also fixed a cost nobody had noticed: `lo`/`hi` were part of the cache-invalidation
+   signature, so every detent of a Lo/Hi turn dropped every cached cell and value and forced a
+   full re-seed — a chain round trip per leg, per detent, on the SPI callback. Identity
+   invalidates caches now; a range only schedules a write.
 3. Shift+touch — **the gesture is retired entirely**, not re-specced. See §5.
 4. Inverted ranges (`lo > hi`) — **allowed.** Turn the knob up, that target goes down.
 5. Enum legs — **a sub-range** of the option list, not all-or-nothing.
