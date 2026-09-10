@@ -3828,20 +3828,55 @@ let genScanForTest = null;      /* tests: the module scan is an empty filesystem
 export function soundSetGeneratorScanForTest(fn) { genScanForTest = fn; }
 export function soundEnumPickForTest() { return (S.view === VIEW_ENUM && S.enumPick) ? { label: S.enumPick.label, options: S.enumPick.options.slice(), sel: S.enumPick.sel } : null; }
 function openInstrPicker() {
-    const gens = genScanForTest ? genScanForTest() : engineListModules(specKeyFor('synth'));
+    const allGens = genScanForTest ? genScanForTest() : engineListModules(specKeyFor('synth'));
+    /*
+     * The GENERATOR group is what a list filters -- Move 1-4, MIDI channels and
+     * the track-follow rows are not modules and are never touched.
+     *
+     * ⚠ This is the picker a user actually chooses a synth in. The FX-block
+     * browser (openBrowse) has the same filter for the same reason, but THIS
+     * one is the surface that matters: it is the list you open to answer
+     * "which instrument", and with 35 generators installed it is the long jog.
+     */
+    if (mlFilter && mlEligible(allGens).indexOf(mlFilter) < 0) mlFilter = null;
+    let gens = allGens;
+    if (mlFilter) {
+        mlEnsure();
+        const kept = ModuleLists.filterIds(mlState, mlRealIds(allGens), mlFilter);
+        if (kept === null) { mlFilter = null; }
+        else {
+            const keep = Object.create(null);
+            for (const id of kept) keep[id] = true;
+            gens = allGens.filter(g => keep[moduleIdOf(g.path || g.id)]);
+        }
+    }
     const rows = instrPickerRows(GS.trackRoute, S.track, gens);
+    /* The filter row leads, above None and its divider: it is the control that
+     * says what the rest of the screen is showing, so it reads first. */
+    rows.unshift({ listRow: true, label: 'List: ' + (mlFilter || 'All') });
     const curV = instrValueFor(S.track);
     const curGen = GS.trackRoute[S.track] === 0 ? moduleIdOf(engineLoadedModule(S.slot, 'synth')) : '';
-    let cur = rows.findIndex(r => !r.divider && (r.gen ? r.gen.id === curGen : r.v === curV));
+    let cur = rows.findIndex(r => !r.divider && !r.listRow && (r.gen ? r.gen.id === curGen : r.v === curV));
     /* A Schwung track with nothing loaded has no current entry: open on the
      * first generator, which is the choice it is waiting for. */
     if (cur < 0 && GS.trackRoute[S.track] === 0) cur = rows.findIndex(r => !!r.gen);
-    if (cur < 0) cur = rows.findIndex(r => !r.divider);
-    openEnumPicker('Instrument', rows.map(r => r.divider ? { divider: true } : r.label),
+    /* Never the filter row: opening with the cursor on a control means the
+     * first click changes the filter instead of choosing an instrument. */
+    if (cur < 0) cur = rows.findIndex(r => !r.divider && !r.listRow);
+    openEnumPicker('Instrument',
+                   rows.map(r => r.divider ? { divider: true }
+                       : (r.gen && mlIsMember(r.gen) ? '\u00b7' + r.label : r.label)),
                    cur < 0 ? 0 : cur, (i) => commitInstrPick(rows[i]));
+    /* The picker keeps the ROWS, not just their labels: the shift-click toggle
+     * needs the `gen` behind the cursor, and the labels alone have lost it. */
+    if (S.enumPick) S.enumPick.rows = rows;
 }
 function commitInstrPick(r) {
     if (!r || r.divider) return;
+    /* The filter row is a CONTROL. Cycling reopens the picker so the rows, the
+     * cursor rule and the group dividers all come from openInstrPicker rather
+     * than being patched in place. */
+    if (r.listRow) { instrPickerCycleList(); return; }
     if (r.gen) {
         if (GS.trackRoute[S.track] === 0) {
             /* Already a Schwung track: the one you have re-selected just opens
@@ -3860,6 +3895,64 @@ function commitInstrPick(r) {
     }
     S.instrSel = r.v;
     commitInstrChoice();
+}
+
+/*
+ * File the generator under the cursor into the list being filtered to (or
+ * Favorites on All). Answers false when the row is not a generator, so the
+ * caller can fall through to the ordinary commit.
+ */
+/*
+ * Cycle the list filter when the cursor is on the filter row. Answers false
+ * for every other row (and every other picker) so the caller falls through to
+ * the ordinary commit.
+ */
+function instrPickerCycleList() {
+    const p = S.enumPick;
+    if (!p || p.label !== 'Instrument' || !Array.isArray(p.rows)) return false;
+    const r = p.rows[p.sel];
+    if (!r || !r.listRow) return false;
+    const all = genScanForTest ? genScanForTest() : engineListModules(specKeyFor('synth'));
+    mlFilter = ModuleLists.nextFilter(mlFilter, mlEligible(all));
+    openInstrPicker();
+    /* Stay ON the row being cycled: reopening places the cursor on an
+     * instrument for a fresh open, and moving the user off after one click
+     * would mean jogging back to the top for every step. */
+    if (S.enumPick) S.enumPick.sel = 0;
+    S.dirty = true;
+    return true;
+}
+
+function instrPickerToggleList() {
+    const p = S.enumPick;
+    if (!p || p.label !== 'Instrument' || !Array.isArray(p.rows)) return false;
+    const r = p.rows[p.sel];
+    if (!r || !r.gen) return false;
+    mlEnsure();
+    const listName = mlFilter || ModuleLists.FAVORITES;
+    const id = moduleIdOf(r.gen.path || r.gen.id);
+    const now = ModuleLists.toggleMembership(mlState, listName, id);
+    /* null = the toggle touched nothing; announcing a removal for it would
+     * report a result that did not happen. */
+    if (now === null) return true;
+    if (!mlSave()) {
+        /* Put the model back: a row that disagrees with the file silently
+         * undoes itself on the next open, having looked like it worked. */
+        ModuleLists.toggleMembership(mlState, listName, id);
+        S.dirty = true;
+        return true;
+    }
+    /* Rebuild so the dot appears -- and so a REMOVAL while filtered to that
+     * list drops the row, rather than leaving a list that disagrees with its
+     * own filter until the next open. */
+    const keep = p.sel;
+    openInstrPicker();
+    if (S.enumPick) {
+        S.enumPick.sel = Math.min(keep, S.enumPick.options.length - 1);
+        if (S.enumPick.sel < 1) S.enumPick.sel = 1;
+    }
+    S.dirty = true;
+    return true;
 }
 
 function commitInstrChoice() {
@@ -7326,7 +7419,32 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.view = VIEW_EDIT; S.dirty = true;
             return true;
         }
-        if (S.view === VIEW_ENUM) { closeEnumPicker(true); return true; }
+        if (S.view === VIEW_ENUM) {
+            /* Shift+click FILES the generator under the cursor into the list
+             * in play, instead of choosing it. Same split the block picker
+             * makes -- the modifier buys the rarer, structural action -- and it
+             * keeps the whole feature on the ONE screen a user picks an
+             * instrument in, with no second screen to find.
+             *
+             * Only the instrument picker carries generator rows, so a shift
+             * click in any other enum picker falls through to the ordinary
+             * commit rather than doing nothing. */
+            if (S.shiftHeld && instrPickerToggleList()) return true;
+            /*
+             * The filter row cycles IN PLACE and must not go through
+             * closeEnumPicker.
+             *
+             * ⚠ Ordering, not preference: closeEnumPicker calls commit(sel)
+             * and THEN sets S.enumPick = null. A cycle handled inside the
+             * commit reopens the picker, and that trailing null tears the
+             * fresh one down -- the screen just closes. Caught by
+             * test_instr_lists.mjs driving the real click; every source pin
+             * was green. Same shape as text_entry calling onConfirm and then
+             * closeTextEntry() unconditionally.
+             */
+            if (instrPickerCycleList()) return true;
+            closeEnumPicker(true); return true;
+        }
         if (S.view === VIEW_SLOTCFG) {
             const row = S.slotRows[S.slotCfgIdx];
             if (row && row.sub) {
