@@ -60,6 +60,7 @@ import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationRegisterSeqApply, automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
          automationClearKey, automationEntriesFor } from './ui_automation.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
+import * as ModuleLists from '/data/UserData/schwung/shared/module_lists.mjs';
 import { MoveKnob1, Red, White } from '/data/UserData/schwung/shared/constants.mjs';
 import { showActionPopup, showActionPopupFor } from './ui_persistence.mjs';
 import { writeSidecar } from './ui_persistence.mjs';
@@ -3827,20 +3828,79 @@ let genScanForTest = null;      /* tests: the module scan is an empty filesystem
 export function soundSetGeneratorScanForTest(fn) { genScanForTest = fn; }
 export function soundEnumPickForTest() { return (S.view === VIEW_ENUM && S.enumPick) ? { label: S.enumPick.label, options: S.enumPick.options.slice(), sel: S.enumPick.sel } : null; }
 function openInstrPicker() {
-    const gens = genScanForTest ? genScanForTest() : engineListModules(specKeyFor('synth'));
-    const rows = instrPickerRows(GS.trackRoute, S.track, gens);
+    const allGens = genScanForTest ? genScanForTest() : engineListModules(specKeyFor('synth'));
+    /*
+     * The GENERATOR group is what a list filters -- Move 1-4, MIDI channels and
+     * the track-follow rows are not modules and are never touched.
+     *
+     * ⚠ This is the picker a user actually chooses a synth in. The FX-block
+     * browser (openBrowse) has the same filter for the same reason, but THIS
+     * one is the surface that matters: it is the list you open to answer
+     * "which instrument", and with 35 generators installed it is the long jog.
+     */
+    if (mlFilter && mlEligible(allGens).indexOf(mlFilter) < 0) mlFilter = null;
+    let gens = allGens;
+    if (mlFilter) {
+        mlEnsure();
+        const kept = ModuleLists.filterIds(mlState, mlRealIds(allGens), mlFilter);
+        if (kept === null) { mlFilter = null; }
+        else {
+            const keep = Object.create(null);
+            for (const id of kept) keep[id] = true;
+            gens = allGens.filter(g => keep[moduleIdOf(g.path || g.id)]);
+        }
+    }
+    let rows = instrPickerRows(GS.trackRoute, S.track, gens);
+    /*
+     * Under a LIST, the picker shows that list and nothing else.
+     *
+     * Upstream never filters its synthetic rows, and that is right for a picker
+     * whose non-module rows are None / Move Left / Move Right -- controls you
+     * always need. Here they are Move 1-4, sixteen MIDI channels and the
+     * track-follow rows: twenty-odd entries that are exactly the jog a filter
+     * exists to remove (Josh, 2026-09-09: "the non-schwung instruments
+     * shouldn't show up on the list"). `All` is one click away and brings them
+     * straight back, so nothing becomes unreachable.
+     */
+    if (mlFilter) rows = rows.filter(r => !!r.gen);
+    /* The filter row leads, above None and its divider: it is the control that
+     * says what the rest of the screen is showing, so it reads first. */
+    rows.unshift({ listRow: true, label: 'List: ' + (mlFilter || 'All') });
     const curV = instrValueFor(S.track);
     const curGen = GS.trackRoute[S.track] === 0 ? moduleIdOf(engineLoadedModule(S.slot, 'synth')) : '';
-    let cur = rows.findIndex(r => !r.divider && (r.gen ? r.gen.id === curGen : r.v === curV));
+    let cur = rows.findIndex(r => !r.divider && !r.listRow && (r.gen ? r.gen.id === curGen : r.v === curV));
     /* A Schwung track with nothing loaded has no current entry: open on the
      * first generator, which is the choice it is waiting for. */
     if (cur < 0 && GS.trackRoute[S.track] === 0) cur = rows.findIndex(r => !!r.gen);
-    if (cur < 0) cur = rows.findIndex(r => !r.divider);
-    openEnumPicker('Instrument', rows.map(r => r.divider ? { divider: true } : r.label),
+    /* Never the filter row: opening with the cursor on a control means the
+     * first click changes the filter instead of choosing an instrument. */
+    if (cur < 0) cur = rows.findIndex(r => !r.divider && !r.listRow);
+    /*
+     * ⚠ The screen this picker FLOATS OVER, captured before openEnumPicker
+     * overwrites it.
+     *
+     * openEnumPicker records `from: S.view`, and every reopen here happens
+     * while S.view is ALREADY VIEW_ENUM (a Lists-menu row acting, a toggle
+     * rebuilding). Left alone, the picker becomes its own parent: soundStackDepth
+     * walks enum -> enum -> enum and draws one more nested box on every trip
+     * through the menu, and Back has a chain that never terminates. Reported
+     * from the device as "the pop-up shows as multiple layers".
+     */
+    const floatOver = (S.view === VIEW_ENUM && S.enumPick) ? S.enumPick.from : S.view;
+    openEnumPicker('Instrument',
+                   rows.map(r => r.divider ? { divider: true }
+                       : (r.gen && mlIsMember(r.gen) ? '\u00b7' + r.label : r.label)),
                    cur < 0 ? 0 : cur, (i) => commitInstrPick(rows[i]));
+    /* The picker keeps the ROWS, not just their labels: the shift-click toggle
+     * needs the `gen` behind the cursor, and the labels alone have lost it. */
+    if (S.enumPick) { S.enumPick.rows = rows; S.enumPick.from = floatOver; }
 }
 function commitInstrPick(r) {
     if (!r || r.divider) return;
+    /* The filter row is a CONTROL. Cycling reopens the picker so the rows, the
+     * cursor rule and the group dividers all come from openInstrPicker rather
+     * than being patched in place. */
+    if (r.listRow) { instrPickerCycleList(); return; }
     if (r.gen) {
         if (GS.trackRoute[S.track] === 0) {
             /* Already a Schwung track: the one you have re-selected just opens
@@ -3859,6 +3919,345 @@ function commitInstrPick(r) {
     }
     S.instrSel = r.v;
     commitInstrChoice();
+}
+
+/*
+ * File the generator under the cursor into the list being filtered to (or
+ * Favorites on All). Answers false when the row is not a generator, so the
+ * caller can fall through to the ordinary commit.
+ */
+/*
+ * Cycle the list filter when the cursor is on the filter row. Answers false
+ * for every other row (and every other picker) so the caller falls through to
+ * the ordinary commit.
+ */
+function instrPickerCycleList() {
+    const p = S.enumPick;
+    if (!p || p.label !== 'Instrument' || !Array.isArray(p.rows)) return false;
+    const r = p.rows[p.sel];
+    if (!r || !r.listRow) return false;
+    /*
+     * The row opens a MENU rather than cycling blind.
+     *
+     * A click that silently advances a filter tells you nothing about what
+     * else exists: Josh had the row on screen and still had "no way to add
+     * modules to lists or create them", because both were hidden behind a
+     * Shift+Click nobody announces. Everything the feature can do is now a
+     * VISIBLE row.
+     *
+     * The generator under the cursor when the menu opened is remembered, so
+     * the first row can act on it by name.
+     */
+    /* No generator: clicking the List row is about the LISTS, not about a
+     * module. The module-scoped rows appear only when the menu is opened from
+     * a generator (Shift+click), where which module is meant is unambiguous. */
+    openListMenu(null);
+    return true;
+}
+
+/*
+ * The Lists menu: everything module lists can do, as rows.
+ *
+ * Built as its own enum picker whose `from` is the Instrument picker's own
+ * `from`, NOT VIEW_ENUM: nesting one picker inside another leaves Back
+ * stepping into a screen that has already been torn down.
+ */
+function openListMenu(gen) {
+    mlEnsure();
+    const lists = (mlState && mlState.lists) || [];
+    const rows = [];
+    const active = mlFilter || ModuleLists.FAVORITES;
+    if (gen) {
+        const id = moduleIdOf(gen.path || gen.id);
+        const isIn = ModuleLists.isMember(mlState, active, id);
+        /* The one-click path for the list you are already on... */
+        rows.push({ act: 'toggle', gen,
+                    label: (isIn ? 'Remove ' : 'Add ') + String(gen.name || gen.id) });
+        /* ...and the overlay for filing into SEVERAL at once, which the row
+         * above cannot do without switching filter per list. */
+        rows.push({ act: 'member', gen,
+                    label: 'Lists for ' + String(gen.name || gen.id) + '...' });
+    }
+    /* Only when something precedes it: a divider as row 0 is a rule under
+     * nothing. */
+    if (rows.length) rows.push({ divider: true });
+    rows.push({ act: 'filter', name: null, label: (mlFilter ? '  ' : '\u00b7') + 'All' });
+    for (const l of lists) {
+        rows.push({ act: 'filter', name: l.name,
+                    label: (mlFilter === l.name ? '\u00b7' : '  ') + l.name +
+                           '  (' + l.modules.length + ')' });
+    }
+    rows.push({ divider: true });
+    rows.push({ act: 'new', label: 'New List...' });
+    /* Favorites cannot be renamed or deleted -- the rows are ABSENT rather
+     * than present and refusing, the same way a position with nowhere to go is
+     * not offered Move Left. Clear is allowed on it. */
+    if (mlFilter && !ModuleLists.isProtected(mlFilter)) {
+        rows.push({ act: 'rename', label: 'Rename ' + mlFilter });
+        rows.push({ act: 'delete', label: 'Delete ' + mlFilter });
+    }
+    rows.push({ act: 'clear', label: 'Clear ' + active });
+
+    const prevFrom = S.enumPick ? S.enumPick.from : S.view;
+    openEnumPicker('Lists', rows.map(r => r.divider ? { divider: true } : r.label),
+                   rows.findIndex(r => !r.divider), (i) => commitListMenu(rows[i]));
+    if (S.enumPick) { S.enumPick.rows = rows; S.enumPick.from = prevFrom; S.enumPick.gen = gen; }
+    S.dirty = true;
+}
+
+/* Track the generator under the cursor, so the Lists menu can name it. Set on
+ * every move through the Instrument picker rather than derived afterwards --
+ * once the menu is open, the picker's rows are gone. */
+let mlMenuGen = null;
+
+/* The room a list row has, in pixels: the overlay's own width less what the
+ * list spends around the text (box inset, row pad, scrollbar gutter). */
+const ML_NAME_MAX_PX = 104;
+
+/* A name the keyboard REJECTED, re-offered from the tick.
+ *
+ * It cannot be re-offered inside onConfirm: text_entry.mjs calls
+ * onConfirm(buffer) and then runs closeTextEntry() UNCONDITIONALLY, so a
+ * keyboard opened in the callback is torn down microseconds later -- the
+ * screen vanishes and the user sees a click that did nothing. Same ordering
+ * trap as the enum picker's commit-then-null. */
+let mlNamePending = null;   /* { renaming, text, why } */
+
+function soundTickListNamePending() {
+    if (!mlNamePending || isTextEntryActive()) return;
+    const q = mlNamePending;
+    mlNamePending = null;
+    showActionPopup(String(q.why || 'REJECTED'));
+    openListNameEntry(q.renaming, q.text);
+}
+
+/*
+ * Apply a Lists-menu row.
+ *
+ * Every write BRANCHES on mlSave(): a save that failed must never be reported
+ * as done, or the list comes back on the next open having said it worked.
+ */
+/*
+ * One module, EVERY list, as checkboxes -- upstream's membership screen, as an
+ * overlay rather than a full screen (Josh, 2026-09-09: "i don't mind screen
+ * sprawl when we're going to popup overlays. it's going into and out of lots
+ * of full screen menus that concerns me").
+ *
+ * This is what the Lists menu's Add/Remove row cannot do: file one module into
+ * THREE lists without switching the filter three times.
+ */
+function openListMembership(gen) {
+    if (!gen) return;
+    mlEnsure();
+    const id = moduleIdOf(gen.path || gen.id);
+    const lists = (mlState && mlState.lists) || [];
+    const rows = lists.map((l) => ({
+        act: 'member', name: l.name, gen,
+        label: (ModuleLists.isMember(mlState, l.name, id) ? '[x] ' : '[ ] ') + l.name,
+    }));
+    rows.push({ divider: true });
+    rows.push({ act: 'back', label: 'Done' });
+    const prevFrom = S.enumPick ? S.enumPick.from : S.view;
+    openEnumPicker('Member', rows.map(r => r.divider ? { divider: true } : r.label),
+                   0, () => {});
+    if (S.enumPick) { S.enumPick.rows = rows; S.enumPick.from = prevFrom; S.enumPick.gen = gen; }
+    S.dirty = true;
+}
+
+/* Toggle one checkbox and STAY on the overlay -- a screen you must reopen per
+ * tick is the thing this exists to avoid. */
+function listMembershipClick() {
+    const p = S.enumPick;
+    if (!p || p.label !== 'Member' || !Array.isArray(p.rows)) return false;
+    const r = p.rows[p.sel];
+    if (!r || r.divider) return true;
+    if (r.act === 'back') { openListMenu(p.gen); return true; }
+    mlEnsure();
+    const id = moduleIdOf(r.gen.path || r.gen.id);
+    const now = ModuleLists.toggleMembership(mlState, r.name, id);
+    if (now !== null && !mlSave()) {
+        /* Put it back: a tick the file disagrees with undoes itself silently
+         * on the next open, having looked like it worked. */
+        ModuleLists.toggleMembership(mlState, r.name, id);
+        showActionPopup('NOT SAVED');
+    }
+    const keep = p.sel;
+    openListMembership(r.gen);
+    if (S.enumPick) S.enumPick.sel = Math.min(keep, S.enumPick.rows.length - 1);
+    return true;
+}
+
+/*
+ * A confirm, as an overlay. Two rows, defaulting to No -- a destructive default
+ * one click from the gesture that opened it is how a list disappears by
+ * accident.
+ */
+function openConfirmOverlay(title, onYes) {
+    const rows = [{ act: 'no', label: 'No' }, { act: 'yes', label: 'Yes' }];
+    const prevFrom = S.enumPick ? S.enumPick.from : S.view;
+    openEnumPicker('Confirm', rows.map(r => r.label), 0, () => {});
+    if (S.enumPick) {
+        S.enumPick.rows = rows;
+        S.enumPick.from = prevFrom;
+        S.enumPick.onYes = onYes;
+        S.enumPick.title = title;
+    }
+    S.dirty = true;
+}
+
+function confirmOverlayClick() {
+    const p = S.enumPick;
+    if (!p || p.label !== 'Confirm' || !Array.isArray(p.rows)) return false;
+    const yes = p.rows[p.sel] && p.rows[p.sel].act === 'yes';
+    const fn = p.onYes;
+    if (yes && typeof fn === 'function') fn();
+    else openInstrPicker();
+    return true;
+}
+
+/* Apply the Lists-menu row under the cursor, ahead of closeEnumPicker. Answers
+ * false when the picker on screen is not the Lists menu. */
+function listMenuClick() {
+    const p = S.enumPick;
+    if (!p || p.label !== 'Lists' || !Array.isArray(p.rows)) return false;
+    commitListMenu(p.rows[p.sel]);
+    return true;
+}
+
+function commitListMenu(r) {
+    if (!r || r.divider) { openInstrPicker(); return; }
+    mlEnsure();
+    const active = mlFilter || ModuleLists.FAVORITES;
+
+    if (r.act === 'filter') { mlFilter = r.name; openInstrPicker(); return; }
+
+    if (r.act === 'toggle') {
+        const id = moduleIdOf(r.gen.path || r.gen.id);
+        const now = ModuleLists.toggleMembership(mlState, active, id);
+        if (now !== null && !mlSave()) ModuleLists.toggleMembership(mlState, active, id);
+        openInstrPicker();
+        return;
+    }
+
+    if (r.act === 'clear') {
+        const res = ModuleLists.clearList(mlState, active);
+        if (res.ok) mlSave();
+        openInstrPicker();
+        return;
+    }
+
+    if (r.act === 'delete') {
+        const gone = mlFilter;
+        /* Asked, not assumed. Deleting a curated list is the one action here
+         * that destroys work, and it was doing it on a single click. */
+        openConfirmOverlay('Delete ' + gone + '?', () => {
+            const res = ModuleLists.deleteList(mlState, gone);
+            if (res.ok && !mlSave()) {
+                ModuleLists.createList(mlState, gone);
+                showActionPopup('NOT SAVED');
+            } else if (res.ok) {
+                mlFilter = null;            /* the filter it named is gone */
+                showActionPopup('DELETED', gone);
+            }
+            openInstrPicker();
+        });
+        return;
+    }
+
+    if (r.act === 'new' || r.act === 'rename') {
+        openListNameEntry((r.act === 'rename') ? mlFilter : '', '');
+        return;
+    }
+    if (r.act === 'member') { openListMembership(r.gen); return; }
+    openInstrPicker();
+}
+
+/*
+ * The keyboard for a new or renamed list. `renaming` is the list being
+ * renamed, or '' to create; `prefill` seeds the field (a rejected name comes
+ * back through here with its text intact).
+ */
+function openListNameEntry(renaming, prefill) {
+    {
+        /* Named, and recorded on S, so a test can drive the REAL callback
+         * (soundListsConfirmNameForTest) instead of reimplementing its rules. */
+        const onConfirmName = (text) => {
+                const name = String(text || '').trim();
+                /* Empty cancels. Backing out by clearing the field is a normal
+                 * way to change your mind, not an error to scold. */
+                if (!name) { openInstrPicker(); return; }
+                /* Capped by PIXEL WIDTH, not characters: the font is
+                 * proportional, so a character count both truncates names that
+                 * fit and admits names that do not. Measured against the room a
+                 * list row actually has. */
+                if (typeof text_width === 'function' && text_width('[x] ' + name) > ML_NAME_MAX_PX) {
+                    mlNamePending = { renaming, text: name, why: 'TOO LONG' };
+                    return;
+                }
+                const res = renaming
+                    ? ModuleLists.renameList(mlState, renaming, name)
+                    : ModuleLists.createList(mlState, name);
+                /* A rejection REOPENS the keyboard with the text intact and
+                 * says why -- returning silently to the picker looks exactly
+                 * like a click that did nothing. Deferred, because
+                 * text_entry.mjs runs closeTextEntry() unconditionally after
+                 * onConfirm and would tear down a keyboard opened here. */
+                if (!res.ok) { mlNamePending = { renaming, text: name, why: res.err }; return; }
+                if (!mlSave()) {
+                    /* Undo: a list that reappears on the next open, having been
+                     * announced as created, is worse than one that never did. */
+                    if (renaming) ModuleLists.renameList(mlState, name, renaming);
+                    else ModuleLists.deleteList(mlState, name);
+                    openInstrPicker();
+                    return;
+                }
+                /* Land ON what you just made -- creating a list to file into
+                 * and then having to find it is the same jog twice. */
+                mlFilter = name;
+                openInstrPicker();
+        };
+        S.__lastListNameConfirm = onConfirmName;
+        openTextEntry({
+            title: renaming ? 'Rename List' : 'New List',
+            initialText: (prefill !== undefined && prefill !== '') ? prefill : (renaming || ''),
+            onConfirm: onConfirmName,
+            onCancel: () => { S.__lastListNameConfirm = null; openInstrPicker(); },
+        });
+    }
+}
+
+/* ---- test hooks (mirroring soundSetGeneratorScanForTest above) ---------- */
+export function soundListsResetForTest() { mlState = null; mlFilter = null; mlMenuGen = null; mlNamePending = null; }
+export function soundListsSetFilterForTest(n) { mlEnsure(); mlFilter = n; }
+export function soundListsFilterForTest() { return mlFilter; }
+/* Drives the live keyboard's confirm and then the unconditional close, which
+ * is exactly what text_entry.mjs does -- the ordering is the thing under
+ * test, so a hook that skipped it would prove nothing. */
+export function soundListsConfirmNameForTest(text) {
+    const cb = S.__lastListNameConfirm;
+    if (!cb) throw new Error('no list-name keyboard is open');
+    cb(text);
+    closeTextEntry();
+}
+
+/*
+ * Shift+click on a generator opens the Lists menu FOR THAT GENERATOR.
+ *
+ * ⚠ It used to toggle immediately, against whichever generator a jog had last
+ * passed over. That is unknowable from the screen: reaching the List row means
+ * jogging UP THROUGH the other generators, so the menu reliably named the
+ * wrong one -- caught by the membership test filing `nusaw` when `obxd` was
+ * chosen. The module is now whatever you shift-clicked, and the menu SHOWS
+ * which, so there is nothing to infer.
+ */
+function instrPickerToggleList() {
+    const p = S.enumPick;
+    if (!p || p.label !== 'Instrument' || !Array.isArray(p.rows)) return false;
+    const r = p.rows[p.sel];
+    if (!r || !r.gen) return false;
+    mlMenuGen = r.gen;
+    openListMenu(r.gen);
+    return true;
 }
 
 function commitInstrChoice() {
@@ -5989,6 +6388,8 @@ function runActionBody(a) {
     else if (a.t === 'browse')  openBrowse(a.comp, a.prompt);
     else if (a.t === 'instrpick') openInstrPicker();
     else if (a.t === 'load')    loadSelected();
+    else if (a.t === 'listcycle')  cycleListFilter();
+    else if (a.t === 'listtoggle') toggleListMembership();
     else if (a.t === 'presets') openPresets();
     else if (a.t === 'usrlist') openUserPresets();
     else if (a.t === 'baked')   openBaked();
@@ -6106,6 +6507,75 @@ function runDiscovery() {
 
 /* ---- module browser (per block) ---- */
 
+/* ---- module lists, in DAVEBOX's browser ---------------------------------
+ *
+ * Upstream (#378) puts this on the host's chain editor and its swap picker.
+ * dAVEBOx never opens either -- it picks through openBrowse/applyModulePick --
+ * so the whole feature lives HERE instead. Only the MODEL is shared
+ * (src/shared/module_lists.mjs, pure and node-tested); every surface below is
+ * dAVEBOx's own.
+ *
+ * The file is shared with stock on purpose (Josh, 2026-09-09): one Favorites
+ * list for both, at the path stock >= 1.1.0 already writes.
+ */
+const LIST_ROW_ID = '__list_filter__';
+
+let mlState = null;        /* { version, lists } once loaded */
+let mlReadOnly = false;    /* corrupt OR newer-than-us: never write */
+let mlWhy = '';            /* why, for the announcement */
+/* The active filter. Module-scoped so it PERSISTS across browses -- opening
+ * the picker already on Favorites is the entire workflow win -- but not on
+ * disk, because a filter you do not remember choosing is a trap next boot. */
+let mlFilter = null;
+
+function mlPath() { return ModuleLists.listsPathFor('/data/UserData/schwung'); }
+
+const mlIo = {
+    readFile: (f) => (typeof host_read_file === 'function' ? host_read_file(f) : null),
+    writeFile: (f, body) => (typeof host_write_file === 'function' ? host_write_file(f, body) : false),
+};
+
+function mlLoad() {
+    const r = ModuleLists.loadLists(mlIo, mlPath());
+    mlState = r.state;
+    /* Two different refusals, one "do not write". Kept apart in the message:
+     * corrupt means the lists shown are NOT the user's (we seeded a default),
+     * newer means they ARE and a newer Schwung owns the file. */
+    mlReadOnly = !!(r.corrupt || r.newer);
+    mlWhy = r.corrupt ? ' (file unreadable)' : (r.newer ? ' (newer Schwung owns it)' : '');
+}
+
+function mlEnsure() { if (!mlState) mlLoad(); }
+
+function mlSave() {
+    if (!mlState || mlReadOnly) return false;
+    return ModuleLists.saveLists(mlIo, mlState, mlPath());
+}
+
+/* The real module ids among browse rows -- not `[ none ]` (empty id) and not
+ * the filter row. Written once because both callers need the same answer. */
+function mlRealIds(rows) {
+    return (rows || [])
+        .filter(m => m && m.id && m.id !== LIST_ROW_ID)
+        .map(m => moduleIdOf(m.path || m.id));
+}
+
+/* Which lists this catalogue could usefully filter to. Lists are global, so
+ * without this an FX browse could land on a synth-only list and draw a screen
+ * with nothing on it. */
+function mlEligible(rows) {
+    mlEnsure();
+    return ModuleLists.listsWithAnyOf(mlState, mlRealIds(rows));
+}
+
+function mlIsMember(mod) {
+    if (!mod || !mod.id || mod.id === LIST_ROW_ID) return false;
+    mlEnsure();
+    const id = moduleIdOf(mod.path || mod.id);
+    const name = mlFilter || ModuleLists.FAVORITES;
+    return ModuleLists.isMember(mlState, name, id);
+}
+
 /* `idx` retargets the block first. Shift+click arrives from the block PICKER,
  * where S.comp still names whichever block was last opened — browsing without
  * this would offer modules for the wrong component and load into it. */
@@ -6125,11 +6595,46 @@ function openBrowse(comp, prompt) {
     const spec = COMPONENTS[S.comp]
         || (S.bus || ModBus.modBusParseInsertKey(S.comp) ? COMPONENTS.fx1 : null);
     const found = spec ? engineListModules(specKeyFor(S.comp)) : [];
+
+    /*
+     * Drop a filter this catalogue cannot honour BEFORE using it. Lists are
+     * global, so the Favorites you set browsing synths may hold no audio FX at
+     * all -- and a sticky filter that opens an empty picker reads as "there
+     * are no effects", which is the same wrong conclusion the module-bus bug
+     * above produced.
+     */
+    if (mlFilter && mlEligible(found).indexOf(mlFilter) < 0) mlFilter = null;
+    let catalogue = found;
+    if (mlFilter) {
+        mlEnsure();
+        const kept = ModuleLists.filterIds(mlState, mlRealIds(found), mlFilter);
+        /* null = the list vanished under us. Never the identity (see
+         * filterIds) -- show everything, which is what All would show. */
+        if (kept === null) { mlFilter = null; }
+        else {
+            const keep = Object.create(null);
+            for (const id of kept) keep[id] = true;
+            catalogue = found.filter(m => keep[moduleIdOf(m.path || m.id)]);
+        }
+    }
+
     /* [ none ] first, and the cursor never resting on it, are one decision —
      * see buildBrowseList, which owns both and is pinned by tests. */
-    const picked = buildBrowseList(found, engineLoadedModule(S.slot, S.comp));
-    S.browseList = picked.list;
-    S.browseIdx = picked.idx;
+    const picked = buildBrowseList(catalogue, engineLoadedModule(S.slot, S.comp));
+    /*
+     * The filter row goes in at 0, AFTER buildBrowseList has placed its cursor,
+     * so that function keeps owning [ none ] and the cursor rule and this only
+     * shifts the result by one.
+     *
+     * ⚠ The cursor must then never REST here, for exactly the reason it never
+     * rests on [ none ]: at index 0 with the cursor defaulting there, one click
+     * would change the filter instead of choosing a module. Same shape of trap
+     * that wiped two slots in phase-1 testing.
+     */
+    S.browseList = [{ id: LIST_ROW_ID, name: 'List: ' + (mlFilter || 'All') }].concat(picked.list);
+    S.browseIdx = picked.idx + 1;
+    if (S.browseIdx >= S.browseList.length) S.browseIdx = S.browseList.length - 1;
+    if (S.browseIdx <= 0) S.browseIdx = Math.min(1, S.browseList.length - 1);
     S.browsePrompt = prompt || '';
     S.view = VIEW_BROWSE;
     S.dirty = true;
@@ -6139,7 +6644,70 @@ function openBrowse(comp, prompt) {
 function loadSelected() {
     const mod = S.browseList[S.browseIdx];
     if (!mod) return;
+    /* The filter row is a CONTROL, not a module. Guarded here as well as at
+     * the click site because applyModulePick would otherwise write its
+     * synthetic id into the slot as a module name. */
+    if (mod.id === LIST_ROW_ID) return;
     applyModulePick(mod);
+}
+
+/* Click on the filter row: All -> each eligible list -> All.
+ *
+ * Re-opens the browse rather than editing S.browseList in place, so the
+ * catalogue, the cursor rule and [ none ] all come from the one function that
+ * owns them. The cursor is put BACK on the filter row afterwards: reopening
+ * places it on a module for a fresh open, and moving the user off after one
+ * click would mean jogging to the top for every step of the cycle. */
+function cycleListFilter() {
+    const spec = COMPONENTS[S.comp]
+        || (S.bus || ModBus.modBusParseInsertKey(S.comp) ? COMPONENTS.fx1 : null);
+    /* The UNFILTERED catalogue, deliberately: cycling from the filtered one
+     * would shrink the eligible set at every step until only All remained. */
+    const found = spec ? engineListModules(specKeyFor(S.comp)) : [];
+    mlFilter = ModuleLists.nextFilter(mlFilter, mlEligible(found));
+    openBrowse(null, S.browsePrompt);
+    S.browseIdx = 0;
+    S.dirty = true;
+    log('browse: list filter -> ' + (mlFilter || 'All'));
+}
+
+/* Shift+click on a module row: file it into the list currently being filtered
+ * to, or into Favorites when the filter is All.
+ *
+ * Writes IMMEDIATELY -- there is no Save row, because a toggle that needs
+ * confirming is a toggle that will be lost. */
+function toggleListMembership() {
+    const mod = S.browseList[S.browseIdx];
+    if (!mod || !mod.id || mod.id === LIST_ROW_ID) return;
+    mlEnsure();
+    const listName = mlFilter || ModuleLists.FAVORITES;
+    const id = moduleIdOf(mod.path || mod.id);
+    const now = ModuleLists.toggleMembership(mlState, listName, id);
+    /* null = the toggle touched NOTHING. Announcing a removal for that would
+     * report a result that did not happen. */
+    if (now === null) { S.browsePrompt = 'no list'; S.dirty = true; return; }
+    if (!mlSave()) {
+        /* Put the model back: a checkbox the file disagrees with silently
+         * undoes itself on the next open, having said it worked. */
+        ModuleLists.toggleMembership(mlState, listName, id);
+        S.browsePrompt = 'not saved' + mlWhy;
+        S.dirty = true;
+        return;
+    }
+    S.browsePrompt = (now ? '+ ' : '- ') + listName;
+    /*
+     * Removing the module you are LOOKING AT while filtered to that list means
+     * the row must go. Rebuild rather than leave a row the filter now excludes
+     * -- the alternative is a list that disagrees with its own filter until the
+     * next open.
+     */
+    if (!now && mlFilter === listName) {
+        const keepIdx = S.browseIdx;
+        openBrowse(null, S.browsePrompt);
+        S.browseIdx = Math.min(keepIdx, S.browseList.length - 1);
+        if (S.browseIdx <= 0) S.browseIdx = Math.min(1, S.browseList.length - 1);
+    }
+    S.dirty = true;
 }
 
 /* Apply a module choice — including the `[ none ]` row, which is how a module is
@@ -7156,7 +7724,41 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.view = VIEW_EDIT; S.dirty = true;
             return true;
         }
-        if (S.view === VIEW_ENUM) { closeEnumPicker(true); return true; }
+        if (S.view === VIEW_ENUM) {
+            /* Shift+click FILES the generator under the cursor into the list
+             * in play, instead of choosing it. Same split the block picker
+             * makes -- the modifier buys the rarer, structural action -- and it
+             * keeps the whole feature on the ONE screen a user picks an
+             * instrument in, with no second screen to find.
+             *
+             * Only the instrument picker carries generator rows, so a shift
+             * click in any other enum picker falls through to the ordinary
+             * commit rather than doing nothing. */
+            if (S.shiftHeld && instrPickerToggleList()) return true;
+            /*
+             * The filter row cycles IN PLACE and must not go through
+             * closeEnumPicker.
+             *
+             * ⚠ Ordering, not preference: closeEnumPicker calls commit(sel)
+             * and THEN sets S.enumPick = null. A cycle handled inside the
+             * commit reopens the picker, and that trailing null tears the
+             * fresh one down -- the screen just closes. Caught by
+             * test_instr_lists.mjs driving the real click; every source pin
+             * was green. Same shape as text_entry calling onConfirm and then
+             * closeTextEntry() unconditionally.
+             */
+            if (instrPickerCycleList()) return true;
+            /*
+             * The Lists MENU's rows act in place too, and for the same reason:
+             * they reopen the Instrument picker, and closeEnumPicker's trailing
+             * `S.enumPick = null` would tear the fresh one down. Handled here,
+             * ahead of the close, exactly as the filter row is.
+             */
+            if (listMembershipClick()) return true;
+            if (confirmOverlayClick()) return true;
+            if (listMenuClick()) return true;
+            closeEnumPicker(true); return true;
+        }
         if (S.view === VIEW_SLOTCFG) {
             const row = S.slotRows[S.slotCfgIdx];
             if (row && row.sub) {
@@ -7435,7 +8037,16 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * where "what is in this block" is the question being asked. */
             S.pendingAction = { t: S.shiftHeld ? 'browse' : 'open', comp: S.pickRows[S.pickRow].comp };
         }
-        else if (S.view === VIEW_BROWSE)      S.pendingAction = { t: 'load' };
+        else if (S.view === VIEW_BROWSE) {
+            const row = S.browseList[S.browseIdx];
+            if (row && row.id === LIST_ROW_ID) S.pendingAction = { t: 'listcycle' };
+            /* Shift+click FILES the module, plain click loads it. Same split
+             * the block picker makes: the modifier buys the rarer, structural
+             * action, and it means the whole feature needs no screen of its
+             * own -- which matters here, where the browser IS the surface. */
+            else if (S.shiftHeld)                 S.pendingAction = { t: 'listtoggle' };
+            else                                  S.pendingAction = { t: 'load' };
+        }
         /* An EMPTY block has no presets to offer, and its editor's whole job is
          * "pick something" — so click there still means the module browser. */
         else if (S.view === VIEW_EDIT)
@@ -7984,6 +8595,11 @@ function reconcileEditCcClaim(force) {
 }
 
 export function soundTick() {
+    /* A list name the keyboard rejected, re-offered now that the
+     * unconditional closeTextEntry() after onConfirm has run. Guarded on the
+     * keyboard being DOWN inside the helper: serving it while one is up would
+     * close a live edit and reopen it on stale text. */
+    soundTickListNamePending();
     /* ⚠⚠ ABOVE EVERY EARLY RETURN, and that is the whole point. Placed after the
      * `S.active` and text-entry guards, "lives exactly one tick" was false: the
      * memo survived a whole Save-As keyboard session and every period sound mode
@@ -8588,7 +9204,11 @@ function renderBrowse() {
     /* ⚠ The prompt (why the browser opened) rides the header band, which the
      * crumb bar now owns — so an EMPTY-block browse says so in the crumb rather
      * than over the backdrop. */
-    renderInChain(S.browseList.map(m => String(m.name)), S.browseIdx);
+    /* A member of the list in play is marked with a leading dot. Not a
+     * checkbox: these rows are modules you LOAD, and a checkbox would say the
+     * click toggles them when the click loads them. */
+    renderInChain(S.browseList.map(m => (mlIsMember(m) ? '\u00b7' : '') + String(m.name)),
+                  S.browseIdx);
 }
 
 /* ── hosting a module's OWN canvas UI ──────────────────────────────────────

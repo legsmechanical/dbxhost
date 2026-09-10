@@ -3184,6 +3184,23 @@ function unloadModuleUi() {
     moduleUiLoadError = false;
     globalThis.chain_ui = null;
     clearModuleParamShims();
+    /*
+     * Lower the pad block the module may have raised.
+     *
+     * A module takes the pads with host_pad_block(1) and lowers them from its
+     * own tick, which this host calls from ONE place -- inside the module-edit
+     * view's draw. So every exit that stops that draw stops the only thing
+     * that could lower the flag. The shim now covers the exits that close the
+     * shadow display; this covers the ones that do NOT -- moving to another
+     * slot, Tools, Global Settings -- where the display stays up and the shim
+     * edge never fires.
+     *
+     * Unconditional, and cheap: the flag is a byte, the module that owned it
+     * is being dropped on the line above, and whoever wants the pads next
+     * raises it on the way in. Nothing is owed on the drop -- what was
+     * withheld is a pad note, so the worst case is an unmatched note-off.
+     */
+    if (typeof host_pad_block === "function") host_pad_block(0);
 }
 
 /* Check for synth error in a slot and show warning if found */
