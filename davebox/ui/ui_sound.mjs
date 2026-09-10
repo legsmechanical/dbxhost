@@ -4494,8 +4494,61 @@ function closeEnumPicker(commitIt) {
     S.enumPick = null;
     S.dirty = true;
 }
+/*
+ * The Instrument picker's Shift+click door, ANNOUNCED.
+ *
+ * Josh, 2026-09-10: "shift+click hint on module picker to get to favorites,
+ * etc." Shift+click on a generator opens that module's Lists menu
+ * (instrPickerToggleList), and nothing on screen said so — the same complaint
+ * that openListMenu's own comment already records once: "both were hidden
+ * behind a Shift+Click nobody announces". That pass made the LISTS reachable
+ * from a visible row; the MODULE-scoped half stayed a secret gesture.
+ *
+ * ⭑ ON THE CURSOR ROW ONLY, and only when that row is a MODULE (`r.gen`).
+ * Shift does nothing on Move 1-4, the MIDI channels, the track-follow rows or
+ * the List row, and a marker there would promise a gesture that is not offered.
+ *
+ * ⚠⚠ DECORATED AT RENDER TIME, NOT WHEN THE PICKER IS BUILT. `options` is
+ * built once in openInstrPicker and the cursor moves afterwards, so a marker
+ * baked into the array would sit on whichever row happened to be selected when
+ * the picker opened and then stay there while the cursor walked away from it.
+ *
+ * ⚠ The leading `\u00b7` some labels already carry is the LIST-MEMBERSHIP mark
+ * from openInstrPicker, a different statement in a different place. The
+ * brackets go AROUND the row, so the two never collide and a row can
+ * legitimately wear both (in the list, and a door).
+ *
+ * ⭑ CORNER BRACKETS, NOT A WORD (Josh, 2026-09-10: "corner brackets would be
+ * good since it's aligned with the rest of shift click"). They are this UI's
+ * door mark — UI_LANGUAGE §3.6, `opens: true` on a knob cell, and the
+ * automation card at rest — so the mark means the same thing here as
+ * everywhere else. A `SHFT` value string was the first cut and was worse
+ * twice over: it invents a second vocabulary for "this opens", and it eats
+ * ~20px of the CURSOR row's label, which is the one row whose full name you
+ * actually want to read.
+ */
+/* What renderEnumPick actually hands the list renderer — the DECORATED rows,
+ * not the raw ones. Exported so a test can assert the mark after driving the
+ * real jog, rather than re-deriving which row the cursor is on. */
+export function soundEnumPickDrawnForTest() { return enumPickOptions(); }
+
+function enumPickOptions() {
+    const p = S.enumPick;
+    if (!p || !Array.isArray(p.options)) return [];
+    if (p.label !== 'Instrument' || !Array.isArray(p.rows)) return p.options;
+    const r = p.rows[p.sel];
+    if (!r || !r.gen) return p.options;
+    const opt = p.options[p.sel];
+    if (opt == null || opt.divider) return p.options;
+    /* One row rewritten, the rest by reference — drawKitList takes a string or
+     * a row object for any entry, so the two forms mix freely. */
+    const out = p.options.slice();
+    out[p.sel] = { label: String(opt), opens: true };
+    return out;
+}
+
 function renderEnumPick() {
-    renderInChain(S.enumPick ? S.enumPick.options : [], S.enumPick ? S.enumPick.sel : 0);
+    renderInChain(enumPickOptions(), S.enumPick ? S.enumPick.sel : 0);
 }
 
 /* The path, INCLUDING the screen you are on, outermost first.

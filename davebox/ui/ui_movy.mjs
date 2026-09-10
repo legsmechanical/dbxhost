@@ -3459,6 +3459,20 @@ export function drawKitList(rows, sel, opts) {
         }
         if (qual) mvPrint(labelEnd + QUAL_GAP, y + 1, qual, ink);
         if (val) mvPrint(rightEdge - vw, y + 1, val, ink);
+        /* ⭑ THE DOOR MARK, on a ROW this time (UI_LANGUAGE §3.6). Corner
+         * brackets are what this UI uses for "this opens" — `opens: true` on a
+         * knob CELL already draws them, and the automation card wears them at
+         * rest. A row that opens something else on a gesture says it the same
+         * way, so the mark means one thing everywhere.
+         *
+         * ⚠ LAST, and around the whole row, for the reason the cell renderer
+         * gives: it must read the same over the selection fill as over bare
+         * background, so it cannot live inside the label or value drawing.
+         * ⚠ Drawn HERE rather than by the caller because the row's rect is this
+         * function's own — topY, rowH and the scroll window are all local, and
+         * a caller recomputing them is two copies of one geometry waiting to
+         * drift. */
+        if (row.opens) drawBrackets(boxX, y - 1, fillW, rowH);
     }
     if (hasScroll) {
         const trackH = visible * rowH;

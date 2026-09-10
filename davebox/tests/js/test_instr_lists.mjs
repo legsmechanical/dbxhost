@@ -179,6 +179,42 @@ step('both generators are offered under All', () => {
         throw new Error('a generator is missing: ' + JSON.stringify(o));
 });
 
+/* ── the Shift+click door, ANNOUNCED (Josh, 2026-09-10) ──────────────────
+ * "shift+click hint on module picker to get to favorites, etc." The mark is
+ * CORNER BRACKETS — this UI's door mark (UI_LANGUAGE §3.6) — on the cursor row
+ * only, and only when that row is a module.
+ * ⚠ Asserted on what renderEnumPick HANDS THE RENDERER, after a real jog, so
+ * the row under test is the one the gesture actually landed on. */
+step('⭐⭐ the cursor row wears the DOOR MARK when it is a module', () => {
+    const o = snd.soundEnumPickForTest().options;
+    jogTo(o.indexOf('NuSaw'));
+    const drawn = snd.soundEnumPickDrawnForTest();
+    const row = drawn[snd.soundEnumPickForTest().sel];
+    if (!row || !row.opens)
+        throw new Error('⭑ no door mark on the generator under the cursor: ' + JSON.stringify(row));
+    if (String(row.label).indexOf('NuSaw') < 0)
+        throw new Error('the mark is on the wrong row: ' + JSON.stringify(row));
+});
+
+step('⚠ CONTROL: rows Shift does NOTHING on carry no mark — the List row', () => {
+    jogTo(0);                                     /* the List row */
+    const drawn = snd.soundEnumPickDrawnForTest();
+    const row = drawn[snd.soundEnumPickForTest().sel];
+    if (row && row.opens)
+        throw new Error('⭑ the List row promises a shift-click gesture it does not offer: '
+                        + JSON.stringify(row));
+});
+
+step('⚠ CONTROL: only the CURSOR row is marked, never every module row', () => {
+    const o = snd.soundEnumPickForTest().options;
+    jogTo(o.indexOf('NuSaw'));
+    const drawn = snd.soundEnumPickDrawnForTest();
+    const marked = drawn.filter(r => r && r.opens).length;
+    if (marked !== 1)
+        throw new Error('⭑ ' + marked + ' rows are marked — the mark says "the cursor is on a door", '
+                        + 'so exactly one row can wear it');
+});
+
 step('shift+click a generator opens the Lists menu FOR IT, by name', () => {
     const o = snd.soundEnumPickForTest().options;
     jogTo(o.indexOf('NuSaw'));
