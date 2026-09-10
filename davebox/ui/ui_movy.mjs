@@ -2838,7 +2838,26 @@ export function kitStackBox(depth) {
 export function drawKitStackedList(depth, rows, sel, opts) {
     const o = opts || {};
     const d = Math.max(1, depth | 0);
-    const h = SCREEN_H_LATCH - 1 - STACK_Y;
+    /* ⚠⚠ `bottomY` EXISTS BECAUSE THE BOX OTHERWISE RUNS UNDER A FOOTER.
+     * The default reaches SCREEN_H_LATCH - 1 (y 14..62), which is right for the
+     * two callers whose chrome is the CRUMB BAR at y=0 — nothing of theirs is
+     * down there. The automation bank is the one that draws a HINT ROW at
+     * MV_FOOTER_Y (57), so its box overlapped the footer band by six rows and
+     * the footer, drawn afterwards, painted over the bottom of the pop-up.
+     * Josh, 2026-09-10: "the automation editor pop-up sits behind the bank's
+     * hint footer rather than on top where it should be."
+     *
+     * ⭑ THE FIX IS TO STOP THE BOX ABOVE THE FOOTER, NOT TO DRAW THE BOX LAST.
+     * Those hints are the POP-UP'S OWN (`CLK DO / JOG OP / BACK LIST`, and the
+     * edit-mode variants) — covering them would hide the only description of
+     * the gestures the pop-up responds to. Reordering would also leave a
+     * half-eaten row of pills sticking out either side of a 108px box, which is
+     * exactly what drawKitEnumOverlay's shared stand-down predicate exists to
+     * prevent: "Either none or all; none is correct here."
+     *
+     * A caller that passes nothing keeps the old geometry to the pixel. */
+    const bottom = (o.bottomY != null) ? (o.bottomY | 0) : (SCREEN_H_LATCH - 1);
+    const h = Math.max(1, bottom - STACK_Y);
     const tx = stackTopX(d);
     for (let k = 0; k < d; k++) {
         const x = tx - (d - 1 - k) * STACK_STEP;
