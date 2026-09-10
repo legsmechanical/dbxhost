@@ -41,8 +41,8 @@ whole discipline — a **watermark** plus a short table, replacing the 11-patch 
 
 | | |
 |---|---|
-| **Last upstream commit reviewed** | `aa4d8f33` — *release 1.3.1 (#473)*, 2026-09-08 |
-| **Reviewed on** | 2026-09-08 (survey: `_worklogs/specs/upstream-1.3.0-survey.md`; 1.3.0 → 1.3.1 is 2 commits, one real) |
+| **Last upstream commit reviewed** | `8e1d99f4` — *release 1.4.0 (#483)*, 2026-09-09 |
+| **Reviewed on** | 2026-09-10 (1.3.1 → 1.4.0, 10 commits; plus the backfill of the 33 the 1.3.0 survey left unlisted) |
 | **Merge base** | `a46f32b2` — *Merge pull request #179: bump host to 0.11.6*, 2026-07-19 |
 
 To advance it:
@@ -56,6 +56,36 @@ git diff --stat HEAD...upstream/main -- src/ schwung-manager/   # what of it is 
 Then take what applies (cherry-pick or hand-apply), add rows below, and move the watermark.
 Docs/catalog-only commits need no action beyond the watermark move — say so in the table rather
 than leaving them unlisted, so "not applied" is never ambiguous with "not looked at".
+
+### ⚠⚠ SURVEY THE COMMIT LIST, NOT A RELEASE RANGE (learned 2026-09-10)
+
+**Every commit between the watermark and `upstream/main` gets a row. No exceptions, no
+sampling.** Two features were lost to the alternative, in two different ways:
+
+- **`#378` Module lists** landed 2026-08-31, just BEFORE the window the 1.3.0 survey started
+  from, and just AFTER the window before it closed. Two adjacent surveys, one seam, nothing in
+  between. Found only because Josh asked whether module lists were portable.
+- **`#423` Boot selector** landed 2026-09-06, INSIDE the reviewed 1.2.0 → 1.3.1 window, and was
+  never listed at all. That window holds 52 commits; the table below carried 19. The other 33
+  were neither taken nor skipped — they were unwritten, which is the exact state this document
+  exists to make impossible.
+
+The check that would have caught both, run before writing any rows:
+
+```sh
+# every commit in the window, and whether this file already mentions it
+for h in $(git log --format=%h <watermark>..upstream/main); do
+  grep -q "$h" docs/UPSTREAM.md || echo "UNLISTED $h $(git log -1 --format=%s $h)"
+done
+```
+
+⚠ A row may say **Unverified — needs the diff read**. That is a legitimate state and an honest
+one: it says the commit was seen and the decision is owed. What is not allowed is silence.
+
+⚠⚠ **A marker grep is not a presence check** ([[a-single-token-probe-is-not-evidence]]). This
+fork splits the shadow UI differently from upstream — there is no `shadow_ui_global_grid.mjs`
+here, and the settings live in `shadow_ui_settings.mjs` — so "upstream's file is absent" says
+nothing about the capability. Rows below that rest on a filename alone are marked as such.
 
 ### Reviewed since the merge base
 
@@ -76,7 +106,7 @@ Those 10 commits touch **no** `src/` or `schwung-manager/` file, so nothing was 
 | `b2c1b744` #394 | Forward-channel Auto asks the module | **Taken** (cherry-pick; Makefile TARGETS kept as the fork's list + `test_forward_channel`) |
 | `39f60cbd` #407 | Link Audio: bound the backlog so a module load cannot park Move's audio 85 ms | **Taken** (cherry-pick; same Makefile resolution) |
 | `dc73d948` #404 | Two knob multipliers are a MAX; an enum counts detents | **Held** (Josh) — folds into the KNOB FEEL item so one curve is tuned, not two |
-| `a6fc6235` #415 | Enum list drew through device globals | **Deferred** to the param-pages library sync (file diverged) |
+| `a6fc6235` #415 | Enum list drew through device globals | **ALREADY HERE — the row was wrong.** ⭑ Corrected 2026-09-10: `src/shared/param_pages/enum_list.mjs` is **byte-identical to upstream** (`git diff upstream/main HEAD --` is empty), `ctx,` forwarded at the `drawMenuList` call with upstream's own comment. The file never diverged; nothing was owed to the library sync. |
 | `98b5c3c7` #393, `2ff52653` #387, `51c11134` #389, `ccbe11ac` `57c3d13c` #411, `c315b95d` #385 | CPU monitor, defaults on, metronome, pad_layout/voices, snapshot recall | **Later, as roadmap items** (snapshot recall = board item 18's mechanism) |
 | `5b6d4b18` #386, `121a79b6` #397 | Track tap = Stay; long-press Track toggles layers | **Assess first** — gesture surfaces davebox owns |
 | `2272a1eb` #392 | Save Stems | **Skipped** — overlaps davebox's export pipeline |
@@ -149,6 +179,89 @@ PR there rather than a fork change ([[schwung-only-what-we-originated]]). Filed 
 **`SLOT_BUSES = 8` against upstream's 4.** Pre-existing, restated here because `default_buses`
 makes it module-visible: a module may declare more buses on this fork, and the seeding loop simply
 stops at the host's cap. Documented in `MODULES.md` for authors targeting both.
+
+### Reviewed 2026-09-10 — v1.3.1 → v1.4.0 (10 commits)
+
+| Upstream | What | Decision |
+|---|---|---|
+| `8e1d99f4` #483, `81692c66` #477 | Release 1.4.0; forge `min_host_version` bump | **Skipped** — no code owed. |
+| `bea4ee3c` #480, `8f482522` #478, `d48a693f` #459, `ecc0ce9d` #471 | Catalog: MonkSynth, Pixel Walkers, Overwork Mix, Maze Voice | **Skipped** — catalog only, and this fork's catalog is not user-facing (see the note in the 1.2.0 window). |
+| `71d0be92` #475 | Disable USB-C output persistence | **NOT APPLICABLE, verified.** Upstream's saved USB-C Main Out state could replay at boot and mute the built-in speaker; their fix rips the feature out (348 deletions). We never took it — `usbc_out_persist` has **0 hits** in `src/`. ⚠ Positive control run: `shadow_resample.c` IS present and DOES carry neighbouring `usb-c` handling (`:247`), so the zero is a real absence and not a probe that could not fire. |
+| `abfe4ec0` #476 | `pad_block` could outlive the component UI that raised it | **PORTED `409c70ff`**, adapted (upstream's `test_pad_block_lifecycle.sh` filename not taken). Merged via `fix-476-pad-block-stranding` → `b1b68b72`. |
+| `d3217ee2` #479 | **Spkr EQ setting — Auto / Off / On** | **DEFERRED (Josh, 2026-09-10): _"we may need it later but i don't want to mess with it now."_** Not skipped — absent and undecided. What it is: the shim emulates Move's `MoveSpeakerEnhancer` gated on the headphone jack and biased hard toward OFF, because a stray CC 115 "speaker" with headphones in is the hollow-audio bug. A device whose XMOS insists on "speaker" with a jack in cannot silence the EQ; one that never settles on speaker never gets it. `#479` adds the escape. ⚠ **Two reasons it is not a casual port:** it APPENDS `speaker_eq_mode` to `shadow_control_t`, and that struct's `sizeof` is a contract between two binaries; and its surface is Global Settings → Audio, whose dAVEBOx equivalent is `davebox/ui/ui_menu.mjs`, not a host settings row. |
+| `897ceea4` #482 | **Boot-target registration through Schwung Manager** | **Not ported; the RISK is the reason to read it, not the feature.** 6,475 lines across 29 files, but **zero `src/`** — it is all `schwung-manager/` Go (`boot_registry.go`, `boot_reconcile.go`, `platforms.go`, `boot_target.go`, the Boot and Platforms pages) plus docs. On its own it is the browser-side registration UI for the selector `#423` shipped. See the `#423` row in the backfill below: that is the item with teeth for dAVEBOx SA. |
+
+### Backfill 2026-09-10 — the 33 commits the 1.3.0 survey never listed
+
+⚠ The 1.2.0 → 1.3.1 window is **52 commits**; the table above carried 19. These are the rest.
+Two carry real consequences (`#423`, `#424`); most were already here, taken silently during the
+buses and param-pages work without ever getting a row.
+
+**Docs, catalog and release commits — no action beyond being written down:**
+`546cd953` #462, `28849c96` #448, `027021fd` #454 (docs); `7995808b` #458, `88dfcca1` #456,
+`70c95aec` #452 (catalog); `8d714811` #470 and `aa4d8f33` #473 (the 1.3.0 and 1.3.1 release
+commits — version bumps and changelog, no code).
+
+| Upstream | What | Decision |
+|---|---|---|
+| `5dadcf38` **#423** | **Boot selector: chainload Schwung, stock Move, or a third-party target** | 🔴 **NOT PORTED, AND NEVER SURVEYED — the miss this backfill exists for.** 3,455 lines, 29 files, squarely in `src/`. Upstream main carries `src/boot-select.c`, `src/host/boot_select_core.c/.h`, `src/host/boot_target_lib.sh`, `src/schwung-entry.sh`; **this fork has none of them**, and our `src/shim-entrypoint.sh` diverges from theirs by 58/66 lines. What it does: `/opt/move/Move` becomes a thin Schwung-owned entrypoint that shows `Loading <name> — press Back to change` for ~2s, then execs a registered target; a third party drops `/data/UserData/boot-targets/<id>/boot.json` plus an entry script and appears in the picker. ⭐ **Why it matters to dAVEBOx SA:** this is our launcher's problem, solved upstream by a different mechanism — SA is reached today by booting stock, opening Tools, and relaunching Move under `dbx-host`. 🔴 **And it is a COLLISION, not only an opportunity:** the contract states the selector owns `/opt/move/Move`, `/usr/lib/schwung-shim.so` and `/etc/ld.so.preload`, and that a platform which rewrites them "will be silently reverted (or will fight heal, which is worse)". `standalone/` does exactly that class of thing, so a user installing stock 1.3.0+ over the top has two owners for three files. **Read `docs/BOOT_TARGETS.md` at `897ceea4` before the next SA install change.** → [[stock-tree-is-not-ours-own-what-we-run]] |
+| `f60bf2c5` **#424** | Retire Updates, Module Store and the File Browser toggle; add the Web Manager QR screen | **NOT PORTED — and the evidence is content, not a filename.** `filebrowser_enabled` is still a row in `src/shared/settings-schema.json:42`, and the 33 MB `libs/filebrowser/filebrowser` binary is still shipped and still built. Upstream deleted both. ⚠ Its surface is Global Settings, so under the gate at the top of this file the dAVEBOx question is `ui_menu.mjs`, not the host grid — but the **payload weight and the dead settings row are ours either way**. Worth sizing. |
+| `bde51a56` #455 | Restore hardware `audio_in` for both overtake roles, not only the generator | **ATTEMPTED AND DELIBERATELY REVERTED 2026-09-09; PARKED.** Upstream's fix is a pure hoist within ONE function; this fork splits the two roles across two functions on two paths — generator in `shadow_inprocess_render_to_buffer()` (`schwung_shim.c:8885`), FX `process_block` in `shadow_inprocess_mix_from_buffer()` (`:5892`). Hoisting inside `render_to_buffer` reaches only the role that already worked. Needs the per-frame ORDER of those two calls established, and the restore placed where both see fresh data without paying the `AUDIO_BUFFER_SIZE` memcpy twice a frame. |
+| `06c9d24a` #457 | `audio_in` restore stands down while the resample bridge is applying | **Blocked on #455** — the follow-up to a fix this fork does not carry. `src/host/audio_in_restore.h` absent, verified as a FILE (the header is upstream-only, not a fork rename: no equivalent guard exists on either of our two paths). |
+| `30c73aeb`, `953f97e5` | `schwung-heal` installs and resolves a **standalone tool's** staged helper | **NOT PORTED — read before the next `install-sa.sh` change.** `src/host/heal_tool_id.h` absent; `src/schwung-heal.c` carries no tool-id resolution. ⭐ Directly adjacent to a known SA trap: a stock install strips setuid from `davebox-heal` ([[stock-install-unblesses-davebox-heal.md]]). Upstream now has heal do this staging for a tool the way it does for itself. Pairs with `#423`/`#482`. |
+| `2f92abdc` #431, `6604d861` #439 + `5d22a68e` | `install.sh`: a payload older than the selector is a DOWNGRADE, not a corrupt tarball; tolerate a missing preselector boot default | **No target while `#423` is unported** — both are selector-aware `scripts/install.sh` logic. Revisit with `#423`. |
+| `9b58ea40` #460 | Module dependencies, and modules declaring the FX behind them | **Unverified — needs the diff read.** Half `schwung-manager/main.go`, half `shadow_ui.js`. A `module_deps` marker grep returns zero here, which under this file's own rule proves nothing about a fork that renames freely. |
+| `f5d42aa1` #449 | Step + volume knob is a VELOCITY edit, and the volume scanner read it | **Unverified — needs the diff read.** `src/schwung_shim.c`, 39 lines. ⚠ dAVEBOx owns this gesture surface, so the port question is what dAVEBOx's own step+volume does, not whether the host line matches. |
+| `4c874ad4` #432, `b5aacd68` #436 | Wake idle synth slots when MIDI FX timers emit; the wake follows DELIVERY, not emission | **Unverified — needs the diff read.** `src/modules/chain/dsp/chain_idle_tick.h` is absent as a file, but the logic may live inline here; the chain DSP is one of the fork's most-diverged areas. ⓘ Real-audio path — worth answering properly rather than leaving. |
+| `d53f10f1` #428 | Wave editor reads 24-bit WAV and AIFF | **ALREADY HERE, via the shared table.** `shadow_ui.js:236` imports `wav_format.mjs`, which handles `pcm24le`/`pcm24be`, `WAVE_FORMAT_EXTENSIBLE` (0xFFFE — how ffmpeg and sox write every 24-bit WAV) and signed 8-bit AIFF. Arrived with `#434`, which the window above already records as fully present. |
+| `382deb5b` #441 | The `extra_keys` cap the docs promised, from one constant | **ALREADY HERE.** `page_plan.mjs:23` imports `MAX_DECLARED_EXTRA_KEYS` from `viz.mjs` and applies it at `:476`. |
+| `4fc36731` #425, `891982ce` #435 | A module may claim buttons (`claims_ccs`, `claims_edit_ccs`); a held button survives the display close | **ALREADY HERE.** Both markers present across 4 and 8 files; `tests/host/test_claims_ccs.sh` present. `#443` in the window above is the later fix ON this feature, and was ported — it could not have been if the feature were missing. |
+| `856ec1b2` #426 | A module may be told about live pad presses (`child_press_param`) | **ALREADY HERE** — marker across 9 files including `page_input.mjs`, `voices.mjs`, `child_key.mjs`. |
+| `1d663c7d` #427 | `visible_if` resolved against the list editor's slot, and failed open on the grid | **ALREADY HERE** — `tests/host/test_grid_visible_if_context.sh` present. `#440` above (the concrete-key fix on the same path) is recorded as already here for the same reason. |
+| `e7bcd159` #429 | Hold Copy or Delete, then pick an instance — copy, clear and undo for child levels | **ALREADY HERE** — `tests/host/test_child_copy_gesture.sh` present. `#438` above (the copy gesture reading the focus) is its follow-up and is recorded as present. |
+| `0006840f` #422 | Enum peek: a LIST never peeks, and 700 ms was shorter than the header | **Unverified — needs the diff read.** `tests/host/test_enum_peek.sh` is present, but the test predates this commit; presence of the file says the feature exists, not that this fix is in it. |
+| `c4b27647` #433 | Let custom pages read hidden canvas state | **Unverified — needs the diff read.** `page_plan.mjs` / `page_controller.mjs`, 22 lines. ⓘ Low stakes while `#420`'s widget wiring is unported: nothing here registers a custom page to read the state with. |
+| `8ebcbe66` #463 | `default_fx` can name a factory PRESET, not only params | **Unverified — and probably moot.** `default_fx` is handled in `shadow_ui.js` (`:3577`), but ⚠⚠ `ui_sound.mjs` records that `default_fx` "had shipped in this fork for months and never logged a single line, because nothing reached the hook — the host seeds them from its OWN component picker, which this UI never uses." Extending a hook dAVEBOx never reaches is the exact failure the gate at the top of this file exists to stop. **Do not port without first answering which dAVEBOx screen seeds an FX chain.** |
+| `523205ba` #461 | Unbundle `velocity_scale`, stop shipping `voice-poc` | **PARTIALLY here, by accident.** `voice-poc` is absent (never carried — which is why `#442` above is "no target, verified"); `src/modules/midi_fx/velocity_scale/` is **still shipped here**. Upstream moved it to the catalog. Ours to decide: unbundling it is payload weight, and this fork's catalog is not user-facing, so a user who loses the bundled copy has no route to get it back. **Recommend: keep it bundled, deliberately** — and this row is that decision being written down. |
+
+### Also resolved in this pass — items the board carried as open
+
+- **`#350` Move's selected track follows a track long-press slot switch** (`ee07f870`) —
+  **NO TARGET, verified.** It fixes a divergence between the shadow UI's slot and MOVE's selected
+  track after a Track long-press, which with a HiJack kit leaves the editor showing one module
+  while the pads play another; the fix injects a synthetic release/press/release tap and swallows
+  the user's real release. **This fork has no track long-press at all** — `track_longpress_fired`,
+  `track_swallow_release` and `LONG_PRESS_ACTIVE()` all have zero hits in `src/schwung_shim.c`;
+  the macro went in upstream's `40d223b4` and the leftover call was the undefined-symbol bug this
+  fork already closed. dAVEBOx owns the Track buttons for its own gestures. Nothing is owed.
+- **`#372` module help is a jog from its knobs** (`bee45c58`) — **WORTH TAKING; Josh, 2026-09-10:
+  _"if this is about allowing modules to display a help menu in the module editor UI then we
+  should include it."_ It is exactly that.** A conditional **Module Help** row on the Module page
+  at the end of a component's knob grid, above Swap and Remove — appearing only when the module
+  ships a `help.json` with topics, because a row that opens an empty viewer teaches that the
+  feature is broken. ⭐ **dAVEBOx already has that page**: `ui_sound.mjs`'s `trailingMenus()`
+  returns a `Module` page carrying Swap Module / Remove Module, on Move buses and session buses
+  alike. The Help row goes above those two, in a list dAVEBOx already builds. **Two things it
+  needs that are not free:** (1) upstream's viewer is hosted by Global Settings, a screen dAVEBOx
+  never opens — dAVEBOx needs its own, which is `scrollable_text.mjs` (present) plus a return
+  pair; (2) content — 17 of 86 installed modules ship no `help.json`, **dAVEBOx itself among
+  them**, so the row would condition itself away on our own module until we write it.
+  ⭑ **Its shared-primitive half is worth taking on its own merits**, independent of the help door:
+  `#372` exports `drawScrollbar` so text and rows get one bar, and kills a rogue
+  `LINE_HEIGHT = 10` in `scrollable_text.mjs` that was throwing away a line of help per screen.
+  This fork still has the split it fixes — **three** separate `LIST_LINE_HEIGHT = 9` declarations,
+  in `chain_ui_views.mjs:13`, `list_geometry.mjs:142` and `menu_layout.mjs:21`.
+- **`#420` module draw surfaces / `#450` "already resolved" asked about the PROCESS** — the
+  existing rows stand, with the dAVEBOx consequence now stated. `widget_registry.mjs` is here in
+  full, and **`registerOverlayWidgets` and `clearWidgets` have zero callers** — the ~110 lines of
+  `shadow_ui.js` wiring that loads a module's `canvas.js` and populates the registry were never
+  ported. **So no module can draw a custom cell in dAVEBOx's editor.** `viz.mjs:253` degrades an
+  unavailable custom kind back into the detector pool rather than leaving a hole, so a module
+  wanting a wave display, an envelope curve or a filter response gets **plain dials, silently and
+  permanently**. `#450` is genuinely moot until `#420` lands (it fixes wrongly EMPTYING a registry
+  that is never FILLED) — blocked, not skipped. ⚠ When the wiring is ported, apply the lesson from
+  `3cb8b664`: this fork's own canvas-load defect lived in the CARD cache, and a failed load that
+  records as a success is the same defect class `#472` fixed upstream.
 
 ## Module buses (#453) — ported, with three named divergences
 
