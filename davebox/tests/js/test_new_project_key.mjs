@@ -28,11 +28,12 @@ globalThis.host_file_exists = (p) => (files[p] !== undefined);
 globalThis.host_write_file = () => true; globalThis.host_ensure_dir = () => true;
 globalThis.host_remove_dir = () => true;
 globalThis.host_module_set_param = (k, v) => { sets.push([String(k), String(v)]); };
-/* ⚠ A REAL readback, not ''. The sync reads `key`/`scale` back from the DSP,
- * and an EMPTY string passes its `!== null && !== undefined` guard and becomes
- * 0 — so a stub that answers '' silently rewrites the key to C and the control
- * below fails for the rig's reason rather than the code's. (That empty-read
- * guard is worth its own look; filed, not fixed here.) */
+/* ⚠ A REAL readback, not ''. The sync reads `key`/`scale` back from the DSP.
+ * ✅ FIXED 2026-09-10 — the guard that made this note necessary is gone: the
+ * reads went through `!== null && !== undefined` on the RAW string, an empty
+ * answer passed it, and `parseInt("", 10) | 0` was 0, so a failed read
+ * silently rewrote the key to C. `dspGetInt` now parses first and tests for a
+ * NUMBER. The last case in this file is the control that pins it. */
 const DSP = { key: '9', scale: '1' };
 globalThis.host_module_get_param = (k) => (DSP[String(k)] !== undefined ? DSP[String(k)] : '');
 globalThis.shadow_get_param = () => ''; globalThis.shadow_set_param = () => 1;
@@ -100,6 +101,49 @@ step('⚠ CONTROL: an ORDINARY project (no note) holds nothing back and changes 
     if (S.newProjectSeed) throw new Error('a project with no note stashed a seed anyway');
     if (bridge.applyNewProjectSeed()) throw new Error('and it applied one');
     if (S.padKey !== 3 || S.padScale !== 5) throw new Error('an ordinary load moved the key');
+});
+
+/* ── the empty-readback guard (Block 1, 2026-09-10) ───────────────────────
+ *
+ * ⚠⚠ THE BUG THIS PINS: `host_module_get_param` returns `undefined` ONLY when
+ * the DSP signals an error (`len < 0`, `src/schwung_host.c:1466`). A serve that
+ * writes ZERO bytes returns `len == 0`, and JS gets an EMPTY STRING. The old
+ * guard — `raw !== null && raw !== undefined` — passed that, and
+ * `parseInt("", 10) | 0` is 0. So a read that never answered wrote a confident
+ * ZERO: key 0 is C, and the user's project silently changed key.
+ *
+ * ⭑ THE CONTROL THAT MUST FAIL comes first: with the fix reverted, the empty
+ * case below rewrites padKey to 0. Without a case that CAN fail, "it passed"
+ * would mean nothing. → [[a-check-that-cries-wolf-is-worse-than-none]] */
+step('⭐⭐ an EMPTY readback leaves the key ALONE — it does not become C', () => {
+    delete files[notePath];                        /* ordinary project, no seed */
+    DSP.key = ''; DSP.scale = '';                  /* the zero-byte serve */
+    S.padKey = 7; S.padScale = 3;                  /* what the user actually has */
+    bridge.syncClipsFromDsp();
+    if (S.padKey === 0 && S.padScale === 0)
+        throw new Error('⭑ THE BUG: an empty read rewrote the project to key 0 (C), scale 0');
+    if (S.padKey !== 7 || S.padScale !== 3)
+        throw new Error('an empty read moved the key to ' + S.padKey + '/' + S.padScale
+            + ' — it must leave 7/3 untouched');
+});
+
+step('⚠ a MISSING key (undefined) is treated the same as an empty one', () => {
+    delete files[notePath];
+    delete DSP.key; delete DSP.scale;              /* stub answers '' for unknowns */
+    S.padKey = 5; S.padScale = 2;
+    bridge.syncClipsFromDsp();
+    if (S.padKey !== 5 || S.padScale !== 2)
+        throw new Error('a missing read moved the key to ' + S.padKey + '/' + S.padScale);
+});
+
+step('⚠ POSITIVE CONTROL: a REAL zero still lands — 0 is a legitimate key (C)', () => {
+    delete files[notePath];
+    DSP.key = '0'; DSP.scale = '0';                /* the user really is in C */
+    S.padKey = 7; S.padScale = 3;
+    bridge.syncClipsFromDsp();
+    if (S.padKey !== 0 || S.padScale !== 0)
+        throw new Error('⭑ the guard is too strict — it rejected a REAL 0, which is C major. '
+            + 'Got ' + S.padKey + '/' + S.padScale);
 });
 
 process.exit(failed);

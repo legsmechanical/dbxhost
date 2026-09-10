@@ -49,7 +49,7 @@ import { sessionHasAnyContent } from './ui_scene.mjs';
  * cycled bindings only inside function bodies, never at module-init time.
  * Keep it that way: no top-level use of anything from this import. */
 import { disarmRecord } from './ui_record.mjs';
-import { dspGet, prefetchTrackDigests, releaseTrackDigests } from './ui_dsp_get.mjs';
+import { dspGet, dspGetInt, dspGetStr, prefetchTrackDigests, releaseTrackDigests } from './ui_dsp_get.mjs';
 
 const pendingLiveNotes = Array.from({length: NUM_TRACKS}, () => []);  /* buffered live notes flushed each tick */
 export const pendingDrumNoteOffs = Array.from({length: NUM_TRACKS}, () => []);  /* drum tap note-offs deferred 1 tick to avoid coalescing with note-on */
@@ -1753,33 +1753,40 @@ function _syncClipsFromDspInner() {
         S.sessVolLevel[_t] = -1;
     }
 
-    const kp = dspGet('key');
-    if (kp !== null && kp !== undefined) S.padKey   = parseInt(kp, 10) | 0;
-    const sp = dspGet('scale');
-    if (sp !== null && sp !== undefined) S.padScale = parseInt(sp, 10) | 0;
+    /* ⚠⚠ dspGetInt, NOT a `!== null && !== undefined` test on the raw string.
+     * A zero-byte serve returns "" (only an ERROR returns undefined), "" passed
+     * that guard, and `parseInt("", 10) | 0` is 0 — so a failed read of `key`
+     * silently rewrote the project to C. See dspGetInt's own note. */
+    const kp = dspGetInt('key');
+    if (kp !== null) S.padKey   = kp;
+    const sp = dspGetInt('scale');
+    if (sp !== null) S.padScale = sp;
     /* ...unless this project has never been opened before, in which case it was
      * born in a random key (Josh, 2026-08-24) and the note saying which one is
      * still sitting in its state dir. Applied HERE, right after the reads it
      * overrides, so there is no window where the UI shows A minor and the engine
      * has something else. Consumed once — see consumeNewProjectSeed. */
     consumeNewProjectSeed();
-    const lqp = dspGet('launch_quant');
-    if (lqp !== null && lqp !== undefined) S.launchQuant = parseInt(lqp, 10) | 0;
-    const iqp = dspGet('inp_quant');
-    if (iqp !== null && iqp !== undefined) S.inpQuant = iqp === '1';
-    const micp = dspGet('midi_in_channel');
-    if (micp !== null && micp !== undefined) S.midiInChannel = parseInt(micp, 10) | 0;
-    const monRaw = dspGet('metro_on');
-    if (monRaw !== null && monRaw !== undefined) {
-        S.metronomeOn = parseInt(monRaw, 10) | 0;
+    const lqp = dspGetInt('launch_quant');
+    if (lqp !== null) S.launchQuant = lqp;
+    /* ⚠ NOT an int: this one is a "1"/"0" flag, so an absent answer must leave
+     * the setting alone rather than resolve to false — `"" === "1"` is false,
+     * which is a confident NO from a read that never happened. */
+    const iqp = dspGetStr('inp_quant');
+    if (iqp !== null) S.inpQuant = iqp === '1';
+    const micp = dspGetInt('midi_in_channel');
+    if (micp !== null) S.midiInChannel = micp;
+    const monRaw = dspGetInt('metro_on');
+    if (monRaw !== null) {
+        S.metronomeOn = monRaw;
         if (S.metronomeOn !== 0) S.metronomeOnLast = S.metronomeOn;
     }
-    const mvolRaw = dspGet('metro_vol');
-    if (mvolRaw !== null && mvolRaw !== undefined) S.metronomeVol = parseInt(mvolRaw, 10) | 0;
-    const swaRaw = dspGet('swing_amt');
-    if (swaRaw !== null && swaRaw !== undefined) S.swingAmt = parseInt(swaRaw, 10) | 0;
-    const swrRaw = dspGet('swing_res');
-    if (swrRaw !== null && swrRaw !== undefined) S.swingRes = parseInt(swrRaw, 10) | 0;
+    const mvolRaw = dspGetInt('metro_vol');
+    if (mvolRaw !== null) S.metronomeVol = mvolRaw;
+    const swaRaw = dspGetInt('swing_amt');
+    if (swaRaw !== null) S.swingAmt = swaRaw;
+    const swrRaw = dspGetInt('swing_res');
+    if (swrRaw !== null) S.swingRes = swrRaw;
 }
 
 /* Targeted re-sync after undo/redo: re-read only the affected clips rather than all 64.
