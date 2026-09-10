@@ -1943,12 +1943,21 @@ export function _tickImpl() {
                 const _ls = S.clipLoopStart[pg.track][pg.clip] | 0;
                 host_module_set_param('t' + pg.track + '_c' + pg.clip + '_step_' + _ls + '_gate', String(pg.gate));
             }
-        } else if (S.pendingPrerollToggleQueue.length > 0) {
-            const _ptq = S.pendingPrerollToggleQueue.shift();
-            const _ls = S.clipLoopStart[_ptq.track][_ptq.clip] | 0;
-            host_module_set_param('t' + _ptq.track + '_c' + _ptq.clip + '_step_' + _ls + '_toggle', _ptq.pitch + ' ' + _ptq.vel);
-            if (_ptq.last)
-                S.pendingPrerollGate = { isDrum: false, track: _ptq.track, clip: _ptq.clip, gate: _ptq.gate };
+        /* ⭑ THE MELODIC PREROLL PATH WAS HERE, AND IT WAS DEAD (deleted 2026-09-10).
+         * `S.pendingPrerollNotes` and `S.pendingPrerollToggleQueue` were read
+         * here, cleared in three places and mutated on release — but NOTHING in
+         * ui/ ever pushed to them, and `git log -S` finds no push in the repo's
+         * whole history. They are vestigial: melodic count-in presses go
+         * through `recordNoteOn` (ui_input_pads), which queues into
+         * `_recNoteOns` REGARDLESS of count-in state and flushes the moment
+         * the count-in ends (see the batched flush above), with the DSP's own
+         * on_midi preroll filter keeping the final eighth. The DRUM path below
+         * is the one that still uses a JS preroll queue, because drum lanes
+         * take a different route.
+         * ⚠ Kept as a comment because the dead code READ as the live melodic
+         * path and was reported as "melodic presses are dropped" on the
+         * strength of having no writer — it took reading recordNoteOn to see
+         * that another mechanism owns it. */
         } else if (S.pendingPrerollNote !== null && S.playing) {
             const pr = S.pendingPrerollNote;
             const _prLive = S.liveActiveNotes.has(pr.laneNote);
@@ -1970,47 +1979,6 @@ export function _tickImpl() {
                         forceRedraw();
                     }
                 }
-            }
-        } else if (S.pendingPrerollNotes.length > 0 && S.playing) {
-            const pns = S.pendingPrerollNotes;
-            const pr  = pns[0];
-            /* TARP-on: DSP tarp_fire_step records arp output to clip directly. Skip
-             * JS preroll capture so a held chord becomes an arpeggiated sequence
-             * across steps instead of a chord stamped on step 0. */
-            const _tarpOn = parseInt(host_module_get_param('t' + pr.track + '_tarp_on'), 10) === 1;
-            if (_tarpOn) {
-                S.pendingPrerollNotes       = [];
-                S.pendingPrerollToggleQueue = [];
-                S.pendingPrerollGate        = null;
-            } else {
-            const _prLive = pns.some(function(n) { return S.liveActiveNotes.has(n.pitch); });
-            const elapsed = S.clockMs - S.transportStartMs;
-            /* Wait for all chord notes released AND one step elapsed (a 16th at tempo) */
-            if (!_prLive && elapsed >= 15000 / Math.max(20, S.bpm || 120)) {
-                S.pendingPrerollNotes = [];
-                const _ls = S.clipLoopStart[pr.track][pr.clip] | 0;
-                if (S.clipSteps[pr.track][pr.clip][_ls] === 0) {
-                    const lastRel    = pns.reduce(function(m, n) { return Math.max(m, n.releasedAtMs || S.clockMs); }, 0);
-                    const gate       = prerollGateTicks(S.transportStartMs - pr.countInStart,
-                                                        lastRel - pr.pressedAtMs, tps * 16);
-                    host_module_set_param('t' + pr.track + '_c' + pr.clip + '_step_' + _ls + '_toggle', pr.pitch + ' ' + pr.vel);
-                    if (pns.length === 1) {
-                        S.pendingPrerollGate = { isDrum: false, track: pr.track, clip: pr.clip, gate };
-                    } else {
-                        for (let _qi = 1; _qi < pns.length; _qi++) {
-                            S.pendingPrerollToggleQueue.push({
-                                track: pns[_qi].track, clip: pns[_qi].clip,
-                                pitch: pns[_qi].pitch,  vel: pns[_qi].vel,
-                                gate, last: _qi === pns.length - 1
-                            });
-                        }
-                    }
-                    S.clipSteps[pr.track][pr.clip][_ls] = 1;
-                    S.clipNonEmpty[pr.track][pr.clip] = true;
-                    invalidateLEDCache();
-                    forceRedraw();
-                }
-            }
             }
         } else {
             /* No note event this tick — safe to send a length set_param without coalescing. */

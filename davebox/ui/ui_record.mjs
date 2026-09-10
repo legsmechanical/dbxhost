@@ -46,8 +46,6 @@ export function disarmRecord() {
     _drumRecNoteOns.length  = 0;
     _drumRecNoteOffs.length = 0;
     S.pendingPrerollNote          = null;
-    S.pendingPrerollNotes         = [];
-    S.pendingPrerollToggleQueue   = [];
     S.pendingPrerollGate          = null;
     if (t >= 0) {
         const _dat = S.trackActiveClip[t];

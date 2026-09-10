@@ -865,8 +865,6 @@ export const S = {
     recordScheduledStopTarget: -1,
     pendingScheduledDisarm: false,
     pendingPrerollNote: null,       /* drum only: { track, lane, laneNote, vel, pressedAtMs, countInStart } */
-    pendingPrerollNotes: [],        /* melodic chord: [{track, clip, pitch, vel, pressedAtMs, countInStart, releasedAtMs?}] */
-    pendingPrerollToggleQueue: [],  /* remaining chord notes queued for step_0_toggle, one per tick */
     pendingPrerollGate: null,       /* { isDrum, track, lane/clip, gate } — sent the tick after last _step_0_toggle */
     pendingClearLengthTrack: -1, /* deferred length-reset after clip clear (avoids coalescing with clear cmd) */
     pendingClearLengthClip: -1,

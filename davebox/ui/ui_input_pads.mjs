@@ -1835,12 +1835,6 @@ export function _onPadRelease(status, d1, d2) {
             if (_prRelPitch === pitch)
                 S.pendingPrerollNote.releasedAtMs = nowMs();
         }
-        for (let _pri = 0; _pri < S.pendingPrerollNotes.length; _pri++) {
-            if (S.pendingPrerollNotes[_pri].pitch === pitch) {
-                S.pendingPrerollNotes[_pri].releasedAtMs = nowMs();
-                break;
-            }
-        }
         padPitch[padIdx] = -1;
         if (!S.sessionView) {
             const t = S.activeTrack;

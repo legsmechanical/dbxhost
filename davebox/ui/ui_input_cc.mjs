@@ -2623,8 +2623,6 @@ function _onCC_transport(d1, d2) {
             S.countInStartMs    = nowMs();
             S.countInBeatStartMs = nowMs();
             S.countInQuarterMs = 60000 / bpm;          /* a quarter note, in ms (the name is historical) */
-            S.pendingPrerollNotes       = [];
-            S.pendingPrerollToggleQueue = [];
             host_module_set_param('record_count_in', String(S.activeTrack));
             noteUndoUnit(); S.undoSeqArpSnapshot = null;
             setButtonLED(MoveRec, Red);
