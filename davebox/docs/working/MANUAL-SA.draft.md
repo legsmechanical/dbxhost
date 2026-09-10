@@ -1363,8 +1363,12 @@ useful: that parameter runs *backwards*, so one knob can open a filter while
 it closes a reverb. For a parameter that picks from a list, Lo and Hi choose a
 span of the list — a knob can sweep three waveforms out of eight.
 
-Nothing moves while you set a range: it takes effect the next time you turn the
-knob.
+You hear a range as you set it. Moving **Lo** or **Hi** moves that parameter
+straight away — the knob itself stays where it is, and the parameter goes to
+wherever the new range puts it. On a knob driving a single target, the
+parameter only moves if the new range shuts it out: narrow the range past where
+it is sitting and it comes in to the nearest edge. The other parameters on the
+same knob are left alone — only the one whose range you changed moves.
 
 A knob with a range on a single target still behaves like that target: it shows
 that parameter's own dial, moves in that parameter's own steps — two clicks a

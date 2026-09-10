@@ -17,6 +17,17 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **The level overlay is back on sound screens.** Shift + volume always moved
+  the track's level in the sound menu and the module editors, but the card
+  showing you the number never appeared there. Four other things that had gone
+  quiet come back with it: the preset audition preview, the pad-tap window, the
+  sound page's idle refresh, and the knob-follows-your-hand rule while a page
+  is polling.
+- **A macro's range applies as you set it.** Turning **Lo** or **Hi** on a
+  knob's target now moves that parameter while you turn, instead of waiting for
+  the next turn of the knob — so you can hear the range you are dialling in.
+  The knob's own position does not move, and the knob's other targets are not
+  touched.
 - **A Dave in the window.** Flip **Daves** to On in the global menu (it sits
   just above Open Your Dave Box; off by default) and, while the transport
   runs, the dAVEBOx banner in Session view becomes a window: one of your

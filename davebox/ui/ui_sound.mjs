@@ -800,6 +800,14 @@ const S = {
      * wholesale. A stale cell is not an error: the knob just stops writing,
      * silently. One string per knob per tick is the cheapest honest answer. */
     macShape: ['', '', '', '', '', '', '', ''],
+    /* The RANGES last seen on each knob, and the apply owed when they change.
+     * Separate from macShape ON PURPOSE: a range edit does not invalidate a
+     * single cached cell or value — it only changes what `v` MEANS — so
+     * folding lo/hi into the shape signature dropped every cell and forced a
+     * full re-seed (a chain round trip per leg) on EVERY detent of a Lo/Hi
+     * turn. Identity invalidates caches; a range schedules a write. */
+    macRange: [null, null, null, null, null, null, null, null],
+    macApplyRange: [null, null, null, null, null, null, null, null],   /* which LEGS owe a write */
     /* The last value we saw on a MULTI knob's anchor leg, so the poll can tell
      * "something else moved it" from "that is our own write echoing back". */
     macAnchorVal: [null, null, null, null, null, null, null, null],
@@ -2397,7 +2405,7 @@ function doChainPatchDelete(index) {
 /* Post-mutation re-list once the DSP has had time to touch the files. */
 function tickChainPatches() {
     if (S.patchRelistAt < 0) return;
-    if (S.clockMs < S.patchRelistAt) return;
+    if (GS.clockMs < S.patchRelistAt) return;
     S.patchRelistAt = -1;
     if (S.view !== VIEW_PATCHES) return;
     S.patchNames = host_patch_list();
@@ -3306,7 +3314,7 @@ function resetKnobAsn() {
     S.knobAsn = [null, null, null, null, null, null, null, null];
     S.knobMeta = {};
     S.macSeededFor = '';
-    for (let i = 0; i < 8; i++) { S.macVals[i] = null; S.macCells[i] = null; S.macLegCells[i] = null; S.macLegVals[i] = null; S.knobAccum[i] = 0; S.macLastDir[i] = 0; }
+    for (let i = 0; i < 8; i++) { S.macVals[i] = null; S.macCells[i] = null; S.macLegCells[i] = null; S.macLegVals[i] = null; S.knobAccum[i] = 0; S.macLastDir[i] = 0; S.macRange[i] = null; S.macApplyRange[i] = null; }
     S.macMigrateFor = -1; S.macMigrateTmp = null;
 }
 
@@ -3345,9 +3353,10 @@ function bankMacroFromAsn(target, param) {
  *       Hi                 100%
  *     + Add target
  *
- * ⚠ Editing Lo/Hi does NOT move the target (Josh's §6.2 ruling: a range takes
- * effect on the NEXT turn of the knob). So there is deliberately no preview
- * write here — the numbers are the feedback. */
+ * ⭑ Editing Lo/Hi MOVES the target as you turn (Josh, 2026-09-10, reversing
+ * his own §6.2 ruling of 09-05). The write is not issued from here though —
+ * macroTick's range pass owns it, because only the tick knows the mapping is
+ * seeded. The numbers are still the feedback; the sound is now feedback too. */
 function knobLegRows() {
     const mp = macroMapping(S.knobIdx);
     const legs = macroLegs(mp);
@@ -3383,11 +3392,15 @@ function knobLegRangeTurn(row, delta) {
     const nv = Math.max(0, Math.min(1, Math.round((was + delta * LEG_RANGE_STEP) * 100) / 100));
     if (nv === was) return;
     leg[row.kind] = nv;
-    /* The mapping's shape changed, so the cells the turn law uses must be
-     * rebuilt — and `v` is kept, which is what makes a range edit not move
-     * the knob either. */
-    S.macLegCells[S.knobIdx] = null; S.macLegVals[S.knobIdx] = null;
-    S.macCells[S.knobIdx] = null; S.macVals[S.knobIdx] = null;
+    /* ⭑ The caches are NOT dropped: a cell is the target's metadata and a val
+     * its last known value, and a range edit changes neither — only what `v`
+     * means. Dropping them here (and folding lo/hi into the shape signature,
+     * which did the same thing a tick later) re-seeded the whole knob on every
+     * detent of this turn: a chain round trip per leg, per detent.
+     * `v` is kept, so the knob itself does not move.
+     * The APPLY is the tick's (macroTick's range pass): it notices the new
+     * ranges and writes the legs once the mapping is seeded — which is the
+     * only place that can promise a leg's previous value has been read. */
     writeSidecar();
     S.dirty = true;
 }
@@ -4671,8 +4684,9 @@ function macroTarget(i, track) { return macroLeg0(macroMapping(i, track)); }
  *      hand left it — and the first turn after playback JUMPS. That is the
  *      cost of A; no soft-takeover is built (it would need its own ruling).
  *   2. A range is BAKED into a recorded lane. Re-ranging a leg does not
- *      re-shape data already recorded, and (Josh's §6.2 ruling) does not move
- *      the target either — it takes effect on the NEXT turn of that knob. */
+ *      re-shape data already RECORDED — but it DOES move the target now
+ *      (Josh, 2026-09-10, reversing §6.2), applied by macroTick's range pass
+ *      at `lo + v·(hi − lo)` with `v` held still. */
 function macroMulti(mp) { return macroLegs(mp).length > 1; }
 /* A leg that does not use its target's whole range. ⭑ On a ONE-leg mapping
  * this is NOT the `v` machinery — see the turn law: a single ranged leg is the
@@ -5278,11 +5292,40 @@ function macroTurn(idx, delta) {
     S.knobAccum[idx] += delta;
 }
 
-/* Everything about a mapping that the caches depend on. */
+/* Everything about a mapping that the caches depend on. ⭑ Lo/Hi are NOT in
+ * here: a cell is the target's metadata and a val is its last known value, and
+ * neither changes because the knob's range did. They used to be, which meant a
+ * Lo/Hi turn dropped every cached cell and value and re-seeded the whole knob
+ * — a chain round trip per leg, per detent, on the SPI callback. Ranges are
+ * tracked by macroRangeSync below instead. */
 function macroShapeOf(mp) {
     return macroLegs(mp).map(l =>
-        l.kind + '|' + (l.comp || '') + '|' + (l.key || l.target || (l.bank + ':' + l.k)) +
-        '|' + l.lo + '|' + l.hi).join(',');
+        l.kind + '|' + (l.comp || '') + '|' + (l.key || l.target || (l.bank + ':' + l.k))).join(',');
+}
+/* The ranges alone. */
+function macroRangeSigOf(mp) { return macroLegs(mp).map(l => l.lo + ':' + l.hi).join(','); }
+/* Notice a RANGE change, and only that: returns the indices of the legs whose
+ * OWN range moved, or null. Never on first sight (a mapping arriving from a
+ * project load has nothing to re-apply), and never when the identity changed
+ * underneath it, because adding or re-pointing a leg must not yank its target
+ * to `v`. Josh ruled on re-ranging (2026-09-10); he ruled nothing about
+ * adding, and the design's promise that adding a leg moves nothing stands.
+ *
+ * ⚠⚠ PER LEG, not per mapping. Re-writing every leg "because they are all
+ * idempotent" is not idempotent at all: a leg whose range did not change is
+ * sitting wherever something else put it — automation, a direct edit, a preset —
+ * and writing it at `lo + v·(hi−lo)` YANKS it to the knob's position. Only the
+ * leg you re-ranged has a new meaning, so only it is written. */
+function macroRangeSync(i, mp, identityChanged) {
+    const sig = macroRangeSigOf(mp);
+    const had = S.macRange[i];
+    S.macRange[i] = sig;
+    if (had == null || identityChanged || had === sig) return null;
+    const a = had.split(','), b = sig.split(',');
+    if (a.length !== b.length) return null;             /* a leg came or went: identity's job */
+    const moved = [];
+    for (let j = 0; j < b.length; j++) if (a[j] !== b[j]) moved.push(j);
+    return moved.length ? moved : null;
 }
 /* Drop a knob's cached cells and values if its mapping is not the one they
  * were read for. Returns true when it dropped something. */
@@ -5310,10 +5353,15 @@ function macroTick() {
     if (S.macSeededFor !== seedKey) {
         S.macSeededFor = seedKey;
         S.macBanksRead = false;
-        for (let i = 0; i < 8; i++) { S.macVals[i] = null; S.macCells[i] = null; S.macLegCells[i] = null; S.macLegVals[i] = null; S.knobAccum[i] = 0; S.macLastDir[i] = 0; }
+        for (let i = 0; i < 8; i++) { S.macVals[i] = null; S.macCells[i] = null; S.macLegCells[i] = null; S.macLegVals[i] = null; S.knobAccum[i] = 0; S.macLastDir[i] = 0; S.macRange[i] = null; S.macApplyRange[i] = null; }
     }
     let reads = 0;
-    for (let i = 0; i < 8; i++) if (macroShapeSync(i, store[i])) S.dirty = true;
+    for (let i = 0; i < 8; i++) {
+        const idChanged = macroShapeSync(i, store[i]);
+        if (idChanged) S.dirty = true;
+        const moved = macroRangeSync(i, store[i], idChanged);
+        if (moved) S.macApplyRange[i] = S.macApplyRange[i] ? S.macApplyRange[i].concat(moved.filter(j => S.macApplyRange[i].indexOf(j) < 0)) : moved;
+    }
     /* Bank targets: the bank's values re-read once per seed (readBankParams
      * is a round trip per bank), then live off davebox's own mirrors. */
     if (!S.macBanksRead) {
@@ -5393,6 +5441,66 @@ function macroTick() {
             S.macVals[i] = parseValue(cell, engineGet(S.slot, m.comp, m.key));
             reads++; S.dirty = true;
         }
+    }
+    /* ── A RANGE EDIT APPLIES NOW ────────────────────────────────────────
+     * Josh, 2026-09-10, REVERSING his own §6.2 ruling of 09-05 ("it takes
+     * effect on the NEXT turn"): set a Lo or a Hi and the target moves while
+     * you are setting it, which is what upstream does and what makes a range
+     * audible instead of theoretical.
+     *
+     * It runs HERE, in the tick, rather than in the Lo/Hi turn handler,
+     * because only here is the mapping known to be SEEDED — `v` read, every
+     * chain leg's cell and previous value in. Writing from the handler would
+     * send an unseeded prev to the automation owner as `''`, which normValue
+     * reads as the parameter's MINIMUM, and the lane would rest at the wrong
+     * place. So the handler edits the store and the tick notices (the range
+     * signature above) and applies once the reads are in — the detents wait,
+     * exactly as a turn's do.
+     *
+     * ⭑ MULTI: `v` is the authority and does not move; each leg is re-written
+     * at `lo + v·(hi − lo)` of its own range. Legs whose range did not change
+     * land on the value they already hold and write nothing.
+     * ⭑ ONE leg: there is no `v` — the plain path's value IS the knob's
+     * position — so applying a range means CLAMPING what is there into the new
+     * bounds. Inside the range, nothing moves; outside, it comes in now
+     * instead of on the first detent. */
+    for (let i = 0; i < 8; i++) {
+        if (!S.macApplyRange[i] || !S.macApplyRange[i].length) continue;
+        const mp = store[i];
+        if (!mp) { S.macApplyRange[i] = null; continue; }
+        if (macroMulti(mp)) {
+            if (mp.v == null || macroLegsUnseeded(i, mp)) continue;     /* wait for the seed */
+            const legs = mp.legs, cells = S.macLegCells[i] || [];
+            for (const j of S.macApplyRange[i]) {
+                const leg = legs[j];
+                if (!leg) continue;
+                const got = legWriteNorm(S.track, leg, leg.lo + mp.v * (leg.hi - leg.lo), cells[j],
+                                         S.macLegVals[i] ? S.macLegVals[i][j] : null);
+                if (got != null && S.macLegVals[i]) S.macLegVals[i][j] = got;
+            }
+            const aj = macroAnchorIdx(mp);
+            if (aj >= 0 && S.macLegVals[i]) S.macAnchorVal[i] = S.macLegVals[i][aj];
+        } else {
+            const leg = macroLeg0(mp);
+            if (!leg || !macroLive(leg)) { S.macApplyRange[i] = null; continue; }
+            const cell = leg.kind === 'chain' ? S.macCells[i] : null;
+            if (leg.kind === 'chain') {
+                if (!cell || cell.vanished || MACRO_UNTURNABLE[cell.kind]) { S.macApplyRange[i] = null; continue; }
+                if (S.macVals[i] == null) continue;                     /* wait for the seed */
+            }
+            const raw = leg.kind === 'chain' ? S.macVals[i] : legReadRaw(S.track, leg, cell);
+            const n = legRawToNorm(S.track, leg, cell, raw);
+            if (n != null) {
+                const lo = Math.min(leg.lo, leg.hi), hi = Math.max(leg.lo, leg.hi);
+                const f = Math.max(lo, Math.min(hi, n));
+                if (f !== n) {
+                    const got = legWriteNorm(S.track, leg, f, cell, raw);
+                    if (got != null && leg.kind === 'chain') S.macVals[i] = got;
+                }
+            }
+        }
+        S.macApplyRange[i] = null;
+        S.dirty = true;
     }
     /* Loaded knobs drain whatever detents arrived — including any from while
      * the reads above were still in flight, which is why they ACCUMULATE. */
@@ -5522,7 +5630,7 @@ function macroPollTick() {
          * is remembered in macAnchorVal, so it reads as "no change". */
         if (macroMulti(store[i])) {
             const mp = store[i];
-            if (i === S.touchedIdx || (S.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
+            if (i === S.touchedIdx || (GS.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
             const j = macroAnchorIdx(mp);
             if (j < 0 || !S.macLegCells[i]) continue;
             const leg = mp.legs[j], c = S.macLegCells[i][j];
@@ -5541,7 +5649,7 @@ function macroPollTick() {
          * bus-pan macro "records and plays back but the widget never moves"
          * — the levels were seeded once and never re-read). */
         if (m && m.kind === 'level') {
-            if (i === S.touchedIdx || (S.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
+            if (i === S.touchedIdx || (GS.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
             if (levelPollOne(macroLevelIdx(m))) S.dirty = true;
             S.macPoll = i + 1;
             break;
@@ -5552,7 +5660,7 @@ function macroPollTick() {
          * accumulator: that remainder never clears on its own, and skipping
          * on it silenced every knob but the first once turned (Josh,
          * 2026-09-03: "only the 1st macro widget is visualizing"). */
-        if (i === S.touchedIdx || (S.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
+        if (i === S.touchedIdx || (GS.clockMs - (S.macTurnMs[i] || 0)) < MACRO_HAND_MS) continue;
         const v = parseValue(cell, engineGet(S.slot, m.comp, m.key));
         if (v !== S.macVals[i]) { S.macVals[i] = v; S.dirty = true; }
         S.macPoll = i + 1;
@@ -6255,7 +6363,7 @@ function dropBakedNames() {
  * run an order of magnitude harder: minijv's 4096 presets go from ~22s to ~4s,
  * and the audible riffle through every preset shortens with it. */
 function bakedScanRate() {
-    return S.playing ? BAKED_SCAN_PER_TICK : BAKED_SCAN_PER_TICK_IDLE;
+    return GS.playing ? BAKED_SCAN_PER_TICK : BAKED_SCAN_PER_TICK_IDLE;
 }
 
 function stepBakedScan() {
@@ -8782,7 +8890,7 @@ export function soundTick() {
     /* Debounced audition — fires once its deadline passes; a row with no
      * sound of its own (the save row) lets the deadline lapse and falls to the
      * restore branch on the next tick. */
-    if (S.previewAt >= 0 && S.clockMs >= S.previewAt) {
+    if (S.previewAt >= 0 && GS.clockMs >= S.previewAt) {
         S.previewAt = -1;
         if (S.previewIdx >= 0) {
             if (S.view === VIEW_PRESET_BAKED) applyBaked(S.previewIdx);
@@ -8829,7 +8937,7 @@ export function soundTick() {
          * Every OTHER tick: a few ms of granularity is imperceptible and halves
          * the cost of a drum roll, which re-arms this on every hit. The window
          * itself is a millisecond deadline (PAD_WATCH_MS). */
-        const expired = S.clockMs >= S.padWatchUntil;
+        const expired = GS.clockMs >= S.padWatchUntil;
         S.padWatchPhase ^= 1;
         /* A module may vouch without publishing a selection (press declared,
          * select not). There is then nothing to watch, so fall back to one
@@ -8900,8 +9008,8 @@ export function soundTick() {
      * second set of ~2.6 ms round-trips for numbers nothing renders. Param
      * reads — not draw CPU — are the expensive half of a hosted frame. */
     if (S.view === VIEW_EDIT && !S.hosted && S.banks.length && !S.pendingWrites.length &&
-        (S.clockMs - S.lastIdlePollMs) >= POLL_IDLE_MS) {
-        S.lastIdlePollMs = S.clockMs;
+        (GS.clockMs - S.lastIdlePollMs) >= POLL_IDLE_MS) {
+        S.lastIdlePollMs = GS.clockMs;
         pollValues(false);
     }
 }
@@ -10660,7 +10768,7 @@ export function soundRender() {
             !soundIsGlobal() && !S.enterSession &&
             !S.instrEditing && !S.busLevelEditing &&
             S.touchedIdx < 0 && !S.volTouched &&
-            !(S.volShownUntil >= 0 && S.clockMs <= S.volShownUntil) &&
+            !(S.volShownUntil >= 0 && GS.clockMs <= S.volShownUntil) &&
             !bankCardVisible())
         return false;
     if (S.view === VIEW_PROMPT) renderPrompt();
@@ -10707,6 +10815,6 @@ export function soundRender() {
     }
     /* The level readout wins: it is the same box in the same place, and the
      * volume knob is a deliberate second gesture on top of this one. */
-    if (S.volShownUntil >= 0 && S.clockMs <= S.volShownUntil) drawVolReadout();
+    if (S.volShownUntil >= 0 && GS.clockMs <= S.volShownUntil) drawVolReadout();
     return true;
 }
