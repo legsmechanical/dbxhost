@@ -1605,6 +1605,19 @@ export function restoreUiSidecar(applyDefaultsNow) {
  * JS-only assignment would show the new key and play the old one. */
 function consumeNewProjectSeed() {
     const path = uuidToNewProjectPath(S.currentSetUuid);
+    /* ⏳ INSTRUMENT (2026-09-10, Josh: "key and scale is no longer being
+     * randomized on new project creation"). Both ends of this contract were
+     * proven working in isolation — project-cmd's seeder writes the note on
+     * the device (run end-to-end into a sandbox SETS_DIR), and this consumer
+     * applies + deletes it correctly in a rig. So the break is in the OPEN
+     * sequence, which only a real session can show: either this runs before
+     * `currentSetUuid` is the new project's (path empty → silent return), or
+     * the note is already gone by the time we look. One line names which.
+     * ⚠ Remove once the answer is in — this logs on every project load. */
+    try {
+        console.log('[seed] uuid=' + (S.currentSetUuid || '(none)')
+            + ' note=' + (path ? (host_file_exists(path) ? 'FOUND' : 'absent') : 'no-path'));
+    } catch (e) { /* logging is never the reason a load fails */ }
     if (!path || !host_file_exists(path)) return;
     let key = -1, scale = -1;
     try {
