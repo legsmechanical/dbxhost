@@ -139,6 +139,13 @@ function openInstr() {
     return p;
 }
 function closeInstr() { cc(9, 127); cc(9, 0); ticks(2); }
+/* Between steps: a keyboard left up swallows the jog, so every later step
+ * would fail on "the jog never reached" and blame the picker. */
+function resetUi() {
+    if (_te.isTextEntryActive()) _te.closeTextEntry();
+    for (let i = 0; i < 4 && snd.soundEnumPickForTest(); i++) { cc(9, 127); cc(9, 0); ticks(1); }
+    ticks(2);
+}
 function jogTo(want) {
     let guard = 0;
     while (snd.soundEnumPickForTest().sel !== want && guard++ <= 80)
@@ -172,47 +179,57 @@ step('both generators are offered under All', () => {
         throw new Error('a generator is missing: ' + JSON.stringify(o));
 });
 
-step('shift+click FILES the generator under the cursor', () => {
+step('shift+click a generator opens the Lists menu FOR IT, by name', () => {
     const o = snd.soundEnumPickForTest().options;
     jogTo(o.indexOf('NuSaw'));
     cc(MoveShift, 127); cc(3, 127); cc(3, 0); cc(MoveShift, 0);
     ticks(2);
-    if (!listsFile) throw new Error('nothing was written to module_lists.json');
+    const m = snd.soundEnumPickForTest();
+    if (!m) throw new Error('shift+click did not open the Lists menu');
+    if (!m.options.some(x => typeof x === 'string' && x.indexOf('NuSaw') >= 0))
+        throw new Error('the menu does not name the generator that was shift-clicked: '
+                        + JSON.stringify(m.options));
+});
+
+step('Add files it, and the picker comes back with it MARKED', () => {
+    const m = snd.soundEnumPickForTest();
+    jogTo(m.options.findIndex(x => typeof x === 'string' && x.indexOf('Add NuSaw') >= 0));
+    cc(3, 127); cc(3, 0); ticks(2);
     const st = JSON.parse(listsFile);
     const fav = st.lists.find(l => l.name === 'Favorites');
     if (!fav || fav.modules.indexOf('nusaw') < 0)
         throw new Error('nusaw is not in Favorites: ' + listsFile);
-});
-
-step('the filed generator is MARKED on screen', () => {
     const o = snd.soundEnumPickForTest().options;
     if (o.indexOf('\u00b7NuSaw') < 0)
-        throw new Error('no member mark: ' + JSON.stringify(o.filter(x => typeof x === 'string' && x.indexOf('NuSaw') >= 0)));
+        throw new Error('no member mark after filing: '
+                        + JSON.stringify(o.filter(x => typeof x === 'string' && x.indexOf('NuSaw') >= 0)));
 });
 
-step('clicking the List row opens the LISTS MENU, with every action visible', () => {
+step('clicking the List row opens the LISTS menu — filters and management', () => {
+    resetUi();
+    openInstr();
     jogTo(0);
     cc(3, 127); cc(3, 0);
     ticks(2);
     const p = snd.soundEnumPickForTest();
     if (!p) throw new Error('the picker closed instead of opening the menu');
     const flat = p.options.map(o => (typeof o === 'string' ? o : '<div>'));
-    /* The two things Josh could not find. If either disappears, the feature is
-     * back to being a hidden Shift+Click nobody announces. */
+    /* The thing Josh could not find: a visible way to CREATE a list. */
     if (!flat.some(x => x.indexOf('New List') >= 0))
         throw new Error('no way to CREATE a list: ' + JSON.stringify(flat));
-    if (!flat.some(x => x.indexOf('NuSaw') >= 0))
-        throw new Error('no way to ADD/REMOVE the generator: ' + JSON.stringify(flat));
     if (!flat.some(x => x.indexOf('All') >= 0) || !flat.some(x => x.indexOf('Favorites') >= 0))
         throw new Error('the lists themselves are not offered: ' + JSON.stringify(flat));
+    /* And NO module rows: nothing was shift-clicked, so there is no module in
+     * play. Offering "Add <something>" here is what named the wrong generator
+     * before, since reaching this row means jogging up THROUGH the others. */
+    if (flat.some(x => x.indexOf('Add ') === 0 || x.indexOf('Remove ') === 0))
+        throw new Error('the List row menu names a module it cannot know: ' + JSON.stringify(flat));
+    if (flat[0] === '<div>')
+        throw new Error('a divider leads the menu — a rule under nothing');
 });
 
-step('the menu names the generator the cursor was on, and its member COUNT', () => {
+step('Favorites shows its member COUNT', () => {
     const flat = snd.soundEnumPickForTest().options.map(o => (typeof o === 'string' ? o : '<div>'));
-    /* NuSaw was filed above, so the row must offer to REMOVE it, not add it --
-     * a menu that says "Add" for something already in the list is lying. */
-    if (!flat.some(x => x.indexOf('Remove NuSaw') >= 0))
-        throw new Error('the row does not reflect current membership: ' + JSON.stringify(flat));
     if (!flat.some(x => /Favorites\s+\(1\)/.test(x)))
         throw new Error('Favorites does not show its count: ' + JSON.stringify(flat));
 });
@@ -251,6 +268,80 @@ step('⭑ New List opens the keyboard — the way you CREATE a list', () => {
     cc(3, 127); cc(3, 0); ticks(2);
     if (!textEntryActive())
         throw new Error('New List did not open the keyboard — there is still no way to create a list');
+});
+
+step('⭑ the membership OVERLAY files one module into SEVERAL lists', () => {
+    resetUi();
+    /* Two lists to tick, so "several" is a real claim. */
+    listsFile = JSON.stringify({ version: 1, lists: [
+        { name: 'Favorites', modules: [] }, { name: 'Live', modules: [] } ] });
+    snd.soundListsResetForTest();
+    let p = openInstr();
+    jogTo(p.options.findIndex(o => typeof o === 'string' && o.indexOf('OB-Xd') >= 0));
+    /* Shift+click the generator: the menu is then scoped to THAT module, with
+     * nothing to infer from where the cursor has been. */
+    cc(MoveShift, 127); cc(3, 127); cc(3, 0); cc(MoveShift, 0); ticks(2);
+    const m = snd.soundEnumPickForTest();
+    const mi = m.options.findIndex(o => typeof o === 'string' && o.indexOf('Lists for') >= 0);
+    if (mi < 0) throw new Error('no membership row: ' + JSON.stringify(m.options));
+    jogTo(mi);
+    cc(3, 127); cc(3, 0); ticks(2);                       /* the overlay */
+    let ov = snd.soundEnumPickForTest();
+    if (!ov.options.some(o => typeof o === 'string' && o.indexOf('[ ] Favorites') >= 0))
+        throw new Error('the overlay is not checkboxes: ' + JSON.stringify(ov.options));
+    /* Tick BOTH, without leaving the overlay — the whole point of it. */
+    jogTo(0); cc(3, 127); cc(3, 0); ticks(1);
+    jogTo(1); cc(3, 127); cc(3, 0); ticks(1);
+    const st = JSON.parse(listsFile);
+    for (const n of ['Favorites', 'Live']) {
+        const l = st.lists.find(x => x.name === n);
+        if (!l || l.modules.indexOf('obxd') < 0)
+            throw new Error('obxd is not in ' + n + ' — the overlay only filed one: ' + listsFile);
+    }
+    ov = snd.soundEnumPickForTest();
+    if (!ov || ov.options.every(o => typeof o !== 'string' || o.indexOf('[x]') < 0))
+        throw new Error('the overlay closed, or shows no tick, after a toggle');
+});
+
+step('⭑ Delete ASKS first, and defaults to No', () => {
+    resetUi();
+    snd.soundListsSetFilterForTest('Live');
+    let p = openInstr();
+    jogTo(0); cc(3, 127); cc(3, 0); ticks(2);             /* Lists menu */
+    const m = snd.soundEnumPickForTest();
+    const di = m.options.findIndex(o => typeof o === 'string' && o.indexOf('Delete') >= 0);
+    if (di < 0) throw new Error('no Delete row while filtered to Live: ' + JSON.stringify(m.options));
+    jogTo(di);
+    cc(3, 127); cc(3, 0); ticks(2);
+    const c = snd.soundEnumPickForTest();
+    if (!c || c.options.indexOf('No') < 0 || c.options.indexOf('Yes') < 0)
+        throw new Error('Delete did not ask: ' + JSON.stringify(c && c.options));
+    if (c.sel !== c.options.indexOf('No'))
+        throw new Error('the confirm defaults to Yes — one stray click destroys a curated list');
+    /* Answer No: the list must survive. */
+    cc(3, 127); cc(3, 0); ticks(2);
+    const st = JSON.parse(listsFile);
+    if (!st.lists.some(l => l.name === 'Live'))
+        throw new Error('answering No deleted the list anyway');
+});
+
+step('⭑ a DUPLICATE name is refused, and the keyboard comes back', () => {
+    resetUi();
+    let p = openInstr();
+    jogTo(0); cc(3, 127); cc(3, 0); ticks(2);
+    const m = snd.soundEnumPickForTest();
+    jogTo(m.options.findIndex(o => typeof o === 'string' && o.indexOf('New List') >= 0));
+    cc(3, 127); cc(3, 0); ticks(2);
+    if (!textEntryActive()) throw new Error('New List did not open the keyboard');
+    /* Confirm a name that already exists, through the REAL onConfirm and the
+     * real unconditional close that follows it. */
+    snd.soundListsConfirmNameForTest('Live');
+    ticks(4);
+    if (!textEntryActive())
+        throw new Error('a duplicate name was swallowed silently — the keyboard did not come back');
+    const st = JSON.parse(listsFile);
+    if (st.lists.filter(l => l.name === 'Live').length !== 1)
+        throw new Error('the duplicate was created anyway');
 });
 
 closeInstr();

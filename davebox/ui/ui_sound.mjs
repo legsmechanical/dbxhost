@@ -3924,18 +3924,11 @@ function instrPickerCycleList() {
      * The generator under the cursor when the menu opened is remembered, so
      * the first row can act on it by name.
      */
-    openListMenu(instrPickerSelectedGen(p));
+    /* No generator: clicking the List row is about the LISTS, not about a
+     * module. The module-scoped rows appear only when the menu is opened from
+     * a generator (Shift+click), where which module is meant is unambiguous. */
+    openListMenu(null);
     return true;
-}
-
-/* The generator the cursor was on before the menu opened, or null. Used to
- * name the Add/Remove row -- a menu that says "Add NuSaw to Favorites" needs
- * no explanation, and one that says "Add to list" needs a paragraph. */
-function instrPickerSelectedGen(p) {
-    if (!p || !Array.isArray(p.rows)) return null;
-    /* Walk back from the filter row to the last generator the cursor passed.
-     * `mlMenuGen` is set on every jog through the picker. */
-    return mlMenuGen || null;
 }
 
 /*
@@ -3953,10 +3946,17 @@ function openListMenu(gen) {
     if (gen) {
         const id = moduleIdOf(gen.path || gen.id);
         const isIn = ModuleLists.isMember(mlState, active, id);
+        /* The one-click path for the list you are already on... */
         rows.push({ act: 'toggle', gen,
                     label: (isIn ? 'Remove ' : 'Add ') + String(gen.name || gen.id) });
+        /* ...and the overlay for filing into SEVERAL at once, which the row
+         * above cannot do without switching filter per list. */
+        rows.push({ act: 'member', gen,
+                    label: 'Lists for ' + String(gen.name || gen.id) + '...' });
     }
-    rows.push({ divider: true });
+    /* Only when something precedes it: a divider as row 0 is a rule under
+     * nothing. */
+    if (rows.length) rows.push({ divider: true });
     rows.push({ act: 'filter', name: null, label: (mlFilter ? '  ' : '\u00b7') + 'All' });
     for (const l of lists) {
         rows.push({ act: 'filter', name: l.name,
@@ -3986,12 +3986,111 @@ function openListMenu(gen) {
  * once the menu is open, the picker's rows are gone. */
 let mlMenuGen = null;
 
+/* The room a list row has, in pixels: the overlay's own width less what the
+ * list spends around the text (box inset, row pad, scrollbar gutter). */
+const ML_NAME_MAX_PX = 104;
+
+/* A name the keyboard REJECTED, re-offered from the tick.
+ *
+ * It cannot be re-offered inside onConfirm: text_entry.mjs calls
+ * onConfirm(buffer) and then runs closeTextEntry() UNCONDITIONALLY, so a
+ * keyboard opened in the callback is torn down microseconds later -- the
+ * screen vanishes and the user sees a click that did nothing. Same ordering
+ * trap as the enum picker's commit-then-null. */
+let mlNamePending = null;   /* { renaming, text, why } */
+
+function soundTickListNamePending() {
+    if (!mlNamePending || isTextEntryActive()) return;
+    const q = mlNamePending;
+    mlNamePending = null;
+    showActionPopup(String(q.why || 'REJECTED'));
+    openListNameEntry(q.renaming, q.text);
+}
+
 /*
  * Apply a Lists-menu row.
  *
  * Every write BRANCHES on mlSave(): a save that failed must never be reported
  * as done, or the list comes back on the next open having said it worked.
  */
+/*
+ * One module, EVERY list, as checkboxes -- upstream's membership screen, as an
+ * overlay rather than a full screen (Josh, 2026-09-09: "i don't mind screen
+ * sprawl when we're going to popup overlays. it's going into and out of lots
+ * of full screen menus that concerns me").
+ *
+ * This is what the Lists menu's Add/Remove row cannot do: file one module into
+ * THREE lists without switching the filter three times.
+ */
+function openListMembership(gen) {
+    if (!gen) return;
+    mlEnsure();
+    const id = moduleIdOf(gen.path || gen.id);
+    const lists = (mlState && mlState.lists) || [];
+    const rows = lists.map((l) => ({
+        act: 'member', name: l.name, gen,
+        label: (ModuleLists.isMember(mlState, l.name, id) ? '[x] ' : '[ ] ') + l.name,
+    }));
+    rows.push({ divider: true });
+    rows.push({ act: 'back', label: 'Done' });
+    const prevFrom = S.enumPick ? S.enumPick.from : S.view;
+    openEnumPicker('Member', rows.map(r => r.divider ? { divider: true } : r.label),
+                   0, () => {});
+    if (S.enumPick) { S.enumPick.rows = rows; S.enumPick.from = prevFrom; S.enumPick.gen = gen; }
+    S.dirty = true;
+}
+
+/* Toggle one checkbox and STAY on the overlay -- a screen you must reopen per
+ * tick is the thing this exists to avoid. */
+function listMembershipClick() {
+    const p = S.enumPick;
+    if (!p || p.label !== 'Member' || !Array.isArray(p.rows)) return false;
+    const r = p.rows[p.sel];
+    if (!r || r.divider) return true;
+    if (r.act === 'back') { openListMenu(p.gen); return true; }
+    mlEnsure();
+    const id = moduleIdOf(r.gen.path || r.gen.id);
+    const now = ModuleLists.toggleMembership(mlState, r.name, id);
+    if (now !== null && !mlSave()) {
+        /* Put it back: a tick the file disagrees with undoes itself silently
+         * on the next open, having looked like it worked. */
+        ModuleLists.toggleMembership(mlState, r.name, id);
+        showActionPopup('NOT SAVED');
+    }
+    const keep = p.sel;
+    openListMembership(r.gen);
+    if (S.enumPick) S.enumPick.sel = Math.min(keep, S.enumPick.rows.length - 1);
+    return true;
+}
+
+/*
+ * A confirm, as an overlay. Two rows, defaulting to No -- a destructive default
+ * one click from the gesture that opened it is how a list disappears by
+ * accident.
+ */
+function openConfirmOverlay(title, onYes) {
+    const rows = [{ act: 'no', label: 'No' }, { act: 'yes', label: 'Yes' }];
+    const prevFrom = S.enumPick ? S.enumPick.from : S.view;
+    openEnumPicker('Confirm', rows.map(r => r.label), 0, () => {});
+    if (S.enumPick) {
+        S.enumPick.rows = rows;
+        S.enumPick.from = prevFrom;
+        S.enumPick.onYes = onYes;
+        S.enumPick.title = title;
+    }
+    S.dirty = true;
+}
+
+function confirmOverlayClick() {
+    const p = S.enumPick;
+    if (!p || p.label !== 'Confirm' || !Array.isArray(p.rows)) return false;
+    const yes = p.rows[p.sel] && p.rows[p.sel].act === 'yes';
+    const fn = p.onYes;
+    if (yes && typeof fn === 'function') fn();
+    else openInstrPicker();
+    return true;
+}
+
 /* Apply the Lists-menu row under the cursor, ahead of closeEnumPicker. Answers
  * false when the picker on screen is not the Lists menu. */
 function listMenuClick() {
@@ -4025,27 +4124,61 @@ function commitListMenu(r) {
 
     if (r.act === 'delete') {
         const gone = mlFilter;
-        const res = ModuleLists.deleteList(mlState, gone);
-        if (res.ok && !mlSave()) ModuleLists.createList(mlState, gone);
-        else if (res.ok) mlFilter = null;   /* the filter it named is gone */
-        openInstrPicker();
+        /* Asked, not assumed. Deleting a curated list is the one action here
+         * that destroys work, and it was doing it on a single click. */
+        openConfirmOverlay('Delete ' + gone + '?', () => {
+            const res = ModuleLists.deleteList(mlState, gone);
+            if (res.ok && !mlSave()) {
+                ModuleLists.createList(mlState, gone);
+                showActionPopup('NOT SAVED');
+            } else if (res.ok) {
+                mlFilter = null;            /* the filter it named is gone */
+                showActionPopup('DELETED', gone);
+            }
+            openInstrPicker();
+        });
         return;
     }
 
     if (r.act === 'new' || r.act === 'rename') {
-        const renaming = (r.act === 'rename') ? mlFilter : '';
-        openTextEntry({
-            title: renaming ? 'Rename List' : 'New List',
-            initialText: renaming || '',
-            onConfirm: (text) => {
+        openListNameEntry((r.act === 'rename') ? mlFilter : '', '');
+        return;
+    }
+    if (r.act === 'member') { openListMembership(r.gen); return; }
+    openInstrPicker();
+}
+
+/*
+ * The keyboard for a new or renamed list. `renaming` is the list being
+ * renamed, or '' to create; `prefill` seeds the field (a rejected name comes
+ * back through here with its text intact).
+ */
+function openListNameEntry(renaming, prefill) {
+    {
+        /* Named, and recorded on S, so a test can drive the REAL callback
+         * (soundListsConfirmNameForTest) instead of reimplementing its rules. */
+        const onConfirmName = (text) => {
                 const name = String(text || '').trim();
                 /* Empty cancels. Backing out by clearing the field is a normal
                  * way to change your mind, not an error to scold. */
                 if (!name) { openInstrPicker(); return; }
+                /* Capped by PIXEL WIDTH, not characters: the font is
+                 * proportional, so a character count both truncates names that
+                 * fit and admits names that do not. Measured against the room a
+                 * list row actually has. */
+                if (typeof text_width === 'function' && text_width('[x] ' + name) > ML_NAME_MAX_PX) {
+                    mlNamePending = { renaming, text: name, why: 'TOO LONG' };
+                    return;
+                }
                 const res = renaming
                     ? ModuleLists.renameList(mlState, renaming, name)
                     : ModuleLists.createList(mlState, name);
-                if (!res.ok) { openInstrPicker(); return; }
+                /* A rejection REOPENS the keyboard with the text intact and
+                 * says why -- returning silently to the picker looks exactly
+                 * like a click that did nothing. Deferred, because
+                 * text_entry.mjs runs closeTextEntry() unconditionally after
+                 * onConfirm and would tear down a keyboard opened here. */
+                if (!res.ok) { mlNamePending = { renaming, text: name, why: res.err }; return; }
                 if (!mlSave()) {
                     /* Undo: a list that reappears on the next open, having been
                      * announced as created, is worse than one that never did. */
@@ -4058,43 +4191,48 @@ function commitListMenu(r) {
                  * and then having to find it is the same jog twice. */
                 mlFilter = name;
                 openInstrPicker();
-            },
-            onCancel: () => { openInstrPicker(); },
+        };
+        S.__lastListNameConfirm = onConfirmName;
+        openTextEntry({
+            title: renaming ? 'Rename List' : 'New List',
+            initialText: (prefill !== undefined && prefill !== '') ? prefill : (renaming || ''),
+            onConfirm: onConfirmName,
+            onCancel: () => { S.__lastListNameConfirm = null; openInstrPicker(); },
         });
-        return;
     }
-    openInstrPicker();
 }
 
+/* ---- test hooks (mirroring soundSetGeneratorScanForTest above) ---------- */
+export function soundListsResetForTest() { mlState = null; mlFilter = null; mlMenuGen = null; mlNamePending = null; }
+export function soundListsSetFilterForTest(n) { mlEnsure(); mlFilter = n; }
+export function soundListsFilterForTest() { return mlFilter; }
+/* Drives the live keyboard's confirm and then the unconditional close, which
+ * is exactly what text_entry.mjs does -- the ordering is the thing under
+ * test, so a hook that skipped it would prove nothing. */
+export function soundListsConfirmNameForTest(text) {
+    const cb = S.__lastListNameConfirm;
+    if (!cb) throw new Error('no list-name keyboard is open');
+    cb(text);
+    closeTextEntry();
+}
+
+/*
+ * Shift+click on a generator opens the Lists menu FOR THAT GENERATOR.
+ *
+ * ⚠ It used to toggle immediately, against whichever generator a jog had last
+ * passed over. That is unknowable from the screen: reaching the List row means
+ * jogging UP THROUGH the other generators, so the menu reliably named the
+ * wrong one -- caught by the membership test filing `nusaw` when `obxd` was
+ * chosen. The module is now whatever you shift-clicked, and the menu SHOWS
+ * which, so there is nothing to infer.
+ */
 function instrPickerToggleList() {
     const p = S.enumPick;
     if (!p || p.label !== 'Instrument' || !Array.isArray(p.rows)) return false;
     const r = p.rows[p.sel];
     if (!r || !r.gen) return false;
-    mlEnsure();
-    const listName = mlFilter || ModuleLists.FAVORITES;
-    const id = moduleIdOf(r.gen.path || r.gen.id);
-    const now = ModuleLists.toggleMembership(mlState, listName, id);
-    /* null = the toggle touched nothing; announcing a removal for it would
-     * report a result that did not happen. */
-    if (now === null) return true;
-    if (!mlSave()) {
-        /* Put the model back: a row that disagrees with the file silently
-         * undoes itself on the next open, having looked like it worked. */
-        ModuleLists.toggleMembership(mlState, listName, id);
-        S.dirty = true;
-        return true;
-    }
-    /* Rebuild so the dot appears -- and so a REMOVAL while filtered to that
-     * list drops the row, rather than leaving a list that disagrees with its
-     * own filter until the next open. */
-    const keep = p.sel;
-    openInstrPicker();
-    if (S.enumPick) {
-        S.enumPick.sel = Math.min(keep, S.enumPick.options.length - 1);
-        if (S.enumPick.sel < 1) S.enumPick.sel = 1;
-    }
-    S.dirty = true;
+    mlMenuGen = r.gen;
+    openListMenu(r.gen);
     return true;
 }
 
@@ -7400,17 +7538,6 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.knobTargetIdx = listMove(S.knobTargets.length, S.knobTargetIdx, delta);
         } else if (S.view === VIEW_ENUM) {
             if (S.enumPick) S.enumPick.sel = enumStep(S.enumPick, delta);
-            /* Remember the last GENERATOR the cursor rested on, so the Lists
-             * menu can name it ("Add NuSaw to Favorites"). Recorded on the JOG
-             * because that is how the cursor reaches a generator -- you pass
-             * over it on the way to the List row, you do not click it. */
-            {
-                const pk = S.enumPick;
-                if (pk && pk.label === 'Instrument' && Array.isArray(pk.rows)) {
-                    const cur = pk.rows[pk.sel];
-                    if (cur && cur.gen) mlMenuGen = cur.gen;
-                }
-            }
         } else if (S.view === VIEW_KNOB_PARAM) {
             S.knobParamIdx = listMove(S.knobParams.length, S.knobParamIdx, delta);
         } else if (S.view === VIEW_LFO) {
@@ -7603,6 +7730,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * `S.enumPick = null` would tear the fresh one down. Handled here,
              * ahead of the close, exactly as the filter row is.
              */
+            if (listMembershipClick()) return true;
+            if (confirmOverlayClick()) return true;
             if (listMenuClick()) return true;
             closeEnumPicker(true); return true;
         }
@@ -8442,6 +8571,11 @@ function reconcileEditCcClaim(force) {
 }
 
 export function soundTick() {
+    /* A list name the keyboard rejected, re-offered now that the
+     * unconditional closeTextEntry() after onConfirm has run. Guarded on the
+     * keyboard being DOWN inside the helper: serving it while one is up would
+     * close a live edit and reopen it on stale text. */
+    soundTickListNamePending();
     /* ⚠⚠ ABOVE EVERY EARLY RETURN, and that is the whole point. Placed after the
      * `S.active` and text-entry guards, "lives exactly one tick" was false: the
      * memo survived a whole Save-As keyboard session and every period sound mode
