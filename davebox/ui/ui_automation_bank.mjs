@@ -29,12 +29,12 @@
  * (one chain_params read per component, ever). */
 
 import { S } from './ui_state.mjs';
-import { BANK_AUTOMATION, midiTargetIsMidi } from './ui_constants.mjs';
+import { BANK_AUTOMATION, PAD_MODE_DRUM, midiTargetIsMidi } from './ui_constants.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey,
          automationToggleActive, automationToggleSmooth, automationSmoothable,
          automationSetLoop, automationSetRate, automationRateText, automationSetScale,
-         automationClearClip, automationListGen } from './ui_automation.mjs';
+         automationClearClip, automationListGen, automationStepTicks } from './ui_automation.mjs';
 import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
          drawBrackets, kitUseLayout, MV_FOOTER_Y } from './ui_movy.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -77,7 +77,7 @@ function scaleText(pct) { return (isFinite(pct) ? pct : 100) + '%'; }
 
 /* Loop length in STEPS for the row (the store keeps ticks). */
 function rowLoopSteps(track, clip, r) {
-    const tps = (S.clipTPS[track] && S.clipTPS[track][clip]) || 24;
+    const tps = automationStepTicks(track, clip);
     return r.loop > 0 ? Math.max(1, Math.round(r.loop / tps)) : 0;
 }
 
@@ -229,11 +229,14 @@ export function autoBankJog(delta) {
             return true;
         }
         if (a.loopEdit) {
-            const max = (S.clipLength[t] && S.clipLength[t][c]) || 16;
+            /* A drum track counts in its active lane's steps, up to that lane's
+             * length (the DSP clamps a loop to the drum window anyway). */
+            const max = S.trackPadMode[t] === PAD_MODE_DRUM ? (S.drumLaneLength[t] || 16)
+                      : ((S.clipLength[t] && S.clipLength[t][c]) || 16);
             const nv = Math.max(0, Math.min(max, a.loopVal + delta));
             if (nv !== a.loopVal) {
                 a.loopVal = nv;
-                const tps = (S.clipTPS[t] && S.clipTPS[t][c]) || 24;
+                const tps = automationStepTicks(t, c);
                 automationSetLoop(t, c, a.ops.row.target, nv > 0 ? nv * tps : 0, !a.loopCkpt);
                 a.loopCkpt = true;
                 a.ops.row.loop = nv > 0 ? nv * tps : 0;

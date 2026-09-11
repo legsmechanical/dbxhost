@@ -583,6 +583,55 @@ static uint32_t pa_entry_tick(const pa_entry_t *e, uint32_t ct, uint32_t clip_ti
 }
 
 /* ------------------------------------------------------------------ */
+/* THE DRUM AUTOMATION CLOCK                                            */
+/*                                                                      */
+/* A drum track's automation is ONE timeline for the whole clip, but a  */
+/* drum clip's timing lives in its 32 lanes — each with its own length, */
+/* resolution and loop start — while the track's own clip struct sits   */
+/* at the defaults no drum edit ever touches. The clock used to be that */
+/* struct: every drum clip's automation looped at 16 steps of 1/16 and  */
+/* a lock past step 16 never played (found 2026-09-11, confirmed under  */
+/* real playback: the step-20 lock of a 32-step clip, never).           */
+/*                                                                      */
+/* ⭑ RULED (Josh, 2026-09-11): the window is the LONGEST LANE — its     */
+/* loop start and its length x ticks_per_step. When every lane matches  */
+/* (every ALL LANES edit) it is simply the clip; when lanes differ, the */
+/* shorter ones loop inside it. Ties go to the lowest lane. Derived,    */
+/* never stored, so no project needs migrating.                         */
+/*                                                                      */
+/* ⚠ THE ONE OWNER of that sum. Playback, recording, the pads'          */
+/* aftertouch writer and the step map all ask here; each used to carry  */
+/* its own copy of the old one. Ticks are master ticks (a lane advances */
+/* one per master tick), so one timeline serves every lane.             */
+static void pa_drum_window(const seq8_track_t *tr, int clip,
+                           uint32_t *start, uint32_t *len, uint32_t *tps) {
+    const clip_t *cl = &tr->clips[clip];
+    uint32_t bt = cl->ticks_per_step ? cl->ticks_per_step : (uint32_t)TICKS_PER_STEP;
+    uint32_t bs = (uint32_t)cl->loop_start * bt, bl = (uint32_t)cl->length * bt;
+    const drum_clip_t *dc = tr->drum_clips[clip];
+    if (dc) {
+        uint32_t best = 0;
+        for (int l = 0; l < DRUM_LANES; l++) {
+            const clip_t *lc = &dc->lanes[l].clip;
+            uint32_t t = lc->ticks_per_step ? lc->ticks_per_step : (uint32_t)TICKS_PER_STEP;
+            uint32_t w = (uint32_t)lc->length * t;
+            if (w > best) { best = w; bt = t; bs = (uint32_t)lc->loop_start * t; bl = w; }
+        }
+    }
+    *start = bs; *len = bl; *tps = bt;
+}
+
+/* The drum automation playhead: the master clock wrapped to the window. */
+static uint32_t pa_drum_clip_tick(const seq8_instance_t *inst, const seq8_track_t *tr, int clip,
+                                  uint32_t *tps, uint32_t *len) {
+    uint32_t start;
+    pa_drum_window(tr, clip, &start, len, tps);
+    uint32_t abs = (uint32_t)inst->global_tick * (uint32_t)TICKS_PER_STEP
+                 + (uint32_t)inst->master_tick_in_step;
+    return start + (*len ? (abs % *len) : 0);
+}
+
+/* ------------------------------------------------------------------ */
 /* Persistence — a SECTION of the project's one state file              */
 /*                                                                      */
 /* Automation is written inside seq8_do_serialize and read back inside   */

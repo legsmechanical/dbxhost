@@ -6993,6 +6993,14 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                 int n = 0;
                 if (out_len > 0) out[0] = '\0';           /* an empty clip is an empty STRING */
                 uint32_t tps = cl->ticks_per_step ? cl->ticks_per_step : (uint32_t)TICKS_PER_STEP;
+                /* A DRUM track's step row is the ACTIVE LANE's (its steps are
+                 * what the buttons show, and what a held step locks — Josh,
+                 * 2026-09-11), not the track's own clip, which drum edits
+                 * never touch. */
+                if (tr->pad_mode == PAD_MODE_DRUM && tr->drum_clips[cidx]) {
+                    const clip_t *alc = &tr->drum_clips[cidx]->lanes[tr->active_drum_lane % DRUM_LANES].clip;
+                    if (alc->ticks_per_step) tps = alc->ticks_per_step;
+                }
                 char mask[SEQ_STEPS + 1];
                 pa_lock(inst);                            /* the latch may be writing */
                 for (int i = 0; i < PA_MAX_ENTRIES; i++) {

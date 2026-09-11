@@ -1049,7 +1049,8 @@ can ramp), **Loop** (that parameter's own loop length in steps, or CLIP to
 follow the clip), and **Rate** (/16 to ×16, the loop stretching to match). The
 last row is **Clear clip**, and **Delete + click** on the card does the same.
 Every operation is one undo, and **Back** closes one layer at a time. Conductor
-tracks don't have this bank. The full description is in
+tracks don't have this bank. On a **drum track**, automation runs the length of
+the **longest lane**; shorter lanes loop inside it. The full description is in
 [Parameter banks](#35-parameter-banks).
 
 ## 11.3 MIDI targets
