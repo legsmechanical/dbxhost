@@ -109,7 +109,24 @@ int main(void) {
       pa_entry_t n; memset(&n, 0, sizeof(n)); n.used = 1; n.flags = PA_FLAG_ACTIVE;
       pa_set_point(&n, 300, 7000);
       HX_ASSERT(pa_eval_window(&n, 10, 0, 96, &v) && v == 7000, "no point inside the window: the old answer");
-      OK("a lane with nothing inside its window keeps the old answer"); }
+      OK("a lane with nothing inside its window keeps the old answer");
+
+      /* Which window: the clip's loop for a plain lane, the lane's OWN window
+       * when it has a Loop or a Rate — what pa_entry_tick wraps inside. */
+      uint32_t ws = 9, wl = 9;
+      pa_entry_t k; memset(&k, 0, sizeof(k)); k.used = 1;
+      pa_entry_window(&k, 96, 384, &ws, &wl);
+      HX_ASSERT(ws == 96 && wl == 384, "plain lane: the clip's loop window (start 96, 384 long)");
+      k.loop_len = 48; k.loop_off = 0;
+      pa_entry_window(&k, 96, 384, &ws, &wl);
+      HX_ASSERT(ws == 0 && wl == 48, "own Loop: the lane's window, not the clip's");
+      k.loop_len = 999;
+      pa_entry_window(&k, 96, 384, &ws, &wl);
+      HX_ASSERT(wl == 384, "an own Loop longer than the clip is clamped to it, as pa_entry_tick does");
+      k.loop_len = 0; k.resolution = 6;
+      pa_entry_window(&k, 96, 384, &ws, &wl);
+      HX_ASSERT(ws == 0 && wl == 384, "a Rate with no Loop: the lane window is one clip long from 0");
+      OK("the carried value is taken from the lane's OWN window when it has one"); }
 
     /* Clearing a range removes exactly what it names, endpoints included. */
     pa_clear_range(&e, 150, 150);
