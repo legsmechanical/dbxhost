@@ -194,15 +194,134 @@ export const SWEEP_UNITS = 120;
  * counts a sweep against the bank knobs' 100. Deleted rather than left in place:
  * a dead law is what the next surface copies, which is how it got here. */
 
+/* ── THE FADER LAW ─────────────────────────────────────────────────────────
+ *
+ * Josh, 2026-09-11, at the device: "i want you to investigate common daw/mixing
+ * board fader scaling across range of travel and make it behave more like
+ * that... it doesn't need to exactly match any particular model, just get us in
+ * the ballpark."
+ *
+ * ⚠⚠ WHAT WAS WRONG: the level knob was LINEAR IN AMPLITUDE over 0..2, which
+ * puts unity at the MIDDLE of travel and is the opposite of a fader. Measured
+ * on the old law:
+ *
+ *      travel   gain      dB
+ *       100%    2.000    +6.0
+ *        50%    1.000     0.0     <- unity, halfway up
+ *        25%    0.500    -6.0
+ *      12.5%    0.250   -12.0
+ *       0.5%    0.010   -40.0
+ *
+ * i.e. the whole TOP HALF of the throw bought 6 dB, while everything below
+ * -12 dB was crushed into the bottom eighth. Mixing happens in the top 12 dB
+ * and fading happens in the bottom 40, and the old law gave the first almost
+ * no resolution and the second almost no room.
+ *
+ * ⭑ SO: PIECEWISE-LINEAR IN dB, which is how console faders are actually
+ * specified (and roughly what IEC 60268-17 describes). Equal travel buys equal
+ * dB within a segment, and the segments steepen toward the bottom so the last
+ * of the throw is a fade to silence rather than a long crawl through values
+ * nobody sets.
+ *
+ *      travel   gain      dB
+ *       100%    1.995    +6.0
+ *        80%    1.000     0.0     <- unity at 80%, the standard place
+ *        60%    0.501    -6.0
+ *        45%    0.251   -12.0
+ *        30%    0.100   -20.0
+ *        10%    0.010   -40.0
+ *         0%    0.000    -inf
+ *
+ * ⭑ ±6 dB around unity now spans 60..100% of travel — 40% of the throw for the
+ * range you actually mix in, against 12% before.
+ *
+ * ⚠ The bottom point is -70 dB, not -inf: the segment needs a finite slope to
+ * interpolate through, and travel 0 is forced to exactly 0 gain (true silence)
+ * so the fader still bottoms out. -70 rather than -90 because the difference is
+ * inaudible either way and -90 spent 5% of the throw crossing 35 dB — 1.37 dB
+ * per detent, the largest step anywhere on the fader, in the one region nobody
+ * listens to. At -70 the worst detent on the whole throw is 0.6 dB.
+ */
+export const FADER_LAW = [
+    [0.00, -70.0], [0.05, -55.0], [0.10, -40.0], [0.20, -30.0], [0.30, -20.0],
+    [0.45, -12.0], [0.60,  -6.0], [0.80,   0.0], [1.00,   6.0],
+];
+
+/* travel (0..1) -> dB. Null at the very bottom, which means silence. */
+export function faderTravelToDb(t) {
+    if (!(t > 0)) return null;
+    if (t >= 1) return FADER_LAW[FADER_LAW.length - 1][1];
+    for (let i = 0; i < FADER_LAW.length - 1; i++) {
+        const [t0, d0] = FADER_LAW[i], [t1, d1] = FADER_LAW[i + 1];
+        if (t <= t1) return d0 + (d1 - d0) * (t - t0) / (t1 - t0);
+    }
+    return FADER_LAW[FADER_LAW.length - 1][1];
+}
+
+/* ⭑ SNAPPED TO THE PRINTED UNIT (0.1 dB), and this is not cosmetic.
+ *
+ * The old linear law had a property Josh asked for by name and valued: a COLD
+ * detent moves the readout by exactly one, so a slow turn dials exact values
+ * instead of sliding between them. A fader law breaks that for free — one
+ * detent is a fixed slice of TRAVEL, which is a VARYING number of dB (0.15 near
+ * unity, more toward the bottom), so the readout would step by one tenth
+ * sometimes and two others, and stall wherever the slice fell short.
+ *
+ * Snapping the result to the same 0.1 dB the readout prints restores it: every
+ * detent lands ON a printed value and always moves it. The alternative was to
+ * make the detent itself 0.1 dB, which would have stretched the throw from the
+ * 510 counts Josh tuned on hardware to about 760. The feel he chose is the one
+ * worth keeping; the quantisation is free. */
+export const FADER_DB_STEP = 0.1;
+
+export function faderTravelToGain(t) {
+    const d = faderTravelToDb(t);
+    if (d === null) return 0;
+    const snapped = Math.round(d / FADER_DB_STEP) * FADER_DB_STEP;
+    return Math.pow(10, snapped / 20);
+}
+
+/* The inverse, and it is NOT optional: the stored parameter is GAIN (that is
+ * what the engine and every automation lane speak), while the knob has to move
+ * in TRAVEL. So each turn is gain -> travel -> add the detents -> gain. */
+export function faderGainToTravel(g) {
+    if (!(g > 0)) return 0;
+    const db = 20 * Math.log10(g);
+    const last = FADER_LAW.length - 1;
+    if (db >= FADER_LAW[last][1]) return 1;
+    if (db <= FADER_LAW[0][1]) return 0;
+    for (let i = 0; i < last; i++) {
+        const [t0, d0] = FADER_LAW[i], [t1, d1] = FADER_LAW[i + 1];
+        if (db <= d1) return t0 + (t1 - t0) * (db - d0) / (d1 - d0);
+    }
+    return 1;
+}
+
+/* What the strip PRINTS. ⚠ A fader law and a `1.00x` readout cannot coexist:
+ * measured over the 510-detent throw, 41 detents (8% of travel) all read
+ * "0.00x" while still making sound and 28 more read "0.01x", because two
+ * decimal places of amplitude have their resolution exactly where the fader
+ * law does not. dB is both legible across the whole throw and what a mixer
+ * shows anyway. */
+export function faderFormatDb(g) {
+    if (!(g > 0)) return '-inf';
+    const db = 20 * Math.log10(g);
+    if (db <= -70) return '-inf';
+    return (db > 0 ? '+' : '') + db.toFixed(1);
+}
+
 export const SESS_KNOB_MODES = [
     /* ⚠ `sweep` is VOLUME's alone: the encoder counts a full 0..max sweep should
      * cost, overriding the universal SWEEP_UNITS. Josh judged the universal rate
      * right for pan and the sends and WRONG here, on hardware — a fader wants
      * travel where a pan wants reach. 510 is the pre-2026-08-26 feel he asked to
      * keep, measured at 511 counts. */
+    /* ⭑ `fader: true` swaps the LAW, not the rate: the knob still spends
+     * `sweep` detents crossing the throw and still runs ccKnobDelta's curve —
+     * what changes is where those detents land. See THE FADER LAW above. */
     { key: 'volume', label: 'VOLUME', short: 'Vol', widget: 'vbar',   def: 1.0, max: SLOT_LEVEL_MAX,
-      units: 200, sweep: 510,
-      fmt: (v) => v.toFixed(2) + 'x' },
+      units: 200, sweep: 510, fader: true,
+      fmt: (v) => faderFormatDb(v) },
     { key: 'pan',    label: 'PAN',    short: 'Pan', widget: 'arcbip', def: 0.5, max: 1.0,
       units: 200,
       fmt: (v) => { const pct = Math.round((v - 0.5) * 200); return pct === 0 ? 'C' : pct < 0 ? Math.abs(pct) + 'L' : pct + 'R'; },

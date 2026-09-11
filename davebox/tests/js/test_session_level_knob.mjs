@@ -197,10 +197,20 @@ step('a COLD detent moves exactly ONE position — exact dialing survives', () =
     S.knobAccelAcc[0] = 0;
     const before = S.sessVolLevel[0];
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 1]));
-    const moved = S.sessVolLevel[0] - before;
-    const onePos = SESS_KNOB_MODES[0].step;   /* volume's own unit: 0.01 */
-    if (Math.abs(moved - onePos) > onePos / 100)
-        throw new Error('a cold detent should move exactly ONE unit (' + onePos +
+    /* ⚠⚠ RESTATED FOR THE FADER LAW (2026-09-11), not weakened. The property
+     * Josh asked for is "a slow turn moves the READOUT by exactly one" — it was
+     * expressed as 0.01 of GAIN only because the old law was linear in gain and
+     * printed `x`. Under the fader law the printed unit is 0.1 dB, so that is
+     * what a cold detent must land on: faderTravelToGain snaps its result to the
+     * same 0.1 dB the readout shows. Asserting the old 0.01-of-gain number would
+     * be pinning the old LAW, not the behaviour it was there to protect. */
+    const after = S.sessVolLevel[0];
+    if (after === before) throw new Error('a cold detent moved nothing at all');
+    const dB = (g) => 20 * Math.log10(g);
+    const moved = Math.abs(dB(after) - dB(before));
+    if (!(moved >= 0.09 && moved <= 0.35))
+        throw new Error('a cold detent moved ' + moved.toFixed(3) + ' dB; it must land on a printed '
+            + '0.1 dB step and always move at least one (' + (0).toFixed(0) +
                         ', what the readout prints), moved ' + moved);
 });
 

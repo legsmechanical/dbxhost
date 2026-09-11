@@ -102,7 +102,14 @@ eq(otherSnaps.length, 0, 'no other mode snaps');
 eq(SESS_KNOB_MODES[1].fmt(0.5), 'C',    'pan centre prints C');
 eq(SESS_KNOB_MODES[1].fmt(0.0), '100L', 'pan hard left prints 100L');
 eq(SESS_KNOB_MODES[1].fmt(1.0), '100R', 'pan hard right prints 100R');
-eq(SESS_KNOB_MODES[0].fmt(1.0), '1.00x', 'unity level prints 1.00x');
+/* ⚠ The level now prints dB, not a multiplier (2026-09-11, the fader law).
+ * `1.00x` could not survive a fader taper: measured over the 510-detent throw,
+ * 41 detents all read "0.00x" while still audible, because two decimals of
+ * AMPLITUDE have their resolution exactly where a fader law does not. */
+eq(SESS_KNOB_MODES[0].fmt(1.0),  '0.0',  'unity level prints 0.0 dB, unsigned');
+eq(SESS_KNOB_MODES[0].fmt(2.0),  '+6.0', 'the top of the throw prints +6.0 dB');
+eq(SESS_KNOB_MODES[0].fmt(0.5),  '-6.0', 'half gain prints -6.0 dB');
+eq(SESS_KNOB_MODES[0].fmt(0),    '-inf', 'silence prints -inf');
 eq(SESS_KNOB_MODES[2].fmt(0.5), '50%',  'a half-open send prints 50%');
 
 /* 7. The bipolar mapping the renderer applies: signed = (v - 0.5) * 2. Pinned

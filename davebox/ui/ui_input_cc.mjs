@@ -29,7 +29,7 @@ import {
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
-         SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock } from './ui_engine.mjs';
+         SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderGainToTravel, faderTravelToGain} from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity, BANK_CYCLE_DRUM, CONDUCT_BANK_CYCLE,
          bankCycleForMode } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
@@ -3709,9 +3709,28 @@ function _sessionKnobParam(knobIdx, d2) {
         forceRedraw();
         return;
     }
-    let v = lvl + acc.steps * mode.step;
-    if (v < 0) v = 0;
-    if (v > mode.max) v = mode.max;
+    let v;
+    if (mode.fader) {
+        /* ⭑ A FADER MOVES IN TRAVEL, NOT IN GAIN. The stored value is gain —
+         * that is what the engine and every automation lane speak — so the turn
+         * is gain -> travel -> add the detents -> gain. `units` spans the whole
+         * throw, so one unit is 1/units of travel, which leaves ccKnobDelta's
+         * acceleration and the tuned `sweep` count doing exactly what they did.
+         * See THE FADER LAW in ui_engine.mjs for why the old linear-in-gain
+         * mapping put unity halfway up the throw. */
+        let t = faderGainToTravel(lvl) + acc.steps / mode.units;
+        if (t < 0) t = 0;
+        if (t > 1) t = 1;
+        v = faderTravelToGain(t);
+        /* ⚠ The law's bottom point is -90 dB, not -inf, so travel 0 would
+         * otherwise leave a whisper of gain. A fader has to bottom out. */
+        if (t === 0) v = 0;
+        if (v > mode.max) v = mode.max;
+    } else {
+        v = lvl + acc.steps * mode.step;
+        if (v < 0) v = 0;
+        if (v > mode.max) v = mode.max;
+    }
     if (mode.snap !== undefined) {
         const prev = lvl, next = v;
         if ((prev < mode.snap && next >= mode.snap - mode.snapZone && next <= mode.snap + mode.snapZone) ||
