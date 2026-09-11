@@ -1144,6 +1144,12 @@ export function markSoundDirty() { S.dirty = true; }
  * Move-routed track opens its bus, not a chain slot). */
 /* The current view, for a caller that needs to record where the user was. */
 export function soundViewForTest() { return S.view; }
+/* The module menu (VIEW_MENU) as the user sees it: which level, how deep, the
+ * cursor, and the row kinds/labels. */
+export function soundMenuForTest() {
+    return { key: S.menuKey, depth: S.menuStack.length, idx: S.menuIdx,
+             rows: S.menuRowsCache.map(r => ({ kind: r.kind, label: r.label || r.name || '' })) };
+}
 /* Which module editor is live. Exported for the RIGS, not for the UI: two
  * assertions in test_sound_write_verify measure davebox's OWN optimistic value
  * and its own poll, machinery the vendored editor replaces wholesale. A rig
@@ -6824,7 +6830,12 @@ function runActionBody(a) {
      * nothing rebuilt the trailing page that displays it. */
     else if (a.t === 'usrsavedo') { saveUserPreset(a.name); ppRefreshPresets(); }
     else if (a.t === 'bakedset') commitBaked();
-    else if (a.t === 'menu')     openMenu();
+    else if (a.t === 'menu') {
+        openMenu();
+        /* From the module editor's Module page: Back at the menu's top returns
+         * to the grid you left (the errand crumb), not to the preset hub. */
+        if (a.errand && S.view === VIEW_MENU) ppErrandView = VIEW_MENU;
+    }
     else if (a.t === 'menuload') refreshMenuRows();
     else if (a.t === 'reflavour') {
         /* Re-enter the flavour the track's CURRENT route calls for. Same choice
@@ -8737,6 +8748,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * un-committed undoes the audition, exactly as it does on davebox's own
          * path. */
         if (ppErrandView !== null && S.view === ppErrandView) {
+            /* ⚠ The module's menu has depth of its own: Back closes an edit or a
+             * confirm, then climbs the tree one level at a time — and only at
+             * its TOP returns to the grid. */
+            if (S.view === VIEW_MENU) {
+                if (S.confirmItem) { S.confirmItem = null; S.dirty = true; return true; }
+                if (menuBack()) { S.dirty = true; return true; }
+            }
             if (S.view === VIEW_PRESET_LIST || S.view === VIEW_PRESET_BAKED) revertOriginal();
             ppErrandView = null;
             S.view = VIEW_EDIT;
@@ -10425,6 +10443,14 @@ function ppIo() {
                     return rows;
                 })() },
                 { name: 'Module', entries: [
+                    /* ⭑ THE DOOR TO THE MODULE'S OWN MENU (plan 6c3, Josh
+                     * 2026-09-11: a row, not upstream's global "Param View"
+                     * setting). The parameter-tree list lost its only door when
+                     * the editor moved to the grid. Offered only when there is a
+                     * tree to open — openMenu's own test — or it would answer
+                     * "NO MENU" to a row we chose to show. */
+                    ...((S.levels && (S.rootKey || S.modes))
+                        ? [{ label: 'Module Menu', action: 'module_menu' }] : []),
                     { label: 'Swap Module', action: 'swap_module' },
                     /* ⭑ REMOVE IS THE `[ none ]` PICK, reached through the same
                      * applyModulePick — not a second way to clear a slot. */
@@ -10495,6 +10521,9 @@ function ppIo() {
             else if (action === 'remove_module') requestModulePick({ id: '', name: '[ none ]' });
             else if (action === 'up_save_as') startSaveFlow();
             else if (action === 'swap_module') { openBrowse(S.comp); ppErrandView = S.view; }
+            /* openMenu reads the engine, so it runs from the tick (like the
+             * preset hub's door); the crumb is set there, once the menu is up. */
+            else if (action === 'module_menu') S.pendingAction = { t: 'menu', errand: true };
             else log('pp: unknown menu action ' + action);
             S.dirty = true;
         },
