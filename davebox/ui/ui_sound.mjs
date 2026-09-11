@@ -4527,6 +4527,32 @@ function closeEnumPicker(commitIt) {
  * cursor moves afterwards, so a decision baked in at build time would describe
  * whichever row happened to be selected when the picker opened.
  */
+/* ── the Instrument picker's box, in numbers ───────────────────────────────
+ *
+ * Josh, 2026-09-10, from the device: "overlay overlaps with the pill. make the
+ * picker 4 lines instead of 5 and pull up the bottom to avoid the overlap."
+ *
+ * ⚠⚠ `visible` IS PINNED, AND THAT IS THE HALF THAT WAS ACTUALLY BROKEN.
+ * drawKitList DERIVES the row count from the box height when a caller does not
+ * say — `floor((h - 1) / rowH)` — and the hint band's height comes off that
+ * height. So the list was FIVE rows on a row with no hint and FOUR on a row
+ * with one: it reflowed under the cursor as you jogged between a MIDI channel
+ * and a generator. Pinning the count makes the geometry fixed, so the band
+ * appears and disappears in space that was already reserved for it.
+ *
+ * The arithmetic, so the next person changing one number can see the others:
+ *   top        = 2                      (the crumb bar is gone; §noCrumbs)
+ *   listTop    = top + 6        = 8     (drawKitStackedList's own inset)
+ *   4 rows     @ rowH 10        = 8..47
+ *   band       = MV_FOOTER_H 7  = 48..54
+ *   box bottom = bottomY - 1    = 55
+ * A row and the band cannot meet: 47 then 48, with the outline clear at 55. */
+const INSTR_TOP_Y = 2, INSTR_BOTTOM_Y = 56, INSTR_ROWS = 4;
+/* Exported so a test measures the band WHERE IT IS rather than re-deriving it
+ * from a number copied out of here — the copy is how the last version of this
+ * test ended up looking at the wrong six rows. */
+export const INSTR_PICKER_GEOM = { topY: INSTR_TOP_Y, bottomY: INSTR_BOTTOM_Y, rows: INSTR_ROWS };
+
 export function soundEnumPickHintsForTest() { return enumPickHints(); }
 
 function enumPickHints() {
@@ -4547,7 +4573,9 @@ function renderEnumPick() {
      * for the hint band, so the visible row count does not drop. */
     const instr = !!(p && p.label === 'Instrument');
     renderInChain(p ? p.options : [], p ? p.sel : 0, undefined,
-                  instr ? { noCrumbs: true, topY: 2, hints: enumPickHints() } : undefined);
+                  instr ? { noCrumbs: true, topY: INSTR_TOP_Y, bottomY: INSTR_BOTTOM_Y,
+                            visible: INSTR_ROWS, hints: enumPickHints() }
+                        : undefined);
 }
 
 /* The path, INCLUDING the screen you are on, outermost first.

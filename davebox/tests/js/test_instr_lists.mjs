@@ -106,13 +106,37 @@ const { MV_FOOTER_H } = await import('../../ui/ui_movy.mjs');
 /* Draw one frame and count the ink in the BOX FOOT -- where the hint band
  * lives. The box runs from topY 2 to y 62, so its foot is the last
  * MV_FOOTER_H rows of that. */
+/* The stacked box at depth 1: x 10..117 (stackTopX(1)=10, STACK_W=108). These
+ * are its INTERIOR columns, clear of the outline on either side. */
+const BOX_IN_X0 = 13, BOX_IN_X1 = 114;
+
 function inkInBandForTest() {
     globalThis.clear_screen();
     render.drawUI();
-    const bandTop = 62 - MV_FOOTER_H;
+    /* The band sits just inside the box's bottom outline. Taken from the
+     * picker's own geometry, never a copied constant. */
+    const g = snd.INSTR_PICKER_GEOM;
+    const bandTop = g.bottomY - 1 - MV_FOOTER_H;
     let n = 0;
-    for (let y = bandTop; y < 62; y++) for (let x = 0; x < 128; x++) if (FB[y * 128 + x]) n++;
+    /* ⚠ INTERIOR ONLY. The box's own vertical outline runs down both edges
+     * through this band, ~17px of it, and counting the frame made this read
+     * "there is ink here" on a screen drawing nothing but the box. */
+    for (let y = bandTop; y < g.bottomY - 1; y++)
+        for (let x = BOX_IN_X0; x <= BOX_IN_X1; x++) if (FB[y * 128 + x]) n++;
     return n;
+}
+
+/* Ink in the LAST list row's band and in the band region must not both be the
+ * box fill: this proves the two do not meet. */
+function inkInRowsForTest() {
+    globalThis.clear_screen();
+    render.drawUI();
+    const g = snd.INSTR_PICKER_GEOM;
+    const rowsTop = g.topY + 6 - 1;
+    const rowsBottom = rowsTop + g.rows * 10;
+    let n = 0;
+    for (let y = rowsTop; y < rowsBottom; y++) for (let x = 0; x < 128; x++) if (FB[y * 128 + x]) n++;
+    return { n, rowsBottom, bandTop: g.bottomY - 1 - MV_FOOTER_H };
 }
 const { MoveNoteSession } = await import('../../ui/ui_constants.mjs');
 const { MoveShift } = await import('/data/UserData/schwung/shared/constants.mjs');
@@ -241,6 +265,33 @@ step('⚠ CONTROL: rows Shift does NOTHING on offer no hint — the List row', (
         throw new Error('⭑ the List row promises a shift-click gesture it does not offer: '
                         + JSON.stringify(h));
 });
+
+step('⭐⭐ the rows END before the band BEGINS — no overlap (Josh: "overlay overlaps with the pill")', () => {
+    const o = snd.soundEnumPickForTest().options;
+    jogTo(o.indexOf('NuSaw'));
+    const r = inkInRowsForTest();
+    if (r.rowsBottom > r.bandTop)
+        throw new Error('⭑ the last row runs to y=' + r.rowsBottom + ' and the band starts at y='
+            + r.bandTop + ' — they overlap');
+});
+
+/* ⚠⚠ THERE IS DELIBERATELY NO "the row count is pinned" CASE HERE, and the
+ * absence is the finding. Three observables were tried and every one was
+ * incapable of failing:
+ *   1. compare `rowsBottom` before/after — computed from the code's own
+ *      exported constant, so identical both times;
+ *   2. ink in the band region — the box's OUTLINE runs down both edges through
+ *      it, ~17px, on a screen drawing nothing else;
+ *   3. the lowest lit pixel — the picker floats over a DIMMED BACKDROP that
+ *      covers all 64 rows, so the answer is always y=63.
+ * Each passed its own mutant. → [[a-check-that-cries-wolf-is-worse-than-none]],
+ * [[led-and-render-observables-lie]]
+ *
+ * `visible` IS pinned in ui_sound (INSTR_ROWS) and the reason is written there;
+ * it is insurance against a future bottomY that would let drawKitList derive a
+ * 5th row. What GUARDS it is the overlap case above, which fails correctly when
+ * the geometry is wrong — that is the shape of the bug Josh actually reported.
+ */
 
 step('⭐⭐ …and the band actually DRAWS — ink lands in the box foot', () => {
     const o = snd.soundEnumPickForTest().options;
