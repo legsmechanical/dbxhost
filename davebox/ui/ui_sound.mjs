@@ -4722,9 +4722,18 @@ function renderInChain(rows, sel, emptyMsg, opts) {
     if (opts && opts.hints && opts.hints.length) {
         /* ⚠ CLEAR THE BAND FIRST. The picker floats over a STIPPLED backdrop
          * (drawKitBackdropDim), so pills drawn straight onto it sit on a field
-         * of half-lit pixels instead of black. Same two-step the sound menu's
-         * own footer uses. */
-        fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0);
+         * of half-lit pixels instead of black.
+         *
+         * ⚠⚠ CLEAR FROM THE BOX'S BOTTOM, NOT `MV_FOOTER_Y - 3`. The sound
+         * menu's own footer uses -3 because its pills POP OVER a full-height
+         * list that owns every row down to the bottom. Here there is a BOX, and
+         * -3 lands at y=54 while the box's bottom outline is at y=55 — so the
+         * clear erased the border a line after drawing it. Josh, from the
+         * device: "there's no bottom border but plenty of space for one."
+         * Starting at `bottomY` keeps the outline and still clears everything
+         * below it. */
+        const clearY = (opts.bottomY != null) ? (opts.bottomY | 0) : (MV_FOOTER_Y - 3);
+        fill_rect(0, clearY, 128, 64 - clearY, 0);
         drawKitHintRow(MV_FOOTER_Y, opts.hints);
     }
 }

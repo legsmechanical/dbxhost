@@ -290,6 +290,26 @@ step('⭐⭐ the rows END before the band BEGINS — no overlap (Josh: "overlay 
  * the geometry is wrong — that is the shape of the bug Josh actually reported.
  */
 
+step('⭐⭐ the box keeps its BOTTOM BORDER — the band clear must not eat it', () => {
+    /* Josh, from the device: "there's no bottom border but plenty of space for
+     * one." The band clear ran from MV_FOOTER_Y - 3 = y54 and the box's bottom
+     * outline is at y55, so it erased the border one line after drawing it.
+     * ⚠ Counted across the box's INTERIOR columns: a horizontal outline is a
+     * near-solid run there, and the left/right edges would mask a missing one
+     * if the whole width were counted. */
+    const o = snd.soundEnumPickForTest().options;
+    jogTo(o.indexOf('NuSaw'));                       /* a row that DRAWS the band */
+    globalThis.clear_screen();
+    render.drawUI();
+    const y = snd.INSTR_PICKER_GEOM.bottomY - 1;
+    let lit = 0;
+    for (let x = BOX_IN_X0; x <= BOX_IN_X1; x++) if (FB[y * 128 + x]) lit++;
+    const span = BOX_IN_X1 - BOX_IN_X0 + 1;
+    if (lit < span - 2)
+        throw new Error('⭑ the box has no bottom border: only ' + lit + '/' + span
+            + ' px lit at y=' + y + ' — the hint band\'s clear ate it');
+});
+
 step('⭐⭐ …and the band actually DRAWS — pills on a CLEARED strip, not stipple', () => {
     /* ⚠⚠ THE OBSERVABLE IS THE SHAPE OF THE INK, NOT ITS AMOUNT. The picker
      * floats over a stippled backdrop, so the bottom row is ~35% lit before
