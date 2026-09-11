@@ -2878,23 +2878,22 @@ export function drawKitStackedList(depth, rows, sel, opts) {
      * 2 and 1, the same as every other list in the app. */
     const rowH = o.rowH != null ? o.rowH : 10;
     const listTop = top + 6;
-    /* ⭑ HINT PILLS INSIDE THE BOX FOOT. The band says what a gesture with no
-     * on-screen trace does — the same job, and the same pill vocabulary, as the
-     * bank footers; it just lives inside the box because a floating list has no
-     * footer of its own. Its height comes OFF the list, exactly like `footer`
-     * below, so the rows can never run into it. */
-    const hintH = (o.hints && o.hints.length) ? MV_FOOTER_H : 0;
+    /* ⚠ NO HINT BAND INSIDE THE BOX — it was tried and moved OUT 2026-09-10.
+     * Josh: "the pill should sit on the bottom row where they always do." A
+     * band in the box foot rose and fell with the box, so the same pills sat at
+     * a different height here than on every other screen. They belong on
+     * MV_FOOTER_Y like all the others; the caller draws them after this
+     * returns. */
     /* `footer` reserves space at the box's foot for a caller drawing its own
      * thing there (the LFO's waveform). It comes off the list's height, so the
      * rows can never run into it. */
     drawKitList(rows, sel, {
         x: tx + 2, w: STACK_W - 4,
         topY: listTop, rowH,
-        h: (top + h - 2) - listTop - (o.footer || 0) - hintH,
+        h: (top + h - 2) - listTop - (o.footer || 0),
         visible: o.visible,
         emptyMsg: o.emptyMsg,
     });
-    if (hintH) drawKitHintRow(top + h - 1 - MV_FOOTER_H, o.hints);
 }
 
 /* ── knocking the backdrop back, and saying where you are ──────────────────

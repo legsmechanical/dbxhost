@@ -101,7 +101,7 @@ const snd = await import('../../ui/ui_sound.mjs');
 const A = await import('../../ui/ui_automation.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
 const render = await import('../../ui/ui_render.mjs');
-const { MV_FOOTER_H } = await import('../../ui/ui_movy.mjs');
+const { MV_FOOTER_H, MV_FOOTER_Y } = await import('../../ui/ui_movy.mjs');
 
 /* Draw one frame and count the ink in the BOX FOOT -- where the hint band
  * lives. The box runs from topY 2 to y 62, so its foot is the last
@@ -115,14 +115,11 @@ function inkInBandForTest() {
     render.drawUI();
     /* The band sits just inside the box's bottom outline. Taken from the
      * picker's own geometry, never a copied constant. */
-    const g = snd.INSTR_PICKER_GEOM;
-    const bandTop = g.bottomY - 1 - MV_FOOTER_H;
+    /* ⭑ The band is on MV_FOOTER_Y, the app's standard bottom row — OUTSIDE
+     * the box, where every other hint pill in the app lives. */
     let n = 0;
-    /* ⚠ INTERIOR ONLY. The box's own vertical outline runs down both edges
-     * through this band, ~17px of it, and counting the frame made this read
-     * "there is ink here" on a screen drawing nothing but the box. */
-    for (let y = bandTop; y < g.bottomY - 1; y++)
-        for (let x = BOX_IN_X0; x <= BOX_IN_X1; x++) if (FB[y * 128 + x]) n++;
+    for (let y = MV_FOOTER_Y; y < 64; y++)
+        for (let x = 0; x < 128; x++) if (FB[y * 128 + x]) n++;
     return n;
 }
 
@@ -270,9 +267,9 @@ step('⭐⭐ the rows END before the band BEGINS — no overlap (Josh: "overlay 
     const o = snd.soundEnumPickForTest().options;
     jogTo(o.indexOf('NuSaw'));
     const r = inkInRowsForTest();
-    if (r.rowsBottom > r.bandTop)
-        throw new Error('⭑ the last row runs to y=' + r.rowsBottom + ' and the band starts at y='
-            + r.bandTop + ' — they overlap');
+    if (r.rowsBottom > MV_FOOTER_Y)
+        throw new Error('⭑ the last row runs to y=' + r.rowsBottom + ' and the hint band starts at y='
+            + MV_FOOTER_Y + ' — they overlap');
 });
 
 /* ⚠⚠ THERE IS DELIBERATELY NO "the row count is pinned" CASE HERE, and the
@@ -293,15 +290,25 @@ step('⭐⭐ the rows END before the band BEGINS — no overlap (Josh: "overlay 
  * the geometry is wrong — that is the shape of the bug Josh actually reported.
  */
 
-step('⭐⭐ …and the band actually DRAWS — ink lands in the box foot', () => {
+step('⭐⭐ …and the band actually DRAWS — pills on a CLEARED strip, not stipple', () => {
+    /* ⚠⚠ THE OBSERVABLE IS THE SHAPE OF THE INK, NOT ITS AMOUNT. The picker
+     * floats over a stippled backdrop, so the bottom row is ~35% lit before
+     * anything of ours draws there. Our band CLEARS the strip and then prints
+     * pills, so a module row has LESS ink than a row with no band -- but more
+     * than none. Both bounds matter:
+     *   · equal to the stipple  -> the band never drew (nothing cleared)
+     *   · zero                  -> it cleared and printed nothing
+     * Either is the bug this case exists for. */
     const o = snd.soundEnumPickForTest().options;
     jogTo(o.indexOf('NuSaw'));
     const withHint = inkInBandForTest();
-    jogTo(0);                                        /* the List row: no hint */
-    const without = inkInBandForTest();
-    if (!(withHint > without + 10))
-        throw new Error('⭑ THE BAND DREW NOTHING: ' + withHint + ' px on a module row vs '
-            + without + ' on the List row. This is the check the bracket version had no answer to.');
+    jogTo(0);                                        /* the List row: no band */
+    const stipple = inkInBandForTest();
+    if (withHint === 0)
+        throw new Error('⭑ the strip was cleared and NO PILLS were printed on it');
+    if (!(withHint < stipple))
+        throw new Error('⭑ THE BAND NEVER DREW: ' + withHint + ' px on a module row vs '
+            + stipple + ' of backdrop stipple on the List row — ours would have cleared it first.');
 });
 
 step('shift+click a generator opens the Lists menu FOR IT, by name', () => {

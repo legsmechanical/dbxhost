@@ -4713,6 +4713,20 @@ function renderInChain(rows, sel, emptyMsg, opts) {
      * 11px on its own list -- opt-in, so every other chain screen keeps its
      * pinned head. */
     if (!(opts && opts.noCrumbs)) drawKitCrumbs(['T' + (S.track + 1), ...soundViewPath()]);
+    /* ⭑ HINTS GO ON MV_FOOTER_Y, THE BOTTOM ROW, like every other hint pill in
+     * the app (Josh, 2026-09-10: "the pill should sit on the bottom row where
+     * they always do"). They were briefly drawn inside the box foot, which rose
+     * and fell with the box and put the same pills at a different height here
+     * than everywhere else. The box stops above this line by its own bottomY,
+     * so the two never meet. */
+    if (opts && opts.hints && opts.hints.length) {
+        /* ⚠ CLEAR THE BAND FIRST. The picker floats over a STIPPLED backdrop
+         * (drawKitBackdropDim), so pills drawn straight onto it sit on a field
+         * of half-lit pixels instead of black. Same two-step the sound menu's
+         * own footer uses. */
+        fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0);
+        drawKitHintRow(MV_FOOTER_Y, opts.hints);
+    }
 }
 
 function renderKnobTarget() {
