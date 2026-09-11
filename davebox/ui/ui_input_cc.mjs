@@ -4027,6 +4027,15 @@ function _onCC_knobs(d1, d2) {
         }
         if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 7) {
             const t   = S.activeTrack;
+            /* ⚠⚠ DECLARED HERE, NOT BORROWED. The table call below passes
+             * `lane`, and from 2026-08-26 (the knob-sites refactor) until
+             * 2026-09-11 nothing in this block declared it — the bank-0 block
+             * above has its own. esbuild takes an undeclared name for a host
+             * global, so it built clean; at runtime every ALL LANES knob threw
+             * a ReferenceError on its first line, the MIDI handler swallowed it
+             * into seq8-jserr.log, and Res, Stch, Shft, Qnt, InQ, Dir and
+             * SyncRpt all did nothing (Josh, on the device). */
+            const lane = S.activeDrumLane[t];
             const dir = (d2 >= 1 && d2 <= 63) ? 1 : -1;
             if (dir !== S.knobLastDir[knobIdx]) { S.knobAccum[knobIdx] = 0; S.knobLastDir[knobIdx] = dir; }
             /* Res · Qnt · InQ · SyncRpt — table-driven; see DRUM_CONFIG_SITES. */

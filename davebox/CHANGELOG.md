@@ -211,6 +211,9 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **The ALL LANES bank's knobs work again.** Since late August every knob on
+  it — resolution, stretch, shift, quantize, input quantize, direction, repeat
+  sync — did nothing after the "Edits will affect all lanes" OK.
 - **Drum-track automation now runs the length of the clip.** It used to loop
   every 16 steps however long the drum clip was, so on a 32-step clip anything
   automated in the second half never played, and step locks landed on the wrong
