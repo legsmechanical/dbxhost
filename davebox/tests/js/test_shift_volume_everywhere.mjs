@@ -77,6 +77,8 @@ const { S } = await import('../../ui/ui_state.mjs');
 const { BANKS, BANK_MACROS, BANK_AUTOMATION } = await import('../../ui/ui_constants.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const rend = await import('../../ui/ui_render.mjs');
+const eng = await import('../../ui/ui_engine.mjs');
+const { levelCardTextForTest } = await import('../../ui/ui_movy.mjs');
 
 const cc    = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 const shift = (on) => cc(49, on ? 127 : 0);
@@ -110,6 +112,19 @@ function assertGesture(label, expectKey, expectSlot) {
     if (k !== expectKey) throw new Error(label + ': wrote ' + k + ', expected ' + expectKey);
     if (expectSlot != null && sl !== expectSlot) throw new Error(label + ': wrote slot ' + sl + ', expected ' + expectSlot);
     if (!(parseFloat(v) > 1.0)) throw new Error(label + ': level did not rise: ' + v);
+    /* ⭑⭑ THE FADER LAW ON EVERY SCREEN (Josh, device, 2026-09-11: "the
+     * shift+volume shortcut still displays as a multiplier"). Sound mode is this
+     * gesture's SECOND owner and the first fader pass converted only the other
+     * one — linear steps, a "0.50x" card. Every level write must sit ON the
+     * fader's detent grid, whoever consumed the turn, and the card must say dB.
+     * (The grid, not a value from unity: sound mode seeds from its own cached
+     * level, which carries across the states of this rig.) The old linear step
+     * (1/64 of gain) lands on that grid essentially never. */
+    for (const [, , wv] of w) {
+        const k = eng.faderGainToTravel(parseFloat(wv)) * eng.SHIFT_VOL_THROW;
+        if (Math.abs(k - Math.round(k)) > 1e-3)
+            throw new Error(label + ': wrote ' + wv + ' — travel x throw = ' + k.toFixed(4) + ', off the fader grid (a linear step?)');
+    }
     /* ⭑⭑ AND THE CARD. Josh, 2026-09-10: "track volume changes but there's no
      * overlay" — the write landing is only half the gesture, and this file
      * asserted only that half, so nine screens were green while two of them
@@ -119,6 +134,8 @@ function assertGesture(label, expectKey, expectSlot) {
     cardDraws = 0;
     rend.drawUI();
     if (!cardDraws) throw new Error(label + ': the level CARD did not draw (the write landed, the overlay did not)');
+    const txt = levelCardTextForTest() || '';
+    if (!/LEVEL  [+-]\d+\.\d$/.test(txt)) throw new Error(label + ': the card reads "' + txt + '" — a level card prints dB, never a multiplier');
     ENGINE['slot:volume'] = '1.000'; ENGINE['move_fx:1:volume'] = '1.000';
     if (swallowed) throw new Error(label + ': a stage threw: ' + swallowed);
 }

@@ -174,7 +174,7 @@ globalThis.move_midi_internal_send = (m) => { leds.push(Array.from(m)); return t
 globalThis.set_led = (cc, v) => { leds.push([0xB0, cc, v]); };
 globalThis.shadow_save_state_now = () => 1;
 const bridge = await import('../../ui/ui_dsp_bridge.mjs');
-const { SLOT_LEVEL_MAX } = await import('../../ui/ui_engine.mjs');
+const { SLOT_LEVEL_MAX , faderStep, faderWire } = await import('../../ui/ui_engine.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const ledsMod = await import('../../ui/ui_leds.mjs');
 const STEP_VOL = SLOT_LEVEL_MAX / 200, STEP_PAN = 1 / 200, STEP_SEND = 1 / 100;
@@ -463,7 +463,16 @@ step('a LEVEL macro is the level\'s own knob: K6 writes slot:volume by the level
     ticks(3);
     writes = [];
     turnBy(5, 10); ticks(1);
-    assert(lastWrite('slot:volume') === (1 + 10 * STEP_VOL).toFixed(3), 'slot:volume, got ' + lastWrite('slot:volume'));
+    /* ⚠ RESTATED FOR THE FADER LAW (2026-09-11). Volume no longer moves in
+     * linear 0.01-of-gain steps: 10 detents from unity on a 200-unit throw is
+     * 0.05 of TRAVEL, which is +1.5 dB, which is gain 1.1885. Asserted as "the
+     * knob is ON the law" (faderStep) and "written at faderWire's precision",
+     * plus a guard that it is NOT the old linear answer, so a regression to
+     * linear cannot pass by accident. */
+    const _lin = (1 + 10 * STEP_VOL).toFixed(3);
+    const _law = faderWire(faderStep(1, 10, 200));
+    assert(lastWrite('slot:volume') !== _lin, '⭑ the K6 volume knob is still LINEAR (' + _lin + ') — it must follow the fader law');
+    assert(lastWrite('slot:volume') === _law, 'K6 volume: expected the fader law ' + _law + ', got ' + lastWrite('slot:volume'));
     assert(M().drawn[5].kind === 'vbar' && M().drawn[5].label === 'Vol', 'fader cell, got ' + JSON.stringify(M().drawn[5]));
 });
 step('⭑ a LEVEL macro FOLLOWS the engine under playback (a bus-pan macro "never moved"): the poll re-reads the level', () => {

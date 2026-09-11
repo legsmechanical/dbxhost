@@ -242,15 +242,19 @@ export const SWEEP_UNITS = 120;
  * per detent, the largest step anywhere on the fader, in the one region nobody
  * listens to. At -70 the worst detent on the whole throw is 0.6 dB.
  */
+/* The top is +6.02 dB, not a round +6: that is EXACTLY a gain of 2.0, which is
+ * SLOT_LEVEL_MAX. At +6.0 the fader topped out at 1.9953 and never reached the
+ * parameter's own maximum. */
+export const FADER_TOP_DB = 20 * Math.log10(2);
 export const FADER_LAW = [
     [0.00, -70.0], [0.05, -55.0], [0.10, -40.0], [0.20, -30.0], [0.30, -20.0],
-    [0.45, -12.0], [0.60,  -6.0], [0.80,   0.0], [1.00,   6.0],
+    [0.45, -12.0], [0.60,  -6.0], [0.80,   0.0], [1.00, FADER_TOP_DB],
 ];
 
 /* travel (0..1) -> dB. Null at the very bottom, which means silence. */
 export function faderTravelToDb(t) {
     if (!(t > 0)) return null;
-    if (t >= 1) return FADER_LAW[FADER_LAW.length - 1][1];
+    if (t >= 1) return FADER_TOP_DB;
     for (let i = 0; i < FADER_LAW.length - 1; i++) {
         const [t0, d0] = FADER_LAW[i], [t1, d1] = FADER_LAW[i + 1];
         if (t <= t1) return d0 + (d1 - d0) * (t - t0) / (t1 - t0);
@@ -258,27 +262,17 @@ export function faderTravelToDb(t) {
     return FADER_LAW[FADER_LAW.length - 1][1];
 }
 
-/* ⭑ SNAPPED TO THE PRINTED UNIT (0.1 dB), and this is not cosmetic.
- *
- * The old linear law had a property Josh asked for by name and valued: a COLD
- * detent moves the readout by exactly one, so a slow turn dials exact values
- * instead of sliding between them. A fader law breaks that for free — one
- * detent is a fixed slice of TRAVEL, which is a VARYING number of dB (0.15 near
- * unity, more toward the bottom), so the readout would step by one tenth
- * sometimes and two others, and stall wherever the slice fell short.
- *
- * Snapping the result to the same 0.1 dB the readout prints restores it: every
- * detent lands ON a printed value and always moves it. The alternative was to
- * make the detent itself 0.1 dB, which would have stretched the throw from the
- * 510 counts Josh tuned on hardware to about 760. The feel he chose is the one
- * worth keeping; the quantisation is free. */
-export const FADER_DB_STEP = 0.1;
-
+/* ⚠ NO dB SNAP IN HERE — and there was one, briefly (2026-09-11). It rounded
+ * each result to the 0.1 dB the readout prints, to keep "a slow turn moves the
+ * readout by exactly one". It broke something worse: the snap fed back into the
+ * NEXT turn, so up-one-then-down-one did not come back. One 40-step detent near
+ * unity is 0.75 dB; it snapped UP to 0.8, and stepping back subtracted 0.75 and
+ * landed on 0.05, which snapped to 0.1. Wiggle a fader and it CREPT. The
+ * quantisation now lives in faderStep, on TRAVEL, where it is reversible by
+ * construction. This function must stay the exact inverse of faderGainToTravel. */
 export function faderTravelToGain(t) {
     const d = faderTravelToDb(t);
-    if (d === null) return 0;
-    const snapped = Math.round(d / FADER_DB_STEP) * FADER_DB_STEP;
-    return Math.pow(10, snapped / 20);
+    return d === null ? 0 : Math.pow(10, d / 20);
 }
 
 /* The inverse, and it is NOT optional: the stored parameter is GAIN (that is
@@ -297,6 +291,44 @@ export function faderGainToTravel(g) {
     return 1;
 }
 
+/* ⭑ ONE FADER TURN, for every surface that edits a level. Five used to step
+ * the same key five different ways (the session strip, Shift+Volume, the
+ * SOUND + CONFIG knob, and the sound menu's Volume row on both a chain slot
+ * and a Move bus) — Josh, 2026-09-11: "can we apply the same to shift+volume
+ * track volume shortcut, volume item in sound menu, and volume cell in
+ * sound+cnfg?". Each surface keeps its OWN throw (`detentsPerThrow`: how many
+ * detents cross the whole fader there), so crossing it takes as many turns as
+ * it always did; only WHERE those detents land changes. */
+export function faderStep(gain, detents, detentsPerThrow) {
+    const N = detentsPerThrow;
+    /* ⭑ QUANTISED TO THIS SURFACE'S DETENT GRID, on TRAVEL. Every result sits
+     * exactly on k/N of the throw, so +n then -n returns to the same k — no
+     * creep, however long you wiggle it. It also re-seats a value that arrived
+     * from elsewhere (another surface's grid, or the five-decimal wire) onto
+     * this one on the first detent. Measured over 40/128/200-detent throws:
+     * zero drift, silence-to-top in exactly N steps, no readout stalls.
+     * ⚠ Unity sits at travel 0.80, so it lands ON the grid only when 0.8*N is
+     * an integer — a surface whose throw is not a multiple of 5 cannot dial
+     * exactly 0.0 dB. That is why Shift+Volume's throw is 130, not 128. */
+    let t = Math.round((faderGainToTravel(gain) + detents / N) * N) / N;
+    if (t <= 0) return 0;             /* a fader bottoms out at true silence */
+    if (t > 1) t = 1;
+    return faderTravelToGain(t);
+}
+
+/* How a fader level is WRITTEN — to the engine and to automation lanes.
+ *
+ * ⚠⚠ NOT `.toFixed(3)`, which every level write used. Three decimals of GAIN
+ * were fine for a linear 0..2 law and are wrong for a fader, which spends the
+ * bottom of its throw on tiny gains: -65 dB is 0.00056, written as "0.001",
+ * which the engine plays at -60 dB. Measured over the 510-detent throw, 103
+ * detents (20%) were written more than 0.05 dB off — worst 5.9 dB — so the
+ * readout could say one level while the engine played another. Five decimals
+ * take that to 6 detents and 0.07 dB, all at the very bottom. */
+export function faderWire(g) {
+    return (g > 0 ? g : 0).toFixed(5);
+}
+
 /* What the strip PRINTS. ⚠ A fader law and a `1.00x` readout cannot coexist:
  * measured over the 510-detent throw, 41 detents (8% of travel) all read
  * "0.00x" while still making sound and 28 more read "0.01x", because two
@@ -308,6 +340,17 @@ export function faderFormatDb(g) {
     const db = 20 * Math.log10(g);
     if (db <= -70) return '-inf';
     return (db > 0 ? '+' : '') + db.toFixed(1);
+}
+
+/* SHIFT+VOLUME — ONE gesture with TWO owners: ui_tick's drain outside a sound
+ * screen, sound mode's onVolumeTurn on one. They share the throw and the card
+ * text from here, because the first fader-law pass converted only the first
+ * owner and left sound mode stepping linearly and printing "0.50x" (Josh, on
+ * the device, 2026-09-11). 130 not 128: see faderStep — 0.8 x 130 = 104 puts
+ * exactly 0.0 dB on a detent. */
+export const SHIFT_VOL_THROW = 130;
+export function trackLevelCardText(track, gain) {
+    return 'Tr ' + (track + 1) + '  LEVEL  ' + faderFormatDb(gain);
 }
 
 export const SESS_KNOB_MODES = [
