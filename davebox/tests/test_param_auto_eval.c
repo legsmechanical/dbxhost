@@ -172,6 +172,13 @@ int main(void) {
       pa_entry_t ow; memset(&ow, 0, sizeof(ow)); ow.used = 1; ow.flags = PA_FLAG_ACTIVE | PA_FLAG_PUNCH; ow.rest = 777;
       pa_set_point(&ow, 90, 5555);
       HX_ASSERT(pa_eval_punch(&ow, 100, 96, 96, 24, &v) == PA_EVAL_REST && v == 777, "a point BEFORE the window never counts");
+      /* ⚠ The case that needs the window check: a window starting MID-step
+       * (loop_off 100) with a point earlier in that same step (97, step 96..119).
+       * Its step has not ended at t=105, so only the window keeps it out. */
+      pa_entry_t mw; memset(&mw, 0, sizeof(mw)); mw.used = 1; mw.flags = PA_FLAG_ACTIVE | PA_FLAG_PUNCH; mw.rest = 444;
+      pa_set_point(&mw, 97, 6666);
+      HX_ASSERT(pa_eval_punch(&mw, 105, 100, 96, 24, &v) == PA_EVAL_REST && v == 444,
+                "window [100,196): the point at 97 is outside it, though its step runs to 120");
       ow.rest = PA_VAL_UNSET;
       HX_ASSERT(pa_eval_punch(&ow, 200, 0, 384, 24, &v) == 1 && v == 5555, "no resting value: the plain curve");
       OK("Punch ignores Smooth and Wrap, honours the window, and falls back to the curve with no rest"); }
