@@ -51,7 +51,7 @@ import {
     bankHasAltParams, altIndicatorActive
 } from './ui_leds.mjs';
 import { soundRender, renderGatewayCard, renderTrackGatewayCard, renderMacrosPeek } from './ui_sound.mjs';
-import { drawAutomationBankBody } from './ui_automation_bank.mjs';
+import { drawAutomationBankBody, autoBankMenuOpen } from './ui_automation_bank.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
@@ -1321,7 +1321,15 @@ export function bankCardVisible() {
      * Shift is the track-switch modifier and the overview is its read-out
      * (Josh, 2026-08-24); a Shift+knob gesture keeps the peek. */
     if (S.sessionView) return false;
-    if (S.shiftHeld && S.knobTouched < 0) return false;
+    /* ⚠ EXCEPT THE AUTOMATION MENU (Josh, 2026-09-11, testing the lane jump:
+     * "holding shift puts the oled in track overview mode, which is really
+     * confusing"). Shift + click a lane is a gesture ON THAT LIST, so standing
+     * the list down the moment the modifier goes down hides the very thing you
+     * are aiming at. Scoped to the open menu — the plain card still obeys the
+     * Shift read-out rule. */
+    if (S.shiftHeld && S.knobTouched < 0
+            && !(S.activeBank === BANK_AUTOMATION && S.bankCardLatched && autoBankMenuOpen()))
+        return false;
     return !!S.bankCardLatched || S.knobTouched >= 0;
 }
 

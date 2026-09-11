@@ -87,6 +87,7 @@ const { BANKS, BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, SEQ_AUTO_TARGETS } = aw
 const auto = await import('../../ui/ui_automation.mjs');
 const bank = await import('../../ui/ui_automation_bank.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
+const render = await import('../../ui/ui_render.mjs');
 const VIEW_EDIT = 1;
 
 const T = 1;                                           /* track 2: melodic by default */
@@ -193,6 +194,23 @@ step('⭐ MIDI lane -> MACROS; Back -> the menu on that lane', () => {
     shiftClick(); ticks(4);
     assert(snd.soundOpen() && S.activeBank === BANK_MACROS, 'not on MACROS: bank ' + S.activeBank);
     assertBackToLane(idx, 'midi', true);
+});
+
+step('⭐ HOLDING SHIFT KEEPS THE LANE LIST ON SCREEN — it does not fall to the track overview', () => {
+    /* Josh, 2026-09-11, testing the jump: "holding shift puts the oled in track
+     * overview mode, which is really confusing." Shift is the track-switch
+     * modifier and the overview is its read-out, but the jump is a gesture ON
+     * the list, so the list has to survive the modifier. */
+    openMenuOn(TARGETS.chain);
+    cc(49, 127); shiftHeld = 1;
+    assert(render.bankCardVisible(), 'the menu vanished the moment Shift went down');
+    cc(49, 0); shiftHeld = 0;
+    assert(render.bankCardVisible(), 'the menu did not come back');
+    /* CONTROL: with no menu open, Shift still shows the overview, as always. */
+    bank.autoBankReset();
+    cc(49, 127); shiftHeld = 1;
+    assert(!render.bankCardVisible(), 'the plain card no longer obeys the Shift read-out rule');
+    cc(49, 0); shiftHeld = 0;
 });
 
 step('CONTROL: with the ops pop-up open, Shift + click is NOT a jump', () => {
