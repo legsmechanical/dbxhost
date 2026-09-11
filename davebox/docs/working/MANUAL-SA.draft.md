@@ -1051,7 +1051,8 @@ step locks, and any step a recorded move passes through. Then click a row for
 its operations:
 **Delete**, **Mute** / **Unmute**, **Smooth** (*On* glides between values, *Off*
 steps — on parameters that can ramp), **Wrap** (*Carry* keeps the last value going
-round the loop; *Reset* goes back to the first value at the loop start), **Loop** (that parameter's own loop length in steps, or CLIP to
+round the loop; *Reset* returns the parameter to where the knob sits at rest, until
+the first lock or recorded move comes round), **Loop** (that parameter's own loop length in steps, or CLIP to
 follow the clip), and **Rate** (/16 to ×16, the loop stretching to match). The
 last row is **Clear clip**, and **Delete + click** on the card does the same.
 Every operation is one undo, and **Back** closes one layer at a time. Conductor

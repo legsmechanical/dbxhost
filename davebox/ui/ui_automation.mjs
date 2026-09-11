@@ -778,7 +778,8 @@ export function automationToggleSmooth(track, clip, target) {
 }
 
 /* Wrap (Josh, 2026-09-11): Carry — the lane's last value carries round the
- * loop (the default) — or Reset, the pre-6b2 rule. Returns the new state
+ * loop (the default) — or Reset: the parameter's RESTING value until the lane's
+ * first point (Josh, 2026-09-11). Returns the new state
  * (true = Reset), or null if nothing is automated there. */
 export function automationToggleWrap(track, clip, target) {
     const s = automationStateFor(track, clip, target);

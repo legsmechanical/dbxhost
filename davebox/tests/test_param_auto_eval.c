@@ -126,7 +126,23 @@ int main(void) {
       k.loop_len = 0; k.resolution = 6;
       pa_entry_window(&k, 96, 384, &ws, &wl);
       HX_ASSERT(ws == 0 && wl == 384, "a Rate with no Loop: the lane window is one clip long from 0");
-      OK("the carried value is taken from the lane's OWN window when it has one"); }
+      OK("the carried value is taken from the lane's OWN window when it has one");
+
+      /* ⭑ WRAP: RESET (Josh, 2026-09-11: "it should reset to resting value until
+       * it hits a point"). Locks at 312:8192 and 336:0, resting value 3000. */
+      pa_entry_t r; memset(&r, 0, sizeof(r)); r.used = 1; r.flags = PA_FLAG_ACTIVE | PA_FLAG_WRAP_RESET;
+      r.rest = 3000;
+      pa_set_point(&r, 312, 8192); pa_set_point(&r, 336, 0);
+      HX_ASSERT(pa_eval_window(&r, 0, 0, 384, &v) == PA_EVAL_REST && v == 3000,
+                "before the first point: the RESTING value, marked as rest (so it is never scaled)");
+      HX_ASSERT(pa_eval_window(&r, 312, 0, 384, &v) == 1 && v == 8192, "the first point takes over");
+      HX_ASSERT(pa_eval_window(&r, 383, 0, 384, &v) == 1 && v == 0, "after the last: the last value to the loop end");
+      r.flags |= PA_FLAG_SMOOTH;
+      HX_ASSERT(pa_eval_window(&r, 360, 0, 384, &v) == 1 && v == 0, "smooth under Reset: no ramp across the wrap — it holds");
+      HX_ASSERT(pa_eval_window(&r, 100, 0, 384, &v) == PA_EVAL_REST && v == 3000, "…and rest before the first");
+      r.rest = PA_VAL_UNSET;
+      HX_ASSERT(pa_eval_window(&r, 0, 0, 384, &v) == 1 && v == 8192, "no resting value captured: the first point's value");
+      OK("Wrap: Reset — the resting value until the first point; the first point's value if none was captured"); }
 
     /* Clearing a range removes exactly what it names, endpoints included. */
     pa_clear_range(&e, 150, 150);

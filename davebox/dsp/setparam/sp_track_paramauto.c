@@ -258,7 +258,8 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
     }
 
     /* pa_wrap: "<clip> <target> <reset>" — Wrap: Carry (0, the default) carries
-     * the lane's last value round the loop; Reset (1) is the pre-6b2 rule. */
+     * the lane's last value round the loop; Reset (1) sits at the parameter's
+     * RESTING value until the lane's first point. */
     if (!strcmp(sub, "pa_wrap")) {
         int clip = 0, reset = 0;
         PA_SKIP_SPACE(p); PA_UINT(p, clip);

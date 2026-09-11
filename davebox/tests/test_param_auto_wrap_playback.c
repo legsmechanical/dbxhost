@@ -68,7 +68,7 @@ int main(void) {
         OK("CONTROL: a lane with one lock behaves exactly as before");
         hx_destroy(h);
     }
-    /* ---- Wrap: Reset — the pre-6b2 rule, per lane (Josh, 2026-09-11) ---- */
+    /* ---- Wrap: Reset — the RESTING value until the first point (Josh, 2026-09-11) ---- */
     {
         hx_t *h = hx_create(NULL);
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
@@ -76,14 +76,16 @@ int main(void) {
         hx_set_param(h, "t0_c0_step_0_toggle", "60 100");
         lock(h, "1:fx1:mix", 12, 8192);
         lock(h, "1:fx1:mix", 13, 0);
+        hx_set_param(h, "t0_pa_rest", "0 1:fx1:mix 3000");     /* where the knob sat, as the UI names it */
         hx_set_param(h, "t0_pa_wrap", "0 1:fx1:mix 1");
         hx_get_param(h, "pa_list", buf, sizeof buf);
         HX_ASSERT(strstr(buf, "0 0 9 2 1:fx1:mix"), "pa_list reports the flag: ACTIVE | WRAP_RESET = 9");
         hx_set_param(h, "transport", "play_focus:0:0");
         int n = sequence(h, "1:fx1:mix", seq, 16, 1600);
-        HX_ASSERT(n >= 4 && seq[0] == 8192 && seq[1] == 0 && seq[2] == 8192 && seq[3] == 0,
-                  "Reset replays the OLD rule: ~50 from Play, 0 at step 14, back to ~50 at the wrap");
-        OK("Wrap: Reset puts back exactly the old snap-back — per lane");
+        HX_ASSERT(n >= 6 && seq[0] == 3000 && seq[1] == 8192 && seq[2] == 0 &&
+                  seq[3] == 3000 && seq[4] == 8192 && seq[5] == 0,
+                  "Reset: the RESTING value (3000) from Play and again at every wrap, until step 13's lock");
+        OK("⭐ Wrap: Reset goes back to the RESTING value until the first point — every pass");
 
         /* It persists: through the project's own serialize/parse. Serialized
          * now, parsed into a fresh instance below — ONE hx instance at a time
@@ -103,6 +105,21 @@ int main(void) {
         HX_ASSERT(strstr(buf, "0 0 9 2 1:fx1:mix"), "the Reset flag survives save + load");
         free(mem); hx_destroy(h2);
         OK("the Wrap setting persists with the project, and toggles back");
+    }
+    /* ---- Scale moves the lane's values, never the resting value ---- */
+    {
+        hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_c0_step_0_toggle", "60 100");
+        lock(h, "1:fx1:mix", 12, 8192);
+        hx_set_param(h, "t0_pa_rest", "0 1:fx1:mix 3000");
+        hx_set_param(h, "t0_pa_wrap", "0 1:fx1:mix 1");
+        hx_set_param(h, "t0_pa_scale", "0 1:fx1:mix 50");
+        hx_set_param(h, "transport", "play_focus:0:0");
+        int n = sequence(h, "1:fx1:mix", seq, 16, 1000);
+        HX_ASSERT(n >= 2 && seq[0] == 3000 && seq[1] == 4096,
+                  "at 50 %: the rest stays 3000, the lock plays 4096 — Scale is the lane's, not the knob's");
+        OK("Scale never touches the resting value");
+        hx_destroy(h);
     }
     printf("test_param_auto_wrap_playback: %d ok\n", ok_count);
     return 0;

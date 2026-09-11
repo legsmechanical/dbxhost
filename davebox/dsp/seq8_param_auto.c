@@ -626,16 +626,35 @@ static uint16_t pa_lerp(int64_t ta, uint16_t va, int64_t tb, uint16_t vb, int64_
     return (uint16_t)(v < 0 ? 0 : v > PA_VAL_MAX ? PA_VAL_MAX : v);
 }
 
-/* pa_eval with the lane's window known: the wrap rule above. */
+/* pa_eval with the lane's window known: the wrap rule above.
+ *
+ * WRAP: RESET (Josh, 2026-09-11: "it should reset to resting value until it
+ * hits a point"). Before the lane's first point the parameter sits at its
+ * RESTING value — where it is when automation is not playing — and the points
+ * take over from there; after the last point the last value holds to the loop
+ * end (no ramp across the wrap: the wrap goes back to rest). A lane with no
+ * resting value captured falls back to the first point's value.
+ *
+ * Returns 0 = no value, 1 = a lane value, PA_EVAL_REST = the RESTING value —
+ * which the caller must NOT scale: Scale moves the lane's values, and rest is
+ * not one of them. */
+#define PA_EVAL_REST 2
 static int pa_eval_window(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t wl, uint16_t *out) {
     if (!e || !e->count) return 0;
-    /* Wrap: Reset (Josh, 2026-09-11: "toggles between what we have now and what
-     * we had previously") — the lane plays the plain curve, exactly as before. */
-    if (!wl || (e->flags & PA_FLAG_WRAP_RESET)) return pa_eval(e, t, out);
+    if (!wl) return pa_eval(e, t, out);
     int fi = pa_lower_bound(e, ws);
     int li = pa_lower_bound(e, ws + wl) - 1;
     if (fi >= e->count || li < fi) return pa_eval(e, t, out);     /* nothing inside the window */
     const pa_point_t *f = &e->points[fi], *l = &e->points[li];
+    if (e->flags & PA_FLAG_WRAP_RESET) {
+        if (t < f->tick) {
+            if (e->rest == PA_VAL_UNSET) { *out = f->val; return 1; }
+            *out = e->rest;
+            return PA_EVAL_REST;
+        }
+        if (t >= l->tick) { *out = l->val; return 1; }
+        return pa_eval(e, t, out);
+    }
     int smooth = (e->flags & PA_FLAG_SMOOTH) != 0;
     if (t < f->tick) {                         /* before the first: carried round from the last */
         *out = smooth ? pa_lerp((int64_t)l->tick - wl, l->val, f->tick, f->val, t) : l->val;
@@ -1127,8 +1146,9 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
         uint16_t v;
         uint32_t ws, wl;
         pa_entry_window(e, clip_start, clip_ticks, &ws, &wl);
-        if (!pa_eval_window(e, pa_entry_tick(e, ct, clip_ticks, tr->pa_cycle), ws, wl, &v)) continue;
-        v = pa_scaled(e, v);                 /* the lane's scale, 100 % = identity */
+        int ev = pa_eval_window(e, pa_entry_tick(e, ct, clip_ticks, tr->pa_cycle), ws, wl, &v);
+        if (!ev) continue;
+        if (ev != PA_EVAL_REST) v = pa_scaled(e, v);   /* the lane's scale; never the resting value */
         if (e->last_sent_valid && e->last_sent == v) continue;   /* unchanged */
 
         int cc = 0;
