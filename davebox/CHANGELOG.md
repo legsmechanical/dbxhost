@@ -227,6 +227,10 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **Undo and redo keep automation straight.** Redoing a step lock could bring
+  it back without its parameter — and the next parameter you automated then
+  played that lock. Undoing a doubled drum loop now takes its automation back
+  with the notes, too.
 - **Automation no longer snaps back when the loop comes round.** A clip's last
   automated value now carries through its first steps until the first lock
   comes round, instead of jumping to the first lock's value on step 1. A lock

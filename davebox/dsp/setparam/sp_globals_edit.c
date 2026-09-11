@@ -520,6 +520,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                 dst->playback_audio_reverse = src->playback_audio_reverse;
                 dst->pfx_params = lane->pfx_params;
             }
+            pa_undo_capture(inst, inst->drum_redo_pa, &inst->drum_redo_pa_count,
+                            &inst->drum_redo_pa_partial, t, c);
             inst->drum_redo_track = (uint8_t)t;
             inst->drum_redo_clip  = (uint8_t)c;
             inst->drum_redo_valid = 1;
@@ -546,6 +548,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                 lane->pfx_params   = src->pfx_params;
                 clip_migrate_to_notes(dst);
             }
+            pa_undo_restore(inst, inst->drum_undo_pa, inst->drum_undo_pa_count,
+                            inst->drum_undo_pa_partial, t, c);
             if ((int)inst->tracks[t].active_clip == c)
                 pfx_sync_from_clip(&inst->tracks[t]);
             inst->drum_undo_valid = 0;
@@ -652,6 +656,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                 dst->playback_audio_reverse = src->playback_audio_reverse;
                 dst->pfx_params = lane->pfx_params;
             }
+            pa_undo_capture(inst, inst->drum_undo_pa, &inst->drum_undo_pa_count,
+                            &inst->drum_undo_pa_partial, t, c);
             inst->drum_undo_track = (uint8_t)t;
             inst->drum_undo_clip  = (uint8_t)c;
             inst->drum_undo_valid = 1;
@@ -675,6 +681,8 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                 lane->pfx_params  = src->pfx_params;
                 clip_migrate_to_notes(dst);
             }
+            pa_undo_restore(inst, inst->drum_redo_pa, inst->drum_redo_pa_count,
+                            inst->drum_redo_pa_partial, t, c);
             if ((int)inst->tracks[t].active_clip == c)
                 pfx_sync_from_clip(&inst->tracks[t]);
             inst->drum_redo_valid = 0;

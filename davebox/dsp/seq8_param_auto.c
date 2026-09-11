@@ -219,21 +219,49 @@ static int pa_target_in_hand(const seq8_instance_t *inst, int target) {
     return 0;
 }
 
-/* Free every target name no entry and no hand refers to. The table used to
- * grow for the life of the project: a session of recording, clearing and
+/* Every target a name must be kept for, as a bit mask (PA_MAX_TARGETS is 64):
+ * a hand, a live entry — and a VALID UNDO OR REDO SNAPSHOT. A snapshot holds
+ * target IDS, not names, so a name freed while a snapshot still refers to it
+ * comes back as a lane with no name; the next parameter interned takes the
+ * slot, and the restored lane plays on THAT parameter (found 2026-09-11: lock
+ * cutoff, undo, redo, lock resonance — the cutoff lock drove resonance). And
+ * pa_undo_restore frees the clip's entries itself before writing them back,
+ * so without this every restore of a clip's only lane lost its name. */
+static uint64_t pa_referenced_mask(const seq8_instance_t *inst) {
+    uint64_t m = 0;
+#define PA_MARK(tg) do { unsigned _tg = (unsigned)(tg); if (_tg < PA_MAX_TARGETS) m |= 1ull << _tg; } while (0)
+    for (int t = 0; t < NUM_TRACKS; t++)
+        for (int k = 0; k < PA_LIVE_MAX; k++)
+            if (inst->pa_live[t][k].used) PA_MARK(inst->pa_live[t][k].target);
+    for (int i = 0; i < PA_MAX_ENTRIES; i++)
+        if (inst->pa_entries[i].used) PA_MARK(inst->pa_entries[i].target);
+    if (inst->undo_valid)
+        for (int s = 0; s < (int)inst->undo_clip_count && s < UNDO_MAX_CLIPS; s++)
+            for (int k = 0; k < (int)inst->undo_pa_count[s] && k < PA_UNDO_ENTRIES; k++)
+                PA_MARK(inst->undo_pa[s][k].target);
+    if (inst->redo_valid)
+        for (int s = 0; s < (int)inst->redo_clip_count && s < UNDO_MAX_CLIPS; s++)
+            for (int k = 0; k < (int)inst->redo_pa_count[s] && k < PA_UNDO_ENTRIES; k++)
+                PA_MARK(inst->redo_pa[s][k].target);
+    if (inst->drum_undo_valid)
+        for (int k = 0; k < (int)inst->drum_undo_pa_count && k < PA_UNDO_ENTRIES; k++)
+            PA_MARK(inst->drum_undo_pa[k].target);
+    if (inst->drum_redo_valid)
+        for (int k = 0; k < (int)inst->drum_redo_pa_count && k < PA_UNDO_ENTRIES; k++)
+            PA_MARK(inst->drum_redo_pa[k].target);
+#undef PA_MARK
+    return m;
+}
+
+/* Free every target name nothing refers to (pa_referenced_mask). The table used
+ * to grow for the life of the project: a session of recording, clearing and
  * re-recording different parameters filled its 64 slots and every NEW
  * parameter was then refused, project-wide — the "automation isn't being
  * recorded, sometimes it works" of 2026-09-05. Caller holds the writer lock. */
 static void pa_targets_gc(seq8_instance_t *inst) {
-    for (int t = 0; t < PA_MAX_TARGETS; t++) {
-        if (!inst->pa_targets[t][0]) continue;
-        int held = pa_target_in_hand(inst, t);
-        for (int i = 0; !held && i < PA_MAX_ENTRIES; i++) {
-            const pa_entry_t *e = &inst->pa_entries[i];
-            if (e->used && e->target == t) held = 1;
-        }
-        if (!held) inst->pa_targets[t][0] = '\0';
-    }
+    uint64_t held = pa_referenced_mask(inst);
+    for (int t = 0; t < PA_MAX_TARGETS; t++)
+        if (inst->pa_targets[t][0] && !((held >> t) & 1u)) inst->pa_targets[t][0] = '\0';
 }
 
 /* A ZOMBIE is a retired lane: used, no points, its release already served —
@@ -241,12 +269,8 @@ static void pa_targets_gc(seq8_instance_t *inst) {
  * pool is full a zombie is the one thing worth evicting: nothing lists,
  * plays or serializes it. Its target may then be unreferenced; gc it. */
 static int pa_target_referenced(const seq8_instance_t *inst, int target) {
-    if (pa_target_in_hand(inst, target)) return 1;
-    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
-        const pa_entry_t *e = &inst->pa_entries[i];
-        if (e->used && e->target == target) return 1;
-    }
-    return 0;
+    if (target < 0 || target >= PA_MAX_TARGETS) return 0;
+    return (int)((pa_referenced_mask(inst) >> target) & 1u);
 }
 
 /* `keep` is the target the caller is about to give the freed slot — interned a

@@ -336,6 +336,33 @@ int main(void) {
         DPTS("0:5000", "and wraps at ITS end (step 31 -> 0), not at 16");
         hx_destroy(h);
         OK("drum: a refused compress moves nothing; the rotation wraps at the longest lane's end");
+
+        /* UNDO takes the automation back WITH the notes. The drum clip snapshot
+         * used to hold notes only, so an undone ALL LANES Double left the copied
+         * automation behind. Melodic Double is the control: its snapshot always
+         * carried automation. */
+        h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+        hx_set_param(h, "t0_l0_note_add", "96 100 12");
+        hx_set_param(h, "t0_pa_set", "0 " DL " 96 5000");
+        hx_set_param(h, "t0_all_lanes_double_fill", "1");
+        DPTS("96:5000 480:5000", "setup: doubled");
+        hx_set_param(h, "undo_restore", "1");
+        HX_ASSERT(in->tracks[0].drum_clips[0]->lanes[0].clip.length == 16, "setup: undo restored the lane to 16 steps");
+        DPTS("96:5000", "⭐ undo takes the copied automation back with the notes");
+        hx_set_param(h, "redo_restore", "1");
+        DPTS("96:5000 480:5000", "and redo brings it back");
+        hx_destroy(h);
+
+        h = hx_create(NULL);
+        hx_set_param(h, "t1_c0_step_4_toggle", "60 100");
+        pa_set(h, LINK, 96, 5000);
+        hx_set_param(h, "t1_loop_double_fill", "1");
+        PTS_EQ(LINK, "96:5000 480:5000", "CONTROL setup: melodic doubled");
+        hx_set_param(h, "undo_restore", "1");
+        PTS_EQ(LINK, "96:5000", "CONTROL: melodic undo takes it back too");
+        hx_destroy(h);
+        OK("⭐ undo and redo of an ALL LANES Double carry the automation with the notes (melodic as the control)");
     }
 
     /* ---- Real playback: the lock arrives on the step its note plays -- */

@@ -1154,6 +1154,13 @@ typedef struct {
     uint8_t  drum_redo_valid;
     uint8_t  drum_redo_track;
     uint8_t  drum_redo_clip;
+    /* The drum clip's automation, with it (plan 6c): an ALL LANES Double now
+     * copies automation too, and undo restoring the notes without it would be
+     * the half-restore pa_undo_capture exists to prevent. */
+    pa_entry_t drum_undo_pa[PA_UNDO_ENTRIES];
+    uint8_t    drum_undo_pa_count, drum_undo_pa_partial;
+    pa_entry_t drum_redo_pa[PA_UNDO_ENTRIES];
+    uint8_t    drum_redo_pa_count, drum_redo_pa_partial;
     char     last_restore_info[64]; /* "d t c" or "m t0 c0 t1 c1 ..." — set by undo/redo restore */
 
     /* Drum effective-mute bitmask per snapshot slot per track (bit L = lane L muted). */
@@ -5477,6 +5484,8 @@ static void undo_begin_drum_clip(seq8_instance_t *inst, int t, int c) {
         dst->playback_audio_reverse = src->playback_audio_reverse;
         dst->pfx_params = lane->pfx_params;
     }
+    pa_undo_capture(inst, inst->drum_undo_pa, &inst->drum_undo_pa_count,
+                    &inst->drum_undo_pa_partial, t, c);
     inst->drum_undo_valid = 1;
     inst->drum_undo_track = (uint8_t)t;
     inst->drum_undo_clip  = (uint8_t)c;
