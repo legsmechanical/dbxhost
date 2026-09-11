@@ -30,7 +30,7 @@ import {
     engineLoadCardScript,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
     slotIndex, moveBusForChannel, moveBusComp, moveBusPrefix,
-} from './ui_engine.mjs';
+    faderStep, faderWire, faderFormatDb, faderGainToTravel} from './ui_engine.mjs';
 /* MODULE buses — a splittable module's voice groups. ⚠ NOT davebox's `S.bus`,
  * which is a MIXER POSITION; ui_modbus.mjs's header says why the source keeps
  * them apart even though the screens never collide. */
@@ -247,7 +247,7 @@ function moveBusFor(track) {
         title: MOVE_BUS_TITLE(bus), prefix: moveBusPrefix(bus),
         levels: [
             { comp: cmp, key: 'volume', label: 'Volume',
-              min: 0, max: SLOT_LEVEL_MAX, step: BUS_LEVEL_STEP, fmt: GAIN_FMT },
+              min: 0, max: SLOT_LEVEL_MAX, step: BUS_LEVEL_STEP, fmt: VOL_FMT, fader: true },
             { comp: cmp, key: 'pan', label: 'Pan',
               min: 0, max: 1, step: BUS_LEVEL_STEP, fmt: PAN_FMT },
             { comp: cmp, key: 'send_a', label: 'Send A',
@@ -349,6 +349,18 @@ const PCT_FMT = (v) => Math.round(v * 100) + '%';
  * "2.00x" says what it does. Sends keep PCT_FMT — they are 0..1 proportions,
  * where a percentage is exactly right. */
 const GAIN_FMT = (v) => (v || 0).toFixed(2) + 'x';
+/* VOLUME prints dB and moves on the fader law everywhere it appears — the same
+ * law as the session strip (see THE FADER LAW in ui_engine.mjs). ⓘ Module Level
+ * (`synth_volume`) is ALSO a 0..2 gain but is deliberately left on GAIN_FMT: it
+ * is a macro-only target, off the page, and it was not asked for. */
+const VOL_FMT = (v) => faderFormatDb(v || 0);
+/* How a LEVEL is written. ⚠ VOLUME goes out at faderWire's five decimals, not
+ * three — three decimals of gain wrote 20% of a fader's throw more than 0.05 dB
+ * off (see faderWire). Keyed on a key segment that is EXACTLY `volume`, which
+ * catches `volume`, `slot:volume` and `move_fx:N:volume` and by construction
+ * excludes `synth_volume` (Module Level). Everything else keeps its three. */
+const IS_VOL_KEY = /(^|:)volume$/;
+const lvWire = (key, v) => IS_VOL_KEY.test(String(key || '')) ? faderWire(v) : (v || 0).toFixed(3);
 const PAN_FMT = (v) => {
     const pct = Math.round((v - 0.5) * 200);
     if (pct === 0) return 'C';
@@ -374,7 +386,7 @@ const ONOFF   = (v) => (v ? 'Yes' : 'No');
  * first detent. */
 const SLOT_LEVELS = [
     { slot: true, key: 'volume', label: 'Volume',
-      min: 0, max: SLOT_LEVEL_MAX, step: 0.05, fmt: GAIN_FMT },
+      min: 0, max: SLOT_LEVEL_MAX, step: 0.05, fmt: VOL_FMT, fader: true },
     { slot: true, key: 'pan', label: 'Pan',
       min: 0, max: 1, step: 0.05, fmt: PAN_FMT },
     { slot: true, key: 'send_a', label: 'Send A',
@@ -1219,7 +1231,7 @@ function flushForRetarget() {
     /* Slot params carry their own slot, so landing them here is correct rather
      * than merely tidy. */
     for (const w of S.pendingSlotWrites) {
-        engineSetSlotParam(w.slot, w.key, w.int ? String(w.val) : w.val.toFixed(3));
+        engineSetSlotParam(w.slot, w.key, w.int ? String(w.val) : lvWire(w.key, w.val));
     }
     S.pendingSlotWrites.length = 0;
     if (S.slotCfgDirty || S.busLevelDirty) {
@@ -1604,7 +1616,7 @@ export function soundExit(opts) {
      * writes: a send you just dialled should survive leaving sound mode, and
      * each carries its own slot so landing them late is still correct. */
     for (const w of S.pendingSlotWrites) {
-        engineSetSlotParam(w.slot, w.key, w.int ? String(w.val) : w.val.toFixed(3));
+        engineSetSlotParam(w.slot, w.key, w.int ? String(w.val) : lvWire(w.key, w.val));
     }
     S.pendingSlotWrites.length = 0;
     if (S.slotCfgDirty) { S.slotCfgDirty = false; engineSaveState(); }
@@ -1748,7 +1760,7 @@ function refreshBlockNames() {
  * The chain's per-knob ASSIGNMENT layer that used to own these knobs on the
  * list screens moves to the MACROS bank (next in the plan). */
 const LEVEL_KNOB_SPECS = [
-    { key: 'volume',       label: 'Vol',  name: 'Volume',       widget: 'vbar',   def: 1.0, max: SLOT_LEVEL_MAX, units: 200, fmt: GAIN_FMT },
+    { key: 'volume',       label: 'Vol',  name: 'Volume',       widget: 'vbar',   def: 1.0, max: SLOT_LEVEL_MAX, units: 200, fmt: VOL_FMT, fader: true },
     { key: 'pan',          label: 'Pan',  name: 'Pan',          widget: 'arcbip', def: 0.5, max: 1.0,            units: 200, fmt: PAN_FMT },
     { key: 'send_a',       label: 'SndA', name: 'Send A',       widget: 'arc',    def: 0.0, max: 1.0,            units: 100, fmt: PCT_FMT },
     { key: 'send_b',       label: 'SndB', name: 'Send B',       widget: 'arc',    def: 0.0, max: 1.0,            units: 100, fmt: PCT_FMT },
@@ -1871,17 +1883,20 @@ function onLevelTurn(idx, delta, bounds) {
     const m = levelKnobSpec(idx);
     if (!m) return;
     const prev = S.levelVals[idx];
-    let v = prev + delta * m.step;
+    /* ⭑ Volume steps on the FADER LAW, keeping its 200-unit throw. */
+    let v = m.fader ? faderStep(prev, delta, m.units) : prev + delta * m.step;
     if (v < 0) v = 0;
     if (v > m.max) v = m.max;
     /* A macro leg's range, when one is set (ui_sound's legBounds). */
     if (bounds) v = Math.max(bounds[0], Math.min(bounds[1], v));
-    v = Math.round(v * 1000) / 1000;
+    /* ⚠ A fader value is NOT rounded to three decimals — faderTravelToGain has
+     * already snapped it to 0.1 dB, and 0.001 of gain is 6 dB at the bottom. */
+    if (!m.fader) v = Math.round(v * 1000) / 1000;
     if (v === prev) return;
     S.levelVals[idx] = v;
     S.levelPending |= (1 << idx);
     S.levelDirtySave = true;
-    automationParamEdit(S.track, effectiveClip(S.track), S.slot, levelFullKey(idx), v.toFixed(3), prev.toFixed(3));
+    automationParamEdit(S.track, effectiveClip(S.track), S.slot, levelFullKey(idx), lvWire(m.key, v), lvWire(m.key, prev));
     S.dirty = true;
 }
 /* Re-read ONE level from the engine into the cache (the automation moves
@@ -1918,7 +1933,7 @@ function drainLevelWrites() {
     for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++) {
         if (!(S.levelPending & (1 << i))) continue;
         const m = LEVEL_KNOB_SPECS[i];
-        const v = S.levelVals[i].toFixed(3);
+        const v = lvWire(m.key, S.levelVals[i]);
         if (comp === 'slot') engineSetSlotParam(S.slot, m.key, v);
         else engineSet(S.slot, comp, m.key, v);
         const row = S.pickRows.find(r => r.kind === 'buslevel' && r.spec && r.spec.key === m.key);
@@ -1945,7 +1960,9 @@ function levelCells() {
         const st = automationStateFor(t, c, S.slot + ':' + levelFullKey(i));
         const cell = { label: m.label, name: m.name, text: m.fmt(v) };
         if (m.widget === 'arcbip') { cell.kind = 'arcbip'; cell.signed = Math.max(-1, Math.min(1, (v - 0.5) * 2)); }
-        else { cell.kind = m.widget; cell.norm = Math.max(0, Math.min(1, v / m.max)); }
+        else { cell.kind = m.widget;
+               /* A fader's bar shows TRAVEL — see THE FADER LAW in ui_engine. */
+               cell.norm = m.fader ? faderGainToTravel(v) : Math.max(0, Math.min(1, v / m.max)); }
         if (st) cell.auto = st.active ? 'auto' : 'auto-off';
         cells.push(cell);
     }
@@ -1974,8 +1991,8 @@ function readSlotVolume(slot) {
 
 function writeVolLevel(slot, v) {
     const t = volTarget();
-    if (t) engineSet(slot, t.comp, t.key, v.toFixed(3));
-    else engineSetSlotParam(slot, SLOT_LEVEL_KEY, v.toFixed(3));
+    if (t) engineSet(slot, t.comp, t.key, faderWire(v));
+    else engineSetSlotParam(slot, SLOT_LEVEL_KEY, faderWire(v));
 }
 
 /* ⚠ Renamed in spirit, 2026-08-24: these no longer touch host_vol_block.
@@ -3094,6 +3111,54 @@ function openSlotCfg(keepCursor, which) {
     S.dirty = true;
 }
 
+/* The sound menu's level row being edited — a Move bus's Volume/Pan, or a
+ * chain slot's through queueSlotCfgWrite. Extracted from soundOnCC's jog branch
+ * unchanged so a test can drive the REAL step: with it inline, reverting Volume
+ * here to linear left the entire suite green, because nothing reached it. */
+function busLevelStep(delta) {
+    const r = S.pickRows[S.pickRow];
+    if (!r || r.kind !== 'buslevel') return;
+    const sp = r.spec;
+    /* ⭑ Volume steps on the FADER LAW, keeping its 40-step throw. */
+    let v = sp.fader ? faderStep(r.val, delta > 0 ? 1 : -1, sp.max / sp.step)
+                     : Math.round((r.val + (delta > 0 ? sp.step : -sp.step)) * 1000) / 1000;
+    if (v < sp.min) v = sp.min;
+    if (v > sp.max) v = sp.max;
+    if (v !== r.val) {
+        r.val = v;
+        S.busLevelDirty = true;
+        /* Queued like every write here — this is the MIDI handler. */
+        if (sp.slot) queueSlotCfgWrite(sp.key, v, !!sp.int);
+        else queueWrite(sp.key, lvWire(sp.key, v), sp.comp);
+    }
+}
+
+/* ⚠ Test hooks for the two SOUND-MENU level paths. They set the sound-local
+ * state each step reads (this module keeps its OWN `S` — see
+ * soundRequestModulePickForTest) and then call the real function. Before these
+ * existed, reverting Volume to linear on BOTH paths left the suite green. */
+export function soundBusLevelStepForTest(spec, val, delta) {
+    S.pickRows = [{ kind: 'buslevel', spec, val }];
+    S.pickRow = 0;
+    busLevelStep(delta);
+    return S.pickRows[0].val;
+}
+export function soundSlotCfgStepForTest(row, val, delta) {
+    S.slotRows = [row];
+    S.slotCfgIdx = 0;
+    S.slotCfgEditing = true;
+    S.slotCfgVals = [val];
+    slotCfgStep(delta);
+    return S.slotCfgVals[0];
+}
+/* The declarations the menus actually use, so a test steps the REAL spec
+ * rather than one it wrote itself. */
+export function soundVolumeSpecsForTest() {
+    const mb = moveBusFor(0);
+    return { slot: SLOT_LEVELS.find(l => l.key === 'volume'),
+             bus: mb && mb.levels ? mb.levels.find(l => l.key === 'volume') : null };
+}
+
 function slotCfgStep(delta) {
     const s = S.slotRows[S.slotCfgIdx];
     if (!S.slotCfgEditing || !s || s.sub) {
@@ -3112,9 +3177,13 @@ function slotCfgStep(delta) {
         const cur = s.opts.indexOf(S.slotCfgVals[S.slotCfgIdx]);
         v = s.opts[Math.max(0, Math.min(s.opts.length - 1, cur + (delta > 0 ? 1 : -1)))];
     } else {
-        v = S.slotCfgVals[S.slotCfgIdx] + (delta > 0 ? s.step : -s.step);
-        if (s.int) v = Math.round(v);
-        else v = Math.round(v * 1000) / 1000;  /* keep 0.05 steps from drifting */
+        /* ⭑ Volume steps on the FADER LAW, keeping its 40-step throw. */
+        if (s.fader) v = faderStep(S.slotCfgVals[S.slotCfgIdx], delta > 0 ? 1 : -1, s.max / s.step);
+        else {
+            v = S.slotCfgVals[S.slotCfgIdx] + (delta > 0 ? s.step : -s.step);
+            if (s.int) v = Math.round(v);
+            else v = Math.round(v * 1000) / 1000;  /* keep 0.05 steps from drifting */
+        }
         if (v < s.min) v = s.min;
         if (v > s.max) v = s.max;
     }
@@ -3179,7 +3248,7 @@ function drainSlotWrites() {
         /* Chain-level keys (knob_N_*, lfoN:*) go through BARE — they are not
          * in the slot: namespace (see engineSetChainParam). */
         if (w.chain) { engineSetChainParam(w.slot, w.key, String(w.val)); continue; }
-        engineSetSlotParam(w.slot, w.key, w.int ? String(w.val) : w.val.toFixed(3));
+        engineSetSlotParam(w.slot, w.key, w.int ? String(w.val) : lvWire(w.key, w.val));
     }
 }
 
@@ -4941,7 +5010,7 @@ function legWriteNorm(t, leg, f, cell, prev) {
         S.levelVals[li] = nv;
         S.levelPending |= (1 << li);
         S.levelDirtySave = true;
-        automationParamEdit(t, effectiveClip(t), S.slot, levelFullKey(li), nv.toFixed(3), was.toFixed(3));
+        automationParamEdit(t, effectiveClip(t), S.slot, levelFullKey(li), lvWire(levelFullKey(li), nv), lvWire(levelFullKey(li), was));
         return nv;
     }
     if (leg.kind === 'bank') {
@@ -7959,21 +8028,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * mid-scroll, 2s after entry, with the cursor still moving. */
             if (S.enterSession) armBankDisplay();
         } else if (S.view === VIEW_BLOCKS && S.busLevelEditing) {
-            const r = S.pickRows[S.pickRow];
-            if (r && r.kind === 'buslevel') {
-                const sp = r.spec;
-                let v = r.val + (delta > 0 ? sp.step : -sp.step);
-                v = Math.round(v * 1000) / 1000;
-                if (v < sp.min) v = sp.min;
-                if (v > sp.max) v = sp.max;
-                if (v !== r.val) {
-                    r.val = v;
-                    S.busLevelDirty = true;
-                    /* Queued like every write here — this is the MIDI handler. */
-                    if (sp.slot) queueSlotCfgWrite(sp.key, v, !!sp.int);
-                    else queueWrite(sp.key, v.toFixed(3), sp.comp);
-                }
-            }
+            busLevelStep(delta);
         } else if (S.view === VIEW_BLOCKS && S.instrEditing) {
             const opts = instrOptions(GS.trackRoute, S.track);
             const cur = opts.indexOf(S.instrSel);

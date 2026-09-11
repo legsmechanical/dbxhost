@@ -29,7 +29,7 @@ import {
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
-         SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderGainToTravel, faderTravelToGain} from './ui_engine.mjs';
+         SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire} from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity, BANK_CYCLE_DRUM, CONDUCT_BANK_CYCLE,
          bankCycleForMode } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
@@ -3718,13 +3718,7 @@ function _sessionKnobParam(knobIdx, d2) {
          * acceleration and the tuned `sweep` count doing exactly what they did.
          * See THE FADER LAW in ui_engine.mjs for why the old linear-in-gain
          * mapping put unity halfway up the throw. */
-        let t = faderGainToTravel(lvl) + acc.steps / mode.units;
-        if (t < 0) t = 0;
-        if (t > 1) t = 1;
-        v = faderTravelToGain(t);
-        /* ⚠ The law's bottom point is -90 dB, not -inf, so travel 0 would
-         * otherwise leave a whisper of gain. A fader has to bottom out. */
-        if (t === 0) v = 0;
+        v = faderStep(lvl, acc.steps, mode.units);
         if (v > mode.max) v = mode.max;
     } else {
         v = lvl + acc.steps * mode.step;
@@ -3751,7 +3745,8 @@ function _sessionKnobParam(knobIdx, d2) {
                 automationParamEdit(knobIdx, _clip, 'midi', tg.fullKey,
                                     String(Math.round((v / _mx) * 127)), String(Math.round((lvl / _mx) * 127)));
             } else {
-                automationParamEdit(knobIdx, _clip, tg.slot, tg.fullKey, v.toFixed(3), lvl.toFixed(3));
+                automationParamEdit(knobIdx, _clip, tg.slot, tg.fullKey,
+                    mode.fader ? faderWire(v) : v.toFixed(3), mode.fader ? faderWire(lvl) : lvl.toFixed(3));
             }
         }
     }
