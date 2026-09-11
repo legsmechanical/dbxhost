@@ -211,6 +211,11 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **A drum pad hit at the very end of a count-in is recorded again.** Since
+  early September it landed nowhere; it now goes on step 1, as it does on a
+  melodic track.
+- **Module Menu opens for modules with several parts.** On a module with
+  repeated elements (parts, pads, tones), Presets > Module Menu failed to open.
 - **The ALL LANES bank's knobs work again.** Since late August every knob on
   it — resolution, stretch, shift, quantize, input quantize, direction, repeat
   sync — did nothing after the "Edits will affect all lanes" OK.
