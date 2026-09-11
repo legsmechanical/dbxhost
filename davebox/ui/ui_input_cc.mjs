@@ -52,7 +52,8 @@ import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankRe
 import { automationParamEdit } from './ui_automation.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
-import { bankKnobLockTurn, performTypeChange, cancelTypeChange } from './ui_sound.mjs';
+import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
+         performModuleChange, cancelModuleChange } from './ui_sound.mjs';
 import { soundActive, soundOpen, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, soundEnterBuses } from './ui_sound.mjs';
@@ -281,6 +282,18 @@ function _onCC_jog(d1, d2) {
         S.confirmTypeChange = null;
         if (S.confirmTypeChangeSel === 0) performTypeChange(c);
         else cancelTypeChange(c);
+        S.screenDirty = true;
+        forceRedraw();
+        return;
+    }
+
+    /* A MODULE swap/remove that would strand automation -- the other axis of the
+     * same question. Yes prunes and then loads; No leaves the module in place. */
+    if (d1 === 3 && d2 === 127 && S.confirmModuleChange) {
+        const c = S.confirmModuleChange;
+        S.confirmModuleChange = null;
+        if (S.confirmModuleChangeSel === 0) performModuleChange(c);
+        else cancelModuleChange();
         S.screenDirty = true;
         forceRedraw();
         return;
@@ -825,6 +838,14 @@ function modalDialogUp() {
             const delta = decodeDelta(d2);
             if (delta !== 0) {
                 S.confirmTypeChangeSel = S.confirmTypeChangeSel === 0 ? 1 : 0;
+                S.screenDirty = true;
+            }
+            return;
+        }
+        if (S.confirmModuleChange) {
+            const delta = decodeDelta(d2);
+            if (delta !== 0) {
+                S.confirmModuleChangeSel = S.confirmModuleChangeSel === 0 ? 1 : 0;
                 S.screenDirty = true;
             }
             return;
@@ -1760,6 +1781,7 @@ export function backTapWouldAct() {
     if (S.confirmStateWipe) return false;
     if (S.confirmExit) return true;         /* Back = No */
     if (S.confirmTypeChange) return true;   /* Back = No */
+    if (S.confirmModuleChange) return true; /* Back = No */
     if (S.projectPadPicker) {
         const _p = S.projectPadPicker;
         /* An open overlay always peels; the bare grid closes unless the
@@ -1810,7 +1832,7 @@ function noOverviewYet() {
      * a project is chosen. Back declines on both for the same reason.
      * ⚠ Note/Session used to exit the module from the state-wipe confirm; Josh
      * ruled that out 2026-09-02 — a button meaning "go home" must not quit. */
-    return !!(S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || (S.projectPadPicker && S.awaitingProjectSelect));
+    return !!(S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.confirmModuleChange || (S.projectPadPicker && S.awaitingProjectSelect));
 }
 
 export function atOverview() {
@@ -1956,6 +1978,7 @@ function _backTap() {
     /* The exit confirm: Back is No — you stay exactly where you were. */
     if (S.confirmExit) { S.confirmExit = null; S.screenDirty = true; return; }
     if (S.confirmTypeChange) { const c = S.confirmTypeChange; S.confirmTypeChange = null; cancelTypeChange(c); S.screenDirty = true; return; }
+    if (S.confirmModuleChange) { S.confirmModuleChange = null; cancelModuleChange(); S.screenDirty = true; return; }
 
     /* 1. Transient dialogs / pickers / modes (one open at a time). */
     if (S.stepRecActive) {
@@ -3746,7 +3769,7 @@ function _onCC_knobs(d1, d2) {
             }
             return;
         }
-        if (S.globalMenuOpen || S.tapTempoOpen || S.confirmBake || S.confirmClearSession || S.confirmConvertToDrum || S.confirmConvertToConduct || S.menuInfoLines.length > 0 || S.confirmExport || S.exportDoneDialog || S.recordBlockedDialog || S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.bpmMoveInfo) return;
+        if (S.globalMenuOpen || S.tapTempoOpen || S.confirmBake || S.confirmClearSession || S.confirmConvertToDrum || S.confirmModuleChange || S.confirmConvertToConduct || S.menuInfoLines.length > 0 || S.confirmExport || S.exportDoneDialog || S.recordBlockedDialog || S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.bpmMoveInfo) return;
         const knobIdx = d1 - 71;
         S.knobTouched          = knobIdx;
         S.knobTurnedTick[knobIdx] = nowMs();

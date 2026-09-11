@@ -172,9 +172,21 @@ step('a second request while the modal is up changes nothing', () => {
 });
 step('knobs and Note/Session are declined under the modal (source pins)', () => {
     const src = readFileSync('ui/ui_input_cc.mjs', 'utf8');
-    if (!/S\.confirmStateWipe \|\| S\.confirmExit \|\| (S\.confirmTypeChange \|\| )?S\.bpmMoveInfo\) return;/.test(src))
+    /* ⚠⚠ THESE PIN THAT THE GUARD LISTS `confirmExit`, NOT THE ORDER OF EVERY
+     * FLAG BESIDE IT. They used to spell the whole disjunction out, with one
+     * optional group for the flag that had been added most recently -- so the
+     * NEXT modal to exist broke a passing test that had nothing to do with it
+     * (confirmModuleChange, 2026-09-10). A pin that has to be edited every time
+     * an unrelated flag appears teaches people to edit pins.
+     * The intent is kept exactly: find the guard, require confirmExit in it. */
+    const guard = (needle) => {
+        const line = src.split('\n').find(l => l.indexOf('S.confirmStateWipe') >= 0 && l.indexOf(needle) >= 0);
+        if (!line) throw new Error('guard not found for ' + needle);
+        return line;
+    };
+    if (guard('S.bpmMoveInfo) return;').indexOf('S.confirmExit') < 0)
         throw new Error('knob guard does not list confirmExit');
-    if (!/S\.confirmStateWipe \|\| S\.confirmExit \|\| (S\.confirmTypeChange \|\| )?\(S\.projectPadPicker/.test(src))
+    if (guard('(S.projectPadPicker').indexOf('S.confirmExit') < 0)
         throw new Error('Note/Session decline does not list confirmExit');
 });
 

@@ -474,6 +474,10 @@ export const S = {
      * cleared — a change that costs nothing asks nothing. */
     confirmTypeChange: null,
     confirmTypeChangeSel: 1,
+    /* A module SWAP or REMOVE that would strand automation/macros -- the same
+     * shape as confirmTypeChange, on the other axis. */
+    confirmModuleChange: null,
+    confirmModuleChangeSel: 1,
     confirmStateWipeSel: 1,   /* 0=Yes, 1=No (default) */
     /* Keys->Drums track conversion confirm dialog (transient, not persisted). */
     confirmConvertToDrum: false,
