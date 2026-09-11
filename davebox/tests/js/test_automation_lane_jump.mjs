@@ -126,7 +126,9 @@ function openMenuOn(target) {
  * does to it (applyBankPick calls autoBankReset). The return has to rebuild it,
  * not rely on it having survived. */
 function assertBackToLane(idx, what, cleared) {
-    if (cleared) bank.autoBankReset();
+    /* ⚠ Move the cursor too: autoBankReset keeps `sel`, so without this the
+     * cursor assertion below could not fail. */
+    if (cleared) { bank.autoBankReset(); S.autoBank.sel = (idx === 0) ? 1 : 0; }
     back(); ticks(4);
     assert(S.activeBank === BANK_AUTOMATION, what + ': Back did not return to AUTOMATION (bank ' + S.activeBank + ')');
     assert(!snd.soundOpen(), what + ': sound mode still open after the return');
@@ -191,6 +193,16 @@ step('⭐ MIDI lane -> MACROS; Back -> the menu on that lane', () => {
     shiftClick(); ticks(4);
     assert(snd.soundOpen() && S.activeBank === BANK_MACROS, 'not on MACROS: bank ' + S.activeBank);
     assertBackToLane(idx, 'midi', true);
+});
+
+step('CONTROL: with the ops pop-up open, Shift + click is NOT a jump', () => {
+    openMenuOn(TARGETS.chain);
+    click();                                           /* the lane -> its ops */
+    assert(S.autoBank.ops, 'rig: the ops did not open');
+    shiftClick(); ticks(3);
+    assert(S.activeBank === BANK_AUTOMATION && !snd.soundOpen(),
+           'the jump fired from inside the ops pop-up (bank ' + S.activeBank + ')');
+    back(); back();
 });
 
 step('CONTROL: walking off the destination bank spends the return — Back is the bank\'s own', () => {
