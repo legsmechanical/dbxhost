@@ -143,7 +143,6 @@ int main(void) {
      * lock -> undo -> redo came back as a lane with NO name — and the next
      * parameter automated took the freed slot, and the redone lock drove IT. */
     {
-        char buf[2048];
         hx_t *h = hx_create(NULL);
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         hx_set_param(h, "t1_c0_step_4_toggle", "60 100");
@@ -174,9 +173,36 @@ int main(void) {
         hx_set_param(h, "t2_c0_undo_checkpoint", "1");            /* a new undo unit: cutoff's snapshot is gone */
         hx_set_param(h, "t1_pa_clear", "0");                      /* any gc */
         HX_ASSERT(pa_target_lookup(in, "1:synth:cutoff") < 0, "no snapshot refers to it any more: name FREED");
-        hx_get_param(h, "pa_list", buf, sizeof buf);
         hx_destroy(h);
-        OK("⚠ undo/redo keep a restored lane's name; a name no snapshot needs is still freed");
+
+        /* CONTROL, sharper: an INVALIDATED snapshot still holds its data — a
+         * drum checkpoint clears undo_valid but leaves the melodic slot as it
+         * was. Only the validity check frees the name here. */
+        h = hx_create(NULL);
+        in = (seq8_instance_t *)h->inst;
+        hx_set_param(h, "t0_l0_note_add", "0 100 12");            /* track 1's drum clip exists */
+        hx_set_param(h, "t1_c0_step_4_toggle", "60 100");
+        pa_set(h, 1, 0, "1:synth:cutoff", 96, 5000);
+        hx_set_param(h, "t1_c0_undo_checkpoint", "1");
+        hx_set_param(h, "t0_drum_undo_checkpoint", "1");          /* melodic snapshot now invalid, data intact */
+        HX_ASSERT(!in->undo_valid && in->undo_pa_count[0] == 1, "setup: a stale melodic snapshot that still names cutoff");
+        hx_set_param(h, "t1_pa_clear", "0");
+        HX_ASSERT(pa_target_lookup(in, "1:synth:cutoff") < 0, "a stale snapshot keeps nothing alive");
+        hx_destroy(h);
+
+        /* The DRUM snapshot keeps a name too: clear a drum clip's automation
+         * after its snapshot, then undo. */
+        h = hx_create(NULL);
+        in = (seq8_instance_t *)h->inst;
+        hx_set_param(h, "t0_l0_note_add", "0 100 12");
+        pa_set(h, 0, 0, "0:synth:cutoff", 96, 5000);
+        hx_set_param(h, "t0_drum_undo_checkpoint", "1");
+        hx_set_param(h, "t0_pa_clear", "0");
+        HX_ASSERT(!has(h, 0, 0, "synth"), "setup: cleared");
+        hx_set_param(h, "undo_restore", "1");
+        HX_ASSERT(has(h, 0, 0, " 0:synth:cutoff"), "drum undo brings the lane back under its name");
+        hx_destroy(h);
+        OK("⚠ undo/redo keep a restored lane's name; a name no VALID snapshot needs is still freed");
     }
 
     printf("PASS: test_param_auto_clipops (%d checks)\n", ok_count);
