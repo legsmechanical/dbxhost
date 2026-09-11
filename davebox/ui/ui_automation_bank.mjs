@@ -34,7 +34,7 @@ import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey,
          automationToggleActive, automationToggleSmooth, automationSmoothable,
          automationSetLoop, automationSetRate, automationRateText, automationSetScale,
-         automationClearClip } from './ui_automation.mjs';
+         automationClearClip, automationListGen } from './ui_automation.mjs';
 import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
          drawBrackets, kitUseLayout, MV_FOOTER_Y } from './ui_movy.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -273,6 +273,54 @@ export function autoBankClearClip() {
     showActionPopup('AUTOMATION', any ? 'CLIP CLEARED' : 'NONE');
     a.ops = null; a.menu = false;
 }
+/* ---- the step row: the selected lane's steps, blinking ------------------- */
+/* Josh, 2026-09-10: "when scrolling through automation rows, have any p-locks
+ * related to the lane light up on the step sequencer (blinking white)."
+ *
+ * The DSP answers the whole clip in ONE read (tN_cC_pa_steps: a step mask per
+ * lane), cached until the list changes (automationListGen) or the clip does —
+ * so moving the cursor costs nothing, and a menu left open costs nothing.
+ * It must run from the TICK: get_param answers null from the MIDI handler.
+ * The painter (ui_leds) only reads S.autoBankLit, set here each tick. */
+let litCache = { key: null, map: null };
+let litTryMs = -1e9;
+/* A failed read is asked again after this long — milliseconds off the one
+ * clock, never ticks (a tick's length is the tick's cost). */
+const LIT_RETRY_MS = 500;
+
+/* The lane under the cursor — or the one whose ops are open — else null. */
+function selectedTarget(t, c) {
+    const a = S.autoBank;
+    if (!a || !(a.menu || a.ops)) return null;
+    const r = a.ops ? a.ops.row : autoBankRows(t, c)[a.sel];
+    return r && r.kind === 'entry' ? r.target : null;
+}
+
+export function autoBankTick() {
+    S.autoBankLit = null;
+    if (!autoBankIsActive() || !S.bankCardLatched || S.moveCoRunTrack >= 0) return;
+    const t = S.activeTrack, c = effectiveClip(t);
+    const target = selectedTarget(t, c);
+    if (target === null) return;
+    const key = t + ' ' + c + ' ' + automationListGen();
+    if (litCache.key !== key) {
+        /* A failed read (null) is not "no steps": keep the old map off the
+         * row and ask again on the slow cadence, not every tick. */
+        if (S.clockMs - litTryMs < LIT_RETRY_MS) return;
+        litTryMs = S.clockMs;
+        const raw = host_module_get_param('t' + t + '_c' + c + '_pa_steps');
+        if (raw === null || raw === undefined) return;
+        const map = new Map();
+        for (const line of String(raw).split('\n')) {
+            const sp = line.lastIndexOf(' ');
+            if (sp > 0) map.set(line.slice(0, sp), line.slice(sp + 1));
+        }
+        litCache = { key, map };
+        litTryMs = -1e9;
+    }
+    S.autoBankLit = litCache.map.get(target) || '';
+}
+
 /* Which slot this track's chain targets live in — for tests and labels. */
 export function autoBankSlotForTrack(t) { return schSlotForTrack(t); }
 export function autoBankIsActive() { return S.activeBank === BANK_AUTOMATION && !S.sessionView; }

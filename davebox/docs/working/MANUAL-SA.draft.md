@@ -1040,7 +1040,10 @@ in the current clip** — parameters, levels, MIDI targets, and the pads'
 aftertouch — each with its state (ON, OFF, or SMTH). Its knobs do nothing; the
 jog is the whole surface.
 
-**Click the jog** for the menu, turn to a row and click for its operations:
+**Click the jog** for the menu. As the cursor moves onto a row, the **step
+buttons blink white** on every step where that parameter has a value set — its
+step locks, and any step a recorded move passes through. Then click a row for
+its operations:
 **Delete**, **Mute** / **Unmute**, **Smooth** / **Stepped** (on parameters that
 can ramp), **Loop** (that parameter's own loop length in steps, or CLIP to
 follow the clip), and **Rate** (/16 to ×16, the loop stretching to match). The

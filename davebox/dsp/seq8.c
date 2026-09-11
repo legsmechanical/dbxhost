@@ -6975,6 +6975,46 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                 out[SEQ_STEPS] = '\0';
                 return SEQ_STEPS;
             }
+            /* tN_cC_pa_steps: which STEPS of this clip hold automation points,
+             * per lane — the AUTOMATION bank lights them on the step row while
+             * its cursor sits on that lane (Josh, 2026-09-10: "have any p-locks
+             * related to the lane light up on the step sequencer").
+             *
+             * One line per automated target of this clip:
+             *   "<target> <mask>\n"   mask[s] == '1' iff a point lies in step s
+             * The mask stops after the last occupied step. ONE read for the
+             * whole clip, so scrolling the list costs nothing more.
+             *
+             * A step is the clip's own ticks_per_step — the unit a p-lock is
+             * written in (a held step writes its point at step * tps). A
+             * recorded sweep lays a point every half step, so it lights every
+             * step it covers: the store does not tell a lock from a sweep. */
+            if (!strcmp(p, "_pa_steps")) {
+                int n = 0;
+                if (out_len > 0) out[0] = '\0';           /* an empty clip is an empty STRING */
+                uint32_t tps = cl->ticks_per_step ? cl->ticks_per_step : (uint32_t)TICKS_PER_STEP;
+                char mask[SEQ_STEPS + 1];
+                pa_lock(inst);                            /* the latch may be writing */
+                for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+                    pa_entry_t *e = &inst->pa_entries[i];
+                    if (!e->used || !e->count || e->track != tidx || e->clip != cidx) continue;
+                    int top = 0;
+                    memset(mask, '0', SEQ_STEPS);
+                    for (int k = 0; k < (int)e->count && k < PA_ENTRY_POINTS; k++) {
+                        uint32_t s = (uint32_t)e->points[k].tick / tps;
+                        if (s >= SEQ_STEPS) continue;
+                        mask[s] = '1';
+                        if ((int)s + 1 > top) top = (int)s + 1;
+                    }
+                    mask[top] = '\0';
+                    int w = snprintf(out + n, (size_t)(out_len - n), "%s %s\n",
+                                     inst->pa_targets[e->target], mask);
+                    if (w < 0 || n + w >= out_len) { out[n] = '\0'; break; }   /* see pa_list */
+                    n += w;
+                }
+                pa_unlock(inst);
+                return n;
+            }
             if (!strncmp(p, "_length", 7))
                 return snprintf(out, out_len, "%d", (int)cl->length);
             if (!strncmp(p, "_loop_start", 11))

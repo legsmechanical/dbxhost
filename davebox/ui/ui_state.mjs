@@ -762,6 +762,10 @@ export const S = {
     trackMacros: new Array(8).fill(null),
     /* The AUTOMATION bank's menu state (ui_automation_bank owns it; null = the plain card). */
     autoBank: null,
+    /* The steps the AUTOMATION menu's selected lane holds points on, as a
+     * '0'/'1' string indexed by absolute step — blinked white on the step row
+     * (ui_leds). Set each tick by autoBankTick; null = nothing to show. */
+    autoBankLit: null,
     /* THE MIDI KNOB VALUES (spec §2b): per track, target -> last value sent
      * (7-bit for cc:<n> / at, 14-bit for pb). CCs have no readback, so this
      * is the knob's truth across relaunches (sidecar `mcv`). */

@@ -111,6 +111,23 @@ export function stepSaveFlashOn() {
            Math.floor((S.clockMs - S.stepSaveFlashStartTick) / 106) % 2 === 0;
 }
 
+/* THE AUTOMATION MENU'S LANE, on the step row (Josh, 2026-09-10: "have any
+ * p-locks related to the lane light up on the step sequencer (blinking
+ * white)"). S.autoBankLit is the selected lane's step mask, set by
+ * autoBankTick; the ON half paints White over the row, the OFF half leaves the
+ * row as it is, so the notes under a lock stay readable — the step-record
+ * cursor's shape. The copy-source blink's 220 ms phase. Inside the loop window
+ * only: a point outside it never plays. */
+function paintAutoBankLit(base, lsBase, winEnd) {
+    const m = S.autoBankLit;
+    if (!m || !(Math.floor(S.clockMs / 220) % 2)) return;
+    for (let i = 0; i < 16; i++) {
+        const absStep = base + i;
+        if (absStep < lsBase || absStep >= winEnd) continue;
+        if (m.charCodeAt(absStep) === 49) setLED(16 + i, White);   /* '1' */
+    }
+}
+
 export function updateStepLEDs() {
     if (!S.ledInitComplete) return;
     /* ⭐⭐ THE SAVE FLASH OWNS THE ROW OUTRIGHT (Josh, 2026-09-10: "blink works,
@@ -284,6 +301,7 @@ export function updateStepLEDs() {
                 }
             }
         }
+        paintAutoBankLit(base, lsBase, winEnd);
         /* Copy-source blink: step-to-step copy waiting for destination (drum lane) */
         if (S.copyHeld && S.copySrc && (S.copySrc.kind === 'step' || S.copySrc.kind === 'cut_step') && Math.floor(S.copySrc.absStep / 16) === page) {
             const btnIdx = S.copySrc.absStep % 16;
@@ -351,6 +369,8 @@ export function updateStepLEDs() {
             }
         }
     }
+
+    paintAutoBankLit(base, lsBase, winEnd);
 
     /* Copy-source blink: step-to-step copy waiting for destination */
     if (S.copyHeld && S.copySrc && (S.copySrc.kind === 'step' || S.copySrc.kind === 'cut_step') && Math.floor(S.copySrc.absStep / 16) === page) {

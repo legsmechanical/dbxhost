@@ -125,6 +125,7 @@ export function automationResetCaches() {
     presenceStale = false;
     listStale = false;
     stateByKey = new Map();
+    listGen++;
 }
 
 /* Value metadata is per (slot, component) and lives as long as the module in
@@ -144,6 +145,11 @@ export function automationInvalidateMeta(slot) {
  * parameter is automated before acting. */
 let stateByKey = new Map();
 const stateKey = (track, clip, target) => track + ' ' + clip + ' ' + target;
+/* Bumped whenever the list may have changed — a successful pa_list read, a
+ * lane cleared here, a reset. A reader that caches something DERIVED from the
+ * points (the AUTOMATION bank's step map) keys its cache on this. */
+let listGen = 0;
+export function automationListGen() { return listGen; }
 
 function parseList(list) {
     /* ⚠ A FAILED READ IS NOT "NO AUTOMATION" (device, 2026-09-05). The read is
@@ -157,6 +163,7 @@ function parseList(list) {
      * (the DSP terminates an empty list explicitly) and clears the map. */
     if (list === null || list === undefined) { listStale = true; return; }
     stateByKey = new Map();
+    listGen++;
     if (!list) return;
     for (const line of list.split('\n')) {
         if (!line.length) continue;
@@ -712,6 +719,7 @@ export function automationClearKey(track, clip, target) {
     queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
     queueSet('t' + track + '_pa_clear_key', clip + ' ' + target);
     stateByKey.delete(stateKey(track, clip, target));
+    listGen++;
     expectStaged();
     return true;
 }
@@ -721,6 +729,7 @@ export function automationClearStep(track, clip, step) {
     const tps = (S.clipTPS[track] && S.clipTPS[track][clip]) || 24;
     const from = step * tps, to = from + tps - 1;
     queueSet('t' + track + '_pa_clear_step', clip + ' ' + from + ' ' + to);
+    listGen++;
     expectStaged();
 }
 
@@ -824,6 +833,7 @@ export function automationClearClip(track, clip) {
     queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
     queueSet('t' + track + '_pa_clear', String(clip));
     for (const e of entries) stateByKey.delete(stateKey(track, clip, e.target));
+    listGen++;
     expectStaged();
     return true;
 }
