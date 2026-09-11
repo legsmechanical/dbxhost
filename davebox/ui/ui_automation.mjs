@@ -189,8 +189,9 @@ export function automationRefreshPresence() {
     parseList(list);
 }
 
-/* The lane flag bits — PA_FLAG_* in dsp/seq8_param_auto.h. 4 is Note link's. */
-const FLAG_ACTIVE = 1, FLAG_SMOOTH = 2, FLAG_WRAP_RESET = 8, FLAG_PUNCH = 16;
+/* The lane flag bits — PA_FLAG_* in dsp/seq8_param_auto.h. UNLINKED is Link: Off
+ * (set = off), so every lane written before Note link reads linked. */
+const FLAG_ACTIVE = 1, FLAG_SMOOTH = 2, FLAG_UNLINKED = 4, FLAG_WRAP_RESET = 8, FLAG_PUNCH = 16;
 
 /* null = not automated; else { active, smooth, wrapReset, count, loop }. */
 export function automationStateFor(track, clip, target) {
@@ -198,6 +199,7 @@ export function automationStateFor(track, clip, target) {
     if (!s || !s.count) return null;
     return { active: !!(s.flags & FLAG_ACTIVE), smooth: !!(s.flags & FLAG_SMOOTH),
              wrapReset: !!(s.flags & FLAG_WRAP_RESET), punch: !!(s.flags & FLAG_PUNCH),
+             linked: !(s.flags & FLAG_UNLINKED),
              count: s.count, loop: s.loop | 0, res: s.res | 0,
              scale: isFinite(s.scale) ? s.scale : 100 };
 }
@@ -209,6 +211,7 @@ export function automationEntriesFor(track, clip) {
         if (k.indexOf(pfx) !== 0 || !s.count) continue;
         out.push({ target: k.slice(pfx.length), active: !!(s.flags & FLAG_ACTIVE), smooth: !!(s.flags & FLAG_SMOOTH),
                    wrapReset: !!(s.flags & FLAG_WRAP_RESET), punch: !!(s.flags & FLAG_PUNCH),
+             linked: !(s.flags & FLAG_UNLINKED),
                    count: s.count, loop: s.loop | 0, res: s.res | 0, scale: isFinite(s.scale) ? s.scale : 100 });
     }
     return out;
@@ -805,6 +808,21 @@ export function automationToggleMode(track, clip, target) {
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.flags = punch ? (cur.flags | FLAG_PUNCH) : (cur.flags & ~FLAG_PUNCH);
     return punch;
+}
+
+/* Link (plan 6c, Josh 2026-09-11): On — the lane moves when its clip's notes
+ * move (Resolution, Clock Shift, Nudge, Beat Stretch, Double loop, step copy) —
+ * or Off, and it stays where it is. On is the default. Returns the new state
+ * (true = linked), or null if nothing is automated. */
+export function automationToggleLink(track, clip, target) {
+    const s = automationStateFor(track, clip, target);
+    if (!s) return null;
+    const linked = !s.linked;
+    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    queueSet('t' + track + '_pa_link', clip + ' ' + target + ' ' + (linked ? 1 : 0));
+    const cur = stateByKey.get(stateKey(track, clip, target));
+    if (cur) cur.flags = linked ? (cur.flags & ~FLAG_UNLINKED) : (cur.flags | FLAG_UNLINKED);
+    return linked;
 }
 
 /* The AUTOMATION bank's Loop row: an entry's own loop window, in clip TICKS

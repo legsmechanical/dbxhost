@@ -48,12 +48,13 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
-import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen } from './ui_automation_bank.mjs';
+import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen,
+         autoBankJumpTarget, autoBankRestoreMenu } from './ui_automation_bank.mjs';
 import { automationParamEdit } from './ui_automation.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
-import { seqAutoTargetForKnob } from './ui_constants.mjs';
+import { seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
-         performModuleChange, cancelModuleChange } from './ui_sound.mjs';
+         performModuleChange, cancelModuleChange, soundJumpToParam } from './ui_sound.mjs';
 import { soundActive, soundOpen, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, soundEnterBuses } from './ui_sound.mjs';
@@ -169,6 +170,16 @@ function _onCC_jog(d1, d2) {
     /* Snapshot picker: jog click resolves a confirm or arms one. */
     if (d1 === 3 && d2 === 127 && S.snapshotPicker) {
         snapshotPickerClick();
+        return;
+    }
+    /* ⭑ SHIFT + CLICK ON A LANE JUMPS TO ITS PARAMETER (plan 6c2). Ahead of
+     * the plain AUTOMATION click below (which requires Shift up) and of the
+     * retired Shift + click's picker-abandon further down. */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && S.shiftHeld && S.moveCoRunTrack < 0 &&
+            S.activeBank === BANK_AUTOMATION && S.bankCardLatched && autoBankJumpTarget()) {
+        autoLaneJump();
+        S.screenDirty = true;
+        forceRedraw();
         return;
     }
     /* THE AUTOMATION BANK (latched): the click enters its menu / runs the
@@ -1241,6 +1252,58 @@ export function applyBankPick(rest) {
     forceRedraw();
 }
 
+/* ⭑ THE LANE JUMP (plan 6c2, Josh 2026-09-11: "Shift+automation lane in
+ * automation menu top level jumps to the bank/mode with that param on it").
+ * Where a lane's parameter lives, by the kind of target:
+ *   seq:<t>:<key>          -> that davebox BANK's card (SEQ_AUTO_TARGETS)
+ *   <slot>:<comp>:<key>    -> the module editor for <comp>, on the page holding <key>
+ *   <slot>:slot:… / move_fx -> SOUND + CONFIG (the track's levels and its Move bus)
+ *   cc:N / at / pb         -> MACROS (where MIDI targets are mapped)
+ * RULED: Back from the destination returns to the AUTOMATION menu, cursor on
+ * the lane — once; after that the destination's Back is its own again. */
+function autoLaneJump() {
+    const j = autoBankJumpTarget();
+    if (!j) return;
+    const t = S.activeTrack, tgt = String(j.target);
+    const soundCard = (macros) => {
+        /* The ordinary deferred entry (the bank walk's), which already picks
+         * the track's flavour — chain or Move bus — and can land on MACROS.
+         * Stamped with the SAME return crumb Shift+Note's hold uses, plus the
+         * lane: soundGestureReturn brings you back into the menu. */
+        S.genReturn = { track: t, wasActive: false, view: -1, bank: BANK_AUTOMATION,
+                        latched: true, autoSel: j.sel };
+        S.globalMenuOpen = false;
+        S.lastSentMenuEditValue = null;
+        S.pendingSoundEnterTrack = t;
+        S.pendingSoundEnterMacros = !!macros;
+        S.pendingSoundEnterRecord = false;          /* a gesture, not the jog's walk */
+        armBankDisplay();
+    };
+    if (midiTargetIsMidi(tgt)) { soundCard(true); return; }
+    if (tgt.indexOf('seq:') === 0) {
+        const st = SEQ_AUTO_TARGETS[tgt.split(':')[2]];
+        if (!st) { showActionPopup('NO EDITOR'); return; }
+        /* A davebox bank is not sound mode: it gets its own one-shot crumb,
+         * spent by the next track-view Back (see _handleBack). */
+        S.autoReturn = { track: t, bank: st.bank, sel: j.sel };
+        autoBankReset();
+        S.activeBank = st.bank;
+        S.trackActiveBank[t] = st.bank;
+        if (st.bank === 7) S.allLanesConfirmed = false;
+        readBankParams(t, st.bank);
+        armBankDisplay();
+        return;
+    }
+    const i = tgt.indexOf(':');
+    const slot = parseInt(tgt.slice(0, i), 10);
+    const rest = tgt.slice(i + 1);
+    const k = rest.lastIndexOf(':');                /* a key has no colon; a comp may (move_fx:1:fx1) */
+    const comp = k < 0 ? rest : rest.slice(0, k), key = k < 0 ? '' : rest.slice(k + 1);
+    if (i < 0 || !isFinite(slot) || slot !== t) { showActionPopup('NO EDITOR'); return; }
+    if (comp === 'slot' || comp.indexOf('move_fx') === 0) { soundCard(false); return; }
+    if (!soundJumpToParam(t, comp, key, j.sel)) showActionPopup('NOT LOADED');
+}
+
 /* ⭑ THE SHIFT EDGE HAS ONE OWNER.
  *
  * Called by the CC 49 handler and by the tick's stuck-modifier reconcile, which
@@ -2099,6 +2162,20 @@ function _backTap() {
         if (S.stepIntervalMode)   { S.stepIntervalMode = false; computePadNoteMap(); forceRedraw(); return; }
         if (S.altMode)            { S.altMode = false; forceRedraw(); return; }
         if (S.activeBank === 7 && S.allLanesConfirmed) { S.allLanesConfirmed = false; forceRedraw(); return; }
+        /* A LANE JUMP landed here (plan 6c2): the first Back returns to the
+         * AUTOMATION menu, cursor on the lane. Spent by any track-view Back,
+         * and honoured only while you are still on the bank it sent you to. */
+        if (S.autoReturn) {
+            const r = S.autoReturn;
+            S.autoReturn = null;
+            if (r.track === S.activeTrack && r.bank === S.activeBank && S.bankCardLatched) {
+                S.activeBank = BANK_AUTOMATION;
+                S.trackActiveBank[r.track] = BANK_AUTOMATION;
+                autoBankRestoreMenu(r.sel);
+                armBankDisplay();
+                invalidateLEDCache(); forceRedraw(); return;
+            }
+        }
         /* ⭑ Back DISMISSES the screen: unlatch if latched, stand the bank card
          * down, and show the track overview (Josh, 2026-08-25).
          *

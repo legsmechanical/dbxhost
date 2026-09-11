@@ -176,6 +176,13 @@ globalThis.shadow_save_state_now = () => 1;
 const bridge = await import('../../ui/ui_dsp_bridge.mjs');
 const { SLOT_LEVEL_MAX , faderStep, faderWire } = await import('../../ui/ui_engine.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
+/* ⚠ The seq: applier is wired at RUNTIME by init() (ui.js), not by ui_sound's
+ * module body — a module-scope registration was wiped by ui_automation's own
+ * initialiser in the shipped BUNDLE, and only there (2026-09-11). This test
+ * drives the modules directly and never calls init(), so it registers the same
+ * function itself; that the BUNDLE does it is pinned by
+ * tests/test_seq_lane_playback.sh. */
+auto.automationRegisterSeqApply(snd.soundSeqApply);
 const ledsMod = await import('../../ui/ui_leds.mjs');
 const STEP_VOL = SLOT_LEVEL_MAX / 200, STEP_PAN = 1 / 200, STEP_SEND = 1 / 100;
 const { BANKS, BANK_SOUND, BANK_STEP, BANK_MACROS, isSoundBank, PAD_MODE_DRUM, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');

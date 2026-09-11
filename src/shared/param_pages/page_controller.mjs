@@ -662,6 +662,7 @@ export function createController(io = {}) {
         voiceCache: null,
         /* A page name to land on once the pages exist; see restorePage(). */
         restoreName: null,
+        restoreKey: null,
         /* key -> live modulated ("effective") value, for the dot on the arc.
          * Only modulated keys are in here, and they get their own fast lane in
          * tick() because they are the only values that move on their own. */
@@ -1211,20 +1212,31 @@ export function createController(io = {}) {
      * Deleting is management: you are likely to do more of it, so it stays in.
      *
      * Default false, which is what this did before the option existed.
+     *
+     * `key` asks for the page that HOLDS a parameter rather than a page by
+     * name — for a host sending the user straight to one parameter (dAVEBOx:
+     * an automated lane jumps to where its parameter is edited). The first
+     * page whose keys include it wins; a name, if both are given, wins over it.
+     * Same one-shot, re-applied-on-replan request as a name.
      */
-    function restorePage(name, { enter = false } = {}) {
+    function restorePage(name, { enter = false, key = null } = {}) {
         s.restoreName = (typeof name === "string" && name) ? name : null;
+        s.restoreKey = (!s.restoreName && typeof key === "string" && key) ? key : null;
         s.restoreEnter = !!enter;
         applyPendingRestore();
     }
 
     function applyPendingRestore() {
-        if (!s.restoreName) return;
+        if (!s.restoreName && !s.restoreKey) return;
         const pages = s.pages || [];
         for (let i = 0; i < pages.length; i++) {
-            if (pages[i] && pages[i].name === s.restoreName) {
+            const pg = pages[i];
+            const hit = pg && (s.restoreName ? pg.name === s.restoreName
+                                             : (Array.isArray(pg.keys) && pg.keys.indexOf(s.restoreKey) >= 0));
+            if (hit) {
                 s.pageIndex = i;
                 s.restoreName = null;
+                s.restoreKey = null;
                 /*
                  * Open the door only when the CALLER said to — see restorePage.
                  *
@@ -1250,7 +1262,7 @@ export function createController(io = {}) {
         /* Not there yet. Left armed for the next plan -- unless the contract
          * has settled, in which case the page genuinely does not exist and
          * waiting forever would hijack a later navigation. */
-        if (s.metaSettled) s.restoreName = null;
+        if (s.metaSettled) { s.restoreName = null; s.restoreKey = null; }
     }
 
     /** Poll for a contract that changed underneath us (async ROM/sample loads). */

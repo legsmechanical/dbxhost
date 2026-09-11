@@ -4,7 +4,7 @@
  * compile or lint this file on its own.
  *
  * Covers: pa_set, pa_set2, pa_clear_key, pa_clear_step, pa_clear, pa_active,
- * pa_smooth, pa_wrap, pa_mode, pa_rest, pa_rest_move, pa_loop, pa_scale, pa_live, pa_hold, pa_live_end.
+ * pa_smooth, pa_wrap, pa_mode, pa_link, pa_rest, pa_rest_move, pa_loop, pa_scale, pa_live, pa_hold, pa_live_end.
  *
  * The dispatcher holds the writer lock and the seqlock around this handler.
  *
@@ -285,6 +285,22 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_id(inst, tgt));
         if (e) {
             if (punch) e->flags |= PA_FLAG_PUNCH; else e->flags &= (uint8_t)~PA_FLAG_PUNCH;
+            pa_mark_dirty(inst);
+        }
+        return 1;
+    }
+
+    /* pa_link: "<clip> <target> <linked>" — Link: On (1, the default) or Off
+     * (0): whether the lane moves when its clip's notes move (plan 6c). */
+    if (!strcmp(sub, "pa_link")) {
+        int clip = 0, linked = 1;
+        PA_SKIP_SPACE(p); PA_UINT(p, clip);
+        PA_TARGET(p, tgt);
+        PA_SKIP_SPACE(p); PA_UINT(p, linked);
+        if (clip < 0 || clip >= NUM_CLIPS) return 1;
+        pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_id(inst, tgt));
+        if (e) {
+            if (linked) e->flags &= (uint8_t)~PA_FLAG_UNLINKED; else e->flags |= PA_FLAG_UNLINKED;
             pa_mark_dirty(inst);
         }
         return 1;

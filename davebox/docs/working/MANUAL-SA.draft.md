@@ -1047,7 +1047,10 @@ jog is the whole surface.
 
 **Click the jog** for the menu. As the cursor moves onto a row, the **step
 buttons blink white** on every step where that parameter has a value set — its
-step locks, and any step a recorded move passes through. Then click a row for
+step locks, and any step a recorded move passes through. **Shift + click** a row
+to jump to where that parameter is edited — its bank, its module's page, SOUND +
+CONFIG for a level, or MACROS for a MIDI target — and **Back** from there
+returns you to this menu, on the same row. Click a row for
 its operations:
 **Delete**, **Mute** / **Unmute**, **Mode** (*Curve* plays the lane as a continuous
 envelope; *Punch* makes each lock last just its own step, with the parameter back at
@@ -1055,7 +1058,11 @@ rest on every other step — Smooth and Wrap don't apply there and are hidden),
 **Smooth** (*On* glides between values, *Off*
 steps — on parameters that can ramp), **Wrap** (*Carry* keeps the last value going
 round the loop; *Reset* returns the parameter to where the knob sits at rest, until
-the first lock or recorded move comes round), **Loop** (that parameter's own loop length in steps, or CLIP to
+the first lock or recorded move comes round), **Link** (*On*, the default: the
+parameter's automation is transformed with the note sequence — Resolution and
+Beat Stretch scale it, Clock Shift and Nudge move it, doubling the loop copies
+it forward; on a drum track, the ALL LANES versions of those. *Off*: it stays
+where it is whatever you do to the notes), **Loop** (that parameter's own loop length in steps, or CLIP to
 follow the clip), and **Rate** (/16 to ×16, the loop stretching to match). The
 last row is **Clear clip**, and **Delete + click** on the card does the same.
 Every operation is one undo, and **Back** closes one layer at a time. Conductor
@@ -1324,7 +1331,10 @@ groups with a line between them: Move 1-4, every Schwung generator by name, MIDI
 channels 1-16, and the tracks this one may follow. Choosing a generator makes
 the track a Schwung track and loads it in one step. Inside a
 block the knobs edit its parameters and the jog turns the pages; hold **Shift**
-while turning to jump between sections. Picking an **empty** effect block opens
+while turning to jump between sections. The last pages are **My Presets** and
+**Module**; on Module, **Module Menu** opens the module's full parameter list
+(its own menu tree, for settings the knob pages don't show), and **Back** from
+its top returns you to the page you left. Picking an **empty** effect block opens
 the module list, which is how you add an effect. **Back** steps out one level at a
 time, and closes the bank from its top level. **Shift + Note/Session** brings you
 back to the top of the sound editor from any depth in one press — and holding it

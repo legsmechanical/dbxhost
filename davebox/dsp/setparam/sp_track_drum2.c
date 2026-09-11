@@ -59,6 +59,11 @@ static int sp_track_drum2(sp_ctx_t *cx) {
         uint16_t new_tps = TPS_VALUES[idx];
         drum_clip_t *dc_ar = tr->drum_clips[tr->active_clip];
         if (!dc_ar) return 1;
+        /* Note link: automation is timed on the drum window (the longest
+         * lane), so it scales as THAT lane's notes do. */
+        uint32_t lk_s, lk_l, lk_tps;
+        pa_drum_window(tr, (int)tr->active_clip, &lk_s, &lk_l, &lk_tps);
+        pa_link_scale(inst, tidx, (int)tr->active_clip, 1, new_tps, lk_tps);
         int l_ar;
         for (l_ar = 0; l_ar < DRUM_LANES; l_ar++) {
             clip_t *dlc = &dc_ar->lanes[l_ar].clip;
@@ -150,6 +155,8 @@ static int sp_track_drum2(sp_ctx_t *cx) {
             }
         }
         inst->all_lanes_stretch_result = 1;
+        /* Note link — past the pre-flight, so every lane is about to move. */
+        pa_link_scale(inst, tidx, (int)tr->active_clip, 1, dir == 1 ? 2 : 1, dir == 1 ? 1 : 2);
         for (l_al = 0; l_al < DRUM_LANES; l_al++) {
             clip_t *dlc = &dc_al->lanes[l_al].clip;
             int len = (int)dlc->length;
@@ -309,6 +316,13 @@ static int sp_track_drum2(sp_ctx_t *cx) {
         int dir = my_atoi(val);
         drum_clip_t *dc_al = tr->drum_clips[tr->active_clip];
         if (!dc_al) return 1;
+        {   /* Note link: one step of the drum window, inside [0, its length). */
+            uint32_t lk_s, lk_l, lk_tps;
+            pa_drum_window(tr, (int)tr->active_clip, &lk_s, &lk_l, &lk_tps);
+            if (lk_l >= 2 * lk_tps)
+                pa_link_rotate(inst, tidx, (int)tr->active_clip, 1,
+                               dir == 1 ? (int32_t)lk_tps : -(int32_t)lk_tps, lk_l);
+        }
         int l_al;
         for (l_al = 0; l_al < DRUM_LANES; l_al++) {
             clip_t *dlc = &dc_al->lanes[l_al].clip;
@@ -374,6 +388,11 @@ static int sp_track_drum2(sp_ctx_t *cx) {
         int dir = my_atoi(val);
         drum_clip_t *dc_al = tr->drum_clips[tr->active_clip];
         if (!dc_al) return 1;
+        if (dir == 1 || dir == -1) {   /* Note link: one tick, wrapping in the drum window */
+            uint32_t lk_s, lk_l, lk_tps;
+            pa_drum_window(tr, (int)tr->active_clip, &lk_s, &lk_l, &lk_tps);
+            pa_link_rotate(inst, tidx, (int)tr->active_clip, 1, dir, lk_l);
+        }
         int l_al;
         for (l_al = 0; l_al < DRUM_LANES; l_al++) {
             clip_t *dlc = &dc_al->lanes[l_al].clip;
@@ -533,6 +552,15 @@ static int sp_track_drum2(sp_ctx_t *cx) {
         if (!dc_al) return 1;
         int l_al, i;
         undo_begin_drum_clip(inst, tidx, (int)tr->active_clip);
+        /* Note link: copied forward as the window lane's notes are — steps
+         * [0, len) onto [len, 2 len), loop start ignored as the op ignores it —
+         * and only if that lane is not too long to double. */
+        {
+            uint32_t lk_s, lk_l, lk_tps;
+            pa_drum_window(tr, (int)tr->active_clip, &lk_s, &lk_l, &lk_tps);
+            if (lk_l && (lk_l / lk_tps) * 2 <= SEQ_STEPS)
+                pa_link_copy(inst, tidx, (int)tr->active_clip, 1, 0, lk_l, lk_l);
+        }
         for (l_al = 0; l_al < DRUM_LANES; l_al++) {
             clip_t *dlc = &dc_al->lanes[l_al].clip;
             int len = (int)dlc->length;

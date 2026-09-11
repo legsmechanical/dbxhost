@@ -57,8 +57,9 @@ import { applyTrackConfig, applyBankParam, readBankParams } from './ui_dsp_bridg
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
-import { automationRegisterSeqApply, automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
+import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
          automationClearKey, automationEntriesFor } from './ui_automation.mjs';
+import { autoBankRestoreMenu } from './ui_automation_bank.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import * as ModuleLists from '/data/UserData/schwung/shared/module_lists.mjs';
 import { MoveKnob1, Red, White } from '/data/UserData/schwung/shared/constants.mjs';
@@ -1144,6 +1145,12 @@ export function markSoundDirty() { S.dirty = true; }
  * Move-routed track opens its bus, not a chain slot). */
 /* The current view, for a caller that needs to record where the user was. */
 export function soundViewForTest() { return S.view; }
+/* The module menu (VIEW_MENU) as the user sees it: which level, how deep, the
+ * cursor, and the row kinds/labels. */
+export function soundMenuForTest() {
+    return { key: S.menuKey, depth: S.menuStack.length, idx: S.menuIdx,
+             rows: S.menuRowsCache.map(r => ({ kind: r.kind, label: r.label || r.name || '' })) };
+}
 /* Which module editor is live. Exported for the RIGS, not for the UI: two
  * assertions in test_sound_write_verify measure davebox's OWN optimistic value
  * and its own poll, machinery the vendored editor replaces wholesale. A rig
@@ -2773,11 +2780,38 @@ export function soundGestureReturn() {
          * land you on the previous screen you were on"): a latched bank CARD
          * comes back as the card, not as the overview with that bank recorded. */
         if (g.latched) { GS.bankCardLatched = true; armBankDisplay(); }
+        /* A LANE JUMP (plan 6c2) came from the AUTOMATION menu: back into the
+         * menu, the cursor on the lane you jumped from. */
+        if (g.autoSel != null) autoBankRestoreMenu(g.autoSel);
     }
     return true;
 }
 
 export function soundGestureArmed() { return !!GS.genReturn; }
+
+/* ⭑ THE LANE JUMP (plan 6c2, Josh 2026-09-11: "Shift+automation lane in
+ * automation menu top level jumps to the bank/mode with that param on it").
+ * A module parameter's lane opens that component's editor ON THE PAGE HOLDING
+ * THE PARAMETER; Back from the editor's top returns to the AUTOMATION menu,
+ * cursor on the lane (the same return crumb Shift+Note's hold stamps, carrying
+ * the lane). Returns false — and changes nothing — when the component has no
+ * module loaded any more. */
+export function soundJumpToParam(track, comp, key, autoSel) {
+    const slot = slotIndex(track);
+    if (!engineLoadedModule(slot, comp)) return false;
+    GS.genReturn = { track, wasActive: false, view: -1, bank: GS.activeBank | 0,
+                     latched: !!GS.bankCardLatched, autoSel };
+    soundEnter(track, slot);
+    ppJumpKey = { slot, comp, key };
+    S.pendingAction = { t: 'open', comp };
+    return true;
+}
+/* The same return for the sound-mode CARDS (SOUND + CONFIG, MACROS), which the
+ * jump reaches through the ordinary deferred entry: spent only when the crumb
+ * came from a lane jump, so Shift+Note's retrace keeps its own screens. */
+function soundLaneJumpReturn() {
+    return !!(GS.genReturn && GS.genReturn.autoSel != null) && soundGestureReturn();
+}
 
 /* Shift+hold Note/Session on a NONE track (Josh, 2026-09-05: "hold
  * shift+note/session should open the instrument picker"): there is nothing to
@@ -5258,9 +5292,19 @@ function bankMacroWriteFor(t, m, nv) {
     GS.screenDirty = true;
 }
 /* PLAYBACK of a `seq:` target (and its rest on stop, and a lock): the owner
- * hands us (track, key, value); the write is the bank knob's own. Registered
- * once; runs from the owner's tick whether or not sound mode is open. */
-automationRegisterSeqApply((track, key, val) => {
+ * hands us (track, key, value); the write is the bank knob's own. Runs from the
+ * owner's tick whether or not sound mode is open.
+ *
+ * ⚠⚠ REGISTERED FROM init() (ui.js), NOT from this module's body. It WAS a
+ * module-scope `automationRegisterSeqApply(...)` call, and in the shipped
+ * BUNDLE esbuild orders this module's body BEFORE ui_automation's — so the
+ * registration ran and was then wiped by ui_automation's own
+ * `var seqApplier = null`. Node runs a dependency's body first, so every test
+ * passed while the device silently never applied a sequencer lane (Josh,
+ * 2026-09-11: "the actual values on the sequencer bank oled cells don't change
+ * on playback even though they have dots"). A runtime registration cannot
+ * depend on module order at all. */
+export function soundSeqApply(track, key, val) {
     const st = SEQ_AUTO_TARGETS[key];
     if (!st || track < 0 || track > 7 || !isFinite(val)) return false;
     const nv = Math.max(st.min, Math.min(st.max, val | 0));
@@ -5270,7 +5314,7 @@ automationRegisterSeqApply((track, key, val) => {
     if (bankMacroValue(m, track) === nv) return true;
     bankMacroWriteFor(track, m, nv);
     return true;
-});
+}
 
 /* The SEQUENCER's automatable settings for a track, as a snapshot sees them
  * (Josh, 2026-09-05: a snapshot holds "any automatable param, in fact"): every
@@ -6824,7 +6868,12 @@ function runActionBody(a) {
      * nothing rebuilt the trailing page that displays it. */
     else if (a.t === 'usrsavedo') { saveUserPreset(a.name); ppRefreshPresets(); }
     else if (a.t === 'bakedset') commitBaked();
-    else if (a.t === 'menu')     openMenu();
+    else if (a.t === 'menu') {
+        openMenu();
+        /* From the module editor's Module page: Back at the menu's top returns
+         * to the grid you left (the errand crumb), not to the preset hub. */
+        if (a.errand && S.view === VIEW_MENU) ppErrandView = VIEW_MENU;
+    }
     else if (a.t === 'menuload') refreshMenuRows();
     else if (a.t === 'reflavour') {
         /* Re-enter the flavour the track's CURRENT route calls for. Same choice
@@ -8737,6 +8786,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * un-committed undoes the audition, exactly as it does on davebox's own
          * path. */
         if (ppErrandView !== null && S.view === ppErrandView) {
+            /* ⚠ The module's menu has depth of its own: Back closes an edit or a
+             * confirm, then climbs the tree one level at a time — and only at
+             * its TOP returns to the grid. */
+            if (S.view === VIEW_MENU) {
+                if (S.confirmItem) { S.confirmItem = null; S.dirty = true; return true; }
+                if (menuBack()) { S.dirty = true; return true; }
+            }
             if (S.view === VIEW_PRESET_LIST || S.view === VIEW_PRESET_BAKED) revertOriginal();
             ppErrandView = null;
             S.view = VIEW_EDIT;
@@ -8754,6 +8810,11 @@ export function soundOnCC(d1, d2, decodeDelta) {
         if (ppDivedOut && S.view === VIEW_EDIT) {
             ppDivedOut = false;
             ppSuppressOnce = false;      /* let the reconcile re-enter the grid */
+            S.dirty = true;
+            return true;
+        }
+        if ((S.view === VIEW_MACROS || S.view === VIEW_PROMPT) && soundLaneJumpReturn()) {
+            /* Reached by a LANE JUMP from the AUTOMATION menu: back there. */
             S.dirty = true;
             return true;
         }
@@ -10047,6 +10108,9 @@ let ppDivedOut = false;
  * by screen: the rule is general, so the crumb is general. Anything the editor
  * opens sets this, and both the Back path and the renderer read it. */
 let ppErrandView = null;
+/* { slot, comp, key } — a lane jump's request to open the editor on the page
+ * holding `key` (soundJumpToParam); consumed by the next ppSync entry. */
+let ppJumpKey = null;
 
 /*
  * The file browser is up ON AN ERRAND FROM THE WAVE EDITOR, and Back or a pick
@@ -10308,13 +10372,16 @@ function ppSync() {
     const want = ppApplies() && !ppDeclinedDraw
         && (S.view === VIEW_EDIT || (ppOn && ppOwnsView()));
     if (want && !ppOn) {
-        enterParamPages(S.slot, S.comp, S.comp, ppRestoreFor(S.slot, S.comp), ppIo(), {
+        /* A lane jump asked for the page holding one parameter (once). */
+        const jk = (ppJumpKey && ppJumpKey.slot === S.slot && ppJumpKey.comp === S.comp) ? ppJumpKey.key : null;
+        ppJumpKey = null;
+        enterParamPages(S.slot, S.comp, S.comp, jk ? null : ppRestoreFor(S.slot, S.comp), ppIo(), {
             label: modLabel(),
             /* Back leaves the editor for the block picker — davebox's own
              * destination, unchanged from what renderEdit's footer promises. */
             returnView: VIEW_BLOCKS,
             onExit: () => { ppOn = false; ppEditLatched.clear(); },
-        });
+        }, jk ? { key: jk } : undefined);
         ppOn = true;
         S.dirty = true;
     } else if (!want && ppOn) {
@@ -10425,6 +10492,14 @@ function ppIo() {
                     return rows;
                 })() },
                 { name: 'Module', entries: [
+                    /* ⭑ THE DOOR TO THE MODULE'S OWN MENU (plan 6c3, Josh
+                     * 2026-09-11: a row, not upstream's global "Param View"
+                     * setting). The parameter-tree list lost its only door when
+                     * the editor moved to the grid. Offered only when there is a
+                     * tree to open — openMenu's own test — or it would answer
+                     * "NO MENU" to a row we chose to show. */
+                    ...((S.levels && (S.rootKey || S.modes))
+                        ? [{ label: 'Module Menu', action: 'module_menu' }] : []),
                     { label: 'Swap Module', action: 'swap_module' },
                     /* ⭑ REMOVE IS THE `[ none ]` PICK, reached through the same
                      * applyModulePick — not a second way to clear a slot. */
@@ -10495,6 +10570,9 @@ function ppIo() {
             else if (action === 'remove_module') requestModulePick({ id: '', name: '[ none ]' });
             else if (action === 'up_save_as') startSaveFlow();
             else if (action === 'swap_module') { openBrowse(S.comp); ppErrandView = S.view; }
+            /* openMenu reads the engine, so it runs from the tick (like the
+             * preset hub's door); the crumb is set there, once the menu is up. */
+            else if (action === 'module_menu') S.pendingAction = { t: 'menu', errand: true };
             else log('pp: unknown menu action ' + action);
             S.dirty = true;
         },

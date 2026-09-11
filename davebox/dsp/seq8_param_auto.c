@@ -219,21 +219,49 @@ static int pa_target_in_hand(const seq8_instance_t *inst, int target) {
     return 0;
 }
 
-/* Free every target name no entry and no hand refers to. The table used to
- * grow for the life of the project: a session of recording, clearing and
+/* Every target a name must be kept for, as a bit mask (PA_MAX_TARGETS is 64):
+ * a hand, a live entry — and a VALID UNDO OR REDO SNAPSHOT. A snapshot holds
+ * target IDS, not names, so a name freed while a snapshot still refers to it
+ * comes back as a lane with no name; the next parameter interned takes the
+ * slot, and the restored lane plays on THAT parameter (found 2026-09-11: lock
+ * cutoff, undo, redo, lock resonance — the cutoff lock drove resonance). And
+ * pa_undo_restore frees the clip's entries itself before writing them back,
+ * so without this every restore of a clip's only lane lost its name. */
+static uint64_t pa_referenced_mask(const seq8_instance_t *inst) {
+    uint64_t m = 0;
+#define PA_MARK(tg) do { unsigned _tg = (unsigned)(tg); if (_tg < PA_MAX_TARGETS) m |= 1ull << _tg; } while (0)
+    for (int t = 0; t < NUM_TRACKS; t++)
+        for (int k = 0; k < PA_LIVE_MAX; k++)
+            if (inst->pa_live[t][k].used) PA_MARK(inst->pa_live[t][k].target);
+    for (int i = 0; i < PA_MAX_ENTRIES; i++)
+        if (inst->pa_entries[i].used) PA_MARK(inst->pa_entries[i].target);
+    if (inst->undo_valid)
+        for (int s = 0; s < (int)inst->undo_clip_count && s < UNDO_MAX_CLIPS; s++)
+            for (int k = 0; k < (int)inst->undo_pa_count[s] && k < PA_UNDO_ENTRIES; k++)
+                PA_MARK(inst->undo_pa[s][k].target);
+    if (inst->redo_valid)
+        for (int s = 0; s < (int)inst->redo_clip_count && s < UNDO_MAX_CLIPS; s++)
+            for (int k = 0; k < (int)inst->redo_pa_count[s] && k < PA_UNDO_ENTRIES; k++)
+                PA_MARK(inst->redo_pa[s][k].target);
+    if (inst->drum_undo_valid)
+        for (int k = 0; k < (int)inst->drum_undo_pa_count && k < PA_UNDO_ENTRIES; k++)
+            PA_MARK(inst->drum_undo_pa[k].target);
+    if (inst->drum_redo_valid)
+        for (int k = 0; k < (int)inst->drum_redo_pa_count && k < PA_UNDO_ENTRIES; k++)
+            PA_MARK(inst->drum_redo_pa[k].target);
+#undef PA_MARK
+    return m;
+}
+
+/* Free every target name nothing refers to (pa_referenced_mask). The table used
+ * to grow for the life of the project: a session of recording, clearing and
  * re-recording different parameters filled its 64 slots and every NEW
  * parameter was then refused, project-wide — the "automation isn't being
  * recorded, sometimes it works" of 2026-09-05. Caller holds the writer lock. */
 static void pa_targets_gc(seq8_instance_t *inst) {
-    for (int t = 0; t < PA_MAX_TARGETS; t++) {
-        if (!inst->pa_targets[t][0]) continue;
-        int held = pa_target_in_hand(inst, t);
-        for (int i = 0; !held && i < PA_MAX_ENTRIES; i++) {
-            const pa_entry_t *e = &inst->pa_entries[i];
-            if (e->used && e->target == t) held = 1;
-        }
-        if (!held) inst->pa_targets[t][0] = '\0';
-    }
+    uint64_t held = pa_referenced_mask(inst);
+    for (int t = 0; t < PA_MAX_TARGETS; t++)
+        if (inst->pa_targets[t][0] && !((held >> t) & 1u)) inst->pa_targets[t][0] = '\0';
 }
 
 /* A ZOMBIE is a retired lane: used, no points, its release already served —
@@ -241,12 +269,8 @@ static void pa_targets_gc(seq8_instance_t *inst) {
  * pool is full a zombie is the one thing worth evicting: nothing lists,
  * plays or serializes it. Its target may then be unreferenced; gc it. */
 static int pa_target_referenced(const seq8_instance_t *inst, int target) {
-    if (pa_target_in_hand(inst, target)) return 1;
-    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
-        const pa_entry_t *e = &inst->pa_entries[i];
-        if (e->used && e->target == target) return 1;
-    }
-    return 0;
+    if (target < 0 || target >= PA_MAX_TARGETS) return 0;
+    return (int)((pa_referenced_mask(inst) >> target) & 1u);
 }
 
 /* `keep` is the target the caller is about to give the freed slot — interned a
@@ -689,6 +713,155 @@ static int pa_eval_punch(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t 
     if (e->rest == PA_VAL_UNSET) return pa_eval(e, t, out);
     *out = e->rest;
     return PA_EVAL_REST;
+}
+
+/* ------------------------------------------------------------------ */
+/* NOTE LINK (plan 6c) — automation follows the notes                   */
+/*                                                                      */
+/* Josh, 2026-09-11: "we should have the automation move with the       */
+/* resolution changes, etc. maybe a 'Note link' toggle ... on by        */
+/* default?" Until this, nothing that moved notes inside a clip moved   */
+/* its automation: a lock on step 5 stayed at step 5's TICK while its   */
+/* note went elsewhere.                                                 */
+/*                                                                      */
+/* RULED: per lane, ON by default (PA_FLAG_UNLINKED set = off). Each op */
+/* applies the transform its notes got, to every LINKED lane:           */
+/*  - grid ops (Resolution, Beat Stretch) RESCALE — the points, and a   */
+/*    lane's own Loop window with them, so a lane on its own clock keeps */
+/*    its length in steps;                                              */
+/*  - time ops (Clock Shift, Nudge, Double loop) move points in the     */
+/*    clip's timeline, on lanes that FOLLOW the clip only. A lane       */
+/*    with its own Loop or Rate runs on its own clock, where a step of   */
+/*    the clip is not a place, so it is left where it is.               */
+/* Zoom keeps every note's absolute tick, and the held-step move        */
+/* (_reassign) re-files notes without moving them in time: neither has  */
+/* anything to follow. Copying a STEP carries no locks either — Link is */
+/* about transforming the sequence, not pinning locks to notes (Josh).  */
+
+#define PA_LINK_SCALE  0   /* tick × num / den */
+#define PA_LINK_ROTATE 1   /* tick + d, wrapping inside [0, w) */
+#define PA_LINK_COPY   2   /* [src, src+span) copied onto [dst, dst+span), replacing it */
+
+typedef struct {
+    int      op;
+    int      drum;      /* an ALL LANES op on a drum track; else a melodic clip op */
+    uint32_t num, den;
+    int32_t  d;
+    uint32_t w;
+    uint32_t src, dst, span;
+} pa_link_op_t;
+
+/* The lane plays on the clip's own clock: no Loop window, Rate x1 (0 = never
+ * set, PA_RATE_UNITY = set back to x1 by the Rate row). */
+static int pa_follows_clip(const pa_entry_t *e) {
+    return !e->loop_len && !e->loop_off &&
+           (!e->resolution || e->resolution == PA_RATE_UNITY);
+}
+
+static uint16_t pa_scale_u16(uint32_t v, uint32_t num, uint32_t den) {
+    uint64_t s = (uint64_t)v * num / den;
+    return (uint16_t)(s > 0xFFFFu ? 0xFFFFu : s);
+}
+
+/* One lane's points through `op`, rebuilt sorted. Where two points land on one
+ * tick (Beat Stretch /2 folding a dense sweep) the one that came LATER wins —
+ * it is the value from there on. A point past the store's 16-bit tick range is
+ * dropped: the store could never have held it there. Returns 0 when the lane
+ * ran out of points (a copy onto a full lane). */
+static int pa_link_entry(pa_entry_t *e, const pa_link_op_t *op) {
+    pa_point_t tmp[PA_ENTRY_POINTS];
+    int n = 0, room = 1;
+    for (int i = 0; i < e->count; i++) {
+        uint32_t t = e->points[i].tick;
+        if (op->op == PA_LINK_SCALE) {
+            t = (uint32_t)((uint64_t)t * op->num / op->den);
+        } else if (op->op == PA_LINK_ROTATE) {
+            if (t < op->w) t = (uint32_t)((((int64_t)t + op->d) % (int64_t)op->w + op->w) % op->w);
+        } else if (t >= op->dst && t < op->dst + op->span) {
+            continue;                                   /* COPY: replaced */
+        }
+        if (t > 0xFFFFu) continue;
+        tmp[n].tick = (uint16_t)t;
+        tmp[n].val  = e->points[i].val;
+        n++;
+    }
+    if (op->op == PA_LINK_COPY) {
+        for (int i = 0; i < e->count; i++) {
+            uint32_t t = e->points[i].tick;
+            if (t < op->src || t >= op->src + op->span) continue;
+            t = t - op->src + op->dst;
+            if (t > 0xFFFFu) continue;
+            if (n >= PA_ENTRY_POINTS) { room = 0; break; }
+            tmp[n].tick = (uint16_t)t;
+            tmp[n].val  = e->points[i].val;
+            n++;
+        }
+    }
+    for (int i = 1; i < n; i++) {                       /* insertion sort: stable */
+        pa_point_t k = tmp[i];
+        int j = i - 1;
+        while (j >= 0 && tmp[j].tick > k.tick) { tmp[j + 1] = tmp[j]; j--; }
+        tmp[j + 1] = k;
+    }
+    int w = 0;
+    for (int i = 0; i < n; i++) {
+        if (w && tmp[w - 1].tick == tmp[i].tick) tmp[w - 1] = tmp[i];   /* the later wins */
+        else tmp[w++] = tmp[i];
+    }
+    memcpy(e->points, tmp, (size_t)w * sizeof(pa_point_t));
+    e->count = (uint16_t)w;
+    return room;
+}
+
+/* SPI thread (the note ops run from set_param): apply `op` to every linked lane
+ * of (track, clip). Takes the writer lock.
+ * ⚠ A drum track's automation runs on the DRUM window (pa_drum_window), not on
+ * its hidden melodic clip — so a melodic clip op reaching a drum track moved no
+ * note that plays, and must move no automation either. Only an ALL LANES op
+ * (op->drum) may move a drum track's lanes (RULED 2026-09-11). */
+static void pa_link_clip(seq8_instance_t *inst, int track, int clip, const pa_link_op_t *op) {
+    if ((inst->tracks[track].pad_mode == PAD_MODE_DRUM) != (op->drum != 0)) return;
+    int changed = 0, full = 0;
+    pa_lock(inst);
+    pa_write_begin(inst);
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+        pa_entry_t *e = &inst->pa_entries[i];
+        if (!e->used || e->track != track || e->clip != clip || !e->count) continue;
+        if (e->flags & PA_FLAG_UNLINKED) continue;
+        if (op->op == PA_LINK_SCALE) {
+            if (e->loop_len) {
+                uint16_t l = pa_scale_u16(e->loop_len, op->num, op->den);
+                e->loop_len = l ? l : 1;
+            }
+            e->loop_off = pa_scale_u16(e->loop_off, op->num, op->den);
+        } else if (!pa_follows_clip(e)) {
+            continue;
+        }
+        if (!pa_link_entry(e, op)) full = 1;
+        changed = 1;
+    }
+    if (full) inst->pa_store_full = PA_FULL_POINTS;
+    pa_write_end(inst);
+    pa_unlock(inst);
+    if (changed) pa_mark_dirty(inst);
+}
+
+/* `drum`: the caller is an ALL LANES op (see pa_link_clip's guard). */
+static void pa_link_scale(seq8_instance_t *inst, int track, int clip, int drum, uint32_t num, uint32_t den) {
+    if (!num || !den || num == den) return;
+    pa_link_op_t op = { .op = PA_LINK_SCALE, .drum = drum, .num = num, .den = den };
+    pa_link_clip(inst, track, clip, &op);
+}
+static void pa_link_rotate(seq8_instance_t *inst, int track, int clip, int drum, int32_t d, uint32_t w) {
+    if (!w || !d) return;
+    pa_link_op_t op = { .op = PA_LINK_ROTATE, .drum = drum, .d = d, .w = w };
+    pa_link_clip(inst, track, clip, &op);
+}
+static void pa_link_copy(seq8_instance_t *inst, int track, int clip, int drum,
+                         uint32_t src, uint32_t dst, uint32_t span) {
+    if (!span || src == dst) return;
+    pa_link_op_t op = { .op = PA_LINK_COPY, .drum = drum, .src = src, .dst = dst, .span = span };
+    pa_link_clip(inst, track, clip, &op);
 }
 
 /* ------------------------------------------------------------------ */

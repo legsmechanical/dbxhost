@@ -17,6 +17,21 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Jump from an automation lane to its parameter.** In the AUTOMATION menu,
+  **Shift + click** a lane to go straight to where that parameter lives — its
+  bank, the module editor's page that holds it, SOUND + CONFIG, or MACROS.
+  **Back** brings you back to the menu, on the same lane.
+- **Automation transforms with the sequence (Link).** Change a clip's
+  Resolution, Beat Stretch it, Clock Shift or Nudge it, or double its loop, and
+  its parameter automation is scaled, stretched or shifted the same way — so a
+  lock stays where it sits against the notes. On drum tracks it follows the ALL
+  LANES versions of those edits; a single lane's edit leaves the clip's
+  automation alone. Each parameter has **Link: On / Off** in the AUTOMATION
+  menu; On is the default, Off leaves that parameter's automation where it is
+  whatever you do to the notes.
+- **Module Menu.** A module's full parameter list is reachable again: in the
+  module editor, jog to the last page (**Module**) and click **Module Menu**.
+  Back from the top of the list returns you to the page you left.
 - **Mode: Curve / Punch, per automated parameter.** Curve is the continuous
   envelope you have now. **Punch** makes each lock last just its own step — every
   other step goes back to where the knob sits at rest — so locks behave like
@@ -221,6 +236,10 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **Undo and redo keep automation straight.** Redoing a step lock could bring
+  it back without its parameter — and the next parameter you automated then
+  played that lock. Undoing a doubled drum loop now takes its automation back
+  with the notes, too.
 - **Automation no longer snaps back when the loop comes round.** A clip's last
   automated value now carries through its first steps until the first lock
   comes round, instead of jumping to the first lock's value on step 1. A lock
