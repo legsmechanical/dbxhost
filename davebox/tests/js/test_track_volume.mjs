@@ -67,6 +67,14 @@ globalThis.host_ext_midi_remap_set = () => {};
 globalThis.host_ext_midi_remap_enable = () => {};
 
 async function main() {
+/* ⚠ RESTATED FOR THE FADER LAW (2026-09-11). Shift+Volume used to step
+ * linearly, 1/64 of gain per detent; it now moves on the same fader law as the
+ * session strip, keeping a 130-detent throw (128 rounded to a multiple of 5 so unity is a detent).
+ * So each expected value below is faderStep(base, detents, 130), not
+ * base + detents/64. The INTENTS are unchanged — the stale-seed case still
+ * proves a new gesture re-reads the engine: from a cached 1.0 the same turn
+ * would land on faderStep(1, 1, 130), a different number. */
+const { faderStep } = await import('../../ui/ui_engine.mjs');
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 
@@ -107,7 +115,7 @@ step('⭑ Shift+volume writes the active CHAIN track\'s slot level, once per tic
     if (w.length !== 1) throw new Error('expected ONE coalesced write, got ' + w.length);
     const [sl, k, v] = w[0];
     if (sl !== 2 || k !== 'slot:volume') throw new Error('wrote ' + sl + '/' + k);
-    if (Math.abs(parseFloat(v) - (1 + 8 / 64)) > 2e-3) throw new Error('value ' + v);
+    if (Math.abs(parseFloat(v) - faderStep(1, 8, 130)) > 2e-3) throw new Error('value ' + v);
     shift(false);
 });
 
@@ -202,7 +210,7 @@ step('⭑ a MOVE-routed track writes its BUS strip Volume, not a slot', () => {
     if (w.length !== 1) throw new Error('writes: ' + JSON.stringify(w));
     const [sl, k, v] = w[0];
     if (sl !== 0 || k !== 'move_fx:3:volume') throw new Error('wrote ' + sl + '/' + k);
-    if (Math.abs(parseFloat(v) - (0.8 + 2 / 64)) > 2e-3) throw new Error('value ' + v);
+    if (Math.abs(parseFloat(v) - faderStep(0.8, 2, 130)) > 2e-3) throw new Error('value ' + v);
     S.trackRoute[2] = 0;
 });
 
@@ -238,7 +246,7 @@ step('⭑ co-run: Shift+volume writes the CO-RUN track bus, not the active track
     const [sl, k, v] = w[0];
     if (sl !== 0 || k !== 'move_fx:4:volume')
         throw new Error('wrote ' + sl + '/' + k + ' — expected the co-run track bus');
-    if (Math.abs(parseFloat(v) - (0.5 + 2 / 64)) > 2e-3) throw new Error('value ' + v);
+    if (Math.abs(parseFloat(v) - faderStep(0.5, 2, 130)) > 2e-3) throw new Error('value ' + v);
 
     /* ⚠ No level card: Move owns the OLED in co-run, so it would draw into a
      * buffer nobody composites and then pop, stale, over the screen you land on
@@ -305,7 +313,7 @@ step('⭑ a NEW gesture re-reads the level — an edit made elsewhere is honoure
     shift(true); vol(1); globalThis.tick(); shift(false); globalThis.tick();
     const w = volWrites();
     if (w.length !== 1) throw new Error('writes: ' + w.length);
-    if (Math.abs(parseFloat(w[0][2]) - (0.5 + 1 / 64)) > 2e-3)
+    if (Math.abs(parseFloat(w[0][2]) - faderStep(0.5, 1, 130)) > 2e-3)
         throw new Error('stale seed: wrote ' + w[0][2]);
 });
 

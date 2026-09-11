@@ -62,7 +62,11 @@ grep -q "r.spec.slot$" ui/ui_sound.mjs \
 # int-vs-fixed rides on the QUEUED ITEM. Three drains used to re-find the row in
 # a table to decide; a row that left that table silently started writing "1.000"
 # where the host parses with atoi, turning a mute into a level.
-n=$(grep -c "w.int ? String(w.val) : w.val.toFixed(3)" ui/ui_sound.mjs || true)
+# ⚠ Pins the w.int BRANCH, not the formatter on the other side of it. It used
+# to spell out ": w.val.toFixed(3)", so switching volume to faderWire's five
+# decimals (2026-09-11) failed a guard that is about table lookups, not
+# precision. The intent is unchanged: every drain decides int-ness from w.int.
+n=$(grep -c "w.int ? String(w.val) :" ui/ui_sound.mjs || true)
 [ "$n" = "3" ] && ok "all 3 slot-write drains take int from the queued item" \
                || bad "$n drain(s) use w.int — expected 3; a table lookup has crept back"
 # Grouping rules are REAL ROWS on their own line. They were briefly a flag on a

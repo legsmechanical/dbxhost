@@ -56,7 +56,7 @@ import { checkBackHold, checkShiftNoteHold, backTapWouldAct, applyShiftEdge, rai
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
-         SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS, SESS_KNOB_MODES } from './ui_engine.mjs';
+         SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS, SESS_KNOB_MODES, faderStep, faderWire, faderFormatDb, faderGainToTravel, SHIFT_VOL_THROW, trackLevelCardText} from './ui_engine.mjs';
 import { soundEntryRecords, soundActive, soundOpen, soundResting, soundEnter, soundEnterMove, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
     soundEnteredInSession, soundConsumeLedDirty,
@@ -1230,7 +1230,11 @@ export function _tickImpl() {
             for (let _t = 0; _t < NUM_TRACKS && _wrote < 2; _t++) {
                 if (!S.sessVolPending[_t]) continue;
                 S.sessVolPending[_t] = false;
-                const _v = S.sessVolLevel[_t].toFixed(3);
+                /* ⚠ faderWire for VOLUME, not toFixed(3) — see faderWire in
+                 * ui_engine: three decimals of gain wrote 20% of the fader's
+                 * throw more than 0.05 dB off. Pan and sends keep theirs. */
+                const _v = (SESS_KNOB_MODES[S.sessKnobMode] && SESS_KNOB_MODES[S.sessKnobMode].fader)
+                    ? faderWire(S.sessVolLevel[_t]) : S.sessVolLevel[_t].toFixed(3);
                 const _bus = S.sessVolBus[_t] | 0;
                 if (_bus > 0) {
                     engineSet(0, moveBusComp(_bus), _wKey, _v);
@@ -1526,21 +1530,30 @@ export function _tickImpl() {
                     S.tvLevel = (isFinite(_sv) && _sv >= 0) ? _sv : 1;
                     S.tvSeeded = true; S.tvTrack = _tvT;
                 }
-                let _tvV = S.tvLevel + _tvD * SLOT_LEVEL_STEP;
-                if (_tvV < 0) _tvV = 0;
+                /* ⭑ THE FADER LAW (Josh, 2026-09-11: "can we apply the same to
+                 * shift+volume track volume shortcut…"). The throw is unchanged —
+                 * SLOT_LEVEL_STEP is 1/64 of a 0..2 range, i.e. 128 detents from
+                 * silence to the top — so crossing it takes the turns it always
+                 * did; only where they land moved. */
+                /* ⚠ 130, not SLOT_LEVEL_MAX / SLOT_LEVEL_STEP (= 128): unity sits at
+                 * 0.80 of the throw, and 0.8 * 128 = 102.4 is not a detent, so on
+                 * a 128 throw exactly 0.0 dB could never be dialled. 130 puts it
+                 * on detent 104. The throw is 1.6% longer — below anything a
+                 * hand can tell. */
+                let _tvV = faderStep(S.tvLevel, _tvD, SHIFT_VOL_THROW);
                 if (_tvV > SLOT_LEVEL_MAX) _tvV = SLOT_LEVEL_MAX;
                 if (_tvV !== S.tvLevel) {
                     S.tvLevel = _tvV; S.tvDirty = true;
-                    if (S.trackRoute[_tvT] === 1) engineSet(0, moveBusComp(_tvBus), 'volume', _tvV.toFixed(3));
-                    else engineSetSlotParam(slotIndex(_tvT), SLOT_LEVEL_KEY, _tvV.toFixed(3));
+                    if (S.trackRoute[_tvT] === 1) engineSet(0, moveBusComp(_tvBus), 'volume', faderWire(_tvV));
+                    else engineSetSlotParam(slotIndex(_tvT), SLOT_LEVEL_KEY, faderWire(_tvV));
                 }
                 /* ⚠ No card in co-run: Move owns the OLED, so it would draw
                  * into a buffer nobody composites — and worse, its timer would
                  * outlive the co-run exit and pop a stale level over the screen
                  * you land on. The gesture is deliberately blind there. */
                 if (S.moveCoRunTrack < 0)
-                    showTrackVolCard('Tr ' + (_tvT + 1) + '  LEVEL  ' + _tvV.toFixed(2) + 'x',
-                                     _tvV / SLOT_LEVEL_MAX);
+                    showTrackVolCard(trackLevelCardText(_tvT, _tvV),
+                                     faderGainToTravel(_tvV));
             }
         }
         /* The save is deferred off the release — a synchronous file write has

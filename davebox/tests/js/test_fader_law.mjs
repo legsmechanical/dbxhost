@@ -11,7 +11,7 @@
  * throw the mixing range gets — not a table of numbers copied out of the
  * implementation, which would pass whatever the implementation happened to say.
  */
-import { faderTravelToDb, faderTravelToGain, faderGainToTravel, faderFormatDb }
+import { faderTravelToDb, faderTravelToGain, faderGainToTravel, faderFormatDb, faderStep, faderWire }
     from '../../ui/ui_engine.mjs';
 
 let failed = 0;
@@ -92,6 +92,45 @@ step('⚠ the READOUT moves across the whole throw (why it is dB, not "x")', () 
     if (worst > 12)
         throw new Error('the readout sits on "' + label + '" for ' + worst
             + ' detents — that is the stall the dB readout exists to avoid');
+});
+
+step('⭐⭐⭐ NO CREEP: +n then -n returns to EXACTLY where it started, on every throw', () => {
+    /* THE BUG THIS CASE EXISTS FOR (2026-09-11). A first cut snapped each result
+     * to the 0.1 dB the readout prints, and the snap fed back into the next
+     * turn: one 40-step detent near unity is 0.75 dB, which snapped up to 0.8,
+     * and stepping back from 0.8 landed on 0.05, which snapped to 0.1. Wiggling
+     * a fader made it CREEP. Asserted in GRID POSITIONS through the real
+     * five-decimal wire — comparing a written value to an unwritten one counts
+     * every rounding as drift, which is how the first harness for this lied.
+     * ⭑ WHAT GUARANTEES IT is faderStep's TRAVEL GRID, not the absence of a dB
+     * snap: putting a snap back into faderTravelToGain ALONE does not fail this
+     * case, because the grid re-seats travel on every turn and absorbs it.
+     * Removing the grid does — mutation-tested: "started on detent 24, +7/-7
+     * came back to 23". If you touch faderStep's rounding, this is the guard. */
+    for (const N of [40, 130, 200]) {
+        const at = (g) => Math.round(faderGainToTravel(g) * N);
+        for (let i = 1; i < N - 8; i++) {
+            let g = parseFloat(faderWire(faderStep(0, i, N)));
+            const k0 = at(g);
+            for (let k = 0; k < 7; k++) g = parseFloat(faderWire(faderStep(g, 1, N)));
+            for (let k = 0; k < 7; k++) g = parseFloat(faderWire(faderStep(g, -1, N)));
+            if (at(g) !== k0)
+                throw new Error('N=' + N + ': started on detent ' + k0 + ', +7/-7 came back to ' + at(g));
+        }
+    }
+});
+
+step('⭐ UNITY IS A DETENT on every surface — you can dial exactly 0.0 dB', () => {
+    for (const N of [40, 130, 200]) {
+        let g = 0, hit = false;
+        for (let i = 0; i <= N; i++) { g = faderStep(0, i, N); if (faderFormatDb(g) === '0.0' && Math.abs(g - 1) < 1e-9) hit = true; }
+        if (!hit) throw new Error('on a ' + N + '-detent throw no detent lands on exactly unity');
+    }
+});
+
+step('⚠ the top of the throw IS the parameter\'s max (2.0), not 1.9953', () => {
+    if (Math.abs(faderTravelToGain(1) - 2) > 1e-12)
+        throw new Error('top of throw = ' + faderTravelToGain(1) + ', want exactly 2 (SLOT_LEVEL_MAX)');
 });
 
 step('⚠ CONTROL: silence prints -inf and nothing else does', () => {
