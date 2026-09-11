@@ -10,7 +10,7 @@ import { S, PERF_FACTORY_PRESETS } from './ui_state.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H } from './ui_daves.mjs';
 import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
-import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev } from './ui_engine.mjs';
+import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev, faderGainToTravel} from './ui_engine.mjs';
 import { instrValueFor } from './ui_dsp_bridge.mjs';
 import { fontPrint4x5, fontWidth4x5 } from './ui_fonts_pp.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
@@ -366,7 +366,12 @@ function drawSessionMixerPage() {
             cell.signed = (v - 0.5) * 2;
         } else {
             cell.kind = mode.widget;          /* 'vbar' (level) or 'arc' (sends) */
-            cell.norm = mode.max > 0 ? v / mode.max : 0;
+            /* ⭑ A FADER'S BAR SHOWS TRAVEL, NOT GAIN. Left linear, the bar
+             * would sit at half height while the knob sits at 80% of its
+             * throw, because unity is 1.0 of a 0..2 range. See THE FADER LAW
+             * in ui_engine.mjs. */
+            cell.norm = mode.fader ? faderGainToTravel(v)
+                                   : (mode.max > 0 ? v / mode.max : 0);
         }
         cells.push(cell);
     }
@@ -418,7 +423,11 @@ function drawSessionFaderRow(cells, mode) {
     /* BOT/LBL_Y moved up 7 rows on 2026-09-05 so the hint footer (row 57) fits
      * under the labels, as on every other bank card. */
     const COLW = 128 / 8, FW = 8, TOP = 14, BOT = 47, LBL_Y = 49;
-    const unity = mode.max > 0 ? (1.0 / mode.max) : -1;
+    /* ⭑ Where the UNITY MARK sits on the rail. Under the old linear law this
+     * was 0.5 — halfway up, which is the tell that the law was not a fader's.
+     * The fader law puts it at 0.80, where a console's unity line is. */
+    const unity = mode.fader ? faderGainToTravel(1.0)
+                             : (mode.max > 0 ? (1.0 / mode.max) : -1);
     /* TURNING is what asks for a number. The strip being moved swaps its track
      * number for its VALUE and swaps back once the turn goes quiet; touch alone
      * keeps the label, which is what tells you WHICH strip you are on.
