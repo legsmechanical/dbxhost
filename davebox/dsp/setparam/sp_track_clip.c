@@ -383,10 +383,10 @@ static int sp_track_clip(sp_ctx_t *cx) {
                     for (k = 0; k < (int)cl->length; k++) if (cl->steps[k]) { any = 1; break; }
                     cl->active = (uint8_t)any;
                 }
-                /* Note link: the step's locks go with its notes, replacing the
-                 * destination's — a step is its cell [s, s+1) in clip ticks. */
-                pa_link_copy(inst, tidx, cidx, 0, (uint32_t)sidx * cl->ticks_per_step,
-                             (uint32_t)dstStep * cl->ticks_per_step, cl->ticks_per_step);
+                /* ⚠ NO Note link here (RULED by Josh, 2026-09-11): Link means the
+                 * automation is TRANSFORMED the way the whole sequence is —
+                 * scaled, stretched, shifted — not that locks ride along with
+                 * individual notes. Copying a step copies notes, not automation. */
                 clip_migrate_to_notes(cl);
                 rui_mark(inst, tidx, cidx);
                 inst->state_dirty = 1;

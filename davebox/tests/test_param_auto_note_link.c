@@ -242,23 +242,26 @@ int main(void) {
         OK("⭐ Double loop copies a linked lane's automation forward with its notes");
     }
 
-    /* ---- Step copy: the step's locks go with it; the re-file moves nothing */
+    /* ---- A STEP is not a transformation: copying one carries no locks ----
+     * RULED (Josh, 2026-09-11): Link means the automation is transformed the
+     * way the whole SEQUENCE is — scaled, stretched, shifted — not that locks
+     * ride along with individual notes. An earlier cut carried the step's locks
+     * to the destination step; he called it note-pinning, and it is gone. */
     {
         hx_t *h = setup();
-        pa_set(h, LINK, 9 * 24, 1111);           /* the destination's own lock: replaced */
-        pa_set(h, LINK, 5 * 24, 2222);           /* the NEXT step's lock: not step 4's, not copied */
+        pa_set(h, LINK, 9 * 24, 1111);           /* the destination's own lock: untouched */
         hx_set_param(h, "t1_c0_step_4_copy_to", "9");
-        PTS_EQ(LINK, "96:5000 120:2222 216:5000 360:7000",
-               "Copy step 4 -> 9: step 4's lock replaces step 9's; step 5's is not step 4's");
-        PTS_EQ(OFF,  "96:5000", "Copy: Off stays");
-        PTS_EQ(OWN,  "96:5000", "Copy: own-clock stays");
+        HX_ASSERT(((seq8_instance_t *)h->inst)->tracks[1].clips[0].step_note_count[9] > 0,
+                  "setup: the NOTES really were copied to step 9");
+        PTS_EQ(LINK, "96:5000 216:1111 360:7000",
+               "copying a step moves no automation — step 9 keeps its own lock, step 4's stays put");
         hx_destroy(h);
 
         h = setup();
         hx_set_param(h, "t1_c0_step_4_reassign", "5");
         PTS_EQ(LINK, "96:5000 360:7000", "the held-step re-file keeps notes in time, so automation stays");
         hx_destroy(h);
-        OK("Step copy carries the step's locks; the held-step re-file (same time) moves nothing");
+        OK("⭐ copying a step carries NO locks, and the held-step re-file moves nothing");
     }
 
     /* ---- A drum track's automation is on the DRUM window: a melodic op there moves nothing */

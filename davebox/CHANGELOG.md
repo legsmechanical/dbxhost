@@ -21,12 +21,14 @@ the section into a versioned heading at release time.
   **Shift + click** a lane to go straight to where that parameter lives — its
   bank, the module editor's page that holds it, SOUND + CONFIG, or MACROS.
   **Back** brings you back to the menu, on the same lane.
-- **Automation follows the notes (Link).** Change a clip's Resolution, Beat
-  Stretch it, Clock Shift or Nudge it, double its loop or copy a step, and its
-  parameter automation now moves with the notes — a lock stays on its note's
-  step. On drum tracks it follows the ALL LANES versions of those edits; a
-  single lane's edit leaves the clip's automation alone. Each parameter has **Link: On / Off** in the AUTOMATION menu; On is the
-  default, Off leaves that parameter's automation where it is.
+- **Automation transforms with the sequence (Link).** Change a clip's
+  Resolution, Beat Stretch it, Clock Shift or Nudge it, or double its loop, and
+  its parameter automation is scaled, stretched or shifted the same way — so a
+  lock stays where it sits against the notes. On drum tracks it follows the ALL
+  LANES versions of those edits; a single lane's edit leaves the clip's
+  automation alone. Each parameter has **Link: On / Off** in the AUTOMATION
+  menu; On is the default, Off leaves that parameter's automation where it is
+  whatever you do to the notes.
 - **Module Menu.** A module's full parameter list is reachable again: in the
   module editor, jog to the last page (**Module**) and click **Module Menu**.
   Back from the top of the list returns you to the page you left.

@@ -729,13 +729,14 @@ static int pa_eval_punch(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t 
 /*  - grid ops (Resolution, Beat Stretch) RESCALE — the points, and a   */
 /*    lane's own Loop window with them, so a lane on its own clock keeps */
 /*    its length in steps;                                              */
-/*  - time ops (Clock Shift, Nudge, Double loop, Step copy) move points  */
-/*    in the clip's timeline, on lanes that FOLLOW the clip only. A lane */
+/*  - time ops (Clock Shift, Nudge, Double loop) move points in the     */
+/*    clip's timeline, on lanes that FOLLOW the clip only. A lane       */
 /*    with its own Loop or Rate runs on its own clock, where a step of   */
 /*    the clip is not a place, so it is left where it is.               */
 /* Zoom keeps every note's absolute tick, and the held-step move        */
-/* (_reassign) re-files notes on a neighbouring step without moving     */
-/* them in time: neither has anything for automation to follow.        */
+/* (_reassign) re-files notes without moving them in time: neither has  */
+/* anything to follow. Copying a STEP carries no locks either — Link is */
+/* about transforming the sequence, not pinning locks to notes (Josh).  */
 
 #define PA_LINK_SCALE  0   /* tick × num / den */
 #define PA_LINK_ROTATE 1   /* tick + d, wrapping inside [0, w) */
