@@ -211,6 +211,10 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **Automation no longer snaps back when the loop comes round.** A clip's last
+  automated value now carries through its first steps until the first lock
+  comes round, instead of jumping to the first lock's value on step 1. A lock
+  on step 13 and another on step 14 now stay put across the loop.
 - **A drum pad hit at the very end of a count-in is recorded again.** Since
   early September it landed nowhere; it now goes on step 1, as it does on a
   melodic track.

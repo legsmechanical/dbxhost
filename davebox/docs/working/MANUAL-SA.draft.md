@@ -1024,6 +1024,11 @@ Two ways, both covered where the knobs are:
   a value the parameter jumps to when the step plays. See
   [Editing notes](#63-editing-notes).
 
+A value **holds until the next one** — and round the loop: the last value in a
+clip carries through its first steps until the first lock or recorded move
+comes round. A recorded (smooth) move glides from its last value back to its
+first across the loop point.
+
 Which knobs? The ones on the module editor's pages, the levels on
 **SOUND + CONFIG** and in the session mixer, the eight **MACROS** — and, through
 a macro, dAVEBOx's own bank knobs. See

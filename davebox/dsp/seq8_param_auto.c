@@ -583,6 +583,70 @@ static uint32_t pa_entry_tick(const pa_entry_t *e, uint32_t ct, uint32_t clip_ti
 }
 
 /* ------------------------------------------------------------------ */
+/* THE LOOP WRAP (6b2)                                                  */
+/*                                                                      */
+/* Josh, 2026-09-11, on the device: "i've got a plock on step 13 turning */
+/* reverb mix to ~50, then one on step 14 turning mix to 0. but when the */
+/* loop comes back around, it resets back to ~50 even though there's no */
+/* p-lock on the first step." pa_eval holds the FIRST point's value     */
+/* before the first point, so steps 1-12 replayed step 13 every pass.   */
+/*                                                                      */
+/* ⭑ RULED: HOLD THE LAST VALUE ACROSS THE WRAP. A lane loops, so the   */
+/* point before its first one is its LAST one, a window earlier. Before */
+/* a lane's first point it plays its last point's value — every pass,   */
+/* the first after Play included; a SMOOTH lane ramps last → first      */
+/* across the wrap (and on after its last point toward the next pass's  */
+/* first). "Last" means last INSIDE the lane's window: the clip's loop, */
+/* or the lane's own Loop / Rate window. Points outside the window never */
+/* play, so they are never the value carried round.                     */
+/* A lane with no points inside its window keeps pa_eval's old answer.  */
+
+/* The window a lane's evaluated tick lives in — what pa_entry_tick wraps
+ * inside. v1 (no rate, no loop): the clip's own loop window. */
+static void pa_entry_window(const pa_entry_t *e, uint32_t clip_start, uint32_t clip_ticks,
+                            uint32_t *ws, uint32_t *wl) {
+    if (!e->resolution && !e->loop_len) { *ws = clip_start; *wl = clip_ticks; return; }
+    uint32_t win = e->loop_len ? (uint32_t)e->loop_len : clip_ticks;
+    if (!e->resolution && clip_ticks && win > clip_ticks) win = clip_ticks;   /* as pa_entry_tick */
+    *ws = (uint32_t)e->loop_off; *wl = win;
+}
+
+/* First index with points[i].tick >= t. */
+static int pa_lower_bound(const pa_entry_t *e, uint32_t t) {
+    int lo = 0, hi = e->count;
+    while (lo < hi) { int mid = (lo + hi) / 2; if (e->points[mid].tick < t) lo = mid + 1; else hi = mid; }
+    return lo;
+}
+
+/* Linear value at `t` on the span (ta, va) → (tb, vb), in 64-bit ticks so a
+ * span reaching back across the wrap (ta < 0) is exact. */
+static uint16_t pa_lerp(int64_t ta, uint16_t va, int64_t tb, uint16_t vb, int64_t t) {
+    if (tb <= ta) return va;
+    int64_t v = (int64_t)va + ((int64_t)vb - (int64_t)va) * (t - ta) / (tb - ta);
+    return (uint16_t)(v < 0 ? 0 : v > PA_VAL_MAX ? PA_VAL_MAX : v);
+}
+
+/* pa_eval with the lane's window known: the wrap rule above. */
+static int pa_eval_window(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t wl, uint16_t *out) {
+    if (!e || !e->count) return 0;
+    if (!wl) return pa_eval(e, t, out);
+    int fi = pa_lower_bound(e, ws);
+    int li = pa_lower_bound(e, ws + wl) - 1;
+    if (fi >= e->count || li < fi) return pa_eval(e, t, out);     /* nothing inside the window */
+    const pa_point_t *f = &e->points[fi], *l = &e->points[li];
+    int smooth = (e->flags & PA_FLAG_SMOOTH) != 0;
+    if (t < f->tick) {                         /* before the first: carried round from the last */
+        *out = smooth ? pa_lerp((int64_t)l->tick - wl, l->val, f->tick, f->val, t) : l->val;
+        return 1;
+    }
+    if (t >= l->tick) {                        /* after the last: toward the next pass's first */
+        *out = smooth ? pa_lerp(l->tick, l->val, (int64_t)f->tick + wl, f->val, t) : l->val;
+        return 1;
+    }
+    return pa_eval(e, t, out);                 /* between two points inside: unchanged */
+}
+
+/* ------------------------------------------------------------------ */
 /* THE DRUM AUTOMATION CLOCK                                            */
 /*                                                                      */
 /* A drum track's automation is ONE timeline for the whole clip, but a  */
@@ -1025,6 +1089,18 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
     struct { uint16_t target; uint16_t val; uint8_t midi; int cc; } out[PA_TICK_MAX_STAGE];
     int nout = 0;
 
+    /* Where the clip's loop window starts, in the same ticks as `ct` — what a
+     * lane with no window of its own wraps inside (the loop wrap, 6b2). Once
+     * per pass: the drum window walks 32 lanes. */
+    uint32_t clip_start;
+    if (tr->pad_mode == PAD_MODE_DRUM && tr->drum_clips[clip]) {
+        uint32_t dl, dt;
+        pa_drum_window(tr, clip, &clip_start, &dl, &dt);
+    } else {
+        const clip_t *pcl = &tr->clips[clip];
+        clip_start = (uint32_t)pcl->loop_start * (pcl->ticks_per_step ? pcl->ticks_per_step : (uint32_t)TICKS_PER_STEP);
+    }
+
     /* Round-robin start. The per-tick cap must not always favour the low
      * indices: under Smooth every ramping entry changes EVERY tick, so a
      * (track, clip) with more of them than the cap would otherwise never reach
@@ -1047,7 +1123,9 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
         if (pa_live_has(inst, track, tgt)) continue;          /* touch wins */
 
         uint16_t v;
-        if (!pa_eval(e, pa_entry_tick(e, ct, clip_ticks, tr->pa_cycle), &v)) continue;
+        uint32_t ws, wl;
+        pa_entry_window(e, clip_start, clip_ticks, &ws, &wl);
+        if (!pa_eval_window(e, pa_entry_tick(e, ct, clip_ticks, tr->pa_cycle), ws, wl, &v)) continue;
         v = pa_scaled(e, v);                 /* the lane's scale, 100 % = identity */
         if (e->last_sent_valid && e->last_sent == v) continue;   /* unchanged */
 
