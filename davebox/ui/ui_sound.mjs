@@ -57,7 +57,7 @@ import { applyTrackConfig, applyBankParam, readBankParams } from './ui_dsp_bridg
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
-import { automationRegisterSeqApply, automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
+import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
          automationClearKey, automationEntriesFor } from './ui_automation.mjs';
 import { autoBankRestoreMenu } from './ui_automation_bank.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
@@ -5292,9 +5292,19 @@ function bankMacroWriteFor(t, m, nv) {
     GS.screenDirty = true;
 }
 /* PLAYBACK of a `seq:` target (and its rest on stop, and a lock): the owner
- * hands us (track, key, value); the write is the bank knob's own. Registered
- * once; runs from the owner's tick whether or not sound mode is open. */
-automationRegisterSeqApply((track, key, val) => {
+ * hands us (track, key, value); the write is the bank knob's own. Runs from the
+ * owner's tick whether or not sound mode is open.
+ *
+ * ⚠⚠ REGISTERED FROM init() (ui.js), NOT from this module's body. It WAS a
+ * module-scope `automationRegisterSeqApply(...)` call, and in the shipped
+ * BUNDLE esbuild orders this module's body BEFORE ui_automation's — so the
+ * registration ran and was then wiped by ui_automation's own
+ * `var seqApplier = null`. Node runs a dependency's body first, so every test
+ * passed while the device silently never applied a sequencer lane (Josh,
+ * 2026-09-11: "the actual values on the sequencer bank oled cells don't change
+ * on playback even though they have dots"). A runtime registration cannot
+ * depend on module order at all. */
+export function soundSeqApply(track, key, val) {
     const st = SEQ_AUTO_TARGETS[key];
     if (!st || track < 0 || track > 7 || !isFinite(val)) return false;
     const nv = Math.max(st.min, Math.min(st.max, val | 0));
@@ -5304,7 +5314,7 @@ automationRegisterSeqApply((track, key, val) => {
     if (bankMacroValue(m, track) === nv) return true;
     bankMacroWriteFor(track, m, nv);
     return true;
-});
+}
 
 /* The SEQUENCER's automatable settings for a track, as a snapshot sees them
  * (Josh, 2026-09-05: a snapshot holds "any automatable param, in fact"): every
