@@ -4,7 +4,7 @@
  * compile or lint this file on its own.
  *
  * Covers: pa_set, pa_set2, pa_clear_key, pa_clear_step, pa_clear, pa_active,
- * pa_smooth, pa_rest, pa_rest_move, pa_loop, pa_scale, pa_live, pa_hold, pa_live_end.
+ * pa_smooth, pa_wrap, pa_rest, pa_rest_move, pa_loop, pa_scale, pa_live, pa_hold, pa_live_end.
  *
  * The dispatcher holds the writer lock and the seqlock around this handler.
  *
@@ -252,6 +252,22 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_id(inst, tgt));
         if (e) {
             if (on) e->flags |= PA_FLAG_SMOOTH; else e->flags &= (uint8_t)~PA_FLAG_SMOOTH;
+            pa_mark_dirty(inst);
+        }
+        return 1;
+    }
+
+    /* pa_wrap: "<clip> <target> <reset>" — Wrap: Carry (0, the default) carries
+     * the lane's last value round the loop; Reset (1) is the pre-6b2 rule. */
+    if (!strcmp(sub, "pa_wrap")) {
+        int clip = 0, reset = 0;
+        PA_SKIP_SPACE(p); PA_UINT(p, clip);
+        PA_TARGET(p, tgt);
+        PA_SKIP_SPACE(p); PA_UINT(p, reset);
+        if (clip < 0 || clip >= NUM_CLIPS) return 1;
+        pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_id(inst, tgt));
+        if (e) {
+            if (reset) e->flags |= PA_FLAG_WRAP_RESET; else e->flags &= (uint8_t)~PA_FLAG_WRAP_RESET;
             pa_mark_dirty(inst);
         }
         return 1;

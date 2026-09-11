@@ -11,6 +11,7 @@
 #include "harness.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 static int ok_count = 0;
 #define OK(msg) do { printf("  ok   — %s\n", msg); ok_count++; } while (0)
@@ -66,6 +67,42 @@ int main(void) {
         HX_ASSERT(n == 1 && seq[0] == 8192, "a single lock stages its value once and never moves");
         OK("CONTROL: a lane with one lock behaves exactly as before");
         hx_destroy(h);
+    }
+    /* ---- Wrap: Reset — the pre-6b2 rule, per lane (Josh, 2026-09-11) ---- */
+    {
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+        char buf[4096];
+        hx_set_param(h, "t0_c0_step_0_toggle", "60 100");
+        lock(h, "1:fx1:mix", 12, 8192);
+        lock(h, "1:fx1:mix", 13, 0);
+        hx_set_param(h, "t0_pa_wrap", "0 1:fx1:mix 1");
+        hx_get_param(h, "pa_list", buf, sizeof buf);
+        HX_ASSERT(strstr(buf, "0 0 9 2 1:fx1:mix"), "pa_list reports the flag: ACTIVE | WRAP_RESET = 9");
+        hx_set_param(h, "transport", "play_focus:0:0");
+        int n = sequence(h, "1:fx1:mix", seq, 16, 1600);
+        HX_ASSERT(n >= 4 && seq[0] == 8192 && seq[1] == 0 && seq[2] == 8192 && seq[3] == 0,
+                  "Reset replays the OLD rule: ~50 from Play, 0 at step 14, back to ~50 at the wrap");
+        OK("Wrap: Reset puts back exactly the old snap-back — per lane");
+
+        /* It persists: through the project's own serialize/parse. Serialized
+         * now, parsed into a fresh instance below — ONE hx instance at a time
+         * (g_inst is process-global), so this one is destroyed first. */
+        char *mem = NULL; size_t len = 0;
+        FILE *fp = open_memstream(&mem, &len);
+        pa_serialize(in, fp); fclose(fp);
+
+        hx_set_param(h, "t0_pa_wrap", "0 1:fx1:mix 0");
+        hx_get_param(h, "pa_list", buf, sizeof buf);
+        HX_ASSERT(strstr(buf, "0 0 1 2 1:fx1:mix"), "back to Carry clears only that bit");
+        hx_destroy(h);
+
+        hx_t *h2 = hx_create(NULL);
+        pa_parse((seq8_instance_t *)h2->inst, mem, len);
+        hx_get_param(h2, "pa_list", buf, sizeof buf);
+        HX_ASSERT(strstr(buf, "0 0 9 2 1:fx1:mix"), "the Reset flag survives save + load");
+        free(mem); hx_destroy(h2);
+        OK("the Wrap setting persists with the project, and toggles back");
     }
     printf("test_param_auto_wrap_playback: %d ok\n", ok_count);
     return 0;

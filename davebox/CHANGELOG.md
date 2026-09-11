@@ -17,6 +17,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Wrap, per automated parameter.** In the AUTOMATION menu, each lane now has
+  **Wrap: Carry / Reset** — Carry (the default) keeps the last value going round
+  the loop, Reset returns to the first value at the loop start, as before.
+  **Smooth** reads the same way now (**Smooth: On / Off**), and both flip in
+  place so you can see the setting you just changed.
 - **The AUTOMATION menu shows where each parameter is set.** Scroll the menu and
   the step buttons blink white on every step where the parameter under the
   cursor has a value — its step locks, and any step a recorded move passes

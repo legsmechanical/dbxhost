@@ -629,7 +629,9 @@ static uint16_t pa_lerp(int64_t ta, uint16_t va, int64_t tb, uint16_t vb, int64_
 /* pa_eval with the lane's window known: the wrap rule above. */
 static int pa_eval_window(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t wl, uint16_t *out) {
     if (!e || !e->count) return 0;
-    if (!wl) return pa_eval(e, t, out);
+    /* Wrap: Reset (Josh, 2026-09-11: "toggles between what we have now and what
+     * we had previously") — the lane plays the plain curve, exactly as before. */
+    if (!wl || (e->flags & PA_FLAG_WRAP_RESET)) return pa_eval(e, t, out);
     int fi = pa_lower_bound(e, ws);
     int li = pa_lower_bound(e, ws + wl) - 1;
     if (fi >= e->count || li < fi) return pa_eval(e, t, out);     /* nothing inside the window */

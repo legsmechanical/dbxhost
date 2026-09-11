@@ -32,7 +32,7 @@ import { S } from './ui_state.mjs';
 import { BANK_AUTOMATION, PAD_MODE_DRUM, midiTargetIsMidi } from './ui_constants.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey,
-         automationToggleActive, automationToggleSmooth, automationSmoothable,
+         automationToggleActive, automationToggleSmooth, automationToggleWrap, automationSmoothable,
          automationSetLoop, automationSetRate, automationRateText, automationSetScale,
          automationClearClip, automationListGen, automationStepTicks } from './ui_automation.mjs';
 import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
@@ -60,7 +60,8 @@ export function autoBankRows(track, clip) {
     const rows = [];
     for (const e of automationEntriesFor(track, clip)) {
         rows.push({ kind: 'entry', target: e.target, label: automationTargetLabel(e.target),
-                    active: e.active, smooth: e.smooth, count: e.count, loop: e.loop, res: e.res,
+                    active: e.active, smooth: e.smooth, wrapReset: !!e.wrapReset,
+                    count: e.count, loop: e.loop, res: e.res,
                     scale: isFinite(e.scale) ? e.scale : 100 });
     }
     rows.sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
@@ -74,6 +75,8 @@ function rowValue(r) {
 }
 function loopText(steps) { return steps > 0 ? (steps + ' ST') : 'CLIP'; }
 function scaleText(pct) { return (isFinite(pct) ? pct : 100) + '%'; }
+function smoothText(on) { return on ? 'On' : 'Off'; }
+function wrapText(reset) { return reset ? 'Reset' : 'Carry'; }
 
 /* Loop length in STEPS for the row (the store keeps ticks). */
 function rowLoopSteps(track, clip, r) {
@@ -87,8 +90,13 @@ function opsFor(track, clip, r) {
                  { op: 'active', label: r.active ? 'Mute' : 'Unmute' }];
     const i = r.target.indexOf(':');
     const slot = parseInt(r.target.slice(0, i), 10), fullKey = r.target.slice(i + 1);
+    /* ⭑ SET-AND-FORGET SETTINGS READ AS SETTINGS (Josh, 2026-09-11): a static
+     * label on the left and the VALUE on the right — "Smooth: On/Off. Wrap:
+     * Carry/Reset." — not an action label that flips its own wording. A click
+     * flips the value in place (see runOp). */
     if (midiTargetIsMidi(r.target) || (isFinite(slot) && automationSmoothable(slot, fullKey)))
-        ops.push({ op: 'smooth', label: r.smooth ? 'Stepped' : 'Smooth' });
+        ops.push({ op: 'smooth', label: 'Smooth', value: smoothText(r.smooth) });
+    ops.push({ op: 'wrap', label: 'Wrap', value: wrapText(r.wrapReset) });
     ops.push({ op: 'loop', label: 'Loop', value: loopText(rowLoopSteps(track, clip, r)) });
     ops.push({ op: 'rate', label: 'Rate', value: automationRateText(r.res) });
     ops.push({ op: 'scale', label: 'Scale', value: scaleText(r.scale) });
@@ -116,7 +124,8 @@ export function drawAutomationBankBody() {
         const ors = a.ops.rows.map((o, i) => ({
             label: o.label,
             value: (o.op === 'loop' || o.op === 'rate' || o.op === 'scale')
-                ? ((a.loopEdit || a.rateEdit || a.scaleEdit) && i === a.ops.sel ? '<' + o.value + '>' : o.value) : undefined,
+                ? ((a.loopEdit || a.rateEdit || a.scaleEdit) && i === a.ops.sel ? '<' + o.value + '>' : o.value)
+                : (o.op === 'smooth' || o.op === 'wrap') ? o.value : undefined,
         }));
         drawKitBackdropDim(0, LIST_TOP, 128, MV_FOOTER_Y - LIST_TOP);
         /* ⚠ bottomY: STOP THE BOX ABOVE THE FOOTER. Without it the stacked
@@ -192,9 +201,17 @@ function runOp(t, c, a) {
     } else if (o.op === 'active') {
         const on = automationToggleActive(t, c, r.target);
         if (on !== null) showActionPopup('AUTOMATION', on ? 'ON' : 'MUTED');
-    } else if (o.op === 'smooth') {
-        const on = automationToggleSmooth(t, c, r.target);
-        if (on !== null) showActionPopup('AUTOMATION', on ? 'SMOOTH' : 'STEPPED');
+    } else if (o.op === 'smooth' || o.op === 'wrap') {
+        /* A setting, not an action: flip it IN PLACE and keep the pop-up open,
+         * so the value you just set is the thing you are looking at. */
+        if (o.op === 'smooth') {
+            const on = automationToggleSmooth(t, c, r.target);
+            if (on !== null) { r.smooth = on; o.value = smoothText(on); }
+        } else {
+            const reset = automationToggleWrap(t, c, r.target);
+            if (reset !== null) { r.wrapReset = reset; o.value = wrapText(reset); }
+        }
+        return;
     }
     a.ops = null;
 }
