@@ -68,6 +68,10 @@
                                   * parameter sits at its RESTING value (Josh,
                                   * 2026-09-11). Clear = Carry, the default: every
                                   * existing file reads Carry. */
+#define PA_FLAG_PUNCH      0x10  /* Mode: Punch — a point lasts to the end of its own
+                                  * STEP, then the RESTING value (Josh, 2026-09-11).
+                                  * Clear = Curve, the default. Wrap / Smooth do not
+                                  * apply in Punch. */
 
 typedef struct {
     uint16_t tick;               /* clip-relative tick; a 256-step clip at 24 tps fits u16 */

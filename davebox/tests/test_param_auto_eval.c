@@ -142,7 +142,39 @@ int main(void) {
       HX_ASSERT(pa_eval_window(&r, 100, 0, 384, &v) == PA_EVAL_REST && v == 3000, "…and rest before the first");
       r.rest = PA_VAL_UNSET;
       HX_ASSERT(pa_eval_window(&r, 0, 0, 384, &v) == 1 && v == 8192, "no resting value captured: the first point's value");
-      OK("Wrap: Reset — the resting value until the first point; the first point's value if none was captured"); }
+      OK("Wrap: Reset — the resting value until the first point; the first point's value if none was captured");
+
+      /* ⭑ MODE: PUNCH (6c4): a point lasts its own step (24 ticks), then rest. */
+      pa_entry_t pu; memset(&pu, 0, sizeof(pu)); pu.used = 1; pu.flags = PA_FLAG_ACTIVE | PA_FLAG_PUNCH;
+      pu.rest = 3000;
+      pa_set_point(&pu, 312, 8192); pa_set_point(&pu, 336, 0);
+      HX_ASSERT(pa_eval_punch(&pu, 0, 0, 384, 24, &v) == PA_EVAL_REST && v == 3000, "no point yet: rest");
+      HX_ASSERT(pa_eval_punch(&pu, 312, 0, 384, 24, &v) == 1 && v == 8192, "step 13's lock, on its step");
+      HX_ASSERT(pa_eval_punch(&pu, 335, 0, 384, 24, &v) == 1 && v == 8192, "…to the step's last tick");
+      HX_ASSERT(pa_eval_punch(&pu, 336, 0, 384, 24, &v) == 1 && v == 0, "step 14's lock");
+      HX_ASSERT(pa_eval_punch(&pu, 360, 0, 384, 24, &v) == PA_EVAL_REST && v == 3000, "step 15 has no point: rest");
+      OK("Punch: a lock lasts exactly its own step, then the resting value");
+
+      /* A recorded sweep: a point every half step (12 ticks) across steps 4-5. */
+      pa_entry_t sw; memset(&sw, 0, sizeof(sw)); sw.used = 1; sw.flags = PA_FLAG_ACTIVE | PA_FLAG_PUNCH;
+      sw.rest = 100;
+      pa_set_point(&sw, 96, 1000); pa_set_point(&sw, 108, 2000); pa_set_point(&sw, 120, 3000); pa_set_point(&sw, 132, 4000);
+      HX_ASSERT(pa_eval_punch(&sw, 110, 0, 384, 24, &v) == 1 && v == 2000, "inside the sweep: its latest point");
+      HX_ASSERT(pa_eval_punch(&sw, 143, 0, 384, 24, &v) == 1 && v == 4000, "the last point holds to its step's end");
+      HX_ASSERT(pa_eval_punch(&sw, 144, 0, 384, 24, &v) == PA_EVAL_REST && v == 100, "then rest");
+      OK("Punch: a recorded sweep plays stepped across the steps it covers, rest around it");
+
+      /* Wrap and Smooth do not apply; points outside the window are ignored. */
+      pu.flags |= PA_FLAG_SMOOTH | PA_FLAG_WRAP_RESET;
+      HX_ASSERT(pa_eval_punch(&pu, 348, 0, 384, 24, &v) == 1 && v == 0, "Smooth does not glide in Punch");
+      HX_ASSERT(pa_eval_punch(&pu, 320, 312, 24, 24, &v) == 1 && v == 8192, "own window [312,336): its point");
+      HX_ASSERT(pa_eval_punch(&pu, 340, 336, 48, 24, &v) == 1 && v == 0, "…and a point on the window start counts");
+      pa_entry_t ow; memset(&ow, 0, sizeof(ow)); ow.used = 1; ow.flags = PA_FLAG_ACTIVE | PA_FLAG_PUNCH; ow.rest = 777;
+      pa_set_point(&ow, 90, 5555);
+      HX_ASSERT(pa_eval_punch(&ow, 100, 96, 96, 24, &v) == PA_EVAL_REST && v == 777, "a point BEFORE the window never counts");
+      ow.rest = PA_VAL_UNSET;
+      HX_ASSERT(pa_eval_punch(&ow, 200, 0, 384, 24, &v) == 1 && v == 5555, "no resting value: the plain curve");
+      OK("Punch ignores Smooth and Wrap, honours the window, and falls back to the curve with no rest"); }
 
     /* Clearing a range removes exactly what it names, endpoints included. */
     pa_clear_range(&e, 150, 150);

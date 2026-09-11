@@ -97,6 +97,22 @@ step('⭐ clicking Smooth flips it to On in place, writes pa_smooth, label uncha
     assert(S.autoBank.ops && sm.label === 'Smooth' && sm.value === 'On', 'Smooth row after click: ' + JSON.stringify(sm));
     assert(bulk.indexOf('t0_pa_smooth=0 0:synth:cutoff 1') >= 0, 'no pa_smooth write: ' + JSON.stringify(bulk));
 });
+step('⭐ Mode: Curve -> Punch hides Smooth and Wrap, keeps the cursor on Mode, writes pa_mode', () => {
+    const md = rowsOf().find(o => o.op === 'mode');
+    assert(md && md.label === 'Mode' && md.value === 'Curve', 'Mode row: ' + JSON.stringify(md));
+    sel('mode'); bulk.length = 0; click(); ticks(2);
+    assert(S.autoBank.ops, 'the pop-up closed');
+    const ops = rowsOf().map(o => o.op);
+    assert(rowsOf().find(o => o.op === 'mode').value === 'Punch', 'value did not flip');
+    assert(ops.indexOf('smooth') < 0 && ops.indexOf('wrap') < 0, 'Smooth / Wrap still shown in Punch: ' + JSON.stringify(ops));
+    assert(rowsOf()[S.autoBank.ops.sel].op === 'mode', 'cursor left Mode');
+    assert(bulk.indexOf('t0_pa_mode=0 0:synth:cutoff 1') >= 0, 'no pa_mode write: ' + JSON.stringify(bulk));
+    bulk.length = 0; click(); ticks(2);
+    const back = rowsOf();
+    assert(back.find(o => o.op === 'mode').value === 'Curve' && bulk.indexOf('t0_pa_mode=0 0:synth:cutoff 0') >= 0, 'back to Curve');
+    assert(back.find(o => o.op === 'smooth').value === 'On', 'Smooth came back WITH its setting (On, set above)');
+    assert(back.find(o => o.op === 'wrap'), 'Wrap came back');
+});
 step('CONTROL: an ACTION row still closes the pop-up (Mute)', () => {
     sel('active'); click(); ticks(1);
     assert(!S.autoBank.ops, 'Mute is an action — the pop-up should close after it');
