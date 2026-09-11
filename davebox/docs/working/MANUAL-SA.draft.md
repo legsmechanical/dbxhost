@@ -1049,7 +1049,10 @@ jog is the whole surface.
 buttons blink white** on every step where that parameter has a value set — its
 step locks, and any step a recorded move passes through. Then click a row for
 its operations:
-**Delete**, **Mute** / **Unmute**, **Smooth** (*On* glides between values, *Off*
+**Delete**, **Mute** / **Unmute**, **Mode** (*Curve* plays the lane as a continuous
+envelope; *Punch* makes each lock last just its own step, with the parameter back at
+rest on every other step — Smooth and Wrap don't apply there and are hidden),
+**Smooth** (*On* glides between values, *Off*
 steps — on parameters that can ramp), **Wrap** (*Carry* keeps the last value going
 round the loop; *Reset* returns the parameter to where the knob sits at rest, until
 the first lock or recorded move comes round), **Loop** (that parameter's own loop length in steps, or CLIP to

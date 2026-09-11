@@ -121,6 +121,41 @@ int main(void) {
         OK("Scale never touches the resting value");
         hx_destroy(h);
     }
+    /* ---- MODE: PUNCH under real playback (6c4) ---- */
+    {
+        hx_t *h = hx_create(NULL);
+        char buf[4096];
+        hx_set_param(h, "t0_c0_step_0_toggle", "60 100");
+        lock(h, "1:fx1:mix", 12, 8192);
+        lock(h, "1:fx1:mix", 13, 0);
+        hx_set_param(h, "t0_pa_rest", "0 1:fx1:mix 3000");
+        hx_set_param(h, "t0_pa_mode", "0 1:fx1:mix 1");
+        /* Stray Smooth / Wrap settings must not leak into Punch. */
+        hx_set_param(h, "t0_pa_smooth", "0 1:fx1:mix 1");
+        hx_set_param(h, "t0_pa_wrap", "0 1:fx1:mix 1");
+        hx_get_param(h, "pa_list", buf, sizeof buf);
+        HX_ASSERT(strstr(buf, "0 0 27 2 1:fx1:mix"), "flags: ACTIVE|SMOOTH|WRAP_RESET|PUNCH = 27");
+        hx_set_param(h, "transport", "play_focus:0:0");
+        int n = sequence(h, "1:fx1:mix", seq, 16, 1600);
+        HX_ASSERT(n >= 7 && seq[0] == 3000 && seq[1] == 8192 && seq[2] == 0 && seq[3] == 3000 &&
+                  seq[4] == 8192 && seq[5] == 0 && seq[6] == 3000,
+                  "Punch: rest, step 13, step 14, REST from step 15 — every pass");
+        OK("⭐ Punch: each lock lasts its own step, then the parameter goes back to rest");
+        hx_destroy(h);
+    }
+    {
+        hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_c0_step_0_toggle", "60 100");
+        lock(h, "1:fx1:mix", 12, 8192);                        /* ONE lock */
+        hx_set_param(h, "t0_pa_rest", "0 1:fx1:mix 3000");
+        hx_set_param(h, "t0_pa_mode", "0 1:fx1:mix 1");
+        hx_set_param(h, "transport", "play_focus:0:0");
+        int n = sequence(h, "1:fx1:mix", seq, 16, 1600);
+        HX_ASSERT(n >= 4 && seq[0] == 3000 && seq[1] == 8192 && seq[2] == 3000 && seq[3] == 8192,
+                  "a single punch lock: one step at ~50 %, rest either side (Curve would hold it all loop)");
+        OK("Punch: a single lock is one step long");
+        hx_destroy(h);
+    }
     printf("test_param_auto_wrap_playback: %d ok\n", ok_count);
     return 0;
 }

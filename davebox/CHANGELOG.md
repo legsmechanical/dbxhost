@@ -17,6 +17,10 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Mode: Curve / Punch, per automated parameter.** Curve is the continuous
+  envelope you have now. **Punch** makes each lock last just its own step — every
+  other step goes back to where the knob sits at rest — so locks behave like
+  one-step hits. Set it in the lane's AUTOMATION menu.
 - **Wrap, per automated parameter.** In the AUTOMATION menu, each lane now has
   **Wrap: Carry / Reset** — Carry (the default) keeps the last value going round
   the loop; Reset puts the parameter back where its knob sits at rest until the

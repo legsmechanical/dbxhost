@@ -32,7 +32,7 @@ import { S } from './ui_state.mjs';
 import { BANK_AUTOMATION, PAD_MODE_DRUM, midiTargetIsMidi } from './ui_constants.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey,
-         automationToggleActive, automationToggleSmooth, automationToggleWrap, automationSmoothable,
+         automationToggleActive, automationToggleSmooth, automationToggleWrap, automationToggleMode, automationSmoothable,
          automationSetLoop, automationSetRate, automationRateText, automationSetScale,
          automationClearClip, automationListGen, automationStepTicks } from './ui_automation.mjs';
 import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
@@ -60,7 +60,7 @@ export function autoBankRows(track, clip) {
     const rows = [];
     for (const e of automationEntriesFor(track, clip)) {
         rows.push({ kind: 'entry', target: e.target, label: automationTargetLabel(e.target),
-                    active: e.active, smooth: e.smooth, wrapReset: !!e.wrapReset,
+                    active: e.active, smooth: e.smooth, wrapReset: !!e.wrapReset, punch: !!e.punch,
                     count: e.count, loop: e.loop, res: e.res,
                     scale: isFinite(e.scale) ? e.scale : 100 });
     }
@@ -77,6 +77,7 @@ function loopText(steps) { return steps > 0 ? (steps + ' ST') : 'CLIP'; }
 function scaleText(pct) { return (isFinite(pct) ? pct : 100) + '%'; }
 function smoothText(on) { return on ? 'On' : 'Off'; }
 function wrapText(reset) { return reset ? 'Reset' : 'Carry'; }
+function modeText(punch) { return punch ? 'Punch' : 'Curve'; }
 
 /* Loop length in STEPS for the row (the store keeps ticks). */
 function rowLoopSteps(track, clip, r) {
@@ -94,9 +95,17 @@ function opsFor(track, clip, r) {
      * label on the left and the VALUE on the right — "Smooth: On/Off. Wrap:
      * Carry/Reset." — not an action label that flips its own wording. A click
      * flips the value in place (see runOp). */
-    if (midiTargetIsMidi(r.target) || (isFinite(slot) && automationSmoothable(slot, fullKey)))
-        ops.push({ op: 'smooth', label: 'Smooth', value: smoothText(r.smooth) });
-    ops.push({ op: 'wrap', label: 'Wrap', value: wrapText(r.wrapReset) });
+    /* MODE first: it decides which of the rows below mean anything. In Punch a
+     * point lasts its own step and every other step is at rest — nothing carries
+     * round the loop and nothing glides between points — so Smooth and Wrap are
+     * HIDDEN there (their settings are kept for when the lane goes back to
+     * Curve). Plan 6c4, Josh 2026-09-11. */
+    ops.push({ op: 'mode', label: 'Mode', value: modeText(r.punch) });
+    if (!r.punch) {
+        if (midiTargetIsMidi(r.target) || (isFinite(slot) && automationSmoothable(slot, fullKey)))
+            ops.push({ op: 'smooth', label: 'Smooth', value: smoothText(r.smooth) });
+        ops.push({ op: 'wrap', label: 'Wrap', value: wrapText(r.wrapReset) });
+    }
     ops.push({ op: 'loop', label: 'Loop', value: loopText(rowLoopSteps(track, clip, r)) });
     ops.push({ op: 'rate', label: 'Rate', value: automationRateText(r.res) });
     ops.push({ op: 'scale', label: 'Scale', value: scaleText(r.scale) });
@@ -125,7 +134,7 @@ export function drawAutomationBankBody() {
             label: o.label,
             value: (o.op === 'loop' || o.op === 'rate' || o.op === 'scale')
                 ? ((a.loopEdit || a.rateEdit || a.scaleEdit) && i === a.ops.sel ? '<' + o.value + '>' : o.value)
-                : (o.op === 'smooth' || o.op === 'wrap') ? o.value : undefined,
+                : (o.op === 'smooth' || o.op === 'wrap' || o.op === 'mode') ? o.value : undefined,
         }));
         drawKitBackdropDim(0, LIST_TOP, 128, MV_FOOTER_Y - LIST_TOP);
         /* ⚠ bottomY: STOP THE BOX ABOVE THE FOOTER. Without it the stacked
@@ -201,6 +210,17 @@ function runOp(t, c, a) {
     } else if (o.op === 'active') {
         const on = automationToggleActive(t, c, r.target);
         if (on !== null) showActionPopup('AUTOMATION', on ? 'ON' : 'MUTED');
+    } else if (o.op === 'mode') {
+        /* A setting, flipped in place — and it changes WHICH rows exist (Smooth
+         * and Wrap come and go), so the list is rebuilt with the cursor kept on
+         * Mode. */
+        const punch = automationToggleMode(t, c, r.target);
+        if (punch !== null) {
+            r.punch = punch;
+            a.ops.rows = opsFor(t, c, r);
+            a.ops.sel = Math.max(0, a.ops.rows.findIndex(x => x.op === 'mode'));
+        }
+        return;
     } else if (o.op === 'smooth' || o.op === 'wrap') {
         /* A setting, not an action: flip it IN PLACE and keep the pop-up open,
          * so the value you just set is the thing you are looking at. */

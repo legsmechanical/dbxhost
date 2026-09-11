@@ -667,6 +667,30 @@ static int pa_eval_window(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t
     return pa_eval(e, t, out);                 /* between two points inside: unchanged */
 }
 
+/* MODE: PUNCH (plan 6c4, Josh 2026-09-11: "Steps with p-locks fall back to
+ * resting value"). The last point at or before `t` — inside the lane's window —
+ * counts only until the END OF ITS OWN STEP; after that, and on every step with
+ * no point, the parameter plays its RESTING value. A lock is one point at a step
+ * start, so it lasts exactly its step; a recorded sweep (a point every half step)
+ * plays as stepped values across the steps it covers. Step grid only — nothing
+ * here knows where notes are (the "just like Elektron" design, which does, was
+ * dropped: see _worklogs/specs/2026-09-11-punch-and-line-locks.md).
+ * Wrap and Smooth do not apply. A lane with no resting value falls back to the
+ * plain curve. Same return codes as pa_eval_window. */
+static int pa_eval_punch(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t wl,
+                         uint32_t step_ticks, uint16_t *out) {
+    if (!e || !e->count) return 0;
+    if (!step_ticks) step_ticks = TICKS_PER_STEP;
+    int k = pa_lower_bound(e, t + 1) - 1;                       /* last point with tick <= t */
+    if (k >= 0 && (!wl || e->points[k].tick >= ws)) {
+        uint32_t pt = e->points[k].tick;
+        if (t < (pt / step_ticks) * step_ticks + step_ticks) { *out = e->points[k].val; return 1; }
+    }
+    if (e->rest == PA_VAL_UNSET) return pa_eval(e, t, out);
+    *out = e->rest;
+    return PA_EVAL_REST;
+}
+
 /* ------------------------------------------------------------------ */
 /* THE DRUM AUTOMATION CLOCK                                            */
 /*                                                                      */
@@ -1113,13 +1137,14 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
     /* Where the clip's loop window starts, in the same ticks as `ct` — what a
      * lane with no window of its own wraps inside (the loop wrap, 6b2). Once
      * per pass: the drum window walks 32 lanes. */
-    uint32_t clip_start;
+    uint32_t clip_start, step_ticks;   /* step_ticks: a STEP, for Punch */
     if (tr->pad_mode == PAD_MODE_DRUM && tr->drum_clips[clip]) {
-        uint32_t dl, dt;
-        pa_drum_window(tr, clip, &clip_start, &dl, &dt);
+        uint32_t dl;
+        pa_drum_window(tr, clip, &clip_start, &dl, &step_ticks);
     } else {
         const clip_t *pcl = &tr->clips[clip];
-        clip_start = (uint32_t)pcl->loop_start * (pcl->ticks_per_step ? pcl->ticks_per_step : (uint32_t)TICKS_PER_STEP);
+        step_ticks = pcl->ticks_per_step ? pcl->ticks_per_step : (uint32_t)TICKS_PER_STEP;
+        clip_start = (uint32_t)pcl->loop_start * step_ticks;
     }
 
     /* Round-robin start. The per-tick cap must not always favour the low
@@ -1146,7 +1171,9 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
         uint16_t v;
         uint32_t ws, wl;
         pa_entry_window(e, clip_start, clip_ticks, &ws, &wl);
-        int ev = pa_eval_window(e, pa_entry_tick(e, ct, clip_ticks, tr->pa_cycle), ws, wl, &v);
+        uint32_t lt = pa_entry_tick(e, ct, clip_ticks, tr->pa_cycle);
+        int ev = (e->flags & PA_FLAG_PUNCH) ? pa_eval_punch(e, lt, ws, wl, step_ticks, &v)
+                                            : pa_eval_window(e, lt, ws, wl, &v);
         if (!ev) continue;
         if (ev != PA_EVAL_REST) v = pa_scaled(e, v);   /* the lane's scale; never the resting value */
         if (e->last_sent_valid && e->last_sent == v) continue;   /* unchanged */
