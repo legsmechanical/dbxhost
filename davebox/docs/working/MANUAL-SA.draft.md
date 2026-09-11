@@ -1330,7 +1330,10 @@ groups with a line between them: Move 1-4, every Schwung generator by name, MIDI
 channels 1-16, and the tracks this one may follow. Choosing a generator makes
 the track a Schwung track and loads it in one step. Inside a
 block the knobs edit its parameters and the jog turns the pages; hold **Shift**
-while turning to jump between sections. Picking an **empty** effect block opens
+while turning to jump between sections. The last pages are **My Presets** and
+**Module**; on Module, **Module Menu** opens the module's full parameter list
+(its own menu tree, for settings the knob pages don't show), and **Back** from
+its top returns you to the page you left. Picking an **empty** effect block opens
 the module list, which is how you add an effect. **Back** steps out one level at a
 time, and closes the bank from its top level. **Shift + Note/Session** brings you
 back to the top of the sound editor from any depth in one press — and holding it

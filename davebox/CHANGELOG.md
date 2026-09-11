@@ -27,6 +27,9 @@ the section into a versioned heading at release time.
   step. On drum tracks it follows the ALL LANES versions of those edits; a
   single lane's edit leaves the clip's automation alone. Each parameter has **Link: On / Off** in the AUTOMATION menu; On is the
   default, Off leaves that parameter's automation where it is.
+- **Module Menu.** A module's full parameter list is reachable again: in the
+  module editor, jog to the last page (**Module**) and click **Module Menu**.
+  Back from the top of the list returns you to the page you left.
 - **Mode: Curve / Punch, per automated parameter.** Curve is the continuous
   envelope you have now. **Punch** makes each lock last just its own step — every
   other step goes back to where the knob sits at rest — so locks behave like
