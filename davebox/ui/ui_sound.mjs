@@ -4494,8 +4494,88 @@ function closeEnumPicker(commitIt) {
     S.enumPick = null;
     S.dirty = true;
 }
+/*
+ * The Instrument picker's Shift+click door, ANNOUNCED.
+ *
+ * Josh, 2026-09-10: "shift+click hint on module picker to get to favorites,
+ * etc." Shift+click on a generator opens that module's Lists menu
+ * (instrPickerToggleList) and nothing on screen said so -- the same complaint
+ * openListMenu's own comment already records once: "both were hidden behind a
+ * Shift+Click nobody announces". That pass made the LISTS reachable from a
+ * visible row; the module-scoped half stayed a secret gesture.
+ *
+ * A HINT PILL, decided per CURSOR ROW, and only when that row is a MODULE
+ * (`r.gen`). Shift does nothing on Move 1-4, the MIDI channels, the
+ * track-follow rows or the List row, so the band is ABSENT there rather than
+ * promising a gesture that is not offered -- the same rule Josh set for the
+ * sound menu on 2026-09-04 ("pop up over the menu at the bottom on items where
+ * it's relevant").
+ *
+ * TWO EARLIER CUTS, BOTH WRONG, BOTH WORTH NOT REPEATING:
+ *   1. A `SHFT` value string on the row -- invents a second vocabulary for
+ *      "this opens", and eats ~20px of the CURSOR row's label, which is the
+ *      one row whose full name you want to read.
+ *   2. CORNER BRACKETS around the row (`opens: true`). Right in the language
+ *      (UI_LANGUAGE 3.6) and INVISIBLE in practice: `drawBrackets` inks colour
+ *      1 unconditionally and a SELECTED row is filled white, so it drew white
+ *      on white. It was built, tested, committed and DEPLOYED before the
+ *      device showed nothing -- the test asserted the decorated row OBJECT
+ *      rather than the pixels, so it passed over a dead feature.
+ *      -> [[test-the-path-not-the-function]], [[led-and-render-observables-lie]]
+ *
+ * Decided AT RENDER TIME. `options` is built once in openInstrPicker and the
+ * cursor moves afterwards, so a decision baked in at build time would describe
+ * whichever row happened to be selected when the picker opened.
+ */
+/* ── the Instrument picker's box, in numbers ───────────────────────────────
+ *
+ * Josh, 2026-09-10, from the device: "overlay overlaps with the pill. make the
+ * picker 4 lines instead of 5 and pull up the bottom to avoid the overlap."
+ *
+ * ⚠⚠ `visible` IS PINNED, AND THAT IS THE HALF THAT WAS ACTUALLY BROKEN.
+ * drawKitList DERIVES the row count from the box height when a caller does not
+ * say — `floor((h - 1) / rowH)` — and the hint band's height comes off that
+ * height. So the list was FIVE rows on a row with no hint and FOUR on a row
+ * with one: it reflowed under the cursor as you jogged between a MIDI channel
+ * and a generator. Pinning the count makes the geometry fixed, so the band
+ * appears and disappears in space that was already reserved for it.
+ *
+ * The arithmetic, so the next person changing one number can see the others:
+ *   top        = 2                      (the crumb bar is gone; §noCrumbs)
+ *   listTop    = top + 6        = 8     (drawKitStackedList's own inset)
+ *   4 rows     @ rowH 10        = 8..47
+ *   band       = MV_FOOTER_H 7  = 48..54
+ *   box bottom = bottomY - 1    = 55
+ * A row and the band cannot meet: 47 then 48, with the outline clear at 55. */
+const INSTR_TOP_Y = 2, INSTR_BOTTOM_Y = 56, INSTR_ROWS = 4;
+/* Exported so a test measures the band WHERE IT IS rather than re-deriving it
+ * from a number copied out of here — the copy is how the last version of this
+ * test ended up looking at the wrong six rows. */
+export const INSTR_PICKER_GEOM = { topY: INSTR_TOP_Y, bottomY: INSTR_BOTTOM_Y, rows: INSTR_ROWS };
+
+export function soundEnumPickHintsForTest() { return enumPickHints(); }
+
+function enumPickHints() {
+    const p = S.enumPick;
+    if (!p || p.label !== 'Instrument' || !Array.isArray(p.rows)) return null;
+    const r = p.rows[p.sel];
+    if (!r || !r.gen) return null;
+    return [['SHFT', 'LISTS']];
+}
+
 function renderEnumPick() {
-    renderInChain(S.enumPick ? S.enumPick.options : [], S.enumPick ? S.enumPick.sel : 0);
+    const p = S.enumPick;
+    /* The Instrument picker DROPS THE CRUMB BAR and spends the band on its own
+     * box (Josh, 2026-09-10: "we can get rid of the track name and instrument
+     * box above the picker to make more space up top"). It is the long jog
+     * through 35 generators, and the crumb read "T<n> > INSTRUMENT", which is
+     * the one thing the screen already makes obvious. The 11px it frees pays
+     * for the hint band, so the visible row count does not drop. */
+    const instr = !!(p && p.label === 'Instrument');
+    renderInChain(p ? p.options : [], p ? p.sel : 0, undefined,
+                  instr ? { noCrumbs: true, topY: INSTR_TOP_Y, bottomY: INSTR_BOTTOM_Y,
+                            visible: INSTR_ROWS, hints: enumPickHints() }
+                        : undefined);
 }
 
 /* The path, INCLUDING the screen you are on, outermost first.
@@ -4629,7 +4709,33 @@ function renderInChain(rows, sel, emptyMsg, opts) {
     drawKitStackedList(Math.max(1, soundStackDepth()), rows, sel,
                        Object.assign({ emptyMsg }, opts || {}));
     /* The track is the pinned head — you never lose which track you are in. */
-    drawKitCrumbs(['T' + (S.track + 1), ...soundViewPath()]);
+    /* ⭑ `noCrumbs` buys that band back for a screen that would rather spend the
+     * 11px on its own list -- opt-in, so every other chain screen keeps its
+     * pinned head. */
+    if (!(opts && opts.noCrumbs)) drawKitCrumbs(['T' + (S.track + 1), ...soundViewPath()]);
+    /* ⭑ HINTS GO ON MV_FOOTER_Y, THE BOTTOM ROW, like every other hint pill in
+     * the app (Josh, 2026-09-10: "the pill should sit on the bottom row where
+     * they always do"). They were briefly drawn inside the box foot, which rose
+     * and fell with the box and put the same pills at a different height here
+     * than everywhere else. The box stops above this line by its own bottomY,
+     * so the two never meet. */
+    if (opts && opts.hints && opts.hints.length) {
+        /* ⚠ CLEAR THE BAND FIRST. The picker floats over a STIPPLED backdrop
+         * (drawKitBackdropDim), so pills drawn straight onto it sit on a field
+         * of half-lit pixels instead of black.
+         *
+         * ⚠⚠ CLEAR FROM THE BOX'S BOTTOM, NOT `MV_FOOTER_Y - 3`. The sound
+         * menu's own footer uses -3 because its pills POP OVER a full-height
+         * list that owns every row down to the bottom. Here there is a BOX, and
+         * -3 lands at y=54 while the box's bottom outline is at y=55 — so the
+         * clear erased the border a line after drawing it. Josh, from the
+         * device: "there's no bottom border but plenty of space for one."
+         * Starting at `bottomY` keeps the outline and still clears everything
+         * below it. */
+        const clearY = (opts.bottomY != null) ? (opts.bottomY | 0) : (MV_FOOTER_Y - 3);
+        fill_rect(0, clearY, 128, 64 - clearY, 0);
+        drawKitHintRow(MV_FOOTER_Y, opts.hints);
+    }
 }
 
 function renderKnobTarget() {

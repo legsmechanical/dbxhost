@@ -63,6 +63,7 @@ const { bankCycleForMode } = await import('../../ui/ui_pure.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const ab = await import('../../ui/ui_automation_bank.mjs');
 const render = await import('../../ui/ui_render.mjs');
+const { MV_FOOTER_Y } = await import('../../ui/ui_movy.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
@@ -103,6 +104,62 @@ step('the card lists the clip\'s automation from the owner\'s cache: labels, ON/
     cc(71, 4); cc(74, 60); ticks(1);
     assert(sets.length === 0, 'the knobs wrote nothing, got ' + JSON.stringify(sets));
 });
+/* ── the ops pop-up must not run under the hint footer (Block 1, 2026-09-10) ──
+ *
+ * Josh: "the modulation editor pop-up sits behind the bank's hint footer rather
+ * than on top where it should be" — the AUTOMATION editor, confirmed with him.
+ *
+ * ⚠⚠ WHY THE OBSERVABLE IS THE RECT AND NOT THE PIXELS. Reading the footer band
+ * back out of the framebuffer cannot tell the pop-up's ink from the footer's own
+ * — and the hints legitimately CHANGE when ops opens (CLK DO / JOG OP / BACK
+ * LIST), so "the band differs" proves nothing either way. The geometry is the
+ * claim, so the geometry is what gets asserted: the 108px-wide stacked-list box
+ * must END above MV_FOOTER_Y. → [[led-and-render-observables-lie]]
+ *
+ * ⭑ It fails against the old code: the box was SCREEN_H_LATCH - 1 - STACK_Y
+ * tall, i.e. y 14..62, overlapping the footer at 57 by six rows. */
+step('⭐⭐ the ops pop-up box ENDS above the hint footer — it does not run under it', () => {
+    /* Runs EARLY, on the state the first step established — the later steps
+     * deliberately empty the clip, and a list with no rows has no ops to open. */
+    click(); ticks(1);                                   /* card  -> menu */
+    assert(menu().menu, 'setup: the menu opened');
+    click(); ticks(1);                                   /* menu  -> ops  */
+    assert(menu().ops, 'setup: the ops pop-up is open');
+
+    /* Record the rects of THIS frame only. */
+    const rects = [];
+    const realFill = globalThis.fill_rect;
+    globalThis.fill_rect = (x, y, w, h, c) => { rects.push({ x, y, w, h, c }); realFill(x, y, w, h, c); };
+    try { draw(); } finally { globalThis.fill_rect = realFill; }
+
+    /* The stacked list's box is the 108px-wide one (STACK_W). */
+    const boxes = rects.filter(r => r.w === 108 && r.h > 10);
+    assert(boxes.length > 0, 'the 108px stacked-list box was drawn at all, got '
+        + JSON.stringify(rects.filter(r => r.w > 60).slice(0, 6)));
+    for (const b of boxes) {
+        const bottom = b.y + b.h - 1;
+        assert(bottom < MV_FOOTER_Y,
+            '⭑ THE BUG: the ops box runs to y=' + bottom + ', under the hint footer at y='
+            + MV_FOOTER_Y + ' — the footer is drawn afterwards and paints over it');
+    }
+});
+
+step('⚠ CONTROL: the footer still DRAWS while the ops pop-up is up (its hints are the pop-up\'s own)', () => {
+    assert(menu().ops, 'setup: ops still open');
+    draw();
+    let inked = 0;
+    for (let y = MV_FOOTER_Y; y < 64; y++) for (let x = 0; x < 128; x++) if (fb[y * 128 + x]) inked++;
+    assert(inked > 20, '⭑ the footer vanished (' + inked + ' px) — the fix must not stand it down: '
+        + 'CLK DO / JOG OP / BACK LIST describe the pop-up itself');
+});
+
+step('⚠ …and the pop-up closes again, so the steps after this see the state they expect', () => {
+    back(); ticks(1);
+    assert(!menu().ops && menu().menu, 'ops closed, menu still open');
+    back(); ticks(1);
+    assert(!menu().menu, 'menu closed — back to the resting card');
+});
+
 step('jog click: the MENU (cursor); click a row: its OPS; Delete runs with a checkpoint and the row leaves the list', () => {
     click(); ticks(1);
     assert(menu().menu === true && !menu().ops, 'menu open');

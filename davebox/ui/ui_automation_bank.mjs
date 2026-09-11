@@ -119,7 +119,16 @@ export function drawAutomationBankBody() {
                 ? ((a.loopEdit || a.rateEdit || a.scaleEdit) && i === a.ops.sel ? '<' + o.value + '>' : o.value) : undefined,
         }));
         drawKitBackdropDim(0, LIST_TOP, 128, MV_FOOTER_Y - LIST_TOP);
-        drawKitStackedList(1, ors, a.ops.sel, {});
+        /* ⚠ bottomY: STOP THE BOX ABOVE THE FOOTER. Without it the stacked
+         * list runs to y=62 while the hint row below draws at MV_FOOTER_Y=57 —
+         * six rows of overlap, and since the footer is drawn AFTERWARDS it
+         * painted over the bottom of the pop-up. Josh, 2026-09-10: "the
+         * automation editor pop-up sits behind the bank's hint footer rather
+         * than on top where it should be."
+         * ⭑ Note the backdrop dim beside it already stops at MV_FOOTER_Y — the
+         * footer band was always meant to stay out of the overlay's area, and
+         * only the box's own height had not been told. */
+        drawKitStackedList(1, ors, a.ops.sel, { bottomY: MV_FOOTER_Y - 1 });
         hints = a.loopEdit ? [['JOG', 'LEN'], ['CLK', 'DONE'], ['BACK', 'DONE']]
               : a.rateEdit ? [['JOG', 'RATE'], ['CLK', 'DONE'], ['BACK', 'DONE']]
               : a.scaleEdit ? [['JOG', 'PCT'], ['CLK', 'DONE'], ['BACK', 'DONE']]

@@ -2838,14 +2838,37 @@ export function kitStackBox(depth) {
 export function drawKitStackedList(depth, rows, sel, opts) {
     const o = opts || {};
     const d = Math.max(1, depth | 0);
-    const h = SCREEN_H_LATCH - 1 - STACK_Y;
+    /* ⚠⚠ `bottomY` EXISTS BECAUSE THE BOX OTHERWISE RUNS UNDER A FOOTER.
+     * The default reaches SCREEN_H_LATCH - 1 (y 14..62), which is right for the
+     * two callers whose chrome is the CRUMB BAR at y=0 — nothing of theirs is
+     * down there. The automation bank is the one that draws a HINT ROW at
+     * MV_FOOTER_Y (57), so its box overlapped the footer band by six rows and
+     * the footer, drawn afterwards, painted over the bottom of the pop-up.
+     * Josh, 2026-09-10: "the automation editor pop-up sits behind the bank's
+     * hint footer rather than on top where it should be."
+     *
+     * ⭑ THE FIX IS TO STOP THE BOX ABOVE THE FOOTER, NOT TO DRAW THE BOX LAST.
+     * Those hints are the POP-UP'S OWN (`CLK DO / JOG OP / BACK LIST`, and the
+     * edit-mode variants) — covering them would hide the only description of
+     * the gestures the pop-up responds to. Reordering would also leave a
+     * half-eaten row of pills sticking out either side of a 108px box, which is
+     * exactly what drawKitEnumOverlay's shared stand-down predicate exists to
+     * prevent: "Either none or all; none is correct here."
+     *
+     * A caller that passes nothing keeps the old geometry to the pixel. */
+    const bottom = (o.bottomY != null) ? (o.bottomY | 0) : (SCREEN_H_LATCH - 1);
+    /* ⭑ `topY` is bottomY's twin: a caller that suppresses the crumb bar has the
+     * top of the screen back, and the box should use it rather than leave an
+     * 11px band of nothing where the crumb used to be. */
+    const top = (o.topY != null) ? (o.topY | 0) : STACK_Y;
+    const h = Math.max(1, bottom - top);
     const tx = stackTopX(d);
     for (let k = 0; k < d; k++) {
         const x = tx - (d - 1 - k) * STACK_STEP;
         /* Blank first: the box is opaque, and the dimmed screen behind it must
          * not read through the rows. */
-        fill_rect(x, STACK_Y, STACK_W, h, 0);
-        rectOutline(x, STACK_Y, STACK_W, h, 1);
+        fill_rect(x, top, STACK_W, h, 0);
+        rectOutline(x, top, STACK_W, h, 1);
     }
     /* Only the top layer carries content.
      * ⚠ rowH is the app's standard 10, NOT a tighter 9. The selection band runs
@@ -2854,14 +2877,20 @@ export function drawKitStackedList(depth, rows, sel, opts) {
      * below, which reads as off-centre (Josh spotted it on device). At 10 it is
      * 2 and 1, the same as every other list in the app. */
     const rowH = o.rowH != null ? o.rowH : 10;
-    const listTop = STACK_Y + 6;
+    const listTop = top + 6;
+    /* ⚠ NO HINT BAND INSIDE THE BOX — it was tried and moved OUT 2026-09-10.
+     * Josh: "the pill should sit on the bottom row where they always do." A
+     * band in the box foot rose and fell with the box, so the same pills sat at
+     * a different height here than on every other screen. They belong on
+     * MV_FOOTER_Y like all the others; the caller draws them after this
+     * returns. */
     /* `footer` reserves space at the box's foot for a caller drawing its own
      * thing there (the LFO's waveform). It comes off the list's height, so the
      * rows can never run into it. */
     drawKitList(rows, sel, {
         x: tx + 2, w: STACK_W - 4,
         topY: listTop, rowH,
-        h: (STACK_Y + h - 2) - listTop - (o.footer || 0),
+        h: (top + h - 2) - listTop - (o.footer || 0),
         visible: o.visible,
         emptyMsg: o.emptyMsg,
     });
@@ -3440,6 +3469,16 @@ export function drawKitList(rows, sel, opts) {
         }
         if (qual) mvPrint(labelEnd + QUAL_GAP, y + 1, qual, ink);
         if (val) mvPrint(rightEdge - vw, y + 1, val, ink);
+        /* ⚠⚠ NO ROW-LEVEL DOOR MARK HERE — it was tried and REVERTED 2026-09-10.
+         * `drawBrackets` inks colour 1 unconditionally, and a SELECTED row is
+         * `fill_rect(..., 1)` with black ink — so brackets on the cursor row are
+         * white on white and draw nothing at all. Shipped, deployed, and
+         * invisible on the device; the test asserted the decorated ROW OBJECT
+         * rather than the pixels, so it passed over a dead feature.
+         * → [[test-the-path-not-the-function]]
+         * The affordance moved to a hint pill (see `hints` on
+         * drawKitStackedList). If a row mark is ever wanted here, drawBrackets
+         * needs an ink argument first. */
     }
     if (hasScroll) {
         const trackH = visible * rowH;

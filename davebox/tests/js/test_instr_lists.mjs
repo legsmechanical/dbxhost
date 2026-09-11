@@ -46,14 +46,33 @@ globalThis.shadow_set_param = (slot, k, v) => {
 globalThis.shadow_save_state_now = () => true;
 globalThis.host_vol_block = () => {};
 globalThis.host_edit_cc_block = () => {};
-globalThis.clear_screen = () => {};
-globalThis.print = () => {};
+/* ⭐ A REAL FRAMEBUFFER. This rig used to throw every pixel away, which is how
+ * the first cut of the Shift hint -- corner brackets drawn white on a
+ * white-filled selected row -- passed its tests, shipped and deployed while
+ * drawing nothing at all. A rendering change needs a rig that can see ink.
+ * → [[test-the-path-not-the-function]] */
+const FB = new Uint8Array(128 * 64);
+const _px = (x, y, c) => {
+    x |= 0; y |= 0;
+    if (x >= 0 && x < 128 && y >= 0 && y < 64) FB[y * 128 + x] = c ? 1 : 0;
+};
+globalThis.clear_screen = () => { FB.fill(0); };
+globalThis.print = (x, y, str) => {
+    /* Enough of a glyph to be COUNTABLE: one lit pixel per character cell. The
+     * band assertion is about ink arriving, not about letterforms. */
+    for (let i = 0; i < String(str).length; i++) _px((x | 0) + i * 6, (y | 0) + 3, 1);
+};
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
-globalThis.fill_rect = () => {};
-globalThis.draw_rect = () => {};
+globalThis.fill_rect = (x, y, w, h, c) => {
+    for (let j = 0; j < (h | 0); j++) for (let i = 0; i < (w | 0); i++) _px((x | 0) + i, (y | 0) + j, c);
+};
+globalThis.draw_rect = (x, y, w, h, c) => {
+    for (let i = 0; i < (w | 0); i++) { _px((x | 0) + i, y | 0, c); _px((x | 0) + i, (y | 0) + (h | 0) - 1, c); }
+    for (let j = 0; j < (h | 0); j++) { _px(x | 0, (y | 0) + j, c); _px((x | 0) + (w | 0) - 1, (y | 0) + j, c); }
+};
 globalThis.stipple_rect = () => {};
 globalThis.draw_line = () => {};
-globalThis.set_pixel = () => {};
+globalThis.set_pixel = _px;
 globalThis.flush_display = () => {};
 globalThis.move_midi_internal_send = () => {};
 globalThis.set_led = () => {};
@@ -81,6 +100,41 @@ const { S } = await import('../../ui/ui_state.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const A = await import('../../ui/ui_automation.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
+const render = await import('../../ui/ui_render.mjs');
+const { MV_FOOTER_H, MV_FOOTER_Y } = await import('../../ui/ui_movy.mjs');
+
+/* Draw one frame and count the ink in the BOX FOOT -- where the hint band
+ * lives. The box runs from topY 2 to y 62, so its foot is the last
+ * MV_FOOTER_H rows of that. */
+/* The stacked box at depth 1: x 10..117 (stackTopX(1)=10, STACK_W=108). These
+ * are its INTERIOR columns, clear of the outline on either side. */
+const BOX_IN_X0 = 13, BOX_IN_X1 = 114;
+
+function inkInBandForTest() {
+    globalThis.clear_screen();
+    render.drawUI();
+    /* The band sits just inside the box's bottom outline. Taken from the
+     * picker's own geometry, never a copied constant. */
+    /* ⭑ The band is on MV_FOOTER_Y, the app's standard bottom row — OUTSIDE
+     * the box, where every other hint pill in the app lives. */
+    let n = 0;
+    for (let y = MV_FOOTER_Y; y < 64; y++)
+        for (let x = 0; x < 128; x++) if (FB[y * 128 + x]) n++;
+    return n;
+}
+
+/* Ink in the LAST list row's band and in the band region must not both be the
+ * box fill: this proves the two do not meet. */
+function inkInRowsForTest() {
+    globalThis.clear_screen();
+    render.drawUI();
+    const g = snd.INSTR_PICKER_GEOM;
+    const rowsTop = g.topY + 6 - 1;
+    const rowsBottom = rowsTop + g.rows * 10;
+    let n = 0;
+    for (let y = rowsTop; y < rowsBottom; y++) for (let x = 0; x < 128; x++) if (FB[y * 128 + x]) n++;
+    return { n, rowsBottom, bandTop: g.bottomY - 1 - MV_FOOTER_H };
+}
 const { MoveNoteSession } = await import('../../ui/ui_constants.mjs');
 const { MoveShift } = await import('/data/UserData/schwung/shared/constants.mjs');
 const _te = await import('/data/UserData/schwung/shared/text_entry.mjs');
@@ -177,6 +231,104 @@ step('both generators are offered under All', () => {
     const o = snd.soundEnumPickForTest().options;
     if (o.indexOf('NuSaw') < 0 || o.indexOf('OB-Xd') < 0)
         throw new Error('a generator is missing: ' + JSON.stringify(o));
+});
+
+/* ── the Shift+click door, ANNOUNCED (Josh, 2026-09-10) ──────────────────
+ * "shift+click hint on module picker to get to favorites, etc." The mark is a
+ * HINT PILL band inside the box foot, on the cursor row only, and only when
+ * that row is a module.
+ *
+ * ⚠⚠ THESE ASSERT THE HINTS THE RENDERER IS HANDED, *AND* THAT PIXELS LAND IN
+ * THE BAND. The first cut of this feature asserted a decorated row OBJECT and
+ * passed while drawing literally nothing (corner brackets, white on a
+ * white-filled selected row) -- it shipped and deployed before the device said
+ * otherwise. A test that cannot tell "drawn" from "decided" is not a test of a
+ * rendering change. → [[test-the-path-not-the-function]]
+ */
+step('⭐⭐ the cursor row on a MODULE offers the SHFT hint', () => {
+    const o = snd.soundEnumPickForTest().options;
+    jogTo(o.indexOf('NuSaw'));
+    const h = snd.soundEnumPickHintsForTest();
+    if (!h || !h.length) throw new Error('⭑ no hint offered on a generator row');
+    const flat = JSON.stringify(h).toUpperCase();
+    if (flat.indexOf('SHFT') < 0 || flat.indexOf('LISTS') < 0)
+        throw new Error('the hint does not name the gesture or its destination: ' + JSON.stringify(h));
+});
+
+step('⚠ CONTROL: rows Shift does NOTHING on offer no hint — the List row', () => {
+    jogTo(0);
+    const h = snd.soundEnumPickHintsForTest();
+    if (h && h.length)
+        throw new Error('⭑ the List row promises a shift-click gesture it does not offer: '
+                        + JSON.stringify(h));
+});
+
+step('⭐⭐ the rows END before the band BEGINS — no overlap (Josh: "overlay overlaps with the pill")', () => {
+    const o = snd.soundEnumPickForTest().options;
+    jogTo(o.indexOf('NuSaw'));
+    const r = inkInRowsForTest();
+    if (r.rowsBottom > MV_FOOTER_Y)
+        throw new Error('⭑ the last row runs to y=' + r.rowsBottom + ' and the hint band starts at y='
+            + MV_FOOTER_Y + ' — they overlap');
+});
+
+/* ⚠⚠ THERE IS DELIBERATELY NO "the row count is pinned" CASE HERE, and the
+ * absence is the finding. Three observables were tried and every one was
+ * incapable of failing:
+ *   1. compare `rowsBottom` before/after — computed from the code's own
+ *      exported constant, so identical both times;
+ *   2. ink in the band region — the box's OUTLINE runs down both edges through
+ *      it, ~17px, on a screen drawing nothing else;
+ *   3. the lowest lit pixel — the picker floats over a DIMMED BACKDROP that
+ *      covers all 64 rows, so the answer is always y=63.
+ * Each passed its own mutant. → [[a-check-that-cries-wolf-is-worse-than-none]],
+ * [[led-and-render-observables-lie]]
+ *
+ * `visible` IS pinned in ui_sound (INSTR_ROWS) and the reason is written there;
+ * it is insurance against a future bottomY that would let drawKitList derive a
+ * 5th row. What GUARDS it is the overlap case above, which fails correctly when
+ * the geometry is wrong — that is the shape of the bug Josh actually reported.
+ */
+
+step('⭐⭐ the box keeps its BOTTOM BORDER — the band clear must not eat it', () => {
+    /* Josh, from the device: "there's no bottom border but plenty of space for
+     * one." The band clear ran from MV_FOOTER_Y - 3 = y54 and the box's bottom
+     * outline is at y55, so it erased the border one line after drawing it.
+     * ⚠ Counted across the box's INTERIOR columns: a horizontal outline is a
+     * near-solid run there, and the left/right edges would mask a missing one
+     * if the whole width were counted. */
+    const o = snd.soundEnumPickForTest().options;
+    jogTo(o.indexOf('NuSaw'));                       /* a row that DRAWS the band */
+    globalThis.clear_screen();
+    render.drawUI();
+    const y = snd.INSTR_PICKER_GEOM.bottomY - 1;
+    let lit = 0;
+    for (let x = BOX_IN_X0; x <= BOX_IN_X1; x++) if (FB[y * 128 + x]) lit++;
+    const span = BOX_IN_X1 - BOX_IN_X0 + 1;
+    if (lit < span - 2)
+        throw new Error('⭑ the box has no bottom border: only ' + lit + '/' + span
+            + ' px lit at y=' + y + ' — the hint band\'s clear ate it');
+});
+
+step('⭐⭐ …and the band actually DRAWS — pills on a CLEARED strip, not stipple', () => {
+    /* ⚠⚠ THE OBSERVABLE IS THE SHAPE OF THE INK, NOT ITS AMOUNT. The picker
+     * floats over a stippled backdrop, so the bottom row is ~35% lit before
+     * anything of ours draws there. Our band CLEARS the strip and then prints
+     * pills, so a module row has LESS ink than a row with no band -- but more
+     * than none. Both bounds matter:
+     *   · equal to the stipple  -> the band never drew (nothing cleared)
+     *   · zero                  -> it cleared and printed nothing
+     * Either is the bug this case exists for. */
+    const o = snd.soundEnumPickForTest().options;
+    jogTo(o.indexOf('NuSaw'));
+    const withHint = inkInBandForTest();
+    jogTo(0);                                        /* the List row: no band */
+    const stipple = inkInBandForTest();
+    if (withHint === 0)
+        throw new Error('⭑ the strip was cleared and NO PILLS were printed on it');
+    if (!(withHint < stipple))
+        throw new Error('⭑ THE BAND NEVER DREW: ' + withHint + ' px on a module row vs '
+            + stipple + ' of backdrop stipple on the List row — ours would have cleared it first.');
 });
 
 step('shift+click a generator opens the Lists menu FOR IT, by name', () => {
