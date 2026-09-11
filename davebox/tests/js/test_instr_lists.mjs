@@ -46,14 +46,33 @@ globalThis.shadow_set_param = (slot, k, v) => {
 globalThis.shadow_save_state_now = () => true;
 globalThis.host_vol_block = () => {};
 globalThis.host_edit_cc_block = () => {};
-globalThis.clear_screen = () => {};
-globalThis.print = () => {};
+/* ⭐ A REAL FRAMEBUFFER. This rig used to throw every pixel away, which is how
+ * the first cut of the Shift hint -- corner brackets drawn white on a
+ * white-filled selected row -- passed its tests, shipped and deployed while
+ * drawing nothing at all. A rendering change needs a rig that can see ink.
+ * → [[test-the-path-not-the-function]] */
+const FB = new Uint8Array(128 * 64);
+const _px = (x, y, c) => {
+    x |= 0; y |= 0;
+    if (x >= 0 && x < 128 && y >= 0 && y < 64) FB[y * 128 + x] = c ? 1 : 0;
+};
+globalThis.clear_screen = () => { FB.fill(0); };
+globalThis.print = (x, y, str) => {
+    /* Enough of a glyph to be COUNTABLE: one lit pixel per character cell. The
+     * band assertion is about ink arriving, not about letterforms. */
+    for (let i = 0; i < String(str).length; i++) _px((x | 0) + i * 6, (y | 0) + 3, 1);
+};
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
-globalThis.fill_rect = () => {};
-globalThis.draw_rect = () => {};
+globalThis.fill_rect = (x, y, w, h, c) => {
+    for (let j = 0; j < (h | 0); j++) for (let i = 0; i < (w | 0); i++) _px((x | 0) + i, (y | 0) + j, c);
+};
+globalThis.draw_rect = (x, y, w, h, c) => {
+    for (let i = 0; i < (w | 0); i++) { _px((x | 0) + i, y | 0, c); _px((x | 0) + i, (y | 0) + (h | 0) - 1, c); }
+    for (let j = 0; j < (h | 0); j++) { _px(x | 0, (y | 0) + j, c); _px((x | 0) + (w | 0) - 1, (y | 0) + j, c); }
+};
 globalThis.stipple_rect = () => {};
 globalThis.draw_line = () => {};
-globalThis.set_pixel = () => {};
+globalThis.set_pixel = _px;
 globalThis.flush_display = () => {};
 globalThis.move_midi_internal_send = () => {};
 globalThis.set_led = () => {};
@@ -81,6 +100,20 @@ const { S } = await import('../../ui/ui_state.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const A = await import('../../ui/ui_automation.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
+const render = await import('../../ui/ui_render.mjs');
+const { MV_FOOTER_H } = await import('../../ui/ui_movy.mjs');
+
+/* Draw one frame and count the ink in the BOX FOOT -- where the hint band
+ * lives. The box runs from topY 2 to y 62, so its foot is the last
+ * MV_FOOTER_H rows of that. */
+function inkInBandForTest() {
+    globalThis.clear_screen();
+    render.drawUI();
+    const bandTop = 62 - MV_FOOTER_H;
+    let n = 0;
+    for (let y = bandTop; y < 62; y++) for (let x = 0; x < 128; x++) if (FB[y * 128 + x]) n++;
+    return n;
+}
 const { MoveNoteSession } = await import('../../ui/ui_constants.mjs');
 const { MoveShift } = await import('/data/UserData/schwung/shared/constants.mjs');
 const _te = await import('/data/UserData/schwung/shared/text_entry.mjs');
@@ -180,39 +213,44 @@ step('both generators are offered under All', () => {
 });
 
 /* ── the Shift+click door, ANNOUNCED (Josh, 2026-09-10) ──────────────────
- * "shift+click hint on module picker to get to favorites, etc." The mark is
- * CORNER BRACKETS — this UI's door mark (UI_LANGUAGE §3.6) — on the cursor row
- * only, and only when that row is a module.
- * ⚠ Asserted on what renderEnumPick HANDS THE RENDERER, after a real jog, so
- * the row under test is the one the gesture actually landed on. */
-step('⭐⭐ the cursor row wears the DOOR MARK when it is a module', () => {
+ * "shift+click hint on module picker to get to favorites, etc." The mark is a
+ * HINT PILL band inside the box foot, on the cursor row only, and only when
+ * that row is a module.
+ *
+ * ⚠⚠ THESE ASSERT THE HINTS THE RENDERER IS HANDED, *AND* THAT PIXELS LAND IN
+ * THE BAND. The first cut of this feature asserted a decorated row OBJECT and
+ * passed while drawing literally nothing (corner brackets, white on a
+ * white-filled selected row) -- it shipped and deployed before the device said
+ * otherwise. A test that cannot tell "drawn" from "decided" is not a test of a
+ * rendering change. → [[test-the-path-not-the-function]]
+ */
+step('⭐⭐ the cursor row on a MODULE offers the SHFT hint', () => {
     const o = snd.soundEnumPickForTest().options;
     jogTo(o.indexOf('NuSaw'));
-    const drawn = snd.soundEnumPickDrawnForTest();
-    const row = drawn[snd.soundEnumPickForTest().sel];
-    if (!row || !row.opens)
-        throw new Error('⭑ no door mark on the generator under the cursor: ' + JSON.stringify(row));
-    if (String(row.label).indexOf('NuSaw') < 0)
-        throw new Error('the mark is on the wrong row: ' + JSON.stringify(row));
+    const h = snd.soundEnumPickHintsForTest();
+    if (!h || !h.length) throw new Error('⭑ no hint offered on a generator row');
+    const flat = JSON.stringify(h).toUpperCase();
+    if (flat.indexOf('SHFT') < 0 || flat.indexOf('LISTS') < 0)
+        throw new Error('the hint does not name the gesture or its destination: ' + JSON.stringify(h));
 });
 
-step('⚠ CONTROL: rows Shift does NOTHING on carry no mark — the List row', () => {
-    jogTo(0);                                     /* the List row */
-    const drawn = snd.soundEnumPickDrawnForTest();
-    const row = drawn[snd.soundEnumPickForTest().sel];
-    if (row && row.opens)
+step('⚠ CONTROL: rows Shift does NOTHING on offer no hint — the List row', () => {
+    jogTo(0);
+    const h = snd.soundEnumPickHintsForTest();
+    if (h && h.length)
         throw new Error('⭑ the List row promises a shift-click gesture it does not offer: '
-                        + JSON.stringify(row));
+                        + JSON.stringify(h));
 });
 
-step('⚠ CONTROL: only the CURSOR row is marked, never every module row', () => {
+step('⭐⭐ …and the band actually DRAWS — ink lands in the box foot', () => {
     const o = snd.soundEnumPickForTest().options;
     jogTo(o.indexOf('NuSaw'));
-    const drawn = snd.soundEnumPickDrawnForTest();
-    const marked = drawn.filter(r => r && r.opens).length;
-    if (marked !== 1)
-        throw new Error('⭑ ' + marked + ' rows are marked — the mark says "the cursor is on a door", '
-                        + 'so exactly one row can wear it');
+    const withHint = inkInBandForTest();
+    jogTo(0);                                        /* the List row: no hint */
+    const without = inkInBandForTest();
+    if (!(withHint > without + 10))
+        throw new Error('⭑ THE BAND DREW NOTHING: ' + withHint + ' px on a module row vs '
+            + without + ' on the List row. This is the check the bracket version had no answer to.');
 });
 
 step('shift+click a generator opens the Lists menu FOR IT, by name', () => {

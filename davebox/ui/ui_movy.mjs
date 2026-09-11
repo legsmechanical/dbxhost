@@ -2857,14 +2857,18 @@ export function drawKitStackedList(depth, rows, sel, opts) {
      *
      * A caller that passes nothing keeps the old geometry to the pixel. */
     const bottom = (o.bottomY != null) ? (o.bottomY | 0) : (SCREEN_H_LATCH - 1);
-    const h = Math.max(1, bottom - STACK_Y);
+    /* ⭑ `topY` is bottomY's twin: a caller that suppresses the crumb bar has the
+     * top of the screen back, and the box should use it rather than leave an
+     * 11px band of nothing where the crumb used to be. */
+    const top = (o.topY != null) ? (o.topY | 0) : STACK_Y;
+    const h = Math.max(1, bottom - top);
     const tx = stackTopX(d);
     for (let k = 0; k < d; k++) {
         const x = tx - (d - 1 - k) * STACK_STEP;
         /* Blank first: the box is opaque, and the dimmed screen behind it must
          * not read through the rows. */
-        fill_rect(x, STACK_Y, STACK_W, h, 0);
-        rectOutline(x, STACK_Y, STACK_W, h, 1);
+        fill_rect(x, top, STACK_W, h, 0);
+        rectOutline(x, top, STACK_W, h, 1);
     }
     /* Only the top layer carries content.
      * ⚠ rowH is the app's standard 10, NOT a tighter 9. The selection band runs
@@ -2873,17 +2877,24 @@ export function drawKitStackedList(depth, rows, sel, opts) {
      * below, which reads as off-centre (Josh spotted it on device). At 10 it is
      * 2 and 1, the same as every other list in the app. */
     const rowH = o.rowH != null ? o.rowH : 10;
-    const listTop = STACK_Y + 6;
+    const listTop = top + 6;
+    /* ⭑ HINT PILLS INSIDE THE BOX FOOT. The band says what a gesture with no
+     * on-screen trace does — the same job, and the same pill vocabulary, as the
+     * bank footers; it just lives inside the box because a floating list has no
+     * footer of its own. Its height comes OFF the list, exactly like `footer`
+     * below, so the rows can never run into it. */
+    const hintH = (o.hints && o.hints.length) ? MV_FOOTER_H : 0;
     /* `footer` reserves space at the box's foot for a caller drawing its own
      * thing there (the LFO's waveform). It comes off the list's height, so the
      * rows can never run into it. */
     drawKitList(rows, sel, {
         x: tx + 2, w: STACK_W - 4,
         topY: listTop, rowH,
-        h: (STACK_Y + h - 2) - listTop - (o.footer || 0),
+        h: (top + h - 2) - listTop - (o.footer || 0) - hintH,
         visible: o.visible,
         emptyMsg: o.emptyMsg,
     });
+    if (hintH) drawKitHintRow(top + h - 1 - MV_FOOTER_H, o.hints);
 }
 
 /* ── knocking the backdrop back, and saying where you are ──────────────────
@@ -3459,20 +3470,16 @@ export function drawKitList(rows, sel, opts) {
         }
         if (qual) mvPrint(labelEnd + QUAL_GAP, y + 1, qual, ink);
         if (val) mvPrint(rightEdge - vw, y + 1, val, ink);
-        /* ⭑ THE DOOR MARK, on a ROW this time (UI_LANGUAGE §3.6). Corner
-         * brackets are what this UI uses for "this opens" — `opens: true` on a
-         * knob CELL already draws them, and the automation card wears them at
-         * rest. A row that opens something else on a gesture says it the same
-         * way, so the mark means one thing everywhere.
-         *
-         * ⚠ LAST, and around the whole row, for the reason the cell renderer
-         * gives: it must read the same over the selection fill as over bare
-         * background, so it cannot live inside the label or value drawing.
-         * ⚠ Drawn HERE rather than by the caller because the row's rect is this
-         * function's own — topY, rowH and the scroll window are all local, and
-         * a caller recomputing them is two copies of one geometry waiting to
-         * drift. */
-        if (row.opens) drawBrackets(boxX, y - 1, fillW, rowH);
+        /* ⚠⚠ NO ROW-LEVEL DOOR MARK HERE — it was tried and REVERTED 2026-09-10.
+         * `drawBrackets` inks colour 1 unconditionally, and a SELECTED row is
+         * `fill_rect(..., 1)` with black ink — so brackets on the cursor row are
+         * white on white and draw nothing at all. Shipped, deployed, and
+         * invisible on the device; the test asserted the decorated ROW OBJECT
+         * rather than the pixels, so it passed over a dead feature.
+         * → [[test-the-path-not-the-function]]
+         * The affordance moved to a hint pill (see `hints` on
+         * drawKitStackedList). If a row mark is ever wanted here, drawBrackets
+         * needs an ink argument first. */
     }
     if (hasScroll) {
         const trackH = visible * rowH;

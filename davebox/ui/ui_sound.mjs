@@ -4499,56 +4499,55 @@ function closeEnumPicker(commitIt) {
  *
  * Josh, 2026-09-10: "shift+click hint on module picker to get to favorites,
  * etc." Shift+click on a generator opens that module's Lists menu
- * (instrPickerToggleList), and nothing on screen said so — the same complaint
- * that openListMenu's own comment already records once: "both were hidden
- * behind a Shift+Click nobody announces". That pass made the LISTS reachable
- * from a visible row; the MODULE-scoped half stayed a secret gesture.
+ * (instrPickerToggleList) and nothing on screen said so -- the same complaint
+ * openListMenu's own comment already records once: "both were hidden behind a
+ * Shift+Click nobody announces". That pass made the LISTS reachable from a
+ * visible row; the module-scoped half stayed a secret gesture.
  *
- * ⭑ ON THE CURSOR ROW ONLY, and only when that row is a MODULE (`r.gen`).
- * Shift does nothing on Move 1-4, the MIDI channels, the track-follow rows or
- * the List row, and a marker there would promise a gesture that is not offered.
+ * A HINT PILL, decided per CURSOR ROW, and only when that row is a MODULE
+ * (`r.gen`). Shift does nothing on Move 1-4, the MIDI channels, the
+ * track-follow rows or the List row, so the band is ABSENT there rather than
+ * promising a gesture that is not offered -- the same rule Josh set for the
+ * sound menu on 2026-09-04 ("pop up over the menu at the bottom on items where
+ * it's relevant").
  *
- * ⚠⚠ DECORATED AT RENDER TIME, NOT WHEN THE PICKER IS BUILT. `options` is
- * built once in openInstrPicker and the cursor moves afterwards, so a marker
- * baked into the array would sit on whichever row happened to be selected when
- * the picker opened and then stay there while the cursor walked away from it.
+ * TWO EARLIER CUTS, BOTH WRONG, BOTH WORTH NOT REPEATING:
+ *   1. A `SHFT` value string on the row -- invents a second vocabulary for
+ *      "this opens", and eats ~20px of the CURSOR row's label, which is the
+ *      one row whose full name you want to read.
+ *   2. CORNER BRACKETS around the row (`opens: true`). Right in the language
+ *      (UI_LANGUAGE 3.6) and INVISIBLE in practice: `drawBrackets` inks colour
+ *      1 unconditionally and a SELECTED row is filled white, so it drew white
+ *      on white. It was built, tested, committed and DEPLOYED before the
+ *      device showed nothing -- the test asserted the decorated row OBJECT
+ *      rather than the pixels, so it passed over a dead feature.
+ *      -> [[test-the-path-not-the-function]], [[led-and-render-observables-lie]]
  *
- * ⚠ The leading `\u00b7` some labels already carry is the LIST-MEMBERSHIP mark
- * from openInstrPicker, a different statement in a different place. The
- * brackets go AROUND the row, so the two never collide and a row can
- * legitimately wear both (in the list, and a door).
- *
- * ⭑ CORNER BRACKETS, NOT A WORD (Josh, 2026-09-10: "corner brackets would be
- * good since it's aligned with the rest of shift click"). They are this UI's
- * door mark — UI_LANGUAGE §3.6, `opens: true` on a knob cell, and the
- * automation card at rest — so the mark means the same thing here as
- * everywhere else. A `SHFT` value string was the first cut and was worse
- * twice over: it invents a second vocabulary for "this opens", and it eats
- * ~20px of the CURSOR row's label, which is the one row whose full name you
- * actually want to read.
+ * Decided AT RENDER TIME. `options` is built once in openInstrPicker and the
+ * cursor moves afterwards, so a decision baked in at build time would describe
+ * whichever row happened to be selected when the picker opened.
  */
-/* What renderEnumPick actually hands the list renderer — the DECORATED rows,
- * not the raw ones. Exported so a test can assert the mark after driving the
- * real jog, rather than re-deriving which row the cursor is on. */
-export function soundEnumPickDrawnForTest() { return enumPickOptions(); }
+export function soundEnumPickHintsForTest() { return enumPickHints(); }
 
-function enumPickOptions() {
+function enumPickHints() {
     const p = S.enumPick;
-    if (!p || !Array.isArray(p.options)) return [];
-    if (p.label !== 'Instrument' || !Array.isArray(p.rows)) return p.options;
+    if (!p || p.label !== 'Instrument' || !Array.isArray(p.rows)) return null;
     const r = p.rows[p.sel];
-    if (!r || !r.gen) return p.options;
-    const opt = p.options[p.sel];
-    if (opt == null || opt.divider) return p.options;
-    /* One row rewritten, the rest by reference — drawKitList takes a string or
-     * a row object for any entry, so the two forms mix freely. */
-    const out = p.options.slice();
-    out[p.sel] = { label: String(opt), opens: true };
-    return out;
+    if (!r || !r.gen) return null;
+    return [['SHFT', 'LISTS']];
 }
 
 function renderEnumPick() {
-    renderInChain(enumPickOptions(), S.enumPick ? S.enumPick.sel : 0);
+    const p = S.enumPick;
+    /* The Instrument picker DROPS THE CRUMB BAR and spends the band on its own
+     * box (Josh, 2026-09-10: "we can get rid of the track name and instrument
+     * box above the picker to make more space up top"). It is the long jog
+     * through 35 generators, and the crumb read "T<n> > INSTRUMENT", which is
+     * the one thing the screen already makes obvious. The 11px it frees pays
+     * for the hint band, so the visible row count does not drop. */
+    const instr = !!(p && p.label === 'Instrument');
+    renderInChain(p ? p.options : [], p ? p.sel : 0, undefined,
+                  instr ? { noCrumbs: true, topY: 2, hints: enumPickHints() } : undefined);
 }
 
 /* The path, INCLUDING the screen you are on, outermost first.
@@ -4682,7 +4681,10 @@ function renderInChain(rows, sel, emptyMsg, opts) {
     drawKitStackedList(Math.max(1, soundStackDepth()), rows, sel,
                        Object.assign({ emptyMsg }, opts || {}));
     /* The track is the pinned head — you never lose which track you are in. */
-    drawKitCrumbs(['T' + (S.track + 1), ...soundViewPath()]);
+    /* ⭑ `noCrumbs` buys that band back for a screen that would rather spend the
+     * 11px on its own list -- opt-in, so every other chain screen keeps its
+     * pinned head. */
+    if (!(opts && opts.noCrumbs)) drawKitCrumbs(['T' + (S.track + 1), ...soundViewPath()]);
 }
 
 function renderKnobTarget() {
