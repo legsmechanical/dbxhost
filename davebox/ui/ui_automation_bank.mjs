@@ -32,7 +32,7 @@ import { S } from './ui_state.mjs';
 import { BANK_AUTOMATION, PAD_MODE_DRUM, midiTargetIsMidi } from './ui_constants.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey,
-         automationToggleActive, automationToggleSmooth, automationToggleWrap, automationToggleMode, automationSmoothable,
+         automationToggleActive, automationToggleSmooth, automationToggleWrap, automationToggleMode, automationToggleLink, automationSmoothable,
          automationSetLoop, automationSetRate, automationRateText, automationSetScale,
          automationClearClip, automationListGen, automationStepTicks } from './ui_automation.mjs';
 import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
@@ -61,6 +61,7 @@ export function autoBankRows(track, clip) {
     for (const e of automationEntriesFor(track, clip)) {
         rows.push({ kind: 'entry', target: e.target, label: automationTargetLabel(e.target),
                     active: e.active, smooth: e.smooth, wrapReset: !!e.wrapReset, punch: !!e.punch,
+                    linked: e.linked !== false,
                     count: e.count, loop: e.loop, res: e.res,
                     scale: isFinite(e.scale) ? e.scale : 100 });
     }
@@ -78,6 +79,7 @@ function scaleText(pct) { return (isFinite(pct) ? pct : 100) + '%'; }
 function smoothText(on) { return on ? 'On' : 'Off'; }
 function wrapText(reset) { return reset ? 'Reset' : 'Carry'; }
 function modeText(punch) { return punch ? 'Punch' : 'Curve'; }
+function linkText(linked) { return linked ? 'On' : 'Off'; }
 
 /* Loop length in STEPS for the row (the store keeps ticks). */
 function rowLoopSteps(track, clip, r) {
@@ -106,6 +108,9 @@ function opsFor(track, clip, r) {
             ops.push({ op: 'smooth', label: 'Smooth', value: smoothText(r.smooth) });
         ops.push({ op: 'wrap', label: 'Wrap', value: wrapText(r.wrapReset) });
     }
+    /* LINK (plan 6c): does the lane move with its notes? Shown in both modes —
+     * a Punch lock follows its note as much as a curve does. */
+    ops.push({ op: 'link', label: 'Link', value: linkText(r.linked) });
     ops.push({ op: 'loop', label: 'Loop', value: loopText(rowLoopSteps(track, clip, r)) });
     ops.push({ op: 'rate', label: 'Rate', value: automationRateText(r.res) });
     ops.push({ op: 'scale', label: 'Scale', value: scaleText(r.scale) });
@@ -134,7 +139,7 @@ export function drawAutomationBankBody() {
             label: o.label,
             value: (o.op === 'loop' || o.op === 'rate' || o.op === 'scale')
                 ? ((a.loopEdit || a.rateEdit || a.scaleEdit) && i === a.ops.sel ? '<' + o.value + '>' : o.value)
-                : (o.op === 'smooth' || o.op === 'wrap' || o.op === 'mode') ? o.value : undefined,
+                : (o.op === 'smooth' || o.op === 'wrap' || o.op === 'mode' || o.op === 'link') ? o.value : undefined,
         }));
         drawKitBackdropDim(0, LIST_TOP, 128, MV_FOOTER_Y - LIST_TOP);
         /* ⚠ bottomY: STOP THE BOX ABOVE THE FOOTER. Without it the stacked
@@ -220,6 +225,11 @@ function runOp(t, c, a) {
             a.ops.rows = opsFor(t, c, r);
             a.ops.sel = Math.max(0, a.ops.rows.findIndex(x => x.op === 'mode'));
         }
+        return;
+    } else if (o.op === 'link') {
+        /* A setting, flipped in place like Smooth and Wrap. */
+        const linked = automationToggleLink(t, c, r.target);
+        if (linked !== null) { r.linked = linked; o.value = linkText(linked); }
         return;
     } else if (o.op === 'smooth' || o.op === 'wrap') {
         /* A setting, not an action: flip it IN PLACE and keep the pop-up open,

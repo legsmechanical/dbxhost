@@ -17,6 +17,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Automation follows the notes (Link).** Change a clip's Resolution, Beat
+  Stretch it, Clock Shift or Nudge it, double its loop or copy a step, and its
+  parameter automation now moves with the notes — a lock stays on its note's
+  step. Each parameter has **Link: On / Off** in the AUTOMATION menu; On is the
+  default, Off leaves that parameter's automation where it is.
 - **Mode: Curve / Punch, per automated parameter.** Curve is the continuous
   envelope you have now. **Punch** makes each lock last just its own step — every
   other step goes back to where the knob sits at rest — so locks behave like

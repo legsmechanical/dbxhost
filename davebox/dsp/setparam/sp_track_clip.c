@@ -299,7 +299,9 @@ static int sp_track_clip(sp_ctx_t *cx) {
             if (!strcmp(q, "_reassign")) {
                 /* Move notes from step sidx to dstStep, adjusting offsets.
                  * If dstStep is empty: simple move. If occupied: merge; dst notes
-                 * take precedence (duplicate pitches from src are dropped). */
+                 * take precedence (duplicate pitches from src are dropped).
+                 * The offsets keep each note where it was IN TIME, so automation
+                 * (Note link) has nothing to follow. */
                 int dstStep = clamp_i(my_atoi(val), 0, (int)cl->length - 1);
                 if (dstStep == sidx) return 1;
                 if (cl->step_note_count[sidx] == 0) return 1;
@@ -381,6 +383,10 @@ static int sp_track_clip(sp_ctx_t *cx) {
                     for (k = 0; k < (int)cl->length; k++) if (cl->steps[k]) { any = 1; break; }
                     cl->active = (uint8_t)any;
                 }
+                /* Note link: the step's locks go with its notes, replacing the
+                 * destination's — a step is its cell [s, s+1) in clip ticks. */
+                pa_link_copy(inst, tidx, cidx, (uint32_t)sidx * cl->ticks_per_step,
+                             (uint32_t)dstStep * cl->ticks_per_step, cl->ticks_per_step);
                 clip_migrate_to_notes(cl);
                 rui_mark(inst, tidx, cidx);
                 inst->state_dirty = 1;

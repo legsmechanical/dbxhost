@@ -42,6 +42,7 @@ static int sp_track_config2(sp_ctx_t *cx) {
               n->gate = (uint16_t)new_gate;
           }
         }
+        pa_link_scale(inst, tidx, (int)tr->active_clip, new_tps, old_tps);   /* Note link */
         cl->ticks_per_step = new_tps;
         /* Rescale current playback position */
         if (old_tps > 0)
@@ -64,6 +65,8 @@ static int sp_track_config2(sp_ctx_t *cx) {
         uint32_t old_ticks = (uint32_t)cl->length * (uint32_t)old_tps;
         uint32_t new_len32 = (old_ticks + (uint32_t)new_tps - 1) / (uint32_t)new_tps;
         if (new_len32 > SEQ_STEPS) return 1;
+        /* Every note keeps its absolute tick, so automation (Note link) has
+         * nothing to follow here. */
         uint32_t abs_clip_tick = (uint32_t)tr->current_step * (uint32_t)old_tps + tr->tick_in_step;
         cl->ticks_per_step = new_tps;
         cl->length = (uint16_t)new_len32;

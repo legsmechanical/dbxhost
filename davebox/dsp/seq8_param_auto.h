@@ -62,8 +62,9 @@
 
 #define PA_FLAG_ACTIVE     0x01  /* cleared by Mute+knob: kept, but not played */
 #define PA_FLAG_SMOOTH     0x02  /* linear interpolation instead of stepped hold */
-/* 0x04 is RESERVED for Note link (plan 6c: an UNLINKED bit, so a zeroed entry
- * reads linked). */
+#define PA_FLAG_UNLINKED   0x04  /* Link: Off — the lane stays put when its notes
+                                  * move (plan 6c, Josh 2026-09-11). Clear = linked,
+                                  * the default: every existing file reads linked. */
 #define PA_FLAG_WRAP_RESET 0x08  /* Wrap: Reset — before the lane's first point the
                                   * parameter sits at its RESTING value (Josh,
                                   * 2026-09-11). Clear = Carry, the default: every

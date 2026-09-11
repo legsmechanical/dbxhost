@@ -113,6 +113,21 @@ step('⭐ Mode: Curve -> Punch hides Smooth and Wrap, keeps the cursor on Mode, 
     assert(back.find(o => o.op === 'smooth').value === 'On', 'Smooth came back WITH its setting (On, set above)');
     assert(back.find(o => o.op === 'wrap'), 'Wrap came back');
 });
+step('⭐ Link reads On by default; a click flips it to Off in place and writes pa_link, after an undo checkpoint', () => {
+    const lk = rowsOf().find(o => o.op === 'link');
+    assert(lk && lk.label === 'Link' && lk.value === 'On', 'Link row: ' + JSON.stringify(lk));
+    sel('link'); bulk.length = 0; click(); ticks(2);
+    assert(S.autoBank.ops, 'the pop-up closed — Link is a setting');
+    assert(rowsOf().find(o => o.op === 'link').value === 'Off', 'value did not flip');
+    const w = bulk.indexOf('t0_pa_link=0 0:synth:cutoff 0');
+    assert(w >= 0, 'no pa_link write: ' + JSON.stringify(bulk));
+    assert(bulk.indexOf('t0_c0_undo_checkpoint=1') >= 0 && bulk.indexOf('t0_c0_undo_checkpoint=1') < w, 'an undo checkpoint first');
+    sel('mode'); click(); ticks(2);                                     /* Punch */
+    assert(rowsOf().find(o => o.op === 'link'), 'Link stays in Punch — a lock follows its note there too');
+    click(); ticks(2);                                                  /* back to Curve */
+    sel('link'); bulk.length = 0; click(); ticks(2);
+    assert(rowsOf().find(o => o.op === 'link').value === 'On' && bulk.indexOf('t0_pa_link=0 0:synth:cutoff 1') >= 0, 'and back On');
+});
 step('CONTROL: an ACTION row still closes the pop-up (Mute)', () => {
     sel('active'); click(); ticks(1);
     assert(!S.autoBank.ops, 'Mute is an action — the pop-up should close after it');
@@ -123,6 +138,14 @@ step('a reopened pop-up reads the flags back from the lane (Reset from the DSP l
     click();                                        /* menu row -> ops */
     const sm = rowsOf().find(o => o.op === 'smooth'), wr = rowsOf().find(o => o.op === 'wrap');
     assert(sm.value === 'On' && wr.value === 'Reset', 'from flags 11: ' + JSON.stringify([sm, wr]));
+    assert(rowsOf().find(o => o.op === 'link').value === 'On', 'flags 11 has no UNLINKED bit: linked');
+});
+step('Link: Off reads back from the DSP list (flags 5 = ACTIVE | UNLINKED)', () => {
+    cc(51, 127); cc(51, 0); ticks(1);                /* Back: ops -> menu */
+    LIST = '0 0 5 3 0:synth:cutoff 0\n';
+    auto.automationRefreshPresence();
+    click();
+    assert(rowsOf().find(o => o.op === 'link').value === 'Off', 'from flags 5: ' + JSON.stringify(rowsOf()));
 });
 if (failed) process.exit(1);
 console.log('test_automation_setting_rows: all ok');

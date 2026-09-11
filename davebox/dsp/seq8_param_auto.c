@@ -692,6 +692,153 @@ static int pa_eval_punch(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t 
 }
 
 /* ------------------------------------------------------------------ */
+/* NOTE LINK (plan 6c) — automation follows the notes                   */
+/*                                                                      */
+/* Josh, 2026-09-11: "we should have the automation move with the       */
+/* resolution changes, etc. maybe a 'Note link' toggle ... on by        */
+/* default?" Until this, nothing that moved notes inside a clip moved   */
+/* its automation: a lock on step 5 stayed at step 5's TICK while its   */
+/* note went elsewhere.                                                 */
+/*                                                                      */
+/* RULED: per lane, ON by default (PA_FLAG_UNLINKED set = off). Each op */
+/* applies the transform its notes got, to every LINKED lane:           */
+/*  - grid ops (Resolution, Beat Stretch) RESCALE — the points, and a   */
+/*    lane's own Loop window with them, so a lane on its own clock keeps */
+/*    its length in steps;                                              */
+/*  - time ops (Clock Shift, Nudge, Double loop, Step copy) move points  */
+/*    in the clip's timeline, on lanes that FOLLOW the clip only. A lane */
+/*    with its own Loop or Rate runs on its own clock, where a step of   */
+/*    the clip is not a place, so it is left where it is.               */
+/* Zoom keeps every note's absolute tick, and the held-step move        */
+/* (_reassign) re-files notes on a neighbouring step without moving     */
+/* them in time: neither has anything for automation to follow.        */
+
+#define PA_LINK_SCALE  0   /* tick × num / den */
+#define PA_LINK_ROTATE 1   /* tick + d, wrapping inside [0, w) */
+#define PA_LINK_COPY   2   /* [src, src+span) copied onto [dst, dst+span), replacing it */
+
+typedef struct {
+    int      op;
+    int      drum;      /* an ALL LANES op on a drum track; else a melodic clip op */
+    uint32_t num, den;
+    int32_t  d;
+    uint32_t w;
+    uint32_t src, dst, span;
+} pa_link_op_t;
+
+/* The lane plays on the clip's own clock: no Loop window, Rate x1 (0 = never
+ * set, PA_RATE_UNITY = set back to x1 by the Rate row). */
+static int pa_follows_clip(const pa_entry_t *e) {
+    return !e->loop_len && !e->loop_off &&
+           (!e->resolution || e->resolution == PA_RATE_UNITY);
+}
+
+static uint16_t pa_scale_u16(uint32_t v, uint32_t num, uint32_t den) {
+    uint64_t s = (uint64_t)v * num / den;
+    return (uint16_t)(s > 0xFFFFu ? 0xFFFFu : s);
+}
+
+/* One lane's points through `op`, rebuilt sorted. Where two points land on one
+ * tick (Beat Stretch /2 folding a dense sweep) the one that came LATER wins —
+ * it is the value from there on. A point past the store's 16-bit tick range is
+ * dropped: the store could never have held it there. Returns 0 when the lane
+ * ran out of points (a copy onto a full lane). */
+static int pa_link_entry(pa_entry_t *e, const pa_link_op_t *op) {
+    pa_point_t tmp[PA_ENTRY_POINTS];
+    int n = 0, room = 1;
+    for (int i = 0; i < e->count; i++) {
+        uint32_t t = e->points[i].tick;
+        if (op->op == PA_LINK_SCALE) {
+            t = (uint32_t)((uint64_t)t * op->num / op->den);
+        } else if (op->op == PA_LINK_ROTATE) {
+            if (t < op->w) t = (uint32_t)((((int64_t)t + op->d) % (int64_t)op->w + op->w) % op->w);
+        } else if (t >= op->dst && t < op->dst + op->span) {
+            continue;                                   /* COPY: replaced */
+        }
+        if (t > 0xFFFFu) continue;
+        tmp[n].tick = (uint16_t)t;
+        tmp[n].val  = e->points[i].val;
+        n++;
+    }
+    if (op->op == PA_LINK_COPY) {
+        for (int i = 0; i < e->count; i++) {
+            uint32_t t = e->points[i].tick;
+            if (t < op->src || t >= op->src + op->span) continue;
+            t = t - op->src + op->dst;
+            if (t > 0xFFFFu) continue;
+            if (n >= PA_ENTRY_POINTS) { room = 0; break; }
+            tmp[n].tick = (uint16_t)t;
+            tmp[n].val  = e->points[i].val;
+            n++;
+        }
+    }
+    for (int i = 1; i < n; i++) {                       /* insertion sort: stable */
+        pa_point_t k = tmp[i];
+        int j = i - 1;
+        while (j >= 0 && tmp[j].tick > k.tick) { tmp[j + 1] = tmp[j]; j--; }
+        tmp[j + 1] = k;
+    }
+    int w = 0;
+    for (int i = 0; i < n; i++) {
+        if (w && tmp[w - 1].tick == tmp[i].tick) tmp[w - 1] = tmp[i];   /* the later wins */
+        else tmp[w++] = tmp[i];
+    }
+    memcpy(e->points, tmp, (size_t)w * sizeof(pa_point_t));
+    e->count = (uint16_t)w;
+    return room;
+}
+
+/* SPI thread (the note ops run from set_param): apply `op` to every linked lane
+ * of (track, clip). Takes the writer lock.
+ * ⚠ A drum track's automation runs on the DRUM window (pa_drum_window), not on
+ * its hidden melodic clip — so a melodic clip op reaching a drum track moved no
+ * note that plays, and must move no automation either. Only an ALL LANES op
+ * (op->drum) may move a drum track's lanes (RULED 2026-09-11). */
+static void pa_link_clip(seq8_instance_t *inst, int track, int clip, const pa_link_op_t *op) {
+    if ((inst->tracks[track].pad_mode == PAD_MODE_DRUM) != (op->drum != 0)) return;
+    int changed = 0, full = 0;
+    pa_lock(inst);
+    pa_write_begin(inst);
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+        pa_entry_t *e = &inst->pa_entries[i];
+        if (!e->used || e->track != track || e->clip != clip || !e->count) continue;
+        if (e->flags & PA_FLAG_UNLINKED) continue;
+        if (op->op == PA_LINK_SCALE) {
+            if (e->loop_len) {
+                uint16_t l = pa_scale_u16(e->loop_len, op->num, op->den);
+                e->loop_len = l ? l : 1;
+            }
+            e->loop_off = pa_scale_u16(e->loop_off, op->num, op->den);
+        } else if (!pa_follows_clip(e)) {
+            continue;
+        }
+        if (!pa_link_entry(e, op)) full = 1;
+        changed = 1;
+    }
+    if (full) inst->pa_store_full = PA_FULL_POINTS;
+    pa_write_end(inst);
+    pa_unlock(inst);
+    if (changed) pa_mark_dirty(inst);
+}
+
+static void pa_link_scale(seq8_instance_t *inst, int track, int clip, uint32_t num, uint32_t den) {
+    if (!num || !den || num == den) return;
+    pa_link_op_t op = { .op = PA_LINK_SCALE, .num = num, .den = den };
+    pa_link_clip(inst, track, clip, &op);
+}
+static void pa_link_rotate(seq8_instance_t *inst, int track, int clip, int32_t d, uint32_t w) {
+    if (!w || !d) return;
+    pa_link_op_t op = { .op = PA_LINK_ROTATE, .d = d, .w = w };
+    pa_link_clip(inst, track, clip, &op);
+}
+static void pa_link_copy(seq8_instance_t *inst, int track, int clip,
+                         uint32_t src, uint32_t dst, uint32_t span) {
+    if (!span || src == dst) return;
+    pa_link_op_t op = { .op = PA_LINK_COPY, .src = src, .dst = dst, .span = span };
+    pa_link_clip(inst, track, clip, &op);
+}
+
+/* ------------------------------------------------------------------ */
 /* THE DRUM AUTOMATION CLOCK                                            */
 /*                                                                      */
 /* A drum track's automation is ONE timeline for the whole clip, but a  */
