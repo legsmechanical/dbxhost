@@ -68,6 +68,82 @@ int main(void) {
       HX_ASSERT(at(&d, 50) == 6000, "descending ramp");
       OK("interpolation follows a falling span as well as a rising one"); }
 
+    /* ⭑ THE LOOP WRAP (6b2, Josh 2026-09-11): with the lane's window known, the
+     * value before its first point is its LAST point's — carried round the loop.
+     * Window [0, 384): locks at 312 (step 13) and 336 (step 14). */
+    { pa_entry_t w; memset(&w, 0, sizeof(w)); w.used = 1; w.flags = PA_FLAG_ACTIVE;
+      pa_set_point(&w, 312, 8192);
+      pa_set_point(&w, 336, 0);
+      uint16_t v = 0xFFFF;
+      HX_ASSERT(pa_eval_window(&w, 0, 0, 384, &v) && v == 0, "step 1: the LAST value (0), carried round the wrap");
+      HX_ASSERT(pa_eval_window(&w, 311, 0, 384, &v) && v == 0, "…up to the first point");
+      HX_ASSERT(pa_eval_window(&w, 312, 0, 384, &v) && v == 8192, "step 13: its lock");
+      HX_ASSERT(pa_eval_window(&w, 383, 0, 384, &v) && v == 0, "after the last: the last value");
+      HX_ASSERT(pa_eval(&w, 0, &v) && v == 8192, "CONTROL: the windowless pa_eval still holds the FIRST (old answer)");
+      OK("stepped: before a lane's first point it plays its LAST point's value");
+
+      /* One lock: first and last are the same point — nothing changes. */
+      pa_entry_t o; memset(&o, 0, sizeof(o)); o.used = 1; o.flags = PA_FLAG_ACTIVE;
+      pa_set_point(&o, 312, 8192);
+      HX_ASSERT(pa_eval_window(&o, 0, 0, 384, &v) && v == 8192, "a single lock holds everywhere, as before");
+      OK("a lane with one point behaves exactly as before");
+
+      /* Smooth: ramps last -> first across the wrap. Points 96:0 and 288:9600 in
+       * [0, 384): the wrap span runs 288 -> 96+384 = 480, 192 ticks, 9600 -> 0. */
+      pa_entry_t sm; memset(&sm, 0, sizeof(sm)); sm.used = 1; sm.flags = PA_FLAG_ACTIVE | PA_FLAG_SMOOTH;
+      pa_set_point(&sm, 96, 0);
+      pa_set_point(&sm, 288, 9600);
+      HX_ASSERT(pa_eval_window(&sm, 336, 0, 384, &v) && v == 7200, "after the last: ramping toward the next pass's first (48/192 of the way)");
+      HX_ASSERT(pa_eval_window(&sm, 0, 0, 384, &v) && v == 4800, "at the wrap: halfway down (96 of 192)");
+      HX_ASSERT(pa_eval_window(&sm, 48, 0, 384, &v) && v == 2400, "before the first: the rest of the ramp");
+      HX_ASSERT(pa_eval_window(&sm, 192, 0, 384, &v) && v == 4800, "between two points inside: unchanged");
+      OK("smooth: the lane ramps last -> first across the wrap");
+
+      /* Points OUTSIDE the window never play, so they are never carried round:
+       * a window [96, 192) holding one point at 120, with others outside it. */
+      pa_entry_t x; memset(&x, 0, sizeof(x)); x.used = 1; x.flags = PA_FLAG_ACTIVE;
+      pa_set_point(&x, 24, 1111); pa_set_point(&x, 120, 5000); pa_set_point(&x, 300, 9999);
+      HX_ASSERT(pa_eval_window(&x, 100, 96, 96, &v) && v == 5000, "before 120 in [96,192): the in-window last (5000), not 1111 or 9999");
+      OK("only points inside the lane's window are carried round");
+
+      pa_entry_t n; memset(&n, 0, sizeof(n)); n.used = 1; n.flags = PA_FLAG_ACTIVE;
+      pa_set_point(&n, 300, 7000);
+      HX_ASSERT(pa_eval_window(&n, 10, 0, 96, &v) && v == 7000, "no point inside the window: the old answer");
+      OK("a lane with nothing inside its window keeps the old answer");
+
+      /* Which window: the clip's loop for a plain lane, the lane's OWN window
+       * when it has a Loop or a Rate — what pa_entry_tick wraps inside. */
+      uint32_t ws = 9, wl = 9;
+      pa_entry_t k; memset(&k, 0, sizeof(k)); k.used = 1;
+      pa_entry_window(&k, 96, 384, &ws, &wl);
+      HX_ASSERT(ws == 96 && wl == 384, "plain lane: the clip's loop window (start 96, 384 long)");
+      k.loop_len = 48; k.loop_off = 0;
+      pa_entry_window(&k, 96, 384, &ws, &wl);
+      HX_ASSERT(ws == 0 && wl == 48, "own Loop: the lane's window, not the clip's");
+      k.loop_len = 999;
+      pa_entry_window(&k, 96, 384, &ws, &wl);
+      HX_ASSERT(wl == 384, "an own Loop longer than the clip is clamped to it, as pa_entry_tick does");
+      k.loop_len = 0; k.resolution = 6;
+      pa_entry_window(&k, 96, 384, &ws, &wl);
+      HX_ASSERT(ws == 0 && wl == 384, "a Rate with no Loop: the lane window is one clip long from 0");
+      OK("the carried value is taken from the lane's OWN window when it has one");
+
+      /* ⭑ WRAP: RESET (Josh, 2026-09-11: "it should reset to resting value until
+       * it hits a point"). Locks at 312:8192 and 336:0, resting value 3000. */
+      pa_entry_t r; memset(&r, 0, sizeof(r)); r.used = 1; r.flags = PA_FLAG_ACTIVE | PA_FLAG_WRAP_RESET;
+      r.rest = 3000;
+      pa_set_point(&r, 312, 8192); pa_set_point(&r, 336, 0);
+      HX_ASSERT(pa_eval_window(&r, 0, 0, 384, &v) == PA_EVAL_REST && v == 3000,
+                "before the first point: the RESTING value, marked as rest (so it is never scaled)");
+      HX_ASSERT(pa_eval_window(&r, 312, 0, 384, &v) == 1 && v == 8192, "the first point takes over");
+      HX_ASSERT(pa_eval_window(&r, 383, 0, 384, &v) == 1 && v == 0, "after the last: the last value to the loop end");
+      r.flags |= PA_FLAG_SMOOTH;
+      HX_ASSERT(pa_eval_window(&r, 360, 0, 384, &v) == 1 && v == 0, "smooth under Reset: no ramp across the wrap — it holds");
+      HX_ASSERT(pa_eval_window(&r, 100, 0, 384, &v) == PA_EVAL_REST && v == 3000, "…and rest before the first");
+      r.rest = PA_VAL_UNSET;
+      HX_ASSERT(pa_eval_window(&r, 0, 0, 384, &v) == 1 && v == 8192, "no resting value captured: the first point's value");
+      OK("Wrap: Reset — the resting value until the first point; the first point's value if none was captured"); }
+
     /* Clearing a range removes exactly what it names, endpoints included. */
     pa_clear_range(&e, 150, 150);
     HX_ASSERT(e.count == 2 && e.points[1].tick == 200, "the named point, and only it");

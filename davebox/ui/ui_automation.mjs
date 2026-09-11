@@ -189,11 +189,15 @@ export function automationRefreshPresence() {
     parseList(list);
 }
 
-/* null = not automated; else { active, smooth, count, loop }. */
+/* The lane flag bits — PA_FLAG_* in dsp/seq8_param_auto.h. 4 is Note link's. */
+const FLAG_ACTIVE = 1, FLAG_SMOOTH = 2, FLAG_WRAP_RESET = 8;
+
+/* null = not automated; else { active, smooth, wrapReset, count, loop }. */
 export function automationStateFor(track, clip, target) {
     const s = stateByKey.get(stateKey(track, clip, target));
     if (!s || !s.count) return null;
-    return { active: !!(s.flags & 1), smooth: !!(s.flags & 2), count: s.count, loop: s.loop | 0, res: s.res | 0,
+    return { active: !!(s.flags & FLAG_ACTIVE), smooth: !!(s.flags & FLAG_SMOOTH),
+             wrapReset: !!(s.flags & FLAG_WRAP_RESET), count: s.count, loop: s.loop | 0, res: s.res | 0,
              scale: isFinite(s.scale) ? s.scale : 100 };
 }
 /* Every automated target of one clip — the AUTOMATION bank's list. */
@@ -202,7 +206,8 @@ export function automationEntriesFor(track, clip) {
     const pfx = track + ' ' + clip + ' ';
     for (const [k, s] of stateByKey) {
         if (k.indexOf(pfx) !== 0 || !s.count) continue;
-        out.push({ target: k.slice(pfx.length), active: !!(s.flags & 1), smooth: !!(s.flags & 2),
+        out.push({ target: k.slice(pfx.length), active: !!(s.flags & FLAG_ACTIVE), smooth: !!(s.flags & FLAG_SMOOTH),
+                   wrapReset: !!(s.flags & FLAG_WRAP_RESET),
                    count: s.count, loop: s.loop | 0, res: s.res | 0, scale: isFinite(s.scale) ? s.scale : 100 });
     }
     return out;
@@ -718,7 +723,7 @@ export function automationToggleActive(track, clip, target) {
     queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');   /* every edit is an undo unit */
     queueSet('t' + track + '_pa_active', clip + ' ' + target + ' ' + (on ? 1 : 0));
     const cur = stateByKey.get(stateKey(track, clip, target));
-    if (cur) cur.flags = on ? (cur.flags | 1) : (cur.flags & ~1);
+    if (cur) cur.flags = on ? (cur.flags | FLAG_ACTIVE) : (cur.flags & ~FLAG_ACTIVE);
     expectStaged();
     return on;
 }
@@ -768,8 +773,23 @@ export function automationToggleSmooth(track, clip, target) {
     queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
     queueSet('t' + track + '_pa_smooth', clip + ' ' + target + ' ' + (on ? 1 : 0));
     const cur = stateByKey.get(stateKey(track, clip, target));
-    if (cur) cur.flags = on ? (cur.flags | 2) : (cur.flags & ~2);
+    if (cur) cur.flags = on ? (cur.flags | FLAG_SMOOTH) : (cur.flags & ~FLAG_SMOOTH);
     return on;
+}
+
+/* Wrap (Josh, 2026-09-11): Carry — the lane's last value carries round the
+ * loop (the default) — or Reset: the parameter's RESTING value until the lane's
+ * first point (Josh, 2026-09-11). Returns the new state
+ * (true = Reset), or null if nothing is automated there. */
+export function automationToggleWrap(track, clip, target) {
+    const s = automationStateFor(track, clip, target);
+    if (!s) return null;
+    const reset = !s.wrapReset;
+    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    queueSet('t' + track + '_pa_wrap', clip + ' ' + target + ' ' + (reset ? 1 : 0));
+    const cur = stateByKey.get(stateKey(track, clip, target));
+    if (cur) cur.flags = reset ? (cur.flags | FLAG_WRAP_RESET) : (cur.flags & ~FLAG_WRAP_RESET);
+    return reset;
 }
 
 /* The AUTOMATION bank's Loop row: an entry's own loop window, in clip TICKS

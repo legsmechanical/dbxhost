@@ -17,6 +17,12 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Wrap, per automated parameter.** In the AUTOMATION menu, each lane now has
+  **Wrap: Carry / Reset** — Carry (the default) keeps the last value going round
+  the loop; Reset puts the parameter back where its knob sits at rest until the
+  first lock or recorded move comes round.
+  **Smooth** reads the same way now (**Smooth: On / Off**), and both flip in
+  place so you can see the setting you just changed.
 - **The AUTOMATION menu shows where each parameter is set.** Scroll the menu and
   the step buttons blink white on every step where the parameter under the
   cursor has a value — its step locks, and any step a recorded move passes
@@ -211,6 +217,10 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **Automation no longer snaps back when the loop comes round.** A clip's last
+  automated value now carries through its first steps until the first lock
+  comes round, instead of jumping to the first lock's value on step 1. A lock
+  on step 13 and another on step 14 now stay put across the loop.
 - **A drum pad hit at the very end of a count-in is recorded again.** Since
   early September it landed nowhere; it now goes on step 1, as it does on a
   melodic track.
