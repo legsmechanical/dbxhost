@@ -36,7 +36,7 @@ import { drawAutoMarkAt,
     drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y
 } from './ui_movy.mjs';
 import {
-    drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
+    drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawModuleSwapConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
     drawConvertToDrumConfirm, drawConvertToConductConfirm, drawMenuInfo,
     drawLgtoConfirm, drawBakeConfirm, drawSnapshotPicker,
     drawBakeSceneConfirm, drawXposeConfirm, drawBpmLine,
@@ -1321,7 +1321,7 @@ export function soundModeCovered() {
         S.projectPadPicker || S.pendingSceneBakePicker ||
         S.mergePlacing || S.mergeNoticePending || S.pendingMergePlacement ||
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
-        S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.bpmMoveInfo || S.recordBlockedDialog ||
+        S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.confirmModuleChange || S.bpmMoveInfo || S.recordBlockedDialog ||
         S.confirmConvertToDrum || S.confirmConvertToConduct ||
         (S.menuInfoLines && S.menuInfoLines.length > 0) ||
         S.confirmLgto || S.confirmXpose || S.confirmBakeScene || S.confirmBake ||
@@ -1620,6 +1620,7 @@ function drawUIBody() {
     if (S.confirmStateWipe) { drawStateWipeConfirm(); return; }
     if (S.confirmExit)      { drawExitConfirm();      return; }
     if (S.confirmTypeChange) { drawTypeChangeConfirm(); return; }
+    if (S.confirmModuleChange) { drawModuleSwapConfirm(); return; }
     if (S.bpmMoveInfo) { drawBpmMoveInfo(); return; }
     if (S.recordBlockedDialog) { drawRecordBlockedDialog(); return; }
     if (S.confirmLgto)         { drawLgtoConfirm();         return; }

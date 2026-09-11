@@ -346,6 +346,21 @@ export function drawTypeChangeConfirm() {
     drawYesNoRow(S.confirmTypeChangeSel);
 }
 
+export function drawModuleSwapConfirm() {
+    clear_screen();
+    const c = S.confirmModuleChange;
+    /* Remove and swap are the same operation with a different destination, so
+     * they are the same dialog with a different verb. */
+    drawMenuHeader((c && c.removing ? 'REMOVE MODULE?' : 'SWAP TO ' + (c ? c.name : '') + '?'));
+    const parts = [];
+    if (c && c.macros) parts.push(c.macros + (c.macros === 1 ? ' macro' : ' macros'));
+    if (c && c.lanes)  parts.push(c.lanes + (c.lanes === 1 ? ' lane' : ' lanes'));
+    print(4, 16, parts.join(', '), 1);
+    print(4, 25, 'of automation will', 1);
+    print(4, 34, 'be cleared.', 1);
+    drawYesNoRow(S.confirmModuleChangeSel);
+}
+
 export function drawStateWipeConfirm() {
     clear_screen();
     drawMenuHeader('INCOMPATIBLE STATE');

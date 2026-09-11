@@ -3976,7 +3976,7 @@ function commitInstrPick(r) {
             /* Already a Schwung track: the one you have re-selected just opens
              * (a reload would throw its state away); another one loads. */
             if (moduleIdOf(engineLoadedModule(S.slot, 'synth')) === r.gen.id) S.pendingAction = { t: 'open', comp: 'synth' };
-            else { S.comp = 'synth'; applyModulePick(r.gen); }
+            else { S.comp = 'synth'; requestModulePick(r.gen); }
         } else {
             /* A Move/MIDI track first becomes Schwung (reflavour rebuilds the
              * screen around the slot), THEN the generator loads into it. */
@@ -6768,7 +6768,7 @@ function runActionBody(a) {
          * for. */
         const _gen = S.genAfterReflavour;
         S.genAfterReflavour = null;
-        if (_gen && GS.trackRoute[_t] === 0) { S.comp = 'synth'; applyModulePick(_gen); }
+        if (_gen && GS.trackRoute[_t] === 0) { S.comp = 'synth'; requestModulePick(_gen); }
     }
     else if (a.t === 'slotcfg')  openSlotCfg(a.keep, a.which);
     else if (a.t === 'knobs')    openKnobEditor();
@@ -6994,10 +6994,13 @@ function loadSelected() {
     const mod = S.browseList[S.browseIdx];
     if (!mod) return;
     /* The filter row is a CONTROL, not a module. Guarded here as well as at
-     * the click site because applyModulePick would otherwise write its
-     * synthetic id into the slot as a module name. */
+     * the click site because the pick would otherwise write its synthetic id
+     * into the slot as a module name. */
     if (mod.id === LIST_ROW_ID) return;
-    applyModulePick(mod);
+    /* ⚠ THE GATE, not the actor: this is the FX browser's commit -- Swap Module
+     * lands here -- so it must ask before stranding that block's automation
+     * exactly as the Instrument picker does. */
+    requestModulePick(mod);
 }
 
 /* Click on the filter row: All -> each eligible list -> All.
@@ -7065,6 +7068,141 @@ function toggleListMembership() {
  * its own remove_module ("IS applyChainComponentPick's None path, not a copy").
  * Two copies of a module swap is two places to forget pendingDiscover, the bank
  * reset, or the livePress hand-off. */
+/* ── a MODULE swap or clear strands its automation and macros ──────────────
+ *
+ * Josh, 2026-09-10: "changing or clearing an automated module leaves any
+ * automation pointing to the prior module behind." Plus the macro half: "macro
+ * knob setting showing the assignment of a removed module on the knob setup
+ * menu despite the knob itself showing unassigned on touch."
+ *
+ * ⭐ THE TYPE AXIS WAS ALREADY COVERED and this is its twin on the other axis.
+ * `requestInstrChange`/`typeChangeImpact`/`performTypeChange` do exactly this
+ * when a TRACK changes kind; nothing did it when a MODULE changed inside a
+ * slot, even though `applyModulePick` is both Swap Module and Remove Module.
+ *
+ * ⚠⚠ THE SEVERE FAILURE IS SILENT REBINDING, NOT THE DANGLING ROW. An
+ * automation target is `<slot>:<comp>:<key>` and a macro leg is `<comp>:<key>`:
+ * NEITHER CARRIES MODULE IDENTITY. So swapping in a module that reuses a key
+ * name -- `cutoff`, `wave`, `level`, `tune`, all common -- does not leave a
+ * lane pointing at nothing. It leaves it pointing at the NEW module's
+ * parameter, driving something the user never mapped, with no popup and
+ * nothing in the bank to show it changed meaning. A dangling row can be seen
+ * and deleted; this one can only be heard.
+ *
+ * ⭑ SO THE RULE IS BY COMPONENT, NOT BY KEY. Everything targeting the
+ * component being replaced goes, whether or not the incoming module happens to
+ * have a parameter of the same name. Keeping the matches would be keeping
+ * exactly the ones that silently rebind.
+ */
+export function moduleChangeImpact(track, slot, comp) {
+    const legs = [];                                    /* [knobIdx, legIdx] */
+    const store = (GS.trackMacros && GS.trackMacros[track]) || [];
+    for (let i = 0; i < store.length; i++) {
+        const mp = store[i]; if (!mp || !mp.legs) continue;
+        for (let l = 0; l < mp.legs.length; l++) {
+            const leg = mp.legs[l];
+            /* A macro leg carries no slot: it is per TRACK, and the track's own
+             * slot is the one it means. `comp` is what distinguishes synth from
+             * fx1..fx4 and the bus inserts. */
+            if (leg && leg.kind === 'chain' && leg.comp === comp) legs.push([i, l]);
+        }
+    }
+    const lanes = [];                                   /* [clip, target] */
+    const prefix = slot + ':' + comp + ':';
+    for (let c = 0; c < NUM_CLIPS; c++)
+        for (const e of automationEntriesFor(track, c))
+            if (e && typeof e.target === 'string' && e.target.indexOf(prefix) === 0)
+                lanes.push([c, e.target]);
+    return { legs, lanes, macros: legs.length, lanesN: lanes.length };
+}
+
+/* Drop what the swap invalidates, then let the caller load. Same two halves,
+ * same order and the same single sidecar write as performTypeChange. */
+function pruneForModuleChange(track, impact) {
+    if (!impact) return;
+    const store = GS.trackMacros && GS.trackMacros[track];
+    if (store && impact.legs.length) {
+        const drop = new Map();
+        for (const [i, l] of impact.legs) { if (!drop.has(i)) drop.set(i, new Set()); drop.get(i).add(l); }
+        for (const [i, set] of drop) {
+            const mp = store[i]; if (!mp) continue;
+            const legs = mp.legs.filter((_, l) => !set.has(l));
+            store[i] = legs.length ? { v: mp.v, legs } : null;
+            if (S.track === track) {
+                S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
+                /* ⚠ The mirror matters as much as the store: `macroMirrorToChain`
+                 * pushes the mapping down to the chain DSP, so a leg pruned only
+                 * in JS would leave the ENGINE still driving the old target. */
+                macroMirrorToChain(i, store[i]);
+            }
+        }
+        writeSidecar();
+    }
+    for (const [clip, target] of impact.lanes) automationClearKey(track, clip, target);
+    S.dirty = true;
+}
+
+/* Yes: prune, then do the pick that was held. */
+export function performModuleChange(c) {
+    if (!c) return;
+    /* Recomputed rather than trusted: the dialog may have been up while a tick
+     * moved something. Same reason performTypeChange recomputes its own. */
+    pruneForModuleChange(c.track, moduleChangeImpact(c.track, c.slot, c.comp));
+    applyModulePick(c.mod);
+}
+
+/* No: nothing changes, and the module that was there stays. */
+export function cancelModuleChange() {
+    S.dirty = true;
+}
+
+/* The entry every real caller uses -- the Instrument picker's commit, the FX
+ * browser's commit, Swap Module and Remove Module all land here. Exported so a
+ * test drives the GATE rather than the prune it guards. */
+/* ⚠⚠ `ctx` IS NOT A CONVENIENCE -- it is the state a real pick HAPPENS IN.
+ * This module keeps its OWN `S` (sound-mode state, `track: -1, slot: -1` until
+ * sound mode opens); `GS` is the global one. A test that set the GLOBAL track
+ * and slot and then called this would drive the gate against track -1, find
+ * nothing to lose, and report a silent pass over working code. So the caller
+ * states the context, exactly as opening sound mode on that slot would. */
+export function soundRequestModulePickForTest(mod, ctx) {
+    if (ctx) {
+        if (ctx.track != null) S.track = ctx.track | 0;
+        if (ctx.slot  != null) S.slot  = ctx.slot | 0;
+        if (ctx.comp  != null) S.comp  = ctx.comp;
+    }
+    requestModulePick(mod);
+}
+
+function requestModulePick(mod) {
+    if (!mod) return;
+    /*
+     * ⚠ THE GATE: a pick that would strand automation or macros ASKS FIRST.
+     * Silent when there is nothing to lose, which is the common case -- an
+     * empty slot, or a module nobody has automated.
+     */
+    const impact = moduleChangeImpact(S.track, S.slot, S.comp);
+    if (impact.macros || impact.lanesN) {
+        GS.confirmModuleChange = {
+            mod, track: S.track, slot: S.slot, comp: S.comp,
+            macros: impact.macros, lanes: impact.lanesN,
+            name: String((mod && (mod.name || mod.id)) || '').toUpperCase(),
+            removing: !(mod && mod.id),
+        };
+        GS.confirmModuleChangeSel = 1;                  /* opens on No */
+        S.dirty = true;
+        return;
+    }
+    applyModulePick(mod);
+}
+
+/* ⚠⚠ THE NAME IS LOAD-BEARING. `tests/host/test_default_fx_seed.sh` and
+ * `test_default_buses_seed.sh` both pin that `host_seed_module_defaults` is
+ * called from `function applyModulePick(` AND FROM NOWHERE ELSE -- because
+ * default_fx/default_buses work here only by davebox picking through this
+ * function, which is why they shipped dead for months. So the ACTOR keeps this
+ * name and the gate above took a new one, mirroring requestInstrChange (gates)
+ * and performTypeChange (acts) in this same file. */
 function applyModulePick(mod) {
     if (!mod) return;
     /* ⚠ A BUS component's `:module` takes a DSP PATH; a chain slot's takes a
@@ -10297,7 +10435,7 @@ function ppIo() {
              * looking at. */
             else if (action === 'up_save') { overwriteUserPreset(); ppRefreshPresets(); }
             else if (action === 'up_delete') { deleteRecordedPreset(); ppRefreshPresets(); }
-            else if (action === 'remove_module') applyModulePick({ id: '', name: '[ none ]' });
+            else if (action === 'remove_module') requestModulePick({ id: '', name: '[ none ]' });
             else if (action === 'up_save_as') startSaveFlow();
             else if (action === 'swap_module') { openBrowse(S.comp); ppErrandView = S.view; }
             else log('pp: unknown menu action ' + action);
