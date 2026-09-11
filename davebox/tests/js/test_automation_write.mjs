@@ -120,6 +120,20 @@ const T = 0, C = 0, SLOT = 1;
     tick();
     check(sets.length === 6 && sets[5] === 't0_pa_live_end=1:fx1:cutoff', 'the step coming up releases the hold');
 
+    /* ⭑ A DRUM track locks on its ACTIVE LANE's grid (2026-09-11, the drum
+     * automation clock). The track's own clip sits at 24 whatever the lanes
+     * are, so at a 1/8 lane resolution (48) a lock written in 24s landed on
+     * step 6 instead of step 3. The control: the melodic case above used 24. */
+    reset({ heldStep: 3 });
+    S.trackPadMode[T] = 1;                       /* PAD_MODE_DRUM */
+    S.drumLaneTPS[T] = 48;
+    automationParamEdit(T, C, SLOT, 'fx1:cutoff', '0.5', '0.25');
+    tick();
+    check(sets.indexOf('t0_pa_set2=0 1:fx1:cutoff 144 191 8192') >= 0,
+          'a drum lock covers the held step on the LANE grid (step 3 x 48 = 144..191), got ' + JSON.stringify(sets.filter(x => x.indexOf('pa_set2') >= 0)));
+    S.heldStep = -1; tick();
+    S.trackPadMode[T] = 0; S.drumLaneTPS[T] = 24;
+
     reset({ heldStep: 0, playing: true, recordArmed: true });
     automationParamEdit(T, C, SLOT, 'fx1:octave', '2', '0');
     tick();

@@ -16,7 +16,7 @@
  */
 
 import { S } from './ui_state.mjs';
-import { POLL_INTERVAL, SEQ_AUTO_TARGETS, BANK_SHORT, midiTargetIsMidi, midiTargetName, midiTargetTo14 } from './ui_constants.mjs';
+import { POLL_INTERVAL, SEQ_AUTO_TARGETS, BANK_SHORT, PAD_MODE_DRUM, midiTargetIsMidi, midiTargetName, midiTargetTo14 } from './ui_constants.mjs';
 /* The move_fx: prefix has exactly one builder, and a source invariant pins
  * that (tests/test_move_fx_prefix_owner.sh). Build it here and the suite fails
  * — correctly: two builders are two things to keep in step. */
@@ -248,6 +248,17 @@ function expectStaged() { stopGrace = STOP_GRACE_TICKS; listStale = true; }
 export function automationNoteWrite() { anyAutomation = true; }
 
 export function automationPresentForTest() { return anyAutomation; }
+
+/* How many clip ticks one STEP of the row the user is looking at spans — the
+ * unit a held-step lock is written in and a step is cleared in. A drum track's
+ * step row is its ACTIVE LANE (S.drumLaneTPS), not the track's own clip, which
+ * drum edits never touch: a lock written in that clip's 24 landed on the wrong
+ * step at any other lane resolution (2026-09-11, with the drum clock fix —
+ * the DSP's step map, tN_cC_pa_steps, uses the same lane). */
+export function automationStepTicks(track, clip) {
+    if (S.trackPadMode[track] === PAD_MODE_DRUM) return S.drumLaneTPS[track] || 24;
+    return (S.clipTPS[track] && S.clipTPS[track][clip]) || 24;
+}
 
 /* The mixer levels publish no chain_params — they are host strip state, not
  * a module's parameters — so their ranges are declared here, once, in the
@@ -647,7 +658,7 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
     /* A held step wins over everything: the turn writes that step, playing or
      * not. Stepped hold means the lock lasts until the next point. */
     if (S.heldStep >= 0) {
-        const tps = (S.clipTPS[track] && S.clipTPS[track][clip]) || 24;
+        const tps = automationStepTicks(track, clip);
         const from = S.heldStep * tps, to = from + tps - 1;
         ensureRest(g, target, prevNorm());
         ensureCheckpoint(g);
@@ -726,7 +737,7 @@ export function automationClearKey(track, clip, target) {
 
 /* Delete + step: every parameter's points in that step. */
 export function automationClearStep(track, clip, step) {
-    const tps = (S.clipTPS[track] && S.clipTPS[track][clip]) || 24;
+    const tps = automationStepTicks(track, clip);
     const from = step * tps, to = from + tps - 1;
     queueSet('t' + track + '_pa_clear_step', clip + ' ' + from + ' ' + to);
     listGen++;

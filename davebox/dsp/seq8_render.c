@@ -936,16 +936,13 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                 (tr->pad_mode != PAD_MODE_DRUM || tr->drum_clips[tr->active_clip])) {
                 clip_t    *_acl = &tr->clips[tr->active_clip];
                 uint32_t   _tps = _acl->ticks_per_step;
-                uint32_t   _abs_tick = (uint32_t)inst->global_tick * (uint32_t)TICKS_PER_STEP
-                                   + (uint32_t)inst->master_tick_in_step;
-                /* Playhead: melodic uses the track step counter; on drum that is
-                 * frozen (only per-lane counters advance), so derive it from the
-                 * master clock wrapped to the clip window — CC/AT automation is one
-                 * shared track-level timeline, not drum-lane-aware. */
+                /* Playhead: melodic uses the track step counter. On drum that is
+                 * frozen (only per-lane counters advance), and automation is one
+                 * timeline for the whole clip — the master clock wrapped to the
+                 * LONGEST LANE's window (pa_drum_clip_tick, the one owner). */
                 uint32_t   _winlen = (uint32_t)_acl->length * _tps;
                 uint32_t   _ct  = (tr->pad_mode == PAD_MODE_DRUM)
-                                  ? ((uint32_t)_acl->loop_start * _tps
-                                     + (_winlen ? (_abs_tick % _winlen) : 0))
+                                  ? pa_drum_clip_tick(inst, tr, (int)tr->active_clip, &_tps, &_winlen)
                                   : ((uint32_t)tr->current_step * _tps + tr->tick_in_step);
                 /* Per-parameter automation (Front 3). It reads its own store and
                  * either emits the MIDI targets itself or stages the rest for

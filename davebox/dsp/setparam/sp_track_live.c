@@ -126,14 +126,14 @@ static int sp_track_live(sp_ctx_t *cx) {
              * cell is the recorder's (half a step). Poly AT keeps its lanes. */
             clip_t *_pacl = &tr->clips[tr->active_clip];
             uint32_t _tps = _pacl->ticks_per_step ? _pacl->ticks_per_step : 24;
-            uint32_t _cell = _tps / 2; if (_cell < 6) _cell = 6;
             uint32_t _rec = tr->current_clip_tick;
             if (tr->pad_mode == PAD_MODE_DRUM) {
-                uint32_t _wl = (uint32_t)_pacl->length * _pacl->ticks_per_step;
-                uint32_t _abs = (uint32_t)inst->global_tick * (uint32_t)TICKS_PER_STEP
-                              + (uint32_t)inst->master_tick_in_step;
-                _rec = (uint32_t)_pacl->loop_start * _pacl->ticks_per_step + (_wl ? (_abs % _wl) : 0);
+                /* The drum automation clock's one owner — the same playhead
+                 * playback and the recorder use. */
+                uint32_t _wl;
+                _rec = pa_drum_clip_tick(inst, tr, (int)tr->active_clip, &_tps, &_wl);
             }
+            uint32_t _cell = _tps / 2; if (_cell < 6) _cell = 6;
             int _pv = clamp_i(press, 0, 127);
             pa_write_cell(inst, tidx, (int)tr->active_clip, "at", _rec, _cell,
                           (uint16_t)((_pv * 16383) / 127));
