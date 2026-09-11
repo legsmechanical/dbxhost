@@ -17,6 +17,10 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **The AUTOMATION menu shows where each parameter is set.** Scroll the menu and
+  the step buttons blink white on every step where the parameter under the
+  cursor has a value — its step locks, and any step a recorded move passes
+  through — so you can see a lane's shape without hunting for it.
 - **Holding Capture keeps Shift to itself.** While the snapshot layer is up,
   Shift no longer lights the general shortcut hints on the step buttons and
   icons — the row stays showing your snapshot slots, in both track and session
