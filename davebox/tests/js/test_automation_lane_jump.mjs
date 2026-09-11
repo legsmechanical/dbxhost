@@ -122,13 +122,32 @@ function openMenuOn(target) {
     assert(S.autoBank.menu && S.autoBank.sel === idx, 'rig: cursor not on ' + target);
     return idx;
 }
-function assertBackToLane(idx, what) {
+/* `cleared`: the menu state was dropped while you were away — what a bank walk
+ * does to it (applyBankPick calls autoBankReset). The return has to rebuild it,
+ * not rely on it having survived. */
+function assertBackToLane(idx, what, cleared) {
+    if (cleared) bank.autoBankReset();
     back(); ticks(4);
     assert(S.activeBank === BANK_AUTOMATION, what + ': Back did not return to AUTOMATION (bank ' + S.activeBank + ')');
     assert(!snd.soundOpen(), what + ': sound mode still open after the return');
     assert(S.bankCardLatched && S.autoBank && S.autoBank.menu && !S.autoBank.ops,
            what + ': not on the menu: ' + JSON.stringify(S.autoBank));
     assert(S.autoBank.sel === idx, what + ': cursor on row ' + S.autoBank.sel + ', not the lane (' + idx + ')');
+    /* And the track is recorded back on AUTOMATION — soundExit's landOn — so a
+     * later track switch or reload comes back to the bank you were on. */
+    assert(S.trackActiveBank[T] === BANK_AUTOMATION,
+           what + ': the track is left recorded on bank ' + S.trackActiveBank[T]);
+}
+/* A gesture entry does NOT record the bank it lands on (the rule since
+ * 2026-09-05: only the jog's walk records) — or leaving without Back would
+ * leave the track sitting on a bank it was sent to.
+ * ⚠ NOT asserted for the MACROS landing: writeSidecar records any bank reached
+ * while the card is LATCHED ("latched means the jog walked there",
+ * ui_persistence), and the jump keeps the card up. The return corrects it
+ * (asserted above), so the wrinkle is confined to leaving by another route. */
+function assertNotRecorded(what) {
+    assert(S.trackActiveBank[T] === BANK_AUTOMATION,
+           what + ': the jump RECORDED bank ' + S.trackActiveBank[T] + ' on the track');
 }
 
 step('CONTROL: a PLAIN click on a lane still opens its ops', () => {
@@ -142,7 +161,7 @@ step('⭐ seq lane -> its davebox BANK; Back -> the AUTOMATION menu on that lane
     const idx = openMenuOn(TARGETS.seq);
     shiftClick(); ticks(3);
     assert(S.activeBank === seq.bank && S.bankCardLatched, 'landed on bank ' + S.activeBank + ', wanted ' + seq.bank);
-    assertBackToLane(idx, 'seq');
+    assertBackToLane(idx, 'seq', true);
     back(); ticks(1);
     assert(!S.autoBank.menu, 'CONTROL: the next Back closes the menu as always');
 });
@@ -151,25 +170,27 @@ step('⭐⭐ module lane -> the EDITOR, on the page holding the parameter; Back 
     const idx = openMenuOn(TARGETS.chain);
     shiftClick(); ticks(10);
     assert(snd.soundOpen() && snd.soundViewForTest() === VIEW_EDIT, 'not in the module editor: view ' + snd.soundViewForTest());
+    assertNotRecorded('module');
     const pp = snd.soundPPForTest();
     assert(pp.on && pp.page, 'the grid is not up');
     assert((pp.page.keys || []).indexOf('cutoff') >= 0,
            'landed on "' + pp.page.name + '" (' + JSON.stringify(pp.page.keys) + '), not the page holding cutoff');
-    assertBackToLane(idx, 'module');
+    assertBackToLane(idx, 'module', true);
 });
 
 step('⭐ level lane -> SOUND + CONFIG; Back -> the menu on that lane', () => {
     const idx = openMenuOn(TARGETS.level);
     shiftClick(); ticks(4);
     assert(snd.soundOpen() && S.activeBank === BANK_SOUND, 'not on SOUND + CONFIG: bank ' + S.activeBank);
-    assertBackToLane(idx, 'level');
+    assertNotRecorded('level');
+    assertBackToLane(idx, 'level', true);
 });
 
 step('⭐ MIDI lane -> MACROS; Back -> the menu on that lane', () => {
     const idx = openMenuOn(TARGETS.midi);
     shiftClick(); ticks(4);
     assert(snd.soundOpen() && S.activeBank === BANK_MACROS, 'not on MACROS: bank ' + S.activeBank);
-    assertBackToLane(idx, 'midi');
+    assertBackToLane(idx, 'midi', true);
 });
 
 step('CONTROL: walking off the destination bank spends the return — Back is the bank\'s own', () => {
