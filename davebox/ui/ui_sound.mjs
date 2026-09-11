@@ -30,7 +30,7 @@ import {
     engineLoadCardScript,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
     slotIndex, moveBusForChannel, moveBusComp, moveBusPrefix,
-    faderStep, faderWire, faderFormatDb, faderGainToTravel} from './ui_engine.mjs';
+    faderStep, faderWire, faderFormatDb, faderGainToTravel, SHIFT_VOL_THROW, trackLevelCardText} from './ui_engine.mjs';
 /* MODULE buses — a splittable module's voice groups. ⚠ NOT davebox's `S.bus`,
  * which is a MIXER POSITION; ui_modbus.mjs's header says why the source keeps
  * them apart even though the screens never collide. */
@@ -547,7 +547,7 @@ const SAVE_ROW = 0;
 /* The slot level is a 0..4 gain, host-clamped, 1.0 = unity. The per-detent step
  * is SLOT_LEVEL_STEP, shared with the session-view knobs so both feel the same;
  * its header explains why the step is as fine as it is. */
-const VOL_MIN = 0, VOL_MAX = SLOT_LEVEL_MAX, VOL_STEP = SLOT_LEVEL_STEP;
+const VOL_MIN = 0, VOL_MAX = SLOT_LEVEL_MAX;
 const VOL_SHOW_MS = 1000;       /* readout lingers 1 s after the last turn */
 
 /* Idle poll cadence, in milliseconds. Deliberately slower than the lab rig —
@@ -2023,7 +2023,9 @@ function flushVolumeSave() {
 }
 
 function onVolumeTurn(delta) {
-    let v = S.volLevel + delta * VOL_STEP;
+    /* THE FADER LAW, the same throw as Shift+Volume everywhere else — this is
+     * that gesture's second owner (see SHIFT_VOL_THROW). */
+    let v = faderStep(S.volLevel, delta, SHIFT_VOL_THROW);
     if (v < VOL_MIN) v = VOL_MIN;
     if (v > VOL_MAX) v = VOL_MAX;
     if (v === S.volLevel) return;
@@ -11163,8 +11165,7 @@ function drawVolReadout() {
      * bank, the mixer or a module editor, and "LEVEL 1.35x" alone does not say
      * WHOSE. At the widest — "Tr 8  LEVEL  2.00x" — it is 86px in the 90px the
      * card has, so the label fits without truncation. */
-    drawLevelCard('Tr ' + (S.track + 1) + '  LEVEL  ' + S.volLevel.toFixed(2) + 'x',
-                  S.volLevel / VOL_MAX);
+    drawLevelCard(trackLevelCardText(S.track, S.volLevel), faderGainToTravel(S.volLevel));
 }
 
 export function soundRender() {

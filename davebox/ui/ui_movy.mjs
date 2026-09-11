@@ -731,7 +731,12 @@ export function plotLine(x1, y1, x2, y2, fg) {
  * differ: a chain slot or Move bus level is 0..2x, a MIDI track's volume is
  * CC 7 at 0..127. The card shows a proportion either way.
  */
+let levelCardLastText = null;
+/* What the card last PRINTED. The text goes through mvPrint, which no test can
+ * see (see [[led-and-render-observables-lie]]), so a test reads it here. */
+export function levelCardTextForTest() { return levelCardLastText; }
 export function drawLevelCard(valueText, frac) {
+    levelCardLastText = String(valueText);
     const w = 100, h = 22, x = (128 - w) >> 1, y = 21;
     fill_rect(x, y, w, h, 0);          /* punch a hole in whatever is under us */
     draw_rect(x, y, w, h, 1);

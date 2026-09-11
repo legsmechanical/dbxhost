@@ -342,6 +342,17 @@ export function faderFormatDb(g) {
     return (db > 0 ? '+' : '') + db.toFixed(1);
 }
 
+/* SHIFT+VOLUME — ONE gesture with TWO owners: ui_tick's drain outside a sound
+ * screen, sound mode's onVolumeTurn on one. They share the throw and the card
+ * text from here, because the first fader-law pass converted only the first
+ * owner and left sound mode stepping linearly and printing "0.50x" (Josh, on
+ * the device, 2026-09-11). 130 not 128: see faderStep — 0.8 x 130 = 104 puts
+ * exactly 0.0 dB on a detent. */
+export const SHIFT_VOL_THROW = 130;
+export function trackLevelCardText(track, gain) {
+    return 'Tr ' + (track + 1) + '  LEVEL  ' + faderFormatDb(gain);
+}
+
 export const SESS_KNOB_MODES = [
     /* ⚠ `sweep` is VOLUME's alone: the encoder counts a full 0..max sweep should
      * cost, overriding the universal SWEEP_UNITS. Josh judged the universal rate

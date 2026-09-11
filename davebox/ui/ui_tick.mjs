@@ -56,7 +56,7 @@ import { checkBackHold, checkShiftNoteHold, backTapWouldAct, applyShiftEdge, rai
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
-         SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS, SESS_KNOB_MODES, faderStep, faderWire, faderFormatDb, faderGainToTravel} from './ui_engine.mjs';
+         SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS, SESS_KNOB_MODES, faderStep, faderWire, faderFormatDb, faderGainToTravel, SHIFT_VOL_THROW, trackLevelCardText} from './ui_engine.mjs';
 import { soundEntryRecords, soundActive, soundOpen, soundResting, soundEnter, soundEnterMove, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
     soundEnteredInSession, soundConsumeLedDirty,
@@ -1540,7 +1540,7 @@ export function _tickImpl() {
                  * a 128 throw exactly 0.0 dB could never be dialled. 130 puts it
                  * on detent 104. The throw is 1.6% longer — below anything a
                  * hand can tell. */
-                let _tvV = faderStep(S.tvLevel, _tvD, 130);
+                let _tvV = faderStep(S.tvLevel, _tvD, SHIFT_VOL_THROW);
                 if (_tvV > SLOT_LEVEL_MAX) _tvV = SLOT_LEVEL_MAX;
                 if (_tvV !== S.tvLevel) {
                     S.tvLevel = _tvV; S.tvDirty = true;
@@ -1552,7 +1552,7 @@ export function _tickImpl() {
                  * outlive the co-run exit and pop a stale level over the screen
                  * you land on. The gesture is deliberately blind there. */
                 if (S.moveCoRunTrack < 0)
-                    showTrackVolCard('Tr ' + (_tvT + 1) + '  LEVEL  ' + faderFormatDb(_tvV),
+                    showTrackVolCard(trackLevelCardText(_tvT, _tvV),
                                      faderGainToTravel(_tvV));
             }
         }
