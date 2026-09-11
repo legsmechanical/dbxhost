@@ -106,7 +106,7 @@ static int sp_track_misc(sp_ctx_t *cx) {
             cl->clock_shift_pos = (uint16_t)((cl->clock_shift_pos + (uint16_t)(len-1)) % (uint16_t)len);
         }
         /* Note link: the same rotation, one step, inside [0, len) as the steps. */
-        pa_link_rotate(inst, tidx, (int)tr->active_clip,
+        pa_link_rotate(inst, tidx, (int)tr->active_clip, 0,
                        dir == 1 ? (int32_t)cl->ticks_per_step : -(int32_t)cl->ticks_per_step,
                        (uint32_t)len * cl->ticks_per_step);
         int i, any = 0;
@@ -195,7 +195,7 @@ static int sp_track_misc(sp_ctx_t *cx) {
         }
         cl->nudge_pos += (int16_t)dir;
         /* Note link: a note moved by `dir` ticks, wrapping round [0, len). */
-        pa_link_rotate(inst, tidx, (int)tr->active_clip, dir, (uint32_t)len * (uint32_t)tps);
+        pa_link_rotate(inst, tidx, (int)tr->active_clip, 0, dir, (uint32_t)len * (uint32_t)tps);
         clip_migrate_to_notes(cl);
         rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
         return 1;
@@ -257,7 +257,7 @@ static int sp_track_misc(sp_ctx_t *cx) {
             cl->length = (uint16_t)new_len;
             cl->stretch_exp++;
             tr->stretch_blocked = 0;
-            pa_link_scale(inst, tidx, (int)tr->active_clip, 2, 1);   /* Note link */
+            pa_link_scale(inst, tidx, (int)tr->active_clip, 0, 2, 1);   /* Note link */
         } else {
             /* COMPRESS /2: dry-run collision check — abort entirely if any two
              * active steps would map to the same destination position. */
@@ -334,7 +334,7 @@ static int sp_track_misc(sp_ctx_t *cx) {
             cl->stretch_exp--;
             /* Note link — only here, past the collision check: a blocked
              * compress moved no notes, so it moves no automation. */
-            pa_link_scale(inst, tidx, (int)tr->active_clip, 1, 2);
+            pa_link_scale(inst, tidx, (int)tr->active_clip, 0, 1, 2);
         }
         } /* end gmax_bs/off_clamp block */
 
@@ -386,7 +386,7 @@ static int sp_track_misc(sp_ctx_t *cx) {
             memcpy(cl->note_tick_offset[dst], cl->note_tick_offset[src], 8 * sizeof(int16_t));
         }
         /* Note link: the window's automation copied forward with its notes. */
-        pa_link_copy(inst, tidx, (int)tr->active_clip,
+        pa_link_copy(inst, tidx, (int)tr->active_clip, 0,
                      (uint32_t)ls * cl->ticks_per_step, (uint32_t)(ls + len) * cl->ticks_per_step,
                      (uint32_t)len * cl->ticks_per_step);
         cl->length = (uint16_t)(len * 2);

@@ -42,7 +42,7 @@ static int sp_track_config2(sp_ctx_t *cx) {
               n->gate = (uint16_t)new_gate;
           }
         }
-        pa_link_scale(inst, tidx, (int)tr->active_clip, new_tps, old_tps);   /* Note link */
+        pa_link_scale(inst, tidx, (int)tr->active_clip, 0, new_tps, old_tps);   /* Note link */
         cl->ticks_per_step = new_tps;
         /* Rescale current playback position */
         if (old_tps > 0)

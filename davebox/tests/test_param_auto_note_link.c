@@ -51,6 +51,23 @@ static const char *pts(hx_t *h, const char *tgt) {
     return b;
 }
 
+/* The same, for track 1 (a drum track by default). */
+static const char *dpts(hx_t *h, const char *tgt) {
+    static char buf[2][512];
+    static int k = 0;
+    char *b = buf[k++ & 1];
+    seq8_instance_t *in = (seq8_instance_t *)h->inst;
+    pa_entry_t *e = pa_find(in, 0, 0, pa_target_lookup(in, tgt));
+    b[0] = '\0';
+    if (!e) return b;
+    for (int i = 0; i < e->count; i++) {
+        char one[32];
+        snprintf(one, sizeof one, "%s%u:%u", i ? " " : "", e->points[i].tick, e->points[i].val);
+        strcat(b, one);
+    }
+    return b;
+}
+
 static pa_entry_t *entry(hx_t *h, const char *tgt) {
     seq8_instance_t *in = (seq8_instance_t *)h->inst;
     return pa_find(in, 1, 0, pa_target_lookup(in, tgt));
@@ -257,6 +274,68 @@ int main(void) {
                   "a melodic clip op on a drum track moved no playing note, so no automation");
         hx_destroy(h);
         OK("a melodic op reaching a drum track leaves its automation alone (drums follow ALL LANES only)");
+    }
+
+    /* ---- DRUM TRACKS: ALL LANES ops only (RULED 2026-09-11) ---------- *
+     * Track 1 is a drum track. Its automation is timed on the drum window —
+     * the longest lane — so an ALL LANES op moves it the way that lane's notes
+     * move; a single-lane op leaves it where it is. */
+    {
+        #define DL  "0:synth:cutoff"
+        #define DOFF "0:synth:reso"
+        #define DPTS(want, msg) do { \
+            const char *_g = dpts(h, DL); \
+            if (strcmp(_g, want)) { printf("  FAIL — %s\n    got  \"%s\"\n    want \"%s\"\n", msg, _g, want); exit(1); } \
+        } while (0)
+        struct { const char *key, *val, *want, *msg; } ops[] = {
+            { "t0_all_lanes_clip_resolution", "2", "192:5000 720:7000", "ALL LANES Resolution 1/16 -> 1/8: the lock follows its lane's note" },
+            { "t0_all_lanes_clock_shift", "1",     "0:7000 120:5000",   "ALL LANES Clock Shift +1: one step later, the last step wrapping" },
+            { "t0_all_lanes_nudge", "1",           "97:5000 361:7000",  "ALL LANES Nudge +1: one tick later" },
+            { "t0_all_lanes_beat_stretch", "1",    "192:5000 720:7000", "ALL LANES Stretch x2" },
+            { "t0_all_lanes_double_fill", "1",     "96:5000 360:7000 480:5000 744:7000", "ALL LANES Double: copied forward" },
+            /* single-lane ops: the clip's automation stays put */
+            { "t0_l0_clip_resolution", "2",        "96:5000 360:7000",  "a SINGLE lane's Resolution moves no automation" },
+            { "t0_l0_clock_shift", "1",            "96:5000 360:7000",  "a SINGLE lane's Clock Shift moves no automation" },
+        };
+        for (unsigned i = 0; i < sizeof ops / sizeof ops[0]; i++) {
+            hx_t *h = hx_create(NULL);
+            seq8_instance_t *in = (seq8_instance_t *)h->inst;
+            hx_set_param(h, "t0_l0_note_add", "96 100 12");            /* lane 1, step 4: allocates the drum clip */
+            HX_ASSERT(in->tracks[0].pad_mode == PAD_MODE_DRUM && in->tracks[0].drum_clips[0], "setup: a drum clip");
+            hx_set_param(h, "t0_pa_set", "0 " DL " 96 5000");
+            hx_set_param(h, "t0_pa_set", "0 " DL " 360 7000");
+            hx_set_param(h, "t0_pa_set", "0 " DOFF " 96 5000");
+            hx_set_param(h, "t0_pa_link", "0 " DOFF " 0");
+            hx_set_param(h, ops[i].key, ops[i].val);
+            DPTS(ops[i].want, ops[i].msg);
+            HX_ASSERT(!strcmp(dpts(h, DOFF), "96:5000"), "and Link: Off stays put");
+            hx_destroy(h);
+        }
+        OK("⭐ drum: every ALL LANES op carries linked automation with the notes; single-lane ops and Off leave it");
+
+        /* A blocked ALL LANES compress moved no notes — so no automation. */
+        hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_l0_note_add", "96 100 12");
+        hx_set_param(h, "t0_l0_note_add", "120 100 12");               /* steps 4 and 5 collide at /2 */
+        hx_set_param(h, "t0_pa_set", "0 " DL " 96 5000");
+        hx_set_param(h, "t0_all_lanes_beat_stretch", "-1");
+        HX_ASSERT(((seq8_instance_t *)h->inst)->all_lanes_stretch_result == -1, "setup: the compress was refused");
+        DPTS("96:5000", "a refused ALL LANES compress moves no automation");
+        hx_destroy(h);
+
+        /* The window is the LONGEST lane: lane 4 at 32 steps makes a point on
+         * step 29 part of the rotation (a 16-step window would not reach it). */
+        h = hx_create(NULL);
+        hx_set_param(h, "t0_l0_note_add", "96 100 12");
+        hx_set_param(h, "t0_l3_clip_length", "32");
+        hx_set_param(h, "t0_pa_set", "0 " DL " 696 5000");              /* step 29 */
+        hx_set_param(h, "t0_all_lanes_clock_shift", "1");
+        DPTS("720:5000", "Clock Shift rotates inside the LONGEST lane's window (step 29 -> 30)");
+        hx_set_param(h, "t0_all_lanes_clock_shift", "1");
+        hx_set_param(h, "t0_all_lanes_clock_shift", "1");
+        DPTS("0:5000", "and wraps at ITS end (step 31 -> 0), not at 16");
+        hx_destroy(h);
+        OK("drum: a refused compress moves nothing; the rotation wraps at the longest lane's end");
     }
 
     /* ---- Real playback: the lock arrives on the step its note plays -- */

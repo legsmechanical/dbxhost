@@ -1057,8 +1057,8 @@ steps — on parameters that can ramp), **Wrap** (*Carry* keeps the last value g
 round the loop; *Reset* returns the parameter to where the knob sits at rest, until
 the first lock or recorded move comes round), **Link** (*On*, the default: the
 parameter's automation moves with the clip's notes — Resolution, Beat Stretch,
-Clock Shift, Nudge, doubling the loop and copying a step all carry it along;
-*Off*: it stays where it is), **Loop** (that parameter's own loop length in steps, or CLIP to
+Clock Shift, Nudge, doubling the loop and copying a step all carry it along —
+on a drum track, the ALL LANES versions of those; *Off*: it stays where it is), **Loop** (that parameter's own loop length in steps, or CLIP to
 follow the clip), and **Rate** (/16 to ×16, the loop stretching to match). The
 last row is **Clear clip**, and **Delete + click** on the card does the same.
 Every operation is one undo, and **Back** closes one layer at a time. Conductor

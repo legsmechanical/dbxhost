@@ -385,7 +385,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
                 }
                 /* Note link: the step's locks go with its notes, replacing the
                  * destination's — a step is its cell [s, s+1) in clip ticks. */
-                pa_link_copy(inst, tidx, cidx, (uint32_t)sidx * cl->ticks_per_step,
+                pa_link_copy(inst, tidx, cidx, 0, (uint32_t)sidx * cl->ticks_per_step,
                              (uint32_t)dstStep * cl->ticks_per_step, cl->ticks_per_step);
                 clip_migrate_to_notes(cl);
                 rui_mark(inst, tidx, cidx);

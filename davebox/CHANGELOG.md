@@ -20,7 +20,8 @@ the section into a versioned heading at release time.
 - **Automation follows the notes (Link).** Change a clip's Resolution, Beat
   Stretch it, Clock Shift or Nudge it, double its loop or copy a step, and its
   parameter automation now moves with the notes — a lock stays on its note's
-  step. Each parameter has **Link: On / Off** in the AUTOMATION menu; On is the
+  step. On drum tracks it follows the ALL LANES versions of those edits; a
+  single lane's edit leaves the clip's automation alone. Each parameter has **Link: On / Off** in the AUTOMATION menu; On is the
   default, Off leaves that parameter's automation where it is.
 - **Mode: Curve / Punch, per automated parameter.** Curve is the continuous
   envelope you have now. **Punch** makes each lock last just its own step — every

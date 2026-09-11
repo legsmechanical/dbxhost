@@ -821,20 +821,21 @@ static void pa_link_clip(seq8_instance_t *inst, int track, int clip, const pa_li
     if (changed) pa_mark_dirty(inst);
 }
 
-static void pa_link_scale(seq8_instance_t *inst, int track, int clip, uint32_t num, uint32_t den) {
+/* `drum`: the caller is an ALL LANES op (see pa_link_clip's guard). */
+static void pa_link_scale(seq8_instance_t *inst, int track, int clip, int drum, uint32_t num, uint32_t den) {
     if (!num || !den || num == den) return;
-    pa_link_op_t op = { .op = PA_LINK_SCALE, .num = num, .den = den };
+    pa_link_op_t op = { .op = PA_LINK_SCALE, .drum = drum, .num = num, .den = den };
     pa_link_clip(inst, track, clip, &op);
 }
-static void pa_link_rotate(seq8_instance_t *inst, int track, int clip, int32_t d, uint32_t w) {
+static void pa_link_rotate(seq8_instance_t *inst, int track, int clip, int drum, int32_t d, uint32_t w) {
     if (!w || !d) return;
-    pa_link_op_t op = { .op = PA_LINK_ROTATE, .d = d, .w = w };
+    pa_link_op_t op = { .op = PA_LINK_ROTATE, .drum = drum, .d = d, .w = w };
     pa_link_clip(inst, track, clip, &op);
 }
-static void pa_link_copy(seq8_instance_t *inst, int track, int clip,
+static void pa_link_copy(seq8_instance_t *inst, int track, int clip, int drum,
                          uint32_t src, uint32_t dst, uint32_t span) {
     if (!span || src == dst) return;
-    pa_link_op_t op = { .op = PA_LINK_COPY, .src = src, .dst = dst, .span = span };
+    pa_link_op_t op = { .op = PA_LINK_COPY, .drum = drum, .src = src, .dst = dst, .span = span };
     pa_link_clip(inst, track, clip, &op);
 }
 
