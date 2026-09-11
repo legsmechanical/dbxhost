@@ -54,6 +54,25 @@ export function autoBankReset() {
 }
 export function autoBankMenuOpen() { return !!(S.autoBank && (S.autoBank.menu || S.autoBank.ops)); }
 
+/* THE LANE JUMP (plan 6c2): Shift + click on a lane in the menu. The lane
+ * under the cursor as { target, sel }, or null — only on the lane list itself
+ * (no ops pop-up open), and only for a parameter lane (the pads' aftertouch
+ * row has nowhere to jump to). */
+export function autoBankJumpTarget() {
+    const a = S.autoBank;
+    if (!a || !a.menu || a.ops) return null;
+    const t = S.activeTrack, c = effectiveClip(t);
+    const r = autoBankRows(t, c)[a.sel];
+    return (r && r.kind === 'entry') ? { target: r.target, sel: a.sel } : null;
+}
+/* Back from a jump: the menu again, with the cursor on the lane you left. */
+export function autoBankRestoreMenu(sel) {
+    const a = st();
+    a.menu = true; a.ops = null;
+    a.loopEdit = false; a.rateEdit = false; a.scaleEdit = false;
+    a.sel = Math.max(0, sel | 0);
+}
+
 /* The rows: every entry of the current clip (sorted by label so the list is
  * stable across edits), then the pads' aftertouch lane if the clip has one. */
 export function autoBankRows(track, clip) {

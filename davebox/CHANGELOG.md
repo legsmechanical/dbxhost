@@ -17,6 +17,10 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Jump from an automation lane to its parameter.** In the AUTOMATION menu,
+  **Shift + click** a lane to go straight to where that parameter lives — its
+  bank, the module editor's page that holds it, SOUND + CONFIG, or MACROS.
+  **Back** brings you back to the menu, on the same lane.
 - **Automation follows the notes (Link).** Change a clip's Resolution, Beat
   Stretch it, Clock Shift or Nudge it, double its loop or copy a step, and its
   parameter automation now moves with the notes — a lock stays on its note's

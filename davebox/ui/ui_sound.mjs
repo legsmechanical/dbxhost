@@ -59,6 +59,7 @@ import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationRegisterSeqApply, automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
          automationClearKey, automationEntriesFor } from './ui_automation.mjs';
+import { autoBankRestoreMenu } from './ui_automation_bank.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import * as ModuleLists from '/data/UserData/schwung/shared/module_lists.mjs';
 import { MoveKnob1, Red, White } from '/data/UserData/schwung/shared/constants.mjs';
@@ -2773,11 +2774,38 @@ export function soundGestureReturn() {
          * land you on the previous screen you were on"): a latched bank CARD
          * comes back as the card, not as the overview with that bank recorded. */
         if (g.latched) { GS.bankCardLatched = true; armBankDisplay(); }
+        /* A LANE JUMP (plan 6c2) came from the AUTOMATION menu: back into the
+         * menu, the cursor on the lane you jumped from. */
+        if (g.autoSel != null) autoBankRestoreMenu(g.autoSel);
     }
     return true;
 }
 
 export function soundGestureArmed() { return !!GS.genReturn; }
+
+/* ⭑ THE LANE JUMP (plan 6c2, Josh 2026-09-11: "Shift+automation lane in
+ * automation menu top level jumps to the bank/mode with that param on it").
+ * A module parameter's lane opens that component's editor ON THE PAGE HOLDING
+ * THE PARAMETER; Back from the editor's top returns to the AUTOMATION menu,
+ * cursor on the lane (the same return crumb Shift+Note's hold stamps, carrying
+ * the lane). Returns false — and changes nothing — when the component has no
+ * module loaded any more. */
+export function soundJumpToParam(track, comp, key, autoSel) {
+    const slot = slotIndex(track);
+    if (!engineLoadedModule(slot, comp)) return false;
+    GS.genReturn = { track, wasActive: false, view: -1, bank: GS.activeBank | 0,
+                     latched: !!GS.bankCardLatched, autoSel };
+    soundEnter(track, slot);
+    ppJumpKey = { slot, comp, key };
+    S.pendingAction = { t: 'open', comp };
+    return true;
+}
+/* The same return for the sound-mode CARDS (SOUND + CONFIG, MACROS), which the
+ * jump reaches through the ordinary deferred entry: spent only when the crumb
+ * came from a lane jump, so Shift+Note's retrace keeps its own screens. */
+function soundLaneJumpReturn() {
+    return !!(GS.genReturn && GS.genReturn.autoSel != null) && soundGestureReturn();
+}
 
 /* Shift+hold Note/Session on a NONE track (Josh, 2026-09-05: "hold
  * shift+note/session should open the instrument picker"): there is nothing to
@@ -8757,6 +8785,11 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.dirty = true;
             return true;
         }
+        if ((S.view === VIEW_MACROS || S.view === VIEW_PROMPT) && soundLaneJumpReturn()) {
+            /* Reached by a LANE JUMP from the AUTOMATION menu: back there. */
+            S.dirty = true;
+            return true;
+        }
         if (S.view === VIEW_MACROS || S.view === VIEW_PROMPT) {
             /* THE CARDS (MACROS, SOUND + CONFIG): Back is out of BANK MODE and
              * nothing else — "Back never changes which bank you are on" (the
@@ -10047,6 +10080,9 @@ let ppDivedOut = false;
  * by screen: the rule is general, so the crumb is general. Anything the editor
  * opens sets this, and both the Back path and the renderer read it. */
 let ppErrandView = null;
+/* { slot, comp, key } — a lane jump's request to open the editor on the page
+ * holding `key` (soundJumpToParam); consumed by the next ppSync entry. */
+let ppJumpKey = null;
 
 /*
  * The file browser is up ON AN ERRAND FROM THE WAVE EDITOR, and Back or a pick
@@ -10308,13 +10344,16 @@ function ppSync() {
     const want = ppApplies() && !ppDeclinedDraw
         && (S.view === VIEW_EDIT || (ppOn && ppOwnsView()));
     if (want && !ppOn) {
-        enterParamPages(S.slot, S.comp, S.comp, ppRestoreFor(S.slot, S.comp), ppIo(), {
+        /* A lane jump asked for the page holding one parameter (once). */
+        const jk = (ppJumpKey && ppJumpKey.slot === S.slot && ppJumpKey.comp === S.comp) ? ppJumpKey.key : null;
+        ppJumpKey = null;
+        enterParamPages(S.slot, S.comp, S.comp, jk ? null : ppRestoreFor(S.slot, S.comp), ppIo(), {
             label: modLabel(),
             /* Back leaves the editor for the block picker — davebox's own
              * destination, unchanged from what renderEdit's footer promises. */
             returnView: VIEW_BLOCKS,
             onExit: () => { ppOn = false; ppEditLatched.clear(); },
-        });
+        }, jk ? { key: jk } : undefined);
         ppOn = true;
         S.dirty = true;
     } else if (!want && ppOn) {

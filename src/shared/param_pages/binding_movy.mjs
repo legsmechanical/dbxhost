@@ -294,6 +294,8 @@ function paramPagesLayout() {
  *   page 5 when they clicked a sample, and page 1 is not where they were.
  *   Matched by NAME, not index — controller.load rebuilds the page set and
  *   every index can shift (same reason page_nav reanchors by name).
+ *   With no name, `restoreOpts.key` lands on the first page holding that
+ *   parameter key instead.
  * @param {object} [io]  {getParam,setParam} to use instead of the slot/component
  *   default. Slot settings needs it: a slot publishes no ui_hierarchy and its
  *   params do not share one prefix, so the contract and the mapping are handed
@@ -409,7 +411,10 @@ function enterParamPages(slot, component, prefix, restorePageName, io, chrome, r
      * see restorePage. Only the caller knows whether we are coming back from
      * finishing something (jog back to paging) or from merely looking (stay
      * inside the menu you never really left). */
-    if (restorePageName) controller.restorePage(restorePageName, restoreOpts || {});
+    /* restoreOpts.key: land on the page holding that parameter instead (see
+     * restorePage) — used when a host sends you straight to one parameter. */
+    if (restorePageName || (restoreOpts && restoreOpts.key))
+        controller.restorePage(restorePageName, restoreOpts || {});
     ctx.setView(ctx.VIEWS.PARAM_PAGES);
 }
 

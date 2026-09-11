@@ -1047,7 +1047,10 @@ jog is the whole surface.
 
 **Click the jog** for the menu. As the cursor moves onto a row, the **step
 buttons blink white** on every step where that parameter has a value set — its
-step locks, and any step a recorded move passes through. Then click a row for
+step locks, and any step a recorded move passes through. **Shift + click** a row
+to jump to where that parameter is edited — its bank, its module's page, SOUND +
+CONFIG for a level, or MACROS for a MIDI target — and **Back** from there
+returns you to this menu, on the same row. Click a row for
 its operations:
 **Delete**, **Mute** / **Unmute**, **Mode** (*Curve* plays the lane as a continuous
 envelope; *Punch* makes each lock last just its own step, with the parameter back at
