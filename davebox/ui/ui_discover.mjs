@@ -1500,7 +1500,12 @@ export function menuRows(levels, levelKey, cpMap, childIndex) {
              * is one fact, the numbering fallback is an older and separate
              * one. */
             rows.push({ kind: 'child', childIndex: i,
-                        label: childName(lvl, i) || (spec.label + ' ' + (i + 1)) });
+                        /* ⚠ `lv`, the level in hand. This read `lvl` — a name that
+                         * exists only in OTHER functions here — from 2026-09-07
+                         * (7f663793) to 2026-09-11: the Module Menu of any module
+                         * with repeated elements threw before it could open. Found
+                         * by tools/check_undeclared.mjs. */
+                        label: childName(lv, i) || (spec.label + ' ' + (i + 1)) });
         }
         return rows;
     }

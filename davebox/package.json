@@ -2,6 +2,8 @@
   "name": "schwung-davebox",
   "private": true,
   "devDependencies": {
-    "esbuild": "^0.25.0"
+    "acorn": "^8.18.0",
+    "esbuild": "^0.25.0",
+    "eslint-scope": "^9.1.2"
   }
 }

@@ -1988,6 +1988,13 @@ export function _tickImpl() {
             const pr = S.pendingPrerollNote;
             const _prLive = S.liveActiveNotes.has(pr.laneNote);
             if (pr.isDrum) {
+                /* ⚠ The lane's step size, for the gate cap below. The 09-02 ms
+                 * rework (7329e30e) deleted this declaration with the tick-count
+                 * wait it also fed, and left the use: from then until
+                 * 2026-09-11 a drum pad hit in the tail of a count-in threw here
+                 * — AFTER the note was taken off the queue, so it was simply
+                 * lost. Found by tools/check_undeclared.mjs. */
+                const tps = S.drumLaneTPS[pr.track] || 24;
                 const elapsed = S.clockMs - S.transportStartMs;
                 /* Wait for note released AND one step elapsed (skip first loop pass to avoid double-trigger) */
                 if (!_prLive && elapsed >= 15000 / Math.max(20, S.bpm || 120)) {
