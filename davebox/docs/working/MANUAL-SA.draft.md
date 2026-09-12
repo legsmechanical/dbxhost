@@ -24,9 +24,25 @@ it does on Move.
 ## Which manual is this?
 
 This manual describes **dAVEBOx SA** — dAVEBOx running as its own session, on its
-own build of the Schwung host. You start it from official Schwung's Tools menu and
-it restarts Move underneath, booting straight into the sequencer. Everything
-described here assumes that. **This is where dAVEBOx is developed.**
+own build of the Schwung host. It restarts Move underneath and boots straight into
+the sequencer. Everything described here assumes that. **This is where dAVEBOx is
+developed.**
+
+**There are two ways in, and they lead to exactly the same place:**
+
+| | how |
+|---|---|
+| **From Schwung** | open **dAVEBOx** in official Schwung's **Tools** menu |
+| **At power-on** | while the screen reads *"Loading Schwung — press Back to change"*, hold **Back**, turn the jog to **dAVEBOx** and click |
+
+The boot route needs official Schwung 1.3.0 or newer, which is what draws that
+picker. On anything older the Tools route is simply the way in, and nothing is
+missing.
+
+⚠ **Picking a row in that boot menu also makes it your default**, so the next
+power-on goes straight there without asking. To change back, hold Back again and
+pick **Schwung**. Leaving dAVEBOx always returns you to Schwung either way — the
+default only decides what a cold boot does.
 
 If you run dAVEBOx the other way — as an ordinary tool you open from inside
 official Schwung — read [`MANUAL.md`](MANUAL.md) instead. That version still works
@@ -37,7 +53,7 @@ manual do not exist there:
 |---|---|---|
 | Insert effects per chain | 2 | **4** |
 | Send effect buses | none | **2 (A and B)** |
-| Starting it | open it from the Tools menu | **boots straight in** |
+| Starting it | open it from the Tools menu | **the Tools menu, or straight from the boot menu** |
 | Leaving it | unloads back to Schwung | **hands the device back to stock** |
 
 Nothing about your Move is modified permanently. Your official Schwung install is

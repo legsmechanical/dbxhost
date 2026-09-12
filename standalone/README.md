@@ -285,6 +285,63 @@ Session-scoped files (all under `$DBX_DIR`, cleared on session exit):
 `select_list.json`, `select_hook_result.json`, `boot_tool.json`,
 `relaunch_patch.sh`, `fresh_session`.
 
+## Two doors: the Tools menu and the BOOT SELECTOR
+
+Since 2026-09-12 dAVEBOx is also a registered **boot target** of stock Schwung's
+boot selector (schwung ≥ 1.3.0), so the device can start in dAVEBOx without going
+through Tools. **Both doors are required** (Josh: *"we need to also be able launch
+it from within schwung tools without issues"*), and they run **one launcher body**:
+
+```
+Tools menu   → stock's launch-standalone.sh → modules/tools/davebox-sa/standalone
+boot picker  → boot-targets/davebox/entry.sh → the SAME file, with --boot
+```
+
+`boot-target/{boot.json,entry.sh}` are installed by `scripts/install-boot-target.sh`
+(called from `install-host.sh`; skips cleanly on stock < 1.3.0). `entry.sh` is a
+thin `exec` — it deliberately contains no launch logic, so the doors cannot drift.
+`tests/host/test_boot_target_second_door.sh` fails the build if it grows any.
+
+**The door is a positional ARGUMENT (`--boot`), never an environment variable.**
+It was `export DBX_ENTRY=boot` for one hour and that leaked: the boot path ends in
+an `exec`, exports survive `exec`, so it rode into the next stock session and the
+following *Tools* launch took every boot branch — Move native on the OLED, dAVEBOx
+on everything else. An argument cannot be inherited.
+
+### What differs at boot, and why (grep `# ENTRY:` in `launch.sh`)
+
+At boot **this process IS `move-launcher.service`**: MoveLauncher forked the
+selector, which exec'd our entry, which exec'd the launcher.
+
+- **Nothing to quiesce or sweep** — no stock stack has started.
+- **⚠⚠ Never sweep `MoveLauncher` or `Move`.** They are our own supervisor and our
+  own ancestor image. Killing MoveLauncher reads to systemd as the service
+  failing; `RestartSec=2s` starts a fresh one and `KillMode=process` leaves our
+  tree alive — two stacks on one SPI device, which presents as "communication
+  error" then a freeze.
+- **Never pause the unit** — that is us. All pause/resume goes through `unit()`,
+  which no-ops at boot; that one owner exists so a new call site inherits the rule.
+- **⚠⚠ NEVER EXIT — `exec` onward instead.** MoveLauncher is a *supervisor* (it
+  forks `MoveSentryRunProcessor` and Move and watches them) and the literal
+  "Move crashed" lives in its binary. Ending the session at all reads as Move
+  dying, **whatever the exit code** — `exit 1`, and `exit 0` plus a detached
+  `systemctl start`, both produced the dialog. Quitting therefore execs stock's
+  `schwung-entry.sh` in the same pid, with fallbacks to the selector and then bare
+  `MoveOriginal` so the device always gets *something*.
+- That stage redirects to `launch.log` first: its stdout is MoveLauncher's, which
+  this device does **not** journal, so an earlier failure there left no trace at
+  all.
+
+### The rule that keeps this safe
+
+**Registering never takes the boot.** The installer never writes
+`boot-targets/default`, so *a reboot always returns to stock* — the promise that
+stops a broken davebox build bricking the device. ⚠ Clicking a row **in the
+picker** does set the default; that is the selector's behaviour, and after any
+test the default should be put back unless the change was intended. Also never
+create `boot-targets/schwung/` (selector-owned, rewritten every boot) and never
+use the reserved ids `schwung` / `stock`.
+
 ## Gotchas
 
 - **Never reference the shim by path.** Bare soname only — see above. A path

@@ -17,6 +17,14 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Boot straight into dAVEBOx.** dAVEBOx now appears in official Schwung's boot
+  menu: hold **Back** while the screen reads *"Loading Schwung — press Back to
+  change"*, pick **dAVEBOx**, and it starts without going through the Tools menu.
+  The Tools route works exactly as before — this is an extra door, not a
+  replacement. Leaving dAVEBOx still hands the device back to Schwung, and a
+  reboot still returns to Schwung unless you choose dAVEBOx in that menu, which
+  also sets it as your default. Needs official Schwung 1.3.0 or newer for the
+  boot menu to exist; on older versions nothing changes.
 - **Capture knob moves, not just notes.** Sweep a filter over a running loop with
   Record off, decide you liked it, and tap **Capture** — the move is written in as
   automation, in the clip you heard it in. One tap keeps notes and knob moves
