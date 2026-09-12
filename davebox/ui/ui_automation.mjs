@@ -480,7 +480,11 @@ function pushPending() {
 export function automationTick() {
     gesturesTick();
     flushModuleWrites();
-    if ((presenceStale || listStale) && !gestures.size && !moduleWrites.length) {
+    /* ⚠ NOT while a pa-clear write is still queued — see queuedClearOutstanding.
+     * The flags stay SET, so the refresh happens on the first tick after the
+     * write has actually gone out, reading a DSP that agrees with the mirror. */
+    if ((presenceStale || listStale) && !gestures.size && !moduleWrites.length
+            && !queuedClearOutstanding()) {
         presenceStale = false; listStale = false;
         automationRefreshPresence();
     }
@@ -955,6 +959,33 @@ export function automationClearClip(track, clip, checkpoint) {
  * So the caller hands us its own ordered queue and we append. One queue, one
  * order, one undo unit.
  * ========================================================================== */
+
+/* ⚠⚠ THE RESURRECTION RACE — device, Josh, 2026-09-12: *"lanes still there …
+ * but none of the automated sequencer params are playing back."*
+ *
+ * These helpers delete the lane from the mirror at once (so the screen updates
+ * on the gesture) and mark the list stale. But the WRITE they queue is drained
+ * ONE PER TICK, behind the note clear, a few ticks later. The refresh fired
+ * first, re-read `pa_list` from a DSP nobody had told anything yet, and put
+ * every deleted row BACK — permanently, because no later refresh was due. The
+ * DSP then cleared them for real, which is why the rows were listed and silent
+ * at the same time. ONE bug, both symptoms.
+ *
+ * ⭑ The gate is the QUEUE ITSELF, not a tick count: while a pa-clear write is
+ * still sitting in `pendingDefaultSetParams`, a refresh can only read staleness,
+ * so it is postponed (the stale FLAG stays set, so it runs on the first tick
+ * after the queue drains). A guessed delay would be wrong the moment the queue
+ * has anything else in it. */
+function queuedClearOutstanding() {
+    const q = S.pendingDefaultSetParams;
+    if (!q || !q.length) return false;
+    for (let i = 0; i < q.length; i++) {
+        const k = q[i] && q[i].key;
+        if (k && (k.endsWith('_pa_clear') || k.endsWith('_pa_clear_key'))) return true;
+    }
+    return false;
+}
+export function automationQueuedClearOutstandingForTest() { return queuedClearOutstanding(); }
 
 /* Every parameter's automation in this clip, queued behind the caller's own
  * clear. For a NOTE clear: the clip is being emptied, so all of it goes

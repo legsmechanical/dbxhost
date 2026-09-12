@@ -17,6 +17,15 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Clearing now clears automation too.** Automation follows the thing it
+  automates. Clear a sequence (Delete + track button) or reset a clip and its
+  automation goes with the notes, instead of staying behind and still moving a
+  parameter you thought you had cleared. Resetting a bank's parameters
+  (Delete + jog click) clears the automation for *that bank's* parameters and
+  leaves every other lane alone. Undo brings the whole thing back as one step.
+  On a drum track, clearing a single lane leaves automation alone — a drum
+  clip's automation covers the whole clip, so taking it would remove moves
+  belonging to the lanes you kept.
 - **Boot straight into dAVEBOx.** dAVEBOx now appears in official Schwung's boot
   menu: hold **Back** while the screen reads *"Loading Schwung — press Back to
   change"*, pick **dAVEBOx**, and it starts without going through the Tools menu.

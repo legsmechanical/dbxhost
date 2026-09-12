@@ -42,7 +42,26 @@ globalThis.host_write_file = (path, body) => {
     return true;
 };
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;
-globalThis.host_module_set_param = () => {};
+const sent = [];
+/* ⚠⚠ THE STUB MUST HONOUR THE CLEAR, or the test models a DSP that ignores it
+ * and no refresh can ever look correct. `tN_pa_clear <clip>` drops every lane of
+ * that (track, clip); `tN_pa_clear_key <clip> <target>` drops one — exactly what
+ * sp_track_paramauto.c does, and what tests/test_param_auto.c already pins.
+ * Without this the resurrection test is unfalsifiable.
+ * [[fixtures-must-be-real-modules-not-my-shape]] */
+function dspClear(key, val) {
+    const m = /^t(\d+)_pa_clear(_key)?$/.exec(key);
+    if (!m) return;
+    const tr = m[1], parts = String(val).split(' ');
+    const clip = parts[0], target = m[2] ? parts.slice(1).join(' ') : null;
+    LIST = LIST.split('\n').filter(line => {
+        if (!line) return false;
+        const f = line.split(' ');
+        if (f[0] !== tr || f[1] !== clip) return true;
+        return target ? f[4] !== target : false;
+    }).map(l => l + '\n').join('');
+}
+globalThis.host_module_set_param = (k, v) => { sent.push(k + '=' + v); dspClear(k, v); };
 globalThis.host_module_set_params = () => true;
 globalThis.host_module_get_param = (k) => (k === 'pa_list' ? LIST : '');
 globalThis.shadow_get_param = () => '';
@@ -213,6 +232,31 @@ step('⚠ CONTROL: with nothing automated, a clear queues no automation write', 
     assert(!q.some(s => s.indexOf('_pa_clear') >= 0),
            'an empty store must send nothing — a write here is a round-trip for no reason: ' + q.join(' | '));
     assert(q.length > 0, 'the note clear itself should still be queued');
+});
+
+/* ---- THE DEVICE BUG (Josh, 2026-09-12): the list came back ------------- */
+
+step('⚠⚠ REGRESSION: a lane must not be RESURRECTED by the refresh that races the write', () => {
+    reset();
+    withDelete(trackBtn);
+    /* The gesture queued the clear. It has NOT been sent yet — the default
+     * queue drains ONE per tick and clearDrainHold defers it a further tick.
+     * Meanwhile the tick refreshes the lane list from the DSP, which still
+     * reports every lane because nobody has told it anything. THAT is the
+     * device symptom: "lanes still there ... but none are playing back" —
+     * the rows are a stale mirror, and the DSP clears them a few ticks later. */
+    sent.length = 0;
+    for (let i = 0; i < 12; i++) { S.tickCount++; globalThis.tick(); }
+    /* FIRST: did the write reach the DSP at all? The queue is not the wire. */
+    assert(sent.some(x => x === 't' + T + '_pa_clear=0'),
+           'the pa_clear was NEVER SENT in 12 ticks — sent: ' + sent.join(' | '));
+    /* THEN: the row must not be back. Before the fix the refresh ran BEFORE the
+     * write drained, re-read the un-cleared list, and restored every deleted row
+     * permanently — listed and silent at once, which is what Josh saw. */
+    assert(!auto.automationStateFor(T, 0, CHAIN_TGT),
+           'the cleared lane came BACK into the list (the refresh won the race)');
+    assert(auto.automationStateFor(T, 1, CHAIN_TGT),
+           'control: the other clip is still listed, so the refresh really ran');
 });
 
 step('⭐ and nothing was swallowed into the JS error log', () => {

@@ -59,6 +59,15 @@ done
 #    down. Widening the surface is the cost of that, and it is why this list is
 #    a PIN rather than a comment: the next addition has to argue for itself here
 #    too, in a diff, rather than appearing quietly.
+# ⚠⚠ THIS CHECK CRIES WOLF ACROSS BRANCH SWITCHES, twice on 2026-09-12. `build/`
+# is untracked and survives a checkout, so the artifact can have been built from
+# a DIFFERENT branch than the want-list below — and the diff then reports a
+# symbol "changed" that is simply from another commit. It blocked pre-commit on a
+# clean `main`. If this fails and the diff names a symbol you did not touch:
+# `rm build/modules/chain/dsp.so` (the check then skips) or rebuild.
+# The list stays HARDCODED on purpose — deriving it from the sources would make
+# it agree with any addition, and the whole point is that an addition has to
+# argue for itself in a diff. [[a-check-that-cries-wolf-is-worse-than-none]]
 so="build/modules/chain/dsp.so"
 if [ -f "$so" ] && command -v nm >/dev/null 2>&1; then
   got=$(nm -D --defined-only "$so" 2>/dev/null | awk '{print $NF}' | sort)

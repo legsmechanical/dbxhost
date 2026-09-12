@@ -826,6 +826,16 @@ those); the rest only change how the clip plays.
 | **Shift + Delete + jog click** | Reset all effects across every bank |
 | **Shift + Delete + side button** | Reset the whole clip — notes and all parameters |
 
+**Resetting a parameter also clears its automation.** Automation follows the
+thing it automates: reset a bank and the [automation](#11-automation) recorded for
+*that bank's* parameters goes with it, while every other lane is left alone.
+Clearing a sequence or resetting a clip clears that clip's automation entirely.
+Undo restores the notes and the automation together, as one step.
+
+On a drum track, clearing a single **lane** leaves automation alone — a drum
+clip's automation covers the whole clip, so removing it would take moves
+belonging to the lanes you kept.
+
 ## 9.1 CLIP bank
 
 <img src="img/bank-clip.png" width="384" alt="CLIP bank: resolution, stretch, shift, legato, input quantize, direction, follow">
