@@ -680,19 +680,45 @@ setsid --wait bash -c '
   # dAVEBOx again, and the only way out is the ~2 s Back window the selector offers.
   # That is the real cost of defaulting, and it is a separate decision.
   if at_boot; then
-    # ⚠⚠ EXIT NON-ZERO, DELIBERATELY. The unit is Restart=on-failure, so a
-    # CLEAN exit is not restarted at all — quitting dAVEBOx would leave the
-    # device with nothing running and a dark panel until the user power-cycles.
-    # Failing is what brings the selector back, and the selector then boots the
-    # default target. This is the whole exit path at boot, so it is worth
-    # stating plainly rather than leaving as a bare exit code.
-    # ⭑ Verified from the unit on device 2026-09-12: Type=simple,
-    # Restart=on-failure, RestartSec=2s, KillMode=process.
+    # ⚠⚠ EXIT CLEAN, AND HAND THE RESTART TO A DETACHED HELPER.
+    #
+    # The obvious move is to exit NON-ZERO so Restart=on-failure re-runs the
+    # unit. It works, and it is WRONG: a failed unit is how this platform
+    # decides Move crashed, so quitting dAVEBOx greeted the user with
+    # "Move crashed, press wheel to continue" on the next boot (device,
+    # 2026-09-12). The log is unambiguous that nothing actually crashed —
+    # "Terminating Move with return code success" — so the dialog was the exit
+    # STATUS talking, not the session.
+    #
+    # So: exit 0 (the unit records success, nothing restarts it, no dialog) and
+    # leave behind a detached child that starts the unit once we are gone. The
+    # child survives our exit because KillMode=process signals ONLY the main
+    # process — the same property that let our whole tree survive when systemd
+    # restarted the unit under us earlier that night.
+    #
+    # ⚠ If this helper ever fails to run, the device sits with nothing on
+    # screen until a power cycle, so it RETRIES rather than trying once.
+    # ⭑ Verified from the unit on device: Type=simple, Restart=on-failure,
+    # RestartSec=2s, KillMode=process, and --resume-launcher is
+    # `systemctl start move-launcher.service` (davebox-heal.c).
+    #
     # ⚠ Do NOT clear the `healthy` marker here. It records that this target
     # STARTED, which it did — a whole session ago. Removing it on a normal quit
     # would re-arm the watchdog against a target that works.
-    echo "boot entry: exiting NON-ZERO so Restart=on-failure re-runs the unit; the selector then boots the default"
-    exit 1
+    echo "boot entry: exiting CLEAN; a detached helper restarts the unit so the selector boots the default"
+    # ⚠ THE ONE PLACE THAT CALLS $HEAL DIRECTLY RATHER THAN unit(), and it has
+    # to: this runs AFTER we have exited, when we are no longer the unit, so
+    # unit() would take its at_boot branch, skip the start, and leave the
+    # device dark. The test allows this single site by name.
+    setsid nohup sh -c "
+      for _try in 1 2 3 4 5; do
+        sleep 2
+        if systemctl is-active --quiet move-launcher.service; then exit 0; fi
+        $HEAL --resume-launcher && exit 0
+      done
+      echo \"$(date) boot exit: could not restart move-launcher after 5 tries\" >> $LOG
+    " >/dev/null 2>&1 &
+    exit 0
   elif command grep -q "already running" /data/UserData/schwung/launch-standalone.sh 2>/dev/null; then
     echo "caller guards its Move restart -- resuming the watchdog and holding until Move is up"
     unit --resume-launcher

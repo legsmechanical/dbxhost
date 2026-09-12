@@ -137,8 +137,13 @@ check "pause/resume of the unit has ONE owner, unit()" \
 check "...and that owner is the thing that knows about boot" \
       grep -q 'if at_boot; then echo "boot entry: skipping move-launcher' <(code "$LAUNCH")
 
+# ⚠ ONE deliberate exception: the detached exit helper. It runs AFTER we have
+# exited, when we are no longer the unit, so it MUST call the helper directly —
+# unit() would take its at_boot branch, skip the start, and leave the device
+# dark. Allowed by its exact shape (`&& exit 0`, inside the sh -c), nothing wider.
 bypass=$(code "$LAUNCH" | grep -n 'HEAL --pause-launcher\|HEAL --resume-launcher' |
-         grep -v '\$HEAL "\$@"' || true)
+         grep -v '\$HEAL "\$@"' |
+         grep -v 'HEAL --resume-launcher && exit 0' || true)
 if [ -n "$bypass" ]; then
     bad "a pause/resume bypasses unit() — at boot the unit is US, and stopping it is a boot loop:"
     printf '        %s\n' "$bypass" >&2
@@ -178,12 +183,31 @@ else
     ok "no second hardcoded sweep list"
 fi
 
-# (b) A CLEAN EXIT AT BOOT LEAVES THE DEVICE DEAD. Restart=on-failure does not
-#     restart a service that exited 0, so quitting dAVEBOx would leave nothing
-#     running. Failing is what brings the selector back.
-boot_exit=$(code "$LAUNCH" | awk '/boot entry: exiting/,/^  fi$/' | head -5)
-check "the boot exit path exits NON-ZERO (Restart=on-failure ignores a clean exit)" \
-      grep -q 'exit 1' <(printf '%s\n' "$boot_exit")
+# (b) THE EXIT MUST BE CLEAN, AND THE RESTART DETACHED.
+#     Two wrongs here, and the second was found only by quitting on hardware:
+#       * exit 0 with nothing else → Restart=on-failure never fires, the device
+#         sits with nothing running until a power cycle;
+#       * exit NON-ZERO → it DOES restart, but a failed unit is how this
+#         platform decides Move crashed: "Move crashed, press wheel to
+#         continue" on the next boot, with nothing having crashed at all
+#         ("Terminating Move with return code success" in the same log).
+#     So: exit 0 AND leave a detached helper to start the unit. It survives
+#     because KillMode=process signals only the main process.
+boot_exit=$(code "$LAUNCH" | awk '/boot entry: exiting/,/^    exit /')
+if printf '%s\n' "$boot_exit" | grep -qE '^\s*exit 1\s*$'; then
+    bad "⚠⚠ the boot exit is NON-ZERO — a failed unit shows the user 'Move crashed'"
+else
+    ok "⚠⚠ the boot exit is CLEAN (a failed unit reads as a Move crash on this platform)"
+fi
+check "...and it hands the restart to a DETACHED helper, or nothing comes back" \
+      grep -q 'setsid nohup sh -c' <(printf '%s\n' "$boot_exit")
+check "...which RETRIES — one failed try leaves a dark device until a power cycle" \
+      grep -q 'for _try in' <(printf '%s\n' "$boot_exit")
+check "...and gives up only after saying so in the log" \
+      grep -q 'could not restart move-launcher' <(printf '%s\n' "$boot_exit")
+# The exception above, asserted POSITIVELY so it cannot be "fixed" into silence.
+check "the detached helper calls HEAL directly — unit() would skip it and leave a dark device" \
+      grep -q '\$HEAL --resume-launcher && exit 0' <(printf '%s\n' "$boot_exit")
 if code "$LAUNCH" | grep -q 'rm -f /data/UserData/boot-targets/davebox/healthy'; then
     bad "the exit path clears the healthy marker — that re-arms the watchdog against a working target"
 else
