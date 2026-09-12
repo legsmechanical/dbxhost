@@ -754,10 +754,15 @@ export function automationToggleActive(track, clip, target) {
 }
 
 /* Delete + knob: all of one parameter's automation in the clip, locks and
- * recorded alike; the parameter goes back to rest. */
-export function automationClearKey(track, clip, target) {
+ * recorded alike; the parameter goes back to rest.
+ *
+ * ⚠ `checkpoint: false` for a caller that has ALREADY booked one — a clear
+ * gesture that takes notes AND automation is ONE undo, not two. Booking a
+ * second here would let an undo bring half the clear back, which is worse
+ * than either outcome. Same shape as automationSetLoop/automationSetRate. */
+export function automationClearKey(track, clip, target, checkpoint) {
     if (!automationStateFor(track, clip, target)) return false;
-    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
     queueSet('t' + track + '_pa_clear_key', clip + ' ' + target);
     stateByKey.delete(stateKey(track, clip, target));
     listGen++;
@@ -911,16 +916,89 @@ export function automationSetScale(track, clip, target, pct, checkpoint) {
     return true;
 }
 /* The AUTOMATION bank's Clear clip: every parameter's automation in the clip,
- * everything back to rest. */
-export function automationClearClip(track, clip) {
+ * everything back to rest. ⚠ `checkpoint: false` — see automationClearKey. */
+export function automationClearClip(track, clip, checkpoint) {
     const entries = automationEntriesFor(track, clip);
     if (!entries.length) return false;
-    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
     queueSet('t' + track + '_pa_clear', String(clip));
     for (const e of entries) stateByKey.delete(stateKey(track, clip, e.target));
     listGen++;
     expectStaged();
     return true;
+}
+
+/* ==========================================================================
+ * AUTOMATION FOLLOWS WHAT IT AUTOMATES (Josh, 2026-09-12)
+ *
+ * "clip reset and sequence clear should also clear all automation - as should
+ * bank param clear on the automation bank. bank param clear elsewhere should
+ * clear automation associated with params on that bank."
+ *
+ * ⚠⚠ WHY THESE PUSH ONTO THE CALLER'S QUEUE INSTEAD OF USING queueSet.
+ *
+ * The undo unit is the thing at risk. `undo_begin_single` snapshots the clip
+ * INCLUDING its automation (pa_undo_capture, seq8.c), and the clears we are
+ * joining already call it — `tN_cC_clear` / `_hard_reset` (sp_track_clip.c)
+ * and every `pfx_reset` (sp_track_misc.c). So the automation clear needs NO
+ * checkpoint of its own; what it needs is to arrive AFTER the write that took
+ * the snapshot.
+ *
+ * queueSet cannot give that. It appends to `moduleWrites`, flushed by
+ * automationTick LATE in the tick, while the clears ride
+ * S.pendingDefaultSetParams, drained ONE PER TICK earlier in the same tick —
+ * and clearClip defers that drain a further tick (clearDrainHold). The
+ * automation clear would therefore land a tick or more BEFORE the note clear,
+ * the snapshot would capture automation that was already gone, and an undo
+ * would bring the notes back WITHOUT it. Half the clear, restored.
+ *
+ * So the caller hands us its own ordered queue and we append. One queue, one
+ * order, one undo unit.
+ * ========================================================================== */
+
+/* Every parameter's automation in this clip, queued behind the caller's own
+ * clear. For a NOTE clear: the clip is being emptied, so all of it goes
+ * (Josh's ruling, 2026-09-12 — "all of the clip/row ones").
+ *
+ * ⚠ A drum track's automation is ONE timeline for the whole clip
+ * (pa_drum_window), not per-lane, so there is nothing lane-scoped to take —
+ * which is why a per-LANE clear must call none of this. Taking the clip's
+ * automation on a single lane's clear would destroy the lanes you kept. Same
+ * reasoning as the 2026-09-11 ruling that only an ALL LANES op may move a
+ * drum track's lanes. */
+export function automationClearClipQueued(queue, track, clip) {
+    const entries = automationEntriesFor(track, clip);
+    if (!entries.length) return false;
+    queue.push({ key: 't' + track + '_pa_clear', val: String(clip), _local: true });
+    for (const e of entries) stateByKey.delete(stateKey(track, clip, e.target));
+    listGen++;
+    expectStaged();
+    return true;
+}
+
+/* The automation for the params `banks` owns, queued behind the caller's own
+ * param reset — the general rule the other three are instances of.
+ *
+ * ⭑ SEQ_AUTO_TARGETS is the ownership table and the only one: it is derived
+ * from BANK_MACRO_ALLOW, which is derived from BANKS[b].knobs[k], so "which
+ * params does this bank own" is answered by the same declaration the knobs
+ * themselves come from rather than by a second list that could drift.
+ *
+ * ⚠ Only BANK params. A chain/synth lane ("0:synth:cutoff") is owned by the
+ * sound chain, not by a davebox bank, and no bank reset touches it. */
+export function automationClearBanksQueued(queue, track, clip, banks) {
+    let any = false;
+    for (const key in SEQ_AUTO_TARGETS) {
+        const st = SEQ_AUTO_TARGETS[key];
+        if (banks.indexOf(st.bank) < 0) continue;
+        const target = 'seq:' + track + ':' + key;
+        if (!automationStateFor(track, clip, target)) continue;
+        queue.push({ key: 't' + track + '_pa_clear_key', val: clip + ' ' + target, _local: true });
+        stateByKey.delete(stateKey(track, clip, target));
+        any = true;
+    }
+    if (any) { listGen++; expectStaged(); }
+    return any;
 }
 
 /* Per tick, from automationTick: end gestures that never had a touch and

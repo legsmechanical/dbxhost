@@ -21,6 +21,10 @@ import { showActionPopup } from './ui_persistence.mjs';
 import { effectiveClip, invalidateLEDCache, forceRedraw } from './ui_leds.mjs';
 import { refreshPerClipBankParams, resetPerClipBankParamsToDefault,
     refreshSeqNotesIfCurrent, _focusedClipIsEmpty } from './ui_dsp_bridge.mjs';
+/* Automation follows what it automates (Josh, 2026-09-12). The *Queued forms
+ * append to S.pendingDefaultSetParams so the automation clear lands AFTER the
+ * clear that took the undo snapshot — see their banner in ui_automation.mjs. */
+import { automationClearClipQueued, automationClearBanksQueued } from './ui_automation.mjs';
 
 /* Record a MELODIC clip whose automation mirror (clipAtHas) the editop cannot
  * fill purely in JS — pollDSP's local-rev path
@@ -139,6 +143,10 @@ export function clearClip(t, ac, keepPlaying) {
             S.drumLaneLoopStart[t] = 0;
             S.seqActiveNotes.clear();
         }
+        /* The whole drum clip is being emptied — every lane — so its one
+         * automation timeline goes with it. (A per-LANE clear must not: see
+         * automationClearClipQueued.) */
+        automationClearClipQueued(S.pendingDefaultSetParams, t, ac);
         return;
     }
     const cmd = (keepPlaying && S.trackClipPlaying[t] && ac === S.trackActiveClip[t])
@@ -156,9 +164,14 @@ export function clearClip(t, ac, keepPlaying) {
     S.clipLoopStart[t][ac]        = 0;
     S.clipLengthManuallySet[t][ac] = false;
     S.clipAdaptiveMode[t][ac]      = false;
-    /* Clip clear now also wipes all automation DSP-side — mirror it so the
-     * AUTOMATION-bank indicators reflect the clear immediately. */
+    /* ⚠ AFTERTOUCH ONLY. `tN_cC_clear` calls at_auto_reset and nothing else —
+     * it does NOT touch the per-parameter pool (no pa_ call anywhere in
+     * sp_track_clip.c), which is why the clear below is needed and why this
+     * comment used to read "all automation" and was wrong. clipAtHas is the
+     * aftertouch indicator; the pa mirror is stateByKey, cleared with it. */
     S.clipAtHas[t][ac] = false;
+    /* The clip's notes are gone, so its automation goes too (Josh, 09-12). */
+    automationClearClipQueued(S.pendingDefaultSetParams, t, ac);
     invalidateLEDCache();
     /* Re-read steps from DSP 2 ticks later so step LEDs catch up after _clear
      * has drained. Belt-and-suspenders against any state that still reads from
@@ -204,11 +217,16 @@ export function hardResetClip(t, ac) {
             S.trackCurrentPage[t] = 0;
             S.seqActiveNotes.clear();
         }
+        automationClearClipQueued(S.pendingDefaultSetParams, t, ac);
         return;
     }
     S.pendingDefaultSetParams.unshift({ key: 't' + t + '_c' + ac + '_hard_reset', val: '1', _local: true });
     S.clearDrainHold = 1;
-    _markLocalTouch(t, ac);   /* automation wiped DSP-side; re-read to mirror */
+    _markLocalTouch(t, ac);   /* aftertouch wiped DSP-side; re-read to mirror */
+    /* ⚠ `_hard_reset` is clip_init + at_auto_reset — it does NOT clear the
+     * per-parameter pool either, so a factory reset needs this as much as an
+     * ordinary clear does. */
+    automationClearClipQueued(S.pendingDefaultSetParams, t, ac);
     const defaultLen = 16;
     for (let s = 0; s < NUM_STEPS; s++) S.clipSteps[t][ac][s] = 0;
     S.clipLength[t][ac] = defaultLen;
@@ -444,7 +462,11 @@ export function clearRow(rowIdx) {
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'row_clear', val: String(rowIdx), _local: true });
     for (let t = 0; t < NUM_TRACKS; t++) {
-        _markLocalTouch(t, rowIdx);   /* automation wiped DSP-side; re-read to mirror */
+        _markLocalTouch(t, rowIdx);   /* aftertouch wiped DSP-side; re-read to mirror */
+        /* Every track's clip in this row is emptied, so every one's automation
+         * goes. Safe for undo: `row_clear`'s undo_begin_row captures pa for
+         * ALL NUM_TRACKS before this lands. */
+        automationClearClipQueued(S.pendingDefaultSetParams, t, rowIdx);
         const len = S.clipLength[t][rowIdx];
         for (let s = 0; s < len; s++) S.clipSteps[t][rowIdx][s] = 0;
         S.clipNonEmpty[t][rowIdx] = false;
@@ -679,6 +701,12 @@ export function resetFxBanks(t) {
             S.bankParams[t][b][k] = pm.def;
         }
     }
+    /* ⭐ THE GENERAL RULE (Josh, 2026-09-12): automation follows the thing it
+     * automates, so resetting these banks' params takes THEIR automation —
+     * and only theirs. The same `targets` list drives both, so a bank added
+     * to the reset cannot be forgotten here. `pfx_reset` above already took
+     * the undo snapshot (sp_track_misc.c), which is why this books none. */
+    automationClearBanksQueued(S.pendingDefaultSetParams, t, effectiveClip(t), targets);
     S.screenDirty = true;
 }
 
@@ -699,6 +727,8 @@ export function resetTarp(t) {
     }
     S.tarpStepLoopLen[t] = 8;
     S.tarpHeldNotes[t].clear();
+    /* ARP IN's own params, so ARP IN's own automation. */
+    automationClearBanksQueued(S.pendingDefaultSetParams, t, effectiveClip(t), [5]);
     S.screenDirty = true;
 }
 
@@ -731,6 +761,9 @@ export function resetSingleFxBank(t, bankIdx) {
         if (!pm) continue;
         S.bankParams[t][bankIdx][k] = pm.def;
     }
+    /* ONE bank reset takes ONE bank's automation — the control that the rule
+     * is "the params THAT BANK owns" and not "everything". */
+    automationClearBanksQueued(S.pendingDefaultSetParams, t, effectiveClip(t), [bankIdx]);
     S.screenDirty = true;
 }
 

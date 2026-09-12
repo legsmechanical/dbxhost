@@ -51,7 +51,7 @@ import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
 import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen,
          autoBankJumpTarget, autoBankRestoreMenu } from './ui_automation_bank.mjs';
 import { automationParamEdit, automationCaptureCommit,
-         automationCaptureClear } from './ui_automation.mjs';
+         automationCaptureClear, automationClearBanksQueued } from './ui_automation.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
@@ -598,6 +598,9 @@ function modalDialogUp() {
             S.bankParams[_dt][0][7] = 1;
             S.pendingDefaultSetParams.push({ key: 't' + _dt + '_l' + _dl + '_playback_dir', val: '0' });
             S.pendingDefaultSetParams.push({ key: 't' + _dt + '_l' + _dl + '_playback_audio_reverse', val: '0' });
+            /* Playback Dir is bank 0's one automatable knob and this gesture
+             * resets it, so its automation goes with it (Josh, 2026-09-12). */
+            automationClearBanksQueued(S.pendingDefaultSetParams, _dt, _dac, [0]);
             showActionPopup('LANE PARAMS', 'RESET');
         } else {
             /* Melodic: full reset — NOTE FX, HARMZ, MIDI DLY, + SEQ ARP */
@@ -623,6 +626,7 @@ function modalDialogUp() {
             S.bankParams[_arpTrack][0][7] = 1;
             S.pendingDefaultSetParams.push({ key: 't' + _arpTrack + '_clip_playback_dir', val: '0' });
             S.pendingDefaultSetParams.push({ key: 't' + _arpTrack + '_clip_playback_audio_reverse', val: '0' });
+            automationClearBanksQueued(S.pendingDefaultSetParams, _arpTrack, _mac, [0]);
             showActionPopup('CLIP PARAMS', 'RESET');
         }
         return;
@@ -656,6 +660,7 @@ function modalDialogUp() {
                 S.bankParams[_bt][0][7] = 1;
                 S.pendingDefaultSetParams.push({ key: 't' + _bt + '_l' + _bl + '_playback_dir', val: '0' });
                 S.pendingDefaultSetParams.push({ key: 't' + _bt + '_l' + _bl + '_playback_audio_reverse', val: '0' });
+                automationClearBanksQueued(S.pendingDefaultSetParams, _bt, _bac, [0]);
                 showActionPopup('BANK RESET');
             }
         } else if (S.activeBank === 5) {
@@ -676,6 +681,7 @@ function modalDialogUp() {
             S.bankParams[_mt][0][7] = 1;
             S.pendingDefaultSetParams.push({ key: 't' + _mt + '_clip_playback_dir', val: '0' });
             S.pendingDefaultSetParams.push({ key: 't' + _mt + '_clip_playback_audio_reverse', val: '0' });
+            automationClearBanksQueued(S.pendingDefaultSetParams, _mt, _mac2, [0]);
             showActionPopup('BANK RESET');
         }
         return;
