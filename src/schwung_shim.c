@@ -1806,12 +1806,44 @@ static void shadow_inprocess_render_to_buffer(void) {
                 if ((shadow_slot_silence_frames[s] + s * SLOT_PROBE_STRIDE_FRAMES)
                         % SLOT_PROBE_WINDOW_FRAMES != 0) {
                     /* Not a probe frame — skip synth render.
-                     * Buffer is zeros; FX below still runs for tail decay. */
-                    shadow_slot_deferred_valid[s] = 1;
-                    goto slot_run_deferred_fx;
+                     * Buffer is zeros; FX below still runs for tail decay.
+                     *
+                     * ⚠ MODULATION AND MIDI FX TIMERS STILL HAVE TO ADVANCE.
+                     * lfo_tick() and v2_tick_midi_fx() live INSIDE
+                     * render_block, so skipping the render froze both: they
+                     * moved only on the 1-in-SLOT_PROBE_WINDOW_FRAMES probe,
+                     * i.e. ~172x too slow and in visible steps, and an LFO
+                     * resumed from a stale phase at note-on — an audio bug,
+                     * not a display one. This runs the modulation without the
+                     * audio render, which was the expensive part. */
+                    if (shadow_plugin_v2->set_param) {
+                        shadow_plugin_v2->set_param(shadow_chain_slots[s].instance,
+                                                    "mod:tick", "128");
+                    }
+                    /* ⚠ ASK EXACTLY ONCE, and only AFTER the tick: the answer
+                     * is a one-shot about THIS frame. Null-checked because
+                     * this host can be running against STOCK's chain dsp.so,
+                     * which does not export it — install-sa does not deploy
+                     * the chain DSP. */
+                    int midi_wake = shadow_chain_take_midi_tick_wake &&
+                        shadow_chain_take_midi_tick_wake(shadow_chain_slots[s].instance);
+                    if (!midi_wake) {
+                        shadow_slot_deferred_valid[s] = 1;
+                        goto slot_run_deferred_fx;
+                    }
+                    /* A MIDI FX delivered a generated message to the synth on
+                     * this frame, so render it here rather than leaving it
+                     * parked until the next probe (up to ~0.5 s away). NOT
+                     * counted as a probe below: probe_burst_this_frame is the
+                     * stagger-ALIGNMENT detector, and a MIDI-driven wake is
+                     * not a probe — counting it reports a spike the stagger
+                     * cannot fix. */
+                    shadow_slot_idle[s] = 0;
+                    shadow_slot_silence_frames[s] = 0;
+                } else {
+                    /* Probe frame: fall through to render and check output */
+                    probe_burst_this_frame++;
                 }
-                /* Probe frame: fall through to render and check output */
-                probe_burst_this_frame++;
             }
 
             if (same_frame_fx) {
