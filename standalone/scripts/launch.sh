@@ -680,44 +680,14 @@ setsid --wait bash -c '
   # dAVEBOx again, and the only way out is the ~2 s Back window the selector offers.
   # That is the real cost of defaulting, and it is a separate decision.
   if at_boot; then
-    # ⚠⚠ EXIT CLEAN, AND HAND THE RESTART TO A DETACHED HELPER.
+    # ENTRY: the body just ends. The OUTER script — the pid MoveLauncher is
+    # watching — hands itself back to the selector; see the exec at the very
+    # bottom of this file, and read that comment before changing anything here.
     #
-    # The obvious move is to exit NON-ZERO so Restart=on-failure re-runs the
-    # unit. It works, and it is WRONG: a failed unit is how this platform
-    # decides Move crashed, so quitting dAVEBOx greeted the user with
-    # "Move crashed, press wheel to continue" on the next boot (device,
-    # 2026-09-12). The log is unambiguous that nothing actually crashed —
-    # "Terminating Move with return code success" — so the dialog was the exit
-    # STATUS talking, not the session.
-    #
-    # So: exit 0 (the unit records success, nothing restarts it, no dialog) and
-    # leave behind a detached child that starts the unit once we are gone. The
-    # child survives our exit because KillMode=process signals ONLY the main
-    # process — the same property that let our whole tree survive when systemd
-    # restarted the unit under us earlier that night.
-    #
-    # ⚠ If this helper ever fails to run, the device sits with nothing on
-    # screen until a power cycle, so it RETRIES rather than trying once.
-    # ⭑ Verified from the unit on device: Type=simple, Restart=on-failure,
-    # RestartSec=2s, KillMode=process, and --resume-launcher is
-    # `systemctl start move-launcher.service` (davebox-heal.c).
-    #
-    # ⚠ Do NOT clear the `healthy` marker here. It records that this target
-    # STARTED, which it did — a whole session ago. Removing it on a normal quit
-    # would re-arm the watchdog against a target that works.
-    echo "boot entry: exiting CLEAN; a detached helper restarts the unit so the selector boots the default"
-    # ⚠ THE ONE PLACE THAT CALLS $HEAL DIRECTLY RATHER THAN unit(), and it has
-    # to: this runs AFTER we have exited, when we are no longer the unit, so
-    # unit() would take its at_boot branch, skip the start, and leave the
-    # device dark. The test allows this single site by name.
-    setsid nohup sh -c "
-      for _try in 1 2 3 4 5; do
-        sleep 2
-        if systemctl is-active --quiet move-launcher.service; then exit 0; fi
-        $HEAL --resume-launcher && exit 0
-      done
-      echo \"$(date) boot exit: could not restart move-launcher after 5 tries\" >> $LOG
-    " >/dev/null 2>&1 &
+    # ⚠ Do NOT clear the `healthy` marker. It records that this target STARTED,
+    # which it did — a whole session ago. Removing it on a normal quit would
+    # re-arm the watchdog against a target that works.
+    echo "boot entry: session over; the outer script hands the pid back to the selector"
     exit 0
   elif command grep -q "already running" /data/UserData/schwung/launch-standalone.sh 2>/dev/null; then
     echo "caller guards its Move restart -- resuming the watchdog and holding until Move is up"
@@ -763,3 +733,41 @@ setsid --wait bash -c '
   # The answer is the one above: DO NOT CREATE THE SECOND MOVE.
   # ⚠ NO APOSTROPHES IN THIS BLOCK — see the warning at the top of the body.
 '
+_body_rc=$?
+
+# ══ ENTRY: BOOT — HAND THE PID BACK TO THE SELECTOR, NEVER JUST EXIT ═════════
+#
+# ⚠⚠ THIS IS WHY "Move crashed, press wheel to continue" APPEARED ON QUIT, and
+# it took three wrong fixes to find, so the reasoning is written down in full.
+#
+# MoveLauncher is not an exec-and-forget wrapper: it is a SUPERVISOR. On the
+# device it forks MoveSentryRunProcessor and MoveOriginal as its own children
+# and watches them, and the literal string "Move crashed" lives inside the
+# MoveLauncher binary (`strings /opt/move/MoveLauncher`). At boot it forks
+# /opt/move/Move — the selector — which execs our entry script, which execs
+# THIS script. So the pid MoveLauncher is supervising is OURS: from where it
+# sits, this process IS its Move.
+#
+# Exiting therefore looks to MoveLauncher exactly like Move dying, whatever the
+# status. Both plausible exits were wrong for the same reason:
+#   * exit non-zero → systemd restarts the unit AND the dialog appears;
+#   * exit zero + a detached `systemctl start` → the dialog still appears,
+#     because the dialog was never about systemd at all.
+# The Tools door never shows it because there MoveLauncher is not our parent —
+# which is exactly the comparison that located this.
+#
+# So we do not exit: we EXEC THE SELECTOR IN OUR OWN PID. MoveLauncher's child
+# never dies, it simply becomes the boot selector again, which shows its Back
+# window and boots the default target. No unit restart, no crash dialog, and
+# the "a reboot always returns to stock" promise is kept by the default being
+# `schwung`.
+#
+# ⚠ It must be HERE, in the outer script, not inside the setsid body above —
+# that body is a different pid and exec-ing there would leave this one to exit.
+# ⚠ If the user has made dAVEBOx the default, this re-enters dAVEBOx, and the
+# way out is the selector's Back window. That is the documented cost of
+# defaulting, not a bug in this path.
+if [ "$DBX_ENTRY" = boot ] && [ -x /opt/move/Move ]; then
+    exec /opt/move/Move
+fi
+exit "$_body_rc"

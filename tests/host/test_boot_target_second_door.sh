@@ -183,31 +183,37 @@ else
     ok "no second hardcoded sweep list"
 fi
 
-# (b) THE EXIT MUST BE CLEAN, AND THE RESTART DETACHED.
-#     Two wrongs here, and the second was found only by quitting on hardware:
-#       * exit 0 with nothing else → Restart=on-failure never fires, the device
-#         sits with nothing running until a power cycle;
-#       * exit NON-ZERO → it DOES restart, but a failed unit is how this
-#         platform decides Move crashed: "Move crashed, press wheel to
-#         continue" on the next boot, with nothing having crashed at all
-#         ("Terminating Move with return code success" in the same log).
-#     So: exit 0 AND leave a detached helper to start the unit. It survives
-#     because KillMode=process signals only the main process.
-boot_exit=$(code "$LAUNCH" | awk '/boot entry: exiting/,/^    exit /')
-if printf '%s\n' "$boot_exit" | grep -qE '^\s*exit 1\s*$'; then
-    bad "⚠⚠ the boot exit is NON-ZERO — a failed unit shows the user 'Move crashed'"
+# (b) THE BOOT PATH MUST NOT EXIT AT ALL — it hands its pid to the selector.
+#     MoveLauncher is a SUPERVISOR, not an exec wrapper: it forks
+#     MoveSentryRunProcessor and Move as children and watches them, and the
+#     string "Move crashed" is inside the MoveLauncher binary. At boot the pid
+#     it supervises is OURS, so exiting looks like Move dying — whatever the
+#     status. Three fixes were spent on the wrong layer (exit code, then
+#     systemd) before the Tools-vs-boot comparison located it.
+check "⚠⚠ the boot path EXECs the selector rather than exiting (MoveLauncher supervises our pid)" \
+      grep -q 'exec /opt/move/Move' <(code "$LAUNCH")
+check "...guarded on the boot door, so the Tools door still returns normally" \
+      grep -q 'if \[ "\$DBX_ENTRY" = boot \] && \[ -x /opt/move/Move \]; then' <(code "$LAUNCH")
+# It has to be in the OUTER script: the setsid body is a different pid, and
+# exec-ing there would leave the supervised one to exit anyway.
+if code "$LAUNCH" | awk '/^setsid --wait/,/^.$/' | grep -q 'exec /opt/move/Move'; then
+    bad "the exec is INSIDE the setsid body — that is the wrong pid; MoveLauncher watches the outer one"
 else
-    ok "⚠⚠ the boot exit is CLEAN (a failed unit reads as a Move crash on this platform)"
+    ok "...and it is in the OUTER script, the pid MoveLauncher actually watches"
 fi
-check "...and it hands the restart to a DETACHED helper, or nothing comes back" \
-      grep -q 'setsid nohup sh -c' <(printf '%s\n' "$boot_exit")
-check "...which RETRIES — one failed try leaves a dark device until a power cycle" \
-      grep -q 'for _try in' <(printf '%s\n' "$boot_exit")
-check "...and gives up only after saying so in the log" \
-      grep -q 'could not restart move-launcher' <(printf '%s\n' "$boot_exit")
-# The exception above, asserted POSITIVELY so it cannot be "fixed" into silence.
-check "the detached helper calls HEAL directly — unit() would skip it and leave a dark device" \
-      grep -q '\$HEAL --resume-launcher && exit 0' <(printf '%s\n' "$boot_exit")
+check "the Tools door still exits with the body's status" \
+      grep -q 'exit "\$_body_rc"' <(code "$LAUNCH")
+# The dead ends, pinned so they are not re-tried: both were deployed and both failed.
+if code "$LAUNCH" | grep -q 'exiting NON-ZERO'; then
+    bad "the non-zero boot exit is back — it restarts the unit AND shows the crash dialog"
+else
+    ok "the non-zero-exit dead end is gone"
+fi
+if code "$LAUNCH" | grep -q 'setsid nohup sh -c'; then
+    bad "the detached systemctl-start helper is back — it did not stop the dialog either"
+else
+    ok "the detached-restart dead end is gone"
+fi
 if code "$LAUNCH" | grep -q 'rm -f /data/UserData/boot-targets/davebox/healthy'; then
     bad "the exit path clears the healthy marker — that re-arms the watchdog against a working target"
 else
