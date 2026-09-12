@@ -39,8 +39,13 @@ grep -q "^setsid --wait bash -c '$" "$LAUNCH" ||
   { echo "FAIL: the launcher does not block (setsid --wait) — stock will start a Move on top of the session" >&2; exit 1; }
 grep -q "^' &$" "$LAUNCH" &&
   { echo "FAIL: the launcher body is still backgrounded — it must block" >&2; exit 1; }
+# ⚠ The closer carries the body's ARGUMENTS since 2026-09-12 — the door (tools
+# vs boot) is passed positionally rather than exported, because an exported copy
+# survived the boot path's exec into stock and split the device. So the close is
+# `' dbx-launch "$_dbx_entry"`, not a bare quote. Everything this test checks is
+# unchanged; only where the body ends had to be re-taught.
 start=$(grep -n "^setsid --wait bash -c '$" "$LAUNCH" | head -1 | cut -d: -f1)
-end=$(grep -n "^'$" "$LAUNCH" | tail -1 | cut -d: -f1)
+end=$(grep -n "^' dbx-launch " "$LAUNCH" | tail -1 | cut -d: -f1)
 check "the supervisor body is delimited as expected" \
     bash -c "[ -n '$start' ] && [ -n '$end' ] && [ '$start' -lt '$end' ]"
 

@@ -336,6 +336,13 @@ $SSH "ls -l '/usr/lib/$DBX_SHIM_SONAME' | awk '{print \"      /usr/lib shim: \" 
 if [ "$DO_MODULE" = "1" ]; then
     say ""; say "--- installing the launcher into stock's tools dir"
     MOVE_HOST="${MOVE_USER}@${MOVE_HOST}" "$HERE/scripts/install-module.sh"
+
+    # THE SECOND DOOR: register with stock's boot selector so dAVEBOx can be
+    # booted into directly, as well as launched from Tools. Additive only — it
+    # never touches boot-targets/default, so a reboot still returns to stock.
+    # Skips cleanly (exit 0) on a stock older than 1.3.0, which has no registry.
+    say ""; say "--- registering the boot-picker row (the second door)"
+    MOVE_USER="$MOVE_USER" MOVE_HOST="$MOVE_HOST" "$HERE/scripts/install-boot-target.sh"
 fi
 
 say ""
