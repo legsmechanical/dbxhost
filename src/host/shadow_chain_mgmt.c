@@ -2163,6 +2163,11 @@ int shadow_handle_slot_param_get(int slot, const char *key, char *buf, int buf_l
 static void mfx_lfo_update_base_from_set_param(int slot_idx,
                                                const char *key,
                                                const char *value);
+/* Same, for a Move bus's block. See its definition for why a knob turn MUST
+ * re-seat the LFO base. */
+static void move_lfo_update_base_from_set_param(int bus, int blk,
+                                                const char *param_key,
+                                                const char *val_str);
 
 int shadow_direct_get_param(uint8_t slot, const char *key, char *out, int cap) {
     if (!out || cap <= 0) return -1;
@@ -2352,6 +2357,10 @@ void shadow_direct_set_param(uint8_t slot, const char *key, const char *value) {
             mfx->bypassed = (value[0] && atoi(value)) ? 1 : 0;
         } else if (mfx->api && mfx->instance && mfx->api->set_param) {
             mfx->api->set_param(mfx->instance, rest, value);
+            /* A turn of a parameter an LFO targets is an EDIT OF ITS RESTING
+             * VALUE — re-seat the base or the LFO overwrites the turn next
+             * block and the knob reads dead. */
+            move_lfo_update_base_from_set_param(sl, blk, rest, value);
         }
         if (host.on_param_changed) host.on_param_changed(slot, key, value);
         return;
@@ -2733,6 +2742,40 @@ static void mfx_lfo_update_base_from_set_param(int slot_idx,
         if (strcmp(lfo->param, param_key) != 0) continue;
         mfx_lfo_base_value[i] = parsed;
         mfx_lfo_base_valid[i] = 1;
+    }
+}
+
+/* ⚠⚠ THE KNOB-VS-LFO RULE, and it is not optional. An LFO modulates AROUND a
+ * remembered base. If the user then turns the very parameter it targets, that
+ * write lands on the module — and the LFO overwrites it on the next block,
+ * because its base still holds the old value. The knob reads DEAD.
+ *
+ * That is a bug this fork already carries elsewhere (`knob_forward_value`
+ * bypassing the modulation bus, fixed upstream at 84953eee and still present
+ * here), so it is a known shape, not a theory. A turn is an EDIT OF THE RESTING
+ * VALUE: re-seat the base and the LFO keeps modulating around where the user
+ * just put it.
+ *
+ * Called from every path that sets a Move-bus block parameter. */
+static void move_lfo_update_base_from_set_param(int bus,
+                                                int blk,
+                                                const char *param_key,
+                                                const char *val_str) {
+    if (bus < 0 || bus >= MOVE_FX_SLOTS || blk < 0 || blk >= MOVE_FX_BLOCKS) return;
+    if (!param_key || !param_key[0] || !val_str) return;
+
+    char *endptr = NULL;
+    float parsed = strtof(val_str, &endptr);
+    if (!endptr || endptr == val_str) return;      /* not a number: not a base */
+
+    char target_key[8];
+    snprintf(target_key, sizeof(target_key), "fx%d", blk + 1);
+    for (int i = 0; i < MOVE_FX_LFO_COUNT; i++) {
+        lfo_state_t *lfo = &shadow_move_fx_lfos[bus][i];
+        if (strcmp(lfo->target, target_key) != 0) continue;
+        if (strcmp(lfo->param, param_key) != 0) continue;
+        move_lfo_base_value[bus][i] = parsed;
+        move_lfo_base_valid[bus][i] = 1;
     }
 }
 
@@ -4001,6 +4044,10 @@ void shadow_inprocess_handle_param_request(void) {
             shadow_param->result_len = 0;
         } else {
             fx_slot_param_rest(mfx, rest, shadow_param, req_type);
+            /* Same rule as the direct path: a SET of a parameter an LFO targets
+             * moves the base it modulates around. Only on a write. */
+            if (req_type == 1)
+                move_lfo_update_base_from_set_param(sl, blk, rest, shadow_param->value);
         }
         shadow_param_publish_response(req_id);
         return;

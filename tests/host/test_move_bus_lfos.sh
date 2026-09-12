@@ -75,6 +75,19 @@ chk "⚠ changing the TARGET invalidates the base (else it modulates around the 
 chk "...and changing target_param does too" \
     bash -c "grep -A3 'strcmp(lp, \"target_param\") == 0' '$STRIP/mgmt.c' | grep -q 'move_lfo_base_valid\[sl\]\[li\] = 0'"
 
+# ---- 3b. A KNOB TURN RE-SEATS THE BASE --------------------------------------
+# Without this an LFO overwrites the user's turn on the very next block and the
+# knob reads DEAD — a bug this fork already carries elsewhere (knob_forward_value
+# bypassing the modulation bus), so a known shape rather than a theory.
+chk "a Move-bus block SET re-seats the LFO base" \
+    grep -q 'static void move_lfo_update_base_from_set_param' "$STRIP/mgmt.c"
+n_calls=$(grep -c 'move_lfo_update_base_from_set_param(sl, blk' "$STRIP/mgmt.c")
+if [ "${n_calls:-0}" -ge 2 ]; then
+    ok "...from BOTH set paths (direct and shadow_param) — $n_calls call sites"
+else
+    bad "only $n_calls call site(s): a Move-bus param set through the other path still fights the LFO"
+fi
+
 # ---- 4. AN EMPTY BLOCK IS A NO-OP, NOT A CRASH ------------------------------
 # Assigning an LFO before loading the effect it is for is an ordinary thing to do.
 chk "an unloaded target block is skipped, not dereferenced" \
