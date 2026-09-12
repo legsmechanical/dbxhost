@@ -60,6 +60,24 @@
 #define PA_LIVE_RECORD       1   /* the knob is writing along the playhead */
 #define PA_LIVE_OVERRIDE     2   /* the knob is overriding; automation resumes on release */
 
+/* CAPTURE (plan 6e, Josh 2026-09-11: "same as move native and davebox
+ * retrospective note capture"). A knob turned while the transport runs and
+ * Record is OFF is an OVERRIDE hand: it was heard, and until now it was
+ * discarded on release. Capture keeps it — the same cell snap the recorder
+ * uses, written to this buffer instead of the lane — so a Capture tap can
+ * commit what was just played into the real lanes.
+ *
+ * PLAYING ONLY (Josh's ruling): a knob moved while stopped has no timeline,
+ * and stopped moves already mean "move the resting value".
+ *
+ * ONE LOOP PER PARAMETER (Josh's ruling): points are keyed by CLIP TICK, so a
+ * second lap round the loop overwrites the cells the first one wrote —
+ * exactly what recording would have done. That is what bounds this buffer:
+ * a clip is at most 256 steps and a cell is half a step, so a lane's cells
+ * cannot outnumber PA_CAP_POINTS however long the knob is held. */
+#define PA_CAP_LANES         8   /* parameters that can be captured at once, all tracks */
+#define PA_CAP_POINTS      512   /* cells one captured parameter can hold — one full clip */
+
 #define PA_FLAG_ACTIVE     0x01  /* cleared by Mute+knob: kept, but not played */
 #define PA_FLAG_SMOOTH     0x02  /* linear interpolation instead of stepped hold */
 #define PA_FLAG_UNLINKED   0x04  /* Link: Off — the lane stays put when its notes
@@ -97,6 +115,21 @@ typedef struct {
     uint16_t val;                /* the live value, 0..PA_VAL_MAX */
     uint32_t last_snap;          /* last cell written (RECORD); 0xFFFFFFFF = none */
 } pa_live_t;
+
+/* One parameter's captured sweep, awaiting a Capture tap. Written on the
+ * AUDIO thread (pa_record_tick, under the writer lock, alongside the
+ * recorder's own writes), read and consumed on the SPI thread by the commit.
+ * `cell` travels with the lane because the commit must clear the same range
+ * width the capture wrote at — the clip's tps can change under it. */
+typedef struct {
+    uint8_t  used;
+    uint8_t  track;
+    uint8_t  clip;
+    uint16_t target;             /* index into pa_targets */
+    uint16_t count;
+    uint16_t cell;               /* cell width in ticks, as written */
+    pa_point_t points[PA_CAP_POINTS];
+} pa_cap_t;
 
 typedef struct {
     uint8_t  used;

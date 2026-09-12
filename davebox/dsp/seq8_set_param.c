@@ -298,6 +298,7 @@ static void silence_active_notes_move(seq8_instance_t *inst, seq8_track_t *tr) {
 static void ext_transport_start(seq8_instance_t *inst) {
     int t;
     capture_clear(inst);   /* Move parity: transport edge drops capture input */
+    pa_cap_clear(inst, -1);   /* ...and the captured knob sweeps with it (plan 6e) */
     inst->global_tick         = 0;
     inst->tick_accum          = 0;
     inst->master_tick_in_step = 0;
@@ -342,6 +343,7 @@ static void ext_transport_start(seq8_instance_t *inst) {
 static void ext_transport_stop(seq8_instance_t *inst) {
     int t;
     capture_clear(inst);   /* Move parity: transport edge drops capture input */
+    pa_cap_clear(inst, -1);   /* ...and the captured knob sweeps with it (plan 6e) */
     inst->cap_select_active = 0;   /* stopping transport closes the tempo selector */
     for (t = 0; t < NUM_TRACKS; t++) {
         play_fx_t *fx = &inst->tracks[t].pfx;

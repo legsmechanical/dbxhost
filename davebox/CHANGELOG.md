@@ -17,6 +17,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Capture knob moves, not just notes.** Sweep a filter over a running loop with
+  Record off, decide you liked it, and tap **Capture** — the move is written in as
+  automation, in the clip you heard it in. One tap keeps notes and knob moves
+  together, Shift + Capture drops both, and the Capture button now lights for
+  either. Going round the loop again replaces what the last lap kept.
 - **Jump from an automation lane to its parameter.** In the AUTOMATION menu,
   **Shift + click** a lane to go straight to where that parameter lives — its
   bank, the module editor's page that holds it, SOUND + CONFIG, or MACROS.

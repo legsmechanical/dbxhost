@@ -1219,6 +1219,126 @@ static void pa_live_end(seq8_instance_t *inst, int track, int clip, int target) 
     if (e) e->last_sent_valid = 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* CAPTURE (plan 6e) — the sweeps Record was not armed for                */
+/*                                                                        */
+/* An OVERRIDE hand is a knob the user turned while the loop ran with      */
+/* Record off. It was heard; it used to be thrown away on release. These   */
+/* three functions keep it against a Capture tap: the audio thread writes  */
+/* cells here exactly as the recorder writes them to a lane, and the SPI   */
+/* thread's commit replays them into the real lanes.                       */
+/*                                                                        */
+/* ⚠ The buffer is TRANSIENT: cleared at every transport edge, never in    */
+/* the project file. Capturing is about what you just heard.               */
+
+/* AUDIO THREAD, holding the writer lock (called from pa_record_tick). One
+ * cell of an unarmed sweep. Points are keyed by CLIP TICK, so going round the
+ * loop again replaces the cells the last lap wrote — one loop per parameter,
+ * and the reason this buffer cannot grow without bound. */
+static void pa_cap_write(seq8_instance_t *inst, int track, int clip, int target,
+                         uint16_t tick, uint16_t cell, uint16_t val) {
+    pa_cap_t *c = NULL, *free_lane = NULL;
+    for (int i = 0; i < PA_CAP_LANES; i++) {
+        pa_cap_t *k = &inst->pa_cap[i];
+        if (!k->used) { if (!free_lane) free_lane = k; continue; }
+        if (k->track == track && k->target == (uint16_t)target) {
+            /* The clip changed under the capture: what was heard belongs to
+             * the clip it was heard in, and that clip is no longer playing.
+             * Start the lane over rather than splicing two clips' sweeps. */
+            if (k->clip != clip) { k->count = 0; k->clip = (uint8_t)clip; }
+            c = k; break;
+        }
+    }
+    if (!c) {
+        if (!free_lane) { inst->pa_cap_full = 1; return; }
+        c = free_lane;
+        c->track  = (uint8_t)track;
+        c->clip   = (uint8_t)clip;
+        c->target = (uint16_t)target;
+        c->count  = 0;
+        c->used   = 1;
+    }
+    c->cell = cell;
+    if (val > PA_VAL_MAX) val = PA_VAL_MAX;
+    int lo = 0, hi = c->count;
+    while (lo < hi) {                      /* first index with points[i].tick >= tick */
+        int mid = (lo + hi) / 2;
+        if (c->points[mid].tick < tick) lo = mid + 1; else hi = mid;
+    }
+    if (lo < c->count && c->points[lo].tick == tick) { c->points[lo].val = val; return; }
+    if (c->count >= PA_CAP_POINTS) { inst->pa_cap_full = 1; return; }
+    memmove(&c->points[lo + 1], &c->points[lo], (size_t)(c->count - lo) * sizeof(pa_point_t));
+    c->points[lo].tick = tick;
+    c->points[lo].val  = val;
+    c->count++;
+}
+
+/* Drop captured sweeps. `track` < 0 means every track (a transport edge);
+ * otherwise just that one (a Capture commit, or Shift+Capture). Callable from
+ * either thread: it only clears `used`, and a concurrent capture write can at
+ * worst re-create a lane it was in the middle of filling. */
+static void pa_cap_clear(seq8_instance_t *inst, int track) {
+    if (!inst) return;
+    for (int i = 0; i < PA_CAP_LANES; i++) {
+        pa_cap_t *c = &inst->pa_cap[i];
+        if (!c->used) continue;
+        if (track >= 0 && c->track != track) continue;
+        c->used = 0; c->count = 0;
+    }
+}
+
+/* How many parameters have a captured sweep waiting on `track`. Drives the
+ * Capture LED and the "Nothing buffered" branch in JS. */
+static int pa_cap_pending(const seq8_instance_t *inst, int track) {
+    int n = 0;
+    if (!inst) return 0;
+    for (int i = 0; i < PA_CAP_LANES; i++) {
+        const pa_cap_t *c = &inst->pa_cap[i];
+        if (c->used && c->count && (track < 0 || c->track == track)) n++;
+    }
+    return n;
+}
+
+/* SPI THREAD. The Capture tap: every captured sweep on `track` becomes real
+ * automation in `clip`, written the way the recorder would have written it —
+ * clear the cell, set the point, mark the lane SMOOTH because a sweep sampled
+ * per cell and held is a staircase. Returns the number of lanes committed.
+ *
+ * ⚠ It commits into the clip the sweep was HEARD in, not whichever clip is
+ * focused now: a lane captured against another clip is left alone rather than
+ * being re-timed into this one.
+ *
+ * ⚠⚠ TAKES NO LOCK, DELIBERATELY. `set_param`'s dispatcher already brackets
+ * every "pa_" sub-op in pa_lock + pa_write_begin (seq8_set_param.c, "so that a
+ * key added later cannot forget it") — and pa_lock is a plain spinlock, not a
+ * recursive one, so locking here DEADLOCKS the SPI thread against itself. It
+ * cost a hang on the first run of this feature's own test. Any caller outside
+ * that dispatcher must take the lock itself. */
+static int pa_cap_commit(seq8_instance_t *inst, int track, int clip) {
+    int lanes = 0;
+    if (!inst) return 0;
+    for (int i = 0; i < PA_CAP_LANES; i++) {
+        pa_cap_t *c = &inst->pa_cap[i];
+        if (!c->used || !c->count) continue;
+        if (c->track != track || c->clip != clip) continue;
+        if (!pa_may_write(inst, track, (int)c->target)) { c->used = 0; c->count = 0; continue; }
+        pa_entry_t *e = pa_get(inst, track, clip, (int)c->target);
+        if (!e) { inst->pa_store_full = PA_FULL_ENTRIES; continue; }
+        uint16_t cell = c->cell ? c->cell : 1;
+        for (int p = 0; p < c->count; p++) {
+            uint16_t s = c->points[p].tick;
+            pa_clear_range(e, s, (uint16_t)(s + cell - 1));
+            if (!pa_set_point(e, s, c->points[p].val)) { inst->pa_store_full = PA_FULL_POINTS; break; }
+        }
+        e->flags |= PA_FLAG_SMOOTH;
+        e->last_sent_valid = 0;            /* playback re-asserts from the new points */
+        c->used = 0; c->count = 0;
+        lanes++;
+    }
+    if (lanes) { inst->pa_dirty = 1; inst->state_dirty = 1; inst->pa_cap_seq++; }
+    return lanes;
+}
+
 /* AUDIO THREAD, once per tick per playing track. Every RECORD-mode live
  * target writes its value at the current cell of the clip's playhead,
  * replacing whatever the cell held — overwrite recording, the way the CC
@@ -1233,10 +1353,26 @@ static void pa_record_tick(seq8_instance_t *inst, seq8_track_t *tr, int track, i
     uint32_t cell = tps / 2; if (cell < 6) cell = 6;
     for (int k = 0; k < PA_LIVE_MAX; k++) {
         pa_live_t *l = &inst->pa_live[track][k];
-        if (!__atomic_load_n(&l->used, __ATOMIC_ACQUIRE) || l->mode != PA_LIVE_RECORD) continue;
+        if (!__atomic_load_n(&l->used, __ATOMIC_ACQUIRE)) continue;
+        if (l->mode != PA_LIVE_RECORD && l->mode != PA_LIVE_OVERRIDE) continue;
         uint16_t tgt = l->target;
         if (tgt >= PA_MAX_TARGETS) continue;
         if (!pa_trylock(inst)) return;            /* next tick */
+        /* CAPTURE (plan 6e): Record is off, so this sweep writes nothing to
+         * the lane — but it is being HEARD, so it is kept against a Capture
+         * tap. Same cell, same snap, same "one write per cell" rule as the
+         * recorder below; only the destination differs. No seqlock bump: the
+         * capture buffer has no audio-thread reader to tear. */
+        if (l->mode == PA_LIVE_OVERRIDE) {
+            uint32_t snap = (ct / cell) * cell;
+            if (l->last_snap != snap) {
+                uint16_t s = (uint16_t)(snap > 0xFFFFu - cell ? 0xFFFFu - cell : snap);
+                pa_cap_write(inst, track, clip, (int)tgt, s, (uint16_t)cell, l->val);
+                l->last_snap = snap;
+            }
+            pa_unlock(inst);
+            continue;
+        }
         pa_write_begin(inst);
         pa_entry_t *e = pa_get(inst, track, clip, (int)tgt);
         /* ⚠ Recorded in CLIP time, whatever the lane's rate: the lane is

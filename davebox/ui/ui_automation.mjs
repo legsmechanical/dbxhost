@@ -640,6 +640,27 @@ function midiNorm(target, wire) {
     return midiTargetTo14(target, isNaN(v) ? 0 : v);
 }
 
+/* CAPTURE (plan 6e) — the Capture tap's automation half.
+ *
+ * The DSP has been keeping every knob sweep it heard while Record was off;
+ * this turns them into real lanes in the clip they were heard in. One undo
+ * checkpoint first, so a capture is one undo like every other automation
+ * write — and it must be QUEUED AHEAD of the commit, which is why this lives
+ * here rather than pushing a raw set_param from the button handler.
+ *
+ * ⚠ Playing only: the DSP drops captured sweeps at every transport edge, so
+ * there is nothing to commit when stopped. */
+export function automationCaptureCommit(track, clip) {
+    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    queueSet('t' + track + '_pa_capture_commit', String(clip));
+    presenceStale = true;
+}
+
+/* Shift+Capture's automation half: drop this track's captured sweeps. */
+export function automationCaptureClear(track) {
+    queueSet('t' + track + '_pa_capture_clear', '1');
+}
+
 export function automationParamTouch(track, clip, slot, fullKey, down) {
     const target = targetOf(slot, fullKey);
     if (down) { gestureFor(target, track, clip, false); return; }

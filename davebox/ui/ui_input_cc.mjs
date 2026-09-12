@@ -50,7 +50,8 @@ import { effectiveClip, forceRedraw, invalidateLEDCache,
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
 import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen,
          autoBankJumpTarget, autoBankRestoreMenu } from './ui_automation_bank.mjs';
-import { automationParamEdit } from './ui_automation.mjs';
+import { automationParamEdit, automationCaptureCommit,
+         automationCaptureClear } from './ui_automation.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
@@ -1459,10 +1460,15 @@ function _onCC_buttons(d1, d2) {
              * Suppressed when Capture was used as a modifier (scene capture via
              * Capture+row, drum-lane select via Capture+pad). */
             if (!S.captureUsedAsModifier && S.shiftHeld) {
-                if (S.capturePending > 0) {
-                    S.pendingDefaultSetParams.push({
-                        key: 't' + S.activeTrack + '_capture_clear', val: '1' });
-                    S.capturePending = 0;
+                if (S.capturePending > 0 || S.paCapturePending > 0) {
+                    if (S.capturePending > 0)
+                        S.pendingDefaultSetParams.push({
+                            key: 't' + S.activeTrack + '_capture_clear', val: '1' });
+                    /* Shift+Capture discards the knob sweeps too — one buffer
+                     * to the user, so one gesture clears it (plan 6e). */
+                    if (S.paCapturePending > 0) automationCaptureClear(S.activeTrack);
+                    S.capturePending   = 0;
+                    S.paCapturePending = 0;
                     showActionPopup('CAPTURE', 'Input cleared');
                 }
                 S.captureUsedAsModifier = true;   /* consume the tap */
@@ -1470,14 +1476,21 @@ function _onCC_buttons(d1, d2) {
             if (!S.captureUsedAsModifier) {
                 const _ct = S.activeTrack;
                 const _fc = S.trackActiveClip[_ct];
-                if (S.capturePending <= 0) {
+                if (S.capturePending <= 0 && S.paCapturePending <= 0) {
                     showActionPopup('CAPTURE', 'Nothing buffered', 'Play pads first');
                 } else if (S.playing) {
-                    /* Overdub into the focused clip (raw timing, no quantize). */
-                    S.pendingDefaultSetParams.push({
-                        key: 't' + _ct + '_capture_commit', val: String(_fc) });
-                    S.capturePending     = 0;
-                    S.captureCommitAwait = 40;
+                    /* Overdub into the focused clip (raw timing, no quantize) —
+                     * notes AND the knob sweeps that were heard alongside them,
+                     * in one tap (plan 6e, Josh's ruling). Either half may be
+                     * empty; only what is buffered is committed. */
+                    if (S.capturePending > 0) {
+                        S.pendingDefaultSetParams.push({
+                            key: 't' + _ct + '_capture_commit', val: String(_fc) });
+                        S.captureCommitAwait = 40;
+                    }
+                    if (S.paCapturePending > 0) automationCaptureCommit(_ct, _fc);
+                    S.capturePending   = 0;
+                    S.paCapturePending = 0;
                 } else if (!trackClipHasContent(_ct, _fc)) {
                     /* Stopped, focused clip empty → commit there (empty session =
                      * detect+set tempo; non-empty session = warp to fit tempo;

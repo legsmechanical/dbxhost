@@ -456,14 +456,37 @@ export function pollDSP() {
     {
         const _cp = pget('capture_pending');
         if (_cp !== null) {
-            const _n = parseInt(_cp, 10) | 0;
+            /* "<notes> <param sweeps> <pa commit seq>" — the last two are plan
+             * 6e, carried on this key because it is already polled every tick
+             * and a key of its own would cost another SPI frame. */
+            const _cpp = _cp.split(' ');
+            const _n   = parseInt(_cpp[0], 10) | 0;
+            const _pn  = parseInt(_cpp[1], 10) | 0;
             if ((_n > 0) !== (S.capturePending > 0)) S.screenDirty = true;
-            S.capturePending = _n;
+            if ((_pn > 0) !== (S.paCapturePending > 0)) S.screenDirty = true;
+            S.capturePending   = _n;
+            S.paCapturePending = _pn;
+            /* The commit edge for the automation half. It has no chooser and
+             * no tempo to report, so it is a plain toast — and it fires on the
+             * DSP's own sequence rather than on the tap, so the toast means
+             * "the lanes exist", not "the key was sent". */
+            const _pseq = parseInt(_cpp[2], 10) | 0;
+            if (S.paCaptureSeq < 0) S.paCaptureSeq = _pseq;
+            else if (_pseq !== S.paCaptureSeq) {
+                S.paCaptureSeq = _pseq;
+                /* ⚠ One tap can commit BOTH halves, and both would toast — the
+                 * note half's own toast lands later and would simply erase
+                 * this one, so the user would never learn the sweeps landed.
+                 * When a note commit is in flight, hand it the news instead. */
+                if (S.captureCommitAwait > 0) S.paCaptureJustCommitted = true;
+                else showActionPopup('CAPTURED', 'Knob moves', 'Added to automation');
+            }
         }
         /* "Armed" = a Capture tap would commit buffered input. Every state now
          * does something (playing = overdub; stopped-empty = tempo; stopped +
-         * content = warp), so the LED blinks whenever input is buffered. */
-        S.captureArmed = S.capturePending > 0;
+         * content = warp), so the LED blinks whenever input is buffered —
+         * captured knob sweeps included (plan 6e). */
+        S.captureArmed = S.capturePending > 0 || S.paCapturePending > 0;
         /* Watch capture_info for a commit + mirror the selector state. Format:
          * "seq stopped len select_active select_idx count warp v0 v1 ...". */
         const _ci = pget('capture_info');
@@ -498,7 +521,11 @@ export function pollDSP() {
                                           : (Math.round(_vals[_sidx] || 0) + ' BPM'),
                                     _len + ' steps');
                 } else {
-                    showActionPopup('CAPTURED', 'Added to clip');
+                    /* The same tap may have committed knob sweeps (plan 6e);
+                     * say so here rather than letting this toast bury theirs. */
+                    showActionPopup('CAPTURED', 'Added to clip',
+                                    S.paCaptureJustCommitted ? '+ knob moves' : undefined);
+                    S.paCaptureJustCommitted = false;
                 }
             } else if (S.captureCommitAwait > 0) {
                 S.captureCommitAwait--;

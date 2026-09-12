@@ -1294,6 +1294,12 @@ typedef struct {
     /* A write was refused because another track owns the target: owner+1,
      * reported and cleared on read. */
     uint8_t    pa_owner_conflict;
+    /* CAPTURE (plan 6e): knob moves heard while Record was OFF, kept until a
+     * Capture tap commits them into the lanes. Transient — never serialized,
+     * cleared at every transport edge, exactly like the note capture ring. */
+    pa_cap_t   pa_cap[PA_CAP_LANES];
+    uint8_t    pa_cap_full;       /* a capture found no free lane; reported and cleared on read */
+    uint8_t    pa_cap_seq;        /* bumped by a commit, so JS can toast the edge */
 
     /* Result of last all_lanes_beat_stretch: 0=none, 1=ok, -1=blocked */
     int all_lanes_stretch_result;
@@ -6538,10 +6544,16 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         return snprintf(out, out_len, "%.0f", b);
     }
     /* Retrospective Capture: buffered event count for the active track
-     * (drives the Capture-button LED + the tap-context decision in JS). */
+     * (drives the Capture-button LED + the tap-context decision in JS).
+     * Second token = captured PARAMETER sweeps awaiting the same tap (plan
+     * 6e), carried here rather than on a key of its own because every
+     * get_param costs a full SPI frame and this one is already polled every
+     * tick. Third = the pa commit sequence, for the toast edge. */
     if (!strcmp(key, "capture_pending"))
-        return snprintf(out, out_len, "%d",
-                        inst ? capture_pending_for_track(inst, (int)inst->active_track) : 0);
+        return snprintf(out, out_len, "%d %d %d",
+                        inst ? capture_pending_for_track(inst, (int)inst->active_track) : 0,
+                        inst ? pa_cap_pending(inst, (int)inst->active_track) : 0,
+                        inst ? (int)inst->pa_cap_seq : 0);
     /* Last commit + selector state:
      * "seq stopped len select_active select_idx count warp v0 v1 ... vN"
      * warp: 0 = tempo chooser (v = BPM), 1 = warp chooser (v = bar count).

@@ -400,7 +400,10 @@ export const S = {
     captureHeld: false,
     captureUsedAsModifier: false,    /* set true when a Capture-held gesture consumes the press (scene capture, drum lane select, etc.) — bare-tap clip/scene bake suppresses on release */
     capturePending: 0,               /* retrospective-capture buffered event count for the active track (DSP capture_pending mirror; gates tap = capture-vs-bake) */
-    captureArmed: false,             /* capturePending>0 AND a tap would actually commit (playing, or stopped in an empty session) — drives the Capture LED blink so it never flashes when a stopped commit would be refused */
+    paCapturePending: 0,             /* captured PARAMETER sweeps awaiting a Capture tap, active track (plan 6e; second token of the DSP's capture_pending) */
+    paCaptureJustCommitted: false,   /* the same Capture tap committed knob sweeps — the note toast says so (plan 6e) */
+    paCaptureSeq: -1,              /* last pa-capture commit sequence seen, so the toast fires on the edge */
+    captureArmed: false,           /* capturePending>0 AND a tap would actually commit (playing, or stopped in an empty session) — drives the Capture LED blink so it never flashes when a stopped commit would be refused */
     captureCommitAwait: 0,           /* >0: polls remaining to watch capture_info for the commit toast (set on tap-commit, counts down in pollDSP) */
     captureInfoSeq: undefined,       /* last seen capture_info commit sequence (toast fires on change) */
     tempoSelectActive: false,        /* Move-style post-capture chooser is open (DSP cap_select_active mirror) */
