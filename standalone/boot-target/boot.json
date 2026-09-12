@@ -1,0 +1,6 @@
+{
+  "name": "dAVEBOx",
+  "exec": "/data/UserData/boot-targets/davebox/entry.sh",
+  "version": "1.0.0",
+  "author": "legsmechanical"
+}

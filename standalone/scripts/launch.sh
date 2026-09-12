@@ -1,6 +1,23 @@
 #!/bin/bash
 # davebox host launcher.
 #
+# TWO DOORS, ONE BODY (Josh, 2026-09-11: "we need to also be able launch it from
+# within schwung tools without issues"). This script is reached two ways:
+#
+#   DBX_ENTRY=tools  (default)  the Schwung Tools menu, via stock's
+#                               launch-standalone.sh — the original path.
+#   DBX_ENTRY=boot              the stock boot SELECTOR (schwung >= 1.3.0),
+#                               via /data/UserData/boot-targets/davebox/entry.sh.
+#
+# ⭐ It is ONE script on purpose. The two entrances differ only in what is
+# already RUNNING when we arrive, which is a handful of conditionals below —
+# everything else (the FD sweep, the session lock, the zero-SSH install, the
+# library bind-mount, heal, the supervisor loop) is identical and must STAY
+# identical. A forked boot copy would drift, and the Tools door is the one that
+# has to keep working.
+#
+# ⚠ Every boot-only difference is marked `# ENTRY:` — grep for it.
+#
 # Invoked by the Schwung Tools menu as a standalone module binary. A module
 # declaring "standalone": true is run through the host's launch-standalone.sh.
 #
@@ -34,6 +51,10 @@
 #
 # Requires the one-time privileged install (scripts/install-privileged.sh).
 
+DBX_ENTRY="${DBX_ENTRY:-tools}"
+case "$DBX_ENTRY" in tools|boot) ;; *) echo "unknown DBX_ENTRY=$DBX_ENTRY"; exit 2 ;; esac
+export DBX_ENTRY
+
 setsid --wait bash -c '
   DBX_DIR=/data/UserData/dbx-host
   HEAL=/data/UserData/schwung/modules/tools/davebox-sa/bin/heal   # the blessed helper (2026-09-05: inside the launcher module dir; no apostrophes in this body)
@@ -46,7 +67,29 @@ setsid --wait bash -c '
   # anyone can answer without them -- the only timestamps this log carried came
   # from quiesce and the reaper, which write their own.
   ts() { echo "$(date +%H:%M:%S.%2N) phase: $*"; }
-  ts "launcher entered"
+  ts "launcher entered (entry=$DBX_ENTRY)"
+  # ENTRY: at BOOT we are the boot selector target — MoveLauncher exec-ed the
+  # selector, which exec-ed us, so this process IS move-launcher.service, not
+  # something running alongside it. Three consequences, each handled below:
+  #   * there is no stock stack to quiesce or sweep (nothing has started yet);
+  #   * we must NOT pause the unit — that is US, and stopping it kills the
+  #     session we are trying to start;
+  #   * on the way out we simply EXIT. systemd re-runs the unit, the selector
+  #     runs again and boots the DEFAULT target, which is stock. That is the
+  #     same "a reboot always returns to stock" promise the Tools door makes.
+  at_boot() { [ "$DBX_ENTRY" = boot ]; }
+
+  # ⭐ ONE OWNER FOR THE UNIT RULE, not a guard at each call site. Pausing or
+  # resuming move-launcher.service is ALWAYS wrong at boot — we are that unit —
+  # and there are several call sites, on paths that are easy to add to. A
+  # per-site guard is a rule you have to remember; this is one you cannot
+  # forget, and a new call site inherits it. Every pause/resume goes through
+  # here; test_boot_target_second_door.sh fails the build if a call goes
+  # straight to the helper again (a bare HEAL pause/resume).
+  unit() {
+    if at_boot; then echo "boot entry: skipping move-launcher $1 (the unit is us)"; return 0; fi
+    $HEAL "$@"
+  }
 
   # Close ALL inherited FDs 3+ — we inherit the SPI device from our parent, and
   # holding it open would keep the device busy for the host we are starting.
@@ -107,7 +150,12 @@ setsid --wait bash -c '
     # ⭑ Placed in refuse() rather than at each call site on purpose: a new
     # refusal path added later inherits the cleanup instead of forgetting it.
     sh "$DBX_DIR/scripts/set-swap.sh" exit >/dev/null 2>&1 || true
-    $HEAL --resume-launcher || true
+    # ENTRY: only the TOOLS door has a paused unit to put back. At boot the unit
+    # was never paused (it is us), and resuming it here would ask systemd to
+    # start a SECOND MoveLauncher alongside the one we are running inside.
+    # Exiting is the restore path at boot: systemd re-runs the unit and the
+    # selector boots the default target.
+    unit --resume-launcher || true
     exit 1
   }
 
@@ -171,12 +219,17 @@ setsid --wait bash -c '
   # 2026-08-15) precisely because stopping the unit TERMs its whole cgroup and
   # would kill shadow_ui before it saved. That reasoning only holds while
   # shadow_ui is ALIVE, which is why this branch is safe: there is no shadow_ui.
-  if pidof MoveOriginal >/dev/null 2>&1 || pidof shadow_ui >/dev/null 2>&1; then
+  if at_boot; then
+    # ENTRY: nothing has started yet — no stack to save, nothing to freeze, and
+    # no watchdog to stand down (see at_boot above). The sweep below is left to
+    # run: at boot it finds nothing and costs one pidof.
+    echo "entry: BOOT selector — no stock stack exists yet"
+  elif pidof MoveOriginal >/dev/null 2>&1 || pidof shadow_ui >/dev/null 2>&1; then
     echo "entry: stock stack is alive -- quiesce then tear down"
     sh "$DBX_DIR/scripts/quiesce-stock.sh"
   else
     echo "entry: stock stack already gone (caller pre-killed it) -- pausing the watchdog before it respawns"
-    $HEAL --pause-launcher || \
+    unit --pause-launcher || \
       echo "WARNING: could not pause move-launcher early; a respawn may flash native Move"
   fi
 
@@ -277,7 +330,13 @@ setsid --wait bash -c '
   # a unit, so davebox-heal (setuid root, hardcoded unit name) does it.
   # Runs AFTER quiesce by design: stopping the unit TERMs its whole cgroup,
   # which would have killed shadow_ui before it saved.
-  if ! $HEAL --pause-launcher; then
+  # ENTRY: the TOOLS door only. At boot this process IS move-launcher.service
+  # (MoveLauncher exec-ed the selector, the selector exec-ed us), so stopping
+  # the unit stops US — the session would die here, and systemd would restart
+  # the unit into the selector, giving a boot loop rather than a launch.
+  # Nothing needs pausing either: the unit cannot respawn a stock stack
+  # alongside us while we are the thing it is running.
+  if ! unit --pause-launcher; then
     refuse "could not pause move-launcher (stock would respawn alongside us)"
   fi
 
@@ -418,6 +477,16 @@ setsid --wait bash -c '
   # guard, heal) is still in place, and the session lock stays held — same
   # supervisor. The SHM wipe between iterations is the same stale-ring hygiene the
   # session entry does.
+  # ENTRY: tell the boot selector watchdog we came up. It also runs a pid check —
+  # 15 s after handover it tests the pid it exec-ed, which is this shell, alive
+  # for the whole session in setsid --wait below — so this is belt and braces.
+  # It is worth having: three failed boots trip a FORCED picker, and a strike
+  # wrongly recorded is a strike that never decays.
+  if at_boot; then
+    touch /data/UserData/boot-targets/davebox/healthy 2>/dev/null || true
+    ts "boot: healthy marked"
+  fi
+
   rm -f "$DBX_DIR/relaunch_requested"
   while :; do
     # (No second LED blank leg here — it was removed 2026-08-24 after shipping
@@ -583,9 +652,20 @@ setsid --wait bash -c '
   # upstream if the guard returns) nothing here changes: we resume the unit and
   # hold until Move is up, so the callers own guard sees it and skips -- which
   # is what that wait was always for.
-  if command grep -q "already running" /data/UserData/schwung/launch-standalone.sh 2>/dev/null; then
+  # ENTRY: at BOOT none of the branch below applies — there is no
+  # launch-standalone.sh caller to race, and no paused unit to put back. We are
+  # move-launcher.service, so EXITING is the restore path: systemd re-runs the
+  # unit, the selector runs again, and it boots the DEFAULT target. The default
+  # is stock and this install never changes it, so quitting dAVEBOx lands in
+  # normal Schwung exactly as it does through the Tools door.
+  # ⚠ If dAVEBOx is ever MADE the default, that changes: quitting would boot
+  # dAVEBOx again, and the only way out is the ~2 s Back window the selector offers.
+  # That is the real cost of defaulting, and it is a separate decision.
+  if at_boot; then
+    echo "boot entry: exiting -- systemd re-runs the unit and the selector boots the default"
+  elif command grep -q "already running" /data/UserData/schwung/launch-standalone.sh 2>/dev/null; then
     echo "caller guards its Move restart -- resuming the watchdog and holding until Move is up"
-    $HEAL --resume-launcher
+    unit --resume-launcher
     _wait=0
     while [ "$_wait" -lt 75 ]; do
       if pidof MoveOriginal >/dev/null 2>&1; then
