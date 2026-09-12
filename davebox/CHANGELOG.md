@@ -17,6 +17,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **LFOs on Move tracks.** A Move track's bus carries real effects, so it now has
+  the same two LFOs a Schwung track does — find them under **LFOs** on the
+  track's menu, and point them at any of that bus's effect slots. Everything
+  works the way it already did: same shapes, same tempo sync, same depth and
+  phase.
 - **Boot straight into dAVEBOx.** dAVEBOx now appears in official Schwung's boot
   menu: hold **Back** while the screen reads *"Loading Schwung — press Back to
   change"*, pick **dAVEBOx**, and it starts without going through the Tools menu.
