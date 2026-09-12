@@ -113,6 +113,16 @@ extern void (*shadow_chain_process_fx)(void *instance, int16_t *buf, int frames)
  * silence-skip via capabilities.requires_continuous_processing. NULL when the
  * loaded chain DSP is older than v0.3.12 — caller must null-check. */
 extern int (*shadow_chain_fx_requires_continuous)(void *instance);
+/* Optional: one-shot, asked EXACTLY ONCE per silent frame and immediately
+ * after the "mod:tick" that advances the timers. Returns 1 if a MIDI FX
+ * delivered a generated message to the synth, meaning this block must render
+ * rather than stay parked. Asking twice loses the wake, and asking before the
+ * tick answers about the previous frame.
+ * ⚠ NULL-CHECK IT, and that is NOT capability probing against our own module:
+ * the chain dsp.so is NOT deployed by install-sa, so this host can be running
+ * against STOCK's chain DSP, which does not export it.
+ * [[schwung-chain-dsp-not-deployed-by-install-sa]] */
+extern int (*shadow_chain_take_midi_tick_wake)(void *instance);
 extern host_api_v1_t shadow_host_api;
 extern int shadow_inprocess_ready;
 /* 1 when the booted set had its own slot config; see shadow_chain_mgmt.c. */

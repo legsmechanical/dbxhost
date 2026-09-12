@@ -53,7 +53,8 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_forward_channel \
           $(BUILD_DIR)/test_link_audio_backlog_trim \
           $(BUILD_DIR)/test_control_layout \
-          $(BUILD_DIR)/test_shadow_param_queue
+          $(BUILD_DIR)/test_shadow_param_queue \
+          $(BUILD_DIR)/test_chain_idle_tick
 
 .PHONY: all test clean
 
@@ -120,6 +121,12 @@ $(BUILD_DIR)/test_forward_channel: test_forward_channel.c ../../src/host/forward
 
 $(BUILD_DIR)/test_control_layout: test_control_layout.c ../../src/host/shadow_constants.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+# chain_idle_tick.h lives with the chain DSP and is standalone by construction
+# (it includes no chain_internal.h), so the unit compiles against that dir
+# instead of src/host.
+$(BUILD_DIR)/test_chain_idle_tick: test_chain_idle_tick.c ../../src/modules/chain/dsp/chain_idle_tick.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) -I../../src/modules/chain/dsp $< -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_shadow_param_queue: test_shadow_param_queue.c ../../src/host/shadow_param_queue.h ../../src/host/shadow_constants.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
