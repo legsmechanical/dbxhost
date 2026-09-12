@@ -158,6 +158,21 @@ void shadow_move_fx_set_solo(int bus, int is_soloed);
 /* Master FX LFOs */
 #define MASTER_FX_LFO_COUNT 2
 extern lfo_state_t shadow_master_fx_lfos[MASTER_FX_LFO_COUNT];
+
+/* PER-MOVE-BUS LFOs. A Move bus is a `master_fx_slot_t` rack exactly like the
+ * master one (shadow_move_fx_slots, above), so it gets the LFOs that rack type
+ * already supports — two per bus, targeting that bus's own fx1..fxN blocks, or
+ * the other LFO on the same bus.
+ *
+ * ⭐ Why here and not in the chain: a chain-slot LFO writes through
+ * chain_mod_set_param_string (modules/chain/dsp/chain_mod.c), which resolves
+ * only synth / fx<N> / midi_fx<N> against its own chain_instance_t. Move-bus
+ * state is host-layer and a chain instance has no reach into it, so a chain LFO
+ * cannot address a Move bus at any price. The rack-side LFO is the design, not
+ * a preference. Keys: move_fx:<1..MOVE_FX_SLOTS>:lfo<1..2>:<field>. */
+#define MOVE_FX_LFO_COUNT 2
+extern lfo_state_t shadow_move_fx_lfos[MOVE_FX_SLOTS][MOVE_FX_LFO_COUNT];
+void shadow_move_fx_lfo_tick(int frames);
 void shadow_master_fx_lfo_tick(int frames);
 
 /* Direct param set (web UI ring buffer — doesn't touch shadow_param_t) */
