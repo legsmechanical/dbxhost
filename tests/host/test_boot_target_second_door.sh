@@ -107,7 +107,7 @@ fi
 
 # ---- 3. EXEC, NOT FORK ------------------------------------------------------
 check "entry.sh EXECs the launcher (the watchdog tests the pid it exec-ed)" \
-      grep -qE '^exec "\$LAUNCHER"$' "$ENTRY"
+      grep -qE '^exec "\$LAUNCHER" --boot$' "$ENTRY"
 if grep -qE '^\s*"?\$LAUNCHER"?\s*&\s*$' "$ENTRY"; then
     bad "entry.sh backgrounds the launcher — fork-and-exit fails the liveness check"
 else
@@ -120,8 +120,50 @@ check "a missing launcher falls through to stock rather than a dead frame" \
 # ---- 4. THE BOOT PATH MUST NOT PAUSE THE UNIT -------------------------------
 # At boot the launcher IS move-launcher.service. Every pause/resume must be
 # behind at_boot, or the session stops itself.
-check "DBX_ENTRY defaults to 'tools', so the Tools door is unchanged by default" \
-      grep -q 'DBX_ENTRY="\${DBX_ENTRY:-tools}"' <(code "$LAUNCH")
+check "the door defaults to 'tools', so the Tools path is unchanged by default" \
+      grep -q '^_dbx_entry=tools$' <(code "$LAUNCH")
+
+# ---- 5. ⚠⚠ THE DOOR SIGNAL MUST NOT BE INHERITABLE -------------------------
+# It was an EXPORTED variable for one hour and it left the device split: Move
+# native on the OLED, dAVEBOx on everything else. The boot path ends in
+# `exec /opt/move/Move`, and export survives exec — so DBX_ENTRY=boot rode into
+# the next stock session, and the Tools launch after it took every boot branch.
+# Confirmed on the device: shadow_ui holding DBX_ENTRY=boot, and a Tools launch
+# logging entry=boot. An argument cannot be inherited; that is the whole fix.
+if code "$LAUNCH" | grep -qE '^\s*export DBX_ENTRY'; then
+    bad "⚠⚠ DBX_ENTRY is EXPORTED again — it leaks through the boot exec into the next session"
+else
+    ok "⚠⚠ the door signal is never exported (an exported one leaked into stock and split the device)"
+fi
+check "the boot door passes it as an ARGUMENT" \
+      grep -q 'exec "\$LAUNCHER" --boot' <(code "$ENTRY")
+check "...and the launcher reads that argument, not the environment" \
+      grep -q '\-\-boot) _dbx_entry=boot ;;' <(code "$LAUNCH")
+if code "$LAUNCH" | grep -q 'DBX_ENTRY:-'; then
+    bad "the launcher still falls back to an INHERITED DBX_ENTRY — a stale copy would be believed"
+else
+    ok "...and consults no inherited value at all, so a stale copy is inert"
+fi
+check "the door reaches the body as a positional arg, not the environment" \
+      grep -q "^' dbx-launch \"\\\$_dbx_entry\"$" <(code "$LAUNCH")
+
+# ⭑ BEHAVIOURAL, not textual. The closer was written once with the variable
+# silently eaten (a perl -pe interpolated `$_dbx_entry` to empty), which greps
+# for "it is passed" would still have matched. Run the real calling convention
+# and read what the body would see.
+for want in tools boot; do
+    got=$(bash -c 'echo "$1"' dbx-launch "$want")
+    [ "$got" = "$want" ] || bad "the bash -c calling convention drops the door: sent '$want', body saw '$got'"
+done
+ok "⭑ the bash -c argument convention really delivers the door to the body (both values)"
+# And the parse itself: --boot in, boot out; nothing in, tools out.
+parse=$(sed -n '/^_dbx_entry=tools$/,/^esac$/p' "$LAUNCH")
+for arg_want in ":tools" "--boot:boot"; do
+    a="${arg_want%%:*}"; w="${arg_want##*:}"
+    got=$(bash -c "set -- $a; $parse; echo \$_dbx_entry")
+    [ "$got" = "$w" ] || bad "arg '$a' should select '$w', selected '$got'"
+done
+ok "⭑ the argument parse itself: no arg = tools, --boot = boot (run, not read)"
 
 # Every --pause-launcher / --resume-launcher must be guarded. This is the check
 # with teeth: a new one added later without a guard is the boot loop.
@@ -196,7 +238,7 @@ check "...guarded on the boot door, so the Tools door still returns normally" \
       grep -q 'if \[ "\$DBX_ENTRY" = boot \] && \[ -x /opt/move/Move \]; then' <(code "$LAUNCH")
 # It has to be in the OUTER script: the setsid body is a different pid, and
 # exec-ing there would leave the supervised one to exit anyway.
-if code "$LAUNCH" | awk '/^setsid --wait/,/^.$/' | grep -q 'exec /opt/move/Move'; then
+if code "$LAUNCH" | awk "/^setsid --wait/,/^' dbx-launch /" | grep -q 'exec /opt/move/Move'; then
     bad "the exec is INSIDE the setsid body — that is the wrong pid; MoveLauncher watches the outer one"
 else
     ok "...and it is in the OUTER script, the pid MoveLauncher actually watches"
@@ -264,6 +306,14 @@ if code "$tmp/launch_bypass.sh" | grep -n 'HEAL --pause-launcher\|HEAL --resume-
     ok "control: a bare HEAL pause/resume IS detected"
 else
     bad "control: the bypass check cannot fire — it is proving nothing"
+fi
+
+# The export leak must be caught — the bug that split the device.
+printf '%s\n' 'export DBX_ENTRY=boot' > "$tmp/launch_exports.sh"
+if code "$tmp/launch_exports.sh" | grep -qE '^\s*export DBX_ENTRY'; then
+    ok "control: an exported DBX_ENTRY IS detected"
+else
+    bad "control: the export check cannot fire — the leak that split the device is unguarded"
 fi
 
 # A forked entry.sh must be caught — and a COMMENT mentioning setsid must not.

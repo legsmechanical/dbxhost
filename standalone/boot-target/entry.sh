@@ -48,5 +48,10 @@ if [ ! -x "$LAUNCHER" ]; then
     exec /opt/move/MoveOriginal
 fi
 
-export DBX_ENTRY=boot
-exec "$LAUNCHER"
+# ⚠⚠ AN ARGUMENT, NOT AN EXPORTED VARIABLE. This said `export DBX_ENTRY=boot`
+# for one hour and left the device in a split state — Move native on the OLED,
+# dAVEBOx on everything else. The boot path ends in `exec /opt/move/Move`, and
+# an exported variable survives exec: it rode into stock Schwung, was inherited
+# by that whole session, and the next Tools-menu launch read it and took every
+# BOOT branch. An argument is not inherited, so the leak cannot happen.
+exec "$LAUNCHER" --boot

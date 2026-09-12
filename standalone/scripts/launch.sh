@@ -4,10 +4,12 @@
 # TWO DOORS, ONE BODY (Josh, 2026-09-11: "we need to also be able launch it from
 # within schwung tools without issues"). This script is reached two ways:
 #
-#   DBX_ENTRY=tools  (default)  the Schwung Tools menu, via stock's
-#                               launch-standalone.sh — the original path.
-#   DBX_ENTRY=boot              the stock boot SELECTOR (schwung >= 1.3.0),
-#                               via /data/UserData/boot-targets/davebox/entry.sh.
+#   (no argument)  the Schwung Tools menu, via stock's launch-standalone.sh —
+#                  the original path, and the default.
+#   --boot         the stock boot SELECTOR (schwung >= 1.3.0), via
+#                  /data/UserData/boot-targets/davebox/entry.sh.
+#
+# ⚠ An ARGUMENT, not an environment variable — see the note above the parse.
 #
 # ⭐ It is ONE script on purpose. The two entrances differ only in what is
 # already RUNNING when we arrive, which is a handful of conditionals below —
@@ -51,11 +53,33 @@
 #
 # Requires the one-time privileged install (scripts/install-privileged.sh).
 
-DBX_ENTRY="${DBX_ENTRY:-tools}"
-case "$DBX_ENTRY" in tools|boot) ;; *) echo "unknown DBX_ENTRY=$DBX_ENTRY"; exit 2 ;; esac
-export DBX_ENTRY
+# WHICH DOOR — AN ARGUMENT, NEVER AN ENVIRONMENT VARIABLE.
+#
+# ⚠⚠ This was an exported variable for exactly one hour, and it produced a
+# device in a split state: Move native on the OLED, dAVEBOx on everything else
+# (Josh, 2026-09-12). `export` survives exec, and the boot path ENDS in
+# `exec /opt/move/Move` — so DBX_ENTRY=boot rode through the selector into
+# stock Schwung, was inherited by every process in that session, and the next
+# Tools-menu launch read it and took all the BOOT branches: no quiesce, no unit
+# pause, no teardown. Confirmed on the device: shadow_ui holding
+# DBX_ENTRY=boot, and a Tools launch logging "entry=boot".
+#
+# An argument cannot leak: it is not inherited, and the boot door is the only
+# caller that passes one. Nothing in the environment is consulted, so a stale
+# copy from any earlier session is inert by construction.
+_dbx_entry=tools
+case "${1:-}" in
+    --boot) _dbx_entry=boot ;;
+    "")     ;;
+    *)      echo "unknown argument: $1 (expected --boot or nothing)"; exit 2 ;;
+esac
 
 setsid --wait bash -c '
+  # ⚠ Which door, passed as a POSITIONAL ARGUMENT (see the note at the top).
+  # NOT exported: an exported copy is inherited by MoveOriginal and everything
+  # it spawns, and the boot path ends in an exec, which is how it escaped into
+  # the next stock session and broke the Tools door.
+  DBX_ENTRY="$1"
   DBX_DIR=/data/UserData/dbx-host
   HEAL=/data/UserData/schwung/modules/tools/davebox-sa/bin/heal   # the blessed helper (2026-09-05: inside the launcher module dir; no apostrophes in this body)
   LOG=$DBX_DIR/launch.log
@@ -732,7 +756,7 @@ setsid --wait bash -c '
   #
   # The answer is the one above: DO NOT CREATE THE SECOND MOVE.
   # ⚠ NO APOSTROPHES IN THIS BLOCK — see the warning at the top of the body.
-'
+' dbx-launch "$_dbx_entry"
 _body_rc=$?
 
 # ══ ENTRY: BOOT — HAND THE PID BACK TO THE SELECTOR, NEVER JUST EXIT ═════════

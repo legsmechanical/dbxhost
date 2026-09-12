@@ -78,7 +78,11 @@ open=$(body_line "setsid --wait bash -c '")
 # ⚠ The body now BLOCKS: it closes on a bare quote with no trailing `&` (see
 # test_launch_supervisor_body.sh for why that is load-bearing). Take the LAST
 # such line, since the opener is not one and nothing may follow the closer.
-close=$(grep -n "^'$" "$ls" | tail -1 | cut -d: -f1)
+# ⚠ Since 2026-09-12 the closer also carries the body's positional ARGUMENTS
+# (the door, passed rather than exported — an exported copy leaked through the
+# boot path's exec and split the device). Still a line starting with the quote,
+# still nothing else allowed inside the body.
+close=$(grep -n "^' dbx-launch " "$ls" | tail -1 | cut -d: -f1)
 [ -n "$open" ] && [ -n "$close" ] || fail "setsid block delimiters not found"
 inner=$(sed -n "$((open+1)),$((close-1))p" "$ls" | grep -c "'" || true)
 [ "$inner" = "0" ] || fail "$inner single quote(s) inside the setsid block body"
