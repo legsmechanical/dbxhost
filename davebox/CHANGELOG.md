@@ -17,6 +17,18 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Resetting a bank resets the bank you are on.** Delete + jog click now resets
+  exactly the bank in front of you and clears the automation for *its* parameters
+  — it used to reset four effect banks whatever bank you were looking at, and the
+  pop-up now names the bank it reset so you can see what happened. Shift + Delete
+  + jog click is the wider form: it puts the whole MIDI effect chain (NOTE FX,
+  HARMZ, MIDI DLY, SEQ ARP) back to defaults, and leaves your notes, clip and lane
+  settings, macros, sound and automation banks alone.
+- **ARP IN is no longer offered for automation.** Its settings belong to the track
+  rather than to a single clip, so automating it could never behave predictably
+  from clip to clip. It remains a macro destination, and any lane recorded for it
+  in an older project is retired when the project loads rather than sitting in the
+  list doing nothing.
 - **Clearing now clears automation too.** Automation follows the thing it
   automates. Clear a sequence (Delete + track button) or reset a clip and its
   automation goes with the notes, instead of staying behind and still moving a

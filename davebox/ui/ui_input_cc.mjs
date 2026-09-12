@@ -79,7 +79,7 @@ import { setTrackMute, setTrackSolo, clearAllMuteSolo,
     clearClip, hardResetClip, copyClip, cutClip, copyRow, cutRow,
     copyDrumClip, cutDrumClip, clearRow,
     _switchActiveTrack, allLanesGate,
-    resetFxBanks, resetTarp, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
+    resetFxBanks, resetBankParams, resetMidiFxChain, resetTarp, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
 import { _resolveLoopGesture } from './ui_input_pads.mjs';
 
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
@@ -587,47 +587,32 @@ function modalDialogUp() {
     }
 
     if (d1 === 3 && d2 === 127 && S.shiftHeld && S.deleteHeld && !S.sessionView) {
+        /* ⭐ SHIFT + DELETE + JOG CLICK = the sequencer's MIDI FX CHAIN, and only
+         * that (Josh, 2026-09-12): banks 1-4, and their automation.
+         * ⛔ NOT clip / drum lane / ALL LANES params — *"leave clip, drum lane,
+         * and all lanes out of shift+delete+click"*: they define the clip, not
+         * the MIDI processing. ⛔ NOT ARP IN (reset from its own bank; it is not
+         * automatable at all). ⛔ NOT SOUND / MACROS / AUTOMATION — those can
+         * affect SOUND, not just MIDI out of the sequencer.
+         * ⓘ The Dir / RvSt / SqFl and aftertouch writes that used to live in
+         * both arms were exactly the clip-defining half, and came out here. */
         if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
-            /* Drum: Shift+Delete+jog = reset all real-time FX banks + Dir/RvSt/SqFl */
-            const _dt = S.activeTrack, _dl = S.activeDrumLane[_dt], _dac = effectiveClip(_dt);
-            resetFxBanks(_dt);
-            S.drumLanePlaybackDir[_dt][_dl] = 0;
-            S.drumLanePlaybackAudioReverse[_dt][_dl] = 0;
-            S.bankParams[_dt][0][6] = 0;
-            S.clipSeqFollow[_dt][_dac] = true;
-            S.bankParams[_dt][0][7] = 1;
-            S.pendingDefaultSetParams.push({ key: 't' + _dt + '_l' + _dl + '_playback_dir', val: '0' });
-            S.pendingDefaultSetParams.push({ key: 't' + _dt + '_l' + _dl + '_playback_audio_reverse', val: '0' });
-            /* Playback Dir is bank 0's one automatable knob and this gesture
-             * resets it, so its automation goes with it (Josh, 2026-09-12). */
-            automationClearBanksQueued(S.pendingDefaultSetParams, _dt, _dac, [0]);
-            showActionPopup('LANE PARAMS', 'RESET');
+            resetMidiFxChain(S.activeTrack);
+            showActionPopup('FX CHAIN', 'RESET');
         } else {
-            /* Melodic: full reset — NOTE FX, HARMZ, MIDI DLY, + SEQ ARP */
             const _arpTrack = S.activeTrack;
+            /* SEQ ARP's pre-reset values, so Undo can put the bank card back
+             * (the whole-chain pfx_reset covers bank 4). */
             const _arpParams = Array.from({length: 8}, function(_, k) {
                 const pm = BANKS[4].knobs[k]; return pm ? S.bankParams[_arpTrack][4][k] : 0;
             });
-            resetFxBanks(_arpTrack);
+            resetMidiFxChain(_arpTrack);
             for (let k = 0; k < 8; k++) {
                 const pm = BANKS[4].knobs[k];
                 if (pm) S.bankParams[_arpTrack][4][k] = pm.def;
             }
-            /* Bank reset also clears the clip's aftertouch automation. */
-            const _ac2 = effectiveClip(_arpTrack);
-            S.clipAtHas[_arpTrack][_ac2] = false;
-            S.pendingDefaultSetParams.push({ key: 't' + _arpTrack + '_c' + _ac2 + '_at_clear', val: '1' });
             S.undoSeqArpSnapshot = { track: _arpTrack, params: _arpParams };
-            const _mac = effectiveClip(_arpTrack);
-            S.clipPlaybackDir[_arpTrack][_mac] = 0;
-            S.clipPlaybackAudioReverse[_arpTrack][_mac] = 0;
-            S.bankParams[_arpTrack][0][6] = 0;
-            S.clipSeqFollow[_arpTrack][_mac] = true;
-            S.bankParams[_arpTrack][0][7] = 1;
-            S.pendingDefaultSetParams.push({ key: 't' + _arpTrack + '_clip_playback_dir', val: '0' });
-            S.pendingDefaultSetParams.push({ key: 't' + _arpTrack + '_clip_playback_audio_reverse', val: '0' });
-            automationClearBanksQueued(S.pendingDefaultSetParams, _arpTrack, _mac, [0]);
-            showActionPopup('CLIP PARAMS', 'RESET');
+            showActionPopup('FX CHAIN', 'RESET');
         }
         return;
     }
@@ -647,42 +632,53 @@ function modalDialogUp() {
                 S.pendingDefaultSetParams.push({ key: 't' + _rt + '_l' + _rl + '_repeat_groove_reset', val: '1' });
                 showActionPopup('RPT GROOVE', 'RESET');
             } else {
-                /* Drum: Delete+jog = reset only the active real-time FX bank + Dir/RvSt/SqFl */
-                const REAL_TIME_BANKS = [1, 2, 3];
-                if (REAL_TIME_BANKS.indexOf(S.activeBank) >= 0) {
-                    resetSingleFxBank(S.activeTrack, S.activeBank);
-                }
+                /* Drum: Delete+jog = reset THE BANK YOU ARE ON (resetBankParams
+                 * is the one owner), and its automation with it. */
                 const _bt = S.activeTrack, _bl = S.activeDrumLane[_bt], _bac = effectiveClip(_bt);
-                S.drumLanePlaybackDir[_bt][_bl] = 0;
-                S.drumLanePlaybackAudioReverse[_bt][_bl] = 0;
-                S.bankParams[_bt][0][6] = 0;
-                S.clipSeqFollow[_bt][_bac] = true;
-                S.bankParams[_bt][0][7] = 1;
-                S.pendingDefaultSetParams.push({ key: 't' + _bt + '_l' + _bl + '_playback_dir', val: '0' });
-                S.pendingDefaultSetParams.push({ key: 't' + _bt + '_l' + _bl + '_playback_audio_reverse', val: '0' });
-                automationClearBanksQueued(S.pendingDefaultSetParams, _bt, _bac, [0]);
-                showActionPopup('BANK RESET');
+                let _name = resetBankParams(_bt, S.activeBank);
+                if (S.activeBank === 0) {
+                    /* CLIP has no DSP reset verb of its own; its settable knobs
+                     * are written here, and ONLY when the card is on it. */
+                    S.drumLanePlaybackDir[_bt][_bl] = 0;
+                    S.drumLanePlaybackAudioReverse[_bt][_bl] = 0;
+                    S.bankParams[_bt][0][6] = 0;
+                    S.clipSeqFollow[_bt][_bac] = true;
+                    S.bankParams[_bt][0][7] = 1;
+                    S.pendingDefaultSetParams.push({ key: 't' + _bt + '_l' + _bl + '_playback_dir', val: '0' });
+                    S.pendingDefaultSetParams.push({ key: 't' + _bt + '_l' + _bl + '_playback_audio_reverse', val: '0' });
+                    automationClearBanksQueued(S.pendingDefaultSetParams, _bt, _bac, [0]);
+                    _name = BANKS[0].name;
+                }
+                if (_name) showActionPopup(_name, 'RESET');
             }
         } else if (S.activeBank === 5) {
-            /* ARP IN bank: dedicated reset that clears every TARP param
-             * (style/rate/oct/gate/steps_mode/retrigger/latch/sync + step arrays
-             * + loop length). Shift+Delete+jog (above) intentionally leaves
-             * ARP IN alone. */
-            resetTarp(S.activeTrack);
-            showActionPopup('LIVE ARP', 'RESET');
+            /* ARP IN: every TARP param (style/rate/oct/gate/steps_mode/
+             * retrigger/latch/sync + step arrays + loop length). Shift+Delete
+             * +jog leaves ARP IN alone — deliberately, and now for a stated
+             * reason: its params are per-TRACK while a lane is per-CLIP, so it
+             * is not automatable at all (see BANK_MACRO_ALLOW). Reset it here. */
+            showActionPopup(resetBankParams(S.activeTrack, 5) || 'ARP IN', 'RESET');
         } else {
+            /* ⭐ THE FIX (Josh, 2026-09-12): reset THE BANK YOU ARE ON. This arm
+             * used to call resetFxBanks(), which resets banks 1-4 whatever bank
+             * the card was on — Shift's job, contradicting the manual, and once
+             * automation began following it took three other banks' lanes too.
+             * That is the regression Josh hit on the device. */
             const _mt = S.activeTrack, _mac2 = effectiveClip(_mt);
-            resetFxBanks(_mt);
+            let _mname = resetBankParams(_mt, S.activeBank);
             S.undoSeqArpSnapshot = null;
-            S.clipPlaybackDir[_mt][_mac2] = 0;
-            S.clipPlaybackAudioReverse[_mt][_mac2] = 0;
-            S.bankParams[_mt][0][6] = 0;
-            S.clipSeqFollow[_mt][_mac2] = true;
-            S.bankParams[_mt][0][7] = 1;
-            S.pendingDefaultSetParams.push({ key: 't' + _mt + '_clip_playback_dir', val: '0' });
-            S.pendingDefaultSetParams.push({ key: 't' + _mt + '_clip_playback_audio_reverse', val: '0' });
-            automationClearBanksQueued(S.pendingDefaultSetParams, _mt, _mac2, [0]);
-            showActionPopup('BANK RESET');
+            if (S.activeBank === 0) {
+                S.clipPlaybackDir[_mt][_mac2] = 0;
+                S.clipPlaybackAudioReverse[_mt][_mac2] = 0;
+                S.bankParams[_mt][0][6] = 0;
+                S.clipSeqFollow[_mt][_mac2] = true;
+                S.bankParams[_mt][0][7] = 1;
+                S.pendingDefaultSetParams.push({ key: 't' + _mt + '_clip_playback_dir', val: '0' });
+                S.pendingDefaultSetParams.push({ key: 't' + _mt + '_clip_playback_audio_reverse', val: '0' });
+                automationClearBanksQueued(S.pendingDefaultSetParams, _mt, _mac2, [0]);
+                _mname = BANKS[0].name;
+            }
+            if (_mname) showActionPopup(_mname, 'RESET');
         }
         return;
     }

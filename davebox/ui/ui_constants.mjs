@@ -574,6 +574,27 @@ export const BANK_MACRO_ALLOW = [
     { bank: 5, k: 5 }, { bank: 5, k: 6 }, { bank: 5, k: 7 },        /* LIVE ARP (no Steps mode) */
     { bank: 7, k: 6 },                                              /* All-lane Playback Dir */
 ];
+
+/* ⛔ BANKS WHOSE PARAMS MAY BE A MACRO DESTINATION BUT NOT AUTOMATED.
+ *
+ * Josh, 2026-09-12: *"let's put all of arp-in on the automation not allowed
+ * list, have delete+click reset it and leave it out of shift+delete+click."*
+ *
+ * ⚠⚠ WHY THIS IS A SECOND LIST INSTEAD OF A DELETION FROM THE ONE ABOVE.
+ * BANK_MACRO_ALLOW answers TWO questions — "may a macro knob point here?" and
+ * "may this be automated?" — and they are no longer the same question. Deleting
+ * bank 5 from it took ARP IN off the MACRO picker too, which Josh did not ask
+ * for and a test caught.
+ *
+ * The reason ARP IN cannot be automated is a SCOPE MISMATCH automation cannot
+ * express: its params live on the TRACK (`tr->tarp`, JS `tarpStepVel[track]`)
+ * while a lane is keyed per (track, CLIP). SEQ ARP is the opposite — genuinely
+ * per-clip (`seqArpStepVel[track][clip]`) — which is why bank 4 stays
+ * automatable. Two ARP IN lanes in different clips would fight over one
+ * track-wide value, and "reset the bank, its automation follows" could only ever
+ * clear the clip you happened to be looking at.
+ * ⚠ Do not empty this list without giving tarp per-clip storage first. */
+export const BANK_AUTOMATION_DENY = [5];
 export const BANK_SHORT = { 0: 'Clip', 1: 'NFX', 2: 'Harm', 3: 'Dly', 4: 'SArp', 5: 'LArp', 7: 'Lanes' };
 export const SEQ_AUTO_TARGETS = (() => {
     const out = {};
@@ -586,7 +607,8 @@ export const SEQ_AUTO_TARGETS = (() => {
             if (!pm || !pm.dspKey) continue;
             key = pm.dspKey; min = pm.min; max = pm.max; label = pm.full;
         }
-        out[key] = { key, bank: e.bank, k: e.k, alt: e.alt || null, min, max, label, type: 'int' };
+        out[key] = { key, bank: e.bank, k: e.k, alt: e.alt || null, min, max, label, type: 'int',
+                     automatable: BANK_AUTOMATION_DENY.indexOf(e.bank) < 0 };
     }
     return out;
 })();
@@ -643,12 +665,23 @@ export function midiTargetDefault(t) {
 /* The wire value as the store's 14 bits. */
 export function midiTargetTo14(t, v) { return t === 'pb' ? (v | 0) : Math.round(((v | 0) * 16383) / 127); }
 /* The DSP key a bank macro automates as, or null when it is not on the list. */
+/* The AUTOMATION key for a bank knob — null when that bank may not be
+ * automated (BANK_AUTOMATION_DENY), which is what keeps an ARP IN turn from
+ * ever creating a lane while leaving it usable as a macro destination. */
 export function seqAutoKeyFor(bank, k, alt) {
     for (const key in SEQ_AUTO_TARGETS) {
         const t = SEQ_AUTO_TARGETS[key];
+        if (t.automatable === false) continue;
         if (t.bank === bank && t.k === k && (t.alt || null) === (alt || null)) return key;
     }
     return null;
+}
+
+/* Is this seq target's parameter automatable AT ALL? The one predicate behind
+ * both the emit gate and the retirement of lanes recorded before a ruling. */
+export function seqAutoAutomatable(key) {
+    const t = SEQ_AUTO_TARGETS[key];
+    return !!(t && t.automatable !== false);
 }
 
 export const PAD_MODE_DRUM = 1;

@@ -86,7 +86,7 @@ const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
 stubParamPagesDevice();
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
-const { BANKS, BANK_AUTOMATION, SEQ_AUTO_TARGETS } = await import('../../ui/ui_constants.mjs');
+const { BANKS, BANK_AUTOMATION, BANK_STEP, SEQ_AUTO_TARGETS, seqAutoTargetForKnob } = await import('../../ui/ui_constants.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 
@@ -102,12 +102,18 @@ const CHAIN_TGT = T + ':synth:cutoff';
  * ownership table said something else. */
 function targetsOfBank(b) {
     return Object.keys(SEQ_AUTO_TARGETS)
-        .filter(k => SEQ_AUTO_TARGETS[k].bank === b)
+        /* AUTOMATABLE targets on this bank. An entry can exist for the MACRO
+         * picker and still be closed to automation (ARP IN, 2026-09-12), so the
+         * flag is the question, not membership. */
+        .filter(k => SEQ_AUTO_TARGETS[k].bank === b && SEQ_AUTO_TARGETS[k].automatable !== false)
         .map(k => 'seq:' + T + ':' + k);
 }
 const B0 = targetsOfBank(0), B1 = targetsOfBank(1), B3 = targetsOfBank(3), B5 = targetsOfBank(5);
-assert(B0.length && B1.length && B3.length && B5.length,
-       'the fixture needs automatable params on banks 0, 1, 3 and 5');
+assert(B0.length && B1.length && B3.length,
+       'the fixture needs automatable params on banks 0, 1 and 3');
+/* ⛔ B5 is EXPECTED to be empty — ARP IN is not automatable (2026-09-12). It is
+ * still seeded into the fixture list below so the test proves a lane recorded
+ * before that ruling is RETIRED rather than left listed and silent. */
 
 /* Every lane above, in clip 0 AND in clip 1 — clip 1 is the CONTROL that a
  * clear is scoped to the clip it was performed on. */
@@ -188,12 +194,24 @@ step('⚠ CONTROL: the automation half books NO second undo checkpoint', () => {
 
 /* ---- RULE 4: a PARAM clear takes only the params IT resets -------------- */
 
-step('Shift+Delete + jog click (CLIP PARAMS RESET) takes the banks it resets', () => {
+step('Shift+Delete + jog click resets the MIDI FX CHAIN — banks 1-4 and their automation', () => {
     reset();
     withShiftDelete(jogClick);
     const got = clearKeysFor(queued());
-    for (const tg of [...B1, ...B3, ...B0])
+    for (const tg of [...B1, ...B3])
         assert(got.indexOf(tg) >= 0, 'expected ' + tg + ' cleared, got: ' + got.join(' | '));
+});
+
+step('⚠⚠ CONTROL: Shift leaves CLIP alone — it defines the clip, not the MIDI processing', () => {
+    reset();
+    withShiftDelete(jogClick);
+    const got = clearKeysFor(queued());
+    for (const tg of B0)
+        assert(got.indexOf(tg) < 0,
+               'Josh, 2026-09-12: "leave clip, drum lane, and all lanes out of shift+delete+click" — ' +
+               tg + ' was cleared');
+    assert(!queued().some(x => /_clip_playback_dir=|_clip_playback_audio_reverse=|_at_clear=/.test(x)),
+           'Shift must no longer write Playback Dir / RvSt / aftertouch either: ' + queued().join(' | '));
 });
 
 step('⚠ CONTROL: and NOT the synth-chain lane it does not reset', () => {
@@ -203,24 +221,62 @@ step('⚠ CONTROL: and NOT the synth-chain lane it does not reset', () => {
            'a bank reset must not touch chain automation — that is owned by the sound chain');
 });
 
-step('Delete + jog click on ARP IN takes bank 5 and ONLY bank 5', () => {
-    reset(5);
-    withDelete(jogClick);
-    const got = clearKeysFor(queued());
-    for (const tg of B5) assert(got.indexOf(tg) >= 0, 'expected ' + tg + ' cleared, got: ' + got.join(' | '));
-    for (const tg of B1)
-        assert(got.indexOf(tg) < 0, '⚠ ' + tg + ' belongs to another bank and must have been left alone');
-    assert(got.indexOf(CHAIN_TGT) < 0, 'and the chain lane stays');
+step('⛔ ARP IN is NOT AUTOMATABLE, so there is no lane for it to have', () => {
+    /* Josh, 2026-09-12: "put all of arp-in on the automation not allowed list."
+     * Its params are per-TRACK while a lane is per-CLIP, so a lane could only
+     * ever be right for the clip you were looking at. */
+    assert(B5.length === 0, 'ARP IN still offers automation targets: ' + B5.join(' | '));
+    /* ⭑ Its entries still EXIST — ARP IN remains a MACRO destination, which Josh
+     * did not ask to remove. Deleting them from BANK_MACRO_ALLOW took it off the
+     * macro picker too, and test_macros_bank caught that. So the invariant is
+     * the FLAG, plus the fact that no automation key can be derived for it. */
+    const five = Object.keys(SEQ_AUTO_TARGETS).filter(k => SEQ_AUTO_TARGETS[k].bank === 5);
+    assert(five.length > 0, 'ARP IN must still be offered as a MACRO destination');
+    for (const k of five)
+        assert(SEQ_AUTO_TARGETS[k].automatable === false, k + ' is not marked non-automatable');
+    for (let k = 0; k < 8; k++)
+        assert(seqAutoTargetForKnob(T, 5, k, false) === null,
+               'an ARP IN knob still resolves to an automation target (knob ' + k + ')');
 });
 
-step('⚠ CONTROL: a param clear lands after the param reset that snapshots it', () => {
+step('Delete + jog click on ARP IN resets its params and clears NO automation', () => {
     reset(5);
     withDelete(jogClick);
     const q = queued();
-    const rst = idxOf(q, /_tarp_reset=/);
+    assert(q.some(x => /_tarp_reset=/.test(x)), 'ARP IN was not reset: ' + q.join(' | '));
+    assert(clearKeysFor(q).length === 0,
+           'nothing on ARP IN can be automated, so nothing may be cleared: ' + q.join(' | '));
+});
+
+step('⚠ CONTROL: a param clear lands after the param reset that snapshots it', () => {
+    /* On NOTE FX, which IS automatable — the ordering rule still has to hold. */
+    reset(1);
+    withDelete(jogClick);
+    const q = queued();
+    const rst = idxOf(q, /_pfx_noteFx_reset=/);
     const autoAt = idxOf(q, /_pa_clear_key=/);
-    assert(rst >= 0, 'no tarp reset queued: ' + q.join(' | '));
+    assert(rst >= 0, 'no NOTE FX reset queued: ' + q.join(' | '));
     assert(autoAt > rst, 'the automation clear must follow the reset (reset@' + rst + ', auto@' + autoAt + ')');
+});
+
+step('⭐ Delete + jog click resets ONLY the bank you are on (the 1(4) regression)', () => {
+    reset(1);
+    withDelete(jogClick);
+    const got = clearKeysFor(queued());
+    for (const tg of B1)
+        assert(got.indexOf(tg) >= 0, 'NOTE FX lane not cleared: ' + tg);
+    for (const tg of B3)
+        assert(got.indexOf(tg) < 0,
+               '⚠⚠ THE REGRESSION: on the card for NOTE FX, MIDI DLY\'s automation went too (' + tg + ')');
+});
+
+step('⛔⛔ STEP is NEVER reset — it IS the sequencer data', () => {
+    /* Josh, 2026-09-12: "step bank IS the sequencer data, so we shouldn't ever
+     * clear anything there." Clearing notes has its own gestures. */
+    reset(BANK_STEP);
+    withDelete(jogClick);
+    const q = queued();
+    assert(q.length === 0, 'Delete + jog click on STEP queued something: ' + q.join(' | '));
 });
 
 step('⚠ CONTROL: with nothing automated, a clear queues no automation write', () => {

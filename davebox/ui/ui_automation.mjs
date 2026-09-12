@@ -16,7 +16,7 @@
  */
 
 import { S } from './ui_state.mjs';
-import { POLL_INTERVAL, SEQ_AUTO_TARGETS, BANK_SHORT, PAD_MODE_DRUM, midiTargetIsMidi, midiTargetName, midiTargetTo14 } from './ui_constants.mjs';
+import { POLL_INTERVAL, SEQ_AUTO_TARGETS, seqAutoAutomatable, BANK_SHORT, PAD_MODE_DRUM, midiTargetIsMidi, midiTargetName, midiTargetTo14 } from './ui_constants.mjs';
 /* The move_fx: prefix has exactly one builder, and a source invariant pins
  * that (tests/test_move_fx_prefix_owner.sh). Build it here and the suite fails
  * — correctly: two builders are two things to keep in step. */
@@ -183,10 +183,52 @@ function parseList(list) {
 
 /* Called once when a project's contents arrive from the DSP — NOT per tick.
  * One round-trip per project load, against one per tick if we guessed. */
+/* ⚠⚠ A `seq:` lane whose parameter is no longer automatable can neither PLAY nor
+ * be EDITED: `pushPair` returns null for it, so the DSP keeps staging a value
+ * that JS silently drops, and the row sits in the bank LISTED AND SILENT — the
+ * exact shape of the resurrection bug, arrived at from the other direction.
+ *
+ * That happens whenever BANK_MACRO_ALLOW loses an entry. It did on 2026-09-12,
+ * when ARP IN came off the list (its params are per-TRACK while a lane is
+ * per-CLIP — see the note there), and any project recorded before that carries
+ * lanes for it. So an unplayable lane is RETIRED the first time it is seen,
+ * rather than left to look like automation that simply does not work.
+ *
+ * ⭑ Written against the allow-list rather than against ARP IN's keys, so the
+ * next change to it is covered without anyone remembering to come back. */
+function dropOrphanSeqLanes() {
+    /* ⚠⚠ REFUSE TO RUN AGAINST AN EMPTY TABLE. This function's whole job is
+     * deleting user data on the strength of "that key is not automatable", so if
+     * SEQ_AUTO_TARGETS were ever empty when it ran — a bundle-order accident of
+     * exactly the kind that has bitten this module before
+     * ([[module-scope-registration-wiped-by-bundle-order]]) — it would retire
+     * EVERY sequencer lane in the project. The table is a module-scope const
+     * derived at import and should always be populated; this is the guard that
+     * makes "should" not matter. */
+    if (Object.keys(SEQ_AUTO_TARGETS).length === 0) return;
+    let n = 0;
+    for (const k of Array.from(stateByKey.keys())) {
+        const sp = k.split(' ');                       /* "<track> <clip> <target>" */
+        if (sp.length < 3) continue;
+        const target = sp.slice(2).join(' ');
+        if (target.indexOf('seq:') !== 0) continue;
+        const key = target.split(':')[2];
+        if (key && seqAutoAutomatable(key)) continue;  /* still automatable */
+        queueSet('t' + sp[0] + '_pa_clear_key', sp[1] + ' ' + target);
+        stateByKey.delete(k);
+        n++;
+    }
+    if (n) {
+        listGen++;
+        console.log('[auto] retired ' + n + ' lane(s) whose parameter is no longer automatable');
+    }
+}
+
 export function automationRefreshPresence() {
     const list = host_module_get_param('pa_list');
     if (list !== null && list !== undefined) anyAutomation = !!(list && list.length);
     parseList(list);
+    dropOrphanSeqLanes();
 }
 
 /* The lane flag bits — PA_FLAG_* in dsp/seq8_param_auto.h. UNLINKED is Link: Off

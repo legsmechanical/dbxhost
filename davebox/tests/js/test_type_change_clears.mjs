@@ -75,6 +75,14 @@ stubParamPagesDevice();
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const C = await import('../../ui/ui_constants.mjs');
+/* ⚠ A REAL automatable bank key, derived from the allow-list rather than made up.
+ * These fixtures used `swing`, which is not a bank param anywhere in
+ * ui_constants — so a lane on it could never have PLAYED (pushPair returns null
+ * for an unknown seq key) and, since 2026-09-12, is retired on sight by
+ * dropOrphanSeqLanes. The tests' intent — a sequencer bank lane SURVIVES a
+ * module swap / type change — is right; the target just has to be one the
+ * product can actually automate. [[fixtures-must-be-real-modules-not-my-shape]] */
+const SEQ_KEY = Object.keys(C.SEQ_AUTO_TARGETS)[0];
 const snd = await import('../../ui/ui_sound.mjs');
 const A = await import('../../ui/ui_automation.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
@@ -129,7 +137,7 @@ step('Move bus FX params play only on a Move track', () => {
     for (const r of [0, 2, 3]) if (T('0:move_fx:2:fx1:cutoff', r)) throw new Error('bus fx kept on ' + routeName[r]);
 });
 step('seq: targets (the bank params) survive every type', () => {
-    for (const r of [0, 1, 2, 3]) if (!T('seq:4:swing', r)) throw new Error('seq cleared on ' + routeName[r]);
+    for (const r of [0, 1, 2, 3]) if (!T('seq:4:' + SEQ_KEY + '', r)) throw new Error('seq cleared on ' + routeName[r]);
 });
 step('MIDI targets: at/pb survive every type but NONE; cc:N only a MIDI track', () => {
     for (const r of [0, 1, 2]) { if (!T('at', r) || !T('pb', r)) throw new Error('at/pb cleared on ' + routeName[r]); }
@@ -152,7 +160,7 @@ function plant() {
     S.trackMacros[0] = new Array(8).fill(null);
     S.trackMacros[0][0] = { v: 0.5, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 }, { kind: 'level', key: 'pan', lo: 0, hi: 1 }] };
     S.trackMacros[0][1] = { v: 0.2, legs: [{ kind: 'bank', bank: 0, k: 1, lo: 0, hi: 1 }] };
-    paList = '0 0 1 4 0:synth:cutoff 0 4 100\n0 3 1 4 0:synth:cutoff 0 4 100\n0 0 1 4 0:slot:pan 0 4 100\n0 0 1 2 seq:0:swing 0 4 100\n';
+    paList = '0 0 1 4 0:synth:cutoff 0 4 100\n0 3 1 4 0:synth:cutoff 0 4 100\n0 0 1 4 0:slot:pan 0 4 100\n0 0 1 2 seq:0:' + SEQ_KEY + ' 0 4 100\n';
     A.automationRefreshPresence();
 }
 step('a change of TYPE with something to lose ASKS; nothing is written yet', () => {
@@ -186,7 +194,7 @@ step('Yes applies the change and clears EXACTLY the incompatible set, in every c
     writes.length = 0;
     cc(3, 127);                                      /* click = confirm */
     /* The DSP has now dropped the cutoff lanes: the next pa_list read says so. */
-    paList = '0 0 1 4 0:slot:pan 0 4 100\n0 0 1 2 seq:0:swing 0 4 100\n';
+    paList = '0 0 1 4 0:slot:pan 0 4 100\n0 0 1 2 seq:0:' + SEQ_KEY + ' 0 4 100\n';
     ticks(3);                                        /* the bulk flush */
     if (S.confirmTypeChange) throw new Error('modal still up');
     if (S.trackRoute[0] !== 1) throw new Error('route not Move: ' + S.trackRoute[0]);
@@ -196,7 +204,7 @@ step('Yes applies the change and clears EXACTLY the incompatible set, in every c
     const m0 = S.trackMacros[0][0];
     if (!m0 || m0.legs.length !== 1 || m0.legs[0].kind !== 'level') throw new Error('macro 0 should keep only its pan leg: ' + JSON.stringify(m0));
     if (!S.trackMacros[0][1]) throw new Error('the bank macro must survive');
-    if (A.automationStateFor(0, 0, '0:slot:pan') === null || A.automationStateFor(0, 0, 'seq:0:swing') === null) throw new Error('a compatible lane was dropped');
+    if (A.automationStateFor(0, 0, '0:slot:pan') === null || A.automationStateFor(0, 0, 'seq:0:' + SEQ_KEY + '') === null) throw new Error('a compatible lane was dropped');
     if (A.automationStateFor(0, 0, '0:synth:cutoff') !== null) throw new Error('the synth lane survived in the map');
 });
 step('a change WITHIN a type asks nothing and clears nothing', () => {

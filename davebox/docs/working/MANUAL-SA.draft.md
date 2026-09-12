@@ -823,7 +823,7 @@ those); the rest only change how the clip plays.
 | Gesture | Result |
 |---|---|
 | **Delete + jog click** | Reset every parameter in the active bank |
-| **Shift + Delete + jog click** | Reset all effects across every bank |
+| **Shift + Delete + jog click** | Reset the whole MIDI effect chain — NOTE FX, HARMZ, MIDI DLY and SEQ ARP |
 | **Shift + Delete + side button** | Reset the whole clip — notes and all parameters |
 
 **Resetting a parameter also clears its automation.** Automation follows the
@@ -831,6 +831,19 @@ thing it automates: reset a bank and the [automation](#11-automation) recorded f
 *that bank's* parameters goes with it, while every other lane is left alone.
 Clearing a sequence or resetting a clip clears that clip's automation entirely.
 Undo restores the notes and the automation together, as one step.
+
+The two gestures differ in **reach**, not in depth. Delete + jog click is about
+the one bank in front of you. Shift + Delete + jog click is about the sequencer's
+**MIDI effect chain** — it puts NOTE FX, HARMZ, MIDI DLY and SEQ ARP back to
+their defaults together, and deliberately leaves everything that defines the clip
+itself alone: the CLIP bank, drum lane and ALL LANES settings, and **STEP**, which
+is your notes. It also leaves the Macros, Sound and Automation banks untouched,
+because those can change how the track *sounds*, not just what it plays.
+
+⚠ **ARP IN cannot be automated.** Its settings belong to the track rather than to
+one clip, so a recorded lane could only ever be right for the clip you happened to
+be on. It is still available as a macro destination, and Delete + jog click on the
+ARP IN bank resets it.
 
 On a drum track, clearing a single **lane** leaves automation alone — a drum
 clip's automation covers the whole clip, so removing it would take moves

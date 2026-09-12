@@ -9,7 +9,7 @@
 import {
     NUM_TRACKS, NUM_STEPS, DRUM_LANES,
     PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS, ACTION_POPUP_MS,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_MACROS, isSoundBank
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_MACROS, BANK_STEP, isSoundBank
 } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -732,8 +732,17 @@ export function resetTarp(t) {
     S.screenDirty = true;
 }
 
+/* ⭐ SEQ ARP (bank 4) IS HERE, and its absence is why melodic drifted.
+ * `pfx_seq_arp_reset` has always existed (dsp/seq8_set_param.c) — it resets
+ * style, rate, octaves, gate, steps mode, retrigger, sync and the 8 step
+ * velocities, then silences the arp and re-inits it. Without bank 4 in this
+ * map, the only thing that would reset SEQ ARP was the whole-chain
+ * `pfx_reset`, so the melodic Delete + jog click reached for resetFxBanks and
+ * quietly reset FOUR banks whatever bank you were on — doing Shift's job and
+ * contradicting the manual. [[bank-reset-resets-the-bank-you-are-on]] */
 export function resetSingleFxBank(t, bankIdx) {
-    const dspCmd = { 1: 'pfx_noteFx_reset', 2: 'pfx_harm_reset', 3: 'pfx_delay_reset' }[bankIdx];
+    const dspCmd = { 1: 'pfx_noteFx_reset', 2: 'pfx_harm_reset', 3: 'pfx_delay_reset',
+                     4: 'pfx_seq_arp_reset' }[bankIdx];
     if (!dspCmd) return;
     noteUndoUnit();
     if (S.trackPadMode[t] === PAD_MODE_DRUM) {
@@ -765,6 +774,54 @@ export function resetSingleFxBank(t, bankIdx) {
      * is "the params THAT BANK owns" and not "everything". */
     automationClearBanksQueued(S.pendingDefaultSetParams, t, effectiveClip(t), [bankIdx]);
     S.screenDirty = true;
+}
+
+/* ==========================================================================
+ * RESETTING A BANK — the ONE owner of "what does resetting this bank mean"
+ *
+ * ⭐ THE MODEL (Josh, 2026-09-12): `Delete + jog click` resets THE BANK YOU ARE
+ * ON, and its automation goes with it. `Shift + Delete + jog click` puts the
+ * sequencer's MIDI FX chain back to a baseline — banks 1..4 — and nothing that
+ * defines the clip itself.
+ *
+ * ⚠⚠ WHY THIS EXISTS RATHER THAN A CALL AT EACH GESTURE SITE. The melodic
+ * `Delete + jog click` used to call resetFxBanks(), which resets banks 1-4
+ * WHATEVER bank you were on — doing Shift's job, contradicting the manual
+ * ("Reset every parameter in the active bank"), and silently taking three other
+ * banks' automation with it once automation started following. It drifted
+ * because the answer lived at four call sites; it lives here now.
+ * [[schwung-give-recurring-state-an-owner]]
+ *
+ * ⛔ STEP IS NEVER RESET. Josh, 2026-09-12: "step bank IS the sequencer data, so
+ * we shouldn't ever clear anything there." Clearing notes has its own gestures,
+ * with the blast radius to match.
+ * ⏸ ALL LANES (7) is left exactly as it was — it is mainly macro controls across
+ * 32 lanes, several reading a -1 sentinel rather than a value, so "default" is
+ * not a thing it has (Josh, 2026-09-12).
+ * ⛔ ARP IN (5) resets here but is NOT automatable at all — its params are
+ * per-TRACK while a lane is per-CLIP (see BANK_MACRO_ALLOW).
+ *
+ * Returns the bank's own name for the popup, or null when nothing was reset.
+ * ⭑ The popup NAMES the bank on purpose: a generic "BANK RESET" is exactly how
+ * the four-bank bug hid for months — it told the user nothing about scope.
+ */
+export function resetBankParams(t, bank) {
+    if (bank === BANK_STEP) return null;             /* the sequence itself */
+    if (bank >= 1 && bank <= 4) { resetSingleFxBank(t, bank); return BANKS[bank].name; }
+    if (bank === 5)             { resetTarp(t);             return BANKS[5].name; }
+    return null;                                     /* 0, 7, SOUND, MACROS, AUTOMATION: own paths */
+}
+
+/* Shift + Delete + jog click: the sequencer's MIDI FX chain, and only that.
+ * Banks 1-4 come back as one whole-chain `pfx_reset` (cheaper than four verbs,
+ * and it is exactly those four), with their automation following.
+ * ⛔ NOT bank 0 / drum lane / ALL LANES (they define the clip, not the MIDI
+ * processing), NOT ARP IN (not automatable; reset it from its own bank), and
+ * NOT SOUND / MACROS / AUTOMATION (those can affect SOUND, not just MIDI out).
+ * All four exclusions are Josh's, 2026-09-12. */
+export function resetMidiFxChain(t) {
+    resetFxBanks(t);
+    return 'FX CHAIN';
 }
 
 /* Conductor bank knob: knob k edits dAVEBOx track k's per-Conductor-clip value.

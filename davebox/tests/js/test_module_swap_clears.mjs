@@ -87,6 +87,14 @@ stubParamPagesDevice();
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const C = await import('../../ui/ui_constants.mjs');
+/* ⚠ A REAL automatable bank key, derived from the allow-list rather than made up.
+ * These fixtures used `swing`, which is not a bank param anywhere in
+ * ui_constants — so a lane on it could never have PLAYED (pushPair returns null
+ * for an unknown seq key) and, since 2026-09-12, is retired on sight by
+ * dropOrphanSeqLanes. The tests' intent — a sequencer bank lane SURVIVES a
+ * module swap / type change — is right; the target just has to be one the
+ * product can actually automate. [[fixtures-must-be-real-modules-not-my-shape]] */
+const SEQ_KEY = Object.keys(C.SEQ_AUTO_TARGETS)[0];
 const snd = await import('../../ui/ui_sound.mjs');
 const A = await import('../../ui/ui_automation.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
@@ -128,7 +136,7 @@ function plant() {
            + '0 0 1 4 0:synth:wave 0 4 100\n'
            + '0 0 1 4 0:fx1:mix 0 4 100\n'
            + '0 0 1 4 0:slot:pan 0 4 100\n'
-           + '0 0 1 2 seq:0:swing 0 4 100\n';
+           + '0 0 1 2 seq:0:' + SEQ_KEY + ' 0 4 100\n';
     A.automationRefreshPresence();
     S.trackRoute[0] = 0;
     /* ⚠ ui_sound keeps its OWN S (track/slot/comp); the globals above are a
@@ -170,7 +178,7 @@ step('⭐⭐ Yes clears EXACTLY the swapped component — in every clip — and 
     /* ⚠ The controls are the point: a swap of the SYNTH must not touch the
      * fx1 insert, the slot level, or the sequencer's own lanes. */
     const l0 = lanesOf(0);
-    for (const keep of ['0:fx1:mix', '0:slot:pan', 'seq:0:swing'])
+    for (const keep of ['0:fx1:mix', '0:slot:pan', 'seq:0:' + SEQ_KEY + ''])
         if (l0.indexOf(keep) < 0) throw new Error('a swap of synth took ' + keep);
 
     const k0 = S.trackMacros[0][0];
@@ -208,7 +216,7 @@ step('⚠ a swap with NOTHING to lose applies at once — no dialog', () => {
     plant();
     /* Clear the synth's own automation and legs, leaving the others. */
     S.trackMacros[0][0] = { v: 0.5, legs: [{ kind: 'level', key: 'pan', lo: 0, hi: 1 }] };
-    paList = '0 0 1 4 0:fx1:mix 0 4 100\n0 0 1 2 seq:0:swing 0 4 100\n';
+    paList = '0 0 1 4 0:fx1:mix 0 4 100\n0 0 1 2 seq:0:' + SEQ_KEY + ' 0 4 100\n';
     A.automationRefreshPresence();
     S.confirmModuleChange = null;
     snd.soundRequestModulePickForTest(NEW_MOD, CTX);
