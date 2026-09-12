@@ -806,6 +806,13 @@ export function resetSingleFxBank(t, bankIdx) {
  * the four-bank bug hid for months — it told the user nothing about scope.
  */
 export function resetBankParams(t, bank) {
+    /* ⛔ STEP first, and explicitly. ⚠ HONEST NOTE: with the dispatcher as it
+     * stands this line is REDUNDANT — STEP is bank 12, so it falls past the
+     * ranges below and returns null anyway, and mutating this line away does
+     * NOT fail the suite (checked 2026-09-12). It is here for the slice that
+     * adds SOUND / MACROS / AUTOMATION, where a generic path could otherwise
+     * reach STEP. The test drives the gesture on STEP and pins the BEHAVIOUR;
+     * do not read it as proving this guard. */
     if (bank === BANK_STEP) return null;             /* the sequence itself */
     if (bank >= 1 && bank <= 4) { resetSingleFxBank(t, bank); return BANKS[bank].name; }
     if (bank === 5)             { resetTarp(t);             return BANKS[5].name; }

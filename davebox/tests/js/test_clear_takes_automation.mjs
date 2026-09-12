@@ -272,7 +272,12 @@ step('⭐ Delete + jog click resets ONLY the bank you are on (the 1(4) regressio
 
 step('⛔⛔ STEP is NEVER reset — it IS the sequencer data', () => {
     /* Josh, 2026-09-12: "step bank IS the sequencer data, so we shouldn't ever
-     * clear anything there." Clearing notes has its own gestures. */
+     * clear anything there." Clearing notes has its own gestures.
+     * ⚠ This pins the BEHAVIOUR, not resetBankParams's early return — STEP is
+     * bank 12 and falls past every range in the dispatcher, so removing that
+     * guard SURVIVES this test today (verified). The value of this case is the
+     * slice that adds SOUND / MACROS / AUTOMATION, where a generic path could
+     * reach STEP and nothing else would notice. */
     reset(BANK_STEP);
     withDelete(jogClick);
     const q = queued();
