@@ -7,6 +7,15 @@
 # It deliberately does NOT grep for the body of the state machine. The first
 # version of this file pinned nine exact source lines, which broke on any
 # reformat and proved nothing about behaviour.
+#
+# ⚠⚠ WHAT THIS CANNOT SEE, stated so nobody reads a pass as more than it is.
+# Every check below is TEXTUAL. A mod:tick call that is present, in the right
+# file, in the right order, and never actually REACHED at runtime — guarded
+# behind a condition that is false, or short-circuited — passes all of them.
+# Verified: mutating the tick's guard to `if (0 && ...)` SURVIVES this file.
+# The state machine is covered by the unit; reachability is what the device
+# pass is for, and it is the one thing neither can answer.
+# [[test-the-path-not-the-function]]
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
