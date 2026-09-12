@@ -166,6 +166,41 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- a lane with NO resting value still has to give the param back ----
+     *
+     * Josh, on the device 2026-09-12: *"automated params are getting stuck when
+     * switching to a new clip and the new clip isn't resetting them back to
+     * where they are resting"* — and copied clips then look LINKED, because the
+     * parameter is simply sitting where the other clip's playhead left it.
+     *
+     * ⭐ THE CAUSE: `pa_cap_commit` (the Capture tap) builds its entry with
+     * pa_get and never sets `rest`, so a CAPTURED lane has PA_VAL_UNSET — and
+     * pa_release_track SKIPPED exactly those, abandoning the parameter. For a
+     * chain parameter the slot then persists that value as if it had been
+     * dialled by hand.
+     *
+     * ⚠ Evaluation already has a rule for this and states it: "A lane with no
+     * resting value captured falls back to the first point's value." Release
+     * simply did not follow it. ONE rule, both paths. */
+    {
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+        /* No pa_rest — exactly the shape pa_cap_commit leaves behind. */
+        pa_set(h, 0, 0, "1:fx1:cutoff", 0, 3000);
+        pa_set(h, 0, 0, "1:fx1:cutoff", 192, 12000);
+
+        pa_playback_scan(in, &in->tracks[0], 0, 0, 190, 384, NULL);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff"), "the captured lane plays");
+
+        pa_release_track(in, 0, 0);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 3000"),
+                  "a lane with no captured rest falls back to its FIRST POINT, not abandoned");
+        OK("⭐ a CAPTURED lane gives its parameter back too — it is not left stuck");
+        hx_destroy(h);
+    }
+
     /* ---- one tick cannot flood the queue ---------------------------- */
     {
         /* A tick stages at most PA_TICK_MAX_STAGE changes. That is the budget

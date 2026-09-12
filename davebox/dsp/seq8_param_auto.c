@@ -1560,6 +1560,32 @@ static void pa_write_cell(seq8_instance_t *inst, int track, int clip, const char
  * driving goes back to the value it held before automation touched it.
  * Without this a parameter is simply abandoned wherever the playhead left it —
  * and for a chain parameter that value is what the slot then persists. */
+/* The value a lane gives back when it stops driving its parameter.
+ *
+ * ⚠⚠ NOT simply `e->rest`. A lane built by the Capture tap (pa_cap_commit) is
+ * created through pa_get and never records a rest, so `rest` is PA_VAL_UNSET —
+ * and both release paths used to SKIP those, abandoning the parameter wherever
+ * the playhead left it. For a chain parameter the slot then persists that value
+ * as if it had been dialled by hand, and switching clips or copying one made
+ * two clips look LINKED (Josh, device, 2026-09-12).
+ *
+ * Evaluation already states the rule this follows — "A lane with no resting
+ * value captured falls back to the first point's value" (pa_eval_window) — so
+ * this is that one rule, honoured on the way out as well as on the way in.
+ * Returns 0 if there is genuinely nothing to give back. */
+static int pa_rest_value(const pa_entry_t *e, uint16_t *out) {
+    if (!e) return 0;
+    /* A RECORDED rest is given back whatever else is true — including for a
+     * RETIRED entry (count 0), which is how Delete+knob puts the parameter back
+     * where it was before the automation existed. Gating this on `count` broke
+     * exactly that, and the existing test caught it. */
+    if (e->rest != PA_VAL_UNSET) { *out = e->rest; return 1; }
+    /* Only the FALLBACK needs a point to fall back to. */
+    if (!e->count) return 0;
+    *out = e->points[0].val;
+    return 1;
+}
+
 /* AUDIO THREAD ONLY — it pushes on the ring. Anyone else asks with
  * pa_release_request and the next render block does it. */
 static void pa_release_track(seq8_instance_t *inst, int track, int clip) {
@@ -1578,11 +1604,12 @@ static void pa_release_track(seq8_instance_t *inst, int track, int clip) {
          * to give back — the value there is whatever the user set by hand, and
          * Stop must not undo that. */
         if (!(e->flags & PA_FLAG_ACTIVE)) continue;
-        if (e->rest == PA_VAL_UNSET) continue;
+        uint16_t back;
+        if (!pa_rest_value(e, &back)) continue;
         uint16_t tgt = e->target;
         if (tgt >= PA_MAX_TARGETS) continue;
         if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
-            pa_ring_push(inst, tgt, e->rest);
+            pa_ring_push(inst, tgt, back);
     }
 }
 
@@ -1602,11 +1629,11 @@ static void pa_release_service(seq8_instance_t *inst) {
         if (!__atomic_load_n(&e->release, __ATOMIC_ACQUIRE)) continue;
         __atomic_exchange_n(&e->release, 0, __ATOMIC_ACQ_REL);
         if (!e->used) continue;
-        uint16_t tgt = e->target;
-        if (tgt >= PA_MAX_TARGETS || e->rest == PA_VAL_UNSET) continue;
+        uint16_t tgt = e->target, back;
+        if (tgt >= PA_MAX_TARGETS || !pa_rest_value(e, &back)) continue;
         e->last_sent_valid = 0;
         if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
-            pa_ring_push(inst, tgt, e->rest);
+            pa_ring_push(inst, tgt, back);
     }
     uint8_t mask = __atomic_exchange_n(&inst->pa_release_mask, 0, __ATOMIC_ACQ_REL);
     if (!mask) return;
