@@ -183,6 +183,48 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- the SAME parameter, swept again in a DIFFERENT clip -------------- */
+    {
+        /* Launch another clip and sweep the same knob. The capture lane is
+         * found by (track, target) — the clip is not part of the match — so
+         * without an explicit reset the new sweep is appended to the OLD
+         * clip's points and inherits its tag: clip 1 would commit nothing
+         * while clip 0 quietly gained a sweep that was never played there.
+         *
+         * ⚠ This case is the one a mutation caught: every other assertion in
+         * this file passes with the reset deleted. */
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+        seq8_track_t *tr = &in->tracks[0];
+
+        in->playing   = 1;
+        tr->recording = 0;
+        hx_set_param(h, "t0_pa_live", "1:fx1:cutoff 3000");
+        pa_record_tick(in, tr, 0, /*clip*/0, 0,  24, 384);
+        pa_record_tick(in, tr, 0, /*clip*/0, 24, 24, 384);
+        HX_ASSERT(in->pa_cap[0].count == 2 && in->pa_cap[0].clip == 0, "two cells captured in clip 0");
+
+        /* The user launches clip 1 and keeps turning the same knob. */
+        hx_set_param(h, "t0_pa_live", "1:fx1:cutoff 7000");
+        pa_record_tick(in, tr, 0, /*clip*/1, 48, 24, 384);
+
+        HX_ASSERT(in->pa_cap[0].clip == 1,
+                  "⚠ the capture followed the knob to the clip it is now being heard in");
+        HX_ASSERT(in->pa_cap[0].count == 1,
+                  "⚠⚠ ...starting OVER — clip 0's cells are not spliced onto clip 1's sweep");
+        HX_ASSERT(in->pa_cap[0].points[0].val == 7000, "and what it holds is the new clip's value");
+
+        hx_set_param(h, "t0_pa_capture_commit", "0");
+        HX_ASSERT(in->pa_entries[0].used == 0,
+                  "⚠ committing clip 0 writes nothing — that sweep is gone, not silently re-homed");
+        hx_set_param(h, "t0_pa_capture_commit", "1");
+        HX_ASSERT(in->pa_entries[0].used && in->pa_entries[0].clip == 1 &&
+                  in->pa_entries[0].count == 1,
+                  "and clip 1 gets exactly the sweep that was heard there");
+        OK("⚠⚠ the same knob swept in a second clip starts a fresh capture");
+        hx_destroy(h);
+    }
+
     printf("test_param_auto_capture: PASS (%d checks)\n", ok_count);
     return 0;
 }
