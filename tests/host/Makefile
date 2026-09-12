@@ -53,7 +53,8 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_forward_channel \
           $(BUILD_DIR)/test_link_audio_backlog_trim \
           $(BUILD_DIR)/test_control_layout \
-          $(BUILD_DIR)/test_shadow_param_queue
+          $(BUILD_DIR)/test_shadow_param_queue \
+          $(BUILD_DIR)/test_chain_idle_tick
 
 .PHONY: all test clean
 
@@ -78,6 +79,17 @@ $(BUILD_DIR):
 # diagnosed as stale, and still reported SURVIVED until a bootstrap build had
 # generated the deps. If a mutation on a header-only unit survives, run
 # `make -C tests/host all` once and try again before believing it.
+#
+# ⚠⚠ AND ONE THE DEPS CANNOT FIX: make's mtime granularity is ONE SECOND, so a
+# restore that lands in the SAME second as the binary built from the mutated
+# header reads as "not newer" and the binary is REUSED. Hit 2026-09-12 with
+# tools/mutate.sh on chain_idle_tick.h: two mutations were correctly caught,
+# then the restored, CORRECT tree kept failing — the binary was still the
+# mutated build, same-second mtime, and `touch`ing the header fixed it.
+# The direction that bites silently is the opposite one: a mutation applied
+# within a second of the previous build reports SURVIVED without ever being
+# compiled. So for a header-only unit, mutate with a forcing build
+# (`make -B -C tests/host test`) or touch the header first.
 #
 # ⚠⚠ Two more things the plain `-MMD -MP` form got wrong, both fixed by
 # DEPFLAGS above plus $(filter %.c,$^) in the multi-source recipes:
@@ -120,6 +132,12 @@ $(BUILD_DIR)/test_forward_channel: test_forward_channel.c ../../src/host/forward
 
 $(BUILD_DIR)/test_control_layout: test_control_layout.c ../../src/host/shadow_constants.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+# chain_idle_tick.h lives with the chain DSP and is standalone by construction
+# (it includes no chain_internal.h), so the unit compiles against that dir
+# instead of src/host.
+$(BUILD_DIR)/test_chain_idle_tick: test_chain_idle_tick.c ../../src/modules/chain/dsp/chain_idle_tick.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) -I../../src/modules/chain/dsp $< -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_shadow_param_queue: test_shadow_param_queue.c ../../src/host/shadow_param_queue.h ../../src/host/shadow_constants.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)

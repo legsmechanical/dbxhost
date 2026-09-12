@@ -419,9 +419,18 @@ static int v2_process_midi_fx(chain_instance_t *inst,
     return out_count;
 }
 
-/* Call tick on all MIDI FX modules and send generated messages to synth */
-void v2_tick_midi_fx(chain_instance_t *inst, int frames) {
-    if (!inst) return;
+/* Call tick on all MIDI FX modules and send generated messages to synth.
+ *
+ * Returns 1 if a generated message was DELIVERED to the synth this tick — the
+ * shim's idle gate uses it to un-park a silent slot for this same block.
+ * Deliberately not "a MIDI FX emitted": a slot carrying MIDI FX with no synth
+ * loaded (Pre mode driving Move's native instrument) is silent by
+ * construction, so counting its output would wake it on every emitting frame
+ * to render a synth that isn't there — the idle gate switched off for exactly
+ * the slot that can never need it. */
+int v2_tick_midi_fx(chain_instance_t *inst, int frames) {
+    if (!inst) return 0;
+    int delivered = 0;
 
     for (int fx = 0; fx < inst->midi_fx_count; fx++) {
         if (fx < MAX_MIDI_FX && inst->midi_fx_bypassed[fx]) continue;
@@ -438,6 +447,9 @@ void v2_tick_midi_fx(chain_instance_t *inst, int frames) {
         for (int i = 0; i < count; i++) {
             if (inst->synth_plugin_v2 && inst->synth_instance && inst->synth_plugin_v2->on_midi) {
                 inst->synth_plugin_v2->on_midi(inst->synth_instance, out_msgs[i], out_lens[i], 0);
+                /* INSIDE the delivery guard, not outside it on `count` — see
+                 * the header comment. */
+                delivered = 1;
             }
         }
 
@@ -488,6 +500,7 @@ void v2_tick_midi_fx(chain_instance_t *inst, int frames) {
             }
         }
     }
+    return delivered;
 }
 
 /* ==========================================================================

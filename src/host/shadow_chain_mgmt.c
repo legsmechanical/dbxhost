@@ -53,6 +53,7 @@ void (*shadow_chain_process_fx)(void *instance, int16_t *buf, int frames) = NULL
 void (*shadow_chain_drain_sends)(void *instance, int32_t *const *accum,
                                  int n_sends, int frames, float slot_gain) = NULL;
 int (*shadow_chain_fx_requires_continuous)(void *instance) = NULL;
+int (*shadow_chain_take_midi_tick_wake)(void *instance) = NULL;
 host_api_v1_t shadow_host_api;
 
 /* Look up the slot owning a chain plugin instance and return its live
@@ -101,6 +102,13 @@ move_fx_strip_t shadow_move_fx_strip[MOVE_FX_SLOTS] = {
 lfo_state_t shadow_master_fx_lfos[MASTER_FX_LFO_COUNT];
 static float mfx_lfo_base_value[MASTER_FX_LFO_COUNT];
 static int mfx_lfo_base_valid[MASTER_FX_LFO_COUNT];
+
+/* Per-Move-bus LFOs — see shadow_chain_mgmt.h. Same struct, same vocabulary,
+ * one set per bus. The base value is what the target parameter held before this
+ * LFO touched it; without it an LFO walks its own target away every block. */
+lfo_state_t shadow_move_fx_lfos[MOVE_FX_SLOTS][MOVE_FX_LFO_COUNT];
+static float move_lfo_base_value[MOVE_FX_SLOTS][MOVE_FX_LFO_COUNT];
+static int   move_lfo_base_valid[MOVE_FX_SLOTS][MOVE_FX_LFO_COUNT];
 #define MFX_RUNTIME_CHAIN_PARAMS_MAX 65536
 #define MFX_RUNTIME_CHAIN_PARAMS_REFRESH_MS 500
 static char mfx_runtime_chain_params_cache[MASTER_FX_SLOTS][MFX_RUNTIME_CHAIN_PARAMS_MAX];
@@ -1452,13 +1460,16 @@ int shadow_inprocess_load_chain(void) {
         dlsym(shadow_dsp_handle, "chain_drain_sends");
     shadow_chain_fx_requires_continuous = (int (*)(void *))
         dlsym(shadow_dsp_handle, "chain_fx_requires_continuous");
+    shadow_chain_take_midi_tick_wake = (int (*)(void *))
+        dlsym(shadow_dsp_handle, "chain_take_midi_tick_wake");
 
-    unified_log("shim", LOG_LEVEL_INFO, "chain dlsym: inject=%p ext_fx_mode=%p process_fx=%p same_frame=%d keep_alive=%p",
+    unified_log("shim", LOG_LEVEL_INFO, "chain dlsym: inject=%p ext_fx_mode=%p process_fx=%p same_frame=%d keep_alive=%p midi_wake=%p",
             (void*)shadow_chain_set_inject_audio,
             (void*)shadow_chain_set_external_fx_mode,
             (void*)shadow_chain_process_fx,
             (shadow_chain_set_external_fx_mode && shadow_chain_process_fx) ? 1 : 0,
-            (void*)shadow_chain_fx_requires_continuous);
+            (void*)shadow_chain_fx_requires_continuous,
+            (void*)shadow_chain_take_midi_tick_wake);
 
     /* Determine boot state directory */
     char boot_state_dir[512];
@@ -2156,6 +2167,11 @@ int shadow_handle_slot_param_get(int slot, const char *key, char *buf, int buf_l
 static void mfx_lfo_update_base_from_set_param(int slot_idx,
                                                const char *key,
                                                const char *value);
+/* Same, for a Move bus's block. See its definition for why a knob turn MUST
+ * re-seat the LFO base. */
+static void move_lfo_update_base_from_set_param(int bus, int blk,
+                                                const char *param_key,
+                                                const char *val_str);
 
 int shadow_direct_get_param(uint8_t slot, const char *key, char *out, int cap) {
     if (!out || cap <= 0) return -1;
@@ -2345,6 +2361,10 @@ void shadow_direct_set_param(uint8_t slot, const char *key, const char *value) {
             mfx->bypassed = (value[0] && atoi(value)) ? 1 : 0;
         } else if (mfx->api && mfx->instance && mfx->api->set_param) {
             mfx->api->set_param(mfx->instance, rest, value);
+            /* A turn of a parameter an LFO targets is an EDIT OF ITS RESTING
+             * VALUE — re-seat the base or the LFO overwrites the turn next
+             * block and the knob reads dead. */
+            move_lfo_update_base_from_set_param(sl, blk, rest, value);
         }
         if (host.on_param_changed) host.on_param_changed(slot, key, value);
         return;
@@ -2729,6 +2749,40 @@ static void mfx_lfo_update_base_from_set_param(int slot_idx,
     }
 }
 
+/* ⚠⚠ THE KNOB-VS-LFO RULE, and it is not optional. An LFO modulates AROUND a
+ * remembered base. If the user then turns the very parameter it targets, that
+ * write lands on the module — and the LFO overwrites it on the next block,
+ * because its base still holds the old value. The knob reads DEAD.
+ *
+ * That is a bug this fork already carries elsewhere (`knob_forward_value`
+ * bypassing the modulation bus, fixed upstream at 84953eee and still present
+ * here), so it is a known shape, not a theory. A turn is an EDIT OF THE RESTING
+ * VALUE: re-seat the base and the LFO keeps modulating around where the user
+ * just put it.
+ *
+ * Called from every path that sets a Move-bus block parameter. */
+static void move_lfo_update_base_from_set_param(int bus,
+                                                int blk,
+                                                const char *param_key,
+                                                const char *val_str) {
+    if (bus < 0 || bus >= MOVE_FX_SLOTS || blk < 0 || blk >= MOVE_FX_BLOCKS) return;
+    if (!param_key || !param_key[0] || !val_str) return;
+
+    char *endptr = NULL;
+    float parsed = strtof(val_str, &endptr);
+    if (!endptr || endptr == val_str) return;      /* not a number: not a base */
+
+    char target_key[8];
+    snprintf(target_key, sizeof(target_key), "fx%d", blk + 1);
+    for (int i = 0; i < MOVE_FX_LFO_COUNT; i++) {
+        lfo_state_t *lfo = &shadow_move_fx_lfos[bus][i];
+        if (strcmp(lfo->target, target_key) != 0) continue;
+        if (strcmp(lfo->param, param_key) != 0) continue;
+        move_lfo_base_value[bus][i] = parsed;
+        move_lfo_base_valid[bus][i] = 1;
+    }
+}
+
 static int mfx_param_strip_suffix(const char *param_key,
                                   const char *suffix,
                                   char *out,
@@ -2920,6 +2974,149 @@ void shadow_master_fx_lfo_tick(int frames) {
                 snprintf(mod_str, sizeof(mod_str), "%d", (int)modulated);
             }
             mfx->api->set_param(mfx->instance, lfo->param, mod_str);
+        }
+    }
+}
+
+/* AUDIO PATH. The per-Move-bus LFOs, one pass over every bus (Block 5, Josh:
+ * "add lfos to move tracks b/c they can target the move bus's effects").
+ *
+ * ⭐ Deliberately a SIBLING of shadow_master_fx_lfo_tick rather than a
+ * generalisation of it. The two are the same shape, and factoring them is the
+ * obvious tidy — but the master path's metadata fallback
+ * (mfx_lfo_try_runtime_chain_params_*) is keyed by an index into per-slot cache
+ * arrays sized MASTER_FX_SLOTS, so sharing means re-indexing caches that serve
+ * a path working today. Added additively on purpose; FACTOR THE TWO once this
+ * one is device-proven, and not before.
+ *
+ * ⚠ Simpler than its sibling in exactly one way: it uses only the metadata the
+ * block already carries (mfx->chain_params_cache) and does not do the runtime
+ * re-fetch. A block with no cached metadata modulates over the 0..1 default
+ * rather than refusing — degraded, never silent. */
+void shadow_move_fx_lfo_tick(int frames) {
+    static uint64_t last_emit_ms[MOVE_FX_SLOTS][MOVE_FX_LFO_COUNT] = {{0}};
+    const float sample_rate = 44100.0f;
+
+    for (int bus = 0; bus < MOVE_FX_SLOTS; bus++) {
+        for (int i = 0; i < MOVE_FX_LFO_COUNT; i++) {
+            lfo_state_t *lfo = &shadow_move_fx_lfos[bus][i];
+            if (!lfo->enabled || lfo->target[0] == '\0' || lfo->param[0] == '\0') continue;
+
+            /* Target: "fx1".."fx<MOVE_FX_BLOCKS>" on THIS bus, or the other LFO
+             * on this bus. A bus never modulates another bus: the LFO belongs to
+             * the track, and reaching across would make one track's automation
+             * silently move another's sound. */
+            int target_blk = -1, target_lfo = -1;
+            if (lfo->target[0] == 'f' && lfo->target[1] == 'x' &&
+                lfo->target[2] >= '1' && lfo->target[2] <= '9' && lfo->target[3] == '\0') {
+                int n = lfo->target[2] - '1';
+                if (n < MOVE_FX_BLOCKS) target_blk = n;
+            } else if (strncmp(lfo->target, "lfo", 3) == 0 &&
+                       lfo->target[3] >= '1' && lfo->target[3] <= '9' && lfo->target[4] == '\0') {
+                int n = lfo->target[3] - '1';
+                if (n < MOVE_FX_LFO_COUNT) target_lfo = n;
+                if (target_lfo == i) continue;              /* never itself */
+            }
+
+            master_fx_slot_t *mfx = NULL;
+            const lfo_param_meta_t *lfo_meta = NULL;
+            if (target_blk >= 0) {
+                mfx = &shadow_move_fx_slots[bus][target_blk];
+                /* An empty block is a no-op, not a fault: the user can assign an
+                 * LFO before loading the effect it is for. */
+                if (!mfx->instance || !mfx->api || !mfx->api->set_param) continue;
+            } else if (target_lfo >= 0) {
+                lfo_meta = mfx_lfo_find_param_meta(lfo->param);
+                if (!lfo_meta) continue;
+            } else {
+                continue;
+            }
+
+            /* Phase: locked to song position while a transport runs (so the
+             * shape lines up with the bar), free-running otherwise. Writing
+             * lfo->phase keeps continuity across the switch. */
+            double bp = -1.0;
+            if (lfo->sync && host.get_beat_position) bp = host.get_beat_position();
+            if (lfo->sync && bp >= 0.0) {
+                lfo->phase = lfo_synced_phase(bp, lfo->rate_div);
+            } else {
+                float rate_hz = lfo->rate_hz;
+                if (lfo->sync) {
+                    float bpm = host.get_bpm ? host.get_bpm() : 120.0f;
+                    rate_hz = lfo_sync_rate_hz(bpm, lfo->rate_div);
+                }
+                lfo->phase = lfo_advance_phase(lfo->phase, rate_hz, frames, sample_rate);
+            }
+            double eff_phase = fmod(lfo->phase + (double)lfo->phase_offset, 1.0);
+            float signal = lfo_compute_shape(lfo->shape, eff_phase, lfo);
+
+            float p_min = 0.0f, p_max = 1.0f;
+            int p_is_float = 1;
+            if (target_lfo >= 0) {
+                p_min = lfo_meta->min_val;
+                p_max = lfo_meta->max_val;
+                p_is_float = lfo_meta->is_float;
+            } else if (mfx->chain_params_cached && mfx->chain_params_cache[0]) {
+                (void)mfx_chain_params_lookup_numeric_meta(mfx->chain_params_cache, lfo->param,
+                                                           &p_min, &p_max, &p_is_float);
+            }
+
+            /* An int/enum target would otherwise be re-sent every block at the
+             * same value — same rate limit the master rack uses. */
+            if (!p_is_float) {
+                struct timespec ts;
+                clock_gettime(CLOCK_MONOTONIC, &ts);
+                uint64_t now_ms = (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+                if (now_ms - last_emit_ms[bus][i] < MFX_LFO_INT_RATE_LIMIT_MS) continue;
+                last_emit_ms[bus][i] = now_ms;
+            }
+
+            if (!move_lfo_base_valid[bus][i]) {
+                if (target_lfo >= 0) {
+                    lfo_state_t *tgt = &shadow_move_fx_lfos[bus][target_lfo];
+                    if      (strcmp(lfo->param, "depth") == 0)        move_lfo_base_value[bus][i] = tgt->depth;
+                    else if (strcmp(lfo->param, "rate_hz") == 0)      move_lfo_base_value[bus][i] = tgt->rate_hz;
+                    else if (strcmp(lfo->param, "phase_offset") == 0) move_lfo_base_value[bus][i] = tgt->phase_offset;
+                    else continue;
+                } else {
+                    char val_buf[64] = {0};
+                    int got = mfx->api->get_param
+                            ? mfx->api->get_param(mfx->instance, lfo->param, val_buf, sizeof(val_buf))
+                            : 0;
+                    if (got > 0) {
+                        move_lfo_base_value[bus][i] = strtof(val_buf, NULL);
+                    } else {
+                        float fb = (p_min + p_max) * 0.5f;
+                        if (mfx->chain_params_cached && mfx->chain_params_cache[0])
+                            (void)mfx_chain_params_lookup_default_value(mfx->chain_params_cache,
+                                                                        lfo->param, &fb);
+                        if (fb < p_min) fb = p_min;
+                        if (fb > p_max) fb = p_max;
+                        move_lfo_base_value[bus][i] = fb;
+                    }
+                }
+                move_lfo_base_valid[bus][i] = 1;
+            }
+
+            float mod_signal = lfo->bipolar ? signal : (signal + 1.0f) * 0.5f;
+            float span = p_max - p_min;
+            float scale = lfo->bipolar ? (0.5f * span) : span;
+            float modulated = move_lfo_base_value[bus][i] + (mod_signal * lfo->depth) * scale;
+            if (modulated < p_min) modulated = p_min;
+            if (modulated > p_max) modulated = p_max;
+            if (!p_is_float) modulated = roundf(modulated);
+
+            if (target_lfo >= 0) {
+                lfo_state_t *tgt = &shadow_move_fx_lfos[bus][target_lfo];
+                if      (strcmp(lfo->param, "depth") == 0)        tgt->depth = modulated;
+                else if (strcmp(lfo->param, "rate_hz") == 0)      tgt->rate_hz = modulated;
+                else if (strcmp(lfo->param, "phase_offset") == 0) tgt->phase_offset = modulated;
+            } else {
+                char mod_str[32];
+                if (p_is_float) snprintf(mod_str, sizeof(mod_str), "%.6f", modulated);
+                else            snprintf(mod_str, sizeof(mod_str), "%d", (int)modulated);
+                mfx->api->set_param(mfx->instance, lfo->param, mod_str);
+            }
         }
     }
 }
@@ -3696,6 +3893,94 @@ void shadow_inprocess_handle_param_request(void) {
             return;
         }
 
+        /* Per-bus LFO params: move_fx:<N>:lfo1:* / lfo2:*. Same field vocabulary
+         * as master_fx:lfoN:* — one editor in the module speaks both. */
+        if (strncmp(rest, "lfo", 3) == 0 && rest[3] >= '1' && rest[3] <= '9' && rest[4] == ':') {
+            int li = rest[3] - '1';
+            if (li < 0 || li >= MOVE_FX_LFO_COUNT) {
+                shadow_param->error = 1;
+                shadow_param->result_len = -1;
+                shadow_param_publish_response(req_id);
+                return;
+            }
+            const char *lp = rest + 5;
+            lfo_state_t *lfo = &shadow_move_fx_lfos[sl][li];
+            if (req_type == 1) {            /* SET */
+                if (strcmp(lp, "enabled") == 0) {
+                    lfo->enabled = atoi(shadow_param->value);
+                    /* Same courtesy defaults the master rack applies, so a
+                     * freshly enabled LFO does something audible. */
+                    if (lfo->enabled) {
+                        if (lfo->rate_hz < 0.1f) lfo->rate_hz = 1.0f;
+                        if (lfo->depth == 0.0f && !lfo->target[0] && !lfo->param[0]) lfo->depth = 0.5f;
+                    }
+                } else if (strcmp(lp, "shape") == 0) {
+                    int v = atoi(shadow_param->value);
+                    lfo->shape = v < 0 ? 0 : (v >= LFO_NUM_SHAPES ? LFO_NUM_SHAPES - 1 : v);
+                } else if (strcmp(lp, "rate_hz") == 0) {
+                    float v = strtof(shadow_param->value, NULL);
+                    lfo->rate_hz = v < 0.1f ? 0.1f : (v > 20.0f ? 20.0f : v);
+                } else if (strcmp(lp, "rate_div") == 0) {
+                    int v = atoi(shadow_param->value);
+                    lfo->rate_div = v < 0 ? 0 : (v >= LFO_NUM_DIVISIONS ? LFO_NUM_DIVISIONS - 1 : v);
+                } else if (strcmp(lp, "sync") == 0) {
+                    lfo->sync = atoi(shadow_param->value);
+                    if (lfo->sync && lfo->rate_div == 0) lfo->rate_div = 15;   /* 1/1 */
+                } else if (strcmp(lp, "depth") == 0) {
+                    float v = strtof(shadow_param->value, NULL);
+                    lfo->depth = v < -1.0f ? -1.0f : (v > 1.0f ? 1.0f : v);
+                } else if (strcmp(lp, "polarity") == 0) {
+                    lfo->bipolar = atoi(shadow_param->value) ? 1 : 0;
+                } else if (strcmp(lp, "phase_offset") == 0) {
+                    float v = strtof(shadow_param->value, NULL);
+                    lfo->phase_offset = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+                } else if (strcmp(lp, "retrigger") == 0) {
+                    lfo->retrigger = atoi(shadow_param->value) ? 1 : 0;
+                } else if (strcmp(lp, "target") == 0) {
+                    snprintf(lfo->target, sizeof(lfo->target), "%s", shadow_param->value);
+                    move_lfo_base_valid[sl][li] = 0;      /* re-snapshot the base */
+                } else if (strcmp(lp, "target_param") == 0) {
+                    snprintf(lfo->param, sizeof(lfo->param), "%s", shadow_param->value);
+                    move_lfo_base_valid[sl][li] = 0;
+                } else {
+                    shadow_param->error = 1;
+                    shadow_param->result_len = -1;
+                    shadow_param_publish_response(req_id);
+                    return;
+                }
+                shadow_param->error = 0;
+                shadow_param->result_len = 0;
+            } else if (req_type == 2) {     /* GET */
+                /* ⚠ Straight into shadow_param->value, never via a local. A
+                 * SHADOW_PARAM_VALUE_LEN buffer is 64 KB and this runs on the
+                 * SPI callback — tests/host/test_param_buffers_not_on_stack.sh
+                 * exists for exactly this and caught it here. */
+                char *out = shadow_param->value;
+                const size_t cap = SHADOW_PARAM_VALUE_LEN;
+                if      (strcmp(lp, "enabled") == 0)      snprintf(out, cap, "%d", lfo->enabled);
+                else if (strcmp(lp, "shape") == 0)        snprintf(out, cap, "%d", lfo->shape);
+                else if (strcmp(lp, "rate_hz") == 0)      snprintf(out, cap, "%.4f", lfo->rate_hz);
+                else if (strcmp(lp, "rate_div") == 0)     snprintf(out, cap, "%d", lfo->rate_div);
+                else if (strcmp(lp, "sync") == 0)         snprintf(out, cap, "%d", lfo->sync);
+                else if (strcmp(lp, "depth") == 0)        snprintf(out, cap, "%.4f", lfo->depth);
+                else if (strcmp(lp, "polarity") == 0)     snprintf(out, cap, "%d", lfo->bipolar);
+                else if (strcmp(lp, "phase_offset") == 0) snprintf(out, cap, "%.4f", lfo->phase_offset);
+                else if (strcmp(lp, "retrigger") == 0)    snprintf(out, cap, "%d", lfo->retrigger);
+                else if (strcmp(lp, "target") == 0)       snprintf(out, cap, "%s", lfo->target);
+                else if (strcmp(lp, "target_param") == 0) snprintf(out, cap, "%s", lfo->param);
+                else {
+                    shadow_param->error = 1;
+                    shadow_param->result_len = -1;
+                    shadow_param_publish_response(req_id);
+                    return;
+                }
+                shadow_param->error = 0;
+                shadow_param->result_len = strlen(shadow_param->value);
+            }
+            shadow_param_publish_response(req_id);
+            return;
+        }
+
         /* Strip-level params (no fxN prefix): volume / pan / send_a / send_b */
         if (strcmp(rest, "volume") == 0 || strcmp(rest, "pan") == 0 ||
             strcmp(rest, "send_a") == 0 || strcmp(rest, "send_b") == 0) {
@@ -3763,6 +4048,10 @@ void shadow_inprocess_handle_param_request(void) {
             shadow_param->result_len = 0;
         } else {
             fx_slot_param_rest(mfx, rest, shadow_param, req_type);
+            /* Same rule as the direct path: a SET of a parameter an LFO targets
+             * moves the base it modulates around. Only on a write. */
+            if (req_type == 1)
+                move_lfo_update_base_from_set_param(sl, blk, rest, shadow_param->value);
         }
         shadow_param_publish_response(req_id);
         return;

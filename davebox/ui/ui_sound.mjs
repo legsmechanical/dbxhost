@@ -1038,6 +1038,12 @@ export function compLabelsForTest(id, param) {
     return { short: compShort(id), wide: compWide(id), pair: compParamLabel(id, param) };
 }
 export function soundLfoCompsForTest() { return lfoCompList(); }
+/* The commit a target pick performs, exposed so a test can assert WHICH KEY the
+ * write lands on. The address differs by track kind (chain params vs the host's
+ * per-bus rack LFOs) and that is exactly the half of Block 5 worth pinning. */
+export function soundCommitLfoTargetForTest(compKey, paramKey) {
+    commitLfoTarget(compKey, paramKey);
+}
 export function soundMacrosForTest() {
     return {
         active: macrosActive(), view: S.view, bankHome: S.bankHome,
@@ -1355,9 +1361,10 @@ export function soundInEditor() {
  *     2026-09-05: it is what you are hearing) and becomes the preset record
  *   menu / module browser / slot presets → the menu
  *   CONFIG → the new track's CONFIG (a MIDI track has one, item 14); the LFOs
- *     screen → only a Schwung track has LFOs, else its menu
- *   an LFO editor → the same LFO on the new track (Schwung), else its menu; its
- *     target/param sub-pickers collapse to that LFO
+ *     screen → a Schwung track or a MOVE track (its bus's rack LFOs, Block 5),
+ *     else its menu
+ *   an LFO editor → the same LFO on the new track (Schwung or Move), else its
+ *     menu; its target/param sub-pickers collapse to that LFO
  *   MACROS → MACROS; the K-list and its sub-pickers → the K-list
  *   the bank prompt → the prompt; the Session FX gateway → the gateway (global,
  *     not per track)
@@ -1385,7 +1392,11 @@ function followPlan(fromView, route) {
         return { editor: false, then: null };
     }
     if (v === VIEW_LFO || v === VIEW_LFO_TARGET || v === VIEW_LFO_PARAM)
-        return { editor: false, then: chain ? { t: 'lfo', lfo: S.lfoNum | 0 } : null };
+        /* ⭐ A MOVE track has LFOs too now (Block 5) — its bus's rack LFOs — so
+         * the same LFO follows onto it exactly as onto a Schwung track. Only a
+         * track with no LFOs at all (MIDI, or no instrument) falls back to its
+         * menu. Was `chain ?`, which sent a Move track to its menu. */
+        return { editor: false, then: (chain || route === 1) ? { t: 'lfo', lfo: S.lfoNum | 0 } : null };
     if (v === VIEW_MACROS) return { editor: false, then: { t: 'view', view: VIEW_MACROS } };
     if (v === VIEW_KNOBS || v === VIEW_KNOBLEGS || v === VIEW_KNOB_TARGET || v === VIEW_KNOB_PARAM)
         return { editor: false, then: { t: 'knobs' } };
@@ -2997,6 +3008,15 @@ function buildPickRows() {
          * layout, transpose, velocity in — davebox-side settings that apply to
          * a Move track as much as a Schwung one. A Master/Send bus is not a
          * track and has none. configRows reads davebox's own state only. */
+        /* LFOs on a MOVE track (Block 5, Josh 2026-09-10: "add lfos to move
+         * tracks b/c they can target the move bus's effects"). The reason is
+         * the whole point — a Move bus carries real effects, so there IS
+         * something to modulate; the restriction was ours. Same door, same
+         * editor, backed by the host's per-bus rack LFOs.
+         * ⚠ Move buses only. A Master/Send bus is not a track, and although the
+         * host does carry master-FX LFOs, no dAVEBOx screen has ever exposed
+         * them — offering that here would be a separate feature, not this one. */
+        if (S.bus.kind === 'move') rows.push({ kind: 'settings', label: 'LFOs' });
         if (S.bus.kind === 'move') rows.push({ kind: 'config', label: 'Config' });
     } else {
         rows.push({ kind: 'trackto', label: 'Instrument' });
@@ -6147,7 +6167,31 @@ export function renderMacrosPeek(track) {
 const LFO_KEYS = ['enabled', 'shape', 'polarity', 'sync', 'rate_div', 'rate_hz',
     'depth', 'phase_offset', 'retrigger', 'target', 'target_param'];
 
-function lfoKey(key) { return 'lfo' + (S.lfoNum + 1) + ':' + key; }
+/* ⭐ TWO BACKING STORES, ONE EDITOR (Block 5, Josh: "add lfos to move tracks
+ * b/c they can target the move bus's effects").
+ *
+ * A chain slot's LFOs are chain params — `lfo1:rate_hz`. A MOVE bus's are the
+ * host's per-bus rack LFOs — `move_fx:<N>:lfo1:rate_hz`. Same field vocabulary,
+ * same editor, different address; everything below composes the key through
+ * here so neither path can be half-converted.
+ *
+ * ⚠ A Move bus's LFO cannot live in the chain: a chain LFO writes through
+ * chain_mod_set_param_string, which resolves only synth/fx<N>/midi_fx<N> inside
+ * its own chain instance and has no reach into host-layer Move-bus state. The
+ * host grew per-bus LFOs for exactly this. */
+function lfoOnBus()  { return !!(S.bus && S.bus.kind === 'move'); }
+function lfoKey(key) {
+    const k = 'lfo' + (S.lfoNum + 1) + ':' + key;
+    return lfoOnBus() ? S.bus.prefix + k : k;
+}
+/* A target is STORED bare — `fx1`, never `move_fx:2:fx1` — because the LFO
+ * already belongs to its bus and the host parses the bare form (it is the same
+ * shape a chain LFO stores). Reading that component's metadata, though, needs
+ * the full address. Keep the two apart: conflating them reads the CHAIN's fx1
+ * while displaying the BUS's, which looks like a working screen. */
+function lfoCompAddr(compKey) {
+    return (lfoOnBus() && /^fx\d+$/.test(compKey)) ? S.bus.prefix + compKey : compKey;
+}
 
 function openLfoEditor(lfoNum) {
     S.lfoNum = lfoNum;
@@ -6246,13 +6290,23 @@ function lfoCompList() {
      * back as a `qual` only where a name repeats. Two MIDI FX slots exist here,
      * so this list can collide in two families rather than one. */
     const probe = (key, label) => {
-        const m = engineLoadedModule(S.slot, key);
-        if (m) comps.push({ key, name: String(engineGet(S.slot, key, 'name') || m),
+        const addr = lfoCompAddr(key);
+        const m = engineLoadedModule(S.slot, addr);
+        if (m) comps.push({ key, name: String(engineGet(S.slot, addr, 'name') || m),
                             slot: label });
     };
+    if (lfoOnBus()) {
+        /* A Move bus's components are its insert FX and nothing else — Move owns
+         * the voice, so there is no synth row to offer and no MIDI FX. Same
+         * enumeration the MACROS target list already does for a bus (:3616).
+         * ⚠ BUS_BLOCKS, never a literal 4: this fork runs MOVE_FX_BLOCKS=4 where
+         * upstream has 2, and the count must come from one place. */
+        for (const n of BUS_BLOCKS) probe('fx' + n, 'FX ' + n);
+    } else {
     probe('synth', 'Synth');
     for (let i = 1; i <= 4; i++) probe('fx' + i, 'FX ' + i);
     for (let i = 1; i <= 2; i++) probe('midi_fx' + i, 'MIDI FX ' + i);
+    }
     qualifyDuplicates(comps);
     for (const c of comps) c.label = c.name;
     comps.push({ key: 'lfo' + (S.lfoNum === 0 ? 2 : 1), label: 'LFO ' + (S.lfoNum === 0 ? 2 : 1) });
@@ -6269,7 +6323,7 @@ function openLfoTargets() {
 function lfoParamList(compKey) {
     if (compKey === 'lfo1' || compKey === 'lfo2') return LFO_TARGET_PARAMS.slice();
     const out = [];
-    const cp = engineGet(S.slot, compKey, 'chain_params');
+    const cp = engineGet(S.slot, lfoCompAddr(compKey), 'chain_params');
     if (cp) {
         try {
             for (const p of (JSON.parse(cp) || [])) {

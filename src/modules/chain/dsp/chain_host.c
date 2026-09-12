@@ -757,9 +757,49 @@ void parse_debug_log(const char *msg) {
     }
 }
 
+/* Defined below, next to the rest of the modulation code; "mod:tick" in
+ * v2_set_param needs it well before that point. Without this declaration the
+ * call compiles as an implicit int-returning extern and then collides with the
+ * static definition — a hard error, but note that scripts/build.sh printed
+ * "Build complete!" and repackaged the PREVIOUS dsp.so anyway.
+ * [[build-must-read-its-own-artifact]] */
+static void lfo_tick(chain_instance_t *inst, int frames);
+
 static void v2_set_param(void *instance, const char *key, const char *val) {
     chain_instance_t *inst = (chain_instance_t *)instance;
     if (!inst) return;
+
+    /*
+     * ---- "mod:tick" -------------------------------------------------------
+     *
+     * The shim's idle gate skips render_block on a silent slot, and lfo_tick /
+     * v2_tick_midi_fx live INSIDE render_block — so a parked slot's modulation
+     * and MIDI FX timers stopped advancing altogether, moving only on the
+     * 1-in-SLOT_PROBE_WINDOW_FRAMES probe. This advances them without the
+     * audio render, which was the expensive part.
+     *
+     * It also reports back whether anything a MIDI FX generated actually
+     * reached the synth — the shim renders this same block if so, rather than
+     * leaving the note unheard until the next probe (chain_idle_tick.h).
+     *
+     * ⚠⚠ FIRST STATEMENT IN THE FUNCTION, ABOVE THE DEBUG LOG, and that
+     * position is load-bearing: this is called from the SPI callback on EVERY
+     * silent frame, and the log below snprintf()s unconditionally. Nothing on
+     * our side of this branch allocates, logs or touches a file. It does call
+     * into third-party MIDI FX tick() — the same code render_block has always
+     * run here, now also on the frames render_block skips.
+     *
+     * Routed through set_param rather than a new plugin_api_v2_t field: the
+     * struct's size is a contract between two binaries, and appending to it
+     * would have a host read past the end of an older module's. A string key
+     * costs one strcmp.
+     */
+    if (key && key[0] == 'm' && strcmp(key, "mod:tick") == 0) {
+        int frames = val ? atoi(val) : MOVE_FRAMES_PER_BLOCK;
+        lfo_tick(inst, frames);
+        chain_idle_tick_mark(&inst->idle_tick, v2_tick_midi_fx(inst, frames));
+        return;
+    }
 
     {
         char dbg[256];
@@ -2533,11 +2573,16 @@ static void v2_render_block(void *instance, int16_t *out_interleaved_lr, int fra
         }
     }
 
-    /* Tick LFOs — emit modulation before audio render */
-    lfo_tick(inst, frames);
-
-    /* Process MIDI FX tick (for arpeggiator timing) */
-    v2_tick_midi_fx(inst, frames);
+    /* Tick LFOs (modulation before audio render) and the MIDI FX timers.
+     *
+     * ⚠ A silent-slot "mod:tick" may already have advanced both AND woken this
+     * exact block with a generated note. Never advance twice: that is a
+     * doubled LFO rate and a doubled arp, on precisely the frames a note
+     * arrives. */
+    if (chain_idle_tick_consume(&inst->idle_tick)) {
+        lfo_tick(inst, frames);
+        v2_tick_midi_fx(inst, frames);
+    }
 
     /*
      * ---- MODULE BUSES ----------------------------------------------------
@@ -2837,4 +2882,15 @@ int chain_fx_requires_continuous(void *instance) {
         if (inst->fx_requires_continuous[i]) return 1;
     }
     return 0;
+}
+
+/* Exported: called by the shim immediately after its silent-slot "mod:tick".
+ * A true result means a timer-generated MIDI message has already reached the
+ * synth, so the current audio block must render instead of remaining parked.
+ * One-shot; see chain_idle_tick.h for why a "no" also clears the double-tick
+ * guard. */
+int chain_take_midi_tick_wake(void *instance) {
+    chain_instance_t *inst = (chain_instance_t *)instance;
+    if (!inst) return 0;
+    return chain_idle_tick_take(&inst->idle_tick);
 }

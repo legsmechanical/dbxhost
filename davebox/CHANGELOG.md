@@ -38,6 +38,11 @@ the section into a versioned heading at release time.
   On a drum track, clearing a single lane leaves automation alone — a drum
   clip's automation covers the whole clip, so taking it would remove moves
   belonging to the lanes you kept.
+- **LFOs on Move tracks.** A Move track's bus carries real effects, so it now has
+  the same two LFOs a Schwung track does — find them under **LFOs** on the
+  track's menu, and point them at any of that bus's effect slots. Everything
+  works the way it already did: same shapes, same tempo sync, same depth and
+  phase.
 - **Boot straight into dAVEBOx.** dAVEBOx now appears in official Schwung's boot
   menu: hold **Back** while the screen reads *"Loading Schwung — press Back to
   change"*, pick **dAVEBOx**, and it starts without going through the Tools menu.
@@ -270,6 +275,13 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **Arps and MIDI delays no longer stumble on a quiet instrument.** An
+  arpeggiator or MIDI delay feeding an instrument that had gone silent could
+  drop or delay its first notes by up to half a second — the instrument was
+  parked to save power and nothing was driving the effect's timing. It now
+  starts on time. LFOs on a quiet instrument benefit from the same fix: they
+  move smoothly instead of stepping, and no longer jump from a stale position
+  when the next note arrives.
 - **Undo and redo keep automation straight.** Redoing a step lock could bring
   it back without its parameter — and the next parameter you automated then
   played that lock. Undoing a doubled drum loop now takes its automation back
