@@ -73,6 +73,7 @@ static int sp_globals_state(sp_ctx_t *cx) {
             inst->merge_solo_track = 0xFF;
             for (t2 = 0; t2 < NUM_TRACKS; t2++) inst->merge_pending_count[t2] = 0;
             capture_clear(inst);
+            pa_cap_clear(inst, -1);
             inst->cap_select_active = 0;
             inst->playing        = 0;
             inst->count_in_ticks = 0;

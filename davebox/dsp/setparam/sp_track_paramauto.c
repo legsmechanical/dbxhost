@@ -137,6 +137,23 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* pa_capture_commit: "<clip>" — the Capture tap (plan 6e). Every knob
+     * sweep heard on this track while Record was OFF becomes real automation
+     * in the clip it was heard in. Consumes the capture buffer. */
+    if (!strcmp(sub, "pa_capture_commit")) {
+        int c = clamp_i(my_atoi(val), 0, NUM_CLIPS - 1);
+        if (pa_cap_commit(inst, tidx, c))
+            seq8_ilog(inst, "SEQ8 pa capture: commit");
+        return 1;
+    }
+
+    /* pa_capture_clear — drop this track's captured sweeps (Shift+Capture,
+     * alongside the note ring's own tN_capture_clear). */
+    if (!strcmp(sub, "pa_capture_clear")) {
+        pa_cap_clear(inst, tidx);
+        return 1;
+    }
+
     /* pa_rest: "<clip> <target> <value>" — the value the parameter held before
      * automation existed, restored on stop / deactivate / clear. Recorded once;
      * a second write does not move it, or stopping would restore whatever the

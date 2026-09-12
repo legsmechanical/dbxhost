@@ -615,8 +615,10 @@ hear it. One **undo** takes back the entire step-recording session in one go.
 
 dAVEBOx is always listening. Everything you play on the pads while a track is not
 recording is held in a buffer, so if you play something you want to keep, tap
-**Capture** and it becomes real clip data. The Capture button lights bright while
-there is buffered input to keep.
+**Capture** and it becomes real clip data. **Knob moves are held the same way** —
+sweep a filter over a running loop, decide you liked it, and Capture writes it in
+as [automation](#11-automation). The Capture button lights bright while there is
+anything buffered to keep, notes or knob moves.
 
 > **Like Move:** this is Move's Capture — play first, keep it after.
 
@@ -631,7 +633,15 @@ What Capture does depends on the transport:
 After a stopped capture into an empty set, a tempo chooser offers the detected BPM
 and a few nearby candidates over a strip showing your take against the bars —
 playback keeps rolling as you scroll them, so you can hear which one fits. Capture
-works on drum clips too. To clear the buffer, hold **Shift** and tap **Capture**.
+works on drum clips too. To clear the buffer, hold **Shift** and tap **Capture** —
+that drops held knob moves as well as held notes.
+
+**Capturing knob moves.** Any parameter you turn while the loop is running and
+Record is **off** is kept, and one Capture tap commits every one of them at once,
+into the clip you heard them in. A captured sweep lands as a smooth lane you can
+edit like any other automation, and it undoes in one press. Because it is about
+what you just heard, the buffer only fills while the transport runs, going round
+the loop again replaces what the last lap kept, and stopping clears it.
 
 ## 6.6 Clip length & the loop
 
