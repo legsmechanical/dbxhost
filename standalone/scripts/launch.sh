@@ -258,6 +258,24 @@ setsid --wait bash -c '
   # string -- a bare apostrophe anywhere in it, even in a comment, ends the
   # string and the script stops parsing.)
   SWEEP_NAMES="MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber schwung-manager display-server"
+  # ⚠⚠ ENTRY: AT BOOT, MoveLauncher IS OUR OWN SUPERVISOR — NEVER SWEEP IT.
+  # The unit is Type=simple / KillMode=process / Restart=on-failure with
+  # RestartSec=2s. MoveLauncher is still the unit main process when the selector
+  # hands over, so killing it by name reads to systemd as the service failing:
+  # two seconds later it starts a FRESH MoveLauncher, and because KillMode is
+  # `process` our tree is NOT torn down with it. The result is two stacks on one
+  # SPI device, which is the "communication error" then freeze Josh hit on the
+  # first boot test (2026-09-12, device: our Move at 01:00:19.50, systemd
+  # restart at 01:00:21, NRestarts=1, our launcher orphaned to init).
+  # ⭑ The plan predicted "at boot the sweep finds nothing". It finds exactly the
+  # one process that must survive.
+  # `Move` goes too: /opt/move/Move is the selector, our own ancestor image.
+  SWEEP_WAIT_NAMES="MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui"
+  if at_boot; then
+    SWEEP_NAMES="MoveMessageDisplay MoveOriginal schwung shadow_ui link-subscriber schwung-manager display-server"
+    SWEEP_WAIT_NAMES="MoveMessageDisplay MoveOriginal schwung shadow_ui"
+    echo "boot entry: MoveLauncher and Move held OUT of the sweep (they are our own supervisor)"
+  fi
   # ⭑ ASK ONCE before walking the list. Each per-name pidof is a process spawn,
   # and on this hardware nine of them cost real time -- in front of the splash,
   # where the user is watching nothing happen. When stock has already pre-killed
@@ -293,7 +311,7 @@ setsid --wait bash -c '
   # mirror, schwung-manager is a web server. Nothing is lost by killing them.
   _swept=0
   while [ "$_swept" -lt 40 ]; do
-    pidof MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui >/dev/null 2>&1 || break
+    pidof $SWEEP_WAIT_NAMES >/dev/null 2>&1 || break
     sleep 0.025
     _swept=$((_swept + 1))
   done
@@ -662,7 +680,19 @@ setsid --wait bash -c '
   # dAVEBOx again, and the only way out is the ~2 s Back window the selector offers.
   # That is the real cost of defaulting, and it is a separate decision.
   if at_boot; then
-    echo "boot entry: exiting -- systemd re-runs the unit and the selector boots the default"
+    # ⚠⚠ EXIT NON-ZERO, DELIBERATELY. The unit is Restart=on-failure, so a
+    # CLEAN exit is not restarted at all — quitting dAVEBOx would leave the
+    # device with nothing running and a dark panel until the user power-cycles.
+    # Failing is what brings the selector back, and the selector then boots the
+    # default target. This is the whole exit path at boot, so it is worth
+    # stating plainly rather than leaving as a bare exit code.
+    # ⭑ Verified from the unit on device 2026-09-12: Type=simple,
+    # Restart=on-failure, RestartSec=2s, KillMode=process.
+    # ⚠ Do NOT clear the `healthy` marker here. It records that this target
+    # STARTED, which it did — a whole session ago. Removing it on a normal quit
+    # would re-arm the watchdog against a target that works.
+    echo "boot entry: exiting NON-ZERO so Restart=on-failure re-runs the unit; the selector then boots the default"
+    exit 1
   elif command grep -q "already running" /data/UserData/schwung/launch-standalone.sh 2>/dev/null; then
     echo "caller guards its Move restart -- resuming the watchdog and holding until Move is up"
     unit --resume-launcher

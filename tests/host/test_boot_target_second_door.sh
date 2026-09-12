@@ -146,6 +146,50 @@ else
     ok "⚠ every move-launcher pause/resume goes through unit()"
 fi
 
+# ---- 5. THE TWO BUGS THE FIRST BOOT TEST FOUND (2026-09-12, on hardware) ----
+# Both were invisible off-device and both came from the same wrong assumption:
+# that at boot there is nothing already running that matters.
+
+# (a) THE SWEEP KILLED OUR OWN SUPERVISOR. MoveLauncher is still the unit's main
+#     process when the selector hands over. Killing it by name reads as the
+#     service failing; RestartSec=2s starts a fresh one, KillMode=process leaves
+#     OUR tree alive, and two stacks fight over one SPI device — "communication
+#     error", then a freeze.
+boot_sweep=$(code "$LAUNCH" | grep -A6 'if at_boot; then' | grep 'SWEEP_NAMES=' || true)
+if [ -z "$boot_sweep" ]; then
+    bad "no boot-specific SWEEP_NAMES — the sweep would kill MoveLauncher, our own supervisor"
+else
+    if printf '%s\n' "$boot_sweep" | grep -q 'MoveLauncher'; then
+        bad "⚠⚠ the BOOT sweep list still contains MoveLauncher — that is the two-stack freeze"
+    else
+        ok "⚠⚠ the boot sweep excludes MoveLauncher (killing it = systemd restarts under us)"
+    fi
+    printf '%s\n' "$boot_sweep" | grep -qE '(^|[ "])Move([ "]|$)' &&
+        bad "the BOOT sweep list still contains 'Move' — /opt/move/Move is the selector, our own ancestor" ||
+        ok "...and excludes 'Move', the selector image we were exec-ed from"
+fi
+# The wait loop has its own copy of the list; a fix to one and not the other
+# leaves the loop waiting for a process it must not kill.
+check "the post-sweep wait loop uses the same variable, not a second hardcoded list" \
+      grep -q 'pidof \$SWEEP_WAIT_NAMES' <(code "$LAUNCH")
+if code "$LAUNCH" | grep -q 'pidof MoveMessageDisplay MoveLauncher'; then
+    bad "the wait loop still hardcodes MoveLauncher — the two lists can drift apart"
+else
+    ok "no second hardcoded sweep list"
+fi
+
+# (b) A CLEAN EXIT AT BOOT LEAVES THE DEVICE DEAD. Restart=on-failure does not
+#     restart a service that exited 0, so quitting dAVEBOx would leave nothing
+#     running. Failing is what brings the selector back.
+boot_exit=$(code "$LAUNCH" | awk '/boot entry: exiting/,/^  fi$/' | head -5)
+check "the boot exit path exits NON-ZERO (Restart=on-failure ignores a clean exit)" \
+      grep -q 'exit 1' <(printf '%s\n' "$boot_exit")
+if code "$LAUNCH" | grep -q 'rm -f /data/UserData/boot-targets/davebox/healthy'; then
+    bad "the exit path clears the healthy marker — that re-arms the watchdog against a working target"
+else
+    ok "it does not clear the healthy marker on a normal quit"
+fi
+
 # ---- the contract's own rules ----------------------------------------------
 # boot.json is read by an awk/C parser that takes the FIRST occurrence of a key
 # and requires a QUOTED value; an unquoted exec reads back empty and the row is
