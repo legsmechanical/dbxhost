@@ -791,7 +791,29 @@ _body_rc=$?
 # ⚠ If the user has made dAVEBOx the default, this re-enters dAVEBOx, and the
 # way out is the selector's Back window. That is the documented cost of
 # defaulting, not a bug in this path.
-if [ "$DBX_ENTRY" = boot ] && [ -x /opt/move/Move ]; then
-    exec /opt/move/Move
+if [ "$_dbx_entry" = boot ]; then
+    # Capture whatever the next stage says. Until now this process wrote to
+    # MoveLauncher's stdout, which is not journalled on this device, so the
+    # first attempt at this exec failed with NO output anywhere: MoveLauncher
+    # ended up alive with only its sentry and no Move, showing "Move
+    # terminated", and nothing recorded why.
+    exec >>/data/UserData/dbx-host/launch.log 2>&1
+    echo "$(date +%H:%M:%S) boot exit: handing the pid on"
+
+    # ⭑ GO STRAIGHT TO STOCK SCHWUNG, not back through the picker. Simpler —
+    # the selector re-runs heal, rewrites its registry and opens a Back window
+    # we do not need here — and better behaviour: the user asked to LEAVE
+    # dAVEBOx, so a picker that can drop them straight back into it (when
+    # dAVEBOx is the default) is the wrong answer to that gesture.
+    if [ -x /data/UserData/schwung/schwung-entry.sh ]; then
+        echo "boot exit: exec schwung-entry.sh"
+        exec /data/UserData/schwung/schwung-entry.sh
+    fi
+    # Fallbacks, in order of preference. Reaching either means the line above
+    # was missing, not that it failed — exec does not return on success.
+    echo "WARNING: schwung-entry.sh missing or not executable; falling back to the selector"
+    [ -x /opt/move/Move ] && exec /opt/move/Move
+    echo "WARNING: /opt/move/Move missing too; falling back to bare MoveOriginal"
+    exec /opt/move/MoveOriginal
 fi
 exit "$_body_rc"

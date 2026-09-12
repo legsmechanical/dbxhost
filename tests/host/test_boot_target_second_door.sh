@@ -232,10 +232,17 @@ fi
 #     it supervises is OURS, so exiting looks like Move dying — whatever the
 #     status. Three fixes were spent on the wrong layer (exit code, then
 #     systemd) before the Tools-vs-boot comparison located it.
-check "⚠⚠ the boot path EXECs the selector rather than exiting (MoveLauncher supervises our pid)" \
-      grep -q 'exec /opt/move/Move' <(code "$LAUNCH")
+check "⚠⚠ the boot path EXECs onward rather than exiting (MoveLauncher supervises our pid)" \
+      grep -q 'exec /data/UserData/schwung/schwung-entry.sh' <(code "$LAUNCH")
 check "...guarded on the boot door, so the Tools door still returns normally" \
-      grep -q 'if \[ "\$DBX_ENTRY" = boot \] && \[ -x /opt/move/Move \]; then' <(code "$LAUNCH")
+      grep -q 'if \[ "\$_dbx_entry" = boot \]; then' <(code "$LAUNCH")
+# ⚠ exec does not return on success, so every line after one is a FALLBACK for
+# a missing file — never a retry. Two of them, ending at bare MoveOriginal, so
+# the device always gets something rather than a dialog and a dead panel.
+check "...with fallbacks if that file is missing (selector, then bare Move)" \
+      bash -c "grep -c 'exec /opt/move/Move' <(sed -e 's/[[:space:]]*#.*$//' '$LAUNCH') | grep -qE '^[12]$'"
+check "the onward exec logs where it went (its stdout is not journalled here)" \
+      grep -q 'boot exit: handing the pid on' <(code "$LAUNCH")
 # It has to be in the OUTER script: the setsid body is a different pid, and
 # exec-ing there would leave the supervised one to exit anyway.
 if code "$LAUNCH" | awk "/^setsid --wait/,/^' dbx-launch /" | grep -q 'exec /opt/move/Move'; then
