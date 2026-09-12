@@ -43,6 +43,11 @@ globalThis.shadow_get_param = (slot, key) => {
     if (key.endsWith(':chain_params')) metaAsked.push(key);
     if (key === 'move_fx:2:fx3:chain_params')
         return JSON.stringify([{ key: 'mix', type: 'float', min: 0, max: 100, step: 1 }]);
+    /* A MODULE bus insert publishes its own metadata under its own prefix —
+     * chain_bus.c serves "bus<N>:fx<K>:chain_params". A range nothing else
+     * declares, so a write in these units can only have come from here. */
+    if (key === 'bus1:fx2:chain_params')
+        return JSON.stringify([{ key: 'drive', type: 'float', min: 0, max: 24, step: 0.5 }]);
     if (key.endsWith(':chain_params'))
         return JSON.stringify([
             { key: 'cutoff', type: 'float', min: 0, max: 1, step: 0.01 },
@@ -209,6 +214,31 @@ const tick = () => { S.tickCount++; tickPrefetch(); automationTick(); };
     check(writes[0].slot === 0 && writes[0].key === 'move_fx:2:fx3:mix', 'the write key keeps the whole block prefix');
     check(metaAsked.includes('move_fx:2:fx3:chain_params'), '⚠ the metadata is asked of the BLOCK, not of "move_fx"');
     check(writes[0].val === '50', 'and the value maps into the block\'s own range (0..100)');
+}
+
+/* ---- a MODULE bus insert: automation reaches it with no special case -----
+ *
+ * Josh, 2026-09-12: "module bus effects automation needs to be added if it's
+ * not already there." It is already there, and this pins WHY rather than that
+ * it happens to work: a module bus insert's component key ("bus1:fx2") IS the
+ * DSP prefix chain_bus.c serves, so it falls in the same "everything between
+ * the slot and the last colon" branch as a Move-bus block. Nothing in the
+ * push path names buses; if that branch ever narrows, this fails.
+ *
+ * ⚠ The control is the RANGE. A write of "12" proves the metadata was asked
+ * of "bus1:fx2" and honoured — the 0..1 fallback for an unresolved component
+ * would write "0.5" and still look like a successful push. */
+{
+    fresh();
+    metaAsked.length = 0;
+    staged = '0:bus1:fx2:drive 8191';
+    tick();
+    check(writes[0] && writes[0].slot === 0 && writes[0].key === 'bus1:fx2:drive',
+          'a module-bus insert param pushes to its slot with the bus prefix intact');
+    check(metaAsked.includes('bus1:fx2:chain_params'),
+          'the metadata is asked of the BUS INSERT, not of "bus1"');
+    check(writes[0] && writes[0].val === '12',
+          'and the value maps into the insert\'s own range (0..24), not the 0..1 fallback');
 }
 
 /* ---- mixer levels: host strip state, ranges declared, no round-trip ------ */
