@@ -148,8 +148,20 @@ step('⚠⚠ CONTROL: inside the MODULE EDITOR the gesture does NOT reset the ba
            'THE PRECONDITION: expected the module editor, got view ' + snd.soundViewForTest());
 
     writes = [];
+    GS.actionPopupLines = null;
     withDelete(click);
     ticks(6);
+
+    /* ⚠⚠ THE OBSERVABLE HAS TO BE "DID THE GESTURE FIRE", NOT "WAS ANYTHING
+     * WRITTEN" — and finding that out cost a survived mutation. Asserting only
+     * on writes, this control passed even with `levelsActive()` deleted from the
+     * guard, because the level FLUSH is gated on the same predicate: in the
+     * editor nothing reaches the engine whether the branch ran or not. So the
+     * write assertion could never distinguish the guard from the flush gate.
+     * The POPUP is what only the reset produces. → [[test-the-path-not-the-function]] */
+    const popup = (GS.actionPopupLines || []).join(' ');
+    assert(popup.indexOf('RESET') < 0,
+           'the reset FIRED inside the module editor — popup was: ' + popup);
     const after = lastWrite('slot:volume');
     assert(after === null || parseFloat(after) === parseFloat(before),
            'the editor reset the BANK levels (volume became ' + after + ')');
