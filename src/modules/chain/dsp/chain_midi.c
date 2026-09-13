@@ -419,6 +419,38 @@ static int v2_process_midi_fx(chain_instance_t *inst,
     return out_count;
 }
 
+/* Exported: run a message through THIS slot's MIDI FX and hand the result back
+ * to the caller, sending it nowhere.
+ *
+ * The transform above is already a pure function of its input: messages in,
+ * messages out, knowing nothing about a synth, a bus or a destination. Its usual
+ * caller (chain_on_midi) is what forwards the result to the slot's synth, and
+ * `midi_fx_pre_mode` is a second, ADDITIVE copy into Move's MIDI_IN — a
+ * different axis that happens to share the word "pre".
+ *
+ * Exposing it lets a sequencer place a slot's MIDI FX at a chosen point in its
+ * OWN chain — ahead of what it records, or after what it plays — with no route
+ * for MIDI to leave this chain and no second plugin host. That distinction
+ * matters: "nothing leaves a chain as MIDI" is a statement about ROUTING, while
+ * what a caller needs here is a function call.
+ *
+ * Returns the number of messages written. With no MIDI FX loaded the input is
+ * copied through, exactly as the internal path does, so a caller needs no
+ * special case for an empty chain.
+ *
+ * ⚠ THE CALLER OWNS THE DESTINATION. This sends nothing and injects nothing.
+ * ⚠ Thread: chain_on_midi is the only caller of the transform today. A second
+ *   one shares the FX modules' own instance state, so establish which thread it
+ *   runs on before wiring one up — the modules are not documented as reentrant.
+ *   ⓘ No caller yet, deliberately: this is the enabler slice, and the audit that
+ *   goes with it is recorded in tests/host/test_chain_midi_fx_apply.c. */
+int chain_midi_fx_apply(void *instance, const uint8_t *msg, int len,
+                        uint8_t out_msgs[][3], int *out_lens, int max_out) {
+    chain_instance_t *inst = (chain_instance_t *)instance;
+    if (!inst || !msg || len < 1 || !out_msgs || !out_lens || max_out < 1) return 0;
+    return v2_process_midi_fx(inst, msg, len, out_msgs, out_lens, max_out);
+}
+
 /* Call tick on all MIDI FX modules and send generated messages to synth.
  *
  * Returns 1 if a generated message was DELIVERED to the synth this tick — the

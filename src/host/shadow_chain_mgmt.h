@@ -123,6 +123,17 @@ extern int (*shadow_chain_fx_requires_continuous)(void *instance);
  * against STOCK's chain DSP, which does not export it.
  * [[schwung-chain-dsp-not-deployed-by-install-sa]] */
 extern int (*shadow_chain_take_midi_tick_wake)(void *instance);
+/* Run a message through a slot's MIDI FX and hand the result back, sent nowhere
+ * — so a sequencer can place a slot's MIDI FX at a chosen point in its own
+ * chain. Returns the message count; copies the input through when the slot has
+ * no MIDI FX loaded. The CALLER owns the destination.
+ * ⚠ NULL-CHECK IT, for the same reason as the wake above: the chain dsp.so is
+ * not deployed by install-sa, so this host can be running against STOCK's chain
+ * DSP, which does not export it.
+ * [[schwung-chain-dsp-not-deployed-by-install-sa]] */
+extern int (*shadow_chain_midi_fx_apply)(void *instance, const uint8_t *msg, int len,
+                                         uint8_t out_msgs[][3], int *out_lens,
+                                         int max_out);
 extern host_api_v1_t shadow_host_api;
 extern int shadow_inprocess_ready;
 /* 1 when the booted set had its own slot config; see shadow_chain_mgmt.c. */
