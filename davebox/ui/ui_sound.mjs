@@ -8441,7 +8441,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
                     S.levelPending |= (1 << i);
                     S.levelDirtySave = true;
                 }
-                if (automationClearKey(_t, _c, S.slot + ':' + levelFullKey(i))) _cleared = true;
+                /* ⚠⚠ ONE UNDO CHECKPOINT FOR THE WHOLE GESTURE. `automationClearKey`
+                 * queues its own unless told not to, so the loop was booking up to
+                 * FOUR — the user would press Undo four times to get their
+                 * automation back, through states nobody created. Only the first
+                 * clear takes one; the rest ride it. (The CLIP arm's
+                 * automationClearBanksQueued already books none.) */
+                if (automationClearKey(_t, _c, S.slot + ':' + levelFullKey(i), !_cleared)) _cleared = true;
             }
             showActionPopup(BANKS[BANK_SOUND].name, 'RESET');
             if (_cleared) S.macDirty = true;

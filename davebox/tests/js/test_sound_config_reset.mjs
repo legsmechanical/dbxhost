@@ -43,6 +43,9 @@ for (const fn of ['host_write_file', 'host_read_file', 'host_file_exists', 'host
                   'host_ext_midi_remap_clear', 'host_ext_midi_remap_set',
                   'host_ext_midi_remap_enable'])
     globalThis[fn] = () => (fn.indexOf('read') >= 0 || fn.indexOf('get') >= 0 ? '' : 0);
+/* The DSP-bound writes, where undo checkpoints live (queueSet -> moduleWrites). */
+let modWrites = [];
+globalThis.host_module_set_param = (key, val) => { modWrites.push(key + '=' + val); return 1; };
 
 async function main() {
 const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
@@ -194,6 +197,18 @@ step('⚠⚠ CONTROL: inside the MODULE EDITOR the gesture does NOT reset the ba
     const after = lastWrite('slot:volume');
     assert(after === null || parseFloat(after) === parseFloat(before),
            'the editor reset the BANK levels (volume became ' + after + ')');
+});
+
+step('⚠⚠ ONE undo checkpoint for the whole reset, not one per level', () => {
+    /* Four page levels with automation booked four `undo_checkpoint` writes, so
+     * Undo had to be pressed four times, through states nobody created. */
+    turnBy(0, -20); turnBy(1, 10); turnBy(2, 15); turnBy(3, 8); ticks(6);
+    modWrites = [];
+    withDelete(click);
+    ticks(8);
+    const cps = modWrites.filter((w) => w.indexOf('_undo_checkpoint=') >= 0);
+    assert(cps.length <= 1,
+           'the reset booked ' + cps.length + ' undo checkpoints: ' + cps.join(' | '));
 });
 
 /* ⓘ The MACROS bank's clear lives in test_macros_clear.mjs, not here: it must be

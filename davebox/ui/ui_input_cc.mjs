@@ -670,10 +670,22 @@ function modalDialogUp() {
                      * ALL LANES (DRUM_CONFIG_SITES[5]), and Josh ruled that bank
                      * untouched. The melodic arm resets it because there it sits
                      * on CLIP itself. */
-                    S.bankParams[_bt][0][0] = 1;
-                    S.drumLaneTPS[_bt] = TPS_VALUES[1];
-                    S.pendingDefaultSetParams.push({ key: 't' + _bt + '_l' + _bl + '_clip_resolution', val: '1' });
-                    S.pendingDrumResync = 2; S.pendingDrumResyncTrack = _bt;
+                    /* Same recording refusal as the melodic arm — the DSP drops
+                     * the key while recording and the mirror would diverge.
+                     * ⚠ pendingDrumResync is armed at 3, not 2: every other arm
+                     * site writes SYNCHRONOUSLY and then waits 2 ticks, but this
+                     * write goes on pendingDefaultSetParams, which drains ONE per
+                     * tick — so the countdown would start before the write went
+                     * out and syncDrumLanesMeta could read the pre-rescale tps
+                     * back over the mirror. One extra tick restores the margin the
+                     * 2 was calibrated for. */
+                    if (!(S.recordArmed && !S.recordCountingIn && S.recordArmedTrack === _bt)) {
+                        S.bankParams[_bt][0][0] = BANKS[0].knobs[0].def;
+                        S.drumLaneTPS[_bt] = TPS_VALUES[BANKS[0].knobs[0].def];
+                        S.pendingDefaultSetParams.push({ key: 't' + _bt + '_l' + _bl + '_clip_resolution',
+                                                         val: String(BANKS[0].knobs[0].def) });
+                        S.pendingDrumResync = 3; S.pendingDrumResyncTrack = _bt;
+                    }
                     S.drumLanePlaybackDir[_bt][_bl] = 0;
                     S.drumLanePlaybackAudioReverse[_bt][_bl] = 0;
                     S.bankParams[_bt][0][6] = 0;
@@ -712,17 +724,38 @@ function modalDialogUp() {
                  * means the reset behaves exactly like turning Res back to
                  * default — including being no more undoable than that is (the
                  * DSP handler takes no undo snapshot; unchanged either way). */
-                S.bankParams[_mt][0][0] = 1;                /* Res -> default idx */
-                S.clipTPS[_mt][_mac2] = TPS_VALUES[1];
-                S.pendingDefaultSetParams.push({ key: 't' + _mt + '_clip_resolution', val: '1' });
+                /* ⚠⚠ RESOLUTION IS REFUSED WHILE RECORDING BY BOTH AUTHORITIES —
+                 * applyBankParam returns early, and the DSP's handler does
+                 * `if (tr->recording) return 1;`. Writing the JS mirror anyway
+                 * would leave S.clipTPS disagreeing with the DSP permanently: the
+                 * step grid, the LED span and the automation step ticks all read
+                 * that mirror, so recorded notes would land steps away from where
+                 * the display puts them. Skip it the same way the knob does.
+                 * ⚠ And the clip index is the ACTIVE one, not effectiveClip():
+                 * effectiveClip returns the QUEUED clip while stopped, but the DSP
+                 * rescales `tr->clips[tr->active_clip]` (sp_track_config2.c) and
+                 * applyBankParam mirrors against S.trackActiveClip. Using the
+                 * queued index recorded the new tps against a clip that never
+                 * changed. The rest of this block keeps effectiveClip — that
+                 * pre-dates this change and is not mine to move here. */
+                const _resRecBlocked = (S.recordArmed && !S.recordCountingIn &&
+                                        S.recordArmedTrack === _mt);
+                if (!_resRecBlocked) {
+                    const _resClip = S.trackActiveClip[_mt];
+                    S.bankParams[_mt][0][0] = BANKS[0].knobs[0].def;
+                    S.clipTPS[_mt][_resClip] = TPS_VALUES[BANKS[0].knobs[0].def];
+                    S.pendingDefaultSetParams.push({ key: 't' + _mt + '_clip_resolution',
+                                                     val: String(BANKS[0].knobs[0].def) });
+                }
                 /* InQ. ⚠ The SAME param as drum ALL LANES K5 (see
                  * CLIP_MELODIC_SITES, declared beside its twin) — which is why
                  * it is reset HERE, on the melodic CLIP bank where it lives, and
                  * NOT in the drum arm below, where it belongs to ALL LANES and
                  * Josh ruled that bank untouched. */
-                S.drumInpQuant[_mt] = 0;
-                S.bankParams[_mt][0][4] = 0;
-                S.pendingDefaultSetParams.push({ key: 't' + _mt + '_diq', val: '0' });
+                S.drumInpQuant[_mt] = BANKS[0].knobs[4].def;
+                S.bankParams[_mt][0][4] = BANKS[0].knobs[4].def;
+                S.pendingDefaultSetParams.push({ key: 't' + _mt + '_diq',
+                                                 val: String(BANKS[0].knobs[4].def) });
                 S.clipPlaybackDir[_mt][_mac2] = 0;
                 S.clipPlaybackAudioReverse[_mt][_mac2] = 0;
                 S.bankParams[_mt][0][6] = 0;
