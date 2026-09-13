@@ -17,6 +17,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Resetting the SOUND + CONFIG bank.** Delete + jog click on SOUND + CONFIG puts
+  the track's Volume, Pan, Send A and Send B back to their defaults and clears
+  any automation on them. Inside a module editor the same gesture still belongs
+  to the module, and a MIDI track's SOUND + CONFIG card is left alone — its
+  controls have no default values to return to.
 - **Resetting a bank resets the bank you are on.** Delete + jog click now resets
   exactly the bank in front of you and clears the automation for *its* parameters
   — it used to reset four effect banks whatever bank you were looking at, and the
