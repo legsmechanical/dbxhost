@@ -91,6 +91,7 @@ const auto = await import('../../ui/ui_automation.mjs');
 const morph = await import('../../ui/ui_snapmorph.mjs');
 const P = await import('../../ui/ui_persistence.mjs');
 const { BANK_MACROS } = await import('../../ui/ui_constants.mjs');
+const await0 = await import('../../ui/ui_engine.mjs');   /* the fader law, for the level assertions */
 auto.automationRegisterSeqApply(snd.soundSeqApply);
 auto.automationRegisterMacApply(morph.snapMorphApply);
 
@@ -98,10 +99,15 @@ const T = 2, K = 3;                        /* track 3, knob K4 */
 const UUID = 'morph-uuid';
 GS.pendingDspSync = 0; GS.pendingSetLoad = false; GS.currentSetUuid = UUID;
 /* Snapshot A (slot 1) and B (slot 2); slot 3 is EMPTY (a cleared slot = '') */
-const snapJson = (vals) => JSON.stringify({ v: 4, track: T, mixer: [], seq: [],
+/* The mixer half rides too: A at −6 dB (gain 0.5, fader travel 0.6), B at
+ * unity (travel 0.8); pan 0.2 → 0.8; send A 0 → 1; send B absent in A (a
+ * level that read back as nothing at the take — not morphed). */
+const snapJson = (vals, mixer) => JSON.stringify({ v: 4, track: T, mixer: [null, null, mixer], seq: [],
     params: [null, null, { synth: { module: 'nusaw', values: vals.synth }, fx2: { module: 'rrverb', values: vals.fx2 } }] });
-files[P.trackSnapDir(UUID, T, 0) + '/davebox.json'] = snapJson({ synth: { cutoff: '0.2', voices: '2', shape: 'Saw', sample: '/a.wav' }, fx2: { room_size: '1', freeze: 'Off' } });
-files[P.trackSnapDir(UUID, T, 1) + '/davebox.json'] = snapJson({ synth: { cutoff: '0.8', voices: '6', shape: 'Tri', sample: '/b.wav' }, fx2: { room_size: '11', freeze: 'On' } });
+files[P.trackSnapDir(UUID, T, 0) + '/davebox.json'] = snapJson({ synth: { cutoff: '0.2', voices: '2', shape: 'Saw', sample: '/a.wav' }, fx2: { room_size: '1', freeze: 'Off' } },
+                                                               { route: 0, slot: T, volume: 0.5, pan: 0.2, send_a: 0 });
+files[P.trackSnapDir(UUID, T, 1) + '/davebox.json'] = snapJson({ synth: { cutoff: '0.8', voices: '6', shape: 'Tri', sample: '/b.wav' }, fx2: { room_size: '11', freeze: 'On' } },
+                                                               { route: 0, slot: T, volume: 1.0, pan: 0.8, send_a: 1, send_b: 0.3 });
 files[P.trackSnapDir(UUID, T, 2) + '/davebox.json'] = '';
 
 const VIEW_MACROS = 19, VIEW_KNOBS = 11, VIEW_KNOBLEGS = 20, VIEW_KNOB_TARGET = 12, VIEW_KNOB_PARAM = 13;
@@ -232,6 +238,19 @@ step('⭐ a turn to the midpoint writes ONE transient bulk SET: numbers interpol
     assert(p['fx2:freeze'] === '0', 'freeze (a switch) stays Off under the midpoint, got ' + p['fx2:freeze']);
     assert(!('synth:sample' in p), 'a filepath never morphs');
     assert(writes.length === 0, 'no single-param writes: ' + JSON.stringify(writes));
+});
+step('⭐ THE MIXER LEVELS ride in the same bulk: volume morphs in FADER travel (−6 dB → 0 dB passes −3 dB, not linear gain 0.75), pan and send A linear, a level one snapshot lacks stays out', () => {
+    const p = chainBulks()[0].pairs;
+    const f = 127 / 255;
+    const { faderGainToTravel, faderTravelToGain } = await0;
+    const tMid = 0.6 + (0.8 - 0.6) * f;                    /* travel: −6 dB is 0.6, unity 0.8 */
+    assert(near(parseFloat(p['slot:volume']), faderTravelToGain(tMid), 0.002), 'volume at travel midpoint ≈ −3 dB (' + faderTravelToGain(tMid).toFixed(4) + '), got ' + p['slot:volume']);
+    assert(!near(parseFloat(p['slot:volume']), 0.5 + 0.5 * f, 0.01), 'and NOT the linear-gain midpoint');
+    assert(near(parseFloat(p['slot:pan']), 0.2 + 0.6 * f, 0.002), 'pan linear, got ' + p['slot:pan']);
+    assert(near(parseFloat(p['slot:send_a']), f, 0.002), 'send A linear, got ' + p['slot:send_a']);
+    assert(!('slot:send_b' in p), 'send B (absent in A) is not morphed');
+    assert(faderGainToTravel(0.5) > 0.59 && faderGainToTravel(0.5) < 0.61, 'the premise: gain 0.5 is travel 0.6');
+    assert(GS.sessVolLevel.every(v => v === -1), 'the session strips were told to re-read');
 });
 step('one more detent pair crosses the midpoint: ONLY the changed pairs go out, and the choice snaps to Tri', () => {
     bulks = [];

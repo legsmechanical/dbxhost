@@ -1519,8 +1519,10 @@ to put it in; click again to take it out. The order you pick them in is the
 path the knob travels: `[1]` at the bottom of the turn, `[2]` next, and so on.
 Press **Back** when you're done — the knob is live as soon as two are in.
 
-Turning the knob moves every parameter the chosen snapshots share: numbers
-glide between the two values, and a choice — a waveform, a switch — flips to
+Turning the knob moves every parameter the chosen snapshots share — every
+block in the chain, and the track's volume, pan and sends: numbers glide
+between the two values (volume in dB, the way the fader travels), and a
+choice — a waveform, a switch — flips to
 the nearer snapshot's setting halfway across. Anything the snapshots don't
 agree on is left alone: a block whose module differs between the snapshots, or
 has been swapped since, stays out of the morph rather than being guessed at.

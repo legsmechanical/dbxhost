@@ -44,7 +44,7 @@ import { S as GS } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { NUM_TRACKS } from './ui_constants.mjs';
 import { trackSnapDir } from './ui_persistence.mjs';
-import { engineGet, engineLoadedModule } from './ui_engine.mjs';
+import { engineGet, engineLoadedModule, faderGainToTravel, faderTravelToGain, faderWire } from './ui_engine.mjs';
 import { makeCell } from './ui_discover.mjs';
 import { parseValue, clampValue, commitString } from './ui_cells.mjs';
 import { bulkEncode } from './ui_automation.mjs';
@@ -86,12 +86,39 @@ export function morphSnapshotSlots(track) {
     return out;
 }
 
-function readSnapshotParams(track, n) {
+function readSnapshot(track, n) {
     let json = null;
     try { json = JSON.parse(host_read_file(trackSnapDir(GS.currentSetUuid, track, n) + '/davebox.json') || 'null'); }
     catch (e) { json = null; }
     const p = json && Array.isArray(json.params) ? json.params[track] : null;
-    return (p && typeof p === 'object') ? p : null;
+    const m = json && Array.isArray(json.mixer) ? json.mixer[track] : null;
+    return { params: (p && typeof p === 'object') ? p : null, mixer: (m && typeof m === 'object') ? m : null };
+}
+
+/* THE MIXER LEVELS ride too (Josh, 2026-09-13: "let's add track mixer
+ * levels"): the snapshot's `mixer[t]` half — volume, pan, send A, send B of a
+ * chain track's own slot. Volume is a FADER ([[davebox-fader-law]]): it
+ * morphs in TRAVEL (dB) space, so the halfway point between −6 dB and unity
+ * is −3 dB, exactly where the fader itself would sit halfway; pan and the
+ * sends are linear 0..1. Written as `slot:<key>` pairs in the same bulk SET
+ * as the chain params (the automation push spells them the same way). */
+const LEVEL_KEYS = ['volume', 'pan', 'send_a', 'send_b'];
+const num = (v) => (typeof v === 'number' && isFinite(v));
+function buildLevels(mixers) {
+    const out = {};
+    if (!mixers.length || mixers.some(m => !m || (m.route | 0) !== 0)) return out;
+    for (const key of LEVEL_KEYS) {
+        const vals = [];
+        for (const m of mixers) {
+            if (!num(m[key])) { vals.length = 0; break; }
+            vals.push(key === 'volume' ? faderGainToTravel(m[key]) : Math.max(0, Math.min(1, m[key])));
+        }
+        if (vals.length) out[key] = vals;
+    }
+    return out;
+}
+function levelWire(key, t) {
+    return key === 'volume' ? faderWire(faderTravelToGain(t)) : t.toFixed(3);
 }
 
 function metaFor(slot, comp) {
@@ -116,11 +143,14 @@ export function morphPrepare(track, knob, leg, budget) {
     const sig = legSig(track, leg);
     let e = entries.get(k);
     if (!e || e.sig !== sig) {
-        e = { sig, ready: false, snaps: null, comps: null, todo: [], keys: 0,
+        e = { sig, ready: false, snaps: null, comps: null, levels: {}, todo: [], keys: 0,
               last: new Map(), finalDue: 0, finalPairs: null };
         entries.set(k, e);
         if (!morphLegValid(leg)) { e.ready = true; e.comps = {}; return { ready: true, reads: 0 }; }
-        e.snaps = leg.snaps.map(n => readSnapshotParams(track, n));
+        const read = leg.snaps.map(n => readSnapshot(track, n));
+        e.snaps = read.map(r => r.params);
+        e.levels = buildLevels(read.map(r => r.mixer));
+        e.keys += Object.keys(e.levels).length;
         /* Components every snapshot has, with one module id across them. */
         const first = e.snaps[0];
         e.comps = {};
@@ -215,6 +245,17 @@ export function morphApply(track, knob, leg, f, mode) {
     if (a >= n - 1) a = n - 2;
     const frac = p - a;
     const pairs = [];
+    let levelsMoved = false;
+    for (const key in e.levels) {
+        const vals = e.levels[key];
+        const t = vals[a] + (vals[a + 1] - vals[a]) * frac;
+        const wire = levelWire(key, t);
+        const id = 'slot:' + key;
+        if (e.last.get(id) === wire) continue;
+        e.last.set(id, wire);
+        pairs.push([id, wire]);
+        levelsMoved = true;
+    }
     for (const comp in e.comps) {
         const c = e.comps[comp];
         if (!c.cells) continue;
@@ -248,6 +289,9 @@ export function morphApply(track, knob, leg, f, mode) {
             if (!e.finalPairs) e.finalPairs = new Map();
             for (const pr of pairs) e.finalPairs.set(pr[0], pr[1]);
         }
+        /* The session strips re-read a level they did not write themselves
+         * (ui_devsnap's mixerApply does the same after a recall). */
+        if (levelsMoved && Array.isArray(GS.sessVolLevel)) GS.sessVolLevel.fill(-1);
     }
     if (mode === 'turn' && e.finalPairs) e.finalDue = nowMs() + MORPH_FINAL_MS;
     return pairs.length;

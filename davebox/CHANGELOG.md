@@ -22,7 +22,8 @@ the section into a versioned heading at release time.
   **SnapMorph** and tick the snapshots you want, in the order you want to pass
   through them; the knob then sweeps every parameter the snapshots share —
   numbers glide, choices such as a waveform flip to the nearer snapshot's
-  setting halfway across. A morph records as **one** automation lane, the
+  setting halfway across — and the track's volume, pan and sends with them
+  (volume moves the way the fader does, in dB). A morph records as **one** automation lane, the
   knob's own position ("SnapMorph K4" in the AUTOMATION bank), so a sweep over
   forty parameters is still one lane to edit, mute or clear. Chain tracks
   only; swapping a module takes it out of the morph rather than guessing.
