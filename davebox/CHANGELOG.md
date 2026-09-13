@@ -28,6 +28,12 @@ the section into a versioned heading at release time.
   all eight macros on the track. **It asks first** — jog to choose, click to
   answer — because eight assignments are a lot to rebuild by accident. Your macro
   values and any automation on the parameters they pointed at are left alone.
+- **Every bank reset is undoable now.** Undo takes back a bank reset on any bank —
+  CLIP, the four MIDI effect banks, ARP IN, SOUND + CONFIG and the AUTOMATION
+  bank — and Shift + Undo re-applies it. Clearing a track's macros is undoable
+  too. Four of these previously did nothing on Undo, or worse: resetting SEQ ARP
+  or ARP IN used to undo whatever edit you had made *before* it.
+  ⓘ Undo is one step deep, as it has always been.
 - **Resetting a bank resets the bank you are on.** Delete + jog click now resets
   exactly the bank in front of you and clears the automation for *its* parameters
   — it used to reset four effect banks whatever bank you were looking at, and the
