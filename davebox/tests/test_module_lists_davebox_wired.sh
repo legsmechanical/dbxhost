@@ -51,8 +51,19 @@ grep -q "if (S.browseIdx <= 0) S.browseIdx = Math.min(1, S.browseList.length - 1
 
 # --- the gestures are dAVEBOx's -------------------------------------------
 pin "click on the filter row cycles"        1 "S.pendingAction = { t: 'listcycle' }"
-pin "shift+click files the module"          1 "S.pendingAction = { t: 'listtoggle' }"
-pin "both actions are DISPATCHED"           2 "a.t === 'listcycle'\|a.t === 'listtoggle'"
+# ⚠ UPDATED 2026-09-12: Shift+click opens the LISTS MENU rather than filing
+# silently. Josh: "shift+click on a module in the fx picker doesn't open the list
+# menu for it, either on regular or bus inserts" — the asymmetry with the
+# Instrument picker. The INVARIANT is unchanged (Shift+click is how you reach
+# filing from the browser); what changed is that it now goes through a screen
+# with visible rows instead of a blind toggle.
+pin "shift+click opens the lists menu"      1 "S.pendingAction = { t: 'listmenu' }"
+pin "both actions are DISPATCHED"           2 "a.t === 'listcycle'\|a.t === 'listmenu'"
+# ⭐ And the menu must be opened FOR THE MODULE UNDER THE CURSOR, with the origin
+# recorded — without the origin every exit returns to the Instrument picker,
+# which is where the eleven hardcoded openInstrPicker() calls used to lead.
+pin "the menu is opened on the browse row, from 'browse'" 1 \
+    "openListMenu(S.browseList\[S.browseIdx\], 'browse')"
 
 # --- the filter row is never loaded as a module ---------------------------
 ls=$(awk '/^function loadSelected\(\)/,/^}$/' "$f")
@@ -60,15 +71,30 @@ grep -q "if (mod.id === LIST_ROW_ID) return;" <<<"$ls" || \
   fail "loadSelected would write the filter row's synthetic id into the slot as a module"
 
 # --- a failed write is never announced as done ----------------------------
-tg=$(awk '/^function toggleListMembership\(\)/,/^}$/' "$f")
-grep -q "if (now === null)" <<<"$tg" || \
+# ⚠ The toggle moved INTO the lists menu (commitListMenu's 'toggle' act) when the
+# browse-only toggleListMembership was retired; the invariant came with it.
+
+# --- every exit from the lists menu returns to the picker it came FROM -------
+# Eleven exits used to name openInstrPicker() directly, so opening the menu from
+# the FX browser and choosing a filter would have dumped the user in the
+# Instrument picker. One owner now.
+lm=$(awk '/^function commitListMenu\(r\) \{/,/^}$/' "$f")
+grep -q "openInstrPicker()" <<<"$lm" && \
+  fail "commitListMenu still returns to the Instrument picker by name"
+grep -q "mlReopen()" <<<"$lm" || \
+  fail "commitListMenu does not reopen through the one owner"
+grep -q "if (now === null)" <<<"$lm" || \
   fail "a toggle that touched nothing is reported as a change"
-grep -q "if (!mlSave())" <<<"$tg" || \
+grep -q "if (mlMenuFrom === 'browse') openBrowse" "$f" || \
+  fail "mlReopen cannot return to the FX browser"
+grep -q "if (!mlSave())" <<<"$lm" || \
   fail "the write is not checked"
 # TWO calls, not one: the toggle itself and the REVERT on a failed write. A
 # count of >=1 passes with the revert deleted, which is how the first version of
 # this pin let that mutation survive.
-n_toggle=$(grep -c "ModuleLists.toggleMembership(mlState, listName, id);" <<<"$tg" || true)
+# ⚠ Counted inside commitListMenu now, and against `active` rather than the
+# retired browse-only `listName`.
+n_toggle=$(grep -c "ModuleLists.toggleMembership(mlState, active, id);" <<<"$lm" || true)
 [ "$n_toggle" = "2" ] || \
   fail "expected 2 toggleMembership calls (the toggle and the revert), found $n_toggle -- a failed write leaves the row disagreeing with the file, and it silently undoes itself on the next open"
 

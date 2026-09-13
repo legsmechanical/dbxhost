@@ -4157,7 +4157,22 @@ function instrPickerCycleList() {
  * `from`, NOT VIEW_ENUM: nesting one picker inside another leaves Back
  * stepping into a screen that has already been torn down.
  */
-function openListMenu(gen) {
+/* WHERE THE LISTS MENU CAME FROM, and therefore where its every exit returns.
+ *
+ * ⚠⚠ The menu is reachable from TWO pickers now (Josh, 2026-09-12: *"shift+click
+ * on a module in the fx picker doesn't open the list menu for it, either on
+ * regular or bus inserts"*), and every one of its eleven exits used to call
+ * openInstrPicker() by name — so opening it from the FX browser and choosing a
+ * filter would have dumped the user in the INSTRUMENT picker. One owner instead
+ * of eleven literals. [[schwung-give-recurring-state-an-owner]] */
+let mlMenuFrom = 'instr';                       /* 'instr' | 'browse' */
+function mlReopen() {
+    if (mlMenuFrom === 'browse') openBrowse(S.comp, S.browsePrompt);
+    else openInstrPicker();
+}
+
+function openListMenu(gen, from) {
+    mlMenuFrom = from || 'instr';
     mlEnsure();
     const lists = (mlState && mlState.lists) || [];
     const rows = [];
@@ -4306,7 +4321,7 @@ function confirmOverlayClick() {
     const yes = p.rows[p.sel] && p.rows[p.sel].act === 'yes';
     const fn = p.onYes;
     if (yes && typeof fn === 'function') fn();
-    else openInstrPicker();
+    else mlReopen();
     return true;
 }
 
@@ -4320,24 +4335,37 @@ function listMenuClick() {
 }
 
 function commitListMenu(r) {
-    if (!r || r.divider) { openInstrPicker(); return; }
+    if (!r || r.divider) { mlReopen(); return; }
     mlEnsure();
     const active = mlFilter || ModuleLists.FAVORITES;
 
-    if (r.act === 'filter') { mlFilter = r.name; openInstrPicker(); return; }
+    if (r.act === 'filter') { mlFilter = r.name; mlReopen(); return; }
 
     if (r.act === 'toggle') {
         const id = moduleIdOf(r.gen.path || r.gen.id);
         const now = ModuleLists.toggleMembership(mlState, active, id);
-        if (now !== null && !mlSave()) ModuleLists.toggleMembership(mlState, active, id);
-        openInstrPicker();
+        /* null = the toggle touched NOTHING; saying "removed" for that would
+         * report a result that did not happen. */
+        if (now === null) { showActionPopup('NO LIST'); mlReopen(); return; }
+        if (!mlSave()) {
+            /* Put the model back: a membership the FILE disagrees with undoes
+             * itself on the next open, having said it worked. */
+            ModuleLists.toggleMembership(mlState, active, id);
+            showActionPopup('NOT SAVED');
+        } else {
+            showActionPopup(now ? 'ADDED' : 'REMOVED', active);
+        }
+        /* mlReopen REBUILDS the picker, which is what drops the row when you
+         * remove the module you are looking at while filtered to that list —
+         * otherwise the list disagrees with its own filter until the next open. */
+        mlReopen();
         return;
     }
 
     if (r.act === 'clear') {
         const res = ModuleLists.clearList(mlState, active);
         if (res.ok) mlSave();
-        openInstrPicker();
+        mlReopen();
         return;
     }
 
@@ -4354,7 +4382,7 @@ function commitListMenu(r) {
                 mlFilter = null;            /* the filter it named is gone */
                 showActionPopup('DELETED', gone);
             }
-            openInstrPicker();
+            mlReopen();
         });
         return;
     }
@@ -4364,7 +4392,7 @@ function commitListMenu(r) {
         return;
     }
     if (r.act === 'member') { openListMembership(r.gen); return; }
-    openInstrPicker();
+    mlReopen();
 }
 
 /*
@@ -4380,7 +4408,7 @@ function openListNameEntry(renaming, prefill) {
                 const name = String(text || '').trim();
                 /* Empty cancels. Backing out by clearing the field is a normal
                  * way to change your mind, not an error to scold. */
-                if (!name) { openInstrPicker(); return; }
+                if (!name) { mlReopen(); return; }
                 /* Capped by PIXEL WIDTH, not characters: the font is
                  * proportional, so a character count both truncates names that
                  * fit and admits names that do not. Measured against the room a
@@ -4403,20 +4431,20 @@ function openListNameEntry(renaming, prefill) {
                      * announced as created, is worse than one that never did. */
                     if (renaming) ModuleLists.renameList(mlState, name, renaming);
                     else ModuleLists.deleteList(mlState, name);
-                    openInstrPicker();
+                    mlReopen();
                     return;
                 }
                 /* Land ON what you just made -- creating a list to file into
                  * and then having to find it is the same jog twice. */
                 mlFilter = name;
-                openInstrPicker();
+                mlReopen();
         };
         S.__lastListNameConfirm = onConfirmName;
         openTextEntry({
             title: renaming ? 'Rename List' : 'New List',
             initialText: (prefill !== undefined && prefill !== '') ? prefill : (renaming || ''),
             onConfirm: onConfirmName,
-            onCancel: () => { S.__lastListNameConfirm = null; openInstrPicker(); },
+            onCancel: () => { S.__lastListNameConfirm = null; mlReopen(); },
         });
     }
 }
@@ -6907,7 +6935,7 @@ function runActionBody(a) {
     else if (a.t === 'instrpick') openInstrPicker();
     else if (a.t === 'load')    loadSelected();
     else if (a.t === 'listcycle')  cycleListFilter();
-    else if (a.t === 'listtoggle') toggleListMembership();
+    else if (a.t === 'listmenu')   openListMenu(S.browseList[S.browseIdx], 'browse');
     else if (a.t === 'presets') openPresets();
     else if (a.t === 'usrlist') openUserPresets();
     else if (a.t === 'baked')   openBaked();
@@ -7197,44 +7225,14 @@ function cycleListFilter() {
     log('browse: list filter -> ' + (mlFilter || 'All'));
 }
 
-/* Shift+click on a module row: file it into the list currently being filtered
- * to, or into Favorites when the filter is All.
- *
- * Writes IMMEDIATELY -- there is no Save row, because a toggle that needs
- * confirming is a toggle that will be lost. */
-function toggleListMembership() {
-    const mod = S.browseList[S.browseIdx];
-    if (!mod || !mod.id || mod.id === LIST_ROW_ID) return;
-    mlEnsure();
-    const listName = mlFilter || ModuleLists.FAVORITES;
-    const id = moduleIdOf(mod.path || mod.id);
-    const now = ModuleLists.toggleMembership(mlState, listName, id);
-    /* null = the toggle touched NOTHING. Announcing a removal for that would
-     * report a result that did not happen. */
-    if (now === null) { S.browsePrompt = 'no list'; S.dirty = true; return; }
-    if (!mlSave()) {
-        /* Put the model back: a checkbox the file disagrees with silently
-         * undoes itself on the next open, having said it worked. */
-        ModuleLists.toggleMembership(mlState, listName, id);
-        S.browsePrompt = 'not saved' + mlWhy;
-        S.dirty = true;
-        return;
-    }
-    S.browsePrompt = (now ? '+ ' : '- ') + listName;
-    /*
-     * Removing the module you are LOOKING AT while filtered to that list means
-     * the row must go. Rebuild rather than leave a row the filter now excludes
-     * -- the alternative is a list that disagrees with its own filter until the
-     * next open.
-     */
-    if (!now && mlFilter === listName) {
-        const keepIdx = S.browseIdx;
-        openBrowse(null, S.browsePrompt);
-        S.browseIdx = Math.min(keepIdx, S.browseList.length - 1);
-        if (S.browseIdx <= 0) S.browseIdx = Math.min(1, S.browseList.length - 1);
-    }
-    S.dirty = true;
-}
+/* ⓘ `toggleListMembership` lived here: the FX picker's Shift+click used to file
+ * a module SILENTLY into the current list. It is gone — Shift+click now opens the
+ * Lists MENU (Josh, 2026-09-12), whose first row is Add/Remove for that module,
+ * so the behaviour survives with a name on it. Its two load-bearing parts were
+ * carried across, not dropped: the +/- feedback (now showActionPopup, which works
+ * on both pickers rather than only the browse prompt) and the REBUILD when you
+ * remove the module you are looking at while filtered to that list, which
+ * mlReopen() does by reopening the picker. */
 
 /* Apply a module choice — including the `[ none ]` row, which is how a module is
  * REMOVED. Split out of loadSelected 2026-08-31 so the editor's "Remove Module"
@@ -8705,11 +8703,19 @@ export function soundOnCC(d1, d2, decodeDelta) {
         else if (S.view === VIEW_BROWSE) {
             const row = S.browseList[S.browseIdx];
             if (row && row.id === LIST_ROW_ID) S.pendingAction = { t: 'listcycle' };
-            /* Shift+click FILES the module, plain click loads it. Same split
-             * the block picker makes: the modifier buys the rarer, structural
-             * action, and it means the whole feature needs no screen of its
-             * own -- which matters here, where the browser IS the surface. */
-            else if (S.shiftHeld)                 S.pendingAction = { t: 'listtoggle' };
+            /* Shift+click opens the LISTS MENU for the module under the cursor;
+             * plain click loads it.
+             *
+             * ⚠ It used to file the module SILENTLY into the current list. Josh,
+             * 2026-09-12: *"shift+click on a module in the fx picker doesn't open
+             * the list menu for it, either on regular or bus inserts"* — the
+             * asymmetry with the Instrument picker, which opens the menu. Nothing
+             * is lost by the change: the menu's FIRST row is Add/Remove for this
+             * module, so the one-gesture file becomes click-click, and creating a
+             * list or filing into several at once stops being reachable from the
+             * generator picker alone. Same reason the Instrument picker moved off
+             * a blind toggle: everything the feature can do is a VISIBLE row. */
+            else if (S.shiftHeld)                 S.pendingAction = { t: 'listmenu' };
             else                                  S.pendingAction = { t: 'load' };
         }
         /* An EMPTY block has no presets to offer, and its editor's whole job is
