@@ -64,7 +64,12 @@ function dspClear(key, val) {
 globalThis.host_module_set_param = (k, v) => { sent.push(k + '=' + v); dspClear(k, v); };
 globalThis.host_module_set_params = () => true;
 let listReads = 0;
-globalThis.host_module_get_param = (k) => { if (k === 'pa_list') { listReads++; return LIST; } return ''; };
+let PFX_SNAP = '';
+globalThis.host_module_get_param = (k) => {
+    if (k === 'pa_list') { listReads++; return LIST; }
+    if (String(k).indexOf('_pfx_snapshot') >= 0) return PFX_SNAP;
+    return '';
+};
 globalThis.shadow_get_param = () => '';
 globalThis.shadow_set_param = () => 1;
 globalThis.shadow_set_params = () => true; globalThis.shadow_get_params = () => '';
@@ -87,6 +92,7 @@ const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
 stubParamPagesDevice();
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
+const bridge = await import('../../ui/ui_dsp_bridge.mjs');
 const { BANKS, BANK_AUTOMATION, BANK_STEP, SEQ_AUTO_TARGETS, seqAutoTargetForKnob,
         PAD_MODE_DRUM } = await import('../../ui/ui_constants.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
@@ -436,6 +442,20 @@ step('⭐ ARP IN: its reset is a JS unit, so Undo restores it and NOT a clip edi
     const q = queued();
     assert(q.some(x => /_tarp_step_vel=2 99/.test(x)),
            'the restore never reached the DSP: ' + q.join(' | '));
+});
+
+step('⭐ an undo restore REFRESHES the bank card — all four FX banks', () => {
+    /* ⓘ THIS BEHAVIOUR ALREADY EXISTED and was simply untested — the refresh sits at
+     * the END of syncClipsTargeted's melodic branch. I claimed otherwise after reading
+     * the first half of that branch and nearly shipped a duplicate call (an extra SPI
+     * frame per undo). The test stays, because nothing pinned it: banks 1-4 must come
+     * back ON SCREEN after an undo, not only in the DSP. */
+    PFX_SNAP = '7 3 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0';   /* K1=7, K2=3 */
+    S.bankParams[T][1][0] = 0; S.bankParams[T][1][1] = 0;
+    bridge.syncClipsTargeted('m ' + T + ' 0');
+    assert(S.bankParams[T][1][0] === 7 && S.bankParams[T][1][1] === 3,
+           'the bank card was not refreshed by the restore: got '
+           + S.bankParams[T][1][0] + '/' + S.bankParams[T][1][1]);
 });
 
 step('⭐ resetting an FX bank leaves something to UNDO', () => {
