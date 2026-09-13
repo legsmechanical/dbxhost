@@ -24,6 +24,13 @@ the section into a versioned heading at release time.
   + jog click is the wider form: it puts the whole MIDI effect chain (NOTE FX,
   HARMZ, MIDI DLY, SEQ ARP) back to defaults, and leaves your notes, clip and lane
   settings, macros, sound and automation banks alone.
+- **Resetting the CLIP bank now resets all of it.** Delete + jog click on the
+  CLIP bank puts Resolution and Input Quantize back to their defaults along
+  with Playback Dir and Seq Follow — Resolution rescales your notes rather
+  than rearranging them, so the pattern keeps its step positions. Beat
+  Stretch, Clock Shift and Apply Legato are one-shot actions with nothing
+  stored, so a reset leaves them alone. On a drum track the resolution reset
+  applies to the lane you are on.
 - **ARP IN is no longer offered for automation.** Its settings belong to the track
   rather than to a single clip, so automating it could never behave predictably
   from clip to clip. It remains a macro destination, and any lane recorded for it
@@ -179,9 +186,12 @@ the section into a versioned heading at release time.
   lane from /16 to ×16, its loop following) — or Clear clip.
   Delete + click on the card clears the clip. Every operation is one undo.
   Smooth/Stepped moved here from the module editor.
-- **Switching clips lets the old clip's automation go.** Parameters return
-  to their resting values when a clip with automation hands over to another,
-  instead of staying where the old lanes left them.
+- **Switching clips lands on the new clip's resting values.** A parameter
+  automated in the clip you leave goes back to rest, and if the clip you
+  arrive in automates the same parameter it jumps straight to *that* clip's
+  resting value rather than holding the old one until its first move comes
+  round. Works whether you switch while playing or stopped, launch a whole
+  row, or change Launch Quant mid-playback.
 - **A Move track's sound menu has the Config door** (mode, layout,
   transpose, velocity in), like a Schwung track's.
 - **"Sound Control" is "LFOs"** in the sound menu: that is what is behind it
