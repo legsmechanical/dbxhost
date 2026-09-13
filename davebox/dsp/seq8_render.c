@@ -662,7 +662,13 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                      * takes over (Josh, 2026-09-04: "an empty clip loads with
                      * the same automation" — the parameters sat where the old
                      * clip's lanes left them). Audio thread: direct. */
-                    if (tr->active_clip != (uint8_t)tr->queued_clip) pa_release_track(inst, t, (int)tr->active_clip);
+                    if (tr->active_clip != (uint8_t)tr->queued_clip) {
+                        pa_release_track(inst, t, (int)tr->active_clip);
+                        /* …and the INCOMING clip asserts its own resting values,
+                         * pushed second so it wins the ring for any target both
+                         * clips automate (Josh, 2026-09-13). */
+                        pa_assert_track(inst, t, (int)tr->queued_clip);
+                    }
                     tr->active_clip  = (uint8_t)tr->queued_clip;
                     tr->queued_clip  = -1;
                     tr->clip_playing = 1;
@@ -734,7 +740,10 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                     tr->clip_playing      = 0;
                     silence_track_notes_v2(inst, tr);
                     if (tr->queued_clip >= 0) {
-                        if (tr->active_clip != (uint8_t)tr->queued_clip) pa_release_track(inst, t, (int)tr->active_clip);
+                        if (tr->active_clip != (uint8_t)tr->queued_clip) {
+                            pa_release_track(inst, t, (int)tr->active_clip);
+                            pa_assert_track(inst, t, (int)tr->queued_clip);   /* the incoming rest, second */
+                        }
                         tr->active_clip  = (uint8_t)tr->queued_clip;
                         tr->queued_clip  = -1;
                         tr->clip_playing = 1;

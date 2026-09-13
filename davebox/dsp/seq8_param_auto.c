@@ -1621,6 +1621,52 @@ static void pa_release_request(seq8_instance_t *inst, int track, int clip) {
     __atomic_or_fetch(&inst->pa_release_mask, (uint8_t)(1u << track), __ATOMIC_RELEASE);
 }
 
+/* THE INCOMING half of a clip switch (Josh, 2026-09-13: the parameter "should
+ * jump immediately to the new clip's resting value").
+ *
+ * Releasing the outgoing clip alone leaves the parameter at the OLD clip's rest
+ * until the new clip's playhead reaches a point — so the sound you get on a
+ * switch belongs to the clip you just left. This asserts the new clip's resting
+ * values instead, and because it is pushed AFTER the release onto the same
+ * ordered ring, the incoming value wins for any target both clips automate.
+ *
+ * ⚠ The filter is deliberately IDENTICAL to pa_release_track's: a retired entry
+ * (count 0) and a DEACTIVATED one drive nothing, so neither may assert — the
+ * value there is whatever the user set by hand, and a clip switch must not
+ * overwrite that.
+ *
+ * AUDIO THREAD ONLY — it pushes on the ring. */
+static void pa_assert_track(seq8_instance_t *inst, int track, int clip) {
+    uint32_t seq0 = pa_read_seq(inst);
+    if (seq0 & 1u) {                        /* a write is in flight: retry next block */
+        inst->pa_assert_clip[track] = (uint8_t)clip;
+        __atomic_or_fetch(&inst->pa_assert_mask, (uint8_t)(1u << track), __ATOMIC_RELEASE);
+        return;
+    }
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+        pa_entry_t *e = &inst->pa_entries[i];
+        if (!e->used || e->track != track || e->clip != clip) continue;
+        if (!e->count) continue;
+        if (!(e->flags & PA_FLAG_ACTIVE)) continue;
+        uint16_t back;
+        if (!pa_rest_value(e, &back)) continue;
+        uint16_t tgt = e->target;
+        if (tgt >= PA_MAX_TARGETS) continue;
+        /* Playback must re-send after this, not believe its cache. */
+        e->last_sent_valid = 0;
+        if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
+            pa_ring_push(inst, tgt, back);
+    }
+}
+
+/* Both halves of a clip switch, from whichever thread saw it. */
+static void pa_switch_request(seq8_instance_t *inst, int track, int from, int to) {
+    if (from == to) return;
+    pa_release_request(inst, track, from);
+    inst->pa_assert_clip[track] = (uint8_t)to;
+    __atomic_or_fetch(&inst->pa_assert_mask, (uint8_t)(1u << track), __ATOMIC_RELEASE);
+}
+
 static void pa_release_service(seq8_instance_t *inst) {
     /* Per-entry releases: a deactivated or cleared parameter goes back to
      * rest now, whether or not the transport runs. */
@@ -1636,7 +1682,14 @@ static void pa_release_service(seq8_instance_t *inst) {
             pa_ring_push(inst, tgt, back);
     }
     uint8_t mask = __atomic_exchange_n(&inst->pa_release_mask, 0, __ATOMIC_ACQ_REL);
-    if (!mask) return;
     for (int t = 0; t < NUM_TRACKS; t++)
         if (mask & (1u << t)) pa_release_track(inst, t, (int)inst->pa_release_clip[t]);
+    /* ⚠ AFTER the releases, and unconditionally — not inside the `mask` early
+     * return above, which is why that `return` had to go. The incoming clip's
+     * values must land LAST so they win the ring for any target both clips
+     * automate, and an assert can be pending on a track whose release already
+     * happened on the audio thread. */
+    uint8_t amask = __atomic_exchange_n(&inst->pa_assert_mask, 0, __ATOMIC_ACQ_REL);
+    for (int t = 0; t < NUM_TRACKS; t++)
+        if (amask & (1u << t)) pa_assert_track(inst, t, (int)inst->pa_assert_clip[t]);
 }

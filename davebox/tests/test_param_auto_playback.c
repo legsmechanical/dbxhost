@@ -249,6 +249,85 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- THE INCOMING CLIP ASSERTS ITS OWN REST ----------------------
+     *
+     * Josh, 2026-09-13, ruling the open question: on a clip switch the parameter
+     * "should jump immediately to the new clip's resting value."
+     *
+     * Before this, only the OUTGOING clip was released, so a target automated in
+     * BOTH clips sat at the OLD clip's rest until the new clip's playhead reached
+     * a point — the sound you got on a switch belonged to the clip you left.
+     * Two clips automating the SAME target is what makes the two behaviours
+     * distinguishable; with different targets, releasing alone looks correct. */
+    {
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+
+        /* clip 0 rests at 2000, clip 1 rests at 5000 — same parameter. */
+        hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
+        pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
+        hx_set_param(h, "t0_pa_rest", "1 1:fx1:cutoff 5000");
+        pa_set(h, 0, 1, "1:fx1:cutoff", 192, 11000);
+
+        pa_playback_scan(in, &in->tracks[0], 0, 0, 0, 384, NULL);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "9000"), "clip 0 is driving the parameter");
+
+        in->launch_quant = 0;
+        in->playing = 1;
+        in->tracks[0].clip_playing = 1;
+        hx_set_param(h, "t0_launch_clip", "1");
+        pa_release_service(in);
+        pending(h, buf, sizeof(buf));
+
+        /* Both are staged — the release then the assert — and the ORDER is the
+         * whole point: JS applies them in order, so the incoming value is what
+         * the parameter ends up holding. */
+        char *outgoing = strstr(buf, "1:fx1:cutoff 2000");
+        char *incoming = strstr(buf, "1:fx1:cutoff 5000");
+        HX_ASSERT(incoming != NULL,
+                  "⭐ the INCOMING clip's resting value (5000) was never staged");
+        HX_ASSERT(outgoing == NULL || incoming > outgoing,
+                  "the incoming rest must be staged AFTER the outgoing one, or the old clip wins");
+        OK("⭐ a clip switch JUMPS to the new clip's resting value (Josh, 09-13)");
+        hx_destroy(h);
+    }
+
+    /* ---- CONTROL: a DEACTIVATED or retired lane asserts nothing -------
+     * The filter has to match the release side exactly: neither drives the
+     * parameter, so the value there is the user's own and a clip switch must not
+     * overwrite it. */
+    {
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+
+        pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
+        hx_set_param(h, "t0_pa_rest", "1 1:fx1:cutoff 5000");
+        pa_set(h, 0, 1, "1:fx1:cutoff", 192, 11000);
+        hx_set_param(h, "t0_pa_active", "1 1:fx1:cutoff 0");   /* clip 1's lane OFF */
+
+        pa_playback_scan(in, &in->tracks[0], 0, 0, 0, 384, NULL);
+        /* ⚠⚠ THE TRAP IN WRITING THIS CONTROL, paid for once: DEACTIVATING a
+         * lane stages its own resting value (pa_release_service's per-entry
+         * loop — "deactivating rests the parameter"). Serve and DRAIN that here,
+         * or the 5000 it pushes is still in the queue after the switch and the
+         * control fails against correct code, blaming the assert for a push it
+         * never made. */
+        pa_release_service(in);
+        pending(h, buf, sizeof(buf));
+
+        in->launch_quant = 0;
+        in->playing = 1;
+        in->tracks[0].clip_playing = 1;
+        hx_set_param(h, "t0_launch_clip", "1");
+        pa_release_service(in);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(!strstr(buf, "1:fx1:cutoff 5000"),
+                  "a DEACTIVATED lane asserted its rest — that overwrites the user's own value");
+        OK("⚠ CONTROL: a deactivated incoming lane asserts NOTHING");
+        hx_destroy(h);
+    }
+
     /* ---- and the SCENE launch, which is that gesture times eight ------
      *
      * Enumerating every writer of active_clip (rather than stopping at the one

@@ -1286,6 +1286,13 @@ typedef struct {
      * keeps its single producer. Bit t = track t; clip index alongside. */
     uint8_t    pa_release_mask;
     uint8_t    pa_release_clip[NUM_TRACKS];
+    /* The INCOMING clip of a switch, asserted right after the release so the
+     * parameter lands on the NEW clip's resting value instead of sitting at the
+     * old one's until a point comes round (Josh, 2026-09-13: it "should jump
+     * immediately to the new clip's resting value"). Runtime only — never
+     * serialized, so no state-version bump. */
+    uint8_t    pa_assert_mask;
+    uint8_t    pa_assert_clip[NUM_TRACKS];
     /* Writer lock — see pa_lock. The SPI thread spins for it (the audio thread
      * holds it for one point write); the audio thread only TRIES it. */
     uint8_t    pa_wlock;
