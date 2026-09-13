@@ -101,7 +101,9 @@ step('Delete + jog click on MACROS opens the confirm and clears NOTHING yet', ()
     withDelete(click);
     ticks(2);
     assert(S.confirmMacroClear === true, 'the confirm did not open');
-    assert(S.confirmMacroClearSel === 0, 'it should open on OK');
+    /* ⭑ Destructive, so it opens on CANCEL (Josh, 2026-09-13) — a stray second
+     * click must not wipe eight assignments. */
+    assert(S.confirmMacroClearSel === 1, 'it should open on CANCEL, not OK');
     assert(assigned(1) === 3, 'it cleared before being answered — the point of asking');
 });
 
@@ -110,11 +112,13 @@ step('⚠⚠ THE REGRESSION GUARD: the jog still REACHES the dialog once it is u
      * on the wrong side of soundModeCovered(), the jog reached nothing and the
      * selection could never move. */
     cc(CC_JOG_TURN, 1); ticks(1);
-    assert(S.confirmMacroClearSel === 1,
+    assert(S.confirmMacroClearSel === 0,
            'the jog did not move the selection — the dialog is not receiving input');
 });
 
 step('⚠ CONTROL: Cancel keeps every assignment, and no chain write is made', () => {
+    cc(CC_JOG_TURN, 1); ticks(1);              /* back to Cancel */
+    assert(S.confirmMacroClearSel === 1, 'setup: expected Cancel selected');
     click(); ticks(2);
     assert(S.confirmMacroClear === false, 'the confirm stayed open after answering');
     assert(assigned(1) === 3, 'Cancel cleared them anyway (' + assigned(1) + ' left)');
@@ -125,7 +129,9 @@ step('⭐ OK unassigns all eight, and tells the CHAIN STORE for every one of the
     writes = [];
     withDelete(click); ticks(2);
     assert(S.confirmMacroClear === true, 'the confirm did not re-open');
-    click();                                   /* sel 0 = OK */
+    cc(CC_JOG_TURN, 1); ticks(1);              /* jog from Cancel to OK */
+    assert(S.confirmMacroClearSel === 0, 'setup: expected OK selected');
+    click();
     ticks(12);                                 /* WRITES_PER_TICK = 2, so 8 needs ≥4 */
     assert(S.confirmMacroClear === false, 'the confirm stayed open');
     assert(assigned(1) === 0, 'assignments survived: ' + JSON.stringify(S.trackMacros[1]));

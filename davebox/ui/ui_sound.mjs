@@ -7940,7 +7940,7 @@ function macroClearAllForTrack(t, slot) {
 export function macroClearConfirmOpen() {
     if (!S.active || S.track < 0) return false;
     GS.confirmMacroClear = true;
-    GS.confirmMacroClearSel = 0;
+    GS.confirmMacroClearSel = 1;   /* Cancel is the default — destructive */
     GS.confirmMacroClearTrack = S.track;
     /* Captured at OPEN, not at commit: S.bus and the route can change while the
      * dialog is up. -1 = not chain-addressable. */
@@ -7972,7 +7972,7 @@ export function macroClearConfirmAnswer(ok) {
  * THREE parallel teardown lists plus soundExit — all four call this. */
 export function macroClearConfirmReset() {
     GS.confirmMacroClear = false;
-    GS.confirmMacroClearSel = 0;
+    GS.confirmMacroClearSel = 1;   /* Cancel is the default — destructive */
     GS.confirmMacroClearTrack = -1;
     GS.confirmMacroClearSlot = -1;
 }

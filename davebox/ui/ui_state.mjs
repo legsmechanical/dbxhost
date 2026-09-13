@@ -202,7 +202,10 @@ export const S = {
      * rebuild and nothing else on the bank is destructive. Sel 0 = OK, 1 = Cancel,
      * matching every other confirm here. */
     confirmMacroClear: false,
-    confirmMacroClearSel: 0,
+    /* ⭑ OPENS ON CANCEL (Josh, 2026-09-13), like confirmExitSel and
+     * confirmTypeChangeSel: a destructive dialog defaults to the safe answer, so
+     * a stray second click cannot wipe eight assignments. */
+    confirmMacroClearSel: 1,
     confirmMacroClearTrack: -1,
     confirmMacroClearSlot: -1,
     allLanesQntResetTick: -1,   /* tick at which to reset bankParams[t][7][3] to -1 after knob release */
