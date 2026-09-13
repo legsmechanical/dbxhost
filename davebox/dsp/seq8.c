@@ -1291,7 +1291,10 @@ typedef struct {
      * old one's until a point comes round (Josh, 2026-09-13: it "should jump
      * immediately to the new clip's resting value"). Runtime only — never
      * serialized, so no state-version bump. */
-    uint8_t    pa_assert_mask;
+    /* ⭐ ONE mask for a clip SWITCH, carrying both indices — never two, so the
+     * two halves can neither be applied in the wrong order nor with mismatched
+     * clips. See pa_switch_track. */
+    uint8_t    pa_switch_mask;
     uint8_t    pa_assert_clip[NUM_TRACKS];
     /* Writer lock — see pa_lock. The SPI thread spins for it (the audio thread
      * holds it for one point write); the audio thread only TRIES it. */

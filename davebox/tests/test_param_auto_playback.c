@@ -287,7 +287,10 @@ int main(void) {
         char *incoming = strstr(buf, "1:fx1:cutoff 5000");
         HX_ASSERT(incoming != NULL,
                   "⭐ the INCOMING clip's resting value (5000) was never staged");
-        HX_ASSERT(outgoing == NULL || incoming > outgoing,
+        /* ⚠ NOT `outgoing == NULL || …` — that passes when the release half has
+         * vanished entirely, claiming to have proved an ordering it never saw. */
+        HX_ASSERT(outgoing != NULL, "the outgoing release was not staged at all");
+        HX_ASSERT(incoming > outgoing,
                   "the incoming rest must be staged AFTER the outgoing one, or the old clip wins");
         OK("⭐ a clip switch JUMPS to the new clip's resting value (Josh, 09-13)");
         hx_destroy(h);
@@ -325,6 +328,85 @@ int main(void) {
         HX_ASSERT(!strstr(buf, "1:fx1:cutoff 5000"),
                   "a DEACTIVATED lane asserted its rest — that overwrites the user's own value");
         OK("⚠ CONTROL: a deactivated incoming lane asserts NOTHING");
+        hx_destroy(h);
+    }
+
+    /* ---- ⭐⭐ A WRITE IN FLIGHT: BOTH HALVES DEFER, OR THE OLD CLIP WINS ----
+     *
+     * THE BUG THIS PINS, found by review before it shipped. The release and the
+     * assert used to sample the seqlock each for themselves. With a store write in
+     * flight for one of them and not the other, the release deferred to the next
+     * block while the assert pushed NOW — ring order assert(new), release(old) —
+     * and JS keeps the LAST value per target. The parameter then landed on the
+     * OUTGOING clip's rest: exactly the bug this feature exists to fix, brought
+     * back by any hand on a knob.
+     *
+     * `pa_write_begin` without its `end` is precisely "a write is in flight". */
+    {
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+
+        hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
+        pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
+        hx_set_param(h, "t0_pa_rest", "1 1:fx1:cutoff 5000");
+        pa_set(h, 0, 1, "1:fx1:cutoff", 192, 11000);
+        pa_playback_scan(in, &in->tracks[0], 0, 0, 0, 384, NULL);
+        pending(h, buf, sizeof(buf));
+
+        in->launch_quant = 0; in->playing = 1; in->tracks[0].clip_playing = 1;
+        pa_write_begin(in);                  /* a hand is editing the store */
+        hx_set_param(h, "t0_launch_clip", "1");
+        pa_release_service(in);              /* must decline to split the switch */
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(lines(buf) == 0,
+                  "⚠⚠ a write was in flight: NEITHER half may be staged, or the order can invert");
+        pa_write_end(in);                    /* the writer finishes */
+
+        pa_release_service(in);              /* now both, in order */
+        pending(h, buf, sizeof(buf));
+        char *out = strstr(buf, "1:fx1:cutoff 2000");
+        char *in_ = strstr(buf, "1:fx1:cutoff 5000");
+        HX_ASSERT(out != NULL, "the outgoing release was lost by the deferral");
+        HX_ASSERT(in_ != NULL, "the incoming assert was lost by the deferral");
+        HX_ASSERT(in_ > out, "⚠⚠ ORDER INVERTED — the outgoing clip's rest would win");
+        OK("⭐⭐ a store write in flight defers BOTH halves together, order intact");
+        hx_destroy(h);
+    }
+
+    /* ---- ⭐ THE AUDIO-THREAD PATH: a QUANTIZED launch, through render_block ---
+     *
+     * ⚠⚠ Deleting BOTH pa_assert calls from render_block left the suite GREEN,
+     * because every other test drives launch_quant=Now, which takes the deferred
+     * SPI path. The quantized boundary is the ORDINARY way a clip switches, and it
+     * had no coverage at all — the same shape as the missing-caller bug this
+     * feature was built to fix. → [[test-the-path-not-the-function]] */
+    {
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+
+        hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
+        pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
+        hx_set_param(h, "t0_pa_rest", "1 1:fx1:cutoff 5000");
+        pa_set(h, 0, 1, "1:fx1:cutoff", 192, 11000);
+
+        /* Playing, and the launch QUEUED rather than immediate: launch_quant != 0
+         * sends tN_launch_clip down the queue branch, and render_block fires it at
+         * the next boundary — the path with no test. */
+        hx_set_param(h, "transport", "play");
+        in->launch_quant = 1;
+        in->tracks[0].clip_playing = 1;
+        hx_render(h, 2);
+        pending(h, buf, sizeof(buf));            /* drain whatever playback staged */
+
+        hx_set_param(h, "t0_launch_clip", "1");
+        HX_ASSERT(in->tracks[0].queued_clip == 1, "setup: the launch did not QUEUE");
+        for (int i = 0; i < 200 && in->tracks[0].active_clip != 1; i++) hx_render(h, 1);
+        HX_ASSERT(in->tracks[0].active_clip == 1,
+                  "setup: the quantized boundary never fired");
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 5000") != NULL,
+                  "⭐ the QUANTIZED launch never asserted the incoming clip's rest");
+        OK("⭐ the audio-thread (quantized boundary) switch asserts too");
         hx_destroy(h);
     }
 
