@@ -414,6 +414,30 @@ step('⭐ and the two params NO snapshot reaches ride along as a JS patch', () =
     assert(S.clipSeqFollow[T][0] === false, 'the patch did not restore Seq Follow');
 });
 
+step('⭐ ARP IN: its reset is a JS unit, so Undo restores it and NOT a clip edit', () => {
+    /* ⚠⚠ IT WAS WORSE THAN UN-UNDOABLE. resetTarp called noteUndoUnit() while taking
+     * NO DSP snapshot (ARP IN lives in tr->tarp*, per TRACK, outside every clip), so
+     * Undo reverted whatever unrelated clip edit still sat in the one-deep slot. */
+    reset(5);
+    S.bankParams[T][5][0] = 3;
+    S.tarpStepVel[T][2] = 99;
+    S.tarpStepLoopLen[T] = 5;
+    withDelete(jogClick);
+    assert(S.undoJs !== null && S.undoJs.kind === 'arp in',
+           'ARP IN did not arm a JS undo unit (kind=' + (S.undoJs && S.undoJs.kind) + ')');
+    assert(S.undoJsPatch === null, 'ARP IN must not use a PATCH — it has no DSP snapshot to ride');
+    assert(S.tarpStepLoopLen[T] === 8, 'setup: the reset did not run');
+
+    S.undoJs.undo();
+    assert(S.bankParams[T][5][0] === 3, 'undo did not restore the bank params');
+    assert(S.tarpStepVel[T][2] === 99, 'undo did not restore the step velocities');
+    assert(S.tarpStepLoopLen[T] === 5, 'undo did not restore the step loop length');
+    /* and the values are REPLAYED to the DSP, since nothing there holds them */
+    const q = queued();
+    assert(q.some(x => /_tarp_step_vel=2 99/.test(x)),
+           'the restore never reached the DSP: ' + q.join(' | '));
+});
+
 step('⭐ resetting an FX bank leaves something to UNDO', () => {
     reset(1);
     S.undoAvailable = false;

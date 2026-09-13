@@ -102,6 +102,11 @@ export function markJsUndoPatch(kind, undo, redo) {
 export function markJsUndo(kind, undo, redo) {
     S.undoJs = { kind: kind, undo: undo, redo: redo };
     S.redoJs = null;
+    /* ⚠⚠ AND IT RETIRES A PENDING PATCH — the mirror of noteUndoUnit clearing a
+     * pending unit. The three are alternatives for ONE press: the handler takes the
+     * JS unit and returns, so a patch left armed here would never apply, then ride
+     * some LATER, unrelated DSP restore and corrupt it. A test caught exactly that. */
+    S.undoJsPatch = null; S.redoJsPatch = null;
     S.undoAvailable = true; S.redoAvailable = false;
     /* A device-snapshot recall is a different mechanism with its own slot; a JS
      * unit supersedes it for the same reason a DSP unit does. */

@@ -11,7 +11,7 @@ import {
     PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS, ACTION_POPUP_MS,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_MACROS, BANK_STEP, isSoundBank
 } from './ui_constants.mjs';
-import { S, noteUndoUnit } from './ui_state.mjs';
+import { S, noteUndoUnit, markJsUndo } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { soundActive, soundOpen, soundExit, soundIsGlobal, soundInEditor, soundFollowTrack } from './ui_sound.mjs';
 import { isTextEntryActive } from '/data/UserData/schwung/shared/text_entry.mjs';
@@ -20,7 +20,7 @@ import { clipHasContent } from './ui_pure.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { effectiveClip, invalidateLEDCache, forceRedraw } from './ui_leds.mjs';
 import { refreshPerClipBankParams, resetPerClipBankParamsToDefault,
-    refreshSeqNotesIfCurrent, _focusedClipIsEmpty } from './ui_dsp_bridge.mjs';
+    refreshSeqNotesIfCurrent, _focusedClipIsEmpty, applyBankParam } from './ui_dsp_bridge.mjs';
 /* Automation follows what it automates (Josh, 2026-09-12). The *Queued forms
  * append to S.pendingDefaultSetParams so the automation clear lands AFTER the
  * clear that took the undo snapshot — see their banner in ui_automation.mjs. */
@@ -763,8 +763,33 @@ export function resetFxBanks(t) {
  * arp_init_defaults + held-buffer clear + silence. JS mirrors are
  * zeroed in parallel so the bank overview reflects defaults immediately. */
 export function resetTarp(t) {
-    noteUndoUnit();
+    /* ⭐ UNDOABLE, and it was WORSE than un-undoable before (Josh, 2026-09-13).
+     * This used to call noteUndoUnit() while taking NO DSP snapshot — ARP IN lives
+     * in `tr->tarp*`, per TRACK, outside every clip — so pressing Undo reverted
+     * whatever unrelated clip edit still sat in the DSP's one-deep slot. A JS unit
+     * fixes both halves at once: Undo restores these values and does not touch the
+     * DSP. ⓘ ARP IN is not automatable (BANK_AUTOMATION_DENY), so the clear below
+     * finds nothing and books no checkpoint — which is why a pure JS unit is right
+     * here and a patch is not. */
+    const _before = {
+        params: S.bankParams[t][5].slice(),
+        vel: S.tarpStepVel[t].slice(),
+        int: S.tarpStepInt[t].slice(),
+        loop: S.tarpStepLoopLen[t],
+    };
+    markJsUndo('arp in',
+        function () { tarpApplyValues(t, _before); },
+        function () { resetTarpValues(t); });
     S.pendingDefaultSetParams.push({ key: 't' + t + '_tarp_reset', val: '1' });
+    resetTarpValues(t);
+    S.tarpHeldNotes[t].clear();      /* transient: not captured, not restored */
+    /* ARP IN's own params, so ARP IN's own automation. */
+    automationClearBanksQueued(S.pendingDefaultSetParams, t, effectiveClip(t), [5]);
+    S.screenDirty = true;
+}
+
+/* The value half of the reset, so undo's REDO is the same code the gesture ran. */
+function resetTarpValues(t) {
     for (let k = 0; k < 8; k++) {
         const pm = BANKS[5].knobs[k];
         if (pm) S.bankParams[t][5][k] = pm.def;
@@ -774,9 +799,25 @@ export function resetTarp(t) {
         S.tarpStepInt[t][s] = 0;
     }
     S.tarpStepLoopLen[t] = 8;
-    S.tarpHeldNotes[t].clear();
-    /* ARP IN's own params, so ARP IN's own automation. */
-    automationClearBanksQueued(S.pendingDefaultSetParams, t, effectiveClip(t), [5]);
+}
+
+/* Put captured ARP IN values back — through the SAME set_param keys a knob turn
+ * uses, because nothing in the DSP holds a snapshot of them. */
+function tarpApplyValues(t, b) {
+    for (let k = 0; k < 8; k++) {
+        const pm = BANKS[5].knobs[k];
+        if (!pm) continue;
+        S.bankParams[t][5][k] = b.params[k];
+        applyBankParam(t, 5, k, b.params[k]);
+    }
+    for (let s = 0; s < 8; s++) {
+        S.tarpStepVel[t][s] = b.vel[s];
+        S.tarpStepInt[t][s] = b.int[s];
+        S.pendingDefaultSetParams.push({ key: 't' + t + '_tarp_step_vel', val: s + ' ' + b.vel[s] });
+        S.pendingDefaultSetParams.push({ key: 't' + t + '_tarp_step_int', val: s + ' ' + b.int[s] });
+    }
+    S.tarpStepLoopLen[t] = b.loop;
+    S.pendingDefaultSetParams.push({ key: 't' + t + '_tarp_step_loop_len', val: String(b.loop) });
     S.screenDirty = true;
 }
 
