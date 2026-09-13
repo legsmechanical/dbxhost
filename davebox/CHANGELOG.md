@@ -21,7 +21,9 @@ the section into a versioned heading at release time.
   the track's Volume, Pan, Send A and Send B back to their defaults and clears
   any automation on them. Inside a module editor the same gesture still belongs
   to the module, and on a MIDI track it does nothing — that card's controls have
-  no default values to return to.
+  no default values to return to. While a take is recording, Resolution is left
+  as it is — the sequencer cannot rescale notes mid-take — but arming Record
+  without playing still resets it.
 - **Clearing a track's macros.** Delete + jog click on the MACROS bank unassigns
   all eight macros on the track. **It asks first** — jog to choose, click to
   answer — because eight assignments are a lot to rebuild by accident. Your macro
