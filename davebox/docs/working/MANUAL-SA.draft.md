@@ -1509,6 +1509,29 @@ a NOTE FX macro reads UNASSIGNED on a drum track. The bank's own page shows
 the same automation: the dot on the cell, Mute + touch and Delete + touch on
 the knob, a blinking ring, and a held step plus a turn locks it there too.
 
+### SnapMorph — one knob between snapshots
+
+A knob can morph the track's whole sound between two or more of its **track
+snapshots** (hold Capture in track view to save them). In the assignment list
+pick **SnapMorph** — it's the last entry, after Levels, and only a Schwung
+track has it — and you get the track's saved snapshot slots. **Click** a slot
+to put it in; click again to take it out. The order you pick them in is the
+path the knob travels: `[1]` at the bottom of the turn, `[2]` next, and so on.
+Press **Back** when you're done — the knob is live as soon as two are in.
+
+Turning the knob moves every parameter the chosen snapshots share: numbers
+glide between the two values, and a choice — a waveform, a switch — flips to
+the nearer snapshot's setting halfway across. Anything the snapshots don't
+agree on is left alone: a block whose module differs between the snapshots, or
+has been swapped since, stays out of the morph rather than being guessed at.
+The knob shows its own position as a percentage under **MORPH**, and **Lo**
+and **Hi** window the path like any other target.
+
+A SnapMorph records as **one** lane — the knob's position, listed as
+`SnapMorph K4` in the AUTOMATION bank — not a lane per parameter, so a sweep
+across forty parameters is still one thing to smooth, mute or clear. It does
+not export to Live; there is nothing there for it to be.
+
 **MIDI targets.** Every track can point a macro at **Aftertouch** or **Pitch
 Bend** (pick **MIDI** in the target list); a MIDI track can also point one at
 any **MIDI CC** (pick **MIDI CC**, then the number — the standard names are
@@ -1656,6 +1679,8 @@ have somewhere to go — drop whatever effect you like on them.
 
 - **CC automation.** A Move set has no place to put a CC curve — the format
   simply has no such thing.
+- **SnapMorph lanes.** A morph knob has no Live equivalent; the parameters it
+  drove are not exported either.
 - **Pitch bend on Schwung tracks.** How far a bend goes is decided by the synth,
   and a Schwung track exports as a placeholder instrument, so there's no honest
   amount to bend by.

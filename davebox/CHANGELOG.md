@@ -17,6 +17,15 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **SnapMorph.** A macro knob can now morph a track's whole sound between two
+  or more of the track's snapshots. On the MACROS bank, assign a knob to
+  **SnapMorph** and tick the snapshots you want, in the order you want to pass
+  through them; the knob then sweeps every parameter the snapshots share —
+  numbers glide, choices such as a waveform flip to the nearer snapshot's
+  setting halfway across. A morph records as **one** automation lane, the
+  knob's own position ("SnapMorph K4" in the AUTOMATION bank), so a sweep over
+  forty parameters is still one lane to edit, mute or clear. Chain tracks
+  only; swapping a module takes it out of the morph rather than guessing.
 - **Resetting the SOUND + CONFIG bank.** Delete + jog click on SOUND + CONFIG puts
   the track's Volume, Pan, Send A and Send B back to their defaults and clears
   any automation on them. Inside a module editor the same gesture still belongs

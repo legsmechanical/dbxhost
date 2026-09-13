@@ -66,6 +66,11 @@ import * as ModuleLists from '/data/UserData/schwung/shared/module_lists.mjs';
 import { MoveKnob1, Red, White } from '/data/UserData/schwung/shared/constants.mjs';
 import { showActionPopup, showActionPopupFor } from './ui_persistence.mjs';
 import { writeSidecar } from './ui_persistence.mjs';
+/* SNAPMORPH (18b): the morph leg's engine — snapshot loading, interpolation,
+ * the bulk write and the playback applier live there; this file owns the leg's
+ * place in the mapping store, the picker and the turn law. */
+import { MORPH_KIND, MORPH_LABEL, morphSnapshotSlots, morphPrepare, morphReady, morphApply,
+         morphLegValid, morphInvalidate } from './ui_snapmorph.mjs';
 import { requestTrackModeChange } from './ui_dialogs.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
@@ -3517,8 +3522,13 @@ function resetKnobAsn() {
 /* The assign list's row shape, from a macro target. `level` is a pseudo-target
  * id on these screens only — never a component the engine knows. */
 const LEVEL_TARGET = 'level';
+/* SnapMorph is a pseudo-target too: its "params" are the track's snapshot
+ * slots, and the assignment row shows the list (`1+3`, 1-based). */
+const MORPH_TARGET = 'morph';
+function morphSnapsLabel(m) { return (m && Array.isArray(m.snaps) ? m.snaps : []).map(n => n + 1).join('+'); }
 function asnFromMacro(m) {
     if (!m) return { target: '', param: '' };
+    if (m.kind === MORPH_KIND) return { target: MORPH_TARGET, param: morphSnapsLabel(m) };
     if (m.kind === 'level') return { target: LEVEL_TARGET, param: m.key };
     if (m.kind === 'bank') return { target: 'bank:' + m.bank, param: 'k' + m.k + (m.alt ? ':' + m.alt : '') };
     if (m.kind === 'midi') return { target: midiTargetCC(m.target) >= 0 ? 'midicc' : 'midi', param: m.target };
@@ -3565,9 +3575,12 @@ function knobLegRows() {
         rows.push({ kind: 'hi', leg: j, label: ' Hi', value: Math.round(leg.hi * 100) + '%' });
         /* TRAVEL, under the two bounds it qualifies (Josh, 2026-09-10). Two
          * states, so the click IS the edit — the slot-settings idiom for a
-         * toggle; the jog also flips it while the row is being edited. */
-        rows.push({ kind: 'travel', leg: j, label: ' Travel',
-                    value: legFullTravel(leg) ? 'Full' : 'Bounded' });
+         * toggle; the jog also flips it while the row is being edited.
+         * A SnapMorph leg has no travel row: it is a position along the
+         * snapshot list and is always driven by `v` (full). */
+        if (leg.kind !== MORPH_KIND)
+            rows.push({ kind: 'travel', leg: j, label: ' Travel',
+                        value: legFullTravel(leg) ? 'Full' : 'Bounded' });
     }
     rows.push({ kind: 'add', label: '+ Add target', value: '' });
     return rows;
@@ -3691,6 +3704,11 @@ function knobTargetList() {
         }
     }
     if (!midiTrack && !noneTrack) rows.push({ id: LEVEL_TARGET, name: 'Levels' });   /* a MIDI or NONE track has no chain */
+    /* SNAPMORPH (18b): a chain track's macro can morph its chain between its
+     * TRACK snapshots. Only a chain track: the snapshot's param list is taken
+     * for route 0 only (ui_devsnap paramsCapture), and a Move track's sound
+     * lives in Move. Not on a bus screen either — a bus is not a track. */
+    if (!S.bus && S.track >= 0 && (GS.trackRoute[S.track] | 0) === 0) rows.push({ id: MORPH_TARGET, name: MORPH_LABEL });
     return rows;
 }
 
@@ -3756,6 +3774,20 @@ function knobParamList(target) {
     if (target === 'midi') {
         params.push({ key: 'at', label: 'Aftertouch' });
         params.push({ key: 'pb', label: 'Pitch Bend' });
+        return params;
+    }
+    if (target === MORPH_TARGET) {
+        /* The track's FILLED snapshot slots. A click TOGGLES a slot in or out
+         * of the leg being built (commitKnobAssignment), so the list stays
+         * open and marks what is chosen; the leg exists from the first pick
+         * and morphs once two are in. Pick ORDER is the morph's path. */
+        const leg = morphLegBeingEdited();
+        const chosen = leg ? leg.snaps : [];
+        for (const n of morphSnapshotSlots(S.track)) {
+            const at = chosen.indexOf(n);
+            params.push({ key: 'snap:' + n, label: (at >= 0 ? '[' + (at + 1) + '] ' : '    ') + 'Snapshot ' + (n + 1) });
+        }
+        if (!params.length) params.push({ key: '', label: '(no track snapshots)' });
         return params;
     }
     if (target.indexOf('bank:') === 0) {
@@ -3870,6 +3902,7 @@ function compParamLabel(target, param) {
         return (BANK_SHORT[m ? m.bank : -1] || 'Bank') + '>' + (meta ? meta.full : param);
     }
     if (target === 'midicc' || target === 'midi') return 'MIDI>' + midiTargetName(param);
+    if (target === MORPH_TARGET) return 'Snap>' + param;        /* SnapMorph over snapshots 1+3 */
     return compShort(target) + '>' + param;
 }
 
@@ -3900,9 +3933,60 @@ function knobRowLabel(i, a) {
  * ⭑ Re-pointing a leg KEEPS its lo/hi. A range is part of the KNOB's shape —
  * how far this knob pushes whatever is on the other end — not a property of
  * the parameter, so swapping the parameter must not silently reset it. */
+/* The SnapMorph leg the picker is editing: the leg it was opened FOR when
+ * that is a morph leg, else the knob's existing morph leg (a knob morphs one
+ * way; a second morph leg on one knob would fight the first), else null. */
+function morphLegBeingEdited() {
+    const legs = macroLegs(macroMapping(S.knobIdx));
+    const j = S.knobLegIdx;
+    if (j >= 0 && j < legs.length && legs[j].kind === MORPH_KIND) return legs[j];
+    return legs.find(l => l.kind === MORPH_KIND) || null;
+}
+/* A snapshot slot picked on the SnapMorph list: toggle it in or out of the
+ * knob's morph leg, creating the leg on the first pick and dropping it on the
+ * last removal. The list stays open (the caller re-reads it) — Back leaves.
+ * `v` is kept: adding a snapshot moves nothing, as adding a leg never does. */
+function commitMorphPick(param) {
+    const i = S.knobIdx, t = S.track;
+    const mm = /^snap:(\d+)$/.exec(String(param || ''));
+    if (t < 0 || !mm) return;
+    const n = parseInt(mm[1], 10);
+    const store = GS.trackMacros[t] || (GS.trackMacros[t] = new Array(8).fill(null));
+    const legs = macroLegs(store[i]).slice();
+    let j = legs.findIndex(l => l.kind === MORPH_KIND);
+    if (j < 0) { legs.push({ kind: MORPH_KIND, snaps: [n], lo: 0, hi: 1 }); j = legs.length - 1; }
+    else {
+        const snaps = legs[j].snaps.slice();
+        const at = snaps.indexOf(n);
+        if (at >= 0) snaps.splice(at, 1); else snaps.push(n);
+        if (snaps.length) legs[j] = Object.assign({}, legs[j], { snaps });
+        else { legs.splice(j, 1); j = -1; }
+    }
+    store[i] = legs.length ? { v: store[i] ? store[i].v : null, legs } : null;
+    S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
+    S.knobLegIdx = j;
+    /* The shape changed: the caches belong to the old leg list (macroShapeSync
+     * would catch it a tick later; clearing here is the commit's own habit). */
+    S.macCells[i] = null; S.macVals[i] = null; S.macLegCells[i] = null; S.macLegVals[i] = null; S.knobAccum[i] = 0; S.macLastDir[i] = 0;
+    writeSidecar();
+    S.knobParams = knobParamList(MORPH_TARGET);
+    S.knobParamIdx = Math.min(S.knobParamIdx, Math.max(0, S.knobParams.length - 1));
+    S.dirty = true;
+}
+/* Where Back lands from the SnapMorph list — the same door a commit takes. */
+function leaveMorphPicker() {
+    const i = S.knobIdx;
+    S.knobLegIdx = -1;
+    const mp = macroMapping(i);
+    if (macroMulti(mp) || macroLegs(mp).some(legRanged) || macroLegs(mp).some(l => l.kind === MORPH_KIND)) {
+        S.knobLegRow = Math.min(S.knobLegRow, knobLegRows().length - 1);
+        S.view = VIEW_KNOBLEGS;
+    } else S.view = VIEW_KNOBS;
+}
 function commitKnobAssignment(target, param) {
     const i = S.knobIdx, t = S.track;
     if (t < 0) return;
+    if (target === MORPH_TARGET) return commitMorphPick(param);
     const store = GS.trackMacros[t] || (GS.trackMacros[t] = new Array(8).fill(null));
     let m = null;
     if (target === LEVEL_TARGET && param) m = { kind: 'level', key: param };
@@ -4558,6 +4642,7 @@ const LEVEL_KEYS = { volume: 1, pan: 1, send_a: 1, send_b: 1 };
 export function targetCompatible(target, newRoute) {
     const t = String(target || '');
     if (t.indexOf('seq:') === 0) return true;
+    if (t.indexOf('mac:') === 0) return newRoute === 0;    /* a SnapMorph lane drives a chain */
     if (midiTargetIsMidi(t)) return midiTargetCC(t) >= 0 ? newRoute === 2 : newRoute !== ROUTE_NONE;
     const parts = t.split(':');
     if (parts.length < 3) return true;                 /* not a shape this rule knows: leave it */
@@ -4576,6 +4661,7 @@ function compCompatible(comp, key, newRoute) {
 export function legCompatible(leg, newRoute) {
     if (!leg) return true;
     if (leg.kind === 'bank') return true;
+    if (leg.kind === MORPH_KIND) return newRoute === 0;   /* morphs a chain; nothing else has a param list */
     if (leg.kind === 'midi') return targetCompatible(leg.target, newRoute);
     if (leg.kind === 'level') return newRoute === 0 || newRoute === 1;
     if (leg.kind === 'chain') return compCompatible(leg.comp, leg.key, newRoute);
@@ -5064,7 +5150,7 @@ function legFullTravel(leg) { return !!leg && leg.travel === 'full'; }
  * knob drive more than one thing" — that is a DISPLAY identity (the MAC slug,
  * the percentage read-out) and a one-leg knob keeps its parameter's name and
  * value however it travels. */
-function macroVDriven(mp) { return macroMulti(mp) || macroLegs(mp).some(legFullTravel); }
+function macroVDriven(mp) { return macroMulti(mp) || macroLegs(mp).some(l => legFullTravel(l) || l.kind === MORPH_KIND); }
 /* A leg that does not use its target's whole range. ⭑ On a ONE-leg mapping
  * this is NOT the `v` machinery — see the turn law: a single ranged leg is the
  * PLAIN path plus a clamp, so it keeps the plain path's FEEL (two detents a
@@ -5101,6 +5187,9 @@ function macroLegsUnseeded(i, mp) {
     const legs = macroLegs(mp), cells = S.macLegCells[i], vals = S.macLegVals[i];
     if (!cells || !vals) return true;
     for (let j = 0; j < legs.length; j++) {
+        /* A SnapMorph leg is seeded once its snapshots and their modules'
+         * metadata are in (ui_snapmorph's own cache, filled by the tick). */
+        if (legs[j].kind === MORPH_KIND) { if (!morphReady(S.track, i, legs[j])) return true; continue; }
         if (legs[j].kind !== 'chain') continue;
         const c = cells[j];
         if (!c) return true;                       /* metadata not in yet */
@@ -5119,8 +5208,25 @@ function legCell(leg) { return leg && leg.kind === 'chain' ? macroCellFor(leg) :
  * moved or the leg is not addressable here (module swapped, off-route,
  * off-mode) — an unaddressable leg is simply skipped, exactly as an
  * unassigned macro is. */
-function legWriteNorm(t, leg, f, cell, prev) {
+function legWriteNorm(t, leg, f, cell, prev, knob) {
     f = Math.max(0, Math.min(1, f));
+    if (leg.kind === MORPH_KIND) {
+        /* SNAPMORPH: `f` is the position along the snapshot list; the engine
+         * writes every shared parameter in one bulk SET (transient, made an
+         * edit by morphTick once the hand is off). The LANE is the knob's own
+         * position (Josh, 2026-09-13: the morph knob is what shows up in the
+         * automation page, not the params it drives) — so it records `v`,
+         * the inverse of the leg's window, and returns it as the leg's value
+         * so the next turn's prev is the last knob position. */
+        if (knob == null || !macroLive(leg)) return null;
+        const n = morphApply(t, knob, leg, f, 'turn');
+        if (n == null) return null;
+        const v = legNormToV(leg, f);
+        const wire = String(Math.round(v * 10000) / 10000);
+        const prevWire = prev == null ? wire : String(Math.round(prev * 10000) / 10000);
+        automationParamEdit(t, effectiveClip(t), 'mac', t + ':' + knob, wire, prevWire);
+        return v;
+    }
     if (leg.kind === 'level') {
         const li = macroLevelIdx(leg);
         if (li < 0 || !levelKnobSpec(li)) return null;
@@ -5166,6 +5272,10 @@ function legWriteNorm(t, leg, f, cell, prev) {
  * `v` is seeded, so nothing jumps the moment a range or a second leg is
  * added. The chain kind is the only one that costs a round trip. */
 function legReadRaw(t, leg, cell) {
+    /* A SnapMorph leg has nothing to read back: its value IS the knob's
+     * position, and a fresh leg starts at the first snapshot. It never
+     * anchors (macroAnchorIdx), so this only ever seeds a morph-only knob. */
+    if (leg.kind === MORPH_KIND) return 0;
     if (leg.kind === 'level') { const li = macroLevelIdx(leg); return (li >= 0 && levelKnobSpec(li)) ? S.levelVals[li] : null; }
     if (leg.kind === 'bank') return bankMacroMeta(leg, t) ? bankMacroValue(leg, t) : null;
     if (leg.kind === 'midi') return midiTargetOnRoute(leg.target, t) ? midiVal(t, leg.target) : null;
@@ -5176,7 +5286,8 @@ function legReadRaw(t, leg, cell) {
 function legRawToNorm(t, leg, cell, raw) {
     if (raw == null) return null;
     let min = 0, max = 1;
-    if (leg.kind === 'level') { const s2 = levelKnobSpec(macroLevelIdx(leg)); if (!s2) return null; max = s2.max; }
+    if (leg.kind === MORPH_KIND) { /* already a 0..1 position */ }
+    else if (leg.kind === 'level') { const s2 = levelKnobSpec(macroLevelIdx(leg)); if (!s2) return null; max = s2.max; }
     else if (leg.kind === 'bank') { const m2 = bankMacroMeta(leg, t); if (!m2) return null; min = m2.min; max = m2.max; }
     else if (leg.kind === 'midi') { max = midiTargetMax(leg.target); }
     else { if (!cell || cell.vanished) return null; min = cell.min; max = cell.max; }
@@ -5188,7 +5299,10 @@ function legReadNorm(t, leg, cell) {
 }
 /* A MULTI knob's ANCHOR: the first leg it can actually address. `v` follows
  * this leg, and a turn then imposes `v` on all of them. */
-function macroAnchorIdx(mp) { return macroLegs(mp).findIndex(l => macroLive(l)); }
+/* ⚠ Never a SnapMorph leg: it has no value to read back, so it cannot tell the
+ * poll whether anything moved — anchoring on it would re-seed `v` to 0 on
+ * every poll and drag the whole knob to the first snapshot. */
+function macroAnchorIdx(mp) { return macroLegs(mp).findIndex(l => l.kind !== MORPH_KIND && macroLive(l)); }
 /* Invert a leg's own fraction back through its range to the KNOB's position —
  * the seed of `v` from leg 0. A whole-range leg is the identity; an inverted
  * leg (lo > hi) inverts here too, which is what keeps "adding a range does not
@@ -5231,6 +5345,7 @@ function macroMultiName(mp) {
     return L.length > 1 ? (first + ' +' + (L.length - 1)) : first;
 }
 function legShortName(leg) {
+    if (leg.kind === MORPH_KIND) return 'Morph';
     if (leg.kind === 'level') { const s = LEVEL_KNOB_SPECS[macroLevelIdx(leg)]; return s ? s.label : 'Lvl'; }
     if (leg.kind === 'bank') { const m = bankMacroMeta(leg); return m ? m.abbrev : 'Bank'; }
     if (leg.kind === 'midi') return midiTargetName(leg.target).split(' ')[0];
@@ -5299,15 +5414,20 @@ function pbRelease(t) {
 /* A macro's AUTOMATION target string — the store's own key. A chain or level
  * macro is `<slot>:<comp>:<key>`; a bank macro is `seq:<track>:<dspKey>`; a
  * MIDI macro is its raw target. */
-function macroAutoTarget(m, track) {
+/* `knob` (0..7) is needed only by a SnapMorph leg, whose lane is the KNOB's
+ * own position (`mac:<track>:<knob>`) — it is the one kind whose identity is
+ * not in the leg itself. Callers that know the knob pass it; null → no lane. */
+function macroAutoTarget(m, track, knob) {
     const t = (track == null) ? S.track : track;
+    if (m.kind === MORPH_KIND) return (knob == null) ? null : 'mac:' + t + ':' + knob;
     if (m.kind === 'bank') { const key = seqAutoKeyFor(m.bank, m.k, m.alt); return key ? 'seq:' + t + ':' + key : null; }
     if (m.kind === 'midi') return m.target;
     return S.slot + ':' + macroFullKey(m);
 }
 /* ...and the (slot, fullKey) pair the owner's gesture API takes for it. */
-function macroAutoRef(m, track) {
+function macroAutoRef(m, track, knob) {
     const t = (track == null) ? S.track : track;
+    if (m.kind === MORPH_KIND) return (knob == null) ? null : { slot: 'mac', fullKey: t + ':' + knob };
     if (m.kind === 'bank') { const key = seqAutoKeyFor(m.bank, m.k, m.alt); return key ? { slot: 'seq', fullKey: t + ':' + key } : null; }
     if (m.kind === 'midi') return { slot: 'midi', fullKey: m.target };
     return { slot: S.slot, fullKey: macroFullKey(m) };
@@ -5315,6 +5435,7 @@ function macroAutoRef(m, track) {
 /* A knob the page can address: assigned, and present on this route / pad mode. */
 function macroLive(m) {
     if (!m) return false;
+    if (m.kind === MORPH_KIND) return morphLegValid(m) && !S.bus && S.track >= 0 && (GS.trackRoute[S.track] | 0) === 0;
     if (m.kind === 'level') return !!macroLevelSpec(m);
     if (m.kind === 'bank') return !!bankMacroMeta(m);
     if (m.kind === 'midi') return midiTargetOnRoute(m.target, S.track);
@@ -5693,7 +5814,8 @@ function macroTurn(idx, delta) {
  * tracked by macroRangeSync below instead. */
 function macroShapeOf(mp) {
     return macroLegs(mp).map(l =>
-        l.kind + '|' + (l.comp || '') + '|' + (l.key || l.target || (l.bank + ':' + l.k))).join(',');
+        l.kind + '|' + (l.comp || '') + '|' + (l.kind === MORPH_KIND ? (l.snaps || []).join('+')
+                                               : (l.key || l.target || (l.bank + ':' + l.k)))).join(',');
 }
 /* The ranges alone. */
 function macroRangeSigOf(mp) { return macroLegs(mp).map(l => l.lo + ':' + l.hi).join(','); }
@@ -5782,6 +5904,15 @@ function macroTick() {
         }
         for (let j = 0; j < legs.length && reads < MACRO_READS_PER_TICK; j++) {
             const leg = legs[j];
+            if (leg.kind === MORPH_KIND) {
+                /* The morph engine seeds itself within this tick's read budget
+                 * (snapshot files once, then chain_params + module id per
+                 * shared component). Its "value" is the knob position. */
+                const r = morphPrepare(S.track, i, leg, MACRO_READS_PER_TICK - reads);
+                if (r.reads) { reads += r.reads; S.dirty = true; }
+                if (r.ready && S.macLegVals[i][j] == null && mp.v != null) S.macLegVals[i][j] = mp.v;
+                continue;
+            }
             if (leg.kind !== 'chain') continue;
             if (!S.knobMeta[leg.comp]) {
                 let list = [];
@@ -5807,7 +5938,10 @@ function macroTick() {
          * would move every other leg to the bottom on the next turn. With
          * none addressable, v stays null and the detents wait. */
         if (mp.v == null && reads < MACRO_READS_PER_TICK) {
-            for (let j = 0; j < legs.length; j++) {
+            /* A SnapMorph leg seeds LAST (it reads as 0 — the first snapshot):
+             * a real target's position is the truth when there is one. */
+            const order = legs.map((l, j) => j).sort((a, b) => (legs[a].kind === MORPH_KIND) - (legs[b].kind === MORPH_KIND));
+            for (const j of order) {
                 if (!macroLive(legs[j])) continue;
                 const n = legReadNorm(S.track, legs[j], S.macLegCells[i][j]);
                 if (n == null) continue;
@@ -5868,7 +6002,7 @@ function macroTick() {
                 const leg = legs[j];
                 if (!leg) continue;
                 const got = legWriteNorm(S.track, leg, leg.lo + mp.v * (leg.hi - leg.lo), cells[j],
-                                         S.macLegVals[i] ? S.macLegVals[i][j] : null);
+                                         S.macLegVals[i] ? S.macLegVals[i][j] : null, i);
                 if (got != null && S.macLegVals[i]) S.macLegVals[i][j] = got;
             }
             const aj = macroAnchorIdx(mp);
@@ -5921,7 +6055,7 @@ function macroTick() {
             for (let j = 0; j < legs.length; j++) {
                 const leg = legs[j];
                 const got = legWriteNorm(S.track, leg, leg.lo + nv * (leg.hi - leg.lo), cells[j],
-                                         S.macLegVals[i] ? S.macLegVals[i][j] : null);
+                                         S.macLegVals[i] ? S.macLegVals[i][j] : null, i);
                 if (got != null && S.macLegVals[i]) S.macLegVals[i][j] = got;
             }
             /* Remember the anchor's new value so the poll can tell our own
@@ -6064,7 +6198,7 @@ function macroPollTick() {
 /* The knob's automation target on the current non-editor page — a level on
  * SOUND + CONFIG, a macro on MACROS — for the ring paint under Mute/Delete. */
 function pageKnobTarget(k) {
-    if (macrosActive()) { const m = macroTarget(k); return macroLive(m) ? macroAutoTarget(m) : null; }
+    if (macrosActive()) { const m = macroTarget(k); return macroLive(m) ? macroAutoTarget(m, null, k) : null; }
     if (midiMixActive()) return (MIDI_MIX_SPECS[k] && MIDI_MIX_SPECS[k].target) || null;
     return levelPageSpec(k) ? S.slot + ':' + levelFullKey(k) : null;
 }
@@ -6096,7 +6230,7 @@ function macroCells(track, live) {
             if (live) {
                 for (const leg of mp.legs) {
                     if (!macroLive(leg)) continue;
-                    const tg = macroAutoTarget(leg, t);
+                    const tg = macroAutoTarget(leg, t, i);
                     const st = tg ? automationStateFor(t, c, tg) : null;
                     if (st) { cellM.auto = st.active ? 'auto' : 'auto-off'; if (st.active) break; }
                 }
@@ -6105,7 +6239,14 @@ function macroCells(track, live) {
             continue;
         }
         let cell;
-        if (m.kind === 'level') {
+        if (m.kind === MORPH_KIND) {
+            /* A SNAPMORPH knob: like a mapped knob, an arc of its own position
+             * — its "value" is where it sits between the snapshots. */
+            if (live && !macroLive(m)) { cells.push(unassigned()); continue; }
+            const v = live ? mp.v : null;
+            cell = { kind: 'arc', label: 'MORPH', name: upper(MORPH_LABEL + ' ' + morphSnapsLabel(m)),
+                     text: v == null ? '--' : Math.round(v * 100) + '%', norm: v == null ? 0 : v };
+        } else if (m.kind === 'level') {
             const li = macroLevelIdx(m);
             const spec = li >= 0 ? (live ? levelKnobSpec(li) : LEVEL_KNOB_SPECS[li]) : null;
             if (!spec) { cells.push(unassigned()); continue; }
@@ -6185,7 +6326,7 @@ function macroCells(track, live) {
             }
         }
         if (live && macroLive(m)) {
-            const tg = macroAutoTarget(m, t);
+            const tg = macroAutoTarget(m, t, i);
             const st = tg ? automationStateFor(t, c, tg) : null;
             if (st) cell.auto = st.active ? 'auto' : 'auto-off';
         }
@@ -7448,6 +7589,11 @@ function applyModulePick(mod) {
     if (!S.bus && S.comp === 'synth' && mod.id) {
         host_seed_module_defaults(S.slot, mod.id);
     }
+    /* A SnapMorph over this slot checked "same module?" when it seeded; the
+     * answer just changed. Drop its cache so the next turn asks again rather
+     * than driving the NEW module's same-named parameters (the silent-rebind
+     * hazard Block 2 closed for lanes). */
+    if (!S.bus) morphInvalidate(S.slot);
     GS.instrAbbrevAt = 0;                 /* the header's [instrument] re-reads next tick */
     /* The chain host instantiates asynchronously — discovering immediately
      * returns null metadata and the module looks empty. */
@@ -9248,6 +9394,10 @@ export function soundOnCC(d1, d2, decodeDelta) {
         } else if (S.view === VIEW_SLOTCFG) {
             if (S.slotCfgEditing) S.slotCfgEditing = false;   /* leave edit first */
             else closeSlotCfg();
+        } else if (S.view === VIEW_KNOB_PARAM && S.knobTarget === MORPH_TARGET) {
+            /* The SnapMorph list commits on every pick and stays open; Back
+             * is how you leave it, and it lands where a commit lands. */
+            leaveMorphPicker();
         } else if (S.view === VIEW_KNOBLEGS) {
             /* Leave the range edit first, then the leg list — the same
              * two-stage Back slot settings has. */
@@ -9403,12 +9553,12 @@ export function soundOnNote(status, d1, d2) {
          * recompute, never assign per member.) */
         const wantActive = !macroLegs(macroMapping(d1)).some(l => {
             if (!macroLive(l)) return false;
-            const r = macroAutoRef(l, t); if (!r) return false;
+            const r = macroAutoRef(l, t, d1); if (!r) return false;
             const st = automationStateFor(t, c, r.slot === 'midi' ? r.fullKey : r.slot + ':' + r.fullKey);
             return !!(st && st.active);
         });
         for (const m of macroLegs(macroMapping(d1))) {
-            const ref = macroLive(m) ? macroAutoRef(m) : null;
+            const ref = macroLive(m) ? macroAutoRef(m, t, d1) : null;
             if (!ref) continue;
             const fk = ref.fullKey, target = ref.slot === 'midi' ? fk : ref.slot + ':' + fk;
             if (m.kind === 'midi' && m.target === 'pb') {

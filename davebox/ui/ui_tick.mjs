@@ -30,6 +30,7 @@ import { tickPrefetch, dget, applyNewProjectSeed } from './ui_dsp_bridge.mjs';
 import { daveBoxTick, bannerDaveSync } from './ui_daves.mjs';
 import { devSnapOpen, devSnapEnter, devSnapTick, DEVSNAP_HOLD_MS } from './ui_devsnap.mjs';
 import { automationTick, automationPollWarnings } from './ui_automation.mjs';
+import { morphTick } from './ui_snapmorph.mjs';
 import { autoBankTick } from './ui_automation_bank.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, readActiveSet,
@@ -1163,6 +1164,9 @@ export function _tickImpl() {
          * read only when something is staged, and its own write budget caps the
          * rest (see ui_automation.mjs). */
         automationTick();
+        /* A SnapMorph turn's values were transient; once the hand is still
+         * they go out once more as an edit (ui_snapmorph). */
+        morphTick();
         /* The AUTOMATION menu's selected lane → the steps it holds points on,
          * for the step row. AFTER automationTick, so a clear it just flushed
          * has crossed before the map is re-read. Reads only on a cache miss. */

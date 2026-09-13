@@ -1495,10 +1495,20 @@ export function restoreUiSidecar(applyDefaultsNow) {
          * migrates the chain's knob_N assignments once. */
         const _leg = function(_e) {
             if (!_e || typeof _e !== 'object') return null;
-            if (_e.kind !== 'bank' && _e.kind !== 'midi' && (typeof _e.key !== 'string' || !_e.key)) return null;
+            if (_e.kind !== 'bank' && _e.kind !== 'midi' && _e.kind !== 'morph' && (typeof _e.key !== 'string' || !_e.key)) return null;
             let _l = null;
             if (_e.kind === 'chain' && typeof _e.comp === 'string' && _e.comp)
                 _l = { kind: 'chain', comp: _e.comp, key: _e.key };
+            else if (_e.kind === 'morph' && Array.isArray(_e.snaps)) {
+                /* SNAPMORPH (18b): the track's snapshot slots, in pick order,
+                 * 0..15, no repeats. One slot is a half-built leg (inert until
+                 * a second is picked) and is kept, so a save mid-pick loses
+                 * nothing; an empty list is no leg. */
+                const _s = [];
+                for (const _n of _e.snaps)
+                    if (typeof _n === 'number' && isFinite(_n) && (_n | 0) >= 0 && (_n | 0) < 16 && _s.indexOf(_n | 0) < 0) _s.push(_n | 0);
+                if (_s.length) _l = { kind: 'morph', snaps: _s };
+            }
             else if (_e.kind === 'level')
                 _l = { kind: 'level', key: _e.key };
             else if (_e.kind === 'bank' && typeof _e.bank === 'number' && typeof _e.k === 'number') {
@@ -1518,7 +1528,7 @@ export function restoreUiSidecar(applyDefaultsNow) {
              * sidecar written before today) = 'bounded', the target's own feel
              * with the range as a wall. READING is the migration, exactly as
              * it was for lo/hi — no version bump. */
-            if (_e.travel === 'full') _l.travel = 'full';
+            if (_e.travel === 'full' && _l.kind !== 'morph') _l.travel = 'full';   /* a morph is always v-driven */
             return _l;
         };
         for (let _t = 0; _t < NUM_TRACKS; _t++) S.trackMacros[_t] = null;

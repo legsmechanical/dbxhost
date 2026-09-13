@@ -49,7 +49,8 @@ fs.mkdirSync(dir, { recursive: true });
 const entry = path.join(dir, 'ui_bundle_entry.mjs');
 fs.writeFileSync(entry, "import " + JSON.stringify(path.join(repoRoot, 'ui/ui.js')) + ";\n"
     + "export { S } from " + JSON.stringify(path.join(repoRoot, 'ui/ui_state.mjs')) + ";\n"
-    + "export * as auto from " + JSON.stringify(path.join(repoRoot, 'ui/ui_automation.mjs')) + ";\n");
+    + "export * as auto from " + JSON.stringify(path.join(repoRoot, 'ui/ui_automation.mjs')) + ";\n"
+    + "export * as persist from " + JSON.stringify(path.join(repoRoot, 'ui/ui_persistence.mjs')) + ";\n");
 const out = path.join(dir, 'ui_bundle_probe.mjs');
 await esbuild.build({
     entryPoints: [entry],
@@ -110,7 +111,7 @@ for (const fn of ['host_register_primary', 'host_open_service', 'host_close_serv
                   'host_set_button_led', 'setButtonLED', 'host_display_flush'])
     if (typeof globalThis[fn] !== 'function') globalThis[fn] = () => 0;
 
-const { S, auto } = await import(pathToFileURL(out).href);
+const { S, auto, persist } = await import(pathToFileURL(out).href);
 
 if (typeof globalThis.init !== 'function') { fail('the bundle defined no init()'); process.exit(1); }
 globalThis.init();
@@ -141,6 +142,45 @@ else console.log('  ok   — ⭐ the SHIPPED BUNDLE applies a staged sequencer l
 if (S.bankParams && S.bankParams[T] && S.bankParams[T][1] && S.bankParams[T][1][5] !== 200)
     fail('the bank mirror did not follow, so the OLED cell would not move: ' + S.bankParams[T][1][5]);
 else console.log('  ok   — the bank mirror follows, so the cell shows the value');
+
+/* ---- THE SNAPMORPH LANE (18b, 2026-09-13): the same bundle-order hazard, the
+ * same runtime registration (automationRegisterMacApply in init). A staged
+ * `mac:<track>:<knob>` value must reach ui_snapmorph's applier, which writes
+ * the chain by bulk SET. Two track snapshots on disk, a morph leg on K4. */
+const K = 3;
+S.currentSetUuid = 'bundle-uuid';
+/* ⚠ The BUNDLE's own trackSnapDir — a second import of the source file would
+ * be a second module copy, and its path is the one the morph engine reads. */
+const dirOf = (n) => persist.trackSnapDir('bundle-uuid', T, n);
+const files = {};
+files[dirOf(0) + '/davebox.json'] = JSON.stringify({ v: 4, track: T, mixer: [], seq: [], params: [null, null, { synth: { module: 'nusaw', values: { cutoff: '0.2' } } }] });
+files[dirOf(1) + '/davebox.json'] = JSON.stringify({ v: 4, track: T, mixer: [], seq: [], params: [null, null, { synth: { module: 'nusaw', values: { cutoff: '0.8' } } }] });
+globalThis.host_file_exists = (p) => Object.prototype.hasOwnProperty.call(files, p);
+globalThis.host_read_file = (p) => files[p] || '';
+globalThis.shadow_get_param = (slot, key) => {
+    if (key === 'synth:module') return 'nusaw';
+    if (key === 'synth:chain_params') return JSON.stringify([{ key: 'cutoff', name: 'Cutoff', type: 'float', min: 0, max: 1, step: 0.01 }]);
+    return '';
+};
+const bulks = [];
+globalThis.shadow_set_params = (slot, prefix, blob, transient) => { bulks.push({ slot, prefix, blob, transient }); return true; };
+S.trackRoute[T] = 0;
+S.trackMacros[T] = new Array(8).fill(null);
+S.trackMacros[T][K] = { v: 0, legs: [{ kind: 'morph', snaps: [0, 1], lo: 0, hi: 1 }] };
+LIST = T + ' 0 1 4 mac:' + T + ':' + K + ' 0 0\n';
+auto.automationRefreshPresence();
+staged = 'mac:' + T + ':' + K + ' 16383\n';
+S.playing = true;
+for (let i = 0; i < 8; i++) { S.tickCount++; globalThis.tick(); }
+S.playing = false;
+const mb = bulks.find(b => b.slot === T && b.prefix === 'chain:' && /synth:cutoff/.test(b.blob));
+if (!mb)
+    fail('the bundle applied NOTHING for a staged SnapMorph lane — the mac applier is not registered. Bulks seen: ' + JSON.stringify(bulks.slice(0, 4)));
+else if (!/0\.8/.test(mb.blob) || !mb.transient)
+    fail('applied the wrong value or not transient: ' + JSON.stringify(mb));
+else console.log('  ok   — ⭐ the SHIPPED BUNDLE applies a staged SnapMorph lane: cutoff → 0.8, transient');
+if (S.trackMacros[T][K].v !== 1) fail('the knob position did not follow the lane: ' + S.trackMacros[T][K].v);
+else console.log('  ok   — the knob position follows the lane, so the dial moves');
 
 if (failed) process.exit(1);
 console.log('bundle_seq_apply: all ok');

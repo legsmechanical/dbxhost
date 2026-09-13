@@ -298,6 +298,11 @@ export function automationTargetLabel(target) {
         const st = SEQ_AUTO_TARGETS[key];
         return st ? (BANK_SHORT[st.bank] || 'Bank') + '>' + st.label : t;
     }
+    if (t.indexOf('mac:') === 0) {
+        /* The SnapMorph lane is the KNOB's: "SnapMorph K3". */
+        const k = parseInt(t.split(':')[2], 10);
+        return MAC_LANE_LABEL + (isFinite(k) ? ' K' + (k + 1) : '');
+    }
     const i = t.indexOf(':');
     if (i < 0) return t;
     const slot = parseInt(t.slice(0, i), 10);
@@ -352,6 +357,8 @@ const LEVEL_META = {
 function isLevelComponent(comp) {
     return comp === 'slot' || /^move_fx:[0-9]+$/.test(comp);
 }
+const MAC_META = Object.freeze({});
+export const MAC_LANE_LABEL = 'SnapMorph';
 
 /* chain_params for one component, fetched once. Costs a round-trip the first
  * time a parameter on that component is automated, then nothing. The mixer
@@ -360,6 +367,10 @@ function componentMeta(slot, comp) {
     /* A SEQUENCER target ("seq:<track>:<key>"): davebox's own bank knobs;
      * their ranges are declared in SEQ_AUTO_TARGETS, never fetched. */
     if (slot === 'seq') return SEQ_AUTO_TARGETS;
+    /* A SNAPMORPH lane ("mac:<track>:<knob>"): the knob's own 0..1 position,
+     * no metadata to fetch — the empty table makes normValue take the plain
+     * 0..1 path, and automationSmoothable say yes (a morph ramps). */
+    if (slot === 'mac') return MAC_META;
     const id = slot + ':' + comp;
     let m = metaCache.get(id);
     if (m) return m;
@@ -410,6 +421,13 @@ function pushPair(target, norm) {
         if (isNaN(track) || !SEQ_AUTO_TARGETS[m[2]]) return null;
         return { slot: 'seq', track, key: m[2], val: wireValue('seq', m[1], m[2], norm), seq: true };
     }
+    if (m.length === 3 && m[0] === 'mac') {
+        /* A SnapMorph lane: the knob's position, applied by davebox's morph
+         * engine (macApplier), which writes the chain itself. */
+        const track = parseInt(m[1], 10), knob = parseInt(m[2], 10);
+        if (isNaN(track) || isNaN(knob)) return null;
+        return { slot: 'mac', track, knob, v: Math.max(0, Math.min(16383, norm)) / 16383, mac: true };
+    }
     if (m.length >= 3 && m[0] !== 'bus') {
         /* The component is everything between the slot and the LAST colon: a
          * bus block is "move_fx:2:fx3", a send block "send_fx:a:fx1" — the
@@ -435,6 +453,11 @@ function pushPair(target, norm) {
  * (ui_sound registers it) — (track, key, intValue). */
 let seqApplier = null;
 export function automationRegisterSeqApply(fn) { seqApplier = fn; }
+/* ...and a staged SNAPMORPH position: ui_snapmorph's applier — (track, knob,
+ * v 0..1). ⚠ Registered from init() like the seq applier, for the same
+ * bundle-order reason. */
+let macApplier = null;
+export function automationRegisterMacApply(fn) { macApplier = fn; }
 
 /* The drain: ONE bulk GET carrying the staged values and the three flags the
  * DSP can only report. */
@@ -516,6 +539,13 @@ function pushPending() {
              * with its own side effects and mirrors (applyBankParam). */
             pending.delete(target);
             if (seqApplier) seqApplier(p.track, p.key, parseInt(p.val, 10));
+            continue;
+        }
+        if (p.mac) {
+            /* A SnapMorph position: the morph engine writes the chain (its
+             * own bulk SET, transient). */
+            pending.delete(target);
+            if (macApplier) macApplier(p.track, p.knob, p.v);
             continue;
         }
         let arr = bySlot.get(p.slot);
