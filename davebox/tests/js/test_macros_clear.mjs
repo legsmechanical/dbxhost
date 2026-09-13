@@ -59,7 +59,7 @@ for (const fn of ['host_write_file', 'host_read_file', 'host_file_exists', 'host
 async function main() {
 const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
 stubParamPagesDevice();
-const { S } = await import('../../ui/ui_state.mjs');
+const { S, noteUndoUnit } = await import('../../ui/ui_state.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const { BANK_MACROS } = await import('../../ui/ui_constants.mjs');
 await import('../../ui/ui.js');          /* the REAL entry point + dispatch */
@@ -239,6 +239,36 @@ step('⭐ SHIFT+UNDO clears them again (redo)', () => {
     cc(CC_SHIFT, 127); undoPress(); cc(CC_SHIFT, 0); ticks(8);
     assert(assigned(5) === 0,
            'redo did not re-clear: ' + JSON.stringify(S.trackMacros[5]));
+});
+
+step('⚠⚠ A DSP UNIT RETIRES A PENDING JS UNIT — or it swallows the wrong press', () => {
+    /* The two cannot both be pending: the handler checks the JS unit FIRST and
+     * returns. So if a later clip edit takes a DSP snapshot while a macro-clear undo
+     * is still pending, Undo would restore the MACROS and leave the clip edit
+     * standing — the press would do the wrong thing entirely.
+     * noteUndoUnit clears it in ONE place so no call site can forget. */
+    openOnMacros(6);
+    withDelete(click); ticks(2);
+    S.confirmMacroClearSel = 0;
+    click(); ticks(6);
+    assert(S.undoJs !== null, 'setup: the macro clear left no JS undo unit');
+
+    noteUndoUnit();                            /* as any clip edit does */
+    assert(S.undoJs === null,
+           'a DSP undo unit did not retire the pending JS unit — Undo would restore '
+           + 'the macros instead of the clip edit');
+
+    dspWrites = [];
+    undoPress(); ticks(4);
+    assert(dspWrites.some((w) => w.indexOf('undo_restore') >= 0),
+           'with a DSP unit pending, Undo must reach the DSP: ' + dspWrites.join(' | '));
+    /* ⓘ And no JS REDO was created, because no JS undo ran — the press belonged to
+     * the DSP unit from start to finish.
+     * ⓘ I do NOT assert the macros stayed cleared here: this rig's merge tick can
+     * re-seed the store from the chain side between ticks, which is real behaviour
+     * but a different subject. The two assertions above are the invariant. */
+    assert(S.redoJs === null,
+           'a JS redo was created by a press that went to the DSP');
 });
 
 console.log(failed ? 'FAIL: test_macros_clear' : 'PASS: test_macros_clear');
