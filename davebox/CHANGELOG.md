@@ -26,7 +26,8 @@ the section into a versioned heading at release time.
   without playing still resets it.
 - **Clearing a track's macros.** Delete + jog click on the MACROS bank unassigns
   all eight macros on the track. **It asks first** — jog to choose, click to
-  answer — because eight assignments are a lot to rebuild by accident. Your macro
+  answer — because eight assignments are a lot to rebuild by accident, and
+  **Cancel is what it starts on**, so a stray click changes nothing. Your macro
   values and any automation on the parameters they pointed at are left alone.
 - **Every bank reset is undoable now.** Undo takes back a bank reset on any bank —
   CLIP, the four MIDI effect banks, ARP IN, SOUND + CONFIG and the AUTOMATION
