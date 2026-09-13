@@ -1,0 +1,161 @@
+import './_bulk_get_stub.mjs';
+/* tests/js/test_sound_config_reset.mjs — BANK-RESET SLICE 3: Delete + jog click
+ * on the SOUND + CONFIG bank puts its params back to their defaults.
+ *
+ * ⚠ THE DISTINCTION THIS TEST EXISTS TO HOLD (Josh, 2026-09-13, correcting me):
+ * *"sound mode isn't a bank. SOUND + CONFIG IS. i never specd resetting the sound
+ * menu params. this was only ever about bank params."* So the gesture acts on the
+ * BANK's knobs — the four page levels — and must NOT act inside the module
+ * editor, where the knobs belong to the module rather than to the bank.
+ *
+ * Driven as a GESTURE (real CCs through soundOnCC), because a green suite has
+ * never meant the screen can be reached. → [[wired-is-not-reachable]]
+ */
+let failed = 0;
+function ok(label) { console.log(`  ok   — ${label}`); }
+function bad(label, e) { console.error(`  FAIL — ${label}: ${e && e.stack ? e.stack : e}`); failed = 1; }
+function step(label, fn) { try { fn(); ok(label); } catch (e) { bad(label, e); } }
+function assert(c, m) { if (!c) throw new Error(m); }
+
+const ENGINE = {
+    'synth:module': 'nusaw',
+    'synth:chain_params': JSON.stringify([
+        { key: 'cutoff', name: 'Cutoff', type: 'float', min: 0, max: 1, step: 0.01 },
+    ]),
+    'synth:cutoff': '0.5',
+};
+globalThis.shadow_get_param = (slot, key) => (ENGINE[key] !== undefined ? ENGINE[key] : '');
+let writes = [];
+globalThis.shadow_set_param = (slot, key, val) => {
+    writes.push({ key, val: String(val) }); ENGINE[key] = String(val); return 1;
+};
+globalThis.shadow_send_midi_to_dsp = () => {};
+globalThis.fill_rect = () => {}; globalThis.draw_rect = () => {};
+globalThis.stipple_rect = () => {}; globalThis.set_pixel = () => {};
+globalThis.clear_screen = () => {}; globalThis.print = () => {};
+globalThis.pixel_print = () => {}; globalThis.flush_display = () => {};
+globalThis.text_width = (t) => String(t).length * 6;
+for (const fn of ['host_write_file', 'host_read_file', 'host_file_exists', 'host_ensure_dir',
+                  'host_remove_dir', 'host_system_cmd', 'host_module_set_param',
+                  'host_module_get_param', 'host_send_midi', 'move_midi_inject_to_move',
+                  'host_set_led', 'set_led', 'host_get_setting', 'host_set_setting',
+                  'move_midi_internal_send', 'host_vol_block', 'host_edit_cc_block',
+                  'host_ext_midi_remap_clear', 'host_ext_midi_remap_set',
+                  'host_ext_midi_remap_enable'])
+    globalThis[fn] = () => (fn.indexOf('read') >= 0 || fn.indexOf('get') >= 0 ? '' : 0);
+
+async function main() {
+const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
+stubParamPagesDevice();
+const { S: GS } = await import('../../ui/ui_state.mjs');
+const snd = await import('../../ui/ui_sound.mjs');
+const bridge = await import('../../ui/ui_dsp_bridge.mjs');
+const auto = await import('../../ui/ui_automation.mjs');
+
+const cc = (d1, d2) => snd.soundOnCC(d1, d2, (v) => (v < 64 ? v : v - 128));
+const ticks = (n) => { for (let i = 0; i < n; i++) { GS.clockMs = (GS.clockMs || 0) + 10.6; snd.soundTick(); bridge.tickPrefetch(); auto.automationTick(); } };
+const turnBy = (k, n) => cc(71 + k, n > 0 ? n : 128 + n);
+const withDelete = (fn) => { cc(119, 127); fn(); cc(119, 0); };
+const click = () => { cc(3, 127); cc(3, 0); };
+const lastWrite = (key) => {
+    const w = writes.filter((x) => x.key === key);
+    return w.length ? w[w.length - 1].val : null;
+};
+
+function enterTrack(t) {
+    GS.sessionView = false;
+    for (let i = 0; i < 8; i++) GS.trackRoute[i] = 0;   /* all Schwung */
+    GS.activeTrack = t;
+    snd.soundEnter(t, t);
+    ticks(4);
+}
+
+/* The four levels ON the SOUND + CONFIG card and their declared defaults
+ * (LEVEL_KNOB_SPECS). Derived here only as a fixture; the code owns the truth. */
+/* ⚠ The engine key is COMPONENT-prefixed (`slot:` on a Schwung track, `move_fx:N:`
+ * on a Move bus). A bare `volume` matches nothing and every assertion on it then
+ * passes vacuously against `null` — which is exactly how the first cut of this
+ * test reported a trivially-true control. */
+const LEVELS = [
+    { key: 'slot:volume', def: 1 },
+    { key: 'slot:pan',    def: 0.5 },
+    { key: 'slot:send_a', def: 0 },
+    { key: 'slot:send_b', def: 0 },
+];
+
+enterTrack(1);
+
+step('the four SOUND + CONFIG levels move off their defaults first', () => {
+    writes = [];
+    turnBy(0, -20);        /* volume down */
+    turnBy(1, 10);         /* pan right   */
+    turnBy(2, 15);         /* send A up   */
+    turnBy(3, 8);          /* send B up   */
+    ticks(6);
+    for (const L of LEVELS) {
+        const got = lastWrite(L.key);
+        assert(got !== null, L.key + ' was never written at all — wrong key? got: ' + JSON.stringify(writes));
+        assert(parseFloat(got) !== L.def,
+               L.key + ' did not move off its default (got ' + got + ')');
+    }
+});
+
+step('⭐ Delete + jog click resets every one of them to its default', () => {
+    writes = [];
+    withDelete(click);
+    ticks(6);
+    for (const L of LEVELS) {
+        const got = lastWrite(L.key);
+        assert(got !== null, L.key + ' was never written by the reset: ' + JSON.stringify(writes));
+        assert(parseFloat(got) === L.def,
+               L.key + ' reset to ' + got + ', expected ' + L.def);
+    }
+});
+
+step('⚠ CONTROL: it is IDEMPOTENT — a second reset writes nothing new', () => {
+    /* The pending bit is only set for a level that actually MOVED, so a reset of
+     * an already-default bank must not re-push four values every click. */
+    writes = [];
+    withDelete(click);
+    ticks(6);
+    const lvl = writes.filter((w) => LEVELS.some((L) => L.key === w.key));
+    assert(lvl.length === 0, 'a no-op reset still wrote: ' + JSON.stringify(lvl));
+});
+
+step('⚠⚠ CONTROL: inside the MODULE EDITOR the gesture does NOT reset the bank', () => {
+    /* Josh, 2026-09-13: this was only ever about BANK params. In the editor the
+     * knobs are the MODULE's, so the click keeps whatever meaning it had there.
+     *
+     * ⚠ The first cut of this control PASSED for the wrong reason — one click
+     * does not reach the editor (entry lands on view 18, one click → the block
+     * list 0, TWO → the editor 1), so it was still asserting on the bank card and
+     * "the gesture did not fire in the editor" was never tested at all. Hence the
+     * explicit view assertions: a control that cannot reach its own precondition
+     * is worse than no control. → [[a-check-that-cries-wolf-is-worse-than-none]] */
+    const VIEW_BLOCKS = 0, VIEW_EDIT = 1;
+
+    /* Off default while the levels ARE the knobs — i.e. before the editor. */
+    turnBy(0, -20); ticks(4);
+    const before = lastWrite('slot:volume');
+    assert(before !== null, 'setup failed: volume was never written');
+    assert(parseFloat(before) !== 1, 'setup failed: volume is already at its default');
+
+    click(); ticks(3);
+    assert(snd.soundViewForTest() === VIEW_BLOCKS,
+           'expected the block list, got view ' + snd.soundViewForTest());
+    click(); ticks(3);
+    assert(snd.soundViewForTest() === VIEW_EDIT,
+           'THE PRECONDITION: expected the module editor, got view ' + snd.soundViewForTest());
+
+    writes = [];
+    withDelete(click);
+    ticks(6);
+    const after = lastWrite('slot:volume');
+    assert(after === null || parseFloat(after) === parseFloat(before),
+           'the editor reset the BANK levels (volume became ' + after + ')');
+});
+
+console.log(failed ? 'FAIL: test_sound_config_reset' : 'PASS: test_sound_config_reset');
+process.exit(failed);
+}
+main();

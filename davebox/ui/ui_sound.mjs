@@ -8280,6 +8280,50 @@ export function soundOnCC(d1, d2, decodeDelta) {
     }
 
     if (d1 === 3 && d2 >= 64) {                        /* jog click */
+        /* ⭐ DELETE + CLICK = RESET THIS BANK'S PARAMS (Josh's 2026-09-12 model,
+         * slice 3). ⚠ The distinction that matters, and I had it wrong once:
+         * *"sound mode isn't a bank. SOUND + CONFIG IS. i never specd resetting
+         * the sound menu params. this was only ever about bank params."*
+         *
+         * So the gesture fires exactly where the eight knobs ARE this bank's —
+         * which is what `levelsActive()` already means (every sound-mode screen
+         * except the module editor). Inside the EDITOR the knobs belong to the
+         * module, not the bank, so it must not fire there; the same click keeps
+         * its existing meaning.
+         *
+         * dAVEBOx's own Delete+jog arm cannot do this: `resetBankParams` returns
+         * null for banks 11/13 because their params live here. Consuming the CC
+         * (return true) is what keeps the two from both acting.
+         *
+         * ⓘ NOT a MIDI track's SOUND + CONFIG card. Its params (MIDI_MIX_SPECS —
+         * Expression/Pan/Mod/Sustain, Program, Bank MSB/LSB) declare NO default
+         * values, so there is nothing to reset them TO. `levelsActive()` already
+         * excludes a MIDI track; stated so the omission reads as a reason.
+         * ⓘ MACROS (bank 13) is not here yet — a macro's default is its LEG's
+         * default, and the four leg kinds (level/bank/chain/midi) do not all
+         * declare one. See the implementation plan. */
+        if (S.deleteHeld && levelsActive()) {
+            const _t = S.track, _c = effectiveClip(_t);
+            let _cleared = false;
+            for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++) {
+                const m = levelPageSpec(i);           /* the four ON the page */
+                if (!m) continue;
+                if (S.levelVals[i] !== m.def) {
+                    /* Same bookkeeping as onLevelTurn: the cache, the pending
+                     * bit the tick flushes to the engine, and the save. What it
+                     * deliberately does NOT do is call automationParamEdit —
+                     * a reset must CLEAR the lane, not record a move into it. */
+                    S.levelVals[i] = m.def;
+                    S.levelPending |= (1 << i);
+                    S.levelDirtySave = true;
+                }
+                if (automationClearKey(_t, _c, S.slot + ':' + levelFullKey(i))) _cleared = true;
+            }
+            showActionPopup(BANKS[BANK_SOUND].name, 'RESET');
+            if (_cleared) S.macDirty = true;
+            S.dirty = true;
+            return true;
+        }
         /* Mute + click = bypass the focused block, the same gesture the host's
          * chain editor uses, so the reflex carries over. Works from the picker
          * (the block under the cursor) and from inside a block's editor (the
