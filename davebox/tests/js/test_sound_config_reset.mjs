@@ -122,6 +122,35 @@ step('⚠ CONTROL: it is IDEMPOTENT — a second reset writes nothing new', () =
     assert(lvl.length === 0, 'a no-op reset still wrote: ' + JSON.stringify(lvl));
 });
 
+step('⚠⚠ CONTROL: on a MIDI TRACK the gesture does not fire at all', () => {
+    /* A MIDI track's SOUND + CONFIG card carries MIDI_MIX_SPECS — Expression,
+     * Pan, Mod, Sustain, Program, Bank MSB/LSB — and NONE of them declares a
+     * default value, so there is nothing to reset them TO. `levelsActive()`
+     * already excludes a MIDI track; this is the control that proves the guard is
+     * doing that work rather than being decorative.
+     *
+     * ⭑ THIS is the clause worth pinning. The module-editor case below is real
+     * behaviour but is enforced UPSTREAM of this branch (the editor's own binding
+     * consumes the jog click first), so a mutation of `levelsActive()` survives
+     * against it — measured, not assumed. → [[explaining-is-not-checking]] */
+    snd.soundExit();
+    GS.trackRoute[4] = 2;                       /* MIDI channel route */
+    GS.activeTrack = 4;
+    snd.soundEnter(4, 4);
+    ticks(4);
+    writes = [];
+    GS.actionPopupLines = null;
+    withDelete(click);
+    ticks(6);
+    const popup = (GS.actionPopupLines || []).join(' ');
+    assert(popup.indexOf('RESET') < 0,
+           'a MIDI track has no resettable bank levels, but the reset fired: ' + popup);
+    assert(!writes.some((w) => LEVELS.some((L) => L.key === w.key)),
+           'a MIDI track wrote slot levels: ' + JSON.stringify(writes));
+    /* back to the Schwung track for anything after this */
+    snd.soundExit(); enterTrack(1);
+});
+
 step('⚠⚠ CONTROL: inside the MODULE EDITOR the gesture does NOT reset the bank', () => {
     /* Josh, 2026-09-13: this was only ever about BANK params. In the editor the
      * knobs are the MODULE's, so the click keeps whatever meaning it had there.
