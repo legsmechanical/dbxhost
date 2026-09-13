@@ -516,6 +516,10 @@ static int sp_globals_transport(sp_ctx_t *cx) {
                     tr2->current_step     = tr2->clip_playing
                                            ? (uint16_t)(_qls + tr2->current_step % newlen)
                                            : (uint16_t)(_qls + inst->global_tick % newlen);
+                    /* Turning quant to Now FLUSHES queued launches, so this is
+                     * a clip switch like any other and owes the same release. */
+                    if (tr2->active_clip != (uint8_t)tr2->queued_clip)
+                        pa_release_request(inst, t, (int)tr2->active_clip);
                     tr2->active_clip      = (uint8_t)tr2->queued_clip;
                     pfx_sync_from_clip(tr2);
                     if (tr2->pad_mode == PAD_MODE_DRUM && tr2->drum_clips[tr2->active_clip]) {

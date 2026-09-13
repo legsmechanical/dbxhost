@@ -249,6 +249,40 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- and the SCENE launch, which is that gesture times eight ------
+     *
+     * Enumerating every writer of active_clip (rather than stopping at the one
+     * reported) found the same gap in launch_scene and in the launch_quant
+     * flush. A scene launch strands EIGHT parameters, so it is the more
+     * expensive of the two to have missed. */
+    {
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+
+        hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
+        hx_set_param(h, "t3_pa_rest", "0 1:fx1:resonance 1500");
+        pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
+        pa_set(h, 3, 0, "1:fx1:resonance", 0, 7000);
+        pa_playback_scan(in, &in->tracks[0], 0, 0, 0, 384, NULL);
+        pa_playback_scan(in, &in->tracks[3], 3, 0, 0, 384, NULL);
+        pending(h, buf, sizeof(buf));
+
+        in->launch_quant = 0;
+        in->playing = 1;
+        in->tracks[0].clip_playing = 1;
+        in->tracks[3].clip_playing = 1;
+        hx_set_param(h, "launch_scene", "1");
+        HX_ASSERT(in->tracks[0].active_clip == 1 && in->tracks[3].active_clip == 1,
+                  "the scene launch took the immediate path on both tracks");
+
+        pa_release_service(in);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 2000"), "track 0's parameter went back to rest");
+        HX_ASSERT(strstr(buf, "1:fx1:resonance 1500"), "and track 3's did too — every track, not the first");
+        OK("⭐ a SCENE launch releases on every track it switches");
+        hx_destroy(h);
+    }
+
     /* ---- one tick cannot flood the queue ---------------------------- */
     {
         /* A tick stages at most PA_TICK_MAX_STAGE changes. That is the budget
