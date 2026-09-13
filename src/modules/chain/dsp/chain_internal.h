@@ -1217,4 +1217,16 @@ CHAIN_INTERNAL int v2_scan_patches(chain_instance_t *inst);
 CHAIN_INTERNAL int v2_update_patch(chain_instance_t *inst, int index, const char *json_data);
 
 
+/* Exported for a sequencer module that places a slot's MIDI FX at a chosen point
+ * in its OWN chain: runs the transform and hands the messages back, sending them
+ * nowhere. Defined in chain_midi.c.
+ * ⚠ DECLARED HERE ON PURPOSE. The shim resolves it by dlsym with a hand-written
+ * cast, so without a prototype the definition and the caller's idea of the
+ * signature are two independent pieces of prose — reorder a parameter and it
+ * compiles clean on both sides and corrupts the stack at the first call. This
+ * pins the definition half at compile time.
+ * ⚠ At most 3 bytes in; returns the message count, 0 on refusal. */
+int chain_midi_fx_apply(void *instance, const uint8_t *msg, int len,
+                        uint8_t out_msgs[][3], int *out_lens, int max_out);
+
 #endif /* CHAIN_INTERNAL_H */

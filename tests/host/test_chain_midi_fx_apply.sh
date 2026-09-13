@@ -70,16 +70,38 @@ grep -q 'DBX_OWNED_MODULE_DIRS' "$mgmt_h" \
 #    and adding the first caller must come with a device test and an update to
 #    this number. If this fires because you wired it up: good. Raise the number,
 #    and say in the commit what device test covers the call.
-# ⚠ `grep -v` EXITS 1 when it filters everything out — which is precisely the
-# passing state here (every hit is plumbing) — and `pipefail` would then abort
-# the script with no message. The `|| true` is load-bearing, not defensive noise.
-callers=$( { grep -rn 'shadow_chain_midi_fx_apply' src/ --include=*.c --include=*.h --include=*.js \
-             | grep -vE 'shadow_chain_mgmt\.(c|h):' || true; } | wc -l | tr -d ' ')
+# ⚠⚠ THE FIRST VERSION OF THIS GATE WAS BLIND TO EVERY PLACE A CALLER WILL LIVE,
+# and an experiment proved it: a real call added under davebox/ still printed PASS.
+# Three holes, all now closed:
+#   · it searched `src/` only — the intended consumer is dAVEBOx, at davebox/;
+#   · it grepped the SHIM POINTER's name, but a caller in the chain module or one
+#     linking the symbol spells it `chain_midi_fx_apply`;
+#   · `--include=*.js` while davebox's UI is `.mjs`.
+# ⚠ `grep -v` EXITS 1 when it filters everything out — precisely the passing state
+# here — and `pipefail` would abort with no message. The `|| true` is load-bearing.
+callers=$( { grep -rnE 'chain_midi_fx_apply' \
+               --include=*.c --include=*.h --include=*.js --include=*.mjs \
+               src/ davebox/ standalone/ 2>/dev/null \
+             | grep -vE 'shadow_chain_mgmt\.(c|h):|chain_midi\.c:|chain_internal\.h:' || true; } \
+           | wc -l | tr -d ' ')
 if [ "$callers" != "0" ]; then
   note "chain_midi_fx_apply now has $callers caller(s) outside the plumbing. That is the point of the
       enabler — but update this count AND name the device test that exercises the call, because a
       green suite has never meant the path is reachable. [[wired-is-not-reachable]]"
 fi
+
+# 7. The 3-byte refusal. The out rows are 3 bytes wide and the transform passes
+#    `in_len` through to out_lens[0], so a longer message hands the caller a length
+#    its row cannot back. An exported entry point cannot assume its callers respect
+#    the 1-3 byte contract the internal one does.
+awk '/^int chain_midi_fx_apply\(/,/^}/' "$midi" | grep -q 'len > 3' \
+  || note "the wrapper no longer refuses len > 3 — out_lens would exceed the 3-byte rows"
+
+# 8. A prototype exists, so the COMPILER pins the definition against one
+#    declaration. Without it the definition and the shim's dlsym cast are two
+#    independent pieces of prose and a reordered parameter corrupts the stack.
+grep -q 'int chain_midi_fx_apply(void \*instance' src/modules/chain/dsp/chain_internal.h \
+  || note "chain_internal.h lost the prototype — the signature is unpinned at compile time"
 
 [ "$fail" = 0 ] || exit 1
 echo "PASS: chain_midi_fx_apply — exported, delegating, resolved by the shim, and still uncalled (enabler slice)"

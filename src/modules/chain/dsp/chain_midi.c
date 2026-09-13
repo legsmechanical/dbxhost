@@ -422,32 +422,58 @@ static int v2_process_midi_fx(chain_instance_t *inst,
 /* Exported: run a message through THIS slot's MIDI FX and hand the result back
  * to the caller, sending it nowhere.
  *
- * The transform above is already a pure function of its input: messages in,
- * messages out, knowing nothing about a synth, a bus or a destination. Its usual
- * caller (chain_on_midi) is what forwards the result to the slot's synth, and
- * `midi_fx_pre_mode` is a second, ADDITIVE copy into Move's MIDI_IN — a
- * different axis that happens to share the word "pre".
+ * WHY THIS IS POSSIBLE AT ALL: the transform above takes messages and returns
+ * messages, and knows nothing about a synth, a bus or a destination. Its usual
+ * caller (v2_on_midi) is what forwards the result to the slot's synth, and
+ * `midi_fx_pre_mode` is a second, ADDITIVE copy into Move's MIDI_IN — a different
+ * axis that happens to share the word "pre". So a sequencer can place a slot's
+ * MIDI FX at a chosen point in its OWN chain with no route for MIDI to leave this
+ * chain and no second plugin host: "nothing leaves a chain as MIDI" is a statement
+ * about ROUTING, while what a caller needs is a function CALL.
  *
- * Exposing it lets a sequencer place a slot's MIDI FX at a chosen point in its
- * OWN chain — ahead of what it records, or after what it plays — with no route
- * for MIDI to leave this chain and no second plugin host. That distinction
- * matters: "nothing leaves a chain as MIDI" is a statement about ROUTING, while
- * what a caller needs here is a function call.
+ * ⚠⚠⚠ IT IS **NOT** A PURE FUNCTION, AND AN EARLIER VERSION OF THIS COMMENT SAID
+ * IT WAS. Each plugin's `process_midi` is documented as STATEFUL —
+ * midi_fx_api_v1.h: "Maintain state between calls (held notes, sequence
+ * position)", and an arp is told to "Store the note internally". The shipped arp
+ * mutates held_count / step / direction on every call. So this does not preview a
+ * transformation: **it advances the live FX state and gives you the output.**
  *
- * Returns the number of messages written. With no MIDI FX loaded the input is
- * copied through, exactly as the internal path does, so a caller needs no
- * special case for an empty chain.
+ * WHAT THAT MEANS FOR A CALLER, concretely: run a note-on through a slot's arp and
+ * `arp_add_note` registers a note nobody played. `v2_tick_midi_fx` then
+ * arpeggiates it into the synth — and in Pre mode into Move's MIDI_IN — with no
+ * note-off ever arriving on that path. The inverse is as bad: your note-off
+ * consumes the arp's real held note and cuts one the pads are still holding.
+ *
+ * ⭑ SO THE RULE IS OWNERSHIP, not purity: a caller may drive only FX instances
+ * whose stream it OWNS. Sharing a slot's blocks with the chain's own MIDI path
+ * corrupts both. A stateless FX (velocity scale) is safe either way, and nothing
+ * in this signature distinguishes them — that is the caller's problem to solve,
+ * and it is why the MIDI FX bank will likely need its own instances rather than
+ * borrowing a loaded slot's.
+ *
+ * Returns the number of messages written; refuses len > 3 (see below). With no
+ * MIDI FX loaded the input is copied through, exactly as the internal path does.
  *
  * ⚠ THE CALLER OWNS THE DESTINATION. This sends nothing and injects nothing.
- * ⚠ Thread: chain_on_midi is the only caller of the transform today. A second
- *   one shares the FX modules' own instance state, so establish which thread it
- *   runs on before wiring one up — the modules are not documented as reentrant.
- *   ⓘ No caller yet, deliberately: this is the enabler slice, and the audit that
- *   goes with it is recorded in tests/host/test_chain_midi_fx_apply.c. */
+ * ⚠ Thread: the transform has TWO existing entry points, not one —
+ *   `v2_on_midi` (MIDI delivery) and `v2_tick_midi_fx` (called from render_block,
+ *   i.e. the audio thread). They already share the plugins' instance state with no
+ *   lock, so a third caller adds a third racer to something already unsynchronised.
+ *   ⓘ No caller yet, deliberately: this is the enabler slice, and the reachability
+ *   gate lives in tests/host/test_chain_midi_fx_apply.sh. */
 int chain_midi_fx_apply(void *instance, const uint8_t *msg, int len,
                         uint8_t out_msgs[][3], int *out_lens, int max_out) {
     chain_instance_t *inst = (chain_instance_t *)instance;
     if (!inst || !msg || len < 1 || !out_msgs || !out_lens || max_out < 1) return 0;
+    /* ⚠⚠ THE ROWS ARE THREE BYTES WIDE. The transform copies at most 3 bytes but
+     * passes `in_len` straight through to `out_lens[0]`, so a longer message would
+     * hand the caller a length its row cannot back: it would read 3 bytes of
+     * whatever follows, and a plugin looping to `in_len` would over-read too. The
+     * API documents in_msg as 1-3 bytes (midi_fx_api_v1.h) and the internal caller
+     * never exceeds it; an EXPORTED entry point cannot assume that of its callers.
+     * Refuse rather than truncate — a silently shortened MIDI message is worse
+     * than a rejected one. */
+    if (len > 3) return 0;
     return v2_process_midi_fx(inst, msg, len, out_msgs, out_lens, max_out);
 }
 

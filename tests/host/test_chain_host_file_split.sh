@@ -82,10 +82,12 @@ done
 #    answers it.
 #
 #    ⭑ chain_midi_fx_apply (2026-09-13) is the next, and its argument is that the
-#    transform it exposes is ALREADY a pure function of its input —
-#    v2_process_midi_fx takes messages and returns messages, knowing nothing about
-#    a synth, a bus or a destination — but it is static, so the only way to reach
-#    it is through chain_on_midi, which also SENDS the result to the slot's synth.
+#    transform it exposes takes messages and returns messages, knowing nothing
+#    about a synth, a bus or a destination — but it is static, so the only way to
+#    reach it is through v2_on_midi, which also SENDS the result to the synth.
+#    ⚠ It is NOT side-effect free: each plugin's process_midi is stateful (held
+#    notes, sequence position), so calling it ADVANCES the live FX state. A caller
+#    may only drive instances whose stream it owns — see the banner in chain_midi.c.
 #    A sequencer that wants a slot's MIDI FX at a chosen point in its own chain
 #    needs the transform WITHOUT the send. No existing route carries that: a
 #    set_param returns void, "nothing leaves a chain as MIDI" is about routing
