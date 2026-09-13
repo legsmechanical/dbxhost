@@ -87,7 +87,8 @@ const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
 stubParamPagesDevice();
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
-const { BANKS, BANK_AUTOMATION, BANK_STEP, SEQ_AUTO_TARGETS, seqAutoTargetForKnob } = await import('../../ui/ui_constants.mjs');
+const { BANKS, BANK_AUTOMATION, BANK_STEP, SEQ_AUTO_TARGETS, seqAutoTargetForKnob,
+        PAD_MODE_DRUM } = await import('../../ui/ui_constants.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const editops = await import('../../ui/ui_editops.mjs');
@@ -266,6 +267,29 @@ step('⚠ CONTROL: a param clear lands after the param reset that snapshots it',
  * Resolution was held back as destructive. It is not: `clip_resolution` rescales
  * every note proportionally and calls `pa_link_scale`, so the pattern keeps its
  * step positions and only the tick granularity changes. */
+/* ---- the DRUM arm of the CLIP reset, which had NO coverage at all ----------
+ * The per-lane resolution write, its mirror and the resync arming are a separate
+ * code path from the melodic arm, and nothing exercised it. */
+step('⭐ on a DRUM track, Delete + jog click resets the ACTIVE LANE\'s resolution', () => {
+    reset(0);
+    const _wasMode = S.trackPadMode[T];
+    S.trackPadMode[T] = PAD_MODE_DRUM;
+    S.activeDrumLane[T] = 3;
+    S.drumPerformMode[T] = 0;          /* not Rpt/Rpt2, which has its own gesture */
+    withDelete(jogClick);
+    const q = queued();
+    assert(q.some(x => x === 't' + T + '_l3_clip_resolution=1'),
+           "the active lane's resolution was not reset: " + q.join(' | '));
+    /* ⛔ AND NOT diq: on a drum track InQ belongs to ALL LANES, which Josh ruled
+     * untouched. The melodic arm resets it because there it sits on CLIP itself. */
+    assert(!q.some(x => /_diq=/.test(x)),
+           'the drum arm reset InQ, which belongs to ALL LANES: ' + q.join(' | '));
+    /* ⛔ and not the MELODIC clip-wide key either */
+    assert(!q.some(x => x === 't' + T + '_clip_resolution=1'),
+           'the drum arm wrote the melodic clip-wide resolution key: ' + q.join(' | '));
+    S.trackPadMode[T] = _wasMode;
+});
+
 step('⭐ Delete + jog click on CLIP resets Res and InQ too, not just Dir/SqFl', () => {
     reset(0);
     withDelete(jogClick);

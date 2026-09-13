@@ -497,7 +497,16 @@ int main(void) {
         pending(h, buf, sizeof(buf));
         HX_ASSERT(strstr(buf, "1:fx1:cutoff 2000"), "track 0's parameter went back to rest");
         HX_ASSERT(strstr(buf, "1:fx1:resonance 1500"), "and track 3's did too — every track, not the first");
-        OK("⭐ a SCENE launch releases on every track it switches");
+        /* ⚠⚠ THE RING MUST NOT HAVE OVERFLOWED. A switch now pushes TWICE per
+         * automated target (release + assert), and pa_ring_push drops the NEWEST on
+         * overflow — which is always the assert, so an overflow silently reinstates
+         * the very bug this feature fixes, on a scene launch across 8 tracks.
+         * This fixture is small; the assertion is here so a future one that grows
+         * past the ring says so instead of going quiet. */
+        HX_ASSERT(in->pa_ring_dropped == 0,
+                  "⚠⚠ the staging ring OVERFLOWED — the dropped entry is the ASSERT, "
+                  "so those parameters keep the OUTGOING clip's value");
+        OK("⭐ a SCENE launch releases on every track it switches, without overflowing the ring");
         hx_destroy(h);
     }
 
