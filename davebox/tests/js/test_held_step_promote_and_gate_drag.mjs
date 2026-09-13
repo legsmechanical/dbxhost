@@ -96,7 +96,7 @@ await step('promotion applies on a bank whose knobs decline the step too (a turn
 /* ---- 2. gate-drag across a page boundary ------------------------------- */
 await step('⚠ hold step 5 (page 0), Right, tap step 3 of page 1: gate = steps 5..19 inclusive (absolute)', async () => {
     fresh();
-    note(STEP(5), 127); S.tickCount += 25; globalThis.tick();      /* past the hold threshold */
+    note(STEP(5), 127); S.tickCount += 40; globalThis.tick();      /* past the hold threshold */
     assert(S.heldStepNotes.length === 1, 'held past threshold with notes read');
     S.clipLength[T][AC] = 32;                                      /* the tick's sync re-derives it from the stub */
     cc(63, 127); cc(63, 0);                                        /* Right: page forward */

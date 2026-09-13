@@ -77,7 +77,7 @@ function fresh(drum) {
 /* ---- melodic ------------------------------------------------------------- */
 step('⚠ an empty melodic step held past the threshold stays EMPTY — no note written, knobs have nothing', () => {
     fresh(false);
-    note(STEP(3), 127); S.tickCount += 25; globalThis.tick(); globalThis.tick();
+    note(STEP(3), 127); S.tickCount += 40; globalThis.tick(); globalThis.tick();
     assert(S.stepWasHeld === true, 'the hold registered');
     assert(!wrote('_step_3_'), 'nothing was written to step 3, got ' + JSON.stringify(sets));
     assert(S.heldStepNotes.length === 0, 'heldStepNotes empty');
@@ -87,7 +87,7 @@ step('⚠ an empty melodic step held past the threshold stays EMPTY — no note 
 });
 step('⚠ a pad press while the empty step is held CREATES the note at that pitch', () => {
     fresh(false);
-    note(STEP(3), 127); S.tickCount += 25; globalThis.tick();
+    note(STEP(3), 127); S.tickCount += 40; globalThis.tick();
     const padIdx = S.padNoteMap.findIndex(n => n !== 0xFF);
     const pitch = S.padNoteMap[padIdx] + S.trackOctave[T] * 12;
     notesOnStep = String(pitch);
@@ -120,7 +120,7 @@ step('control: a TAP on an empty step still places the last note (unchanged)', (
 /* ---- drum ----------------------------------------------------------------- */
 step('⚠ an empty DRUM step held past the threshold stays empty', () => {
     fresh(true);
-    note(STEP(3), 127); S.tickCount += 25; globalThis.tick(); globalThis.tick();
+    note(STEP(3), 127); S.tickCount += 40; globalThis.tick(); globalThis.tick();
     assert(S.stepWasHeld === true, 'the hold registered');
     assert(!wrote('_step_3_'), 'nothing written, got ' + JSON.stringify(sets));
     assert(S.heldStepNotes.length === 0, 'no hit');
@@ -129,7 +129,7 @@ step('⚠ an empty DRUM step held past the threshold stays empty', () => {
 });
 step('⚠ a velocity-zone pad while holding the empty drum step CREATES the hit at that velocity', () => {
     fresh(true);
-    note(STEP(3), 127); S.tickCount += 25; globalThis.tick();
+    note(STEP(3), 127); S.tickCount += 40; globalThis.tick();
     note(PAD(4), 100);                                  /* right half, row 0, zone 0 */
     const w = sets.find(x => x.startsWith('t0_l0_step_3_toggle='));
     assert(w, 'the hit was created, got ' + JSON.stringify(sets));

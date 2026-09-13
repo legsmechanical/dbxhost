@@ -66,7 +66,24 @@ import { enterMoveNativeCoRun } from './ui_corun.mjs';
 
 const BANK_DISPLAY_MS = 1000;
 const KNOB_TURN_HIGHLIGHT_MS = 600;               /* highlight after turn without touch */
-const STEP_HOLD_MS       = 120;  /* below = tap, at/above = hold (ms off ui_clock, never ticks). Josh 2026-09-02: shorter than the old 200 ms, longer than the accidental ~55 */
+/* Below = tap (enters the note), at/above = hold (the p-lock gesture). Milliseconds
+ * off ui_clock, never ticks — ⚠ the field it is compared against is named
+ * `stepBtnPressedTick` but holds `nowMs()` (ui_input_pads.mjs:1406), so this is an
+ * ms-vs-ms comparison despite the name.
+ *
+ * 120 (Josh 2026-09-02) → 250 (Josh 2026-09-13): *"entering notes on steps requires
+ * a really quick tap and release. need to make it about twice as long bc it's easy
+ * to miss the quick release timing."*
+ * ⭑ The precedent is NOTE_SESSION_HOLD_MS (ui_input_cc.mjs), which went 120 → 350 on
+ * 2026-09-05 for the same complaint, reasoning *"a deliberate tap is well under
+ * 250 ms"* — which is the argument for landing here rather than lower.
+ *
+ * ⚠ THE TRADE-OFF, so nobody has to rediscover it: raising this delays the HOLD by
+ * the same 130 ms, and the hold is the p-lock gesture. What keeps that acceptable is
+ * that dialling a lock sets S.stepHoldPromote (ui_automation.mjs), which promotes the
+ * press to a hold IMMEDIATELY without waiting the window out — so the slower path is
+ * only the one where you hold and touch nothing. */
+const STEP_HOLD_MS       = 250;
 /* How long a select HANDOFF may be in flight before the SELECT-BEFORE-LOAD
  * watchdog is allowed to treat the session as stranded again. ~15s at the 94Hz
  * device tick. The handoff itself measured ~6.5s on hardware (arm -> walk Move

@@ -303,6 +303,11 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **Entering notes on steps no longer needs a quick release.** The tap that puts a
+  note on a step now has about twice as long to finish — a press only becomes a
+  *hold* (the p-lock gesture) after a quarter-second, so an ordinary tap is no
+  longer easy to miss. Dialling a lock still promotes the press to a hold
+  immediately, so p-locks are as quick to reach as before.
 - **Arps and MIDI delays no longer stumble on a quiet instrument.** An
   arpeggiator or MIDI delay feeding an instrument that had gone silent could
   drop or delay its first notes by up to half a second — the instrument was
