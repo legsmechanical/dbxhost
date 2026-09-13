@@ -40,7 +40,7 @@ import * as ModBus from './ui_modbus.mjs';
  * confusing them is exactly what broke the bypass gesture. Used only for the
  * Back long-press, which davebox owns module-wide. */
 import { armBankDisplay, standDownBankDisplay, bankDisplayStamp, restoreBankDisplay,
-         noteUndoUnit, markJsUndo, S as GS } from './ui_state.mjs';
+         noteUndoUnit, markJsUndo, markJsUndoPatch, S as GS } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 /* ⚠ Deliberate import cycle with ui_render (it imports soundRender from here);
  * safe because both sides only call the binding inside function bodies, never
@@ -1906,6 +1906,25 @@ function levelSeedIfNeeded() {
     S.levelSeededFor = k;
     S.levelPending = 0;
 }
+/* Put captured level values back and let the tick push them, exactly as a knob
+ * turn does (the cache plus the pending bit). Deliberately NOT automationParamEdit:
+ * an undo restores a value, it does not record a move.
+ * ⚠ Only when that slot is still the one showing — S.levelVals is the CURRENT
+ * context's cache, so writing it for another slot would corrupt the screen and push
+ * the wrong slot's levels. An undo after navigating away restores nothing rather
+ * than something wrong; stated so the limit is deliberate. */
+function levelApplyValues(slot, vals) {
+    if (slot !== S.slot) return;
+    for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++) {
+        if (!levelPageSpec(i)) continue;
+        if (S.levelVals[i] === vals[i]) continue;
+        S.levelVals[i] = vals[i];
+        S.levelPending |= (1 << i);
+        S.levelDirtySave = true;
+    }
+    S.dirty = true;
+}
+
 /* MIDI handler: cache + queue + the automation owner. */
 function onLevelTurn(idx, delta, bounds) {
     const m = levelKnobSpec(idx);
@@ -8475,6 +8494,16 @@ export function soundOnCC(d1, d2, decodeDelta) {
         if (S.deleteHeld && levelsActive()) {
             const _t = S.track, _c = effectiveClip(_t);
             let _cleared = false;
+            /* ⭐ UNDOABLE (Josh, 2026-09-13). The level VALUES live in the audio
+             * engine — no clip snapshot reaches them — so they are restored by
+             * replaying them through the same cache + pending-bit path the knob uses.
+             * ⚠ WHICH MECHANISM depends on what this gesture did: clearing automation
+             * books a DSP checkpoint, so then the values must ride it as a PATCH (a
+             * pure JS unit would short-circuit and the automation would never come
+             * back). With nothing automated there is no DSP unit, so a pure JS unit
+             * is both necessary and sufficient. Hence the branch after the loop. */
+            const _lvlBefore = S.levelVals.slice();
+            const _lvlSlot = S.slot;
             for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++) {
                 const m = levelPageSpec(i);           /* the four ON the page */
                 if (!m) continue;
@@ -8501,7 +8530,30 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * cleared — otherwise Undo would revert an unrelated older edit.
              * ⓘ This makes the AUTOMATION half undoable. The level VALUES live in the
              * engine, outside any snapshot, and are a separate piece of work. */
-            if (_cleared) noteUndoUnit();
+            const _restoreLevels = function () { levelApplyValues(_lvlSlot, _lvlBefore); };
+            const _resetLevels = function () {
+                const after = _lvlBefore.slice();
+                for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++) {
+                    const m = levelPageSpec(i);
+                    if (m) after[i] = m.def;
+                }
+                levelApplyValues(_lvlSlot, after);
+            };
+            /* ⚠ Only claim an undo unit if something actually MOVED. A second reset
+             * on an already-default bank changes nothing, and claiming a unit for it
+             * would discard a previous, real one and offer "UNDO" for a no-op. */
+            let _lvlMoved = false;
+            for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++)
+                if (levelPageSpec(i) && S.levelVals[i] !== _lvlBefore[i]) _lvlMoved = true;
+            if (_cleared) {
+                /* A DSP checkpoint exists (the automation clear booked it), so the
+                 * values ride it rather than replacing it. noteUndoUnit FIRST — it
+                 * clears any pending patch. */
+                noteUndoUnit();
+                markJsUndoPatch('sound', _restoreLevels, _resetLevels);
+            } else if (_lvlMoved) {
+                markJsUndo('sound', _restoreLevels, _resetLevels);
+            }
             showActionPopup(BANKS[BANK_SOUND].name, 'RESET');
             if (_cleared) S.macDirty = true;
             S.dirty = true;

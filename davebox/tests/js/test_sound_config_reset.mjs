@@ -249,18 +249,44 @@ step('⭐ the reset CLEARS the levels\' automation, not just their values', () =
            'the reset cleared automation but left nothing to UNDO — the snapshot is stranded');
 });
 
-step('⚠⚠ CONTROL: with NO automation, the reset raises NO undo unit', () => {
-    /* The flag is a single untyped boolean and Undo unconditionally fires the DSP
-     * restore, so raising it for a no-op would revert an unrelated OLDER edit. */
+step('⭐ with NO automation, the reset arms a JS-ONLY unit (the values still moved)', () => {
+    /* ⚠ THIS CONTROL USED TO ASSERT THE OPPOSITE, and it was encoding a limitation
+     * rather than a rule: before the level values were undoable, raising the flag
+     * here would have made Undo fire the DSP restore and revert an unrelated older
+     * edit. A JS unit is exactly what makes it safe — Undo restores the levels and
+     * never reaches the DSP. */
     snd.soundExit(); enterTrack(1);
     LIST = ''; auto.automationRefreshPresence(); ticks(2);
     turnBy(0, -20); ticks(4);
-    GS.undoAvailable = false;
+    GS.undoAvailable = false; GS.undoJs = null; GS.undoJsPatch = null;
     withDelete(click);
     ticks(6);
-    assert(GS.undoAvailable === false,
-           'a reset that cleared no automation still claimed an undo unit — Undo would '
-           + 'revert an unrelated earlier edit');
+    assert(GS.undoJs !== null && GS.undoJs.kind === 'sound',
+           'no JS undo unit for the level values (kind=' + (GS.undoJs && GS.undoJs.kind) + ')');
+    assert(GS.undoJsPatch === null,
+           'with no automation there is no DSP checkpoint, so a PATCH would never run');
+});
+
+step('⚠⚠ CONTROL: a reset that changes NOTHING claims no undo unit at all', () => {
+    /* Claiming one would discard a previous, real unit and offer "UNDO" for a no-op. */
+    GS.undoAvailable = false; GS.undoJs = null; GS.undoJsPatch = null;
+    withDelete(click);          /* already at defaults from the step above */
+    ticks(6);
+    assert(GS.undoJs === null && GS.undoAvailable === false,
+           'a no-op reset claimed an undo unit');
+});
+
+step('⭐ and with automation, the values ride the DSP checkpoint as a PATCH', () => {
+    seedLevelAutomation(1);
+    turnBy(1, 10); ticks(4);
+    GS.undoAvailable = false; GS.undoJs = null; GS.undoJsPatch = null;
+    withDelete(click);
+    ticks(8);
+    assert(GS.undoAvailable === true, 'no undo unit at all');
+    assert(GS.undoJs === null,
+           'a pure JS unit would short-circuit and the AUTOMATION would never come back');
+    assert(GS.undoJsPatch !== null && GS.undoJsPatch.kind === 'sound',
+           'the level values did not ride the DSP checkpoint as a patch');
 });
 
 step('⚠⚠ ONE undo checkpoint for the whole reset, not one per level', () => {
