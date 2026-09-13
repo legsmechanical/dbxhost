@@ -242,6 +242,25 @@ step('⭐ the reset CLEARS the levels\' automation, not just their values', () =
     const nClears = (blob.match(/_pa_clear_key/g) || []).length;
     assert(nClears === LEVELS.length,
            'expected ' + LEVELS.length + ' lane clears, got ' + nClears + ': ' + blob);
+    /* ⭐ AND IT MUST BE UNDOABLE. The checkpoint was always booked correctly; the
+     * flag that makes Undo act on it was missing, so Undo said "NOTHING TO UNDO"
+     * over a perfectly good snapshot. */
+    assert(GS.undoAvailable === true,
+           'the reset cleared automation but left nothing to UNDO — the snapshot is stranded');
+});
+
+step('⚠⚠ CONTROL: with NO automation, the reset raises NO undo unit', () => {
+    /* The flag is a single untyped boolean and Undo unconditionally fires the DSP
+     * restore, so raising it for a no-op would revert an unrelated OLDER edit. */
+    snd.soundExit(); enterTrack(1);
+    LIST = ''; auto.automationRefreshPresence(); ticks(2);
+    turnBy(0, -20); ticks(4);
+    GS.undoAvailable = false;
+    withDelete(click);
+    ticks(6);
+    assert(GS.undoAvailable === false,
+           'a reset that cleared no automation still claimed an undo unit — Undo would '
+           + 'revert an unrelated earlier edit');
 });
 
 step('⚠⚠ ONE undo checkpoint for the whole reset, not one per level', () => {
