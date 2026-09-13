@@ -119,18 +119,33 @@ extern int (*shadow_chain_fx_requires_continuous)(void *instance);
  * rather than stay parked. Asking twice loses the wake, and asking before the
  * tick answers about the previous frame.
  * ⚠ NULL-CHECK IT, and that is NOT capability probing against our own module:
- * the chain dsp.so is NOT deployed by install-sa, so this host can be running
- * against STOCK's chain DSP, which does not export it.
- * [[schwung-chain-dsp-not-deployed-by-install-sa]] */
+ * dlsym can fail, and an install predating the symbol has a chain DSP without it.
+ * ⚠⚠ CORRECTED 2026-09-13 — this comment used to say "the chain dsp.so is NOT
+ * deployed by install-sa, so this host can be running against STOCK's chain DSP".
+ * That was true in August and is FALSE now: `modules/` stopped being a shared
+ * symlink when the payload and its mirror became one script (2026-09-05), and
+ * `DBX_OWNED_MODULE_DIRS="chain tools/davebox-sound"` (standalone/config.sh) is
+ * rsynced by install-host.sh. Measured: after one install-sa run the device's
+ * dbx-host chain dsp.so md5-matched the local build and carried a symbol added
+ * minutes earlier, with stock's copy untouched. The stale claim mattered because
+ * its documented workaround was to scp into /data/UserData/schwung/ — the STOCK
+ * TREE, a red line. Just run install-sa.
+ * [[schwung-chain-dsp-not-deployed-by-install-sa]] (now marked obsolete) */
 extern int (*shadow_chain_take_midi_tick_wake)(void *instance);
 /* Run a message through a slot's MIDI FX and hand the result back, sent nowhere
  * — so a sequencer can place a slot's MIDI FX at a chosen point in its own
  * chain. Returns the message count; copies the input through when the slot has
  * no MIDI FX loaded. The CALLER owns the destination.
- * ⚠ NULL-CHECK IT, for the same reason as the wake above: the chain dsp.so is
- * not deployed by install-sa, so this host can be running against STOCK's chain
- * DSP, which does not export it.
- * [[schwung-chain-dsp-not-deployed-by-install-sa]] */
+ * ⚠ NULL-CHECK IT: dlsym can fail, and an install predating the symbol has a
+ * chain DSP without it.
+ * ⚠⚠ NOT for the reason the comment above gives. Re-measured 2026-09-13:
+ * install-sa DOES deploy the chain dsp.so — `DBX_OWNED_MODULE_DIRS="chain
+ * tools/davebox-sound"` (standalone/config.sh) and install-host.sh rsyncs each
+ * owned dir, verified by md5 against the local build with stock's copy left
+ * alone. `modules/` stopped being a shared symlink when the payload and mirror
+ * became one script (2026-09-05). The older note is stale in a way that reads as
+ * reassurance, and its documented workaround — scp into /data/UserData/schwung/
+ * — would modify the STOCK TREE, which is a red line. Just run install-sa. */
 extern int (*shadow_chain_midi_fx_apply)(void *instance, const uint8_t *msg, int len,
                                          uint8_t out_msgs[][3], int *out_lens,
                                          int max_out);

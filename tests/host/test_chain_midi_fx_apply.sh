@@ -52,10 +52,17 @@ grep -q 'midi_fx_apply=%p' "$mgmt_c" \
   || note "$mgmt_c does not log whether the symbol resolved — an absent one must be visible"
 
 # 5. ⚠ The NULL-check requirement stays documented, and the REASON with it: the
-#    chain dsp.so is not deployed by install-sa, so this host can be running
-#    against stock's chain DSP, which does not export this at all.
+#    dlsym can fail, and an install predating the symbol has a chain DSP without
+#    it.
+#    ⚠⚠ The NEIGHBOURING pointer's comment says install-sa does not deploy the
+#    chain dsp.so. True in August, FALSE now — re-measured 2026-09-13:
+#    DBX_OWNED_MODULE_DIRS includes `chain`, install-host rsyncs it, and a
+#    deployed dsp.so md5-matched the local build with stock's copy untouched.
+#    Pin the correction so it cannot rot back: the stale version's workaround was
+#    to scp into the STOCK TREE, which is a red line.
 grep -q 'NULL-CHECK IT' "$mgmt_h" || note "$mgmt_h lost the NULL-check warning"
-grep -q 'install-sa' "$mgmt_h" || note "$mgmt_h lost WHY the pointer can be NULL"
+grep -q 'DBX_OWNED_MODULE_DIRS' "$mgmt_h" \
+  || note "$mgmt_h lost the correction that install-sa DOES deploy the chain DSP"
 
 # 6. ⭑⭑ THE REACHABILITY GATE. This slice ships the enabler with NO caller, on
 #    purpose. A staged port has shipped a whole compiling, linking, tested file
