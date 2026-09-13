@@ -46,6 +46,19 @@ for (const fn of ['host_write_file', 'host_read_file', 'host_file_exists', 'host
 /* The DSP-bound writes, where undo checkpoints live (queueSet -> moduleWrites). */
 let modWrites = [];
 globalThis.host_module_set_param = (key, val) => { modWrites.push(key + '=' + val); return 1; };
+/* ⚠ The BULK setter is how automation's queued writes actually leave (queueSet ->
+ * moduleWrites -> host_module_set_params). Leaving it undefined threw inside the
+ * drain, and the symptom was "0 lane clears" — a missing stub reading as a
+ * missing feature. It carries encoded key/value pairs; record them flattened. */
+/* ⚠ The payload is LENGTH-PREFIXED, not newline-delimited — a first cut split it
+ * on newlines and produced garbage like "t1_pa_clear_key15", so every assertion
+ * counted zero while the feature worked. Keep it RAW and count occurrences. */
+globalThis.host_module_set_params = (pairs) => { modWrites.push(String(pairs)); return true; };
+/* The automation LIST the DSP would report. Seeded so the four levels genuinely
+ * CARRY automation — without it automationClearKey returns early and every
+ * assertion about clearing (and about undo checkpoints) passes on zero. */
+let LIST = '';
+globalThis.host_module_get_param = (k) => (k === 'pa_list' ? LIST : '');
 
 async function main() {
 const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
@@ -79,6 +92,7 @@ function enterTrack(t) {
  * on a Move bus). A bare `volume` matches nothing and every assertion on it then
  * passes vacuously against `null` — which is exactly how the first cut of this
  * test reported a trivially-true control. */
+const SLOT = 1;   /* sound mode's slot for track 1 in this rig */
 const LEVELS = [
     { key: 'slot:volume', def: 1 },
     { key: 'slot:pan',    def: 0.5 },
@@ -199,16 +213,50 @@ step('⚠⚠ CONTROL: inside the MODULE EDITOR the gesture does NOT reset the ba
            'the editor reset the BANK levels (volume became ' + after + ')');
 });
 
+/* one lane per page level, in clip 0, on the track under test (fields:
+ * track clip active count target loopLen loopOff rest — as test_clear_takes_automation) */
+function seedLevelAutomation(t) {
+    /* ⚠ Re-enter the bank. The module-editor control above deliberately LEAVES us
+     * in the editor, where levelsActive() is false and the reset does not fire —
+     * so a step added after it silently measured nothing at all. */
+    snd.soundExit(); enterTrack(t);
+    LIST = '';
+    for (const L of LEVELS) LIST += t + ' 0 1 4 ' + SLOT + ':' + L.key + ' 0 0 100\n';
+    auto.automationRefreshPresence();
+    ticks(2);
+}
+
+step('⭐ the reset CLEARS the levels\' automation, not just their values', () => {
+    seedLevelAutomation(1);
+    let live = 0;
+    for (const L of LEVELS) if (auto.automationStateFor(1, 0, SLOT + ':' + L.key)) live++;
+    assert(live === LEVELS.length,
+           'setup: expected ' + LEVELS.length + ' lanes, the mirror has ' + live);
+    modWrites = [];
+    withDelete(click);
+    ticks(8);
+    const blob = modWrites.join(' ');
+    for (const L of LEVELS)
+        assert(blob.indexOf(SLOT + ':' + L.key) >= 0,
+               L.key + "'s lane was never cleared: " + blob);
+    const nClears = (blob.match(/_pa_clear_key/g) || []).length;
+    assert(nClears === LEVELS.length,
+           'expected ' + LEVELS.length + ' lane clears, got ' + nClears + ': ' + blob);
+});
+
 step('⚠⚠ ONE undo checkpoint for the whole reset, not one per level', () => {
     /* Four page levels with automation booked four `undo_checkpoint` writes, so
      * Undo had to be pressed four times, through states nobody created. */
+    seedLevelAutomation(1);
     turnBy(0, -20); turnBy(1, 10); turnBy(2, 15); turnBy(3, 8); ticks(6);
     modWrites = [];
     withDelete(click);
     ticks(8);
-    const cps = modWrites.filter((w) => w.indexOf('_undo_checkpoint=') >= 0);
-    assert(cps.length <= 1,
-           'the reset booked ' + cps.length + ' undo checkpoints: ' + cps.join(' | '));
+    const cps = (modWrites.join(' ').match(/_undo_checkpoint/g) || []);
+    /* ⚠ EXACTLY one, not "at most" — `<= 1` passed on ZERO, which is what the
+     * unseeded version of this test was really measuring. */
+    assert(cps.length === 1,
+           'the reset booked ' + cps.length + ' undo checkpoints (want exactly 1): ' + cps.join(' | '));
 });
 
 /* ⓘ The MACROS bank's clear lives in test_macros_clear.mjs, not here: it must be
