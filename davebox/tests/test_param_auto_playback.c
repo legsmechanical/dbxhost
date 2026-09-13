@@ -422,6 +422,51 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- ⚠⚠ A RETIRED lane in the INCOMING clip asserts NOTHING -----------
+     *
+     * A retired ("zombie") lane is `used`, has NO points, and keeps its recorded
+     * rest so a later automation of the same target knows where back is — that is
+     * how Delete + knob-touch puts a parameter back. `pa_rest_value` therefore
+     * RETURNS a rest for it, deliberately.
+     *
+     * So the `!e->count` guard in the assert scan is load-bearing: without it,
+     * switching INTO a clip whose lane the user had DELETED would drive the
+     * parameter to the deleted lane's remembered rest, overwriting whatever the
+     * user's hand had since set. A mutation dropping that guard SURVIVED until
+     * this block existed. */
+    {
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+
+        /* clip 0 drives the parameter; clip 1 has a lane the user then DELETES. */
+        hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
+        pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
+        hx_set_param(h, "t0_pa_rest", "1 1:fx1:cutoff 7777");
+        pa_set(h, 0, 1, "1:fx1:cutoff", 192, 11000);
+        hx_set_param(h, "t0_pa_clear_key", "1 1:fx1:cutoff");     /* Delete + knob */
+
+        /* The retire itself stages one rest (that IS Delete+knob's job) — serve and
+         * drain it, or it would be mistaken for the assert below. */
+        pa_release_service(in);
+        pending(h, buf, sizeof(buf));
+
+        pa_playback_scan(in, &in->tracks[0], 0, 0, 0, 384, NULL);
+        pending(h, buf, sizeof(buf));
+
+        in->launch_quant = 0; in->playing = 1; in->tracks[0].clip_playing = 1;
+        hx_set_param(h, "t0_launch_clip", "1");
+        pa_release_service(in);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(!strstr(buf, "7777"),
+                  "⚠⚠ a RETIRED lane asserted its remembered rest — that overwrites "
+                  "the value the user's hand set after deleting the automation");
+        /* the outgoing clip still hands its parameter back, as always */
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 2000"),
+                  "the outgoing release went missing");
+        OK("⚠⚠ a RETIRED lane in the incoming clip asserts nothing (the count guard)");
+        hx_destroy(h);
+    }
+
     /* ---- and the SCENE launch, which is that gesture times eight ------
      *
      * Enumerating every writer of active_clip (rather than stopping at the one
