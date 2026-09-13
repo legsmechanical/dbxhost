@@ -198,14 +198,13 @@ function sendPairs(slot, pairs, transient) {
 }
 
 /* Write the chain at position `f` (0..1 along the snapshot list). Returns
- * the number of pairs sent, or null when the leg is not ready. `mode`:
- *   'turn' — a hand: transient now, and the tick's final resend (morphTick)
- *            makes the edit stick once the hand is off;
- *   'play' — automation playback: transient, no resend — playback never
- *            dirties the slot, exactly as every other lane's push;
- *   'edit' — an edit at once (the final resend uses it). */
+ * the number of pairs sent, or null when the leg is not ready. Every write
+ * from here is TRANSIENT; `mode` says what is owed afterwards:
+ *   'turn' — a hand: the tick's final resend (morphTick) makes the same
+ *            values an EDIT once the hand is off;
+ *   'play' — automation playback: nothing — playback never dirties the
+ *            slot, exactly as every other lane's push. */
 export function morphApply(track, knob, leg, f, mode) {
-    const transient = mode !== 'edit';
     const e = entries.get(entryKey(track, knob));
     if (!e || !e.ready || e.sig !== legSig(track, leg)) return null;
     const n = e.snaps ? e.snaps.length : 0;
@@ -238,7 +237,7 @@ export function morphApply(track, knob, leg, f, mode) {
         }
     }
     if (pairs.length) {
-        if (!sendPairs(track, pairs, transient)) {
+        if (!sendPairs(track, pairs, true)) {
             /* Refused: forget what we claimed to have written so the next
              * apply sends it again. */
             for (const pr of pairs) e.last.delete(pr[0]);
