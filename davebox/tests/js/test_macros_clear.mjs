@@ -158,18 +158,24 @@ step('⚠⚠ LEAVING SOUND MODE drops it — or it paints over an unrelated scre
            + 'stuck on the track overview with nothing able to dismiss it');
 });
 
-step('⚠⚠ THE MODIFIER IS NOT LEFT LATCHED', () => {
-    /* Delete's PRESS reaches sound mode; its RELEASE cannot, because the flag we
-     * raise puts soundModeCovered() true. Left latched, every later knob touch in
-     * sound mode would clear that parameter's automation. */
-    openOnMacros(4);
-    withDelete(click); ticks(2);
-    macroClearReset();
-    assert(snd.soundDeleteHeldForTest ? snd.soundDeleteHeldForTest() === false : true,
-           "sound mode's Delete stayed held after the gesture");
-});
-
-function macroClearReset() { cc(CC_BACK, 127); cc(CC_BACK, 0); ticks(1); }
+/* ⚠⚠ NOT PINNED, AND SAYING SO RATHER THAN PRETENDING: THE MODIFIER RELEASE.
+ *
+ * `macroClearConfirmOpen` sets ui_sound's own `S.deleteHeld = false`, because on
+ * the LATCHED card sound mode sees Delete's press and then cannot see its release
+ * (the flag it raises makes soundModeCovered() true, and ui.js stops routing CCs
+ * there). Left held, every later knob touch in sound mode clears that parameter's
+ * automation — a silent lane-destroyer.
+ *
+ * A mutation deleting that line SURVIVES. The reason is not that the line is
+ * pointless: on the RESTING overview, which is what this rig can drive, CC 119
+ * never reaches sound mode at all, so there is nothing to leave held. I could not
+ * get the harness to route Delete into sound mode on the latched card (probed:
+ * latched, not resting, active, view 19 — and `S.deleteHeld` still false), and I
+ * stopped rather than keep digging.
+ *
+ * So: the line is defensive and unproven HERE. It is worth one device check —
+ * open the confirm from the latched MACROS card, cancel it, then touch a knob and
+ * confirm that touch does NOT clear the parameter's automation. */
 
 console.log(failed ? 'FAIL: test_macros_clear' : 'PASS: test_macros_clear');
 process.exit(failed);
