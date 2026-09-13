@@ -679,7 +679,9 @@ function modalDialogUp() {
                      * out and syncDrumLanesMeta could read the pre-rescale tps
                      * back over the mirror. One extra tick restores the margin the
                      * 2 was calibrated for. */
-                    if (!(S.recordArmed && !S.recordCountingIn && S.recordArmedTrack === _bt)) {
+                    /* Armed is not recording — same rule as the melodic arm above. */
+                    if (!(S.recordArmed && S.recordArmedTrack === _bt &&
+                          S.playing && !S.recordCountingIn)) {
                         S.bankParams[_bt][0][0] = BANKS[0].knobs[0].def;
                         S.drumLaneTPS[_bt] = TPS_VALUES[BANKS[0].knobs[0].def];
                         S.pendingDefaultSetParams.push({ key: 't' + _bt + '_l' + _bl + '_clip_resolution',
@@ -724,13 +726,21 @@ function modalDialogUp() {
                  * means the reset behaves exactly like turning Res back to
                  * default — including being no more undoable than that is (the
                  * DSP handler takes no undo snapshot; unchanged either way). */
-                /* ⚠⚠ RESOLUTION IS REFUSED WHILE RECORDING BY BOTH AUTHORITIES —
-                 * applyBankParam returns early, and the DSP's handler does
-                 * `if (tr->recording) return 1;`. Writing the JS mirror anyway
-                 * would leave S.clipTPS disagreeing with the DSP permanently: the
-                 * step grid, the LED span and the automation step ticks all read
-                 * that mirror, so recorded notes would land steps away from where
-                 * the display puts them. Skip it the same way the knob does.
+                /* ⚠⚠ RESOLUTION IS REFUSED WHILE A TAKE IS ROLLING, by the DSP:
+                 * `if (tr->recording) return 1;` — and SILENTLY, so writing the JS
+                 * mirror anyway would leave S.clipTPS disagreeing with the DSP
+                 * permanently. The step grid, the LED span and the automation step
+                 * ticks all read that mirror, so notes would draw steps away from
+                 * where they record.
+                 * ⭑ ARMED IS NOT RECORDING (Josh, 2026-09-13, choosing this over the
+                 * broader guard): arming while STOPPED still resets, because the DSP
+                 * accepts the change then. The Resolution KNOB's own guard keys on
+                 * ARMED and is therefore broader — deliberately NOT copied here, so
+                 * this gesture is not a silent no-op in the common case.
+                 * ⚠ JS has no per-track `recording` mirror, so this is a proxy for
+                 * `tr->recording`, and its error is one-directional ON PURPOSE:
+                 * skipping when the DSP would have accepted costs nothing, while
+                 * resetting when the DSP REFUSES desyncs the grid.
                  * ⚠ And the clip index is the ACTIVE one, not effectiveClip():
                  * effectiveClip returns the QUEUED clip while stopped, but the DSP
                  * rescales `tr->clips[tr->active_clip]` (sp_track_config2.c) and
@@ -738,8 +748,8 @@ function modalDialogUp() {
                  * queued index recorded the new tps against a clip that never
                  * changed. The rest of this block keeps effectiveClip — that
                  * pre-dates this change and is not mine to move here. */
-                const _resRecBlocked = (S.recordArmed && !S.recordCountingIn &&
-                                        S.recordArmedTrack === _mt);
+                const _resRecBlocked = (S.recordArmed && S.recordArmedTrack === _mt &&
+                                        S.playing && !S.recordCountingIn);
                 if (!_resRecBlocked) {
                     const _resClip = S.trackActiveClip[_mt];
                     S.bankParams[_mt][0][0] = BANKS[0].knobs[0].def;

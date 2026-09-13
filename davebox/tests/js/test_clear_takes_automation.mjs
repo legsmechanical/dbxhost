@@ -267,6 +267,37 @@ step('⚠ CONTROL: a param clear lands after the param reset that snapshots it',
  * Resolution was held back as destructive. It is not: `clip_resolution` rescales
  * every note proportionally and calls `pa_link_scale`, so the pattern keeps its
  * step positions and only the tick granularity changes. */
+/* ---- ARMED IS NOT RECORDING (Josh, 2026-09-13) -----------------------------
+ * Resolution is the one CLIP param the DSP refuses mid-take, and it refuses
+ * SILENTLY — so resetting the JS mirror then would desync the note grid. But the
+ * guard must be as NARROW as that refusal: arming Record while stopped must still
+ * reset, or the gesture is a silent no-op in a common case. */
+step('⭐ Record ARMED but STOPPED: the CLIP reset still resets Resolution', () => {
+    reset(0);
+    S.recordArmed = true; S.recordArmedTrack = T; S.recordCountingIn = false;
+    S.playing = false;
+    withDelete(jogClick);
+    const q = queued();
+    assert(q.some(x => x === 't' + T + '_clip_resolution=1'),
+           'armed-but-stopped must still reset Resolution: ' + q.join(' | '));
+    S.recordArmed = false; S.recordArmedTrack = -1;
+});
+
+step('⚠⚠ CONTROL: a take ROLLING — Resolution is left alone, the rest still resets', () => {
+    reset(0);
+    S.recordArmed = true; S.recordArmedTrack = T; S.recordCountingIn = false;
+    S.playing = true;
+    withDelete(jogClick);
+    const q = queued();
+    assert(!q.some(x => /_clip_resolution=/.test(x)),
+           'Resolution was reset mid-take — the DSP refuses it silently and the note '
+           + 'grid would then disagree with the sequencer: ' + q.join(' | '));
+    /* the rest of the bank is NOT held hostage by that one param */
+    assert(q.some(x => /_clip_playback_dir=0$/.test(x)),
+           'the rest of the bank stopped resetting mid-take: ' + q.join(' | '));
+    S.recordArmed = false; S.recordArmedTrack = -1; S.playing = false;
+});
+
 /* ---- the DRUM arm of the CLIP reset, which had NO coverage at all ----------
  * The per-lane resolution write, its mirror and the resync arming are a separate
  * code path from the melodic arm, and nothing exercised it. */
