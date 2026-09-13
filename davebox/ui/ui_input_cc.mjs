@@ -639,6 +639,16 @@ function modalDialogUp() {
                 if (S.activeBank === 0) {
                     /* CLIP has no DSP reset verb of its own; its settable knobs
                      * are written here, and ONLY when the card is on it. */
+                    /* ⭐ Res too (Josh, 2026-09-13) — per LANE on a drum track,
+                     * which is the whole reason this arm exists separately.
+                     * ⛔ InQ is NOT reset here: on a drum track it belongs to
+                     * ALL LANES (DRUM_CONFIG_SITES[5]), and Josh ruled that bank
+                     * untouched. The melodic arm resets it because there it sits
+                     * on CLIP itself. */
+                    S.bankParams[_bt][0][0] = 1;
+                    S.drumLaneTPS[_bt] = TPS_VALUES[1];
+                    S.pendingDefaultSetParams.push({ key: 't' + _bt + '_l' + _bl + '_clip_resolution', val: '1' });
+                    S.pendingDrumResync = 2; S.pendingDrumResyncTrack = _bt;
                     S.drumLanePlaybackDir[_bt][_bl] = 0;
                     S.drumLanePlaybackAudioReverse[_bt][_bl] = 0;
                     S.bankParams[_bt][0][6] = 0;
@@ -668,6 +678,26 @@ function modalDialogUp() {
             let _mname = resetBankParams(_mt, S.activeBank);
             S.undoSeqArpSnapshot = null;
             if (S.activeBank === 0) {
+                /* ⭐ RES AND INQ COMPLETE THE BANK (Josh, 2026-09-13: *"reset it
+                 * with the rest"*). Resolution was held back as destructive; it
+                 * is not — `clip_resolution` RESCALES every note proportionally
+                 * and calls `pa_link_scale` so note-linked automation follows,
+                 * so the pattern keeps its step positions and only the tick
+                 * granularity changes. Writing the same key the knob writes
+                 * means the reset behaves exactly like turning Res back to
+                 * default — including being no more undoable than that is (the
+                 * DSP handler takes no undo snapshot; unchanged either way). */
+                S.bankParams[_mt][0][0] = 1;                /* Res -> default idx */
+                S.clipTPS[_mt][_mac2] = TPS_VALUES[1];
+                S.pendingDefaultSetParams.push({ key: 't' + _mt + '_clip_resolution', val: '1' });
+                /* InQ. ⚠ The SAME param as drum ALL LANES K5 (see
+                 * CLIP_MELODIC_SITES, declared beside its twin) — which is why
+                 * it is reset HERE, on the melodic CLIP bank where it lives, and
+                 * NOT in the drum arm below, where it belongs to ALL LANES and
+                 * Josh ruled that bank untouched. */
+                S.drumInpQuant[_mt] = 0;
+                S.bankParams[_mt][0][4] = 0;
+                S.pendingDefaultSetParams.push({ key: 't' + _mt + '_diq', val: '0' });
                 S.clipPlaybackDir[_mt][_mac2] = 0;
                 S.clipPlaybackAudioReverse[_mt][_mac2] = 0;
                 S.bankParams[_mt][0][6] = 0;
@@ -677,6 +707,9 @@ function modalDialogUp() {
                 S.pendingDefaultSetParams.push({ key: 't' + _mt + '_clip_playback_audio_reverse', val: '0' });
                 automationClearBanksQueued(S.pendingDefaultSetParams, _mt, _mac2, [0]);
                 _mname = BANKS[0].name;
+                /* ⓘ K2 Strch / K3 Shft / K4 Lgto are ACTIONS, not values — they
+                 * are one-shot note transforms with nothing stored to reset, so
+                 * "reset the bank" cannot mean "perform them". K6 is unassigned. */
             }
             if (_mname) showActionPopup(_mname, 'RESET');
         }

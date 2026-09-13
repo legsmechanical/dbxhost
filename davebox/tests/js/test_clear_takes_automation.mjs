@@ -261,6 +261,47 @@ step('⚠ CONTROL: a param clear lands after the param reset that snapshots it',
     assert(autoAt > rst, 'the automation clear must follow the reset (reset@' + rst + ', auto@' + autoAt + ')');
 });
 
+/* ---- the CLIP bank, completed (Josh, 2026-09-13: "reset it with the rest") --
+ *
+ * Resolution was held back as destructive. It is not: `clip_resolution` rescales
+ * every note proportionally and calls `pa_link_scale`, so the pattern keeps its
+ * step positions and only the tick granularity changes. */
+step('⭐ Delete + jog click on CLIP resets Res and InQ too, not just Dir/SqFl', () => {
+    reset(0);
+    withDelete(jogClick);
+    const q = queued();
+    assert(q.some(x => x === 't' + T + '_clip_resolution=1'),
+           'Resolution was not reset to its default index: ' + q.join(' | '));
+    assert(q.some(x => x === 't' + T + '_diq=0'),
+           'InQ was not reset: ' + q.join(' | '));
+    /* the two that already worked, so this cannot pass by replacing them */
+    assert(q.some(x => /_clip_playback_dir=0$/.test(x)), 'Playback Dir stopped being reset');
+    assert(q.some(x => /_clip_seq_follow|_clip_playback_audio_reverse=0$/.test(x)),
+           'the rest of the bank stopped being reset: ' + q.join(' | '));
+});
+
+step('⚠ CONTROL: the CLIP bank\'s three ACTION knobs are not fired by a reset', () => {
+    /* K2 Strch / K3 Shft / K4 Lgto are one-shot note transforms with no stored
+     * value. "Reset the bank" must not mean "perform them" — Lgto is
+     * destructive and normally guarded by a confirm dialog. */
+    reset(0);
+    withDelete(jogClick);
+    const q = queued();
+    for (const re of [/_beat_stretch/, /_clock_shift/, /_lgto_apply/])
+        assert(!q.some(x => re.test(x)),
+               'a reset fired an ACTION knob (' + re + '): ' + q.join(' | '));
+});
+
+step('⚠⚠ CONTROL: Shift+Delete still leaves Res and InQ alone', () => {
+    /* Josh, 2026-09-12: "leave clip ... out of shift+delete+click." Adding two
+     * writes to the Delete arm must not leak into the Shift arm. */
+    reset(0);
+    withShiftDelete(jogClick);
+    const q = queued();
+    assert(!q.some(x => /_clip_resolution=|_diq=/.test(x)),
+           'Shift+Delete reached into the CLIP bank: ' + q.join(' | '));
+});
+
 step('⭐ Delete + jog click resets ONLY the bank you are on (the 1(4) regression)', () => {
     reset(1);
     withDelete(jogClick);
