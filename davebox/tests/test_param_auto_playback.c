@@ -404,9 +404,21 @@ int main(void) {
         HX_ASSERT(in->tracks[0].active_clip == 1,
                   "setup: the quantized boundary never fired");
         pending(h, buf, sizeof(buf));
-        HX_ASSERT(strstr(buf, "1:fx1:cutoff 5000") != NULL,
-                  "⭐ the QUANTIZED launch never asserted the incoming clip's rest");
-        OK("⭐ the audio-thread (quantized boundary) switch asserts too");
+        {
+            char *out2 = strstr(buf, "1:fx1:cutoff 2000");
+            char *in2  = strstr(buf, "1:fx1:cutoff 5000");
+            HX_ASSERT(in2 != NULL,
+                      "⭐ the QUANTIZED launch never asserted the incoming clip's rest");
+            HX_ASSERT(out2 != NULL,
+                      "the quantized launch never released the outgoing clip");
+            /* ⚠ ORDER, on the DIRECT path too. Pinning it only in the deferred
+             * (service) path left pa_switch_track's own two lines swappable — a
+             * mutation that inverted them survived. */
+            HX_ASSERT(in2 > out2,
+                      "⚠⚠ the quantized switch staged the INCOMING rest FIRST — the "
+                      "outgoing clip's value would win, which is the original bug");
+        }
+        OK("⭐ the audio-thread (quantized boundary) switch asserts too, in the right order");
         hx_destroy(h);
     }
 
