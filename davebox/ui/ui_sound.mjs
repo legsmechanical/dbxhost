@@ -39,7 +39,8 @@ import * as ModBus from './ui_modbus.mjs';
  * under a different name deliberately — the two are easy to confuse, and
  * confusing them is exactly what broke the bypass gesture. Used only for the
  * Back long-press, which davebox owns module-wide. */
-import { armBankDisplay, standDownBankDisplay, bankDisplayStamp, restoreBankDisplay, S as GS } from './ui_state.mjs';
+import { armBankDisplay, standDownBankDisplay, bankDisplayStamp, restoreBankDisplay,
+         noteUndoUnit, S as GS } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 /* ⚠ Deliberate import cycle with ui_render (it imports soundRender from here);
  * safe because both sides only call the binding inside function bodies, never
@@ -8449,6 +8450,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
                  * automationClearBanksQueued already books none.) */
                 if (automationClearKey(_t, _c, S.slot + ':' + levelFullKey(i), !_cleared)) _cleared = true;
             }
+            /* ⚠ Same stranded-snapshot bug as the AUTOMATION bank: automationClearKey
+             * books exactly one checkpoint for the gesture, but nothing raised the
+             * undo flag, so Undo said "NOTHING TO UNDO". Only when a lane was really
+             * cleared — otherwise Undo would revert an unrelated older edit.
+             * ⓘ This makes the AUTOMATION half undoable. The level VALUES live in the
+             * engine, outside any snapshot, and are a separate piece of work. */
+            if (_cleared) noteUndoUnit();
             showActionPopup(BANKS[BANK_SOUND].name, 'RESET');
             if (_cleared) S.macDirty = true;
             S.dirty = true;

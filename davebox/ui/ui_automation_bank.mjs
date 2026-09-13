@@ -28,7 +28,7 @@
  * read per project load and per edit); labels use the owner's metadata cache
  * (one chain_params read per component, ever). */
 
-import { S } from './ui_state.mjs';
+import { S, noteUndoUnit } from './ui_state.mjs';
 import { BANK_AUTOMATION, PAD_MODE_DRUM, midiTargetIsMidi } from './ui_constants.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey,
@@ -339,6 +339,14 @@ export function autoBankClearClip() {
         S.clipAtHas[t][c] = false;
         any = true;
     }
+    /* ⚠⚠ THE SNAPSHOT WAS TAKEN AND THEN STRANDED. Both halves book a DSP
+     * checkpoint (automationClearClip queues tN_cC_undo_checkpoint; the DSP's
+     * _at_clear calls undo_begin_single itself) — but nothing set S.undoAvailable,
+     * so Undo answered "NOTHING TO UNDO" while a perfectly good snapshot sat
+     * unused. One line, and the bank becomes undoable with no new state.
+     * ⚠ Only when something was ACTUALLY cleared: raising the flag on a no-op
+     * would make Undo revert an unrelated older edit still in the slot. */
+    if (any) noteUndoUnit();
     showActionPopup('AUTOMATION', any ? 'CLIP CLEARED' : 'NONE');
     a.ops = null; a.menu = false;
 }

@@ -39,6 +39,22 @@ export function nowMs() {
     return S.clockFollowTicks ? Math.round(S.tickCount * TICK_MS_FOR_TESTS) : Date.now();
 }
 
+/* ⭐ ONE UNDO UNIT. Raising this is what makes the Undo button do anything — the
+ * DSP may have taken a perfect snapshot and it stays unreachable until this is set
+ * (three banks shipped exactly that bug, 2026-09-13).
+ *
+ * ⚠⚠ ONLY CALL IT WHEN A SNAPSHOT WAS ACTUALLY TAKEN. `S.undoAvailable` is a
+ * single untyped boolean and the Undo handler unconditionally sends `undo_restore`,
+ * so raising it for a no-op makes Undo revert an unrelated OLDER edit still sitting
+ * in the DSP's one-deep slot.
+ *
+ * Lives here rather than in ui_editops so any module can raise a unit without
+ * importing that file (which imports ui_sound, so the reverse would cycle). */
+export function noteUndoUnit() {
+    S.undoAvailable = true; S.redoAvailable = false;
+    S.undoSnapshot = null;  S.redoSnapshot = null;
+}
+
 export function armBankDisplay() {
     S.bankSelectTick = nowMs();              /* the window is a DURATION (ms) */
     S.bankDisplayArmedTick = S.tickCount;    /* "armed this pass" is a tick identity */

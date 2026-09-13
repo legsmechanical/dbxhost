@@ -11,7 +11,7 @@ import {
     PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS, ACTION_POPUP_MS,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_MACROS, BANK_STEP, isSoundBank
 } from './ui_constants.mjs';
-import { S } from './ui_state.mjs';
+import { S, noteUndoUnit } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { soundActive, soundOpen, soundExit, soundIsGlobal, soundInEditor, soundFollowTrack } from './ui_sound.mjs';
 import { isTextEntryActive } from '/data/UserData/schwung/shared/text_entry.mjs';
@@ -42,7 +42,18 @@ function _markLocalTouch(t, c) {
  * the DSP checkpoints, and — since snapshots — a recall. A DSP unit forgets a
  * pending SNAPSHOT undo (the snapshot's before-state is older than the edit
  * now on top of it); the recall registers itself through markSnapshotUndo. */
-export function noteUndoUnit() { S.undoAvailable = true; S.redoAvailable = false; S.undoSnapshot = null; S.redoSnapshot = null; }
+/* ⭑ MOVED to ui_state.mjs (2026-09-13) and re-exported here so the ~20 callers
+ * in this file are unchanged. It is three assignments on S, and putting it at
+ * the bottom layer lets ui_sound and ui_automation_bank raise an undo unit
+ * WITHOUT importing this file — which would have created a new import cycle,
+ * since ui_editops imports ui_sound. */
+/* ⚠⚠ IMPORTED **AND** re-exported, and the distinction cost a debugging round:
+ * `export { x } from './y.mjs'` re-exports for IMPORTERS but does NOT bind `x`
+ * in THIS file's scope — so the ~20 internal calls below became undefined
+ * globals. esbuild treats those as host globals (no build error) and
+ * `globalThis.tick` swallows the throw, so every gesture silently did nothing.
+ * → the two traps in davebox/CLAUDE.md, back to back. */
+export { noteUndoUnit };
 export function markSnapshotUndo(before, after, n, track) {
     S.undoSnapshot = { before, after, n, track: (track === undefined) ? -1 : track }; S.redoSnapshot = null;
     S.undoAvailable = true; S.redoAvailable = false; S.undoSeqArpSnapshot = null;

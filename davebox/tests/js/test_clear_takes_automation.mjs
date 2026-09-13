@@ -368,6 +368,33 @@ step('⭐ Delete + jog click resets ONLY the bank you are on (the 1(4) regressio
                '⚠⚠ THE REGRESSION: on the card for NOTE FX, MIDI DLY\'s automation went too (' + tg + ')');
 });
 
+/* ---- ⭐ UNDO. "It should be undoable on every bank" (Josh, 2026-09-13) --------
+ *
+ * ⚠⚠ The thing to assert is that the UNDO FLAG IS RAISED, because a DSP snapshot
+ * that nobody flags is unreachable — three banks shipped exactly that. And the
+ * flag must NOT be raised when nothing was snapshotted, or Undo reverts an
+ * unrelated older edit out of the one-deep slot. */
+step('⭐ resetting an FX bank leaves something to UNDO', () => {
+    reset(1);
+    S.undoAvailable = false;
+    withDelete(jogClick);
+    assert(S.undoAvailable === true,
+           'the NOTE FX reset left nothing to undo — the DSP snapshot would be stranded');
+});
+
+step('⭐ SEQ ARP too — its reset took NO DSP snapshot until 2026-09-13', () => {
+    /* `pfx_seq_arp_reset` was missing from the snapshot list in sp_track_misc.c, so
+     * Undo reverted whatever older edit sat in the slot instead. The JS side always
+     * raised the flag, which is why a presence-only test saw nothing wrong. */
+    reset(4);
+    S.undoAvailable = false;
+    withDelete(jogClick);
+    const q = queued();
+    assert(q.some(x => /_pfx_seq_arp_reset=/.test(x)),
+           'SEQ ARP was not reset at all: ' + q.join(' | '));
+    assert(S.undoAvailable === true, 'the SEQ ARP reset left nothing to undo');
+});
+
 step('⛔⛔ STEP is NEVER reset — it IS the sequencer data', () => {
     /* Josh, 2026-09-12: "step bank IS the sequencer data, so we shouldn't ever
      * clear anything there." Clearing notes has its own gestures.
