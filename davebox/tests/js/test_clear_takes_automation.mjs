@@ -458,6 +458,24 @@ step('⭐ an undo restore REFRESHES the bank card — all four FX banks', () => 
            + S.bankParams[T][1][0] + '/' + S.bankParams[T][1][1]);
 });
 
+step('⚠⚠ a stale SEQ ARP sidecar cannot survive a later reset (two live bugs)', () => {
+    /* The sidecar is nulled at 31 hand-written sites and THREE were missing —
+     * resetFxBanks, resetTarp, resetSingleFxBank — so the drum Shift+Delete arm and
+     * the ARP IN arm left a stale MELODIC sidecar armed, and a later Undo wrote a
+     * PREVIOUS TRACK's SEQ ARP values over the card. Cleared centrally now. */
+    reset(1);
+    S.undoSeqArpSnapshot = { track: 7, params: [9, 9, 9, 9, 9, 9, 9, 9] };
+    withDelete(jogClick);                      /* NOTE FX reset -> noteUndoUnit */
+    assert(S.undoSeqArpSnapshot === null,
+           'a stale sidecar survived a later reset — Undo would write track 7\'s values '
+           + 'over this card');
+
+    reset(5);
+    S.undoSeqArpSnapshot = { track: 7, params: [9, 9, 9, 9, 9, 9, 9, 9] };
+    withDelete(jogClick);                      /* ARP IN -> a JS unit */
+    assert(S.undoSeqArpSnapshot === null, 'the ARP IN arm left a stale sidecar armed');
+});
+
 step('⭐ resetting an FX bank leaves something to UNDO', () => {
     reset(1);
     S.undoAvailable = false;

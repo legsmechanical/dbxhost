@@ -60,6 +60,14 @@ export function noteUndoUnit() {
      * and needs 31 hand-written nulls, three of which are missing. */
     S.undoJs = null; S.redoJs = null;
     S.undoJsPatch = null; S.redoJsPatch = null;
+    /* ⚠⚠ AND THE SEQ ARP SIDECAR, for the same reason and in the same one place.
+     * It is cleared at 31 hand-written sites across five files and THREE ARE MISSING
+     * — `resetFxBanks`, `resetTarp` and `resetSingleFxBank` — so the drum
+     * Shift+Delete arm and the ARP IN arm both left a stale MELODIC sidecar armed,
+     * and a later Undo wrote a previous track's SEQ ARP values over the card.
+     * ⓘ Safe here: the one site that legitimately SETS it (the melodic Shift+Delete
+     * arm) does so AFTER its reset has called this. */
+    S.undoSeqArpSnapshot = null;
 }
 
 /* ── A JS-ONLY UNDO UNIT ────────────────────────────────────────────────────
@@ -107,6 +115,11 @@ export function markJsUndo(kind, undo, redo) {
      * JS unit and returns, so a patch left armed here would never apply, then ride
      * some LATER, unrelated DSP restore and corrupt it. A test caught exactly that. */
     S.undoJsPatch = null; S.redoJsPatch = null;
+    /* …and the SEQ ARP display sidecar, for the same reason. A test caught this one
+     * too: the ARP IN reset became a JS unit, so it stopped passing through
+     * noteUndoUnit and started leaking a stale sidecar again. EVERY way of claiming
+     * an undo unit must retire the others. */
+    S.undoSeqArpSnapshot = null;
     S.undoAvailable = true; S.redoAvailable = false;
     /* A device-snapshot recall is a different mechanism with its own slot; a JS
      * unit supersedes it for the same reason a DSP unit does. */
