@@ -374,6 +374,37 @@ step('⭐ Delete + jog click resets ONLY the bank you are on (the 1(4) regressio
  * that nobody flags is unreachable — three banks shipped exactly that. And the
  * flag must NOT be raised when nothing was snapshotted, or Undo reverts an
  * unrelated older edit out of the one-deep slot. */
+step('⭐ the CLIP reset queues its checkpoint FIRST, and leaves an undo unit', () => {
+    /* ⚠⚠ ORDER IS THE WHOLE THING. The queue drains ONE PER TICK, so a checkpoint
+     * pushed after the writes would snapshot a clip that had already been reset —
+     * Undo would then "restore" the reset. It must be unshifted to the front. */
+    reset(0);
+    S.undoAvailable = false;
+    withDelete(jogClick);
+    const q = queued();
+    const cp = idxOf(q, /_undo_checkpoint=/);
+    assert(cp === 0, 'the checkpoint is not FIRST in the queue (at ' + cp + '): ' + q.join(' | '));
+    const firstWrite = q.findIndex((x) => /_clip_resolution=|_diq=|_clip_playback_dir=/.test(x));
+    assert(firstWrite > cp, 'a reset write precedes the checkpoint: ' + q.join(' | '));
+    assert(S.undoAvailable === true, 'the CLIP reset left nothing to undo');
+});
+
+step('⭐ and the two params NO snapshot reaches ride along as a JS patch', () => {
+    /* InQ is per-TRACK and Seq Follow is JS-only (no DSP key at all), so neither is
+     * in the clip the checkpoint copies. They are restored by a patch that runs
+     * alongside the DSP restore — not instead of it, or the clip half would be lost. */
+    reset(0);
+    S.drumInpQuant[T] = 5;
+    S.clipSeqFollow[T][0] = false;
+    withDelete(jogClick);
+    assert(S.undoJsPatch !== null, 'no JS patch was armed for InQ / Seq Follow');
+    assert(S.drumInpQuant[T] === BANKS[0].knobs[4].def, 'setup: InQ did not reset');
+
+    S.undoJsPatch.undo();
+    assert(S.drumInpQuant[T] === 5, 'the patch did not restore InQ');
+    assert(S.clipSeqFollow[T][0] === false, 'the patch did not restore Seq Follow');
+});
+
 step('⭐ resetting an FX bank leaves something to UNDO', () => {
     reset(1);
     S.undoAvailable = false;

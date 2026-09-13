@@ -26,7 +26,8 @@ import {
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
-import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay } from './ui_state.mjs';
+import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay,
+         markJsUndoPatch } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire} from './ui_engine.mjs';
@@ -717,6 +718,36 @@ function modalDialogUp() {
             let _mname = resetBankParams(_mt, S.activeBank);
             S.undoSeqArpSnapshot = null;
             if (S.activeBank === 0) {
+                /* ⭐ UNDOABLE (Josh, 2026-09-13: "it should be undoable on every
+                 * bank"). Two halves, because the bank's state is split:
+                 *  · Res / Dir / RvSt and the automation live IN THE CLIP, so ONE
+                 *    checkpoint queued BEFORE the writes covers them for free;
+                 *  · InQ (`diq`, per-TRACK) and Seq Follow (JS-only, it has no DSP
+                 *    key at all) are outside any snapshot, so they ride along as a
+                 *    JS patch.
+                 * ⚠ unshift, not push: the queue drains ONE PER TICK and the
+                 * checkpoint must reach the DSP before the mutations it protects. */
+                const _c0 = S.trackActiveClip[_mt];
+                S.pendingDefaultSetParams.unshift({ key: 't' + _mt + '_c' + _c0 + '_undo_checkpoint', val: '1' });
+                const _inqWas = S.drumInpQuant[_mt];
+                const _sqfWas = S.clipSeqFollow[_mt][_c0];
+                noteUndoUnit();                       /* FIRST — it clears any patch */
+                markJsUndoPatch('clip',
+                    function () {
+                        S.drumInpQuant[_mt] = _inqWas;
+                        S.bankParams[_mt][0][4] = _inqWas;
+                        S.pendingDefaultSetParams.push({ key: 't' + _mt + '_diq', val: String(_inqWas) });
+                        S.clipSeqFollow[_mt][_c0] = _sqfWas;
+                        S.bankParams[_mt][0][7] = _sqfWas ? 1 : 0;
+                    },
+                    function () {
+                        S.drumInpQuant[_mt] = BANKS[0].knobs[4].def;
+                        S.bankParams[_mt][0][4] = BANKS[0].knobs[4].def;
+                        S.pendingDefaultSetParams.push({ key: 't' + _mt + '_diq',
+                                                        val: String(BANKS[0].knobs[4].def) });
+                        S.clipSeqFollow[_mt][_c0] = true;
+                        S.bankParams[_mt][0][7] = 1;
+                    });
                 /* ⭐ RES AND INQ COMPLETE THE BANK (Josh, 2026-09-13: *"reset it
                  * with the rest"*). Resolution was held back as destructive; it
                  * is not — `clip_resolution` RESCALES every note proportionally
@@ -2581,6 +2612,12 @@ function _onCC_transport(d1, d2) {
                     S.undoSeqArpSnapshot = null;
                 }
                 host_module_set_param('redo_restore', '1');
+                if (S.redoJsPatch) {
+                    const _p = S.redoJsPatch;
+                    S.redoJsPatch = null;
+                    if (_p.redo) _p.redo();
+                    S.undoJsPatch = { kind: _p.kind, undo: _p.undo, redo: _p.redo };
+                }
                 if (S.redoSeqArpSnapshot) {
                     const { track, params } = S.redoSeqArpSnapshot;
                     for (let k = 0; k < 8; k++) {
@@ -2604,6 +2641,14 @@ function _onCC_transport(d1, d2) {
                     S.redoSeqArpSnapshot = null;
                 }
                 host_module_set_param('undo_restore', '1');
+                /* A JS patch riding this DSP unit: the half of the gesture that no
+                 * clip snapshot can reach (per-track params, JS-only state). */
+                if (S.undoJsPatch) {
+                    const _p = S.undoJsPatch;
+                    S.undoJsPatch = null;
+                    if (_p.undo) _p.undo();
+                    S.redoJsPatch = { kind: _p.kind, undo: _p.undo, redo: _p.redo };
+                }
                 if (S.undoSeqArpSnapshot) {
                     const { track, params } = S.undoSeqArpSnapshot;
                     for (let k = 0; k < 8; k++) {

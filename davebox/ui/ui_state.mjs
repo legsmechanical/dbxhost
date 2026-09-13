@@ -59,6 +59,7 @@ export function noteUndoUnit() {
      * every call site is deliberate — `undoSeqArpSnapshot` took the other approach
      * and needs 31 hand-written nulls, three of which are missing. */
     S.undoJs = null; S.redoJs = null;
+    S.undoJsPatch = null; S.redoJsPatch = null;
 }
 
 /* ── A JS-ONLY UNDO UNIT ────────────────────────────────────────────────────
@@ -79,6 +80,25 @@ export function noteUndoUnit() {
  * ui_state imports nothing of theirs.
  *
  * ⚠ ONE DEEP, like every other layer here. A second unit discards the first. */
+/* ── A JS PATCH THAT RIDES A DSP UNIT ───────────────────────────────────────
+ *
+ * The sibling of markJsUndo, for a gesture that changes BOTH clip state (covered by
+ * a DSP snapshot) and state no snapshot reaches. A pure JS unit is wrong there: the
+ * handler would short-circuit and the clip half would never be restored.
+ *
+ * So this runs ALONGSIDE the DSP restore — captured before, applied after — which
+ * is the shape `undoSeqArpSnapshot` already uses for the SEQ ARP card.
+ *
+ * ⚠⚠ CALL ORDER: `noteUndoUnit()` FIRST, then this. noteUndoUnit deliberately
+ * clears a pending patch (a later unrelated clip edit must not leave one armed), so
+ * setting the patch first would throw it away.
+ * ⚠ The DSP re-read lands 5 ticks later (S.pendingUndoSync), so a patch may only
+ * own state the DSP does NOT hold — otherwise syncClipsTargeted overwrites it. */
+export function markJsUndoPatch(kind, undo, redo) {
+    S.undoJsPatch = { kind: kind, undo: undo, redo: redo };
+    S.redoJsPatch = null;
+}
+
 export function markJsUndo(kind, undo, redo) {
     S.undoJs = { kind: kind, undo: undo, redo: redo };
     S.redoJs = null;
@@ -261,6 +281,10 @@ export const S = {
      * undo layer. Holds closures, so nothing may JSON-stringify it. */
     undoJs: null,
     redoJs: null,
+    /* A JS patch that rides a DSP restore — see markJsUndoPatch. For a gesture whose
+     * state is PART clip (snapshotted) and part not (per-track params, JS-only). */
+    undoJsPatch: null,
+    redoJsPatch: null,
     allLanesQntResetTick: -1,   /* tick at which to reset bankParams[t][7][3] to -1 after knob release */
     allLanesQntResetTrack: -1,
     allLanesResResetTick: -1,
