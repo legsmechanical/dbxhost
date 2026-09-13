@@ -822,7 +822,10 @@ those); the rest only change how the clip plays.
 
 | Gesture | Result |
 |---|---|
-| **Delete + jog click** | Reset every parameter in the active bank |
+| **Delete + jog click** | Reset every parameter in the active bank. One-shot actions (Beat Stretch, Clock Shift, Apply Legato) hold no value, so they are left alone |
+| **Delete + jog click** on **MACROS** | Unassign all eight macros on the track. **Asks first** — jog to choose, click to answer. Values and automation are left alone |
+
+**Resets are undoable.** **Undo** takes back a bank reset on any bank, and a macro clear; **Shift + Undo** re-applies it. Undo is one step deep.
 | **Shift + Delete + jog click** | Reset the whole MIDI effect chain — NOTE FX, HARMZ, MIDI DLY and SEQ ARP |
 | **Shift + Delete + side button** | Reset the whole clip — notes and all parameters |
 
@@ -1086,6 +1089,13 @@ a macro, dAVEBOx's own bank knobs. See
 An automated knob says so where it lives: a dot on its cell, and a blinking
 ring. **Mute + touch** mutes that parameter's automation; **Delete + touch**
 clears it.
+
+**Switching clips hands the parameter over.** Leave a clip and its automated
+parameters go back to where they rest, so an empty clip doesn't inherit the
+last clip's sound. Arrive in a clip that automates the same parameter and it
+lands on *that* clip's resting value straight away, rather than holding the
+old one until its first move comes round. A parameter whose automation you
+muted is left where your hand put it.
 
 ## 11.2 The AUTOMATION bank
 

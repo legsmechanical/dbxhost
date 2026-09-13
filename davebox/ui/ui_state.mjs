@@ -39,6 +39,93 @@ export function nowMs() {
     return S.clockFollowTicks ? Math.round(S.tickCount * TICK_MS_FOR_TESTS) : Date.now();
 }
 
+/* ⭐ ONE UNDO UNIT. Raising this is what makes the Undo button do anything — the
+ * DSP may have taken a perfect snapshot and it stays unreachable until this is set
+ * (three banks shipped exactly that bug, 2026-09-13).
+ *
+ * ⚠⚠ ONLY CALL IT WHEN A SNAPSHOT WAS ACTUALLY TAKEN. `S.undoAvailable` is a
+ * single untyped boolean and the Undo handler unconditionally sends `undo_restore`,
+ * so raising it for a no-op makes Undo revert an unrelated OLDER edit still sitting
+ * in the DSP's one-deep slot.
+ *
+ * Lives here rather than in ui_editops so any module can raise a unit without
+ * importing that file (which imports ui_sound, so the reverse would cycle). */
+export function noteUndoUnit() {
+    S.undoAvailable = true; S.redoAvailable = false;
+    S.undoSnapshot = null;  S.redoSnapshot = null;
+    /* ⚠⚠ AND IT RETIRES ANY JS-ONLY UNIT. The two cannot both be pending: the Undo
+     * handler checks the JS unit FIRST and returns, so a stale one would swallow the
+     * press and leave this DSP snapshot unreachable. Clearing it HERE rather than at
+     * every call site is deliberate — `undoSeqArpSnapshot` took the other approach
+     * and needs 31 hand-written nulls, three of which are missing. */
+    S.undoJs = null; S.redoJs = null;
+    S.undoJsPatch = null; S.redoJsPatch = null;
+    /* ⚠⚠ AND THE SEQ ARP SIDECAR, for the same reason and in the same one place.
+     * It is cleared at 31 hand-written sites across five files and THREE ARE MISSING
+     * — `resetFxBanks`, `resetTarp` and `resetSingleFxBank` — so the drum
+     * Shift+Delete arm and the ARP IN arm both left a stale MELODIC sidecar armed,
+     * and a later Undo wrote a previous track's SEQ ARP values over the card.
+     * ⓘ Safe here: the one site that legitimately SETS it (the melodic Shift+Delete
+     * arm) does so AFTER its reset has called this. */
+    S.undoSeqArpSnapshot = null;
+}
+
+/* ── A JS-ONLY UNDO UNIT ────────────────────────────────────────────────────
+ *
+ * For state no DSP snapshot can reach: per-TRACK params (ARP IN), the audio
+ * engine (the SOUND + CONFIG levels), and pure-JS stores (MACROS, Seq Follow).
+ *
+ * ⚠⚠ WHY THIS HAD TO EXIST BEFORE ANY OF THOSE COULD BE UNDOABLE. `undoAvailable`
+ * is one untyped boolean and the handler UNCONDITIONALLY sends `undo_restore`. So
+ * simply raising the flag after a JS-only change would ALSO revert whatever clip
+ * edit still sits in the DSP's one-deep slot — a gesture that undoes something the
+ * user did five minutes ago, silently. The handler now checks for a JS unit first
+ * and, finding one, does NOT involve the DSP at all. Same shape the device-snapshot
+ * recall already uses.
+ *
+ * `undo` and `redo` are CLOSURES supplied by the capturing module, which keeps the
+ * appliers where the state lives and needs no registry — and no import cycle, since
+ * ui_state imports nothing of theirs.
+ *
+ * ⚠ ONE DEEP, like every other layer here. A second unit discards the first. */
+/* ── A JS PATCH THAT RIDES A DSP UNIT ───────────────────────────────────────
+ *
+ * The sibling of markJsUndo, for a gesture that changes BOTH clip state (covered by
+ * a DSP snapshot) and state no snapshot reaches. A pure JS unit is wrong there: the
+ * handler would short-circuit and the clip half would never be restored.
+ *
+ * So this runs ALONGSIDE the DSP restore — captured before, applied after — which
+ * is the shape `undoSeqArpSnapshot` already uses for the SEQ ARP card.
+ *
+ * ⚠⚠ CALL ORDER: `noteUndoUnit()` FIRST, then this. noteUndoUnit deliberately
+ * clears a pending patch (a later unrelated clip edit must not leave one armed), so
+ * setting the patch first would throw it away.
+ * ⚠ The DSP re-read lands 5 ticks later (S.pendingUndoSync), so a patch may only
+ * own state the DSP does NOT hold — otherwise syncClipsTargeted overwrites it. */
+export function markJsUndoPatch(kind, undo, redo) {
+    S.undoJsPatch = { kind: kind, undo: undo, redo: redo };
+    S.redoJsPatch = null;
+}
+
+export function markJsUndo(kind, undo, redo) {
+    S.undoJs = { kind: kind, undo: undo, redo: redo };
+    S.redoJs = null;
+    /* ⚠⚠ AND IT RETIRES A PENDING PATCH — the mirror of noteUndoUnit clearing a
+     * pending unit. The three are alternatives for ONE press: the handler takes the
+     * JS unit and returns, so a patch left armed here would never apply, then ride
+     * some LATER, unrelated DSP restore and corrupt it. A test caught exactly that. */
+    S.undoJsPatch = null; S.redoJsPatch = null;
+    /* …and the SEQ ARP display sidecar, for the same reason. A test caught this one
+     * too: the ARP IN reset became a JS unit, so it stopped passing through
+     * noteUndoUnit and started leaking a stale sidecar again. EVERY way of claiming
+     * an undo unit must retire the others. */
+    S.undoSeqArpSnapshot = null;
+    S.undoAvailable = true; S.redoAvailable = false;
+    /* A device-snapshot recall is a different mechanism with its own slot; a JS
+     * unit supersedes it for the same reason a DSP unit does. */
+    S.undoSnapshot = null; S.redoSnapshot = null;
+}
+
 export function armBankDisplay() {
     S.bankSelectTick = nowMs();              /* the window is a DURATION (ms) */
     S.bankDisplayArmedTick = S.tickCount;    /* "armed this pass" is a tick identity */
@@ -195,6 +282,27 @@ export const S = {
     confirmLgto: false,
     confirmLgtoSel: 0,
     confirmLgtoIsDrum: false,
+    /* MACROS bank, Delete + jog click: clear EVERY macro assignment on the track
+     * (Josh, 2026-09-13 — this REPLACES the 09-12 model's "values to defaults,
+     * assignments unchanged"; it is now assignments, and only assignments).
+     * ⚠ It asks first, at Josh's instruction: eight assignments are real work to
+     * rebuild and nothing else on the bank is destructive. Sel 0 = OK, 1 = Cancel,
+     * matching every other confirm here. */
+    confirmMacroClear: false,
+    /* ⭑ OPENS ON CANCEL (Josh, 2026-09-13), like confirmExitSel and
+     * confirmTypeChangeSel: a destructive dialog defaults to the safe answer, so
+     * a stray second click cannot wipe eight assignments. */
+    confirmMacroClearSel: 1,
+    confirmMacroClearTrack: -1,
+    confirmMacroClearSlot: -1,
+    /* The JS-only undo/redo unit — see markJsUndo. One deep, like every other
+     * undo layer. Holds closures, so nothing may JSON-stringify it. */
+    undoJs: null,
+    redoJs: null,
+    /* A JS patch that rides a DSP restore — see markJsUndoPatch. For a gesture whose
+     * state is PART clip (snapshotted) and part not (per-track params, JS-only). */
+    undoJsPatch: null,
+    redoJsPatch: null,
     allLanesQntResetTick: -1,   /* tick at which to reset bankParams[t][7][3] to -1 after knob release */
     allLanesQntResetTrack: -1,
     allLanesResResetTick: -1,

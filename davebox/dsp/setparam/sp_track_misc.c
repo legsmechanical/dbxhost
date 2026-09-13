@@ -413,9 +413,14 @@ static int sp_track_misc(sp_ctx_t *cx) {
         return 1;
     }
 
-    /* Snapshot before pfx reset commands */
+    /* Snapshot before pfx reset commands.
+     * ⚠⚠ `pfx_seq_arp_reset` WAS MISSING HERE, so resetting the SEQ ARP bank took
+     * no snapshot and Undo reverted whatever older edit still sat in the slot.
+     * Its parameters live in `clip_pfx_params_t` like the other three, so one
+     * strcmp makes the whole bank undoable — values AND automation. */
     if (!strcmp(sub, "pfx_reset") || !strcmp(sub, "pfx_noteFx_reset") ||
-        !strcmp(sub, "pfx_harm_reset") || !strcmp(sub, "pfx_delay_reset"))
+        !strcmp(sub, "pfx_harm_reset") || !strcmp(sub, "pfx_delay_reset") ||
+        !strcmp(sub, "pfx_seq_arp_reset"))
         undo_begin_single(inst, tidx, (int)tr->active_clip);
     /* All play effects params */
     pfx_set(inst, tr, &tr->clips[tr->active_clip].pfx_params, sub, val);

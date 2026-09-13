@@ -1586,15 +1586,12 @@ static int pa_rest_value(const pa_entry_t *e, uint16_t *out) {
     return 1;
 }
 
-/* AUDIO THREAD ONLY — it pushes on the ring. Anyone else asks with
- * pa_release_request and the next render block does it. */
-static void pa_release_track(seq8_instance_t *inst, int track, int clip) {
-    uint32_t seq0 = pa_read_seq(inst);
-    if (seq0 & 1u) {                        /* a write is in flight: retry next block */
-        inst->pa_release_clip[track] = (uint8_t)clip;
-        __atomic_or_fetch(&inst->pa_release_mask, (uint8_t)(1u << track), __ATOMIC_RELEASE);
-        return;
-    }
+/* ── THE TWO SCANS. No seqlock check inside: the CALLER owns that decision, and
+ * that is the whole point of the split. Both push on the ring, so both are AUDIO
+ * THREAD ONLY. ─────────────────────────────────────────────────────────────── */
+
+/* The OUTGOING half: give each of this clip's driven parameters back its rest. */
+static void pa_release_scan(seq8_instance_t *inst, int track, int clip) {
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         pa_entry_t *e = &inst->pa_entries[i];
         if (!e->used || e->track != track || e->clip != clip) continue;
@@ -1613,12 +1610,88 @@ static void pa_release_track(seq8_instance_t *inst, int track, int clip) {
     }
 }
 
+/* The INCOMING half (Josh, 2026-09-13: the parameter "should jump immediately to
+ * the new clip's resting value"). Releasing the outgoing clip alone leaves the
+ * parameter at the OLD clip's rest until the new clip's playhead reaches a point,
+ * so the sound you get on a switch belongs to the clip you just left.
+ *
+ * ⚠ The ENTRY FILTER is identical to the release scan's — a retired (count 0) or
+ * DEACTIVATED entry drives nothing, so neither may assert, or a switch would
+ * overwrite a value the user's hand put there.
+ * ⚠⚠ `last_sent_valid` is deliberately cleared in DIFFERENT places in the two
+ * scans, and an earlier comment claiming they were "identical" was wrong: the
+ * release clears it for EVERY matching entry (before the filters) so a retired
+ * lane's cache cannot outlive the clip; the assert clears it only for an entry it
+ * is about to drive. Do not "tidy" one to match the other. */
+static void pa_assert_scan(seq8_instance_t *inst, int track, int clip) {
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+        pa_entry_t *e = &inst->pa_entries[i];
+        if (!e->used || e->track != track || e->clip != clip) continue;
+        if (!e->count) continue;
+        if (!(e->flags & PA_FLAG_ACTIVE)) continue;
+        uint16_t back;
+        if (!pa_rest_value(e, &back)) continue;
+        uint16_t tgt = e->target;
+        if (tgt >= PA_MAX_TARGETS) continue;
+        /* Playback must re-send after this, not believe its cache. */
+        e->last_sent_valid = 0;
+        if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
+            pa_ring_push(inst, tgt, back);
+    }
+}
+
+/* A transport stop: release only, there is no incoming clip.
+ * AUDIO THREAD ONLY. Defers to the next block if a store write is in flight. */
+static void pa_release_track(seq8_instance_t *inst, int track, int clip) {
+    if (pa_read_seq(inst) & 1u) {           /* a write is in flight: retry next block */
+        inst->pa_release_clip[track] = (uint8_t)clip;
+        __atomic_or_fetch(&inst->pa_release_mask, (uint8_t)(1u << track), __ATOMIC_RELEASE);
+        return;
+    }
+    pa_release_scan(inst, track, clip);
+}
+
+/* ⭐⭐ A CLIP SWITCH IS **ONE** DECISION, NOT TWO. AUDIO THREAD ONLY.
+ *
+ * ⚠⚠ THE BUG THIS SHAPE EXISTS TO PREVENT, found by review before it shipped:
+ * when the release and the assert each sampled the seqlock for themselves, a
+ * store write landing between them made the release defer to the next block while
+ * the assert pushed NOW. The ring then carried assert(new) … release(old), and JS
+ * keeps the LAST value per target — so the parameter landed on the OUTGOING
+ * clip's rest. That is precisely the bug this whole feature fixes, reappearing
+ * under a knob turn. The window was not exotic: every pa_set/pa_rest/pa_active
+ * from a hand on a knob opens it.
+ *
+ * So: ONE seqlock sample, and BOTH halves happen or NEITHER does. Deferral uses
+ * a single mask with both clip indices, so they can never be applied with
+ * mismatched clips either. */
+static void pa_switch_track(seq8_instance_t *inst, int track, int from, int to) {
+    if (from == to) return;                 /* a relaunch of the same clip: nothing hands over */
+    if (pa_read_seq(inst) & 1u) {
+        inst->pa_release_clip[track] = (uint8_t)from;
+        inst->pa_assert_clip[track]  = (uint8_t)to;
+        __atomic_or_fetch(&inst->pa_switch_mask, (uint8_t)(1u << track), __ATOMIC_RELEASE);
+        return;
+    }
+    pa_release_scan(inst, track, from);
+    pa_assert_scan(inst, track, to);        /* second, so the incoming value wins the ring */
+}
+
 /* The transport stops from either thread (a button on the SPI thread, a stale
  * clock on the audio thread). Both leave a request here and the audio thread
  * serves it at the top of its next block, so the ring keeps its one producer. */
 static void pa_release_request(seq8_instance_t *inst, int track, int clip) {
     inst->pa_release_clip[track] = (uint8_t)clip;
     __atomic_or_fetch(&inst->pa_release_mask, (uint8_t)(1u << track), __ATOMIC_RELEASE);
+}
+
+/* A clip switch seen from the SPI thread: leave BOTH indices and ONE mask bit, so
+ * the audio thread applies them together or not at all. */
+static void pa_switch_request(seq8_instance_t *inst, int track, int from, int to) {
+    if (from == to) return;
+    inst->pa_release_clip[track] = (uint8_t)from;
+    inst->pa_assert_clip[track]  = (uint8_t)to;
+    __atomic_or_fetch(&inst->pa_switch_mask, (uint8_t)(1u << track), __ATOMIC_RELEASE);
 }
 
 static void pa_release_service(seq8_instance_t *inst) {
@@ -1635,8 +1708,26 @@ static void pa_release_service(seq8_instance_t *inst) {
         if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
             pa_ring_push(inst, tgt, back);
     }
+    /* Release-only requests (a transport stop). */
     uint8_t mask = __atomic_exchange_n(&inst->pa_release_mask, 0, __ATOMIC_ACQ_REL);
-    if (!mask) return;
     for (int t = 0; t < NUM_TRACKS; t++)
         if (mask & (1u << t)) pa_release_track(inst, t, (int)inst->pa_release_clip[t]);
+
+    /* ⭐⭐ DEFERRED CLIP SWITCHES: BOTH HALVES OR NEITHER, per track.
+     *
+     * ⚠ The seqlock is tested ONCE for the whole batch, and the mask is only
+     * CLEARED when we can act on it. Testing it per half — or clearing the mask
+     * and then letting each half decide — is what allowed assert-before-release,
+     * and with it the parameter landing on the clip the user just left. If a store
+     * write is in flight the bits stay set and the next block tries again; a
+     * deferral costs one audio block (~ms), which is why waiting is affordable and
+     * splitting is not. */
+    if (!(pa_read_seq(inst) & 1u)) {
+        uint8_t smask = __atomic_exchange_n(&inst->pa_switch_mask, 0, __ATOMIC_ACQ_REL);
+        for (int t = 0; t < NUM_TRACKS; t++) {
+            if (!(smask & (1u << t))) continue;
+            pa_release_scan(inst, t, (int)inst->pa_release_clip[t]);
+            pa_assert_scan(inst, t, (int)inst->pa_assert_clip[t]);
+        }
+    }
 }

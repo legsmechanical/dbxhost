@@ -210,8 +210,7 @@ static int sp_globals_misc(sp_ctx_t *cx) {
                 /* Same release the per-track immediate launch owes — a scene
                  * launch is that gesture on all eight tracks at once, so
                  * forgetting it here strands eight parameters, not one. */
-                if (tr2->active_clip != (uint8_t)cidx)
-                    pa_release_request(inst, t, (int)tr2->active_clip);
+                pa_switch_request(inst, t, (int)tr2->active_clip, cidx);
                 tr2->active_clip      = (uint8_t)cidx;
                 pfx_sync_from_clip(tr2);
                 if (tr2->pad_mode == PAD_MODE_DRUM && tr2->drum_clips[cidx]) {

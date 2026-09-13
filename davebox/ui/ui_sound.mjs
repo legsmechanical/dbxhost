@@ -39,7 +39,8 @@ import * as ModBus from './ui_modbus.mjs';
  * under a different name deliberately — the two are easy to confuse, and
  * confusing them is exactly what broke the bypass gesture. Used only for the
  * Back long-press, which davebox owns module-wide. */
-import { armBankDisplay, standDownBankDisplay, bankDisplayStamp, restoreBankDisplay, S as GS } from './ui_state.mjs';
+import { armBankDisplay, standDownBankDisplay, bankDisplayStamp, restoreBankDisplay,
+         noteUndoUnit, markJsUndo, markJsUndoPatch, S as GS } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 /* ⚠ Deliberate import cycle with ui_render (it imports soundRender from here);
  * safe because both sides only call the binding inside function bodies, never
@@ -1151,6 +1152,11 @@ export function markSoundDirty() { S.dirty = true; }
  * Move-routed track opens its bus, not a chain slot). */
 /* The current view, for a caller that needs to record where the user was. */
 export function soundViewForTest() { return S.view; }
+/* ui_sound's own `S.deleteHeld` — the modifier latch. Exposed because the
+ * MACROS-clear gesture must RELEASE it itself (its release never arrives, see
+ * the opener), and a latched Delete silently clears automation on every later
+ * knob touch. A test can only see that from outside. */
+export function soundDeleteHeldForTest() { return S.deleteHeld; }
 /* The module menu (VIEW_MENU) as the user sees it: which level, how deep, the
  * cursor, and the row kinds/labels. */
 export function soundMenuForTest() {
@@ -1616,6 +1622,10 @@ export function soundExit(opts) {
     log('exit: view ' + S.view + ' track ' + S.track + ' opts ' + JSON.stringify(opts || null) + ' from ' +
         String(new Error().stack || '').split('\n').slice(2, 5).map((l) => l.trim()).join(' | '));
     wavEditCloseIfOpen();      /* nothing may outlive sound mode itself */
+    /* …INCLUDING the MACROS-clear confirm, which is about a bank that only exists
+     * while this mode is open. It draws over everything, so an exit that left it
+     * standing would paint it on the track overview with no way to dismiss it. */
+    macroClearConfirmReset();
     const _opts = (opts && typeof opts === 'object') ? opts : {};
     const _leaving = _opts.leaving === true;
     /* Any exit at all spends the gesture crumb. A crumb that outlives its screen
@@ -1896,6 +1906,25 @@ function levelSeedIfNeeded() {
     S.levelSeededFor = k;
     S.levelPending = 0;
 }
+/* Put captured level values back and let the tick push them, exactly as a knob
+ * turn does (the cache plus the pending bit). Deliberately NOT automationParamEdit:
+ * an undo restores a value, it does not record a move.
+ * ⚠ Only when that slot is still the one showing — S.levelVals is the CURRENT
+ * context's cache, so writing it for another slot would corrupt the screen and push
+ * the wrong slot's levels. An undo after navigating away restores nothing rather
+ * than something wrong; stated so the limit is deliberate. */
+function levelApplyValues(slot, vals) {
+    if (slot !== S.slot) return;
+    for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++) {
+        if (!levelPageSpec(i)) continue;
+        if (S.levelVals[i] === vals[i]) continue;
+        S.levelVals[i] = vals[i];
+        S.levelPending |= (1 << i);
+        S.levelDirtySave = true;
+    }
+    S.dirty = true;
+}
+
 /* MIDI handler: cache + queue + the automation owner. */
 function onLevelTurn(idx, delta, bounds) {
     const m = levelKnobSpec(idx);
@@ -3261,11 +3290,18 @@ function slotCfgStep(delta) {
  * can retarget to another track before the drain, and a send raised against
  * one slot must not land in the one that replaced it. */
 /* Chain-level twin of queueSlotCfgWrite: same queue, bare-key namespace. */
-function queueChainWrite(key, val) {
+/* `slot` defaults to the CURRENT one, which is right for every knob-turn caller.
+ * ⚠ Pass it explicitly when the write belongs to a slot the user may have
+ * navigated away from before the drain — a deferred confirm, say. The queue is
+ * drained later, so capturing S.slot at drain time would write to whatever slot
+ * is showing THEN (the comment on queueSlotCfgWrite below says the same thing
+ * about retargeting). */
+function queueChainWrite(key, val, slot) {
+    const sl = (slot === undefined) ? S.slot : slot;
     for (const w of S.pendingSlotWrites) {
-        if (w.chain && w.key === key && w.slot === S.slot) { w.val = val; return; }
+        if (w.chain && w.key === key && w.slot === sl) { w.val = val; return; }
     }
-    S.pendingSlotWrites.push({ slot: S.slot, key: key, val: val, chain: true });
+    S.pendingSlotWrites.push({ slot: sl, key: key, val: val, chain: true });
 }
 
 /* No `comp` argument: the only writer that addressed a component namespace
@@ -5455,9 +5491,15 @@ const MACRO_UNTURNABLE = { file: 1, text: 1, opaque: 1 };
  * target per knob, so a leg's range and every other leg stay in the sidecar. */
 function macroMirrorToChain(i, mp) {
     if (S.bus || S.track < 0 || GS.trackRoute[S.track] !== 0) return;
+    macroMirrorToChainFor(i, mp, S.slot);
+}
+/* The same mirror against an EXPLICIT slot, for a deferred caller (an undo) whose
+ * slot may no longer be the one showing. `slot < 0` means "not chain-addressable". */
+function macroMirrorToChainFor(i, mp, slot) {
+    if (slot < 0) return;
     const ci = macroChainLegIdx(mp), leg = ci >= 0 ? mp.legs[ci] : null;
-    if (leg) queueChainWrite('knob_' + (i + 1) + '_set', leg.comp + ':' + leg.key);   /* level/bank: no chain form */
-    else queueChainWrite('knob_' + (i + 1) + '_clear', '1');
+    if (leg) queueChainWrite('knob_' + (i + 1) + '_set', leg.comp + ':' + leg.key, slot);
+    else queueChainWrite('knob_' + (i + 1) + '_clear', '1', slot);
 }
 
 /* ── THE MERGE from the chain store: first visit, and after a patch load ──
@@ -7877,8 +7919,146 @@ function hostedTakes(d1, d2) {
     }
 }
 
+/* Unassign all eight macros on a track. Mirrors knobLegRemove's teardown for
+ * every knob — the store, the assignment mirror, the CHAIN store (knob_N_clear),
+ * and every per-knob cache, because a stale cell would draw a macro that no
+ * longer exists. Persisted once at the end rather than eight times. */
+/* ⚠⚠ TWO SCOPES, AND THEY CAN DISAGREE. The store is addressed by the track the
+ * confirm was OPENED on; the screen caches and the chain slot belong to whatever
+ * is SHOWING NOW. Nothing stops the user pressing a track button while the
+ * dialog is up, and the first cut of this mixed the two: it cleared track A's
+ * store while sending the eight `knob_N_clear` writes to track B's slot — so B
+ * lost its chain assignments and A's came BACK on the next merge, because the
+ * chain store still held them and a chain-store assignment wins (macroMigrateTick).
+ *
+ * So: the store and the CHAIN writes use the captured track/slot, and the screen
+ * caches are touched only when that track is still the one on screen.
+ * ⚠ `slot < 0` means "was not chain-addressable when opened" (a bus, or a
+ * non-Schwung route) — captured at OPEN time, because S.bus can change after. */
+function macroClearAllForTrack(t, slot) {
+    if (t < 0 || !GS.trackMacros[t]) return 0;
+    const onScreen = (S.track === t);
+    let n = 0;
+    for (let i = 0; i < NUM_KNOBS; i++) {
+        if (GS.trackMacros[t][i]) n++;
+        GS.trackMacros[t][i] = null;
+        if (slot >= 0) queueChainWrite('knob_' + (i + 1) + '_clear', '1', slot);
+        if (onScreen) {
+            S.knobAsn[i] = asnFromMacro(null);
+            S.macCells[i] = null;    S.macVals[i] = null;
+            S.macLegCells[i] = null; S.macLegVals[i] = null;
+            S.knobAccum[i] = 0;      S.macLastDir[i] = 0;
+        }
+    }
+    writeSidecar();
+    S.dirty = true;
+    return n;
+}
+
+/* OPEN the confirm. One owner, because the gesture arrives by TWO routes and the
+ * capture has to be identical on both:
+ *   · sound mode steering (the latched MACROS card) → soundOnCC's jog-click branch
+ *   · the RESTING MACROS overview → ui_input_cc's Delete+jog arm, because there
+ *     only the eight knobs reach sound mode; the jog click is davebox's.
+ * The first cut only had the first route, so the gesture did nothing on the
+ * overview — the more likely place to use it.
+ * Returns false when there is no track to act on, so the caller can fall through. */
+export function macroClearConfirmOpen() {
+    if (!S.active || S.track < 0) return false;
+    GS.confirmMacroClear = true;
+    GS.confirmMacroClearSel = 1;   /* Cancel is the default — destructive */
+    GS.confirmMacroClearTrack = S.track;
+    /* Captured at OPEN, not at commit: S.bus and the route can change while the
+     * dialog is up. -1 = not chain-addressable. */
+    GS.confirmMacroClearSlot = (!S.bus && GS.trackRoute[S.track] === 0) ? S.slot : -1;
+    /* ⚠⚠ RELEASE THE MODIFIER OURSELVES. ui_sound's `S.deleteHeld` is cleared only
+     * by the RELEASE — which will never arrive, because the flag we just raised
+     * makes `soundModeCovered()` true and ui.js stops routing CCs here. Left
+     * latched, every later knob touch in sound mode would clear that parameter's
+     * automation. The gesture is finished; drop it. */
+    S.deleteHeld = false;
+    S.dirty = true;
+    return true;
+}
+
+/* The confirm's answer, owned here because the macro store is. Called from
+ * ui_input_cc — see the banner at soundOnCC for why the handler cannot live in
+ * this file's CC path. `ok` false is Cancel: clear the flags, touch nothing. */
+export function macroClearConfirmAnswer(ok) {
+    const t = GS.confirmMacroClearTrack, slot = GS.confirmMacroClearSlot;
+    macroClearConfirmReset();
+    if (!ok) return;
+    /* ⭐ UNDOABLE (Josh, 2026-09-13: "it should be undoable"). The store is the
+     * OWNER — the chain slot's knob_N_* keys are a mirror of it (macroMirrorToChain)
+     * — so the before-image is a copy of the eight mappings, and restoring means
+     * putting them back and re-mirroring through the SAME path that writes them.
+     * ⚠ A JS unit, not a DSP one: none of this is in a clip, so Undo must NOT send
+     * `undo_restore` or it would revert an unrelated older edit. See markJsUndo. */
+    const before = (GS.trackMacros[t] || []).slice();
+    const n = macroClearAllForTrack(t, slot);
+    if (n) {
+        markJsUndo('macros',
+            function () { macroRestoreForTrack(t, slot, before); },
+            function () { macroClearAllForTrack(t, slot); });
+    }
+    showActionPopup('MACROS', n ? 'CLEARED' : 'NONE SET');
+}
+
+/* Put a captured set of eight mappings back, and re-mirror each to the chain so the
+ * next merge does not undo the undo (a chain-store assignment wins — macroMigrateTick).
+ * The screen caches are refreshed only when that track is still the one showing, for
+ * the same reason macroClearAllForTrack guards them. */
+function macroRestoreForTrack(t, slot, before) {
+    if (t < 0 || !before) return;
+    if (!GS.trackMacros[t]) GS.trackMacros[t] = new Array(NUM_KNOBS).fill(null);
+    const onScreen = (S.track === t);
+    for (let i = 0; i < NUM_KNOBS; i++) {
+        const mp = before[i] || null;
+        GS.trackMacros[t][i] = mp;
+        if (slot >= 0) {
+            /* Re-point the chain store, or clear it for a knob that was unassigned
+             * before the clear — mirroring null is what macroMirrorToChain does. */
+            macroMirrorToChainFor(i, mp, slot);
+        }
+        if (onScreen) {
+            S.knobAsn[i] = asnFromMacro(macroLeg0(mp));
+            S.macCells[i] = null;    S.macVals[i] = null;
+            S.macLegCells[i] = null; S.macLegVals[i] = null;
+            S.knobAccum[i] = 0;      S.macLastDir[i] = 0;
+        }
+    }
+    writeSidecar();
+    S.dirty = true;
+}
+
+/* ⚠⚠ TEARDOWN. This flag draws OVER everything (soundModeCovered), so anything
+ * that leaves the screen it belongs to must drop it or the dialog is painted on
+ * top of an unrelated view with nothing able to dismiss it. ui_input_cc has
+ * THREE parallel teardown lists plus soundExit — all four call this. */
+export function macroClearConfirmReset() {
+    GS.confirmMacroClear = false;
+    GS.confirmMacroClearSel = 1;   /* Cancel is the default — destructive */
+    GS.confirmMacroClearTrack = -1;
+    GS.confirmMacroClearSlot = -1;
+}
+
 export function soundOnCC(d1, d2, decodeDelta) {
     if (!S.active) return false;
+    /* ⚠⚠ THE MACROS-CLEAR CONFIRM IS **NOT** HANDLED HERE, AND THAT IS THE WHOLE
+     * POINT. It was, for one commit, and the result was a screen nothing on the
+     * device could dismiss:
+     *
+     *   ui.js:655   const _soundSteers = soundActive() && !soundModeCovered() …
+     *
+     * The confirm is registered in `soundModeCovered()` so it can DRAW over this
+     * bank — which is the same predicate that stops sound mode steering input. So
+     * a handler placed in `soundOnCC` becomes unreachable at the exact moment its
+     * flag goes up. Every sibling confirm (confirmLgto, confirmXpose, confirmBake)
+     * lives in ui_input_cc.mjs for this reason; ours is beside them now.
+     *
+     * ⚠ A JS test that calls `soundOnCC` DIRECTLY cannot see this, because it
+     * bypasses the gate in ui.js. The test enters through onMidiMessageInternal.
+     * → [[wired-is-not-reachable]] */
 
     if (hostedTakes(d1, d2)) { S.dirty = true; return true; }
 
@@ -8280,6 +8460,105 @@ export function soundOnCC(d1, d2, decodeDelta) {
     }
 
     if (d1 === 3 && d2 >= 64) {                        /* jog click */
+        /* ⭐ DELETE + CLICK = RESET THIS BANK'S PARAMS (Josh's 2026-09-12 model,
+         * slice 3). ⚠ The distinction that matters, and I had it wrong once:
+         * *"sound mode isn't a bank. SOUND + CONFIG IS. i never specd resetting
+         * the sound menu params. this was only ever about bank params."*
+         *
+         * So the gesture fires exactly where the eight knobs ARE this bank's —
+         * which is what `levelsActive()` already means (every sound-mode screen
+         * except the module editor). Inside the EDITOR the knobs belong to the
+         * module, not the bank, so it must not fire there; the same click keeps
+         * its existing meaning.
+         *
+         * dAVEBOx's own Delete+jog arm cannot do this: `resetBankParams` returns
+         * null for banks 11/13 because their params live here. Consuming the CC
+         * (return true) is what keeps the two from both acting.
+         *
+         * ⓘ NOT a MIDI track's SOUND + CONFIG card. Its params (MIDI_MIX_SPECS —
+         * Expression/Pan/Mod/Sustain, Program, Bank MSB/LSB) declare NO default
+         * values, so there is nothing to reset them TO. `levelsActive()` already
+         * excludes a MIDI track; stated so the omission reads as a reason.
+         * ⓘ MACROS (bank 13) is not here yet — a macro's default is its LEG's
+         * default, and the four leg kinds (level/bank/chain/midi) do not all
+         * declare one. See the implementation plan. */
+        /* ⭐ MACROS bank: Delete + click CLEARS EVERY MACRO ASSIGNMENT on the
+         * track, after asking (Josh, 2026-09-13).
+         * ⚠⚠ This REPLACES the 2026-09-12 model's row for MACROS — which said
+         * "values → defaults, assignments unchanged". It is now the opposite, and
+         * only the assignments. The old reading is gone, not layered under this.
+         * ⚠ The values are NOT reset and the targets' AUTOMATION is left alone: a
+         * macro IS its target, so those lanes belong to parameters that still
+         * exist and are still reachable without the macro. */
+        if (S.deleteHeld && macrosActive() && macroClearConfirmOpen()) return true;
+        if (S.deleteHeld && levelsActive()) {
+            const _t = S.track, _c = effectiveClip(_t);
+            let _cleared = false;
+            /* ⭐ UNDOABLE (Josh, 2026-09-13). The level VALUES live in the audio
+             * engine — no clip snapshot reaches them — so they are restored by
+             * replaying them through the same cache + pending-bit path the knob uses.
+             * ⚠ WHICH MECHANISM depends on what this gesture did: clearing automation
+             * books a DSP checkpoint, so then the values must ride it as a PATCH (a
+             * pure JS unit would short-circuit and the automation would never come
+             * back). With nothing automated there is no DSP unit, so a pure JS unit
+             * is both necessary and sufficient. Hence the branch after the loop. */
+            const _lvlBefore = S.levelVals.slice();
+            const _lvlSlot = S.slot;
+            for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++) {
+                const m = levelPageSpec(i);           /* the four ON the page */
+                if (!m) continue;
+                if (S.levelVals[i] !== m.def) {
+                    /* Same bookkeeping as onLevelTurn: the cache, the pending
+                     * bit the tick flushes to the engine, and the save. What it
+                     * deliberately does NOT do is call automationParamEdit —
+                     * a reset must CLEAR the lane, not record a move into it. */
+                    S.levelVals[i] = m.def;
+                    S.levelPending |= (1 << i);
+                    S.levelDirtySave = true;
+                }
+                /* ⚠⚠ ONE UNDO CHECKPOINT FOR THE WHOLE GESTURE. `automationClearKey`
+                 * queues its own unless told not to, so the loop was booking up to
+                 * FOUR — the user would press Undo four times to get their
+                 * automation back, through states nobody created. Only the first
+                 * clear takes one; the rest ride it. (The CLIP arm's
+                 * automationClearBanksQueued already books none.) */
+                if (automationClearKey(_t, _c, S.slot + ':' + levelFullKey(i), !_cleared)) _cleared = true;
+            }
+            /* ⚠ Same stranded-snapshot bug as the AUTOMATION bank: automationClearKey
+             * books exactly one checkpoint for the gesture, but nothing raised the
+             * undo flag, so Undo said "NOTHING TO UNDO". Only when a lane was really
+             * cleared — otherwise Undo would revert an unrelated older edit.
+             * ⓘ This makes the AUTOMATION half undoable. The level VALUES live in the
+             * engine, outside any snapshot, and are a separate piece of work. */
+            const _restoreLevels = function () { levelApplyValues(_lvlSlot, _lvlBefore); };
+            const _resetLevels = function () {
+                const after = _lvlBefore.slice();
+                for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++) {
+                    const m = levelPageSpec(i);
+                    if (m) after[i] = m.def;
+                }
+                levelApplyValues(_lvlSlot, after);
+            };
+            /* ⚠ Only claim an undo unit if something actually MOVED. A second reset
+             * on an already-default bank changes nothing, and claiming a unit for it
+             * would discard a previous, real one and offer "UNDO" for a no-op. */
+            let _lvlMoved = false;
+            for (let i = 0; i < LEVEL_KNOB_SPECS.length; i++)
+                if (levelPageSpec(i) && S.levelVals[i] !== _lvlBefore[i]) _lvlMoved = true;
+            if (_cleared) {
+                /* A DSP checkpoint exists (the automation clear booked it), so the
+                 * values ride it rather than replacing it. noteUndoUnit FIRST — it
+                 * clears any pending patch. */
+                noteUndoUnit();
+                markJsUndoPatch('sound', _restoreLevels, _resetLevels);
+            } else if (_lvlMoved) {
+                markJsUndo('sound', _restoreLevels, _resetLevels);
+            }
+            showActionPopup(BANKS[BANK_SOUND].name, 'RESET');
+            if (_cleared) S.macDirty = true;
+            S.dirty = true;
+            return true;
+        }
         /* Mute + click = bypass the focused block, the same gesture the host's
          * chain editor uses, so the reflex carries over. Works from the picker
          * (the block under the cursor) and from inside a block's editor (the

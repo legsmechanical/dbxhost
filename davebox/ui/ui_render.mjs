@@ -38,7 +38,7 @@ import { drawAutoMarkAt,
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawModuleSwapConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
     drawConvertToDrumConfirm, drawConvertToConductConfirm, drawMenuInfo,
-    drawLgtoConfirm, drawBakeConfirm, drawSnapshotPicker,
+    drawLgtoConfirm, drawMacroClearConfirm, drawBakeConfirm, drawSnapshotPicker,
     drawBakeSceneConfirm, drawXposeConfirm, drawBpmLine,
     drawProjectPadPicker
 } from './ui_dialogs.mjs';
@@ -1342,6 +1342,7 @@ export function soundModeCovered() {
         S.confirmConvertToDrum || S.confirmConvertToConduct ||
         (S.menuInfoLines && S.menuInfoLines.length > 0) ||
         S.confirmLgto || S.confirmXpose || S.confirmBakeScene || S.confirmBake ||
+        S.confirmMacroClear ||   /* MACROS bank clear — opened FROM sound mode, so it must cover it */
         S.globalMenuOpen || S.tapTempoOpen ||
         (S.sessionView && (S.loopHeld || S.perfViewLocked)));
 }
@@ -1641,6 +1642,7 @@ function drawUIBody() {
     if (S.bpmMoveInfo) { drawBpmMoveInfo(); return; }
     if (S.recordBlockedDialog) { drawRecordBlockedDialog(); return; }
     if (S.confirmLgto)         { drawLgtoConfirm();         return; }
+    if (S.confirmMacroClear)   { drawMacroClearConfirm();   return; }
     if (S.confirmXpose) { drawXposeConfirm(); return; }
     if (S.confirmBakeScene) { drawBakeSceneConfirm(); return; }
     if (S.confirmBake) { drawBakeConfirm(); return; }

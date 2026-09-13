@@ -80,13 +80,28 @@ done
 #    contract forbids (a host built against the longer version reads past the
 #    end of an older module's). A one-shot getter is the smallest surface that
 #    answers it.
+#
+#    ⭑ chain_midi_fx_apply (2026-09-13) is the next, and its argument is that the
+#    transform it exposes takes messages and returns messages, knowing nothing
+#    about a synth, a bus or a destination — but it is static, so the only way to
+#    reach it is through v2_on_midi, which also SENDS the result to the synth.
+#    ⚠ It is NOT side-effect free: each plugin's process_midi is stateful (held
+#    notes, sequence position), so calling it ADVANCES the live FX state. A caller
+#    may only drive instances whose stream it owns — see the banner in chain_midi.c.
+#    A sequencer that wants a slot's MIDI FX at a chosen point in its own chain
+#    needs the transform WITHOUT the send. No existing route carries that: a
+#    set_param returns void, "nothing leaves a chain as MIDI" is about routing
+#    rather than calling, and hosting the modules a second time was rejected in
+#    the design. An exported delegate that sends nothing is the smallest surface.
+#    ⓘ It has NO caller yet, deliberately — see test_chain_midi_fx_apply.sh,
+#    which pins that count so adding the first one has to be a conscious edit.
 so="build/modules/chain/dsp.so"
 if [ -f "$so" ] && command -v nm >/dev/null 2>&1; then
   got=$(nm -D --defined-only "$so" 2>/dev/null | awk '{print $NF}' | sort)
   want=$(printf '%s\n' \
     chain_drain_sends chain_fx_requires_continuous chain_process_fx \
     chain_set_external_fx_mode chain_set_inject_audio \
-    chain_take_midi_tick_wake move_plugin_init_v2 \
+    chain_take_midi_tick_wake chain_midi_fx_apply move_plugin_init_v2 \
     unified_log unified_log_crash unified_log_enabled unified_log_init \
     unified_log_shutdown unified_log_v | sort)
   if [ "$got" != "$want" ]; then

@@ -26,7 +26,8 @@ import {
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
-import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay } from './ui_state.mjs';
+import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay,
+         markJsUndoPatch } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire} from './ui_engine.mjs';
@@ -58,7 +59,8 @@ import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam } from './ui_sound.mjs';
 import { soundActive, soundOpen, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
-    soundViewForTest, soundEnterBuses } from './ui_sound.mjs';
+    soundViewForTest, soundEnterBuses, macroClearConfirmAnswer,
+    macroClearConfirmReset, macroClearConfirmOpen } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
 /* ⚠ one-way: ui_render never imports this module (checked 2026-08-31) —
@@ -244,6 +246,21 @@ function _onCC_jog(d1, d2) {
         }
         S.confirmBakeScene = false;
         S.screenDirty      = true;
+        return;
+    }
+
+    /* MACROS-clear confirm: jog click commits (OK unassigns all 8, Cancel aborts).
+     * ⚠⚠ IT LIVES HERE, NOT IN ui_sound's CC PATH, and that is load-bearing. The
+     * flag is in `soundModeCovered()` so the dialog can DRAW over the MACROS bank
+     * — and ui.js gates sound mode's input on that SAME predicate
+     * (`_soundSteers = soundActive() && !soundModeCovered()`). A handler inside
+     * `soundOnCC` is therefore unreachable the moment the flag goes up, which is
+     * exactly how the first cut shipped a dialog nothing could dismiss. Every
+     * sibling confirm is here for this reason. → [[wired-is-not-reachable]] */
+    if (d1 === 3 && d2 === 127 && S.confirmMacroClear) {
+        macroClearConfirmAnswer(S.confirmMacroClearSel === 0);
+        S.screenDirty = true;
+        forceRedraw();
         return;
     }
 
@@ -617,6 +634,15 @@ function modalDialogUp() {
         return;
     }
     if (d1 === 3 && d2 === 127 && S.deleteHeld && !S.sessionView) {
+        /* ⭐ MACROS: clear the track's assignments, after asking. Handled HERE as
+         * well as in sound mode's own jog branch, because on the RESTING MACROS
+         * overview only the eight knobs reach sound mode — the jog click is
+         * davebox's (see ui.js's _restKnob). Without this the gesture did nothing
+         * on the overview, which is the likelier place to use it. One owner does
+         * the capture; this is just the second door into it. */
+        if (S.activeBank === BANK_MACROS && macroClearConfirmOpen()) {
+            S.screenDirty = true; forceRedraw(); return;
+        }
         if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
             if (S.drumPerformMode[S.activeTrack] > 0) {
                 /* Rpt/Rpt2 mode: Delete+jog = reset current lane groove params */
@@ -639,6 +665,30 @@ function modalDialogUp() {
                 if (S.activeBank === 0) {
                     /* CLIP has no DSP reset verb of its own; its settable knobs
                      * are written here, and ONLY when the card is on it. */
+                    /* ⭐ Res too (Josh, 2026-09-13) — per LANE on a drum track,
+                     * which is the whole reason this arm exists separately.
+                     * ⛔ InQ is NOT reset here: on a drum track it belongs to
+                     * ALL LANES (DRUM_CONFIG_SITES[5]), and Josh ruled that bank
+                     * untouched. The melodic arm resets it because there it sits
+                     * on CLIP itself. */
+                    /* Same recording refusal as the melodic arm — the DSP drops
+                     * the key while recording and the mirror would diverge.
+                     * ⚠ pendingDrumResync is armed at 3, not 2: every other arm
+                     * site writes SYNCHRONOUSLY and then waits 2 ticks, but this
+                     * write goes on pendingDefaultSetParams, which drains ONE per
+                     * tick — so the countdown would start before the write went
+                     * out and syncDrumLanesMeta could read the pre-rescale tps
+                     * back over the mirror. One extra tick restores the margin the
+                     * 2 was calibrated for. */
+                    /* Armed is not recording — same rule as the melodic arm above. */
+                    if (!(S.recordArmed && S.recordArmedTrack === _bt &&
+                          S.playing && !S.recordCountingIn)) {
+                        S.bankParams[_bt][0][0] = BANKS[0].knobs[0].def;
+                        S.drumLaneTPS[_bt] = TPS_VALUES[BANKS[0].knobs[0].def];
+                        S.pendingDefaultSetParams.push({ key: 't' + _bt + '_l' + _bl + '_clip_resolution',
+                                                         val: String(BANKS[0].knobs[0].def) });
+                        S.pendingDrumResync = 3; S.pendingDrumResyncTrack = _bt;
+                    }
                     S.drumLanePlaybackDir[_bt][_bl] = 0;
                     S.drumLanePlaybackAudioReverse[_bt][_bl] = 0;
                     S.bankParams[_bt][0][6] = 0;
@@ -668,6 +718,92 @@ function modalDialogUp() {
             let _mname = resetBankParams(_mt, S.activeBank);
             S.undoSeqArpSnapshot = null;
             if (S.activeBank === 0) {
+                /* ⭐ UNDOABLE (Josh, 2026-09-13: "it should be undoable on every
+                 * bank"). Two halves, because the bank's state is split:
+                 *  · Res / Dir / RvSt and the automation live IN THE CLIP, so ONE
+                 *    checkpoint queued BEFORE the writes covers them for free;
+                 *  · InQ (`diq`, per-TRACK) and Seq Follow (JS-only, it has no DSP
+                 *    key at all) are outside any snapshot, so they ride along as a
+                 *    JS patch.
+                 * ⚠⚠ PUSHED, NOT UNSHIFTED, and the reasoning matters because the
+                 * obvious advice is the other way round. What the checkpoint must
+                 * precede is THIS gesture's writes — and it does, because they are
+                 * queued after it in the same turn; the queue drains in order, one
+                 * per tick. Unshifting would additionally jump it ahead of writes
+                 * still PENDING FROM AN EARLIER gesture, so the snapshot would be
+                 * taken before those landed and Undo would revert them too. That is
+                 * strictly worse, and it is why a mutation swapping the two showed no
+                 * behavioural difference here (the queue is empty at this point). */
+                const _c0 = S.trackActiveClip[_mt];
+                S.pendingDefaultSetParams.push({ key: 't' + _mt + '_c' + _c0 + '_undo_checkpoint', val: '1' });
+                const _inqWas = S.drumInpQuant[_mt];
+                const _sqfWas = S.clipSeqFollow[_mt][_c0];
+                noteUndoUnit();                       /* FIRST — it clears any patch */
+                markJsUndoPatch('clip',
+                    function () {
+                        S.drumInpQuant[_mt] = _inqWas;
+                        S.bankParams[_mt][0][4] = _inqWas;
+                        S.pendingDefaultSetParams.push({ key: 't' + _mt + '_diq', val: String(_inqWas) });
+                        S.clipSeqFollow[_mt][_c0] = _sqfWas;
+                        S.bankParams[_mt][0][7] = _sqfWas ? 1 : 0;
+                    },
+                    function () {
+                        S.drumInpQuant[_mt] = BANKS[0].knobs[4].def;
+                        S.bankParams[_mt][0][4] = BANKS[0].knobs[4].def;
+                        S.pendingDefaultSetParams.push({ key: 't' + _mt + '_diq',
+                                                        val: String(BANKS[0].knobs[4].def) });
+                        S.clipSeqFollow[_mt][_c0] = true;
+                        S.bankParams[_mt][0][7] = 1;
+                    });
+                /* ⭐ RES AND INQ COMPLETE THE BANK (Josh, 2026-09-13: *"reset it
+                 * with the rest"*). Resolution was held back as destructive; it
+                 * is not — `clip_resolution` RESCALES every note proportionally
+                 * and calls `pa_link_scale` so note-linked automation follows,
+                 * so the pattern keeps its step positions and only the tick
+                 * granularity changes. Writing the same key the knob writes
+                 * means the reset behaves exactly like turning Res back to
+                 * default — including being no more undoable than that is (the
+                 * DSP handler takes no undo snapshot; unchanged either way). */
+                /* ⚠⚠ RESOLUTION IS REFUSED WHILE A TAKE IS ROLLING, by the DSP:
+                 * `if (tr->recording) return 1;` — and SILENTLY, so writing the JS
+                 * mirror anyway would leave S.clipTPS disagreeing with the DSP
+                 * permanently. The step grid, the LED span and the automation step
+                 * ticks all read that mirror, so notes would draw steps away from
+                 * where they record.
+                 * ⭑ ARMED IS NOT RECORDING (Josh, 2026-09-13, choosing this over the
+                 * broader guard): arming while STOPPED still resets, because the DSP
+                 * accepts the change then. The Resolution KNOB's own guard keys on
+                 * ARMED and is therefore broader — deliberately NOT copied here, so
+                 * this gesture is not a silent no-op in the common case.
+                 * ⚠ JS has no per-track `recording` mirror, so this is a proxy for
+                 * `tr->recording`, and its error is one-directional ON PURPOSE:
+                 * skipping when the DSP would have accepted costs nothing, while
+                 * resetting when the DSP REFUSES desyncs the grid.
+                 * ⚠ And the clip index is the ACTIVE one, not effectiveClip():
+                 * effectiveClip returns the QUEUED clip while stopped, but the DSP
+                 * rescales `tr->clips[tr->active_clip]` (sp_track_config2.c) and
+                 * applyBankParam mirrors against S.trackActiveClip. Using the
+                 * queued index recorded the new tps against a clip that never
+                 * changed. The rest of this block keeps effectiveClip — that
+                 * pre-dates this change and is not mine to move here. */
+                const _resRecBlocked = (S.recordArmed && S.recordArmedTrack === _mt &&
+                                        S.playing && !S.recordCountingIn);
+                if (!_resRecBlocked) {
+                    const _resClip = S.trackActiveClip[_mt];
+                    S.bankParams[_mt][0][0] = BANKS[0].knobs[0].def;
+                    S.clipTPS[_mt][_resClip] = TPS_VALUES[BANKS[0].knobs[0].def];
+                    S.pendingDefaultSetParams.push({ key: 't' + _mt + '_clip_resolution',
+                                                     val: String(BANKS[0].knobs[0].def) });
+                }
+                /* InQ. ⚠ The SAME param as drum ALL LANES K5 (see
+                 * CLIP_MELODIC_SITES, declared beside its twin) — which is why
+                 * it is reset HERE, on the melodic CLIP bank where it lives, and
+                 * NOT in the drum arm below, where it belongs to ALL LANES and
+                 * Josh ruled that bank untouched. */
+                S.drumInpQuant[_mt] = BANKS[0].knobs[4].def;
+                S.bankParams[_mt][0][4] = BANKS[0].knobs[4].def;
+                S.pendingDefaultSetParams.push({ key: 't' + _mt + '_diq',
+                                                 val: String(BANKS[0].knobs[4].def) });
                 S.clipPlaybackDir[_mt][_mac2] = 0;
                 S.clipPlaybackAudioReverse[_mt][_mac2] = 0;
                 S.bankParams[_mt][0][6] = 0;
@@ -677,6 +813,9 @@ function modalDialogUp() {
                 S.pendingDefaultSetParams.push({ key: 't' + _mt + '_clip_playback_audio_reverse', val: '0' });
                 automationClearBanksQueued(S.pendingDefaultSetParams, _mt, _mac2, [0]);
                 _mname = BANKS[0].name;
+                /* ⓘ K2 Strch / K3 Shft / K4 Lgto are ACTIONS, not values — they
+                 * are one-shot note transforms with nothing stored to reset, so
+                 * "reset the bank" cannot mean "perform them". K6 is unassigned. */
             }
             if (_mname) showActionPopup(_mname, 'RESET');
         }
@@ -876,6 +1015,13 @@ function modalDialogUp() {
             const delta = decodeDelta(d2);
             if (delta !== 0) {
                 S.confirmLgtoSel = S.confirmLgtoSel === 0 ? 1 : 0;
+                S.screenDirty = true;
+            }
+            return;
+        }
+        if (S.confirmMacroClear) {
+            if (decodeDelta(d2) !== 0) {
+                S.confirmMacroClearSel = S.confirmMacroClearSel === 0 ? 1 : 0;
                 S.screenDirty = true;
             }
             return;
@@ -1982,6 +2128,7 @@ function returnToOverview() {
         S.lastSentMenuEditValue = null; S.bpmWasEditing = false;
     }
     if (S.confirmLgto)         S.confirmLgto = false;
+    if (S.confirmMacroClear)   macroClearConfirmReset();
     if (S.confirmBake)         { S.confirmBake = false; S.confirmBakeWrapPhase = false; }
     if (S.recordBlockedDialog) S.recordBlockedDialog = false;
     if (S.bpmMoveInfo)         S.bpmMoveInfo = false;
@@ -2135,6 +2282,7 @@ function _backTap() {
                                      }
                                      S.lastSentMenuEditValue = null; S.bpmWasEditing = false;
                                      forceRedraw(); return; }
+    if (S.confirmMacroClear)       { macroClearConfirmReset(); forceRedraw(); return; }
     if (S.confirmLgto)             { S.confirmLgto = false; forceRedraw(); return; }
     if (S.confirmBake)             { S.confirmBake = false; S.confirmBakeWrapPhase = false; forceRedraw(); return; }
     if (S.recordBlockedDialog)     { S.recordBlockedDialog = false; forceRedraw(); return; }
@@ -2438,6 +2586,30 @@ function _onCC_transport(d1, d2) {
             if (devSnapUndo()) showActionPopup('UNDO', 'SNAPSHOT ' + (_n + 1));
             S.screenDirty = true; return;
         }
+        /* ⭐⭐ A JS-ONLY UNIT IS HANDLED HERE AND THE DSP IS NOT TOLD — the same
+         * short-circuit the snapshot recall above uses, and for the same reason: the
+         * gesture never touched a clip, so sending `undo_restore` would revert an
+         * unrelated older edit out of the DSP's one-deep slot. Kinds that need this:
+         * MACROS, ARP IN, the SOUND + CONFIG level VALUES, Seq Follow — none of them
+         * lives anywhere a clip snapshot can reach. See markJsUndo. */
+        if (S.shiftHeld && S.redoJs) {
+            const u = S.redoJs;
+            S.redoJs = null;
+            if (u.redo) u.redo();
+            S.undoJs = { kind: u.kind, undo: u.undo, redo: u.redo };
+            S.undoAvailable = true; S.redoAvailable = false;
+            showActionPopup('REDO', u.kind.toUpperCase());
+            S.screenDirty = true; forceRedraw(); return;
+        }
+        if (!S.shiftHeld && S.undoJs) {
+            const u = S.undoJs;
+            S.undoJs = null;
+            if (u.undo) u.undo();
+            S.redoJs = { kind: u.kind, undo: u.undo, redo: u.redo };
+            S.redoAvailable = true; S.undoAvailable = false;
+            showActionPopup('UNDO', u.kind.toUpperCase());
+            S.screenDirty = true; forceRedraw(); return;
+        }
         if (S.shiftHeld) {
             if (S.redoAvailable) {
                 if (S.redoSeqArpSnapshot) {
@@ -2447,6 +2619,12 @@ function _onCC_transport(d1, d2) {
                     S.undoSeqArpSnapshot = null;
                 }
                 host_module_set_param('redo_restore', '1');
+                if (S.redoJsPatch) {
+                    const _p = S.redoJsPatch;
+                    S.redoJsPatch = null;
+                    if (_p.redo) _p.redo();
+                    S.undoJsPatch = { kind: _p.kind, undo: _p.undo, redo: _p.redo };
+                }
                 if (S.redoSeqArpSnapshot) {
                     const { track, params } = S.redoSeqArpSnapshot;
                     for (let k = 0; k < 8; k++) {
@@ -2470,6 +2648,14 @@ function _onCC_transport(d1, d2) {
                     S.redoSeqArpSnapshot = null;
                 }
                 host_module_set_param('undo_restore', '1');
+                /* A JS patch riding this DSP unit: the half of the gesture that no
+                 * clip snapshot can reach (per-track params, JS-only state). */
+                if (S.undoJsPatch) {
+                    const _p = S.undoJsPatch;
+                    S.undoJsPatch = null;
+                    if (_p.undo) _p.undo();
+                    S.redoJsPatch = { kind: _p.kind, undo: _p.undo, redo: _p.redo };
+                }
                 if (S.undoSeqArpSnapshot) {
                     const { track, params } = S.undoSeqArpSnapshot;
                     for (let k = 0; k < 8; k++) {
@@ -4528,6 +4714,12 @@ function _switchViewCleanup() {
      * to it, and the next click re-opens exactly where you were. */
     S.sessMixerLatched = false;
     S.bankCardLatched  = false;
+    /* ⚠ The MACROS-clear confirm draws over EVERYTHING (soundModeCovered), so a
+     * view switch must drop it or it is painted on top of the view you land on
+     * with nothing able to dismiss it. This is the THIRD of the parallel
+     * teardown lists this file warns about; the others are _backTap and
+     * returnToOverview, plus soundExit in ui_sound.mjs. */
+    macroClearConfirmReset();
     autoBankReset();
     stepRecExit();
     standDownBankDisplay(true);

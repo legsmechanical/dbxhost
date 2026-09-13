@@ -64,7 +64,12 @@ function dspClear(key, val) {
 globalThis.host_module_set_param = (k, v) => { sent.push(k + '=' + v); dspClear(k, v); };
 globalThis.host_module_set_params = () => true;
 let listReads = 0;
-globalThis.host_module_get_param = (k) => { if (k === 'pa_list') { listReads++; return LIST; } return ''; };
+let PFX_SNAP = '';
+globalThis.host_module_get_param = (k) => {
+    if (k === 'pa_list') { listReads++; return LIST; }
+    if (String(k).indexOf('_pfx_snapshot') >= 0) return PFX_SNAP;
+    return '';
+};
 globalThis.shadow_get_param = () => '';
 globalThis.shadow_set_param = () => 1;
 globalThis.shadow_set_params = () => true; globalThis.shadow_get_params = () => '';
@@ -87,7 +92,9 @@ const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
 stubParamPagesDevice();
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
-const { BANKS, BANK_AUTOMATION, BANK_STEP, SEQ_AUTO_TARGETS, seqAutoTargetForKnob } = await import('../../ui/ui_constants.mjs');
+const bridge = await import('../../ui/ui_dsp_bridge.mjs');
+const { BANKS, BANK_AUTOMATION, BANK_STEP, SEQ_AUTO_TARGETS, seqAutoTargetForKnob,
+        PAD_MODE_DRUM } = await import('../../ui/ui_constants.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const editops = await import('../../ui/ui_editops.mjs');
@@ -261,6 +268,101 @@ step('⚠ CONTROL: a param clear lands after the param reset that snapshots it',
     assert(autoAt > rst, 'the automation clear must follow the reset (reset@' + rst + ', auto@' + autoAt + ')');
 });
 
+/* ---- the CLIP bank, completed (Josh, 2026-09-13: "reset it with the rest") --
+ *
+ * Resolution was held back as destructive. It is not: `clip_resolution` rescales
+ * every note proportionally and calls `pa_link_scale`, so the pattern keeps its
+ * step positions and only the tick granularity changes. */
+/* ---- ARMED IS NOT RECORDING (Josh, 2026-09-13) -----------------------------
+ * Resolution is the one CLIP param the DSP refuses mid-take, and it refuses
+ * SILENTLY — so resetting the JS mirror then would desync the note grid. But the
+ * guard must be as NARROW as that refusal: arming Record while stopped must still
+ * reset, or the gesture is a silent no-op in a common case. */
+step('⭐ Record ARMED but STOPPED: the CLIP reset still resets Resolution', () => {
+    reset(0);
+    S.recordArmed = true; S.recordArmedTrack = T; S.recordCountingIn = false;
+    S.playing = false;
+    withDelete(jogClick);
+    const q = queued();
+    assert(q.some(x => x === 't' + T + '_clip_resolution=1'),
+           'armed-but-stopped must still reset Resolution: ' + q.join(' | '));
+    S.recordArmed = false; S.recordArmedTrack = -1;
+});
+
+step('⚠⚠ CONTROL: a take ROLLING — Resolution is left alone, the rest still resets', () => {
+    reset(0);
+    S.recordArmed = true; S.recordArmedTrack = T; S.recordCountingIn = false;
+    S.playing = true;
+    withDelete(jogClick);
+    const q = queued();
+    assert(!q.some(x => /_clip_resolution=/.test(x)),
+           'Resolution was reset mid-take — the DSP refuses it silently and the note '
+           + 'grid would then disagree with the sequencer: ' + q.join(' | '));
+    /* the rest of the bank is NOT held hostage by that one param */
+    assert(q.some(x => /_clip_playback_dir=0$/.test(x)),
+           'the rest of the bank stopped resetting mid-take: ' + q.join(' | '));
+    S.recordArmed = false; S.recordArmedTrack = -1; S.playing = false;
+});
+
+/* ---- the DRUM arm of the CLIP reset, which had NO coverage at all ----------
+ * The per-lane resolution write, its mirror and the resync arming are a separate
+ * code path from the melodic arm, and nothing exercised it. */
+step('⭐ on a DRUM track, Delete + jog click resets the ACTIVE LANE\'s resolution', () => {
+    reset(0);
+    const _wasMode = S.trackPadMode[T];
+    S.trackPadMode[T] = PAD_MODE_DRUM;
+    S.activeDrumLane[T] = 3;
+    S.drumPerformMode[T] = 0;          /* not Rpt/Rpt2, which has its own gesture */
+    withDelete(jogClick);
+    const q = queued();
+    assert(q.some(x => x === 't' + T + '_l3_clip_resolution=1'),
+           "the active lane's resolution was not reset: " + q.join(' | '));
+    /* ⛔ AND NOT diq: on a drum track InQ belongs to ALL LANES, which Josh ruled
+     * untouched. The melodic arm resets it because there it sits on CLIP itself. */
+    assert(!q.some(x => /_diq=/.test(x)),
+           'the drum arm reset InQ, which belongs to ALL LANES: ' + q.join(' | '));
+    /* ⛔ and not the MELODIC clip-wide key either */
+    assert(!q.some(x => x === 't' + T + '_clip_resolution=1'),
+           'the drum arm wrote the melodic clip-wide resolution key: ' + q.join(' | '));
+    S.trackPadMode[T] = _wasMode;
+});
+
+step('⭐ Delete + jog click on CLIP resets Res and InQ too, not just Dir/SqFl', () => {
+    reset(0);
+    withDelete(jogClick);
+    const q = queued();
+    assert(q.some(x => x === 't' + T + '_clip_resolution=1'),
+           'Resolution was not reset to its default index: ' + q.join(' | '));
+    assert(q.some(x => x === 't' + T + '_diq=0'),
+           'InQ was not reset: ' + q.join(' | '));
+    /* the two that already worked, so this cannot pass by replacing them */
+    assert(q.some(x => /_clip_playback_dir=0$/.test(x)), 'Playback Dir stopped being reset');
+    assert(q.some(x => /_clip_seq_follow|_clip_playback_audio_reverse=0$/.test(x)),
+           'the rest of the bank stopped being reset: ' + q.join(' | '));
+});
+
+step('⚠ CONTROL: the CLIP bank\'s three ACTION knobs are not fired by a reset', () => {
+    /* K2 Strch / K3 Shft / K4 Lgto are one-shot note transforms with no stored
+     * value. "Reset the bank" must not mean "perform them" — Lgto is
+     * destructive and normally guarded by a confirm dialog. */
+    reset(0);
+    withDelete(jogClick);
+    const q = queued();
+    for (const re of [/_beat_stretch/, /_clock_shift/, /_lgto_apply/])
+        assert(!q.some(x => re.test(x)),
+               'a reset fired an ACTION knob (' + re + '): ' + q.join(' | '));
+});
+
+step('⚠⚠ CONTROL: Shift+Delete still leaves Res and InQ alone', () => {
+    /* Josh, 2026-09-12: "leave clip ... out of shift+delete+click." Adding two
+     * writes to the Delete arm must not leak into the Shift arm. */
+    reset(0);
+    withShiftDelete(jogClick);
+    const q = queued();
+    assert(!q.some(x => /_clip_resolution=|_diq=/.test(x)),
+           'Shift+Delete reached into the CLIP bank: ' + q.join(' | '));
+});
+
 step('⭐ Delete + jog click resets ONLY the bank you are on (the 1(4) regression)', () => {
     reset(1);
     withDelete(jogClick);
@@ -270,6 +372,129 @@ step('⭐ Delete + jog click resets ONLY the bank you are on (the 1(4) regressio
     for (const tg of B3)
         assert(got.indexOf(tg) < 0,
                '⚠⚠ THE REGRESSION: on the card for NOTE FX, MIDI DLY\'s automation went too (' + tg + ')');
+});
+
+/* ---- ⭐ UNDO. "It should be undoable on every bank" (Josh, 2026-09-13) --------
+ *
+ * ⚠⚠ The thing to assert is that the UNDO FLAG IS RAISED, because a DSP snapshot
+ * that nobody flags is unreachable — three banks shipped exactly that. And the
+ * flag must NOT be raised when nothing was snapshotted, or Undo reverts an
+ * unrelated older edit out of the one-deep slot. */
+step('⭐ the CLIP reset checkpoints BEFORE its own writes, and leaves an undo unit', () => {
+    /* ⚠⚠ ORDER IS THE WHOLE THING. The queue drains ONE PER TICK, so a checkpoint
+     * pushed after the writes would snapshot a clip that had already been reset —
+     * Undo would then "restore" the reset. It must be unshifted to the front. */
+    reset(0);
+    S.undoAvailable = false;
+    /* ⚠ A write left over from an EARLIER gesture. It belongs before the checkpoint:
+     * snapshotting ahead of it would make Undo revert that too. This is what makes
+     * the assertion below about THIS gesture rather than about queue position. */
+    S.pendingDefaultSetParams.push({ key: 't' + T + '_leftover_from_before', val: '1' });
+    withDelete(jogClick);
+    const q = queued();
+    const cp = idxOf(q, /_undo_checkpoint=/);
+    assert(cp >= 0, 'no checkpoint was queued at all: ' + q.join(' | '));
+    assert(idxOf(q, /_leftover_from_before=/) < cp,
+           'the checkpoint jumped ahead of an earlier gesture\'s pending write — Undo '
+           + 'would revert that too: ' + q.join(' | '));
+    const firstWrite = q.findIndex((x) => /_clip_resolution=|_diq=|_clip_playback_dir=/.test(x));
+    assert(firstWrite > cp,
+           'a reset write precedes the checkpoint, so the snapshot would capture an '
+           + 'already-reset clip: ' + q.join(' | '));
+    assert(S.undoAvailable === true, 'the CLIP reset left nothing to undo');
+});
+
+step('⭐ and the two params NO snapshot reaches ride along as a JS patch', () => {
+    /* InQ is per-TRACK and Seq Follow is JS-only (no DSP key at all), so neither is
+     * in the clip the checkpoint copies. They are restored by a patch that runs
+     * alongside the DSP restore — not instead of it, or the clip half would be lost. */
+    reset(0);
+    S.drumInpQuant[T] = 5;
+    S.clipSeqFollow[T][0] = false;
+    withDelete(jogClick);
+    assert(S.undoJsPatch !== null, 'no JS patch was armed for InQ / Seq Follow');
+    assert(S.drumInpQuant[T] === BANKS[0].knobs[4].def, 'setup: InQ did not reset');
+
+    S.undoJsPatch.undo();
+    assert(S.drumInpQuant[T] === 5, 'the patch did not restore InQ');
+    assert(S.clipSeqFollow[T][0] === false, 'the patch did not restore Seq Follow');
+});
+
+step('⭐ ARP IN: its reset is a JS unit, so Undo restores it and NOT a clip edit', () => {
+    /* ⚠⚠ IT WAS WORSE THAN UN-UNDOABLE. resetTarp called noteUndoUnit() while taking
+     * NO DSP snapshot (ARP IN lives in tr->tarp*, per TRACK, outside every clip), so
+     * Undo reverted whatever unrelated clip edit still sat in the one-deep slot. */
+    reset(5);
+    S.bankParams[T][5][0] = 3;
+    S.tarpStepVel[T][2] = 99;
+    S.tarpStepLoopLen[T] = 5;
+    withDelete(jogClick);
+    assert(S.undoJs !== null && S.undoJs.kind === 'arp in',
+           'ARP IN did not arm a JS undo unit (kind=' + (S.undoJs && S.undoJs.kind) + ')');
+    assert(S.undoJsPatch === null, 'ARP IN must not use a PATCH — it has no DSP snapshot to ride');
+    assert(S.tarpStepLoopLen[T] === 8, 'setup: the reset did not run');
+
+    S.undoJs.undo();
+    assert(S.bankParams[T][5][0] === 3, 'undo did not restore the bank params');
+    assert(S.tarpStepVel[T][2] === 99, 'undo did not restore the step velocities');
+    assert(S.tarpStepLoopLen[T] === 5, 'undo did not restore the step loop length');
+    /* and the values are REPLAYED to the DSP, since nothing there holds them */
+    const q = queued();
+    assert(q.some(x => /_tarp_step_vel=2 99/.test(x)),
+           'the restore never reached the DSP: ' + q.join(' | '));
+});
+
+step('⭐ an undo restore REFRESHES the bank card — all four FX banks', () => {
+    /* ⓘ THIS BEHAVIOUR ALREADY EXISTED and was simply untested — the refresh sits at
+     * the END of syncClipsTargeted's melodic branch. I claimed otherwise after reading
+     * the first half of that branch and nearly shipped a duplicate call (an extra SPI
+     * frame per undo). The test stays, because nothing pinned it: banks 1-4 must come
+     * back ON SCREEN after an undo, not only in the DSP. */
+    PFX_SNAP = '7 3 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0';   /* K1=7, K2=3 */
+    S.bankParams[T][1][0] = 0; S.bankParams[T][1][1] = 0;
+    bridge.syncClipsTargeted('m ' + T + ' 0');
+    assert(S.bankParams[T][1][0] === 7 && S.bankParams[T][1][1] === 3,
+           'the bank card was not refreshed by the restore: got '
+           + S.bankParams[T][1][0] + '/' + S.bankParams[T][1][1]);
+});
+
+step('⚠⚠ a stale SEQ ARP sidecar cannot survive a later reset (two live bugs)', () => {
+    /* The sidecar is nulled at 31 hand-written sites and THREE were missing —
+     * resetFxBanks, resetTarp, resetSingleFxBank — so the drum Shift+Delete arm and
+     * the ARP IN arm left a stale MELODIC sidecar armed, and a later Undo wrote a
+     * PREVIOUS TRACK's SEQ ARP values over the card. Cleared centrally now. */
+    reset(1);
+    S.undoSeqArpSnapshot = { track: 7, params: [9, 9, 9, 9, 9, 9, 9, 9] };
+    withDelete(jogClick);                      /* NOTE FX reset -> noteUndoUnit */
+    assert(S.undoSeqArpSnapshot === null,
+           'a stale sidecar survived a later reset — Undo would write track 7\'s values '
+           + 'over this card');
+
+    reset(5);
+    S.undoSeqArpSnapshot = { track: 7, params: [9, 9, 9, 9, 9, 9, 9, 9] };
+    withDelete(jogClick);                      /* ARP IN -> a JS unit */
+    assert(S.undoSeqArpSnapshot === null, 'the ARP IN arm left a stale sidecar armed');
+});
+
+step('⭐ resetting an FX bank leaves something to UNDO', () => {
+    reset(1);
+    S.undoAvailable = false;
+    withDelete(jogClick);
+    assert(S.undoAvailable === true,
+           'the NOTE FX reset left nothing to undo — the DSP snapshot would be stranded');
+});
+
+step('⭐ SEQ ARP too — its reset took NO DSP snapshot until 2026-09-13', () => {
+    /* `pfx_seq_arp_reset` was missing from the snapshot list in sp_track_misc.c, so
+     * Undo reverted whatever older edit sat in the slot instead. The JS side always
+     * raised the flag, which is why a presence-only test saw nothing wrong. */
+    reset(4);
+    S.undoAvailable = false;
+    withDelete(jogClick);
+    const q = queued();
+    assert(q.some(x => /_pfx_seq_arp_reset=/.test(x)),
+           'SEQ ARP was not reset at all: ' + q.join(' | '));
+    assert(S.undoAvailable === true, 'the SEQ ARP reset left nothing to undo');
 });
 
 step('⛔⛔ STEP is NEVER reset — it IS the sequencer data', () => {

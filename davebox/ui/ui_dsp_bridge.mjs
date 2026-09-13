@@ -1850,6 +1850,11 @@ export function syncClipsTargeted(infoStr) {
                 const tpsVal = parseInt(tpsRaw, 10);
                 S.clipTPS[t][c] = TPS_VALUES.indexOf(tpsVal) >= 0 ? tpsVal : 24;
             }
+            /* ⭐ THE BANK CARD IS REFRESHED HERE — banks 1-4 come back on screen after
+             * an undo restore, not just in the DSP. ⚠ It is at the END of this branch,
+             * which is easy to miss: on 2026-09-13 I read the first half, concluded the
+             * card was never refreshed, and added a DUPLICATE call at the top. Read the
+             * whole branch. */
             if (c === S.trackActiveClip[t]) refreshPerClipBankParams(t);
         }
         const _ath = host_module_get_param('t' + t + '_c' + c + '_at_has');
