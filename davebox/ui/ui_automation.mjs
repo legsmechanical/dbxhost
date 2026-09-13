@@ -224,6 +224,31 @@ function dropOrphanSeqLanes() {
     }
 }
 
+/* ⚠⚠ THE DSP'S LANE LIST CHANGED WITHOUT A WRITE FROM HERE — so re-read it.
+ *
+ * Josh, device, 2026-09-12: a clip COPIED to another slot "plays back the
+ * automation from clip a but doesn't show it as a lane on the automation window",
+ * and a bank reset on the copy "didn't clear the automation" until something else
+ * had forced a refresh.
+ *
+ * `clip_copy` copies the lanes DSP-side (pa_copy_clip), but this module's mirror
+ * is only ever fed by pa_list, and nothing asked for it. So the lane played while
+ * `stateByKey` had never heard of it — and every gesture that consults the mirror
+ * before acting (the bank clears ask automationStateFor first) silently did
+ * NOTHING, which is indistinguishable from a broken clear.
+ *
+ * ⚠ copyClip DID call _markLocalTouch with the comment "dst automation copied
+ * DSP-side; re-read to mirror" — but that path refreshes `clipAtHas`, the
+ * AFTERTOUCH mirror. Two automation stores, one word, the second time that
+ * conflation has bitten today. [[clip-clear-clears-aftertouch-not-parameters]]
+ *
+ * ⭑ A FLAG, not a read: this is called from on_midi context, where get_param
+ * silently returns null — and parseList(null) would mark the list stale while
+ * looking like a successful refresh. The tick does the reading. */
+export function automationNoteListChangedElsewhere() {
+    presenceStale = true;
+}
+
 export function automationRefreshPresence() {
     const list = host_module_get_param('pa_list');
     if (list !== null && list !== undefined) anyAutomation = !!(list && list.length);
@@ -519,6 +544,34 @@ function pushPending() {
 /* Called once per tick, in this order: gestures age; the module hears what
  * the hand did (one write); the DSP's staged values are drained (one read);
  * the chain slots get them (one write per slot). */
+/* ⚠⚠ A CLIP CHANGE STAGES VALUES NOBODY WAS DRAINING (Josh, device, 2026-09-12:
+ * "automation filter sweep on clip a. when i switch to clip b the filter value is
+ * at the point it was on clip a when switched").
+ *
+ * The DSP releases the outgoing clip's lanes back to their resting values and
+ * STAGES them on the ring (pa_release_track). But the drain below runs only when
+ * the transport is playing, within the stop grace, or something is already
+ * pending — and a clip change is none of those. So the resting values sat in the
+ * ring until the next Play, and the parameter stayed wherever the old clip's
+ * playhead left it.
+ *
+ * ⭑ Detected HERE rather than at the gesture, for two reasons: `launch_clip` has
+ * six call sites, and the switch that matters most is not a gesture at all — a
+ * queued clip becomes active on the DSP's own launch boundary while playing, and
+ * JS only ever learns of it through this mirror. One watcher covers both. */
+let lastClipSeen = null;
+function clipChanged() {
+    const now = S.trackActiveClip;
+    if (!now) return false;
+    if (!lastClipSeen) { lastClipSeen = now.slice(); return false; }
+    let changed = false;
+    for (let t = 0; t < now.length; t++) {
+        if (lastClipSeen[t] !== now[t]) { lastClipSeen[t] = now[t]; changed = true; }
+    }
+    return changed;
+}
+export function automationForgetClipsForTest() { lastClipSeen = null; }
+
 export function automationTick() {
     gesturesTick();
     flushModuleWrites();
@@ -538,6 +591,8 @@ export function automationTick() {
      * already flipped by the time this sees it. Keep draining for a few ticks
      * past the edge so what the stop produced is pushed, not left in the ring
      * for the next Play to find. */
+    /* A clip change opens the drain window even when stopped — see clipChanged. */
+    if (clipChanged()) stopGrace = STOP_GRACE_TICKS;
     if (S.playing) stopGrace = STOP_GRACE_TICKS;
     else if (stopGrace > 0) stopGrace--;
     else if (!pending.size) return;

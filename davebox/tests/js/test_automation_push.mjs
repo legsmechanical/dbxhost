@@ -67,6 +67,7 @@ let fireAndForget = 0;
 globalThis.shadow_set_param = () => { fireAndForget++; return true; };
 globalThis.shadow_set_param_timeout = () => { fireAndForget++; return true; };
 
+import * as auto from '../../ui/ui_automation.mjs';
 import { automationTick, automationResetCaches, automationPendingSizeForTest,
          automationRefreshPresence, automationNoteWrite, automationPresentForTest,
          automationPollWarnings }
@@ -214,6 +215,36 @@ const tick = () => { S.tickCount++; tickPrefetch(); automationTick(); };
     check(writes[0].slot === 0 && writes[0].key === 'move_fx:2:fx3:mix', 'the write key keeps the whole block prefix');
     check(metaAsked.includes('move_fx:2:fx3:chain_params'), '⚠ the metadata is asked of the BLOCK, not of "move_fx"');
     check(writes[0].val === '50', 'and the value maps into the block\'s own range (0..100)');
+}
+
+/* ---- a CLIP CHANGE drains, even with the transport stopped ---------------
+ *
+ * Josh, device, 2026-09-12: "automation filter sweep on clip a. when i switch to
+ * clip b the filter value is at the point it was on clip a when switched."
+ *
+ * The DSP releases the outgoing clip's lanes to their RESTING values and stages
+ * them on the ring. But this drain runs only while playing, inside the stop
+ * grace, or with something already pending — and a clip change is none of the
+ * three, so the resting values sat in the ring until the next Play and the
+ * parameter stayed where the old clip's playhead left it. */
+{
+    fresh();
+    auto.automationForgetClipsForTest();
+    S.playing = false;
+    for (let i = 0; i < 8; i++) tick();          /* spend the stop grace */
+    writes.length = 0;
+    staged = '0:fx1:cutoff 4000';
+    tick();
+    check(writes.length === 0,
+          '⚠ CONTROL: stopped and quiet, nothing drains — that is the gate this bug hid behind');
+
+    S.trackActiveClip[0] = (S.trackActiveClip[0] | 0) + 1;      /* the switch */
+    tick();
+    check(writes.length === 0,
+          'ⓘ the tick that SEES the switch cannot carry it: tickPrefetch decides what to read BEFORE automationTick runs, so this tick has no staged data to drain');
+    tick();
+    check(writes.some(w => w.key === 'fx1:cutoff'),
+          '⭐ a CLIP CHANGE opens the drain: the released resting value is pushed (one tick later, ~11 ms)');
 }
 
 /* ---- a MODULE bus insert: automation reaches it with no special case -----

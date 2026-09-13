@@ -24,7 +24,8 @@ import { refreshPerClipBankParams, resetPerClipBankParamsToDefault,
 /* Automation follows what it automates (Josh, 2026-09-12). The *Queued forms
  * append to S.pendingDefaultSetParams so the automation clear lands AFTER the
  * clear that took the undo snapshot — see their banner in ui_automation.mjs. */
-import { automationClearClipQueued, automationClearBanksQueued } from './ui_automation.mjs';
+import { automationClearClipQueued, automationClearBanksQueued,
+         automationNoteListChangedElsewhere } from './ui_automation.mjs';
 
 /* Record a MELODIC clip whose automation mirror (clipAtHas) the editop cannot
  * fill purely in JS — pollDSP's local-rev path
@@ -246,6 +247,12 @@ export function copyClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'clip_copy', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
+    /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
+     * by pa_list, so ask for a re-read — otherwise the copy PLAYS automation
+     * the bank cannot see, and any gesture that checks the mirror first
+     * silently does nothing. ⚠ _markLocalTouch refreshes the AFTERTOUCH
+     * mirror, which is a different store wearing the same word. */
+    automationNoteListChangedElsewhere();
     _markLocalTouch(dstT, dstC);   /* dst automation copied DSP-side; re-read to mirror */
     S.clipSteps[dstT][dstC] = S.clipSteps[srcT][srcC].slice();
     S.clipLength[dstT][dstC] = S.clipLength[srcT][srcC];
@@ -263,6 +270,12 @@ export function cutClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'clip_cut', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
+    /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
+     * by pa_list, so ask for a re-read — otherwise the copy PLAYS automation
+     * the bank cannot see, and any gesture that checks the mirror first
+     * silently does nothing. ⚠ _markLocalTouch refreshes the AFTERTOUCH
+     * mirror, which is a different store wearing the same word. */
+    automationNoteListChangedElsewhere();
     _markLocalTouch(dstT, dstC);   /* dst gets src's automation, src cleared — re-read both */
     _markLocalTouch(srcT, srcC);
     S.clipSteps[dstT][dstC] = S.clipSteps[srcT][srcC].slice();
@@ -290,6 +303,12 @@ export function copyRow(srcRow, dstRow) {
     if (srcRow === dstRow) return;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'row_copy', val: `${srcRow} ${dstRow}`, _local: true });
+    /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
+     * by pa_list, so ask for a re-read — otherwise the copy PLAYS automation
+     * the bank cannot see, and any gesture that checks the mirror first
+     * silently does nothing. ⚠ _markLocalTouch refreshes the AFTERTOUCH
+     * mirror, which is a different store wearing the same word. */
+    automationNoteListChangedElsewhere();
     for (let t = 0; t < NUM_TRACKS; t++) {
         _markLocalTouch(t, dstRow);   /* dst automation copied DSP-side; re-read to mirror */
         S.clipSteps[t][dstRow] = S.clipSteps[t][srcRow].slice();
@@ -313,6 +332,12 @@ export function cutRow(srcRow, dstRow) {
     if (srcRow === dstRow) return;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'row_cut', val: `${srcRow} ${dstRow}`, _local: true });
+    /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
+     * by pa_list, so ask for a re-read — otherwise the copy PLAYS automation
+     * the bank cannot see, and any gesture that checks the mirror first
+     * silently does nothing. ⚠ _markLocalTouch refreshes the AFTERTOUCH
+     * mirror, which is a different store wearing the same word. */
+    automationNoteListChangedElsewhere();
     for (let t = 0; t < NUM_TRACKS; t++) {
         _markLocalTouch(t, dstRow);   /* dst gets src's automation, src cleared — re-read both */
         _markLocalTouch(t, srcRow);
@@ -435,6 +460,12 @@ export function copyDrumClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'drum_clip_copy', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
+    /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
+     * by pa_list, so ask for a re-read — otherwise the copy PLAYS automation
+     * the bank cannot see, and any gesture that checks the mirror first
+     * silently does nothing. ⚠ _markLocalTouch refreshes the AFTERTOUCH
+     * mirror, which is a different store wearing the same word. */
+    automationNoteListChangedElsewhere();
     S.drumClipNonEmpty[dstT][dstC] = S.drumClipNonEmpty[srcT][srcC];
     if (dstC === S.trackActiveClip[dstT]) { S.pendingDrumResync = 2; S.pendingDrumResyncTrack = dstT; }
 }
@@ -444,6 +475,12 @@ export function cutDrumClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'drum_clip_cut', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
+    /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
+     * by pa_list, so ask for a re-read — otherwise the copy PLAYS automation
+     * the bank cannot see, and any gesture that checks the mirror first
+     * silently does nothing. ⚠ _markLocalTouch refreshes the AFTERTOUCH
+     * mirror, which is a different store wearing the same word. */
+    automationNoteListChangedElsewhere();
     S.drumClipNonEmpty[dstT][dstC] = S.drumClipNonEmpty[srcT][srcC];
     S.drumClipNonEmpty[srcT][srcC] = false;
     if (srcC === S.trackActiveClip[srcT]) {

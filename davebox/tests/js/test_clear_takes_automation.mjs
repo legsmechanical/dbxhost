@@ -63,7 +63,8 @@ function dspClear(key, val) {
 }
 globalThis.host_module_set_param = (k, v) => { sent.push(k + '=' + v); dspClear(k, v); };
 globalThis.host_module_set_params = () => true;
-globalThis.host_module_get_param = (k) => (k === 'pa_list' ? LIST : '');
+let listReads = 0;
+globalThis.host_module_get_param = (k) => { if (k === 'pa_list') { listReads++; return LIST; } return ''; };
 globalThis.shadow_get_param = () => '';
 globalThis.shadow_set_param = () => 1;
 globalThis.shadow_set_params = () => true; globalThis.shadow_get_params = () => '';
@@ -89,6 +90,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 const { BANKS, BANK_AUTOMATION, BANK_STEP, SEQ_AUTO_TARGETS, seqAutoTargetForKnob } = await import('../../ui/ui_constants.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
+const editops = await import('../../ui/ui_editops.mjs');
 
 /* ⚠ Track 2 (index 1). Track 1 is a DRUM track by default, and a "melodic"
  * gesture on it edits a hidden clip while every store check still passes.
@@ -318,6 +320,27 @@ step('⚠⚠ REGRESSION: a lane must not be RESURRECTED by the refresh that race
            'the cleared lane came BACK into the list (the refresh won the race)');
     assert(auto.automationStateFor(T, 1, CHAIN_TGT),
            'control: the other clip is still listed, so the refresh really ran');
+});
+
+/* ---- a COPIED clip's lanes must become VISIBLE ------------------------- */
+
+step('⭐ a clip COPY asks for the lane list to be re-read', () => {
+    /* Josh, device, 2026-09-12: a clip copied to another slot "plays back the
+     * automation from clip a but doesn't show it as a lane on the automation
+     * window", and a bank reset on the copy "didn't clear the automation" until
+     * something else forced a refresh.
+     *
+     * The DSP copies the lanes; this module's mirror is fed only by pa_list. So
+     * the lane played while stateByKey had never heard of it — and every gesture
+     * that checks the mirror first (the bank clears do) silently did NOTHING.
+     * ⚠ copyClip's own _markLocalTouch refreshes the AFTERTOUCH mirror, which is
+     * a different store wearing the same word. */
+    reset();
+    listReads = 0;
+    editops.copyClip(T, 0, T, 5);
+    for (let i = 0; i < 6; i++) { S.tickCount++; globalThis.tick(); }
+    assert(listReads > 0,
+           'the copy never asked for a pa_list re-read, so the copied lane is invisible to the bank');
 });
 
 step('⭐ and nothing was swallowed into the JS error log', () => {
