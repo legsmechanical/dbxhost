@@ -725,10 +725,17 @@ function modalDialogUp() {
                  *  · InQ (`diq`, per-TRACK) and Seq Follow (JS-only, it has no DSP
                  *    key at all) are outside any snapshot, so they ride along as a
                  *    JS patch.
-                 * ⚠ unshift, not push: the queue drains ONE PER TICK and the
-                 * checkpoint must reach the DSP before the mutations it protects. */
+                 * ⚠⚠ PUSHED, NOT UNSHIFTED, and the reasoning matters because the
+                 * obvious advice is the other way round. What the checkpoint must
+                 * precede is THIS gesture's writes — and it does, because they are
+                 * queued after it in the same turn; the queue drains in order, one
+                 * per tick. Unshifting would additionally jump it ahead of writes
+                 * still PENDING FROM AN EARLIER gesture, so the snapshot would be
+                 * taken before those landed and Undo would revert them too. That is
+                 * strictly worse, and it is why a mutation swapping the two showed no
+                 * behavioural difference here (the queue is empty at this point). */
                 const _c0 = S.trackActiveClip[_mt];
-                S.pendingDefaultSetParams.unshift({ key: 't' + _mt + '_c' + _c0 + '_undo_checkpoint', val: '1' });
+                S.pendingDefaultSetParams.push({ key: 't' + _mt + '_c' + _c0 + '_undo_checkpoint', val: '1' });
                 const _inqWas = S.drumInpQuant[_mt];
                 const _sqfWas = S.clipSeqFollow[_mt][_c0];
                 noteUndoUnit();                       /* FIRST — it clears any patch */

@@ -374,18 +374,27 @@ step('⭐ Delete + jog click resets ONLY the bank you are on (the 1(4) regressio
  * that nobody flags is unreachable — three banks shipped exactly that. And the
  * flag must NOT be raised when nothing was snapshotted, or Undo reverts an
  * unrelated older edit out of the one-deep slot. */
-step('⭐ the CLIP reset queues its checkpoint FIRST, and leaves an undo unit', () => {
+step('⭐ the CLIP reset checkpoints BEFORE its own writes, and leaves an undo unit', () => {
     /* ⚠⚠ ORDER IS THE WHOLE THING. The queue drains ONE PER TICK, so a checkpoint
      * pushed after the writes would snapshot a clip that had already been reset —
      * Undo would then "restore" the reset. It must be unshifted to the front. */
     reset(0);
     S.undoAvailable = false;
+    /* ⚠ A write left over from an EARLIER gesture. It belongs before the checkpoint:
+     * snapshotting ahead of it would make Undo revert that too. This is what makes
+     * the assertion below about THIS gesture rather than about queue position. */
+    S.pendingDefaultSetParams.push({ key: 't' + T + '_leftover_from_before', val: '1' });
     withDelete(jogClick);
     const q = queued();
     const cp = idxOf(q, /_undo_checkpoint=/);
-    assert(cp === 0, 'the checkpoint is not FIRST in the queue (at ' + cp + '): ' + q.join(' | '));
+    assert(cp >= 0, 'no checkpoint was queued at all: ' + q.join(' | '));
+    assert(idxOf(q, /_leftover_from_before=/) < cp,
+           'the checkpoint jumped ahead of an earlier gesture\'s pending write — Undo '
+           + 'would revert that too: ' + q.join(' | '));
     const firstWrite = q.findIndex((x) => /_clip_resolution=|_diq=|_clip_playback_dir=/.test(x));
-    assert(firstWrite > cp, 'a reset write precedes the checkpoint: ' + q.join(' | '));
+    assert(firstWrite > cp,
+           'a reset write precedes the checkpoint, so the snapshot would capture an '
+           + 'already-reset clip: ' + q.join(' | '));
     assert(S.undoAvailable === true, 'the CLIP reset left nothing to undo');
 });
 
