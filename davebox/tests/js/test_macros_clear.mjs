@@ -38,13 +38,17 @@ globalThis.shadow_set_param = (slot, key, val) => {
     writes.push({ slot, key, val: String(val) }); ENGINE[key] = String(val); return 1;
 };
 globalThis.shadow_send_midi_to_dsp = () => {};
+/* The DSP-bound writes, so the control below can prove `undo_restore` was NOT
+ * sent. Declared here because the blanket stub loop would swallow it. */
+let dspWrites = [];
+globalThis.host_module_set_param = (key, val) => { dspWrites.push(key + '=' + val); return 1; };
 globalThis.fill_rect = () => {}; globalThis.draw_rect = () => {};
 globalThis.stipple_rect = () => {}; globalThis.set_pixel = () => {};
 globalThis.clear_screen = () => {}; globalThis.print = () => {};
 globalThis.pixel_print = () => {}; globalThis.flush_display = () => {};
 globalThis.text_width = (t) => String(t).length * 6;
 for (const fn of ['host_write_file', 'host_read_file', 'host_file_exists', 'host_ensure_dir',
-                  'host_remove_dir', 'host_system_cmd', 'host_module_set_param',
+                  'host_remove_dir', 'host_system_cmd',
                   'host_module_get_param', 'host_send_midi', 'move_midi_inject_to_move',
                   'host_set_led', 'set_led', 'host_get_setting', 'host_set_setting',
                   'move_midi_internal_send', 'host_vol_block', 'host_edit_cc_block',
@@ -182,6 +186,60 @@ step('⚠⚠ LEAVING SOUND MODE drops it — or it paints over an unrelated scre
  * So: the line is defensive and unproven HERE. It is worth one device check —
  * open the confirm from the latched MACROS card, cancel it, then touch a knob and
  * confirm that touch does NOT clear the parameter's automation. */
+
+/* ---- ⭐ UNDO (Josh, 2026-09-13: "it should be undoable") --------------------
+ *
+ * ⚠⚠ AND THE CONTROL THAT MATTERS MOST: Undo must NOT send `undo_restore`. The
+ * macro store is not in any clip, so involving the DSP would revert an unrelated
+ * older clip edit out of its one-deep slot — a gesture that silently undoes
+ * something the user did minutes ago. That is why the JS unit exists at all. */
+const CC_UNDO = 56, CC_SHIFT = 49;   /* MoveUndo = 56 (ui_constants.mjs) */
+const undoPress = () => { cc(CC_UNDO, 127); cc(CC_UNDO, 0); };
+
+step('⭐ UNDO brings all eight macro assignments back', () => {
+    openOnMacros(5);
+    const wanted = (S.trackMacros[5] || []).map((m) => (m ? 1 : 0)).join('');
+    assert(assigned(5) === 3, 'setup: expected 3 assignments');
+    withDelete(click); ticks(2);
+    /* ⓘ Selecting OK directly. The jog's reach into the dialog is pinned by the
+     * regression-guard step above; this step is about what UNDO restores, and
+     * driving the selection here only adds a way for it to fail for another
+     * reason. */
+    S.confirmMacroClearSel = 0;
+    click(); ticks(6);
+    assert(assigned(5) === 0, 'setup: the clear did not happen');
+
+    writes = []; dspWrites = [];
+    undoPress(); ticks(8);
+    assert(assigned(5) === 3, 'UNDO did not restore the assignments: ' + JSON.stringify(S.trackMacros[5]));
+    assert((S.trackMacros[5] || []).map((m) => (m ? 1 : 0)).join('') === wanted,
+           'the assignments came back in the wrong SLOTS: expected ' + wanted);
+});
+
+step('⚠⚠ CONTROL: UNDO did NOT send undo_restore — no clip was touched', () => {
+    /* This is the whole reason for the typed unit. If it fires, Undo is reverting a
+     * clip edit the user never associated with this gesture. */
+    assert(!dspWrites.some((w) => w.indexOf('undo_restore') >= 0),
+           'Undo sent undo_restore for a JS-only change — it would revert an unrelated '
+           + 'older clip edit: ' + dspWrites.join(' | '));
+});
+
+step('⭐ and the CHAIN STORE is re-pointed, or the next merge would undo the undo', () => {
+    /* macroMigrateTick documents that a chain-store assignment WINS, so a restore
+     * that only fixed davebox's store would have the macros vanish again. */
+    const blob = writes.map((w) => w.key || '').join(' ');
+    assert(/knob_\d_set/.test(blob),
+           'no knob_N_set reached the chain store on undo: ' + blob);
+});
+
+step('⭐ SHIFT+UNDO clears them again (redo)', () => {
+    /* ⚠ Not vacuous: assert they are BACK before redoing, or "still cleared" passes
+     * for the wrong reason (it did, on the first run of this test). */
+    assert(assigned(5) === 3, 'setup: undo should have restored them first');
+    cc(CC_SHIFT, 127); undoPress(); cc(CC_SHIFT, 0); ticks(8);
+    assert(assigned(5) === 0,
+           'redo did not re-clear: ' + JSON.stringify(S.trackMacros[5]));
+});
 
 console.log(failed ? 'FAIL: test_macros_clear' : 'PASS: test_macros_clear');
 process.exit(failed);

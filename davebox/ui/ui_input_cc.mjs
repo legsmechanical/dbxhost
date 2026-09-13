@@ -2548,6 +2548,30 @@ function _onCC_transport(d1, d2) {
             if (devSnapUndo()) showActionPopup('UNDO', 'SNAPSHOT ' + (_n + 1));
             S.screenDirty = true; return;
         }
+        /* ⭐⭐ A JS-ONLY UNIT IS HANDLED HERE AND THE DSP IS NOT TOLD — the same
+         * short-circuit the snapshot recall above uses, and for the same reason: the
+         * gesture never touched a clip, so sending `undo_restore` would revert an
+         * unrelated older edit out of the DSP's one-deep slot. Kinds that need this:
+         * MACROS, ARP IN, the SOUND + CONFIG level VALUES, Seq Follow — none of them
+         * lives anywhere a clip snapshot can reach. See markJsUndo. */
+        if (S.shiftHeld && S.redoJs) {
+            const u = S.redoJs;
+            S.redoJs = null;
+            if (u.redo) u.redo();
+            S.undoJs = { kind: u.kind, undo: u.undo, redo: u.redo };
+            S.undoAvailable = true; S.redoAvailable = false;
+            showActionPopup('REDO', u.kind.toUpperCase());
+            S.screenDirty = true; forceRedraw(); return;
+        }
+        if (!S.shiftHeld && S.undoJs) {
+            const u = S.undoJs;
+            S.undoJs = null;
+            if (u.undo) u.undo();
+            S.redoJs = { kind: u.kind, undo: u.undo, redo: u.redo };
+            S.redoAvailable = true; S.undoAvailable = false;
+            showActionPopup('UNDO', u.kind.toUpperCase());
+            S.screenDirty = true; forceRedraw(); return;
+        }
         if (S.shiftHeld) {
             if (S.redoAvailable) {
                 if (S.redoSeqArpSnapshot) {

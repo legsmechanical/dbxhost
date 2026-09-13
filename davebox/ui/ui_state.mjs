@@ -53,6 +53,39 @@ export function nowMs() {
 export function noteUndoUnit() {
     S.undoAvailable = true; S.redoAvailable = false;
     S.undoSnapshot = null;  S.redoSnapshot = null;
+    /* ⚠⚠ AND IT RETIRES ANY JS-ONLY UNIT. The two cannot both be pending: the Undo
+     * handler checks the JS unit FIRST and returns, so a stale one would swallow the
+     * press and leave this DSP snapshot unreachable. Clearing it HERE rather than at
+     * every call site is deliberate — `undoSeqArpSnapshot` took the other approach
+     * and needs 31 hand-written nulls, three of which are missing. */
+    S.undoJs = null; S.redoJs = null;
+}
+
+/* ── A JS-ONLY UNDO UNIT ────────────────────────────────────────────────────
+ *
+ * For state no DSP snapshot can reach: per-TRACK params (ARP IN), the audio
+ * engine (the SOUND + CONFIG levels), and pure-JS stores (MACROS, Seq Follow).
+ *
+ * ⚠⚠ WHY THIS HAD TO EXIST BEFORE ANY OF THOSE COULD BE UNDOABLE. `undoAvailable`
+ * is one untyped boolean and the handler UNCONDITIONALLY sends `undo_restore`. So
+ * simply raising the flag after a JS-only change would ALSO revert whatever clip
+ * edit still sits in the DSP's one-deep slot — a gesture that undoes something the
+ * user did five minutes ago, silently. The handler now checks for a JS unit first
+ * and, finding one, does NOT involve the DSP at all. Same shape the device-snapshot
+ * recall already uses.
+ *
+ * `undo` and `redo` are CLOSURES supplied by the capturing module, which keeps the
+ * appliers where the state lives and needs no registry — and no import cycle, since
+ * ui_state imports nothing of theirs.
+ *
+ * ⚠ ONE DEEP, like every other layer here. A second unit discards the first. */
+export function markJsUndo(kind, undo, redo) {
+    S.undoJs = { kind: kind, undo: undo, redo: redo };
+    S.redoJs = null;
+    S.undoAvailable = true; S.redoAvailable = false;
+    /* A device-snapshot recall is a different mechanism with its own slot; a JS
+     * unit supersedes it for the same reason a DSP unit does. */
+    S.undoSnapshot = null; S.redoSnapshot = null;
 }
 
 export function armBankDisplay() {
@@ -224,6 +257,10 @@ export const S = {
     confirmMacroClearSel: 1,
     confirmMacroClearTrack: -1,
     confirmMacroClearSlot: -1,
+    /* The JS-only undo/redo unit — see markJsUndo. One deep, like every other
+     * undo layer. Holds closures, so nothing may JSON-stringify it. */
+    undoJs: null,
+    redoJs: null,
     allLanesQntResetTick: -1,   /* tick at which to reset bankParams[t][7][3] to -1 after knob release */
     allLanesQntResetTrack: -1,
     allLanesResResetTick: -1,

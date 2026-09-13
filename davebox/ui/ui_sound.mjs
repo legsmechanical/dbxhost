@@ -40,7 +40,7 @@ import * as ModBus from './ui_modbus.mjs';
  * confusing them is exactly what broke the bypass gesture. Used only for the
  * Back long-press, which davebox owns module-wide. */
 import { armBankDisplay, standDownBankDisplay, bankDisplayStamp, restoreBankDisplay,
-         noteUndoUnit, S as GS } from './ui_state.mjs';
+         noteUndoUnit, markJsUndo, S as GS } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 /* ⚠ Deliberate import cycle with ui_render (it imports soundRender from here);
  * safe because both sides only call the binding inside function bodies, never
@@ -5472,9 +5472,15 @@ const MACRO_UNTURNABLE = { file: 1, text: 1, opaque: 1 };
  * target per knob, so a leg's range and every other leg stay in the sidecar. */
 function macroMirrorToChain(i, mp) {
     if (S.bus || S.track < 0 || GS.trackRoute[S.track] !== 0) return;
+    macroMirrorToChainFor(i, mp, S.slot);
+}
+/* The same mirror against an EXPLICIT slot, for a deferred caller (an undo) whose
+ * slot may no longer be the one showing. `slot < 0` means "not chain-addressable". */
+function macroMirrorToChainFor(i, mp, slot) {
+    if (slot < 0) return;
     const ci = macroChainLegIdx(mp), leg = ci >= 0 ? mp.legs[ci] : null;
-    if (leg) queueChainWrite('knob_' + (i + 1) + '_set', leg.comp + ':' + leg.key);   /* level/bank: no chain form */
-    else queueChainWrite('knob_' + (i + 1) + '_clear', '1');
+    if (leg) queueChainWrite('knob_' + (i + 1) + '_set', leg.comp + ':' + leg.key, slot);
+    else queueChainWrite('knob_' + (i + 1) + '_clear', '1', slot);
 }
 
 /* ── THE MERGE from the chain store: first visit, and after a patch load ──
@@ -7963,8 +7969,47 @@ export function macroClearConfirmAnswer(ok) {
     const t = GS.confirmMacroClearTrack, slot = GS.confirmMacroClearSlot;
     macroClearConfirmReset();
     if (!ok) return;
+    /* ⭐ UNDOABLE (Josh, 2026-09-13: "it should be undoable"). The store is the
+     * OWNER — the chain slot's knob_N_* keys are a mirror of it (macroMirrorToChain)
+     * — so the before-image is a copy of the eight mappings, and restoring means
+     * putting them back and re-mirroring through the SAME path that writes them.
+     * ⚠ A JS unit, not a DSP one: none of this is in a clip, so Undo must NOT send
+     * `undo_restore` or it would revert an unrelated older edit. See markJsUndo. */
+    const before = (GS.trackMacros[t] || []).slice();
     const n = macroClearAllForTrack(t, slot);
+    if (n) {
+        markJsUndo('macros',
+            function () { macroRestoreForTrack(t, slot, before); },
+            function () { macroClearAllForTrack(t, slot); });
+    }
     showActionPopup('MACROS', n ? 'CLEARED' : 'NONE SET');
+}
+
+/* Put a captured set of eight mappings back, and re-mirror each to the chain so the
+ * next merge does not undo the undo (a chain-store assignment wins — macroMigrateTick).
+ * The screen caches are refreshed only when that track is still the one showing, for
+ * the same reason macroClearAllForTrack guards them. */
+function macroRestoreForTrack(t, slot, before) {
+    if (t < 0 || !before) return;
+    if (!GS.trackMacros[t]) GS.trackMacros[t] = new Array(NUM_KNOBS).fill(null);
+    const onScreen = (S.track === t);
+    for (let i = 0; i < NUM_KNOBS; i++) {
+        const mp = before[i] || null;
+        GS.trackMacros[t][i] = mp;
+        if (slot >= 0) {
+            /* Re-point the chain store, or clear it for a knob that was unassigned
+             * before the clear — mirroring null is what macroMirrorToChain does. */
+            macroMirrorToChainFor(i, mp, slot);
+        }
+        if (onScreen) {
+            S.knobAsn[i] = asnFromMacro(macroLeg0(mp));
+            S.macCells[i] = null;    S.macVals[i] = null;
+            S.macLegCells[i] = null; S.macLegVals[i] = null;
+            S.knobAccum[i] = 0;      S.macLastDir[i] = 0;
+        }
+    }
+    writeSidecar();
+    S.dirty = true;
 }
 
 /* ⚠⚠ TEARDOWN. This flag draws OVER everything (soundModeCovered), so anything
