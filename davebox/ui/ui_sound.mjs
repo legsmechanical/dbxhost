@@ -7877,8 +7877,61 @@ function hostedTakes(d1, d2) {
     }
 }
 
+/* Unassign all eight macros on a track. Mirrors knobLegRemove's teardown for
+ * every knob — the store, the assignment mirror, the CHAIN store (knob_N_clear),
+ * and every per-knob cache, because a stale cell would draw a macro that no
+ * longer exists. Persisted once at the end rather than eight times. */
+function macroClearAllForTrack(t) {
+    if (t < 0 || !GS.trackMacros[t]) return 0;
+    let n = 0;
+    for (let i = 0; i < NUM_KNOBS; i++) {
+        if (GS.trackMacros[t][i]) n++;
+        GS.trackMacros[t][i] = null;
+        S.knobAsn[i] = asnFromMacro(null);
+        macroMirrorToChain(i, null);
+        S.macCells[i] = null;    S.macVals[i] = null;
+        S.macLegCells[i] = null; S.macLegVals[i] = null;
+        S.knobAccum[i] = 0;      S.macLastDir[i] = 0;
+    }
+    writeSidecar();
+    S.dirty = true;
+    return n;
+}
+
 export function soundOnCC(d1, d2, decodeDelta) {
     if (!S.active) return false;
+    /* ⚠ THE MACROS-CLEAR CONFIRM OWNS THE INPUT WHILE IT IS OPEN, and it is
+     * checked FIRST — ahead of the param-pages branch below, which would
+     * otherwise hand the jog to the module editor's binding. Same grammar as
+     * every other confirm in this UI: jog turn flips the selection, jog click
+     * commits, Back cancels. Sel 0 = OK. */
+    if (GS.confirmMacroClear) {
+        if (d1 === 14) {                                   /* jog turn */
+            if (decodeDelta(d2) !== 0) {
+                GS.confirmMacroClearSel = GS.confirmMacroClearSel === 0 ? 1 : 0;
+                S.dirty = true;
+            }
+            return true;
+        }
+        if (d1 === 3 && d2 >= 64) {                        /* jog click = commit */
+            const ok = GS.confirmMacroClearSel === 0, t = GS.confirmMacroClearTrack;
+            GS.confirmMacroClear = false;
+            GS.confirmMacroClearTrack = -1;
+            if (ok) {
+                const n = macroClearAllForTrack(t);
+                showActionPopup('MACROS', n ? 'CLEARED' : 'NONE SET');
+            }
+            S.dirty = true;
+            return true;
+        }
+        if (d1 === 51 && d2 >= 64) {                       /* Back = cancel */
+            GS.confirmMacroClear = false;
+            GS.confirmMacroClearTrack = -1;
+            S.dirty = true;
+            return true;
+        }
+        if (d1 === 3 || d1 === 51) return true;            /* eat the releases */
+    }
 
     if (hostedTakes(d1, d2)) { S.dirty = true; return true; }
 
@@ -8302,6 +8355,21 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * ⓘ MACROS (bank 13) is not here yet — a macro's default is its LEG's
          * default, and the four leg kinds (level/bank/chain/midi) do not all
          * declare one. See the implementation plan. */
+        /* ⭐ MACROS bank: Delete + click CLEARS EVERY MACRO ASSIGNMENT on the
+         * track, after asking (Josh, 2026-09-13).
+         * ⚠⚠ This REPLACES the 2026-09-12 model's row for MACROS — which said
+         * "values → defaults, assignments unchanged". It is now the opposite, and
+         * only the assignments. The old reading is gone, not layered under this.
+         * ⚠ The values are NOT reset and the targets' AUTOMATION is left alone: a
+         * macro IS its target, so those lanes belong to parameters that still
+         * exist and are still reachable without the macro. */
+        if (S.deleteHeld && macrosActive() && S.track >= 0) {
+            GS.confirmMacroClear = true;
+            GS.confirmMacroClearSel = 0;
+            GS.confirmMacroClearTrack = S.track;
+            S.dirty = true;
+            return true;
+        }
         if (S.deleteHeld && levelsActive()) {
             const _t = S.track, _c = effectiveClip(_t);
             let _cleared = false;

@@ -195,6 +195,15 @@ export const S = {
     confirmLgto: false,
     confirmLgtoSel: 0,
     confirmLgtoIsDrum: false,
+    /* MACROS bank, Delete + jog click: clear EVERY macro assignment on the track
+     * (Josh, 2026-09-13 — this REPLACES the 09-12 model's "values to defaults,
+     * assignments unchanged"; it is now assignments, and only assignments).
+     * ⚠ It asks first, at Josh's instruction: eight assignments are real work to
+     * rebuild and nothing else on the bank is destructive. Sel 0 = OK, 1 = Cancel,
+     * matching every other confirm here. */
+    confirmMacroClear: false,
+    confirmMacroClearSel: 0,
+    confirmMacroClearTrack: -1,
     allLanesQntResetTick: -1,   /* tick at which to reset bankParams[t][7][3] to -1 after knob release */
     allLanesQntResetTrack: -1,
     allLanesResResetTick: -1,

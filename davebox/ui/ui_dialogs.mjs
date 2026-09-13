@@ -400,6 +400,18 @@ export function drawLgtoConfirm() {
     drawDlgBtn(58, 46, 64, 13, S.confirmLgtoSel === 1, 'Cancel');
 }
 
+/* MACROS bank, Delete + jog click: clear every macro ASSIGNMENT on the track.
+ * Josh, 2026-09-13, asked for the confirmation explicitly — eight assignments are
+ * real work to rebuild, and nothing else on that bank is destructive. */
+export function drawMacroClearConfirm() {
+    clear_screen();
+    drawMenuHeader('CLEAR MACROS');
+    print(4, 16, 'Unassign all 8 macros', 1);
+    print(4, 25, 'on this track.', 1);
+    drawDlgBtn(6,  46, 46, 13, S.confirmMacroClearSel === 0, 'OK');
+    drawDlgBtn(58, 46, 64, 13, S.confirmMacroClearSel === 1, 'Cancel');
+}
+
 export function drawBakeConfirm() {
     clear_screen();
     if (S.confirmBakeWrapPhase) {
