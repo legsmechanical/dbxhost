@@ -201,6 +201,54 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- THE CLIP SWITCH ITSELF, as a gesture ------------------------
+     *
+     * ⚠⚠ Every release assertion above calls pa_release_track / _request
+     * DIRECTLY, and that is exactly how this shipped broken twice. The function
+     * was pinned both ways and mutation-proof while ONE OF ITS FOUR CALLERS DID
+     * NOT EXIST: the immediate branch of tN_launch_clip (launch_quant=Now with
+     * the transport running) set tr->active_clip and released nothing. The three
+     * paths that did release made it read as covered.
+     *
+     * Josh, device 2026-09-12, reporting the SAME thing a second time after the
+     * JS drain fix: *"Clip B with no automation picks up where clip A's
+     * automation left off and stays there."* — and it stays, because clip B has
+     * no lane to take the parameter over.
+     *
+     * So this drives the GESTURE and asserts on the ring.
+     * → [[test-the-path-not-the-function]] */
+    {
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+
+        hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
+        pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
+        pa_playback_scan(in, &in->tracks[0], 0, 0, 0, 384, NULL);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "9000"), "clip 0's automation is driving the parameter");
+
+        /* Now + transport active — the immediate branch, not the queue. */
+        in->launch_quant = 0;
+        in->playing = 1;
+        in->tracks[0].clip_playing = 1;
+        hx_set_param(h, "t0_launch_clip", "1");
+        HX_ASSERT(in->tracks[0].active_clip == 1, "the switch really took the immediate path");
+
+        pa_release_service(in);          /* what the next render block does */
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, "1:fx1:cutoff 2000"),
+                  "⭐ switching INTO an empty clip stages the old clip's RESTING value");
+        OK("⭐ the clip switch gesture itself releases — not only stop/deactivate");
+
+        /* And switching back is not a one-off: the new clip has no lanes, so
+         * nothing should be staged for it, and clip 0 must release again when
+         * it next hands over. */
+        pa_playback_scan(in, &in->tracks[0], 0, 1, 0, 384, NULL);
+        pending(h, buf, sizeof(buf));
+        HX_ASSERT(lines(buf) == 0, "the empty clip drives nothing of its own");
+        hx_destroy(h);
+    }
+
     /* ---- one tick cannot flood the queue ---------------------------- */
     {
         /* A tick stages at most PA_TICK_MAX_STAGE changes. That is the budget

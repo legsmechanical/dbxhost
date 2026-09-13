@@ -74,6 +74,17 @@ static int sp_track_config(sp_ctx_t *cx) {
                 tr->current_step = initial_clip_step(_nls, newlen, _ncl->playback_dir);
                 _ncl->pp_dir_state = initial_pp_dir(_ncl->playback_dir);
             }
+            /* The OLD clip's automation lets go here TOO. Three other paths
+             * switch a clip and all three released — the quantized boundary and
+             * the page stop (seq8_render.c) and the stopped preview below — so
+             * this one read as covered while being the one a hand actually
+             * takes: launch_quant=Now with the transport running. Josh, device
+             * 2026-09-12, twice: *"clip B with no automation picks up where clip
+             * A's automation left off and stays there."* Nothing ever staged a
+             * resting value, so there was nothing for JS to drain.
+             * SPI thread: REQUEST it — the ring keeps its one producer. */
+            if (tr->active_clip != (uint8_t)new_cidx)
+                pa_release_request(inst, tidx, (int)tr->active_clip);
             tr->active_clip      = (uint8_t)new_cidx;
             pfx_sync_from_clip(tr);
             if (tr->tick_in_step >= tr->clips[new_cidx].ticks_per_step)
