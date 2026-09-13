@@ -1151,6 +1151,11 @@ export function markSoundDirty() { S.dirty = true; }
  * Move-routed track opens its bus, not a chain slot). */
 /* The current view, for a caller that needs to record where the user was. */
 export function soundViewForTest() { return S.view; }
+/* ui_sound's own `S.deleteHeld` — the modifier latch. Exposed because the
+ * MACROS-clear gesture must RELEASE it itself (its release never arrives, see
+ * the opener), and a latched Delete silently clears automation on every later
+ * knob touch. A test can only see that from outside. */
+export function soundDeleteHeldForTest() { return S.deleteHeld; }
 /* The module menu (VIEW_MENU) as the user sees it: which level, how deep, the
  * cursor, and the row kinds/labels. */
 export function soundMenuForTest() {
@@ -1616,6 +1621,10 @@ export function soundExit(opts) {
     log('exit: view ' + S.view + ' track ' + S.track + ' opts ' + JSON.stringify(opts || null) + ' from ' +
         String(new Error().stack || '').split('\n').slice(2, 5).map((l) => l.trim()).join(' | '));
     wavEditCloseIfOpen();      /* nothing may outlive sound mode itself */
+    /* …INCLUDING the MACROS-clear confirm, which is about a bank that only exists
+     * while this mode is open. It draws over everything, so an exit that left it
+     * standing would paint it on the track overview with no way to dismiss it. */
+    macroClearConfirmReset();
     const _opts = (opts && typeof opts === 'object') ? opts : {};
     const _leaving = _opts.leaving === true;
     /* Any exit at all spends the gesture crumb. A crumb that outlives its screen
@@ -3261,11 +3270,18 @@ function slotCfgStep(delta) {
  * can retarget to another track before the drain, and a send raised against
  * one slot must not land in the one that replaced it. */
 /* Chain-level twin of queueSlotCfgWrite: same queue, bare-key namespace. */
-function queueChainWrite(key, val) {
+/* `slot` defaults to the CURRENT one, which is right for every knob-turn caller.
+ * ⚠ Pass it explicitly when the write belongs to a slot the user may have
+ * navigated away from before the drain — a deferred confirm, say. The queue is
+ * drained later, so capturing S.slot at drain time would write to whatever slot
+ * is showing THEN (the comment on queueSlotCfgWrite below says the same thing
+ * about retargeting). */
+function queueChainWrite(key, val, slot) {
+    const sl = (slot === undefined) ? S.slot : slot;
     for (const w of S.pendingSlotWrites) {
-        if (w.chain && w.key === key && w.slot === S.slot) { w.val = val; return; }
+        if (w.chain && w.key === key && w.slot === sl) { w.val = val; return; }
     }
-    S.pendingSlotWrites.push({ slot: S.slot, key: key, val: val, chain: true });
+    S.pendingSlotWrites.push({ slot: sl, key: key, val: val, chain: true });
 }
 
 /* No `comp` argument: the only writer that addressed a component namespace
@@ -7881,57 +7897,103 @@ function hostedTakes(d1, d2) {
  * every knob — the store, the assignment mirror, the CHAIN store (knob_N_clear),
  * and every per-knob cache, because a stale cell would draw a macro that no
  * longer exists. Persisted once at the end rather than eight times. */
-function macroClearAllForTrack(t) {
+/* ⚠⚠ TWO SCOPES, AND THEY CAN DISAGREE. The store is addressed by the track the
+ * confirm was OPENED on; the screen caches and the chain slot belong to whatever
+ * is SHOWING NOW. Nothing stops the user pressing a track button while the
+ * dialog is up, and the first cut of this mixed the two: it cleared track A's
+ * store while sending the eight `knob_N_clear` writes to track B's slot — so B
+ * lost its chain assignments and A's came BACK on the next merge, because the
+ * chain store still held them and a chain-store assignment wins (macroMigrateTick).
+ *
+ * So: the store and the CHAIN writes use the captured track/slot, and the screen
+ * caches are touched only when that track is still the one on screen.
+ * ⚠ `slot < 0` means "was not chain-addressable when opened" (a bus, or a
+ * non-Schwung route) — captured at OPEN time, because S.bus can change after. */
+function macroClearAllForTrack(t, slot) {
     if (t < 0 || !GS.trackMacros[t]) return 0;
+    const onScreen = (S.track === t);
     let n = 0;
     for (let i = 0; i < NUM_KNOBS; i++) {
         if (GS.trackMacros[t][i]) n++;
         GS.trackMacros[t][i] = null;
-        S.knobAsn[i] = asnFromMacro(null);
-        macroMirrorToChain(i, null);
-        S.macCells[i] = null;    S.macVals[i] = null;
-        S.macLegCells[i] = null; S.macLegVals[i] = null;
-        S.knobAccum[i] = 0;      S.macLastDir[i] = 0;
+        if (slot >= 0) queueChainWrite('knob_' + (i + 1) + '_clear', '1', slot);
+        if (onScreen) {
+            S.knobAsn[i] = asnFromMacro(null);
+            S.macCells[i] = null;    S.macVals[i] = null;
+            S.macLegCells[i] = null; S.macLegVals[i] = null;
+            S.knobAccum[i] = 0;      S.macLastDir[i] = 0;
+        }
     }
     writeSidecar();
     S.dirty = true;
     return n;
 }
 
+/* OPEN the confirm. One owner, because the gesture arrives by TWO routes and the
+ * capture has to be identical on both:
+ *   · sound mode steering (the latched MACROS card) → soundOnCC's jog-click branch
+ *   · the RESTING MACROS overview → ui_input_cc's Delete+jog arm, because there
+ *     only the eight knobs reach sound mode; the jog click is davebox's.
+ * The first cut only had the first route, so the gesture did nothing on the
+ * overview — the more likely place to use it.
+ * Returns false when there is no track to act on, so the caller can fall through. */
+export function macroClearConfirmOpen() {
+    if (!S.active || S.track < 0) return false;
+    GS.confirmMacroClear = true;
+    GS.confirmMacroClearSel = 0;
+    GS.confirmMacroClearTrack = S.track;
+    /* Captured at OPEN, not at commit: S.bus and the route can change while the
+     * dialog is up. -1 = not chain-addressable. */
+    GS.confirmMacroClearSlot = (!S.bus && GS.trackRoute[S.track] === 0) ? S.slot : -1;
+    /* ⚠⚠ RELEASE THE MODIFIER OURSELVES. ui_sound's `S.deleteHeld` is cleared only
+     * by the RELEASE — which will never arrive, because the flag we just raised
+     * makes `soundModeCovered()` true and ui.js stops routing CCs here. Left
+     * latched, every later knob touch in sound mode would clear that parameter's
+     * automation. The gesture is finished; drop it. */
+    S.deleteHeld = false;
+    S.dirty = true;
+    return true;
+}
+
+/* The confirm's answer, owned here because the macro store is. Called from
+ * ui_input_cc — see the banner at soundOnCC for why the handler cannot live in
+ * this file's CC path. `ok` false is Cancel: clear the flags, touch nothing. */
+export function macroClearConfirmAnswer(ok) {
+    const t = GS.confirmMacroClearTrack, slot = GS.confirmMacroClearSlot;
+    macroClearConfirmReset();
+    if (!ok) return;
+    const n = macroClearAllForTrack(t, slot);
+    showActionPopup('MACROS', n ? 'CLEARED' : 'NONE SET');
+}
+
+/* ⚠⚠ TEARDOWN. This flag draws OVER everything (soundModeCovered), so anything
+ * that leaves the screen it belongs to must drop it or the dialog is painted on
+ * top of an unrelated view with nothing able to dismiss it. ui_input_cc has
+ * THREE parallel teardown lists plus soundExit — all four call this. */
+export function macroClearConfirmReset() {
+    GS.confirmMacroClear = false;
+    GS.confirmMacroClearSel = 0;
+    GS.confirmMacroClearTrack = -1;
+    GS.confirmMacroClearSlot = -1;
+}
+
 export function soundOnCC(d1, d2, decodeDelta) {
     if (!S.active) return false;
-    /* ⚠ THE MACROS-CLEAR CONFIRM OWNS THE INPUT WHILE IT IS OPEN, and it is
-     * checked FIRST — ahead of the param-pages branch below, which would
-     * otherwise hand the jog to the module editor's binding. Same grammar as
-     * every other confirm in this UI: jog turn flips the selection, jog click
-     * commits, Back cancels. Sel 0 = OK. */
-    if (GS.confirmMacroClear) {
-        if (d1 === 14) {                                   /* jog turn */
-            if (decodeDelta(d2) !== 0) {
-                GS.confirmMacroClearSel = GS.confirmMacroClearSel === 0 ? 1 : 0;
-                S.dirty = true;
-            }
-            return true;
-        }
-        if (d1 === 3 && d2 >= 64) {                        /* jog click = commit */
-            const ok = GS.confirmMacroClearSel === 0, t = GS.confirmMacroClearTrack;
-            GS.confirmMacroClear = false;
-            GS.confirmMacroClearTrack = -1;
-            if (ok) {
-                const n = macroClearAllForTrack(t);
-                showActionPopup('MACROS', n ? 'CLEARED' : 'NONE SET');
-            }
-            S.dirty = true;
-            return true;
-        }
-        if (d1 === 51 && d2 >= 64) {                       /* Back = cancel */
-            GS.confirmMacroClear = false;
-            GS.confirmMacroClearTrack = -1;
-            S.dirty = true;
-            return true;
-        }
-        if (d1 === 3 || d1 === 51) return true;            /* eat the releases */
-    }
+    /* ⚠⚠ THE MACROS-CLEAR CONFIRM IS **NOT** HANDLED HERE, AND THAT IS THE WHOLE
+     * POINT. It was, for one commit, and the result was a screen nothing on the
+     * device could dismiss:
+     *
+     *   ui.js:655   const _soundSteers = soundActive() && !soundModeCovered() …
+     *
+     * The confirm is registered in `soundModeCovered()` so it can DRAW over this
+     * bank — which is the same predicate that stops sound mode steering input. So
+     * a handler placed in `soundOnCC` becomes unreachable at the exact moment its
+     * flag goes up. Every sibling confirm (confirmLgto, confirmXpose, confirmBake)
+     * lives in ui_input_cc.mjs for this reason; ours is beside them now.
+     *
+     * ⚠ A JS test that calls `soundOnCC` DIRECTLY cannot see this, because it
+     * bypasses the gate in ui.js. The test enters through onMidiMessageInternal.
+     * → [[wired-is-not-reachable]] */
 
     if (hostedTakes(d1, d2)) { S.dirty = true; return true; }
 
@@ -8363,13 +8425,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * ⚠ The values are NOT reset and the targets' AUTOMATION is left alone: a
          * macro IS its target, so those lanes belong to parameters that still
          * exist and are still reachable without the macro. */
-        if (S.deleteHeld && macrosActive() && S.track >= 0) {
-            GS.confirmMacroClear = true;
-            GS.confirmMacroClearSel = 0;
-            GS.confirmMacroClearTrack = S.track;
-            S.dirty = true;
-            return true;
-        }
+        if (S.deleteHeld && macrosActive() && macroClearConfirmOpen()) return true;
         if (S.deleteHeld && levelsActive()) {
             const _t = S.track, _c = effectiveClip(_t);
             let _cleared = false;

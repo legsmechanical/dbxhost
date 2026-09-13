@@ -58,7 +58,8 @@ import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam } from './ui_sound.mjs';
 import { soundActive, soundOpen, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
-    soundViewForTest, soundEnterBuses } from './ui_sound.mjs';
+    soundViewForTest, soundEnterBuses, macroClearConfirmAnswer,
+    macroClearConfirmReset, macroClearConfirmOpen } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
 /* ⚠ one-way: ui_render never imports this module (checked 2026-08-31) —
@@ -244,6 +245,21 @@ function _onCC_jog(d1, d2) {
         }
         S.confirmBakeScene = false;
         S.screenDirty      = true;
+        return;
+    }
+
+    /* MACROS-clear confirm: jog click commits (OK unassigns all 8, Cancel aborts).
+     * ⚠⚠ IT LIVES HERE, NOT IN ui_sound's CC PATH, and that is load-bearing. The
+     * flag is in `soundModeCovered()` so the dialog can DRAW over the MACROS bank
+     * — and ui.js gates sound mode's input on that SAME predicate
+     * (`_soundSteers = soundActive() && !soundModeCovered()`). A handler inside
+     * `soundOnCC` is therefore unreachable the moment the flag goes up, which is
+     * exactly how the first cut shipped a dialog nothing could dismiss. Every
+     * sibling confirm is here for this reason. → [[wired-is-not-reachable]] */
+    if (d1 === 3 && d2 === 127 && S.confirmMacroClear) {
+        macroClearConfirmAnswer(S.confirmMacroClearSel === 0);
+        S.screenDirty = true;
+        forceRedraw();
         return;
     }
 
@@ -617,6 +633,15 @@ function modalDialogUp() {
         return;
     }
     if (d1 === 3 && d2 === 127 && S.deleteHeld && !S.sessionView) {
+        /* ⭐ MACROS: clear the track's assignments, after asking. Handled HERE as
+         * well as in sound mode's own jog branch, because on the RESTING MACROS
+         * overview only the eight knobs reach sound mode — the jog click is
+         * davebox's (see ui.js's _restKnob). Without this the gesture did nothing
+         * on the overview, which is the likelier place to use it. One owner does
+         * the capture; this is just the second door into it. */
+        if (S.activeBank === BANK_MACROS && macroClearConfirmOpen()) {
+            S.screenDirty = true; forceRedraw(); return;
+        }
         if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
             if (S.drumPerformMode[S.activeTrack] > 0) {
                 /* Rpt/Rpt2 mode: Delete+jog = reset current lane groove params */
@@ -909,6 +934,13 @@ function modalDialogUp() {
             const delta = decodeDelta(d2);
             if (delta !== 0) {
                 S.confirmLgtoSel = S.confirmLgtoSel === 0 ? 1 : 0;
+                S.screenDirty = true;
+            }
+            return;
+        }
+        if (S.confirmMacroClear) {
+            if (decodeDelta(d2) !== 0) {
+                S.confirmMacroClearSel = S.confirmMacroClearSel === 0 ? 1 : 0;
                 S.screenDirty = true;
             }
             return;
@@ -2015,6 +2047,7 @@ function returnToOverview() {
         S.lastSentMenuEditValue = null; S.bpmWasEditing = false;
     }
     if (S.confirmLgto)         S.confirmLgto = false;
+    if (S.confirmMacroClear)   macroClearConfirmReset();
     if (S.confirmBake)         { S.confirmBake = false; S.confirmBakeWrapPhase = false; }
     if (S.recordBlockedDialog) S.recordBlockedDialog = false;
     if (S.bpmMoveInfo)         S.bpmMoveInfo = false;
@@ -2168,6 +2201,7 @@ function _backTap() {
                                      }
                                      S.lastSentMenuEditValue = null; S.bpmWasEditing = false;
                                      forceRedraw(); return; }
+    if (S.confirmMacroClear)       { macroClearConfirmReset(); forceRedraw(); return; }
     if (S.confirmLgto)             { S.confirmLgto = false; forceRedraw(); return; }
     if (S.confirmBake)             { S.confirmBake = false; S.confirmBakeWrapPhase = false; forceRedraw(); return; }
     if (S.recordBlockedDialog)     { S.recordBlockedDialog = false; forceRedraw(); return; }
@@ -4561,6 +4595,12 @@ function _switchViewCleanup() {
      * to it, and the next click re-opens exactly where you were. */
     S.sessMixerLatched = false;
     S.bankCardLatched  = false;
+    /* ⚠ The MACROS-clear confirm draws over EVERYTHING (soundModeCovered), so a
+     * view switch must drop it or it is painted on top of the view you land on
+     * with nothing able to dismiss it. This is the THIRD of the parallel
+     * teardown lists this file warns about; the others are _backTap and
+     * returnToOverview, plus soundExit in ui_sound.mjs. */
+    macroClearConfirmReset();
     autoBankReset();
     stepRecExit();
     standDownBankDisplay(true);

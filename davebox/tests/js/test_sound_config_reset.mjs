@@ -196,56 +196,10 @@ step('⚠⚠ CONTROL: inside the MODULE EDITOR the gesture does NOT reset the ba
            'the editor reset the BANK levels (volume became ' + after + ')');
 });
 
-/* ---- MACROS bank: Delete + click clears the ASSIGNMENTS, after asking -----
- * Josh, 2026-09-13: *"delete click on macro bank clears all macro assignments
- * for the track. but it needs a yes/no confirmation option before it executes."*
- * ⚠ This REPLACES the 09-12 model's "values to defaults, assignments unchanged". */
-const BANK_MACROS = 13;
-function seedMacros(t) {
-    GS.trackMacros[t] = [
-        { v: 0.5, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 }] },
-        null, null,
-        { v: 0.5, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 }] },
-        null, null, null, null,
-    ];
-}
-const assignedCount = (t) => (GS.trackMacros[t] || []).filter((m) => !!m).length;
-
-step('Delete + click on MACROS ASKS FIRST — nothing is cleared yet', () => {
-    snd.soundExit(); enterTrack(1);
-    seedMacros(1);
-    snd.soundSetBank(BANK_MACROS); ticks(3);
-    assert(assignedCount(1) === 2, 'setup: expected 2 assignments, got ' + assignedCount(1));
-    withDelete(click);
-    ticks(2);
-    assert(GS.confirmMacroClear === true, 'the confirm did not open');
-    assert(GS.confirmMacroClearSel === 0, 'the confirm should open on OK');
-    assert(assignedCount(1) === 2,
-           '⚠⚠ it cleared BEFORE the confirm was answered — the whole point of asking');
-});
-
-step('⚠⚠ CONTROL: Cancel keeps every assignment', () => {
-    cc(14, 1); ticks(1);                       /* jog turn -> Cancel */
-    assert(GS.confirmMacroClearSel === 1, 'the jog did not move the selection');
-    click(); ticks(2);
-    assert(GS.confirmMacroClear === false, 'the confirm stayed open after a click');
-    assert(assignedCount(1) === 2, 'Cancel cleared them anyway (' + assignedCount(1) + ' left)');
-});
-
-step('⭐ OK clears all eight assignments on the track', () => {
-    withDelete(click); ticks(2);
-    assert(GS.confirmMacroClear === true, 'the confirm did not re-open');
-    click(); ticks(3);                         /* sel 0 = OK */
-    assert(GS.confirmMacroClear === false, 'the confirm stayed open');
-    assert(assignedCount(1) === 0, 'assignments survived: ' + JSON.stringify(GS.trackMacros[1]));
-});
-
-step('⚠ CONTROL: the CHAIN store is told too, so the clear is not JS-only', () => {
-    /* macroMirrorToChain queues knob_N_clear; without it the chain store would
-     * re-seed the macros on the next merge and they would come back. */
-    const cleared = writes.filter((w) => /knob_\d_clear/.test(w.key));
-    assert(cleared.length > 0, 'no knob_N_clear reached the chain store: ' + JSON.stringify(writes.slice(-8)));
-});
+/* ⓘ The MACROS bank's clear lives in test_macros_clear.mjs, not here: it must be
+ * driven through `onMidiMessageInternal` rather than `soundOnCC`, because its
+ * confirm flag turns off sound mode's own CC routing. A direct-call test cannot
+ * see that and passed against a dialog nothing could dismiss. */
 
 console.log(failed ? 'FAIL: test_sound_config_reset' : 'PASS: test_sound_config_reset');
 process.exit(failed);

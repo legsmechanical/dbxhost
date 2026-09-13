@@ -204,6 +204,7 @@ export const S = {
     confirmMacroClear: false,
     confirmMacroClearSel: 0,
     confirmMacroClearTrack: -1,
+    confirmMacroClearSlot: -1,
     allLanesQntResetTick: -1,   /* tick at which to reset bankParams[t][7][3] to -1 after knob release */
     allLanesQntResetTrack: -1,
     allLanesResResetTick: -1,
