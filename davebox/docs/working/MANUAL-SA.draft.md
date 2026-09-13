@@ -823,6 +823,7 @@ those); the rest only change how the clip plays.
 | Gesture | Result |
 |---|---|
 | **Delete + jog click** | Reset every parameter in the active bank. One-shot actions (Beat Stretch, Clock Shift, Apply Legato) hold no value, so they are left alone |
+| **Delete + jog click** on **MACROS** | Unassign all eight macros on the track. **Asks first** — jog to choose, click to answer. Values and automation are left alone |
 | **Shift + Delete + jog click** | Reset the whole MIDI effect chain — NOTE FX, HARMZ, MIDI DLY and SEQ ARP |
 | **Shift + Delete + side button** | Reset the whole clip — notes and all parameters |
 
