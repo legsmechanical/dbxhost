@@ -4635,9 +4635,14 @@ static void shadow_drain_param_lane(void) {
 
         n++;
         if (n >= PARAM_LANE_MAX_RECORDS_PER_FRAME) { param_lane_budget_frames++; break; }
-        /* Time budget, checked the way pserve times inside the callback.
-         * Leftovers stay in the lane, in order, for the next frame. */
-        if ((n & 7u) == 0) {
+        /* Time budget, checked after EVERY record the way pserve times inside
+         * the callback — a vDSO clock read is cheap next to an apply, and a
+         * check every 8th record would let one slow apply be followed by
+         * seven more before anyone looked (adversarial review, 2026-09-14).
+         * The loaders that could be slow are kept off the lane by the
+         * classifier; this is the second line. Leftovers stay in the lane, in
+         * order, for the next frame. */
+        {
             struct timespec t1;
             clock_gettime(CLOCK_MONOTONIC, &t1);
             if (timespec_delta_us(&t0, &t1) >= PARAM_LANE_BUDGET_US) {

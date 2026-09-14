@@ -64,15 +64,34 @@
  *                          rather than a new rule — and a state restore is a
  *                          thing the caller waits on before reading back.
  *
- * Not excluded (worth stating, because they look risky and are not):
- *   synth:module / fx1:module / load_file / load_patch — these DO activate a
- *   slot, but slot activation is idempotent and nothing reads a response from
- *   them; they arrive on the lane in producer order ahead of any later read,
- *   which is precisely the ordering guarantee the lane is built on.
+ *   "<comp>:module", "load_file", "load_patch", "patch"
+ *                          LOADERS. Each dlopen()s a plugin or reads a capture
+ *                          file inside shadow_param_apply_set — on the SPI
+ *                          thread, as the mailbox always did, but the mailbox
+ *                          paced them at ONE per frame. The lane drains up to
+ *                          256 records a frame, so a preset or snapshot recall
+ *                          could run several loads back to back in one ~900 µs
+ *                          callback (adversarial review, 2026-09-14). They keep
+ *                          the mailbox's pacing by staying on it; the writes
+ *                          behind them queue in order (the producer gate also
+ *                          requires the mailbox idle).
  */
 static inline int spl_key_eligible(const char *key)
 {
     if (key == NULL || key[0] == '\0') return 0;
+
+    /* Loaders: any "<...>:module" (synth/fxN/midi_fxN/master_fx/send_fx/
+     * move_fx alike — the suffix is the contract), and the capture/patch
+     * loaders in every spelling the dispatcher accepts. */
+    {
+        size_t n = strlen(key);
+        if (n >= 7 && strcmp(key + n - 7, ":module") == 0) return 0;
+        if (strcmp(key, "load_file") == 0 || strcmp(key, "load_patch") == 0 ||
+            strcmp(key, "patch") == 0) return 0;
+        if ((n >= 10 && strcmp(key + n - 10, ":load_file") == 0) ||
+            (n >= 11 && strcmp(key + n - 11, ":load_patch") == 0) ||
+            (n >= 6 && strcmp(key + n - 6, ":patch") == 0)) return 0;
+    }
 
     /* Serialized blobs: "state" and any "<prefix>:state". Checked FIRST, so
      * that `overtake_dsp:state` — a whole serialized instrument — is caught

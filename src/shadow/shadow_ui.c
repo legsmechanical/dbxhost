@@ -984,11 +984,18 @@ static int shadow_set_param_common(int slot, const char *key, const char *value,
          *     so a key whose SET has a consequence the caller reads (a
          *     lifecycle load/unload, a jack: special) must not take it. See
          *     host/shadow_param_lane_policy.h for each exclusion and why.
-         *   - spq_count(&g_param_pending) == 0: THIS is what preserves order.
-         *     The lane and the mailbox are two wires; a write that jumps to
-         *     the lane while earlier writes are still queued for the mailbox
-         *     would overtake them. Once anything is queued, everything queues
-         *     until the queue drains, and the two wires can never interleave.
+         *   - spq_count(&g_param_pending) == 0 AND shadow_param_mailbox_idle():
+         *     THESE preserve order. The lane and the mailbox are two wires and
+         *     the shim drains the lane FIRST, so a write that takes the lane
+         *     while an earlier write is still queued for — or already SITTING
+         *     IN — the mailbox would overtake it. The queue check alone missed
+         *     the second case: SPQ_COMMIT_NOW and the pending drain both leave
+         *     the queue empty with a request unserviced in the mailbox
+         *     (adversarial review, 2026-09-14 — an `overtake_dsp:load` in the
+         *     mailbox with the module's init writes overtaking it on the lane
+         *     is the 09-05 fresh-project failure by another road). Once
+         *     anything is queued or in flight, everything queues until both
+         *     are clear, and the two wires never interleave.
          *   - spl_push(...): it refuses a lane the shim has not stamped, an
          *     oversize key/value and a full ring — every one of which simply
          *     falls through to the queue below. A refusal costs nothing and
@@ -996,6 +1003,7 @@ static int shadow_set_param_common(int slot, const char *key, const char *value,
          * The dirty marking above stays where it is: it runs for EVERY write
          * whichever wire it takes, which is why it is not repeated here. */
         if (spl_key_eligible(key) && spq_count(&g_param_pending) == 0 &&
+                shadow_param_mailbox_idle() &&
                 spl_push(shadow_param_lane, (uint8_t)slot, 0, key, value)) {
             param_lane_trace_push(slot, key, value,
                                   spl_used(shadow_param_lane,
@@ -1007,6 +1015,7 @@ static int shadow_set_param_common(int slot, const char *key, const char *value,
         param_lane_trace_fallback(slot, key,
                                   !spl_key_eligible(key)                ? "ineligible-key"
                                   : spq_count(&g_param_pending) != 0    ? "queue-not-empty"
+                                  : !shadow_param_mailbox_idle()        ? "mailbox-busy"
                                   : !spl_ready(shadow_param_lane)       ? "lane-not-ready"
                                                                         : "push-refused");
 
@@ -1131,31 +1140,32 @@ static JSValue shadow_param_bulk_js(JSContext *ctx, int argc, JSValueConst *argv
      * bulk STAYS on the mailbox: it reaches the module's own set_param and its
      * callers sequence reads against it.
      *
-     * The three conditions are the single path's, verbatim (eligible key,
-     * pending queue empty, push succeeded), plus the overtake fire-and-forget
-     * mode the single path gates on, plus one this path needs: the payload
-     * must survive a NUL-terminated round trip. The wire carries explicit
-     * lengths and the lane does not, so a payload with an embedded NUL takes
-     * the mailbox rather than being silently truncated.
+     * The conditions are the single path's, verbatim (eligible key, pending
+     * queue empty, mailbox idle, push succeeded), plus the overtake
+     * fire-and-forget mode the single path gates on, plus two this path needs:
+     *   - TRANSIENT ONLY. A transient bulk is one whose caller has declared
+     *     "nobody reads the result and nothing dirties" — automation playback
+     *     and a SnapMorph turn. A NON-transient bulk is an EDIT or a RECALL:
+     *     the host's snapshot recall (`snapshotRecallTick`) counts its
+     *     `restored` from this boolean and refreshes caches on the strength of
+     *     it, and davebox's automation flush re-pends a refused batch. Those
+     *     callers were written against a bulk that had LANDED on return, so
+     *     they keep the blocking wire (adversarial review, 2026-09-14).
+     *   - the payload must survive a NUL-terminated round trip: the wire
+     *     carries explicit lengths and the lane does not, so a payload with
+     *     an embedded NUL takes the mailbox rather than being truncated.
      *
      * We return true only when the push SUCCEEDED; every refusal falls
      * through to the blocking path below, so the caller's boolean never
      * claims a write that did not happen (only one that has not landed YET,
-     * which is the fire-and-forget contract).
-     *
-     * The dirty/transient marking below reads shadow_param->key because the JS
-     * string is freed by then; this branch runs BEFORE that and so marks from
-     * the local `key`, with the same condition. */
-    if (req_type == 4 && strcmp(key, "chain:") == 0 &&
+     * which is exactly what `transient` promised). Transient means no dirty
+     * marking, so none is repeated here. */
+    if (req_type == 4 && transient && strcmp(key, "chain:") == 0 &&
             shadow_control && shadow_control->overtake_mode >= 2 &&
             strlen(value) == vlen &&
             spl_key_eligible(key) && spq_count(&g_param_pending) == 0 &&
+            shadow_param_mailbox_idle() &&
             spl_push(shadow_param_lane, (uint8_t)slot, SPL_FLAG_BULK, key, value)) {
-        if (!transient) {
-            if (slot < 32 && shadow_param_key_dirties(key))
-                g_slot_param_dirty_mask |= (1u << slot);
-            shadow_mark_fx_bus_dirty(key);
-        }
         param_lane_trace_push(slot, key, value,
                               spl_used(shadow_param_lane,
                                        __atomic_load_n(&shadow_param_lane->tail_published,

@@ -208,7 +208,10 @@ spl_push(shadow_param_lane_t *r, uint8_t slot, uint8_t flags,
 
     size_t key_len = strlen(key);
     size_t value_len = strlen(value);
-    if (key_len > SHADOW_PARAM_LANE_KEY_MAX || value_len > SHADOW_PARAM_LANE_VALUE_MAX) {
+    /* An EMPTY key is refused on purpose: a parameter always has a name, and
+     * the consumer treats key_len == 0 as a header nobody wrote (see spl_pop).
+     * Keeping the two rules symmetric is what makes the zero-header reject safe. */
+    if (key_len == 0 || key_len > SHADOW_PARAM_LANE_KEY_MAX || value_len > SHADOW_PARAM_LANE_VALUE_MAX) {
         return 0;
     }
 
@@ -289,7 +292,15 @@ spl_pop(shadow_param_lane_t *r, uint32_t *tail, spl_record_t *out)
          * burst is recoverable (the UI's verify-and-rewrite re-reads), a
          * smashed stack is not. The caller counts these via the return
          * value of 0 with `*tail == head` after a non-empty check. */
-        if (key_len > SHADOW_PARAM_LANE_KEY_MAX || value_len > SHADOW_PARAM_LANE_VALUE_MAX) {
+        /* key_len == 0 is the header that a ZEROED ring presents: the shim
+         * re-zeroes the segment on restart, and a producer mid-push can land
+         * its head store after that memset, so [tail, head) is all zeros —
+         * which parse as valid 5-byte records with an empty key. spl_push
+         * never writes one, so it is torn state, and it must be dropped, not
+         * applied as set_param("", "") on the SPI thread (adversarial review,
+         * 2026-09-14). */
+        if (key_len == 0 ||
+            key_len > SHADOW_PARAM_LANE_KEY_MAX || value_len > SHADOW_PARAM_LANE_VALUE_MAX) {
             *tail = head;
             __atomic_store_n(&r->tail_published, head, __ATOMIC_RELEASE);
             return 0;

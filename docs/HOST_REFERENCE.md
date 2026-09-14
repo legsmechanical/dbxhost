@@ -367,14 +367,21 @@ classifier accepts (`shadow_param_lane_policy.h`, `spl_key_eligible`). The shim
 (`shadow_drain_param_lane` in `schwung_shim.c`) drains the lane at the top of every frame, **before** it services the mailbox, so many writes
 land in one frame instead of one per frame; a write pushed to the lane before a read reaches the
 mailbox is applied before that read is served. Excluded from the lane, always: `overtake_dsp:load`
-/`unload`, `jack:`, `suspend_overtake`, `passthrough`, and any `*:state`/blob key — these keep
-lifecycle side effects or exceed the record size cap, so they stay on the mailbox. Eligible AND
-`spq` empty AND the lane has room → lane; otherwise the existing `spq_offer` path, unchanged.
+/`unload`, `jack:`, `suspend_overtake`, `passthrough`, any `*:state`/blob key, and the LOADERS —
+any `<comp>:module`, `load_file`, `load_patch`, `patch` — which dlopen or read a capture inside the
+dispatcher and keep the mailbox's one-per-frame pacing (the lane would run several per SPI
+callback). Eligible AND `spq` empty AND **the mailbox idle** AND the lane has room → lane; otherwise
+the existing `spq_offer` path, unchanged. The mailbox-idle condition is not optional: the queue can
+be empty while a request still sits unserviced in the mailbox (`SPQ_COMMIT_NOW`), and the lane is
+drained first, so without it a lane write overtakes that request. Bulk SETs take the lane only when
+**transient** (automation playback, a SnapMorph turn); a non-transient bulk is an edit or a recall
+whose callers were written against a write that had landed on return, and it keeps the blocking wire.
 
 **Ordering guarantees:**
 - FIFO within the lane (a byte ring popped in push order).
 - The lane is drained before the mailbox every frame, so a GET issued after a lane SET observes it.
-- The queue-non-empty rule above holds order between `spq` and direct mailbox commits.
+- The queue-non-empty rule above holds order between `spq` and direct mailbox commits; the
+  mailbox-idle rule holds it between the lane and a request already committed to the mailbox.
 - No ordering promise between the web ring and shadow_ui's own writes — none exists today and none
   is added.
 
@@ -398,7 +405,9 @@ path funnels through the one function above instead of re-implementing routing.
 **Instrumentation:** RT-safe counters written only by the SPI thread and reported on the
 `spi_timing` line as
 `param lane: drained=… max/frame=… bytes_max=… pending=… errors=… resyncs=… budget_frames=… | mailbox set=… get=… bulk=…`.
-Drain budget: 256 records or 300 µs per frame, leftovers next frame in order. A debug-file-gated trace of every lane push/drain for the
+Drain budget: 256 records or 300 µs per frame, the clock read after every record, leftovers next
+frame in order. A record with an empty key (what a re-zeroed ring presents) is dropped with a resync,
+never applied. A debug-file-gated trace of every lane push/drain for the
 first 3 s of a session (`param_lane_trace_on`, see `docs/tracing.md`) doubles as the fresh-project
 regression probe: the init burst of routes/defaults/picker writes must all reach the DSP, not just
 the last one before the tail.

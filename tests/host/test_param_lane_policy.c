@@ -54,8 +54,22 @@ int main(void) {
     OK(spl_key_eligible("pa_live") == 1,             "pa_live is eligible");
     OK(spl_key_eligible("send_fx:a:return_level") == 1, "send_fx:a:return_level is eligible");
     OK(spl_key_eligible("move_fx:3:volume") == 1,    "move_fx:3:volume is eligible");
-    OK(spl_key_eligible("fx1:module") == 1,          "fx1:module is eligible (activation is idempotent, no response read)");
-    OK(spl_key_eligible("load_patch") == 1,          "load_patch is eligible");
+    /* Loaders are EXCLUDED: each dlopen()s or reads a capture inside the
+     * dispatcher, and the mailbox paced them at one per frame; the lane would
+     * run several per callback (adversarial review, 2026-09-14). */
+    OK(spl_key_eligible("fx1:module") == 0,          "fx1:module is EXCLUDED (dlopen on the SPI thread - keep the mailbox's one-per-frame pacing)");
+    OK(spl_key_eligible("synth:module") == 0,        "synth:module is EXCLUDED");
+    OK(spl_key_eligible("fx4:module") == 0,          "fx4:module is EXCLUDED (this fork's 3rd/4th FX blocks too)");
+    OK(spl_key_eligible("midi_fx2:module") == 0,     "midi_fx2:module is EXCLUDED");
+    OK(spl_key_eligible("move_fx:2:fx1:module") == 0, "a Move-bus insert's :module is EXCLUDED (suffix rule, any depth)");
+    OK(spl_key_eligible("load_patch") == 0,          "load_patch is EXCLUDED (capture read)");
+    OK(spl_key_eligible("load_file") == 0,           "load_file is EXCLUDED");
+    OK(spl_key_eligible("patch") == 0,               "patch is EXCLUDED");
+    OK(spl_key_eligible("synth:load_patch") == 0,    "a component-scoped :load_patch is EXCLUDED");
+    OK(spl_key_eligible("synth:module_x") == 1,      "CONTROL: `module_x` does not end in `:module`");
+    OK(spl_key_eligible("modules") == 1,             "CONTROL: a bare `modules` is an ordinary key");
+    OK(spl_key_eligible("synth:patchy") == 1,        "CONTROL: `:patchy` is not `:patch`");
+    OK(spl_key_eligible("dispatch") == 1,            "CONTROL: `dispatch` ends in `patch` but not `:patch`");
 
     /* --- near misses that must NOT be caught by the suffix rule ---------- */
     OK(spl_key_eligible("stateful") == 1,            "`stateful` is not `state`");

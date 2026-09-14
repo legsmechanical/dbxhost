@@ -302,10 +302,42 @@ static int test_corrupt_header_resyncs(void)
     return 0;
 }
 
+/* The shim re-zeroes the segment on restart; a producer mid-push can land
+ * its head store after that memset, so [tail, head) is all zeros - which
+ * parse as VALID 5-byte records with an empty key. They must be dropped
+ * (resync), never applied as set_param("", "") on the SPI thread. And the
+ * producer must never be able to write one, so the two rules stay symmetric. */
+static int test_zeroed_ring_is_dropped_not_applied(void)
+{
+    shadow_param_lane_t *r = alloc_lane();
+    spl_stamp_ready(r);
+    uint32_t tail = spl_first_tail(r);
+    spl_record_t rec;
+
+    OK(spl_push(r, 1, 0, "", "1") == 0, "the producer refuses an EMPTY key");
+
+    /* Simulate the restart race: three records pushed, then the data zeroed
+     * underneath them with head left standing (memset vs the head store). */
+    OK(spl_push(r, 1, 0, "a", "1") == 1 && spl_push(r, 2, 0, "b", "2") == 1 &&
+       spl_push(r, 3, 0, "c", "3") == 1, "three records pushed");
+    memset(r->data, 0, SHADOW_PARAM_LANE_BYTES);
+    OK(spl_used(r, tail) > 0, "head still stands past the zeroed bytes (the race)");
+    rec.key[0] = 'X';
+    OK(spl_pop(r, &tail, &rec) == 0, "a zero header pops as 0 - NOT as a record with an empty key");
+    OK(rec.key[0] == 'X', "and nothing was copied into the record");
+    OK(spl_used(r, tail) == 0, "the consumer resynced to head (the torn burst is dropped)");
+    OK(spl_push(r, 4, 0, "later", "4") == 1 && spl_pop(r, &tail, &rec) == 1 && !strcmp(rec.key, "later"),
+       "the lane is usable again after the resync");
+
+    free(r);
+    return 0;
+}
+
 int main(void)
 {
     if (test_round_trip_order_and_bytes()) return 1;
     if (test_corrupt_header_resyncs()) return 1;
+    if (test_zeroed_ring_is_dropped_not_applied()) return 1;
     if (test_not_ready_refuses()) return 1;
     if (test_oversize_refused()) return 1;
     if (test_fill_then_drain_fully()) return 1;

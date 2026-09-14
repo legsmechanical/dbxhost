@@ -197,9 +197,40 @@ run_checks() {
         *) say "the lane gate is MISSING the queue-empty condition — a lane write would overtake queued mailbox writes" ;;
     esac
     case "$gate" in
+        *'shadow_param_mailbox_idle()'*) ;;
+        *) say "the lane gate is MISSING the mailbox-idle condition - a lane write would overtake a request still SITTING in the mailbox (queue empty after SPQ_COMMIT_NOW)" ;;
+    esac
+    case "$gate" in
         *'spl_push('*) ;;
         *) say "the lane gate must take the lane only when spl_push actually succeeded" ;;
     esac
+
+    # the BULK gate (shadow_param_bulk_js): transient only, same ordering conditions
+    extract_fn "$w/ui.c" '^static JSValue shadow_param_bulk_js' > "$w/bulk.c"
+    [ -s "$w/bulk.c" ] || say "shadow_param_bulk_js not found in shadow_ui.c"
+    local bgate
+    bgate="$(tr '\n' ' ' < "$w/bulk.c" | grep -o 'if (req_type == 4[^{]*spl_push([^{]*{' | head -1 || true)"
+    [ -n "$bgate" ] || say "shadow_param_bulk_js must carry a lane gate ending in spl_push"
+    case "$bgate" in
+        *'transient &&'*|*'&& transient'*) ;;
+        *) say "the BULK lane gate must be TRANSIENT-only - a non-transient bulk is an edit/recall whose callers rely on it having LANDED on return" ;;
+    esac
+    case "$bgate" in
+        *'shadow_param_mailbox_idle()'*) ;;
+        *) say "the BULK lane gate is missing the mailbox-idle condition" ;;
+    esac
+    case "$bgate" in
+        *'spq_count(&g_param_pending) == 0'*) ;;
+        *) say "the BULK lane gate is missing the queue-empty condition" ;;
+    esac
+
+    # the drain's time budget is checked after EVERY record, not every Nth
+    grep -qE '\(n & 7u\) == 0|n % 8|n & 7' "$w/drain.c" \
+        && say "the drain checks its time budget only every Nth record - one slow apply can be followed by N-1 more unchecked"
+    local nclk
+    nclk="$(grep -c 'clock_gettime(' "$w/drain.c" || true)"
+    [ "${nclk:-0}" -ge 2 ] \
+        || say "the drain must read the clock at entry AND per record (found $nclk clock_gettime calls)"
     # ...and it must sit INSIDE the fire-and-forget branch, before spq_offer
     local ln_ff ln_gate ln_offer
     ln_ff="$(grep -n 'if (overtake_fire_and_forget)' "$w/set.c" | head -1 | cut -d: -f1 || true)"
@@ -320,5 +351,38 @@ s = s.replace("    shadow_drain_param_lane();\n",
 open(p, 'w').write(s)
 PY
 expect_fail "$C6" "control 6 (drain call commented out)"
+
+echo "== control 7: gate without the mailbox-idle test =="
+C7="$(make_copy c7)"
+python3 - "$C7/src/shadow/shadow_ui.c" <<'PY'
+import sys
+p = sys.argv[1]; s = open(p).read()
+s = s.replace("spl_key_eligible(key) && spq_count(&g_param_pending) == 0 &&\n                shadow_param_mailbox_idle() &&",
+              "spl_key_eligible(key) && spq_count(&g_param_pending) == 0 &&", 1)
+open(p, 'w').write(s)
+PY
+expect_fail "$C7" "control 7 (mailbox-idle condition deleted from the single gate)"
+
+echo "== control 8: bulk gate takes non-transient bulks =="
+C8="$(make_copy c8)"
+python3 - "$C8/src/shadow/shadow_ui.c" <<'PY'
+import sys
+p = sys.argv[1]; s = open(p).read()
+s = s.replace('if (req_type == 4 && transient && strcmp(key, "chain:") == 0 &&',
+              'if (req_type == 4 && strcmp(key, "chain:") == 0 &&', 1)
+open(p, 'w').write(s)
+PY
+expect_fail "$C8" "control 8 (transient-only dropped from the bulk gate)"
+
+echo "== control 9: the drain checks its clock every 8th record only =="
+C9="$(make_copy c9)"
+python3 - "$C9/src/schwung_shim.c" <<'PY'
+import sys
+p = sys.argv[1]; s = open(p).read()
+s = s.replace("        {\n            struct timespec t1;\n            clock_gettime(CLOCK_MONOTONIC, &t1);",
+              "        if ((n & 7u) == 0) {\n            struct timespec t1;\n            clock_gettime(CLOCK_MONOTONIC, &t1);", 1)
+open(p, 'w').write(s)
+PY
+expect_fail "$C9" "control 9 (budget checked every 8th record)"
 
 echo "PASS: the param lane is wired end to end, in the one order that works; controls fire"
