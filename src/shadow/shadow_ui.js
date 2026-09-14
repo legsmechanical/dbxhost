@@ -6273,6 +6273,16 @@ function hostSnapshotStatus() {
     return snapshotLastResult ? JSON.stringify(snapshotLastResult) : "null";
 }
 
+/* Run one autosave unit inside an `autosave.<kind>` span, so a trace shows
+ * which unit a slow tick paid for (and its param.get children under it).
+ * host_trace_begin returns 0 when tracing is off and the pair is then free;
+ * the finally keeps the pair balanced within the tick if a saver throws. */
+function autosaveTraced(kind, fn) {
+    const h = host_trace_begin("autosave." + kind);
+    try { return fn(); }
+    finally { host_trace_end(h); }
+}
+
 function saveOneDirtyUnit() {
     for (let slot = 0; slot < SHADOW_UI_SLOTS; slot++) {
         if (autosaveDirtySlots & (1 << slot)) {
@@ -6302,8 +6312,8 @@ function saveOneDirtyUnit() {
              * synth cannot report state (a module with no get_param("state"),
              * which is legal) would otherwise retry forever and never persist
              * the settings that ARE readable. */
-            const wroteChain  = autosaveAllSlots(slot);
-            const wroteConfig = saveChainConfigToDir(activeSlotStateDir);
+            const wroteChain  = autosaveTraced("slot", () => autosaveAllSlots(slot));
+            const wroteConfig = autosaveTraced("config", () => saveChainConfigToDir(activeSlotStateDir));
             if (wroteChain || wroteConfig) {
                 autosaveDirtySlots &= ~(1 << slot);
                 debugLog("autosave: slot " + slot +
@@ -6326,7 +6336,7 @@ function saveOneDirtyUnit() {
      * busy mailbox can no longer blank a good bus config — the bit stays set
      * and the pass backs off, exactly like the slot path above. */
     if (autosaveDirtyBuses & FXBUS_DIRTY_MASTER) {
-        if (saveMasterFxChainConfig(true)) {
+        if (autosaveTraced("master_fx", () => saveMasterFxChainConfig(true))) {
             autosaveDirtyBuses &= ~FXBUS_DIRTY_MASTER;
             debugLog("autosave: master fx written");
         } else {
@@ -6336,7 +6346,7 @@ function saveOneDirtyUnit() {
         return;
     }
     if (autosaveDirtyBuses & FXBUS_DIRTY_SEND_A) {
-        if (saveSendFxChainConfig("a")) {
+        if (autosaveTraced("send_fx", () => saveSendFxChainConfig("a"))) {
             autosaveDirtyBuses &= ~FXBUS_DIRTY_SEND_A;
             debugLog("autosave: send fx a written");
         } else {
@@ -6345,7 +6355,7 @@ function saveOneDirtyUnit() {
         return;
     }
     if (autosaveDirtyBuses & FXBUS_DIRTY_SEND_B) {
-        if (saveSendFxChainConfig("b")) {
+        if (autosaveTraced("send_fx", () => saveSendFxChainConfig("b"))) {
             autosaveDirtyBuses &= ~FXBUS_DIRTY_SEND_B;
             debugLog("autosave: send fx b written");
         } else {
@@ -6356,7 +6366,7 @@ function saveOneDirtyUnit() {
     for (let m = 0; m < MOVE_FX_SLOTS_JS; m++) {
         const bit = 1 << (FXBUS_DIRTY_MOVE_SHIFT + m);
         if (autosaveDirtyBuses & bit) {
-            if (saveMoveFxChainConfig(m)) {
+            if (autosaveTraced("move_fx", () => saveMoveFxChainConfig(m))) {
                 autosaveDirtyBuses &= ~bit;
                 debugLog("autosave: move fx bus " + m + " written");
             } else {

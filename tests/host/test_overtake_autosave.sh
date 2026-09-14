@@ -88,7 +88,7 @@ rg -q 'shadow_mark_fx_bus_dirty\(shadow_param->key\)' "$c" \
 #    than clobber a good file. Clearing the bit in front of that bail discards
 #    the user's edit permanently — observed on hardware 2026-08-05, where a
 #    transpose change logged a save and never reached disk.
-rg -q 'const wroteChain  = autosaveAllSlots\(slot\);' "$js" \
+rg -qF 'const wroteChain  = autosaveTraced("slot", () => autosaveAllSlots(slot));' "$js" \
   || fail "$js no longer captures whether the chain was actually written"
 rg -q 'if \(wroteChain \|\| wroteConfig\) \{' "$js" \
   || fail "$js clears the dirty bit without checking whether anything was actually written — a failed save silently loses the edit"
@@ -105,11 +105,11 @@ for saver_pin in 'const _name = shadow_get_param' 'if (_name === null || _name =
   [ "${n:-0}" -ge 2 ] \
     || fail "$js FX bus savers lost the null-vs-empty guard on the :name read ('$saver_pin' found $n times, need 2) — a timed-out read would blank a good bus config"
 done
-rg -qF 'if (saveMasterFxChainConfig(true)) {' "$js" \
+rg -qF 'if (autosaveTraced("master_fx", () => saveMasterFxChainConfig(true))) {' "$js" \
   || fail "$js dirty path no longer checks the master saver's result — a failed save would clear the bit and drop the edit"
-rg -qF 'if (saveSendFxChainConfig("a")) {' "$js" \
+rg -qF 'if (autosaveTraced("send_fx", () => saveSendFxChainConfig("a"))) {' "$js" \
   || fail "$js dirty path no longer checks the send saver's result"
-rg -qF 'if (saveMoveFxChainConfig(m)) {' "$js" \
+rg -qF 'if (autosaveTraced("move_fx", () => saveMoveFxChainConfig(m))) {' "$js" \
   || fail "$js dirty path no longer checks the move saver's result"
 
 # 10b. A slot edit must write BOTH files. slot_N.json holds the chain (synth/FX
@@ -119,7 +119,7 @@ rg -qF 'if (saveMoveFxChainConfig(m)) {' "$js" \
 #      (⚠ transpose WAS always serialised — in the GLOBAL file, shadow_state.c.
 #      The real defect was that the per-set copy had no reader and the global
 #      one was applied last at boot. See test_slot_settings_are_per_set.sh.)
-rg -q 'saveChainConfigToDir\(activeSlotStateDir\);' "$js" \
+rg -qF 'autosaveTraced("config", () => saveChainConfigToDir(activeSlotStateDir));' "$js" \
   || fail "$js overtake autosave no longer writes shadow_chain_config.json — slot settings (transpose, sends, mute) would not persist mid-session"
 rg -q 'wroteChain \|\| wroteConfig' "$js" \
   || fail "$js does not treat a config-only write as success — a synth without get_param(\"state\") would retry forever and never persist readable settings"

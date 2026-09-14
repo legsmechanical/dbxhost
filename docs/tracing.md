@@ -55,6 +55,10 @@ collector or import directly into Tempo/Jaeger.
 ⭑ **`param.get` spans are named by the key's shape** — `param.get overtake_dsp:t#_c#_steps`,
 digits collapsed — so a trace answers WHICH reads a tick made, not only how many (up to a
 bounded number of distinct shapes; past it the plain `param.get`). Match on the prefix.
+A **bulk** read (`shadow_get_params`) is one round-trip carrying many keys and gets its own
+span, `param.get_bulk <marker>` (`param.get_bulk chain:`) — count both when counting reads.
+The dirty-driven autosave wraps each unit it runs in `autosave.<kind>` (`slot`, `config`,
+`master_fx`, `send_fx`, `move_fx`), so a slow `js.tick` names the saver that paid for it.
 
 **Shim** (`schwung-shim`), per SPI frame:
 
