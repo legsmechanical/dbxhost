@@ -3370,20 +3370,22 @@ function loadChainConfigFromSlot(slotIndex) {
 }
 
 /* Build a signature of module IDs for a slot to detect changes */
+const SLOT_MODULE_SIGNATURE_KEYS = ["synth_module", "midi_fx1_module", "fx1_module",
+                                    "fx2_module", "fx3_module", "fx4_module"];
+function slotModuleSignatureOf(read) {
+    return SLOT_MODULE_SIGNATURE_KEYS.map((k) => read(k) || "").join("|");
+}
 function getSlotModuleSignature(slotIndex) {
-    const synthModule = getSlotParam(slotIndex, "synth_module") || "";
-    const midiFxModule = getSlotParam(slotIndex, "midi_fx1_module") || "";
-    const fx1Module = getSlotParam(slotIndex, "fx1_module") || "";
-    const fx2Module = getSlotParam(slotIndex, "fx2_module") || "";
-    const fx3Module = getSlotParam(slotIndex, "fx3_module") || "";
-    const fx4Module = getSlotParam(slotIndex, "fx4_module") || "";
-    return `${synthModule}|${midiFxModule}|${fx1Module}|${fx2Module}|${fx3Module}|${fx4Module}`;
+    return slotModuleSignatureOf((k) => getSlotParam(slotIndex, k));
 }
 
-/* Refresh module signature for a slot and invalidate knob cache on changes */
-function refreshSlotModuleSignature(slotIndex) {
+/* Refresh module signature for a slot and invalidate knob cache on changes.
+ * `knownSignature` (optional): a signature the caller has JUST read, so the
+ * six round-trips are not paid twice (the autosave reads it in its bulk). */
+function refreshSlotModuleSignature(slotIndex, knownSignature) {
     if (slotIndex < 0 || slotIndex >= SHADOW_UI_SLOTS) return false;
-    const signature = getSlotModuleSignature(slotIndex);
+    const signature = (typeof knownSignature === "string")
+        ? knownSignature : getSlotModuleSignature(slotIndex);
     if (signature !== lastSlotModuleSignatures[slotIndex]) {
         lastSlotModuleSignatures[slotIndex] = signature;
         invalidateFeedbackModuleCache();
@@ -3410,6 +3412,31 @@ function getModuleAbbrev(moduleId) {
 }
 
 /* Param API helper functions */
+
+/* Read many keys of ONE chain slot in a single `chain:` bulk GET, answered in
+ * the SINGLE-GET semantics the callers were written against, so switching a
+ * caller onto it changes its round-trip count and nothing else:
+ *   - a key the host did not resolve (`?` on the wire) reads as "" — exactly
+ *     what shadow_get_param returns for it (the cleared value buffer; the two
+ *     requests resolve a chain key through the same slot handler and plugin
+ *     get_param, so they cannot disagree about WHICH keys resolve);
+ *   - a request that failed (timeout, reply overflow) returns null for the
+ *     WHOLE read, and the caller falls back to getSlotParam per key — a failed
+ *     bulk costs speed, never the tri-state a single read would have given.
+ * Returns { key: value } or null. `<prefix>:state` blobs do NOT belong here:
+ * the reply shares one buffer, and two blobs overflow it. */
+function getSlotParamsBulk(slotIndex, keys) {
+    if (typeof shadow_get_params !== "function" || !keys.length || keys.length > 64) return null;
+    let raw = null;
+    try { raw = shadow_get_params(slotIndex, "chain:", bulkEncodeItems(keys)); }
+    catch (e) { raw = null; }
+    if (raw === null || raw === undefined) return null;
+    const vals = bulkDecode(String(raw));
+    if (!vals || vals.length !== keys.length) return null;
+    const out = {};
+    for (let k = 0; k < keys.length; k++) out[keys[k]] = (vals[k] === null) ? "" : vals[k];
+    return out;
+}
 function getSlotParam(slot, key) {
     if (typeof shadow_get_param !== "function") return null;
     try {
@@ -5462,6 +5489,20 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
      * so the module selection survives a reboot. */
     const bailIfEmpty = forAutosave && !moduleChanged;
 
+    /* Every NON-blob read below in ONE bulk round-trip (the state blobs stay
+     * single reads — see getSlotParamsBulk). `pre(key)` answers from it, and
+     * reads singly when the bulk failed or did not carry the key, so the
+     * document is byte-identical to the one the single reads built. */
+    const preKeys = ["slot:receive_channel", "slot:forward_channel", "midi_fx_pre_mode",
+                     "knob_mappings", "buses:config", "lfo_config"];
+    for (const [c, k] of [[cfg.synth, "synth"], [cfg.midiFx, "midi_fx1"], [cfg.fx1, "fx1"],
+                          [cfg.fx2, "fx2"], [cfg.fx3, "fx3"], [cfg.fx4, "fx4"]]) {
+        if (c && c.module) preKeys.push(k + ":bypassed");
+    }
+    const preVals = getSlotParamsBulk(slotIndex, preKeys);
+    const pre = (key) => (preVals && Object.prototype.hasOwnProperty.call(preVals, key))
+        ? preVals[key] : getSlotParam(slotIndex, key);
+
     const patch = {
         custom_name: name,
         input: "both",
@@ -5507,7 +5548,7 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
         patch.synth = {
             module: cfg.synth.module,
             config: synthConfig,
-            bypassed: parseInt(getSlotParam(slotIndex, "synth:bypassed") || "0", 10) === 1 ? 1 : 0
+            bypassed: parseInt(pre("synth:bypassed") || "0", 10) === 1 ? 1 : 0
         };
     }
 
@@ -5532,7 +5573,7 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
         patch.midi_fx = [{
             type: cfg.midiFx.module,
             params: midiFxConfig,
-            bypassed: parseInt(getSlotParam(slotIndex, "midi_fx1:bypassed") || "0", 10) === 1 ? 1 : 0
+            bypassed: parseInt(pre("midi_fx1:bypassed") || "0", 10) === 1 ? 1 : 0
         }];
     }
 
@@ -5557,7 +5598,7 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
         patch.audio_fx.push({
             type: cfg.fx1.module,
             params: fx1Config,
-            bypassed: parseInt(getSlotParam(slotIndex, "fx1:bypassed") || "0", 10) === 1 ? 1 : 0
+            bypassed: parseInt(pre("fx1:bypassed") || "0", 10) === 1 ? 1 : 0
         });
     }
     if (cfg.fx2 && cfg.fx2.module) {
@@ -5581,7 +5622,7 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
         patch.audio_fx.push({
             type: cfg.fx2.module,
             params: fx2Config,
-            bypassed: parseInt(getSlotParam(slotIndex, "fx2:bypassed") || "0", 10) === 1 ? 1 : 0
+            bypassed: parseInt(pre("fx2:bypassed") || "0", 10) === 1 ? 1 : 0
         });
     }
     if (cfg.fx3 && cfg.fx3.module) {
@@ -5603,7 +5644,7 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
         patch.audio_fx.push({
             type: cfg.fx3.module,
             params: fx3Config,
-            bypassed: parseInt(getSlotParam(slotIndex, "fx3:bypassed") || "0", 10) === 1 ? 1 : 0
+            bypassed: parseInt(pre("fx3:bypassed") || "0", 10) === 1 ? 1 : 0
         });
     }
     if (cfg.fx4 && cfg.fx4.module) {
@@ -5625,22 +5666,22 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
         patch.audio_fx.push({
             type: cfg.fx4.module,
             params: fx4Config,
-            bypassed: parseInt(getSlotParam(slotIndex, "fx4:bypassed") || "0", 10) === 1 ? 1 : 0
+            bypassed: parseInt(pre("fx4:bypassed") || "0", 10) === 1 ? 1 : 0
         });
     }
 
     /* Include slot channel settings */
-    const recvCh = getSlotParam(slotIndex, "slot:receive_channel");
-    const fwdCh = getSlotParam(slotIndex, "slot:forward_channel");
+    const recvCh = pre("slot:receive_channel");
+    const fwdCh = pre("slot:forward_channel");
     if (recvCh !== null) patch.receive_channel = parseInt(recvCh);
     if (fwdCh !== null) patch.forward_channel = parseInt(fwdCh);
 
     /* Include MIDI FX placement (Pre/Post) */
-    const preMode = getSlotParam(slotIndex, "midi_fx_pre_mode");
+    const preMode = pre("midi_fx_pre_mode");
     if (preMode !== null) patch.midi_fx_pre_mode = parseInt(preMode) ? 1 : 0;
 
     /* Include knob mappings */
-    const knobMappingsJson = getSlotParam(slotIndex, "knob_mappings");
+    const knobMappingsJson = pre("knob_mappings");
     if (knobMappingsJson) {
         try {
             const mappings = JSON.parse(knobMappingsJson);
@@ -5670,7 +5711,10 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
      * the next time it is loaded. `""` is different and is not a failure: it is
      * a chain host that serves no bus keys at all, and it emits nothing.
      */
-    const busRaw = getSlotStateWithRetry(slotIndex, "buses:config");
+    /* A bulk answer is getSlotStateWithRetry's FIRST read: a value or "" is
+     * final there too; only a failed bulk (null) takes the retrying path. */
+    const busRaw = (preVals && typeof preVals["buses:config"] === "string")
+        ? preVals["buses:config"] : getSlotStateWithRetry(slotIndex, "buses:config");
     if (busRaw !== "") {
         const busCfg = BusModel.parseBusesConfig(busRaw);
         if (busCfg.unresolved) {
@@ -5707,7 +5751,7 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
     }
 
     /* Include LFO config */
-    const lfoConfigJson = getSlotParam(slotIndex, "lfo_config");
+    const lfoConfigJson = pre("lfo_config");
     if (lfoConfigJson) {
         try {
             const lfos = JSON.parse(lfoConfigJson);
@@ -5751,8 +5795,14 @@ function autosaveAllSlots(onlySlot, forSnapshot) {
     for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
         if (onlySlot !== undefined && i !== onlySlot) continue;
         /* Sync chainConfigs from DSP before checking - prevents clobbering
-         * valid autosave files for slots we haven't navigated to yet */
-        refreshSlotModuleSignature(i);
+         * valid autosave files for slots we haven't navigated to yet.
+         * The signature and the `dirty` flag come from ONE bulk read, and the
+         * signature is reused below rather than read a second time (it was 12
+         * single GETs per slot unit); a failed bulk reads them singly. */
+        const sigVals = getSlotParamsBulk(i, SLOT_MODULE_SIGNATURE_KEYS.concat(["dirty"]));
+        const sigRead = (k) => sigVals ? sigVals[k] : getSlotParam(i, k);
+        const currentSig = slotModuleSignatureOf(sigRead);
+        refreshSlotModuleSignature(i, currentSig);
         const cfg = chainConfigs[i];
         const hasSynth = cfg && cfg.synth && cfg.synth.module;
         const hasFx1 = cfg && cfg.fx1 && cfg.fx1.module;
@@ -5814,10 +5864,9 @@ function autosaveAllSlots(onlySlot, forSnapshot) {
             continue;
         }
 
-        const dirty = getSlotParam(i, "dirty");
+        const dirty = sigRead("dirty");
         slotDirtyCache[i] = (dirty === "1");
 
-        const currentSig = getSlotModuleSignature(i);
         const moduleChanged = currentSig !== lastSavedSlotSignature[i];
         const patchJson = buildSlotPatchJson(i, slots[i].name || "Untitled", !forSnapshot, moduleChanged);
         if (!patchJson) continue;
