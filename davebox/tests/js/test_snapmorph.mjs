@@ -311,6 +311,25 @@ step('a refused bulk (host busy) is not forgotten: the pairs go out on the next 
     touch(K, false); ticks(Math.ceil(morph.MORPH_FINAL_MS / 10.6) + 2);
 });
 
+step('⭐ a NEW turn re-asserts EVERY morphed parameter — a value the hand moved in between snaps back to the morph\'s position (Josh, device)', () => {
+    /* The hand (the editor, a preset) moved voices to 8 between turns; the
+     * morph at v≈0.5 says 4, and 4 is what it wrote last, so the changed-pairs
+     * filter alone would leave 8 in place. */
+    ASSIGN['synth:voices'] = '8';
+    bulks = [];
+    touch(K, true); turnBy(K, 2); ticks(1);
+    const b = chainBulks();
+    assert(b.length === 1, 'one bulk, got ' + b.length);
+    const p = b[0].pairs;
+    assert(p['synth:voices'] === '4', 'voices re-asserted to the morph\'s 4, got ' + JSON.stringify(p));
+    assert('synth:shape' in p && 'fx2:room_size' in p && 'slot:volume' in p, 'the WHOLE set goes on the first apply of a turn: ' + JSON.stringify(Object.keys(p)));
+    /* …and the rest of the same gesture is back to changed pairs only. */
+    bulks = [];
+    turnBy(K, 2); ticks(1);
+    assert(chainBulks().length === 1 && !('synth:voices' in chainBulks()[0].pairs), 'mid-gesture: only what moved, got ' + JSON.stringify(chainBulks()[0] && chainBulks()[0].pairs));
+    touch(K, false); ticks(Math.ceil(morph.MORPH_FINAL_MS / 10.6) + 2);
+});
+
 /* ---- PLAYBACK ------------------------------------------------------------- */
 step('⭐ PLAYBACK: the applier moves v and writes the chain TRANSIENT, with no edit owed — the top snapshot exactly', () => {
     bulks = [];

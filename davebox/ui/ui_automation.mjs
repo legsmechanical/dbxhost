@@ -323,6 +323,11 @@ export function automationTargetLabel(target) {
  * the list once the write has crossed. */
 let listStale = false;
 function expectStaged() { stopGrace = STOP_GRACE_TICKS; listStale = true; }
+/* How long a stale presence may wait for the gate (gestures / writes / a
+ * queued clear) before the refresh runs regardless. */
+const PRESENCE_HOLD_MS = 1500;
+let presenceHeldSince = 0;
+export function automationPresenceStaleForTest() { return presenceStale || listStale; }
 
 /* Every automation write goes through JS, so JS always knows when the first
  * one appears; P3's record and lock paths call this. */
@@ -608,11 +613,25 @@ export function automationTick() {
     /* ⚠ NOT while a pa-clear write is still queued — see queuedClearOutstanding.
      * The flags stay SET, so the refresh happens on the first tick after the
      * write has actually gone out, reading a DSP that agrees with the mirror. */
-    if ((presenceStale || listStale) && !gestures.size && !moduleWrites.length
-            && !queuedClearOutstanding()) {
-        presenceStale = false; listStale = false;
-        automationRefreshPresence();
-    }
+    if (presenceStale || listStale) {
+        const clear = !gestures.size && !moduleWrites.length && !queuedClearOutstanding();
+        /* ⚠ A refresh held back FOREVER is a lane that plays and is never
+         * listed (Josh, device, 2026-09-13: a retrospectively captured
+         * SnapMorph lane "plays back but doesn't show on the automation
+         * bank"). The gate above waits for the mirror and the DSP to agree —
+         * a moment, never a minute. Past PRESENCE_HOLD_MS the refresh runs
+         * anyway and the log names what was holding it, so the mechanism is
+         * on record rather than inferred. */
+        if (!presenceHeldSince) presenceHeldSince = S.clockMs;
+        const heldMs = S.clockMs - presenceHeldSince;
+        if (clear || heldMs > PRESENCE_HOLD_MS) {
+            if (!clear) console.log('[auto] presence refresh forced after ' + Math.round(heldMs) + ' ms — held by gestures=' +
+                                    JSON.stringify(Array.from(gestures.keys())) + ' writes=' + moduleWrites.length +
+                                    ' clearQueued=' + (queuedClearOutstanding() ? 1 : 0));
+            presenceStale = false; listStale = false; presenceHeldSince = 0;
+            automationRefreshPresence();
+        }
+    } else presenceHeldSince = 0;
     /* Nothing to drain unless this project has automation AND the transport is
      * running: staging only happens on a playing clip. Both are already-known
      * flags, so the common case costs nothing at all. */

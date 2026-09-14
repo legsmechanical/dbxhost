@@ -264,6 +264,22 @@ function sendPairs(slot, pairs, transient) {
 export function morphApply(track, knob, leg, f, mode) {
     const e = entries.get(entryKey(track, knob));
     if (!e || !e.ready || e.sig !== legSig(track, leg)) return null;
+    /* ⭐ A NEW TURN RE-ASSERTS EVERYTHING (Josh, device, 2026-09-13): "once I
+     * start turning morph, everything should snap to the appropriate position
+     * based on where things were when the snapshots were recorded." Between
+     * turns the hand (or the editor, or a preset) may have moved a parameter
+     * the morph also drives; `last` still says the morph wrote it, so the
+     * changed-pairs filter would leave it where the hand put it — until the
+     * interpolation happened to cross a grid step. So the first apply of a
+     * turn forgets what was last sent and writes the whole set: one bulk per
+     * 32 pairs, once per gesture. A turn is "new" after MORPH_FINAL_MS of
+     * quiet — the same boundary that makes the transient writes an edit.
+     * Playback keeps the filter: a lane drives continuously. */
+    if (mode === 'turn') {
+        const now = nowMs();
+        if (now - (e.lastTurnMs || 0) > MORPH_FINAL_MS) e.last.clear();
+        e.lastTurnMs = now;
+    }
     const n = e.snaps ? e.snaps.length : 0;
     if (n < MORPH_MIN_SNAPS) return 0;
     f = Math.max(0, Math.min(1, isFinite(f) ? f : 0));
