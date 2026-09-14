@@ -36,7 +36,8 @@ import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
 import { showActionPopup, readActiveSet, resolveSetLoadDecision } from './ui_persistence.mjs';
 import { automationParamTouch, automationClearKey, automationToggleActive,
-         automationRegisterSeqApply } from './ui_automation.mjs';
+         automationRegisterSeqApply, automationRegisterMacApply } from './ui_automation.mjs';
+import { snapMorphApply } from './ui_snapmorph.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { daveBoxRotate } from './ui_daves.mjs';
@@ -415,6 +416,8 @@ globalThis.init = function () {
      * every test and never once on the device. Registered here, where nothing
      * can run afterwards to undo it. */
     automationRegisterSeqApply(soundSeqApply);
+    /* The SNAPMORPH-lane applier, same rule, same reason. */
+    automationRegisterMacApply(snapMorphApply);
     S._origClearScreen = clear_screen;
     S._wasSuspended    = false;
 };

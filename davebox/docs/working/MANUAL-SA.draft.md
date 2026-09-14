@@ -1388,7 +1388,11 @@ the menu saying what the click and the Shift chord do — the same band the bank
 cards wear. That picker is one list in four
 groups with a line between them: Move 1-4, every Schwung generator by name, MIDI
 channels 1-16, and the tracks this one may follow. Choosing a generator makes
-the track a Schwung track and loads it in one step. Inside a
+the track a Schwung track and loads it in one step. A Move instrument belongs
+to **one track at a time**: one that another track already plays is shown
+centred with that track's number (`Move 2 - T3`) and the jog steps over it —
+to play the same Move instrument from a second track, make that track *follow*
+the one that owns it. Inside a
 block the knobs edit its parameters and the jog turns the pages; hold **Shift**
 while turning to jump between sections. The last pages are **My Presets** and
 **Module**; on Module, **Module Menu** opens the module's full parameter list
@@ -1508,6 +1512,34 @@ knob does, records and locks like any other, and belongs to the track type —
 a NOTE FX macro reads UNASSIGNED on a drum track. The bank's own page shows
 the same automation: the dot on the cell, Mute + touch and Delete + touch on
 the knob, a blinking ring, and a held step plus a turn locks it there too.
+
+### SnapMorph — one knob between snapshots
+
+A knob can morph the track's whole sound between two or more of its **track
+snapshots** (hold Capture in track view to save them). In the assignment list
+pick **SnapMorph** — it's the last entry, after Levels — and you get the
+track's saved snapshot slots. On a Schwung track the morph covers every block
+in the chain and the track's levels; on a Move track it covers the track's
+bus effects and bus levels (the Move instrument itself lives in Move and stays
+put). A MIDI track has nothing to morph. **Click** a slot
+to put it in; click again to take it out. The order you pick them in is the
+path the knob travels: `[1]` at the bottom of the turn, `[2]` next, and so on.
+Press **Back** when you're done — the knob is live as soon as two are in.
+
+Turning the knob moves every parameter the chosen snapshots share — every
+block in the chain, and the track's volume, pan and sends: numbers glide
+between the two values (volume in dB, the way the fader travels), and a
+choice — a waveform, a switch — flips to
+the nearer snapshot's setting halfway across. Anything the snapshots don't
+agree on is left alone: a block whose module differs between the snapshots, or
+has been swapped since, stays out of the morph rather than being guessed at.
+The knob shows its own position as a percentage under **MORPH**, and **Lo**
+and **Hi** window the path like any other target.
+
+A SnapMorph records as **one** lane — the knob's position, listed as
+`SnapMorph K4` in the AUTOMATION bank — not a lane per parameter, so a sweep
+across forty parameters is still one thing to smooth, mute or clear. It does
+not export to Live; there is nothing there for it to be.
 
 **MIDI targets.** Every track can point a macro at **Aftertouch** or **Pitch
 Bend** (pick **MIDI** in the target list); a MIDI track can also point one at
@@ -1656,6 +1688,8 @@ have somewhere to go — drop whatever effect you like on them.
 
 - **CC automation.** A Move set has no place to put a CC curve — the format
   simply has no such thing.
+- **SnapMorph lanes.** A morph knob has no Live equivalent; the parameters it
+  drove are not exported either.
 - **Pitch bend on Schwung tracks.** How far a bend goes is decided by the synth,
   and a Schwung track exports as a placeholder instrument, so there's no honest
   amount to bend by.

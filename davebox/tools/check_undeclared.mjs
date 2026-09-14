@@ -46,7 +46,12 @@ const ALLOWED = new Set([
 function hostGlobals() {
     const names = new Set();
     const SRC = join(ROOT, '..', 'src');
-    for (const f of [join(SRC, 'shadow', 'shadow_ui.c'), join(SRC, 'host', 'js_display.c')]) {
+    /* js_host_common.c: the file/dir bindings (host_read_file, host_remove_dir,
+     * …) that js_host_register_common() installs in the shadow_ui context.
+     * Missing from this list until 2026-09-13, it passed only because
+     * shadow_ui.js happens to re-export four of them under globalThis — the
+     * fifth, host_remove_dir, is called unguarded by shadow_ui.js itself. */
+    for (const f of [join(SRC, 'shadow', 'shadow_ui.c'), join(SRC, 'host', 'js_display.c'), join(SRC, 'host', 'js_host_common.c')]) {
         const src = readFileSync(f, 'utf8');
         for (const m of src.matchAll(/JS_SetPropertyStr\(\s*ctx\s*,\s*global_obj\s*,\s*"([A-Za-z_][A-Za-z0-9_]*)"/g))
             names.add(m[1]);

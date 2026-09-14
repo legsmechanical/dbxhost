@@ -41,6 +41,10 @@ import { engineGet, engineSet, engineSetSlotParam, moveBusComp,
          moveBusForChannel, engineLoadedModule, engineDescribe, engineGetMany } from './ui_engine.mjs';
 import { midiVal, midiSendValue, seqAutoSnapshot, seqAutoRestore } from './ui_sound.mjs';
 import { forceRedraw, invalidateLEDCache } from './ui_leds.mjs';
+/* A SnapMorph caches the snapshots it morphs between when it seeds; a save
+ * or a clear here is the one thing that changes them (Josh, device,
+ * 2026-09-13: "changing a snapshot doesn't change what the morph knob does"). */
+import { morphInvalidate } from './ui_snapmorph.mjs';
 
 export const DEVSNAP_SLOTS   = 16;
 export const DEVSNAP_HOLD_MS = 450;     /* = BACK_HOLD_MS: a deliberate long-press */
@@ -157,16 +161,34 @@ function paramKeysFor(slot, comp, moduleId) {
 export function paramKeysCacheResetForTest() { for (const k in keysByModule) delete keysByModule[k]; }
 /* Per Schwung track: { comp: { module, values: { key: raw } } } for every
  * loaded component. Cost: one bulk GET per loaded component (≤60 keys each). */
+const BUS_FX = ['fx1', 'fx2', 'fx3', 'fx4'];
 function paramsCapture() {
     const tracks = [];
     for (let t = 0; t < NUM_TRACKS; t++) {
         const e = {};
-        if ((S.trackRoute[t] | 0) === 0) {
+        const r = S.trackRoute[t] | 0;
+        if (r === 0) {
             for (const comp of COMPS) {
                 const id = engineLoadedModule(t, comp);
                 if (!id) continue;
                 const keys = paramKeysFor(t, comp, id);
                 e[comp] = { module: id, values: keys.length ? engineGetMany(t, comp, keys) : {} };
+            }
+        } else if (r === 1) {
+            /* A MOVE track's sound the morph can reach is its bus's insert FX
+             * (Josh, 2026-09-13; the Move instrument itself lives in Move).
+             * Keyed by the FULL component (`move_fx:2:fx1`) on slot 0, which
+             * is how the engine and the automation push address a bus block —
+             * and ONE track owns the bus, so the values are this track's. */
+            const bus = moveBusForChannel(S.trackChannel[t]) | 0;
+            if (bus > 0) {
+                for (const fx of BUS_FX) {
+                    const comp = moveBusComp(bus) + ':' + fx;
+                    const id = engineLoadedModule(0, comp);
+                    if (!id) continue;
+                    const keys = paramKeysFor(0, comp, id);
+                    e[comp] = { module: id, values: keys.length ? engineGetMany(0, comp, keys) : {} };
+                }
             }
         }
         tracks.push(e);
@@ -252,6 +274,10 @@ export function devSnapSave(n) {
     const res = takeInto(slotDir(n));
     if (!res) { showActionPopup('SNAPSHOT', 'Save failed'); return false; }
     d.slots[n] = true; d.last = n;
+    /* The slot's contents changed: every morph over it re-reads on its next
+     * seed. A TRACK save touches that track's morphs; a SESSION save (the
+     * device layer, track -1) every track's. */
+    morphInvalidate(d.track >= 0 ? d.track : undefined);
     showActionPopupFor(DEVSNAP_CARD_MS, 'SNAPSHOT ' + (n + 1), 'SAVED', res.skipped ? res.skipped + ' skipped' : undefined);
     /* ⚠ BOTH ticks. The renderer needs the END (ui_leds: EndTick >= 0 && clockMs
      * < EndTick && StartTick >= 0), and the tick's hold-to-save used to set it
@@ -394,9 +420,37 @@ export function devSnapTick() {
 export function devSnapClear(n) {
     const d = st();
     if (!d.slots[n]) return false;
-    /* No unlink binding: the marker file is what "exists" means, so empty it. */
-    host_write_file(slotDir(n) + '/davebox.json', '');
+    /* REMOVE THE SLOT'S DIRECTORY — the host's files and ours (Josh, device,
+     * 2026-09-13: a cleared slot's step LED came back lit on re-entering the
+     * layer, and a press on it recalled the OLD snapshot).
+     *
+     * ⚠ The previous clear EMPTIED davebox.json and left the host's slot_/bus
+     * files in place. host_file_exists is a bare stat(), so an empty file
+     * still "exists": devSnapScan marked the slot filled on the next open, and
+     * recallDir runs the host recall whether or not davebox.json parses — so
+     * the slot was clear on this screen and full on the next. The JS rig hid
+     * it: its host_file_exists stub treated an empty file as absent, a
+     * semantics the device never had. Now the rig's stub is a stat too.
+     *
+     * ⚠ NOT host_remove_dir: that binding is fenced to the modules/update dirs
+     * (js_host_common.c) and REFUSES a Sets path — which is exactly what the
+     * device did on 2026-09-13, falling back to the blank marker, and the LED
+     * stayed lit. The project tree's own delete goes through host_system_cmd
+     * (project-cmd.sh), whose allow-list includes `rm `; so does this one,
+     * fenced here to the project's snapshots dir and a safe character set.
+     * If the removal fails the old blanking is the fallback — the slot then
+     * reads filled again, which is at least the truth about what is on disk. */
+    const dir = slotDir(n);
+    let gone = false;
+    if (/^\/data\/UserData\/UserLibrary\/Sets\/[A-Za-z0-9-]+\/dAVEBOx\/snapshots\/[A-Za-z0-9_\/-]+$/.test(dir) && dir.indexOf('..') < 0) {
+        try { gone = host_system_cmd('rm -rf ' + dir) === 0; } catch (e) { gone = false; }
+    }
+    if (!gone || host_file_exists(dir + '/davebox.json')) {
+        console.log('[devsnap] clear ' + (n + 1) + ': rm failed for ' + dir + ', blanking davebox.json instead');
+        host_write_file(dir + '/davebox.json', '');
+    }
     d.slots[n] = false;
+    morphInvalidate(d.track >= 0 ? d.track : undefined);   /* a morph over it now morphs nothing there */
     if (d.last === n) d.last = -1;
     showActionPopup('SNAPSHOT ' + (n + 1), 'CLEARED');
     invalidateLEDCache(); forceRedraw();

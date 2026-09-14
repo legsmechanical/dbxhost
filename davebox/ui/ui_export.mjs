@@ -428,6 +428,7 @@ function classifyPaTarget(target) {
     if (target === 'pb') return { kind: 'note', key: 'PitchBend', max: PA_VAL_MAX };
     if (target.indexOf('cc:') === 0) return null;      /* no clip-level MIDI target exists */
     if (target.indexOf('seq:') === 0) return null;     /* davebox's own sequencer params */
+    if (target.indexOf('mac:') === 0) return null;     /* a SnapMorph knob: no Live equivalent (v1) */
     const m = /:(?:slot|move_fx:\d+):(volume|pan|send_a|send_b)$/.exec(target);
     if (m) return { kind: 'mixer', field: m[1] };
     return null;                                       /* a chain param: no module in Live */

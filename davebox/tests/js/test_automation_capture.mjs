@@ -57,7 +57,8 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const { MoveCapture } = await import('../../ui/ui_constants.mjs');
-bulkDecodeFn = (await import('../../ui/ui_automation.mjs')).bulkDecode;
+const autoMod = await import('../../ui/ui_automation.mjs');
+bulkDecodeFn = autoMod.bulkDecode;
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 2;
@@ -143,6 +144,23 @@ step('Shift+Capture clears the sweeps too, and commits NOTHING', () => {
             throw new Error('the second token of capture_pending was not read: ' + S.paCapturePending);
         if (!S.captureArmed)
             throw new Error('LED not armed by sweeps alone — a user would never know to tap');
+        globalThis.host_module_get_param = () => '';
+    });
+    step('⭐ the DSP\'s COMMIT EDGE (pa commit seq) marks the automation LIST stale — the lanes are listed once they EXIST, not when the tap was sent', () => {
+        /* The tap's own refresh can read pa_list before the commit has
+         * crossed and then never re-run (device, 2026-09-13: a captured lane
+         * played but was not listed). The third token is the DSP's own edge. */
+        const auto = autoMod;
+        globalThis.host_module_get_param = (k) => (k === 'capture_pending' ? '0 0 5' : (k === 'pa_list' ? '' : ''));
+        S.paCaptureSeq = 5;
+        auto.automationRefreshPresence();                 /* clean slate: nothing stale */
+        mod.pollDSP();
+        if (auto.automationPresenceStaleForTest())
+            throw new Error('control: an unchanged sequence must not mark the list stale');
+        globalThis.host_module_get_param = (k) => (k === 'capture_pending' ? '0 0 6' : '');
+        mod.pollDSP();
+        if (!auto.automationPresenceStaleForTest())
+            throw new Error('the commit edge did not mark the list stale — a captured lane would play unlisted');
         globalThis.host_module_get_param = () => '';
     });
 }

@@ -679,7 +679,10 @@ step('a Move-routed track: the store seeds EMPTY at once (no knob_N reads), Leve
     assert(Array.isArray(GS.trackMacros[3]) && GS.trackMacros[3].every(m => m === null), 'seeded empty');
     assert(!reads.some(k => /^knob_\d_target$/.test(k)), 'no chain store reads on a Move bus');
     const targets = snd.soundKnobTargetsForTest();
-    assert(targets[targets.length - 1].name === 'Levels', 'Levels is a target, got ' + JSON.stringify(targets.map(t => t.name)));
+    /* Levels, then SnapMorph (2026-09-13: a Move track morphs its bus FX and
+     * levels between its snapshots, so the morph target is offered here too). */
+    assert(targets[targets.length - 2].name === 'Levels' && targets[targets.length - 1].name === 'SnapMorph',
+           'Levels then SnapMorph are targets, got ' + JSON.stringify(targets.map(t => t.name)));
     snd.soundQueueActionForTest({ t: 'knobparam', target: 'level' }); ticks(1);
     const rows = snd.soundKnobParamsForTest();
     assert(rows.length === 4 && !rows.some(p => p.label === 'Module Level'), 'four bus levels, got ' + JSON.stringify(rows.map(p => p.label)));

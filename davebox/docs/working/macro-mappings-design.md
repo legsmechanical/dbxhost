@@ -167,6 +167,21 @@ Decisions NOT put to Josh (mine, each pinned in a test rather than left as prose
   leg, the patch's target is PREPENDED as one. The one-leg case is byte-for-byte today's.
 - **The chain mirror** writes the first chain-kind leg (§2 already says this).
 
+## 6b. SnapMorph (18b, 2026-09-13) — the fifth leg kind, and the one exception to §4
+
+`{ kind:'morph', snaps:[n,…], lo, hi }`: the knob's position is a place along the track's
+snapshot list; every parameter the chosen snapshots share is interpolated (numbers) or snapped
+to the nearer snapshot (choices). Engine in `ui_snapmorph.mjs`. Rulings (Josh, 09-13):
+1. Built on the per-track MACROS bank over TRACK snapshots first; a device-wide morph comes with
+   the global macros bank.
+2. Enums/switches snap to the nearer snapshot's OWN value — never an option between them.
+3. **The exception to §4-A: a morph records ONE lane, the knob's position** (`mac:<track>:<knob>`,
+   "SnapMorph K4"), applied on playback by `snapMorphApply` the way `seq:` lanes are. A morph IS one
+   thing, unlike a two-leg knob; recording forty lanes per turn was the alternative. Export skips it.
+   Other legs on the same knob still record their own lanes per A.
+- A morph leg is always `v`-driven, has no Travel row, and NEVER anchors (nothing to read back).
+- Writes: bulk SET, transient under the hand, one non-transient resend once the hand is off.
+
 ## 7. Order of work once ruled
 
 1. Store shape + migration + sidecar `mac` v-bump; one-leg parity pinned in

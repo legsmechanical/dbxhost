@@ -218,9 +218,16 @@ ok("no declaration, a malformed one, or entries with no module: nothing written"
    * exactly the boot re-seed this guards. */
   const dbx = readFileSync("davebox/ui/ui_sound.mjs", "utf8");
   const dbxSites = [...dbx.matchAll(/host_seed_module_defaults\(/g)].length;
-  const pickIdx = dbx.indexOf("function applyModulePick(");
-  if (pickIdx < 0) fail("could not find the davebox applyModulePick()");
-  const inPick = dbx.slice(pickIdx, pickIdx + 2200).includes("host_seed_module_defaults(");
+  /* The DEFINITION, not a mention: a comment above names this function too,
+   * and anchoring there made the window start 2 KB early. */
+  const pickIdx = dbx.indexOf("\nfunction applyModulePick(") + 1;
+  if (pickIdx < 1) fail("could not find the davebox applyModulePick()");
+  /* STRUCTURAL window: the applyModulePick body ends at the next top-level
+   * declaration. A fixed slice(pickIdx, pickIdx + N) failed a CORRECT tree
+   * the day a comment grew above the call (2026-09-13). */
+  const nextDecl = dbx.slice(pickIdx + 1).search(/\n(?:export )?(?:function|const|let|class) /);
+  if (nextDecl < 0) fail("no declaration follows applyModulePick() -- the pin has no window");
+  const inPick = dbx.slice(pickIdx, pickIdx + 1 + nextDecl).includes("host_seed_module_defaults(");
   if (dbxSites !== 1 || !inPick) {
     fail("davebox calls host_seed_module_defaults " + dbxSites + " time(s), inPick=" + inPick
          + " -- it must be the interactive pick ALONE");

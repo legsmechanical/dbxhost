@@ -97,7 +97,22 @@ globalThis.host_snapshot_recall = (dir, slot, undoDir) => {
 let statusSkipped = 1, statusAdded = 0;
 let undoTakeFails = false;   /* the host could not write the before-image */
 globalThis.host_snapshot_status = () => JSON.stringify({ pending: recallPending, skipped: statusSkipped, added: statusAdded, addedList: statusAdded ? ['master_fx:fx1'] : [] });
-globalThis.host_file_exists = (p) => Object.prototype.hasOwnProperty.call(files, p) && files[p] !== '';
+/* ⚠ A STAT, like the device's js_host_file_exists: an EMPTY file exists. The
+ * old stub read `files[p] !== ''` and hid for a week that a cleared slot's
+ * empty davebox.json still counted as a snapshot on the next open. */
+globalThis.host_file_exists = (p) => Object.prototype.hasOwnProperty.call(files, p);
+/* The clear goes through host_system_cmd('rm -rf <dir>') — host_remove_dir is
+ * fenced away from Sets on the device. The stub removes everything under the
+ * path; any other command is the old no-op. */
+const removedDirs = [];
+globalThis.host_system_cmd = (cmd) => {
+    const m = /^rm -rf (\S+)$/.exec(String(cmd));
+    if (!m) return 0;
+    removedDirs.push(m[1]);
+    for (const k of Object.keys(files)) if (k.indexOf(m[1] + '/') === 0) delete files[k];
+    return 0;
+};
+globalThis.host_remove_dir = () => false;                 /* as on the device, for a Sets path */
 globalThis.host_write_file = (p, c) => { files[p] = c; writes.push('FILE ' + p); return true; };
 globalThis.host_read_file = (p) => (files[p] !== undefined ? files[p] : '');
 globalThis.host_ensure_dir = () => true;
@@ -303,6 +318,20 @@ step_('⭑ DELETE + step clears the slot', () => {
     if (D.devSnapState().slots[2]) throw new Error('slot 2 still filled');
     scene.updateSceneMapLEDs();
     if (leds[18] !== DarkGrey) throw new Error('cleared slot led ' + leds[18]);
+    /* ⚠ THE DEVICE BUG (Josh, 2026-09-13): the LED came back lit on RE-ENTRY,
+     * because the clear emptied davebox.json and host_file_exists is a stat.
+     * The slot's whole directory goes now — the host's files with it, or a
+     * press would still recall the old snapshot. */
+    const dir = P.deviceSnapDir('aaaa-bbbb', 2);
+    if (removedDirs.indexOf(dir) < 0) throw new Error('the slot dir was not removed: ' + JSON.stringify(removedDirs));
+    if (Object.keys(files).some(k => k.indexOf(dir + '/') === 0)) throw new Error('files left under the slot dir');
+    D.devSnapLeave(); D.devSnapEnter();
+    if (D.devSnapState().slots[2]) throw new Error('slot 2 reads FILLED again on re-entry (the LED bug)');
+    scene.updateSceneMapLEDs();
+    if (leds[18] !== DarkGrey) throw new Error('re-entry led ' + leds[18]);
+    snapCalls.length = 0;
+    snapRecall(2);
+    if (snapCalls.length) throw new Error('a press on the cleared slot still recalled: ' + JSON.stringify(snapCalls));
 });
 
 /* ⚠⚠ THE SCOPE TEST. muteSnapSave/Recall and perfPresetSave/Recall were first

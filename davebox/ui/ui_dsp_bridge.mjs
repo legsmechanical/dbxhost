@@ -25,12 +25,13 @@
 import {
     setButtonLED
 } from '/data/UserData/schwung/shared/input_filter.mjs';
-import { automationRefreshPresence, automationInvalidateMeta, automationWantsDrain, bulkEncode, bulkDecode } from './ui_automation.mjs';
+import { automationRefreshPresence, automationInvalidateMeta, automationWantsDrain, bulkEncode, bulkDecode,
+         automationNoteListChangedElsewhere } from './ui_automation.mjs';
 
 import {
     NUM_TRACKS, NUM_CLIPS, NUM_STEPS, DRUM_LANES, POLL_INTERVAL,
     TPS_VALUES, BANKS, PAD_MODE_DRUM, BANK_SOUND, isSoundBank, BANK_AUTOMATION,
-    INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK,
+    INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK, moveInstrOwner, moveInstrDuplicates,
     MoveRec, LED_OFF, parseActionRaw, INSTR_NONE, ROUTE_NONE } from './ui_constants.mjs';
 import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
@@ -474,6 +475,15 @@ export function pollDSP() {
             if (S.paCaptureSeq < 0) S.paCaptureSeq = _pseq;
             else if (_pseq !== S.paCaptureSeq) {
                 S.paCaptureSeq = _pseq;
+                /* ⚠ THE LIST TOO, on THIS edge (Josh, device, 2026-09-13: a
+                 * captured SnapMorph lane "plays back but doesn't show on the
+                 * automation bank" — intermittently). The tap marks presence
+                 * stale when it QUEUES the commit; that refresh can read
+                 * pa_list before the commit has crossed, see no new lane, and
+                 * nothing marks it stale again. The DSP's own sequence is the
+                 * one signal that says the lanes EXIST — so it re-marks the
+                 * list, exactly as it fires the toast. */
+                automationNoteListChangedElsewhere();
                 /* ⚠ One tap can commit BOTH halves, and both would toast — the
                  * note half's own toast lands later and would simply erase
                  * this one, so the user would never learn the sweeps landed.
@@ -1108,9 +1118,18 @@ export function applyInstrChoice(t, v) {
         applyTrackConfig(t, 'route', 2);
         return;
     }
+    /* ONE dAVEBOx TRACK PER MOVE INSTRUMENT (Josh, 2026-09-13). The picker
+     * never offers a taken one; this is the guard behind it, for every other
+     * way a choice can arrive. Refused, and said so — nothing is written. */
+    const owner = moveInstrOwner(S.trackRoute, S.trackChannel, v, t);
+    if (owner >= 0) {
+        console.log('[instr] track ' + (t + 1) + ': Move ' + (v + 1) + ' is track ' + (owner + 1) + "'s — refused");
+        return false;
+    }
     applyTrackConfig(t, 'midi_to', 0);
     applyTrackConfig(t, 'channel', v + 1);
     applyTrackConfig(t, 'route', 1);
+    return true;
 }
 
 export function applyTrackConfig(t, key, val) {
@@ -1495,10 +1514,20 @@ export function restoreUiSidecar(applyDefaultsNow) {
          * migrates the chain's knob_N assignments once. */
         const _leg = function(_e) {
             if (!_e || typeof _e !== 'object') return null;
-            if (_e.kind !== 'bank' && _e.kind !== 'midi' && (typeof _e.key !== 'string' || !_e.key)) return null;
+            if (_e.kind !== 'bank' && _e.kind !== 'midi' && _e.kind !== 'morph' && (typeof _e.key !== 'string' || !_e.key)) return null;
             let _l = null;
             if (_e.kind === 'chain' && typeof _e.comp === 'string' && _e.comp)
                 _l = { kind: 'chain', comp: _e.comp, key: _e.key };
+            else if (_e.kind === 'morph' && Array.isArray(_e.snaps)) {
+                /* SNAPMORPH (18b): the track's snapshot slots, in pick order,
+                 * 0..15, no repeats. One slot is a half-built leg (inert until
+                 * a second is picked) and is kept, so a save mid-pick loses
+                 * nothing; an empty list is no leg. */
+                const _s = [];
+                for (const _n of _e.snaps)
+                    if (typeof _n === 'number' && isFinite(_n) && (_n | 0) >= 0 && (_n | 0) < 16 && _s.indexOf(_n | 0) < 0) _s.push(_n | 0);
+                if (_s.length) _l = { kind: 'morph', snaps: _s };
+            }
             else if (_e.kind === 'level')
                 _l = { kind: 'level', key: _e.key };
             else if (_e.kind === 'bank' && typeof _e.bank === 'number' && typeof _e.k === 'number') {
@@ -1518,7 +1547,7 @@ export function restoreUiSidecar(applyDefaultsNow) {
              * sidecar written before today) = 'bounded', the target's own feel
              * with the range as a wall. READING is the migration, exactly as
              * it was for lo/hi — no version bump. */
-            if (_e.travel === 'full') _l.travel = 'full';
+            if (_e.travel === 'full' && _l.kind !== 'morph') _l.travel = 'full';   /* a morph is always v-driven */
             return _l;
         };
         for (let _t = 0; _t < NUM_TRACKS; _t++) S.trackMacros[_t] = null;
@@ -1771,6 +1800,13 @@ function _syncClipsFromDspInner() {
      * first or an unchanged-looking value would suppress the correcting write. */
     invalidateLinkAudioRoutingCache();
     syncLinkAudioRoutingFromRoutes(S.trackRoute);
+    /* ONE dAVEBOx TRACK PER MOVE INSTRUMENT (Josh, 2026-09-13): a project made
+     * before the rule can still hold two tracks on one Move instrument.
+     * REPORTED, never repaired — the picker refuses NEW duplicates and shows the
+     * owner; re-routing a track on load would be a session to diagnose. */
+    for (const [m, owners] of moveInstrDuplicates(S.trackRoute, S.trackChannel))
+        console.log('[instr] Move ' + (m + 1) + ' is addressed by tracks ' + owners.map(t => t + 1).join(', ') +
+                    ' — they share one bus; the picker will not add a third');
     /* Same reason, one level up: session view caches each track's level so the
      * first knob detent moves from the real value, and that cache belongs to the
      * PREVIOUS project. Drop it rather than re-read 8 levels here — the tick
