@@ -93,21 +93,8 @@ setsid --wait bash -c '
   ts() { echo "$(date +%H:%M:%S.%2N) phase: $*"; }
   ts "launcher entered (entry=$DBX_ENTRY)"
 
-  # S1: background reader that distills MoveOriginal own "About to load ..."
-  # boot line into $DBX_DIR/move_loaded_set.txt (contract documented at the
-  # top of move-loaded-set-reader.sh; S4, a later and separate slice, is the
-  # consumer that compares it against the host xattr-resolved project).
-  # Started once here and left running for the life of the whole session,
-  # including every relaunch below, because it just tails the single growing
-  # LOG this exec already redirected everything into. It never touches
-  # MoveOriginal stdio directly -- MoveOriginal keeps running in the
-  # foreground exactly as before -- so a dead or lagging reader can never
-  # change MoveOriginal exit status or pid as the supervisor loop sees them.
-  _mlsr_pid=""
-  if [ -x "$DBX_DIR/scripts/move-loaded-set-reader.sh" ]; then
-    sh "$DBX_DIR/scripts/move-loaded-set-reader.sh" "$LOG" "$DBX_DIR/move_loaded_set.txt" &
-    _mlsr_pid=$!
-  fi
+  # (The move_loaded_set.txt reader starts just before the Move loop below,
+  # not here -- see the note there for why the position matters.)
   # ENTRY: at BOOT we are the boot selector target — MoveLauncher exec-ed the
   # selector, which exec-ed us, so this process IS move-launcher.service, not
   # something running alongside it. Three consequences, each handled below:
@@ -554,6 +541,26 @@ setsid --wait bash -c '
   fi
 
   rm -f "$DBX_DIR/relaunch_requested"
+
+  # S1: background reader that distills MoveOriginal own "About to load ..."
+  # boot line into $DBX_DIR/move_loaded_set.txt (contract and lifecycle at the
+  # top of move-loaded-set-reader.sh). ONE per session, alive across every
+  # relaunch below. Its position is load-bearing:
+  #   * AFTER the session lock -- started before it, a REFUSED second launch
+  #     left a second reader running beside the live session;
+  #   * AFTER the inherited-FD close loop -- started before it, the reader and
+  #     its tail held the SPI device our parent passed us;
+  #   * AFTER every refuse() -- nothing below this line exits before the
+  #     explicit stop on the exit path;
+  #   * fd 9 closed for it (9>&-) so it can never hold the session lock.
+  # It is given this shell pid as its OWNER and stops itself when that pid is
+  # gone, so even an exit path that forgets it (or a killed supervisor) cannot
+  # leave it running into the stock session the boot door execs to.
+  _mlsr_pid=""
+  if [ -f "$DBX_DIR/scripts/move-loaded-set-reader.sh" ]; then
+    sh "$DBX_DIR/scripts/move-loaded-set-reader.sh" "$LOG" "$DBX_DIR/move_loaded_set.txt" "$$" 9>&- &
+    _mlsr_pid=$!
+  fi
   while :; do
     # (No second LED blank leg here — it was removed 2026-08-24 after shipping
     # twice without darkening anything. Writing note-offs down OUR ring cannot
@@ -644,8 +651,13 @@ setsid --wait bash -c '
   echo "davebox host exited ($?) — restoring the watchdog"
 
   # S1: the reader was started once, outside this loop -- stop it with the
-  # session, not with an individual Move process.
-  [ -n "$_mlsr_pid" ] && kill "$_mlsr_pid" 2>/dev/null || true
+  # session, not with an individual Move process. Its TERM handler tears down
+  # its own tail pipeline; wait so it is gone before the boot door execs on.
+  if [ -n "$_mlsr_pid" ]; then
+    kill "$_mlsr_pid" 2>/dev/null || true
+    wait "$_mlsr_pid" 2>/dev/null || true
+  fi
+  rm -f "$DBX_DIR/move_loaded_set.txt"
 
   # Kill surviving sidecars on EXIT too — same reason as the relaunch branch:
   # they outlive MoveOriginal, and a stray shadow_ui keeps running against

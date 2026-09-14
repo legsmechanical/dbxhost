@@ -28,13 +28,18 @@ T="$(mktemp -d)"
 # (exactly what the pre-commit hook and CI do), long after this test itself
 # has printed PASS and returned. `pkill -P` reaps the reader's direct
 # children (tail, and the while-loop subshell) before the parent.
-trap 'pkill -P "${READER_PID:-0}" 2>/dev/null || true; kill "${READER_PID:-0}" 2>/dev/null || true; rm -rf "$T"' EXIT
+descendants() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do descendants "$c"; echo "$c"; done; }
+reap() { local p; for p in $(descendants "${1:-0}") "${1:-0}"; do kill "$p" 2>/dev/null || true; done; }
+trap 'reap "${READER_PID:-0}"; reap "${READER2_PID:-0}"; kill "${OWNER_PID:-0}" "${OWNER2_PID:-0}" 2>/dev/null || true; rm -rf "$T"' EXIT
 
 LOG="$T/launch.log"
 OUT="$T/move_loaded_set.txt"
 : > "$LOG"
 
-sh "$READER" "$LOG" "$OUT" &
+# A fake supervisor: the reader is told to live exactly as long as this pid.
+sleep 300 &
+OWNER_PID=$!
+sh "$READER" "$LOG" "$OUT" "$OWNER_PID" &
 READER_PID=$!
 
 wait_for() { # predicate-file expected-content-substring timeout-tenths
@@ -80,8 +85,36 @@ rm -f "$OUT"
 echo "About to load default song" >> "$LOG"
 check "default song captured" wait_for "$OUT" "^default\$"
 
-pkill -P "$READER_PID" 2>/dev/null || true
+# ---- lifecycle: the reader must never outlive the session ----------------
+# The session ends by exec-ing onward to stock (boot) or exiting (tools);
+# neither kills background children. A reader that leaves its tail pipeline
+# behind writes into dbx-host/ forever and gains a copy per session.
+all_gone() { local p; for p in "$@"; do kill -0 "$p" 2>/dev/null && return 1; done; return 0; }
+gone_within() { local n=0; while [ $n -lt 40 ]; do all_gone "$@" && return 0; sleep 0.1; n=$((n+1)); done; return 1; }
+
+TREE1="$(descendants "$READER_PID")"
+check "reader runs a tail pipeline (positive control for the tree checks)" test -n "$TREE1"
 kill "$READER_PID" 2>/dev/null || true
-wait "$READER_PID" 2>/dev/null || true
+check "SIGTERM stops the reader AND its whole tail pipeline" gone_within "$READER_PID" $TREE1
+
+sleep 300 &
+OWNER2_PID=$!
+sh "$READER" "$LOG" "$OUT" "$OWNER2_PID" &
+READER2_PID=$!
+sleep 0.5
+TREE2="$(descendants "$READER2_PID")"
+check "second reader has a pipeline too" test -n "$TREE2"
+kill "$OWNER2_PID"
+check "owner gone (session exec-ed on / died) -> reader and pipeline stop themselves" gone_within "$READER2_PID" $TREE2
+
+# ---- launch.sh wiring: one reader, started where no exit path can skip it --
+L=standalone/scripts/launch.sh
+line_of() { grep -n -- "$1" "$L" | tail -n 1 | cut -d: -f1; }
+START=$(grep -n 'move-loaded-set-reader.sh" "\$LOG"' "$L" | cut -d: -f1)
+check "launch.sh starts the reader exactly once" test "$(printf '%s\n' "$START" | grep -c .)" = 1
+check "reader starts after the session lock" test "$START" -gt "$(line_of 'flock -n 9')"
+check "reader starts after the last refuse call" test "$START" -gt "$(line_of '|| refuse \|  refuse \"')"
+check "reader starts before the Move loop" test "$START" -lt "$(line_of 'while :; do')"
+check "reader is handed its owner pid and not the lock fd" bash -c "sed -n '${START}p' '$L' | grep -q '\"\\\$\\\$\" 9>&- &'"
 
 [ "$fails" = 0 ] && echo "PASS: launch_move_loaded_set" || { echo "FAIL: launch_move_loaded_set" >&2; exit 1; }
