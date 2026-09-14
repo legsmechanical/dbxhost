@@ -76,6 +76,16 @@ PY
 
 check "switch rejects junk" bash -c '! sh "$0" switch bogus 2>/dev/null' "$CMD"
 
+# S5 (Fix E of the 2026-09-14 new-project plan): do_switch refuses --
+# non-zero, logged -- rather than queue a second relaunch while one is
+# already in flight.
+touch "$DBX_DIR/relaunch_requested"
+rm -f "$DBX_DIR/relaunch_song_index"
+check "switch refuses while a relaunch is already queued" bash -c '! sh "$0" switch 3 2>/dev/null' "$CMD"
+check "refusal is logged" bash -c 'sh "$0" switch 3 2>&1 >/dev/null | grep -qi "relaunch"' "$CMD"
+check "refused switch does not queue relaunch_song_index" test ! -f "$DBX_DIR/relaunch_song_index"
+rm -f "$DBX_DIR/relaunch_requested"
+
 # ---- color + rename (both key off the user.song-index xattr, so they can
 # only be exercised where user xattrs work: Linux + a real setxattr on $T.
 # macOS python has no os.setxattr; tmpfs before 6.6 lacks user.*). ----

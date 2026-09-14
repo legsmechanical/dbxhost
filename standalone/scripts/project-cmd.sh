@@ -485,6 +485,17 @@ PYEOF
 
 do_switch() { # index
     case "${1:-}" in *[!0-9]*|"") die "switch needs a numeric index" ;; esac
+    # S5 (Fix E of the 2026-09-14 new-project plan): refuse rather than queue
+    # a SECOND relaunch. A relaunch already in flight means launch.sh's
+    # supervisor loop is about to consume relaunch_song_index/relaunch_patch.sh
+    # and kill Move out from under us — a second writer here would either be
+    # silently clobbered by the one already in flight (losing this switch) or
+    # clobber IT (losing whatever it queued, e.g. a `new` mid-relaunch: `new`
+    # ends by calling do_switch itself, which is exactly how a create-during-
+    # relaunch race would otherwise slip through undetected).
+    if [ -f "$DBX_DIR/relaunch_requested" ]; then
+        die "a relaunch is already queued (relaunch_requested exists) — refusing to queue a second one"
+    fi
     save_song
     # ⚠ Do NOT write currentSongIndex here: Move is still alive, and its
     # SIGTERM teardown saves Settings.json — overwriting the value with its
