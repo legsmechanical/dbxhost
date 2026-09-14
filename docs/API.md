@@ -313,6 +313,18 @@ host_autosave_hold(on)        // While on, the host DEFERS its mid-session slot/
                               // share the SPI thread with a slot serialization — e.g.
                               // hold while the transport runs. Call on the EDGE, not
                               // every tick. Cleared when the module unloads.
+host_autosave_kick()          // Bring the PENDING dirty-driven autosave forward
+                              // instead of waiting out its quiet period. No-op
+                              // when nothing is dirty; never bypasses
+                              // host_autosave_hold, preset-preview audition or
+                              // set-change suppression — those gates still
+                              // apply at the moment the save actually runs.
+                              // Cheaper than a full shadow_save_state_now()
+                              // sweep: it only flushes what is already marked
+                              // dirty. Added S5 (2026-09-14) so a caller with
+                              // its own idle-gesture debounce (dAVEBOx's
+                              // session-fader idle save) can end its gesture
+                              // promptly without forcing a whole-set flush.
 host_preview_play(path)       // Play a WAV preview through Move's speakers
 host_preview_stop()
 host_send_screenreader(text)  // Same as host_announce_screenreader

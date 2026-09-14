@@ -4250,6 +4250,7 @@ function exitOvertakeMode() {
     unloadOvertakeDsp();
     autosaveHold = false;
     delete globalThis.host_autosave_hold;
+    delete globalThis.host_autosave_kick;
     delete globalThis.host_module_set_param;
     delete globalThis.host_module_set_param_blocking;
     delete globalThis.host_module_get_param;
@@ -4807,6 +4808,25 @@ function loadOvertakeModule(moduleInfo, skipOvertake) {
         globalThis.host_snapshot_status = function() { return hostSnapshotStatus(); };
         globalThis.host_autosave_hold = function(on) {
             autosaveHold = !!on;
+        };
+        /* host_autosave_kick(): bring the PENDING autosave forward instead of
+         * waiting out AUTOSAVE_QUIET_MS. A caller that already implements its
+         * own idle-gesture debounce (e.g. dAVEBOx's session-fader idle save)
+         * can ask the dirty-driven autosave to flush now rather than forcing
+         * a full shadow_save_state_now() sweep of every slot/bus.
+         *
+         * No-op when nothing is dirty. Never bypasses hold, preset-preview
+         * audition or set-change suppression — those are the SAME gates the
+         * tick loop's own dirty-driven save checks
+         * (`ready && !autosaveHold && !isPresetPreviewActive()`, itself only
+         * reached once `nowMs >= autosaveSuppressUntil`); this only moves
+         * `autosaveNotBefore` into the past so the NEXT such check reads
+         * "ready" instead of waiting for the quiet period to elapse on its
+         * own. */
+        globalThis.host_autosave_kick = function() {
+            if (autosaveDirtySlots || autosaveDirtyConfig || autosaveDirtyBuses) {
+                autosaveNotBefore = Date.now();
+            }
         };
         globalThis.host_exit_module = function() {
             debugLog("host_exit_module called by overtake module");
