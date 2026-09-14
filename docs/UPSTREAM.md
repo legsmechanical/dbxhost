@@ -41,8 +41,8 @@ whole discipline — a **watermark** plus a short table, replacing the 11-patch 
 
 | | |
 |---|---|
-| **Last upstream commit reviewed** | `8e1d99f4` — *release 1.4.0 (#483)*, 2026-09-09 |
-| **Reviewed on** | 2026-09-10 (1.3.1 → 1.4.0, 10 commits; plus the backfill of the 33 the 1.3.0 survey left unlisted) |
+| **Last upstream commit reviewed** | `35260e0b` — *docs: a standalone tool is one file from being a boot target, and `exec` is the wrong file (#510)*, 2026-09-13 |
+| **Reviewed on** | 2026-09-14 (`8e1d99f4`..`upstream/main`, 23 commits) |
 | **Merge base** | `a46f32b2` — *Merge pull request #179: bump host to 0.11.6*, 2026-07-19 |
 
 To advance it:
@@ -87,7 +87,24 @@ fork splits the shadow UI differently from upstream — there is no `shadow_ui_g
 here, and the settings live in `shadow_ui_settings.mjs` — so "upstream's file is absent" says
 nothing about the capability. Rows below that rest on a filename alone are marked as such.
 
-### Reviewed since the merge base
+### Reviewed 2026-09-14 — `8e1d99f4` → `upstream/main` (23 commits)
+
+| Upstream | What | Decision |
+|---|---|---|
+| `e912756d` #486, `444be110` #485, `43c08481` #484, `3bc05eb8` #488, `317b8c37` #495, `52439245` #496, `9c2f4a54` #499, `e3b42ed8` #498, `ef07aa44` #501, `d2d92254` #503 | Catalog/taxonomy: new modules, subcategories, tags; `module-catalog.json` + `taxonomy.json` + `schwung-manager` filter UI only | **Skipped** — catalog is fetched from **upstream's** hardcoded URL (see the note above); this fork's edits to it do nothing, and the taxonomy filter lives entirely in `schwung-manager`'s own templates, a store surface this fork does not use. Verified via `git show --stat`: no `src/` file in any of the ten. |
+| `f84c477f` #497 | `host.channels.stable` catalog field + mirror test | **Skipped** — catalog + test only, no `src/` change. |
+| `844cc7d8` #390, `2adb05e3` #505, `c50908ff` #506 | `schwung-manager`: beta/stable channels, stale-catalog downgrade guard, Check-for-Update cache/lock | **Skipped** — `schwung-manager` Go/template code only, a store surface this fork does not carry (verified `--stat`: `schwung-manager/*.go`, `templates/*.html` only). |
+| `fbe33154` #502 | `schwung-manager`: single builder (`build-manager.sh`) + CI pin; `install.sh`'s `go`-guard silent-skip fixed | **Skipped, applicable-to-upstream-only** — `install.sh`/`build.sh` here are `dbxhost`'s own scripts (`standalone/scripts/install-sa.sh` etc.), not upstream's; the bug fixed (silent stale-manager ship) is specific to upstream's manager-build indirection. No `src/` change. |
+| `035b96f2` #507 | Licensing: LICENSE/THIRD_PARTY_LICENSES consistency, GPL text shipped; `JackShadowDriver.cpp` header corrected | **Skipped** — docs/licensing only; the one `src/` file touched is a **comment-only** header-block correction (verified in the diff: code starts unchanged at line 33). This fork's own licensing statement is separate and unaffected. |
+| `2ecdb741` #508 | Release: version-agreement test, `release.json` bump | **Skipped** — release tooling for upstream's own release process. |
+| `35260e0b` #510 | Docs: `BOOT_TARGETS.md` design note | **Skipped** — docs only. |
+| `1491fe1d` #400 | `shadow_ui.js`: clear the loaded-preset record (`currentUserPresets`) when a chain position changes hands, so an incoming module's My Presets page didn't read the outgoing module's name | **Already here, independently.** dAVEBOx never uses the host's `enterComponentSelect`/`currentUserPresets` path (it picks through `applyModulePick`, `davebox/ui/ui_sound.mjs:7596`) — it has its own `presetRecord()`/`setPresetRecord()` (`ui_sound.mjs:2178`), keyed by `slot:comp` and immune to this bug **by construction**: the accessor checks `r.mod !== S.moduleId` and drops the stale record lazily on every read, rather than needing an eager clear on the swap gesture. No port needed. |
+| `485740bc` #396 | `shadow_ui.js` + `component_load_gate.mjs`: a chain component that draws its own param grid (ships `ui_chain.js`) now gets the host's trailing "My Presets"/"Module" pages too | **Not applicable.** This is entirely the host's own chain editor / `enterParamPages` trailing-page mechanism — the surface named in the gate above as one dAVEBOx never opens. dAVEBOx already builds its own "My Presets" (`openPresets()`, `ui_sound.mjs:2218`) and Module Menu row independent of this host plumbing, so there is nothing to plumb dAVEBOx into. |
+| `820e2db1` #465 | `src/shared/param_pages/page_controller.mjs`: coalesce `replanIfCondition` writes to one `planPages()` per tick (an encoder sweep on DR32's send-effect page cost 112 full replans in one 10.6 ms tick) | **Already here.** `dbxhost/src/shared/param_pages/page_controller.mjs` — the shared file `davebox/ui/ui_sound.mjs`'s `createParamPagesBinding` runs on — already has `replanOwed`/`flushReplan()`/`replanNow()` at the same call sites (`tick()` line ~2106, `replanIfCondition` ~3645). No drift, no port needed. |
+| `0aee5d89` #500 | `src/host/shadow_resample.c` + `shadow_dbus.c` + `shim_worker.c`: delete the screen-reader-text sampler-source classifier (a bare substring match that never saw a true positive and gated a resample-bridge mode, `mode 1`, that no shipped UI could select) and its dead 4th argument; fix a real JS/C disagreement on migrating the retired mode-1 value | **Applicable & worth porting — needs Josh.** `dbxhost/src/host/shadow_resample.c` carries the identical pre-fix code: `native_resample_bridge_mode_from_text`, the same mode-1 hole, and (unverified here) the same JS `parseResampleBridgeMode` migration gap in `src/shadow/shadow_ui.js`. This is host-level audio-input routing plumbing with no screen of its own — it runs in the background regardless of which UI has focus, so the gate's "name the dAVEBOx screen" question doesn't apply the way it does to a UI port. It is real dead-code removal plus a correctness fix (mode-1 backward-compat migration agreement between the C boot-time reader and the JS runtime reader) on a shared audio-routing path both installs carry. Low urgency (no live bug observed — mode 1 is equally unreachable here), but it is a genuine simplification+bugfix on live host code, not chrome. Filed on the board. |
+| `2e406933` #504 | New `clip_regions.c`/`clip_state.c`/`editor_bar_announce.h` + `schwung-manager/clip_debug.go`: decode which Move Session-view clip is playing per track and where in it, from the cable-0 LED stream, behind a `clip_state_on` diagnostic toggle | **Not applicable.** This decodes Move's own native **Session-view clip launch** grid (`move_ui_mode`, pad LED channels 9/14) — a surface dAVEBOx does not co-run with; dAVEBOx takes over the pads for its own sequencer and never puts Move in native Session mode while it holds the surface. Diagnostic/telemetry feature (`schwung-manager` debug endpoint) with no dAVEBOx-reachable behavior. |
+
+
 
 | Upstream | What | Decision |
 |---|---|---|
