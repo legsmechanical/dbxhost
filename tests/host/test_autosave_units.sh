@@ -68,7 +68,7 @@ function makeHost(opts = {}) {
         unresolved: opts.unresolved || null,   /* {slot, key}: that key answers `?` */
         failBulkSlot: opts.failBulkSlot,       /* that slot's bulk request fails (null) */
         chainFails: new Set(opts.chainFails || []),
-        chainCalls: [],
+        chainCalls: [], busCalls: [],
     };
     /* shadow_direct_get_param: a string, or -1 for "I do not know this key". */
     h.direct = (slot, key) => {
@@ -108,7 +108,9 @@ function makeRig(host, state) {
         getSlotParam: (s, k) => host.shadow_get_param(s, k),
         host_write_file: (p, c) => { host.writes.push({ p, c }); return true; },
         autosaveAllSlots: (slot) => { host.chainCalls.push(slot); return !host.chainFails.has(slot); },
-        saveMasterFxChainConfig: () => true, saveSendFxChainConfig: () => true, saveMoveFxChainConfig: () => true,
+        saveMasterFxChainConfig: () => { host.busCalls.push("master"); return true; },
+        saveSendFxChainConfig: (w) => { host.busCalls.push("send_" + w); return true; },
+        saveMoveFxChainConfig: (m) => { host.busCalls.push("move_" + m); return true; },
     };
     const body = `let autosaveDirtySlots = ${state.slots | 0}, autosaveDirtyConfig = ${state.config | 0},
                      autosaveDirtyBuses = ${state.buses | 0}, autosaveNotBefore = 0;
@@ -198,6 +200,18 @@ function drain(rig, max = 40) {
     rig.unit();
     ok(configWrites(h).length === 0, "null reply: the config file was written anyway");
     ok(rig.get().config === 1 && rig.get().notBefore > 0, "null reply: bits not kept / no back-off");
+}
+
+/* 4b. Strictly ONE unit per tick: config and a bus both pending -> the config
+ *     alone this tick, the bus on the next. */
+{
+    const h = makeHost();
+    const rig = makeRig(h, { config: 1, buses: 1 });
+    rig.unit();
+    ok(configWrites(h).length === 1 && h.busCalls.length === 0,
+       `one unit per tick: config + ${JSON.stringify(h.busCalls)} ran in the same tick`);
+    rig.unit();
+    ok(JSON.stringify(h.busCalls) === '["master"]', `one unit per tick: the bus did not follow (${JSON.stringify(h.busCalls)})`);
 }
 
 /* 5. A chain save that fails keeps ITS bit, does not clear config bits, and does
