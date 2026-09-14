@@ -84,6 +84,30 @@ done
 rg -q 'shadow_take_dirty_fx_buses' "$c" \
   || fail "$c no longer exposes shadow_take_dirty_fx_buses to JS"
 
+# 7b. A bus write must NOT also mark slot 0's CHAIN dirty. All three bus
+#     namespaces are addressed at slot 0 only because the mailbox needs a
+#     slot (see shadow_dirty_policy.h), so a naive classifier sends them to
+#     the default CHAIN case and every Move-bus level change re-saves
+#     slot 0's chain file for nothing (device-observed 2026-09-14: "autosave:
+#     slot 0 chain written" right before "move fx bus 0 written"). The
+#     classifier — not shadow_mark_slot_dirty's caller — must be the one that
+#     zeroes it, since shadow_mark_slot_dirty runs unconditionally alongside
+#     shadow_mark_fx_bus_dirty for every SET (shadow_set_param_common above).
+policy_h="src/host/shadow_dirty_policy.h"
+for prefix in 'master_fx:' 'send_fx:' 'move_fx:'; do
+  rg -qF "strncmp(key, \"$prefix\"" "$policy_h" \
+    || fail "$policy_h does not classify the $prefix namespace — it would fall through to the default CHAIN case and mark slot 0's chain dirty on every bus edit"
+done
+# The three prefix checks must each return 0 (not reach the CHAIN fallthrough).
+awk '
+  /strncmp\(key, "master_fx:"/ { m=1 }
+  /strncmp\(key, "send_fx:"/   { s=1 }
+  /strncmp\(key, "move_fx:"/   { v=1 }
+  m && s && v { found=1 }
+  END { exit !found }
+' "$policy_h" \
+  || fail "$policy_h is missing one of the three bus-prefix guards ahead of the CHAIN fallthrough"
+
 # 8. Bulk sets must mark buses too — a bus :state restore is a bulk SET.
 rg -q 'shadow_mark_fx_bus_dirty\(shadow_param->key\)' "$c" \
   || fail "$c bulk path does not mark FX buses (and must read the key from shared memory, not the freed JS string)"

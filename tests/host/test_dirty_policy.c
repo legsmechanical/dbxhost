@@ -60,6 +60,29 @@ int main(void) {
     OK(shadow_slot_key_dirty_class("synth:overtake_dsp:x") == SHADOW_DIRTY_CHAIN,
        "a key CONTAINING overtake_dsp: later still dirties CHAIN");
 
+    /* --- the FX buses: addressed at slot 0, tracked by their own mask ---- */
+    OK(shadow_slot_key_dirty_class("master_fx:volume") == 0,       "master_fx:<param> dirties nothing (bus mask owns it)");
+    OK(shadow_slot_key_dirty_class("master_fx:fx1:bypassed") == 0, "master_fx:fx1:<param> dirties nothing");
+    OK(shadow_slot_key_dirty_class("master_fx:") == 0,             "the master_fx: bulk marker dirties nothing");
+    OK(shadow_slot_key_dirty_class("send_fx:a:return_level") == 0, "send_fx:a:<param> dirties nothing");
+    OK(shadow_slot_key_dirty_class("send_fx:b:fx2:bypassed") == 0, "send_fx:b:fx2:<param> dirties nothing");
+    OK(shadow_slot_key_dirty_class("send_fx:") == 0,                "the send_fx: bulk marker dirties nothing");
+    OK(shadow_slot_key_dirty_class("move_fx:1:volume") == 0,       "move_fx:1:<param> dirties nothing");
+    OK(shadow_slot_key_dirty_class("move_fx:16:fx4:bypassed") == 0,"move_fx:16:fx4:<param> dirties nothing");
+    OK(shadow_slot_key_dirty_class("move_fx:") == 0,                "the move_fx: bulk marker dirties nothing");
+    OK(shadow_slot_key_dirty_class("synth:master_fx:x") == SHADOW_DIRTY_CHAIN,
+       "a key CONTAINING master_fx: later still dirties CHAIN");
+
+    /* --- near-miss controls: prefix, not substring ------------------------ */
+    OK(shadow_slot_key_dirty_class("master_fxx:volume") == SHADOW_DIRTY_CHAIN,
+       "master_fxx: (no colon after fx) is not the master_fx: prefix, CHAIN");
+    OK(shadow_slot_key_dirty_class("send_fxa:x") == SHADOW_DIRTY_CHAIN,
+       "send_fxa: (missing the colon) is not the send_fx: prefix, CHAIN");
+    OK(shadow_slot_key_dirty_class("move_fx") == SHADOW_DIRTY_CHAIN,
+       "bare move_fx without the colon is not the prefix, CHAIN");
+    OK(shadow_slot_key_dirty_class("move_fx1:volume") == SHADOW_DIRTY_CHAIN,
+       "move_fx1: (missing the colon after move_fx) is not the prefix, CHAIN");
+
     /* --- unknown: never under-mark --------------------------------------- */
     OK(shadow_slot_key_dirty_class(NULL) == SHADOW_DIRTY_BOTH, "NULL dirties BOTH");
     OK(shadow_slot_key_dirty_class("") == SHADOW_DIRTY_BOTH,   "the empty key dirties BOTH");
