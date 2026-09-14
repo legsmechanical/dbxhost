@@ -581,7 +581,7 @@ const VOUCH_MAX_TRIES = 4;
  * sequencer AND the UI — once per pad press, which is exactly the moment it is
  * most visible. Measured cost per get_param on device: ~2.6ms. */
 const POLL_PER_TICK = 3;
-const WRITES_PER_TICK = 2;      /* bound the per-tick SHM cost */
+const WRITES_PER_TICK = 8;      /* bound the per-tick SHM cost */
 /* ---- verify-and-rewrite (2026-08-24) ----
  * A write is not DONE until a read confirms it. shadow_set_param is
  * fire-and-forget in overtake mode: it waits <=8ms for the one-deep mailbox,

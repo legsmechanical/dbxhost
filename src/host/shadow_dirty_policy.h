@@ -41,6 +41,20 @@
  *                               instrument, persisted by the tool; its keys
  *                               are addressed at slot 0 only because the
  *                               mailbox needs a slot.
+ *   "master_fx:*", "send_fx:*", 0. These are addressed at slot 0 only
+ *   "move_fx:*"                 because the mailbox needs a slot — the bus
+ *                               they actually touch is tracked by its own
+ *                               mask (shadow_mark_fx_bus_dirty), which runs
+ *                               unconditionally alongside this classifier
+ *                               (shadow_set_param_common) and independently
+ *                               of it (the web ring, src/schwung_shim.c).
+ *                               Neither file this header decides between
+ *                               holds ANY bus data: buildSlotPatchJson /
+ *                               saveChainConfigToDir (shadow_ui.js) read only
+ *                               slot-scoped keys. Classing these CHAIN marked
+ *                               slot 0's chain dirty for a bus-only edit —
+ *                               a spurious slot_0.json save on every Move-bus
+ *                               level change.
  *   "slot:receive_channel",     BOTH — in the config AND in slot_N.json.
  *   "slot:forward_channel"
  *   "slot:*" (any other)        CONFIG.
@@ -51,6 +65,9 @@ static inline unsigned shadow_slot_key_dirty_class(const char *key)
 {
     if (!key || !key[0]) return SHADOW_DIRTY_BOTH;
     if (strncmp(key, "overtake_dsp:", 13) == 0) return 0;
+    if (strncmp(key, "master_fx:", 10) == 0) return 0;
+    if (strncmp(key, "send_fx:", 8) == 0) return 0;
+    if (strncmp(key, "move_fx:", 8) == 0) return 0;
     if (strncmp(key, "slot:", 5) == 0) {
         if (strcmp(key + 5, "receive_channel") == 0 ||
             strcmp(key + 5, "forward_channel") == 0)
