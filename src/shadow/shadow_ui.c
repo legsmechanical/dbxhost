@@ -30,6 +30,7 @@
 #include "host/shadow_param_queue.h"
 #include "host/shadow_param_lane.h"
 #include "host/shadow_param_lane_policy.h"
+#include "host/shadow_dirty_policy.h"
 #include "host/shadow_shm_util.h"
 #include "host/js_host_common.h"
 #include "host/shadow_midi_inject_writer.h"
@@ -914,8 +915,15 @@ static int shadow_param_wait_response(uint32_t req_id, int timeout_ms) {
  *
  * Deliberately marks on EVERY slot-targeted set, including keys that are not
  * persistent state. Over-marking costs one redundant save; under-marking loses
- * a user's edit, so the asymmetry decides it. */
+ * a user's edit, so the asymmetry decides it.
+ *
+ * Two masks, one per FILE the slot's state lives in (host/shadow_dirty_policy.h
+ * decides which a key dirties): g_slot_param_dirty_mask is the CHAIN
+ * (slot_N.json, per slot), g_slot_config_dirty_mask the SLOT SETTINGS
+ * (shadow_chain_config.json, one file for all slots). A mixer edit then no
+ * longer pays for re-serializing a chain, nor a synth knob for the config. */
 static uint32_t g_slot_param_dirty_mask = 0;
+static uint32_t g_slot_config_dirty_mask = 0;
 
 /* The FX buses cannot be told apart by slot: master, both sends and every Move
  * bus are all addressed at slot 0 and distinguished only by their key
@@ -949,20 +957,21 @@ static void shadow_mark_fx_bus_dirty(const char *key) {
     }
 }
 
-/* Does a write to `key` edit persisted slot state? The overtake DSP is the
+/* Mark the slot's dirty bits for a write to `key`. The overtake DSP is the
  * tool's own instrument, persisted by the tool: its "overtake_dsp:" keys are
  * addressed at slot 0 only because the mailbox needs a slot, and marking slot
  * 0 dirty for them autosaves a chain that did not change — once per deferral
  * cap for as long as the tool keeps writing, each save a full serialization
- * of the slot on the SPI thread. */
-static int shadow_param_key_dirties(const char *key) {
-    return key == NULL || strncmp(key, "overtake_dsp:", 13) != 0;
+ * of the slot on the SPI thread. The policy classes them 0. */
+static void shadow_mark_slot_dirty(int slot, const char *key) {
+    if (slot < 0 || slot >= 32) return;
+    unsigned cls = shadow_slot_key_dirty_class(key);
+    if (cls & SHADOW_DIRTY_CHAIN)  g_slot_param_dirty_mask  |= (1u << slot);
+    if (cls & SHADOW_DIRTY_CONFIG) g_slot_config_dirty_mask |= (1u << slot);
 }
 
 static int shadow_set_param_common(int slot, const char *key, const char *value, int timeout_ms, int force_blocking) {
-    if (slot >= 0 && slot < 32 && shadow_param_key_dirties(key)) {
-        g_slot_param_dirty_mask |= (1u << slot);
-    }
+    shadow_mark_slot_dirty(slot, key);
     shadow_mark_fx_bus_dirty(key);
 
     const int overtake_fire_and_forget = !force_blocking && (shadow_control && shadow_control->overtake_mode >= 2);
@@ -1243,8 +1252,14 @@ static JSValue shadow_param_bulk_js(JSContext *ctx, int argc, JSValueConst *argv
      * Reads the key back out of shared memory, NOT the JS string: `key` was
      * released above and using it here would be a use-after-free. */
     if (req_type == 4 && !transient) {
-        if (slot < 32 && shadow_param_key_dirties(shadow_param->key))
-            g_slot_param_dirty_mask |= (1u << slot);
+        /* The key here is the routing MARKER ("chain:"), not the keys the
+         * blob carries — which may be `slot:*`, chain params or both — so the
+         * policy cannot class it: mark BOTH files. `overtake_dsp:` still
+         * classes 0 (its pairs all land on the tool's DSP). */
+        if (slot < 32 && shadow_slot_key_dirty_class(shadow_param->key)) {
+            g_slot_param_dirty_mask  |= (1u << slot);
+            g_slot_config_dirty_mask |= (1u << slot);
+        }
         shadow_mark_fx_bus_dirty(shadow_param->key);
     }
 
@@ -1297,7 +1312,10 @@ static JSValue js_shadow_set_params(JSContext *ctx, JSValueConst this_val,
  * read+store: a shim OR landing between the two would be lost forever. */
 static void web_write_dirty_fold(void) {
     if (!web_write_dirty) return;
-    g_slot_param_dirty_mask |= __atomic_exchange_n(&web_write_dirty->slot_mask, 0, __ATOMIC_ACQ_REL);
+    /* The shim's hint carries no key class, so a web write dirties BOTH files. */
+    uint32_t web_slots = __atomic_exchange_n(&web_write_dirty->slot_mask, 0, __ATOMIC_ACQ_REL);
+    g_slot_param_dirty_mask  |= web_slots;
+    g_slot_config_dirty_mask |= web_slots;
     g_fx_bus_dirty_mask |= __atomic_exchange_n(&web_write_dirty->fxbus_mask, 0, __ATOMIC_ACQ_REL);
 }
 
@@ -1306,6 +1324,20 @@ static JSValue js_shadow_take_dirty_slots(JSContext *ctx, JSValueConst this_val,
     web_write_dirty_fold();
     uint32_t mask = g_slot_param_dirty_mask;
     g_slot_param_dirty_mask = 0;
+    return JS_NewInt32(ctx, (int32_t)mask);
+}
+
+/* shadow_take_dirty_slot_config() -> int
+ * Companion to shadow_take_dirty_slots for the SLOT SETTINGS file
+ * (shadow_chain_config.json): bitmask of slots whose volume/pan/channel/
+ * mute/solo/sends/transpose were written since the last call. Same take
+ * semantics — act on the mask or re-set it, never discard it. The slots mask
+ * now covers the chain (slot_N.json) only; a key in both files marks both. */
+static JSValue js_shadow_take_dirty_slot_config(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    (void)ctx; (void)this_val; (void)argc; (void)argv;
+    web_write_dirty_fold();
+    uint32_t mask = g_slot_config_dirty_mask;
+    g_slot_config_dirty_mask = 0;
     return JS_NewInt32(ctx, (int32_t)mask);
 }
 
@@ -3036,6 +3068,7 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JS_SetPropertyStr(ctx, global_obj, "shadow_get_params", JS_NewCFunction(ctx, js_shadow_get_params, "shadow_get_params", 3));
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_params", JS_NewCFunction(ctx, js_shadow_set_params, "shadow_set_params", 4));
     JS_SetPropertyStr(ctx, global_obj, "shadow_take_dirty_slots", JS_NewCFunction(ctx, js_shadow_take_dirty_slots, "shadow_take_dirty_slots", 0));
+    JS_SetPropertyStr(ctx, global_obj, "shadow_take_dirty_slot_config", JS_NewCFunction(ctx, js_shadow_take_dirty_slot_config, "shadow_take_dirty_slot_config", 0));
     JS_SetPropertyStr(ctx, global_obj, "shadow_take_dirty_fx_buses", JS_NewCFunction(ctx, js_shadow_take_dirty_fx_buses, "shadow_take_dirty_fx_buses", 0));
 
     /* OTLP tracing (Phase 2) */

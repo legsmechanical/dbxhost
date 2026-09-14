@@ -22,14 +22,19 @@ js="src/shadow/shadow_ui.js"
 fail() { echo "FAIL: $1" >&2; exit 1; }
 
 # 1a. The overtake DSP's keys never dirty a slot: the tool persists its own state.
-rg -q 'static int shadow_param_key_dirties' "$c" \
-  || fail "$c lost shadow_param_key_dirties — overtake_dsp: writes dirty slot 0 again"
-rg -q 'strncmp\(key, "overtake_dsp:", 13\) != 0' "$c" \
-  || fail "$c: shadow_param_key_dirties no longer excludes the overtake_dsp: prefix"
-rg -q 'slot < 32 && shadow_param_key_dirties\(key\)' "$c" \
-  || fail "$c: the common setter marks dirty without asking shadow_param_key_dirties"
-rg -q 'slot < 32 && shadow_param_key_dirties\(shadow_param->key\)' "$c" \
-  || fail "$c: the bulk setter marks dirty without asking shadow_param_key_dirties"
+#     The key -> file class lives in host/shadow_dirty_policy.h (unit-tested by
+#     test_dirty_policy.c); here: both setters actually ask it.
+pol="src/host/shadow_dirty_policy.h"
+rg -q 'static inline unsigned shadow_slot_key_dirty_class' "$pol" \
+  || fail "$pol lost shadow_slot_key_dirty_class — overtake_dsp: writes dirty slot 0 again"
+rg -qF 'if (strncmp(key, "overtake_dsp:", 13) == 0) return 0;' "$pol" \
+  || fail "$pol: shadow_slot_key_dirty_class no longer excludes the overtake_dsp: prefix"
+rg -qF 'unsigned cls = shadow_slot_key_dirty_class(key);' "$c" \
+  || fail "$c: shadow_mark_slot_dirty marks without asking shadow_slot_key_dirty_class"
+rg -qU 'static int shadow_set_param_common\([^)]*\) \{\n    shadow_mark_slot_dirty\(slot, key\);' "$c" \
+  || fail "$c: the common setter does not mark through shadow_mark_slot_dirty"
+rg -qF 'if (slot < 32 && shadow_slot_key_dirty_class(shadow_param->key)) {' "$c" \
+  || fail "$c: the bulk setter marks dirty without asking shadow_slot_key_dirty_class"
 
 # 1b. A bulk SET can be declared TRANSIENT (4th arg, default off) and then
 #     marks neither slots nor buses. Off by default so a :state restore still marks.

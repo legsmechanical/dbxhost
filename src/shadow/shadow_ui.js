@@ -17962,7 +17962,10 @@ globalThis.tick = function() {
         snapshotRecallTick();
         if (nowMs >= autosaveSuppressUntil &&
             typeof shadow_take_dirty_slots === "function") {
-            const justDirtied = shadow_take_dirty_slots();
+            /* Chain and slot-settings masks are separate in C; this pass
+             * still writes both files per dirty slot, so it takes their union. */
+            const justDirtied = shadow_take_dirty_slots() |
+                ((typeof shadow_take_dirty_slot_config === "function") ? shadow_take_dirty_slot_config() : 0);
             const busDirtied = (typeof shadow_take_dirty_fx_buses === "function")
                 ? shadow_take_dirty_fx_buses() : 0;
             if (justDirtied || busDirtied) {

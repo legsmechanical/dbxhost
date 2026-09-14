@@ -345,6 +345,19 @@ shadow_set_params(slot, "chain:", blob[, transient])
                                           // Writes with an "overtake_dsp:" key never
                                           // dirty a slot: the tool's DSP is the tool's
                                           // to persist.
+shadow_take_dirty_slots() / shadow_take_dirty_slot_config()
+                                          // -> slot bitmask written since the last call
+                                          // (take semantics: act on it or re-set it).
+                                          // _slots = the CHAIN (slot_N.json: modules,
+                                          // :state, bypass...); _slot_config = the SLOT
+                                          // SETTINGS (shadow_chain_config.json: `slot:*`
+                                          // volume/pan/mute/solo/sends/transpose). A key
+                                          // in both files (slot:receive_channel,
+                                          // slot:forward_channel), a non-transient bulk
+                                          // SET and a web-UI write mark both.
+                                          // Classifier: host/shadow_dirty_policy.h.
+shadow_take_dirty_fx_buses()              // -> bus bitmask, same semantics
+                                          // (bit 0 master, 1/2 send A/B, 8+n Move bus n)
 shadow_get_slots() / shadow_set_focused_slot(slot)
 shadow_get_selected_slot() / shadow_get_ui_slot()
 shadow_get_display_mode() / shadow_set_display_overlay(mode)

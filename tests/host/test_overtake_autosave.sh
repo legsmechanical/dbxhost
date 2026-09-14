@@ -37,9 +37,15 @@ rg -q 'shadow_take_dirty_slots' "$c" \
   || fail "$c no longer exposes shadow_take_dirty_slots to JS"
 
 # 2. BOTH write paths mark: the common setter and the bulk setter.
-common_marks=$(rg -c 'g_slot_param_dirty_mask \|=' "$c" || echo 0)
-[ "${common_marks:-0}" -ge 2 ] \
-  || fail "$c marks the dirty bit in fewer than 2 places; the bulk SET path (a :state restore) is almost certainly uncovered"
+#    Two masks since the dirty classes (chain file / slot-settings file): each
+#    is marked by the common setter's helper, the bulk setter and the web fold.
+for m in g_slot_param_dirty_mask g_slot_config_dirty_mask; do
+  marks=$(rg -c "$m +\|=" "$c" || echo 0)
+  [ "${marks:-0}" -ge 3 ] \
+    || fail "$c marks $m in fewer than 3 places (common, bulk, web fold); the bulk SET path (a :state restore) is almost certainly uncovered"
+done
+rg -q 'shadow_take_dirty_slot_config' "$c" \
+  || fail "$c no longer exposes shadow_take_dirty_slot_config to JS — slot settings would never autosave"
 
 # 3. The JS side consumes it UNCONDITIONALLY (P4b): the dirty-driven path is
 #    the only mid-session autosave and must not be gated on what's on screen.
@@ -137,6 +143,18 @@ rg -q 'setSlotParamWithTimeout\(i, "slot:transpose"' "$js" \
 #      user's settings with defaults rather than error.
 rg -q 'refusing to overwrite with defaults' "$js" \
   || fail "$js saveChainConfigToDir lost its unreadable-params guard; it would clobber settings with defaults"
+
+# 10e. Every `slot:` key buildSlotPatchJson writes into slot_N.json must class
+#      BOTH in host/shadow_dirty_policy.h, or a change to it dirties only the
+#      config and the chain file silently keeps the old value.
+build_fn=$(awk '/^function buildSlotPatchJson\(/,/^}/' "$js")
+[ -n "$build_fn" ] || fail "$js: buildSlotPatchJson not found"
+chain_slot_keys=$(printf '%s' "$build_fn" | rg -o '"slot:[a-z_]+"' | tr -d '"' | sed 's/^slot://' | sort -u)
+[ -n "$chain_slot_keys" ] || fail "control: no slot: keys found in buildSlotPatchJson — the cross-pin is checking nothing"
+for k in $chain_slot_keys; do
+  rg -qF "strcmp(key + 5, \"$k\") == 0" src/host/shadow_dirty_policy.h \
+    || fail "slot:$k is written into slot_N.json but shadow_dirty_policy.h does not class it BOTH"
+done
 
 # 11. Still exactly one unit of work per tick.
 rg -q 'function saveOneDirtyUnit' "$js" \
