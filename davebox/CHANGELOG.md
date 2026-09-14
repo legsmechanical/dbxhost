@@ -330,6 +330,9 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **No more hang after moving faders or knobs.** A few seconds after a burst of level
+  or knob changes the screen used to freeze for up to a second while the session
+  saved. Saving now takes a few milliseconds and happens without interrupting you.
 - **Entering notes on steps no longer needs a quick release.** The tap that puts a
   note on a step now has about twice as long to finish — a press only becomes a
   *hold* (the p-lock gesture) after a quarter-second, so an ordinary tap is no
