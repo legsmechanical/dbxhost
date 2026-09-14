@@ -23,12 +23,16 @@ if ! rg -q 'static void mfx_lfo_update_base_from_set_param\(' "$file"; then
   exit 1
 fi
 
-if ! rg -q 'mfx_lfo_update_base_from_set_param\(mfx_slot, param_key, shadow_param->value\);' "$file"; then
+# The SET arms moved out of the shadow_param mailbox handler into the ONE
+# dispatcher, shadow_param_apply_set_ex, so these read `value` /
+# `s_set_value_copy` rather than `shadow_param->value`. Same two call sites,
+# same behaviour — see tests/host/test_param_apply_set_dispatch.sh.
+if ! rg -q 'mfx_lfo_update_base_from_set_param\(mfx_slot, param_key, value\);' "$file"; then
   echo "FAIL: direct MFX param set path does not refresh LFO base snapshot" >&2
   exit 1
 fi
 
-if ! rg -q 'mfx_lfo_update_base_from_set_param\(mfx_slot, shadow_param->value, eq \+ 1\);' "$file"; then
+if ! rg -q 'mfx_lfo_update_base_from_set_param\(mfx_slot, s_set_value_copy, eq \+ 1\);' "$file"; then
   echo "FAIL: key=value MFX param set path does not refresh LFO base snapshot" >&2
   exit 1
 fi

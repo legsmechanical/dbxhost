@@ -81,6 +81,19 @@ typedef struct {
      * Returns 1 if handled, 0 if not. Caller publishes response if handled. */
     int (*handle_param_special)(uint8_t req_type, uint32_t req_id);
 
+    /* SET-only twin of the above, addressed BY VALUE instead of through the
+     * shadow_param mailbox: overtake_dsp: (incl. load / unload), jack:*,
+     * passthrough, suspend_overtake and the master_fx: shim specials
+     * (resample_bridge, link_audio_*, latency_comp_enabled,
+     * system_link_enabled). This is what lets shadow_param_apply_set be the
+     * ONE dispatcher — the web set-ring drain has no mailbox to write into.
+     * Returns 1 when the key belongs to the shim, 0 when it does not.
+     * *io_error / *io_result_len arrive holding what the caller would publish
+     * and are overwritten only where the mailbox arm would have written them
+     * (a couple of branches deliberately leave them alone). */
+    int (*apply_set_special)(int slot, const char *key, const char *value,
+                             int *io_error, int *io_result_len);
+
     /* Tempo query — returns current BPM via sampler_get_bpm() fallback chain. */
     float (*get_bpm)(void);
 
@@ -211,7 +224,35 @@ extern lfo_state_t shadow_move_fx_lfos[MOVE_FX_SLOTS][MOVE_FX_LFO_COUNT];
 void shadow_move_fx_lfo_tick(int frames);
 void shadow_master_fx_lfo_tick(int frames);
 
-/* Direct param set (web UI ring buffer — doesn't touch shadow_param_t) */
+/* ⭐ THE parameter SET dispatcher. Apply one parameter SET exactly as the
+ * shadow_param mailbox would: every prefix family (the shim specials,
+ * master_fx: incl. lfoN:, send_fx:, move_fx: incl. its bus LFOs, overtake_dsp:,
+ * slot-level keys, the chain plugin), every side effect (module loads, LFO base
+ * re-snapshots, slot activation, patch capture). Returns 0 on success, else the
+ * same error code the mailbox arm would have published.
+ *
+ * Both wires call this — the mailbox arm and the web set-ring drain — because
+ * two dispatchers for one wire means the second is always missing a case; the
+ * one that shipped had no `overtake_dsp:load`, so a module's DSP never loaded.
+ * Add a prefix family HERE and both wires get it.
+ *
+ * ⚠ Runs on the SPI callback. No logging, no allocation, no file I/O.
+ */
+int shadow_param_apply_set(int slot, const char *key, const char *value);
+
+/* Same, but reporting result_len too, and leaving both fields untouched on the
+ * branches where the mailbox arm did (jack:display with no JACK shm,
+ * suspend_overtake with no control block). Pass in the values the caller would
+ * otherwise publish. Either pointer may be NULL. */
+int shadow_param_apply_set_ex(int slot, const char *key, const char *value,
+                              int *io_error, int *io_result_len);
+
+/* Direct param set — NARROWER than shadow_param_apply_set above (no shim
+ * specials, no slot-activation side effects, and the chain plugin forward
+ * requires an ACTIVE slot). Retained for the `chain:` bulk SET, whose pairs are
+ * automation writes that must NOT trip module loads or slot activation.
+ * ⚠ Not the place to add a new prefix family — that belongs in
+ * shadow_param_apply_set, which is the one both single-SET wires use. */
 void shadow_direct_set_param(uint8_t slot, const char *key, const char *value);
 /* Direct get_param for a chain slot, no shared-memory mailbox: slot-level keys
  * (slot:volume …) then the slot's plugin (synth:cutoff …). Returns the value
