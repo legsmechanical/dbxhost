@@ -92,6 +92,22 @@ setsid --wait bash -c '
   # from quiesce and the reaper, which write their own.
   ts() { echo "$(date +%H:%M:%S.%2N) phase: $*"; }
   ts "launcher entered (entry=$DBX_ENTRY)"
+
+  # S1: background reader that distills MoveOriginal own "About to load ..."
+  # boot line into $DBX_DIR/move_loaded_set.txt (contract documented at the
+  # top of move-loaded-set-reader.sh; S4, a later and separate slice, is the
+  # consumer that compares it against the host xattr-resolved project).
+  # Started once here and left running for the life of the whole session,
+  # including every relaunch below, because it just tails the single growing
+  # LOG this exec already redirected everything into. It never touches
+  # MoveOriginal stdio directly -- MoveOriginal keeps running in the
+  # foreground exactly as before -- so a dead or lagging reader can never
+  # change MoveOriginal exit status or pid as the supervisor loop sees them.
+  _mlsr_pid=""
+  if [ -x "$DBX_DIR/scripts/move-loaded-set-reader.sh" ]; then
+    sh "$DBX_DIR/scripts/move-loaded-set-reader.sh" "$LOG" "$DBX_DIR/move_loaded_set.txt" &
+    _mlsr_pid=$!
+  fi
   # ENTRY: at BOOT we are the boot selector target — MoveLauncher exec-ed the
   # selector, which exec-ed us, so this process IS move-launcher.service, not
   # something running alongside it. Three consequences, each handled below:
@@ -539,6 +555,10 @@ setsid --wait bash -c '
     # happen while STOCK still owns the surface, which is leg 1 in
     # quiesce-stock.sh; from the freeze onward the strip is what keeps the pads
     # dark, because there is nothing left to repaint them.)
+    # S1: clear the reader outfile before EVERY Move start (first boot and
+    # every relaunch) -- a value the reader wrote for a PREVIOUS Move process
+    # must never be read as belonging to this one.
+    rm -f "$DBX_DIR/move_loaded_set.txt"
     ts "starting Move"
     echo "run LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal"
     env LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal
@@ -614,6 +634,10 @@ setsid --wait bash -c '
     break
   done
   echo "davebox host exited ($?) — restoring the watchdog"
+
+  # S1: the reader was started once, outside this loop -- stop it with the
+  # session, not with an individual Move process.
+  [ -n "$_mlsr_pid" ] && kill "$_mlsr_pid" 2>/dev/null || true
 
   # Kill surviving sidecars on EXIT too — same reason as the relaunch branch:
   # they outlive MoveOriginal, and a stray shadow_ui keeps running against
