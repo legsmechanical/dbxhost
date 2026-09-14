@@ -8722,29 +8722,43 @@ function saveMoveFxChainConfig(onlySlot) {
                 host_write_file(filePath, JSON.stringify(slotConfig, null, 2) + "\n");
             }
         }
-        /* Per-slot strip state (volume + sends + mute/solo). A timed-out read
-         * must skip the write, not stamp defaults over real levels. */
+        /* Per-slot strip state (volume + sends + mute/solo). ONE bulk GET for
+         * all four slots' 6 fields (24 keys total) at slot 0 — the strip
+         * fields resolve slot-independently off the key itself
+         * (shadow_direct_get_param's "move_fx:" branch), so slot 0 is just
+         * the routing arg. A timed-out read, a bulk-overflow null, or any
+         * unresolved (`?`) key must skip the write, not stamp defaults over
+         * real levels (test_move_fx_strip_bulk.sh). */
         const strips = [];
         let stripsOk = true;
+        const stripKeys = [];
         for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
-            const _v  = shadow_get_param(0, "move_fx:" + (sl + 1) + ":volume");
-            const _p  = shadow_get_param(0, "move_fx:" + (sl + 1) + ":pan");
-            const _sa = shadow_get_param(0, "move_fx:" + (sl + 1) + ":send_a");
-            const _sb = shadow_get_param(0, "move_fx:" + (sl + 1) + ":send_b");
-            const _m  = shadow_get_param(0, "move_fx:" + (sl + 1) + ":muted");
-            const _so = shadow_get_param(0, "move_fx:" + (sl + 1) + ":soloed");
-            if (_v === null || _p === null || _sa === null || _sb === null ||
-                _m === null || _so === null) { stripsOk = false; break; }
-            const v = parseFloat(_v || "1.0"), p = parseFloat(_p || "0.5");
-            const sa = parseFloat(_sa || "0.0"), sb = parseFloat(_sb || "0.0");
-            strips.push({
-                volume: isNaN(v) ? 1.0 : v,
-                pan: isNaN(p) ? 0.5 : p,
-                send_a: isNaN(sa) ? 0.0 : sa,
-                send_b: isNaN(sb) ? 0.0 : sb,
-                muted: (parseInt(_m, 10) === 1) ? 1 : 0,
-                soloed: (parseInt(_so, 10) === 1) ? 1 : 0,
-            });
+            for (const f of ["volume", "pan", "send_a", "send_b", "muted", "soloed"]) {
+                stripKeys.push("move_fx:" + (sl + 1) + ":" + f);
+            }
+        }
+        const stripVals = (typeof shadow_get_params === "function")
+            ? bulkDecode(String(shadow_get_params(0, "chain:", bulkEncodeItems(stripKeys)) || ""))
+            : null;
+        if (!stripVals || stripVals.length !== stripKeys.length || stripVals.some(v => v === null)) {
+            stripsOk = false;
+        } else {
+            for (let sl = 0; sl < MOVE_FX_SLOTS_JS; sl++) {
+                const base = sl * 6;
+                const _v = stripVals[base], _p = stripVals[base + 1],
+                      _sa = stripVals[base + 2], _sb = stripVals[base + 3],
+                      _m = stripVals[base + 4], _so = stripVals[base + 5];
+                const v = parseFloat(_v || "1.0"), p = parseFloat(_p || "0.5");
+                const sa = parseFloat(_sa || "0.0"), sb = parseFloat(_sb || "0.0");
+                strips.push({
+                    volume: isNaN(v) ? 1.0 : v,
+                    pan: isNaN(p) ? 0.5 : p,
+                    send_a: isNaN(sa) ? 0.0 : sa,
+                    send_b: isNaN(sb) ? 0.0 : sb,
+                    muted: (parseInt(_m, 10) === 1) ? 1 : 0,
+                    soloed: (parseInt(_so, 10) === 1) ? 1 : 0,
+                });
+            }
         }
         if (stripsOk) {
             host_write_file(activeSlotStateDir + "/move_fx_meta.json",

@@ -66,10 +66,16 @@ if ! grep -q 'shadow_chain_set_solo(' <<<"$handler"; then
 fi
 
 # 3. Per-set persistence. The values are only per-project if they are in the
-#    set's meta file on BOTH sides.
+#    set's meta file on BOTH sides. (S4: the 6 strip fields are read as one
+#    `chain:` bulk GET rather than 6 discrete single-GET string literals per
+#    slot, so the pin looks for the field LIST and the decoded object shape.)
 save=$(awk '/Per-slot strip state/,/move_fx_meta.json/' src/shadow/shadow_ui.js)
+if ! grep -q '\["volume", "pan", "send_a", "send_b", "muted", "soloed"\]' <<<"$save"; then
+  echo "FAIL: saveMoveFxChainConfig's strip field list no longer includes muted/soloed in order" >&2
+  exit 1
+fi
 for k in muted soloed; do
-  if ! grep -q "\"move_fx:\" + (sl + 1) + \":$k\"" <<<"$save"; then
+  if ! grep -q "$k:" <<<"$save"; then
     echo "FAIL: saveMoveFxChainConfig does not persist :$k — it would not survive a project switch" >&2
     exit 1
   fi
