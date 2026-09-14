@@ -166,6 +166,13 @@ function boot(activeUuid, activeName) {
 function provokeSaves() {
     S.saveNowOnce = true; S.playing = false; S.lastInputTick = 0;
     ticks(200);
+    /* A host suspend: the host swaps clear_screen for a no-op while parked, and
+     * the tick saves on that edge (saveState -> sidecar + DSP 'save'). */
+    const cs = globalThis.clear_screen;
+    globalThis.clear_screen = () => {};
+    ticks(4);
+    globalThis.clear_screen = cs;
+    ticks(4);
 }
 const aimedAt = (uuid) => writes.filter((w) => w.indexOf(uuid) >= 0);
 
@@ -207,6 +214,11 @@ step('X already loaded at boot + Move says default -> no save reaches X after th
     provokeSaves();
     const hits = writes.slice(before).filter((w) => w.indexOf(X) >= 0);
     if (hits.length) throw new Error('saves aimed at X after the verdict: ' + hits.join(', '));
+    /* Nor ANYWHERE else a project's state could be filed: with no project open
+     * a uuid-less save falls back to the stock tree's path, which is not ours. */
+    const stray = writes.slice(before).filter((w) =>
+        w.indexOf('/dAVEBOx') >= 0 || w.indexOf('seq8') >= 0 || w.indexOf('/data/UserData/schwung/') === 0);
+    if (stray.length) throw new Error('project-state saves after the verdict: ' + stray.join(', '));
     if (dsp.awaiting !== 1) throw new Error('the DSP was not told to refuse saves');
     if (!onScreen()) throw new Error('no screen: ' + frame());
 });
