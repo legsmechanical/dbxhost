@@ -157,16 +157,34 @@ function paramKeysFor(slot, comp, moduleId) {
 export function paramKeysCacheResetForTest() { for (const k in keysByModule) delete keysByModule[k]; }
 /* Per Schwung track: { comp: { module, values: { key: raw } } } for every
  * loaded component. Cost: one bulk GET per loaded component (≤60 keys each). */
+const BUS_FX = ['fx1', 'fx2', 'fx3', 'fx4'];
 function paramsCapture() {
     const tracks = [];
     for (let t = 0; t < NUM_TRACKS; t++) {
         const e = {};
-        if ((S.trackRoute[t] | 0) === 0) {
+        const r = S.trackRoute[t] | 0;
+        if (r === 0) {
             for (const comp of COMPS) {
                 const id = engineLoadedModule(t, comp);
                 if (!id) continue;
                 const keys = paramKeysFor(t, comp, id);
                 e[comp] = { module: id, values: keys.length ? engineGetMany(t, comp, keys) : {} };
+            }
+        } else if (r === 1) {
+            /* A MOVE track's sound the morph can reach is its bus's insert FX
+             * (Josh, 2026-09-13; the Move instrument itself lives in Move).
+             * Keyed by the FULL component (`move_fx:2:fx1`) on slot 0, which
+             * is how the engine and the automation push address a bus block —
+             * and ONE track owns the bus, so the values are this track's. */
+            const bus = moveBusForChannel(S.trackChannel[t]) | 0;
+            if (bus > 0) {
+                for (const fx of BUS_FX) {
+                    const comp = moveBusComp(bus) + ':' + fx;
+                    const id = engineLoadedModule(0, comp);
+                    if (!id) continue;
+                    const keys = paramKeysFor(0, comp, id);
+                    e[comp] = { module: id, values: keys.length ? engineGetMany(0, comp, keys) : {} };
+                }
             }
         }
         tracks.push(e);

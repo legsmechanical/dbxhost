@@ -181,12 +181,48 @@ export function instrOptions(routes, self) {
  * others their INSTR value (`v`). The track rule is instrOptions' — a MIDI
  * track may not follow a MIDI track, and never itself — so cycles stay
  * unrepresentable here too. */
-export function instrPickerRows(routes, self, gens) {
+/* ── ONE dAVEBOx TRACK PER MOVE INSTRUMENT (Josh, 2026-09-13) ──────────────
+ * "we should never allow a track to address a move track that's already
+ * addressed." A Move instrument's bus is the track's mixer position and its
+ * FX rack; two tracks on one bus would share a fader and a reverb, and a
+ * snapshot, LFO or SnapMorph on either would move the other's sound. So a
+ * Move instrument has at most one OWNER: the track routed to Move on its
+ * channel. (A MIDI track FOLLOWING that track still plays it — through the
+ * owner, whose bus it is.) `m` is 0-based (Move 1 = 0); returns the owning
+ * track index, or -1. */
+export function moveInstrOwner(routes, channels, m, self) {
+    for (let t = 0; t < routes.length; t++) {
+        if (t === self) continue;
+        if ((routes[t] | 0) === 1 && ((channels[t] | 0) === m + 1)) return t;
+    }
+    return -1;
+}
+/* Every Move instrument addressed by MORE than one track — what a project made
+ * before the rule (or by hand) can still contain. Reported, never repaired:
+ * a silent re-route on load is a session to diagnose. [[m, [tracks…]], …] */
+export function moveInstrDuplicates(routes, channels) {
+    const out = [];
+    for (let m = 0; m <= INSTR_MOVE_MAX; m++) {
+        const owners = [];
+        for (let t = 0; t < routes.length; t++)
+            if ((routes[t] | 0) === 1 && ((channels[t] | 0) === m + 1)) owners.push(t);
+        if (owners.length > 1) out.push([m, owners]);
+    }
+    return out;
+}
+
+export function instrPickerRows(routes, self, gens, channels) {
     const rows = [];
     /* None first (Josh, 2026-09-05), behind its own divider. */
     rows.push({ v: INSTR_NONE, label: fmtInstr(INSTR_NONE) });
     rows.push({ divider: true });
-    for (let m = 0; m <= INSTR_MOVE_MAX; m++) rows.push({ v: m, label: fmtInstr(m) });
+    /* A Move instrument another track already owns is shown, with its owner,
+     * as information the cursor steps over — not offered (see moveInstrOwner). */
+    for (let m = 0; m <= INSTR_MOVE_MAX; m++) {
+        const owner = channels ? moveInstrOwner(routes, channels, m, self) : -1;
+        if (owner >= 0) rows.push({ v: m, label: fmtInstr(m), taken: owner });
+        else rows.push({ v: m, label: fmtInstr(m) });
+    }
     rows.push({ divider: true });
     for (const g of (gens || [])) rows.push({ gen: g, label: String(g.name || g.id) });
     if (gens && gens.length) rows.push({ divider: true });

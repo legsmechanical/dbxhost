@@ -1388,7 +1388,11 @@ the menu saying what the click and the Shift chord do — the same band the bank
 cards wear. That picker is one list in four
 groups with a line between them: Move 1-4, every Schwung generator by name, MIDI
 channels 1-16, and the tracks this one may follow. Choosing a generator makes
-the track a Schwung track and loads it in one step. Inside a
+the track a Schwung track and loads it in one step. A Move instrument belongs
+to **one track at a time**: one that another track already plays is shown
+centred with that track's number (`Move 2 - T3`) and the jog steps over it —
+to play the same Move instrument from a second track, make that track *follow*
+the one that owns it. Inside a
 block the knobs edit its parameters and the jog turns the pages; hold **Shift**
 while turning to jump between sections. The last pages are **My Presets** and
 **Module**; on Module, **Module Menu** opens the module's full parameter list
@@ -1513,8 +1517,11 @@ the knob, a blinking ring, and a held step plus a turn locks it there too.
 
 A knob can morph the track's whole sound between two or more of its **track
 snapshots** (hold Capture in track view to save them). In the assignment list
-pick **SnapMorph** — it's the last entry, after Levels, and only a Schwung
-track has it — and you get the track's saved snapshot slots. **Click** a slot
+pick **SnapMorph** — it's the last entry, after Levels — and you get the
+track's saved snapshot slots. On a Schwung track the morph covers every block
+in the chain and the track's levels; on a Move track it covers the track's
+bus effects and bus levels (the Move instrument itself lives in Move and stays
+put). A MIDI track has nothing to morph. **Click** a slot
 to put it in; click again to take it out. The order you pick them in is the
 path the knob travels: `[1]` at the bottom of the turn, `[2]` next, and so on.
 Press **Back** when you're done — the knob is live as soon as two are in.

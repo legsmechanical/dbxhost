@@ -70,7 +70,7 @@ import { writeSidecar } from './ui_persistence.mjs';
  * the bulk write and the playback applier live there; this file owns the leg's
  * place in the mapping store, the picker and the turn law. */
 import { MORPH_KIND, MORPH_LABEL, morphSnapshotSlots, morphPrepare, morphReady, morphApply,
-         morphLegValid, morphInvalidate } from './ui_snapmorph.mjs';
+         morphLegValid, morphInvalidate, morphInvalidateBuses } from './ui_snapmorph.mjs';
 import { requestTrackModeChange } from './ui_dialogs.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
@@ -3704,11 +3704,11 @@ function knobTargetList() {
         }
     }
     if (!midiTrack && !noneTrack) rows.push({ id: LEVEL_TARGET, name: 'Levels' });   /* a MIDI or NONE track has no chain */
-    /* SNAPMORPH (18b): a chain track's macro can morph its chain between its
-     * TRACK snapshots. Only a chain track: the snapshot's param list is taken
-     * for route 0 only (ui_devsnap paramsCapture), and a Move track's sound
-     * lives in Move. Not on a bus screen either — a bus is not a track. */
-    if (!S.bus && S.track >= 0 && (GS.trackRoute[S.track] | 0) === 0) rows.push({ id: MORPH_TARGET, name: MORPH_LABEL });
+    /* SNAPMORPH (18b): a track's macro can morph its sound between its TRACK
+     * snapshots — a chain track's chain, or a Move track's bus FX and levels
+     * (Josh, 2026-09-13; one track owns a Move instrument, so the bus is its
+     * own). Not a session bus — that is not a track (S.track < 0 there). */
+    if (S.track >= 0 && ((GS.trackRoute[S.track] | 0) === 0 || (GS.trackRoute[S.track] | 0) === 1)) rows.push({ id: MORPH_TARGET, name: MORPH_LABEL });
     return rows;
 }
 
@@ -4165,7 +4165,7 @@ function openInstrPicker() {
             gens = allGens.filter(g => keep[moduleIdOf(g.path || g.id)]);
         }
     }
-    let rows = instrPickerRows(GS.trackRoute, S.track, gens);
+    let rows = instrPickerRows(GS.trackRoute, S.track, gens, GS.trackChannel);
     /*
      * Under a LIST, the picker shows that list and nothing else.
      *
@@ -4183,13 +4183,14 @@ function openInstrPicker() {
     rows.unshift({ listRow: true, label: 'List: ' + (mlFilter || 'All') });
     const curV = instrValueFor(S.track);
     const curGen = GS.trackRoute[S.track] === 0 ? moduleIdOf(engineLoadedModule(S.slot, 'synth')) : '';
-    let cur = rows.findIndex(r => !r.divider && !r.listRow && (r.gen ? r.gen.id === curGen : r.v === curV));
+    let cur = rows.findIndex(r => !r.divider && !r.listRow && r.taken == null && (r.gen ? r.gen.id === curGen : r.v === curV));
     /* A Schwung track with nothing loaded has no current entry: open on the
      * first generator, which is the choice it is waiting for. */
     if (cur < 0 && GS.trackRoute[S.track] === 0) cur = rows.findIndex(r => !!r.gen);
     /* Never the filter row: opening with the cursor on a control means the
-     * first click changes the filter instead of choosing an instrument. */
-    if (cur < 0) cur = rows.findIndex(r => !r.divider && !r.listRow);
+     * first click changes the filter instead of choosing an instrument. Nor a
+     * taken Move row: it is a note, not a choice. */
+    if (cur < 0) cur = rows.findIndex(r => !r.divider && !r.listRow && r.taken == null);
     /*
      * ⚠ The screen this picker FLOATS OVER, captured before openEnumPicker
      * overwrites it.
@@ -4202,8 +4203,12 @@ function openInstrPicker() {
      * from the device as "the pop-up shows as multiple layers".
      */
     const floatOver = (S.view === VIEW_ENUM && S.enumPick) ? S.enumPick.from : S.view;
+    /* A Move instrument another track owns is a NOTE row \u2014 centred, with the
+     * owner, stepped over by the cursor (1-bit has no grey; UI_LANGUAGE \u00a76):
+     * one dAVEBOx track per Move instrument (Josh, 2026-09-13). */
     openEnumPicker('Instrument',
                    rows.map(r => r.divider ? { divider: true }
+                       : r.taken != null ? { note: r.label + ' - T' + (r.taken + 1), hdr: false }
                        : (r.gen && mlIsMember(r.gen) ? '\u00b7' + r.label : r.label)),
                    cur < 0 ? 0 : cur, (i) => commitInstrPick(rows[i]));
     /* The picker keeps the ROWS, not just their labels: the shift-click toggle
@@ -4212,6 +4217,8 @@ function openInstrPicker() {
 }
 function commitInstrPick(r) {
     if (!r || r.divider) return;
+    /* Unreachable by the jog (a note row), kept as the guard it is. */
+    if (r.taken != null) { showActionPopup(String(r.label).toUpperCase(), 'Track ' + (r.taken + 1) + ' has it'); return; }
     /* The filter row is a CONTROL. Cycling reopens the picker so the rows, the
      * cursor rule and the group dividers all come from openInstrPicker rather
      * than being patched in place. */
@@ -4642,7 +4649,7 @@ const LEVEL_KEYS = { volume: 1, pan: 1, send_a: 1, send_b: 1 };
 export function targetCompatible(target, newRoute) {
     const t = String(target || '');
     if (t.indexOf('seq:') === 0) return true;
-    if (t.indexOf('mac:') === 0) return newRoute === 0;    /* a SnapMorph lane drives a chain */
+    if (t.indexOf('mac:') === 0) return newRoute === 0 || newRoute === 1;   /* a SnapMorph lane drives a chain or a bus */
     if (midiTargetIsMidi(t)) return midiTargetCC(t) >= 0 ? newRoute === 2 : newRoute !== ROUTE_NONE;
     const parts = t.split(':');
     if (parts.length < 3) return true;                 /* not a shape this rule knows: leave it */
@@ -4661,7 +4668,7 @@ function compCompatible(comp, key, newRoute) {
 export function legCompatible(leg, newRoute) {
     if (!leg) return true;
     if (leg.kind === 'bank') return true;
-    if (leg.kind === MORPH_KIND) return newRoute === 0;   /* morphs a chain; nothing else has a param list */
+    if (leg.kind === MORPH_KIND) return newRoute === 0 || newRoute === 1;   /* a chain, or a Move track's bus */
     if (leg.kind === 'midi') return targetCompatible(leg.target, newRoute);
     if (leg.kind === 'level') return newRoute === 0 || newRoute === 1;
     if (leg.kind === 'chain') return compCompatible(leg.comp, leg.key, newRoute);
@@ -5435,7 +5442,9 @@ function macroAutoRef(m, track, knob) {
 /* A knob the page can address: assigned, and present on this route / pad mode. */
 function macroLive(m) {
     if (!m) return false;
-    if (m.kind === MORPH_KIND) return morphLegValid(m) && !S.bus && S.track >= 0 && (GS.trackRoute[S.track] | 0) === 0;
+    /* A chain track, or a Move track on ITS OWN bus screen (S.bus is set there
+     * with S.track ≥ 0; a session bus has no track). */
+    if (m.kind === MORPH_KIND) return morphLegValid(m) && S.track >= 0 && ((GS.trackRoute[S.track] | 0) === 0 || (GS.trackRoute[S.track] | 0) === 1);
     if (m.kind === 'level') return !!macroLevelSpec(m);
     if (m.kind === 'bank') return !!bankMacroMeta(m);
     if (m.kind === 'midi') return midiTargetOnRoute(m.target, S.track);
@@ -7593,7 +7602,7 @@ function applyModulePick(mod) {
      * answer just changed. Drop its cache so the next turn asks again rather
      * than driving the NEW module's same-named parameters (the silent-rebind
      * hazard Block 2 closed for lanes). */
-    if (!S.bus) morphInvalidate(S.slot);
+    if (!S.bus) morphInvalidate(S.slot); else morphInvalidateBuses();
     GS.instrAbbrevAt = 0;                 /* the header's [instrument] re-reads next tick */
     /* The chain host instantiates asynchronously — discovering immediately
      * returns null metadata and the module looks empty. */
@@ -7997,7 +8006,7 @@ function enumStep(p, delta) {
         const j = i + dir;
         if (j < 0 || j >= n) return i;
         i = j;
-        if (!(opts[i] && opts[i].divider)) return i;
+        if (!(opts[i] && (opts[i].divider || opts[i].note))) return i;   /* dividers and notes are stepped over */
     }
     return p.sel;
 }

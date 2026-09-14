@@ -44,7 +44,8 @@ import { S as GS } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { NUM_TRACKS } from './ui_constants.mjs';
 import { trackSnapDir } from './ui_persistence.mjs';
-import { engineGet, engineLoadedModule, faderGainToTravel, faderTravelToGain, faderWire } from './ui_engine.mjs';
+import { engineGet, engineLoadedModule, faderGainToTravel, faderTravelToGain, faderWire,
+         moveBusForChannel, moveBusComp } from './ui_engine.mjs';
 import { makeCell } from './ui_discover.mjs';
 import { parseValue, clampValue, commitString } from './ui_cells.mjs';
 import { bulkEncode } from './ui_automation.mjs';
@@ -104,9 +105,28 @@ function readSnapshot(track, n) {
  * as the chain params (the automation push spells them the same way). */
 const LEVEL_KEYS = ['volume', 'pan', 'send_a', 'send_b'];
 const num = (v) => (typeof v === 'number' && isFinite(v));
-function buildLevels(mixers) {
+/* ── WHERE A TRACK'S SOUND LIVES (Josh, 2026-09-13: Move tracks too) ────────
+ * A chain track: its slot (= the track index), components synth/fxN/midi_fxN,
+ * levels `slot:<key>`. A MOVE track: slot 0, its bus's insert FX as
+ * `move_fx:N:fxK`, levels `move_fx:N:<key>`. One dAVEBOx track owns a Move
+ * instrument (moveInstrOwner), so writing the bus moves this track alone.
+ * ⚠ The bus is checked against the SAVE: every snapshot must name the bus
+ * the track is on NOW, or the morph is empty — re-pointed to another Move
+ * instrument, the saved values belong to a bus that is somebody else's. */
+function trackAddress(track, mixers) {
+    const route = GS.trackRoute[track] | 0;
+    if (route === 0) return { slot: track, levelComp: 'slot', ok: true };
+    if (route !== 1) return { ok: false, why: 'not a chain or Move track' };
+    const live = moveBusForChannel(GS.trackChannel[track]) | 0;
+    if (!live) return { ok: false, why: 'no bus' };
+    for (const m of mixers)
+        if (!m || (m.route | 0) !== 1 || (m.bus | 0) !== live)
+            return { ok: false, why: 'a snapshot was taken on bus ' + (m ? m.bus : '?') + ', the track is on bus ' + live };
+    return { slot: 0, levelComp: moveBusComp(live), ok: true };
+}
+function buildLevels(mixers, route) {
     const out = {};
-    if (!mixers.length || mixers.some(m => !m || (m.route | 0) !== 0)) return out;
+    if (!mixers.length || mixers.some(m => !m || (m.route | 0) !== route)) return out;
     for (const key of LEVEL_KEYS) {
         const vals = [];
         for (const m of mixers) {
@@ -143,13 +163,20 @@ export function morphPrepare(track, knob, leg, budget) {
     const sig = legSig(track, leg);
     let e = entries.get(k);
     if (!e || e.sig !== sig) {
-        e = { sig, ready: false, snaps: null, comps: null, levels: {}, todo: [], keys: 0,
-              last: new Map(), finalDue: 0, finalPairs: null };
+        e = { sig, ready: false, snaps: null, comps: {}, levels: {}, todo: [], keys: 0,
+              slot: track, levelComp: 'slot', last: new Map(), finalDue: 0, finalPairs: null };
         entries.set(k, e);
-        if (!morphLegValid(leg)) { e.ready = true; e.comps = {}; return { ready: true, reads: 0 }; }
+        if (!morphLegValid(leg)) { e.ready = true; return { ready: true, reads: 0 }; }
         const read = leg.snaps.map(n => readSnapshot(track, n));
+        const addr = trackAddress(track, read.map(r => r.mixer));
+        if (!addr.ok) {
+            console.log('[morph] t' + (track + 1) + ' K' + (knob + 1) + ': nothing to morph — ' + addr.why);
+            e.ready = true; e.snaps = read.map(r => r.params);
+            return { ready: true, reads: 0 };
+        }
+        e.slot = addr.slot; e.levelComp = addr.levelComp;
         e.snaps = read.map(r => r.params);
-        e.levels = buildLevels(read.map(r => r.mixer));
+        e.levels = buildLevels(read.map(r => r.mixer), GS.trackRoute[track] | 0);
         e.keys += Object.keys(e.levels).length;
         /* Components every snapshot has, with one module id across them. */
         const first = e.snaps[0];
@@ -176,12 +203,12 @@ export function morphPrepare(track, knob, leg, budget) {
          * what does it declare. Cached per project, so a second morph over the
          * same components costs nothing here. */
         if (c.live === undefined) {
-            c.live = (engineLoadedModule(track, comp) === c.module);
+            c.live = (engineLoadedModule(e.slot, comp) === c.module);
             reads++;
             if (!c.live) { delete e.comps[comp]; e.todo.shift(); continue; }
             if (reads >= max) break;
         }
-        const meta = metaFor(track, comp);
+        const meta = metaFor(e.slot, comp);
         reads++;
         c.cells = {};
         for (const key in meta) {
@@ -250,7 +277,7 @@ export function morphApply(track, knob, leg, f, mode) {
         const vals = e.levels[key];
         const t = vals[a] + (vals[a + 1] - vals[a]) * frac;
         const wire = levelWire(key, t);
-        const id = 'slot:' + key;
+        const id = e.levelComp + ':' + key;
         if (e.last.get(id) === wire) continue;
         e.last.set(id, wire);
         pairs.push([id, wire]);
@@ -278,7 +305,7 @@ export function morphApply(track, knob, leg, f, mode) {
         }
     }
     if (pairs.length) {
-        if (!sendPairs(track, pairs, true)) {
+        if (!sendPairs(e.slot, pairs, true)) {
             /* Refused: forget what we claimed to have written so the next
              * apply sends it again. */
             for (const pr of pairs) e.last.delete(pr[0]);
@@ -305,10 +332,9 @@ export function morphTick() {
     const now = nowMs();
     for (const [k, e] of entries) {
         if (!e.finalPairs || now < e.finalDue) continue;
-        const track = parseInt(k, 10);
         const pairs = Array.from(e.finalPairs, ([id, wire]) => [id, wire]);
         e.finalPairs = null;
-        if (!sendPairs(track, pairs, false)) {
+        if (!sendPairs(e.slot, pairs, false)) {
             /* Try again next tick rather than lose the edit. */
             e.finalPairs = new Map(pairs);
             e.finalDue = now + MORPH_FINAL_MS;
@@ -328,6 +354,10 @@ export function morphInvalidate(track) {
     for (const k of Array.from(entries.keys())) if (parseInt(k, 10) === track) entries.delete(k);
     for (const id of Array.from(metaCache.keys())) if (parseInt(id, 10) === track) metaCache.delete(id);
 }
+/* The meaning of every `move_fx:` component may have changed: a module swapped
+ * on a bus, or a track re-pointed to another Move instrument. Bus entries all
+ * live on slot 0, so this is the whole cache. */
+export function morphInvalidateBuses() { morphInvalidate(); }
 
 /* ── PLAYBACK: the SnapMorph lane comes back here ─────────────────────────
  * The owner (ui_automation) hands us (track, knob, v) for target
@@ -346,7 +376,8 @@ export function snapMorphApply(track, knob, v) {
     if (!mp || !mp.legs) return false;
     const leg = mp.legs.find(l => l && l.kind === MORPH_KIND);
     if (!morphLegValid(leg)) return false;
-    if ((GS.trackRoute[track] | 0) !== 0) return false;      /* a chain track only */
+    const route = GS.trackRoute[track] | 0;
+    if (route !== 0 && route !== 1) return false;            /* a chain or a Move track */
     v = Math.max(0, Math.min(1, v));
     mp.v = v;
     if (!morphReady(track, knob, leg)) { morphPrepare(track, knob, leg, 2); if (!morphReady(track, knob, leg)) return false; }

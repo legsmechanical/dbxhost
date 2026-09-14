@@ -17,6 +17,17 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **One track per Move instrument.** A Move instrument (Move 1–4) can be the
+  instrument of only one dAVEBOx track at a time: in the Instrument picker a
+  Move that another track already plays is shown with that track's number and
+  can't be chosen. A MIDI track can still *follow* the track that owns it.
+  Projects that already have two tracks on one Move instrument keep working —
+  nothing is re-routed behind your back — but the picker won't add a third.
+- **SnapMorph on Move tracks.** A Move track's macro can morph too: its bus
+  effects and its bus volume/pan/sends move between the track's snapshots
+  (the Move instrument itself lives in Move and stays where it is). If the
+  track has since been pointed at a different Move instrument, the morph
+  stays quiet rather than moving somebody else's bus.
 - **SnapMorph.** A macro knob can now morph a track's whole sound between two
   or more of the track's snapshots. On the MACROS bank, assign a knob to
   **SnapMorph** and tick the snapshots you want, in the order you want to pass

@@ -147,12 +147,13 @@ step('the target picker offers SnapMorph on a chain track', () => {
     assert(names.indexOf('SnapMorph') >= 0, 'SnapMorph offered, got ' + JSON.stringify(names));
     assert(names.indexOf('SnapMorph') === names.length - 1, 'last, after Levels');
 });
-step('…but NOT on a MIDI track or a Move track (no param list to morph)', () => {
-    GS.trackRoute[T] = 2;
-    assert(snd.soundKnobTargetsForTest().map(t => t.name).indexOf('SnapMorph') < 0, 'MIDI track: absent');
-    GS.trackRoute[T] = 1;
-    assert(snd.soundKnobTargetsForTest().map(t => t.name).indexOf('SnapMorph') < 0, 'Move track: absent');
-    GS.trackRoute[T] = 0;
+step('…and on a Move track (its bus FX and levels), but NOT on a MIDI track (nothing to morph)', () => {
+    try {
+        GS.trackRoute[T] = 2;
+        assert(snd.soundKnobTargetsForTest().map(t => t.name).indexOf('SnapMorph') < 0, 'MIDI track: absent');
+        GS.trackRoute[T] = 1;
+        assert(snd.soundKnobTargetsForTest().map(t => t.name).indexOf('SnapMorph') >= 0, 'Move track: offered');
+    } finally { GS.trackRoute[T] = 0; }
 });
 step('SnapMorph lists the FILLED snapshot slots only; a click TOGGLES one in, the leg appears, the list stays open and marks it', () => {
     sidecars = [];
@@ -391,6 +392,52 @@ step('a snapshot with a DIFFERENT module in a component drops that component fro
     const p = chainBulks()[0].pairs;
     assert(!('synth:cutoff' in p) && p['fx2:room_size'] === '11', 'synth out, fx2 in: ' + JSON.stringify(p));
 });
+
+/* ---- A MOVE TRACK: its bus FX and bus levels (Josh, 2026-09-13) ------------------ */
+const TM = 4, KM = 0;                     /* track 5 on Move 2 (channel 2 → bus 2), K1 */
+step('setup: track 5 is a Move track on Move 2; two snapshots hold its bus FX and bus levels', () => {
+    GS.trackRoute[TM] = 1; GS.trackChannel[TM] = 2;
+    Object.assign(ASSIGN, {
+        'move_fx:2:fx1:module': 'rrverb',
+        'move_fx:2:fx1:chain_params': JSON.stringify([{ key: 'room_size', name: 'Room Size', type: 'float', min: 0.5, max: 20, step: 0.01 }]),
+    });
+    const busJson = (room, mixer) => JSON.stringify({ v: 4, track: TM, mixer: [null, null, null, null, mixer], seq: [],
+        params: [null, null, null, null, { 'move_fx:2:fx1': { module: 'rrverb', values: { room_size: room } } }] });
+    files[P.trackSnapDir(UUID, TM, 0) + '/davebox.json'] = busJson('1', { route: 1, bus: 2, volume: 0.5, pan: 0.5 });
+    files[P.trackSnapDir(UUID, TM, 1) + '/davebox.json'] = busJson('11', { route: 1, bus: 2, volume: 1.0, pan: 0.5 });
+    GS.trackMacros[TM] = new Array(8).fill(null);
+    GS.trackMacros[TM][KM] = { v: 0, legs: [{ kind: 'morph', snaps: [0, 1], lo: 0, hi: 1 }] };
+});
+step('the target picker offers SnapMorph on a Move track', () => {
+    snd.soundEnter(TM, TM); ticks(3); snd.soundShowMenu(); snd.soundSetBank(BANK_MACROS);
+    reads = [];                                              /* the seed starts on the next tick */
+    ticks(2);
+    const names = snd.soundKnobTargetsForTest().map(t => t.name);
+    assert(names.indexOf('SnapMorph') >= 0, 'offered on a Move track: ' + JSON.stringify(names));
+});
+step('⭐ a Move-track morph writes the BUS: slot 0, `move_fx:2:fx1:room_size` and `move_fx:2:volume`, one transient bulk', () => {
+    bulks = [];
+    ticks(6);
+    assert(reads.filter(k => k === 'move_fx:2:fx1:module').length === 1, 'the bus insert\'s module checked once');
+    assert(morph.morphReady(TM, KM, GS.trackMacros[TM][KM].legs[0]), 'ready');
+    assert(morph.snapMorphApply(TM, KM, 1.0) === true, 'applied');
+    const b = bulks.filter(x => x.prefix === 'chain:');
+    assert(b.length === 1 && b[0].slot === 0 && b[0].transient, 'one transient bulk on SLOT 0, got ' + JSON.stringify(b.map(x => [x.slot, x.transient])));
+    assert(b[0].pairs['move_fx:2:fx1:room_size'] === '11', 'the bus FX param: ' + JSON.stringify(b[0].pairs));
+    assert(near(parseFloat(b[0].pairs['move_fx:2:volume']), 1.0, 0.001), 'the bus volume (fader travel): ' + b[0].pairs['move_fx:2:volume']);
+    assert(!('slot:volume' in b[0].pairs), 'never the chain slot\'s level');
+});
+step('⚠ re-pointed to another Move instrument since the save, the morph is EMPTY (and says why) — the saved bus is somebody else\'s now', () => {
+    GS.trackChannel[TM] = 3;                                 /* Move 3 → bus 3 */
+    morph.morphInvalidate(TM);
+    bulks = [];
+    ticks(6);
+    assert(morph.morphReady(TM, KM, GS.trackMacros[TM][KM].legs[0]), 'ready (with nothing)');
+    morph.snapMorphApply(TM, KM, 0.5);
+    assert(bulks.filter(x => x.prefix === 'chain:').length === 0, 'nothing written: ' + JSON.stringify(bulks));
+    GS.trackChannel[TM] = 2; morph.morphInvalidate(TM);
+});
+step('back on the chain track for the store checks', () => { snd.soundEnter(T, T); ticks(3); snd.soundShowMenu(); snd.soundSetBank(BANK_MACROS); ticks(2); });
 
 /* ---- THE STORE ---------------------------------------------------------------- */
 step('the sidecar round-trips a morph leg through the validator (order kept, bad slots dropped, a stray key ignored)', () => {
