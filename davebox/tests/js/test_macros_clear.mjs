@@ -136,7 +136,7 @@ step('⭐ OK unassigns all eight, and tells the CHAIN STORE for every one of the
     cc(CC_JOG_TURN, 1); ticks(1);              /* jog from Cancel to OK */
     assert(S.confirmMacroClearSel === 0, 'setup: expected OK selected');
     click();
-    ticks(12);                                 /* WRITES_PER_TICK = 2, so 8 needs ≥4 */
+    ticks(12);                                 /* WRITES_PER_TICK = 8 lands 8 in one tick; 12 keeps slack for 2 */
     assert(S.confirmMacroClear === false, 'the confirm stayed open');
     assert(assigned(1) === 0, 'assignments survived: ' + JSON.stringify(S.trackMacros[1]));
     /* ⚠ ALL EIGHT. Asserting "> 0" passed against a version that cleared one:
