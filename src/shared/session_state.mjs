@@ -97,6 +97,31 @@ export function setUuidIsProvisional(uuid) {
     return String(uuid).indexOf(PROVISIONAL_SET_UUID_PREFIX) === 0;
 }
 
+/* ── "Move did not open the project" ────────────────────────────────────────
+ *
+ * The host resolves the open set from the song index, but Move can refuse the
+ * dir that index names and sit on a default set of its own instead. When the
+ * launcher's record of what Move logged loading disagrees with the resolution,
+ * the host publishes `__pending-unopened-<songIndex>-<seq>`
+ * (src/host/shadow_loaded_set_policy.h — keep the prefix in step).
+ *
+ * It is PROVISIONAL by construction (it starts with `__pending-`), so every
+ * writer that refuses a placeholder refuses it too. These two only add what a
+ * UI needs on top: THAT it happened, and which index to try again. */
+export const UNOPENED_SET_UUID_PREFIX = "__pending-unopened-";
+
+export function setUuidIsUnopened(uuid) {
+    if (!uuid) return false;
+    return String(uuid).indexOf(UNOPENED_SET_UUID_PREFIX) === 0;
+}
+
+/* The song index (== project pad) the host could not see opened, or -1. */
+export function unopenedSetIndex(uuid) {
+    if (!setUuidIsUnopened(uuid)) return -1;
+    const n = parseInt(String(uuid).slice(UNOPENED_SET_UUID_PREFIX.length), 10);
+    return (n >= 0) ? n : -1;
+}
+
 /* The one question a file surface should ask before listing or offering an
  * entry: is this path off-limits right now?
  *

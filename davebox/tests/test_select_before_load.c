@@ -11,6 +11,7 @@
  * SEQ8_SELECT_MARKER is redirected to a temp path below (seq8.c guards the
  * define with #ifndef) so the test never touches a device path. */
 #define SEQ8_SELECT_MARKER "/tmp/davebox-tests/select-marker"
+#define SEQ8_ACTIVE_SET_PATH "/tmp/davebox-tests/select-active-set.txt"
 
 #include "harness.h"
 #include <unistd.h>
@@ -190,6 +191,56 @@ int main(void) {
         HX_ASSERT(i3->awaiting_select == 0,
                   "an empty marker is spent and must boot normally");
         hx_destroy(h3);
+    }
+
+    /* --- PROJECT DID NOT OPEN: a LIVE instance is put back into the refusing
+     * state by JS (set_param awaiting_select=1) when Move turns out to hold a
+     * different set. Every save must stop — the explicit one AND the one
+     * destroy_instance makes on the relaunch that follows — and only a load may
+     * lift it, so a "0" is ignored. --- */
+    {
+        unlink(SEQ8_SELECT_MARKER);
+        hx_t *h5 = hx_create(NULL);
+        HX_ASSERT(h5, "create h5 failed");
+        seq8_instance_t *i5 = (seq8_instance_t *)h5->inst;
+        HX_ASSERT(i5->awaiting_select == 0, "h5 must boot live");
+        strncpy(i5->state_path, STATE_TMP, sizeof(i5->state_path) - 1);
+        hx_set_param(h5, "bpm", "123");
+        seq8_save_state(i5);
+        long bl = 0;
+        char *base = slurp(STATE_TMP, &bl);
+        HX_ASSERT(base && bl > 0, "h5 baseline did not save");
+
+        hx_set_param(h5, "awaiting_select", "1");
+        HX_ASSERT(i5->awaiting_select == 1, "set_param awaiting_select=1 did not arm the refusal");
+        hx_set_param(h5, "bpm", "88");
+        hx_set_param(h5, "save", "1");
+        hx_set_param(h5, "awaiting_select", "0");
+        HX_ASSERT(i5->awaiting_select == 1, "awaiting_select=0 lifted the refusal (only a load may)");
+        hx_destroy(h5);
+        long n = 0;
+        char *after = slurp(STATE_TMP, &n);
+        HX_ASSERT(after && n == bl && !memcmp(after, base, (size_t)n),
+                  "a save (explicit or destroy) landed after awaiting_select=1");
+        free(after);
+        free(base);
+    }
+
+    /* --- A provisional identity in active_set.txt is NO project: the fresh
+     * instance must not adopt it as its state path (a save would then create
+     * Sets/__pending-.../ in the library). --- */
+    {
+        FILE *af = fopen(SEQ8_ACTIVE_SET_PATH, "w");
+        HX_ASSERT(af, "cannot write active set");
+        fputs("__pending-unopened-31-1\nProject 32\n", af);
+        fclose(af);
+        hx_t *h6 = hx_create(NULL);
+        HX_ASSERT(h6, "create h6 failed");
+        seq8_instance_t *i6 = (seq8_instance_t *)h6->inst;
+        HX_ASSERT(i6->state_uuid[0] == '\0', "a provisional uuid was adopted as state_uuid");
+        HX_ASSERT(!strstr(i6->state_path, "__pending-"), "a provisional uuid was built into state_path");
+        hx_destroy(h6);
+        unlink(SEQ8_ACTIVE_SET_PATH);
     }
 
     free(ref);

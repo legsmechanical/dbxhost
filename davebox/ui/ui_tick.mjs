@@ -36,7 +36,8 @@ import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, readActiveSet,
     commitSnapshot } from './ui_persistence.mjs';
 import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
-         projectPickerTextEntryTick } from './ui_dialogs.mjs';
+         projectPickerTextEntryTick,
+         checkProjectOpened, PROJECT_OPEN_CHECK_TICKS } from './ui_dialogs.mjs';
 import { sceneAllQueued, updateSceneMapLEDs } from './ui_scene.mjs';
 import { _padDispatchMutedNow, computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
     syncDrumClipContent } from './ui_drummodel.mjs';
@@ -599,6 +600,8 @@ export function _tickImpl() {
          * flip still triggers the reload instead of silently keeping the
          * previous project's data. */
         S.resumeSetRecheckTicks = 1200;   /* ~13 s @94 Hz, checked every 16 ticks */
+        /* ...and the host's "Move did not open it" verdict, same shape. */
+        S.projectOpenCheckTicks = PROJECT_OPEN_CHECK_TICKS;
         S.ledInitComplete = false;
         invalidateLEDCache();
         S.ledInitQueue = buildLedInitQueue();
@@ -613,7 +616,7 @@ export function _tickImpl() {
      * reload path the resume edge uses. Inert once the window expires. */
     if (S.resumeSetRecheckTicks > 0 && !isSuspended) {
         S.resumeSetRecheckTicks--;
-        if ((S.resumeSetRecheckTicks & 15) === 0 && !S.pendingSetLoad) {
+        if ((S.resumeSetRecheckTicks & 15) === 0 && !S.pendingSetLoad && !S.projectOpenFailed) {
             const _las = readActiveSet();
             if (_las.uuid && _las.uuid !== S.currentSetUuid) {
                 console.log('post-resume set flip: ' + S.currentSetUuid +
@@ -624,6 +627,13 @@ export function _tickImpl() {
                 S.resumeSetRecheckTicks = 0;   /* one heal per resume */
             }
         }
+    }
+
+    /* PROJECT DID NOT OPEN: poll the host's verdict for a window after
+     * init/resume (one small file read every 16 ticks, inert afterwards). */
+    if (S.projectOpenCheckTicks > 0 && !isSuspended) {
+        S.projectOpenCheckTicks--;
+        if ((S.projectOpenCheckTicks & 15) === 0) checkProjectOpened();
     }
 
     /* Age the select-handoff window. Observed handoff on hardware: ~6.5 s from
@@ -641,7 +651,7 @@ export function _tickImpl() {
     }
 
     /* Fresh-session boot: open the picker once loading + LED init settle. */
-    if (S.pendingOpenProjectPicker && !S.stateLoading && S.ledInitComplete &&
+    if (S.pendingOpenProjectPicker && !S.projectOpenFailed && !S.stateLoading && S.ledInitComplete &&
             !S.pendingSetLoad && S.pendingDspSync === 0) {
         S.pendingOpenProjectPicker = false;
         openProjectPadPicker();
@@ -676,6 +686,7 @@ export function _tickImpl() {
      * The lesson is the general one: this is a repair for a DEAD END, so it
      * must not run while the thing that would end it is still in flight. */
     if (S.awaitingProjectSelect && !S.projectPadPicker &&
+            !S.projectOpenFailed &&      /* its own screen owns the dead end */
             S.selectHandoffUntil === 0 &&
             !S.pendingOpenProjectPicker && !S.pendingSetLoad &&
             S.pendingProjectSwitch === null &&

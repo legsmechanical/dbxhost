@@ -35,6 +35,7 @@ import { nowMs } from './ui_clock.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
 import { showActionPopup, readActiveSet, resolveSetLoadDecision } from './ui_persistence.mjs';
+import { checkProjectOpened, projectOpenFailedMidi, PROJECT_OPEN_CHECK_TICKS } from './ui_dialogs.mjs';
 import { automationParamTouch, automationClearKey, automationToggleActive,
          automationRegisterSeqApply, automationRegisterMacApply } from './ui_automation.mjs';
 import { snapMorphApply } from './ui_snapmorph.mjs';
@@ -316,6 +317,15 @@ globalThis.init = function () {
         S.currentSetUuid = _as.uuid;
         S.currentSetName = _as.name;
     }
+    /* Did Move actually open the project the host resolved? The host's verdict
+     * can land seconds after we start (it waits for Move's own load line), so
+     * look now and keep looking for a window. And because it holds the
+     * project's identity back until then, a real project can also arrive after
+     * init — arm the same late-flip heal a resume gets. */
+    S.projectOpenCheckTicks = PROJECT_OPEN_CHECK_TICKS;
+    checkProjectOpened();
+    if (!S.awaitingProjectSelect && S.resumeSetRecheckTicks < PROJECT_OPEN_CHECK_TICKS)
+        S.resumeSetRecheckTicks = PROJECT_OPEN_CHECK_TICKS;
     const currentDspNonce = host_module_get_param('instance_id');
     if (currentDspNonce) S.lastDspInstanceId = currentDspNonce;
 
@@ -504,6 +514,10 @@ function _onMidiInternalImpl(data) {
     const status = data[0] | 0;
     const d1     = (data[1] ?? 0) | 0;
     const d2     = (data[2] ?? 0) | 0;
+
+    /* PROJECT DID NOT OPEN is fully modal: nothing else may act while dAVEBOx
+     * holds something Move does not. */
+    if (S.projectOpenFailed && projectOpenFailedMidi(data)) return;
 
     /* Project-rename keyboard (picker menu -> Rename) is fully modal and
      * reads raw messages — same contract as sound mode's preset-name

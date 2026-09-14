@@ -330,6 +330,11 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **A project that fails to open says so, instead of quietly saving into it.**
+  Occasionally Move can't open the project you picked and starts an empty set
+  of its own. dAVEBOx used to carry on as if the project were open — and save
+  over it. Now it shows **PROJECT DID NOT OPEN**, saves nothing, and offers
+  **Retry** (opens that project again) or **Back** (to the project picker).
 - **No more hang after moving faders or knobs.** A few seconds after a burst of level
   or knob changes the screen used to freeze for up to a second while the session
   saved. Saving now takes a few milliseconds and happens without interrupting you.

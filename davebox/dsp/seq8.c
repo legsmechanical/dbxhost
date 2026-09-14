@@ -4537,7 +4537,11 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
             }
             fclose(uf);
         }
-        if (uuid[0]) {
+        /* ⚠ A PROVISIONAL identity (`__pending-…`, including the host's
+         * "Move did not open it" `__pending-unopened-…`) is NO project: a state
+         * path built from it makes a fake project dir in the set library on the
+         * first save. Same rule as shared/session_state.mjs. */
+        if (uuid[0] && strncmp(uuid, "__pending-", 10) != 0) {
             snprintf(inst->state_path, sizeof(inst->state_path),
                      SEQ8_SET_STATE_FMT, uuid);
             snprintf(inst->state_uuid, sizeof(inst->state_uuid), "%s", uuid);

@@ -148,7 +148,8 @@ import {
 
 import {
     standaloneSessionActive,
-    setUuidIsProvisional
+    setUuidIsProvisional,
+    setUuidIsUnopened
 } from '/data/UserData/schwung/shared/session_state.mjs';
 
 /* One definition of "which key does this component publish a load failure
@@ -15890,19 +15891,28 @@ function processSetChangedFlag() {
     if (!(flags & SHADOW_UI_FLAG_SET_CHANGED)) return;
             debugLog("SET_CHANGED flag detected — switching slot state directory");
 
-            /* 1. Save current state to outgoing directory */
-            autosaveAllSlots();
-            saveAllFxBusConfigs();
-            /* Save chain config (volumes, channels, mute/solo) to outgoing set dir */
-            saveChainConfigToDir(activeSlotStateDir);
-            /* Save current RNBO graph (if RNBO is running) */
-            saveRnboGraphToDir(activeSlotStateDir);
-
             /* 2. Get UUID and set name from shim (in-memory, no file I/O on audio thread) */
             const activeSetRaw = getSlotParam(0, "active_set");
             const activeSetLines = activeSetRaw ? activeSetRaw.split("\n") : [];
             const uuid = activeSetLines[0] ? activeSetLines[0].trim() : "";
             const setName = activeSetLines[1] ? activeSetLines[1].trim() : "";
+
+            /* 1. Save current state to outgoing directory.
+             * ⚠ NOT when the incoming identity says Move did not open the set
+             * the host resolved (setUuidIsUnopened). The outgoing dir can BE that
+             * set — a boot that read it from active_set.txt — and "no save lands
+             * in a project Move never opened" admits no exception for a save
+             * that happens to be on the way out. */
+            if (setUuidIsUnopened(uuid)) {
+                debugLog("SET_CHANGED: Move did not open the resolved set — outgoing save skipped");
+            } else {
+                autosaveAllSlots();
+                saveAllFxBusConfigs();
+                /* Save chain config (volumes, channels, mute/solo) to outgoing set dir */
+                saveChainConfigToDir(activeSlotStateDir);
+                /* Save current RNBO graph (if RNBO is running) */
+                saveRnboGraphToDir(activeSlotStateDir);
+            }
             /* Write active_set.txt for boot persistence (UI thread, not audio thread) */
             if (uuid) {
                 host_write_file(HOST_STATE_ROOT + "/active_set.txt", uuid + "\n" + setName);

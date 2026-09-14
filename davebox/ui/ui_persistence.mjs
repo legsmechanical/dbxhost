@@ -26,7 +26,7 @@ const STATE_PREFIX = (typeof SEQ8_STATE_PREFIX === 'string') ? SEQ8_STATE_PREFIX
  * is a contract with project-cmd.sh/select-list.sh, pinned by check-config.sh.
  * ⚠ In-session Sets/ is the standalone library (bind-mounted), so these paths
  * only ever land inside dAVEBOx projects. */
-import { setUuidIsProvisional }
+import { setUuidIsProvisional, unopenedSetIndex }
     from '/data/UserData/schwung/shared/session_state.mjs';
 
 const SETS_DIR    = '/data/UserData/UserLibrary/Sets';
@@ -89,7 +89,7 @@ const ACTIVE_SET_PATH = DAVEBOX_HOST_DIR + '/active_set.txt';
 export function readActiveSet() {
     try {
         const raw = host_read_file(ACTIVE_SET_PATH);
-        if (!raw) return { uuid: '', name: '' };
+        if (!raw) return { uuid: '', name: '', unopenedIndex: -1 };
         const lines = raw.split('\n');
         const _u = (lines[0] || '').trim();
         /* ⚠⚠ A PROVISIONAL identity is reported as NO PROJECT, not as itself.
@@ -100,10 +100,13 @@ export function readActiveSet() {
          * builder, save and snapshot downstream from ever seeing one. */
         return {
             uuid: setUuidIsProvisional(_u) ? '' : _u,
-            name: (lines[1] || '').trim()
+            name: (lines[1] || '').trim(),
+            /* ≥ 0 when the host saw Move fail to open the project at this
+             * index (the placeholder is provisional, so uuid is '' too). */
+            unopenedIndex: unopenedSetIndex(_u)
         };
     } catch (e) {
-        return { uuid: '', name: '' };
+        return { uuid: '', name: '', unopenedIndex: -1 };
     }
 }
 

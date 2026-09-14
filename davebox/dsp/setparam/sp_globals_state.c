@@ -30,6 +30,18 @@ static int sp_globals_state(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* "The project did not open" (JS, ui_project_open.mjs): Move is holding a
+     * set other than the one this session resolved, so whatever this instance
+     * holds must not be written ANYWHERE keyed on a project. Re-entering the
+     * select-before-load state is exactly that — seq8_save_state, state_full
+     * and state_chunk_ already refuse under it, destroy_instance included —
+     * and the next real state_load clears it. One-way on purpose: only a load
+     * may say a project is live again. */
+    if (!strcmp(key, "awaiting_select")) {
+        if (val && val[0] == '1') inst->awaiting_select = 1;
+        return 1;
+    }
+
     if (!strcmp(key, "save")) {
         inst->xpose_preview_active = 0;  /* defensive: never persist/leave a preview stuck on suspend */
         if (!inst->state_version_mismatch)

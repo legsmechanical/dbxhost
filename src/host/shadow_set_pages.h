@@ -31,6 +31,11 @@
 #define SET_STATE_DIR_FMT SAMPLER_SETS_DIR "/%s/" PER_SET_STATE_SUBDIR
 #define SLOT_STATE_DIR SCHWUNG_INSTALL_DIR "/slot_state"
 #define ACTIVE_SET_PATH SCHWUNG_INSTALL_DIR "/active_set.txt"
+/* What Move itself logged loading (`About to load ...`), distilled by the
+ * session launcher's reader: a uuid, or `default`. ABSENT = not known yet.
+ * The reader's presence is what switches verification on. */
+#define MOVE_LOADED_SET_PATH SCHWUNG_INSTALL_DIR "/move_loaded_set.txt"
+#define MOVE_LOADED_SET_READER SCHWUNG_INSTALL_DIR "/scripts/move-loaded-set-reader.sh"
 
 /* ============================================================================
  * Callback struct - shim functions set pages needs

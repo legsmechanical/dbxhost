@@ -22,6 +22,7 @@
 #include "shadow_chain_mgmt.h"  /* MASTER_FX_SLOTS — its own axis, see the seed loops */
 #include "host/schwung_paths.h"
 #include "shadow_sampler.h"  /* for SAMPLER_SETS_DIR, sampler_read_set_tempo */
+#include "shadow_loaded_set_policy.h"
 
 /* ============================================================================
  * Globals
@@ -396,9 +397,64 @@ void shadow_set_tracking_force_index(int idx)
     set_tracking_forced_index = idx;
 }
 
+/* ---- Did Move OPEN what we resolved? (shadow_loaded_set_policy.h) --------
+ * State for the index currently under verification. Worker thread only. */
+static int      loaded_verify_index = -1;     /* song index being verified, -1 = none */
+static int      loaded_verify_active = 0;     /* keep re-polling this index */
+static long     loaded_verify_start_ms = 0;
+static unsigned loaded_verify_seq = 0;
+static char     loaded_verify_name[128];
+static char     loaded_verify_uuid[64];
+
+static long loaded_set_now_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long)ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
+}
+
+/* Read the launcher's answer. Returns buf, or NULL when the file is absent. */
+static const char *loaded_set_read_file(char *buf, size_t len)
+{
+    FILE *f = fopen(MOVE_LOADED_SET_PATH, "r");
+    if (!f) return NULL;
+    size_t n = fread(buf, 1, len - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    return buf;
+}
+
+/* Publish the resolution — or, when Move demonstrably did not open it, the
+ * "no active set" identity — for the set dir the xattr scan matched. */
+static void loaded_set_verify_and_publish(int song_index)
+{
+    long elapsed = loaded_set_now_ms() - loaded_verify_start_ms;
+    char buf[128];
+    const char *file = loaded_set_read_file(buf, sizeof(buf));
+    loaded_set_verdict_t v = loaded_set_verdict(loaded_verify_uuid, file);
+    loaded_verify_active = loaded_set_keep_checking(v, elapsed);
+
+    switch (loaded_set_action(v, elapsed)) {
+    case LOADED_SET_ACT_PUBLISH_RESOLVED:
+        shadow_set_pages_publish(loaded_verify_name, loaded_verify_uuid);
+        break;
+    case LOADED_SET_ACT_PUBLISH_UNOPENED: {
+        char uuid[64];
+        loaded_set_unopened_uuid(uuid, sizeof(uuid), song_index, loaded_verify_seq);
+        shadow_set_pages_publish(loaded_verify_name, uuid);
+        break;
+    }
+    case LOADED_SET_ACT_HOLD:
+    default:
+        break;
+    }
+}
+
 int shadow_set_tracking_forced_pending(void)
 {
-    return set_tracking_forced_index >= 0;
+    /* Also poll at the fast cadence while a load is being verified, so a
+     * confirmed switch publishes within a worker tick rather than 1.4 s. */
+    return set_tracking_forced_index >= 0 || loaded_verify_active;
 }
 
 /* Poll Settings.json for currentSongIndex changes, then match via xattr.
@@ -440,6 +496,15 @@ void shadow_poll_current_set(void)
 
     /* Normal path: react when index changes.
      * Pending path: keep retrying the same unresolved index until a UUID appears. */
+    /* Verification in flight for this very index: re-check the launcher's
+     * answer only. The dir was already matched; rescanning the library five
+     * times a second would buy nothing. */
+    if (loaded_verify_active && song_index == loaded_verify_index &&
+        song_index == sampler_last_song_index) {
+        loaded_set_verify_and_publish(song_index);
+        return;
+    }
+
     if (song_index == sampler_last_song_index &&
         song_index != sampler_pending_song_index) {
         return;
@@ -480,7 +545,25 @@ void shadow_poll_current_set(void)
         while ((sub = readdir(uuid_dir)) != NULL) {
             if (sub->d_name[0] == '.') continue;
             /* This subdirectory name is the set name */
-            shadow_set_pages_publish(sub->d_name, entry->d_name);
+            /* ⚠ Not published blindly: the index names a DIR, not what Move
+             * opened. When a launcher provides Move's own answer
+             * (MOVE_LOADED_SET_PATH, written by move-loaded-set-reader.sh),
+             * the publish waits for it — see shadow_loaded_set_policy.h.
+             * Without that launcher (an ordinary install) nothing changes. */
+            if (access(MOVE_LOADED_SET_READER, F_OK) == 0) {
+                if (song_index_changed || song_index != loaded_verify_index ||
+                    strcmp(loaded_verify_uuid, entry->d_name) != 0) {
+                    loaded_verify_index = song_index;
+                    loaded_verify_start_ms = loaded_set_now_ms();
+                    if (++loaded_verify_seq == 0) loaded_verify_seq = 1;
+                }
+                snprintf(loaded_verify_name, sizeof(loaded_verify_name), "%s", sub->d_name);
+                snprintf(loaded_verify_uuid, sizeof(loaded_verify_uuid), "%s", entry->d_name);
+                loaded_set_verify_and_publish(song_index);
+            } else {
+                loaded_verify_active = 0;
+                shadow_set_pages_publish(sub->d_name, entry->d_name);
+            }
             handled = 1;
             break;
         }
