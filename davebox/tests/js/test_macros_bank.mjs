@@ -259,26 +259,34 @@ step('⚠ SEED: chain_params once per component, one value per macro; the page d
 });
 
 /* ---- THE KNOB TRAVEL LAW ------------------------------------------------- */
-const STEP_CUTOFF = 1 / 255, STEP_ROOM = 19.5 / 255;
+/* ⭐ THE PAGE LAW (Josh, 2026-09-13): a macro moves like the generated module
+ * editor's knob for the same parameter — 0.5 % of the range a detent (~200 to
+ * sweep), one detent a step, no speed curve. It WAS 1/255 at two detents a
+ * position (510 a sweep, 2.5× the wrist of nusaw's own detune knob). The
+ * fraction is IMPORTED from the host's knob engine (PAGE_KNOB), so this pin
+ * reads it too rather than restating a number that could drift. */
+const { PAGE_KNOB } = await import('../../ui/ui_engine.mjs');
+const STEP_CUTOFF = 1 * PAGE_KNOB.frac, STEP_ROOM = 19.5 * PAGE_KNOB.frac;
 const near = (a, b, tol) => Math.abs(a - b) <= (tol || 1e-3);
-step('⭑⭑ RANGE NORMALISATION: cutoff declares step 0.5 over 0..1, yet 2 detents move it by 1/255 — the declared step is NOT the resolution', () => {
+step('⭑⭑ RANGE NORMALISATION: cutoff declares step 0.5 over 0..1, yet ONE detent moves it by 0.5 % of the range — the declared step is NOT the resolution', () => {
+    assert(near(PAGE_KNOB.frac, 0.005), 'the page fraction is 0.5 % (engine MIN_STEP_RANGE_FRAC × ARC_DELTA_SCALE), got ' + PAGE_KNOB.frac);
     writes = [];
-    touch(0, true); turnBy(0, 2); ticks(1);
+    touch(0, true); turnBy(0, 1); ticks(1);
     const w = wrote('synth:cutoff');
     assert(w.length === 1, 'one write, got ' + JSON.stringify(writes));
     assert(near(parseFloat(w[0].val), 0.483 + STEP_CUTOFF), 'moved by one range step, got ' + w[0].val);
     assert(!near(parseFloat(w[0].val), 0.983), 'not by the declared 0.5');
     touch(0, false); ticks(1);
 });
-step('⭑⭑ a WIDE range (room_size 0.5..20, declared step 0.01) does not crawl: 2 detents = 19.5/255', () => {
+step('⭑⭑ a WIDE range (room_size 0.5..20, declared step 0.01) does not crawl: ONE detent = 19.5 × 0.5 %', () => {
     writes = [];
-    touch(2, true); turnBy(2, 2); ticks(1);
+    touch(2, true); turnBy(2, 1); ticks(1);
     const w = wrote('fx2:room_size');
     assert(w.length === 1, 'one write, got ' + JSON.stringify(writes));
     assert(near(parseFloat(w[0].val), 0.75 + STEP_ROOM, 0.01), 'moved by a range step, got ' + w[0].val);
     touch(2, false); ticks(1);
 });
-step('⭑⭑ a SWEEP costs ZERO reads and the delta MAGNITUDE is kept: one event of 20 detents = 10 steps, one coalesced write', () => {
+step('⭑⭑ a SWEEP costs ZERO reads and the delta MAGNITUDE is kept: one event of 20 detents = 20 steps, one coalesced write', () => {
     const before = reads.length;
     const base = parseFloat(ASSIGN['synth:cutoff']);   /* the stub records every write back: the live value */
     writes = [];
@@ -286,20 +294,27 @@ step('⭑⭑ a SWEEP costs ZERO reads and the delta MAGNITUDE is kept: one event
     turnBy(0, 20); ticks(1);
     const w = wrote('synth:cutoff');
     assert(w.length === 1, 'one coalesced write per tick, got ' + w.length);
-    assert(near(parseFloat(w[0].val), base + 10 * STEP_CUTOFF, 0.002), '10 steps, got ' + w[0].val + ' from ' + base);
+    assert(near(parseFloat(w[0].val), base + 20 * STEP_CUTOFF, 0.002), '20 steps, got ' + w[0].val + ' from ' + base);
     assert(reads.slice(before).filter(k => k === 'synth:cutoff').length === 0, 'no read-back during the sweep (touched knob is never polled)');
     touch(0, false); ticks(1);
 });
-step('⭑⭑ REVERSAL RESETS the accumulator: +1 then -1 writes nothing; a second -1 steps down once', () => {
+step('⭑⭑ a continuous knob has NO sub-step: +1 moves up one step, -1 moves straight back (no unwinding of a gate that is not there)', () => {
     const base = parseFloat(ASSIGN['synth:cutoff']);
     writes = [];
     touch(0, true);
-    turnBy(0, 1); ticks(1); assert(wrote('synth:cutoff').length === 0, 'one detent: sub-step, no write');
-    turnBy(0, -1); ticks(1); assert(wrote('synth:cutoff').length === 0, 'reversal: reset, no write');
+    turnBy(0, 1); ticks(1);
+    assert(wrote('synth:cutoff').length === 1 && near(parseFloat(lastWrite('synth:cutoff')), base + STEP_CUTOFF), 'one detent: one step up, got ' + lastWrite('synth:cutoff'));
     turnBy(0, -1); ticks(1);
-    const w = wrote('synth:cutoff');
-    assert(w.length === 1 && near(parseFloat(w[0].val), base - STEP_CUTOFF), 'one step down, got ' + JSON.stringify(w));
+    assert(wrote('synth:cutoff').length === 2 && near(parseFloat(lastWrite('synth:cutoff')), base), 'reversal: straight back, got ' + lastWrite('synth:cutoff'));
     touch(0, false); ticks(1);
+});
+step('⭑⭑ SHIFT = FINE: a tenth of the step on a continuous knob', () => {
+    const base = parseFloat(ASSIGN['synth:cutoff']);
+    writes = [];
+    shift(true); touch(0, true); turnBy(0, 1); ticks(1);
+    const w = wrote('synth:cutoff');
+    assert(w.length === 1 && near(parseFloat(w[0].val), base + STEP_CUTOFF * PAGE_KNOB.fine, 1e-4), 'a tenth of a step, got ' + JSON.stringify(w) + ' from ' + base);
+    touch(0, false); shift(false); ticks(1);
 });
 
 /* ---- the assign flow (jog-click), an INT and an ENUM ------------------------ */
@@ -342,13 +357,20 @@ step('the jog-click assign flow: K4 → Synth → Voices; the commit lands on th
     ticks(3);
     assert(M().drawn[3].kind === 'valsq', 'an 8-value int draws as the big number, got ' + M().drawn[3].kind);
 });
-step('⭑⭑ INT FLOOR: voices 1..8 moves ONE voice per 2 detents — never 0.03 — and 1 detent moves nothing', () => {
+step('⭑⭑ NARROW INT: voices 1..8 is a CHOICE, not a sweep — 4 detents a voice, like a list (the page law\'s NARROW_RANGE_MAX); 3 move nothing', () => {
     writes = [];
     touch(3, true);
-    turnBy(3, 1); ticks(1); assert(wrote('synth:voices').length === 0, 'one detent: nothing');
+    turnBy(3, 3); ticks(1); assert(wrote('synth:voices').length === 0, 'three detents: nothing');
     turnBy(3, 1); ticks(1);
-    assert(lastWrite('synth:voices') === '5', 'two detents: 4 → 5, got ' + lastWrite('synth:voices'));
+    assert(lastWrite('synth:voices') === '5', 'the fourth: 4 → 5, got ' + lastWrite('synth:voices'));
     touch(3, false); ticks(1);
+});
+step('⭑⭑ SHIFT = FINE lifts the gate on a narrow int: one detent, one voice', () => {
+    writes = [];
+    shift(true); touch(3, true); turnBy(3, 1); ticks(1);
+    assert(lastWrite('synth:voices') === '6', 'one detent under Shift: 5 → 6, got ' + lastWrite('synth:voices'));
+    touch(3, false); shift(false); ticks(1);
+    ASSIGN['synth:voices'] = '4';
 });
 step('⭑⭑ ENUM: shape takes 4 detents per option; 3 do nothing, the 4th steps Saw → Square; it draws as the enum square', () => {
     snd.soundSetViewForTest(VIEW_MACROS);
@@ -735,15 +757,15 @@ step('⭑ a RANGED one-leg macro is the PLAIN path plus a CLAMP: it keeps the ta
            'and at lo=0.2, got ' + lastWrite('synth:cutoff'));
     assert(GS.trackMacros[2][0].v == null, 'a one-leg mapping never needs a knob position, got v=' + GS.trackMacros[2][0].v);
 });
-step('⭑⭑ a RANGED INT keeps the INT feel: two detents a voice, not 255 positions across eight (the slow-knob law)', () => {
+step('⭑⭑ a RANGED INT keeps the INT feel: four detents a voice, not 200 positions across eight (the slow-knob law)', () => {
     /* voices is 1..8 declaring step 1. The range 0.25..0.75 quantises to the
      * int grid: 3..6. If this were driven through a 0..1 knob position, one
-     * voice would take ~64 detents and small turns would move nothing at all. */
+     * voice would take ~50 detents and small turns would move nothing at all. */
     ASSIGN['synth:voices'] = '4';
     GS.trackMacros[2][0] = { v: null, legs: [{ kind: 'chain', comp: 'synth', key: 'voices', lo: 0.25, hi: 0.75 }] };
     ticks(6); writes = [];
-    turnBy(0, 2); ticks(2);
-    assert(lastWrite('synth:voices') === '5', '⭑ TWO detents = one voice, got ' + lastWrite('synth:voices'));
+    turnBy(0, 4); ticks(2);
+    assert(lastWrite('synth:voices') === '5', '⭑ FOUR detents = one voice, got ' + lastWrite('synth:voices'));
     for (let n = 0; n < 4; n++) { turnBy(0, 20); ticks(1); }
     assert(lastWrite('synth:voices') === '6', 'clamped at the top of the range (6 of 1..8), got ' + lastWrite('synth:voices'));
     for (let n = 0; n < 6; n++) { turnBy(0, -20); ticks(1); }
@@ -846,9 +868,9 @@ step('⭐⭐ TRAVEL: FULL sweeps the window across the whole knob; BOUNDED keeps
         { kind: 'chain', comp: 'synth', key: 'voices', lo: 0.25, hi: 0.75 }] };
     snd.soundSetViewForTest(VIEW_MACROS); ticks(8);
     writes = [];
-    turnBy(0, 2); ticks(2);
+    turnBy(0, 4); ticks(2);
     assert(lastWrite('synth:voices') === '5',
-           'BOUNDED: two detents is one voice, got ' + lastWrite('synth:voices'));
+           'BOUNDED: four detents is one voice (a narrow int, the page law), got ' + lastWrite('synth:voices'));
 
     /* The same leg, set to FULL. Two detents is now a fraction of the whole
      * sweep, so the SAME turn must move LESS — that is the trade. */

@@ -17,6 +17,12 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Macros and mixer knobs feel like the module editor.** A macro on a
+  parameter now sweeps it in the same wrist movement the module's own page
+  knob takes (it used to take two and a half times the turn), whole-number
+  and list parameters step the way they do on the pages, and **Shift** while
+  turning gives fine control everywhere. Pan and the sends on SOUND + CONFIG
+  and in the session mixer follow the same law; volume keeps its fader feel.
 - **One track per Move instrument.** A Move instrument (Move 1–4) can be the
   instrument of only one dAVEBOx track at a time: in the Instrument picker a
   Move that another track already plays is shown with that track's number and

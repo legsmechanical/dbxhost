@@ -173,7 +173,9 @@ globalThis.shadow_save_state_now = () => 1;
 const bridge = await import('../../ui/ui_dsp_bridge.mjs');
 const { SLOT_LEVEL_MAX , faderStep, faderWire } = await import('../../ui/ui_engine.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
-const STEP_VOL = SLOT_LEVEL_MAX / 200, STEP_PAN = 1 / 200, STEP_SEND = 1 / 100;
+/* Pan and the sends step on THE PAGE LAW (Josh, 2026-09-13): 0.5 % of the range
+ * a detent, like the module editor — the sends were 1/100. Volume: the fader law. */
+const STEP_VOL = SLOT_LEVEL_MAX / 200, STEP_PAN = 1 / 200, STEP_SEND = 1 / 200;
 
 step('setup: sound mode on a Schwung track, at its menu (a non-EDIT screen); the levels seed ONCE', () => {
     reads = []; writes = [];
@@ -206,7 +208,7 @@ step('⚠ K1 Volume: n detents = n steps of SLOT_LEVEL_MAX/200, written ONCE per
      * decimals now, so the string is "1.00000"; the value is what matters. */
     assert(parseFloat(lastWrite('slot:volume')) === 1, 'back to exactly unity, got ' + lastWrite('slot:volume'));
 });
-step('K2 Pan (1/200 per detent), K3/K4 sends (1/100): each to its own slot: key — and K5 Module Level is OFF the page (a macro target only, Josh 2026-09-03)', () => {
+step('K2 Pan (1/200 per detent), K3/K4 sends (1/200, the page law): each to its own slot: key — and K5 Module Level is OFF the page (a macro target only, Josh 2026-09-03)', () => {
     writes = [];
     turnBy(1, -20); turnBy(2, 50); turnBy(3, 25); turnBy(4, 10); ticks(1);
     assert(lastWrite('slot:pan') === (0.5 - 20 * STEP_PAN).toFixed(3), 'pan, got ' + lastWrite('slot:pan'));

@@ -30,7 +30,8 @@ import {
     engineLoadCardScript,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
     slotIndex, moveBusForChannel, moveBusComp, moveBusPrefix,
-    faderStep, faderWire, faderFormatDb, faderGainToTravel, SHIFT_VOL_THROW, trackLevelCardText} from './ui_engine.mjs';
+    faderStep, faderWire, faderFormatDb, faderGainToTravel, SHIFT_VOL_THROW, trackLevelCardText,
+    PAGE_KNOB, pageFloatStep, pageIntStep, pageIntDetents } from './ui_engine.mjs';
 /* MODULE buses — a splittable module's voice groups. ⚠ NOT davebox's `S.bus`,
  * which is a MIXER POSITION; ui_modbus.mjs's header says why the source keeps
  * them apart even though the screens never collide. */
@@ -1935,8 +1936,12 @@ function onLevelTurn(idx, delta, bounds) {
     const m = levelKnobSpec(idx);
     if (!m) return;
     const prev = S.levelVals[idx];
-    /* ⭑ Volume steps on the FADER LAW, keeping its 200-unit throw. */
-    let v = m.fader ? faderStep(prev, delta, m.units) : prev + delta * m.step;
+    /* ⭑ Volume steps on the FADER LAW, keeping its 200-unit throw. Pan and the
+     * sends step on THE PAGE LAW (Josh, 2026-09-13: the mixer elements besides
+     * volume feel like the module editor's knobs) — 0.5 % of the range a
+     * detent, Shift a tenth of that. */
+    let v = m.fader ? faderStep(prev, delta, m.units)
+                    : prev + delta * pageFloatStep(0, m.max) * (S.shiftHeld ? PAGE_KNOB.fine : 1);
     if (v < 0) v = 0;
     if (v > m.max) v = m.max;
     /* A macro leg's range, when one is set (ui_sound's legBounds). */
@@ -5601,10 +5606,11 @@ export function bankKnobLockTurn(track, bank, k, altMode, delta) {
  * range-normalised to ~255 positions with the declared step as a floor;
  * detents per step from the bank's own feel (a list or toggle keeps its
  * deliberate 8/16), the continuous ones the chain law's 2. */
+/* A bank param as a macro target: the page law's int rule, unless the param
+ * declares its own detent cost (meta.sens — the deliberate ones). */
 function bankMacroTravel(meta) {
-    const span = meta.max - meta.min;
-    const step = Math.max(1, Math.round(span / KNOB_TRAVEL.int.positions));
-    const sens = (meta.sens && meta.sens > 1) ? meta.sens : KNOB_TRAVEL.int.sens;
+    const step = pageIntStep(meta.min, meta.max, 1);
+    const sens = (meta.sens && meta.sens > 1) ? meta.sens : pageIntDetents(meta.min, meta.max);
     return { step, sens };
 }
 function bankMacroCell(m, meta, v) {
@@ -5748,22 +5754,28 @@ function macroMergeAfterPatch() { S.macMergeWanted = true; S.macMigrateFor = -1;
  *   `sens`      = detents per position
  *   sweep       = positions x sens detents, end to end
  */
+/* ⭐ THE PAGE LAW (Josh, 2026-09-13): a macro feels like the generated module
+ * editor's knob for the same parameter — see PAGE_KNOB in ui_engine, where the
+ * numbers are imported from the host's knob engine. This table WAS canvaskit's
+ * continuous-cell default (255 positions × 2 detents = 510 a sweep) — 2.5× the
+ * wrist of nusaw's own detune knob, which is exactly what Josh felt.
+ *   float: 0.5 % of the range per detent, one detent a position — ~200 to sweep.
+ *   int:   at least a whole unit per detent (perDetentStep); a NARROW range
+ *          (2..16) takes ENUM_DELTA_DIV detents a unit, like a list — see
+ *          macroCellFor, which sets the per-cell sens.
+ *   enum:  ENUM_DELTA_DIV detents an option (unchanged; it always matched). */
 const KNOB_TRAVEL = {
-    /* Continuous: canvaskit's law, and identical to the session-view mixer's
-     * knobs — 255 positions, 2 detents each, ~510 detents end to end. The one
-     * knob feel already blessed on this hardware. */
-    float: { positions: 255, sens: 2 },
-    /* Whole numbers keep their DECLARED step as a floor — 1..8 voices must move
-     * one voice per step, never 0.03 — so `positions` only bites on a wide int
-     * that would otherwise crawl (0..1000 → step 4, not 1). 2 detents per step
-     * resists a brush; an eight-voice sweep is 14 detents. */
-    int: { positions: 255, sens: 2 },
-    /* A short named list: its positions ARE the options, so only the detent
-     * cost is a choice. 4 makes changing patch deliberate rather than something
-     * a sleeve does. (movy's ENUM_DELTA_DIV, and canvaskit's "pick" class is
-     * the same idea at 6.) */
-    enum: { positions: 0, sens: 4 },
+    float: { positions: PAGE_KNOB.positions, sens: 1 },
+    int:   { positions: PAGE_KNOB.positions, sens: 1 },
+    enum:  { positions: 0, sens: PAGE_KNOB.enumDiv },
 };
+/* Shift = FINE, as on the pages: a tenth of the step (an int never below one
+ * whole unit), and the detent gate lifted so one click is one option. */
+function fineStepFor(cell) {
+    if (cell.options) return 1;
+    if (cell.type === 'int') return Math.max(1, Math.round(cell.step * PAGE_KNOB.fine));
+    return cell.step * PAGE_KNOB.fine;
+}
 
 /* The editable cell for a chain macro: makeCell (ui_discover) gives it the
  * bank editor's widget vocabulary and its short label from the target's
@@ -5782,17 +5794,18 @@ function macroCellFor(m) {
     const type = cell.options ? 'enum' : (cell.type === 'int' ? 'int' : 'float');
     const travel = KNOB_TRAVEL[type] || KNOB_TRAVEL.float;
     const span = cell.max - cell.min;
-    if (type === 'enum') cell.step = 1;                /* the options are the positions */
-    else {
-        const rangeStep = (span > 0 && travel.positions) ? span / travel.positions : 0;
-        const declared = (isFinite(p.step) && p.step > 0) ? Number(p.step) : 0;
-        /* float: normalise OUTRIGHT — the declared step is what costs the
-         * resolution. int: the declared step is a FLOOR, or a 1..8 voice count
-         * would move by 0.03 and never change. */
-        cell.step = (type === 'int') ? Math.max(declared || 1, rangeStep)
-                                     : (rangeStep || declared || 0.01);
+    const declared = (isFinite(p.step) && p.step > 0) ? Number(p.step) : 0;
+    if (type === 'enum') { cell.step = 1; cell.sens = travel.sens; }   /* the options are the positions */
+    else if (type === 'int') {
+        /* The engine's perDetentStep and detentsPerStep: a whole unit per
+         * detent at least, and a narrow range (a voice count, a pad index)
+         * gated like a list so a flick cannot fly past it. */
+        cell.step = pageIntStep(cell.min, cell.max, declared);
+        cell.sens = pageIntDetents(cell.min, cell.max);
+    } else {
+        cell.step = span > 0 ? pageFloatStep(cell.min, cell.max) : (declared || 0.01);
+        cell.sens = travel.sens;
     }
-    cell.sens = travel.sens;
     return cell;
 }
 
@@ -6060,6 +6073,8 @@ function macroTick() {
             while (S.knobAccum[i] >= tr.sens) { steps++; S.knobAccum[i] -= tr.sens; }
             while (S.knobAccum[i] <= -tr.sens) { steps--; S.knobAccum[i] += tr.sens; }
             if (!steps) continue;
+            /* Shift = FINE on the knob's own position too: a tenth of a detent. */
+            if (S.shiftHeld) steps *= PAGE_KNOB.fine;
             /* ⚠ WAIT until v and every addressable chain leg's previous value
              * are known — the detents ACCUMULATE meanwhile, exactly as the
              * plain path's do while its reads are in flight. Turning early
@@ -6124,19 +6139,22 @@ function macroTick() {
         }
         if (!m || m.kind !== 'chain' || !cell || cell.vanished || S.macVals[i] == null) continue;
         if (MACRO_UNTURNABLE[cell.kind]) { S.knobAccum[i] = 0; continue; }
-        const sens = cell.sens || 1;
+        /* Shift = FINE (the page law): the gate lifts and the step shrinks. */
+        const fine = !!S.shiftHeld;   /* sound mode's own mirror of Shift */
+        const sens = fine ? 1 : (cell.sens || 1);
         let steps = 0;
         while (S.knobAccum[i] >= sens) { steps++; S.knobAccum[i] -= sens; }
         while (S.knobAccum[i] <= -sens) { steps--; S.knobAccum[i] += sens; }
         if (!steps) continue;
         const cur = S.macVals[i];
         /* ⭑ A RANGED single leg is this path plus a CLAMP — never the `v`
-         * machinery. It keeps the target's own feel (two detents a voice, four
-         * an enum step) and simply cannot leave lo..hi; an inverted leg flips
-         * the step's sign. §6.5 falls out of the clamp landing on the enum's
-         * own grid. A value already outside the range clamps in on the first
-         * turn, which is the constraint doing its job. */
-        const next = legClamp(stepValue(cell, cur, legSteps(m, steps)), m, cell.min, cell.max, cell);
+         * machinery. It keeps the target's own feel (a unit a detent, four
+         * an enum step or a narrow int) and simply cannot leave lo..hi; an
+         * inverted leg flips the step's sign. §6.5 falls out of the clamp
+         * landing on the enum's own grid. A value already outside the range
+         * clamps in on the first turn, which is the constraint doing its job. */
+        const inc = fine ? fineStepFor(cell) : cell.step;
+        const next = legClamp(clampValue(cell, (cur == null ? cell.min : cur) + inc * legSteps(m, steps)), m, cell.min, cell.max, cell);
         if (next === cur) continue;
         S.macVals[i] = next;                             /* optimistic, drawn now */
         const wire = commitString(cell, next), prevWire = commitString(cell, cur);

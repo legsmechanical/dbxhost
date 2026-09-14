@@ -1496,13 +1496,15 @@ Recording works on the parameters, not the knob: sweep a three-target macro
 while recording and you get three lanes, one per parameter, each of which you
 can edit, smooth or clear on its own. Delete + touch the knob clears all of
 them at once, and Mute + touch switches them all off together.
-Every knob sweeps its whole range in the same gesture, whatever the parameter's
-units — a filter cutoff and a 0.5-to-20-second reverb size take the same turn,
-and it's the same turn a fader takes in the session mixer. Turning faster moves
-further, in proportion, and changing direction takes effect on the next click
-rather than unwinding what you just did. Whole-number parameters keep their own
-steps — an eight-voice count is two clicks a voice — and picking from a list
-takes four clicks each, so a sleeve can't change your waveform.
+A macro turns exactly like the module editor's own knob for the same parameter:
+every knob sweeps its whole range in the same gesture, whatever the parameter's
+units — a filter cutoff and a 0.5-to-20-second reverb size take the same turn —
+and turning faster moves further, in proportion. Whole-number parameters move at
+least a whole unit per click; a short count (up to sixteen values — voices, a
+pad number) and any list take four clicks per step, so a sleeve can't change your
+waveform. Hold **Shift** while turning for fine control: a tenth of the step, and
+one click is one option on a list. The same law drives pan and the sends on
+SOUND + CONFIG and in the session mixer; volume keeps its fader travel.
 
 A macro is not a copy of its parameter; it *is* the parameter. Turn it while
 recording and the parameter records; turn it while holding a step and that step
