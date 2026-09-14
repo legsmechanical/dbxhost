@@ -353,6 +353,51 @@ export function trackLevelCardText(track, gain) {
     return 'Tr ' + (track + 1) + '  LEVEL  ' + faderFormatDb(gain);
 }
 
+/* ── THE PAGE LAW (Josh, 2026-09-13): macros and the mixer's pan/sends feel
+ * like the GENERATED MODULE EDITOR's knobs — nusaw's own pages ────────────
+ * "if I map nusaw detune to a macro, it requires a lot more wrist movement to
+ * sweep the full range than the param pages detune knob."
+ *
+ * The pages run the shared knob engine's Movy model (src/shared/knob_engine.mjs
+ * knobStep): a continuous knob moves a fixed FRACTION of its own range per
+ * detent — MIN_STEP_RANGE_FRAC × ARC_DELTA_SCALE = 0.5 %, so ~200 detents
+ * bottom to top whatever the units — with NO time-based acceleration; an int
+ * moves at least a whole unit per detent, and a NARROW int (2..16 values) or
+ * any list takes ENUM_DELTA_DIV detents a step; Shift is FINE (a tenth of the
+ * step, the gate lifted). A macro on the same parameter used sound mode's own
+ * 255-positions-×-2-detents table — 510 detents, 2.5× the wrist — the
+ * "slow-knob law" copied for the second time ([[schwung-canvaskit-continuous-
+ * cell-default-is-the-slow-law]]). The constants are IMPORTED from the engine
+ * rather than copied a third time, so a retune upstream retunes these too.
+ *
+ * Surfaces on this law: chain-param macro legs, the multi-target / SnapMorph
+ * knob's own position, and pan / send A / send B on the SOUND + CONFIG bank
+ * and the session strips. NOT on it: volume (the fader law, "great already"),
+ * davebox's own bank pages (the time-divisor curve Josh judged right), the
+ * pick/deliberate classes. */
+import { MIN_STEP_RANGE_FRAC, ARC_DELTA_SCALE, ENUM_DELTA_DIV, NARROW_RANGE_MAX }
+    from '/data/UserData/schwung/shared/knob_engine.mjs';
+export const PAGE_KNOB = Object.freeze({
+    frac: MIN_STEP_RANGE_FRAC * ARC_DELTA_SCALE,      /* of the range, per detent (0.005) */
+    positions: Math.round(1 / (MIN_STEP_RANGE_FRAC * ARC_DELTA_SCALE)),   /* 200 */
+    enumDiv: ENUM_DELTA_DIV,                          /* detents per list step / narrow-int unit */
+    narrowMax: NARROW_RANGE_MAX,                      /* an int range this narrow steps like a list */
+    fine: 0.1,                                        /* Shift: a tenth of the step */
+});
+/* A continuous parameter's per-detent step. */
+export function pageFloatStep(min, max) { return (max - min) * PAGE_KNOB.frac; }
+/* An int's per-detent step: the engine's perDetentStep — at least the declared
+ * step (or 1), at least 1 % of the range, halved for the arc, rounded, never 0. */
+export function pageIntStep(min, max, declared) {
+    const d = (declared > 0) ? declared : 1;
+    return Math.max(1, Math.round(Math.max(d, (max - min) * MIN_STEP_RANGE_FRAC) * ARC_DELTA_SCALE));
+}
+/* Detents per int step: a narrow range (2..16) is a choice, not a sweep. */
+export function pageIntDetents(min, max) {
+    const r = max - min;
+    return (r >= 2 && r <= NARROW_RANGE_MAX) ? ENUM_DELTA_DIV : 1;
+}
+
 export const SESS_KNOB_MODES = [
     /* ⚠ `sweep` is VOLUME's alone: the encoder counts a full 0..max sweep should
      * cost, overriding the universal SWEEP_UNITS. Josh judged the universal rate

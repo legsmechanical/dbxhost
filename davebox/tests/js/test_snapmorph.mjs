@@ -230,24 +230,25 @@ step('⭐ a turn to the midpoint writes ONE transient bulk SET: numbers interpol
     bulks = []; modSets.length = 0; writes = [];
     touch(K, true);
     /* ⚠ a CC value ≥ 64 decodes as NEGATIVE (v − 128): 63 is the largest
-     * positive event. 4 × 63 + 2 = 254 detents = 127 steps ≈ v 0.498. */
-    turnBy(K, 63); turnBy(K, 63); turnBy(K, 63); turnBy(K, 63); turnBy(K, 2); ticks(1);
+     * positive event. The knob's position is on THE PAGE LAW (200 detents a
+     * sweep, one a position): 63 + 36 = 99 detents ≈ v 0.495, just under. */
+    turnBy(K, 63); turnBy(K, 36); ticks(1);
     const b = chainBulks();
     assert(b.length === 1, 'one bulk SET for the whole turn, got ' + b.length + ' ' + JSON.stringify(bulks));
     assert(b[0].transient === true, 'transient under the hand');
     const p = b[0].pairs;
-    assert(near(mp().v, 127 / 255), 'v ≈ 0.498, got ' + mp().v);
-    assert(near(parseFloat(p['synth:cutoff']), 0.2 + 0.6 * (127 / 255), 0.002), 'cutoff interpolated, got ' + p['synth:cutoff']);
+    assert(near(mp().v, 99 / 200), 'v ≈ 0.495, got ' + mp().v);
+    assert(near(parseFloat(p['synth:cutoff']), 0.2 + 0.6 * (99 / 200), 0.002), 'cutoff interpolated, got ' + p['synth:cutoff']);
     assert(p['synth:voices'] === '4', 'voices 2→6 at the midpoint is 4, got ' + p['synth:voices']);
     assert(p['synth:shape'] === '0', 'shape just UNDER the midpoint stays Saw (index 0), not Square, got ' + p['synth:shape']);
-    assert(near(parseFloat(p['fx2:room_size']), 1 + 10 * (127 / 255), 0.02), 'room size interpolated, got ' + p['fx2:room_size']);
+    assert(near(parseFloat(p['fx2:room_size']), 1 + 10 * (99 / 200), 0.02), 'room size interpolated, got ' + p['fx2:room_size']);
     assert(p['fx2:freeze'] === '0', 'freeze (a switch) stays Off under the midpoint, got ' + p['fx2:freeze']);
     assert(!('synth:sample' in p), 'a filepath never morphs');
     assert(writes.length === 0, 'no single-param writes: ' + JSON.stringify(writes));
 });
 step('⭐ THE MIXER LEVELS ride in the same bulk: volume morphs in FADER travel (−6 dB → 0 dB passes −3 dB, not linear gain 0.75), pan and send A linear, a level one snapshot lacks stays out', () => {
     const p = chainBulks()[0].pairs;
-    const f = 127 / 255;
+    const f = 99 / 200;
     const { faderGainToTravel, faderTravelToGain } = await0;
     const tMid = 0.6 + (0.8 - 0.6) * f;                    /* travel: −6 dB is 0.6, unity 0.8 */
     assert(near(parseFloat(p['slot:volume']), faderTravelToGain(tMid), 0.002), 'volume at travel midpoint ≈ −3 dB (' + faderTravelToGain(tMid).toFixed(4) + '), got ' + p['slot:volume']);

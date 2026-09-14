@@ -256,6 +256,33 @@ step('a SEND sweep costs a human gesture, not four revolutions', () => {
                         'law no longer exceeds the bound — this step has stopped discriminating');
 });
 
+/* ⭐ THE PAGE LAW on the session strips (Josh, 2026-09-13: the mixer elements
+ * besides volume feel like the module editor's knobs): pan and the sends move
+ * 0.5 % of their range per detent — flat, the batch magnitude honoured, no
+ * speed curve — and Shift is a tenth. The sweep bound above cannot tell the
+ * two laws apart (both land inside it); this step can. */
+step('⭐ a SEND on the page law: a cold detent is exactly 0.5 %, a 10-detent batch 5 %, Shift a tenth — never the speed curve\'s 1 %', () => {
+    S.trackChannel[0] = 2;
+    ticks(64);
+    S.sessKnobMode = 2;                          /* SEND A */
+    S.knobAccelLast[0] = 0; S.knobAccelAcc[0] = 0;
+    S.sessVolLevel[0] = 0.5;
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 1]));
+    let moved = S.sessVolLevel[0] - 0.5;
+    if (Math.abs(moved - 0.005) > 1e-6)
+        throw new Error('a cold detent moved ' + moved.toFixed(4) + ' — the page law is 0.005 (the speed curve would give 0.010)');
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 10]));
+    moved = S.sessVolLevel[0] - 0.505;
+    if (Math.abs(moved - 0.05) > 1e-6)
+        throw new Error('a 10-detent batch moved ' + moved.toFixed(4) + ' — the magnitude must be honoured flat (0.050)');
+    S.shiftHeld = true;
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 71, 1]));
+    S.shiftHeld = false;
+    moved = S.sessVolLevel[0] - 0.555;
+    if (Math.abs(moved - 0.0005) > 1e-6)
+        throw new Error('Shift moved ' + moved.toFixed(5) + ' — fine is a tenth of the step (0.0005)');
+});
+
 /* Josh, 2026-08-26, having felt the universal rate on all four banks: "volume
  * can be reverted. the rest feel great." A fader wants travel where a pan wants
  * reach — so volume keeps its own, slower sweep, and that override is a DECISION

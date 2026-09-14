@@ -23,7 +23,10 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 command -v node >/dev/null 2>&1 || { echo "FAIL: node required"; exit 1; }
 
-node --input-type=module -e '
+# ui_engine.mjs imports the host's shared knob_engine.mjs by its DEVICE path
+# (the page law, 2026-09-13); davebox's audit loader resolves that prefix to
+# src/shared here, as the davebox suite's own build does.
+node --import ./davebox/tools/audit_loader.mjs --input-type=module -e '
 import { readFileSync } from "node:fs";
 import { bulkDecodeForTest } from "./davebox/ui/ui_engine.mjs";
 let fail = 0;

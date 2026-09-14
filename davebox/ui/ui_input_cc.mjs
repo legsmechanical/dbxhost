@@ -30,7 +30,8 @@ import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay,
          markJsUndoPatch } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
-         SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire} from './ui_engine.mjs';
+         SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
+         PAGE_KNOB, pageFloatStep } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity, BANK_CYCLE_DRUM, CONDUCT_BANK_CYCLE,
          bankCycleForMode } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
@@ -3975,7 +3976,14 @@ function _sessionKnobParam(knobIdx, d2) {
      * by the same knob index — eight strips still cannot steal each other's
      * partial turns, and a strip cannot be turned as a bank knob at the same
      * time, so there is nothing for the two contexts to fight over. */
-    const steps = ccKnobDelta(d2, knobIdx, mode.units / (mode.sweep || SWEEP_UNITS));
+    /* ⭐ PAN AND THE SENDS STEP ON THE PAGE LAW (Josh, 2026-09-13: the mixer
+     * elements besides volume feel like the module editor's knobs): 0.5 % of
+     * the range a detent, the batch magnitude honoured, no speed curve, Shift a
+     * tenth. Volume alone keeps ccKnobDelta's curve and its fader throw — "it's
+     * great already". Every detent moves here, so the partial-detent branch
+     * below is volume's alone. */
+    const steps = mode.fader ? ccKnobDelta(d2, knobIdx, mode.units / (mode.sweep || SWEEP_UNITS))
+                             : d * (S.shiftHeld ? PAGE_KNOB.fine : 1);
     const acc = { steps };
     if (!acc.steps) {
         /* Partial detent: nothing moves, but the finger is clearly ON this
@@ -3999,7 +4007,7 @@ function _sessionKnobParam(knobIdx, d2) {
         v = faderStep(lvl, acc.steps, mode.units);
         if (v > mode.max) v = mode.max;
     } else {
-        v = lvl + acc.steps * mode.step;
+        v = lvl + acc.steps * pageFloatStep(0, mode.max);
         if (v < 0) v = 0;
         if (v > mode.max) v = mode.max;
     }
