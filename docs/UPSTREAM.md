@@ -291,6 +291,8 @@ collide and most deserving of a careful read before taking:
 | `src/modules/chain/dsp/chain_patch.c`, `chain_host.c` | ~750 | fx3/fx4 routing and patch parse |
 | `src/shadow/shadow_ui.c`, `src/host/shadow_constants.h` | ~570 | Fork-only JS bindings, SHM struct fields |
 | `standalone/`, `davebox/` | all of it | Fork-only by construction — no upstream counterpart exists |
+| `src/host/shadow_param_lane.h`, `src/host/shadow_param_lane_policy.h` | new (branch `param-transport`) | The param-transport write lane + its eligibility classifier — no upstream equivalent |
+| `tests/host/test_shadow_param_lane.c`, `tests/host/test_param_lane_policy.c`, `tests/host/test_param_apply_set_dispatch.sh`, `tests/host/test_param_lane_wiring.sh` | new (branch `param-transport`) | Unit + structural pins for the lane and the one-dispatcher invariant |
 
 ## Still worth offering upstream
 
@@ -306,6 +308,7 @@ so the option stays visible.
 | Let a module claim Undo/Copy/Delete (`claims_edit_ccs`) + its tests | `883b5f1e`, `df03a19c` | Not submitted. Supersedes upstream #154, which #175 reverted |
 | Treat an empty param readback as absent, not as a value | `16368a97` | Not submitted |
 | Text-entry function keys no longer overlap the last characters | `02e5ac2d` | Not submitted |
+| One-dispatcher param SET extraction (`shadow_param_apply_set`) + the variable-length param write lane | branch `param-transport` | Not submitted — generic host change, no module named; fixes a real two-dispatcher class of bug (see the 09-05 lesson in `docs/HOST_REFERENCE.md`) |
 
 ⚠ **Identify these by SUBJECT, not by hash.** Upstream rewrites history on every release, and this
 fork has been renumbered by it before — a stale hash reads as "the work is missing" when it is

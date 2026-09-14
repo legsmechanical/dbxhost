@@ -24,6 +24,9 @@
 #     handshake, oversize refusal, fill-then-drain, the end-of-buffer skip
 #     marker, the uint32 cursor wrap, the first-drain seed (tail_published,
 #     not head), and a concurrent producer/consumer pair.
+#   - test_param_lane_policy — WHICH keys may take that lane: the lifecycle
+#     and blob exclusions, each with a near-miss control, so an exclusion
+#     cannot quietly widen into a whole-prefix ban.
 #
 # Usage: `make -C tests/host test`
 
@@ -61,6 +64,7 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_control_layout \
           $(BUILD_DIR)/test_shadow_param_queue \
           $(BUILD_DIR)/test_shadow_param_lane \
+          $(BUILD_DIR)/test_param_lane_policy \
           $(BUILD_DIR)/test_chain_idle_tick
 
 .PHONY: all test clean

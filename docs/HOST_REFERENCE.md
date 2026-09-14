@@ -333,6 +333,90 @@ SHM segments: `/schwung-audio` (mixed shadow output), `/schwung-control` (`shado
 
 `shadow_control_t.ui_flags`: `JUMP_TO_SLOT (0x01)`, `JUMP_TO_MASTER_FX (0x02)`, `JUMP_TO_OVERTAKE (0x04)`.
 
+### Parameter transport: the mailbox, the pending queue, and the lane
+
+Every parameter GET/SET reaches the host by one of three paths. Which one a given write takes is
+decided by the caller (JS side), not arbitrated between paths on the C side.
+
+| class | path | size | rate | needs reply? |
+|---|---|---|---|---|
+| knob detents, `pa_*` automation writes, SnapMorph/`transient` pushes, `pendingDefaultSetParams` | fire-and-forget SET: lane if eligible, else `spq`, else mailbox | small–≤2 KB | per detent/tick | no |
+| lifecycle/special: `overtake_dsp:load`/`unload`, `jack:`, `suspend_overtake`, `passthrough` | **mailbox only** | small | rare | side effects on the shim |
+| reads (tick prefetch, `pa_list`, digests, bulk GET), state blobs (`<prefix>:state`, chunked load/save, snapshots) | mailbox | up to 128 KB | 1+/tick, or per load/save | yes |
+| live notes (`liveSendNote`) | MIDI inject ring (its own, unrelated transport) | 4 B | per note | no |
+| manager / web UI | web ring, applied through the same one-dispatcher call as the mailbox | ≤255 B | remote edits | no |
+
+**Mailbox** (`shadow_param_t`, `src/host/shadow_constants.h:642`) is a single in-flight
+request/response slot, serviced once per SPI frame (~2.9 ms) by
+`shadow_inprocess_handle_param_request` (`src/host/shadow_chain_mgmt.c`). It carries every read,
+every bulk request, every state blob, and the lifecycle/special keys above — nothing on that list
+is eligible for the lane.
+
+**Pending queue** (`shadow_param_queue.h`, `spq`, `g_param_pending` in `shadow_ui.c`) is the
+overflow fallback behind the mailbox: 64 entries, last-writer-wins per (slot, key), drained one per
+idle main-loop pass and by every blocking caller before it takes the mailbox. It exists because a
+fire-and-forget SET that missed an idle mailbox used to be silently stomped by the next one
+targeting a different key (found on device 2026-08-23, fixed 2026-09-05) — see the lesson below.
+The **queue-non-empty rule**: once anything is queued, every later fire-and-forget SET queues too,
+even if the mailbox happens to be idle — order is preserved by never letting a later write jump the
+line (`spq_offer` in `shadow_param_queue.h`).
+
+**The lane** (`shadow_param_lane.h`) is a single-producer/single-consumer variable-length byte ring
+in its own SHM segment, carrying only fire-and-forget SETs (single or bulk) that the producer-side
+classifier accepts (`shadow_param_lane_policy.h`, `spl_key_eligible`). The shim
+(`shadow_drain_param_lane` in `schwung_shim.c`) drains the lane at the top of every frame, **before** it services the mailbox, so many writes
+land in one frame instead of one per frame; a write pushed to the lane before a read reaches the
+mailbox is applied before that read is served. Excluded from the lane, always: `overtake_dsp:load`
+/`unload`, `jack:`, `suspend_overtake`, `passthrough`, and any `*:state`/blob key — these keep
+lifecycle side effects or exceed the record size cap, so they stay on the mailbox. Eligible AND
+`spq` empty AND the lane has room → lane; otherwise the existing `spq_offer` path, unchanged.
+
+**Ordering guarantees:**
+- FIFO within the lane (a byte ring popped in push order).
+- The lane is drained before the mailbox every frame, so a GET issued after a lane SET observes it.
+- The queue-non-empty rule above holds order between `spq` and direct mailbox commits.
+- No ordering promise between the web ring and shadow_ui's own writes — none exists today and none
+  is added.
+
+**One dispatcher, always** — `shadow_param_apply_set(slot, key, value)` (declared in
+`shadow_chain_mgmt.h`, extracted from the old mailbox SET arm) is the single place every prefix
+family, module load, and side effect (LFO base re-snapshot, slot activation, patch capture) is
+handled. The mailbox arm, the web-ring drain and the lane drain all call it; a new write path
+must call it too. The one exception is a bulk `chain:` SET, whose per-pair loop
+(`shim_apply_param_bulk_chain_pairs`) is deliberately narrower (`shadow_direct_set_param`: no
+slot-activation or patch-capture side effects from an automation push) — the mailbox and the lane
+share that ONE by-value function, pinned by `tests/host/test_param_lane_wiring.sh`. `tests/host/test_param_apply_set_dispatch.sh` is a structural pin
+that reads code with comments stripped and fails if a second dispatcher reappears — it does not
+merely check that this one exists.
+
+**The 09-05 lesson**, worth restating for anyone adding a fourth path: the web-ring drain once
+carried its own copy of the SET routing, narrower than the mailbox's, and shipped without an
+`overtake_dsp:load` case — a module's DSP never loaded on that path and a fresh project came up
+dead. Two dispatchers for one wire means the second is always missing a case; that is why every
+path funnels through the one function above instead of re-implementing routing.
+
+**Instrumentation:** RT-safe counters written only by the SPI thread and reported on the
+`spi_timing` line as
+`param lane: drained=… max/frame=… bytes_max=… pending=… errors=… resyncs=… budget_frames=… | mailbox set=… get=… bulk=…`.
+Drain budget: 256 records or 300 µs per frame, leftovers next frame in order. A debug-file-gated trace of every lane push/drain for the
+first 3 s of a session (`param_lane_trace_on`, see `docs/tracing.md`) doubles as the fresh-project
+regression probe: the init burst of routes/defaults/picker writes must all reach the DSP, not just
+the last one before the tail.
+
+**Deliberately NOT on the lane:** reads of any kind (they need a synchronous reply and no longer
+wait behind writes anyway, so there is nothing to gain by moving them); state blobs and chunked
+load/save/snapshot traffic (too large, and correctness-sensitive); lifecycle/special keys (they run
+side effects on the shim and must not race a classifier); live notes (`liveSendNote`), which already
+have their own transport, the MIDI inject ring (`shadow_midi_inject_writer.h`).
+
+**SHM lifecycle:** the shim creates the segment zeroed and stamps `version` once; `shadow_ui`
+attaches and never stamps. A shim restart under a surviving `shadow_ui` re-zeroes in place (the web
+ring's behaviour): both cursors return to 0 and `version` to 0, so the producer's pushes are refused
+until the new shim stamps, and its first drain seeds from `tail_published`, never `head`.
+
+⚠ Bulk `overtake_dsp:` SETs are always blocking and stay on the mailbox; only `chain:` bulk rides
+the lane (flag `SPL_FLAG_BULK`).
+
 ### Shadow Slot Features
 
 Each of the 4 slots has:

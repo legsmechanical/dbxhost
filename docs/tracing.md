@@ -175,6 +175,24 @@ init. (`CLOCK_MONOTONIC` rather than `_RAW`: it shares REALTIME's NTP slew, so
 the fixed offset doesn't drift the exported UnixNano over a long session.)
 Tempo/Jaeger merge the two files by `trace_id`.
 
+## Other gate files (not part of this trace mechanism)
+
+Separate touch-file gates exist alongside `otlp_trace_on` and `debug_log_on`
+(`docs/LOGGING.md`), each independent and independently toggleable:
+
+- **`param_lane_trace_on`**: touching
+  `/data/UserData/dbx-host/param_lane_trace_on` BEFORE `shadow_ui` starts (it is
+  checked once at startup, like `otlp_trace_on`) captures a
+  3-second trace of every push onto the parameter write lane and every
+  fallback off it (to the pending queue or the mailbox), independent of
+  `otlp_trace_on`. Its purpose is the fresh-project boot check: the init burst
+  of routes/defaults/picker writes a module sends on load must all reach the
+  DSP, not silently drop after the first few — the exact class of bug a
+  narrower second dispatcher caused once on an earlier attempt at this lane
+  (see `docs/HOST_REFERENCE.md`'s "Parameter transport" section). Remove the
+  file to stop capturing; it is a fixed 3 s window from whenever the flag is
+  observed, not a toggle you hold open.
+
 ## Adding spans
 
 **C** (anywhere, including the RT path):

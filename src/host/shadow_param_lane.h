@@ -105,6 +105,16 @@
 #define SHADOW_PARAM_LANE_PAD_SLOT   0xFFu     /* skip-to-start marker */
 #define SHADOW_PARAM_LANE_HDR_BYTES  5u        /* slot + flags + key_len + value_len(2) */
 
+/* Wire flags (the record's `flags` byte).
+ *
+ * SPL_FLAG_BULK — the record is a BULK SET: `key` is the routing marker (only
+ * "chain:" is carried today) and `value` is the length-prefixed pair payload
+ * that shim_handle_param_bulk_chain parses, NOT a single parameter value. A
+ * consumer that does not understand a flag it sees must skip the record rather
+ * than apply it as a single SET: applying a pair blob as one value would push
+ * a whole payload into one parameter. */
+#define SPL_FLAG_BULK                0x01u
+
 _Static_assert((SHADOW_PARAM_LANE_BYTES & (SHADOW_PARAM_LANE_BYTES - 1u)) == 0,
                "SHADOW_PARAM_LANE_BYTES must be a power of two");
 
