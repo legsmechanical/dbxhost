@@ -101,9 +101,18 @@ globalThis.host_snapshot_status = () => JSON.stringify({ pending: recallPending,
  * old stub read `files[p] !== ''` and hid for a week that a cleared slot's
  * empty davebox.json still counted as a snapshot on the next open. */
 globalThis.host_file_exists = (p) => Object.prototype.hasOwnProperty.call(files, p);
-/* host_remove_dir is a tree removal: everything under the path goes. */
+/* The clear goes through host_system_cmd('rm -rf <dir>') — host_remove_dir is
+ * fenced away from Sets on the device. The stub removes everything under the
+ * path; any other command is the old no-op. */
 const removedDirs = [];
-globalThis.host_remove_dir = (d) => { removedDirs.push(d); for (const k of Object.keys(files)) if (k.indexOf(d + '/') === 0) delete files[k]; return true; };
+globalThis.host_system_cmd = (cmd) => {
+    const m = /^rm -rf (\S+)$/.exec(String(cmd));
+    if (!m) return 0;
+    removedDirs.push(m[1]);
+    for (const k of Object.keys(files)) if (k.indexOf(m[1] + '/') === 0) delete files[k];
+    return 0;
+};
+globalThis.host_remove_dir = () => false;                 /* as on the device, for a Sets path */
 globalThis.host_write_file = (p, c) => { files[p] = c; writes.push('FILE ' + p); return true; };
 globalThis.host_read_file = (p) => (files[p] !== undefined ? files[p] : '');
 globalThis.host_ensure_dir = () => true;

@@ -72,14 +72,15 @@ globalThis.host_file_exists = (p) => Object.prototype.hasOwnProperty.call(files,
 globalThis.host_read_file = (p) => (files[p] !== undefined ? files[p] : '');
 globalThis.host_write_file = (p, body) => { sidecars.push({ p, body }); files[p] = body; return true; };
 globalThis.host_ensure_dir = () => true;
-globalThis.host_remove_dir = (d) => { for (const k of Object.keys(files)) if (k.indexOf(d + '/') === 0) delete files[k]; return true; };
+globalThis.host_remove_dir = () => false;                 /* fenced away from Sets on the device */
+globalThis.host_system_cmd = (cmd) => { const m = /^rm -rf (\S+)$/.exec(String(cmd)); if (!m) return 0; for (const k of Object.keys(files)) if (k.indexOf(m[1] + '/') === 0) delete files[k]; return 0; };
 globalThis.host_snapshot_take = (dir) => { files[dir + '/slot_2.json'] = '{}\n'; return JSON.stringify({ ok: true, skipped: 0, positions: 1 }); };
 globalThis.host_snapshot_recall = () => JSON.stringify({ ok: true, restored: 0, pending: false });
 globalThis.host_snapshot_status = () => JSON.stringify({ pending: false, skipped: 0, added: 0 });
 globalThis.fill_rect = () => {}; globalThis.draw_rect = () => {}; globalThis.stipple_rect = () => {};
 globalThis.set_pixel = () => {}; globalThis.clear_screen = () => {}; globalThis.print = () => {};
 globalThis.pixel_print = () => {}; globalThis.flush_display = () => {}; globalThis.text_width = (t) => String(t).length * 6;
-for (const fn of ['host_system_cmd', 'host_send_midi', 'move_midi_inject_to_move',
+for (const fn of ['host_send_midi', 'move_midi_inject_to_move',
                   'host_set_led', 'set_led', 'host_get_setting', 'host_set_setting', 'move_midi_internal_send',
                   'host_vol_block', 'host_edit_cc_block', 'host_ext_midi_remap_clear', 'host_ext_midi_remap_set',
                   'host_ext_midi_remap_enable', 'host_autosave_hold', 'shadow_save_state_now'])

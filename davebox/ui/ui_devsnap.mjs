@@ -432,15 +432,21 @@ export function devSnapClear(n) {
      * it: its host_file_exists stub treated an empty file as absent, a
      * semantics the device never had. Now the rig's stub is a stat too.
      *
-     * host_remove_dir is the storage model's own primitive (a project is one
-     * tree; copy = copytree, delete = one rmtree). If it fails the old
-     * blanking is the fallback — the slot then reads filled again, which is
-     * at least the truth about what is on disk. */
+     * ⚠ NOT host_remove_dir: that binding is fenced to the modules/update dirs
+     * (js_host_common.c) and REFUSES a Sets path — which is exactly what the
+     * device did on 2026-09-13, falling back to the blank marker, and the LED
+     * stayed lit. The project tree's own delete goes through host_system_cmd
+     * (project-cmd.sh), whose allow-list includes `rm `; so does this one,
+     * fenced here to the project's snapshots dir and a safe character set.
+     * If the removal fails the old blanking is the fallback — the slot then
+     * reads filled again, which is at least the truth about what is on disk. */
     const dir = slotDir(n);
     let gone = false;
-    try { gone = !!host_remove_dir(dir); } catch (e) { gone = false; }
+    if (/^\/data\/UserData\/UserLibrary\/Sets\/[A-Za-z0-9-]+\/dAVEBOx\/snapshots\/[A-Za-z0-9_\/-]+$/.test(dir) && dir.indexOf('..') < 0) {
+        try { gone = host_system_cmd('rm -rf ' + dir) === 0; } catch (e) { gone = false; }
+    }
     if (!gone || host_file_exists(dir + '/davebox.json')) {
-        console.log('[devsnap] clear ' + (n + 1) + ': remove_dir failed, blanking davebox.json instead');
+        console.log('[devsnap] clear ' + (n + 1) + ': rm failed for ' + dir + ', blanking davebox.json instead');
         host_write_file(dir + '/davebox.json', '');
     }
     d.slots[n] = false;
