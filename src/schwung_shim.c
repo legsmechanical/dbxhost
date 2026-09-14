@@ -44,6 +44,7 @@
 #include "host/shadow_ui_midi_policy.h"
 #include "host/timespec_delta.h"
 #include "host/shadow_midi_inject_writer.h"
+#include "host/shadow_param_lane.h"
 #include "host/shadow_test_stream.h"
 #include "host/shadow_chain_types.h"
 #include "host/unified_log.h"
@@ -142,7 +143,27 @@ static uint8_t shadow_display_mode = 0;
 static shadow_ui_state_t *shadow_ui_state = NULL;
 
 static shadow_param_t *shadow_param = NULL;
+static shadow_param_lane_t *shadow_param_lane_shm = NULL;    /* shadow_ui → shim fire-and-forget SET lane */
 static web_param_set_ring_t *web_param_set_shm = NULL;       /* Web UI → shim param set ring */
+
+/* Param-lane drain counters. Written ONLY by the SPI thread (the drain), read
+ * by the non-RT spi_timing logger thread — the same discipline as
+ * ui_midi_drop_sticky above it: plain words, informational, a torn read is
+ * harmless. Cumulative since launch except the two _max trackers, so the
+ * difference between two 5 s lines is the rate. */
+static uint64_t param_lane_drained_total  = 0;  /* records applied, all frames */
+static uint32_t param_lane_drained_max    = 0;  /* most records in ONE frame */
+static uint32_t param_lane_bytes_max      = 0;  /* highest spl_used seen at drain entry */
+static uint32_t param_lane_apply_errors   = 0;  /* shadow_param_apply_set returned non-zero */
+static uint32_t param_lane_resyncs        = 0;  /* corrupt header: pop refused a non-empty lane */
+static uint32_t param_lane_budget_frames  = 0;  /* frames that stopped on the record/time budget */
+/* Mailbox requests serviced, split by kind, so an A/B can state requests per
+ * frame for the path the lane is meant to empty. Counted where the shim can
+ * see the request about to be serviced (shim_pre_transfer), not inside the
+ * handler, which lives in another translation unit. */
+static uint64_t param_mailbox_set_total   = 0;  /* req_type 1 */
+static uint64_t param_mailbox_get_total   = 0;  /* req_type 2 */
+static uint64_t param_mailbox_bulk_total  = 0;  /* req_type 3/4 */
 static web_param_notify_ring_t *web_param_notify_shm = NULL;  /* Shim → web UI param change ring */
 static web_write_dirty_t *web_write_dirty_shm = NULL;         /* Shim → shadow_ui autosave dirty hints */
 static shadow_screenreader_t *shadow_screenreader_shm = NULL;  /* Forward declaration for D-Bus handler */
@@ -3603,6 +3624,36 @@ static void init_shadow_shm(void)
     shadow_param = (shadow_param_t *)shadow_shm_map(SHM_SHADOW_PARAM,
                                                     SHADOW_PARAM_BUFFER_SIZE, 1, 1);
 
+    /* Create/open the param LANE (shadow_ui → shim, fire-and-forget SETs; see
+     * host/shadow_param_lane.h). The shim is the CONSUMER and the creator.
+     *
+     * ⚠ SHM LIFECYCLE, checked rather than assumed (2026-09-13): this matches
+     * the web set ring exactly — shadow_shm_map(create=1, zero=1). There is no
+     * shm_unlink anywhere for these segments, so a shim restart REATTACHES to
+     * the surviving segment and MEMSETS it in place; it does not recreate it.
+     * That matters because a shadow_ui CAN outlive a shim restart (the shim
+     * adopts a live one via shadow_ui.pid — see shadow_process.c), so a
+     * producer may be attached across the zero. It is safe here, and the
+     * zeroing is what makes it safe: head and tail_published both return to 0,
+     * i.e. an EMPTY lane, so nothing half-written before the restart is ever
+     * read, and `version` returns to 0 until we re-stamp it below — a producer
+     * that pushes in that window is refused by spl_ready() and keeps the write
+     * on the mailbox. It is also why spl_first_tail() (tail_published, never
+     * head) is the correct seed for our private tail: on a freshly zeroed
+     * segment the two agree, and seeding from tail_published additionally
+     * keeps whatever the producer pushes between the stamp and our first
+     * drain — the burst the retired param-write-ring branch silently dropped.
+     *
+     * spl_stamp_ready is called exactly ONCE, here at creation: it is the
+     * statement "a consumer exists", and no producer may push before it. */
+    shadow_param_lane_shm = (shadow_param_lane_t *)shadow_shm_map(SHM_SHADOW_PARAM_LANE,
+                                                                  sizeof(shadow_param_lane_t), 1, 1);
+    if (shadow_param_lane_shm) {
+        spl_stamp_ready(shadow_param_lane_shm);
+        printf("Shadow: param lane shm initialized (%zu bytes)\n",
+               sizeof(shadow_param_lane_t));
+    }
+
     /* Create/open web param set ring (web UI → shim, fire-and-forget) */
     web_param_set_shm = (web_param_set_ring_t *)shadow_shm_map(SHM_WEB_PARAM_SET,
                                                                sizeof(web_param_set_ring_t), 1, 1);
@@ -4018,6 +4069,10 @@ static float shim_get_bpm(void) {
 /* =========================================================================
  * Web UI ring buffer: drain set requests from web server
  * ========================================================================= */
+/* Defined just below; the drain pushes the browser echo itself now that the
+ * one SET dispatcher no longer fires on_param_changed per branch. */
+void web_param_notify_push(uint8_t slot, const char *key, const char *value);
+
 static void shadow_drain_web_param_set(void) {
     if (!web_param_set_shm) return;
     /* SPSC protocol (2026-07-19 rework, paired with the manager): write_idx is
@@ -4045,32 +4100,42 @@ static void shadow_drain_web_param_set(void) {
         count = WEB_PARAM_SET_ENTRIES;
     }
 
-    /* Process each set request via direct dispatch — does NOT touch shadow_param,
-     * so it's safe to run while shadow_ui.js has a request in-flight. Copy each
-     * entry locally before dispatch (the producer may only reuse a slot after we
-     * publish tail, but the copy keeps dispatch immune to a buggy producer). */
+    /* Process each set request via the ONE SET dispatcher — does NOT touch
+     * shadow_param, so it's safe to run while shadow_ui.js has a request
+     * in-flight. Copy each entry locally before dispatch (the producer may only
+     * reuse a slot after we publish tail, but the copy keeps dispatch immune to
+     * a buggy producer). */
     for (uint8_t i = 0; i < count; i++) {
         web_param_set_entry_t e;
         memcpy(&e, (const void *)&web_param_set_shm->entries[(uint8_t)(tail + i) % WEB_PARAM_SET_ENTRIES],
                sizeof(e));
         if (e.key[0] == '\0') continue;
 
-        /* Overtake-tool params dispatch straight to the overtake DSP (gen,
-         * else fx — mirrors the mailbox SET dispatch). This is the browser
-         * editor's lossless edit path: ring entries can't be stomped by the
-         * shadow_ui mailbox producer (fire-and-forget in overtake mode),
-         * unlike mailbox SETs, which died in 500ms manager timeouts under
-         * contention. Values >255B still take the mailbox (ring entry cap) —
-         * the manager routes by size. */
-        if (strncmp(e.key, "overtake_dsp:", 13) == 0) {
-            if (overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->set_param)
-                overtake_dsp_gen->set_param(overtake_dsp_gen_inst, e.key + 13, e.value);
-            else if (overtake_dsp_fx && overtake_dsp_fx_inst && overtake_dsp_fx->set_param)
-                overtake_dsp_fx->set_param(overtake_dsp_fx_inst, e.key + 13, e.value);
-            continue;
-        }
+        /* ⭐ shadow_param_apply_set is THE dispatcher — the same function the
+         * mailbox SET arm calls. This loop used to carry its own: an
+         * `overtake_dsp:` arm straight to the DSP, everything else to the
+         * NARROWER shadow_direct_set_param. A branch that copied that second
+         * dispatcher shipped without an `overtake_dsp:load` case, so a module's
+         * DSP never loaded and a fresh project came up dead — two dispatchers
+         * for one wire means the second is always missing a case.
+         *
+         * ⚠ RT note, said out loud: an `overtake_dsp:load` arriving on the web
+         * ring now runs shadow_overtake_dsp_load on the SPI thread. That is not
+         * a NEW hazard — the mailbox arm has always run it on this same thread,
+         * every time shadow_ui sets that key — but this wire can now reach it.
+         *
+         * This is still the browser editor's lossless edit path: ring entries
+         * can't be stomped by the shadow_ui mailbox producer (fire-and-forget
+         * in overtake mode), unlike mailbox SETs, which died in 500ms manager
+         * timeouts under contention. Values >255B still take the mailbox (ring
+         * entry cap) — the manager routes by size. */
+        int rc = shadow_param_apply_set((int)e.slot, e.key, e.value);
 
-        shadow_direct_set_param(e.slot, e.key, e.value);
+        /* Real-time browser echo. shadow_direct_set_param used to fire this
+         * itself, per resolved branch; the dispatcher leaves it to the caller
+         * (the mailbox arm gets it from shadow_param_publish_response), so push
+         * it here — only when the SET actually landed. */
+        if (rc == 0) web_param_notify_push(e.slot, e.key, e.value);
 
         /* Autosave dirty hint: this write bypassed shadow_ui (whose
          * shadow_set_param_common feeds the dirty masks), so without this a
@@ -4431,19 +4496,38 @@ static void snap_worker_start(void) {
  * (slot-level params, master/send FX and the chain plugin alike). Ordered,
  * one consume, no stomp window between pairs. GET is not offered here —
  * chain readback has its own paths, and a bulk GET across slots would need
- * a per-item slot the format does not carry. */
-static void shim_handle_param_bulk_chain(void) {
-    uint8_t slot = shadow_param->slot;
-    const char *p   = shadow_param->value;
-    const char *end = shadow_param->value + SHADOW_PARAM_VALUE_LEN;
+ * a per-item slot the format does not carry.
+ *
+ * ⚠ This one deliberately does NOT go through shadow_param_apply_set, the
+ * single SET dispatcher the mailbox arm and the web ring share. Its pairs are
+ * AUTOMATION writes — a macro, a scene recall — and the dispatcher is wider in
+ * two ways that matter here: it runs the slot-activation and patch-capture side
+ * effects (synth:module / load_file / load_patch flip `active`, load a capture,
+ * update the UI state), and it forwards to the chain plugin for any slot with
+ * an INSTANCE, where shadow_direct_set_param requires the slot to be ACTIVE.
+ * A bulk recall must not silently activate slots or trigger module loads, so
+ * the narrower call is the correct one. Single SETs are the shared wire; this
+ * is not one. */
+/* The applier, BY VALUE: (slot, payload). Lifted out of the mailbox arm below
+ * so the param LANE can apply a `chain:` bulk SET through THE SAME per-pair
+ * code rather than growing a second copy of this loop — the one-dispatcher
+ * rule of test_param_apply_set_dispatch.sh, applied to bulk. `end` is passed
+ * rather than derived because the mailbox's payload is bounded by the 64 KB
+ * mailbox buffer while a lane record is bounded by its own decoded length;
+ * deriving it here would silently change the mailbox's behaviour.
+ *
+ * Returns 0 if the payload parsed, 22 if its framing is malformed. The caller
+ * owns whatever it publishes.
+ *
+ * SPI thread only: it writes the file-static s_bulk_val, which every other
+ * bulk arm also uses. */
+static int shim_apply_param_bulk_chain_pairs(uint8_t slot, const char *p, const char *end) {
     int count = 0; { int any = 0;
         while (p < end && *p >= '0' && *p <= '9') { count = count*10 + (*p-'0'); p++; any = 1; }
-        if (!any || p >= end || *p != '\n') { shadow_param->error = 22; shadow_param->result_len = -1; return; }
+        if (!any || p >= end || *p != '\n') return 22;
         p++;
     }
-    if (count < 0 || count > SHADOW_BULK_MAX_ITEMS || (count & 1)) {
-        shadow_param->error = 22; shadow_param->result_len = -1; return;
-    }
+    if (count < 0 || count > SHADOW_BULK_MAX_ITEMS || (count & 1)) return 22;
     char keybuf[SHADOW_PARAM_KEY_LEN];
     for (int i = 0; i + 1 < count; i += 2) {
         int klen = 0, vlen = 0;
@@ -4456,7 +4540,120 @@ static void shim_handle_param_bulk_chain(void) {
         memcpy(s_bulk_val, v, (size_t)vlen); s_bulk_val[vlen] = '\0';
         shadow_direct_set_param(slot, keybuf, s_bulk_val);
     }
-    shadow_param->error = 0; shadow_param->result_len = 0;
+    return 0;
+}
+
+static void shim_handle_param_bulk_chain(void) {
+    int err = shim_apply_param_bulk_chain_pairs(shadow_param->slot,
+                                                shadow_param->value,
+                                                shadow_param->value + SHADOW_PARAM_VALUE_LEN);
+    shadow_param->error = err;
+    shadow_param->result_len = err ? -1 : 0;
+}
+
+/* =========================================================================
+ * The param LANE: drain shadow_ui's fire-and-forget SETs
+ * =========================================================================
+ * Runs at the TOP of the param phase — before the mailbox is serviced and
+ * before the web ring — so a write pushed to the lane before a mailbox GET
+ * was issued is applied before that GET is answered. That is the whole
+ * ordering contract (host/shadow_param_lane.h); the producer's queue-empty
+ * gate is the other half of it.
+ *
+ * Every record takes the SAME route a mailbox SET takes: shadow_param_apply_set,
+ * THE one dispatcher, for a single SET; shim_apply_param_bulk_chain_pairs,
+ * shared verbatim with the mailbox bulk arm, for a `chain:` bulk. Nothing
+ * here dispatches on its own — that is pinned by
+ * tests/host/test_param_lane_wiring.sh.
+ *
+ * No dirty marking here: the producer is shadow_ui itself, which marks its own
+ * autosave masks as it pushes (shadow_set_param_common). The browser echo IS
+ * pushed, because a mailbox SET gets one via shadow_param_publish_response and
+ * moving a write to the lane must not make the web editor go blind.
+ *
+ * ⚠ SPI callback: no logging, no allocation, no file I/O. The decoded record
+ * is ~4.2 KB, so it is a file-scope static and never a stack frame here.
+ */
+#define PARAM_LANE_MAX_RECORDS_PER_FRAME 256
+#define PARAM_LANE_BUDGET_US             300
+
+static spl_record_t s_lane_rec;   /* ~4.2 KB — never on the SPI stack */
+
+static void shadow_drain_param_lane(void) {
+    if (!shadow_param_lane_shm) return;
+
+    /* Seeded ONCE from tail_published, never from head: a first drain seeded
+     * from head discards everything the producer pushed before this consumer
+     * started, which is the burst the retired param-write-ring branch lost on
+     * device (davebox's own init routes/defaults/picker writes). */
+    static uint32_t tail;
+    static int      tail_init = 0;
+    if (!tail_init) {
+        tail = spl_first_tail(shadow_param_lane_shm);
+        tail_init = 1;
+    }
+
+    uint32_t used = spl_used(shadow_param_lane_shm, tail);
+    if (used == 0) return;
+    if (used > param_lane_bytes_max) param_lane_bytes_max = used;
+
+    struct timespec t0;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+
+    uint32_t n = 0;
+    for (;;) {
+        uint32_t before = spl_used(shadow_param_lane_shm, tail);
+        if (before == 0) break;
+        if (!spl_pop(shadow_param_lane_shm, &tail, &s_lane_rec)) {
+            /* The lane was NOT empty and pop still refused: a header past the
+             * wire maxima. spl_pop has already resynced tail to head and
+             * dropped the rest. Count it and stop; a dropped burst is
+             * recoverable (the UI re-reads and rewrites), reading on is not. */
+            param_lane_resyncs++;
+            break;
+        }
+
+        if (s_lane_rec.flags & SPL_FLAG_BULK) {
+            /* Only `chain:` bulk rides the lane — see the producer. Anything
+             * else flagged bulk is a record this consumer does not understand,
+             * and applying a pair payload as a single value would stuff the
+             * whole blob into one parameter, so it is dropped, counted. */
+            if (strcmp(s_lane_rec.key, "chain:") == 0) {
+                if (shim_apply_param_bulk_chain_pairs(s_lane_rec.slot, s_lane_rec.value,
+                                                      s_lane_rec.value + strlen(s_lane_rec.value)))
+                    param_lane_apply_errors++;
+            } else {
+                param_lane_apply_errors++;
+            }
+        } else {
+            int rc = shadow_param_apply_set((int)s_lane_rec.slot, s_lane_rec.key, s_lane_rec.value);
+            if (rc != 0) param_lane_apply_errors++;
+            /* Same real-time browser echo the mailbox arm gets from
+             * shadow_param_publish_response and the web drain pushes by hand. */
+            else web_param_notify_push(s_lane_rec.slot, s_lane_rec.key, s_lane_rec.value);
+        }
+
+        n++;
+        if (n >= PARAM_LANE_MAX_RECORDS_PER_FRAME) { param_lane_budget_frames++; break; }
+        /* Time budget, checked after EVERY record the way pserve times inside
+         * the callback — a vDSO clock read is cheap next to an apply, and a
+         * check every 8th record would let one slow apply be followed by
+         * seven more before anyone looked (adversarial review, 2026-09-14).
+         * The loaders that could be slow are kept off the lane by the
+         * classifier; this is the second line. Leftovers stay in the lane, in
+         * order, for the next frame. */
+        {
+            struct timespec t1;
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            if (timespec_delta_us(&t0, &t1) >= PARAM_LANE_BUDGET_US) {
+                param_lane_budget_frames++;
+                break;
+            }
+        }
+    }
+
+    param_lane_drained_total += n;
+    if (n > param_lane_drained_max) param_lane_drained_max = n;
 }
 
 /* `chain:` BULK_GET for the chain slot named by ->slot: "<n>\n" then n keys,
@@ -4506,9 +4703,224 @@ static void shim_handle_param_bulk_chain_get(void) {
     shadow_param->error = 0; shadow_param->result_len = off;
 }
 
+/* ============================================================================
+ * Shim-side SET specials, addressed BY VALUE (host.apply_set_special)
+ * ============================================================================
+ * The SET half of shim_handle_param_special, lifted out so it takes
+ * (slot, key, value) instead of reading the shadow_param mailbox globals. That
+ * is what lets shadow_param_apply_set in chain_mgmt be the ONE dispatcher for
+ * every parameter SET: the web set-ring drain has no mailbox to read, and the
+ * copy of the routing it used to carry had no `overtake_dsp:load` case, so a
+ * module's DSP never loaded and a fresh project came up dead.
+ *
+ * Returns 1 when the key belongs to the shim, 0 when it does not.
+ * *io_error / *io_result_len come in holding what the caller would publish;
+ * branches that used to leave the mailbox fields untouched still do.
+ *
+ * ⚠ Runs on the SPI callback. The shadow_log() calls below are pre-existing
+ * (config-change one-shots, not per-frame); do not add more.
+ */
+static int shim_apply_set_special(int slot, const char *key, const char *value,
+                                  int *io_error, int *io_result_len) {
+    (void)slot;
+
+    /* overtake_dsp:<sub_key> */
+    if (strncmp(key, "overtake_dsp:", 13) == 0) {
+        const char *param_key = key + 13;
+        if (strcmp(param_key, "load") == 0) {
+            shadow_overtake_dsp_load(value);
+            *io_error = 0;
+            *io_result_len = 0;
+        } else if (strcmp(param_key, "unload") == 0) {
+            shadow_overtake_dsp_unload();
+            *io_error = 0;
+            *io_result_len = 0;
+        } else if (overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->set_param) {
+            /* No snap_wait_idle here: the remote_snapshot_rt_safe contract
+             * guarantees set_param never frees snapshot-reachable memory,
+             * so the worker may read concurrently (torn at worst). */
+            overtake_dsp_gen->set_param(overtake_dsp_gen_inst, param_key, value);
+            *io_error = 0;
+            *io_result_len = 0;
+        } else if (overtake_dsp_fx && overtake_dsp_fx_inst && overtake_dsp_fx->set_param) {
+            overtake_dsp_fx->set_param(overtake_dsp_fx_inst, param_key, value);
+            *io_error = 0;
+            *io_result_len = 0;
+        } else {
+            *io_error = 13;
+            *io_result_len = -1;
+        }
+        return 1;
+    }
+
+    /* jack:display — enable/disable JACK display override */
+    if (strcmp(key, "jack:display") == 0) {
+        if (g_jack_shm) {
+            g_jack_shm->display_active = (value[0] == '1') ? 1 : 0;
+            *io_error = 0;
+            *io_result_len = 0;
+        }
+        return 1;
+    }
+
+    /* "passthrough" — value is a CSV of CC numbers (0-127). Clears the
+     * passthrough bitmap and sets the listed CCs in a single write.
+     * Doing it atomically avoids the fire-and-forget race that back-to-back
+     * passthrough_clear + passthrough_add calls ran into (overtake_mode=2
+     * makes shadow_set_param non-blocking, so consecutive writes overwrite
+     * before the shim reads them). */
+    if (strcmp(key, "passthrough") == 0) {
+        memset(overtake_passthrough_ccs, 0, sizeof(overtake_passthrough_ccs));
+        const char *p = value;
+        while (p && *p) {
+            while (*p == ' ' || *p == ',') p++;
+            if (!*p) break;
+            int cc = atoi(p);
+            if (cc >= 0 && cc < 128) overtake_passthrough_ccs[cc] = 1;
+            while (*p && *p != ',') p++;
+        }
+        /* Log so we can verify registration in the debug log. */
+        char dbg[128];
+        int off = snprintf(dbg, sizeof(dbg), "passthrough set: value=\"%s\" ccs=[", value);
+        for (int i = 0; i < 128 && off < (int)sizeof(dbg) - 4; i++) {
+            if (overtake_passthrough_ccs[i]) {
+                off += snprintf(dbg + off, sizeof(dbg) - off, "%d,", i);
+            }
+        }
+        snprintf(dbg + off, sizeof(dbg) - off, "]");
+        shadow_log(dbg);
+        *io_error = 0;
+        *io_result_len = 0;
+        return 1;
+    }
+
+    if (strcmp(key, "suspend_overtake") == 0) {
+        if (shadow_control) {
+            shadow_control->suspend_overtake = (value[0] == '1') ? 1 : 0;
+            *io_error = 0;
+            *io_result_len = 0;
+        }
+        return 1;
+    }
+
+    if (strcmp(key, "jack:restore_leds") == 0) {
+        {
+            int starts = 0, cached = 0, last_cin = 0;
+            int total = led_queue_jack_sysex_debug_info(&starts, &cached, &last_cin);
+            char dbg[128];
+            snprintf(dbg, sizeof(dbg),
+                "jack:restore_leds sysex debug: packets=%d starts=%d cached=%d last_cin=0x%02X",
+                total, starts, cached, last_cin);
+            shadow_log(dbg);
+        }
+        led_queue_restore_jack_leds();
+        led_queue_restore_jack_sysex_leds();
+        *io_error = 0;
+        *io_result_len = 0;
+        return 1;
+    }
+
+    if (strncmp(key, "master_fx:", 10) == 0) {
+        const char *fx_key = key + 10;
+
+        /* master_fx:resample_bridge */
+        if (strcmp(fx_key, "resample_bridge") == 0) {
+            native_resample_bridge_mode_t new_mode =
+                native_resample_bridge_mode_from_text(value);
+            if (new_mode != native_resample_bridge_mode) {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "Native resample bridge mode: %s",
+                         native_resample_bridge_mode_name(new_mode));
+                shadow_log(msg);
+            }
+            native_resample_bridge_mode = new_mode;
+            *io_error = 0;
+            *io_result_len = 0;
+            return 1;
+        }
+        /* master_fx:link_audio_routing */
+        if (strcmp(fx_key, "link_audio_routing") == 0) {
+            int val = atoi(value);
+            int prev = link_audio_routing_enabled;
+            link_audio_routing_enabled = val ? 1 : 0;
+            /* On 0→1, re-attempt /schwung-link-in attach. The init-time
+             * retry thread exits after ~30s; if routing was off at boot
+             * (or the sidecar lost the race), shadow_in_audio_shm stays
+             * NULL and rebuild_from_la never engages. Respawn the retry
+             * thread here so toggling routing on later actually works. */
+            if (!prev && link_audio_routing_enabled && !shadow_in_audio_shm) {
+                if (!try_attach_in_audio_shm()) {
+                    pthread_t tid;
+                    if (pthread_create(&tid, NULL,
+                                       link_in_attach_retry_thread,
+                                       NULL) == 0) {
+                        pthread_detach(tid);
+                    }
+                }
+            }
+            {
+                char msg[64];
+                snprintf(msg, sizeof(msg), "Link Audio routing: %s",
+                         link_audio_routing_enabled ? "ON" : "OFF");
+                shadow_log(msg);
+            }
+            *io_error = 0;
+            *io_result_len = 0;
+            return 1;
+        }
+        /* master_fx:link_audio_publish */
+        if (strcmp(fx_key, "link_audio_publish") == 0) {
+            int val = atoi(value);
+            link_audio_publish_enabled = val ? 1 : 0;
+            {
+                char msg[64];
+                snprintf(msg, sizeof(msg), "Link Audio publish: %s",
+                         link_audio_publish_enabled ? "ON" : "OFF");
+                shadow_log(msg);
+            }
+            *io_error = 0;
+            *io_result_len = 0;
+            return 1;
+        }
+        /* master_fx:latency_comp_enabled — user toggle. Applies
+         * immediately; the brief ~9 ms transition artifact (audio hole on
+         * OFF→ON, duplicate on ON→OFF) is accepted as a known cost of
+         * flipping a delay buffer mid-playback. */
+        if (strcmp(fx_key, "latency_comp_enabled") == 0) {
+            int val = atoi(value) ? 1 : 0;
+            latency_comp_user_enabled = val;
+            if (val != latency_comp_active) {
+                latency_comp_active = val;
+                link_audio_reset_nudge_state();
+                shadow_latency_delay_reset();
+                char msg[64];
+                snprintf(msg, sizeof(msg), "Latency Comp: %s",
+                         latency_comp_active ? "ACTIVE" : "BYPASSED");
+                shadow_log(msg);
+            }
+            *io_error = 0;
+            *io_result_len = 0;
+            return 1;
+        }
+        /* master_fx:system_link_enabled is GET-only (reads Move's
+         * Settings.json); a SET is refused, result_len deliberately 0. */
+        if (strcmp(fx_key, "system_link_enabled") == 0) {
+            *io_error = 1; /* read-only */
+            *io_result_len = 0;
+            return 1;
+        }
+    }
+
+    return 0;  /* Not handled */
+}
+
 /* Callback for chain_mgmt: handle shim-specific param prefixes.
  * Reads/writes shadow_param->key/value/error/result_len directly.
- * Returns 1 if handled, 0 if not. */
+ * Returns 1 if handled, 0 if not.
+ *
+ * ⚠ SET (req_type 1) is NOT handled here any more — it goes out to
+ * shim_apply_set_special above, the same code the one dispatcher
+ * (shadow_param_apply_set) reaches. What is left is GET and the bulk arms. */
 static int shim_handle_param_special(uint8_t req_type, uint32_t req_id) {
     (void)req_id;
     const char *key = shadow_param->key;
@@ -4523,40 +4935,28 @@ static int shim_handle_param_special(uint8_t req_type, uint32_t req_id) {
         return 1;
     }
 
+    /* Bulk get/set carry their payload (key list / pairs) in ->value;
+     * the key field is just the "overtake_dsp:" routing marker. */
+    if (strncmp(key, "overtake_dsp:", 13) == 0 && (req_type == 3 || req_type == 4)) {
+        shim_handle_param_bulk(req_type);
+        return 1;
+    }
+
+    if (req_type == 1) {
+        int err = shadow_param->error;
+        int len = shadow_param->result_len;
+        if (!shim_apply_set_special((int)shadow_param->slot, key,
+                                    shadow_param->value, &err, &len))
+            return 0;
+        shadow_param->error = err;
+        shadow_param->result_len = len;
+        return 1;
+    }
+
     /* overtake_dsp:<sub_key> */
     if (strncmp(key, "overtake_dsp:", 13) == 0) {
-        /* Bulk get/set carry their payload (key list / pairs) in ->value;
-         * the key field is just the "overtake_dsp:" routing marker. */
-        if (req_type == 3 || req_type == 4) {
-            shim_handle_param_bulk(req_type);
-            return 1;
-        }
         const char *param_key = key + 13;
-        if (req_type == 1) {  /* SET */
-            if (strcmp(param_key, "load") == 0) {
-                shadow_overtake_dsp_load(shadow_param->value);
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else if (strcmp(param_key, "unload") == 0) {
-                shadow_overtake_dsp_unload();
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else if (overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->set_param) {
-                /* No snap_wait_idle here: the remote_snapshot_rt_safe contract
-                 * guarantees set_param never frees snapshot-reachable memory,
-                 * so the worker may read concurrently (torn at worst). */
-                overtake_dsp_gen->set_param(overtake_dsp_gen_inst, param_key, shadow_param->value);
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else if (overtake_dsp_fx && overtake_dsp_fx_inst && overtake_dsp_fx->set_param) {
-                overtake_dsp_fx->set_param(overtake_dsp_fx_inst, param_key, shadow_param->value);
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else {
-                shadow_param->error = 13;
-                shadow_param->result_len = -1;
-            }
-        } else if (req_type == 2) {  /* GET */
+        if (req_type == 2) {  /* GET */
             /* Cached snapshot: when the module opted in, answer the big
              * read-only "state" GET from the worker-maintained cache with a
              * memcpy — one frame, mailbox never held, audio thread never
@@ -4628,11 +5028,7 @@ static int shim_handle_param_special(uint8_t req_type, uint32_t req_id) {
 
     /* jack:display — enable/disable JACK display override */
     if (strcmp(key, "jack:display") == 0) {
-        if (req_type == 1 && g_jack_shm) {  /* SET */
-            g_jack_shm->display_active = (shadow_param->value[0] == '1') ? 1 : 0;
-            shadow_param->error = 0;
-            shadow_param->result_len = 0;
-        } else if (req_type == 2 && g_jack_shm) {  /* GET */
+        if (req_type == 2 && g_jack_shm) {  /* GET */
             shadow_param->value[0] = g_jack_shm->display_active ? '1' : '0';
             shadow_param->value[1] = '\0';
             shadow_param->error = 0;
@@ -4641,100 +5037,25 @@ static int shim_handle_param_special(uint8_t req_type, uint32_t req_id) {
         return 1;
     }
 
-    /* "passthrough" — value is a CSV of CC numbers (0-127). Clears the
-     * passthrough bitmap and sets the listed CCs in a single write.
-     * Doing it atomically avoids the fire-and-forget race that back-to-back
-     * passthrough_clear + passthrough_add calls ran into (overtake_mode=2
-     * makes shadow_set_param non-blocking, so consecutive writes overwrite
-     * before the shim reads them). */
-    if (strcmp(key, "passthrough") == 0) {
-        if (req_type == 1) {
-            memset(overtake_passthrough_ccs, 0, sizeof(overtake_passthrough_ccs));
-            const char *p = shadow_param->value;
-            while (p && *p) {
-                while (*p == ' ' || *p == ',') p++;
-                if (!*p) break;
-                int cc = atoi(p);
-                if (cc >= 0 && cc < 128) overtake_passthrough_ccs[cc] = 1;
-                while (*p && *p != ',') p++;
-            }
-            /* Log so we can verify registration in the debug log. */
-            char dbg[128];
-            int off = snprintf(dbg, sizeof(dbg), "passthrough set: value=\"%s\" ccs=[",
-                               shadow_param->value ? shadow_param->value : "");
-            for (int i = 0; i < 128 && off < (int)sizeof(dbg) - 4; i++) {
-                if (overtake_passthrough_ccs[i]) {
-                    off += snprintf(dbg + off, sizeof(dbg) - off, "%d,", i);
-                }
-            }
-            snprintf(dbg + off, sizeof(dbg) - off, "]");
-            shadow_log(dbg);
-            shadow_param->error = 0;
-            shadow_param->result_len = 0;
-        }
-        shadow_param->response_id = shadow_param->request_id;
-        /* Release-store the flag AFTER the fields (incl. response_id), pairing
-         * with the reader's acquire-load. Matches shadow_param_publish_response;
-         * a plain store lets ARMv8 commit the flag ahead of the fields. */
-        __atomic_store_n(&shadow_param->response_ready, 1, __ATOMIC_RELEASE);
-        return 1;
-    }
-
-    if (strcmp(key, "suspend_overtake") == 0) {
-        if (req_type == 1 && shadow_control) {  /* SET */
-            shadow_control->suspend_overtake = (shadow_param->value[0] == '1') ? 1 : 0;
-            shadow_param->error = 0;
-            shadow_param->result_len = 0;
-        }
-        shadow_param->response_id = shadow_param->request_id;
-        /* Release-store the flag AFTER the fields (incl. response_id), pairing
-         * with the reader's acquire-load. Matches shadow_param_publish_response;
-         * a plain store lets ARMv8 commit the flag ahead of the fields. */
-        __atomic_store_n(&shadow_param->response_ready, 1, __ATOMIC_RELEASE);
-        return 1;
-    }
-
-    if (strcmp(key, "jack:restore_leds") == 0) {
-        if (req_type == 1) {  /* SET */
-            {
-                int starts = 0, cached = 0, last_cin = 0;
-                int total = led_queue_jack_sysex_debug_info(&starts, &cached, &last_cin);
-                char dbg[128];
-                snprintf(dbg, sizeof(dbg),
-                    "jack:restore_leds sysex debug: packets=%d starts=%d cached=%d last_cin=0x%02X",
-                    total, starts, cached, last_cin);
-                shadow_log(dbg);
-            }
-            led_queue_restore_jack_leds();
-            led_queue_restore_jack_sysex_leds();
-            shadow_param->error = 0;
-            shadow_param->result_len = 0;
-        }
-        shadow_param->response_id = shadow_param->request_id;
-        /* Release-store the flag AFTER the fields (incl. response_id), pairing
-         * with the reader's acquire-load. Matches shadow_param_publish_response;
-         * a plain store lets ARMv8 commit the flag ahead of the fields. */
-        __atomic_store_n(&shadow_param->response_ready, 1, __ATOMIC_RELEASE);
-        return 1;
+    /* passthrough / suspend_overtake / jack:restore_leds — the WRITE half of
+     * each moved to shim_apply_set_special (req_type 1 left above). These three
+     * used to publish the response themselves as well; they no longer do, and
+     * nothing is lost: the only caller, shadow_inprocess_handle_param_request,
+     * calls shadow_param_publish_response the instant we return 1, which sets
+     * the same response_id, the same release-stored response_ready — and also
+     * clears request_type, which the self-publish never did. Same final state,
+     * published once instead of twice. */
+    if (strcmp(key, "passthrough") == 0 ||
+        strcmp(key, "suspend_overtake") == 0 ||
+        strcmp(key, "jack:restore_leds") == 0) {
+        return 1;   /* nothing to read back; caller publishes */
     }
 
     /* master_fx:resample_bridge */
     if (strncmp(key, "master_fx:", 10) == 0) {
         const char *fx_key = key + 10;
         if (strcmp(fx_key, "resample_bridge") == 0) {
-            if (req_type == 1) {
-                native_resample_bridge_mode_t new_mode =
-                    native_resample_bridge_mode_from_text(shadow_param->value);
-                if (new_mode != native_resample_bridge_mode) {
-                    char msg[128];
-                    snprintf(msg, sizeof(msg), "Native resample bridge mode: %s",
-                             native_resample_bridge_mode_name(new_mode));
-                    shadow_log(msg);
-                }
-                native_resample_bridge_mode = new_mode;
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else if (req_type == 2) {
+            if (req_type == 2) {
                 int mode = (int)native_resample_bridge_mode;
                 if (mode < 0 || mode > 2) mode = 0;
                 shadow_param->result_len = snprintf(shadow_param->value,
@@ -4745,34 +5066,7 @@ static int shim_handle_param_special(uint8_t req_type, uint32_t req_id) {
         }
         /* master_fx:link_audio_routing */
         if (strcmp(fx_key, "link_audio_routing") == 0) {
-            if (req_type == 1) {
-                int val = atoi(shadow_param->value);
-                int prev = link_audio_routing_enabled;
-                link_audio_routing_enabled = val ? 1 : 0;
-                /* On 0→1, re-attempt /schwung-link-in attach. The init-time
-                 * retry thread exits after ~30s; if routing was off at boot
-                 * (or the sidecar lost the race), shadow_in_audio_shm stays
-                 * NULL and rebuild_from_la never engages. Respawn the retry
-                 * thread here so toggling routing on later actually works. */
-                if (!prev && link_audio_routing_enabled && !shadow_in_audio_shm) {
-                    if (!try_attach_in_audio_shm()) {
-                        pthread_t tid;
-                        if (pthread_create(&tid, NULL,
-                                           link_in_attach_retry_thread,
-                                           NULL) == 0) {
-                            pthread_detach(tid);
-                        }
-                    }
-                }
-                {
-                    char msg[64];
-                    snprintf(msg, sizeof(msg), "Link Audio routing: %s",
-                             link_audio_routing_enabled ? "ON" : "OFF");
-                    shadow_log(msg);
-                }
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else if (req_type == 2) {
+            if (req_type == 2) {
                 shadow_param->result_len = snprintf(shadow_param->value,
                     SHADOW_PARAM_VALUE_LEN, "%d", link_audio_routing_enabled);
                 shadow_param->error = 0;
@@ -4781,18 +5075,7 @@ static int shim_handle_param_special(uint8_t req_type, uint32_t req_id) {
         }
         /* master_fx:link_audio_publish */
         if (strcmp(fx_key, "link_audio_publish") == 0) {
-            if (req_type == 1) {
-                int val = atoi(shadow_param->value);
-                link_audio_publish_enabled = val ? 1 : 0;
-                {
-                    char msg[64];
-                    snprintf(msg, sizeof(msg), "Link Audio publish: %s",
-                             link_audio_publish_enabled ? "ON" : "OFF");
-                    shadow_log(msg);
-                }
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else if (req_type == 2) {
+            if (req_type == 2) {
                 shadow_param->result_len = snprintf(shadow_param->value,
                     SHADOW_PARAM_VALUE_LEN, "%d", link_audio_publish_enabled);
                 shadow_param->error = 0;
@@ -4804,21 +5087,7 @@ static int shim_handle_param_special(uint8_t req_type, uint32_t req_id) {
          * OFF→ON, duplicate on ON→OFF) is accepted as a known cost of
          * flipping a delay buffer mid-playback. */
         if (strcmp(fx_key, "latency_comp_enabled") == 0) {
-            if (req_type == 1) {
-                int val = atoi(shadow_param->value) ? 1 : 0;
-                latency_comp_user_enabled = val;
-                if (val != latency_comp_active) {
-                    latency_comp_active = val;
-                    link_audio_reset_nudge_state();
-                    shadow_latency_delay_reset();
-                    char msg[64];
-                    snprintf(msg, sizeof(msg), "Latency Comp: %s",
-                             latency_comp_active ? "ACTIVE" : "BYPASSED");
-                    shadow_log(msg);
-                }
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else if (req_type == 2) {
+            if (req_type == 2) {
                 shadow_param->result_len = snprintf(shadow_param->value,
                     SHADOW_PARAM_VALUE_LEN, "%d", latency_comp_user_enabled);
                 shadow_param->error = 0;
@@ -4918,6 +5187,7 @@ static void shim_init_subsystems(void)
             .startup_modwheel_countdown = &shadow_startup_modwheel_countdown,
             .startup_modwheel_reset_frames = STARTUP_MODWHEEL_RESET_FRAMES,
             .handle_param_special = shim_handle_param_special,
+            .apply_set_special = shim_apply_set_special,
             .get_bpm = shim_get_bpm,
             .get_beat_position = shadow_transport_beat_position,
             .on_param_changed = web_param_notify_push,
@@ -5794,6 +6064,21 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
     TIME_SECTION_END(spi_ui_req_sum, spi_ui_req_max);
 
     TIME_SECTION_START();
+    /* ⭐ The param LANE drains FIRST — before the mailbox, before the web ring.
+     * shadow_ui pushes a fire-and-forget SET to the lane and only then issues
+     * a mailbox GET; draining here is what makes that write land before that
+     * read is answered. Moving this call below the mailbox silently reverses
+     * the ordering, so tests/host/test_param_lane_wiring.sh pins the position. */
+    shadow_drain_param_lane();
+    /* Mailbox requests serviced this frame, by kind — read here because the
+     * handler lives in shadow_chain_mgmt.c. A non-zero request_type at this
+     * point is a request the call below will service. */
+    if (shadow_param) {
+        uint8_t rt = __atomic_load_n(&shadow_param->request_type, __ATOMIC_RELAXED);
+        if (rt == 1)      param_mailbox_set_total++;
+        else if (rt == 2) param_mailbox_get_total++;
+        else if (rt)      param_mailbox_bulk_total++;
+    }
     /* param.serve span is emitted inside the handler, parented to the JS
      * param.get span via the SHM-propagated trace context (Phase 2b). */
     shadow_inprocess_handle_param_request();
@@ -9320,6 +9605,29 @@ static void *spi_timing_logger_thread(void *arg)
             unified_log("spi_timing", LOG_LEVEL_DEBUG,
                 "UI-MIDI ring drops: sticky=%u yield=%u",
                 ui_midi_drop_sticky, ui_midi_drop_yield);
+            /* The param LANE. `drained` is cumulative since launch (the delta
+             * between two lines 5 s apart is the rate); `max` is the most
+             * records ever applied in ONE frame, and `bytes_max` the deepest
+             * the ring ever got — together they say whether the lane is doing
+             * its job (many per frame) or just moving one write per frame the
+             * mailbox would have taken anyway. `budget` counting up means
+             * frames are ending with work still queued. `mailbox` is the path
+             * the lane exists to empty: for an A/B, divide by the frame count.
+             * Non-RT thread; the counters are SPI-thread-written plain words. */
+            unified_log("spi_timing", LOG_LEVEL_DEBUG,
+                "param lane: drained=%llu max/frame=%u bytes_max=%u pending=%u "
+                "errors=%u resyncs=%u budget_frames=%u | mailbox set=%llu get=%llu bulk=%llu",
+                (unsigned long long)param_lane_drained_total,
+                param_lane_drained_max, param_lane_bytes_max,
+                shadow_param_lane_shm
+                    ? spl_used(shadow_param_lane_shm,
+                               __atomic_load_n(&shadow_param_lane_shm->tail_published,
+                                               __ATOMIC_ACQUIRE))
+                    : 0u,
+                param_lane_apply_errors, param_lane_resyncs, param_lane_budget_frames,
+                (unsigned long long)param_mailbox_set_total,
+                (unsigned long long)param_mailbox_get_total,
+                (unsigned long long)param_mailbox_bulk_total);
             /* THE load line. `total` above is dominated by the blocking ioctl
              * and barely moves with load; this one is the work we actually do
              * and the only one worth judging headroom from. */

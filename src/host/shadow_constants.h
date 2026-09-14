@@ -35,6 +35,7 @@
 #define SHM_SHADOW_OVERLAY SCHWUNG_SHM_PREFIX "overlay"  /* Overlay state (sampler/skipback) */
 #define SHM_TEST_STREAM_MIDI_OUT SCHWUNG_SHM_PREFIX "test-stream-midi-out" /* Shim → schwung-testd MIDI_OUT events (E2E test bus, dev-only) */
 #define SHM_DISPLAY_LIVE SCHWUNG_SHM_PREFIX "display-live"    /* Live display for remote viewer */
+#define SHM_SHADOW_PARAM_LANE SCHWUNG_SHM_PREFIX "param-lane"  /* shadow_ui → shim fire-and-forget SET lane (shadow_param_lane.h) */
 #define SHM_WEB_PARAM_SET SCHWUNG_SHM_PREFIX "web-param-set"   /* Web UI → shim param set ring */
 #define SHM_WEB_PARAM_NOTIFY SCHWUNG_SHM_PREFIX "web-param-notify" /* Shim → web UI param change ring */
 #define SHM_WEB_WRITE_DIRTY SCHWUNG_SHM_PREFIX "web-write-dirty" /* Shim → shadow_ui autosave dirty hints */

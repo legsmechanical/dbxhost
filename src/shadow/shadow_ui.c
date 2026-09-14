@@ -28,6 +28,8 @@
 #include "host/js_display.h"
 #include "host/shadow_constants.h"
 #include "host/shadow_param_queue.h"
+#include "host/shadow_param_lane.h"
+#include "host/shadow_param_lane_policy.h"
 #include "host/shadow_shm_util.h"
 #include "host/js_host_common.h"
 #include "host/shadow_midi_inject_writer.h"
@@ -49,6 +51,11 @@ static schwung_ext_midi_remap_t *ext_midi_remap = NULL;
 static shadow_screenreader_t *shadow_screenreader = NULL;
 static shadow_overlay_state_t *shadow_overlay = NULL;
 static web_write_dirty_t *web_write_dirty = NULL; /* shim's autosave hints for web-originated writes */
+/* The param LANE to the shim (host/shadow_param_lane.h). This process is the
+ * PRODUCER and never writes `version` — the shim stamps it once, at creation,
+ * and until we observe that stamp spl_push refuses and every write takes the
+ * mailbox. NULL (segment absent) reads the same way. */
+static shadow_param_lane_t *shadow_param_lane = NULL;
 
 static int global_exit_flag = 0;
 static uint8_t last_midi_ready = 0;
@@ -65,6 +72,72 @@ static uint32_t shadow_ui_checksum(const unsigned char *buf, size_t len) {
 
 /* Display state - use shared buffer for packing */
 static unsigned char packed_buffer[DISPLAY_BUFFER_SIZE];
+
+/* =========================================================================
+ * Param-lane trace: the "instrumented session" for a fresh-project boot
+ * =========================================================================
+ * shadow_ui is NOT the realtime process — it is an ordinary SCHED_OTHER
+ * child — so a file-gated trace here is allowed where the same thing in the
+ * shim's SPI callback would not be. Gated the way otlp_trace_on gates span
+ * export (schwung_trace.c) and debug_log_on gates the unified logger: a touch
+ * file under the install dir, checked ONCE at startup, so touching it
+ * mid-session does nothing until the next launch.
+ *
+ * It logs the first 3 SECONDS after the FIRST push and then goes silent by
+ * itself. That window is deliberately the boot burst — the routes, defaults
+ * and picker writes a fresh project emits — which is the thing worth reading
+ * and also the thing that would drown the log if it never stopped.
+ */
+#define PARAM_LANE_TRACE_FILE   SCHWUNG_INSTALL_DIR "/param_lane_trace_on"
+#define PARAM_LANE_TRACE_MS     3000
+#define PARAM_LANE_TRACE_VALUE  40      /* value bytes echoed per line */
+
+static int      g_lane_trace_on = 0;    /* touch file present at startup */
+static uint64_t g_lane_trace_t0_ms = 0; /* first push; 0 = not started */
+
+static void param_lane_trace_init(void) {
+    g_lane_trace_on = (access(PARAM_LANE_TRACE_FILE, F_OK) == 0);
+    if (g_lane_trace_on)
+        unified_log("param_lane", LOG_LEVEL_DEBUG,
+                    "trace armed (%s present); logging the first %d ms after the first push",
+                    PARAM_LANE_TRACE_FILE, PARAM_LANE_TRACE_MS);
+}
+
+static uint64_t param_lane_now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000ull + (uint64_t)(ts.tv_nsec / 1000000L);
+}
+
+/* True while the trace window is open. Starts the window on the first call
+ * that reports a PUSH (started=1), so a session that never pushes never opens
+ * one and the fallback lines cannot fill the log on their own. */
+static int param_lane_trace_open(int starting) {
+    if (!g_lane_trace_on) return 0;
+    if (!g_lane_trace_t0_ms) {
+        if (!starting) return 0;
+        g_lane_trace_t0_ms = param_lane_now_ms();
+        return 1;
+    }
+    return (param_lane_now_ms() - g_lane_trace_t0_ms) < PARAM_LANE_TRACE_MS;
+}
+
+/* One push. `used` is spl_used AFTER the push, i.e. how deep the ring now is. */
+static void param_lane_trace_push(int slot, const char *key, const char *value,
+                                  uint32_t used, const char *what) {
+    if (!param_lane_trace_open(1)) return;
+    unified_log("param_lane", LOG_LEVEL_DEBUG,
+                "%s slot=%d key=%s value=%.*s%s used=%u",
+                what, slot, key, PARAM_LANE_TRACE_VALUE, value,
+                strlen(value) > (size_t)PARAM_LANE_TRACE_VALUE ? "..." : "", used);
+}
+
+/* One write that did NOT take the lane, and the reason it did not. */
+static void param_lane_trace_fallback(int slot, const char *key, const char *why) {
+    if (!param_lane_trace_open(0)) return;
+    unified_log("param_lane", LOG_LEVEL_DEBUG,
+                "fallback slot=%d key=%s why=%s", slot, key, why);
+}
 
 static int open_shadow_shm(void) {
     /* Attach to segments created by the shim (create=0). The first three
@@ -96,6 +169,13 @@ static int open_shadow_shm(void) {
     }
 
     shadow_overlay = (shadow_overlay_state_t *)shadow_shm_map(SHM_SHADOW_OVERLAY, SHADOW_OVERLAY_BUFFER_SIZE, 0, 0);
+
+    /* Attach (create=0) to the param lane. Producer side: we map it and never
+     * stamp it. If the shim has not created it yet the map returns NULL and
+     * every write keeps taking the mailbox — no probe, no degraded mode, just
+     * the path that has always worked. */
+    shadow_param_lane = (shadow_param_lane_t *)shadow_shm_map(SHM_SHADOW_PARAM_LANE, sizeof(shadow_param_lane_t), 0, 0);
+    param_lane_trace_init();
 
     web_write_dirty = (web_write_dirty_t *)shadow_shm_map(SHM_WEB_WRITE_DIRTY, sizeof(web_write_dirty_t), 0, 0);
     if (shadow_overlay) {
@@ -897,6 +977,48 @@ static int shadow_set_param_common(int slot, const char *key, const char *value,
          * is QUEUED, in order, and committed by the next drain — the main
          * loop's, or any blocking caller's. Only an oversize value or a full
          * queue takes the old path, and that is counted. */
+
+        /* ⭐ THE LANE, tried FIRST. Three conditions, and all three are load-
+         * bearing:
+         *   - spl_key_eligible(key): fire-and-forget throws away the response,
+         *     so a key whose SET has a consequence the caller reads (a
+         *     lifecycle load/unload, a jack: special) must not take it. See
+         *     host/shadow_param_lane_policy.h for each exclusion and why.
+         *   - spq_count(&g_param_pending) == 0 AND shadow_param_mailbox_idle():
+         *     THESE preserve order. The lane and the mailbox are two wires and
+         *     the shim drains the lane FIRST, so a write that takes the lane
+         *     while an earlier write is still queued for — or already SITTING
+         *     IN — the mailbox would overtake it. The queue check alone missed
+         *     the second case: SPQ_COMMIT_NOW and the pending drain both leave
+         *     the queue empty with a request unserviced in the mailbox
+         *     (adversarial review, 2026-09-14 — an `overtake_dsp:load` in the
+         *     mailbox with the module's init writes overtaking it on the lane
+         *     is the 09-05 fresh-project failure by another road). Once
+         *     anything is queued or in flight, everything queues until both
+         *     are clear, and the two wires never interleave.
+         *   - spl_push(...): it refuses a lane the shim has not stamped, an
+         *     oversize key/value and a full ring — every one of which simply
+         *     falls through to the queue below. A refusal costs nothing and
+         *     loses nothing.
+         * The dirty marking above stays where it is: it runs for EVERY write
+         * whichever wire it takes, which is why it is not repeated here. */
+        if (spl_key_eligible(key) && spq_count(&g_param_pending) == 0 &&
+                shadow_param_mailbox_idle() &&
+                spl_push(shadow_param_lane, (uint8_t)slot, 0, key, value)) {
+            param_lane_trace_push(slot, key, value,
+                                  spl_used(shadow_param_lane,
+                                           __atomic_load_n(&shadow_param_lane->tail_published,
+                                                           __ATOMIC_ACQUIRE)),
+                                  "push");
+            return 1;
+        }
+        param_lane_trace_fallback(slot, key,
+                                  !spl_key_eligible(key)                ? "ineligible-key"
+                                  : spq_count(&g_param_pending) != 0    ? "queue-not-empty"
+                                  : !shadow_param_mailbox_idle()        ? "mailbox-busy"
+                                  : !spl_ready(shadow_param_lane)       ? "lane-not-ready"
+                                                                        : "push-refused");
+
         spq_action_t act = spq_offer(&g_param_pending, shadow_param_mailbox_idle(),
                                      (uint8_t)slot, key, value);
         if (act == SPQ_COMMIT_NOW) {
@@ -1005,6 +1127,54 @@ static JSValue shadow_param_bulk_js(JSContext *ctx, int argc, JSValueConst *argv
     const char *value = JS_ToCStringLen(ctx, &vlen, argv[2]);
     if (!value) { JS_FreeCString(ctx, key); return JS_NULL; }
     if (vlen >= SHADOW_PARAM_VALUE_LEN) vlen = SHADOW_PARAM_VALUE_LEN - 1;
+
+    /* ⭐ THE LANE, for `chain:` bulk SETs only.
+     *
+     * ⚠ BULK IS ALWAYS BLOCKING TODAY — checked, not assumed: this function
+     * has no fire-and-forget arm at all. It wait_idle()s, writes the mailbox,
+     * and wait_response()s, and its JS callers read the boolean/string it
+     * returns. So the lane branch cannot simply mirror the single-SET one; it
+     * is added ONLY for the `chain:` marker, whose pairs are automation writes
+     * (a macro, a scene recall) that land through shadow_direct_set_param with
+     * no response to read — exactly the shape the lane is for. `overtake_dsp:`
+     * bulk STAYS on the mailbox: it reaches the module's own set_param and its
+     * callers sequence reads against it.
+     *
+     * The conditions are the single path's, verbatim (eligible key, pending
+     * queue empty, mailbox idle, push succeeded), plus the overtake
+     * fire-and-forget mode the single path gates on, plus two this path needs:
+     *   - TRANSIENT ONLY. A transient bulk is one whose caller has declared
+     *     "nobody reads the result and nothing dirties" — automation playback
+     *     and a SnapMorph turn. A NON-transient bulk is an EDIT or a RECALL:
+     *     the host's snapshot recall (`snapshotRecallTick`) counts its
+     *     `restored` from this boolean and refreshes caches on the strength of
+     *     it, and davebox's automation flush re-pends a refused batch. Those
+     *     callers were written against a bulk that had LANDED on return, so
+     *     they keep the blocking wire (adversarial review, 2026-09-14).
+     *   - the payload must survive a NUL-terminated round trip: the wire
+     *     carries explicit lengths and the lane does not, so a payload with
+     *     an embedded NUL takes the mailbox rather than being truncated.
+     *
+     * We return true only when the push SUCCEEDED; every refusal falls
+     * through to the blocking path below, so the caller's boolean never
+     * claims a write that did not happen (only one that has not landed YET,
+     * which is exactly what `transient` promised). Transient means no dirty
+     * marking, so none is repeated here. */
+    if (req_type == 4 && transient && strcmp(key, "chain:") == 0 &&
+            shadow_control && shadow_control->overtake_mode >= 2 &&
+            strlen(value) == vlen &&
+            spl_key_eligible(key) && spq_count(&g_param_pending) == 0 &&
+            shadow_param_mailbox_idle() &&
+            spl_push(shadow_param_lane, (uint8_t)slot, SPL_FLAG_BULK, key, value)) {
+        param_lane_trace_push(slot, key, value,
+                              spl_used(shadow_param_lane,
+                                       __atomic_load_n(&shadow_param_lane->tail_published,
+                                                       __ATOMIC_ACQUIRE)),
+                              "push-bulk");
+        JS_FreeCString(ctx, key);
+        JS_FreeCString(ctx, value);
+        return JS_TRUE;
+    }
 
     if (!shadow_param_wait_idle(SHADOW_PARAM_DEFAULT_TIMEOUT_MS)) {
         JS_FreeCString(ctx, key); JS_FreeCString(ctx, value); return JS_NULL;

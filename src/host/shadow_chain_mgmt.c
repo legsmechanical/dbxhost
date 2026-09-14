@@ -3189,18 +3189,30 @@ static void pserve_emit(pserve_span_t *ps) {
  * cases (module/name/bypassed/chain_params/ui_hierarchy/live param). Sets
  * p->value/error/result_len but does NOT publish — the caller publishes once.
  * Module-load SET is handled by the caller (loaders differ per FX-bus type). */
+/* SET half of fx_slot_param_rest, addressed BY VALUE so the one dispatcher
+ * (shadow_param_apply_set) can reach it without a shadow_param mailbox. The
+ * mailbox arm goes through fx_slot_param_rest, which forwards here — one
+ * implementation, two callers. */
+static void fx_slot_param_set_rest(master_fx_slot_t *s, const char *rest,
+                                   const char *value,
+                                   int *io_error, int *io_result_len) {
+    if (strcmp(rest, "bypassed") == 0) {
+        s->bypassed = (value[0] && atoi(value)) ? 1 : 0;
+        *io_error = 0; *io_result_len = 0;
+    } else if (s->api && s->instance && s->api->set_param) {
+        s->api->set_param(s->instance, rest, value);
+        *io_error = 0; *io_result_len = 0;
+    } else {
+        *io_error = 9; *io_result_len = -1;
+    }
+}
+
 static void fx_slot_param_rest(master_fx_slot_t *s, const char *rest,
                                shadow_param_t *p, uint8_t req_type) {
     if (req_type == 1) {  /* SET (module handled by caller) */
-        if (strcmp(rest, "bypassed") == 0) {
-            s->bypassed = (p->value[0] && atoi(p->value)) ? 1 : 0;
-            p->error = 0; p->result_len = 0;
-        } else if (s->api && s->instance && s->api->set_param) {
-            s->api->set_param(s->instance, rest, p->value);
-            p->error = 0; p->result_len = 0;
-        } else {
-            p->error = 9; p->result_len = -1;
-        }
+        int err = p->error, len = p->result_len;
+        fx_slot_param_set_rest(s, rest, p->value, &err, &len);
+        p->error = err; p->result_len = len;
         return;
     }
     /* GET */
@@ -3286,6 +3298,541 @@ static void fx_slot_param_rest(master_fx_slot_t *s, const char *rest,
     }
 }
 
+/* ============================================================================
+ * THE parameter SET dispatcher — one function, every wire
+ * ============================================================================
+ *
+ * Every parameter SET that reaches this host lands here: the shadow_param
+ * mailbox arm (shadow_inprocess_handle_param_request, req_type == 1) and the
+ * web set-ring drain (shadow_drain_web_param_set in the shim). It used to be
+ * two: the ring drain re-implemented the prefix routing against the narrower
+ * shadow_direct_set_param, and a copy of THAT second dispatcher shipped with
+ * no `overtake_dsp:load` case, so a module's DSP never loaded and a fresh
+ * project came up dead. Two dispatchers for one wire means the second is
+ * always missing a case. Add a prefix family HERE and both wires get it.
+ *
+ * ⚠ Runs inside the SPI callback (SCHED_FIFO 90, ~900 µs budget). No logging,
+ * no allocation, no file I/O beyond what the branches already did.
+ *
+ * io_error / io_result_len come in holding what the caller would publish and
+ * are overwritten only where the mailbox arm would have written them — a few
+ * branches (jack:display with no JACK shm, suspend_overtake with no control
+ * block) deliberately leave the mailbox fields alone, and that is preserved.
+ */
+
+/* Value copies the SET path needs (the master_fx `param` split, and the chain
+ * plugin's copy). 64 KB, so file-scope static — never on the SPI stack; see
+ * tests/host/test_param_buffers_not_on_stack.sh. SPI thread only. */
+static char s_set_value_copy[SHADOW_PARAM_VALUE_LEN];
+
+int shadow_param_apply_set_ex(int slot, const char *key, const char *value,
+                              int *io_error, int *io_result_len) {
+    int dummy_err = 0, dummy_len = 0;
+    if (!io_error) io_error = &dummy_err;
+    if (!io_result_len) io_result_len = &dummy_len;
+    if (!key || !value) { *io_error = 1; *io_result_len = -1; return *io_error; }
+
+    /* Handle shim-specific params (jack:*, suspend_overtake, passthrough) */
+    if (host.apply_set_special) {
+        if (strncmp(key, "jack:", 5) == 0 ||
+            strcmp(key, "suspend_overtake") == 0 ||
+            strcmp(key, "passthrough") == 0) {
+            if (host.apply_set_special(slot, key, value, io_error, io_result_len))
+                return *io_error;
+        }
+    }
+
+    /* Handle master FX chain params */
+    if (strncmp(key, "master_fx:", 10) == 0) {
+        const char *fx_key = key + 10;
+
+        /* Handle master FX LFO params: master_fx:lfo1:*, master_fx:lfo2:* */
+        if (strncmp(fx_key, "lfo1:", 5) == 0 || strncmp(fx_key, "lfo2:", 5) == 0) {
+            int lfo_idx = (fx_key[3] == '1') ? 0 : 1;
+            const char *lfo_param = fx_key + 5;
+            lfo_state_t *lfo = &shadow_master_fx_lfos[lfo_idx];
+
+            if (strcmp(lfo_param, "enabled") == 0) {
+                lfo->enabled = atoi(value);
+                if (lfo->enabled) {
+                    if (lfo->rate_hz < 0.1f) lfo->rate_hz = 1.0f;
+                    if (lfo->depth == 0.0f && !lfo->target[0] && !lfo->param[0]) {
+                        lfo->depth = 0.5f;
+                    }
+                }
+            } else if (strcmp(lfo_param, "shape") == 0) {
+                lfo->shape = atoi(value);
+                if (lfo->shape < 0) lfo->shape = 0;
+                if (lfo->shape >= LFO_NUM_SHAPES) lfo->shape = LFO_NUM_SHAPES - 1;
+            } else if (strcmp(lfo_param, "rate_hz") == 0) {
+                lfo->rate_hz = strtof(value, NULL);
+                if (lfo->rate_hz < 0.1f) lfo->rate_hz = 0.1f;
+                if (lfo->rate_hz > 20.0f) lfo->rate_hz = 20.0f;
+            } else if (strcmp(lfo_param, "rate_div") == 0) {
+                lfo->rate_div = atoi(value);
+                if (lfo->rate_div < 0) lfo->rate_div = 0;
+                if (lfo->rate_div >= LFO_NUM_DIVISIONS) lfo->rate_div = LFO_NUM_DIVISIONS - 1;
+            } else if (strcmp(lfo_param, "sync") == 0) {
+                lfo->sync = atoi(value);
+                if (lfo->sync && lfo->rate_div == 0) lfo->rate_div = 15;  /* Default to 1/1 */
+            } else if (strcmp(lfo_param, "depth") == 0) {
+                lfo->depth = strtof(value, NULL);
+                if (lfo->depth < -1.0f) lfo->depth = -1.0f;
+                if (lfo->depth > 1.0f) lfo->depth = 1.0f;
+            } else if (strcmp(lfo_param, "polarity") == 0) {
+                lfo->bipolar = atoi(value) ? 1 : 0;
+            } else if (strcmp(lfo_param, "phase_offset") == 0) {
+                lfo->phase_offset = strtof(value, NULL);
+                if (lfo->phase_offset < 0.0f) lfo->phase_offset = 0.0f;
+                if (lfo->phase_offset > 1.0f) lfo->phase_offset = 1.0f;
+            } else if (strcmp(lfo_param, "target") == 0) {
+                strncpy(lfo->target, value, sizeof(lfo->target) - 1);
+                lfo->target[sizeof(lfo->target) - 1] = '\0';
+                mfx_lfo_base_valid[lfo_idx] = 0;  /* Re-snapshot base */
+            } else if (strcmp(lfo_param, "target_param") == 0) {
+                strncpy(lfo->param, value, sizeof(lfo->param) - 1);
+                lfo->param[sizeof(lfo->param) - 1] = '\0';
+                mfx_lfo_base_valid[lfo_idx] = 0;  /* Re-snapshot base */
+            }
+            *io_error = 0;
+            *io_result_len = 0;
+            return *io_error;
+        }
+
+        int mfx_slot = -1;
+        int has_slot_prefix = 0;
+        const char *param_key = fx_key;
+
+        /* Parse slot prefix */
+        if (strncmp(fx_key, "fx1:", 4) == 0) { mfx_slot = 0; param_key = fx_key + 4; has_slot_prefix = 1; }
+        else if (strncmp(fx_key, "fx2:", 4) == 0) { mfx_slot = 1; param_key = fx_key + 4; has_slot_prefix = 1; }
+        else if (strncmp(fx_key, "fx3:", 4) == 0) { mfx_slot = 2; param_key = fx_key + 4; has_slot_prefix = 1; }
+        else if (strncmp(fx_key, "fx4:", 4) == 0) { mfx_slot = 3; param_key = fx_key + 4; has_slot_prefix = 1; }
+        else { mfx_slot = 0; param_key = fx_key; }
+
+        /* Delegate shim-specific params (resample_bridge, link_audio_*, jack:*, suspend_overtake) */
+        if (!has_slot_prefix && host.apply_set_special) {
+            if (strcmp(param_key, "resample_bridge") == 0 ||
+                strcmp(param_key, "link_audio_routing") == 0 ||
+                strcmp(param_key, "link_audio_publish") == 0 ||
+                strcmp(param_key, "latency_comp_enabled") == 0 ||
+                strcmp(param_key, "system_link_enabled") == 0 ||
+                strncmp(param_key, "jack:", 5) == 0 ||
+                strcmp(param_key, "suspend_overtake") == 0) {
+                if (host.apply_set_special(slot, key, value, io_error, io_result_len))
+                    return *io_error;
+            }
+        }
+
+        master_fx_slot_t *mfx = &shadow_master_fx_slots[mfx_slot];
+
+        /* Bypass: handled host-side at the MFX render loop. Caught before the
+         * generic plugin set_param dispatch so the key never reaches the
+         * sub-plugin (which doesn't know about it). */
+        if (has_slot_prefix && strcmp(param_key, "bypassed") == 0) {
+            mfx->bypassed = (value[0] && atoi(value)) ? 1 : 0;
+            *io_error = 0;
+            *io_result_len = 0;
+            return *io_error;
+        }
+
+        if (strcmp(param_key, "module") == 0) {
+            int result = shadow_master_fx_slot_load(mfx_slot, value);
+            *io_error = (result == 0) ? 0 : 7;
+            *io_result_len = 0;
+        } else if (strcmp(param_key, "param") == 0 && mfx->api && mfx->instance) {
+            /* "<name>=<val>" split. Done in our own copy rather than in the
+             * caller's buffer — the mailbox used to punch a NUL into the SHM
+             * value and put the '=' back; same result, nothing borrowed. */
+            size_t vl = strnlen(value, sizeof(s_set_value_copy) - 1);
+            memcpy(s_set_value_copy, value, vl);
+            s_set_value_copy[vl] = '\0';
+            char *eq = strchr(s_set_value_copy, '=');
+            if (eq && mfx->api->set_param) {
+                *eq = '\0';
+                mfx->api->set_param(mfx->instance, s_set_value_copy, eq + 1);
+                mfx_lfo_update_base_from_set_param(mfx_slot, s_set_value_copy, eq + 1);
+                *eq = '=';
+                *io_error = 0;
+            } else {
+                *io_error = 8;
+            }
+            *io_result_len = 0;
+        } else if (mfx->api && mfx->instance && mfx->api->set_param) {
+            mfx->api->set_param(mfx->instance, param_key, value);
+            mfx_lfo_update_base_from_set_param(mfx_slot, param_key, value);
+            *io_error = 0;
+            *io_result_len = 0;
+        } else {
+            *io_error = 9;
+            *io_result_len = -1;
+        }
+        return *io_error;
+    }
+
+    /* Handle send FX params: send_fx:a:fx1:param or send_fx:b:fx2:module */
+    if (strncmp(key, "send_fx:", 8) == 0) {
+        const char *rest = key + 8;
+        int bus = -1;
+        if (rest[0] == 'a' && rest[1] == ':') { bus = 0; rest += 2; }
+        else if (rest[0] == 'b' && rest[1] == ':') { bus = 1; rest += 2; }
+        if (bus < 0) {
+            *io_error = 1;
+            *io_result_len = -1;
+            return *io_error;
+        }
+
+        /* Bus-level params (no fxN prefix) */
+        if (strcmp(rest, "return_level") == 0) {
+            float lv = (value[0]) ? atof(value) : 1.0f;
+            if (lv < 0.0f) lv = 0.0f;
+            shadow_send_return_level[bus] = lv;
+            *io_error = 0;
+            *io_result_len = 0;
+            return *io_error;
+        }
+        if (strcmp(rest, "to_b") == 0) {
+            float lv = (value[0]) ? atof(value) : 0.0f;
+            if (lv < 0.0f) lv = 0.0f;
+            if (lv > 1.0f) lv = 1.0f;
+            if (bus == 0) shadow_send_a_to_b_level = lv;
+            *io_error = 0;
+            *io_result_len = 0;
+            return *io_error;
+        }
+
+        int sfx_slot = -1;
+        if      (strncmp(rest, "fx1:", 4) == 0) { sfx_slot = 0; rest += 4; }
+        else if (strncmp(rest, "fx2:", 4) == 0) { sfx_slot = 1; rest += 4; }
+        else if (strncmp(rest, "fx3:", 4) == 0) { sfx_slot = 2; rest += 4; }
+        else if (strncmp(rest, "fx4:", 4) == 0) { sfx_slot = 3; rest += 4; }
+        if (sfx_slot < 0) {
+            *io_error = 1;
+            *io_result_len = -1;
+            return *io_error;
+        }
+
+        master_fx_slot_t *sfx = &shadow_send_fx_slots[bus][sfx_slot];
+
+        if (strcmp(rest, "module") == 0) {
+            int result = shadow_send_fx_slot_load(bus, sfx_slot, value);
+            *io_error = (result == 0) ? 0 : 7;
+            *io_result_len = 0;
+        } else if (strcmp(rest, "bypassed") == 0) {
+            sfx->bypassed = (value[0] && atoi(value)) ? 1 : 0;
+            *io_error = 0;
+            *io_result_len = 0;
+        } else if (sfx->api && sfx->instance && sfx->api->set_param) {
+            sfx->api->set_param(sfx->instance, rest, value);
+            *io_error = 0;
+            *io_result_len = 0;
+        } else {
+            *io_error = 9;
+            *io_result_len = -1;
+        }
+        return *io_error;
+    }
+
+    /* Handle Move FX params: move_fx:N:fx1:param or move_fx:N:volume (N = 1..4) */
+    if (strncmp(key, "move_fx:", 8) == 0) {
+        const char *rest = key + 8;
+        int sl = -1;
+        if (rest[0] >= '1' && rest[0] <= '4' && rest[1] == ':') { sl = rest[0] - '1'; rest += 2; }
+        if (sl < 0) {
+            *io_error = 1;
+            *io_result_len = -1;
+            return *io_error;
+        }
+
+        /* Per-bus LFO params: move_fx:<N>:lfo1:* / lfo2:*. Same field vocabulary
+         * as master_fx:lfoN:* — one editor in the module speaks both. */
+        if (strncmp(rest, "lfo", 3) == 0 && rest[3] >= '1' && rest[3] <= '9' && rest[4] == ':') {
+            int li = rest[3] - '1';
+            if (li < 0 || li >= MOVE_FX_LFO_COUNT) {
+                *io_error = 1;
+                *io_result_len = -1;
+                return *io_error;
+            }
+            const char *lp = rest + 5;
+            lfo_state_t *lfo = &shadow_move_fx_lfos[sl][li];
+            if (strcmp(lp, "enabled") == 0) {
+                lfo->enabled = atoi(value);
+                /* Same courtesy defaults the master rack applies, so a
+                 * freshly enabled LFO does something audible. */
+                if (lfo->enabled) {
+                    if (lfo->rate_hz < 0.1f) lfo->rate_hz = 1.0f;
+                    if (lfo->depth == 0.0f && !lfo->target[0] && !lfo->param[0]) lfo->depth = 0.5f;
+                }
+            } else if (strcmp(lp, "shape") == 0) {
+                int v = atoi(value);
+                lfo->shape = v < 0 ? 0 : (v >= LFO_NUM_SHAPES ? LFO_NUM_SHAPES - 1 : v);
+            } else if (strcmp(lp, "rate_hz") == 0) {
+                float v = strtof(value, NULL);
+                lfo->rate_hz = v < 0.1f ? 0.1f : (v > 20.0f ? 20.0f : v);
+            } else if (strcmp(lp, "rate_div") == 0) {
+                int v = atoi(value);
+                lfo->rate_div = v < 0 ? 0 : (v >= LFO_NUM_DIVISIONS ? LFO_NUM_DIVISIONS - 1 : v);
+            } else if (strcmp(lp, "sync") == 0) {
+                lfo->sync = atoi(value);
+                if (lfo->sync && lfo->rate_div == 0) lfo->rate_div = 15;   /* 1/1 */
+            } else if (strcmp(lp, "depth") == 0) {
+                float v = strtof(value, NULL);
+                lfo->depth = v < -1.0f ? -1.0f : (v > 1.0f ? 1.0f : v);
+            } else if (strcmp(lp, "polarity") == 0) {
+                lfo->bipolar = atoi(value) ? 1 : 0;
+            } else if (strcmp(lp, "phase_offset") == 0) {
+                float v = strtof(value, NULL);
+                lfo->phase_offset = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+            } else if (strcmp(lp, "retrigger") == 0) {
+                lfo->retrigger = atoi(value) ? 1 : 0;
+            } else if (strcmp(lp, "target") == 0) {
+                snprintf(lfo->target, sizeof(lfo->target), "%s", value);
+                move_lfo_base_valid[sl][li] = 0;      /* re-snapshot the base */
+            } else if (strcmp(lp, "target_param") == 0) {
+                snprintf(lfo->param, sizeof(lfo->param), "%s", value);
+                move_lfo_base_valid[sl][li] = 0;
+            } else {
+                *io_error = 1;
+                *io_result_len = -1;
+                return *io_error;
+            }
+            *io_error = 0;
+            *io_result_len = 0;
+            return *io_error;
+        }
+
+        /* Strip-level params (no fxN prefix): volume / pan / send_a / send_b */
+        if (strcmp(rest, "volume") == 0 || strcmp(rest, "pan") == 0 ||
+            strcmp(rest, "send_a") == 0 || strcmp(rest, "send_b") == 0) {
+            float *tgt = (rest[0] == 'v') ? &shadow_move_fx_strip[sl].volume
+                       : (rest[0] == 'p') ? &shadow_move_fx_strip[sl].pan
+                       : (rest[5] == 'a') ? &shadow_move_fx_strip[sl].send_a
+                                          : &shadow_move_fx_strip[sl].send_b;
+            float maxv = (rest[0] == 'v') ? 4.0f : 1.0f;
+            float defv = (rest[0] == 'v') ? 1.0f : (rest[0] == 'p') ? 0.5f : 0.0f;
+            float v = (value[0]) ? atof(value) : defv;
+            if (v < 0.0f) v = 0.0f;
+            if (v > maxv) v = maxv;
+            *tgt = v;
+            *io_error = 0;
+            *io_result_len = 0;
+            return *io_error;
+        }
+
+        /* Mute / solo. Kept out of the float block above because they go
+         * through the helpers, which own solo's exclusivity across both
+         * families — writing the field directly here would let two things be
+         * soloed at once. */
+        if (strcmp(rest, "muted") == 0 || strcmp(rest, "soloed") == 0) {
+            int on = (value[0]) ? (atoi(value) != 0) : 0;
+            if (rest[0] == 'm') shadow_move_fx_apply_mute(sl, on);
+            else                shadow_move_fx_set_solo(sl, on);
+            *io_error = 0;
+            *io_result_len = 0;
+            return *io_error;
+        }
+
+        /* Generic fxN: parse (N = 1..MOVE_FX_BLOCKS) */
+        int blk = -1;
+        if (rest[0] == 'f' && rest[1] == 'x' && rest[2] >= '1' && rest[2] <= '9' && rest[3] == ':') {
+            int n = rest[2] - '1';
+            if (n < MOVE_FX_BLOCKS) { blk = n; rest += 4; }
+        }
+        if (blk < 0) {
+            *io_error = 1;
+            *io_result_len = -1;
+            return *io_error;
+        }
+
+        master_fx_slot_t *mfx = &shadow_move_fx_slots[sl][blk];
+        if (strcmp(rest, "module") == 0) {
+            int result = shadow_move_fx_slot_load(sl, blk, value);
+            *io_error = (result == 0) ? 0 : 7;
+            *io_result_len = 0;
+        } else {
+            fx_slot_param_set_rest(mfx, rest, value, io_error, io_result_len);
+            /* Same rule as the direct path: a SET of a parameter an LFO targets
+             * moves the base it modulates around. Only on a write. */
+            move_lfo_update_base_from_set_param(sl, blk, rest, value);
+        }
+        return *io_error;
+    }
+
+    /* Handle overtake DSP params - delegate to shim. "chain:" is the bulk SET
+     * addressed to a chain slot (shim_handle_param_bulk_chain); it carries no
+     * slot prefix of its own, so without this line it would fall through to
+     * the generic slot path below, be ignored there, and still be answered —
+     * a caller cannot tell a landed bulk write from a dropped one. (A plain
+     * SET of the bare "chain:" marker is not a thing the shim handles, so it
+     * lands on the error below, exactly as it always has.) */
+    if (strncmp(key, "overtake_dsp:", 13) == 0 || strcmp(key, "chain:") == 0) {
+        if (host.apply_set_special &&
+            host.apply_set_special(slot, key, value, io_error, io_result_len))
+            return *io_error;
+        /* Fallback if no handler */
+        *io_error = 13;
+        *io_result_len = -1;
+        return *io_error;
+    }
+
+    if (slot < 0 || slot >= SHADOW_CHAIN_INSTANCES) {
+        *io_error = 1;
+        *io_result_len = -1;
+        return *io_error;
+    }
+
+    /* Handle slot-level params first */
+    if (shadow_handle_slot_param_set(slot, key, value)) {
+        *io_error = 0;
+        *io_result_len = 0;
+        return *io_error;
+    }
+
+    /* Not a slot param - forward to plugin */
+    if (!shadow_plugin_v2 || !shadow_chain_slots[slot].instance) {
+        *io_error = 2;
+        *io_result_len = -1;
+        return *io_error;
+    }
+
+    if (!shadow_plugin_v2->set_param) {
+        *io_error = 3;
+        *io_result_len = -1;
+        return *io_error;
+    }
+
+    {
+        char key_copy[SHADOW_PARAM_KEY_LEN];
+        char *value_copy = s_set_value_copy;
+        size_t kl = strnlen(key, sizeof(key_copy) - 1);
+        memcpy(key_copy, key, kl);
+        key_copy[kl] = '\0';
+        size_t vl = strnlen(value, (size_t)SHADOW_PARAM_VALUE_LEN - 1);
+        memcpy(value_copy, value, vl);
+        value_copy[vl] = '\0';
+
+        shadow_plugin_v2->set_param(shadow_chain_slots[slot].instance,
+                                    key_copy, value_copy);
+        *io_error = 0;
+        *io_result_len = 0;
+
+        if (strcmp(key_copy, "synth:module") == 0) {
+            if (value_copy[0] != '\0') {
+                shadow_chain_slots[slot].active = 1;
+                shadow_chain_slots[slot].fade.target = 1.0f;
+                if (shadow_plugin_v2->get_param) {
+                    char fwd_buf[16];
+                    int len = shadow_plugin_v2->get_param(shadow_chain_slots[slot].instance,
+                        "synth:default_forward_channel", fwd_buf, sizeof(fwd_buf));
+                    if (len > 0) {
+                        fwd_buf[len < (int)sizeof(fwd_buf) ? len : (int)sizeof(fwd_buf) - 1] = '\0';
+                        int default_fwd = atoi(fwd_buf);
+                        if (default_fwd == -2 || (default_fwd >= 0 && default_fwd <= 15)) {
+                            shadow_chain_slots[slot].default_forward_channel = default_fwd;
+                            shadow_ui_state_update_slot(slot);
+                        }
+                    }
+                }
+            }
+        }
+        if (!shadow_chain_slots[slot].active &&
+            (strcmp(key_copy, "fx1:module") == 0 ||
+             strcmp(key_copy, "fx2:module") == 0 ||
+             strcmp(key_copy, "midi_fx1:module") == 0 ||
+             strcmp(key_copy, "midi_fx2:module") == 0) &&
+            value_copy[0] != '\0') {
+            shadow_chain_slots[slot].active = 1;
+            shadow_chain_slots[slot].fade.target = 1.0f;
+        }
+        if (strcmp(key_copy, "load_file") == 0) {
+            /* JS uses load_file on SET_CHANGED to restore slots from
+             * per-set state. Unlike synth:module / fx*:module /
+             * load_patch, load_file does not pass through the
+             * explicit-activation branches above — so without this
+             * the slot stays inactive until lazy activation fires on
+             * a matching MIDI event. If MIDI never hits the slot's
+             * channel post-load (or the query races the instance
+             * state), the slot remains silent even though the patch
+             * and synth are correctly loaded in the DSP. Query the
+             * instance and activate eagerly to mirror the other load
+             * paths. */
+            if (shadow_plugin_v2->get_param) {
+                /* Same key list as the lazy-activation probe in
+                 * shadow_midi.c — keep the two in step. fx3/fx4 are
+                 * fork-only slot-chain blocks; a state whose only
+                 * loaded component sits there must still activate. */
+                static const char *probe_keys[] = {
+                    "synth_module", "fx1_module", "fx2_module",
+                    "fx3_module", "fx4_module",
+                    "midi_fx1_module", "midi_fx2_module"
+                };
+                char buf[64];
+                int loaded = 0;
+                for (size_t k = 0; !loaded &&
+                     k < sizeof(probe_keys)/sizeof(probe_keys[0]); k++) {
+                    int len = shadow_plugin_v2->get_param(
+                        shadow_chain_slots[slot].instance,
+                        probe_keys[k], buf, sizeof(buf));
+                    if (len > 0) {
+                        buf[len < (int)sizeof(buf) ? len : (int)sizeof(buf) - 1] = '\0';
+                        if (buf[0] != '\0') loaded = 1;
+                    }
+                }
+                if (loaded) {
+                    shadow_chain_slots[slot].active = 1;
+                    shadow_chain_slots[slot].fade.target = 1.0f;
+                    shadow_ui_state_update_slot(slot);
+                }
+            }
+        }
+        if (strcmp(key_copy, "load_patch") == 0 ||
+            strcmp(key_copy, "patch") == 0) {
+            int idx = atoi(value_copy);
+            if (idx < 0 || idx == SHADOW_PATCH_INDEX_NONE) {
+                shadow_chain_slots[slot].active = 0;
+                shadow_chain_slots[slot].patch_index = -1;
+                capture_clear(&shadow_chain_slots[slot].capture);
+                shadow_chain_slots[slot].patch_name[0] = '\0';
+            } else {
+                shadow_chain_slots[slot].active = 1;
+                shadow_chain_slots[slot].fade.target = 1.0f;
+                shadow_chain_slots[slot].patch_index = idx;
+                shadow_slot_load_capture(slot, idx);
+
+                if (shadow_plugin_v2->get_param) {
+                    char fwd_buf[16];
+                    int len = shadow_plugin_v2->get_param(shadow_chain_slots[slot].instance,
+                        "synth:default_forward_channel", fwd_buf, sizeof(fwd_buf));
+                    if (len > 0) {
+                        fwd_buf[len < (int)sizeof(fwd_buf) ? len : (int)sizeof(fwd_buf) - 1] = '\0';
+                        int default_fwd = atoi(fwd_buf);
+                        if (default_fwd == -2 || (default_fwd >= 0 && default_fwd <= 15)) {
+                            shadow_chain_slots[slot].default_forward_channel = default_fwd;
+                        }
+                    }
+                }
+            }
+            shadow_ui_state_update_slot(slot);
+        }
+
+        if (shadow_midi_out_log_enabled()) {
+            if (strcmp(key_copy, "synth:module") == 0 ||
+                strcmp(key_copy, "fx1:module") == 0 ||
+                strcmp(key_copy, "fx2:module") == 0 ||
+                strcmp(key_copy, "midi_fx1:module") == 0) {
+                shadow_midi_out_logf("param_set: slot=%d key=%s val=%s active=%d",
+                    slot, key_copy, value_copy, shadow_chain_slots[slot].active);
+            }
+        }
+    }
+    return *io_error;
+}
+
+int shadow_param_apply_set(int slot, const char *key, const char *value) {
+    int err = 0, len = 0;
+    return shadow_param_apply_set_ex(slot, key, value, &err, &len);
+}
+
 void shadow_inprocess_handle_param_request(void) {
     shadow_param_t *shadow_param = host.shadow_param_ptr ? *host.shadow_param_ptr : NULL;
     if (!shadow_param) return;
@@ -3314,6 +3861,24 @@ void shadow_inprocess_handle_param_request(void) {
         _ps.on        = 1;
     }
 
+    /* ⭐ EVERY SET leaves here. shadow_param_apply_set_ex is THE dispatcher —
+     * the same one the web set-ring drain calls — so a prefix family can only
+     * ever be handled in one place. This arm's only remaining job is to hand
+     * it the mailbox's key/value/slot and publish what it reports. The
+     * key/value pointers are stable for the whole frame (the producer may not
+     * touch them until response_ready goes up), so no copy is needed here.
+     * What follows below is GET (2) and the bulk arms (3/4) only. */
+    if (req_type == 1) {
+        int err = shadow_param->error;
+        int len = shadow_param->result_len;
+        shadow_param_apply_set_ex((int)shadow_param->slot, shadow_param->key,
+                                  shadow_param->value, &err, &len);
+        shadow_param->error = err;
+        shadow_param->result_len = len;
+        shadow_param_publish_response(req_id);
+        return;
+    }
+
     /* Handle shim-specific params (jack:*, suspend_overtake, passthrough) */
     if (host.handle_param_special) {
         const char *key = shadow_param->key;
@@ -3337,52 +3902,7 @@ void shadow_inprocess_handle_param_request(void) {
             const char *lfo_param = fx_key + 5;
             lfo_state_t *lfo = &shadow_master_fx_lfos[lfo_idx];
 
-            if (req_type == 1) {  /* SET */
-                if (strcmp(lfo_param, "enabled") == 0) {
-                    lfo->enabled = atoi(shadow_param->value);
-                    if (lfo->enabled) {
-                        if (lfo->rate_hz < 0.1f) lfo->rate_hz = 1.0f;
-                        if (lfo->depth == 0.0f && !lfo->target[0] && !lfo->param[0]) {
-                            lfo->depth = 0.5f;
-                        }
-                    }
-                } else if (strcmp(lfo_param, "shape") == 0) {
-                    lfo->shape = atoi(shadow_param->value);
-                    if (lfo->shape < 0) lfo->shape = 0;
-                    if (lfo->shape >= LFO_NUM_SHAPES) lfo->shape = LFO_NUM_SHAPES - 1;
-                } else if (strcmp(lfo_param, "rate_hz") == 0) {
-                    lfo->rate_hz = strtof(shadow_param->value, NULL);
-                    if (lfo->rate_hz < 0.1f) lfo->rate_hz = 0.1f;
-                    if (lfo->rate_hz > 20.0f) lfo->rate_hz = 20.0f;
-                } else if (strcmp(lfo_param, "rate_div") == 0) {
-                    lfo->rate_div = atoi(shadow_param->value);
-                    if (lfo->rate_div < 0) lfo->rate_div = 0;
-                    if (lfo->rate_div >= LFO_NUM_DIVISIONS) lfo->rate_div = LFO_NUM_DIVISIONS - 1;
-                } else if (strcmp(lfo_param, "sync") == 0) {
-                    lfo->sync = atoi(shadow_param->value);
-                    if (lfo->sync && lfo->rate_div == 0) lfo->rate_div = 15;  /* Default to 1/1 */
-                } else if (strcmp(lfo_param, "depth") == 0) {
-                    lfo->depth = strtof(shadow_param->value, NULL);
-                    if (lfo->depth < -1.0f) lfo->depth = -1.0f;
-                    if (lfo->depth > 1.0f) lfo->depth = 1.0f;
-                } else if (strcmp(lfo_param, "polarity") == 0) {
-                    lfo->bipolar = atoi(shadow_param->value) ? 1 : 0;
-                } else if (strcmp(lfo_param, "phase_offset") == 0) {
-                    lfo->phase_offset = strtof(shadow_param->value, NULL);
-                    if (lfo->phase_offset < 0.0f) lfo->phase_offset = 0.0f;
-                    if (lfo->phase_offset > 1.0f) lfo->phase_offset = 1.0f;
-                } else if (strcmp(lfo_param, "target") == 0) {
-                    strncpy(lfo->target, shadow_param->value, sizeof(lfo->target) - 1);
-                    lfo->target[sizeof(lfo->target) - 1] = '\0';
-                    mfx_lfo_base_valid[lfo_idx] = 0;  /* Re-snapshot base */
-                } else if (strcmp(lfo_param, "target_param") == 0) {
-                    strncpy(lfo->param, shadow_param->value, sizeof(lfo->param) - 1);
-                    lfo->param[sizeof(lfo->param) - 1] = '\0';
-                    mfx_lfo_base_valid[lfo_idx] = 0;  /* Re-snapshot base */
-                }
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else if (req_type == 2) {  /* GET */
+            if (req_type == 2) {  /* GET */
                 char result[256] = {0};
                 if (strcmp(lfo_param, "enabled") == 0) {
                     snprintf(result, sizeof(result), "%d", lfo->enabled);
@@ -3456,11 +3976,7 @@ void shadow_inprocess_handle_param_request(void) {
          * generic plugin set_param/get_param dispatch so the key never reaches
          * the sub-plugin (which doesn't know about it). */
         if (has_slot_prefix && strcmp(param_key, "bypassed") == 0) {
-            if (req_type == 1) {  /* SET */
-                mfx->bypassed = (shadow_param->value[0] && atoi(shadow_param->value)) ? 1 : 0;
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else if (req_type == 2) {  /* GET */
+            if (req_type == 2) {  /* GET */
                 snprintf(shadow_param->value, SHADOW_PARAM_VALUE_LEN, "%d", mfx->bypassed ? 1 : 0);
                 shadow_param->error = 0;
                 shadow_param->result_len = strlen(shadow_param->value);
@@ -3469,33 +3985,7 @@ void shadow_inprocess_handle_param_request(void) {
             return;
         }
 
-        if (req_type == 1) {  /* SET */
-            if (strcmp(param_key, "module") == 0) {
-                int result = shadow_master_fx_slot_load(mfx_slot, shadow_param->value);
-                shadow_param->error = (result == 0) ? 0 : 7;
-                shadow_param->result_len = 0;
-            } else if (strcmp(param_key, "param") == 0 && mfx->api && mfx->instance) {
-                char *eq = strchr(shadow_param->value, '=');
-                if (eq && mfx->api->set_param) {
-                    *eq = '\0';
-                    mfx->api->set_param(mfx->instance, shadow_param->value, eq + 1);
-                    mfx_lfo_update_base_from_set_param(mfx_slot, shadow_param->value, eq + 1);
-                    *eq = '=';
-                    shadow_param->error = 0;
-                } else {
-                    shadow_param->error = 8;
-                }
-                shadow_param->result_len = 0;
-            } else if (mfx->api && mfx->instance && mfx->api->set_param) {
-                mfx->api->set_param(mfx->instance, param_key, shadow_param->value);
-                mfx_lfo_update_base_from_set_param(mfx_slot, param_key, shadow_param->value);
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else {
-                shadow_param->error = 9;
-                shadow_param->result_len = -1;
-            }
-        } else if (req_type == 2) {  /* GET */
+        if (req_type == 2) {  /* GET */
             if (has_slot_prefix) {
                 char bare_param[64];
                 char target_key[8];
@@ -3699,13 +4189,7 @@ void shadow_inprocess_handle_param_request(void) {
 
         /* Bus-level params (no fxN prefix) */
         if (strcmp(rest, "return_level") == 0) {
-            if (req_type == 1) {  /* SET */
-                float lv = (shadow_param->value[0]) ? atof(shadow_param->value) : 1.0f;
-                if (lv < 0.0f) lv = 0.0f;
-                shadow_send_return_level[bus] = lv;
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else if (req_type == 2) {  /* GET */
+            if (req_type == 2) {  /* GET */
                 snprintf(shadow_param->value, SHADOW_PARAM_VALUE_LEN, "%.3f",
                          shadow_send_return_level[bus]);
                 shadow_param->error = 0;
@@ -3715,14 +4199,7 @@ void shadow_inprocess_handle_param_request(void) {
             return;
         }
         if (strcmp(rest, "to_b") == 0) {
-            if (req_type == 1) {  /* SET */
-                float lv = (shadow_param->value[0]) ? atof(shadow_param->value) : 0.0f;
-                if (lv < 0.0f) lv = 0.0f;
-                if (lv > 1.0f) lv = 1.0f;
-                if (bus == 0) shadow_send_a_to_b_level = lv;
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else if (req_type == 2) {  /* GET */
+            if (req_type == 2) {  /* GET */
                 snprintf(shadow_param->value, SHADOW_PARAM_VALUE_LEN, "%.3f",
                          shadow_send_a_to_b_level);
                 shadow_param->error = 0;
@@ -3746,24 +4223,7 @@ void shadow_inprocess_handle_param_request(void) {
 
         master_fx_slot_t *sfx = &shadow_send_fx_slots[bus][sfx_slot];
 
-        if (req_type == 1) {  /* SET */
-            if (strcmp(rest, "module") == 0) {
-                int result = shadow_send_fx_slot_load(bus, sfx_slot, shadow_param->value);
-                shadow_param->error = (result == 0) ? 0 : 7;
-                shadow_param->result_len = 0;
-            } else if (strcmp(rest, "bypassed") == 0) {
-                sfx->bypassed = (shadow_param->value[0] && atoi(shadow_param->value)) ? 1 : 0;
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else if (sfx->api && sfx->instance && sfx->api->set_param) {
-                sfx->api->set_param(sfx->instance, rest, shadow_param->value);
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else {
-                shadow_param->error = 9;
-                shadow_param->result_len = -1;
-            }
-        } else if (req_type == 2) {  /* GET */
+        if (req_type == 2) {  /* GET */
             if (strcmp(rest, "module") == 0) {
                 strncpy(shadow_param->value, sfx->module_path, SHADOW_PARAM_VALUE_LEN - 1);
                 shadow_param->value[SHADOW_PARAM_VALUE_LEN - 1] = '\0';
@@ -3914,52 +4374,7 @@ void shadow_inprocess_handle_param_request(void) {
             }
             const char *lp = rest + 5;
             lfo_state_t *lfo = &shadow_move_fx_lfos[sl][li];
-            if (req_type == 1) {            /* SET */
-                if (strcmp(lp, "enabled") == 0) {
-                    lfo->enabled = atoi(shadow_param->value);
-                    /* Same courtesy defaults the master rack applies, so a
-                     * freshly enabled LFO does something audible. */
-                    if (lfo->enabled) {
-                        if (lfo->rate_hz < 0.1f) lfo->rate_hz = 1.0f;
-                        if (lfo->depth == 0.0f && !lfo->target[0] && !lfo->param[0]) lfo->depth = 0.5f;
-                    }
-                } else if (strcmp(lp, "shape") == 0) {
-                    int v = atoi(shadow_param->value);
-                    lfo->shape = v < 0 ? 0 : (v >= LFO_NUM_SHAPES ? LFO_NUM_SHAPES - 1 : v);
-                } else if (strcmp(lp, "rate_hz") == 0) {
-                    float v = strtof(shadow_param->value, NULL);
-                    lfo->rate_hz = v < 0.1f ? 0.1f : (v > 20.0f ? 20.0f : v);
-                } else if (strcmp(lp, "rate_div") == 0) {
-                    int v = atoi(shadow_param->value);
-                    lfo->rate_div = v < 0 ? 0 : (v >= LFO_NUM_DIVISIONS ? LFO_NUM_DIVISIONS - 1 : v);
-                } else if (strcmp(lp, "sync") == 0) {
-                    lfo->sync = atoi(shadow_param->value);
-                    if (lfo->sync && lfo->rate_div == 0) lfo->rate_div = 15;   /* 1/1 */
-                } else if (strcmp(lp, "depth") == 0) {
-                    float v = strtof(shadow_param->value, NULL);
-                    lfo->depth = v < -1.0f ? -1.0f : (v > 1.0f ? 1.0f : v);
-                } else if (strcmp(lp, "polarity") == 0) {
-                    lfo->bipolar = atoi(shadow_param->value) ? 1 : 0;
-                } else if (strcmp(lp, "phase_offset") == 0) {
-                    float v = strtof(shadow_param->value, NULL);
-                    lfo->phase_offset = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
-                } else if (strcmp(lp, "retrigger") == 0) {
-                    lfo->retrigger = atoi(shadow_param->value) ? 1 : 0;
-                } else if (strcmp(lp, "target") == 0) {
-                    snprintf(lfo->target, sizeof(lfo->target), "%s", shadow_param->value);
-                    move_lfo_base_valid[sl][li] = 0;      /* re-snapshot the base */
-                } else if (strcmp(lp, "target_param") == 0) {
-                    snprintf(lfo->param, sizeof(lfo->param), "%s", shadow_param->value);
-                    move_lfo_base_valid[sl][li] = 0;
-                } else {
-                    shadow_param->error = 1;
-                    shadow_param->result_len = -1;
-                    shadow_param_publish_response(req_id);
-                    return;
-                }
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else if (req_type == 2) {     /* GET */
+            if (req_type == 2) {     /* GET */
                 /* ⚠ Straight into shadow_param->value, never via a local. A
                  * SHADOW_PARAM_VALUE_LEN buffer is 64 KB and this runs on the
                  * SPI callback — tests/host/test_param_buffers_not_on_stack.sh
@@ -3997,16 +4412,9 @@ void shadow_inprocess_handle_param_request(void) {
                        : (rest[0] == 'p') ? &shadow_move_fx_strip[sl].pan
                        : (rest[5] == 'a') ? &shadow_move_fx_strip[sl].send_a
                                           : &shadow_move_fx_strip[sl].send_b;
-            float maxv = (rest[0] == 'v') ? 4.0f : 1.0f;
-            float defv = (rest[0] == 'v') ? 1.0f : (rest[0] == 'p') ? 0.5f : 0.0f;
-            if (req_type == 1) {  /* SET */
-                float v = (shadow_param->value[0]) ? atof(shadow_param->value) : defv;
-                if (v < 0.0f) v = 0.0f;
-                if (v > maxv) v = maxv;
-                *tgt = v;
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else if (req_type == 2) {  /* GET */
+            /* (The SET clamps — maxv 4.0 for volume, 1.0 otherwise, and the
+             * per-key defaults — live in shadow_param_apply_set_ex now.) */
+            if (req_type == 2) {  /* GET */
                 snprintf(shadow_param->value, SHADOW_PARAM_VALUE_LEN, "%.3f", *tgt);
                 shadow_param->error = 0;
                 shadow_param->result_len = strlen(shadow_param->value);
@@ -4022,13 +4430,7 @@ void shadow_inprocess_handle_param_request(void) {
         if (strcmp(rest, "muted") == 0 || strcmp(rest, "soloed") == 0) {
             uint8_t *tgt = (rest[0] == 'm') ? &shadow_move_fx_strip[sl].muted
                                             : &shadow_move_fx_strip[sl].soloed;
-            if (req_type == 1) {  /* SET */
-                int on = (shadow_param->value[0]) ? (atoi(shadow_param->value) != 0) : 0;
-                if (rest[0] == 'm') shadow_move_fx_apply_mute(sl, on);
-                else                shadow_move_fx_set_solo(sl, on);
-                shadow_param->error = 0;
-                shadow_param->result_len = 0;
-            } else if (req_type == 2) {  /* GET */
+            if (req_type == 2) {  /* GET */
                 snprintf(shadow_param->value, SHADOW_PARAM_VALUE_LEN, "%d", (int)*tgt);
                 shadow_param->error = 0;
                 shadow_param->result_len = strlen(shadow_param->value);
@@ -4051,17 +4453,7 @@ void shadow_inprocess_handle_param_request(void) {
         }
 
         master_fx_slot_t *mfx = &shadow_move_fx_slots[sl][blk];
-        if (req_type == 1 && strcmp(rest, "module") == 0) {
-            int result = shadow_move_fx_slot_load(sl, blk, shadow_param->value);
-            shadow_param->error = (result == 0) ? 0 : 7;
-            shadow_param->result_len = 0;
-        } else {
-            fx_slot_param_rest(mfx, rest, shadow_param, req_type);
-            /* Same rule as the direct path: a SET of a parameter an LFO targets
-             * moves the base it modulates around. Only on a write. */
-            if (req_type == 1)
-                move_lfo_update_base_from_set_param(sl, blk, rest, shadow_param->value);
-        }
+        fx_slot_param_rest(mfx, rest, shadow_param, req_type);
         shadow_param_publish_response(req_id);
         return;
     }
@@ -4093,15 +4485,7 @@ void shadow_inprocess_handle_param_request(void) {
     }
 
     /* Handle slot-level params first */
-    if (req_type == 1) {
-        if (shadow_handle_slot_param_set(slot, shadow_param->key, shadow_param->value)) {
-            shadow_param->error = 0;
-            shadow_param->result_len = 0;
-            shadow_param_publish_response(req_id);
-            return;
-        }
-    }
-    else if (req_type == 2) {
+    if (req_type == 2) {
         int len = shadow_handle_slot_param_get(slot, shadow_param->key,
                                                 shadow_param->value, SHADOW_PARAM_VALUE_LEN);
         if (len >= 0) {
@@ -4120,134 +4504,7 @@ void shadow_inprocess_handle_param_request(void) {
         return;
     }
 
-    if (req_type == 1) {  /* SET param */
-        if (shadow_plugin_v2->set_param) {
-            char key_copy[SHADOW_PARAM_KEY_LEN];
-            static char value_copy[SHADOW_PARAM_VALUE_LEN];
-            strncpy(key_copy, shadow_param->key, sizeof(key_copy) - 1);
-            key_copy[sizeof(key_copy) - 1] = '\0';
-            strncpy(value_copy, shadow_param->value, sizeof(value_copy) - 1);
-            value_copy[sizeof(value_copy) - 1] = '\0';
-
-            shadow_plugin_v2->set_param(shadow_chain_slots[slot].instance,
-                                        key_copy, value_copy);
-            shadow_param->error = 0;
-            shadow_param->result_len = 0;
-
-            if (strcmp(key_copy, "synth:module") == 0) {
-                if (value_copy[0] != '\0') {
-                    shadow_chain_slots[slot].active = 1;
-    shadow_chain_slots[slot].fade.target = 1.0f;
-                    if (shadow_plugin_v2->get_param) {
-                        char fwd_buf[16];
-                        int len = shadow_plugin_v2->get_param(shadow_chain_slots[slot].instance,
-                            "synth:default_forward_channel", fwd_buf, sizeof(fwd_buf));
-                        if (len > 0) {
-                            fwd_buf[len < (int)sizeof(fwd_buf) ? len : (int)sizeof(fwd_buf) - 1] = '\0';
-                            int default_fwd = atoi(fwd_buf);
-                            if (default_fwd == -2 || (default_fwd >= 0 && default_fwd <= 15)) {
-                                shadow_chain_slots[slot].default_forward_channel = default_fwd;
-                                shadow_ui_state_update_slot(slot);
-                            }
-                        }
-                    }
-                }
-            }
-            if (!shadow_chain_slots[slot].active &&
-                (strcmp(key_copy, "fx1:module") == 0 ||
-                 strcmp(key_copy, "fx2:module") == 0 ||
-                 strcmp(key_copy, "midi_fx1:module") == 0 ||
-                 strcmp(key_copy, "midi_fx2:module") == 0) &&
-                value_copy[0] != '\0') {
-                shadow_chain_slots[slot].active = 1;
-    shadow_chain_slots[slot].fade.target = 1.0f;
-            }
-            if (strcmp(key_copy, "load_file") == 0) {
-                /* JS uses load_file on SET_CHANGED to restore slots from
-                 * per-set state. Unlike synth:module / fx*:module /
-                 * load_patch, load_file does not pass through the
-                 * explicit-activation branches above — so without this
-                 * the slot stays inactive until lazy activation fires on
-                 * a matching MIDI event. If MIDI never hits the slot's
-                 * channel post-load (or the query races the instance
-                 * state), the slot remains silent even though the patch
-                 * and synth are correctly loaded in the DSP. Query the
-                 * instance and activate eagerly to mirror the other load
-                 * paths. */
-                if (shadow_plugin_v2->get_param) {
-                    /* Same key list as the lazy-activation probe in
-                     * shadow_midi.c — keep the two in step. fx3/fx4 are
-                     * fork-only slot-chain blocks; a state whose only
-                     * loaded component sits there must still activate. */
-                    static const char *probe_keys[] = {
-                        "synth_module", "fx1_module", "fx2_module",
-                        "fx3_module", "fx4_module",
-                        "midi_fx1_module", "midi_fx2_module"
-                    };
-                    char buf[64];
-                    int loaded = 0;
-                    for (size_t k = 0; !loaded &&
-                         k < sizeof(probe_keys)/sizeof(probe_keys[0]); k++) {
-                        int len = shadow_plugin_v2->get_param(
-                            shadow_chain_slots[slot].instance,
-                            probe_keys[k], buf, sizeof(buf));
-                        if (len > 0) {
-                            buf[len < (int)sizeof(buf) ? len : (int)sizeof(buf) - 1] = '\0';
-                            if (buf[0] != '\0') loaded = 1;
-                        }
-                    }
-                    if (loaded) {
-                        shadow_chain_slots[slot].active = 1;
-                        shadow_chain_slots[slot].fade.target = 1.0f;
-                        shadow_ui_state_update_slot(slot);
-                    }
-                }
-            }
-            if (strcmp(key_copy, "load_patch") == 0 ||
-                strcmp(key_copy, "patch") == 0) {
-                int idx = atoi(value_copy);
-                if (idx < 0 || idx == SHADOW_PATCH_INDEX_NONE) {
-                    shadow_chain_slots[slot].active = 0;
-                    shadow_chain_slots[slot].patch_index = -1;
-                    capture_clear(&shadow_chain_slots[slot].capture);
-                    shadow_chain_slots[slot].patch_name[0] = '\0';
-                } else {
-                    shadow_chain_slots[slot].active = 1;
-    shadow_chain_slots[slot].fade.target = 1.0f;
-                    shadow_chain_slots[slot].patch_index = idx;
-                    shadow_slot_load_capture(slot, idx);
-
-                    if (shadow_plugin_v2->get_param) {
-                        char fwd_buf[16];
-                        int len = shadow_plugin_v2->get_param(shadow_chain_slots[slot].instance,
-                            "synth:default_forward_channel", fwd_buf, sizeof(fwd_buf));
-                        if (len > 0) {
-                            fwd_buf[len < (int)sizeof(fwd_buf) ? len : (int)sizeof(fwd_buf) - 1] = '\0';
-                            int default_fwd = atoi(fwd_buf);
-                            if (default_fwd == -2 || (default_fwd >= 0 && default_fwd <= 15)) {
-                                shadow_chain_slots[slot].default_forward_channel = default_fwd;
-                            }
-                        }
-                    }
-                }
-                shadow_ui_state_update_slot(slot);
-            }
-
-            if (shadow_midi_out_log_enabled()) {
-                if (strcmp(key_copy, "synth:module") == 0 ||
-                    strcmp(key_copy, "fx1:module") == 0 ||
-                    strcmp(key_copy, "fx2:module") == 0 ||
-                    strcmp(key_copy, "midi_fx1:module") == 0) {
-                    shadow_midi_out_logf("param_set: slot=%d key=%s val=%s active=%d",
-                        slot, key_copy, value_copy, shadow_chain_slots[slot].active);
-                }
-            }
-        } else {
-            shadow_param->error = 3;
-            shadow_param->result_len = -1;
-        }
-    }
-    else if (req_type == 2) {  /* GET param */
+    if (req_type == 2) {  /* GET param */
         if (shadow_plugin_v2->get_param) {
             memset(shadow_param->value, 0, 256);
             int len = shadow_plugin_v2->get_param(shadow_chain_slots[slot].instance,
