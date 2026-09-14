@@ -25,7 +25,8 @@
 import {
     setButtonLED
 } from '/data/UserData/schwung/shared/input_filter.mjs';
-import { automationRefreshPresence, automationInvalidateMeta, automationWantsDrain, bulkEncode, bulkDecode } from './ui_automation.mjs';
+import { automationRefreshPresence, automationInvalidateMeta, automationWantsDrain, bulkEncode, bulkDecode,
+         automationNoteListChangedElsewhere } from './ui_automation.mjs';
 
 import {
     NUM_TRACKS, NUM_CLIPS, NUM_STEPS, DRUM_LANES, POLL_INTERVAL,
@@ -474,6 +475,15 @@ export function pollDSP() {
             if (S.paCaptureSeq < 0) S.paCaptureSeq = _pseq;
             else if (_pseq !== S.paCaptureSeq) {
                 S.paCaptureSeq = _pseq;
+                /* ⚠ THE LIST TOO, on THIS edge (Josh, device, 2026-09-13: a
+                 * captured SnapMorph lane "plays back but doesn't show on the
+                 * automation bank" — intermittently). The tap marks presence
+                 * stale when it QUEUES the commit; that refresh can read
+                 * pa_list before the commit has crossed, see no new lane, and
+                 * nothing marks it stale again. The DSP's own sequence is the
+                 * one signal that says the lanes EXIST — so it re-marks the
+                 * list, exactly as it fires the toast. */
+                automationNoteListChangedElsewhere();
                 /* ⚠ One tap can commit BOTH halves, and both would toast — the
                  * note half's own toast lands later and would simply erase
                  * this one, so the user would never learn the sweeps landed.
