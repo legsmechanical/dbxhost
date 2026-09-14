@@ -111,8 +111,19 @@ const routeName = { 0: 'Schwung', 1: 'Move', 2: 'MIDI', 3: 'NONE' };
 step('setup', () => {
     globalThis.init();
     S.awaitingProjectSelect = false; S.ledInitComplete = true; S.sessionView = false; S.activeTrack = 0;
-    S.trackRoute[0] = 0; S.trackRoute[1] = 0; S.trackRoute[2] = 1; S.trackChannel[2] = 1;
+    /* Track 3 owns Move 3, so Move 1 (the change under test) is FREE — one
+     * dAVEBOx track per Move instrument (2026-09-13), and the refusal now comes
+     * BEFORE the confirm so a taken instrument is never a destructive no-op. */
+    S.trackRoute[0] = 0; S.trackRoute[1] = 0; S.trackRoute[2] = 1; S.trackChannel[2] = 3;
     S.confirmTypeChange = null;
+});
+step('⚠ a TAKEN Move instrument is refused before the confirm: no modal, nothing cleared', () => {
+    S.trackChannel[2] = 1;                                  /* track 3 owns Move 1 for this step */
+    const applied = snd.requestInstrChange(0, 0 /* Move 1 */);
+    if (applied !== false) throw new Error('should be refused');
+    if (S.confirmTypeChange) throw new Error('the confirm must not open for a taken instrument');
+    if (S.trackRoute[0] !== 0) throw new Error('route changed');
+    S.trackChannel[2] = 3;
 });
 
 /* ---- the matrix, one cell at a time ------------------------------------ */

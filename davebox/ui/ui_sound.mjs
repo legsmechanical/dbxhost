@@ -50,7 +50,7 @@ import { bankCardVisible, sessMixerVisible, bankHeaderRight } from './ui_render.
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
-import { instrOptions, instrPickerRows, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
+import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, ROUTE_NONE } from './ui_constants.mjs';
@@ -4692,6 +4692,14 @@ export function typeChangeImpact(track, newRoute) {
  * answered in ui_input_cc — the confirm-exit modal's shape). */
 export function requestInstrChange(track, v) {
     const newRoute = routeForInstr(v);
+    /* ONE TRACK PER MOVE INSTRUMENT: refuse BEFORE the type-change confirm —
+     * otherwise Yes would clear the incompatible macros and lanes and THEN the
+     * write would be refused, a destructive no-op. The picker never offers a
+     * taken Move; this covers every other way a choice arrives. */
+    if (newRoute === 1) {
+        const owner = moveInstrOwner(GS.trackRoute, GS.trackChannel, v | 0, track);
+        if (owner >= 0) { showActionPopup('MOVE ' + ((v | 0) + 1), 'Track ' + (owner + 1) + ' has it'); return false; }
+    }
     if (newRoute !== (GS.trackRoute[track] | 0)) {
         const im = typeChangeImpact(track, newRoute);
         if (im.macros || im.lanesN) {

@@ -106,6 +106,12 @@ step('applyInstrChoice refuses a taken Move instrument and writes NOTHING; a fre
     assert(writes.some(w => w === 't4_route=move') && writes.some(w => w === 't4_channel=3'), 'written: ' + JSON.stringify(writes));
     assert(bridge.applyInstrChoice(0, 1) === true, 'the OWNER re-choosing its own instrument is fine');
 });
+step('requestInstrChange refuses a taken Move BEFORE the type-change confirm (no modal, nothing cleared)', () => {
+    S.trackRoute[1] = 0;                                    /* track 2: a chain track wanting Move 2 */
+    S.confirmTypeChange = null;
+    const r = snd.requestInstrChange(1, 1);
+    assert(r === false && !S.confirmTypeChange && S.trackRoute[1] === 0, 'refused with no modal: ' + JSON.stringify([r, !!S.confirmTypeChange, S.trackRoute[1]]));
+});
 step('a MIDI track may still FOLLOW the owner (it plays through the owner\'s bus)', () => {
     writes.length = 0;
     bridge.applyInstrChoice(6, C.INSTR_TRACK + 0);          /* track 7 follows track 1 */
