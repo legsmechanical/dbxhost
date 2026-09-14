@@ -18,6 +18,12 @@
 #   - test_stipple — the checkerboard parity rule behind stipple_rect: 50%
 #     coverage, complementary phases, a CHECKERBOARD rather than stripes (a
 #     row-parity bug passes the first two), and no seam across a call boundary.
+#   - test_shadow_param_lane — the param LANE (shadow_ui -> shim): an SPSC
+#     byte ring for fire-and-forget parameter SETs, many per SPI frame
+#     ahead of the mailbox. Covers round-trip order/bytes, the not-ready
+#     handshake, oversize refusal, fill-then-drain, the end-of-buffer skip
+#     marker, the uint32 cursor wrap, the first-drain seed (tail_published,
+#     not head), and a concurrent producer/consumer pair.
 #
 # Usage: `make -C tests/host test`
 
@@ -54,6 +60,7 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_link_audio_backlog_trim \
           $(BUILD_DIR)/test_control_layout \
           $(BUILD_DIR)/test_shadow_param_queue \
+          $(BUILD_DIR)/test_shadow_param_lane \
           $(BUILD_DIR)/test_chain_idle_tick
 
 .PHONY: all test clean
