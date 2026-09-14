@@ -90,6 +90,30 @@ except Exception:
     print(-1)' "$1" 2>/dev/null || printf '%s\n' -1
 }
 
+# Stamp the xattrs a NATIVE Move-born set carries, in the same shape Move
+# itself writes — see tools/pytest-schwung/src/schwung_bus/pytest_plugin.py
+# ::_create_template_set (which stamps a test fixture to "look like an
+# ordinary [Move] entry") and shadow_set_pages.c's set_page_xattr_names for
+# the reference. Fix D of the 2026-09-14 new-project plan: a dAVEBOx-born
+# project was missing these, and Move's own set-open code may be the thing
+# silently rejecting a project that lacks its own provenance markers — this
+# is provenance PARITY, not a guess at a new format.
+#   user.song-color          Move's own color slot (distinct from dAVEBOx's
+#                             own user.dbx-color) — mirror the SAME value so
+#                             the project looks Move-born to Move too.
+#   user.last-modified-time  ISO-8601 UTC, Move's own spelling.
+#   user.local-cloud-state   Move seeds "notSynced" on a locally-made set.
+# Best-effort, like every xattr write in this file: a project this fails on
+# is simply missing Move's own metadata, not missing entirely.
+stamp_move_xattrs() { # set-dir color-value
+    python3 -c "import os,sys
+_d, _c = sys.argv[1], sys.argv[2]
+os.setxattr(_d, 'user.song-color', _c.encode())
+os.setxattr(_d, 'user.last-modified-time', sys.argv[3].encode())
+os.setxattr(_d, 'user.local-cloud-state', b'notSynced')
+" "$1" "$2" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>/dev/null || true
+}
+
 do_list() {
     python3 - "$SETS_DIR" "$SETTINGS_JSON" "$OUT_JSON" "$DBX_SUBDIR_NAME" <<'PYEOF'
 import json, os, re, sys
@@ -503,6 +527,9 @@ do_new_at() { # index [name]
     # shape as the index above — a project without the xattr is simply colour 0.
     python3 -c "import os,sys; os.setxattr(sys.argv[1], 'user.dbx-color', str(int(sys.argv[2]) % int(sys.argv[3])).encode())" \
         "$SETS_DIR/$_uuid" "$1" "$DBX_PALETTE_N" 2>/dev/null || true
+    # Provenance parity (Fix D, S2): Move's OWN xattrs, mirroring the SAME
+    # colour value just chosen above. See stamp_move_xattrs for why.
+    stamp_move_xattrs "$SETS_DIR/$_uuid" "$(( $1 % DBX_PALETTE_N ))"
     do_normalize "$1" >/dev/null
     do_list
     printf 'project-cmd: created "%s" (%s) at index %s\n' "$_name" "$_uuid" "$1"
@@ -515,7 +542,7 @@ do_copy() { # src-index dst-index
     case "${1:-}" in *[!0-9]*|"") die "copy needs a numeric source index" ;; esac
     case "${2:-}" in *[!0-9]*|"") die "copy needs a numeric destination index" ;; esac
     python3 - "$SETS_DIR" "$1" "$2" "$DBX_SUBDIR_NAME" <<'PYEOF'
-import os, re, shutil, sys, uuid as uuidlib
+import datetime, os, re, shutil, sys, uuid as uuidlib
 sets_dir, src, dst = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 dbx_subdir = sys.argv[4]
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
@@ -561,6 +588,19 @@ try:
     os.setxattr(np, "user.dbx-color", os.getxattr(sp, "user.dbx-color"))
 except OSError:
     pass
+# Provenance parity (Fix D, S2): stamp Move's OWN xattrs too — see
+# stamp_move_xattrs (this file, shell side) for the reference shape and why.
+# Mirror whatever colour dAVEBOx just settled on above (0 if the source had
+# none), same as do_new_at does for a brand-new project.
+try:
+    _color = os.getxattr(np, "user.dbx-color").decode()
+except OSError:
+    _color = "0"
+os.setxattr(np, "user.song-color", _color.encode())
+os.setxattr(np, "user.last-modified-time",
+            datetime.datetime.now(datetime.timezone.utc)
+            .strftime("%Y-%m-%dT%H:%M:%SZ").encode())
+os.setxattr(np, "user.local-cloud-state", b"notSynced")
 
 # (No second half to hand-copy: since Phase C the HOST state — chains, slots,
 # FX — lives inside the set dir too, under <subdir>/host/, so the copytree

@@ -101,6 +101,35 @@ d = json.load(open(sys.argv[1]))
 p = [x for x in d["projects"] if x["index"] == 5][0]
 assert p["name"] == "First Project Copy" and p["color"] == 3, p
 PY
+    # S2: do_copy also stamps Move's OWN provenance xattrs (Fix D of the
+    # 2026-09-14 new-project plan) -- song-color mirroring dbx-color, an
+    # ISO-8601 UTC last-modified-time, local-cloud-state=notSynced.
+    _copy_dst_uuid=$(python3 -c "import json;print([x for x in json.load(open('$DBX_DIR/projects.json'))['projects'] if x['index']==5][0]['uuid'])")
+    python3 - "$SETS_DIR/$_copy_dst_uuid" <<'PY' && echo "  ok   copy stamps Move's own provenance xattrs" || { echo "  FAIL copy stamps Move provenance xattrs" >&2; fails=1; }
+import os, sys
+d = sys.argv[1]
+assert os.getxattr(d, "user.song-color") == b"3", "song-color should mirror dbx-color"
+lm = os.getxattr(d, "user.last-modified-time").decode()
+assert lm.endswith("Z") and "T" in lm, "not ISO-8601 UTC: %r" % lm
+assert os.getxattr(d, "user.local-cloud-state") == b"notSynced"
+PY
+
+    # S2: do_new_at stamps the same three xattrs on a freshly-born project.
+    sh "$CMD" new-at 20 "New At Project" >/dev/null
+    _newat_uuid=$(python3 -c "
+import json
+d = json.load(open('$DBX_DIR/projects.json'))
+print([x for x in d['projects'] if x['index'] == 20][0]['uuid'])")
+    python3 - "$SETS_DIR/$_newat_uuid" <<'PY' && echo "  ok   new-at stamps Move's own provenance xattrs" || { echo "  FAIL new-at stamps Move provenance xattrs" >&2; fails=1; }
+import os, sys
+d = sys.argv[1]
+color = os.getxattr(d, "user.dbx-color").decode()
+assert os.getxattr(d, "user.song-color").decode() == color, "song-color should mirror dbx-color"
+lm = os.getxattr(d, "user.last-modified-time").decode()
+assert lm.endswith("Z") and "T" in lm, "not ISO-8601 UTC: %r" % lm
+assert os.getxattr(d, "user.local-cloud-state") == b"notSynced"
+PY
+
     # Phase B: the copy is a whole-uuid-dir copytree, so the state came WITH
     # it - assert the duplicate's dAVEBOx/ holds the source's bytes, and that
     # DELETING the duplicate takes the state along (one rmtree, no second root).
