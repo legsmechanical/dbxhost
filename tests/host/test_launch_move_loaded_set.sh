@@ -30,7 +30,11 @@ T="$(mktemp -d)"
 # children (tail, and the while-loop subshell) before the parent.
 descendants() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do descendants "$c"; echo "$c"; done; }
 reap() { local p; for p in $(descendants "${1:-0}") "${1:-0}"; do kill "$p" 2>/dev/null || true; done; }
-trap 'reap "${READER_PID:-0}"; reap "${READER2_PID:-0}"; kill "${OWNER_PID:-0}" "${OWNER2_PID:-0}" 2>/dev/null || true; rm -rf "$T"' EXIT
+# Last resort in the trap: anything still carrying the temp dir on its command
+# line. A reader's pipeline subshell keeps the script's argv, so an orphan shows
+# up as `sh .../move-loaded-set-reader.sh $T/launch.log ...` with PPID 1 — the
+# descendant walk cannot reach it once its parent is gone.
+trap 'reap "${READER_PID:-0}"; reap "${READER2_PID:-0}"; kill "${OWNER_PID:-0}" "${OWNER2_PID:-0}" 2>/dev/null || true; pkill -f "$T" 2>/dev/null || true; rm -rf "$T"' EXIT
 
 LOG="$T/launch.log"
 OUT="$T/move_loaded_set.txt"
@@ -106,6 +110,14 @@ TREE2="$(descendants "$READER2_PID")"
 check "second reader has a pipeline too" test -n "$TREE2"
 kill "$OWNER2_PID"
 check "owner gone (session exec-ed on / died) -> reader and pipeline stop themselves" gone_within "$READER2_PID" $TREE2
+
+# ---- nothing survives: no reader, no tail, no pipeline subshell ------------
+# Checked by COMMAND LINE, not by the trees captured above: an orphan is
+# reparented to init and no longer anyone's descendant, which is exactly how
+# the pre-fix reader leaked past a check that only walked the tree.
+survivors() { pgrep -f "$T" 2>/dev/null || true; }
+no_survivors_within() { local n=0; while [ $n -lt 40 ]; do [ -z "$(survivors)" ] && return 0; sleep 0.1; n=$((n+1)); done; return 1; }
+check "no process mentioning this test's log survives either stop" no_survivors_within
 
 # ---- launch.sh wiring: one reader, started where no exit path can skip it --
 L=standalone/scripts/launch.sh
