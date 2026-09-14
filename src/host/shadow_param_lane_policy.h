@@ -75,6 +75,38 @@
  *                          the mailbox's pacing by staying on it; the writes
  *                          behind them queue in order (the producer gate also
  *                          requires the mailbox idle).
+ *
+ *   "master_fx:resample_bridge", "master_fx:link_audio_routing",
+ *   "master_fx:link_audio_publish", "master_fx:latency_comp_enabled",
+ *   "master_fx:system_link_enabled"
+ *                          SHIM SPECIALS delegated to host.apply_set_special
+ *                          (shadow_chain_mgmt.c's master-fx SET path, the
+ *                          `!has_slot_prefix` arm ~:3413-3420) — the same
+ *                          "side effect the caller reads back" shape as the
+ *                          generic jack:/suspend_overtake/passthrough
+ *                          exclusions above, just spelled under the
+ *                          master_fx: prefix instead of bare. Exact matches
+ *                          only, and only when NOT `fx1:`..`fx4:`-prefixed —
+ *                          the dispatcher's own `has_slot_prefix` gate means
+ *                          an fxN:-scoped key of the same name (were one ever
+ *                          added) is an ordinary per-slot MFX parameter, not
+ *                          one of these specials, and ships on the lane.
+ *
+ *   "overtake_dsp:state_load", "overtake_dsp:state_path", "overtake_dsp:save"
+ *                          LOADER/SAVE, same shape as the generic loader
+ *                          exclusions but scoped to dAVEBOx's own DSP
+ *                          (seq8_set_param.c's globals handler,
+ *                          dsp/setparam/sp_globals_state.c): state_load reads
+ *                          a project file and can cost tens of ms
+ *                          (seq8_state.c: "7.8-38.9 ms against a 2.9 ms audio
+ *                          block" even after the strstr-index fix); save
+ *                          calls seq8_save_state synchronously on the
+ *                          suspend path, which the caller waits on before the
+ *                          host may kill the module's JS. Exact sub-key
+ *                          matches only — `overtake_dsp:state_loaded` (the
+ *                          GET-only readback of whether a load landed) is an
+ *                          ordinary key and stays eligible, same as `load`
+ *                          vs `loaded` above.
  */
 static inline int spl_key_eligible(const char *key)
 {
@@ -103,11 +135,15 @@ static inline int spl_key_eligible(const char *key)
         if (n >= 6 && strcmp(key + n - 6, ":state") == 0) return 0;
     }
 
-    /* Lifecycle: overtake DSP load/unload. Sub-key match, not prefix — every
-     * other overtake_dsp: key is an ordinary parameter and stays eligible. */
+    /* Lifecycle: overtake DSP load/unload/state_load/state_path/save.
+     * Sub-key match, not prefix — every other overtake_dsp: key (including
+     * the GET-only readback `state_loaded`) is an ordinary parameter and
+     * stays eligible. */
     if (strncmp(key, "overtake_dsp:", 13) == 0) {
         const char *sub = key + 13;
-        if (strcmp(sub, "load") == 0 || strcmp(sub, "unload") == 0) return 0;
+        if (strcmp(sub, "load") == 0 || strcmp(sub, "unload") == 0 ||
+            strcmp(sub, "state_load") == 0 || strcmp(sub, "state_path") == 0 ||
+            strcmp(sub, "save") == 0) return 0;
         return 1;
     }
 
@@ -115,6 +151,16 @@ static inline int spl_key_eligible(const char *key)
     if (strncmp(key, "jack:", 5) == 0) return 0;
     if (strcmp(key, "suspend_overtake") == 0) return 0;
     if (strcmp(key, "passthrough") == 0) return 0;
+
+    /* master_fx: shim specials — exact matches only, mirroring the
+     * dispatcher's `!has_slot_prefix` arm (shadow_chain_mgmt.c ~:3413-3420).
+     * An fxN:-prefixed key of the same name is an ordinary per-slot MFX
+     * parameter and falls through to eligible below. */
+    if (strcmp(key, "master_fx:resample_bridge") == 0 ||
+        strcmp(key, "master_fx:link_audio_routing") == 0 ||
+        strcmp(key, "master_fx:link_audio_publish") == 0 ||
+        strcmp(key, "master_fx:latency_comp_enabled") == 0 ||
+        strcmp(key, "master_fx:system_link_enabled") == 0) return 0;
 
     return 1;
 }

@@ -341,7 +341,7 @@ decided by the caller (JS side), not arbitrated between paths on the C side.
 | class | path | size | rate | needs reply? |
 |---|---|---|---|---|
 | knob detents, `pa_*` automation writes, SnapMorph/`transient` pushes, `pendingDefaultSetParams` | fire-and-forget SET: lane if eligible, else `spq`, else mailbox | small–≤2 KB | per detent/tick | no |
-| lifecycle/special: `overtake_dsp:load`/`unload`, `jack:`, `suspend_overtake`, `passthrough` | **mailbox only** | small | rare | side effects on the shim |
+| lifecycle/special: `overtake_dsp:load`/`unload`/`state_load`/`state_path`/`save`, `jack:`, `suspend_overtake`, `passthrough`, `master_fx:resample_bridge`/`link_audio_routing`/`link_audio_publish`/`latency_comp_enabled`/`system_link_enabled` | **mailbox only** | small | rare | side effects on the shim |
 | reads (tick prefetch, `pa_list`, digests, bulk GET), state blobs (`<prefix>:state`, chunked load/save, snapshots) | mailbox | up to 128 KB | 1+/tick, or per load/save | yes |
 | live notes (`liveSendNote`) | MIDI inject ring (its own, unrelated transport) | 4 B | per note | no |
 | manager / web UI | web ring, applied through the same one-dispatcher call as the mailbox | ≤255 B | remote edits | no |
@@ -370,7 +370,13 @@ mailbox is applied before that read is served. Excluded from the lane, always: `
 /`unload`, `jack:`, `suspend_overtake`, `passthrough`, any `*:state`/blob key, and the LOADERS —
 any `<comp>:module`, `load_file`, `load_patch`, `patch` — which dlopen or read a capture inside the
 dispatcher and keep the mailbox's one-per-frame pacing (the lane would run several per SPI
-callback). Eligible AND `spq` empty AND **the mailbox idle** AND the lane has room → lane; otherwise
+callback). Also excluded (S6, 2026-09-14): dAVEBOx's own DSP loader/save keys
+`overtake_dsp:state_load`/`state_path`/`save` (project file I/O, tens of ms — see
+`davebox/dsp/CLAUDE.md`'s Deferred save section), and the `master_fx:` shim specials delegated to
+`host.apply_set_special` (`resample_bridge`, `link_audio_routing`, `link_audio_publish`,
+`latency_comp_enabled`, `system_link_enabled` — exact matches only, kept in step with the
+dispatcher's own list by `tests/host/test_lane_master_fx_specials_match.sh`; an `fxN:`-scoped key
+of the same name is an ordinary per-slot MFX parameter and IS eligible). Eligible AND `spq` empty AND **the mailbox idle** AND the lane has room → lane; otherwise
 the existing `spq_offer` path, unchanged. The mailbox-idle condition is not optional: the queue can
 be empty while a request still sits unserviced in the mailbox (`SPQ_COMMIT_NOW`), and the lane is
 drained first, so without it a lane write overtakes that request. Bulk SETs take the lane only when
