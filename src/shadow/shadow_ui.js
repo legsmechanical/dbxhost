@@ -40,7 +40,7 @@ import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
 import * as BusModel from '/data/UserData/schwung/shared/bus_model.mjs';
 /* Snapshot / recall — the PURE half (parsers, the restore planner, the bulk
  * packing). The host bindings below drive it; dAVEBOx owns the gesture. */
-import { parseSlotSnapshot, parseBusSnapshot, planRestore, batchWrites, bulkEncodeItems, scopeForWrites }
+import { parseSlotSnapshot, parseBusSnapshot, planRestore, batchWrites, bulkEncodeItems, bulkDecode, scopeForWrites }
     from '/data/UserData/schwung/shared/snapshot.mjs';
 /* The ONE definition of "this two-state control is a momentary button", shared
  * with the param-pages knob grid. See isTriggerParam below for why this file
@@ -859,8 +859,15 @@ let autosaveSuppressUntil = 0;  /* Date.now() ms; suppress autosave after set ch
 /* Dirty-driven autosave (see tick()). Pending slot/bus bitmasks + a
  * quiet-period countdown, so a knob sweep coalesces into ONE save instead of
  * hundreds. */
-let autosaveDirtySlots = 0;
+let autosaveDirtySlots = 0;   /* CHAIN (slot_N.json), per slot */
+let autosaveDirtyConfig = 0;  /* SLOT SETTINGS (shadow_chain_config.json, one file) */
 let autosaveDirtyBuses = 0;
+/* Units that FAILED in the current pass, skipped until everything else pending
+ * has had its turn — so one slot whose save cannot land (a busy mailbox, a
+ * slot the shim reports empty while its file is preserved) never starves the
+ * config and bus saves queued behind it. Cleared when a pass runs dry. */
+let autosaveDeferredSlots = 0;
+let autosaveConfigDeferred = false;
 let autosaveNotBefore = 0;  /* Date.now() ms: the quiet period / retry back-off */
 let autosaveDirtySince = 0; /* Date.now() ms the oldest unsaved edit landed; 0 = clean */
 /* A module may HOLD the mid-session autosave (host_autosave_hold) — a
@@ -5094,6 +5101,33 @@ function saveSlotsToConfig(nextSlots) {
     }
 }
 
+/* The slot settings shadow_chain_config.json holds, read per slot in ONE
+ * `chain:` bulk GET. Keep in step with the C writer in shadow_set_pages.c —
+ * both write this file and the last one to run wins it whole, so a field
+ * missing from either is silently dropped (test_autosave_units.sh cross-pins
+ * the two). */
+const CHAIN_CONFIG_KEYS = [
+    "slot:volume", "slot:pan", "slot:receive_channel", "slot:forward_channel",
+    "slot:muted", "slot:soloed", "slot:send_a", "slot:send_b",
+    "slot:transpose", "slot:synth_volume",
+];
+
+/* One slot's CHAIN_CONFIG_KEYS values, in order — or null when ANY of them was
+ * not answered: a failed request (timeout, overflow) or a `?` (the host did not
+ * resolve that key). Never a partial array: the caller's defaults would fill
+ * the gaps and be written as the user's settings. */
+function readSlotConfigValues(slotIndex) {
+    if (typeof shadow_get_params !== "function") return null;
+    let raw = null;
+    try { raw = shadow_get_params(slotIndex, "chain:", bulkEncodeItems(CHAIN_CONFIG_KEYS)); }
+    catch (e) { raw = null; }
+    if (raw === null || raw === undefined) return null;
+    const vals = bulkDecode(String(raw));
+    if (!vals || vals.length !== CHAIN_CONFIG_KEYS.length) return null;
+    for (const v of vals) if (v === null) return null;
+    return vals;
+}
+
 /* Save chain config (volumes, channels, mute/solo) to a per-set directory.
  * Mirrors what shadow_save_config_to_dir() did on the C side, but runs
  * on the UI thread to avoid blocking the audio thread. */
@@ -5101,37 +5135,40 @@ function saveChainConfigToDir(dir) {
     if (!dir) return false;
     const path = dir + "/shadow_chain_config.json";
     try {
-        /* Every field below falls back to a DEFAULT when its read returns
-         * nothing, so a round of failed reads would not error — it would
-         * quietly write a file full of defaults over the user's settings.
-         * Harmless at the transition flushes (the mailbox is quiet there), but
-         * this is now also called mid-session, so prove the reads work before
-         * trusting any of them. slot:volume is served by the chain manager for
-         * every slot, so a null here means "cannot read", never "unset". */
-        if (getSlotParam(0, "slot:volume") === null) {
-            debugLog("saveChainConfigToDir: slot params unreadable — skipping " +
-                     "(refusing to overwrite with defaults)");
-            return false;
+        /* Every field below falls back to a DEFAULT when its value is empty,
+         * so a round of failed reads would not error — it would quietly write
+         * a file full of defaults over the user's settings. So EVERY slot is
+         * read before anything is written, and one unanswered key refuses the
+         * whole write (refusing to overwrite with defaults); the caller keeps
+         * its dirty bits and retries. One bulk GET per slot: 8 round-trips
+         * where this used to cost 81 single reads. */
+        const perSlot = [];
+        for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+            const vals = readSlotConfigValues(i);
+            if (!vals) {
+                debugLog("saveChainConfigToDir: slot " + i + " params unreadable — skipping " +
+                         "(refusing to overwrite with defaults)");
+                return false;
+            }
+            perSlot.push(vals);
         }
         const cfgSlots = [];
         for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
-            const vol = parseFloat(getSlotParam(i, "slot:volume") || "1");
-            const pan = parseFloat(getSlotParam(i, "slot:pan") || "0.5");
-            const ch = parseInt(getSlotParam(i, "slot:receive_channel") || "0");
-            const fwd = parseInt(getSlotParam(i, "slot:forward_channel") || "-1");
-            const muted = parseInt(getSlotParam(i, "slot:muted") || "0");
-            const soloed = parseInt(getSlotParam(i, "slot:soloed") || "0");
-            const sendA = parseFloat(getSlotParam(i, "slot:send_a") || "0");
-            const sendB = parseFloat(getSlotParam(i, "slot:send_b") || "0");
+            const [volR, panR, chR, fwdR, mutedR, soloedR, sendAR, sendBR, transposeR, synthVolR] = perSlot[i];
+            const vol = parseFloat(volR || "1");
+            const pan = parseFloat(panR || "0.5");
+            const ch = parseInt(chR || "0");
+            const fwd = parseInt(fwdR || "-1");
+            const muted = parseInt(mutedR || "0");
+            const soloed = parseInt(soloedR || "0");
+            const sendA = parseFloat(sendAR || "0");
+            const sendB = parseFloat(sendBR || "0");
             /* Transpose was exposed as a slot setting and wired through the
              * shim (set + get, reset to 0 on start) but never serialised by
              * anything — so it silently reverted to 0 on every host start.
              * Reported on hardware 2026-08-05 as "the change didn't stick". */
-            const transpose = parseInt(getSlotParam(i, "slot:transpose") || "0", 10) || 0;
-            /* Keep in step with the C writer in shadow_set_pages.c — both write
-             * this file and the last one to run wins it whole, so a field
-             * missing from either is silently dropped. */
-            const synthVol = parseFloat(getSlotParam(i, "slot:synth_volume") || "1");
+            const transpose = parseInt(transposeR || "0", 10) || 0;
+            const synthVol = parseFloat(synthVolR || "1");
             cfgSlots.push({ name: slots[i] ? slots[i].name : "", channel: ch, volume: vol, pan: isNaN(pan) ? 0.5 : pan, forward_channel: fwd, muted: muted, soloed: soloed, send_a: sendA, send_b: sendB, transpose: transpose, synth_volume: isNaN(synthVol) ? 1 : synthVol });
         }
         return !!host_write_file(path, JSON.stringify({ slots: cfgSlots }, null, 2) + "\n");
@@ -5825,7 +5862,8 @@ function saveAllFxBusConfigs() {
     saveMoveFxChainConfig();
 }
 
-/* One unit of dirty-driven autosave work: a single slot, or a single FX bus.
+/* One unit of dirty-driven autosave work: a single slot's chain, the slot
+ * settings file (all slots, once per pass), or a single FX bus.
  *
  * Strictly one per tick. Every unit costs get_param round-trips — a Move bus
  * walks MOVE_FX_BLOCKS_JS blocks plus the shared strip meta — and a whole
@@ -6285,7 +6323,8 @@ function autosaveTraced(kind, fn) {
 
 function saveOneDirtyUnit() {
     for (let slot = 0; slot < SHADOW_UI_SLOTS; slot++) {
-        if (autosaveDirtySlots & (1 << slot)) {
+        const bit = 1 << slot;
+        if ((autosaveDirtySlots & bit) && !(autosaveDeferredSlots & bit)) {
             /* Clear the bit ONLY if the slot was really written.
              *
              * Reading a synth's state needs a round trip through the param
@@ -6300,27 +6339,29 @@ function saveOneDirtyUnit() {
              * the tool is not busy forever — the retry lands as soon as the
              * mailbox goes quiet, which is also when the read was always going
              * to succeed. */
-            /* Two different files, and a slot edit can touch either.
-             *   slot_N.json           — the CHAIN (synth/FX state blobs)
+            /* Two different files, and a slot edit can touch either — so they
+             * are two DIRTY MASKS (host/shadow_dirty_policy.h) and two units.
+             *   slot_N.json           — the CHAIN (synth/FX state blobs): here
              *   shadow_chain_config.json — the SLOT's own settings: volume,
-             *                              channel, mute/solo, sends, transpose
+             *                              channel, mute/solo, sends, transpose;
+             *                              the config unit below, once per pass
              * Writing only the first is why a slot:transpose change survived
              * nothing on 2026-08-05: the chain file was the only thing this
              * path ever wrote, and transpose does not live there.
              *
-             * The config write is counted as success on its own. A slot whose
-             * synth cannot report state (a module with no get_param("state"),
-             * which is legal) would otherwise retry forever and never persist
-             * the settings that ARE readable. */
-            const wroteChain  = autosaveTraced("slot", () => autosaveAllSlots(slot));
-            const wroteConfig = autosaveTraced("config", () => saveChainConfigToDir(activeSlotStateDir));
-            if (wroteChain || wroteConfig) {
-                autosaveDirtySlots &= ~(1 << slot);
-                debugLog("autosave: slot " + slot +
-                         " written (chain=" + wroteChain + " config=" + wroteConfig + ")");
+             * Each unit clears only its own bits. That used to be unsafe for a
+             * synth that serves no state (it would retry forever); it is not
+             * now, because "" is an answer (getSlotStateWithRetry) and such a
+             * slot writes. A unit that DOES fail is deferred for the rest of the
+             * pass rather than blocking the units queued behind it. */
+            const wroteChain = autosaveTraced("slot", () => autosaveAllSlots(slot));
+            if (wroteChain) {
+                autosaveDirtySlots &= ~bit;
+                debugLog("autosave: slot " + slot + " chain written");
             } else {
                 /* Back off briefly so a busy mailbox is not hammered every
                  * tick; the bit stays set, so nothing is lost. */
+                autosaveDeferredSlots |= bit;
                 autosaveNotBefore = Date.now() + AUTOSAVE_RETRY_MS;
                 debugLog("autosave: slot " + slot +
                          " not persisted (mailbox busy) — retrying");
@@ -6328,8 +6369,24 @@ function saveOneDirtyUnit() {
             return;
         }
     }
-    /* Any residue is bits outside the slot range — nothing to write. */
-    autosaveDirtySlots = 0;
+    /* Any residue is bits outside the slot range — nothing to write — or a
+     * slot deferred this pass, which keeps its bit. */
+    autosaveDirtySlots &= autosaveDeferredSlots & ((1 << SHADOW_UI_SLOTS) - 1);
+
+    /* The slot settings: ONE file for every slot, so ONE write however many
+     * slots changed (a mixer gesture across four tracks used to rewrite it
+     * four times). All config bits clear together, and only on success. */
+    if (autosaveDirtyConfig && !autosaveConfigDeferred) {
+        if (autosaveTraced("config", () => saveChainConfigToDir(activeSlotStateDir))) {
+            autosaveDirtyConfig = 0;
+            debugLog("autosave: slot config written");
+        } else {
+            autosaveConfigDeferred = true;
+            autosaveNotBefore = Date.now() + AUTOSAVE_RETRY_MS;
+            debugLog("autosave: slot config not persisted (unreadable) — retrying");
+        }
+        return;
+    }
 
     /* FX buses. Live since P4b: the savers distinguish "empty" (persist the
      * removal) from "could not read" (preserve the file, return false), so a
@@ -6341,6 +6398,7 @@ function saveOneDirtyUnit() {
             debugLog("autosave: master fx written");
         } else {
             autosaveNotBefore = Date.now() + AUTOSAVE_RETRY_MS;
+            autosaveEndPass();
             debugLog("autosave: master fx not persisted (mailbox busy) — retrying");
         }
         return;
@@ -6351,6 +6409,7 @@ function saveOneDirtyUnit() {
             debugLog("autosave: send fx a written");
         } else {
             autosaveNotBefore = Date.now() + AUTOSAVE_RETRY_MS;
+            autosaveEndPass();
         }
         return;
     }
@@ -6360,6 +6419,7 @@ function saveOneDirtyUnit() {
             debugLog("autosave: send fx b written");
         } else {
             autosaveNotBefore = Date.now() + AUTOSAVE_RETRY_MS;
+            autosaveEndPass();
         }
         return;
     }
@@ -6371,11 +6431,22 @@ function saveOneDirtyUnit() {
                 debugLog("autosave: move fx bus " + m + " written");
             } else {
                 autosaveNotBefore = Date.now() + AUTOSAVE_RETRY_MS;
+                autosaveEndPass();
             }
             return;
         }
     }
     autosaveDirtyBuses = 0;
+    autosaveEndPass();
+}
+
+/* End the pass: what was deferred gets its retry on the next one. Called when
+ * the pass runs dry AND when a bus unit fails — the buses are last in the
+ * order, so a bus that keeps failing must not leave a deferred slot waiting
+ * for a dry pass that never comes. */
+function autosaveEndPass() {
+    autosaveDeferredSlots = 0;
+    autosaveConfigDeferred = false;
 }
 
 /* Actually save the preset */
@@ -17962,20 +18033,19 @@ globalThis.tick = function() {
         snapshotRecallTick();
         if (nowMs >= autosaveSuppressUntil &&
             typeof shadow_take_dirty_slots === "function") {
-            /* Chain and slot-settings masks are separate in C; this pass
-             * still writes both files per dirty slot, so it takes their union. */
-            const justDirtied = shadow_take_dirty_slots() |
-                ((typeof shadow_take_dirty_slot_config === "function") ? shadow_take_dirty_slot_config() : 0);
+            const justDirtied = shadow_take_dirty_slots();
+            const configDirtied = shadow_take_dirty_slot_config();
             const busDirtied = (typeof shadow_take_dirty_fx_buses === "function")
                 ? shadow_take_dirty_fx_buses() : 0;
-            if (justDirtied || busDirtied) {
-                if (!autosaveDirtySlots && !autosaveDirtyBuses) autosaveDirtySince = nowMs;
+            if (justDirtied || configDirtied || busDirtied) {
+                if (!autosaveDirtySlots && !autosaveDirtyConfig && !autosaveDirtyBuses) autosaveDirtySince = nowMs;
                 autosaveDirtySlots |= justDirtied;
+                autosaveDirtyConfig |= configDirtied;
                 autosaveDirtyBuses |= busDirtied;
                 /* Restart the quiet period: a knob sweep is one edit, not 200. */
                 autosaveNotBefore = nowMs + AUTOSAVE_QUIET_MS;
             }
-            if (autosaveDirtySlots || autosaveDirtyBuses) {
+            if (autosaveDirtySlots || autosaveDirtyConfig || autosaveDirtyBuses) {
                 /* A writer that fires every tick would hold the quiet period
                  * open forever, so cap the deferral (timeout-skip guard).
                  * Starvation here would silently lose the edit on a crash. */

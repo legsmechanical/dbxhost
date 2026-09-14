@@ -65,9 +65,9 @@ function extract(name) {
     }
     fails.push(`${name}: unbalanced`); return "";
 }
-const code = extract("autosaveTraced") + "\n" + extract("saveOneDirtyUnit");
+const code = extract("autosaveTraced") + "\n" + extract("saveOneDirtyUnit") + "\n" + extract("autosaveEndPass");
 
-function run(code, dirtySlots, dirtyBuses, throwIn) {
+function run(code, dirtySlots, dirtyBuses, throwIn, dirtyConfig = 0) {
     const spans = [];           /* [name, "begin"|"end"] in order */
     let next = 1;
     const open = new Map();
@@ -83,25 +83,30 @@ function run(code, dirtySlots, dirtyBuses, throwIn) {
     const fn = new Function(...Object.keys(scope),
         "autosaveAllSlots", "saveChainConfigToDir", "saveMasterFxChainConfig",
         "saveSendFxChainConfig", "saveMoveFxChainConfig",
-        `let autosaveDirtySlots = ${dirtySlots}, autosaveDirtyBuses = ${dirtyBuses}, autosaveNotBefore = 0;
+        `let autosaveDirtySlots = ${dirtySlots}, autosaveDirtyConfig = ${dirtyConfig}, autosaveDirtyBuses = ${dirtyBuses}, autosaveNotBefore = 0;
+         let autosaveDeferredSlots = 0, autosaveConfigDeferred = false;
          ${code}
          let threw = false;
-         try { saveOneDirtyUnit(); } catch (e) { threw = true; }
+         try { saveOneDirtyUnit(); } catch (e) { threw = e; }
          return threw;`);
     const threw = fn(...Object.values(scope), saver("slot"), saver("config"),
                      saver("master_fx"), saver("send_fx"), saver("move_fx"));
     return { spans, open: open.size, threw };
 }
 
-function check(label, dirtySlots, dirtyBuses, expectKinds, throwIn) {
-    const r = run(code, dirtySlots, dirtyBuses, throwIn);
+function check(label, dirtySlots, dirtyBuses, expectKinds, throwIn, dirtyConfig = 0) {
+    const r = run(code, dirtySlots, dirtyBuses, throwIn, dirtyConfig);
+    /* Only the deliberately throwing saver may throw — a ReferenceError from a
+     * stale stub scope would otherwise read as "no spans". */
+    if (r.threw && !(throwIn && String(r.threw.message) === "boom")) fails.push(`${label}: threw ${r.threw}`);
     const begun = r.spans.filter((s) => s[1] === "begin").map((s) => s[0]);
     if (JSON.stringify(begun) !== JSON.stringify(expectKinds))
         fails.push(`${label}: spans ${JSON.stringify(begun)}, expected ${JSON.stringify(expectKinds)}`);
     if (r.open !== 0) fails.push(`${label}: ${r.open} span(s) left open`);
 }
 
-check("slot unit", 1 << 3, 0, ["autosave.slot", "autosave.config"]);
+check("slot unit", 1 << 3, 0, ["autosave.slot"]);
+check("config unit", 0, 0, ["autosave.config"], undefined, 1 << 2);
 check("master bus", 0, 1, ["autosave.master_fx"]);
 check("send bus", 0, 4, ["autosave.send_fx"]);
 check("move bus", 0, 1 << 10, ["autosave.move_fx"]);

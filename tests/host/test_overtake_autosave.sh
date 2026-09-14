@@ -94,9 +94,9 @@ rg -q 'shadow_mark_fx_bus_dirty\(shadow_param->key\)' "$c" \
 #    than clobber a good file. Clearing the bit in front of that bail discards
 #    the user's edit permanently — observed on hardware 2026-08-05, where a
 #    transpose change logged a save and never reached disk.
-rg -qF 'const wroteChain  = autosaveTraced("slot", () => autosaveAllSlots(slot));' "$js" \
+rg -qF 'const wroteChain = autosaveTraced("slot", () => autosaveAllSlots(slot));' "$js" \
   || fail "$js no longer captures whether the chain was actually written"
-rg -q 'if \(wroteChain \|\| wroteConfig\) \{' "$js" \
+rg -qU 'if \(wroteChain\) \{\n\s*autosaveDirtySlots &= ~bit;' "$js" \
   || fail "$js clears the dirty bit without checking whether anything was actually written — a failed save silently loses the edit"
 rg -q 'return wrote;' "$js" \
   || fail "$js: autosaveAllSlots no longer reports whether it persisted anything"
@@ -125,10 +125,12 @@ rg -qF 'if (autosaveTraced("move_fx", () => saveMoveFxChainConfig(m))) {' "$js" 
 #      (⚠ transpose WAS always serialised — in the GLOBAL file, shadow_state.c.
 #      The real defect was that the per-set copy had no reader and the global
 #      one was applied last at boot. See test_slot_settings_are_per_set.sh.)
-rg -qF 'autosaveTraced("config", () => saveChainConfigToDir(activeSlotStateDir));' "$js" \
-  || fail "$js overtake autosave no longer writes shadow_chain_config.json — slot settings (transpose, sends, mute) would not persist mid-session"
-rg -q 'wroteChain \|\| wroteConfig' "$js" \
-  || fail "$js does not treat a config-only write as success — a synth without get_param(\"state\") would retry forever and never persist readable settings"
+#      Since the dirty classes the two files are two units with two masks, so
+#      each clears only on its OWN success (behaviour: test_autosave_units.sh).
+rg -qU 'if \(autosaveTraced\("config", \(\) => saveChainConfigToDir\(activeSlotStateDir\)\)\) \{\n\s*autosaveDirtyConfig = 0;' "$js" \
+  || fail "$js overtake autosave no longer writes shadow_chain_config.json (or clears its bits without checking) — slot settings (transpose, sends, mute) would not persist mid-session"
+rg -qF 'autosaveDirtyConfig |= configDirtied;' "$js" \
+  || fail "$js does not collect the slot-settings dirty mask — config-only edits would never autosave"
 
 # 10c. slot:transpose must actually be serialised. It was wired end to end in
 #      the shim and shown in the UI, but nothing wrote it, so it reset to 0 on
