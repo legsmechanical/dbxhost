@@ -213,6 +213,45 @@ export function bulkEncodeItems(items) {
     return s;
 }
 
+/* The reply side of a BULK GET, same wire form. Returns an array with one
+ * entry per requested key — the value string, or null where the host answered
+ * `?` (did not resolve that key) — or null for a short/malformed frame.
+ * Moved here from davebox/ui/ui_engine.mjs so the host and dAVEBOx share one
+ * decoder. */
+/* Decode by BYTES: the host counts UTF-8 bytes, JS strings count code units.
+ * ⚠ No TextEncoder/TextDecoder here — QuickJS has neither, and the first cut
+ * threw on every call inside its try, so the bulk path silently fell back to
+ * one read per key (device, 2026-09-06: a 550 ms recall). The byte count is
+ * walked per code unit instead. */
+export function bulkDecode(blob) {
+    const s = String(blob);
+    let p = 0;
+    const readLen = () => { let n = 0, any = false; while (p < s.length && s.charCodeAt(p) >= 48 && s.charCodeAt(p) <= 57) { n = n * 10 + (s.charCodeAt(p) - 48); p++; any = true; } if (!any || s.charCodeAt(p) !== 10) return -1; p++; return n; };
+    const count = readLen(); if (count < 0) return null;
+    const out = [];
+    for (let i = 0; i < count; i++) {
+        /* ⚠⚠ `?` MEANS THE HOST DID NOT RESOLVE THAT KEY, which is a different
+         * fact from a value that is the empty string — and until the host said
+         * so the two were the same bytes on the wire. A `null` here is what lets
+         * a caller (davebox's engineGetMany, the host autosave) act on that ONE
+         * key instead of guessing from whether the whole chunk came back blank. */
+        if (s.charCodeAt(p) === 63 /* ? */ && s.charCodeAt(p + 1) === 10) {
+            p += 2; out.push(null); continue;
+        }
+        const nb = readLen(); if (nb < 0) return null;
+        let bytes = 0; const start = p;
+        while (bytes < nb && p < s.length) {
+            const c = s.charCodeAt(p);
+            if (c < 0x80) bytes += 1; else if (c < 0x800) bytes += 2;
+            else if (c >= 0xD800 && c <= 0xDBFF) { bytes += 4; p++; } else bytes += 3;
+            p++;
+        }
+        if (bytes !== nb) return null;
+        out.push(s.slice(start, p));
+    }
+    return out;
+}
+
 /*
  * Pack the plan's writes into bulk SETs: one request per slot per batch,
  * each `<key>:state` + `<key>:bypassed` pair kept together, batches split so

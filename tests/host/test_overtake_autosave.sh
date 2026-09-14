@@ -37,9 +37,15 @@ rg -q 'shadow_take_dirty_slots' "$c" \
   || fail "$c no longer exposes shadow_take_dirty_slots to JS"
 
 # 2. BOTH write paths mark: the common setter and the bulk setter.
-common_marks=$(rg -c 'g_slot_param_dirty_mask \|=' "$c" || echo 0)
-[ "${common_marks:-0}" -ge 2 ] \
-  || fail "$c marks the dirty bit in fewer than 2 places; the bulk SET path (a :state restore) is almost certainly uncovered"
+#    Two masks since the dirty classes (chain file / slot-settings file): each
+#    is marked by the common setter's helper, the bulk setter and the web fold.
+for m in g_slot_param_dirty_mask g_slot_config_dirty_mask; do
+  marks=$(rg -c "$m +\|=" "$c" || echo 0)
+  [ "${marks:-0}" -ge 3 ] \
+    || fail "$c marks $m in fewer than 3 places (common, bulk, web fold); the bulk SET path (a :state restore) is almost certainly uncovered"
+done
+rg -q 'shadow_take_dirty_slot_config' "$c" \
+  || fail "$c no longer exposes shadow_take_dirty_slot_config to JS — slot settings would never autosave"
 
 # 3. The JS side consumes it UNCONDITIONALLY (P4b): the dirty-driven path is
 #    the only mid-session autosave and must not be gated on what's on screen.
@@ -88,9 +94,9 @@ rg -q 'shadow_mark_fx_bus_dirty\(shadow_param->key\)' "$c" \
 #    than clobber a good file. Clearing the bit in front of that bail discards
 #    the user's edit permanently — observed on hardware 2026-08-05, where a
 #    transpose change logged a save and never reached disk.
-rg -q 'const wroteChain  = autosaveAllSlots\(slot\);' "$js" \
+rg -qF 'const wroteChain = autosaveTraced("slot", () => autosaveAllSlots(slot));' "$js" \
   || fail "$js no longer captures whether the chain was actually written"
-rg -q 'if \(wroteChain \|\| wroteConfig\) \{' "$js" \
+rg -qU 'if \(wroteChain\) \{\n\s*autosaveDirtySlots &= ~bit;' "$js" \
   || fail "$js clears the dirty bit without checking whether anything was actually written — a failed save silently loses the edit"
 rg -q 'return wrote;' "$js" \
   || fail "$js: autosaveAllSlots no longer reports whether it persisted anything"
@@ -105,11 +111,11 @@ for saver_pin in 'const _name = shadow_get_param' 'if (_name === null || _name =
   [ "${n:-0}" -ge 2 ] \
     || fail "$js FX bus savers lost the null-vs-empty guard on the :name read ('$saver_pin' found $n times, need 2) — a timed-out read would blank a good bus config"
 done
-rg -qF 'if (saveMasterFxChainConfig(true)) {' "$js" \
+rg -qF 'if (autosaveTraced("master_fx", () => saveMasterFxChainConfig(true))) {' "$js" \
   || fail "$js dirty path no longer checks the master saver's result — a failed save would clear the bit and drop the edit"
-rg -qF 'if (saveSendFxChainConfig("a")) {' "$js" \
+rg -qF 'if (autosaveTraced("send_fx", () => saveSendFxChainConfig("a"))) {' "$js" \
   || fail "$js dirty path no longer checks the send saver's result"
-rg -qF 'if (saveMoveFxChainConfig(m)) {' "$js" \
+rg -qF 'if (autosaveTraced("move_fx", () => saveMoveFxChainConfig(m))) {' "$js" \
   || fail "$js dirty path no longer checks the move saver's result"
 
 # 10b. A slot edit must write BOTH files. slot_N.json holds the chain (synth/FX
@@ -119,10 +125,12 @@ rg -qF 'if (saveMoveFxChainConfig(m)) {' "$js" \
 #      (⚠ transpose WAS always serialised — in the GLOBAL file, shadow_state.c.
 #      The real defect was that the per-set copy had no reader and the global
 #      one was applied last at boot. See test_slot_settings_are_per_set.sh.)
-rg -q 'saveChainConfigToDir\(activeSlotStateDir\);' "$js" \
-  || fail "$js overtake autosave no longer writes shadow_chain_config.json — slot settings (transpose, sends, mute) would not persist mid-session"
-rg -q 'wroteChain \|\| wroteConfig' "$js" \
-  || fail "$js does not treat a config-only write as success — a synth without get_param(\"state\") would retry forever and never persist readable settings"
+#      Since the dirty classes the two files are two units with two masks, so
+#      each clears only on its OWN success (behaviour: test_autosave_units.sh).
+rg -qU 'if \(autosaveTraced\("config", \(\) => saveChainConfigToDir\(activeSlotStateDir\)\)\) \{\n\s*autosaveDirtyConfig = 0;' "$js" \
+  || fail "$js overtake autosave no longer writes shadow_chain_config.json (or clears its bits without checking) — slot settings (transpose, sends, mute) would not persist mid-session"
+rg -qF 'autosaveDirtyConfig |= configDirtied;' "$js" \
+  || fail "$js does not collect the slot-settings dirty mask — config-only edits would never autosave"
 
 # 10c. slot:transpose must actually be serialised. It was wired end to end in
 #      the shim and shown in the UI, but nothing wrote it, so it reset to 0 on
@@ -137,6 +145,18 @@ rg -q 'setSlotParamWithTimeout\(i, "slot:transpose"' "$js" \
 #      user's settings with defaults rather than error.
 rg -q 'refusing to overwrite with defaults' "$js" \
   || fail "$js saveChainConfigToDir lost its unreadable-params guard; it would clobber settings with defaults"
+
+# 10e. Every `slot:` key buildSlotPatchJson writes into slot_N.json must class
+#      BOTH in host/shadow_dirty_policy.h, or a change to it dirties only the
+#      config and the chain file silently keeps the old value.
+build_fn=$(awk '/^function buildSlotPatchJson\(/,/^}/' "$js")
+[ -n "$build_fn" ] || fail "$js: buildSlotPatchJson not found"
+chain_slot_keys=$(printf '%s' "$build_fn" | rg -o '"slot:[a-z_]+"' | tr -d '"' | sed 's/^slot://' | sort -u)
+[ -n "$chain_slot_keys" ] || fail "control: no slot: keys found in buildSlotPatchJson — the cross-pin is checking nothing"
+for k in $chain_slot_keys; do
+  rg -qF "strcmp(key + 5, \"$k\") == 0" src/host/shadow_dirty_policy.h \
+    || fail "slot:$k is written into slot_N.json but shadow_dirty_policy.h does not class it BOTH"
+done
 
 # 11. Still exactly one unit of work per tick.
 rg -q 'function saveOneDirtyUnit' "$js" \

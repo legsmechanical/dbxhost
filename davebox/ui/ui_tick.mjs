@@ -1281,11 +1281,16 @@ export function _tickImpl() {
              * host's slot-level setter nor its bus-strip setter saves, and
              * saving is a sync file write.
              *
-             * ONE call covers both flavours: engineSaveState flushes every FX
-             * bus family alongside the slots, so a bus level reaches the set's
-             * move_fx_meta.json by the same act that writes slot_N.json. (This
-             * is the same call sound mode's own VOLUME row ends its gesture
-             * with — there is no second cadence to hit.)
+             * The ordinary case kicks the host's dirty-driven autosave
+             * (host_autosave_kick(), S5) rather than calling engineSaveState()
+             * — that flush is a synchronous full sweep of EVERY slot and FX
+             * bus family (0.6-0.9 s on 8 dirty slots, previously the whole
+             * point of "500 ms after any fader turn" being a stall).
+             * host_autosave_kick() just brings the ALREADY-PENDING dirty-mask
+             * save forward, so it costs only what is actually dirty — a bus
+             * level still reaches move_fx_meta.json, just via the normal
+             * per-unit autosave rather than this call. Suspend keeps the full
+             * engineSaveState() flush below — see that branch.
              *
              * ⚠ "No writes pending" is NOT the end of a gesture. Encoder messages
              * arrive in bursts, so a continuous turn leaves quiet ticks all the
@@ -1299,7 +1304,19 @@ export function _tickImpl() {
                 ((S.clockMs - S.sessVolLastTurn) >= SESSVOL_SAVE_IDLE_MS ||
                  S.pendingSuspendSave)) {
                 S.sessVolSaveOwed = false;
-                engineSaveState();
+                /* Suspend needs the FULL synchronous flush (device is about to
+                 * lose power/suspend, so every dirty file must be on disk
+                 * before we return) — engineSaveState() stays for that case.
+                 * The ordinary idle-gesture case just needs the dirty-driven
+                 * autosave to stop waiting out its own quiet period; kicking
+                 * it does that in a fraction of the round-trips, since it
+                 * re-reads only what is actually dirty rather than sweeping
+                 * every slot/bus. */
+                if (S.pendingSuspendSave) {
+                    engineSaveState();
+                } else {
+                    host_autosave_kick();
+                }
             }
         }
 

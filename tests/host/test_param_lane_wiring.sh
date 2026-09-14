@@ -246,7 +246,7 @@ run_checks() {
     fi
     # the dirty marking stays above the branch, untouched
     local ln_dirty
-    ln_dirty="$(grep -n 'g_slot_param_dirty_mask |=' "$w/set.c" | head -1 | cut -d: -f1 || true)"
+    ln_dirty="$(grep -n 'shadow_mark_slot_dirty(slot, key);' "$w/set.c" | head -1 | cut -d: -f1 || true)"
     if [ -n "$ln_dirty" ] && [ -n "$ln_ff" ]; then
         [ "$ln_dirty" -lt "$ln_ff" ] \
             || say "the autosave dirty marking must still happen for EVERY write, above the fire-and-forget branch"

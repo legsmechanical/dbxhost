@@ -39,6 +39,20 @@ int main(void) {
     OK(spl_key_eligible(NULL) == 0,                  "NULL is not eligible");
     OK(spl_key_eligible("") == 0,                    "the empty key is not eligible");
 
+    /* --- S6: master_fx: shim specials (shadow_chain_mgmt.c's dispatcher
+     * list, ~:3413-3420) --------------------------------------------------- */
+    OK(spl_key_eligible("master_fx:resample_bridge") == 0,     "master_fx:resample_bridge is EXCLUDED");
+    OK(spl_key_eligible("master_fx:link_audio_routing") == 0,  "master_fx:link_audio_routing is EXCLUDED");
+    OK(spl_key_eligible("master_fx:link_audio_publish") == 0,  "master_fx:link_audio_publish is EXCLUDED");
+    OK(spl_key_eligible("master_fx:latency_comp_enabled") == 0, "master_fx:latency_comp_enabled is EXCLUDED");
+    OK(spl_key_eligible("master_fx:system_link_enabled") == 0, "master_fx:system_link_enabled is EXCLUDED");
+
+    /* --- S6: overtake_dsp: state_load / state_path / save (dAVEBOx's own
+     * DSP globals handler, dsp/setparam/sp_globals_state.c) --------------- */
+    OK(spl_key_eligible("overtake_dsp:state_load") == 0, "overtake_dsp:state_load is EXCLUDED (project file read, tens of ms)");
+    OK(spl_key_eligible("overtake_dsp:state_path") == 0, "overtake_dsp:state_path is EXCLUDED");
+    OK(spl_key_eligible("overtake_dsp:save") == 0,       "overtake_dsp:save is EXCLUDED (synchronous save on the suspend path)");
+
     /* --- THE CONTROL: the prefix must not be excluded wholesale ---------- */
     OK(spl_key_eligible("overtake_dsp:t0_route") == 1,
        "CONTROL: overtake_dsp:t0_route IS eligible — the exclusion is the two sub-keys, not the prefix");
@@ -46,6 +60,12 @@ int main(void) {
        "CONTROL: overtake_dsp:loaded IS eligible — `load` is an exact match, not a prefix");
     OK(spl_key_eligible("overtake_dsp:unloader") == 1,
        "CONTROL: overtake_dsp:unloader IS eligible for the same reason");
+    OK(spl_key_eligible("overtake_dsp:state_loaded") == 1,
+       "CONTROL: overtake_dsp:state_loaded (the GET-only readback) IS eligible — `state_load` is exact, not a prefix");
+    OK(spl_key_eligible("overtake_dsp:state_load_ok") == 1,
+       "CONTROL: overtake_dsp:state_load_ok IS eligible for the same reason");
+    OK(spl_key_eligible("overtake_dsp:save_slot") == 1,
+       "CONTROL: overtake_dsp:save_slot IS eligible — `save` is exact, not a prefix");
 
     /* --- the ordinary traffic the lane exists to carry -------------------- */
     OK(spl_key_eligible("synth:cutoff") == 1,        "synth:cutoff is eligible");
@@ -76,6 +96,21 @@ int main(void) {
     OK(spl_key_eligible("estate") == 1,              "`estate` does not end in `:state`");
     OK(spl_key_eligible("jackal") == 1,              "`jackal` is not the jack: namespace");
     OK(spl_key_eligible("suspend_overtake_x") == 1,  "suspend_overtake_x is a different key");
+
+    /* --- S6 near misses: an fxN:-prefixed key of the same name is an
+     * ORDINARY per-slot MFX parameter, not the shim special — mirrors the
+     * dispatcher's has_slot_prefix gate. And a longer/shorter name must not
+     * false-match the exact strcmp. */
+    OK(spl_key_eligible("master_fx:fx1:resample_bridge") == 1,
+       "CONTROL: an fx1:-scoped resample_bridge is an ordinary MFX param, not the shim special");
+    OK(spl_key_eligible("master_fx:fx3:system_link_enabled") == 1,
+       "CONTROL: same for fx3: (this fork's 3rd block)");
+    OK(spl_key_eligible("master_fx:resample_bridge_x") == 1,
+       "CONTROL: master_fx:resample_bridge_x is not the exact special");
+    OK(spl_key_eligible("master_fx:link_audio_routing_extra") == 1,
+       "CONTROL: a longer name is not caught by the exact match");
+    OK(spl_key_eligible("master_fx:fx1:mix") == 1,
+       "CONTROL: master_fx:fx1:mix (ordinary MFX param) stays eligible");
 
     printf("PASS: test_param_lane_policy (%d checks)\n", checks);
     return 0;

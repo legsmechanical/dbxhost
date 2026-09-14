@@ -15,8 +15,10 @@ globalThis.host_module_get_params = (blob) => enc(dec(blob).map((k) => {
     return (v === null || v === undefined) ? '' : String(v);
 }));
 
-/* The host's autosave hold: a no-op here; the edge is pinned by its own test. */
+/* The host's autosave hold/kick: no-ops here; each is pinned by its own test
+ * (test_autosave_hold_edge.mjs, test_sessvol_save_kick.mjs). */
 if (typeof globalThis.host_autosave_hold !== 'function') globalThis.host_autosave_hold = () => {};
+if (typeof globalThis.host_autosave_kick !== 'function') globalThis.host_autosave_kick = () => {};
 
 /* Time in tests is driven by S.tickCount; the clock follows at the old device cadence. */
 import { S as __S } from '../../ui/ui_state.mjs';

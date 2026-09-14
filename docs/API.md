@@ -313,6 +313,18 @@ host_autosave_hold(on)        // While on, the host DEFERS its mid-session slot/
                               // share the SPI thread with a slot serialization — e.g.
                               // hold while the transport runs. Call on the EDGE, not
                               // every tick. Cleared when the module unloads.
+host_autosave_kick()          // Bring the PENDING dirty-driven autosave forward
+                              // instead of waiting out its quiet period. No-op
+                              // when nothing is dirty; never bypasses
+                              // host_autosave_hold, preset-preview audition or
+                              // set-change suppression — those gates still
+                              // apply at the moment the save actually runs.
+                              // Cheaper than a full shadow_save_state_now()
+                              // sweep: it only flushes what is already marked
+                              // dirty. Added S5 (2026-09-14) so a caller with
+                              // its own idle-gesture debounce (dAVEBOx's
+                              // session-fader idle save) can end its gesture
+                              // promptly without forcing a whole-set flush.
 host_preview_play(path)       // Play a WAV preview through Move's speakers
 host_preview_stop()
 host_send_screenreader(text)  // Same as host_announce_screenreader
@@ -345,6 +357,19 @@ shadow_set_params(slot, "chain:", blob[, transient])
                                           // Writes with an "overtake_dsp:" key never
                                           // dirty a slot: the tool's DSP is the tool's
                                           // to persist.
+shadow_take_dirty_slots() / shadow_take_dirty_slot_config()
+                                          // -> slot bitmask written since the last call
+                                          // (take semantics: act on it or re-set it).
+                                          // _slots = the CHAIN (slot_N.json: modules,
+                                          // :state, bypass...); _slot_config = the SLOT
+                                          // SETTINGS (shadow_chain_config.json: `slot:*`
+                                          // volume/pan/mute/solo/sends/transpose). A key
+                                          // in both files (slot:receive_channel,
+                                          // slot:forward_channel), a non-transient bulk
+                                          // SET and a web-UI write mark both.
+                                          // Classifier: host/shadow_dirty_policy.h.
+shadow_take_dirty_fx_buses()              // -> bus bitmask, same semantics
+                                          // (bit 0 master, 1/2 send A/B, 8+n Move bus n)
 shadow_get_slots() / shadow_set_focused_slot(slot)
 shadow_get_selected_slot() / shadow_get_ui_slot()
 shadow_get_display_mode() / shadow_set_display_overlay(mode)

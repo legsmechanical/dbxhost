@@ -65,6 +65,7 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_shadow_param_queue \
           $(BUILD_DIR)/test_shadow_param_lane \
           $(BUILD_DIR)/test_param_lane_policy \
+          $(BUILD_DIR)/test_dirty_policy \
           $(BUILD_DIR)/test_chain_idle_tick
 
 .PHONY: all test clean
