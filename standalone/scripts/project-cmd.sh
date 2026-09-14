@@ -879,6 +879,155 @@ PYEOF
 # orphan, nothing to reclaim. Devices that ran older builds may hold inert
 # leftovers under $DBX_DIR/set_state — KB-scale history, harmless.)
 
+# Launch-time index/orphan repair (Fix C of the 2026-09-14 new-project plan).
+# Called from launch.sh in the SAME Move-not-running window as `normalize` —
+# the only window a set dir can be renamed/moved without a live Move's own
+# save clobbering the change or the OS refusing a busy directory.
+#
+# WHAT IT FIXES: pad = the `user.song-index` xattr, for BOTH dAVEBOx's own
+# picker and the way Move itself resolves currentSongIndex — but Move can
+# mint a set of its OWN out-of-band (CLAUDE.md's "dAVEBOx owns project
+# management" section; out-of-band mutation is not defended against, only
+# repaired here) and happen to land on the SAME index as an existing dAVEBOx
+# project. Two set dirs sharing one index is exactly the failure this plan
+# traced: the picker shows one, Move may resolve the other, and a save can
+# land in the wrong project.
+#
+# PROVENANCE: a project is dAVEBOx's own if it carries the `user.dbx-color`
+# xattr OR a `<uuid>/$DBX_SUBDIR_NAME/new-project.json` file — every project
+# do_new/do_new_at/do_copy creates leaves one or the other (seed_random_key
+# always writes new-project.json; the color xattr is best-effort). A project
+# sharing an index with one of those, that is NEITHER, is the Move-born
+# stray — IT moves, to the lowest free pad (0..31 — davebox/ui/ui_state.mjs:
+# "32 pads = project slots"), never the dAVEBOx project: the dAVEBOx picker's
+# pad assignment is the one the user actually sees and chose.
+#
+# ORPHANS (not a collision, just unusable, and quarantined regardless of any
+# index): `__pending-*` dirs (an interrupted native creation) and uuid dirs
+# with no Song.abl anywhere inside them. Moved WHOLE, name preserved, to
+# $DBX_DIR/sets/quarantine/<YYYYMMDD>/ — NEVER deleted, so a human can always
+# recover one by hand. `DO-NOT-EDIT.txt` (a file, not a project dir) and any
+# other non-directory entry are skipped outright.
+#
+# Idempotent: a rerun over an already-repaired library finds nothing to do —
+# the strays now hold unique indices, and the orphans are no longer inside
+# SETS_DIR to be found again. Parse-only unless something is actually wrong,
+# so a healthy library costs one directory listing and logs NOTHING — same
+# "silent when there is nothing to say" shape `do_normalize` already has.
+do_repair_indices() {
+    python3 - "$SETS_DIR" "$DBX_DIR" "$DBX_SUBDIR_NAME" <<'PYEOF'
+import datetime, os, re, shutil, sys
+
+sets_dir, dbx_dir, dbx_subdir = sys.argv[1], sys.argv[2], sys.argv[3]
+uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
+NUM_PADS = 32   # davebox/ui/ui_state.mjs: "32 pads = project slots"
+
+
+def has_song(uuid_dir):
+    """A Song.abl under any non-reserved inner dir — same shape as
+    do_normalize's song_path(), minus the sort (existence only)."""
+    try:
+        entries = os.listdir(uuid_dir)
+    except OSError:
+        return False
+    for n in entries:
+        if n.startswith(".") or n == dbx_subdir:
+            continue
+        p = os.path.join(uuid_dir, n)
+        if os.path.isdir(p) and os.path.isfile(os.path.join(p, "Song.abl")):
+            return True
+    return False
+
+
+def is_dbx_owned(uuid_dir):
+    if os.path.exists(os.path.join(uuid_dir, dbx_subdir, "new-project.json")):
+        return True
+    if hasattr(os, "getxattr"):
+        try:
+            os.getxattr(uuid_dir, "user.dbx-color")
+            return True
+        except OSError:
+            pass
+    return False
+
+
+def song_index(p):
+    try:
+        return int(os.getxattr(p, "user.song-index").decode())
+    except (OSError, ValueError):
+        return None
+
+
+if not os.path.isdir(sets_dir):
+    sys.exit(0)
+
+orphans = []     # (name, path)
+projects = []    # (name, path, index_or_None, dbx_owned)
+
+for n in sorted(os.listdir(sets_dir)):
+    if n == "DO-NOT-EDIT.txt":
+        continue
+    p = os.path.join(sets_dir, n)
+    if not os.path.isdir(p):
+        continue
+    if n.startswith("__pending-") or not uuid_re.match(n):
+        orphans.append((n, p))
+        continue
+    if not has_song(p):
+        orphans.append((n, p))
+        continue
+    projects.append((n, p, song_index(p), is_dbx_owned(p)))
+
+used = set(idx for _n, _p, idx, _o in projects if idx is not None)
+
+# Group by index so one collision cannot chase the free-index search's own
+# tail as it fills gaps.
+by_index = {}
+for n, p, idx, owned in projects:
+    if idx is not None:
+        by_index.setdefault(idx, []).append((n, p, owned))
+
+moves = []   # (path, old_index)
+for idx, group in sorted(by_index.items()):
+    if len(group) < 2 or not any(owned for _n, _p, owned in group):
+        continue   # no collision, or a collision with no dAVEBOx side — not ours to arbitrate
+    for n, p, owned in group:
+        if not owned:
+            moves.append((p, idx))
+
+repaired = 0
+for p, old_idx in moves:
+    new_idx = 0
+    while new_idx in used and new_idx < NUM_PADS:
+        new_idx += 1
+    if new_idx >= NUM_PADS:
+        print("project-cmd: repair-indices: WARNING no free pad for %s (index %d)" % (p, old_idx))
+        continue
+    os.setxattr(p, "user.song-index", str(new_idx).encode())
+    used.add(new_idx)
+    repaired += 1
+    print("project-cmd: repair-indices: moved %s from index %d to %d" % (os.path.basename(p), old_idx, new_idx))
+
+quarantined = 0
+if orphans:
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d")
+    qdir = os.path.join(dbx_dir, "sets", "quarantine", stamp)
+    for n, p in orphans:
+        os.makedirs(qdir, exist_ok=True)
+        dest = os.path.join(qdir, n)
+        if os.path.exists(dest):
+            dest = dest + "-" + str(int(datetime.datetime.now().timestamp() * 1000))
+        shutil.move(p, dest)
+        quarantined += 1
+        print("project-cmd: repair-indices: quarantined %s -> %s" % (n, dest))
+
+if repaired or quarantined:
+    os.sync()
+    print("project-cmd: repair-indices: %d project(s) checked, %d re-indexed, %d quarantined"
+          % (len(projects), repaired, quarantined))
+PYEOF
+}
+
 case "${1:-}" in
     list)   do_list ;;
     new)    shift; do_new "${1:-}" ;;
@@ -889,5 +1038,6 @@ case "${1:-}" in
     color)  shift; do_color "${1:-}" "${2:-}" ;;
     normalize) shift; do_normalize "${1:-}" ;;
     rename) shift; do_rename "${1:-}" "${2:-}" "${3:-}" ;;
-    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>" ;;
+    repair-indices) do_repair_indices ;;
+    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>|repair-indices" ;;
 esac

@@ -480,6 +480,14 @@ setsid --wait bash -c '
     # actually wrong, so it costs nothing on a healthy library.
     sh "$DBX_DIR/scripts/project-cmd.sh" normalize || \
       echo "WARNING: Move mixer normalize failed — continuing"
+    # S3: index-collision + orphan repair, same Move-not-running window as the
+    # normalize sweep above (the only window a set dir can be re-indexed or
+    # moved without a live Move clobbering it). Before normalize would also
+    # work; after is chosen so a project about to be quarantined is never
+    # normalized first for nothing. Never deletes; only re-indexes a
+    # Move-born stray or moves an orphan into sets/quarantine/<date>/.
+    sh "$DBX_DIR/scripts/project-cmd.sh" repair-indices || \
+      echo "WARNING: repair-indices failed — continuing"
   fi
 
   ts "workspace ready"
