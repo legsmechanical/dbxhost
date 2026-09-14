@@ -41,6 +41,10 @@ import { engineGet, engineSet, engineSetSlotParam, moveBusComp,
          moveBusForChannel, engineLoadedModule, engineDescribe, engineGetMany } from './ui_engine.mjs';
 import { midiVal, midiSendValue, seqAutoSnapshot, seqAutoRestore } from './ui_sound.mjs';
 import { forceRedraw, invalidateLEDCache } from './ui_leds.mjs';
+/* A SnapMorph caches the snapshots it morphs between when it seeds; a save
+ * or a clear here is the one thing that changes them (Josh, device,
+ * 2026-09-13: "changing a snapshot doesn't change what the morph knob does"). */
+import { morphInvalidate } from './ui_snapmorph.mjs';
 
 export const DEVSNAP_SLOTS   = 16;
 export const DEVSNAP_HOLD_MS = 450;     /* = BACK_HOLD_MS: a deliberate long-press */
@@ -270,6 +274,10 @@ export function devSnapSave(n) {
     const res = takeInto(slotDir(n));
     if (!res) { showActionPopup('SNAPSHOT', 'Save failed'); return false; }
     d.slots[n] = true; d.last = n;
+    /* The slot's contents changed: every morph over it re-reads on its next
+     * seed. A TRACK save touches that track's morphs; a SESSION save (the
+     * device layer, track -1) every track's. */
+    morphInvalidate(d.track >= 0 ? d.track : undefined);
     showActionPopupFor(DEVSNAP_CARD_MS, 'SNAPSHOT ' + (n + 1), 'SAVED', res.skipped ? res.skipped + ' skipped' : undefined);
     /* ⚠ BOTH ticks. The renderer needs the END (ui_leds: EndTick >= 0 && clockMs
      * < EndTick && StartTick >= 0), and the tick's hold-to-save used to set it
@@ -412,9 +420,31 @@ export function devSnapTick() {
 export function devSnapClear(n) {
     const d = st();
     if (!d.slots[n]) return false;
-    /* No unlink binding: the marker file is what "exists" means, so empty it. */
-    host_write_file(slotDir(n) + '/davebox.json', '');
+    /* REMOVE THE SLOT'S DIRECTORY — the host's files and ours (Josh, device,
+     * 2026-09-13: a cleared slot's step LED came back lit on re-entering the
+     * layer, and a press on it recalled the OLD snapshot).
+     *
+     * ⚠ The previous clear EMPTIED davebox.json and left the host's slot_/bus
+     * files in place. host_file_exists is a bare stat(), so an empty file
+     * still "exists": devSnapScan marked the slot filled on the next open, and
+     * recallDir runs the host recall whether or not davebox.json parses — so
+     * the slot was clear on this screen and full on the next. The JS rig hid
+     * it: its host_file_exists stub treated an empty file as absent, a
+     * semantics the device never had. Now the rig's stub is a stat too.
+     *
+     * host_remove_dir is the storage model's own primitive (a project is one
+     * tree; copy = copytree, delete = one rmtree). If it fails the old
+     * blanking is the fallback — the slot then reads filled again, which is
+     * at least the truth about what is on disk. */
+    const dir = slotDir(n);
+    let gone = false;
+    try { gone = !!host_remove_dir(dir); } catch (e) { gone = false; }
+    if (!gone || host_file_exists(dir + '/davebox.json')) {
+        console.log('[devsnap] clear ' + (n + 1) + ': remove_dir failed, blanking davebox.json instead');
+        host_write_file(dir + '/davebox.json', '');
+    }
     d.slots[n] = false;
+    morphInvalidate(d.track >= 0 ? d.track : undefined);   /* a morph over it now morphs nothing there */
     if (d.last === n) d.last = -1;
     showActionPopup('SNAPSHOT ' + (n + 1), 'CLEARED');
     invalidateLEDCache(); forceRedraw();

@@ -68,14 +68,18 @@ globalThis.host_module_get_param = () => '';
  * and the sidecar writes. */
 const files = {};
 let sidecars = [];
-globalThis.host_file_exists = (p) => Object.prototype.hasOwnProperty.call(files, p) && files[p] !== '';
+globalThis.host_file_exists = (p) => Object.prototype.hasOwnProperty.call(files, p);   /* a stat, as on the device */
 globalThis.host_read_file = (p) => (files[p] !== undefined ? files[p] : '');
 globalThis.host_write_file = (p, body) => { sidecars.push({ p, body }); files[p] = body; return true; };
 globalThis.host_ensure_dir = () => true;
+globalThis.host_remove_dir = (d) => { for (const k of Object.keys(files)) if (k.indexOf(d + '/') === 0) delete files[k]; return true; };
+globalThis.host_snapshot_take = (dir) => { files[dir + '/slot_2.json'] = '{}\n'; return JSON.stringify({ ok: true, skipped: 0, positions: 1 }); };
+globalThis.host_snapshot_recall = () => JSON.stringify({ ok: true, restored: 0, pending: false });
+globalThis.host_snapshot_status = () => JSON.stringify({ pending: false, skipped: 0, added: 0 });
 globalThis.fill_rect = () => {}; globalThis.draw_rect = () => {}; globalThis.stipple_rect = () => {};
 globalThis.set_pixel = () => {}; globalThis.clear_screen = () => {}; globalThis.print = () => {};
 globalThis.pixel_print = () => {}; globalThis.flush_display = () => {}; globalThis.text_width = (t) => String(t).length * 6;
-for (const fn of ['host_remove_dir', 'host_system_cmd', 'host_send_midi', 'move_midi_inject_to_move',
+for (const fn of ['host_system_cmd', 'host_send_midi', 'move_midi_inject_to_move',
                   'host_set_led', 'set_led', 'host_get_setting', 'host_set_setting', 'move_midi_internal_send',
                   'host_vol_block', 'host_edit_cc_block', 'host_ext_midi_remap_clear', 'host_ext_midi_remap_set',
                   'host_ext_midi_remap_enable', 'host_autosave_hold', 'shadow_save_state_now'])
@@ -108,7 +112,7 @@ files[P.trackSnapDir(UUID, T, 0) + '/davebox.json'] = snapJson({ synth: { cutoff
                                                                { route: 0, slot: T, volume: 0.5, pan: 0.2, send_a: 0 });
 files[P.trackSnapDir(UUID, T, 1) + '/davebox.json'] = snapJson({ synth: { cutoff: '0.8', voices: '6', shape: 'Tri', sample: '/b.wav' }, fx2: { room_size: '11', freeze: 'On' } },
                                                                { route: 0, slot: T, volume: 1.0, pan: 0.8, send_a: 1, send_b: 0.3 });
-files[P.trackSnapDir(UUID, T, 2) + '/davebox.json'] = '';
+/* slot 3 is EMPTY: no file at all (a cleared slot's directory is removed) */
 
 const VIEW_MACROS = 19, VIEW_KNOBS = 11, VIEW_KNOBLEGS = 20, VIEW_KNOB_TARGET = 12, VIEW_KNOB_PARAM = 13;
 const cc    = (d1, d2) => snd.soundOnCC(d1, d2, (v) => (v < 64 ? v : v - 128));
@@ -391,6 +395,53 @@ step('a snapshot with a DIFFERENT module in a component drops that component fro
     morph.snapMorphApply(T, K, 1.0);
     const p = chainBulks()[0].pairs;
     assert(!('synth:cutoff' in p) && p['fx2:room_size'] === '11', 'synth out, fx2 in: ' + JSON.stringify(p));
+});
+
+/* ---- A SNAPSHOT CHANGES UNDER THE MORPH (Josh, device, 2026-09-13) ----------------
+ * "changing a snapshot doesn't change what the morph knob does - it morphs
+ * between snapshots that shouldn't exist anymore." A save or a clear of a slot
+ * must make every morph over it re-read. */
+const D = await import('../../ui/ui_devsnap.mjs');
+step('⭐ RE-SAVING snapshot 2 (through the real devSnapSave) makes the morph re-seed and morph to the NEW values', () => {
+    /* Restore the two-snapshot leg on K4 and seed it. */
+    GS.trackMacros[T][K] = { v: 0, legs: [{ kind: 'morph', snaps: [0, 1], lo: 0, hi: 1 }] };
+    files[P.trackSnapDir(UUID, T, 1) + '/davebox.json'] = snapJson({ synth: { cutoff: '0.8', voices: '6', shape: 'Tri' }, fx2: { room_size: '11', freeze: 'On' } },
+                                                                   { route: 0, slot: T, volume: 1.0, pan: 0.8, send_a: 1 });
+    morph.morphInvalidate(T); ticks(8);
+    assert(morph.morphReady(T, K, morphLeg()), 'seeded on the old snapshot 2');
+    /* The take reads the LIVE values: cutoff is now 0.3 on the engine. */
+    ASSIGN['synth:cutoff'] = '0.3'; ASSIGN['synth:voices'] = '4'; ASSIGN['synth:shape'] = 'Saw'; ASSIGN['fx2:room_size'] = '3';
+    /* The take's seq half reads the bank mirrors, which init() allocates and
+     * this rig (which never runs init) has not. */
+    if (!GS.bankParams) GS.bankParams = [];
+    for (let t = 0; t < 8; t++) if (!GS.bankParams[t] || !GS.bankParams[t][0]) GS.bankParams[t] = Array.from({ length: 8 }, () => new Array(8).fill(0));
+    D.devSnapEnter(T);
+    assert(D.devSnapSave(1) === true, 'saved slot 2 over the old one');
+    D.devSnapLeave();
+    assert(!morph.morphReady(T, K, morphLeg()), 'the morph forgot the old snapshot 2');
+    ticks(8);
+    assert(morph.morphReady(T, K, morphLeg()), 're-seeded');
+    bulks = [];
+    morph.snapMorphApply(T, K, 1.0);
+    const p = chainBulks()[0].pairs;
+    assert(p['synth:cutoff'] === '0.3' && p['fx2:room_size'] === '3', 'the top of the morph is the NEW snapshot 2: ' + JSON.stringify(p));
+});
+step('⭐ CLEARING snapshot 2 removes its directory (host files too), the layer\'s scan agrees, and the morph over it goes quiet', () => {
+    D.devSnapEnter(T);
+    assert(D.devSnapClear(1) === true, 'cleared');
+    const dir = P.trackSnapDir(UUID, T, 1);
+    assert(!Object.keys(files).some(k => k.indexOf(dir + '/') === 0), 'nothing left under the slot dir: ' + JSON.stringify(Object.keys(files).filter(k => k.indexOf(dir) === 0)));
+    D.devSnapLeave(); D.devSnapEnter(T);
+    assert(D.devSnapState().slots[1] === false, 'on re-entry the slot reads EMPTY (the LED bug)');
+    D.devSnapLeave();
+    ticks(8);
+    bulks = [];
+    morph.snapMorphApply(T, K, 1.0);
+    assert(chainBulks().length === 0, 'a morph over a cleared slot writes nothing');
+    /* Put snapshot 2 back for the sections below. */
+    files[P.trackSnapDir(UUID, T, 1) + '/davebox.json'] = snapJson({ synth: { cutoff: '0.8', voices: '6', shape: 'Tri', sample: '/b.wav' }, fx2: { room_size: '11', freeze: 'On' } },
+                                                                   { route: 0, slot: T, volume: 1.0, pan: 0.8, send_a: 1, send_b: 0.3 });
+    ASSIGN['synth:cutoff'] = '0.5'; morph.morphInvalidate(T); ticks(8);
 });
 
 /* ---- A MOVE TRACK: its bus FX and bus levels (Josh, 2026-09-13) ------------------ */
