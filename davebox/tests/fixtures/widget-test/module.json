@@ -1,0 +1,78 @@
+{
+  "_fixture": "TEST FIXTURE copied from charlesvestal/schwung src/modules/audio_fx/widget-test/module.json @ 35260e0bd2979b60fad7a32702a5f37da7a08b5b (only this key added). Test-only; not built or shipped.",
+  "id": "widget-test",
+  "name": "Widget Test",
+  "version": "0.1.0",
+  "description": "Reference module for the three module-supplied draw surfaces: an in-grid widget (drawCell), a card that floats while the knob turns (card_script), and a fullscreen canvas view.",
+  "author": "Schwung",
+  "component_type": "audio_fx",
+  "capabilities": {
+    "chainable": true,
+    "canvas_script": "canvas.js",
+    "chain_params": [
+      {
+        "key": "mode",
+        "name": "Mode",
+        "short_name": "Mod",
+        "type": "enum",
+        "options": [
+          "Dry/Wet",
+          "In/Out",
+          "A/B"
+        ],
+        "default": 0,
+        "viz": {
+          "kind": "custom:wtmode"
+        }
+      },
+      {
+        "key": "level",
+        "name": "Level",
+        "type": "float",
+        "min": 0,
+        "max": 1,
+        "step": 0.01,
+        "default": 0.5,
+        "viz": {
+          "kind": "custom:wtmeter"
+        },
+        "card_script": "cards.js#blend_card",
+        "card_w": 96,
+        "card_h": 34,
+        "short_name": "Lvl"
+      },
+      {
+        "key": "detail",
+        "name": "Detail",
+        "type": "canvas",
+        "canvas_script": "canvas.js",
+        "show_value": false
+      }
+    ]
+  },
+  "ui_hierarchy": {
+    "levels": {
+      "root": {
+        "label": "Widget Test",
+        "knobs": [
+          "level",
+          "mode"
+        ],
+        "params": [
+          {
+            "key": "level"
+          },
+          {
+            "key": "mode"
+          },
+          {
+            "key": "detail"
+          }
+        ]
+      }
+    }
+  },
+  "dsp": "widget-test.so",
+  "api_version": 2,
+  "abbrev": "WT"
+}
