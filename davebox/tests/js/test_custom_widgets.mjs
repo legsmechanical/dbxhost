@@ -21,6 +21,11 @@ import './_bulk_get_stub.mjs';
 import fs from 'fs';
 import path from 'path';
 
+/* The module's log lines, so "logged ONCE" is countable. */
+const widgetLog = [];
+const _log = console.log.bind(console);
+console.log = (...a) => { const m = a.join(' '); if (m.indexOf('[sound] widgets:') === 0) widgetLog.push(m); _log(...a); };
+
 let failed = 0;
 function ok(l) { console.log(`  ok   — ${l}`); }
 function bad(l, e) { console.error(`  FAIL — ${l}: ${e && e.stack ? e.stack : e}`); failed = 1; }
@@ -277,6 +282,84 @@ step('settled: ticking on does not reload, re-read or re-evaluate', () => {
     if (loads.length) throw new Error('re-evaluated per tick: ' + loads.length);
     const after = paramReads.filter(k => k.endsWith('chain_params')).length;
     if (after !== before) throw new Error('chain_params re-read ' + (after - before) + 'x while settled');
+});
+
+/* ── Test B: a failed load degrades ONCE, and is re-asked on the next visit ── */
+/* A script that clobbers davebox's globals and THEN throws — both hazards in
+ * one file. On device shadow_load_ui_module returns false for it. */
+const THROWING = "globalThis.init = null; globalThis.tick = null;\n"
+    + "globalThis.onMidiMessageInternal = null; globalThis.onMidiMessageExternal = null;\n"
+    + "globalThis.canvas_overlay = { widgetKind: 'custom:wtmeter', drawCell() {} };\n"
+    + "throw new Error('broken canvas.js');\n";
+const evalsOfCanvas = () => loads.filter(p => p.endsWith('/canvas.js')).length;
+function openOnTrack(t) {
+    S.activeTrack = t; S.trackRoute[t] = 0; S.trackChannel[t] = t + 1;
+    ticks(4);
+    openFx1Editor();
+    ticks(4);
+}
+
+step('⭐ B: a THROWING canvas.js on a fresh slot — one log line, built-ins drawn, no drawer', () => {
+    leaveSound();
+    loadWidgetTest(1);
+    disk.canvas = THROWING;
+    widgetLog.length = 0; loads.length = 0;
+    openOnTrack(1);
+    const w = snd.soundWidgetsForTest();
+    if (w.key.indexOf('1:fx1') !== 0) throw new Error('rig: not on slot 1 — ' + w.key);
+    if (!w.failed) throw new Error('state does not record the failure: ' + JSON.stringify(w));
+    if (widgetLog.length !== 1) throw new Error('want ONE log line, got ' + JSON.stringify(widgetLog));
+    if (REG.isWidgetAvailable('custom:wtmeter')) throw new Error('a throwing script still registered');
+    draws.length = 0;
+    frame();
+    if (draws.length) throw new Error('a drawer ran: ' + JSON.stringify(draws));
+    if (cellInk() !== controlInk) throw new Error('the cells are not the built-ins the control drew');
+});
+
+step('⭐ B: the throw did not take dAVEBOx\'s globals with it', () => {
+    for (const n of ['init', 'tick', 'onMidiMessageInternal', 'onMidiMessageExternal'])
+        if (typeof globalThis[n] !== 'function') throw new Error(n + ' was clobbered by the failed load');
+    if ('canvas_overlay' in globalThis) throw new Error('canvas_overlay leaked');
+});
+
+step('⭐ B: no re-evaluation and no new log line while the visit lasts', () => {
+    loads.length = 0; widgetLog.length = 0;
+    ticks(90);
+    frame();
+    if (evalsOfCanvas()) throw new Error('canvas.js re-evaluated ' + evalsOfCanvas() + 'x within the visit');
+    if (widgetLog.length) throw new Error('logged again: ' + JSON.stringify(widgetLog));
+});
+
+step('⭐ B: leaving and coming back is a new visit — asked exactly once more', () => {
+    leaveSound();
+    loads.length = 0; widgetLog.length = 0;
+    const before = snd.soundWidgetsForTest().loads;
+    openOnTrack(1);
+    if (snd.soundWidgetsForTest().loads !== before + 1)
+        throw new Error('the loader did not re-ask on the new visit: ' + JSON.stringify(snd.soundWidgetsForTest()));
+    if (widgetLog.length !== 1) throw new Error('want ONE log line on the retry, got ' + JSON.stringify(widgetLog));
+});
+
+step('⭐ B: a RENAMED canvas.js (absent) degrades the same way — once, built-ins', () => {
+    leaveSound();
+    disk.canvas = null;
+    widgetLog.length = 0;
+    openOnTrack(1);
+    ticks(40);
+    if (widgetLog.length !== 1 || widgetLog[0].indexOf('no canvas.js') < 0)
+        throw new Error('want one "no canvas.js" line, got ' + JSON.stringify(widgetLog));
+    draws.length = 0;
+    frame();
+    if (draws.length || cellInk() !== controlInk) throw new Error('did not fall back to the built-ins');
+});
+
+step('⭐ B: repaired on disk, the next visit draws the module\'s widgets', () => {
+    leaveSound();
+    disk.canvas = undefined;
+    openOnTrack(1);
+    draws.length = 0;
+    frame();
+    if (!draws.some(d => d.kind === 'custom:wtmeter')) throw new Error('still built-ins after the repair');
 });
 
 leaveSound();
