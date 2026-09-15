@@ -1398,7 +1398,9 @@ centred with that track's number (`Move 2 - T3`) and the jog steps over it —
 to play the same Move instrument from a second track, make that track *follow*
 the one that owns it. Inside a
 block the knobs edit its parameters and the jog turns the pages; hold **Shift**
-while turning to jump between sections. The last pages are **My Presets** and
+while turning to jump between sections. A module that draws some of its own
+cells (a waveform, a picture of its mode) shows them there in place of a
+plain dial. The last pages are **My Presets** and
 **Module**; on Module, **Module Menu** opens the module's full parameter list
 (its own menu tree, for settings the knob pages don't show), and **Back** from
 its top returns you to the page you left. Picking an **empty** effect block opens

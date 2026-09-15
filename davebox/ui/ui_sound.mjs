@@ -27,7 +27,8 @@ import {
     engineListUserPresets, engineReadUserPreset,
     engineGetSlotParam, engineSetSlotParam, engineSaveState,
     engineGetChainParam, engineSetChainParam, engineModuleAbbrev,
-    engineLoadCardScript,
+    engineLoadCardScript, engineCanvasOverlayShared, engineCanvasPageDrawer,
+    engineCanvasNewVisit, engineCanvasForget,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
     slotIndex, moveBusForChannel, moveBusComp, moveBusPrefix,
     faderStep, faderWire, faderFormatDb, faderGainToTravel, SHIFT_VOL_THROW, trackLevelCardText,
@@ -155,6 +156,17 @@ const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         paramPagesCachedValue, paramPagesLevelNameOf,
         paramPagesPageLabel } = PP;
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
+/* ⚠⚠ THE CANONICAL SPECIFIER, AND IT IS LOAD-BEARING. The registry is the
+ * one the grid reads only because both names normalise to the same module:
+ * the binding reaches it from inside this same
+ * `/data/UserData/schwung/shared/param_pages/` directory (page_controller.mjs
+ * and viz.mjs import `./widget_registry.mjs`), and QuickJS keys a module by
+ * its normalised name. Any other spelling — a
+ * relative path, a copied file, an inlined bundle — is a SECOND registry that
+ * the grid never consults, and every custom cell draws a plain dial with
+ * nothing logged. tests/test_custom_widgets_bundle.sh pins it in the bundle. */
+import { registerOverlayWidgets, clearWidgets, setWidgetLogger }
+    from '/data/UserData/schwung/shared/param_pages/widget_registry.mjs';
 
 /* Chain blocks in signal order, across the audio-FX blocks the host routes.
  *
@@ -7236,7 +7248,7 @@ function runDiscovery() {
      * two-second loop means something else entirely on the eight-bar sample
      * that replaced it. Zoom survives leaving the SCREEN (or you lose it every
      * time you glance at another param) but never a module swap. */
-    if (id !== S.moduleId) { wavEditCloseIfOpen(); wavForgetComponent(S.comp, S.slot); }
+    if (id !== S.moduleId) { wavEditCloseIfOpen(); wavForgetComponent(S.comp, S.slot); ppWidgetsForget(); }
     S.moduleId = id;
     if (!id) { S.banks = []; S.sections = []; S.dirty = true; return; }
     const res = discover(S.slot, S.comp);
@@ -9818,6 +9830,9 @@ export function soundTick() {
     /* ⭑ AHEAD of discovery: when the editor is on, davebox's own bank model is
      * not what is being drawn, and running both would pay for two contracts. */
     ppSync();
+    /* Right behind the grid's own reconcile, so the frame that first draws the
+     * editor already has the module's widgets when the reads are settled. */
+    ppWidgetsTick();
     /* Hold-Mute / Delete paint on the LEVEL knobs (spec §2) — on the bank card
      * and every non-editor screen, so it lives OUTSIDE the editor's ppOn block:
      * the five that exist here, unlit where nothing is automated; K6-K8 unlit.
@@ -10907,6 +10922,8 @@ function ppSync() {
             onExit: () => { ppOn = false; ppEditLatched.clear(); },
         }, jk ? { key: jk } : undefined);
         ppOn = true;
+        ppVisit++;          /* a new visit re-asks a widget load that failed */
+        engineCanvasNewVisit();   /* ...and a module page that threw or had no drawPage */
         S.dirty = true;
     } else if (!want && ppOn) {
         /* Remembered BEFORE the exit — the page is the controller's, and it is
@@ -10920,6 +10937,116 @@ function ppSync() {
     /* Left the editor entirely: the decline belonged to that entry. */
     if (S.view !== VIEW_EDIT && !(ppOn && ppOwnsView())) ppDeclinedDraw = false;
 }
+
+/* ---- module-supplied in-grid widgets (upstream #420 / #450 / #472) ---------
+ *
+ * A module can draw one of its knob cells ITSELF: a chain_params entry declares
+ * `viz: { kind: "custom:<name>" }` and the module's canvas.js supplies the
+ * drawer (`widgetKind` + `drawCell`, or `widgetKinds`). The grid only READS the
+ * shared registry — an unregistered custom kind falls through to a built-in
+ * dial — so whoever hosts the grid has to fill it. On stock that is the host's
+ * chain editor; dAVEBOx never opens that screen, so it is done here, for the
+ * grid dAVEBOx does open.
+ *
+ * THE STATE, and why each field exists (the upstream bugs it avoids):
+ *   key         `<slot>:<comp>|<moduleId>` the registry currently describes.
+ *   ok          that attempt FINISHED — widgets registered, or the module
+ *               declares no custom kind. A latch alone cannot say this (#472):
+ *               a load that failed looked identical to one that worked.
+ *   failedKey / failedVisit
+ *               a failed load stops for THIS VISIT only. Retrying within the
+ *               visit re-reads the same bytes ~4x/s; never retrying means dials
+ *               until a reboot. Leaving the grid and coming back asks again.
+ *   attemptedKey / attemptedVisit / retryTick
+ *               first attempt at once, repeats throttled to WIDGET_RETRY_TICKS
+ *               — and a repeat happens only while a READ is unanswered.
+ *
+ * ⚠ The tri-state rule: a chain_params read that did not answer (null) is not
+ * "no widgets", and must never latch. "" / [] is an answer.
+ *
+ * ⚠ NOTHING HERE WRITES THE REGISTRY AT MODULE SCOPE. The registry is a
+ * separate, EXTERNAL module; its only writers are ppWidgetsTick and
+ * ppWidgetsForget, reached from the tick, so bundle order cannot wipe a
+ * registration ([[module-scope-registration-wiped-by-bundle-order]]). */
+const WIDGET_RETRY_TICKS = 15;
+let ppVisit = 0;                /* bumped by ppSync each time the grid is entered */
+let ppWidgetsEnabled = true;    /* test seam: the CONTROL runs without the loader */
+const ppWidgets = { key: '', ok: false, failedKey: '', failedVisit: -1,
+                    attemptedKey: '', attemptedVisit: -1, retryTick: 0, loads: 0 };
+
+/* A module swapped or removed underneath: the registry describes something no
+ * longer loaded, and a later module declaring the same custom: name would
+ * silently inherit the wrong art. */
+function ppWidgetsForget() {
+    if (ppWidgets.key) clearWidgets();
+    /* The overlay the widgets came from, and any module page drawn from it. */
+    engineCanvasForget();
+    ppWidgets.key = ''; ppWidgets.ok = false;
+    ppWidgets.failedKey = ''; ppWidgets.attemptedKey = ''; ppWidgets.retryTick = 0;
+}
+
+function ppWidgetsTick() {
+    if (!ppWidgetsEnabled || !ppOn || S.slot < 0 || !S.comp || !S.moduleId) return;
+    const id = S.moduleId;
+    const key = S.slot + ':' + S.comp + '|' + id;
+    if (ppWidgets.ok && ppWidgets.key === key) return;
+    if (ppWidgets.failedKey === key && ppWidgets.failedVisit === ppVisit) return;
+
+    if (key !== ppWidgets.attemptedKey || ppVisit !== ppWidgets.attemptedVisit) {
+        ppWidgets.attemptedKey = key; ppWidgets.attemptedVisit = ppVisit;
+        ppWidgets.retryTick = 0;
+    } else if (++ppWidgets.retryTick % WIDGET_RETRY_TICKS) {
+        return;
+    }
+
+    /* chain_params: discovery's copy when it holds anything, else ONE read.
+     * S.cpMap cannot tell a failed read from an empty one ({} either way). */
+    let cps = S.cpMap ? Object.keys(S.cpMap).map(k => S.cpMap[k]) : [];
+    if (!cps.length) {
+        const raw = engineGet(S.slot, S.comp, 'chain_params');
+        if (raw === null || raw === undefined) return;          /* unanswered: retry */
+        try { cps = raw ? JSON.parse(raw) : []; } catch (e) { cps = null; }
+        if (!Array.isArray(cps)) {
+            ppWidgets.failedKey = key; ppWidgets.failedVisit = ppVisit;
+            log('widgets: ' + id + ' chain_params did not parse');
+            return;
+        }
+    }
+
+    setWidgetLogger(log);
+    clearWidgets();
+    ppWidgets.key = key; ppWidgets.ok = false;
+
+    const wants = cps.some(p => p && p.viz && typeof p.viz.kind === 'string'
+                                && p.viz.kind.indexOf('custom:') === 0);
+    if (!wants) { ppWidgets.ok = true; return; }
+
+    /* SHARED with a module-owned page (ppIo().drawCanvasPage): one evaluation of
+     * canvas.js serves both. */
+    const r = engineCanvasOverlayShared(S.slot + ':' + S.comp, specKeyFor(S.comp), id);
+    ppWidgets.loads++;
+    if (!r.overlay) {
+        log('widgets: ' + id + ' declares a custom viz kind but ' + r.error);
+        /* A directory not found yet is left to the throttle; anything else is
+         * this visit's answer. */
+        if (!r.retry) { ppWidgets.failedKey = key; ppWidgets.failedVisit = ppVisit; }
+        return;
+    }
+    const { registered, skipped } = registerOverlayWidgets(r.overlay);
+    /* The script loaded: whatever came of it is final for this module. */
+    ppWidgets.ok = true;
+    if (registered.length) log('widgets: ' + id + ' registered ' + registered.join(', '));
+    for (const sk of skipped) log('widgets: ' + id + ' declared ' + sk.kind + ' but ' + sk.why);
+    if (!registered.length && !skipped.length)
+        log('widgets: ' + id + ' declares a custom viz kind but no usable drawCell');
+    S.dirty = true;
+}
+
+export function soundWidgetsForTest() {
+    return { key: ppWidgets.key, ok: ppWidgets.ok, loads: ppWidgets.loads,
+             failed: ppWidgets.failedKey !== '' && ppWidgets.failedVisit === ppVisit };
+}
+export function soundWidgetsEnableForTest(on) { ppWidgetsEnabled = !!on; }
 
 /* Re-read the user presets and rebuild the trailing pages from them.
  *
@@ -11099,6 +11226,23 @@ function ppIo() {
             else if (action === 'module_menu') S.pendingAction = { t: 'menu', errand: true };
             else log('pp: unknown menu action ' + action);
             S.dirty = true;
+        },
+
+        /*
+         * A MODULE-OWNED PAGE (`type: "canvas"`, `as_page: true` — MonkSynth's Face).
+         * The controller draws the header, touch strip and footer and hands us the
+         * band between them; without this the band was silently blank, because the
+         * controller returns early when its io offers no drawer (#420's third part).
+         * Closes over the component the editor is on, like the widget loader.
+         * ⚠ Here in the io, NOT in installPpCtx: the binding spreads the io over
+         * the controller's defaults, and the ctx member list is pinned to what
+         * the binding reads (test_param_pages_vendor.sh).
+         */
+        drawCanvasPage: (drawCtx, band, canvas, payload) => {
+            if (S.slot < 0 || !S.comp || !S.moduleId) return;
+            const fn = engineCanvasPageDrawer(S.slot + ':' + S.comp, specKeyFor(S.comp),
+                                              S.moduleId, canvas);
+            if (fn) fn(drawCtx, band, payload);
         },
     };
 }

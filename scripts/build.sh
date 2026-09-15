@@ -412,7 +412,7 @@ if needs_rebuild build/shadow/shadow_ui \
     src/host/schwung_trace.c \
     src/host/js_display.h src/host/shadow_constants.h src/host/unified_log.h \
     src/host/js_host_common.h src/host/shadow_shm_util.h src/host/schwung_trace.h \
-    src/host/file_atomic.h; then
+    src/host/file_atomic.h src/host/shared_import_resolve.h; then
     echo "Building Shadow UI..."
     "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 \
         src/shadow/shadow_ui.c \

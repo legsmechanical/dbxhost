@@ -1485,6 +1485,18 @@ Behavior notes:
 - Set `show_value: false` for button-style canvas entries that should not show a value.
 - The loaded script should expose `globalThis.canvas_overlay` (or `globalThis.canvas_overlays`) with hooks such as `onOpen`, `onMidi`, `tick`, `draw`, `onClose`, `onExit`.
 
+**A canvas as a page (`as_page: true`).** Instead of a cell you click into, the canvas becomes a
+page in the level's jog rotation carrying that level's own knobs; add `preset_browser: true` and it
+IS the level's preset browser (first page). The host draws the header, touch strip and footer and
+calls the overlay's **`drawPage(ctx, payload)`** — not `draw` — for the band between them. `ctx`
+is frame-scoped: `(0,0)` is the band's top-left, `ctx.width`/`ctx.height` its size, and nothing
+drawn can reach the chrome. `payload` is `{ key, values, base, keys, touched, preset, nowMs,
+width, height }` — `values` are the live (modulation-merged) values, `base` the knob positions,
+`preset` is `{ name, index, count, entered }` on a browser page and `null` otherwise. It is a draw
+path: no `getParam` (declare off-page keys in `extra_keys`). A `drawPage` that throws is disabled
+(the page shows its chrome with an empty body) until the page is next entered. The same
+`canvas.js` evaluation serves the page and the module's in-grid widgets.
+
 #### Jog-click in a canvas UI
 
 By default a canvas receives the jog **wheel**, knobs, knob-touch and pad notes,
@@ -1658,6 +1670,71 @@ These map to knobs 1-8 in the Shadow UI for quick access.
   }
 }
 ```
+
+#### A cell your module draws itself — `viz.kind: "custom:<name>"`
+
+A knob cell can be drawn by the module instead of by a built-in widget: a
+waveform, a mouth, a mode picture. Two halves, and both are required.
+
+**1. Declare the kind on the parameter** in `capabilities.chain_params`:
+
+```json
+{ "key": "level", "name": "Level", "type": "float", "min": 0, "max": 1,
+  "viz": { "kind": "custom:wtmeter" } }
+```
+
+`custom:` is a reserved prefix — no built-in kind will ever use it.
+
+**2. Supply the drawer in `canvas.js`** in the module's own directory (the
+file name is fixed; `canvas_script` does not change which file is read for
+cells). It must assign `globalThis.canvas_overlay`:
+
+```js
+globalThis.canvas_overlay = {
+    widgetKind: "custom:wtmeter",          // one kind, drawn by drawCell
+    drawCell(ctx, { values, group }) {
+        const v = Number(values[group.keys[0]]);
+        ctx.fillRect(0, ctx.height - 1, ctx.width, 1, 1);
+        /* ... */
+    },
+    // More than one kind: an array of names sharing drawCell (tell them apart
+    // by group.keys), or an object giving each kind its own drawer:
+    widgetKinds: { "custom:wtmode": { draw(ctx, payload) { /* ... */ }, nominal: null } },
+};
+```
+
+**The rules a drawer lives under:**
+
+- **The frame is the cell, not the screen.** `(0,0)` is the cell's top-left and
+  `ctx.width` / `ctx.height` are the cell's; everything outside is clipped. Size
+  against them — the same widget is handed many frame sizes. `ctx` offers
+  `fillRect`, `setPixel`, `line`, `fillCircle`, `drawCircle`, `drawArc`,
+  `print` and `textWidth` (`src/shared/param_pages/frame_ctx.mjs`).
+- **You are given values; you cannot read them.** There is no `getParam` on the
+  draw path — one read costs more than drawing the whole page. What a picture
+  needs from a key with no cell on the page goes in `viz.extra_keys`.
+- **The label is not yours.** The host draws every cell's label.
+- **One strike.** A drawer that throws is disabled for the session and the
+  built-in widget draws instead; the throw is in `debug.log`.
+
+**When it is loaded.** `canvas.js` is read when the module editor opens on the
+component, and only if a `chain_params` entry declares a `custom:` kind — a
+module declaring none never has the file read. Once per module per visit to the
+editor, never per frame; the script is evaluated with the host's own globals
+saved and restored, so assigning `init`/`tick` there cannot break the host.
+
+**Every failure draws something correct.** A kind that is not registered — a
+typo, a missing or throwing `canvas.js`, no `drawCell` for the kind, or an
+older host that has never heard of it — leaves the parameter to the built-in
+widget it would otherwise get. So a broken widget looks like an ordinary dial;
+check `debug.log` for a `widgets:` line naming the module and the reason. A
+failed load is retried the next time the editor is opened, so a repaired file
+needs no restart.
+
+⚠ In dAVEBOx this is the module editor (Sound menu → a block → its pages).
+Reference module: upstream `src/modules/audio_fx/widget-test/` (this fork keeps
+its `module.json` + `canvas.js` as the test fixture
+`davebox/tests/fixtures/widget-test/`).
 
 ### `max_param` is NOT supported — publish a real `max`
 

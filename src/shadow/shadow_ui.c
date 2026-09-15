@@ -2934,38 +2934,9 @@ static JSValue js_host_trace_end(JSContext *ctx, JSValueConst this_val, int argc
 #define SHARED_IMPORT_CANONICAL "/data/UserData/schwung/shared/"
 #define SHARED_IMPORT_LOCAL     SCHWUNG_INSTALL_DIR "/shared/"
 
-/* Resolve a shared-library import to THIS install's shared/ directory.
- *
- * Modules import shared utilities by absolute canonical path, which hardcodes
- * one install location. That is fine while only one install exists, but a
- * second install running the SAME modules directory would load the other
- * install's shared/ — silently mixing two builds' library code, with whatever
- * contract skew that implies.
- *
- * Rewriting the prefix here keeps the module contract stable — no module edits,
- * no fleet sweep — while letting each install serve its own shared/.
- *
- * Done by wrapping the LOADER rather than installing a normalizer: the loader
- * receives names that are already normalized, so relative imports keep
- * QuickJS's default resolution. Supplying a normalizer would mean
- * reimplementing that resolution, and the default one is not exported.
- *
- * No-op on a stock build, where the two prefixes are the same string. */
-static JSModuleDef *schwung_module_loader(JSContext *ctx, const char *module_name,
-                                          void *opaque) {
-    const size_t canon_len = strlen(SHARED_IMPORT_CANONICAL);
-
-    if (strncmp(module_name, SHARED_IMPORT_CANONICAL, canon_len) == 0) {
-        char local[512];
-        int n = snprintf(local, sizeof(local), "%s%s",
-                         SHARED_IMPORT_LOCAL, module_name + canon_len);
-        /* Truncation would silently resolve to the wrong file; fall through to
-         * the canonical path instead, which at worst loads the stock copy. */
-        if (n > 0 && (size_t)n < sizeof(local))
-            return js_module_loader(ctx, local, opaque);
-    }
-    return js_module_loader(ctx, module_name, opaque);
-}
+/* The resolver (normalizer + loader) lives in host/shared_import_resolve.h so a
+ * host test can compile the REAL code against QuickJS with temp prefixes. */
+#include "host/shared_import_resolve.h"
 
 static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JSRuntime *rt = JS_NewRuntime();
@@ -2977,7 +2948,7 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     js_std_add_helpers(ctx, -1, 0);
 
     /* Enable ES module imports (e.g., import { ... } from '../shared/constants.mjs') */
-    JS_SetModuleLoaderFunc(rt, NULL, schwung_module_loader, NULL);
+    schwung_install_module_resolver(rt);
 
     JSValue global_obj = JS_GetGlobalObject(ctx);
 
