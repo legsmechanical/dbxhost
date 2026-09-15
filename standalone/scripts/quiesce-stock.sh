@@ -155,6 +155,158 @@ with open("/dev/shm/schwung-control", "r+b") as f:
 PY
 }
 
+# ⭑ THE GRACEFUL EXIT (2026-09-15). Freezing and then SIGKILLing Move leaves the
+# audio hardware DRIVERLESS: captured 20:59:55 that night, a -3 dBFS burst began
+# exactly at launch.sh's kill sweep and ran until our Move's first frames landed
+# (~1.5 s). Another launch with the identical sequence was silent — the codec is
+# simply not deterministic when nobody is feeding it. A Move that SHUTS DOWN
+# ORDERLY quiesces it on the way out (verified on our own host the same night,
+# with the thread-mask fix: a graceful exit left the line output silent across
+# the whole gap).
+#
+# Getting that orderly shutdown is not `kill -TERM $pid`. MoveOriginal handles
+# SIGTERM on ONE dedicated thread parked in rt_sigtimedwait — the only thread of
+# the process with SigBlk == 0 (every other carries 0x4202). A process-directed
+# signal goes to ANY thread with SIGTERM unblocked, and in the STOCK stack the
+# shim's helper threads are unblocked (an upstream bug this fork has since
+# fixed) and their crash handler _exit()s — so "SignalManager: Received signal
+# 15 -> Terminating Move" has been running by luck. A THREAD-directed SIGTERM
+# (tgkill) to the sigtimedwait thread is always consumed by that thread.
+#
+# ⚠ SAME ORDERING CONSTRAINT AS THE FREEZE: this must not run before shadow_ui
+# has exited. It is placed after the wait AND after save_song at every call
+# site, and additionally refuses to run while shadow_ui_live() is still true —
+# the timeout route reaches the freeze with a wedged UI, and a Move that exits
+# under it takes the param bus down mid-save exactly like a freeze would.
+# (Stock's shim respawns shadow_ui within <=743 ms of its exit; a graceful Move
+# exit takes both down together, which is what we want.)
+#
+# Returns 0 only when Move is GONE — the caller then skips freeze_move, because
+# there is nothing left to freeze. Every other outcome returns 1 and the caller
+# falls through to today's freeze-and-let-the-sweep-kill-it path, unchanged.
+#
+# ⭑ THE KNOB. This changes what the PANEL does at the handoff — a graceful Move
+# repaints on its way out, where a frozen one cannot push a frame — so it must
+# be switchable off on the device without a redeploy: set
+# DBX_QUIESCE_GRACEFUL=0, or `touch` the flag file below. Default ON.
+GRACEFUL_OFF_FLAG=/data/UserData/dbx-host/quiesce-graceful-off
+# ⚠⚠ ABSOLUTE PATH, for the reason spelled out at BLANK_LEDS above: this script
+# runs as `sh quiesce-stock.sh`, nothing is sourced, and a relative path here
+# would skip the whole feature in silence.
+PICK_SIGNAL_THREAD=/data/UserData/dbx-host/scripts/pick-signal-thread.py
+
+move_live() {
+    for p in $(pgrep -x MoveOriginal 2>/dev/null); do
+        case "$(cut -d' ' -f3 "/proc/$p/stat" 2>/dev/null)" in
+            Z|X|"") ;;            # zombie / dead / vanished between pgrep and read
+            *) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+graceful_enabled() {
+    case "${DBX_QUIESCE_GRACEFUL:-1}" in
+        0|no|off|false|NO|OFF|FALSE) return 1 ;;
+    esac
+    [ -e "$GRACEFUL_OFF_FLAG" ] && return 1
+    return 0
+}
+
+graceful_move_exit() {
+    if ! graceful_enabled; then
+        say "graceful exit OFF (DBX_QUIESCE_GRACEFUL / $GRACEFUL_OFF_FLAG) — freezing"
+        return 1
+    fi
+    if shadow_ui_live; then
+        say "shadow_ui still live — no graceful exit (param-bus deadlock), freezing"
+        return 1
+    fi
+    # Two MoveOriginal pids exist (parent/child, ~100 apart — e.g. "19827 19735").
+    # BOTH get the signal, CHILD FIRST: the child is the higher pid and carries
+    # the audio threads, so it is the one whose orderly shutdown quiesces the
+    # hardware; the parent is signalled after so it cannot outlive it and be
+    # left for the sweep's SIGKILL. `pidof` does not promise an order, so sort.
+    pids=$(pidof MoveOriginal 2>/dev/null | tr ' ' '\n' | sort -rn | tr '\n' ' ')
+    if [ -z "$(printf '%s' "$pids" | tr -d ' ')" ]; then
+        say "no MoveOriginal to exit gracefully"
+        return 1
+    fi
+    if [ ! -f "$PICK_SIGNAL_THREAD" ]; then
+        say "WARNING: $PICK_SIGNAL_THREAD missing — freezing instead"
+        return 1
+    fi
+
+    # Put the splash up and let the shim push it, exactly as freeze_move does,
+    # BEFORE the signal: those are the last frames we control. What a shutting-
+    # down Move paints over them is for hardware to answer.
+    paint_splash
+    sleep 0.2
+
+    arch=$(uname -m 2>/dev/null || echo unknown)
+    sent=0
+    for p in $pids; do
+        # SigBlk is world-readable; /proc/<tid>/syscall and wchan are not (we run
+        # as `ableton`, Move runs as root), which is why the picker leads with
+        # the mask. No zero-mask thread -> we do NOT guess: skip to the freeze.
+        tid=$(python3 "$PICK_SIGNAL_THREAD" "$p" 2>/dev/null || true)
+        if [ -z "$tid" ]; then
+            say "pid $p: no SigBlk==0 signal thread — not signalling"
+            continue
+        fi
+        if [ "$arch" = "aarch64" ]; then
+            if python3 - "$p" "$tid" <<'PY'
+import ctypes, sys
+libc = ctypes.CDLL("libc.so.6", use_errno=True)
+# ⚠ syscall() is VARIADIC and takes longs. ctypes would otherwise pass 32-bit
+# ints and leave the top half of each 64-bit register undefined on aarch64.
+libc.syscall.restype = ctypes.c_long
+libc.syscall.argtypes = [ctypes.c_long] * 4
+# aarch64 tgkill = 131. Thread-directed, so the rt_sigtimedwait thread — and
+# not some unblocked shim helper — is the one that consumes SIGTERM (15).
+sys.exit(0 if libc.syscall(131, int(sys.argv[1]), int(sys.argv[2]), 15) == 0 else 1)
+PY
+            then
+                say "pid $p: SIGTERM -> tid $tid (tgkill 131)"
+                sent=$((sent + 1))
+            else
+                say "pid $p: tgkill to tid $tid FAILED"
+            fi
+        else
+            # Not the device. Nothing here is portable, so degrade to the
+            # process-directed signal rather than aiming a wrong syscall number.
+            kill -TERM "$p" 2>/dev/null \
+                && { say "pid $p: arch $arch, process-directed SIGTERM"; sent=$((sent + 1)); }
+        fi
+    done
+    if [ "$sent" -eq 0 ]; then
+        say "no SIGTERM delivered — freezing"
+        return 1
+    fi
+
+    # Up to 3 s, polled every 100 ms. "Gone" must mean GONE and not ZOMBIE, for
+    # the same reason shadow_ui_live() reads /proc/<pid>/stat: we signal the
+    # child first, and a child that has exited stays listed by pgrep until its
+    # parent — which is itself shutting down — reaps it.
+    i=0
+    while [ "$i" -lt 30 ]; do
+        if ! move_live; then
+            say "stock Move exited gracefully after $((i * 100)) ms"
+            # Re-assert the splash/LEDs over whatever Move painted on its way
+            # out. Best-effort by construction: with the shim gone nothing is
+            # compositing the display SHM any more, so this is the one part of
+            # the visual handoff the freeze path gave us for free and this path
+            # cannot guarantee. Josh judges the result on the device.
+            paint_splash
+            return 0
+        fi
+        sleep 0.1
+        i=$((i + 1))
+    done
+    say "no graceful exit after 3 s — freezing"
+    return 1
+}
+
 freeze_move() {
     paint_splash
     # A few SPI frames (~3 ms each) so the shim pushes the new frame to the
@@ -247,7 +399,7 @@ if [ ! -e "$CONTROL" ]; then
     say "no stock control SHM — nothing to save"
     paint_splash
     save_song
-    freeze_move
+    graceful_move_exit || freeze_move
     exit 0
 fi
 
@@ -302,7 +454,7 @@ while [ "$i" -lt 50 ]; do
         say "shadow_ui exited after $((i * 100))ms$z"
         paint_splash
         save_song
-        freeze_move
+        graceful_move_exit || freeze_move
         exit 0
     fi
     sleep 0.1
@@ -312,5 +464,5 @@ done
 say "shadow_ui still running after 5s — proceeding anyway"
 paint_splash
 save_song
-freeze_move
+graceful_move_exit || freeze_move
 exit 0
