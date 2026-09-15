@@ -426,8 +426,19 @@ static const char *loaded_set_read_file(char *buf, size_t len)
 
 /* The pad a relaunch actually asked Move to open, or -1 when nothing is
  * pinned (see MOVE_INTENDED_INDEX_PATH). */
+/* The intended index answers ONE question — did the relaunch that started
+ * this Move land on the pad it asked for — so it is consulted until the first
+ * verdict of this process, then ignored. The marker file outlives the process
+ * (launch.sh leaves it for the next relaunch to overwrite), and a later
+ * in-process switch (the select actuator, no relaunch) would otherwise be
+ * judged against a pad nobody is asking for any more. The shim lives inside
+ * MoveOriginal, so this resets with every Move start. */
+static int loaded_intended_consumed = 0;
+static int loaded_unopened_empty_index = -1;   /* Move's index while an empty-pad UNOPENED is shown */
+
 static int loaded_set_read_intended_index(void)
 {
+    if (loaded_intended_consumed) return -1;
     FILE *f = fopen(MOVE_INTENDED_INDEX_PATH, "r");
     if (!f) return -1;
     char buf[32] = "";
@@ -461,9 +472,11 @@ static void loaded_set_verify_and_publish(int song_index)
 
     switch (loaded_set_action(v, elapsed)) {
     case LOADED_SET_ACT_PUBLISH_RESOLVED:
+        loaded_intended_consumed = 1;
         shadow_set_pages_publish(loaded_verify_name, loaded_verify_uuid);
         break;
     case LOADED_SET_ACT_PUBLISH_UNOPENED: {
+        loaded_intended_consumed = 1;
         char uuid[64];
         /* Retry must land back on the pad the user actually pressed, not
          * whichever pad Move's fallback happens to occupy. */
@@ -606,6 +619,32 @@ void shadow_poll_current_set(void)
     if (matched) {
         sampler_pending_song_index = -1;
         return;
+    }
+
+    /* A relaunch asked for pad N but Move sits on an index with NO project
+     * (an early pad press selected an empty pad, device 2026-09-15: intended 2,
+     * Move on 19). That is not "a new set still materialising" — the user's
+     * project did not open. Say so instead of presenting a blank set. */
+    /* Once published, hold it: this path is re-polled while the index stays
+     * unresolved, and falling through would overwrite the verdict with a
+     * blank "New Set" on the very next poll. A real change of index (Move
+     * moved on, or the user picked a set) releases it. */
+    if (loaded_unopened_empty_index >= 0 && song_index == loaded_unopened_empty_index) return;
+    loaded_unopened_empty_index = -1;
+    {
+        int intended_index = loaded_set_read_intended_index();
+        if (!loaded_set_index_matches(intended_index, song_index)) {
+            loaded_unopened_empty_index = song_index;
+            char uuid[64];
+            char name[128];
+            loaded_intended_consumed = 1;
+            if (++loaded_verify_seq == 0) loaded_verify_seq = 1;
+            snprintf(name, sizeof(name), "Set %d", intended_index + 1);
+            loaded_set_unopened_uuid(uuid, sizeof(uuid), intended_index, loaded_verify_seq);
+            shadow_set_pages_publish(name, uuid);
+            sampler_pending_song_index = -1;
+            return;
+        }
     }
 
     /* currentSongIndex changed, but the Sets/<UUID>/ folder is not materialized yet.

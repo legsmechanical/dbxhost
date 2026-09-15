@@ -909,6 +909,14 @@ static void shim_select_blank_move_leds(void);   /* defined with the gate below 
  * that point anyway. */
 #define BOOT_LED_BLANK_MAX_MS 20000
 static int boot_tool_led_blank = 0;
+/* Boot pad-input latch. Shim-LOCAL on purpose, not shadow_control->pad_block:
+ * shadow_ui lowers the shared flag on its own startup ("pad_block OFF"),
+ * ~0.8 s into a relaunch and before the tool takes the surface, and the
+ * shared-flag filter only runs under shadow_display_mode, which is also off
+ * in that window. Device 2026-09-15: a press at +1.0 s still reached Move and
+ * made it fall back to the default song. Enforced just before the MIDI_IN
+ * compaction, whatever the display mode. */
+static int boot_pad_block = 0;
 static uint64_t boot_tool_led_blank_deadline_ms = 0;
 /* Suppress plain volume-touch hide until touch is fully released after
  * Shift+Vol shortcut launches, avoiding a brief native volume flash. */
@@ -3575,7 +3583,7 @@ static void init_shadow_shm(void)
                  * too would cost Shift/Menu/Volume/transport responsiveness
                  * during every boot for a class of input that was never
                  * observed causing the fallback. */
-                shadow_control->pad_block = 1;
+                boot_pad_block = 1;
             }
         }
         /* Set-select actuator: armed only mid-session, by a tool calling
@@ -7021,7 +7029,7 @@ static void shim_select_blank_move_leds(void)
          * would stomp every pad_block that tool raises for itself. */
         if (boot_tool_led_blank) {
             boot_tool_led_blank = 0;
-            shadow_control->pad_block = 0;
+            boot_pad_block = 0;
         }
         return;
     }
@@ -7034,7 +7042,7 @@ static void shim_select_blank_move_leds(void)
             boot_tool_led_blank_deadline_ms = _now + BOOT_LED_BLANK_MAX_MS;
         } else if (_now >= boot_tool_led_blank_deadline_ms) {
             boot_tool_led_blank = 0;
-            shadow_control->pad_block = 0;
+            boot_pad_block = 0;
             shadow_log("boot LED blank: timed out — releasing LEDs to Move");
             if (!shadow_control->select_phase) return;
         }
@@ -9194,6 +9202,25 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
      * Dense-prefix-then-zero is the shape the hardware itself delivers, and
      * events already shift between slots across frames, which is why the
      * dedup rings key on content plus timestamp rather than position. */
+    /* Boot pad-input latch (see boot_pad_block): drop pad notes 68-99 and
+     * their poly aftertouch on the internal cable, regardless of display mode,
+     * so a press during a relaunch cannot select a set in Move. */
+    if (boot_pad_block) {
+        for (int j = 0; j < SHADOW_MIDI_IN_BYTES; j += 8) {
+            uint8_t cin = sh_midi[j] & 0x0F;
+            uint8_t cable = (sh_midi[j] >> 4) & 0x0F;
+            uint8_t type = sh_midi[j + 1] & 0xF0;
+            uint8_t d1 = sh_midi[j + 2];
+            if (cable != 0x00 || d1 < 68 || d1 > 99) continue;
+            if (((cin == 0x09 || cin == 0x08) && (type == 0x90 || type == 0x80)) ||
+                (cin == 0x0A && type == 0xA0)) {
+                sh_midi[j] = 0;
+                sh_midi[j + 1] = 0;
+                sh_midi[j + 2] = 0;
+                sh_midi[j + 3] = 0;
+            }
+        }
+    }
     if (global_mmap_addr)
         shadow_midi_in_compact(global_mmap_addr + MIDI_IN_OFFSET);
 
