@@ -126,8 +126,8 @@ printf '%s' "$_cp" | grep -q 'shutil.copytree(sp, np)' \
 printf '%s' "$_cp" | grep -q 'host_state_dir' \
     && bad "do_copy references a parallel host-state root again — that root died in Phase C" \
     || ok "do_copy has no parallel root to seed: the copytree carries BOTH halves"
-printf '%s' "$_cp" | grep -q 'n != dbx_subdir' \
-    && ok "do_copy skips the reserved state subdir when hunting the inner set" \
+printf '%s' "$_cp" | grep -q 'inner = ss.inner_dirs(np)' \
+    && ok "do_copy skips the state dir (any dAVEBOx~n) when hunting the inner set" \
     || bad "do_copy lost the reserved-name filter — it can rename the STATE dir as the set"
 
 [ "$fail" -eq 0 ] && echo "PASS: a project switch cannot inherit its predecessor's state" \

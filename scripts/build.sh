@@ -874,6 +874,10 @@ if [ -d ./standalone ]; then
     # project-cmd.sh: in-session project management (list/new/switch), driven
     # by the hosted module via host_system_cmd.
     cp ./standalone/scripts/project-cmd.sh ./build/scripts/
+    # state_subdir.py: the state-dir naming rule project-cmd.sh, select-list.sh
+    # and set-swap.sh import from beside themselves. Without it every project
+    # verb dies on the import.
+    cp ./standalone/scripts/state_subdir.py ./build/scripts/
     # move-loaded-set-reader.sh: backgrounded by launch.sh to distill
     # MoveOriginal's own "About to load ..." boot line into
     # move_loaded_set.txt (see that script for the file contract).

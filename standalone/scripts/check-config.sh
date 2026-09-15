@@ -71,7 +71,11 @@ REPO="$(cd "$HERE/.." && pwd)"
 DBX_SUBDIR_NAME=dAVEBOx
 check "seq8.c reserved subdir"         "$REPO/davebox/dsp/seq8.c"           "\"$DBX_SUBDIR_NAME\""
 check "ui_persistence reserved subdir" "$REPO/davebox/ui/ui_persistence.mjs" "'$DBX_SUBDIR_NAME'"
-check "project-cmd reserved subdir"    "$HERE/scripts/project-cmd.sh"        ":-$DBX_SUBDIR_NAME}"
+# The shell side's naming RULE (set-folder order fix): project-cmd.sh imports it.
+check "state_subdir.py base name"      "$HERE/scripts/state_subdir.py"       "STATE_BASE = \"$DBX_SUBDIR_NAME\""
+check "state_subdir.py name pattern"   "$HERE/scripts/state_subdir.py"       "^$DBX_SUBDIR_NAME(~[0-9]+)?\$"
+check "state_subdir.py retry bound"    "$HERE/scripts/state_subdir.py"       "STATE_MAX_TRIES = 256"
+check "project-cmd imports the rule"   "$HERE/scripts/project-cmd.sh"        "import state_subdir as ss"
 check "select-list reserved subdir"    "$HERE/scripts/select-list.sh"        ":-$DBX_SUBDIR_NAME}"
 # Phase C: the HOST side has two spellings of the same contract - the shim
 # reads at boot (C) what shadow_ui.js writes on SET_CHANGED (JS). The host

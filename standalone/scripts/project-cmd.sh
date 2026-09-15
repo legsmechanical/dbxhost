@@ -39,7 +39,7 @@ SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
 DBX_PALETTE_N=9
 SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
 # Per-project state needs NO constant here: both halves live INSIDE the
-# project's set dir (Sets/<uuid>/$DBX_SUBDIR_NAME/ — module files flat, host
+# project's set dir (Sets/<uuid>/<state>/ — module files flat, host
 # half under host/), so delete/copy/rename of the set dir take everything.
 # The host's own record of the set it loaded, rewritten on every set change.
 # ⚠ THIS install's copy — the stock tree has a file of the same name holding
@@ -49,15 +49,16 @@ ACTIVE_SET_PATH="${ACTIVE_SET_PATH:-$DBX_DIR/active_set.txt}"
 # Move's stock instrument library. Overridable so the tests can point at a
 # fixture instead of the device's real one.
 CORE_LIBRARY_DIR="${CORE_LIBRARY_DIR:-/data/CoreLibrary}"
-# ⭑ The reserved state subdir INSIDE each project's set dir (Phase B of the
-# state-co-location plan): Sets/<uuid>/$DBX_SUBDIR_NAME/ holds the module's
-# per-project state, beside Move's inner <Name>/ dir. Every site that hunts the
-# inner set dir by "the one directory inside" MUST skip this name — a project
-# dir has TWO children now, and os.listdir order is arbitrary, so an unfiltered
-# [0] is a coin toss between the set and the state. Grep for dbx_subdir to find
-# the filter sites; check-config.sh pins the spelling here, in the module
-# (ui_persistence.mjs, dsp/seq8.c) and in select-list.sh.
-DBX_SUBDIR_NAME="${DBX_SUBDIR_NAME:-dAVEBOx}"
+# ⭑ The state dir INSIDE each project's set dir (Phase B of the
+# state-co-location plan): Sets/<uuid>/<state>/ holds the module's per-project
+# state, beside Move's inner <Name>/ dir. Its NAME is not fixed: `dAVEBOx` or
+# `dAVEBOx~<n>`, chosen per project so it lists AFTER the song folder, because
+# Move opens the first subfolder it lists as the song (set-folder order fix,
+# 2026-09-14). Every rule about that name — match, find, choose, re-order —
+# lives in state_subdir.py beside this script; every python block here imports
+# it rather than spelling the name. check-config.sh pins it against the C copy.
+DBX_PY_DIR="${DBX_PY_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+export DBX_PY_DIR
 OUT_JSON="$DBX_DIR/projects.json"
 TEMPLATE_DIR="$DBX_DIR/sets/template"
 
@@ -115,9 +116,11 @@ os.setxattr(_d, 'user.local-cloud-state', b'notSynced')
 }
 
 do_list() {
-    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$OUT_JSON" "$DBX_SUBDIR_NAME" <<'PYEOF'
+    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$OUT_JSON" <<'PYEOF'
 import json, os, re, sys
-sets_dir, settings, out, dbx_subdir = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import state_subdir as ss
+sets_dir, settings, out = sys.argv[1], sys.argv[2], sys.argv[3]
 cur = 0
 try:
     m = re.search(r'"currentSongIndex":\s*(-?\d+)', open(settings).read())
@@ -131,12 +134,9 @@ if os.path.isdir(sets_dir):
         p = os.path.join(sets_dir, u)
         if not os.path.isdir(p) or not uuid_re.match(u):
             continue
-        # ⚠ TWO children since Phase B: Move's inner <Name>/ AND the reserved
-        # state subdir. listdir order is arbitrary — filter, or the project
-        # can list under the state dir's name.
-        names = [n for n in os.listdir(p)
-                 if os.path.isdir(os.path.join(p, n)) and not n.startswith(".")
-                 and n != dbx_subdir]
+        # ⚠ TWO children since Phase B: Move's inner <Name>/ AND the state
+        # dir. Filter, or the project can list under the state dir's name.
+        names = ss.inner_dirs(p)
         name = names[0] if names else u[:8]
         idx = None
         color = None
@@ -180,26 +180,20 @@ PYEOF
 # repairs projects made before this rule existed — or muted from Move itself in
 # a previous session.
 do_normalize() { # [index]  — every project when omitted
-    python3 - "$SETS_DIR" "$DBX_SUBDIR_NAME" "${1:-}" <<'PYEOF'
+    python3 - "$SETS_DIR" "${1:-}" <<'PYEOF'
 import json, os, re, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import state_subdir as ss
 
-sets_dir, dbx_subdir, only = sys.argv[1], sys.argv[2], sys.argv[3]
+sets_dir, only = sys.argv[1], sys.argv[2]
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 
 def song_path(uuid_dir):
     """The project's Song.abl, via its single inner set dir.
 
-    ⚠ Skip the reserved state subdir — it is a sibling of Move's inner <Name>/
-    dir, not a set, and listdir order is arbitrary."""
-    for n in sorted(os.listdir(uuid_dir)):
-        if n.startswith(".") or n == dbx_subdir:
-            continue
-        p = os.path.join(uuid_dir, n)
-        if os.path.isdir(p):
-            f = os.path.join(p, "Song.abl")
-            if os.path.isfile(f):
-                return f
-    return None
+    ⚠ Skips the state dir — a sibling of Move's inner <Name>/ dir, not a set."""
+    n = ss.song_folder(uuid_dir)
+    return os.path.join(uuid_dir, n, ss.SONG_FILE) if n else None
 
 def wanted(mixer):
     """True when the mixer already satisfies the invariant."""
@@ -332,15 +326,19 @@ PYEOF
 # is leave a note: the module reads it on the first load of that project,
 # applies it, and deletes it. One marker, consumed once.
 #
-# ⚠ Written into the project's own dAVEBOx dir, so it travels with the project
+# ⚠ Written into the project's own state dir, so it travels with the project
 # and dies with it — a copy of a project is NOT a new project and must not be
 # re-randomised, which is exactly what a marker in a shared location would do.
+# ⚠⚠ This is usually the FIRST thing to create the state dir, so it goes
+# through the chooser: a plain mkdir of `dAVEBOx` here is exactly the bug that
+# opened an empty Move set on some pads (it listed before the song folder).
 seed_random_key() { # set-dir
     python3 - "$1" <<'PYEOF' || true
 import json, os, random, sys
-d = os.path.join(sys.argv[1], "dAVEBOx")
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import state_subdir as ss
 try:
-    os.makedirs(d, exist_ok=True)
+    d = os.path.join(sys.argv[1], ss.ensure_state_subdir(sys.argv[1]))
     # 12 keys x 14 scales — the same ranges the DSP clamps to
     # (sp_globals_transport.c: key 0-11, scale 0-13).
     with open(os.path.join(d, "new-project.json"), "w") as f:
@@ -552,10 +550,11 @@ do_new_at() { # index [name]
 do_copy() { # src-index dst-index
     case "${1:-}" in *[!0-9]*|"") die "copy needs a numeric source index" ;; esac
     case "${2:-}" in *[!0-9]*|"") die "copy needs a numeric destination index" ;; esac
-    python3 - "$SETS_DIR" "$1" "$2" "$DBX_SUBDIR_NAME" <<'PYEOF'
+    python3 - "$SETS_DIR" "$1" "$2" <<'PYEOF'
 import datetime, os, re, shutil, sys, uuid as uuidlib
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import state_subdir as ss
 sets_dir, src, dst = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
-dbx_subdir = sys.argv[4]
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 def find(idx):
     for u in os.listdir(sets_dir):
@@ -576,7 +575,7 @@ if du:
     sys.exit("project-cmd: ERROR: index %d already occupied" % dst)
 
 # ⭑ COPY = one copytree of the WHOLE uuid dir. The module's state lives INSIDE
-# it (<uuid>/<dbx_subdir>/, Phase B of the state-co-location plan), so the
+# it (<uuid>/<state>/, Phase B of the state-co-location plan), so the
 # duplicate is a snapshot BY CONSTRUCTION — the hand-copied module-state seeding
 # that used to live here, and the silently-tracks-its-source bug it fixed
 # (Josh, hardware, 2026-08-11), are both structurally impossible now.
@@ -585,13 +584,16 @@ if du:
 nu = str(uuidlib.uuid4())
 np = os.path.join(sets_dir, nu)
 shutil.copytree(sp, np)
-inner = [n for n in os.listdir(np)
-         if os.path.isdir(os.path.join(np, n)) and not n.startswith(".")
-         and n != dbx_subdir]
+inner = ss.inner_dirs(np)
 if not inner:
     shutil.rmtree(np)
     sys.exit("project-cmd: ERROR: source has no inner set dir")
 os.rename(os.path.join(np, inner[0]), os.path.join(np, inner[0] + " Copy"))
+# " Copy" is a NEW song name, so it can list on the other side of the copied
+# state dir — re-run the order rule, or the duplicate opens as an empty set.
+moved = ss.fix_state_order(np)
+if moved:
+    print("project-cmd: copy: state dir %s -> %s (lists after the song)" % moved)
 # copytree carries the INNER tree but not the OUTER dir's xattrs — index and
 # color are the outer dir's, so set by hand.
 os.setxattr(np, "user.song-index", str(dst).encode())
@@ -824,9 +826,11 @@ do_rename() { # index newname [reselect]
     [ -n "${2:-}" ] || die "rename needs a name"
     case "$2" in */*) die "name must not contain /" ;; esac
 
-    _found="$(python3 - "$SETS_DIR" "$1" "$DBX_SUBDIR_NAME" <<'PYEOF'
+    _found="$(python3 - "$SETS_DIR" "$1" <<'PYEOF'
 import os, re, sys
-sets_dir, idx, dbx_subdir = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import state_subdir as ss
+sets_dir, idx = sys.argv[1], int(sys.argv[2])
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 for u in os.listdir(sets_dir):
     p = os.path.join(sets_dir, u)
@@ -837,9 +841,7 @@ for u in os.listdir(sets_dir):
             continue
     except (OSError, ValueError):
         continue
-    inner = [n for n in os.listdir(p)
-             if os.path.isdir(os.path.join(p, n)) and not n.startswith(".")
-             and n != dbx_subdir]
+    inner = ss.inner_dirs(p)
     if not inner:
         sys.exit("project-cmd: ERROR: project has no inner set dir")
     print(u); print(inner[0])
@@ -879,6 +881,11 @@ PYEOF
     fi
 
     mv "$SETS_DIR/$_uuid/$_old" "$SETS_DIR/$_uuid/$2"
+    # A new song name can list on the other side of the state dir: re-order.
+    python3 -c 'import os,sys; sys.path.insert(0, os.environ["DBX_PY_DIR"]); import state_subdir as ss
+m = ss.fix_state_order(sys.argv[1])
+if m: print("project-cmd: rename: state dir %s -> %s (lists after the song)" % m)' "$SETS_DIR/$_uuid" \
+        || printf 'project-cmd: WARNING: rename: state-dir order check failed\n' >&2
     printf 'project-cmd: renamed index %s to "%s"\n' "$1" "$2"
     do_list
 }
@@ -905,7 +912,7 @@ PYEOF
 # land in the wrong project.
 #
 # PROVENANCE: a project is dAVEBOx's own if it carries the `user.dbx-color`
-# xattr OR a `<uuid>/$DBX_SUBDIR_NAME/new-project.json` file — every project
+# xattr OR a `<uuid>/<state>/new-project.json` file — every project
 # do_new/do_new_at/do_copy creates leaves one or the other (seed_random_key
 # always writes new-project.json; the color xattr is best-effort). A project
 # sharing an index with one of those, that is NEITHER, is the Move-born
@@ -926,32 +933,24 @@ PYEOF
 # so a healthy library costs one directory listing and logs NOTHING — same
 # "silent when there is nothing to say" shape `do_normalize` already has.
 do_repair_indices() {
-    python3 - "$SETS_DIR" "$DBX_DIR" "$DBX_SUBDIR_NAME" <<'PYEOF'
+    python3 - "$SETS_DIR" "$DBX_DIR" <<'PYEOF'
 import datetime, os, re, shutil, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import state_subdir as ss
 
-sets_dir, dbx_dir, dbx_subdir = sys.argv[1], sys.argv[2], sys.argv[3]
+sets_dir, dbx_dir = sys.argv[1], sys.argv[2]
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 NUM_PADS = 32   # davebox/ui/ui_state.mjs: "32 pads = project slots"
 
 
 def has_song(uuid_dir):
-    """A Song.abl under any non-reserved inner dir — same shape as
-    do_normalize's song_path(), minus the sort (existence only)."""
-    try:
-        entries = os.listdir(uuid_dir)
-    except OSError:
-        return False
-    for n in entries:
-        if n.startswith(".") or n == dbx_subdir:
-            continue
-        p = os.path.join(uuid_dir, n)
-        if os.path.isdir(p) and os.path.isfile(os.path.join(p, "Song.abl")):
-            return True
-    return False
+    """A Song.abl under any non-state inner dir — do_normalize's rule."""
+    return ss.song_folder(uuid_dir) is not None
 
 
 def is_dbx_owned(uuid_dir):
-    if os.path.exists(os.path.join(uuid_dir, dbx_subdir, "new-project.json")):
+    st = ss.state_subdir(uuid_dir)
+    if st and os.path.exists(os.path.join(uuid_dir, st, "new-project.json")):
         return True
     if hasattr(os, "getxattr"):
         try:

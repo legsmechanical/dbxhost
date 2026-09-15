@@ -58,8 +58,14 @@ inner = sorted(os.listdir(os.path.join(sets_dir, dirs[0])))
 # it (project-cmd's seed_random_key). It used to appear only on the first save.
 # Asserted as a SET rather than loosened to a substring check: a stray third
 # entry here is still worth failing on.
-assert inner == ["Project 2", "dAVEBOx"], inner
-seed = os.path.join(sets_dir, dirs[0], "dAVEBOx", "new-project.json")
+# The state dir's NAME is chosen per project (dAVEBOx or dAVEBOx~<n>, set-folder
+# order fix) — so the second entry is matched by the rule, not spelled.
+sys.path.insert(0, "standalone/scripts")
+import state_subdir as ss
+assert len(inner) == 2 and "Project 2" in inner, inner
+st = [n for n in inner if ss.is_state_name(n)]
+assert len(st) == 1, inner
+seed = os.path.join(sets_dir, dirs[0], st[0], "new-project.json")
 assert os.path.isfile(seed), "no key/scale seed written for the new project"
 song = json.load(open(os.path.join(sets_dir, dirs[0], "Project 2", "Song.abl")))
 assert song["tracks"][0]["midiInputMode"] == [0]   # template wiring intact
@@ -147,7 +153,9 @@ PY
 import json, os, sys
 d = json.load(open(sys.argv[2]))
 cu = [x for x in d["projects"] if x["index"] == 5][0]["uuid"]
-st = os.path.join(sys.argv[1], cu, "dAVEBOx", "seq8sa-state.json")
+sys.path.insert(0, "standalone/scripts")
+import state_subdir as ss
+st = os.path.join(sys.argv[1], cu, ss.state_subdir(os.path.join(sys.argv[1], cu)) or "?", "seq8sa-state.json")
 assert os.path.isfile(st), "copy has no co-located state file"
 assert "fixture" in open(st).read(), "state bytes did not come from the source"
 PY
@@ -171,7 +179,7 @@ PY
     printf '%s\nsomething-else\n' "99999999-dead-dead-dead-000000000000" > "$ACTIVE_SET_PATH"
     sh "$CMD" rename 7 "Renamed Project" >/dev/null
     check "rename: inner dir renamed" test -d "$SETS_DIR/$U1/Renamed Project"
-    check "rename: state subdir untouched by rename" test -f "$SETS_DIR/$U1/dAVEBOx/seq8sa-state.json"
+    check "rename: state file survives the rename" bash -c "ls '$SETS_DIR/$U1'/dAVEBOx*/seq8sa-state.json >/dev/null 2>&1"
     check "rename: old dir gone" bash -c "! test -d '$SETS_DIR/$U1/First Project'"
     check "rename: no relaunch queued" bash -c "! test -f '$DBX_DIR/relaunch_patch.sh'"
 
