@@ -149,7 +149,7 @@ with open("/dev/shm/schwung-display", "r+b") as f:
     mm[:] = bytes(out)
     mm.flush(); mm.close()
 with open("/dev/shm/schwung-control", "r+b") as f:
-    mm = mmap.mmap(f.fileno(), 84)
+    mm = mmap.mmap(f.fileno(), 256)
     mm[0] = 1          # display_mode: keep the shim compositing our frame
     mm.flush(); mm.close()
 PY
@@ -251,20 +251,44 @@ if [ ! -e "$CONTROL" ]; then
     exit 0
 fi
 
-# should_exit is byte 2 of shadow_control_t (display_mode, shadow_ready,
-# should_exit, ...). Setting it asks for a saved, orderly exit. FIRST thing we
-# do: the sooner the menu is gone, the sooner the user stops clicking it.
+# Two bytes of shadow_control_t, in this order:
+#
+#   [49] mute_move_audio = 1  — FIRST. Despite its name this is the shim's
+#        whole-mix hardware mute: the last statement of the SPI pre-transfer
+#        callback zeroes the audio region of the buffer that is about to be
+#        copied to the hardware, AFTER Move's audio, the chain slots, Master
+#        FX and TTS have all been mixed in. Captured 2026-09-15 (ZOOM line
+#        capture, clocks matched): a broadband -4 dBFS burst decaying over
+#        ~1.4 s began within 10 ms of should_exit and ended before our Move
+#        started — the exiting UI's autosave serves multi-ms `synth:state`
+#        GETs on the SPI callback, the late frames tear the output, and the
+#        stock FX chain rings the tear out. Mute sits downstream of all of
+#        that, so the tear never leaves the box. Nothing in stock resets the
+#        byte (the shim's init block skips it), and launch.sh's teardown
+#        removes /dev/shm/schwung-* so stock boots un-muted afterwards — if
+#        that rm is ever narrowed, clear this byte explicitly on the way out.
+#        Move's own set goes silent 1-2 s earlier than before; that is the
+#        trade at a handoff the user just asked for.
+#   [2]  should_exit = 1 — asks the UI for a saved, orderly exit. The sooner
+#        the menu is gone, the sooner the user stops clicking it.
+#
+# Offsets are stock v1.4.0's (offsetof, compiled from its header) and happen
+# to equal the fork's; the map is the full CONTROL_BUFFER_SIZE, not the 84
+# bytes an older layout had — pinned by tests/host/test_handoff_mute.sh.
 say "$(python3 - "$CONTROL" <<'PY'
-import mmap, sys
+import mmap, sys, time
 try:
     with open(sys.argv[1], "r+b") as f:
-        mm = mmap.mmap(f.fileno(), 84)
-        mm[2] = 1
+        mm = mmap.mmap(f.fileno(), 256)
+        mm[49] = 1          # mute_move_audio: whole-mix hardware mute
+        mm.flush()
+        time.sleep(0.01)    # ~3 SPI frames: the mute lands before the save
+        mm[2] = 1           # should_exit
         mm.flush()
         mm.close()
-    print("should_exit set")
+    print("audio muted; should_exit set")
 except Exception as e:
-    print("could not set should_exit: %s" % e)
+    print("could not set mute/should_exit: %s" % e)
 PY
 )"
 
