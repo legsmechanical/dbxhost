@@ -52,6 +52,12 @@ set -eu
 
 DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
 SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
+# state_subdir.py (beside this script): the state dir's name is dAVEBOx or
+# dAVEBOx~<n> per project (set-folder order fix) — never spell it here.
+DBX_PY_DIR="${DBX_PY_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+export DBX_PY_DIR
+# No __pycache__ beside the scripts (the install tree is a manifest-checked payload).
+export PYTHONDONTWRITEBYTECODE=1
 SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
 
 SWAP_ROOT="${SWAP_ROOT:-$DBX_DIR/sets}"
@@ -150,6 +156,8 @@ write_song_index() { # index
 session_song_index() {
     python3 - "$SETS_DIR" "$ACTIVE_SET_PATH" <<'SESSIDX_PY' 2>/dev/null
 import os, sys, glob
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import state_subdir as ss
 
 sets_dir, active_set_path = sys.argv[1], sys.argv[2]
 
@@ -167,7 +175,9 @@ def index_of(uuid):
 def newest_autosave_uuid():
     """The project the module is writing IS the project that is loaded."""
     best, best_t = None, None
-    for path in glob.glob(os.path.join(sets_dir, "*", "dAVEBOx", "seq8sa-state.json")):
+    for path in glob.glob(os.path.join(sets_dir, "*", ss.STATE_BASE + "*", "seq8sa-state.json")):
+        if not ss.is_state_name(os.path.basename(os.path.dirname(path))):
+            continue
         try:
             t = os.stat(path).st_mtime
         except OSError:

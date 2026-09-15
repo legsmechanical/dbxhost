@@ -69,15 +69,31 @@ check "set-swap calls the umount verb" "$HERE/scripts/set-swap.sh"  "--umount-se
 # is arbitrary, so it passes most of the time — the worst kind).
 REPO="$(cd "$HERE/.." && pwd)"
 DBX_SUBDIR_NAME=dAVEBOx
-check "seq8.c reserved subdir"         "$REPO/davebox/dsp/seq8.c"           "\"$DBX_SUBDIR_NAME\""
-check "ui_persistence reserved subdir" "$REPO/davebox/ui/ui_persistence.mjs" "'$DBX_SUBDIR_NAME'"
-check "project-cmd reserved subdir"    "$HERE/scripts/project-cmd.sh"        ":-$DBX_SUBDIR_NAME}"
-check "select-list reserved subdir"    "$HERE/scripts/select-list.sh"        ":-$DBX_SUBDIR_NAME}"
-# Phase C: the HOST side has two spellings of the same contract - the shim
-# reads at boot (C) what shadow_ui.js writes on SET_CHANGED (JS). The host
-# half lives one level deeper, under <subdir>/host.
-check "shadow_set_pages.h host subdir" "$REPO/src/host/shadow_set_pages.h"   "\"$DBX_SUBDIR_NAME/host\""
-check "shadow_ui.js host subdir"       "$REPO/src/shadow/shadow_ui.js"       "\"$DBX_SUBDIR_NAME/host\""
+# The shell side's naming RULE (set-folder order fix): project-cmd.sh imports it.
+check "state_subdir.py base name"      "$HERE/scripts/state_subdir.py"       "STATE_BASE = \"$DBX_SUBDIR_NAME\""
+check "state_subdir.py name pattern"   "$HERE/scripts/state_subdir.py"       "^$DBX_SUBDIR_NAME(~[0-9]+)?\$"
+check "state_subdir.py retry bound"    "$HERE/scripts/state_subdir.py"       "STATE_MAX_TRIES = 256"
+check "project-cmd imports the rule"   "$HERE/scripts/project-cmd.sh"        "import state_subdir as ss"
+check "select-list imports the rule"   "$HERE/scripts/select-list.sh"        "import state_subdir as ss"
+check "set-swap imports the rule"      "$HERE/scripts/set-swap.sh"           "import state_subdir as ss"
+# The C side's copy of the SAME rule (dbx_state_subdir.h): the shim, the JS
+# binding host_state_subdir (host UI + dAVEBOx UI) and the DSP. The DSP builds
+# in a container that cannot see src/, so it carries a copy — pinned
+# BYTE-IDENTICAL, then the name, pattern and retry bound against the shell's.
+check "C rule base name"               "$REPO/src/host/dbx_state_subdir.h"   "#define DBX_STATE_BASE       \"$DBX_SUBDIR_NAME\""
+check "C rule pattern"                 "$REPO/src/host/dbx_state_subdir.h"   "\"^$DBX_SUBDIR_NAME(~[0-9]+)?\$\""
+check "C rule retry bound"             "$REPO/src/host/dbx_state_subdir.h"   "#define DBX_STATE_MAX_TRIES  256"
+if cmp -s "$REPO/src/host/dbx_state_subdir.h" "$REPO/davebox/dsp/dbx_state_subdir.h"; then
+    echo "  ok   davebox/dsp/dbx_state_subdir.h is byte-identical to src/host/'s"
+else
+    echo "  FAIL davebox/dsp/dbx_state_subdir.h differs from src/host/dbx_state_subdir.h"
+    fail=1
+fi
+check "seq8.c uses the rule"           "$REPO/davebox/dsp/seq8.c"            "dbx_state_subdir_resolve(uuid_dir, create"
+check "shim boot read uses the rule"   "$REPO/src/host/shadow_chain_mgmt.c"  "dbx_state_subdir_resolve(set_root, 0"
+check "JS binding uses the rule"       "$REPO/src/host/js_host_common.c"     "dbx_state_subdir_resolve(dir, create"
+check "shadow_ui.js resolves"          "$REPO/src/shadow/shadow_ui.js"       "host_state_subdir(setDir, !!create)"
+check "ui_persistence resolves"        "$REPO/davebox/ui/ui_persistence.mjs" "host_state_subdir(dir, !setUuidIsProvisional(uuid))"
 
 # The HOST's own copy. shadow_ui.js owns the Shift+Back exit, so a DBX_DIR
 # change that misses this line breaks exit-to-stock from the host side with

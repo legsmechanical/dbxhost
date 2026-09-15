@@ -92,6 +92,9 @@ setsid --wait bash -c '
   # from quiesce and the reaper, which write their own.
   ts() { echo "$(date +%H:%M:%S.%2N) phase: $*"; }
   ts "launcher entered (entry=$DBX_ENTRY)"
+
+  # (The move_loaded_set.txt reader starts just before the Move loop below,
+  # not here -- see the note there for why the position matters.)
   # ENTRY: at BOOT we are the boot selector target — MoveLauncher exec-ed the
   # selector, which exec-ed us, so this process IS move-launcher.service, not
   # something running alongside it. Three consequences, each handled below:
@@ -464,6 +467,14 @@ setsid --wait bash -c '
     # actually wrong, so it costs nothing on a healthy library.
     sh "$DBX_DIR/scripts/project-cmd.sh" normalize || \
       echo "WARNING: Move mixer normalize failed — continuing"
+    # S3: index-collision + orphan repair, same Move-not-running window as the
+    # normalize sweep above (the only window a set dir can be re-indexed or
+    # moved without a live Move clobbering it). Before normalize would also
+    # work; after is chosen so a project about to be quarantined is never
+    # normalized first for nothing. Never deletes; only re-indexes a
+    # Move-born stray or moves an orphan into sets/quarantine/<date>/.
+    sh "$DBX_DIR/scripts/project-cmd.sh" repair-indices || \
+      echo "WARNING: repair-indices failed — continuing"
   fi
 
   ts "workspace ready"
@@ -530,6 +541,26 @@ setsid --wait bash -c '
   fi
 
   rm -f "$DBX_DIR/relaunch_requested"
+
+  # S1: background reader that distills MoveOriginal own "About to load ..."
+  # boot line into $DBX_DIR/move_loaded_set.txt (contract and lifecycle at the
+  # top of move-loaded-set-reader.sh). ONE per session, alive across every
+  # relaunch below. Its position is load-bearing:
+  #   * AFTER the session lock -- started before it, a REFUSED second launch
+  #     left a second reader running beside the live session;
+  #   * AFTER the inherited-FD close loop -- started before it, the reader and
+  #     its tail held the SPI device our parent passed us;
+  #   * AFTER every refuse() -- nothing below this line exits before the
+  #     explicit stop on the exit path;
+  #   * fd 9 closed for it (9>&-) so it can never hold the session lock.
+  # It is given this shell pid as its OWNER and stops itself when that pid is
+  # gone, so even an exit path that forgets it (or a killed supervisor) cannot
+  # leave it running into the stock session the boot door execs to.
+  _mlsr_pid=""
+  if [ -f "$DBX_DIR/scripts/move-loaded-set-reader.sh" ]; then
+    sh "$DBX_DIR/scripts/move-loaded-set-reader.sh" "$LOG" "$DBX_DIR/move_loaded_set.txt" "$$" 9>&- &
+    _mlsr_pid=$!
+  fi
   while :; do
     # (No second LED blank leg here — it was removed 2026-08-24 after shipping
     # twice without darkening anything. Writing note-offs down OUR ring cannot
@@ -539,6 +570,13 @@ setsid --wait bash -c '
     # happen while STOCK still owns the surface, which is leg 1 in
     # quiesce-stock.sh; from the freeze onward the strip is what keeps the pads
     # dark, because there is nothing left to repaint them.)
+    # S1: clear the reader outfile before EVERY Move start (first boot and
+    # every relaunch) -- a value the reader wrote for a PREVIOUS Move process
+    # must never be read as belonging to this one. S9: its history sibling
+    # (move_loaded_history.txt, written by move-loaded-set-reader.sh) shares
+    # the same lifecycle -- clear it alongside so a fallback log line never
+    # mixes loads from two different Move processes.
+    rm -f "$DBX_DIR/move_loaded_set.txt" "$DBX_DIR/move_loaded_history.txt"
     ts "starting Move"
     echo "run LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal"
     env LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal
@@ -576,6 +614,11 @@ setsid --wait bash -c '
       if [ -f "$DBX_DIR/relaunch_patch.sh" ]; then
         sh "$DBX_DIR/relaunch_patch.sh" || echo "WARNING: relaunch patch failed"
         rm -f "$DBX_DIR/relaunch_patch.sh"
+        # Set-folder order fix (S7): a patch can rename a song folder, and the
+        # new name may list after the state dir — Move would then open the
+        # state dir as the set. Still inside the Move-is-down window.
+        sh "$DBX_DIR/scripts/project-cmd.sh" fix-order || \
+          echo "WARNING: fix-order failed — continuing"
       fi
       if [ -f "$DBX_DIR/relaunch_song_index" ]; then
         _rsi=$(cat "$DBX_DIR/relaunch_song_index")
@@ -585,6 +628,15 @@ setsid --wait bash -c '
             sed "s/\(\"currentSongIndex\":[[:space:]]*\)-\{0,1\}[0-9][0-9]*/\1$_rsi/" \
               /data/UserData/settings/Settings.json > /data/UserData/settings/Settings.json.dbxtmp \
               && mv -f /data/UserData/settings/Settings.json.dbxtmp /data/UserData/settings/Settings.json
+            # S4b: the pad the user actually chose, for the host to verify
+            # against (shadow_loaded_set_policy.h loaded_set_index_matches)
+            # -- Move is free to reject this set and settle on a DIFFERENT
+            # real project of its own, and only THIS file still remembers
+            # what was asked for. Left in place (not removed) after this
+            # relaunch: it stays correct until the next relaunch overwrites
+            # it, and a cold session with no relaunch yet leaves it absent,
+            # which the host reads as "nothing pinned -- trust the scan".
+            echo "$_rsi" > "$DBX_DIR/move_intended_index.txt"
             echo "applied project index $_rsi"
             ;;
         esac
@@ -614,6 +666,15 @@ setsid --wait bash -c '
     break
   done
   echo "davebox host exited ($?) — restoring the watchdog"
+
+  # S1: the reader was started once, outside this loop -- stop it with the
+  # session, not with an individual Move process. Its TERM handler tears down
+  # its own tail pipeline; wait so it is gone before the boot door execs on.
+  if [ -n "$_mlsr_pid" ]; then
+    kill "$_mlsr_pid" 2>/dev/null || true
+    wait "$_mlsr_pid" 2>/dev/null || true
+  fi
+  rm -f "$DBX_DIR/move_loaded_set.txt"
 
   # Kill surviving sidecars on EXIT too — same reason as the relaunch branch:
   # they outlive MoveOriginal, and a stray shadow_ui keeps running against

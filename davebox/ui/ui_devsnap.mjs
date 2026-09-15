@@ -25,7 +25,7 @@
  * / row within the hold keeps its existing modifier meaning; a tap keeps the
  * retrospective capture — the layer only opens once the hold is unmistakable.
  *
- * STORAGE: per PROJECT, Sets/<uuid>/dAVEBOx/snapshots/<n>/ — the host writes
+ * STORAGE: per PROJECT, Sets/<uuid>/<state dir>/snapshots/<n>/ — the host writes
  * its files there (host_snapshot_take) and davebox adds davebox.json. RECALL:
  * host_snapshot_recall(dir) is state-only, id-guarded and budgeted one bulk
  * per host tick (never load_file, so a reverb tail is not cut); the layer says
@@ -442,7 +442,7 @@ export function devSnapClear(n) {
      * reads filled again, which is at least the truth about what is on disk. */
     const dir = slotDir(n);
     let gone = false;
-    if (/^\/data\/UserData\/UserLibrary\/Sets\/[A-Za-z0-9-]+\/dAVEBOx\/snapshots\/[A-Za-z0-9_\/-]+$/.test(dir) && dir.indexOf('..') < 0) {
+    if (/^\/data\/UserData\/UserLibrary\/Sets\/[A-Za-z0-9-]+\/dAVEBOx(~[0-9]+)?\/snapshots\/[A-Za-z0-9_\/-]+$/.test(dir) && dir.indexOf('..') < 0) {
         try { gone = host_system_cmd('rm -rf ' + dir) === 0; } catch (e) { gone = false; }
     }
     if (!gone || host_file_exists(dir + '/davebox.json')) {

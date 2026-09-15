@@ -77,7 +77,7 @@ let PARAMS = {};
 globalThis.shadow_get_param = (slot, key) => PARAMS[key] ?? '';
 globalThis.shadow_set_param = () => 1;
 globalThis.shadow_send_midi_to_dsp = () => {};
-for (const fn of ['host_write_file', 'host_read_file', 'host_file_exists', 'host_ensure_dir',
+for (const fn of ['host_write_file', 'host_read_file', 'host_file_exists', 'host_ensure_dir', 'host_state_subdir',
                   'host_remove_dir', 'host_system_cmd', 'host_module_set_param',
                   'host_module_get_param', 'host_send_midi', 'move_midi_inject_to_move',
                   'host_set_led', 'set_led', 'host_get_setting', 'host_set_setting',

@@ -28,7 +28,9 @@ import {
 } from '/data/UserData/schwung/shared/text_entry.mjs';
 import {
     Blue, Cyan, Green, Lime, VividYellow, OrangeRed, Red, NeonPink, ElectricViolet,
+    MoveMainKnob, MoveMainButton, MoveBack,
 } from '/data/UserData/schwung/shared/constants.mjs';
+import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
 
 export function pixelPrintMcu(x, y, text, scale, color) {
     const charW = 5 * scale + scale;
@@ -368,6 +370,115 @@ export function drawStateWipeConfirm() {
     print(4, 25, 'a different dAVEBOx', 1);
     print(4, 34, 'version. Erase it?', 1);
     drawYesNoRow(S.confirmStateWipeSel);
+}
+
+/* ── PROJECT DID NOT OPEN ────────────────────────────────────────────────────
+ *
+ * Move was pointed at a project and opened something else — typically an empty
+ * set of its own. The host notices by comparing what Move logged loading with
+ * the project it resolved, and publishes a placeholder identity instead of the
+ * project (src/host/shadow_loaded_set_policy.h); readActiveSet reports that as
+ * `unopenedIndex`.
+ *
+ * From that moment NOTHING may be saved: whatever dAVEBOx holds is not what
+ * Move holds, and the project's own files are the one place a save must not
+ * land. Rather than add a second family of save gates, it re-enters the
+ * select-before-load state, whose gates are already every save path in JS
+ * (saveState, writeSidecar, the deferred autosave, snapshots, Clear Session)
+ * and in the DSP (seq8_save_state — destroy_instance included — state_full,
+ * state_chunk_). The next real load clears it, exactly as a selection does.
+ *
+ * Dialog chassis (UI_LANGUAGE §5.0: a confirm/info screen stays a dialog). Copy
+ * in the user's terms — a project did not open; nothing about sets or hosts. */
+export const PROJECT_OPEN_CHECK_TICKS = 3200;   /* ~34 s @94 Hz — outlasts the host's 30 s watch */
+
+export function checkProjectOpened() {
+    const as = readActiveSet();
+    const f = S.projectOpenFailed;
+    if (f) {
+        /* A late real answer (Move finished opening after all): drop the screen
+         * and load it the way a selection would. Not while a Retry is already
+         * tearing the session down. */
+        if (as.uuid && !f.retrying) {
+            S.projectOpenFailed = null;
+            S.forceRelaunchNextLoad = false;   /* Move did open it: nothing to force */
+            S.currentSetUuid = as.uuid;
+            S.currentSetName = as.name;
+            loadSelectedCurrentProject();
+            S.screenDirty = true;
+        }
+        return;
+    }
+    if (as.unopenedIndex < 0) return;
+    S.projectOpenFailed = { pad: as.unopenedIndex, name: as.name, sel: 0, retrying: false };
+    /* No project is open: nothing downstream may name one — not even the
+     * project the session was in before, and not the one that failed. */
+    S.currentSetUuid = '';
+    S.awaitingProjectSelect = true;
+    host_module_set_param('awaiting_select', '1');
+    /* Anything already queued toward a save or a load is void now. */
+    S.pendingSuspendSave = false;
+    S.pendingSetLoad = false;
+    S.saveNowOnce = false;
+    S.pendingSnapshotCopy = null;
+    S.projectPadPicker = null;
+    S.pendingOpenProjectPicker = false;
+    console.log('PROJECT DID NOT OPEN: pad ' + as.unopenedIndex + ' (' + as.name + ') — saves refused');
+    S.screenDirty = true;
+}
+
+export function drawProjectOpenFailed() {
+    const f = S.projectOpenFailed;
+    clear_screen();
+    drawMenuHeader('PROJECT DID NOT OPEN');
+    print(4, 16, truncLabel(f && f.name ? f.name : 'Project ' + ((f ? f.pad : 0) + 1), 21), 1);
+    if (f && f.retrying) {
+        print(4, 30, 'Opening again...', 1);
+        return;
+    }
+    print(4, 25, 'Move could not load', 1);
+    print(4, 34, 'it. Nothing saved.', 1);
+    drawDlgBtn(6,  46, 52, 13, !f || f.sel === 0, 'Retry');
+    drawDlgBtn(64, 46, 58, 13, !!f && f.sel === 1, 'Back');
+}
+
+/* Fully modal: every internal message lands here while the screen is up.
+ * Jog turns move between the buttons, the jog click commits, Back = Back. */
+export function projectOpenFailedMidi(data) {
+    const f = S.projectOpenFailed;
+    if (!f) return false;
+    const status = data[0] & 0xF0, d1 = data[1] | 0, d2 = data[2] | 0;
+    if (f.retrying || status !== 0xB0) return true;
+    if (d1 === MoveMainKnob) {
+        if (decodeDelta(d2) !== 0) { f.sel = f.sel === 0 ? 1 : 0; S.screenDirty = true; }
+        return true;
+    }
+    const click = (d1 === MoveMainButton && d2 === 127);
+    const back  = (d1 === MoveBack && d2 === 127);
+    if (!click && !back) return true;
+    if (click && f.sel === 0) {
+        /* Retry: relaunch into the same pad through the existing switch path
+         * (project-cmd `switch`, fired from the tick). The screen stays up,
+         * locked, until the session goes down. */
+        f.retrying = true;
+        S.pendingProjectRelaunch = f.pad;
+    } else {
+        /* Back to the project picker. Still awaiting a selection, so the picker
+         * is the select-before-load one: nothing loads until a pad is chosen.
+         * ⚠ Whatever is chosen must RELAUNCH Move (S9): Move is on a default
+         * set of its own, so neither the select actuator nor an in-place load
+         * of the "current" pad opens anything — the pick loaded nothing and
+         * the verdict came straight back. And stop watching for the verdict:
+         * active_set.txt still names the same failure, so the watch would
+         * re-raise the screen over the picker the user was sent to. */
+        S.forceRelaunchNextLoad = true;
+        S.projectOpenCheckTicks = 0;
+        S.projectOpenFailed = null;
+        S.projectPadPicker = null;
+        openProjectPadPicker();
+    }
+    S.screenDirty = true;
+    return true;
 }
 
 export function drawRecordBlockedDialog() {
@@ -896,7 +1007,8 @@ function _pppOpenMenu(p, k) {
 /* --- menu actions ------------------------------------------------------ */
 
 function _pppLoad(p, k) {
-    if (k === p.current) {
+    const _forceRelaunch = S.forceRelaunchNextLoad;
+    if (k === p.current && !_forceRelaunch) {
         /* The already-current project. Under SELECT-BEFORE-LOAD this IS the
          * selection: create_instance loaded nothing, so load now. Once a
          * project is live, "Load" on the current one just closes the picker. */
@@ -931,7 +1043,11 @@ function _pppLoad(p, k) {
      * old one. Confirmed on hardware 2026-08-27.
      * Those go through a Move RELAUNCH (project-cmd `switch`), which is the only
      * thing that makes Move re-read the set list. */
-    if (S.projectsCreatedThisSession.indexOf(k) >= 0) S.pendingProjectRelaunch = k;
+    /* ⚠ Same relaunch after PROJECT DID NOT OPEN -> Back (forceRelaunchNextLoad):
+     * Move is on a set it minted itself, and only a relaunch makes it open the
+     * pad's real set. */
+    S.forceRelaunchNextLoad = false;
+    if (_forceRelaunch || S.projectsCreatedThisSession.indexOf(k) >= 0) S.pendingProjectRelaunch = k;
     else S.pendingProjectSwitch = k;
 }
 

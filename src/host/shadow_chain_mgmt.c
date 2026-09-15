@@ -15,6 +15,7 @@
 #include "shadow_chain_mgmt.h"
 #include "master_fx_saved_state.h" /* object or opaque-string state at boot */
 #include "shadow_set_pages.h"
+#include "dbx_state_subdir.h"
 #include "shadow_sampler.h"
 #include "shadow_dbus.h"
 #include "shadow_state.h"
@@ -1496,7 +1497,14 @@ int shadow_inprocess_load_chain(void) {
                      * ⚠ Valid at boot because launch.sh binds the standalone
                      * library over Sets/ BEFORE starting Move — the shim only
                      * ever initialises with the mount up. */
-                    snprintf(set_dir, sizeof(set_dir), SET_STATE_DIR_FMT, boot_uuid);
+                    /* Read-only resolve (create = 0): the boot probe below
+                     * must not make a state dir; the UI creates it through
+                     * the chooser on SET_CHANGED. */
+                    char set_root[256];
+                    char sub[DBX_STATE_NAME_MAX];
+                    snprintf(set_root, sizeof(set_root), SAMPLER_SETS_DIR "/%s", boot_uuid);
+                    dbx_state_subdir_resolve(set_root, 0, sub, sizeof(sub));
+                    snprintf(set_dir, sizeof(set_dir), "%s/%s/" PER_SET_STATE_LEAF, set_root, sub);
                     char test_slot[768];
                     snprintf(test_slot, sizeof(test_slot), "%s/slot_0.json", set_dir);
                     char test_cfg[768];

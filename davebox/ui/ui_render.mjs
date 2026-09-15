@@ -40,7 +40,8 @@ import {
     drawConvertToDrumConfirm, drawConvertToConductConfirm, drawMenuInfo,
     drawLgtoConfirm, drawMacroClearConfirm, drawBakeConfirm, drawSnapshotPicker,
     drawBakeSceneConfirm, drawXposeConfirm, drawBpmLine,
-    drawProjectPadPicker
+    drawProjectPadPicker,
+    drawProjectOpenFailed,
 } from './ui_dialogs.mjs';
 import { isBooleanPair } from './ui_cells.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
@@ -1400,6 +1401,8 @@ function drawBankLatchBox() {
 }
 
 export function drawUI() {
+    /* PROJECT DID NOT OPEN blocks everything — no body, no overlay, no card. */
+    if (S.projectOpenFailed) { drawProjectOpenFailed(); return; }
     drawUIBody();
     drawBankLatchBox();
     drawTrackVolCard();

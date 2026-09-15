@@ -223,6 +223,10 @@ pad per project, 32 slots:
   in the lowest remaining project, or at the picker if it was the last one.
 - **Back** steps out (color → the project's screen → closed); **Shift + Back**
   leaves dAVEBOx SA entirely, as always.
+- **PROJECT DID NOT OPEN.** If Move can't open the project you chose, dAVEBOx
+  says so rather than carrying on in it, and saves nothing until a project is
+  really open. **Retry** opens the same project again; **Back** returns to the
+  project picker.
 
 > **Coming from an earlier dAVEBOx?** Work you made back when dAVEBOx used the
 > shared Move sets stays in those Move sets, visible from Move native and

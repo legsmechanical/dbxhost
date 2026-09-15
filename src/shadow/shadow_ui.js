@@ -148,7 +148,8 @@ import {
 
 import {
     standaloneSessionActive,
-    setUuidIsProvisional
+    setUuidIsProvisional,
+    setUuidIsUnopened
 } from '/data/UserData/schwung/shared/session_state.mjs';
 
 /* One definition of "which key does this component publish a load failure
@@ -371,14 +372,13 @@ function overtakeMidiLogEnabled() {
     return overtakeMidiLogFlag;
 }
 /* ⭑ Per-set state lives INSIDE the set's own directory (state co-location,
- * 2026-08-12): Sets/<uuid>/<SET_STATE_SUBDIR>/. Must agree with the C side's
- * PER_SET_STATE_SUBDIR (shadow_set_pages.h) — the shim reads at boot what this
+ * 2026-08-12): Sets/<uuid>/<state dir>/host/. Must agree with the C side's
+ * resolve in shadow_chain_mgmt.c (dbx_state_subdir.h) — the shim reads at boot what this
  * file writes on SET_CHANGED. Pinned by check-config.sh. Valid whenever a set
  * is loaded: the launcher binds the session library over Sets/ before Move
  * starts, so a uuid we are told about is a dir that exists there. */
 const SETS_LIBRARY_DIR = "/data/UserData/UserLibrary/Sets";
-const SET_STATE_SUBDIR = "dAVEBOx/host";
-function perSetStateDir(uuid) {
+function perSetStateDir(uuid, create) {
     /* ⚠⚠ Empty for a PROVISIONAL identity. `__pending-N-M` is this process's
      * OWN placeholder (shadow_set_pages.c publishes it when Move's song index
      * moves before the set folder exists) — building a state path from it
@@ -386,7 +386,11 @@ function perSetStateDir(uuid) {
      * state where no real project will read it. Callers must treat "" as
      * "nowhere to save yet" and skip. */
     if (!uuid || setUuidIsProvisional(uuid)) return "";
-    return SETS_LIBRARY_DIR + "/" + uuid + "/" + SET_STATE_SUBDIR;
+    /* ⚠⚠ The state dir's NAME is resolved, never spelled (set-folder order
+     * fix): `dAVEBOx` or `dAVEBOx~<n>`, whichever lists after Move's song
+     * folder. `create` runs the chooser when the project has none yet. */
+    const setDir = SETS_LIBRARY_DIR + "/" + uuid;
+    return setDir + "/" + host_state_subdir(setDir, !!create) + "/host";
 }
 const PATCH_DIR = "/data/UserData/schwung/patches";
 const SLOT_STATE_DIR_DEFAULT = HOST_STATE_ROOT + "/slot_state";
@@ -15890,19 +15894,28 @@ function processSetChangedFlag() {
     if (!(flags & SHADOW_UI_FLAG_SET_CHANGED)) return;
             debugLog("SET_CHANGED flag detected — switching slot state directory");
 
-            /* 1. Save current state to outgoing directory */
-            autosaveAllSlots();
-            saveAllFxBusConfigs();
-            /* Save chain config (volumes, channels, mute/solo) to outgoing set dir */
-            saveChainConfigToDir(activeSlotStateDir);
-            /* Save current RNBO graph (if RNBO is running) */
-            saveRnboGraphToDir(activeSlotStateDir);
-
             /* 2. Get UUID and set name from shim (in-memory, no file I/O on audio thread) */
             const activeSetRaw = getSlotParam(0, "active_set");
             const activeSetLines = activeSetRaw ? activeSetRaw.split("\n") : [];
             const uuid = activeSetLines[0] ? activeSetLines[0].trim() : "";
             const setName = activeSetLines[1] ? activeSetLines[1].trim() : "";
+
+            /* 1. Save current state to outgoing directory.
+             * ⚠ NOT when the incoming identity says Move did not open the set
+             * the host resolved (setUuidIsUnopened). The outgoing dir can BE that
+             * set — a boot that read it from active_set.txt — and "no save lands
+             * in a project Move never opened" admits no exception for a save
+             * that happens to be on the way out. */
+            if (setUuidIsUnopened(uuid)) {
+                debugLog("SET_CHANGED: Move did not open the resolved set — outgoing save skipped");
+            } else {
+                autosaveAllSlots();
+                saveAllFxBusConfigs();
+                /* Save chain config (volumes, channels, mute/solo) to outgoing set dir */
+                saveChainConfigToDir(activeSlotStateDir);
+                /* Save current RNBO graph (if RNBO is running) */
+                saveRnboGraphToDir(activeSlotStateDir);
+            }
             /* Write active_set.txt for boot persistence (UI thread, not audio thread) */
             if (uuid) {
                 host_write_file(HOST_STATE_ROOT + "/active_set.txt", uuid + "\n" + setName);
@@ -15911,7 +15924,7 @@ function processSetChangedFlag() {
             /* 3. Determine new directory */
             /* perSetStateDir returns "" for a provisional identity — fall back
              * to the install-local dir rather than building a path from "". */
-            const _perSet = perSetStateDir(uuid);
+            const _perSet = perSetStateDir(uuid, true);
             const newDir = _perSet ? _perSet : SLOT_STATE_DIR_DEFAULT;
 
             if (uuid && typeof host_ensure_dir === "function") {

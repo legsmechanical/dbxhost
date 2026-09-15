@@ -76,7 +76,7 @@
  * subfolder beside Move's inner <Name>/ dir (Phase B of the state-co-location
  * plan, 2026-08-12):
  *
- *     Sets/<uuid>/dAVEBOx/seq8sa-state.json
+ *     Sets/<uuid>/<state dir>/seq8sa-state.json   (dAVEBOx or dAVEBOx~<n>)
  *
  * NOT in a tree parallel to the projects. The parallel-tree model (the stock
  * host's shared set_state/, keyed by uuid) needed a liveness test, an orphan
@@ -85,17 +85,17 @@
  * travels with the project because it IS in the project: delete/copy/rename of
  * the set dir take it along, and an orphan cannot exist.
  *
- * ⚠ The reserved name is a CONTRACT shared with project-cmd.sh and
- * select-list.sh (which must skip it when hunting the inner set dir) and is
- * pinned by check-config.sh in all its spellings. Change it in one place and
- * the pin names the others.
+ * ⚠⚠ The subfolder's NAME is not fixed (set-folder order fix, 2026-09-14):
+ * `dAVEBOx` or `dAVEBOx~<n>`, whichever lists AFTER Move's song folder, because
+ * Move opens the first subfolder it lists as the song. dbx_state_subdir.h holds
+ * the rule — a byte-identical copy of src/host/'s, pinned by check-config.sh
+ * with the shell copy (standalone/scripts/state_subdir.py). Never spell the
+ * name here: a plain mkdir of `dAVEBOx` is the bug.
  *
  * ⚠ In-session, Sets/ is the standalone library via the bind mount, so this
- * path is only ever a dAVEBOx project's dir. The macro stays overridable for
+ * path is only ever a dAVEBOx project's dir. The root stays overridable for
  * the test harness (real deletes need a real temp tree to be exercised in). */
-#ifndef SEQ8_SET_DBX_SUBDIR
-#define SEQ8_SET_DBX_SUBDIR     "dAVEBOx"
-#endif
+#include "dbx_state_subdir.h"
 #ifndef SEQ8_SET_STATE_ROOT
 #define SEQ8_SET_STATE_ROOT     SEQ8_SETS_DIR
 #endif
@@ -113,8 +113,18 @@
 #define SEQ8_STATE_CHUNK_MAX 32768u
 
 #define SEQ8_STATE_PATH_FALLBACK "/data/UserData/schwung/" SEQ8_STATE_PREFIX "-state.json"
-#define SEQ8_SET_STATE_FMT      SEQ8_SET_STATE_ROOT "/%s/" SEQ8_SET_DBX_SUBDIR "/" SEQ8_STATE_PREFIX "-state.json"
-#define SEQ8_SET_UISTATE_FMT    SEQ8_SET_STATE_ROOT "/%s/" SEQ8_SET_DBX_SUBDIR "/" SEQ8_STATE_PREFIX "-ui-state.json"
+/* Sets/<uuid>/<state dir>/<prefix>-state.json. create = 0 resolves an existing
+ * state dir (or names the default, making nothing); create = 1 runs the
+ * chooser when none exists yet — every SAVE passes 1, so the first save of a
+ * project never makes a `dAVEBOx/` that lists before the song. Directory I/O:
+ * never from the audio thread. */
+static void seq8_set_state_path(char *out, size_t sz, const char *uuid, int create) {
+    char uuid_dir[192];
+    char sub[DBX_STATE_NAME_MAX];
+    snprintf(uuid_dir, sizeof(uuid_dir), SEQ8_SET_STATE_ROOT "/%s", uuid);
+    dbx_state_subdir_resolve(uuid_dir, create, sub, sizeof(sub));
+    snprintf(out, sz, "%s/%s/" SEQ8_STATE_PREFIX "-state.json", uuid_dir, sub);
+}
 #define SEQ8_SNAP_PREFIX        SEQ8_STATE_PREFIX "-snap-"
 
 /* SELECT-BEFORE-LOAD marker, written by the SA launcher at session entry and
@@ -4537,9 +4547,12 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
             }
             fclose(uf);
         }
-        if (uuid[0]) {
-            snprintf(inst->state_path, sizeof(inst->state_path),
-                     SEQ8_SET_STATE_FMT, uuid);
+        /* ⚠ A PROVISIONAL identity (`__pending-…`, including the host's
+         * "Move did not open it" `__pending-unopened-…`) is NO project: a state
+         * path built from it makes a fake project dir in the set library on the
+         * first save. Same rule as shared/session_state.mjs. */
+        if (uuid[0] && strncmp(uuid, "__pending-", 10) != 0) {
+            seq8_set_state_path(inst->state_path, sizeof(inst->state_path), uuid, 0);
             snprintf(inst->state_uuid, sizeof(inst->state_uuid), "%s", uuid);
         }
     }

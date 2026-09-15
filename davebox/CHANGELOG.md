@@ -330,6 +330,23 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **Back from PROJECT DID NOT OPEN, then picking the project, now opens it.**
+  It used to load nothing and bring the same screen straight back; picking a
+  project from there now restarts Move into it.
+- **New projects on some pads no longer open an empty Move set.** On about
+  one pad in five (13, 14, 21 and 31 among them on the device it was found
+  on), a brand-new project, a copy or a renamed project could open as an
+  empty set because Move picked dAVEBOx's own data folder as the song. Each
+  project's data folder is now named so Move always finds the song first,
+  and projects already affected are repaired the next time dAVEBOx launches.
+- **A project that fails to open says so, instead of quietly saving into it.**
+  Occasionally Move can't open the project you picked and starts an empty set
+  of its own. dAVEBOx used to carry on as if the project were open — and save
+  over it. Now it shows **PROJECT DID NOT OPEN**, saves nothing, and offers
+  **Retry** (opens that project again) or **Back** (to the project picker).
+  The did-not-open screen also appears when Move falls back to another
+  project instead of an empty set — that no longer gets silently treated as
+  the one you picked either.
 - **No more hang after moving faders or knobs.** A few seconds after a burst of level
   or knob changes the screen used to freeze for up to a second while the session
   saved. Saving now takes a few milliseconds and happens without interrupting you.

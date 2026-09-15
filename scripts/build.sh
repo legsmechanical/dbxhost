@@ -874,6 +874,14 @@ if [ -d ./standalone ]; then
     # project-cmd.sh: in-session project management (list/new/switch), driven
     # by the hosted module via host_system_cmd.
     cp ./standalone/scripts/project-cmd.sh ./build/scripts/
+    # state_subdir.py: the state-dir naming rule project-cmd.sh, select-list.sh
+    # and set-swap.sh import from beside themselves. Without it every project
+    # verb dies on the import.
+    cp ./standalone/scripts/state_subdir.py ./build/scripts/
+    # move-loaded-set-reader.sh: backgrounded by launch.sh to distill
+    # MoveOriginal's own "About to load ..." boot line into
+    # move_loaded_set.txt (see that script for the file contract).
+    cp ./standalone/scripts/move-loaded-set-reader.sh ./build/scripts/
     # select-list.sh / select-hook.sh: the boot set-select gate's name source
     # and post-selection wiring hook, run by the shadow UI (see the gate block
     # in src/shadow/shadow_ui.js for the file contract).
@@ -897,7 +905,8 @@ if [ -d ./standalone ]; then
     chmod +x ./build/scripts/layout-install.sh ./build/scripts/bootstrap.sh
     chmod +x ./build/scripts/quiesce-stock.sh ./build/scripts/exit-to-stock.sh \
              ./build/scripts/set-swap.sh ./build/scripts/project-cmd.sh \
-             ./build/scripts/select-list.sh ./build/scripts/select-hook.sh
+             ./build/scripts/select-list.sh ./build/scripts/select-hook.sh \
+             ./build/scripts/move-loaded-set-reader.sh
     # The template project every standalone workspace seeds from (correctly
     # wired at birth — see the generator's header). Generated, not checked in,
     # so the pristine fixture stays the single source.

@@ -32,6 +32,7 @@ globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;
 globalThis.host_write_file = () => true;
 globalThis.host_ensure_dir = () => true;
+globalThis.host_state_subdir = () => 'dAVEBOx';   /* dbx_state_subdir.h's answer */
 globalThis.host_remove_dir = () => true;
 globalThis.host_module_set_param = (k, v) => { writes.push(k + '=' + v); };
 globalThis.host_module_set_params = () => true;   /* the strip's turn reaches the automation owner (2026-09-04) */
@@ -116,6 +117,7 @@ globalThis.host_remove_dir = () => false;                 /* as on the device, f
 globalThis.host_write_file = (p, c) => { files[p] = c; writes.push('FILE ' + p); return true; };
 globalThis.host_read_file = (p) => (files[p] !== undefined ? files[p] : '');
 globalThis.host_ensure_dir = () => true;
+globalThis.host_state_subdir = () => 'dAVEBOx';   /* dbx_state_subdir.h's answer */
 const leds = {};
 globalThis.set_led = (n, c) => { leds[n] = c; };
 globalThis.move_midi_internal_send = (a) => { if ((a[1] & 0xF0) === 0x90) leds[a[2]] = a[3]; };

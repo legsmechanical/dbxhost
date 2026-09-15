@@ -15,24 +15,34 @@ import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 const STATE_PREFIX = (typeof SEQ8_STATE_PREFIX === 'string') ? SEQ8_STATE_PREFIX : 'seq8';
 
 /* ⭑⭑ Per-project state lives INSIDE the project's set dir (Phase B of the
- * state-co-location plan, 2026-08-12): Sets/<uuid>/dAVEBOx/<prefix>-*.json,
+ * state-co-location plan, 2026-08-12): Sets/<uuid>/<state dir>/<prefix>-*.json,
  * beside Move's inner <Name>/ dir. It travels with the set on copy/delete/
  * rename because it IS in the set — the parallel set_state/ tree, and all the
  * machinery that kept it in step (liveness test, orphan prune, two-root
  * delete, name index), retires with the old location.
  *
- * ⚠ These MUST agree with the DSP's SEQ8_SET_STATE_FMT (dsp/seq8.c) — the DSP
+ * ⚠ These MUST agree with the DSP's seq8_set_state_path (dsp/seq8.c) — the DSP
  * writes state where JS expects to read it back — and the reserved subdir name
  * is a contract with project-cmd.sh/select-list.sh, pinned by check-config.sh.
  * ⚠ In-session Sets/ is the standalone library (bind-mounted), so these paths
  * only ever land inside dAVEBOx projects. */
-import { setUuidIsProvisional }
+import { setUuidIsProvisional, unopenedSetIndex }
     from '/data/UserData/schwung/shared/session_state.mjs';
 
 const SETS_DIR    = '/data/UserData/UserLibrary/Sets';
-const DBX_SUBDIR  = 'dAVEBOx';
 
-function setStateDir(uuid) { return SETS_DIR + '/' + uuid + '/' + DBX_SUBDIR; }
+/* ⚠⚠ The state dir's NAME is resolved, never spelled (set-folder order fix,
+ * 2026-09-14): `dAVEBOx` or `dAVEBOx~<n>`, whichever lists AFTER Move's song
+ * folder — Move opens the first subfolder it lists as the song, so a plain
+ * `dAVEBOx/` opened some projects as an empty set. host_state_subdir applies
+ * the one rule (dbx_state_subdir.h); with create it runs the chooser, so the
+ * first JS write of a fresh project (sidecar, snapshot, new-project marker)
+ * cannot make the losing name. Never for a provisional identity: that makes
+ * nothing at all (see ensureStateDir). */
+function setStateDir(uuid) {
+    const dir = SETS_DIR + '/' + uuid;
+    return dir + '/' + host_state_subdir(dir, !setUuidIsProvisional(uuid));
+}
 /* Device-wide snapshots (item 18): one dir per slot beside the live state. */
 export function deviceSnapDir(uuid, n) { return setStateDir(uuid) + '/snapshots/' + (n | 0); }
 /* The hidden "before" take a recall makes so Undo can return to it (Josh,
@@ -89,7 +99,7 @@ const ACTIVE_SET_PATH = DAVEBOX_HOST_DIR + '/active_set.txt';
 export function readActiveSet() {
     try {
         const raw = host_read_file(ACTIVE_SET_PATH);
-        if (!raw) return { uuid: '', name: '' };
+        if (!raw) return { uuid: '', name: '', unopenedIndex: -1 };
         const lines = raw.split('\n');
         const _u = (lines[0] || '').trim();
         /* ⚠⚠ A PROVISIONAL identity is reported as NO PROJECT, not as itself.
@@ -100,10 +110,13 @@ export function readActiveSet() {
          * builder, save and snapshot downstream from ever seeing one. */
         return {
             uuid: setUuidIsProvisional(_u) ? '' : _u,
-            name: (lines[1] || '').trim()
+            name: (lines[1] || '').trim(),
+            /* ≥ 0 when the host saw Move fail to open the project at this
+             * index (the placeholder is provisional, so uuid is '' too). */
+            unopenedIndex: unopenedSetIndex(_u)
         };
     } catch (e) {
-        return { uuid: '', name: '' };
+        return { uuid: '', name: '', unopenedIndex: -1 };
     }
 }
 

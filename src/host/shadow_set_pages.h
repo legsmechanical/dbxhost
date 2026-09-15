@@ -17,20 +17,29 @@
 #define SHADOW_CHAIN_CONFIG_FILENAME "shadow_chain_config.json"
 #define SHADOW_CHAIN_CONFIG_PATH SCHWUNG_INSTALL_DIR "/" SHADOW_CHAIN_CONFIG_FILENAME
 /* ⭑ Per-set state lives INSIDE the set's own directory (state co-location,
- * 2026-08-12): Sets/<uuid>/PER_SET_STATE_SUBDIR/. It travels with the set on
- * copy/delete/rename because it is in the set — the old parallel
+ * 2026-08-12): Sets/<uuid>/<state dir>/PER_SET_STATE_LEAF/. It travels with the
+ * set on copy/delete/rename because it is in the set — the old parallel
  * SCHWUNG_INSTALL_DIR/set_state tree needed a sweeper to stay in step.
- * ⚠ Genericity waiver, recorded: the SUBDIR's VALUE names a module, which this
+ * ⚠⚠ The state dir's NAME is resolved per set, never spelled: it is chosen so
+ * it lists AFTER Move's song folder (Move opens the first subfolder it lists).
+ * Build the path with dbx_state_subdir_resolve() (dbx_state_subdir.h).
+ * ⚠ Genericity waiver, recorded: the state dir's name names a module, which this
  * repo's "keep host changes generic" rule discourages. Accepted deliberately —
- * one host, one module, one deliverable — and kept to this single constant so
- * a rename (or an upstream offer under a neutral name) is one line + the
- * check-config pin. The macro NAME stays generic. */
-#ifndef PER_SET_STATE_SUBDIR
-#define PER_SET_STATE_SUBDIR "dAVEBOx/host"
-#endif
-#define SET_STATE_DIR_FMT SAMPLER_SETS_DIR "/%s/" PER_SET_STATE_SUBDIR
+ * one host, one module, one deliverable. */
+#define PER_SET_STATE_LEAF "host"
 #define SLOT_STATE_DIR SCHWUNG_INSTALL_DIR "/slot_state"
 #define ACTIVE_SET_PATH SCHWUNG_INSTALL_DIR "/active_set.txt"
+/* What Move itself logged loading (`About to load ...`), distilled by the
+ * session launcher's reader: a uuid, or `default`. ABSENT = not known yet.
+ * The reader's presence is what switches verification on. */
+#define MOVE_LOADED_SET_PATH SCHWUNG_INSTALL_DIR "/move_loaded_set.txt"
+#define MOVE_LOADED_SET_READER SCHWUNG_INSTALL_DIR "/scripts/move-loaded-set-reader.sh"
+/* The song index a relaunch actually asked Move to open (launch.sh, applied
+ * alongside `relaunch_song_index` -> "applied project index N"). Left in
+ * place across the whole session until the next relaunch overwrites it;
+ * ABSENT = no relaunch has pinned an index yet, trust the scan as-is. See
+ * loaded_set_index_matches() in shadow_loaded_set_policy.h. */
+#define MOVE_INTENDED_INDEX_PATH SCHWUNG_INSTALL_DIR "/move_intended_index.txt"
 
 /* ============================================================================
  * Callback struct - shim functions set pages needs

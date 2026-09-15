@@ -12,7 +12,7 @@
  * (`seq8_set_uuid_alive`) are GONE (Phase B, 2026-08-12). They existed because
  * state lived in a tree PARALLEL to the projects, keyed by uuid, where a
  * deleted set left its state behind. State now lives INSIDE the set dir
- * (SEQ8_SET_STATE_FMT), so an orphan cannot exist: no set, no state. The whole
+ * (seq8_set_state_path), so an orphan cannot exist: no set, no state. The whole
  * class — liveness tests, four alive-roots, the "unverifiable counts as ALIVE"
  * asymmetry — retires with the parallel tree.
  * (Leftover seq8sa-* files from the old location remain in the stock host's
@@ -27,6 +27,18 @@ static int sp_globals_state(sp_ctx_t *cx) {
 
     if (!strcmp(key, "debug_log")) {
         seq8_ilog(inst, val);
+        return 1;
+    }
+
+    /* "The project did not open" (JS, ui_project_open.mjs): Move is holding a
+     * set other than the one this session resolved, so whatever this instance
+     * holds must not be written ANYWHERE keyed on a project. Re-entering the
+     * select-before-load state is exactly that — seq8_save_state, state_full
+     * and state_chunk_ already refuse under it, destroy_instance included —
+     * and the next real state_load clears it. One-way on purpose: only a load
+     * may say a project is live again. */
+    if (!strcmp(key, "awaiting_select")) {
+        if (val && val[0] == '1') inst->awaiting_select = 1;
         return 1;
     }
 
@@ -57,8 +69,7 @@ static int sp_globals_state(sp_ctx_t *cx) {
          * state_uuid tracks every assignment — it is what get_param "state_uuid"
          * serves, and the fallback path genuinely has no set, so it clears. */
         if (val && val[0]) {
-            snprintf(inst->state_path, sizeof(inst->state_path),
-                     SEQ8_SET_STATE_FMT, val);
+            seq8_set_state_path(inst->state_path, sizeof(inst->state_path), val, 0);
             snprintf(inst->state_uuid, sizeof(inst->state_uuid), "%s", val);
         } else {
             strncpy(inst->state_path, SEQ8_STATE_PATH_FALLBACK,

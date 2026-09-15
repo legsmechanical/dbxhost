@@ -26,6 +26,7 @@
 #include "js_host_common.h"
 #include "spawn_command.h"
 #include "unified_log.h"
+#include "dbx_state_subdir.h"
 
 #include "host/schwung_paths.h"
 #define BASE_DIR "/data/UserData"
@@ -387,6 +388,29 @@ static JSValue js_host_ensure_dir(JSContext *ctx, JSValueConst this_val,
     JS_FreeCString(ctx, path);
 
     return (result == 0) ? JS_TRUE : JS_FALSE;
+}
+
+/* host_state_subdir(uuidDir, create) -> string
+ *
+ * The NAME of a project's state dir inside `uuidDir` ("dAVEBOx" or
+ * "dAVEBOx~<n>"), by the one rule in dbx_state_subdir.h: the existing one, or —
+ * with `create` truthy and none present — the first candidate that lists AFTER
+ * Move's song folder, created. JS never spells the name: a plain mkdir of
+ * "dAVEBOx" is the set-folder order bug (Move opens the first subfolder it
+ * lists as the song). An invalid path answers the default name, creating
+ * nothing, so a caller's path is still well-formed. */
+static JSValue js_host_state_subdir(JSContext *ctx, JSValueConst this_val,
+                                    int argc, JSValueConst *argv) {
+    (void)this_val;
+    char sub[DBX_STATE_NAME_MAX];
+    snprintf(sub, sizeof(sub), "%s", DBX_STATE_BASE);
+    if (argc < 1) return JS_NewString(ctx, sub);
+    const char *dir = JS_ToCString(ctx, argv[0]);
+    if (!dir) return JS_NewString(ctx, sub);
+    int create = (argc >= 2) ? JS_ToBool(ctx, argv[1]) : 0;
+    if (validate_path(dir)) dbx_state_subdir_resolve(dir, create, sub, sizeof(sub));
+    JS_FreeCString(ctx, dir);
+    return JS_NewString(ctx, sub);
 }
 
 /* host_remove_dir(path) -> bool */
@@ -1042,6 +1066,7 @@ void js_host_register_common(JSContext *ctx) {
     JS_SetPropertyStr(ctx, global_obj, "host_extract_tar_strip", JS_NewCFunction(ctx, js_host_extract_tar_strip, "host_extract_tar_strip", 3));
     JS_SetPropertyStr(ctx, global_obj, "host_ensure_dir", JS_NewCFunction(ctx, js_host_ensure_dir, "host_ensure_dir", 1));
     JS_SetPropertyStr(ctx, global_obj, "host_remove_dir", JS_NewCFunction(ctx, js_host_remove_dir, "host_remove_dir", 1));
+    JS_SetPropertyStr(ctx, global_obj, "host_state_subdir", JS_NewCFunction(ctx, js_host_state_subdir, "host_state_subdir", 2));
 
     JS_FreeValue(ctx, global_obj);
 }

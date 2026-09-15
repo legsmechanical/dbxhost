@@ -192,8 +192,10 @@ Key prefixes:
 
 `state_load` calls `drum_track_init` + `drum_repeat_init_defaults` before applying saved values.
 
-⭑ Paths come from the co-located storage model — `Sets/<uuid>/dAVEBOx/<prefix>-state.json` via
-`SEQ8_SET_STATE_FMT`, with `SEQ8_STATE_PATH_FALLBACK` for the no-set case.
+⭑ Paths come from the co-located storage model — `Sets/<uuid>/<state dir>/<prefix>-state.json` via
+`seq8_set_state_path()`, with `SEQ8_STATE_PATH_FALLBACK` for the no-set case. ⚠ The state dir is
+`dAVEBOx` OR `dAVEBOx~<n>` (whichever lists after Move's song folder — `dbx_state_subdir.h`); never
+spell the name, and every save passes `create = 1` so a first save runs the chooser.
 [[schwung-state-colocation-model]]
 
 ## Step-write invariant
