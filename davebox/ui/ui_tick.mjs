@@ -31,6 +31,7 @@ import { daveBoxTick, bannerDaveSync } from './ui_daves.mjs';
 import { devSnapOpen, devSnapEnter, devSnapTick, DEVSNAP_HOLD_MS } from './ui_devsnap.mjs';
 import { automationTick, automationPollWarnings } from './ui_automation.mjs';
 import { morphTick } from './ui_snapmorph.mjs';
+import { reconcileParallelAll, parallelForgetPushed, parallelSweepTick } from './ui_parallel.mjs';
 import { autoBankTick } from './ui_automation_bank.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, readActiveSet,
@@ -748,6 +749,11 @@ export function _tickImpl() {
         if (_dp._local) S.localRevSuppressUntil = S.tickCount + 12;
     }
 
+    /* One slot's render-pool pin per PARALLEL_SWEEP_TICKS, round-robin — a
+     * module that arrived by a road the picker does not own (a snapshot
+     * recall) is corrected within a sweep. One read per step. */
+    if (!S.stateLoading) parallelSweepTick(S.tickCount);
+
     /* Poll every 100 ticks (~0.5s): detect DSP hot-reload via instance nonce. */
     if ((S.tickCount % 100) === 0) {
         const newInstanceId = host_module_get_param('instance_id');
@@ -827,6 +833,10 @@ export function _tickImpl() {
              * above has just written the DSP's defaults over the copy the sync
              * applied. See applyNewProjectSeed. */
             applyNewProjectSeed();
+            /* The host's slots were rebuilt by the load: re-pin every slot
+             * for the module it now holds (ui_parallel.mjs). */
+            parallelForgetPushed();
+            reconcileParallelAll();
             S.stateLoading = false;
             /* Load completion is an INPUT-STATE BARRIER for touch state. The
              * resync above blocks the tick for seconds, the shim's UI MIDI
