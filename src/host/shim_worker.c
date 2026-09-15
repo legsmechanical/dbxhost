@@ -16,6 +16,7 @@
 #include "unified_log.h"
 
 #include "host/schwung_paths.h"
+#include "host/shim_thread.h"   /* shim threads must never receive the host's SIGTERM */
 volatile uint32_t shim_debug_flags = 0;
 volatile int shim_pending_sysex_inject = -1;
 volatile int shim_inject_boot_jack = -1;
@@ -305,7 +306,7 @@ void shim_worker_start(void) {
     static volatile int started = 0;
     if (__sync_lock_test_and_set(&started, 1)) return;
     pthread_t tid;
-    if (pthread_create(&tid, NULL, worker_main, NULL) != 0) {
+    if (shim_pthread_create(&tid, NULL, worker_main, NULL) != 0) {
         started = 0;
         unified_log("shim", LOG_LEVEL_ERROR, "shim_worker: pthread_create failed");
         return;

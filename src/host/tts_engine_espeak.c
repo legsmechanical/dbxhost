@@ -22,6 +22,7 @@
 #include "unified_log.h"
 
 #include "host/schwung_paths.h"
+#include "host/shim_thread.h"   /* shim threads must never receive the host's SIGTERM */
 /* Forward declarations */
 static void* espeak_synthesis_thread(void *arg);
 static void espeak_load_config(void);
@@ -328,7 +329,7 @@ bool espeak_tts_init(int sample_rate) {
     espeak_SetParameter(espeakPITCH, pitch, 0);
 
     synth_thread_running = true;
-    if (pthread_create(&synth_thread, NULL, espeak_synthesis_thread, NULL) != 0) {
+    if (shim_pthread_create(&synth_thread, NULL, espeak_synthesis_thread, NULL) != 0) {
         unified_log("tts_engine", LOG_LEVEL_ERROR, "Failed to create synthesis thread");
         synth_thread_running = false;
         espeak_Terminate();

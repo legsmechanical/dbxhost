@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 
 #include "host/schwung_paths.h"
+#include "host/shim_thread.h"   /* shim threads must never receive the host's SIGTERM */
 /* ============================================================================
  * Host callbacks (set during sampler_init)
  * ============================================================================ */
@@ -643,7 +644,7 @@ void sampler_worker_prepare(void) {
     }
     sampler_write_wav_header(sampler_wav_file, 0);
 
-    if (pthread_create(&sampler_writer_thread, NULL, sampler_writer_thread_func, NULL) != 0) {
+    if (shim_pthread_create(&sampler_writer_thread, NULL, sampler_writer_thread_func, NULL) != 0) {
         fclose(sampler_wav_file);
         sampler_wav_file = NULL;
         sampler_worker_abort_start("Sampler: failed to create writer thread");
@@ -1365,7 +1366,7 @@ void skipback_trigger_save(void) {
  * seconds and must not block the worker's event loop). */
 void skipback_worker_spawn_save(void) {
     pthread_t t;
-    if (pthread_create(&t, NULL, skipback_writer_func, NULL) != 0) {
+    if (shim_pthread_create(&t, NULL, skipback_writer_func, NULL) != 0) {
         s_host.log("Skipback: failed to create writer thread");
         s_host.announce("Skipback failed");
         __atomic_store_n(&skipback_saving, 0, __ATOMIC_RELEASE);

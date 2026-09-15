@@ -192,14 +192,49 @@ Killing `shadow_ui` loses host state. Its main loop saves only when it sees
 is no safety net: `shadow_ui` registers only `atexit(remove_pid)`, and neither
 it nor the shim handles `SIGTERM`.
 
-So the launcher runs `scripts/quiesce-stock.sh` first, which sets `should_exit`
-(byte 2 of the control SHM) and waits for `shadow_ui` to go. Best-effort — if it
-does not, the kill sequence still runs.
+So the launcher runs `scripts/quiesce-stock.sh` first. **As of 2026-09-15 it does
+NOT set `should_exit` by default.** It used to, unconditionally, as the very
+first step — but `should_exit` is what triggers the remaining launch-audio
+burst: stock's shim respawns a fresh `shadow_ui` within ≤743 ms of the exit (no
+`should_exit` guard on its watchdog), the fresh UI reloads every chain slot
+un-faded, and reloading osirus boots its emulator child whose first 4096
+frames bypass gain and resampling at +3 dB — captured as a −4 dBFS 1.5 s burst
+on every launch with an osirus patch feeding the reverb, silent without one. A
+stock-only control (osirus loaded, no `should_exit` sent, thread-directed
+`SIGTERM` straight to Move's signal thread) was silent, isolating the burst to
+`should_exit` rather than the exit itself.
 
-Without it the user loses whatever the periodic autosave has not written, and
-that autosave is both coarse (~10 s) and **gated on `!isOvertakeActive`** — so
-launching from inside an overtake tool would have saved nothing since that tool
-opened.
+The default sequence is now: mute the mix (byte 49 of the control SHM) → paint
+the dAVEBOx splash into stock's display → ask Move's own Live Set to save over
+D-Bus → take Move down (gracefully if possible, frozen-and-swept otherwise).
+`shadow_ui` is never asked to exit and is still fully alive at handoff — stock's
+own autosave (coarse, ~10 s; the `synth:state` polling shows it lands roughly
+every 5 s in practice) is what's left protecting in-progress chain edits, so
+the accepted exposure is at most the last ~5 s of chain state (or, launched
+from inside an overtake tool, whatever that tool touched since it opened —
+autosave is gated on `!isOvertakeActive`). Move's own Live Set is unaffected
+either way; the D-Bus save covers that regardless of the knob below.
+
+The old `should_exit`-and-wait step is still available for A/B, behind its own
+knob: `DBX_QUIESCE_ASK_UI_EXIT=1`, or
+`touch /data/UserData/dbx-host/quiesce-ask-ui-exit`. Default OFF. When it runs,
+it behaves as before — sets `should_exit`, waits up to 5 s for `shadow_ui` to
+save and exit — before the rest of the sequence below.
+
+Once the (optional) wait is done and Move's own song save has run, the script
+asks stock Move to **shut down gracefully** — a *thread*-directed `SIGTERM`
+(tgkill) to the one thread parked in `rt_sigtimedwait` (the only one with
+`SigBlk == 0`), picked by `scripts/pick-signal-thread.py`, child pid first,
+waiting up to 3 s. An orderly shutdown quiesces the audio hardware; a
+`SIGSTOP`ped then `SIGKILL`ed Move leaves it driverless and it can burst
+(−3 dBFS for ~1.5 s, captured 2026-09-15). If Move goes, the freeze is
+skipped; if it does not — or if no zero-mask thread is found — the old
+freeze-and-sweep path runs unchanged. Turn it off with `DBX_QUIESCE_GRACEFUL=0`
+or `touch /data/UserData/dbx-host/quiesce-graceful-off`. Its `shadow_ui_live`
+guard (refusing a graceful exit while `shadow_ui` is mid-save) now applies only
+when `should_exit` was actually sent — with the default knob off, `shadow_ui`
+is always still live at this point and was never asked to save, so there is no
+in-flight save for a graceful exit to interrupt.
 
 ⚠ The host config for the current Move set lives in
 `schwung/set_state/<set-uuid>/`, **not** `schwung/slot_state/`. The latter is the
