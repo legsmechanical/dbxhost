@@ -89,6 +89,35 @@ rm -f "$OUT"
 echo "About to load default song" >> "$LOG"
 check "default song captured" wait_for "$OUT" "^default\$"
 
+# ---- shape 4: pad 13 device sequence — Move flaps through 4 loads in ONE
+# start before settling; move_loaded_set.txt must hold only the LAST, the
+# history sibling must hold all 4 in order, and the flap must be logged ------
+rm -f "$OUT" "$T/move_loaded_history.txt"
+D6=d6b24c82-1111-4bbb-8ccc-000000000006
+C6=c63c3e77-2222-4ccc-8ddd-000000000007
+echo "About to load /data/UserData/UserLibrary/Sets/$D6/Pad 13 Project/Song.abl" >> "$LOG"
+check "pad13: first load (requested set) captured" wait_for "$OUT" "^$D6\$"
+echo "About to load /data/UserData/UserLibrary/Sets/$C6/Project 1/Song.abl" >> "$LOG"
+check "pad13: second load (Move's fallback) captured" wait_for "$OUT" "^$C6\$"
+echo "About to load default song" >> "$LOG"
+check "pad13: third load (default) captured" wait_for "$OUT" "^default\$"
+echo "About to load /data/UserData/UserLibrary/Sets/$C6/Project 1/Song.abl" >> "$LOG"
+check "pad13: fourth load (Move settles on Project 1) captured" wait_for "$OUT" "^$C6\$"
+
+HIST="$T/move_loaded_history.txt"
+check "history file exists" wait_for "$HIST" "$D6"
+check "history: 4 lines, oldest first" bash -c "[ \"\$(wc -l < '$HIST' | tr -d ' ')\" = 4 ]"
+check "history: line 1 is the requested set" bash -c "sed -n 1p '$HIST' | grep -q ' $D6\$'"
+check "history: line 4 is the final settled set" bash -c "sed -n 4p '$HIST' | grep -q ' $C6\$'"
+check "history: line 3 is default" bash -c "sed -n 3p '$HIST' | grep -q ' default\$'"
+check "history: each line starts with an ISO-8601 UTC timestamp" \
+    bash -c "grep -Ecv '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z ' '$HIST' | grep -q '^0\$'"
+
+check "launch.log records the fall-back from the requested set" \
+    bash -c "grep -q \"move-loaded-set: Move fell back: $D6 -> $C6\" '$LOG'"
+check "launch.log records the fall-back to default too" \
+    bash -c "grep -q \"move-loaded-set: Move fell back: $D6 -> default\" '$LOG'"
+
 # ---- lifecycle: the reader must never outlive the session ----------------
 # The session ends by exec-ing onward to stock (boot) or exiting (tools);
 # neither kills background children. A reader that leaves its tail pipeline

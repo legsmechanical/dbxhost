@@ -551,15 +551,29 @@ void shadow_poll_current_set(void)
              * the publish waits for it — see shadow_loaded_set_policy.h.
              * Without that launcher (an ordinary install) nothing changes. */
             if (access(MOVE_LOADED_SET_READER, F_OK) == 0) {
-                if (song_index_changed || song_index != loaded_verify_index ||
-                    strcmp(loaded_verify_uuid, entry->d_name) != 0) {
-                    loaded_verify_index = song_index;
-                    loaded_verify_start_ms = loaded_set_now_ms();
-                    if (++loaded_verify_seq == 0) loaded_verify_seq = 1;
+                int is_new_candidate = song_index_changed ||
+                    song_index != loaded_verify_index ||
+                    strcmp(loaded_verify_uuid, entry->d_name) != 0;
+                /* A verification already in flight for a DIFFERENT uuid must
+                 * not be silently re-targeted onto this scan's answer within
+                 * the settle window — see loaded_set_may_retarget() in
+                 * shadow_loaded_set_policy.h for why. Keep verifying the
+                 * ORIGINAL uuid; this scan's dir match still counts as
+                 * "handled" below so the caller doesn't fall into the
+                 * pending-blank-state branch. */
+                long elapsed_since_start = loaded_set_now_ms() - loaded_verify_start_ms;
+                if (!is_new_candidate ||
+                    loaded_verify_index < 0 ||
+                    loaded_set_may_retarget(elapsed_since_start)) {
+                    if (is_new_candidate) {
+                        loaded_verify_index = song_index;
+                        loaded_verify_start_ms = loaded_set_now_ms();
+                        if (++loaded_verify_seq == 0) loaded_verify_seq = 1;
+                    }
+                    snprintf(loaded_verify_name, sizeof(loaded_verify_name), "%s", sub->d_name);
+                    snprintf(loaded_verify_uuid, sizeof(loaded_verify_uuid), "%s", entry->d_name);
                 }
-                snprintf(loaded_verify_name, sizeof(loaded_verify_name), "%s", sub->d_name);
-                snprintf(loaded_verify_uuid, sizeof(loaded_verify_uuid), "%s", entry->d_name);
-                loaded_set_verify_and_publish(song_index);
+                loaded_set_verify_and_publish(loaded_verify_index);
             } else {
                 loaded_verify_active = 0;
                 shadow_set_pages_publish(sub->d_name, entry->d_name);

@@ -65,6 +65,20 @@ int main(void) {
        "UNOPENED keeps watching for a late match");
     OK(!loaded_set_keep_checking(LOADED_SET_MISMATCH, LOADED_SET_WATCH_MS), "watch window ends");
 
+    /* --- retargeting -----------------------------------------------------
+     * A resolution change mid-verification must NOT be adopted while still
+     * inside the settle window — that is exactly Move rewriting
+     * currentSongIndex to reflect the project it fell back into (pad 13
+     * device log: d6b24c82 -> c63c3e77/Project 1, one launch, < 300 ms),
+     * which would otherwise legitimately MATCH move_loaded_set.txt's last
+     * line and silently publish the fallback instead of UNOPENED. */
+    OK(!loaded_set_may_retarget(0), "retarget refused at 0 ms (settle window)");
+    OK(!loaded_set_may_retarget(LOADED_SET_SETTLE_MS - 1),
+       "retarget still refused just inside the settle window");
+    OK(loaded_set_may_retarget(LOADED_SET_SETTLE_MS),
+       "retarget allowed once the settle window has elapsed");
+    OK(loaded_set_may_retarget(60000), "retarget allowed well past settle");
+
     /* --- the identity --------------------------------------------------- */
     char u[64];
     loaded_set_unopened_uuid(u, sizeof u, 31, 7);

@@ -572,8 +572,11 @@ setsid --wait bash -c '
     # dark, because there is nothing left to repaint them.)
     # S1: clear the reader outfile before EVERY Move start (first boot and
     # every relaunch) -- a value the reader wrote for a PREVIOUS Move process
-    # must never be read as belonging to this one.
-    rm -f "$DBX_DIR/move_loaded_set.txt"
+    # must never be read as belonging to this one. S9: its history sibling
+    # (move_loaded_history.txt, written by move-loaded-set-reader.sh) shares
+    # the same lifecycle -- clear it alongside so a fallback log line never
+    # mixes loads from two different Move processes.
+    rm -f "$DBX_DIR/move_loaded_set.txt" "$DBX_DIR/move_loaded_history.txt"
     ts "starting Move"
     echo "run LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal"
     env LD_PRELOAD=davebox-shim.so /opt/move/MoveOriginal

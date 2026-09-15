@@ -97,6 +97,35 @@ static inline int loaded_set_keep_checking(loaded_set_verdict_t v, long elapsed_
     return v != LOADED_SET_MATCH && elapsed_ms < LOADED_SET_WATCH_MS;
 }
 
+/* May the poll RETARGET verification onto a freshly-scanned uuid, abandoning
+ * whichever uuid it is currently verifying?
+ *
+ * Settings.json's currentSongIndex is Move's own state, not just ours: when
+ * Move rejects the set we asked it to open, it does not merely log `About to
+ * load default song` — it can also keep hunting and settle on a DIFFERENT
+ * real project of its own, rewriting currentSongIndex to that project's
+ * index. If the poll blindly re-resolves via the xattr scan whenever the
+ * index moves, it re-targets verification onto Move's fallback mid-flight,
+ * and that fallback's own uuid legitimately MATCHES move_loaded_set.txt's
+ * last line (that really is what Move loaded) — silently publishing the set
+ * Move fell back into instead of raising "did not open" for the one we
+ * asked for. Device log, one launch, pad 13:
+ *   About to load d6b24c82... -> About to load c63c3e77.../Project 1
+ *   -> About to load default song -> About to load .../Project 1
+ * all inside the settle window.
+ *
+ * So: while a verification is still within its settle window, a new
+ * resolution must NOT replace it — keep verifying the ORIGINAL uuid, and let
+ * move_loaded_set.txt naming a different real uuid resolve as the MISMATCH
+ * it is (-> UNOPENED once the settle window elapses). Once the settle window
+ * has passed (the original verification has either matched, or is already on
+ * its way to UNOPENED), a differing resolution is trusted as a legitimate new
+ * target. */
+static inline int loaded_set_may_retarget(long elapsed_since_verify_start_ms)
+{
+    return elapsed_since_verify_start_ms >= LOADED_SET_SETTLE_MS;
+}
+
 static inline void loaded_set_unopened_uuid(char *out, size_t out_len,
                                             int song_index, unsigned seq)
 {

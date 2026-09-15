@@ -42,12 +42,52 @@
 #     start (first boot AND every relaunch), so a value left over from a
 #     previous launch is never mistaken for the current one.
 #
+# ---- <outfile>'s sibling, move_loaded_history.txt — every load, not just
+# the last one (S9) ----------------------------------------------------------
+#   - lives beside <outfile> (same dir), named `move_loaded_history.txt`.
+#   - one line per "About to load" seen since the last clear:
+#     `<ISO-8601 UTC time> <uuid|default>`, oldest first, capped at 50 lines.
+#   - cleared by the caller alongside <outfile>, at each Move start — same
+#     lifecycle, so it never mixes loads from two different Move processes.
+#   - purely diagnostic (S4's policy only ever reads <outfile>): it exists so
+#     a flapping boot (Move rejects the requested set, tries again, lands on
+#     a fallback) is visible after the fact instead of only in the single
+#     last-load line <outfile> keeps by contract.
+#   - when a Move start logs MORE THAN ONE load, each load past the first
+#     also gets a line in $LOGFILE itself:
+#       `move-loaded-set: Move fell back: <first> -> <this one>`
+#     so the flap shows up in the same log a human already tails.
+#
 # Usage: move-loaded-set-reader.sh <logfile> <outfile> <owner-pid>
 set -eu
 
 LOGFILE="$1"
 OUTFILE="$2"
 OWNER="$3"
+HISTFILE="$(dirname "$OUTFILE")/move_loaded_history.txt"
+
+# Write <val> ("default" or a uuid) as the new answer, append it to the
+# history, and — when it is not the first load recorded since the last
+# clear — log the fallback to $LOGFILE.
+write_loaded() {
+    _val="$1"
+    _tmp="$OUTFILE.tmp.$$"
+    printf '%s\n' "$_val" > "$_tmp" && mv -f "$_tmp" "$OUTFILE"
+
+    _first=""
+    if [ -s "$HISTFILE" ]; then
+        _first=$(head -n 1 "$HISTFILE" | awk '{print $2}')
+    fi
+
+    _ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    _htmp="$HISTFILE.tmp.$$"
+    { [ -s "$HISTFILE" ] && cat "$HISTFILE"; printf '%s %s\n' "$_ts" "$_val"; } \
+        | tail -n 50 > "$_htmp" && mv -f "$_htmp" "$HISTFILE"
+
+    if [ -n "$_first" ]; then
+        printf 'move-loaded-set: Move fell back: %s -> %s\n' "$_first" "$_val" >> "$LOGFILE"
+    fi
+}
 
 killtree() { # kill every descendant of $1, deepest first
     for _c in $(pgrep -P "$1" 2>/dev/null || true); do
@@ -65,16 +105,14 @@ trap stop TERM INT HUP
 tail -n 0 -F "$LOGFILE" 2>/dev/null | while IFS= read -r line; do
     case "$line" in
         *"About to load default song"*)
-            tmp="$OUTFILE.tmp.$$"
-            printf 'default\n' > "$tmp" && mv -f "$tmp" "$OUTFILE"
+            write_loaded "default"
             ;;
         *"About to load "*)
             uuid=$(printf '%s\n' "$line" \
                 | grep -oE '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' \
                 | head -n 1)
             [ -n "$uuid" ] || continue
-            tmp="$OUTFILE.tmp.$$"
-            printf '%s\n' "$uuid" > "$tmp" && mv -f "$tmp" "$OUTFILE"
+            write_loaded "$uuid"
             ;;
         *) ;;
     esac
