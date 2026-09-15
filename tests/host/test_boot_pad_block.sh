@@ -34,22 +34,27 @@ note() { echo "FAIL: $1" >&2; fail=1; }
 # --- armed alongside the boot LED blank, inside the SAME boot_tool.json gate
 boot_block=$(awk '/if \(stat\(SCHWUNG_INSTALL_DIR "\/boot_tool\.json", &_bt\) == 0\)/,/^            }$/' "$shim")
 [ -n "$boot_block" ] || note "the boot_tool.json gate block is gone from $shim"
+# -E anchored on the trimmed line, deliberately NOT a bare substring grep: a
+# mutation that comments the statement out (`/* shadow_control->pad_block =
+# 1; */`) still CONTAINS the substring and must not read as present.
+live_line() { command grep -Eq "^[[:space:]]*${1};[[:space:]]*\$"; }
+
 command grep -q "boot_tool_led_blank = 1;" <<<"$boot_block" || note "boot_tool_led_blank is not armed in the boot_tool.json gate (test itself is stale)"
-command grep -q "shadow_control->pad_block = 1;" <<<"$boot_block" || \
-    note "pad_block is not armed alongside boot_tool_led_blank in the boot_tool.json gate"
+live_line "shadow_control->pad_block = 1" <<<"$boot_block" || \
+    note "pad_block is not armed (live) alongside boot_tool_led_blank in the boot_tool.json gate"
 
 # --- release 1: overtake_mode (the tool has taken the surface) -------------
 overtake=$(awk '/if \(shadow_control->overtake_mode\) \{/,/^    \}$/' "$shim" | head -6)
 command grep -q "boot_tool_led_blank = 0;" <<<"$overtake" || note "overtake_mode no longer clears boot_tool_led_blank (test is stale)"
-command grep -q "shadow_control->pad_block = 0;" <<<"$overtake" || \
-    note "overtake_mode does not clear pad_block — a boot press-block would outlive the tool taking the surface"
+live_line "shadow_control->pad_block = 0" <<<"$overtake" || \
+    note "overtake_mode does not clear pad_block (live) — a boot press-block would outlive the tool taking the surface"
 
 # --- release 2: the BOOT_LED_BLANK_MAX_MS timeout --------------------------
 timeout_block=$(awk '/_now >= boot_tool_led_blank_deadline_ms\) \{/,/^        }$/' "$shim")
 [ -n "$timeout_block" ] || note "the boot LED blank timeout block is gone from $shim"
 command grep -q "boot_tool_led_blank = 0;" <<<"$timeout_block" || note "the timeout no longer clears boot_tool_led_blank (test is stale)"
-command grep -q "shadow_control->pad_block = 0;" <<<"$timeout_block" || \
-    note "the BOOT_LED_BLANK_MAX_MS timeout does not clear pad_block — a missing/crashing boot tool would strand pads dead forever"
+live_line "shadow_control->pad_block = 0" <<<"$timeout_block" || \
+    note "the BOOT_LED_BLANK_MAX_MS timeout does not clear pad_block (live) — a missing/crashing boot tool would strand pads dead forever"
 
 # --- the existing passthrough filter enforces it on notes 68-99 -----------
 if ! command grep -q "shadow_control->pad_block && d1 >= 68 && d1 <= 99" "$shim"; then
