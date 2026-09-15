@@ -343,6 +343,11 @@ the section into a versioned heading at release time.
   longer sometimes reopened the project you were last in: a late report about
   the previous session's set could flash a "project did not open" screen and
   load it behind you. Nothing loads now until you tap a pad.
+- **No more notes left hanging when you load a project or quit.** Opening a
+  project while something was sounding could leave a synth holding that note
+  flat until the next panic — and that pitch would then stay silent for the
+  rest of the session. Quit and Shift+Back now stop the transport on the way
+  out, so every voice is released before dAVEBOx leaves.
 - **STEP bank at rest reads "Hold step to edit".** The knob cells appear only
   while a step is held; with nothing held the page shows the one line instead
   of eight dashes.

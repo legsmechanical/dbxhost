@@ -2561,6 +2561,23 @@ export function raiseExitConfirm(kind) {
  * unloads dAVEBOx (the launcher's marker decides, at exit time). */
 export function exitSessionNow() {
     if (S.exitFarewell !== 0 || S.pendingExitAfterSave) return;   /* already leaving */
+    /* ⭑ STOP THE TRANSPORT FIRST, exactly as the project switch does
+     * (ui_dialogs.mjs, the `pendingStopBeforeSave` comment there carries the
+     * reasoning). Quit and Shift+Back used to save and leave with the
+     * sequencer still rolling, and nothing after the gesture can release a
+     * voice: the shim `_exit`s on SIGTERM. The DSP's own reset paths zero
+     * `playing` WITHOUT note-offs — they must not panic — so a chain synth
+     * was left holding the last note it was given, flat, until something
+     * else panicked. A real transport stop releases every voice on the way
+     * out, and under clock-follow asks Move to stop with us.
+     *
+     * A pending flag, not a call, and for the same reason as the switch: this
+     * runs from a MIDI-handler context, where the tick's own `save`
+     * set_param would coalesce the stop away (same buffer, last write wins).
+     * The tick drain gives the stop a tick of its own, the save fires the
+     * tick after, and `pendingExitAfterSave` the tick after that — the
+     * else-if chain in ui_tick.mjs already orders them that way. */
+    if (S.playing) S.pendingStopBeforeSave = true;
     saveState();                       /* sets pendingSuspendSave */
     S.pendingExitAfterSave = true;     /* drained one tick after the save fires */
     S.globalMenuOpen = false;
