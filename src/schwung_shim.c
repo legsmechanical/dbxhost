@@ -7561,6 +7561,12 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                 shadow_log("vol claim released mid-touch: injected volume-touch-on to Move");
             else
                 shadow_log("vol claim released mid-touch: touch-on DROPPED (inject ring full)");
+            /* The touch physically belongs to the claimed gesture (Shift+Vol),
+             * even though Move is now being told it started. Keep the OLED on
+             * the tool's shadow display until the finger actually lifts, so
+             * Move's native volume overlay doesn't flash through while it
+             * learns the held state we just injected. */
+            shadow_block_plain_volume_hide_until_release = 1;
         }
         prev_vol_block = vb_now;
     }

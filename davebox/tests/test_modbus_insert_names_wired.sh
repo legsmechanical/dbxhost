@@ -19,13 +19,17 @@ bad() { echo "  FAIL — $1"; fail=1; }
 
 SND=ui/ui_sound.mjs
 
-# 1. the render prefers the instance's own name, and still falls back
-if grep -q "modBusInsertName(S.modBus, S.modBusGroup, c.index)" "$SND" \
-   && grep -A2 "modBusInsertName(S.modBus, S.modBusGroup, c.index)" "$SND" \
-      | grep -q "engineModuleAbbrev(c.module)"; then
-    ok "the insert row draws display_name, falling back to the abbreviation"
+# 1. the render prefers the instance's own name, and falls back to the module's
+#    FULL id (2026-09-15: "full module name, like on sound menu" — the
+#    abbreviation fallback is gone), through modBusInsertDisplayValue.
+if grep -q "modBusInsertDisplayValue($" "$SND" \
+   && grep -A1 "modBusInsertDisplayValue($" "$SND" \
+      | grep -q "modBusInsertName(S.modBus, S.modBusGroup, c.index), c.module" \
+   && grep -A4 "^export function modBusInsertDisplayValue" "$SND" \
+      | grep -q "moduleIdOf(moduleRaw)"; then
+    ok "the insert row draws display_name, falling back to the module's full id"
 else
-    bad "renderModBusChain does not prefer modBusInsertName over the abbreviation"
+    bad "renderModBusChain does not prefer modBusInsertName, falling back to the full id"
 fi
 
 # 2. the tick refreshes it, scoped to the open bus

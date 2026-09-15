@@ -129,10 +129,10 @@ step('⭐ scrolling moves the lights to the next lane, with no further read', ()
     assert(stepReads === 1, 'scrolling is served from the clip\'s one read, got ' + stepReads);
 });
 
-step('the Clear clip row lights nothing', () => {
+step('the Clear all row lights nothing', () => {
     jog(1);
-    assert(S.autoBank.sel === 2, 'setup: cursor on Clear clip');
-    assert(watch().ever.length === 0, 'Clear clip is not a lane');
+    assert(S.autoBank.sel === 2, 'setup: cursor on Clear all');
+    assert(watch().ever.length === 0, 'Clear all is not a lane');
 });
 
 step('the ops pop-up keeps its lane lit; Back to the card puts the row out', () => {

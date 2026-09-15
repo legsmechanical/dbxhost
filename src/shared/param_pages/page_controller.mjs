@@ -249,12 +249,20 @@ export function drawPageChromeList(ctx, rect, entries, index, { editMode = false
          * work. Found by rendering it and looking, not by reading it.
          *
          * Handing the floor over like this is also why this is the ONE list that
-         * needed drawMenuList's `minLabelChars` — with no value-column floor of
-         * its own, a wide value took the whole row and left `A...` / `B...` for
-         * two different samples. The general floor is drawMenuList's default, so
-         * nothing is passed here; see THE LABEL FLOOR in menu_layout.mjs and
-         * tests/host/test_list_label_floor.sh. */
+         * needs drawMenuList's `prioritizeSelectedValue` floor — with no
+         * value-column floor of its own (valueX === labelX below), a wide
+         * value pushed resolvedValueX all the way back to labelX, leaving
+         * maxLabelWidth negative, and the `maxLabelChars > 0` guard in
+         * drawMenuList then skipped truncation entirely: the FULL label
+         * printed at labelX with the value's floor-clamped start at the same
+         * x — two strings drawn on top of each other ("Preset" over a long
+         * preset name reading as "PKBsBia Synth FN" on the module editor's
+         * My Presets page). ⚠ This is NOT selection-gated: an inert list
+         * (index === -1, nothing entered yet) draws every row unselected, so
+         * the floor must apply there too — see the note at drawMenuList's
+         * `prioritizeSelectedValue` check in menu_layout.mjs. */
         valueX: rect.x,
+        prioritizeSelectedValue: true,
         /* Values end at x=118, not the 126 a full-width list uses: the frame's
          * right arm is the column x=123 and it runs through the first and last
          * glyph rows. This is the number renderPicker used (r.x + r.w - 2) and

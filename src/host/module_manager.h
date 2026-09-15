@@ -9,7 +9,7 @@
 #include "plugin_api_v1.h"
 
 #include "host/schwung_paths.h"
-#define MAX_MODULES 64
+#define MAX_MODULES 128
 #define MAX_MODULE_ID_LEN 64
 #define MAX_MODULE_NAME_LEN 128
 #define MAX_PATH_LEN 512

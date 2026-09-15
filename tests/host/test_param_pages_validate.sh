@@ -127,6 +127,37 @@ Promise.all([
 
     const ch = one({ levels: { root: { knobs: ["a"], child_prefix: "p" } } }, [{ key: "a" }]);
     if (!ch.has("child-without-count")) fail("child_prefix without child_count should be reported");
+
+    /* filepath-param-not-a-path: a wav_position marker whose filepath_param
+       names a numeric key gives a confident wrong filename at runtime
+       (normalizeWavPath stringifies the knob value). */
+    const fpBadType = one(
+      { levels: { root: { params: [] } } },
+      [
+        { key: "start", type: "wav_position", filepath_param: "wav_pos" },
+        { key: "wav_pos", type: "float", min: 0, max: 1 },
+      ]);
+    if (!fpBadType.has("filepath-param-not-a-path"))
+      fail("filepath_param pointing at a non-path (float) key should be reported");
+
+    /* the same rule catches a filepath_param that names no chain_params key
+       at all -- the file cell can never resolve a source. */
+    const fpMissing = one(
+      { levels: { root: { params: [] } } },
+      [{ key: "start", type: "wav_position", filepath_param: "sample_file" }]);
+    if (!fpMissing.has("filepath-param-not-a-path"))
+      fail("filepath_param naming an undeclared key should be reported");
+
+    /* the known-good shape must stay quiet: filepath_param names a real
+       filepath-typed sibling. */
+    const fpGood = one(
+      { levels: { root: { params: [] } } },
+      [
+        { key: "start", type: "wav_position", filepath_param: "sample_file" },
+        { key: "sample_file", type: "filepath" },
+      ]);
+    if (fpGood.has("filepath-param-not-a-path"))
+      fail("filepath_param pointing at a real filepath key must not be reported");
   }
 
   /* ---- 4. no module is in an unrenderable state ------------------------- */

@@ -12,7 +12,7 @@
  *                                  · Loop (clip, or N steps — click to edit,
  *                                  turn, click to set) · Scale (0-200 %, same
  *                                  shape: the lane's values up or down)
- *   Delete + click on the card    → CLEAR CLIP, the shortcut
+ *   Delete + click on the card    → CLEAR ALL, the shortcut
  *   Back                          → ops → menu → card → (davebox's own: out)
  *
  * Every edit takes an UNDO CHECKPOINT (ui_automation queues it). Smooth/Stepped
@@ -145,7 +145,7 @@ export function drawAutomationBankBody() {
     if (!S.bankCardLatched) autoBankReset();       /* the peek shows the plain card */
     const rows = autoBankRows(t, c);
     const listRows = rows.map(r => ({ label: r.label, value: rowValue(r) }));
-    if (a.menu) listRows.push({ label: 'Clear clip', hdr: true });
+    if (a.menu) listRows.push({ label: 'Clear all', hdr: true });
     if (a.sel >= listRows.length) a.sel = Math.max(0, listRows.length - 1);
     kitUseLayout('bank');
     drawKitList(listRows, a.menu ? a.sel : -1, { emptyMsg: 'NO AUTOMATION' });
@@ -191,7 +191,7 @@ export function autoBankClick() {
     const rows = autoBankRows(t, c);
     if (a.ops) { runOp(t, c, a); return; }
     if (!a.menu) { a.menu = true; a.sel = 0; return; }
-    if (a.sel >= rows.length) { autoBankClearClip(); return; }      /* the Clear clip row */
+    if (a.sel >= rows.length) { autoBankClearClip(); return; }      /* the Clear all row */
     const r = rows[a.sel];
     a.ops = { rows: opsFor(t, c, r), sel: 0, row: r };
     a.loopEdit = false; a.rateEdit = false; a.scaleEdit = false;
@@ -314,7 +314,7 @@ export function autoBankJog(delta) {
         }
         return true;
     }
-    const n = autoBankRows(t, c).length + 1;                 /* + Clear clip */
+    const n = autoBankRows(t, c).length + 1;                 /* + Clear all */
     a.sel = Math.max(0, Math.min(n - 1, a.sel + delta));
     return true;
 }

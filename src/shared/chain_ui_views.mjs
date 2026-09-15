@@ -4,13 +4,18 @@
  * Shared between main chain UI and shadow UI for consistent rendering.
  */
 
+/* LIST_LINE_HEIGHT owned by list_geometry.mjs (the leaf geometry module) —
+ * imported and re-exported here so this file's existing importers keep
+ * working without a second declaration to drift out of sync. */
+import { LIST_LINE_HEIGHT } from './list_geometry.mjs';
+export { LIST_LINE_HEIGHT };
+
 /* Layout constants */
 export const SCREEN_WIDTH = 128;
 export const SCREEN_HEIGHT = 64;
 export const TITLE_Y = 2;
 export const TITLE_RULE_Y = 12;
 export const LIST_TOP_Y = 15;
-export const LIST_LINE_HEIGHT = 9;
 export const LIST_HIGHLIGHT_HEIGHT = LIST_LINE_HEIGHT;
 export const LIST_LABEL_X = 4;
 export const LIST_VALUE_X = 92;

@@ -5,6 +5,11 @@
 import { getMenuLabelScroller } from './text_scroll.mjs';
 import { announceMenuItem, announceParameter } from './screen_reader.mjs';
 import { truncateText } from './chain_ui_views.mjs';
+/* LIST_LINE_HEIGHT owned by list_geometry.mjs (the leaf geometry module) —
+ * imported and re-exported here so this file's existing importers keep
+ * working without a second declaration to drift out of sync. */
+import { LIST_LINE_HEIGHT } from './list_geometry.mjs';
+export { LIST_LINE_HEIGHT };
 
 /* Screen dimensions */
 export const SCREEN_WIDTH = 128;
@@ -18,7 +23,6 @@ export const FOOTER_RULE_Y = FOOTER_TEXT_Y - 2;
 
 /* List rendering */
 export const LIST_TOP_Y = 15;
-export const LIST_LINE_HEIGHT = 9;                      // 5x7px font + 2px spacing
 export const LIST_HIGHLIGHT_HEIGHT = LIST_LINE_HEIGHT;
 export const LIST_HIGHLIGHT_OFFSET = 1;                 // Shift rect up 1px to vertically center
 export const LIST_LABEL_X = 4;
@@ -259,7 +263,18 @@ export function drawMenuList({
 
         if (valueAlignRight && fullValue) {
             let valueXFloor = valueX;
-            if (isSelected && prioritizeSelectedValue) {
+            /* ⚠ NOT gated on isSelected. A caller whose valueX floor equals
+             * labelX (drawPageChromeList: "the floor goes to the list's own
+             * left edge") relies on THIS reservation to give the label any
+             * room at all — and an inert list draws every row unselected
+             * (selectedIndex === -1), so gating on isSelected left every row
+             * but the selected one with a zero-width label budget. A long
+             * value then right-aligned all the way back to valueXFloor ===
+             * labelX, maxLabelWidth went negative, the `> 0` guard below left
+             * the label UNtruncated, and both strings printed at the same x —
+             * the "PKBsBia Synth FN" overlap on the module editor's My
+             * Presets page (Preset row, unselected: cursor was on Delete). */
+            if (prioritizeSelectedValue) {
                 const minLabelChars = Math.max(0, selectedMinLabelChars | 0);
                 const minLabelWidth = ((labelPrefix.length + minLabelChars) * DEFAULT_CHAR_WIDTH) + labelGap;
                 valueXFloor = labelX + minLabelWidth;

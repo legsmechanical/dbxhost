@@ -1509,6 +1509,17 @@ function _drawProjectPadPicker_impl() {
      * Move-native gestures the user already knows (Josh, 2026-08-15). */
     drawKitBrandHeader();
     drawKitList([], -1, { emptyMsg: 'Select project', emptyHdr: true, hostLabels: false });
+    _drawPreflightNotice();
+}
+
+/* One-line footer notice for a launch-time preflight failure (see ui.js init
+ * and standalone/scripts/preflight.sh) — never a popup, so it does not steal
+ * the picker's attention from project selection. Sits in the same bottom
+ * strip other screens reserve for a hint row, well clear of the centred
+ * "Select project" prompt above it, so it never displaces the list. */
+function _drawPreflightNotice() {
+    if (!S.preflightFailed) return;
+    print(4, 58, 'Preflight: see log', 1);
 }
 
 /* Fail-SAFE wrappers: see the banner above. */
