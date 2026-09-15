@@ -24,28 +24,36 @@ echo "quiesce-stock.sh order:"
 code() { grep -v '^[[:space:]]*#' "$Q"; }
 lineof() { code | grep -n -- "$1" | head -1 | cut -d: -f1; }
 
-# 1. should_exit is written BEFORE any D-Bus save can run.
+# 1. should_exit (2026-09-15: now knob-gated, DBX_QUIESCE_ASK_UI_EXIT / the
+#    quiesce-ask-ui-exit flag file — see the file header) is, WHEN SENT, still
+#    written before any D-Bus save can run — source order only; this is a
+#    static pin, not an execution of the default-off path.
 se=$(lineof 'mm\[2\] = 1'); sv=$(lineof 'saveSongIfDirty')
 # The D-Bus call lives inside save_song(). Its first CALL on the normal path
-# must come after should_exit. The no-control branch (`if [ ! -e "$CONTROL"`)
-# has no shadow UI to signal and may save first — skip its lines.
+# must come after should_exit's write site. The no-control branch (`if [ ! -e
+# "$CONTROL"`) has no shadow UI to signal and may save first — skip its lines.
 nc_start=$(lineof 'if \[ ! -e "\$CONTROL" \]')
 nc_end=$(code | awk -v s="$nc_start" 'NR>s && /^fi$/ {print NR; exit}')
 first_call=$(code | grep -n '^[[:space:]]*save_song$' | cut -d: -f1 \
              | awk -v a="$nc_start" -v b="$nc_end" '$1<a || $1>b' | head -1)
 if [ -n "$se" ] && [ -n "$first_call" ] && [ "$se" -lt "$first_call" ]; then
-    ok "should_exit is set before the first save_song call (line $se < $first_call)"
+    ok "should_exit's write site precedes the first save_song call (line $se < $first_call)"
 else
-    bad "save_song (D-Bus, 4 s timeout) runs before should_exit — the menu stays live while it waits"
+    bad "save_song (D-Bus, 4 s timeout) runs before should_exit's write site — the menu stays live while it waits"
 fi
+se_guarded=$(code | awk '/^if ask_ui_exit_enabled; then/{g=1} g && /mm\[2\] = 1/{print "yes"; exit} /^fi$/{g=0}')
+[ "$se_guarded" = "yes" ] \
+    && ok "should_exit is only written inside the ask_ui_exit_enabled knob" \
+    || bad "should_exit's write is not gated behind ask_ui_exit_enabled"
 
-# 2. In the shadow_ui-exited branch, the splash goes up before the save and the freeze.
+# 2. In the shadow_ui-exited branch (only reachable via the ask-ui-exit knob),
+#    the splash goes up before the save and the freeze/graceful-exit.
 branch=$(code | sed -n '/shadow_ui exited after/,/exit 0/p')
 order=$(printf '%s\n' "$branch" | grep -o 'paint_splash\|save_song\|freeze_move' | tr '\n' ' ')
 if [ "$order" = "paint_splash save_song freeze_move " ]; then
-    ok "exited branch: splash → save → freeze"
+    ok "post-wait sequence: splash → save → freeze"
 else
-    bad "exited branch order is '$order', want 'paint_splash save_song freeze_move '"
+    bad "post-wait sequence is '$order', want 'paint_splash save_song freeze_move '"
 fi
 
 # 3. The wait must not count a zombie as running.
@@ -59,7 +67,7 @@ if code | sed -n '/^shadow_ui_live()/,/^}/p' | grep -q 'Z|X|""'; then
 else
     bad "the state case does not treat Z as exited"
 fi
-if code | sed -n '/^while/,/^done/p' | grep -q 'shadow_ui_live'; then
+if code | sed -n '/^[[:space:]]*while/,/^[[:space:]]*done/p' | grep -q 'shadow_ui_live'; then
     ok "the wait loop uses shadow_ui_live"
 else
     bad "the wait loop does not call shadow_ui_live"

@@ -28,13 +28,31 @@ fi
 Q=standalone/scripts/quiesce-stock.sh
 X=standalone/scripts/exit-to-stock.sh
 
-# 2. quiesce: mute (49) is written BEFORE should_exit (2), in the same block
-m=$(grep -n 'mm\[49\] = 1' "$Q" | head -1 | cut -d: -f1)
-e=$(grep -n 'mm\[2\] = 1'  "$Q" | head -1 | cut -d: -f1)
-if [ -n "$m" ] && [ -n "$e" ] && [ "$m" -lt "$e" ]; then
-    ok "quiesce-stock.sh mutes (byte 49) before should_exit (byte 2)"
+# 2. quiesce: mute (49) precedes everything else in the handoff sequence
+#    (paint_splash / save_song, and should_exit if the knob sends it at all —
+#    2026-09-15: should_exit is no longer unconditional, see 2b).
+qcode() { grep -v '^[[:space:]]*#' "$Q"; }
+ctrl_if=$(qcode | grep -n 'if \[ ! -e "\$CONTROL" \]' | head -1 | cut -d: -f1)
+ctrl_fi=$(qcode | awk -v s="$ctrl_if" 'NR>s && /^fi$/ {print NR; exit}')
+seq_tail() { qcode | awk -v b="$ctrl_fi" 'NR>b'; }
+m=$(seq_tail | grep -n 'mm\[49\] = 1' | head -1 | cut -d: -f1)
+other=$(seq_tail | grep -nE 'mm\[2\] = 1|^[[:space:]]*paint_splash[[:space:]]*$|^[[:space:]]*save_song[[:space:]]*$' \
+        | head -1 | cut -d: -f1)
+if [ -n "$m" ] && [ -n "$other" ] && [ "$m" -lt "$other" ]; then
+    ok "quiesce-stock.sh mutes (byte 49) before everything else in the handoff sequence"
 else
-    bad "quiesce-stock.sh: mute must precede should_exit (mute line=$m, exit line=$e)"
+    bad "quiesce-stock.sh: mute must precede the rest of the sequence (mute line=$m, next line=$other)"
+fi
+
+# 2b. should_exit (byte 2) is knob-gated, not unconditional — the 2026-09-15
+#     change: it used to run on every launch and was the trigger of the
+#     respawn-storm launch burst (see the file's header comment).
+guard_l=$(seq_tail | grep -n 'ask_ui_exit_enabled' | head -1 | cut -d: -f1)
+se_l=$(seq_tail | grep -n 'mm\[2\] = 1' | head -1 | cut -d: -f1)
+if [ -n "$guard_l" ] && [ -n "$se_l" ] && [ "$guard_l" -lt "$se_l" ]; then
+    ok "should_exit (byte 2) is written only inside the ask_ui_exit_enabled knob"
+else
+    bad "should_exit is not gated behind ask_ui_exit_enabled (guard line=$guard_l, exit line=$se_l)"
 fi
 
 # 3. quiesce maps the whole control segment, not the stale 84 bytes

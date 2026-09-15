@@ -33,9 +33,13 @@ echo "quiesce-stock.sh graceful exit:"
 # 1. Placement: on every route the graceful step sits AFTER save_song and
 #    BEFORE (as the alternative to) freeze_move. The param-bus deadlock that
 #    the freeze comment records applies here identically.
+#    2026-09-15: the should_exit-wait branch and the should_exit-timeout
+#    branch were collapsed into one shared tail (should_exit itself is now
+#    knob-gated, see test_quiesce_order.sh) — 2 routes now (no-control-SHM,
+#    and the shared tail every CONTROL-present launch reaches), not 3.
 calls=$(code | grep -c 'graceful_move_exit || freeze_move')
 routes=$(code | grep -c '^[[:space:]]*save_song$')
-if [ "$calls" -ge 3 ] && [ "$calls" -eq "$routes" ]; then
+if [ "$calls" -ge 2 ] && [ "$calls" -eq "$routes" ]; then
     ok "every save_song route ($routes) is followed by 'graceful_move_exit || freeze_move'"
 else
     bad "graceful step is on $calls of $routes save_song routes — it must be on all of them"
@@ -52,11 +56,18 @@ EOF
     || bad "a graceful call does not follow save_song — the D-Bus save must finish first"
 
 # 2. It refuses to run while shadow_ui is still live (same constraint as the
-#    freeze: the shim serves the param bus shadow_ui blocks on).
+#    freeze: the shim serves the param bus shadow_ui blocks on) — but 2026-09-
+#    15: only when should_exit was actually sent (asked shadow_ui to save).
+#    With should_exit off (the default), shadow_ui is always still live at
+#    this point and was never asked to save, so gating unconditionally would
+#    refuse the graceful exit on every default-path launch.
 body=$(code | sed -n '/^graceful_move_exit()/,/^}/p')
 printf '%s\n' "$body" | grep -q 'shadow_ui_live' \
     && ok "graceful_move_exit checks shadow_ui_live before signalling" \
     || bad "graceful_move_exit does not gate on shadow_ui_live — it can deadlock the save"
+printf '%s\n' "$body" | grep -qE 'SHOULD_EXIT_SENT.*&&.*shadow_ui_live' \
+    && ok "the shadow_ui_live gate only applies when SHOULD_EXIT_SENT is set" \
+    || bad "shadow_ui_live gates unconditionally — refuses the graceful exit on every default (should_exit-off) launch"
 
 # 3. tgkill, by number, behind an arch guard.
 printf '%s\n' "$body" | grep -q 'syscall(131' \
