@@ -104,6 +104,20 @@ step('⭑ routing to Move with system Link ON raises no popup', () => {
     if (S.actionPopupLines.length) throw new Error('popup fired although Link is enabled: ' + JSON.stringify(S.actionPopupLines));
 });
 
+step('⭐⭐ a project-load resync (invalidate + sync) with an already-Move-routed track and Link off raises NO popup', () => {
+    /* _syncClipsFromDspInner invalidates the routing cache before re-deriving
+     * it from S.trackRoute, which reads as a null->1 "just enabled" transition
+     * to syncLinkAudioRoutingFromRoutes() even though nothing actually changed
+     * -- the track was already routed to Move before this project loaded. The
+     * warning must not fire from that path; only a real user route change
+     * (applyTrackConfig) may trigger it. */
+    sysLinkAnswer = '0';
+    S.trackRoute[0] = 1 /* ROUTE_MOVE, already set from the prior step */;
+    S.actionPopupLines = []; S.actionPopupEndTick = -1;
+    B.syncClipsFromDsp();
+    if (S.actionPopupLines.length) throw new Error('resync popped the Link warning: ' + JSON.stringify(S.actionPopupLines));
+});
+
 process.exit(failed);
 }
 main().catch((e) => { bad('unhandled', e); process.exit(1); });
