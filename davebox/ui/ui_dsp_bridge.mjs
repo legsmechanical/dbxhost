@@ -1811,10 +1811,15 @@ function _syncClipsFromDspInner() {
     }
     /* Every track's route is now known: re-derive the Link Audio rebuild flag.
      * The host's flag belongs to the PREVIOUS project, so invalidate the cache
-     * first or an unchanged-looking value would suppress the correcting write. */
+     * first or an unchanged-looking value would suppress the correcting write.
+     * Deliberately no warnIfLinkAudioSystemDisabled() here: invalidating makes
+     * this sync's null->1 transition read as "just enabled" even when nothing
+     * changed (a project load / full resync of a project that was already
+     * routed to Move), which fired the popup on every load. The warning is a
+     * response to a USER route change and belongs only at that gesture's own
+     * call site in applyTrackConfig(). */
     invalidateLinkAudioRoutingCache();
     syncLinkAudioRoutingFromRoutes(S.trackRoute);
-    warnIfLinkAudioSystemDisabled();
     /* ONE dAVEBOx TRACK PER MOVE INSTRUMENT (Josh, 2026-09-13): a project made
      * before the rule can still hold two tracks on one Move instrument.
      * REPORTED, never repaired — the picker refuses NEW duplicates and shows the
