@@ -1485,6 +1485,18 @@ Behavior notes:
 - Set `show_value: false` for button-style canvas entries that should not show a value.
 - The loaded script should expose `globalThis.canvas_overlay` (or `globalThis.canvas_overlays`) with hooks such as `onOpen`, `onMidi`, `tick`, `draw`, `onClose`, `onExit`.
 
+**A canvas as a page (`as_page: true`).** Instead of a cell you click into, the canvas becomes a
+page in the level's jog rotation carrying that level's own knobs; add `preset_browser: true` and it
+IS the level's preset browser (first page). The host draws the header, touch strip and footer and
+calls the overlay's **`drawPage(ctx, payload)`** — not `draw` — for the band between them. `ctx`
+is frame-scoped: `(0,0)` is the band's top-left, `ctx.width`/`ctx.height` its size, and nothing
+drawn can reach the chrome. `payload` is `{ key, values, base, keys, touched, preset, nowMs,
+width, height }` — `values` are the live (modulation-merged) values, `base` the knob positions,
+`preset` is `{ name, index, count, entered }` on a browser page and `null` otherwise. It is a draw
+path: no `getParam` (declare off-page keys in `extra_keys`). A `drawPage` that throws is disabled
+(the page shows its chrome with an empty body) until the page is next entered. The same
+`canvas.js` evaluation serves the page and the module's in-grid widgets.
+
 #### Jog-click in a canvas UI
 
 By default a canvas receives the jog **wheel**, knobs, knob-touch and pad notes,

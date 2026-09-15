@@ -27,7 +27,8 @@ import {
     engineListUserPresets, engineReadUserPreset,
     engineGetSlotParam, engineSetSlotParam, engineSaveState,
     engineGetChainParam, engineSetChainParam, engineModuleAbbrev,
-    engineLoadCardScript, engineLoadCanvasOverlay,
+    engineLoadCardScript, engineCanvasOverlayShared, engineCanvasPageDrawer,
+    engineCanvasNewVisit, engineCanvasForget,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
     slotIndex, moveBusForChannel, moveBusComp, moveBusPrefix,
     faderStep, faderWire, faderFormatDb, faderGainToTravel, SHIFT_VOL_THROW, trackLevelCardText,
@@ -10922,6 +10923,7 @@ function ppSync() {
         }, jk ? { key: jk } : undefined);
         ppOn = true;
         ppVisit++;          /* a new visit re-asks a widget load that failed */
+        engineCanvasNewVisit();   /* ...and a module page that threw or had no drawPage */
         S.dirty = true;
     } else if (!want && ppOn) {
         /* Remembered BEFORE the exit — the page is the controller's, and it is
@@ -10977,6 +10979,8 @@ const ppWidgets = { key: '', ok: false, failedKey: '', failedVisit: -1,
  * silently inherit the wrong art. */
 function ppWidgetsForget() {
     if (ppWidgets.key) clearWidgets();
+    /* The overlay the widgets came from, and any module page drawn from it. */
+    engineCanvasForget();
     ppWidgets.key = ''; ppWidgets.ok = false;
     ppWidgets.failedKey = ''; ppWidgets.attemptedKey = ''; ppWidgets.retryTick = 0;
 }
@@ -11017,7 +11021,9 @@ function ppWidgetsTick() {
                                 && p.viz.kind.indexOf('custom:') === 0);
     if (!wants) { ppWidgets.ok = true; return; }
 
-    const r = engineLoadCanvasOverlay(specKeyFor(S.comp), id);
+    /* SHARED with a module-owned page (ppIo().drawCanvasPage): one evaluation of
+     * canvas.js serves both. */
+    const r = engineCanvasOverlayShared(S.slot + ':' + S.comp, specKeyFor(S.comp), id);
     ppWidgets.loads++;
     if (!r.overlay) {
         log('widgets: ' + id + ' declares a custom viz kind but ' + r.error);
@@ -11220,6 +11226,23 @@ function ppIo() {
             else if (action === 'module_menu') S.pendingAction = { t: 'menu', errand: true };
             else log('pp: unknown menu action ' + action);
             S.dirty = true;
+        },
+
+        /*
+         * A MODULE-OWNED PAGE (`type: "canvas"`, `as_page: true` — MonkSynth's Face).
+         * The controller draws the header, touch strip and footer and hands us the
+         * band between them; without this the band was silently blank, because the
+         * controller returns early when its io offers no drawer (#420's third part).
+         * Closes over the component the editor is on, like the widget loader.
+         * ⚠ Here in the io, NOT in installPpCtx: the binding spreads the io over
+         * the controller's defaults, and the ctx member list is pinned to what
+         * the binding reads (test_param_pages_vendor.sh).
+         */
+        drawCanvasPage: (drawCtx, band, canvas, payload) => {
+            if (S.slot < 0 || !S.comp || !S.moduleId) return;
+            const fn = engineCanvasPageDrawer(S.slot + ':' + S.comp, specKeyFor(S.comp),
+                                              S.moduleId, canvas);
+            if (fn) fn(drawCtx, band, payload);
         },
     };
 }

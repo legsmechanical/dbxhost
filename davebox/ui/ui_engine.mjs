@@ -28,6 +28,9 @@
  * import survives to the device (see scripts/bundle_lab.sh). */
 import * as os from 'os';
 import { bulkDecode } from '/data/UserData/schwung/shared/snapshot.mjs';
+/* A module-owned page draws through the same clipped, origin-shifted context a
+ * widget gets (engineCanvasPageDrawer). */
+import { frameCtx } from '/data/UserData/schwung/shared/param_pages/frame_ctx.mjs';
 
 const MODULES_BASE = '/data/UserData/schwung/modules';
 
@@ -900,26 +903,32 @@ export function engineLoadCardScript(comp, moduleId, scriptRef, exportRef) {
  * ⚠ Called once per editor visit by the caller's state machine, never per
  * frame: shadow_load_ui_module has no cache and re-evaluates on every call.
  */
-export function engineLoadCanvasOverlay(comp, moduleId) {
+export function engineLoadCanvasOverlay(comp, moduleId, script = 'canvas.js', ref = '') {
     const dir = moduleDirFor(comp, moduleId);
-    if (!dir) return { overlay: null, error: 'module dir not found', retry: true };
-    const path = dir + '/canvas.js';
-    if (!host_file_exists(path)) return { overlay: null, error: 'no canvas.js', retry: false };
+    if (!dir) return { overlay: null, named: null, error: 'module dir not found', retry: true };
+    const name = script || 'canvas.js';
+    const path = name.startsWith('/') ? name : dir + '/' + name;
+    if (!host_file_exists(path)) return { overlay: null, named: null, error: 'no ' + name, retry: false };
 
     const G = globalThis;
     const NAMES = ['init', 'tick', 'onMidiMessageInternal', 'onMidiMessageExternal',
                    'canvas_overlay', 'canvas_overlays', 'bank_editor'];
+    /* A page may name its overlay (`canvas_overlay: "face_page"`): a global of
+     * that name is captured and restored like the rest. */
+    const refHead = ref ? String(ref).split('.')[0].trim() : '';
+    if (refHead && NAMES.indexOf(refHead) < 0) NAMES.push(refHead);
     const had = {}, saved = {};
     for (const n of NAMES) {
         had[n] = Object.prototype.hasOwnProperty.call(G, n);
         saved[n] = G[n];
     }
 
-    let ok = false, error = '', overlay = null;
+    let ok = false, error = '', overlay = null, named = null;
     try {
         ok = !!shadow_load_ui_module(path);
         const ov = G.canvas_overlay;
         if (ok && ov && typeof ov === 'object') overlay = ov;
+        if (ok && ref) named = resolveOverlayRef(G, String(ref));
     } catch (e) {
         ok = false;
         error = String(e);
@@ -928,9 +937,133 @@ export function engineLoadCanvasOverlay(comp, moduleId) {
             if (had[n]) G[n] = saved[n]; else { try { delete G[n]; } catch (e) {} }
         }
     }
-    if (!ok) return { overlay: null, error: error || 'canvas.js failed to load', retry: false };
-    if (!overlay) return { overlay: null, error: 'canvas.js set no canvas_overlay', retry: false };
-    return { overlay, error: '', retry: false };
+    if (!ok) return { overlay: null, named: null, error: error || name + ' failed to load', retry: false };
+    if (!overlay && !named) return { overlay: null, named: null, error: name + ' set no canvas_overlay', retry: false };
+    return { overlay, named, error: '', retry: false };
+}
+
+/* Upstream's lookup for a named overlay: a dotted path off the globals, then
+ * the same name in `canvas_overlays`. A factory function is called once. */
+function resolveOverlayRef(G, ref) {
+    const walk = (root, dotted) => {
+        let cur = root;
+        for (const part of dotted.split('.').map(p => p.trim()).filter(Boolean)) {
+            if (!cur || (typeof cur !== 'object' && typeof cur !== 'function')) return undefined;
+            cur = cur[part];
+        }
+        return cur;
+    };
+    for (const c of [walk(G, ref), walk(G.canvas_overlays, ref)]) {
+        let v = c;
+        if (typeof v === 'function') { try { v = v(); } catch (e) { v = null; } }
+        if (v && typeof v === 'object') return v;
+    }
+    return null;
+}
+
+/*
+ * ONE EVALUATION OF A MODULE'S canvas.js SERVES EVERY CONSUMER IN THE EDITOR.
+ *
+ * shadow_load_ui_module has no cache, and two things in the module editor want
+ * the same overlay object: the widget loader (drawCell / widgetKinds) and a
+ * module-owned PAGE (drawPage, #420). Loading per consumer would add an
+ * evaluation of the whole script per visit for every surface we port.
+ *
+ *   key       "<slot>:<comp>|<moduleId>|<script>[|<ref>]"
+ *   success   kept until engineCanvasForget (a module swap underneath)
+ *   failure   kept for the VISIT only (engineCanvasNewVisit drops it), so a
+ *             broken script costs one evaluation per visit, not one per
+ *             consumer — and a repaired one is picked up on the next visit
+ *   retry     (directory not found yet) is never kept
+ *
+ * The ref only enters the key when it names something other than the default
+ * `canvas_overlay`, so the common case shares the widget loader's evaluation.
+ */
+const canvasLoads = new Map();
+export function engineCanvasOverlayShared(slotKey, comp, moduleId, script = 'canvas.js', ref = '') {
+    const r0 = (ref && ref !== 'canvas_overlay') ? ref : '';
+    const key = slotKey + '|' + moduleId + '|' + (script || 'canvas.js') + (r0 ? '|' + r0 : '');
+    const hit = canvasLoads.get(key);
+    if (hit) return hit;
+    const r = engineLoadCanvasOverlay(comp, moduleId, script, r0);
+    if (!r.retry) canvasLoads.set(key, r);
+    return r;
+}
+
+/*
+ * A MODULE-OWNED PAGE's drawer (`type: "canvas"`, `as_page: true`), or null.
+ *
+ * Upstream's canvasPageDrawer, for dAVEBOx: resolves the overlay's `drawPage`
+ * (NOT `draw` — that is the fullscreen dive-in view), and hands it a
+ * frame-scoped ctx so (0,0) is the top-left of the BAND: the header, touch
+ * strip and footer stay the grid's and cannot be painted over.
+ *
+ * ONE STRIKE PER VISIT: a drawer that throws is retired with one log line and
+ * the page falls back to an empty body under the normal chrome. The next visit
+ * asks again (engineCanvasNewVisit), the same rule the widget loader keeps.
+ * A missing drawPage is remembered for the visit too, so the draw path — which
+ * runs every frame — never evaluates a script.
+ */
+const pageDrawers = new Map();      /* key -> fn | null */
+const pageDisabled = new Set();
+export function engineCanvasPageDrawer(slotKey, comp, moduleId, canvas) {
+    if (!canvas || !moduleId) return null;
+    const script = canvas.script || 'canvas.js';
+    const ref = canvas.overlay || '';
+    const key = slotKey + '|' + moduleId + '|' + script + '|' + ref;
+    if (pageDisabled.has(key)) return null;
+    if (pageDrawers.has(key)) return pageDrawers.get(key);
+
+    const r = engineCanvasOverlayShared(slotKey, comp, moduleId, script, ref);
+    const ov = (ref && ref !== 'canvas_overlay') ? r.named : r.overlay;
+    let fn = null;
+    if (ov && typeof ov.drawPage === 'function') {
+        const draw = ov.drawPage;
+        fn = (drawCtx, band, payload) => {
+            if (pageDisabled.has(key)) return;
+            const p = payload || {};
+            try {
+                draw.call(ov, frameCtx(drawCtx, band), {
+                    key: canvas.key,
+                    values: p.values || {},
+                    base: p.base || {},
+                    keys: p.keys || [],
+                    touched: typeof p.touched === 'number' ? p.touched : -1,
+                    preset: p.preset || null,
+                    nowMs: typeof p.nowMs === 'number' ? p.nowMs : Date.now(),
+                    width: band.w, height: band.h,
+                });
+            } catch (e) {
+                pageDisabled.add(key);
+                console.log('[engine] canvas page ' + key + ' disabled after throw: ' + e);
+            }
+        };
+    } else if (!r.retry) {
+        console.log('[engine] canvas page: ' + moduleId + ' ' + script + ' exposes no drawPage'
+                    + (r.error ? ' (' + r.error + ')' : ''));
+    }
+    /* A directory not found yet is not remembered: the next frame may find it.
+     * Everything else is this visit's answer. */
+    if (fn || !r.retry) pageDrawers.set(key, fn);
+    return fn;
+}
+
+/* A new editor visit: failures and one-strike retirements are asked again. */
+export function engineCanvasNewVisit() {
+    for (const [k, r] of canvasLoads) if (!r.overlay && !r.named) canvasLoads.delete(k);
+    for (const [k, fn] of pageDrawers) if (!fn) pageDrawers.delete(k);
+    pageDisabled.clear();
+}
+
+/* A module swapped or removed underneath: nothing loaded for it may survive. */
+export function engineCanvasForget() {
+    canvasLoads.clear();
+    pageDrawers.clear();
+    pageDisabled.clear();
+}
+
+export function engineCanvasPageStateForTest() {
+    return { loads: canvasLoads.size, drawers: pageDrawers.size, disabled: pageDisabled.size };
 }
 
 export function engineLoadKitStructure(comp, moduleId) {
