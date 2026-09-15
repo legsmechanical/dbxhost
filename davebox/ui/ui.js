@@ -246,6 +246,13 @@ globalThis.init = function () {
      * including sysex suppression — is DERIVED by the host from our
      * declared claims + the service stack from here on. */
     initPrimarySurface();
+    /* preflight.sh (standalone/scripts/preflight.sh) runs at launch, before
+     * this module ever loads, and writes DAVEBOX_HOST_DIR + '/preflight_failed'
+     * when a stock-tree seam it checks (owned modules, the Tools-menu stub, the
+     * shared/ import surface...) is broken. host_file_exists is a bare stat —
+     * an empty file (its content is just "1") counts as existing, which is all
+     * that is asked here. Read once; the project picker shows the notice. */
+    S.preflightFailed = !!host_file_exists(DAVEBOX_HOST_DIR + '/preflight_failed');
     if (S.bankParams === null)
         S.bankParams = Array.from({length: NUM_TRACKS}, function() {
             return BANKS.map(function(bank) { return bank.knobs.map(function(k) { return k.def; }); });

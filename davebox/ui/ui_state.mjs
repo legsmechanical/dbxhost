@@ -437,6 +437,11 @@ export const S = {
     trackOctave: new Array(8).fill(0),
     actionPopupEndTick: -1,
     actionPopupLines: [],
+    /* True when standalone/scripts/preflight.sh found a stock-tree seam broken
+     * at launch (DAVEBOX_HOST_DIR + '/preflight_failed'). Read once at init;
+     * the project picker's resting screen shows a footer notice, never a popup
+     * — a preflight problem is worth SURFACING, not interrupting the picker for. */
+    preflightFailed: false,
     actionPopupHighlight: -1,
     /* 0..1 fill for a popup that reads a LEVEL rather than an event; -1 = none.
      * Kept separate from the lines so the bar needs no string sniffing. */
