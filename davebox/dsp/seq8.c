@@ -6080,6 +6080,63 @@ static int seq8_remote_snapshot(seq8_instance_t *inst, char *out, int out_len) {
     return n;
 }
 
+/* pa_export_points: the exact breakpoint sequence pa_export writes for one
+ * lane (its own scale already applied) — factored out of pa_export so it is
+ * white-box testable without the device-only EXPORT_PA_PATH file write.
+ *
+ * 6b2 FOLLOW-UP: Live's clip envelope holds its FIRST breakpoint's value for
+ * every time before it — the pre-6b2 dAVEBOx rule. 6b2 (`pa_eval_window`)
+ * changed playback: before a lane's first point *inside its own window* (the
+ * clip's loop, or the lane's own Loop/Rate window) it now plays its LAST
+ * point's value, carried round from the previous pass (Wrap: Carry, the
+ * default) — or, under Wrap: Reset, the lane's resting value. Raw points
+ * alone can't tell Live that, so when the first point inside the window is
+ * later than the window start, prepend a synthetic point AT the window start
+ * carrying whatever the real evaluator (pa_eval_punch / pa_eval_window, the
+ * same ones playback calls) says plays there: the lane's Mode (Curve/Punch)
+ * and Wrap flag decide the value, not a rule duplicated here. A
+ * PA_EVAL_REST-coded value is written unscaled, matching playback, which
+ * never scales the resting value (see pa_eval_window's own comment).
+ *
+ * `tr` is the lane's owning track (or NULL, e.g. an orphaned entry after a
+ * track was cleared) — with no track the lane's window is unknown and the
+ * lead point is skipped, same as pa_export always did. Returns the point
+ * count written into `pts` (capped at `cap`). */
+static int pa_export_points(const seq8_track_t *tr, const pa_entry_t *e,
+                            pa_point_t *pts, int cap) {
+    int n = 0;
+    if (tr && e->clip < NUM_CLIPS) {
+        uint32_t clip_start, clip_ticks, step_ticks;
+        if (tr->pad_mode == PAD_MODE_DRUM && tr->drum_clips[e->clip]) {
+            pa_drum_window(tr, e->clip, &clip_start, &clip_ticks, &step_ticks);
+        } else {
+            const clip_t *pcl = &tr->clips[e->clip];
+            step_ticks = pcl->ticks_per_step ? pcl->ticks_per_step : (uint32_t)TICKS_PER_STEP;
+            clip_start = (uint32_t)pcl->loop_start * step_ticks;
+            clip_ticks = (uint32_t)pcl->length * step_ticks;
+        }
+        uint32_t ws, wl;
+        pa_entry_window(e, clip_start, clip_ticks, &ws, &wl);
+        if (wl && e->count && e->points[0].tick > ws && n < cap) {
+            uint16_t v;
+            int ev = (e->flags & PA_FLAG_PUNCH)
+                     ? pa_eval_punch(e, ws, ws, wl, step_ticks, &v)
+                     : pa_eval_window(e, ws, ws, wl, &v);
+            if (ev) {
+                pts[n].tick = (uint16_t)ws;
+                pts[n].val  = (ev == PA_EVAL_REST) ? v : pa_scaled(e, v);
+                n++;
+            }
+        }
+    }
+    for (int k = 0; k < (int)e->count && k < PA_ENTRY_POINTS && n < cap; k++) {
+        pts[n].tick = e->points[k].tick;
+        pts[n].val  = pa_scaled(e, e->points[k].val);
+        n++;
+    }
+    return n;
+}
+
 /* ------------------------------------------------------------------ */
 /* get_param                                                            */
 /* ------------------------------------------------------------------ */
@@ -6515,8 +6572,11 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     (int)e->flags, (int)e->loop_len, (int)e->resolution, pa_scale_pct(e));
             /* The SCALE is applied here, as it is at playback: what leaves in
              * the export is what the lane plays, not the raw points. */
-            for (int k = 0; k < (int)e->count && k < PA_ENTRY_POINTS; k++)
-                fprintf(pf, "%u:%u ", (unsigned)e->points[k].tick, (unsigned)pa_scaled(e, e->points[k].val));
+            const seq8_track_t *etr = (e->track < NUM_TRACKS) ? &inst->tracks[e->track] : 0;
+            pa_point_t xpts[PA_ENTRY_POINTS + 1];
+            int xn = pa_export_points(etr, e, xpts, PA_ENTRY_POINTS + 1);
+            for (int k = 0; k < xn; k++)
+                fprintf(pf, "%u:%u ", (unsigned)xpts[k].tick, (unsigned)xpts[k].val);
             fputc('\n', pf);
             lanes++;
         }
