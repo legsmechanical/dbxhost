@@ -3,8 +3,16 @@
 #
 # A dAVEBOx session shows two screens before the module is up, and since
 # 2026-08-24 they say different things (Josh):
-#   1. artwork, painted instantly into the stock display, ROTATING per launch
+#   1. artwork, ROTATING per launch — but since 2026-09-15 (Josh: "get rid of
+#      the 'daves' splash on launch") this is dealt ONLY on an in-session
+#      project-load relaunch (shadow_ui.js's own dealer); a cold tools-menu
+#      launch shows no Dave at all any more — see quiesce-stock.sh.
 #   2. text — the wordmark over "Schwung base: <version>"
+#
+# The artwork assets and the dealer (pick-splash.py / splash-pool.tsv /
+# daves-seen.txt) still exist and are still pinned below: they are what
+# project-load relaunches deal from, even though quiesce-stock.sh no longer
+# calls any of it.
 #
 # Screen 2 is pre-rendered at build time (standalone/scripts/make-splashes.mjs)
 # because the fonts it needs live in the module and the host half has only its
@@ -77,23 +85,38 @@ grep -q 'splash-\*\.hex' scripts/build.sh \
 grep -q 'splash2\.hex' scripts/build.sh \
     && ok "build.sh ships the text screen" \
     || bad "build.sh does not copy splash2.hex"
-# The rotation moved into pick-splash.py (the Dave Box dealer, 2026-08-31):
-# quiesce must call it, and the dealer itself must do the weighted pool pick
-# and record the deal. Pinning both ends — quiesce calling a dealer that no
-# longer rotates would pass a quiesce-only grep.
-grep -q 'pick-splash\.py' standalone/scripts/quiesce-stock.sh \
-    && ok "the instant splash is dealt by pick-splash.py" \
-    || bad "quiesce-stock no longer calls the dealer — no rotation"
+# ⭑⭑ 2026-09-15 (Josh: "get rid of the 'daves' splash on launch (b/c it
+# flickers for just a split second before 'move terminated' shows)"):
+# quiesce-stock.sh no longer deals or paints a Dave at all — the graceful
+# stock-Move exit repaints "Move terminated" over it within a frame or two, so
+# the painted frame was never retained, just flickered. This also lines up
+# with DBX-014 (a Dave is dealt on PROJECT LOAD, never on a tools-menu
+# launch): quiesce-stock.sh runs ONLY on that cold-entry path, so the fix for
+# "no Dave here" doubles as "no Dave on a tools-menu launch". The relaunch-
+# path dealer (below, in shadow_ui.js) is untouched — that is what still deals
+# a Dave when a project actually loads.
+# Strip comments — the function's own comment names pick-splash.py to explain
+# what it used to do, and that mention must not trip this pin.
+grep -v '^[[:space:]]*#' standalone/scripts/quiesce-stock.sh | grep -q 'pick-splash\.py' \
+    && bad "quiesce-stock still calls the dealer — it must not deal a Dave on a tools launch" \
+    || ok "quiesce-stock no longer calls pick-splash.py (no Dave on tools launch)"
+grep -q 'SPLASH_PICK' standalone/scripts/quiesce-stock.sh \
+    && bad "quiesce-stock still caches a splash pick — the dealing machinery should be gone" \
+    || ok "...and the SPLASH_PICK caching is gone with it"
+grep -q 'mm\[:\] = bytes(out)' standalone/scripts/quiesce-stock.sh \
+    && bad "quiesce-stock still paints bits into stock's display" \
+    || ok "...and nothing is painted into stock's display any more"
+grep -q "printf '%s skip\\\\n'" standalone/scripts/quiesce-stock.sh \
+    && grep -q 'splash-stage1\.txt' standalone/scripts/quiesce-stock.sh \
+    && ok "...but the stage-1 marker is still written, with a 'skip' pick" \
+    || bad "quiesce-stock no longer writes the stage-1 'skip' marker — the host would deal its own Dave on a tools launch"
+# The dealer itself (still used by shadow_ui.js's own relaunch-path dealing)
+# must still do the weighted pool pick and record the deal — a Dave dealt on
+# project load still needs to be a genuine deal.
 grep -q 'splash-pool\.tsv' standalone/scripts/pick-splash.py \
     && grep -q 'daves-seen\.txt\|SEEN' standalone/scripts/pick-splash.py \
-    && ok "...and the dealer reads the weighted pool and records the deal" \
+    && ok "the dealer still reads the weighted pool and records the deal" \
     || bad "pick-splash.py lost the pool read or the collection record"
-grep -q 'pick-splash\.py' scripts/build.sh \
-    && ok "...and build.sh ships the dealer" \
-    || bad "pick-splash.py never reaches the device — quiesce would fall back forever"
-grep -q 'splash-pool\.tsv' scripts/build.sh \
-    && ok "...and build.sh ships the pool manifest" \
-    || bad "splash-pool.tsv never reaches the device — both dealers fall back, nothing records"
 # The pool manifest: one row per frame, weights sane, DAVE DAVIES rarest.
 pool=standalone/assets/splash-pool.tsv
 frames=$(ls standalone/assets/splash-[0-9]*.hex | wc -l | tr -d ' ')
@@ -116,21 +139,6 @@ grep -q 'splash-pool\.tsv' src/shadow/shadow_ui.js \
 grep -q 'i < 10; i++' src/shadow/shadow_ui.js \
     && bad "the 10-frame scan cap is back in shadow_ui.js" \
     || ok "...and the 10-frame scan cap is gone"
-# ⚠⚠ ONE frame per LAUNCH, not one per CALL. paint_splash runs TWICE on every
-# route (directly, then again inside freeze_move to re-assert after the save).
-# The first version picked inside the python each time, so the second paint
-# showed a DIFFERENT face and the user watched it change mid-launch — Josh saw
-# it immediately. The pick has to be cached across the two calls.
-grep -q 'SPLASH_PICK' standalone/scripts/quiesce-stock.sh \
-    && ok "the frame is chosen once per launch and reused" \
-    || bad "no cached pick — the second paint would roll a different splash"
-# The PAINTING step must be deterministic given the cached pick: it reads
-# SPLASH_PICK and never chooses. If the roll lives in the paint heredoc, the
-# cache is decoration and the second call changes the face again.
-awk "/python3 - <<'PY'/,/^PY\$/" standalone/scripts/quiesce-stock.sh \
-    | grep -q 'random' \
-    && bad "the PAINT step still rolls its own frame — the cache is decoration" \
-    || ok "...and the paint step only reads the cached pick, never re-rolls"
 
 # --- 5. no third screen between the splash and the app ---------------------
 # Josh, 2026-08-24: "is there any way to skip the Loading.... after the schwung
