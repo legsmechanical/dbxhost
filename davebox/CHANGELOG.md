@@ -17,6 +17,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **A Link Audio route tells you when Link is off.** Pointing a track at a
+  Link Audio route while Link is disabled in Move's System Settings now pops
+  a warning saying so, instead of silence.
+- **A failed launch check shows on the picker.** If the launcher's preflight
+  found a problem, the project picker's footer reads "Preflight: see log".
 - **Macros and mixer knobs feel like the module editor.** A macro on a
   parameter now sweeps it in the same wrist movement the module's own page
   knob takes (it used to take two and a half times the turn), whole-number
@@ -330,6 +335,18 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **STEP bank at rest reads "Hold step to edit".** The knob cells appear only
+  while a step is held; with nothing held the page shows the one line instead
+  of eight dashes.
+- **AUTOMATION bank: "Clear all".** The row that clears every parameter's
+  automation in the clip is named for what it does (it was "Clear clip").
+- **Buses sits under Send B.** In a track's Sound menu the Buses row now
+  follows the send levels, before Mute, instead of trailing after Solo.
+- **"SAVED" no longer writes over the last preset.** On the presets and
+  patches lists a status message gets its own row at the foot of the screen.
+- **A module's menu-root knobs stay live.** A module whose root page lists
+  only a bank selector beside its knobs had every other knob go dead; the
+  knobs now follow the page.
 - **Back from PROJECT DID NOT OPEN, then picking the project, now opens it.**
   It used to load nothing and bring the same screen straight back; picking a
   project from there now restarts Move into it.
