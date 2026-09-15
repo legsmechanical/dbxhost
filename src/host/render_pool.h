@@ -86,7 +86,9 @@
 #ifndef RENDER_POOL_H
 #define RENDER_POOL_H
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #include <errno.h>
 #include <pthread.h>
 #include <sched.h>

@@ -500,6 +500,7 @@ void shadow_chain_defaults(void) {
         shadow_chain_slots[i].send_b = 0.0f;
         shadow_chain_slots[i].muted = 0;
         shadow_chain_slots[i].soloed = 0;
+        shadow_chain_slots[i].render_pinned = 0;
         shadow_chain_slots[i].forward_channel = -1;
         shadow_chain_slots[i].default_forward_channel = -1;
         shadow_chain_slots[i].transpose = 0;
@@ -2133,6 +2134,12 @@ int shadow_handle_slot_param_set(int slot, const char *key, const char *value) {
         shadow_ui_state_update_slot(slot);
         return 1;
     }
+    if (strcmp(key, "slot:parallel") == 0) {
+        /* Takes effect on the next render round: the pool reads the pin mask
+         * once per round, on the SPI thread, which is also where this runs. */
+        shadow_chain_slots[slot].render_pinned = atoi(value) ? 0 : 1;
+        return 1;
+    }
     return 0;
 }
 
@@ -2170,6 +2177,9 @@ int shadow_handle_slot_param_get(int slot, const char *key, char *buf, int buf_l
     }
     if (strcmp(key, "slot:transpose") == 0) {
         return snprintf(buf, buf_len, "%d", shadow_chain_slots[slot].transpose);
+    }
+    if (strcmp(key, "slot:parallel") == 0) {
+        return snprintf(buf, buf_len, "%d", shadow_chain_slots[slot].render_pinned ? 0 : 1);
     }
     if (strcmp(key, "active_set") == 0) {
         /* Return "uuid\nname" for UI thread to write active_set.txt */
