@@ -21,6 +21,7 @@
 #include "unified_log.h"
 
 #include "host/schwung_paths.h"
+#include "host/shim_thread.h"   /* shim threads must never receive the host's SIGTERM */
 /* ============================================================================
  * Static host callbacks
  * ============================================================================ */
@@ -600,7 +601,7 @@ void start_link_sub_monitor(void) {
     if (link_sub_monitor_started) return;
 
     link_sub_monitor_running = 1;
-    int rc = pthread_create(&link_sub_monitor_thread, NULL, link_sub_monitor_main, NULL);
+    int rc = shim_pthread_create(&link_sub_monitor_thread, NULL, link_sub_monitor_main, NULL);
     if (rc != 0) {
         link_sub_monitor_running = 0;
         unified_log("shim", LOG_LEVEL_WARN,

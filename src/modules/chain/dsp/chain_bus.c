@@ -51,6 +51,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include "chain_internal.h"
+#include "host/shim_thread.h"   /* shim threads must never receive the host's SIGTERM */
 #include "host/bus_voice_apply.h"
 
 /* ============================================================================
@@ -947,7 +948,7 @@ void chain_bus_post_work(chain_instance_t *inst, int bus) {
             inst->bus_worker_sem_ok = 1;
         }
         __atomic_store_n(&inst->bus_worker_started, 1, __ATOMIC_RELEASE);
-        if (pthread_create(&inst->bus_worker, NULL, chain_bus_worker_fn, inst) != 0) {
+        if (shim_pthread_create(&inst->bus_worker, NULL, chain_bus_worker_fn, inst) != 0) {
             /* No worker, no allocation, no crash: the bus keeps playing
              * through Main and a later request tries again. */
             __atomic_store_n(&inst->bus_worker_started, 0, __ATOMIC_RELEASE);

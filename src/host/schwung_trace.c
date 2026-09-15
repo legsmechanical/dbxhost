@@ -25,6 +25,7 @@
 #include <sys/types.h>
 
 #include "unified_log.h"   /* exporter thread is non-RT → logging is safe here */
+#include "host/shim_thread.h"   /* shim threads must never receive the host's SIGTERM */
 
 #if defined(__linux__)
 #include <sys/syscall.h>
@@ -504,7 +505,7 @@ static int start_exporter(void) {
     CPU_ZERO(&cpus);
     CPU_SET(0, &cpus); CPU_SET(1, &cpus); CPU_SET(2, &cpus);
     pthread_attr_setaffinity_np(&attr, sizeof(cpus), &cpus);  /* best-effort */
-    int rc = pthread_create(&g_exporter, &attr, exporter_main, NULL);
+    int rc = shim_pthread_create(&g_exporter, &attr, exporter_main, NULL);
     pthread_attr_destroy(&attr);
     return rc;
 }

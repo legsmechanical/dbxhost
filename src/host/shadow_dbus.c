@@ -31,6 +31,7 @@
 #endif
 
 #include "shadow_dbus.h"
+#include "host/shim_thread.h"   /* shim threads must never receive the host's SIGTERM */
 
 /* ============================================================================
  * Internal state
@@ -790,7 +791,7 @@ void shadow_dbus_start(void)
     if (shadow_dbus_running) return;
 
     shadow_dbus_running = 1;
-    if (pthread_create(&shadow_dbus_thread, NULL, shadow_dbus_thread_func, NULL) != 0) {
+    if (shim_pthread_create(&shadow_dbus_thread, NULL, shadow_dbus_thread_func, NULL) != 0) {
         host.log("D-Bus: Failed to create thread");
         shadow_dbus_running = 0;
     }

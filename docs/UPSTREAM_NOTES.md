@@ -176,11 +176,16 @@ cleanup + davebox MovePlay/JS host) but was single-writer in code → a torn slo
 - **Backtrace instrumentation** (`crash_signal_handler` → dumps a symbolizable
   stack to `/data/UserData/schwung/shim_crash_bt.txt`). Kept on fork main as a
   diagnostic; candidate for a separate small upstream PR. ✅
-  ⚠ **SIGTERM is observed, not consumed.** The handler logs the "Caught SIGTERM"
-  line and then chains to the action installed before ours
-  (`src/host/shim_signal_chain.h`), so the host process's own shutdown — which is
-  what quiesces the audio device — still runs. It never `_exit()`s on SIGTERM;
-  only SIGSEGV/SIGBUS/SIGABRT terminate from the handler.
+  ⚠ **SIGTERM is not handled at all, by design.** Only SIGSEGV/SIGBUS/SIGABRT are
+  installed. The host takes SIGTERM/SIGINT/SIGHUP on a dedicated `sigwait()`
+  thread while its own threads block them — it installs no `sigaction`, so a
+  diagnostic handler has nothing to chain to and merely pre-empts the shutdown
+  that quiesces the audio device. (An attempt to chain shipped briefly and did
+  exactly that: the saved "previous action" was `SIG_DFL`.) The real defect was
+  that a process-directed signal reaches ANY thread not blocking it, and the
+  shim adds ~13 threads to that process; they now block those three signals at
+  creation via `shim_pthread_create()` (`src/host/shim_thread.h`), leaving the
+  host's sigwait thread as the only eligible receiver. ✅ upstreamable.
 - **OPEN follow-up (not fixed): inject-pipe starvation / no QoS.** The inject
   ring is a shared, throttled, flow-control-free side-channel into Move's
   hardware mailbox; under a heavy ROUTE_MOVE note flood (e.g. davebox repeat-mode

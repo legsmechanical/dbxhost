@@ -48,7 +48,7 @@
 #include "host/shadow_test_stream.h"
 #include "host/shadow_chain_types.h"
 #include "host/unified_log.h"
-#include "host/shim_signal_chain.h"
+#include "host/shim_thread.h"
 #include "host/sa_master_volume.h"
 #include "host/spawn_command.h"
 #include "host/schwung_trace.h"
@@ -3301,12 +3301,21 @@ static int shadow_shm_initialized = 0;
 
 /* Initialize shadow shared memory segments */
 
-/* The SIGTERM action that was installed before ours — saved so the handler
- * can hand the signal back instead of consuming it. See the rationale in
- * host/shim_signal_chain.h: SIGTERM is the host process's own graceful
- * shutdown request, and that shutdown is what quiesces the audio device. */
-static struct sigaction prev_sigterm_action;
-static int prev_sigterm_saved = 0;
+/* ⚠ SIGTERM is deliberately NOT handled here, and must not be added back.
+ *
+ * SIGTERM is the host process's own graceful shutdown request, and that
+ * shutdown is what quiesces the audio device. The host takes it on a
+ * dedicated sigwait() thread while its other threads block it — it installs
+ * no sigaction at all, so there is nothing for a diagnostic handler to chain
+ * to, and an earlier attempt to chain simply re-raised into SIG_DFL and died
+ * exactly as before.
+ *
+ * The real problem was never the handler: a process-directed signal goes to
+ * ANY thread that does not block it, and the shim's own threads did not.
+ * They now block it at creation — see host/shim_thread.h — which leaves the
+ * host's sigwait thread as the only eligible receiver. Installing a
+ * disposition we do not need can only re-open the hole.
+ */
 
 /* Signal handler for crash diagnostics - async-signal-safe */
 static void crash_signal_handler(int sig, siginfo_t *si, void *uctx_v)
@@ -3316,8 +3325,6 @@ static void crash_signal_handler(int sig, siginfo_t *si, void *uctx_v)
         case SIGSEGV: name = "SIGSEGV"; break;
         case SIGBUS:  name = "SIGBUS";  break;
         case SIGABRT: name = "SIGABRT"; break;
-        case SIGTERM: name = "SIGTERM"; break;
-        case SIGINT:  name = "SIGINT";  break;
         default:      name = "UNKNOWN"; break;
     }
     /* Build async-signal-safe message including faulting address and PC.
@@ -3363,20 +3370,11 @@ static void crash_signal_handler(int sig, siginfo_t *si, void *uctx_v)
         for (int i = 0; i < hp; i++) msg[pos++] = hex[i];
     }
 
-    const char *suffix = sigterm_is_fatal_here(sig) ? " - terminating"
-                                                    : " - chaining to previous handler";
+    const char *suffix = " - terminating";
     for (int i = 0; suffix[i]; i++) msg[pos++] = suffix[i];
     msg[pos] = '\0';
 
     unified_log_crash(msg);
-
-    /* A termination request is not a crash: log it, then hand it straight on
-     * so the host's own shutdown runs. No backtrace file, no _exit(). */
-    if (!sigterm_is_fatal_here(sig)) {
-        chain_prev_sigaction(prev_sigterm_saved ? &prev_sigterm_action : NULL,
-                             sig, si, uctx_v);
-        return;
-    }
 
     /* Dump a call stack to a dedicated file for post-mortem symbolization.
      * backtrace()/backtrace_symbols_fd() are async-signal-safe (no malloc).
@@ -3495,12 +3493,9 @@ static void init_shadow_shm(void)
         sigaction(SIGSEGV, &sa, NULL);
         sigaction(SIGBUS,  &sa, NULL);
         sigaction(SIGABRT, &sa, NULL);
-        /* Save the host's SIGTERM action so the handler can chain to it.
-         * This init runs lazily from the first SPI transfer, long after the
-         * host process has installed its own shutdown handler, so the saved
-         * action is normally that handler — but SIG_DFL is handled too. */
-        if (sigaction(SIGTERM, &sa, &prev_sigterm_action) == 0)
-            prev_sigterm_saved = 1;
+        /* ⚠ SIGTERM/SIGINT/SIGHUP are NOT installed — they belong to the
+         * host's own sigwait() shutdown thread. See the note above
+         * crash_signal_handler and host/shim_thread.h. */
     }
 
     /* Log startup identity (always-on, no flag needed) */
@@ -4538,7 +4533,7 @@ static void snap_worker_start(void) {
     if (sem_init(&g_snap_sem, 0, 0) != 0) { started = 0; return; }
     g_snap_sem_ok = 1;
     pthread_t tid;
-    if (pthread_create(&tid, NULL, snap_worker_main, NULL) != 0) {
+    if (shim_pthread_create(&tid, NULL, snap_worker_main, NULL) != 0) {
         started = 0; g_snap_sem_ok = 0;
         return;
     }
@@ -4911,7 +4906,7 @@ static int shim_apply_set_special(int slot, const char *key, const char *value,
             if (!prev && link_audio_routing_enabled && !shadow_in_audio_shm) {
                 if (!try_attach_in_audio_shm()) {
                     pthread_t tid;
-                    if (pthread_create(&tid, NULL,
+                    if (shim_pthread_create(&tid, NULL,
                                        link_in_attach_retry_thread,
                                        NULL) == 0) {
                         pthread_detach(tid);
@@ -9961,7 +9956,7 @@ static void shim_spi_init(void)
     /* Start background timing logger thread */
     {
         pthread_t tid;
-        pthread_create(&tid, NULL, spi_timing_logger_thread, NULL);
+        shim_pthread_create(&tid, NULL, spi_timing_logger_thread, NULL);
         pthread_detach(tid);
     }
 
@@ -9985,7 +9980,7 @@ static void shim_spi_init(void)
     /* Start LED capture logger thread (gated by flag file) */
     {
         pthread_t tid;
-        pthread_create(&tid, NULL, led_capture_logger_thread, NULL);
+        shim_pthread_create(&tid, NULL, led_capture_logger_thread, NULL);
         pthread_detach(tid);
     }
 
@@ -9994,7 +9989,7 @@ static void shim_spi_init(void)
      * after ~30s of retries. Non-RT: shm_open/mmap are not RT-safe. */
     if (!shadow_in_audio_shm) {
         pthread_t tid;
-        pthread_create(&tid, NULL, link_in_attach_retry_thread, NULL);
+        shim_pthread_create(&tid, NULL, link_in_attach_retry_thread, NULL);
         pthread_detach(tid);
     }
 }
