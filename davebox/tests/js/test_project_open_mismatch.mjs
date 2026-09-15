@@ -64,6 +64,13 @@ globalThis.host_system_cmd = (c) => {
 
 /* ---- the DSP, as seq8.c behaves ------------------------------------------ */
 const dsp = { uuid: '', awaiting: 0, dirty: 1 };
+/* Every value JS ever pushed into awaiting_select, in order — the save gate's
+ * own history. A fresh session must show '1' once (init's own arm, if any) and
+ * never a 0/1 flap, because a flap means a save was briefly permitted. */
+const awWrites = [];
+/* Every state_load the DSP was sent — the one event that means "a project was
+ * loaded", whether a pick asked for it or something loaded behind the user. */
+const stateLoads = [];
 const BLOB = '{"v":36,"tracks":[]}';
 globalThis.host_module_get_param = (k) => {
     k = String(k);
@@ -81,9 +88,9 @@ globalThis.host_module_get_param = (k) => {
 };
 globalThis.host_module_set_param = (k, v) => {
     k = String(k); v = String(v);
-    if (k === 'awaiting_select') { if (v[0] === '1') dsp.awaiting = 1; return; }
+    if (k === 'awaiting_select') { awWrites.push(v); if (v[0] === '1') dsp.awaiting = 1; return; }
     if (k === 'save') { if (!dsp.awaiting) writes.push(SETS + (dsp.uuid || '<fallback>') + '/' + stateName(dsp.uuid) + '/seq8sa-state.json'); return; }
-    if (k === 'state_load') { dsp.uuid = v; dsp.awaiting = 0; return; }
+    if (k === 'state_load') { stateLoads.push(v); dsp.uuid = v; dsp.awaiting = 0; return; }
 };
 globalThis.host_module_set_params = () => true;
 
@@ -335,6 +342,78 @@ step('control: without a verdict, loading a pre-existing pad still uses the sele
     ticks(6);
     if (sysCmds.some((c) => /switch 31$/.test(c))) throw new Error('relaunched without a verdict: ' + JSON.stringify(sysCmds));
     if (selectArms.indexOf(31) < 0) throw new Error('select actuator not armed for a normal switch: ' + JSON.stringify(selectArms) + ' ' + JSON.stringify(sysCmds));
+});
+
+/* 6. THE FRESH SESSION. Device, 2026-09-15, four identical tools-menu launches:
+ *    the launcher armed fresh_session, so nothing was loaded and the picker was
+ *    pending — and ~3 s in the host published the placeholder for the project
+ *    the PREVIOUS session had been in. The verdict fired on a project nobody
+ *    had chosen: it killed pendingOpenProjectPicker, and ~1 s later, when Move
+ *    finished opening after all, the late-answer branch loaded that project.
+ *    SELECT-BEFORE-LOAD was gone every launch, too fast to see on the OLED.
+ *
+ *    A fresh session must sit on the picker through the whole flip-flop: no
+ *    load, no verdict screen, and the save gate never moving off 1. */
+function bootFresh(activeUuid, activeName) {
+    files.clear(); writes.length = 0; sysCmds.length = 0;
+    awWrites.length = 0; stateLoads.length = 0;
+    /* active_set.txt still names the LAST session's project — nothing clears it
+     * at launch, which is exactly how the host came to publish a verdict about
+     * a project this session never asked for. */
+    if (activeUuid) {
+        files.set(ACTIVE, activeUuid + '\n' + activeName);
+        files.set(SETS + activeUuid + '/' + stateName(activeUuid) + '/seq8sa-state.json', BLOB);
+    }
+    files.set(HOST_DIR + '/fresh_session', '1');   /* the launcher's entry marker */
+    /* create_instance saw the marker: nothing loaded, every save refused. */
+    dsp.uuid = ''; dsp.awaiting = 1; dsp.dirty = 1;
+    S.projectOpenFailed = null; S.projectPadPicker = null; S.pendingOpenProjectPicker = false;
+    S.pendingProjectRelaunch = null; S.pendingProjectSwitch = null;
+    S.pendingSetLoad = false; S.pendingDspSync = 0; S.stateLoading = false;
+    S.awaitingProjectSelect = false; S.confirmStateWipe = false;
+    S.currentSetUuid = ''; S.forceRelaunchNextLoad = false; S.selectHandoffUntil = 0;
+    globalThis.init();
+    S.ledInitComplete = true;
+    ticks(20);
+}
+const pickerUp = () => !!(S.projectPadPicker || S.pendingOpenProjectPicker);
+
+step('fresh session: the picker comes up with nothing loaded', () => {
+    bootFresh(X, 'Project 32');
+    if (!S.awaitingProjectSelect) throw new Error('not awaiting a selection');
+    if (!pickerUp()) throw new Error('no picker: ' + frame());
+    if (stateLoads.length) throw new Error('something loaded before a pick: ' + stateLoads.join(', '));
+});
+step('...a verdict about the LAST session\'s project does not take the picker away', () => {
+    hostPublish(X, 'Project 32', 31, 'default');
+    ticks(40);
+    if (onScreen()) throw new Error('PROJECT DID NOT OPEN raised before any pick: ' + frame());
+    if (S.projectOpenFailed) throw new Error('verdict state raised before any pick');
+    if (!pickerUp()) throw new Error('picker lost to the verdict: ' + frame());
+    if (stateLoads.length) throw new Error('loaded during the verdict: ' + stateLoads.join(', '));
+});
+step('...and the late real answer does not load it either', () => {
+    hostPublish(X, 'Project 32', 31, X);          /* Move opened it after all */
+    ticks(200);
+    if (stateLoads.length) throw new Error('loaded with no pick: ' + stateLoads.join(', '));
+    if (S.pendingSetLoad) throw new Error('a load is armed with no pick');
+    if (!S.awaitingProjectSelect) throw new Error('select-before-load was abandoned');
+    if (!pickerUp()) throw new Error('picker gone after the late answer: ' + frame());
+    if (onScreen()) throw new Error('verdict screen after the late answer: ' + frame());
+});
+step('...and the save gate never flapped: awaiting_select stayed 1 throughout', () => {
+    if (dsp.awaiting !== 1) throw new Error('the DSP stopped refusing saves');
+    const flap = awWrites.filter((v) => v[0] !== '1');
+    if (flap.length) throw new Error('awaiting_select written non-1: ' + JSON.stringify(awWrites));
+    provokeSaves();
+    const hits = writes.filter((w) => w.indexOf('seq8') >= 0 || w.indexOf('/dAVEBOx') >= 0);
+    if (hits.length) throw new Error('project-state saves during a fresh session: ' + hits.join(', '));
+});
+step('control: the SAME publish sequence on a relaunch boot still raises the verdict', () => {
+    boot(P, 'Project 1');
+    hostPublish(X, 'Project 32', 31, 'default');
+    ticks(40);
+    if (!onScreen()) throw new Error('the verdict stopped working for a picked project: ' + frame());
 });
 
 if (failed) { console.error('FAIL: project_open_mismatch'); process.exit(1); }

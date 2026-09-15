@@ -344,6 +344,10 @@ the section into a versioned heading at release time.
   Ableton export used to leave Live holding that lock's value from the very
   start — dAVEBOx itself plays the lane's last value there instead, looping
   back around. The export now matches what dAVEBOx plays.
+- **A fresh launch always asks which project to open.** Launching dAVEBOx no
+  longer sometimes reopened the project you were last in: a late report about
+  the previous session's set could flash a "project did not open" screen and
+  load it behind you. Nothing loads now until you tap a pad.
 - **STEP bank at rest reads "Hold step to edit".** The knob cells appear only
   while a step is held; with nothing held the page shows the one line instead
   of eight dashes.
