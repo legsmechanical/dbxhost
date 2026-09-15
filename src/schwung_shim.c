@@ -3554,6 +3554,28 @@ static void init_shadow_shm(void)
                  * it runs. Nothing else strips them: the only other blanking
                  * is the select actuator's, and that never runs at boot. */
                 boot_tool_led_blank = 1;
+                /* And block pad input over the same window: Move is still
+                 * booting underneath our screen and can read an early pad
+                 * press as one of ITS OWN set-selection gestures, silently
+                 * switching sets before the tool we are about to hand the
+                 * surface to ever sees the press (measured: pad note-ons
+                 * landing 24-36 ms before the extra "About to load" lines
+                 * that make Move fall back to another project — clean runs
+                 * had no pad input in that window at all). Cleared at the
+                 * exact same two points as boot_tool_led_blank below: the
+                 * tool taking the surface (overtake_mode) and the
+                 * BOOT_LED_BLANK_MAX_MS timeout, so it can never outlive the
+                 * window it exists for.
+                 *
+                 * Buttons (CCs) are deliberately left unblocked: Move's own
+                 * set-selection and set-overview gestures are pad presses,
+                 * not CC buttons, and that is what the measurement caught —
+                 * pad note-ons in the 24-36 ms window before each extra
+                 * "About to load" line, none in the clean runs. Blocking CCs
+                 * too would cost Shift/Menu/Volume/transport responsiveness
+                 * during every boot for a class of input that was never
+                 * observed causing the fallback. */
+                shadow_control->pad_block = 1;
             }
         }
         /* Set-select actuator: armed only mid-session, by a tool calling
@@ -6993,6 +7015,9 @@ static void shim_select_blank_move_leds(void)
      * off is the menu, where Move's own LEDs are what the user should see. */
     if (shadow_control->overtake_mode) {
         boot_tool_led_blank = 0;
+        /* The boot pad-input latch shares this window exactly: once a tool
+         * owns the surface it is the one deciding what a pad press means. */
+        shadow_control->pad_block = 0;
         return;
     }
     if (!shadow_control->select_phase && !boot_tool_led_blank) return;
@@ -7004,6 +7029,7 @@ static void shim_select_blank_move_leds(void)
             boot_tool_led_blank_deadline_ms = _now + BOOT_LED_BLANK_MAX_MS;
         } else if (_now >= boot_tool_led_blank_deadline_ms) {
             boot_tool_led_blank = 0;
+            shadow_control->pad_block = 0;
             shadow_log("boot LED blank: timed out — releasing LEDs to Move");
             if (!shadow_control->select_phase) return;
         }
