@@ -46,13 +46,20 @@ const ASSIGN = {
     'master_fx:fx1:mix': '0.35',
     'master_fx:fx1:damp': '0.5',
     'master_fx:fx1:ui_hierarchy': HIER,
+    /* Non-empty state, or saveUserPreset bails with 'NO STATE' before ever
+     * touching S.presetRec — needed for the My Presets save-flow step below. */
+    'master_fx:fx1:state': '{"room_size":4,"mix":0.35}',
 };
 globalThis.shadow_get_param = (slot, key) => ASSIGN[key] || '';
 globalThis.shadow_set_param = (slot, key, val) => { ASSIGN[key] = String(val); return 1; };
 globalThis.shadow_send_midi_to_dsp = () => {};
 globalThis.fill_rect = () => {}; globalThis.draw_rect = () => {};
 globalThis.stipple_rect = () => {}; globalThis.set_pixel = () => {};
-globalThis.clear_screen = () => {}; globalThis.print = () => {};
+globalThis.clear_screen = () => {};
+/* Recorded, not a no-op — the My Presets row-overlap regression test below
+ * needs to see where every print() lands. */
+let printCalls = [];
+globalThis.print = (x, y, text) => { printCalls.push({ x, y, text: String(text) }); };
 globalThis.pixel_print = () => {}; globalThis.flush_display = () => {};
 globalThis.text_width = (t) => String(t).length * 6;
 /* ⚠ Shift UP. The JS test build defaults this to HELD (build.mjs), and with
@@ -110,6 +117,19 @@ function walkTo(name) {
     }
     throw new Error('never reached the "' + name + '" page');
 }
+/* Page backward until `name` — 'My Presets' sits one page before the trailing
+ * 'Module' page, which has no wraparound past it, so getting there from
+ * 'Module' means going back rather than forward. */
+function walkBackTo(name) {
+    for (let guard = 0; guard < 40; guard++) {
+        const p = pp().page;
+        if (p && p.name === name) return p;
+        const before = p && p.name;
+        jog(-1); ticks(2);
+        if ((pp().page && pp().page.name) === before) break;
+    }
+    throw new Error('never reached the "' + name + '" page going backward');
+}
 
 step('⭐ the Module page offers "Module Menu" first, above Swap and Remove', () => {
     enterMasterFxBlock();
@@ -151,6 +171,49 @@ step('⭐⭐ Back at the TOP lands on the GRID, on the Module page you left — 
     assert(snd.soundViewForTest() === VIEW_EDIT, 'view is ' + snd.soundViewForTest() + ', not the editor');
     assert(pp().on, 'the grid did not come back');
     assert(pp().page && pp().page.name === 'Module', 'landed on "' + (pp().page && pp().page.name) + '"');
+});
+
+step('⭐⭐ the My Presets "Preset" row does not draw its label and value on ' +
+     'top of each other for a long preset name (device bug: "PKBsBia Synth ' +
+     'FN" — a label and a value both landing at the same x)', () => {
+    if (!pp().on) throw new Error('rig: the grid is not up');
+    const LONGNAME = 'Bs Big Synth Absolutely Massive FN';
+    snd.soundQueueActionForTest({ t: 'usrsavedo', name: LONGNAME });
+    ticks(6);
+    if (snd.soundPendingActionForTest()) throw new Error('rig: the save action never drained');
+
+    const page = walkBackTo('My Presets');
+    const row = (page.entries || []).find(r => r && r.label === 'Preset');
+    if (!row) throw new Error('no Preset row: ' + JSON.stringify(page.entries));
+    if (String(row.value || '').indexOf(LONGNAME) < 0)
+        throw new Error('rig: the Preset row does not show the saved name: ' + row.value);
+
+    /* Render the actual screen (soundRender -> drawParamPages -> drawMenuList
+     * -> print) and inspect what really got drawn, not the row's raw data. */
+    printCalls = [];
+    snd.soundRender();
+    if (printCalls.length < 2) throw new Error('rig: the page did not draw (' +
+        printCalls.length + ' print() calls)');
+
+    /* No two print() calls may start at the exact same (x, y) — that is
+     * literally the label and the value overlapping on screen. */
+    const seen = new Map();
+    for (const c of printCalls) {
+        const k = c.x + ',' + c.y;
+        if (seen.has(k))
+            throw new Error('two print() calls at the same (x,y) ' + k + ': "' +
+                seen.get(k) + '" and "' + c.text + '"');
+        seen.set(k, c.text);
+    }
+
+    /* Every printed string must fit inside the 128px display — a value that
+     * runs off (or under) the frame the way an untruncated long name does. */
+    for (const c of printCalls) {
+        const w = c.text.length * 6;
+        if (c.x + w > 128)
+            throw new Error('print() at x=' + c.x + ' ("' + c.text + '") overflows the ' +
+                '128px screen — not truncated to fit');
+    }
 });
 
 step('CONTROL: a module with NO hierarchy tree is not offered the row', () => {

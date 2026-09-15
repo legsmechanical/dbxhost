@@ -263,7 +263,18 @@ export function drawMenuList({
 
         if (valueAlignRight && fullValue) {
             let valueXFloor = valueX;
-            if (isSelected && prioritizeSelectedValue) {
+            /* ⚠ NOT gated on isSelected. A caller whose valueX floor equals
+             * labelX (drawPageChromeList: "the floor goes to the list's own
+             * left edge") relies on THIS reservation to give the label any
+             * room at all — and an inert list draws every row unselected
+             * (selectedIndex === -1), so gating on isSelected left every row
+             * but the selected one with a zero-width label budget. A long
+             * value then right-aligned all the way back to valueXFloor ===
+             * labelX, maxLabelWidth went negative, the `> 0` guard below left
+             * the label UNtruncated, and both strings printed at the same x —
+             * the "PKBsBia Synth FN" overlap on the module editor's My
+             * Presets page (Preset row, unselected: cursor was on Delete). */
+            if (prioritizeSelectedValue) {
                 const minLabelChars = Math.max(0, selectedMinLabelChars | 0);
                 const minLabelWidth = ((labelPrefix.length + minLabelChars) * DEFAULT_CHAR_WIDTH) + labelGap;
                 valueXFloor = labelX + minLabelWidth;
