@@ -867,6 +867,11 @@ if [ -d ./standalone ]; then
     # ensureCustomSplash's pool read is splash-pool.tsv, deployed with the
     # assets above).
     cp ./standalone/scripts/pick-splash.py ./build/scripts/
+    # pick-signal-thread.py: finds MoveOriginal's rt_sigtimedwait thread (the
+    # one with SigBlk == 0) so quiesce-stock.sh can aim a THREAD-directed
+    # SIGTERM at it and get an orderly shutdown — which quiesces the audio
+    # hardware, where a freeze-then-SIGKILL leaves it driverless and bursting.
+    cp ./standalone/scripts/pick-signal-thread.py ./build/scripts/
     chmod +x ./build/scripts/blank-leds.py
     # set-swap.sh: the Design-B project-library swap engine — a runtime
     # dependency of launch.sh (session entry/exit) and of the blessed

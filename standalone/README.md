@@ -196,6 +196,16 @@ So the launcher runs `scripts/quiesce-stock.sh` first, which sets `should_exit`
 (byte 2 of the control SHM) and waits for `shadow_ui` to go. Best-effort — if it
 does not, the kill sequence still runs.
 
+Once `shadow_ui` is gone and Move's own song save has run, the script asks stock
+Move to **shut down gracefully** — a *thread*-directed `SIGTERM` (tgkill) to the
+one thread parked in `rt_sigtimedwait` (the only one with `SigBlk == 0`), picked
+by `scripts/pick-signal-thread.py`, child pid first, waiting up to 3 s. An
+orderly shutdown quiesces the audio hardware; a `SIGSTOP`ped then `SIGKILL`ed
+Move leaves it driverless and it can burst (−3 dBFS for ~1.5 s, captured
+2026-09-15). If Move goes, the freeze is skipped; if it does not — or if no
+zero-mask thread is found — the old freeze-and-sweep path runs unchanged. Turn
+it off with `DBX_QUIESCE_GRACEFUL=0` or `touch /data/UserData/dbx-host/quiesce-graceful-off`.
+
 Without it the user loses whatever the periodic autosave has not written, and
 that autosave is both coarse (~10 s) and **gated on `!isOvertakeActive`** — so
 launching from inside an overtake tool would have saved nothing since that tool
