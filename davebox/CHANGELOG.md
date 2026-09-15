@@ -330,6 +330,11 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **Exported automation now plays right from the start of the clip in Live.**
+  When a lane's first parameter lock landed partway into the clip, the
+  Ableton export used to leave Live holding that lock's value from the very
+  start — dAVEBOx itself plays the lane's last value there instead, looping
+  back around. The export now matches what dAVEBOx plays.
 - **Back from PROJECT DID NOT OPEN, then picking the project, now opens it.**
   It used to load nothing and bring the same screen straight back; picking a
   project from there now restarts Move into it.
