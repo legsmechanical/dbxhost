@@ -3459,6 +3459,41 @@ function renderModBusGroup() {
  * rows of "--". A hole left by a removed insert keeps its row and reads "--",
  * because the config is never compacted and neither may the picture of it.
  */
+/* The insert row's right-hand value must say what the effect IS, the same as
+ * the Sound menu's own block rows (`refreshBlockNames`: r.name =
+ * moduleIdOf(...)) — not a 2-letter abbreviation, which is what
+ * engineModuleAbbrev was doing here.
+ *
+ * ⚠⚠ THE ACTUAL BUG behind the device screenshot ("FX 1  >" with NO name at
+ * all) was never the abbreviation, though — it is that `drawKitList`'s
+ * `chevron` and `value` are MUTUALLY EXCLUSIVE (its own docstring: "rows:
+ * { label, value?, qual?, chevron? ('>') }"; the row loop does
+ * `row.chevron ? '>' : (row.value ...)`). The old row set BOTH
+ * `value: (name || abbrev || c.module)` AND `chevron: !!c.module` — for any
+ * loaded insert `chevron` was true, so drawKitList drew '>' and threw the
+ * value away UNCONDITIONALLY. The abbreviation would never have been visible
+ * either, regardless of what it resolved to. Fixed the same way the
+ * `trackto` row already does it (`r.gen + ' >'`): fold the door marker INTO
+ * the value string and never set `chevron` alongside a value.
+ *
+ * Capped to MOD_BUS_INSERT_VALUE_MAX_W so a long module name is cut short on
+ * the right rather than crushing the "FX N" label down to nothing —
+ * drawKitList shrinks the LABEL to make room for whatever width the VALUE
+ * claims, so the value has to self-limit.
+ *
+ * Pure (no S, no engine reads) so it is unit-testable without the render
+ * harness — insertName/moduleRaw are exactly what the caller below already
+ * has in hand. */
+const MOD_BUS_INSERT_VALUE_MAX_W = 80;
+const MOD_BUS_INSERT_DOOR_MARK = ' >';
+export function modBusInsertDisplayValue(insertName, moduleRaw) {
+    if (!moduleRaw) return '--';
+    const markW = mvWidth(MOD_BUS_INSERT_DOOR_MARK);
+    let t = String(insertName || moduleIdOf(moduleRaw) || moduleRaw).toUpperCase();
+    while (t.length > 1 && mvWidth(t) + markW > MOD_BUS_INSERT_VALUE_MAX_W) t = t.slice(0, -1);
+    return t + MOD_BUS_INSERT_DOOR_MARK;
+}
+
 function renderModBusChain() {
     const rows = ModBus.modBusChainRows(S.modBus, S.modBusGroup);
     if (!rows.length) { renderInChain([{ label: 'Reading...', hdr: true }], 0); return; }
@@ -3466,13 +3501,15 @@ function renderModBusChain() {
         ? { label: '+ Add effect', hdr: true }
         : { label: c.label, hdr: true,
             /* The insert's OWN name first — several effects can ship in one
-             * binary, and then the abbreviation is the same on every box. Falls
-             * back to the abbreviation when the module does not answer. */
-            value: c.module
-                ? (ModBus.modBusInsertName(S.modBus, S.modBusGroup, c.index)
-                   || engineModuleAbbrev(c.module) || c.module)
-                : '--',
-            chevron: !!c.module })),
+             * binary, and then the abbreviation is the same on every box.
+             * Falls back to the module's full name (normalised the same way
+             * the Sound menu normalises a bus's DSP-path report) when the
+             * instance has no display_name of its own. NO `chevron` field —
+             * see modBusInsertDisplayValue's banner: chevron would eat the
+             * value whole. An empty position (c.module falsy) gets '--' with
+             * no door mark, matching its old un-enterable affordance. */
+            value: modBusInsertDisplayValue(
+                ModBus.modBusInsertName(S.modBus, S.modBusGroup, c.index), c.module) })),
         S.modBusChainIdx);
 }
 
