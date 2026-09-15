@@ -570,10 +570,11 @@ export const BANK_SOUND_PREV = BANK_STEP;
 export const TICK_HZ = 94;
 
 export const ACTION_POPUP_MS = 520;
-/* Shift+Volume's level card lingers 1 s after the last turn — the same window
- * sound mode uses for its own read-out (VOL_SHOW_MS), because they are the
- * same card and must not feel like two controls. Milliseconds on the one clock. */
-export const VOL_CARD_MS = 1000;
+/* Shift+Volume's level card lingers 0.5 s after the last turn (Josh, 2026-09-15:
+ * "about half as long" — it was 1 s) — the same window sound mode uses for its
+ * own read-out (VOL_SHOW_MS), because they are the same card and must not feel
+ * like two controls. Milliseconds on the one clock. */
+export const VOL_CARD_MS = 500;
 export const POLL_INTERVAL = 4;
 export const CC_SCRATCH_PALETTE_BASE = 51;  /* 51-58: per-knob value brightness (knob LEDs) */
 export const OOB_SCRATCH_PALETTE     = 50;  /* scratch index for 50%-white OOB step LEDs */

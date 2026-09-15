@@ -556,7 +556,7 @@ const SAVE_ROW = 0;
  * is SLOT_LEVEL_STEP, shared with the session-view knobs so both feel the same;
  * its header explains why the step is as fine as it is. */
 const VOL_MIN = 0, VOL_MAX = SLOT_LEVEL_MAX;
-const VOL_SHOW_MS = 1000;       /* readout lingers 1 s after the last turn */
+const VOL_SHOW_MS = 500;        /* readout lingers 0.5 s after the last turn — = VOL_CARD_MS */
 
 /* Idle poll cadence, in milliseconds. Deliberately slower than the lab rig —
  * davebox's tick is already busy, so idle refresh is cheap and the responsive
