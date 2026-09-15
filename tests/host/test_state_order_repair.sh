@@ -14,6 +14,7 @@ set -euo pipefail
 # so those two layers need user xattrs (Linux) and skip elsewhere.
 
 cd "$(dirname "$0")/../.."
+export PYTHONDONTWRITEBYTECODE=1   # no __pycache__ in standalone/scripts
 CMD=standalone/scripts/project-cmd.sh
 fails=0
 ok()  { echo "  ok   $1"; }

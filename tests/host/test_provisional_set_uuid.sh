@@ -85,7 +85,7 @@ callers_handle_empty() {
     local n
     n=$(grep -c "perSetStateDir(" "$HOST")
     [ "$n" = "3" ] || { echo "    (perSetStateDir call/def count is $n, expected 3 — new caller?)"; return 1; }
-    grep -q "_perSet = perSetStateDir(uuid)" "$HOST" &&
+    grep -q "_perSet = perSetStateDir(uuid, true)" "$HOST" &&
         grep -q "newDir = _perSet ? _perSet : SLOT_STATE_DIR_DEFAULT" "$HOST" &&
         grep -q "if (setDir && (host_file_exists" "$HOST"
 }

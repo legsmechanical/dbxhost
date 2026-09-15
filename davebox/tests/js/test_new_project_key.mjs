@@ -26,6 +26,11 @@ globalThis.host_system_cmd = () => 0;
 globalThis.host_read_file = (p) => (files[p] !== undefined ? files[p] : '');
 globalThis.host_file_exists = (p) => (files[p] !== undefined);
 globalThis.host_write_file = () => true; globalThis.host_ensure_dir = () => true;
+/* A project whose state dir had to be CHOSEN (set-folder order fix): the note
+ * must be read where project-cmd.sh wrote it — the resolved name, not a
+ * spelled `dAVEBOx`. Records its calls so the create flag is checked too. */
+const subdirCalls = [];
+globalThis.host_state_subdir = (dir, create) => { subdirCalls.push([String(dir), create]); return 'dAVEBOx~3'; };
 globalThis.host_remove_dir = () => true;
 globalThis.host_module_set_param = (k, v) => { sets.push([String(k), String(v)]); };
 /* ⚠ A REAL readback, not ''. The sync reads `key`/`scale` back from the DSP.
@@ -56,6 +61,13 @@ S.bankParams = Array.from({ length: 8 }, () =>
     Array.from({ length: 16 }, () => new Array(8).fill(0)));
 S.currentSetUuid = 'new-proj-uuid';
 const notePath = persist.uuidToNewProjectPath(S.currentSetUuid);
+step('the note path goes through the resolver (dAVEBOx~3), asking it to create', () => {
+    if (notePath !== '/data/UserData/UserLibrary/Sets/new-proj-uuid/dAVEBOx~3/new-project.json')
+        throw new Error('note path: ' + notePath);
+    const c = subdirCalls[subdirCalls.length - 1];
+    if (!c || c[0] !== '/data/UserData/UserLibrary/Sets/new-proj-uuid' || c[1] !== true)
+        throw new Error('resolver call: ' + JSON.stringify(c));
+});
 const lastOf = (k) => { const w = sets.filter(([kk]) => kk === k); return w.length ? w[w.length - 1][1] : null; };
 
 /* The DSP's defaults, i.e. what a state load writes for a brand-new project. */

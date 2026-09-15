@@ -96,6 +96,7 @@ for (const fn of ['host_write_file', 'host_read_file', 'host_file_exists', 'host
                   'host_ext_midi_remap_clear', 'host_ext_midi_remap_set',
                   'host_ext_midi_remap_enable'])
     globalThis[fn] = () => (fn.indexOf('read') >= 0 || fn.indexOf('get') >= 0 ? '' : 0);
+globalThis.host_state_subdir = () => 'dAVEBOx';   /* dbx_state_subdir.h's answer */
 
 async function main() {
 /* ⚠ davebox's module editor is the HOST'S OWN binding (ui/vendor/), so sound

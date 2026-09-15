@@ -7,6 +7,7 @@ set -euo pipefail
 # its index write shares code exercised here via `new`.
 
 cd "$(dirname "$0")/../.."
+export PYTHONDONTWRITEBYTECODE=1   # no __pycache__ in standalone/scripts
 CMD=standalone/scripts/project-cmd.sh
 [ -f "$CMD" ] || { echo "FAIL: $CMD missing" >&2; exit 1; }
 

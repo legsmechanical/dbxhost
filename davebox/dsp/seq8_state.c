@@ -746,6 +746,12 @@ static void seq8_save_state(seq8_instance_t *inst) {
      * load has happened. (The JS deferred-save path is gated separately, on the
      * same flag read back via get_param, so it never even fetches state_full.) */
     if (inst->awaiting_select) return;
+    /* Re-resolve per save, WITH the chooser: the state dir may not exist yet
+     * (a project's first save), and a plain ensure_parent_dir would make a
+     * `dAVEBOx/` that can list before Move's song folder — the set-folder
+     * order bug. A raw state_path (no uuid) is left as given. */
+    if (inst->state_uuid[0])
+        seq8_set_state_path(inst->state_path, sizeof(inst->state_path), inst->state_uuid, 1);
     ensure_parent_dir(inst->state_path);
     /* Temp sibling + fsync + rename, never a truncating write to the live path:
      * the serialize below is thousands of fprintf calls, so writing in place

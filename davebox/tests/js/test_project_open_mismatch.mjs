@@ -44,6 +44,10 @@ globalThis.host_read_file = (p) => (files.has(String(p)) ? files.get(String(p)) 
 globalThis.host_file_exists = (p) => files.has(String(p));        /* stat(): empty exists */
 globalThis.host_write_file = (p, body) => { writes.push(String(p)); files.set(String(p), String(body)); return true; };
 globalThis.host_ensure_dir = (p) => { writes.push(String(p)); return true; };
+/* dbx_state_subdir.h, per project: X ("Project 32") is the device's measured
+ * loser, so its state dir is the chosen `dAVEBOx~3`; P keeps the plain name. */
+const stateName = (uuidOrDir) => (String(uuidOrDir).indexOf(X) >= 0 ? 'dAVEBOx~3' : 'dAVEBOx');
+globalThis.host_state_subdir = (dir) => stateName(dir);
 globalThis.host_remove_dir = () => false;                          /* fenced off Sets/ on the device */
 const sysCmds = [];
 /* host_system_cmd blocks (system()): `project-cmd.sh list` has WRITTEN
@@ -78,7 +82,7 @@ globalThis.host_module_get_param = (k) => {
 globalThis.host_module_set_param = (k, v) => {
     k = String(k); v = String(v);
     if (k === 'awaiting_select') { if (v[0] === '1') dsp.awaiting = 1; return; }
-    if (k === 'save') { if (!dsp.awaiting) writes.push(SETS + (dsp.uuid || '<fallback>') + '/dAVEBOx/seq8sa-state.json'); return; }
+    if (k === 'save') { if (!dsp.awaiting) writes.push(SETS + (dsp.uuid || '<fallback>') + '/' + stateName(dsp.uuid) + '/seq8sa-state.json'); return; }
     if (k === 'state_load') { dsp.uuid = v; dsp.awaiting = 0; return; }
 };
 globalThis.host_module_set_params = () => true;
@@ -150,7 +154,7 @@ function boot(activeUuid, activeName) {
     if (activeUuid) {
         files.set(ACTIVE, activeUuid + '\n' + activeName);
         /* A project that has been used before has its state file. */
-        files.set(SETS + activeUuid + '/dAVEBOx/seq8sa-state.json', BLOB);
+        files.set(SETS + activeUuid + '/' + stateName(activeUuid) + '/seq8sa-state.json', BLOB);
     }
     dsp.uuid = activeUuid || ''; dsp.awaiting = 0; dsp.dirty = 1;
     S.projectOpenFailed = null; S.projectPadPicker = null; S.pendingOpenProjectPicker = false;
@@ -207,6 +211,11 @@ step('X already loaded at boot + Move says default -> no save reaches X after th
      * write X — otherwise "nothing reached X" below would prove nothing. */
     provokeSaves();
     if (!aimedAt(X).length) throw new Error('control: no saver reached X even before the verdict — rig is inert');
+    /* ...and every one of them aimed at X's RESOLVED state dir, never a plain
+     * `dAVEBOx/` beside it (which would list before "Project 32" on the device). */
+    const plain = aimedAt(X).filter((w) => w.indexOf('/dAVEBOx/') >= 0);
+    if (plain.length) throw new Error('writes to a spelled dAVEBOx/ under X: ' + plain.join(', '));
+    if (!aimedAt(X).some((w) => w.indexOf('/dAVEBOx~3/') >= 0)) throw new Error('no write under dAVEBOx~3: ' + aimedAt(X).join(', '));
     hostPublish(X, 'Project 32', 31, 'default');
     ticks(40);
     const before = writes.length;

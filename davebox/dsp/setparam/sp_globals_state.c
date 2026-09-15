@@ -12,7 +12,7 @@
  * (`seq8_set_uuid_alive`) are GONE (Phase B, 2026-08-12). They existed because
  * state lived in a tree PARALLEL to the projects, keyed by uuid, where a
  * deleted set left its state behind. State now lives INSIDE the set dir
- * (SEQ8_SET_STATE_FMT), so an orphan cannot exist: no set, no state. The whole
+ * (seq8_set_state_path), so an orphan cannot exist: no set, no state. The whole
  * class — liveness tests, four alive-roots, the "unverifiable counts as ALIVE"
  * asymmetry — retires with the parallel tree.
  * (Leftover seq8sa-* files from the old location remain in the stock host's
@@ -69,8 +69,7 @@ static int sp_globals_state(sp_ctx_t *cx) {
          * state_uuid tracks every assignment — it is what get_param "state_uuid"
          * serves, and the fallback path genuinely has no set, so it clears. */
         if (val && val[0]) {
-            snprintf(inst->state_path, sizeof(inst->state_path),
-                     SEQ8_SET_STATE_FMT, val);
+            seq8_set_state_path(inst->state_path, sizeof(inst->state_path), val, 0);
             snprintf(inst->state_uuid, sizeof(inst->state_uuid), "%s", val);
         } else {
             strncpy(inst->state_path, SEQ8_STATE_PATH_FALLBACK,

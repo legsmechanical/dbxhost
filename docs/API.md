@@ -223,6 +223,7 @@ host_extract_tar(tarball, dir) // Extract .tar.gz to directory, returns bool
 host_extract_tar_strip(tarball, dir, strip) // Extract with --strip-components
 host_ensure_dir(path)         // Create directory if it doesn't exist, returns bool
 host_remove_dir(path)         // Recursively remove directory, returns bool
+host_state_subdir(dir, create) // [FORK-ONLY] Name of a project's state dir in Sets/<uuid> (dAVEBOx or dAVEBOx~<n>, listing after the song folder); create runs the chooser
 
 // `host_write_file` is a whole-file REPLACE and is crash-atomic: the content is
 // written to a `<path>.tmp` sibling, flushed to the medium, then renamed over

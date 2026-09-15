@@ -59,6 +59,8 @@ CORE_LIBRARY_DIR="${CORE_LIBRARY_DIR:-/data/CoreLibrary}"
 # it rather than spelling the name. check-config.sh pins it against the C copy.
 DBX_PY_DIR="${DBX_PY_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 export DBX_PY_DIR
+# No __pycache__ beside the scripts (the install tree is a manifest-checked payload).
+export PYTHONDONTWRITEBYTECODE=1
 OUT_JSON="$DBX_DIR/projects.json"
 TEMPLATE_DIR="$DBX_DIR/sets/template"
 

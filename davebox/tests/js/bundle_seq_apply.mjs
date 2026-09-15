@@ -77,6 +77,7 @@ globalThis.host_read_file = () => '';
 globalThis.host_write_file = () => true;
 globalThis.host_file_exists = () => false;
 globalThis.host_ensure_dir = () => true;
+globalThis.host_state_subdir = () => 'dAVEBOx';   /* dbx_state_subdir.h's answer */
 globalThis.host_remove_dir = () => true;
 globalThis.host_system_cmd = () => 0;
 globalThis.shadow_get_param = () => '';

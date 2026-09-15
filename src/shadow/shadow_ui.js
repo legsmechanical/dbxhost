@@ -372,14 +372,13 @@ function overtakeMidiLogEnabled() {
     return overtakeMidiLogFlag;
 }
 /* ⭑ Per-set state lives INSIDE the set's own directory (state co-location,
- * 2026-08-12): Sets/<uuid>/<SET_STATE_SUBDIR>/. Must agree with the C side's
- * PER_SET_STATE_SUBDIR (shadow_set_pages.h) — the shim reads at boot what this
+ * 2026-08-12): Sets/<uuid>/<state dir>/host/. Must agree with the C side's
+ * resolve in shadow_chain_mgmt.c (dbx_state_subdir.h) — the shim reads at boot what this
  * file writes on SET_CHANGED. Pinned by check-config.sh. Valid whenever a set
  * is loaded: the launcher binds the session library over Sets/ before Move
  * starts, so a uuid we are told about is a dir that exists there. */
 const SETS_LIBRARY_DIR = "/data/UserData/UserLibrary/Sets";
-const SET_STATE_SUBDIR = "dAVEBOx/host";
-function perSetStateDir(uuid) {
+function perSetStateDir(uuid, create) {
     /* ⚠⚠ Empty for a PROVISIONAL identity. `__pending-N-M` is this process's
      * OWN placeholder (shadow_set_pages.c publishes it when Move's song index
      * moves before the set folder exists) — building a state path from it
@@ -387,7 +386,11 @@ function perSetStateDir(uuid) {
      * state where no real project will read it. Callers must treat "" as
      * "nowhere to save yet" and skip. */
     if (!uuid || setUuidIsProvisional(uuid)) return "";
-    return SETS_LIBRARY_DIR + "/" + uuid + "/" + SET_STATE_SUBDIR;
+    /* ⚠⚠ The state dir's NAME is resolved, never spelled (set-folder order
+     * fix): `dAVEBOx` or `dAVEBOx~<n>`, whichever lists after Move's song
+     * folder. `create` runs the chooser when the project has none yet. */
+    const setDir = SETS_LIBRARY_DIR + "/" + uuid;
+    return setDir + "/" + host_state_subdir(setDir, !!create) + "/host";
 }
 const PATCH_DIR = "/data/UserData/schwung/patches";
 const SLOT_STATE_DIR_DEFAULT = HOST_STATE_ROOT + "/slot_state";
@@ -15921,7 +15924,7 @@ function processSetChangedFlag() {
             /* 3. Determine new directory */
             /* perSetStateDir returns "" for a provisional identity — fall back
              * to the install-local dir rather than building a path from "". */
-            const _perSet = perSetStateDir(uuid);
+            const _perSet = perSetStateDir(uuid, true);
             const newDir = _perSet ? _perSet : SLOT_STATE_DIR_DEFAULT;
 
             if (uuid && typeof host_ensure_dir === "function") {

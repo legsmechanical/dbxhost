@@ -25,6 +25,7 @@ set -euo pipefail
 # copy and watch it fail).
 
 cd "$(dirname "$0")/../.."
+export PYTHONDONTWRITEBYTECODE=1   # no __pycache__ in standalone/scripts
 REPO="$(pwd)"
 CMD="${PROJECT_CMD:-standalone/scripts/project-cmd.sh}"
 PY="$REPO/standalone/scripts"

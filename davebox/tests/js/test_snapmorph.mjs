@@ -72,6 +72,7 @@ globalThis.host_file_exists = (p) => Object.prototype.hasOwnProperty.call(files,
 globalThis.host_read_file = (p) => (files[p] !== undefined ? files[p] : '');
 globalThis.host_write_file = (p, body) => { sidecars.push({ p, body }); files[p] = body; return true; };
 globalThis.host_ensure_dir = () => true;
+globalThis.host_state_subdir = () => 'dAVEBOx';   /* dbx_state_subdir.h's answer */
 globalThis.host_remove_dir = () => false;                 /* fenced away from Sets on the device */
 globalThis.host_system_cmd = (cmd) => { const m = /^rm -rf (\S+)$/.exec(String(cmd)); if (!m) return 0; for (const k of Object.keys(files)) if (k.indexOf(m[1] + '/') === 0) delete files[k]; return 0; };
 globalThis.host_snapshot_take = (dir) => { files[dir + '/slot_2.json'] = '{}\n'; return JSON.stringify({ ok: true, skipped: 0, positions: 1 }); };

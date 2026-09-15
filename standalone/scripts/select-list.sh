@@ -23,13 +23,19 @@ DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
 SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
 SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
 OUT_JSON="$DBX_DIR/select_list.json"
-# The reserved state subdir inside each set dir (Phase B) — skipped when hunting
-# the inner set dir. One spelling, pinned by check-config.sh.
-DBX_SUBDIR_NAME="${DBX_SUBDIR_NAME:-dAVEBOx}"
+# The state dir inside each set dir (Phase B) — skipped when hunting the inner
+# set dir. Its name is dAVEBOx or dAVEBOx~<n> per project (set-folder order
+# fix), so the rule is imported from state_subdir.py beside this script.
+DBX_PY_DIR="${DBX_PY_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+export DBX_PY_DIR
+# No __pycache__ beside the scripts (the install tree is a manifest-checked payload).
+export PYTHONDONTWRITEBYTECODE=1
 
-python3 - "$SETS_DIR" "$SETTINGS_JSON" "$OUT_JSON" "$DBX_SUBDIR_NAME" <<'PYEOF'
+python3 - "$SETS_DIR" "$SETTINGS_JSON" "$OUT_JSON" <<'PYEOF'
 import json, os, re, sys
-sets_dir, settings, out, dbx_subdir = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import state_subdir as ss
+sets_dir, settings, out = sys.argv[1], sys.argv[2], sys.argv[3]
 cur = 0
 try:
     m = re.search(r'"currentSongIndex":\s*(-?\d+)', open(settings).read())
@@ -43,9 +49,7 @@ if os.path.isdir(sets_dir):
         p = os.path.join(sets_dir, u)
         if not os.path.isdir(p) or not uuid_re.match(u):
             continue
-        inner = [n for n in os.listdir(p)
-                 if os.path.isdir(os.path.join(p, n)) and not n.startswith(".")
-                 and n != dbx_subdir]
+        inner = ss.inner_dirs(p)
         name = inner[0] if inner else u[:8]
         try:
             idx = int(os.getxattr(p, "user.song-index").decode())
