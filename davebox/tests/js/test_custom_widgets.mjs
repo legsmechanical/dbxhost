@@ -126,12 +126,22 @@ globalThis.shadow_get_param = (slot, k) => {
     const v = engine[slot + ':' + k];
     return v === undefined ? '' : v;
 };
+/* A plain effect with no custom kind, for the swap. */
+function loadFreeverb(slot) {
+    engine[slot + ':fx1:module'] = 'freeverb';
+    engine[slot + ':fx1:chain_params'] = JSON.stringify([
+        { key: 'room', name: 'Room', type: 'float', min: 0, max: 1 },
+        { key: 'wet', name: 'Wet', type: 'float', min: 0, max: 1 }]);
+    engine[slot + ':fx1:room'] = '0.3';
+    engine[slot + ':fx1:wet'] = '0.2';
+}
+/* Loading a module replaces EVERYTHING its component answered. */
 globalThis.shadow_set_param = (slot, k, v) => {
-    const m = String(k).match(/^(.*):module$/);
+    const m = String(k).match(/^(fx1):module$/);
     if (m) {
-        if (!v) {
-            for (const key of Object.keys(engine)) if (key.startsWith(slot + ':' + m[1] + ':')) delete engine[key];
-        } else engine[slot + ':' + k] = String(v);
+        for (const key of Object.keys(engine)) if (key.startsWith(slot + ':fx1:')) delete engine[key];
+        if (v === 'widget-test') loadWidgetTest(slot);
+        else if (v === 'freeverb') loadFreeverb(slot);
     }
     return 1;
 };
@@ -360,6 +370,45 @@ step('⭐ B: repaired on disk, the next visit draws the module\'s widgets', () =
     draws.length = 0;
     frame();
     if (!draws.some(d => d.kind === 'custom:wtmeter')) throw new Error('still built-ins after the repair');
+});
+
+/* ── Test C: a swap or removal underneath clears what was registered ─────── */
+step('⭐ C: SWAP widget-test -> a plain effect: its widgets go, and the new module settles with no load', () => {
+    if (!REG.isWidgetAvailable('custom:wtmeter')) throw new Error('rig: not starting from a registered module');
+    const before = snd.soundWidgetsForTest().loads;
+    snd.soundRequestModulePickForTest({ id: 'freeverb', name: 'Freeverb' });
+    ticks(12);
+    if (REG.isWidgetAvailable('custom:wtmeter') || REG.isWidgetAvailable('custom:wtmode'))
+        throw new Error('widget-test\'s widgets outlived the swap');
+    leaveSound();
+    openOnTrack(1);
+    if (snd.soundModuleIdForTest() !== 'freeverb') throw new Error('rig: editor holds ' + snd.soundModuleIdForTest());
+    const w = snd.soundWidgetsForTest();
+    if (!w.ok || w.key !== '1:fx1|freeverb') throw new Error('a widgetless module did not settle: ' + JSON.stringify(w));
+    if (w.loads !== before) throw new Error('a module declaring no custom kind had its canvas.js loaded');
+});
+
+step('⭐ C: REMOVE the module (-> none) and the registry no longer carries its widgets', () => {
+    leaveSound();
+    loadWidgetTest(2);
+    openOnTrack(2);
+    if (!REG.isWidgetAvailable('custom:wtmeter')) throw new Error('rig: slot 2 did not register');
+    snd.soundRequestModulePickForTest({ id: '', name: '[ none ]' });
+    ticks(12);
+    if (REG.isWidgetAvailable('custom:wtmeter') || REG.isWidgetAvailable('custom:wtmode'))
+        throw new Error('widget-test\'s widgets outlived its removal');
+});
+
+step('⭐⭐ C: ...and back on ANOTHER slot, the widget module draws its own cells again (#450)', () => {
+    leaveSound();
+    loadWidgetTest(3);
+    openOnTrack(3);
+    const w = snd.soundWidgetsForTest();
+    if (w.key !== '3:fx1|widget-test' || !w.ok) throw new Error('state: ' + JSON.stringify(w));
+    draws.length = 0;
+    frame();
+    if (!draws.some(d => d.kind === 'custom:wtmeter') || !draws.some(d => d.kind === 'custom:wtmode'))
+        throw new Error('the widgetless visit latched the registry empty: ' + JSON.stringify(draws));
 });
 
 leaveSound();
