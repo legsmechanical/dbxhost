@@ -339,6 +339,10 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **A fresh launch always asks which project to open.** Launching dAVEBOx no
+  longer sometimes reopened the project you were last in: a late report about
+  the previous session's set could flash a "project did not open" screen and
+  load it behind you. Nothing loads now until you tap a pad.
 - **STEP bank at rest reads "Hold step to edit".** The knob cells appear only
   while a step is held; with nothing held the page shows the one line instead
   of eight dashes.

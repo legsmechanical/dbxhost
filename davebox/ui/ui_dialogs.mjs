@@ -409,6 +409,26 @@ export function checkProjectOpened() {
         }
         return;
     }
+    /* SELECT-BEFORE-LOAD outranks the verdict. While the session is still
+     * awaiting a pick nothing of ours is loaded, every save path is already
+     * refused (awaiting_select is 1 in both halves), and no project has been
+     * chosen for the verdict to be ABOUT — so there is nothing left for it to
+     * protect, and the only thing it can still do is destroy the picker.
+     *
+     * Device, 2026-09-15, four identical tools-menu launches: boot, then ~3 s
+     * later the host published the placeholder for the project the LAST session
+     * had been in ("SET_CHANGED: Move did not open the resolved set"), which
+     * nobody had asked for. That raised the screen and cleared
+     * pendingOpenProjectPicker — and ~1 s later Move finished opening it after
+     * all, so the late-answer branch above loaded it with no pick. Every launch
+     * came up on the old project, and the screen flipped past too fast to read.
+     *
+     * The verdict keeps the case it was built for: a project the user PICKED.
+     * A pick from here always RELAUNCHES Move (the switch path — the in-place
+     * branch needs a current pad, and a placeholder identity leaves none), so
+     * init() runs again with awaiting_select 0 and re-arms this window; the
+     * in-place branch re-arms it itself. Deferring costs no coverage. */
+    if (S.awaitingProjectSelect) return;
     if (as.unopenedIndex < 0) return;
     S.projectOpenFailed = { pad: as.unopenedIndex, name: as.name, sel: 0, retrying: false };
     /* No project is open: nothing downstream may name one — not even the
@@ -1013,7 +1033,14 @@ function _pppLoad(p, k) {
          * selection: create_instance loaded nothing, so load now. Once a
          * project is live, "Load" on the current one just closes the picker. */
         closeProjectPadPicker();
-        if (S.awaitingProjectSelect) loadSelectedCurrentProject();
+        if (S.awaitingProjectSelect) {
+            /* The pick IS the load here, and checkProjectOpened stands down
+             * while awaiting — so the "did Move open it" window is measured
+             * from the pick, not from init. The switch path needs no such line:
+             * it relaunches, and init() arms the window again. */
+            S.projectOpenCheckTicks = PROJECT_OPEN_CHECK_TICKS;
+            loadSelectedCurrentProject();
+        }
         return;
     }
     /* Switch: save first; the command fires one tick after the save lands
