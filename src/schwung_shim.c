@@ -488,6 +488,13 @@ static int shadow_deferred_dsp_valid = 0;
 /* Per-slot raw synth output from render_to_buffer (no FX applied).
  * FX is processed in mix_from_buffer using same-frame Link Audio data. */
 static int16_t shadow_slot_deferred[SHADOW_CHAIN_INSTANCES][FRAMES_PER_BLOCK * 2];
+/* The FALLBACK path's render (a chain that cannot split synth and FX across the
+ * frame — `same_frame_fx` false) used to render into a STACK scratch and then
+ * read the shared accumulator for its silence check, so slot B's idle decision
+ * saw slot A's audio (a silent B never napped while A played), and under a
+ * render pool every slot on that path would write one buffer. Per slot, like
+ * shadow_slot_deferred (2026-09-05, parallel-render survey). */
+static int16_t shadow_slot_fallback[SHADOW_CHAIN_INSTANCES][FRAMES_PER_BLOCK * 2];
 static int shadow_slot_deferred_valid[SHADOW_CHAIN_INSTANCES];
 
 /* Deferred FX output: FX runs in post-ioctl, result mixed in pre-ioctl */
@@ -1890,9 +1897,10 @@ static void shadow_inprocess_render_to_buffer(void) {
                 shadow_slot_deferred_valid[s] = 1;
             } else {
                 /* Fallback: full render (synth + FX) → accumulated buffer.
-                 * No Link Audio inject (one-frame delay would cause issues). */
-                int16_t render_buffer[FRAMES_PER_BLOCK * 2];
-                memset(render_buffer, 0, sizeof(render_buffer));
+                 * No Link Audio inject (one-frame delay would cause issues).
+                 * Rendered into THIS SLOT's buffer (see shadow_slot_fallback). */
+                int16_t *render_buffer = shadow_slot_fallback[s];
+                memset(render_buffer, 0, sizeof(shadow_slot_fallback[s]));
                 shadow_plugin_v2->render_block(shadow_chain_slots[s].instance,
                                                render_buffer, MOVE_FRAMES_PER_BLOCK);
                 if (link_audio.enabled && s < LINK_AUDIO_SHADOW_CHANNELS) {
@@ -1927,7 +1935,7 @@ static void shadow_inprocess_render_to_buffer(void) {
 
             /* Check if synth render output is silent */
             {
-            int16_t *slot_out = same_frame_fx ? shadow_slot_deferred[s] : shadow_deferred_dsp_buffer;
+            int16_t *slot_out = same_frame_fx ? shadow_slot_deferred[s] : shadow_slot_fallback[s];   /* THIS slot's output, never the accumulator */
             int is_silent = 1;
             for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
                 if (slot_out[i] > DSP_SILENCE_LEVEL || slot_out[i] < -DSP_SILENCE_LEVEL) {

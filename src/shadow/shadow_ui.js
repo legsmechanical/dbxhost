@@ -5831,8 +5831,12 @@ function autosaveAllSlots(onlySlot, forSnapshot) {
         const hasSynth = cfg && cfg.synth && cfg.synth.module;
         const hasFx1 = cfg && cfg.fx1 && cfg.fx1.module;
         const hasFx2 = cfg && cfg.fx2 && cfg.fx2.module;
+        /* fx3/fx4 are this fork's extra insert blocks — a slot holding only
+         * those is NOT empty, and missing them here wrote `{}` over it. */
+        const hasFx3 = cfg && cfg.fx3 && cfg.fx3.module;
+        const hasFx4 = cfg && cfg.fx4 && cfg.fx4.module;
         const hasMidiFx = cfg && cfg.midiFx && cfg.midiFx.module;
-        if (!hasSynth && !hasFx1 && !hasFx2 && !hasMidiFx) {
+        if (!hasSynth && !hasFx1 && !hasFx2 && !hasFx3 && !hasFx4 && !hasMidiFx) {
             /* Cross-check before clobbering: if the slot has a preset name
              * but the shim is reporting "no modules" AND the user did not
              * explicitly clear the slot via the picker, it's a transient
