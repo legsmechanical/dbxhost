@@ -7014,10 +7014,15 @@ static void shim_select_blank_move_leds(void)
      * good: once it has taken the surface, any LATER moment with overtake
      * off is the menu, where Move's own LEDs are what the user should see. */
     if (shadow_control->overtake_mode) {
-        boot_tool_led_blank = 0;
         /* The boot pad-input latch shares this window exactly: once a tool
-         * owns the surface it is the one deciding what a pad press means. */
-        shadow_control->pad_block = 0;
+         * owns the surface it is the one deciding what a pad press means.
+         * ⚠ Release it ONCE, on the edge where the boot latch drops. This runs
+         * every frame a tool owns the surface, and an unconditional clear here
+         * would stomp every pad_block that tool raises for itself. */
+        if (boot_tool_led_blank) {
+            boot_tool_led_blank = 0;
+            shadow_control->pad_block = 0;
+        }
         return;
     }
     if (!shadow_control->select_phase && !boot_tool_led_blank) return;

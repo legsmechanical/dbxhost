@@ -42,7 +42,7 @@ if ! grep -B14 "boot_tool_led_blank = 1;" "$shim" | grep -q "boot_tool.json"; th
 fi
 
 # Release 1: overtake clears the latch, not just an early return.
-if ! grep -A4 "if (shadow_control->overtake_mode) {" "$shim" | grep -q "boot_tool_led_blank = 0;"; then
+if ! grep -A10 "if (shadow_control->overtake_mode) {" "$shim" | grep -q "boot_tool_led_blank = 0;"; then
     note "overtake_mode does not CLEAR the latch (it would re-blank on the menu)"
 fi
 
