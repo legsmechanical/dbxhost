@@ -1257,8 +1257,9 @@ to float over. `tests/host/test_param_card.sh` pins it by drawing
 *counted* the overflow.
 
 ⭑ `frame_ctx.mjs` comes from upstream's module-supplied-widget work, where a
-custom cell widget is held to the same rule. Only the file is here; the cell
-widgets are not. It exposes `fillRect` / `print` / `textWidth`, so a drawer that
+custom cell widget is held to the same rule — and since the custom-widgets port
+the cell widgets are here too, registered by dAVEBOx's module editor
+(`ppWidgetsTick`, `davebox/ui/ui_sound.mjs`; contract in `docs/MODULES.md`). It exposes `fillRect` / `print` / `textWidth`, so a drawer that
 wants `line` or `setPixel` falls back to `fillRect` — a Bresenham built on it
 still clips correctly.
 

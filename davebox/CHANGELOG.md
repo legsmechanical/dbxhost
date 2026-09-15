@@ -17,6 +17,9 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Features (pending)
+- **Modules with custom displays now draw them in the module editor.** A module
+  that paints its own knob cells (e.g. MonkSynth, Hank) shows its pictures
+  instead of plain dials.
 - **Macros and mixer knobs feel like the module editor.** A macro on a
   parameter now sweeps it in the same wrist movement the module's own page
   knob takes (it used to take two and a half times the turn), whole-number
