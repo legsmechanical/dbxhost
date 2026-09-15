@@ -176,6 +176,11 @@ cleanup + davebox MovePlay/JS host) but was single-writer in code → a torn slo
 - **Backtrace instrumentation** (`crash_signal_handler` → dumps a symbolizable
   stack to `/data/UserData/schwung/shim_crash_bt.txt`). Kept on fork main as a
   diagnostic; candidate for a separate small upstream PR. ✅
+  ⚠ **SIGTERM is observed, not consumed.** The handler logs the "Caught SIGTERM"
+  line and then chains to the action installed before ours
+  (`src/host/shim_signal_chain.h`), so the host process's own shutdown — which is
+  what quiesces the audio device — still runs. It never `_exit()`s on SIGTERM;
+  only SIGSEGV/SIGBUS/SIGABRT terminate from the handler.
 - **OPEN follow-up (not fixed): inject-pipe starvation / no QoS.** The inject
   ring is a shared, throttled, flow-control-free side-channel into Move's
   hardware mailbox; under a heavy ROUTE_MOVE note flood (e.g. davebox repeat-mode
