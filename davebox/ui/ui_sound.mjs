@@ -3105,16 +3105,9 @@ function buildPickRows() {
          * one way on a Move track and another on a Schwung one.
          *
          * Sends are capability-gated: a host without send buses would otherwise
-         * offer two rows backed by nothing. */
-        for (const lv of SLOT_LEVELS) {
-            if (lv.cap === 'sends' && !S.capSends) continue;
-            rows.push({ kind: 'buslevel', label: lv.label, spec: lv });
-        }
-        /* Doors last, presets last of all (Josh). "Presets" not "patches" in
-         * user-facing text — the store is still the host's patches/ dir. */
-        /* 'LFOs', not 'Sound Control' (Josh, 2026-09-04): the Knobs row moved
-         * to the MACROS bank, so the LFOs are all that is behind this door. */
-        /* ⭐ BUSES — only for a module that actually SPLITS, and the gate is a
+         * offer two rows backed by nothing.
+         *
+         * ⭐ BUSES — only for a module that actually SPLITS, and the gate is a
          * TRI-STATE, not a boolean (ModBus.modBusDoorState):
          *
          *   'open'     the module declares voices — offer the door
@@ -3127,9 +3120,21 @@ function buildPickRows() {
          * with nothing on screen to contradict it. The refresh runs on the next
          * entry, so an unknown resolves itself rather than latching.
          *
-         * Placed with the other doors and before Presets, which stays last. */
-        if (ModBus.modBusDoorState(S.modBus) === 'open')
-            rows.push({ kind: 'modbus', label: ModBus.MODBUS_LABEL });
+         * Placed inline with the levels, right below Send B and above Mute
+         * (Josh, 2026-09-15: "'Buses' row moves up to just below Send B level,
+         * before Mute") — not with the other doors below. It still has kind
+         * 'modbus', so the door-opening/select logic elsewhere is unaffected;
+         * only its position in `rows` changed. */
+        for (const lv of SLOT_LEVELS) {
+            if (lv.cap === 'sends' && !S.capSends) continue;
+            rows.push({ kind: 'buslevel', label: lv.label, spec: lv });
+            if (lv.key === 'send_b' && ModBus.modBusDoorState(S.modBus) === 'open')
+                rows.push({ kind: 'modbus', label: ModBus.MODBUS_LABEL });
+        }
+        /* Doors last, presets last of all (Josh). "Presets" not "patches" in
+         * user-facing text — the store is still the host's patches/ dir. */
+        /* 'LFOs', not 'Sound Control' (Josh, 2026-09-04): the Knobs row moved
+         * to the MACROS bank, so the LFOs are all that is behind this door. */
         rows.push({ kind: 'settings', label: 'LFOs' });
         rows.push({ kind: 'config',   label: 'Config' });
         rows.push({ kind: 'patches',  label: 'Presets' });
@@ -11778,9 +11783,30 @@ function modLabel() {
     return String(S.moduleId || blockLabel()).toUpperCase();
 }
 
-/* Shared list body for the row-based preset screens (thin drawKitList shim). */
-function renderRows(rows, sel, emptyMsg) {
-    drawKitList(rows.map(String), sel, { emptyMsg });
+/* Shared list body for the row-based preset screens (thin drawKitList shim).
+ * `opts` passes through to drawKitList (e.g. the message-row cap below). */
+function renderRows(rows, sel, emptyMsg, opts) {
+    drawKitList(rows.map(String), sel, Object.assign({ emptyMsg }, opts || {}));
+}
+
+/* A pending status message (SAVED, DELETED…) needs a row of its own at the
+ * screen's foot. Without this the message lands ON TOP of the list's own last
+ * row once there are enough entries to fill it — "2 strings writing on same
+ * line" (renderPresetList with >=5 user presets: SAVED over the 5th name).
+ *
+ * One row's height (drawKitList's own default rowH, 10px — UI_LANGUAGE's
+ * documented list-row height) is reserved at the foot. `h` caps a full-screen
+ * drawKitList call directly (renderPresetList, renderChainPatches' message
+ * branch); `footer` caps the boxed one drawKitStackedList draws internally
+ * (renderPresetBaked, via renderInChain) — passing both is harmless, each
+ * drawer reads only the key it understands. Returns null (untouched geometry)
+ * when nothing is pending, so the no-message layout never changes. */
+const LIST_MSG_ROW_H = 10;
+function listMsgCap(pending) {
+    return pending ? { h: (64 - 11) - LIST_MSG_ROW_H, footer: LIST_MSG_ROW_H } : null;
+}
+function clearListMsgBand() {
+    fill_rect(0, 64 - LIST_MSG_ROW_H, 128, LIST_MSG_ROW_H, 0);
 }
 
 function renderPresetSrc() {
@@ -11802,7 +11828,8 @@ function renderChainPatches() {
      * ends, so floating would simply hide it. §5.0's not-a-list exception. */
     if (S.patchMsg) {
         drawKitHeader(trackTitle('SLOT PRESETS'), false);
-        renderRows(rows, S.patchIdx, '');
+        renderRows(rows, S.patchIdx, '', listMsgCap(true));
+        clearListMsgBand();
         centreText(58, S.patchMsg);
         return;
     }
@@ -11820,8 +11847,8 @@ function renderPresetList() {
     }
     drawKitHeader('USER PRESETS', false);
     const rows = ['[Save current…]'].concat(S.userPresets.map(p => p.name));
-    renderRows(rows, S.userIdx, '');
-    if (S.presetMsg) centreText(58, S.presetMsg);
+    renderRows(rows, S.userIdx, '', listMsgCap(S.presetMsg));
+    if (S.presetMsg) { clearListMsgBand(); centreText(58, S.presetMsg); }
 }
 
 /* Numbered scrollable list, same shape as the user list. The names behind it
@@ -11850,11 +11877,11 @@ function renderPresetBaked() {
     }
     const rows = S.bakedNames.map((n, i) =>
         String(i + 1).padStart(3, ' ') + '  ' + (n || ('Preset ' + (i + 1))));
-    renderInChain(rows, S.bakedIdx);
-    /* Transient feedback stays on top of the box, as it was on top of the list.
-     * ⚠ It overlaps the bottom row while it is up; it is a few frames of status
-     * after an action, not a thing you read while choosing. */
-    if (S.presetMsg) centreText(58, S.presetMsg);
+    renderInChain(rows, S.bakedIdx, undefined, listMsgCap(S.presetMsg));
+    /* Transient feedback sits in its own row at the foot, capped out of the
+     * list above by listMsgCap — it used to overlap the list's own bottom row
+     * (see listMsgCap's docblock) rather than merely sit over the box border. */
+    if (S.presetMsg) { clearListMsgBand(); centreText(58, S.presetMsg); }
 }
 
 /* Two-column rows: label left, value right — levels show a chevron instead.

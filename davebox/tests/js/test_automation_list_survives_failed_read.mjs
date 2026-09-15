@@ -2,7 +2,7 @@ import './_bulk_get_stub.mjs';
 /* tests/js/test_automation_list_survives_failed_read.mjs
  * 2026-09-02): last on the walk after MACROS, replacing the old AUTO bank 6.
  * The card is the LIST of what is automated in the clip (bracketed corners);
- * the knobs are a no-op; jog click enters the menu (cursor + Clear clip);
+ * the knobs are a no-op; jog click enters the menu (cursor + Clear all);
  * click on a row opens its ops (Delete / Mute / Smooth / Loop); Delete +
  * click clears the clip; Back closes one layer at a time; every edit takes an
  * undo checkpoint. Smooth/Stepped moved here from the module editor.

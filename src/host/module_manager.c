@@ -274,6 +274,22 @@ static void extract_rnbopacks(const char *packs_path) {
     closedir(dir);
 }
 
+/* Fires once per mm_scan_modules() pass, the first time the fixed-size
+ * modules[] table fills up. Every scan_directory()/scan_packs_dir() call
+ * after that point checks mm->module_count before writing into the table
+ * (never removed — only the guard moved out of the readdir() loop
+ * condition, so readdir() itself keeps draining the directory), so this
+ * is purely diagnostic: it tells whoever reads the log which entry the
+ * scan gave up on and that raising MAX_MODULES is the fix. tools/ is
+ * scanned last (see mm_scan_modules), so a real overflow lands there. */
+static int g_mm_table_full_logged = 0;
+static void log_table_full_once(const char *skipped_name) {
+    if (g_mm_table_full_logged) return;
+    g_mm_table_full_logged = 1;
+    printf("mm: module table full (MAX_MODULES=%d), skipping '%s'\n",
+           MAX_MODULES, skipped_name ? skipped_name : "?");
+}
+
 /* Scan a packs subdirectory for extracted pack directories.
  * Each directory with info.json becomes a virtual module entry.
  * Also auto-extracts any .rnbopack tarballs found. */
@@ -289,7 +305,7 @@ static int scan_packs_dir(module_manager_t *mm, const module_info_t *parent) {
 
     int found = 0;
     struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL && mm->module_count < MAX_MODULES) {
+    while ((entry = readdir(dir)) != NULL) {
         if (entry->d_name[0] == '.') continue;
 
         char pack_dir[MAX_PATH_LEN];
@@ -302,6 +318,11 @@ static int scan_packs_dir(module_manager_t *mm, const module_info_t *parent) {
         char info_path[MAX_PATH_LEN];
         snprintf(info_path, sizeof(info_path), "%s/info.json", pack_dir);
         if (stat(info_path, &st) != 0) continue;
+
+        if (mm->module_count >= MAX_MODULES) {
+            log_table_full_once(entry->d_name);
+            continue;
+        }
 
         /* Create virtual module entry */
         module_info_t *info = &mm->modules[mm->module_count];
@@ -347,7 +368,7 @@ static int scan_directory(module_manager_t *mm, const char *dir_path) {
 
     int found = 0;
     struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL && mm->module_count < MAX_MODULES) {
+    while ((entry = readdir(dir)) != NULL) {
         if (entry->d_name[0] == '.') continue;
 
         /* Reject names containing path traversal sequences */
@@ -363,6 +384,11 @@ static int scan_directory(module_manager_t *mm, const char *dir_path) {
         char json_path[MAX_PATH_LEN];
         snprintf(json_path, sizeof(json_path), "%s/module.json", module_path);
         if (stat(json_path, &st) != 0) continue;
+
+        if (mm->module_count >= MAX_MODULES) {
+            log_table_full_once(entry->d_name);
+            continue;
+        }
 
         if (parse_module_json(module_path, &mm->modules[mm->module_count]) == 0) {
             module_info_t *parsed = &mm->modules[mm->module_count];
@@ -414,6 +440,7 @@ static int scan_directory(module_manager_t *mm, const char *dir_path) {
 
 int mm_scan_modules(module_manager_t *mm, const char *modules_dir) {
     mm->module_count = 0;
+    g_mm_table_full_logged = 0;
 
     /* Scan main modules directory */
     int main_count = scan_directory(mm, modules_dir);

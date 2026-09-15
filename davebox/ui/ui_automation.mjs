@@ -380,13 +380,21 @@ function componentMeta(slot, comp) {
     let m = metaCache.get(id);
     if (m) return m;
     if (isLevelComponent(comp)) { metaCache.set(id, LEVEL_META); return LEVEL_META; }
+    /* ⚠ A FAILED read must NOT be cached forever — only a read that actually
+     * parsed gets remembered. Otherwise a component visited before its chain
+     * was ready (or during a dropped round-trip) is stuck at {} (a plain 0..1
+     * float) for the rest of the session, with no way to retry. */
+    let raw;
+    try { raw = shadow_get_param(slot, comp + ':chain_params'); }
+    catch (e) { return {}; /* not cached: retry next visit */ }
+    if (raw === null || raw === undefined || raw === '?') return {}; /* not cached: retry next visit */
+    let parsed;
+    try { parsed = JSON.parse(raw || '[]'); }
+    catch (e) { return {}; /* not cached: retry next visit */ }
     m = {};
-    try {
-        const raw = shadow_get_param(slot, comp + ':chain_params');
-        for (const p of (JSON.parse(raw || '[]') || [])) {
-            if (p && p.key) m[p.key] = p;
-        }
-    } catch (e) { /* no metadata: fall back to a plain 0..1 float below */ }
+    for (const p of (parsed || [])) {
+        if (p && p.key) m[p.key] = p;
+    }
     metaCache.set(id, m);
     return m;
 }
@@ -1065,7 +1073,7 @@ export function automationSetScale(track, clip, target, pct, checkpoint) {
     if (cur) cur.scale = v;
     return true;
 }
-/* The AUTOMATION bank's Clear clip: every parameter's automation in the clip,
+/* The AUTOMATION bank's Clear all: every parameter's automation in the clip,
  * everything back to rest. ⚠ `checkpoint: false` — see automationClearKey. */
 export function automationClearClip(track, clip, checkpoint) {
     const entries = automationEntriesFor(track, clip);

@@ -2876,22 +2876,36 @@ function applyHierarchyVisibilityFilters(levelDef) {
     }
 
     if (Array.isArray(hierEditorAllKnobs) && hierEditorAllKnobs.length > 0) {
-        /* Injected rows are excluded, not just ignored: `visibleKeys.size === 0`
-         * below means "this level has only nav links, so keep every knob". An
-         * injected row is not one of the level's own params, so counting it
-         * would flip that test and silently strip the knobs. */
-        const visibleKeys = new Set(
-            hierEditorParams
-                .map(extractHierarchyParamKey)
-                .filter(k => k && k !== SWAP_MODULE_ACTION && k !== MODULE_LEVEL_KEY)
+        /* ⭐ A knob is dropped ONLY when its OWN param is hidden by a
+         * `visible_if` that currently evaluates false. A knob whose key this
+         * level does not list at all is none of the list's business.
+         *
+         * ⚠ The rule used to be the other way round — keep only the knobs whose
+         * key appears among the VISIBLE params, unless that set was empty, in
+         * which case keep all of them. That is right for a level that lists
+         * every one of its knobs, and wrong for every other shape: a menu-root
+         * or page-select level declares the knobs for the page it fronts while
+         * listing only nav links plus, very often, ONE ordinary param. That one
+         * param was enough to make the set non-empty, so the "only nav links"
+         * escape hatch never fired and all the other knobs were stripped —
+         * the level's knobs went dead with nothing logged.
+         *
+         * Injected rows (the swap action, the module level) are not the level's
+         * own params, so they can never hide a knob. */
+        const shownKeys = new Set(
+            hierEditorParams.map(extractHierarchyParamKey).filter(k => k)
         );
-        if (visibleKeys.size === 0) {
-            /* Root/page-select level: no editable params visible (only nav links)
-             * → keep all knobs so they control the first page's params */
-            hierEditorKnobs = [...hierEditorAllKnobs];
-        } else {
-            hierEditorKnobs = hierEditorAllKnobs.filter(k => visibleKeys.has(k));
+        const hiddenKeys = new Set();
+        if (Array.isArray(hierEditorAllParams)) {
+            for (const param of hierEditorAllParams) {
+                const k = extractHierarchyParamKey(param);
+                if (!k || k === SWAP_MODULE_ACTION || k === MODULE_LEVEL_KEY) continue;
+                if (!shownKeys.has(k)) hiddenKeys.add(k);
+            }
         }
+        hierEditorKnobs = (hiddenKeys.size === 0)
+            ? [...hierEditorAllKnobs]
+            : hierEditorAllKnobs.filter(k => !hiddenKeys.has(k));
     } else {
         hierEditorKnobs = [];
     }

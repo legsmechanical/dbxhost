@@ -323,6 +323,84 @@ export function validateContract({ id, hierarchy, chainParams, capabilities } = 
         }
     }
 
+    /* ---- filepath_param points at something that isn't a path ------------- */
+
+    /*
+     * `filepath_param` names a SIBLING key that holds the source file path —
+     * docs/MODULES.md's `wav_position` section: "Key of the linked filepath
+     * parameter containing the WAV source." resolveWavSourcePath()
+     * (wav_position.mjs) reads that key's live value with no further checking,
+     * and normalizeWavPath() just stringifies whatever comes back. Point it at
+     * a numeric key — a `wav_position` marker declaring
+     * `"filepath_param": "wav_position"` instead of the file key, say — and the
+     * UI does not fail: it shows a confident, wrong filename ("0.25") built
+     * from the knob's own value.
+     *
+     * Declared in two places, both checked: on the chain_params entry itself
+     * (the common shape — a `wav_position` param carries its own
+     * `filepath_param`) and inline on a level's params entry (a marker
+     * declared only in the hierarchy). A bare declared value is looked up as
+     * a plain key; a `component:key` form (see resolveWavSourcePath) is tried
+     * whole first and falls back to the part after the last ':' so a
+     * same-component reference still resolves.
+     */
+    {
+        const cpTypeByKey = new Map();
+        for (const p of cp) {
+            if (p && p.key && !cpTypeByKey.has(p.key)) {
+                cpTypeByKey.set(p.key, { type: p.type, ui_type: p.ui_type });
+            }
+        }
+        const PATH_TYPES = new Set(["filepath", "file", "string"]);
+        const isPathType = (t) => t && PATH_TYPES.has(String(t).toLowerCase());
+
+        const declarations = [];
+        for (const p of cp) {
+            if (p && p.key && p.filepath_param) {
+                declarations.push({ from: p.key, declared: String(p.filepath_param) });
+            }
+        }
+        for (const [lname, lvl] of Object.entries(levels || {})) {
+            for (const item of (lvl && lvl.params) || []) {
+                if (item && typeof item === "object" && item.key && item.filepath_param) {
+                    declarations.push({ from: `${lname}.${item.key}`, declared: String(item.filepath_param) });
+                }
+            }
+        }
+
+        const missing = [];
+        const wrongType = [];
+        for (const { from, declared } of declarations) {
+            const trimmed = declared.trim();
+            if (!trimmed) continue;
+            let target = cpTypeByKey.get(trimmed);
+            if (!target && trimmed.includes(":")) {
+                target = cpTypeByKey.get(trimmed.slice(trimmed.lastIndexOf(":") + 1));
+            }
+            if (!target) {
+                missing.push(`${from} -> "${trimmed}"`);
+                continue;
+            }
+            if (!isPathType(target.type) && !isPathType(target.ui_type)) {
+                wrongType.push(`${from} -> "${trimmed}" (${target.type || target.ui_type || "untyped"})`);
+            }
+        }
+        if (wrongType.length) {
+            add("warn", "filepath-param-not-a-path",
+                `${wrongType.length} filepath_param declaration(s) name a chain_params key that ` +
+                `is not filepath/file/string, so the file cell will stringify a number instead of ` +
+                `showing a filename: ${wrongType.slice(0, 6).join("; ")}` +
+                (wrongType.length > 6 ? `, and ${wrongType.length - 6} more` : ""));
+        }
+        if (missing.length) {
+            add("warn", "filepath-param-not-a-path",
+                `${missing.length} filepath_param declaration(s) name a key chain_params does not ` +
+                `declare at all, so the file cell can never resolve a source: ` +
+                `${missing.slice(0, 6).join("; ")}` +
+                (missing.length > 6 ? `, and ${missing.length - 6} more` : ""));
+        }
+    }
+
     /* ---- metadata gaps ---------------------------------------------------- */
 
     const index = buildMetaIndex({ hierarchy, chainParams: cp });

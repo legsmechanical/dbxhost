@@ -37,7 +37,7 @@ import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
 import { S } from './ui_state.mjs';
 import { slotIndex, syncLinkAudioRoutingFromRoutes,
-         invalidateLinkAudioRoutingCache } from './ui_engine.mjs';
+         invalidateLinkAudioRoutingCache, linkAudioRoutingJustEnabled } from './ui_engine.mjs';
 import { clipHasContent, _clipIsEmpty } from './ui_pure.mjs';
 import { showActionPopup, writeSidecar, uuidToStatePath, uuidToUiStatePath,
          uuidToNewProjectPath } from './ui_persistence.mjs';
@@ -51,6 +51,19 @@ import { sessionHasAnyContent } from './ui_scene.mjs';
  * Keep it that way: no top-level use of anything from this import. */
 import { disarmRecord } from './ui_record.mjs';
 import { dspGet, dspGetInt, dspGetStr, prefetchTrackDigests, releaseTrackDigests } from './ui_dsp_get.mjs';
+
+/* Popup counterpart of the host's warnIfLinkDisabled (src/shadow/shadow_ui.js)
+ * for a dAVEBOx screen dAVEBOx never opens (the host's own Link/System page).
+ * Call right after syncLinkAudioRoutingFromRoutes() — checks
+ * linkAudioRoutingJustEnabled() so this fires once per 0->1 transition, not
+ * once per tick while routing stays on. */
+function warnIfLinkAudioSystemDisabled() {
+    if (!linkAudioRoutingJustEnabled()) return;
+    let sysLinkOn = false;
+    try { sysLinkOn = shadow_get_param(0, 'master_fx:system_link_enabled') === '1'; } catch (e) { /* keep default */ }
+    if (!sysLinkOn)
+        showActionPopup('LINK AUDIO ROUTE', 'requires Link', 'enabled in Move', 'System Settings');
+}
 
 const pendingLiveNotes = Array.from({length: NUM_TRACKS}, () => []);  /* buffered live notes flushed each tick */
 export const pendingDrumNoteOffs = Array.from({length: NUM_TRACKS}, () => []);  /* drum tap note-offs deferred 1 tick to avoid coalescing with note-on */
@@ -1145,6 +1158,7 @@ export function applyTrackConfig(t, key, val) {
         /* Link Audio rebuild is derived from routing, not a setting — a track
          * routed to Move needs its audio back through that Move bus. */
         syncLinkAudioRoutingFromRoutes(S.trackRoute);
+        warnIfLinkAudioSystemDisabled();
         /* Move route offers only Off/Poly aftertouch — normalize a lingering
          * Channel selection so the AftTch menu + send stay in sync. */
         if (val === 1 && S.trackAtMode[t] === 2) { S.trackAtMode[t] = 1; writeSidecar(); }
@@ -1800,6 +1814,7 @@ function _syncClipsFromDspInner() {
      * first or an unchanged-looking value would suppress the correcting write. */
     invalidateLinkAudioRoutingCache();
     syncLinkAudioRoutingFromRoutes(S.trackRoute);
+    warnIfLinkAudioSystemDisabled();
     /* ONE dAVEBOx TRACK PER MOVE INSTRUMENT (Josh, 2026-09-13): a project made
      * before the rule can still hold two tracks on one Move instrument.
      * REPORTED, never repaired — the picker refuses NEW duplicates and shows the

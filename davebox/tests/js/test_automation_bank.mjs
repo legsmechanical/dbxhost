@@ -2,7 +2,7 @@ import './_bulk_get_stub.mjs';
 /* tests/js/test_automation_bank.mjs — THE AUTOMATION BANK (spec §2, Josh
  * 2026-09-02): last on the walk after MACROS, replacing the old AUTO bank 6.
  * The card is the LIST of what is automated in the clip (bracketed corners);
- * the knobs are a no-op; jog click enters the menu (cursor + Clear clip);
+ * the knobs are a no-op; jog click enters the menu (cursor + Clear all);
  * click on a row opens its ops (Delete / Mute / Smooth / Loop); Delete +
  * click clears the clip; Back closes one layer at a time; every edit takes an
  * undo checkpoint. Smooth/Stepped moved here from the module editor.
@@ -358,6 +358,6 @@ step('⭑ a session strip turn goes through the owner: playing → pa_live on <s
 });
 
 if (failed) { console.log('FAIL: automation bank'); process.exit(1); }
-console.log('PASS: the AUTOMATION bank — the list, the menu, the ops, Clear clip');
+console.log('PASS: the AUTOMATION bank — the list, the menu, the ops, Clear all');
 }
 main().catch(e => { console.error(e); process.exit(1); });
