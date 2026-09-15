@@ -977,15 +977,34 @@ function ensureCustomSplash() {
          * Probed by name rather than listed: this file has no readdir binding,
          * and a fixed small pool costs ten host_file_exists calls once.
          *
-         * ⭑ STAGE-1 HANDOFF (2026-08-31): on the branch where the stock stack
-         * is ALIVE at entry, quiesce-stock.sh still paints the artwork into
-         * the stock display the instant the tool is picked — and this stage
-         * then rolled its OWN face on top, so the user watched the artwork
-         * CHANGE mid-launch (Josh: "a DIFFERENT splash shows"). quiesce leaves
-         * a timestamped marker naming what it painted; a fresh one means the
-         * artwork has already been on screen for the whole entry gap, so this
-         * stage is SKIPPED and the boot splash is the text screen alone —
-         * repeating the same picture "said nothing" (Josh, 2026-08-24).
+         * ⭑ STAGE-1 HANDOFF (2026-08-31; the pick went away 2026-09-15). On
+         * the branch where the stock stack is ALIVE at entry, quiesce-
+         * stock.sh used to paint artwork into the stock display the instant
+         * the tool was picked — and this stage then rolled its OWN face on
+         * top, so the user watched the artwork CHANGE mid-launch (Josh: "a
+         * DIFFERENT splash shows"). quiesce left a timestamped marker naming
+         * what it painted; a fresh one meant the artwork had already been on
+         * screen for the whole entry gap, so this stage was SKIPPED and the
+         * boot splash was the text screen alone — repeating the same picture
+         * "said nothing" (Josh, 2026-08-24).
+         *
+         * 2026-09-15 (Josh: "get rid of the 'daves' splash on launch (b/c it
+         * flickers for just a split second before 'move terminated' shows)"):
+         * quiesce-stock.sh no longer paints ANY artwork into stock's display
+         * — stock's own graceful Move exit repaints "Move terminated" over it
+         * within a frame or two, so the Dave was a flicker, not a hold. It
+         * still writes this marker, now carrying a "skip" pick instead of a
+         * real splash-N.hex path: its mere presence (and freshness) says
+         * "this was a cold Tools-menu/boot entry — show the text screen,
+         * deal NOTHING", per the standing board item (DBX-014: a Dave is
+         * dealt on PROJECT LOAD, never on a tools-menu launch). Since
+         * quiesce-stock.sh runs ONLY on that cold-entry path (never during an
+         * in-session project-load relaunch — see standalone/scripts/
+         * launch.sh's "relaunch requested" branch, which restarts Move
+         * directly and never calls back into quiesce-stock.sh), the marker's
+         * mere existence already distinguishes the two cases: a relaunch
+         * finds no marker here, falls through below, and deals its own Dave
+         * exactly as before.
          * Consumed by overwriting empty (no delete binding here); a marker
          * older than 120 s is a crashed launch's leftover and is ignored. */
         let stage1Done = false;
@@ -995,8 +1014,11 @@ function ensureCustomSplash() {
             const ts = parseInt(parts[0], 10);
             if (!isNaN(ts) && Math.abs(Date.now() / 1000 - ts) < 120) {
                 stage1Done = true;
-                debugLog("splash: stage-1 artwork already shown (" +
-                         (parts[1] || "?") + ") — text screen only");
+                debugLog("splash: stage-1 " +
+                         (parts[1] === "skip"
+                             ? "declined (tools-menu launch — no Dave)"
+                             : "artwork already shown (" + (parts[1] || "?") + ")") +
+                         " — text screen only");
             }
             host_write_file(handoff, "");   /* consume, one launch only */
         }

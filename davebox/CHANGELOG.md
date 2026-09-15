@@ -344,6 +344,9 @@ the section into a versioned heading at release time.
   Ableton export used to leave Live holding that lock's value from the very
   start — dAVEBOx itself plays the lane's last value there instead, looping
   back around. The export now matches what dAVEBOx plays.
+- **The project picker's header reads "Select Project" instead of "dAVEBOx".**
+  The wordmark told you what app you were in, not what to do — the picker's
+  one job is choosing a project, so its header says so now.
 - **A fresh launch always asks which project to open.** Launching dAVEBOx no
   longer sometimes reopened the project you were last in: a late report about
   the previous session's set could flash a "project did not open" screen and

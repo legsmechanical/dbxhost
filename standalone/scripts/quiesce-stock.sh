@@ -70,25 +70,22 @@ say() {
 # freezing (or a graceful Move exit) with shadow_ui simply still running is
 # the same shape as the old post-timeout fallback, which has run this way for
 # months whenever shadow_ui was slow to react.
-# Paint the dAVEBOx splash into the STOCK shadow display before freezing, so
-# the frozen frame the panel retains through the whole entry gap is the
-# splash — the user sees "picked the tool → splash" within a second, and the
-# standalone host's own boot splash then replaces it — with the TEXT screen
-# now (wordmark + Schwung base version), so the two screens say different
-# things instead of the same one twice.
-# ⭑ The artwork ROTATES (Josh, 2026-08-24): one of splash-0..N.hex at random,
-# a different face each launch. Falls back to the single splash.hex if the
-# numbered set is not installed, so an older payload still paints something.
-# Without this the retained frame is the stock Tools menu, which reads as a
-# hang (Josh, first hands-on 2026-08-15: "no indication that it's loading").
-# The shim keeps compositing /dev/shm/schwung-display for the frames between
-# shadow_ui's exit and the freeze — display_mode stays set (re-asserted here
-# for good measure), which is exactly why the menu stayed on screen before.
-# ⚠ The display SHM is PAGE-PACKED (8 pages x 128 cols, byte = 8 vertical
-# pixels, bit 0 topmost — see movy grab-screen / display_server.c), while
-# splash.hex is row-major MSB-first; the python below converts.
+# paint_splash() used to paint the dAVEBOx splash (a rotating Dave portrait,
+# Josh 2026-08-24: "no indication that it's loading") into the STOCK shadow
+# display before freezing, so the frozen frame the panel retained through the
+# whole entry gap was the splash, and the standalone host's own boot splash
+# then replaced it with the TEXT screen (wordmark + Schwung base version).
+# ⭑⭑ 2026-09-15 (Josh: "get rid of the 'daves' splash on launch (b/c it
+# flickers for just a split second before 'move terminated' shows)"): that
+# painted frame is no longer RETAINED through the gap — the graceful stock-
+# Move exit below now repaints "Move terminated" over it within a frame or
+# two, so the Dave read as a flicker, not a hold, and disappeared before it
+# said anything. paint_splash() now only blanks the LEDs and leaves stock's
+# own frame on screen; see the comment inside it for the full reasoning
+# (including why this also satisfies "Dave only on project load", DBX-014).
 # Every LED dark, as early as the surface can be written (Josh, 2026-08-24:
-# "as early as possible when davebox is selected from stock tool menu").
+# "as early as possible when davebox is selected from stock tool menu") is
+# the part of this that still applies.
 #
 # ⚠⚠ The shim boot LED-strip is NOT enough on its own, and a first attempt that
 # relied on it shipped without darkening anything: stripping stops Move
@@ -122,58 +119,50 @@ paint_splash() {
     # covers all four routes and a new one inherits it. Writing dark twice is
     # dark — the repeat also re-asserts after the save.
     blank_leds
+    # ⭑⭑ NO DAVE ON THIS PATH (Josh, 2026-09-15: "get rid of the 'daves'
+    # splash on launch (b/c it flickers for just a split second before 'move
+    # terminated' shows)"). This function used to deal a Dave here (via
+    # pick-splash.py) and paint it straight into STOCK's display, on the
+    # theory that the frame would be RETAINED — either by the freeze below,
+    # or (before that existed) simply by nothing else drawing again. Tonight's
+    # graceful-exit change broke that theory: stock's own Move now shuts
+    # itself down ORDERLY and repaints "Move terminated" over whatever we just
+    # painted, within a frame or two of the handoff. The Dave was on screen
+    # for a flicker and then replaced by something WORSE than the Tools menu
+    # it used to hold — not "instead of a hang", an extra flash on top of one.
+    # This also lines up with the standing board item (DBX-014, Josh: "Unwrap
+    # a Dave only when loading a project, not on launch from tools menu") —
+    # this whole script runs ONLY on that cold Tools-menu / boot-selector-
+    # while-stock-was-alive entry (launch.sh calls it exactly once, before the
+    # session's own supervisor loop even starts); an in-session project-load
+    # relaunch never calls back into this script — see
+    # standalone/scripts/launch.sh's "relaunch requested" branch, which
+    # restarts Move directly and never touches quiesce-stock.sh at all. So "no
+    # Dave dealt here" already IS "no Dave on a Tools-menu launch", with
+    # nothing further to gate.
+    #
+    # So: no pick-splash.py call, nothing painted into stock's display, and
+    # nothing recorded into daves-seen.txt (the Dave Box album stays accurate
+    # — it must record only Daves that were genuinely SHOWN, and this path no
+    # longer shows one). We deliberately leave stock's own frame up rather
+    # than painting a placeholder of ours — simpler, and "get rid of it" is
+    # Josh's own instruction.
     [ -e /dev/shm/schwung-display ] || return 0
-    # ⭑ ONE frame per LAUNCH, not one per call (Josh, 2026-08-24: "the splash
-    # sometimes shows one for a brief second and then a different one"). This
-    # function runs TWICE on every route — once directly, then again inside
-    # freeze_move to re-assert after the save — and the pick used to be made
-    # inside the python each time, so the second call rolled a different face
-    # and the user watched it change. The choice is made once here, in the
-    # shell, and reused; rotation is between launches, which is the whole idea.
-    if [ -z "${SPLASH_PICK:-}" ]; then
-        # ⭑ THE DAVE BOX PACK-OPENING (Josh, 2026-08-31): pick-splash.py does a
-        # rarity-WEIGHTED pick over splash-pool.tsv and records the dealt
-        # Dave's permanent number into daves-seen.txt — the collection the
-        # module's Dave Box album shows. Falls back to the old uniform pick
-        # (recording nothing) if the pool manifest is missing.
-        SPLASH_PICK=$(python3 /data/UserData/dbx-host/scripts/pick-splash.py 2>/dev/null || true)
-        export SPLASH_PICK
-    fi
-    [ -n "$SPLASH_PICK" ] || return 0
-    # ⭑ THE STAGE-1 HANDOFF (2026-08-31). The standalone host's own boot splash
-    # also carries an artwork stage (ensureCustomSplash, shadow_ui.js) — added
-    # for the branch where stock PRE-KILLS the stack and this paint never runs.
-    # On THIS branch it does run, and without the handoff the host rolled its
-    # own independent face: the user watched the artwork CHANGE mid-launch
-    # (Josh, 2026-08-31: "a DIFFERENT splash shows"). The marker says "stage 1
-    # already showed the artwork"; the host consumes it and goes straight to
-    # the text screen — the original 08-24 design, where repeating the same
-    # picture "said nothing". Timestamped so a stale marker from a crashed
-    # launch cannot suppress the artwork forever; the host ignores one older
-    # than 120 s.
-    printf '%s %s\n' "$(date +%s)" "$SPLASH_PICK" \
-        > /data/UserData/dbx-host/splash-stage1.txt 2>/dev/null || true
-    python3 - <<'PY' && say "splash painted into stock display ($SPLASH_PICK)"
-import mmap, os
-pick = os.environ.get("SPLASH_PICK", "")
-if not pick or not os.path.isfile(pick):
-    raise SystemExit(0)
-src = bytes.fromhex(open(pick).read().strip())
-out = bytearray(1024)
-for y in range(64):
-    row = y * 16
-    for x in range(128):
-        if (src[row + (x >> 3)] >> (7 - (x & 7))) & 1:
-            out[(y >> 3) * 128 + x] |= 1 << (y & 7)
-with open("/dev/shm/schwung-display", "r+b") as f:
-    mm = mmap.mmap(f.fileno(), 1024)
-    mm[:] = bytes(out)
-    mm.flush(); mm.close()
-with open("/dev/shm/schwung-control", "r+b") as f:
-    mm = mmap.mmap(f.fileno(), 256)
-    mm[0] = 1          # display_mode: keep the shim compositing our frame
-    mm.flush(); mm.close()
-PY
+    # ⭑ THE STAGE-1 HANDOFF (2026-08-31, revised 2026-09-15). The standalone
+    # host's own boot splash (ensureCustomSplash, shadow_ui.js) still needs
+    # telling that "stage 1" already happened on this launch — without that it
+    # cannot tell a cold Tools-menu entry (this script) from an in-session
+    # project-load relaunch (which never runs this script, and where dealing
+    # its OWN Dave is exactly the DBX-014 behaviour we want to keep). Since we
+    # no longer paint any artwork, the marker now carries a "skip" pick rather
+    # than a real splash-N.hex path: the host reads its mere PRESENCE (and
+    # freshness) as "stage 1 is decided — go straight to the text screen, deal
+    # nothing", not as "here is the face that was shown". Timestamped so a
+    # stale marker from a crashed launch cannot suppress the host's own Dave
+    # forever; the host ignores one older than 120 s.
+    printf '%s skip\n' "$(date +%s)" \
+        > /data/UserData/dbx-host/splash-stage1.txt 2>/dev/null \
+        && say "stage-1 marker written (no Dave on tools launch)"
 }
 
 # ⭑ THE GRACEFUL EXIT (2026-09-15). Freezing and then SIGKILLing Move leaves the
