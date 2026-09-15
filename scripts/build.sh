@@ -337,7 +337,7 @@ if needs_rebuild build/schwung-shim.so \
     src/host/shadow_led_queue.h src/host/shadow_state.h \
     src/host/plugin_api_v1.h src/host/unified_log.h src/host/tts_engine.h \
     src/host/schwung_trace.h \
-    src/host/link_audio.h src/host/shadow_shm_util.h; then
+    src/host/link_audio.h src/host/shadow_shm_util.h src/host/shim_thread.h; then
     echo "Building shim..."
     "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g3 -shared -fPIC \
         -o build/schwung-shim.so \
@@ -596,7 +596,8 @@ if needs_rebuild build/modules/chain/dsp.so \
     src/host/unified_log.h src/host/plugin_api_v1.h src/host/audio_fx_api_v1.h \
     src/host/audio_fx_api_v2.h src/host/midi_fx_api_v1.h src/host/lfo_common.h \
     src/host/bus_mix.h src/host/bus_route.h src/host/bus_voice_apply.h \
-    src/host/voice_send_source.h src/host/split_voices_parse.h; then
+    src/host/voice_send_source.h src/host/split_voices_parse.h \
+    src/host/shim_thread.h; then
     echo "Building chain DSP..."
     "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
         src/modules/chain/dsp/chain_host.c \

@@ -22,6 +22,7 @@
 #include "unified_log.h"
 
 #include "host/schwung_paths.h"
+#include "host/shim_thread.h"   /* shim threads must never receive the host's SIGTERM */
 /* Voice registration function (not in public headers) */
 extern cst_voice *register_cmu_us_kal(const char *voxdir);
 
@@ -295,7 +296,7 @@ bool flite_tts_init(int sample_rate) {
     feat_set_float(voice->features, "int_f0_target_mean", tts_pitch);
 
     synth_thread_running = true;
-    if (pthread_create(&synth_thread, NULL, flite_synthesis_thread, NULL) != 0) {
+    if (shim_pthread_create(&synth_thread, NULL, flite_synthesis_thread, NULL) != 0) {
         unified_log("tts_engine", LOG_LEVEL_ERROR, "Failed to create synthesis thread");
         synth_thread_running = false;
         return false;
