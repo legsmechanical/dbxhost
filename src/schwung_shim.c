@@ -48,6 +48,7 @@
 #include "host/shadow_test_stream.h"
 #include "host/shadow_chain_types.h"
 #include "host/unified_log.h"
+#include "host/shim_signal_chain.h"
 #include "host/sa_master_volume.h"
 #include "host/spawn_command.h"
 #include "host/schwung_trace.h"
@@ -3300,6 +3301,13 @@ static int shadow_shm_initialized = 0;
 
 /* Initialize shadow shared memory segments */
 
+/* The SIGTERM action that was installed before ours — saved so the handler
+ * can hand the signal back instead of consuming it. See the rationale in
+ * host/shim_signal_chain.h: SIGTERM is the host process's own graceful
+ * shutdown request, and that shutdown is what quiesces the audio device. */
+static struct sigaction prev_sigterm_action;
+static int prev_sigterm_saved = 0;
+
 /* Signal handler for crash diagnostics - async-signal-safe */
 static void crash_signal_handler(int sig, siginfo_t *si, void *uctx_v)
 {
@@ -3355,11 +3363,20 @@ static void crash_signal_handler(int sig, siginfo_t *si, void *uctx_v)
         for (int i = 0; i < hp; i++) msg[pos++] = hex[i];
     }
 
-    const char *suffix = " - terminating";
+    const char *suffix = sigterm_is_fatal_here(sig) ? " - terminating"
+                                                    : " - chaining to previous handler";
     for (int i = 0; suffix[i]; i++) msg[pos++] = suffix[i];
     msg[pos] = '\0';
 
     unified_log_crash(msg);
+
+    /* A termination request is not a crash: log it, then hand it straight on
+     * so the host's own shutdown runs. No backtrace file, no _exit(). */
+    if (!sigterm_is_fatal_here(sig)) {
+        chain_prev_sigaction(prev_sigterm_saved ? &prev_sigterm_action : NULL,
+                             sig, si, uctx_v);
+        return;
+    }
 
     /* Dump a call stack to a dedicated file for post-mortem symbolization.
      * backtrace()/backtrace_symbols_fd() are async-signal-safe (no malloc).
@@ -3478,7 +3495,12 @@ static void init_shadow_shm(void)
         sigaction(SIGSEGV, &sa, NULL);
         sigaction(SIGBUS,  &sa, NULL);
         sigaction(SIGABRT, &sa, NULL);
-        sigaction(SIGTERM, &sa, NULL);
+        /* Save the host's SIGTERM action so the handler can chain to it.
+         * This init runs lazily from the first SPI transfer, long after the
+         * host process has installed its own shutdown handler, so the saved
+         * action is normally that handler — but SIG_DFL is handled too. */
+        if (sigaction(SIGTERM, &sa, &prev_sigterm_action) == 0)
+            prev_sigterm_saved = 1;
     }
 
     /* Log startup identity (always-on, no flag needed) */
