@@ -157,9 +157,10 @@ const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 /* ⚠⚠ THE CANONICAL SPECIFIER, AND IT IS LOAD-BEARING. The registry is the
  * one the grid reads only because both names normalise to the same module:
- * binding_movy.mjs reaches it relatively (./viz.mjs -> ./widget_registry.mjs)
- * from this same `/data/UserData/schwung/shared/param_pages/` directory, and
- * QuickJS keys a module by its normalised name. Any other spelling — a
+ * the binding reaches it from inside this same
+ * `/data/UserData/schwung/shared/param_pages/` directory (page_controller.mjs
+ * and viz.mjs import `./widget_registry.mjs`), and QuickJS keys a module by
+ * its normalised name. Any other spelling — a
  * relative path, a copied file, an inlined bundle — is a SECOND registry that
  * the grid never consults, and every custom cell draws a plain dial with
  * nothing logged. tests/test_custom_widgets_bundle.sh pins it in the bundle. */
