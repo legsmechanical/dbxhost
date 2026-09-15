@@ -611,6 +611,11 @@ setsid --wait bash -c '
       if [ -f "$DBX_DIR/relaunch_patch.sh" ]; then
         sh "$DBX_DIR/relaunch_patch.sh" || echo "WARNING: relaunch patch failed"
         rm -f "$DBX_DIR/relaunch_patch.sh"
+        # Set-folder order fix (S7): a patch can rename a song folder, and the
+        # new name may list after the state dir — Move would then open the
+        # state dir as the set. Still inside the Move-is-down window.
+        sh "$DBX_DIR/scripts/project-cmd.sh" fix-order || \
+          echo "WARNING: fix-order failed — continuing"
       fi
       if [ -f "$DBX_DIR/relaunch_song_index" ]; then
         _rsi=$(cat "$DBX_DIR/relaunch_song_index")

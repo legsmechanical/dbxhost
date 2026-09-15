@@ -864,6 +864,10 @@ PYEOF
             printf 'mv %s %s\n' \
                 "'$SETS_DIR/$_uuid/$(printf '%s' "$_old" | sed "s/'/'\\\\''/g")'" \
                 "'$SETS_DIR/$_uuid/$(printf '%s' "$2"   | sed "s/'/'\\\\''/g")'"
+            # The new name can list on the other side of the state dir; the
+            # launcher also sweeps fix-order after every patch, this names it.
+            printf 'sh %s fix-order %s\n' \
+                "'$(printf '%s' "$DBX_PY_DIR/project-cmd.sh" | sed "s/'/'\\\\''/g")'" "'$_uuid'"
         } >> "$DBX_DIR/relaunch_patch.sh"
         printf '%s\n' "$1" > "$DBX_DIR/relaunch_song_index"
         # A rename issued while NOTHING is loaded (the boot picker) must bring
@@ -1031,10 +1035,37 @@ if orphans:
         quarantined += 1
         print("project-cmd: repair-indices: quarantined %s -> %s" % (n, dest))
 
-if repaired or quarantined:
+# STATE-DIR ORDER (set-folder order fix, S7): a project whose state dir lists
+# BEFORE its song folder opens as an empty Move set — Move takes the first
+# subfolder. Projects made before the fix, or copied/renamed by Move itself,
+# are renamed here to the first name that lists after. Same window as the rest
+# of this function: Move is down, so nothing holds the directory.
+reordered = ss.fix_library_order(sets_dir)
+for u, old, new in reordered:
+    print("project-cmd: repair-indices: %s state dir %s -> %s (listed before the song)" % (u, old, new))
+
+if repaired or quarantined or reordered:
     os.sync()
-    print("project-cmd: repair-indices: %d project(s) checked, %d re-indexed, %d quarantined"
-          % (len(projects), repaired, quarantined))
+    print("project-cmd: repair-indices: %d project(s) checked, %d re-indexed, %d quarantined, %d re-ordered"
+          % (len(projects), repaired, quarantined, len(reordered)))
+PYEOF
+}
+
+# Re-order state dirs that list before their song folder — one project, or the
+# whole library. The same pass repair-indices ends with, as its own verb for
+# the launcher's relaunch branch: a rename of the OPEN project is applied by
+# relaunch_patch.sh after Move exits, and the new song name may list on the
+# other side of the state dir. ⚠ Only while Move is not running.
+do_fix_order() { # [uuid]
+    python3 - "$SETS_DIR" "${1:-}" <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import state_subdir as ss
+moved = ss.fix_library_order(sys.argv[1], sys.argv[2] or None)
+for u, old, new in moved:
+    print("project-cmd: fix-order: %s state dir %s -> %s (listed before the song)" % (u, old, new))
+if moved:
+    os.sync()
 PYEOF
 }
 
@@ -1049,5 +1080,6 @@ case "${1:-}" in
     normalize) shift; do_normalize "${1:-}" ;;
     rename) shift; do_rename "${1:-}" "${2:-}" "${3:-}" ;;
     repair-indices) do_repair_indices ;;
-    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>|repair-indices" ;;
+    fix-order) shift; do_fix_order "${1:-}" ;;
+    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>|repair-indices|fix-order [uuid]" ;;
 esac

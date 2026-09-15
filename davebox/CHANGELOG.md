@@ -334,7 +334,8 @@ the section into a versioned heading at release time.
   one pad in five (13, 14, 21 and 31 among them on the device it was found
   on), a brand-new project, a copy or a renamed project could open as an
   empty set because Move picked dAVEBOx's own data folder as the song. Each
-  project's data folder is now named so Move always finds the song first.
+  project's data folder is now named so Move always finds the song first,
+  and projects already affected are repaired the next time dAVEBOx launches.
 - **A project that fails to open says so, instead of quietly saving into it.**
   Occasionally Move can't open the project you picked and starts an empty set
   of its own. dAVEBOx used to carry on as if the project were open — and save

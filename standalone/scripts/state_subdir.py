@@ -166,3 +166,30 @@ def fix_state_order(uuid_dir):
             return (have, name)
         os.rename(probe, old)     # the listing disagreed after the move: put it back
     return None
+
+
+UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$")
+
+
+def fix_library_order(sets_dir, only_uuid=None):
+    """fix_state_order over every project dir (or just `only_uuid`).
+
+    Returns [(uuid, old, new)] for each state dir it moved. Same window rule as
+    fix_state_order: Move must not be holding any of them open."""
+    moved = []
+    try:
+        names = [only_uuid] if only_uuid else sorted(os.listdir(sets_dir))
+    except OSError:
+        return moved
+    for u in names:
+        p = os.path.join(sets_dir, u)
+        if not UUID_RE.match(u) or not os.path.isdir(p):
+            continue
+        try:
+            m = fix_state_order(p)
+        except OSError as e:
+            print("project-cmd: fix-order: WARNING %s: %s" % (u, e))
+            continue
+        if m:
+            moved.append((u, m[0], m[1]))
+    return moved
