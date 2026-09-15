@@ -14,8 +14,9 @@ import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_i
 /* The KIT chassis. ui_movy is pure — no imports, no state — so pulling it in
  * here cannot cycle. See docs/UI_LANGUAGE.md: a list of the app's own structure
  * renders on the kit; the host chassis is for dialogs. */
-import { drawKitHeader, drawKitBrandHeader, drawKitList, fitHdr, hdrWidth,
-         drawKitStackedList, drawKitBackdropDim, drawKitCrumbs } from './ui_movy.mjs';
+import { drawKitHeader, drawKitList, fitHdr, hdrWidth, hdrPrint,
+         MV_BRAND_HDR_H, drawKitStackedList, drawKitBackdropDim, drawKitCrumbs } from './ui_movy.mjs';
+import { fontPrint4x5, fontWidth4x5 } from './ui_fonts_pp.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
     dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
@@ -1400,6 +1401,19 @@ function _projectPadPickerModifiers_impl() {
     if (dirty) S.screenDirty = true;
 }
 
+/* The picker's own header: the brand bar's height (MV_BRAND_HDR_H) and y, but
+ * the title "SELECT PROJECT" in the kit's 4x5 caps face, centred — Josh,
+ * 2026-09-15: the header should say what the screen is for, and not in the
+ * wordmark's mixed-case font. Nothing else on this screen moved. */
+function _drawProjectPickerHeader() {
+    /* ALL CAPS in the kit's 4x5 face, not the wordmark's mixed-case header
+     * font (Josh, 2026-09-15: "project picker header shouldn't use the mixed
+     * font. use all caps."). Same bar, same y, still centred. */
+    const t = 'SELECT PROJECT';
+    fill_rect(0, 0, 128, MV_BRAND_HDR_H, 1);
+    fontPrint4x5(Math.max(2, Math.round((128 - fontWidth4x5(t)) / 2)), 1, t, 0);
+}
+
 /* ⚠ PICKER — opted OUT of the 2026-08-27 menu type rule at every drawKitList
  * call below (`hostLabels: false`), including the menu and confirms that live
  * INSIDE it: it is one surface and half-converting it would look like a bug. */
@@ -1432,7 +1446,7 @@ function _drawProjectPadPicker_impl() {
         /* `restarting` carries its VERB rather than a bare true — two gestures
          * now take this path (rename of the open project, delete of it) and a
          * screen that says RENAMING through a delete is worse than no screen. */
-        drawKitBrandHeader();
+        _drawProjectPickerHeader();
         drawKitList([{ label: p.restarting, hdr: true },
                      { note: 'Restarting' }, { note: 'the session...' }], -1,
                     { hostLabels: false });
@@ -1455,7 +1469,7 @@ function _drawProjectPadPicker_impl() {
      * them ran off the right edge of the panel. */
     if (p.deleteIdx >= 0) {
         const dp = p.byIndex[p.deleteIdx];
-        drawKitBrandHeader();
+        _drawProjectPickerHeader();
         drawKitList([{ label: 'DELETE ' + (dp ? dp.name : '?'), hdr: true },
                      { divider: true },
                      { note: 'Tap the pad again' },
@@ -1466,7 +1480,7 @@ function _drawProjectPadPicker_impl() {
     }
     if (p.copySrcIdx >= 0) {
         const sp = p.byIndex[p.copySrcIdx];
-        drawKitBrandHeader();
+        _drawProjectPickerHeader();
         drawKitList([{ label: 'COPY ' + (sp ? sp.name : '?'), hdr: true },
                      { divider: true },
                      { note: 'Tap an empty pad' }], -1, { hostLabels: false });
@@ -1479,7 +1493,7 @@ function _drawProjectPadPicker_impl() {
      * live, which is the part a 1-bit display cannot do. */
     if (p.colorPick) {
         const cp = p.byIndex[p.colorPick.k];
-        drawKitBrandHeader();
+        _drawProjectPickerHeader();
         /* No title row here, deliberately: the colour list SCROLLS, and a row-0
          * title scrolls off with it — worse than absent. Context is carried by
          * the flow (this screen opens from that project's own menu) and by the
@@ -1492,7 +1506,7 @@ function _drawProjectPadPicker_impl() {
 
     if (p.menu) {
         const mp = p.byIndex[p.menu.k];
-        drawKitBrandHeader();
+        _drawProjectPickerHeader();
         /* Name row + rule under it (Josh, 2026-08-23), then the actions. The
          * (Current) status folds into the name row's VALUE rather than keeping
          * its own note row — with the brand header above, a sixth row pushes
@@ -1534,7 +1548,7 @@ function _drawProjectPadPicker_impl() {
      * to the generic title and the screen carries one centred hint until a pad
      * is tapped. No gesture legend anywhere in here: copy and delete are
      * Move-native gestures the user already knows (Josh, 2026-08-15). */
-    drawKitBrandHeader();
+    _drawProjectPickerHeader();
     drawKitList([], -1, { emptyMsg: 'Select project', emptyHdr: true, hostLabels: false });
     _drawPreflightNotice();
 }
