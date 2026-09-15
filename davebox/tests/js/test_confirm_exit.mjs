@@ -87,7 +87,8 @@ function armed() {
 function reset() {
     S.confirmExit = null; S.confirmExitSel = 1;
     S.pendingSuspendManaged = false; S.pendingExitAfterSave = false;
-    S.pendingSuspendSave = false; S.exitFarewell = 0;
+    S.pendingSuspendSave = false; S.pendingStopBeforeSave = false;
+    S.playing = false; S.exitFarewell = 0;
     S.globalMenuOpen = false; S.awaitingProjectSelect = false;
     S.backPressTick = -1; S.backHoldFired = false; S.moveCoRunTrack = -1;
 }
@@ -98,6 +99,12 @@ function holdBack() {
     S.tickCount += 60; ticks(2);          /* 62 ticks ≈ 657 ms ≥ BACK_HOLD_MS */
     cc(MoveBack, 0);
 }
+/* Params the tick actually pushed. The global above is a no-op; a recorder is
+ * the same thing with a memory, so nothing else in this file changes. */
+const sentParams = [];
+globalThis.host_module_set_param = (k, v) => { sentParams.push(k + '=' + v); };
+function tickCapture() { sentParams.length = 0; S.tickCount++; tickmod._tickImpl(); return sentParams.slice(); }
+
 function menuAction(label) {
     menu.openGlobalMenu();                 /* builds S.globalMenuItems for the active track */
     const item = S.globalMenuItems.find((it) => it && it.label === label);
@@ -169,6 +176,49 @@ step('a second request while the modal is up changes nothing', () => {
     globalThis.onSessionExitRequest();      /* a quit request over a suspend modal */
     if (S.confirmExit !== 'suspend' || S.confirmExitSel !== 0)
         throw new Error('the second request rewrote the modal');
+});
+/* LEAVING WITH THE TRANSPORT RUNNING (device capture 2026-09-15). Quit and
+ * Shift+Back used to save and exit with the sequencer still rolling, and
+ * nothing after the gesture can release a voice — the shim `_exit`s on
+ * SIGTERM, and the DSP's own reset paths zero `playing` WITHOUT note-offs
+ * because they must not panic. A chain synth was left holding its last note.
+ * The project SWITCH already solved this with `pendingStopBeforeSave`; Quit
+ * now arms the same flag, so the tick drain stops a tick ahead of the save.
+ * ⚠ tick() swallows errors, so both assertions are POSITIVE — a set_param
+ * that was SENT, never "nothing happened". */
+step('Quit while PLAYING arms the stop, and the drain stops BEFORE the save', () => {
+    reset();
+    S.playing = true;
+    menuAction('Quit');
+    cc(JOG_TURN, 1); cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    if (!S.pendingExitAfterSave) throw new Error('Yes did not quit');
+    if (!S.pendingStopBeforeSave) throw new Error('the stop was not armed');
+    const t1 = tickCapture();
+    if (t1.indexOf('transport=stop') < 0)
+        throw new Error('tick 1 did not stop the transport: ' + JSON.stringify(t1));
+    if (t1.indexOf('save=1') >= 0)
+        throw new Error("the save shared the stop's tick (coalescing): " + JSON.stringify(t1));
+    if (S.playing) throw new Error('the JS mirror still says playing');
+    if (!S.pendingExitAfterSave) throw new Error('the exit fired before the save');
+    const t2 = tickCapture();
+    if (t2.indexOf('save=1') < 0)
+        throw new Error('tick 2 did not save: ' + JSON.stringify(t2));
+    if (!S.pendingExitAfterSave) throw new Error('the exit fired on the save tick');
+    reset();
+});
+step('control: Quit while STOPPED saves on tick 1, with no transport write', () => {
+    reset();
+    S.playing = false;
+    menuAction('Quit');
+    cc(JOG_TURN, 1); cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    if (!S.pendingExitAfterSave) throw new Error('Yes did not quit');
+    if (S.pendingStopBeforeSave) throw new Error('a stop was armed while stopped');
+    const t1 = tickCapture();
+    if (t1.indexOf('save=1') < 0)
+        throw new Error('tick 1 did not save: ' + JSON.stringify(t1));
+    if (t1.some((x) => x.indexOf('transport=') === 0))
+        throw new Error('a transport write while stopped: ' + JSON.stringify(t1));
+    reset();
 });
 step('knobs and Note/Session are declined under the modal (source pins)', () => {
     const src = readFileSync('ui/ui_input_cc.mjs', 'utf8');
