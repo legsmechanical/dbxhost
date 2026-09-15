@@ -1431,6 +1431,11 @@ static JSValue js_shadow_get_param(JSContext *ctx, JSValueConst this_val, int ar
 static long shadow_midi_out_drops = 0;
 
 
+/* Packets discarded because the shadow-UI MIDI-to-DSP SHM buffer was full
+ * when the caller wrote. Was silently zero-information before: the write
+ * returned success either way. See js_shadow_send_midi_to_dsp. */
+static long shadow_midi_dsp_drops = 0;
+
 /* Common implementation for sending MIDI via shared memory */
 static JSValue js_shadow_midi_send(int cable, JSContext *ctx, JSValueConst this_val,
                                    int argc, JSValueConst *argv) {
@@ -1562,17 +1567,41 @@ static JSValue js_shadow_send_midi_to_dsp(JSContext *ctx, JSValueConst this_val,
     if (slot >= 0 && slot < SHADOW_CHAIN_INSTANCES)
         slot_tag = (uint8_t)(slot + 1);
     int write_offset = shadow_midi_dsp->write_idx;
+    int dropped = 0;
     if (write_offset + 4 <= SHADOW_MIDI_DSP_BUFFER_SIZE) {
         shadow_midi_dsp->buffer[write_offset] = msg[0];
         shadow_midi_dsp->buffer[write_offset + 1] = msg[1];
         shadow_midi_dsp->buffer[write_offset + 2] = msg[2];
         shadow_midi_dsp->buffer[write_offset + 3] = slot_tag;
-        shadow_midi_dsp->write_idx = write_offset + 4;
+        shadow_midi_dsp->write_idx = (uint16_t)(write_offset + 4);
+    } else {
+        dropped = 1;
     }
 
     /* Signal shim that data is ready (barrier ensures buffer writes are visible first) */
     __sync_synchronize();
     shadow_midi_dsp->ready++;
+
+    /* Same "silent success" trap as js_shadow_midi_send: a caller that treats
+     * this return as fire-and-forget will retry on JS_FALSE (or at least know
+     * a note was lost) rather than believe a message reached the DSP that
+     * never did. Rate-limited for the same reason — shadow_ui is a separate
+     * SCHED_OTHER process, not the SPI callback, but a flood must not become
+     * a log storm. */
+    if (dropped) {
+        shadow_midi_dsp_drops += dropped;
+        static time_t last_report = 0;
+        time_t now = time(NULL);
+        if (now != last_report) {
+            last_report = now;
+            unified_log("shadow_ui", LOG_LEVEL_DEBUG,
+                        "shadow MIDI to DSP: buffer full, dropped %d packet(s) "
+                        "(%ld total) - more than %d bytes queued in one flush",
+                        dropped, shadow_midi_dsp_drops,
+                        SHADOW_MIDI_DSP_BUFFER_SIZE);
+        }
+        return JS_FALSE;
+    }
 
     return JS_TRUE;
 }

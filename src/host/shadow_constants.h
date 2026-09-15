@@ -696,11 +696,33 @@ _Static_assert((1ull << (8 * sizeof(((shadow_midi_out_t *)0)->write_idx))) >
  * (legacy zero-pad), 1..N = deliver directly to slot tag-1.
  */
 typedef struct shadow_midi_dsp_t {
-    volatile uint8_t write_idx;      /* Shadow UI increments after writing */
+    /* uint16_t, for the same reason as shadow_midi_out_t.write_idx above: the
+     * buffer is 512 bytes and this is a BYTE offset into it. As a uint8_t it
+     * saturated at 255, so the `write_offset + 4 <= SHADOW_MIDI_DSP_BUFFER_SIZE`
+     * bounds check in js_shadow_send_midi_to_dsp could never fire — a uint8_t
+     * cannot reach 512. At offset 252 the 65th packet of one flush wrapped
+     * write_idx 252 -> 0 (256 truncated to 8 bits), silently rewinding the
+     * buffer so later packets overwrote packet 1, and the shim's drain
+     * (shadow_midi.c:shadow_drain_ui_midi_dsp, `snapshot_len = write_idx`)
+     * then only ever saw `(4N mod 256)` bytes. Nothing counted the loss and
+     * js_shadow_send_midi_to_dsp still returned JS_TRUE either way. Found
+     * 2026-09-15 on-device: a load left a note held, and this ring was first
+     * suspected and cleared as the direct cause, but was lossy regardless and
+     * is fixed here as a latent copy of the already-fixed OUT-ring bug.
+     * Widening costs nothing — it takes one of the reserved bytes, so sizeof
+     * is unchanged and both mappers (shadow_ui.c, schwung_shim.c) use
+     * sizeof. */
+    volatile uint16_t write_idx;     /* Shadow UI increments after writing */
     volatile uint8_t ready;          /* Toggle to signal new data */
-    volatile uint8_t reserved[2];
+    volatile uint8_t reserved[1];
     uint8_t buffer[SHADOW_MIDI_DSP_BUFFER_SIZE];  /* MIDI frames (4 bytes each: status, d1, d2, slot tag) */
 } shadow_midi_dsp_t;
+
+/* The field above is load-bearing and its width is not obvious from its uses.
+ * A byte offset into the buffer must be able to reach the end of it. */
+_Static_assert((1ull << (8 * sizeof(((shadow_midi_dsp_t *)0)->write_idx))) >
+                   SHADOW_MIDI_DSP_BUFFER_SIZE,
+               "shadow_midi_dsp_t.write_idx cannot address its own buffer");
 
 /*
  * MIDI Inject ring — multi-producer, single-consumer SHM channel.
