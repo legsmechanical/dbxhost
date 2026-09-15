@@ -20,6 +20,92 @@
  * history, in a SHARED tree we no longer touch. Do not write a cleaner for
  * them there — that tree holds stock's own state.) */
 
+/* Release every pitch this instance is ACTUALLY SOUNDING, one note-off each.
+ *
+ * `state_load` below throws away the bookkeeping that says a note is down
+ * (`playing`, `note_active`, `pfx.event_count`, `pfx.active_notes`) without
+ * ever telling the synth. The note therefore holds — captured on device
+ * 2026-09-15 as a chain-synth note flat for six seconds after a project load,
+ * released only by the next panic. Worse, `pfx_emit`'s output-pitch refcount
+ * gate survives the reset: the pitch is still counted as sounding, so the
+ * NEXT note-on for it is swallowed as a duplicate and its matching note-off
+ * is swallowed too. The pitch is then stuck for good, until a `send_panic`.
+ *
+ * ⚠ This is NOT the MIDI panic the module rule forbids before `state_load`
+ * ("it floods the MIDI buffer and drops the load param"). A panic is a blind
+ * 16-channel × 128-note sweep per route — 2048 messages — and that flood is
+ * what swallows the load. This is a TARGETED release: at most one note-off
+ * per pitch that is genuinely sounding, so a silent instance sends nothing
+ * and a normal one sends a handful. The bound is per track ≤ 128, in
+ * practice ≤ the polyphony actually down.
+ *
+ * `pitch_refcount` is the set to walk, not `active_notes`. It counts what
+ * `pfx_emit` actually put on the wire, so it is by construction the notes the
+ * synth is holding; `active_notes` is INPUT-keyed and is cleared the moment
+ * `pfx_note_off` merely QUEUES an off, so it both misses notes already queued
+ * (queued, then wiped with `event_count`, so never sent) and lists pitches
+ * the wire never saw.
+ *
+ * Emit through `pfx_emit`, never `pfx_send`: `pfx_send` re-queues note-offs
+ * into the deferred event queue when swing is on, and the reset clears that
+ * queue a few lines later — the release would be swallowed by the very reset
+ * it is protecting against. `pfx_emit` is the single hardware-send choke
+ * point, so each off is routed exactly as the note-on that created it was:
+ * chain slot via `midi_send_internal_slot`, Move via `midi_inject_to_move`,
+ * USB-A via `midi_send_external`, honouring `MIDI to Track N` through
+ * `midi_dest_resolve`.
+ *
+ * ⭑ Per-route handling mirrors `send_panic`'s, including its deliberate
+ * ROUTE_MOVE choice: targeted per-voice note-offs only, and NO CC 120/123
+ * sweep at a Move instrument — Move's voice allocator corrupts when an
+ * all-notes-off is followed by explicit offs for pitches the CC already
+ * killed. Targeted offs are exactly the form `silence_active_notes_move`
+ * already uses, and are what `send_panic`'s ROUTE_MOVE comment assumes has
+ * happened.
+ *
+ * The refcount entry is zeroed BEFORE its off is emitted, which is what makes
+ * a single message enough: `pfx_emit` passes a note-off through unchanged
+ * when the refcount is already 0 (the documented panic / stray-off path),
+ * whereas decrementing from N would swallow the off until N reached 0. It
+ * also makes the release idempotent — a `send_panic` arriving afterwards
+ * finds every refcount at zero and every slot cold, so nothing is sent twice.
+ *
+ * RT safety: `set_param` is not the audio thread — `state_load` goes on to
+ * call `seq8_load_state`, which reads the state file, and file I/O from the
+ * render path is banned. This helper is in any case allocation-free,
+ * I/O-free and log-free, the same contract `silence_track_from_set_param`
+ * already meets from this identical context. */
+static void state_load_release_sounding(seq8_instance_t *inst) {
+    int t, p, l;
+    for (t = 0; t < NUM_TRACKS; t++) {
+        seq8_track_t *tr = &inst->tracks[t];
+        play_fx_t    *fx = &tr->pfx;
+        uint8_t off_s = (uint8_t)(0x80 | (tr->channel & 0x0F));
+        for (p = 0; p < 128; p++) {
+            if (!fx->pitch_refcount[p]) continue;
+            fx->pitch_refcount[p] = 0;
+            pfx_emit(fx, off_s, (uint8_t)p, 0);
+        }
+        /* Belt and braces: the loop already zeroed every non-zero entry, but
+         * the reset below must never leave a stale count behind — that is the
+         * half of the bug that makes the NEXT note-on vanish. */
+        memset(fx->pitch_refcount, 0, sizeof(fx->pitch_refcount));
+        /* Drum lanes carry their own monophonic engine with no refcount — one
+         * `active_note` each, whose generated pitch is what reached the wire.
+         * `drum_pfx_emit` for the same reason `pfx_emit` is used above: the
+         * lane's swing-defer queue is cleared by `drum_track_init` in the
+         * reset. */
+        for (l = 0; l < DRUM_LANES; l++) {
+            drum_pfx_t   *px = &tr->drum_lane_pfx[l];
+            pfx_active_t *an = &px->active_note;
+            if (!an->active) continue;
+            drum_pfx_emit(px, (uint8_t)(0x80 | (an->channel & 0x0F)),
+                          an->gen_notes[0], 0);
+            an->active = 0;
+        }
+    }
+}
+
 static int sp_globals_state(sp_ctx_t *cx) {
     seq8_instance_t *inst = cx->inst;
     const char *key = cx->key;
@@ -77,6 +163,11 @@ static int sp_globals_state(sp_ctx_t *cx) {
             inst->state_uuid[0] = '\0';
         }
         seq8_ilog(inst, inst->state_path);
+        /* Release what is genuinely sounding BEFORE the bookkeeping that says
+         * so is thrown away — targeted note-offs, not the forbidden panic.
+         * See state_load_release_sounding above for why a panic here would
+         * drop this very load param, and why the refcount must not survive. */
+        state_load_release_sounding(inst);
         /* Reset internal state without MIDI panic to avoid flooding the MIDI buffer. */
         {
             int t2, c2;
