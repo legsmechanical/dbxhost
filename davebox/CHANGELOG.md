@@ -339,6 +339,9 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **The project picker's header reads "Select Project" instead of "dAVEBOx".**
+  The wordmark told you what app you were in, not what to do — the picker's
+  one job is choosing a project, so its header says so now.
 - **A fresh launch always asks which project to open.** Launching dAVEBOx no
   longer sometimes reopened the project you were last in: a late report about
   the previous session's set could flash a "project did not open" screen and
