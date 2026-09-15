@@ -132,10 +132,15 @@ if grep -q 'SHARED_IMPORT_LOCAL     SCHWUNG_INSTALL_DIR "/shared/"' ../src/shado
 else
     bad "the shared-import rewrite no longer targets SCHWUNG_INSTALL_DIR"
 fi
-if grep -q 'JS_SetModuleLoaderFunc(rt, NULL, schwung_module_loader, NULL)' ../src/shadow/shadow_ui.c; then
-    ok "the rewriting module loader is still installed"
+# The resolver lives in src/host/shared_import_resolve.h since 2026-09-15: a
+# NORMALIZER as well as the loader, because a loader-only rewrite loaded a
+# second instance of any shared module reached both canonically and relatively
+# (tests/host/test_shared_import_one_instance.sh proves the behaviour).
+if grep -q 'schwung_install_module_resolver(rt);' ../src/shadow/shadow_ui.c \
+   && grep -q 'JS_SetModuleLoaderFunc(rt, schwung_module_normalize, schwung_module_loader, NULL)' ../src/host/shared_import_resolve.h; then
+    ok "the rewriting module resolver (normalizer + loader) is still installed"
 else
-    bad "shadow_ui.c no longer installs schwung_module_loader -- shared imports fall back to stock"
+    bad "shadow_ui.c no longer installs the shared-import resolver -- shared imports fall back to stock"
 fi
 if grep -q 'SCHWUNG_INSTALL_DIR=' ../standalone/scripts/build-host.sh; then
     ok "the SA host build sets SCHWUNG_INSTALL_DIR"
