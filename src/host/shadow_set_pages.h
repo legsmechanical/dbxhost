@@ -34,6 +34,12 @@
  * The reader's presence is what switches verification on. */
 #define MOVE_LOADED_SET_PATH SCHWUNG_INSTALL_DIR "/move_loaded_set.txt"
 #define MOVE_LOADED_SET_READER SCHWUNG_INSTALL_DIR "/scripts/move-loaded-set-reader.sh"
+/* The song index a relaunch actually asked Move to open (launch.sh, applied
+ * alongside `relaunch_song_index` -> "applied project index N"). Left in
+ * place across the whole session until the next relaunch overwrites it;
+ * ABSENT = no relaunch has pinned an index yet, trust the scan as-is. See
+ * loaded_set_index_matches() in shadow_loaded_set_policy.h. */
+#define MOVE_INTENDED_INDEX_PATH SCHWUNG_INSTALL_DIR "/move_intended_index.txt"
 
 /* ============================================================================
  * Callback struct - shim functions set pages needs

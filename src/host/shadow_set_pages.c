@@ -424,6 +424,22 @@ static const char *loaded_set_read_file(char *buf, size_t len)
     return buf;
 }
 
+/* The pad a relaunch actually asked Move to open, or -1 when nothing is
+ * pinned (see MOVE_INTENDED_INDEX_PATH). */
+static int loaded_set_read_intended_index(void)
+{
+    FILE *f = fopen(MOVE_INTENDED_INDEX_PATH, "r");
+    if (!f) return -1;
+    char buf[32] = "";
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    char *end = NULL;
+    long v = strtol(buf, &end, 10);
+    if (end == buf || v < 0) return -1;
+    return (int)v;
+}
+
 /* Publish the resolution — or, when Move demonstrably did not open it, the
  * "no active set" identity — for the set dir the xattr scan matched. */
 static void loaded_set_verify_and_publish(int song_index)
@@ -432,6 +448,15 @@ static void loaded_set_verify_and_publish(int song_index)
     char buf[128];
     const char *file = loaded_set_read_file(buf, sizeof(buf));
     loaded_set_verdict_t v = loaded_set_verdict(loaded_verify_uuid, file);
+
+    /* The uuid file can legitimately MATCH a resolution that is still wrong
+     * — Move rejected the requested pad and settled on a different real
+     * project, and the reader correctly reports THAT load. Only the index
+     * the relaunch actually asked for still knows the difference. */
+    int intended_index = loaded_set_read_intended_index();
+    int index_ok = loaded_set_index_matches(intended_index, song_index);
+    if (!index_ok) v = LOADED_SET_MISMATCH;
+
     loaded_verify_active = loaded_set_keep_checking(v, elapsed);
 
     switch (loaded_set_action(v, elapsed)) {
@@ -440,7 +465,10 @@ static void loaded_set_verify_and_publish(int song_index)
         break;
     case LOADED_SET_ACT_PUBLISH_UNOPENED: {
         char uuid[64];
-        loaded_set_unopened_uuid(uuid, sizeof(uuid), song_index, loaded_verify_seq);
+        /* Retry must land back on the pad the user actually pressed, not
+         * whichever pad Move's fallback happens to occupy. */
+        int placeholder_index = index_ok ? song_index : intended_index;
+        loaded_set_unopened_uuid(uuid, sizeof(uuid), placeholder_index, loaded_verify_seq);
         shadow_set_pages_publish(loaded_verify_name, uuid);
         break;
     }
@@ -551,29 +579,15 @@ void shadow_poll_current_set(void)
              * the publish waits for it — see shadow_loaded_set_policy.h.
              * Without that launcher (an ordinary install) nothing changes. */
             if (access(MOVE_LOADED_SET_READER, F_OK) == 0) {
-                int is_new_candidate = song_index_changed ||
-                    song_index != loaded_verify_index ||
-                    strcmp(loaded_verify_uuid, entry->d_name) != 0;
-                /* A verification already in flight for a DIFFERENT uuid must
-                 * not be silently re-targeted onto this scan's answer within
-                 * the settle window — see loaded_set_may_retarget() in
-                 * shadow_loaded_set_policy.h for why. Keep verifying the
-                 * ORIGINAL uuid; this scan's dir match still counts as
-                 * "handled" below so the caller doesn't fall into the
-                 * pending-blank-state branch. */
-                long elapsed_since_start = loaded_set_now_ms() - loaded_verify_start_ms;
-                if (!is_new_candidate ||
-                    loaded_verify_index < 0 ||
-                    loaded_set_may_retarget(elapsed_since_start)) {
-                    if (is_new_candidate) {
-                        loaded_verify_index = song_index;
-                        loaded_verify_start_ms = loaded_set_now_ms();
-                        if (++loaded_verify_seq == 0) loaded_verify_seq = 1;
-                    }
-                    snprintf(loaded_verify_name, sizeof(loaded_verify_name), "%s", sub->d_name);
-                    snprintf(loaded_verify_uuid, sizeof(loaded_verify_uuid), "%s", entry->d_name);
+                if (song_index_changed || song_index != loaded_verify_index ||
+                    strcmp(loaded_verify_uuid, entry->d_name) != 0) {
+                    loaded_verify_index = song_index;
+                    loaded_verify_start_ms = loaded_set_now_ms();
+                    if (++loaded_verify_seq == 0) loaded_verify_seq = 1;
                 }
-                loaded_set_verify_and_publish(loaded_verify_index);
+                snprintf(loaded_verify_name, sizeof(loaded_verify_name), "%s", sub->d_name);
+                snprintf(loaded_verify_uuid, sizeof(loaded_verify_uuid), "%s", entry->d_name);
+                loaded_set_verify_and_publish(song_index);
             } else {
                 loaded_verify_active = 0;
                 shadow_set_pages_publish(sub->d_name, entry->d_name);

@@ -628,6 +628,15 @@ setsid --wait bash -c '
             sed "s/\(\"currentSongIndex\":[[:space:]]*\)-\{0,1\}[0-9][0-9]*/\1$_rsi/" \
               /data/UserData/settings/Settings.json > /data/UserData/settings/Settings.json.dbxtmp \
               && mv -f /data/UserData/settings/Settings.json.dbxtmp /data/UserData/settings/Settings.json
+            # S4b: the pad the user actually chose, for the host to verify
+            # against (shadow_loaded_set_policy.h loaded_set_index_matches)
+            # -- Move is free to reject this set and settle on a DIFFERENT
+            # real project of its own, and only THIS file still remembers
+            # what was asked for. Left in place (not removed) after this
+            # relaunch: it stays correct until the next relaunch overwrites
+            # it, and a cold session with no relaunch yet leaves it absent,
+            # which the host reads as "nothing pinned -- trust the scan".
+            echo "$_rsi" > "$DBX_DIR/move_intended_index.txt"
             echo "applied project index $_rsi"
             ;;
         esac

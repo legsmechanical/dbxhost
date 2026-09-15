@@ -97,33 +97,33 @@ static inline int loaded_set_keep_checking(loaded_set_verdict_t v, long elapsed_
     return v != LOADED_SET_MATCH && elapsed_ms < LOADED_SET_WATCH_MS;
 }
 
-/* May the poll RETARGET verification onto a freshly-scanned uuid, abandoning
- * whichever uuid it is currently verifying?
+/* Did Move end up on the INDEX we actually asked for?
  *
- * Settings.json's currentSongIndex is Move's own state, not just ours: when
- * Move rejects the set we asked it to open, it does not merely log `About to
- * load default song` — it can also keep hunting and settle on a DIFFERENT
- * real project of its own, rewriting currentSongIndex to that project's
- * index. If the poll blindly re-resolves via the xattr scan whenever the
- * index moves, it re-targets verification onto Move's fallback mid-flight,
- * and that fallback's own uuid legitimately MATCHES move_loaded_set.txt's
- * last line (that really is what Move loaded) — silently publishing the set
- * Move fell back into instead of raising "did not open" for the one we
- * asked for. Device log, one launch, pad 13:
- *   About to load d6b24c82... -> About to load c63c3e77.../Project 1
- *   -> About to load default song -> About to load .../Project 1
- * all inside the settle window.
+ * Settings.json's currentSongIndex is Move's own state, not just ours. A
+ * relaunch writes the pad the user chose (N) into Settings.json before
+ * starting Move (launch.sh, `relaunch_song_index` -> "applied project index
+ * N"), but Move is free to reject that set and settle on a DIFFERENT real
+ * project of its own, rewriting currentSongIndex to THAT project's index.
+ * When that happens, the xattr scan resolves to the fallback project's own
+ * (real, valid) uuid, and move_loaded_set.txt's last line legitimately
+ * MATCHES it — Move really did load that set. Comparing the reader's answer
+ * against the freshly-resolved uuid can never see this: both sides agree,
+ * and agree WRONGLY, because the resolution itself already followed Move's
+ * rewrite. Only the ORIGINAL requested index (N) still remembers what pad
+ * the user actually pressed. Device log, one launch, pad 13 (intended index
+ * 13): About to load d6b24c82... -> About to load c63c3e77.../Project 1
+ * (index 0) -> About to load default song -> About to load .../Project 1 —
+ * Move settles on index 0's project, not 13's.
  *
- * So: while a verification is still within its settle window, a new
- * resolution must NOT replace it — keep verifying the ORIGINAL uuid, and let
- * move_loaded_set.txt naming a different real uuid resolve as the MISMATCH
- * it is (-> UNOPENED once the settle window elapses). Once the settle window
- * has passed (the original verification has either matched, or is already on
- * its way to UNOPENED), a differing resolution is trusted as a legitimate new
- * target. */
-static inline int loaded_set_may_retarget(long elapsed_since_verify_start_ms)
+ * intended_index < 0 means "no relaunch is pinning an index right now" (an
+ * ordinary session start, or the intended-index marker was never written) —
+ * always trust the scan in that case. Otherwise, a resolved index that
+ * disagrees is fatal to the whole resolution: it can never become a MATCH,
+ * no matter what move_loaded_set.txt says, because it is provably not the
+ * project the user asked for. */
+static inline int loaded_set_index_matches(int intended_index, int resolved_index)
 {
-    return elapsed_since_verify_start_ms >= LOADED_SET_SETTLE_MS;
+    return intended_index < 0 || intended_index == resolved_index;
 }
 
 static inline void loaded_set_unopened_uuid(char *out, size_t out_len,

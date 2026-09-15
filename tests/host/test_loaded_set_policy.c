@@ -65,19 +65,18 @@ int main(void) {
        "UNOPENED keeps watching for a late match");
     OK(!loaded_set_keep_checking(LOADED_SET_MISMATCH, LOADED_SET_WATCH_MS), "watch window ends");
 
-    /* --- retargeting -----------------------------------------------------
-     * A resolution change mid-verification must NOT be adopted while still
-     * inside the settle window — that is exactly Move rewriting
-     * currentSongIndex to reflect the project it fell back into (pad 13
-     * device log: d6b24c82 -> c63c3e77/Project 1, one launch, < 300 ms),
-     * which would otherwise legitimately MATCH move_loaded_set.txt's last
-     * line and silently publish the fallback instead of UNOPENED. */
-    OK(!loaded_set_may_retarget(0), "retarget refused at 0 ms (settle window)");
-    OK(!loaded_set_may_retarget(LOADED_SET_SETTLE_MS - 1),
-       "retarget still refused just inside the settle window");
-    OK(loaded_set_may_retarget(LOADED_SET_SETTLE_MS),
-       "retarget allowed once the settle window has elapsed");
-    OK(loaded_set_may_retarget(60000), "retarget allowed well past settle");
+    /* --- index verdict -----------------------------------------------------
+     * A relaunch asks Move to open pad N. Move can reject that set and settle
+     * on a DIFFERENT real project of its own, rewriting currentSongIndex to
+     * that project's own index — the xattr scan then resolves a real uuid,
+     * and move_loaded_set.txt's last line legitimately MATCHES it (Move
+     * really did load that set). Only the intended index still remembers
+     * this was not pad N. Device log, one launch: intended pad 13, Move
+     * settles on index 0's project. */
+    OK(loaded_set_index_matches(-1, 0), "no intended index pinned -> trust the scan");
+    OK(loaded_set_index_matches(-1, 13), "no intended index pinned, any resolved index -> trust the scan");
+    OK(loaded_set_index_matches(13, 13), "intended pad matches the resolved index");
+    OK(!loaded_set_index_matches(13, 0), "resolved index is Move's OWN fallback, not the intended pad");
 
     /* --- the identity --------------------------------------------------- */
     char u[64];
