@@ -273,7 +273,7 @@ function stepBankIdleCells(drum) {
             dash('Iter', 'Iteration'), dash('Prob', 'Probability', 'arc'), dash('Ratch', 'Ratchet')];
 }
 
-function drawStepEditKitPage(title, cells, noteBox, footer) {
+function drawStepEditKitPage(title, cells, noteBox, footer, noStepHeld) {
     /* The bank card's map, set explicitly: this page is drawn from two places
      * (the STEP bank, and the reveal over any screen) and must look the same
      * from both — the kit's layout binding is whatever the LAST draw chose. */
@@ -290,7 +290,17 @@ function drawStepEditKitPage(title, cells, noteBox, footer) {
         fill_rect(0, 9, 128, 1, 1);   /* solid rule (no bank context here) */
     }
     if (!cells) {
-        /* An empty step (or no step held): every knob reads `--` — spec §2, the
+        if (noStepHeld) {
+            /* Nothing held at all: knobs edit NOTHING (Josh, 2026-09-15 —
+             * "knobs should only appear on oled when a step is held").
+             * No cells, one centred line in the cell area in place of them;
+             * the footer hint row stays (it still says how to get here). */
+            const _txt = 'Hold step to edit';
+            print(Math.max(0, Math.floor((128 - _txt.length * 6) / 2)), 30, _txt, 1);
+            if (footer) drawKitHintRow(MV_FOOTER_Y, footer);
+            return;
+        }
+        /* A step IS held but is empty: every knob reads `--` — spec §2, the
          * STEP bank. The layout is the mode's own, so the cells say what the
          * knobs WOULD edit. */
         drawKitCells(stepBankIdleCells(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM), -1);
@@ -2000,10 +2010,10 @@ function drawUIBody() {
             return;
         }
         if (bank === BANK_STEP) {
-            /* STEP with nothing held: the layout, every cell `--`. A held step
-             * with a note is drawn by the step-edit block above, before the
-             * card gate — a held step is the reason for being here. */
-            drawStepEditKitPage(BANKS[BANK_STEP].name, null, null, bankPageHints(BANK_STEP));
+            /* STEP with nothing held: no cells, just "Hold step to edit". A held
+             * step is drawn by the step-edit block above, before the card gate —
+             * a held step is the reason for being here. */
+            drawStepEditKitPage(BANKS[BANK_STEP].name, null, null, bankPageHints(BANK_STEP), true);
             return;
         }
         const isDrumLaneBank = (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 0);

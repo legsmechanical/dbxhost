@@ -129,6 +129,12 @@ step('⚠ the retired bank 6 writes NOTHING under a held step (P8 left its index
  * is set back to the reference tick before the frame is drawn. */
 function frameAt(tick) { const keep = S.tickCount; S.tickCount = tick; S.screenDirty = true; globalThis.tick(); const h = fbHash(); S.tickCount = keep; return h; }
 function partsAt(tick) { const keep = S.tickCount; S.tickCount = tick; S.screenDirty = true; globalThis.tick(); const r = { body: bodyHash(), foot: footHash() }; S.tickCount = keep; return r; }
+/* Snapshot the actual pixels (not just a hash), for the pins that need to
+ * look at a specific region of the cell area rather than just "it changed". */
+function snapAt(tick) { const keep = S.tickCount; S.tickCount = tick; S.screenDirty = true; globalThis.tick(); const s = fb.slice(); S.tickCount = keep; return s; }
+/* Count lit pixels in rows [y0, y1) — used to check a row-band of the cell
+ * area (above the footer, below the header rule) for content. */
+function litInRows(snap, y0, y1) { let n = 0; for (let y = y0; y < y1; y++) for (let x = 0; x < 128; x++) if (snap[y * 128 + x]) n++; return n; }
 step('⚠ a held step does NOT change the screen on another bank (NOTE FX card, pixel-identical)', () => {
     fresh(1); S.bankCardLatched = true;
     const ref = S.tickCount + 50;
@@ -148,6 +154,42 @@ step('⚠ on the STEP bank the held step IS the screen: the frame changes when a
     const held = frameAt(ref);
     assert(rest !== held, 'holding a step with a note changes the STEP card');
     note(STEP(5), 0); globalThis.tick();
+});
+
+/* Josh, 2026-09-15: "knobs should only appear on oled when a step is held.
+ * otherwise it should read 'Hold step to edit'." — no step held → no cells,
+ * one centred notice line. A step held but EMPTY still shows the dash cells
+ * (spec §2): the two idle states must render differently, and only the
+ * held-empty one fills the knob rows. */
+const KNOB_TOP = 10, KNOB_BOT = 57; /* just below the header's solid rule (y=9) .. MV_FOOTER_Y */
+step('⚠ the STEP bank at rest (nothing held) shows NO cells — just the notice line, cell area otherwise blank', () => {
+    fresh(BANK_STEP); S.bankCardLatched = true;
+    const ref = S.tickCount + 50;
+    const snap = snapAt(ref);
+    const litRows = litInRows(snap, KNOB_TOP, KNOB_BOT);
+    assert(litRows > 0, 'the cell area draws SOMETHING (the notice line)');
+    /* The notice is one line at y=30 (drawStepEditKitPage): everything else
+     * in the cell area (where the dash cells would otherwise sit) is blank. */
+    const litOutsideNotice = litInRows(snap, KNOB_TOP, 30) + litInRows(snap, 31, KNOB_BOT);
+    assert(litOutsideNotice === 0, 'no cell content anywhere in the knob rows besides the one notice line, got ' + litOutsideNotice + ' px');
+});
+step('⚠ a held EMPTY step still shows the dash cells (not the "hold step" notice)', () => {
+    fresh(BANK_STEP); S.bankCardLatched = true;
+    const ref = S.tickCount + 50;
+    /* idle (nothing held) reference frame */
+    const idleSnap = snapAt(ref);
+    const idleLit = litInRows(idleSnap, KNOB_TOP, KNOB_BOT);
+    /* now hold an EMPTY step (no notes ever placed on it) */
+    note(STEP(2), 127); S.tickCount += 25; globalThis.tick();
+    assert(S.heldStep >= 0, 'a step is now held');
+    assert(S.heldStepNotes.length === 0, 'the held step has no notes (empty)');
+    const heldSnap = snapAt(ref);
+    const heldLit = litInRows(heldSnap, KNOB_TOP, KNOB_BOT);
+    assert(heldLit > idleLit, 'the held-empty dash cells light MORE of the cell area than the idle one-line notice, got held=' + heldLit + ' idle=' + idleLit);
+    /* and it is NOT just the same notice line — the widget rows (outside y=30) are lit */
+    const heldOutsideNotice = litInRows(heldSnap, KNOB_TOP, 30) + litInRows(heldSnap, 31, KNOB_BOT);
+    assert(heldOutsideNotice > 0, 'held-empty draws real dash cells in the widget rows, not just the notice line');
+    note(STEP(2), 0); globalThis.tick();
 });
 
 if (failed) { console.log('FAIL: STEP bank'); process.exit(1); }
