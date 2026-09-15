@@ -16,6 +16,7 @@ import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_i
  * renders on the kit; the host chassis is for dialogs. */
 import { drawKitHeader, drawKitList, fitHdr, hdrWidth, hdrPrint,
          MV_BRAND_HDR_H, drawKitStackedList, drawKitBackdropDim, drawKitCrumbs } from './ui_movy.mjs';
+import { fontPrint4x5, fontWidth4x5 } from './ui_fonts_pp.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
     dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
@@ -1400,19 +1401,17 @@ function _projectPadPickerModifiers_impl() {
     if (dirty) S.screenDirty = true;
 }
 
-/* The picker's OWN header (Josh, 2026-09-15): "Select Project" rather than the
- * app wordmark — this screen's whole job is picking/managing a project, so
- * the functional title reads better than the brand mark repeated over it.
- * `drawKitBrandHeader()` is used nowhere else in the codebase (it is the
- * picker's own chassis call), so this mirrors it exactly — same bar height
- * (MV_BRAND_HDR_H), same font (hdrPrint, unmodified case), same y (1), same
- * centring call (hdrWidth) — and only the string differs. 128px screen width
- * is inlined rather than imported, matching the rest of this file's picker
- * code (e.g. the 124px budget at the menu name row below). */
+/* The picker's own header: the brand bar's height (MV_BRAND_HDR_H) and y, but
+ * the title "SELECT PROJECT" in the kit's 4x5 caps face, centred — Josh,
+ * 2026-09-15: the header should say what the screen is for, and not in the
+ * wordmark's mixed-case font. Nothing else on this screen moved. */
 function _drawProjectPickerHeader() {
-    const t = 'Select Project';
+    /* ALL CAPS in the kit's 4x5 face, not the wordmark's mixed-case header
+     * font (Josh, 2026-09-15: "project picker header shouldn't use the mixed
+     * font. use all caps."). Same bar, same y, still centred. */
+    const t = 'SELECT PROJECT';
     fill_rect(0, 0, 128, MV_BRAND_HDR_H, 1);
-    hdrPrint(Math.max(2, Math.round((128 - hdrWidth(t)) / 2)), 1, t, 0);
+    fontPrint4x5(Math.max(2, Math.round((128 - fontWidth4x5(t)) / 2)), 1, t, 0);
 }
 
 /* ⚠ PICKER — opted OUT of the 2026-08-27 menu type rule at every drawKitList

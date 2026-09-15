@@ -57,7 +57,7 @@ await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const { DAVEBOX_HOST_DIR } = await import('../../ui/ui_engine.mjs');
 const { drawProjectPadPicker } = await import('../../ui/ui_dialogs.mjs');
-const { hdrWidth } = await import('../../ui/ui_movy.mjs');
+const { fontWidth4x5 } = await import('../../ui/ui_fonts_pp.mjs');
 
 const FLAG = DAVEBOX_HOST_DIR + '/preflight_failed';
 
@@ -91,7 +91,7 @@ step('the resting picker screen prints nothing extra when preflight is clean', (
  * land via set_pixel (hdrPrint), not the global print() this file otherwise
  * spies on, so this measures the ink's bounding box in the header's y-band
  * (rows 1..6, under the MV_BRAND_HDR_H=8 bar) rather than reading text. */
-step('⭑ the resting picker header text is "Select Project", centred', () => {
+step('⭑ the resting picker header text is "SELECT PROJECT" (4x5 caps), centred', () => {
     pixels.length = 0;
     S.projectPadPicker = restingPicker();
     drawProjectPadPicker();
@@ -100,18 +100,18 @@ step('⭑ the resting picker header text is "Select Project", centred', () => {
         throw new Error('no ink drawn in the header band at all');
     const xs = headerPixels.map(([x]) => x);
     const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const w = hdrWidth('Select Project');
+    const w = fontWidth4x5('SELECT PROJECT');
     const expectedX = Math.max(2, Math.round((128 - w) / 2));
     /* left edge of the ink should sit at the computed centred x (within a
      * couple px of slop for a glyph whose own leftmost column is blank) */
     if (Math.abs(minX - expectedX) > 3)
         throw new Error('header ink not centred: minX=' + minX + ' expectedX=' + expectedX);
-    /* the ink's own width should track hdrWidth('Select Project') (97px in
-     * the current font) and NOT the much narrower "dAVEBOx" wordmark (48px)
-     * — this is what actually pins the STRING, not just the centring math */
+    /* the ink's own width should track fontWidth4x5('SELECT PROJECT') and NOT
+     * the "dAVEBOx" wordmark (48px in the header font) — this is what actually
+     * pins the STRING, not just the centring math (Josh: all caps, kit font) */
     const inkW = maxX - minX + 1;
     if (inkW < w - 6 || inkW > w + 2)
-        throw new Error('header ink width ' + inkW + ' does not match hdrWidth("Select Project")=' + w +
+        throw new Error('header ink width ' + inkW + ' does not match fontWidth4x5("SELECT PROJECT")=' + w +
                          ' — is this still drawing "dAVEBOx"?');
 });
 
