@@ -330,6 +330,9 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **Back from PROJECT DID NOT OPEN, then picking the project, now opens it.**
+  It used to load nothing and bring the same screen straight back; picking a
+  project from there now restarts Move into it.
 - **New projects on some pads no longer open an empty Move set.** On about
   one pad in five (13, 14, 21 and 31 among them on the device it was found
   on), a brand-new project, a copy or a renamed project could open as an

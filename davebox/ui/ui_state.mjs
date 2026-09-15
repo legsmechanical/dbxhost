@@ -788,6 +788,12 @@ export const S = {
      * projects is fine"). These go through a Move RELAUNCH instead. */
     projectsCreatedThisSession: [],
     pendingProjectRelaunch: null,
+    /* One-shot: the next project Load goes through a RELAUNCH even for a
+     * pre-existing pad. Set by Back on PROJECT DID NOT OPEN — Move is then
+     * sitting on a default set it minted, so the select actuator (and loading
+     * the "current" project in place) opens nothing and the verdict fires
+     * again. Consumed by the Load; cleared by a late real answer. */
+    forceRelaunchNextLoad: false,
     /* PROJECT DID NOT OPEN (ui_dialogs.checkProjectOpened): {pad, name, sel,
      * retrying} while the blocking screen is up, else null. */
     projectOpenFailed: null,

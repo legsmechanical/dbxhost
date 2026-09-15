@@ -401,6 +401,7 @@ export function checkProjectOpened() {
          * tearing the session down. */
         if (as.uuid && !f.retrying) {
             S.projectOpenFailed = null;
+            S.forceRelaunchNextLoad = false;   /* Move did open it: nothing to force */
             S.currentSetUuid = as.uuid;
             S.currentSetName = as.name;
             loadSelectedCurrentProject();
@@ -463,7 +464,15 @@ export function projectOpenFailedMidi(data) {
         S.pendingProjectRelaunch = f.pad;
     } else {
         /* Back to the project picker. Still awaiting a selection, so the picker
-         * is the select-before-load one: nothing loads until a pad is chosen. */
+         * is the select-before-load one: nothing loads until a pad is chosen.
+         * ⚠ Whatever is chosen must RELAUNCH Move (S9): Move is on a default
+         * set of its own, so neither the select actuator nor an in-place load
+         * of the "current" pad opens anything — the pick loaded nothing and
+         * the verdict came straight back. And stop watching for the verdict:
+         * active_set.txt still names the same failure, so the watch would
+         * re-raise the screen over the picker the user was sent to. */
+        S.forceRelaunchNextLoad = true;
+        S.projectOpenCheckTicks = 0;
         S.projectOpenFailed = null;
         S.projectPadPicker = null;
         openProjectPadPicker();
@@ -998,7 +1007,8 @@ function _pppOpenMenu(p, k) {
 /* --- menu actions ------------------------------------------------------ */
 
 function _pppLoad(p, k) {
-    if (k === p.current) {
+    const _forceRelaunch = S.forceRelaunchNextLoad;
+    if (k === p.current && !_forceRelaunch) {
         /* The already-current project. Under SELECT-BEFORE-LOAD this IS the
          * selection: create_instance loaded nothing, so load now. Once a
          * project is live, "Load" on the current one just closes the picker. */
@@ -1033,7 +1043,11 @@ function _pppLoad(p, k) {
      * old one. Confirmed on hardware 2026-08-27.
      * Those go through a Move RELAUNCH (project-cmd `switch`), which is the only
      * thing that makes Move re-read the set list. */
-    if (S.projectsCreatedThisSession.indexOf(k) >= 0) S.pendingProjectRelaunch = k;
+    /* ⚠ Same relaunch after PROJECT DID NOT OPEN -> Back (forceRelaunchNextLoad):
+     * Move is on a set it minted itself, and only a relaunch makes it open the
+     * pad's real set. */
+    S.forceRelaunchNextLoad = false;
+    if (_forceRelaunch || S.projectsCreatedThisSession.indexOf(k) >= 0) S.pendingProjectRelaunch = k;
     else S.pendingProjectSwitch = k;
 }
 

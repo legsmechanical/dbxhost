@@ -127,6 +127,12 @@ globalThis.host_ext_midi_remap_clear = () => {};
 globalThis.host_ext_midi_remap_set = () => {};
 globalThis.host_ext_midi_remap_enable = () => {};
 globalThis.shadow_get_shift_held = () => 0;
+/* The headless select actuator (ui_tick's pendingProjectSwitch branch). Recorded,
+ * because after a verdict it is the WRONG way to open a project: Move is sitting
+ * on a default set it minted, and walking its overview loads nothing. */
+const selectArms = [];
+globalThis.shadow_select_arm = (k) => { selectArms.push(k); };
+globalThis.host_suspend_overtake = () => {};
 
 async function main() {
 const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
@@ -136,6 +142,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
 const render = await import('../../ui/ui_render.mjs');
 const shared = await import('/data/UserData/schwung/shared/session_state.mjs');
+const dialogs = await import('../../ui/ui_dialogs.mjs');
 
 const JOG_CLICK = 3, JOG_TURN = 14, BACK = 51;
 const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
@@ -281,6 +288,53 @@ step('the Back BUTTON does the same', () => {
     cc(BACK, 127); cc(BACK, 0);
     ticks(2);
     if (S.projectOpenFailed || !S.projectPadPicker) throw new Error('Back button did not reach the picker');
+});
+
+/* 5. Back, then load the SAME pad from the picker (S9). Before the fix the pick
+ *    went through the select actuator (or loaded the "current" project in place)
+ *    on the default set Move had minted: nothing loaded, and the verdict fired
+ *    again. It must relaunch Move into that pad instead. Real gestures only:
+ *    Back button, a pad note-on, the jog click on the menu's Load row. */
+const PAD_NOTE = (k) => 68 + k;
+function padTap(k) {
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, PAD_NOTE(k), 100]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, PAD_NOTE(k), 0]));
+}
+step('verdict -> Back -> pick pad 31 -> Load RELAUNCHES into it (project-cmd switch), no select actuator', () => {
+    boot(P, 'Project 1');
+    hostPublish(X, 'Project 32', 31, 'default');
+    ticks(40);
+    if (!onScreen()) throw new Error('no verdict screen');
+    cc(BACK, 127); cc(BACK, 0);
+    ticks(2);
+    if (!S.projectPadPicker) throw new Error('Back did not open the picker');
+    sysCmds.length = 0; selectArms.length = 0;
+    padTap(31);
+    ticks(2);
+    const p = S.projectPadPicker;
+    if (!p || !p.menu || p.menu.k !== 31) throw new Error('pad tap did not open pad 31\'s menu: ' + JSON.stringify(p && p.menu));
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    ticks(6);
+    const sw = sysCmds.filter((c) => /project-cmd\.sh switch 31$/.test(c));
+    if (sw.length !== 1) throw new Error('expected one relaunch switch to 31, got: ' + JSON.stringify(sysCmds));
+    if (selectArms.length) throw new Error('the select actuator was armed: ' + JSON.stringify(selectArms));
+    if (S.forceRelaunchNextLoad) throw new Error('the one-shot flag was not consumed');
+});
+step('control: without a verdict, loading a pre-existing pad still uses the select actuator', () => {
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    S.pendingOpenProjectPicker = false;
+    sysCmds.length = 0; selectArms.length = 0;
+    /* open the picker the way the Back path does, then pick pad 31 */
+    S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    padTap(31);
+    ticks(2);
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    ticks(6);
+    if (sysCmds.some((c) => /switch 31$/.test(c))) throw new Error('relaunched without a verdict: ' + JSON.stringify(sysCmds));
+    if (selectArms.indexOf(31) < 0) throw new Error('select actuator not armed for a normal switch: ' + JSON.stringify(selectArms) + ' ' + JSON.stringify(sysCmds));
 });
 
 if (failed) { console.error('FAIL: project_open_mismatch'); process.exit(1); }
