@@ -1181,7 +1181,7 @@ Modules expose a navigable parameter hierarchy to the Shadow UI via `ui_hierarch
 |-------|-------------|
 | `name` / `label` | Display name for the level |
 | `params` | Array of parameter items (see below) |
-| `knobs` | Array of parameter keys mapped to physical knobs 1-8 |
+| `knobs` | Array of parameter keys mapped to physical knobs 1-8. A level's `knobs` need not appear in its own `params` — a menu-root or page-select level may map knobs to the parameters of the page it fronts. A mapped knob is suppressed only while its own listed param is hidden by a `visible_if` that evaluates false. |
 | `list_param` / `count_param` / `name_param` | For preset browser levels |
 | `items_param` / `select_param` | For dynamic item selection levels |
 | `child_prefix` / `child_count` / `child_label` | For repeated elements (see below) |
