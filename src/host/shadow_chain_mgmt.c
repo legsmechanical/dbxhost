@@ -24,6 +24,7 @@
 #include "host/schwung_paths.h"
 #include "schwung_trace.h"   /* Phase 2b: emit param.serve as a child of the JS param.get span */
 #include "param_slow.h"      /* attribute a serve that ate the frame — header-only */
+#include "timespec_delta.h"  /* signed-safe elapsed-us across a second boundary */
 
 /* ============================================================================
  * Globals
@@ -3181,8 +3182,7 @@ static void pserve_emit(pserve_span_t *ps) {
     if (!ps->sp) return;
     struct timespec w1;
     clock_gettime(CLOCK_MONOTONIC, &w1);
-    uint64_t us = (uint64_t)(w1.tv_sec - ps->w0.tv_sec) * 1000000ull
-                + (uint64_t)(w1.tv_nsec - ps->w0.tv_nsec) / 1000ull;
+    uint64_t us = timespec_delta_us(&ps->w0, &w1);
     if (us < PARAM_SLOW_THRESHOLD_US) return;
     if (us > 0xFFFFFFFFull) us = 0xFFFFFFFFull;
 
