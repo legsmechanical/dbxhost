@@ -2785,8 +2785,13 @@ export function drawKitEnumOverlay(cells, touchedIdx) {
     drawKitListOverlay(cell.options, cell.sel | 0);
 }
 
-/* How long an enum peek stays up, in ms. Upstream's ENUM_PEEK_MS, carried
- * verbatim so the two surfaces cannot drift to different numbers. */
+/* How long an enum peek stays up, in ms. This is davebox's OWN number, kept
+ * deliberately independent of upstream's ENUM_PEEK_MS
+ * (src/shared/param_pages/page_controller.mjs, currently 1500) — this file
+ * loads standalone (see the note on enumPeekExpired below) and imports
+ * nothing from the host's shared modules, so there is no cross-seam import
+ * to keep the two in step. Tune it for this surface; don't assume it mirrors
+ * upstream's. */
 export const MV_ENUM_PEEK_MS = 700;
 
 /* Has the peek raised at `turnedAtMs` decayed by `nowMs`?
