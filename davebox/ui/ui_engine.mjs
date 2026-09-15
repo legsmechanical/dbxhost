@@ -473,15 +473,31 @@ export function engineSetChainParam(slot, key, val) {
  * flag must never disagree with the routes.
  */
 let lastLinkAudioRouting = null;
+/* Set only on a call that just turned routing ON (including the first sync
+ * after invalidateLinkAudioRoutingCache(), where "just" means "as far as this
+ * process knows") — the caller uses it to decide whether the Link-disabled
+ * warning is due, without re-deriving the transition itself. */
+let linkAudioRoutingJustTurnedOn = false;
 export function syncLinkAudioRoutingFromRoutes(routes) {
     let wanted = 0;
     for (let t = 0; t < routes.length; t++) {
         if (routes[t] === 1 /* ROUTE_MOVE */) { wanted = 1; break; }
     }
-    if (wanted === lastLinkAudioRouting) return wanted;
+    if (wanted === lastLinkAudioRouting) {
+        linkAudioRoutingJustTurnedOn = false;
+        return wanted;
+    }
+    linkAudioRoutingJustTurnedOn = (wanted === 1 && lastLinkAudioRouting !== 1);
     lastLinkAudioRouting = wanted;
     shadow_set_param(0, 'master_fx:link_audio_routing', String(wanted));
     return wanted;
+}
+
+/* True only immediately after a syncLinkAudioRoutingFromRoutes() call that
+ * turned the rebuild on — read it right after calling sync, before anything
+ * else can call sync again and overwrite it. */
+export function linkAudioRoutingJustEnabled() {
+    return linkAudioRoutingJustTurnedOn;
 }
 
 /* Force the next sync to write even if the value looks unchanged — used after a
