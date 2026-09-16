@@ -1306,7 +1306,22 @@ function _projectPadPickerTap_impl(k) {
     if (S.deleteHeld) {
         _pppCloseOverlays(p);
         if (!proj) { p.deleteIdx = -1; showActionPopup('EMPTY', 'PAD'); return; }
-        if (k === p.current) {
+        /* ⭑⭑ "Am I IN this project?" is NOT "has Move confirmed it?".
+         *
+         * `p.current` is deliberately −1 until the host confirms an open
+         * project, because the load shortcut must never act on a guess. The
+         * delete guard is asking a different question — whether this directory
+         * is the one the running session has loaded — and the answer to that is
+         * what dAVEBOx itself holds. Using p.current here would let a delete
+         * during the unconfirmed window take the immediate path and remove the
+         * directory underneath a live session, which is precisely what the
+         * careful path exists to prevent.
+         *
+         * So ask both: the loaded uuid first, and p.current as the fallback for
+         * the case where nothing is loaded but a project is confirmed open. */
+        const _inThis = (S.currentSetUuid && proj && proj.uuid === S.currentSetUuid) ||
+                        (k === p.current && p.current >= 0);
+        if (_inThis) {
             /* Deleting the project you are IN (Josh, 2026-08-24). It cannot
              * happen underneath a running session, so it happens the way a
              * rename of the open project already does: project-cmd queues the

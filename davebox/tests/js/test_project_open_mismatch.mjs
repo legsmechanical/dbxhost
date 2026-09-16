@@ -512,6 +512,51 @@ step('⚠ CONTROL: the marker is what forces the relaunch, not the pad number', 
         throw new Error('control: the fast route was not taken without the marker');
 });
 
+/* 10. DELETING THE PROJECT YOU ARE IN takes the careful path even when the
+ *     host has not confirmed the identity yet.
+ *
+ * The guard used to read the picker's `current`, which is −1 until the host
+ * confirms — correct for the load shortcut, wrong here. "Am I in this project?"
+ * is about what dAVEBOx has LOADED. Reading the unconfirmed value would delete
+ * the directory underneath a live session, which is the one thing the careful
+ * path (queue the removal, restart, remove when nothing holds it) exists to
+ * stop. Introduced and caught the same day, 2026-09-16, from Josh asking
+ * whether delete still worked. */
+function holdDeleteTap(k) {
+    S.deleteHeld = true;
+    padTap(k); ticks(1);   /* arm */
+    padTap(k); ticks(2);   /* confirm */
+    S.deleteHeld = false;
+}
+
+step('⭑⭑ deleting the LOADED project restarts, even with identity unconfirmed', () => {
+    boot(P, 'Project 1');
+    publish('pending', '', '', '', -1);        /* host has not confirmed yet */
+    S.currentSetUuid = P;                      /* ...but dAVEBOx has P loaded */
+    S.pendingOpenProjectPicker = false; S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    if (S.projectPadPicker.current !== -1)
+        throw new Error('precondition: current should be -1 while unconfirmed');
+    sysCmds.length = 0;
+    holdDeleteTap(0);
+    if (!S.projectPadPicker || S.projectPadPicker.restarting !== 'DELETING')
+        throw new Error('deleting the loaded project did NOT take the restarting path');
+});
+
+step('⚠ CONTROL: deleting a project you are NOT in still deletes in place', () => {
+    boot(P, 'Project 1');
+    publish('open', '', P, 'Project 1', 0);
+    S.currentSetUuid = P;
+    S.pendingOpenProjectPicker = false; S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    sysCmds.length = 0;
+    holdDeleteTap(31);                         /* a DIFFERENT project */
+    if (S.projectPadPicker && S.projectPadPicker.restarting === 'DELETING')
+        throw new Error('control: deleting another project should not restart the session');
+    if (!sysCmds.some((c) => /project-cmd\.sh delete 31$/.test(c)))
+        throw new Error('control: the plain delete did not fire: ' + JSON.stringify(sysCmds));
+});
+
 if (failed) { console.error('FAIL: project_open_mismatch'); process.exit(1); }
 console.log('PASS: project_open_mismatch');
 }
