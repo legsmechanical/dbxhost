@@ -3437,6 +3437,7 @@ int shadow_param_apply_set_ex(int slot, const char *key, const char *value,
                 strcmp(param_key, "link_audio_publish") == 0 ||
                 strcmp(param_key, "latency_comp_enabled") == 0 ||
                 strcmp(param_key, "system_link_enabled") == 0 ||
+                strcmp(param_key, "render_lanes") == 0 ||   /* the render pool's lane count */
                 strncmp(param_key, "jack:", 5) == 0 ||
                 strcmp(param_key, "suspend_overtake") == 0) {
                 if (host.apply_set_special(slot, key, value, io_error, io_result_len))
@@ -3981,6 +3982,7 @@ void shadow_inprocess_handle_param_request(void) {
                 strcmp(param_key, "link_audio_publish") == 0 ||
                 strcmp(param_key, "latency_comp_enabled") == 0 ||
                 strcmp(param_key, "system_link_enabled") == 0 ||
+                strcmp(param_key, "render_lanes") == 0 ||   /* the render pool's lane count */
                 strncmp(param_key, "jack:", 5) == 0 ||
                 strcmp(param_key, "suspend_overtake") == 0) {
                 if (host.handle_param_special(req_type, req_id)) {

@@ -149,6 +149,18 @@ run_checks() {
     extract_fn "$w/shim.c" '^static int shim_handle_param_special' > "$w/hps.c"
     grep -q '"render_lanes"' "$w/aset.c" || say "master_fx:render_lanes missing from shim_apply_set_special (the by-value SET)"
     grep -q '"render_lanes"' "$w/hps.c"  || say "master_fx:render_lanes missing from shim_handle_param_special (the GET)"
+    # ⚠ Both shim handlers are reachable ONLY through chain mgmt's explicit
+    # allow-lists of shim specials (one in the by-value dispatcher, one in the
+    # mailbox request handler) — a key missing there goes to master-FX slot 0's
+    # plugin and vanishes. Found on the device 2026-09-15: the first lane flip
+    # did nothing while both handlers above were present.
+    extract_fn "$w/mgmt.c" '^int shadow_param_apply_set_ex' > "$w/apply.c"
+    [ -s "$w/apply.c" ] || extract_fn "$w/mgmt.c" '^int shadow_param_apply_set' > "$w/apply.c"
+    [ -s "$w/apply.c" ] || say "shadow_param_apply_set not found"
+    grep -q '"render_lanes"' "$w/apply.c" || say "render_lanes is not on the dispatcher's delegate list — the shim SET handler is unreachable"
+    extract_fn "$w/mgmt.c" '^void shadow_inprocess_handle_param_request' > "$w/req.c"
+    [ -s "$w/req.c" ] || say "shadow_inprocess_handle_param_request not found"
+    grep -q '"render_lanes"' "$w/req.c" || say "render_lanes is not on the mailbox handler's delegate list — the shim GET handler is unreachable"
 
     # F. the pin mask comes from the slot's render_pinned
     grep -q 'render_pinned' "$w/rtb.c" \
@@ -267,4 +279,15 @@ open(p, 'w').write(s)
 PY
 expect_fail "$C8" "control 8 (Link-in shm read inside the task)"
 
-echo "PASS: the render pool is wired in the one safe shape; 8 controls fire"
+echo "== control 9: render_lanes dropped from the dispatcher's delegate list =="
+C9="$(make_copy c9)"
+python3 - "$C9/src/host/shadow_chain_mgmt.c" <<'PY'
+import sys
+p = sys.argv[1]; s = open(p).read(); s0 = s
+s = s.replace('                strcmp(param_key, "render_lanes") == 0 ||   /* the render pool\'s lane count */\n', '', 1)
+assert s != s0, 'mutation matched nothing'
+open(p, 'w').write(s)
+PY
+expect_fail "$C9" "control 9 (render_lanes unreachable through the dispatcher)"
+
+echo "PASS: the render pool is wired in the one safe shape; 9 controls fire"
