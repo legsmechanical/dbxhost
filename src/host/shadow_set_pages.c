@@ -664,8 +664,15 @@ static void identity_tick(int hint_index, const char *hint_name)
                 rec.uuid[0] ? rec.uuid : "-",
                 rec.name[0] ? rec.name : "-",
                 rec.index,
-                (long)(loaded_set_now_ms() - identity_arm_ms),
-                in.have_request ? " (requested)" : "");
+                /* Only meaningful when a request was armed — it is measured
+                 * FROM the arm. With no request, identity_arm_ms is whatever it
+                 * last was (zero on a fresh shim), and the subtraction prints
+                 * the process uptime, which reads as a real latency and is not
+                 * one. A diagnostic number that lies is worse than none, and
+                 * this one was going to be used to replace the guessed request
+                 * timeout. */
+                in.have_request ? (long)(loaded_set_now_ms() - identity_arm_ms) : -1L,
+                in.have_request ? " (requested)" : " (unrequested: elapsed n/a)");
 
     identity_published = rec;
     identity_ever_published = 1;
