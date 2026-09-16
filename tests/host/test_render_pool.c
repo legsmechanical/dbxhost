@@ -155,6 +155,7 @@ static int test_round(void) {
     pooled = render_pool_run(&p, 0xFF, 0, task, NULL);
     int all0 = 1; for (int t = 0; t < 8; t++) if (atomic_load(&ran_on_lane[t]) != 0) all0 = 0;
     OK(pooled == 0 && all0 && total_runs() == 8, "1 lane: inline, all eight on lane 0");
+    OK(p.inline_us_sum >= 8 * 300 && p.inline_us_max >= 8 * 300, "an inline round records its own wall (the serial control's number)");
 
     /* many rounds: the count stays exact (no lost or doubled task on any round) */
     render_pool_set_lanes(&p, 3);

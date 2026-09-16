@@ -153,6 +153,7 @@ typedef struct render_pool {
 
     /* counters for the timing snapshot — written by the caller only */
     uint32_t rounds_pooled, rounds_inline, bails;
+    uint64_t inline_us_sum, inline_us_max;      /* inline rounds: the serial loop's own wall */
     uint64_t wall_us_sum, wall_us_max;          /* pooled rounds: dispatch→join */
     uint64_t serial_us_sum, serial_us_max;      /* pooled rounds: Σ task_us (the serial-equivalent) */
     uint64_t join_wait_us_max;                  /* caller's idle time in the join */
@@ -400,7 +401,13 @@ static inline int render_pool_run(render_pool_t *p, uint32_t active_mask, uint32
             p->lane_tasks[0][p->lane_count[0]++] = t;
         }
         for (int l = 1; l < RENDER_POOL_MAX_LANES; l++) p->lane_count[l] = 0;
+        uint64_t i0 = render_pool_now_us();
         render_pool_run_lane(p, 0);
+        uint64_t iw = render_pool_now_us() - i0;
+        /* The serial control's own number, so a lanes=1 A/B window reads
+         * a wall rather than zeros (the first device A/B printed zeros here
+         * and the whole-frame Compute line had to stand in). */
+        p->inline_us_sum += iw; if (iw > p->inline_us_max) p->inline_us_max = iw;
         p->rounds_inline++;
         return 0;
     }
@@ -460,6 +467,7 @@ static inline int render_pool_run(render_pool_t *p, uint32_t active_mask, uint32
 /* Reset the snapshot counters (after the timing logger latched them). */
 static inline void render_pool_reset_counters(render_pool_t *p) {
     p->rounds_pooled = p->rounds_inline = p->bails = 0;
+    p->inline_us_sum = p->inline_us_max = 0;
     p->wall_us_sum = p->wall_us_max = 0;
     p->serial_us_sum = p->serial_us_max = 0;
     p->join_wait_us_max = 0;

@@ -5766,6 +5766,7 @@ typedef struct {
      * caller's idle time in the join, bails, per-lane makespan. */
     uint32_t rp_lanes, rp_rounds_pooled, rp_rounds_inline, rp_bails, rp_degraded;
     uint64_t rp_wall_avg, rp_wall_max, rp_serial_avg, rp_serial_max, rp_join_wait_max;
+    uint64_t rp_inline_avg, rp_inline_max;
     uint64_t rp_lane_max[RENDER_POOL_MAX_LANES];
     /* JACK audio double-buffer stats */
     uint32_t jack_audio_hits;
@@ -9618,6 +9619,8 @@ post_timing:
             spi_snap.rp_serial_avg = rp->rounds_pooled ? rp->serial_us_sum / rp->rounds_pooled : 0;
             spi_snap.rp_serial_max = rp->serial_us_max;
             spi_snap.rp_join_wait_max = rp->join_wait_us_max;
+            spi_snap.rp_inline_avg = rp->rounds_inline ? rp->inline_us_sum / rp->rounds_inline : 0;
+            spi_snap.rp_inline_max = rp->inline_us_max;
             for (int l = 0; l < RENDER_POOL_MAX_LANES; l++) spi_snap.rp_lane_max[l] = rp->lane_us_max[l];
             render_pool_reset_counters(rp);
         }
@@ -9915,9 +9918,10 @@ static void *spi_timing_logger_thread(void *arg)
                  * serial loop's time for the same work). lanes=1 makes the
                  * two equal by construction, which is the control. */
                 unified_log("spi_timing", LOG_LEVEL_DEBUG,
-                    "render pool: lanes=%u pooled=%u inline=%u wall=%llu/%llu serial=%llu/%llu "
+                    "render pool: lanes=%u pooled=%u inline=%u inline_wall=%llu/%llu wall=%llu/%llu serial=%llu/%llu "
                     "join_wait_max=%llu lane_max=%llu/%llu/%llu bails=%u%s",
                     spi_snap.rp_lanes, spi_snap.rp_rounds_pooled, spi_snap.rp_rounds_inline,
+                    (unsigned long long)spi_snap.rp_inline_avg, (unsigned long long)spi_snap.rp_inline_max,
                     (unsigned long long)spi_snap.rp_wall_avg, (unsigned long long)spi_snap.rp_wall_max,
                     (unsigned long long)spi_snap.rp_serial_avg, (unsigned long long)spi_snap.rp_serial_max,
                     (unsigned long long)spi_snap.rp_join_wait_max,
