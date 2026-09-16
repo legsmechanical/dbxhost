@@ -34,7 +34,7 @@ if rg -q "/data/UserData/UserLibrary/Schwung Backups/Set Pages" "$logfile"; then
   exit 1
 fi
 
-if ! rg -q "rm -rf ~/move-anything ~/move-anything.tar.gz" "$logfile"; then
+if ! rg -q "rm -rf ~/schwung ~/schwung.tar.gz" "$logfile"; then
   echo "FAIL: --purge-data should still remove the Schwung payload" >&2
   exit 1
 fi

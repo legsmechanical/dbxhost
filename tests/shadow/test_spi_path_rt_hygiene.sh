@@ -54,9 +54,19 @@ if ! grep -q 'shim_worker_post(' <<<"$post"; then
 fi
 
 # 4. shim_run_command children must drop SCHED_FIFO before exec.
+# ⚠ The drop itself moved OUT of the shim into spawn_command() (src/host/
+# spawn_command.c), which does it via posix_spawnattr rather than a hand-rolled
+# sched_setscheduler. So assert the INVARIANT across the seam - the shim
+# delegates, and the delegate drops - rather than pinning the old location.
 runcmd=$(awk '/^static int shim_run_command/,/^}/' "$shim")
-if ! grep -q 'SCHED_OTHER' <<<"$runcmd"; then
-  echo "FAIL: shim_run_command child inherits SCHED_FIFO 90" >&2
+if ! grep -q 'spawn_command(' <<<"$runcmd"; then
+  echo "FAIL: shim_run_command no longer delegates to spawn_command()" >&2
+  echo "      If the spawn was inlined again, it must drop SCHED_FIFO itself." >&2
+  exit 1
+fi
+if ! rg -q 'POSIX_SPAWN_SETSCHEDULER' src/host/spawn_command.c \
+   || ! rg -q 'setschedpolicy\(&attr, SCHED_OTHER\)' src/host/spawn_command.c; then
+  echo "FAIL: spawn_command() does not force SCHED_OTHER - children inherit FIFO 90" >&2
   exit 1
 fi
 
