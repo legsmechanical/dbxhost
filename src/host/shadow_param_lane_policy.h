@@ -78,7 +78,7 @@
  *
  *   "master_fx:resample_bridge", "master_fx:link_audio_routing",
  *   "master_fx:link_audio_publish", "master_fx:latency_comp_enabled",
- *   "master_fx:system_link_enabled"
+ *   "master_fx:system_link_enabled", "master_fx:render_lanes"
  *                          SHIM SPECIALS delegated to host.apply_set_special
  *                          (shadow_chain_mgmt.c's master-fx SET path, the
  *                          `!has_slot_prefix` arm ~:3413-3420) — the same
@@ -160,7 +160,8 @@ static inline int spl_key_eligible(const char *key)
         strcmp(key, "master_fx:link_audio_routing") == 0 ||
         strcmp(key, "master_fx:link_audio_publish") == 0 ||
         strcmp(key, "master_fx:latency_comp_enabled") == 0 ||
-        strcmp(key, "master_fx:system_link_enabled") == 0) return 0;
+        strcmp(key, "master_fx:system_link_enabled") == 0 ||
+        strcmp(key, "master_fx:render_lanes") == 0) return 0;   /* the render pool's lane count: a shim special */
 
     return 1;
 }

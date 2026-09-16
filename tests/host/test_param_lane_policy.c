@@ -46,6 +46,7 @@ int main(void) {
     OK(spl_key_eligible("master_fx:link_audio_publish") == 0,  "master_fx:link_audio_publish is EXCLUDED");
     OK(spl_key_eligible("master_fx:latency_comp_enabled") == 0, "master_fx:latency_comp_enabled is EXCLUDED");
     OK(spl_key_eligible("master_fx:system_link_enabled") == 0, "master_fx:system_link_enabled is EXCLUDED");
+    OK(spl_key_eligible("master_fx:render_lanes") == 0,        "master_fx:render_lanes is EXCLUDED (a shim special)");
 
     /* --- S6: overtake_dsp: state_load / state_path / save (dAVEBOx's own
      * DSP globals handler, dsp/setparam/sp_globals_state.c) --------------- */
