@@ -167,7 +167,7 @@ function _onCC_jog(d1, d2) {
      * color pick, the Load/Rename/Color menu) — and with nothing open it opens
      * the menu on the CURRENT project, the keyboard-free path under
      * SELECT-BEFORE-LOAD where the session starts here. */
-    if (d1 === 3 && d2 === 127 && S.projectPadPicker) {
+    if (d1 === 3 && d2 === 127 && S.projectPadPicker && !S.confirmExit) {
         projectPadPickerClick();
         return;
     }
@@ -950,7 +950,9 @@ function modalDialogUp() {
         /* PROJECTS pad picker: the wheel drives whichever overlay is open.
          * (Swallow the turn either way — the picker owns the surface; without
          * this the turn fell through to the bank knob handling underneath.) */
-        if (S.projectPadPicker) {
+        /* ⭑ ...unless the exit confirm is up over it (2026-09-16): the wheel
+         * moves the dialog's Yes/No, not the picker underneath. */
+        if (S.projectPadPicker && !S.confirmExit) {
             projectPadPickerRotate(decodeDelta(d2));
             return;
         }

@@ -69,6 +69,8 @@ await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
 const menu = await import('../../ui/ui_menu.mjs');
+const render = await import('../../ui/ui_render.mjs');
+const { openProjectPadPicker, closeProjectPadPicker } = await import('../../ui/ui_dialogs.mjs');
 const MoveBack = 51;                   /* the Back button's CC */
 const JOG_CLICK = 3, JOG_TURN = 14;    /* jog click / jog step CCs */
 
@@ -238,6 +240,60 @@ step('knobs and Note/Session are declined under the modal (source pins)', () => 
         throw new Error('knob guard does not list confirmExit');
     if (guard('(S.projectPadPicker').indexOf('S.confirmExit') < 0)
         throw new Error('Note/Session decline does not list confirmExit');
+});
+
+/* ⭑ THE PROJECT MANAGER IS A DOOR TOO (2026-09-16, Josh: "permitting davebox
+ * exit from project manager (same as inside a session)").
+ *
+ * Hold-Back already RAISED the confirm from here — checkBackHold() has never had
+ * a picker guard — but drawUIBody() drew the picker and returned before reaching
+ * the dialog, and the picker's jog handlers ran before the dialog's. So the modal
+ * was LIVE AND INVISIBLE: nothing appeared to happen, and the click that would
+ * answer it moved the picker instead. The project manager was the one screen with
+ * no way out.
+ *
+ * ⚠ This asserts the RENDER, not just the flag. A state check alone passes on the
+ * broken build — S.confirmExit was already being set. What was broken is whether
+ * the user can SEE and ANSWER it. */
+step('exit confirm is reachable from the project manager', () => {
+    reset();
+    S.awaitingProjectSelect = true;
+    /* Open it for real, through _pppRunList: the picker reads projects.json
+     * after shelling out to `project-cmd.sh list`. Two projects is enough to
+     * have a grid and a cursor. */
+    const prevRead = globalThis.host_read_file;
+    globalThis.host_read_file = (f) =>
+        (String(f).indexOf('projects.json') >= 0)
+            ? JSON.stringify({ projects: [
+                { index: 0, name: 'Project 1', uuid: 'aaaaaaaa-0000-0000-0000-000000000001', color: 0 },
+                { index: 1, name: 'Project 2', uuid: 'aaaaaaaa-0000-0000-0000-000000000002', color: 1 }] })
+            : '';
+    try { openProjectPadPicker(); } finally { globalThis.host_read_file = prevRead; }
+    if (!S.projectPadPicker) throw new Error('picker did not open');
+
+    holdBack();
+    if (S.confirmExit !== 'suspend') throw new Error('hold-Back did not raise the confirm');
+    if (armed()) throw new Error('the exit fired without the confirm');
+
+    /* It must be ON SCREEN over the picker, not merely in state. */
+    const printed = [];
+    const realPrint = globalThis.print;
+    globalThis.print = (x, y, t) => { printed.push(String(t)); };
+    try { render.drawUI(); } finally { globalThis.print = realPrint; }
+    const joined = printed.join('|');
+    if (joined.indexOf('SUSPEND SESSION?') < 0)
+        throw new Error('the picker drew over the confirm; screen was: ' + joined.slice(0, 120));
+
+    /* ...and answerable: the wheel moves Yes/No, the click takes it. */
+    const sel0 = S.confirmExitSel;
+    cc(JOG_TURN, 1);
+    if (S.confirmExitSel === sel0) throw new Error('the picker ate the wheel; Yes/No did not move');
+    S.confirmExitSel = 0;                       /* Yes */
+    cc(JOG_CLICK, 127);
+    if (S.confirmExit !== null) throw new Error('the picker ate the click; confirm still up');
+    if (!armed()) throw new Error('Yes did not arm the exit');
+    reset();
+    if (S.projectPadPicker) closeProjectPadPicker();
 });
 
 process.exit(failed);

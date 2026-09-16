@@ -576,14 +576,29 @@ function _onMidiInternalImpl(data) {
              * loaded behind the picker — is declined there by noOverviewYet(),
              * not swallowed here, so the law has ONE owner. */
             else if (d1 === MoveNoteSession) { /* falls through */ }
+            /* ⭐ The EXIT CONFIRM falls through too (2026-09-16, Josh:
+             * "permitting davebox exit from project manager (same as inside a
+             * session)"). Hold-Back has always raised it from here — the tick's
+             * checkBackHold() has no picker guard — but this router swallowed
+             * the jog, and the renderer drew the picker over the dialog, so the
+             * modal was LIVE AND INVISIBLE and the project manager was the one
+             * screen with no way out. Same family as the two escapes above:
+             * the wheel and the click reach the dialog, everything else stays
+             * swallowed so a blind pad press cannot act under it. */
             else if (d1 === MoveMainKnob) {
-                const _pd = decodeDelta(d2);
-                if (_pd) projectPadPickerRotate(_pd);
-                return;
+                if (S.confirmExit) { /* falls through to the dialog */ }
+                else {
+                    const _pd = decodeDelta(d2);
+                    if (_pd) projectPadPickerRotate(_pd);
+                    return;
+                }
             }
             else if (d1 === MoveMainButton) {
-                if (d2 === 127) projectPadPickerClick();
-                return;
+                if (S.confirmExit) { /* falls through to the dialog */ }
+                else {
+                    if (d2 === 127) projectPadPickerClick();
+                    return;
+                }
             }
             else if (d1 === MoveShift)  { S.shiftHeld  = d2 === 127; return; }
             else if (d1 === MoveDelete) { S.deleteHeld = d2 === 127; return; }

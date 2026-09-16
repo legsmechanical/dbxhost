@@ -1595,6 +1595,13 @@ function drawUIBody() {
     if (S.sessionOverlayHeld) { drawSessionOverview(); return; }
     if (S.daveBox) { drawDaveBox(); return; }
     if (S.snapshotPicker) { drawSnapshotPicker(); return; }
+    /* ⭑ The exit confirm outranks the picker (2026-09-16). Hold-Back already
+     * raised it from here — checkBackHold() has no picker guard — but the
+     * picker drew first and returned, so the dialog was LIVE AND INVISIBLE and
+     * the picker ate the click that would answer it. The project manager was
+     * the one screen with no way out. Input precedence matches, in
+     * ui_input_cc.mjs (jog click and rotate). */
+    if (S.confirmExit)      { drawExitConfirm();      return; }
     if (S.projectPadPicker) { drawProjectPadPicker(); return; }
     if (S.pendingSceneBakePicker) {
         clear_screen();
