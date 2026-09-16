@@ -30,8 +30,23 @@
 #     Move with it.
 #
 # ---- <outfile> contract — read this before writing a consumer (S4) -------
-#   - one line: either the uuid parsed out of a Sets/<uuid>/... path, or the
-#     literal string `default`.
+#   - one line, three space-separated fields:  `<n> <uuid|default> <name>`
+#       n     a load COUNTER, 1 for the first load recorded since the last
+#             clear and +1 for each one after it. It exists so a consumer can
+#             tell "Move has loaded something SINCE I asked" from "Move loaded
+#             something before I asked" — a value alone cannot say that, and
+#             judging a request against an older line is how a stale
+#             confirmation gets mistaken for a fresh one.
+#             ⚠ It is derived from <outfile> ITSELF (read back, incremented),
+#             so the caller's `rm` before each Move start resets it to 1 with
+#             no state kept in this process. This reader outlives a relaunch;
+#             the counter deliberately does not.
+#       uuid  the uuid parsed out of a Sets/<uuid>/... path, or `default`.
+#       name  the project's folder name from the same path (the component
+#             before /Song.abl), or empty for `default`. It is carried so a
+#             surface can NAME the project in a message without a second
+#             lookup, and it may contain spaces — it is the LAST field, so a
+#             consumer must split on the first two separators only.
 #   - written ATOMICALLY: a temp file beside <outfile>, then `mv -f` — a
 #     reader of <outfile> never observes a half-written value.
 #   - <outfile> MAY NOT EXIST. Absence means "nothing logged an `About to
@@ -46,7 +61,8 @@
 # the last one (S9) ----------------------------------------------------------
 #   - lives beside <outfile> (same dir), named `move_loaded_history.txt`.
 #   - one line per "About to load" seen since the last clear:
-#     `<ISO-8601 UTC time> <uuid|default>`, oldest first, capped at 50 lines.
+#     `<ISO-8601 UTC time> <uuid|default> <name>`, oldest first, capped at 50
+#     lines.
 #   - cleared by the caller alongside <outfile>, at each Move start — same
 #     lifecycle, so it never mixes loads from two different Move processes.
 #   - purely diagnostic (S4's policy only ever reads <outfile>): it exists so
@@ -66,13 +82,25 @@ OUTFILE="$2"
 OWNER="$3"
 HISTFILE="$(dirname "$OUTFILE")/move_loaded_history.txt"
 
-# Write <val> ("default" or a uuid) as the new answer, append it to the
-# history, and — when it is not the first load recorded since the last
+# Write <val> ("default" or a uuid) with <name> as the new answer, append it
+# to the history, and — when it is not the first load recorded since the last
 # clear — log the fallback to $LOGFILE.
 write_loaded() {
     _val="$1"
+    _name="${2:-}"
+
+    # The counter comes from <outfile> itself: absent (the caller cleared it
+    # before this Move start) means this is load 1. Keeping it in a shell
+    # variable instead would survive the clear and number a fresh Move's first
+    # load as though it followed the previous Move's loads.
+    _n=0
+    if [ -s "$OUTFILE" ]; then
+        _n=$(awk '{print $1+0}' "$OUTFILE" 2>/dev/null || echo 0)
+    fi
+    _n=$((_n + 1))
+
     _tmp="$OUTFILE.tmp.$$"
-    printf '%s\n' "$_val" > "$_tmp" && mv -f "$_tmp" "$OUTFILE"
+    printf '%s %s %s\n' "$_n" "$_val" "$_name" > "$_tmp" && mv -f "$_tmp" "$OUTFILE"
 
     _first=""
     if [ -s "$HISTFILE" ]; then
@@ -81,7 +109,7 @@ write_loaded() {
 
     _ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     _htmp="$HISTFILE.tmp.$$"
-    { [ -s "$HISTFILE" ] && cat "$HISTFILE"; printf '%s %s\n' "$_ts" "$_val"; } \
+    { [ -s "$HISTFILE" ] && cat "$HISTFILE"; printf '%s %s %s\n' "$_ts" "$_val" "$_name"; } \
         | tail -n 50 > "$_htmp" && mv -f "$_htmp" "$HISTFILE"
 
     if [ -n "$_first" ]; then
@@ -105,14 +133,21 @@ trap stop TERM INT HUP
 tail -n 0 -F "$LOGFILE" 2>/dev/null | while IFS= read -r line; do
     case "$line" in
         *"About to load default song"*)
-            write_loaded "default"
+            write_loaded "default" ""
             ;;
         *"About to load "*)
             uuid=$(printf '%s\n' "$line" \
                 | grep -oE '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' \
                 | head -n 1)
             [ -n "$uuid" ] || continue
-            write_loaded "$uuid"
+            # The project folder name: the path component before /Song.abl.
+            # Measured shape (device, 2026-09-16):
+            #   About to load /data/.../Sets/<uuid>/<Name>/Song.abl
+            # A name with spaces is normal ("Project 12"), so this takes the
+            # whole component rather than a field split. Empty if the path
+            # does not end the way we expect — never a guess.
+            name=$(printf '%s\n' "$line" | sed -n 's#.*/Sets/[^/]*/\(.*\)/Song\.abl.*#\1#p')
+            write_loaded "$uuid" "$name"
             ;;
         *) ;;
     esac

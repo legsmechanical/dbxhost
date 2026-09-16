@@ -413,14 +413,69 @@ static long loaded_set_now_ms(void)
     return (long)ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
 }
 
-/* Read the launcher's answer. Returns buf, or NULL when the file is absent. */
+/* The launcher's answer, parsed. The file is one line, `<n> <uuid|default>
+ * <name>` (move-loaded-set-reader.sh's contract) — three fields, of which the
+ * LAST may contain spaces, so this splits on the first two separators only and
+ * never on whitespace generally.
+ *
+ * `n` is the load COUNTER. It is what lets a caller ask "did Move load
+ * something SINCE I asked", which a uuid alone cannot answer: a line naming
+ * the set we requested may have been written before the request existed, and
+ * treating that as confirmation is how a stale answer passes for a fresh one.
+ *
+ * A file that does not parse yields n == 0 and an empty uuid, which every
+ * caller already treats as ABSENT — the deliberately safe reading, and the one
+ * a file left over from an older reader collapses to. */
+typedef struct {
+    int  n;
+    char uuid[64];      /* a uuid, or the literal "default" */
+    char name[128];     /* project folder name; empty for "default" */
+} loaded_set_line_t;
+
+static int loaded_set_parse_line(const char *raw, loaded_set_line_t *out)
+{
+    out->n = 0; out->uuid[0] = '\0'; out->name[0] = '\0';
+    if (!raw) return 0;
+    while (*raw == ' ') raw++;
+    if (*raw < '0' || *raw > '9') return 0;          /* no counter: not our format */
+    out->n = atoi(raw);
+    const char *p = strchr(raw, ' ');
+    if (!p) return 0;
+    p++;
+    const char *q = strchr(p, ' ');
+    size_t ulen = q ? (size_t)(q - p) : strcspn(p, "\r\n");
+    if (ulen == 0 || ulen >= sizeof(out->uuid)) return 0;
+    memcpy(out->uuid, p, ulen);
+    out->uuid[ulen] = '\0';
+    if (q) {
+        q++;
+        size_t nlen = strcspn(q, "\r\n");
+        if (nlen >= sizeof(out->name)) nlen = sizeof(out->name) - 1;
+        memcpy(out->name, q, nlen);
+        out->name[nlen] = '\0';
+    }
+    return out->n > 0;
+}
+
+static int loaded_set_read_line(loaded_set_line_t *out)
+{
+    char raw[256];
+    FILE *f = fopen(MOVE_LOADED_SET_PATH, "r");
+    if (!f) { loaded_set_parse_line(NULL, out); return 0; }
+    size_t n = fread(raw, 1, sizeof(raw) - 1, f);
+    fclose(f);
+    raw[n] = '\0';
+    return loaded_set_parse_line(raw, out);
+}
+
+/* Read the launcher's answer as today's callers want it: the uuid field alone,
+ * or NULL when the file is absent or unparseable. The counter and the name are
+ * reached with loaded_set_read_line(). */
 static const char *loaded_set_read_file(char *buf, size_t len)
 {
-    FILE *f = fopen(MOVE_LOADED_SET_PATH, "r");
-    if (!f) return NULL;
-    size_t n = fread(buf, 1, len - 1, f);
-    fclose(f);
-    buf[n] = '\0';
+    loaded_set_line_t line;
+    if (!loaded_set_read_line(&line)) return NULL;
+    snprintf(buf, len, "%s", line.uuid);
     return buf;
 }
 
