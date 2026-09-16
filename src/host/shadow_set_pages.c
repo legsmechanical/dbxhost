@@ -413,82 +413,253 @@ static long loaded_set_now_ms(void)
     return (long)ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
 }
 
-/* Read the launcher's answer. Returns buf, or NULL when the file is absent. */
+/* The launcher's answer, parsed. The file is one line, `<n> <uuid|default>
+ * <name>` (move-loaded-set-reader.sh's contract) — three fields, of which the
+ * LAST may contain spaces, so this splits on the first two separators only and
+ * never on whitespace generally.
+ *
+ * `n` is the load COUNTER. It is what lets a caller ask "did Move load
+ * something SINCE I asked", which a uuid alone cannot answer: a line naming
+ * the set we requested may have been written before the request existed, and
+ * treating that as confirmation is how a stale answer passes for a fresh one.
+ *
+ * A file that does not parse yields n == 0 and an empty uuid, which every
+ * caller already treats as ABSENT — the deliberately safe reading, and the one
+ * a file left over from an older reader collapses to. */
+typedef struct {
+    int  n;
+    char uuid[64];      /* a uuid, or the literal "default" */
+    char name[128];     /* project folder name; empty for "default" */
+} loaded_set_line_t;
+
+static int loaded_set_parse_line(const char *raw, loaded_set_line_t *out)
+{
+    out->n = 0; out->uuid[0] = '\0'; out->name[0] = '\0';
+    if (!raw) return 0;
+    while (*raw == ' ') raw++;
+    if (*raw < '0' || *raw > '9') return 0;          /* no counter: not our format */
+    out->n = atoi(raw);
+    const char *p = strchr(raw, ' ');
+    if (!p) return 0;
+    p++;
+    const char *q = strchr(p, ' ');
+    size_t ulen = q ? (size_t)(q - p) : strcspn(p, "\r\n");
+    if (ulen == 0 || ulen >= sizeof(out->uuid)) return 0;
+    memcpy(out->uuid, p, ulen);
+    out->uuid[ulen] = '\0';
+    if (q) {
+        q++;
+        size_t nlen = strcspn(q, "\r\n");
+        if (nlen >= sizeof(out->name)) nlen = sizeof(out->name) - 1;
+        memcpy(out->name, q, nlen);
+        out->name[nlen] = '\0';
+    }
+    return out->n > 0;
+}
+
+static int loaded_set_read_line(loaded_set_line_t *out)
+{
+    char raw[256];
+    FILE *f = fopen(MOVE_LOADED_SET_PATH, "r");
+    if (!f) { loaded_set_parse_line(NULL, out); return 0; }
+    size_t n = fread(raw, 1, sizeof(raw) - 1, f);
+    fclose(f);
+    raw[n] = '\0';
+    return loaded_set_parse_line(raw, out);
+}
+
+/* Read the launcher's answer as today's callers want it: the uuid field alone,
+ * or NULL when the file is absent or unparseable. The counter and the name are
+ * reached with loaded_set_read_line(). */
 static const char *loaded_set_read_file(char *buf, size_t len)
 {
-    FILE *f = fopen(MOVE_LOADED_SET_PATH, "r");
-    if (!f) return NULL;
-    size_t n = fread(buf, 1, len - 1, f);
-    fclose(f);
-    buf[n] = '\0';
+    loaded_set_line_t line;
+    if (!loaded_set_read_line(&line)) return NULL;
+    snprintf(buf, len, "%s", line.uuid);
     return buf;
 }
 
-/* The pad a relaunch actually asked Move to open, or -1 when nothing is
- * pinned (see MOVE_INTENDED_INDEX_PATH). */
-/* The intended index answers ONE question — did the relaunch that started
- * this Move land on the pad it asked for — so it is consulted until the first
- * verdict of this process, then ignored. The marker file outlives the process
- * (launch.sh leaves it for the next relaunch to overwrite), and a later
- * in-process switch (the select actuator, no relaunch) would otherwise be
- * judged against a pad nobody is asking for any more. The shim lives inside
- * MoveOriginal, so this resets with every Move start. */
-static int loaded_intended_consumed = 0;
-static int loaded_unopened_empty_index = -1;   /* Move's index while an empty-pad UNOPENED is shown */
+/* ── THE REQUEST ───────────────────────────────────────────────────────────
+ *
+ * dAVEBOx writes `intended_set.txt` at the moment it picks a project, which is
+ * the one moment the answer is KNOWN rather than inferred: the picker is
+ * holding that project's record when the user presses the pad. Before this,
+ * both actuators carried only a pad INDEX onward and every layer downstream
+ * re-derived the uuid by watching Move.
+ *
+ * ⚠⚠ It is CONSUMED (unlinked) the instant it is armed. A request record that
+ * outlived its request would be judged against a later, unrelated load — which
+ * is exactly how the previous attempt at this failed review. One request, one
+ * arming, no precedence. */
+typedef struct {
+    char uuid[LOADED_SET_UUID_MAX];
+    char name[LOADED_SET_NAME_MAX];
+    int  index;
+} identity_request_t;
 
-static int loaded_set_read_intended_index(void)
+static int identity_read_and_consume_request(identity_request_t *out)
 {
-    if (loaded_intended_consumed) return -1;
-    FILE *f = fopen(MOVE_INTENDED_INDEX_PATH, "r");
-    if (!f) return -1;
-    char buf[32] = "";
+    out->uuid[0] = '\0'; out->name[0] = '\0'; out->index = -1;
+
+    FILE *f = fopen(MOVE_INTENDED_SET_PATH, "r");
+    if (!f) return 0;
+    char buf[512];
     size_t n = fread(buf, 1, sizeof(buf) - 1, f);
     fclose(f);
     buf[n] = '\0';
-    char *end = NULL;
-    long v = strtol(buf, &end, 10);
-    if (end == buf || v < 0) return -1;
-    return (int)v;
+    /* Consume it here, not after parsing: a malformed record must not be left
+     * behind to be re-read on every tick for the rest of the session. */
+    unlink(MOVE_INTENDED_SET_PATH);
+
+    /* uuid \n index \n name */
+    char *p1 = strchr(buf, '\n');
+    if (!p1) return 0;
+    *p1++ = '\0';
+    size_t ulen = strcspn(buf, "\r");
+    if (ulen == 0 || ulen >= sizeof(out->uuid)) return 0;
+    memcpy(out->uuid, buf, ulen); out->uuid[ulen] = '\0';
+
+    char *p2 = strchr(p1, '\n');
+    if (p2) *p2++ = '\0';
+    out->index = atoi(p1);
+    if (p2) {
+        size_t nlen = strcspn(p2, "\r\n");
+        if (nlen >= sizeof(out->name)) nlen = sizeof(out->name) - 1;
+        memcpy(out->name, p2, nlen); out->name[nlen] = '\0';
+    }
+    return out->uuid[0] != '\0';
 }
 
-/* Publish the resolution — or, when Move demonstrably did not open it, the
- * "no active set" identity — for the set dir the xattr scan matched. */
-static void loaded_set_verify_and_publish(int song_index)
+/* ── THE GATE ──────────────────────────────────────────────────────────────
+ *
+ * Every publish goes through here. That is the whole point: one choke point
+ * means a placeholder, a guess or an unconfirmed identity cannot reach
+ * active_set.txt, the DSP or dAVEBOx by ANY road, rather than each consumer
+ * having to refuse it correctly (which is what failed — a guard on the
+ * placeholder namespace silently swallowed the verdict that shared it).
+ *
+ * The resolver's answer arrives here as a HINT and never as a state. */
+static identity_request_t identity_req;
+static int  identity_have_request = 0;
+static int  identity_req_n0 = 0;
+static long identity_arm_ms = 0;
+static loaded_set_record_t identity_published;
+static int  identity_ever_published = 0;
+static int  identity_hint_index = -1;
+/* Move's index while a NONE is being shown for an index that resolves to no
+ * dir. Held so the re-poll of that same unresolved index does not overwrite
+ * the answer with a blank "New Set" on the very next tick; a real change of
+ * index releases it. */
+static int  loaded_unopened_empty_index = -1;
+
+/* Arm a request. Called when a switch is actually set in motion: the relaunch
+ * boot (the launcher applied relaunch_song_index) and the in-place actuator. */
+void shadow_set_identity_arm(void)
 {
-    long elapsed = loaded_set_now_ms() - loaded_verify_start_ms;
-    char buf[128];
-    const char *file = loaded_set_read_file(buf, sizeof(buf));
-    loaded_set_verdict_t v = loaded_set_verdict(loaded_verify_uuid, file);
+    loaded_set_line_t line;
+    loaded_set_read_line(&line);          /* n now; 0 when nothing said yet */
 
-    /* The uuid file can legitimately MATCH a resolution that is still wrong
-     * — Move rejected the requested pad and settled on a different real
-     * project, and the reader correctly reports THAT load. Only the index
-     * the relaunch actually asked for still knows the difference. */
-    int intended_index = loaded_set_read_intended_index();
-    int index_ok = loaded_set_index_matches(intended_index, song_index);
-    if (!index_ok) v = LOADED_SET_MISMATCH;
+    identity_request_t r;
+    if (!identity_read_and_consume_request(&r)) return;
 
-    loaded_verify_active = loaded_set_keep_checking(v, elapsed);
+    identity_req = r;
+    identity_have_request = 1;
+    identity_req_n0 = line.n;
+    identity_arm_ms = loaded_set_now_ms();
+}
 
-    switch (loaded_set_action(v, elapsed)) {
-    case LOADED_SET_ACT_PUBLISH_RESOLVED:
-        loaded_intended_consumed = 1;
-        shadow_set_pages_publish(loaded_verify_name, loaded_verify_uuid);
-        break;
-    case LOADED_SET_ACT_PUBLISH_UNOPENED: {
-        loaded_intended_consumed = 1;
-        char uuid[64];
-        /* Retry must land back on the pad the user actually pressed, not
-         * whichever pad Move's fallback happens to occupy. */
-        int placeholder_index = index_ok ? song_index : intended_index;
-        loaded_set_unopened_uuid(uuid, sizeof(uuid), placeholder_index, loaded_verify_seq);
-        shadow_set_pages_publish(loaded_verify_name, uuid);
-        break;
+/* The REQUEST FILE'S APPEARANCE is the signal — there is no cross-process call
+ * to make. dAVEBOx runs in shadow_ui and the machine lives in the shim (inside
+ * MoveOriginal), so the file is the only thing both can touch. It is written
+ * before either actuator fires and consumed the moment it is seen.
+ *
+ * ⚠ ORDERING, stated rather than assumed. Arming must happen before Move can
+ * log the load it is being asked for, or the confirming line would sit at or
+ * below n0 and be correctly refused as stale — costing a timeout and a Retry,
+ * never a wrong answer.
+ *   · relaunch: EXACT. Move restarts, so the shim restarts with it and reads
+ *     the file at n = 0 before Move has logged anything.
+ *   · in-place actuator: the shim is live, so this depends on a poll landing
+ *     between the write and Move's line. The actuator walks Move's overview
+ *     over SECONDS while the poll runs every ~200 ms in that state, so the
+ *     margin is large — but it IS a margin, not a proof. The failure mode is
+ *     the safe one by construction, which is why this is acceptable rather
+ *     than merely convenient. */
+static void identity_poll_request(void)
+{
+    if (access(MOVE_INTENDED_SET_PATH, F_OK) != 0) return;
+    shadow_set_identity_arm();
+}
+
+static int identity_record_differs(const loaded_set_record_t *a, const loaded_set_record_t *b)
+{
+    return a->state != b->state || a->reason != b->reason ||
+           a->index != b->index ||
+           strcmp(a->uuid, b->uuid) != 0 || strcmp(a->name, b->name) != 0;
+}
+
+/* Run one step and publish if the answer changed. `hint_*` is the resolver's
+ * guess for this index — used ONLY to fill in the index of an OPEN that Move
+ * confirmed, never to produce a state. */
+static void identity_tick(int hint_index, const char *hint_name)
+{
+    loaded_set_line_t line;
+    loaded_set_read_line(&line);
+
+    loaded_set_input_t in;
+    memset(&in, 0, sizeof(in));
+    in.have_request = identity_have_request;
+    if (identity_have_request) {
+        snprintf(in.req_uuid, sizeof(in.req_uuid), "%s", identity_req.uuid);
+        snprintf(in.req_name, sizeof(in.req_name), "%s", identity_req.name);
+        in.req_index = identity_req.index;
+    } else {
+        in.req_index = -1;
     }
-    case LOADED_SET_ACT_HOLD:
-    default:
-        break;
-    }
+    in.req_n0 = identity_req_n0;
+    in.line_n = line.n;
+    in.line_uuid = line.n > 0 ? line.uuid : NULL;
+    in.line_name = line.n > 0 ? line.name : NULL;
+    in.elapsed_ms = loaded_set_now_ms() - identity_arm_ms;
+    in.timeout_ms = LOADED_SET_REQUEST_TIMEOUT_MS;
+
+    loaded_set_record_t rec;
+    loaded_set_step(&in, &rec);
+
+    /* An OPEN with no request carries no index of its own; the resolver's is
+     * the only source for it, and it is a HINT — it names a pad, which is
+     * cosmetic, never a save destination. */
+    if (rec.state == LOADED_SET_OPEN && rec.index < 0) rec.index = hint_index;
+    if (rec.state == LOADED_SET_OPEN && rec.name[0] == '\0' && hint_name)
+        snprintf(rec.name, sizeof(rec.name), "%s", hint_name);
+
+    /* A settled request stops being one, so a later spontaneous move by Move
+     * is judged on its own terms rather than against a request nobody is
+     * making any more. */
+    if (rec.state != LOADED_SET_PENDING) identity_have_request = 0;
+
+    if (identity_ever_published && !identity_record_differs(&rec, &identity_published)) return;
+    identity_published = rec;
+    identity_ever_published = 1;
+
+    /* Only an OPEN has an identity to publish. PENDING and NONE publish an
+     * EMPTY one — that is the point: downstream cannot name a project we have
+     * not been told is open. The state itself travels in the fork-only
+     * `active_set_state` param (shadow_chain_mgmt.c). */
+    if (rec.state == LOADED_SET_OPEN)
+        shadow_set_pages_publish(rec.name, rec.uuid);
+    else
+        shadow_set_pages_publish(rec.name, "");
+}
+
+/* The fork-only typed record, read by the host UI and dAVEBOx through
+ * get_param("active_set_state"). Four lines: state, reason, index, seq. */
+int shadow_set_identity_state(char *out, size_t out_len)
+{
+    return snprintf(out, out_len, "%s\n%s\n%d",
+                    loaded_set_state_str(identity_published.state),
+                    loaded_set_reason_str(identity_published.reason),
+                    identity_published.index);
 }
 
 int shadow_set_tracking_forced_pending(void)
@@ -505,6 +676,11 @@ int shadow_set_tracking_forced_pending(void)
 void shadow_poll_current_set(void)
 {
     static const char settings_path[] = "/data/UserData/settings/Settings.json";
+
+    /* Before anything else: has dAVEBOx asked for a project since the last
+     * tick? Arming first means the counter recorded as "before the request"
+     * really is. */
+    identity_poll_request();
 
     /* Read currentSongIndex from Settings.json */
     FILE *f = fopen(settings_path, "r");
@@ -542,7 +718,7 @@ void shadow_poll_current_set(void)
      * times a second would buy nothing. */
     if (loaded_verify_active && song_index == loaded_verify_index &&
         song_index == sampler_last_song_index) {
-        loaded_set_verify_and_publish(song_index);
+        identity_tick(song_index, loaded_verify_name);
         return;
     }
 
@@ -600,7 +776,11 @@ void shadow_poll_current_set(void)
                 }
                 snprintf(loaded_verify_name, sizeof(loaded_verify_name), "%s", sub->d_name);
                 snprintf(loaded_verify_uuid, sizeof(loaded_verify_uuid), "%s", entry->d_name);
-                loaded_set_verify_and_publish(song_index);
+                /* The resolver matched a dir. That is a HINT — it says which
+                 * dir carries this index, never which set Move is holding.
+                 * The gate decides. */
+                identity_hint_index = song_index;
+                identity_tick(song_index, sub->d_name);
             } else {
                 loaded_verify_active = 0;
                 shadow_set_pages_publish(sub->d_name, entry->d_name);
@@ -629,19 +809,21 @@ void shadow_poll_current_set(void)
      * unresolved, and falling through would overwrite the verdict with a
      * blank "New Set" on the very next poll. A real change of index (Move
      * moved on, or the user picked a set) releases it. */
+    /* ⭑ The index resolves to no dir — either an empty pad, or a set still
+     * materialising. Upstream's two branches below (the "did not open" case and
+     * the placeholder mint) are LEFT AS THEY ARE; only what they PUBLISH is
+     * re-pointed at the gate. The machine already distinguishes these cases
+     * from Move's own word, so neither branch needs to invent an identity, and
+     * keeping their structure keeps this fork's delta to the publish lines. */
     if (loaded_unopened_empty_index >= 0 && song_index == loaded_unopened_empty_index) return;
     loaded_unopened_empty_index = -1;
     {
-        int intended_index = loaded_set_read_intended_index();
-        if (!loaded_set_index_matches(intended_index, song_index)) {
+        /* Nothing is confirmed open at this index. Tick the gate: it says
+         * PENDING while a request is still outstanding and NONE when the
+         * timeout says Move is not coming. No identity is minted here. */
+        identity_tick(song_index, NULL);
+        if (identity_published.state == LOADED_SET_NONE) {
             loaded_unopened_empty_index = song_index;
-            char uuid[64];
-            char name[128];
-            loaded_intended_consumed = 1;
-            if (++loaded_verify_seq == 0) loaded_verify_seq = 1;
-            snprintf(name, sizeof(name), "Set %d", intended_index + 1);
-            loaded_set_unopened_uuid(uuid, sizeof(uuid), intended_index, loaded_verify_seq);
-            shadow_set_pages_publish(name, uuid);
             sampler_pending_song_index = -1;
             return;
         }
@@ -660,5 +842,11 @@ void shadow_poll_current_set(void)
     snprintf(pending_name, sizeof(pending_name), "New Set %d", song_index + 1);
     snprintf(pending_uuid, sizeof(pending_uuid), "__pending-%d-%u",
              song_index, (unsigned)sampler_pending_set_seq);
-    shadow_set_pages_publish(pending_name, pending_uuid);
+    /* ⭑ The placeholder is still MINTED (upstream code, untouched) but it no
+     * longer reaches anyone: the gate publishes the machine's answer instead.
+     * A placeholder persisting into the next boot is what sent two sessions to
+     * the fallback state file on 2026-09-16 — cutting it here, at the one choke
+     * point, is what makes that unwritable rather than merely guarded against. */
+    (void)pending_uuid;
+    identity_tick(song_index, pending_name);
 }

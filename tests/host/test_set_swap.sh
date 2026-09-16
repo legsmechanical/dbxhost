@@ -132,15 +132,10 @@ else
     run enter
     check "1b enter: opened the remembered project (0)" grep -q '"currentSongIndex": 0' "$SETTINGS_JSON"
 
-    # The session switches to a second project. On device this means: the module
-    # autosaves the NEW project from now on, and active_set.txt names it. It does
-    # NOT mean Settings.json changes.
+    # The session switches to a second project. On device this means:
+    # active_set.txt names it. It does NOT mean Settings.json changes.
     mkdir -p "$SETS_DIR/$P2/dAVEBOx"
     set_song_index "$SETS_DIR/$P2" 5
-    mkdir -p "$SETS_DIR/$P1/dAVEBOx"
-    echo '{}' > "$SETS_DIR/$P1/dAVEBOx/seq8sa-state.json"
-    sleep 1
-    echo '{}' > "$SETS_DIR/$P2/dAVEBOx/seq8sa-state.json"   # newer: the live one
     printf '%s\nProject Two\n' "$P2" > "$DBX_DIR/active_set.txt"
 
     check "1b control: Settings.json still says the OLD project" \
@@ -153,22 +148,31 @@ else
     run enter
     check "1b relaunch: opens the project you were on, not the one you started on" \
         grep -q '"currentSongIndex": 5' "$SETTINGS_JSON"
+
+    # ⭑⭑ THE TRAP THIS PINS: session_song_index() used to try the newest-mtime
+    # per-project autosave FIRST, ahead of active_set.txt, on the theory that
+    # "whichever project the module is writing IS the project that is loaded."
+    # Deleted (project-identity-design §3A A10) because it is tried at the one
+    # moment — exit — that decides where the NEXT session opens, so a live
+    # second guess could OVERRIDE active_set.txt, which the host now writes
+    # only once Move has CONFIRMED a project is open. Here P1's autosave is
+    # made the newer file while active_set.txt still names P2: the OLD
+    # heuristic would answer P1 (0), the current code must still answer P2 (5).
+    mkdir -p "$SETS_DIR/$P1/dAVEBOx"
+    echo '{}' > "$SETS_DIR/$P2/dAVEBOx/seq8sa-state.json"
+    sleep 1
+    echo '{}' > "$SETS_DIR/$P1/dAVEBOx/seq8sa-state.json"   # newer, but NOT live
     run exit
+    check "1b heuristic gone: newest autosave (P1) disagrees, active_set.txt (P2) still wins" \
+        bash -c "[ \"\$(cat '$SWAP_ROOT/sa_song_index')\" = 5 ]"
 
-    # ...and with no autosave to read, active_set.txt answers instead.
-    rm -f "$SWAP_ROOT/library/$P1/dAVEBOx/seq8sa-state.json" \
-          "$SWAP_ROOT/library/$P2/dAVEBOx/seq8sa-state.json"
-    printf '%s\nProject One\n' "$P1" > "$DBX_DIR/active_set.txt"
-    run enter; run exit
-    check "1b fallback: active_set.txt answers when no autosave exists" \
-        bash -c "[ \"\$(cat '$SWAP_ROOT/sa_song_index')\" = 0 ]"
-
-    # ...and with BOTH gone it degrades to the old behaviour rather than to 0.
+    # ...and with active_set.txt gone it degrades to the old behaviour rather
+    # than to any autosave mtime.
     rm -f "$DBX_DIR/active_set.txt"
     run enter
-    sed -i.bak 's/"currentSongIndex": 0/"currentSongIndex": 7/' "$SETTINGS_JSON"
+    sed -i.bak 's/"currentSongIndex": 5/"currentSongIndex": 7/' "$SETTINGS_JSON"
     run exit
-    check "1b fallback: currentSongIndex when nothing else can answer" \
+    check "1b fallback: currentSongIndex when active_set.txt cannot answer" \
         bash -c "[ \"\$(cat '$SWAP_ROOT/sa_song_index')\" = 7 ]"
 fi
 rm -rf "$T"

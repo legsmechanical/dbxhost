@@ -52,10 +52,6 @@ set -eu
 
 DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
 SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
-# state_subdir.py (beside this script): the state dir's name is dAVEBOx or
-# dAVEBOx~<n> per project (set-folder order fix) — never spell it here.
-DBX_PY_DIR="${DBX_PY_DIR:-$(cd "$(dirname "$0")" && pwd)}"
-export DBX_PY_DIR
 # No __pycache__ beside the scripts (the install tree is a manifest-checked payload).
 export PYTHONDONTWRITEBYTECODE=1
 SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
@@ -142,22 +138,26 @@ write_song_index() { # index
 # faithfully restored it next launch. Every project switch made in between was
 # thrown away right here.
 #
-# So ask the WRITER, not a mirror. The module autosaves the LIVE project
-# continuously, so the newest per-project state file names it — seconds old
-# against many minutes for every other project. Two fallbacks behind it, each
-# checked for existence rather than trusted:
-#   1. the autosave mtime (the writer)
-#   2. active_set.txt (a mirror, but written on every set change — it has been
-#      measured naming a uuid with NO set dir, hence the existence check)
-#   3. nothing: the caller keeps currentSongIndex, which is today's behaviour and
+# So ask active_set.txt, not currentSongIndex. It is written on every set
+# change (checked for existence rather than trusted — it has been measured
+# naming a uuid with NO set dir). One fallback behind it:
+#   1. active_set.txt (a mirror, but written on every set change)
+#   2. nothing: the caller keeps currentSongIndex, which is today's behaviour and
 #      is right in the one case it can be, a session that never switched project.
+#
+# ⚠ There used to be a source ahead of active_set.txt: the newest-mtime
+# per-project autosave file, on the theory that "whichever project the module
+# is writing IS the project that is loaded." Deleted (project-identity-design
+# §3A A10): it was tried FIRST, so it could OVERRIDE active_set.txt at the one
+# moment (exit) that decides where the next session opens — and active_set.txt
+# is now written by the host only when Move has CONFIRMED a project is open, so
+# a live second guess is strictly less trustworthy than the thing it used to
+# override.
 #
 # Prints the index, or nothing if no source could answer.
 session_song_index() {
     python3 - "$SETS_DIR" "$ACTIVE_SET_PATH" <<'SESSIDX_PY' 2>/dev/null
-import os, sys, glob
-sys.path.insert(0, os.environ["DBX_PY_DIR"])
-import state_subdir as ss
+import os, sys
 
 sets_dir, active_set_path = sys.argv[1], sys.argv[2]
 
@@ -172,23 +172,6 @@ def index_of(uuid):
         return None
 
 
-def newest_autosave_uuid():
-    """The project the module is writing IS the project that is loaded."""
-    best, best_t = None, None
-    for path in glob.glob(os.path.join(sets_dir, "*", ss.STATE_BASE + "*", "seq8sa-state.json")):
-        if not ss.is_state_name(os.path.basename(os.path.dirname(path))):
-            continue
-        try:
-            t = os.stat(path).st_mtime
-        except OSError:
-            continue
-        if best_t is None or t > best_t:
-            best, best_t = path, t
-    if best is None:
-        return ""
-    return os.path.basename(os.path.dirname(os.path.dirname(best)))
-
-
 def active_set_uuid():
     try:
         with open(active_set_path) as f:
@@ -197,7 +180,7 @@ def active_set_uuid():
         return ""
 
 
-for candidate in (newest_autosave_uuid(), active_set_uuid()):
+for candidate in (active_set_uuid(),):
     i = index_of(candidate)
     if i is not None and i >= 0:
         print(i)

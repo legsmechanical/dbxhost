@@ -75,7 +75,11 @@ check "state_subdir.py name pattern"   "$HERE/scripts/state_subdir.py"       "^$
 check "state_subdir.py retry bound"    "$HERE/scripts/state_subdir.py"       "STATE_MAX_TRIES = 256"
 check "project-cmd imports the rule"   "$HERE/scripts/project-cmd.sh"        "import state_subdir as ss"
 check "select-list imports the rule"   "$HERE/scripts/select-list.sh"        "import state_subdir as ss"
-check "set-swap imports the rule"      "$HERE/scripts/set-swap.sh"           "import state_subdir as ss"
+# set-swap.sh used to import this too, for newest_autosave_uuid()'s state-dir
+# glob — deleted (project-identity-design §3A A10): it was a live second guess
+# at session identity that could override active_set.txt, which the host now
+# writes only on a Move-confirmed open. set-swap.sh no longer hunts state dirs
+# by name at all, so there is nothing left here to pin.
 # The C side's copy of the SAME rule (dbx_state_subdir.h): the shim, the JS
 # binding host_state_subdir (host UI + dAVEBOx UI) and the DSP. The DSP builds
 # in a container that cannot see src/, so it carries a copy — pinned

@@ -555,7 +555,6 @@ export const S = {
     /* Post-resume self-heal window: ticks left of active_set.txt re-checking
      * after an overtake resume, so a set switch the host detected LATE still
      * triggers the reload (see the resume-edge block in _tickImpl). */
-    resumeSetRecheckTicks: 0,
     globalMenuOpen: false,
     globalMenuItems: null,
     globalMenuState: null,
@@ -803,7 +802,6 @@ export const S = {
      * retrying} while the blocking screen is up, else null. */
     projectOpenFailed: null,
     /* Ticks left of polling active_set.txt for that verdict after init/resume. */
-    projectOpenCheckTicks: 0,
     /* Set one tick after a snapshot Save fires the DSP 'save'; the live state
      * file is on disk by then, so the copy-into-snapshot runs in tick().
      * { id, label } (id reused = overwrite). */
