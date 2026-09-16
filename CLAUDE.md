@@ -166,10 +166,26 @@ a skip. Install with `./scripts/install-hooks.sh`; bypass deliberately with `SCH
 scripts/test-linux.sh                 # the host suite on glibc, as CI runs it
 ```
 
-⭑ **A count is never a claim about coverage.** A skipped case prints PASS and increments the total,
-so the number is identical either way — `test-linux.sh` reports skips beside the count, and
-`KNOWN-OPEN` cases are named rather than hidden. Run the suite in the **checkout**, not a worktree:
-a worktree silently skips tests a checkout runs.
+### ⭑⭑ A runner must report what it did NOT do
+
+**A count is never a claim about coverage.** A skipped case prints PASS, increments the total, and
+leaves the number **identical to a clean run** — there is nothing in the output to notice. So, for
+any runner in this repo:
+
+- **A missing tool is a FAILURE, not a skip.** Give it a named escape hatch instead, so a skip is a
+  deliberate act: `SCHWUNG_SKIP_HOOKS=1` (pre-commit), `DBX_ALLOW_MISSING_TOOLS=1` (davebox suite).
+- **Zero collected is not green.** A glob that matches nothing leaves the counters at 0 while
+  everything downstream still prints PASS.
+- **Count the skips and name them beside the result.** `test-linux.sh` does; `KNOWN-OPEN` cases are
+  named rather than hidden.
+- **Run the suite in the CHECKOUT, not a worktree** — a worktree silently skips tests a checkout
+  runs (a branch once reported "177/177" that was 175 plus two skips; both failures surfaced only
+  after the merge).
+- When you report a number, say what was skipped. *"223/223, 0 skipped"* is a claim; *"223/223"* is
+  not.
+
+⚠ Four instances of this one shape surfaced on 2026-09-16, three in machinery built that same day.
+Prove the negative before believing it: hide the tool, break the glob, confirm it goes red.
 
 CI (`.github/workflows/ci.yml`) runs host-tests, davebox-tests, go and cross-compile on every push
 and PR. It is advisory — `main` is unprotected — so the local hook is the real gate.
