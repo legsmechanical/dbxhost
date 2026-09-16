@@ -746,13 +746,40 @@ static void seq8_save_state(seq8_instance_t *inst) {
      * load has happened. (The JS deferred-save path is gated separately, on the
      * same flag read back via get_param, so it never even fetches state_full.) */
     if (inst->awaiting_select) return;
-    /* Re-resolve per save, WITH the chooser: the state dir may not exist yet
-     * (a project's first save), and a plain ensure_parent_dir would make a
-     * `dAVEBOx/` that can list before Move's song folder — the set-folder
-     * order bug. A raw state_path (no uuid) is left as given. */
-    if (inst->state_uuid[0])
-        seq8_set_state_path(inst->state_path, sizeof(inst->state_path), inst->state_uuid, 1);
-    ensure_parent_dir(inst->state_path);
+
+    char dest[sizeof(inst->state_path)];
+    /* NO DESTINATION AT ALL — no identity and no explicitly named path. There
+     * is no fallback file to fall back to any more (deleting it is the point:
+     * it let a session with no project save "somewhere"), so this save has
+     * nowhere it is entitled to go.
+     *
+     * Under the identity design this is UNREACHABLE: the instance is dirty only
+     * after a load, and a load only happens on a Move-confirmed project. It is
+     * written anyway because "unreachable" has been wrong here twice, and
+     * because a parked file can still be recovered while a refused save is gone
+     * forever. Per-instance name, timestamped, never overwritten and never read
+     * back by anything — recovery is a decision for a human, not an inference.
+     *
+     * Defaults are not work: a CLEAN instance simply returns, which is the
+     * crash-before-init case and has nothing worth keeping. */
+    if (!inst->state_uuid[0] && !inst->state_path[0]) {
+        if (!inst->state_dirty) return;
+        int pn = snprintf(dest, sizeof(dest),
+                          SEQ8_QUARANTINE_DIR "/" SEQ8_STATE_PREFIX "-%u-%lld.json",
+                          (unsigned)inst->instance_nonce, (long long)time(NULL));
+        if (pn < 0 || (size_t)pn >= sizeof(dest)) return;
+        seq8_ilog(inst, "SAVE WITH NO IDENTITY — PARKED, not written to any project:");
+        seq8_ilog(inst, dest);
+    } else {
+        /* Re-resolve per save, WITH the chooser: the state dir may not exist yet
+         * (a project's first save), and a plain ensure_parent_dir would make a
+         * `dAVEBOx/` that can list before Move's song folder — the set-folder
+         * order bug. A raw state_path (no uuid) is left as given. */
+        if (inst->state_uuid[0])
+            seq8_set_state_path(inst->state_path, sizeof(inst->state_path), inst->state_uuid, 1);
+        snprintf(dest, sizeof(dest), "%s", inst->state_path);
+    }
+    ensure_parent_dir(dest);
     /* Temp sibling + fsync + rename, never a truncating write to the live path:
      * the serialize below is thousands of fprintf calls, so writing in place
      * would leave the only on-disk copy a fragment for the whole of it. The
@@ -760,15 +787,15 @@ static void seq8_save_state(seq8_instance_t *inst) {
      * project, quietly missing whatever the cut removed. Same contract as the
      * host's host_write_file — either the old state or the new one, never a
      * blend of the two. */
-    char tmp_path[sizeof(inst->state_path) + 8];
-    int _n = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", inst->state_path);
+    char tmp_path[sizeof(dest) + 8];
+    int _n = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", dest);
     if (_n < 0 || (size_t)_n >= sizeof(tmp_path)) return;
     FILE *fp = fopen(tmp_path, "w");
     if (!fp) return;
     seq8_do_serialize(inst, fp);
     int ok = (fflush(fp) == 0) && (fsync(fileno(fp)) == 0);
     if (fclose(fp) != 0) ok = 0;
-    if (!ok || rename(tmp_path, inst->state_path) != 0) remove(tmp_path);
+    if (!ok || rename(tmp_path, dest) != 0) remove(tmp_path);
 }
 
 static void seq8_load_state(seq8_instance_t *inst) {
