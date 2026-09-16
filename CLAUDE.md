@@ -47,6 +47,61 @@ an outside request. The module lives in `davebox/` and is the sole living SA sou
 - The OLED UI language is specified in `docs/UI_LANGUAGE.md`; rebuilt screens compose from the shared
   primitives.
 
+## 🔴🔴 dAVEBOx IS THE PRODUCT — port FOR it, onto a screen it OPENS
+
+> *"WE'RE WORKING ON DAVEBOX. EVERYTHING NEEDS TO BE HAPPENING INSIDE DAVEBOX. the entire point of
+> the work with upstream is to pick what's useful to davebox and port it so it works FOR DAVEBOX."*
+> — Josh, 2026-09-09
+
+**Before writing ANY port or feature, answer in one line: which dAVEBOx screen shows this, and what
+does the user press to get there?** If the answer names a HOST screen — the chain editor,
+`enterComponentSelect`, Global Settings, the host help viewer — **stop and find dAVEBOx's own
+equivalent.** A host-side change is right only when it is PLUMBING dAVEBOx calls into, never when it
+is the surface itself.
+
+| upstream puts it in | dAVEBOx's actual surface |
+|---|---|
+| the swap picker / `enterComponentSelect` | the **Instrument picker** (`openInstrPicker`, `instrPickerRows`) for generators; `openBrowse`/`buildBrowseList`/`applyModulePick` for FX blocks — `davebox/ui/ui_sound.mjs` |
+| the host knob grid's trailing pages | dAVEBOx draws its own editor (`ui_sound.mjs`, via `createParamPagesBinding`) |
+| Global Settings rows | `davebox/ui/ui_menu.mjs` |
+| the host help viewer | ⚠ dAVEBOx has **no help screen** — building one is its own decision |
+| text entry / dialogs | `davebox/ui/ui_dialogs.mjs` (the shared keyboard) |
+
+⚠⚠ **A GREEN SUITE DOES NOT MEAN THE SCREEN IS REACHABLE.** #378 was built three times on three
+screens; 17 source pins, 31 mutations, a render harness and three hash-verified deploys were green
+on two surfaces a dAVEBOx session cannot open. Tests here answer *"is it wired"*, never *"is this
+the screen"*. Make one test perform the real gesture and assert what is on screen —
+`davebox/tests/js/test_instr_lists.mjs` is the worked example, and it found three defects in seconds
+that every pin had missed.
+
+⚠ This fork had already paid for it once: `default_fx` shipped here for months and never logged a
+line, because nothing reached the hook — the host seeds them from its OWN component picker, which
+this UI never uses.
+
+## 📏 No A/B number without naming the control
+
+Before stating ANY comparative result — performance, size, output — state **what was held constant
+and how that was VERIFIED**: a hash or a captured input, never a filename or a folder name.
+**No control named, no number reported.** For a probe, the same rule reads: show it producing a
+POSITIVE before believing a negative.
+
+⚠ On 2026-08-26 a "container builds are 23% slower" result was reported as decisive and collapsed —
+the two artifacts had different provenance and nobody hashed the input. In the same session a
+knob-sweep "finding" came from a probe that silently ignored the knob. Both were caught only after
+being reported.
+
+## 📗 Module composition: read the CURRENT `MODULES.md`
+
+Before writing or debugging any `module.json`, UI hierarchy, chain param, knob mapping, menu, DSP
+entry point or JS↔DSP param bridge — read **`docs/MODULES.md` in THIS repo** for dAVEBOx SA work;
+`../schwung-current/docs/MODULES.md` is the upstream-bound contract. ⚠ Do **not** infer the schema
+by copying another module's `module.json`: the failure mode is that the module loads, the DSP
+instantiates, nothing is logged, and the menu does nothing when you turn a knob. Traps already paid
+for: editable params use **`name`**, not `label`; a file browser is a **`filepath` param type**
+(`root`/`start_path`/`filter`); repeated elements use **`child_prefix`/`child_count`/`child_label`**;
+and the DSP must implement **`get_param` readback** for every key the UI displays or every knob
+reads zero.
+
 ## ⚠️ Fork-only divergences (never push upstream)
 
 Keep each isolated in its own commit so it is easy to exclude when cherry-picking upstream.
