@@ -305,6 +305,8 @@ collide and most deserving of a careful read before taking:
 | `standalone/`, `davebox/` | all of it | Fork-only by construction — no upstream counterpart exists |
 | `src/host/shadow_param_lane.h`, `src/host/shadow_param_lane_policy.h` | new (branch `param-transport`) | The param-transport write lane + its eligibility classifier — no upstream equivalent |
 | `tests/host/test_shadow_param_lane.c`, `tests/host/test_param_lane_policy.c`, `tests/host/test_param_apply_set_dispatch.sh`, `tests/host/test_param_lane_wiring.sh` | new (branch `param-transport`) | Unit + structural pins for the lane and the one-dispatcher invariant |
+| `src/host/render_pool.h` | new (2026-09-15) | The fork-join render pool under the per-slot chain render (`shadow_inprocess_render_to_buffer` restructured around it; `slot:parallel`, `master_fx:render_lanes`) — no upstream equivalent |
+| `tests/host/test_render_pool.c`, `tests/host/test_render_pool_wiring.sh` | new (2026-09-15) | The pool's unit (plan, round, bail) and the structural pin on how the shim uses it |
 
 ## Still worth offering upstream
 
@@ -321,6 +323,7 @@ so the option stays visible.
 | Treat an empty param readback as absent, not as a value | `16368a97` | Not submitted |
 | Text-entry function keys no longer overlap the last characters | `02e5ac2d` | Not submitted |
 | One-dispatcher param SET extraction (`shadow_param_apply_set`) + the variable-length param write lane | branch `param-transport` | Not submitted — generic host change, no module named; fixes a real two-dispatcher class of bug (see the 09-05 lesson in `docs/HOST_REFERENCE.md`) |
+| The render pool (`render_pool.h` + the shim restructure) | 2026-09-15 | Not submitted — generic, no module named; `slot:parallel` is a plain slot key. Worth offering once the CM4 A/B exists (upstream's users are all on CM4) |
 
 ⚠ **Identify these by SUBJECT, not by hash.** Upstream rewrites history on every release, and this
 fork has been renumbered by it before — a stale hash reads as "the work is missing" when it is

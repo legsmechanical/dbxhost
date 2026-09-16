@@ -127,6 +127,13 @@ typedef struct host_api_v1 {
      * support slot-addressed dispatch. */
     int (*midi_send_internal_slot)(int slot, const uint8_t *msg, int len);
 
+    /* Move's "MIDI Clock Out" preference as a cached word: 1 = output (or
+     * unknown/unavailable), 0 = off / input. The host refreshes it off the
+     * audio thread (~1 s); a plugin may call this from render. NULL if the
+     * host does not provide it — treat as 1. (2026-09-05: the chain used to
+     * read Settings.json itself, from the SPI callback.) */
+    int (*clock_output_enabled)(void);
+
 } host_api_v1_t;
 
 /*

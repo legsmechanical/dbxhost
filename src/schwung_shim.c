@@ -49,6 +49,7 @@
 #include "host/shadow_chain_types.h"
 #include "host/unified_log.h"
 #include "host/shim_thread.h"
+#include "host/render_pool.h"   /* the per-slot chain render's fork-join pool */
 #include "host/sa_master_volume.h"
 #include "host/spawn_command.h"
 #include "host/schwung_trace.h"
@@ -1622,6 +1623,7 @@ static void shadow_overtake_dsp_load(const char *path) {
     overtake_host_api.audio_in_offset = MOVE_AUDIO_IN_OFFSET;
     overtake_host_api.log = shadow_log;
     overtake_host_api.midi_send_internal = overtake_midi_send_internal;
+    overtake_host_api.clock_output_enabled = shim_clock_output_enabled_get;
     overtake_host_api.midi_send_internal_slot = overtake_midi_send_internal_slot;
     overtake_host_api.midi_send_external = overtake_midi_send_external;
     overtake_host_api.get_bpm = shim_get_bpm;
@@ -1780,9 +1782,258 @@ static uint32_t spi_slot_probe_burst_max;
  * Render DSP into buffer (slow, ~300µs) - called POST-ioctl
  * This renders audio for the NEXT frame, adding one frame of latency (~3ms)
  * but allowing Move to process pad events faster after ioctl returns.
+ *
+ * ⭑ THE RENDER POOL (2026-09-15). The per-slot body below is a TASK; the
+ * pool (host/render_pool.h) runs the active slots across up to three lanes
+ * — lane 0 is this thread, the others park between frames — and this
+ * function returns only after every lane is done (fork-join). Everything
+ * the task touches is per-slot; what used to be shared inside the loop
+ * moved out of it:
+ *   - the fallback path's mix into shadow_deferred_dsp_buffer (a shared
+ *     accumulator, read-modify-write) now runs AFTER the join, serially, in
+ *     slot order — the slot renders into its own shadow_slot_fallback[s]
+ *     and marks it; the pass below sums the marked ones.
+ *   - probe_burst is counted per LANE and summed after.
+ *   - skip_deferred_fx (a read of the Link-in shm) is decided once per
+ *     frame, before dispatch, not per slot.
+ * A slot whose module is pinned (`slot:parallel` 0) always runs on lane 0,
+ * i.e. exactly where it always ran. `master_fx:render_lanes` sets the lane
+ * count (1 = serial: the pool's inline path, which IS the old loop in the
+ * old order). The pool's counters ride the spi_timing snapshot as the
+ * `render pool:` line — wall vs the serial-equivalent Σ of slot costs, so
+ * the speedup is measured on the device by ONE build, lanes=1 vs lanes=3.
  */
+static render_pool_t shadow_render_pool;          /* static: helpers hold its address forever */
+static int shadow_render_pool_inited = 0;
+static int shadow_render_lanes_cfg = RENDER_POOL_MAX_LANES;   /* master_fx:render_lanes */
+
+typedef struct {
+    int same_frame_fx;
+    int skip_deferred_fx;
+} shadow_render_ctx_t;
+
+static uint32_t shadow_render_probe_burst[RENDER_POOL_MAX_LANES];
+/* Fallback-path slots that rendered this frame and await the serial mix. */
+static int shadow_slot_fallback_rendered[SHADOW_CHAIN_INSTANCES];
+
+static void shadow_render_slot_task(void *vctx, int s, int lane) {
+    const shadow_render_ctx_t *ctx = (const shadow_render_ctx_t *)vctx;
+    const int same_frame_fx = ctx->same_frame_fx;
+
+    /* Per-slot timing for the render+fx work below */
+    struct timespec slot_t0, slot_t1;
+    clock_gettime(CLOCK_MONOTONIC, &slot_t0);
+
+    /* Wake slot from idle if fade is ramping (otherwise gain stays at 0) */
+    if (shadow_chain_slots[s].fade.gain != shadow_chain_slots[s].fade.target) {
+        shadow_slot_idle[s] = 0;
+        shadow_slot_silence_frames[s] = 0;
+    }
+
+    /* Idle gate: skip render_block if synth output has been silent.
+     * Buffer is already zeroed; FX still runs for tail decay.
+     * Probe every ~0.5s to detect self-generating audio (LFOs, arps).
+     *
+     * Stagger: slots that go idle on the same frame (common at boot)
+     * have aligned silence_frames counters and would all probe the
+     * same frame, stacking render+FX cost into one ~1ms spike. The
+     * per-slot offset spreads probes evenly across the probe window
+     * so at most one slot probes per frame.
+     *
+     * ⚠ The offset MUST be derived from the slot count. It was once a
+     * literal 43 (= 172/4), which silently collides the moment the
+     * count is not 4: at 8 slots s=4..7 wrap modulo the window back
+     * onto s=0..3's probe frames, so four pairs probe together — the
+     * exact spike this stagger exists to prevent. */
+    if (shadow_slot_idle[s]) {
+        shadow_slot_silence_frames[s]++;
+        if ((shadow_slot_silence_frames[s] + s * SLOT_PROBE_STRIDE_FRAMES)
+                % SLOT_PROBE_WINDOW_FRAMES != 0) {
+            /* Not a probe frame — skip synth render.
+             * Buffer is zeros; FX below still runs for tail decay.
+             *
+             * ⚠ MODULATION AND MIDI FX TIMERS STILL HAVE TO ADVANCE.
+             * lfo_tick() and v2_tick_midi_fx() live INSIDE
+             * render_block, so skipping the render froze both: they
+             * moved only on the 1-in-SLOT_PROBE_WINDOW_FRAMES probe,
+             * i.e. ~172x too slow and in visible steps, and an LFO
+             * resumed from a stale phase at note-on — an audio bug,
+             * not a display one. This runs the modulation without the
+             * audio render, which was the expensive part. */
+            if (shadow_plugin_v2->set_param) {
+                shadow_plugin_v2->set_param(shadow_chain_slots[s].instance,
+                                            "mod:tick", "128");
+            }
+            /* ⚠ ASK EXACTLY ONCE, and only AFTER the tick: the answer
+             * is a one-shot about THIS frame. Null-checked because
+             * this host can be running against STOCK's chain dsp.so,
+             * which does not export it — install-sa does not deploy
+             * the chain DSP. */
+            int midi_wake = shadow_chain_take_midi_tick_wake &&
+                shadow_chain_take_midi_tick_wake(shadow_chain_slots[s].instance);
+            if (!midi_wake) {
+                shadow_slot_deferred_valid[s] = 1;
+                goto slot_run_deferred_fx;
+            }
+            /* A MIDI FX delivered a generated message to the synth on
+             * this frame, so render it here rather than leaving it
+             * parked until the next probe (up to ~0.5 s away). NOT
+             * counted as a probe below: probe_burst is the
+             * stagger-ALIGNMENT detector, and a MIDI-driven wake is
+             * not a probe — counting it reports a spike the stagger
+             * cannot fix. */
+            shadow_slot_idle[s] = 0;
+            shadow_slot_silence_frames[s] = 0;
+        } else {
+            /* Probe frame: fall through to render and check output */
+            shadow_render_probe_burst[lane]++;
+        }
+    }
+
+    if (same_frame_fx) {
+        /* Synth only → per-slot buffer. FX deferred below. */
+        shadow_chain_set_external_fx_mode(shadow_chain_slots[s].instance, 1);
+        struct timespec synth_t0, synth_t1;
+        clock_gettime(CLOCK_MONOTONIC, &synth_t0);
+        shadow_plugin_v2->render_block(shadow_chain_slots[s].instance,
+                                       shadow_slot_deferred[s],
+                                       MOVE_FRAMES_PER_BLOCK);
+        clock_gettime(CLOCK_MONOTONIC, &synth_t1);
+        uint64_t synth_us = (synth_t1.tv_sec - synth_t0.tv_sec) * 1000000ULL +
+                            (synth_t1.tv_nsec - synth_t0.tv_nsec) / 1000;
+        if (synth_us > spi_slot_synth_max[s]) spi_slot_synth_max[s] = synth_us;
+        shadow_slot_deferred_valid[s] = 1;
+    } else {
+        /* Fallback: full render (synth + FX) into THIS SLOT's buffer (see
+         * shadow_slot_fallback). No Link Audio inject (one-frame delay
+         * would cause issues). The mix into the shared accumulator happens
+         * AFTER the join, in shadow_inprocess_render_to_buffer — never
+         * here, where another lane may be doing the same. */
+        int16_t *render_buffer = shadow_slot_fallback[s];
+        memset(render_buffer, 0, sizeof(shadow_slot_fallback[s]));
+        shadow_plugin_v2->render_block(shadow_chain_slots[s].instance,
+                                       render_buffer, MOVE_FRAMES_PER_BLOCK);
+        if (link_audio.enabled && s < LINK_AUDIO_SHADOW_CHANNELS) {
+            float cap_vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
+            for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++)
+                shadow_slot_capture[s][i] = (int16_t)lroundf((float)render_buffer[i] * cap_vol);
+            /* Write to publisher shared memory for link_subscriber */
+            if (shadow_pub_audio_shm) {
+                link_audio_pub_slot_t *ps = &shadow_pub_audio_shm->slots[s];
+                uint32_t wp = ps->write_pos;
+                for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
+                    ps->ring[wp & LINK_AUDIO_PUB_SHM_RING_MASK] = shadow_slot_capture[s][i];
+                    wp++;
+                }
+                __sync_synchronize();
+                ps->write_pos = wp;
+                ps->active = 1;
+            }
+        }
+        shadow_slot_fallback_rendered[s] = 1;
+    }
+
+    /* Check if synth render output is silent */
+    {
+    int16_t *slot_out = same_frame_fx ? shadow_slot_deferred[s] : shadow_slot_fallback[s];   /* THIS slot's output, never the accumulator */
+    int is_silent = 1;
+    for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
+        if (slot_out[i] > DSP_SILENCE_LEVEL || slot_out[i] < -DSP_SILENCE_LEVEL) {
+            is_silent = 0;
+            break;
+        }
+    }
+
+    if (is_silent) {
+        shadow_slot_silence_frames[s]++;
+        if (shadow_slot_silence_frames[s] >= DSP_IDLE_THRESHOLD) {
+            shadow_slot_idle[s] = 1;
+        }
+    } else {
+        shadow_slot_silence_frames[s] = 0;
+        shadow_slot_idle[s] = 0;
+    }
+    }
+
+    /* Run per-slot FX in post-ioctl (deferred) when same_frame_fx is active.
+     * Moves ~435µs avg / 3ms max out of the pre-ioctl budget.
+     * When synth is idle, FX still runs on zeros for tail decay.
+     * When both synth AND FX are idle, skip entirely. */
+slot_run_deferred_fx:
+    /* Skip the deferred FX call ONLY when the main-mix rebuild path
+     * will actually run this frame — otherwise the slot has no FX
+     * output at all (both the deferred and the rebuild paths get
+     * skipped). Mirrors the conditions of `rebuild_from_la` computed
+     * later in shadow_inprocess_mix_from_buffer(). Decided once per
+     * frame by the caller (ctx->skip_deferred_fx). */
+    if (ctx->skip_deferred_fx) {
+        /* Mark valid with zeros so downstream non-rebuild path, if
+         * it ran, would get silence — but in practice main path
+         * replaces mailbox entirely so this is just for safety. */
+        memset(shadow_slot_fx_deferred[s], 0,
+               sizeof(shadow_slot_fx_deferred[s]));
+        shadow_slot_fx_deferred_valid[s] = 1;
+    } else if (same_frame_fx && shadow_chain_process_fx) {
+        if (shadow_slot_fx_idle[s] && shadow_slot_idle[s]) {
+            /* Both idle — FX output is silence */
+            shadow_slot_fx_deferred_valid[s] = 1;
+        } else {
+            int16_t fx_buf[FRAMES_PER_BLOCK * 2];
+            memcpy(fx_buf, shadow_slot_deferred[s], sizeof(fx_buf));
+            shadow_apply_synth_level(s, fx_buf);
+            struct timespec fx_t0, fx_t1;
+            clock_gettime(CLOCK_MONOTONIC, &fx_t0);
+            shadow_chain_process_fx(shadow_chain_slots[s].instance,
+                                    fx_buf, MOVE_FRAMES_PER_BLOCK);
+            clock_gettime(CLOCK_MONOTONIC, &fx_t1);
+            uint64_t fx_us = (fx_t1.tv_sec - fx_t0.tv_sec) * 1000000ULL +
+                             (fx_t1.tv_nsec - fx_t0.tv_nsec) / 1000;
+            if (fx_us > spi_slot_fx_max[s]) spi_slot_fx_max[s] = fx_us;
+            memcpy(shadow_slot_fx_deferred[s], fx_buf, sizeof(fx_buf));
+            shadow_slot_fx_deferred_valid[s] = 1;
+
+            /* Track FX output silence for phase 2 idle.
+             * Stateful FX (loopers, modulated delays) opt out via
+             * capabilities.requires_continuous_processing — without
+             * this, a 6 s looper's write_pos stops advancing during
+             * silence and the loop "only returns when there's signal". */
+            int fx_silent = 1;
+            for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
+                if (fx_buf[i] > DSP_SILENCE_LEVEL || fx_buf[i] < -DSP_SILENCE_LEVEL) {
+                    fx_silent = 0;
+                    break;
+                }
+            }
+            int fx_keep_alive = (shadow_chain_fx_requires_continuous &&
+                                 shadow_chain_fx_requires_continuous(shadow_chain_slots[s].instance));
+            if (fx_keep_alive) {
+                shadow_slot_fx_silence_frames[s] = 0;
+                shadow_slot_fx_idle[s] = 0;
+            } else if (fx_silent) {
+                shadow_slot_fx_silence_frames[s]++;
+                if (shadow_slot_fx_silence_frames[s] >= DSP_IDLE_THRESHOLD)
+                    shadow_slot_fx_idle[s] = 1;
+            } else {
+                shadow_slot_fx_silence_frames[s] = 0;
+                shadow_slot_fx_idle[s] = 0;
+            }
+        }
+    }
+
+    /* End per-slot timing (added 2026-05-15 for render spike hunt) */
+    clock_gettime(CLOCK_MONOTONIC, &slot_t1);
+    uint64_t slot_us = (slot_t1.tv_sec - slot_t0.tv_sec) * 1000000ULL +
+                       (slot_t1.tv_nsec - slot_t0.tv_nsec) / 1000;
+    if (slot_us > spi_slot_render_max[s]) spi_slot_render_max[s] = slot_us;
+}
+
 static void shadow_inprocess_render_to_buffer(void) {
     if (!shadow_inprocess_ready || !global_mmap_addr) return;
+
+    if (!shadow_render_pool_inited) {
+        render_pool_init(&shadow_render_pool, shadow_render_lanes_cfg, shadow_log);
+        shadow_render_pool_inited = 1;
+    }
 
     /* Advance the transport clock before slot/master LFOs render below, so
      * they read a beat position interpolated to this block. */
@@ -1797,130 +2048,52 @@ static void shadow_inprocess_render_to_buffer(void) {
         shadow_slot_deferred_valid[s] = 0;
         memset(shadow_slot_fx_deferred[s], 0, FRAMES_PER_BLOCK * 2 * sizeof(int16_t));
         shadow_slot_fx_deferred_valid[s] = 0;
+        shadow_slot_fallback_rendered[s] = 0;
     }
 
     /* Same-frame FX: render synth only into per-slot buffers.
      * FX + Link Audio inject are processed in mix_from_buffer (same frame as mailbox)
      * so the inject/subtract cancellation is sample-accurate. */
-    int same_frame_fx = (shadow_chain_set_external_fx_mode != NULL &&
+    shadow_render_ctx_t ctx;
+    ctx.same_frame_fx = (shadow_chain_set_external_fx_mode != NULL &&
                          shadow_chain_process_fx != NULL);
+    {
+        int la_any_active = 0;
+        if (shadow_in_audio_shm) {
+            for (int i = 0; i < LINK_AUDIO_IN_SLOT_COUNT; i++) {
+                if (shadow_in_audio_shm->slots[i].active) {
+                    la_any_active = 1; break;
+                }
+            }
+        }
+        ctx.skip_deferred_fx = (link_audio.enabled &&
+                                link_audio_routing_enabled &&
+                                la_any_active);
+    }
 
     /* Probe-burst diagnostic: count slots whose idle probe fires this frame.
      * If 2-3 slots' silence counters align on the same probe-frame the
-     * render cost stacks into a single ~1ms spike. */
-    uint32_t probe_burst_this_frame = 0;
+     * render cost stacks into a single ~1ms spike. Per lane, summed after. */
+    for (int l = 0; l < RENDER_POOL_MAX_LANES; l++) shadow_render_probe_burst[l] = 0;
+
     if (shadow_plugin_v2 && shadow_plugin_v2->render_block) {
+        uint32_t active_mask = 0, pinned_mask = 0;
         for (int s = 0; s < SHADOW_CHAIN_INSTANCES; s++) {
             if (!shadow_chain_slots[s].active || !shadow_chain_slots[s].instance) continue;
+            active_mask |= 1u << s;
+            if (shadow_chain_slots[s].render_pinned) pinned_mask |= 1u << s;
+        }
+        if (active_mask)
+            render_pool_run(&shadow_render_pool, active_mask, pinned_mask,
+                            shadow_render_slot_task, &ctx);
 
-            /* Per-slot timing for the render+fx work below */
-            struct timespec slot_t0, slot_t1;
-            clock_gettime(CLOCK_MONOTONIC, &slot_t0);
-
-            /* Wake slot from idle if fade is ramping (otherwise gain stays at 0) */
-            if (shadow_chain_slots[s].fade.gain != shadow_chain_slots[s].fade.target) {
-                shadow_slot_idle[s] = 0;
-                shadow_slot_silence_frames[s] = 0;
-            }
-
-            /* Idle gate: skip render_block if synth output has been silent.
-             * Buffer is already zeroed; FX still runs for tail decay.
-             * Probe every ~0.5s to detect self-generating audio (LFOs, arps).
-             *
-             * Stagger: slots that go idle on the same frame (common at boot)
-             * have aligned silence_frames counters and would all probe the
-             * same frame, stacking render+FX cost into one ~1ms spike. The
-             * per-slot offset spreads probes evenly across the probe window
-             * so at most one slot probes per frame.
-             *
-             * ⚠ The offset MUST be derived from the slot count. It was once a
-             * literal 43 (= 172/4), which silently collides the moment the
-             * count is not 4: at 8 slots s=4..7 wrap modulo the window back
-             * onto s=0..3's probe frames, so four pairs probe together — the
-             * exact spike this stagger exists to prevent. */
-            if (shadow_slot_idle[s]) {
-                shadow_slot_silence_frames[s]++;
-                if ((shadow_slot_silence_frames[s] + s * SLOT_PROBE_STRIDE_FRAMES)
-                        % SLOT_PROBE_WINDOW_FRAMES != 0) {
-                    /* Not a probe frame — skip synth render.
-                     * Buffer is zeros; FX below still runs for tail decay.
-                     *
-                     * ⚠ MODULATION AND MIDI FX TIMERS STILL HAVE TO ADVANCE.
-                     * lfo_tick() and v2_tick_midi_fx() live INSIDE
-                     * render_block, so skipping the render froze both: they
-                     * moved only on the 1-in-SLOT_PROBE_WINDOW_FRAMES probe,
-                     * i.e. ~172x too slow and in visible steps, and an LFO
-                     * resumed from a stale phase at note-on — an audio bug,
-                     * not a display one. This runs the modulation without the
-                     * audio render, which was the expensive part. */
-                    if (shadow_plugin_v2->set_param) {
-                        shadow_plugin_v2->set_param(shadow_chain_slots[s].instance,
-                                                    "mod:tick", "128");
-                    }
-                    /* ⚠ ASK EXACTLY ONCE, and only AFTER the tick: the answer
-                     * is a one-shot about THIS frame. Null-checked because
-                     * this host can be running against STOCK's chain dsp.so,
-                     * which does not export it — install-sa does not deploy
-                     * the chain DSP. */
-                    int midi_wake = shadow_chain_take_midi_tick_wake &&
-                        shadow_chain_take_midi_tick_wake(shadow_chain_slots[s].instance);
-                    if (!midi_wake) {
-                        shadow_slot_deferred_valid[s] = 1;
-                        goto slot_run_deferred_fx;
-                    }
-                    /* A MIDI FX delivered a generated message to the synth on
-                     * this frame, so render it here rather than leaving it
-                     * parked until the next probe (up to ~0.5 s away). NOT
-                     * counted as a probe below: probe_burst_this_frame is the
-                     * stagger-ALIGNMENT detector, and a MIDI-driven wake is
-                     * not a probe — counting it reports a spike the stagger
-                     * cannot fix. */
-                    shadow_slot_idle[s] = 0;
-                    shadow_slot_silence_frames[s] = 0;
-                } else {
-                    /* Probe frame: fall through to render and check output */
-                    probe_burst_this_frame++;
-                }
-            }
-
-            if (same_frame_fx) {
-                /* Synth only → per-slot buffer. FX deferred below. */
-                shadow_chain_set_external_fx_mode(shadow_chain_slots[s].instance, 1);
-                struct timespec synth_t0, synth_t1;
-                clock_gettime(CLOCK_MONOTONIC, &synth_t0);
-                shadow_plugin_v2->render_block(shadow_chain_slots[s].instance,
-                                               shadow_slot_deferred[s],
-                                               MOVE_FRAMES_PER_BLOCK);
-                clock_gettime(CLOCK_MONOTONIC, &synth_t1);
-                uint64_t synth_us = (synth_t1.tv_sec - synth_t0.tv_sec) * 1000000ULL +
-                                    (synth_t1.tv_nsec - synth_t0.tv_nsec) / 1000;
-                if (synth_us > spi_slot_synth_max[s]) spi_slot_synth_max[s] = synth_us;
-                shadow_slot_deferred_valid[s] = 1;
-            } else {
-                /* Fallback: full render (synth + FX) → accumulated buffer.
-                 * No Link Audio inject (one-frame delay would cause issues).
-                 * Rendered into THIS SLOT's buffer (see shadow_slot_fallback). */
-                int16_t *render_buffer = shadow_slot_fallback[s];
-                memset(render_buffer, 0, sizeof(shadow_slot_fallback[s]));
-                shadow_plugin_v2->render_block(shadow_chain_slots[s].instance,
-                                               render_buffer, MOVE_FRAMES_PER_BLOCK);
-                if (link_audio.enabled && s < LINK_AUDIO_SHADOW_CHANNELS) {
-                    float cap_vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
-                    for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++)
-                        shadow_slot_capture[s][i] = (int16_t)lroundf((float)render_buffer[i] * cap_vol);
-                    /* Write to publisher shared memory for link_subscriber */
-                    if (shadow_pub_audio_shm) {
-                        link_audio_pub_slot_t *ps = &shadow_pub_audio_shm->slots[s];
-                        uint32_t wp = ps->write_pos;
-                        for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                            ps->ring[wp & LINK_AUDIO_PUB_SHM_RING_MASK] = shadow_slot_capture[s][i];
-                            wp++;
-                        }
-                        __sync_synchronize();
-                        ps->write_pos = wp;
-                        ps->active = 1;
-                    }
-                }
+        /* Fallback path: mix each rendered slot into the shared accumulator,
+         * in slot order, on this thread, after every lane is done. The fade
+         * advances here because this is the read that consumes it. */
+        if (!ctx.same_frame_fx) {
+            for (int s = 0; s < SHADOW_CHAIN_INSTANCES; s++) {
+                if (!shadow_slot_fallback_rendered[s]) continue;
+                const int16_t *render_buffer = shadow_slot_fallback[s];
                 float dfr_pan_l = shadow_pan_gain_l(shadow_chain_slots[s].pan);
                 float dfr_pan_r = shadow_pan_gain_r(shadow_chain_slots[s].pan);
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
@@ -1933,114 +2106,15 @@ static void shadow_inprocess_render_to_buffer(void) {
                     if (i & 1) shadow_fade_advance(s);
                 }
             }
-
-            /* Check if synth render output is silent */
-            {
-            int16_t *slot_out = same_frame_fx ? shadow_slot_deferred[s] : shadow_slot_fallback[s];   /* THIS slot's output, never the accumulator */
-            int is_silent = 1;
-            for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                if (slot_out[i] > DSP_SILENCE_LEVEL || slot_out[i] < -DSP_SILENCE_LEVEL) {
-                    is_silent = 0;
-                    break;
-                }
-            }
-
-            if (is_silent) {
-                shadow_slot_silence_frames[s]++;
-                if (shadow_slot_silence_frames[s] >= DSP_IDLE_THRESHOLD) {
-                    shadow_slot_idle[s] = 1;
-                }
-            } else {
-                shadow_slot_silence_frames[s] = 0;
-                shadow_slot_idle[s] = 0;
-            }
-            }
-
-            /* Run per-slot FX in post-ioctl (deferred) when same_frame_fx is active.
-             * Moves ~435µs avg / 3ms max out of the pre-ioctl budget.
-             * When synth is idle, FX still runs on zeros for tail decay.
-             * When both synth AND FX are idle, skip entirely. */
-        slot_run_deferred_fx:
-            /* Skip the deferred FX call ONLY when the main-mix rebuild path
-             * will actually run this frame — otherwise the slot has no FX
-             * output at all (both the deferred and the rebuild paths get
-             * skipped). Mirrors the conditions of `rebuild_from_la` computed
-             * later in shadow_inprocess_mix_from_buffer(). */
-            int la_any_active = 0;
-            if (shadow_in_audio_shm) {
-                for (int i = 0; i < LINK_AUDIO_IN_SLOT_COUNT; i++) {
-                    if (shadow_in_audio_shm->slots[i].active) {
-                        la_any_active = 1; break;
-                    }
-                }
-            }
-            int skip_deferred_fx = (link_audio.enabled &&
-                                    link_audio_routing_enabled &&
-                                    la_any_active);
-
-            if (skip_deferred_fx) {
-                /* Mark valid with zeros so downstream non-rebuild path, if
-                 * it ran, would get silence — but in practice main path
-                 * replaces mailbox entirely so this is just for safety. */
-                memset(shadow_slot_fx_deferred[s], 0,
-                       sizeof(shadow_slot_fx_deferred[s]));
-                shadow_slot_fx_deferred_valid[s] = 1;
-            } else if (same_frame_fx && shadow_chain_process_fx) {
-                if (shadow_slot_fx_idle[s] && shadow_slot_idle[s]) {
-                    /* Both idle — FX output is silence */
-                    shadow_slot_fx_deferred_valid[s] = 1;
-                } else {
-                    int16_t fx_buf[FRAMES_PER_BLOCK * 2];
-                    memcpy(fx_buf, shadow_slot_deferred[s], sizeof(fx_buf));
-                    shadow_apply_synth_level(s, fx_buf);
-                    struct timespec fx_t0, fx_t1;
-                    clock_gettime(CLOCK_MONOTONIC, &fx_t0);
-                    shadow_chain_process_fx(shadow_chain_slots[s].instance,
-                                            fx_buf, MOVE_FRAMES_PER_BLOCK);
-                    clock_gettime(CLOCK_MONOTONIC, &fx_t1);
-                    uint64_t fx_us = (fx_t1.tv_sec - fx_t0.tv_sec) * 1000000ULL +
-                                     (fx_t1.tv_nsec - fx_t0.tv_nsec) / 1000;
-                    if (fx_us > spi_slot_fx_max[s]) spi_slot_fx_max[s] = fx_us;
-                    memcpy(shadow_slot_fx_deferred[s], fx_buf, sizeof(fx_buf));
-                    shadow_slot_fx_deferred_valid[s] = 1;
-
-                    /* Track FX output silence for phase 2 idle.
-                     * Stateful FX (loopers, modulated delays) opt out via
-                     * capabilities.requires_continuous_processing — without
-                     * this, a 6 s looper's write_pos stops advancing during
-                     * silence and the loop "only returns when there's signal". */
-                    int fx_silent = 1;
-                    for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                        if (fx_buf[i] > DSP_SILENCE_LEVEL || fx_buf[i] < -DSP_SILENCE_LEVEL) {
-                            fx_silent = 0;
-                            break;
-                        }
-                    }
-                    int fx_keep_alive = (shadow_chain_fx_requires_continuous &&
-                                         shadow_chain_fx_requires_continuous(shadow_chain_slots[s].instance));
-                    if (fx_keep_alive) {
-                        shadow_slot_fx_silence_frames[s] = 0;
-                        shadow_slot_fx_idle[s] = 0;
-                    } else if (fx_silent) {
-                        shadow_slot_fx_silence_frames[s]++;
-                        if (shadow_slot_fx_silence_frames[s] >= DSP_IDLE_THRESHOLD)
-                            shadow_slot_fx_idle[s] = 1;
-                    } else {
-                        shadow_slot_fx_silence_frames[s] = 0;
-                        shadow_slot_fx_idle[s] = 0;
-                    }
-                }
-            }
-
-            /* End per-slot timing (added 2026-05-15 for render spike hunt) */
-            clock_gettime(CLOCK_MONOTONIC, &slot_t1);
-            uint64_t slot_us = (slot_t1.tv_sec - slot_t0.tv_sec) * 1000000ULL +
-                               (slot_t1.tv_nsec - slot_t0.tv_nsec) / 1000;
-            if (slot_us > spi_slot_render_max[s]) spi_slot_render_max[s] = slot_us;
         }
     }
-    if (probe_burst_this_frame > spi_slot_probe_burst_max)
-        spi_slot_probe_burst_max = probe_burst_this_frame;
+    {
+        uint32_t probe_burst_this_frame = 0;
+        for (int l = 0; l < RENDER_POOL_MAX_LANES; l++)
+            probe_burst_this_frame += shadow_render_probe_burst[l];
+        if (probe_burst_this_frame > spi_slot_probe_burst_max)
+            spi_slot_probe_burst_max = probe_burst_this_frame;
+    }
 
     /* Overtake DSP generator: mix its output into the deferred buffer */
     if (overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->render_block) {
@@ -4893,6 +4967,25 @@ static int shim_apply_set_special(int slot, const char *key, const char *value,
             *io_result_len = 0;
             return 1;
         }
+        /* master_fx:render_lanes — the render pool's lane count (1 = serial,
+         * up to RENDER_POOL_MAX_LANES). Also the one thing that clears the
+         * pool's poison after a bail. Applied on the SPI thread, where the
+         * pool is driven, so no round is in progress while it changes. */
+        if (strcmp(fx_key, "render_lanes") == 0) {
+            int val = atoi(value);
+            if (val < 1) val = 1;
+            if (val > RENDER_POOL_MAX_LANES) val = RENDER_POOL_MAX_LANES;
+            shadow_render_lanes_cfg = val;
+            if (shadow_render_pool_inited) render_pool_set_lanes(&shadow_render_pool, val);
+            {
+                char msg[64];
+                snprintf(msg, sizeof(msg), "render pool: lanes=%d", val);
+                shadow_log(msg);
+            }
+            *io_error = 0;
+            *io_result_len = 0;
+            return 1;
+        }
         /* master_fx:link_audio_routing */
         if (strcmp(fx_key, "link_audio_routing") == 0) {
             int val = atoi(value);
@@ -5115,6 +5208,16 @@ static int shim_handle_param_special(uint8_t req_type, uint32_t req_id) {
                 if (mode < 0 || mode > 2) mode = 0;
                 shadow_param->result_len = snprintf(shadow_param->value,
                     SHADOW_PARAM_VALUE_LEN, "%d", mode);
+                shadow_param->error = 0;
+            }
+            return 1;
+        }
+        /* master_fx:render_lanes (GET; the SET is in shim_apply_set_special) */
+        if (strcmp(fx_key, "render_lanes") == 0) {
+            if (req_type == 2) {
+                shadow_param->result_len = snprintf(shadow_param->value,
+                    SHADOW_PARAM_VALUE_LEN, "%d",
+                    shadow_render_pool_inited ? shadow_render_pool.lanes : shadow_render_lanes_cfg);
                 shadow_param->error = 0;
             }
             return 1;
@@ -5658,6 +5761,13 @@ typedef struct {
     uint64_t mix_phase_max[MIX_PHASE_COUNT];   /* where mix_buf's time went */
     uint64_t slot_fx_max[SHADOW_CHAIN_INSTANCES];
     uint32_t slot_probe_burst_max;
+    /* Render pool (host/render_pool.h): pooled vs inline rounds, the wall of
+     * a pooled round vs its serial-equivalent (Σ slot cost) — the A/B — the
+     * caller's idle time in the join, bails, per-lane makespan. */
+    uint32_t rp_lanes, rp_rounds_pooled, rp_rounds_inline, rp_bails, rp_degraded;
+    uint64_t rp_wall_avg, rp_wall_max, rp_serial_avg, rp_serial_max, rp_join_wait_max;
+    uint64_t rp_inline_avg, rp_inline_max;
+    uint64_t rp_lane_max[RENDER_POOL_MAX_LANES];
     /* JACK audio double-buffer stats */
     uint32_t jack_audio_hits;
     uint32_t jack_audio_misses;
@@ -9497,6 +9607,23 @@ post_timing:
         for (int i = 0; i < MIX_PHASE_COUNT; i++)
             spi_snap.mix_phase_max[i] = spi_mix_phase_max[i];
         spi_snap.slot_probe_burst_max = spi_slot_probe_burst_max;
+        {
+            render_pool_t *rp = &shadow_render_pool;
+            spi_snap.rp_lanes = (uint32_t)rp->lanes;
+            spi_snap.rp_rounds_pooled = rp->rounds_pooled;
+            spi_snap.rp_rounds_inline = rp->rounds_inline;
+            spi_snap.rp_bails = rp->bails;
+            spi_snap.rp_degraded = (uint32_t)atomic_load_explicit(&rp->degraded, memory_order_relaxed);
+            spi_snap.rp_wall_avg = rp->rounds_pooled ? rp->wall_us_sum / rp->rounds_pooled : 0;
+            spi_snap.rp_wall_max = rp->wall_us_max;
+            spi_snap.rp_serial_avg = rp->rounds_pooled ? rp->serial_us_sum / rp->rounds_pooled : 0;
+            spi_snap.rp_serial_max = rp->serial_us_max;
+            spi_snap.rp_join_wait_max = rp->join_wait_us_max;
+            spi_snap.rp_inline_avg = rp->rounds_inline ? rp->inline_us_sum / rp->rounds_inline : 0;
+            spi_snap.rp_inline_max = rp->inline_us_max;
+            for (int l = 0; l < RENDER_POOL_MAX_LANES; l++) spi_snap.rp_lane_max[l] = rp->lane_us_max[l];
+            render_pool_reset_counters(rp);
+        }
         spi_snap.jack_audio_hits = schwung_jack_bridge_get_hit_count();
         spi_snap.jack_audio_misses = schwung_jack_bridge_get_miss_count();
         spi_snap.granular_ready = 1;
@@ -9786,6 +9913,21 @@ static void *spi_timing_logger_thread(void *arg)
                 unified_log("spi_timing", LOG_LEVEL_DEBUG,
                     "Slot synth max(us):%s | Slot fx max(us):%s",
                     synth_buf, fx_buf);
+                /* The render pool's A/B in one line: `wall` is what a pooled
+                 * round took, `serial` what its slots cost summed (= the
+                 * serial loop's time for the same work). lanes=1 makes the
+                 * two equal by construction, which is the control. */
+                unified_log("spi_timing", LOG_LEVEL_DEBUG,
+                    "render pool: lanes=%u pooled=%u inline=%u inline_wall=%llu/%llu wall=%llu/%llu serial=%llu/%llu "
+                    "join_wait_max=%llu lane_max=%llu/%llu/%llu bails=%u%s",
+                    spi_snap.rp_lanes, spi_snap.rp_rounds_pooled, spi_snap.rp_rounds_inline,
+                    (unsigned long long)spi_snap.rp_inline_avg, (unsigned long long)spi_snap.rp_inline_max,
+                    (unsigned long long)spi_snap.rp_wall_avg, (unsigned long long)spi_snap.rp_wall_max,
+                    (unsigned long long)spi_snap.rp_serial_avg, (unsigned long long)spi_snap.rp_serial_max,
+                    (unsigned long long)spi_snap.rp_join_wait_max,
+                    (unsigned long long)spi_snap.rp_lane_max[0], (unsigned long long)spi_snap.rp_lane_max[1],
+                    (unsigned long long)spi_snap.rp_lane_max[2],
+                    spi_snap.rp_bails, spi_snap.rp_degraded ? " DEGRADED" : "");
                 /* Where mix_buf's time went. Printed next to the slot lines
                  * because the pair is the whole diagnosis: on 2026-08-22 the
                  * slots held 28 µs and mix_buf held 1915 µs of a 1946 µs

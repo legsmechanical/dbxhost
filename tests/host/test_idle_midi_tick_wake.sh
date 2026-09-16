@@ -67,7 +67,8 @@ awk '
   END {exit (tick && take && bail && tick < take && take < bail) ? 0 : 1}
 ' "$SHIM" || fail "the shim does not tick, then take, then bail — in that order"
 
-# 6. A MIDI wake is not a probe. probe_burst_this_frame is the stagger-
+# 6. A MIDI wake is not a probe. The probe-burst counter (per lane since the
+#    render pool: shadow_render_probe_burst[lane]) is the stagger-
 #    alignment detector, so the increment must sit in the ELSE arm (the real
 #    probe frame). On the wake path it reports a spike the stagger cannot fix.
 #    ⚠ Matched on leading WHITESPACE, not upstream's literal 16 spaces: a pin
@@ -75,9 +76,9 @@ awk '
 #    [[source-pins-window-must-be-structural]]
 awk '
   /shadow_chain_take_midi_tick_wake\(shadow_chain_slots/ {take=1; next}
-  take && !els && /probe_burst_this_frame\+\+/ {bad=1; exit}
+  take && !els && /probe_burst[^;]*\+\+/ {bad=1; exit}
   take && !els && /^[[:space:]]*\} else \{/ {els=1; next}
-  els && /probe_burst_this_frame\+\+/ {inc=1; exit}
+  els && /probe_burst[^;]*\+\+/ {inc=1; exit}
   END {exit (!bad && els && inc) ? 0 : 1}
 ' "$SHIM" || fail "a MIDI-driven wake is counted as an idle probe"
 

@@ -13,6 +13,7 @@
 #include <strings.h>  /* strcasecmp */
 
 #include "shadow_chain_mgmt.h"
+#include "shim_worker.h"
 #include "master_fx_saved_state.h" /* object or opaque-string state at boot */
 #include "shadow_set_pages.h"
 #include "dbx_state_subdir.h"
@@ -499,6 +500,7 @@ void shadow_chain_defaults(void) {
         shadow_chain_slots[i].send_b = 0.0f;
         shadow_chain_slots[i].muted = 0;
         shadow_chain_slots[i].soloed = 0;
+        shadow_chain_slots[i].render_pinned = 0;
         shadow_chain_slots[i].forward_channel = -1;
         shadow_chain_slots[i].default_forward_channel = -1;
         shadow_chain_slots[i].transpose = 0;
@@ -1438,6 +1440,7 @@ int shadow_inprocess_load_chain(void) {
     shadow_host_api.get_beat_position = host.get_beat_position;  /* transport phase for LFO sync */
     shadow_host_api.midi_inject_to_move = shadow_chain_midi_inject;
     shadow_host_api.slot_recv_channel = shadow_chain_slot_recv_channel;
+    shadow_host_api.clock_output_enabled = shim_clock_output_enabled_get;   /* the worker's cached word */
 
     move_plugin_init_v2_fn init_v2 = (move_plugin_init_v2_fn)dlsym(
         shadow_dsp_handle, MOVE_PLUGIN_INIT_V2_SYMBOL);
@@ -2131,6 +2134,12 @@ int shadow_handle_slot_param_set(int slot, const char *key, const char *value) {
         shadow_ui_state_update_slot(slot);
         return 1;
     }
+    if (strcmp(key, "slot:parallel") == 0) {
+        /* Takes effect on the next render round: the pool reads the pin mask
+         * once per round, on the SPI thread, which is also where this runs. */
+        shadow_chain_slots[slot].render_pinned = atoi(value) ? 0 : 1;
+        return 1;
+    }
     return 0;
 }
 
@@ -2168,6 +2177,9 @@ int shadow_handle_slot_param_get(int slot, const char *key, char *buf, int buf_l
     }
     if (strcmp(key, "slot:transpose") == 0) {
         return snprintf(buf, buf_len, "%d", shadow_chain_slots[slot].transpose);
+    }
+    if (strcmp(key, "slot:parallel") == 0) {
+        return snprintf(buf, buf_len, "%d", shadow_chain_slots[slot].render_pinned ? 0 : 1);
     }
     if (strcmp(key, "active_set") == 0) {
         /* Return "uuid\nname" for UI thread to write active_set.txt */
@@ -3425,6 +3437,7 @@ int shadow_param_apply_set_ex(int slot, const char *key, const char *value,
                 strcmp(param_key, "link_audio_publish") == 0 ||
                 strcmp(param_key, "latency_comp_enabled") == 0 ||
                 strcmp(param_key, "system_link_enabled") == 0 ||
+                strcmp(param_key, "render_lanes") == 0 ||   /* the render pool's lane count */
                 strncmp(param_key, "jack:", 5) == 0 ||
                 strcmp(param_key, "suspend_overtake") == 0) {
                 if (host.apply_set_special(slot, key, value, io_error, io_result_len))
@@ -3969,6 +3982,7 @@ void shadow_inprocess_handle_param_request(void) {
                 strcmp(param_key, "link_audio_publish") == 0 ||
                 strcmp(param_key, "latency_comp_enabled") == 0 ||
                 strcmp(param_key, "system_link_enabled") == 0 ||
+                strcmp(param_key, "render_lanes") == 0 ||   /* the render pool's lane count */
                 strncmp(param_key, "jack:", 5) == 0 ||
                 strcmp(param_key, "suspend_overtake") == 0) {
                 if (host.handle_param_special(req_type, req_id)) {

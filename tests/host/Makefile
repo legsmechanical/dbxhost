@@ -27,6 +27,10 @@
 #   - test_param_lane_policy — WHICH keys may take that lane: the lifecycle
 #     and blob exclusions, each with a near-miss control, so an exclusion
 #     cannot quietly widen into a whole-prefix ban.
+#   - test_render_pool — the fork-join pool under the per-slot chain render:
+#     the longest-first plan with pinned slots on the caller's lane, every
+#     task exactly once per round, the bail that poisons and skips the task
+#     a stuck helper still holds, and the serial-equivalent counter.
 #
 # Usage: `make -C tests/host test`
 
@@ -68,7 +72,9 @@ TARGETS = $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_dirty_policy \
           $(BUILD_DIR)/test_loaded_set_policy \
           $(BUILD_DIR)/test_chain_idle_tick \
-          $(BUILD_DIR)/test_chain_clock_state
+          $(BUILD_DIR)/test_chain_clock_state \
+          $(BUILD_DIR)/test_move_clock_setting \
+          $(BUILD_DIR)/test_render_pool
 
 .PHONY: all test clean
 
@@ -157,6 +163,12 @@ $(BUILD_DIR)/test_chain_clock_state: test_chain_clock_state.c ../../src/modules/
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_shadow_param_queue: test_shadow_param_queue.c ../../src/host/shadow_param_queue.h ../../src/host/shadow_constants.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_move_clock_setting: test_move_clock_setting.c ../../src/host/move_clock_setting.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_render_pool: test_render_pool.c ../../src/host/render_pool.h ../../src/host/shim_thread.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 -include $(TARGETS:=.d)

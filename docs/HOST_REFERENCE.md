@@ -432,6 +432,56 @@ until the new shim stamps, and its first drain seeds from `tail_published`, neve
 ⚠ Bulk `overtake_dsp:` SETs are always blocking and stay on the mailbox; only `chain:` bulk rides
 the lane (flag `SPL_FLAG_BULK`).
 
+### The render pool: the per-slot chain render across lanes
+
+`src/host/render_pool.h`. The post-transfer slot render (`shadow_inprocess_render_to_buffer`) used
+to be a serial `for` over the chain slots on the SPI thread. It is now a **fork-join round** on up
+to three lanes: lane 0 is the SPI thread itself, the other two are helper threads that park between
+frames. The caller dispatches, renders its own lane, and returns only when every helper is done.
+
+**Why that shape is safe.** Every other thing that touches a chain instance — `set_param`,
+`on_midi`, load, unload, the param mailbox, the write lane — runs on the very thread that is blocked
+in the join, so a render never overlaps a `set_param` and one module's construction never overlaps
+another's render. What remains shared between two *rendering* slots is: the chain host's MIDI clock
+(atomic, `chain_clock_state.h`), the fallback path's mix into `shadow_deferred_dsp_buffer` (moved
+after the join, in slot order), and the probe-burst counter (per lane, summed after). The per-slot
+task body (`shadow_render_slot_task`) owns per-slot state only; `tests/host/test_render_pool_
+wiring.sh` pins that with eight mutation controls.
+
+**Lanes and pins.** Tasks are placed longest-first (an EWMA of measured cost) onto the least-loaded
+lane. A slot whose module is **pinned** (`slot:parallel` = 0) always renders on lane 0 — the audio
+thread, exactly where it always did, serially with every other pinned slot. That is the per-module
+"Parallel" switch: dAVEBOx keeps a device-wide default per module (`davebox/ui/ui_parallel.mjs`,
+`/data/UserData/dbx-host/parallel-modules.txt`; every module defaults On — the built-in Off list ships empty, as movy's does) and pushes the pin
+to every slot holding that module. A round with nothing for a helper (one task, or all pinned) runs
+inline with no wake and no join. `master_fx:render_lanes` (1..3; 1 = serial = the old loop, in the
+old order) is the lane count and the control for any A/B.
+
+**Scheduling.** Helpers are created from the SPI thread on the first pooled round (they inherit its
+policy and priority and drop one level, so Move's own audio threads can preempt them and they can
+never preempt the callback), pinned to cores 0-2 (never 3, the SPI IRQ's), each with flush-to-zero
+set on its own FPCR (per-thread on aarch64 — without it a helper is slower than serial on decaying
+tails and pooled output is not bit-identical to serial). Affinity/priority failures degrade, never
+fail (`DEGRADED` on the timing line). The join spins ~30 µs then blocks on a condvar rather than
+spinning a FIFO thread on a core a helper needs.
+
+**The bail.** A join past 50 ms (`RENDER_POOL_BAIL_US`) poisons the pool: that round returns without
+the late lane, every later round runs inline, the task the stuck helper still holds is *skipped* by
+the inline path until the helper finishes it (one torn frame, never a double render into one
+buffer, never a hang of the SPI thread), and the tasks that helper had not started are handed back.
+Only a `master_fx:render_lanes` write clears the poison, and only once nothing is in flight.
+
+**Instrumentation.** The `spi_timing` snapshot carries a `render pool:` line: `pooled`/`inline`
+rounds, `wall` (a pooled round, dispatch to join) vs `serial` (the same round's slot costs summed —
+what the serial loop would have taken), `join_wait_max`, per-lane max, `bails`. **The A/B is one
+build**: same set, `render_lanes` 1 then 3; report wall vs serial with the set named. ⚠ A number
+measured on the CM5 dev unit says nothing about a CM4: the budget is tighter and cores 0-2 busier
+there, so the ratio has to be measured on each board before the pool is on by default for it.
+
+Model: movy's `render_pool.rs` (spawn once, park, LPT lanes, FTZ per worker, a bail that poisons).
+Deliberate differences: a 50 ms bail (the waiting thread is the one Move's SPI transfer depends on),
+and a pinned slot renders on the audio thread rather than on one helper lane of its own.
+
 ### Shadow Slot Features
 
 Each of the 4 slots has:

@@ -58,6 +58,12 @@ typedef struct shadow_chain_slot_t {
      * shadow_chain_remap_channel -- that runs per MIDI event. */
     int default_forward_channel;
     int transpose;          /* semitone offset applied to incoming note-on/off/poly-AT, range -12..+12 */
+    /* 1 = this slot renders on the SPI thread, serially with every other
+     * pinned slot, and never on a render-pool helper. 0 (the default, so a
+     * zeroed struct is parallel) = the pool may place it on any lane. Set by
+     * `slot:parallel` (0 pins, 1 frees) — the UI's per-module "Parallel"
+     * switch, which the module's own thread-safety decides. */
+    int render_pinned;
     char patch_name[64];
     shadow_capture_rules_t capture;  /* MIDI controls this slot captures when focused */
     slot_fade_t fade;                /* fade envelope for seamless transitions */

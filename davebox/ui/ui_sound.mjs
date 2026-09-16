@@ -58,6 +58,7 @@ import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, ROUTE_NONE } from './ui_constants.mjs';
 import { applyTrackConfig, applyBankParam, readBankParams } from './ui_dsp_bridge.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
+import { moduleParallelDefault, setModuleParallelDefault, reconcileParallelSlot } from './ui_parallel.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
@@ -515,6 +516,22 @@ function configRows(t) {
             get: () => GS.trackAtMode[t] | 0,
             set: (v) => { GS.trackAtMode[t] = v | 0; writeSidecar(); } });
     }
+    /* Parallel (Josh, ruled 2026-09-05): shown on a Schwung-routed track that
+     * holds an instrument. The row reads and writes the DEVICE-WIDE default
+     * for THAT MODULE — flipping it here re-pins every slot holding the same
+     * module, on every project — because whether a module may render on a
+     * pool helper is a property of the module, not of the track. See
+     * ui_parallel.mjs; the host side is `slot:parallel`. */
+    if (GS.trackRoute[t] === 0) {
+        const slot = slotIndex(t);
+        const mod = String(engineLoadedModule(slot, 'synth') || '');
+        if (mod) {
+            rows.push({ key: 'parallel', label: 'Parallel',
+                opts: [0, 1], fmt: (v) => (v ? 'On' : 'Off'),
+                get: () => moduleParallelDefault(mod),
+                set: (v) => { setModuleParallelDefault(mod, v ? 1 : 0); } });
+        }
+    }
     return rows;
 }
 
@@ -933,6 +950,8 @@ export function soundInflightForTest() { return S.inflight; }
  * a decision per route (a MIDI track has no Looper), and this is how a test
  * reads that decision without rendering. */
 export function soundSlotRowsForTest() { return S.slotRows.map(r => r.key); }
+/* The real row object, so a test can step the REAL spec through slotCfgStep. */
+export function soundSlotRowForTest(key) { return S.slotRows.find(r => r.key === key) || null; }
 /* The hosted canvas's ctx, for the read-shield behaviour test. Exposes the same
  * object the kit is handed — nothing a test could not already reach by faking a
  * kit module, minus the fixture. */
@@ -7653,6 +7672,9 @@ function applyModulePick(mod) {
      * module id. Same key, different currency — loading a bus by id silently
      * does nothing, which is the kind of failure you debug for an hour. */
     engineLoadModule(S.slot, S.comp, S.bus ? (mod.path || '') : mod.id);
+    /* The slot's render-pool pin follows the module that just arrived (a
+     * synth pick only; the pin is decided by the instrument). */
+    if (!S.bus && S.comp === 'synth') reconcileParallelSlot(S.slot);
     /*
      * A module gets to bring its own chain and its own buses — `default_fx`
      * and `default_buses` in its module.json.

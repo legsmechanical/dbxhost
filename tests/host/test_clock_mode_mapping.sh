@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-file="src/modules/chain/dsp"
+file="src/host/move_clock_setting.h"   # the parse moved off the chain (2026-09-05): a pure header the shim worker calls
 
 if ! command -v rg >/dev/null 2>&1; then
   echo "rg is required to run this test" >&2

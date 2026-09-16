@@ -337,7 +337,7 @@ if needs_rebuild build/schwung-shim.so \
     src/host/shadow_led_queue.h src/host/shadow_state.h \
     src/host/plugin_api_v1.h src/host/unified_log.h src/host/tts_engine.h \
     src/host/schwung_trace.h \
-    src/host/link_audio.h src/host/shadow_shm_util.h src/host/shim_thread.h; then
+    src/host/link_audio.h src/host/shadow_shm_util.h src/host/shim_thread.h src/host/render_pool.h; then
     echo "Building shim..."
     "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g3 -shared -fPIC \
         -o build/schwung-shim.so \
