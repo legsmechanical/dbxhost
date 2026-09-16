@@ -28,6 +28,13 @@ for t in tests/test_*.c; do
 done
 echo "---"
 echo "$pass passed, $fail failed"
+# ⚠ An empty suite is not a green suite. If the glob collected nothing the loop
+# never ran, both counters are 0, and every check below still reports PASS - a
+# result indistinguishable from a clean run. Say so instead.
+if [ "$pass" -eq 0 ] && [ "$fail" -eq 0 ]; then
+    echo "FAIL: collected NO tests/test_*.c - the suite did not run" >&2
+    fail=1
+fi
 
 js_fail=0
 if command -v node >/dev/null 2>&1; then
@@ -37,8 +44,12 @@ if command -v node >/dev/null 2>&1; then
         echo "JS: FAIL"
         js_fail=1
     fi
+elif [ "${DBX_ALLOW_MISSING_TOOLS:-0}" = "1" ]; then
+    echo "JS: SKIPPED (node not found, DBX_ALLOW_MISSING_TOOLS=1)" >&2
 else
-    echo "JS: SKIPPED (node not found)"
+    echo "FAIL: node not found - the JS units cannot run" >&2
+    echo "      Install node, or set DBX_ALLOW_MISSING_TOOLS=1 to skip deliberately." >&2
+    js_fail=1
 fi
 
 # Remote UI halves: web_ui.html loads web_ui_*.js as plain classic scripts, so a
@@ -51,8 +62,12 @@ if command -v node >/dev/null 2>&1; then
         if node --check "$f"; then echo "PASS: node --check $f"
         else echo "FAIL: node --check $f"; web_fail=1; fi
     done
+elif [ "${DBX_ALLOW_MISSING_TOOLS:-0}" = "1" ]; then
+    echo "WEB UI: SKIPPED (node not found, DBX_ALLOW_MISSING_TOOLS=1)" >&2
 else
-    echo "WEB UI: SKIPPED (node not found)"
+    echo "FAIL: node not found - web_ui_*.js cannot be syntax-checked" >&2
+    echo "      A syntax error there is only visible as a dead page on the device." >&2
+    web_fail=1
 fi
 
 # Repo-invariant shell checks (no compilation, no device). These pin conventions
