@@ -44,7 +44,7 @@ need() {  # need <tool> <what it gates> — fail closed, never skip
 }
 
 # ------------------------------------------------------------- host / C / shell
-if touches '^(src/|tests/host/|standalone/|scripts/|Makefile|tests/Makefile)'; then
+if touches '^(src/|tests/host/|tests/(shadow|store|build)/|standalone/|scripts/|Makefile|tests/Makefile)'; then
   echo "[pre-commit] host-tests (unit + contract) …"
   ran="$ran host"
   if need cc "the host C units" && need rg "the host source pins"; then
@@ -58,6 +58,12 @@ if touches '^(src/|tests/host/|standalone/|scripts/|Makefile|tests/Makefile)'; t
         fail=1
       fi
     done
+    # tests/{shadow,store,build} pin src/, and were run by nothing until
+    # 2026-09-16. Held against tests/known-failing.txt, which may only shrink.
+    if ! out=$(bash tests/run-ungated.sh 2>&1); then
+      echo "  FAIL: tests/run-ungated.sh"; printf '%s\n' "$out" | sed 's/^/    /'
+      fail=1
+    fi
   fi
 fi
 
