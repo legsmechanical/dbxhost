@@ -463,6 +463,55 @@ step('control: the SAME publish sequence on a relaunch boot still raises the ver
     if (!onScreen()) throw new Error('the verdict stopped working for a picked project: ' + frame());
 });
 
+/* 9. EVERY PATH THAT MAKES A PROJECT MUST MARK IT CREATED-THIS-SESSION.
+ *
+ * Move builds its set list when it starts. A project made after that is not in
+ * it, so the fast in-place switch walks Move's overview to a pad Move believes
+ * is EMPTY: nothing loads and it returns as though it worked. dAVEBOx is then
+ * nominally in the new project while Move still holds the previous one — and
+ * Move saves the set it HAS open, so edits land in the wrong project, silently.
+ *
+ * ⚠ The two create paths always recorded this. COPY did not, for as long as
+ * copy has existed, and no test noticed because every test exercised create.
+ * Found on hardware by Josh (2026-09-16). This asserts the RULE rather than the
+ * three call sites, so the next path that makes a project fails here instead.
+ */
+step('⭑⭑ a COPIED project relaunches Move, exactly like a created one', () => {
+    boot(P, 'Project 1');
+    S.pendingOpenProjectPicker = false; S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    /* The real gesture: hold Copy, tap the source, tap an empty destination. */
+    S.copyHeld = true;
+    sysCmds.length = 0;
+    padTap(0);          /* source */
+    ticks(1);
+    padTap(7);          /* empty destination */
+    ticks(2);
+    S.copyHeld = false;
+    if (!sysCmds.some((c) => /project-cmd\.sh copy 0 7$/.test(c)))
+        throw new Error('the copy gesture did not issue a copy: ' + JSON.stringify(sysCmds));
+    if (S.projectsCreatedThisSession.indexOf(7) < 0)
+        throw new Error('the COPY was not recorded as created this session — loading it ' +
+                        'would take the in-place route to a pad Move has never seen');
+});
+
+step('⚠ CONTROL: the marker is what forces the relaunch, not the pad number', () => {
+    /* Strip the marker and the same pick takes the fast route — proving the
+     * assertion above is load-bearing rather than incidental. */
+    boot(P, 'Project 1');
+    S.projectsCreatedThisSession.length = 0;
+    S.pendingOpenProjectPicker = false; S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    sysCmds.length = 0; selectArms.length = 0;
+    padTap(31); ticks(2);
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    ticks(6);
+    if (sysCmds.some((c) => /switch 31$/.test(c)))
+        throw new Error('control: relaunched without the marker');
+    if (selectArms.indexOf(31) < 0)
+        throw new Error('control: the fast route was not taken without the marker');
+});
+
 if (failed) { console.error('FAIL: project_open_mismatch'); process.exit(1); }
 console.log('PASS: project_open_mismatch');
 }

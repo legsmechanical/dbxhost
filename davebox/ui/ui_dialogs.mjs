@@ -1358,6 +1358,19 @@ function _projectPadPickerTap_impl(k) {
             showActionPopup('PAD', 'OCCUPIED');
         } else {
             host_system_cmd('sh ' + PROJECT_CMD + ' copy ' + p.copySrcIdx + ' ' + k);
+            /* ⭑⭑ A COPY IS A PROJECT CREATED THIS SESSION, and Move built its
+             * set list when it started — so the copy is not in it. Without this
+             * marker the next load takes the fast in-place route, which walks
+             * Move's overview to a pad Move believes is EMPTY: nothing loads,
+             * and it returns as though it worked. dAVEBOx is then nominally in
+             * the copy while Move still has the previous project open — and
+             * Move saves the set it HAS open, so edits land in the wrong
+             * project, silently.
+             *
+             * The two create paths have always recorded this. Copy never did.
+             * (Found by Josh on device, 2026-09-16: "copied a project and
+             * noticed there was no restart".) */
+            _pppNoteCreated(k);
             const d = _pppRunList();
             if (d) _pppApplyList(p, d);
             p.copySrcIdx = -1;
