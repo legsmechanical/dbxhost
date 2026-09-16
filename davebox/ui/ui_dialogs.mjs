@@ -1100,6 +1100,25 @@ function _pppLoad(p, k) {
 }
 
 /* Remember a create so the load after it knows to relaunch rather than select. */
+/* ⭑⭑ IS PAD k THE PROJECT THIS SESSION IS IN?
+ *
+ * One predicate, because three places ask it and they must never disagree:
+ * delete (careful path vs immediate), rename (queued mv vs immediate), and the
+ * confirm screen that WARNS you the session will restart.
+ *
+ * ⚠ It is NOT `k === p.current`. That value is deliberately −1 until the host
+ * confirms an open project, which is right for the load shortcut — loading must
+ * never act on a guess — and wrong here. This question is about what dAVEBOx
+ * has LOADED, and the answer is its own currentSetUuid. Reading the unconfirmed
+ * value made a delete or a rename act on the directory underneath a live
+ * session, and made the warning about that silently absent.
+ * (2026-09-16: introduced by the identity work, caught the same day.) */
+function _pppIsOpenProject(p, k) {
+    const proj = p && p.byIndex ? p.byIndex[k] : null;
+    if (S.currentSetUuid && proj && proj.uuid === S.currentSetUuid) return true;
+    return k === p.current && p.current >= 0;
+}
+
 function _pppNoteCreated(k) {
     if (S.projectsCreatedThisSession.indexOf(k) < 0) S.projectsCreatedThisSession.push(k);
 }
@@ -1136,7 +1155,7 @@ function _pppDoRename_impl(k, name) {
             return;
         }
     }
-    if (k === p.current) {
+    if (_pppIsOpenProject(p, k)) {
         /* The OPEN project renames via the deferred switch-in-place path:
          * project-cmd queues the mv for the launcher and restarts Move at the
          * same index. Save our half first — same ordering as a switch.
@@ -1319,9 +1338,7 @@ function _projectPadPickerTap_impl(k) {
          *
          * So ask both: the loaded uuid first, and p.current as the fallback for
          * the case where nothing is loaded but a project is confirmed open. */
-        const _inThis = (S.currentSetUuid && proj && proj.uuid === S.currentSetUuid) ||
-                        (k === p.current && p.current >= 0);
-        if (_inThis) {
+        if (_pppIsOpenProject(p, k)) {
             /* Deleting the project you are IN (Josh, 2026-08-24). It cannot
              * happen underneath a running session, so it happens the way a
              * rename of the open project already does: project-cmd queues the
@@ -1521,7 +1538,7 @@ function _drawProjectPadPicker_impl() {
         drawKitList([{ label: 'DELETE ' + (dp ? dp.name : '?'), hdr: true },
                      { divider: true },
                      { note: 'Tap the pad again' },
-                     ...(p.deleteIdx === p.current
+                     ...(_pppIsOpenProject(p, p.deleteIdx)
                          ? [{ note: 'This one is OPEN —' }, { note: 'session restarts' }]
                          : [])], -1, { hostLabels: false });
         return;

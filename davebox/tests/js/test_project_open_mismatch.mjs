@@ -557,6 +557,26 @@ step('⚠ CONTROL: deleting a project you are NOT in still deletes in place', ()
         throw new Error('control: the plain delete did not fire: ' + JSON.stringify(sysCmds));
 });
 
+/* 11. RENAME asks the same question as DELETE, and so does the warning.
+ *     All three go through one predicate so they cannot drift apart; this pins
+ *     that there is exactly one, and that it reads the LOADED project. */
+step('⭑ renaming the LOADED project takes the restart path while unconfirmed', () => {
+    boot(P, 'Project 1');
+    publish('pending', '', '', '', -1);
+    S.currentSetUuid = P;
+    S.pendingOpenProjectPicker = false; S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    const src = readFileSync('ui/ui_dialogs.mjs', 'utf8');
+    /* the three sites must all route through the one predicate — a direct
+     * `=== p.current` comparison at any of them is the bug returning */
+    const uses = (src.match(/_pppIsOpenProject\(/g) || []).length;
+    if (uses < 4) throw new Error('expected the shared predicate at all three sites, saw ' + uses);
+    if (/if \(k === p\.current\) \{\n\s+\/\* The OPEN project renames/.test(src))
+        throw new Error('rename still compares against the unconfirmed current');
+    if (/p\.deleteIdx === p\.current/.test(src))
+        throw new Error('the delete warning still reads the unconfirmed current');
+});
+
 if (failed) { console.error('FAIL: project_open_mismatch'); process.exit(1); }
 console.log('PASS: project_open_mismatch');
 }
