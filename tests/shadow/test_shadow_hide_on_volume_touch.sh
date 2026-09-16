@@ -12,7 +12,7 @@ if ! command -v rg >/dev/null 2>&1; then
   exit 1
 fi
 
-fn_start=$(rg -n "static void shadow_swap_display\\(void\\)" "$file" | head -n 1 | cut -d: -f1 || true)
+fn_start=$(rg -n "static void shadow_swap_display\\(void\\)" "$file" | sed -n 1p | cut -d: -f1 || true)
 if [ -z "${fn_start}" ]; then
   echo "FAIL: Could not locate shadow_swap_display() in ${file}" >&2
   exit 1

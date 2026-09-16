@@ -43,7 +43,7 @@ command grep -q 'volatile uint8_t claim_cc_bits\[16\];' "$hdr" \
 # means nothing sits in front of it that was not already there. Pinned as its
 # predecessor rather than as "last" -- a later register appended after it is
 # correct, and a last-field check would fail on every one of them.
-prev=$(command grep -oE 'volatile [a-z0-9_]+ [a-z_0-9]+(\[[0-9]+\])?;' "$hdr" | command grep -B1 'claim_cc_bits' | head -1 | awk '{print $3}' | tr -d ';')
+prev=$(command grep -oE 'volatile [a-z0-9_]+ [a-z_0-9]+(\[[0-9]+\])?;' "$hdr" | command grep -B1 'claim_cc_bits' | sed -n 1p | awk '{print $3}' | tr -d ';')
 [ "$prev" = "select_queue" ] || fail "claim_cc_bits no longer directly follows select_queue (this fork's last field) (preceded by \"$prev\") -- a field was INSERTED, which moves every field behind it"
 
 command grep -q 'claim_press_blocked\[d1\] =' "$shim" \
@@ -114,8 +114,8 @@ drain=$(sed -n '/CLAIM-LATCH DRAIN/,/^                }/p' "$shim")
 [ -n "$drain" ] || fail "no claim-latch drain in the post-ioctl scan"
 echo "$drain" | command grep -q 'claim_press_blocked\[d1\] == CLAIM_LATCH_HELD' || fail "the drain is not gated on HELD -- it would eat the next press"
 echo "$drain" | command grep -q 'midi_in_swallow(shadow + MIDI_IN_OFFSET, src, j);' || fail "the drain does not swallow through midi_in_swallow (both mailboxes)"
-dl=$(command grep -n 'CLAIM-LATCH DRAIN' "$shim" | head -1 | cut -d: -f1)
-cl=$(command grep -n 'shadow_midi_in_compact(global_mmap_addr + MIDI_IN_OFFSET);' "$shim" | head -1 | cut -d: -f1)
+dl=$(command grep -n 'CLAIM-LATCH DRAIN' "$shim" | sed -n 1p | cut -d: -f1)
+cl=$(command grep -n 'shadow_midi_in_compact(global_mmap_addr + MIDI_IN_OFFSET);' "$shim" | sed -n 1p | cut -d: -f1)
 [ "$dl" -lt "$cl" ] || fail "the drain sits after compaction -- index pairing is broken"
 command grep -A2 'claim_press_blocked\[d1\] =$' "$shim" | command grep -q 'CLAIM_LATCH_HELD : CLAIM_LATCH_NONE' || fail "a claimed press is not latched as HELD"
 command grep -q 'if (d2 == 0 && claim_press_blocked\[d1\] == CLAIM_LATCH_HELD)' "$shim" || fail "a release does not demote HELD to RELEASED"

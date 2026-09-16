@@ -56,7 +56,7 @@ done < <(grep -rn "^[[:space:]]*chain_param_info_t [a-z_]*\[" src/ || true)
 # holds only for the declaration region, so scan its FUNCTION BODIES on their
 # own -- everything from the first one to the end of the file.
 hdr=src/modules/chain/dsp/chain_internal.h
-first_body=$(grep -nE "^(static |static inline |[a-zA-Z_]).*\)[[:space:]]*\{" "$hdr" | head -1 | cut -d: -f1 || true)
+first_body=$(grep -nE "^(static |static inline |[a-zA-Z_]).*\)[[:space:]]*\{" "$hdr" | sed -n 1p | cut -d: -f1 || true)
 if [ -n "${first_body:-}" ]; then
     if tail -n "+$first_body" "$hdr" | grep -qE "^[[:space:]]+(chain_param_info_t [a-z_]*\[|[a-z_]* *char [a-z_]*\[SHADOW_PARAM_VALUE_LEN\])"; then
         echo "FAIL: a big param buffer is declared inside a function body in $hdr"

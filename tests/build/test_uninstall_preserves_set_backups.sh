@@ -29,8 +29,8 @@ chmod +x "$tmpdir/bin/ssh"
 
 PATH="$tmpdir/bin:$PATH" SSH_LOG="$logfile" MOVE_FORCE_UNINSTALL=1 bash "$script" >/dev/null 2>&1
 
-backup_line=$(rg -n "/data/UserData/UserLibrary/Schwung Backups/Set Pages" "$logfile" | head -n 1 | cut -d: -f1 || true)
-remove_line=$(rg -n "rm -rf ~/schwung ~/schwung.tar.gz" "$logfile" | head -n 1 | cut -d: -f1 || true)
+backup_line=$(rg -n "/data/UserData/UserLibrary/Schwung Backups/Set Pages" "$logfile" | sed -n 1p | cut -d: -f1 || true)
+remove_line=$(rg -n "rm -rf ~/schwung ~/schwung.tar.gz" "$logfile" | sed -n 1p | cut -d: -f1 || true)
 
 if [ -z "$backup_line" ]; then
   echo "FAIL: uninstall.sh did not export set-page backups before cleanup" >&2

@@ -23,7 +23,7 @@ ls=standalone/scripts/launch.sh
 fail() { echo "FAIL: $*" >&2; exit 1; }
 [ -f "$ls" ] || fail "$ls missing"
 
-body_line() { grep -n "$1" "$ls" | head -1 | cut -d: -f1; }
+body_line() { grep -n "$1" "$ls" | sed -n 1p | cut -d: -f1; }
 body_line_last() { grep -n "$1" "$ls" | tail -1 | cut -d: -f1; }
 
 recover=$(body_line 'set-swap.sh" recover')

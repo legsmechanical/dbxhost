@@ -18,8 +18,8 @@ if ! rg -q "pthread_create\\(&link_sub_monitor_thread" "$file"; then
   exit 1
 fi
 
-ioctl_start=$(rg -n "^int ioctl\\(int fd, unsigned long request, \\.\\.\\.\\)" "$file" | head -n 1 | cut -d: -f1 || true)
-ioctl_guard=$(rg -n "if \\(baseline_mode\\) goto do_ioctl;" "$file" | head -n 1 | cut -d: -f1 || true)
+ioctl_start=$(rg -n "^int ioctl\\(int fd, unsigned long request, \\.\\.\\.\\)" "$file" | sed -n 1p | cut -d: -f1 || true)
+ioctl_guard=$(rg -n "if \\(baseline_mode\\) goto do_ioctl;" "$file" | sed -n 1p | cut -d: -f1 || true)
 
 if [ -z "${ioctl_start}" ] || [ -z "${ioctl_guard}" ]; then
   echo "FAIL: Could not locate ioctl() block in ${file}" >&2

@@ -10,8 +10,8 @@ if ! command -v rg >/dev/null 2>&1; then
   exit 1
 fi
 
-cleanup_line=$(rg -n "/var/volatile/tmp/_MEI\\*" "$file" | head -n 1 | cut -d: -f1 || true)
-guard_line=$(rg -n "root_avail=.*df /" "$file" | head -n 1 | cut -d: -f1 || true)
+cleanup_line=$(rg -n "/var/volatile/tmp/_MEI\\*" "$file" | sed -n 1p | cut -d: -f1 || true)
+guard_line=$(rg -n "root_avail=.*df /" "$file" | sed -n 1p | cut -d: -f1 || true)
 
 if [ -z "${cleanup_line}" ]; then
   echo "FAIL: install.sh missing stale tmp cleanup command for /var/volatile/tmp/_MEI*" >&2

@@ -32,7 +32,7 @@ else
         f="${line%%:*}"; v="$(printf '%s' "$line" | grep -oE "[0-9]+\.[0-9]+" | tail -1)"
         [ -n "$v" ] || continue
         # numeric compare on major.minor
-        if [ "$(printf '%s\n%s\n' "$want" "$v" | sort -V | head -1)" != "$want" ]; then
+        if [ "$(printf '%s\n%s\n' "$want" "$v" | sort -V | sed -n 1p)" != "$want" ]; then
             echo "    $f pins Go $v, below go.mod's $want" >&2; pin_bad=1
         fi
     done <<EOF
@@ -71,7 +71,31 @@ else
     bad "capability gates in davebox/ui/ grew to $n (ratchet $GATE_MAX)"
 fi
 
-# ---- 4. the parity harness stays wired to the same env CI uses -------------
+# ---- 4. no `| head` inside a pipefail script (SIGPIPE flake) ---------------
+# `set -o pipefail` + `grep ... | head -N` is a RACE: head exits after N lines
+# and closes the pipe, grep gets SIGPIPE and returns 141, pipefail propagates it
+# and set -e kills the script - with NO message, so it reads as an unexplained
+# flake. Measured 2026-09-16: test_launch_project_workspace.sh failed 1 run in
+# 60 under CPU load, exit 141. It passed 25/25 unloaded, which is why it looked
+# like "flaky, suspect temp dirs" for a week. 95 sites across 37 files were
+# exposed. `sed -n 1p` reads to EOF, so nothing closes the pipe early.
+# ⚠ Scanned with awk, not `grep -v ... | grep -q ...`: grep -q exits on its first
+# match and would SIGPIPE its own upstream - the very bug being checked for.
+# awk reads to EOF. Comment lines are skipped so this file may DESCRIBE the bug.
+hp=0
+for t in tests/*/*.sh davebox/tests/*.sh; do
+    [ -f "$t" ] || continue
+    grep -q 'pipefail' "$t" || continue
+    hits=$(awk '!/^[[:space:]]*#/ && /\|[[:space:]]*head /' "$t")
+    if [ -n "$hits" ]; then
+        echo "    $t pipes into head under pipefail - use 'sed -n 1p'" >&2
+        hp=1
+    fi
+done
+[ "$hp" = 0 ] && ok "no '| head' inside a pipefail script (SIGPIPE flake)" \
+               || bad "a pipefail script pipes into head - that is a 1-in-N silent flake"
+
+# ---- 5. the parity harness stays wired to the same env CI uses -------------
 [ -f scripts/test-linux.sh ] && [ -f tests/Dockerfile.linux ] \
     && ok "the Linux parity harness is present" \
     || bad "scripts/test-linux.sh / tests/Dockerfile.linux is missing"

@@ -21,7 +21,7 @@ if ! rg -q "raw_ui_module_active" "$file"; then
   exit 1
 fi
 
-transpose_start=$(rg -n "Shift \\+ Up/Down = Semitone transpose" "$file" | head -n 1 | cut -d: -f1 || true)
+transpose_start=$(rg -n "Shift \\+ Up/Down = Semitone transpose" "$file" | sed -n 1p | cut -d: -f1 || true)
 if [ -z "${transpose_start}" ]; then
   echo "FAIL: Could not locate transpose shortcut block in ${file}" >&2
   exit 1

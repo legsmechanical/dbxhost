@@ -11,7 +11,7 @@ if ! command -v rg >/dev/null 2>&1; then
   exit 1
 fi
 
-func_start=$(rg -n "^float sampler_get_bpm\\(tempo_source_t \\*source\\)" "$file" | cut -d: -f1 | head -n1 || true)
+func_start=$(rg -n "^float sampler_get_bpm\\(tempo_source_t \\*source\\)" "$file" | cut -d: -f1 | sed -n 1p || true)
 if [ -z "$func_start" ]; then
   echo "FAIL: could not locate sampler_get_bpm()" >&2
   exit 1
@@ -19,8 +19,8 @@ fi
 
 func_block=$(sed -n "${func_start},$((func_start + 80))p" "$file")
 
-set_line=$(printf "%s\n" "$func_block" | rg -n "Current Set's tempo|set_tempo" | head -n1 | cut -d: -f1 || true)
-last_line=$(printf "%s\n" "$func_block" | rg -n "Last measured clock BPM|sampler_last_known_bpm" | head -n1 | cut -d: -f1 || true)
+set_line=$(printf "%s\n" "$func_block" | rg -n "Current Set's tempo|set_tempo" | sed -n 1p | cut -d: -f1 || true)
+last_line=$(printf "%s\n" "$func_block" | rg -n "Last measured clock BPM|sampler_last_known_bpm" | sed -n 1p | cut -d: -f1 || true)
 
 if [ -z "$set_line" ] || [ -z "$last_line" ]; then
   echo "FAIL: could not find set tempo or last clock checks in sampler_get_bpm()" >&2

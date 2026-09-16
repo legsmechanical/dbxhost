@@ -41,8 +41,8 @@ fi
 
 # ORDER: before adjustKnobAndShow/handleKnobTurn, or the write happens first
 # and the scroll is dead code.
-fp_line=$(grep -n "VIEWS.FILEPATH_BROWSER" <<<"$block" | head -n 1 | cut -d: -f1)
-adj_line=$(grep -n "adjustKnobAndShow(knobIndex, delta)" <<<"$block" | head -n 1 | cut -d: -f1)
+fp_line=$(grep -n "VIEWS.FILEPATH_BROWSER" <<<"$block" | sed -n 1p | cut -d: -f1)
+adj_line=$(grep -n "adjustKnobAndShow(knobIndex, delta)" <<<"$block" | sed -n 1p | cut -d: -f1)
 if [ -z "$fp_line" ] || [ -z "$adj_line" ] || [ "$fp_line" -ge "$adj_line" ]; then
   echo "FAIL: the FILEPATH_BROWSER route must come BEFORE adjustKnobAndShow" >&2
   echo "      (browser at line $fp_line, adjustKnobAndShow at $adj_line)" >&2

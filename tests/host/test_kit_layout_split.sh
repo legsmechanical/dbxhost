@@ -159,8 +159,8 @@ emit() — with the layout passed as its argument."
 for pair in "drawKitPage:$render:bank"; do
   fn=${pair%%:*}; rest=${pair#*:}; file=${rest%%:*}; want=${rest##*:}
   body=$(awk "/^(export )?function $fn\\(/,/^}/" "$file")
-  first_draw=$(command grep -nE "^\s+(kit)?[dD]raw[A-Za-z]*\(|^\s+drawKit" <<<"$body" | head -n 1 | cut -d: -f1)
-  sel=$(command grep -n "kitUseLayout(" <<<"$body" | head -n 1 | cut -d: -f1)
+  first_draw=$(command grep -nE "^\s+(kit)?[dD]raw[A-Za-z]*\(|^\s+drawKit" <<<"$body" | sed -n 1p | cut -d: -f1)
+  sel=$(command grep -n "kitUseLayout(" <<<"$body" | sed -n 1p | cut -d: -f1)
   [ -n "$sel" ] || fail "$fn does not select a layout at all"
   if [ -n "$first_draw" ] && [ "$sel" -gt "$first_draw" ]; then
     fail "$fn draws (line $first_draw of the function) BEFORE selecting its

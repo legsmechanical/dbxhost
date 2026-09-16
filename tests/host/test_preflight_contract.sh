@@ -47,8 +47,8 @@ done
 # records the outgoing stub and every launch reports a false positive (observed
 # while building this, 2026-08-30).
 inst=standalone/scripts/install-host.sh
-man=$(command grep -n 'recording the owned-file manifest' "$inst" | head -1 | cut -d: -f1)
-stub=$(command grep -n 'installing the launcher into stock' "$inst" | head -1 | cut -d: -f1)
+man=$(command grep -n 'recording the owned-file manifest' "$inst" | sed -n 1p | cut -d: -f1)
+stub=$(command grep -n 'installing the launcher into stock' "$inst" | sed -n 1p | cut -d: -f1)
 [ -n "$man" ] || fail "install-host.sh no longer records the owned-file manifest"
 [ -n "$stub" ] || fail "install-host.sh no longer installs the launcher stub"
 [ "$man" -gt "$stub" ] ||

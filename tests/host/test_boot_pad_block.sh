@@ -44,7 +44,7 @@ live_line "boot_pad_block = 1" <<<"$boot_block" || \
     note "pad_block is not armed (live) alongside boot_tool_led_blank in the boot_tool.json gate"
 
 # --- release 1: overtake_mode (the tool has taken the surface) -------------
-overtake=$(awk '/if \(shadow_control->overtake_mode\) \{/,/^    \}$/' "$shim" | head -14)
+overtake=$(awk '/if \(shadow_control->overtake_mode\) \{/,/^    \}$/' "$shim" | sed -n 1,14p)
 command grep -q "boot_tool_led_blank = 0;" <<<"$overtake" || note "overtake_mode no longer clears boot_tool_led_blank (test is stale)"
 live_line "boot_pad_block = 0" <<<"$overtake" || \
     note "overtake_mode does not clear pad_block (live) — a boot press-block would outlive the tool taking the surface"

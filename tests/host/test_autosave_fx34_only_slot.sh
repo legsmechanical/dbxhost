@@ -14,7 +14,7 @@ note() { echo "FAIL: $1" >&2; fail=1; }
 
 body=$(awk '/^function autosaveAllSlots\(onlySlot, forSnapshot\) \{/,/^}/' "$f")
 [ -n "$body" ] || { echo "FAIL: autosaveAllSlots not found" >&2; exit 1; }
-cond=$(command grep -E "^[[:space:]]*if \(!hasSynth " <<<"$body" | head -1)
+cond=$(command grep -E "^[[:space:]]*if \(!hasSynth " <<<"$body" | sed -n 1p)
 [ -n "$cond" ] || note "the empty-slot condition is gone (test is stale)"
 
 for comp in Synth Fx1 Fx2 Fx3 Fx4 MidiFx; do

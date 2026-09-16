@@ -103,8 +103,8 @@ command grep -q "triggerFireValue(ctx.meta" <<<"$turn" || \
 # kills the script at the assignment, so the fail() message below -- the only
 # thing that says WHICH invariant broke -- never prints. An unexplained exit 1
 # is how a deliberate change gets mistaken for a broken harness.
-cl=$( { command grep -n "if (!startsGesture) return;" "$file" || true; } | head -n 1 | cut -d: -f1)
-fl=$( { command grep -n "setSlotParam(ctx.slot, ctx.fullKey, fire)" "$file" || true; } | head -n 1 | cut -d: -f1)
+cl=$( { command grep -n "if (!startsGesture) return;" "$file" || true; } | sed -n 1p | cut -d: -f1)
+fl=$( { command grep -n "setSlotParam(ctx.slot, ctx.fullKey, fire)" "$file" || true; } | sed -n 1p | cut -d: -f1)
 [ -n "$cl" ] && [ -n "$fl" ] && [ "$cl" -lt "$fl" ] || \
   fail "the gesture latch is evaluated AFTER the fire (gate $cl, write $fl) -- it gates nothing"
 # THE STAMP MUST BE WRITTEN BEFORE THE BAIL. That one line is the whole
@@ -113,13 +113,13 @@ fl=$( { command grep -n "setSlotParam(ctx.slot, ctx.fullKey, fire)" "$file" || t
 # on every DETENT makes it measure stillness, which is the promise the docs
 # make ("a whole flick counts as one press"). Reported from the device as
 # "gesture test fires repeatedly on detent".
-st=$( { command grep -n "triggerKnobLastMs\[knobIndex\] = t;" "$file" || true; } | head -n 1 | cut -d: -f1)
+st=$( { command grep -n "triggerKnobLastMs\[knobIndex\] = t;" "$file" || true; } | sed -n 1p | cut -d: -f1)
 [ -n "$st" ] && [ "$st" -lt "$cl" ] || \
   fail "the detent stamp is written AFTER the bail (stamp $st, bail $cl) -- that is a rate limit, not a latch"
 # ORDER is the whole point: both guards must precede the enum stepper's read.
-g=$( { command grep -n "if (isTriggerParam(ctx.meta)) {" "$file" || true; } | head -n 1 | cut -d: -f1)
-r=$( { command grep -n "if (isReadoutParam(ctx.meta)) {" "$file" || true; } | head -n 1 | cut -d: -f1)
-w=$( { command grep -n "const currentVal = getKnobCachedValue" "$file" || true; } | head -n 1 | cut -d: -f1)
+g=$( { command grep -n "if (isTriggerParam(ctx.meta)) {" "$file" || true; } | sed -n 1p | cut -d: -f1)
+r=$( { command grep -n "if (isReadoutParam(ctx.meta)) {" "$file" || true; } | sed -n 1p | cut -d: -f1)
+w=$( { command grep -n "const currentVal = getKnobCachedValue" "$file" || true; } | sed -n 1p | cut -d: -f1)
 [ -n "$g" ] && [ -n "$r" ] && [ -n "$w" ] && [ "$g" -lt "$w" ] && [ "$r" -lt "$w" ] || \
   fail "an access guard runs AFTER the value is read (trigger $g, readout $r, read $w)"
 # The LATCH IS KNOB-ONLY. A click is one gesture per press, and the two
@@ -138,9 +138,9 @@ done
 # setting the user can flip. Two copies of the number is two behaviours, and
 # the disagreement would only ever be noticed as "it fires differently in List
 # view", which nobody would think to report as a constant.
-a=$( { command grep -oE "^const TRIGGER_KNOB_GESTURE_GAP_MS = [0-9]+" "$file" || true; } | head -n 1)
+a=$( { command grep -oE "^const TRIGGER_KNOB_GESTURE_GAP_MS = [0-9]+" "$file" || true; } | sed -n 1p)
 b=$( { command grep -oE "^const TRIGGER_KNOB_GESTURE_GAP_MS = [0-9]+" \
-         src/shared/param_pages/page_controller.mjs || true; } | head -n 1)
+         src/shared/param_pages/page_controller.mjs || true; } | sed -n 1p)
 [ -n "$a" ] || fail "shadow_ui.js does not declare TRIGGER_KNOB_GESTURE_GAP_MS"
 [ -n "$b" ] || fail "page_controller.mjs does not declare TRIGGER_KNOB_GESTURE_GAP_MS"
 [ "$a" = "$b" ] || fail "the knob trigger gesture gap has drifted: shadow_ui \"$a\" vs grid \"$b\""
@@ -148,7 +148,7 @@ b=$( { command grep -oE "^const TRIGGER_KNOB_GESTURE_GAP_MS = [0-9]+" \
 # LETTING GO RE-ARMS IT. The gap is the fallback for a cap sensor that never
 # registered; a release is the real boundary. Without this you fire, let go,
 # take hold again, and the next detent is swallowed for up to 400ms.
-rearm=$( { command grep -n "triggerKnobLastMs\[knobIndex\] = 0;" "$file" || true; } | head -n 1 | cut -d: -f1)
+rearm=$( { command grep -n "triggerKnobLastMs\[knobIndex\] = 0;" "$file" || true; } | sed -n 1p | cut -d: -f1)
 [ -n "$rearm" ] || fail "releasing a knob does not re-arm the trigger latch on this surface"
 # FORK ANCHOR. Upstream locates its release handler by `knobTouched[knobIndex]
 # = false;`; this fork has no knobTouched array at all -- its release handler
@@ -159,7 +159,7 @@ rearm=$( { command grep -n "triggerKnobLastMs\[knobIndex\] = 0;" "$file" || true
 # anchor -- it appears three times in this fork (a co-run branch and a
 # knob-press branch come first), so `head -n 1` finds the wrong one and the
 # proximity check fails against code that is not the release handler at all.
-touchoff=$( { command grep -n "Handle Note Off for knob release" "$file" || true; } | head -n 1 | cut -d: -f1)
+touchoff=$( { command grep -n "Handle Note Off for knob release" "$file" || true; } | sed -n 1p | cut -d: -f1)
 [ -n "$touchoff" ] && [ "$rearm" -gt "$touchoff" ] && [ $((rearm - touchoff)) -lt 30 ] || \
   fail "the trigger re-arm is not in the knob RELEASE handler (release $touchoff, re-arm $rearm)"
 # ...and that handler must accept BOTH note-off spellings, or a real 0x80
@@ -185,8 +185,8 @@ command grep -q "triggerFireValue" <<<"$click" || fail "the click does not use t
 command grep -q "isTriggerParam(meta)" <<<"$click" || \
   fail "the trigger branch is no longer guarded by isTriggerParam -- it is dead code"
 command grep -q "isReadoutParam(meta)" <<<"$click" || fail "clicking a readout still opens an editor"
-tl=$(command grep -n "A TRIGGER is pushed, not opened" "$file" | head -n 1 | cut -d: -f1)
-el=$(command grep -n "if (beginHierarchyParamEdit(selectedKey)) {" "$file" | head -n 1 | cut -d: -f1)
+tl=$(command grep -n "A TRIGGER is pushed, not opened" "$file" | sed -n 1p | cut -d: -f1)
+el=$(command grep -n "if (beginHierarchyParamEdit(selectedKey)) {" "$file" | sed -n 1p | cut -d: -f1)
 [ "$tl" -lt "$el" ] || fail "the trigger branch is after the edit-mode fallthrough -- edit mode wins"
 echo "  ok  a click fires a trigger through the module wire, and never enters edit mode"
 echo "  ok  a click on a readout opens nothing"
@@ -216,8 +216,8 @@ command grep -q "function isTriggerEnumMeta" "$file" || \
 # predicates by first occurrence measures the wrong pair and fails against
 # correct code. The stepper is where a write happens, and the access guard has
 # to be in front of it.
-al=$(command grep -n "if (isTriggerParam(ctx.meta)) {" "$file" | head -n 1 | cut -d: -f1)
-sl=$(command grep -n 'if (ctx.meta && ctx.meta.type === "enum" && ctx.meta.options && ctx.meta.options.length > 0) {' "$file" | head -n 1 | cut -d: -f1)
+al=$(command grep -n "if (isTriggerParam(ctx.meta)) {" "$file" | sed -n 1p | cut -d: -f1)
+sl=$(command grep -n 'if (ctx.meta && ctx.meta.type === "enum" && ctx.meta.options && ctx.meta.options.length > 0) {' "$file" | sed -n 1p | cut -d: -f1)
 [ -n "$al" ] && [ -n "$sl" ] && [ "$al" -lt "$sl" ] || \
   fail "the access guard does not precede the enum stepper (access $al, stepper $sl)"
 echo "  ok  both trigger predicates are live, and access is checked before the stepper"

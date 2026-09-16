@@ -8,7 +8,7 @@ if ! command -v rg >/dev/null 2>&1; then
   exit 1
 fi
 
-fn_start=$(rg -n "static void native_resample_bridge_apply_overwrite_makeup\\(const int16_t \\*src," "$file" | head -n 1 | cut -d: -f1 || true)
+fn_start=$(rg -n "static void native_resample_bridge_apply_overwrite_makeup\\(const int16_t \\*src," "$file" | sed -n 1p | cut -d: -f1 || true)
 if [ -z "${fn_start}" ]; then
   echo "FAIL: Could not locate overwrite makeup helper" >&2
   exit 1

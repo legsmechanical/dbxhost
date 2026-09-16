@@ -44,9 +44,9 @@ if [ -z "$body" ]; then
   echo "FAIL: soundRetarget not found — this pin is reading the wrong shape"
   fail=1
 else
-  close_at=$(printf '%s\n' "$body" | grep -n "wavEditCloseIfOpen();" | head -1 | cut -d: -f1)
-  slot_at=$(printf '%s\n' "$body" | grep -n "^    S.slot = slot;" | head -1 | cut -d: -f1)
-  drop_at=$(printf '%s\n' "$body" | grep -n "^    S.fileState = null;" | head -1 | cut -d: -f1)
+  close_at=$(printf '%s\n' "$body" | grep -n "wavEditCloseIfOpen();" | sed -n 1p | cut -d: -f1)
+  slot_at=$(printf '%s\n' "$body" | grep -n "^    S.slot = slot;" | sed -n 1p | cut -d: -f1)
+  drop_at=$(printf '%s\n' "$body" | grep -n "^    S.fileState = null;" | sed -n 1p | cut -d: -f1)
   if [ -z "$close_at" ] || [ -z "$slot_at" ] || [ -z "$drop_at" ]; then
     echo "FAIL: inside soundRetarget, could not find close=$close_at slot=$slot_at drop=$drop_at"
     fail=1

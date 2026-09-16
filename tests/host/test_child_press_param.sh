@@ -110,7 +110,7 @@ Promise.all([
 shim="src/schwung_shim.c"
 hdr="src/host/shadow_constants.h"
 command grep -q 'volatile uint8_t pad_observe;' "$hdr" || fail "shadow_control_t has no pad_observe"
-fwd=$(command grep -n 'shadow_control->pad_observe &&' "$shim" | head -1 | cut -d: -f1)
+fwd=$(command grep -n 'shadow_control->pad_observe &&' "$shim" | sed -n 1p | cut -d: -f1)
 [ -n "$fwd" ] || fail "the shim never forwards pads under pad_observe"
 if sed -n "$fwd,$((fwd+4))p" "$shim" | command grep -q 'continue;'; then
   fail "the pad_observe forward has a \`continue\` -- that BLOCKS the pad from the DSP, which is pad_block, not observation"

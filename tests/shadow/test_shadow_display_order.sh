@@ -8,8 +8,8 @@ if ! command -v rg >/dev/null 2>&1; then
   exit 1
 fi
 
-display_line=$(rg -n "shadow_swap_display\\(" "$file" | rg -v "static void" | head -n 1 | cut -d: -f1 || true)
-ioctl_line=$(rg -n "real_ioctl\\(fd" "$file" | head -n 1 | cut -d: -f1 || true)
+display_line=$(rg -n "shadow_swap_display\\(" "$file" | rg -v "static void" | sed -n 1p | cut -d: -f1 || true)
+ioctl_line=$(rg -n "real_ioctl\\(fd" "$file" | sed -n 1p | cut -d: -f1 || true)
 
 if [ -z "${display_line}" ] || [ -z "${ioctl_line}" ]; then
   echo "Failed to locate shadow_swap_display or real_ioctl call in ${file}" >&2

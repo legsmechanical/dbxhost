@@ -32,8 +32,8 @@ command grep -q "inst->knob_mapping_count = 0;" <<<"$blk" || \
 # It must clear AFTER the unloads, not before: a mapping's target is only
 # meaningless once the modules are gone, and ordering it first would be a
 # silent no-op the moment an unload path grows a knob-mapping write of its own.
-u=$(command grep -n "v2_unload_synth(inst)" <<<"$blk" | head -n 1 | cut -d: -f1)
-k=$(command grep -n "memset(inst->knob_mappings" <<<"$blk" | head -n 1 | cut -d: -f1)
+u=$(command grep -n "v2_unload_synth(inst)" <<<"$blk" | sed -n 1p | cut -d: -f1)
+k=$(command grep -n "memset(inst->knob_mappings" <<<"$blk" | sed -n 1p | cut -d: -f1)
 [ -n "$u" ] && [ -n "$k" ] && [ "$u" -lt "$k" ] || \
   fail "the knob-mapping reset runs before the modules are unloaded"
 

@@ -114,8 +114,8 @@ run_checks() {
 
     # C. the fallback mix comes AFTER the join, in render_to_buffer
     local ln_run ln_mix
-    ln_run="$(grep -n 'render_pool_run(' "$w/rtb.c" | head -1 | cut -d: -f1 || true)"
-    ln_mix="$(grep -n 'if (!shadow_slot_fallback_rendered\[s\]) continue;' "$w/rtb.c" | head -1 | cut -d: -f1 || true)"
+    ln_run="$(grep -n 'render_pool_run(' "$w/rtb.c" | sed -n 1p | cut -d: -f1 || true)"
+    ln_mix="$(grep -n 'if (!shadow_slot_fallback_rendered\[s\]) continue;' "$w/rtb.c" | sed -n 1p | cut -d: -f1 || true)"
     if [ -z "$ln_mix" ]; then
         say "render_to_buffer must sum the rendered fallback slots (shadow_slot_fallback_rendered) after the join"
     elif [ -n "$ln_run" ] && [ "$ln_mix" -lt "$ln_run" ]; then

@@ -13,7 +13,7 @@ if ! command -v rg >/dev/null 2>&1; then
   exit 1
 fi
 
-start=$(rg -n "const release = fetchReleaseJson\\(" "$file" | head -n 1 | cut -d: -f1 || true)
+start=$(rg -n "const release = fetchReleaseJson\\(" "$file" | sed -n 1p | cut -d: -f1 || true)
 if [ -z "${start}" ]; then
   echo "FAIL: Could not locate release fetch loop in $file" >&2
   exit 1

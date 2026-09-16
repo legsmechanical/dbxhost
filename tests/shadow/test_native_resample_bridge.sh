@@ -21,7 +21,7 @@ for sym in \
 done
 
 # 2) Apply path must use mode/source gating and overwrite helper.
-bridge_start=$(rg -n "static void native_resample_bridge_apply\\(void\\)" "$file" | head -n 1 | cut -d: -f1 || true)
+bridge_start=$(rg -n "static void native_resample_bridge_apply\\(void\\)" "$file" | sed -n 1p | cut -d: -f1 || true)
 if [ -z "${bridge_start}" ]; then
   echo "FAIL: Could not locate native_resample_bridge_apply()" >&2
   exit 1
@@ -42,7 +42,7 @@ if ! echo "${bridge_ctx}" | rg -q "native_resample_bridge_apply_overwrite_makeup
 fi
 
 # 3) Overwrite helper must support both no-MFX component comp and MFX post-FX makeup.
-overwrite_start=$(rg -n "static void native_resample_bridge_apply_overwrite_makeup\\(const int16_t \\*src," "$file" | head -n 1 | cut -d: -f1 || true)
+overwrite_start=$(rg -n "static void native_resample_bridge_apply_overwrite_makeup\\(const int16_t \\*src," "$file" | sed -n 1p | cut -d: -f1 || true)
 if [ -z "${overwrite_start}" ]; then
   echo "FAIL: Could not locate overwrite helper" >&2
   exit 1
@@ -81,15 +81,15 @@ if ! rg -q "split=%d mfx=%d makeup=\\(%.2fx->%.2fx lim=%d\\)" "$file"; then
 fi
 
 # 5) Snapshot capture in mix path should be post-FX and before sampler capture.
-mix_start=$(rg -n "static void shadow_inprocess_mix_from_buffer\\(void\\)" "$file" | head -n 1 | cut -d: -f1 || true)
+mix_start=$(rg -n "static void shadow_inprocess_mix_from_buffer\\(void\\)" "$file" | sed -n 1p | cut -d: -f1 || true)
 if [ -z "${mix_start}" ]; then
   echo "FAIL: Could not locate shadow_inprocess_mix_from_buffer()" >&2
   exit 1
 fi
 mix_ctx=$(sed -n "${mix_start},$((mix_start + 110))p" "$file")
-capture_rel=$(echo "${mix_ctx}" | rg -n "native_capture_total_mix_snapshot_from_buffer\\(" | head -n 1 | cut -d: -f1 || true)
-fx_rel=$(echo "${mix_ctx}" | rg -n "Apply master FX chain to combined audio" | head -n 1 | cut -d: -f1 || true)
-sampler_rel=$(echo "${mix_ctx}" | rg -n "Capture audio for sampler BEFORE master volume scaling" | head -n 1 | cut -d: -f1 || true)
+capture_rel=$(echo "${mix_ctx}" | rg -n "native_capture_total_mix_snapshot_from_buffer\\(" | sed -n 1p | cut -d: -f1 || true)
+fx_rel=$(echo "${mix_ctx}" | rg -n "Apply master FX chain to combined audio" | sed -n 1p | cut -d: -f1 || true)
+sampler_rel=$(echo "${mix_ctx}" | rg -n "Capture audio for sampler BEFORE master volume scaling" | sed -n 1p | cut -d: -f1 || true)
 
 if [ -z "${capture_rel}" ] || [ -z "${fx_rel}" ] || [ -z "${sampler_rel}" ]; then
   echo "FAIL: Could not locate capture/fx/sampler markers in mix path" >&2

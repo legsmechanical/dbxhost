@@ -45,8 +45,8 @@ else
     note "the request file is not consumed — a stale request can be re-judged"
 fi
 # the unlink must precede the first parse step, or a malformed record persists
-unlink_line=$(grep -n 'unlink(MOVE_INTENDED_SET_PATH)' <<<"$reader" | head -1 | cut -d: -f1)
-parse_line=$(grep -n "strchr(buf" <<<"$reader" | head -1 | cut -d: -f1)
+unlink_line=$(grep -n 'unlink(MOVE_INTENDED_SET_PATH)' <<<"$reader" | sed -n 1p | cut -d: -f1)
+parse_line=$(grep -n "strchr(buf" <<<"$reader" | sed -n 1p | cut -d: -f1)
 if [ -n "$unlink_line" ] && [ -n "$parse_line" ] && [ "$unlink_line" -lt "$parse_line" ]; then
     ok "...before parsing, so a malformed record cannot be re-read every tick"
 else
@@ -83,7 +83,7 @@ fi
 #    a quote (its shell use was "$DBX_DIR/move_intended_index.txt").
 used=$(grep -rnE 'MOVE_INTENDED_INDEX|move_intended_index\.txt"' src/ standalone/ davebox/ 2>/dev/null | grep -v '^Binary' || true)
 if [ -n "$used" ]; then
-    echo "    still used:" >&2; printf '%s\n' "$used" | head -5 >&2
+    echo "    still used:" >&2; printf '%s\n' "$used" | sed -n 1,5p >&2
     note "the retired index-only request file is still used somewhere"
 else
     ok "nothing reads the retired index-only request file"
@@ -118,8 +118,8 @@ done
 #    while nothing called it. This pin exists because "it is correct" and "it
 #    runs" are different claims.
 poll=$(awk '/^void shadow_poll_current_set/,/^}/' "$f")
-tick_line=$(printf '%s\n' "$poll" | grep -n "identity_tick(" | head -1 | cut -d: -f1)
-guard_line=$(printf '%s\n' "$poll" | grep -n "song_index == sampler_last_song_index" | head -1 | cut -d: -f1)
+tick_line=$(printf '%s\n' "$poll" | grep -n "identity_tick(" | sed -n 1p | cut -d: -f1)
+guard_line=$(printf '%s\n' "$poll" | grep -n "song_index == sampler_last_song_index" | sed -n 1p | cut -d: -f1)
 if [ -n "$tick_line" ] && [ -n "$guard_line" ] && [ "$tick_line" -lt "$guard_line" ]; then
     ok "the machine ticks BEFORE the index-change early return"
 else

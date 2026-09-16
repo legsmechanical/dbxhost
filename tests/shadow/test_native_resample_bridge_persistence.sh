@@ -29,7 +29,7 @@ if [ -z "${startup_line}" ]; then
   exit 1
 fi
 
-mmap_hook_line=$(rg -n "if \\(length == 4096\\)" "$file" | head -n 1 | cut -d: -f1 || true)
+mmap_hook_line=$(rg -n "if \\(length == 4096\\)" "$file" | sed -n 1p | cut -d: -f1 || true)
 if [ -z "${mmap_hook_line}" ]; then
   echo "FAIL: Could not locate mmap mailbox hook init path" >&2
   exit 1

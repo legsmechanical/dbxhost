@@ -132,9 +132,9 @@ run_checks() {
     extract_fn "$w/shim.c" '^static void shim_pre_transfer' > "$w/pre.c"
     [ -s "$w/pre.c" ] || say "shim_pre_transfer not found in schwung_shim.c"
     local ln_lane ln_mbox ln_web
-    ln_lane="$(grep -n 'shadow_drain_param_lane()' "$w/pre.c" | head -1 | cut -d: -f1 || true)"
-    ln_mbox="$(grep -n 'shadow_inprocess_handle_param_request()' "$w/pre.c" | head -1 | cut -d: -f1 || true)"
-    ln_web="$(grep -n 'shadow_drain_web_param_set()' "$w/pre.c" | head -1 | cut -d: -f1 || true)"
+    ln_lane="$(grep -n 'shadow_drain_param_lane()' "$w/pre.c" | sed -n 1p | cut -d: -f1 || true)"
+    ln_mbox="$(grep -n 'shadow_inprocess_handle_param_request()' "$w/pre.c" | sed -n 1p | cut -d: -f1 || true)"
+    ln_web="$(grep -n 'shadow_drain_web_param_set()' "$w/pre.c" | sed -n 1p | cut -d: -f1 || true)"
     if [ -z "$ln_lane" ]; then
         say "shim_pre_transfer must call shadow_drain_param_lane()"
     elif [ -z "$ln_mbox" ]; then
@@ -190,7 +190,7 @@ run_checks() {
         || say "shadow_set_param_common must offer eligible writes to the lane"
     # the gate is ONE expression carrying all three conditions
     local gate
-    gate="$(tr '\n' ' ' < "$w/set.c" | grep -o 'if (spl_key_eligible(key)[^{]*{' | head -1 || true)"
+    gate="$(tr '\n' ' ' < "$w/set.c" | grep -o 'if (spl_key_eligible(key)[^{]*{' | sed -n 1p || true)"
     [ -n "$gate" ] || say "the lane gate must start with spl_key_eligible(key)"
     case "$gate" in
         *'spq_count(&g_param_pending) == 0'*) ;;
@@ -209,7 +209,7 @@ run_checks() {
     extract_fn "$w/ui.c" '^static JSValue shadow_param_bulk_js' > "$w/bulk.c"
     [ -s "$w/bulk.c" ] || say "shadow_param_bulk_js not found in shadow_ui.c"
     local bgate
-    bgate="$(tr '\n' ' ' < "$w/bulk.c" | grep -o 'if (req_type == 4[^{]*spl_push([^{]*{' | head -1 || true)"
+    bgate="$(tr '\n' ' ' < "$w/bulk.c" | grep -o 'if (req_type == 4[^{]*spl_push([^{]*{' | sed -n 1p || true)"
     [ -n "$bgate" ] || say "shadow_param_bulk_js must carry a lane gate ending in spl_push"
     case "$bgate" in
         *'transient &&'*|*'&& transient'*) ;;
@@ -233,9 +233,9 @@ run_checks() {
         || say "the drain must read the clock at entry AND per record (found $nclk clock_gettime calls)"
     # ...and it must sit INSIDE the fire-and-forget branch, before spq_offer
     local ln_ff ln_gate ln_offer
-    ln_ff="$(grep -n 'if (overtake_fire_and_forget)' "$w/set.c" | head -1 | cut -d: -f1 || true)"
-    ln_gate="$(grep -n 'spl_push(' "$w/set.c" | head -1 | cut -d: -f1 || true)"
-    ln_offer="$(grep -n 'spq_offer(' "$w/set.c" | head -1 | cut -d: -f1 || true)"
+    ln_ff="$(grep -n 'if (overtake_fire_and_forget)' "$w/set.c" | sed -n 1p | cut -d: -f1 || true)"
+    ln_gate="$(grep -n 'spl_push(' "$w/set.c" | sed -n 1p | cut -d: -f1 || true)"
+    ln_offer="$(grep -n 'spq_offer(' "$w/set.c" | sed -n 1p | cut -d: -f1 || true)"
     if [ -n "$ln_ff" ] && [ -n "$ln_gate" ] && [ -n "$ln_offer" ]; then
         [ "$ln_ff" -lt "$ln_gate" ] \
             || say "the lane gate must sit INSIDE the overtake fire-and-forget branch, not ahead of it"
@@ -246,7 +246,7 @@ run_checks() {
     fi
     # the dirty marking stays above the branch, untouched
     local ln_dirty
-    ln_dirty="$(grep -n 'shadow_mark_slot_dirty(slot, key);' "$w/set.c" | head -1 | cut -d: -f1 || true)"
+    ln_dirty="$(grep -n 'shadow_mark_slot_dirty(slot, key);' "$w/set.c" | sed -n 1p | cut -d: -f1 || true)"
     if [ -n "$ln_dirty" ] && [ -n "$ln_ff" ]; then
         [ "$ln_dirty" -lt "$ln_ff" ] \
             || say "the autosave dirty marking must still happen for EVERY write, above the fire-and-forget branch"

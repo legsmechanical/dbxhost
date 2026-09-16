@@ -27,7 +27,7 @@ if [[ -z "$body" ]]; then
   exit 1
 fi
 
-line_of() { grep -n "$1" <<<"$body" | head -n 1 | cut -d: -f1; }
+line_of() { grep -n "$1" <<<"$body" | sed -n 1p | cut -d: -f1; }
 
 reap_line="$(line_of 'shadow_ui_reap();' || true)"
 guard_line="$(line_of 'if (shadow_ui_started && shadow_ui_pid > 0) return;' || true)"
@@ -72,8 +72,8 @@ fi
 shim="src/schwung_shim.c"
 swap="$(sed -n '/^static void shadow_swap_display(void)/,/^}/p' "$shim")"
 
-watchdog_line="$(grep -n 'launch_shadow_ui();' <<<"$swap" | head -n 1 | cut -d: -f1 || true)"
-gate_line="$(grep -n 'if (!shadow_display_mode) {' <<<"$swap" | head -n 1 | cut -d: -f1 || true)"
+watchdog_line="$(grep -n 'launch_shadow_ui();' <<<"$swap" | sed -n 1p | cut -d: -f1 || true)"
+gate_line="$(grep -n 'if (!shadow_display_mode) {' <<<"$swap" | sed -n 1p | cut -d: -f1 || true)"
 
 if [[ -z "$watchdog_line" || -z "$gate_line" ]]; then
   echo "FAIL: could not locate the watchdog or the shadow-mode gate" >&2
@@ -95,8 +95,8 @@ fi
 
 # The give-up state must cost only the waitpid, not a /proc read per call.
 launch_body="$(sed -n '/^void launch_shadow_ui(void) {/,/^}/p' "$src")"
-backoff_line="$(grep -n 'if (shadow_ui_backoff_active) return;' <<<"$launch_body" | head -n 1 | cut -d: -f1 || true)"
-refresh_line2="$(grep -n 'shadow_ui_refresh_pid();' <<<"$launch_body" | head -n 1 | cut -d: -f1 || true)"
+backoff_line="$(grep -n 'if (shadow_ui_backoff_active) return;' <<<"$launch_body" | sed -n 1p | cut -d: -f1 || true)"
+refresh_line2="$(grep -n 'shadow_ui_refresh_pid();' <<<"$launch_body" | sed -n 1p | cut -d: -f1 || true)"
 if [[ -z "$backoff_line" ]] || (( backoff_line >= refresh_line2 )); then
   echo "FAIL: the backoff early-out must precede shadow_ui_refresh_pid()," >&2
   echo "      or the give-up state reads /proc on every SPI-path call" >&2

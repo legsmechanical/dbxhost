@@ -71,8 +71,8 @@ body=$(awk '/^export function soundTick\(\) \{/{f=1} f{print} f && /^\}$/{exit}'
 if [ -z "$body" ]; then
   echo "FAIL: soundTick not found — this pin is reading the wrong shape"; fail=1
 else
-  drop_at=$(printf '%s\n' "$body" | grep -n "ppCondReadsDrop();" | head -1 | cut -d: -f1)
-  ret_at=$(printf '%s\n' "$body" | grep -n "return;" | head -1 | cut -d: -f1)
+  drop_at=$(printf '%s\n' "$body" | grep -n "ppCondReadsDrop();" | sed -n 1p | cut -d: -f1)
+  ret_at=$(printf '%s\n' "$body" | grep -n "return;" | sed -n 1p | cut -d: -f1)
   if [ -z "$drop_at" ]; then
     echo "FAIL: soundTick does not empty the gate memo — it would live for the whole"
     echo "      session, and a gate would answer from a value read minutes ago"

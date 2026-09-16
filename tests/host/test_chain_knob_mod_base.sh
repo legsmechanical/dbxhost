@@ -52,8 +52,8 @@ command grep -q 'chain_mod_update_base_from_set_param(inst, target, param, val_s
 # ...and it does so BEFORE any plugin write. A write that already happened
 # cannot be taken back; the ordering is the whole fix.
 awk '/^void knob_forward_value/,/^}/' "$P" > "$work/kfv.c"
-base_line=$(command grep -n 'chain_mod_update_base_from_set_param' "$work/kfv.c" | head -1 | cut -d: -f1)
-set_line=$(command grep -n -- '->set_param(' "$work/kfv.c" | head -1 | cut -d: -f1)
+base_line=$(command grep -n 'chain_mod_update_base_from_set_param' "$work/kfv.c" | sed -n 1p | cut -d: -f1)
+set_line=$(command grep -n -- '->set_param(' "$work/kfv.c" | sed -n 1p | cut -d: -f1)
 [ -n "$base_line" ] && [ -n "$set_line" ] || fail "could not locate both calls in knob_forward_value"
 [ "$base_line" -lt "$set_line" ] \
   || fail "knob_forward_value writes the plugin before telling the modulation bus"

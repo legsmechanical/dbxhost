@@ -9,7 +9,7 @@ if ! command -v rg >/dev/null 2>&1; then
 fi
 
 # Capture helper should copy snapshot verbatim.
-capture_start=$(rg -n "static void native_capture_total_mix_snapshot_from_buffer\\(const int16_t \\*src\\)" "$file" | head -n 1 | cut -d: -f1 || true)
+capture_start=$(rg -n "static void native_capture_total_mix_snapshot_from_buffer\\(const int16_t \\*src\\)" "$file" | sed -n 1p | cut -d: -f1 || true)
 if [ -z "${capture_start}" ]; then
   echo "FAIL: Could not locate snapshot capture helper" >&2
   exit 1
@@ -26,7 +26,7 @@ if echo "${capture_ctx}" | rg -q "1\\.0f /"; then
 fi
 
 # Gain compensation belongs in overwrite apply helper.
-overwrite_start=$(rg -n "static void native_resample_bridge_apply_overwrite_makeup\\(const int16_t \\*src," "$file" | head -n 1 | cut -d: -f1 || true)
+overwrite_start=$(rg -n "static void native_resample_bridge_apply_overwrite_makeup\\(const int16_t \\*src," "$file" | sed -n 1p | cut -d: -f1 || true)
 if [ -z "${overwrite_start}" ]; then
   echo "FAIL: Could not locate overwrite helper" >&2
   exit 1

@@ -66,8 +66,8 @@ command grep -q 'static inline int chain_params_answer_is_useful(const char \*bu
 #
 # Derived from the header so a fifth block fails HERE rather than shipping a
 # component whose params silently lose their types.
-cap_fx=$(sed -n 's/^#define MAX_AUDIO_FX \([0-9]*\).*/\1/p' "$H" | head -1)
-cap_midi=$(sed -n 's/^#define MAX_MIDI_FX \([0-9]*\).*/\1/p' "$H" | head -1)
+cap_fx=$(sed -n 's/^#define MAX_AUDIO_FX \([0-9]*\).*/\1/p' "$H" | sed -n 1p)
+cap_midi=$(sed -n 's/^#define MAX_MIDI_FX \([0-9]*\).*/\1/p' "$H" | sed -n 1p)
 [ -n "$cap_fx" ] && [ -n "$cap_midi" ] || fail "could not read MAX_AUDIO_FX / MAX_MIDI_FX from $H"
 want=$((1 + cap_fx + cap_midi))
 sites=$(command grep -c 'if (chain_params_answer_is_useful(buf, result)) return result;' "$C" || true)

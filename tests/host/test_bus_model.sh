@@ -579,8 +579,8 @@ console.log("PASS: bus model — the tri-state read, positional buses, retained 
 # the DSP is running. Derived from the C headers rather than restated, the way
 # test_master_fx_slots_js.sh derives MASTER_FX_SLOTS.
 fail=0
-c_val() { sed -n "s/^#define $2 \([0-9]*\).*/\1/p" "$1" | head -1; }
-js_val() { sed -n "s/^export const $2 = \([0-9]*\);.*/\1/p" src/shared/bus_model.mjs | head -1; }
+c_val() { sed -n "s/^#define $2 \([0-9]*\).*/\1/p" "$1" | sed -n 1p; }
+js_val() { sed -n "s/^export const $2 = \([0-9]*\);.*/\1/p" src/shared/bus_model.mjs | sed -n 1p; }
 
 check() {   # <name-in-js> <name-in-c> <c-header>
   local js c

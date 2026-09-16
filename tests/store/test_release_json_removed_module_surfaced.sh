@@ -19,7 +19,7 @@ if ! command -v rg >/dev/null 2>&1; then
 fi
 
 # The explicit removed-module branch: multi-module doc present, this id absent.
-removed_line=$(rg -n "no longer published in" "$file" | head -n 1 | cut -d: -f1 || true)
+removed_line=$(rg -n "no longer published in" "$file" | sed -n 1p | cut -d: -f1 || true)
 if [ -z "${removed_line}" ]; then
   echo "FAIL: Missing explicit 'no longer published' branch for dropped multi-module entries" >&2
   exit 1
@@ -34,7 +34,7 @@ fi
 
 # It must run BEFORE the generic "Invalid release.json format" catch, otherwise
 # a valid multi-module doc missing this id would be misreported as corrupt.
-invalid_line=$(rg -n 'console\.log\(.Invalid release\.json format' "$file" | head -n 1 | cut -d: -f1 || true)
+invalid_line=$(rg -n 'console\.log\(.Invalid release\.json format' "$file" | sed -n 1p | cut -d: -f1 || true)
 if [ -z "${invalid_line}" ]; then
   echo "FAIL: Could not locate the generic invalid-format guard" >&2
   exit 1

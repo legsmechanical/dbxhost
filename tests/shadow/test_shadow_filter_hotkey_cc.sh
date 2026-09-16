@@ -13,7 +13,7 @@ if ! command -v rg >/dev/null 2>&1; then
 fi
 
 # Verify hotkey detection uses raw MIDI_IN buffer.
-hotkey_start=$(rg -n "void midi_monitor\\(\\)" "$file" | head -n 1 | cut -d: -f1 || true)
+hotkey_start=$(rg -n "void midi_monitor\\(\\)" "$file" | sed -n 1p | cut -d: -f1 || true)
 if [ -z "${hotkey_start}" ]; then
   echo "FAIL: Could not locate midi_monitor() in ${file}" >&2
   exit 1
@@ -26,8 +26,8 @@ if ! echo "${hotkey_block}" | rg -q "uint8_t \\*src = global_mmap_addr \\+ MIDI_
 fi
 
 # Check the post-ioctl MIDI_IN filter block does not include shift CC.
-filter_start=$(rg -n "Filter MIDI_IN: zero out jog/back/knobs" "$file" | head -n 1 | cut -d: -f1 || true)
-filter_end=$(rg -n "Note messages: filter knob touches" "$file" | head -n 1 | cut -d: -f1 || true)
+filter_start=$(rg -n "Filter MIDI_IN: zero out jog/back/knobs" "$file" | sed -n 1p | cut -d: -f1 || true)
+filter_end=$(rg -n "Note messages: filter knob touches" "$file" | sed -n 1p | cut -d: -f1 || true)
 if [ -z "${filter_start}" ] || [ -z "${filter_end}" ]; then
   echo "FAIL: Could not locate post-ioctl MIDI_IN filter block in ${file}" >&2
   exit 1
