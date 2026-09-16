@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
-# Schwung pre-commit hook — fast, native checks only.
+# Pre-commit gate: run the checks that cover WHAT WAS STAGED, and never pass
+# because a tool was missing.
 #
-# Runs locally what the CI 'host-tests' and 'go' jobs run: the device-free
-# unit/contract tests (tests/host/) and schwung-manager's go vet/build/test.
-# Takes a few seconds; no Docker, no ARM64 toolchain required.
+# WHY IT IS SHAPED THIS WAY. The previous version ran the whole tests/host
+# suite plus go vet/build/test on EVERY commit, and nothing else. Measured over
+# 30 days: davebox/ took 2508 file touches and had no gate at all, while
+# schwung-manager/ took 3 and was checked on all ~974 commits. The gate was
+# inverted with respect to both the work and the risk.
 #
-# The CI 'cross-compile' job is intentionally NOT here — it needs Docker +
-# the aarch64 toolchain and takes ~2.5 min. CI runs it authoritatively on
-# the pull request.
+# It also degraded OPEN: a missing rg/cc/go skipped that block and the commit
+# passed. 'go' is not installed on the primary dev machine, so the Go block had
+# been silently skipping indefinitely. A green hook must mean the checks ran.
 #
-# Enable (once per clone):  ./scripts/install-hooks.sh
+# Install:                 ./scripts/install-hooks.sh
 #   (equivalently: git config core.hooksPath scripts/hooks)
-# Bypass one commit:        git commit --no-verify
-# Skip via env:             SCHWUNG_SKIP_HOOKS=1 git commit ...
-
+# Bypass one commit:       git commit --no-verify
+# Skip via env:            SCHWUNG_SKIP_HOOKS=1 git commit ...
+#
+# ⚠ This runs NATIVELY (macOS here, Linux in CI). It cannot see platform
+# differences in C — sigset_t and friends. Before pushing, run the parity
+# suite:  scripts/test-linux.sh
 set -uo pipefail
 
 if [ "${SCHWUNG_SKIP_HOOKS:-0}" = "1" ]; then
@@ -21,37 +27,87 @@ if [ "${SCHWUNG_SKIP_HOOKS:-0}" = "1" ]; then
   exit 0
 fi
 
-# Always run from the repo root, regardless of where git invoked us.
 cd "$(git rev-parse --show-toplevel)"
 
-fail=0
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -n "$staged" ] && touches() { printf '%s\n' "$staged" | grep -qE "$1"; } || touches() { return 1; }
 
-# --------------------------------------------------------------- host-tests
-echo "[pre-commit] host-tests (unit + contract) …"
-if command -v rg >/dev/null 2>&1 && command -v cc >/dev/null 2>&1; then
-  if ! out=$(make -C tests/host test 2>&1); then
-    echo "  FAIL: make -C tests/host test"; printf '%s\n' "$out" | sed 's/^/    /'
-    fail=1
-  fi
-  for t in tests/host/*.sh; do
-    if ! out=$(bash "$t" 2>&1); then
-      echo "  FAIL: $t"; printf '%s\n' "$out" | sed 's/^/    /'
+fail=0
+ran=""
+
+need() {  # need <tool> <what it gates> — fail closed, never skip
+  if command -v "$1" >/dev/null 2>&1; then return 0; fi
+  echo "[pre-commit] MISSING '$1' — required to check $2." >&2
+  echo "             Install it, or bypass deliberately with SCHWUNG_SKIP_HOOKS=1." >&2
+  fail=1
+  return 1
+}
+
+# ------------------------------------------------------------- host / C / shell
+if touches '^(src/|tests/host/|standalone/|scripts/|Makefile|tests/Makefile)'; then
+  echo "[pre-commit] host-tests (unit + contract) …"
+  ran="$ran host"
+  if need cc "the host C units" && need rg "the host source pins"; then
+    if ! out=$(make -C tests/host test 2>&1); then
+      echo "  FAIL: make -C tests/host test"; printf '%s\n' "$out" | sed 's/^/    /'
       fail=1
     fi
-  done
-else
-  echo "[pre-commit] 'cc' or 'rg' missing — skipping host-tests (install ripgrep + a C compiler)" >&2
+    for t in tests/host/*.sh; do
+      if ! out=$(bash "$t" 2>&1); then
+        echo "  FAIL: $t"; printf '%s\n' "$out" | sed 's/^/    /'
+        fail=1
+      fi
+    done
+  fi
 fi
 
-# ----------------------------------------------------------------------- go
-echo "[pre-commit] go (schwung-manager) …"
-if command -v go >/dev/null 2>&1; then
-  if ! out=$(cd schwung-manager && go vet ./... && go build ./... && go test ./... 2>&1); then
-    echo "  FAIL: go checks"; printf '%s\n' "$out" | sed 's/^/    /'
+# ------------------------------------------------------------------- davebox
+if touches '^davebox/'; then
+  echo "[pre-commit] davebox tests (C units + JS units + invariants) …"
+  ran="$ran davebox"
+  if need cc "the davebox C units"; then
+    if ! out=$(bash davebox/tests/run.sh 2>&1); then
+      echo "  FAIL: davebox/tests/run.sh"; printf '%s\n' "$out" | tail -40 | sed 's/^/    /'
+      fail=1
+    fi
+  fi
+fi
+
+# ------------------------------------------------------------- schwung-manager
+if touches '^schwung-manager/'; then
+  echo "[pre-commit] go (schwung-manager) …"
+  ran="$ran go"
+  if command -v go >/dev/null 2>&1; then
+    if ! out=$(cd schwung-manager && go vet ./... && go build ./... && go test ./... 2>&1); then
+      echo "  FAIL: go checks"; printf '%s\n' "$out" | sed 's/^/    /'
+      fail=1
+    fi
+  elif command -v docker >/dev/null 2>&1 && docker version >/dev/null 2>&1; then
+    # Same fallback scripts/build.sh uses when go is not installed locally.
+    # Pin matches .github/workflows/ci.yml.
+    echo "  (no local go — using golang:1.26-bookworm)"
+    mkdir -p .cache/go-cache .cache/go-mod-cache
+    if ! out=$(docker run --rm \
+        -v "$PWD/schwung-manager:/src" \
+        -v "$PWD/.cache/go-cache:/gocache" \
+        -v "$PWD/.cache/go-mod-cache:/go-mod-cache" \
+        -u "$(id -u):$(id -g)" -w /src \
+        -e GOCACHE=/gocache -e GOMODCACHE=/go-mod-cache -e GOFLAGS=-buildvcs=false \
+        golang:1.26-bookworm \
+        bash -c 'go vet ./... && go build ./... && go test ./...' 2>&1); then
+      echo "  FAIL: go checks (container)"; printf '%s\n' "$out" | tail -40 | sed 's/^/    /'
+      fail=1
+    fi
+  else
+    echo "[pre-commit] MISSING both 'go' and a running docker — cannot check schwung-manager." >&2
+    echo "             Install one, or bypass deliberately with SCHWUNG_SKIP_HOOKS=1." >&2
     fail=1
   fi
-else
-  echo "[pre-commit] 'go' missing — skipping schwung-manager checks" >&2
+fi
+
+if [ -z "$ran" ]; then
+  echo "[pre-commit] nothing staged that these checks cover — OK"
+  exit 0
 fi
 
 if [ "$fail" -ne 0 ]; then
@@ -59,4 +115,4 @@ if [ "$fail" -ne 0 ]; then
   exit 1
 fi
 
-echo "[pre-commit] OK"
+echo "[pre-commit] OK —$ran"
