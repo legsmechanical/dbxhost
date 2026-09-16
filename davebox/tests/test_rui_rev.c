@@ -451,7 +451,9 @@ int main(void) {
          * (which initiated the load and runs its own pendingDspSync) must not
          * be told to resync again. */
         { unsigned c2;
-          r = rev(h); c2 = crev(h); hx_set_param(h, "state_load", "");
+          /* A real uuid — an empty one is refused and never reaches the bump. */
+          r = rev(h); c2 = crev(h);
+          hx_set_param(h, "state_load", "11111111-2222-3333-4444-555555555555");
           HX_ASSERT(crev(h) == c2 + 1, "state_load must bump rui_content_rev");
           HX_ASSERT(rev(h) == r,       "state_load must NOT bump rui_rev"); }
     }

@@ -49,7 +49,9 @@ for f in chain_host.c chain_json.c chain_params.c chain_mod.c chain_midi.c chain
 done
 
 # 5. Exported-symbol invariant: dsp.so must export exactly the intended set
-#    (7 chain entry points + 6 unified_log fns). Cross-TU internals must be
+#    (7 chain entry points + 7 unified_log fns — unified_log_important joined
+#    them 2026-09-16: the blocking sibling for records that must not be
+#    dropped). Cross-TU internals must be
 #    hidden-visibility so dlopen'd sub-plugins can't collide with them.
 #
 #    ⭑ chain_drain_sends was ADDED to this list deliberately (module buses,
@@ -102,8 +104,8 @@ if [ -f "$so" ] && command -v nm >/dev/null 2>&1; then
     chain_drain_sends chain_fx_requires_continuous chain_process_fx \
     chain_set_external_fx_mode chain_set_inject_audio \
     chain_take_midi_tick_wake chain_midi_fx_apply move_plugin_init_v2 \
-    unified_log unified_log_crash unified_log_enabled unified_log_init \
-    unified_log_shutdown unified_log_v | sort)
+    unified_log unified_log_crash unified_log_enabled unified_log_important \
+    unified_log_init unified_log_shutdown unified_log_v | sort)
   if [ "$got" != "$want" ]; then
     echo "FAIL: dsp.so exported symbols changed:" >&2
     diff <(echo "$want") <(echo "$got") >&2 || true

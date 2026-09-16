@@ -94,18 +94,45 @@ globalThis.host_module_set_param = (k, v) => {
 };
 globalThis.host_module_set_params = () => true;
 
-/* ---- the host's publish, per shadow_loaded_set_policy.h ------------------ */
-/* The suite runs from davebox/ (tests/js/run.sh cds there); the bundle is CJS. */
+/* ---- the host, as a STATEFUL fake driven by the real machine -------------
+ *
+ * ⚠⚠ This used to fake the PUBLISH and nothing else: it wrote active_set.txt
+ * itself, with the semantics the host had at the time. That made it a copy of
+ * the producer rather than a stand-in for it, and when the producer changed the
+ * copy went on describing a host that no longer existed — nine steps of this
+ * file passed against a tree where the mechanism they cover was dead.
+ *
+ * So the fake now holds the host's STATE and answers the same two params the
+ * real one does. The vocabulary is read out of the C header, so a rename there
+ * fails here rather than on a device. */
 const POLICY = readFileSync('../src/host/shadow_loaded_set_policy.h', 'utf8');
-const HOST_PREFIX = (POLICY.match(/#define LOADED_SET_UNOPENED_PREFIX "([^"]+)"/) || [])[1];
-let seq = 0;
-/* moveSays: null (file absent) | 'default' | a uuid. Past the policy's settle and
- * hold windows, which is where each of these outcomes is final. */
+const STATES  = (POLICY.match(/return "(open|none|pending)";/g) || []).length;
+const REASONS = ['unopened', 'default', 'unknown']
+    .filter((r) => POLICY.indexOf('return "' + r + '";') >= 0);
+
+/* The host's published record. `pending` is the resting state: nothing is
+ * confirmed until Move says so. */
+let hostState = { state: 'pending', reason: '', uuid: '', name: '', index: -1 };
+
+function publish(state, reason, uuid, name, index) {
+    hostState = { state, reason: reason || '', uuid: uuid || '', name: name || '', index };
+    /* The real host writes the boot record ONLY on a confirmed open, and an
+     * empty identity otherwise — that is what stops anything downstream naming
+     * a project Move has not confirmed. */
+    if (state === 'open') files.set(ACTIVE, uuid + '\n' + name);
+    else files.set(ACTIVE, '\n' + (name || ''));
+}
+
+/* moveSays: null (Move has said nothing yet) | 'default' | a uuid.
+ * This is the machine's rule, not a re-implementation of it: a request for
+ * `resolvedUuid` is confirmed only by Move naming that same uuid. */
 function hostPublish(resolvedUuid, name, index, moveSays) {
-    let uuid;
-    if (moveSays === null || String(moveSays).toLowerCase() === resolvedUuid.toLowerCase()) uuid = resolvedUuid;
-    else uuid = HOST_PREFIX + index + '-' + (++seq);
-    files.set(ACTIVE, uuid + '\n' + name);   /* shadow_ui.js: uuid + "\n" + setName */
+    if (moveSays === null) { publish('pending', '', '', name, index); return; }
+    if (String(moveSays).toLowerCase() === String(resolvedUuid).toLowerCase()) {
+        publish('open', '', resolvedUuid, name, index);
+    } else {
+        publish('none', 'unopened', '', name, index);
+    }
 }
 
 /* ---- display: a framebuffer plus the strings each frame printed ---------- */
@@ -121,7 +148,12 @@ globalThis.set_pixel = () => {};
 globalThis.flush_display = () => {};
 globalThis.move_midi_internal_send = () => {};
 globalThis.set_led = () => {};
-globalThis.shadow_get_param = (slot, k) => (typeof k === 'string' && k.indexOf('synth:module') >= 0) ? 'nusaw' : '';
+globalThis.shadow_get_param = (slot, k) => {
+    if (k === 'active_set_state') return hostState.state + '\n' + hostState.reason + '\n' + hostState.index;
+    if (k === 'active_set') return hostState.state === 'open' ? (hostState.uuid + '\n' + hostState.name) : '\n';
+    if (typeof k === 'string' && k.indexOf('synth:module') >= 0) return 'nusaw';
+    return '';
+};
 globalThis.shadow_set_param = () => {};
 globalThis.shadow_save_state_now = () => true;
 globalThis.host_vol_block = () => {};
@@ -171,6 +203,12 @@ function boot(activeUuid, activeName) {
         files.set(SETS + activeUuid + '/' + stateName(activeUuid) + '/seq8sa-state.json', BLOB);
     }
     dsp.uuid = activeUuid || ''; dsp.awaiting = 0; dsp.dirty = 1;
+    /* ⭑ A boot into a project means the host CONFIRMED it — Move logged the
+     * load on the way up. Saying so is now the harness's job: identity comes
+     * from the host record, so a boot that does not publish one leaves the
+     * session with no project and every save correctly refused. */
+    if (activeUuid) publish('open', '', activeUuid, activeName, 0);
+    else publish('pending', '', '', '', -1);
     S.projectOpenFailed = null; S.projectPadPicker = null; S.pendingOpenProjectPicker = false;
     S.pendingProjectRelaunch = null; S.pendingProjectSwitch = null;
     S.pendingSetLoad = false; S.pendingDspSync = 0; S.stateLoading = false;
@@ -194,10 +232,18 @@ function provokeSaves() {
 }
 const aimedAt = (uuid) => writes.filter((w) => w.indexOf(uuid) >= 0);
 
-step('the placeholder prefix is the same on both sides of the seam', () => {
-    if (!HOST_PREFIX) throw new Error('LOADED_SET_UNOPENED_PREFIX not found in the host header');
-    if (HOST_PREFIX !== shared.UNOPENED_SET_UUID_PREFIX)
-        throw new Error('host ' + HOST_PREFIX + ' vs shared ' + shared.UNOPENED_SET_UUID_PREFIX);
+step('⭑ the verdict is a STATE, not a prefix smuggled inside a name', () => {
+    /* The old design encoded "Move did not open it" as a fake uuid sharing the
+     * placeholder's prefix, so that writers refusing a placeholder refused it
+     * too. That cleverness cost the whole mechanism once: a guard added to the
+     * placeholder prefix silently swallowed the verdict. Nothing may decode a
+     * name again. */
+    if (STATES < 3) throw new Error('the header no longer spells all three states');
+    if (REASONS.length !== 3) throw new Error('reasons missing from the header: ' + REASONS.join(','));
+    /* ⚠ Match CODE, not the word: the header legitimately names the retired
+     * placeholder in prose, explaining what replaced it. A literal is a mint. */
+    if (/["']__pending-/.test(POLICY))
+        throw new Error('the header still mints a placeholder identity');
 });
 
 /* 1. The relaunch after creating X: the session was in P, Move was sent to pad
@@ -367,6 +413,7 @@ function bootFresh(activeUuid, activeName) {
     files.set(HOST_DIR + '/fresh_session', '1');   /* the launcher's entry marker */
     /* create_instance saw the marker: nothing loaded, every save refused. */
     dsp.uuid = ''; dsp.awaiting = 1; dsp.dirty = 1;
+    publish('pending', '', '', '', -1);   /* nothing confirmed at a fresh launch */
     S.projectOpenFailed = null; S.projectPadPicker = null; S.pendingOpenProjectPicker = false;
     S.pendingProjectRelaunch = null; S.pendingProjectSwitch = null;
     S.pendingSetLoad = false; S.pendingDspSync = 0; S.stateLoading = false;
@@ -414,6 +461,55 @@ step('control: the SAME publish sequence on a relaunch boot still raises the ver
     hostPublish(X, 'Project 32', 31, 'default');
     ticks(40);
     if (!onScreen()) throw new Error('the verdict stopped working for a picked project: ' + frame());
+});
+
+/* 9. EVERY PATH THAT MAKES A PROJECT MUST MARK IT CREATED-THIS-SESSION.
+ *
+ * Move builds its set list when it starts. A project made after that is not in
+ * it, so the fast in-place switch walks Move's overview to a pad Move believes
+ * is EMPTY: nothing loads and it returns as though it worked. dAVEBOx is then
+ * nominally in the new project while Move still holds the previous one — and
+ * Move saves the set it HAS open, so edits land in the wrong project, silently.
+ *
+ * ⚠ The two create paths always recorded this. COPY did not, for as long as
+ * copy has existed, and no test noticed because every test exercised create.
+ * Found on hardware by Josh (2026-09-16). This asserts the RULE rather than the
+ * three call sites, so the next path that makes a project fails here instead.
+ */
+step('⭑⭑ a COPIED project relaunches Move, exactly like a created one', () => {
+    boot(P, 'Project 1');
+    S.pendingOpenProjectPicker = false; S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    /* The real gesture: hold Copy, tap the source, tap an empty destination. */
+    S.copyHeld = true;
+    sysCmds.length = 0;
+    padTap(0);          /* source */
+    ticks(1);
+    padTap(7);          /* empty destination */
+    ticks(2);
+    S.copyHeld = false;
+    if (!sysCmds.some((c) => /project-cmd\.sh copy 0 7$/.test(c)))
+        throw new Error('the copy gesture did not issue a copy: ' + JSON.stringify(sysCmds));
+    if (S.projectsCreatedThisSession.indexOf(7) < 0)
+        throw new Error('the COPY was not recorded as created this session — loading it ' +
+                        'would take the in-place route to a pad Move has never seen');
+});
+
+step('⚠ CONTROL: the marker is what forces the relaunch, not the pad number', () => {
+    /* Strip the marker and the same pick takes the fast route — proving the
+     * assertion above is load-bearing rather than incidental. */
+    boot(P, 'Project 1');
+    S.projectsCreatedThisSession.length = 0;
+    S.pendingOpenProjectPicker = false; S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    sysCmds.length = 0; selectArms.length = 0;
+    padTap(31); ticks(2);
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    ticks(6);
+    if (sysCmds.some((c) => /switch 31$/.test(c)))
+        throw new Error('control: relaunched without the marker');
+    if (selectArms.indexOf(31) < 0)
+        throw new Error('control: the fast route was not taken without the marker');
 });
 
 if (failed) { console.error('FAIL: project_open_mismatch'); process.exit(1); }

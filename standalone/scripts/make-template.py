@@ -41,6 +41,7 @@ build/sets/template/<name>/Song.abl and the launcher seeds the first project
 from it (launch.sh first-run branch).
 """
 import json
+import re
 import os
 import sys
 
@@ -59,6 +60,28 @@ def main():
     tracks = song.get("tracks")
     if not isinstance(tracks, list) or len(tracks) < 4:
         sys.exit("make-template: fixture has no 4-track array — refusing")
+
+    # ⭑⭑ NOTHING PERSONAL MAY RIDE IN FROM THE DONOR.
+    #
+    # The fixture is a REAL set someone captured, so whatever was on it that day
+    # is baked in unless something objects. This is the second time that has bitten:
+    # first a muted track, which made every project born from the template mix
+    # silently wrong; then a sampler pointing at `ableton:/user-library/...`, a
+    # sample that exists on exactly one machine. Every project created from the
+    # template then failed to load it, on the device it was captured on and on
+    # every device that will ever run this.
+    #
+    # A log line is not enough — nobody reads a successful build. The generator
+    # refuses, because the donor cannot be trusted to be clean and the cost of
+    # shipping a dirty one is paid by every project anyone ever makes.
+    raw = json.dumps(song)
+    personal = sorted(set(re.findall(r'ableton:/user-library/[^"]*', raw)))
+    if personal:
+        sys.exit("make-template: the fixture references the USER LIBRARY, which "
+                 "exists on one machine — refusing:\n  " + "\n  ".join(personal) +
+                 "\nEvery sample must come from ableton:/packs/ (the core library "
+                 "the device ships with). Re-capture the donor, or clear that "
+                 "device's sample, then regenerate.")
 
     for i, t in enumerate(tracks[:4]):
         t["midiInputMode"] = [i]        # 0-based listen channel = track number

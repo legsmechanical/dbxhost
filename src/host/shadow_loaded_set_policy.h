@@ -1,135 +1,256 @@
-/* shadow_loaded_set_policy.h — did Move actually OPEN the set the host
- * resolved?
+/* shadow_loaded_set_policy.h — WHICH PROJECT IS OPEN, as a state machine.
  *
- * The host resolves the active set from Settings.json's currentSongIndex by
- * scanning `user.song-index` xattrs (shadow_set_pages.c). That answers "which
- * set dir carries this index", NOT "which set is Move holding". The two part
- * company when Move rejects the dir it was pointed at and logs
- * `About to load default song`: it then sits on an unsaved default set of its
- * own while the host believes the project is open, and every save keyed on
- * the active set lands in a project Move never loaded (root cause:
- * _worklogs/specs/2026-09-14-new-project-default-song-plan.md).
+ * ── Why this is a machine and not a lookup ────────────────────────────────
  *
- * The launcher distills Move's own `About to load ...` line into a one-line
- * file (standalone/scripts/move-loaded-set-reader.sh): a uuid, or `default`.
- * ⚠ ABSENT means UNKNOWN — the reader has not seen the line yet — and is
- * never read as `default`.
+ * Identity used to be inferred: the host read Settings.json's currentSongIndex,
+ * scanned `user.song-index` xattrs for a dir carrying it, and published that.
+ * That answers "which set dir carries this index", never "which set is Move
+ * holding". The two part company — Move can look in a project folder, not find
+ * a song where it expects one, treat the pad as empty and load a set of its own
+ * (`About to load default song`), while the host goes on believing the project
+ * is open. Every save keyed on that belief then lands in a project Move never
+ * loaded.
  *
- * This header is the pure decision, so it can be tested off-device
- * (tests/host/test_loaded_set_policy.c). The poll feeds it the file contents
- * and the time since this index was first resolved, and publishes what it
- * says.
+ * ⭑ But Move SAYS what it loaded. It logs `About to load <path>` for every
+ * load, and the launcher distills that into a record
+ * (standalone/scripts/move-loaded-set-reader.sh): a counter, a uuid or the
+ * literal `default`, and the project's folder name. Measured on device
+ * 2026-09-16: the line lands 0.18 s after `starting Move`, five samples, no
+ * spread worth naming. Two of those five were the sessions that lost a night's
+ * work — Move named the project 0.18 s in, both times, and nothing read it.
+ *
+ * So identity is no longer resolved. It is DECIDED, by three parties with one
+ * record each:
+ *   dAVEBOx authors the REQUEST  (intended_set.txt, at the pick)
+ *   Move    authors the CONFIRMATION (the log line, via the reader)
+ *   this    decides the STATE    (open / pending / none)
+ *
+ * ── The rule that makes it safe ───────────────────────────────────────────
+ *
+ * 🔴 **OPEN is always Move-confirmed.** There is no path that promotes a
+ * request, a guess or a user's choice into `open` (Josh, 2026-09-15: "retry
+ * only"). The sole producer of `open` is a reader line whose counter is PAST
+ * the counter recorded when the request was armed. The counter is what makes
+ * "Move loaded something since I asked" expressible at all: a line naming the
+ * set we wanted may have been written before we wanted it, and taking that for
+ * confirmation is how a stale answer passes for a fresh one.
+ *
+ * ⚠ The resolver survives as a HINT and nothing more (it is upstream code, and
+ * it is the only source that can answer before Move has loaded anything). A
+ * hint never appears as a state and is never saved into; see the `confirmed`
+ * gate at the outgoing save in shadow_ui.js.
+ *
+ * ── Why there is no prefix here any more ──────────────────────────────────
+ *
+ * The verdict used to be smuggled inside the identity as
+ * `__pending-unopened-<idx>-<seq>`, sharing the `__pending-` prefix with the
+ * placeholder ON PURPOSE so that writers refusing a placeholder refused it too.
+ * That cleverness cost a whole mechanism: a guard added to the placeholder
+ * prefix silently swallowed the verdict, and `active_set.txt` is the verdict's
+ * only channel, so "PROJECT DID NOT OPEN" went dark with both suites green.
+ * A state is a FIELD now. Nothing decodes a name.
+ *
+ * Pure and header-only, so the whole machine is unit-tested off-device
+ * (tests/host/test_loaded_set_policy.c). It does no I/O and keeps no statics:
+ * the caller supplies the inputs and stores the record.
  */
 #ifndef SHADOW_LOADED_SET_POLICY_H
 #define SHADOW_LOADED_SET_POLICY_H
 
-#include <stdio.h>
+#include <stddef.h>
 #include <string.h>
-#include <strings.h>
-#include <ctype.h>
 
-/* The identity published when Move did not open the resolved set. It starts
- * with the PROVISIONAL prefix `__pending-` on purpose: every writer that
- * already refuses a provisional identity (shared/session_state.mjs
- * setUuidIsProvisional, the host's perSetStateDir, dAVEBOx's readActiveSet and
- * ensureStateDir) refuses this one for free. The `unopened-` part is the flag
- * dAVEBOx reads to put up its screen; the index is the pad to retry.
- * Must match UNOPENED_SET_UUID_PREFIX in src/shared/session_state.mjs. */
-#define LOADED_SET_UNOPENED_PREFIX "__pending-unopened-"
-
-/* A non-matching answer must PERSIST this long before it is believed. The
- * reader lags Move's log by up to a second (tail polling), and on an in-place
- * switch the file still holds the PREVIOUS load until then. */
-#define LOADED_SET_SETTLE_MS       3000
-/* No answer at all: hold the publish this long, then publish the resolution
- * as before — unknown is not a failure. */
-#define LOADED_SET_UNKNOWN_HOLD_MS 10000
-/* Keep re-checking this long after the index was first resolved, so a late
- * `default` (a slow Move boot) still flips the published identity. */
-#define LOADED_SET_WATCH_MS        30000
+/* How long a request waits for Move's word before it is called a failure.
+ *
+ * ⚠ HALF-EVIDENCED, and deliberately recorded as such. The BOOT arm is
+ * measured at 0.18 s (device, 2026-09-16, 5 samples). The in-place actuator
+ * arm — which is the path that actually sets this constant — writes no
+ * timestamp and was NOT measured; the only figure for it is a remembered
+ * "~6.5 s arm to resume". 8000 keeps a wide margin over that. Instrument the
+ * arm site before treating this number as anything but a ceiling. */
+#define LOADED_SET_REQUEST_TIMEOUT_MS 8000
 
 typedef enum {
-    LOADED_SET_UNKNOWN  = 0,  /* file absent or empty */
-    LOADED_SET_MATCH    = 1,  /* file names the resolved uuid */
-    LOADED_SET_MISMATCH = 2,  /* `default`, or a different uuid */
-} loaded_set_verdict_t;
+    LOADED_SET_PENDING = 0,  /* waiting for Move's word — NOT a failure */
+    LOADED_SET_OPEN,         /* Move confirmed it; the only state with an identity */
+    LOADED_SET_NONE          /* nothing is open, and `reason` says why */
+} loaded_set_state_t;
 
 typedef enum {
-    LOADED_SET_ACT_HOLD = 0,          /* publish nothing yet */
-    LOADED_SET_ACT_PUBLISH_RESOLVED,  /* publish the xattr resolution */
-    LOADED_SET_ACT_PUBLISH_UNOPENED,  /* publish "no active set" + the flag */
-} loaded_set_action_t;
+    LOADED_SET_REASON_NONE = 0,
+    LOADED_SET_REASON_UNOPENED,  /* we asked for something and did not get it */
+    LOADED_SET_REASON_DEFAULT,   /* Move is on a set it minted; nobody asked */
+    LOADED_SET_REASON_UNKNOWN    /* Move has not said anything: reader dead,
+                                  * still booting past the timeout, or the log
+                                  * line no longer matches the parser */
+} loaded_set_reason_t;
 
-/* file: the file's contents, or NULL when it does not exist. */
-static inline loaded_set_verdict_t loaded_set_verdict(const char *resolved_uuid,
-                                                      const char *file)
+#define LOADED_SET_UUID_MAX 64
+#define LOADED_SET_NAME_MAX 128
+
+typedef struct {
+    loaded_set_state_t  state;
+    loaded_set_reason_t reason;
+    char uuid[LOADED_SET_UUID_MAX];  /* set only when state == OPEN */
+    char name[LOADED_SET_NAME_MAX];  /* the project's name, when known */
+    int  index;                      /* song index: the open one, or the one asked for, or -1 */
+} loaded_set_record_t;
+
+/* Everything the decision depends on. The caller reads these; the machine
+ * touches no file, no clock and no global. */
+typedef struct {
+    /* the request, if one is armed (dAVEBOx's intended_set.txt, consumed) */
+    int  have_request;
+    char req_uuid[LOADED_SET_UUID_MAX];
+    char req_name[LOADED_SET_NAME_MAX];
+    int  req_index;
+    int  req_n0;            /* the reader's counter at the moment of arming */
+
+    /* Move's word (move_loaded_set.txt), or n == 0 for "nothing said yet" */
+    int  line_n;
+    const char *line_uuid;  /* a uuid, or "default"; NULL when n == 0 */
+    const char *line_name;  /* may be NULL or empty */
+
+    long elapsed_ms;        /* since the request was armed, or since Move start */
+    long timeout_ms;        /* LOADED_SET_REQUEST_TIMEOUT_MS unless a test overrides */
+} loaded_set_input_t;
+
+static inline int loaded_set_is_default(const char *u)
 {
-    if (!file) return LOADED_SET_UNKNOWN;
-    while (*file && isspace((unsigned char)*file)) file++;
-    size_t n = strlen(file);
-    while (n > 0 && isspace((unsigned char)file[n - 1])) n--;
-    if (n == 0) return LOADED_SET_UNKNOWN;
-    if (resolved_uuid && resolved_uuid[0] && strlen(resolved_uuid) == n &&
-        strncasecmp(file, resolved_uuid, n) == 0)
-        return LOADED_SET_MATCH;
-    return LOADED_SET_MISMATCH;
+    return u && strcmp(u, "default") == 0;
 }
 
-static inline loaded_set_action_t loaded_set_action(loaded_set_verdict_t v,
-                                                    long elapsed_ms)
+static inline void loaded_set_copy(char *dst, size_t cap, const char *src)
 {
-    switch (v) {
-    case LOADED_SET_MATCH:
-        return LOADED_SET_ACT_PUBLISH_RESOLVED;
-    case LOADED_SET_MISMATCH:
-        return elapsed_ms < LOADED_SET_SETTLE_MS ? LOADED_SET_ACT_HOLD
-                                                 : LOADED_SET_ACT_PUBLISH_UNOPENED;
-    case LOADED_SET_UNKNOWN:
-    default:
-        return elapsed_ms < LOADED_SET_UNKNOWN_HOLD_MS ? LOADED_SET_ACT_HOLD
-                                                       : LOADED_SET_ACT_PUBLISH_RESOLVED;
+    if (!src) { dst[0] = '\0'; return; }
+    size_t n = strlen(src);
+    if (n >= cap) n = cap - 1;
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+}
+
+static inline void loaded_set_none(loaded_set_record_t *out, loaded_set_reason_t why,
+                                   int index, const char *name)
+{
+    out->state = LOADED_SET_NONE;
+    out->reason = why;
+    out->uuid[0] = '\0';
+    loaded_set_copy(out->name, sizeof(out->name), name);
+    out->index = index;
+}
+
+/* One step of the machine. Total: every input shape produces exactly one
+ * record, and the caller publishes it.
+ *
+ *   with a request R armed, n0 = the counter when it was armed:
+ *     a line PAST n0 naming R's uuid  -> OPEN(R)
+ *     a line PAST n0 naming anything else, or `default` -> NONE(unopened, R)
+ *     no line past n0 by the timeout  -> NONE(unopened, R)
+ *     otherwise                       -> PENDING
+ *
+ *   with no request (Move moving of its own accord, or a plain boot):
+ *     any line naming a uuid          -> OPEN(that uuid)
+ *     a line saying `default`         -> NONE(default)
+ *     no line at all by the timeout   -> NONE(unknown)
+ *     otherwise                       -> PENDING
+ *
+ * ⚠ Note what is NOT here: a transition that accepts a line at or BELOW n0 as
+ * confirmation of a request ("Move already holds it"). It re-used Move's word
+ * about an earlier moment, and a stale confirmation is not a confirmation. The
+ * cost is that re-selecting the project Move already holds waits for a fresh
+ * line; measured on device 2026-09-16, Move does re-log a set it already named,
+ * so the fast path holds — though that evidence spans restarts and the pure
+ * in-place same-set case is still unobserved. If it turns out Move stays quiet
+ * there, the pick times out to `unopened` and the user's Retry relaunches:
+ * slow, never wrong. */
+static inline void loaded_set_step(const loaded_set_input_t *in, loaded_set_record_t *out)
+{
+    int fresh = (in->line_n > 0) &&
+                (!in->have_request || in->line_n > in->req_n0);
+    int timed_out = in->elapsed_ms >= in->timeout_ms;
+
+    if (in->have_request) {
+        if (fresh) {
+            if (!loaded_set_is_default(in->line_uuid) &&
+                in->line_uuid && in->req_uuid[0] &&
+                strcmp(in->line_uuid, in->req_uuid) == 0) {
+                out->state = LOADED_SET_OPEN;
+                out->reason = LOADED_SET_REASON_NONE;
+                loaded_set_copy(out->uuid, sizeof(out->uuid), in->line_uuid);
+                /* Move's own name for it when it gave one, else the request's:
+                 * the two agree, and the request's is what the user just read
+                 * off the picker. */
+                loaded_set_copy(out->name, sizeof(out->name),
+                                (in->line_name && in->line_name[0]) ? in->line_name : in->req_name);
+                out->index = in->req_index;
+                return;
+            }
+            /* Move loaded something else, or minted its own. Either way the
+             * project the user asked for is not open. The index carried is the
+             * REQUEST's, because Retry must land back on the pad they pressed,
+             * not on whatever Move settled on. */
+            loaded_set_none(out, LOADED_SET_REASON_UNOPENED, in->req_index, in->req_name);
+            return;
+        }
+        if (timed_out) {
+            loaded_set_none(out, LOADED_SET_REASON_UNOPENED, in->req_index, in->req_name);
+            return;
+        }
+        out->state = LOADED_SET_PENDING;
+        out->reason = LOADED_SET_REASON_NONE;
+        out->uuid[0] = '\0';
+        loaded_set_copy(out->name, sizeof(out->name), in->req_name);
+        out->index = in->req_index;
+        return;
+    }
+
+    /* No request: Move is moving on its own, or this is a plain boot. */
+    if (fresh) {
+        if (loaded_set_is_default(in->line_uuid)) {
+            loaded_set_none(out, LOADED_SET_REASON_DEFAULT, -1, in->line_name);
+            return;
+        }
+        if (in->line_uuid && in->line_uuid[0]) {
+            out->state = LOADED_SET_OPEN;
+            out->reason = LOADED_SET_REASON_NONE;
+            loaded_set_copy(out->uuid, sizeof(out->uuid), in->line_uuid);
+            loaded_set_copy(out->name, sizeof(out->name), in->line_name);
+            out->index = -1;   /* the caller fills this from its own resolution */
+            return;
+        }
+    }
+    if (timed_out) {
+        loaded_set_none(out, LOADED_SET_REASON_UNKNOWN, -1, NULL);
+        return;
+    }
+    out->state = LOADED_SET_PENDING;
+    out->reason = LOADED_SET_REASON_NONE;
+    out->uuid[0] = '\0';
+    out->name[0] = '\0';
+    out->index = -1;
+}
+
+/* The wire spelling of a state, for the fork-only `active_set_state` param and
+ * for logs. One place, so the C and the JS cannot drift apart in wording. */
+static inline const char *loaded_set_state_str(loaded_set_state_t s)
+{
+    switch (s) {
+    case LOADED_SET_OPEN:    return "open";
+    case LOADED_SET_NONE:    return "none";
+    case LOADED_SET_PENDING:
+    default:                 return "pending";
     }
 }
 
-/* Should the poll come back to this index even though nothing changed? */
-static inline int loaded_set_keep_checking(loaded_set_verdict_t v, long elapsed_ms)
+static inline const char *loaded_set_reason_str(loaded_set_reason_t r)
 {
-    return v != LOADED_SET_MATCH && elapsed_ms < LOADED_SET_WATCH_MS;
-}
-
-/* Did Move end up on the INDEX we actually asked for?
- *
- * Settings.json's currentSongIndex is Move's own state, not just ours. A
- * relaunch writes the pad the user chose (N) into Settings.json before
- * starting Move (launch.sh, `relaunch_song_index` -> "applied project index
- * N"), but Move is free to reject that set and settle on a DIFFERENT real
- * project of its own, rewriting currentSongIndex to THAT project's index.
- * When that happens, the xattr scan resolves to the fallback project's own
- * (real, valid) uuid, and move_loaded_set.txt's last line legitimately
- * MATCHES it — Move really did load that set. Comparing the reader's answer
- * against the freshly-resolved uuid can never see this: both sides agree,
- * and agree WRONGLY, because the resolution itself already followed Move's
- * rewrite. Only the ORIGINAL requested index (N) still remembers what pad
- * the user actually pressed. Device log, one launch, pad 13 (intended index
- * 13): About to load d6b24c82... -> About to load c63c3e77.../Project 1
- * (index 0) -> About to load default song -> About to load .../Project 1 —
- * Move settles on index 0's project, not 13's.
- *
- * intended_index < 0 means "no relaunch is pinning an index right now" (an
- * ordinary session start, or the intended-index marker was never written) —
- * always trust the scan in that case. Otherwise, a resolved index that
- * disagrees is fatal to the whole resolution: it can never become a MATCH,
- * no matter what move_loaded_set.txt says, because it is provably not the
- * project the user asked for. */
-static inline int loaded_set_index_matches(int intended_index, int resolved_index)
-{
-    return intended_index < 0 || intended_index == resolved_index;
-}
-
-static inline void loaded_set_unopened_uuid(char *out, size_t out_len,
-                                            int song_index, unsigned seq)
-{
-    snprintf(out, out_len, LOADED_SET_UNOPENED_PREFIX "%d-%u", song_index, seq);
+    switch (r) {
+    case LOADED_SET_REASON_UNOPENED: return "unopened";
+    case LOADED_SET_REASON_DEFAULT:  return "default";
+    case LOADED_SET_REASON_UNKNOWN:  return "unknown";
+    case LOADED_SET_REASON_NONE:
+    default:                         return "";
+    }
 }
 
 #endif /* SHADOW_LOADED_SET_POLICY_H */

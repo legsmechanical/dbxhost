@@ -148,8 +148,7 @@ import {
 
 import {
     standaloneSessionActive,
-    setUuidIsProvisional,
-    setUuidIsUnopened
+    setUuidIsProvisional
 } from '/data/UserData/schwung/shared/session_state.mjs';
 
 /* One definition of "which key does this component publish a load failure
@@ -15928,6 +15927,18 @@ function drawComponentSelect() {
  * against it (observed on hardware 2026-08-06: 28 s hang, reload firing the
  * instant the phase died, tool resumed into the mid-reload host). Reads and
  * clears the flag itself; a no-op when the flag is down. */
+/* True while the host's last published identity was a Move-CONFIRMED open.
+ * Read from the same typed record dAVEBOx reads, so the two cannot disagree. */
+function identityWasConfirmed() {
+    try {
+        const rec = getSlotParam(0, "active_set_state");
+        return !!rec && String(rec).split("\n")[0].trim() === "open";
+    } catch (e) {
+        /* Unreadable means unknown, and unknown must not authorise a save. */
+        return false;
+    }
+}
+
 function processSetChangedFlag() {
     if (typeof shadow_get_ui_flags !== "function") return;
     const flags = shadow_get_ui_flags();
@@ -15941,13 +15952,19 @@ function processSetChangedFlag() {
             const setName = activeSetLines[1] ? activeSetLines[1].trim() : "";
 
             /* 1. Save current state to outgoing directory.
-             * ⚠ NOT when the incoming identity says Move did not open the set
-             * the host resolved (setUuidIsUnopened). The outgoing dir can BE that
-             * set — a boot that read it from active_set.txt — and "no save lands
-             * in a project Move never opened" admits no exception for a save
-             * that happens to be on the way out. */
-            if (setUuidIsUnopened(uuid)) {
-                debugLog("SET_CHANGED: Move did not open the resolved set — outgoing save skipped");
+             * ⭑⭑ THE GATE IS "WAS THE OUTGOING IDENTITY CONFIRMED", not "does the
+             * INCOMING one look like a placeholder" (2026-09-16).
+             *
+             * The old test asked whether the arriving name carried a verdict
+             * prefix. That named one symptom of the hazard rather than the
+             * hazard, which is this: a save must never land in a project we
+             * merely GUESSED was open. The resolver still supplies such guesses
+             * — deliberately, as an early hint for the preload — so the question
+             * has to be about what we are saving INTO, not about what is
+             * arriving. `identityWasConfirmed` is true only while the last
+             * published state was `open`, which is only ever Move's own word. */
+            if (!identityWasConfirmed()) {
+                debugLog("SET_CHANGED: outgoing identity was never confirmed — save skipped");
             } else {
                 autosaveAllSlots();
                 saveAllFxBusConfigs();
@@ -15956,7 +15973,13 @@ function processSetChangedFlag() {
                 /* Save current RNBO graph (if RNBO is running) */
                 saveRnboGraphToDir(activeSlotStateDir);
             }
-            /* Write active_set.txt for boot persistence (UI thread, not audio thread) */
+            /* Write active_set.txt for boot persistence (UI thread, not audio thread).
+             * ⚠ Only a CONFIRMED identity is recorded: this file is what the next
+             * boot reads before anything has resolved, so a guess written here
+             * outlives the session that made it. That is precisely how two
+             * sessions came to run on the fallback state file (2026-09-16). The
+             * gate publishes an empty uuid for anything but `open`, so this
+             * condition is also what keeps the file's invariant true. */
             if (uuid) {
                 host_write_file(HOST_STATE_ROOT + "/active_set.txt", uuid + "\n" + setName);
             }

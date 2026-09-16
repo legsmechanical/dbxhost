@@ -56,14 +56,39 @@ single_source() {
     n=$(grep -rlE "[\"']__pending-" src/shared src/shadow davebox/ui 2>/dev/null | wc -l | tr -d " ")
     [ "$n" = "1" ]
 }
+# ⚠ And the VERDICT namespace must be gone entirely — a name may never carry a
+# state again. That conflation is what let one guard take a whole mechanism
+# dark while both suites stayed green.
+no_verdict_namespace() {
+    local hits
+    hits=$(grep -rlE "UNOPENED_SET_UUID_PREFIX|setUuidIsUnopened|unopenedSetIndex" src davebox 2>/dev/null || true)
+    if [ -n "$hits" ]; then
+        echo "    still present in:" >&2
+        printf '%s\n' "$hits" | head -5 >&2
+        return 1
+    fi
+    return 0
+}
+check "⭑ the 'did not open' NAMESPACE is gone (a verdict is a field, not a name)" no_verdict_namespace
 check "only ONE file in the JS/MJS surface holds the prefix LITERAL" single_source
 
 # 3. dAVEBOx refuses it at the single choke point where the uuid enters, and
 #    again at the function that actually makes the directory.
-dbx_reads_guarded() {
-    grep -A14 "^export function readActiveSet" "$DBX" | grep -q "setUuidIsProvisional"
+# ⭑ dAVEBOx no longer READS the boot record at all (2026-09-16): identity
+# arrives as the host's typed record through hostIdentity(), and a uuid exists
+# only when the state is `open`. So the guard that used to matter here is
+# replaced by a stronger property — there is no second reader to disagree with
+# the first, and no name to decode.
+dbx_has_no_reader() {
+    ! grep -q "^export function readActiveSet" "$DBX"
 }
-check "dAVEBOx readActiveSet() reports a provisional uuid as NO project" dbx_reads_guarded
+check "dAVEBOx has no reader of its own for the boot record" dbx_has_no_reader
+
+dbx_identity_is_typed() {
+    grep -A30 "^export function hostIdentity" "$DBX" | grep -q "active_set_state" &&
+        grep -A30 "^export function hostIdentity" "$DBX" | grep -q "state === 'open'"
+}
+check "...identity comes from the typed record, and a uuid only when open" dbx_identity_is_typed
 
 dbx_mkdir_guarded() {
     grep -A8 "^function ensureStateDir" "$DBX" | grep -q "setUuidIsProvisional"

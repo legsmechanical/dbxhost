@@ -97,30 +97,24 @@ export function setUuidIsProvisional(uuid) {
     return String(uuid).indexOf(PROVISIONAL_SET_UUID_PREFIX) === 0;
 }
 
-/* ── "Move did not open the project" ────────────────────────────────────────
+/* ⭑⭑ THE "MOVE DID NOT OPEN IT" NAMESPACE IS GONE (2026-09-16).
  *
- * The host resolves the open set from the song index, but Move can refuse the
- * dir that index names and sit on a default set of its own instead. When the
- * launcher's record of what Move logged loading disagrees with the resolution,
- * the host publishes `__pending-unopened-<songIndex>-<seq>`
- * (src/host/shadow_loaded_set_policy.h — keep the prefix in step).
+ * There used to be a second placeholder flavour, `__pending-unopened-<idx>`,
+ * carrying a verdict INSIDE an identity so that every writer refusing a
+ * placeholder refused the verdict too. It was clever and it cost the whole
+ * mechanism once: a guard added to the placeholder prefix silently swallowed
+ * the verdict that shared it, and since that identity was the verdict's only
+ * channel, the "project did not open" screen went dark with both test suites
+ * green.
  *
- * It is PROVISIONAL by construction (it starts with `__pending-`), so every
- * writer that refuses a placeholder refuses it too. These two only add what a
- * UI needs on top: THAT it happened, and which index to try again. */
-export const UNOPENED_SET_UUID_PREFIX = "__pending-unopened-";
-
-export function setUuidIsUnopened(uuid) {
-    if (!uuid) return false;
-    return String(uuid).indexOf(UNOPENED_SET_UUID_PREFIX) === 0;
-}
-
-/* The song index (== project pad) the host could not see opened, or -1. */
-export function unopenedSetIndex(uuid) {
-    if (!setUuidIsUnopened(uuid)) return -1;
-    const n = parseInt(String(uuid).slice(UNOPENED_SET_UUID_PREFIX.length), 10);
-    return (n >= 0) ? n : -1;
-}
+ * A verdict is a FIELD now. The host publishes a typed record — state plus a
+ * reason — and nothing anywhere decodes a name to learn what happened. See
+ * src/host/shadow_loaded_set_policy.h.
+ *
+ * `setUuidIsProvisional` above SURVIVES: the host still mints an ordinary
+ * placeholder internally while a set folder has not materialised, and refusing
+ * to build a storage path from one is still a true and useful rule. What is
+ * gone is the idea that a name can carry a verdict. */
 
 /* The one question a file surface should ask before listing or offering an
  * entry: is this path off-limits right now?

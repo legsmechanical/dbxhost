@@ -28,6 +28,16 @@ const PROJECTS = JSON.stringify({ current: 5, projects: [
 globalThis.host_system_cmd = () => 0;
 globalThis.host_read_file = (p) => (typeof p === 'string' && p.endsWith('projects.json')) ? PROJECTS : '';
 globalThis.host_file_exists = () => false;
+/* ⭑ "Current" means CONFIRMED OPEN since 2026-09-16 — the picker no longer
+ * falls back to Move's song index, because that index is a guess about which
+ * pad Move sits on, not a statement about which project it opened, and it fed
+ * the one shortcut that loads without making a request. So a test that expects
+ * a current project must say the host CONFIRMED one. */
+globalThis.shadow_get_param = (slot, k) => {
+    if (k === 'active_set_state') return 'open\n\n5';
+    if (k === 'active_set') return 'u1\nColored';
+    return '';
+};
 globalThis.host_write_file = () => true;
 globalThis.host_ensure_dir = () => true;
 globalThis.host_remove_dir = () => true;

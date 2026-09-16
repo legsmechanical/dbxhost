@@ -34,8 +34,8 @@ import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
-import { showActionPopup, readActiveSet, resolveSetLoadDecision } from './ui_persistence.mjs';
-import { checkProjectOpened, projectOpenFailedMidi, PROJECT_OPEN_CHECK_TICKS } from './ui_dialogs.mjs';
+import { showActionPopup, hostIdentity, resolveSetLoadDecision } from './ui_persistence.mjs';
+import { checkProjectOpened, projectOpenFailedMidi } from './ui_dialogs.mjs';
 import { automationParamTouch, automationClearKey, automationToggleActive,
          automationRegisterSeqApply, automationRegisterMacApply } from './ui_automation.mjs';
 import { snapMorphApply } from './ui_snapmorph.mjs';
@@ -316,23 +316,22 @@ globalThis.init = function () {
      * products. State loads (S.stateLoading) still show the artwork. */
     S.bootSplashMs = 0;
 
-    /* Detect set mismatch: compare active_set.txt UUID with what the DSP currently has loaded.
-     * Works regardless of JS context lifetime — no cross-init state needed.
-     * If they differ, DSP has old set's data: save it, then load the active set. */
+    /* Which project is this session in? Ask the host, which decided it from
+     * Move's own word. ⚠ An identity exists only when the state is `open`;
+     * `pending` and `none` leave it EMPTY on purpose, and the load decision
+     * below is skipped for both. Nothing here reads a file or waits out a
+     * window — a change arrives as an event (applyHostIdentity). */
     {
-        const _as = readActiveSet();
-        S.currentSetUuid = _as.uuid;
-        S.currentSetName = _as.name;
+        const _id = hostIdentity();
+        S.currentSetUuid = _id.state === 'open' ? _id.uuid : '';
+        S.currentSetName = _id.state === 'open' ? _id.name : '';
     }
     /* Did Move actually open the project the host resolved? The host's verdict
      * can land seconds after we start (it waits for Move's own load line), so
      * look now and keep looking for a window. And because it holds the
      * project's identity back until then, a real project can also arrive after
      * init — arm the same late-flip heal a resume gets. */
-    S.projectOpenCheckTicks = PROJECT_OPEN_CHECK_TICKS;
     checkProjectOpened();
-    if (!S.awaitingProjectSelect && S.resumeSetRecheckTicks < PROJECT_OPEN_CHECK_TICKS)
-        S.resumeSetRecheckTicks = PROJECT_OPEN_CHECK_TICKS;
     const currentDspNonce = host_module_get_param('instance_id');
     if (currentDspNonce) S.lastDspInstanceId = currentDspNonce;
 

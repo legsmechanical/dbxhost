@@ -87,7 +87,7 @@ check "relaunch: first uuid is gone (atomic overwrite, not append)" bash -c "! g
 # ---- shape 3: About to load default song -> the literal `default` ---------
 rm -f "$OUT"
 echo "About to load default song" >> "$LOG"
-check "default song captured" wait_for "$OUT" "^default\$"
+check "default song captured" wait_for "$OUT" "^1 default \$"
 
 # ---- shape 4: pad 13 device sequence — Move flaps through 4 loads in ONE
 # start before settling; move_loaded_set.txt must hold only the LAST, the
@@ -96,22 +96,48 @@ rm -f "$OUT" "$T/move_loaded_history.txt"
 D6=d6b24c82-1111-4bbb-8ccc-000000000006
 C6=c63c3e77-2222-4ccc-8ddd-000000000007
 echo "About to load /data/UserData/UserLibrary/Sets/$D6/Pad 13 Project/Song.abl" >> "$LOG"
-check "pad13: first load (requested set) captured" wait_for "$OUT" "^$D6\$"
+check "pad13: first load (requested set) captured" wait_for "$OUT" "^1 $D6 Pad 13 Project\$"
 echo "About to load /data/UserData/UserLibrary/Sets/$C6/Project 1/Song.abl" >> "$LOG"
-check "pad13: second load (Move's fallback) captured" wait_for "$OUT" "^$C6\$"
+check "pad13: second load (Move's fallback) captured" wait_for "$OUT" "^2 $C6 Project 1\$"
 echo "About to load default song" >> "$LOG"
-check "pad13: third load (default) captured" wait_for "$OUT" "^default\$"
+check "pad13: third load (default) captured" wait_for "$OUT" "^3 default \$"
 echo "About to load /data/UserData/UserLibrary/Sets/$C6/Project 1/Song.abl" >> "$LOG"
-check "pad13: fourth load (Move settles on Project 1) captured" wait_for "$OUT" "^$C6\$"
+check "pad13: fourth load (Move settles on Project 1) captured" wait_for "$OUT" "^4 $C6 Project 1\$"
 
 HIST="$T/move_loaded_history.txt"
 check "history file exists" wait_for "$HIST" "$D6"
 check "history: 4 lines, oldest first" bash -c "[ \"\$(wc -l < '$HIST' | tr -d ' ')\" = 4 ]"
-check "history: line 1 is the requested set" bash -c "sed -n 1p '$HIST' | grep -q ' $D6\$'"
-check "history: line 4 is the final settled set" bash -c "sed -n 4p '$HIST' | grep -q ' $C6\$'"
-check "history: line 3 is default" bash -c "sed -n 3p '$HIST' | grep -q ' default\$'"
+check "history: line 1 is the requested set" bash -c "sed -n 1p '$HIST' | grep -q ' $D6 Pad 13 Project\$'"
+check "history: line 4 is the final settled set" bash -c "sed -n 4p '$HIST' | grep -q ' $C6 Project 1\$'"
+check "history: line 3 is default" bash -c "sed -n 3p '$HIST' | grep -q ' default \$'"
 check "history: each line starts with an ISO-8601 UTC timestamp" \
     bash -c "grep -Ecv '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z ' '$HIST' | grep -q '^0\$'"
+
+# ---- shape 5: the COUNTER and the NAME (the 2026-09-16 contract) ----------
+# The counter is what lets a consumer tell "Move loaded something SINCE I
+# asked" from "Move loaded something before I asked". It is derived from the
+# outfile itself, so the caller's rm at each Move start resets it — and a
+# consumer that judged a request against an older line would otherwise take a
+# stale answer for a fresh confirmation.
+rm -f "$OUT" "$T/move_loaded_history.txt"
+N1=eeeeeeee-3333-4ddd-8eee-000000000011
+echo "About to load /data/UserData/UserLibrary/Sets/$N1/Project 12/Song.abl" >> "$LOG"
+check "counter starts at 1 after a clear" wait_for "$OUT" "^1 $N1 Project 12\$"
+echo "About to load /data/UserData/UserLibrary/Sets/$N1/Project 12/Song.abl" >> "$LOG"
+check "⭑ the SAME set loaded again still increments the counter" wait_for "$OUT" "^2 $N1 Project 12\$"
+rm -f "$OUT"
+echo "About to load /data/UserData/UserLibrary/Sets/$N1/Project 12/Song.abl" >> "$LOG"
+check "⭑ a clear (each Move start) resets the counter to 1" wait_for "$OUT" "^1 $N1 Project 12\$"
+
+# The name is the LAST field and may contain spaces; a consumer must split on
+# the first two separators only.
+rm -f "$OUT"
+S1=ffffffff-4444-4eee-8fff-000000000012
+echo "About to load /data/UserData/UserLibrary/Sets/$S1/A Name With Spaces/Song.abl" >> "$LOG"
+check "the name field carries spaces intact" wait_for "$OUT" "^1 $S1 A Name With Spaces\$"
+check "⚠ CONTROL: the uuid is still the second field, not the rest of the line" \
+    bash -c "[ \"\$(awk '{print \$2}' '$OUT')\" = '$S1' ]"
+
 
 check "launch.log records the fall-back from the requested set" \
     bash -c "grep -q \"move-loaded-set: Move fell back: $D6 -> $C6\" '$LOG'"

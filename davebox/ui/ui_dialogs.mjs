@@ -20,7 +20,7 @@ import { fontPrint4x5, fontWidth4x5 } from './ui_fonts_pp.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
     dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
-    readActiveSet
+    hostIdentity
 } from './ui_persistence.mjs';
 import { invalidateLEDCache } from './ui_leds.mjs';
 import {
@@ -391,20 +391,21 @@ export function drawStateWipeConfirm() {
  *
  * Dialog chassis (UI_LANGUAGE §5.0: a confirm/info screen stays a dialog). Copy
  * in the user's terms — a project did not open; nothing about sets or hosts. */
-export const PROJECT_OPEN_CHECK_TICKS = 3200;   /* ~34 s @94 Hz — outlasts the host's 30 s watch */
+/* ⭑ The 34 s verdict window is GONE: waiting is a published state now, so
+ * there is nothing to outlast and nothing to miss after it expires. */
 
 export function checkProjectOpened() {
-    const as = readActiveSet();
+    const id = hostIdentity();
     const f = S.projectOpenFailed;
     if (f) {
-        /* A late real answer (Move finished opening after all): drop the screen
-         * and load it the way a selection would. Not while a Retry is already
+        /* A late real answer (Move opened it after all): drop the screen and
+         * load it the way a selection would. Not while a Retry is already
          * tearing the session down. */
-        if (as.uuid && !f.retrying) {
+        if (id.state === 'open' && id.uuid && !f.retrying) {
             S.projectOpenFailed = null;
             S.forceRelaunchNextLoad = false;   /* Move did open it: nothing to force */
-            S.currentSetUuid = as.uuid;
-            S.currentSetName = as.name;
+            S.currentSetUuid = id.uuid;
+            S.currentSetName = id.name;
             loadSelectedCurrentProject();
             S.screenDirty = true;
         }
@@ -412,29 +413,35 @@ export function checkProjectOpened() {
     }
     /* SELECT-BEFORE-LOAD outranks the verdict. While the session is still
      * awaiting a pick nothing of ours is loaded, every save path is already
-     * refused (awaiting_select is 1 in both halves), and no project has been
-     * chosen for the verdict to be ABOUT — so there is nothing left for it to
-     * protect, and the only thing it can still do is destroy the picker.
+     * refused, and no project has been chosen for the verdict to be ABOUT — so
+     * the only thing it can still do is destroy the picker.
      *
-     * Device, 2026-09-15, four identical tools-menu launches: boot, then ~3 s
-     * later the host published the placeholder for the project the LAST session
-     * had been in ("SET_CHANGED: Move did not open the resolved set"), which
-     * nobody had asked for. That raised the screen and cleared
-     * pendingOpenProjectPicker — and ~1 s later Move finished opening it after
-     * all, so the late-answer branch above loaded it with no pick. Every launch
-     * came up on the old project, and the screen flipped past too fast to read.
-     *
-     * The verdict keeps the case it was built for: a project the user PICKED.
-     * A pick from here always RELAUNCHES Move (the switch path — the in-place
-     * branch needs a current pad, and a placeholder identity leaves none), so
-     * init() runs again with awaiting_select 0 and re-arms this window; the
-     * in-place branch re-arms it itself. Deferring costs no coverage. */
+     * Device, 2026-09-15, four identical tools-menu launches: ~3 s in, the host
+     * published a verdict about the project the LAST session had been in, which
+     * nobody had asked for. It raised this screen, cleared the pending picker,
+     * and ~1 s later the late-answer branch above loaded that project with no
+     * pick. Every launch came up on the old project, too fast to read. */
     if (S.awaitingProjectSelect) return;
-    if (as.unopenedIndex < 0) return;
-    S.projectOpenFailed = { pad: as.unopenedIndex, name: as.name, sel: 0, retrying: false };
+
+    /* ⭑ The verdict is a STATE now, not a name to decode. `none` means Move is
+     * not holding a project, and `reason` says which sentence to show. Under
+     * "retry only" (Josh, 2026-09-15) none of these ever becomes an open
+     * project: the dialog offers Retry, or Back to the picker, and nothing
+     * else. `pending` is NOT a failure — it is the wait, and it must not raise
+     * anything, which is the whole reason the host publishes it. */
+    if (id.state !== 'none') return;
+
+    const reason = id.reason || 'unknown';
+    S.projectOpenFailed = {
+        pad: id.index, name: id.name, sel: 0, retrying: false,
+        /* `unknown` is a different sentence: Move did not say what it opened,
+         * rather than saying it opened something else. */
+        reason: reason
+    };
     /* No project is open: nothing downstream may name one — not even the
      * project the session was in before, and not the one that failed. */
     S.currentSetUuid = '';
+    S.currentSetName = '';
     S.awaitingProjectSelect = true;
     host_module_set_param('awaiting_select', '1');
     /* Anything already queued toward a save or a load is void now. */
@@ -444,9 +451,11 @@ export function checkProjectOpened() {
     S.pendingSnapshotCopy = null;
     S.projectPadPicker = null;
     S.pendingOpenProjectPicker = false;
-    console.log('PROJECT DID NOT OPEN: pad ' + as.unopenedIndex + ' (' + as.name + ') — saves refused');
+    console.log('NO PROJECT OPEN (' + reason + '): pad ' + id.index +
+                (id.name ? ' (' + id.name + ')' : '') + ' \u2014 saves refused');
     S.screenDirty = true;
 }
+
 
 export function drawProjectOpenFailed() {
     const f = S.projectOpenFailed;
@@ -493,7 +502,6 @@ export function projectOpenFailedMidi(data) {
          * active_set.txt still names the same failure, so the watch would
          * re-raise the screen over the picker the user was sent to. */
         S.forceRelaunchNextLoad = true;
-        S.projectOpenCheckTicks = 0;
         S.projectOpenFailed = null;
         S.projectPadPicker = null;
         openProjectPadPicker();
@@ -857,12 +865,25 @@ function _pppApplyList(p, data) {
      * leftovers; readActiveSet reads OURS. See tests/test_install_paths.sh.)
      * Match it by uuid and fall back to Settings.json only when it names nothing
      * we know — at first boot, before any set change has been recorded. */
-    p.current = data.current;
-    const _as = readActiveSet();
-    if (_as.uuid) {
+    /* ⭑⭑ "CURRENT" MEANS CONFIRMED OPEN, AND NOTHING ELSE.
+     *
+     * This used to fall back to Settings.json's index whenever the boot record
+     * named nothing we recognised. That index is a GUESS — it says which pad
+     * Move is sitting on, never which project Move actually opened — and it fed
+     * the one shortcut in this file that loads without making a request
+     * (`k === p.current` in _pppLoad). So tapping the "current" pad could load
+     * on an unconfirmed identity, which is exactly what "retry only" forbids
+     * (Josh, 2026-09-15).
+     *
+     * So: current comes from the host's CONFIRMED identity or it is -1. Under
+     * -1 every pick is a new request, which is the slower path and the only
+     * honest one. */
+    p.current = -1;
+    const _id = hostIdentity();
+    if (_id.state === 'open' && _id.uuid) {
         for (let i = 0; i < data.projects.length; i++) {
             const pr = data.projects[i];
-            if (pr.uuid === _as.uuid && pr.index !== null && pr.index !== undefined) {
+            if (pr.uuid === _id.uuid && pr.index !== null && pr.index !== undefined) {
                 p.current = pr.index;
                 break;
             }
@@ -1039,7 +1060,6 @@ function _pppLoad(p, k) {
              * while awaiting — so the "did Move open it" window is measured
              * from the pick, not from init. The switch path needs no such line:
              * it relaunches, and init() arms the window again. */
-            S.projectOpenCheckTicks = PROJECT_OPEN_CHECK_TICKS;
             loadSelectedCurrentProject();
         }
         return;
@@ -1338,6 +1358,19 @@ function _projectPadPickerTap_impl(k) {
             showActionPopup('PAD', 'OCCUPIED');
         } else {
             host_system_cmd('sh ' + PROJECT_CMD + ' copy ' + p.copySrcIdx + ' ' + k);
+            /* ⭑⭑ A COPY IS A PROJECT CREATED THIS SESSION, and Move built its
+             * set list when it started — so the copy is not in it. Without this
+             * marker the next load takes the fast in-place route, which walks
+             * Move's overview to a pad Move believes is EMPTY: nothing loads,
+             * and it returns as though it worked. dAVEBOx is then nominally in
+             * the copy while Move still has the previous project open — and
+             * Move saves the set it HAS open, so edits land in the wrong
+             * project, silently.
+             *
+             * The two create paths have always recorded this. Copy never did.
+             * (Found by Josh on device, 2026-09-16: "copied a project and
+             * noticed there was no restart".) */
+            _pppNoteCreated(k);
             const d = _pppRunList();
             if (d) _pppApplyList(p, d);
             p.copySrcIdx = -1;

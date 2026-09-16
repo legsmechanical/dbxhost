@@ -135,11 +135,6 @@ static int sp_globals_state(sp_ctx_t *cx) {
         return 1;
     }
 
-    /* Walk /data/UserData/schwung/set_state/ and remove seq8-state.json +
-     * seq8-ui-state.json for any UUID-named subdir whose corresponding Move
-     * set folder no longer exists. Leaves Schwung core's master_fx_*.json,
-     * shadow_chain_config.json, slot_*.json untouched. */
-
     if (!strcmp(key, "state_path")) {
         strncpy(inst->state_path, val, sizeof(inst->state_path) - 1);
         inst->state_path[sizeof(inst->state_path) - 1] = '\0';
@@ -151,17 +146,22 @@ static int sp_globals_state(sp_ctx_t *cx) {
     }
 
     if (!strcmp(key, "state_load")) {
-        /* val is the UUID from JS (36 chars); construct path from it. Fallback if empty.
-         * state_uuid tracks every assignment — it is what get_param "state_uuid"
-         * serves, and the fallback path genuinely has no set, so it clears. */
-        if (val && val[0]) {
-            seq8_set_state_path(inst->state_path, sizeof(inst->state_path), val, 0);
-            snprintf(inst->state_uuid, sizeof(inst->state_uuid), "%s", val);
-        } else {
-            strncpy(inst->state_path, SEQ8_STATE_PATH_FALLBACK,
-                    sizeof(inst->state_path) - 1);
-            inst->state_uuid[0] = '\0';
+        /* ⛔ AN EMPTY IDENTITY IS REFUSED. This used to point the instance at an
+         * install-wide fallback file and clear state_uuid — i.e. "no project"
+         * was a loadable destination, and a caller that had not worked out who
+         * it was got a live, saving session pointed at a file nobody owns.
+         * There is no such file any more and no path to put the instance on, so
+         * the only honest answer is to do nothing: no path, no reset, and
+         * crucially awaiting_select stays armed so saving stays refused. */
+        if (!val || !val[0]) {
+            seq8_ilog(inst, "state_load REFUSED: empty identity is not a project");
+            return 1;
         }
+        /* val is the UUID from JS (36 chars); construct the path from it.
+         * state_uuid tracks every assignment — it is what get_param "state_uuid"
+         * serves. */
+        seq8_set_state_path(inst->state_path, sizeof(inst->state_path), val, 0);
+        snprintf(inst->state_uuid, sizeof(inst->state_uuid), "%s", val);
         seq8_ilog(inst, inst->state_path);
         /* Release what is genuinely sounding BEFORE the bookkeeping that says
          * so is thrown away — targeted note-offs, not the forbidden panic.

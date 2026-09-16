@@ -1394,6 +1394,7 @@ export function liveSendNote(t, type, pitch, vel, rawVel, ext) {
 /* ------------------------------------------------------------------ */
 
 export function restoreUiSidecar(applyDefaultsNow) {
+    if (!S.currentSetUuid) return;   /* no project: nothing to read, nowhere to look */
     const uiSp = uuidToUiStatePath(S.currentSetUuid);
     let us = null;
     if (host_file_exists(uiSp)) {
