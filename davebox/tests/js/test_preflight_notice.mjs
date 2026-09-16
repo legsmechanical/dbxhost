@@ -31,7 +31,13 @@ globalThis.clear_screen = () => {};
 const printCalls = [];
 globalThis.print = (x, y, t, c) => { printCalls.push(String(t)); };
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
-globalThis.fill_rect = () => {};
+/* ⭑ the header title is drawn by fontPrint4x5, which emits horizontal RUNS
+ * through fill_rect — not set_pixel like the old hdrPrint face did. A no-op
+ * fill_rect stub therefore reported "no ink in the header band at all" for a
+ * header that draws perfectly well (2026-09-15). Record the rects too, with
+ * their colour, so the ink measurement below can see the glyphs. */
+let inkRects = [];
+globalThis.fill_rect = (x, y, w, h, c) => { inkRects.push([x, y, w, h, c]); };
 globalThis.draw_rect = () => {};
 globalThis.stipple_rect = () => {};
 globalThis.draw_line = () => {};
@@ -88,14 +94,23 @@ step('the resting picker screen prints nothing extra when preflight is clean', (
 /* ⭑ Josh, 2026-09-15: the resting picker's header reads "Select Project", not
  * the "dAVEBOx" wordmark — centred exactly as the brand header was (same
  * font/hdrPrint, same y=1, same `(128 - width) / 2` centring). Header glyphs
- * land via set_pixel (hdrPrint), not the global print() this file otherwise
+ * land via the drawing primitives, not the global print() this file otherwise
  * spies on, so this measures the ink's bounding box in the header's y-band
- * (rows 1..6, under the MV_BRAND_HDR_H=8 bar) rather than reading text. */
+ * (rows 1..6, under the MV_BRAND_HDR_H=8 bar) rather than reading text. The
+ * bar itself is fill_rect(...,1) and the title is drawn in colour 0 ON TOP of
+ * it, so only colour-0 ink counts as the glyphs. */
 step('⭑ the resting picker header text is "SELECT PROJECT" (4x5 caps), centred', () => {
-    pixels.length = 0;
+    pixels.length = 0; inkRects.length = 0;
     S.projectPadPicker = restingPicker();
     drawProjectPadPicker();
     const headerPixels = pixels.filter(([, y]) => y >= 1 && y <= 6);
+    for (const [x, y, w, h, c] of inkRects) {
+        if (c !== 0) continue;             /* colour 1 is the bar, not the text */
+        for (let yy = y; yy < y + h; yy++) {
+            if (yy < 1 || yy > 6) continue;
+            for (let xx = x; xx < x + w; xx++) headerPixels.push([xx, yy]);
+        }
+    }
     if (headerPixels.length === 0)
         throw new Error('no ink drawn in the header band at all');
     const xs = headerPixels.map(([x]) => x);
