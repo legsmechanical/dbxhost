@@ -14,6 +14,9 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 IMAGE="${SCHWUNG_LINUX_TEST_IMAGE:-schwung-linux-tests}"
+TMPVOL="${SCHWUNG_LINUX_TEST_TMPVOL:-schwung-linux-tests-tmp}"
+LOG="$(mktemp -t schwung-linux-tests)"
+trap 'rm -f "$LOG"' EXIT
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "test-linux: docker is not installed — cannot run the Linux parity suite." >&2
@@ -43,13 +46,27 @@ fi
 # empty build dir: otherwise make re-runs the macOS binaries left there by a
 # native run and dies with "Exec format error" — and, worse, a Linux object
 # could overwrite one the local workflow is about to use. --rm discards it.
+# ⚠ TMPDIR must be a REAL ext4 mount, not the container's overlayfs. Several
+# tests probe `stat -f` and quietly SKIP their strongest cases off ext4 — and a
+# skip counts as a pass, so the total is identical either way. A named docker
+# volume is ext4 inside the VM; the overlay root is not. Without this the suite
+# reported 223/223 while silently skipping the very case CI was failing on.
+docker volume create "$TMPVOL" >/dev/null 2>&1 || true
+
 docker run --rm \
   -v "$PWD:/repo" \
   -v /repo/build \
+  -v "$TMPVOL:/ext4tmp" \
   -e SCHWUNG_TEST_LIST="$list" \
   -w /repo \
   "$IMAGE" bash -c '
     set -uo pipefail
+    rm -rf /ext4tmp/* 2>/dev/null || true
+    export TMPDIR=/ext4tmp
+    if [ "$(stat -f -c %T /ext4tmp)" != "ext2/ext3" ]; then
+      echo "test-linux: WARNING — /ext4tmp is $(stat -f -c %T /ext4tmp), not ext4;" >&2
+      echo "            filesystem-dependent cases will SKIP and still count as passes." >&2
+    fi
     fail=0
     echo "== make -C tests/host test"
     make -C tests/host test || fail=1
@@ -59,7 +76,17 @@ docker run --rm \
       bash "$t" || { echo "  FAIL: $t" >&2; fail=1; }
     done <<< "$SCHWUNG_TEST_LIST"
     exit $fail
-  '
-rc=$?
-if [ "$rc" -eq 0 ]; then echo "test-linux: OK (Linux/glibc)"; else echo "test-linux: FAILED ($rc)" >&2; fi
+  ' 2>&1 | tee "$LOG"
+rc=${PIPESTATUS[0]}
+
+# ⭑ A count is not a claim about coverage. Surface skips explicitly: a test that
+# skips its real work still prints PASS and still increments the total.
+skips=$(grep -ciE "^[[:space:]]*(skip|note:)" "$LOG" || true)
+if [ "$skips" -gt 0 ]; then
+  echo
+  echo "test-linux: ⚠ $skips skip/note line(s) — these counted as passes:"
+  grep -inE "^[[:space:]]*(skip|note:)" "$LOG" | sed 's/^/    /' | head -40
+fi
+
+if [ "$rc" -eq 0 ]; then echo "test-linux: OK (Linux/glibc, $skips skipped)"; else echo "test-linux: FAILED ($rc)" >&2; fi
 exit "$rc"
