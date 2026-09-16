@@ -452,7 +452,7 @@ wiring.sh` pins that with eight mutation controls.
 lane. A slot whose module is **pinned** (`slot:parallel` = 0) always renders on lane 0 — the audio
 thread, exactly where it always did, serially with every other pinned slot. That is the per-module
 "Parallel" switch: dAVEBOx keeps a device-wide default per module (`davebox/ui/ui_parallel.mjs`,
-`/data/UserData/dbx-host/parallel-modules.txt`; Dexed and JE-8086 pre-set Off) and pushes the pin
+`/data/UserData/dbx-host/parallel-modules.txt`; every module defaults On — the built-in Off list ships empty, as movy's does) and pushes the pin
 to every slot holding that module. A round with nothing for a helper (one task, or all pinned) runs
 inline with no wake and no join. `master_fx:render_lanes` (1..3; 1 = serial = the old loop, in the
 old order) is the lane count and the control for any A/B.

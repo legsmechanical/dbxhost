@@ -91,19 +91,24 @@ step('setup: dexed in slots 0 and 3, nusaw in slot 1, a MIDI track on 2', () => 
     slotWrites.length = 0;
 });
 
-step('built-in defaults: dexed and jp8000 Off, anything else On, no module On', () => {
-    if (P.moduleParallelDefault('dexed') !== 0) throw new Error('dexed');
-    if (P.moduleParallelDefault('jp8000') !== 0) throw new Error('jp8000');
+step('built-in defaults: ON for everything (the list ships empty), no module On', () => {
+    if (P.BUILTIN_OFF.length !== 0) throw new Error('BUILTIN_OFF not empty: ' + P.BUILTIN_OFF.join(','));
+    if (P.moduleParallelDefault('dexed') !== 1) throw new Error('dexed');
+    if (P.moduleParallelDefault('jp8000') !== 1) throw new Error('jp8000');
     if (P.moduleParallelDefault('nusaw') !== 1) throw new Error('nusaw');
     if (P.moduleParallelDefault('') !== 1) throw new Error('empty');
 });
 
-step('the Schwung track holding dexed shows a Parallel row reading Off', () => {
+step('the Schwung track holding dexed shows a Parallel row reading On (seeded Off below to test the flip)', () => {
     S.activeTrack = 0;
     const keys = configRowsFor(0);
     if (!keys.includes('parallel')) throw new Error('no row: ' + keys.join(','));
     const row = sound.soundSlotRowForTest('parallel');
-    if (row.get() !== 0) throw new Error('reads ' + row.get());
+    if (row.get() !== 1) throw new Error('reads ' + row.get());
+    /* seed a user preference so the flip below has an Off to leave */
+    P.setModuleParallelDefault('dexed', 0);
+    configRowsFor(0);
+    if (sound.soundSlotRowForTest('parallel').get() !== 0) throw new Error('seeded Off not read back');
     if (row.fmt(0) !== 'Off' || row.fmt(1) !== 'On') throw new Error('fmt');
 });
 step('…the one holding nusaw reads On', () => {
@@ -149,12 +154,11 @@ step('the row now reads On, and stepping past the end clamps (no wrap back to Of
 step('the preference SURVIVES a reload of the module (fresh prefs read the file)', () => {
     P.parallelResetForTest();
     if (P.moduleParallelDefault('dexed') !== 1) throw new Error('lost after reload');
-    if (P.moduleParallelDefault('jp8000') !== 0) throw new Error('jp8000 default disturbed');
+    if (P.moduleParallelDefault('jp8000') !== 1) throw new Error('jp8000 default disturbed');
 });
 
 step('a project load re-pins every slot for the module it holds — one write per slot, none for an unchanged pin', () => {
-    P.parallelResetForTest();
-    files[P.PARALLEL_PREF_PATH] = '';           /* back to built-ins: dexed Off */
+    files[P.PARALLEL_PREF_PATH] = 'dexed 0\n';  /* the user pinned dexed Off */
     P.parallelResetForTest();
     slotWrites.length = 0;
     P.parallelForgetPushed();
@@ -168,6 +172,8 @@ step('a project load re-pins every slot for the module it holds — one write pe
 });
 step('the tick sweep touches ONE slot per PARALLEL_SWEEP_TICKS and catches a module that arrived by another road', () => {
     slotWrites.length = 0;
+    files[P.PARALLEL_PREF_PATH] = 'dexed 0\njp8000 0\n'; P.parallelResetForTest();
+    P.parallelForgetPushed(); P.reconcileParallelAll(); slotWrites.length = 0;
     loaded['1:synth'] = 'jp8000';               /* a snapshot recall swapped slot 1's synth */
     let reads = 0;
     const realGet = globalThis.shadow_get_param;

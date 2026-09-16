@@ -19,14 +19,16 @@
  *     chain blob loads modules inside the host) is corrected within a few
  *     seconds rather than never. One get_param per sweep step, never more.
  *
- * DEFAULTS: on, except the modules in BUILTIN_OFF — Dexed (`dexed`: its
- * msfa lookup tables are class-static and re-initialised on every instance
- * construction) and JE-8086 (`jp8000`: three forked processes with hard
- * core affinity and FIFO 20 of their own, not a workload a thread pool can
- * schedule). Both were named by Josh as "pre-set Off"; the user can flip
- * either from the row. ⚠ Under the pool's fork-join shape a module's
- * CONSTRUCTION never overlaps a render, so Dexed's race cannot actually
- * fire — the default is the ruling, and it is one row-flip to change.
+ * DEFAULTS: on for every module; BUILTIN_OFF ships EMPTY (Josh, 2026-09-16,
+ * after asking whether the two pre-set-Off candidates had a reason). The
+ * survey's two candidates do not survive the pool's shape: Dexed's static
+ * msfa tables are re-initialised at instance CONSTRUCTION, and construction
+ * happens in set_param on the SPI thread, which is blocked in the join
+ * while helpers render — the two cannot overlap; JE-8086's forked children
+ * are separate processes our helpers outrank exactly as the SPI thread did,
+ * and only one instance can exist. Same reasoning movy gives for shipping
+ * its blacklist empty: pre-pinning on a static audit gives back the gain.
+ * The list stays as the place a real culprit goes.
  *
  * STORAGE: /data/UserData/dbx-host/parallel-modules.txt, one `id 0|1` per
  * line. Device-global like the Daves preference (a property of the user's
@@ -36,7 +38,7 @@
 import { engineLoadedModule, engineSetSlotParam, CHAIN_SLOTS } from './ui_engine.mjs';
 
 export const PARALLEL_PREF_PATH = '/data/UserData/dbx-host/parallel-modules.txt';
-export const BUILTIN_OFF = ['dexed', 'jp8000'];
+export const BUILTIN_OFF = [];
 /* One slot per this many ticks; CHAIN_SLOTS × this = a full sweep (~8 s at
  * 40 ticks/s with 40). */
 export const PARALLEL_SWEEP_TICKS = 40;

@@ -20,8 +20,7 @@ the section into a versioned heading at release time.
 - **Instruments render in parallel.** Each track's chain now renders across
   three cores instead of one, so more instruments can sound at once before the
   audio engine runs out of time in a frame. A new **Parallel** row on each
-  Schwung track's CONFIG screen switches it per instrument, device-wide (Dexed
-  and JE-8086 start Off); Off means that instrument renders exactly as before.
+  Schwung track's CONFIG screen switches it per instrument, device-wide; Off means that instrument renders exactly as before.
 - **Modules with custom displays now draw them in the module editor.** A module
   that paints its own knob cells (e.g. MonkSynth, Hank) shows its pictures
   instead of plain dials, and a module's own pages — such as MonkSynth's Face —
