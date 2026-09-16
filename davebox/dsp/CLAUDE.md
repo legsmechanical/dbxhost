@@ -128,18 +128,20 @@ appear in the log. ⚠ **Never log from the audio thread at all** — per-event 
 ([[schwung-davebox-rt-logging-footgun]]). If you need RT diagnostics, use a preallocated in-memory
 ring drained off-thread.
 
-⚠⚠ **The log path is in the STOCK tree, not the DBX tree.** `SEQ8_LOG_PATH` (`seq8.c:107`) is
-`"/data/UserData/schwung/" SEQ8_STATE_PREFIX ".log"`, so an SA build writes
-**`/data/UserData/schwung/seq8sa.log`** — while the *host's* unified log under SA lives at
-`/data/UserData/dbx-host/debug.log`. Two trees, and the obvious guess is wrong in both directions.
+**The log lives in THIS build's own tree.** `SEQ8_LOG_PATH` is `SEQ8_DBX_DIR "/" SEQ8_STATE_PREFIX
+".log"`, so an SA build writes **`/data/UserData/dbx-host/seq8sa.log`** — beside the host's own
+unified log at `/data/UserData/dbx-host/debug.log`.
 
 ```sh
-ssh ableton@move.local "tail -f /data/UserData/schwung/seq8sa.log"   # SA (prefix seq8sa)
-ssh ableton@move.local "tail -f /data/UserData/schwung/seq8.log"     # Legacy build
+ssh ableton@move.local "tail -f /data/UserData/dbx-host/seq8sa.log"   # SA (prefix seq8sa)
 ```
 
-⭑ Same family as the metronome bug fixed on 2026-08-14, where a hardcoded Legacy module path made
-the click silently never load. See [[schwung-two-install-trees-same-filenames]].
+⚠ It used to be written into the STOCK install, and was the last dAVEBOx file left in a tree we do
+not own; an older note here told you to tail it there. `tests/test_dsp_owns_its_tree.sh` now pins
+that no DSP state or log destination names the stock install, with an allow-list of exactly the
+MIDI-export staging paths. Same family as the metronome bug fixed on 2026-08-14, where a hardcoded
+Legacy module path made the click silently never load.
+See [[schwung-two-install-trees-same-filenames]].
 
 ## Drum clip allocation
 
@@ -193,7 +195,11 @@ Key prefixes:
 `state_load` calls `drum_track_init` + `drum_repeat_init_defaults` before applying saved values.
 
 ⭑ Paths come from the co-located storage model — `Sets/<uuid>/<state dir>/<prefix>-state.json` via
-`seq8_set_state_path()`, with `SEQ8_STATE_PATH_FALLBACK` for the no-set case. ⚠ The state dir is
+`seq8_set_state_path()`. ⚠⚠ **There is NO no-set case any more.** The fallback path that used to
+answer it was the sink two whole sessions drained into, so it is gone: `create_instance` starts with
+no identity and no path, `state_load ""` is refused, and a dirty save with no identity is PARKED
+under `$DBX_DIR/quarantine/` rather than aimed at a default. Never reintroduce a default
+destination. ⚠ The state dir is
 `dAVEBOx` OR `dAVEBOx~<n>` (whichever lists after Move's song folder — `dbx_state_subdir.h`); never
 spell the name, and every save passes `create = 1` so a first save runs the chooser.
 [[schwung-state-colocation-model]]

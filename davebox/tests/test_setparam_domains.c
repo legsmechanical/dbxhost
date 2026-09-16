@@ -2495,13 +2495,11 @@ int main(void) {
         }
         inst->state_version_mismatch = 0;   /* restore for state_load below */
 
-        /* prune_orphan_states: scans /data/UserData/schwung/set_state and unlinks
-         * orphaned seq8-*.json. OUT-OF-SCOPE-IN-STUB: that device dir tree does
-         * not exist off-device, so opendir fails and the handler takes its
-         * clean early-return branch (opendir fails -> seq8_ilog + return). The
-         * log line is not observable (seq8_ilog no-op, see debug_log above), so
-         * pin the reachable contract: it mutates NO instance state and returns
-         * without crashing (reaching the next line proves no crash). */
+        /* prune_orphan_states: the orphan pruner itself is GONE (state lives
+         * inside each project's own set dir, so there is nothing to orphan), so
+         * this is now an unhandled key. Pin what an unhandled key must do:
+         * mutate NO instance state and return without crashing (reaching the
+         * next line proves no crash). */
         {
             char sp0[256]; strncpy(sp0, inst->state_path, sizeof(sp0));
             hx_set_param(h, "prune_orphan_states", "1");
@@ -2539,12 +2537,24 @@ int main(void) {
         HX_ASSERT(inst->tracks[0].recording == 0, "state_load: resets per-track recording");
         HX_ASSERT(inst->tracks[0].current_step == 0, "state_load: resets per-track current_step");
         HX_ASSERT(inst->tracks[0].queued_clip == -1, "state_load: resets per-track queued_clip to -1");
-        /* empty val -> fallback path, and NO set identity. */
-        hx_set_param(h, "state_load", "");
-        HX_ASSERT(inst->state_uuid[0] == '\0',
-                  "state_load(\"\"): clears state_uuid — the fallback file describes no set");
-        HX_ASSERT(!strcmp(inst->state_path, SEQ8_STATE_PATH_FALLBACK),
-                  "state_load: empty val -> SEQ8_STATE_PATH_FALLBACK");
+        /* ⛔ An EMPTY identity is REFUSED outright — it is not a load, and it is
+         * emphatically not a load of some default file. The instance must be
+         * left exactly where it was: same path, same uuid, nothing reset. */
+        {
+            char keep_path[sizeof(inst->state_path)];
+            char keep_uuid[sizeof(inst->state_uuid)];
+            snprintf(keep_path, sizeof(keep_path), "%s", inst->state_path);
+            snprintf(keep_uuid, sizeof(keep_uuid), "%s", inst->state_uuid);
+            inst->playing = 1;
+            hx_set_param(h, "state_load", "");
+            HX_ASSERT(!strcmp(inst->state_path, keep_path),
+                      "state_load(\"\"): must not move the instance to any path");
+            HX_ASSERT(!strcmp(inst->state_uuid, keep_uuid),
+                      "state_load(\"\"): must not disturb the identity it has");
+            HX_ASSERT(inst->playing == 1,
+                      "state_load(\"\"): refused, so it must not run the load reset either");
+            inst->playing = 0;
+        }
 
         remove(SAVE_TMP);
     }

@@ -29,6 +29,8 @@
 #define T      4                   /* ROUTE_SCHWUNG by default (t >= 4) */
 #define PITCH  60
 #define VEL    100
+/* Any well-formed uuid; the set dir it names does not exist off-device. */
+#define LOAD_UUID "11111111-2222-3333-4444-555555555555"
 
 /* Count note-offs for PITCH sent to the chain slot, at any channel. */
 static int slot_note_offs(int slot, int pitch)
@@ -78,7 +80,11 @@ int main(void)
 
     /* --- the project load that used to abandon it --- */
     hx_clear_capture(h);
-    hx_set_param(h, "state_load", "");    /* no uuid: the fallback path, no file */
+    /* A real uuid: an EMPTY one is refused outright now and would never reach
+     * the release at all, so it cannot stand in for a project switch here. The
+     * set dir does not exist off-device, so the load itself no-ops — which is
+     * fine, because what is under test is the release that precedes it. */
+    hx_set_param(h, "state_load", LOAD_UUID);
 
     HX_ASSERT(slot_note_offs(slot, PITCH) >= 1,
               "state_load abandoned a sounding note — no note-off reached the chain slot");
@@ -104,7 +110,7 @@ int main(void)
     /* --- a panic arriving after the release must not double-send --- */
     pfx_note_on(inst, tr, PITCH, VEL);
     hx_clear_capture(h);
-    hx_set_param(h, "state_load", "");
+    hx_set_param(h, "state_load", LOAD_UUID);
     HX_ASSERT(slot_note_offs(slot, PITCH) == 1, "the release double-sent its note-off");
 
     hx_destroy(h);
