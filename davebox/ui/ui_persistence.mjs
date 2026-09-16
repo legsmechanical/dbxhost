@@ -76,15 +76,19 @@ export function uuidToNewProjectPath(uuid) {
 }
 
 export function uuidToStatePath(uuid) {
-    return uuid
-        ? setStateDir(uuid) + '/' + STATE_PREFIX + '-state.json'
-        : '/data/UserData/schwung/' + STATE_PREFIX + '-state.json';
+    /* ⚠⚠ NO FALLBACK — see uuidToUiStatePath. */
+    if (!uuid) throw new Error('uuidToStatePath: no project identity');
+    return setStateDir(uuid) + '/' + STATE_PREFIX + '-state.json';
 }
 
 export function uuidToUiStatePath(uuid) {
-    return uuid
-        ? setStateDir(uuid) + '/' + STATE_PREFIX + '-ui-state.json'
-        : '/data/UserData/schwung/' + STATE_PREFIX + '-ui-state.json';
+    /* ⚠⚠ NO FALLBACK. An empty identity used to resolve to an install-wide
+     * file beside the stock tree, which meant "I cannot name a project" was a
+     * valid place to write. Two sessions wrote a whole night there (2026-09-16)
+     * and everything looked fine. A destination we cannot name is now a BUG,
+     * and it says so rather than inventing a path. */
+    if (!uuid) throw new Error('uuidToUiStatePath: no project identity');
+    return setStateDir(uuid) + '/' + STATE_PREFIX + '-ui-state.json';
 }
 
 /* ⚠ active_set.txt lives under THIS host's install dir, never the stock literal
@@ -120,6 +124,48 @@ export function readActiveSet() {
     }
 }
 
+/* ── IDENTITY ENTERS HERE, AND NOWHERE ELSE ───────────────────────────────
+ *
+ * The host decides which project is open, from Move's own word, and publishes
+ * a TYPED record. dAVEBOx reads it and does not second-guess it.
+ *
+ * What this replaces: reading `active_set.txt` directly, and deciding what an
+ * empty or odd-looking value meant. That file had two independent readers who
+ * could disagree, and its value could be a placeholder that every consumer
+ * decoded as "no project" — except the one that mattered, which went on saving.
+ *
+ *   state   'open' | 'pending' | 'none'
+ *   reason  '' | 'unopened' | 'default' | 'unknown'   (only when none)
+ *   index   the open pad, or the one asked for, or -1
+ *
+ * ⚠⚠ A uuid exists ONLY when state is 'open'. `pending` and `none` carry an
+ * empty identity deliberately: there is nothing to name, and naming something
+ * anyway is the entire bug this design removes. */
+export function hostIdentity() {
+    const empty = { state: 'pending', reason: '', uuid: '', name: '', index: -1 };
+    try {
+        const rec = shadow_get_param(0, 'active_set_state');
+        if (!rec) return empty;
+        const L = String(rec).split('\n');
+        const state = (L[0] || '').trim() || 'pending';
+        const reason = (L[1] || '').trim();
+        const index = parseInt((L[2] || '-1').trim(), 10);
+        let uuid = '', name = '';
+        if (state === 'open') {
+            const a = String(shadow_get_param(0, 'active_set') || '').split('\n');
+            uuid = (a[0] || '').trim();
+            name = (a[1] || '').trim();
+            /* Defence in depth: the host publishes an empty identity for
+             * anything but OPEN, so an OPEN with no uuid is a contradiction.
+             * Treat it as pending rather than inventing one. */
+            if (!uuid) return empty;
+        }
+        return { state, reason, uuid, name, index: isNaN(index) ? -1 : index };
+    } catch (e) {
+        return empty;
+    }
+}
+
 /* Decide whether the DSP needs a state_load for the currently-active set, and
  * arm it: the version-mismatch gate first, then the plain "DSP holds a
  * different set / has no state file" checks.
@@ -143,7 +189,7 @@ export function resolveSetLoadDecision() {
     } else if (S.currentSetUuid && dspUuid !== S.currentSetUuid) {
         S.pendingSetLoad = true;
     } else if (S.currentSetUuid) {
-        if (!host_file_exists(uuidToStatePath(S.currentSetUuid)))
+        if (S.currentSetUuid && !host_file_exists(uuidToStatePath(S.currentSetUuid)))
             S.pendingSetLoad = true;
     }
 }
@@ -211,6 +257,14 @@ export function showActionPopupGauge(frac, mark, ...lines) {
 
 /* Write the sidecar synchronously. Split out of saveState so bank-change
  * sites can persist immediately without scheduling a DSP save. */
+let _identitylessSaveLogged = false;
+function noteIdentitylessSave() {
+    if (_identitylessSaveLogged) return;
+    _identitylessSaveLogged = true;
+    console.log('SAVE DEFERRED: no project identity yet — nothing written ' +
+                '(awaiting_select=' + (S.awaitingProjectSelect ? 1 : 0) + ')');
+}
+
 export function writeSidecar() {
     /* SELECT-BEFORE-LOAD: no project is loaded, so S holds startup defaults —
      * writing them out replaces the boot project's sidecar with a blank one.
@@ -236,6 +290,16 @@ export function writeSidecar() {
      * (Josh, 2026-09-05) — only the jog's walk records those. */
     if (!isSoundBank(S.activeBank) || S.bankCardLatched)
         S.trackActiveBank[S.activeTrack] = S.activeBank;
+    /* ⭑ No identity, no write — and no fallback either. The path builders now
+     * THROW rather than invent a destination, so this is the one place that has
+     * to decide what a save with no project MEANS, and it means "not yet",
+     * never "somewhere else". Under the identity machine this is reachable only
+     * while a project is still being confirmed, which is a wait rather than a
+     * loss: the DSP holds the work and the next save lands once OPEN arrives.
+     * One line per session, because the previous behaviour — redirecting to an
+     * install-wide file beside the stock tree — was silent, and that silence is
+     * why two sessions' work went missing before anyone noticed (2026-09-16). */
+    if (!S.currentSetUuid) { noteIdentitylessSave(); return; }
     ensureStateDir(S.currentSetUuid);
     host_write_file(uuidToUiStatePath(S.currentSetUuid), JSON.stringify({
         v: 9, at: S.activeTrack, ac: S.trackActiveClip.slice(), sv: S.sessionView ? 1 : 0,
@@ -300,7 +364,9 @@ export const SNAPSHOT_CAP = 16;
 const SNAP_MANIFEST_VER = 1;
 
 function snapBaseDir(uuid) {
-    return uuid ? setStateDir(uuid) : '/data/UserData/schwung';
+    /* ⚠⚠ NO FALLBACK — a snapshot of nothing has nowhere to go. */
+    if (!uuid) throw new Error('snapBaseDir: no project identity');
+    return setStateDir(uuid);
 }
 function snapManifestPath(uuid) { return snapBaseDir(uuid) + '/' + STATE_PREFIX + '-snap-index.json'; }
 function snapStatePath(uuid, id) { return snapBaseDir(uuid) + '/' + STATE_PREFIX + '-snap-' + id + '-state.json'; }
@@ -322,6 +388,7 @@ function parseStateVersion(raw) {
 
 /* Returns the snapshot list (newest-first) for a set, or []. */
 export function loadSnapshotManifest(uuid) {
+    if (!uuid) return [];   /* no project, no manifest */
     const p = snapManifestPath(uuid);
     if (!host_file_exists(p)) return [];
     try {
@@ -341,6 +408,7 @@ function writeSnapshotManifest(uuid, snaps) {
  * and update the manifest. Reusing an existing id overwrites in place.
  * Call AFTER the DSP 'save' has flushed live state to disk. */
 export function commitSnapshot(uuid, id, label) {
+    if (!uuid) return false;   /* a snapshot of no project is not a snapshot */
     const srcSt = uuidToStatePath(uuid);
     if (!host_file_exists(srcSt)) return false;
     const stContents = host_read_file(srcSt);
@@ -367,6 +435,7 @@ export function commitSnapshot(uuid, id, label) {
 /* Copy a snapshot's files over the live state files, so the normal
  * state_load reload path (pendingSetLoad) restores them. */
 export function applySnapshotToLive(uuid, id) {
+    if (!uuid) return false;
     const snSt = snapStatePath(uuid, id);
     if (!host_file_exists(snSt)) return false;
     const stContents = host_read_file(snSt);
@@ -385,6 +454,7 @@ export function applySnapshotToLive(uuid, id) {
  * we best-effort stub the orphaned files to reclaim space. Returns the
  * surviving snapshot list. */
 export function dropSnapshots(uuid, ids) {
+    if (!uuid) return;
     /* Same shape as doClearSession: a direct destructive writer, reachable
      * before a project has been selected. See the guard note there. */
     if (S.awaitingProjectSelect) return loadSnapshotManifest(uuid);
@@ -407,6 +477,8 @@ export function doClearSession() {
      * them "every save path" and was wrong; a destructive writer that bypasses
      * them is exactly the shape that gets missed. */
     if (S.awaitingProjectSelect) return;
+    /* No project, nothing to clear — and no fallback to clear instead. */
+    if (!S.currentSetUuid) return;
     const sp = uuidToStatePath(S.currentSetUuid);
     host_write_file(sp, '{"v":0}');
     host_write_file(uuidToUiStatePath(S.currentSetUuid), '{"v":0}');

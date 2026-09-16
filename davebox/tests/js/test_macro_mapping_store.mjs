@@ -53,6 +53,10 @@ globalThis.set_led = () => {};
 globalThis.host_ext_midi_remap_clear = () => {};
 globalThis.host_ext_midi_remap_set = () => {};
 globalThis.host_ext_midi_remap_enable = () => {};
+/* The per-project state dir's name is chosen at runtime (dAVEBOx or
+ * dAVEBOx~<n>, the set-folder order fix) — a test that names a project needs
+ * this binding, and the C semantics are "whatever this project already has". */
+globalThis.host_state_subdir = () => 'dAVEBOx';
 
 async function main() {
 await import('../../ui/ui.js');
@@ -60,6 +64,11 @@ const { S } = await import('../../ui/ui_state.mjs');
 const bridge = await import('../../ui/ui_dsp_bridge.mjs');
 const persist = await import('../../ui/ui_persistence.mjs');
 
+/* ⚠ A project must be OPEN for a sidecar path to exist at all: since
+ * 2026-09-16 "no identity" is not a destination, it THROWS. This test is about
+ * the macro store, not about identity, so give it a real project. */
+S.currentSetUuid = 'aaaaaaaa-1111-4bbb-8ccc-00000000ma1';
+S.currentSetName = 'Macro Test';
 const uiPath = persist.uuidToUiStatePath(S.currentSetUuid);
 
 const load = (mac) => { fsFiles[uiPath] = JSON.stringify({ v: 9, mac }); bridge.restoreUiSidecar(false); };

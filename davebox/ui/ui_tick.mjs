@@ -34,11 +34,11 @@ import { morphTick } from './ui_snapmorph.mjs';
 import { reconcileParallelAll, parallelForgetPushed, parallelSweepTick } from './ui_parallel.mjs';
 import { autoBankTick } from './ui_automation_bank.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
-import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, readActiveSet,
+import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, hostIdentity,
     commitSnapshot } from './ui_persistence.mjs';
 import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
          projectPickerTextEntryTick,
-         checkProjectOpened, PROJECT_OPEN_CHECK_TICKS } from './ui_dialogs.mjs';
+         checkProjectOpened } from './ui_dialogs.mjs';
 import { sceneAllQueued, updateSceneMapLEDs } from './ui_scene.mjs';
 import { _padDispatchMutedNow, computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
     syncDrumClipContent } from './ui_drummodel.mjs';
@@ -587,11 +587,11 @@ export function _tickImpl() {
          * applied-claims snapshot on suspend, so the first reconcile after
          * resume re-derives the full declared set. */
         /* Check if the active set changed while we were parked. */
-        const _as = readActiveSet();
+        const _id = hostIdentity();
         const _dspUuid = (host_module_get_param('state_uuid') || '');
-        if (_as.uuid && _dspUuid !== _as.uuid) {
-            S.currentSetUuid = _as.uuid;
-            S.currentSetName = _as.name;
+        if (_id.state === 'open' && _id.uuid && _dspUuid !== _id.uuid) {
+            S.currentSetUuid = _id.uuid;
+            S.currentSetName = _id.name;
             S.pendingSetLoad = true;
         }
         /* Self-heal window: the host's set reload can land seconds AFTER we
@@ -600,9 +600,8 @@ export function _tickImpl() {
          * 2026-08-06). Keep re-checking active_set.txt for a while so a late
          * flip still triggers the reload instead of silently keeping the
          * previous project's data. */
-        S.resumeSetRecheckTicks = 1200;   /* ~13 s @94 Hz, checked every 16 ticks */
-        /* ...and the host's "Move did not open it" verdict, same shape. */
-        S.projectOpenCheckTicks = PROJECT_OPEN_CHECK_TICKS;
+        /* No window to arm: the permanent check below covers a resume the
+         * same way it covers a boot. */
         S.ledInitComplete = false;
         invalidateLEDCache();
         S.ledInitQueue = buildLedInitQueue();
@@ -611,31 +610,23 @@ export function _tickImpl() {
     }
     S._wasSuspended = isSuspended;
 
-    /* Post-resume self-heal: a set switch the host detected LATE flips
-     * active_set.txt after our resume-edge check already passed. Poll it for
-     * a window (cheap: one small file read every 16 ticks) and arm the same
-     * reload path the resume edge uses. Inert once the window expires. */
-    if (S.resumeSetRecheckTicks > 0 && !isSuspended) {
-        S.resumeSetRecheckTicks--;
-        if ((S.resumeSetRecheckTicks & 15) === 0 && !S.pendingSetLoad && !S.projectOpenFailed) {
-            const _las = readActiveSet();
-            if (_las.uuid && _las.uuid !== S.currentSetUuid) {
-                console.log('post-resume set flip: ' + S.currentSetUuid +
-                            ' -> ' + _las.uuid + ' — reloading');
-                S.currentSetUuid = _las.uuid;
-                S.currentSetName = _las.name;
-                S.pendingSetLoad = true;
-                S.resumeSetRecheckTicks = 0;   /* one heal per resume */
-            }
-        }
-    }
-
-    /* PROJECT DID NOT OPEN: poll the host's verdict for a window after
-     * init/resume (one small file read every 16 ticks, inert afterwards). */
-    if (S.projectOpenCheckTicks > 0 && !isSuspended) {
-        S.projectOpenCheckTicks--;
-        if ((S.projectOpenCheckTicks & 15) === 0) checkProjectOpened();
-    }
+    /* ⭑⭑ THE TWO HEAL WINDOWS ARE GONE (2026-09-16).
+     *
+     * There used to be two: one re-reading the boot record for ~13 s after a
+     * resume, and one polling the "did it open" verdict for ~34 s after
+     * init/resume. Both existed because the answer used to arrive LATE and by
+     * inference — so the code had to keep looking, and had to guess how long to
+     * keep looking for. Everything outside those windows was simply missed.
+     *
+     * The host now decides identity from Move's own word and publishes a state
+     * that includes `pending`, so waiting is a state rather than a gap in
+     * coverage. What is left is one cheap read of an in-memory param every 16
+     * ticks, forever — no window to expire, no flip to miss, and a change that
+     * lands minutes in is handled exactly like one that lands at boot.
+     *
+     * ⚠ `checkProjectOpened` also adopts a LATE `open` (its first branch), so
+     * the resume-flip case the first window existed for is covered here too. */
+    if (!isSuspended && (S.tickCount & 15) === 0) checkProjectOpened();
 
     /* Age the select-handoff window. Observed handoff on hardware: ~6.5 s from
      * arm to resume (walk Move into its overview, replay the pad, load the set,
