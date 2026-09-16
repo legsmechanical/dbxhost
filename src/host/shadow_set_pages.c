@@ -17,6 +17,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <time.h>
+#include "unified_log.h"
 
 #include "shadow_set_pages.h"
 #include "shadow_chain_mgmt.h"  /* MASTER_FX_SLOTS — its own axis, see the seed loops */
@@ -639,6 +640,27 @@ static void identity_tick(int hint_index, const char *hint_name)
     if (rec.state != LOADED_SET_PENDING) identity_have_request = 0;
 
     if (identity_ever_published && !identity_record_differs(&rec, &identity_published)) return;
+
+    /* One line per CHANGE — not per tick, so this is a handful of lines per
+     * session. Identity was the least legible thing in this system: the
+     * 2026-09-16 data loss ran for two whole sessions and the logs said
+     * nothing, because nobody logs a value that looks fine. A state machine
+     * that never says which state it is in reproduces exactly that.
+     *
+     * `elapsed` is measured from the arm, so this line is also the measurement
+     * of how long Move takes to answer — the number the request timeout should
+     * be set from, instead of the guess it currently is. */
+    unified_log("shim", LOG_LEVEL_INFO,
+                "identity: %s%s%s uuid=%s name=%s index=%d elapsed=%ldms%s",
+                loaded_set_state_str(rec.state),
+                rec.reason != LOADED_SET_REASON_NONE ? "/" : "",
+                loaded_set_reason_str(rec.reason),
+                rec.uuid[0] ? rec.uuid : "-",
+                rec.name[0] ? rec.name : "-",
+                rec.index,
+                (long)(loaded_set_now_ms() - identity_arm_ms),
+                in.have_request ? " (requested)" : "");
+
     identity_published = rec;
     identity_ever_published = 1;
 
@@ -779,7 +801,16 @@ void shadow_poll_current_set(void)
                 /* The resolver matched a dir. That is a HINT — it says which
                  * dir carries this index, never which set Move is holding.
                  * The gate decides. */
-                identity_hint_index = song_index;
+                if (identity_hint_index != song_index) {
+                    identity_hint_index = song_index;
+                    /* The resolver answered. It is a HINT and never a state —
+                     * logged so the gap between it and Move's own word can be
+                     * measured, which is what decides whether keeping the
+                     * resolver buys anything at all. */
+                    unified_log("shim", LOG_LEVEL_INFO,
+                                "identity: hint index=%d dir=%s (resolver, NOT confirmation)",
+                                song_index, sub->d_name);
+                }
                 identity_tick(song_index, sub->d_name);
             } else {
                 loaded_verify_active = 0;
