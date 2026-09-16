@@ -103,5 +103,28 @@ for fn in identity_read_and_consume_request shadow_set_identity_arm identity_tic
     else note "control: $fn not found — the checks above matched nothing"; fi
 done
 
+# 5. ⭑⭑ THE MACHINE MUST TICK ON EVERY POLL, not only when the index moves.
+#
+#    Device, 2026-09-16: a whole session produced no identity line and saved
+#    nothing. The gate was inside the resolver's directory scan, which the poll
+#    SKIPS when Move's song index has not changed since the shim last saw it —
+#    so identity depended on the index MOVING, and a session that opened the
+#    project the shim already knew about never published at all.
+#
+#    The machine is driven by Move's log line and by elapsed time. Neither has
+#    anything to do with the index changing.
+#
+#    ⚠ Every other test here exercises the machine's LOGIC and passed happily
+#    while nothing called it. This pin exists because "it is correct" and "it
+#    runs" are different claims.
+poll=$(awk '/^void shadow_poll_current_set/,/^}/' "$f")
+tick_line=$(printf '%s\n' "$poll" | grep -n "identity_tick(" | head -1 | cut -d: -f1)
+guard_line=$(printf '%s\n' "$poll" | grep -n "song_index == sampler_last_song_index" | head -1 | cut -d: -f1)
+if [ -n "$tick_line" ] && [ -n "$guard_line" ] && [ "$tick_line" -lt "$guard_line" ]; then
+    ok "the machine ticks BEFORE the index-change early return"
+else
+    note "the machine ticks only when the index changes (tick=$tick_line guard=$guard_line) — a session that reopens the same project never publishes"
+fi
+
 if [ "$fail" = 0 ]; then echo "PASS: a request is consumed, never merely ignored"; fi
 exit "$fail"

@@ -733,6 +733,25 @@ void shadow_poll_current_set(void)
 
     if (song_index < 0) return;
 
+    /* ⭑⭑ THE MACHINE TICKS ON EVERY POLL, before any index-change check.
+     *
+     * The gate used to live inside the resolver's directory scan, which is
+     * skipped whenever Move's song index has not changed since the shim last
+     * saw it. That made identity depend on the index MOVING — so a session
+     * that opened the same project the shim already knew about never ticked,
+     * never published, and left the module waiting on a record that was never
+     * written. Caught on device 2026-09-16: a whole session with no identity
+     * line and nothing saved.
+     *
+     * The machine is driven by Move's own log line and by elapsed time, and
+     * neither of those has anything to do with the index changing. So it ticks
+     * here, unconditionally, using whatever the resolver last hinted. The
+     * resolver below still refines the hint when it does rescan.
+     *
+     * (Cheap: the tick reads one small file and returns early unless the
+     * answer actually changed.) */
+    identity_tick(song_index, NULL);
+
     /* Normal path: react when index changes.
      * Pending path: keep retrying the same unresolved index until a UUID appears. */
     /* Verification in flight for this very index: re-check the launcher's
