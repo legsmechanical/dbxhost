@@ -44,6 +44,27 @@ typedef struct {
     int mask_ok;
 } inherited_t;
 
+/* sigset_t is OPAQUE, so memcmp() is not a valid way to compare two masks.
+ * On macOS it is a 4-byte int and a byte compare happens to work; on
+ * Linux/glibc it is 128 bytes of which only the first 8 are meaningful, and
+ * nothing in the API promises the remaining padding is stable across a
+ * pthread_sigmask() round-trip. That difference is why this case passed
+ * locally and failed on CI. Compare membership signal by signal instead.
+ */
+#ifndef NSIG
+#define NSIG 65
+#endif
+static int masks_equal(const sigset_t *a, const sigset_t *b)
+{
+    for (int s = 1; s < NSIG; s++) {
+        int ina = sigismember(a, s);
+        int inb = sigismember(b, s);
+        if (ina < 0 || inb < 0) continue;   /* not a valid signal here */
+        if (ina != inb) return 0;
+    }
+    return 1;
+}
+
 static void *report_mask(void *arg)
 {
     inherited_t *out = (inherited_t *)arg;
@@ -211,7 +232,7 @@ int main(void)
         pthread_sigmask(SIG_BLOCK, NULL, &after);
         CHECK(!sigismember(&after, SIGTERM),
               "SIGTERM is NOT blocked in the creating thread afterwards");
-        CHECK(memcmp(&before, &after, sizeof(sigset_t)) == 0,
+        CHECK(masks_equal(&before, &after),
               "the creating thread's mask is restored exactly");
     }
 

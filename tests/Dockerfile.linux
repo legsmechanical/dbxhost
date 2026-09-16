@@ -1,0 +1,25 @@
+# Linux parity environment for the host test suite.
+#
+# WHY THIS EXISTS: tests/host/ is compiled and run natively. Locally that is
+# macOS; in CI it is Linux. Types the C standard leaves opaque differ between
+# them — sigset_t is 4 bytes on macOS and 128 on glibc, of which only the first
+# 8 are meaningful — so a test can pass locally and fail in CI with no bug in
+# the code under test. This image lets the suite run on glibc before a push.
+#
+# Mirrors .github/workflows/ci.yml's host-tests job: ubuntu + ripgrep. node is
+# added explicitly because the GitHub runner image ships it ambiently and the
+# job never installs it — ~51 of the .sh tests shell out to node and would
+# otherwise fail here for a reason CI never sees.
+# Built for the host's own architecture, so it runs natively (no emulation).
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential \
+      ripgrep \
+      nodejs \
+      python3 \
+      ca-certificates \
+      git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /repo
