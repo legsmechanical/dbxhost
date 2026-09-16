@@ -650,7 +650,13 @@ static void identity_tick(int hint_index, const char *hint_name)
      * `elapsed` is measured from the arm, so this line is also the measurement
      * of how long Move takes to answer — the number the request timeout should
      * be set from, instead of the guess it currently is. */
-    unified_log("shim", LOG_LEVEL_INFO,
+    /* unified_log_important, not unified_log: this is one line per CHANGE, and
+     * the best-effort logger drops a line whenever another thread holds the
+     * mutex — which at a project switch is exactly when everything else is
+     * logging. A dropped identity event reads as "no change happened", which is
+     * the failure this whole subsystem exists to make impossible. The worker
+     * thread is not the realtime path, so blocking briefly here is legal. */
+    unified_log_important("shim", LOG_LEVEL_INFO,
                 "identity: %s%s%s uuid=%s name=%s index=%d elapsed=%ldms%s",
                 loaded_set_state_str(rec.state),
                 rec.reason != LOADED_SET_REASON_NONE ? "/" : "",
@@ -826,7 +832,7 @@ void shadow_poll_current_set(void)
                      * logged so the gap between it and Move's own word can be
                      * measured, which is what decides whether keeping the
                      * resolver buys anything at all. */
-                    unified_log("shim", LOG_LEVEL_INFO,
+                    unified_log_important("shim", LOG_LEVEL_INFO,
                                 "identity: hint index=%d dir=%s (resolver, NOT confirmation)",
                                 song_index, sub->d_name);
                 }

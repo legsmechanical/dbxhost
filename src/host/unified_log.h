@@ -32,6 +32,19 @@ void unified_log_v(const char *source, int level, const char *fmt, va_list args)
 /* Async-signal-safe crash logger - uses write() only, no mutex, no malloc */
 void unified_log_crash(const char *msg);
 
+/* Log something that MUST NOT be silently lost.
+ *
+ * `unified_log` deliberately drops a message when another thread holds the
+ * mutex — correct, because it can be called from the SPI callback and a stall
+ * there is an audio glitch. But that makes it unfit for a record whose absence
+ * is indistinguishable from the event never happening. The project-identity
+ * events are exactly that: a save going somewhere unexpected produces one line,
+ * and the whole point of it is to be there afterwards.
+ *
+ * ⚠⚠ BLOCKS on the mutex. NEVER call it from the SPI callback or any
+ * realtime path (docs/REALTIME_SAFETY.md). Worker threads only. */
+void unified_log_important(const char *source, int level, const char *fmt, ...);
+
 /* Convenience macros */
 #define LOG_ERROR(src, ...) unified_log(src, LOG_LEVEL_ERROR, __VA_ARGS__)
 #define LOG_WARN(src, ...)  unified_log(src, LOG_LEVEL_WARN, __VA_ARGS__)

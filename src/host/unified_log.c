@@ -68,13 +68,11 @@ static const char *level_str(int level) {
     }
 }
 
-void unified_log_v(const char *source, int level, const char *fmt, va_list args) {
-    /* Non-blocking: skip log message if mutex is held (avoids blocking audio thread).
-     * Log messages are best-effort — dropping one is better than an audio click. */
-    if (pthread_mutex_trylock(&log_mutex) != 0) {
-        return;  /* Mutex held by another thread, drop this message */
-    }
-
+/* Everything that happens with the lock ALREADY held. Split out so the
+ * best-effort and must-not-be-lost entry points differ only in how they take
+ * the lock, and can never drift in format, gating or flushing. */
+static void unified_log_emit_locked(const char *source, int level,
+                                    const char *fmt, va_list args) {
     /* Periodically recheck flag file */
     if (++check_counter >= CHECK_INTERVAL) {
         check_counter = 0;
@@ -105,7 +103,29 @@ void unified_log_v(const char *source, int level, const char *fmt, va_list args)
         fprintf(log_file, "\n");
         fflush(log_file);
     }
+}
+
+void unified_log_v(const char *source, int level, const char *fmt, va_list args) {
+    /* Best-effort: skip the message if the mutex is held. This is called from
+     * the SPI callback, where stalling is an audio glitch, so dropping a line
+     * is the right trade. ⚠ It means a once-per-event line can vanish — use
+     * unified_log_important() for anything whose absence would be read as the
+     * event not having happened. */
+    if (pthread_mutex_trylock(&log_mutex) != 0) {
+        return;
+    }
+    unified_log_emit_locked(source, level, fmt, args);
     pthread_mutex_unlock(&log_mutex);
+}
+
+/* Blocks for the lock. Legal only off the realtime path — see the header. */
+void unified_log_important(const char *source, int level, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    pthread_mutex_lock(&log_mutex);
+    unified_log_emit_locked(source, level, fmt, args);
+    pthread_mutex_unlock(&log_mutex);
+    va_end(args);
 }
 
 void unified_log(const char *source, int level, const char *fmt, ...) {

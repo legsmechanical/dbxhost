@@ -302,6 +302,10 @@ static void *worker_main(void *arg) {
         }
         /* ~1.4 s FS scan normally; every worker tick (~200 ms) while a
          * forced index is pending so a picker selection propagates fast. */
+        /* TEMPORARY PROBE (2026-09-16): separating "the worker loops" from
+         * "the poll is called". shim_worker.c is certainly in the image — it
+         * starts this thread — so if THIS logs and the one inside
+         * shadow_poll_current_set does not, the call is being skipped. */
         if (tick % 7 == 0 || shadow_set_tracking_forced_pending())
             shadow_poll_current_set();
         tick++;
