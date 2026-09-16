@@ -296,6 +296,15 @@ weaken it.
 
 ## 📚 Host reference — architecture, SPI, shadow mode, install layout
 
-Moved to **[`docs/HOST_REFERENCE.md`](docs/HOST_REFERENCE.md)** (2026-09-09): architecture, Move hardware MIDI, the SPI protocol, deployment layout, gain staging, Link Audio, the signal-chain module, shadow mode, module install/update and external module development.
+The **shape** of each subsystem moved to **[`docs/HOST_REFERENCE.md`](docs/HOST_REFERENCE.md)**
+(2026-09-09): architecture, Move hardware MIDI, SPI, deployment layout, gain staging, Link Audio,
+the signal-chain module, shadow mode, module install/update and external module development.
+
+⚠ **It did not absorb the detailed references, and they are not stale.** `docs/SPI_PROTOCOL.md` is
+still the wire reference (buffer layout, MIDI packet formats, cable numbers, display protocol,
+ioctls, constants) against HOST_REFERENCE's single overview section, and `docs/ARCHITECTURE.md` and
+`docs/MIDI_INJECTION.md` are likewise live — 9, 3 and 7 files link to them respectively. Read
+HOST_REFERENCE for the shape, those for the detail. (Checked 2026-09-16, after this line's earlier
+wording was read as "those files are superseded" and nearly cost three live documents.)
 
 This file keeps the RULES; that one keeps the reference. Read it when you need the shape of a subsystem rather than a rule to follow.
