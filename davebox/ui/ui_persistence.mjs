@@ -26,7 +26,7 @@ const STATE_PREFIX = (typeof SEQ8_STATE_PREFIX === 'string') ? SEQ8_STATE_PREFIX
  * is a contract with project-cmd.sh/select-list.sh, pinned by check-config.sh.
  * ⚠ In-session Sets/ is the standalone library (bind-mounted), so these paths
  * only ever land inside dAVEBOx projects. */
-import { setUuidIsProvisional, unopenedSetIndex }
+import { setUuidIsProvisional }
     from '/data/UserData/schwung/shared/session_state.mjs';
 
 const SETS_DIR    = '/data/UserData/UserLibrary/Sets';
@@ -99,30 +99,13 @@ export function uuidToUiStatePath(uuid) {
  * per-install and never crosses. */
 const ACTIVE_SET_PATH = DAVEBOX_HOST_DIR + '/active_set.txt';
 
-/* Read active_set.txt (per-install): line 1 = UUID, line 2 = name. */
-export function readActiveSet() {
-    try {
-        const raw = host_read_file(ACTIVE_SET_PATH);
-        if (!raw) return { uuid: '', name: '', unopenedIndex: -1 };
-        const lines = raw.split('\n');
-        const _u = (lines[0] || '').trim();
-        /* ⚠⚠ A PROVISIONAL identity is reported as NO PROJECT, not as itself.
-         * `__pending-N-M` is the host's placeholder while Move sits on a song
-         * index whose set folder does not exist yet. This is the single choke
-         * point where the uuid enters dAVEBOx (both S.currentSetUuid writes in
-         * ui_tick read it from here), so refusing it here keeps every path
-         * builder, save and snapshot downstream from ever seeing one. */
-        return {
-            uuid: setUuidIsProvisional(_u) ? '' : _u,
-            name: (lines[1] || '').trim(),
-            /* ≥ 0 when the host saw Move fail to open the project at this
-             * index (the placeholder is provisional, so uuid is '' too). */
-            unopenedIndex: unopenedSetIndex(_u)
-        };
-    } catch (e) {
-        return { uuid: '', name: '', unopenedIndex: -1 };
-    }
-}
+/* ⭑ `readActiveSet()` is GONE (2026-09-16). It was the module's own reader of
+ * the host's boot record, and its existence is half of why this went wrong:
+ * the sequencer DSP read the same file independently, so two consumers could
+ * disagree with nothing to reconcile them, and each decoded "no project" its
+ * own way. Identity now enters through hostIdentity() below and nowhere else.
+ * The file itself survives as the host's boot-persistence record, written only
+ * when a project is confirmed open — the module never reads it. */
 
 /* ── IDENTITY ENTERS HERE, AND NOWHERE ELSE ───────────────────────────────
  *

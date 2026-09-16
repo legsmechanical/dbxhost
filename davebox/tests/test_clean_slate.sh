@@ -102,9 +102,20 @@ awk '/^do_delete\(\)/,/^}/' ../standalone/scripts/project-cmd.sh | grep -q 'os.s
 #    (a tap on the "already open" pad just closes the picker) and pointed the
 #    delete guard at the wrong pad, permitting deletion of the LIVE project.
 echo "which project is open:"
-grep -q 'pr.uuid === _as.uuid' ui/ui_dialogs.mjs \
-    && ok "the picker resolves current from active_set.txt by uuid" \
+#    ⭑ STRENGTHENED 2026-09-16: "the host's own record" is now a TYPED state,
+#    and current means CONFIRMED OPEN or nothing. The old rule still allowed a
+#    fallback to Settings.json's index when the record named nothing we knew —
+#    and that index is a guess about which pad Move sits on, never a statement
+#    about which project it opened. It fed the one shortcut in the picker that
+#    loads without making a request, so a tap could load on an unconfirmed
+#    identity. Under `none`, current is -1 and every pick is a new request.
+grep -q "_id.state === 'open'" ui/ui_dialogs.mjs \
+    && grep -q 'pr.uuid === _id.uuid' ui/ui_dialogs.mjs \
+    && ok "the picker resolves current ONLY from a confirmed-open host record" \
     || bad "the picker is back on Settings.json's currentSongIndex — a stale value makes the live project unselectable"
+grep -q 'p.current = -1;' ui/ui_dialogs.mjs \
+    && ok "...and defaults to NO current project, so a pick is always a request" \
+    || bad "the picker still defaults current to a guess"
 grep -q '^ACTIVE_SET_PATH=' ../standalone/scripts/project-cmd.sh \
     && ok "project-cmd declares ACTIVE_SET_PATH" \
     || bad "project-cmd lost ACTIVE_SET_PATH"
