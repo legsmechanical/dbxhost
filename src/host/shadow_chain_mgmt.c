@@ -2186,6 +2186,16 @@ int shadow_handle_slot_param_get(int slot, const char *key, char *buf, int buf_l
         return snprintf(buf, buf_len, "%s\n%s",
                         sampler_current_set_uuid, sampler_current_set_name);
     }
+    /* [FORK-ONLY] The TYPED identity record: `<state>\n<reason>\n<index>`.
+     *
+     * Additive sibling of `active_set`, which keeps its exact upstream shape.
+     * The pair is deliberate: `active_set` says WHICH project (and is empty
+     * unless one is confirmed open), this says WHETHER one is and why not —
+     * so no consumer has to infer a state by decoding a name, which is the
+     * mistake the `__pending-` namespace institutionalised. */
+    if (strcmp(key, "active_set_state") == 0) {
+        return shadow_set_identity_state(buf, (size_t)buf_len);
+    }
     return -1;
 }
 

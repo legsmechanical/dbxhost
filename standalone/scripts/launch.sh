@@ -628,15 +628,21 @@ setsid --wait bash -c '
             sed "s/\(\"currentSongIndex\":[[:space:]]*\)-\{0,1\}[0-9][0-9]*/\1$_rsi/" \
               /data/UserData/settings/Settings.json > /data/UserData/settings/Settings.json.dbxtmp \
               && mv -f /data/UserData/settings/Settings.json.dbxtmp /data/UserData/settings/Settings.json
-            # S4b: the pad the user actually chose, for the host to verify
-            # against (shadow_loaded_set_policy.h loaded_set_index_matches)
-            # -- Move is free to reject this set and settle on a DIFFERENT
-            # real project of its own, and only THIS file still remembers
-            # what was asked for. Left in place (not removed) after this
-            # relaunch: it stays correct until the next relaunch overwrites
-            # it, and a cold session with no relaunch yet leaves it absent,
-            # which the host reads as "nothing pinned -- trust the scan".
-            echo "$_rsi" > "$DBX_DIR/move_intended_index.txt"
+            # NOTHING IS WRITTEN HERE ANY MORE (2026-09-16).
+            # This used to record the pad, so the host could check whether Move
+            # landed on it. That was half a request: the index alone cannot say
+            # WHICH project was wanted, and it was left on disk afterwards, so a
+            # later in-process switch got judged against a pad nobody was asking
+            # for. Two request records that can disagree, where one will do.
+            # dAVEBOx now writes the whole request -- uuid, index and name -- at
+            # the moment of the pick, into intended_set.txt, and the shim
+            # CONSUMES it. That file is already on disk before this relaunch and
+            # survives it untouched, so re-stating the index here would only
+            # give the two records a chance to differ.
+            # A relaunch nobody requested a project for (the select hook
+            # rewiring a set) simply leaves no request, and the machine then
+            # treats whatever Move opens as what is open -- which is correct,
+            # because nothing specific was asked for.
             echo "applied project index $_rsi"
             ;;
         esac

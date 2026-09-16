@@ -4,6 +4,8 @@
 #ifndef SHADOW_SET_PAGES_H
 #define SHADOW_SET_PAGES_H
 
+#include <stddef.h>   /* size_t, for shadow_set_identity_state */
+
 #include <stdint.h>
 #include "shadow_constants.h"
 #include "shadow_chain_types.h"
@@ -39,7 +41,13 @@
  * place across the whole session until the next relaunch overwrites it;
  * ABSENT = no relaunch has pinned an index yet, trust the scan as-is. See
  * loaded_set_index_matches() in shadow_loaded_set_policy.h. */
-#define MOVE_INTENDED_INDEX_PATH SCHWUNG_INSTALL_DIR "/move_intended_index.txt"
+/* dAVEBOx's REQUEST: the project it deliberately switched to, written at the
+ * moment of the pick (when the answer is known rather than inferred) and
+ * CONSUMED by the shim when it arms. One record, four fields:
+ *   uuid\nindex\nname\nseq
+ * It replaces move_intended_index.txt, which carried only the index — two
+ * request records that could disagree, where one will do. */
+#define MOVE_INTENDED_SET_PATH SCHWUNG_INSTALL_DIR "/intended_set.txt"
 
 /* ============================================================================
  * Callback struct - shim functions set pages needs
@@ -112,5 +120,21 @@ int shadow_set_tracking_forced_pending(void);
  * (cheap; calls shadow_handle_set_loaded, which dedupes). The filesystem
  * scan itself (shadow_poll_current_set) runs on the shim worker. */
 void shadow_set_pages_consume(void);
+
+/* ── Identity (the 2026-09-16 state machine) ──────────────────────────────
+ *
+ * Arm a request: a switch has been set in motion and we are now waiting for
+ * Move's own word about it. Called from the two places a switch actually
+ * starts — the relaunch boot and the in-place select actuator. It reads and
+ * CONSUMES dAVEBOx's intended_set.txt and records the reader's counter, which
+ * is what lets a later line be recognised as newer than the request. */
+void shadow_set_identity_arm(void);
+
+/* The typed record behind get_param("active_set_state"):
+ *   <state>\n<reason>\n<index>
+ * where state is open|pending|none. ⚠ A uuid exists ONLY when state is open —
+ * `pending` and `none` publish an empty identity on purpose, so nothing
+ * downstream can name a project Move has not confirmed. */
+int shadow_set_identity_state(char *out, size_t out_len);
 
 #endif /* SHADOW_SET_PAGES_H */
