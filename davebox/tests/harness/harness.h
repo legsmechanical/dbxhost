@@ -22,7 +22,11 @@ typedef struct {
     if (!(cond)) { fprintf(stderr, "FAIL: %s (%s:%d)\n", (msg), __FILE__, __LINE__); exit(1); } \
 } while (0)
 
-static inline hx_t *hx_create(const char *json_defaults) {
+/* create_instance EXACTLY as the host calls it: no identity, no state path,
+ * awaiting_select armed. Use this only to assert what a fresh instance IS —
+ * every other test wants hx_create() below, because an instance in that state
+ * refuses every save and a test that saves would pin nothing. */
+static inline hx_t *hx_create_raw(const char *json_defaults) {
     static hx_t h;
     host_api_v1_t *host = hx_stub_host();
     h.api = move_plugin_init_v2(host);
@@ -31,6 +35,18 @@ static inline hx_t *hx_create(const char *json_defaults) {
     hx_stub_set_bpm(120.0f);   /* fresh instance => default tempo (capture clears are independent) */
     h.inst = h.api->create_instance(".", json_defaults);
     return h.inst ? &h : NULL;
+}
+
+/* A LIVE instance — what every test that is not about identity means by "an
+ * instance". The DSP no longer resolves a project for itself, so on device it
+ * sits at defaults and refuses to save until JS sends `state_load <uuid>`;
+ * lifting awaiting_select here stands in for that load without dragging a real
+ * Sets/<uuid>/ tree into every unrelated test. The path is still whatever the
+ * test names, exactly as before. */
+static inline hx_t *hx_create(const char *json_defaults) {
+    hx_t *h = hx_create_raw(json_defaults);
+    if (h) ((seq8_instance_t *)h->inst)->awaiting_select = 0;
+    return h;
 }
 static inline void hx_destroy(hx_t *h) {
     if (h && h->api && h->inst) h->api->destroy_instance(h->inst);

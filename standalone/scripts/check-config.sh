@@ -129,7 +129,17 @@ check "davebox ui_tick exit-to-stock"  "$DBX/ui/ui_tick.mjs"     "sh $DBX_DIR/sc
 # (A "seq8.c set_pages dir" pin lived here until 2026-08-12. The 8-page set
 # stash died in P3 and nothing writes one, so seq8.c no longer carries that
 # literal — the pin outlived the path it was pinning.)
-check "davebox seq8.c select marker"   "$DBX/dsp/seq8.c"         "\"$DBX_DIR/fresh_session\""
+# The select marker is now read only by the JS half — the DSP stopped resolving
+# its own identity, so its copy of this literal went with the read. The marker
+# itself is unchanged: the launcher still writes it and ui.js still consumes it.
+check "davebox ui.js select marker"    "$DBX/ui/ui.js"           "DAVEBOX_HOST_DIR + '/fresh_session'"
+# The DSP's own files — its log and the quarantine a no-identity save parks in —
+# must hang off THIS install dir. The log lived in the STOCK tree until
+# 2026-09-16 and was the last dAVEBOx file there; nothing pinned it, which is
+# why it survived every other pass over this list.
+check "davebox seq8.c install dir"     "$DBX/dsp/seq8.c"         "\"$DBX_DIR\""
+check "davebox seq8.c log path"        "$DBX/dsp/seq8.c"         'SEQ8_DBX_DIR "/" SEQ8_STATE_PREFIX ".log"'
+check "davebox seq8.c quarantine"      "$DBX/dsp/seq8.c"         'SEQ8_DBX_DIR "/quarantine"'
 
 # The SHM namespace, not just the install dir. launch.sh clears the namespace on
 # both edges; if DBX_SHM_PREFIX changes and these do not, the host builds with a

@@ -1,29 +1,20 @@
 /* tests/test_select_before_load.c — SELECT-BEFORE-LOAD.
  *
- * The session marker means "the user has not chosen a project yet", so
- * create_instance comes up EMPTY and every save path is refused until a real
- * load lands. The refusal is the whole point: an unloaded instance holds
- * defaults, and letting it serialize would overwrite the boot project's state
- * file with an empty one — silent, total data loss on a session the user never
- * opened. These assertions are the guard rail for that, so treat a failure
- * here as "we are about to eat someone's work", not as a stale pin.
+ * EVERY instance is born not knowing which project it is in, so create_instance
+ * comes up EMPTY and every save path is refused until a real load lands. The
+ * refusal is the whole point: an unloaded instance holds defaults, and letting
+ * it serialize would overwrite a real project's state file with an empty one —
+ * silent, total data loss on a session the user never opened. These assertions
+ * are the guard rail for that, so treat a failure here as "we are about to eat
+ * someone's work", not as a stale pin.
  *
- * SEQ8_SELECT_MARKER is redirected to a temp path below (seq8.c guards the
- * define with #ifndef) so the test never touches a device path. */
-#define SEQ8_SELECT_MARKER "/tmp/davebox-tests/select-marker"
-#define SEQ8_ACTIVE_SET_PATH "/tmp/davebox-tests/select-active-set.txt"
-
+ * ⚠ The boot cases use hx_create_raw(), the untouched create_instance result.
+ * hx_create() lifts awaiting_select on behalf of tests that are not about
+ * identity, and would hide the very thing this file pins. */
 #include "harness.h"
 #include <unistd.h>
 
 #define STATE_TMP "/tmp/davebox-tests/select-state.json"
-
-static void marker_write(const char *body) {
-    FILE *f = fopen(SEQ8_SELECT_MARKER, "w");
-    HX_ASSERT(f, "cannot write marker");
-    if (body && *body) fputs(body, f);
-    fclose(f);
-}
 
 static char *slurp(const char *path, long *len_out) {
     FILE *f = fopen(path, "r");
@@ -41,7 +32,6 @@ static char *slurp(const char *path, long *len_out) {
 }
 
 int main(void) {
-    unlink(SEQ8_SELECT_MARKER);
     unlink(STATE_TMP);
 
     /* --- A real project on disk: populate an ordinary instance and save it. --- */
@@ -51,8 +41,6 @@ int main(void) {
         hx_t *h = hx_create(NULL);
         HX_ASSERT(h, "create A failed");
         seq8_instance_t *inst = (seq8_instance_t *)h->inst;
-        HX_ASSERT(inst->awaiting_select == 0,
-                  "no marker => ordinary boot, must NOT be awaiting");
 
         /* Something recognizable that survives serialize/load. */
         hx_set_param(h, "bpm", "137");
@@ -65,13 +53,17 @@ int main(void) {
         hx_destroy(h);
     }
 
-    /* --- Marker present: create_instance must skip the load entirely. --- */
-    marker_write("1\n");
-    hx_t *h = hx_create(NULL);
+    /* --- The ordinary boot: create_instance skips the load, unconditionally,
+     * and resolves NO identity of its own. --- */
+    hx_t *h = hx_create_raw(NULL);
     HX_ASSERT(h, "create B failed");
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     HX_ASSERT(inst->awaiting_select == 1,
-              "marker present => must come up awaiting selection");
+              "a fresh instance must come up awaiting selection");
+    HX_ASSERT(inst->state_path[0] == '\0',
+              "a fresh instance must have NO state path — there is no fallback file");
+    HX_ASSERT(inst->state_uuid[0] == '\0',
+              "a fresh instance must have NO identity — the DSP never resolves one");
 
     strncpy(inst->state_path, STATE_TMP, sizeof(inst->state_path) - 1);
 
@@ -133,8 +125,7 @@ int main(void) {
      * — otherwise the user records into it and every save is silently dropped. */
     {
         hx_destroy(h);
-        marker_write("1\n");
-        hx_t *h2 = hx_create(NULL);
+        hx_t *h2 = hx_create_raw(NULL);
         HX_ASSERT(h2, "create C failed");
         seq8_instance_t *i2 = (seq8_instance_t *)h2->inst;
         HX_ASSERT(i2->awaiting_select == 1, "C should start awaiting");
@@ -160,8 +151,7 @@ int main(void) {
         fputs("{\"v\":1}", bf);
         fclose(bf);
 
-        marker_write("1\n");
-        hx_t *h4 = hx_create(NULL);
+        hx_t *h4 = hx_create_raw(NULL);
         HX_ASSERT(h4, "create E failed");
         seq8_instance_t *i4 = (seq8_instance_t *)h4->inst;
         HX_ASSERT(i4->awaiting_select == 1, "E should start awaiting");
@@ -181,25 +171,12 @@ int main(void) {
         unlink(badpath);
     }
 
-    /* A spent (blanked) marker is not a selection request — JS blanks it to
-     * consume, and a later create_instance must boot normally. */
-    {
-        marker_write("");
-        hx_t *h3 = hx_create(NULL);
-        HX_ASSERT(h3, "create D failed");
-        seq8_instance_t *i3 = (seq8_instance_t *)h3->inst;
-        HX_ASSERT(i3->awaiting_select == 0,
-                  "an empty marker is spent and must boot normally");
-        hx_destroy(h3);
-    }
-
     /* --- PROJECT DID NOT OPEN: a LIVE instance is put back into the refusing
      * state by JS (set_param awaiting_select=1) when Move turns out to hold a
      * different set. Every save must stop — the explicit one AND the one
      * destroy_instance makes on the relaunch that follows — and only a load may
      * lift it, so a "0" is ignored. --- */
     {
-        unlink(SEQ8_SELECT_MARKER);
         hx_t *h5 = hx_create(NULL);
         HX_ASSERT(h5, "create h5 failed");
         seq8_instance_t *i5 = (seq8_instance_t *)h5->inst;
@@ -226,25 +203,7 @@ int main(void) {
         free(base);
     }
 
-    /* --- A provisional identity in active_set.txt is NO project: the fresh
-     * instance must not adopt it as its state path (a save would then create
-     * Sets/__pending-.../ in the library). --- */
-    {
-        FILE *af = fopen(SEQ8_ACTIVE_SET_PATH, "w");
-        HX_ASSERT(af, "cannot write active set");
-        fputs("__pending-unopened-31-1\nProject 32\n", af);
-        fclose(af);
-        hx_t *h6 = hx_create(NULL);
-        HX_ASSERT(h6, "create h6 failed");
-        seq8_instance_t *i6 = (seq8_instance_t *)h6->inst;
-        HX_ASSERT(i6->state_uuid[0] == '\0', "a provisional uuid was adopted as state_uuid");
-        HX_ASSERT(!strstr(i6->state_path, "__pending-"), "a provisional uuid was built into state_path");
-        hx_destroy(h6);
-        unlink(SEQ8_ACTIVE_SET_PATH);
-    }
-
     free(ref);
-    unlink(SEQ8_SELECT_MARKER);
     printf("PASS: select-before-load — empty instance never overwrites a project\n");
     return 0;
 }

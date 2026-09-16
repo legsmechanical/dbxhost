@@ -100,11 +100,31 @@
 #define SEQ8_SET_STATE_ROOT     SEQ8_SETS_DIR
 #endif
 
-#ifndef SEQ8_ACTIVE_SET_PATH
-#define SEQ8_ACTIVE_SET_PATH    "/data/UserData/dbx-host/active_set.txt"
+/* ⭑ THIS BUILD'S OWN TREE, and nothing of ours lives outside it. The install
+ * dir is the one declared in standalone/config.sh (DBX_DIR); check-config.sh
+ * pins this literal against it, as it does the JS half's copies. The DSP cannot
+ * source that file — its Docker build sees only davebox/ — so the constant is
+ * carried and pinned rather than discovered.
+ *
+ * ⚠ The log used to be written into the STOCK install, which we do not own and
+ * must never write to; it was the last dAVEBOx file left there. Anything new
+ * belongs here. */
+#ifndef SEQ8_DBX_DIR
+#define SEQ8_DBX_DIR            "/data/UserData/dbx-host"
 #endif
 
-#define SEQ8_LOG_PATH           "/data/UserData/schwung/" SEQ8_STATE_PREFIX ".log"
+#ifndef SEQ8_LOG_PATH
+#define SEQ8_LOG_PATH           SEQ8_DBX_DIR "/" SEQ8_STATE_PREFIX ".log"
+#endif
+
+/* Where a save with NO identity is PARKED rather than dropped or guessed at.
+ * See seq8_save_state: this should be unreachable, and exists because a parked
+ * file can still be recovered while a refused save is gone for good. Never
+ * auto-adopted — nothing in the DSP or JS ever reads this directory back. */
+#ifndef SEQ8_QUARANTINE_DIR
+#define SEQ8_QUARANTINE_DIR     SEQ8_DBX_DIR "/quarantine"
+#endif
+
 /* Chunk size for the chunked state readback. Must leave room for the caller's
  * NUL inside the shadow parameter transport (SHADOW_PARAM_VALUE_LEN, 128 KB
  * since the v1.3.0 port of upstream #444; it was 64 KB when this was written);
@@ -112,7 +132,13 @@
  * and the protocol does not depend on the transport's exact size. */
 #define SEQ8_STATE_CHUNK_MAX 32768u
 
-#define SEQ8_STATE_PATH_FALLBACK "/data/UserData/schwung/" SEQ8_STATE_PREFIX "-state.json"
+/* ⛔ THERE IS NO FALLBACK STATE FILE. One lived here and WAS the bug: it made
+ * "no project" a legal save destination, so a session that never resolved an
+ * identity ran happily against an install-wide file (in the stock tree, no
+ * less) and the project's own state was never touched once. An
+ * instance with no identity now has NO path at all — saving parks (see
+ * seq8_save_state) and loading is refused. Do not reintroduce a default. */
+
 /* Sets/<uuid>/<state dir>/<prefix>-state.json. create = 0 resolves an existing
  * state dir (or names the default, making nothing); create = 1 runs the
  * chooser when none exists yet — every SAVE passes 1, so the first save of a
@@ -127,15 +153,14 @@ static void seq8_set_state_path(char *out, size_t sz, const char *uuid, int crea
 }
 #define SEQ8_SNAP_PREFIX        SEQ8_STATE_PREFIX "-snap-"
 
-/* SELECT-BEFORE-LOAD marker, written by the SA launcher at session entry and
- * removed on its relaunch branch (so a project switch never re-asks). Its
- * presence at create_instance means "the user has not chosen a project yet":
- * skip the state load entirely and come up empty. The JS side consumes the
- * marker in init() — DSP reads it first, since create_instance runs before
- * init(). Absent (stock host, or any relaunch) = load normally, as always. */
-#ifndef SEQ8_SELECT_MARKER
-#define SEQ8_SELECT_MARKER      "/data/UserData/dbx-host/fresh_session"
-#endif
+/* ⛔ THE DSP NO LONGER RESOLVES ITS OWN IDENTITY. It used to read the session
+ * marker (fresh_session) and active_set.txt at create_instance and decide for
+ * itself which project it was in — a second, independent answer to a question
+ * the host now answers once, typed, for everyone. It always starts awaiting a
+ * selection with no path; JS issues the `state_load` on a CONFIRMED identity
+ * and that is the only thing that makes a project live. The marker file itself
+ * still exists and is still the launcher's word to the JS half — it is only the
+ * DSP's reading of it that is gone. */
 
 #define NUM_TRACKS          8
 #define NUM_CLIPS           16
@@ -1105,9 +1130,9 @@ typedef struct {
     uint8_t state_version_mismatch;
 
     /* SELECT-BEFORE-LOAD: 1 = create_instance deliberately did NOT load state, so
-     * this instance holds defaults and NO project is live. Armed when the session
-     * marker (SEQ8_SELECT_MARKER) is present at create_instance; cleared by the
-     * first seq8_load_state. While set, saving is suppressed EVERYWHERE — an empty
+     * this instance holds defaults and NO project is live. Armed unconditionally
+     * at create_instance — the DSP never resolves its own identity — and cleared
+     * by the first seq8_load_state. While set, saving is suppressed EVERYWHERE — an empty
      * instance must never serialize over a real project's state file. JS reads it
      * via get_param("awaiting_select") and keeps its own surfaces in step; the DSP
      * is the single source of truth for "is anything loaded". */
@@ -4525,37 +4550,16 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
     memset(inst->pad_source_scratch, 0, sizeof(inst->pad_source_scratch)); /* PAD_SRC_NORMAL */
     memset(inst->drum_vel_zone_armed, 0, sizeof(inst->drum_vel_zone_armed));
     memset(inst->drum_last_vel_zone, 0, sizeof(inst->drum_last_vel_zone));
-    strncpy(inst->state_path, SEQ8_STATE_PATH_FALLBACK, sizeof(inst->state_path) - 1);
-
-    /* Resolve per-set state path from active_set.txt.
+    /* NO IDENTITY, NO PATH, NOTHING LOADED. A fresh instance knows nothing
+     * about which project it belongs to and does not go looking: it opens no
+     * file here, and `state_path`/`state_uuid` stay empty (calloc'd above).
      *
-     * ⚠ THIS INSTALL'S copy (fixed in Phase B, 2026-08-12). This read pointed
-     * at the STOCK tree's active_set.txt for its whole life — a file of the
-     * same name holding a different host's leftovers, the
-     * two-install-trees trap. It never bit only because SELECT-BEFORE-LOAD
-     * has JS set state_path explicitly before anything loads; a latent wrong
-     * path is still a wrong path. host active_set.txt is written by
-     * shadow_ui.js on every SET_CHANGED (HOST_STATE_ROOT + "/active_set.txt"). */
-    {
-        char uuid[128] = {0};
-        FILE *uf = fopen(SEQ8_ACTIVE_SET_PATH, "r");
-        if (uf) {
-            if (fgets(uuid, sizeof(uuid), uf)) {
-                int i = (int)strlen(uuid) - 1;
-                while (i >= 0 && (uuid[i] == '\n' || uuid[i] == '\r' || uuid[i] == ' '))
-                    uuid[i--] = '\0';
-            }
-            fclose(uf);
-        }
-        /* ⚠ A PROVISIONAL identity (`__pending-…`, including the host's
-         * "Move did not open it" `__pending-unopened-…`) is NO project: a state
-         * path built from it makes a fake project dir in the set library on the
-         * first save. Same rule as shared/session_state.mjs. */
-        if (uuid[0] && strncmp(uuid, "__pending-", 10) != 0) {
-            seq8_set_state_path(inst->state_path, sizeof(inst->state_path), uuid, 0);
-            snprintf(inst->state_uuid, sizeof(inst->state_uuid), "%s", uuid);
-        }
-    }
+     * This replaces a read of the host's identity pointer plus a prefix test
+     * for a provisional uuid — the DSP deciding, from a file, which project it
+     * was in. Two parties answering the same question is how a session ends up
+     * saving somewhere nobody chose. JS drives every load now, off a
+     * Move-CONFIRMED identity, and `awaiting_select` below is what makes the
+     * gap between create_instance and that load safe rather than merely quiet. */
 
     /* Unique nonce: JS polls this to detect DSP hot-reload */
     inst->instance_nonce = (uint32_t)time(NULL) ^ (uint32_t)((uintptr_t)inst >> 3);
@@ -4619,21 +4623,16 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
         inst->tick_delta = (uint32_t)((double)MOVE_FRAMES_PER_BLOCK * init_bpm * (double)PPQN);
     }
 
-    /* SELECT-BEFORE-LOAD: with the session marker present the user has not yet
-     * chosen a project, so nothing is loaded — the instance stays at defaults
-     * and every save path is suppressed until a real state_load arrives (which
-     * is what clears the flag). Without the marker this is the ordinary boot. */
-    {
-        FILE *mf = fopen(SEQ8_SELECT_MARKER, "r");
-        if (mf) {
-            int c = fgetc(mf);      /* the launcher writes a non-empty marker;
-                                     * JS blanks it to consume, so empty = spent */
-            fclose(mf);
-            if (c != EOF) inst->awaiting_select = 1;
-        }
-    }
-    if (!inst->awaiting_select)
-        seq8_load_state(inst);
+    /* SELECT-BEFORE-LOAD is now the ONLY way an instance is born. Nothing is
+     * loaded here under any circumstance, so the instance holds defaults and
+     * every save path is suppressed until a real `state_load` arrives — which
+     * is the one thing that clears this flag.
+     *
+     * Previously this was conditional on a marker file, and the else branch
+     * loaded whatever path the identity read above had produced. That made an
+     * unconfirmed guess indistinguishable from a chosen project.
+     * There is no else branch left to get wrong. */
+    inst->awaiting_select = 1;
 
     /* Default track 0 to drum mode if no tracks loaded as drum.
      * Matches the JS first-run default (restoreUiSidecar else branch).
