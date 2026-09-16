@@ -36,15 +36,14 @@ jobs:
       - name: C unit tests (MPSC writer, etc.)
         run: make -C tests/host test
       - name: Contract / invariant / native-compile tests
-      - name: Ungated suites vs known-failing list
-        run: bash tests/run-ungated.sh
-
         run: |
           set -e
           for t in tests/host/*.sh; do
             echo "== $t"
             bash "$t"
           done
+      - name: Ungated suites vs known-failing list
+        run: bash tests/run-ungated.sh
 
   # ------------------------------------------------------------ davebox-tests
   # The davebox half of the deliverable (davebox/ subtree). Same shape as
