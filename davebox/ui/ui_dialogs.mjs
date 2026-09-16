@@ -1177,11 +1177,11 @@ function _pppDoRename_impl(k, name) {
         S.screenDirty = true;
         saveState();
         showActionPopup('RENAMING', 'RESTARTING');
-        host_system_cmd('sh ' + PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed) +
+        host_system_cmd('DBX_OPEN_UUID=' + (S.currentSetUuid || '') + ' sh ' + PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed) +
                         (S.awaitingProjectSelect ? ' reselect' : ''));
         return;
     }
-    host_system_cmd('sh ' + PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed));
+    host_system_cmd('DBX_OPEN_UUID=' + (S.currentSetUuid || '') + ' sh ' + PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed));
     const d = _pppRunList();
     if (d) _pppApplyList(p, d);
     const now = p.byIndex[k];
@@ -1358,7 +1358,11 @@ function _projectPadPickerTap_impl(k) {
                 p.deleteIdx = -1;
                 S.screenDirty = true;
                 showActionPopup('DELETING', 'RESTARTING');
-                host_system_cmd('sh ' + PROJECT_CMD + ' delete ' + k);
+                /* Tell the script what we know rather than letting it
+                 * re-derive it from the boot record, which is silent
+                 * until Move confirms. See do_delete in project-cmd.sh. */
+                host_system_cmd('DBX_OPEN_UUID=' + (S.currentSetUuid || '') +
+                                ' sh ' + PROJECT_CMD + ' delete ' + k);
                 return;
             }
             p.deleteIdx = k;

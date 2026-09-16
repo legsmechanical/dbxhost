@@ -657,8 +657,18 @@ do_delete() { # index
     # from loading it — the same shape as a fresh install. The guard below still
     # stands for every path that has NOT arranged this — it is the accident that
     # is refused, not the intent.
-    _open_del=""
-    [ -f "$ACTIVE_SET_PATH" ] && _open_del="$(head -n 1 "$ACTIVE_SET_PATH" | tr -d '[:space:]')"
+    # ⭑⭑ THE CALLER SAYS which project is open; the boot record is a FALLBACK.
+    #
+    # dAVEBOx knows what it has loaded. This script was re-deriving the same
+    # answer from active_set.txt, which since 2026-09-16 is written ONLY once
+    # Move has confirmed a project -- so in an unconfirmed window it is stale
+    # or silent, and the fall-through is the IMMEDIATE path: removing the
+    # directory underneath a live session. Two independent deciders for one
+    # question is the shape that caused the loss this work exists to fix, and
+    # fixing only the JS half would have left this one still guessing.
+    _open_del="${DBX_OPEN_UUID:-}"
+    [ -z "$_open_del" ] && [ -f "$ACTIVE_SET_PATH" ] && \
+        _open_del="$(head -n 1 "$ACTIVE_SET_PATH" | tr -d '[:space:]')"
     if [ -n "$_open_del" ] && [ -d "$SETS_DIR/$_open_del" ] && \
        [ "$(song_index "$SETS_DIR/$_open_del")" = "$1" ]; then
         _next_idx="$(python3 - "$SETS_DIR" "$_open_del" <<'PYEOF'
@@ -855,8 +865,10 @@ PYEOF
     _old="$(printf '%s\n' "$_found" | sed -n 2p)"
     [ "$_old" = "$2" ] && { do_list; return 0; }
 
-    _open=""
-    [ -f "$ACTIVE_SET_PATH" ] && _open="$(head -n 1 "$ACTIVE_SET_PATH" | tr -d '[:space:]')"
+    # Same rule as do_delete: the caller's word first, the boot record second.
+    _open="${DBX_OPEN_UUID:-}"
+    [ -z "$_open" ] && [ -f "$ACTIVE_SET_PATH" ] && \
+        _open="$(head -n 1 "$ACTIVE_SET_PATH" | tr -d '[:space:]')"
     if [ "$_uuid" = "$_open" ]; then
         # OPEN project: defer the mv to the launcher (post-exit), then restart
         # Move in place at the same index — do_switch's exact shape. Append to
