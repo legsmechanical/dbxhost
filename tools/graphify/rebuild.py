@@ -36,6 +36,26 @@ CODE_ROOTS = ["src", "davebox", "standalone", "schwung-manager", "tests", "tools
 EXCLUDE_PARTS = {"dist", "node_modules", "build", ".git", "__pycache__", "vendor", "libs"}
 EXCLUDE_SUFFIX = (".min.js", ".bundle.js")
 
+# Documentation that is HISTORY, not current design. The semantic pass indexes prose,
+# and these dominate semantic queries: measured 2026-09-16, 401 of 726 doc nodes (55%)
+# came from here, so "how does X work" returned dissolved plans and unimplemented
+# designs -- "G10 (dissolved 2026-08-06)", "standalone_active marker (retired)",
+# "Host Support Packs (design, unimplemented)" -- as though they described the system.
+# The FILES stay (docs/plans is referenced by 29 places incl. two live tests); they are
+# only kept out of the graph.
+STALE_DOC_PREFIXES = (
+    "docs/plans/",
+    "docs/archive/",
+    "docs/superpowers/",
+    "davebox/docs/working/",
+    "davebox/docs/archive/",
+)
+
+
+def _is_stale_doc(node):
+    sf = node.get("source_file") or ""
+    return sf.startswith(STALE_DOC_PREFIXES)
+
 # Walked explicitly rather than via graphify.extract.collect_files, which does not
 # recognise .mjs and silently dropped 89 files here -- including all of src/shared/*.mjs,
 # the modules davebox actually imports across the seam.
@@ -78,14 +98,21 @@ def reextract():
     (OUT / ".graphify_ast.json").write_text(json.dumps(ast))
 
     sem = load(".graphify_semantic.json", {"nodes": [], "edges": [], "hyperedges": []})
+    stale_ids = {n["id"] for n in sem["nodes"] if _is_stale_doc(n)}
+    sem_nodes = [n for n in sem["nodes"] if n["id"] not in stale_ids]
+    sem_edges = [e for e in sem["edges"]
+                 if e.get("source") not in stale_ids and e.get("target") not in stale_ids]
+    if stale_ids:
+        print(f"excluded {len(stale_ids)} historical doc nodes "
+              f"({len(sem['edges']) - len(sem_edges)} edges) -- see STALE_DOC_PREFIXES")
     seen = {n["id"] for n in ast["nodes"]}
-    merged_nodes = list(ast["nodes"]) + [n for n in sem["nodes"] if n["id"] not in seen]
+    merged_nodes = list(ast["nodes"]) + [n for n in sem_nodes if n["id"] not in seen]
     (OUT / ".graphify_extract.json").write_text(json.dumps({
         "nodes": merged_nodes,
-        "edges": ast["edges"] + sem["edges"],
+        "edges": ast["edges"] + sem_edges,
         "hyperedges": sem.get("hyperedges", []),
         "input_tokens": 0, "output_tokens": 0}))
-    print(f"re-extracted: {len(ast['nodes'])} AST + {len(sem['nodes'])} semantic nodes")
+    print(f"re-extracted: {len(ast['nodes'])} AST + {len(sem_nodes)} semantic nodes")
     return 0
 
 
@@ -135,6 +162,9 @@ def carry_labels(new_comms, old_comms, old_labels, threshold):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--allow-shrink", action="store_true",
+                    help="permit graph.json to be rewritten with FEWER nodes than it has "
+                         "(needed after narrowing CODE_ROOTS or STALE_DOC_PREFIXES)")
     ap.add_argument("--reextract", action="store_true",
                     help="re-run AST over code files and re-merge with the cached semantic "
                          "layer before rebuilding (no LLM, no subagents)")
@@ -193,7 +223,15 @@ def main():
     (OUT / "GRAPH_REPORT.md").write_text(generate(
         G, communities, cohesion, labels, gods, surprises, detection,
         {"input": 0, "output": 0}, str(Path.cwd()), suggested_questions=questions))
-    to_json(G, communities, str(OUT / "graph.json"))
+    # ⚠ to_json REFUSES to overwrite a larger existing graph.json (graphify #479) and
+    # only warns. That guard is right - it catches an accidental shrink - but it means
+    # a DELIBERATE one leaves graph.json stale while every other artifact updates, and
+    # `graphify query` reads graph.json. Excluding the historical docs shrank the graph
+    # by 401 nodes and hit exactly that. --allow-shrink says the shrink is intended.
+    if not to_json(G, communities, str(OUT / "graph.json"), force=args.allow_shrink):
+        print("graph.json was NOT rewritten (it would shrink). "
+              "Re-run with --allow-shrink if that is intended.", file=sys.stderr)
+        return 1
     (OUT / ".graphify_labels.json").write_text(json.dumps({str(k): v for k, v in labels.items()}))
     (OUT / ".graphify_analysis.json").write_text(json.dumps({
         "communities": {str(k): v for k, v in communities.items()},

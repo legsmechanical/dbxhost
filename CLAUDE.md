@@ -245,9 +245,20 @@ cluster, including retired designs, and `calls` edges are name-matched guesses �
 never a fact. `graphify-out/wiki/index.md` is the crawlable form.
 
 ```bash
-tools/graphify/rebuild.py --reextract    # ~2s, no LLM
-/graphify --update                       # only when DOCS or IMAGES changed (costs tokens)
+python3 tools/graphify/rebuild.py --reextract                 # ~2s, no LLM
+python3 tools/graphify/rebuild.py --reextract --allow-shrink  # when the graph should get SMALLER
+/graphify --update                                            # only when DOCS or IMAGES changed (costs tokens)
 ```
+
+⚠ `to_json` **refuses to overwrite a larger `graph.json`** and only warns, so a deliberate shrink
+leaves that one file stale while everything else updates — and `graphify query` reads it.
+`--allow-shrink` says the shrink is intended; without it the rebuild now exits non-zero rather than
+pretending. Narrowing `CODE_ROOTS` or `STALE_DOC_PREFIXES` needs it.
+
+⚠ **Historical documentation is excluded** (`STALE_DOC_PREFIXES` in `rebuild.py`): `docs/plans/`,
+`docs/archive/`, `docs/superpowers/`, `davebox/docs/working/`. Measured 2026-09-16, they were **401
+of 726 doc nodes — 55%** — and they dominated semantic results, so "how does X work" answered with
+dissolved plans and unimplemented designs. The files stay; only the graph ignores them.
 
 ⚠ `libs/`, `dist/`, `node_modules/` and minified bundles are excluded deliberately. Measured
 usage and the pruning rules: [`RATIONALE.md`](RATIONALE.md).
