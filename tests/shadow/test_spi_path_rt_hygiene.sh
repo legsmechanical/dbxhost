@@ -64,9 +64,19 @@ if ! grep -q 'spawn_command(' <<<"$runcmd"; then
   echo "      If the spawn was inlined again, it must drop SCHED_FIFO itself." >&2
   exit 1
 fi
-if ! rg -q 'POSIX_SPAWN_SETSCHEDULER' src/host/spawn_command.c \
-   || ! rg -q 'setschedpolicy\(&attr, SCHED_OTHER\)' src/host/spawn_command.c; then
-  echo "FAIL: spawn_command() does not force SCHED_OTHER - children inherit FIFO 90" >&2
+# ⚠ spawn_command.c has TWO spawn paths. Requiring ONE SCHED_OTHER passes while
+# the other is wrong - proved by mutation, which this check originally survived.
+# Require EVERY setschedpolicy in the file to be SCHED_OTHER.
+sched_all=$(rg -c 'posix_spawnattr_setschedpolicy\(' src/host/spawn_command.c || echo 0)
+sched_ok=$(rg -c 'posix_spawnattr_setschedpolicy\(&attr, SCHED_OTHER\)' src/host/spawn_command.c || echo 0)
+if [ "$sched_all" -lt 1 ] || [ "$sched_all" != "$sched_ok" ]; then
+  echo "FAIL: spawn_command() does not force SCHED_OTHER on every spawn path" >&2
+  echo "      ($sched_ok of $sched_all setschedpolicy calls use SCHED_OTHER)" >&2
+  echo "      A child inheriting FIFO 90 competes with the SPI callback." >&2
+  exit 1
+fi
+if ! rg -q 'POSIX_SPAWN_SETSCHEDULER' src/host/spawn_command.c; then
+  echo "FAIL: spawn_command() never applies the sched attributes it sets" >&2
   exit 1
 fi
 
