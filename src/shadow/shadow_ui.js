@@ -13053,6 +13053,15 @@ function createCanvasRuntimeContext() {
             draw_line(Math.round(x1), Math.round(y1), Math.round(x2), Math.round(y2), value ? 1 : 0);
         },
         print(x, y, text, color = 1) { print(Math.round(x), Math.round(y), String(text), color ? 1 : 0); },
+        /* ⭐ HOW WIDE IS THAT TEXT? Needed by any module laying out its own
+         * chrome. davebox's canvas ctx has always offered this; stock's did
+         * not, so a module that measured worked on one host and had to guess a
+         * fixed advance on the other. On the draw path deliberately -- a local
+         * glyph-table sum, not an SPI round trip. */
+        measureText(text) {
+            const t = String(text == null ? "" : text);
+            return typeof text_width === "function" ? text_width(t) : t.length * 6;
+        },
         now() { return Date.now(); },
         random() { return Math.random(); },
         /*
