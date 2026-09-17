@@ -1477,7 +1477,6 @@ Use `type: "canvas"` to open a module-defined fullscreen canvas UI from the hier
 - `canvas_overlay` (optional): Named overlay object selector (aliases: `canvas_target`, `overlay`).
 - `show_footer` (optional): Show/hide footer in canvas view (default `true`; alias `showfooter`).
 - `show_value` (optional): Show/hide parameter value in hierarchy and canvas footer (default `true`; alias `showvalue`).
-- `canvas_takes_click` (optional): Forward jog-click to the canvas instead of closing it (default `false`; alias `canvastakesclick`). See "Jog-click in a canvas UI" below.
 
 Behavior notes:
 
@@ -1496,67 +1495,6 @@ width, height }` — `values` are the live (modulation-merged) values, `base` th
 path: no `getParam` (declare off-page keys in `extra_keys`). A `drawPage` that throws is disabled
 (the page shows its chrome with an empty body) until the page is next entered. The same
 `canvas.js` evaluation serves the page and the module's in-grid widgets.
-
-#### Jog-click in a canvas UI
-
-By default a canvas receives the jog **wheel**, knobs, knob-touch and pad notes,
-but never the jog **click** — the click is the close gesture, taken before the
-canvas's `onMidi` runs. That leaves a canvas with no "enter" action, so anything
-hierarchical (a directory browser, a drill-down list) cannot be expressed as a
-canvas UI.
-
-Set `canvas_takes_click: true` on the canvas param to receive it:
-
-```json
-{
-  "key": "browser",
-  "name": "Sample Browser",
-  "type": "canvas",
-  "canvas_script": "canvas.js#browser",
-  "canvas_takes_click": true
-}
-```
-
-The click then arrives in `onMidi` as an ordinary CC (`MoveMainButton`, CC 3)
-with `d2 > 0`, and the module decides what it means — enter a folder, confirm a
-selection, drill into a page.
-
-Applies to both the fullscreen canvas and the co-run canvas overlay, so a
-module's navigation behaves the same in either context.
-
-#### Back in a canvas UI (`handleBack`)
-
-Back is **contextual**, using the same consume/fall-through contract as
-`ui_chain.js`'s `handleBack()`. A canvas overlay may export it:
-
-```js
-globalThis.my_canvas = {
-  draw(ctx) { ... },
-  onMidi(ctx, payload) { ... },
-  handleBack(ctx) {
-    if (myFieldIsOpen) { closeMyField(); return true; }   // consumed
-    return false;                                          // let the host close
-  }
-};
-```
-
-- return **truthy** to consume Back — you had somewhere to go back *to* (a text
-  field, a drill-down, a confirm step);
-- return **falsy**, omit the hook, or throw, and the host closes the canvas
-  exactly as before.
-
-So one press steps out of your sub-view and the next leaves the canvas, which is
-what Back already means everywhere else in the UI.
-
-> **Only consume Back while you actually have somewhere to go back to.** Same
-> warning as the `ui_chain.js` contract: a `handleBack` that always returns
-> truthy takes an exit away from the user.
-
-**Shift+Back always closes the canvas and can never be claimed.** It is the
-failsafe, and it is what keeps both this and `canvas_takes_click` safe to opt
-into: a module can take the click, and can consume Back wrongly or forever, and
-still cannot trap the user. This mirrors `capabilities.suspend_keeps_js`, where
-Back suspends and Shift+Back is the guaranteed full exit.
 
 #### The parameter card (`card_script`)
 

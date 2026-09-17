@@ -13034,7 +13034,7 @@ function createCanvasRuntimeContext() {
         return prefix ? `${prefix}:${key}` : key;
     };
 
-    return {
+    const canvasCtx = {
         width: SCREEN_WIDTH,
         height: SCREEN_HEIGHT,
         state: canvasRuntime ? canvasRuntime.state : {},
@@ -13042,14 +13042,44 @@ function createCanvasRuntimeContext() {
         setPixel(x, y, value) { set_pixel(Math.round(x), Math.round(y), value ? 1 : 0); },
         drawRect(x, y, w, h, value) { draw_rect(Math.round(x), Math.round(y), Math.round(w), Math.round(h), value ? 1 : 0); },
         fillRect(x, y, w, h, value) { fill_rect(Math.round(x), Math.round(y), Math.round(w), Math.round(h), value ? 1 : 0); },
+        /* ⚠ `draw_line`, NOT `display.drawLine`. There is no `display` object in
+         * the SHADOW context: shadow_ui.c calls js_display_register_bindings,
+         * which registers the bare snake_case globals only -- the `display`
+         * wrapper is built in schwung_host.c, a different JSContext. So the old
+         * guard did not read as falsy, it THREW a ReferenceError on an
+         * undeclared identifier, which disabled the overlay for the session and
+         * left a canvas page drawing chrome around an empty body. */
         drawLine(x1, y1, x2, y2, value) {
-            if (display && typeof display.drawLine === "function") {
-                display.drawLine(Math.round(x1), Math.round(y1), Math.round(x2), Math.round(y2), value ? 1 : 0);
-            }
+            draw_line(Math.round(x1), Math.round(y1), Math.round(x2), Math.round(y2), value ? 1 : 0);
         },
         print(x, y, text, color = 1) { print(Math.round(x), Math.round(y), String(text), color ? 1 : 0); },
+        /* ⭐ HOW WIDE IS THAT TEXT? Needed by any module laying out its own
+         * chrome. davebox's canvas ctx has always offered this; stock's did
+         * not, so a module that measured worked on one host and had to guess a
+         * fixed advance on the other. On the draw path deliberately -- a local
+         * glyph-table sum, not an SPI round trip. */
+        measureText(text) {
+            const t = String(text == null ? "" : text);
+            return typeof text_width === "function" ? text_width(t) : t.length * 6;
+        },
         now() { return Date.now(); },
         random() { return Math.random(); },
+        /*
+         * ⭐ IS SHIFT DOWN? State, not chrome. A module owns its screen and
+         * draws its own hints, so it is the one that needs to know a modifier
+         * is held. It cannot learn this from MIDI: the host reads Shift from
+         * the shim's shared memory, and the CC does not reliably reach a
+         * canvas -- a module watching CC 49 worked here, where davebox forwards
+         * the byte, and silently did nothing on stock.
+         */
+        shiftHeld() { return isShiftHeld(); },
+        /*
+         * ⭐ THE MODULE SAYS IT IS DONE. An enterable canvas owns the click,
+         * so it also owns the moment its job is finished -- picking the sample
+         * IS leaving the browser. `handleBack` cannot express it: that answers
+         * a press, and this is not one.
+         */
+        close() { closeCanvasPreview(false); return true; },
         getValue() {
             if (!fullCanvasKey) return "";
             return getSlotParam(hierEditorSlot, fullCanvasKey) || "";
@@ -13072,38 +13102,63 @@ function createCanvasRuntimeContext() {
             return canvasRuntime ? (canvasRuntime.scriptPath || "") : "";
         }
     };
+    return canvasCtx;
 }
 
-function invokeCanvasOverlayHook(hookName, payload) {
-    if (!canvasRuntime || !canvasRuntime.overlay) return false;
-    const fn = canvasRuntime.overlay[hookName];
-    if (typeof fn !== "function") return false;
-    try {
-        fn(canvasRuntime.ctx, payload || {});
-    } catch (e) {
-        canvasRuntime.error = `${hookName} error: ${e}`;
-        debugLog(`canvas ${hookName} hook error: ${e}`);
-    }
-    return true;
-}
+/* "The hook did not run" -- told apart from a hook that ran and returned
+ * undefined, which Back has to distinguish and `draw` does not. */
+const CANVAS_HOOK_ABSENT = {};
 
-/* Like invokeCanvasOverlayHook, but returns what the HOOK returned rather than
- * whether a hook existed. Needed for consume/fall-through hooks such as
- * handleBack, where the two answers are different: "no hook" and "hook declined"
- * must both fall through, and only an explicit truthy return consumes. Kept
- * separate so the existing hook callers, which read the return as "did a hook
- * run", keep their current meaning. */
+/*
+ * Call one overlay hook and hand back WHAT IT RETURNED.
+ *
+ * ⚠ A throw answers CANVAS_HOOK_ABSENT, never a value. Back reads this, and a
+ * hook that died must not be able to consume the press -- being stuck on a
+ * screen whose script just threw is the one outcome this must not produce.
+ */
 function canvasOverlayHookResult(hookName, payload) {
-    if (!canvasRuntime || !canvasRuntime.overlay) return undefined;
+    if (!canvasRuntime || !canvasRuntime.overlay) return CANVAS_HOOK_ABSENT;
+    /* ONE STRIKE, taken from upstream with the rest of this contract.
+     *
+     * This used to record the error, log, and carry on -- so a throwing overlay
+     * threw on EVERY FRAME, forever, at 60Hz. The error was visible in the log
+     * and the flood was not. A fresh canvasRuntime is built on every open, so
+     * the flag clears itself when the screen is reopened. */
+    if (canvasRuntime.hookDisabled) return CANVAS_HOOK_ABSENT;
     const fn = canvasRuntime.overlay[hookName];
-    if (typeof fn !== "function") return undefined;
+    if (typeof fn !== "function") return CANVAS_HOOK_ABSENT;
     try {
         return fn(canvasRuntime.ctx, payload || {});
     } catch (e) {
         canvasRuntime.error = `${hookName} error: ${e}`;
-        debugLog(`canvas ${hookName} hook error: ${e}`);
-        return undefined;   /* a throwing hook must not consume the press */
+        canvasRuntime.hookDisabled = true;
+        debugLog(`canvas overlay disabled after throw in ${hookName}: ${e}`);
+        return CANVAS_HOOK_ABSENT;
     }
+}
+
+/* Did the hook run at all? The older question, and still the right one for
+ * `draw`, whose return value means nothing. */
+function invokeCanvasOverlayHook(hookName, payload) {
+    return canvasOverlayHookResult(hookName, payload) !== CANVAS_HOOK_ABSENT;
+}
+
+/*
+ * ⭐ IS THIS CANVAS A PAGE YOU ENTER, or a picture you look at?
+ *
+ * A canvas gets the jog WHEEL and the knobs, and the host keeps the jog CLICK
+ * and Back as the close gesture. For a visualiser that is right. For anything
+ * NESTED it is fatal, because the one gesture that means "enter" is the one
+ * spent on "leave", so a file browser or a settings menu cannot be built as a
+ * canvas at all.
+ *
+ * `enterable: true` says the module has navigation inside it. Upstream's
+ * contract; see docs/CANVAS_PAGES.md there. This replaces the fork's own
+ * `canvas_takes_click`, which asked for the click rather than describing the
+ * screen.
+ */
+function canvasIsEnterable() {
+    return !!getMetaOption(canvasParamMeta, "enterable", false);
 }
 
 function dispatchCanvasMidi(data, source) {
@@ -13192,6 +13247,9 @@ function openCanvasPreview(paramKey, meta) {
 }
 
 function closeCanvasPreview(cancelled) {
+    /* Give the pads back. The tick that would have restated this is the very
+     * thing that stops here, so leaving it raised strands the flag. */
+    if (typeof host_pad_observe === "function") host_pad_observe(0);
     invokeCanvasOverlayHook("onClose", { cancelled: !!cancelled });
     invokeCanvasOverlayHook("onExit", { cancelled: !!cancelled });
     resetCanvasState();
@@ -13201,6 +13259,25 @@ function closeCanvasPreview(cancelled) {
 
 function tickCanvasPreview() {
     if (view !== VIEWS.CANVAS) return;
+    /*
+     * ⭐ A CANVAS THAT ASKS FOR PADS HEARS THEM, passively.
+     *
+     * The knob grid reconciles `pad_observe` from the module's contract, and
+     * opening a canvas LEAVES the grid -- so a module-drawn browser could not
+     * tell which pad you pressed, on the one screen where filling a pad is the
+     * entire job.
+     *
+     * OBSERVE, NEVER BLOCK: the shim adds a publish and does not `continue`, so
+     * the pad still plays. That is what you want while auditioning.
+     *
+     * ⚠ RESTATED EVERY TICK rather than raised on open: the shim drops the flag
+     * on its own authority when the shadow display closes, so a JS mirror goes
+     * stale and the feature dies silently for the rest of the session.
+     */
+    if (typeof host_pad_observe === "function") {
+        const ov = canvasRuntime && canvasRuntime.overlay;
+        host_pad_observe(ov && ov.wantsPads ? 1 : 0);
+    }
     invokeCanvasOverlayHook("tick", {});
 }
 
@@ -13215,7 +13292,10 @@ function drawCanvasPreview() {
         const message = canvasRuntime && canvasRuntime.error ? canvasRuntime.error : "No module canvas overlay";
         print(Math.max(0, Math.floor((SCREEN_WIDTH - title.length * 5) / 2)), 10, truncateText(title, 24), 1);
         print(3, 29, truncateText(message, 24), 1);
-        print(3, 50, "Click/Back: return", 1);
+        /* ⚠ An enterable canvas keeps the click, so only Back returns -- and a
+         * broken overlay is exactly when the footer must not lie about the way
+         * out. */
+        print(3, 50, canvasIsEnterable() ? "Back: return" : "Click/Back: return", 1);
     }
 
     const showCanvasValue = !canvasParamMeta || canvasParamMeta.show_value !== false;
@@ -13234,6 +13314,7 @@ function drawCanvasPreview() {
         });
     }
 }
+
 
 /* Draw filepath browser for filepath chain params */
 function drawFilepathBrowser() {
@@ -14919,6 +15000,11 @@ function handleSelect() {
             }
             break;
         case VIEWS.CANVAS:
+            /* ⚠ An enterable canvas owns the click, so "select" must not close
+             * it from here either. The MIDI path never reaches this case for
+             * one, but this is also the screen reader's and the remote UI's
+             * select, and those would close a browser mid-navigation. */
+            if (canvasIsEnterable()) break;
             closeCanvasPreview(false);
             announce("Hierarchy Editor");
             break;
@@ -18821,23 +18907,35 @@ globalThis.onMidiMessageInternal = function(data) {
      * co-run overlay when coRunView === CANVAS. Steal jog-click/Back to close it
      * (wrapped so coRunView returns to the hierarchy editor), mirroring the
      * non-co-run steal below. */
-    /* ...unless the canvas asked for the click. A canvas gets the jog WHEEL but
-     * never the click, because the click is the close gesture — which leaves a
-     * canvas with no "enter" at all, so anything hierarchical (a directory
-     * browser, a drill-down list) cannot be built as a canvas UI.
-     *
-     * `canvas_takes_click: true` on the canvas param hands the click to the
-     * module's onMidi instead. Declining to steal is all that is needed: the
-     * event falls through to dispatchCanvasMidi below like every other CC.
-     *
-     * BACK IS NEVER CLAIMABLE — it always closes. That is what makes this safe
-     * to opt into: a module cannot trap the user by taking the only way out,
-     * however its own navigation behaves. */
-    var canvasTakesClick = !!(canvasParamMeta && getMetaOption(canvasParamMeta,
-        "canvas_takes_click", getMetaOption(canvasParamMeta, "canvastakesclick", false)));
     var canvasInCorun = coRunUiActive() && coRunView === VIEWS.CANVAS;
+    var canvasEnterable = (view === VIEWS.CANVAS || canvasInCorun) && canvasIsEnterable();
     if ((view === VIEWS.CANVAS || canvasInCorun) && (status & 0xF0) === 0xB0) {
-        if (d1 === MoveMainButton && d2 > 0 && !canvasTakesClick) {
+        /*
+         * ⭐⭐ SHIFT+JOG IS THE ESCAPE HATCH, and it is never the module's.
+         *
+         * An enterable canvas owns the jog, the click and (until it declines)
+         * Back, so a module whose navigation is broken -- or simply deeper than
+         * the user expected -- can make leaving feel like work. Shift+jog closes
+         * the canvas and DOES NOT CONSUME THE TURN: the event falls through to
+         * the screen underneath, which pages. Exit and move on, in one gesture.
+         *
+         * ⭑ Not new grammar: Shift+jog already pages out of every entered door,
+         * and Shift+click already reaches the section picker from anywhere. A
+         * dive was the one screen with no such way out.
+         *
+         * ⚠ NEVER OFFERED TO THE MODULE and not gated on `enterable` -- an
+         * escape hatch a module can decline is not an escape hatch.
+         */
+        if (d1 === 14 && isShiftHeld() && d2 !== 0) {
+            if (canvasInCorun) runCoRunChainEdit(function() { closeCanvasPreview(true); });
+            else closeCanvasPreview(true);
+            needsRedraw = true;
+            /* NO return: the turn belongs to whatever is underneath now. */
+        } else
+        /* ⭐ AN ENTERABLE CANVAS KEEPS THE CLICK. Declining to steal is all that
+         * is needed -- the press falls through to dispatchCanvasMidi below like
+         * every other CC, and the module's onMidi sees it. */
+        if (d1 === MoveMainButton && d2 > 0 && !canvasEnterable) {
             if (canvasInCorun) runCoRunChainEdit(function() { closeCanvasPreview(false); });
             else closeCanvasPreview(false);
             announce("Hierarchy Editor");
@@ -18845,24 +18943,18 @@ globalThis.onMidiMessageInternal = function(data) {
             return;
         }
         if (d1 === MoveBack && d2 > 0) {
-            /* Back is CONTEXTUAL, mirroring the ui_chain.js handleBack() contract:
-             * the canvas gets first refusal and returns truthy only when it has
-             * somewhere to go back TO (a text field, a drill-down, a confirm).
-             * Anything else — no hook, a falsy return, or a hook that threw —
-             * falls through and closes the canvas exactly as before.
+            /* ⭐ BACK IS THE EXIT CONTRACT, and it is what makes handing over the
+             * click safe:
              *
-             * So one press steps out of the module's own sub-view and the next
-             * leaves the canvas, which is what the button already means everywhere
-             * else in the UI.
+             *   handleBack() === true   "I went up a level"    -> stay inside
+             *   anything else           "I am at my top level" -> the host closes
              *
-             * SHIFT+BACK IS THE FAILSAFE and is never offered to the module: it
-             * always closes. That is what keeps this safe to opt into now that a
-             * canvas can also claim the jog click — a module whose navigation is
-             * buggy, or which wrongly consumes Back forever, can take every other
-             * exit and still not trap the user. Same shape as the existing
-             * capabilities.suspend_keeps_js contract, where Back suspends and
-             * Shift+Back is the guaranteed full exit. */
-            if (!isShiftHeld() && canvasOverlayHookResult("handleBack") === true) {
+             * So a module implements a way UP, never a way OUT. Offered only to
+             * an enterable canvas -- a visualiser has no levels to climb, and
+             * asking it would make Back's meaning depend on a hook nobody
+             * declared. A throwing hook answers CANVAS_HOOK_ABSENT, so it can
+             * never hold the button. */
+            if (canvasEnterable && canvasOverlayHookResult("handleBack") === true) {
                 needsRedraw = true;
                 return;
             }
