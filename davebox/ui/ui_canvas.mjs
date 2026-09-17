@@ -97,6 +97,8 @@ export function canvasScriptSpec(meta) {
  *   getParam(bareKey)        -> string               a live read, in-flight aware
  *   setParam(bareKey, value)                         MUST enter the write ledger
  *   getValue() / setValue(v)                         this canvas param's own value
+ *   shiftHeld()              -> bool                 Shift is down (state, for a
+ *                                                    module drawing its own hints)
  *   crumbs                   -> string[]             the path to this screen
  */
 export function canvasEditOpen({ key, fullKey, meta, comp, slot = 0, io }) {
@@ -279,6 +281,9 @@ function makeCtx(c) {
             ? text_width(String(s)) : String(s).length * 6),
         now: () => Date.now(),
         random: () => Math.random(),
+        /* Shift, as STATE -- the same member stock's canvas ctx offers, so a
+         * module that draws its own hints behaves the same on both. */
+        shiftHeld: () => (typeof c.io.shiftHeld === 'function' ? !!c.io.shiftHeld() : false),
         /* "I am done." Recorded rather than acted on: the VIEW is davebox's, so
          * the caller reads this back and leaves on the module's behalf. */
         close: () => { c.wantsClose = true; return true; },

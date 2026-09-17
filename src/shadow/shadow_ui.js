@@ -13056,6 +13056,15 @@ function createCanvasRuntimeContext() {
         now() { return Date.now(); },
         random() { return Math.random(); },
         /*
+         * ⭐ IS SHIFT DOWN? State, not chrome. A module owns its screen and
+         * draws its own hints, so it is the one that needs to know a modifier
+         * is held. It cannot learn this from MIDI: the host reads Shift from
+         * the shim's shared memory, and the CC does not reliably reach a
+         * canvas -- a module watching CC 49 worked here, where davebox forwards
+         * the byte, and silently did nothing on stock.
+         */
+        shiftHeld() { return isShiftHeld(); },
+        /*
          * ⭐ THE MODULE SAYS IT IS DONE. An enterable canvas owns the click,
          * so it also owns the moment its job is finished -- picking the sample
          * IS leaving the browser. `handleBack` cannot express it: that answers
