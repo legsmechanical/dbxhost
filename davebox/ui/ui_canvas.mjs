@@ -36,13 +36,6 @@
  */
 
 import { drawKitHintRow, MV_FOOTER_Y } from './ui_movy.mjs';
-/* ⚠ THE FOOTER'S CONTENT IS NOT OURS TO DECIDE. It said something different
- * here from what it says on stock for one afternoon, because this file followed
- * davebox's chrome idiom without comparing the two. Dress differs between the
- * surfaces; content does not. The decision is shared; we only render it. */
-import {
-    canvasHints, canvasCanGoUp,
-} from '/data/UserData/schwung/shared/param_pages/canvas_hints.mjs';
 
 /* The one open canvas, or null. */
 let C = null;
@@ -104,9 +97,6 @@ export function canvasScriptSpec(meta) {
  *   getParam(bareKey)        -> string               a live read, in-flight aware
  *   setParam(bareKey, value)                         MUST enter the write ledger
  *   getValue() / setValue(v)                         this canvas param's own value
- *   shiftHeld()              -> bool                 Shift is down (the footer
- *                                                    advertises the escape
- *                                                    hatch only while it is)
  *   crumbs                   -> string[]             the path to this screen
  */
 export function canvasEditOpen({ key, fullKey, meta, comp, slot = 0, io }) {
@@ -220,18 +210,17 @@ export function renderCanvasEdit() {
         print(3, 12, fit(canvasEditCrumb(), 24), 1);
         print(3, 30, fit(C.error || 'No module canvas overlay', 24), 1);
     }
-    /* ⭑ FOOTER OVER THE CANVAS, as on stock and SAYING THE SAME THING, honouring
-     * the same opt-out. The module owns all 64 rows and may have drawn under
-     * here; `show_footer: false` is how it says so. */
+    /*
+     * ⭑ THE HOST'S FOOTER IS THE HOST'S, AND IT IS MINIMAL.
+     *
+     * A module owns all 64 rows and draws whatever it likes there. What we add
+     * is one hint saying the screen can be left -- and `show_footer: false` is
+     * how a module says it would rather we did not, because it is drawing its
+     * own. Anything more opinionated than this belongs to the module: "up a
+     * level" means something to a file browser and nothing to a scope.
+     */
     if (!C.meta || C.meta.show_footer !== false) {
-        const hints = canvasHints({
-            enterable: C.enterable,
-            canGoUp: canvasCanGoUp(C.dead ? null : C.overlay, C.ctx),
-            shiftHeld: typeof C.io.shiftHeld === 'function' ? !!C.io.shiftHeld() : false,
-        });
-        drawKitHintRow(MV_FOOTER_Y, hints.length
-            ? hints.map((h) => [h.key, h.action])
-            : [['back', 'exit']]);
+        drawKitHintRow(MV_FOOTER_Y, [['back', 'exit']]);
     }
     return true;
 }

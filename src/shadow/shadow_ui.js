@@ -3,7 +3,6 @@ import * as std from 'std';
 
 /* Import unified logger */
 import { log as unifiedLog, installConsoleOverride } from '/data/UserData/schwung/shared/logger.mjs';
-import { canvasHints, canvasCanGoUp } from '/data/UserData/schwung/shared/param_pages/canvas_hints.mjs';
 
 /* Install console.log override to route to unified debug.log */
 installConsoleOverride('shadow');
@@ -13280,45 +13279,23 @@ function drawCanvasPreview() {
         print(3, 50, canvasIsEnterable() ? "Back: return" : "Click/Back: return", 1);
     }
 
+    const showCanvasValue = !canvasParamMeta || canvasParamMeta.show_value !== false;
+    let valueText = showCanvasValue ? "-" : "";
+    if (showCanvasValue && canvasParamKey) {
+        const fullKey = buildHierarchyParamKey(canvasParamKey);
+        const raw = getSlotParam(hierEditorSlot, fullKey);
+        if (raw !== null && raw !== undefined && raw !== "") {
+            valueText = formatHierDisplayValue(canvasParamKey, raw);
+        }
+    }
     if (!canvasParamMeta || canvasParamMeta.show_footer !== false) {
-        /*
-         * ⭐ AN ENTERABLE CANVAS GETS HINTS, NOT ITS VALUE -- and it says the
-         * SAME THING dAVEBOx says, which for one afternoon it did not.
-         *
-         *   BACK UP     Back climbs a level (the module answers `canGoUp`)
-         *   BACK EXIT   Back leaves, because the module is at its top
-         *   JOG PAGES   only while Shift is down: the escape hatch, advertised
-         *               when it is live rather than cluttering every frame
-         *
-         * A visualiser keeps its value and title, which is all a screen you
-         * only look at has to say.
-         */
-        const hints = canvasHints({
-            enterable: canvasIsEnterable(),
-            canGoUp: canvasCanGoUp(canvasRuntime && canvasRuntime.overlay,
-                                   canvasRuntime && canvasRuntime.ctx),
-            shiftHeld: isShiftHeld(),
-        });
-        if (hints.length) {
-            drawFooter(hints.map((h) => `${h.key}: ${h.action}`));
-            return;
-        }
-
-        const showCanvasValue = !canvasParamMeta || canvasParamMeta.show_value !== false;
-        let valueText = showCanvasValue ? "-" : "";
-        if (showCanvasValue && canvasParamKey) {
-            const fullKey = buildHierarchyParamKey(canvasParamKey);
-            const raw = getSlotParam(hierEditorSlot, fullKey);
-            if (raw !== null && raw !== undefined && raw !== "") {
-                valueText = formatHierDisplayValue(canvasParamKey, raw);
-            }
-        }
         drawFooter({
             left: truncateText(String(valueText || "-"), 20),
             right: truncateText(title, 12)
         });
     }
 }
+
 
 /* Draw filepath browser for filepath chain params */
 function drawFilepathBrowser() {

@@ -8428,6 +8428,25 @@ export function soundOnCC(d1, d2, decodeDelta) {
         return true;
     }
 
+    /*
+     * ⭑ SHIFT IS FORWARDED BUT NOT CONSUMED (2026-09-17).
+     *
+     * Excluded above with the other escapes, and rightly -- Shift+Volume is the
+     * track level everywhere and davebox keeps its own Shift bookkeeping. But a
+     * module draws its own hints now that the host footer can be turned off, and
+     * a canvas that wants to say "Shift+jog pages out" has to know Shift is
+     * down. On stock it simply sees CC 49, because the host steals only the
+     * click and Back.
+     *
+     * So: pass it on and fall THROUGH, so davebox still gets it too. Telling a
+     * screen about a key is not the same as giving the key away.
+     */
+    if (d1 === 49 && S.view === VIEW_CANVAS && canvasEditActive()) {
+        canvasEditOnMidi(0xB0, d1, d2);
+        S.dirty = true;
+        /* no return: Shift stays davebox's */
+    }
+
     /* ⚠ AFTER the hosted check and BEFORE davebox's own handling, but the two
      * modifier CCs below are read FIRST and always fall through: the binding
      * asks davebox for Shift and Mute through ctx (precision mode, and
@@ -11877,10 +11896,6 @@ function openCanvasScreen(fullKey, meta, divedFrom) {
             setParam: (k, v) => queueWrite(ppBare(k) || k, v),
             getValue: () => settledValue(bare, S.comp),
             setValue: (v) => queueWrite(bare, v),
-            /* The footer advertises the Shift+jog escape hatch only while Shift
-             * is actually down -- a permanent hint for "when your navigation
-             * goes wrong" would be clutter on every canvas that works. */
-            shiftHeld: () => !!GS.shiftHeld,
             crumbs: divedFrom ? [divedFrom] : [],
         },
     });
