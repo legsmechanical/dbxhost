@@ -128,6 +128,14 @@ import {
     wavEditOnKnob, wavEditOnKnobTouch, wavEditOnJog, wavForgetComponent,
     wavEditFileKey, wavEditCrumb,
 } from './ui_wav.mjs';
+/* The fullscreen MODULE CANVAS. A `type: "canvas"` param names its own script
+ * and draws the whole screen; this is davebox's place to land when one is
+ * dived into, which it never had. */
+import {
+    canvasEditOpen, canvasEditClose, canvasEditActive, canvasEditTick,
+    renderCanvasEdit, canvasEditOnMidi, canvasEditBack, canvasEditCrumb,
+    canvasEditWantsPads, canvasEditAnimates, canvasEditTakeClose, isCanvasParam,
+} from './ui_canvas.mjs';
 import { isWavPosition, wavSiblingKey }
     from '/data/UserData/schwung/shared/param_pages/wav_position.mjs';
 /* The generic rule "do not open an editor on a component that reported a load
@@ -339,7 +347,16 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
        * lines in READING order, not numeric order, so "the next number" is not
        * the one under the cursor — a first cut of this took 19 and would have
        * made two unrelated screens the same screen. */
-      VIEW_WAV = 22;
+      VIEW_WAV = 22,
+      /* ⭑ The fullscreen MODULE CANVAS (2026-09-17). Its own view for the same
+       * reason VIEW_WAV has one: the host derives "am I in a canvas" from
+       * several separate facts and each input handler re-tests them, so a miss
+       * makes a handler fire "sometimes". davebox gets a view id and one branch
+       * per handler.
+       * ⚠ 23 because 22 is VIEW_WAV. These ids are declared in READING order,
+       * not numeric order, so "the next number" is not the one under the
+       * cursor. */
+      VIEW_CANVAS = 23;
 
 /* Chain-patch file ops (save_patch / delete_patch) are DSP-side and async —
  * the file appears/vanishes a beat after the request. Re-read the list this
@@ -1516,6 +1533,7 @@ export function soundRetarget(track, slot) {
      * being edited. The guard is the same condition as that return, read here
      * because `S.bus` cannot change in between. */
     if (!(S.bus && S.bus.kind === 'global')) wavEditCloseIfOpen();
+    if (!(S.bus && S.bus.kind === 'global')) canvasCloseIfOpen();
     flushForRetarget();
     takeBankIdentity(track, S.bankHome);
 
@@ -1658,7 +1676,8 @@ export function soundExit(opts) {
      * name who closed sound mode. debug.log only; exits are rare. */
     log('exit: view ' + S.view + ' track ' + S.track + ' opts ' + JSON.stringify(opts || null) + ' from ' +
         String(new Error().stack || '').split('\n').slice(2, 5).map((l) => l.trim()).join(' | '));
-    wavEditCloseIfOpen();      /* nothing may outlive sound mode itself */
+    wavEditCloseIfOpen();
+    canvasCloseIfOpen();      /* nothing may outlive sound mode itself */
     /* …INCLUDING the MACROS-clear confirm, which is about a bank that only exists
      * while this mode is open. It draws over everything, so an exit that left it
      * standing would paint it on the track overview with no way to dismiss it. */
@@ -4206,6 +4225,14 @@ const VIEW_TREE = {
      * overlay box would cover the plot, which is the whole screen. */
     [VIEW_WAV]:         { parent: VIEW_EDIT,       float: false,
                           crumb: () => wavEditCrumb() || 'Wave' },
+    /* ⚠ NOT `backPure`: Back on a canvas is the MODULE'S first -- it climbs its
+     * own levels and only then do we leave -- so it keeps its own branch. It is
+     * tabled for the other three things the table is: the breadcrumb, the stack
+     * depth, and which screen draws underneath.
+     * ⚠ `float: false`: the module owns all 64 rows. An overlay box would cover
+     * the thing it drew. */
+    [VIEW_CANVAS]:      { parent: VIEW_EDIT,       float: false,
+                          crumb: () => canvasEditCrumb() || 'Canvas' },
 };
 
 /* Applying an Instrument choice. Extracted so the PICKER and the old
@@ -7309,7 +7336,7 @@ function runDiscovery() {
      * two-second loop means something else entirely on the eight-bar sample
      * that replaced it. Zoom survives leaving the SCREEN (or you lose it every
      * time you glance at another param) but never a module swap. */
-    if (id !== S.moduleId) { wavEditCloseIfOpen(); wavForgetComponent(S.comp, S.slot); ppWidgetsForget(); }
+    if (id !== S.moduleId) { wavEditCloseIfOpen(); canvasCloseIfOpen(); wavForgetComponent(S.comp, S.slot); ppWidgetsForget(); }
     S.moduleId = id;
     if (!id) { S.banks = []; S.sections = []; S.dirty = true; return; }
     const res = discover(S.slot, S.comp);
@@ -7937,6 +7964,33 @@ export function soundVouchLivePress(track, note) {
         catch (e) { /* a bad hook must not cost the user their pad press */ }
     }
 
+    /*
+     * 🔴 A DIVED CANVAS IS NOT TOLD, AND THAT IS ON PURPOSE (2026-09-17).
+     *
+     * On stock, `wantsPads` forwards the raw pad note to the canvas and a
+     * module-drawn browser follows the pad you hit. Doing the same here would
+     * break the rule stated above: we own the pad notes, and a module that
+     * receives one vouches for it -- DR32's browser writes `ui_live_press` the
+     * moment it sees a pad. That would be a SECOND vouch on top of the note we
+     * are about to name below, re-arming a press the kit had already resolved,
+     * and the arm would then be claimed by whatever note arrived next.
+     *
+     * Naming the note is also strictly better than the vouch it would sit on
+     * top of: it is deterministic where the vouch is a race (measured: the
+     * vouch missed 2 of 16 presses against a 58 ms window).
+     *
+     * So in dAVEBOx a canvas gets the jog, the click and Back, and does NOT
+     * follow the pads. The cost is one behaviour, and it is a behaviour the
+     * module is written to do without -- on a host that forwards nothing it
+     * keeps filling the pad that was focused when it opened.
+     *
+     * ⭑ TO CLOSE THIS PROPERLY the canvas needs telling that FOCUS MOVED, not
+     * that a pad was hit -- there is no note to replay in that, so no second
+     * vouch. That is a contract addition (stock has no such hook either), which
+     * is why it is a note here rather than a quiet local invention.
+     */
+
+
     /* ⭑ NAME the pad when the module lets us. We EMIT this note, so unlike the
      * module's own canvas we know exactly which element it is — and saying so
      * is deterministic where vouching is a race. MEASURED (2026-07-30): the
@@ -8318,6 +8372,29 @@ export function soundOnCC(d1, d2, decodeDelta) {
      * → [[wired-is-not-reachable]] */
 
     if (hostedTakes(d1, d2)) { S.dirty = true; return true; }
+
+    /*
+     * ⭐ A DIVED CANVAS OWNS THE INPUT, because it owns the screen.
+     *
+     * Unlike a HOSTED canvas -- which shares VIEW_EDIT with davebox's own bank
+     * and must decline what it does not use -- this one is alone on the panel.
+     * An unclaimed jog turn would walk davebox's bank cycle UNDERNEATH a screen
+     * the user cannot see changing, and they would come back out somewhere else
+     * entirely.
+     *
+     * ⚠ The global escapes stay davebox's, the same list hostedTakes keeps:
+     * Shift (49), Mute (88), Volume (79) so Shift+Volume is the track level
+     * EVERYWHERE, Note/Session (50) and Shift+Record (86). Back (51) is handled
+     * below, because the MODULE gets first refusal on it.
+     */
+    if (S.view === VIEW_CANVAS && canvasEditActive() &&
+        d1 !== 49 && d1 !== 88 && d1 !== 79 && d1 !== 50 && d1 !== 51 &&
+        !(d1 === 86 && GS.shiftHeld)) {
+        canvasEditOnMidi(0xB0, d1, d2);
+        if (canvasEditTakeClose()) closeCanvasScreen();
+        S.dirty = true;
+        return true;
+    }
 
     /* ⚠ AFTER the hosted check and BEFORE davebox's own handling, but the two
      * modifier CCs below are read FIRST and always fall through: the binding
@@ -9375,6 +9452,21 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.dirty = true;
             return true;
         }
+        /*
+         * ⭐ ON A CANVAS, BACK IS THE MODULE'S FIRST.
+         *
+         *   handleBack() === true   "I went up a level"     -> stay
+         *   anything else           "I am at my top level"  -> we leave
+         *
+         * So a module writes a way UP and never a way OUT, and a file browser's
+         * Back walks back up the folders instead of throwing the whole screen
+         * away. Same contract as stock, so one script behaves the same on both.
+         */
+        if (S.view === VIEW_CANVAS) {
+            if (canvasEditBack()) { S.dirty = true; return true; }
+            closeCanvasScreen();
+            return true;
+        }
         /* ⭐ ANY SCREEN THE EDITOR OPENED BACKS INTO THE EDITOR. Ahead of the
          * per-view branches below, because those step up davebox's OWN tree —
          * which is not the tree you walked when you arrived from a module page.
@@ -9853,6 +9945,15 @@ export function soundTick() {
      * blocked tick here overflows the input ring and drops note-offs, and a
      * dropped note-off is a stuck note in Move AND in the slot synth. */
     if (S.view === VIEW_WAV) wavEditTick();
+
+    /* ⭑ Only a canvas that ANIMATES is redrawn per tick. A static one (a
+     * browser, a menu) redraws on input like every other screen, so it costs
+     * nothing to leave open. */
+    if (S.view === VIEW_CANVAS && canvasEditActive()) {
+        canvasEditTick();
+        if (canvasEditTakeClose()) closeCanvasScreen();
+        else if (canvasEditAnimates()) S.dirty = true;
+    }
 
     /* ⭑ THE BROWSER'S AUDITION, and its close.
      *
@@ -11549,6 +11650,20 @@ installPpCtx({
             return;
         }
         /*
+         * ⭐ A CANVAS PARAM GETS ITS OWN SCREEN (2026-09-17), for exactly the
+         * reason the marker above got one. Everything else here hands the
+         * COMPONENT to the bank editor, which has the file, text and option
+         * screens -- and no way to run a module's canvas script. So the dive
+         * fired and landed somewhere with nothing to show, which is the whole
+         * of Josh's "the knob 2 gesture isn't doing anything but flickering the
+         * screen" on dvx.
+         */
+        if (isCanvasParam(meta) && openCanvasScreen(fullKey, meta, divedFrom)) {
+            S.view = VIEW_CANVAS;
+            S.dirty = true;
+            return;
+        }
+        /*
          * ⭐ A FILEPATH PARAM OPENS ITS OWN BROWSER, not the editor's front page.
          *
          * ⚠⚠ REPORTED REPEATEDLY AND MIS-READ BY ME AS A WAVEFORM PROBLEM: "touch
@@ -11589,6 +11704,36 @@ installPpCtx({
  * against {slot: newSlot, comp: newComp} — landing an edit on a track the user
  * never opened. Closing here makes the window empty rather than narrow.
  */
+/*
+ * Leave the canvas and hand the grid back its suppression flags.
+ *
+ * ⚠ ONE EXIT, because there are four ways out -- Back, the module's own
+ * ctx.close(), a retarget, and a module swap -- and three of them forgetting to
+ * clear ppSuppressOnce would leave the grid unable to re-enter, which reads as
+ * a dead editor rather than a stuck flag.
+ */
+function closeCanvasScreen() {
+    if (!canvasEditActive()) return;
+    canvasEditClose();
+    ppSuppressOnce = false;   /* let ppSync re-enter the grid at once */
+    ppDivedOut = false;
+    S.view = VIEW_EDIT;
+    S.dirty = true;
+}
+
+/*
+ * ⚠⚠ THE CANVAS MUST NOT SURVIVE A RETARGET, for the reason spelled out on
+ * wavEditCloseIfOpen below: soundRetarget moves S.slot (and can move S.comp)
+ * without touching S.view, and the queued action that changes the view runs on
+ * a LATER tick. In that window the screen is up and pointed at the old
+ * component -- a read would go to the new slot with the old component's key,
+ * and a write would land an edit on a track the user never opened.
+ */
+function canvasCloseIfOpen() {
+    if (!canvasEditActive()) return;
+    closeCanvasScreen();
+}
+
 function wavEditCloseIfOpen() {
     if (!wavEditActive()) return;
     wavEditClose();
@@ -11664,6 +11809,47 @@ function wavEditCloseIfOpen() {
  * the host's existing one already disagrees with wav_format.mjs about 24-bit
  * and AIFF files — so it is a deliberate gap, not an oversight.
  */
+/*
+ * Open the fullscreen module canvas on one param.
+ *
+ * ⚠ THE SAME TWO TRAPS openWavEditor documents, and for the same reasons:
+ *   - reads go through `settledValue`, not the engine, so a value the user just
+ *     wrote is not read back as the one before it
+ *   - writes go through `queueWrite`, so they enter the ledger and the verifier
+ *     can re-assert them; `engineSet` straight would be a write nothing watches
+ *   - `divedFrom` is passed IN. exitParamPages() has already nulled the
+ *     binding's controller by the time we are called, so asking for the page
+ *     label here returns "" -- always.
+ */
+function openCanvasScreen(fullKey, meta, divedFrom) {
+    const bare = ppBare(fullKey) || fullKey;
+    const slotKey = `${S.slot}:${S.comp}`;
+    return canvasEditOpen({
+        key: (meta && meta.key) || bare,
+        fullKey,
+        meta,
+        comp: S.comp,
+        slot: S.slot,
+        io: {
+            /* ONE evaluation of the module's script serves every consumer in
+             * the editor -- the widget loader, a module-owned page, and this.
+             * Loading our own would evaluate it again and hand us a different
+             * closure, so a canvas's state would depend on who asked. */
+            loadOverlay: (script, ref) => {
+                const r = engineCanvasOverlayShared(
+                    slotKey, S.comp, engineLoadedModule(S.slot, S.comp), script, ref) || {};
+                const ov = (ref && ref !== 'canvas_overlay') ? (r.named || r.overlay) : r.overlay;
+                return { overlay: ov || null, error: r.error || '' };
+            },
+            getParam: (k) => settledValue(k, S.comp),
+            setParam: (k, v) => queueWrite(ppBare(k) || k, v),
+            getValue: () => settledValue(bare, S.comp),
+            setValue: (v) => queueWrite(bare, v),
+            crumbs: divedFrom ? [divedFrom] : [],
+        },
+    });
+}
+
 function openWavEditor(fullKey, meta, divedFrom) {
     const cp = S.cpMap || {};
     /*
@@ -12079,6 +12265,7 @@ export function soundRender() {
     else if (S.view === VIEW_LFO_TARGET) renderLfoTarget();
     else if (S.view === VIEW_LFO_PARAM) renderLfoParam();
     else if (S.view === VIEW_WAV) renderWavEdit();
+    else if (S.view === VIEW_CANVAS) renderCanvasEdit();
     else if (S.view === VIEW_ENUM) renderEnumPick();
     else if (S.view === VIEW_PATCHES) renderChainPatches();
     else if (S.view === VIEW_BUSES) renderBuses();
