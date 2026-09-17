@@ -128,8 +128,14 @@ if (!/d1 === MoveMainButton && d2 > 0 && !canvasEnterable/.test(src))
 else ok("the jog-click steal declines for an enterable canvas");
 
 /* Back must reach handleBack BEFORE the close, and only when enterable. */
-const backAt  = src.indexOf("canvasEnterable && canvasOverlayHookResult(\"handleBack\")");
-const closeAt = src.indexOf("runCoRunChainEdit(function() { closeCanvasPreview(true); })");
+/* ⚠ Scoped to the BACK BRANCH. This used to compare against the first
+   closeCanvasPreview(true) anywhere in the file -- which the Shift+jog escape
+   hatch later added ABOVE this branch, so a correct ordering read as broken.
+   An assertion that a nearby edit can flip is worse than none. */
+const backBranch = src.slice(src.indexOf("if (d1 === MoveBack && d2 > 0) {",
+                                         src.indexOf("SHIFT+JOG IS THE ESCAPE HATCH")));
+const backAt  = backBranch.indexOf("canvasOverlayHookResult(\"handleBack\")");
+const closeAt = backBranch.indexOf("closeCanvasPreview(true)");
 if (backAt < 0)               bad("Back is not offered to handleBack at all");
 else if (closeAt < 0)         bad("the Back close path moved -- re-check the ordering");
 else if (backAt > closeAt)    bad("handleBack is offered AFTER the close, so it can never run");
@@ -150,6 +156,47 @@ const selAt = src.indexOf("case VIEWS.CANVAS:");
 if (selAt < 0 || !/case VIEWS\.CANVAS:[\s\S]{0,600}?if \(canvasIsEnterable\(\)\) break;/.test(src))
   bad("handleSelect closes an enterable canvas");
 else ok("select does not close an enterable canvas");
+
+/* ⭐⭐ SHIFT+JOG IS THE ESCAPE HATCH, and it must be three things at once:
+ * unconditional, not the modules, and NOT CONSUMED -- so the turn that got you
+ * out also moves you on. Charles, reviewing the PR: "I worry about getting
+ * stuck in a page tho if youre more than one level in." */
+const steal = src.slice(src.indexOf("SHIFT+JOG IS THE ESCAPE HATCH"),
+                        src.indexOf("if (d1 === MoveBack && d2 > 0)",
+                                    src.indexOf("SHIFT+JOG IS THE ESCAPE HATCH")));
+if (!/if \(d1 === 14 && isShiftHeld\(\) && d2 !== 0\) \{/.test(steal))
+  bad("Shift+jog is not handled in the canvas steal block");
+else ok("Shift+jog is handled while a canvas is up");
+
+if (!/closeCanvasPreview\(true\)/.test(steal))
+  bad("Shift+jog does not close the canvas");
+else ok("...and closes it");
+
+/* The branch must NOT return: the turn belongs to the screen underneath. A
+ * `return` here would make the escape hatch cost two gestures instead of one,
+ * and nothing would report it. */
+const shiftBranch = steal.slice(steal.indexOf("if (d1 === 14 && isShiftHeld"));
+const braceEnd = shiftBranch.indexOf("} else");
+/* ⚠ CODE ONLY. The comment inside this branch says "NO return", so matching the
+   word anywhere failed on the very text that documents the behaviour. */
+const shiftCode = shiftBranch.slice(0, braceEnd < 0 ? 0 : braceEnd)
+                             .replace(/\/\*[\s\S]*?\*\//g, "");
+if (braceEnd < 0 || /\breturn\b/.test(shiftCode))
+  bad("the Shift+jog branch RETURNS -- the turn is swallowed, so exiting costs a second gesture");
+else ok("...without consuming the turn, so it pages on the way out");
+
+/* It must not be gated on `enterable`: an escape hatch a module can decline is
+ * not an escape hatch. */
+if (/isShiftHeld\(\)[\s\S]{0,60}canvasEnterable/.test(steal))
+  bad("the escape hatch is gated on enterable");
+else ok("...and is not gated on enterable -- no module can decline it");
+
+/* And it must never reach the module. dispatchCanvasMidi runs after this block
+ * and early-returns once the view has changed, which is what keeps the turn
+ * away from onMidi; assert the close happens BEFORE that dispatch. */
+if (src.indexOf("SHIFT+JOG IS THE ESCAPE HATCH") > src.indexOf("if (dispatchCanvasMidi(data, \"internal\"))"))
+  bad("the escape hatch runs AFTER dispatchCanvasMidi -- the module would see the turn first");
+else ok("...and runs before the canvas dispatch, so the module never sees it");
 
 /* The footer must not promise a click that the module now owns. */
 if (!/canvasIsEnterable\(\) \? "Back: return" : "Click\/Back: return"/.test(src))

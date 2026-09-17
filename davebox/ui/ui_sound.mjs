@@ -11877,6 +11877,10 @@ function openCanvasScreen(fullKey, meta, divedFrom) {
             setParam: (k, v) => queueWrite(ppBare(k) || k, v),
             getValue: () => settledValue(bare, S.comp),
             setValue: (v) => queueWrite(bare, v),
+            /* The footer advertises the Shift+jog escape hatch only while Shift
+             * is actually down -- a permanent hint for "when your navigation
+             * goes wrong" would be clutter on every canvas that works. */
+            shiftHeld: () => !!GS.shiftHeld,
             crumbs: divedFrom ? [divedFrom] : [],
         },
     });

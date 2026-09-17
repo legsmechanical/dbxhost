@@ -3,6 +3,7 @@ import * as std from 'std';
 
 /* Import unified logger */
 import { log as unifiedLog, installConsoleOverride } from '/data/UserData/schwung/shared/logger.mjs';
+import { canvasHints, canvasCanGoUp } from '/data/UserData/schwung/shared/param_pages/canvas_hints.mjs';
 
 /* Install console.log override to route to unified debug.log */
 installConsoleOverride('shadow');
@@ -13279,16 +13280,39 @@ function drawCanvasPreview() {
         print(3, 50, canvasIsEnterable() ? "Back: return" : "Click/Back: return", 1);
     }
 
-    const showCanvasValue = !canvasParamMeta || canvasParamMeta.show_value !== false;
-    let valueText = showCanvasValue ? "-" : "";
-    if (showCanvasValue && canvasParamKey) {
-        const fullKey = buildHierarchyParamKey(canvasParamKey);
-        const raw = getSlotParam(hierEditorSlot, fullKey);
-        if (raw !== null && raw !== undefined && raw !== "") {
-            valueText = formatHierDisplayValue(canvasParamKey, raw);
-        }
-    }
     if (!canvasParamMeta || canvasParamMeta.show_footer !== false) {
+        /*
+         * ⭐ AN ENTERABLE CANVAS GETS HINTS, NOT ITS VALUE -- and it says the
+         * SAME THING dAVEBOx says, which for one afternoon it did not.
+         *
+         *   BACK UP     Back climbs a level (the module answers `canGoUp`)
+         *   BACK EXIT   Back leaves, because the module is at its top
+         *   JOG PAGES   only while Shift is down: the escape hatch, advertised
+         *               when it is live rather than cluttering every frame
+         *
+         * A visualiser keeps its value and title, which is all a screen you
+         * only look at has to say.
+         */
+        const hints = canvasHints({
+            enterable: canvasIsEnterable(),
+            canGoUp: canvasCanGoUp(canvasRuntime && canvasRuntime.overlay,
+                                   canvasRuntime && canvasRuntime.ctx),
+            shiftHeld: isShiftHeld(),
+        });
+        if (hints.length) {
+            drawFooter(hints.map((h) => `${h.key}: ${h.action}`));
+            return;
+        }
+
+        const showCanvasValue = !canvasParamMeta || canvasParamMeta.show_value !== false;
+        let valueText = showCanvasValue ? "-" : "";
+        if (showCanvasValue && canvasParamKey) {
+            const fullKey = buildHierarchyParamKey(canvasParamKey);
+            const raw = getSlotParam(hierEditorSlot, fullKey);
+            if (raw !== null && raw !== undefined && raw !== "") {
+                valueText = formatHierDisplayValue(canvasParamKey, raw);
+            }
+        }
         drawFooter({
             left: truncateText(String(valueText || "-"), 20),
             right: truncateText(title, 12)
@@ -18890,6 +18914,28 @@ globalThis.onMidiMessageInternal = function(data) {
     var canvasInCorun = coRunUiActive() && coRunView === VIEWS.CANVAS;
     var canvasEnterable = (view === VIEWS.CANVAS || canvasInCorun) && canvasIsEnterable();
     if ((view === VIEWS.CANVAS || canvasInCorun) && (status & 0xF0) === 0xB0) {
+        /*
+         * ⭐⭐ SHIFT+JOG IS THE ESCAPE HATCH, and it is never the module's.
+         *
+         * An enterable canvas owns the jog, the click and (until it declines)
+         * Back, so a module whose navigation is broken -- or simply deeper than
+         * the user expected -- can make leaving feel like work. Shift+jog closes
+         * the canvas and DOES NOT CONSUME THE TURN: the event falls through to
+         * the screen underneath, which pages. Exit and move on, in one gesture.
+         *
+         * ⭑ Not new grammar: Shift+jog already pages out of every entered door,
+         * and Shift+click already reaches the section picker from anywhere. A
+         * dive was the one screen with no such way out.
+         *
+         * ⚠ NEVER OFFERED TO THE MODULE and not gated on `enterable` -- an
+         * escape hatch a module can decline is not an escape hatch.
+         */
+        if (d1 === 14 && isShiftHeld() && d2 !== 0) {
+            if (canvasInCorun) runCoRunChainEdit(function() { closeCanvasPreview(true); });
+            else closeCanvasPreview(true);
+            needsRedraw = true;
+            /* NO return: the turn belongs to whatever is underneath now. */
+        } else
         /* ⭐ AN ENTERABLE CANVAS KEEPS THE CLICK. Declining to steal is all that
          * is needed -- the press falls through to dispatchCanvasMidi below like
          * every other CC, and the module's onMidi sees it. */
