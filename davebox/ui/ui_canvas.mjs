@@ -36,6 +36,11 @@
  */
 
 import { drawKitHintRow, MV_FOOTER_Y } from './ui_movy.mjs';
+/* The device's own small font, so a module drawing its own chrome draws it in
+ * the same type as the chrome beside it -- the same `print(..., "small")` stock
+ * offers. davebox transcribes this font rather than importing it; see
+ * ui_fonts_pp.mjs. */
+import { fontPrint4x5, fontWidth4x5, FONT4_HEIGHT } from './ui_fonts_pp.mjs';
 
 /* The one open canvas, or null. */
 let C = null;
@@ -276,9 +281,19 @@ function makeCtx(c) {
          * there; spelled out here because copying that line is the obvious
          * thing to do. */
         drawLine: (x1, y1, x2, y2, v) => draw_line(Math.round(x1), Math.round(y1), Math.round(x2), Math.round(y2), v ? 1 : 0),
-        print: (x, y, t, color = 1) => print(Math.round(x), Math.round(y), String(t), color ? 1 : 0),
-        measureText: (s) => (typeof text_width === 'function'
-            ? text_width(String(s)) : String(s).length * 6),
+        print: (x, y, t, color = 1, font) => {
+            if (font === 'small') {
+                fontPrint4x5(c.ctx, Math.round(x), Math.round(y), String(t), color ? 1 : 0);
+                return;
+            }
+            print(Math.round(x), Math.round(y), String(t), color ? 1 : 0);
+        },
+        fontHeight: (font) => (font === 'small' ? FONT4_HEIGHT : 7),
+        measureText: (t, font) => {
+            const str = String(t);
+            if (font === 'small') return fontWidth4x5(str);
+            return typeof text_width === 'function' ? text_width(str) : str.length * 6;
+        },
         now: () => Date.now(),
         random: () => Math.random(),
         /* Shift, as STATE -- the same member stock's canvas ctx offers, so a
