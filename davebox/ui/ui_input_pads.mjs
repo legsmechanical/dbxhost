@@ -311,7 +311,7 @@ function _onPadPressTrackView(status, d1, d2) {
                 const lane_vp  = S.activeDrumLane[t];
                 const laneNote = S.drumLaneNote[t][lane_vp];
                 liveSendNote(t, 0x90, laneNote, zoneVel, true);
-                soundVouchLivePress(t, laneNote);
+                soundVouchLivePress(t, laneNote, d1);
                 padPitch[padIdx] = laneNote;
                 padPressTick[padIdx] = nowMs();
                 S.liveActiveNotes.add(laneNote);
@@ -444,7 +444,7 @@ function _onPadPressTrackView(status, d1, d2) {
                     const vel = effectiveVelocity(d2);
                     const laneNote = S.drumLaneNote[t][lane];
                     liveSendNote(t, 0x90, laneNote, vel);
-                    soundVouchLivePress(t, laneNote);
+                    soundVouchLivePress(t, laneNote, d1);
                     padPitch[padIdx] = laneNote;
                     padPressTick[padIdx] = nowMs();
                     S.liveActiveNotes.add(laneNote);
@@ -565,7 +565,7 @@ function _onPadPressTrackView(status, d1, d2) {
              * STEP-HELD preview above deliberately does not vouch: that finger
              * is aiming at a step, not at a sound, and moving the editor under
              * it would be a surprise rather than a shortcut. */
-            soundVouchLivePress(S.activeTrack, pitch);
+            soundVouchLivePress(S.activeTrack, pitch, d1);
             /* STEP RECORD: the pad still previews (above), and also writes at
              * the cursor. ui_record owns the entry/advance state machine. */
             if (S.stepRecActive)

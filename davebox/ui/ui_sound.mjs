@@ -55,7 +55,7 @@ import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
 import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
-         PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, ROUTE_NONE } from './ui_constants.mjs';
+         PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, ROUTE_NONE, TRACK_PAD_BASE } from './ui_constants.mjs';
 import { applyTrackConfig, applyBankParam, readBankParams } from './ui_dsp_bridge.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { moduleParallelDefault, setModuleParallelDefault, reconcileParallelSlot } from './ui_parallel.mjs';
@@ -7938,7 +7938,14 @@ function queueWrite(key, val, comp) {
  * a playing pattern cannot move focus. External MIDI is excluded too — it
  * reaches liveSendNote by a different path, and an incoming drum loop should no
  * more steal focus than a sequenced one. */
-export function soundVouchLivePress(track, note) {
+/*
+ * ⭑ `padNote` is the PHYSICAL pad (68..99) the finger landed on -- what the
+ * hardware sent, not the note we emit. It is only ever used as a doorbell for a
+ * dived canvas, which is the one consumer that wants to know a finger was
+ * involved without being told a pad index. `note` remains what it always was:
+ * the note we EMIT, which is the module's to map.
+ */
+export function soundVouchLivePress(track, note, padNote) {
     /* `livePress` comes from the hierarchy of the block CURRENTLY open, so it
      * is null unless the module being looked at is one that asked for this.
      * That self-gates the whole feature — no module-id test needed. */
@@ -7965,32 +7972,31 @@ export function soundVouchLivePress(track, note) {
     }
 
     /*
-     * 🔴 A DIVED CANVAS IS NOT TOLD, AND THAT IS ON PURPOSE (2026-09-17).
+     * ⭐ A DIVED CANVAS THAT ASKED FOR PADS IS TOLD, and it is told LAST.
      *
-     * On stock, `wantsPads` forwards the raw pad note to the canvas and a
-     * module-drawn browser follows the pad you hit. Doing the same here would
-     * break the rule stated above: we own the pad notes, and a module that
-     * receives one vouches for it -- DR32's browser writes `ui_live_press` the
-     * moment it sees a pad. That would be a SECOND vouch on top of the note we
-     * are about to name below, re-arming a press the kit had already resolved,
-     * and the arm would then be claimed by whatever note arrived next.
+     * The rule this closes: if davebox cannot do what a module does on stock,
+     * davebox changes. On stock a canvas declaring `wantsPads` follows the pad
+     * you hit, so a sample browser fills the pad under your finger; without
+     * this it did not, here.
      *
-     * Naming the note is also strictly better than the vouch it would sit on
-     * top of: it is deterministic where the vouch is a race (measured: the
-     * vouch missed 2 of 16 presses against a 58 ms window).
+     * ⚠⚠ AFTER the note is named below -- read that block first. We own the pad
+     * notes and used to forward NONE of them, because a module that receives
+     * one vouches for it, and a vouch landing after we have already named the
+     * note finds it consumed, ARMS FORWARD, and is then claimed by whatever
+     * note arrives next: a sequenced one, dragging focus to a pad nobody
+     * touched.
      *
-     * So in dAVEBOx a canvas gets the jog, the click and Back, and does NOT
-     * follow the pads. The cost is one behaviour, and it is a behaviour the
-     * module is written to do without -- on a host that forwards nothing it
-     * keeps filling the pad that was focused when it opened.
+     * What makes forwarding safe now is the module's half of the same
+     * contract: it READS focus before it vouches, and stays quiet when focus
+     * has already moved. Naming the note first is therefore not merely the
+     * better answer (measured: the vouch missed 2 of 16 presses against a 58 ms
+     * window) -- it is what suppresses the second claim.
      *
-     * ⭑ TO CLOSE THIS PROPERLY the canvas needs telling that FOCUS MOVED, not
-     * that a pad was hit -- there is no note to replay in that, so no second
-     * vouch. That is a contract addition (stock has no such hook either), which
-     * is why it is a note here rather than a quiet local invention.
+     * ⚠ So ORDER IS LOAD-BEARING. Forward before the naming and the canvas
+     * reads a stale focus, vouches, and we are back to the arming hazard. The
+     * forward therefore sits at the END of this function, after both return
+     * paths below have had their say.
      */
-
-
     /* ⭑ NAME the pad when the module lets us. We EMIT this note, so unlike the
      * module's own canvas we know exactly which element it is — and saying so
      * is deterministic where vouching is a race. MEASURED (2026-07-30): the
@@ -7999,6 +8005,7 @@ export function soundVouchLivePress(track, note) {
      * The module maps note -> element; we never send an index. */
     if (S.livePress.noteParam && note >= 0) {
         engineSet(S.slot, S.comp, S.livePress.noteParam, String(note));
+        canvasPadDoorbell(padNote);
         return;
     }
 
@@ -8010,8 +8017,33 @@ export function soundVouchLivePress(track, note) {
      * NOT the coalescing footgun in CLAUDE.md: that is host_module_set_param
      * sharing a channel with shadow_send_midi_to_dsp; this is shadow_set_param,
      * the chain-param SHM mailbox. The tick retry covers a dropped write. */
-    if (!S.livePress.pressParam) return;
+    if (!S.livePress.pressParam) { canvasPadDoorbell(padNote); return; }
     S.padVouch = !engineSet(S.slot, S.comp, S.livePress.pressParam, '1');
+    canvasPadDoorbell(padNote);
+}
+
+/*
+ * Tell a dived canvas that a finger landed on a pad.
+ *
+ * ⚠⚠ CALLED LAST, ALWAYS, and the order is load-bearing. We name the note (or
+ * vouch) FIRST so the module's focus has already moved by the time the canvas
+ * hears about it -- because a canvas that hears about a press reads focus and,
+ * finding it unmoved, vouches itself. That second vouch would land after ours
+ * has consumed the note, ARM FORWARD, and be claimed by whatever note arrived
+ * next: a sequenced one, dragging focus to a pad nobody touched. This is the
+ * hazard the old "we deliberately never forward them" note described, and
+ * ordering is what removes it -- with the module's half, which is to read focus
+ * before vouching and stay quiet when it has already moved.
+ *
+ * The note is the PHYSICAL pad (68..99), exactly what stock's shim publishes
+ * under `pad_observe`, so a module written against stock needs no branch.
+ */
+function canvasPadDoorbell(padNote) {
+    if (S.view !== VIEW_CANVAS || !canvasEditActive() || !canvasEditWantsPads()) return;
+    if (!(padNote >= TRACK_PAD_BASE && padNote < TRACK_PAD_BASE + 32)) return;
+    canvasEditOnMidi(0x90, padNote, 100);
+    if (canvasEditTakeClose()) closeCanvasScreen();
+    S.dirty = true;
 }
 
 /* Drain a spread bank re-read. `pollCursor` < 0 means idle. Deliberately does
