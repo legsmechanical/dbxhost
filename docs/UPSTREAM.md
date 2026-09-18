@@ -290,6 +290,28 @@ float gain; and ONE producer of a bus send key rather than upstream's two. Full 
 `default_buses` (#464, with #466/#467) landed 2026-09-08 — see the window above for its
 divergences. Pieces 2 (send-FX chain editing) and 3 (the async FX load ring) are NOT ported.
 
+## Canvas contract (#520) — ported while the PR is open
+
+Ported 2026-09-17 from charlesvestal/schwung#520 (open, 11 commits) so both hosts carry ONE shape.
+The fork's own `canvas_takes_click` and contextual-Back/Shift+Back experiments were reverted first;
+`enterable` + `handleBack` supersede both.
+
+- **Taken:** `enterable`, `handleBack` (true = went up a level), `ctx.close()`, `wantsPads`,
+  `ctx.shiftHeld()`, `ctx.measureText()`, `show_footer: false`, the unconditional Shift+jog escape
+  hatch, and the one-strike hook primitive (a throw answers a sentinel, never a value).
+- **dAVEBOx surface:** `davebox/ui/ui_canvas.mjs` (`VIEW_CANVAS`), reached from `openParamEditor`
+  when a `type: "canvas"` param is dived into. ⚠ The escape hatch is keyed on the host's
+  `VIEWS.CANVAS`, which dAVEBOx never enters, so it needs its own dAVEBOx copy —
+  `tests/host/test_canvas_escape_hatch_both_surfaces.sh` pins both.
+- **NOT taken:** the draw-path ctx split (`DRAW_PATH_HOOKS` / `canvasHookCtx`, which strips param
+  accessors from `draw`/`tick`). An unrelated read-cost change; it belongs to a proper upstream
+  sync, and its test was left out rather than shipped failing.
+- **Deliberately absent from the host:** host-drawn footer hints, a `canGoUp` hook, and a published
+  device font. Each was built and reverted; a module carries its own font and draws its own chrome.
+  `test_canvas_enterable.sh` pins the absence of a typeface on the ctx.
+
+When #520 merges, re-diff it against this port — upstream may change shape in review.
+
 ## Keep-list — paths this fork owns
 
 Divergence is concentrated, and these are the files where an upstream change is most likely to
@@ -297,7 +319,7 @@ collide and most deserving of a careful read before taking:
 
 | Path | Δ vs upstream | Why it diverges |
 |---|---|---|
-| `src/shadow/shadow_ui.js` | ~3.1k lines | Canvas click/back, edit-CC claims, Module Level row, Send/Move FX pickers, optional-readback normalization |
+| `src/shadow/shadow_ui.js` | ~3.1k lines | Canvas contract (#520 port), edit-CC claims, Module Level row, Send/Move FX pickers, optional-readback normalization |
 | `src/schwung_shim.c` | ~1.3k | Module-level render paths, edit-CC forwarding, `claims_edit_ccs`, remote-UI push |
 | `src/host/shadow_chain_mgmt.c` + `.h` | ~890 | 4 FX blocks per slot, Send FX buses |
 | `src/modules/chain/dsp/chain_patch.c`, `chain_host.c` | ~750 | fx3/fx4 routing and patch parse |
@@ -317,8 +339,6 @@ so the option stays visible.
 |---|---|---|
 | Send FX buses + generic FX-bus picker | `0d6402b6` (the Send FX half only) | **PR #121 OPEN**, parked on review time |
 | Remote UI v2 — off-thread snapshots, lossless edits, server push | `c29abdf7` + the 7-commit push series | **PR #180 OPEN** |
-| Let a canvas claim the jog click (`canvas_takes_click`) | `0bea22ad` | Not submitted |
-| Contextual Back in a canvas UI (`handleBack` + Shift+Back failsafe) | `2bad2ea5` | Not submitted |
 | Let a module claim Undo/Copy/Delete (`claims_edit_ccs`) + its tests | `883b5f1e`, `df03a19c` | Not submitted. Supersedes upstream #154, which #175 reverted |
 | Treat an empty param readback as absent, not as a value | `16368a97` | Not submitted |
 | Text-entry function keys no longer overlap the last characters | `02e5ac2d` | Not submitted |
