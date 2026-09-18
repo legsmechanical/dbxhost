@@ -8419,6 +8419,30 @@ export function soundOnCC(d1, d2, decodeDelta) {
      * EVERYWHERE, Note/Session (50) and Shift+Record (86). Back (51) is handled
      * below, because the MODULE gets first refusal on it.
      */
+    /*
+     * ⭐⭐ SHIFT+JOG IS THE ESCAPE HATCH, and it is never the module's.
+     *
+     * ⚠⚠ THE HOST'S COPY DOES NOT COVER US. Stock handles this in shadow_ui's
+     * canvas steal block, gated on `view === VIEWS.CANVAS` -- the HIERARCHY
+     * EDITOR's canvas. dAVEBOx's canvas is its own VIEW_CANVAS in this file, so
+     * that branch never fires here and Shift+jog was simply forwarded to the
+     * module like any other CC. Josh, from the device: "on dbxhost shift+wheel
+     * doesn't exit the browser."
+     *
+     * Every other half of this contract was ported and this one was not,
+     * because it is the only piece whose host implementation is keyed on a view
+     * dAVEBOx does not use. A port that copies members will miss it; only using
+     * the screen finds it.
+     *
+     * Closes and does NOT consume the turn: execution falls through to
+     * davebox's own jog handling below, so the gesture that gets you out also
+     * moves you on -- the same behaviour stock has.
+     */
+    if (S.view === VIEW_CANVAS && canvasEditActive() &&
+        d1 === 14 && GS.shiftHeld && d2 !== 0) {
+        closeCanvasScreen();
+        /* no return: the turn belongs to whatever is underneath now */
+    } else
     if (S.view === VIEW_CANVAS && canvasEditActive() &&
         d1 !== 49 && d1 !== 88 && d1 !== 79 && d1 !== 50 && d1 !== 51 &&
         !(d1 === 86 && GS.shiftHeld)) {
