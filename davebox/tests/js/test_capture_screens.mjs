@@ -1,0 +1,110 @@
+/* tests/js/test_capture_screens.mjs — the capture chooser, as the user drives it.
+ *
+ * Confirming the LENGTH chooser (warp-to-fit) used to announce "TEMPO SET /
+ * 2 BPM" — its choices are bar counts. Driven through the real jog click.
+ */
+import './_bulk_get_stub.mjs';
+
+let failed = 0;
+function ok(l) { console.log(`  ok   — ${l}`); }
+function bad(l, e) { console.error(`  FAIL — ${l}: ${e && e.stack ? e.stack : e}`); failed = 1; }
+function step(l, fn) { try { fn(); ok(l); } catch (e) { bad(l, e); } }
+function assert(c, m) { if (!c) throw new Error(m); }
+
+const ENGINE = {};
+globalThis.shadow_get_param = (slot, k) => (ENGINE[k] !== undefined ? ENGINE[k] : '');
+globalThis.shadow_set_param = (slot, k, v) => { ENGINE[k] = String(v); return 1; };
+globalThis.shadow_send_midi_to_dsp = () => {};
+globalThis.host_system_cmd = () => 0;
+globalThis.host_read_file = () => '';
+globalThis.host_file_exists = () => false;
+globalThis.host_write_file = () => true;
+globalThis.host_ensure_dir = () => true;
+globalThis.host_remove_dir = () => true;
+globalThis.host_module_set_param = () => {};
+globalThis.host_module_set_params = () => true;
+globalThis.host_module_get_param = () => '';
+globalThis.shadow_save_state_now = () => true;
+globalThis.host_vol_block = () => {};
+globalThis.host_edit_cc_block = () => {};
+globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
+globalThis.stipple_rect = () => {};
+globalThis.clear_screen = () => {}; globalThis.print = () => {};
+globalThis.draw_rect = () => {}; globalThis.fill_rect = () => {};
+globalThis.draw_line = () => {};
+globalThis.set_pixel = () => {};
+globalThis.flush_display = () => {};
+globalThis.move_midi_internal_send = () => {};
+globalThis.set_led = () => {};
+globalThis.shadow_get_ui_flags = () => 0;
+globalThis.host_register_primary = () => true;
+globalThis.host_open_service = () => {};
+globalThis.host_close_service = () => {};
+globalThis.host_ext_midi_remap_clear = () => {};
+globalThis.host_ext_midi_remap_set = () => {};
+globalThis.host_ext_midi_remap_enable = () => {};
+globalThis.shadow_get_shift_held = () => 0;
+
+/* One frame, recorded: every print, every box, every fill. */
+let F;
+function frame(R) {
+    F = { prints: [], rects: [], fills: [] };
+    globalThis.clear_screen = () => {};
+    globalThis.print = (x, y, t, c) => F.prints.push({ x, y, t: String(t), c });
+    globalThis.draw_rect = (x, y, w, h, c) => F.rects.push({ x, y, w, h, c });
+    globalThis.fill_rect = (x, y, w, h, c) => F.fills.push({ x, y, w, h, c });
+    R.drawUI();
+    return F;
+}
+/* The card: the one box drawn at CARD_X 6, width 116. */
+const cardBox = (f) => f.rects.find((r) => r.x === 6 && r.w === 116);
+const said = (f, t) => f.prints.some((p) => p.t === t);
+const inCard = (f, t) => {
+    const b = cardBox(f);
+    return !!b && f.prints.some((p) => p.t === t && p.x >= b.x && p.x < b.x + b.w &&
+                                         p.y >= b.y && p.y < b.y + b.h);
+};
+
+async function main() {
+const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
+stubParamPagesDevice();
+await import('../../ui/ui.js');
+const { S } = await import('../../ui/ui_state.mjs');
+const R = await import('../../ui/ui_render.mjs');
+globalThis.init();
+S.awaitingProjectSelect = false; S.ledInitComplete = true;
+S.stateLoading = false; S.bootSplashMs = 0; S.sessionView = false;
+const click = () => { globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 3, 127]));
+                      globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 3, 0])); };
+function open(warp, vals, idx) {
+    S.tempoSelectActive = true; S.tempoSelectTrack = 1; S.tempoSelectClip = 0;
+    S.tempoSelectWarp = warp; S.tempoSelectBpms = vals; S.tempoSelectIdx = idx;
+    S.actionPopupLines = []; S.actionPopupEndTick = -1;
+}
+
+step('the LENGTH chooser confirms a LENGTH, in bars', () => {
+    open(true, [1, 2, 3, 4], 1);
+    click();
+    assert(!S.tempoSelectActive, 'the click did not close the chooser');
+    const got = S.actionPopupLines.join(' ');
+    assert(got === 'LENGTH SET 2 BARS', 'popup was: ' + got);
+});
+
+step('⚠ CONTROL: the TEMPO chooser still confirms a tempo', () => {
+    open(false, [61, 122, 244], 1);
+    click();
+    const got = S.actionPopupLines.join(' ');
+    assert(got === 'TEMPO SET 122 BPM', 'popup was: ' + got);
+});
+
+step('the chooser draws in the kit faces, not the host list font', () => {
+    open(true, [1, 2, 3, 4], 0);
+    const f = frame(R);
+    assert(f.prints.length === 0, 'host print() is still used: ' + JSON.stringify(f.prints.map((p) => p.t)));
+    S.tempoSelectActive = false;
+});
+
+if (failed) process.exit(1);
+console.log('PASS: test_capture_screens.mjs');
+}
+main().catch((e) => { console.error(e && e.stack ? e.stack : e); process.exit(1); });

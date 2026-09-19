@@ -158,8 +158,11 @@ function _onCC_jog(d1, d2) {
     if (d1 === 3 && d2 === 127 && S.tempoSelectActive) {
         host_module_set_param('t' + S.tempoSelectTrack + '_capture_confirm', '');
         S.tempoSelectActive = false;
-        showActionPopup('TEMPO SET',
-                        Math.round(S.tempoSelectBpms[S.tempoSelectIdx]) + ' BPM');
+        /* Warp mode's choices are BAR COUNTS, not tempos — it used to announce
+         * "TEMPO SET / 2 BPM" for a 2-bar fit. */
+        const _v = Math.round(S.tempoSelectBpms[S.tempoSelectIdx]);
+        if (S.tempoSelectWarp) showActionPopup('LENGTH SET', _v + (_v === 1 ? ' BAR' : ' BARS'));
+        else                   showActionPopup('TEMPO SET', _v + ' BPM');
         S.screenDirty = true;
         return;
     }

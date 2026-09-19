@@ -12,7 +12,7 @@ import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
 import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev, faderGainToTravel} from './ui_engine.mjs';
 import { instrValueFor } from './ui_dsp_bridge.mjs';
-import { fontPrint4x5, fontWidth4x5 } from './ui_fonts_pp.mjs';
+import { fontPrint4x5, fontWidth4x5, fit4x5, fontPrintBigNum, fontWidthBigNum, bigNumCanDraw, BIGNUM_H } from './ui_fonts_pp.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
@@ -39,7 +39,7 @@ import {
     drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawModuleSwapConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
     drawConvertToDrumConfirm, drawConvertToConductConfirm, drawMenuInfo,
     drawLgtoConfirm, drawMacroClearConfirm, drawBakeConfirm, drawSnapshotPicker,
-    drawBakeSceneConfirm, drawXposeConfirm, drawBpmLine,
+    drawBakeSceneConfirm, drawXposeConfirm,
     drawProjectPadPicker,
     drawProjectOpenFailed,
 } from './ui_dialogs.mjs';
@@ -57,7 +57,6 @@ import { automationStateFor } from './ui_automation.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
-import { drawMenuHeader } from '/data/UserData/schwung/shared/menu_layout.mjs';
 
 /* ------------------------------------------------------------------ */
 /* Parameter bank definitions                                           */
@@ -1192,54 +1191,103 @@ function drawPerfModeOled() {
  * bright dividers, the notes, the loop end, and a live playhead sweeping at the
  * selected tempo — so the user sees where the bar breaks and loop point fall
  * relative to what they hear. Jog click keeps the tempo. */
+/* ── CAPTURE SCREENS — the kit's chrome (header bar, 4x5 caps, big numerals,
+ * hint row), like every rebuilt dAVEBOx screen. They had kept the MCUFONT
+ * dialog face and the host's list font long after the rest moved on. ── */
+
+/* A small solid triangle pointing left (dir -1) or right (+1): "the jog moves
+ * this". 3 wide, 5 tall, apex at the outer edge. */
+function capArrow(x, y, dir) {
+    for (let i = 0; i < 3; i++) {             /* i = distance from the apex */
+        const col = dir < 0 ? x + i : x + 2 - i;
+        fill_rect(col, y + 2 - i, 1, 1 + 2 * i, 1);
+    }
+}
+
+/* A prompt: title in the header bar, lines of 4x5 caps centred in the body,
+ * hints on the footer row. The capture / merge placement screens. */
+function drawCapturePrompt(title, lines, hints) {
+    clear_screen();
+    drawKitHeader(title);
+    const pitch = 9;
+    const top = 7 + Math.floor((MV_FOOTER_Y - 7 - (lines.length * pitch - (pitch - FONT4_H))) / 2);
+    lines.forEach((ln, i) => {
+        const t = fit4x5(String(ln).toUpperCase(), 124);
+        fontPrint4x5(Math.floor((128 - fontWidth4x5(t)) / 2), top + i * pitch, t, 1);
+    });
+    if (hints) drawKitHintRow(MV_FOOTER_Y, hints);
+}
+const FONT4_H = 5;
+
 function drawTempoSelect() {
     clear_screen();
     const t    = S.tempoSelectTrack;
     const c    = S.tempoSelectClip;
     const idx  = S.tempoSelectIdx | 0;
-    const bpms = S.tempoSelectBpms;
+    const vals = S.tempoSelectBpms || [];
+    const warp = !!S.tempoSelectWarp;
     const isDrum = S.trackPadMode[t] === PAD_MODE_DRUM;
 
-    /* "< 120 bpm >" (empty-session tempo) or "< 2 bars >" (warp-to-fit) —
-     * shared value line (same look as the tap-tempo screen). */
-    drawBpmLine(64, 6, bpms[idx], S.tempoSelectWarp ? 'bars' : 'bpm');
-    if (S.tempoSelectWarp) pixelPrintC(64, 22, 'Shift = Fine adjust', 1);
+    drawKitBankHeader(warp ? 'Fit to bars' : 'Capture tempo', null, 'T' + (t + 1));
 
-    /* BAR view. */
-    const BX = 4, BW = 120, BY = 28, BH = 19;
+    /* THE VALUE: big numerals + their unit, centred; the neighbouring choices
+     * sit small at either side behind an arrow, so it reads as a wheel you can
+     * turn rather than a number you are told. */
+    const fmt  = (v) => String(Math.round(v || 0));
+    const num  = fmt(vals[idx]);
+    const unit = warp ? ((Math.round(vals[idx]) === 1) ? 'BAR' : 'BARS') : 'BPM';
+    const VY = 10;
+    const big = bigNumCanDraw(num);
+    const nw  = big ? fontWidthBigNum(num) : fontWidth4x5(num);
+    const uw  = fontWidth4x5(unit);
+    const gw  = nw + 3 + uw;
+    const gx  = Math.floor((128 - gw) / 2);
+    if (big) fontPrintBigNum(gx, VY, num, 1);
+    else     fontPrint4x5(gx, VY + BIGNUM_H - FONT4_H, num, 1);
+    fontPrint4x5(gx + nw + 3, VY + BIGNUM_H - FONT4_H, unit, 1);
+    const AY = VY + Math.floor((BIGNUM_H - 5) / 2);
+    if (vals.length > 1) {
+        const prev = idx > 0 ? fmt(vals[idx - 1]) : '';
+        const next = idx < vals.length - 1 ? fmt(vals[idx + 1]) : '';
+        capArrow(2, AY, -1);
+        if (prev) fontPrint4x5(8, AY, prev, 1);
+        capArrow(123, AY, +1);
+        if (next) fontPrint4x5(120 - fontWidth4x5(next), AY, next, 1);
+    }
+
+    /* THE TAKE, against the bars at this choice: bar lines full height, beats
+     * dotted, a tick per note, the playhead sweeping at the auditioned tempo. */
+    const BX = 4, BW = 120, BY = 26, BH = 26;
     const len = Math.max(1, (isDrum ? (S.drumLaneLength[t] | 0)
                                     : (S.clipLength[t][c] | 0)) || 16);
     const bars = Math.max(1, Math.round(len / 16));
     rectOutline(BX, BY, BW, BH, 1);
-    /* Bar dividers (bright, full height) + faint beat marks. */
     for (let s = 4; s < len; s += 4) {
         const x = BX + Math.round((s / len) * BW);
         if (s % 16 === 0) for (let yy = BY; yy < BY + BH; yy++) set_pixel(x, yy, 1);
-        else for (let yy = BY + 2; yy < BY + BH - 2; yy += 3) set_pixel(x, yy, 1);
+        else for (let yy = BY + 3; yy < BY + BH - 2; yy += 3) set_pixel(x, yy, 1);
     }
-    /* Bar numbers along the top-inside of each bar segment (if they fit). */
     if (BW / bars >= 10) {
         for (let bi = 0; bi < bars; bi++) {
             const x = BX + Math.round((bi * 16 / len) * BW) + 2;
-            print(x, BY + 1, String(bi + 1), 1);
+            fontPrint4x5(x, BY + 2, String(bi + 1), 1);
         }
     }
-    /* Note ticks (melodic clip, or the active drum lane). */
     const steps = isDrum ? S.drumLaneSteps[t][S.activeDrumLane[t]] : S.clipSteps[t][c];
     if (steps) {
         for (let s = 0; s < len && s < steps.length; s++) {
             if (!steps[s] || steps[s] === '0') continue;
             const x = BX + Math.round((s / len) * BW);
-            fill_rect(Math.min(x, BX + BW - 2), BY + BH - 6, 2, 4, 1);
+            fill_rect(Math.min(x, BX + BW - 3), BY + BH - 9, 2, 7, 1);
         }
     }
-    /* Playhead sweeping at the selected tempo. */
     const cur = isDrum ? (S.drumCurrentStep[t] | 0) : (S.trackCurrentStep[t] | 0);
     const ph  = ((cur % len) + len) % len;
     const px  = BX + Math.round((ph / len) * BW);
     for (let yy = BY; yy < BY + BH; yy++) set_pixel(Math.min(px, BX + BW - 1), yy, 1);
 
-    pixelPrintC(64, 56, 'Click to set', 1);
+    drawKitHintRow(MV_FOOTER_Y, warp ? [['jog', 'bars'], ['shft', 'fine'], ['clk', 'set']]
+                                     : [['jog', 'tempo'], ['clk', 'set']]);
 }
 
 /* Drum-view position bar (bottom strip): loop-window pages, view page solid,
@@ -1605,55 +1653,41 @@ function drawUIBody() {
     if (S.confirmExit)      { drawExitConfirm();      return; }
     if (S.projectPadPicker) { drawProjectPadPicker(); return; }
     if (S.pendingSceneBakePicker) {
-        clear_screen();
-        drawMenuHeader('BAKE SCENE');
-        print(4, 20, 'Tap a row or scene', 1);
-        print(4, 30, 'step to pick it.',   1);
-        print(4, 50, 'Back cancels',        1);
+        drawCapturePrompt('Bake scene', ['Tap a row or scene', 'step to pick it'],
+                          [['back', 'exit']]);
         return;
     }
     if (S.mergePlacing) {
         /* Destination picked — DSP is committing the take. Shown so the jump
          * back to the normal screen doesn't read as a freeze. */
-        clear_screen();
-        drawMenuHeader('PLACING MERGED');
-        print(4, 26, S.mergePlacingScene ? 'Clips…' : 'Clip…', 1);
+        drawCapturePrompt('Live merge', [S.mergePlacingScene ? 'Placing the clips...' : 'Placing the clip...'], null);
         return;
     }
     if (S.mergeNoticePending) {
         /* Shift+Sample raised this notice; it does NOT start the merge. Plain
          * Rec begins the count-in, Back cancels. */
-        clear_screen();
-        drawMenuHeader('LIVE MERGE');
-        print(4, 20, S.mergeNoticeSingleTrack < 0 ? 'Capture all 8.'
-                                                   : 'Capture this track.', 1);
-        print(4, 34, 'Rec to start,',                                       1);
-        print(4, 48, 'Back to cancel.',                                     1);
+        drawCapturePrompt('Live merge',
+                          [S.mergeNoticeSingleTrack < 0 ? 'Captures all 8 tracks' : 'Captures this track',
+                           'Press Rec to start'],
+                          [['back', 'exit']]);
         return;
     }
     if (S.pendingMergePlacement) {
-        clear_screen();
-        drawMenuHeader('PLACE MERGED');
-        print(4, 20, 'Tap a row or scene', 1);
-        print(4, 30, 'step for the clips.', 1);
-        print(4, 50, 'Back cancels',         1);
+        drawCapturePrompt('Place merged take', ['Tap a row or scene', 'step for the clips'],
+                          [['back', 'exit']]);
         return;
     }
     if (S.tempoSelectActive) { drawTempoSelect(); return; }
     if (S.mergeSoloPlacement >= 0) {
-        clear_screen();
-        drawMenuHeader('MERGED TAKE');
-        print(4, 20, 'Tap a blinking clip', 1);
-        print(4, 32, 'on track ' + (S.mergeSoloPlacement + 1) + ' to save.', 1);
-        print(4, 50, 'Back cancels',         1);
+        drawCapturePrompt('Merged take',
+                          ['Tap a blinking clip', 'on track ' + (S.mergeSoloPlacement + 1) + ' to keep it'],
+                          [['back', 'exit']]);
         return;
     }
     if (S.capturePlaceTrack >= 0) {
-        clear_screen();
-        drawMenuHeader('CAPTURED TAKE');
-        print(4, 20, 'Tap a blinking clip', 1);
-        print(4, 32, 'on track ' + (S.capturePlaceTrack + 1) + ' to save.', 1);
-        print(4, 50, 'Back cancels',         1);   /* Rec still works; Back is the universal cancel */
+        drawCapturePrompt('Captured take',
+                          ['Tap a blinking clip', 'on track ' + (S.capturePlaceTrack + 1) + ' to keep it'],
+                          [['back', 'exit']]);   /* Rec still works; Back is the universal cancel */
         return;
     }
     if (S.confirmStateWipe) { drawStateWipeConfirm(); return; }
