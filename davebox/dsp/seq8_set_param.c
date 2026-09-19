@@ -743,8 +743,47 @@ static int capture_write_take(seq8_instance_t *inst, int tidx, int clip,
  * the clip is armed and the transport started so the take plays back
  * immediately. A non-empty target keeps its length + the current tempo.
  *
- * Returns 1 if anything was written (ring is then consumed). */
-static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
+ * Returns 1 if anything was written. */
+/* Is this set_param a DELIBERATE EDIT that should drop the capture buffer?
+ * Capture takes what you just played; once you have hand-edited a clip,
+ * launched one or armed recording, the noodling before that is not "what you
+ * just played" any more. A small fixed list of user actions, not traffic:
+ * knob/param writes, pad maps, undo checkpoints and the capture keys
+ * themselves must never be on it. ⚠ In particular tN_cC_undo_checkpoint is
+ * queued by the knob half of the SAME Capture press and can land before the
+ * note commit — listing it would wipe the take it is meant to protect. */
+static int cap_str_ends(const char *s, const char *suf) {
+    size_t n = strlen(s), m = strlen(suf);
+    return n >= m && !strcmp(s + n - m, suf);
+}
+static int capture_clears_on(const char *key, const char *val) {
+    if (!strcmp(key, "launch_scene") || !strcmp(key, "launch_scene_quant") ||
+        !strcmp(key, "record_count_in") || !strcmp(key, "row_clear"))
+        return 1;
+    if (!(key[0] == 't' && key[1] >= '0' && key[1] <= '7' && key[2] == '_'))
+        return 0;
+    const char *sub = key + 3;
+    if (!strcmp(sub, "launch_clip")) return 1;
+    if (!strcmp(sub, "recording"))   return my_atoi(val) != 0;
+    /* clip (cC_) and drum-lane (lL_) edits */
+    if (!((sub[0] == 'c' || sub[0] == 'l') && sub[1] >= '0' && sub[1] <= '9'))
+        return 0;
+    const char *op = sub + 1;
+    while (*op >= '0' && *op <= '9') op++;
+    if (!strncmp(op, "_step_", 6))
+        return cap_str_ends(op, "_toggle") || cap_str_ends(op, "_add") ||
+               cap_str_ends(op, "_set_notes") || cap_str_ends(op, "_clear");
+    static const char *const OPS[] = {
+        "_note_add", "_note_del", "_note_move", "_note_resize", "_notes_op",
+        "_clear", "_drum_clear", "_hard_reset", "_euclid_stamp",
+    };
+    size_t k;
+    for (k = 0; k < sizeof(OPS) / sizeof(OPS[0]); k++)
+        if (!strcmp(op, OPS[k])) return 1;
+    return 0;
+}
+
+static int capture_commit_take(seq8_instance_t *inst, int tidx, int clip) {
     if (!inst || tidx < 0 || tidx >= NUM_TRACKS) return 0;
     if (clip < 0 || clip >= NUM_CLIPS) return 0;
     seq8_track_t *tr = &inst->tracks[tidx];
@@ -766,8 +805,11 @@ static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
     if (inst->playing) {
         uint32_t now_abs = inst->global_tick * TICKS_PER_STEP
                          + inst->master_tick_in_step;
-        if (!is_drum) undo_begin_single(inst, tidx, clip);
+        /* Drum captures are undoable too: snapshot AFTER the alloc, because
+         * undo_begin_drum_clip returns early on a clip that does not exist. */
         if (is_drum && !tr->drum_clips[clip]) drum_clips_alloc(inst, tr);
+        if (is_drum) undo_begin_drum_clip(inst, tidx, clip);
+        else         undo_begin_single(inst, tidx, clip);
 
         /* If the target clip is EMPTY, this is a first take: lay the phrase out
          * from the first played note to the last (sized to fit), rather than
@@ -786,16 +828,21 @@ static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
         /* First event's absolute tick + its clip-tick (where the phrase begins
          * in the loop). Empty-clip notes are laid out from there, unwrapped, so
          * a phrase longer than the clip extends it instead of wrapping. */
-        uint32_t first_abs = 0, first_ct = 0; int have_first = 0;
+        uint32_t first_abs = 0; int have_first = 0;
         for (i = 0; i < (int)inst->cap_count; i++) {
             const cap_ev_t *ev = &inst->cap_ring[(inst->cap_head + i) % CAP_MAX_EVENTS];
             if (ev->track != (uint8_t)tidx) continue;
             if (ev->type == CAP_EV_NOTE_ON || ev->type == CAP_EV_CC) {
-                first_abs = ev->abs_tick; first_ct = ev->ctick; have_first = 1; break;
+                first_abs = ev->abs_tick; have_first = 1; break;
             }
         }
         int fresh = mcl_empty && have_first;
         uint32_t span_end = 0;
+        /* A first take keeps the BEAT it was played on: its offset into the
+         * transport's bar, not the clip's own playhead (frozen on a clip that
+         * is not playing) nor the loop start (which lost the beat on drums).
+         * A phrase started on beat 3 comes back on beat 3. */
+        uint32_t bar_phase = first_abs % (16u * TICKS_PER_STEP);
 
         for (i = 0; i < (int)inst->cap_count; i++) {
             const cap_ev_t *ev = &inst->cap_ring[(inst->cap_head + i) % CAP_MAX_EVENTS];
@@ -810,7 +857,7 @@ static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
                 if (gate > 65535u) gate = 65535u;
                 if (!is_drum) {
                     uint32_t ct = fresh
-                        ? first_ct + (ev->abs_tick - first_abs)
+                        ? ws + bar_phase + (ev->abs_tick - first_abs)
                         : (clip == (int)tr->active_clip && tr->clip_playing)
                             ? ev->ctick
                             : ws + (wl ? (ev->abs_tick % wl) : 0);
@@ -827,7 +874,7 @@ static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
                         uint32_t lws  = (uint32_t)ln->clip.loop_start * ltps;
                         uint32_t lwl  = (uint32_t)ln->clip.length * ltps;
                         uint32_t ct = fresh
-                            ? lws + (ev->abs_tick - first_abs)
+                            ? lws + bar_phase + (ev->abs_tick - first_abs)
                             : lws + (lwl ? (ev->abs_tick % lwl) : 0);
                         clip_insert_note(&ln->clip, ct, (uint16_t)gate, ev->a, ev->b);
                         if (ct + gate > span_end) span_end = ct + gate;
@@ -852,6 +899,12 @@ static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
                 for (l = 0; l < DRUM_LANES; l++)
                     tr->drum_clips[clip]->lanes[l].clip.length = (uint16_t)len_steps;
             }
+            /* ...and starts on the next bar, through the same bar-boundary
+             * launch Shift+scene uses (seq8_render.c page stop), so the take
+             * plays back in time with everything else. */
+            tr->queued_clip       = (int8_t)clip;
+            tr->pending_page_stop = 1;
+            tr->will_relaunch     = 0;
         }
         inst->cap_last_was_stopped = 0;
         inst->cap_select_active    = 0;   /* overdub never opens the selector */
@@ -909,8 +962,9 @@ static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
     inst->cap_take_span    = (last_frame > first_frame) ? (last_frame - first_frame) : 1;
     inst->cap_take_is_drum = (uint8_t)is_drum;
 
-    if (!is_drum) undo_begin_single(inst, tidx, clip);
     if (is_drum && !tr->drum_clips[clip]) drum_clips_alloc(inst, tr);
+    if (is_drum) undo_begin_drum_clip(inst, tidx, clip);
+    else         undo_begin_single(inst, tidx, clip);
 
     int tempo_mode = capture_session_empty(inst) && !inst->clock_follow_on;
     int have_selector = 0;
@@ -974,6 +1028,15 @@ static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
     inst->state_dirty = 1;
     capture_clear(inst);   /* ring consumed; the take lives in cap_take[] */
     return 1;
+}
+
+/* EVERY Capture press consumes the ring, whether or not it wrote anything —
+ * a press that found nothing to take must not leave its leftovers for the
+ * next one. The stopped take survives in cap_take[] for the selector. */
+static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
+    int r = capture_commit_take(inst, tidx, clip);
+    if (inst) capture_clear(inst);
+    return r;
 }
 
 /* Clock-follow: route a transport-stop gesture. Toggle Move off if it's running
@@ -1060,6 +1123,8 @@ static void set_param(void *instance, const char *key, const char *val) {
      * before the tN_ block) read only inst/key/val; tidx/tr/sub are filled in
      * inside the tN_ block. Designated init leaves tidx=0, tr=NULL, sub=NULL. */
     sp_ctx_t cx = { .inst = inst, .key = key, .val = val };
+
+    if (inst->cap_count && capture_clears_on(key, val)) capture_clear(inst);
 
 
     /* --- Transport / tempo / tonality / metro / clock / count-in (global) ---

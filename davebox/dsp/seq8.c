@@ -345,6 +345,7 @@ typedef struct {
  * (abs_tick / ctick) or stopped (frame, against the free-running rui_frames
  * device clock, later scaled by the estimated tempo). */
 #define CAP_MAX_EVENTS  2048
+#define CAP_REACH_BARS  8   /* how far back a Capture press reaches */
 #define CAP_EV_NOTE_ON  0
 #define CAP_EV_NOTE_OFF 1
 #define CAP_EV_CC       2
@@ -356,7 +357,9 @@ typedef struct {
     uint8_t  track;
     uint8_t  a;         /* pitch (notes) / knob index 0-7 (CC) */
     uint8_t  b;         /* velocity (note-on) / CC value (CC) */
+    uint32_t loop_pos;  /* where in the LOOPING clip it was played, CAP_NO_LOOP if none */
 } cap_ev_t;
+#define CAP_NO_LOOP 0xFFFFFFFFu
 
 /* Frozen snapshot of a stopped-capture take, kept while the tempo selector is
  * open so re-tempo can re-derive the clip from the original wall-clock timing
@@ -1812,6 +1815,46 @@ static void capture_clear(seq8_instance_t *inst) {
     inst->cap_count = 0;
 }
 
+/* The one writer of active_track. Moving to ANOTHER track drops the buffer:
+ * Capture takes what you just played, and after a track change that is
+ * nothing yet. Compares old and new because tN_padmap is re-pushed for the
+ * SAME track on every key/scale/octave recompute, which must not wipe a
+ * phrase mid-play. */
+static void capture_set_active_track(seq8_instance_t *inst, int t) {
+    if ((uint8_t)t != inst->active_track) capture_clear(inst);
+    inst->active_track = (uint8_t)t;
+}
+
+static inline uint32_t playback_audible_cct(const clip_t *cl,
+                                            uint16_t current_step, uint16_t tick_in_step);
+
+/* Where in its loop is this track right now, for a note of this pitch?
+ * Only meaningful while the track's clip is actually LOOPING — a clip that
+ * is not playing has no loop to come round again, and its playhead fields
+ * are frozen (a drum track never writes current_clip_tick at all, so each
+ * lane's own clock is read instead). CAP_NO_LOOP otherwise. */
+static uint32_t capture_loop_pos(seq8_track_t *tr, uint8_t pitch) {
+    if (!tr->clip_playing) return CAP_NO_LOOP;
+    /* ⚠ An EMPTY clip loops silently at its default length, but there is no
+     * earlier pass to redo — playing over it is a first take that grows the
+     * clip. Without this, bar 2 of a 2-bar phrase over an empty 1-bar loop hit
+     * bar 1's positions and threw it away (Josh, device, 2026-09-19: "if i
+     * play 2 bars it only captures the last bar as a 1-bar loop"). */
+    if (tr->pad_mode != PAD_MODE_DRUM)
+        return tr->clips[tr->active_clip].note_count ? tr->current_clip_tick : CAP_NO_LOOP;
+    drum_clip_t *dc = tr->drum_clips[tr->active_clip];
+    if (!dc) return CAP_NO_LOOP;
+    int l, any = 0;
+    for (l = 0; l < DRUM_LANES; l++)
+        if (dc->lanes[l].clip.note_count) { any = 1; break; }
+    if (!any) return CAP_NO_LOOP;
+    for (l = 0; l < DRUM_LANES; l++)
+        if (dc->lanes[l].midi_note == pitch)
+            return playback_audible_cct(&dc->lanes[l].clip, tr->drum_current_step[l],
+                                        tr->drum_tick_in_step[l]);
+    return CAP_NO_LOOP;
+}
+
 /* Append one live-input event to the capture ring. Called from
  * live_note_on / live_note_off (both the on_midi RT path and the JS
  * tN_live_notes fallback funnel through those) and from the cc_send
@@ -1839,6 +1882,33 @@ static void capture_push(seq8_instance_t *inst, seq8_track_t *tr,
             capture_clear(inst);
     }
     inst->cap_last_frame = inst->rui_frames;
+
+    /* THE LATEST PASS WINS: playing over a spot an earlier pass of the loop
+     * already covered means you are having another go — drop the earlier
+     * take rather than stack them (movy, engine.rs). "Same spot" = within a
+     * step of an earlier note-on's loop position, played at least two steps
+     * earlier in time (a chord or a flam is the same pass). Only while the
+     * clip loops; stopped or not-playing has no "again". */
+    uint32_t here_pos = CAP_NO_LOOP;
+    uint32_t now_abs  = inst->global_tick * TICKS_PER_STEP + inst->master_tick_in_step;
+    if (type == CAP_EV_NOTE_ON && inst->playing) {
+        here_pos = capture_loop_pos(tr, a);
+        if (here_pos != CAP_NO_LOOP) {
+            int i;
+            uint8_t tidx = (uint8_t)(tr - inst->tracks);
+            for (i = 0; i < (int)inst->cap_count; i++) {
+                const cap_ev_t *o = &inst->cap_ring[(inst->cap_head + i) % CAP_MAX_EVENTS];
+                if (o->type != CAP_EV_NOTE_ON || o->track != tidx || o->loop_pos == CAP_NO_LOOP)
+                    continue;
+                uint32_t d = here_pos > o->loop_pos ? here_pos - o->loop_pos : o->loop_pos - here_pos;
+                if (d < TICKS_PER_STEP && now_abs - o->abs_tick >= 2u * TICKS_PER_STEP) {
+                    capture_clear(inst);
+                    break;
+                }
+            }
+        }
+    }
+
     if (inst->cap_count >= CAP_MAX_EVENTS) {
         inst->cap_head  = (uint16_t)((inst->cap_head + 1) % CAP_MAX_EVENTS);
         inst->cap_count = CAP_MAX_EVENTS - 1;
@@ -1846,13 +1916,31 @@ static void capture_push(seq8_instance_t *inst, seq8_track_t *tr,
     cap_ev_t *ev = &inst->cap_ring[(inst->cap_head + inst->cap_count)
                                    % CAP_MAX_EVENTS];
     ev->frame    = inst->rui_frames;
-    ev->abs_tick = inst->global_tick * TICKS_PER_STEP + inst->master_tick_in_step;
+    ev->abs_tick = now_abs;
     ev->ctick    = tr->current_clip_tick;
+    ev->loop_pos = here_pos;
     ev->type     = type;
     ev->track    = (uint8_t)(tr - inst->tracks);
     ev->a        = a;
     ev->b        = b;
     inst->cap_count++;
+
+    /* REACH BACK 8 BARS AT MOST: a minute of continuous playing captures the
+     * last phrase, not a clip's worth of everything. Frames are the one clock
+     * that runs stopped and playing alike, so both paths share the rule. A
+     * note-off left behind by a trimmed note-on is harmless — offs are only
+     * matched forward from an on. */
+    {
+        double bpm = (double)tr->pfx.cached_bpm;
+        if (bpm < 20.0 || bpm > 400.0) bpm = 120.0;
+        uint64_t window = (uint64_t)(CAP_REACH_BARS *
+                          ((double)inst->sample_rate * 60.0 / bpm * 4.0));
+        while (inst->cap_count > 1 &&
+               inst->cap_ring[inst->cap_head].frame + window < inst->rui_frames) {
+            inst->cap_head = (uint16_t)((inst->cap_head + 1) % CAP_MAX_EVENTS);
+            inst->cap_count--;
+        }
+    }
 }
 
 /* Count buffered capture events for one track (notes + CC). Drives the

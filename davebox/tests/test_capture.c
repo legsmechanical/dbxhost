@@ -138,9 +138,14 @@ int main(void) {
     HX_ASSERT(inst->playing == 1, "transport running");
     hx_render(h, 100);
     /* Capturing over an EMPTY clip while playing = a first take: the note lands
-     * at the clip playhead where it was played (its captured clip-tick), and the
-     * clip is sized to fit — no wrap into a default 1-bar window. */
-    uint32_t tick_at_play = inst->tracks[1].current_clip_tick;
+     * on the beat of the TRANSPORT's bar where it was played, and the clip is
+     * sized to fit — no wrap into a default 1-bar window. (This once compared
+     * against the clip's own playhead, which is frozen on a clip that is not
+     * playing — the test agreed with a frozen value.) */
+    HX_ASSERT(!inst->tracks[1].clip_playing, "setup: the empty clip is not playing");
+    uint32_t tick_at_play = (inst->global_tick * TICKS_PER_STEP + inst->master_tick_in_step)
+                          % (16u * TICKS_PER_STEP);
+    HX_ASSERT(tick_at_play >= 2 * TICKS_PER_STEP, "setup: played well into the bar");
     live_note_on(inst, &inst->tracks[1], 61, 90);
     hx_render(h, 10);
     live_note_off(inst, &inst->tracks[1], 61);
@@ -152,8 +157,13 @@ int main(void) {
     {
         int d = (int)cl->notes[0].tick - (int)tick_at_play;
         if (d < 0) d = -d;
-        HX_ASSERT(d < 24, "note lands where it was played (clip playhead)");
+        HX_ASSERT(d < 24, "note lands on the beat it was played (transport bar)");
     }
+    HX_ASSERT(inst->tracks[1].queued_clip == 0 && inst->tracks[1].pending_page_stop,
+              "the new take is queued to start on the next bar");
+    hx_render(h, 16 * 43);
+    HX_ASSERT(inst->tracks[1].clip_playing && inst->tracks[1].active_clip == 0,
+              "...and it is playing after the bar line");
     HX_ASSERT(inst->playing == 1, "playing commit leaves transport running");
 
     /* ---- 3. Transport edges clear the ring ---- */
@@ -299,6 +309,219 @@ int main(void) {
         HX_ASSERT((inst->tracks[1].clips[0].length % 16) == 0, "clip length is whole bars");
     }
     hx_destroy(h);
+
+    /* ---- 9. A drum capture is ONE undo step (stopped and playing) ---- */
+    {
+        int pass;
+        for (pass = 0; pass < 2; pass++) {
+            h = hx_create(NULL);
+            HX_ASSERT(h, "create failed");
+            inst = I(h);
+            if (pass == 1) hx_set_param(h, "transport", "play");
+            hx_render(h, 4);
+            tap(h, 0, 60, 100, 40, 132);
+            tap(h, 0, 60, 100, 40, 132);
+            tap(h, 0, 60, 100, 40, 132);
+            hx_set_param(h, "t0_capture_commit", "0");
+            HX_ASSERT(inst->tracks[0].drum_clips[0] != NULL, "drum clips allocated");
+            int l, found = -1;
+            for (l = 0; l < DRUM_LANES; l++)
+                if (inst->tracks[0].drum_clips[0]->lanes[l].midi_note == 60) { found = l; break; }
+            HX_ASSERT(found >= 0, "lane for pitch 60");
+            HX_ASSERT(inst->tracks[0].drum_clips[0]->lanes[found].clip.note_count == 3,
+                      "drum capture wrote 3 hits");
+            HX_ASSERT(inst->drum_undo_valid, "drum capture took an undo snapshot");
+            hx_set_param(h, "undo_restore", "1");
+            HX_ASSERT(inst->tracks[0].drum_clips[0]->lanes[found].clip.note_count == 0,
+                      pass ? "Undo removed the playing drum capture"
+                           : "Undo removed the stopped drum capture");
+            hx_destroy(h);
+        }
+    }
+
+    /* ---- 10. EVERY Capture press consumes the ring, even one that writes
+     * nothing: notes on track 1, a press on track 2 takes nothing — and the
+     * track-1 notes must not be waiting for a later press. ---- */
+    h = hx_create(NULL);
+    HX_ASSERT(h, "create failed");
+    inst = I(h);
+    hx_set_param(h, "transport", "play");
+    tap(h, 1, 60, 100, 20, 20);
+    HX_ASSERT(capture_pending_for_track(inst, 1) == 1, "track-1 note buffered");
+    {
+        uint32_t seq = inst->cap_commit_seq;
+        hx_set_param(h, "t2_capture_commit", "0");
+        HX_ASSERT(inst->cap_commit_seq == seq, "a press with nothing to take writes nothing");
+    }
+    HX_ASSERT(inst->cap_count == 0, "an empty press still consumed the ring");
+    hx_destroy(h);
+
+    /* ---- 11. Changing track drops the buffer; re-pushing the SAME track's
+     * pad map (a key/scale/octave change) does not. Driven through tN_padmap,
+     * the message the UI sends when you select a track. ---- */
+    {
+        static const char *PM =
+            "60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 "
+            "76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91";
+        h = hx_create(NULL);
+        HX_ASSERT(h, "create failed");
+        inst = I(h);
+        hx_set_param(h, "transport", "play");
+        hx_set_param(h, "t1_padmap", PM);
+        tap(h, 1, 60, 100, 20, 20);
+        HX_ASSERT(capture_pending_for_track(inst, 1) == 1, "note buffered on track 1");
+        hx_set_param(h, "t1_padmap", PM);          /* same track, re-pushed */
+        HX_ASSERT(capture_pending_for_track(inst, 1) == 1,
+                  "a same-track pad-map push kept the phrase");
+        hx_set_param(h, "t3_padmap", PM);          /* select track 3 */
+        HX_ASSERT(inst->cap_count == 0, "changing track dropped the buffer");
+        hx_set_param(h, "t1_padmap", PM);          /* and back */
+        HX_ASSERT(capture_pending_for_track(inst, 1) == 0,
+                  "the old track-1 phrase did not come back with the track");
+        hx_destroy(h);
+    }
+
+    /* ---- 12. A deliberate edit drops the buffer; ordinary traffic does not ---- */
+    h = hx_create(NULL);
+    HX_ASSERT(h, "create failed");
+    inst = I(h);
+    hx_set_param(h, "transport", "play");
+    tap(h, 1, 60, 100, 20, 20);
+    hx_set_param(h, "t1_c0_undo_checkpoint", "1");   /* rides the same Capture press */
+    hx_set_param(h, "t1_c0_step_0_vel", "90");       /* a knob on a held step */
+    HX_ASSERT(capture_pending_for_track(inst, 1) == 1,
+              "an undo checkpoint / step knob write kept the phrase");
+    hx_set_param(h, "t1_c0_step_4_toggle", "64 100"); /* hand-enter a step */
+    HX_ASSERT(inst->cap_count == 0, "a step entry dropped the buffer");
+    tap(h, 1, 62, 100, 20, 20);
+    hx_set_param(h, "t1_launch_clip", "2");
+    HX_ASSERT(inst->cap_count == 0, "a clip launch dropped the buffer");
+    tap(h, 1, 62, 100, 20, 20);
+    hx_set_param(h, "t1_recording", "0");            /* DISarm is not an edit */
+    HX_ASSERT(inst->cap_count > 0, "disarming kept the buffer");
+    hx_set_param(h, "t1_recording", "1");
+    HX_ASSERT(inst->cap_count == 0, "arming dropped the buffer");
+    hx_destroy(h);
+
+    /* ---- 13. Capture reaches back 8 bars at most. Ten bars of quarter
+     * notes at 120 on a stopped transport (1 quarter = 172 blocks): the
+     * first two bars have aged out; the last eight (32 notes) remain. ---- */
+    h = hx_create(NULL);
+    HX_ASSERT(h, "create failed");
+    inst = I(h);
+    hx_render(h, 4);
+    {
+        int q;
+        for (q = 0; q < 40; q++) tap(h, 1, 60 + (q % 12), 100, 20, 152);
+        int n = capture_pending_for_track(inst, 1);
+        HX_ASSERT(n >= 31 && n <= 33, "only the last ~8 bars (32 notes) are kept");
+    }
+    hx_destroy(h);
+
+    /* ---- 14. The latest pass over the loop replaces the earlier one ----
+     * Track 1's clip 0 holds one note so it loops (1 bar = 16 x 43 blocks). */
+    {
+        int pass;
+        for (pass = 0; pass < 2; pass++) {
+            h = hx_create(NULL);
+            HX_ASSERT(h, "create failed");
+            inst = I(h);
+            clip_insert_note(&inst->tracks[1].clips[0], 0, 24, 48, 100);
+            clip_build_steps_from_notes(&inst->tracks[1].clips[0]);
+            hx_set_param(h, "transport", "play_focus:1:0");   /* launches track 1's clip */
+            hx_render(h, 4);
+            if (pass == 0) {
+                HX_ASSERT(inst->tracks[1].clip_playing, "setup: track 1's clip loops");
+            } else {
+                /* CONTROL: a track whose clip is NOT looping has no "again" —
+                 * its playhead is frozen and every note would look alike. */
+                inst->tracks[1].clip_playing = 0;
+            }
+            tap(h, 1, 60, 100, 8, 35);           /* step 0 of pass 1 */
+            tap(h, 1, 64, 100, 8, 35);           /* step 1: same pass, different spot */
+            HX_ASSERT(capture_pending_for_track(inst, 1) == 2, "one pass: both notes kept");
+            hx_render(h, 16 * 43 - 2 * 43);      /* round to step 0 of pass 2 */
+            tap(h, 1, 62, 100, 8, 35);
+            int n = capture_pending_for_track(inst, 1);
+            if (pass == 0) {
+                HX_ASSERT(n == 1, "playing the same spot again replaced the earlier pass");
+                const cap_ev_t *ev = &inst->cap_ring[inst->cap_head];
+                HX_ASSERT(ev->type == CAP_EV_NOTE_ON && ev->a == 62, "the survivor is the new note");
+            } else {
+                HX_ASSERT(n == 3, "no loop running: nothing was replaced");
+            }
+            hx_destroy(h);
+        }
+    }
+
+    /* ---- 15. Drum first take while playing keeps its beat too (it used to be
+     * pinned to the lane's loop start) ---- */
+    h = hx_create(NULL);
+    HX_ASSERT(h, "create failed");
+    inst = I(h);
+    hx_set_param(h, "transport", "play");
+    hx_render(h, 8 * 43);                            /* beat 3 of the bar */
+    {
+        uint32_t phase = (inst->global_tick * TICKS_PER_STEP + inst->master_tick_in_step)
+                       % (16u * TICKS_PER_STEP);
+        tap(h, 0, 60, 100, 8, 20);
+        hx_set_param(h, "t0_capture_commit", "0");
+        HX_ASSERT(inst->tracks[0].drum_clips[0] != NULL, "drum clips allocated");
+        int l, found = -1;
+        for (l = 0; l < DRUM_LANES; l++)
+            if (inst->tracks[0].drum_clips[0]->lanes[l].midi_note == 60) { found = l; break; }
+        HX_ASSERT(found >= 0, "lane for pitch 60");
+        clip_t *lc = &inst->tracks[0].drum_clips[0]->lanes[found].clip;
+        HX_ASSERT(lc->note_count == 1, "drum first take wrote the hit");
+        int d = (int)lc->notes[0].tick - (int)phase;
+        if (d < 0) d = -d;
+        HX_ASSERT(phase >= 6 * TICKS_PER_STEP, "setup: played on beat 3");
+        HX_ASSERT(d < 24, "the drum hit lands on the beat it was played, not the loop start");
+        HX_ASSERT(inst->tracks[0].queued_clip == 0, "the drum take is queued for the next bar");
+    }
+    hx_destroy(h);
+
+    /* ---- 16. A 2-bar phrase over an EMPTY clip that is playing is ONE take.
+     * Josh, device, 2026-09-19: "if i play 2 bars it only captures the last bar
+     * as a 1-bar loop". The empty clip loops silently at 1 bar, so bar 2 of the
+     * phrase hit the same loop positions as bar 1 and "the latest pass wins"
+     * threw bar 1 away. An empty clip has no pass to redo. ---- */
+    {
+        int drum;
+        for (drum = 0; drum < 2; drum++) {
+            int t = drum ? 0 : 1;
+            char k[32];
+            h = hx_create(NULL);
+            HX_ASSERT(h, "create failed");
+            inst = I(h);
+            snprintf(k, sizeof k, "play_focus:%d:0", t);
+            hx_set_param(h, "transport", k);           /* the empty clip is playing */
+            hx_render(h, 4);
+            HX_ASSERT(inst->tracks[t].clip_playing, "setup: the empty clip is playing");
+            /* four quarter notes per bar, two bars, same pitch (a drum pad) */
+            int q;
+            for (q = 0; q < 8; q++) tap(h, t, 60, 100, 8, 164);
+            HX_ASSERT(capture_pending_for_track(inst, t) == 8,
+                      drum ? "drums: all 8 hits of the 2-bar phrase are held"
+                           : "melodic: all 8 notes of the 2-bar phrase are held");
+            snprintf(k, sizeof k, "t%d_capture_commit", t);
+            hx_set_param(h, k, "0");
+            if (!drum) {
+                HX_ASSERT(inst->tracks[1].clips[0].note_count == 8, "melodic: 8 notes captured");
+                HX_ASSERT(inst->tracks[1].clips[0].length == 32, "melodic: a 2-bar clip");
+            } else {
+                int l, found = -1;
+                for (l = 0; l < DRUM_LANES; l++)
+                    if (inst->tracks[0].drum_clips[0]->lanes[l].midi_note == 60) { found = l; break; }
+                HX_ASSERT(found >= 0, "lane for pitch 60");
+                HX_ASSERT(inst->tracks[0].drum_clips[0]->lanes[found].clip.note_count == 8,
+                          "drums: 8 hits captured");
+                HX_ASSERT(inst->tracks[0].drum_clips[0]->lanes[found].clip.length == 32,
+                          "drums: a 2-bar clip");
+            }
+            hx_destroy(h);
+        }
+    }
 
     printf("PASS: capture\n");
     return 0;
