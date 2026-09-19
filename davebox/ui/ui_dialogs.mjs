@@ -7,8 +7,7 @@ import { STATE_VERSION, NOTE_KEYS, SCALE_DISPLAY,
  * The header and the button family stay: those are the dialog chassis, which
  * is still the right home for a confirm. */
 import {
-    drawMenuHeader,
-    drawDialogButton, drawDialogYesNoRow, drawDialogOkButton
+    drawDialogButton, drawDialogYesNoRow, drawDialogOkButton, drawDialogButtonRow
 } from '/data/UserData/schwung/shared/menu_layout.mjs';
 import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_items.mjs';
 /* The KIT chassis. ui_movy is pure — no imports, no state — so pulling it in
@@ -16,7 +15,7 @@ import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_i
  * renders on the kit; the host chassis is for dialogs. */
 import { drawKitHeader, drawKitList, fitHdr, hdrWidth, hdrPrint,
          MV_BRAND_HDR_H, drawKitStackedList, drawKitBackdropDim, drawKitCrumbs,
-         drawKitBigValue, drawKitHintRow, MV_FOOTER_Y } from './ui_movy.mjs';
+         drawKitBigValue, drawKitHintRow, drawKitMarkHeader, MV_FOOTER_Y } from './ui_movy.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
@@ -49,6 +48,43 @@ const drawDlgBtn = drawDialogButton;
 
 /* Canonical two-button Yes/No row: No left, Yes right, bottom of screen.
  * `sel` follows the universal davebox convention (0 = Yes, 1 = No). */
+/* ── THE CONFIRM FAMILY ON THE KIT (2026-09-19) ──────────────────────────────
+ * Every dialog here drew its title and body in the HOST's list font under the
+ * host menu header, so a confirm raised from a rebuilt screen looked like it
+ * came from a different app. They now take the kit's bar and the 4x5 face,
+ * and keep the shared button widgets (a confirm's buttons ARE the dialog
+ * chassis — see docs/UI_LANGUAGE.md §5).
+ *
+ * `dlgHeader` prints VERBATIM in the header face: titles are written in CAPS
+ * like every other kit header, and the ONE thing that is not is the wordmark,
+ * which that face has the lowercase glyphs for; `dlgLines` CENTRES and UPPERCASES, because the 4x5 face has no
+ * lowercase glyphs at all. Body lines are centred as a block between the
+ * header and whatever the caller puts at `bottom` (its first button row). */
+function dlgHeader(title) { drawKitMarkHeader(title); }
+function dlgLines(lines, bottom) {
+    /* WRAP BY MEASURED WIDTH, never by a guessed line break: the 4x5 face is
+     * proportional, and a hand-broken line that fits one string overflows the
+     * next one the same code draws (CHANGE TO DRUMS? lost "...ED." that way). */
+    const out = [];
+    for (const raw of lines) {
+        if (raw === undefined || raw === null || raw === '') continue;
+        let cur = '';
+        for (const word of String(raw).toUpperCase().split(' ')) {
+            const next = cur ? cur + ' ' + word : word;
+            if (cur && fontWidth4x5(next) > 124) { out.push(cur); cur = word; }
+            else cur = next;
+        }
+        if (cur) out.push(cur);
+    }
+    if (!out.length) return;
+    const pitch = 10, bot = bottom == null ? 44 : bottom;
+    const top = 7 + Math.floor((bot - 7 - (out.length * pitch - (pitch - 5))) / 2);
+    for (let i = 0; i < out.length; i++) {
+        const t = fit4x5(out[i], 124);
+        fontPrint4x5(Math.floor((128 - fontWidth4x5(t)) / 2), top + i * pitch, t, 1);
+    }
+}
+
 function drawYesNoRow(sel) {
     drawDialogYesNoRow(sel === 0);
 }
@@ -76,36 +112,29 @@ function drawTapTempoScreen() {
 
 function drawClearSessionConfirm() {
     clear_screen();
-    drawMenuHeader('CLEAR SESSION');
-    print(4, 16, 'This will clear the', 1);
-    print(4, 25, 'entire project and', 1);
-    print(4, 34, 'cannot be undone.', 1);
+    dlgHeader('CLEAR SESSION');
+    dlgLines(['This will clear the entire', 'project and cannot be undone.']);
     drawYesNoRow(S.confirmClearSel);
 }
 
 function drawSaveStateConfirm() {
     clear_screen();
-    drawMenuHeader('SAVE STATE');
-    print(4, 20, 'Save this session?', 1);
-    print(4, 32, S.confirmSaveCount + ' of ' + SNAPSHOT_CAP + ' saved', 1);
+    dlgHeader('SAVE STATE');
+    dlgLines(['Save this session?', S.confirmSaveCount + ' of ' + SNAPSHOT_CAP + ' saved']);
     drawYesNoRow(S.confirmSaveSel);
 }
 
 export function drawConvertToDrumConfirm() {
     clear_screen();
-    drawMenuHeader('CONVERT');
-    print(4, 16, 'Warning:', 1);
-    print(4, 25, 'Existing notes may', 1);
-    print(4, 34, 'be lost. Proceed?', 1);
+    dlgHeader('CONVERT');
+    dlgLines(['Warning:', 'Existing notes may be lost.', 'Proceed?']);
     drawYesNoRow(S.confirmConvertToDrumSel);
 }
 
 export function drawConvertToConductConfirm() {
     clear_screen();
-    drawMenuHeader('CONVERT');
-    print(4, 16, 'Make Conductor?', 1);
-    print(4, 25, 'Clears FX/ARP/Auto.', 1);
-    print(4, 34, 'Keeps notes.', 1);
+    dlgHeader('CONVERT');
+    dlgLines(['Make Conductor?', 'Clears FX/ARP/Auto.', 'Keeps notes.']);
     drawYesNoRow(S.confirmConvertToConductSel);
 }
 
@@ -114,30 +143,23 @@ export function drawConvertToConductConfirm() {
  * button. Used for "Conductor exists", "Stop playback to change type", etc. */
 export function drawMenuInfo() {
     clear_screen();
-    drawMenuHeader('INFO');
-    const lines = S.menuInfoLines || [];
-    let y = 16;
-    for (let i = 0; i < lines.length && i < 4; i++) {
-        print(4, y, lines[i], 1);
-        y += 9;
-    }
+    dlgHeader('INFO');
+    dlgLines((S.menuInfoLines || []).slice(0, 4), 46);
     drawOkButton(46);
 }
 
 function drawExportConfirm() {
     clear_screen();
-    drawMenuHeader('EXPORT');
+    dlgHeader('EXPORT');
     if (S.confirmExportCondPhase) {
-        print(4, 22, 'Apply Conductor?', 1);
-        const bY = 47, bW = 36, mH = 11;
-        drawDlgBtn(4,  bY, bW, mH, S.confirmExportCondSel === 0, 'Yes');
-        drawDlgBtn(45, bY, bW, mH, S.confirmExportCondSel === 1, 'No');
-        drawDlgBtn(86, bY, bW, mH, S.confirmExportCondSel === 2, 'Cancel');
+        dlgLines(['Apply Conductor?'], 47);
+        drawDialogButtonRow(47, 11, [
+            { label: 'Yes',    sel: S.confirmExportCondSel === 0 },
+            { label: 'No',     sel: S.confirmExportCondSel === 1 },
+            { label: 'Cancel', sel: S.confirmExportCondSel === 2 }]);
         return;
     }
-    print(4, 16, 'Export this set as', 1);
-    print(4, 25, 'an Ableton bundle?', 1);
-    print(4, 34, '(transport stopped)', 1);
+    dlgLines(['Export this set as', 'an Ableton bundle?', '(transport stopped)']);
     drawYesNoRow(S.confirmExportSel);
 }
 
@@ -145,7 +167,7 @@ function drawExportConfirm() {
  * with OK (jog-click or Back). Path is wrapped to fit the OLED. */
 function drawExportDoneDialog() {
     clear_screen();
-    drawMenuHeader(S.exportDoneMissing > 0 ? ('EXPORTED -' + S.exportDoneMissing) : 'EXPORTED TO');
+    dlgHeader(S.exportDoneMissing > 0 ? ('EXPORTED -' + S.exportDoneMissing) : 'EXPORTED TO');
     /* ⚠ MEASURE, never estimate. This wrapped at a fixed 21 characters on a
      * PROPORTIONAL font, so a path of wide glyphs ran past the right edge and a
      * path of narrow ones wasted a third of the line. Same family as the two
@@ -156,7 +178,7 @@ function drawExportDoneDialog() {
     while (i < path.length && lines < 4) {
         let n = 1;
         while (i + n < path.length && text_width(path.slice(i, i + n + 1)) <= LIMIT) n++;
-        print(2, y, path.slice(i, i + n), 1);
+        print(2, y, path.slice(i, i + n), 1);   /* the host face: a PATH keeps its case */
         i += n; y += 9; lines++;
     }
     drawOkButton(52);
@@ -264,15 +286,13 @@ function drawGlobalMenuList() {
 export function drawExitConfirm() {
     clear_screen();
     if (S.confirmExit === 'quit') {
-        drawMenuHeader('QUIT dAVEBOx?');
-        print(4, 16, 'Save and leave the', 1);
-        print(4, 25, 'session? The device', 1);
-        print(4, 34, 'returns to Move.', 1);
+        dlgHeader('QUIT dAVEBOx?');
+        dlgLines(['Save and leave the session?', 'The device returns to Move.']);
     } else {
-        drawMenuHeader('SUSPEND SESSION?');
-        print(4, 16, 'Save and park', 1);
-        print(4, 25, 'dAVEBOx in the', 1);
-        print(4, 34, 'background?', 1);
+        dlgHeader('SUSPEND SESSION?');
+        /* the name lives in the HEADER: the 4x5 face has no lowercase, so a
+         * wordmark in the body can only come out as DAVEBOX */
+        dlgLines(['Save and park the session', 'in the background?']);
     }
     drawYesNoRow(S.confirmExitSel);
 }
@@ -281,13 +301,11 @@ export function drawExitConfirm() {
 export function drawTypeChangeConfirm() {
     clear_screen();
     const c = S.confirmTypeChange;
-    drawMenuHeader('CHANGE TO ' + (c ? c.typeName : '') + '?');
+    dlgHeader('CHANGE TO ' + (c ? String(c.typeName).toUpperCase() : '') + '?');
     const parts = [];
     if (c && c.macros) parts.push(c.macros + (c.macros === 1 ? ' macro' : ' macros'));
     if (c && c.lanes)  parts.push(c.lanes + (c.lanes === 1 ? ' lane' : ' lanes'));
-    print(4, 16, parts.join(', '), 1);
-    print(4, 25, 'of automation will', 1);
-    print(4, 34, 'be cleared.', 1);
+    dlgLines([parts.join(', '), 'of automation will be cleared.']);
     drawYesNoRow(S.confirmTypeChangeSel);
 }
 
@@ -296,22 +314,18 @@ export function drawModuleSwapConfirm() {
     const c = S.confirmModuleChange;
     /* Remove and swap are the same operation with a different destination, so
      * they are the same dialog with a different verb. */
-    drawMenuHeader((c && c.removing ? 'REMOVE MODULE?' : 'SWAP TO ' + (c ? c.name : '') + '?'));
+    dlgHeader(c && c.removing ? 'REMOVE MODULE?' : 'SWAP TO ' + (c ? String(c.name).toUpperCase() : '') + '?');
     const parts = [];
     if (c && c.macros) parts.push(c.macros + (c.macros === 1 ? ' macro' : ' macros'));
     if (c && c.lanes)  parts.push(c.lanes + (c.lanes === 1 ? ' lane' : ' lanes'));
-    print(4, 16, parts.join(', '), 1);
-    print(4, 25, 'of automation will', 1);
-    print(4, 34, 'be cleared.', 1);
+    dlgLines([parts.join(', '), 'of automation will be cleared.']);
     drawYesNoRow(S.confirmModuleChangeSel);
 }
 
 export function drawStateWipeConfirm() {
     clear_screen();
-    drawMenuHeader('INCOMPATIBLE STATE');
-    print(4, 16, 'This session is from', 1);
-    print(4, 25, 'a different dAVEBOx', 1);
-    print(4, 34, 'version. Erase it?', 1);
+    dlgHeader('STATE MISMATCH');
+    dlgLines(['This session is from a', 'different version. Erase it?']);
     drawYesNoRow(S.confirmStateWipeSel);
 }
 
@@ -412,8 +426,8 @@ export function drawProjectOpenFailed() {
     if (f && f.retrying) { line(30, 'Opening again...'); return; }
     line(26, 'Move could not load it.');
     line(35, 'Nothing was saved.');
-    drawDlgBtn(6,  46, 52, 13, !f || f.sel === 0, 'Retry');
-    drawDlgBtn(64, 46, 58, 13, !!f && f.sel === 1, 'Back');
+    drawDialogButtonRow(46, 13, [{ label: 'Retry', sel: !f || f.sel === 0 },
+                                 { label: 'Back',  sel: !!f && f.sel === 1 }], { x0: 6, x1: 122 });
 }
 
 /* Fully modal: every internal message lands here while the screen is up.
@@ -456,20 +470,19 @@ export function projectOpenFailedMidi(data) {
 
 export function drawRecordBlockedDialog() {
     clear_screen();
-    drawMenuHeader('REC UNAVAILABLE');
-    print(4, 16, 'Set clip Dir to Fwd,', 1);
-    print(4, 25, 'or bake it first.', 1);
-    drawDlgBtn(6,  46, 46, 13, S.recordBlockedDialogSel === 0, 'OK');
-    drawDlgBtn(58, 46, 64, 13, S.recordBlockedDialogSel === 1, 'Bake Now');
+    dlgHeader('REC UNAVAILABLE');
+    dlgLines(['Set clip Dir to Fwd,', 'or bake it first.']);
+    drawDialogButtonRow(46, 13, [{ label: 'OK',       sel: S.recordBlockedDialogSel === 0 },
+                                 { label: 'Bake Now', sel: S.recordBlockedDialogSel === 1 }],
+                        { x0: 6, x1: 122 });
 }
 
 /* Shown when Tap Tempo is invoked while Clock Follow = Move (tempo is Move's, so
  * there's nothing to tap). Single OK button; dismissed by jog click or Back. */
 export function drawBpmMoveInfo() {
     clear_screen();
-    drawMenuHeader('TEMPO');
-    print(4, 20, 'Tempo follows Move', 1);
-    print(4, 30, 'while clock-linked.', 1);
+    dlgHeader('TEMPO');
+    dlgLines(['Tempo follows Move', 'while clock-linked.']);
     drawOkButton(52);
 }
 
@@ -477,11 +490,10 @@ export function drawBpmMoveInfo() {
  * opens this. OK applies; CANCEL aborts. Undoable. */
 export function drawLgtoConfirm() {
     clear_screen();
-    drawMenuHeader(S.confirmLgtoIsDrum ? 'LEGATO (LANE)' : 'LEGATO (CLIP)');
-    print(4, 16, 'Extend notes to fill', 1);
-    print(4, 25, 'gaps. Destructive.', 1);
-    drawDlgBtn(6,  46, 46, 13, S.confirmLgtoSel === 0, 'OK');
-    drawDlgBtn(58, 46, 64, 13, S.confirmLgtoSel === 1, 'Cancel');
+    dlgHeader(S.confirmLgtoIsDrum ? 'LEGATO (LANE)' : 'LEGATO (CLIP)');
+    dlgLines(['Extend notes to fill gaps.', 'Destructive.']);
+    drawDialogButtonRow(46, 13, [{ label: 'OK',     sel: S.confirmLgtoSel === 0 },
+                                 { label: 'Cancel', sel: S.confirmLgtoSel === 1 }], { x0: 6, x1: 122 });
 }
 
 /* MACROS bank, Delete + jog click: clear every macro ASSIGNMENT on the track.
@@ -489,59 +501,52 @@ export function drawLgtoConfirm() {
  * real work to rebuild, and nothing else on that bank is destructive. */
 export function drawMacroClearConfirm() {
     clear_screen();
-    drawMenuHeader('CLEAR MACROS');
-    print(4, 16, 'Unassign all 8 macros', 1);
-    print(4, 25, 'on this track.', 1);
-    drawDlgBtn(6,  46, 46, 13, S.confirmMacroClearSel === 0, 'OK');
-    drawDlgBtn(58, 46, 64, 13, S.confirmMacroClearSel === 1, 'Cancel');
+    dlgHeader('CLEAR MACROS');
+    dlgLines(['Unassign all 8 macros', 'on this track.']);
+    drawDialogButtonRow(46, 13, [{ label: 'OK',     sel: S.confirmMacroClearSel === 0 },
+                                 { label: 'Cancel', sel: S.confirmMacroClearSel === 1 }], { x0: 6, x1: 122 });
 }
 
 export function drawBakeConfirm() {
     clear_screen();
     if (S.confirmBakeWrapPhase) {
-        drawMenuHeader('WRAP TAILS?');
-        print(4, 16, 'Wrap delay echoes', 1);
-        print(4, 25, 'past clip end back', 1);
-        print(4, 34, 'to the beginning?', 1);
-        const bW = 38, bH = 13, bY = 50;
-        drawDlgBtn(4,  bY, bW, bH, S.confirmBakeWrapSel === 0, 'Yes');
-        drawDlgBtn(45, bY, bW, bH, S.confirmBakeWrapSel === 1, 'No');
-        drawDlgBtn(86, bY, bW, bH, S.confirmBakeWrapSel === 2, 'Cancel');
+        dlgHeader('WRAP TAILS?');
+        dlgLines(['Wrap delay echoes past', 'clip end back to the start?'], 50);
+        drawDialogButtonRow(50, 13, [
+            { label: 'Yes',    sel: S.confirmBakeWrapSel === 0 },
+            { label: 'No',     sel: S.confirmBakeWrapSel === 1 },
+            { label: 'Cancel', sel: S.confirmBakeWrapSel === 2 }]);
     } else if (S.confirmBakeIsMultiLoop) {
-        drawMenuHeader('BAKE FX?');
-        print(4, 14, 'Bake the FX chain to', 1);
-        print(4, 23, 'the clip — how many', 1);
-        print(4, 32, 'loops?', 1);
-        const bH = 12, bY = 44;
-        drawDlgBtn(2,  bY, 27, bH, S.confirmBakeSel === 1, '1x');
-        drawDlgBtn(31, bY, 27, bH, S.confirmBakeSel === 2, '2x');
-        drawDlgBtn(60, bY, 27, bH, S.confirmBakeSel === 3, '4x');
-        drawDlgBtn(89, bY, 37, bH, S.confirmBakeSel === 0, 'Cancel');
+        dlgHeader('BAKE FX?');
+        dlgLines(['Bake the FX chain to the', 'clip - how many loops?'], 44);
+        drawDialogButtonRow(44, 12, [
+            { label: '1x',     sel: S.confirmBakeSel === 1 },
+            { label: '2x',     sel: S.confirmBakeSel === 2 },
+            { label: '4x',     sel: S.confirmBakeSel === 3 },
+            { label: 'Cancel', sel: S.confirmBakeSel === 0 }]);
     } else if (!S.confirmBakeIsDrum) {
-        drawMenuHeader('BAKE FX?');
-        print(4, 16, 'Apply effects chain', 1);
-        print(4, 25, 'to clip notes and', 1);
-        print(4, 34, 'clear the settings.', 1);
+        dlgHeader('BAKE FX?');
+        dlgLines(['Apply effects chain to clip', 'notes and clear the settings.']);
         drawYesNoRow(S.confirmBakeSel);
     } else if (S.confirmBakeDrumLoopOpen) {
         /* Step 2: loop count selection */
         const modeLabel = S.confirmBakeDrumMode === 1 ? 'Lane' : 'Clip';
-        drawMenuHeader('BAKE DRUMS?');
-        print(4, 13, modeLabel + ' — loop count:', 1);
-        const mH = 11;
-        drawDlgBtn(14, 33, 100, mH, S.confirmBakeDrumLoopSel === 0, 'Cancel');
-        drawDlgBtn(4,  47, 36,  mH, S.confirmBakeDrumLoopSel === 1, '1x');
-        drawDlgBtn(46, 47, 36,  mH, S.confirmBakeDrumLoopSel === 2, '2x');
-        drawDlgBtn(88, 47, 36,  mH, S.confirmBakeDrumLoopSel === 3, '4x');
+        dlgHeader('BAKE DRUMS?');
+        dlgLines([modeLabel + ' - loop count:'], 33);
+        drawDialogButtonRow(33, 11, [{ label: 'Cancel', sel: S.confirmBakeDrumLoopSel === 0 }],
+                            { x0: 14, x1: 114 });
+        drawDialogButtonRow(47, 11, [
+            { label: '1x', sel: S.confirmBakeDrumLoopSel === 1 },
+            { label: '2x', sel: S.confirmBakeDrumLoopSel === 2 },
+            { label: '4x', sel: S.confirmBakeDrumLoopSel === 3 }]);
     } else {
-        drawMenuHeader('BAKE DRUMS?');
-        print(4, 16, 'Bake FX to clip', 1);
-        print(4, 25, '(all lanes) or lane?', 1);
+        dlgHeader('BAKE DRUMS?');
+        dlgLines(['Bake FX to clip', '(all lanes) or lane?'], 50);
         /* 3 buttons: Clip(0) | Lane(1) | Cancel(2, default) */
-        const bW = 38, bH = 13, bY = 50;
-        drawDlgBtn(4,  bY, bW, bH, S.confirmBakeSel === 0, 'Clip');
-        drawDlgBtn(45, bY, bW, bH, S.confirmBakeSel === 1, 'Lane');
-        drawDlgBtn(86, bY, bW, bH, S.confirmBakeSel === 2, 'Cancel');
+        drawDialogButtonRow(50, 13, [
+            { label: 'Clip',   sel: S.confirmBakeSel === 0 },
+            { label: 'Lane',   sel: S.confirmBakeSel === 1 },
+            { label: 'Cancel', sel: S.confirmBakeSel === 2 }]);
     }
 }
 
@@ -566,21 +571,16 @@ export function drawSnapshotPicker() {
     if (p.confirm) {
         const c = p.confirm;
         if (c.kind === 'wipe') {
-            drawMenuHeader('STATES UPDATED');
-            print(4, 18, 'Delete ' + c.wipeIds.length + ' snapshot(s)', 1);
-            print(4, 27, 'from an older', 1);
-            print(4, 36, 'version?', 1);
+            dlgHeader('STATES UPDATED');
+            dlgLines(['Delete ' + c.wipeIds.length + ' snapshot(s)', 'from an older version?']);
         } else if (c.kind === 'load') {
             const s = snapById(p, c.targetId);
-            drawMenuHeader('LOAD STATE');
-            print(4, 18, 'Load ' + truncLabel(s ? s.label : '', 15), 1);
-            print(4, 27, 'Unsaved changes', 1);
-            print(4, 36, 'will be lost.', 1);
+            dlgHeader('LOAD STATE');
+            dlgLines(['Load ' + truncLabel(s ? s.label : '', 15), 'Unsaved changes will be lost.']);
         } else {
             const s = snapById(p, c.targetId);
-            drawMenuHeader('OVERWRITE');
-            print(4, 18, 'Replace', 1);
-            print(4, 27, truncLabel(s ? s.label : '', 19) + '?', 1);
+            dlgHeader('OVERWRITE');
+            dlgLines(['Replace', truncLabel(s ? s.label : '', 19) + '?']);
         }
         drawSnapYesNo(c.sel);
         return;
@@ -600,35 +600,36 @@ export function drawSnapshotPicker() {
 
 export function drawBakeSceneConfirm() {
     clear_screen();
-    drawMenuHeader('BAKE SCENE?');
+    dlgHeader('BAKE SCENE?');
     const mH = 11;
     if (S.confirmBakeSceneCondPhase) {
-        print(4, 22, 'Apply Conductor?', 1);
-        const bY = 47, bW = 36;
-        drawDlgBtn(4,  bY, bW, mH, S.confirmBakeSceneCondSel === 0, 'Yes');
-        drawDlgBtn(45, bY, bW, mH, S.confirmBakeSceneCondSel === 1, 'No');
-        drawDlgBtn(86, bY, bW, mH, S.confirmBakeSceneCondSel === 2, 'Cancel');
+        dlgLines(['Apply Conductor?'], 47);
+        drawDialogButtonRow(47, mH, [
+            { label: 'Yes',    sel: S.confirmBakeSceneCondSel === 0 },
+            { label: 'No',     sel: S.confirmBakeSceneCondSel === 1 },
+            { label: 'Cancel', sel: S.confirmBakeSceneCondSel === 2 }]);
     } else if (S.confirmBakeSceneWrapPhase) {
-        print(4, 22, 'Wrap tails?', 1);
-        const bY = 47, bW = 36;
-        drawDlgBtn(4,  bY, bW, mH, S.confirmBakeSceneWrapSel === 0, 'Yes');
-        drawDlgBtn(45, bY, bW, mH, S.confirmBakeSceneWrapSel === 1, 'No');
-        drawDlgBtn(86, bY, bW, mH, S.confirmBakeSceneWrapSel === 2, 'Cancel');
+        dlgLines(['Wrap tails?'], 47);
+        drawDialogButtonRow(47, mH, [
+            { label: 'Yes',    sel: S.confirmBakeSceneWrapSel === 0 },
+            { label: 'No',     sel: S.confirmBakeSceneWrapSel === 1 },
+            { label: 'Cancel', sel: S.confirmBakeSceneWrapSel === 2 }]);
     } else {
-        print(4, 22, 'Loop count:', 1);
-        drawDlgBtn(14, 33, 100, mH, S.confirmBakeSceneSel === 0, 'Cancel');
-        drawDlgBtn(4,  47, 36,  mH, S.confirmBakeSceneSel === 1, '1x');
-        drawDlgBtn(46, 47, 36,  mH, S.confirmBakeSceneSel === 2, '2x');
-        drawDlgBtn(88, 47, 36,  mH, S.confirmBakeSceneSel === 3, '4x');
+        dlgLines(['Loop count:'], 33);
+        drawDialogButtonRow(33, mH, [{ label: 'Cancel', sel: S.confirmBakeSceneSel === 0 }],
+                            { x0: 14, x1: 114 });
+        drawDialogButtonRow(47, mH, [
+            { label: '1x', sel: S.confirmBakeSceneSel === 1 },
+            { label: '2x', sel: S.confirmBakeSceneSel === 2 },
+            { label: '4x', sel: S.confirmBakeSceneSel === 3 }]);
     }
 }
 
 export function drawXposeConfirm() {
     clear_screen();
-    drawMenuHeader('TRANSPOSE CLIPS?');
+    dlgHeader('TRANSPOSE CLIPS?');
     const tgt = NOTE_KEYS[S.confirmXposeKey] + ' ' + (SCALE_DISPLAY[S.confirmXposeScale] || '?');
-    print(4, 22, 'To ' + tgt, 1);
-    print(4, 33, 'All melodic clips', 1);
+    dlgLines(['To ' + tgt, 'All melodic clips']);
     drawYesNoRow(S.confirmXposeSel);
 }
 

@@ -70,6 +70,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
 const menu = await import('../../ui/ui_menu.mjs');
 const render = await import('../../ui/ui_render.mjs');
+const fonts = await import('../../ui/ui_fonts_pp.mjs');
 const { openProjectPadPicker, closeProjectPadPicker } = await import('../../ui/ui_dialogs.mjs');
 const MoveBack = 51;                   /* the Back button's CC */
 const JOG_CLICK = 3, JOG_TURN = 14;    /* jog click / jog step CCs */
@@ -276,10 +277,14 @@ step('exit confirm is reachable from the project manager', () => {
     if (armed()) throw new Error('the exit fired without the confirm');
 
     /* It must be ON SCREEN over the picker, not merely in state. */
+    /* ⚠ Collect KIT text as well as host text: the confirm family draws its
+     * title in the kit's header face, which paints pixels — a print() capture
+     * alone sees a screen that says nothing. */
     const printed = [];
     const realPrint = globalThis.print;
     globalThis.print = (x, y, t) => { printed.push(String(t)); };
-    try { render.drawUI(); } finally { globalThis.print = realPrint; }
+    fonts.setKitTextTrace((t) => printed.push(String(t)));
+    try { render.drawUI(); } finally { globalThis.print = realPrint; fonts.setKitTextTrace(null); }
     const joined = printed.join('|');
     if (joined.indexOf('SUSPEND SESSION?') < 0)
         throw new Error('the picker drew over the confirm; screen was: ' + joined.slice(0, 120));
