@@ -8,7 +8,7 @@ import './_bulk_get_stub.mjs';
 let failed = 0;
 function ok(l) { console.log(`  ok   — ${l}`); }
 function bad(l, e) { console.error(`  FAIL — ${l}: ${e && e.stack ? e.stack : e}`); failed = 1; }
-function step(l, fn) { try { fn(); ok(l); } catch (e) { bad(l, e); } }
+async function step(l, fn) { try { await fn(); ok(l); } catch (e) { bad(l, e); } }
 function assert(c, m) { if (!c) throw new Error(m); }
 
 const ENGINE = {};
@@ -82,7 +82,7 @@ function open(warp, vals, idx) {
     S.actionPopupLines = []; S.actionPopupEndTick = -1;
 }
 
-step('the LENGTH chooser confirms a LENGTH, in bars', () => {
+await step('the LENGTH chooser confirms a LENGTH, in bars', () => {
     open(true, [1, 2, 3, 4], 1);
     click();
     assert(!S.tempoSelectActive, 'the click did not close the chooser');
@@ -90,14 +90,14 @@ step('the LENGTH chooser confirms a LENGTH, in bars', () => {
     assert(got === 'LENGTH SET 2 BARS', 'popup was: ' + got);
 });
 
-step('⚠ CONTROL: the TEMPO chooser still confirms a tempo', () => {
+await step('⚠ CONTROL: the TEMPO chooser still confirms a tempo', () => {
     open(false, [61, 122, 244], 1);
     click();
     const got = S.actionPopupLines.join(' ');
     assert(got === 'TEMPO SET 122 BPM', 'popup was: ' + got);
 });
 
-step('the chooser draws in the kit faces, not the host list font', () => {
+await step('the chooser draws in the kit faces, not the host list font', () => {
     open(true, [1, 2, 3, 4], 0);
     const f = frame(R);
     assert(f.prints.length === 0, 'host print() is still used: ' + JSON.stringify(f.prints.map((p) => p.t)));
@@ -111,7 +111,7 @@ let kit = [];
 fonts.setKitTextTrace((t) => kit.push(String(t)));
 const kitFrame = () => { kit = []; frame(R); return kit.join(' | '); };
 
-step('the tempo chooser says what it is, in the kit faces', () => {
+await step('the tempo chooser says what it is, in the kit faces', () => {
     open(false, [61, 122, 244], 1);
     const t = kitFrame();
     ['CAPTURE TEMPO', '122', 'BPM', 'TEMPO', 'SET'].forEach((w) =>
@@ -119,7 +119,7 @@ step('the tempo chooser says what it is, in the kit faces', () => {
     S.tempoSelectActive = false;
 });
 
-step('TAP TEMPO is on the kit now, not the MCU dialog face', () => {
+await step('TAP TEMPO is on the kit now, not the MCU dialog face', () => {
     S.tapTempoOpen = true; S.tapTempoBpm = 118;
     const t = kitFrame();
     ['TAP TEMPO', '118', 'BPM', 'TAP ANY PAD'].forEach((w) =>
@@ -127,7 +127,7 @@ step('TAP TEMPO is on the kit now, not the MCU dialog face', () => {
     S.tapTempoOpen = false;
 });
 
-step('PERFORMANCE mode names its mode chips and what is engaged', () => {
+await step('PERFORMANCE mode names its mode chips and what is engaged', () => {
     S.sessionView = true; S.perfViewLocked = true;
     S.perfModsToggled = 0; S.perfModsHeld = 0; S.perfStack = []; S.perfRecalledSlot = -1;
     let t = kitFrame();
@@ -140,7 +140,7 @@ step('PERFORMANCE mode names its mode chips and what is engaged', () => {
     S.sessionView = false; S.perfViewLocked = false; S.perfStack = []; S.perfModsToggled = 0;
 });
 
-step('the LOADING screen names the project and the stage', () => {
+await step('the LOADING screen names the project and the stage', () => {
     S.stateLoading = true; S.currentSetName = 'Grams at night';
     const t = kitFrame();
     ['LOADING', 'GRAMS AT NIGHT', 'STARTING THE SEQUENCER'].forEach((w) =>
@@ -148,10 +148,32 @@ step('the LOADING screen names the project and the stage', () => {
     S.stateLoading = false;
 });
 
-step('⚠ CONTROL: the trace SEES a draw — so a missing string means missing text, not a dead hook', () => {
+await step('⚠ CONTROL: the trace SEES a draw — so a missing string means missing text, not a dead hook', () => {
     kit = [];
     fonts.fontPrint4x5(0, 0, '', 1);
     assert(kit.length === 1 && kit[0] === '', 'the trace does not see a draw: ' + JSON.stringify(kit));
+});
+
+await step('the confirm family: kit header, and the WORDMARK survives in the title', () => {
+    S.confirmExit = 'quit'; S.confirmExitSel = 1;
+    const t = kitFrame();
+    assert(t.indexOf('QUIT dAVEBOx?') >= 0,
+           'the title lost the wordmark (the header face has the lowercase glyphs): ' + t);
+    assert(t.indexOf('SAVE AND LEAVE THE SESSION?') >= 0, 'body missing: ' + t);
+    S.confirmExit = true;
+    assert(kitFrame().indexOf('SUSPEND SESSION?') >= 0, 'the suspend confirm lost its title');
+    S.confirmExit = false;
+});
+
+await step('⭑ a long body line WRAPS by measured width rather than running off the panel', () => {
+    /* "of automation will be cleared." used to be hand-broken and lost its last
+     * word on the wider of the two dialogs that draw it. */
+    S.confirmTypeChange = { typeName: 'Drums', macros: 3, lanes: 2 };
+    const t = kitFrame();
+    assert(t.indexOf('CLEARED.') >= 0, 'the line was truncated instead of wrapped: ' + t);
+    kit.filter((l) => l !== 'CHANGE TO DRUMS?').forEach((l) =>
+        assert(fonts.fontWidth4x5(l) <= 124, 'a body line is wider than the panel: "' + l + '"'));
+    S.confirmTypeChange = null;
 });
 
 if (failed) process.exit(1);

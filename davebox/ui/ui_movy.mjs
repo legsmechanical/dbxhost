@@ -3595,3 +3595,22 @@ export function drawKitChip(x, y, label, on) {
 export function kitChipWidth(label) {
     return fontWidth4x5(String(label).toUpperCase()) + MV_HINT_PAD * 2;
 }
+
+/* The DIALOG header: the kit's bar, but printed VERBATIM in the header face
+ * rather than the 4x5 one. That face carries real lowercase `d` and `x`, which
+ * is what keeps the dAVEBOx wordmark its own shape in a title like
+ * "QUIT dAVEBOx?" — the 4x5 face has no lowercase at all (measured: d, x and y
+ * draw zero ink), so uppercasing is the only safe thing to do with it, and a
+ * title is the one place that costs something. */
+export function drawKitMarkHeader(text) {
+    /* An 8px bar, not the 7px one: this face is 6 rows tall and its ascenders
+     * (b, d, k, l, t) then sit flush against the bar's top edge and read as
+     * clipped. The brand header is 8 for the same reason. */
+    fill_rect(0, 0, SCREEN_W, MV_BRAND_HDR_H, 1);
+    /* ⚠ NOT fitHdr: that uppercases (its own contract), which turns the
+     * wordmark back into "DAVEBOX" — the whole point of this header. Trim
+     * verbatim instead. */
+    let t = String(text);
+    while (t.length > 0 && hdrWidth(t) > SCREEN_W - 4) t = t.slice(0, -1);
+    hdrPrint(2, 1, t, 0);
+}
