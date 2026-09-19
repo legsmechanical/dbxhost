@@ -442,16 +442,56 @@ step('both ramps rise monotonically — a dip is the "curve is weird" bug', () =
     }
 });
 
-step('an unbound or degenerate bank knob normalises to null, not to zero', () => {
+step('an UNBOUND bank knob normalises to null; a VALUELESS one to the floor', () => {
     const knob = { abbrev: 'Cut', min: 0, max: 100, def: 0, scope: 'clip' };
     assert(rings.knobRingNorm(knob, 50) === 0.5, 'a plain knob mis-normalised');
     assert(rings.knobRingNorm(knob, 0) === 0, 'a knob at its minimum is not 0');
     assert(rings.knobRingNorm(null, 5) === null, 'an empty slot normalised');
     assert(rings.knobRingNorm({ abbrev: 'S', scope: 'stub', min: 0, max: 1 }, 1) === null, 'a stub normalised');
-    assert(rings.knobRingNorm({ abbrev: 'X', min: 3, max: 3 }, 3) === null, 'a degenerate range normalised');
     assert(rings.knobRingNorm(knob, undefined) === null, 'an unread value normalised to a number');
     /* The two halves compose to the reserved dark: unbound -> null -> 0. */
     assert(rings.knobRingColor(0, rings.knobRingNorm(null, 0)) === 0, 'an empty slot lit its ring');
+
+    /* ⭑⭑ THE THIRD STATE (2026-09-19). A degenerate range is an ACTION knob:
+     * the turn fires an event, so there is no position to report — but it is not
+     * "nothing here", and returning null made it dark. Same for a knob the
+     * generic store never sees, which `custom` marks. */
+    assert(rings.knobRingNorm({ abbrev: 'X', min: 3, max: 3 }, 3) === rings.RING_FLOOR,
+           'an ACTION knob (degenerate range) is dark instead of at the floor');
+    assert(rings.knobRingNorm({ scope: 'stub', custom: true, min: 0, max: 0 }, -1) === rings.RING_FLOOR,
+           'a custom-handled knob is dark — this is the bug that hid five live knobs');
+    for (let k = 0; k < 8; k++) {
+        const ramp = k < 4 ? rings.KNOB_WHITE_LEVELS : rings.KNOB_AMBER_LEVELS;
+        const c = rings.knobRingColor(k, rings.RING_FLOOR);
+        assert(c === ramp[0], 'knob ' + k + ': the floor is not its ramp\'s first step');
+        assert(c !== 0, 'knob ' + k + ': the floor collapsed to the reserved dark');
+    }
+    /* ⚠ The one distinction that must NOT blur: lit vs unlit. */
+    assert(rings.knobRingColor(0, rings.RING_FLOOR) !== rings.knobRingColor(4, rings.RING_FLOOR),
+           'white and amber collide at the floor — the hue is what orients you');
+});
+
+/* ⭐⭐ THE CELL SHAPE LIES, AND THAT WAS A REAL DEFECT (Josh, 2026-09-19: "the
+ * step each work to set pitch so should be lit"). `kind: 'blank'` meant both
+ * "no knob here" (a drum step's K4/K8) and "this knob's value is big text, not
+ * an arc" (the melodic step page's Note and Oct, which nudge every note in the
+ * step). The ring rule read the shape and promised two working pitch controls
+ * did nothing. `ringBound` states it instead of inferring it. */
+step('⭐ a cell whose value is TEXT still lights; a genuinely empty one does not', () => {
+    assert(rings.ringNormOfCell({ kind: 'blank', label: 'Note', bigText: 'C3', ringBound: true })
+           === rings.RING_FLOOR, 'the step page\'s Note knob is dark');
+    assert(rings.ringNormOfCell({ kind: 'valsq', label: 'Leng', text: '--', ringBound: true })
+           === rings.RING_FLOOR, "a '--' value on a real knob is dark");
+    assert(rings.ringNormOfCell({ kind: 'blank', label: '' }) === null,
+           'an EMPTY cell lit — the drum page has no K4 or K8');
+    assert(rings.ringNormOfCell(null) === null, 'a missing cell lit');
+    /* ⚠ A real value WINS over the marker: it is a fallback, not an override.
+     * As an override, marking a cell would flatten a ring that has something to
+     * say down to its dimmest step. */
+    assert(rings.ringNormOfCell({ kind: 'arc', norm: 1, ringBound: true }) === 1,
+           'the marker overrode a real value instead of backing it up');
+    assert(rings.ringNormOfCell({ kind: 'arc', norm: 0, ringBound: true }) === 0,
+           'a marked cell at ZERO fell through to the floor (0 is a value, not absence)');
 });
 
 /* -------------------------------------------------------- 8. scrollbar */

@@ -260,15 +260,22 @@ function drawNoteBox(name, sub, invert) {
  * top. `noteBox` (melodic) draws the merged Oct/Note box over the K1+K2
  * widget span; cells === null renders the empty-step notice. */
 /* The STEP bank at rest: the mode's step-edit layout with every value `--`. */
+/* ⚠ `ringBound` on every cell that IS a knob, and on no cell that isn't.
+ * These are the STEP bank's cells with nothing held — every value reads '--'
+ * because holding a step is what gives them one. The knobs are still THERE, so
+ * their rings light at the floor to say which is which (Josh, 2026-09-19); the
+ * two empty cells on the drum page are genuinely absent and stay dark. The
+ * rings read these very cells, so the page and the LEDs cannot disagree. */
 function stepBankIdleCells(drum) {
-    const dash = (label, name, kind) => ({ kind: kind || 'valsq', label, name, text: '--' });
+    const dash = (label, name, kind) =>
+        ({ kind: kind || 'valsq', label, name, text: '--', ringBound: true });
     if (drum) {
         return [dash('Leng', 'Length'), dash('Vel', 'Velocity', 'arc'), dash('Nudg', 'Nudge', 'arcbip'),
                 { kind: 'blank', label: '' }, dash('Iter', 'Iteration'), dash('Prob', 'Probability', 'arc'),
                 dash('Ratch', 'Ratchet'), { kind: 'blank', label: '' }];
     }
-    return [{ kind: 'blank', label: 'Note', name: 'Note', bigText: '--' },
-            { kind: 'blank', label: 'Oct',  name: 'Note', bigText: '--' },
+    return [{ kind: 'blank', label: 'Note', name: 'Note', bigText: '--', ringBound: true },
+            { kind: 'blank', label: 'Oct',  name: 'Note', bigText: '--', ringBound: true },
             dash('Leng', 'Length'), dash('Vel', 'Velocity', 'arc'), dash('Nudg', 'Nudge', 'arcbip'),
             dash('Iter', 'Iteration'), dash('Prob', 'Probability', 'arc'), dash('Ratch', 'Ratchet')];
 }
@@ -1472,8 +1479,14 @@ export function heldStepCells() {
     const tps = S.clipTPS[t][ac] || 24;
     const _gateSteps = S.stepEditGate / tps;
     return [
-        { kind: 'blank', label: 'Note', name: 'Note', bigText: noteLabel },
-        { kind: 'blank', label: 'Oct',  name: 'Note', bigText: noteLabel },
+        /* ⚠ `blank` is about the DRAWING — the value is big text, not an arc —
+         * and says nothing about whether the knob works. These two DO: K1 nudges
+         * every note in the step by a scale degree, K2 by an octave
+         * (ui_input_cc.mjs, the heldStep knob branch). `ringBound` tells the ring
+         * rule that, because it used to infer "dead" from the shape and leave two
+         * working pitch controls dark. */
+        { kind: 'blank', label: 'Note', name: 'Note', bigText: noteLabel, ringBound: true },
+        { kind: 'blank', label: 'Oct',  name: 'Note', bigText: noteLabel, ringBound: true },
         { kind: 'valsq', label: 'Leng', name: 'Length',
           text: fmtStepLen(_gateSteps) },
         { kind: 'arc', label: 'Vel', name: 'Velocity', text: String(S.stepEditVel),
@@ -1493,7 +1506,12 @@ export function heldStepCells() {
           options: ['--', '2', '3', '4'], sel: S.stepEditRatch <= 1 ? 0 : S.stepEditRatch - 1 },
     ];
 }
-registerRingCells(BANK_STEP, heldStepCells);
+/* ⭐ Held or not, the rings read the cells the PAGE draws — one source, so the
+ * two can never disagree. With a step held that is its real values; without one
+ * it is the idle page, whose knobs light at the floor because they are still the
+ * knobs (see stepBankIdleCells). */
+registerRingCells(BANK_STEP, () => heldStepCells() ||
+    stepBankIdleCells(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM));
 
 function drawHeldStepPage() {
     if (S.heldStep < 0) return false;

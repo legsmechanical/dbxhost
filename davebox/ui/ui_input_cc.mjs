@@ -2540,6 +2540,10 @@ export function checkShiftNoteHold() {
  * holding Back would back you out a level, which is a different gesture
  * quietly acquiring a second meaning. Consuming it keeps tap and hold distinct
  * and leaves the gesture free for whatever claims it next.
+ * ⚠ Measured, not assumed: it is `backPressTick = -1` that blocks the tap (the
+ * release guard tests it first), so `backHoldFired` is belt-and-braces here — a
+ * mutation removing that line alone SURVIVES. Removing the threshold test is
+ * caught. Don't "fix" the survivor by deleting the wrong line.
  *
  * 🚫 DO NOT "simplify" this away by deleting the function and its caller. The
  * exit machinery it used to call (raiseExitConfirm / S.confirmExit) is SHARED

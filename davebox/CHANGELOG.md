@@ -16,6 +16,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed (pending)
+- **The Clip, Step and All Lanes banks now light their knob rings** like every
+  other bank — knobs 1–4 white, 5–8 orange — so you can tell at a glance which
+  encoder is which. A ring lights whenever the knob *does* something, even where
+  there is no value to show, and stays dark only where there is genuinely nothing
+  on it (Clip's sixth knob, and the two empty cells on a drum step page).
+- **The step editor's Note and Oct knobs no longer read as dead.** Both change
+  the held step's pitch, but their rings were unlit — the one case where the
+  lights actively said a working control did nothing.
+- **The Conductor banks light each knob in its track's colour**, since on those
+  three pages a knob *is* a track.
+
 ### Changed (pending)
 - **Holding Back no longer suspends.** Suspending to Move is now one deliberate
   place — **Settings menu → Suspend session** — rather than something a long
