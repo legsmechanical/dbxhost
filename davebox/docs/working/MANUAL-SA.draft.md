@@ -423,7 +423,7 @@ dAVEBOx saves your set automatically whenever you leave it:
 
 | Action | Result |
 |---|---|
-| **Hold Back** (~½ s) | Suspend — dAVEBOx keeps playing in the background |
+| **Settings menu → Suspend session** | Suspend — dAVEBOx keeps playing in the background |
 | **Shift + Back** | Save and hand the device back to official Schwung |
 | **Settings menu → Quit** | Save and hand the device back to official Schwung |
 
@@ -431,9 +431,17 @@ There is no manual "save." For named backups you can return to, use
 [Save state](#163-snapshots).
 
 Because dAVEBOx **is** the session here, Quit and Shift + Back do not drop you into
-a Schwung menu — they restart Move on your official install. Suspend (**Hold Back**)
-is the one that keeps dAVEBOx alive in the background, and it is what you want when
-you are stepping out to Move's own screens and coming straight back.
+a Schwung menu — they restart Move on your official install. Suspend is the one that
+keeps dAVEBOx alive in the background, and it is what you want when you are stepping
+out to Move's own screens and coming straight back.
+
+**Shift + Back works everywhere, the project picker included** — you never have to
+open a project just to get out of one.
+
+Suspend used to have a shortcut as well: holding Back. It doesn't any more. Going
+out to Move isn't part of using dAVEBOx — that is what co-run is for — so parking
+the session is a deliberate trip to the menu rather than something a long press can
+do by accident.
 
 ---
 

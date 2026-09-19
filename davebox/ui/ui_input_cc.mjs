@@ -2532,17 +2532,30 @@ export function checkShiftNoteHold() {
     }
 }
 
+/* ⭑ A HELD Back does NOTHING (Josh, 2026-09-19). It used to suspend from
+ * anywhere; suspend now has exactly one door, the global menu's row.
+ *
+ * ⚠⚠ THE HOLD IS STILL SWALLOWED, and that is the whole of what is left here.
+ * Without it a long press would fall through to the release and TAP — so
+ * holding Back would back you out a level, which is a different gesture
+ * quietly acquiring a second meaning. Consuming it keeps tap and hold distinct
+ * and leaves the gesture free for whatever claims it next.
+ *
+ * 🚫 DO NOT "simplify" this away by deleting the function and its caller. The
+ * exit machinery it used to call (raiseExitConfirm / S.confirmExit) is SHARED
+ * with 'quit', which is still raised by the host's Shift+Back and must keep
+ * working everywhere, the project picker included (Josh: "shift+back should
+ * still exit on project manager. exit is distinct from suspend"). */
 export function checkBackHold() {
     if (S.backPressTick < 0) return;
     /* Co-run started while Back was held: abandon the pending hold (co-run owns
-     * Back) rather than fire a suspend on/after its exit. */
+     * Back) rather than act on/after its exit. */
     if (S.moveCoRunTrack >= 0) {
         S.backPressTick = -1; S.backHoldFired = false; return;
     }
     if ((S.clockMs - S.backPressTick) >= BACK_HOLD_MS) {
         S.backHoldFired = true;
         S.backPressTick = -1;
-        raiseExitConfirm('suspend');
     }
 }
 

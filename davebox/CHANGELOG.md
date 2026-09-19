@@ -16,6 +16,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Changed (pending)
+- **Holding Back no longer suspends.** Suspending to Move is now one deliberate
+  place — **Settings menu → Suspend session** — rather than something a long
+  press can do from anywhere. Going out to Move isn't part of using dAVEBOx; that
+  is what co-run is for. **Leaving is unaffected: Shift + Back still exits from
+  anywhere, the project picker included.** Suspend and Quit are also separated in
+  the menu now, so the row you want isn't one detent from the one you don't.
+
 ### Features (pending)
 - **Instruments render in parallel.** Each track's chain now renders across
   three cores instead of one, so more instruments can sound at once before the
