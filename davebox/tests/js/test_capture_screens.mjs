@@ -176,6 +176,45 @@ await step('⭑ a long body line WRAPS by measured width rather than running off
     S.confirmTypeChange = null;
 });
 
+await step('⭑ every dialog BUTTON has room for its label, boxes and all', async () => {
+    /* Josh, device render 2026-09-19: "some of the letters/digits are touching
+     * the box borders". Fixed widths did that — "Cancel" needs 15px more than
+     * "1x" — so a row sizes each button to its MEASURED label now. This checks
+     * the geometry rather than the look: every label ink box sits at least a
+     * pixel inside its button, horizontally and vertically. */
+    const ML = await import('/data/UserData/schwung/shared/menu_layout.mjs');
+    const rows = [
+        [{ label: 'Yes' }, { label: 'No' }, { label: 'Cancel' }],
+        [{ label: '1x' }, { label: '2x' }, { label: '4x' }, { label: 'Cancel' }],
+        [{ label: 'Clip' }, { label: 'Lane' }, { label: 'Cancel' }],
+        [{ label: 'OK' }, { label: 'Bake Now' }],
+    ];
+    for (const h of [11, 12, 13]) {
+        for (const row of rows) {
+            const boxes = [], texts = [];
+            globalThis.fill_rect = (x, y, w, hh) => { if (w > 12 && hh === h) boxes.push({ x, y, w, h: hh }); };
+            globalThis.draw_rect = (x, y, w, hh) => { if (w > 12 && hh === h) boxes.push({ x, y, w, h: hh }); };
+            globalThis.print = (x, y, t) => texts.push({ x, y, t: String(t), w: globalThis.text_width(String(t)) });
+            /* every button SELECTED, so each box is one fill_rect — the
+             * unselected outline is four thin ones and the widths are the same
+             * either way (sel only picks the paint). */
+            ML.drawDialogButtonRow(40, h, row.map((b) => ({ label: b.label, sel: true })));
+            assert(boxes.length === row.length, 'expected ' + row.length + ' buttons, drew ' + boxes.length);
+            assert(texts.length === row.length, 'expected ' + row.length + ' labels, drew ' + texts.length);
+            for (let i = 0; i < row.length; i++) {
+                const b = boxes[i], t = texts[i];
+                assert(t.x >= b.x + 1 && t.x + t.w <= b.x + b.w - 1,
+                       'h' + h + ' "' + t.t + '" touches its box sides: text ' + t.x + '+' + t.w +
+                       ' in box ' + b.x + '+' + b.w);
+                assert(t.y >= b.y + 1 && t.y + 7 <= b.y + b.h - 1,
+                       'h' + h + ' "' + t.t + '" touches its box top/bottom: text y ' + t.y +
+                       ' in box y ' + b.y + ' h ' + b.h);
+            }
+            assert(boxes[boxes.length - 1].x + boxes[boxes.length - 1].w <= 124, 'the row runs off the panel');
+        }
+    }
+});
+
 if (failed) process.exit(1);
 console.log('PASS: test_capture_screens.mjs');
 }

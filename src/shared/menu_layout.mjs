@@ -34,6 +34,7 @@ export const LIST_BOTTOM_WITH_FOOTER = FOOTER_RULE_Y - 1;
 
 /* Text rendering */
 export const DEFAULT_CHAR_WIDTH = 6;
+export const FONT_HEIGHT = 7;        /* the host face's glyph height */
 export const DEFAULT_LABEL_GAP = 6;
 export const DEFAULT_VALUE_PADDING_RIGHT = 2;
 export const VALUE_RIGHT_CLEARANCE = 10;  /* Clearance from scroll-arrow column (LIST_INDICATOR_X = 120) */
@@ -101,13 +102,22 @@ export function drawMenuFooter(text, y = FOOTER_TEXT_Y) {
 /* A single button: filled when selected (black label), else outlined (white
  * label). The label is auto-centered at the 6px print font. */
 export function drawDialogButton(x, y, w, h, sel, label) {
-    const lx = x + Math.round((w - label.length * DEFAULT_CHAR_WIDTH) / 2);
+    /* MEASURE, never estimate: this font is proportional, so label.length *
+     * DEFAULT_CHAR_WIDTH mis-centres every label that is not all average-width
+     * glyphs (and is what let "Cancel" sit against its box edge). */
+    const lw = (typeof text_width === 'function') ? text_width(label)
+                                                  : label.length * DEFAULT_CHAR_WIDTH;
+    const lx = x + Math.round((w - lw) / 2);
+    /* Centre VERTICALLY too, from the glyph height: the fixed y+3 was right
+     * for a 13px button and left the text against the bottom edge of an 11px
+     * or 12px one. */
+    const ly = y + Math.max(1, Math.round((h - FONT_HEIGHT) / 2));
     if (sel) {
         fill_rect(x, y, w, h, 1);
-        print(lx, y + 3, label, 0);
+        print(lx, ly, label, 0);
     } else {
         drawRect(x, y, w, h, 1);
-        print(lx, y + 3, label, 1);
+        print(lx, ly, label, 1);
     }
 }
 
@@ -606,4 +616,41 @@ export function drawLoadingScreen(name, stage) {
     const clip = (t, n) => (t.length > n ? t.slice(0, n - 1) + "\u2026" : t);
     if (name)  centre(clip(String(name), 21), 26);
     if (stage) centre(String(stage), 44);
+}
+
+/* A ROW of buttons sized to their labels. Fixed widths are how a label ends up
+ * touching its border: "Cancel" needs 15px more than "1x" and a row that gives
+ * them the same box either clips the long one or wastes the short one. Each
+ * button gets its measured label plus `pad` either side, the leftover is
+ * shared out evenly, and the row spans `x0`..`x1`.
+ *
+ * `buttons` = [{ label, sel }] in draw order. */
+export function drawDialogButtonRow(y, h, buttons, opts) {
+    const o = opts || {};
+    const pad = o.pad == null ? 6 : o.pad, gap = o.gap == null ? 4 : o.gap;
+    const x0 = o.x0 == null ? 4 : o.x0, x1 = o.x1 == null ? SCREEN_WIDTH - 4 : o.x1;
+    const n = buttons.length;
+    if (!n) return;
+    const meas = (t) => ((typeof text_width === 'function') ? text_width(String(t))
+                                                            : String(t).length * DEFAULT_CHAR_WIDTH);
+    const widths = buttons.map((b) => meas(b.label) + pad * 2);
+    const span = x1 - x0 - gap * (n - 1);
+    let used = widths.reduce((a, b) => a + b, 0);
+    if (used < span) {
+        const extra = Math.floor((span - used) / n);
+        for (let i = 0; i < n; i++) widths[i] += extra;
+        used = widths.reduce((a, b) => a + b, 0);
+    }
+    /* Over budget: take it off the widest first, so a short label never loses
+     * the padding it needs while a long one keeps slack. */
+    while (used > span) {
+        let wi = 0;
+        for (let i = 1; i < n; i++) if (widths[i] > widths[wi]) wi = i;
+        widths[wi]--; used--;
+    }
+    let x = x0;
+    for (let i = 0; i < n; i++) {
+        drawDialogButton(x, y, widths[i], h, !!buttons[i].sel, String(buttons[i].label));
+        x += widths[i] + gap;
+    }
 }

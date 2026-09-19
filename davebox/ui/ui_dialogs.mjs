@@ -7,7 +7,7 @@ import { STATE_VERSION, NOTE_KEYS, SCALE_DISPLAY,
  * The header and the button family stay: those are the dialog chassis, which
  * is still the right home for a confirm. */
 import {
-    drawDialogButton, drawDialogYesNoRow, drawDialogOkButton
+    drawDialogButton, drawDialogYesNoRow, drawDialogOkButton, drawDialogButtonRow
 } from '/data/UserData/schwung/shared/menu_layout.mjs';
 import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_items.mjs';
 /* The KIT chassis. ui_movy is pure — no imports, no state — so pulling it in
@@ -153,10 +153,10 @@ function drawExportConfirm() {
     dlgHeader('EXPORT');
     if (S.confirmExportCondPhase) {
         dlgLines(['Apply Conductor?'], 47);
-        const bY = 47, bW = 36, mH = 11;
-        drawDlgBtn(4,  bY, bW, mH, S.confirmExportCondSel === 0, 'Yes');
-        drawDlgBtn(45, bY, bW, mH, S.confirmExportCondSel === 1, 'No');
-        drawDlgBtn(86, bY, bW, mH, S.confirmExportCondSel === 2, 'Cancel');
+        drawDialogButtonRow(47, 11, [
+            { label: 'Yes',    sel: S.confirmExportCondSel === 0 },
+            { label: 'No',     sel: S.confirmExportCondSel === 1 },
+            { label: 'Cancel', sel: S.confirmExportCondSel === 2 }]);
         return;
     }
     dlgLines(['Export this set as', 'an Ableton bundle?', '(transport stopped)']);
@@ -426,8 +426,8 @@ export function drawProjectOpenFailed() {
     if (f && f.retrying) { line(30, 'Opening again...'); return; }
     line(26, 'Move could not load it.');
     line(35, 'Nothing was saved.');
-    drawDlgBtn(6,  46, 52, 13, !f || f.sel === 0, 'Retry');
-    drawDlgBtn(64, 46, 58, 13, !!f && f.sel === 1, 'Back');
+    drawDialogButtonRow(46, 13, [{ label: 'Retry', sel: !f || f.sel === 0 },
+                                 { label: 'Back',  sel: !!f && f.sel === 1 }], { x0: 6, x1: 122 });
 }
 
 /* Fully modal: every internal message lands here while the screen is up.
@@ -472,8 +472,9 @@ export function drawRecordBlockedDialog() {
     clear_screen();
     dlgHeader('REC UNAVAILABLE');
     dlgLines(['Set clip Dir to Fwd,', 'or bake it first.']);
-    drawDlgBtn(6,  46, 46, 13, S.recordBlockedDialogSel === 0, 'OK');
-    drawDlgBtn(58, 46, 64, 13, S.recordBlockedDialogSel === 1, 'Bake Now');
+    drawDialogButtonRow(46, 13, [{ label: 'OK',       sel: S.recordBlockedDialogSel === 0 },
+                                 { label: 'Bake Now', sel: S.recordBlockedDialogSel === 1 }],
+                        { x0: 6, x1: 122 });
 }
 
 /* Shown when Tap Tempo is invoked while Clock Follow = Move (tempo is Move's, so
@@ -491,8 +492,8 @@ export function drawLgtoConfirm() {
     clear_screen();
     dlgHeader(S.confirmLgtoIsDrum ? 'LEGATO (LANE)' : 'LEGATO (CLIP)');
     dlgLines(['Extend notes to fill gaps.', 'Destructive.']);
-    drawDlgBtn(6,  46, 46, 13, S.confirmLgtoSel === 0, 'OK');
-    drawDlgBtn(58, 46, 64, 13, S.confirmLgtoSel === 1, 'Cancel');
+    drawDialogButtonRow(46, 13, [{ label: 'OK',     sel: S.confirmLgtoSel === 0 },
+                                 { label: 'Cancel', sel: S.confirmLgtoSel === 1 }], { x0: 6, x1: 122 });
 }
 
 /* MACROS bank, Delete + jog click: clear every macro ASSIGNMENT on the track.
@@ -502,8 +503,8 @@ export function drawMacroClearConfirm() {
     clear_screen();
     dlgHeader('CLEAR MACROS');
     dlgLines(['Unassign all 8 macros', 'on this track.']);
-    drawDlgBtn(6,  46, 46, 13, S.confirmMacroClearSel === 0, 'OK');
-    drawDlgBtn(58, 46, 64, 13, S.confirmMacroClearSel === 1, 'Cancel');
+    drawDialogButtonRow(46, 13, [{ label: 'OK',     sel: S.confirmMacroClearSel === 0 },
+                                 { label: 'Cancel', sel: S.confirmMacroClearSel === 1 }], { x0: 6, x1: 122 });
 }
 
 export function drawBakeConfirm() {
@@ -511,18 +512,18 @@ export function drawBakeConfirm() {
     if (S.confirmBakeWrapPhase) {
         dlgHeader('WRAP TAILS?');
         dlgLines(['Wrap delay echoes past', 'clip end back to the start?'], 50);
-        const bW = 38, bH = 13, bY = 50;
-        drawDlgBtn(4,  bY, bW, bH, S.confirmBakeWrapSel === 0, 'Yes');
-        drawDlgBtn(45, bY, bW, bH, S.confirmBakeWrapSel === 1, 'No');
-        drawDlgBtn(86, bY, bW, bH, S.confirmBakeWrapSel === 2, 'Cancel');
+        drawDialogButtonRow(50, 13, [
+            { label: 'Yes',    sel: S.confirmBakeWrapSel === 0 },
+            { label: 'No',     sel: S.confirmBakeWrapSel === 1 },
+            { label: 'Cancel', sel: S.confirmBakeWrapSel === 2 }]);
     } else if (S.confirmBakeIsMultiLoop) {
         dlgHeader('BAKE FX?');
         dlgLines(['Bake the FX chain to the', 'clip - how many loops?'], 44);
-        const bH = 12, bY = 44;
-        drawDlgBtn(2,  bY, 27, bH, S.confirmBakeSel === 1, '1x');
-        drawDlgBtn(31, bY, 27, bH, S.confirmBakeSel === 2, '2x');
-        drawDlgBtn(60, bY, 27, bH, S.confirmBakeSel === 3, '4x');
-        drawDlgBtn(89, bY, 37, bH, S.confirmBakeSel === 0, 'Cancel');
+        drawDialogButtonRow(44, 12, [
+            { label: '1x',     sel: S.confirmBakeSel === 1 },
+            { label: '2x',     sel: S.confirmBakeSel === 2 },
+            { label: '4x',     sel: S.confirmBakeSel === 3 },
+            { label: 'Cancel', sel: S.confirmBakeSel === 0 }]);
     } else if (!S.confirmBakeIsDrum) {
         dlgHeader('BAKE FX?');
         dlgLines(['Apply effects chain to clip', 'notes and clear the settings.']);
@@ -532,19 +533,20 @@ export function drawBakeConfirm() {
         const modeLabel = S.confirmBakeDrumMode === 1 ? 'Lane' : 'Clip';
         dlgHeader('BAKE DRUMS?');
         dlgLines([modeLabel + ' - loop count:'], 33);
-        const mH = 11;
-        drawDlgBtn(14, 33, 100, mH, S.confirmBakeDrumLoopSel === 0, 'Cancel');
-        drawDlgBtn(4,  47, 36,  mH, S.confirmBakeDrumLoopSel === 1, '1x');
-        drawDlgBtn(46, 47, 36,  mH, S.confirmBakeDrumLoopSel === 2, '2x');
-        drawDlgBtn(88, 47, 36,  mH, S.confirmBakeDrumLoopSel === 3, '4x');
+        drawDialogButtonRow(33, 11, [{ label: 'Cancel', sel: S.confirmBakeDrumLoopSel === 0 }],
+                            { x0: 14, x1: 114 });
+        drawDialogButtonRow(47, 11, [
+            { label: '1x', sel: S.confirmBakeDrumLoopSel === 1 },
+            { label: '2x', sel: S.confirmBakeDrumLoopSel === 2 },
+            { label: '4x', sel: S.confirmBakeDrumLoopSel === 3 }]);
     } else {
         dlgHeader('BAKE DRUMS?');
         dlgLines(['Bake FX to clip', '(all lanes) or lane?'], 50);
         /* 3 buttons: Clip(0) | Lane(1) | Cancel(2, default) */
-        const bW = 38, bH = 13, bY = 50;
-        drawDlgBtn(4,  bY, bW, bH, S.confirmBakeSel === 0, 'Clip');
-        drawDlgBtn(45, bY, bW, bH, S.confirmBakeSel === 1, 'Lane');
-        drawDlgBtn(86, bY, bW, bH, S.confirmBakeSel === 2, 'Cancel');
+        drawDialogButtonRow(50, 13, [
+            { label: 'Clip',   sel: S.confirmBakeSel === 0 },
+            { label: 'Lane',   sel: S.confirmBakeSel === 1 },
+            { label: 'Cancel', sel: S.confirmBakeSel === 2 }]);
     }
 }
 
@@ -602,22 +604,24 @@ export function drawBakeSceneConfirm() {
     const mH = 11;
     if (S.confirmBakeSceneCondPhase) {
         dlgLines(['Apply Conductor?'], 47);
-        const bY = 47, bW = 36;
-        drawDlgBtn(4,  bY, bW, mH, S.confirmBakeSceneCondSel === 0, 'Yes');
-        drawDlgBtn(45, bY, bW, mH, S.confirmBakeSceneCondSel === 1, 'No');
-        drawDlgBtn(86, bY, bW, mH, S.confirmBakeSceneCondSel === 2, 'Cancel');
+        drawDialogButtonRow(47, mH, [
+            { label: 'Yes',    sel: S.confirmBakeSceneCondSel === 0 },
+            { label: 'No',     sel: S.confirmBakeSceneCondSel === 1 },
+            { label: 'Cancel', sel: S.confirmBakeSceneCondSel === 2 }]);
     } else if (S.confirmBakeSceneWrapPhase) {
         dlgLines(['Wrap tails?'], 47);
-        const bY = 47, bW = 36;
-        drawDlgBtn(4,  bY, bW, mH, S.confirmBakeSceneWrapSel === 0, 'Yes');
-        drawDlgBtn(45, bY, bW, mH, S.confirmBakeSceneWrapSel === 1, 'No');
-        drawDlgBtn(86, bY, bW, mH, S.confirmBakeSceneWrapSel === 2, 'Cancel');
+        drawDialogButtonRow(47, mH, [
+            { label: 'Yes',    sel: S.confirmBakeSceneWrapSel === 0 },
+            { label: 'No',     sel: S.confirmBakeSceneWrapSel === 1 },
+            { label: 'Cancel', sel: S.confirmBakeSceneWrapSel === 2 }]);
     } else {
         dlgLines(['Loop count:'], 33);
-        drawDlgBtn(14, 33, 100, mH, S.confirmBakeSceneSel === 0, 'Cancel');
-        drawDlgBtn(4,  47, 36,  mH, S.confirmBakeSceneSel === 1, '1x');
-        drawDlgBtn(46, 47, 36,  mH, S.confirmBakeSceneSel === 2, '2x');
-        drawDlgBtn(88, 47, 36,  mH, S.confirmBakeSceneSel === 3, '4x');
+        drawDialogButtonRow(33, mH, [{ label: 'Cancel', sel: S.confirmBakeSceneSel === 0 }],
+                            { x0: 14, x1: 114 });
+        drawDialogButtonRow(47, mH, [
+            { label: '1x', sel: S.confirmBakeSceneSel === 1 },
+            { label: '2x', sel: S.confirmBakeSceneSel === 2 },
+            { label: '4x', sel: S.confirmBakeSceneSel === 3 }]);
     }
 }
 
