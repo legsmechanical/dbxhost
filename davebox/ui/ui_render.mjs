@@ -930,10 +930,11 @@ function drawWordmark(mark) {
 }
 
 /* The notice CARD: a black box with a white 1px border, centred, one line of
- * the stock face per entry, over whatever the session view is showing. Up to
- * five lines fill the panel exactly (5 × 11 + 9 = 64). */
+ * the stock face per entry, over whatever screen is up. Up to five lines fill
+ * the panel exactly (5 × 11 + 9 = 64). `highlight` is a line index drawn in
+ * inverse video — a mode popup's current choice; -1 for none. */
 const CARD_LINE_H = 11, CARD_PAD = 5, CARD_W = 116, CARD_X = 6;
-export function drawNoticeCard(lines) {
+export function drawNoticeCard(lines, highlight = -1) {
     const n = Math.min(5, lines.length);
     if (!n) return;
     const h = n * CARD_LINE_H + CARD_PAD * 2 - 1;
@@ -948,8 +949,21 @@ export function drawNoticeCard(lines) {
     for (let i = 0; i < n; i++) {
         const t = String(lines[i]);
         const w = Math.min(CARD_W - 4, text_width(t));
-        print(CARD_X + Math.floor((CARD_W - w) / 2), y + CARD_PAD + i * CARD_LINE_H, t, 1);
+        const ly = y + CARD_PAD + i * CARD_LINE_H;
+        const hi = (i === highlight);
+        if (hi) fill_rect(CARD_X + 1, ly - 2, CARD_W - 2, CARD_LINE_H, 1);
+        print(CARD_X + Math.floor((CARD_W - w) / 2), ly, t, hi ? 0 : 1);
     }
+}
+
+/* Is the action popup's card up this frame? A plain popup DEFERS to what you
+ * are holding — a step's page, a knob's read-out — and shows for whatever is
+ * left of its window once you let go. */
+function actionCardShowing() {
+    if (!S.actionPopupCard || S.actionPopupEndTick < 0 || S.clockMs > S.actionPopupEndTick) return false;
+    if (!S.actionPopupLines.length) return false;
+    if (S.actionPopupDefers && (S.heldStep >= 0 || S.knobTouched >= 0)) return false;
+    return true;
 }
 
 function drawSessionOverview() {
@@ -1117,25 +1131,9 @@ function drawPerfModeOled() {
     }
     print(4, 3, title, 0);
 
-    /* ── Body (y 14-49): action popup → mod popup → mods list ── */
-    if (S.actionPopupEndTick >= 0 && S.clockMs <= S.actionPopupEndTick && S.actionPopupLines.length > 0) {
-        const _n = S.actionPopupLines.length;
-        if (_n >= 4) {
-            print(4, 14, S.actionPopupLines[0], 1);
-            print(4, 25, S.actionPopupLines[1], 1);
-            print(4, 36, S.actionPopupLines[2], 1);
-            print(4, 47, S.actionPopupLines[3], 1);
-        } else if (_n === 3) {
-            print(4, 17, S.actionPopupLines[0], 1);
-            print(4, 29, S.actionPopupLines[1], 1);
-            print(4, 41, S.actionPopupLines[2], 1);
-        } else if (_n === 2) {
-            print(4, 20, S.actionPopupLines[0], 1);
-            print(4, 32, S.actionPopupLines[1], 1);
-        } else {
-            print(4, 26, S.actionPopupLines[0], 1);
-        }
-    } else if (S.perfModPopupEndTick >= 0 && S.clockMs <= S.perfModPopupEndTick && S.perfModPopupName) {
+    /* ── Body (y 14-49): mod popup → mods list. An action popup is the notice
+     * card, drawn over this screen by drawUI. ── */
+    if (S.perfModPopupEndTick >= 0 && S.clockMs <= S.perfModPopupEndTick && S.perfModPopupName) {
         const px = Math.floor((128 - S.perfModPopupName.length * 6) / 2);
         print(px < 0 ? 0 : px, 26, S.perfModPopupName, 1);
     } else {
@@ -1420,9 +1418,12 @@ export function drawUI() {
     /* THE NOTICE CARD, above everything (Josh, 2026-09-05: "the confirmation
      * overlays pop up wherever you are when you save/recall, same for session
      * view"): a card notice is drawn here, last, whatever screen the body
-     * chose — a bank, an editor, the session mixer, a dialog. */
-    if (S.actionPopupCard && S.actionPopupEndTick >= 0 && S.clockMs <= S.actionPopupEndTick && S.actionPopupLines.length)
-        drawNoticeCard(S.actionPopupLines);
+     * chose — a bank, an editor, the session mixer, a dialog. The two refusals
+     * below outrank it: each answers the press you just made. */
+    if (S.stretchBlockedEndTick >= 0) drawNoticeCard(['BEAT STRETCH', 'COMPRESS LIMIT']);
+    else if (S.noNoteFlashEndTick >= 0 && S.activeBank !== 6 && !S.sessionView)
+        drawNoticeCard(['NO NOTE', 'Play a pad first']);
+    else if (actionCardShowing()) drawNoticeCard(S.actionPopupLines, S.actionPopupHighlight);
 }
 
 /* The held step's page: the STEP bank's layout with THAT step's values. Drawn
@@ -1729,13 +1730,14 @@ function drawUIBody() {
             drawSessionMixerPage();
             return;
         }
-        /* A plain notice (no gauge) is a CARD over the session view, not a
-         * screen of its own (Josh, 2026-09-05: "I was thinking of a pop-up
-         * window … but it's just a full screen"): the underlay draws as usual
-         * and the card sits on top, below. The gauge popup keeps its full
-         * screen — the bar wants the room. */
-        const _card = (S.actionPopupEndTick >= 0 && S.actionPopupGauge < 0 && !S.actionPopupCard) ? S.actionPopupLines : null;
-        if (S.actionPopupEndTick >= 0 && !_card) {
+        /* A notice is a CARD over the session view, not a screen of its own
+         * (Josh, 2026-09-05: "I was thinking of a pop-up window … but it's just
+         * a full screen"): the underlay draws as usual and drawUI puts the card
+         * on top. Only the gauge popup keeps its full screen — the bar wants the
+         * room. ⚠ Gate on the GAUGE, not on "not a card": the old test sent the
+         * card notices (snapshot save/recall) through here too, so they drew a
+         * full-screen copy with an empty bar underneath their own card. */
+        if (S.actionPopupEndTick >= 0 && !S.actionPopupCard && S.actionPopupGauge >= 0) {
             const _n = S.actionPopupLines.length;
             {
                 /* Gauge popup: text sits high so the bar owns the lower half.
@@ -1781,7 +1783,6 @@ function drawUIBody() {
          * metronome word — a mode you are in, not a flash you missed. */
         drawInfoRow2();
         drawOverviewTracks(overviewHints());
-        if (_card) drawNoticeCard(_card);
         return;
     }
 
@@ -1798,60 +1799,8 @@ function drawUIBody() {
      * transient window; only the bare resting touch stopped revealing. */
     const inTimeout = bankCardVisible();
 
-    /* Compress-limit override: highest priority for ~1500ms after a blocked compress */
-    if (S.stretchBlockedEndTick >= 0) {
-        print(4, 10, '[CLIP       ]', 1);
-        print(4, 22, 'Beat Stretch', 1);
-        print(4, 34, 'COMPRESS LIMIT', 1);
-        return;
-    }
-
-    /* Action confirmation pop-up: ~500ms; defers to step edit and active-knob bank overview */
-    if (S.actionPopupEndTick >= 0 && S.heldStep < 0 && S.knobTouched < 0 && !S.actionPopupCard) {
-        if (S.actionPopupHighlight >= 0 && S.actionPopupLines.length >= 3) {
-            const _title = S.actionPopupLines[0];
-            const _tw = _title.length * 6;
-            const _tx = Math.floor((128 - _tw) / 2);
-            print(_tx, 4, _title, 1);
-            fill_rect(_tx, 13, _tw, 1, 1);
-            for (let _li = 1; _li < S.actionPopupLines.length; _li++) {
-                const _ly = 12 + _li * 14;
-                const _lw = S.actionPopupLines[_li].length * 6;
-                const _lx = Math.floor((128 - _lw) / 2);
-                if (_li === S.actionPopupHighlight) {
-                    fill_rect(0, _ly - 1, 128, 13, 1);
-                    print(_lx, _ly, S.actionPopupLines[_li], 0);
-                } else {
-                    print(_lx, _ly, S.actionPopupLines[_li], 1);
-                }
-            }
-        } else if (S.actionPopupLines.length >= 4) {
-            /* 3+ line info popups have no highlight, so they fell through to the
-             * 2-line branch below and silently dropped lines 3-4. Render all
-             * four (matches the Perf-view popup renderer's layout). */
-            print(4, 14, S.actionPopupLines[0], 1);
-            print(4, 25, S.actionPopupLines[1], 1);
-            print(4, 36, S.actionPopupLines[2], 1);
-            print(4, 47, S.actionPopupLines[3], 1);
-        } else if (S.actionPopupLines.length === 3) {
-            print(4, 17, S.actionPopupLines[0], 1);
-            print(4, 29, S.actionPopupLines[1], 1);
-            print(4, 41, S.actionPopupLines[2], 1);
-        } else if (S.actionPopupLines.length >= 2) {
-            print(4, 22, S.actionPopupLines[0], 1);
-            print(4, 34, S.actionPopupLines[1], 1);
-        } else {
-            print(4, 28, S.actionPopupLines[0], 1);
-        }
-        return;
-    }
-
-    /* No-note flash: ~600ms after pressing an empty step with no prior pad */
-    if (S.noNoteFlashEndTick >= 0 && S.activeBank !== 6) {
-        print(4, 22, 'NO NOTE', 1);
-        print(4, 34, 'Play a pad first', 1);
-        return;
-    }
+    /* The action popup, COMPRESS LIMIT and NO NOTE used to take this whole
+     * screen. They are notice cards now, drawn over it by drawUI. */
 
     /* Step edit — ON THE STEP BANK (spec §2, 2026-09-02): a held step is the
      * screen there; everywhere else it changes nothing (the reveal excepted,

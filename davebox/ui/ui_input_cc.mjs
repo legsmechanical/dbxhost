@@ -2476,7 +2476,7 @@ S.genReturn = { track: _gt,
 if (S.trackRoute[_gt] === 1) {
     enterMoveNativeCoRun(_gt);
 } else if (S.trackRoute[_gt] === 2) {
-    showActionPopup('MIDI TRACK', 'No generator to edit');
+    showActionPopup('MIDI TRACK', 'No generator', 'to edit');
 } else if (S.trackRoute[_gt] === ROUTE_NONE) {
     /* NONE: nothing to edit and never the parked chain — the hold opens the
      * INSTRUMENT PICKER over the track's menu (Josh, 2026-09-05; the first cut
@@ -2789,7 +2789,7 @@ function _onCC_transport(d1, d2) {
          * Declining (rather than exiting for them) keeps the two modes
          * symmetric: step-record entry already refuses while a merge is up. */
         if (S.stepRecActive) {
-            showActionPopup('LIVE MERGE', 'Leave step record first.');
+            showActionPopup('LIVE MERGE', 'Leave step record', 'first.');
             return;
         }
         if (S.dspMergeState !== 0) {
@@ -2873,8 +2873,8 @@ function _onCC_transport(d1, d2) {
         if (S.dspMergeState !== 0 || S.mergeNoticePending || S.recordArmed ||
             S.mergeCountingIn || S.pendingMergeArm) return;
         if (!stepRecEligible()) {
-            showActionPopup('STEP REC', S.playing ? 'Stop transport first.'
-                                                  : 'Melodic tracks only.');
+            showActionPopup('STEP REC', ...(S.playing ? ['Stop transport', 'first.']
+                                                      : ['Melodic tracks only.']));
             return;
         }
         stepRecEnter();

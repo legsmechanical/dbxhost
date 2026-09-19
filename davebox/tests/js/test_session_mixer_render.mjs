@@ -139,7 +139,9 @@ S.trackRoute[4] = 2; S.sessVolSlots[4] = 0;
 
 /* 4. The mixer page must WIN over a pending popup while a knob is held — the
  *    page is the richer read-out and the popup would cover it. */
+/* the shape showActionPopup produces: a card that defers to a held knob */
 S.actionPopupEndTick = 999; S.actionPopupLines = ['SOMETHING']; S.actionPopupGauge = -1;
+S.actionPopupCard = true; S.actionPopupDefers = true;
 S.sessKnobMode = 0; S.knobTouched = 3; S.sessMixerLatched = true; S.bankSelectTick = -1;
 draw();
 if (!prints.includes('SOMETHING')) ok('a held knob shows the mixer page, not a queued popup');

@@ -343,6 +343,10 @@ the section into a versioned heading at release time.
   bank. Aftertouch from the pads is unchanged and still records.
 
 ### Fixes (pending)
+- **Notices pop up over the screen you're on.** Confirmations like "UNDO",
+  "AUTOMATION CLEARED" or "SOUND RESET" now appear as a small box on top of
+  whatever you are looking at instead of replacing the whole screen, and the
+  ones fired from the sound editor, which used to never show, are visible now.
 - **The project picker's header reads "Select Project" instead of "dAVEBOx".**
   The wordmark told you what app you were in, not what to do — the picker's
   one job is choosing a project, so its header says so now.

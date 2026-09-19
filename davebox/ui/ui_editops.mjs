@@ -121,6 +121,9 @@ export function showModePopup(title, items, activeIdx) {
     S.actionPopupLines     = [title, ...items];
     S.actionPopupHighlight = activeIdx + 1;
     S.actionPopupEndTick   = nowMs() + ACTION_POPUP_MS;
+    S.actionPopupGauge     = -1;
+    S.actionPopupCard      = true;    /* a card like every notice — ui_persistence */
+    S.actionPopupDefers    = true;
     S.screenDirty = true;
 }
 
