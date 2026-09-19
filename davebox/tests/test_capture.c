@@ -481,6 +481,48 @@ int main(void) {
     }
     hx_destroy(h);
 
+    /* ---- 16. A 2-bar phrase over an EMPTY clip that is playing is ONE take.
+     * Josh, device, 2026-09-19: "if i play 2 bars it only captures the last bar
+     * as a 1-bar loop". The empty clip loops silently at 1 bar, so bar 2 of the
+     * phrase hit the same loop positions as bar 1 and "the latest pass wins"
+     * threw bar 1 away. An empty clip has no pass to redo. ---- */
+    {
+        int drum;
+        for (drum = 0; drum < 2; drum++) {
+            int t = drum ? 0 : 1;
+            char k[32];
+            h = hx_create(NULL);
+            HX_ASSERT(h, "create failed");
+            inst = I(h);
+            snprintf(k, sizeof k, "play_focus:%d:0", t);
+            hx_set_param(h, "transport", k);           /* the empty clip is playing */
+            hx_render(h, 4);
+            HX_ASSERT(inst->tracks[t].clip_playing, "setup: the empty clip is playing");
+            /* four quarter notes per bar, two bars, same pitch (a drum pad) */
+            int q;
+            for (q = 0; q < 8; q++) tap(h, t, 60, 100, 8, 164);
+            HX_ASSERT(capture_pending_for_track(inst, t) == 8,
+                      drum ? "drums: all 8 hits of the 2-bar phrase are held"
+                           : "melodic: all 8 notes of the 2-bar phrase are held");
+            snprintf(k, sizeof k, "t%d_capture_commit", t);
+            hx_set_param(h, k, "0");
+            if (!drum) {
+                HX_ASSERT(inst->tracks[1].clips[0].note_count == 8, "melodic: 8 notes captured");
+                HX_ASSERT(inst->tracks[1].clips[0].length == 32, "melodic: a 2-bar clip");
+            } else {
+                int l, found = -1;
+                for (l = 0; l < DRUM_LANES; l++)
+                    if (inst->tracks[0].drum_clips[0]->lanes[l].midi_note == 60) { found = l; break; }
+                HX_ASSERT(found >= 0, "lane for pitch 60");
+                HX_ASSERT(inst->tracks[0].drum_clips[0]->lanes[found].clip.note_count == 8,
+                          "drums: 8 hits captured");
+                HX_ASSERT(inst->tracks[0].drum_clips[0]->lanes[found].clip.length == 32,
+                          "drums: a 2-bar clip");
+            }
+            hx_destroy(h);
+        }
+    }
+
     printf("PASS: capture\n");
     return 0;
 }

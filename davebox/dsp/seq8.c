@@ -1835,10 +1835,19 @@ static inline uint32_t playback_audible_cct(const clip_t *cl,
  * lane's own clock is read instead). CAP_NO_LOOP otherwise. */
 static uint32_t capture_loop_pos(seq8_track_t *tr, uint8_t pitch) {
     if (!tr->clip_playing) return CAP_NO_LOOP;
-    if (tr->pad_mode != PAD_MODE_DRUM) return tr->current_clip_tick;
+    /* ⚠ An EMPTY clip loops silently at its default length, but there is no
+     * earlier pass to redo — playing over it is a first take that grows the
+     * clip. Without this, bar 2 of a 2-bar phrase over an empty 1-bar loop hit
+     * bar 1's positions and threw it away (Josh, device, 2026-09-19: "if i
+     * play 2 bars it only captures the last bar as a 1-bar loop"). */
+    if (tr->pad_mode != PAD_MODE_DRUM)
+        return tr->clips[tr->active_clip].note_count ? tr->current_clip_tick : CAP_NO_LOOP;
     drum_clip_t *dc = tr->drum_clips[tr->active_clip];
     if (!dc) return CAP_NO_LOOP;
-    int l;
+    int l, any = 0;
+    for (l = 0; l < DRUM_LANES; l++)
+        if (dc->lanes[l].clip.note_count) { any = 1; break; }
+    if (!any) return CAP_NO_LOOP;
     for (l = 0; l < DRUM_LANES; l++)
         if (dc->lanes[l].midi_note == pitch)
             return playback_audible_cct(&dc->lanes[l].clip, tr->drum_current_step[l],
