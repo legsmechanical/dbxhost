@@ -743,8 +743,8 @@ static int capture_write_take(seq8_instance_t *inst, int tidx, int clip,
  * the clip is armed and the transport started so the take plays back
  * immediately. A non-empty target keeps its length + the current tempo.
  *
- * Returns 1 if anything was written (ring is then consumed). */
-static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
+ * Returns 1 if anything was written. */
+static int capture_commit_take(seq8_instance_t *inst, int tidx, int clip) {
     if (!inst || tidx < 0 || tidx >= NUM_TRACKS) return 0;
     if (clip < 0 || clip >= NUM_CLIPS) return 0;
     seq8_track_t *tr = &inst->tracks[tidx];
@@ -766,8 +766,11 @@ static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
     if (inst->playing) {
         uint32_t now_abs = inst->global_tick * TICKS_PER_STEP
                          + inst->master_tick_in_step;
-        if (!is_drum) undo_begin_single(inst, tidx, clip);
+        /* Drum captures are undoable too: snapshot AFTER the alloc, because
+         * undo_begin_drum_clip returns early on a clip that does not exist. */
         if (is_drum && !tr->drum_clips[clip]) drum_clips_alloc(inst, tr);
+        if (is_drum) undo_begin_drum_clip(inst, tidx, clip);
+        else         undo_begin_single(inst, tidx, clip);
 
         /* If the target clip is EMPTY, this is a first take: lay the phrase out
          * from the first played note to the last (sized to fit), rather than
@@ -909,8 +912,9 @@ static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
     inst->cap_take_span    = (last_frame > first_frame) ? (last_frame - first_frame) : 1;
     inst->cap_take_is_drum = (uint8_t)is_drum;
 
-    if (!is_drum) undo_begin_single(inst, tidx, clip);
     if (is_drum && !tr->drum_clips[clip]) drum_clips_alloc(inst, tr);
+    if (is_drum) undo_begin_drum_clip(inst, tidx, clip);
+    else         undo_begin_single(inst, tidx, clip);
 
     int tempo_mode = capture_session_empty(inst) && !inst->clock_follow_on;
     int have_selector = 0;
@@ -974,6 +978,15 @@ static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
     inst->state_dirty = 1;
     capture_clear(inst);   /* ring consumed; the take lives in cap_take[] */
     return 1;
+}
+
+/* EVERY Capture press consumes the ring, whether or not it wrote anything —
+ * a press that found nothing to take must not leave its leftovers for the
+ * next one. The stopped take survives in cap_take[] for the selector. */
+static int capture_commit(seq8_instance_t *inst, int tidx, int clip) {
+    int r = capture_commit_take(inst, tidx, clip);
+    if (inst) capture_clear(inst);
+    return r;
 }
 
 /* Clock-follow: route a transport-stop gesture. Toggle Move off if it's running

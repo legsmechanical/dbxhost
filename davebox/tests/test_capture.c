@@ -300,6 +300,52 @@ int main(void) {
     }
     hx_destroy(h);
 
+    /* ---- 9. A drum capture is ONE undo step (stopped and playing) ---- */
+    {
+        int pass;
+        for (pass = 0; pass < 2; pass++) {
+            h = hx_create(NULL);
+            HX_ASSERT(h, "create failed");
+            inst = I(h);
+            if (pass == 1) hx_set_param(h, "transport", "play");
+            hx_render(h, 4);
+            tap(h, 0, 60, 100, 40, 132);
+            tap(h, 0, 60, 100, 40, 132);
+            tap(h, 0, 60, 100, 40, 132);
+            hx_set_param(h, "t0_capture_commit", "0");
+            HX_ASSERT(inst->tracks[0].drum_clips[0] != NULL, "drum clips allocated");
+            int l, found = -1;
+            for (l = 0; l < DRUM_LANES; l++)
+                if (inst->tracks[0].drum_clips[0]->lanes[l].midi_note == 60) { found = l; break; }
+            HX_ASSERT(found >= 0, "lane for pitch 60");
+            HX_ASSERT(inst->tracks[0].drum_clips[0]->lanes[found].clip.note_count == 3,
+                      "drum capture wrote 3 hits");
+            HX_ASSERT(inst->drum_undo_valid, "drum capture took an undo snapshot");
+            hx_set_param(h, "undo_restore", "1");
+            HX_ASSERT(inst->tracks[0].drum_clips[0]->lanes[found].clip.note_count == 0,
+                      pass ? "Undo removed the playing drum capture"
+                           : "Undo removed the stopped drum capture");
+            hx_destroy(h);
+        }
+    }
+
+    /* ---- 10. EVERY Capture press consumes the ring, even one that writes
+     * nothing: notes on track 1, a press on track 2 takes nothing — and the
+     * track-1 notes must not be waiting for a later press. ---- */
+    h = hx_create(NULL);
+    HX_ASSERT(h, "create failed");
+    inst = I(h);
+    hx_set_param(h, "transport", "play");
+    tap(h, 1, 60, 100, 20, 20);
+    HX_ASSERT(capture_pending_for_track(inst, 1) == 1, "track-1 note buffered");
+    {
+        uint32_t seq = inst->cap_commit_seq;
+        hx_set_param(h, "t2_capture_commit", "0");
+        HX_ASSERT(inst->cap_commit_seq == seq, "a press with nothing to take writes nothing");
+    }
+    HX_ASSERT(inst->cap_count == 0, "an empty press still consumed the ring");
+    hx_destroy(h);
+
     printf("PASS: capture\n");
     return 0;
 }
