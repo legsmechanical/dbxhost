@@ -199,7 +199,7 @@ static int sp_track_live(sp_ctx_t *cx) {
          * Pushing on every computePadNoteMap recompute (not just init)
          * means the enable below survives DSP instance recreate
          * (state_load destroy/recreate path). */
-        inst->active_track = (uint8_t)tidx;
+        capture_set_active_track(inst, tidx);
         /* This is the flag the live_notes branch above early-returns on:
          * once padmap enables inbound, on_midi owns live dispatch and a
          * following live_notes push is a no-op. Keep the two in sync. */

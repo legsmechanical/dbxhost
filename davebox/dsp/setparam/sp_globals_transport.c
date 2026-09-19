@@ -404,7 +404,7 @@ static int sp_globals_transport(sp_ctx_t *cx) {
 
     /* --- Active track --- */
     if (!strcmp(key, "active_track")) {
-        inst->active_track = (uint8_t)clamp_i(my_atoi(val), 0, NUM_TRACKS - 1);
+        capture_set_active_track(inst, clamp_i(my_atoi(val), 0, NUM_TRACKS - 1));
         return 1;
     }
 

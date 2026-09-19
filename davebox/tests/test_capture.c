@@ -346,6 +346,104 @@ int main(void) {
     HX_ASSERT(inst->cap_count == 0, "an empty press still consumed the ring");
     hx_destroy(h);
 
+    /* ---- 11. Changing track drops the buffer; re-pushing the SAME track's
+     * pad map (a key/scale/octave change) does not. Driven through tN_padmap,
+     * the message the UI sends when you select a track. ---- */
+    {
+        static const char *PM =
+            "60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 "
+            "76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91";
+        h = hx_create(NULL);
+        HX_ASSERT(h, "create failed");
+        inst = I(h);
+        hx_set_param(h, "transport", "play");
+        hx_set_param(h, "t1_padmap", PM);
+        tap(h, 1, 60, 100, 20, 20);
+        HX_ASSERT(capture_pending_for_track(inst, 1) == 1, "note buffered on track 1");
+        hx_set_param(h, "t1_padmap", PM);          /* same track, re-pushed */
+        HX_ASSERT(capture_pending_for_track(inst, 1) == 1,
+                  "a same-track pad-map push kept the phrase");
+        hx_set_param(h, "t3_padmap", PM);          /* select track 3 */
+        HX_ASSERT(inst->cap_count == 0, "changing track dropped the buffer");
+        hx_set_param(h, "t1_padmap", PM);          /* and back */
+        HX_ASSERT(capture_pending_for_track(inst, 1) == 0,
+                  "the old track-1 phrase did not come back with the track");
+        hx_destroy(h);
+    }
+
+    /* ---- 12. A deliberate edit drops the buffer; ordinary traffic does not ---- */
+    h = hx_create(NULL);
+    HX_ASSERT(h, "create failed");
+    inst = I(h);
+    hx_set_param(h, "transport", "play");
+    tap(h, 1, 60, 100, 20, 20);
+    hx_set_param(h, "t1_c0_undo_checkpoint", "1");   /* rides the same Capture press */
+    hx_set_param(h, "t1_c0_step_0_vel", "90");       /* a knob on a held step */
+    HX_ASSERT(capture_pending_for_track(inst, 1) == 1,
+              "an undo checkpoint / step knob write kept the phrase");
+    hx_set_param(h, "t1_c0_step_4_toggle", "64 100"); /* hand-enter a step */
+    HX_ASSERT(inst->cap_count == 0, "a step entry dropped the buffer");
+    tap(h, 1, 62, 100, 20, 20);
+    hx_set_param(h, "t1_launch_clip", "2");
+    HX_ASSERT(inst->cap_count == 0, "a clip launch dropped the buffer");
+    tap(h, 1, 62, 100, 20, 20);
+    hx_set_param(h, "t1_recording", "0");            /* DISarm is not an edit */
+    HX_ASSERT(inst->cap_count > 0, "disarming kept the buffer");
+    hx_set_param(h, "t1_recording", "1");
+    HX_ASSERT(inst->cap_count == 0, "arming dropped the buffer");
+    hx_destroy(h);
+
+    /* ---- 13. Capture reaches back 8 bars at most. Ten bars of quarter
+     * notes at 120 on a stopped transport (1 quarter = 172 blocks): the
+     * first two bars have aged out; the last eight (32 notes) remain. ---- */
+    h = hx_create(NULL);
+    HX_ASSERT(h, "create failed");
+    inst = I(h);
+    hx_render(h, 4);
+    {
+        int q;
+        for (q = 0; q < 40; q++) tap(h, 1, 60 + (q % 12), 100, 20, 152);
+        int n = capture_pending_for_track(inst, 1);
+        HX_ASSERT(n >= 31 && n <= 33, "only the last ~8 bars (32 notes) are kept");
+    }
+    hx_destroy(h);
+
+    /* ---- 14. The latest pass over the loop replaces the earlier one ----
+     * Track 1's clip 0 holds one note so it loops (1 bar = 16 x 43 blocks). */
+    {
+        int pass;
+        for (pass = 0; pass < 2; pass++) {
+            h = hx_create(NULL);
+            HX_ASSERT(h, "create failed");
+            inst = I(h);
+            clip_insert_note(&inst->tracks[1].clips[0], 0, 24, 48, 100);
+            clip_build_steps_from_notes(&inst->tracks[1].clips[0]);
+            hx_set_param(h, "transport", "play_focus:1:0");   /* launches track 1's clip */
+            hx_render(h, 4);
+            if (pass == 0) {
+                HX_ASSERT(inst->tracks[1].clip_playing, "setup: track 1's clip loops");
+            } else {
+                /* CONTROL: a track whose clip is NOT looping has no "again" —
+                 * its playhead is frozen and every note would look alike. */
+                inst->tracks[1].clip_playing = 0;
+            }
+            tap(h, 1, 60, 100, 8, 35);           /* step 0 of pass 1 */
+            tap(h, 1, 64, 100, 8, 35);           /* step 1: same pass, different spot */
+            HX_ASSERT(capture_pending_for_track(inst, 1) == 2, "one pass: both notes kept");
+            hx_render(h, 16 * 43 - 2 * 43);      /* round to step 0 of pass 2 */
+            tap(h, 1, 62, 100, 8, 35);
+            int n = capture_pending_for_track(inst, 1);
+            if (pass == 0) {
+                HX_ASSERT(n == 1, "playing the same spot again replaced the earlier pass");
+                const cap_ev_t *ev = &inst->cap_ring[inst->cap_head];
+                HX_ASSERT(ev->type == CAP_EV_NOTE_ON && ev->a == 62, "the survivor is the new note");
+            } else {
+                HX_ASSERT(n == 3, "no loop running: nothing was replaced");
+            }
+            hx_destroy(h);
+        }
+    }
+
     printf("PASS: capture\n");
     return 0;
 }

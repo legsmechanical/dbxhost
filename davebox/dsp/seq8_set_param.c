@@ -744,6 +744,45 @@ static int capture_write_take(seq8_instance_t *inst, int tidx, int clip,
  * immediately. A non-empty target keeps its length + the current tempo.
  *
  * Returns 1 if anything was written. */
+/* Is this set_param a DELIBERATE EDIT that should drop the capture buffer?
+ * Capture takes what you just played; once you have hand-edited a clip,
+ * launched one or armed recording, the noodling before that is not "what you
+ * just played" any more. A small fixed list of user actions, not traffic:
+ * knob/param writes, pad maps, undo checkpoints and the capture keys
+ * themselves must never be on it. ⚠ In particular tN_cC_undo_checkpoint is
+ * queued by the knob half of the SAME Capture press and can land before the
+ * note commit — listing it would wipe the take it is meant to protect. */
+static int cap_str_ends(const char *s, const char *suf) {
+    size_t n = strlen(s), m = strlen(suf);
+    return n >= m && !strcmp(s + n - m, suf);
+}
+static int capture_clears_on(const char *key, const char *val) {
+    if (!strcmp(key, "launch_scene") || !strcmp(key, "launch_scene_quant") ||
+        !strcmp(key, "record_count_in") || !strcmp(key, "row_clear"))
+        return 1;
+    if (!(key[0] == 't' && key[1] >= '0' && key[1] <= '7' && key[2] == '_'))
+        return 0;
+    const char *sub = key + 3;
+    if (!strcmp(sub, "launch_clip")) return 1;
+    if (!strcmp(sub, "recording"))   return my_atoi(val) != 0;
+    /* clip (cC_) and drum-lane (lL_) edits */
+    if (!((sub[0] == 'c' || sub[0] == 'l') && sub[1] >= '0' && sub[1] <= '9'))
+        return 0;
+    const char *op = sub + 1;
+    while (*op >= '0' && *op <= '9') op++;
+    if (!strncmp(op, "_step_", 6))
+        return cap_str_ends(op, "_toggle") || cap_str_ends(op, "_add") ||
+               cap_str_ends(op, "_set_notes") || cap_str_ends(op, "_clear");
+    static const char *const OPS[] = {
+        "_note_add", "_note_del", "_note_move", "_note_resize", "_notes_op",
+        "_clear", "_drum_clear", "_hard_reset", "_euclid_stamp",
+    };
+    size_t k;
+    for (k = 0; k < sizeof(OPS) / sizeof(OPS[0]); k++)
+        if (!strcmp(op, OPS[k])) return 1;
+    return 0;
+}
+
 static int capture_commit_take(seq8_instance_t *inst, int tidx, int clip) {
     if (!inst || tidx < 0 || tidx >= NUM_TRACKS) return 0;
     if (clip < 0 || clip >= NUM_CLIPS) return 0;
@@ -1073,6 +1112,8 @@ static void set_param(void *instance, const char *key, const char *val) {
      * before the tN_ block) read only inst/key/val; tidx/tr/sub are filled in
      * inside the tN_ block. Designated init leaves tidx=0, tr=NULL, sub=NULL. */
     sp_ctx_t cx = { .inst = inst, .key = key, .val = val };
+
+    if (inst->cap_count && capture_clears_on(key, val)) capture_clear(inst);
 
 
     /* --- Transport / tempo / tonality / metro / clock / count-in (global) ---
