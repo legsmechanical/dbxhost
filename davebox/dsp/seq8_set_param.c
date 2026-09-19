@@ -828,16 +828,21 @@ static int capture_commit_take(seq8_instance_t *inst, int tidx, int clip) {
         /* First event's absolute tick + its clip-tick (where the phrase begins
          * in the loop). Empty-clip notes are laid out from there, unwrapped, so
          * a phrase longer than the clip extends it instead of wrapping. */
-        uint32_t first_abs = 0, first_ct = 0; int have_first = 0;
+        uint32_t first_abs = 0; int have_first = 0;
         for (i = 0; i < (int)inst->cap_count; i++) {
             const cap_ev_t *ev = &inst->cap_ring[(inst->cap_head + i) % CAP_MAX_EVENTS];
             if (ev->track != (uint8_t)tidx) continue;
             if (ev->type == CAP_EV_NOTE_ON || ev->type == CAP_EV_CC) {
-                first_abs = ev->abs_tick; first_ct = ev->ctick; have_first = 1; break;
+                first_abs = ev->abs_tick; have_first = 1; break;
             }
         }
         int fresh = mcl_empty && have_first;
         uint32_t span_end = 0;
+        /* A first take keeps the BEAT it was played on: its offset into the
+         * transport's bar, not the clip's own playhead (frozen on a clip that
+         * is not playing) nor the loop start (which lost the beat on drums).
+         * A phrase started on beat 3 comes back on beat 3. */
+        uint32_t bar_phase = first_abs % (16u * TICKS_PER_STEP);
 
         for (i = 0; i < (int)inst->cap_count; i++) {
             const cap_ev_t *ev = &inst->cap_ring[(inst->cap_head + i) % CAP_MAX_EVENTS];
@@ -852,7 +857,7 @@ static int capture_commit_take(seq8_instance_t *inst, int tidx, int clip) {
                 if (gate > 65535u) gate = 65535u;
                 if (!is_drum) {
                     uint32_t ct = fresh
-                        ? first_ct + (ev->abs_tick - first_abs)
+                        ? ws + bar_phase + (ev->abs_tick - first_abs)
                         : (clip == (int)tr->active_clip && tr->clip_playing)
                             ? ev->ctick
                             : ws + (wl ? (ev->abs_tick % wl) : 0);
@@ -869,7 +874,7 @@ static int capture_commit_take(seq8_instance_t *inst, int tidx, int clip) {
                         uint32_t lws  = (uint32_t)ln->clip.loop_start * ltps;
                         uint32_t lwl  = (uint32_t)ln->clip.length * ltps;
                         uint32_t ct = fresh
-                            ? lws + (ev->abs_tick - first_abs)
+                            ? lws + bar_phase + (ev->abs_tick - first_abs)
                             : lws + (lwl ? (ev->abs_tick % lwl) : 0);
                         clip_insert_note(&ln->clip, ct, (uint16_t)gate, ev->a, ev->b);
                         if (ct + gate > span_end) span_end = ct + gate;
@@ -894,6 +899,12 @@ static int capture_commit_take(seq8_instance_t *inst, int tidx, int clip) {
                 for (l = 0; l < DRUM_LANES; l++)
                     tr->drum_clips[clip]->lanes[l].clip.length = (uint16_t)len_steps;
             }
+            /* ...and starts on the next bar, through the same bar-boundary
+             * launch Shift+scene uses (seq8_render.c page stop), so the take
+             * plays back in time with everything else. */
+            tr->queued_clip       = (int8_t)clip;
+            tr->pending_page_stop = 1;
+            tr->will_relaunch     = 0;
         }
         inst->cap_last_was_stopped = 0;
         inst->cap_select_active    = 0;   /* overdub never opens the selector */

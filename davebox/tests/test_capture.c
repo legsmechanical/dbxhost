@@ -138,9 +138,14 @@ int main(void) {
     HX_ASSERT(inst->playing == 1, "transport running");
     hx_render(h, 100);
     /* Capturing over an EMPTY clip while playing = a first take: the note lands
-     * at the clip playhead where it was played (its captured clip-tick), and the
-     * clip is sized to fit — no wrap into a default 1-bar window. */
-    uint32_t tick_at_play = inst->tracks[1].current_clip_tick;
+     * on the beat of the TRANSPORT's bar where it was played, and the clip is
+     * sized to fit — no wrap into a default 1-bar window. (This once compared
+     * against the clip's own playhead, which is frozen on a clip that is not
+     * playing — the test agreed with a frozen value.) */
+    HX_ASSERT(!inst->tracks[1].clip_playing, "setup: the empty clip is not playing");
+    uint32_t tick_at_play = (inst->global_tick * TICKS_PER_STEP + inst->master_tick_in_step)
+                          % (16u * TICKS_PER_STEP);
+    HX_ASSERT(tick_at_play >= 2 * TICKS_PER_STEP, "setup: played well into the bar");
     live_note_on(inst, &inst->tracks[1], 61, 90);
     hx_render(h, 10);
     live_note_off(inst, &inst->tracks[1], 61);
@@ -152,8 +157,13 @@ int main(void) {
     {
         int d = (int)cl->notes[0].tick - (int)tick_at_play;
         if (d < 0) d = -d;
-        HX_ASSERT(d < 24, "note lands where it was played (clip playhead)");
+        HX_ASSERT(d < 24, "note lands on the beat it was played (transport bar)");
     }
+    HX_ASSERT(inst->tracks[1].queued_clip == 0 && inst->tracks[1].pending_page_stop,
+              "the new take is queued to start on the next bar");
+    hx_render(h, 16 * 43);
+    HX_ASSERT(inst->tracks[1].clip_playing && inst->tracks[1].active_clip == 0,
+              "...and it is playing after the bar line");
     HX_ASSERT(inst->playing == 1, "playing commit leaves transport running");
 
     /* ---- 3. Transport edges clear the ring ---- */
@@ -443,6 +453,33 @@ int main(void) {
             hx_destroy(h);
         }
     }
+
+    /* ---- 15. Drum first take while playing keeps its beat too (it used to be
+     * pinned to the lane's loop start) ---- */
+    h = hx_create(NULL);
+    HX_ASSERT(h, "create failed");
+    inst = I(h);
+    hx_set_param(h, "transport", "play");
+    hx_render(h, 8 * 43);                            /* beat 3 of the bar */
+    {
+        uint32_t phase = (inst->global_tick * TICKS_PER_STEP + inst->master_tick_in_step)
+                       % (16u * TICKS_PER_STEP);
+        tap(h, 0, 60, 100, 8, 20);
+        hx_set_param(h, "t0_capture_commit", "0");
+        HX_ASSERT(inst->tracks[0].drum_clips[0] != NULL, "drum clips allocated");
+        int l, found = -1;
+        for (l = 0; l < DRUM_LANES; l++)
+            if (inst->tracks[0].drum_clips[0]->lanes[l].midi_note == 60) { found = l; break; }
+        HX_ASSERT(found >= 0, "lane for pitch 60");
+        clip_t *lc = &inst->tracks[0].drum_clips[0]->lanes[found].clip;
+        HX_ASSERT(lc->note_count == 1, "drum first take wrote the hit");
+        int d = (int)lc->notes[0].tick - (int)phase;
+        if (d < 0) d = -d;
+        HX_ASSERT(phase >= 6 * TICKS_PER_STEP, "setup: played on beat 3");
+        HX_ASSERT(d < 24, "the drum hit lands on the beat it was played, not the loop start");
+        HX_ASSERT(inst->tracks[0].queued_clip == 0, "the drum take is queued for the next bar");
+    }
+    hx_destroy(h);
 
     printf("PASS: capture\n");
     return 0;
