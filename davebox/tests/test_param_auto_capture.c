@@ -225,6 +225,42 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- ONE Undo takes back a tap that captured notes AND sweeps -------
+     * The order the UI now sends them in: the note commit (which snapshots the
+     * clip, automation included, before writing), then the sweep commit, with
+     * no checkpoint of its own. */
+    {
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+        seq8_track_t *tr = &in->tracks[1];       /* melodic */
+        hx_set_param(h, "transport", "play");
+        live_note_on(in, tr, 60, 100);
+        hx_render(h, 10);
+        live_note_off(in, tr, 60);
+        hx_set_param(h, "t1_pa_live", "1:fx1:cutoff 3000");
+        pa_record_tick(in, tr, 1, 0, 0, 24, 384);
+        hx_set_param(h, "t1_pa_live", "1:fx1:cutoff 5000");
+        pa_record_tick(in, tr, 1, 0, 24, 24, 384);
+
+        hx_set_param(h, "t1_capture_commit", "0");
+        hx_set_param(h, "t1_pa_capture_commit", "0");
+        HX_ASSERT(tr->clips[0].note_count == 1, "the note half landed");
+        int e, lanes = 0;
+        for (e = 0; e < PA_MAX_ENTRIES; e++)
+            if (in->pa_entries[e].used && in->pa_entries[e].track == 1) lanes++;
+        HX_ASSERT(lanes == 1, "the sweep half landed");
+
+        hx_set_param(h, "undo_restore", "1");
+        HX_ASSERT(tr->clips[0].note_count == 0, "Undo removed the captured notes");
+        lanes = 0;
+        for (e = 0; e < PA_MAX_ENTRIES; e++)
+            if (in->pa_entries[e].used && in->pa_entries[e].track == 1 &&
+                in->pa_entries[e].count > 0) lanes++;
+        HX_ASSERT(lanes == 0, "...and the captured sweep, in the same Undo");
+        OK("⭐ one Undo takes back a capture of notes AND knob moves");
+        hx_destroy(h);
+    }
+
     printf("test_param_auto_capture: PASS (%d checks)\n", ok_count);
     return 0;
 }

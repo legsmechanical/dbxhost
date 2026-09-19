@@ -814,6 +814,17 @@ export function automationCaptureCommit(track, clip) {
     presenceStale = true;
 }
 
+/* The automation half of a Capture tap that ALSO commits notes. The note
+ * commit rides S.pendingDefaultSetParams and takes the undo snapshot itself —
+ * before anything is written, knob automation included. A separate checkpoint
+ * on the automation queue could land AFTER that commit and overwrite the
+ * snapshot with a post-write one, so Undo left the notes in. So: no checkpoint,
+ * and the sweep commit goes on the SAME ordered queue, behind the notes. */
+export function automationCaptureCommitAfterNotes(track, clip) {
+    S.pendingDefaultSetParams.push({ key: 't' + track + '_pa_capture_commit', val: String(clip) });
+    presenceStale = true;
+}
+
 /* Shift+Capture's automation half: drop this track's captured sweeps. */
 export function automationCaptureClear(track) {
     queueSet('t' + track + '_pa_capture_clear', '1');

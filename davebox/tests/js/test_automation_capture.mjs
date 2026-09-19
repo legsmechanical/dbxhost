@@ -73,7 +73,9 @@ function tapCapture() {
     sets.length = 0; bulk.length = 0;
     S.captureUsedAsModifier = false;
     cc(MoveCapture, 127); cc(MoveCapture, 0);
-    globalThis.tick();                       /* automationTick flushes the queue */
+    /* automationTick flushes its queue each tick; pendingDefaultSetParams
+     * drains ONE per tick — run until both are dry. */
+    for (let i = 0; i < 6; i++) globalThis.tick();
 }
 const bulkHas = (frag) => bulk.some((l) => l.indexOf(frag) >= 0);
 const setsHas = (frag) => sets.some(([k]) => k.indexOf(frag) >= 0);
@@ -101,8 +103,23 @@ step('⭐ ONE TAP COMMITS BOTH HALVES (Josh\'s ruling) — notes to the clip, sw
     S.playing = true; S.capturePending = 5; S.paCapturePending = 2;
     tapCapture();
     if (!setsHas('t2_capture_commit')) throw new Error('the NOTE half did not commit: ' + JSON.stringify(sets));
-    if (!bulkHas('t2_pa_capture_commit')) throw new Error('the AUTOMATION half did not commit: ' + JSON.stringify(bulk));
+    if (!setsHas('t2_pa_capture_commit') && !bulkHas('t2_pa_capture_commit'))
+        throw new Error('the AUTOMATION half did not commit: ' + JSON.stringify(sets.concat(bulk)));
     if (S.capturePending !== 0 || S.paCapturePending !== 0) throw new Error('a half was left pending');
+});
+
+step('⭐ ONE UNDO takes back BOTH halves: the sweeps ride BEHIND the notes on one ordered queue, with no checkpoint of their own', () => {
+    /* The note commit snapshots the clip (automation included) before it writes.
+     * A separate checkpoint on the automation queue could land AFTER it and
+     * replace that snapshot with a post-write one — Undo then left the notes. */
+    S.playing = true; S.capturePending = 5; S.paCapturePending = 2;
+    tapCapture();
+    const keys = sets.map(([k]) => k);
+    const n = keys.indexOf('t2_capture_commit'), a = keys.indexOf('t2_pa_capture_commit');
+    if (n < 0 || a < 0) throw new Error('both halves must go on the ordered queue: ' + JSON.stringify(keys) + ' / bulk ' + JSON.stringify(bulk));
+    if (a < n) throw new Error('the sweeps were committed BEFORE the notes');
+    if (bulkHas('undo_checkpoint') || keys.some((k) => k.indexOf('undo_checkpoint') >= 0))
+        throw new Error('a separate checkpoint was sent — it can overwrite the capture\'s own snapshot');
 });
 
 step('⚠ CONTROL: notes buffered but NO sweeps — the tap must not send a pa commit', () => {

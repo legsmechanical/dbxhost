@@ -52,7 +52,7 @@ import { effectiveClip, forceRedraw, invalidateLEDCache,
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
 import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen,
          autoBankJumpTarget, autoBankRestoreMenu } from './ui_automation_bank.mjs';
-import { automationParamEdit, automationCaptureCommit,
+import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAfterNotes,
          automationCaptureClear, automationClearBanksQueued } from './ui_automation.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi } from './ui_constants.mjs';
@@ -1638,8 +1638,10 @@ function _onCC_buttons(d1, d2) {
                         S.pendingDefaultSetParams.push({
                             key: 't' + _ct + '_capture_commit', val: String(_fc) });
                         S.captureCommitAwait = 40;
+                        if (S.paCapturePending > 0) automationCaptureCommitAfterNotes(_ct, _fc);
+                    } else if (S.paCapturePending > 0) {
+                        automationCaptureCommit(_ct, _fc);
                     }
-                    if (S.paCapturePending > 0) automationCaptureCommit(_ct, _fc);
                     S.capturePending   = 0;
                     S.paCapturePending = 0;
                 } else if (!trackClipHasContent(_ct, _fc)) {
