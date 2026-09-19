@@ -438,9 +438,11 @@ step_('⭑ the layer COVERS sound mode while open, and a store/recall card draws
     S.sessionView = true; R.drawUI();
     globalThis.draw_rect = _dr;
     if (boxes < 2) throw new Error('the card was not drawn above both views: ' + boxes);
-    /* a plain popup is NOT a card */
+    /* a plain popup is a card too (every timed notice is), but it DEFERS to a
+     * held step or knob — the one thing that still separates it */
     P.showActionPopup('UNDO');
-    if (S.actionPopupCard) throw new Error('a plain popup was flagged as a card');
+    if (!S.actionPopupCard) throw new Error('a plain popup was not flagged as a card');
+    if (!S.actionPopupDefers) throw new Error('a plain popup does not defer to held gestures');
 });
 
 if (failed) process.exit(1);

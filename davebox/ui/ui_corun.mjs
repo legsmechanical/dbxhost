@@ -220,7 +220,7 @@ export function schSlotMasksAllTracks(out) {
 export function enterMoveNativeCoRun(t, origin) {
     /* Track view only (Josh, 2026-08-08) — see openSchwungSlotEditor. */
     if (S.sessionView) {
-        showActionPopup('TRACK VIEW ONLY', 'Switch out of session', 'view to edit synths.');
+        showActionPopup('TRACK VIEW ONLY', 'Switch out of', 'session view to', 'edit synths.');
         return;
     }
     S.moveCoRunTrack = t;

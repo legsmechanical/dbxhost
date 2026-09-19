@@ -204,9 +204,18 @@ export function showTrackVolCard(text, frac) {
     S.screenDirty = true;
 }
 
+/* ⭐ EVERY TIMED NOTICE IS A CARD, drawn over whatever screen is up (Josh:
+ * "Every temporary full-screen notification becomes a POP-UP over the current
+ * screen"). The plain popup used to take the whole screen in track view, and
+ * in sound mode it drew NOTHING — soundRender owns the panel and returns before
+ * any popup branch, so "AUTOMATION CLEARED", "MACROS CLEARED" and "NOT SAVED"
+ * fired into the void whenever the sound card was up. What still separates the
+ * plain popup from showActionPopupFor is only that it DEFERS: while a step is
+ * held or a knob touched, the read-out you are using wins and the card waits
+ * out the rest of its window. */
 export function showActionPopup(...lines) {
     showActionPopupFor(ACTION_POPUP_MS, ...lines);
-    S.actionPopupCard = false;
+    S.actionPopupDefers = true;
 }
 
 /* The same popup, held for `ms`. The default ACTION_POPUP_MS is a glance —
@@ -222,8 +231,9 @@ export function showActionPopupFor(ms, ...lines) {
     S.actionPopupLines   = lines.filter((l) => l !== undefined && l !== null);
     S.actionPopupEndTick = nowMs() + ms;
     /* A timed notice is a CARD, drawn above whatever screen is up (ui_render
-     * drawUI); the plain popup keeps each view's own placement. */
+     * drawUI). Only the gauge opts out — it wants the room for its bar. */
     S.actionPopupCard = true;
+    S.actionPopupDefers = false;
     S.screenDirty = true;
 }
 
@@ -234,6 +244,7 @@ export function showActionPopupFor(ms, ...lines) {
  * fractions of full scale; -1 omits the tick. */
 export function showActionPopupGauge(frac, mark, ...lines) {
     showActionPopup(...lines);
+    S.actionPopupCard = false;
     S.actionPopupGauge = Math.max(0, Math.min(1, frac));
     S.actionPopupGaugeMark = (mark >= 0 && mark <= 1) ? mark : -1;
 }
