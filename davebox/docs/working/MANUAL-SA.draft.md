@@ -646,15 +646,25 @@ What Capture does depends on the transport:
 
 | Transport | What Capture does |
 |---|---|
-| Playing | Adds the buffered notes to the active clip where you played them; knob moves become [automation](#11-automation) |
+| Playing | Adds the buffered notes to the active clip where you played them; knob moves become [automation](#11-automation). Into an **empty** clip, the take keeps the beat you played it on and starts on the next bar |
 | Stopped, empty set | Reads a tempo from your playing, sizes a clip to whole bars, and starts it |
 | Stopped, set with clips | Fits the take to the current tempo; a screen lets the jog pick how many bars it fills |
 
 After a stopped capture into an empty set, a tempo chooser offers the detected BPM
 and a few nearby candidates over a strip showing your take against the bars —
 playback keeps rolling as you scroll them, so you can hear which one fits. Capture
-works on drum clips too. To clear the buffer, hold **Shift** and tap **Capture** —
-that drops held knob moves as well as held notes.
+works on drum clips too, and one **Undo** takes back any capture. To clear the buffer,
+hold **Shift** and tap **Capture** — that drops held knob moves as well as held notes.
+
+**What the buffer holds.** Capture keeps what you *just* played, not everything
+since you started:
+
+- it reaches back **8 bars** at most;
+- playing over a spot you already played on an earlier lap of the loop replaces
+  that earlier lap, so four passes of jamming keep the last one;
+- selecting another track, editing a clip by hand (entering steps, clearing),
+  launching a clip or scene, or arming Record starts it afresh;
+- every Capture tap empties it, even one that found nothing to keep.
 
 **Capturing knob moves.** Any parameter you turn while the loop is running and
 Record is **off** is kept, and one Capture tap commits every one of them at once,
