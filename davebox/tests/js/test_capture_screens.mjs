@@ -104,6 +104,56 @@ step('the chooser draws in the kit faces, not the host list font', () => {
     S.tempoSelectActive = false;
 });
 
+/* The kit draws through fill_rect, so kit text is invisible to a print()
+ * capture — these read it through the fonts' own trace. */
+const fonts = await import('../../ui/ui_fonts_pp.mjs');
+let kit = [];
+fonts.setKitTextTrace((t) => kit.push(String(t)));
+const kitFrame = () => { kit = []; frame(R); return kit.join(' | '); };
+
+step('the tempo chooser says what it is, in the kit faces', () => {
+    open(false, [61, 122, 244], 1);
+    const t = kitFrame();
+    ['CAPTURE TEMPO', '122', 'BPM', 'TEMPO', 'SET'].forEach((w) =>
+        assert(t.indexOf(w) >= 0, 'missing "' + w + '": ' + t));
+    S.tempoSelectActive = false;
+});
+
+step('TAP TEMPO is on the kit now, not the MCU dialog face', () => {
+    S.tapTempoOpen = true; S.tapTempoBpm = 118;
+    const t = kitFrame();
+    ['TAP TEMPO', '118', 'BPM', 'TAP ANY PAD'].forEach((w) =>
+        assert(t.indexOf(w) >= 0, 'missing "' + w + '": ' + t));
+    S.tapTempoOpen = false;
+});
+
+step('PERFORMANCE mode names its mode chips and what is engaged', () => {
+    S.sessionView = true; S.perfViewLocked = true;
+    S.perfModsToggled = 0; S.perfModsHeld = 0; S.perfStack = []; S.perfRecalledSlot = -1;
+    let t = kitFrame();
+    ['PERFORMANCE', 'NO MODS ENGAGED', 'HOLD', 'SYNC', 'LATCH'].forEach((w) =>
+        assert(t.indexOf(w) >= 0, 'missing "' + w + '": ' + t));
+    S.perfModsToggled = 0b101; S.perfStack = [{ idx: 2 }];
+    t = kitFrame();
+    assert(t.indexOf('OCT+') >= 0, 'an engaged mod is not named: ' + t);
+    assert(t.indexOf('1/8') >= 0, 'the repeat rate is not shown: ' + t);
+    S.sessionView = false; S.perfViewLocked = false; S.perfStack = []; S.perfModsToggled = 0;
+});
+
+step('the LOADING screen names the project and the stage', () => {
+    S.stateLoading = true; S.currentSetName = 'Grams at night';
+    const t = kitFrame();
+    ['LOADING', 'GRAMS AT NIGHT', 'STARTING THE SEQUENCER'].forEach((w) =>
+        assert(t.indexOf(w) >= 0, 'missing "' + w + '": ' + t));
+    S.stateLoading = false;
+});
+
+step('⚠ CONTROL: the trace SEES a draw — so a missing string means missing text, not a dead hook', () => {
+    kit = [];
+    fonts.fontPrint4x5(0, 0, '', 1);
+    assert(kit.length === 1 && kit[0] === '', 'the trace does not see a draw: ' + JSON.stringify(kit));
+});
+
 if (failed) process.exit(1);
 console.log('PASS: test_capture_screens.mjs');
 }

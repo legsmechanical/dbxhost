@@ -154,7 +154,10 @@ printf '%s' "$ov" | grep -q 'drawCustomSplash()' \
 printf '%s' "$ov" | grep -q 'overtakeLoadingLabel === "Loading\.\.\."' \
     && ok "...only for the DEFAULT label — a named project still shows its name" \
     || bad "the splash would hide 'Loading <project>', which is real information"
-printf '%s' "$ov" | grep -q 'overtakeLoadingLabel, 21' \
+# ⚠ Pinned by BEHAVIOUR, not by the old truncateText call: the labelled path
+# now draws the shared loading screen (menu_layout drawLoadingScreen), which is
+# what the davebox half and the select phase draw too.
+printf '%s' "$ov" | grep -q 'drawLoadingScreen(' \
     && ok "...and the label path still exists for that case" \
     || bad "the labelled loading screen was removed entirely"
 

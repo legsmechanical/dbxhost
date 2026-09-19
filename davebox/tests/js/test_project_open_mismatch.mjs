@@ -139,6 +139,8 @@ function hostPublish(resolvedUuid, name, index, moveSays) {
 let frameText = [];
 globalThis.clear_screen = () => { frameText = []; };
 globalThis.print = (x, y, str) => { frameText.push(String(str)); };
+/* ⚠ The kit faces draw through fill_rect, so print() alone sees nothing a kit
+ * screen says — and the verdict screen moved onto the kit. Collect both. */
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
 globalThis.fill_rect = () => {};
 globalThis.draw_rect = () => {};
@@ -182,6 +184,8 @@ const tickmod = await import('../../ui/ui_tick.mjs');
 const render = await import('../../ui/ui_render.mjs');
 const shared = await import('/data/UserData/schwung/shared/session_state.mjs');
 const dialogs = await import('../../ui/ui_dialogs.mjs');
+const fonts = await import('../../ui/ui_fonts_pp.mjs');
+fonts.setKitTextTrace((t) => frameText.push(String(t)));
 
 const JOG_CLICK = 3, JOG_TURN = 14, BACK = 51;
 const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
@@ -254,7 +258,8 @@ step('resolver X + Move says default -> PROJECT DID NOT OPEN is on the OLED', ()
     hostPublish(X, 'Project 32', 31, 'default');
     ticks(40);
     if (!onScreen()) throw new Error('rendered frame: ' + frame());
-    if (frame().indexOf('Project 32') < 0) throw new Error('project name not shown: ' + frame());
+    /* the kit draws CAPS; the name is what matters, not its case */
+    if (frame().toUpperCase().indexOf('PROJECT 32') < 0) throw new Error('project name not shown: ' + frame());
 });
 step('...and no save of any kind is aimed at X', () => {
     provokeSaves();

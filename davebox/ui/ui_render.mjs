@@ -12,7 +12,7 @@ import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
 import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev, faderGainToTravel} from './ui_engine.mjs';
 import { instrValueFor } from './ui_dsp_bridge.mjs';
-import { fontPrint4x5, fontWidth4x5, fit4x5, fontPrintBigNum, fontWidthBigNum, bigNumCanDraw, BIGNUM_H } from './ui_fonts_pp.mjs';
+import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
@@ -20,7 +20,7 @@ import {
     INSTR_SCHWUNG, INSTR_MOVE_MAX, INSTR_MIDI_CH, INSTR_TRACK, INSTR_NONE,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
-    col4, col5, pixelPrint, pixelPrintC,
+    col4, col5,
     fmtSign, fmtStretch, fmtLen, fmtRes, fmtPct, fmtBool, fmtGateMod,
     fmtArpRate, fmtVelOverride, fmtPlayDir, fmtRevStyle,
     fmtDly, fmtArpStyle, fmtArpSteps, fmtDiq, fmtPlain, fmtLgto, fmtPitchRnd
@@ -33,7 +33,8 @@ import { drawAutoMarkAt,
     drawLevelCard,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
-    drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y
+    drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y,
+    drawKitBigValue, drawKitPrompt, drawKitChip, kitChipWidth
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawModuleSwapConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
@@ -1097,92 +1098,87 @@ function _modAscii(name) {
     return name.replace('↑', '+').replace('↓', '-').replace('½', 'Hf');
 }
 
-/* Footer indicator chip: filled-rect when active, outline when inactive.
- * Returns the chip's width so the caller can advance x. */
-function _perfChip(x, y, label, active) {
-    const w = label.length * 6 + 3;
-    if (active) {
-        fill_rect(x, y, w, 9, 1);
-        pixelPrint(x + 2, y + 2, label, 0);
-    } else {
-        /* hollow outline */
-        fill_rect(x,         y,     w, 1, 1);
-        fill_rect(x,         y + 8, w, 1, 1);
-        fill_rect(x,         y,     1, 9, 1);
-        fill_rect(x + w - 1, y,     1, 9, 1);
-        pixelPrint(x + 2, y + 2, label, 1);
+/* THE LOADING SCREEN (2026-09-19). A project load passes through the host's
+ * select screen, sometimes the host's "Loading <name>" splash, then this — and
+ * the three used to look like three different products. The host pair now
+ * draws the same layout (shadow_ui.js drawLoadingLayout): a LOADING header,
+ * the project NAME as the one big thing, and a small line naming the stage. */
+export function drawLoadingScreen(name, stage) {
+    clear_screen();
+    drawKitHeader('Loading');
+    const n = String(name || '').toUpperCase();
+    if (n) {
+        const w = bigWidth(n), wc = bigWidth(n, true);
+        if (w <= 124)       bigPrint(Math.floor((128 - w) / 2), 22, n, 1);
+        else if (wc <= 124) bigPrint(Math.floor((128 - wc) / 2), 22, n, 1, true);
+        else { const t = fit4x5(n, 124); fontPrint4x5(Math.floor((128 - fontWidth4x5(t)) / 2), 25, t, 1); }
     }
-    return w;
+    if (stage) {
+        const t = fit4x5(String(stage).toUpperCase(), 124);
+        fontPrint4x5(Math.floor((128 - fontWidth4x5(t)) / 2), 46, t, 1);
+    }
 }
 
+/* PERFORMANCE MODE on the kit (2026-09-19): header bar, 4x5 caps, the mode
+ * chips in the hint-pill shape (filled = on). It was the last screen on the
+ * MCUFONT dialog face. */
 function drawPerfModeOled() {
     clear_screen();
     const activeMods = S.perfModsToggled | S.perfModsHeld;
 
-    /* ── Header bar (y 0-11): preset name or "PERFORMANCE" ── */
-    fill_rect(0, 0, 128, 12, 1);
     let title;
     if (S.perfRecalledSlot >= 0) {
         const fp = PERF_FACTORY_PRESETS[S.perfRecalledSlot];
-        title = fp ? fp.name : ('SLOT ' + (S.perfRecalledSlot + 1));
+        title = fp ? fp.name : ('Slot ' + (S.perfRecalledSlot + 1));
     } else {
-        title = 'PERFORMANCE';
+        title = 'Performance';
     }
-    print(4, 3, title, 0);
+    drawKitHeader(title);
 
-    /* ── Body (y 14-49): mod popup → mods list. An action popup is the notice
-     * card, drawn over this screen by drawUI. ── */
+    /* Body: the flash of a mod just engaged, else what is engaged. An action
+     * popup is the notice card, drawn over this screen by drawUI. */
+    const BODY_TOP = 9, BODY_BOT = MV_FOOTER_Y - 2;
     if (S.perfModPopupEndTick >= 0 && S.clockMs <= S.perfModPopupEndTick && S.perfModPopupName) {
-        const px = Math.floor((128 - S.perfModPopupName.length * 6) / 2);
-        print(px < 0 ? 0 : px, 26, S.perfModPopupName, 1);
+        const n = _modAscii(S.perfModPopupName).toUpperCase();
+        const w = bigWidth(n);
+        if (w <= 124) bigPrint(Math.floor((128 - w) / 2), 22, n, 1);
+        else { const t = fit4x5(n, 124); fontPrint4x5(Math.floor((128 - fontWidth4x5(t)) / 2), 25, t, 1); }
     } else {
         S.perfModPopupEndTick = -1;
-        const activeNames = [];
+        const names = [];
         for (let i = 0; i < PERF_MOD_NAMES.length; i++)
-            if ((activeMods >> i) & 1) activeNames.push(_modAscii(PERF_MOD_NAMES[i]));
-        if (activeNames.length === 0) {
-            pixelPrint(4, 24, 'no mods active', 1);
-            pixelPrint(4, 34, 'tap pad to engage', 1);
+            if ((activeMods >> i) & 1) names.push(_modAscii(PERF_MOD_NAMES[i]).toUpperCase());
+        const put = (lines) => {
+            const pitch = 9, h = lines.length * pitch - 4;
+            const top = BODY_TOP + Math.floor((BODY_BOT - BODY_TOP - h) / 2);
+            lines.forEach((ln, i) => fontPrint4x5(Math.floor((128 - fontWidth4x5(ln)) / 2), top + i * pitch, ln, 1));
+        };
+        if (names.length === 0) {
+            put(['NO MODS ENGAGED', 'TAP A PAD TO ENGAGE ONE']);
         } else {
-            /* Wrap into up to 4 lines, ~20 chars per line at 6px each. */
-            const MAX_CHARS = 20;
-            const MAX_LINES = 4;
-            const lines = [];
-            let cur = '';
-            for (let i = 0; i < activeNames.length; i++) {
-                const sep  = cur ? '  ' : '';
-                const next = cur + sep + activeNames[i];
-                if (next.length > MAX_CHARS && cur) {
-                    lines.push(cur);
-                    if (lines.length >= MAX_LINES) { cur = ''; break; }
-                    cur = activeNames[i];
-                } else {
-                    cur = next;
-                }
+            /* Wrap by MEASURED width into up to four centred rows. */
+            const lines = []; let cur = '';
+            for (const nm of names) {
+                const next = cur ? cur + '  ' + nm : nm;
+                if (cur && fontWidth4x5(next) > 120) {
+                    lines.push(cur); cur = nm;
+                    if (lines.length >= 4) { cur = ''; break; }
+                } else cur = next;
             }
-            if (cur && lines.length < MAX_LINES) lines.push(cur);
-            for (let li = 0; li < lines.length; li++) {
-                pixelPrint(4, 16 + li * 8, lines[li], 1);
-            }
+            if (cur && lines.length < 4) lines.push(cur);
+            put(lines);
         }
     }
 
-    /* ── Footer (y 53-61): mode chips + rate ── */
-    const fy = 53;
-    let fx = 2;
-    fx += _perfChip(fx, fy, 'Hold',  S.perfHoldPadHeld || S.perfStickyLengths.size > 0) + 3;
-    fx += _perfChip(fx, fy, 'Sync',  S.perfSync) + 3;
-    fx += _perfChip(fx, fy, 'Latch', S.perfLatchMode) + 3;
-
-    /* Rate (right-aligned, only when a loop length is active) */
+    /* Footer: the mode chips, and the repeat rate on the right while one runs. */
+    let x = 1;
+    x += drawKitChip(x, MV_FOOTER_Y, 'Hold',  S.perfHoldPadHeld || S.perfStickyLengths.size > 0) + 3;
+    x += drawKitChip(x, MV_FOOTER_Y, 'Sync',  S.perfSync) + 3;
+    x += drawKitChip(x, MV_FOOTER_Y, 'Latch', S.perfLatchMode) + 3;
     if (S.perfStack.length > 0) {
-        const RATE_LABELS = ['1/32','1/16','1/8','1/4','1/2'];
-        const top = S.perfStack[S.perfStack.length - 1];
-        const lab = RATE_LABELS[top.idx];
-        const w   = lab.length * 6 + 3;
-        const rx  = 128 - w - 2;
-        fill_rect(rx, fy, w, 9, 1);
-        pixelPrint(rx + 2, fy + 2, lab, 0);
+        const RATE_LABELS = ['1/32', '1/16', '1/8', '1/4', '1/2'];
+        const lab = RATE_LABELS[S.perfStack[S.perfStack.length - 1].idx];
+        if (lab) drawKitChip(128 - 1 - kitChipWidth(lab), MV_FOOTER_Y, lab, true);
     }
 }
 
@@ -1195,30 +1191,6 @@ function drawPerfModeOled() {
  * hint row), like every rebuilt dAVEBOx screen. They had kept the MCUFONT
  * dialog face and the host's list font long after the rest moved on. ── */
 
-/* A small solid triangle pointing left (dir -1) or right (+1): "the jog moves
- * this". 3 wide, 5 tall, apex at the outer edge. */
-function capArrow(x, y, dir) {
-    for (let i = 0; i < 3; i++) {             /* i = distance from the apex */
-        const col = dir < 0 ? x + i : x + 2 - i;
-        fill_rect(col, y + 2 - i, 1, 1 + 2 * i, 1);
-    }
-}
-
-/* A prompt: title in the header bar, lines of 4x5 caps centred in the body,
- * hints on the footer row. The capture / merge placement screens. */
-function drawCapturePrompt(title, lines, hints) {
-    clear_screen();
-    drawKitHeader(title);
-    const pitch = 9;
-    const top = 7 + Math.floor((MV_FOOTER_Y - 7 - (lines.length * pitch - (pitch - FONT4_H))) / 2);
-    lines.forEach((ln, i) => {
-        const t = fit4x5(String(ln).toUpperCase(), 124);
-        fontPrint4x5(Math.floor((128 - fontWidth4x5(t)) / 2), top + i * pitch, t, 1);
-    });
-    if (hints) drawKitHintRow(MV_FOOTER_Y, hints);
-}
-const FONT4_H = 5;
-
 function drawTempoSelect() {
     clear_screen();
     const t    = S.tempoSelectTrack;
@@ -1230,30 +1202,13 @@ function drawTempoSelect() {
 
     drawKitBankHeader(warp ? 'Fit to bars' : 'Capture tempo', null, 'T' + (t + 1));
 
-    /* THE VALUE: big numerals + their unit, centred; the neighbouring choices
-     * sit small at either side behind an arrow, so it reads as a wheel you can
-     * turn rather than a number you are told. */
+    /* THE VALUE, with the neighbouring choices at the edges (a wheel). */
     const fmt  = (v) => String(Math.round(v || 0));
-    const num  = fmt(vals[idx]);
     const unit = warp ? ((Math.round(vals[idx]) === 1) ? 'BAR' : 'BARS') : 'BPM';
-    const VY = 10;
-    const big = bigNumCanDraw(num);
-    const nw  = big ? fontWidthBigNum(num) : fontWidth4x5(num);
-    const uw  = fontWidth4x5(unit);
-    const gw  = nw + 3 + uw;
-    const gx  = Math.floor((128 - gw) / 2);
-    if (big) fontPrintBigNum(gx, VY, num, 1);
-    else     fontPrint4x5(gx, VY + BIGNUM_H - FONT4_H, num, 1);
-    fontPrint4x5(gx + nw + 3, VY + BIGNUM_H - FONT4_H, unit, 1);
-    const AY = VY + Math.floor((BIGNUM_H - 5) / 2);
-    if (vals.length > 1) {
-        const prev = idx > 0 ? fmt(vals[idx - 1]) : '';
-        const next = idx < vals.length - 1 ? fmt(vals[idx + 1]) : '';
-        capArrow(2, AY, -1);
-        if (prev) fontPrint4x5(8, AY, prev, 1);
-        capArrow(123, AY, +1);
-        if (next) fontPrint4x5(120 - fontWidth4x5(next), AY, next, 1);
-    }
+    drawKitBigValue(10, fmt(vals[idx]), unit,
+                    idx > 0 ? fmt(vals[idx - 1]) : '',
+                    idx < vals.length - 1 ? fmt(vals[idx + 1]) : '',
+                    vals.length > 1);
 
     /* THE TAKE, against the bars at this choice: bar lines full height, beats
      * dotted, a tick per note, the playhead sweeping at the auditioned tempo. */
@@ -1653,39 +1608,39 @@ function drawUIBody() {
     if (S.confirmExit)      { drawExitConfirm();      return; }
     if (S.projectPadPicker) { drawProjectPadPicker(); return; }
     if (S.pendingSceneBakePicker) {
-        drawCapturePrompt('Bake scene', ['Tap a row or scene', 'step to pick it'],
+        drawKitPrompt('Bake scene', ['Tap a row or scene', 'step to pick it'],
                           [['back', 'exit']]);
         return;
     }
     if (S.mergePlacing) {
         /* Destination picked — DSP is committing the take. Shown so the jump
          * back to the normal screen doesn't read as a freeze. */
-        drawCapturePrompt('Live merge', [S.mergePlacingScene ? 'Placing the clips...' : 'Placing the clip...'], null);
+        drawKitPrompt('Live merge', [S.mergePlacingScene ? 'Placing the clips...' : 'Placing the clip...'], null);
         return;
     }
     if (S.mergeNoticePending) {
         /* Shift+Sample raised this notice; it does NOT start the merge. Plain
          * Rec begins the count-in, Back cancels. */
-        drawCapturePrompt('Live merge',
+        drawKitPrompt('Live merge',
                           [S.mergeNoticeSingleTrack < 0 ? 'Captures all 8 tracks' : 'Captures this track',
                            'Press Rec to start'],
                           [['back', 'exit']]);
         return;
     }
     if (S.pendingMergePlacement) {
-        drawCapturePrompt('Place merged take', ['Tap a row or scene', 'step for the clips'],
+        drawKitPrompt('Place merged take', ['Tap a row or scene', 'step for the clips'],
                           [['back', 'exit']]);
         return;
     }
     if (S.tempoSelectActive) { drawTempoSelect(); return; }
     if (S.mergeSoloPlacement >= 0) {
-        drawCapturePrompt('Merged take',
+        drawKitPrompt('Merged take',
                           ['Tap a blinking clip', 'on track ' + (S.mergeSoloPlacement + 1) + ' to keep it'],
                           [['back', 'exit']]);
         return;
     }
     if (S.capturePlaceTrack >= 0) {
-        drawCapturePrompt('Captured take',
+        drawKitPrompt('Captured take',
                           ['Tap a blinking clip', 'on track ' + (S.capturePlaceTrack + 1) + ' to keep it'],
                           [['back', 'exit']]);   /* Rec still works; Back is the universal cancel */
         return;
@@ -1741,12 +1696,7 @@ function drawUIBody() {
          * picked to the moment the sequencer is ready, everything on screen
          * says one thing: which set is loading. (The host actuator shows
          * "Loading <name>" during its half; this is the davebox half.) */
-        clear_screen();
-        const _ln = 'LOADING';
-        print(Math.max(0, Math.floor((128 - _ln.length * 6) / 2)), 20, _ln, 1);
-        const _sn = (S.currentSetName || '').length ? S.currentSetName : '...';
-        const _snT = _sn.length > 20 ? _sn.substring(0, 19) + '…' : _sn;
-        print(Math.max(0, Math.floor((128 - _snT.length * 6) / 2)), 34, _snT, 1);
+        drawLoadingScreen(S.currentSetName || '', 'Starting the sequencer');
         return;
     }
 

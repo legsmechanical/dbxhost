@@ -1,6 +1,6 @@
 import { S, conductorTrackIdx } from './ui_state.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
-import { MCUFONT, STATE_VERSION, NOTE_KEYS, SCALE_DISPLAY, pixelPrintC,
+import { STATE_VERSION, NOTE_KEYS, SCALE_DISPLAY,
          NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_CONDUCT } from './ui_constants.mjs';
 /* ⭑ drawMenuList and menuLayoutDefaults are GONE from this file as of the
  * 2026-08-15 cohesion pass — every list here renders on the kit now (§5.0).
@@ -15,8 +15,9 @@ import { formatItemValue, isDivider } from '/data/UserData/schwung/shared/menu_i
  * here cannot cycle. See docs/UI_LANGUAGE.md: a list of the app's own structure
  * renders on the kit; the host chassis is for dialogs. */
 import { drawKitHeader, drawKitList, fitHdr, hdrWidth, hdrPrint,
-         MV_BRAND_HDR_H, drawKitStackedList, drawKitBackdropDim, drawKitCrumbs } from './ui_movy.mjs';
-import { fontPrint4x5, fontWidth4x5 } from './ui_fonts_pp.mjs';
+         MV_BRAND_HDR_H, drawKitStackedList, drawKitBackdropDim, drawKitCrumbs,
+         drawKitBigValue, drawKitHintRow, MV_FOOTER_Y } from './ui_movy.mjs';
+import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
     dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
@@ -33,74 +34,10 @@ import {
 } from '/data/UserData/schwung/shared/constants.mjs';
 import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
 
-export function pixelPrintMcu(x, y, text, scale, color) {
-    const charW = 5 * scale + scale;
-    for (let ci = 0; ci < text.length; ci++) {
-        const g = MCUFONT[text[ci]];
-        if (!g) continue;
-        for (let row = 0; row < 5; row++) {
-            const bits = g[row];
-            for (let col = 0; col < 5; col++) {
-                if (bits & (1 << (4 - col)))
-                    fill_rect(x + ci * charW + col * scale, y + row * scale, scale, scale, color);
-            }
-        }
-    }
-}
-
-function pixelPrintLargeC(cx, y, text, scale, color) {
-    const charW  = 5 * scale + scale;
-    const totalW = text.length * charW - scale;
-    const startX = cx - Math.floor(totalW / 2);
-    for (let ci = 0; ci < text.length; ci++) {
-        const g = MCUFONT[text[ci]];
-        if (!g) continue;
-        for (let row = 0; row < 5; row++) {
-            const bits = g[row];
-            for (let col = 0; col < 5; col++) {
-                if (bits & (1 << (4 - col)))
-                    fill_rect(startX + ci * charW + col * scale, y + row * scale, scale, scale, color);
-            }
-        }
-    }
-}
-
-/* Left/right filled triangle "arrows" (the wheel-changeable "< >" indicator). */
-function triLeft(x, y, w, h) {
-    const mid = (h - 1) / 2;
-    for (let r = 0; r < h; r++) {
-        const c0 = Math.round((Math.abs(r - mid) / mid) * (w - 1));
-        for (let c = c0; c < w; c++) set_pixel(x + c, y + r, 1);
-    }
-}
-function triRight(x, y, w, h) {
-    const mid = (h - 1) / 2;
-    for (let r = 0; r < h; r++) {
-        const c1 = Math.round((1 - Math.abs(r - mid) / mid) * (w - 1));
-        for (let c = 0; c <= c1; c++) set_pixel(x + c, y + r, 1);
-    }
-}
-
-/* Shared "< NNN unit >" value line — number in MCUFONT ×2, smaller unit label,
- * chevrons flanking (jog-changeable), the group centered at cx. Used by the
- * tap-tempo screen (unit 'bpm') and the post-capture chooser ('bpm' or 'bars'). */
-export function drawBpmLine(cx, topY, value, unit) {
-    const num = String(Math.round(value || 0));
-    const u   = unit || 'bpm';
-    const nS = 2, uS = 1;
-    const nCW = 5 * nS + nS, uCW = 5 * uS + uS;
-    const nW  = num.length * nCW - nS;
-    const uW  = u.length * uCW - uS;
-    const aW = 5, aH = 9, aGap = 5, uGap = 3;
-    const total = aW + aGap + nW + uGap + uW + aGap + aW;
-    let x = cx - Math.round(total / 2);
-    if (x < 1) x = 1;
-    const nH = 5 * nS;
-    triLeft(x, topY + Math.round((nH - aH) / 2), aW, aH); x += aW + aGap;
-    pixelPrintMcu(x, topY, num, nS, 1); x += nW + uGap;
-    pixelPrintMcu(x, topY + (nH - 5 * uS), u, uS, 1); x += uW + aGap;
-    triRight(x, topY + Math.round((nH - aH) / 2), aW, aH);
-}
+/* ⭑ The MCUFONT value line (drawBpmLine), its ×2 printer and the chevron
+ * triangles lived here and were DELETED 2026-09-19 with their last callers:
+ * the capture choosers and tap tempo now draw the kit's big numerals
+ * (drawKitBigValue). Nothing in the tree prints MCUFONT any more. */
 
 /* ---- Shared confirm-dialog chrome ----
  * The button primitive + Yes/No layout are the NORMATIVE dialog convention
@@ -125,11 +62,16 @@ function truncLabel(label, maxChars) {
     return label.length > maxChars ? label.substring(0, maxChars - 1) + '…' : label;
 }
 
+/* On the kit since 2026-09-19 — it wore the MCUFONT dialog face, the last
+ * screen to do so alongside performance mode. The jog turns the tempo here,
+ * so the value keeps the arrows. */
 function drawTapTempoScreen() {
     clear_screen();
-    drawMenuHeader('TAP TEMPO');
-    drawBpmLine(64, 24, S.tapTempoBpm);
-    pixelPrintC(64, 50, 'Tap any pad', 1);
+    drawKitHeader('Tap tempo');
+    drawKitBigValue(14, Math.round(S.tapTempoBpm || 0), 'BPM', '', '', true);
+    const t = fit4x5('TAP ANY PAD', 124);
+    fontPrint4x5(Math.floor((128 - fontWidth4x5(t)) / 2), 40, t, 1);
+    drawKitHintRow(MV_FOOTER_Y, [['jog', 'tempo'], ['clk', 'set']]);
 }
 
 function drawClearSessionConfirm() {
@@ -459,15 +401,17 @@ export function checkProjectOpened() {
 
 export function drawProjectOpenFailed() {
     const f = S.projectOpenFailed;
+    const name = f && f.name ? f.name : 'Project ' + ((f ? f.pad : 0) + 1);
     clear_screen();
-    drawMenuHeader('PROJECT DID NOT OPEN');
-    print(4, 16, truncLabel(f && f.name ? f.name : 'Project ' + ((f ? f.pad : 0) + 1), 21), 1);
-    if (f && f.retrying) {
-        print(4, 30, 'Opening again...', 1);
-        return;
-    }
-    print(4, 25, 'Move could not load', 1);
-    print(4, 34, 'it. Nothing saved.', 1);
+    drawKitHeader('Project did not open');
+    const line = (y, t) => {
+        const s4 = fit4x5(String(t).toUpperCase(), 124);
+        fontPrint4x5(Math.floor((128 - fontWidth4x5(s4)) / 2), y, s4, 1);
+    };
+    line(13, name);
+    if (f && f.retrying) { line(30, 'Opening again...'); return; }
+    line(26, 'Move could not load it.');
+    line(35, 'Nothing was saved.');
     drawDlgBtn(6,  46, 52, 13, !f || f.sel === 0, 'Retry');
     drawDlgBtn(64, 46, 58, 13, !!f && f.sel === 1, 'Back');
 }
@@ -1525,9 +1469,12 @@ function _drawProjectPadPicker_impl() {
     /* A CONFIRM, so it stays on the shared dialog family — that is what the
      * dialog chassis is for, and its header already matches the kit's. */
     if (p.confirmNew) {
-        drawMenuHeader('NEW PROJECT');
-        print(4, 20, 'Create new project', 1);
-        print(4, 30, 'on this pad?', 1);
+        drawKitHeader('New project');
+        const s4 = fit4x5('CREATE A NEW PROJECT ON THIS PAD?', 124);
+        if (fontWidth4x5(s4) <= 124 && s4.indexOf('?') >= 0) {
+            fontPrint4x5(Math.floor((128 - fontWidth4x5('CREATE A NEW PROJECT')) / 2), 18, 'CREATE A NEW PROJECT', 1);
+            fontPrint4x5(Math.floor((128 - fontWidth4x5('ON THIS PAD?')) / 2), 28, 'ON THIS PAD?', 1);
+        }
         drawYesNoRow(p.confirmNew.sel);
         return;
     }
