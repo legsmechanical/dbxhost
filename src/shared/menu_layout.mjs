@@ -584,3 +584,26 @@ export function drawConfirmOverlay(title, messageLines, footer) {
 }
 
 /* Note: Label scroller is auto-ticked inside drawMenuList() */
+
+/* ── THE LOADING SCREEN ────────────────────────────────────────────────────
+ * One layout for every "something is loading" moment, so a load that passes
+ * through more than one of them does not look like three different products:
+ * the header bar says LOADING, the NAME of what is loading is the one big
+ * thing on the panel, and a small line under it names the stage.
+ *
+ * `name` may be empty (nothing is named yet); `stage` may be empty (nothing
+ * useful to add). Both are centred by MEASURED width — the callers this
+ * replaced centred by `text.length * 5`, which is not this font's advance and
+ * left every line a few pixels off-centre. */
+export function drawLoadingScreen(name, stage) {
+    clear_screen();
+    drawMenuHeader("LOADING");
+    const centre = (text, y) => {
+        const t = String(text);
+        const w = (typeof text_width === 'function') ? text_width(t) : t.length * DEFAULT_CHAR_WIDTH;
+        print(Math.max(0, Math.floor((SCREEN_WIDTH - w) / 2)), y, t, 1);
+    };
+    const clip = (t, n) => (t.length > n ? t.slice(0, n - 1) + "\u2026" : t);
+    if (name)  centre(clip(String(name), 21), 26);
+    if (stage) centre(String(stage), 44);
+}

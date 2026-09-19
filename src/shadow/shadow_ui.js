@@ -57,6 +57,7 @@ const VOLUME_TOUCH_NOTE = 8;
 
 import {
     drawMenuHeader as drawHeader,
+    drawLoadingScreen,
     drawMenuFooter as drawFooter,
     drawMenuList,
     drawStatusOverlay,
@@ -16550,33 +16551,16 @@ function tickSelectPhase() {
     }
 }
 
+/* Both states of the select phase are "something is loading", so both draw the
+ * shared loading screen: the set's name, and the stage under it. (The actuator
+ * run is named from frame one — shadow_select_headless returns the armed pad.)
+ * The phase TITLE is not drawn here: the loading screen carries its own
+ * header, and a second title line said nothing the name did not. */
 function drawSelectPhase() {
-    clear_screen();
-    drawHeader(truncateText(selectPhase.title, 24));
-
-    if (selectPhase.launching) {
-        const name = selectNameForIndex(selectPhase.lastPad >= 0 ? selectPhase.lastPad
-                                                                 : selectPhase.current);
-        if (name) {
-            const t = truncateText(name, 24);
-            print(Math.floor((SCREEN_WIDTH - t.length * 5) / 2), 24, t, 1);
-        }
-        const s = selectPhase.statusLine || "Preparing...";
-        print(Math.floor((SCREEN_WIDTH - s.length * 5) / 2), 38, s, 1);
-        return;
-    }
-
-    /* The actuator run: the target was chosen before arming, so the only
-     * user-facing state is "your project is loading". Named from frame one
-     * (shadow_select_headless returns the armed pad). */
-    const hn = selectNameForIndex(selectPhase.lastPad >= 0 ? selectPhase.lastPad
-                                                           : selectPhase.current);
-    if (hn) {
-        const ht = truncateText(hn, 24);
-        print(Math.floor((SCREEN_WIDTH - ht.length * 5) / 2), 24, ht, 1);
-    }
-    const hs = selectPhase.statusLine || "Loading set...";
-    print(Math.max(0, Math.floor((SCREEN_WIDTH - hs.length * 6) / 2)), 38, hs, 1);
+    drawLoadingScreen(selectNameForIndex(selectPhase.lastPad >= 0 ? selectPhase.lastPad
+                                                                  : selectPhase.current),
+                      selectPhase.statusLine ||
+                      (selectPhase.launching ? "Preparing..." : "Loading set..."));
 }
 
 /* Draw component edit view (presets, params) */
@@ -18689,9 +18673,11 @@ globalThis.tick = function() {
                     if (customSplash && overtakeLoadingLabel === "Loading...") {
                         drawCustomSplash();
                     } else {
-                        clear_screen();
-                        const _ll = truncateText(overtakeLoadingLabel, 21);
-                        print(Math.max(0, Math.floor((128 - _ll.length * 6) / 2)), 28, _ll, 1);
+                        /* "Loading <name>" carries the name; the bare default
+                         * has none, and the header already says LOADING. */
+                        const _lbl = String(overtakeLoadingLabel || "");
+                        const _nm = _lbl.indexOf("Loading ") === 0 ? _lbl.slice(8) : "";
+                        drawLoadingScreen(_nm, _nm ? "" : "Starting up...");
                     }
 
                     /* Clear LEDs in batches (buffer is small) */

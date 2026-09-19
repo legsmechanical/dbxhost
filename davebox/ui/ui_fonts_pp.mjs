@@ -122,6 +122,16 @@ function glyph4(ch) {
 
 export const FONT4_HEIGHT = 5;
 
+/* ⭑ THE KIT'S TEXT TRACE. The kit faces draw through fill_rect, so a test that
+ * captures print() sees NOTHING a kit screen says — every screen rebuilt onto
+ * the kit went invisible to the suite at the moment it was rebuilt, and the
+ * screens still pinned by their text were pinned only because they had not
+ * been rebuilt yet. A test installs a collector here and reads kit text as it
+ * reads host text. Null in the shipped build: one branch per string drawn. */
+let kitTrace = null;
+export function setKitTextTrace(fn) { kitTrace = (typeof fn === 'function') ? fn : null; }
+export function traceKitText(str) { if (kitTrace) kitTrace(String(str == null ? '' : str)); }
+
 export function fontWidth4x5(str) {
     let w = 0;
     const s = String(str == null ? '' : str);
@@ -133,6 +143,7 @@ export function fontWidth4x5(str) {
 }
 
 export function fontPrint4x5(x, y, str, color) {
+    traceKitText(str);
     let cx = x;
     const s = String(str == null ? '' : str);
     for (let i = 0; i < s.length; i++) {
@@ -191,6 +202,7 @@ export function fontWidthBigNum(str) {
 }
 
 export function fontPrintBigNum(x, y, str, color) {
+    traceKitText(str);
     let cx = x; const s = String(str == null ? '' : str);
     for (let i = 0; i < s.length; i++) {
         const g = glyphBN(s[i]);

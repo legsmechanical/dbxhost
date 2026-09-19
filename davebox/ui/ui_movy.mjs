@@ -45,7 +45,7 @@
 import {
     fontPrint4x5, fontWidth4x5, fit4x5, FONT4_HEIGHT, enumSquareLines,
     fontPrintBigNum, fontWidthBigNum, bigNumCanDraw, BIGNUM_H,
-    fontPrintTamzen, fontWidthTamzen, TAMZEN_H,
+    fontPrintTamzen, fontWidthTamzen, TAMZEN_H, traceKitText,
 } from './ui_fonts_pp.mjs';
 import { observeLanded, easeOut, lerp } from './ui_anim.mjs';
 
@@ -289,6 +289,7 @@ export function hdrWidth(text) {
 }
 
 export function hdrPrint(x, y, text, color) {
+    traceKitText(text);
     const s = String(text);
     let cx = Math.round(x);
     const oy = Math.round(y), v = color ? 1 : 0;
@@ -424,6 +425,7 @@ export function mvWidth(text) {
 }
 
 export function mvPrint(x, y, text, color) {
+    traceKitText(text);
     const s = String(text);
     let cx = Math.round(x);
     const oy = Math.round(y), v = color ? 1 : 0;
@@ -673,6 +675,7 @@ export function bigWidth(text, cond) {
 }
 
 export function bigPrint(x, y, text, color, cond) {
+    traceKitText(text);
     const s = String(text);
     let cx = Math.round(x);
     const oy = Math.round(y), v = color ? 1 : 0;
@@ -3520,3 +3523,75 @@ export function drawKitList(rows, sel, opts) {
 /* (drawKitAltArrow, the alt-param chevron in the header's top-right, retired
  * 2026-09-05 with the bank header's glyph/track/instrument layout — Josh: "get
  * rid of the alt down arrow indicator on headers".) */
+
+/* ---- value / prompt / chip (2026-09-19: the capture, tap-tempo, performance
+ * and project screens, moved off the MCUFONT dialog face onto the kit) ---- */
+
+/* A small solid triangle pointing left (dir -1) or right (+1): "the jog moves
+ * this". 3 wide, 5 tall, apex at the outer edge. */
+export function drawKitArrow(x, y, dir) {
+    for (let i = 0; i < 3; i++) {             /* i = distance from the apex */
+        const col = dir < 0 ? x + i : x + 2 - i;
+        fill_rect(col, y + 2 - i, 1, 1 + 2 * i, 1);
+    }
+}
+
+/* A value you turn: big numerals and a 4x5 unit, centred at `y`; the
+ * neighbouring choices (`prev`/`next`, '' for none) sit small at either edge
+ * behind an arrow, so it reads as a wheel rather than a number you are told.
+ * `arrows` false draws no edge furniture at all (a value that is not turned). */
+export function drawKitBigValue(y, num, unit, prev, next, arrows) {
+    const n = String(num);
+    const big = bigNumCanDraw(n);
+    const nw = big ? fontWidthBigNum(n) : fontWidth4x5(n);
+    const u  = unit ? String(unit).toUpperCase() : '';
+    const uw = u ? fontWidth4x5(u) : 0;
+    const gw = nw + (u ? 3 + uw : 0);
+    const gx = Math.floor((SCREEN_W - gw) / 2);
+    const base = y + BIGNUM_H - FONT4_HEIGHT;
+    if (big) fontPrintBigNum(gx, y, n, 1);
+    else     fontPrint4x5(gx, base, n, 1);
+    if (u) fontPrint4x5(gx + nw + 3, base, u, 1);
+    if (arrows === false) return;
+    const ay = y + Math.floor((BIGNUM_H - 5) / 2);
+    drawKitArrow(2, ay, -1);
+    if (prev) fontPrint4x5(8, ay, String(prev), 1);
+    drawKitArrow(SCREEN_W - 5, ay, +1);
+    if (next) fontPrint4x5(SCREEN_W - 8 - fontWidth4x5(String(next)), ay, String(next), 1);
+}
+
+/* A prompt screen: title in the header bar, lines of 4x5 caps centred in the
+ * body, hints on the footer row (null for none). */
+export function drawKitPrompt(title, lines, hints) {
+    clear_screen();
+    drawKitHeader(title);
+    const pitch = 9;
+    const n = lines.length;
+    const bodyTop = MV_HDR_H, bodyBot = hints ? MV_FOOTER_Y : SCREEN_H_LATCH;
+    const top = bodyTop + Math.floor((bodyBot - bodyTop - (n * pitch - (pitch - FONT4_HEIGHT))) / 2);
+    for (let i = 0; i < n; i++) {
+        const t = fit4x5(String(lines[i]).toUpperCase(), SCREEN_W - 4);
+        fontPrint4x5(Math.floor((SCREEN_W - fontWidth4x5(t)) / 2), top + i * pitch, t, 1);
+    }
+    if (hints) drawKitHintRow(MV_FOOTER_Y, hints);
+}
+
+/* A mode chip in the hint-pill shape: FILLED when on, OUTLINED when off.
+ * Returns its width so a row of them can be laid out. */
+export function drawKitChip(x, y, label, on) {
+    const t = String(label).toUpperCase();
+    const w = fontWidth4x5(t) + MV_HINT_PAD * 2, h = MV_FOOTER_H;
+    if (on) {
+        fill_rect(x, y, w, h, 1);
+        notchCorners(x, y, w, h);
+        fontPrint4x5(x + MV_HINT_PAD, y + 1, t, 0);
+    } else {
+        fill_rect(x + 1, y, w - 2, 1, 1);  fill_rect(x + 1, y + h - 1, w - 2, 1, 1);
+        fill_rect(x, y + 1, 1, h - 2, 1);  fill_rect(x + w - 1, y + 1, 1, h - 2, 1);
+        fontPrint4x5(x + MV_HINT_PAD, y + 1, t, 1);
+    }
+    return w;
+}
+export function kitChipWidth(label) {
+    return fontWidth4x5(String(label).toUpperCase()) + MV_HINT_PAD * 2;
+}
