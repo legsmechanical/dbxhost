@@ -32,6 +32,10 @@ import {
     MoveMainKnob, MoveMainButton, MoveBack,
 } from '/data/UserData/schwung/shared/constants.mjs';
 import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
+/* A provisional uuid is the host's placeholder for a set whose folder does not
+ * exist yet — never a save destination. Read by the lost-project save below. */
+import { setUuidIsProvisional }
+    from '/data/UserData/schwung/shared/session_state.mjs';
 
 /* ⭑ The MCUFONT value line (drawBpmLine), its ×2 printer and the chevron
  * triangles lived here and were DELETED 2026-09-19 with their last callers:
@@ -352,6 +356,12 @@ export function drawStateWipeConfirm() {
 
 export function checkProjectOpened() {
     const id = hostIdentity();
+    /* A save-then-lock is already in flight (see lockAfterProjectLost): the
+     * session is finishing its last write and the lock fires on the next tick.
+     * Re-entering here would raise the verdict NOW, i.e. set awaiting_select
+     * before `save=1` reaches the DSP, and seq8_save_state refuses under that
+     * flag — the write the whole detour exists for would be dropped. */
+    if (S.pendingProjectLostLock) return;
     const f = S.projectOpenFailed;
     if (f) {
         /* A late real answer (Move opened it after all): drop the screen and
@@ -388,8 +398,50 @@ export function checkProjectOpened() {
     if (id.state !== 'none') return;
 
     const reason = id.reason || 'unknown';
+
+    /* ⭐ A PROJECT LOST UNDERNEATH A LIVE SESSION SAVES TO WHERE IT CAME FROM,
+     * THEN LOCKS (Josh, 2026-09-20, the save/load design pass, ruling ②).
+     *
+     * If a project is loaded when the verdict arrives, everything played since
+     * the last autosave lives in DSP memory and NOWHERE else — no journal, no
+     * second copy. Locking immediately (what this used to do, and what
+     * enterProjectOpenFailed below still does) throws it away silently.
+     *
+     * The destination is not a guess. `S.currentSetUuid` is assigned in exactly
+     * three places and every one of them requires `state === 'open'` — a
+     * Move-CONFIRMED identity — so a non-empty value here names the project
+     * this session was loaded under, and that project's own folder is a
+     * legitimate place for its own work. The DSP does not even take our word
+     * for it: seq8_save_state writes to `inst->state_uuid`, set by the load.
+     * (Ruled out, 2026-09-20: doing nothing, and holding the work for the next
+     * pick — which would land one project's work inside another.)
+     *
+     * ⚠ The ORDER is the whole trick. `awaiting_select` is what refuses saves,
+     * in JS and in the DSP alike, so it cannot be set until the save has gone.
+     * saveState() writes the sidecar synchronously and arms pendingSuspendSave,
+     * which ui_tick drains at the END of this same tick as `save=1`; the lock
+     * fires from a sibling branch one tick later, the same shape
+     * pendingExitAfterSave uses. Until then the guard at the top of this
+     * function keeps the verdict from being raised early. */
+    if (S.currentSetUuid && !setUuidIsProvisional(S.currentSetUuid)) {
+        S.pendingProjectLostLock = { pad: id.index, name: id.name, reason: reason };
+        console.log('PROJECT LOST (' + reason + '): saving this session into ' +
+                    S.currentSetUuid + ' before locking');
+        saveState();
+        S.screenDirty = true;
+        return;
+    }
+
+    enterProjectOpenFailed(id.index, id.name, reason);
+}
+
+/* The lock, shared by both ways in: straight from the verdict when no project
+ * was loaded, and one tick after the last save when one was. It is its own
+ * function so there is ONE lock rather than two that can drift — what it
+ * clears is what every save path reads. */
+function enterProjectOpenFailed(pad, name, reason) {
     S.projectOpenFailed = {
-        pad: id.index, name: id.name, sel: 0, retrying: false,
+        pad: pad, name: name, sel: 0, retrying: false,
         /* `unknown` is a different sentence: Move did not say what it opened,
          * rather than saying it opened something else. */
         reason: reason
@@ -407,9 +459,20 @@ export function checkProjectOpened() {
     S.pendingSnapshotCopy = null;
     S.projectPadPicker = null;
     S.pendingOpenProjectPicker = false;
-    console.log('NO PROJECT OPEN (' + reason + '): pad ' + id.index +
-                (id.name ? ' (' + id.name + ')' : '') + ' \u2014 saves refused');
+    console.log('NO PROJECT OPEN (' + reason + '): pad ' + pad +
+                (name ? ' (' + name + ')' : '') + ' \u2014 saves refused');
     S.screenDirty = true;
+}
+
+/* Drained by ui_tick one tick AFTER the `save=1` that saveState armed, so the
+ * DSP has had a whole buffer to write the blob out before saving is refused.
+ * What this session had is now on disk under the project it came from; from
+ * here the session is locked and the picker is the only way forward. */
+export function lockAfterProjectLost() {
+    const l = S.pendingProjectLostLock;
+    S.pendingProjectLostLock = null;
+    if (!l) return;
+    enterProjectOpenFailed(l.pad, l.name, l.reason);
 }
 
 
@@ -877,21 +940,95 @@ function _pppApplyList(p, data) {
     }
 }
 
-/* SELECT-BEFORE-LOAD safety valve. If the picker cannot open at session start
- * — no host_system_cmd, or project-cmd gave us no list — the user would be
- * stranded on an empty instance with no way to choose and nothing loaded. Fail
- * OPEN: load the boot project, exactly as a pre-select-before-load session did.
- * A degraded session that works beats a correct one that is unusable. */
-function _pppFailOpen() {
+/* ⭐ A LIST THAT CANNOT BE READ FAILS CLOSED (Josh, 2026-09-20,
+ * the save/load design pass, ruling ③). If the picker cannot open at session start — no host_system_cmd,
+ * or project-cmd gave us no list — the user gets a card that says so, with
+ * Retry and Quit. Nothing loads on its own.
+ *
+ * ⚠ What this REPLACES, and why it had to go. This used to fail OPEN: it called
+ * loadSelectedCurrentProject() and loaded whatever project the session booted
+ * into, on the reasoning that a degraded session beats an unusable one. That
+ * made it the last place in the module where a project opened WITHOUT a pick —
+ * the exact thing select-before-load exists to prevent — and it did so at the
+ * one moment we know least: the list we would have checked it against is the
+ * thing that just failed to read. A user who launched meaning to choose would
+ * land in a project already live, with a popup that has gone by the time they
+ * look up, and every keystroke from then on recorded into it.
+ *
+ * ⭑ Only while AWAITING. Mid-session the picker is a menu that failed to open;
+ * the caller shows the popup and the session carries on. There is no dead end
+ * to rescue anyone from, and a modal card over working music would be worse
+ * than the thing it reports. */
+function _pppFailClosed(why) {
     if (!S.awaitingProjectSelect) return;
-    console.log('projectPadPicker: cannot open at boot — loading boot project');
-    loadSelectedCurrentProject();
+    if (S.projectListFailed) return;        /* already on the card */
+    console.log('projectPadPicker: ' + why + ' — NO PROJECT LIST (nothing loaded)');
+    S.projectListFailed = { sel: 0, why: why };
+    S.projectPadPicker = null;
+    S.pendingOpenProjectPicker = false;
+    S.screenDirty = true;
+}
+
+/* NO PROJECT LIST. Sibling of PROJECT DID NOT OPEN and deliberately the same
+ * chassis: both are "dAVEBOx cannot go on, here is why, here is what you can
+ * do". Copy in the user's terms — a list of projects, not projects.json or a
+ * shell that would not run. */
+export function drawProjectListFailed() {
+    const f = S.projectListFailed;
+    clear_screen();
+    drawKitHeader('No project list');
+    const line = (y, t) => {
+        const s4 = fit4x5(String(t).toUpperCase(), 124);
+        fontPrint4x5(Math.floor((128 - fontWidth4x5(s4)) / 2), y, s4, 1);
+    };
+    if (f && f.retrying) { line(26, 'Looking again...'); return; }
+    line(20, 'Your projects could not');
+    line(29, 'be read. Nothing loaded.');
+    drawDialogButtonRow(46, 13, [{ label: 'Retry', sel: !f || f.sel === 0 },
+                                 { label: 'Quit',  sel: !!f && f.sel === 1 }], { x0: 6, x1: 122 });
+}
+
+/* Fully modal, same contract as projectOpenFailedMidi: every internal message
+ * lands here while the card is up, the jog moves between the two buttons and
+ * the click commits. Back is deliberately NOT a third answer — there is nowhere
+ * to go back TO, and a Back that silently did nothing would read as a freeze. */
+export function projectListFailedMidi(data) {
+    const f = S.projectListFailed;
+    if (!f) return false;
+    const status = data[0] & 0xF0, d1 = data[1] | 0, d2 = data[2] | 0;
+    if (f.retrying || status !== 0xB0) return true;
+    if (d1 === MoveMainKnob) {
+        if (decodeDelta(d2) !== 0) { f.sel = f.sel === 0 ? 1 : 0; S.screenDirty = true; }
+        return true;
+    }
+    if (!(d1 === MoveMainButton && d2 === 127)) return true;
+    if (f.sel === 0) {
+        /* Retry: run the list again. Clearing the card first is what lets the
+         * open either succeed (picker up) or fail into a FRESH card — with the
+         * card still set, _pppFailClosed would stand down and the retry would
+         * look like it did nothing. */
+        S.projectListFailed = null;
+        openProjectPadPicker();
+        /* Still no list: say so again rather than leaving a blank screen. */
+        if (!S.projectPadPicker) _pppFailClosed('retry found no list');
+    } else {
+        /* Quit. This is exitSessionNow's tail (ui_input_cc.mjs) and nothing
+         * else, because its other two legs are provably no-ops here: the
+         * transport is locked while awaiting a selection, so there is nothing
+         * to stop, and saveState() returns immediately under the same flag,
+         * so there is nothing to save. Calling it directly would import
+         * ui_input_cc, which already imports this file. */
+        S.projectListFailed = null;
+        S.pendingExitAfterSave = true;
+    }
+    S.screenDirty = true;
+    return true;
 }
 
 function _openProjectPadPicker_impl() {
     /* Projects are a davebox-host concept (project-cmd.sh, projects.json live in
      * the SA install), and this is that host — the picker is always legitimate
-     * here. _pppFailOpen() remains the answer for a genuine data failure below;
+     * here. _pppFailClosed() remains the answer for a genuine data failure below;
      * it just no longer answers "which host is this". */
     /* Toggle — EXCEPT while awaiting a selection, where closing the picker
      * leaves nothing loaded, nothing on screen but LOADING, and no way out.
@@ -901,7 +1038,7 @@ function _openProjectPadPicker_impl() {
         return;
     }
     const data = _pppRunList();
-    if (!data) { showActionPopup('NO PROJECT', 'LIST'); _pppFailOpen(); return; }
+    if (!data) { showActionPopup('NO PROJECT', 'LIST'); _pppFailClosed('project-cmd gave no list'); return; }
     const p = { projects: [], byIndex: {}, current: -1,
                 touchedIdx: -1, copySrcIdx: -1, deleteIdx: -1,
                 /* jog-menu overlays (one open at a time; see the tap impl) */
@@ -1739,12 +1876,14 @@ function _pppGuard(name, impl, args) {
          * lands back on the sequencer. While AWAITING it is a dead end: no
          * project, no picker, LOADING pinned, transport locked. The tick
          * watchdog re-arms the open, but if the fault is in the open itself
-         * that would loop, so count the attempts and fail open to the boot
-         * project instead. */
+         * that would loop, so count the attempts and put up the NO PROJECT LIST
+         * card instead — which is drawn outside this guard, so a fault in the
+         * picker's own draw cannot take it down too. (It used to load the boot
+         * project here; see _pppFailClosed for why that had to stop.) */
         try {
             if (S.awaitingProjectSelect) {
                 S._pppFaultCount = (S._pppFaultCount | 0) + 1;
-                if (S._pppFaultCount >= 3) _pppFailOpen();
+                if (S._pppFaultCount >= 3) _pppFailClosed('the picker faulted three times');
             }
         } catch (e4) {}
     }

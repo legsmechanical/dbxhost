@@ -4,7 +4,7 @@
  *
  * Why this exists: the picker's entry points are _pppGuard-wrapped and its LED
  * painter runs inside the tick, so an exception here is SILENT on hardware —
- * the guard eats it (three strikes = fail-open auto-load) or the tick dies
+ * the guard eats it (three strikes = the NO PROJECT LIST card) or the tick dies
  * every frame (LOADING pinned, pads dark). Both happened on 2026-08-12: a
  * project whose `color` was null crashed `projectColorLED` because
  * `null >= 0` is TRUE in JS, so `PROJECT_COLORS[null].led` threw — and the

@@ -40,9 +40,13 @@ const X = 'bbbbbbbb-0000-4000-8000-000000000031';
 /* ---- an in-memory filesystem with the device's semantics ---------------- */
 const files = new Map();
 const writes = [];                       /* every path any save aimed at */
+/* ⭐ The same saves PLUS the awaiting_select arms, in one ordered list. `writes`
+ * alone can say a save happened; only this can say it happened BEFORE the gate
+ * that refuses saves closed, which is the entire content of ruling ② (Josh, 2026-09-20). */
+const events = [];
 globalThis.host_read_file = (p) => (files.has(String(p)) ? files.get(String(p)) : '');
 globalThis.host_file_exists = (p) => files.has(String(p));        /* stat(): empty exists */
-globalThis.host_write_file = (p, body) => { writes.push(String(p)); files.set(String(p), String(body)); return true; };
+globalThis.host_write_file = (p, body) => { writes.push(String(p)); events.push('write ' + p); files.set(String(p), String(body)); return true; };
 globalThis.host_ensure_dir = (p) => { writes.push(String(p)); return true; };
 /* dbx_state_subdir.h, per project: X ("Project 32") is the device's measured
  * loser, so its state dir is the chosen `dAVEBOx~3`; P keeps the plain name. */
@@ -56,9 +60,16 @@ const PROJECTS_JSON = JSON.stringify({ current: 31, projects: [
     { uuid: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'Project 1', index: 0, color: 1 },
     { uuid: 'bbbbbbbb-0000-4000-8000-000000000031', name: 'Project 32', index: 31, color: 2 },
 ]});
+/* ⭑ THE LIST CAN FAIL. project-cmd can be missing, refused by the host's
+ * command allowlist, or write nothing readable — on the device all three look
+ * identical from here: `list` returns and projects.json is not there. */
+let listFails = false;
 globalThis.host_system_cmd = (c) => {
     sysCmds.push(String(c));
-    if (/project-cmd\.sh list$/.test(String(c))) files.set('/data/UserData/dbx-host/projects.json', PROJECTS_JSON);
+    if (/project-cmd\.sh list$/.test(String(c))) {
+        if (listFails) files.delete('/data/UserData/dbx-host/projects.json');
+        else files.set('/data/UserData/dbx-host/projects.json', PROJECTS_JSON);
+    }
     return 0;
 };
 
@@ -88,8 +99,15 @@ globalThis.host_module_get_param = (k) => {
 };
 globalThis.host_module_set_param = (k, v) => {
     k = String(k); v = String(v);
-    if (k === 'awaiting_select') { awWrites.push(v); if (v[0] === '1') dsp.awaiting = 1; return; }
-    if (k === 'save') { if (!dsp.awaiting) writes.push(SETS + (dsp.uuid || '<fallback>') + '/' + stateName(dsp.uuid) + '/seq8sa-state.json'); return; }
+    if (k === 'awaiting_select') { awWrites.push(v); events.push('awaiting_select=' + v); if (v[0] === '1') dsp.awaiting = 1; return; }
+    if (k === 'save') {
+        /* seq8_save_state returns early under awaiting_select — a refused save
+         * leaves no trace on the device, and must leave none here either. */
+        if (dsp.awaiting) { events.push('save REFUSED (awaiting_select)'); return; }
+        const dest = SETS + (dsp.uuid || '<fallback>') + '/' + stateName(dsp.uuid) + '/seq8sa-state.json';
+        writes.push(dest); events.push('dsp save ' + dest);
+        return;
+    }
     if (k === 'state_load') { stateLoads.push(v); dsp.uuid = v; dsp.awaiting = 0; return; }
 };
 globalThis.host_module_set_params = () => true;
@@ -200,7 +218,7 @@ function step(l, fn) {
 /* A relaunch: Move restarted, a fresh DSP loaded whatever active_set.txt named
  * at that moment, and dAVEBOx init()s. */
 function boot(activeUuid, activeName) {
-    files.clear(); writes.length = 0; sysCmds.length = 0;
+    files.clear(); writes.length = 0; events.length = 0; sysCmds.length = 0;
     if (activeUuid) {
         files.set(ACTIVE, activeUuid + '\n' + activeName);
         /* A project that has been used before has its state file. */
@@ -217,6 +235,10 @@ function boot(activeUuid, activeName) {
     S.pendingProjectRelaunch = null; S.pendingProjectSwitch = null;
     S.pendingSetLoad = false; S.pendingDspSync = 0; S.stateLoading = false;
     S.awaitingProjectSelect = false; S.confirmStateWipe = false;
+    /* ⚠ A test that QUIT leaves the session mid-teardown: exitFarewell freezes
+     * every later tick stage, so without this the next boot's picker never
+     * opens and the failure lands on a step that did nothing wrong. */
+    S.pendingExitAfterSave = false; S.exitFarewell = 0; S.pendingHideAfterSave = false;
     globalThis.init();
     S.ledInitComplete = true;
     ticks(20);
@@ -295,6 +317,187 @@ step('X already loaded at boot + Move says default -> no save reaches X after th
     if (stray.length) throw new Error('project-state saves after the verdict: ' + stray.join(', '));
     if (dsp.awaiting !== 1) throw new Error('the DSP was not told to refuse saves');
     if (!onScreen()) throw new Error('no screen: ' + frame());
+});
+
+/* 1c. ⭐⭐ RULING ② (Josh, 2026-09-20): A PROJECT LOST UNDERNEATH A LIVE SESSION SAVES TO
+ *     WHERE IT CAME FROM, THEN LOCKS.
+ *
+ *     Everything played since the last autosave lives in DSP memory and nowhere
+ *     else. Locking on the verdict — which is what this did until 2026-09-20 —
+ *     throws it away with no screen, no log and no way back. The work is
+ *     written into the project it was LOADED under (Move-confirmed when it
+ *     opened, so a legitimate destination), and only then does the session stop
+ *     accepting saves.
+ *
+ *     ⚠ These steps assert an ORDER, not a count, and the order is the whole
+ *     mechanism: `awaiting_select` is what makes seq8_save_state refuse, so a
+ *     lock that runs one tick too early turns the final save into a no-op that
+ *     looks exactly like a success from JS. That is why the fake DSP records a
+ *     refusal rather than silently dropping it. */
+step('⭐⭐ the project goes out from under a LIVE session -> a final save lands in it', () => {
+    boot(X, 'Project 32');
+    /* Work since the last save: the DSP is dirty and nothing has been written
+     * for this session yet. */
+    writes.length = 0; events.length = 0; dsp.dirty = 1;
+    hostPublish(X, 'Project 32', 31, 'default');
+    ticks(40);
+    if (!onScreen()) throw new Error('the verdict screen never came up: ' + frame());
+    const saved = writes.filter((w) => w.indexOf(X) >= 0 && w.indexOf('seq8sa-state.json') >= 0);
+    if (!saved.length)
+        throw new Error('the session locked without saving into the project it came from: ' + JSON.stringify(events));
+    /* ...and into X's RESOLVED state dir, not a plain dAVEBOx/ beside it. */
+    if (!saved.every((w) => w.indexOf('/dAVEBOx~3/') >= 0))
+        throw new Error('final save went to the wrong state dir: ' + saved.join(', '));
+});
+step('⭐⭐ ...and it lands BEFORE the gate that refuses saves closes', () => {
+    const iSave = events.findIndex((e) => e.indexOf('dsp save') === 0 && e.indexOf(X) >= 0);
+    const iLock = events.indexOf('awaiting_select=1');
+    if (iSave < 0) throw new Error('no DSP save reached the project: ' + JSON.stringify(events));
+    if (iLock < 0) throw new Error('the session never locked: ' + JSON.stringify(events));
+    if (iSave > iLock)
+        throw new Error('locked before saving — the save was refused: ' + JSON.stringify(events));
+    if (events.some((e) => e.indexOf('save REFUSED') === 0))
+        throw new Error('a save was refused during the handover: ' + JSON.stringify(events));
+});
+step('⭐ ...and the sidecar goes to the same project, not to nowhere', () => {
+    /* ⚠ the JS half's STATE_PREFIX is injected at bundle time and is `seq8`
+     * here, `seq8sa` on the device — match the suffix, not the whole name. */
+    const side = writes.filter((w) => /-ui-state\.json$/.test(w));
+    if (!side.length) throw new Error('no sidecar written: ' + JSON.stringify(writes));
+    if (!side.every((w) => w.indexOf(X) >= 0))
+        throw new Error('sidecar written outside the project it came from: ' + side.join(', '));
+});
+step('⭐ ...and once locked, nothing more is written anywhere', () => {
+    const before = writes.length;
+    dsp.dirty = 1;
+    provokeSaves();
+    const after = writes.slice(before);
+    if (after.length) throw new Error('writes after the lock: ' + after.join(', '));
+    if (dsp.awaiting !== 1) throw new Error('the DSP was not told to refuse saves');
+});
+step('⭑ control: no project loaded -> the verdict locks IMMEDIATELY, with no save', () => {
+    /* The other way in. Nothing was ever loaded, so there is nothing to write
+     * and the one-tick detour must not happen at all — without this control the
+     * steps above would pass just as well against code that always saves, which
+     * would file an empty session over a real project. */
+    boot(null, '');
+    S.awaitingProjectSelect = false;         /* a session that is not awaiting, but holds no project */
+    S.currentSetUuid = ''; S.currentSetName = '';
+    writes.length = 0; events.length = 0;
+    hostPublish(X, 'Project 32', 31, 'default');
+    ticks(40);
+    if (S.pendingProjectLostLock) throw new Error('a save-then-lock was armed with no project to save into');
+    if (events.indexOf('awaiting_select=1') < 0) throw new Error('the session did not lock: ' + JSON.stringify(events));
+    const stray = writes.filter((w) => w.indexOf('seq8') >= 0);
+    if (stray.length) throw new Error('state written with no project open: ' + stray.join(', '));
+});
+
+/* 1d. ⭐⭐ RULING ③ (Josh, 2026-09-20): A LIST THAT CANNOT BE READ FAILS CLOSED.
+ *
+ *     _pppFailOpen was the last place in the module where a project opened
+ *     WITHOUT a pick: if the list could not be read at session start it loaded
+ *     whatever the session booted into, on the reasoning that a degraded
+ *     session beats an unusable one. It did that at the one moment we know
+ *     least — the list we would have checked against is the thing that just
+ *     failed — and it did it behind a popup that is gone by the time anyone
+ *     looks up. Now: a NO PROJECT LIST card with Retry / Quit, and nothing
+ *     loads on its own.
+ *
+ *     ⚠ Nothing pinned the old behaviour, which is why it survived three
+ *     design passes. These steps assert on the SCREEN and on state_load — the
+ *     one event that means a project was opened — not on the popup. */
+function bootAwaiting(noList) {
+    listFails = !!noList;
+    boot(null, '');
+    /* A FRESH DSP instance arms awaiting_select itself (seq8.c create_instance)
+     * — that is what select-before-load IS, and without it here the session
+     * believes a project is live and the fail-closed path never applies. */
+    dsp.awaiting = 1;
+    S.projectListFailed = null;
+    S._pppFaultCount = 0;
+    stateLoads.length = 0;
+    globalThis.init();
+    S.ledInitComplete = true;
+    ticks(40);
+}
+const bootAwaitingNoList = () => bootAwaiting(true);
+step('⭐⭐ no list at session start -> the NO PROJECT LIST card, and NOTHING loaded', () => {
+    bootAwaitingNoList();
+    if (!S.awaitingProjectSelect) throw new Error('precondition: the session is not awaiting a selection');
+    if (!S.projectListFailed) throw new Error('no card raised: ' + frame());
+    if (S.projectPadPicker) throw new Error('a picker opened with no list');
+    if (stateLoads.length) throw new Error('a project was LOADED without a pick: ' + JSON.stringify(stateLoads));
+    const f = frame().toUpperCase();
+    if (f.indexOf('NO PROJECT LIST') < 0) throw new Error('the card is not on the OLED: ' + frame());
+    if (f.indexOf('RETRY') < 0 || f.indexOf('QUIT') < 0) throw new Error('both answers must be offered: ' + frame());
+});
+step('⭐ ...and it STAYS — the watchdog does not re-arm an open behind it', () => {
+    /* The re-arm watchdog fires on "awaiting with no picker", which is exactly
+     * this state. Without a stand-down it would open, fault, fail closed and
+     * re-arm again, once a tick, forever. */
+    sysCmds.length = 0;
+    ticks(400);
+    if (!S.projectListFailed) throw new Error('the card went away on its own');
+    if (S.projectPadPicker) throw new Error('the watchdog opened a picker behind the card');
+    if (stateLoads.length) throw new Error('something loaded while the card was up: ' + JSON.stringify(stateLoads));
+    /* ⚠ The visible state is the same either way — the card stays up because
+     * _pppFailClosed stands down when one is already showing — so the cost is
+     * the only thing that can say the stand-down is missing. host_system_cmd is
+     * a BLOCKING system(): re-arming would spawn a shell every tick, on the
+     * audio-adjacent thread, for as long as the user leaves the card up. */
+    const lists = sysCmds.filter((c) => /project-cmd\.sh list$/.test(c));
+    if (lists.length) throw new Error('the list ran ' + lists.length + ' more times behind the card ' +
+                                      '— the watchdog is re-arming the open once a tick');
+});
+step('⭐ Retry: the list is back -> the picker opens and the card goes', () => {
+    bootAwaitingNoList();
+    listFails = false;
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    ticks(4);
+    if (S.projectListFailed) throw new Error('the card survived a successful retry');
+    if (!S.projectPadPicker) throw new Error('the picker did not open on retry');
+    if (stateLoads.length) throw new Error('retry LOADED a project instead of opening the picker');
+});
+step('⭐ Retry: still no list -> a fresh card, not a blank screen', () => {
+    bootAwaitingNoList();
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    ticks(4);
+    if (!S.projectListFailed) throw new Error('a failed retry left nothing on screen: ' + frame());
+    if (frame().toUpperCase().indexOf('NO PROJECT LIST') < 0) throw new Error('screen: ' + frame());
+    if (stateLoads.length) throw new Error('a failed retry loaded something');
+});
+step('⭐ Quit: leaves the session, and still loads nothing', () => {
+    bootAwaitingNoList();
+    S.pendingExitAfterSave = false;
+    cc(JOG_TURN, 1);                       /* Retry -> Quit */
+    if (S.projectListFailed.sel !== 1) throw new Error('the jog did not move to Quit');
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    if (!S.pendingExitAfterSave) throw new Error('Quit did not arm the exit');
+    if (stateLoads.length) throw new Error('Quit loaded a project on the way out');
+});
+step('⚠ control: the SAME boot WITH a list opens the picker and raises no card', () => {
+    /* Without this the steps above would pass against a rig where the picker
+     * can never open at all, which would make "fails closed" meaningless. */
+    bootAwaiting(false);
+    if (!S.awaitingProjectSelect) throw new Error('control: the rig cannot even reach select-before-load');
+    if (S.projectListFailed) throw new Error('a card was raised with a perfectly good list');
+    if (!S.projectPadPicker) throw new Error('control: the picker does not open even with a list — the rig proves nothing');
+});
+step('⚠ control: mid-session, a failed list is a POPUP, not a modal card', () => {
+    /* Fail-closed is for the boot dead end. With a project loaded there is no
+     * dead end to rescue anyone from, and a modal over working music would be
+     * worse than the thing it reports. */
+    listFails = false;
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    if (S.awaitingProjectSelect) throw new Error('precondition: still awaiting, this is not a live session');
+    S.projectListFailed = null; S.projectPadPicker = null; S.pendingOpenProjectPicker = false;
+    listFails = true;
+    dialogs.openProjectPadPicker();
+    if (S.projectListFailed) throw new Error('a live session was taken over by the card');
+    if (S.projectPadPicker) throw new Error('a picker opened with no list');
+    listFails = false;
 });
 
 /* 2. Unknown is not default. */
@@ -509,7 +712,7 @@ step('⭑ a live project SPENDS the request (a later Retry cannot re-issue a sta
  *    A fresh session must sit on the picker through the whole flip-flop: no
  *    load, no verdict screen, and the save gate never moving off 1. */
 function bootFresh(activeUuid, activeName) {
-    files.clear(); writes.length = 0; sysCmds.length = 0;
+    files.clear(); writes.length = 0; events.length = 0; sysCmds.length = 0;
     awWrites.length = 0; stateLoads.length = 0;
     /* active_set.txt still names the LAST session's project — nothing clears it
      * at launch, which is exactly how the host came to publish a verdict about
