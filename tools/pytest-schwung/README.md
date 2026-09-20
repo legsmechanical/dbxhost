@@ -321,9 +321,13 @@ pins it with hand-checkable cases.
 
 ### Known gaps
 
-* **Pads do nothing on the project picker specifically** (they work in a loaded
-  session). Suspect that screen's own gating rather than the injection — probe
-  with a positive control before concluding.
+* ~~Pads do nothing on the project picker~~ — **retracted 2026-09-20, the claim
+  was wrong.** Pads work there like everywhere else: with the picker confirmed
+  on screen, an injected tap on an empty pad raised the CREATE-NEW confirm (700
+  bytes of the frame changed). The original "finding" came from injecting
+  without looking at the screen first and assuming which screen was up. ⚠ **Read
+  the frame before and after every gesture** — that is the whole point of having
+  it, and an unread screen is how a null result becomes a false bug report.
 * No golden-frame diffing helpers yet; compare byte counts or assert on
   `pixel()` regions.
 * The daemon serves **one client at a time**, and a dropped connection resets
