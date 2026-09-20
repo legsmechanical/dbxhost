@@ -970,6 +970,34 @@ export function projectColorLED(proj) {
 /* POSIX single-quote for a name headed through host_system_cmd (system()). */
 function _shq(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
 
+/* ⚠⚠ host_system_cmd REFUSES anything not starting with an allowed verb
+ * (`sh `, `cp `, `mv `, …, see js_host_system_cmd in shadow_ui.c). An
+ * environment assignment in front — `DBX_OPEN_UUID=… sh project-cmd …` —
+ * matches none of them, so the command was REJECTED and never ran. The
+ * rejection prints to stderr, which nothing collects, so the caller saw a
+ * command that silently did nothing:
+ *
+ *   rename          -> nothing renamed, the re-listing shows the old name,
+ *                      and the UI reported RENAME FAILED
+ *   delete (open)   -> nothing queued and no restart, so the picker sat on
+ *                      DELETING / RESTARTING forever, waiting for a teardown
+ *                      that was never asked for. The device had to be freed
+ *                      from outside.
+ *
+ * Every other project-cmd call starts with `sh ` and was therefore fine —
+ * which is why create, copy, and deleting a project Move is NOT holding all
+ * worked, and only these two were broken.
+ * (Josh, on hardware 2026-09-20: "it gave me rename failed", then
+ * "device seems stuck on deleting restarting the session screen".)
+ *
+ * The command is run by /bin/sh anyway, so the assignment is fine once the
+ * check is satisfied: put the allowed verb first and let that shell apply it.
+ * Deliberately NOT widening the allowlist — this is a caller's mistake, and
+ * the guard should keep refusing anything that does not name its verb. */
+function _pppCmdWithOpenUuid(rest) {
+    return 'sh -c ' + _shq('DBX_OPEN_UUID=' + (S.currentSetUuid || '') + ' sh ' + rest);
+}
+
 function _pppCloseOverlays(p) {
     p.menu = null; p.colorPick = null; p.confirmNew = null;
 }
@@ -1203,12 +1231,12 @@ function _pppDoRename_impl(k, name) {
         S.screenDirty = true;
         saveState();
         showActionPopup('RENAMING', 'RESTARTING');
-        host_system_cmd('DBX_OPEN_UUID=' + (S.currentSetUuid || '') + ' sh ' + PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed) +
-                        (S.awaitingProjectSelect ? ' reselect' : ''));
+        host_system_cmd(_pppCmdWithOpenUuid(PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed) +
+                        (S.awaitingProjectSelect ? ' reselect' : '')));
         return;
     }
     const _queueBefore = _pppQueueSnapshot();
-    host_system_cmd('DBX_OPEN_UUID=' + (S.currentSetUuid || '') + ' sh ' + PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed));
+    host_system_cmd(_pppCmdWithOpenUuid(PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed)));
     const d = _pppRunList();
     if (d) _pppApplyList(p, d);
     const now = p.byIndex[k];
@@ -1414,8 +1442,7 @@ function _projectPadPickerTap_impl(k) {
                 /* Tell the script what we know rather than letting it
                  * re-derive it from the boot record, which is silent
                  * until Move confirms. See do_delete in project-cmd.sh. */
-                host_system_cmd('DBX_OPEN_UUID=' + (S.currentSetUuid || '') +
-                                ' sh ' + PROJECT_CMD + ' delete ' + k);
+                host_system_cmd(_pppCmdWithOpenUuid(PROJECT_CMD + ' delete ' + k));
                 return;
             }
             p.deleteIdx = k;

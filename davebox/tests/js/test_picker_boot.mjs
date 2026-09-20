@@ -141,6 +141,48 @@ step('Rename opens the shared keyboard and its draw takes over', () => {
     dlg.drawProjectPadPicker();
     leds.updateSessionLEDs();                   // painter must yield, not crash
 });
+/* ⭐⭐ EVERY project-cmd CALL MUST NAME AN ALLOWED VERB FIRST.
+ *
+ * host_system_cmd refuses anything whose first word is not one of `sh cp mv
+ * mkdir rm ls test chmod tar` (js_host_system_cmd, shadow_ui.c), and prints
+ * the refusal to stderr, which nothing collects. Two calls put an environment
+ * assignment in front — `DBX_OPEN_UUID=... sh project-cmd ...` — so they were
+ * silently REJECTED and never ran. On hardware that was a rename that reported
+ * RENAME FAILED, and a delete of the open project that left the device frozen
+ * on DELETING / RESTARTING waiting for a teardown nobody had requested.
+ *
+ * Pinned at the command STRING, because it is the shape of the string that the
+ * host judges. A test that only checked "a command was issued" passes while
+ * the command is refused — which is exactly how this shipped. */
+const ALLOWED_VERBS = ['sh ', 'cp ', 'mv ', 'mkdir ', 'rm ', 'ls ', 'test ', 'chmod ', 'tar '];
+function issuedCommands(fn) {
+    const real = globalThis.host_system_cmd;
+    const seen = [];
+    globalThis.host_system_cmd = (c) => { seen.push(String(c)); return 0; };
+    try { fn(); } finally { globalThis.host_system_cmd = real; }
+    return seen;
+}
+
+step('⭐ every command the picker issues starts with a verb the host ALLOWS', () => {
+    const p = S.projectPadPicker;
+    p.restarting = null; p.deleteIdx = -1; p.copySrcIdx = -1;
+    p.menu = null; p.colorPick = null; p.confirmNew = null;
+    S.currentSetUuid = '';                 /* the boot picker: nothing loaded */
+    const cmds = [];
+    /* delete of the project the host says is open -> the env-prefixed call */
+    S.deleteHeld = true;
+    cmds.push(...issuedCommands(() => {
+        dlg.projectPadPickerTap(5);        /* arm  (pad 5 is `current`) */
+        dlg.projectPadPickerTap(5);        /* confirm */
+    }));
+    S.deleteHeld = false;
+    if (!cmds.length) throw new Error('precondition: the gesture issued no command at all');
+    for (const c of cmds) {
+        if (!ALLOWED_VERBS.some((v) => c.startsWith(v)))
+            throw new Error('command would be REFUSED by host_system_cmd: ' + c);
+    }
+});
+
 /* ⭐⭐ THE TWO DECIDERS. project-cmd decides for itself which project is open —
  * on purpose, because one JS-side decider is the shape that caused the loss the
  * identity work exists to fix. At the BOOT PICKER the two halves disagree by
