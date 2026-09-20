@@ -91,7 +91,7 @@ const sound = await import('../../ui/ui_sound.mjs');
  * ones — importing it from there yields `undefined`, the CC never matches, and
  * every assertion below reports "the gesture did nothing" while testing nothing.
  * Caught by printing the constant when the first assertion failed. */
-const { MoveNoteSession, BANK_SOUND, BANK_DEFAULT } = await import('../../ui/ui_constants.mjs');
+const { MoveNoteSession, BANK_SOUND, BANK_DEFAULT, INSTR_ROW_LABEL } = await import('../../ui/ui_constants.mjs');
 const { MoveShift } = await import('/data/UserData/schwung/shared/constants.mjs');
 const MoveBack = 51;   /* the Back button's CC */
 
@@ -296,7 +296,7 @@ step('⭑ a NONE track: the HOLD opens the INSTRUMENT PICKER over its menu (Josh
     const v = sound.soundPickStateForTest().view;
     if (v !== 17) throw new Error('the hold on a NONE track landed on view ' + v + ', not the enum picker (17)');
     const pk = sound.soundPickStateForTest().enumPick;
-    if (pk !== 'Instrument') throw new Error('the picker open is not the Instrument picker: ' + JSON.stringify(pk));
+    if (pk !== INSTR_ROW_LABEL) throw new Error('the picker open is not the Instrument picker: ' + JSON.stringify(pk));
     S.trackRoute[0] = 0; sound.soundExit(); ticks(4);
 });
 
@@ -532,7 +532,7 @@ step('an EMPTY generator opens the INSTRUMENT picker (on the HOLD) — one picke
         if (sound.soundBrowseStateForTest().browsing)
             throw new Error('the gesture opened the old module browser, not the Instrument picker');
         const p = sound.soundEnumPickForTest();
-        if (!p || p.label !== 'Instrument')
+        if (!p || p.label !== INSTR_ROW_LABEL)
             throw new Error('the gesture did not land on the Instrument picker: ' + JSON.stringify(p));
         if (!p.options.some((o) => o === 'NuSaw'))
             throw new Error('the picker does not list the generator: ' + JSON.stringify(p.options));

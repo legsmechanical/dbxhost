@@ -29,6 +29,13 @@ the section into a versioned heading at release time.
   three pages a knob *is* a track.
 
 ### Changed (pending)
+- **Conductor is chosen in the Instrument picker now**, which is renamed
+  **Instrument/Type**. It sits just after the Move instruments, and turning a
+  Conductor back into an ordinary track is done from the same list — previously
+  there was no way to reach it from a track's own screen at all. **Mode** keeps
+  the two choices that only change how a track sequences: Keys and Drums.
+  A Conductor keeps the instrument it had parked, so it is still there when you
+  come back.
 - **A track's settings are at the foot of its own Sound menu**, below a divider,
   instead of behind a **Config** door — Mode, Layout, Transpose, VelIn, Looper,
   AftTch and Parallel. Click a row to take the jog, turn to change it, click (or

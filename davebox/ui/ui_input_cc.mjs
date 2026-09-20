@@ -2014,6 +2014,7 @@ export function backTapWouldAct() {
     if (S.confirmExit) return true;         /* Back = No */
     if (S.confirmTypeChange) return true;   /* Back = No */
     if (S.confirmModuleChange) return true; /* Back = No */
+    if (S.confirmConvertToDrum || S.confirmConvertToConduct) return true;  /* Back = No */
     if (S.projectPadPicker) {
         const _p = S.projectPadPicker;
         /* An open overlay always peels; the bare grid closes unless the
@@ -2084,6 +2085,12 @@ export function atOverview() {
     if (S.confirmBakeScene || S.confirmBakeDrumLoopOpen ||
         S.confirmXpose || S.confirmLgto || S.confirmBake ||
         S.recordBlockedDialog || S.bpmMoveInfo)                     return false;
+    /* ⚠ The track-TYPE confirms belong here since the Conductor moved to the
+     * instrument picker (2026-09-19): they are raised over SOUND MODE now, not
+     * just the global menu, so a modal can be up with the menu shut. A modal up
+     * is not "at the overview" — Note/Session must close it rather than treat
+     * the press as a view switch underneath it. */
+    if (S.confirmConvertToDrum || S.confirmConvertToConduct)        return false;
     if (S.bankCardLatched || S.sessMixerLatched)                    return false;
     if (S.sessionView) return !S.perfViewLocked;
     return !(S.stepIntervalMode || S.altMode ||
@@ -2147,9 +2154,12 @@ function returnToOverview() {
     if (S.projectPadPicker)    closeProjectPadPicker();   /* startup case handled by noOverviewYet */
 
     /* 2. The global menu and every confirm nested in it, all at once. */
+    /* ⚠ OUTSIDE the globalMenuOpen block: these confirms are raised from the
+     * sound menu's instrument picker too, and a teardown that only ran with the
+     * menu open would leave one live and invisible behind the overview. */
+    if (S.confirmConvertToDrum || S.confirmConvertToConduct) closeConvertConfirm();
     if (S.globalMenuOpen) {
         S.confirmClearSession = false; S.confirmSaveState = false;
-        if (S.confirmConvertToDrum || S.confirmConvertToConduct) closeConvertConfirm();
         S.menuInfoLines = []; S.exportDoneDialog = false;
         S.confirmExportCondPhase = false; S.confirmExport = false;
         S.globalMenuOpen = false; S.lastSentMenuEditValue = null;
@@ -2212,6 +2222,16 @@ function _backTap() {
     if (S.confirmExit) { S.confirmExit = null; S.screenDirty = true; return; }
     if (S.confirmTypeChange) { const c = S.confirmTypeChange; S.confirmTypeChange = null; cancelTypeChange(c); S.screenDirty = true; return; }
     if (S.confirmModuleChange) { S.confirmModuleChange = null; cancelModuleChange(); S.screenDirty = true; return; }
+    /* ⭐ The TRACK-TYPE conversion confirms answer Back as No WHEREVER they were
+     * raised. They used to be closed only inside the `globalMenuOpen` block
+     * below, which was true of every caller while `Mode` lived in that menu.
+     * Since the Conductor moved to the INSTRUMENT/TYPE picker they also rise
+     * over SOUND MODE — and there Back fell past them into sound mode's own
+     * chain, stepping a view while the modal stayed up. That is the
+     * live-and-invisible shape again ([[wired-is-not-reachable]]). */
+    if (S.confirmConvertToDrum || S.confirmConvertToConduct) {
+        closeConvertConfirm(); S.screenDirty = true; forceRedraw(); return;
+    }
 
     /* 1. Transient dialogs / pickers / modes (one open at a time). */
     if (S.stepRecActive) {

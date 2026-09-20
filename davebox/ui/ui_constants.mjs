@@ -137,12 +137,34 @@ export const INSTR_TRACK      = 30;     /* +0..7  = Track 1..8   */
  * slot is parked. Outside every band, and NOT the unseeded `--`: a track the
  * user emptied and a track not yet read must never look the same. */
 export const INSTR_NONE       = 40;
+/* CONDUCTOR (Josh, 2026-09-19): "conductor isn't like the other types. it
+ * completely changes how the track behaves. [it] should go into the instrument
+ * picker. keys/drum should stay as types bc they only change the sequencer
+ * paradigm of the track, not where the sequencer data is sent."
+ *
+ * ⭐ SO THE SPLIT IS: this picker answers what a track IS and where its notes
+ * go; the `Mode` row answers how its sequencer behaves, and keeps two values.
+ *
+ * ⚠⚠ IT IS NOT A ROUTE. A Conductor is a PAD MODE (`PAD_MODE_CONDUCT`), which
+ * is what the DSP persists and reconciles; the DSP's `t<N>_pad_mode` setter
+ * CLAMPS to 0..1, so this value must never reach applyTrackConfig('pad_mode').
+ * It goes through requestTrackModeChange, which owns the conversion and its
+ * confirm. A Conductor's ROUTE is left exactly where it was — parked, the way
+ * None parks channel/midi_to — so picking a real instrument later finds it. */
+export const INSTR_CONDUCT    = 50;
+/* The label on the row that opens the picker. A CONSTANT because it is not just
+ * a caption: four places test the string to recognise this picker, and a rename
+ * that missed one left a silently dead branch. */
+export const INSTR_ROW_LABEL  = 'Instrument/Type';
 export const ROUTE_NONE       = 3;      /* S.trackRoute value; DSP `t<N>_route` = 'none' */
 
 export function fmtInstr(v) {
     v = v | 0;
     if (v === INSTR_SCHWUNG) return 'Schwung';
     if (v === INSTR_NONE)    return 'None';
+    /* ⚠ Before the band checks below: 50 would fall into the `>= INSTR_TRACK`
+     * range test and format as '?'. */
+    if (v === INSTR_CONDUCT) return 'Conductor';
     /* Each band is bounded at BOTH ends. An open-ended `>=` would format a
      * stray value as a plausible destination that does not exist ("MIDI Ch 17"),
      * which is worse than showing it is wrong. */
@@ -223,6 +245,11 @@ export function instrPickerRows(routes, self, gens, channels) {
         if (owner >= 0) rows.push({ v: m, label: fmtInstr(m), taken: owner });
         else rows.push({ v: m, label: fmtInstr(m) });
     }
+    /* ⭐ CONDUCTOR sits between the Move instruments and the generators — Josh,
+     * 2026-09-19: "after move, before schwung modules". Its own group: it is not
+     * a destination like the rows above it, nor a module like the ones below. */
+    rows.push({ divider: true });
+    rows.push({ v: INSTR_CONDUCT, label: fmtInstr(INSTR_CONDUCT) });
     rows.push({ divider: true });
     for (const g of (gens || [])) rows.push({ gen: g, label: String(g.name || g.id) });
     if (gens && gens.length) rows.push({ divider: true });

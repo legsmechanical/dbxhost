@@ -68,7 +68,7 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
-const { BANK_SOUND, ROUTE_NONE, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
+const { BANK_SOUND, ROUTE_NONE, PAD_MODE_CONDUCT, INSTR_ROW_LABEL } = await import('../../ui/ui_constants.mjs');
 const editops = await import('../../ui/ui_editops.mjs');
 
 const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_SLOTCFG = 8, VIEW_BUSES = 9, VIEW_LFO = 14,
@@ -235,7 +235,7 @@ step('⭑ an LFO editor → the SAME LFO on the new Schwung track; its target pi
 step('⭑ an open ENUM PICKER closes WITHOUT committing and the switch follows its parent (the menu)', () => {
     enterMenu(2);
     snd.soundQueueActionForTest({ t: 'instrpick' }); globalThis.tick();
-    if (view() !== VIEW_ENUM || fs().enumPick !== 'Instrument') throw new Error('control: the picker did not open');
+    if (view() !== VIEW_ENUM || fs().enumPick !== INSTR_ROW_LABEL) throw new Error('control: the picker did not open');
     const routeBefore = S.trackRoute[2];
     editops._switchActiveTrack(3); settle();
     if (S.trackRoute[2] !== routeBefore) throw new Error('the picker COMMITTED on a track switch');

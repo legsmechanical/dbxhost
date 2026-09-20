@@ -453,18 +453,26 @@ points at one instrument (its channel and route — see
 
 ## 4.1 Track type
 
-A track's **type** sets how you enter notes into it and how it sequences them. Set
-it in the Settings menu under **Mode**, where scrolling previews the candidate type
-and clicking commits it:
+A track's **type** sets how you enter notes into it and how it sequences them.
 
-| Type | Menu label | How it works |
+| Type | Where you set it | How it works |
 |---|---|---|
-| Melodic | `Keys` | Scale-snapped notes on the pads and steps — [Melodic Clips](#6-melodic-clips) |
-| Drum | `Drums` | 32 drum lanes, each its own step sequence — [Drum Clips](#7-drum-clips) |
-| Conductor | `Conduct` | Plays no notes of its own; transposes the other tracks — [The Conductor](#8-the-conductor) |
+| Melodic | **Mode → Keys** | Scale-snapped notes on the pads and steps — [Melodic Clips](#6-melodic-clips) |
+| Drum | **Mode → Drums** | 32 drum lanes, each its own step sequence — [Drum Clips](#7-drum-clips) |
+| Conductor | **Instrument/Type → Conductor** | Plays no notes of its own; transposes the other tracks — [The Conductor](#8-the-conductor) |
+
+**Keys and Drums** are the **Mode** row at the foot of the track's Sound menu.
+Scrolling previews the candidate type; clicking commits it.
+
+**Conductor** is chosen in the **Instrument/Type** picker instead — the same list
+you pick an instrument from, just after the Move instruments. It sits there rather
+than with Keys and Drums because it is not a way of sequencing a track: it changes
+what the track *is*, and it plays nothing. To turn a Conductor back into an
+ordinary track, open that same picker and choose an instrument.
 
 Melodic is the default. A track keeps its color, clips, and routing whatever its
-type.
+type — including while it is a Conductor, so the instrument you had is still
+there when you come back to it.
 
 ## 4.2 Changing type
 
@@ -475,7 +483,8 @@ defaults.
 - **Melodic ↔ Drum** asks you to confirm when the track holds notes. An empty
   track switches at once.
 - **To or from Conductor** keeps your notes and is only available with the
-  transport stopped. Only one Conductor can exist in a set at a time.
+  transport stopped. Only one Conductor can exist in a set at a time. Both
+  directions are done from the **Instrument/Type** picker.
 
 ---
 

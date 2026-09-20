@@ -184,6 +184,16 @@ enterSound(); openRow('settings');
 for (let g = 0; g < 12; g++) { jog(1); }
 draw(); shoot('track', 'Sound Control, scrolled', 'sub-rows + chevrons');
 
+/* The Instrument/Type picker — Conductor sits between the Move rows and the
+ * generators (2026-09-19). */
+enterSound();
+snd.soundOpenInstrPicker(4);
+tick(3);
+/* Scroll to the Conductor row so the shot shows the group it sits in, rather
+ * than the top of a list whose interesting part is six rows down. */
+for (let g = 0; g < 6; g++) { jog(1); tick(1); }
+draw(); shoot('track', 'Instrument-Type picker', 'Conductor after Move, before the generators');
+
 enterSound(); openRow('patches');
 draw(); shoot('track', 'Slot Presets (submenu)', '');
 

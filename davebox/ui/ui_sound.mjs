@@ -52,7 +52,7 @@ import { bankCardVisible, sessMixerVisible, bankHeaderRight } from './ui_render.
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
-import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
+import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, INSTR_CONDUCT, INSTR_ROW_LABEL, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, ROUTE_NONE, TRACK_PAD_BASE } from './ui_constants.mjs';
@@ -74,7 +74,7 @@ import { writeSidecar } from './ui_persistence.mjs';
  * place in the mapping store, the picker and the turn law. */
 import { MORPH_KIND, MORPH_LABEL, morphSnapshotSlots, morphPrepare, morphReady, morphApply,
          morphLegValid, morphInvalidate, morphInvalidateBuses } from './ui_snapmorph.mjs';
-import { requestTrackModeChange } from './ui_dialogs.mjs';
+import { requestTrackModeChange, showMenuInfo } from './ui_dialogs.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
     closeTextEntry,
@@ -484,15 +484,26 @@ function configRows(t) {
     /* Mode leads: it decides what the rest of this screen even means (Layout is
      * melodic-only, AftTch is hidden on drums, Transpose on Conduct).
      *
+     * ⭐⭐ TWO VALUES, KEYS AND DRUMS (Josh, 2026-09-19). Conductor was the third
+     * and does not belong with them: "conductor isn't like the other types. it
+     * completely changes how the track behaves ... keys/drum should stay as types
+     * bc they only change the sequencer paradigm of the track, not where the
+     * sequencer data is sent." Conductor is chosen in the INSTRUMENT/TYPE picker.
+     * ⚠ HIDDEN on a Conductor rather than shown holding a value it cannot
+     * represent: `get` would answer 2, `opts.indexOf(2)` is -1, and the formatter
+     * would read "Drums". Leaving a Conductor is done from the picker.
+     *
      * ⚠ COMMIT ON CLICK, not per detent — the only row here whose edit CONVERTS
      * the track. Scrolling past Drums must not fire a conversion, so the value
      * is previewed and applied when the edit closes. The rules (and the
      * confirms) are requestTrackModeChange's; this row only chooses a target. */
-    rows.push({ key: 'mode', label: 'Mode', commitOnClick: true,
-        opts: [0, 1, 2],
-        fmt: (v) => (v === PMC ? 'Conduct' : v ? 'Drums' : 'Keys'),
-        get: () => GS.trackPadMode[t] | 0,
-        set: (v) => requestTrackModeChange(t, v | 0) });
+    if (GS.trackPadMode[t] !== PMC) {
+        rows.push({ key: 'mode', label: 'Mode', commitOnClick: true,
+            opts: [0, 1],
+            fmt: (v) => (v ? 'Drums' : 'Keys'),
+            get: () => GS.trackPadMode[t] | 0,
+            set: (v) => requestTrackModeChange(t, v | 0) });
+    }
     /* Pad layout is a melodic idea — a drum track's pads are its lanes. */
     rows.push({ key: 'layout', label: 'Layout',
         opts: [0, 1], fmt: (v) => (melodic ? (v ? 'Chrom' : 'Scale') : '-'),
@@ -3136,7 +3147,7 @@ function buildPickRows() {
              * not be re-routed from Track Control — the same gap the EXT case
              * had, in the other flavour. ⚠ Master/Send buses do NOT get it:
              * they are entered from the session FX list, not from a track. */
-            rows.push({ kind: 'trackto', label: 'Instrument' });
+            rows.push({ kind: 'trackto', label: INSTR_ROW_LABEL });
         }
         for (const n of BUS_BLOCKS) {
             rows.push({ kind: 'block', comp: S.bus.prefix + 'fx' + n, label: 'FX ' + n });
@@ -3163,7 +3174,7 @@ function buildPickRows() {
         if (S.bus.kind === 'move') rows.push({ kind: 'settings', label: 'LFOs' });
         if (S.bus.kind === 'move') pushConfigRows(rows, S.track);
     } else {
-        rows.push({ kind: 'trackto', label: 'Instrument' });
+        rows.push({ kind: 'trackto', label: INSTR_ROW_LABEL });
         /* An EXT-routed track (MIDI out, or playing another track's instrument)
          * has no chain and no bus, so it has no sound to show and no mixer
          * position to set — every other row here would be backed by nothing.
@@ -4414,7 +4425,7 @@ function openInstrPicker() {
     /* A Move instrument another track owns is a NOTE row \u2014 centred, with the
      * owner, stepped over by the cursor (1-bit has no grey; UI_LANGUAGE \u00a76):
      * one dAVEBOx track per Move instrument (Josh, 2026-09-13). */
-    openEnumPicker('Instrument',
+    openEnumPicker(INSTR_ROW_LABEL,
                    rows.map(r => r.divider ? { divider: true }
                        : r.taken != null ? { note: r.label + ' - T' + (r.taken + 1), hdr: false }
                        : (r.gen && mlIsMember(r.gen) ? '\u00b7' + r.label : r.label)),
@@ -4431,8 +4442,19 @@ function commitInstrPick(r) {
      * cursor rule and the group dividers all come from openInstrPicker rather
      * than being patched in place. */
     if (r.listRow) { instrPickerCycleList(); return; }
+    /* ⚠ A CONDUCTOR CHANGING TYPE NEEDS THE TRANSPORT STOPPED, and it has to be
+     * said BEFORE anything is written — requestTrackModeChange refuses while
+     * playing, so without this a Conductor would get its new ROUTE and keep its
+     * Conduct mode: half a change, silently. */
+    if (GS.trackPadMode[S.track] === PMC && r.v !== INSTR_CONDUCT && GS.playing) {
+        showMenuInfo('Stop playback', 'to change the', 'track type.');
+        return;
+    }
     if (r.gen) {
-        if (GS.trackRoute[S.track] === 0) {
+        /* ⚠ `&& !wasConduct`: a Conductor with a parked Schwung route would take
+         * this fast path and load a generator while STAYING a Conductor. It has
+         * to go the long way round so applyInstrChangeNow converts it to Keys. */
+        if (GS.trackRoute[S.track] === 0 && GS.trackPadMode[S.track] !== PMC) {
             /* Already a Schwung track: the one you have re-selected just opens
              * (a reload would throw its state away); another one loads. */
             if (moduleIdOf(engineLoadedModule(S.slot, 'synth')) === r.gen.id) S.pendingAction = { t: 'open', comp: 'synth' };
@@ -4463,7 +4485,7 @@ function commitInstrPick(r) {
  */
 function instrPickerCycleList() {
     const p = S.enumPick;
-    if (!p || p.label !== 'Instrument' || !Array.isArray(p.rows)) return false;
+    if (!p || p.label !== INSTR_ROW_LABEL || !Array.isArray(p.rows)) return false;
     const r = p.rows[p.sel];
     if (!r || !r.listRow) return false;
     /*
@@ -4810,7 +4832,7 @@ export function soundListsConfirmNameForTest(text) {
  */
 function instrPickerToggleList() {
     const p = S.enumPick;
-    if (!p || p.label !== 'Instrument' || !Array.isArray(p.rows)) return false;
+    if (!p || p.label !== INSTR_ROW_LABEL || !Array.isArray(p.rows)) return false;
     const r = p.rows[p.sel];
     if (!r || !r.gen) return false;
     mlMenuGen = r.gen;
@@ -4899,6 +4921,12 @@ export function typeChangeImpact(track, newRoute) {
  * a destructive one asks first (S.confirmTypeChange, drawn by ui_dialogs,
  * answered in ui_input_cc — the confirm-exit modal's shape). */
 export function requestInstrChange(track, v) {
+    /* ⭐⭐ CONDUCTOR IS A CONVERSION, NOT A DESTINATION — and this must come
+     * FIRST. routeForInstr() below tests `v >= INSTR_MIDI_CH`, and 50 satisfies
+     * it, so falling through would quietly route the track to MIDI.
+     * requestTrackModeChange owns everything that follows: the confirm, the
+     * refusal while playing, and the "conductor exists on T<n>" case. */
+    if ((v | 0) === INSTR_CONDUCT) { requestTrackModeChange(track, PMC); return false; }
     const newRoute = routeForInstr(v);
     /* ONE TRACK PER MOVE INSTRUMENT: refuse BEFORE the type-change confirm —
      * otherwise Yes would clear the incompatible macros and lanes and THEN the
@@ -4922,6 +4950,14 @@ export function requestInstrChange(track, v) {
     return true;
 }
 function applyInstrChangeNow(track, v) {
+    /* ⭐ Choosing a real instrument on a CONDUCTOR converts it back to KEYS —
+     * never Drums, because a Conductor's note data is melodic. Silent (the
+     * Keys direction asks nothing) and deferred to the tick, while the route
+     * write below goes out from this callback.
+     * ⚠ Placed here rather than in requestInstrChange so it runs on BOTH paths:
+     * the immediate one and the type-change confirm's Yes. A No therefore leaves
+     * the Conductor intact, which is what No has to mean. */
+    if (GS.trackPadMode[track] === PMC) requestTrackModeChange(track, 0);
     applyInstrChoice(track, v);
     /* The screen must FOLLOW the new destination immediately — a track just
      * switched to MIDI has no chain to show, and a switch between Schwung
@@ -5055,7 +5091,7 @@ export function soundEnumPickHintsForTest() { return enumPickHints(); }
 
 function enumPickHints() {
     const p = S.enumPick;
-    if (!p || p.label !== 'Instrument' || !Array.isArray(p.rows)) return null;
+    if (!p || p.label !== INSTR_ROW_LABEL || !Array.isArray(p.rows)) return null;
     const r = p.rows[p.sel];
     if (!r || !r.gen) return null;
     return [['SHFT', 'LISTS']];
@@ -5069,7 +5105,7 @@ function renderEnumPick() {
      * through 35 generators, and the crumb read "T<n> > INSTRUMENT", which is
      * the one thing the screen already makes obvious. The 11px it frees pays
      * for the hint band, so the visible row count does not drop. */
-    const instr = !!(p && p.label === 'Instrument');
+    const instr = !!(p && p.label === INSTR_ROW_LABEL);
     renderInChain(p ? p.options : [], p ? p.sel : 0, undefined,
                   instr ? { noCrumbs: true, topY: INSTR_TOP_Y, bottomY: INSTR_BOTTOM_Y,
                             visible: INSTR_ROWS, hints: enumPickHints() }
@@ -9271,10 +9307,17 @@ export function soundOnCC(d1, d2, decodeDelta) {
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'trackto') {
             if (!S.instrEditing) {
-                /* Conductor emits nothing, so it has no destination to choose —
-                 * the row reads '-' and declines the edit, exactly as the global
-                 * menu's row does. */
-                if (GS.trackPadMode[S.track] === PMC) { S.dirty = true; }
+                /* ⭐ A CONDUCTOR IS NOT A DEAD END ANY MORE (2026-09-19). This row
+                 * used to decline every gesture on a Conductor, because it named
+                 * only a DESTINATION and a Conductor has none. It names the TYPE
+                 * too now — which makes it the only way BACK OUT of Conductor, so
+                 * refusing to open the picker would strand the track.
+                 * ⚠ Shift+click opens the picker (choose something else); a plain
+                 * click has nothing to enter, since a Conductor plays nothing. */
+                if (GS.trackPadMode[S.track] === PMC) {
+                    if (GS.shiftHeld || S.shiftHeld) openInstrPicker();
+                    S.dirty = true;
+                }
                 else {
                     /* ⭑ THE DOOR (Josh, 2026-09-04): once an instrument is
                      * chosen, a click ENTERS it — a Schwung generator's editor,
@@ -10606,7 +10649,11 @@ function renderBlocks() {
              * track its Move instrument; MIDI its channel or track. The ` >`
              * rides in the value like the old Move Generator row's did —
              * chevron and value are exclusive in drawKitList. */
-            let txt = GS.trackPadMode[S.track] === PMC ? '-'
+            /* ⚠ A Conductor used to show '-' here because the row named a
+             * DESTINATION and a Conductor has none. It names the TYPE too now,
+             * and fmtInstr answers 'Conductor' — via instrValueFor, which tests
+             * pad mode first. */
+            let txt = GS.trackPadMode[S.track] === PMC ? fmtInstr(INSTR_CONDUCT)
                     /* No generator yet reads as NOTHING, not "Schwung": the
                      * route is bookkeeping the user never chose (Josh,
                      * 2026-09-04) — what they have is no instrument. */
@@ -10669,7 +10716,9 @@ function renderBlocks() {
 function menuRowHints(r) {
     if (!r) return [];
     if (r.kind === 'trackto') {
-        if (GS.trackPadMode[S.track] === PMC) return [];
+        /* A Conductor has nothing to ENTER, but Shift+click changes what it is —
+         * and that is the only way out of Conductor, so it has to be advertised. */
+        if (GS.trackPadMode[S.track] === PMC) return [['SHFT', 'CHANGE']];
         const route = GS.trackRoute[S.track];
         if (route === 2) return [['SHFT', 'CHANGE']];            /* nothing to enter */
         if (route === 0 && !r.gen) return [['CLK', 'CHOOSE']];  /* no generator yet */
