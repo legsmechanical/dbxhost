@@ -435,11 +435,19 @@ step('⭐ ...and it STAYS — the watchdog does not re-arm an open behind it', (
     /* The re-arm watchdog fires on "awaiting with no picker", which is exactly
      * this state. Without a stand-down it would open, fault, fail closed and
      * re-arm again, once a tick, forever. */
-    const armed = [];
+    sysCmds.length = 0;
     ticks(400);
     if (!S.projectListFailed) throw new Error('the card went away on its own');
     if (S.projectPadPicker) throw new Error('the watchdog opened a picker behind the card');
     if (stateLoads.length) throw new Error('something loaded while the card was up: ' + JSON.stringify(stateLoads));
+    /* ⚠ The visible state is the same either way — the card stays up because
+     * _pppFailClosed stands down when one is already showing — so the cost is
+     * the only thing that can say the stand-down is missing. host_system_cmd is
+     * a BLOCKING system(): re-arming would spawn a shell every tick, on the
+     * audio-adjacent thread, for as long as the user leaves the card up. */
+    const lists = sysCmds.filter((c) => /project-cmd\.sh list$/.test(c));
+    if (lists.length) throw new Error('the list ran ' + lists.length + ' more times behind the card ' +
+                                      '— the watchdog is re-arming the open once a tick');
 });
 step('⭐ Retry: the list is back -> the picker opens and the card goes', () => {
     bootAwaitingNoList();
