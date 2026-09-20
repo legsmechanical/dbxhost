@@ -38,7 +38,7 @@ import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, hostIden
     commitSnapshot } from './ui_persistence.mjs';
 import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
          projectPickerTextEntryTick,
-         checkProjectOpened } from './ui_dialogs.mjs';
+         checkProjectOpened, lockAfterProjectLost } from './ui_dialogs.mjs';
 import { sceneAllQueued, updateSceneMapLEDs } from './ui_scene.mjs';
 import { _padDispatchMutedNow, computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
     syncDrumClipContent } from './ui_drummodel.mjs';
@@ -279,9 +279,13 @@ var _lastSessionView = false;
  *   "if (S.pendingSuspendSave)") is placed deliberately near the end of the function so
  *   no subsequent set_param in the same tick can overwrite the save (see
  *   the block's own inline comment). Its else-if siblings
- *   (pendingExitAfterSave/pendingHideAfterSave/pendingSnapshotCopy) each
- *   run a tick AFTER the save set_param reached DSP — do not hoist any of
- *   this earlier in the function.
+ *   (pendingExitAfterSave/pendingHideAfterSave/pendingSnapshotCopy/
+ *   pendingProjectLostLock) each run a tick AFTER the save set_param reached
+ *   DSP — do not hoist any of this earlier in the function.
+ *   ⚠ pendingProjectLostLock is the one whose lateness is load-bearing for
+ *   DATA rather than teardown: it sets awaiting_select, which is what makes
+ *   seq8_save_state refuse, so running it in the same tick as the save would
+ *   drop the very write it is waiting for (DBX-114 ruling ②).
  *
  * - isSuspended: EARLY COMPUTE, LATE CONSUME. `const isSuspended` (anchor:
  *   "const isSuspended = S._origClearScreen && (clear_screen !==
@@ -2134,6 +2138,15 @@ export function _tickImpl() {
     } else if (S.pendingSuspendSave) {
         S.pendingSuspendSave = false;
         host_module_set_param('save', '1');
+    } else if (S.pendingProjectLostLock) {
+        /* DBX-114 ruling ②: the project went out from under a live session, the
+         * branch above sent its last `save=1` on the previous tick, and the DSP
+         * has had a whole buffer to write it. NOW the session may lock. Placed
+         * here, as a sibling rather than inside checkProjectOpened, for the same
+         * reason pendingExitAfterSave is: the lock sets awaiting_select, and
+         * seq8_save_state refuses under it — do it in the same tick as the save
+         * and the write the detour exists for is dropped. */
+        lockAfterProjectLost();
     } else if (S.pendingExitAfterSave) {
         S.pendingExitAfterSave = false;
         removeFlagsWrap();

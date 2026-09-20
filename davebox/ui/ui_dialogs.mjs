@@ -32,6 +32,10 @@ import {
     MoveMainKnob, MoveMainButton, MoveBack,
 } from '/data/UserData/schwung/shared/constants.mjs';
 import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
+/* A provisional uuid is the host's placeholder for a set whose folder does not
+ * exist yet — never a save destination. Read by the lost-project save below. */
+import { setUuidIsProvisional }
+    from '/data/UserData/schwung/shared/session_state.mjs';
 
 /* ⭑ The MCUFONT value line (drawBpmLine), its ×2 printer and the chevron
  * triangles lived here and were DELETED 2026-09-19 with their last callers:
@@ -352,6 +356,12 @@ export function drawStateWipeConfirm() {
 
 export function checkProjectOpened() {
     const id = hostIdentity();
+    /* A save-then-lock is already in flight (see lockAfterProjectLost): the
+     * session is finishing its last write and the lock fires on the next tick.
+     * Re-entering here would raise the verdict NOW, i.e. set awaiting_select
+     * before `save=1` reaches the DSP, and seq8_save_state refuses under that
+     * flag — the write the whole detour exists for would be dropped. */
+    if (S.pendingProjectLostLock) return;
     const f = S.projectOpenFailed;
     if (f) {
         /* A late real answer (Move opened it after all): drop the screen and
@@ -388,8 +398,50 @@ export function checkProjectOpened() {
     if (id.state !== 'none') return;
 
     const reason = id.reason || 'unknown';
+
+    /* ⭐ A PROJECT LOST UNDERNEATH A LIVE SESSION SAVES TO WHERE IT CAME FROM,
+     * THEN LOCKS (Josh, 2026-09-20, DBX-114 ruling ②).
+     *
+     * If a project is loaded when the verdict arrives, everything played since
+     * the last autosave lives in DSP memory and NOWHERE else — no journal, no
+     * second copy. Locking immediately (what this used to do, and what
+     * enterProjectOpenFailed below still does) throws it away silently.
+     *
+     * The destination is not a guess. `S.currentSetUuid` is assigned in exactly
+     * three places and every one of them requires `state === 'open'` — a
+     * Move-CONFIRMED identity — so a non-empty value here names the project
+     * this session was loaded under, and that project's own folder is a
+     * legitimate place for its own work. The DSP does not even take our word
+     * for it: seq8_save_state writes to `inst->state_uuid`, set by the load.
+     * (Ruled out, 2026-09-20: doing nothing, and holding the work for the next
+     * pick — which would land one project's work inside another.)
+     *
+     * ⚠ The ORDER is the whole trick. `awaiting_select` is what refuses saves,
+     * in JS and in the DSP alike, so it cannot be set until the save has gone.
+     * saveState() writes the sidecar synchronously and arms pendingSuspendSave,
+     * which ui_tick drains at the END of this same tick as `save=1`; the lock
+     * fires from a sibling branch one tick later, the same shape
+     * pendingExitAfterSave uses. Until then the guard at the top of this
+     * function keeps the verdict from being raised early. */
+    if (S.currentSetUuid && !setUuidIsProvisional(S.currentSetUuid)) {
+        S.pendingProjectLostLock = { pad: id.index, name: id.name, reason: reason };
+        console.log('PROJECT LOST (' + reason + '): saving this session into ' +
+                    S.currentSetUuid + ' before locking');
+        saveState();
+        S.screenDirty = true;
+        return;
+    }
+
+    enterProjectOpenFailed(id.index, id.name, reason);
+}
+
+/* The lock, shared by both ways in: straight from the verdict when no project
+ * was loaded, and one tick after the last save when one was. It is its own
+ * function so there is ONE lock rather than two that can drift — what it
+ * clears is what every save path reads. */
+function enterProjectOpenFailed(pad, name, reason) {
     S.projectOpenFailed = {
-        pad: id.index, name: id.name, sel: 0, retrying: false,
+        pad: pad, name: name, sel: 0, retrying: false,
         /* `unknown` is a different sentence: Move did not say what it opened,
          * rather than saying it opened something else. */
         reason: reason
@@ -407,9 +459,20 @@ export function checkProjectOpened() {
     S.pendingSnapshotCopy = null;
     S.projectPadPicker = null;
     S.pendingOpenProjectPicker = false;
-    console.log('NO PROJECT OPEN (' + reason + '): pad ' + id.index +
-                (id.name ? ' (' + id.name + ')' : '') + ' \u2014 saves refused');
+    console.log('NO PROJECT OPEN (' + reason + '): pad ' + pad +
+                (name ? ' (' + name + ')' : '') + ' \u2014 saves refused');
     S.screenDirty = true;
+}
+
+/* Drained by ui_tick one tick AFTER the `save=1` that saveState armed, so the
+ * DSP has had a whole buffer to write the blob out before saving is refused.
+ * What this session had is now on disk under the project it came from; from
+ * here the session is locked and the picker is the only way forward. */
+export function lockAfterProjectLost() {
+    const l = S.pendingProjectLostLock;
+    S.pendingProjectLostLock = null;
+    if (!l) return;
+    enterProjectOpenFailed(l.pad, l.name, l.reason);
 }
 
 

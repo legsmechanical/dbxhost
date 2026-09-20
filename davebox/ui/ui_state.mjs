@@ -803,6 +803,15 @@ export const S = {
     /* PROJECT DID NOT OPEN (ui_dialogs.checkProjectOpened): {pad, name, sel,
      * retrying} while the blocking screen is up, else null. */
     projectOpenFailed: null,
+    /* ⭐ THE ONE TICK BETWEEN THE LAST SAVE AND THE LOCK (DBX-114 ruling ②).
+     * {pad, name, reason} while a project that was LOADED has been lost
+     * underneath the session: the verdict has arrived, saveState() has written
+     * the sidecar and armed the DSP save, and the lock waits for that `save=1`
+     * to reach the DSP before setting awaiting_select — which is what refuses
+     * saves on both sides. Drained by ui_tick as a sibling of the suspend-save,
+     * cleared by ui_dialogs.lockAfterProjectLost. Non-null means "still
+     * writing"; checkProjectOpened stands down while it is set. */
+    pendingProjectLostLock: null,
     /* ⭑ THE REQUEST WE MADE: {uuid, index, name} from the moment of the pick,
      * else null. This is the ONLY moment the answer is known rather than
      * inferred — the picker is holding that project's record when the pad is
