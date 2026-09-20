@@ -396,6 +396,14 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   overview (the levels, or the macros), and a knob touch peeks the card. The
   knob rings on these banks show each knob's value like every other bank, and
   a knob whose parameter is automated in this clip blinks.
+- **Every bank lights its knob rings** — knobs 1-4 white, 5-8 orange, so you can
+  tell at a glance which encoder drives which cell. The brightness rides the
+  value where there is one; where there isn't (a knob that fires an action rather
+  than holding a position, or a step-editor knob before you hold a step) the ring
+  sits at its dimmest and simply says "this one does something". A **dark** ring
+  means the opposite and means it: nothing is on that knob here. The three
+  Conductor banks are the exception — each of their knobs is one of the eight
+  tracks, so they light in the track's own colour instead.
 - **Click the jog** (with no picker open) switches a bank between its primary and
   alternate parameters (the labels change). A **down-arrow** in the header marks
   any bank that has alternates, and blinks while the alternates are showing.
@@ -412,8 +420,9 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
 
 ## 3.6 The Settings menu
 
-**Shift + Step 2** opens the Settings menu — the active track's settings
-first, then the session-wide settings. The full list is in
+**Shift + Step 2** opens the Settings menu — the session-wide settings. (A track's
+own settings live at the foot of its Sound menu, not here — see
+[Track settings](#164-track-settings).) The full list is in
 [Settings & Sets](#16-settings--sets), and many settings have a **Shift + Step**
 shortcut (see the [Quick Reference](#18-quick-reference)).
 
@@ -802,10 +811,17 @@ sequence a progression on the Conductor, and every responding track follows it.
 
 ## 8.1 Creating one
 
-Set a track's **Mode** to `Conduct` in the Settings menu (transport stopped). Its
-notes carry over; its effects, arps, and automation reset. A Conductor's channel
-and route are inert (shown `-`), and **Mute** pauses its conducting — the
-responders snap back to their written pitch.
+Open the track's **Instrument/Type** picker — the top row of its Sound menu — and
+choose **Conductor**, which sits just after the Move instruments. The transport
+must be stopped. Its notes carry over; its effects, arps, and automation reset.
+
+**Mute** pauses its conducting — the responders snap back to their written pitch.
+
+A Conductor plays nothing, so its Sound menu is short: the Instrument/Type row and
+the track's own settings, with no FX slots, mixer controls, LFOs or presets. None
+of that is lost — whatever instrument the track had is **parked**, and it comes
+back with everything attached when you choose an instrument again from that same
+picker. That is also how you turn a Conductor back into an ordinary track.
 
 ## 8.2 How the shift works
 
@@ -1408,18 +1424,23 @@ and levels and times are still adjusted by turning. Backing out of a picker
 leaves the setting as it was.
 
 **Schwung tracks** open dAVEBOx's own sound editor. It starts on the track's
-chain — the **Instrument** row, then MIDI FX and **FX 1-4** — and the jog picks
-a row. The Instrument row names the track's generator (or its Move instrument,
+chain — the **Instrument/Type** row, then MIDI FX and **FX 1-4** — and the jog
+picks a row; the track's own settings sit at the very foot of the same list,
+below a divider (see [Track settings](#164-track-settings)).
+The Instrument/Type row names the track's generator (or its Move instrument,
 MIDI channel or followed track); **click** it to enter the generator's editor
 (or Move's, on a Move instrument), **Shift + click** to change the instrument.
 A MIDI channel or a followed track has nothing to enter, so a plain click does
 nothing there; a track with no generator yet reads `--`, and the click opens
-the picker. On the Instrument and effect rows a hint band pops over the foot of
+the picker. On the Instrument/Type and effect rows a hint band pops over the foot of
 the menu saying what the click and the Shift chord do — the same band the bank
-cards wear. That picker is one list in four
-groups with a line between them: Move 1-4, every Schwung generator by name, MIDI
-channels 1-16, and the tracks this one may follow. Choosing a generator makes
-the track a Schwung track and loads it in one step. A Move instrument belongs
+cards wear. That picker is one list in
+groups with a line between them: **None**, Move 1-4, **Conductor**, every Schwung
+generator by name, MIDI channels 1-16, and the tracks this one may follow.
+Choosing a generator makes the track a Schwung track and loads it in one step.
+**Conductor** is there because it is not an instrument but a kind of track — see
+[The Conductor](#8-the-conductor) — and choosing it converts the track behind a
+confirm, with the transport stopped. A Move instrument belongs
 to **one track at a time**: one that another track already plays is shown
 centred with that track's number (`Move 2 - T3`) and the jog steps over it —
 to play the same Move instrument from a second track, make that track *follow*
@@ -1619,9 +1640,9 @@ counts — a playing pattern, or drums arriving over MIDI, never move the editor
 module decides which drum a pad means, so this follows its own kit mapping. Modules
 that don't offer per-drum editing are unaffected.
 
-The Schwung chain editor is still available from **Edit Synth… / Edit Slot…** in
-the Settings menu, where **Mute + jog-click** bypasses the focused slot.
-*Requires Schwung 0.9.18 or later.*
+**Mute + jog-click** on a block row bypasses that effect without muting the track.
+(The `Edit Synth… / Edit Slot…` rows this used to describe left the Settings menu
+in August — a track's chain is edited from its own Sound menu now.)
 
 ## 14.4 Clock Follow
 
@@ -1740,8 +1761,9 @@ is also the only time you could hear them.
 
 # 16. Settings & Sets
 
-Open the Settings menu with **Shift + Step 2**. It holds the active track's
-settings and the session-wide settings.
+Open the Settings menu with **Shift + Step 2**. It holds the **session-wide**
+settings. Anything belonging to one track lives on that track's own Sound menu —
+see [Track settings](#164-track-settings) below.
 
 ## 16.1 Global settings
 
@@ -1789,19 +1811,23 @@ and survive **Clear Session**.
 
 ## 16.4 Track settings
 
-The top of the menu, for the active track. Entries that don't apply to the track's
-type or route are hidden.
+**At the foot of the track's own Sound menu**, below a divider — not in the
+Settings menu. Click a row to give it the jog, turn to change the value, then
+click (or **Back**) to let go. Entries that don't apply to the track's type or
+route are hidden, so the list is shorter on a MIDI track or a Conductor.
 
 | Setting | Values | Notes |
 |---|---|---|
-| Channel | 1–16 | MIDI channel |
-| Route | Move, Schwung, External | Where its MIDI goes |
-| Mode | Keys, Drums, Conduct | [Track type](#41-track-type) |
+| Mode | Keys, Drums | [Track type](#41-track-type). Scrolling previews; the click commits |
 | Layout | Scale, Chrom | Melodic pad layout |
+| Transpose | −24…+24 st | Shifts everything the track plays |
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |
 | Looper | On, Off | Feeds [Performance Mode](#13-performance-mode) |
 | AftTch | Off, Poly, Channel | Pad-pressure aftertouch (melodic) |
-| Edit Synth… / Edit Slot… | action | [Edit the instrument in place](#143-editing-a-tracks-sound) |
+| Parallel | On, Off | Whether this instrument may render on another core — set per instrument, device-wide |
+
+Where the track's notes GO is the **Instrument/Type** row at the top of the same
+menu, not a setting here — see [Editing a track's sound](#143-editing-a-tracks-sound).
 
 ## 16.5 Sets & compatibility
 
