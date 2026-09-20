@@ -386,8 +386,30 @@ export function checkProjectOpened() {
      * published a verdict about the project the LAST session had been in, which
      * nobody had asked for. It raised this screen, cleared the pending picker,
      * and ~1 s later the late-answer branch above loaded that project with no
-     * pick. Every launch came up on the old project, too fast to read. */
-    if (S.awaitingProjectSelect) return;
+     * pick. Every launch came up on the old project, too fast to read.
+     *
+     * ⭐ EXCEPT WHEN THE VERDICT IS ABOUT THE PROJECT WE ASKED FOR (Josh,
+     * 2026-09-20, the save/load design pass, ruling ④: only FAILURE splits out). "Not chosen" and
+     * "still resolving" stay ONE state and both show the picker — that is the
+     * blanket return below, and it is right for both. But a pick that Move
+     * then refuses is neither: the user has chosen, and waiting is all the
+     * screen can offer them, forever. Before this, the verdict could not fire
+     * from the boot picker AT ALL (measured 2026-09-20 — forcing it took
+     * deleting a folder out from under the picker), which made PROJECT DID NOT
+     * OPEN unreachable from the one state a user can actually get stuck in.
+     *
+     * ⚠ The discriminator is THE REQUEST (S.requestedSet), not a timer and not
+     * the verdict's own word. It exists for precisely this: it is written at
+     * the pick, the one moment the answer is known rather than inferred, and
+     * cleared when a load lands. A verdict with no request outstanding is the
+     * 09-15 case above — noise about a project nobody asked for — and is still
+     * ignored. A verdict about a DIFFERENT pad than the one we asked for is
+     * ignored too: it is not an answer to our question. */
+    if (S.awaitingProjectSelect) {
+        const req = S.requestedSet;
+        if (!req || id.state !== 'none' || req.index !== id.index) return;
+        /* Fall through: this is a genuine failure to open what we asked for. */
+    }
 
     /* ⭑ The verdict is a STATE now, not a name to decode. `none` means Move is
      * not holding a project, and `reason` says which sentence to show. Under
@@ -400,7 +422,7 @@ export function checkProjectOpened() {
     const reason = id.reason || 'unknown';
 
     /* ⭐ A PROJECT LOST UNDERNEATH A LIVE SESSION SAVES TO WHERE IT CAME FROM,
-     * THEN LOCKS (Josh, 2026-09-20, DBX-114 ruling ②).
+     * THEN LOCKS (Josh, 2026-09-20, the save/load design pass, ruling ②).
      *
      * If a project is loaded when the verdict arrives, everything played since
      * the last autosave lives in DSP memory and NOWHERE else — no journal, no
@@ -940,8 +962,8 @@ function _pppApplyList(p, data) {
     }
 }
 
-/* ⭐ A LIST THAT CANNOT BE READ FAILS CLOSED (Josh, 2026-09-20, DBX-114
- * ruling ③). If the picker cannot open at session start — no host_system_cmd,
+/* ⭐ A LIST THAT CANNOT BE READ FAILS CLOSED (Josh, 2026-09-20,
+ * the save/load design pass, ruling ③). If the picker cannot open at session start — no host_system_cmd,
  * or project-cmd gave us no list — the user gets a card that says so, with
  * Retry and Quit. Nothing loads on its own.
  *

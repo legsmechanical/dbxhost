@@ -42,7 +42,7 @@ const files = new Map();
 const writes = [];                       /* every path any save aimed at */
 /* ⭐ The same saves PLUS the awaiting_select arms, in one ordered list. `writes`
  * alone can say a save happened; only this can say it happened BEFORE the gate
- * that refuses saves closed, which is the entire content of DBX-114 ruling ②. */
+ * that refuses saves closed, which is the entire content of ruling ② (Josh, 2026-09-20). */
 const events = [];
 globalThis.host_read_file = (p) => (files.has(String(p)) ? files.get(String(p)) : '');
 globalThis.host_file_exists = (p) => files.has(String(p));        /* stat(): empty exists */
@@ -319,7 +319,7 @@ step('X already loaded at boot + Move says default -> no save reaches X after th
     if (!onScreen()) throw new Error('no screen: ' + frame());
 });
 
-/* 1c. ⭐⭐ DBX-114 RULING ②: A PROJECT LOST UNDERNEATH A LIVE SESSION SAVES TO
+/* 1c. ⭐⭐ RULING ② (Josh, 2026-09-20): A PROJECT LOST UNDERNEATH A LIVE SESSION SAVES TO
  *     WHERE IT CAME FROM, THEN LOCKS.
  *
  *     Everything played since the last autosave lives in DSP memory and nowhere
@@ -392,7 +392,7 @@ step('⭑ control: no project loaded -> the verdict locks IMMEDIATELY, with no s
     if (stray.length) throw new Error('state written with no project open: ' + stray.join(', '));
 });
 
-/* 1d. ⭐⭐ DBX-114 RULING ③: A LIST THAT CANNOT BE READ FAILS CLOSED.
+/* 1d. ⭐⭐ RULING ③ (Josh, 2026-09-20): A LIST THAT CANNOT BE READ FAILS CLOSED.
  *
  *     _pppFailOpen was the last place in the module where a project opened
  *     WITHOUT a pick: if the list could not be read at session start it loaded
@@ -767,6 +767,72 @@ step('...and the save gate never flapped: awaiting_select stayed 1 throughout', 
     const hits = writes.filter((w) => w.indexOf('seq8') >= 0 || w.indexOf('/dAVEBOx') >= 0);
     if (hits.length) throw new Error('project-state saves during a fresh session: ' + hits.join(', '));
 });
+/* 8b. ⭐⭐ RULING ④ (Josh, 2026-09-20): ONLY FAILURE SPLITS OUT, and it is REACHABLE.
+ *
+ *     "Not chosen" and "still resolving" stay one state — both show the picker,
+ *     and the three steps above are that rule working. But a pick Move then
+ *     REFUSES is neither, and until 2026-09-20 the verdict could not fire from
+ *     the boot picker at all: the blanket `if (awaitingProjectSelect) return`
+ *     covered the chosen case too, so the user waited on a picker that was
+ *     never going to move. Forcing the screen in testing took deleting a folder
+ *     out from under the picker, which is not a state a user reaches.
+ *
+ *     The discriminator is THE REQUEST, which exists for exactly this: it is
+ *     written at the pick and cleared when a load lands. These steps drive the
+ *     real gesture — pad tap, Load — so the request is authored the way the
+ *     device authors it, never by hand. */
+function pickPad(k) {
+    padTap(k);
+    ticks(2);
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);     /* the menu's Load row */
+    ticks(6);
+}
+step('⭐⭐ a pick Move REFUSES raises the verdict — from the picker, with no folder tricks', () => {
+    bootFresh(X, 'Project 32');
+    if (!pickerUp()) throw new Error('precondition: no picker to pick from');
+    if (!S.projectPadPicker) { ticks(4); }
+    pickPad(31);
+    if (!S.requestedSet) throw new Error('precondition: the pick authored no request, so nothing can be about it');
+    hostPublish(X, 'Project 32', 31, 'default');       /* Move opened its own set instead */
+    ticks(40);
+    if (!onScreen()) throw new Error('the user is still waiting on the picker: ' + frame());
+    if (S.projectPadPicker) throw new Error('the picker is still up underneath the verdict');
+});
+step('⭐ ...and Retry from there re-issues the SAME request', () => {
+    const f = S.projectOpenFailed;
+    if (!f) throw new Error('precondition: no verdict screen');
+    files.delete(INTENDED);
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);              /* Retry is the default button */
+    ticks(3);
+    const req = files.get(INTENDED) || '';
+    if (req.split('\n')[0] !== X) throw new Error('Retry asked for something else: ' + JSON.stringify(req));
+});
+step('⚠ control: a verdict about a DIFFERENT pad leaves the picker alone', () => {
+    /* An answer to a question nobody asked. The request is outstanding for pad
+     * 31; a verdict about pad 0 is not an answer to it, and taking the picker
+     * away for it would be the 09-15 regression wearing a request as cover. */
+    bootFresh(X, 'Project 32');
+    ticks(4);
+    pickPad(31);
+    if (!S.requestedSet) throw new Error('precondition: no request outstanding');
+    hostPublish(P, 'Project 1', 0, 'default');
+    ticks(40);
+    if (onScreen()) throw new Error('a verdict about another pad took the picker: ' + frame());
+    if (S.projectOpenFailed) throw new Error('verdict state raised for another pad');
+});
+step('⚠ control: the request is what unlocks it — without one the same verdict is ignored', () => {
+    /* The positive control for the gate itself: identical publish, identical
+     * ticks, only the request missing. If this raised the screen the gate would
+     * be doing nothing and the step above would prove nothing. */
+    bootFresh(X, 'Project 32');
+    ticks(4);
+    S.requestedSet = null;
+    hostPublish(X, 'Project 32', 31, 'default');
+    ticks(40);
+    if (S.projectOpenFailed) throw new Error('the verdict fired with no request outstanding');
+    if (!pickerUp()) throw new Error('the picker went away anyway: ' + frame());
+});
+
 step('control: the SAME publish sequence on a relaunch boot still raises the verdict', () => {
     boot(P, 'Project 1');
     hostPublish(X, 'Project 32', 31, 'default');

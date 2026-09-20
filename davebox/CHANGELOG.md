@@ -17,6 +17,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Fixed (pending)
+- **A project Move refuses to open now says so, instead of leaving you on the
+  picker.** Choose a project and, if the device opens something else, you get
+  the "Project did not open" screen with a Retry — previously that screen could
+  not appear while you were still choosing, so the pick simply never completed
+  and nothing on screen explained why.
 - **If your projects can't be read at startup, dAVEBOx says so instead of
   guessing.** A "No project list" screen now offers Retry or Quit. Before, it
   quietly opened whichever project the device happened to boot into — so a
