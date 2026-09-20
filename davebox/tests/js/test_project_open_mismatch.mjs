@@ -42,7 +42,7 @@ const files = new Map();
 const writes = [];                       /* every path any save aimed at */
 /* ⭐ The same saves PLUS the awaiting_select arms, in one ordered list. `writes`
  * alone can say a save happened; only this can say it happened BEFORE the gate
- * that refuses saves closed, which is the entire content of DBX-114 ruling ②. */
+ * that refuses saves closed, which is the entire content of ruling ② (Josh, 2026-09-20). */
 const events = [];
 globalThis.host_read_file = (p) => (files.has(String(p)) ? files.get(String(p)) : '');
 globalThis.host_file_exists = (p) => files.has(String(p));        /* stat(): empty exists */
@@ -319,7 +319,7 @@ step('X already loaded at boot + Move says default -> no save reaches X after th
     if (!onScreen()) throw new Error('no screen: ' + frame());
 });
 
-/* 1c. ⭐⭐ DBX-114 RULING ②: A PROJECT LOST UNDERNEATH A LIVE SESSION SAVES TO
+/* 1c. ⭐⭐ RULING ② (Josh, 2026-09-20): A PROJECT LOST UNDERNEATH A LIVE SESSION SAVES TO
  *     WHERE IT CAME FROM, THEN LOCKS.
  *
  *     Everything played since the last autosave lives in DSP memory and nowhere
@@ -392,7 +392,7 @@ step('⭑ control: no project loaded -> the verdict locks IMMEDIATELY, with no s
     if (stray.length) throw new Error('state written with no project open: ' + stray.join(', '));
 });
 
-/* 1d. ⭐⭐ DBX-114 RULING ③: A LIST THAT CANNOT BE READ FAILS CLOSED.
+/* 1d. ⭐⭐ RULING ③ (Josh, 2026-09-20): A LIST THAT CANNOT BE READ FAILS CLOSED.
  *
  *     _pppFailOpen was the last place in the module where a project opened
  *     WITHOUT a pick: if the list could not be read at session start it loaded

@@ -400,7 +400,7 @@ export function checkProjectOpened() {
     const reason = id.reason || 'unknown';
 
     /* ⭐ A PROJECT LOST UNDERNEATH A LIVE SESSION SAVES TO WHERE IT CAME FROM,
-     * THEN LOCKS (Josh, 2026-09-20, DBX-114 ruling ②).
+     * THEN LOCKS (Josh, 2026-09-20, the save/load design pass, ruling ②).
      *
      * If a project is loaded when the verdict arrives, everything played since
      * the last autosave lives in DSP memory and NOWHERE else — no journal, no
@@ -940,8 +940,8 @@ function _pppApplyList(p, data) {
     }
 }
 
-/* ⭐ A LIST THAT CANNOT BE READ FAILS CLOSED (Josh, 2026-09-20, DBX-114
- * ruling ③). If the picker cannot open at session start — no host_system_cmd,
+/* ⭐ A LIST THAT CANNOT BE READ FAILS CLOSED (Josh, 2026-09-20,
+ * the save/load design pass, ruling ③). If the picker cannot open at session start — no host_system_cmd,
  * or project-cmd gave us no list — the user gets a card that says so, with
  * Retry and Quit. Nothing loads on its own.
  *

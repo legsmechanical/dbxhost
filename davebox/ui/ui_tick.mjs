@@ -285,7 +285,7 @@ var _lastSessionView = false;
  *   ⚠ pendingProjectLostLock is the one whose lateness is load-bearing for
  *   DATA rather than teardown: it sets awaiting_select, which is what makes
  *   seq8_save_state refuse, so running it in the same tick as the save would
- *   drop the very write it is waiting for (DBX-114 ruling ②).
+ *   drop the very write it is waiting for (Josh's ruling ②, 2026-09-20).
  *
  * - isSuspended: EARLY COMPUTE, LATE CONSUME. `const isSuspended` (anchor:
  *   "const isSuspended = S._origClearScreen && (clear_screen !==
@@ -2142,7 +2142,7 @@ export function _tickImpl() {
         S.pendingSuspendSave = false;
         host_module_set_param('save', '1');
     } else if (S.pendingProjectLostLock) {
-        /* DBX-114 ruling ②: the project went out from under a live session, the
+        /* Ruling ② (Josh, 2026-09-20): the project went out from under a live session, the
          * branch above sent its last `save=1` on the previous tick, and the DSP
          * has had a whole buffer to write it. NOW the session may lock. Placed
          * here, as a sibling rather than inside checkProjectOpened, for the same
