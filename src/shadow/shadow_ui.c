@@ -1803,6 +1803,17 @@ static JSValue js_host_system_cmd(JSContext *ctx, JSValueConst this_val,
     }
 
     if (!allowed) {
+        /* ⚠⚠ SAY THIS WHERE SOMEONE WILL SEE IT. stderr goes nowhere any
+         * caller reads, so a REFUSED command and a command that ran and did
+         * nothing were indistinguishable from JS — which is how two project
+         * calls sat broken: a rename that reported FAILED, and a delete that
+         * left the picker frozen waiting for a restart nobody had requested
+         * (2026-09-20). Log the whole command, not a prefix: the first word is
+         * the thing that was wrong, and truncating at 40 chars can hide it. */
+        char refused[512];
+        snprintf(refused, sizeof(refused),
+                 "host_system_cmd REFUSED (first word must be an allowed verb): %s", cmd);
+        shadow_ui_log_line(refused);
         fprintf(stderr, "host_system_cmd: command not allowed: %.40s...\n", cmd);
         JS_FreeCString(ctx, cmd);
         return JS_NewInt32(ctx, -1);
