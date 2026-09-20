@@ -17,6 +17,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Fixed (pending)
+- **If your projects can't be read at startup, dAVEBOx says so instead of
+  guessing.** A "No project list" screen now offers Retry or Quit. Before, it
+  quietly opened whichever project the device happened to boot into — so a
+  launch you meant to choose from could land you in a project already live, and
+  everything you played went into it.
 - **If a project disappears out from under a session, your work is saved into it
   first.** When Move loses the project you were working in, dAVEBOx now writes
   the session into that project — the one it was loaded from — before the

@@ -683,6 +683,9 @@ export function _tickImpl() {
      * must not run while the thing that would end it is still in flight. */
     if (S.awaitingProjectSelect && !S.projectPadPicker &&
             !S.projectOpenFailed &&      /* its own screen owns the dead end */
+            !S.projectListFailed &&      /* ...and so does NO PROJECT LIST: re-arming
+                                         * the open here would fault, fail closed and
+                                         * re-arm again, once a tick, forever */
             S.selectHandoffUntil === 0 &&
             !S.pendingOpenProjectPicker && !S.pendingSetLoad &&
             S.pendingProjectSwitch === null &&

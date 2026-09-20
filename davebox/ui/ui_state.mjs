@@ -803,6 +803,12 @@ export const S = {
     /* PROJECT DID NOT OPEN (ui_dialogs.checkProjectOpened): {pad, name, sel,
      * retrying} while the blocking screen is up, else null. */
     projectOpenFailed: null,
+    /* ⭐ NO PROJECT LIST (ui_dialogs._pppFailClosed, DBX-114 ruling ③):
+     * {sel, why, retrying} while the card is up, else null. The list could not
+     * be read at session start, so there is no picker and — unlike the fail-OPEN
+     * this replaced — nothing has been loaded in its place. Modal: it owns the
+     * screen and every internal MIDI message until Retry or Quit. */
+    projectListFailed: null,
     /* ⭐ THE ONE TICK BETWEEN THE LAST SAVE AND THE LOCK (DBX-114 ruling ②).
      * {pad, name, reason} while a project that was LOADED has been lost
      * underneath the session: the verdict has arrived, saveState() has written
