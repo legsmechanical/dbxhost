@@ -333,6 +333,24 @@ pins it with hand-checkable cases.
 * The daemon serves **one client at a time**, and a dropped connection resets
   subscriptions.
 
+### Provoking a failure on a real device — three traps, all paid for 2026-09-20
+
+* **Show the provocation WORKED before believing the result.** `chmod 000
+  projects.json` looks decisive and is not: `project-cmd` rewrites that file via
+  temp + rename, which needs the *directory* bit, so the list came back and two
+  assertions "failed" against a condition that never existed. Assert the
+  condition first, then the behaviour.
+* **A restore that races the thing it is restoring proves nothing.** Loading a
+  project Move does not hold goes through a RELAUNCH; a `finally` that puts the
+  folder back runs while Move is still restarting, so Move finds it, opens it,
+  and there is no failure left to see.
+* **⚠⚠ `mv .gone-X X` NESTS when `X` already exists** — and Move recreates a set
+  folder on its own. The payload ends up at `X/.gone-X/`, `project-cmd
+  repair-indices` then correctly quarantines the orphan at
+  `dbx-host/sets/quarantine/<date>/`, and the project is gone from the picker.
+  It is recoverable from there (it was), but move the payload explicitly rather
+  than renaming onto a path that may have come back.
+
 ### Cleanup
 
 `ssh ableton@move.local 'sh /data/UserData/dbx-host/scripts/exit-to-stock.sh'`
