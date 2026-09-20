@@ -141,6 +141,69 @@ step('Rename opens the shared keyboard and its draw takes over', () => {
     dlg.drawProjectPadPicker();
     leds.updateSessionLEDs();                   // painter must yield, not crash
 });
+/* ⭐⭐ THE TWO DECIDERS. project-cmd decides for itself which project is open —
+ * on purpose, because one JS-side decider is the shape that caused the loss the
+ * identity work exists to fix. At the BOOT PICKER the two halves disagree by
+ * construction: dAVEBOx has nothing loaded, Move is still holding the set it
+ * had. The script then QUEUES the work and restarts, so nothing has changed on
+ * disk when this side looks.
+ *
+ * It used to guess again from that: a deferred rename reported RENAME FAILED,
+ * and a deferred delete reported PROJECT DELETED without re-reading anything.
+ * Both wrong in the word, and worse in the tail — the real rename/rm landed
+ * silently at the NEXT LAUNCH, which reads as the box acting on its own.
+ * (Josh, on hardware 2026-09-20: "just tried renaming project 1 and it gave me
+ * rename failed"; delete reproduced the same way.)
+ *
+ * The queue file is the script's own answer, so these drive the real gesture
+ * with a stubbed project-cmd that DEFERS, and assert we follow it. */
+function withDeferringScript(fn) {
+    const realCmd = globalThis.host_system_cmd;
+    const realRead = globalThis.host_read_file;
+    let queue = '';
+    globalThis.host_system_cmd = (c) => {
+        const s = String(c);
+        /* the script's deferral: queue the work, change nothing else */
+        if (/project-cmd\.sh (rename|delete)/.test(s)) queue += 'mv or rm queued\n';
+        return 0;
+    };
+    globalThis.host_read_file = (f) => {
+        const s = String(f);
+        if (s.endsWith('relaunch_patch.sh')) return queue;
+        return realRead(f);
+    };
+    try { return fn(); }
+    finally { globalThis.host_system_cmd = realCmd; globalThis.host_read_file = realRead; }
+}
+
+step('⭐ a DEFERRED delete is not a completed one', () => {
+    const p = S.projectPadPicker;
+    p.restarting = null; p.menu = null; p.colorPick = null; p.confirmNew = null;
+    p.deleteIdx = -1;
+    S.deleteHeld = true;
+    withDeferringScript(() => {
+        dlg.projectPadPickerTap(9);      /* arm on a project that is NOT loaded */
+        dlg.projectPadPickerTap(9);      /* confirm -> script defers */
+    });
+    S.deleteHeld = false;
+    if (p.restarting !== 'DELETING')
+        throw new Error('a deferred delete did not take the restarting path: ' + JSON.stringify(p.restarting));
+});
+
+step('⚠ CONTROL: a delete the script really performed still reads as done', () => {
+    const p = S.projectPadPicker;
+    p.restarting = null; p.deleteIdx = -1;
+    S.deleteHeld = true;
+    const realCmd = globalThis.host_system_cmd;
+    globalThis.host_system_cmd = () => 0;        /* no queue written = not deferred */
+    try {
+        dlg.projectPadPickerTap(9);
+        dlg.projectPadPickerTap(9);
+    } finally { globalThis.host_system_cmd = realCmd; S.deleteHeld = false; }
+    if (p.restarting === 'DELETING')
+        throw new Error('an immediate delete was reported as deferred — the check cries wolf');
+});
+
 step('restarting locks EVERY picker entry point (the teardown race)', () => {
     /* Rename-of-current sets p.restarting and then Move dies ~1-2 s later;
      * any gesture accepted in that window races the teardown — on hardware

@@ -774,6 +774,32 @@ export function closeConvertConfirm() {
 
 const PROJECT_CMD = '/data/UserData/dbx-host/scripts/project-cmd.sh';
 const PROJECTS_JSON = '/data/UserData/dbx-host/projects.json';
+/* The launcher's queued-work file. project-cmd appends an mv here when it
+ * decides a rename touches a set MOVE still has open; its presence is the only
+ * way this side can tell "deferred" from "failed". */
+const RELAUNCH_PATCH = '/data/UserData/dbx-host/relaunch_patch.sh';
+
+/* ⭑⭑ DID THE SCRIPT DEFER? — the one question this side must not answer twice.
+ *
+ * project-cmd decides for ITSELF which project is open, deliberately: one
+ * decider living in JS is the shape that caused the loss the identity work
+ * exists to fix (see do_delete's `_open_del`). When it decides the target is
+ * open it QUEUES the mv or rm for the launcher and restarts Move in place —
+ * so nothing has changed on disk when we look, and the project is still there.
+ *
+ * At the boot picker the two halves disagree by construction: dAVEBOx has
+ * nothing loaded, while MOVE is still holding the set it had. Guessing again
+ * from a re-listing is what made a deferred rename report RENAME FAILED, and a
+ * deferred delete report PROJECT DELETED — both wrong, and both with a tail
+ * where the real thing happened silently at the next launch.
+ *
+ * So compare the queue around the command instead of re-deciding. A CHANGE is
+ * the script's own answer. Comparing content rather than mere existence
+ * matters: a patch left by earlier queued work would otherwise read as "this
+ * command deferred". */
+function _pppQueueSnapshot() {
+    try { return String(host_read_file(RELAUNCH_PATCH) || ''); } catch (e) { return ''; }
+}
 
 function _pppRunList() {
     /* host_system_cmd blocks (system()), so the refreshed list is readable
@@ -1126,12 +1152,39 @@ function _pppDoRename_impl(k, name) {
                         (S.awaitingProjectSelect ? ' reselect' : ''));
         return;
     }
+    const _queueBefore = _pppQueueSnapshot();
     host_system_cmd('DBX_OPEN_UUID=' + (S.currentSetUuid || '') + ' sh ' + PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed));
     const d = _pppRunList();
     if (d) _pppApplyList(p, d);
     const now = p.byIndex[k];
-    if (now && now.name === trimmed) showActionPopup('PROJECT', 'RENAMED');
-    else showActionPopup('RENAME', 'FAILED');
+    if (now && now.name === trimmed) { showActionPopup('PROJECT', 'RENAMED'); S.screenDirty = true; return; }
+
+    /* ⚠⚠ AN UNCHANGED NAME IS NOT A FAILURE. project-cmd makes its OWN
+     * determination of which project is open — deliberately, because one
+     * decider in JS is the shape that caused the loss the identity work
+     * exists to fix (see the comment on do_delete's `_open_del`). When it
+     * decides the project is open it QUEUES the mv for the launcher and
+     * restarts Move in place, so the name cannot have changed yet.
+     *
+     * We reached here believing nothing was open — which is true of dAVEBOx
+     * and false of MOVE, because at the boot picker Move is still holding the
+     * set it had. So the two halves disagreed, and this branch reported
+     * RENAME FAILED for a rename that was merely deferred. Worse than a wrong
+     * word: the rename then applied silently at the next launch, which reads
+     * as the box renaming a project on its own. (Josh, 2026-09-20: "just tried
+     * renaming project 1 and it gave me rename failed".)
+     *
+     * So ASK WHAT IT DECIDED rather than guessing again: a queued patch means
+     * deferred, and we take the same restarting path the open branch does. */
+    if (_pppQueueSnapshot() !== _queueBefore) {
+        p.restarting = 'RENAMING';
+        _pppCloseOverlays(p);
+        saveState();
+        showActionPopup('RENAMING', 'RESTARTING');
+        S.screenDirty = true;
+        return;
+    }
+    showActionPopup('RENAME', 'FAILED');
     S.screenDirty = true;
 }
 
@@ -1315,12 +1368,26 @@ function _projectPadPickerTap_impl(k) {
             return;
         }
         if (p.deleteIdx === k) {
+            /* ⚠ This path used to announce PROJECT DELETED unconditionally —
+             * without even re-reading the list. When the script deferred (it
+             * had decided the project was open, which at the boot picker it
+             * routinely is), the directory was still there, the pad still
+             * showed the project, and it vanished at the next launch instead.
+             * Ask the queue what the script decided; see _pppQueueSnapshot. */
+            const _queueBefore = _pppQueueSnapshot();
             host_system_cmd('sh ' + PROJECT_CMD + ' delete ' + k);
+            const deferred = (_pppQueueSnapshot() !== _queueBefore);
             const d = _pppRunList();
             if (d) _pppApplyList(p, d);
             p.deleteIdx = -1;
             invalidateLEDCache();
-            showActionPopup('PROJECT', 'DELETED');
+            if (deferred) {
+                p.restarting = 'DELETING';
+                _pppCloseOverlays(p);
+                showActionPopup('DELETING', 'RESTARTING');
+            } else {
+                showActionPopup('PROJECT', 'DELETED');
+            }
         } else {
             p.deleteIdx = k;    /* OLED asks for the confirming tap */
         }
