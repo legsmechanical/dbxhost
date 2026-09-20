@@ -449,6 +449,12 @@ export function projectOpenFailedMidi(data) {
          * (project-cmd `switch`, fired from the tick). The screen stays up,
          * locked, until the session goes down. */
         f.retrying = true;
+        /* RE-ISSUE the same request. The picker is gone and the verdict record
+         * carries no uuid — only the pad and the name the host reported — so
+         * the request we made is the only thing that still knows what we asked
+         * for. If we asked for nothing (the verdict arrived about a set nobody
+         * requested), we write nothing: a Retry cannot invent a request. */
+        if (S.requestedSet) _pppWriteRequest(S.requestedSet);
         S.pendingProjectRelaunch = f.pad;
     } else {
         /* Back to the project picker. Still awaiting a selection, so the picker
@@ -774,6 +780,15 @@ export function closeConvertConfirm() {
 
 const PROJECT_CMD = '/data/UserData/dbx-host/scripts/project-cmd.sh';
 const PROJECTS_JSON = '/data/UserData/dbx-host/projects.json';
+/* ⭐ THE REQUEST. Written at the moment of the pick, consumed and unlinked by
+ * the host the instant it arms (src/host/shadow_set_pages.c). Format is fixed
+ * by that reader: `uuid \n index \n name`.
+ *
+ * Without it the host has no way to tell "dAVEBOx asked for this project and
+ * got it" from "a set was already open underneath" — it takes whatever Move
+ * loads as the answer, and the PROJECT DID NOT OPEN verdict, which exists for
+ * exactly the case where we asked and did not get it, can never be produced. */
+const INTENDED_SET = '/data/UserData/dbx-host/intended_set.txt';
 
 function _pppRunList() {
     /* host_system_cmd blocks (system()), so the refreshed list is readable
@@ -993,6 +1008,37 @@ function _pppOpenMenu(p, k) {
 
 /* --- menu actions ------------------------------------------------------ */
 
+/* Author the request for pad k, before either actuator fires.
+ *
+ * ⚠ ONE request, ONE arming: the host unlinks the file as it arms, so a record
+ * that outlived its request would be judged against a later, unrelated load.
+ * Writing it here — not at the drain — is deliberate: the drains carry only a
+ * pad INDEX, and re-deriving the uuid downstream by watching Move is the exact
+ * inference this record exists to replace. */
+function _pppRequestSet(p, k) {
+    const proj = p && p.byIndex ? p.byIndex[k] : null;
+    const uuid = proj && proj.uuid ? proj.uuid : '';
+    if (!uuid) { S.requestedSet = null; return false; }
+    const name = (proj && proj.name) ? proj.name : '';
+    S.requestedSet = { uuid: uuid, index: k, name: name };
+    return _pppWriteRequest(S.requestedSet);
+}
+
+function _pppWriteRequest(req) {
+    /* Best effort by design: a request that cannot be written leaves the host
+     * in the state it is in TODAY (it treats what Move opens as the answer),
+     * which is degraded but not wrong. Failing the load over it would be worse
+     * than the thing this fixes. */
+    let ok = false;
+    try {
+        ok = !!host_write_file(INTENDED_SET,
+                               req.uuid + '\n' + req.index + '\n' + req.name + '\n');
+    } catch (e) { ok = false; }
+    if (!ok) console.log('project request: could not write ' + INTENDED_SET +
+                         ' for ' + req.uuid + ' (pad ' + req.index + ')');
+    return ok;
+}
+
 function _pppLoad(p, k) {
     const _forceRelaunch = S.forceRelaunchNextLoad;
     if (k === p.current && !_forceRelaunch) {
@@ -1040,6 +1086,15 @@ function _pppLoad(p, k) {
      * Move is on a set it minted itself, and only a relaunch makes it open the
      * pad's real set. */
     S.forceRelaunchNextLoad = false;
+    /* ⭐ AUTHOR THE REQUEST before either actuator fires. Both of them carry a
+     * pad index only; this is the record that says WHICH PROJECT was asked for,
+     * so the host can tell an answer from a coincidence.
+     *
+     * ⚠ Deliberately NOT on the `k === p.current` shortcut above: that path
+     * asks Move for nothing (the set is already open and Move confirmed it on
+     * its own), it only loads OUR state. A request there would be a claim we
+     * never made. */
+    _pppRequestSet(p, k);
     if (_forceRelaunch || S.projectsCreatedThisSession.indexOf(k) >= 0) S.pendingProjectRelaunch = k;
     else S.pendingProjectSwitch = k;
 }

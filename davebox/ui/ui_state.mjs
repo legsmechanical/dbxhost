@@ -803,6 +803,17 @@ export const S = {
     /* PROJECT DID NOT OPEN (ui_dialogs.checkProjectOpened): {pad, name, sel,
      * retrying} while the blocking screen is up, else null. */
     projectOpenFailed: null,
+    /* ⭑ THE REQUEST WE MADE: {uuid, index, name} from the moment of the pick,
+     * else null. This is the ONLY moment the answer is known rather than
+     * inferred — the picker is holding that project's record when the pad is
+     * pressed, and both actuators carry only a pad INDEX onward.
+     *
+     * It is written to intended_set.txt for the host (which consumes and
+     * unlinks it), and kept here so a RETRY can re-issue the same request
+     * rather than re-deriving it from a screen that no longer has the uuid.
+     * null means "we asked for nothing" — which is a real state, not a gap:
+     * at boot Move opens a set of its own accord and nobody requested it. */
+    requestedSet: null,
     /* Ticks left of polling active_set.txt for that verdict after init/resume. */
     /* Set one tick after a snapshot Save fires the DSP 'save'; the live state
      * file is on disk by then, so the copy-into-snapshot runs in tick().

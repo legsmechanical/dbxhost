@@ -82,7 +82,11 @@ command grep -qE 'rsync .*"\$REPO_ROOT/build/modules/\$own/"' "$inst" ||
 command grep -q 'synth:module' src/modules/chain/dsp/chain_host.c ||
   fail "the fork's chain DSP no longer carries the synth:module readback — \
 re-examine whether dbx-host still needs to own modules/chain"
-[ "${DBX_PRIVATE_STATE:-}" = "slot_state active_set.txt shadow_chain_config.json shadow_config.json" ] ||
+# ⚠ intended_set.txt joined this list on 2026-09-19 and MUST be private: it is
+# the request dAVEBOx writes at the pick and the host consumes. Shared between
+# the two installs it would let one host's pick be judged against the other's
+# load — the exact fusing this list exists to prevent.
+[ "${DBX_PRIVATE_STATE:-}" = "slot_state active_set.txt intended_set.txt shadow_chain_config.json shadow_config.json" ] ||
   fail "DBX_PRIVATE_STATE drifted: '${DBX_PRIVATE_STATE:-}'"
 
 # The consumer moved (2026-09-05): the device-side layout is ONE script,
