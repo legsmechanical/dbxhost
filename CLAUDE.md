@@ -199,6 +199,12 @@ ssh ableton@move.local "tail -f /data/UserData/schwung/debug.log"
 JS: `console.log()` or `shared/logger.mjs`. C: `LOG_DEBUG("source","msg")` from `host/unified_log.h`.
 
 **On-device E2E** (opt-in): `tools/pytest-schwung/`, driving real hardware through `schwung-testd`.
+⭐ **It can READ THE OLED and PERFORM GESTURES** — so "is this screen reachable", the one question a
+green suite can never answer, is testable without a person at the device. `snapshot_display()` is a
+live read of the composited frame; `press_pad`/`tap(..., hold_frames=N)`/`inject_midi` route to
+whoever owns the surface. **Read `tools/pytest-schwung/README.md` → "Seeing the screen, and driving
+the surface" before reaching for it** — it carries the launch/teardown commands and the traps
+(page-ordered frame packing; a snapshot REFUSES rather than return a blank frame).
 **OTLP span tracing** (off by default): `touch /data/UserData/schwung/otlp_trace_on`; see
 `docs/tracing.md`.
 

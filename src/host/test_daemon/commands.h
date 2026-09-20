@@ -25,6 +25,18 @@ typedef struct daemon_shm {
     shadow_overlay_state_t  *overlay;       /* RO: pad_led_colors snapshot */
     test_stream_shm_t       *midi_out_stream; /* RW: stream of MIDI_OUT events from shim */
     shadow_param_t          *param;         /* RW: get/set requests to chain DSPs / overtake modules */
+    /* RO: the FINAL COMPOSITED FRAME, exactly what is on the OLED — 1024
+     * bytes, 128x64 at 1bpp. The shim already maintains this for the remote
+     * viewer (schwung_shim.c, the display_mirror block): in shadow mode it is
+     * a copy of the composited shadow frame, in native mode it is rebuilt from
+     * the six SPI slices. So this is a LIVE READ of the device's screen, not an
+     * off-device re-render — which is the only kind that can answer "is this
+     * actually what the user is looking at". */
+    const uint8_t           *display_live;
+    /* RW: our own surface-input ring, drained by the shim's overtake scan and
+     * replayed onto the route a hardware press takes. Separate from `inject`,
+     * which reaches Move's firmware but never an overtake module. */
+    shadow_midi_inject_t    *inject_ui;
 } daemon_shm_t;
 
 /* Wire SHM pointers into the command layer. Must be called before

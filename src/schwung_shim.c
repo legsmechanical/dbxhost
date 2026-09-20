@@ -3308,6 +3308,25 @@ static uint8_t last_shadow_midi_out_ready = 0;
 static shadow_midi_dsp_t *shadow_midi_dsp_shm = NULL;  /* MIDI to DSP from shadow UI */
 static uint8_t last_shadow_midi_dsp_ready = 0;
 static shadow_midi_inject_t *shadow_midi_inject_shm = NULL;  /* MIDI inject into Move's MIDI_IN */
+/* The TEST BUS's own surface-input ring (schwung-testd → here, dev-only).
+ *
+ * ⭐ WHY A SECOND RING RATHER THAN SHARING THE ONE ABOVE. That ring's consumer
+ * writes into MOVE'S MAILBOX for the firmware to read; an overtake module is
+ * fed from the raw HARDWARE buffer instead, so an injected packet could never
+ * reach one. (Measured here 2026-09-20: pressing a project pad through the test
+ * bus moved none of the 32 pad LEDs. Upstream measured the identical result on
+ * 2026-07-29 and took the other road — draining the SHARED ring during overtake,
+ * which then needed a dedicated ring for the module's own output and two
+ * follow-up fixes, one of them a module hearing its own notes played back as
+ * input.)
+ *
+ * ⚠ That road is worse HERE, because the shared ring is how dAVEBOx's sequencer
+ * plays Move's own sounds (shadow_chain_midi_inject). Taking it over during
+ * overtake would put the product's core note path on the test bus's route. This
+ * ring carries test input ONLY, is written only by schwung-testd, and is drained
+ * only below — so with no daemon running it costs one atomic load per frame and
+ * changes nothing. */
+static shadow_midi_inject_t *test_inject_ui_shm = NULL;
 static schwung_ext_midi_remap_t *ext_midi_remap_shm = NULL;  /* Cable-2 channel remap table */
 
 static uint32_t last_screenreader_sequence = 0;  /* Track last spoken message */
@@ -3812,6 +3831,14 @@ static void init_shadow_shm(void)
      * maps it, so initializing here once at startup is race-free. */
     if (shadow_midi_inject_shm) {
         shadow_midi_inject_init(shadow_midi_inject_shm);
+    }
+
+    /* Create/open the test bus's surface-input ring. Same Vyukov ring type and
+     * the same one-time init; a different segment and a different consumer. */
+    test_inject_ui_shm = (shadow_midi_inject_t *)shadow_shm_map(SHM_TEST_INJECT_UI,
+                                                                sizeof(shadow_midi_inject_t), 1, 1);
+    if (test_inject_ui_shm) {
+        shadow_midi_inject_init(test_inject_ui_shm);
     }
 
     /* Create/open cable-2 channel remap shared memory (active overtake module writes,
@@ -9316,6 +9343,55 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                 d1 >= 68 && d1 <= 99 && shadow_ui_midi_shm) {
                 shadow_ui_midi_publish(0x0A, status, d1, d2);
                 continue;
+            }
+        }
+
+        /* === TEST-BUS INPUT, OVERTAKE PATH (dev-only) ===
+         *
+         * The module on screen is fed from the raw HARDWARE buffer scanned
+         * above. Nothing a test could write reached that route, so the bus
+         * could read an overtake module's state but never DRIVE its surface —
+         * which is most of what a UI test does, and the reason a screen could
+         * only ever be checked by hand.
+         *
+         * So a packet from schwung-testd is replayed HERE, onto exactly the
+         * route a hardware press takes: publish to the shadow UI, and hand note
+         * events to the overtake DSP the way the loop above does — otherwise an
+         * injected pad would move the UI while the engine heard nothing.
+         *
+         * ⚠ This ring is the TEST BUS'S OWN (see test_inject_ui_shm). Move's
+         * inject ring is left alone: it carries dAVEBOx's sequencer output to
+         * Move, and routing the product's note path through the test bus is how
+         * a module ends up hearing its own output as input.
+         *
+         * Realtime: one relaxed atomic load when the ring is empty (the normal
+         * case — no daemon, no packets), peek/pop are lock-free over a
+         * preallocated ring, and the loop is BOUNDED, so this adds no
+         * allocation and no unbounded work to the SPI callback. */
+        if (overtake_mode && test_inject_ui_shm) {
+            uint8_t pkt[4];
+            int budget = 16;            /* bounded: never stall the callback */
+            while (budget-- > 0 && shadow_midi_inject_peek(test_inject_ui_shm, pkt)) {
+                shadow_midi_inject_pop(test_inject_ui_shm);
+
+                const uint8_t hdr    = pkt[0];
+                const uint8_t status = pkt[1];
+                const uint8_t d1     = pkt[2];
+                const uint8_t d2     = pkt[3];
+                const uint8_t type   = status & 0xF0;
+
+                if (shadow_ui_midi_shm)
+                    shadow_ui_midi_publish(hdr, status, d1, d2);
+
+                if (type == 0x90 || type == 0x80) {
+                    uint8_t msg[3] = { status, d1, d2 };
+                    if (overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->on_midi)
+                        overtake_dsp_gen->on_midi(overtake_dsp_gen_inst, msg, 3,
+                                                  MOVE_MIDI_SOURCE_INTERNAL);
+                    else if (overtake_dsp_fx && overtake_dsp_fx_inst && overtake_dsp_fx->on_midi)
+                        overtake_dsp_fx->on_midi(overtake_dsp_fx_inst, msg, 3,
+                                                 MOVE_MIDI_SOURCE_INTERNAL);
+                }
             }
         }
 

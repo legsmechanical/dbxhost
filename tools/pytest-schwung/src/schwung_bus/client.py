@@ -160,6 +160,59 @@ class MidiOutCapture:
         return MidiOutCapture(events=[e for e in self.events if keep(e)], dropped=0)
 
 
+DISPLAY_WIDTH = 128
+DISPLAY_HEIGHT = 64
+
+
+@dataclass
+class DisplayFrame:
+    """One OLED frame: 128x64, 1 bit per pixel, as the device packs it.
+
+    ⚠ THE PACKING IS PAGE-ORDERED, not row-ordered. `js_display_pack()`
+    (src/host/js_display.c) walks 8 pages of 128 columns; each byte holds 8
+    VERTICAL pixels, bit j = the row j down from the top of that page:
+
+        byte index = (y // 8) * 128 + x
+        bit        = (y % 8)          # LSB is the TOPMOST row of the page
+
+    Decode it row-wise by accident and you get a picture that looks like
+    plausible noise rather than an obvious error, so use `pixel()`.
+    """
+
+    counter: int
+    data: bytes
+
+    def pixel(self, x: int, y: int) -> int:
+        """1 if the pixel at (x, y) is lit. Origin is top-left."""
+        if not (0 <= x < DISPLAY_WIDTH and 0 <= y < DISPLAY_HEIGHT):
+            raise IndexError(f"({x}, {y}) is outside {DISPLAY_WIDTH}x{DISPLAY_HEIGHT}")
+        return (self.data[(y // 8) * DISPLAY_WIDTH + x] >> (y % 8)) & 1
+
+    def lit(self) -> int:
+        """How many pixels are on. 0 means a genuinely blank screen."""
+        return sum(bin(b).count("1") for b in self.data)
+
+    def is_blank(self) -> bool:
+        return self.lit() == 0
+
+    def to_ascii(self, on: str = "#", off: str = ".") -> str:
+        """The frame as 64 lines of 128 chars — for eyeballing in a terminal
+        and for putting in a failure message, where a hex dump says nothing."""
+        return "\n".join(
+            "".join(on if self.pixel(x, y) else off for x in range(DISPLAY_WIDTH))
+            for y in range(DISPLAY_HEIGHT)
+        )
+
+    def to_pbm(self) -> bytes:
+        """Portable bitmap, so a frame can be written to a file and opened."""
+        header = f"P1\n{DISPLAY_WIDTH} {DISPLAY_HEIGHT}\n".encode()
+        rows = [
+            " ".join(str(self.pixel(x, y)) for x in range(DISPLAY_WIDTH))
+            for y in range(DISPLAY_HEIGHT)
+        ]
+        return header + ("\n".join(rows) + "\n").encode()
+
+
 class SchwungBus:
     """Synchronous client for one schwung-testd instance.
 
@@ -215,21 +268,38 @@ class SchwungBus:
         """Return the daemon's identity string (e.g. 'schwung-testd 0.1.0')."""
         return self._request("PING")
 
-    def inject_midi(self, packet: bytes) -> None:
-        """Inject one 4-byte USB-MIDI packet into Move's MIDI_IN buffer.
+    def inject_midi(self, packet: bytes) -> str:
+        """Inject one 4-byte USB-MIDI packet at WHOEVER OWNS THE SURFACE.
 
         Packet format: [CIN+cable, status, data1, data2]. Cable nibble is
         the high nibble of byte 0; CIN the low nibble. Cable 0 = internal
         hardware (pads/buttons), cable 2 = external USB.
 
-        Delivery is frame-synchronous: the daemon writes the packet into the
-        /schwung-midi-inject ring and the shim drains it on the next SPI
-        frame. Sequence ordering across injects is the caller's job — use
-        :meth:`wait_frame` between injects that must land in distinct frames.
+        ⚠ There are two input routes and they do not meet. Move's firmware
+        reads a mailbox; a module that has taken over the surface is fed from
+        the raw hardware buffer. A packet on the wrong one is not an error and
+        not a drop — it simply arrives somewhere nobody is looking, which reads
+        exactly like "the gesture did nothing". So the daemon picks by what is
+        on screen. Returns "surface" or "move" saying which route was taken;
+        assert on it when a test's meaning depends on the answer.
+
+        Delivery is frame-synchronous: the shim drains on the next SPI frame.
+        Ordering across injects is the caller's job — use :meth:`wait_frame`
+        between injects that must land in distinct frames.
         """
         if len(packet) != 4:
             raise ValueError(f"INJECT_MIDI expects exactly 4 bytes, got {len(packet)}")
-        self._request("INJECT_MIDI " + packet.hex())
+        return self._request("INJECT_MIDI " + packet.hex())
+
+    def inject_midi_move(self, packet: bytes) -> None:
+        """Inject into MOVE's mailbox specifically, whatever is on screen.
+
+        For tests that mean Move itself — co-run, the native UI — where being
+        auto-routed to an overtake module would answer a different question.
+        """
+        if len(packet) != 4:
+            raise ValueError(f"INJECT_MIDI_MOVE expects exactly 4 bytes, got {len(packet)}")
+        self._request("INJECT_MIDI_MOVE " + packet.hex())
 
     def wait_frame(self, n: int = 1) -> WaitFrameResult:
         """Block until the shim has ticked at least N more SPI frames."""
@@ -265,6 +335,39 @@ class SchwungBus:
     # snapshot_step_leds() is intentionally absent: the daemon's
     # SNAPSHOT_STEP_LEDS reads a step-LED buffer added by a separate
     # shim feature not yet mainline. It returns with that feature.
+
+    def set_display_mirror(self, on: bool) -> None:
+        """Gate the shim's per-frame copy of the OLED into the live buffer.
+
+        OFF by default: it costs a memcpy per frame on the SPI thread. Turn it
+        on for the duration of a test and off afterwards.
+        """
+        self._request(f"SET_DISPLAY_MIRROR {1 if on else 0}")
+
+    def snapshot_display(self) -> "DisplayFrame":
+        """Return what is ON THE OLED right now: 128x64, 1 bit per pixel.
+
+        This is a live read of the final composited frame the shim maintains
+        for the remote viewer — not an off-device re-render. It is therefore
+        the only instrument here that can answer "is this screen actually
+        reachable", which a green test suite never can.
+
+        Raises if the display mirror is off rather than returning a blank
+        frame: all-zero bytes render as an empty screen and read as "the
+        module drew nothing", which is a false finding, not a missing one.
+        """
+        line = self._request("SNAPSHOT_DISPLAY")
+        head, _, hexpart = line.partition(" ")
+        if not head.startswith("counter="):
+            raise SchwungBusError(f"bad SNAPSHOT_DISPLAY reply: {line!r}")
+        try:
+            counter = int(head[len("counter="):])
+            data = bytes.fromhex(hexpart)
+        except ValueError as e:
+            raise SchwungBusError(f"bad SNAPSHOT_DISPLAY payload: {line!r}") from e
+        if len(data) != 1024:
+            raise SchwungBusError(f"expected 1024 display bytes, got {len(data)}")
+        return DisplayFrame(counter=counter, data=data)
 
     # ----- stream subscriptions -----------------------------------
 
