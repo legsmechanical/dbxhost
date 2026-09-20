@@ -35,7 +35,8 @@ import { nowMs } from './ui_clock.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
 import { showActionPopup, hostIdentity, resolveSetLoadDecision } from './ui_persistence.mjs';
-import { checkProjectOpened, projectOpenFailedMidi } from './ui_dialogs.mjs';
+import { checkProjectOpened, projectOpenFailedMidi,
+         projectListFailedMidi } from './ui_dialogs.mjs';
 import { automationParamTouch, automationClearKey, automationToggleActive,
          automationRegisterSeqApply, automationRegisterMacApply } from './ui_automation.mjs';
 import { snapMorphApply } from './ui_snapmorph.mjs';
@@ -524,6 +525,11 @@ function _onMidiInternalImpl(data) {
     /* PROJECT DID NOT OPEN is fully modal: nothing else may act while dAVEBOx
      * holds something Move does not. */
     if (S.projectOpenFailed && projectOpenFailedMidi(data)) return;
+
+    /* NO PROJECT LIST is modal for the same reason: there is no project, no
+     * picker and nothing loaded, so every control below it would act on an
+     * empty instance. */
+    if (S.projectListFailed && projectListFailedMidi(data)) return;
 
     /* Project-rename keyboard (picker menu -> Rename) is fully modal and
      * reads raw messages — same contract as sound mode's preset-name

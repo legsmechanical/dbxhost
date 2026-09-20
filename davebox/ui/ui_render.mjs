@@ -43,6 +43,7 @@ import {
     drawBakeSceneConfirm, drawXposeConfirm,
     drawProjectPadPicker,
     drawProjectOpenFailed,
+    drawProjectListFailed,
 } from './ui_dialogs.mjs';
 import { isBooleanPair } from './ui_cells.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
@@ -1425,6 +1426,10 @@ function drawBankLatchBox() {
 export function drawUI() {
     /* PROJECT DID NOT OPEN blocks everything — no body, no overlay, no card. */
     if (S.projectOpenFailed) { drawProjectOpenFailed(); return; }
+    /* NO PROJECT LIST blocks the same way, and sits ABOVE the LOADING screen
+     * below: while awaiting a selection with no picker, drawUIBody would print
+     * "Loading" forever over a session that is not loading anything. */
+    if (S.projectListFailed) { drawProjectListFailed(); return; }
     drawUIBody();
     drawBankLatchBox();
     drawTrackVolCard();

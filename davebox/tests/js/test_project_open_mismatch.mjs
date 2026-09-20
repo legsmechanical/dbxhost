@@ -60,9 +60,16 @@ const PROJECTS_JSON = JSON.stringify({ current: 31, projects: [
     { uuid: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'Project 1', index: 0, color: 1 },
     { uuid: 'bbbbbbbb-0000-4000-8000-000000000031', name: 'Project 32', index: 31, color: 2 },
 ]});
+/* ⭑ THE LIST CAN FAIL. project-cmd can be missing, refused by the host's
+ * command allowlist, or write nothing readable — on the device all three look
+ * identical from here: `list` returns and projects.json is not there. */
+let listFails = false;
 globalThis.host_system_cmd = (c) => {
     sysCmds.push(String(c));
-    if (/project-cmd\.sh list$/.test(String(c))) files.set('/data/UserData/dbx-host/projects.json', PROJECTS_JSON);
+    if (/project-cmd\.sh list$/.test(String(c))) {
+        if (listFails) files.delete('/data/UserData/dbx-host/projects.json');
+        else files.set('/data/UserData/dbx-host/projects.json', PROJECTS_JSON);
+    }
     return 0;
 };
 
@@ -228,6 +235,10 @@ function boot(activeUuid, activeName) {
     S.pendingProjectRelaunch = null; S.pendingProjectSwitch = null;
     S.pendingSetLoad = false; S.pendingDspSync = 0; S.stateLoading = false;
     S.awaitingProjectSelect = false; S.confirmStateWipe = false;
+    /* ⚠ A test that QUIT leaves the session mid-teardown: exitFarewell freezes
+     * every later tick stage, so without this the next boot's picker never
+     * opens and the failure lands on a step that did nothing wrong. */
+    S.pendingExitAfterSave = false; S.exitFarewell = 0; S.pendingHideAfterSave = false;
     globalThis.init();
     S.ledInitComplete = true;
     ticks(20);
@@ -379,6 +390,106 @@ step('⭑ control: no project loaded -> the verdict locks IMMEDIATELY, with no s
     if (events.indexOf('awaiting_select=1') < 0) throw new Error('the session did not lock: ' + JSON.stringify(events));
     const stray = writes.filter((w) => w.indexOf('seq8') >= 0);
     if (stray.length) throw new Error('state written with no project open: ' + stray.join(', '));
+});
+
+/* 1d. ⭐⭐ DBX-114 RULING ③: A LIST THAT CANNOT BE READ FAILS CLOSED.
+ *
+ *     _pppFailOpen was the last place in the module where a project opened
+ *     WITHOUT a pick: if the list could not be read at session start it loaded
+ *     whatever the session booted into, on the reasoning that a degraded
+ *     session beats an unusable one. It did that at the one moment we know
+ *     least — the list we would have checked against is the thing that just
+ *     failed — and it did it behind a popup that is gone by the time anyone
+ *     looks up. Now: a NO PROJECT LIST card with Retry / Quit, and nothing
+ *     loads on its own.
+ *
+ *     ⚠ Nothing pinned the old behaviour, which is why it survived three
+ *     design passes. These steps assert on the SCREEN and on state_load — the
+ *     one event that means a project was opened — not on the popup. */
+function bootAwaiting(noList) {
+    listFails = !!noList;
+    boot(null, '');
+    /* A FRESH DSP instance arms awaiting_select itself (seq8.c create_instance)
+     * — that is what select-before-load IS, and without it here the session
+     * believes a project is live and the fail-closed path never applies. */
+    dsp.awaiting = 1;
+    S.projectListFailed = null;
+    S._pppFaultCount = 0;
+    stateLoads.length = 0;
+    globalThis.init();
+    S.ledInitComplete = true;
+    ticks(40);
+}
+const bootAwaitingNoList = () => bootAwaiting(true);
+step('⭐⭐ no list at session start -> the NO PROJECT LIST card, and NOTHING loaded', () => {
+    bootAwaitingNoList();
+    if (!S.awaitingProjectSelect) throw new Error('precondition: the session is not awaiting a selection');
+    if (!S.projectListFailed) throw new Error('no card raised: ' + frame());
+    if (S.projectPadPicker) throw new Error('a picker opened with no list');
+    if (stateLoads.length) throw new Error('a project was LOADED without a pick: ' + JSON.stringify(stateLoads));
+    const f = frame().toUpperCase();
+    if (f.indexOf('NO PROJECT LIST') < 0) throw new Error('the card is not on the OLED: ' + frame());
+    if (f.indexOf('RETRY') < 0 || f.indexOf('QUIT') < 0) throw new Error('both answers must be offered: ' + frame());
+});
+step('⭐ ...and it STAYS — the watchdog does not re-arm an open behind it', () => {
+    /* The re-arm watchdog fires on "awaiting with no picker", which is exactly
+     * this state. Without a stand-down it would open, fault, fail closed and
+     * re-arm again, once a tick, forever. */
+    const armed = [];
+    ticks(400);
+    if (!S.projectListFailed) throw new Error('the card went away on its own');
+    if (S.projectPadPicker) throw new Error('the watchdog opened a picker behind the card');
+    if (stateLoads.length) throw new Error('something loaded while the card was up: ' + JSON.stringify(stateLoads));
+});
+step('⭐ Retry: the list is back -> the picker opens and the card goes', () => {
+    bootAwaitingNoList();
+    listFails = false;
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    ticks(4);
+    if (S.projectListFailed) throw new Error('the card survived a successful retry');
+    if (!S.projectPadPicker) throw new Error('the picker did not open on retry');
+    if (stateLoads.length) throw new Error('retry LOADED a project instead of opening the picker');
+});
+step('⭐ Retry: still no list -> a fresh card, not a blank screen', () => {
+    bootAwaitingNoList();
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    ticks(4);
+    if (!S.projectListFailed) throw new Error('a failed retry left nothing on screen: ' + frame());
+    if (frame().toUpperCase().indexOf('NO PROJECT LIST') < 0) throw new Error('screen: ' + frame());
+    if (stateLoads.length) throw new Error('a failed retry loaded something');
+});
+step('⭐ Quit: leaves the session, and still loads nothing', () => {
+    bootAwaitingNoList();
+    S.pendingExitAfterSave = false;
+    cc(JOG_TURN, 1);                       /* Retry -> Quit */
+    if (S.projectListFailed.sel !== 1) throw new Error('the jog did not move to Quit');
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    if (!S.pendingExitAfterSave) throw new Error('Quit did not arm the exit');
+    if (stateLoads.length) throw new Error('Quit loaded a project on the way out');
+});
+step('⚠ control: the SAME boot WITH a list opens the picker and raises no card', () => {
+    /* Without this the steps above would pass against a rig where the picker
+     * can never open at all, which would make "fails closed" meaningless. */
+    bootAwaiting(false);
+    if (!S.awaitingProjectSelect) throw new Error('control: the rig cannot even reach select-before-load');
+    if (S.projectListFailed) throw new Error('a card was raised with a perfectly good list');
+    if (!S.projectPadPicker) throw new Error('control: the picker does not open even with a list — the rig proves nothing');
+});
+step('⚠ control: mid-session, a failed list is a POPUP, not a modal card', () => {
+    /* Fail-closed is for the boot dead end. With a project loaded there is no
+     * dead end to rescue anyone from, and a modal over working music would be
+     * worse than the thing it reports. */
+    listFails = false;
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    if (S.awaitingProjectSelect) throw new Error('precondition: still awaiting, this is not a live session');
+    S.projectListFailed = null; S.projectPadPicker = null; S.pendingOpenProjectPicker = false;
+    listFails = true;
+    dialogs.openProjectPadPicker();
+    if (S.projectListFailed) throw new Error('a live session was taken over by the card');
+    if (S.projectPadPicker) throw new Error('a picker opened with no list');
+    listFails = false;
 });
 
 /* 2. Unknown is not default. */
