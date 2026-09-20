@@ -863,6 +863,11 @@ export function _tickImpl() {
             const _aw = host_module_get_param('awaiting_select');
             const _awUnknown = (_aw === null || _aw === undefined || _aw === '');
             S.awaitingProjectSelect = _awUnknown ? false : (parseInt(_aw, 10) === 1);
+            /* The request is SPENT once a project is live: this is the site that
+             * proves the load landed, so it is where the asking ends. Leaving it
+             * set would let a later Retry re-issue a request about a project we
+             * are no longer trying to open. */
+            if (!S.awaitingProjectSelect) S.requestedSet = null;
             /* The handoff LANDED — this is the site that proves it, because it
              * is where the DSP's own readback says a project is live. Close the
              * window here rather than on resume: a resume can also arrive with
