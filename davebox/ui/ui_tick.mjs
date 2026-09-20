@@ -590,10 +590,28 @@ export function _tickImpl() {
         /* Sysex suppression needs no re-assert here: the host reset its
          * applied-claims snapshot on suspend, so the first reconcile after
          * resume re-derives the full declared set. */
-        /* Check if the active set changed while we were parked. */
+        /* Check if the active set changed while we were parked.
+         *
+         * ⚠⚠ SELECT-BEFORE-LOAD OUTRANKS THIS. While the session is awaiting a
+         * pick the DSP holds no set, so `_dspUuid` is ALWAYS empty and the
+         * mismatch below is true for ANY open identity the host happens to be
+         * holding — typically the project the LAST session was in, which
+         * `active_set.txt` still names. This edge would then load it, with no
+         * pick, while the picker is on screen asking the user to choose.
+         *
+         * That is the last unguarded "loads without a pick" path in the module
+         * (its two siblings went on 2026-09-20: the boot capability probe and
+         * _pppFailOpen's silent load). It is also the only route still standing
+         * to a report Josh made on hardware 2026-09-16 — a relaunch auto-opening
+         * the previous project behind the picker, which offered Resume for a
+         * project he had only SELECTED. The gesture he used to get here (Back
+         * out of the picker to suspend) no longer exists, so this is not
+         * reachable by a user gesture today; a HOST-initiated park (co-run, Move
+         * taking over) still reaches it. Guarded rather than argued about. */
         const _id = hostIdentity();
         const _dspUuid = (host_module_get_param('state_uuid') || '');
-        if (_id.state === 'open' && _id.uuid && _dspUuid !== _id.uuid) {
+        if (!S.awaitingProjectSelect &&
+                _id.state === 'open' && _id.uuid && _dspUuid !== _id.uuid) {
             S.currentSetUuid = _id.uuid;
             S.currentSetName = _id.name;
             S.pendingSetLoad = true;

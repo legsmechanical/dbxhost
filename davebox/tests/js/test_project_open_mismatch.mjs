@@ -500,6 +500,65 @@ step('⚠ control: mid-session, a failed list is a POPUP, not a modal card', () 
     listFails = false;
 });
 
+/* 1e. ⭐⭐ A RESUME MUST NOT LOAD WHAT NOBODY PICKED.
+ *
+ *     The resume edge re-checks whether the active set changed while the module
+ *     was parked, and reloads if the DSP's uuid disagrees with the host's. While
+ *     AWAITING a pick the DSP holds no set, so its uuid is always empty and that
+ *     disagreement is true for ANY open identity — typically the project the
+ *     last session was in, which active_set.txt still names. Unguarded, a
+ *     suspend/resume while the picker is up loads that project with no pick.
+ *
+ *     Josh met the shape of this on hardware 2026-09-16: a relaunch auto-opened
+ *     the previous project behind the picker, which then offered Resume for a
+ *     project he had only SELECTED — *"i never loaded a project. just selected
+ *     it"*. The suspend door he used is gone, but a host-initiated park still
+ *     reaches this edge, so it is guarded rather than reasoned away.
+ *
+ *     The test performs the real thing: the host swaps clear_screen for a no-op
+ *     while parked (that IS the suspend signal ui_tick reads), ticks, swaps it
+ *     back, ticks. No source pin — those cannot tell a guard from a comment. */
+function suspendAndResume() {
+    const cs = globalThis.clear_screen;
+    globalThis.clear_screen = () => {};
+    ticks(6);
+    globalThis.clear_screen = cs;
+    ticks(6);
+}
+
+step('⭐⭐ suspend + resume while AWAITING loads nothing, even with a set open underneath', () => {
+    bootFresh(X, 'Project 32');
+    ticks(4);
+    if (!S.awaitingProjectSelect) throw new Error('precondition: not awaiting a pick');
+    /* The host is holding the LAST session's project — exactly what
+     * active_set.txt names at a relaunch. Nobody has picked it. */
+    publish('open', '', X, 'Project 32', 31);
+    ticks(4);
+    stateLoads.length = 0;
+    suspendAndResume();
+    if (stateLoads.length)
+        throw new Error('a resume loaded a project nobody picked: ' + JSON.stringify(stateLoads));
+    if (S.pendingSetLoad) throw new Error('a resume ARMED a load nobody asked for');
+    if (S.currentSetUuid) throw new Error('a resume adopted an identity with no pick: ' + S.currentSetUuid);
+    if (!S.awaitingProjectSelect) throw new Error('select-before-load was abandoned by a resume');
+});
+step('⚠ control: the same resume in a LOADED session still reloads a CHANGED set', () => {
+    /* The guard must not cost the thing this edge exists for. With a project
+     * loaded, a set that changed while parked must still be picked up — without
+     * this control the step above passes just as well against an edge that was
+     * simply deleted. */
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    if (S.awaitingProjectSelect) throw new Error('precondition: still awaiting, this is not a live session');
+    dsp.uuid = P;
+    publish('open', '', X, 'Project 32', 31);      /* the set changed while parked */
+    stateLoads.length = 0; S.pendingSetLoad = false;
+    suspendAndResume();
+    if (!S.pendingSetLoad && !stateLoads.length)
+        throw new Error('the resume edge no longer reloads a changed set — the guard went too far');
+});
+
 /* 2. Unknown is not default. */
 step('file absent (unknown) -> no screen', () => {
     boot(P, 'Project 1');
