@@ -111,6 +111,11 @@ static int wire_shm(daemon_shm_t *out) {
      * for the rationale + race window. */
     if (map_shm_rw(SHM_SHADOW_PARAM, sizeof(shadow_param_t),
                    (void **)&out->param) < 0) return -1;
+    /* The live display mirror, read-only: the daemon only ever reads the
+     * frame. Turning the mirror ON is a write to shadow_control, which is
+     * already mapped RW above — see SET_DISPLAY_MIRROR. */
+    if (map_shm_ro(SHM_DISPLAY_LIVE, DISPLAY_BUFFER_SIZE,
+                   (void **)&out->display_live) < 0) return -1;
     return 0;
 }
 

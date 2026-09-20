@@ -170,6 +170,54 @@ static int cmd_snapshot_pad_leds(int fd, const char *args) {
     return protocol_reply(fd, line);
 }
 
+/* SNAPSHOT_DISPLAY — the OLED itself, 1024 bytes of 128x64 1bpp, hex.
+ *
+ * ⚠⚠ THE WHOLE VALUE OF THIS COMMAND IS THAT IT CANNOT LIE. A test that
+ * asserts on wiring can pass while the screen it claims to check is
+ * unreachable; this is the one instrument that answers "what is ON the
+ * device". So it must never hand back a frame that merely LOOKS like data:
+ *
+ *   - mirror OFF  -> the buffer is whatever was last left there, or zeros.
+ *     Zeros render as a blank screen, which reads as "the module drew
+ *     nothing" — a false finding, and exactly the kind that costs a day.
+ *     We refuse instead, and name the command that fixes it.
+ *   - fresh?      -> we return the shim's frame counter with the frame, so a
+ *     caller can prove the picture advanced rather than trusting a repeat.
+ *
+ * Response: `OK counter=<n> <2048 hex chars>` (fits TESTD_LINE_MAX 4096). */
+static int cmd_snapshot_display(int fd, const char *args) {
+    if (args && *args) return protocol_reply_err(fd, "SNAPSHOT_DISPLAY takes no args");
+    if (!g_shm.display_live) return protocol_reply_err(fd, "SNAPSHOT_DISPLAY: display SHM not mapped");
+    if (!g_shm.control->display_mirror) {
+        return protocol_reply_err(fd,
+            "SNAPSHOT_DISPLAY: display mirror is OFF — the buffer would be stale or "
+            "blank, which reads as an empty screen. Enable it with SET_DISPLAY_MIRROR 1 "
+            "(then WAIT_FRAME) and the next snapshot is live.");
+    }
+    uint8_t copy[DISPLAY_BUFFER_SIZE];
+    memcpy(copy, g_shm.display_live, DISPLAY_BUFFER_SIZE);
+    unsigned counter = (unsigned)g_shm.control->shim_counter;
+    static char hex[DISPLAY_BUFFER_SIZE * 2 + 1];
+    protocol_format_hex(copy, DISPLAY_BUFFER_SIZE, hex);
+    static char line[TESTD_LINE_MAX];
+    snprintf(line, sizeof(line), "OK counter=%u %s", counter, hex);
+    return protocol_reply(fd, line);
+}
+
+/* SET_DISPLAY_MIRROR 0|1 — gate the shim's per-frame copy into the live
+ * buffer. It is OFF by default because it costs a memcpy per frame on the SPI
+ * thread; a test turns it on for the duration and back off after. Explicit
+ * rather than auto-enabled inside SNAPSHOT_DISPLAY: a command that silently
+ * changes device state is how a measurement ends up describing a machine that
+ * only exists while it is being measured. */
+static int cmd_set_display_mirror(int fd, const char *args) {
+    if (!args || !*args) return protocol_reply_err(fd, "SET_DISPLAY_MIRROR needs 0 or 1");
+    if (strcmp(args, "0") != 0 && strcmp(args, "1") != 0)
+        return protocol_reply_err(fd, "SET_DISPLAY_MIRROR takes exactly 0 or 1");
+    g_shm.control->display_mirror = (uint8_t)(args[0] == '1');
+    return protocol_reply(fd, "OK");
+}
+
 /* SNAPSHOT_STEP_LEDS deferred: it reads shadow_overlay_state_t.step_led_colors,
  * a field added by the separate "step LED visibility" shim feature that is not
  * in mainline yet. It returns with that feature + its tests in a follow-up PR. */
@@ -790,6 +838,8 @@ static const command_entry_t g_commands[] = {
     {"INJECT_MIDI",       cmd_inject_midi},
     {"WAIT_FRAME",        cmd_wait_frame},
     {"SNAPSHOT_PAD_LEDS", cmd_snapshot_pad_leds},
+    {"SNAPSHOT_DISPLAY",  cmd_snapshot_display},
+    {"SET_DISPLAY_MIRROR", cmd_set_display_mirror},
     {"STATE",             cmd_state},
     {"RESTART_MOVE",      cmd_restart_move},
     {"SET_OPEN_TOOL",     cmd_set_open_tool},
