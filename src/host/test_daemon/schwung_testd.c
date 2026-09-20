@@ -116,6 +116,11 @@ static int wire_shm(daemon_shm_t *out) {
      * already mapped RW above — see SET_DISPLAY_MIRROR. */
     if (map_shm_ro(SHM_DISPLAY_LIVE, DISPLAY_BUFFER_SIZE,
                    (void **)&out->display_live) < 0) return -1;
+    /* The surface-input ring. The shim creates and initializes it, so a failure
+     * here means an older shim — fatal rather than silent, or INJECT_MIDI would
+     * quietly go back to being invisible to the module on screen. */
+    if (map_shm_rw(SHM_TEST_INJECT_UI, sizeof(shadow_midi_inject_t),
+                   (void **)&out->inject_ui) < 0) return -1;
     return 0;
 }
 

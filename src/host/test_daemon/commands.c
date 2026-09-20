@@ -105,13 +105,34 @@ static int cmd_ping(int fd, const char *args) {
     return protocol_reply(fd, "OK schwung-testd " TESTD_VERSION);
 }
 
-static int cmd_inject_midi(int fd, const char *args) {
+/* INJECT_MIDI — deliver one packet to WHOEVER OWNS THE SURFACE.
+ *
+ * ⚠⚠ THERE ARE TWO INPUT ROUTES AND THEY DO NOT MEET. `/schwung-midi-inject`
+ * is drained into MOVE'S MAILBOX for the firmware to read. A module that has
+ * taken over the surface is fed from the raw HARDWARE buffer instead, so a
+ * packet on that ring reaches Move and is INVISIBLE to the module on screen —
+ * measured here 2026-09-20: a project-picker pad tap moved none of the 32 pad
+ * LEDs, which reads exactly like "the gesture did nothing" rather than "the
+ * gesture went somewhere else".
+ *
+ * So the routing is decided by who is on screen, not by the caller: in
+ * overtake mode the packet goes on the test bus's own surface ring, which the
+ * shim replays onto the route a hardware press takes. INJECT_MIDI_MOVE forces
+ * the mailbox route for tests that mean Move itself (co-run, native UI). */
+static int cmd_inject_midi_to(int fd, const char *args, int force_move) {
     if (!args || strlen(args) != 8) {
         return protocol_reply_err(fd, "INJECT_MIDI expects 8 hex chars (1 USB-MIDI packet)");
     }
     uint8_t pkt[4];
     if (protocol_parse_hex(args, 8, pkt) < 0) {
         return protocol_reply_err(fd, "INJECT_MIDI: bad hex");
+    }
+
+    if (!force_move && g_shm.control->overtake_mode && g_shm.inject_ui) {
+        int rc_ui = shadow_midi_inject_push(g_shm.inject_ui, pkt);
+        if (rc_ui == -1) return protocol_reply_err(fd, "INJECT_MIDI: surface ring full (shim not draining?)");
+        if (rc_ui == -2) return protocol_reply_err(fd, "INJECT_MIDI: prior producer stranded, packet not committed");
+        return protocol_reply(fd, "OK surface");
     }
 
     /* All four producers (shim, shadow_ui, shadow_chain forwarder, this
@@ -124,7 +145,15 @@ static int cmd_inject_midi(int fd, const char *args) {
     if (rc == -2) {
         return protocol_reply_err(fd, "INJECT_MIDI: prior producer stranded, packet not committed");
     }
-    return protocol_reply(fd, "OK");
+    return protocol_reply(fd, "OK move");
+}
+
+static int cmd_inject_midi(int fd, const char *args) {
+    return cmd_inject_midi_to(fd, args, 0);
+}
+
+static int cmd_inject_midi_move(int fd, const char *args) {
+    return cmd_inject_midi_to(fd, args, 1);
 }
 
 static int cmd_wait_frame(int fd, const char *args) {
@@ -836,6 +865,7 @@ typedef struct {
 static const command_entry_t g_commands[] = {
     {"PING",              cmd_ping},
     {"INJECT_MIDI",       cmd_inject_midi},
+    {"INJECT_MIDI_MOVE",  cmd_inject_midi_move},
     {"WAIT_FRAME",        cmd_wait_frame},
     {"SNAPSHOT_PAD_LEDS", cmd_snapshot_pad_leds},
     {"SNAPSHOT_DISPLAY",  cmd_snapshot_display},

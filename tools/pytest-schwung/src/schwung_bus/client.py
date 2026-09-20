@@ -268,21 +268,38 @@ class SchwungBus:
         """Return the daemon's identity string (e.g. 'schwung-testd 0.1.0')."""
         return self._request("PING")
 
-    def inject_midi(self, packet: bytes) -> None:
-        """Inject one 4-byte USB-MIDI packet into Move's MIDI_IN buffer.
+    def inject_midi(self, packet: bytes) -> str:
+        """Inject one 4-byte USB-MIDI packet at WHOEVER OWNS THE SURFACE.
 
         Packet format: [CIN+cable, status, data1, data2]. Cable nibble is
         the high nibble of byte 0; CIN the low nibble. Cable 0 = internal
         hardware (pads/buttons), cable 2 = external USB.
 
-        Delivery is frame-synchronous: the daemon writes the packet into the
-        /schwung-midi-inject ring and the shim drains it on the next SPI
-        frame. Sequence ordering across injects is the caller's job — use
-        :meth:`wait_frame` between injects that must land in distinct frames.
+        ⚠ There are two input routes and they do not meet. Move's firmware
+        reads a mailbox; a module that has taken over the surface is fed from
+        the raw hardware buffer. A packet on the wrong one is not an error and
+        not a drop — it simply arrives somewhere nobody is looking, which reads
+        exactly like "the gesture did nothing". So the daemon picks by what is
+        on screen. Returns "surface" or "move" saying which route was taken;
+        assert on it when a test's meaning depends on the answer.
+
+        Delivery is frame-synchronous: the shim drains on the next SPI frame.
+        Ordering across injects is the caller's job — use :meth:`wait_frame`
+        between injects that must land in distinct frames.
         """
         if len(packet) != 4:
             raise ValueError(f"INJECT_MIDI expects exactly 4 bytes, got {len(packet)}")
-        self._request("INJECT_MIDI " + packet.hex())
+        return self._request("INJECT_MIDI " + packet.hex())
+
+    def inject_midi_move(self, packet: bytes) -> None:
+        """Inject into MOVE's mailbox specifically, whatever is on screen.
+
+        For tests that mean Move itself — co-run, the native UI — where being
+        auto-routed to an overtake module would answer a different question.
+        """
+        if len(packet) != 4:
+            raise ValueError(f"INJECT_MIDI_MOVE expects exactly 4 bytes, got {len(packet)}")
+        self._request("INJECT_MIDI_MOVE " + packet.hex())
 
     def wait_frame(self, n: int = 1) -> WaitFrameResult:
         """Block until the shim has ticked at least N more SPI frames."""

@@ -34,6 +34,10 @@
 #define SHM_SHADOW_SCREENREADER SCHWUNG_SHM_PREFIX "screenreader" /* Screen reader announcements */
 #define SHM_SHADOW_OVERLAY SCHWUNG_SHM_PREFIX "overlay"  /* Overlay state (sampler/skipback) */
 #define SHM_TEST_STREAM_MIDI_OUT SCHWUNG_SHM_PREFIX "test-stream-midi-out" /* Shim → schwung-testd MIDI_OUT events (E2E test bus, dev-only) */
+/* schwung-testd → shim SURFACE input (E2E test bus, dev-only). The opposite
+ * direction to the stream above, and a SEPARATE ring from SHM_SHADOW_MIDI_INJECT
+ * on purpose — see the drain in schwung_shim.c's overtake scan. */
+#define SHM_TEST_INJECT_UI SCHWUNG_SHM_PREFIX "test-inject-ui"
 #define SHM_DISPLAY_LIVE SCHWUNG_SHM_PREFIX "display-live"    /* Live display for remote viewer */
 #define SHM_SHADOW_PARAM_LANE SCHWUNG_SHM_PREFIX "param-lane"  /* shadow_ui → shim fire-and-forget SET lane (shadow_param_lane.h) */
 #define SHM_WEB_PARAM_SET SCHWUNG_SHM_PREFIX "web-param-set"   /* Web UI → shim param set ring */

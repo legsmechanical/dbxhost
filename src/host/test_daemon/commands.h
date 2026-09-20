@@ -33,6 +33,10 @@ typedef struct daemon_shm {
      * off-device re-render — which is the only kind that can answer "is this
      * actually what the user is looking at". */
     const uint8_t           *display_live;
+    /* RW: our own surface-input ring, drained by the shim's overtake scan and
+     * replayed onto the route a hardware press takes. Separate from `inject`,
+     * which reaches Move's firmware but never an overtake module. */
+    shadow_midi_inject_t    *inject_ui;
 } daemon_shm_t;
 
 /* Wire SHM pointers into the command layer. Must be called before
