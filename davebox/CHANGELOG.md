@@ -29,6 +29,11 @@ the section into a versioned heading at release time.
   three pages a knob *is* a track.
 
 ### Changed (pending)
+- **A Conductor's Sound menu is just its type and its own settings.** It plays
+  nothing, so the FX slots, the mixer controls, the LFOs and the presets are all
+  gone from it — they were shaping a signal that isn't there. Whatever instrument
+  the track had is parked, not cleared, and comes back with all of it when you
+  choose an instrument again.
 - **Conductor is chosen in the Instrument picker now**, which is renamed
   **Instrument/Type**. It sits just after the Move instruments, and turning a
   Conductor back into an ordinary track is done from the same list — previously

@@ -3133,6 +3133,14 @@ function pushConfigRows(rows, t) {
     for (const c of cfg) rows.push({ kind: 'cfg', label: c.label, spec: c });
 }
 
+/* Is the screen showing a CONDUCTOR's own track? Conduct tracks emit nothing,
+ * so every row backed by the chain or the mixer is inert on one.
+ * ⚠ Not for a SESSION bus (Master/Send): those are not a track at all, and
+ * S.track is -1 there. */
+function conductorMenu() {
+    return !soundIsGlobal() && S.track >= 0 && GS.trackPadMode[S.track] === PMC;
+}
+
 function buildPickRows() {
     const rows = [];
     if (S.bus) {
@@ -3149,6 +3157,10 @@ function buildPickRows() {
              * they are entered from the session FX list, not from a track. */
             rows.push({ kind: 'trackto', label: INSTR_ROW_LABEL });
         }
+        /* ⭐ A CONDUCTOR HAS NO SOUND TO SHAPE — see conductorMenu(). Its bus is
+         * parked exactly as its chain is, so the effects and the mixer position
+         * below would all be backed by something that cannot be heard. */
+        if (!conductorMenu()) {
         for (const n of BUS_BLOCKS) {
             rows.push({ kind: 'block', comp: S.bus.prefix + 'fx' + n, label: 'FX ' + n });
         }
@@ -3158,6 +3170,7 @@ function buildPickRows() {
          * Master declares none; see the note on FX_BUSES. */
         for (const lv of (S.bus.levels || [])) {
             rows.push({ kind: 'buslevel', label: lv.label, spec: lv });
+        }
         }
         /* A Move TRACK's menu has the CONFIG door too (Josh, 2026-09-04): mode,
          * layout, transpose, velocity in — davebox-side settings that apply to
@@ -3171,10 +3184,21 @@ function buildPickRows() {
          * ⚠ Move buses only. A Master/Send bus is not a track, and although the
          * host does carry master-FX LFOs, no dAVEBOx screen has ever exposed
          * them — offering that here would be a separate feature, not this one. */
-        if (S.bus.kind === 'move') rows.push({ kind: 'settings', label: 'LFOs' });
+        if (S.bus.kind === 'move' && !conductorMenu()) rows.push({ kind: 'settings', label: 'LFOs' });
         if (S.bus.kind === 'move') pushConfigRows(rows, S.track);
     } else {
         rows.push({ kind: 'trackto', label: INSTR_ROW_LABEL });
+        /* ⭐⭐ A CONDUCTOR'S MENU IS ITS TYPE AND ITS OWN SETTINGS, nothing else
+         * (Josh, 2026-09-19: "conductor doesn't need fx slots or mixer
+         * controls"). It emits no notes, so there is no signal for a chain to
+         * process and no mixer position for it to occupy — the same reasoning
+         * that gives a MIDI track the same short screen, and it holds whatever
+         * route is PARKED behind the Conductor.
+         * ⚠ The LFOs and Presets rows go with them rather than being left
+         * stranded: both address the parked chain, so a preset that loads
+         * effects you cannot see would be worse than not offering it. They come
+         * back with the instrument. */
+        if (conductorMenu()) { pushConfigRows(rows, S.track); S.pickRows = rows; S.pickRow = 0; return; }
         /* An EXT-routed track (MIDI out, or playing another track's instrument)
          * has no chain and no bus, so it has no sound to show and no mixer
          * position to set — every other row here would be backed by nothing.

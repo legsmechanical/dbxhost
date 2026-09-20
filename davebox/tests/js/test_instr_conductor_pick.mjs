@@ -233,6 +233,37 @@ step('⭐⭐ the Mode row is GONE on a Conductor, and has two values elsewhere',
            'Mode reads ' + mode.opts.map(mode.fmt).join(','));
 });
 
+/* ⭐⭐ Josh, 2026-09-19: "conductor doesn't need fx slots or mixer controls." */
+step('⭐⭐ a Conductor\'s menu is its TYPE and its own settings — no chain, no mixer', () => {
+    assert(S.trackPadMode[0] === PAD_MODE_CONDUCT, 'setup: track 0 is not a Conductor');
+    snd.soundExit(); S.activeTrack = 0; snd.soundEnter(0, 0); ticks(3);
+    snd.soundShowMenu(); ticks(2);
+    const k = snd.soundPickStateForTest().kinds;
+    assert(k[0] === 'trackto', 'the type row is not first: ' + k.join(','));
+    assert(!k.includes('block'), 'a Conductor shows FX slots: ' + k.join(','));
+    assert(!k.includes('buslevel'), 'a Conductor shows mixer controls: ' + k.join(','));
+    assert(!k.includes('settings'), 'a Conductor shows LFOs (they modulate a parked chain): ' + k.join(','));
+    assert(!k.includes('patches'), 'a Conductor shows Presets: ' + k.join(','));
+    assert(k.includes('cfg'), 'a Conductor lost its own settings: ' + k.join(','));
+    /* ⚠ Its own settings survive the trim. Not `transpose` — configRows already
+     * hides that one on a Conductor, which emits nothing to transpose — so this
+     * names a row a Conductor actually has. */
+    const cfg = snd.soundCfgRowsForTest();
+    assert(cfg.includes('layout') && cfg.includes('looper'),
+           'the config rows went with the chain rows: ' + cfg.join(','));
+    assert(!cfg.includes('mode'), 'the Mode row came back on a Conductor: ' + cfg.join(','));
+});
+
+step('⚠ CONTROL: an ordinary track still has its chain and mixer rows', () => {
+    snd.soundExit(); S.activeTrack = 1; snd.soundEnter(1, 1); ticks(3);
+    snd.soundShowMenu(); ticks(2);
+    const k = snd.soundPickStateForTest().kinds;
+    assert(k.includes('block') && k.includes('buslevel'),
+           'a normal track lost its chain rows: ' + k.join(','));
+    assert(k.includes('settings') && k.includes('patches'),
+           'a normal track lost LFOs/Presets: ' + k.join(','));
+});
+
 step('⭐ picking a GENERATOR on a Conductor converts it back to Keys', () => {
     assert(S.trackPadMode[0] === PAD_MODE_CONDUCT, 'setup: track 0 is not a Conductor');
     openPicker(0);
