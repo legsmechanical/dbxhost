@@ -122,4 +122,4 @@ DBX_OWNED_MODULE_DIRS="chain tools/davebox-sound"
 # (set_state left this list in Phase C of the state-co-location plan: per-set
 # state lives inside each project's set dir now, so no such root is created.
 # A leftover $DBX_DIR/set_state from an older build is inert.)
-DBX_PRIVATE_STATE="slot_state active_set.txt shadow_chain_config.json shadow_config.json"
+DBX_PRIVATE_STATE="slot_state active_set.txt intended_set.txt shadow_chain_config.json shadow_config.json"

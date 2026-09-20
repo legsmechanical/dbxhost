@@ -141,6 +141,111 @@ step('Rename opens the shared keyboard and its draw takes over', () => {
     dlg.drawProjectPadPicker();
     leds.updateSessionLEDs();                   // painter must yield, not crash
 });
+/* ⭐⭐ EVERY project-cmd CALL MUST NAME AN ALLOWED VERB FIRST.
+ *
+ * host_system_cmd refuses anything whose first word is not one of `sh cp mv
+ * mkdir rm ls test chmod tar` (js_host_system_cmd, shadow_ui.c), and prints
+ * the refusal to stderr, which nothing collects. Two calls put an environment
+ * assignment in front — `DBX_OPEN_UUID=... sh project-cmd ...` — so they were
+ * silently REJECTED and never ran. On hardware that was a rename that reported
+ * RENAME FAILED, and a delete of the open project that left the device frozen
+ * on DELETING / RESTARTING waiting for a teardown nobody had requested.
+ *
+ * Pinned at the command STRING, because it is the shape of the string that the
+ * host judges. A test that only checked "a command was issued" passes while
+ * the command is refused — which is exactly how this shipped. */
+const ALLOWED_VERBS = ['sh ', 'cp ', 'mv ', 'mkdir ', 'rm ', 'ls ', 'test ', 'chmod ', 'tar '];
+function issuedCommands(fn) {
+    const real = globalThis.host_system_cmd;
+    const seen = [];
+    globalThis.host_system_cmd = (c) => { seen.push(String(c)); return 0; };
+    try { fn(); } finally { globalThis.host_system_cmd = real; }
+    return seen;
+}
+
+step('⭐ every command the picker issues starts with a verb the host ALLOWS', () => {
+    const p = S.projectPadPicker;
+    p.restarting = null; p.deleteIdx = -1; p.copySrcIdx = -1;
+    p.menu = null; p.colorPick = null; p.confirmNew = null;
+    S.currentSetUuid = '';                 /* the boot picker: nothing loaded */
+    const cmds = [];
+    /* delete of the project the host says is open -> the env-prefixed call */
+    S.deleteHeld = true;
+    cmds.push(...issuedCommands(() => {
+        dlg.projectPadPickerTap(5);        /* arm  (pad 5 is `current`) */
+        dlg.projectPadPickerTap(5);        /* confirm */
+    }));
+    S.deleteHeld = false;
+    if (!cmds.length) throw new Error('precondition: the gesture issued no command at all');
+    for (const c of cmds) {
+        if (!ALLOWED_VERBS.some((v) => c.startsWith(v)))
+            throw new Error('command would be REFUSED by host_system_cmd: ' + c);
+    }
+});
+
+/* ⭐⭐ THE TWO DECIDERS. project-cmd decides for itself which project is open —
+ * on purpose, because one JS-side decider is the shape that caused the loss the
+ * identity work exists to fix. At the BOOT PICKER the two halves disagree by
+ * construction: dAVEBOx has nothing loaded, Move is still holding the set it
+ * had. The script then QUEUES the work and restarts, so nothing has changed on
+ * disk when this side looks.
+ *
+ * It used to guess again from that: a deferred rename reported RENAME FAILED,
+ * and a deferred delete reported PROJECT DELETED without re-reading anything.
+ * Both wrong in the word, and worse in the tail — the real rename/rm landed
+ * silently at the NEXT LAUNCH, which reads as the box acting on its own.
+ * (Josh, on hardware 2026-09-20: "just tried renaming project 1 and it gave me
+ * rename failed"; delete reproduced the same way.)
+ *
+ * The queue file is the script's own answer, so these drive the real gesture
+ * with a stubbed project-cmd that DEFERS, and assert we follow it. */
+function withDeferringScript(fn) {
+    const realCmd = globalThis.host_system_cmd;
+    const realRead = globalThis.host_read_file;
+    let queue = '';
+    globalThis.host_system_cmd = (c) => {
+        const s = String(c);
+        /* the script's deferral: queue the work, change nothing else */
+        if (/project-cmd\.sh (rename|delete)/.test(s)) queue += 'mv or rm queued\n';
+        return 0;
+    };
+    globalThis.host_read_file = (f) => {
+        const s = String(f);
+        if (s.endsWith('relaunch_patch.sh')) return queue;
+        return realRead(f);
+    };
+    try { return fn(); }
+    finally { globalThis.host_system_cmd = realCmd; globalThis.host_read_file = realRead; }
+}
+
+step('⭐ a DEFERRED delete is not a completed one', () => {
+    const p = S.projectPadPicker;
+    p.restarting = null; p.menu = null; p.colorPick = null; p.confirmNew = null;
+    p.deleteIdx = -1;
+    S.deleteHeld = true;
+    withDeferringScript(() => {
+        dlg.projectPadPickerTap(9);      /* arm on a project that is NOT loaded */
+        dlg.projectPadPickerTap(9);      /* confirm -> script defers */
+    });
+    S.deleteHeld = false;
+    if (p.restarting !== 'DELETING')
+        throw new Error('a deferred delete did not take the restarting path: ' + JSON.stringify(p.restarting));
+});
+
+step('⚠ CONTROL: a delete the script really performed still reads as done', () => {
+    const p = S.projectPadPicker;
+    p.restarting = null; p.deleteIdx = -1;
+    S.deleteHeld = true;
+    const realCmd = globalThis.host_system_cmd;
+    globalThis.host_system_cmd = () => 0;        /* no queue written = not deferred */
+    try {
+        dlg.projectPadPickerTap(9);
+        dlg.projectPadPickerTap(9);
+    } finally { globalThis.host_system_cmd = realCmd; S.deleteHeld = false; }
+    if (p.restarting === 'DELETING')
+        throw new Error('an immediate delete was reported as deferred — the check cries wolf');
+});
+
 step('restarting locks EVERY picker entry point (the teardown race)', () => {
     /* Rename-of-current sets p.restarting and then Move dies ~1-2 s later;
      * any gesture accepted in that window races the teardown — on hardware

@@ -395,6 +395,109 @@ step('control: without a verdict, loading a pre-existing pad still uses the sele
     if (selectArms.indexOf(31) < 0) throw new Error('select actuator not armed for a normal switch: ' + JSON.stringify(selectArms) + ' ' + JSON.stringify(sysCmds));
 });
 
+/* 5b. ⭐⭐ THE REQUEST. dAVEBOx authors `intended_set.txt` at the moment of the
+ *     pick — the one moment the answer is KNOWN rather than inferred, because
+ *     the picker is holding that project's record when the pad is pressed.
+ *     Both actuators carry only a pad INDEX onward.
+ *
+ *     Without it the host cannot tell "we asked for this project and got it"
+ *     from "a set was already open underneath": `have_request` stays 0 forever,
+ *     the machine takes its no-request branch for every load, and the `unopened`
+ *     verdict — the entire reason the PROJECT DID NOT OPEN screen exists — can
+ *     never be produced. It shipped that way: the consumer landed, the producer
+ *     was on a branch that was deleted, and nothing noticed because every
+ *     request-branch unit test passes against a branch that never runs.
+ *
+ *     Format is fixed by the reader (identity_read_and_consume_request,
+ *     src/host/shadow_set_pages.c): `uuid \n index \n name`. */
+const INTENDED = HOST_DIR + '/intended_set.txt';
+
+step('⭐⭐ the pick AUTHORS the request, and does it BEFORE the actuator fires', () => {
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    S.pendingOpenProjectPicker = false;
+    sysCmds.length = 0; selectArms.length = 0;
+    files.delete(INTENDED);                       /* the host unlinks as it arms */
+    /* Catch the file's contents AT THE MOMENT the actuator arms: a request
+     * written after the walk starts is a record about a load already underway. */
+    const armFn = globalThis.shadow_select_arm;
+    let atArm = null;
+    globalThis.shadow_select_arm = (k) => { atArm = files.get(INTENDED) || null; armFn(k); };
+    try {
+        S.projectPadPicker = null;
+        dialogs.openProjectPadPicker();
+        padTap(31);
+        ticks(2);
+        cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+        ticks(6);
+    } finally { globalThis.shadow_select_arm = armFn; }
+
+    if (selectArms.indexOf(31) < 0)
+        throw new Error('precondition: the actuator never armed, so the ordering proves nothing');
+    if (atArm === null)
+        throw new Error('the actuator armed with NO request on disk — the host cannot tell this load from a coincidence');
+    if (atArm !== X + '\n31\nProject 32\n')
+        throw new Error('request record is not `uuid \\n index \\n name`: ' + JSON.stringify(atArm));
+});
+
+step('⚠ CONTROL: the already-current pad asks for NOTHING', () => {
+    /* That path loads only OUR state — Move is already holding the set and
+     * confirmed it on its own. A request there would be a claim we never made,
+     * and it would be judged against a load nobody performed. */
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    S.pendingOpenProjectPicker = false;
+    files.delete(INTENDED);
+    S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    padTap(0);                                    /* pad 0 IS the current project */
+    ticks(2);
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    ticks(6);
+    if (files.has(INTENDED))
+        throw new Error('the current-pad shortcut wrote a request: ' + JSON.stringify(files.get(INTENDED)));
+});
+
+step('⭑ RETRY re-issues the SAME request (the verdict screen has no uuid of its own)', () => {
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    S.pendingOpenProjectPicker = false;
+    S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    padTap(31); ticks(2);
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);         /* Load pad 31 -> a request */
+    ticks(6);
+    if (!S.requestedSet || S.requestedSet.uuid !== X)
+        throw new Error('precondition: the pick did not record a request');
+    files.delete(INTENDED);                       /* the host consumed it */
+    /* ...and Move opened something else. */
+    hostPublish(X, 'Project 32', 31, 'default');
+    ticks(40);
+    if (!onScreen()) throw new Error('precondition: no verdict screen to retry from');
+    sysCmds.length = 0;
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);         /* Retry (sel 0) */
+    ticks(4);
+    if (!sysCmds.some((c) => /project-cmd\.sh switch 31$/.test(c)))
+        throw new Error('precondition: Retry did not fire the relaunch');
+    if (files.get(INTENDED) !== X + '\n31\nProject 32\n')
+        throw new Error('Retry relaunched WITHOUT re-issuing the request: ' + JSON.stringify(files.get(INTENDED)));
+});
+
+step('⭑ a live project SPENDS the request (a later Retry cannot re-issue a stale one)', () => {
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    S.requestedSet = { uuid: X, index: 31, name: 'Project 32' };
+    dsp.awaiting = 0;
+    S.pendingDspSync = 1;
+    ticks(6);
+    if (S.requestedSet !== null)
+        throw new Error('the request outlived the load it asked for');
+});
+
 /* 6. THE FRESH SESSION. Device, 2026-09-15, four identical tools-menu launches:
  *    the launcher armed fresh_session, so nothing was loaded and the picker was
  *    pending — and ~3 s in the host published the placeholder for the project
