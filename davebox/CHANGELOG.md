@@ -29,6 +29,11 @@ the section into a versioned heading at release time.
   three pages a knob *is* a track.
 
 ### Changed (pending)
+- **A track's settings are at the foot of its own Sound menu**, below a divider,
+  instead of behind a **Config** door — Mode, Layout, Transpose, VelIn, Looper,
+  AftTch and Parallel. Click a row to take the jog, turn to change it, click (or
+  Back) to let go. One less screen to walk into and out of, and the settings still
+  live in exactly one place.
 - **Holding Back no longer suspends.** Suspending to Move is now one deliberate
   place — **Settings menu → Suspend session** — rather than something a long
   press can do from anywhere. Going out to Move isn't part of using dAVEBOx; that

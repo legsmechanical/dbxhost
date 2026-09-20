@@ -71,11 +71,14 @@ const P = await import('../../ui/ui_parallel.mjs');
 
 function step(l, fn) { try { fn(); ok(l); } catch (e) { bad(l, e); } }
 function ticks(n) { for (let i = 0; i < n; i++) globalThis.tick(); }
+/* ⚠ The config rows are INLINE at the foot of the track's sound MENU since
+ * 2026-09-19 — there is no CONFIG door to open any more. Entering the menu IS
+ * how you reach them. */
 function configRowsFor(t) {
     sound.soundExit(); sound.soundEnter(t, t); ticks(2);
-    sound.soundQueueActionForTest({ t: 'slotcfg', which: 'config' });
+    sound.soundShowMenu();
     ticks(2);
-    return sound.soundSlotRowsForTest();
+    return sound.soundCfgRowsForTest();
 }
 function writesTo(slot) { return slotWrites.filter(w => w.slot === slot && w.key === 'slot:parallel').map(w => w.val); }
 
@@ -103,18 +106,18 @@ step('the Schwung track holding dexed shows a Parallel row reading On (seeded Of
     S.activeTrack = 0;
     const keys = configRowsFor(0);
     if (!keys.includes('parallel')) throw new Error('no row: ' + keys.join(','));
-    const row = sound.soundSlotRowForTest('parallel');
+    const row = sound.soundCfgRowForTest('parallel');
     if (row.get() !== 1) throw new Error('reads ' + row.get());
     /* seed a user preference so the flip below has an Off to leave */
     P.setModuleParallelDefault('dexed', 0);
     configRowsFor(0);
-    if (sound.soundSlotRowForTest('parallel').get() !== 0) throw new Error('seeded Off not read back');
+    if (sound.soundCfgRowForTest('parallel').get() !== 0) throw new Error('seeded Off not read back');
     if (row.fmt(0) !== 'Off' || row.fmt(1) !== 'On') throw new Error('fmt');
 });
 step('…the one holding nusaw reads On', () => {
     S.activeTrack = 1;
     configRowsFor(1);
-    if (sound.soundSlotRowForTest('parallel').get() !== 1) throw new Error('reads Off');
+    if (sound.soundCfgRowForTest('parallel').get() !== 1) throw new Error('reads Off');
 });
 step('CONTROL: a MIDI-routed track has no Parallel row', () => {
     S.activeTrack = 2;
@@ -131,7 +134,7 @@ step('CONTROL: a Schwung track with no instrument has no Parallel row', () => {
 step('flipping the row on track 0 (dexed) writes the pref and re-pins EVERY dexed slot, not the nusaw one', () => {
     S.activeTrack = 0;
     configRowsFor(0);
-    const row = sound.soundSlotRowForTest('parallel');
+    const row = sound.soundCfgRowForTest('parallel');
     slotWrites.length = 0;
     const v = sound.soundSlotCfgStepForTest(row, row.get(), +1);   /* Off -> On, the real step */
     if (v !== 1) throw new Error('stepped to ' + v);
@@ -144,7 +147,7 @@ step('flipping the row on track 0 (dexed) writes the pref and re-pins EVERY dexe
 });
 step('the row now reads On, and stepping past the end clamps (no wrap back to Off)', () => {
     configRowsFor(0);
-    const row = sound.soundSlotRowForTest('parallel');
+    const row = sound.soundCfgRowForTest('parallel');
     if (row.get() !== 1) throw new Error('reads ' + row.get());
     slotWrites.length = 0;
     const v = sound.soundSlotCfgStepForTest(row, 1, +1);

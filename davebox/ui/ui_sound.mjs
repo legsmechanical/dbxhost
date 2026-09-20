@@ -786,8 +786,13 @@ const S = {
      * Scroll previews, click commits. */
     instrEditing: false,
     instrSel: 0,
-    cfgWhich: 'sound',          /* which list the settings screen is showing */
     slotRows: [],               /* the active settings row set */
+    /* The track's own CONFIG rows now live INLINE at the foot of this menu
+     * (2026-09-19), so one of them can be taking the jog the way a bus level
+     * does. Preview/commit is only for `commitOnClick` rows — see cfgRowStep. */
+    cfgRowEditing: false,
+    cfgRowPreview: null,
+    cfgRowKey: null,            /* WHICH row the edit belongs to — see cfgRowLive */
     capFx34: false,
     capSends: false,
     /* The module-bus cache. Its resting state is UNRESOLVED, never "none" —
@@ -967,6 +972,29 @@ export function soundInflightForTest() { return S.inflight; }
  * a decision per route (a MIDI track has no Looper), and this is how a test
  * reads that decision without rendering. */
 export function soundSlotRowsForTest() { return S.slotRows.map(r => r.key); }
+/* The track's own CONFIG rows, which live INLINE at the foot of the sound menu
+ * since 2026-09-19 rather than behind a door. Keys in the order they appear. */
+export function soundCfgRowsForTest() {
+    return S.pickRows.filter(r => r.kind === 'cfg').map(r => r.spec.key);
+}
+/* The real spec for one of them, so a test steps what the menu steps. */
+export function soundCfgRowForTest(key) {
+    const r = S.pickRows.find(x => x.kind === 'cfg' && x.spec.key === key);
+    return r ? r.spec : null;
+}
+/* Whether a row is taking the jog, and what it is previewing. */
+export function soundCfgEditForTest() {
+    return { editing: !!S.cfgRowEditing, key: S.cfgRowKey, preview: S.cfgRowPreview };
+}
+/* The spec under the cursor, when the cursor is on a config row. Lets a test
+ * jog to a named row instead of assuming an index. */
+export function soundPickRowSpecForTest() {
+    const r = S.pickRows[S.pickRow];
+    return (r && r.kind === 'cfg') ? r.spec : null;
+}
+/* Park the cursor, for the stale-edit case: it has to be possible to move off a
+ * row WITHOUT the click that would close its edit. */
+export function soundPickRowSetForTest(i) { S.pickRow = i | 0; }
 /* The real row object, so a test can step the REAL spec through slotCfgStep. */
 export function soundSlotRowForTest(key) { return S.slotRows.find(r => r.key === key) || null; }
 /* The hosted canvas's ctx, for the read-shield behaviour test. Exposes the same
@@ -1224,7 +1252,12 @@ export function soundMenuForTest() {
  * satisfy both or quietly stop measuring anything. */
 export function soundPpEditorForTest() { return PP_EDITOR; }
 
+/* ⚠ No in-flight value edit survives (re)opening the menu. The flag is sound
+ * mode's own state, so leaving and coming back would otherwise arrive with the
+ * jog still bound to a row from the screen before — and the first jog would be
+ * eaten by an edit the user cannot see. */
 export function soundShowMenu() {
+    S.cfgRowEditing = false; S.cfgRowPreview = null; S.cfgRowKey = null;
     if (!S.active) return;
     /* The menu is SOUND + CONFIG's: asked for from the MACROS identity (the
      * Shift+Note gesture on a track resting there), the bank switches first
@@ -1447,8 +1480,10 @@ function followPlan(fromView, route) {
      * the same way the first would have. */
     if (isEditorish) return { editor: false, noEditor: false, fromEditor: true, then: { t: 'instrrow' } };
     if (v === VIEW_SLOTCFG) {
-        if (chain) return { editor: false, then: { t: 'slotcfg', which: S.cfgWhich } };
-        if (route === 2 && S.cfgWhich === 'config') return { editor: false, then: { t: 'slotcfg', which: 'config' } };
+        /* ⚠ Only the LFO list lives here now, and only a chain has LFOs — the
+         * MIDI-track clause that used to follow the CONFIG list onto the new
+         * track went with the door (the rows travel with the menu instead). */
+        if (chain) return { editor: false, then: { t: 'slotcfg', which: 'sound' } };
         return { editor: false, then: null };
     }
     if (v === VIEW_LFO || v === VIEW_LFO_TARGET || v === VIEW_LFO_PARAM)
@@ -1517,7 +1552,7 @@ export function noEditorWords(track) {
 
 /* Read-only, for tests: where a follow landed. */
 export function soundFollowStateForTest() {
-    return { view: S.view, cfgWhich: S.cfgWhich, lfoNum: S.lfoNum | 0,
+    return { view: S.view, lfoNum: S.lfoNum | 0,
              enumPick: S.enumPick ? S.enumPick.label : null };
 }
 
@@ -3067,6 +3102,26 @@ function pickStep(delta) {
     return S.pickRow;
 }
 
+/* ⭐ THE TRACK'S OWN SETTINGS, AT THE FOOT OF ITS MENU (Josh, 2026-09-19:
+ * "Move track “config” submenu items to the bottom of the menu itself with a
+ * divider between them and what's now the bottom of the list").
+ *
+ * They were behind a `Config` door. This dissolves the door: the rows land
+ * inline, below everything else, behind one rule. ⭑ Note what this is NOT — a
+ * SECOND home for these settings. The door is gone, so there is still exactly
+ * one place each of them lives, which is the rule the 08-13 pass established
+ * when they were pulled out of the global menu (see ui_menu.mjs).
+ *
+ * ⚠ configRows() is built PER CALL because which rows apply depends on the
+ * track's pad mode and route, and both change under this screen — so this must
+ * stay a call from buildPickRows, never a cached tail. */
+function pushConfigRows(rows, t) {
+    const cfg = configRows(t);
+    if (!cfg.length) return;
+    rows.push({ kind: 'div' });
+    for (const c of cfg) rows.push({ kind: 'cfg', label: c.label, spec: c });
+}
+
 function buildPickRows() {
     const rows = [];
     if (S.bus) {
@@ -3106,7 +3161,7 @@ function buildPickRows() {
          * host does carry master-FX LFOs, no dAVEBOx screen has ever exposed
          * them — offering that here would be a separate feature, not this one. */
         if (S.bus.kind === 'move') rows.push({ kind: 'settings', label: 'LFOs' });
-        if (S.bus.kind === 'move') rows.push({ kind: 'config', label: 'Config' });
+        if (S.bus.kind === 'move') pushConfigRows(rows, S.track);
     } else {
         rows.push({ kind: 'trackto', label: 'Instrument' });
         /* An EXT-routed track (MIDI out, or playing another track's instrument)
@@ -3126,7 +3181,7 @@ function buildPickRows() {
          * screen is its destination plus the CONFIG door, exactly as a Move
          * track's is. configRows itself decides which rows a MIDI track gets. */
         if (GS.trackRoute[S.track] === 2) {
-            rows.push({ kind: 'config', label: 'Config' });
+            pushConfigRows(rows, S.track);
             S.pickRows = rows; S.pickRow = 0; return;
         }
         /* ⭑ No Generator row (Josh, 2026-09-04): the INSTRUMENT row is the
@@ -3174,8 +3229,8 @@ function buildPickRows() {
         /* 'LFOs', not 'Sound Control' (Josh, 2026-09-04): the Knobs row moved
          * to the MACROS bank, so the LFOs are all that is behind this door. */
         rows.push({ kind: 'settings', label: 'LFOs' });
-        rows.push({ kind: 'config',   label: 'Config' });
         rows.push({ kind: 'patches',  label: 'Presets' });
+        pushConfigRows(rows, S.track);
     }
     /* ---- grouping rules, each on a row of its own ----
      *
@@ -3243,8 +3298,11 @@ function openSlotCfg(keepCursor, which) {
     /* One screen, two row sets. `which` is remembered so a return from a
      * sub-editor (Knobs, LFO) reopens the list it came from rather than
      * whichever was opened last. */
-    if (which) S.cfgWhich = which;
-    S.slotRows = S.cfgWhich === 'config' ? configRows(S.track) : SOUND_CONTROL;
+    /* ⚠ ONE row set since 2026-09-19. This screen used to host the track's
+     * CONFIG rows as well, chosen by `S.cfgWhich`; those are inline at the foot
+     * of the sound menu now (pushConfigRows), so `which` survives only as the
+     * argument callers still pass and there is nothing left to switch on. */
+    S.slotRows = SOUND_CONTROL;
     S.slotCfgVals = S.slotRows.map(s => {
         if (s.sub) return 0;            /* no stored param behind these rows */
         /* A row with `get` owns its own value (davebox state + the DSP); one
@@ -3265,6 +3323,40 @@ function openSlotCfg(keepCursor, which) {
  * chain slot's through queueSlotCfgWrite. Extracted from soundOnCC's jog branch
  * unchanged so a test can drive the REAL step: with it inline, reverting Volume
  * here to linear left the entire suite green, because nothing reached it. */
+/* One detent on an inline config row. Same clamping as the settings screen —
+ * literally the same function (cfgStepValue) — so the two cannot drift.
+ *
+ * ⚠ A COMMIT-ON-CLICK ROW ONLY PREVIEWS. `Mode` converts the track behind a
+ * confirm, so scrolling past a value must not apply it; the click commits. That
+ * rule came with the row and has to survive the move, or jogging through the
+ * list would convert tracks on the way past. */
+/* The row an in-flight edit belongs to, or null if it no longer exists.
+ *
+ * ⚠⚠ IDENTIFIED BY KEY, NOT BY CURSOR POSITION. This list is rebuilt under the
+ * cursor — `names` refreshes fire from solo changes and module loads, and which
+ * config rows exist depends on pad mode and route, so a rebuild can change the
+ * row COUNT. An edit remembered only as "row 11 is being edited" would then
+ * commit a Transpose preview into whatever row 11 had become. */
+function cfgRowLive() {
+    if (!S.cfgRowEditing) return null;
+    const r = S.pickRows[S.pickRow];
+    if (r && r.kind === 'cfg' && r.spec.key === S.cfgRowKey) return r;
+    S.cfgRowEditing = false; S.cfgRowPreview = null; S.cfgRowKey = null;
+    return null;
+}
+
+function cfgRowStep(delta) {
+    const r = cfgRowLive();
+    if (!r) return;
+    const spec = r.spec;
+    const cur = (S.cfgRowPreview !== null) ? S.cfgRowPreview : spec.get();
+    const v = cfgStepValue(spec, cur, delta);
+    if (v === cur) return;
+    if (spec.commitOnClick) { S.cfgRowPreview = v; S.dirty = true; return; }
+    spec.set(v);
+    S.dirty = true;
+}
+
 function busLevelStep(delta) {
     const r = S.pickRows[S.pickRow];
     if (!r || r.kind !== 'buslevel') return;
@@ -3309,14 +3401,14 @@ export function soundVolumeSpecsForTest() {
              bus: mb && mb.levels ? mb.levels.find(l => l.key === 'volume') : null };
 }
 
-function slotCfgStep(delta) {
-    const s = S.slotRows[S.slotCfgIdx];
-    if (!S.slotCfgEditing || !s || s.sub) {
-        S.slotCfgIdx = listMove(S.slotRows.length, S.slotCfgIdx, delta);
-        S.slotCfgEditing = false;
-        return;
-    }
-    let v;
+/* ONE DETENT on a settings row's value. Pure: the row spec and the current
+ * value in, the new value out.
+ *
+ * ⭑ Extracted 2026-09-19 because there are now TWO surfaces that step these
+ * rows — the settings screen and the sound menu's own inline config rows — and
+ * the clamping rules must not be able to differ between them. Everything here
+ * was previously inline in slotCfgStep. */
+export function cfgStepValue(s, cur, delta) {
     if (s.opts) {
         /* Enum: step the option list, CLAMPED at the ends. This used to wrap,
          * with a comment defending it for short closed sets — overridden by
@@ -3324,19 +3416,30 @@ function slotCfgStep(delta) {
          * their lists, everywhere, so a scroll can never overshoot onto the
          * opposite extreme. (An end is one detent away from anywhere in a
          * 3-option set; nothing is stranded.) */
-        const cur = s.opts.indexOf(S.slotCfgVals[S.slotCfgIdx]);
-        v = s.opts[Math.max(0, Math.min(s.opts.length - 1, cur + (delta > 0 ? 1 : -1)))];
-    } else {
-        /* ⭑ Volume steps on the FADER LAW, keeping its 40-step throw. */
-        if (s.fader) v = faderStep(S.slotCfgVals[S.slotCfgIdx], delta > 0 ? 1 : -1, s.max / s.step);
-        else {
-            v = S.slotCfgVals[S.slotCfgIdx] + (delta > 0 ? s.step : -s.step);
-            if (s.int) v = Math.round(v);
-            else v = Math.round(v * 1000) / 1000;  /* keep 0.05 steps from drifting */
-        }
-        if (v < s.min) v = s.min;
-        if (v > s.max) v = s.max;
+        const i = s.opts.indexOf(cur);
+        return s.opts[Math.max(0, Math.min(s.opts.length - 1, i + (delta > 0 ? 1 : -1)))];
     }
+    let v;
+    /* ⭑ Volume steps on the FADER LAW, keeping its 40-step throw. */
+    if (s.fader) v = faderStep(cur, delta > 0 ? 1 : -1, s.max / s.step);
+    else {
+        v = cur + (delta > 0 ? s.step : -s.step);
+        if (s.int) v = Math.round(v);
+        else v = Math.round(v * 1000) / 1000;  /* keep 0.05 steps from drifting */
+    }
+    if (v < s.min) v = s.min;
+    if (v > s.max) v = s.max;
+    return v;
+}
+
+function slotCfgStep(delta) {
+    const s = S.slotRows[S.slotCfgIdx];
+    if (!S.slotCfgEditing || !s || s.sub) {
+        S.slotCfgIdx = listMove(S.slotRows.length, S.slotCfgIdx, delta);
+        S.slotCfgEditing = false;
+        return;
+    }
+    const v = cfgStepValue(s, S.slotCfgVals[S.slotCfgIdx], delta);
     if (v === S.slotCfgVals[S.slotCfgIdx]) return;
     S.slotCfgVals[S.slotCfgIdx] = v;
     /* A row with `set` applies immediately and is persisted by whatever that
@@ -4159,7 +4262,7 @@ const VIEW_TREE = {
                            * over by ONE pixel; both then drop a crumb. 'Snd'
                            * saves 10px and both fit. 'Config' needs no such
                            * help: its own paths are 78px at the deepest. */
-                          crumb: () => (S.cfgWhich === 'config' ? 'Config' : 'LFOs') },
+                          crumb: () => 'LFOs' },
     /* The MACROS page is a root: its assign screens float over it. */
     [VIEW_MACROS]:      { parent: null,            float: false, crumb: () => 'Macros' },
     [VIEW_KNOBS]:       { parent: VIEW_MACROS,     float: true,  crumb: () => 'Knobs' },
@@ -8701,6 +8804,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * does — without this the list would fall back to the overview
              * mid-scroll, 2s after entry, with the cursor still moving. */
             if (S.enterSession) armBankDisplay();
+        } else if (S.view === VIEW_BLOCKS && S.cfgRowEditing) {
+            cfgRowStep(delta);
         } else if (S.view === VIEW_BLOCKS && S.busLevelEditing) {
             busLevelStep(delta);
         } else if (S.view === VIEW_BLOCKS && S.instrEditing) {
@@ -9233,8 +9338,27 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.pendingAction = { t: 'slotcfg', which: 'sound' };  /* reads the slot — tick only */
         }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
-                 S.pickRows[S.pickRow].kind === 'config') {
-            S.pendingAction = { t: 'slotcfg', which: 'config' };
+                 S.pickRows[S.pickRow].kind === 'cfg') {
+            /* Click takes the jog, click gives it back — the same two-state
+             * grammar a bus level row has, and what these rows had on the
+             * settings screen they came from. */
+            const spec = S.pickRows[S.pickRow].spec;
+            if (cfgRowLive()) {
+                const preview = S.cfgRowPreview;
+                S.cfgRowEditing = false;
+                S.cfgRowPreview = null;
+                S.cfgRowKey = null;
+                /* ⭐ THE COMMIT. Only here does a commit-on-click row apply, and
+                 * only if it actually moved — `Mode` raises a conversion confirm,
+                 * so clicking a row you scrolled back to its starting value must
+                 * ask nothing. */
+                if (spec.commitOnClick && preview !== null && preview !== spec.get()) spec.set(preview);
+            } else {
+                S.cfgRowEditing = true;
+                S.cfgRowKey = spec.key;
+                S.cfgRowPreview = spec.commitOnClick ? spec.get() : null;
+            }
+            S.dirty = true;
         }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'patches') {
@@ -9583,6 +9707,20 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * arrived on (its bus menu for a Move track, Instrument (+ Config)
              * for MIDI / NONE). */
             soundShowMenu();
+            return true;
+        }
+        /* ⭐ A ROW TAKING THE JOG IS BACKED OUT OF FIRST — two stages, the same
+         * shape the slot-settings and module-bus screens have: cancel the VALUE
+         * edit, and only a second Back leaves the menu.
+         * ⚠⚠ MUST SIT ABOVE the VIEW_BLOCKS branch below, which handles the menu
+         * and RETURNS. Placed after it (where the sibling `instrEditing` check
+         * still sits) it is DEAD CODE that reads as working — which is exactly
+         * how it was written the first time, and the test caught it.
+         * ⚠ A commit-on-click preview is DISCARDED here. That is the point of
+         * previewing: Back must not convert a track. */
+        if (S.view === VIEW_BLOCKS && S.cfgRowEditing) {
+            S.cfgRowEditing = false; S.cfgRowPreview = null; S.cfgRowKey = null;
+            S.dirty = true;
             return true;
         }
         if (S.view === VIEW_BLOCKS) {
@@ -10479,6 +10617,21 @@ function renderBlocks() {
                      value: S.instrEditing ? '[' + txt + ']' : txt };
         }
         if (r.kind === 'div') return { divider: true };
+        if (r.kind === 'cfg') {
+            /* Read LIVE through the row's own getter rather than from a cache
+             * kept beside the list: these rows are rebuilt whenever the menu is,
+             * and an index-aligned value array is exactly what goes stale when
+             * the row set changes under it (which it does — pad mode and route
+             * both add and remove rows here).
+             * ⚠ While a commit-on-click row is being scrubbed the PREVIEW shows,
+             * not the committed value — otherwise the screen would say Keys while
+             * the cursor sits on Drums. */
+            const editing = (idx === S.pickRow) && S.cfgRowEditing && S.cfgRowKey === r.spec.key;
+            const v = (editing && S.cfgRowPreview !== null) ? S.cfgRowPreview : r.spec.get();
+            return { label: r.label, hdr: true,
+                     value: r.spec.fmt ? r.spec.fmt(v) : String(v),
+                     editing };
+        }
         /* Doors get the chevron drawKitList draws for a sub-row. They used to
          * fall through to the bare branch below, which sets neither value nor
          * chevron, so nothing on screen said they opened anything.
