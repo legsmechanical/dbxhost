@@ -52,7 +52,7 @@ import { bankCardVisible, sessMixerVisible, bankHeaderRight } from './ui_render.
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
-import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
+import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, INSTR_CONDUCT, INSTR_ROW_LABEL, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, ROUTE_NONE, TRACK_PAD_BASE } from './ui_constants.mjs';
@@ -74,7 +74,7 @@ import { writeSidecar } from './ui_persistence.mjs';
  * place in the mapping store, the picker and the turn law. */
 import { MORPH_KIND, MORPH_LABEL, morphSnapshotSlots, morphPrepare, morphReady, morphApply,
          morphLegValid, morphInvalidate, morphInvalidateBuses } from './ui_snapmorph.mjs';
-import { requestTrackModeChange } from './ui_dialogs.mjs';
+import { requestTrackModeChange, showMenuInfo } from './ui_dialogs.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
     closeTextEntry,
@@ -484,15 +484,26 @@ function configRows(t) {
     /* Mode leads: it decides what the rest of this screen even means (Layout is
      * melodic-only, AftTch is hidden on drums, Transpose on Conduct).
      *
+     * ⭐⭐ TWO VALUES, KEYS AND DRUMS (Josh, 2026-09-19). Conductor was the third
+     * and does not belong with them: "conductor isn't like the other types. it
+     * completely changes how the track behaves ... keys/drum should stay as types
+     * bc they only change the sequencer paradigm of the track, not where the
+     * sequencer data is sent." Conductor is chosen in the INSTRUMENT/TYPE picker.
+     * ⚠ HIDDEN on a Conductor rather than shown holding a value it cannot
+     * represent: `get` would answer 2, `opts.indexOf(2)` is -1, and the formatter
+     * would read "Drums". Leaving a Conductor is done from the picker.
+     *
      * ⚠ COMMIT ON CLICK, not per detent — the only row here whose edit CONVERTS
      * the track. Scrolling past Drums must not fire a conversion, so the value
      * is previewed and applied when the edit closes. The rules (and the
      * confirms) are requestTrackModeChange's; this row only chooses a target. */
-    rows.push({ key: 'mode', label: 'Mode', commitOnClick: true,
-        opts: [0, 1, 2],
-        fmt: (v) => (v === PMC ? 'Conduct' : v ? 'Drums' : 'Keys'),
-        get: () => GS.trackPadMode[t] | 0,
-        set: (v) => requestTrackModeChange(t, v | 0) });
+    if (GS.trackPadMode[t] !== PMC) {
+        rows.push({ key: 'mode', label: 'Mode', commitOnClick: true,
+            opts: [0, 1],
+            fmt: (v) => (v ? 'Drums' : 'Keys'),
+            get: () => GS.trackPadMode[t] | 0,
+            set: (v) => requestTrackModeChange(t, v | 0) });
+    }
     /* Pad layout is a melodic idea — a drum track's pads are its lanes. */
     rows.push({ key: 'layout', label: 'Layout',
         opts: [0, 1], fmt: (v) => (melodic ? (v ? 'Chrom' : 'Scale') : '-'),
@@ -786,8 +797,13 @@ const S = {
      * Scroll previews, click commits. */
     instrEditing: false,
     instrSel: 0,
-    cfgWhich: 'sound',          /* which list the settings screen is showing */
     slotRows: [],               /* the active settings row set */
+    /* The track's own CONFIG rows now live INLINE at the foot of this menu
+     * (2026-09-19), so one of them can be taking the jog the way a bus level
+     * does. Preview/commit is only for `commitOnClick` rows — see cfgRowStep. */
+    cfgRowEditing: false,
+    cfgRowPreview: null,
+    cfgRowKey: null,            /* WHICH row the edit belongs to — see cfgRowLive */
     capFx34: false,
     capSends: false,
     /* The module-bus cache. Its resting state is UNRESOLVED, never "none" —
@@ -967,6 +983,29 @@ export function soundInflightForTest() { return S.inflight; }
  * a decision per route (a MIDI track has no Looper), and this is how a test
  * reads that decision without rendering. */
 export function soundSlotRowsForTest() { return S.slotRows.map(r => r.key); }
+/* The track's own CONFIG rows, which live INLINE at the foot of the sound menu
+ * since 2026-09-19 rather than behind a door. Keys in the order they appear. */
+export function soundCfgRowsForTest() {
+    return S.pickRows.filter(r => r.kind === 'cfg').map(r => r.spec.key);
+}
+/* The real spec for one of them, so a test steps what the menu steps. */
+export function soundCfgRowForTest(key) {
+    const r = S.pickRows.find(x => x.kind === 'cfg' && x.spec.key === key);
+    return r ? r.spec : null;
+}
+/* Whether a row is taking the jog, and what it is previewing. */
+export function soundCfgEditForTest() {
+    return { editing: !!S.cfgRowEditing, key: S.cfgRowKey, preview: S.cfgRowPreview };
+}
+/* The spec under the cursor, when the cursor is on a config row. Lets a test
+ * jog to a named row instead of assuming an index. */
+export function soundPickRowSpecForTest() {
+    const r = S.pickRows[S.pickRow];
+    return (r && r.kind === 'cfg') ? r.spec : null;
+}
+/* Park the cursor, for the stale-edit case: it has to be possible to move off a
+ * row WITHOUT the click that would close its edit. */
+export function soundPickRowSetForTest(i) { S.pickRow = i | 0; }
 /* The real row object, so a test can step the REAL spec through slotCfgStep. */
 export function soundSlotRowForTest(key) { return S.slotRows.find(r => r.key === key) || null; }
 /* The hosted canvas's ctx, for the read-shield behaviour test. Exposes the same
@@ -1224,7 +1263,12 @@ export function soundMenuForTest() {
  * satisfy both or quietly stop measuring anything. */
 export function soundPpEditorForTest() { return PP_EDITOR; }
 
+/* ⚠ No in-flight value edit survives (re)opening the menu. The flag is sound
+ * mode's own state, so leaving and coming back would otherwise arrive with the
+ * jog still bound to a row from the screen before — and the first jog would be
+ * eaten by an edit the user cannot see. */
 export function soundShowMenu() {
+    S.cfgRowEditing = false; S.cfgRowPreview = null; S.cfgRowKey = null;
     if (!S.active) return;
     /* The menu is SOUND + CONFIG's: asked for from the MACROS identity (the
      * Shift+Note gesture on a track resting there), the bank switches first
@@ -1447,8 +1491,10 @@ function followPlan(fromView, route) {
      * the same way the first would have. */
     if (isEditorish) return { editor: false, noEditor: false, fromEditor: true, then: { t: 'instrrow' } };
     if (v === VIEW_SLOTCFG) {
-        if (chain) return { editor: false, then: { t: 'slotcfg', which: S.cfgWhich } };
-        if (route === 2 && S.cfgWhich === 'config') return { editor: false, then: { t: 'slotcfg', which: 'config' } };
+        /* ⚠ Only the LFO list lives here now, and only a chain has LFOs — the
+         * MIDI-track clause that used to follow the CONFIG list onto the new
+         * track went with the door (the rows travel with the menu instead). */
+        if (chain) return { editor: false, then: { t: 'slotcfg', which: 'sound' } };
         return { editor: false, then: null };
     }
     if (v === VIEW_LFO || v === VIEW_LFO_TARGET || v === VIEW_LFO_PARAM)
@@ -1517,7 +1563,7 @@ export function noEditorWords(track) {
 
 /* Read-only, for tests: where a follow landed. */
 export function soundFollowStateForTest() {
-    return { view: S.view, cfgWhich: S.cfgWhich, lfoNum: S.lfoNum | 0,
+    return { view: S.view, lfoNum: S.lfoNum | 0,
              enumPick: S.enumPick ? S.enumPick.label : null };
 }
 
@@ -3067,6 +3113,26 @@ function pickStep(delta) {
     return S.pickRow;
 }
 
+/* ⭐ THE TRACK'S OWN SETTINGS, AT THE FOOT OF ITS MENU (Josh, 2026-09-19:
+ * "Move track “config” submenu items to the bottom of the menu itself with a
+ * divider between them and what's now the bottom of the list").
+ *
+ * They were behind a `Config` door. This dissolves the door: the rows land
+ * inline, below everything else, behind one rule. ⭑ Note what this is NOT — a
+ * SECOND home for these settings. The door is gone, so there is still exactly
+ * one place each of them lives, which is the rule the 08-13 pass established
+ * when they were pulled out of the global menu (see ui_menu.mjs).
+ *
+ * ⚠ configRows() is built PER CALL because which rows apply depends on the
+ * track's pad mode and route, and both change under this screen — so this must
+ * stay a call from buildPickRows, never a cached tail. */
+function pushConfigRows(rows, t) {
+    const cfg = configRows(t);
+    if (!cfg.length) return;
+    rows.push({ kind: 'div' });
+    for (const c of cfg) rows.push({ kind: 'cfg', label: c.label, spec: c });
+}
+
 function buildPickRows() {
     const rows = [];
     if (S.bus) {
@@ -3081,7 +3147,7 @@ function buildPickRows() {
              * not be re-routed from Track Control — the same gap the EXT case
              * had, in the other flavour. ⚠ Master/Send buses do NOT get it:
              * they are entered from the session FX list, not from a track. */
-            rows.push({ kind: 'trackto', label: 'Instrument' });
+            rows.push({ kind: 'trackto', label: INSTR_ROW_LABEL });
         }
         for (const n of BUS_BLOCKS) {
             rows.push({ kind: 'block', comp: S.bus.prefix + 'fx' + n, label: 'FX ' + n });
@@ -3106,9 +3172,9 @@ function buildPickRows() {
          * host does carry master-FX LFOs, no dAVEBOx screen has ever exposed
          * them — offering that here would be a separate feature, not this one. */
         if (S.bus.kind === 'move') rows.push({ kind: 'settings', label: 'LFOs' });
-        if (S.bus.kind === 'move') rows.push({ kind: 'config', label: 'Config' });
+        if (S.bus.kind === 'move') pushConfigRows(rows, S.track);
     } else {
-        rows.push({ kind: 'trackto', label: 'Instrument' });
+        rows.push({ kind: 'trackto', label: INSTR_ROW_LABEL });
         /* An EXT-routed track (MIDI out, or playing another track's instrument)
          * has no chain and no bus, so it has no sound to show and no mixer
          * position to set — every other row here would be backed by nothing.
@@ -3126,7 +3192,7 @@ function buildPickRows() {
          * screen is its destination plus the CONFIG door, exactly as a Move
          * track's is. configRows itself decides which rows a MIDI track gets. */
         if (GS.trackRoute[S.track] === 2) {
-            rows.push({ kind: 'config', label: 'Config' });
+            pushConfigRows(rows, S.track);
             S.pickRows = rows; S.pickRow = 0; return;
         }
         /* ⭑ No Generator row (Josh, 2026-09-04): the INSTRUMENT row is the
@@ -3174,8 +3240,8 @@ function buildPickRows() {
         /* 'LFOs', not 'Sound Control' (Josh, 2026-09-04): the Knobs row moved
          * to the MACROS bank, so the LFOs are all that is behind this door. */
         rows.push({ kind: 'settings', label: 'LFOs' });
-        rows.push({ kind: 'config',   label: 'Config' });
         rows.push({ kind: 'patches',  label: 'Presets' });
+        pushConfigRows(rows, S.track);
     }
     /* ---- grouping rules, each on a row of its own ----
      *
@@ -3243,8 +3309,11 @@ function openSlotCfg(keepCursor, which) {
     /* One screen, two row sets. `which` is remembered so a return from a
      * sub-editor (Knobs, LFO) reopens the list it came from rather than
      * whichever was opened last. */
-    if (which) S.cfgWhich = which;
-    S.slotRows = S.cfgWhich === 'config' ? configRows(S.track) : SOUND_CONTROL;
+    /* ⚠ ONE row set since 2026-09-19. This screen used to host the track's
+     * CONFIG rows as well, chosen by `S.cfgWhich`; those are inline at the foot
+     * of the sound menu now (pushConfigRows), so `which` survives only as the
+     * argument callers still pass and there is nothing left to switch on. */
+    S.slotRows = SOUND_CONTROL;
     S.slotCfgVals = S.slotRows.map(s => {
         if (s.sub) return 0;            /* no stored param behind these rows */
         /* A row with `get` owns its own value (davebox state + the DSP); one
@@ -3265,6 +3334,40 @@ function openSlotCfg(keepCursor, which) {
  * chain slot's through queueSlotCfgWrite. Extracted from soundOnCC's jog branch
  * unchanged so a test can drive the REAL step: with it inline, reverting Volume
  * here to linear left the entire suite green, because nothing reached it. */
+/* One detent on an inline config row. Same clamping as the settings screen —
+ * literally the same function (cfgStepValue) — so the two cannot drift.
+ *
+ * ⚠ A COMMIT-ON-CLICK ROW ONLY PREVIEWS. `Mode` converts the track behind a
+ * confirm, so scrolling past a value must not apply it; the click commits. That
+ * rule came with the row and has to survive the move, or jogging through the
+ * list would convert tracks on the way past. */
+/* The row an in-flight edit belongs to, or null if it no longer exists.
+ *
+ * ⚠⚠ IDENTIFIED BY KEY, NOT BY CURSOR POSITION. This list is rebuilt under the
+ * cursor — `names` refreshes fire from solo changes and module loads, and which
+ * config rows exist depends on pad mode and route, so a rebuild can change the
+ * row COUNT. An edit remembered only as "row 11 is being edited" would then
+ * commit a Transpose preview into whatever row 11 had become. */
+function cfgRowLive() {
+    if (!S.cfgRowEditing) return null;
+    const r = S.pickRows[S.pickRow];
+    if (r && r.kind === 'cfg' && r.spec.key === S.cfgRowKey) return r;
+    S.cfgRowEditing = false; S.cfgRowPreview = null; S.cfgRowKey = null;
+    return null;
+}
+
+function cfgRowStep(delta) {
+    const r = cfgRowLive();
+    if (!r) return;
+    const spec = r.spec;
+    const cur = (S.cfgRowPreview !== null) ? S.cfgRowPreview : spec.get();
+    const v = cfgStepValue(spec, cur, delta);
+    if (v === cur) return;
+    if (spec.commitOnClick) { S.cfgRowPreview = v; S.dirty = true; return; }
+    spec.set(v);
+    S.dirty = true;
+}
+
 function busLevelStep(delta) {
     const r = S.pickRows[S.pickRow];
     if (!r || r.kind !== 'buslevel') return;
@@ -3309,14 +3412,14 @@ export function soundVolumeSpecsForTest() {
              bus: mb && mb.levels ? mb.levels.find(l => l.key === 'volume') : null };
 }
 
-function slotCfgStep(delta) {
-    const s = S.slotRows[S.slotCfgIdx];
-    if (!S.slotCfgEditing || !s || s.sub) {
-        S.slotCfgIdx = listMove(S.slotRows.length, S.slotCfgIdx, delta);
-        S.slotCfgEditing = false;
-        return;
-    }
-    let v;
+/* ONE DETENT on a settings row's value. Pure: the row spec and the current
+ * value in, the new value out.
+ *
+ * ⭑ Extracted 2026-09-19 because there are now TWO surfaces that step these
+ * rows — the settings screen and the sound menu's own inline config rows — and
+ * the clamping rules must not be able to differ between them. Everything here
+ * was previously inline in slotCfgStep. */
+export function cfgStepValue(s, cur, delta) {
     if (s.opts) {
         /* Enum: step the option list, CLAMPED at the ends. This used to wrap,
          * with a comment defending it for short closed sets — overridden by
@@ -3324,19 +3427,30 @@ function slotCfgStep(delta) {
          * their lists, everywhere, so a scroll can never overshoot onto the
          * opposite extreme. (An end is one detent away from anywhere in a
          * 3-option set; nothing is stranded.) */
-        const cur = s.opts.indexOf(S.slotCfgVals[S.slotCfgIdx]);
-        v = s.opts[Math.max(0, Math.min(s.opts.length - 1, cur + (delta > 0 ? 1 : -1)))];
-    } else {
-        /* ⭑ Volume steps on the FADER LAW, keeping its 40-step throw. */
-        if (s.fader) v = faderStep(S.slotCfgVals[S.slotCfgIdx], delta > 0 ? 1 : -1, s.max / s.step);
-        else {
-            v = S.slotCfgVals[S.slotCfgIdx] + (delta > 0 ? s.step : -s.step);
-            if (s.int) v = Math.round(v);
-            else v = Math.round(v * 1000) / 1000;  /* keep 0.05 steps from drifting */
-        }
-        if (v < s.min) v = s.min;
-        if (v > s.max) v = s.max;
+        const i = s.opts.indexOf(cur);
+        return s.opts[Math.max(0, Math.min(s.opts.length - 1, i + (delta > 0 ? 1 : -1)))];
     }
+    let v;
+    /* ⭑ Volume steps on the FADER LAW, keeping its 40-step throw. */
+    if (s.fader) v = faderStep(cur, delta > 0 ? 1 : -1, s.max / s.step);
+    else {
+        v = cur + (delta > 0 ? s.step : -s.step);
+        if (s.int) v = Math.round(v);
+        else v = Math.round(v * 1000) / 1000;  /* keep 0.05 steps from drifting */
+    }
+    if (v < s.min) v = s.min;
+    if (v > s.max) v = s.max;
+    return v;
+}
+
+function slotCfgStep(delta) {
+    const s = S.slotRows[S.slotCfgIdx];
+    if (!S.slotCfgEditing || !s || s.sub) {
+        S.slotCfgIdx = listMove(S.slotRows.length, S.slotCfgIdx, delta);
+        S.slotCfgEditing = false;
+        return;
+    }
+    const v = cfgStepValue(s, S.slotCfgVals[S.slotCfgIdx], delta);
     if (v === S.slotCfgVals[S.slotCfgIdx]) return;
     S.slotCfgVals[S.slotCfgIdx] = v;
     /* A row with `set` applies immediately and is persisted by whatever that
@@ -4159,7 +4273,7 @@ const VIEW_TREE = {
                            * over by ONE pixel; both then drop a crumb. 'Snd'
                            * saves 10px and both fit. 'Config' needs no such
                            * help: its own paths are 78px at the deepest. */
-                          crumb: () => (S.cfgWhich === 'config' ? 'Config' : 'LFOs') },
+                          crumb: () => 'LFOs' },
     /* The MACROS page is a root: its assign screens float over it. */
     [VIEW_MACROS]:      { parent: null,            float: false, crumb: () => 'Macros' },
     [VIEW_KNOBS]:       { parent: VIEW_MACROS,     float: true,  crumb: () => 'Knobs' },
@@ -4311,7 +4425,7 @@ function openInstrPicker() {
     /* A Move instrument another track owns is a NOTE row \u2014 centred, with the
      * owner, stepped over by the cursor (1-bit has no grey; UI_LANGUAGE \u00a76):
      * one dAVEBOx track per Move instrument (Josh, 2026-09-13). */
-    openEnumPicker('Instrument',
+    openEnumPicker(INSTR_ROW_LABEL,
                    rows.map(r => r.divider ? { divider: true }
                        : r.taken != null ? { note: r.label + ' - T' + (r.taken + 1), hdr: false }
                        : (r.gen && mlIsMember(r.gen) ? '\u00b7' + r.label : r.label)),
@@ -4328,8 +4442,19 @@ function commitInstrPick(r) {
      * cursor rule and the group dividers all come from openInstrPicker rather
      * than being patched in place. */
     if (r.listRow) { instrPickerCycleList(); return; }
+    /* ⚠ A CONDUCTOR CHANGING TYPE NEEDS THE TRANSPORT STOPPED, and it has to be
+     * said BEFORE anything is written — requestTrackModeChange refuses while
+     * playing, so without this a Conductor would get its new ROUTE and keep its
+     * Conduct mode: half a change, silently. */
+    if (GS.trackPadMode[S.track] === PMC && r.v !== INSTR_CONDUCT && GS.playing) {
+        showMenuInfo('Stop playback', 'to change the', 'track type.');
+        return;
+    }
     if (r.gen) {
-        if (GS.trackRoute[S.track] === 0) {
+        /* ⚠ `&& !wasConduct`: a Conductor with a parked Schwung route would take
+         * this fast path and load a generator while STAYING a Conductor. It has
+         * to go the long way round so applyInstrChangeNow converts it to Keys. */
+        if (GS.trackRoute[S.track] === 0 && GS.trackPadMode[S.track] !== PMC) {
             /* Already a Schwung track: the one you have re-selected just opens
              * (a reload would throw its state away); another one loads. */
             if (moduleIdOf(engineLoadedModule(S.slot, 'synth')) === r.gen.id) S.pendingAction = { t: 'open', comp: 'synth' };
@@ -4360,7 +4485,7 @@ function commitInstrPick(r) {
  */
 function instrPickerCycleList() {
     const p = S.enumPick;
-    if (!p || p.label !== 'Instrument' || !Array.isArray(p.rows)) return false;
+    if (!p || p.label !== INSTR_ROW_LABEL || !Array.isArray(p.rows)) return false;
     const r = p.rows[p.sel];
     if (!r || !r.listRow) return false;
     /*
@@ -4707,7 +4832,7 @@ export function soundListsConfirmNameForTest(text) {
  */
 function instrPickerToggleList() {
     const p = S.enumPick;
-    if (!p || p.label !== 'Instrument' || !Array.isArray(p.rows)) return false;
+    if (!p || p.label !== INSTR_ROW_LABEL || !Array.isArray(p.rows)) return false;
     const r = p.rows[p.sel];
     if (!r || !r.gen) return false;
     mlMenuGen = r.gen;
@@ -4796,6 +4921,12 @@ export function typeChangeImpact(track, newRoute) {
  * a destructive one asks first (S.confirmTypeChange, drawn by ui_dialogs,
  * answered in ui_input_cc — the confirm-exit modal's shape). */
 export function requestInstrChange(track, v) {
+    /* ⭐⭐ CONDUCTOR IS A CONVERSION, NOT A DESTINATION — and this must come
+     * FIRST. routeForInstr() below tests `v >= INSTR_MIDI_CH`, and 50 satisfies
+     * it, so falling through would quietly route the track to MIDI.
+     * requestTrackModeChange owns everything that follows: the confirm, the
+     * refusal while playing, and the "conductor exists on T<n>" case. */
+    if ((v | 0) === INSTR_CONDUCT) { requestTrackModeChange(track, PMC); return false; }
     const newRoute = routeForInstr(v);
     /* ONE TRACK PER MOVE INSTRUMENT: refuse BEFORE the type-change confirm —
      * otherwise Yes would clear the incompatible macros and lanes and THEN the
@@ -4819,6 +4950,14 @@ export function requestInstrChange(track, v) {
     return true;
 }
 function applyInstrChangeNow(track, v) {
+    /* ⭐ Choosing a real instrument on a CONDUCTOR converts it back to KEYS —
+     * never Drums, because a Conductor's note data is melodic. Silent (the
+     * Keys direction asks nothing) and deferred to the tick, while the route
+     * write below goes out from this callback.
+     * ⚠ Placed here rather than in requestInstrChange so it runs on BOTH paths:
+     * the immediate one and the type-change confirm's Yes. A No therefore leaves
+     * the Conductor intact, which is what No has to mean. */
+    if (GS.trackPadMode[track] === PMC) requestTrackModeChange(track, 0);
     applyInstrChoice(track, v);
     /* The screen must FOLLOW the new destination immediately — a track just
      * switched to MIDI has no chain to show, and a switch between Schwung
@@ -4952,7 +5091,7 @@ export function soundEnumPickHintsForTest() { return enumPickHints(); }
 
 function enumPickHints() {
     const p = S.enumPick;
-    if (!p || p.label !== 'Instrument' || !Array.isArray(p.rows)) return null;
+    if (!p || p.label !== INSTR_ROW_LABEL || !Array.isArray(p.rows)) return null;
     const r = p.rows[p.sel];
     if (!r || !r.gen) return null;
     return [['SHFT', 'LISTS']];
@@ -4966,7 +5105,7 @@ function renderEnumPick() {
      * through 35 generators, and the crumb read "T<n> > INSTRUMENT", which is
      * the one thing the screen already makes obvious. The 11px it frees pays
      * for the hint band, so the visible row count does not drop. */
-    const instr = !!(p && p.label === 'Instrument');
+    const instr = !!(p && p.label === INSTR_ROW_LABEL);
     renderInChain(p ? p.options : [], p ? p.sel : 0, undefined,
                   instr ? { noCrumbs: true, topY: INSTR_TOP_Y, bottomY: INSTR_BOTTOM_Y,
                             visible: INSTR_ROWS, hints: enumPickHints() }
@@ -8701,6 +8840,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * does — without this the list would fall back to the overview
              * mid-scroll, 2s after entry, with the cursor still moving. */
             if (S.enterSession) armBankDisplay();
+        } else if (S.view === VIEW_BLOCKS && S.cfgRowEditing) {
+            cfgRowStep(delta);
         } else if (S.view === VIEW_BLOCKS && S.busLevelEditing) {
             busLevelStep(delta);
         } else if (S.view === VIEW_BLOCKS && S.instrEditing) {
@@ -9166,10 +9307,17 @@ export function soundOnCC(d1, d2, decodeDelta) {
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'trackto') {
             if (!S.instrEditing) {
-                /* Conductor emits nothing, so it has no destination to choose —
-                 * the row reads '-' and declines the edit, exactly as the global
-                 * menu's row does. */
-                if (GS.trackPadMode[S.track] === PMC) { S.dirty = true; }
+                /* ⭐ A CONDUCTOR IS NOT A DEAD END ANY MORE (2026-09-19). This row
+                 * used to decline every gesture on a Conductor, because it named
+                 * only a DESTINATION and a Conductor has none. It names the TYPE
+                 * too now — which makes it the only way BACK OUT of Conductor, so
+                 * refusing to open the picker would strand the track.
+                 * ⚠ Shift+click opens the picker (choose something else); a plain
+                 * click has nothing to enter, since a Conductor plays nothing. */
+                if (GS.trackPadMode[S.track] === PMC) {
+                    if (GS.shiftHeld || S.shiftHeld) openInstrPicker();
+                    S.dirty = true;
+                }
                 else {
                     /* ⭑ THE DOOR (Josh, 2026-09-04): once an instrument is
                      * chosen, a click ENTERS it — a Schwung generator's editor,
@@ -9233,8 +9381,27 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.pendingAction = { t: 'slotcfg', which: 'sound' };  /* reads the slot — tick only */
         }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
-                 S.pickRows[S.pickRow].kind === 'config') {
-            S.pendingAction = { t: 'slotcfg', which: 'config' };
+                 S.pickRows[S.pickRow].kind === 'cfg') {
+            /* Click takes the jog, click gives it back — the same two-state
+             * grammar a bus level row has, and what these rows had on the
+             * settings screen they came from. */
+            const spec = S.pickRows[S.pickRow].spec;
+            if (cfgRowLive()) {
+                const preview = S.cfgRowPreview;
+                S.cfgRowEditing = false;
+                S.cfgRowPreview = null;
+                S.cfgRowKey = null;
+                /* ⭐ THE COMMIT. Only here does a commit-on-click row apply, and
+                 * only if it actually moved — `Mode` raises a conversion confirm,
+                 * so clicking a row you scrolled back to its starting value must
+                 * ask nothing. */
+                if (spec.commitOnClick && preview !== null && preview !== spec.get()) spec.set(preview);
+            } else {
+                S.cfgRowEditing = true;
+                S.cfgRowKey = spec.key;
+                S.cfgRowPreview = spec.commitOnClick ? spec.get() : null;
+            }
+            S.dirty = true;
         }
         else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
                  S.pickRows[S.pickRow].kind === 'patches') {
@@ -9583,6 +9750,20 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * arrived on (its bus menu for a Move track, Instrument (+ Config)
              * for MIDI / NONE). */
             soundShowMenu();
+            return true;
+        }
+        /* ⭐ A ROW TAKING THE JOG IS BACKED OUT OF FIRST — two stages, the same
+         * shape the slot-settings and module-bus screens have: cancel the VALUE
+         * edit, and only a second Back leaves the menu.
+         * ⚠⚠ MUST SIT ABOVE the VIEW_BLOCKS branch below, which handles the menu
+         * and RETURNS. Placed after it (where the sibling `instrEditing` check
+         * still sits) it is DEAD CODE that reads as working — which is exactly
+         * how it was written the first time, and the test caught it.
+         * ⚠ A commit-on-click preview is DISCARDED here. That is the point of
+         * previewing: Back must not convert a track. */
+        if (S.view === VIEW_BLOCKS && S.cfgRowEditing) {
+            S.cfgRowEditing = false; S.cfgRowPreview = null; S.cfgRowKey = null;
+            S.dirty = true;
             return true;
         }
         if (S.view === VIEW_BLOCKS) {
@@ -10468,7 +10649,11 @@ function renderBlocks() {
              * track its Move instrument; MIDI its channel or track. The ` >`
              * rides in the value like the old Move Generator row's did —
              * chevron and value are exclusive in drawKitList. */
-            let txt = GS.trackPadMode[S.track] === PMC ? '-'
+            /* ⚠ A Conductor used to show '-' here because the row named a
+             * DESTINATION and a Conductor has none. It names the TYPE too now,
+             * and fmtInstr answers 'Conductor' — via instrValueFor, which tests
+             * pad mode first. */
+            let txt = GS.trackPadMode[S.track] === PMC ? fmtInstr(INSTR_CONDUCT)
                     /* No generator yet reads as NOTHING, not "Schwung": the
                      * route is bookkeeping the user never chose (Josh,
                      * 2026-09-04) — what they have is no instrument. */
@@ -10479,6 +10664,21 @@ function renderBlocks() {
                      value: S.instrEditing ? '[' + txt + ']' : txt };
         }
         if (r.kind === 'div') return { divider: true };
+        if (r.kind === 'cfg') {
+            /* Read LIVE through the row's own getter rather than from a cache
+             * kept beside the list: these rows are rebuilt whenever the menu is,
+             * and an index-aligned value array is exactly what goes stale when
+             * the row set changes under it (which it does — pad mode and route
+             * both add and remove rows here).
+             * ⚠ While a commit-on-click row is being scrubbed the PREVIEW shows,
+             * not the committed value — otherwise the screen would say Keys while
+             * the cursor sits on Drums. */
+            const editing = (idx === S.pickRow) && S.cfgRowEditing && S.cfgRowKey === r.spec.key;
+            const v = (editing && S.cfgRowPreview !== null) ? S.cfgRowPreview : r.spec.get();
+            return { label: r.label, hdr: true,
+                     value: r.spec.fmt ? r.spec.fmt(v) : String(v),
+                     editing };
+        }
         /* Doors get the chevron drawKitList draws for a sub-row. They used to
          * fall through to the bare branch below, which sets neither value nor
          * chevron, so nothing on screen said they opened anything.
@@ -10516,7 +10716,9 @@ function renderBlocks() {
 function menuRowHints(r) {
     if (!r) return [];
     if (r.kind === 'trackto') {
-        if (GS.trackPadMode[S.track] === PMC) return [];
+        /* A Conductor has nothing to ENTER, but Shift+click changes what it is —
+         * and that is the only way out of Conductor, so it has to be advertised. */
+        if (GS.trackPadMode[S.track] === PMC) return [['SHFT', 'CHANGE']];
         const route = GS.trackRoute[S.track];
         if (route === 2) return [['SHFT', 'CHANGE']];            /* nothing to enter */
         if (route === 0 && !r.gen) return [['CLK', 'CHOOSE']];  /* no generator yet */

@@ -28,6 +28,16 @@ globalThis.draw_rect = (x, y, w, h, v) => {
     globalThis.fill_rect(x, y, w, 1, v); globalThis.fill_rect(x, y + h - 1, w, 1, v);
     globalThis.fill_rect(x, y, 1, h, v); globalThis.fill_rect(x + w - 1, y, 1, h, v);
 };
+/* ⚠ THE REAL SEMANTICS, not a no-op: stipple REMOVES half the ink of whatever
+ * is already there, so a rig that counts pixels must see it happen. Missing
+ * entirely until 2026-09-19, which made every screen reaching drawKitBackdropDim
+ * throw — and a throw here comes out as an EMPTY png, which reads as "this
+ * screen draws nothing". Same implementation the JS tests use. */
+globalThis.stipple_rect = (x, y, w, h, v, phase) => {
+    for (let yi = y; yi < y + h; yi++)
+        for (let xi = (((x + yi) & 1) === ((phase || 0) & 1)) ? x : x + 1; xi < x + w; xi += 2)
+            globalThis.set_pixel(xi, yi, v);
+};
 globalThis.draw_line = (x0, y0, x1, y1, v) => {
     const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
     const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
@@ -133,7 +143,14 @@ const jog = (d) => cc(14, d > 0 ? 1 : 127);
 const click = () => cc(3, 127);
 const draw = () => { globalThis.clear_screen(); snd.soundRender(); };
 
-function enterSound() { snd.soundEnter(4, 4); tick(4); }
+/* ⚠⚠ soundEnter lands on the bank PROMPT, not the menu — the bank is a door
+ * (08-28). Without the click that opens the menu, this rig drew a view it has no
+ * renderer for and the shot came out EMPTY. It had been doing that for the
+ * "reference" top-level shot for some time; the submenu shots only looked fine
+ * because clicking a row moved them onto a view that does draw. Caught by
+ * comparing ink against a previous commit — an empty PNG reads as "this screen
+ * draws nothing", which is a very believable lie. */
+function enterSound() { snd.soundEnter(4, 4); tick(4); snd.soundShowMenu(); tick(2); }
 
 /* Walk the picker cursor to the first row of a given kind and click it. */
 function openRow(kind) {
@@ -156,13 +173,26 @@ draw(); shoot('track', 'Track settings — TOP LEVEL', 'the reference Josh appro
 enterSound(); openRow('settings');
 draw(); shoot('track', 'Sound Control (submenu)', 'reached from the top level');
 
-enterSound(); openRow('config');
-draw(); shoot('track', 'Config (submenu)', '');
+/* ⚠ There is no Config submenu since 2026-09-19 — the track's own settings are
+ * INLINE at the foot of this menu. Scroll to the bottom to see them. */
+enterSound();
+for (let g = 0; g < 30; g++) { jog(1); }
+draw(); shoot('track', 'Track settings — SCROLLED TO THE FOOT', 'the config rows, inline behind a rule');
 
 /* Knobs… lives inside Sound Control; find its sub row. */
 enterSound(); openRow('settings');
 for (let g = 0; g < 12; g++) { jog(1); }
 draw(); shoot('track', 'Sound Control, scrolled', 'sub-rows + chevrons');
+
+/* The Instrument/Type picker — Conductor sits between the Move rows and the
+ * generators (2026-09-19). */
+enterSound();
+snd.soundOpenInstrPicker(4);
+tick(3);
+/* Scroll to the Conductor row so the shot shows the group it sits in, rather
+ * than the top of a list whose interesting part is six rows down. */
+for (let g = 0; g < 6; g++) { jog(1); tick(1); }
+draw(); shoot('track', 'Instrument-Type picker', 'Conductor after Move, before the generators');
 
 enterSound(); openRow('patches');
 draw(); shoot('track', 'Slot Presets (submenu)', '');

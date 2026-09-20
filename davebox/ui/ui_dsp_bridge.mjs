@@ -32,7 +32,8 @@ import {
     NUM_TRACKS, NUM_CLIPS, NUM_STEPS, DRUM_LANES, POLL_INTERVAL,
     TPS_VALUES, BANKS, PAD_MODE_DRUM, BANK_SOUND, isSoundBank, BANK_AUTOMATION,
     INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK, moveInstrOwner, moveInstrDuplicates,
-    MoveRec, LED_OFF, parseActionRaw, INSTR_NONE, ROUTE_NONE } from './ui_constants.mjs';
+    MoveRec, LED_OFF, parseActionRaw, INSTR_NONE, ROUTE_NONE,
+    INSTR_CONDUCT, PAD_MODE_CONDUCT } from './ui_constants.mjs';
 import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
 import { S } from './ui_state.mjs';
@@ -1102,6 +1103,11 @@ function readTrackConfig(t) {
  * `Track to` — so it lives here, beside the setter it drives, and neither
  * screen owns the rules. */
 export function instrValueFor(t) {
+    /* ⭐ CONDUCTOR OUTRANKS THE ROUTE, and must be tested first. A Conductor
+     * keeps whatever route it had — parked, so picking a real instrument later
+     * finds it again — so asking the route what this track IS would answer with
+     * the parked destination and the picker would open on the wrong row. */
+    if (S.trackPadMode[t] === PAD_MODE_CONDUCT) return INSTR_CONDUCT;
     if (S.trackRoute[t] === ROUTE_NONE) return INSTR_NONE;
     if (S.trackRoute[t] === 2) {
         const mt = S.trackMidiTo[t] | 0;
@@ -1118,6 +1124,12 @@ export function instrValueFor(t) {
 
 export function applyInstrChoice(t, v) {
     v = v | 0;
+    /* ⚠⚠ NEVER A ROUTE WRITE. Conductor is a pad mode, and the conversion is
+     * requestTrackModeChange's job (it confirms, and it refuses while playing).
+     * Arriving here means a caller skipped that — refuse rather than write a
+     * route for it, which would move the track's destination as a side effect
+     * of choosing a type. */
+    if (v === INSTR_CONDUCT) return false;
     if (v === INSTR_SCHWUNG) { applyTrackConfig(t, 'route', 0); return; }
     if (v === INSTR_NONE)    { applyTrackConfig(t, 'route', ROUTE_NONE); return; }   /* channel / midi_to untouched: coming back finds them */
     if (v >= INSTR_TRACK) {

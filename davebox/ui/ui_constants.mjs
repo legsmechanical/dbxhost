@@ -137,12 +137,34 @@ export const INSTR_TRACK      = 30;     /* +0..7  = Track 1..8   */
  * slot is parked. Outside every band, and NOT the unseeded `--`: a track the
  * user emptied and a track not yet read must never look the same. */
 export const INSTR_NONE       = 40;
+/* CONDUCTOR (Josh, 2026-09-19): "conductor isn't like the other types. it
+ * completely changes how the track behaves. [it] should go into the instrument
+ * picker. keys/drum should stay as types bc they only change the sequencer
+ * paradigm of the track, not where the sequencer data is sent."
+ *
+ * ⭐ SO THE SPLIT IS: this picker answers what a track IS and where its notes
+ * go; the `Mode` row answers how its sequencer behaves, and keeps two values.
+ *
+ * ⚠⚠ IT IS NOT A ROUTE. A Conductor is a PAD MODE (`PAD_MODE_CONDUCT`), which
+ * is what the DSP persists and reconciles; the DSP's `t<N>_pad_mode` setter
+ * CLAMPS to 0..1, so this value must never reach applyTrackConfig('pad_mode').
+ * It goes through requestTrackModeChange, which owns the conversion and its
+ * confirm. A Conductor's ROUTE is left exactly where it was — parked, the way
+ * None parks channel/midi_to — so picking a real instrument later finds it. */
+export const INSTR_CONDUCT    = 50;
+/* The label on the row that opens the picker. A CONSTANT because it is not just
+ * a caption: four places test the string to recognise this picker, and a rename
+ * that missed one left a silently dead branch. */
+export const INSTR_ROW_LABEL  = 'Instrument/Type';
 export const ROUTE_NONE       = 3;      /* S.trackRoute value; DSP `t<N>_route` = 'none' */
 
 export function fmtInstr(v) {
     v = v | 0;
     if (v === INSTR_SCHWUNG) return 'Schwung';
     if (v === INSTR_NONE)    return 'None';
+    /* ⚠ Before the band checks below: 50 would fall into the `>= INSTR_TRACK`
+     * range test and format as '?'. */
+    if (v === INSTR_CONDUCT) return 'Conductor';
     /* Each band is bounded at BOTH ends. An open-ended `>=` would format a
      * stray value as a plausible destination that does not exist ("MIDI Ch 17"),
      * which is worse than showing it is wrong. */
@@ -223,6 +245,11 @@ export function instrPickerRows(routes, self, gens, channels) {
         if (owner >= 0) rows.push({ v: m, label: fmtInstr(m), taken: owner });
         else rows.push({ v: m, label: fmtInstr(m) });
     }
+    /* ⭐ CONDUCTOR sits between the Move instruments and the generators — Josh,
+     * 2026-09-19: "after move, before schwung modules". Its own group: it is not
+     * a destination like the rows above it, nor a module like the ones below. */
+    rows.push({ divider: true });
+    rows.push({ v: INSTR_CONDUCT, label: fmtInstr(INSTR_CONDUCT) });
     rows.push({ divider: true });
     for (const g of (gens || [])) rows.push({ gen: g, label: String(g.name || g.id) });
     if (gens && gens.length) rows.push({ divider: true });
@@ -395,6 +422,18 @@ function p(abbrev, full, dspKey, scope, min, max, def, fmt, sens, actionSuffix, 
 const _X   = p(null, null, null, 'stub', 0,   0,  0, fmtNA);
 const _XQ  = p(null, null, null, 'stub', 0, 100, -1, fmtNA);  /* bank 7 Qnt: def=-1 = unset */
 const _XR  = p(null, null, null, 'stub', 0,   0, -1, fmtNA);  /* bank 7 Res/Dir: def=-1 = unset */
+/* ⭑⭑ STUB ≠ ABSENT. A `'stub'` entry only tells the GENERIC handler to keep its
+ * hands off; the knob may still be fully wired by its own code. Bank 7 is
+ * almost entirely that — "custom handling" on five of eight knobs — while bank
+ * 0's K6 really is nothing at all. Nothing in the entry distinguished the two,
+ * so anything reading the table to decide whether a knob EXISTS got bank 7
+ * wrong. `custom` marks the live ones. Currently read by the knob-ring rule
+ * (`knobRingNorm`); a dark ring is a promise that turning it does nothing, and
+ * that promise was false five times over. */
+const _mkCustom = (base) => Object.assign({}, base, { custom: true });
+const _C   = _mkCustom(_X);
+const _CQ  = _mkCustom(_XQ);
+const _CR  = _mkCustom(_XR);
 
 export const BANKS = [
     /* 0 — CLIP (pad 92) — K1=Res, K2=Stch (Beat Stretch), K3=Shft (Clock
@@ -482,13 +521,13 @@ export const BANKS = [
      * K4=Qnt (custom), K5=VelIn (custom), K6=InQ (custom),
      * K7=Dir (all-lane playback dir, alt=RvSt, custom), K8=SyncRpt. */
     { name: 'ALL LANES', knobs: [
-        _XR,  /* K1: Res — all-lane resolution, custom handling, def=-1 */
+        _CR,  /* K1: Res — all-lane resolution, custom handling, def=-1 */
         p('Strch', 'Beat Stretch', 'beat_stretch', 'action', 0, 0,  0,  fmtStretch, 16, '_factor', true),
         p('Shift', 'Clock Shift',  'clock_shift',  'action', 0, 0,  0,  fmtSign,    8),
-        _XQ,  /* K4: Qnt — quantize all lanes, custom handling, def=-1 */
-        _X,   /* K5: VelIn — custom handling via trackVelOverride */
-        _X,   /* K6: InQ — per-track drum input quantize, custom handling */
-        _XR,  /* K7: Dir — all-lane playback dir, custom handling, def=-1 */
+        _CQ,  /* K4: Qnt — quantize all lanes, custom handling, def=-1 */
+        _C,   /* K5: VelIn — custom handling via trackVelOverride */
+        _C,   /* K6: InQ — per-track drum input quantize, custom handling */
+        _CR,  /* K7: Dir — all-lane playback dir, custom handling, def=-1 */
         p('RSync', 'Repeat Sync', 'drum_repeat_sync', 'track', 0, 1, 1, fmtBool, 16),
     ]},
     /* 8 — RESPONDER (conduct) — per-track on/off, custom render+handler (Task 2.3/2.4) */
@@ -585,7 +624,18 @@ export const STEP_REVEAL_DEBOUNCE_MS = 150;
 export const NO_NOTE_FLASH_MS = 600;
 export const TAP_TEMPO_FLASH_MS = 96;
 export const TAP_TEMPO_RESET_MS    = 2000; /* inactivity reset threshold */
-export const PARAM_LED_BANKS = [1, 2, 3, 4, 5];
+/* Banks whose knob rings ride the BANKS table (see ui_leds.mjs).
+ * ⭑ CLIP (0) and ALL LANES (7) joined on 2026-09-19. They were the only param
+ * banks left dark, which Josh read as an inconsistency rather than a rule:
+ * "Clip bank doesn't show knob led rings like the other banks ... just so it's
+ * easier to orient yourself." Both are mostly action / custom-handled knobs, so
+ * what they light is the ramp's FLOOR — see knobRingColor's third state. */
+export const PARAM_LED_BANKS = [0, 1, 2, 3, 4, 5, 7];
+
+/* The CONDUCT banks light by TRACK, not by param (2026-09-19): each of their
+ * eight knobs IS one of the eight tracks, so the white/amber split of the param
+ * banks would cut across tracks 4 and 5 and say nothing. Handled in ui_leds. */
+export const CONDUCT_LED_BANKS = [BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN];
 
 /* ---- davebox's own bank knobs as MACRO targets and AUTOMATION targets -----
  *

@@ -3,7 +3,7 @@ import {
     NUM_STEPS, NUM_TRACKS, LED_OFF, LEDS_PER_FRAME,
     TRACK_COLORS, TRACK_DIM_COLORS, TRACK_PAD_BASE, SCENE_BTN_FLASH_MS,
     PAD_MODE_DRUM, BANKS,
-    POLL_INTERVAL, TAP_TEMPO_FLASH_MS, PARAM_LED_BANKS,
+    POLL_INTERVAL, TAP_TEMPO_FLASH_MS, PARAM_LED_BANKS, CONDUCT_LED_BANKS,
     SEQ8_NAV_FLAGS
 } from './ui_constants.mjs';
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
@@ -862,6 +862,15 @@ export function updateTrackLEDs() {
             const isDirty = (S.drumRepeatVelScale[S.activeTrack][lane][k] !== 100) ||
                             (S.drumRepeatNudge[S.activeTrack][lane][k] !== 0);
             ledVal = isDirty ? White : LED_OFF;
+        } else if (CONDUCT_LED_BANKS.indexOf(S.activeBank) >= 0) {
+            /* ⭑ CONDUCT: knob k IS track k (Josh, 2026-09-19). These three banks
+             * set Responder / Octave / When per TRACK, so the ring says WHICH
+             * TRACK — the same colours the session view's eight strips use, and
+             * the same thing the pads under them say. The param banks' 4-white /
+             * 4-amber split would cut the eight tracks into two arbitrary halves.
+             * ⚠ Every track is lit, including one with the feature off: the ring
+             * is an address here, not a value. */
+            ledVal = trackColor(k);
         } else if (ringCellsFor(S.activeBank)) {
             /* The kit-page banks (STEP, SOUND + CONFIG, MACROS): the ring
              * rides the SAME cell the page draws — same ramps as the param

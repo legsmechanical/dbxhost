@@ -68,7 +68,7 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
-const { BANK_SOUND, ROUTE_NONE, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
+const { BANK_SOUND, ROUTE_NONE, PAD_MODE_CONDUCT, INSTR_ROW_LABEL } = await import('../../ui/ui_constants.mjs');
 const editops = await import('../../ui/ui_editops.mjs');
 
 const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_SLOTCFG = 8, VIEW_BUSES = 9, VIEW_LFO = 14,
@@ -106,6 +106,13 @@ step('setup: routes — 2,3 Schwung · 4 MIDI · 5 NONE · 6 Move · 7 Conduct',
 
 /* ⭑ RULED (Josh, 2026-09-05, after the build-23 pass): from an EDITOR the switch
  * lands on the new track's SOUND MENU on its INSTRUMENT row — every track kind. */
+/* A MIDI track's menu: its destination, a rule, then its own config rows — no
+ * chain, no bus, and (since 2026-09-19) no CONFIG door, the rows being inline. */
+const isMidiMenu = () => {
+    const k = kinds().split(',');
+    return k[0] === 'trackto' && k[1] === 'div' && k.length > 2 &&
+           k.slice(2).every(x => x === 'cfg');
+};
 const onInstrumentRow = () => view() === VIEW_BLOCKS && kinds().split(',')[snd.soundPickStateForTest().row] === 'trackto';
 step('⭑ Schwung → Schwung: the switch from an EDITOR lands on the new track\'s sound menu, INSTRUMENT row', () => {
     enterEditor(2);
@@ -129,14 +136,14 @@ step('⭑ menu → MIDI: from that menu the switch lands on the MIDI track\'s me
     if (!snd.soundOpen() || snd.soundTrack() !== 4) throw new Error('did not follow');
     settle();
     if (view() !== VIEW_BLOCKS) throw new Error('view ' + view());
-    if (kinds() !== 'trackto,config') throw new Error('rows: ' + kinds());
+    if (!isMidiMenu()) throw new Error('rows: ' + kinds());
 });
 step('⭑ Schwung → MIDI from the EDITOR: the MIDI track\'s menu, Instrument row (no message screen — Josh, 2026-09-05)', () => {
     enterEditor(2);
     editops._switchActiveTrack(4);
     if (!snd.soundOpen() || snd.soundTrack() !== 4) throw new Error('did not follow');
     settle();
-    if (!onInstrumentRow() || kinds() !== 'trackto,config') throw new Error('view ' + view() + ' row ' + snd.soundPickStateForTest().row + ' rows ' + kinds());
+    if (!onInstrumentRow() || !isMidiMenu()) throw new Error('view ' + view() + ' row ' + snd.soundPickStateForTest().row + ' rows ' + kinds());
 });
 
 step('⭑ from that MENU a further switch FOLLOWS to the new track\'s MENU (09-05: under everything)', () => {
@@ -152,22 +159,45 @@ step('⭑ from that MENU a further switch FOLLOWS to the new track\'s MENU (09-0
 /* soundEnter lands on the bank PROMPT (the bank is a door, 08-28); the click that
  * opens the menu is a view change, queued here the way the prompt's click does it. */
 function enterMenu(t) { S.activeTrack = t; snd.soundEnter(t, t); globalThis.tick(); snd.soundQueueActionForTest({ t: 'view', view: VIEW_BLOCKS }); globalThis.tick(); if (view() !== VIEW_BLOCKS) throw new Error('control: menu did not open (view ' + view() + ')'); }
-function enterConfig(t) { enterMenu(t); snd.soundQueueActionForTest({ t: 'slotcfg', which: 'config' }); globalThis.tick(); if (view() !== VIEW_SLOTCFG) throw new Error('control: CONFIG did not open (view ' + view() + ')'); }
+/* ⚠ There is no CONFIG screen since 2026-09-19 — the rows are inline at the
+ * foot of the track's own menu. "Being on config" is being on the menu with the
+ * cursor parked on one of them, so that is what this sets up. */
+function enterConfig(t) {
+    enterMenu(t);
+    const keys = snd.soundCfgRowsForTest();
+    if (!keys.length) throw new Error('control: track ' + t + ' has no config rows');
+    const i = snd.soundPickStateForTest().kinds.indexOf('cfg');
+    snd.soundQueueActionForTest({ t: 'view', view: VIEW_BLOCKS }); globalThis.tick();
+    if (i < 0) throw new Error('control: no cfg row in the menu');
+}
 function settle() { globalThis.tick(); globalThis.tick(); globalThis.tick(); }
 
-step('⭑ CONFIG → CONFIG: Schwung to Schwung lands on the new track\'s CONFIG screen', () => {
+/* ⭐ The CONFIG rows now travel with the MENU, which is the point of moving
+ * them: there is no separate screen to follow, so "does config follow the
+ * switch?" becomes "does the new track's menu carry its own rows?" — and the
+ * answer has to hold across a change of ROUTE, because which rows exist depends
+ * on it. */
+step('⭑ CONFIG rows follow the switch: Schwung to Schwung, the new track\'s own rows', () => {
     enterConfig(2);
     editops._switchActiveTrack(3);
     if (!snd.soundOpen() || snd.soundTrack() !== 3) throw new Error('did not follow');
     settle();
-    if (view() !== VIEW_SLOTCFG || fs().cfgWhich !== 'config') throw new Error('view ' + view() + ' which ' + fs().cfgWhich);
+    if (view() !== VIEW_BLOCKS) throw new Error('view ' + view());
+    if (!snd.soundCfgRowsForTest().includes('transpose'))
+        throw new Error('track 3 carries no config rows: ' + snd.soundCfgRowsForTest().join(','));
 });
 
-step('⭑ CONFIG → CONFIG: Schwung to a MIDI track lands on ITS CONFIG (item 14 gave it one)', () => {
+step('⭑ CONFIG rows follow onto a MIDI track, which has its own (shorter) set', () => {
     editops._switchActiveTrack(4);
     if (!snd.soundOpen() || snd.soundTrack() !== 4) throw new Error('did not follow');
     settle();
-    if (view() !== VIEW_SLOTCFG || fs().cfgWhich !== 'config') throw new Error('view ' + view() + ' which ' + fs().cfgWhich);
+    if (view() !== VIEW_BLOCKS) throw new Error('view ' + view());
+    const keys = snd.soundCfgRowsForTest();
+    if (!keys.includes('transpose') || !keys.includes('looper'))
+        throw new Error('the MIDI track lost its rows: ' + keys.join(','));
+    /* ⚠ A MIDI track has no chain, so no Parallel row — the row set is rebuilt
+     * for the NEW route rather than carried over from the old one. */
+    if (keys.includes('parallel')) throw new Error('a MIDI track showed Parallel: ' + keys.join(','));
 });
 
 step('⭑ CONFIG → NONE: a NONE track has no config — its Instrument-only menu', () => {
@@ -181,7 +211,7 @@ step('⭑ CONFIG → NONE: a NONE track has no config — its Instrument-only me
 step('⭑ the LFOs screen → a MIDI track has no LFOs: its menu; → Schwung: the LFOs screen again', () => {
     enterMenu(2);
     snd.soundQueueActionForTest({ t: 'slotcfg', which: 'sound' }); globalThis.tick();
-    if (view() !== VIEW_SLOTCFG || fs().cfgWhich !== 'sound') throw new Error('control: LFOs screen did not open');
+    if (view() !== VIEW_SLOTCFG) throw new Error('control: LFOs screen did not open');
     editops._switchActiveTrack(4); settle();
     if (view() !== VIEW_BLOCKS) throw new Error('a MIDI track showed an LFOs screen (view ' + view() + ')');
     editops._switchActiveTrack(3); settle();
@@ -205,7 +235,7 @@ step('⭑ an LFO editor → the SAME LFO on the new Schwung track; its target pi
 step('⭑ an open ENUM PICKER closes WITHOUT committing and the switch follows its parent (the menu)', () => {
     enterMenu(2);
     snd.soundQueueActionForTest({ t: 'instrpick' }); globalThis.tick();
-    if (view() !== VIEW_ENUM || fs().enumPick !== 'Instrument') throw new Error('control: the picker did not open');
+    if (view() !== VIEW_ENUM || fs().enumPick !== INSTR_ROW_LABEL) throw new Error('control: the picker did not open');
     const routeBefore = S.trackRoute[2];
     editops._switchActiveTrack(3); settle();
     if (S.trackRoute[2] !== routeBefore) throw new Error('the picker COMMITTED on a track switch');
@@ -269,7 +299,7 @@ step('⭑ the walk goes ON from that menu: every further track lands on ITS menu
 step('⚠ from the MENU (not the editor) a switch onto a MIDI track still lands on its menu directly', () => {
     enterMenu(2);
     editops._switchActiveTrack(4); globalThis.tick();
-    if (view() !== VIEW_BLOCKS || kinds() !== 'trackto,config') throw new Error('view ' + view() + ' rows ' + kinds());
+    if (view() !== VIEW_BLOCKS || !isMidiMenu()) throw new Error('view ' + view() + ' rows ' + kinds());
     snd.soundExit();
 });
 

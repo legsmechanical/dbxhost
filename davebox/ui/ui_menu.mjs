@@ -220,11 +220,18 @@ function buildGlobalMenuItems() {
             S.globalMenuOpen = false;
         }),
         createAction('Suspend session', function() {
-            /* Park dAVEBOx in the background (same as hold-Back) — after the
-             * exit confirm (Josh, 2026-09-05); Yes runs _suspendModule. */
+            /* Park dAVEBOx in the background — after the exit confirm
+             * (Josh, 2026-09-05); Yes runs _suspendModule.
+             * ⚠ "same as hold-Back" no longer: holding Back does nothing now,
+             * and this is the only way to suspend. */
             S.confirmExit = 'suspend'; S.confirmExitSel = 1;
             S.globalMenuOpen = false;
         }),
+        /* ⭑ The two exits are separated (Josh, 2026-09-19). Since suspend came
+         * off hold-Back the row above is its ONLY door, so it is now a place
+         * you must come to — and it sat one detent from Quit, which leaves the
+         * session entirely. A rule between them rather than nothing. */
+        createDivider(),
         createAction('Quit', function() {
             /* Confirm first (Josh, 2026-09-05); Yes runs exitSessionNow():
              * save, then the exit a tick later so the save lands.

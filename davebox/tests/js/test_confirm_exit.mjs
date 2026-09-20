@@ -1,8 +1,8 @@
 /* tests/js/test_confirm_exit.mjs — CONFIRM BEFORE EXIT (Josh, 2026-09-05: "add
  * confirmation before davebox exit").
  *
- * Every door out of the session — hold-Back, the menu's Suspend and Quit, the
- * host's Shift+Back (onSessionExitRequest) — must raise the modal FIRST and do
+ * Every door out of the session — the menu's Suspend and Quit, and the host's
+ * Shift+Back (onSessionExitRequest) — must raise the modal FIRST and do
  * nothing else; the exit runs only from its Yes, and Back / No leave the user
  * exactly where they were. The failure this guards is silent: an exit that
  * still fires directly looks like a working exit. So every step asserts BOTH
@@ -95,8 +95,9 @@ function reset() {
     S.globalMenuOpen = false; S.awaitingProjectSelect = false;
     S.backPressTick = -1; S.backHoldFired = false; S.moveCoRunTrack = -1;
 }
-/* A held Back: press, then tick past the ~450 ms threshold (the hold fires
- * from the TICK, not the release), then release. */
+/* A held Back: press, then tick past the ~450 ms threshold (the hold is
+ * resolved by the TICK, not the release), then release. ⚠ Since 2026-09-19 this
+ * gesture does NOTHING — it is kept here precisely so that is asserted. */
 function holdBack() {
     cc(MoveBack, 127);
     S.tickCount += 60; ticks(2);          /* 62 ticks ≈ 657 ms ≥ BACK_HOLD_MS */
@@ -123,26 +124,39 @@ step('setup: a booted session in track view', () => {
     S.activeTrack = 0;
     reset();
 });
-step('hold-Back raises the SUSPEND confirm and does not suspend', () => {
+/* ⭐⭐ SUSPEND HAS ONE DOOR, AND HOLD-BACK IS NOT IT (Josh, 2026-09-19: "Take
+ * suspend off hold back, leave global menu as the only option").
+ *
+ * ⚠ The hold must still be SWALLOWED. If the threshold stopped consuming the
+ * press, the release would fall through to _backTap() and hold-Back would
+ * silently become "back out one level" — the gesture acquiring a new meaning by
+ * omission. So this asserts BOTH halves: nothing suspends, and nothing taps. */
+step('⭐ a held Back does NOTHING — no modal, no suspend, and it does not TAP either', () => {
+    reset();
+    S.sessionView = false; S.bankCardLatched = true;   /* something a TAP would dismiss */
     holdBack();
-    if (S.confirmExit !== 'suspend') throw new Error('confirmExit=' + S.confirmExit);
-    if (armed()) throw new Error('the hold suspended without asking');
-    if (S.confirmExitSel !== 1) throw new Error('the modal must open on No');
+    if (S.confirmExit) throw new Error('the hold still raises a modal: ' + S.confirmExit);
+    if (armed()) throw new Error('the hold suspended');
+    if (!S.bankCardLatched) throw new Error('the hold fell through to a TAP (card dismissed)');
+    ticks(2);
+    if (S.confirmExit || armed()) throw new Error('the hold acted a tick later');
+    S.bankCardLatched = false;
 });
-step('Back on the modal is No — nothing armed, modal gone', () => {
+step('the menu Suspend modal opens on No, and Back on it is No', () => {
+    reset();
+    menuAction('Suspend session');
+    if (S.confirmExit !== 'suspend') throw new Error('confirmExit=' + S.confirmExit);
+    if (armed()) throw new Error('the menu suspended without asking');
+    if (S.confirmExitSel !== 1) throw new Error('the modal must open on No');
     cc(MoveBack, 127); cc(MoveBack, 0); ticks(1);
     if (S.confirmExit) throw new Error('modal still up');
     if (armed()) throw new Error('Back armed an exit');
 });
-step('CONTROL: without the modal, the hold used to suspend directly — it must not now', () => {
-    reset(); holdBack(); ticks(2);
-    if (armed()) throw new Error('suspend fired past the confirm');
-});
 step('jog-click on No dismisses; jog turn flips to Yes; click on Yes SUSPENDS', () => {
-    reset(); holdBack();
+    reset(); menuAction('Suspend session');
     cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
     if (S.confirmExit || armed()) throw new Error('No did not just dismiss');
-    holdBack();
+    menuAction('Suspend session');
     cc(JOG_TURN, 1);                       /* one detent: No → Yes */
     if (S.confirmExitSel !== 0) throw new Error('turn did not move to Yes');
     cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
@@ -174,7 +188,7 @@ step("the host's Shift+Back (onSessionExitRequest) is TAKEN and asks first", () 
     if (armed()) throw new Error('Shift+Back exited without asking');
 });
 step('a second request while the modal is up changes nothing', () => {
-    reset(); holdBack();
+    reset(); menuAction('Suspend session');
     cc(JOG_TURN, 1);                       /* on Yes */
     globalThis.onSessionExitRequest();      /* a quit request over a suspend modal */
     if (S.confirmExit !== 'suspend' || S.confirmExitSel !== 0)
@@ -246,17 +260,25 @@ step('knobs and Note/Session are declined under the modal (source pins)', () => 
 /* ⭑ THE PROJECT MANAGER IS A DOOR TOO (2026-09-16, Josh: "permitting davebox
  * exit from project manager (same as inside a session)").
  *
- * Hold-Back already RAISED the confirm from here — checkBackHold() has never had
- * a picker guard — but drawUIBody() drew the picker and returned before reaching
- * the dialog, and the picker's jog handlers ran before the dialog's. So the modal
+ * The confirm was already RAISED from here — no path to it has ever had a picker
+ * guard — but drawUIBody() drew the picker and returned before reaching the
+ * dialog, and the picker's jog handlers ran before the dialog's. So the modal
  * was LIVE AND INVISIBLE: nothing appeared to happen, and the click that would
  * answer it moved the picker instead. The project manager was the one screen with
  * no way out.
  *
  * ⚠ This asserts the RENDER, not just the flag. A state check alone passes on the
  * broken build — S.confirmExit was already being set. What was broken is whether
- * the user can SEE and ANSWER it. */
-step('exit confirm is reachable from the project manager', () => {
+ * the user can SEE and ANSWER it.
+ *
+ * ⚠⚠ RE-AIMED 2026-09-19 TO SHIFT+BACK, AND THAT IS NOW THE POINT OF THE STEP.
+ * Josh: "shift+back should still exit on project manager. exit is distinct from
+ * suspend." Suspend lost its gesture; EXIT kept its own, here included. The
+ * precedence this pins (renderer + router) keys on `S.confirmExit`, NOT on its
+ * kind — which is exactly why it still serves 'quit' now the suspend trigger is
+ * gone. ⚠ A later tidy-up of the now-empty checkBackHold() must not take this
+ * machinery with it; that is what this step stands guard over. */
+step('⭐ EXIT confirm is reachable from the project manager via Shift+Back', () => {
     reset();
     S.awaitingProjectSelect = true;
     /* Open it for real, through _pppRunList: the picker reads projects.json
@@ -272,9 +294,16 @@ step('exit confirm is reachable from the project manager', () => {
     try { openProjectPadPicker(); } finally { globalThis.host_read_file = prevRead; }
     if (!S.projectPadPicker) throw new Error('picker did not open');
 
-    holdBack();
-    if (S.confirmExit !== 'suspend') throw new Error('hold-Back did not raise the confirm');
+    /* The host's gesture, through the same entry point the host calls. */
+    if (globalThis.onSessionExitRequest() !== true)
+        throw new Error('Shift+Back was not TAKEN at the picker — the host will tear down under it');
+    if (S.confirmExit !== 'quit') throw new Error('Shift+Back did not raise the quit confirm');
     if (armed()) throw new Error('the exit fired without the confirm');
+
+    /* ⚠ CONTROL, same screen: the gesture that was REMOVED must not disturb
+     * the modal that replaced its job here. */
+    holdBack();
+    if (S.confirmExit !== 'quit') throw new Error('the hold disturbed the quit modal');
 
     /* It must be ON SCREEN over the picker, not merely in state. */
     /* ⚠ Collect KIT text as well as host text: the confirm family draws its
@@ -286,7 +315,7 @@ step('exit confirm is reachable from the project manager', () => {
     fonts.setKitTextTrace((t) => printed.push(String(t)));
     try { render.drawUI(); } finally { globalThis.print = realPrint; fonts.setKitTextTrace(null); }
     const joined = printed.join('|');
-    if (joined.indexOf('SUSPEND SESSION?') < 0)
+    if (joined.indexOf('QUIT dAVEBOx?') < 0)
         throw new Error('the picker drew over the confirm; screen was: ' + joined.slice(0, 120));
 
     /* ...and answerable: the wheel moves Yes/No, the click takes it. */

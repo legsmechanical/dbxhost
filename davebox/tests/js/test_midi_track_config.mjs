@@ -62,11 +62,11 @@ function kinds() { return sound.soundPickStateForTest().kinds; }
 /* Enter sound mode on a track the way the tick does for its route, then read
  * the menu. soundEnter is the Schwung/EXT flavour (a MIDI track has no bus). */
 function menuFor(t) { sound.soundExit(); sound.soundEnter(t, t); ticks(2); return kinds(); }
+/* ⚠ No CONFIG door since 2026-09-19: the rows are INLINE at the foot of the
+ * track's own menu, so entering the menu is all it takes. */
 function configRowsFor(t) {
     menuFor(t);
-    sound.soundQueueActionForTest({ t: 'slotcfg', which: 'config' });
-    ticks(2);
-    return sound.soundSlotRowsForTest();
+    return sound.soundCfgRowsForTest();
 }
 
 step('setup', () => {
@@ -79,12 +79,16 @@ step('CONTROL: a Schwung track\'s menu still has its blocks, levels and doors', 
     if (k[0] !== 'trackto') throw new Error('first row ' + k[0]);
     if (!k.includes('block') || !k.includes('buslevel')) throw new Error('Schwung menu lost rows: ' + k.join(','));
 });
-step('a MIDI-routed track\'s menu is its destination + the CONFIG door, nothing else', () => {
+step('a MIDI-routed track\'s menu is its destination + its own CONFIG rows, nothing else', () => {
     B.applyInstrChoice(1, C.INSTR_MIDI_CH + 4);
     if (S.trackRoute[1] !== 2) throw new Error('route=' + S.trackRoute[1]);
     S.activeTrack = 1;
     const k = menuFor(1);
-    if (k.join(',') !== 'trackto,config') throw new Error('rows: ' + k.join(','));
+    /* No chain, no bus — so: the destination, a rule, then the config rows. */
+    if (k[0] !== 'trackto' || k[1] !== 'div') throw new Error('rows: ' + k.join(','));
+    if (!k.slice(2).every(x => x === 'cfg')) throw new Error('rows: ' + k.join(','));
+    if (k.includes('config')) throw new Error('the CONFIG door came back: ' + k.join(','));
+    if (k.includes('block') || k.includes('buslevel')) throw new Error('rows: ' + k.join(','));
 });
 step('a NONE track stays collapsed to the row that picks an instrument', () => {
     B.applyInstrChoice(2, C.INSTR_NONE);
@@ -92,27 +96,26 @@ step('a NONE track stays collapsed to the row that picks an instrument', () => {
     const k = menuFor(2);
     if (k.join(',') !== 'trackto') throw new Error('rows: ' + k.join(','));
 });
-step('the MIDI track\'s CONFIG screen: mode, layout, transpose, velin, LOOPER, afttch (Josh, 09-05: the looper is a MIDI looper)', () => {
+step('the MIDI track\'s config rows: mode, layout, transpose, velin, LOOPER, afttch (Josh, 09-05: the looper is a MIDI looper)', () => {
     S.activeTrack = 1;
     const keys = configRowsFor(1);
     for (const want of ['mode', 'layout', 'transpose', 'velin', 'afttch'])
         if (!keys.includes(want)) throw new Error('missing ' + want + ' in ' + keys.join(','));
     if (!keys.includes('looper')) throw new Error('Looper missing on a MIDI track (it loops the note stream): ' + keys.join(','));
-    if (sound.soundPickStateForTest().view === 0) throw new Error('the config door did not open');
 });
-step('CONTROL: the same screen on a Schwung track still has the Looper', () => {
+step('CONTROL: a Schwung track still has the Looper among its rows', () => {
     S.activeTrack = 0;
     const keys = configRowsFor(0);
     if (!keys.includes('looper')) throw new Error('Schwung track lost its Looper: ' + keys.join(','));
 });
-step('the config screen SURVIVES the tick on a MIDI track (no follow kicks it out)', () => {
+step('the rows SURVIVE the tick on a MIDI track (no follow rebuilds them away)', () => {
     S.activeTrack = 1;
     configRowsFor(1);
     const v0 = sound.soundPickStateForTest().view;
     ticks(30);
     const v1 = sound.soundPickStateForTest().view;
     if (v1 !== v0) throw new Error('view changed under the tick: ' + v0 + ' -> ' + v1);
-    if (!sound.soundSlotRowsForTest().includes('transpose')) throw new Error('rows lost under the tick');
+    if (!sound.soundCfgRowsForTest().includes('transpose')) throw new Error('rows lost under the tick');
 });
 
 if (failed) process.exit(1);

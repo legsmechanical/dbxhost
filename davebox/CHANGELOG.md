@@ -16,6 +16,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed (pending)
+- **The Clip, Step and All Lanes banks now light their knob rings** like every
+  other bank — knobs 1–4 white, 5–8 orange — so you can tell at a glance which
+  encoder is which. A ring lights whenever the knob *does* something, even where
+  there is no value to show, and stays dark only where there is genuinely nothing
+  on it (Clip's sixth knob, and the two empty cells on a drum step page).
+- **The step editor's Note and Oct knobs no longer read as dead.** Both change
+  the held step's pitch, but their rings were unlit — the one case where the
+  lights actively said a working control did nothing.
+- **The Conductor banks light each knob in its track's colour**, since on those
+  three pages a knob *is* a track.
+
+### Changed (pending)
+- **Conductor is chosen in the Instrument picker now**, which is renamed
+  **Instrument/Type**. It sits just after the Move instruments, and turning a
+  Conductor back into an ordinary track is done from the same list — previously
+  there was no way to reach it from a track's own screen at all. **Mode** keeps
+  the two choices that only change how a track sequences: Keys and Drums.
+  A Conductor keeps the instrument it had parked, so it is still there when you
+  come back.
+- **A track's settings are at the foot of its own Sound menu**, below a divider,
+  instead of behind a **Config** door — Mode, Layout, Transpose, VelIn, Looper,
+  AftTch and Parallel. Click a row to take the jog, turn to change it, click (or
+  Back) to let go. One less screen to walk into and out of, and the settings still
+  live in exactly one place.
+- **Holding Back no longer suspends.** Suspending to Move is now one deliberate
+  place — **Settings menu → Suspend session** — rather than something a long
+  press can do from anywhere. Going out to Move isn't part of using dAVEBOx; that
+  is what co-run is for. **Leaving is unaffected: Shift + Back still exits from
+  anywhere, the project picker included.** Suspend and Quit are also separated in
+  the menu now, so the row you want isn't one detent from the one you don't.
+
 ### Features (pending)
 - **Instruments render in parallel.** Each track's chain now renders across
   three cores instead of one, so more instruments can sound at once before the
