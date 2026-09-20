@@ -189,6 +189,9 @@ line. Replies start with `OK` or `ERR`.
 | `INJECT_MIDI 0BB0307F` | `OK` |
 | `WAIT_FRAME 5` | `OK frame=1234567` |
 | `SNAPSHOT_PAD_LEDS` | `OK 00000000010000…` (64 hex chars = 32 bytes; notes 68-99) |
+| `SNAPSHOT_DISPLAY` | `OK counter=<n> <2048 hex chars>` — the OLED itself, 1024 bytes of 128x64 1bpp |
+| `SET_DISPLAY_MIRROR 0\|1` | `OK` (gates the shim's per-frame copy; **off by default**) |
+| `INJECT_MIDI_MOVE 0BB0307F` | `OK move` — force Move's mailbox regardless of what is on screen |
 | `STATE` | `OK move_ui_mode=N overtake_mode=N shift_held=N selected_slot=N ui_slot=N shim_counter=N transport_playing=N speaker_active=N line_in_connected=N display_mode=N` |
 | `RESTART_MOVE` | `OK` (sets the shim's `restart_move` flag; Move relaunches) |
 | `SET_PARAM <key> <value>` | `OK` (writes a shadow/overtake param via the `/schwung-param` SHM) |
@@ -205,6 +208,20 @@ line. Replies start with `OK` or `ERR`.
 are notes 68–99 on cable 0; the high nibble of byte 0 is the cable number,
 the low nibble the CIN (`0x9` = note-on, `0x8` = note-off, `0xB` = CC).
 
+**`INJECT_MIDI` delivers to whoever owns the surface, and says which.** There
+are two MIDI_IN routes and they do not meet: `/schwung-midi-inject` is drained
+into **Move's mailbox** for the firmware, while a module that has taken over the
+surface is fed from the **raw hardware buffer**. A packet on the wrong one is
+not an error and not a drop — it arrives somewhere nobody is looking, which
+reads exactly like "the gesture did nothing". So the daemon picks by
+`overtake_mode` and replies `OK surface` or `OK move`; assert on that when a
+test's meaning depends on it. `INJECT_MIDI_MOVE` forces the mailbox for tests
+that mean Move itself (co-run, native UI).
+
+*Measured 2026-09-20, before this existed: a project-picker pad tap through the
+bus moved none of the 32 pad LEDs. Upstream measured the identical result on
+2026-07-29.*
+
 `WAIT_FRAME N` blocks until the shim's SPI frame counter has advanced by at
 least N (each frame ≈ 2.9 ms). Hard cap N ≤ 10000 and a 30 s wall-clock
 ceiling guard against runaway tests.
@@ -218,12 +235,106 @@ one per pad. Index 0 = note 68 (track 4 pad A), index 31 = note 99
 (All build on the primitives shipped here and land in follow-ups.)
 
 * Streams for `midi_in`, `log`, `audio` (only `midi_out` so far)
-* Display framebuffer snapshots + syrupy diffing
+* ~~Display framebuffer snapshots~~ — **shipped**, see "Seeing the screen" below. Image *diffing* helpers (syrupy-style golden frames) are still to come.
 * Module state providers (`host_register_test_state`)
 * The reversible-UI `Commander` layer (see "Reversible UI tests" below)
 * Combinator helpers (`bus.wait_all`)
 * Server-side sub-filters on subscriptions (`midi_out:cable=0,status=note_off`) — for now, filter client-side via `cap.filter(...)`
 * Audio fixture WAV-as-line-in injection
+
+## Seeing the screen, and driving the surface
+
+This is the pair that makes unattended device work possible: **read what is on
+the OLED**, and **perform a real gesture** to change it. Before them a suite
+could prove a screen was *wired* and never that it was *reachable* — the
+distinction that has cost this repo whole days.
+
+### The full loop, from a dev machine
+
+```sh
+# 1. a session must be running on the device (the launcher installs under this
+#    name — there is no scripts/launch.sh on the device):
+ssh ableton@move.local 'nohup setsid \
+  /data/UserData/schwung/modules/tools/davebox-sa/standalone \
+  > /data/UserData/launch.out 2>&1 < /dev/null &'
+
+# 2. the daemon is opt-in — start it by hand:
+ssh ableton@move.local 'nohup setsid /data/UserData/dbx-host/bin/schwung-testd \
+  > /data/UserData/testd.log 2>&1 < /dev/null &'
+
+# 3. forward the port:
+ssh -f -N -L 47777:127.0.0.1:47777 ableton@move.local
+```
+
+```python
+from schwung_bus.client import SchwungBus
+
+with SchwungBus() as bus:
+    bus.set_display_mirror(True)      # OFF by default: it costs a memcpy/frame
+    bus.wait_frame(10)                # let one composite land
+
+    before = bus.snapshot_display()
+    print(before.to_ascii())          # 64 lines x 128 chars — readable in a terminal
+
+    bus.inject_midi(bytes([0x0B, 0xB0, 14, 1]))   # jog turn, one detent right
+    bus.wait_frame(20)
+
+    after = bus.snapshot_display()
+    changed = sum(1 for i in range(1024) if before.data[i] != after.data[i])
+    assert changed, "the gesture did not move the screen"
+```
+
+Measured on hardware for orientation: a **jog turn** moves ~384 bytes of the
+frame, a **jog click** ~628, a **pad press in a loaded session** ~47. A change
+of 0 means the gesture did not land — treat it as a failure, not as noise.
+
+### Gestures
+
+`press_pad` / `release_pad` (notes 68–99), `press_step` / `release_step`,
+`tap("jog_click" | "shift" | "menu" | "back", hold_frames=N)` — a **hold** is
+what a long-press test needs, and `hold_frames` is how long. All of them go
+through `inject_midi`, so all of them route to whoever owns the surface.
+
+### Reading a frame
+
+`snapshot_display()` returns a `DisplayFrame`:
+
+* `pixel(x, y)` — origin top-left. **Use this, do not index `data` by hand.**
+* `lit()` / `is_blank()` — a genuinely empty screen vs a screen you did not read
+* `to_ascii(on="#", off=" ")` — put this in a failure message; a hex dump says nothing
+* `to_pbm()` — write it to a file and open it
+
+⚠ **The packing is PAGE-ordered, not row-ordered.** One byte is 8 *vertical*
+pixels: `byte = (y // 8) * 128 + x`, `bit = y % 8`, LSB topmost. Decoded
+row-wise nothing errors — you get plausible-looking noise, and an assertion
+that fails for a reason unrelated to the screen. `tests/test_display_frame.py`
+pins it with hand-checkable cases.
+
+### Two refusals, on purpose
+
+* `SNAPSHOT_DISPLAY` **refuses** when the mirror is off instead of returning the
+  stale/zero buffer. All-zero renders as a blank screen and reads as "the module
+  drew nothing" — a false finding is worse than a missing one.
+* `SET_DISPLAY_MIRROR` is explicit rather than auto-enabled inside the snapshot.
+  A command that silently changes device state describes a machine that only
+  exists while it is being measured.
+
+### Known gaps
+
+* **Pads do nothing on the project picker specifically** (they work in a loaded
+  session). Suspect that screen's own gating rather than the injection — probe
+  with a positive control before concluding.
+* No golden-frame diffing helpers yet; compare byte counts or assert on
+  `pixel()` regions.
+* The daemon serves **one client at a time**, and a dropped connection resets
+  subscriptions.
+
+### Cleanup
+
+`ssh ableton@move.local 'sh /data/UserData/dbx-host/scripts/exit-to-stock.sh'`
+ends the session cleanly. Killing `shadow_ui` does **not** — the shim respawns
+it. ⚠ Do not `pkill -f schwung-testd` inside an ssh command: the pattern matches
+the remote shell's own command line and kills the session before the rest runs.
 
 ## Writing tests — pitfalls hard-won on hardware
 
