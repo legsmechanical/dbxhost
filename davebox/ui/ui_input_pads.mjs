@@ -945,7 +945,19 @@ function _jumpToMenuLabel(label) {
     }
 }
 
+/* Companion to the shift probe in ui_input_cc.mjs: does a STEP press reach the
+ * module at all? The two together separate "the chord never arrived" from "the
+ * chord arrived and the branch did not fire", which no screen or LED read can
+ * distinguish — an injected step that lands but does nothing visible looks
+ * identical to one that was never delivered. */
+let _stepPressSeen = false;
+
 function _doShiftStepCommon(idx) {
+    if (!_stepPressSeen) {
+        _stepPressSeen = true;
+        console.log('dbx: STEP press reached the module (idx=' + idx +
+                    ', shiftHeld=' + S.shiftHeld + ')');
+    }
     if (idx === 0) {
         /* Shift+Step1: back to the project picker (the host's boot set-select
          * gate) — same visibility as the Shift+Step2 menu shortcut, same

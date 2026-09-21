@@ -1485,12 +1485,17 @@ function autoLaneJump() {
  *
  * Once per session, not per press: Shift is pressed constantly in ordinary
  * use, and a per-press line would be noise that buys nothing after the first. */
-let _shiftEverSeen = false;
+/* ⚠ held=TRUE only. The first cut logged the first CALL, and the module calls
+ * this on ITSELF at startup to clear the flag (ui_tick, ui_corun) — so it fired
+ * twice with held=false seven seconds into the session and spent its one shot
+ * before any press could arrive. A probe that answers at the wrong moment reads
+ * exactly like a probe that answered. Only a PRESS can set held true. */
+let _shiftPressSeen = false;
 
 export function applyShiftEdge(held) {
-    if (!_shiftEverSeen) {
-        _shiftEverSeen = true;
-        console.log('dbx: shift edge received by the module (held=' + held + ')');
+    if (held && !_shiftPressSeen) {
+        _shiftPressSeen = true;
+        console.log('dbx: SHIFT PRESS reached the module');
     }
     S.shiftHeld = held;
     S.screenDirty = true;      /* the overview footer names the Shift chords while it is held (2026-09-05) */
