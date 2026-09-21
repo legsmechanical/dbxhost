@@ -86,6 +86,15 @@ check "project-cmd reads the pad"      "$HERE/scripts/project-cmd.sh"  "import p
 check "select-list reads the pad"      "$HERE/scripts/select-list.sh"  "import project_pad as pp"
 check "select-hook reads the pad"      "$HERE/scripts/select-hook.sh"  "import project_pad as pp"
 
+# ⭑ THE TWO SLOTS. Move sees exactly these and never a project id. They are
+# fixtures, not projects: nothing may mint one, and nothing may spell them
+# anywhere but their home. A drifted id here is silent in the worst way — the
+# library would carry a third entry and the old one would never be reclaimed.
+check "slot A id"                      "$HERE/scripts/library_slots.py" '"5107a000-0000-4000-8000-000000000000"'
+check "slot B id"                      "$HERE/scripts/library_slots.py" '"5107b000-0000-4000-8000-000000000001"'
+check "the slots own Move's index"     "$HERE/scripts/library_slots.py" 'SONG_INDEX_XATTR = "user.song-index"'
+check "set-swap clamps the boot index" "$HERE/scripts/set-swap.sh"      "slot(s) this library has"
+
 # ⭑ The reserved per-project state subdir (Phase B, state-co-location): the ONE
 # name every consumer must agree on. The C side and JS side WRITE state under
 # it; the shell sites SKIP it when hunting the inner set dir. A case slip in any

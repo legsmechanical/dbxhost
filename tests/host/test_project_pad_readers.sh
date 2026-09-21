@@ -62,11 +62,14 @@ fi
 # ⭐ project-cmd.sh, select-hook.sh and launch.sh dropped off this list when
 # they stopped stamping it per project. That is the change, and this check is
 # how it is kept: a verb that starts authoring it again fails here.
+# (check-config.sh names it in order to PIN the owner — a checker appearing in
+# its own subject list, same as it does for the pad.)
 idx_files=$(git grep -l 'user\.song-index' -- ':!work' ':!*.md' ':!tests' ':!davebox/tests' ':!tools' | sort)
 want_idx="src/host/shadow_constants.h
 src/host/shadow_loaded_set_policy.h
 src/host/shadow_set_pages.c
 src/schwung_shim.c
+standalone/scripts/check-config.sh
 standalone/scripts/library_slots.py
 standalone/scripts/project_pad.py
 standalone/scripts/set-swap.sh"
