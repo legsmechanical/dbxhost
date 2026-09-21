@@ -74,8 +74,21 @@ if awk '/sh "\$DBX_DIR\/relaunch_patch.sh"/{p=NR} /project-cmd.sh" fix-order/{if
 else
     bad "launch.sh does not run fix-order after the relaunch patch"
 fi
-awk '/^do_repair_indices\(\)/,/^}/' "$CMD" | grep -q "ss.fix_library_order(projects_dir)" \
-    && ok "repair-indices runs the re-order pass" || bad "repair-indices lost the re-order pass"
+# ⚠ CAPTURE, THEN MATCH — do NOT pipe awk into `grep -q` here. Under
+# `pipefail`, grep -q exits on the match, awk's final stdio flush hits a
+# closed pipe and dies of SIGPIPE (141), and the pipeline reports failure —
+# so the check announces the very defect it is hunting. It is a RACE decided
+# by size: this range block is 4159 bytes and the match ends at 3631, either
+# side of the 4096-byte flush, which is why it fires under full-suite load
+# and never in isolation. Seen 2026-09-21. The empty case is separate and
+# just as necessary: an awk range that matches NOTHING otherwise reads as
+# "the call is absent", which is the same wrong answer by another route.
+body="$(awk '/^do_repair_indices\(\)/,/^}/' "$CMD")"
+case "$body" in
+    *"ss.fix_library_order(projects_dir)"*) ok  "repair-indices runs the re-order pass" ;;
+    "")  bad "do_repair_indices not found in $CMD — the check cannot see its subject" ;;
+    *)   bad "repair-indices lost the re-order pass" ;;
+esac
 
 # ---- xattr layers: repair-indices end to end, and the OPEN rename ----------
 if python3 -c 'import os,sys; os.setxattr(sys.argv[1], "user.t", b"1")' "$PROJECTS_DIR" 2>/dev/null; then
