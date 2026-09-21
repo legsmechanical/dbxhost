@@ -56,18 +56,19 @@ fi
 # ---- 3. Move's ordering index stays where Move's ordering lives --------------
 # These are the files allowed to know `user.song-index`. It is MOVE'S number:
 # the shim and set-pages resolve Move's currentSongIndex with it, set-swap
-# restores a session position with it, project-cmd/select-hook/launch still
-# author it per project (that is what the next phase takes away), and
-# project_pad.py reads it for the one-time migration.
+# restores a session position with it, project_pad.py reads it for the one-time
+# pad migration — and `library_slots.py` is the ONE WRITER, because it is a
+# SLOT property now, belonging to whichever project each slot points at.
+# ⭐ project-cmd.sh, select-hook.sh and launch.sh dropped off this list when
+# they stopped stamping it per project. That is the change, and this check is
+# how it is kept: a verb that starts authoring it again fails here.
 idx_files=$(git grep -l 'user\.song-index' -- ':!work' ':!*.md' ':!tests' ':!davebox/tests' ':!tools' | sort)
 want_idx="src/host/shadow_constants.h
 src/host/shadow_loaded_set_policy.h
 src/host/shadow_set_pages.c
 src/schwung_shim.c
-standalone/scripts/launch.sh
-standalone/scripts/project-cmd.sh
+standalone/scripts/library_slots.py
 standalone/scripts/project_pad.py
-standalone/scripts/select-hook.sh
 standalone/scripts/set-swap.sh"
 if [ "$idx_files" = "$(printf '%s' "$want_idx")" ]; then
     ok "user.song-index is confined to the files that answer to Move"

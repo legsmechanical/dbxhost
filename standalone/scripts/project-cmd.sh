@@ -155,18 +155,77 @@ os.setxattr(_d, 'user.local-cloud-state', b'notSynced')
 # visible to Move immediately; and outside a session there is no mount to be
 # wrong about.
 sync_library() {
-    python3 - "$LIBRARY_DIR" "$PROJECTS_DIR" <<'PYEOF' || \
+    _prefer=""
+    [ -f "$ACTIVE_SET_PATH" ] && \
+        _prefer="$(head -n 1 "$ACTIVE_SET_PATH" | tr -d '[:space:]')"
+    python3 - "$LIBRARY_DIR" "$PROJECTS_DIR" "$_prefer" <<'PYEOF' || \
         printf 'project-cmd: WARNING: library sync failed\n' >&2
 import os, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
 import library_slots as sl
-linked, unlinked, strays = sl.sync(sys.argv[1], sys.argv[2])
-for p in linked:
-    print("project-cmd: library: slot %s -> project" % p)
-for p in unlinked:
-    print("project-cmd: library: dropped stale slot %s" % p)
+# ⭐ The boot project keeps slot 0 where it can, so a launch lands where the
+# last session left off rather than on whichever project sorts first.
+# ⚠ active_set.txt carries what MOVE confirmed — which is the library ENTRY,
+# i.e. a slot id once slots exist. Resolve it to the project it leads to
+# before preferring it, or the preference names a slot and matches nothing.
+_prefer = sys.argv[3] if len(sys.argv) > 3 else ""
+if _prefer in sl.SLOT_IDS:
+    _prefer = sl.slot_target(sys.argv[1], _prefer)
+pointed, removed, strays = sl.sync(sys.argv[1], sys.argv[2], _prefer)
+for i, pid in pointed:
+    print("project-cmd: library: slot %d -> %s" % (i, pid))
+for n in removed:
+    print("project-cmd: library: removed %s (not a slot)" % n)
 for n in strays:
     print("project-cmd: library: WARNING not a slot, left alone: %s" % n)
+PYEOF
+}
+
+# ⭐ THE SWITCH PRIMITIVE: point ONE slot at ONE project, and say what it
+# actually resolves to afterwards.
+#
+# Prints the project id the slot leads to AFTER the write, and exits non-zero
+# when that is not what was asked for. ⚠ A READBACK, not a success flag, and
+# the difference is the whole point: if the rename did not land, the slot still
+# points at its PREVIOUS project — so pressing its pad would make Move
+# genuinely change set, Move would log, and the uuid it logs IS the slot we
+# pressed. Confirmation would pass and the wrong project would be reported
+# open. The caller must compare, and must not press on a mismatch.
+#
+# ⚠⚠ ONLY EVER THE IDLE SLOT. Re-pointing the slot Move is live on was tried
+# deliberately on hardware: the session's state landed in an unrelated project,
+# the project being edited took zero writes, and nothing said so.
+do_point() { # slot-index project-id
+    case "${1:-}" in *[!0-9]*|"") die "point needs a numeric slot index" ;; esac
+    [ -n "${2:-}" ] || die "point needs a project id"
+    python3 - "$LIBRARY_DIR" "$PROJECTS_DIR" "$1" "$2" <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import library_slots as sl
+library, projects_dir, slot, pid = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
+if not os.path.isdir(os.path.join(projects_dir, pid)):
+    sys.exit("project-cmd: ERROR: no such project: %s" % pid)
+try:
+    landed = sl.repoint(library, projects_dir, slot, pid)
+except ValueError as e:
+    sys.exit("project-cmd: ERROR: %s" % e)
+print(landed)
+if landed != pid:
+    sys.exit("project-cmd: ERROR: slot %d resolves to %r, asked for %r — NOT pressed"
+             % (slot, landed, pid))
+PYEOF
+}
+
+# Which slot currently leads to a project (or nothing). The caller needs this
+# to know which slot is IDLE before it re-points one.
+do_slot_of() { # project-id
+    [ -n "${1:-}" ] || die "slot-of needs a project id"
+    python3 - "$LIBRARY_DIR" "$1" <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import library_slots as sl
+i = sl.slot_of_project(sys.argv[1], sys.argv[2])
+print(-1 if i is None else i)
 PYEOF
 }
 
@@ -561,7 +620,6 @@ nxt = top + 1
 if hasattr(os, "setxattr"):
     try:
         pp.set_pad(os.path.join(projects_dir, new_uuid), nxt)
-        os.setxattr(os.path.join(projects_dir, new_uuid), "user.song-index", str(nxt).encode())
         os.setxattr(os.path.join(projects_dir, new_uuid), "user.dbx-color", str(nxt % palette_n).encode())
     except OSError:
         pass
@@ -595,7 +653,33 @@ do_switch() { # index
     # session then booted into an unmatched set, `__pending-*`). The launcher
     # applies this file to Settings.json AFTER Move has exited, which is the
     # same ordering the host's own set-page change uses.
-    printf '%s\n' "$1" > "$DBX_DIR/relaunch_song_index"
+    # ⚠⚠ TRANSLATE THE PAD TO A SLOT. The caller names a PICKER PAD; Move boots
+    # into `currentSongIndex` of the library it can see, which holds the two
+    # slots. Writing the pad would name a position that does not exist and Move
+    # would open its own default song — which is exactly what a stale index did
+    # on hardware. Every caller keeps passing a pad; the translation lives here
+    # so none of them has to know.
+    _sw_uuid="$(python3 - "$PROJECTS_DIR" "$1" <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import library_slots as sl, project_pad as pp
+projects_dir, pad = sys.argv[1], int(sys.argv[2])
+for pid in sl.project_ids(projects_dir):
+    if pp.pad_of(os.path.join(projects_dir, pid)) == pad:
+        print(pid); break
+PYEOF
+)"
+    _sw_slot=0
+    if [ -n "$_sw_uuid" ]; then
+        _sw_slot="$(do_slot_of "$_sw_uuid" 2>/dev/null || echo -1)"
+        if [ "$_sw_slot" = "-1" ]; then
+            # Not on show. A relaunch kills Move, so there is no live slot to
+            # protect — this is the one window where taking one is safe.
+            do_point 0 "$_sw_uuid" >/dev/null 2>&1 && _sw_slot=0
+        fi
+    fi
+    case "$_sw_slot" in ''|*[!0-9]*) _sw_slot=0 ;; esac
+    printf '%s\n' "$_sw_slot" > "$DBX_DIR/relaunch_song_index"
     : > "$DBX_DIR/relaunch_requested"
     # Detached, exactly like exit-to-stock.sh: our caller is a child of the
     # process we are about to signal. SIGTERM so shutdown saves run; the
@@ -627,8 +711,7 @@ do_new_at() { # index [name]
     python3 -c "import os,sys
 sys.path.insert(0, os.environ['DBX_PY_DIR'])
 import project_pad as pp
-pp.set_pad(sys.argv[1], int(sys.argv[2]))
-os.setxattr(sys.argv[1], 'user.song-index', sys.argv[2].encode())" \
+pp.set_pad(sys.argv[1], int(sys.argv[2]))" \
         "$PROJECTS_DIR/$_uuid" "$1" 2>/dev/null || true
     # Default colour: round-robin by pad (see DBX_PALETTE_N). Same best-effort
     # shape as the index above — a project without the xattr is simply colour 0.
@@ -697,7 +780,6 @@ if moved:
 # copytree carries the INNER tree but not the OUTER dir's xattrs — index and
 # color are the outer dir's, so set by hand.
 pp.set_pad(np, dst)
-os.setxattr(np, "user.song-index", str(dst).encode())
 try:
     os.setxattr(np, "user.dbx-color", os.getxattr(sp, "user.dbx-color"))
 except OSError:
@@ -1154,7 +1236,6 @@ for p, old_idx in moves:
         print("project-cmd: repair-indices: WARNING no free pad for %s (index %d)" % (p, old_idx))
         continue
     pp.set_pad(p, new_idx)
-    os.setxattr(p, "user.song-index", str(new_idx).encode())
     used.add(new_idx)
     repaired += 1
     print("project-cmd: repair-indices: moved %s from index %d to %d" % (os.path.basename(p), old_idx, new_idx))
@@ -1263,6 +1344,8 @@ case "${1:-}" in
     color) _require_own_tree color; shift; do_color "${1:-}" "${2:-}" ;;
     normalize) _require_own_tree normalize; shift; do_normalize "${1:-}" ;;
     library-sync) _require_own_tree library-sync; do_library_sync ;;
+    point) _require_own_tree point; shift; do_point "${1:-}" "${2:-}" ;;
+    slot-of) shift; do_slot_of "${1:-}" ;;
     rename) _require_own_tree rename; shift; do_rename "${1:-}" "${2:-}" "${3:-}" ;;
     repair-indices) _require_own_tree repair-indices; do_repair_indices ;;
     fix-order) _require_own_tree fix-order; shift; do_fix_order "${1:-}" ;;

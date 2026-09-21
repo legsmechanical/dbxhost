@@ -455,14 +455,14 @@ setsid --wait bash -c '
       _tuuid=$(cat /proc/sys/kernel/random/uuid)
       mkdir -p "$DBX_DIR/projects/$_tuuid"
       cp -r "$DBX_DIR/sets/template/." "$DBX_DIR/projects/$_tuuid/"
-      # Pad position in the native picker IS user.song-index; pin the seed to
-      # index 0 so the first project sits on the first pad (and the select
-      # phases pad<->index mapping holds from the very first boot).
+      # Pin the seed to picker pad 0 so the first project sits on the first
+      # pad. Only the PAD: the ordering index Move reads belongs to whichever
+      # slot ends up pointing here, and library-sync below is the one thing
+      # that writes it. (No apostrophes in this body -- see the header.)
       python3 -c "import os,sys
 sys.path.insert(0, sys.argv[2])
 import project_pad as pp
-pp.set_pad(sys.argv[1], 0)
-os.setxattr(sys.argv[1], \"user.song-index\", b\"0\")" \
+pp.set_pad(sys.argv[1], 0)" \
         "$DBX_DIR/projects/$_tuuid" "$DBX_DIR/scripts" 2>/dev/null || true
       # …and give it the slot Move will enumerate. A seeded project with no
       # slot is a fresh install that comes up on an empty picker.

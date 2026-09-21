@@ -46,6 +46,35 @@ PROJECT_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$")
 # writes it). It is a FILE, and it is not ours to move.
 NOTICE = "DO-NOT-EDIT.txt"
 
+# ---- the two slots ----------------------------------------------------------
+#
+# Move sees exactly these, and never a project id. Switching is: re-point the
+# IDLE slot at the project you want, confirm it landed, then press its pad —
+# so the slot Move is LIVE on is never touched, which is the whole safety
+# property. (Re-pointing the live slot was tried deliberately on hardware: it
+# wrote the session's state into an unrelated project and left the project the
+# user was editing with zero writes, silently, in both directions.)
+#
+# ⚠ Fixed, constant ids: a slot is a fixture, not a project, and nothing may
+# ever mint one. `5107` reads as SLOT, and `a000`/`b000` are far enough apart to
+# tell at a glance in a log line — a pair differing in the last character would
+# not be. check-config.sh pins them.
+SLOT_IDS = (
+    "5107a000-0000-4000-8000-000000000000",
+    "5107b000-0000-4000-8000-000000000001",
+)
+
+# Move orders the library by this xattr, read THROUGH the slot symlink (a
+# symlink cannot carry one — PermissionError, verified). So it lives on
+# whichever project a slot currently points at, is {0,1}, and is written HERE
+# and nowhere else. The picker's own pad is a different number in a different
+# xattr (project_pad.py).
+SONG_INDEX_XATTR = "user.song-index"
+
+
+def is_slot_id(name):
+    return name in SLOT_IDS
+
 
 def is_project_id(name):
     return bool(PROJECT_RE.match(name))
@@ -65,9 +94,26 @@ def project_path(projects_dir, pid):
     return os.path.abspath(os.path.join(projects_dir, pid))
 
 
-def point_slot(library, pid, target):
-    """Create or re-point one slot. Atomic; returns True when it changed."""
-    link = os.path.join(library, pid)
+def _set_song_index(project_dir, idx):
+    """Put Move's ordering index on a project, or take it off (idx None)."""
+    try:
+        if idx is None:
+            os.removexattr(project_dir, SONG_INDEX_XATTR)
+        else:
+            os.setxattr(project_dir, SONG_INDEX_XATTR, str(int(idx)).encode())
+    except (OSError, AttributeError):
+        pass            # best effort: a platform without user.* xattrs, or none set
+
+
+def _point(library, slot_id, target):
+    """Create or re-point ONE slot. Atomic; returns True when it changed.
+
+    ⚠ symlink-to-temp then rename, never unlink-then-symlink: the rename is
+    atomic, so a reader — Move, enumerating the library — never sees the name
+    missing. An unlink/symlink pair has a window where the slot does not exist,
+    and Move enumerating in that window sees a library one entry short.
+    """
+    link = os.path.join(library, slot_id)
     try:
         if os.readlink(link) == target:
             return False
@@ -79,49 +125,154 @@ def point_slot(library, pid, target):
     except OSError:
         pass
     os.symlink(target, tmp)
-    os.rename(tmp, link)            # atomic over an existing link
+    os.rename(tmp, link)
     return True
 
 
-def sync(library, projects_dir):
-    """Make the library show exactly one slot per project.
+def slot_target(library, slot_id):
+    """The project id a slot currently leads to, or '' if it leads nowhere."""
+    try:
+        t = os.readlink(os.path.join(library, slot_id))
+    except OSError:
+        return ""
+    return os.path.basename(t.rstrip("/"))
 
-    Returns (linked, unlinked, strays): ids whose slot was created or
-    re-pointed, ids whose stale slot was removed, and the names of entries
-    left alone because they are not ours.
+
+def slot_of_project(library, pid):
+    """Which slot currently points at this project, or None."""
+    if not pid:
+        return None
+    for i, sid in enumerate(SLOT_IDS):
+        if slot_target(library, sid) == pid:
+            return i
+    return None
+
+
+def plan_slots(ids, current):
+    """Choose what each slot should point at. Pure — no filesystem.
+
+    `ids` is the store, `current` is what each slot points at NOW (a list the
+    length of SLOT_IDS, entries '' for unset). Returns the same shape.
+
+    Two rules, and the second is the one that is easy to get wrong:
+
+      1. **Keep what is already pointed**, where it is still a real project.
+         A launch must not move a slot Move may be about to boot into.
+      2. ⚠⚠ **The two slots must never point at the SAME project.** They would
+         share one directory, so they would share its single `user.song-index`
+         — and Move would see two entries claiming one position, which is
+         undefined. Nothing else in the design prevents this, so it is
+         prevented here.
+
+    ⭑ With ONE project there is ONE slot, not a second slot parked somewhere
+    invented. Nothing can be switched to when there is nothing else, so a
+    second slot would buy a placeholder project that could leak into the
+    picker, for no behaviour at all. The slot appears when the second project
+    does. (Josh's call, 2026-09-21.)
+    """
+    want = [""] * len(SLOT_IDS)
+    taken = set()
+    n = min(len(SLOT_IDS), len(ids))
+    for i in range(n):
+        c = current[i] if i < len(current) else ""
+        if c and c in ids and c not in taken:
+            want[i] = c
+            taken.add(c)
+    for i in range(n):
+        if want[i]:
+            continue
+        for pid in ids:
+            if pid not in taken:
+                want[i] = pid
+                taken.add(pid)
+                break
+    return want
+
+
+def sync(library, projects_dir, prefer=""):
+    """Make the library show the two slots, and NOTHING else.
+
+    `prefer` names a project that should keep/take slot 0 when it is not
+    already placed — the boot project, so a launch lands where it left off.
+
+    Returns (pointed, removed, strays): (slot index, project id) pairs that
+    moved, library entries removed, and entries left alone because they are
+    not ours to touch.
     """
     os.makedirs(library, exist_ok=True)
     ids = project_ids(projects_dir)
-    linked, unlinked, strays = [], [], []
+    current = [slot_target(library, sid) for sid in SLOT_IDS]
+    if prefer and prefer in ids and prefer not in current:
+        current[0] = prefer
+    want = plan_slots(ids, current)
 
-    for pid in ids:
-        target = project_path(projects_dir, pid)
-        link = os.path.join(library, pid)
+    pointed, removed, strays = [], [], []
+    for i, sid in enumerate(SLOT_IDS):
+        link = os.path.join(library, sid)
+        if not want[i]:
+            if os.path.islink(link):
+                os.unlink(link)
+                removed.append(sid)
+            continue
         if os.path.lexists(link) and not os.path.islink(link):
-            # A real directory sitting on the name a slot needs. Do NOT clobber
-            # it — it is either an unmigrated project or something Move minted,
-            # and either way it holds a user's work. migrate() is what moves it.
-            strays.append(pid)
+            strays.append(sid)          # a real directory on a slot's name
             continue
-        if point_slot(library, pid, target):
-            linked.append(pid)
+        if _point(library, sid, project_path(projects_dir, want[i])):
+            pointed.append((i, want[i]))
 
-    have = set(ids)
+    # ⭐ Move's ordering index is a SLOT property: it belongs to whichever
+    # project each slot points at, and to no other. Re-derived from scratch on
+    # every sync, which is also what heals a crash between a re-point and its
+    # xattr write — the state is a pure function of where the links point.
+    on_show = {}
+    for i, pid in enumerate(want):
+        if pid:
+            on_show[pid] = i
+    for pid in ids:
+        _set_song_index(project_path(projects_dir, pid), on_show.get(pid))
+
+    # Anything else in the library is not a slot. The per-project links the
+    # previous phase made are exactly this, which is how the layout migrates.
     for n in sorted(os.listdir(library)):
+        if n == NOTICE or is_slot_id(n):
+            continue
         p = os.path.join(library, n)
-        if not os.path.islink(p):
-            if n != NOTICE and n not in strays:
-                strays.append(n)
-            continue
-        if n in have:
-            continue
-        # A slot with no project behind it: the project was deleted, or the
-        # link was left by a phase this one replaces. Dropping it is the whole
-        # reason the library is a VIEW — nothing of the user's is inside it.
-        os.unlink(p)
-        unlinked.append(n)
+        if os.path.islink(p):
+            os.unlink(p)
+            removed.append(n)
+        elif n not in strays:
+            strays.append(n)
 
-    return linked, unlinked, strays
+    return pointed, removed, strays
+
+
+def repoint(library, projects_dir, slot_index, pid):
+    """Point ONE slot at a project and confirm it landed. The switch primitive.
+
+    ⚠⚠ THE CALLER MUST ONLY EVER PASS THE IDLE SLOT. Re-pointing the slot Move
+    is live on was tried deliberately on hardware: the session's state went into
+    an unrelated project, the project being edited took zero writes, and nothing
+    on screen said so — in both directions, silently.
+
+    Returns the project id the slot resolves to AFTER the write, which the
+    caller must compare against what it asked for. It is deliberately a
+    READBACK rather than a success flag: if the rename did not land, the slot
+    still points at its previous project, Move would still change set, still
+    log, and the uuid it logs IS the slot we pressed — so confirmation would
+    pass and the wrong project would be reported open.
+    """
+    if slot_index < 0 or slot_index >= len(SLOT_IDS):
+        raise ValueError("no such slot: %r" % (slot_index,))
+    sid = SLOT_IDS[slot_index]
+    other = slot_target(library, SLOT_IDS[1 - slot_index]) if len(SLOT_IDS) == 2 else ""
+    if pid and pid == other:
+        raise ValueError("slot %d already holds %s — the two slots may not share a project"
+                         % (1 - slot_index, pid))
+    _point(library, sid, project_path(projects_dir, pid))
+    landed = slot_target(library, sid)
+    if landed == pid:
+        _set_song_index(project_path(projects_dir, pid), slot_index)
+    return landed
 
 
 def migrate(library, projects_dir):

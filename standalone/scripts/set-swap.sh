@@ -58,6 +58,13 @@ SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
 
 SWAP_ROOT="${SWAP_ROOT:-$DBX_DIR/sets}"
 LIBRARY="$SWAP_ROOT/library"
+# The python helpers beside this script (library_slots.py, for the slot count
+# the boot-index clamp needs). ⚠ Set it EXPLICITLY: a `python3 -` heredoc has
+# sys.argv[0] == "-", so deriving the directory from argv inside the block
+# silently resolves to the caller cwd instead.
+DBX_PY_DIR="${DBX_PY_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+export DBX_PY_DIR
+export PYTHONDONTWRITEBYTECODE=1
 STATE_FILE="$SWAP_ROOT/swap_state"
 SA_INDEX_FILE="$SWAP_ROOT/sa_song_index"
 ACTIVE_SET_PATH="${ACTIVE_SET_PATH:-$DBX_DIR/active_set.txt}"
@@ -244,9 +251,34 @@ do_enter() {
     heal_mount || die "bind mount failed"
     sets_are_ours || die "bind reported success but Sets/ is not our library"
 
-    # Restore the session's own last position.
+    # Restore the session's own last position, CLAMPED to a position the
+    # library actually has.
+    #
+    # 🔴 MEASURED 2026-09-21: the first launch after the library shrank restored
+    # `session index 10` into a library holding two entries, Move resolved
+    # nothing, and it opened its OWN DEFAULT SONG — not a project, with no
+    # message. The stored value is only ever as valid as the library it was
+    # stored against, and the library is now a fixed, small set of slots.
+    #
+    # ⚠ Ask the library how many slots it HAS rather than hard-coding two: the
+    # count is one with a single project (there is nothing to switch to, so
+    # there is no second slot), and a constant here would put Move on a
+    # position that does not exist on exactly the install least able to cope —
+    # a fresh one.
     _sa_idx=0
     [ -f "$SA_INDEX_FILE" ] && _sa_idx="$(grep -E '^-?[0-9]+$' "$SA_INDEX_FILE" || echo 0)"
+    _nslots="$(python3 - "$LIBRARY" <<'NSLOT_PY' 2>/dev/null || echo 0
+import os, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import library_slots as sl
+print(sum(1 for s in sl.SLOT_IDS if os.path.islink(os.path.join(sys.argv[1], s))))
+NSLOT_PY
+)"
+    case "$_nslots" in ''|*[!0-9]*) _nslots=0 ;; esac
+    if [ "$_nslots" -gt 0 ] && { [ "$_sa_idx" -lt 0 ] || [ "$_sa_idx" -ge "$_nslots" ]; }; then
+        log "session index $_sa_idx is outside the $_nslots slot(s) this library has — clamping to 0"
+        _sa_idx=0
+    fi
     write_song_index "$_sa_idx"
 
     write_state "sa-live" "$_idx"

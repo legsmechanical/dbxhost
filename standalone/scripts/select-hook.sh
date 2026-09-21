@@ -128,11 +128,12 @@ if [ -z "$SONG" ]; then
     _name="Project $((IDX + 1))"
     mkdir -p "$PROJECTS_DIR/$_uuid/$_name"
     cp "$_tsrc" "$PROJECTS_DIR/$_uuid/$_name/Song.abl"
+    # ⚠ The PICKER PAD only. Move's ordering index is a slot property now and
+    # library-sync below is the one thing that writes it.
     python3 -c "import os,sys
 sys.path.insert(0, os.environ['DBX_PY_DIR'])
 import project_pad as pp
-pp.set_pad(sys.argv[1], int(sys.argv[2]))
-os.setxattr(sys.argv[1], \"user.song-index\", sys.argv[2].encode())" \
+pp.set_pad(sys.argv[1], int(sys.argv[2]))" \
         "$PROJECTS_DIR/$_uuid" "$IDX" 2>/dev/null || true
     # The project exists; it needs its slot before the relaunch enumerates the
     # library looking for it. ⚠ This is the SECOND path that can mint a
@@ -141,8 +142,20 @@ os.setxattr(sys.argv[1], \"user.song-index\", sys.argv[2].encode())" \
     # the user asked for.
     sh "$DBX_DIR/scripts/project-cmd.sh" library-sync >/dev/null 2>&1 || \
         echo "select-hook: WARNING library sync failed after birthing $_uuid" >&2
-    echo "select-hook: birthed \"$_name\" ($_uuid) at index $IDX from template — relaunching"
-    printf '%s\n' "$IDX" > "$DBX_DIR/relaunch_song_index"
+    # ⚠⚠ THE RELAUNCH INDEX IS A SLOT POSITION, NOT THE PICKER PAD. Move boots
+    # into `currentSongIndex` of the library it can SEE, which holds two slots
+    # — so writing the pad here would name a position that does not exist and
+    # Move would mint its own default song instead. Ask which slot the project
+    # landed on; if the library was already full, take one (a relaunch kills
+    # Move, so there is no live slot to protect at this moment — the one
+    # window where re-pointing anything is safe).
+    _slot="$(sh "$DBX_DIR/scripts/project-cmd.sh" slot-of "$_uuid" 2>/dev/null || echo -1)"
+    if [ "$_slot" = "-1" ]; then
+        sh "$DBX_DIR/scripts/project-cmd.sh" point 0 "$_uuid" >/dev/null 2>&1 && _slot=0
+    fi
+    case "$_slot" in ''|*[!0-9]*) _slot=0 ;; esac
+    echo "select-hook: birthed \"$_name\" ($_uuid) on slot $_slot from template — relaunching"
+    printf '%s\n' "$_slot" > "$DBX_DIR/relaunch_song_index"
     : > "$DBX_DIR/relaunch_requested"
     result relaunch
     setsid sh -c '
