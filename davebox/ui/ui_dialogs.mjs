@@ -929,10 +929,17 @@ function _pppApplyList(p, data) {
      * honest one. */
     p.current = -1;
     const _id = hostIdentity();
-    if (_id.state === 'open' && _id.uuid) {
+    /* ⚠ Match on the PROJECT, not on the library entry Move named. `projects`
+     * is the project store; `_id.uuid` is the entry Move opened and logged.
+     * They are the same string while the library holds one slot per project and
+     * names it after that project — and the moment it holds two fixed slots
+     * instead, matching the entry would leave `current` at -1 forever, so the
+     * picker would never mark the open project and every pick would be treated
+     * as a switch. Identical behaviour today; correct behaviour after. */
+    if (_id.state === 'open' && _id.projectId) {
         for (let i = 0; i < data.projects.length; i++) {
             const pr = data.projects[i];
-            if (pr.uuid === _id.uuid && pr.index !== null && pr.index !== undefined) {
+            if (pr.uuid === _id.projectId && pr.index !== null && pr.index !== undefined) {
                 p.current = pr.index;
                 break;
             }

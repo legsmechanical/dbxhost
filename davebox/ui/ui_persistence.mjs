@@ -58,6 +58,28 @@ function setStateDir(uuid) {
     const dir = dbxProjectDir(SETS_DIR, uuid);
     return dir + '/' + host_state_subdir(dir, !setUuidIsProvisional(uuid));
 }
+
+/* The PROJECT a library entry leads to, by id.
+ *
+ * ⚠⚠ THE ENTRY IS NOT THE PROJECT. Move names, and logs, the SLOT it opened —
+ * the entry in its one set library. What the picker lists, and what every
+ * project verb knows, is the PROJECT that slot points at. Those are the same
+ * string today, because the library shows one slot per project and names it
+ * after the project; they stop being the same the moment the library shows two
+ * fixed slots instead of N.
+ *
+ * So resolve it, rather than assume it. Same rule, same seam and the same
+ * reason as setStateDir above: today this is the identity function, and when it
+ * stops being one nothing else has to change.
+ *
+ * Returns '' when the entry resolves to nothing — a caller comparing project
+ * ids must treat that as "no match", never as a match against another empty. */
+export function projectIdOfEntry(uuid) {
+    if (!uuid) return '';
+    const dir = dbxProjectDir(SETS_DIR, uuid);
+    const cut = dir.lastIndexOf('/');
+    return cut >= 0 ? dir.slice(cut + 1) : dir;
+}
 /* Device-wide snapshots (item 18): one dir per slot beside the live state. */
 export function deviceSnapDir(uuid, n) { return setStateDir(uuid) + '/snapshots/' + (n | 0); }
 /* The hidden "before" take a recall makes so Undo can return to it (Josh,
@@ -140,7 +162,7 @@ const ACTIVE_SET_PATH = DAVEBOX_HOST_DIR + '/active_set.txt';
  * empty identity deliberately: there is nothing to name, and naming something
  * anyway is the entire bug this design removes. */
 export function hostIdentity() {
-    const empty = { state: 'pending', reason: '', uuid: '', name: '', index: -1 };
+    const empty = { state: 'pending', reason: '', uuid: '', name: '', projectId: '', index: -1 };
     try {
         const rec = shadow_get_param(0, 'active_set_state');
         if (!rec) return empty;
@@ -158,7 +180,14 @@ export function hostIdentity() {
              * Treat it as pending rather than inventing one. */
             if (!uuid) return empty;
         }
-        return { state, reason, uuid, name, index: isNaN(index) ? -1 : index };
+        /* ⭐ uuid is the LIBRARY ENTRY Move opened and logged; projectId is the
+         * project it leads to. Identical strings today — the library names each
+         * slot after its project — and deliberately carried as two fields
+         * anyway, because a caller that wants one and reads the other is
+         * indistinguishable from a correct one until the day they diverge. */
+        return { state, reason, uuid, name,
+                 projectId: state === 'open' ? projectIdOfEntry(uuid) : '',
+                 index: isNaN(index) ? -1 : index };
     } catch (e) {
         return empty;
     }

@@ -18,3 +18,25 @@ export function read() { return 0; }
 export function seek() { return -1; }
 export function close() { return 0; }
 export function readdir() { return [[], 2 /* ENOENT */]; }
+
+/* ⚠ realpath was MISSING until 2026-09-21, and its absence was invisible: the
+ * one caller (ui_persistence's dbxProjectDir, the Phase-1 resolve seam) wraps
+ * it in try/catch and falls back to the literal join, so `os.realpath` being
+ * undefined threw and the tests silently exercised only the fallback. A seam
+ * whose resolving half is never reached in any test is a seam nobody is
+ * testing.
+ *
+ * Default stays "cannot resolve" — [.., ENOENT] — so every existing test keeps
+ * the join it has always had. A test that wants the RESOLVING half opts in with
+ * __setRealpath({ '<from>': '<to>' }), and must clear it afterwards. */
+let _realpathMap = null;
+
+export function __setRealpath(map) { _realpathMap = map || null; }
+
+export function realpath(p) {
+    const k = String(p);
+    if (_realpathMap && Object.prototype.hasOwnProperty.call(_realpathMap, k)) {
+        return [_realpathMap[k], 0];
+    }
+    return ['', 2 /* ENOENT */];
+}

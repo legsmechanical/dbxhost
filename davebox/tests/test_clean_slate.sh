@@ -109,10 +109,17 @@ echo "which project is open:"
 #    about which project it opened. It fed the one shortcut in the picker that
 #    loads without making a request, so a tap could load on an unconfirmed
 #    identity. Under `none`, current is -1 and every pick is a new request.
+#    ⭑ 2026-09-21: the match is on `_id.projectId`, NOT `_id.uuid`. The host
+#    names the library ENTRY Move opened; the picker lists PROJECTS. They are
+#    the same string only while the library holds one slot per project, and
+#    matching the entry would silently leave current at -1 once it does not.
 grep -q "_id.state === 'open'" ui/ui_dialogs.mjs \
-    && grep -q 'pr.uuid === _id.uuid' ui/ui_dialogs.mjs \
+    && grep -q 'pr.uuid === _id.projectId' ui/ui_dialogs.mjs \
     && ok "the picker resolves current ONLY from a confirmed-open host record" \
     || bad "the picker is back on Settings.json's currentSongIndex — a stale value makes the live project unselectable"
+grep -q 'export function projectIdOfEntry' ui/ui_persistence.mjs \
+    && ok "...and the entry is RESOLVED to a project, not assumed to be one" \
+    || bad "projectIdOfEntry is gone — the picker is assuming the entry IS the project"
 grep -q 'p.current = -1;' ui/ui_dialogs.mjs \
     && ok "...and defaults to NO current project, so a pick is always a request" \
     || bad "the picker still defaults current to a guess"
