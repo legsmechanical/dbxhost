@@ -87,6 +87,15 @@ check "select-list imports the rule"   "$HERE/scripts/select-list.sh"        "im
 check "C rule base name"               "$REPO/src/host/dbx_state_subdir.h"   "#define DBX_STATE_BASE       \"$DBX_SUBDIR_NAME\""
 check "C rule pattern"                 "$REPO/src/host/dbx_state_subdir.h"   "\"^$DBX_SUBDIR_NAME(~[0-9]+)?\$\""
 check "C rule retry bound"             "$REPO/src/host/dbx_state_subdir.h"   "#define DBX_STATE_MAX_TRIES  256"
+# The project-path seam (dbx_project_path.h) is duplicated the same way and for
+# the same reason: the DSP's Docker build cannot see src/.
+if cmp -s "$REPO/src/host/dbx_project_path.h" "$REPO/davebox/dsp/dbx_project_path.h"; then
+    echo "  ok   davebox/dsp/dbx_project_path.h is byte-identical to src/host/'s"
+else
+    echo "  FAIL davebox/dsp/dbx_project_path.h differs from src/host/dbx_project_path.h"
+    fail=1
+fi
+
 if cmp -s "$REPO/src/host/dbx_state_subdir.h" "$REPO/davebox/dsp/dbx_state_subdir.h"; then
     echo "  ok   davebox/dsp/dbx_state_subdir.h is byte-identical to src/host/'s"
 else
