@@ -77,6 +77,7 @@ TARGETS = $(BUILD_DIR)/test_project_path \
           $(BUILD_DIR)/test_param_lane_policy \
           $(BUILD_DIR)/test_dirty_policy \
           $(BUILD_DIR)/test_loaded_set_policy \
+          $(BUILD_DIR)/test_set_request \
           $(BUILD_DIR)/test_chain_idle_tick \
           $(BUILD_DIR)/test_chain_clock_state \
           $(BUILD_DIR)/test_move_clock_setting \
@@ -157,6 +158,11 @@ $(BUILD_DIR)/test_forward_channel: test_forward_channel.c ../../src/host/forward
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(BUILD_DIR)/test_control_layout: test_control_layout.c ../../src/host/shadow_constants.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+# Header-only units: name the headers so a FIRST build (no .d yet) still
+# rebuilds when they change.
+$(BUILD_DIR)/test_set_request: test_set_request.c ../../src/host/shadow_set_request.h ../../src/host/shadow_loaded_set_policy.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 # chain_idle_tick.h lives with the chain DSP and is standalone by construction

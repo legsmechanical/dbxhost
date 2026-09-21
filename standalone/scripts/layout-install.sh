@@ -28,7 +28,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 if [ -f "$HERE/config.sh" ]; then . "$HERE/config.sh"; elif [ -f "$SRC/scripts/config.sh" ]; then . "$SRC/scripts/config.sh"; fi
 SRC="$1"; DBX_DIR="$2"; STOCK="$3"
 : "${DBX_SHARED_LINKS:=presets patches}"
-: "${DBX_PRIVATE_STATE:=slot_state active_set.txt intended_set.txt shadow_chain_config.json shadow_config.json}"
+: "${DBX_PRIVATE_STATE:=slot_state active_set.txt intended_set.txt relaunch_request.txt shadow_chain_config.json shadow_config.json}"
 : "${DBX_OWNED_MODULE_DIRS:=chain tools/davebox-sound}"
 
 echo "layout: $SRC -> $DBX_DIR (stock: $STOCK)"

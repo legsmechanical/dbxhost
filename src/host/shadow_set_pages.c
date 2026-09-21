@@ -24,6 +24,7 @@
 #include "host/schwung_paths.h"
 #include "shadow_sampler.h"  /* for SAMPLER_SETS_DIR, sampler_read_set_tempo */
 #include "shadow_loaded_set_policy.h"
+#include "shadow_set_request.h"
 
 /* ============================================================================
  * Globals
@@ -492,11 +493,11 @@ static const char *loaded_set_read_file(char *buf, size_t len)
  * outlived its request would be judged against a later, unrelated load — which
  * is exactly how the previous attempt at this failed review. One request, one
  * arming, no precedence. */
-typedef struct {
-    char uuid[LOADED_SET_UUID_MAX];
-    char name[LOADED_SET_NAME_MAX];
-    int  index;
-} identity_request_t;
+/* `identity_request_t` and the parser live in shadow_set_request.h, so the
+ * record can be tested against the exact bytes each writer produces. It grew a
+ * fourth field there: an EXPLICIT n0, written only by the launcher on the
+ * relaunch route, because that route's arming shim is not the one that sees
+ * the answer. Read that header before changing anything here. */
 
 static int identity_read_and_consume_request(identity_request_t *out)
 {
@@ -512,23 +513,8 @@ static int identity_read_and_consume_request(identity_request_t *out)
      * behind to be re-read on every tick for the rest of the session. */
     unlink(MOVE_INTENDED_SET_PATH);
 
-    /* uuid \n index \n name */
-    char *p1 = strchr(buf, '\n');
-    if (!p1) return 0;
-    *p1++ = '\0';
-    size_t ulen = strcspn(buf, "\r");
-    if (ulen == 0 || ulen >= sizeof(out->uuid)) return 0;
-    memcpy(out->uuid, buf, ulen); out->uuid[ulen] = '\0';
-
-    char *p2 = strchr(p1, '\n');
-    if (p2) *p2++ = '\0';
-    out->index = atoi(p1);
-    if (p2) {
-        size_t nlen = strcspn(p2, "\r\n");
-        if (nlen >= sizeof(out->name)) nlen = sizeof(out->name) - 1;
-        memcpy(out->name, p2, nlen); out->name[nlen] = '\0';
-    }
-    return out->uuid[0] != '\0';
+    /* uuid \n index \n name [\n n0] — see shadow_set_request.h */
+    return identity_request_parse(buf, out);
 }
 
 /* ── THE GATE ──────────────────────────────────────────────────────────────
@@ -565,8 +551,23 @@ void shadow_set_identity_arm(void)
 
     identity_req = r;
     identity_have_request = 1;
-    identity_req_n0 = line.n;
+    /* ⭐ The record's own counter when it carries one — the launcher installed
+     * it while Move was DOWN, so 0 is exact rather than a sample that raced
+     * Move's load line. Otherwise sample, as the in-place route always has.
+     * shadow_set_request.h has the why. */
+    identity_req_n0 = identity_request_arm_n0(&r, line.n);
     identity_arm_ms = loaded_set_now_ms();
+
+    /* ⚠ ARMING LOGS NOW. It did not, and that is a large part of why the
+     * orphaned-request bug stayed invisible: the device log showed a `pending`
+     * publish and then silence, with nothing to say whether a later session
+     * had armed at all. One line per arm, and there is at most one per
+     * request. */
+    unified_log_important("shim", LOG_LEVEL_INFO,
+                          "identity: armed uuid=%s index=%d n0=%d (%s)",
+                          identity_req.uuid[0] ? identity_req.uuid : "-",
+                          identity_req.index, identity_req_n0,
+                          r.have_n0 ? "explicit" : "sampled");
 }
 
 /* The REQUEST FILE'S APPEARANCE is the signal — there is no cross-process call
@@ -578,8 +579,18 @@ void shadow_set_identity_arm(void)
  * log the load it is being asked for, or the confirming line would sit at or
  * below n0 and be correctly refused as stale — costing a timeout and a Retry,
  * never a wrong answer.
- *   · relaunch: EXACT. Move restarts, so the shim restarts with it and reads
- *     the file at n = 0 before Move has logged anything.
+ *   · relaunch: EXACT, but NOT for the reason this comment used to give. It
+ *     claimed "Move restarts, so the shim restarts with it and reads the file
+ *     at n = 0 before Move has logged anything." Both halves were false, and
+ *     the cost was a user-visible bug that survived two fixes (device,
+ *     2026-09-21). The STILL-LIVE shim consumes the request ~1.4 s after the
+ *     pick, ~1 s BEFORE the relaunch kills it, so the new session never sees
+ *     the file at all; and even carried across, the new shim's first poll
+ *     sleeps 200 ms while Move logs at ~0.18 s, so a sampled n0 would equal
+ *     line_n and refuse its own answer. What makes it exact is that the
+ *     LAUNCHER installs the record while Move is down and states n0 = 0
+ *     explicitly, in the same loop iteration that clears the reader's counter.
+ *     See shadow_set_request.h.
  *   · in-place actuator: the shim is live, so this depends on a poll landing
  *     between the write and Move's line. The actuator walks Move's overview
  *     over SECONDS while the poll runs every ~200 ms in that state, so the

@@ -86,7 +86,10 @@ re-examine whether dbx-host still needs to own modules/chain"
 # the request dAVEBOx writes at the pick and the host consumes. Shared between
 # the two installs it would let one host's pick be judged against the other's
 # load — the exact fusing this list exists to prevent.
-[ "${DBX_PRIVATE_STATE:-}" = "slot_state active_set.txt intended_set.txt shadow_chain_config.json shadow_config.json" ] ||
+# ⚠ relaunch_request.txt joined it on 2026-09-21 for the identical reason: it
+# is the SAME record, written to a path that survives a Move restart because
+# the dying shim eats the other one. Same content, same hazard, same list.
+[ "${DBX_PRIVATE_STATE:-}" = "slot_state active_set.txt intended_set.txt relaunch_request.txt shadow_chain_config.json shadow_config.json" ] ||
   fail "DBX_PRIVATE_STATE drifted: '${DBX_PRIVATE_STATE:-}'"
 
 # The consumer moved (2026-09-05): the device-side layout is ONE script,

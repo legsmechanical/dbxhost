@@ -512,6 +512,40 @@ pp.set_pad(sys.argv[1], 0)" \
   # free and the browser is reachable while Move boots. Restarted by the
   # relaunch branch below after each SHM wipe — its mappings die with the
   # segments, same rule as every other sidecar.
+  # CARRY dAVEBOx REQUEST ACROSS A MOVE RESTART.
+  #
+  # A request NEVER survives a relaunch on its own, and believing it did cost a
+  # user-visible bug that outlived two fixes (device, 2026-09-21): the still
+  # live shim polls and CONSUMES intended_set.txt within ~1.4 s of the pick,
+  # about a second before the relaunch below kills it. The next session then
+  # starts with no request, never arms, and so can never confirm what Move
+  # opened -- Move loaded exactly the right project and the host never said so,
+  # which dAVEBOx reads as "nothing is open" and answers with the picker.
+  #
+  # So on the relaunch route dAVEBOx writes relaunch_request.txt instead, which
+  # no shim reads, and this installs it as the NEXT session request. The
+  # appended 0 is the reader counter this request is measured against: the same
+  # loop iteration clears move_loaded_set.txt before starting Move, and the
+  # reader takes its counter from that file, so this run first load is always
+  # 1 and 1 > 0 holds by construction rather than by timing.
+  #
+  # Do NOT sample the counter here instead. It would read the PREVIOUS Move run
+  # number, which the clear is about to reset, and every relaunch would judge
+  # its own answer stale forever.
+  #
+  # dAVEBOx stays the single AUTHOR: this copies the record, it never writes
+  # one of its own. Two request records that can disagree is the exact shape
+  # deleted on 2026-09-16.
+  install_relaunch_request() {
+    rm -f "$DBX_DIR/intended_set.txt"
+    if [ -f "$DBX_DIR/relaunch_request.txt" ]; then
+      { cat "$DBX_DIR/relaunch_request.txt"; echo 0; } > "$DBX_DIR/intended_set.txt.tmp" \
+        && mv -f "$DBX_DIR/intended_set.txt.tmp" "$DBX_DIR/intended_set.txt"
+      rm -f "$DBX_DIR/relaunch_request.txt"
+      echo "installed relaunch request for $(sed -n 1p "$DBX_DIR/intended_set.txt") (n0=0)"
+    fi
+  }
+
   start_manager() {
     mgr_log="$DBX_DIR/manager.log"
     if [ -f "$mgr_log" ] && [ "$(wc -c < "$mgr_log" 2>/dev/null || echo 0)" -gt 102400 ]; then
@@ -559,6 +593,9 @@ pp.set_pad(sys.argv[1], 0)" \
   fi
 
   rm -f "$DBX_DIR/relaunch_requested"
+  # A request from a CRASHED session must never be judged against a cold boot
+  # load: it would name a project nobody asked for this time round.
+  rm -f "$DBX_DIR/intended_set.txt" "$DBX_DIR/relaunch_request.txt"
 
   # S1: background reader that distills MoveOriginal own "About to load ..."
   # boot line into $DBX_DIR/move_loaded_set.txt (contract and lifecycle at the
@@ -652,11 +689,16 @@ pp.set_pad(sys.argv[1], 0)" \
             # WHICH project was wanted, and it was left on disk afterwards, so a
             # later in-process switch got judged against a pad nobody was asking
             # for. Two request records that can disagree, where one will do.
-            # dAVEBOx now writes the whole request -- uuid, index and name -- at
-            # the moment of the pick, into intended_set.txt, and the shim
-            # CONSUMES it. That file is already on disk before this relaunch and
-            # survives it untouched, so re-stating the index here would only
-            # give the two records a chance to differ.
+            # dAVEBOx now writes the whole request -- uuid, index and name --
+            # at the moment of the pick, and the shim CONSUMES it, so
+            # re-stating the index here would only give the two records a
+            # chance to differ.
+            # This used to add "that file is already on disk before this
+            # relaunch and survives it untouched". It does NOT survive: the
+            # live shim eats intended_set.txt ~1 s before this block runs.
+            # Carrying it across is install_relaunch_request above, and the
+            # record it installs is written by dAVEBOx to a DIFFERENT path for
+            # exactly that reason.
             # A relaunch nobody requested a project for (the select hook
             # rewiring a set) simply leaves no request, and the machine then
             # treats whatever Move opens as what is open -- which is correct,
@@ -665,6 +707,9 @@ pp.set_pad(sys.argv[1], 0)" \
             ;;
         esac
       fi
+      # Still inside the Move-is-down window, and AFTER both kill sweeps above:
+      # no shim is alive to eat this one.
+      install_relaunch_request
       echo "relaunch requested — restarting Move within the session"
       # Every relaunch is post-selection (a project switch, or the select hook
       # rewiring a set), so DIRECT-BOOT the tool. The shadow UI already staged
@@ -750,6 +795,7 @@ pp.set_pad(sys.argv[1], 0)" \
   rm -f "$DBX_DIR/boot_tool.json"
   rm -f "$DBX_DIR/select_list.json" "$DBX_DIR/select_hook_result.json"
   rm -f "$DBX_DIR/fresh_session"
+  rm -f "$DBX_DIR/intended_set.txt" "$DBX_DIR/relaunch_request.txt"
   # Leave no standing open-tool command behind for the stock host to act on.
   rm -f /data/UserData/schwung/open_tool_cmd.json
   # WHO BRINGS MOVE BACK depends on which caller we have, and getting this wrong

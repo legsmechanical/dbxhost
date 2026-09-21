@@ -517,7 +517,9 @@ export function projectOpenFailedMidi(data) {
          * the request we made is the only thing that still knows what we asked
          * for. If we asked for nothing (the verdict arrived about a set nobody
          * requested), we write nothing: a Retry cannot invent a request. */
-        if (S.requestedSet) _pppWriteRequest(S.requestedSet);
+        /* RELAUNCH route (pendingProjectRelaunch below), so it must go in the
+         * file that survives the restart. */
+        if (S.requestedSet) _pppWriteRequest(S.requestedSet, RELAUNCH_REQUEST);
         S.pendingProjectRelaunch = f.pad;
     } else {
         /* Back to the project picker. Still awaiting a selection, so the picker
@@ -878,6 +880,20 @@ function _pppQueueSnapshot() {
  * loads as the answer, and the PROJECT DID NOT OPEN verdict, which exists for
  * exactly the case where we asked and did not get it, can never be produced. */
 const INTENDED_SET = '/data/UserData/dbx-host/intended_set.txt';
+/* ⭐⭐ THE SAME RECORD, FOR THE NEXT SESSION. A request does NOT survive a Move
+ * relaunch: the still-live shim consumes intended_set.txt within ~1.4 s of the
+ * pick, about a second before the relaunch tears that shim down, so the new
+ * session starts with nothing to confirm against and can never answer "did
+ * Move open what we asked for". Measured on device 2026-09-21 — it is why a
+ * project created this session bounced back to the picker on its FIRST load
+ * while every later load worked.
+ *
+ * ⚠ The relaunch route therefore writes HERE instead. No shim reads this path;
+ * launch.sh installs it as the next session's intended_set.txt while Move is
+ * down, appending the counter it is measured against. Writing BOTH would be
+ * pointless (the dying shim would still eat one) and would give two records a
+ * chance to disagree — the shape deliberately removed on 2026-09-16. */
+const RELAUNCH_REQUEST = '/data/UserData/dbx-host/relaunch_request.txt';
 
 function _pppRunList() {
     /* host_system_cmd blocks (system()), so the refreshed list is readable
@@ -1230,6 +1246,12 @@ function _pppOpenMenu(p, k) {
  * authored NO request, so nothing could confirm what Move opened and every
  * freshly created project bounced back to the picker on its first load.
  *
+ * ⚠⚠ AND AUTHORING ONE WAS NOT ENOUGH — the same symptom survived that fix.
+ * A request written to intended_set.txt on the relaunch route is consumed by
+ * the shim that is ABOUT TO DIE, so the new session still had nothing to
+ * confirm against. The relaunch route writes RELAUNCH_REQUEST, which launch.sh
+ * installs for the next session; see that constant. Device 2026-09-21.
+ *
  * Returns the parsed answer, or null. Re-pointing the IDLE slot is safe at any
  * time — it is never the one Move is on. */
 export function prepareSlotFor(projectUuid) {
@@ -1242,26 +1264,31 @@ export function prepareSlotFor(projectUuid) {
     } catch (e) { return null; }
 }
 
-export function requestSetForSlot(pick, entryUuid, slotIndex) {
+/* `viaRelaunch` says WHICH SESSION will answer this request, and therefore
+ * which file it goes in. It is not a preference: a relaunch-route request left
+ * in intended_set.txt is eaten by the shim that is about to die. */
+export function requestSetForSlot(pick, entryUuid, slotIndex, viaRelaunch) {
     const uuid = entryUuid || '';
     if (!uuid) { S.requestedSet = null; return false; }
     S.requestedSet = { uuid: uuid, index: slotIndex,
                        name: (pick && pick.name) ? pick.name : '',
                        projectId: (pick && pick.uuid) ? pick.uuid : '' };
-    return _pppWriteRequest(S.requestedSet);
+    return _pppWriteRequest(S.requestedSet,
+                            viaRelaunch ? RELAUNCH_REQUEST : INTENDED_SET);
 }
 
-function _pppWriteRequest(req) {
+function _pppWriteRequest(req, path) {
     /* Best effort by design: a request that cannot be written leaves the host
      * in the state it is in TODAY (it treats what Move opens as the answer),
      * which is degraded but not wrong. Failing the load over it would be worse
      * than the thing this fixes. */
+    const dest = path || INTENDED_SET;
     let ok = false;
     try {
-        ok = !!host_write_file(INTENDED_SET,
+        ok = !!host_write_file(dest,
                                req.uuid + '\n' + req.index + '\n' + req.name + '\n');
     } catch (e) { ok = false; }
-    if (!ok) console.log('project request: could not write ' + INTENDED_SET +
+    if (!ok) console.log('project request: could not write ' + dest +
                          ' for ' + req.uuid + ' (pad ' + req.index + ')');
     return ok;
 }
@@ -1332,7 +1359,7 @@ function _pppLoad(p, k) {
          * list, not a substitute for identity. */
         const _sw = prepareSlotFor(_proj && _proj.uuid ? _proj.uuid : '');
         if (_sw) requestSetForSlot({ pad: k, uuid: _proj.uuid, name: _proj.name },
-                                   _sw.slot_uuid, _sw.slot);
+                                   _sw.slot_uuid, _sw.slot, true);
         else console.log('project relaunch: no slot prepared for pad ' + k +
                          ' — Move will boot wherever it was');
         S.pendingProjectRelaunch = k;

@@ -43,8 +43,12 @@
  * loaded_set_index_matches() in shadow_loaded_set_policy.h. */
 /* dAVEBOx's REQUEST: the project it deliberately switched to, written at the
  * moment of the pick (when the answer is known rather than inferred) and
- * CONSUMED by the shim when it arms. One record, four fields:
- *   uuid\nindex\nname\nseq
+ * CONSUMED by the shim when it arms. One record:
+ *   uuid\nindex\nname[\nn0]
+ * ⚠ The old comment here said the fourth field was `seq`. There has never been
+ * a `seq`. Line 4 is an optional explicit n0, written ONLY by launch.sh when
+ * it carries a request across a Move relaunch; dAVEBOx writes lines 1-3 and
+ * never line 4. shadow_set_request.h says why it has to exist.
  * It replaces move_intended_index.txt, which carried only the index — two
  * request records that could disagree, where one will do. */
 #define MOVE_INTENDED_SET_PATH SCHWUNG_INSTALL_DIR "/intended_set.txt"

@@ -730,6 +730,17 @@ step('control: without a verdict, loading a pre-existing pad still uses the sele
  *     Format is fixed by the reader (identity_read_and_consume_request,
  *     src/host/shadow_set_pages.c): `uuid \n index \n name`. */
 const INTENDED = HOST_DIR + '/intended_set.txt';
+/* ⭐⭐ ...EXCEPT ON THE RELAUNCH ROUTE, WHERE THAT FILE IS A TRAP.
+ * A request left in intended_set.txt when Move is about to restart is consumed
+ * by the shim that is ABOUT TO DIE (its poll runs every ~1.4 s; the relaunch
+ * follows ~1 s later). The next session then arms nothing and can never
+ * confirm — Move opens exactly the right project and the host never says so,
+ * which dAVEBOx reads as "nothing is open" and answers with the picker.
+ * Device 2026-09-21: every project created this session bounced on its FIRST
+ * load, and authoring the request at all (the previous fix) did not help.
+ * The relaunch routes write here instead; launch.sh installs it for the next
+ * session. */
+const RELAUNCH = HOST_DIR + '/relaunch_request.txt';
 
 step('⭐⭐ the pick AUTHORS the request, and does it BEFORE the actuator fires', () => {
     boot(P, 'Project 1');
@@ -763,6 +774,12 @@ step('⭐⭐ the pick AUTHORS the request, and does it BEFORE the actuator fires
      * That is why this asserts the slot uuid and not X. */
     if (atArm !== SLOT1_UUID + '\n1\nProject 32\n')
         throw new Error('request must name the SLOT `uuid \\n slot \\n name`: ' + JSON.stringify(atArm));
+    /* ⚠ CONTROL for the relaunch fix below: this is the IN-PLACE route, where
+     * the arming shim is the one that sees the answer. Routing it through the
+     * surviving file too would leave a record nothing consumes, to be
+     * installed over a later, unrelated request. */
+    if (files.has(RELAUNCH))
+        throw new Error('the in-place route wrote the relaunch request file: ' + JSON.stringify(files.get(RELAUNCH)));
 });
 
 step('⚠ CONTROL: the already-current pad asks for NOTHING', () => {
@@ -811,8 +828,55 @@ step('⭑ RETRY re-issues the SAME request (the verdict screen has no uuid of it
     /* Retry re-issues the SAME record — the slot one, unchanged. The verdict
      * screen has no identity of its own, which is the whole point: it re-asks
      * for exactly what was asked for, rather than re-deriving it. */
-    if (files.get(INTENDED) !== SLOT1_UUID + '\n1\nProject 32\n')
-        throw new Error('Retry relaunched WITHOUT re-issuing the request: ' + JSON.stringify(files.get(INTENDED)));
+    /* ⚠ Retry RELAUNCHES (the switch above), so the record must go where it
+     * survives the restart. In intended_set.txt it would be eaten by the shim
+     * this very Retry is about to kill. */
+    if (files.get(RELAUNCH) !== SLOT1_UUID + '\n1\nProject 32\n')
+        throw new Error('Retry relaunched WITHOUT re-issuing the request where it survives: ' + JSON.stringify(files.get(RELAUNCH)));
+    if (files.has(INTENDED))
+        throw new Error('Retry wrote the request into the file the dying shim consumes: ' + JSON.stringify(files.get(INTENDED)));
+});
+
+step('\u2b50\u2b50 A PROJECT CREATED THIS SESSION writes the request where it SURVIVES the relaunch', () => {
+    /* THE BUG JOSH HIT, as a test. A project created this session cannot be
+     * reached by the select actuator (Move enumerates its sets at launch), so
+     * it goes through a Move RELAUNCH. That route wrote its request into
+     * intended_set.txt, the live shim consumed it ~1 s before the relaunch
+     * killed that shim, and the new session had nothing to confirm against:
+     * "Loading..." and then straight back to the picker, every first load.
+     *
+     * The fix is not "author a request" (that was already true and still
+     * broke) — it is authoring it where the NEXT session can find it. */
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    S.pendingOpenProjectPicker = false;
+    sysCmds.length = 0; selectArms.length = 0;
+    files.delete(INTENDED); files.delete(RELAUNCH);
+
+    S.projectsCreatedThisSession.push(31);        /* made since Move last looked */
+    S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    padTap(31);
+    ticks(2);
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    ticks(6);
+    S.projectsCreatedThisSession.length = 0;
+
+    if (!sysCmds.some((c) => /project-cmd\.sh switch 31$/.test(c)))
+        throw new Error('precondition: a created-this-session pad did not take the RELAUNCH route: ' + JSON.stringify(sysCmds));
+    if (selectArms.length)
+        throw new Error('precondition: the select actuator was armed for a set Move cannot see: ' + JSON.stringify(selectArms));
+
+    /* \u2b50 The record itself: the SLOT, its position, the name — in the file
+     * that outlives the shim. */
+    if (files.get(RELAUNCH) !== SLOT1_UUID + '\n1\nProject 32\n')
+        throw new Error('the relaunch route did not author a surviving request: ' + JSON.stringify(files.get(RELAUNCH)));
+    /* \u26a0 And NOT in the one the dying shim eats. Writing both is not
+     * harmless: the doomed copy is consumed and published as a `pending` that
+     * nothing will ever settle. */
+    if (files.has(INTENDED))
+        throw new Error('the relaunch route also wrote the doomed request file: ' + JSON.stringify(files.get(INTENDED)));
 });
 
 step('⭑ a live project SPENDS the request (a later Retry cannot re-issue a stale one)', () => {

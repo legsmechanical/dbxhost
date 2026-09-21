@@ -183,6 +183,14 @@ check "davebox ui_tick exit-to-stock"  "$DBX/ui/ui_tick.mjs"     "sh $DBX_DIR/sc
 # its own identity, so its copy of this literal went with the read. The marker
 # itself is unchanged: the launcher still writes it and ui.js still consumes it.
 check "davebox ui.js select marker"    "$DBX/ui/ui.js"           "DAVEBOX_HOST_DIR + '/fresh_session'"
+# ⭐ THE REQUEST RECORD TRAVELS BETWEEN THREE FILES IN TWO LANGUAGES, and the
+# whole mechanism is silent when they disagree: dAVEBOx writes one path, the
+# shim consumes another, launch.sh carries the first to the second. A typo in
+# any one of them reads exactly like the bug this fixed — Move opens the right
+# project and nobody confirms it. Pin all three literals.
+check "davebox intended-set request"   "$DBX/ui/ui_dialogs.mjs"  "'$DBX_DIR/intended_set.txt'"
+check "davebox relaunch request"       "$DBX/ui/ui_dialogs.mjs"  "'$DBX_DIR/relaunch_request.txt'"
+check "launch.sh carries the request"  "$HERE/scripts/launch.sh" '$DBX_DIR/relaunch_request.txt'
 # The DSP's own files — its log and the quarantine a no-identity save parks in —
 # must hang off THIS install dir. The log lived in the STOCK tree until
 # 2026-09-16 and was the last dAVEBOx file there; nothing pinned it, which is

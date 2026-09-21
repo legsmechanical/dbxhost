@@ -46,7 +46,13 @@ else
 fi
 # the unlink must precede the first parse step, or a malformed record persists
 unlink_line=$(grep -n 'unlink(MOVE_INTENDED_SET_PATH)' <<<"$reader" | sed -n 1p | cut -d: -f1)
-parse_line=$(grep -n "strchr(buf" <<<"$reader" | sed -n 1p | cut -d: -f1)
+# ⚠ The parse MOVED (2026-09-21) into shadow_set_request.h so the record can be
+# tested against real bytes. The ordering this pins is unchanged — consume,
+# THEN parse — but the line to look for is now the call, not strchr(). When
+# this stopped matching, the whole rest of the file silently stopped running
+# under `set -e`: the assignment below took a non-zero grep and the script
+# exited mid-way, printing one ok and looking almost like a pass.
+parse_line=$(grep -n "identity_request_parse(buf" <<<"$reader" | sed -n 1p | cut -d: -f1)
 if [ -n "$unlink_line" ] && [ -n "$parse_line" ] && [ "$unlink_line" -lt "$parse_line" ]; then
     ok "...before parsing, so a malformed record cannot be re-read every tick"
 else
@@ -55,10 +61,20 @@ fi
 
 # 2. arming records the counter.
 arm=$(awk '/^void shadow_set_identity_arm\(void\)/,/^}/' "$f")
-if grep -q 'identity_req_n0 = line.n;' <<<"$arm"; then
-    ok "arming records the reader's counter (n0)"
+if grep -q 'identity_req_n0 = identity_request_arm_n0(&r, line.n);' <<<"$arm"; then
+    ok "arming records the counter this request is measured against"
 else
     note "arming does not record n0 — a line older than the request could confirm it"
+fi
+# ⭐ AND THE RECORD'S OWN n0 WINS WHEN IT CARRIES ONE. On the relaunch route the
+# arming shim is not the one that sees the answer, and a SAMPLED counter there
+# lands after Move has already logged (200 ms first poll vs a 0.18 s load) — so
+# it would refuse its own confirmation as stale. The launcher states n0 = 0
+# while Move is down; this is what makes the shim honour it.
+if grep -q 'line.n' <<<"$arm" && grep -q 'identity_request_arm_n0' <<<"$arm"; then
+    ok "...explicitly when the launcher supplied one, by sampling otherwise"
+else
+    note "the arm no longer distinguishes an explicit n0 from a sampled one"
 fi
 if grep -q 'if (!identity_read_and_consume_request(&r)) return;' <<<"$arm"; then
     ok "no request record, no arming (a bare file touch cannot arm a wait)"
