@@ -109,6 +109,34 @@ write_song_index() { # index
         "$SETTINGS_JSON" > "$_tmp" && mv -f "$_tmp" "$SETTINGS_JSON"
 }
 
+# ⭐⭐ WHAT IS OPEN IS A LIBRARY ENTRY. THESE VERBS REASON IN PROJECTS.
+#
+# `active_set.txt` carries exactly what MOVE confirmed, which is the entry it
+# opened — a SLOT id since the library stopped being one entry per project. So
+# does DBX_OPEN_UUID, because the module passes on what the host published.
+# Every verb here compares against project ids.
+#
+# ⚠⚠ THE COST OF NOT DOING THIS, measured on the device: `delete` read the slot
+# id, looked for a project by that name, found none, and so decided the project
+# being deleted was NOT the open one — taking the immediate path and removing
+# the live project out from under the session, with no relaunch queued. The
+# screen sat on "deleting" forever, because the restart it was waiting for was
+# never asked for. Silent, and the opposite of what the guard exists to do.
+#
+# Same rule as the JS side\'s projectIdOfEntry, same reason, other language.
+resolve_open_project() { # entry-or-project-id  -> project id, or empty
+    [ -n "${1:-}" ] || return 0
+    python3 - "$LIBRARY_DIR" "$PROJECTS_DIR" "$1" <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import library_slots as sl
+library, projects_dir, ident = sys.argv[1], sys.argv[2], sys.argv[3]
+if ident in sl.SLOT_IDS:
+    ident = sl.slot_target(library, ident)
+print(ident if ident and os.path.isdir(os.path.join(projects_dir, ident)) else "")
+PYEOF
+}
+
 # The pad position of a project directory, or -1. The xattr IS the position —
 # same source do_list, do_new_at and Move's own picker read (see the header
 # note), so nothing here needs to keep a second opinion in step.
@@ -963,6 +991,7 @@ do_delete() { # index
     _open_del="${DBX_OPEN_UUID:-}"
     [ -z "$_open_del" ] && [ -f "$ACTIVE_SET_PATH" ] && \
         _open_del="$(head -n 1 "$ACTIVE_SET_PATH" | tr -d '[:space:]')"
+    _open_del="$(resolve_open_project "$_open_del")"
     if [ -n "$_open_del" ] && [ -d "$PROJECTS_DIR/$_open_del" ] && \
        [ "$(song_index "$PROJECTS_DIR/$_open_del")" = "$1" ]; then
         _next_idx="$(python3 - "$PROJECTS_DIR" "$_open_del" <<'PYEOF'
@@ -1030,27 +1059,20 @@ PYEOF
         printf 'project-cmd: delete of OPEN project queued (Move restarting in place)\n'
         return 0
     fi
-    python3 - "$PROJECTS_DIR" "$SETTINGS_JSON" "$1" "$ACTIVE_SET_PATH" <<'PYEOF'
+    python3 - "$PROJECTS_DIR" "$SETTINGS_JSON" "$1" "$_open_del" <<'PYEOF'
 import os, re, shutil, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
 import project_pad as pp
 projects_dir, settings, idx = sys.argv[1], sys.argv[2], int(sys.argv[3])
-active_set_path = sys.argv[4] if len(sys.argv) > 4 else ""
+# ⭐ Handed in ALREADY RESOLVED to a project id (resolve_open_project). It used
+# to read active_set.txt itself, which carries the library ENTRY — a slot id —
+# so it matched no project and reported "nothing is open", which is the
+# dangerous direction: it permits deleting the project that is live.
+open_project = sys.argv[4] if len(sys.argv) > 4 else ""
 
 
 def open_uuid():
-    """UUID of the set the HOST has loaded, or '' if unknown.
-
-    active_set.txt is written on every set change; currentSongIndex is only
-    written at a relaunch and goes stale mid-session — measured naming project 5
-    while 14 was loaded. Trusting the stale one here is the dangerous direction:
-    it protects the wrong pad AND permits deleting the project that is live.
-    """
-    try:
-        with open(active_set_path) as f:
-            return f.readline().strip()
-    except OSError:
-        return ""
+    return open_project
 
 
 def index_of(uuid):
@@ -1194,6 +1216,7 @@ PYEOF
     _open="${DBX_OPEN_UUID:-}"
     [ -z "$_open" ] && [ -f "$ACTIVE_SET_PATH" ] && \
         _open="$(head -n 1 "$ACTIVE_SET_PATH" | tr -d '[:space:]')"
+    _open="$(resolve_open_project "$_open")"
     if [ "$_uuid" = "$_open" ]; then
         # OPEN project: defer the mv to the launcher (post-exit), then restart
         # Move in place at the same index — do_switch's exact shape. Append to

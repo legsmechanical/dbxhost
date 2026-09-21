@@ -43,8 +43,19 @@ for i, u in enumerate([u1, u2][:n]):
     json.dump({"tracks": []}, open(os.path.join(d, "Song.abl"), "w"))
     os.setxattr(os.path.join(lib, u), "user.song-index", str(i).encode())
     os.setxattr(os.path.join(lib, u), "user.dbx-pad", str(i).encode())
-open(os.path.join(lib, ".dbx", "active_set.txt"), "w").write(u1 + "\n")
 PY
+    # The library, and what "open" looks like ON THE DEVICE.
+    #
+    # active_set.txt carries what MOVE confirmed: the library ENTRY it opened,
+    # which is a SLOT id. This fixture used to write the PROJECT id, and that
+    # one difference is why this file passed green while the device hung —
+    # delete looked for a project named after the slot, found none, concluded
+    # the open project was NOT the one being deleted, and removed the live
+    # project with no relaunch queued. A fixture that does not model the real
+    # identity shape is testing a system nobody runs.
+    PROJECTS_DIR="$T/lib" DBX_DIR="$T/lib/.dbx" \
+        sh standalone/scripts/project-cmd.sh library-sync >/dev/null 2>&1
+    python3 tests/host/_open_is_a_slot.py "$T/lib/.dbx" "$U1"
 }
 run() { PROJECTS_DIR="$T/lib" DBX_DIR="$T/lib/.dbx" ACTIVE_SET_PATH="$T/lib/.dbx/active_set.txt" \
         sh standalone/scripts/project-cmd.sh "$@" 2>&1; }
