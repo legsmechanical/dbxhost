@@ -108,6 +108,50 @@ else
     ok "pointing both slots at one project is REFUSED"
 fi
 
+# ---- switch-slot: the whole invariant, in one verb --------------------------
+sw() { sh "$CMD" switch-slot "$@" >/dev/null 2>&1; python3 -c "
+import json,sys
+d=json.load(open('$DBX_DIR/slot_switch.json'))
+print('%s %s %s' % (d['ok'], d['slot'], d['project'][:8]))"; }
+
+# Live on whatever slot 0 holds; ask for the project on the OTHER slot. It is
+# already on show, so nothing is re-pointed and slot 1 is the answer.
+live="$(target_of "$SLOT_A")"; other="$(target_of "$SLOT_B")"
+[ "$(sw "$other" "$live")" = "True 1 ${other:0:8}" ] \
+    && ok "a project already on a slot is pressed where it is, with no re-point" \
+    || bad "switch-slot to the idle slot gave: $(sw "$other" "$live")"
+
+# ⚠ THE CASE THAT BROKE. Asking for the project that is ALREADY LIVE. The early
+# success path used to print and fall through, re-point anyway, hit the
+# two-slots-one-project guard and write ok:false over its own ok:true —
+# reporting failure for the simplest case there is.
+[ "$(sw "$live" "$live")" = "True 0 ${live:0:8}" ] \
+    && ok "asking for the LIVE project answers its own slot, once, and succeeds" \
+    || bad "switch-slot to the live project gave: $(sw "$live" "$live")"
+
+# An off-slot project takes the IDLE slot — never the live one.
+# ⚠ SET THE FIXTURE, do not test whether it happens to hold. The first cut
+# guarded this block with "unless U3 is already on a slot", U3 WAS on one from
+# the case above, and the whole block silently did not run — printing nothing,
+# which reads exactly like a pass.
+sh "$CMD" point 1 "$U2" >/dev/null 2>&1        # park slot 1 on U2, so U3 is off-slot
+live="$(target_of "$SLOT_A")"
+off="$U3"
+[ "$(target_of "$SLOT_B")" = "$off" ] && bad "fixture failed: $off is still on a slot"
+res="$(sw "$off" "$live")"
+case "$res" in
+    "True 1 ${off:0:8}") ok "an off-slot project takes the IDLE slot, not the live one" ;;
+    "True 0 "*) bad "it took the LIVE slot — the invariant is broken" ;;
+    *) bad "switch-slot for an off-slot project gave: $res" ;;
+esac
+[ "$(target_of "$SLOT_A")" = "$live" ] \
+    && ok "…and the live slot still leads where it did" \
+    || bad "the live slot moved to $(target_of "$SLOT_A")"
+
+[ "$(sw deadbeef-0000-4000-8000-00000000dead "$live")" = "False -1 " ] \
+    && ok "a project that does not exist answers ok:false with a reason" \
+    || bad "switch-slot for a missing project gave: $(sw deadbeef-0000-4000-8000-00000000dead "$live")"
+
 # ---- the N-slot layout migrates away ---------------------------------------
 # The previous phase named one slot per project. Those are not slots any more
 # and must go, or Move sees the old library alongside the new one.

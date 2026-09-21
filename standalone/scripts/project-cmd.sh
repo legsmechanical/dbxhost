@@ -216,6 +216,92 @@ if landed != pid:
 PYEOF
 }
 
+# ⭐⭐ PREPARE A SWITCH: make the target project reachable on a slot, and say
+# WHICH slot to press. The whole invariant lives here, in one place, rather
+# than split across the shell/JS seam where half of it would be assumed.
+#
+#   switch-slot <target-project> [live-project]
+#
+# Writes $DBX_DIR/slot_switch.json  {"slot": N, "project": "<id>", "ok": true}
+# and exits non-zero on any failure, having written "ok": false.
+#
+# The rules it keeps, all three of which are load-bearing:
+#   1. NEVER re-point the slot the live project is on. Re-pointing a live slot
+#      was tried deliberately on hardware: the session state went into an
+#      unrelated project and the project being edited took zero writes, both
+#      directions, silently.
+#   2. If the target is ALREADY on a slot, press that one — do not re-point
+#      anything. This is the ordinary A->B->A case and it needs no write at all.
+#   3. Confirm by READBACK before reporting a slot as pressable. A rename that
+#      did not land leaves the slot on its previous project, and pressing it
+#      would still make Move change set, still log, and log the slot we
+#      pressed — so confirmation would pass for the wrong project.
+do_switch_slot() { # target-project [live-project]
+    [ -n "${1:-}" ] || die "switch-slot needs a target project id"
+    python3 - "$LIBRARY_DIR" "$PROJECTS_DIR" "$DBX_DIR/slot_switch.json" "$1" "${2:-}" <<'PYEOF'
+import json, os, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import library_slots as sl
+
+library, projects_dir, out, target, live = sys.argv[1:6]
+
+def answer(ok, slot=-1, project="", why=""):
+    """Write the verdict and STOP. ⚠ It must terminate on success too.
+
+    It did not, for one revision: the success path printed and returned, so the
+    already-on-show case fell through and re-pointed a slot it had just said
+    needed no re-point. Switching to the project that is ALREADY LIVE then hit
+    the two-slots-one-project guard and wrote ok:false over its own ok:true —
+    reporting failure for the one case that could not be simpler."""
+    tmp = out + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"ok": bool(ok), "slot": slot, "project": project, "why": why}, f)
+        f.flush(); os.fsync(f.fileno())
+    os.replace(tmp, out)
+    if not ok:
+        sys.exit("project-cmd: switch-slot: %s" % why)
+    print("project-cmd: switch-slot: press slot %d for %s" % (slot, project))
+    sys.exit(0)
+
+if not os.path.isdir(os.path.join(projects_dir, target)):
+    answer(False, why="no such project: %s" % target)
+
+# 2. already on show — press it, touch nothing.
+here = sl.slot_of_project(library, target)
+if here is not None:
+    answer(True, here, target)
+
+# 1. the idle slot is the one the live project is NOT on.
+live_slot = sl.slot_of_project(library, live) if live else None
+idle = None
+for i in range(len(sl.SLOT_IDS)):
+    if i != live_slot and os.path.islink(os.path.join(library, sl.SLOT_IDS[i])):
+        idle = i
+        break
+if idle is None:
+    # Fewer slots than we thought (a single-project library that just grew).
+    # Taking the next slot is safe: it holds nothing, so nothing is live on it.
+    for i in range(len(sl.SLOT_IDS)):
+        if not os.path.islink(os.path.join(library, sl.SLOT_IDS[i])):
+            idle = i
+            break
+if idle is None:
+    answer(False, why="no idle slot (live=%r)" % live)
+
+try:
+    landed = sl.repoint(library, projects_dir, idle, target)
+except ValueError as e:
+    answer(False, why=str(e))
+
+# 3. readback, before anyone presses anything.
+if landed != target:
+    answer(False, idle, landed,
+           "slot %d resolves to %r, asked for %r — NOT pressed" % (idle, landed, target))
+os.sync()
+answer(True, idle, target)
+PYEOF
+}
+
 # Which slot currently leads to a project (or nothing). The caller needs this
 # to know which slot is IDLE before it re-points one.
 do_slot_of() { # project-id
@@ -1346,6 +1432,7 @@ case "${1:-}" in
     library-sync) _require_own_tree library-sync; do_library_sync ;;
     point) _require_own_tree point; shift; do_point "${1:-}" "${2:-}" ;;
     slot-of) shift; do_slot_of "${1:-}" ;;
+    switch-slot) _require_own_tree switch-slot; shift; do_switch_slot "${1:-}" "${2:-}" ;;
     rename) _require_own_tree rename; shift; do_rename "${1:-}" "${2:-}" "${3:-}" ;;
     repair-indices) _require_own_tree repair-indices; do_repair_indices ;;
     fix-order) _require_own_tree fix-order; shift; do_fix_order "${1:-}" ;;
