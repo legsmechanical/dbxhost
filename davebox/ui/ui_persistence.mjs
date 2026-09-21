@@ -1,3 +1,4 @@
+import * as os from 'os';
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { isSoundBank, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, ACTION_POPUP_MS,
@@ -39,8 +40,22 @@ const SETS_DIR    = '/data/UserData/UserLibrary/Sets';
  * first JS write of a fresh project (sidecar, snapshot, new-project marker)
  * cannot make the losing name. Never for a provisional identity: that makes
  * nothing at all (see ensureStateDir). */
+/* The JS copy of dbx_project_path.h's rule. ⚠ ONE RULE, SEVERAL LANGUAGES —
+ * read that header for WHY this resolves at all; check-config.sh pins the
+ * copies together. Same contract: resolve the entry, and keep the literal
+ * join when it cannot be resolved (ENOENT is the NORMAL case for a project
+ * being created — returning nothing would file its first write nowhere). */
+function dbxProjectDir(root, uuid) {
+    const joined = root + '/' + uuid;
+    try {
+        const r = os.realpath(joined);
+        if (r && r[1] === 0 && r[0]) return r[0];
+    } catch (e) { /* fall through to the join */ }
+    return joined;
+}
+
 function setStateDir(uuid) {
-    const dir = SETS_DIR + '/' + uuid;
+    const dir = dbxProjectDir(SETS_DIR, uuid);
     return dir + '/' + host_state_subdir(dir, !setUuidIsProvisional(uuid));
 }
 /* Device-wide snapshots (item 18): one dir per slot beside the live state. */

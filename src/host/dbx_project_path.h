@@ -53,7 +53,7 @@ static inline void dbx_project_dir(const char *sets_root, const char *uuid,
                                    char *out, size_t out_sz)
 {
     char joined[DBX_PROJECT_PATH_MAX];
-    char resolved[DBX_PROJECT_PATH_MAX];
+    char *resolved;
 
     if (!out || out_sz == 0) return;
     out[0] = '\0';
@@ -61,13 +61,24 @@ static inline void dbx_project_dir(const char *sets_root, const char *uuid,
 
     snprintf(joined, sizeof(joined), "%s/%s", sets_root, uuid);
 
-    /* realpath() needs a buffer of at least PATH_MAX; ours is >= that by
-     * DBX_PROJECT_PATH_MAX, and the ENOENT case (a project not yet created)
-     * is expected, not an error. */
-    if (realpath(joined, resolved) != NULL)
+    /* ⚠ realpath(p, NULL) MALLOCS the result rather than demanding a caller
+     * buffer of at least PATH_MAX. That matters here: the two-buffer form put
+     * 8 KB on the stack of whichever thread called it, including the DSP's,
+     * and "probably enough stack" is not a thing worth being probably right
+     * about. Allocation is fine on this path — it already does directory I/O
+     * and is never reached from the audio thread.
+     *
+     * A NULL return is the EXPECTED case for a project not yet created
+     * (ENOENT), and is also what a malloc failure looks like; both fall back
+     * to the literal join, which is the right answer for the first and the
+     * safe answer for the second. */
+    resolved = realpath(joined, NULL);
+    if (resolved) {
         snprintf(out, out_sz, "%s", resolved);
-    else
+        free(resolved);
+    } else {
         snprintf(out, out_sz, "%s", joined);
+    }
 }
 
 #endif /* DBX_PROJECT_PATH_H */

@@ -84,7 +84,7 @@ if [ "${1:-}" = "--write" ]; then
         tag='-'
         if [ -f "$INVENTORY" ]; then
             old=$(grep -F -- " $l" "$INVENTORY" 2>/dev/null | sed -n 1p)
-            case "$old" in B\ *) tag='B' ;; esac
+            case "$old" in B\ *) tag='B' ;; R\ *) tag='R' ;; esac
         fi
         printf '%s %s\n' "$tag" "$l" >> "$INVENTORY.new"
     done < "$tmp"
@@ -105,7 +105,7 @@ else
         # Zero collected is not green: an over-narrowed grep or a moved file
         # would otherwise report a clean run.
         bad "extractor collected ZERO lines — the pattern or paths are wrong"
-    elif diff -u <(sed -E 's/^[B-] //' "$INVENTORY") <(printf '%s\n' "$got") > /tmp/spp.$$ 2>&1; then
+    elif diff -u <(sed -E 's/^[BR-] //' "$INVENTORY") <(printf '%s\n' "$got") > /tmp/spp.$$ 2>&1; then
         ok "$n set-path sites, all pinned"
     else
         bad "the set-path surface CHANGED — review every line, then --write"
@@ -119,7 +119,11 @@ want_sh="standalone/scripts/project-cmd.sh
 standalone/scripts/select-hook.sh
 standalone/scripts/select-list.sh
 standalone/scripts/set-swap.sh"
-got_sh=$(git grep -l -E "$SYMS" -- 'standalone/scripts/*.sh' 'scripts/*.sh' | sort)
+# check-config.sh is excluded because it NAMES these symbols in order to PIN
+# them; it never reaches the set library. A checker appearing in its own
+# subject list is noise, and noise is how a tripwire gets ignored.
+got_sh=$(git grep -l -E "$SYMS" -- 'standalone/scripts/*.sh' 'scripts/*.sh' \
+         | grep -v '/check-config\.sh$' | sort)
 if [ "$got_sh" = "$want_sh" ]; then
     ok "4 shell scripts reach the set library, all known"
 else
@@ -127,15 +131,21 @@ else
     diff -u <(printf '%s\n' "$want_sh") <(printf '%s\n' "$got_sh") | sed 's/^/    /' >&2
 fi
 
-# ---- 3. the per-project BUILDERS specifically ------------------------------
-# These turn a uuid into a path. Each must be routed through the resolver seam
-# when the store is re-rooted; each is a silent wrong-project write if missed.
+# ---- 3. the per-project path sites, split by what they DO ------------------
+# B — builds a path that is PERSISTED or written through. Must resolve, so a
+#     later change to what the entry points at cannot re-aim a write already
+#     aimed. These go through dbx_project_dir / dbxProjectDir.
+# R — READS through the entry (fetches Song.abl, enumerates) and keeps no path.
+#     Deliberately NOT resolved: a read through a window is correct as-is, and
+#     resolving it would buy nothing. Tagged so it reads as a decision rather
+#     than as four sites somebody forgot.
 builders=$(grep -c '^B ' "$INVENTORY" 2>/dev/null | tr -d ' ')
-if [ "${builders:-0}" -eq 8 ]; then
-    ok "8 per-project path builders (uuid -> path), each tagged B"
+reads=$(grep -c '^R ' "$INVENTORY" 2>/dev/null | tr -d ' ')
+if [ "${builders:-0}" -eq 4 ] && [ "${reads:-0}" -eq 4 ]; then
+    ok "4 resolved builders (B) + 4 deliberate read-throughs (R)"
 else
-    bad "per-project builder count is ${builders:-0}, pinned at 8 — one was added, removed, or lost its B tag"
-    grep '^B ' "$INVENTORY" 2>/dev/null | sed 's/^/    /' >&2
+    bad "path-site split is B=${builders:-0} R=${reads:-0}, pinned at B=4 R=4"
+    grep -E '^[BR] ' "$INVENTORY" 2>/dev/null | sed 's/^/    /' >&2
 fi
 
 exit $fails

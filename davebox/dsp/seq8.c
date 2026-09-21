@@ -96,6 +96,7 @@
  * path is only ever a dAVEBOx project's dir. The root stays overridable for
  * the test harness (real deletes need a real temp tree to be exercised in). */
 #include "dbx_state_subdir.h"
+#include "dbx_project_path.h"
 #ifndef SEQ8_SET_STATE_ROOT
 #define SEQ8_SET_STATE_ROOT     SEQ8_SETS_DIR
 #endif
@@ -147,7 +148,7 @@
 static void seq8_set_state_path(char *out, size_t sz, const char *uuid, int create) {
     char uuid_dir[192];
     char sub[DBX_STATE_NAME_MAX];
-    snprintf(uuid_dir, sizeof(uuid_dir), SEQ8_SET_STATE_ROOT "/%s", uuid);
+    dbx_project_dir(SEQ8_SET_STATE_ROOT, uuid, uuid_dir, sizeof(uuid_dir));
     dbx_state_subdir_resolve(uuid_dir, create, sub, sizeof(sub));
     snprintf(out, sz, "%s/%s/" SEQ8_STATE_PREFIX "-state.json", uuid_dir, sub);
 }

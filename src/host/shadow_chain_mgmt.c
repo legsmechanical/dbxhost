@@ -17,6 +17,7 @@
 #include "master_fx_saved_state.h" /* object or opaque-string state at boot */
 #include "shadow_set_pages.h"
 #include "dbx_state_subdir.h"
+#include "dbx_project_path.h"
 #include "shadow_sampler.h"
 #include "shadow_dbus.h"
 #include "shadow_state.h"
@@ -1506,7 +1507,7 @@ int shadow_inprocess_load_chain(void) {
                      * the chooser on SET_CHANGED. */
                     char set_root[256];
                     char sub[DBX_STATE_NAME_MAX];
-                    snprintf(set_root, sizeof(set_root), SAMPLER_SETS_DIR "/%s", boot_uuid);
+                    dbx_project_dir(SAMPLER_SETS_DIR, boot_uuid, set_root, sizeof(set_root));
                     dbx_state_subdir_resolve(set_root, 0, sub, sizeof(sub));
                     snprintf(set_dir, sizeof(set_dir), "%s/%s/" PER_SET_STATE_LEAF, set_root, sub);
                     char test_slot[768];

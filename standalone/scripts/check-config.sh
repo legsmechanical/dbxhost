@@ -102,6 +102,10 @@ else
     echo "  FAIL davebox/dsp/dbx_state_subdir.h differs from src/host/dbx_state_subdir.h"
     fail=1
 fi
+check "host JS resolves via the rule"  "$REPO/src/shadow/shadow_ui.js"       "const setDir = dbxProjectDir(SETS_LIBRARY_DIR, uuid);"
+check "davebox JS resolves via rule"   "$REPO/davebox/ui/ui_persistence.mjs" "const dir = dbxProjectDir(SETS_DIR, uuid);"
+check "seq8.c resolves via the seam"   "$REPO/davebox/dsp/seq8.c"            "dbx_project_dir(SEQ8_SET_STATE_ROOT, uuid"
+check "shim boot resolves via the seam" "$REPO/src/host/shadow_chain_mgmt.c" "dbx_project_dir(SAMPLER_SETS_DIR, boot_uuid"
 check "seq8.c uses the rule"           "$REPO/davebox/dsp/seq8.c"            "dbx_state_subdir_resolve(uuid_dir, create"
 check "shim boot read uses the rule"   "$REPO/src/host/shadow_chain_mgmt.c"  "dbx_state_subdir_resolve(set_root, 0"
 check "JS binding uses the rule"       "$REPO/src/host/js_host_common.c"     "dbx_state_subdir_resolve(dir, create"
