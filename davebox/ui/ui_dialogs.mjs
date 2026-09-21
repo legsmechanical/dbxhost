@@ -20,7 +20,7 @@ import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
     dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
-    hostIdentity
+    hostIdentity, projectIdOfEntry
 } from './ui_persistence.mjs';
 import { invalidateLEDCache } from './ui_leds.mjs';
 import {
@@ -1358,7 +1358,15 @@ function _pppLoad(p, k) {
  * (2026-09-16: introduced by the identity work, caught the same day.) */
 function _pppIsOpenProject(p, k) {
     const proj = p && p.byIndex ? p.byIndex[k] : null;
-    if (S.currentSetUuid && proj && proj.uuid === S.currentSetUuid) return true;
+    /* ⚠⚠ RESOLVE. `currentSetUuid` is the library ENTRY Move opened; `proj.uuid`
+     * is a PROJECT. Comparing them directly worked only while a slot was named
+     * after the project it held — after that it can never match, and this
+     * function silently falls through to `k === p.current`, which is exactly
+     * the value the comment above says is wrong here because it is -1 until
+     * the host confirms. That would put the un-warned delete/rename window
+     * back, i.e. re-open the defect of 2026-09-16 without touching its fix. */
+    if (S.currentSetUuid && proj &&
+        proj.uuid === projectIdOfEntry(S.currentSetUuid)) return true;
     return k === p.current && p.current >= 0;
 }
 
