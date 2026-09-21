@@ -610,7 +610,23 @@ export function _tickImpl() {
          * taking over) still reaches it. Guarded rather than argued about. */
         const _id = hostIdentity();
         const _dspUuid = (host_module_get_param('state_uuid') || '');
-        if (!S.awaitingProjectSelect &&
+        /* ⚠⚠ AWAITING IS NOT THE SAME AS "NOBODY ASKED". An in-place project
+         * switch PARKS this module and resumes it, and the DSP that comes back
+         * is fresh — so `awaitingProjectSelect` is SET at exactly the moment we
+         * must load the project the user just picked. Gating on the flag alone
+         * blocked that load: Move switched correctly, the host published `open`,
+         * and the module sat awaiting until the watchdog re-armed the picker.
+         * Josh, on hardware: *"loaded project 12 and it hung ... and fell back
+         * to picker"*. Shipped in `261dbb899` and caught within the hour.
+         *
+         * The discriminator is the REQUEST, not the flag. `S.requestedSet` is
+         * written at the pick and survives the park (the module is suspended,
+         * not restarted), so "we asked for exactly this uuid" is knowable. A
+         * verdict about anything else, or with no request outstanding, is still
+         * refused — which is the case the guard was added for. */
+        const _asked = S.requestedSet && _id.uuid &&
+                       S.requestedSet.uuid === _id.uuid;
+        if ((!S.awaitingProjectSelect || _asked) &&
                 _id.state === 'open' && _id.uuid && _dspUuid !== _id.uuid) {
             S.currentSetUuid = _id.uuid;
             S.currentSetName = _id.name;

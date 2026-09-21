@@ -542,6 +542,44 @@ step('⭐⭐ suspend + resume while AWAITING loads nothing, even with a set open
     if (S.currentSetUuid) throw new Error('a resume adopted an identity with no pick: ' + S.currentSetUuid);
     if (!S.awaitingProjectSelect) throw new Error('select-before-load was abandoned by a resume');
 });
+step('⭐⭐ the SWITCH case: awaiting WITH a request outstanding must still load', () => {
+    /* ⚠ THE GAP THAT SHIPPED A REGRESSION (261dbb899, caught on hardware within
+     * the hour). An in-place switch PARKS the module and resumes it with a
+     * fresh DSP, so `awaitingProjectSelect` is SET at the exact moment the
+     * picked project must load. The original guard tested that flag alone and
+     * blocked it: Move switched, the host published `open`, and the module sat
+     * awaiting until the watchdog re-armed the picker.
+     *
+     * The step above covers awaiting with NO request. This covers awaiting WITH
+     * one — the difference between "nobody asked" and "the user just asked for
+     * exactly this". Both are needed; only having the first is what let the
+     * regression through. */
+    bootFresh(X, 'Project 32');
+    ticks(4);
+    if (!S.awaitingProjectSelect) throw new Error('precondition: not awaiting');
+    /* The pick: a request for X is outstanding, and the host has confirmed X. */
+    S.requestedSet = { uuid: X, index: 31, name: 'Project 32' };
+    publish('open', '', X, 'Project 32', 31);
+    ticks(4);
+    stateLoads.length = 0; S.pendingSetLoad = false;
+    suspendAndResume();
+    if (!S.pendingSetLoad && !stateLoads.length)
+        throw new Error('the resume refused to load the project the user PICKED — '
+                        + 'this is the hardware regression, reproduced');
+});
+step('⚠ control: a request for a DIFFERENT project does not unlock it', () => {
+    /* The exemption must be about THIS uuid, not merely about a request
+     * existing — otherwise any stale request would re-open the hole. */
+    bootFresh(X, 'Project 32');
+    ticks(4);
+    S.requestedSet = { uuid: P, index: 0, name: 'Project 1' };   /* asked for P */
+    publish('open', '', X, 'Project 32', 31);                     /* host holds X */
+    ticks(4);
+    stateLoads.length = 0; S.pendingSetLoad = false;
+    suspendAndResume();
+    if (S.pendingSetLoad || stateLoads.length)
+        throw new Error('a request for P unlocked a load of X: ' + JSON.stringify(stateLoads));
+});
 step('⚠ control: the same resume in a LOADED session still reloads a CHANGED set', () => {
     /* The guard must not cost the thing this edge exists for. With a project
      * loaded, a set that changed while parked must still be picked up — without
