@@ -787,14 +787,6 @@ export const S = {
      * save fires: shadow_select_arm(k) + suspend (the host gate as a headless
      * actuator, ~2 s, resume + set reload). */
     pendingProjectSwitch: null,
-    /* Indexes CREATED during this session. They need a different switch: Move
-     * builds its set list at LAUNCH, so a project made mid-session is not in its
-     * overview — the headless select actuator walks to a pad Move believes is
-     * empty, nothing loads, and davebox lands "in" a project whose sounds are
-     * still the previous one's. Confirmed on hardware 2026-08-27 (Josh: "new
-     * project doesn't exist" in Move's overview; "switching between pre-existing
-     * projects is fine"). These go through a Move RELAUNCH instead. */
-    projectsCreatedThisSession: [],
     pendingProjectRelaunch: null,
     /* One-shot: the next project Load goes through a RELAUNCH even for a
      * pre-existing pad. Set by Back on PROJECT DID NOT OPEN — Move is then

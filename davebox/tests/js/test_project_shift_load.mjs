@@ -161,21 +161,21 @@ step('Shift+tap on an EMPTY pad CREATES it, then loads it', () => {
     projectPadPickerTap(2);
     if (!cmds.some((c) => c.indexOf('new-at 2') >= 0))
         throw new Error('no create was issued for the empty pad: ' + JSON.stringify(cmds));
-    /* ⚠⚠ A RELAUNCH, not the select switch — and the difference is the whole bug
-     * this step now guards. Move enumerates its sets at LAUNCH, so a project
-     * created mid-session is NOT in the overview the select actuator drives: it
-     * walks to a pad Move believes is empty, loads nothing, and davebox ends up
-     * in the new project while Move still plays the OLD one's set. Move then
-     * saves the set it HAS open, so sound edits land in the wrong project.
-     * Found by Josh on hardware 2026-08-27 ("new project doesn't exist" in
-     * Move's overview) and confirmed by the contrast he ran: switching between
-     * PRE-EXISTING projects is fine, which is the control below. */
-    if (S.pendingProjectRelaunch !== 2)
-        throw new Error('a just-created project must switch by RELAUNCH (Move has never ' +
-                        'seen it); pendingRelaunch=' + S.pendingProjectRelaunch);
-    if (_pendPad() === 2)
-        throw new Error('it used the select actuator, which cannot reach a set Move ' +
-                        'enumerated before it existed');
+    /* ⭐ THE NORMAL SWITCH, not a relaunch — the INVERSE of what this step
+     * asserted until 2026-09-21. Under one library entry per project Move only
+     * discovered a new entry at launch, so a project created mid-session had to
+     * restart Move to be reachable (Josh, on hardware 2026-08-27: "new project
+     * doesn't exist" in Move's overview). Under two fixed slots there is
+     * nothing to discover: the new project is just a folder behind the idle
+     * slot. And the restart was what broke it — the module came back with no
+     * memory of having asked, so every first load of a new project landed on
+     * the picker (Josh, on hardware 2026-09-21, three times over). */
+    if (S.pendingProjectRelaunch !== null)
+        throw new Error('a just-created project RESTARTED Move to load; pendingRelaunch=' +
+                        S.pendingProjectRelaunch);
+    if (_pendPad() !== 2)
+        throw new Error('a just-created project did not take the normal switch; pending=' +
+                        _pendPad());
 });
 
 step('a create that FAILS reports it and does not load', () => {
@@ -258,16 +258,19 @@ step('switching while PLAYING: stop on tick 1 (alone), save on tick 2, switch on
     if (S.pendingProjectSwitch !== null) throw new Error('tick 3 did not fire the switch');
 });
 
-step('the RELAUNCH door (a project created this session) stops first too', () => {
+/* The RELAUNCH door is now reached only after PROJECT DID NOT OPEN -> Back
+ * (forceRelaunchNextLoad). A project created this session no longer takes it:
+ * with two fixed slots it loads through the normal switch. */
+step('the RELAUNCH door (after a failed open) stops first too', () => {
     settle();
     S.projectPadPicker = mkPicker(0); S.shiftHeld = true; S.playing = true;
-    S.projectsCreatedThisSession = [1];
+    S.forceRelaunchNextLoad = true;
     projectPadPickerTap(1);
     if (S.pendingProjectRelaunch !== 1) throw new Error('no relaunch requested');
     if (!S.pendingStopBeforeSave) throw new Error('the stop was not queued on the relaunch door');
     const t1 = tickOnce();
     if (t1.indexOf('transport=stop') < 0) throw new Error('tick 1 did not stop: ' + JSON.stringify(t1));
-    S.projectsCreatedThisSession = []; S.pendingProjectRelaunch = null;
+    S.forceRelaunchNextLoad = false; S.pendingProjectRelaunch = null;
 });
 
 if (failed) process.exit(1);

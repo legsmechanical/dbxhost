@@ -56,10 +56,17 @@ globalThis.host_remove_dir = () => false;                          /* fenced off
 const sysCmds = [];
 /* host_system_cmd blocks (system()): `project-cmd.sh list` has WRITTEN
  * projects.json by the time it returns, which is what the picker relies on. */
-const PROJECTS_JSON = JSON.stringify({ current: 31, projects: [
+const BASE_PROJECTS = [
     { uuid: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'Project 1', index: 0, color: 1 },
     { uuid: 'bbbbbbbb-0000-4000-8000-000000000031', name: 'Project 32', index: 31, color: 2 },
-]});
+];
+/* The store, as project-cmd would leave it. `new-at` and `copy` ADD to it, so a
+ * test can perform the real create/copy gesture and then load what it made —
+ * rather than pretending a pad was created by pushing onto a list. boot()
+ * resets it. */
+let rigProjects = BASE_PROJECTS.slice();
+const projectsJson = () => JSON.stringify({ current: 31, projects: rigProjects });
+const rigUuidFor = (k) => 'cccccccc-0000-4000-8000-' + String(1000 + k).padStart(12, '0');
 /* ⭑ THE LIST CAN FAIL. project-cmd can be missing, refused by the host's
  * command allowlist, or write nothing readable — on the device all three look
  * identical from here: `list` returns and projects.json is not there. */
@@ -75,9 +82,22 @@ const SLOT1_UUID = '5107b000-0000-4000-8000-000000000001';
 let switchSlotFails = false;
 globalThis.host_system_cmd = (c) => {
     sysCmds.push(String(c));
+    const mk = /project-cmd\.sh new-at (\d+)$/.exec(String(c));
+    if (mk) {
+        const k = parseInt(mk[1], 10);
+        if (!rigProjects.some((q) => q.index === k))
+            rigProjects.push({ uuid: rigUuidFor(k), name: 'Project ' + (k + 1), index: k, color: 3 });
+    }
+    const cp = /project-cmd\.sh copy (\d+) (\d+)$/.exec(String(c));
+    if (cp) {
+        const src = rigProjects.find((q) => q.index === parseInt(cp[1], 10));
+        const k = parseInt(cp[2], 10);
+        if (src && !rigProjects.some((q) => q.index === k))
+            rigProjects.push({ uuid: rigUuidFor(k), name: src.name + ' copy', index: k, color: src.color });
+    }
     if (/project-cmd\.sh list$/.test(String(c))) {
         if (listFails) files.delete('/data/UserData/dbx-host/projects.json');
-        else files.set('/data/UserData/dbx-host/projects.json', PROJECTS_JSON);
+        else files.set('/data/UserData/dbx-host/projects.json', projectsJson());
     }
     const m = /switch-slot (\S+)/.exec(String(c));
     if (m) {
@@ -235,6 +255,7 @@ function step(l, fn) {
  * at that moment, and dAVEBOx init()s. */
 function boot(activeUuid, activeName) {
     files.clear(); writes.length = 0; events.length = 0; sysCmds.length = 0;
+    rigProjects = BASE_PROJECTS.slice();
     if (activeUuid) {
         files.set(ACTIVE, activeUuid + '\n' + activeName);
         /* A project that has been used before has its state file. */
@@ -837,46 +858,54 @@ step('⭑ RETRY re-issues the SAME request (the verdict screen has no uuid of it
         throw new Error('Retry wrote the request into the file the dying shim consumes: ' + JSON.stringify(files.get(INTENDED)));
 });
 
-step('\u2b50\u2b50 A PROJECT CREATED THIS SESSION writes the request where it SURVIVES the relaunch', () => {
-    /* THE BUG JOSH HIT, as a test. A project created this session cannot be
-     * reached by the select actuator (Move enumerates its sets at launch), so
-     * it goes through a Move RELAUNCH. That route wrote its request into
-     * intended_set.txt, the live shim consumed it ~1 s before the relaunch
-     * killed that shim, and the new session had nothing to confirm against:
-     * "Loading..." and then straight back to the picker, every first load.
+step('\u2b50\u2b50 CREATE-THEN-LOAD takes the NORMAL switch — no Move restart', () => {
+    /* THE BUG JOSH HIT, as the gesture he used: Shift + tap an empty pad, which
+     * creates the project and loads it in one press.
      *
-     * The fix is not "author a request" (that was already true and still
-     * broke) — it is authoring it where the NEXT session can find it. */
+     * That load used to RESTART Move, because under one library entry per
+     * project Move only discovered a new entry at startup. The restart wiped
+     * everything the module remembered — including that it had asked for this
+     * project — so every first load of a new project came back up on the
+     * picker, whatever the host confirmed. Two fixes tried to carry that memory
+     * across the restart; the actual fix is not to restart. With two fixed
+     * slots a new project is just a folder behind the idle slot, and Move
+     * re-reads a re-pointed slot from disk. */
     boot(P, 'Project 1');
     hostPublish(P, 'Project 1', 0, P);
     ticks(40);
     S.pendingOpenProjectPicker = false;
+    S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
     sysCmds.length = 0; selectArms.length = 0;
     files.delete(INTENDED); files.delete(RELAUNCH);
 
-    S.projectsCreatedThisSession.push(31);        /* made since Move last looked */
-    S.projectPadPicker = null;
-    dialogs.openProjectPadPicker();
-    padTap(31);
-    ticks(2);
-    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
-    ticks(6);
-    S.projectsCreatedThisSession.length = 0;
+    S.shiftHeld = true;
+    padTap(7);                                    /* EMPTY pad: create, then load */
+    S.shiftHeld = false;
+    ticks(8);
 
-    if (!sysCmds.some((c) => /project-cmd\.sh switch 31$/.test(c)))
-        throw new Error('precondition: a created-this-session pad did not take the RELAUNCH route: ' + JSON.stringify(sysCmds));
-    if (selectArms.length)
-        throw new Error('precondition: the select actuator was armed for a set Move cannot see: ' + JSON.stringify(selectArms));
+    if (!sysCmds.some((c) => /project-cmd\.sh new-at 7$/.test(c)))
+        throw new Error('precondition: the gesture did not create a project: ' + JSON.stringify(sysCmds));
 
-    /* \u2b50 The record itself: the SLOT, its position, the name — in the file
-     * that outlives the shim. */
-    if (files.get(RELAUNCH) !== SLOT1_UUID + '\n1\nProject 32\n')
-        throw new Error('the relaunch route did not author a surviving request: ' + JSON.stringify(files.get(RELAUNCH)));
-    /* \u26a0 And NOT in the one the dying shim eats. Writing both is not
-     * harmless: the doomed copy is consumed and published as a `pending` that
-     * nothing will ever settle. */
-    if (files.has(INTENDED))
-        throw new Error('the relaunch route also wrote the doomed request file: ' + JSON.stringify(files.get(INTENDED)));
+    /* \u2b50 NO restart. */
+    if (sysCmds.some((c) => /project-cmd\.sh switch 7$/.test(c)))
+        throw new Error('a freshly created project RESTARTED Move to load: ' + JSON.stringify(sysCmds));
+    /* \u2b50 The normal switch: the idle slot re-pointed at the NEW project, then
+     * pressed. The re-point must name the project just made, not pad 7's old
+     * occupant — there was none — and not the project being left. */
+    const rp = sysCmds.find((c) => /switch-slot /.test(c));
+    if (!rp || rp.indexOf(rigUuidFor(7)) < 0)
+        throw new Error('the idle slot was not pointed at the new project: ' + JSON.stringify(sysCmds));
+    if (selectArms.indexOf(1) < 0)
+        throw new Error('the switch never pressed the slot: ' + JSON.stringify(selectArms));
+
+    /* The request goes where THIS session's shim reads it — the one that will
+     * see the answer. Nothing is left in the relaunch file for a later restart
+     * to install over an unrelated pick. */
+    if (files.get(INTENDED) !== SLOT1_UUID + '\n1\nProject 8\n')
+        throw new Error('the request does not name the slot and the NEW project: ' + JSON.stringify(files.get(INTENDED)));
+    if (files.has(RELAUNCH))
+        throw new Error('a normal switch wrote the relaunch request: ' + JSON.stringify(files.get(RELAUNCH)));
 });
 
 step('⭑ a live project SPENDS the request (a later Retry cannot re-issue a stale one)', () => {
@@ -964,21 +993,27 @@ step('control: the SAME publish sequence on a relaunch boot still raises the ver
     if (!onScreen()) throw new Error('the verdict stopped working for a picked project: ' + frame());
 });
 
-/* 9. EVERY PATH THAT MAKES A PROJECT MUST MARK IT CREATED-THIS-SESSION.
+/* 9. A COPIED PROJECT LOADS LIKE ANY OTHER.
  *
- * Move builds its set list when it starts. A project made after that is not in
- * it, so the fast in-place switch walks Move's overview to a pad Move believes
- * is EMPTY: nothing loads and it returns as though it worked. dAVEBOx is then
- * nominally in the new project while Move still holds the previous one — and
- * Move saves the set it HAS open, so edits land in the wrong project, silently.
+ * This section used to assert the opposite: that every path making a project
+ * marked it "created this session", so its first load would RESTART Move. That
+ * was right under one library entry per project — Move only discovered a new
+ * entry at startup, and COPY once skipped the marker, so its edits landed in
+ * the previous project (Josh, 2026-09-16: "copied a project and noticed there
+ * was no restart").
  *
- * ⚠ The two create paths always recorded this. COPY did not, for as long as
- * copy has existed, and no test noticed because every test exercised create.
- * Found on hardware by Josh (2026-09-16). This asserts the RULE rather than the
- * three call sites, so the next path that makes a project fails here instead.
- */
-step('⭑⭑ a COPIED project relaunches Move, exactly like a created one', () => {
+ * Under two fixed slots there is nothing for Move to discover, and the restart
+ * is what broke every first load of a new project. So the rule is now the
+ * inverse, and it is asserted through the real copy gesture rather than a
+ * marker: copy, then Load, and the load must be the normal switch.
+ *
+ * ⚠ What stops the old hazard now is not a restart but identity: a load that
+ * does not open what was asked never becomes `open`, and nothing saves into a
+ * project that is not open. */
+step('⭑⭑ a COPIED project loads through the NORMAL switch, no restart', () => {
     boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
     S.pendingOpenProjectPicker = false; S.projectPadPicker = null;
     dialogs.openProjectPadPicker();
     /* The real gesture: hold Copy, tap the source, tap an empty destination. */
@@ -991,26 +1026,19 @@ step('⭑⭑ a COPIED project relaunches Move, exactly like a created one', () =
     S.copyHeld = false;
     if (!sysCmds.some((c) => /project-cmd\.sh copy 0 7$/.test(c)))
         throw new Error('the copy gesture did not issue a copy: ' + JSON.stringify(sysCmds));
-    if (S.projectsCreatedThisSession.indexOf(7) < 0)
-        throw new Error('the COPY was not recorded as created this session — loading it ' +
-                        'would take the in-place route to a pad Move has never seen');
-});
 
-step('⚠ CONTROL: the marker is what forces the relaunch, not the pad number', () => {
-    /* Strip the marker and the same pick takes the fast route — proving the
-     * assertion above is load-bearing rather than incidental. */
-    boot(P, 'Project 1');
-    S.projectsCreatedThisSession.length = 0;
-    S.pendingOpenProjectPicker = false; S.projectPadPicker = null;
-    dialogs.openProjectPadPicker();
+    /* ...then load the copy, the way a user would: tap it, Load. */
     sysCmds.length = 0; selectArms.length = 0;
-    padTap(31); ticks(2);
+    padTap(7); ticks(2);
     cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
-    ticks(6);
-    if (sysCmds.some((c) => /switch 31$/.test(c)))
-        throw new Error('control: relaunched without the marker');
+    ticks(8);
+    if (sysCmds.some((c) => /project-cmd\.sh switch 7$/.test(c)))
+        throw new Error('a copied project RESTARTED Move to load: ' + JSON.stringify(sysCmds));
+    const rp = sysCmds.find((c) => /switch-slot /.test(c));
+    if (!rp || rp.indexOf(rigUuidFor(7)) < 0)
+        throw new Error('the idle slot was not pointed at the COPY: ' + JSON.stringify(sysCmds));
     if (selectArms.indexOf(1) < 0)
-        throw new Error('control: the fast route was not taken without the marker');
+        throw new Error('the switch never pressed the slot: ' + JSON.stringify(selectArms));
 });
 
 /* 10. DELETING THE PROJECT YOU ARE IN takes the careful path even when the

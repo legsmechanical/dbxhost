@@ -1353,7 +1353,16 @@ function _pppLoad(p, k) {
      * where the live project sits — a question best asked as late as possible,
      * immediately before the press. What is recorded here is the PROJECT. */
     const _proj = p && p.byIndex ? p.byIndex[k] : null;
-    if (_forceRelaunch || S.projectsCreatedThisSession.indexOf(k) >= 0) {
+    /* ⭐ A PROJECT CREATED THIS SESSION TAKES THE NORMAL SWITCH NOW.
+     * It used to relaunch Move, because under one-library-entry-per-project
+     * Move only discovers a new entry when it starts. With two fixed slots Move
+     * never has to discover anything: a new project is just a different folder
+     * behind the idle slot, and Move re-reads a re-pointed slot from disk
+     * (measured on a freshly created, never-opened set, 4.2 s, no restart).
+     * The relaunch was a leftover — and the route every first load of a new
+     * project failed on, because nothing the module remembered survived it.
+     * Only the explicit one-shot below still relaunches. */
+    if (_forceRelaunch) {
         /* The relaunch route. It still needs the project ON a slot and a
          * request NAMING that slot: the relaunch is how Move re-reads its set
          * list, not a substitute for identity. */
@@ -1395,10 +1404,6 @@ function _pppIsOpenProject(p, k) {
     if (S.currentSetUuid && proj &&
         proj.uuid === projectIdOfEntry(S.currentSetUuid)) return true;
     return k === p.current && p.current >= 0;
-}
-
-function _pppNoteCreated(k) {
-    if (S.projectsCreatedThisSession.indexOf(k) < 0) S.projectsCreatedThisSession.push(k);
 }
 
 function _pppStartRename(p, k) {
@@ -1519,7 +1524,6 @@ function _projectPadPickerClick_impl() {
         const c = p.confirmNew;
         if (c.sel === 0) {          /* Yes — create, then open its menu */
             host_system_cmd('sh ' + PROJECT_CMD + ' new-at ' + c.k);
-            _pppNoteCreated(c.k);
             const d = _pppRunList();
             if (d) _pppApplyList(p, d);
             if (!p.byIndex[c.k]) { p.confirmNew = null; showActionPopup('CREATE', 'FAILED'); return; }
@@ -1714,19 +1718,14 @@ function _projectPadPickerTap_impl(k) {
             showActionPopup('PAD', 'OCCUPIED');
         } else {
             host_system_cmd('sh ' + PROJECT_CMD + ' copy ' + p.copySrcIdx + ' ' + k);
-            /* ⭑⭑ A COPY IS A PROJECT CREATED THIS SESSION, and Move built its
-             * set list when it started — so the copy is not in it. Without this
-             * marker the next load takes the fast in-place route, which walks
-             * Move's overview to a pad Move believes is EMPTY: nothing loads,
-             * and it returns as though it worked. dAVEBOx is then nominally in
-             * the copy while Move still has the previous project open — and
-             * Move saves the set it HAS open, so edits land in the wrong
-             * project, silently.
-             *
-             * The two create paths have always recorded this. Copy never did.
-             * (Found by Josh on device, 2026-09-16: "copied a project and
-             * noticed there was no restart".) */
-            _pppNoteCreated(k);
+            /* A copy is just another project folder: loading it re-points the
+             * idle slot and presses it, exactly like any other project. It used
+             * to need a Move relaunch (Move only discovered new library entries
+             * at startup), and copy once silently skipped that relaunch, so its
+             * edits landed in the previous project (Josh, 2026-09-16). Under two
+             * fixed slots there is nothing for Move to discover, and a load that
+             * does not open what was asked never becomes `open`, so nothing can
+             * save into the wrong project. */
             const d = _pppRunList();
             if (d) _pppApplyList(p, d);
             p.copySrcIdx = -1;
@@ -1756,7 +1755,6 @@ function _projectPadPickerTap_impl(k) {
         _pppCloseOverlays(p);
         if (!proj) {
             host_system_cmd('sh ' + PROJECT_CMD + ' new-at ' + k);
-            _pppNoteCreated(k);
             const d = _pppRunList();
             if (d) _pppApplyList(p, d);
             if (!p.byIndex[k]) { showActionPopup('CREATE', 'FAILED'); return; }
