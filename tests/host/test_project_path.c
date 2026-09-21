@@ -10,6 +10,18 @@
  * The identity case is pinned just as hard: it is the claim that routing every
  * caller through this function changes NO behaviour today, and that claim is
  * what makes the change safe to land on its own. */
+/* ⚠ glibc hides POSIX declarations under -std=c11 (which this suite uses), so
+ * mkdtemp/symlink/realpath come back IMPLICITLY DECLARED — i.e. int-returning.
+ * The truncated pointer from mkdtemp then reached realpath and _FORTIFY_SOURCE
+ * aborted the test with "buffer overflow detected". macOS declares them
+ * regardless, so the local run was green and only the Linux run caught it.
+ * [[local-green-on-a-different-libc-is-not-green]] */
+#define _DEFAULT_SOURCE    /* glibc: POSIX 2008 + BSD, which -std=c11 hides */
+#define _DARWIN_C_SOURCE   /* macOS: same job. ⚠ _XOPEN_SOURCE would HIDE
+                            * mkdtemp here — it is a BSD extension — so the
+                            * obvious portable-looking macro breaks the OTHER
+                            * platform. Both are needed; neither alone. */
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,8 +45,13 @@ int main(void)
 {
     char tmpl[] = "/tmp/dbx-projpath-XXXXXX";
     char *made = mkdtemp(tmpl);
-    char base[512];
-    char sets[512], projects[512], real_dir[512], link_path[512];
+    char base[DBX_PROJECT_PATH_MAX];   /* ⚠ realpath(p, buf) may write up to
+                                        * PATH_MAX. A 256-byte buffer here
+                                        * aborted under glibc's _FORTIFY_SOURCE
+                                        * ("buffer overflow detected") while
+                                        * passing on macOS, where the resolved
+                                        * path happened to be short. */
+    char sets[512], projects[512], real_dir[1024], link_path[1024];
     char out[DBX_PROJECT_PATH_MAX];
     assert(made && "mkdtemp");
     /* ⚠ The temp root itself may be reached through a symlink — on macOS
@@ -43,7 +60,12 @@ int main(void)
      * assertion fails for a reason that has nothing to do with the code.
      * (On the Move no component of the set library is a symlink — checked on
      * the device — which is why resolving is the identity there.) */
-    if (!realpath(made, base)) snprintf(base, sizeof(base), "%s", made);
+    {   /* the malloc form, as dbx_project_path.h uses, so no PATH_MAX
+         * assumption is needed at all */
+        char *rp = realpath(made, NULL);
+        snprintf(base, sizeof(base), "%s", rp ? rp : made);
+        free(rp);
+    }
 
     snprintf(sets, sizeof(sets), "%s/Sets", base);
     snprintf(projects, sizeof(projects), "%s/projects", base);
@@ -63,7 +85,7 @@ int main(void)
 
     /* ---- 2. a SYMLINK entry resolves to its target ------------------------
      * The case the seam exists for. */
-    char target[512];
+    char target[1024];
     snprintf(target, sizeof(target), "%s/actual-project", projects);
     assert(mkdir(target, 0755) == 0);
     snprintf(link_path, sizeof(link_path), "%s/slot-uuid", sets);
@@ -72,7 +94,7 @@ int main(void)
     eq("a symlinked entry resolves to the project it points at", out, target);
 
     /* ---- 3. re-pointing the symlink changes where NEW paths land ---------- */
-    char target2[512];
+    char target2[1024];
     snprintf(target2, sizeof(target2), "%s/other-project", projects);
     assert(mkdir(target2, 0755) == 0);
     assert(unlink(link_path) == 0);
@@ -94,7 +116,7 @@ int main(void)
     /* ---- 5. a project that does not exist yet keeps the join --------------
      * realpath() fails ENOENT here. Returning empty would file a fresh
      * project's first write nowhere at all. */
-    char want_join[512];
+    char want_join[2048];
     snprintf(want_join, sizeof(want_join), "%s/not-created-yet", sets);
     dbx_project_dir(sets, "not-created-yet", out, sizeof(out));
     eq("an uncreated project keeps the literal join", out, want_join);
