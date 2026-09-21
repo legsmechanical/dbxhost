@@ -255,7 +255,13 @@ def answer(ok, slot=-1, project="", why=""):
     reporting failure for the one case that could not be simpler."""
     tmp = out + ".tmp"
     with open(tmp, "w") as f:
-        json.dump({"ok": bool(ok), "slot": slot, "project": project, "why": why}, f)
+        # ⭐ slot_uuid is what MOVE will name when it opens this — the library
+        # entry, not the project. The request the caller writes must carry it,
+        # or confirmation compares a project id against an entry id and never
+        # matches. (They are different strings now; that is the whole change.)
+        json.dump({"ok": bool(ok), "slot": slot, "project": project,
+                   "slot_uuid": sl.SLOT_IDS[slot] if 0 <= slot < len(sl.SLOT_IDS) else "",
+                   "why": why}, f)
         f.flush(); os.fsync(f.fileno())
     os.replace(tmp, out)
     if not ok:

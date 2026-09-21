@@ -89,6 +89,12 @@ globalThis.move_midi_external_send = () => {};
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
+/* ⚠ pendingProjectSwitch is a RECORD now — { pad, uuid, name } — because the
+ * SLOT to press is decided at the drain, immediately before the press, not at
+ * the pick. The PAD is still what these cases are about, so read it out rather
+ * than comparing the whole value. */
+const _pendPad = () => (S.pendingProjectSwitch && typeof S.pendingProjectSwitch === 'object')
+    ? S.pendingProjectSwitch.pad : S.pendingProjectSwitch;
 const { projectPadPickerTap } = await import('../../ui/ui_dialogs.mjs');
 
 function mkPicker(currentIdx) {
@@ -112,9 +118,9 @@ function step(l, fn) {
 step('control: a PLAIN tap still does not load (2026-08-11 spec)', () => {
     S.projectPadPicker = mkPicker(0);
     S.shiftHeld = false;
-    S.pendingProjectSwitch = -1;
+    S.pendingProjectSwitch = null;
     projectPadPickerTap(1);
-    if (S.pendingProjectSwitch === 1)
+    if (_pendPad() === 1)
         throw new Error('a plain tap loaded the project — the accidental-load guard is gone');
     if (!S.projectPadPicker.menu)
         throw new Error('a plain tap on an occupied pad should open its menu');
@@ -134,10 +140,10 @@ step('control: a plain tap on an EMPTY pad still asks before creating', () => {
 step('Shift+tap on an OCCUPIED pad loads it immediately', () => {
     S.projectPadPicker = mkPicker(0);
     S.shiftHeld = true;
-    S.pendingProjectSwitch = -1;
+    S.pendingProjectSwitch = null;
     projectPadPickerTap(1);
-    if (S.pendingProjectSwitch !== 1)
-        throw new Error('Shift+tap did not request the switch; pending=' + S.pendingProjectSwitch);
+    if (_pendPad() !== 1)
+        throw new Error('Shift+tap did not request the switch; pending=' + JSON.stringify(S.pendingProjectSwitch));
     /* ⚠ CONTROL for the create case below: a PRE-EXISTING project must keep using
      * the select actuator. Josh verified this half on hardware too — "switching
      * between pre-existing projects is fine" — so routing everything through a
@@ -150,7 +156,7 @@ step('Shift+tap on an OCCUPIED pad loads it immediately', () => {
 step('Shift+tap on an EMPTY pad CREATES it, then loads it', () => {
     S.projectPadPicker = mkPicker(0);
     S.shiftHeld = true;
-    S.pendingProjectSwitch = -1;
+    S.pendingProjectSwitch = null;
     cmds.length = 0;
     projectPadPickerTap(2);
     if (!cmds.some((c) => c.indexOf('new-at 2') >= 0))
@@ -167,7 +173,7 @@ step('Shift+tap on an EMPTY pad CREATES it, then loads it', () => {
     if (S.pendingProjectRelaunch !== 2)
         throw new Error('a just-created project must switch by RELAUNCH (Move has never ' +
                         'seen it); pendingRelaunch=' + S.pendingProjectRelaunch);
-    if (S.pendingProjectSwitch === 2)
+    if (_pendPad() === 2)
         throw new Error('it used the select actuator, which cannot reach a set Move ' +
                         'enumerated before it existed');
 });
@@ -175,13 +181,13 @@ step('Shift+tap on an EMPTY pad CREATES it, then loads it', () => {
 step('a create that FAILS reports it and does not load', () => {
     S.projectPadPicker = mkPicker(0);
     S.shiftHeld = true;
-    S.pendingProjectSwitch = -1;
+    S.pendingProjectSwitch = null;
     S.actionPopupEndTick = -1;
     const realCmd = globalThis.host_system_cmd;
     globalThis.host_system_cmd = (c) => { cmds.push(c); return 1; };   /* creates nothing */
     try {
         projectPadPickerTap(3);
-        if (S.pendingProjectSwitch === 3)
+        if (_pendPad() === 3)
             throw new Error('loaded a project the create never made');
         if (S.actionPopupEndTick < 0)
             throw new Error('a failed create said nothing');
@@ -194,9 +200,9 @@ step('a held Delete still wins over Shift', () => {
     S.projectPadPicker = mkPicker(0);
     S.shiftHeld = true;
     S.deleteHeld = true;
-    S.pendingProjectSwitch = -1;
+    S.pendingProjectSwitch = null;
     projectPadPickerTap(1);
-    if (S.pendingProjectSwitch === 1)
+    if (_pendPad() === 1)
         throw new Error('Shift+Delete+tap loaded the project instead of arming the delete');
     S.deleteHeld = false;
 });
@@ -226,7 +232,7 @@ step('control: switching while STOPPED saves on the first tick, no transport wri
     settle();
     S.projectPadPicker = mkPicker(0); S.shiftHeld = true; S.playing = false;
     projectPadPickerTap(1);
-    if (S.pendingProjectSwitch !== 1) throw new Error('no switch requested');
+    if (_pendPad() !== 1) throw new Error('no switch requested');
     if (S.pendingStopBeforeSave) throw new Error('a stop was queued while stopped');
     const t1 = tickOnce();
     if (t1.indexOf('save=1') < 0) throw new Error('tick 1 did not save: ' + JSON.stringify(t1));
@@ -238,16 +244,16 @@ step('switching while PLAYING: stop on tick 1 (alone), save on tick 2, switch on
     settle();
     S.projectPadPicker = mkPicker(0); S.shiftHeld = true; S.playing = true;
     projectPadPickerTap(1);
-    if (S.pendingProjectSwitch !== 1) throw new Error('no switch requested');
+    if (_pendPad() !== 1) throw new Error('no switch requested');
     if (!S.pendingStopBeforeSave) throw new Error('the stop was not queued');
     const t1 = tickOnce();
     if (t1.indexOf('transport=stop') < 0) throw new Error('tick 1 did not stop: ' + JSON.stringify(t1));
     if (t1.indexOf('save=1') >= 0) throw new Error('the save shared the stop\'s tick (coalescing): ' + JSON.stringify(t1));
     if (S.playing) throw new Error('the JS mirror still says playing');
-    if (S.pendingProjectSwitch !== 1) throw new Error('the switch fired before the save');
+    if (_pendPad() !== 1) throw new Error('the switch fired before the save');
     const t2 = tickOnce();
     if (t2.indexOf('save=1') < 0) throw new Error('tick 2 did not save: ' + JSON.stringify(t2));
-    if (S.pendingProjectSwitch !== 1) throw new Error('the switch fired with the save');
+    if (_pendPad() !== 1) throw new Error('the switch fired with the save');
     tickOnce();
     if (S.pendingProjectSwitch !== null) throw new Error('tick 3 did not fire the switch');
 });

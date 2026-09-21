@@ -64,11 +64,27 @@ const PROJECTS_JSON = JSON.stringify({ current: 31, projects: [
  * command allowlist, or write nothing readable — on the device all three look
  * identical from here: `list` returns and projects.json is not there. */
 let listFails = false;
+/* ⭐ `switch-slot` re-points the IDLE slot and answers with the slot to press,
+ * through slot_switch.json — the drain refuses to arm without an ok answer,
+ * which is the point of it. The rig answers as the device would: slot 1, whose
+ * entry uuid is what Move will log. `switchSlotFails` drives the refusal path.
+ * ⚠ The SLOT uuid is deliberately not either project's: a request carrying the
+ * project would never match the uuid Move logs, and this rig is where that
+ * would otherwise go unnoticed. */
+const SLOT1_UUID = '5107b000-0000-4000-8000-000000000001';
+let switchSlotFails = false;
 globalThis.host_system_cmd = (c) => {
     sysCmds.push(String(c));
     if (/project-cmd\.sh list$/.test(String(c))) {
         if (listFails) files.delete('/data/UserData/dbx-host/projects.json');
         else files.set('/data/UserData/dbx-host/projects.json', PROJECTS_JSON);
+    }
+    const m = /switch-slot (\S+)/.exec(String(c));
+    if (m) {
+        files.set('/data/UserData/dbx-host/slot_switch.json', JSON.stringify(
+            switchSlotFails
+                ? { ok: false, slot: -1, project: '', slot_uuid: '', why: 'rig: refused' }
+                : { ok: true, slot: 1, project: m[1], slot_uuid: SLOT1_UUID, why: '' }));
     }
     return 0;
 };
@@ -692,7 +708,10 @@ step('control: without a verdict, loading a pre-existing pad still uses the sele
     cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
     ticks(6);
     if (sysCmds.some((c) => /switch 31$/.test(c))) throw new Error('relaunched without a verdict: ' + JSON.stringify(sysCmds));
-    if (selectArms.indexOf(31) < 0) throw new Error('select actuator not armed for a normal switch: ' + JSON.stringify(selectArms) + ' ' + JSON.stringify(sysCmds));
+    /* ⭐ The actuator is armed with the SLOT, not the pad. The pad is dAVEBOx's
+     * own picker position; Move only ever sees the two slots, so pressing a pad
+     * number would walk its overview to a position that is not there. */
+    if (selectArms.indexOf(1) < 0) throw new Error('select actuator not armed with the SLOT for a normal switch: ' + JSON.stringify(selectArms) + ' ' + JSON.stringify(sysCmds));
 });
 
 /* 5b. ⭐⭐ THE REQUEST. dAVEBOx authors `intended_set.txt` at the moment of the
@@ -733,12 +752,17 @@ step('⭐⭐ the pick AUTHORS the request, and does it BEFORE the actuator fires
         ticks(6);
     } finally { globalThis.shadow_select_arm = armFn; }
 
-    if (selectArms.indexOf(31) < 0)
+    if (selectArms.indexOf(1) < 0)
         throw new Error('precondition: the actuator never armed, so the ordering proves nothing');
     if (atArm === null)
         throw new Error('the actuator armed with NO request on disk — the host cannot tell this load from a coincidence');
-    if (atArm !== X + '\n31\nProject 32\n')
-        throw new Error('request record is not `uuid \\n index \\n name`: ' + JSON.stringify(atArm));
+    /* ⭐⭐ THE REQUEST NAMES THE SLOT, and the index is the slot's position.
+     * Confirmation is a string compare against the uuid MOVE logs, and Move
+     * logs the library entry it opened — so a request carrying the project
+     * uuid would never match, and every switch would read as `unopened`.
+     * That is why this asserts the slot uuid and not X. */
+    if (atArm !== SLOT1_UUID + '\n1\nProject 32\n')
+        throw new Error('request must name the SLOT `uuid \\n slot \\n name`: ' + JSON.stringify(atArm));
 });
 
 step('⚠ CONTROL: the already-current pad asks for NOTHING', () => {
@@ -770,8 +794,10 @@ step('⭑ RETRY re-issues the SAME request (the verdict screen has no uuid of it
     padTap(31); ticks(2);
     cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);         /* Load pad 31 -> a request */
     ticks(6);
-    if (!S.requestedSet || S.requestedSet.uuid !== X)
-        throw new Error('precondition: the pick did not record a request');
+    /* The request names the SLOT; the project it leads to rides along beside
+     * it for the message the user sees. */
+    if (!S.requestedSet || S.requestedSet.uuid !== SLOT1_UUID || S.requestedSet.projectId !== X)
+        throw new Error('precondition: the pick did not record a slot request');
     files.delete(INTENDED);                       /* the host consumed it */
     /* ...and Move opened something else. */
     hostPublish(X, 'Project 32', 31, 'default');
@@ -782,7 +808,10 @@ step('⭑ RETRY re-issues the SAME request (the verdict screen has no uuid of it
     ticks(4);
     if (!sysCmds.some((c) => /project-cmd\.sh switch 31$/.test(c)))
         throw new Error('precondition: Retry did not fire the relaunch');
-    if (files.get(INTENDED) !== X + '\n31\nProject 32\n')
+    /* Retry re-issues the SAME record — the slot one, unchanged. The verdict
+     * screen has no identity of its own, which is the whole point: it re-asks
+     * for exactly what was asked for, rather than re-deriving it. */
+    if (files.get(INTENDED) !== SLOT1_UUID + '\n1\nProject 32\n')
         throw new Error('Retry relaunched WITHOUT re-issuing the request: ' + JSON.stringify(files.get(INTENDED)));
 });
 
@@ -916,7 +945,7 @@ step('⚠ CONTROL: the marker is what forces the relaunch, not the pad number', 
     ticks(6);
     if (sysCmds.some((c) => /switch 31$/.test(c)))
         throw new Error('control: relaunched without the marker');
-    if (selectArms.indexOf(31) < 0)
+    if (selectArms.indexOf(1) < 0)
         throw new Error('control: the fast route was not taken without the marker');
 });
 

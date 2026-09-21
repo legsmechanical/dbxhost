@@ -37,7 +37,7 @@ import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, hostIdentity,
     commitSnapshot } from './ui_persistence.mjs';
 import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
-         projectPickerTextEntryTick,
+         projectPickerTextEntryTick, requestSetForSlot,
          checkProjectOpened, lockAfterProjectLost } from './ui_dialogs.mjs';
 import { sceneAllQueued, updateSceneMapLEDs } from './ui_scene.mjs';
 import { _padDispatchMutedNow, computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
@@ -2228,6 +2228,35 @@ export function _tickImpl() {
          * = the switch). */
         const _psw = S.pendingProjectSwitch;
         S.pendingProjectSwitch = null;
+        /* ⭐⭐ DECIDE THE SLOT HERE, one step before the press.
+         *
+         * `switch-slot` re-points the IDLE slot at the project, reads the link
+         * back, and answers with the slot to press. It is asked NOW rather
+         * than at the pick because which slot is idle depends on where the
+         * live project sits, and that is a fact about this moment.
+         *
+         * ⚠⚠ ON A REFUSAL WE DO NOT PRESS. A re-point that did not land leaves
+         * the slot on its PREVIOUS project — and pressing it would still make
+         * Move change set, still log, and log the slot we pressed, so
+         * confirmation would pass and the wrong project would be reported
+         * open. That is the failure this whole rewrite exists to remove, so
+         * the one thing we must never do is press anyway. */
+        const _live = hostIdentity().projectId || '';
+        host_system_cmd('sh ' + '/data/UserData/dbx-host/scripts/project-cmd.sh' +
+                        ' switch-slot ' + _psw.uuid + ' ' + _live);
+        let _sw = null;
+        try { _sw = JSON.parse(host_read_file('/data/UserData/dbx-host/slot_switch.json') || '{}'); }
+        catch (e) { _sw = null; }
+        if (!_sw || !_sw.ok || typeof _sw.slot !== 'number' || _sw.slot < 0) {
+            console.log('project switch: could not prepare a slot for ' + _psw.uuid +
+                        ' (' + ((_sw && _sw.why) || 'no answer') + ') — NOT pressing');
+            S.pendingProjectSwitch = null;
+            showActionPopup('COULD NOT', 'OPEN');
+            openProjectPadPicker();
+            return;
+        }
+        /* The request names the SLOT, because that is what Move logs. */
+        requestSetForSlot(_psw, _sw.slot_uuid, _sw.slot);
         removeFlagsWrap();
         S.ledInitComplete = false;
         invalidateLEDCache();
@@ -2238,7 +2267,7 @@ export function _tickImpl() {
          * gets a look in as soon as the next tick, and mid-handoff it would
          * read this as a dead end and re-arm the picker over the resume. */
         S.selectHandoffUntil = nowMs() + SELECT_HANDOFF_MS;
-        shadow_select_arm(_psw);
+        shadow_select_arm(_sw.slot);
         host_suspend_overtake();
         return;
     } else if (S.pendingHideAfterSave) {

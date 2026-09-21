@@ -27,7 +27,7 @@ awk '/SELECT-BEFORE-LOAD watchdog/,/ledInitComplete\) \{/' ui/ui_tick.mjs \
 
 # 2. The window must open BEFORE the actuator is armed. Our own tick can run as
 #    soon as the next frame, so arming first leaves exactly the gap that bit.
-armline=$(grep -n "shadow_select_arm(_psw);" ui/ui_tick.mjs | cut -d: -f1)
+armline=$(grep -n "shadow_select_arm(_sw.slot);" ui/ui_tick.mjs | cut -d: -f1)
 winline=$(grep -n "S.selectHandoffUntil = nowMs() + SELECT_HANDOFF_MS;" ui/ui_tick.mjs | cut -d: -f1)
 if [ -n "$armline" ] && [ -n "$winline" ] && [ "$winline" -lt "$armline" ]; then
     ok "the handoff window opens before the actuator is armed"

@@ -14,8 +14,12 @@ echo "project-select UI (tap never loads):"
 
 # 1. The ONLY writer of S.pendingProjectSwitch in the dialogs is _pppLoad —
 #    the menu's Load action. A second writer means some other gesture loads.
-n=$(grep -c "S.pendingProjectSwitch = k" ui/ui_dialogs.mjs)
-if [ "$n" = 1 ] && awk '/^function _pppLoad/,/^}/' ui/ui_dialogs.mjs | grep -q "S.pendingProjectSwitch = k"; then
+# ⚠ The value is a RECORD now, not the pad: `{ pad, uuid, name }`. The slot to
+# press is decided at the drain, immediately before the press, because which
+# slot is idle depends on where the live project sits. The pin is unchanged in
+# substance — exactly one writer, inside _pppLoad.
+n=$(grep -c "S.pendingProjectSwitch = { pad: k" ui/ui_dialogs.mjs)
+if [ "$n" = 1 ] && awk '/^function _pppLoad/,/^}/' ui/ui_dialogs.mjs | grep -q "S.pendingProjectSwitch = { pad: k"; then
     ok "exactly one switch writer, inside _pppLoad (the menu's Load)"
 else
     bad "S.pendingProjectSwitch writers moved — a gesture other than Load may load ($n writers)"

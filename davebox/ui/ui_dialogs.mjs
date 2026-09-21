@@ -1213,12 +1213,20 @@ function _pppOpenMenu(p, k) {
  * Writing it here — not at the drain — is deliberate: the drains carry only a
  * pad INDEX, and re-deriving the uuid downstream by watching Move is the exact
  * inference this record exists to replace. */
-function _pppRequestSet(p, k) {
-    const proj = p && p.byIndex ? p.byIndex[k] : null;
-    const uuid = proj && proj.uuid ? proj.uuid : '';
+/* `entryUuid` is what MOVE will name in its log — the library ENTRY, i.e. the
+ * slot about to be pressed. `index` is the position the actuator presses.
+ *
+ * ⚠⚠ NOT the project uuid, and not the picker pad. Confirmation is a string
+ * compare against the uuid Move logs (shadow_loaded_set_policy.h), so a
+ * request carrying the project would never match once a slot stops being
+ * named after the project it holds — every switch would read as `unopened`.
+ * The project id rides along for the message the user sees, nothing else. */
+export function requestSetForSlot(pick, entryUuid, slotIndex) {
+    const uuid = entryUuid || '';
     if (!uuid) { S.requestedSet = null; return false; }
-    const name = (proj && proj.name) ? proj.name : '';
-    S.requestedSet = { uuid: uuid, index: k, name: name };
+    S.requestedSet = { uuid: uuid, index: slotIndex,
+                       name: (pick && pick.name) ? pick.name : '',
+                       projectId: (pick && pick.uuid) ? pick.uuid : '' };
     return _pppWriteRequest(S.requestedSet);
 }
 
@@ -1292,9 +1300,15 @@ function _pppLoad(p, k) {
      * asks Move for nothing (the set is already open and Move confirmed it on
      * its own), it only loads OUR state. A request there would be a claim we
      * never made. */
-    _pppRequestSet(p, k);
+    /* ⭐ The REQUEST is authored at the drain now, not here: it must name the
+     * SLOT that is about to be pressed, and which slot that is depends on
+     * where the live project sits — a question best asked as late as possible,
+     * immediately before the press. What is recorded here is the PROJECT. */
+    const _proj = p && p.byIndex ? p.byIndex[k] : null;
     if (_forceRelaunch || S.projectsCreatedThisSession.indexOf(k) >= 0) S.pendingProjectRelaunch = k;
-    else S.pendingProjectSwitch = k;
+    else S.pendingProjectSwitch = { pad: k,
+                                    uuid: (_proj && _proj.uuid) ? _proj.uuid : '',
+                                    name: (_proj && _proj.name) ? _proj.name : '' };
 }
 
 /* Remember a create so the load after it knows to relaunch rather than select. */
