@@ -59,30 +59,46 @@ fi
 
 # ---- 2. shell: every reader of the open identity ---------------------------
 # project-cmd is the only script that reasons in projects. It must resolve.
-# ⚠ Match the CALL, not the name. The first cut grepped for the bare
+#
+# ⚠ Match the CALL, not the name. The first cut grepped the bare
 # `resolve_open_project`, which also matches the COMMENT explaining it — so
 # removing the actual call left the check green. A grep that matches prose
 # about the thing is not a check on the thing.
-if awk '/^do_delete\(\)/,/^}/' standalone/scripts/project-cmd.sh | grep -q '\$(resolve_open_project'; then
-    ok "delete resolves what is open before deciding"
-else
-    bad "delete compares the raw entry — this is the one that hung the device"
-fi
-if awk '/^do_rename\(\)/,/^}/' standalone/scripts/project-cmd.sh | grep -q '\$(resolve_open_project'; then
-    ok "rename resolves what is open before deciding"
-else
-    bad "rename compares the raw entry"
-fi
+#
+# ⚠⚠ AND DO NOT PIPE INTO `grep -q` UNDER pipefail. grep -q exits the moment it
+# matches, awk takes SIGPIPE, and pipefail turns that into a failed pipeline —
+# so the `if` takes the ELSE branch and the check reports the defect it was
+# looking for, at random. It passed alone and failed inside the full suite,
+# which is the worst version: a 1-in-N flake that looks like a real finding.
+# Capture first, then match. (Same shape as `| head` under pipefail, which
+# tests/host/test_repo_claims.sh already pins against.)
+_body_of() { # function-name file
+    awk -v f="^$1\\(\\)" '$0 ~ f, /^}/' "$2"
+}
+_delete_body="$(_body_of do_delete standalone/scripts/project-cmd.sh)"
+_rename_body="$(_body_of do_rename standalone/scripts/project-cmd.sh)"
+
+case "$_delete_body" in
+    *'$(resolve_open_project'*) ok "delete resolves what is open before deciding" ;;
+    "") bad "do_delete not found — the check cannot see what it is pinning" ;;
+    *)  bad "delete compares the raw entry — this is the one that hung the device" ;;
+esac
+case "$_rename_body" in
+    *'$(resolve_open_project'*) ok "rename resolves what is open before deciding" ;;
+    "") bad "do_rename not found — the check cannot see what it is pinning" ;;
+    *)  bad "rename compares the raw entry" ;;
+esac
 
 # ⭑ set-swap is the DELIBERATE exception, and it is correct BY CONSTRUCTION:
 # it joins the identity against the LIBRARY (where slots live) and reads the
 # index through the link, which is the slot position it wants. Pinned so the
 # exemption is a decision on the record rather than an omission.
-if awk '/^session_song_index\(\)/,/^}/' standalone/scripts/set-swap.sh | grep -q 'sets_dir'; then
-    ok "set-swap reads the index through the LIBRARY (slot position — correct as-is)"
-else
-    bad "set-swap stopped joining against the library — re-check what it resolves"
-fi
+_sess_body="$(_body_of session_song_index standalone/scripts/set-swap.sh)"
+case "$_sess_body" in
+    *sets_dir*) ok "set-swap reads the index through the LIBRARY (slot position — correct as-is)" ;;
+    "") bad "session_song_index not found — the check cannot see what it is pinning" ;;
+    *)  bad "set-swap stopped joining against the library — re-check what it resolves" ;;
+esac
 
 # ---- 3. the resolver exists on both sides of the seam ----------------------
 grep -q 'export function projectIdOfEntry' davebox/ui/ui_persistence.mjs \

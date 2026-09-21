@@ -209,9 +209,16 @@ grep -q 'slot-of' standalone/scripts/select-hook.sh \
 # The deferred delete must also leave the library consistent: the deleted
 # project's slot leads nowhere, and a relaunch does not run the launch-time
 # sync.
-awk '/^do_delete\(\)/,/^}/' "$CMD" | grep -q 'library-sync' \
-    && ok "the deferred delete re-syncs the library before Move restarts" \
-    || bad "a deleted open project leaves its slot dangling for Move to enumerate"
+# ⚠ Capture, then match. `awk … | grep -q` under pipefail is a RACE: grep -q
+# exits on its first match, awk takes SIGPIPE, and pipefail turns that into a
+# failed pipeline — so this reported the defect it was hunting, at random. It
+# passed alone and failed inside the full suite, which is the worst version.
+_del_body="$(awk -v f='^do_delete\\(\\)' '$0 ~ f, /^}/' "$CMD")"
+case "$_del_body" in
+    *library-sync*) ok "the deferred delete re-syncs the library before Move restarts" ;;
+    "")             bad "do_delete not found — this pin cannot see its subject" ;;
+    *)              bad "a deleted open project leaves its slot dangling for Move to enumerate" ;;
+esac
 
 # ---- the guard: neither root may be the user's own Move library ------------
 # ⚠ Assert the REASON. library-sync can fail for unrelated causes, and every
