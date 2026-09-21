@@ -62,6 +62,20 @@ check "heal umount verb"               "$HERE/src/davebox-heal.c"   "--umount-se
 check "set-swap calls the mount verb"  "$HERE/scripts/set-swap.sh"  "--mount-sets"
 check "set-swap calls the umount verb" "$HERE/scripts/set-swap.sh"  "--umount-sets"
 
+# ⭑ THE PROJECT STORE. Projects live in $DBX_DIR/projects/; the set library
+# heal mounts is a VIEW of it, one symlink per project. Four scripts spell that
+# root, and a slip in any one of them is silent in the worst way: the verb
+# enumerates an empty directory and reports zero projects, which is exactly
+# what a fresh install looks like. Pin all four, and pin that the rule they
+# share is imported rather than re-spelled.
+check "project-cmd store root"         "$HERE/scripts/project-cmd.sh"  'PROJECTS_DIR="${PROJECTS_DIR:-$DBX_DIR/projects}"'
+check "select-list store root"         "$HERE/scripts/select-list.sh"  'PROJECTS_DIR="${PROJECTS_DIR:-$DBX_DIR/projects}"'
+check "select-hook store root"         "$HERE/scripts/select-hook.sh"  'PROJECTS_DIR="${PROJECTS_DIR:-$DBX_DIR/projects}"'
+check "launch.sh seeds the store"      "$HERE/scripts/launch.sh"       '$DBX_DIR/projects/$_tuuid'
+check "project-cmd library root"       "$HERE/scripts/project-cmd.sh"  'LIBRARY_DIR="${LIBRARY_DIR:-$DBX_DIR/sets/library}"'
+check "project-cmd imports the slots"  "$HERE/scripts/project-cmd.sh"  "import library_slots as sl"
+check "launch.sh syncs the library"    "$HERE/scripts/launch.sh"       'project-cmd.sh" library-sync'
+
 # ⭑ The reserved per-project state subdir (Phase B, state-co-location): the ONE
 # name every consumer must agree on. The C side and JS side WRITE state under
 # it; the shell sites SKIP it when hunting the inner set dir. A case slip in any

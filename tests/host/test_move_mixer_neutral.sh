@@ -57,7 +57,7 @@ PY
 # The reserved state subdir must NOT be mistaken for the set dir.
 echo '{"v":36}' > "$lib/$uuid/dAVEBOx/seq8sa-state.json"
 
-out=$(SETS_DIR="$lib" DBX_DIR="$lib/.dbx" sh standalone/scripts/project-cmd.sh normalize 2>&1)
+out=$(PROJECTS_DIR="$lib" DBX_DIR="$lib/.dbx" sh standalone/scripts/project-cmd.sh normalize 2>&1)
 grep -q "1 project(s), 1 normalized" <<<"$out" \
     && ok "the sweep found and fixed the project" \
     || bad "unexpected sweep output: $out"
@@ -94,7 +94,7 @@ PY
 ident() { python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(s.st_ino, s.st_mtime_ns)' "$1"; }
 song="$lib/$uuid/My Project/Song.abl"
 before=$(ident "$song")
-out=$(SETS_DIR="$lib" DBX_DIR="$lib/.dbx" sh standalone/scripts/project-cmd.sh normalize 2>&1)
+out=$(PROJECTS_DIR="$lib" DBX_DIR="$lib/.dbx" sh standalone/scripts/project-cmd.sh normalize 2>&1)
 after=$(ident "$song")
 grep -q "1 project(s), 0 normalized" <<<"$out" \
     && ok "a healthy library reports nothing to do" \

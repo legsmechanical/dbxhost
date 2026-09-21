@@ -48,60 +48,60 @@ except OSError:
 #   __pending-8-1 (orphan by name)   DO-NOT-EDIT.txt (skip, not a project)
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
-DBX_DIR="$T/dbx"; SETS_DIR="$T/Sets"
-export DBX_DIR SETS_DIR
-mkdir -p "$SETS_DIR" "$DBX_DIR"
+DBX_DIR="$T/dbx"; PROJECTS_DIR="$T/projects"
+export DBX_DIR PROJECTS_DIR
+mkdir -p "$PROJECTS_DIR" "$DBX_DIR"
 
 U_A=aaaaaaaa-0000-4000-8000-00000000000a
 U_B=bbbbbbbb-0000-4000-8000-00000000000b
 U_C=cccccccc-0000-4000-8000-00000000000c
 
-mkdir -p "$SETS_DIR/$U_A/Project A" "$SETS_DIR/$U_A/dAVEBOx"
-echo '{}' > "$SETS_DIR/$U_A/Project A/Song.abl"
-setxattr "$SETS_DIR/$U_A" user.song-index 13
-setxattr "$SETS_DIR/$U_A" user.dbx-color 2
+mkdir -p "$PROJECTS_DIR/$U_A/Project A" "$PROJECTS_DIR/$U_A/dAVEBOx"
+echo '{}' > "$PROJECTS_DIR/$U_A/Project A/Song.abl"
+setxattr "$PROJECTS_DIR/$U_A" user.song-index 13
+setxattr "$PROJECTS_DIR/$U_A" user.dbx-color 2
 
-mkdir -p "$SETS_DIR/$U_B/Set 1"
-echo '{}' > "$SETS_DIR/$U_B/Set 1/Song.abl"
-setxattr "$SETS_DIR/$U_B" user.song-index 13   # collides with A, no dAVEBOx marker
+mkdir -p "$PROJECTS_DIR/$U_B/Set 1"
+echo '{}' > "$PROJECTS_DIR/$U_B/Set 1/Song.abl"
+setxattr "$PROJECTS_DIR/$U_B" user.song-index 13   # collides with A, no dAVEBOx marker
 
-mkdir -p "$SETS_DIR/$U_C/Project C"
-echo '{}' > "$SETS_DIR/$U_C/Project C/Song.abl"
-setxattr "$SETS_DIR/$U_C" user.song-index 31
-setxattr "$SETS_DIR/$U_C" user.dbx-color 5
+mkdir -p "$PROJECTS_DIR/$U_C/Project C"
+echo '{}' > "$PROJECTS_DIR/$U_C/Project C/Song.abl"
+setxattr "$PROJECTS_DIR/$U_C" user.song-index 31
+setxattr "$PROJECTS_DIR/$U_C" user.dbx-color 5
 
-mkdir -p "$SETS_DIR/__pending-8-1"
-echo "junk" > "$SETS_DIR/__pending-8-1/partial"
+mkdir -p "$PROJECTS_DIR/__pending-8-1"
+echo "junk" > "$PROJECTS_DIR/__pending-8-1/partial"
 
-printf 'do not touch\n' > "$SETS_DIR/DO-NOT-EDIT.txt"
+printf 'do not touch\n' > "$PROJECTS_DIR/DO-NOT-EDIT.txt"
 
 out="$(sh "$CMD" repair-indices)"
 echo "$out" | sed 's/^/    /'
 
 check "exits 0" true   # repair-indices never refuses; reaching here is the check
 
-idx_b="$(getxattr "$SETS_DIR/$U_B" user.song-index)"
-idx_a="$(getxattr "$SETS_DIR/$U_A" user.song-index)"
-idx_c="$(getxattr "$SETS_DIR/$U_C" user.song-index)"
+idx_b="$(getxattr "$PROJECTS_DIR/$U_B" user.song-index)"
+idx_a="$(getxattr "$PROJECTS_DIR/$U_A" user.song-index)"
+idx_c="$(getxattr "$PROJECTS_DIR/$U_C" user.song-index)"
 check "B moved to the lowest free index (0)" bash -c "[ '$idx_b' = 0 ]"
 check "A untouched (still 13)" bash -c "[ '$idx_a' = 13 ]"
 check "C untouched (still 31)" bash -c "[ '$idx_c' = 31 ]"
 check "B's move was logged old -> new" bash -c "printf '%s' \"$out\" | grep -q 'moved.*from index 13 to 0'"
 
-check "pending dir quarantined, not left in Sets/" bash -c "[ ! -e '$SETS_DIR/__pending-8-1' ]"
+check "pending dir quarantined, not left in Sets/" bash -c "[ ! -e '$PROJECTS_DIR/__pending-8-1' ]"
 check "pending dir survives somewhere under sets/quarantine/" bash -c "find '$DBX_DIR/sets/quarantine' -maxdepth 2 -type d -name '__pending-8-1' | grep -q ."
 check "quarantine was logged" bash -c "printf '%s' \"$out\" | grep -q 'quarantined __pending-8-1'"
 check "quarantine dir is dated YYYYMMDD" bash -c "find '$DBX_DIR/sets/quarantine' -maxdepth 1 -mindepth 1 -type d -name '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]' | grep -q ."
 
-check "DO-NOT-EDIT.txt left alone" test -f "$SETS_DIR/DO-NOT-EDIT.txt"
+check "DO-NOT-EDIT.txt left alone" test -f "$PROJECTS_DIR/DO-NOT-EDIT.txt"
 check "nothing was deleted -- A/B/C set dirs all still exist somewhere" bash -c \
-    "[ -d '$SETS_DIR/$U_A' ] && [ -d '$SETS_DIR/$U_B' ] && [ -d '$SETS_DIR/$U_C' ]"
+    "[ -d '$PROJECTS_DIR/$U_A' ] && [ -d '$PROJECTS_DIR/$U_B' ] && [ -d '$PROJECTS_DIR/$U_C' ]"
 
 # ---- idempotent: rerun over the repaired library is a no-op ---------------
 out2="$(sh "$CMD" repair-indices)"
 findings2="$(printf '%s' "$out2" | grep 'repair-indices:' || true)"
 check "rerun logs nothing (idempotent)" bash -c "[ -z '$findings2' ]"
-idx_b2="$(getxattr "$SETS_DIR/$U_B" user.song-index)"
+idx_b2="$(getxattr "$PROJECTS_DIR/$U_B" user.song-index)"
 check "rerun: B's index unchanged" bash -c "[ '$idx_b2' = 0 ]"
 
 # ---- positive control: a healthy library produces ZERO findings -----------
@@ -114,7 +114,7 @@ mkdir -p "$SETS_DIR2/$U_H/Healthy Project"
 echo '{}' > "$SETS_DIR2/$U_H/Healthy Project/Song.abl"
 setxattr "$SETS_DIR2/$U_H" user.song-index 0
 setxattr "$SETS_DIR2/$U_H" user.dbx-color 0
-h_out="$(DBX_DIR="$DBX_DIR2" SETS_DIR="$SETS_DIR2" sh "$CMD" repair-indices)"
+h_out="$(DBX_DIR="$DBX_DIR2" PROJECTS_DIR="$SETS_DIR2" sh "$CMD" repair-indices)"
 h_findings="$(printf '%s' "$h_out" | grep 'repair-indices:' || true)"
 check "healthy library: zero log lines" bash -c "[ -z '$h_findings' ]"
 check "healthy library: no quarantine dir created" bash -c "[ ! -d '$DBX_DIR2/sets/quarantine' ]"

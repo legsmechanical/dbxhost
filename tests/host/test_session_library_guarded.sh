@@ -86,10 +86,13 @@ grep -q 'write_library_notice' <<<"$enter" \
 echo "the notice must not be mistaken for a project:"
 # ⚠ The first-run seed test was "is the library directory empty" — a notice file
 # would answer yes-it-has-something and silently skip seeding, leaving a fresh
-# install on an empty picker.
-grep -q 'ls -d "\$DBX_DIR/sets/library"/\*/' standalone/scripts/launch.sh \
+# install on an empty picker. It asks the project STORE now, where the notice
+# does not live and a project is the only thing that is a directory — but the
+# DIRECTORIES-not-entries shape is kept, because the store can hold a stray
+# file for the same reason the library could.
+grep -q 'ls -d "\$DBX_DIR/projects"/\*/' standalone/scripts/launch.sh \
     && ok "first-run seeding counts DIRECTORIES, not entries" \
-    || bad "the seed test counts any entry — the notice would suppress first-run seeding"
+    || bad "the seed test counts any entry — a stray file would suppress first-run seeding"
 # Both library enumerators must ignore it too.
 for f in standalone/scripts/project-cmd.sh standalone/scripts/select-list.sh; do
     if grep -q 'os.path.isdir(p)' "$f" && grep -q 'uuid_re.match' "$f"; then

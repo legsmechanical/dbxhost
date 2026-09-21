@@ -436,20 +436,34 @@ setsid --wait bash -c '
   # session over a half-swapped library would mix the two worlds.
   if [ -x "$DBX_DIR/scripts/set-swap.sh" ]; then
     sh "$DBX_DIR/scripts/set-swap.sh" recover || refuse "set-swap recover failed"
-    # First run: seed the library with the wired-correctly template project.
-    # ⚠ "First run" means NO PROJECT, not an empty directory: the library also
-    # carries a DO-NOT-EDIT notice for the file surfaces we cannot filter, and a
-    # plain `ls` would count that as a project and silently skip the seeding —
-    # a fresh install would come up on an empty picker. Directories only.
-    if [ -d "$DBX_DIR/sets/template" ] && [ -z "$(ls -d "$DBX_DIR/sets/library"/*/ 2>/dev/null)" ]; then
+    # ⭐ Projects live in $DBX_DIR/projects/; the library is a view of symlinks
+    # onto it. This moves anything still living IN the library into the store
+    # (the one-time migration off the old layout, resumable and idempotent)
+    # and then makes the library show exactly one slot per project. It runs
+    # HERE — after recover, before enter — because that is the window where
+    # Move is down and the library is at its own path, not under the mount.
+    # ⚠ Not fatal: a library that cannot be synced still opens whatever slots
+    # it already has, which is a better failure than refusing to launch.
+    sh "$DBX_DIR/scripts/project-cmd.sh" library-sync || \
+      echo "WARNING: library sync failed — continuing"
+    # First run: seed the STORE with the wired-correctly template project.
+    # ⚠ "First run" means NO PROJECT, not an empty directory — and it is asked
+    # of the store, where a project is a real directory and nothing else lives.
+    # (The library could never answer this: it also carries a DO-NOT-EDIT
+    # notice for the file surfaces we cannot filter, and now symlinks too.)
+    if [ -d "$DBX_DIR/sets/template" ] && [ -z "$(ls -d "$DBX_DIR/projects"/*/ 2>/dev/null)" ]; then
       _tuuid=$(cat /proc/sys/kernel/random/uuid)
-      mkdir -p "$DBX_DIR/sets/library/$_tuuid"
-      cp -r "$DBX_DIR/sets/template/." "$DBX_DIR/sets/library/$_tuuid/"
+      mkdir -p "$DBX_DIR/projects/$_tuuid"
+      cp -r "$DBX_DIR/sets/template/." "$DBX_DIR/projects/$_tuuid/"
       # Pad position in the native picker IS user.song-index; pin the seed to
       # index 0 so the first project sits on the first pad (and the select
       # phases pad<->index mapping holds from the very first boot).
       python3 -c "import os,sys; os.setxattr(sys.argv[1], \"user.song-index\", b\"0\")" \
-        "$DBX_DIR/sets/library/$_tuuid" 2>/dev/null || true
+        "$DBX_DIR/projects/$_tuuid" 2>/dev/null || true
+      # …and give it the slot Move will enumerate. A seeded project with no
+      # slot is a fresh install that comes up on an empty picker.
+      sh "$DBX_DIR/scripts/project-cmd.sh" library-sync || \
+        echo "WARNING: library sync failed after seeding — continuing"
       echo "seeded first project $_tuuid from template"
     fi
     sh "$DBX_DIR/scripts/set-swap.sh" enter || {

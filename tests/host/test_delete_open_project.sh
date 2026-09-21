@@ -45,7 +45,7 @@ for i, u in enumerate([u1, u2][:n]):
 open(os.path.join(lib, ".dbx", "active_set.txt"), "w").write(u1 + "\n")
 PY
 }
-run() { SETS_DIR="$T/lib" DBX_DIR="$T/lib/.dbx" ACTIVE_SET_PATH="$T/lib/.dbx/active_set.txt" \
+run() { PROJECTS_DIR="$T/lib" DBX_DIR="$T/lib/.dbx" ACTIVE_SET_PATH="$T/lib/.dbx/active_set.txt" \
         sh standalone/scripts/project-cmd.sh "$@" 2>&1; }
 
 # --- 1. the open project: DEFERRED, not done here and now ------------------

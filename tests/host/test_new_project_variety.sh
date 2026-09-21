@@ -47,7 +47,7 @@ mktpl() {
 }
 newproj() { # index
     rm -rf "$T/lib"; mkdir -p "$T/lib"
-    SETS_DIR="$T/lib" DBX_DIR="$T/dbx" CORE_LIBRARY_DIR="$T/core" \
+    PROJECTS_DIR="$T/lib" DBX_DIR="$T/dbx" CORE_LIBRARY_DIR="$T/core" \
       ACTIVE_SET_PATH="$T/dbx/active_set.txt" \
       sh standalone/scripts/project-cmd.sh new-at "$1" "P" >/dev/null 2>&1
     find "$T/lib" -name Song.abl | head -n 1
@@ -139,7 +139,7 @@ nk=$(printf '%s' "$keys" | tr ' ' '\n' | sort -u | grep -c .)
 # sounds of a project someone deliberately duplicated.
 s=$(newproj 0)
 before=$(names "$s")
-SETS_DIR="$T/lib" DBX_DIR="$T/dbx" CORE_LIBRARY_DIR="$T/core" \
+PROJECTS_DIR="$T/lib" DBX_DIR="$T/dbx" CORE_LIBRARY_DIR="$T/core" \
   ACTIVE_SET_PATH="$T/dbx/active_set.txt" \
   sh standalone/scripts/project-cmd.sh copy 0 1 >/dev/null 2>&1
 csong=$(find "$T/lib" -name Song.abl | grep -v "$(dirname "$s")" | head -n 1)

@@ -884,6 +884,11 @@ if [ -d ./standalone ]; then
     # and set-swap.sh import from beside themselves. Without it every project
     # verb dies on the import.
     cp ./standalone/scripts/state_subdir.py ./build/scripts/
+    # library_slots.py: the rule that turns the project store into the set
+    # library Move sees — one slot symlink per project. project-cmd.sh imports
+    # it from beside itself; without it `library-sync` dies on the import and
+    # a fresh install comes up on an empty picker.
+    cp ./standalone/scripts/library_slots.py ./build/scripts/
     # move-loaded-set-reader.sh: backgrounded by launch.sh to distill
     # MoveOriginal's own "About to load ..." boot line into
     # move_loaded_set.txt (see that script for the file contract).

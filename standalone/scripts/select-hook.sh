@@ -26,7 +26,10 @@
 set -eu
 
 DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
-SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
+# ⭐ The PROJECT STORE, not Move's set library. This script inspects and can
+# BIRTH a project, and a birth into the library would put an entry in front of
+# Move that the store knows nothing about.
+PROJECTS_DIR="${PROJECTS_DIR:-$DBX_DIR/projects}"
 SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
 OUT_JSON="$DBX_DIR/select_hook_result.json"
 
@@ -75,12 +78,12 @@ dbus-send --system --print-reply --reply-timeout=4000 \
     com.ableton.move.Browser.saveSongIfDirty string: \
     >/dev/null 2>&1 || true
 
-SONG="$(python3 - "$SETS_DIR" "$IDX" <<'PYEOF'
+SONG="$(python3 - "$PROJECTS_DIR" "$IDX" <<'PYEOF'
 import os, re, sys
-sets_dir, want = sys.argv[1], int(sys.argv[2])
+projects_dir, want = sys.argv[1], int(sys.argv[2])
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
-for u in os.listdir(sets_dir) if os.path.isdir(sets_dir) else []:
-    p = os.path.join(sets_dir, u)
+for u in os.listdir(projects_dir) if os.path.isdir(projects_dir) else []:
+    p = os.path.join(projects_dir, u)
     if not os.path.isdir(p) or not uuid_re.match(u):
         continue
     try:
@@ -117,10 +120,17 @@ if [ -z "$SONG" ]; then
     fi
     _uuid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())')"
     _name="Project $((IDX + 1))"
-    mkdir -p "$SETS_DIR/$_uuid/$_name"
-    cp "$_tsrc" "$SETS_DIR/$_uuid/$_name/Song.abl"
+    mkdir -p "$PROJECTS_DIR/$_uuid/$_name"
+    cp "$_tsrc" "$PROJECTS_DIR/$_uuid/$_name/Song.abl"
     python3 -c "import os,sys; os.setxattr(sys.argv[1], \"user.song-index\", sys.argv[2].encode())" \
-        "$SETS_DIR/$_uuid" "$IDX" 2>/dev/null || true
+        "$PROJECTS_DIR/$_uuid" "$IDX" 2>/dev/null || true
+    # The project exists; it needs its slot before the relaunch enumerates the
+    # library looking for it. ⚠ This is the SECOND path that can mint a
+    # project (project-cmd's new/new-at is the first) and the one most likely
+    # to be forgotten — it fires on a pad Move could not open, not on anything
+    # the user asked for.
+    sh "$DBX_DIR/scripts/project-cmd.sh" library-sync >/dev/null 2>&1 || \
+        echo "select-hook: WARNING library sync failed after birthing $_uuid" >&2
     echo "select-hook: birthed \"$_name\" ($_uuid) at index $IDX from template — relaunching"
     printf '%s\n' "$IDX" > "$DBX_DIR/relaunch_song_index"
     : > "$DBX_DIR/relaunch_requested"

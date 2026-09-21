@@ -64,8 +64,8 @@ known() {
 
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
-export DBX_DIR="$T/dbx" SETS_DIR="$T/Sets" SETTINGS_JSON="$T/Settings.json" CORE_LIBRARY_DIR="$T/no-core"
-mkdir -p "$SETS_DIR" "$DBX_DIR/sets/template/Project 1"
+export DBX_DIR="$T/dbx" PROJECTS_DIR="$T/projects" SETTINGS_JSON="$T/Settings.json" CORE_LIBRARY_DIR="$T/no-core"
+mkdir -p "$PROJECTS_DIR" "$DBX_DIR/sets/template/Project 1"
 printf '{"currentSongIndex": 0}\n' > "$SETTINGS_JSON"
 python3 standalone/scripts/make-template.py "$DBX_DIR/sets/template/Project 1/Song.abl" >/dev/null
 
@@ -132,7 +132,7 @@ then ok "pure rule under the device's losing order (control reproduces it)"; els
 # `|| true`: on macOS python has no getxattr, so new-at's trailing normalize
 # dies — AFTER the song and the state dir exist, which is all this asserts.
 DBX_TEST_DIR_ORDER="$LOSING" sh "$CMD" new-at 31 >/dev/null 2>&1 || true
-if DBX_TEST_DIR_ORDER="$LOSING" python3 - "$PY" "$SETS_DIR" <<'PY'
+if DBX_TEST_DIR_ORDER="$LOSING" python3 - "$PY" "$PROJECTS_DIR" <<'PY'
 import os, sys
 sys.path.insert(0, sys.argv[1])
 import state_subdir as ss
@@ -150,10 +150,10 @@ then ok "new-at 31: the song folder lists first under the losing order"; else ba
 # ---- 2. real order, ext4 only ----------------------------------------------
 fstype=""; [ "$(uname)" = Linux ] && fstype="$(stat -f -c %T "$T" 2>/dev/null || true)"
 xattr_ok=0
-python3 -c 'import os,sys; os.setxattr(sys.argv[1], "user.t", b"1")' "$SETS_DIR" 2>/dev/null && xattr_ok=1
+python3 -c 'import os,sys; os.setxattr(sys.argv[1], "user.t", b"1")' "$PROJECTS_DIR" 2>/dev/null && xattr_ok=1
 if [ "$fstype" = "ext2/ext3" ] && [ "$xattr_ok" = 1 ]; then
     real_first() { # index -> exit 0 when listdir()[0] of that project is its song folder
-        python3 - "$PY" "$SETS_DIR" "$1" <<'PY'
+        python3 - "$PY" "$PROJECTS_DIR" "$1" <<'PY'
 import os, sys
 sys.path.insert(0, sys.argv[1])
 import state_subdir as ss

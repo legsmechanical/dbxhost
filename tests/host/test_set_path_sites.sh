@@ -52,7 +52,11 @@ bad() { echo "  FAIL $1" >&2; fails=1; }
 
 echo "test_set_path_sites"
 
-SYMS='UserLibrary/Sets|SEQ8_SET_STATE_ROOT|SEQ8_SETS_DIR|SAMPLER_SETS_DIR|SETS_LIBRARY_DIR|EXPORT_SETS_BASE_DIR|SET_LIBRARY_DIR|SETS_DIR'
+# ⭐ PROJECTS_DIR / LIBRARY_DIR / `DBX_DIR/projects` joined the list when the
+# project store stopped being Move's set library: the surface this guards is
+# "what turns a project id into a path", and that moved with it. Without them
+# the tripwire would have kept passing while covering three scripts less.
+SYMS='UserLibrary/Sets|SEQ8_SET_STATE_ROOT|SEQ8_SETS_DIR|SAMPLER_SETS_DIR|SETS_LIBRARY_DIR|EXPORT_SETS_BASE_DIR|SET_LIBRARY_DIR|SETS_DIR|PROJECTS_DIR|LIBRARY_DIR|DBX_DIR/projects'
 
 extract() {
     git grep -n -E "$SYMS" -- \
@@ -64,7 +68,14 @@ extract() {
             '*'*|'//'*|'/*'*) continue ;;                 # C / JS comment
         esac
         case "$f" in
-            *.sh) continue ;;                             # file-level only
+            # The shell side is pinned at FILE level in part 2, not line by
+            # line — its scripts carry prose about these paths in ordinary
+            # comments and docstrings, and a prose filter is a worse tripwire
+            # than a file list. ⚠ .py belongs here for the same reason .sh
+            # does: `#` is a comment in sh but a directive in C, and `"""`
+            # is prose in python and nothing anywhere else. Keep part 2's
+            # want-list covering every file skipped here.
+            *.sh|*.py) continue ;;                        # file-level only
         esac
         printf '%s|%s\n' "$f" "$t"
     done | sort -u
@@ -114,18 +125,20 @@ else
     rm -f /tmp/spp.$$
 fi
 
-# ---- 2. shell scripts that reach the set library, pinned at file level -----
-want_sh="standalone/scripts/project-cmd.sh
+# ---- 2. shell-side files that reach the set library, pinned at file level --
+want_sh="standalone/scripts/launch.sh
+standalone/scripts/library_slots.py
+standalone/scripts/project-cmd.sh
 standalone/scripts/select-hook.sh
 standalone/scripts/select-list.sh
 standalone/scripts/set-swap.sh"
 # check-config.sh is excluded because it NAMES these symbols in order to PIN
 # them; it never reaches the set library. A checker appearing in its own
 # subject list is noise, and noise is how a tripwire gets ignored.
-got_sh=$(git grep -l -E "$SYMS" -- 'standalone/scripts/*.sh' 'scripts/*.sh' \
+got_sh=$(git grep -l -E "$SYMS" -- 'standalone/scripts/*.sh' 'standalone/scripts/*.py' 'scripts/*.sh' \
          | grep -v '/check-config\.sh$' | sort)
 if [ "$got_sh" = "$want_sh" ]; then
-    ok "4 shell scripts reach the set library, all known"
+    ok "6 shell-side files reach the project store or the set library, all known"
 else
     bad "the set of SHELL scripts touching the set library changed"
     diff -u <(printf '%s\n' "$want_sh") <(printf '%s\n' "$got_sh") | sed 's/^/    /' >&2

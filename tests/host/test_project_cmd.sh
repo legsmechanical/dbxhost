@@ -16,19 +16,19 @@ check() { local d="$1"; shift; if "$@"; then echo "  ok   $d"; else echo "  FAIL
 
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
-export DBX_DIR="$T/dbx" SETS_DIR="$T/Sets" SETTINGS_JSON="$T/Settings.json"
-mkdir -p "$SETS_DIR" "$DBX_DIR/sets/template/Project 1"
+export DBX_DIR="$T/dbx" PROJECTS_DIR="$T/projects" SETTINGS_JSON="$T/Settings.json"
+mkdir -p "$PROJECTS_DIR" "$DBX_DIR/sets/template/Project 1"
 printf '{"currentSongIndex": 0}\n' > "$SETTINGS_JSON"
 python3 standalone/scripts/make-template.py "$DBX_DIR/sets/template/Project 1/Song.abl" >/dev/null
 
 U1=11111111-aaaa-4bbb-8ccc-000000000001
-mkdir -p "$SETS_DIR/$U1/First Project"
-echo '{}' > "$SETS_DIR/$U1/First Project/Song.abl"
+mkdir -p "$PROJECTS_DIR/$U1/First Project"
+echo '{}' > "$PROJECTS_DIR/$U1/First Project/Song.abl"
 # ⚠ The reserved state subdir sits beside the inner set dir in EVERY fixture —
 # Phase B's gate: the one-child sites must be exercised against two children,
 # or a dropped filter passes on listdir luck.
-mkdir -p "$SETS_DIR/$U1/dAVEBOx"
-echo '{"v":36,"fixture":"first"}' > "$SETS_DIR/$U1/dAVEBOx/seq8sa-state.json"
+mkdir -p "$PROJECTS_DIR/$U1/dAVEBOx"
+echo '{"v":36,"fixture":"first"}' > "$PROJECTS_DIR/$U1/dAVEBOx/seq8sa-state.json"
 
 echo "test_project_cmd"
 
@@ -48,7 +48,7 @@ PY
 # no MoveOriginal exists; the marker and index write still happen).
 sh "$CMD" new "Project 2" >/dev/null
 check "new: relaunch marker written" test -f "$DBX_DIR/relaunch_requested"
-python3 - "$SETS_DIR" "$SETTINGS_JSON" <<'PY' && echo "  ok   new: project created from template" || { echo "  FAIL new: project created from template" >&2; fails=1; }
+python3 - "$PROJECTS_DIR" "$SETTINGS_JSON" <<'PY' && echo "  ok   new: project created from template" || { echo "  FAIL new: project created from template" >&2; fails=1; }
 import json, os, re, sys
 sets_dir, settings = sys.argv[1], sys.argv[2]
 dirs = [u for u in os.listdir(sets_dir) if not u.startswith("11111111")]
@@ -97,7 +97,7 @@ rm -f "$DBX_DIR/relaunch_requested"
 # only be exercised where user xattrs work: Linux + a real setxattr on $T.
 # macOS python has no os.setxattr; tmpfs before 6.6 lacks user.*). ----
 XATTR_OK=0
-python3 - "$SETS_DIR/$U1" <<'PY' >/dev/null 2>&1 && XATTR_OK=1
+python3 - "$PROJECTS_DIR/$U1" <<'PY' >/dev/null 2>&1 && XATTR_OK=1
 import os, sys
 os.setxattr(sys.argv[1], "user.song-index", b"7")
 assert os.getxattr(sys.argv[1], "user.song-index") == b"7"
@@ -122,7 +122,7 @@ PY
     # 2026-09-14 new-project plan) -- song-color mirroring dbx-color, an
     # ISO-8601 UTC last-modified-time, local-cloud-state=notSynced.
     _copy_dst_uuid=$(python3 -c "import json;print([x for x in json.load(open('$DBX_DIR/projects.json'))['projects'] if x['index']==5][0]['uuid'])")
-    python3 - "$SETS_DIR/$_copy_dst_uuid" <<'PY' && echo "  ok   copy stamps Move's own provenance xattrs" || { echo "  FAIL copy stamps Move provenance xattrs" >&2; fails=1; }
+    python3 - "$PROJECTS_DIR/$_copy_dst_uuid" <<'PY' && echo "  ok   copy stamps Move's own provenance xattrs" || { echo "  FAIL copy stamps Move provenance xattrs" >&2; fails=1; }
 import os, sys
 d = sys.argv[1]
 assert os.getxattr(d, "user.song-color") == b"3", "song-color should mirror dbx-color"
@@ -137,7 +137,7 @@ PY
 import json
 d = json.load(open('$DBX_DIR/projects.json'))
 print([x for x in d['projects'] if x['index'] == 20][0]['uuid'])")
-    python3 - "$SETS_DIR/$_newat_uuid" <<'PY' && echo "  ok   new-at stamps Move's own provenance xattrs" || { echo "  FAIL new-at stamps Move provenance xattrs" >&2; fails=1; }
+    python3 - "$PROJECTS_DIR/$_newat_uuid" <<'PY' && echo "  ok   new-at stamps Move's own provenance xattrs" || { echo "  FAIL new-at stamps Move provenance xattrs" >&2; fails=1; }
 import os, sys
 d = sys.argv[1]
 color = os.getxattr(d, "user.dbx-color").decode()
@@ -150,7 +150,7 @@ PY
     # Phase B: the copy is a whole-uuid-dir copytree, so the state came WITH
     # it - assert the duplicate's dAVEBOx/ holds the source's bytes, and that
     # DELETING the duplicate takes the state along (one rmtree, no second root).
-    python3 - "$SETS_DIR" "$DBX_DIR/projects.json" <<'PY' && echo "  ok   copy carries the state INSIDE the set dir" || { echo "  FAIL copy carries the state" >&2; fails=1; }
+    python3 - "$PROJECTS_DIR" "$DBX_DIR/projects.json" <<'PY' && echo "  ok   copy carries the state INSIDE the set dir" || { echo "  FAIL copy carries the state" >&2; fails=1; }
 import json, os, sys
 d = json.load(open(sys.argv[2]))
 cu = [x for x in d["projects"] if x["index"] == 5][0]["uuid"]
@@ -163,7 +163,7 @@ PY
     _copy5_uuid=$(python3 -c "import json;print([x for x in json.load(open('$DBX_DIR/projects.json'))['projects'] if x['index']==5][0]['uuid'])")
     sh "$CMD" delete 5 >/dev/null
     check "delete takes the co-located state with the set dir" \
-        bash -c "! test -e '$SETS_DIR/$_copy5_uuid'"
+        bash -c "! test -e '$PROJECTS_DIR/$_copy5_uuid'"
     sh "$CMD" copy 7 5 >/dev/null   # re-create: later checks expect index 5
     sh "$CMD" color 7 -1 >/dev/null
     python3 - "$DBX_DIR/projects.json" <<'PY' && echo "  ok   color: -1 clears (back to null)" || { echo "  FAIL color: -1 clears" >&2; fails=1; }
@@ -179,9 +179,9 @@ PY
     export ACTIVE_SET_PATH="$T/active_set.txt" HOST_STATE_DIR="$DBX_DIR/set_state"
     printf '%s\nsomething-else\n' "99999999-dead-dead-dead-000000000000" > "$ACTIVE_SET_PATH"
     sh "$CMD" rename 7 "Renamed Project" >/dev/null
-    check "rename: inner dir renamed" test -d "$SETS_DIR/$U1/Renamed Project"
-    check "rename: state file survives the rename" bash -c "ls '$SETS_DIR/$U1'/dAVEBOx*/seq8sa-state.json >/dev/null 2>&1"
-    check "rename: old dir gone" bash -c "! test -d '$SETS_DIR/$U1/First Project'"
+    check "rename: inner dir renamed" test -d "$PROJECTS_DIR/$U1/Renamed Project"
+    check "rename: state file survives the rename" bash -c "ls '$PROJECTS_DIR/$U1'/dAVEBOx*/seq8sa-state.json >/dev/null 2>&1"
+    check "rename: old dir gone" bash -c "! test -d '$PROJECTS_DIR/$U1/First Project'"
     check "rename: no relaunch queued" bash -c "! test -f '$DBX_DIR/relaunch_patch.sh'"
 
     # rename of the OPEN project: DEFERRED — dir untouched, mv queued for the
@@ -189,13 +189,13 @@ PY
     rm -f "$DBX_DIR/relaunch_requested"
     printf '%s\nRenamed Project\n' "$U1" > "$ACTIVE_SET_PATH"
     sh "$CMD" rename 7 "Open Renamed" >/dev/null
-    check "rename(open): dir NOT renamed yet" test -d "$SETS_DIR/$U1/Renamed Project"
+    check "rename(open): dir NOT renamed yet" test -d "$PROJECTS_DIR/$U1/Renamed Project"
     check "rename(open): mv queued in relaunch_patch.sh" \
         bash -c "grep -q 'Open Renamed' '$DBX_DIR/relaunch_patch.sh'"
     check "rename(open): relaunch requested" test -f "$DBX_DIR/relaunch_requested"
     check "rename(open): same index queued" bash -c "[ \"\$(cat '$DBX_DIR/relaunch_song_index')\" = 7 ]"
     sh "$DBX_DIR/relaunch_patch.sh"
-    check "rename(open): queued mv applies" test -d "$SETS_DIR/$U1/Open Renamed"
+    check "rename(open): queued mv applies" test -d "$PROJECTS_DIR/$U1/Open Renamed"
 else
     echo "  skip color/rename checks (no user-xattr support here; device is ext4+Linux)"
 fi

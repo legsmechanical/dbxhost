@@ -1,11 +1,22 @@
 #!/bin/sh
 # project-cmd.sh — project management for a live standalone session.
 #
-# While a session runs, Sets/ IS the project library (set-swap.sh put it
-# there), so these verbs operate directly on Sets/ using Move's own notions:
-# a project is a <uuid>/<Name>/Song.abl set dir, ordering is the
-# user.song-index xattr, and the active project is currentSongIndex in
-# Settings.json.
+# ⭐ Projects live in THEIR OWN root ($DBX_DIR/projects/<id>/), not in Move's
+# set library. Every verb here enumerates that root. What Move sees is a VIEW
+# of it: one symlink per project inside $DBX_DIR/sets/library, which
+# set-swap.sh bind-mounts over Sets/ for a session. library_slots.py owns that
+# view and is the only thing here that writes a link.
+#
+# Two consequences worth stating, because the old shape had neither:
+#   · no verb can reach the user's own Move library, whatever is mounted —
+#     the store is ours unconditionally;
+#   · no verb operates on a symlink, so `rm -rf`, `rmtree`, `copytree` and
+#     `shutil.move` all mean what they say again.
+#
+# A project keeps Move's own notions otherwise: <id>/<Name>/Song.abl, ordering
+# is the user.song-index xattr (on the PROJECT — a symlink cannot carry one,
+# and Move's getxattr follows the link), and the active project is
+# currentSongIndex in Settings.json.
 #
 # Verbs (driven by the hosted module through host_system_cmd's `sh ` prefix,
 # results returned through files it can host_read_file):
@@ -20,6 +31,9 @@
 #   rename <index> <name> rename the inner set dir + name index; the OPEN
 #                     project defers the mv to relaunch_patch.sh and restarts
 #                     Move in place (see do_rename)
+#   library-sync    move anything still living IN the library into the store,
+#                     then make the library show exactly one slot per project.
+#                     Run from launch.sh before set-swap enters; idempotent.
 #
 # The switch path mirrors exit-to-stock.sh's shape: SIGTERM so the host runs
 # its normal shutdown saves, detached because our caller dies with the process
@@ -29,7 +43,15 @@
 set -eu
 
 DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
-SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
+# ⭐ THE PROJECT STORE. Projects live here and nowhere else; every verb below
+# enumerates THIS directory. The set library Move sees is a VIEW of it — one
+# symlink per project, maintained by library_slots.py — so no verb here ever
+# touches a link, and none of them can reach the user's own Move library.
+PROJECTS_DIR="${PROJECTS_DIR:-$DBX_DIR/projects}"
+# The library the slots live in. set-swap.sh bind-mounts it over Move's Sets/
+# for the duration of a session, so a slot written here appears to Move at
+# once — same inode, no copy, nothing to keep in step.
+LIBRARY_DIR="${LIBRARY_DIR:-$DBX_DIR/sets/library}"
 # Size of the picker's PROJECT_COLORS palette (davebox/ui/ui_dialogs.mjs). A
 # new project is born with color `index % DBX_PALETTE_N` — round-robin by pad,
 # so a shelf of fresh projects is not a wall of one colour, and the same pad
@@ -39,7 +61,7 @@ SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
 DBX_PALETTE_N=9
 SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
 # Per-project state needs NO constant here: both halves live INSIDE the
-# project's set dir (Sets/<uuid>/<state>/ — module files flat, host
+# project's set dir (projects/<id>/<state>/ — module files flat, host
 # half under host/), so delete/copy/rename of the set dir take everything.
 # The host's own record of the set it loaded, rewritten on every set change.
 # ⚠ THIS install's copy — the stock tree has a file of the same name holding
@@ -50,7 +72,7 @@ ACTIVE_SET_PATH="${ACTIVE_SET_PATH:-$DBX_DIR/active_set.txt}"
 # fixture instead of the device's real one.
 CORE_LIBRARY_DIR="${CORE_LIBRARY_DIR:-/data/CoreLibrary}"
 # ⭑ The state dir INSIDE each project's set dir (Phase B of the
-# state-co-location plan): Sets/<uuid>/<state>/ holds the module's per-project
+# state-co-location plan): projects/<id>/<state>/ holds the module's per-project
 # state, beside Move's inner <Name>/ dir. Its NAME is not fixed: `dAVEBOx` or
 # `dAVEBOx~<n>`, chosen per project so it lists AFTER the song folder, because
 # Move opens the first subfolder it lists as the song (set-folder order fix,
@@ -117,12 +139,60 @@ os.setxattr(_d, 'user.local-cloud-state', b'notSynced')
 " "$1" "$2" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>/dev/null || true
 }
 
+# ---- the library view --------------------------------------------------------
+# Bring the set library back in step with the store: one slot per project, and
+# nothing else of ours. Cheap and idempotent — a healthy library is one listing
+# and says nothing — so every verb that adds or removes a project just calls it
+# rather than reasoning about which link to touch.
+#
+# ⚠ It writes into $LIBRARY_DIR, the library's REAL path, never through the
+# bind mount at Sets/. Same inode while a session is up, so a new slot is
+# visible to Move immediately; and outside a session there is no mount to be
+# wrong about.
+sync_library() {
+    python3 - "$LIBRARY_DIR" "$PROJECTS_DIR" <<'PYEOF' || \
+        printf 'project-cmd: WARNING: library sync failed\n' >&2
+import os, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import library_slots as sl
+linked, unlinked, strays = sl.sync(sys.argv[1], sys.argv[2])
+for p in linked:
+    print("project-cmd: library: slot %s -> project" % p)
+for p in unlinked:
+    print("project-cmd: library: dropped stale slot %s" % p)
+for n in strays:
+    print("project-cmd: library: WARNING not a slot, left alone: %s" % n)
+PYEOF
+}
+
+# Migrate anything still living IN the library into the store, then sync.
+# Runs from launch.sh before set-swap enters, i.e. while Move is down and the
+# library is at its own path. Idempotent: a migrated library has nothing to
+# move and the sync finds nothing to do.
+do_library_sync() {
+    python3 - "$LIBRARY_DIR" "$PROJECTS_DIR" <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import library_slots as sl
+moved, conflicts = sl.migrate(sys.argv[1], sys.argv[2])
+for p in moved:
+    print("project-cmd: library: migrated %s into the project store" % p)
+for p in conflicts:
+    # Both a store project and a library directory carry this id. Merging them
+    # would silently pick a winner over a user's work, so neither is touched;
+    # the library copy stays put and repair-indices never sees it.
+    print("project-cmd: library: WARNING %s exists in BOTH the store and the "
+          "library — left in the library, not merged" % p)
+PYEOF
+    sync_library
+}
+
 do_list() {
-    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$OUT_JSON" <<'PYEOF'
+    python3 - "$PROJECTS_DIR" "$SETTINGS_JSON" "$OUT_JSON" <<'PYEOF'
 import json, os, re, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
 import state_subdir as ss
-sets_dir, settings, out = sys.argv[1], sys.argv[2], sys.argv[3]
+projects_dir, settings, out = sys.argv[1], sys.argv[2], sys.argv[3]
 cur = 0
 try:
     m = re.search(r'"currentSongIndex":\s*(-?\d+)', open(settings).read())
@@ -131,9 +201,9 @@ except OSError:
     pass
 projects = []
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
-if os.path.isdir(sets_dir):
-    for u in sorted(os.listdir(sets_dir)):
-        p = os.path.join(sets_dir, u)
+if os.path.isdir(projects_dir):
+    for u in sorted(os.listdir(projects_dir)):
+        p = os.path.join(projects_dir, u)
         if not os.path.isdir(p) or not uuid_re.match(u):
             continue
         # ⚠ TWO children since Phase B: Move's inner <Name>/ AND the state
@@ -182,12 +252,12 @@ PYEOF
 # repairs projects made before this rule existed — or muted from Move itself in
 # a previous session.
 do_normalize() { # [index]  — every project when omitted
-    python3 - "$SETS_DIR" "${1:-}" <<'PYEOF'
+    python3 - "$PROJECTS_DIR" "${1:-}" <<'PYEOF'
 import json, os, re, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
 import state_subdir as ss
 
-sets_dir, only = sys.argv[1], sys.argv[2]
+projects_dir, only = sys.argv[1], sys.argv[2]
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 
 def song_path(uuid_dir):
@@ -243,8 +313,8 @@ if only:
         sys.exit("project-cmd: normalize takes a numeric index")
 
 seen = fixed = 0
-for u in sorted(os.listdir(sets_dir)):
-    p = os.path.join(sets_dir, u)
+for u in sorted(os.listdir(projects_dir)):
+    p = os.path.join(projects_dir, u)
     if not os.path.isdir(p) or not uuid_re.match(u):
         continue
     if want_index is not None:
@@ -439,7 +509,7 @@ do_new() { # name
     [ -n "${1:-}" ] || die "new needs a name"
     [ -d "$TEMPLATE_DIR" ] || die "no template at $TEMPLATE_DIR"
     _uuid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())')"
-    _dst="$SETS_DIR/$_uuid/$1"
+    _dst="$PROJECTS_DIR/$_uuid/$1"
     mkdir -p "$_dst"
     # The template contains one <Name>/Song.abl; take the Song.abl regardless
     # of the template's own inner name.
@@ -449,19 +519,19 @@ do_new() { # name
     # Random stock instruments, like Move native does on a new set.
     # After the copy (there is a file), before normalize (which re-reads it).
     randomize_instruments "$_dst/Song.abl"
-    seed_random_key "$SETS_DIR/$_uuid"
+    seed_random_key "$PROJECTS_DIR/$_uuid"
     clear_full_velocity
     # Belt and braces: the template ships neutral, but a project is born here
     # and this is the one place that can promise it.
     do_normalize >/dev/null
 
-    _idx="$(python3 - "$SETS_DIR" "$_uuid" "$DBX_PALETTE_N" <<'PYEOF'
+    _idx="$(python3 - "$PROJECTS_DIR" "$_uuid" "$DBX_PALETTE_N" <<'PYEOF'
 import os, re, sys
-sets_dir, new_uuid, palette_n = sys.argv[1], sys.argv[2], int(sys.argv[3])
+projects_dir, new_uuid, palette_n = sys.argv[1], sys.argv[2], int(sys.argv[3])
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 top = -1
-for u in os.listdir(sets_dir):
-    p = os.path.join(sets_dir, u)
+for u in os.listdir(projects_dir):
+    p = os.path.join(projects_dir, u)
     if not os.path.isdir(p) or not uuid_re.match(u) or u == new_uuid:
         continue
     if hasattr(os, "getxattr"):
@@ -472,13 +542,16 @@ for u in os.listdir(sets_dir):
 nxt = top + 1
 if hasattr(os, "setxattr"):
     try:
-        os.setxattr(os.path.join(sets_dir, new_uuid), "user.song-index", str(nxt).encode())
-        os.setxattr(os.path.join(sets_dir, new_uuid), "user.dbx-color", str(nxt % palette_n).encode())
+        os.setxattr(os.path.join(projects_dir, new_uuid), "user.song-index", str(nxt).encode())
+        os.setxattr(os.path.join(projects_dir, new_uuid), "user.dbx-color", str(nxt % palette_n).encode())
     except OSError:
         pass
 print(nxt)
 PYEOF
 )"
+    # The project exists; give it its slot before the switch takes Move
+    # through the library looking for it.
+    sync_library
     printf 'project-cmd: created "%s" (%s) at index %s\n' "$1" "$_uuid" "$_idx"
     do_switch "$_idx"
 }
@@ -525,23 +598,24 @@ do_new_at() { # index [name]
     [ -n "$_src" ] || die "template has no Song.abl"
     _uuid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())')"
     _name="${2:-Project $(($1 + 1))}"
-    mkdir -p "$SETS_DIR/$_uuid/$_name"
-    cp "$_src" "$SETS_DIR/$_uuid/$_name/Song.abl"
+    mkdir -p "$PROJECTS_DIR/$_uuid/$_name"
+    cp "$_src" "$PROJECTS_DIR/$_uuid/$_name/Song.abl"
     # Random stock instruments, like Move native does on a new set.
     # After the copy (there is a file), before normalize (which re-reads it).
-    randomize_instruments "$SETS_DIR/$_uuid/$_name/Song.abl"
-    seed_random_key "$SETS_DIR/$_uuid"
+    randomize_instruments "$PROJECTS_DIR/$_uuid/$_name/Song.abl"
+    seed_random_key "$PROJECTS_DIR/$_uuid"
     clear_full_velocity
     python3 -c "import os,sys; os.setxattr(sys.argv[1], 'user.song-index', sys.argv[2].encode())" \
-        "$SETS_DIR/$_uuid" "$1" 2>/dev/null || true
+        "$PROJECTS_DIR/$_uuid" "$1" 2>/dev/null || true
     # Default colour: round-robin by pad (see DBX_PALETTE_N). Same best-effort
     # shape as the index above — a project without the xattr is simply colour 0.
     python3 -c "import os,sys; os.setxattr(sys.argv[1], 'user.dbx-color', str(int(sys.argv[2]) % int(sys.argv[3])).encode())" \
-        "$SETS_DIR/$_uuid" "$1" "$DBX_PALETTE_N" 2>/dev/null || true
+        "$PROJECTS_DIR/$_uuid" "$1" "$DBX_PALETTE_N" 2>/dev/null || true
     # Provenance parity (Fix D, S2): Move's OWN xattrs, mirroring the SAME
     # colour value just chosen above. See stamp_move_xattrs for why.
-    stamp_move_xattrs "$SETS_DIR/$_uuid" "$(( $1 % DBX_PALETTE_N ))"
+    stamp_move_xattrs "$PROJECTS_DIR/$_uuid" "$(( $1 % DBX_PALETTE_N ))"
     do_normalize "$1" >/dev/null
+    sync_library
     do_list
     printf 'project-cmd: created "%s" (%s) at index %s\n' "$_name" "$_uuid" "$1"
 }
@@ -552,15 +626,15 @@ do_new_at() { # index [name]
 do_copy() { # src-index dst-index
     case "${1:-}" in *[!0-9]*|"") die "copy needs a numeric source index" ;; esac
     case "${2:-}" in *[!0-9]*|"") die "copy needs a numeric destination index" ;; esac
-    python3 - "$SETS_DIR" "$1" "$2" <<'PYEOF'
+    python3 - "$PROJECTS_DIR" "$1" "$2" <<'PYEOF'
 import datetime, os, re, shutil, sys, uuid as uuidlib
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
 import state_subdir as ss
-sets_dir, src, dst = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+projects_dir, src, dst = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 def find(idx):
-    for u in os.listdir(sets_dir):
-        p = os.path.join(sets_dir, u)
+    for u in os.listdir(projects_dir):
+        p = os.path.join(projects_dir, u)
         if not os.path.isdir(p) or not uuid_re.match(u):
             continue
         try:
@@ -584,7 +658,7 @@ if du:
 # The inner set dir is renamed to "<Name> Copy" AFTER the copy; the reserved
 # state subdir is skipped when hunting it (it is a sibling, not a set).
 nu = str(uuidlib.uuid4())
-np = os.path.join(sets_dir, nu)
+np = os.path.join(projects_dir, nu)
 shutil.copytree(sp, np)
 inner = ss.inner_dirs(np)
 if not inner:
@@ -632,6 +706,7 @@ PYEOF
     # from Move itself — so the duplicate gets the invariant applied, not the
     # source's history.
     do_normalize "$2" >/dev/null
+    sync_library
     do_list
 }
 
@@ -669,17 +744,17 @@ do_delete() { # index
     _open_del="${DBX_OPEN_UUID:-}"
     [ -z "$_open_del" ] && [ -f "$ACTIVE_SET_PATH" ] && \
         _open_del="$(head -n 1 "$ACTIVE_SET_PATH" | tr -d '[:space:]')"
-    if [ -n "$_open_del" ] && [ -d "$SETS_DIR/$_open_del" ] && \
-       [ "$(song_index "$SETS_DIR/$_open_del")" = "$1" ]; then
-        _next_idx="$(python3 - "$SETS_DIR" "$_open_del" <<'PYEOF'
+    if [ -n "$_open_del" ] && [ -d "$PROJECTS_DIR/$_open_del" ] && \
+       [ "$(song_index "$PROJECTS_DIR/$_open_del")" = "$1" ]; then
+        _next_idx="$(python3 - "$PROJECTS_DIR" "$_open_del" <<'PYEOF'
 import os, re, sys
-sets_dir, skip = sys.argv[1], sys.argv[2]
+projects_dir, skip = sys.argv[1], sys.argv[2]
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 idxs = []
-for u in os.listdir(sets_dir):
+for u in os.listdir(projects_dir):
     if u == skip or not uuid_re.match(u):
         continue
-    p = os.path.join(sets_dir, u)
+    p = os.path.join(projects_dir, u)
     if not os.path.isdir(p):
         continue
     try:
@@ -692,9 +767,18 @@ PYEOF
         save_song
         # ⭑ rm -rf, not rmtree-in-python: this line is executed by the LAUNCHER
         # long after this script is gone. Quote it the way do_rename quotes its
-        # mv — a set directory is a uuid, but $SETS_DIR need not be innocent.
+        # mv — a set directory is a uuid, but $PROJECTS_DIR need not be innocent.
         printf 'rm -rf %s\n' \
-            "'$(printf '%s' "$SETS_DIR/$_open_del" | sed "s/'/'\\\\''/g")'" \
+            "'$(printf '%s' "$PROJECTS_DIR/$_open_del" | sed "s/'/'\\\\''/g")'" \
+            >> "$DBX_DIR/relaunch_patch.sh"
+        # …and the slot that showed it. `rm -f` on a SYMLINK removes the link
+        # and never the project — but the project is gone by this line anyway,
+        # and the next launch's library sync would drop the dangling slot in
+        # any case. This is here so the library is never momentarily showing a
+        # project that no longer exists, which is what Move would enumerate on
+        # the relaunch that follows.
+        printf 'rm -f %s\n' \
+            "'$(printf '%s' "$LIBRARY_DIR/$_open_del" | sed "s/'/'\\\\''/g")'" \
             >> "$DBX_DIR/relaunch_patch.sh"
         # ⚠ sync AFTER the rm, in the same deferred script — an unsynced rmtree
         # can be undone by journal replay after a power cut (Josh, hardware,
@@ -713,9 +797,9 @@ PYEOF
         printf 'project-cmd: delete of OPEN project queued (Move restarting in place)\n'
         return 0
     fi
-    python3 - "$SETS_DIR" "$SETTINGS_JSON" "$1" "$ACTIVE_SET_PATH" <<'PYEOF'
+    python3 - "$PROJECTS_DIR" "$SETTINGS_JSON" "$1" "$ACTIVE_SET_PATH" <<'PYEOF'
 import os, re, shutil, sys
-sets_dir, settings, idx = sys.argv[1], sys.argv[2], int(sys.argv[3])
+projects_dir, settings, idx = sys.argv[1], sys.argv[2], int(sys.argv[3])
 active_set_path = sys.argv[4] if len(sys.argv) > 4 else ""
 
 
@@ -737,7 +821,7 @@ def open_uuid():
 def index_of(uuid):
     if not uuid:
         return -1
-    p = os.path.join(sets_dir, uuid)
+    p = os.path.join(projects_dir, uuid)
     try:
         return int(os.getxattr(p, "user.song-index").decode())
     except (OSError, ValueError):
@@ -754,8 +838,8 @@ if cur < 0:                                  # no usable record — fall back
 if idx == cur:
     sys.exit("project-cmd: ERROR: refusing to delete the OPEN project")
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
-for u in os.listdir(sets_dir):
-    p = os.path.join(sets_dir, u)
+for u in os.listdir(projects_dir):
+    p = os.path.join(projects_dir, u)
     if not os.path.isdir(p) or not uuid_re.match(u):
         continue
     try:
@@ -783,6 +867,7 @@ for u in os.listdir(sets_dir):
         pass
 sys.exit("project-cmd: ERROR: no project at index %d" % idx)
 PYEOF
+    sync_library
     do_list
 }
 
@@ -792,12 +877,12 @@ PYEOF
 do_color() { # index n
     case "${1:-}" in *[!0-9]*|"") die "color needs a numeric index" ;; esac
     case "${2:-}" in -*|[0-9]*) ;; *) die "color needs a numeric value" ;; esac
-    python3 - "$SETS_DIR" "$1" "$2" <<'PYEOF'
+    python3 - "$PROJECTS_DIR" "$1" "$2" <<'PYEOF'
 import os, re, sys
-sets_dir, idx, n = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+projects_dir, idx, n = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
-for u in os.listdir(sets_dir):
-    p = os.path.join(sets_dir, u)
+for u in os.listdir(projects_dir):
+    p = os.path.join(projects_dir, u)
     if not os.path.isdir(p) or not uuid_re.match(u):
         continue
     try:
@@ -838,14 +923,14 @@ do_rename() { # index newname [reselect]
     [ -n "${2:-}" ] || die "rename needs a name"
     case "$2" in */*) die "name must not contain /" ;; esac
 
-    _found="$(python3 - "$SETS_DIR" "$1" <<'PYEOF'
+    _found="$(python3 - "$PROJECTS_DIR" "$1" <<'PYEOF'
 import os, re, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
 import state_subdir as ss
-sets_dir, idx = sys.argv[1], int(sys.argv[2])
+projects_dir, idx = sys.argv[1], int(sys.argv[2])
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
-for u in os.listdir(sets_dir):
-    p = os.path.join(sets_dir, u)
+for u in os.listdir(projects_dir):
+    p = os.path.join(projects_dir, u)
     if not os.path.isdir(p) or not uuid_re.match(u):
         continue
     try:
@@ -876,8 +961,8 @@ PYEOF
         save_song
         {
             printf 'mv %s %s\n' \
-                "'$SETS_DIR/$_uuid/$(printf '%s' "$_old" | sed "s/'/'\\\\''/g")'" \
-                "'$SETS_DIR/$_uuid/$(printf '%s' "$2"   | sed "s/'/'\\\\''/g")'"
+                "'$PROJECTS_DIR/$_uuid/$(printf '%s' "$_old" | sed "s/'/'\\\\''/g")'" \
+                "'$PROJECTS_DIR/$_uuid/$(printf '%s' "$2"   | sed "s/'/'\\\\''/g")'"
             # The new name can list on the other side of the state dir; the
             # launcher also sweeps fix-order after every patch, this names it.
             printf 'sh %s fix-order %s\n' \
@@ -898,11 +983,11 @@ PYEOF
         return 0
     fi
 
-    mv "$SETS_DIR/$_uuid/$_old" "$SETS_DIR/$_uuid/$2"
+    mv "$PROJECTS_DIR/$_uuid/$_old" "$PROJECTS_DIR/$_uuid/$2"
     # A new song name can list on the other side of the state dir: re-order.
     python3 -c 'import os,sys; sys.path.insert(0, os.environ["DBX_PY_DIR"]); import state_subdir as ss
 m = ss.fix_state_order(sys.argv[1])
-if m: print("project-cmd: rename: state dir %s -> %s (lists after the song)" % m)' "$SETS_DIR/$_uuid" \
+if m: print("project-cmd: rename: state dir %s -> %s (lists after the song)" % m)' "$PROJECTS_DIR/$_uuid" \
         || printf 'project-cmd: WARNING: rename: state-dir order check failed\n' >&2
     printf 'project-cmd: renamed index %s to "%s"\n' "$1" "$2"
     do_list
@@ -947,16 +1032,16 @@ if m: print("project-cmd: rename: state dir %s -> %s (lists after the song)" % m
 #
 # Idempotent: a rerun over an already-repaired library finds nothing to do —
 # the strays now hold unique indices, and the orphans are no longer inside
-# SETS_DIR to be found again. Parse-only unless something is actually wrong,
+# the store to be found again. Parse-only unless something is actually wrong,
 # so a healthy library costs one directory listing and logs NOTHING — same
 # "silent when there is nothing to say" shape `do_normalize` already has.
 do_repair_indices() {
-    python3 - "$SETS_DIR" "$DBX_DIR" <<'PYEOF'
+    python3 - "$PROJECTS_DIR" "$DBX_DIR" <<'PYEOF'
 import datetime, os, re, shutil, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
 import state_subdir as ss
 
-sets_dir, dbx_dir = sys.argv[1], sys.argv[2]
+projects_dir, dbx_dir = sys.argv[1], sys.argv[2]
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 NUM_PADS = 32   # davebox/ui/ui_state.mjs: "32 pads = project slots"
 
@@ -986,16 +1071,16 @@ def song_index(p):
         return None
 
 
-if not os.path.isdir(sets_dir):
+if not os.path.isdir(projects_dir):
     sys.exit(0)
 
 orphans = []     # (name, path)
 projects = []    # (name, path, index_or_None, dbx_owned)
 
-for n in sorted(os.listdir(sets_dir)):
+for n in sorted(os.listdir(projects_dir)):
     if n == "DO-NOT-EDIT.txt":
         continue
-    p = os.path.join(sets_dir, n)
+    p = os.path.join(projects_dir, n)
     if not os.path.isdir(p):
         continue
     if n.startswith("__pending-") or not uuid_re.match(n):
@@ -1054,7 +1139,7 @@ if orphans:
 # subfolder. Projects made before the fix, or copied/renamed by Move itself,
 # are renamed here to the first name that lists after. Same window as the rest
 # of this function: Move is down, so nothing holds the directory.
-reordered = ss.fix_library_order(sets_dir)
+reordered = ss.fix_library_order(projects_dir)
 for u, old, new in reordered:
     print("project-cmd: repair-indices: %s state dir %s -> %s (listed before the song)" % (u, old, new))
 
@@ -1063,6 +1148,9 @@ if repaired or quarantined or reordered:
     print("project-cmd: repair-indices: %d project(s) checked, %d re-indexed, %d quarantined, %d re-ordered"
           % (len(projects), repaired, quarantined, len(reordered)))
 PYEOF
+    # Quarantine MOVES a project out of the store, so the library can be left
+    # showing a slot with nothing behind it. Reconcile.
+    sync_library
 }
 
 # Re-order state dirs that list before their song folder — one project, or the
@@ -1071,7 +1159,7 @@ PYEOF
 # relaunch_patch.sh after Move exits, and the new song name may list on the
 # other side of the state dir. ⚠ Only while Move is not running.
 do_fix_order() { # [uuid]
-    python3 - "$SETS_DIR" "${1:-}" <<'PYEOF'
+    python3 - "$PROJECTS_DIR" "${1:-}" <<'PYEOF'
 import os, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
 import state_subdir as ss
@@ -1083,62 +1171,62 @@ if moved:
 PYEOF
 }
 
-# ⚠⚠ REFUSE TO MUTATE THE USER'S OWN LIBRARY.
+# ⚠⚠ REFUSE TO TOUCH THE USER'S OWN LIBRARY — re-scoped, NOT removed.
 #
-# Every verb below operates on $SETS_DIR, and that path is the PROJECT library
-# only while set-swap.sh has the bind mount on. With no session running the
-# same path is the user's NATIVE Move library — his own sets, the ones that sit
-# underneath the mount untouched. `delete` there is irreversible.
+# It used to read "refuse unless set-swap has the bind mount on", because every
+# verb operated on Sets/ and that path is the PROJECT library only while the
+# mount is up. With no session the same path is the user's NATIVE Move library
+# — his own sets, sitting underneath the mount untouched — and `delete` there
+# is irreversible. It is not hypothetical: on 2026-09-20 `list` was run with no
+# session and returned the native sets (Set 29, and Move's factory demos),
+# writing them into projects.json as though they were dAVEBOx projects;
+# scratch projects were about to be created the same way, and a file had
+# already been moved inside one of those real sets earlier the same evening.
 #
-# This is not hypothetical: on 2026-09-20 `list` was run with no session and
-# returned the native sets (Set 29, and Move's factory demos), writing them
-# into projects.json as though they were dAVEBOx projects; scratch projects
-# were about to be created the same way. A file had already been moved inside
-# one of those real sets earlier the same evening, for the same reason.
+# ⭐ The verbs no longer operate on Sets/ at all. They operate on $PROJECTS_DIR
+# and write slots into $LIBRARY_DIR, both of which are ours whatever is
+# mounted, so "is a session up" has stopped being the question — gating on it
+# now only refuses legitimate work outside a session.
 #
-# launch.sh is unaffected — it calls `set-swap.sh enter` before any of these —
-# so the guard costs the normal path nothing. It exists for the hand-run case,
-# where the rule "remember which library you are looking at" has now failed
-# twice in one session. A refusal in one place beats a rule in everyone's head.
+# What replaces it is the thing the old guard was really protecting, stated
+# directly and checked ALWAYS rather than only when a session is down:
+# **neither root may be, or live inside, the user's own Move library.** That
+# holds for a misconfigured $PROJECTS_DIR, a misconfigured $LIBRARY_DIR and a
+# future caller that has not read this file — none of which the mount check
+# could see.
 #
-# `list` and `switch` are READ-ONLY with respect to set dirs and stay allowed;
-# list still says which library it read, so a stale projects.json cannot
-# silently pass itself off as the project list.
-# ⚠ MATCH THE BOUND STATE POSITIVELY. set-swap prints `sa-live (bound)` or
-# `none (not bound)` — and "not bound" CONTAINS "bound", so a `grep bound`
-# reports every unbound library as bound. The first cut of this guard did
-# exactly that and created a project in the user's native library while
-# claiming to protect it (2026-09-21 01:24, recovered). Anchor on the phase
-# name, which is unambiguous, and FAIL CLOSED if set-swap cannot be asked.
-_swap_bound() {
-    [ -x "$DBX_DIR/scripts/set-swap.sh" ] || return 1
-    sh "$DBX_DIR/scripts/set-swap.sh" status 2>/dev/null | tail -1 | grep -q '^sa-live'
+# ⚠ MATCH THE PATH POSITIVELY, prefix by prefix. The first cut of the old
+# guard grepped for "bound" in set-swap's status, and "not bound" CONTAINS
+# "bound" — so it reported every unbound library as bound and created a
+# project in the user's native library while claiming to protect it
+# (2026-09-21 01:24, recovered). A containment test is not a prefix test:
+# compare against the root and the root plus a separator, nothing looser.
+DBX_NATIVE_LIBRARY="${DBX_NATIVE_LIBRARY:-/data/UserData/UserLibrary}"
+_not_native() { # role path
+    case "$2" in
+        "$DBX_NATIVE_LIBRARY"|"$DBX_NATIVE_LIBRARY"/*)
+            die "refusing to $1: $2 is inside the user's own Move library
+     ($DBX_NATIVE_LIBRARY). dAVEBOx projects live in their own root; nothing
+     here may write into the library Move keeps the user's native sets in." ;;
+    esac
 }
-# The hazard is specific to the REAL library path: that is the one that becomes
-# the user's own Move library when the mount is off. A SETS_DIR pointed anywhere
-# else — which is what every host test does, into a temp dir — has no native
-# library underneath it and nothing to protect. So the guard applies to the real
-# path only, rather than needing a skip flag the tests would have to remember.
-DBX_REAL_SETS_DIR="/data/UserData/UserLibrary/Sets"
-_require_bound() {
-    [ "$SETS_DIR" = "$DBX_REAL_SETS_DIR" ] || return 0
-    _swap_bound && return 0
-    die "refusing to $1: the project library is NOT mounted (set-swap: $(sh "$DBX_DIR/scripts/set-swap.sh" status 2>/dev/null | tail -1)).
-     $SETS_DIR is the USER'S OWN Move library right now, not dAVEBOx projects.
-     Start a session first, or run set-swap.sh enter."
+_require_own_tree() { # verb
+    _not_native "$1" "$PROJECTS_DIR"
+    _not_native "$1" "$LIBRARY_DIR"
 }
 
 case "${1:-}" in
     list)   do_list ;;
-    new) _require_bound new; shift; do_new "${1:-}" ;;
-    new-at) _require_bound new-at; shift; do_new_at "${1:-}" "${2:-}" ;;
-    copy) _require_bound copy; shift; do_copy "${1:-}" "${2:-}" ;;
-    delete) _require_bound delete; shift; do_delete "${1:-}" ;;
+    new) _require_own_tree new; shift; do_new "${1:-}" ;;
+    new-at) _require_own_tree new-at; shift; do_new_at "${1:-}" "${2:-}" ;;
+    copy) _require_own_tree copy; shift; do_copy "${1:-}" "${2:-}" ;;
+    delete) _require_own_tree delete; shift; do_delete "${1:-}" ;;
     switch) shift; do_switch "${1:-}" ;;
-    color) _require_bound color; shift; do_color "${1:-}" "${2:-}" ;;
-    normalize) _require_bound normalize; shift; do_normalize "${1:-}" ;;
-    rename) _require_bound rename; shift; do_rename "${1:-}" "${2:-}" "${3:-}" ;;
-    repair-indices) _require_bound repair-indices; do_repair_indices ;;
-    fix-order) _require_bound fix-order; shift; do_fix_order "${1:-}" ;;
-    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>|repair-indices|fix-order [uuid]" ;;
+    color) _require_own_tree color; shift; do_color "${1:-}" "${2:-}" ;;
+    normalize) _require_own_tree normalize; shift; do_normalize "${1:-}" ;;
+    library-sync) _require_own_tree library-sync; do_library_sync ;;
+    rename) _require_own_tree rename; shift; do_rename "${1:-}" "${2:-}" "${3:-}" ;;
+    repair-indices) _require_own_tree repair-indices; do_repair_indices ;;
+    fix-order) _require_own_tree fix-order; shift; do_fix_order "${1:-}" ;;
+    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>|library-sync|repair-indices|fix-order [uuid]" ;;
 esac
