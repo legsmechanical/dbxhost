@@ -378,6 +378,20 @@ function overtakeMidiLogEnabled() {
  * is loaded: the launcher binds the session library over Sets/ before Move
  * starts, so a uuid we are told about is a dir that exists there. */
 const SETS_LIBRARY_DIR = "/data/UserData/UserLibrary/Sets";
+/* The JS copy of dbx_project_path.h's rule. ⚠ ONE RULE, SEVERAL LANGUAGES —
+ * read that header for WHY this resolves at all; check-config.sh pins the
+ * copies together. Same contract: resolve the entry, and keep the literal
+ * join when it cannot be resolved (ENOENT is the NORMAL case for a project
+ * being created — returning nothing would file its first write nowhere). */
+function dbxProjectDir(root, uuid) {
+    const joined = root + "/" + uuid;
+    try {
+        const r = os.realpath(joined);
+        if (r && r[1] === 0 && r[0]) return r[0];
+    } catch (e) { /* fall through to the join */ }
+    return joined;
+}
+
 function perSetStateDir(uuid, create) {
     /* ⚠⚠ Empty for a PROVISIONAL identity. `__pending-N-M` is this process's
      * OWN placeholder (shadow_set_pages.c publishes it when Move's song index
@@ -389,7 +403,7 @@ function perSetStateDir(uuid, create) {
     /* ⚠⚠ The state dir's NAME is resolved, never spelled (set-folder order
      * fix): `dAVEBOx` or `dAVEBOx~<n>`, whichever lists after Move's song
      * folder. `create` runs the chooser when the project has none yet. */
-    const setDir = SETS_LIBRARY_DIR + "/" + uuid;
+    const setDir = dbxProjectDir(SETS_LIBRARY_DIR, uuid);
     return setDir + "/" + host_state_subdir(setDir, !!create) + "/host";
 }
 const PATCH_DIR = "/data/UserData/schwung/patches";

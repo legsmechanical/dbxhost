@@ -20,6 +20,7 @@
 #define SEQ8_SETS_DIR "/tmp/davebox-tests/state_subdir_sets"
 #include "harness.h"
 #include <dirent.h>
+#include <stdlib.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -49,8 +50,17 @@ static int count_state_dirs(const char *uuid, char *last, size_t sz) {
     return n;
 }
 
+/* The state path is RESOLVED now (dbx_project_dir), so an expectation built
+ * from the literal ROOT is wrong wherever a parent of ROOT is a symlink —
+ * which is every macOS run, since /tmp links to /private/tmp. On Linux and on
+ * the device /tmp is real, so a literal expectation PASSES in CI and FAILS
+ * locally: the platform-difference trap, inverted. Build expectations from
+ * the resolved root and the test means the same thing everywhere. */
+static char RROOT[512];
+
 int main(void) {
     HX_ASSERT(system("rm -rf " ROOT " && mkdir -p " ROOT) == 0, "temp set library");
+    if (!realpath(ROOT, RROOT)) snprintf(RROOT, sizeof(RROOT), "%s", ROOT);
 
     hx_t *h = hx_create(NULL);
     HX_ASSERT(h, "create failed");
@@ -60,7 +70,10 @@ int main(void) {
     song(U1, "Project 32");
     mk(ROOT "/" U1 "/dAVEBOx~3");
     hx_set_param(h, "state_load", U1);
-    HX_ASSERT(!strcmp(inst->state_path, ROOT "/" U1 "/dAVEBOx~3/" SEQ8_STATE_PREFIX "-state.json"),
+    char want1[512];
+    snprintf(want1, sizeof(want1), "%s/%s/dAVEBOx~3/%s-state.json",
+             RROOT, U1, SEQ8_STATE_PREFIX);
+    HX_ASSERT(!strcmp(inst->state_path, want1),
               "state_load resolves the existing dAVEBOx~3, not a spelled dAVEBOx");
 
     /* 2. the save lands there and makes no plain dAVEBOx/ beside it */
@@ -80,7 +93,7 @@ int main(void) {
     char name[64] = "";
     HX_ASSERT(count_state_dirs(U2, name, sizeof(name)) == 1, "first save made exactly one state dir");
     char want[512];
-    snprintf(want, sizeof(want), ROOT "/" U2 "/%s/" SEQ8_STATE_PREFIX "-state.json", name);
+    snprintf(want, sizeof(want), "%s/%s/%s/%s-state.json", RROOT, U2, name, SEQ8_STATE_PREFIX);
     HX_ASSERT(!strcmp(inst->state_path, want) && exists(want),
               "first save's file is inside the dir the chooser made");
 

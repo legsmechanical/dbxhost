@@ -32,6 +32,11 @@
 #     task exactly once per round, the bail that poisons and skips the task
 #     a stuck helper still holds, and the serial-equivalent counter.
 #
+#   - test_project_path — dbx_project_dir(): resolving a set-library entry to
+#     the directory a project's files really live in. Today the identity
+#     function, and that claim is pinned as hard as the symlink case, because
+#     it is what makes routing every caller through the seam a safe no-op.
+#
 # Usage: `make -C tests/host test`
 
 CC ?= cc
@@ -47,7 +52,8 @@ DEPFLAGS = -MMD -MP -MF $@.d
 
 BUILD_DIR = ../../build/tests/host
 
-TARGETS = $(BUILD_DIR)/test_timespec_delta \
+TARGETS = $(BUILD_DIR)/test_project_path \
+          $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_split_voices_parse \
           $(BUILD_DIR)/test_midi_coalesce \
           $(BUILD_DIR)/test_ui_midi_policy \
