@@ -1,0 +1,42 @@
+- davebox/dsp/seq8.c|#define SEQ8_SETS_DIR           "/data/UserData/UserLibrary/Sets"
+- davebox/dsp/seq8.c|#define SEQ8_SET_STATE_ROOT     SEQ8_SETS_DIR
+- davebox/dsp/seq8.c|#ifndef SEQ8_SETS_DIR
+- davebox/dsp/seq8.c|#ifndef SEQ8_SET_STATE_ROOT
+B davebox/dsp/seq8.c|snprintf(uuid_dir, sizeof(uuid_dir), SEQ8_SET_STATE_ROOT "/%s", uuid);
+- davebox/ui/ui_export.mjs|const EXPORT_SETS_BASE_DIR    = '/data/UserData/UserLibrary/Sets';
+B davebox/ui/ui_export.mjs|const path = EXPORT_SETS_BASE_DIR + '/' + S.currentSetUuid + '/' + S.currentSetName + '/Song.abl';
+- davebox/ui/ui_persistence.mjs|const SETS_DIR    = '/data/UserData/UserLibrary/Sets';
+B davebox/ui/ui_persistence.mjs|const dir = SETS_DIR + '/' + uuid;
+B src/host/shadow_chain_mgmt.c|snprintf(set_root, sizeof(set_root), SAMPLER_SETS_DIR "/%s", boot_uuid);
+- src/host/shadow_overlay.c|DIR *sets_dir = opendir(SAMPLER_SETS_DIR);
+- src/host/shadow_overlay.c|SAMPLER_SETS_DIR, entry->d_name, set_name);
+- src/host/shadow_sampler.c|DIR *sets_dir = opendir(SAMPLER_SETS_DIR);
+- src/host/shadow_sampler.c|SAMPLER_SETS_DIR, entry->d_name, set_name);
+- src/host/shadow_sampler.h|#define SAMPLER_SETS_DIR "/data/UserData/UserLibrary/Sets"
+- src/host/shadow_set_pages.c|#include "shadow_sampler.h"  /* for SAMPLER_SETS_DIR, sampler_read_set_tempo */
+- src/host/shadow_set_pages.c|DIR *sets_dir = opendir(SAMPLER_SETS_DIR);
+- src/host/shadow_set_pages.c|snprintf(uuid_path, sizeof(uuid_path), "%s/%s", SAMPLER_SETS_DIR, entry->d_name);
+- src/host/shadow_set_pages.h|#include "shadow_sampler.h"   /* SAMPLER_SETS_DIR — the per-set state root since co-location */
+- src/modules/tools/song-mode/ui.js|const SETS_DIR   = "/data/UserData/UserLibrary/Sets";
+B src/modules/tools/song-mode/ui.js|const directPath = SETS_DIR + "/" + uuid + "/" + name + "/Song.abl";
+- src/shadow/shadow_ui.js|const SETS_DIR = "/data/UserData/UserLibrary/Sets";
+- src/shadow/shadow_ui.js|const SETS_LIBRARY_DIR = "/data/UserData/UserLibrary/Sets";
+- src/shadow/shadow_ui.js|const entries = os.readdir(SETS_DIR) || [];
+B src/shadow/shadow_ui.js|const setDir = SETS_LIBRARY_DIR + "/" + uuid;
+B src/shadow/shadow_ui.js|const songPath = "/data/UserData/UserLibrary/Sets/" + uuid + "/" + setName + "/Song.abl";
+B src/shadow/shadow_ui.js|const subEntries = os.readdir(SETS_DIR + "/" + uuid) || [];
+- src/shared/session_state.mjs|export const SET_LIBRARY_DIR = "/data/UserData/UserLibrary/Sets";
+- src/shared/session_state.mjs|if (p === SET_LIBRARY_DIR) return true;
+- src/shared/session_state.mjs|return p.indexOf(SET_LIBRARY_DIR + "/") === 0;
+- standalone/src/davebox-heal.c|#define SETS_DIR     "/data/UserData/UserLibrary/Sets"
+- standalone/src/davebox-heal.c|SA_LIBRARY, SETS_DIR, strerror(errno));
+- standalone/src/davebox-heal.c|SETS_DIR);
+- standalone/src/davebox-heal.c|fprintf(stderr, "davebox-heal: bound %s -> %s\n", SA_LIBRARY, SETS_DIR);
+- standalone/src/davebox-heal.c|fprintf(stderr, "davebox-heal: umount %s: %s\n", SETS_DIR, strerror(errno));
+- standalone/src/davebox-heal.c|fprintf(stderr, "davebox-heal: unbound %s (lazy — was busy)\n", SETS_DIR);
+- standalone/src/davebox-heal.c|fprintf(stderr, "davebox-heal: unbound %s\n", SETS_DIR);
+- standalone/src/davebox-heal.c|if (errno == EBUSY && umount2(SETS_DIR, MNT_DETACH) == 0) {
+- standalone/src/davebox-heal.c|if (mount(SA_LIBRARY, SETS_DIR, NULL, MS_BIND, NULL) < 0) {
+- standalone/src/davebox-heal.c|if (stat(SETS_DIR, &st) < 0 || !S_ISDIR(st.st_mode)) {
+- standalone/src/davebox-heal.c|if (stat(SETS_DIR, &st_target) < 0) return 0;
+- standalone/src/davebox-heal.c|if (umount(SETS_DIR) == 0) {
