@@ -93,14 +93,21 @@ echo "the notice must not be mistaken for a project:"
 grep -q 'ls -d "\$DBX_DIR/projects"/\*/' standalone/scripts/launch.sh \
     && ok "first-run seeding counts DIRECTORIES, not entries" \
     || bad "the seed test counts any entry — a stray file would suppress first-run seeding"
-# Both library enumerators must ignore it too.
-for f in standalone/scripts/project-cmd.sh standalone/scripts/select-list.sh; do
+# The store enumerator must ignore it too.
+for f in standalone/scripts/project-cmd.sh; do
     if grep -q 'os.path.isdir(p)' "$f" && grep -q 'uuid_re.match' "$f"; then
         ok "$(basename "$f") lists uuid DIRECTORIES only"
     else
         bad "$(basename "$f") no longer filters to uuid dirs — a stray file could list as a project"
     fi
 done
+# ⚠ select-list.sh no longer enumerates the store at all: it names the two
+# SLOTS, because that is what the actuator presses. A stray file cannot reach
+# it — it only ever looks at the two fixture links — so the filter it used to
+# need does not apply. It must still refuse to name a slot pointing at nothing.
+grep -q 'dangling: name nothing rather than guess' standalone/scripts/select-list.sh \
+    && ok "select-list names SLOTS, and names nothing for a dangling one" \
+    || bad "select-list lost its dangling-slot guard — it would name a project that is not there"
 
 [ $fail -eq 0 ] && echo "PASS: the library is hidden where we can, and labelled where we cannot"
 exit $fail

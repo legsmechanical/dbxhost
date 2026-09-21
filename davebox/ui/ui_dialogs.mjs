@@ -1221,6 +1221,27 @@ function _pppOpenMenu(p, k) {
  * request carrying the project would never match once a slot stops being
  * named after the project it holds — every switch would read as `unopened`.
  * The project id rides along for the message the user sees, nothing else. */
+/* Put a project on a slot and say which one to press.
+ *
+ * ⚠ Both routes to a project need this — the actuator switch AND the relaunch
+ * a project created this session takes — and the second one is easy to forget,
+ * because it looks like it is about Move re-reading its set list rather than
+ * about identity. Forgetting it is exactly what happened: the relaunch route
+ * authored NO request, so nothing could confirm what Move opened and every
+ * freshly created project bounced back to the picker on its first load.
+ *
+ * Returns the parsed answer, or null. Re-pointing the IDLE slot is safe at any
+ * time — it is never the one Move is on. */
+export function prepareSlotFor(projectUuid) {
+    if (!projectUuid) return null;
+    const live = hostIdentity().projectId || '';
+    host_system_cmd('sh ' + PROJECT_CMD + ' switch-slot ' + projectUuid + ' ' + live);
+    try {
+        const a = JSON.parse(host_read_file('/data/UserData/dbx-host/slot_switch.json') || '{}');
+        return (a && a.ok && typeof a.slot === 'number' && a.slot >= 0) ? a : null;
+    } catch (e) { return null; }
+}
+
 export function requestSetForSlot(pick, entryUuid, slotIndex) {
     const uuid = entryUuid || '';
     if (!uuid) { S.requestedSet = null; return false; }
@@ -1305,7 +1326,17 @@ function _pppLoad(p, k) {
      * where the live project sits — a question best asked as late as possible,
      * immediately before the press. What is recorded here is the PROJECT. */
     const _proj = p && p.byIndex ? p.byIndex[k] : null;
-    if (_forceRelaunch || S.projectsCreatedThisSession.indexOf(k) >= 0) S.pendingProjectRelaunch = k;
+    if (_forceRelaunch || S.projectsCreatedThisSession.indexOf(k) >= 0) {
+        /* The relaunch route. It still needs the project ON a slot and a
+         * request NAMING that slot: the relaunch is how Move re-reads its set
+         * list, not a substitute for identity. */
+        const _sw = prepareSlotFor(_proj && _proj.uuid ? _proj.uuid : '');
+        if (_sw) requestSetForSlot({ pad: k, uuid: _proj.uuid, name: _proj.name },
+                                   _sw.slot_uuid, _sw.slot);
+        else console.log('project relaunch: no slot prepared for pad ' + k +
+                         ' — Move will boot wherever it was');
+        S.pendingProjectRelaunch = k;
+    }
     else S.pendingProjectSwitch = { pad: k,
                                     uuid: (_proj && _proj.uuid) ? _proj.uuid : '',
                                     name: (_proj && _proj.name) ? _proj.name : '' };

@@ -24,6 +24,8 @@ set -eu
 
 DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
 PROJECTS_DIR="${PROJECTS_DIR:-$DBX_DIR/projects}"
+# The library the slots live in — the names are keyed by SLOT now.
+LIBRARY_DIR="${LIBRARY_DIR:-$DBX_DIR/sets/library}"
 SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
 OUT_JSON="$DBX_DIR/select_list.json"
 # The state dir inside each project dir (Phase B) — skipped when hunting the
@@ -34,31 +36,39 @@ export DBX_PY_DIR
 # No __pycache__ beside the scripts (the install tree is a manifest-checked payload).
 export PYTHONDONTWRITEBYTECODE=1
 
-python3 - "$PROJECTS_DIR" "$SETTINGS_JSON" "$OUT_JSON" <<'PYEOF'
+python3 - "$LIBRARY_DIR" "$PROJECTS_DIR" "$SETTINGS_JSON" "$OUT_JSON" <<'PYEOF'
 import json, os, re, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
 import state_subdir as ss
-import project_pad as pp
-projects_dir, settings, out = sys.argv[1], sys.argv[2], sys.argv[3]
+import library_slots as sl
+library, projects_dir, settings, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 cur = 0
 try:
     m = re.search(r'"currentSongIndex":\s*(-?\d+)', open(settings).read())
     if m: cur = int(m.group(1))
 except OSError:
     pass
+
+# ⚠⚠ KEYED BY SLOT, NOT BY PICKER PAD.
+#
+# The actuator replays pad note 68+k for the index it was ARMED with, and since
+# the two-slot change that index is a SLOT position, not the project's pad. The
+# screen looks a name up by that same number, so keying this by pad names
+# whichever project happens to sit on pad 0 or pad 1 — which is not the project
+# being loaded, and is wrong in a way that looks like a cosmetic glitch rather
+# than a mismatch: the right project still loads, under the wrong name.
+# Reported by Josh, 2026-09-21: "25 says it's loading 7 and 26 says its loading
+# 1" — pad 1 is Project 7 and pad 0 is Project 1, exactly.
 names = {}
-uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
-if os.path.isdir(projects_dir):
-    for u in os.listdir(projects_dir):
-        p = os.path.join(projects_dir, u)
-        if not os.path.isdir(p) or not uuid_re.match(u):
-            continue
-        inner = ss.inner_dirs(p)
-        name = inner[0] if inner else u[:8]
-        idx = pp.pad_of(p)
-        if idx is None:
-            continue  # no picker pad; the picker cannot offer it
-        names[str(idx)] = name
+for i, sid in enumerate(sl.SLOT_IDS):
+    pid = sl.slot_target(library, sid)
+    if not pid:
+        continue                       # that slot is not in use
+    p = os.path.join(projects_dir, pid)
+    if not os.path.isdir(p):
+        continue                       # dangling: name nothing rather than guess
+    inner = ss.inner_dirs(p)
+    names[str(i)] = inner[0] if inner else pid[:8]
 tmp = out + ".tmp"
 with open(tmp, "w") as f:
     json.dump({"title": "dAVEBOx projects", "current": cur, "names": names}, f)

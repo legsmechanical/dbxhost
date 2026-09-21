@@ -83,7 +83,7 @@ check "launch.sh syncs the library"    "$HERE/scripts/launch.sh"       'project-
 # anywhere in the tree. The three shell verbs must IMPORT it, never re-spell it.
 check "the picker-pad xattr name"      "$HERE/scripts/project_pad.py"  'PAD_XATTR = "user.dbx-pad"'
 check "project-cmd reads the pad"      "$HERE/scripts/project-cmd.sh"  "import project_pad as pp"
-check "select-list reads the pad"      "$HERE/scripts/select-list.sh"  "import project_pad as pp"
+check "select-list names by slot"     "$HERE/scripts/select-list.sh"  "import library_slots as sl"
 check "select-hook reads the pad"      "$HERE/scripts/select-hook.sh"  "import project_pad as pp"
 
 # ⭑ THE TWO SLOTS. Move sees exactly these and never a project id. They are

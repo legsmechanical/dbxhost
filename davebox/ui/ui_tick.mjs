@@ -37,7 +37,7 @@ import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, hostIdentity,
     commitSnapshot } from './ui_persistence.mjs';
 import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
-         projectPickerTextEntryTick, requestSetForSlot,
+         projectPickerTextEntryTick, requestSetForSlot, prepareSlotFor,
          checkProjectOpened, lockAfterProjectLost } from './ui_dialogs.mjs';
 import { sceneAllQueued, updateSceneMapLEDs } from './ui_scene.mjs';
 import { _padDispatchMutedNow, computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
@@ -2241,15 +2241,10 @@ export function _tickImpl() {
          * confirmation would pass and the wrong project would be reported
          * open. That is the failure this whole rewrite exists to remove, so
          * the one thing we must never do is press anyway. */
-        const _live = hostIdentity().projectId || '';
-        host_system_cmd('sh ' + '/data/UserData/dbx-host/scripts/project-cmd.sh' +
-                        ' switch-slot ' + _psw.uuid + ' ' + _live);
-        let _sw = null;
-        try { _sw = JSON.parse(host_read_file('/data/UserData/dbx-host/slot_switch.json') || '{}'); }
-        catch (e) { _sw = null; }
-        if (!_sw || !_sw.ok || typeof _sw.slot !== 'number' || _sw.slot < 0) {
+        const _sw = prepareSlotFor(_psw.uuid);
+        if (!_sw) {
             console.log('project switch: could not prepare a slot for ' + _psw.uuid +
-                        ' (' + ((_sw && _sw.why) || 'no answer') + ') — NOT pressing');
+                        ' — NOT pressing');
             S.pendingProjectSwitch = null;
             showActionPopup('COULD NOT', 'OPEN');
             openProjectPadPicker();

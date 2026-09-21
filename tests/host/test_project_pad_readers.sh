@@ -84,8 +84,11 @@ fi
 # A file could import the module and still hand-roll the xattr beside it; this
 # only proves the import is there, which is the cheap half. Part 1 is what
 # makes the expensive half unnecessary.
+# ⚠ select-list.sh is NOT here any more. It keys its name map by SLOT, because
+# the actuator presses a slot — so it reads library_slots, not the pad. That is
+# the fix for a real defect: keyed by pad it named whichever project sat on pad
+# 0 or 1, so the right project loaded under the wrong name.
 for f in standalone/scripts/project-cmd.sh \
-         standalone/scripts/select-list.sh \
          standalone/scripts/select-hook.sh; do
     if grep -q 'import project_pad as pp' "$f"; then
         ok "$(basename "$f") reads the pad through the accessor"
