@@ -1083,17 +1083,62 @@ if moved:
 PYEOF
 }
 
+# ⚠⚠ REFUSE TO MUTATE THE USER'S OWN LIBRARY.
+#
+# Every verb below operates on $SETS_DIR, and that path is the PROJECT library
+# only while set-swap.sh has the bind mount on. With no session running the
+# same path is the user's NATIVE Move library — his own sets, the ones that sit
+# underneath the mount untouched. `delete` there is irreversible.
+#
+# This is not hypothetical: on 2026-09-20 `list` was run with no session and
+# returned the native sets (Set 29, and Move's factory demos), writing them
+# into projects.json as though they were dAVEBOx projects; scratch projects
+# were about to be created the same way. A file had already been moved inside
+# one of those real sets earlier the same evening, for the same reason.
+#
+# launch.sh is unaffected — it calls `set-swap.sh enter` before any of these —
+# so the guard costs the normal path nothing. It exists for the hand-run case,
+# where the rule "remember which library you are looking at" has now failed
+# twice in one session. A refusal in one place beats a rule in everyone's head.
+#
+# `list` and `switch` are READ-ONLY with respect to set dirs and stay allowed;
+# list still says which library it read, so a stale projects.json cannot
+# silently pass itself off as the project list.
+# ⚠ MATCH THE BOUND STATE POSITIVELY. set-swap prints `sa-live (bound)` or
+# `none (not bound)` — and "not bound" CONTAINS "bound", so a `grep bound`
+# reports every unbound library as bound. The first cut of this guard did
+# exactly that and created a project in the user's native library while
+# claiming to protect it (2026-09-21 01:24, recovered). Anchor on the phase
+# name, which is unambiguous, and FAIL CLOSED if set-swap cannot be asked.
+_swap_bound() {
+    [ -x "$DBX_DIR/scripts/set-swap.sh" ] || return 1
+    sh "$DBX_DIR/scripts/set-swap.sh" status 2>/dev/null | tail -1 | grep -q '^sa-live'
+}
+# The hazard is specific to the REAL library path: that is the one that becomes
+# the user's own Move library when the mount is off. A SETS_DIR pointed anywhere
+# else — which is what every host test does, into a temp dir — has no native
+# library underneath it and nothing to protect. So the guard applies to the real
+# path only, rather than needing a skip flag the tests would have to remember.
+DBX_REAL_SETS_DIR="/data/UserData/UserLibrary/Sets"
+_require_bound() {
+    [ "$SETS_DIR" = "$DBX_REAL_SETS_DIR" ] || return 0
+    _swap_bound && return 0
+    die "refusing to $1: the project library is NOT mounted (set-swap: $(sh "$DBX_DIR/scripts/set-swap.sh" status 2>/dev/null | tail -1)).
+     $SETS_DIR is the USER'S OWN Move library right now, not dAVEBOx projects.
+     Start a session first, or run set-swap.sh enter."
+}
+
 case "${1:-}" in
     list)   do_list ;;
-    new)    shift; do_new "${1:-}" ;;
-    new-at) shift; do_new_at "${1:-}" "${2:-}" ;;
-    copy)   shift; do_copy "${1:-}" "${2:-}" ;;
-    delete) shift; do_delete "${1:-}" ;;
+    new) _require_bound new; shift; do_new "${1:-}" ;;
+    new-at) _require_bound new-at; shift; do_new_at "${1:-}" "${2:-}" ;;
+    copy) _require_bound copy; shift; do_copy "${1:-}" "${2:-}" ;;
+    delete) _require_bound delete; shift; do_delete "${1:-}" ;;
     switch) shift; do_switch "${1:-}" ;;
-    color)  shift; do_color "${1:-}" "${2:-}" ;;
-    normalize) shift; do_normalize "${1:-}" ;;
-    rename) shift; do_rename "${1:-}" "${2:-}" "${3:-}" ;;
-    repair-indices) do_repair_indices ;;
-    fix-order) shift; do_fix_order "${1:-}" ;;
+    color) _require_bound color; shift; do_color "${1:-}" "${2:-}" ;;
+    normalize) _require_bound normalize; shift; do_normalize "${1:-}" ;;
+    rename) _require_bound rename; shift; do_rename "${1:-}" "${2:-}" "${3:-}" ;;
+    repair-indices) _require_bound repair-indices; do_repair_indices ;;
+    fix-order) _require_bound fix-order; shift; do_fix_order "${1:-}" ;;
     *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>|repair-indices|fix-order [uuid]" ;;
 esac
