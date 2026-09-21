@@ -858,6 +858,49 @@ step('⭑ RETRY re-issues the SAME request (the verdict screen has no uuid of it
         throw new Error('Retry wrote the request into the file the dying shim consumes: ' + JSON.stringify(files.get(INTENDED)));
 });
 
+step('\u2b50\u2b50 JOSH\'S GESTURE: tap a blank pad, confirm Create, then Load — no restart', () => {
+    /* The exact path that bounced to the picker on hardware, three times: a
+     * PLAIN tap on an empty pad (no Shift), the Create confirm, then Load from
+     * the new project's menu. The Shift+tap step below covers the other create
+     * path; this one is the path the bug was actually reported on, and the
+     * first cut of this fix tested the other one while claiming it was this. */
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    S.pendingOpenProjectPicker = false;
+    S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    sysCmds.length = 0; selectArms.length = 0;
+    files.delete(INTENDED); files.delete(RELAUNCH);
+
+    padTap(7);                                    /* plain tap, EMPTY pad */
+    ticks(2);
+    const p = S.projectPadPicker;
+    if (!p || !p.confirmNew || p.confirmNew.k !== 7)
+        throw new Error('precondition: a plain tap on an empty pad did not ask to create: ' +
+                        JSON.stringify(p && p.confirmNew));
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);         /* Yes, create */
+    ticks(2);
+    if (!sysCmds.some((c) => /project-cmd\.sh new-at 7$/.test(c)))
+        throw new Error('precondition: confirming did not create: ' + JSON.stringify(sysCmds));
+    if (!S.projectPadPicker || !S.projectPadPicker.menu || S.projectPadPicker.menu.k !== 7)
+        throw new Error('precondition: the new project\'s menu did not open: ' +
+                        JSON.stringify(S.projectPadPicker && S.projectPadPicker.menu));
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);         /* Load */
+    ticks(8);
+
+    if (sysCmds.some((c) => /project-cmd\.sh switch 7$/.test(c)))
+        throw new Error('the new project RESTARTED Move to load: ' + JSON.stringify(sysCmds));
+    const rp = sysCmds.find((c) => /switch-slot /.test(c));
+    if (!rp || rp.indexOf(rigUuidFor(7)) < 0)
+        throw new Error('the idle slot was not pointed at the new project: ' + JSON.stringify(sysCmds));
+    if (selectArms.indexOf(1) < 0)
+        throw new Error('the switch never pressed the slot: ' + JSON.stringify(selectArms));
+    if (files.get(INTENDED) !== SLOT1_UUID + '\n1\nProject 8\n')
+        throw new Error('the request does not name the slot and the NEW project: ' +
+                        JSON.stringify(files.get(INTENDED)));
+});
+
 step('\u2b50\u2b50 CREATE-THEN-LOAD takes the NORMAL switch — no Move restart', () => {
     /* THE BUG JOSH HIT, as the gesture he used: Shift + tap an empty pad, which
      * creates the project and loads it in one press.
