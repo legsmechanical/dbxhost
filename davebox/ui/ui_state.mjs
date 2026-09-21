@@ -750,7 +750,9 @@ export const S = {
     devSnap: null,           /* device-wide snapshots layer (ui_devsnap.mjs); lazily built */
     captureHeldAt: -1,       /* ms the Capture press landed; the hold opens the snapshot layer */
     /* PROJECTS pad picker (v3): dAVEBOx draws the picker itself — 32 pads =
-     * 32 project slots (pad k ↔ user.song-index k, same mapping the host
+     * 32 project slots (pad k = the project's PICKER PAD, which is ours and
+     * no longer Move's ordering index — see standalone/scripts/project_pad.py;
+     * the host actuator replays the pad note for the SLOT it presses
      * actuator replays). null = closed; else { projects, byIndex, current,
      * touchedIdx, copySrcIdx, deleteIdx }. Copy/Delete are hold-modifier
      * two-step flows under OUR semantics (release cancels). */

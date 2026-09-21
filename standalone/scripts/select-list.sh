@@ -7,8 +7,9 @@
 #
 #   {"title": "...", "current": N, "names": {"<song-index>": "<set name>", ...}}
 #
-# Index space is user.song-index — the actuator replays pad note 68+k for
-# index k, so the JSON is keyed exactly the way the screen looks names up.
+# Index space is the project's PICKER PAD (project_pad.py) — ours, and since
+# the split no longer Move's ordering index. The JSON is keyed exactly the way
+# the screen looks names up.
 # ⭐ Read from the PROJECT STORE, not from the set library: the library is a
 # view of symlinks (library_slots.py) and a name read through a link is a name
 # read twice. Same root project-cmd.sh list enumerates, so the two cannot
@@ -37,6 +38,7 @@ python3 - "$PROJECTS_DIR" "$SETTINGS_JSON" "$OUT_JSON" <<'PYEOF'
 import json, os, re, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
 import state_subdir as ss
+import project_pad as pp
 projects_dir, settings, out = sys.argv[1], sys.argv[2], sys.argv[3]
 cur = 0
 try:
@@ -53,10 +55,9 @@ if os.path.isdir(projects_dir):
             continue
         inner = ss.inner_dirs(p)
         name = inner[0] if inner else u[:8]
-        try:
-            idx = int(os.getxattr(p, "user.song-index").decode())
-        except (OSError, ValueError, AttributeError):
-            continue  # unindexed sets have no pad; the picker cannot offer them
+        idx = pp.pad_of(p)
+        if idx is None:
+            continue  # no picker pad; the picker cannot offer it
         names[str(idx)] = name
 tmp = out + ".tmp"
 with open(tmp, "w") as f:

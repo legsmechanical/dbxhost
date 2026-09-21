@@ -93,14 +93,17 @@ check "refusal is logged" bash -c 'sh "$0" switch 3 2>&1 >/dev/null | grep -qi "
 check "refused switch does not queue relaunch_song_index" test ! -f "$DBX_DIR/relaunch_song_index"
 rm -f "$DBX_DIR/relaunch_requested"
 
-# ---- color + rename (both key off the user.song-index xattr, so they can
-# only be exercised where user xattrs work: Linux + a real setxattr on $T.
-# macOS python has no os.setxattr; tmpfs before 6.6 lacks user.*). ----
+# ---- color + rename (both find a project BY ITS PICKER PAD, so they can only
+# be exercised where user xattrs work: Linux + a real setxattr on $T. macOS
+# python has no os.setxattr; tmpfs before 6.6 lacks user.*).
+# ⚠ The pad is user.dbx-pad since the split — seeding user.song-index here
+# would make every verb below report "no project at index 7", because that is
+# Move's ordering index now and no verb reads it. ----
 XATTR_OK=0
 python3 - "$PROJECTS_DIR/$U1" <<'PY' >/dev/null 2>&1 && XATTR_OK=1
 import os, sys
-os.setxattr(sys.argv[1], "user.song-index", b"7")
-assert os.getxattr(sys.argv[1], "user.song-index") == b"7"
+os.setxattr(sys.argv[1], "user.dbx-pad", b"7")
+assert os.getxattr(sys.argv[1], "user.dbx-pad") == b"7"
 PY
 if [ "$XATTR_OK" = 1 ]; then
     sh "$CMD" color 7 3 >/dev/null

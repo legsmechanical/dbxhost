@@ -14,9 +14,14 @@
 #     `shutil.move` all mean what they say again.
 #
 # A project keeps Move's own notions otherwise: <id>/<Name>/Song.abl, ordering
-# is the user.song-index xattr (on the PROJECT — a symlink cannot carry one,
-# and Move's getxattr follows the link), and the active project is
+# is Move's own index xattr (on the PROJECT — a symlink cannot carry one, and
+# Move's getxattr follows the link), and the active project is
 # currentSongIndex in Settings.json.
+#
+# ⭐ The PICKER PAD is a different number and lives in a different xattr —
+# see project_pad.py, which is the only thing that spells it. Every verb here
+# finds a project BY PAD; Move's index is still stamped alongside it, and that
+# is the part the next phase takes away.
 #
 # Verbs (driven by the hosted module through host_system_cmd's `sh ` prefix,
 # results returned through files it can host_read_file):
@@ -107,12 +112,12 @@ write_song_index() { # index
 # The pad position of a project directory, or -1. The xattr IS the position —
 # same source do_list, do_new_at and Move's own picker read (see the header
 # note), so nothing here needs to keep a second opinion in step.
-song_index() { # set-dir
+song_index() { # project-dir  — the PICKER PAD, or -1
     python3 -c 'import os,sys
-try:
-    print(int(os.getxattr(sys.argv[1], "user.song-index").decode()))
-except Exception:
-    print(-1)' "$1" 2>/dev/null || printf '%s\n' -1
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import project_pad as pp
+_p = pp.pad_of(sys.argv[1])
+print(-1 if _p is None else _p)' "$1" 2>/dev/null || printf '%s\n' -1
 }
 
 # Stamp the xattrs a NATIVE Move-born set carries, in the same shape Move
@@ -174,7 +179,14 @@ do_library_sync() {
 import os, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
 import library_slots as sl
+import project_pad as pp
 moved, conflicts = sl.migrate(sys.argv[1], sys.argv[2])
+# ⭐ Give every project its own PICKER PAD, once, copied from the index it
+# already had — so the picker does not move by a single pad. Idempotent; a
+# project that already has one is left alone. Runs here because this is the
+# Move-is-down window and every project is in the store by the line above.
+for _pid in pp.migrate_pads(sys.argv[2], sl.project_ids(sys.argv[2])):
+    print("project-cmd: pad: %s carried its picker pad across" % _pid)
 for p in moved:
     print("project-cmd: library: migrated %s into the project store" % p)
 for p in conflicts:
@@ -191,6 +203,7 @@ do_list() {
     python3 - "$PROJECTS_DIR" "$SETTINGS_JSON" "$OUT_JSON" <<'PYEOF'
 import json, os, re, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import project_pad as pp
 import state_subdir as ss
 projects_dir, settings, out = sys.argv[1], sys.argv[2], sys.argv[3]
 cur = 0
@@ -214,12 +227,12 @@ if os.path.isdir(projects_dir):
         color = None
         if hasattr(os, "getxattr"):
             try:
-                idx = int(os.getxattr(p, "user.song-index").decode())
+                idx = pp.pad_of(p)
             except (OSError, ValueError):
                 pass
             # Palette index into the picker's PROJECT_COLORS table; absent =
             # null = the default color. Lives on the uuid dir beside
-            # user.song-index so it travels with the project through the
+            # the picker pad so it travels with the project through the
             # set-swap and dies with delete for free.
             try:
                 color = int(os.getxattr(p, "user.dbx-color").decode())
@@ -255,6 +268,7 @@ do_normalize() { # [index]  — every project when omitted
     python3 - "$PROJECTS_DIR" "${1:-}" <<'PYEOF'
 import json, os, re, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import project_pad as pp
 import state_subdir as ss
 
 projects_dir, only = sys.argv[1], sys.argv[2]
@@ -319,7 +333,7 @@ for u in sorted(os.listdir(projects_dir)):
         continue
     if want_index is not None:
         try:
-            if int(os.getxattr(p, "user.song-index").decode()) != want_index:
+            if pp.pad_of(p) != want_index:
                 continue
         except (OSError, ValueError):
             continue
@@ -527,6 +541,8 @@ do_new() { # name
 
     _idx="$(python3 - "$PROJECTS_DIR" "$_uuid" "$DBX_PALETTE_N" <<'PYEOF'
 import os, re, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import project_pad as pp
 projects_dir, new_uuid, palette_n = sys.argv[1], sys.argv[2], int(sys.argv[3])
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 top = -1
@@ -536,12 +552,15 @@ for u in os.listdir(projects_dir):
         continue
     if hasattr(os, "getxattr"):
         try:
-            top = max(top, int(os.getxattr(p, "user.song-index").decode()))
+            _pad = pp.pad_of(p)
+            if _pad is not None:
+                top = max(top, _pad)
         except (OSError, ValueError):
             pass
 nxt = top + 1
 if hasattr(os, "setxattr"):
     try:
+        pp.set_pad(os.path.join(projects_dir, new_uuid), nxt)
         os.setxattr(os.path.join(projects_dir, new_uuid), "user.song-index", str(nxt).encode())
         os.setxattr(os.path.join(projects_dir, new_uuid), "user.dbx-color", str(nxt % palette_n).encode())
     except OSError:
@@ -605,7 +624,11 @@ do_new_at() { # index [name]
     randomize_instruments "$PROJECTS_DIR/$_uuid/$_name/Song.abl"
     seed_random_key "$PROJECTS_DIR/$_uuid"
     clear_full_velocity
-    python3 -c "import os,sys; os.setxattr(sys.argv[1], 'user.song-index', sys.argv[2].encode())" \
+    python3 -c "import os,sys
+sys.path.insert(0, os.environ['DBX_PY_DIR'])
+import project_pad as pp
+pp.set_pad(sys.argv[1], int(sys.argv[2]))
+os.setxattr(sys.argv[1], 'user.song-index', sys.argv[2].encode())" \
         "$PROJECTS_DIR/$_uuid" "$1" 2>/dev/null || true
     # Default colour: round-robin by pad (see DBX_PALETTE_N). Same best-effort
     # shape as the index above — a project without the xattr is simply colour 0.
@@ -629,6 +652,7 @@ do_copy() { # src-index dst-index
     python3 - "$PROJECTS_DIR" "$1" "$2" <<'PYEOF'
 import datetime, os, re, shutil, sys, uuid as uuidlib
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import project_pad as pp
 import state_subdir as ss
 projects_dir, src, dst = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
@@ -638,7 +662,7 @@ def find(idx):
         if not os.path.isdir(p) or not uuid_re.match(u):
             continue
         try:
-            if int(os.getxattr(p, "user.song-index").decode()) == idx:
+            if pp.pad_of(p) == idx:
                 return u, p
         except (OSError, ValueError):
             pass
@@ -672,6 +696,7 @@ if moved:
     print("project-cmd: copy: state dir %s -> %s (lists after the song)" % moved)
 # copytree carries the INNER tree but not the OUTER dir's xattrs — index and
 # color are the outer dir's, so set by hand.
+pp.set_pad(np, dst)
 os.setxattr(np, "user.song-index", str(dst).encode())
 try:
     os.setxattr(np, "user.dbx-color", os.getxattr(sp, "user.dbx-color"))
@@ -748,6 +773,8 @@ do_delete() { # index
        [ "$(song_index "$PROJECTS_DIR/$_open_del")" = "$1" ]; then
         _next_idx="$(python3 - "$PROJECTS_DIR" "$_open_del" <<'PYEOF'
 import os, re, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import project_pad as pp
 projects_dir, skip = sys.argv[1], sys.argv[2]
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 idxs = []
@@ -758,7 +785,9 @@ for u in os.listdir(projects_dir):
     if not os.path.isdir(p):
         continue
     try:
-        idxs.append(int(os.getxattr(p, "user.song-index").decode()))
+        _pad = pp.pad_of(p)
+        if _pad is not None:
+            idxs.append(_pad)
     except (OSError, ValueError):
         pass
 print(min(idxs) if idxs else -1)
@@ -799,6 +828,8 @@ PYEOF
     fi
     python3 - "$PROJECTS_DIR" "$SETTINGS_JSON" "$1" "$ACTIVE_SET_PATH" <<'PYEOF'
 import os, re, shutil, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import project_pad as pp
 projects_dir, settings, idx = sys.argv[1], sys.argv[2], int(sys.argv[3])
 active_set_path = sys.argv[4] if len(sys.argv) > 4 else ""
 
@@ -822,10 +853,12 @@ def index_of(uuid):
     if not uuid:
         return -1
     p = os.path.join(projects_dir, uuid)
-    try:
-        return int(os.getxattr(p, "user.song-index").decode())
-    except (OSError, ValueError):
-        return -1
+    # ⚠ -1, never None: the caller compares this numerically against
+    # currentSongIndex, and `None < 0` is a TypeError rather than a falsy — it
+    # would abort the delete instead of falling through to the Settings.json
+    # fallback. pad_of() answers None for "this project has no pad".
+    _pad = pp.pad_of(p)
+    return -1 if _pad is None else _pad
 
 
 cur = index_of(open_uuid())
@@ -843,7 +876,7 @@ for u in os.listdir(projects_dir):
     if not os.path.isdir(p) or not uuid_re.match(u):
         continue
     try:
-        if int(os.getxattr(p, "user.song-index").decode()) == idx:
+        if pp.pad_of(p) == idx:
             shutil.rmtree(p)
             # ⭑ ONE rmtree deletes the WHOLE project. Both state halves live
             # inside the set dir (module since Phase B, host since Phase C),
@@ -879,6 +912,8 @@ do_color() { # index n
     case "${2:-}" in -*|[0-9]*) ;; *) die "color needs a numeric value" ;; esac
     python3 - "$PROJECTS_DIR" "$1" "$2" <<'PYEOF'
 import os, re, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import project_pad as pp
 projects_dir, idx, n = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 for u in os.listdir(projects_dir):
@@ -886,7 +921,7 @@ for u in os.listdir(projects_dir):
     if not os.path.isdir(p) or not uuid_re.match(u):
         continue
     try:
-        if int(os.getxattr(p, "user.song-index").decode()) != idx:
+        if pp.pad_of(p) != idx:
             continue
     except (OSError, ValueError):
         continue
@@ -926,6 +961,7 @@ do_rename() { # index newname [reselect]
     _found="$(python3 - "$PROJECTS_DIR" "$1" <<'PYEOF'
 import os, re, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import project_pad as pp
 import state_subdir as ss
 projects_dir, idx = sys.argv[1], int(sys.argv[2])
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
@@ -934,7 +970,7 @@ for u in os.listdir(projects_dir):
     if not os.path.isdir(p) or not uuid_re.match(u):
         continue
     try:
-        if int(os.getxattr(p, "user.song-index").decode()) != idx:
+        if pp.pad_of(p) != idx:
             continue
     except (OSError, ValueError):
         continue
@@ -1005,7 +1041,7 @@ if m: print("project-cmd: rename: state dir %s -> %s (lists after the song)" % m
 # the only window a set dir can be renamed/moved without a live Move's own
 # save clobbering the change or the OS refusing a busy directory.
 #
-# WHAT IT FIXES: pad = the `user.song-index` xattr, for BOTH dAVEBOx's own
+# WHAT IT FIXES: the PICKER PAD (project_pad.py), for BOTH dAVEBOx's own
 # picker and the way Move itself resolves currentSongIndex — but Move can
 # mint a set of its OWN out-of-band (CLAUDE.md's "dAVEBOx owns project
 # management" section; out-of-band mutation is not defended against, only
@@ -1039,6 +1075,7 @@ do_repair_indices() {
     python3 - "$PROJECTS_DIR" "$DBX_DIR" <<'PYEOF'
 import datetime, os, re, shutil, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import project_pad as pp
 import state_subdir as ss
 
 projects_dir, dbx_dir = sys.argv[1], sys.argv[2]
@@ -1066,7 +1103,7 @@ def is_dbx_owned(uuid_dir):
 
 def song_index(p):
     try:
-        return int(os.getxattr(p, "user.song-index").decode())
+        return pp.pad_of(p)
     except (OSError, ValueError):
         return None
 
@@ -1116,6 +1153,7 @@ for p, old_idx in moves:
     if new_idx >= NUM_PADS:
         print("project-cmd: repair-indices: WARNING no free pad for %s (index %d)" % (p, old_idx))
         continue
+    pp.set_pad(p, new_idx)
     os.setxattr(p, "user.song-index", str(new_idx).encode())
     used.add(new_idx)
     repaired += 1

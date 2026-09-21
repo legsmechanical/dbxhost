@@ -81,14 +81,14 @@ awk '/^do_repair_indices\(\)/,/^}/' "$CMD" | grep -q "ss.fix_library_order(proje
 if python3 -c 'import os,sys; os.setxattr(sys.argv[1], "user.t", b"1")' "$PROJECTS_DIR" 2>/dev/null; then
     setx() { python3 -c "import os,sys; os.setxattr(sys.argv[1], sys.argv[2], sys.argv[3].encode())" "$@"; }
     U_R=dddddddd-0000-4000-8000-00000000000d
-    mkproj "$U_R" "Project 32"; setx "$PROJECTS_DIR/$U_R" user.song-index 31; setx "$PROJECTS_DIR/$U_R" user.dbx-color 4
+    mkproj "$U_R" "Project 32"; setx "$PROJECTS_DIR/$U_R" user.song-index 31; setx "$PROJECTS_DIR/$U_R" user.dbx-pad 31; setx "$PROJECTS_DIR/$U_R" user.dbx-color 4
     out="$(DBX_TEST_DIR_ORDER="$LOSING" sh "$CMD" repair-indices)"
     [ -d "$PROJECTS_DIR/$U_R/dAVEBOx~3" ] && printf '%s' "$out" | grep -q "$U_R state dir dAVEBOx -> dAVEBOx~3" \
         && ok "repair-indices re-orders a losing project and logs it" || bad "repair-indices: $out"
 
     # OPEN project renamed to a losing name: the patch applies mv, then fix-order.
     U_O=eeeeeeee-0000-4000-8000-00000000000e
-    mkproj "$U_O" "Old Name"; setx "$PROJECTS_DIR/$U_O" user.song-index 5
+    mkproj "$U_O" "Old Name"; setx "$PROJECTS_DIR/$U_O" user.song-index 5; setx "$PROJECTS_DIR/$U_O" user.dbx-pad 5
     export ACTIVE_SET_PATH="$T/active_set.txt"; printf '%s\nOld Name\n' "$U_O" > "$ACTIVE_SET_PATH"
     sh "$CMD" rename 5 "Project 32" >/dev/null
     grep -q "fix-order '$U_O'" "$DBX_DIR/relaunch_patch.sh" && ok "rename(open) queues fix-order for that project" \

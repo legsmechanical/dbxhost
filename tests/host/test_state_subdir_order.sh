@@ -161,7 +161,7 @@ sets, idx = sys.argv[2], sys.argv[3]
 for u in os.listdir(sets):
     p = os.path.join(sets, u)
     try:
-        if os.getxattr(p, "user.song-index").decode() != idx:
+        if os.getxattr(p, "user.dbx-pad").decode() != idx:
             continue
     except OSError:
         continue

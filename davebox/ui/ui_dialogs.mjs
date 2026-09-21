@@ -1532,7 +1532,9 @@ function _projectPickerTextEntryTick_impl() {
     return false;
 }
 
-/* Pad tap inside the picker. k = pad index 0-31 == user.song-index. */
+/* Pad tap inside the picker. k = the project's PICKER PAD, 0-31 — ours, not
+ * Move's ordering index. The two were one number until the pad got its own
+ * home (standalone/scripts/project_pad.py); `projects.json.index` carries it. */
 function _projectPadPickerTap_impl(k) {
     const p = S.projectPadPicker;
     if (!p) return;

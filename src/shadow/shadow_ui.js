@@ -1147,7 +1147,8 @@ function drawCustomSplash(bitsOverride, captionOverride) {
  *   scripts/select-list.sh    refresh names: writes select_list.json
  *                             {"title": "...", "current": N,
  *                              "names": {"0": "...", ...}} (index = the set's
- *                             user.song-index == pad position in the picker)
+ *                             the project's own picker pad, which is no longer
+ *                             Move's ordering index — see project_pad.py)
  *   scripts/select-hook.sh    post-selection hook, argv[1] = chosen index or
  *                             "current". Writes select_hook_result.json
  *                             {"status": "open"|"relaunch"}. "relaunch" means

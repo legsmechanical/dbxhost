@@ -1475,7 +1475,23 @@ function autoLaneJump() {
  * Reported by Josh 2026-08-25: the Shift+bottom-row track LEDs kept animating
  * after Shift was released. [[schwung-blocked-tick-drops-midi-releases]] had
  * predicted exactly this for the held-modifier flags and was waiting for a repro. */
+/* ⭑ ONE line per session, the first time Shift is seen at all.
+ *
+ * It answers a question nothing else can: the test harness injects CC 49 and
+ * NOTHING observable moves, and we cannot tell "dAVEBOx never received it"
+ * from "it received it and something downstream ate the chord". The shim's own
+ * shift flag is no help — it is written only from the raw hardware buffer, so
+ * an injected press can never set it and it reads 0 either way.
+ *
+ * Once per session, not per press: Shift is pressed constantly in ordinary
+ * use, and a per-press line would be noise that buys nothing after the first. */
+let _shiftEverSeen = false;
+
 export function applyShiftEdge(held) {
+    if (!_shiftEverSeen) {
+        _shiftEverSeen = true;
+        console.log('dbx: shift edge received by the module (held=' + held + ')');
+    }
     S.shiftHeld = held;
     S.screenDirty = true;      /* the overview footer names the Shift chords while it is held (2026-09-05) */
     S.shiftTrackLEDActive = held;

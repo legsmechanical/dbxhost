@@ -59,15 +59,18 @@ U_C=cccccccc-0000-4000-8000-00000000000c
 mkdir -p "$PROJECTS_DIR/$U_A/Project A" "$PROJECTS_DIR/$U_A/dAVEBOx"
 echo '{}' > "$PROJECTS_DIR/$U_A/Project A/Song.abl"
 setxattr "$PROJECTS_DIR/$U_A" user.song-index 13
+setxattr "$PROJECTS_DIR/$U_A" user.dbx-pad 13
 setxattr "$PROJECTS_DIR/$U_A" user.dbx-color 2
 
 mkdir -p "$PROJECTS_DIR/$U_B/Set 1"
 echo '{}' > "$PROJECTS_DIR/$U_B/Set 1/Song.abl"
-setxattr "$PROJECTS_DIR/$U_B" user.song-index 13   # collides with A, no dAVEBOx marker
+setxattr "$PROJECTS_DIR/$U_B" user.song-index 13
+setxattr "$PROJECTS_DIR/$U_B" user.dbx-pad 13   # collides with A, no dAVEBOx marker
 
 mkdir -p "$PROJECTS_DIR/$U_C/Project C"
 echo '{}' > "$PROJECTS_DIR/$U_C/Project C/Song.abl"
 setxattr "$PROJECTS_DIR/$U_C" user.song-index 31
+setxattr "$PROJECTS_DIR/$U_C" user.dbx-pad 31
 setxattr "$PROJECTS_DIR/$U_C" user.dbx-color 5
 
 mkdir -p "$PROJECTS_DIR/__pending-8-1"
@@ -80,9 +83,9 @@ echo "$out" | sed 's/^/    /'
 
 check "exits 0" true   # repair-indices never refuses; reaching here is the check
 
-idx_b="$(getxattr "$PROJECTS_DIR/$U_B" user.song-index)"
-idx_a="$(getxattr "$PROJECTS_DIR/$U_A" user.song-index)"
-idx_c="$(getxattr "$PROJECTS_DIR/$U_C" user.song-index)"
+idx_b="$(getxattr "$PROJECTS_DIR/$U_B" user.dbx-pad)"
+idx_a="$(getxattr "$PROJECTS_DIR/$U_A" user.dbx-pad)"
+idx_c="$(getxattr "$PROJECTS_DIR/$U_C" user.dbx-pad)"
 check "B moved to the lowest free index (0)" bash -c "[ '$idx_b' = 0 ]"
 check "A untouched (still 13)" bash -c "[ '$idx_a' = 13 ]"
 check "C untouched (still 31)" bash -c "[ '$idx_c' = 31 ]"
@@ -101,7 +104,7 @@ check "nothing was deleted -- A/B/C set dirs all still exist somewhere" bash -c 
 out2="$(sh "$CMD" repair-indices)"
 findings2="$(printf '%s' "$out2" | grep 'repair-indices:' || true)"
 check "rerun logs nothing (idempotent)" bash -c "[ -z '$findings2' ]"
-idx_b2="$(getxattr "$PROJECTS_DIR/$U_B" user.song-index)"
+idx_b2="$(getxattr "$PROJECTS_DIR/$U_B" user.dbx-pad)"
 check "rerun: B's index unchanged" bash -c "[ '$idx_b2' = 0 ]"
 
 # ---- positive control: a healthy library produces ZERO findings -----------
@@ -113,6 +116,7 @@ U_H=dddddddd-0000-4000-8000-00000000000d
 mkdir -p "$SETS_DIR2/$U_H/Healthy Project"
 echo '{}' > "$SETS_DIR2/$U_H/Healthy Project/Song.abl"
 setxattr "$SETS_DIR2/$U_H" user.song-index 0
+setxattr "$SETS_DIR2/$U_H" user.dbx-pad 0
 setxattr "$SETS_DIR2/$U_H" user.dbx-color 0
 h_out="$(DBX_DIR="$DBX_DIR2" PROJECTS_DIR="$SETS_DIR2" sh "$CMD" repair-indices)"
 h_findings="$(printf '%s' "$h_out" | grep 'repair-indices:' || true)"

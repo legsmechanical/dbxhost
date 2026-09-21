@@ -42,6 +42,7 @@ for i, u in enumerate([u1, u2][:n]):
     d = os.path.join(lib, u, "Proj%d" % i); os.makedirs(d)
     json.dump({"tracks": []}, open(os.path.join(d, "Song.abl"), "w"))
     os.setxattr(os.path.join(lib, u), "user.song-index", str(i).encode())
+    os.setxattr(os.path.join(lib, u), "user.dbx-pad", str(i).encode())
 open(os.path.join(lib, ".dbx", "active_set.txt"), "w").write(u1 + "\n")
 PY
 }

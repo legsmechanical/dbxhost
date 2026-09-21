@@ -76,6 +76,16 @@ check "project-cmd library root"       "$HERE/scripts/project-cmd.sh"  'LIBRARY_
 check "project-cmd imports the slots"  "$HERE/scripts/project-cmd.sh"  "import library_slots as sl"
 check "launch.sh syncs the library"    "$HERE/scripts/launch.sh"       'project-cmd.sh" library-sync'
 
+# ⭑ THE PICKER PAD. dAVEBOx's own pad (0-31) and Move's ordering index used to
+# be one xattr; they are two now, and the split only stays split if exactly one
+# file spells the new name. That file is project_pad.py — pinned here, and
+# tests/host/test_project_pad_readers.sh fails if a second speller appears
+# anywhere in the tree. The three shell verbs must IMPORT it, never re-spell it.
+check "the picker-pad xattr name"      "$HERE/scripts/project_pad.py"  'PAD_XATTR = "user.dbx-pad"'
+check "project-cmd reads the pad"      "$HERE/scripts/project-cmd.sh"  "import project_pad as pp"
+check "select-list reads the pad"      "$HERE/scripts/select-list.sh"  "import project_pad as pp"
+check "select-hook reads the pad"      "$HERE/scripts/select-hook.sh"  "import project_pad as pp"
+
 # ⭑ The reserved per-project state subdir (Phase B, state-co-location): the ONE
 # name every consumer must agree on. The C side and JS side WRITE state under
 # it; the shell sites SKIP it when hunting the inner set dir. A case slip in any

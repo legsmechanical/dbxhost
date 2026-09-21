@@ -889,6 +889,10 @@ if [ -d ./standalone ]; then
     # it from beside itself; without it `library-sync` dies on the import and
     # a fresh install comes up on an empty picker.
     cp ./standalone/scripts/library_slots.py ./build/scripts/
+    # project_pad.py: the ONE place that spells the picker-pad xattr. Every
+    # project verb, select-list and select-hook import it from beside
+    # themselves; without it they die on the import and the picker is empty.
+    cp ./standalone/scripts/project_pad.py ./build/scripts/
     # move-loaded-set-reader.sh: backgrounded by launch.sh to distill
     # MoveOriginal's own "About to load ..." boot line into
     # move_loaded_set.txt (see that script for the file contract).

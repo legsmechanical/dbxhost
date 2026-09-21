@@ -32,6 +32,14 @@ DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
 PROJECTS_DIR="${PROJECTS_DIR:-$DBX_DIR/projects}"
 SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
 OUT_JSON="$DBX_DIR/select_hook_result.json"
+# The python helpers beside this script (project_pad.py). ⚠ This script had no
+# need of them until the picker pad became its own xattr; without it every
+# python block here dies on the import, and the ones wrapped in
+# `2>/dev/null || true` would do it SILENTLY.
+DBX_PY_DIR="${DBX_PY_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+export DBX_PY_DIR
+# No __pycache__ beside the scripts (the install tree is a manifest-checked payload).
+export PYTHONDONTWRITEBYTECODE=1
 
 result() { # status
     printf '{"status": "%s"}\n' "$1" > "$OUT_JSON.tmp" && mv -f "$OUT_JSON.tmp" "$OUT_JSON"
@@ -80,17 +88,15 @@ dbus-send --system --print-reply --reply-timeout=4000 \
 
 SONG="$(python3 - "$PROJECTS_DIR" "$IDX" <<'PYEOF'
 import os, re, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import project_pad as pp
 projects_dir, want = sys.argv[1], int(sys.argv[2])
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 for u in os.listdir(projects_dir) if os.path.isdir(projects_dir) else []:
     p = os.path.join(projects_dir, u)
     if not os.path.isdir(p) or not uuid_re.match(u):
         continue
-    try:
-        idx = int(os.getxattr(p, "user.song-index").decode())
-    except (OSError, ValueError, AttributeError):
-        continue
-    if idx != want:
+    if pp.pad_of(p) != want:
         continue
     for n in os.listdir(p):
         f = os.path.join(p, n, "Song.abl")
@@ -122,7 +128,11 @@ if [ -z "$SONG" ]; then
     _name="Project $((IDX + 1))"
     mkdir -p "$PROJECTS_DIR/$_uuid/$_name"
     cp "$_tsrc" "$PROJECTS_DIR/$_uuid/$_name/Song.abl"
-    python3 -c "import os,sys; os.setxattr(sys.argv[1], \"user.song-index\", sys.argv[2].encode())" \
+    python3 -c "import os,sys
+sys.path.insert(0, os.environ['DBX_PY_DIR'])
+import project_pad as pp
+pp.set_pad(sys.argv[1], int(sys.argv[2]))
+os.setxattr(sys.argv[1], \"user.song-index\", sys.argv[2].encode())" \
         "$PROJECTS_DIR/$_uuid" "$IDX" 2>/dev/null || true
     # The project exists; it needs its slot before the relaunch enumerates the
     # library looking for it. ⚠ This is the SECOND path that can mint a
