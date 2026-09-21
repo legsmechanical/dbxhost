@@ -179,6 +179,40 @@ check "the move carried the state, not just the song" \
 out="$(sh "$CMD" library-sync)"
 [ -z "$out" ] && ok "a healthy library syncs silently" || bad "rerun said: $out"
 
+# ---- every boot position is a SLOT, never a picker pad ---------------------
+# ⚠⚠ THE BUG THIS PINS, found on the device: deleting the OPEN project wrote
+# the lowest remaining PICKER PAD into relaunch_song_index. Move boots into a
+# position in the library IT sees — two slots — so a pad names nothing, and the
+# device sat on the deleting screen with nothing to come back to.
+# Three places write that file. They must all translate.
+# ⚠ awk -v, not an interpolated pattern. The first cut wrote the function name
+# into a double-quoted awk program where the shell did NOT expand it, so awk
+# matched nothing, and the check reported "does not write a boot position" —
+# green, for both functions that certainly do. A body this check cannot find is
+# a FAILURE, never a pass.
+for _fn in do_switch do_delete; do
+    _body="$(awk -v f="^$_fn\\(\\)" '$0 ~ f, /^}/' "$CMD")"
+    if [ -z "$_body" ]; then
+        bad "$_fn not found in $CMD — the check cannot see what it is pinning"
+    elif ! printf '%s' "$_body" | grep -q 'relaunch_song_index'; then
+        bad "$_fn no longer writes a boot position — this pin has lost its subject"
+    elif printf '%s' "$_body" | grep -q 'boot_slot_for_pad'; then
+        ok "$_fn translates its boot position to a slot"
+    else
+        bad "$_fn writes relaunch_song_index WITHOUT translating — Move would boot nowhere"
+    fi
+done
+grep -q 'slot-of' standalone/scripts/select-hook.sh \
+    && ok "select-hook translates its boot position too (the third writer)" \
+    || bad "select-hook writes a boot position without asking for a slot"
+
+# The deferred delete must also leave the library consistent: the deleted
+# project's slot leads nowhere, and a relaunch does not run the launch-time
+# sync.
+awk '/^do_delete\(\)/,/^}/' "$CMD" | grep -q 'library-sync' \
+    && ok "the deferred delete re-syncs the library before Move restarts" \
+    || bad "a deleted open project leaves its slot dangling for Move to enumerate"
+
 # ---- the guard: neither root may be the user's own Move library ------------
 # ⚠ Assert the REASON. library-sync can fail for unrelated causes, and every
 # one of them would read as a guard that works.

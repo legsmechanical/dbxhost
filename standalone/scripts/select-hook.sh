@@ -149,6 +149,10 @@ pp.set_pad(sys.argv[1], int(sys.argv[2]))" \
     # landed on; if the library was already full, take one (a relaunch kills
     # Move, so there is no live slot to protect at this moment — the one
     # window where re-pointing anything is safe).
+    # ⚠ Same rule as project-cmd's boot_slot_for_pad, expressed on a uuid
+    # because that is what this path has. Three places write a boot position
+    # and one of them was missed once; if a fourth appears, give it the verb
+    # rather than another copy of these five lines.
     _slot="$(sh "$DBX_DIR/scripts/project-cmd.sh" slot-of "$_uuid" 2>/dev/null || echo -1)"
     if [ "$_slot" = "-1" ]; then
         sh "$DBX_DIR/scripts/project-cmd.sh" point 0 "$_uuid" >/dev/null 2>&1 && _slot=0

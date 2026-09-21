@@ -216,6 +216,46 @@ if landed != pid:
 PYEOF
 }
 
+# ⭐ THE BOOT POSITION IS A SLOT, NEVER A PICKER PAD.
+#
+# Move boots into `currentSongIndex` of the library it can SEE, which holds the
+# two slots. A picker pad is dAVEBOx\'s own number and means nothing to Move —
+# writing one names a position that does not exist, and Move mints its own
+# default song instead of opening a project.
+#
+# ⚠⚠ THIS EXISTS BECAUSE THE SAME TRANSLATION WAS WRITTEN THREE TIMES AND
+# MISSED ONCE. do_switch, select-hook and do_delete each write a boot position;
+# do_delete was missed, which is how deleting the OPEN project left the device
+# on a screen that never came back. One helper, so there is one place to be
+# wrong rather than three.
+boot_slot_for_pad() { # picker-pad  -> slot index on stdout (0 if unplaceable)
+    _bs_uuid="$(python3 - "$PROJECTS_DIR" "${1:-}" <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import library_slots as sl, project_pad as pp
+projects_dir, pad = sys.argv[1], sys.argv[2]
+try:
+    pad = int(pad)
+except ValueError:
+    sys.exit(0)
+for pid in sl.project_ids(projects_dir):
+    if pp.pad_of(os.path.join(projects_dir, pid)) == pad:
+        print(pid); break
+PYEOF
+)"
+    _bs_slot=-1
+    if [ -n "$_bs_uuid" ]; then
+        _bs_slot="$(do_slot_of "$_bs_uuid" 2>/dev/null || echo -1)"
+        if [ "$_bs_slot" = "-1" ]; then
+            # Not on show. A relaunch kills Move, so there is no live slot to
+            # protect — the one window where taking one is safe.
+            do_point 0 "$_bs_uuid" >/dev/null 2>&1 && _bs_slot=0
+        fi
+    fi
+    case "$_bs_slot" in ''|*[!0-9]*) _bs_slot=0 ;; esac
+    printf '%s\n' "$_bs_slot"
+}
+
 # ⭐⭐ PREPARE A SWITCH: make the target project reachable on a slot, and say
 # WHICH slot to press. The whole invariant lives here, in one place, rather
 # than split across the shell/JS seam where half of it would be assumed.
@@ -751,27 +791,7 @@ do_switch() { # index
     # would open its own default song — which is exactly what a stale index did
     # on hardware. Every caller keeps passing a pad; the translation lives here
     # so none of them has to know.
-    _sw_uuid="$(python3 - "$PROJECTS_DIR" "$1" <<'PYEOF'
-import os, sys
-sys.path.insert(0, os.environ["DBX_PY_DIR"])
-import library_slots as sl, project_pad as pp
-projects_dir, pad = sys.argv[1], int(sys.argv[2])
-for pid in sl.project_ids(projects_dir):
-    if pp.pad_of(os.path.join(projects_dir, pid)) == pad:
-        print(pid); break
-PYEOF
-)"
-    _sw_slot=0
-    if [ -n "$_sw_uuid" ]; then
-        _sw_slot="$(do_slot_of "$_sw_uuid" 2>/dev/null || echo -1)"
-        if [ "$_sw_slot" = "-1" ]; then
-            # Not on show. A relaunch kills Move, so there is no live slot to
-            # protect — this is the one window where taking one is safe.
-            do_point 0 "$_sw_uuid" >/dev/null 2>&1 && _sw_slot=0
-        fi
-    fi
-    case "$_sw_slot" in ''|*[!0-9]*) _sw_slot=0 ;; esac
-    printf '%s\n' "$_sw_slot" > "$DBX_DIR/relaunch_song_index"
+    printf '%s\n' "$(boot_slot_for_pad "$1")" > "$DBX_DIR/relaunch_song_index"
     : > "$DBX_DIR/relaunch_requested"
     # Detached, exactly like exit-to-stock.sh: our caller is a child of the
     # process we are about to signal. SIGTERM so shutdown saves run; the
@@ -988,9 +1008,19 @@ PYEOF
         # 2026-08-12), and that lesson does not stop applying because the delete
         # moved into the launcher.
         printf 'sync\n' >> "$DBX_DIR/relaunch_patch.sh"
+        # ⚠ A SLOT, not the pad. `_next_idx` is the lowest remaining PICKER
+        # PAD; Move needs the position in ITS library.
         if [ "$_next_idx" -ge 0 ] 2>/dev/null; then
-            printf '%s\n' "$_next_idx" > "$DBX_DIR/relaunch_song_index"
+            printf '%s\n' "$(boot_slot_for_pad "$_next_idx")" > "$DBX_DIR/relaunch_song_index"
         fi
+        # …and the deleted project's slot leads nowhere until something
+        # re-points it. The launcher applies this patch before Move restarts,
+        # which is exactly the window: a relaunch does NOT run the launch-time
+        # sync, so without this Move enumerates a slot pointing at a project
+        # that no longer exists.
+        printf 'sh %s library-sync\n' \
+            "'$(printf '%s' "$DBX_PY_DIR/project-cmd.sh" | sed "s/'/'\\\\''/g")'" \
+            >> "$DBX_DIR/relaunch_patch.sh"
         : > "$DBX_DIR/relaunch_reselect"
         : > "$DBX_DIR/relaunch_requested"
         setsid sh -c '
