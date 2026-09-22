@@ -131,6 +131,10 @@ step('a plain tap opens the menu with "(Can\'t open)" instead of Load; Rename an
     const r = rowsOf();
     assert(r[0] === "(Can't open)" && !r.includes('Load') && r.includes('Rename') && r.includes('Color'), 'rows: ' + JSON.stringify(r));
     assert(S.projectPadPicker.menu.sel === 1, 'the cursor starts on the status row, sel=' + S.projectPadPicker.menu.sel);
+    /* The status shows as the name row's VALUE — it must be ITS word. It said
+     * CURRENT for every status on the device. */
+    const m = dlg._pppMenuModel(S.projectPadPicker, 2);
+    assert(m[0].value === "CAN'T OPEN", 'status value beside the name: ' + m[0].value);
 });
 step('control: a healthy project\'s menu still offers Load', () => {
     fresh();

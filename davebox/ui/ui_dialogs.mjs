@@ -1191,12 +1191,12 @@ export function _pppMenuModel(p, k) {
          * still close it — but a menu offering nothing but Rename and Color on
          * the project you are already in reads as a dead end, and "Back works"
          * is not the same as "Back is discoverable". */
-        rows.push({ kind: 'status', label: '(Current)' });
+        rows.push({ kind: 'status', label: '(Current)', value: 'CURRENT' });
         rows.push({ kind: 'resume', label: 'Resume' });
     } else if (_pppBroken(p, k)) {
         /* No Load to offer. Rename, Color and Delete stay: none of them touch
          * the song, and Delete is how a damaged project is cleared out. */
-        rows.push({ kind: 'status', label: "(Can't open)" });
+        rows.push({ kind: 'status', label: "(Can't open)", value: "CAN'T OPEN" });
     } else {
         rows.push({ kind: 'load', label: 'Load' });
     }
@@ -1938,7 +1938,10 @@ function _drawProjectPadPicker_impl() {
         const hasStatus = model.length > 0 && model[0].kind === 'status';
         const nameLbl = fitHdr(String(mp ? mp.name : '?').toUpperCase(), 124);
         const rows = [{ label: nameLbl,
-                        hdr: true, value: hasStatus ? 'CURRENT' : undefined }]
+                        /* The status row's OWN word — this printed CURRENT for any
+                         * status, so a project that cannot open read as the open
+                         * one (device, 2026-09-22). */
+                        hdr: true, value: hasStatus ? model[0].value : undefined }]
             .concat(model.filter(r => r.kind !== 'status').map(function(r) {
             /* Both open a screen, so both carry the chevron and NEITHER carries a
              * value (Josh, 2026-08-15). Showing the current colour here read as
