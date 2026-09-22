@@ -82,7 +82,7 @@ say() {
 # two, so the Dave read as a flicker, not a hold, and disappeared before it
 # said anything. paint_splash() now only blanks the LEDs and leaves stock's
 # own frame on screen; see the comment inside it for the full reasoning
-# (including why this also satisfies "Dave only on project load", DBX-014).
+# (including why this also satisfies "Dave only on project load").
 # Every LED dark, as early as the surface can be written (Josh, 2026-08-24:
 # "as early as possible when davebox is selected from stock tool menu") is
 # the part of this that still applies.
@@ -130,7 +130,7 @@ paint_splash() {
     # painted, within a frame or two of the handoff. The Dave was on screen
     # for a flicker and then replaced by something WORSE than the Tools menu
     # it used to hold — not "instead of a hang", an extra flash on top of one.
-    # This also lines up with the standing board item (DBX-014, Josh: "Unwrap
+    # This also lines up with the standing rule (Josh: "Unwrap
     # a Dave only when loading a project, not on launch from tools menu") —
     # this whole script runs ONLY on that cold Tools-menu / boot-selector-
     # while-stock-was-alive entry (launch.sh calls it exactly once, before the
@@ -153,7 +153,7 @@ paint_splash() {
     # telling that "stage 1" already happened on this launch — without that it
     # cannot tell a cold Tools-menu entry (this script) from an in-session
     # project-load relaunch (which never runs this script, and where dealing
-    # its OWN Dave is exactly the DBX-014 behaviour we want to keep). Since we
+    # its OWN Dave is exactly the behaviour we want to keep). Since we
     # no longer paint any artwork, the marker now carries a "skip" pick rather
     # than a real splash-N.hex path: the host reads its mere PRESENCE (and
     # freshness) as "stage 1 is decided — go straight to the text screen, deal

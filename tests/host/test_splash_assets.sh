@@ -90,7 +90,7 @@ grep -q 'splash2\.hex' scripts/build.sh \
 # quiesce-stock.sh no longer deals or paints a Dave at all — the graceful
 # stock-Move exit repaints "Move terminated" over it within a frame or two, so
 # the painted frame was never retained, just flickered. This also lines up
-# with DBX-014 (a Dave is dealt on PROJECT LOAD, never on a tools-menu
+# with the standing rule (a Dave is dealt on PROJECT LOAD, never on a tools-menu
 # launch): quiesce-stock.sh runs ONLY on that cold-entry path, so the fix for
 # "no Dave here" doubles as "no Dave on a tools-menu launch". The relaunch-
 # path dealer (below, in shadow_ui.js) is untouched — that is what still deals

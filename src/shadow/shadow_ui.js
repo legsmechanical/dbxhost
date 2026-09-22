@@ -1011,7 +1011,7 @@ function ensureCustomSplash() {
          * still writes this marker, now carrying a "skip" pick instead of a
          * real splash-N.hex path: its mere presence (and freshness) says
          * "this was a cold Tools-menu/boot entry — show the text screen,
-         * deal NOTHING", per the standing board item (DBX-014: a Dave is
+         * deal NOTHING", per the standing rule (a Dave is
          * dealt on PROJECT LOAD, never on a tools-menu launch). Since
          * quiesce-stock.sh runs ONLY on that cold-entry path (never during an
          * in-session project-load relaunch — see standalone/scripts/

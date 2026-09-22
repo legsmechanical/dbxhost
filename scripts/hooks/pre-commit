@@ -43,6 +43,13 @@ need() {  # need <tool> <what it gates> — fail closed, never skip
   return 1
 }
 
+# ------------------------------------------------------------ local private checks
+# A clone may carry checks that are not part of this repo (a local file beside
+# this one, excluded from git). Run it when present; its refusal fails the commit.
+if [ -x scripts/hooks/pre-commit-private ]; then
+  scripts/hooks/pre-commit-private || fail=1
+fi
+
 # ------------------------------------------------------------- host / C / shell
 if touches '^(src/|tests/host/|tests/(shadow|store|build)/|standalone/|scripts/|Makefile|tests/Makefile)'; then
   echo "[pre-commit] host-tests (unit + contract) …"
