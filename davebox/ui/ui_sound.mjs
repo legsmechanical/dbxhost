@@ -32,7 +32,7 @@ import {
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
     slotIndex, moveBusForChannel, moveBusComp, moveBusPrefix,
     faderStep, faderWire, faderFormatDb, faderGainToTravel, SHIFT_VOL_THROW, trackLevelCardText,
-    PAGE_KNOB, pageFloatStep, pageIntStep, pageIntDetents } from './ui_engine.mjs';
+    PAGE_KNOB, pageFloatStep, pageIntStep, pageIntDetents, engineModuleHelp } from './ui_engine.mjs';
 /* MODULE buses — a splittable module's voice groups. ⚠ NOT davebox's `S.bus`,
  * which is a MIXER POSITION; ui_modbus.mjs's header says why the source keeps
  * them apart even though the screens never collide. */
@@ -305,6 +305,8 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
        * a list must never carry a row that answers a click by doing nothing. */
       VIEW_MODBUS_GROUP = 31, VIEW_MODBUS_VOICES = 32,
       VIEW_MODBUS_CHAIN = 33,   /* a bus's insert positions, as block rows */
+      /* A module's own help (upstream #372), opened from the Module page. */
+      VIEW_HELP = 34,
       /* P7: the knob and LFO editors, absorbed from the host (they were
        * overlay services in P5). Sub-screens of slot settings. */
       VIEW_KNOBS = 11, VIEW_KNOB_TARGET = 12, VIEW_KNOB_PARAM = 13,
@@ -736,6 +738,7 @@ const S = {
     pollCursor: -1,             /* spread bank re-read; <0 = idle */
     padVouchTries: 0,           /* the vouch write can be DROPPED; retry it */
     menuRowsCache: [],
+    help: null,                 /* Module Help: { title, stack: [frame] }, see openModuleHelp */
     menuEditing: false,         /* jog edits the highlighted param instead of scrolling */
     fileState: null,            /* shared filepath_browser state, when browsing */
     fileKey: '',                /* param the browse will write on select */
@@ -1479,7 +1482,7 @@ export function soundInEditor() {
 function followPlan(fromView, route) {
     const v = fromView;
     const chain = route === 0;
-    const isEditorish = v === VIEW_EDIT || v === VIEW_MENU || v === VIEW_FILE ||
+    const isEditorish = v === VIEW_EDIT || v === VIEW_MENU || v === VIEW_HELP || v === VIEW_FILE ||
         v === VIEW_PRESET_SRC || v === VIEW_PRESET_LIST || v === VIEW_PRESET_BAKED ||
         v === VIEW_NOEDITOR || (ppOn && ppOwnsView());
     /* ⭑ RULED (Josh, 2026-09-05, after the build-23 pass: "there's too much
@@ -1724,6 +1727,7 @@ export function soundExit(opts) {
         String(new Error().stack || '').split('\n').slice(2, 5).map((l) => l.trim()).join(' | '));
     wavEditCloseIfOpen();
     canvasCloseIfOpen();      /* nothing may outlive sound mode itself */
+    S.help = null;
     /* …INCLUDING the MACROS-clear confirm, which is about a bank that only exists
      * while this mode is open. It draws over everything, so an exit that left it
      * standing would paint it on the track overview with no way to dismiss it. */
@@ -8780,6 +8784,10 @@ export function soundOnCC(d1, d2, decodeDelta) {
             if (delta) onKnobTurn(d1 - 71, delta);
             return true;
         }
+        /* Help is a page to READ: the knobs do nothing. Unclaimed they would
+         * fall to levelsActive() and move the track's level unseen (the trap
+         * the wave editor's note above describes). */
+        if (S.view === VIEW_HELP) return true;
         /* On the MACROS page (and its assign screens) the knobs are THE
          * MACROS (spec §2); on every other non-editor screen of a track they
          * are THE LEVELS. The two predicates are exclusive by construction
@@ -8984,6 +8992,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
             }
         } else if (S.view === VIEW_MENU) {
             menuStep(delta);
+        } else if (S.view === VIEW_HELP) {
+            helpJog(delta);
         } else if (S.view === VIEW_FILE) {
             moveFilepathBrowserSelection(S.fileState, delta > 0 ? 1 : -1);
             armFilepathPreview(S.fileState);
@@ -9614,6 +9624,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
         }
         else if (S.view === VIEW_PRESET_BAKED) S.pendingAction = { t: 'bakedset' };
         else if (S.view === VIEW_MENU) menuEnter();
+        else if (S.view === VIEW_HELP) helpClick();
         else if (S.view === VIEW_FILE) fileActivate();
         S.dirty = true;
         return true;
@@ -9728,6 +9739,12 @@ export function soundOnCC(d1, d2, decodeDelta) {
             if (S.view === VIEW_MENU) {
                 if (S.confirmItem) { S.confirmItem = null; S.dirty = true; return true; }
                 if (menuBack()) { S.dirty = true; return true; }
+            }
+            /* Help climbs its own topics first; at the top it lands on the
+             * Module page like every errand (one frame deep, upstream's rule). */
+            if (S.view === VIEW_HELP) {
+                if (helpBack()) { S.dirty = true; return true; }
+                S.help = null;
             }
             if (S.view === VIEW_PRESET_LIST || S.view === VIEW_PRESET_BAKED) revertOriginal();
             ppErrandView = null;
@@ -11599,6 +11616,11 @@ function ppIo() {
                      * "NO MENU" to a row we chose to show. */
                     ...((S.levels && (S.rootKey || S.modes))
                         ? [{ label: 'Module Menu', action: 'module_menu' }] : []),
+                    /* ⭑ MODULE HELP (upstream #372 on dAVEBOx's own page): only
+                     * when the module ships a help file — a row that answered
+                     * "no help" would be a door to nothing. Cached per module. */
+                    ...(engineModuleHelp(S.comp, S.moduleId)
+                        ? [{ label: 'Module Help', action: 'module_help' }] : []),
                     { label: 'Swap Module', action: 'swap_module' },
                     /* ⭑ REMOVE IS THE `[ none ]` PICK, reached through the same
                      * applyModulePick — not a second way to clear a slot. */
@@ -11669,6 +11691,7 @@ function ppIo() {
             else if (action === 'remove_module') requestModulePick({ id: '', name: '[ none ]' });
             else if (action === 'up_save_as') startSaveFlow();
             else if (action === 'swap_module') { openBrowse(S.comp); ppErrandView = S.view; }
+            else if (action === 'module_help') { if (openModuleHelp()) ppErrandView = S.view; }
             /* openMenu reads the engine, so it runs from the tick (like the
              * preset hub's door); the crumb is set there, once the menu is up. */
             else if (action === 'module_menu') S.pendingAction = { t: 'menu', errand: true };
@@ -12450,6 +12473,68 @@ function renderMenu() {
     }), S.menuIdx, { emptyMsg: 'NO PARAMS' });
 }
 
+/* ---- MODULE HELP (upstream #372, on dAVEBOx's own surface) ----------------
+ *
+ * A stack of frames: a LIST of topics ({ items, sel }) or a TEXT page
+ * ({ lines, off }). Click on a topic with `children` pushes a list, one with
+ * `lines` pushes a text page; Back pops, and at the first frame leaves to the
+ * Module page (the errand block). Lines are drawn as written — the file is
+ * authored pre-wrapped — in the stock font, mixed case. */
+const HELP_TEXT_ROWH = 8;   /* the 7-row stock glyph + 1px: five lines under the header */
+function helpTextRows() { return Math.max(1, Math.floor((MV_FOOTER_Y - 11 - 2) / HELP_TEXT_ROWH)); }
+function helpFrame() { return S.help ? S.help.stack[S.help.stack.length - 1] : null; }
+
+function openModuleHelp() {
+    const h = engineModuleHelp(S.comp, S.moduleId);
+    if (!h) return false;
+    S.help = { stack: [{ title: h.title, items: h.children, sel: 0 }] };
+    S.view = VIEW_HELP;
+    S.dirty = true;
+    return true;
+}
+function helpJog(delta) {
+    const f = helpFrame();
+    if (!f) return;
+    if (f.items) f.sel = listMove(f.items.length, f.sel, delta);
+    else f.off = Math.max(0, Math.min(Math.max(0, f.lines.length - helpTextRows()),
+                                      f.off + (delta > 0 ? 1 : -1)));
+}
+function helpClick() {
+    const f = helpFrame();
+    if (!f || !f.items) return;
+    const it = f.items[f.sel];
+    if (!it) return;
+    if (Array.isArray(it.children) && it.children.length)
+        S.help.stack.push({ title: String(it.title || ''), items: it.children, sel: 0 });
+    else if (Array.isArray(it.lines))
+        S.help.stack.push({ title: String(it.title || ''), lines: it.lines.map(String), off: 0 });
+}
+function helpBack() {
+    if (!S.help || S.help.stack.length <= 1) return false;
+    S.help.stack.pop();
+    return true;
+}
+function renderHelp() {
+    clear_screen();
+    const f = helpFrame();
+    if (!f) return;
+    const root = S.help.stack.length === 1;
+    drawKitHeader(String(root ? 'HELP: ' + f.title : f.title).toUpperCase(), false);
+    const h = MV_FOOTER_Y - 11 - 1;
+    if (f.items) {
+        drawKitList(f.items.map((it) => ({ label: String((it && it.title) || ''),
+                                           chevron: !!(it && (it.children || it.lines)) })),
+                    f.sel, { h: h });
+        drawKitHintRow(MV_FOOTER_Y, [['JOG', 'PICK'], ['CLK', 'OPEN'], ['BACK', 'OUT']]);
+    } else {
+        /* ⭑ The full 124px help files are written for: no selection bar here,
+         * so none of its 3px margin; text stops just short of the scrollbar. */
+        drawKitList(f.lines.map((l) => ({ label: l })), -1,
+                    { h: h, rowH: HELP_TEXT_ROWH, start: f.off, labelInset: 1, rightInset: 3 });
+        drawKitHintRow(MV_FOOTER_Y, [['JOG', 'SCROLL'], ['BACK', 'OUT']]);
+    }
+}
+
 function renderFile() {
     clear_screen();
     const st = S.fileState;
@@ -12538,6 +12623,7 @@ export function soundRender() {
     else if (S.view === VIEW_PRESET_LIST) renderPresetList();
     else if (S.view === VIEW_PRESET_BAKED) renderPresetBaked();
     else if (S.view === VIEW_MENU) renderMenu();
+    else if (S.view === VIEW_HELP) renderHelp();
     else if (S.view === VIEW_FILE) renderFile();
     else if (S.view === VIEW_MODBUS) renderModBus();
     else if (S.view === VIEW_MODBUS_GROUP) renderModBusGroup();

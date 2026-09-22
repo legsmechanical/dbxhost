@@ -253,7 +253,16 @@ commits — version bumps and changelog, no code).
   `track_swallow_release` and `LONG_PRESS_ACTIVE()` all have zero hits in `src/schwung_shim.c`;
   the macro went in upstream's `40d223b4` and the leftover call was the undefined-symbol bug this
   fork already closed. dAVEBOx owns the Track buttons for its own gestures. Nothing is owed.
-- **`#372` module help is a jog from its knobs** (`bee45c58`) — **WORTH TAKING; Josh, 2026-09-10:
+- **`#372` module help is a jog from its knobs** (`bee45c58`) — ✅ **PORTED for dAVEBOx
+  (2026-09-22)**: the Module Help row on dAVEBOx's own Module page and dAVEBOx's own viewer
+  (`ui_sound.mjs` `openModuleHelp`/`renderHelp`, `ui_engine.mjs` `engineModuleHelp`), drawn with
+  the kit list (`drawKitList` gained `start`/`labelInset`/`rightInset`) rather than
+  `scrollable_text.mjs`, at upstream's 124px line budget. `tests/host/test_module_help_shape.sh`
+  taken from `866408b73`; this fork's file-browser and song-mode help were rewrapped to pass it
+  (our wording kept — upstream's song-mode rewrite documents stems this fork does not have).
+  NOT taken: the shared `drawScrollbar` half (the kit list already owns one rail), and the
+  earlier note's "dAVEBOx itself among them" / stock-tree fix — dAVEBOx has no slot modules of
+  its own and is an overtake. Original note: **WORTH TAKING; Josh, 2026-09-10:
   _"if this is about allowing modules to display a help menu in the module editor UI then we
   should include it."_ It is exactly that.** A conditional **Module Help** row on the Module page
   at the end of a component's knob grid, above Swap and Remove — appearing only when the module

@@ -849,6 +849,40 @@ function moduleDirFor(comp, moduleId) {
     return '';
 }
 
+/* ⭐ A MODULE'S HELP (upstream #372, ported to dAVEBOx's own Module page):
+ * `<module dir>/help.json` = { title, children: [ { title, lines: [...] } |
+ * { title, children: [...] } ] }. Returns { title, children }, or null
+ * when the module has none — missing, unreadable, malformed, or empty all mean
+ * "no Module Help row", and none of them may break the Module page.
+ *
+ * Read ONCE per module per session and cached, misses included: the Module
+ * page's rows are rebuilt on every draw, and a module cannot change under a
+ * running session (installing one restarts the host). */
+const _helpCache = Object.create(null);
+export function engineModuleHelp(comp, moduleId) {
+    if (!moduleId || /[\/]|\.\./.test(moduleId)) return null;
+    const key = comp + ':' + moduleId;
+    if (key in _helpCache) return _helpCache[key];
+    let out = null;
+    try {
+        /* ⚠ A bus block is named with its bus in front — `master_fx:fx1`,
+         * `send_fx:a:fx2` — and COMPONENTS knows only the block (`fx1`). The
+         * module lives in the same category dir either way. */
+        const block = String(comp).slice(String(comp).lastIndexOf(':') + 1);
+        const dir = moduleDirFor(block, moduleId);
+        const path = dir ? dir + '/help.json' : '';
+        if (path && host_file_exists(path)) {
+            const doc = JSON.parse(host_read_file(path) || '');
+            if (doc && Array.isArray(doc.children) && doc.children.length > 0)
+                out = { title: String(doc.title || moduleId), children: doc.children };
+        }
+    } catch (e) {
+        console.log('help: unreadable help.json for ' + moduleId + ' (' + e + ')');
+    }
+    _helpCache[key] = out;
+    return out;
+}
+
 /*
  * A module-supplied CARD DRAWER for one parameter, or null.
  *

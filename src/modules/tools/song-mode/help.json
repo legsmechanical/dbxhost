@@ -8,13 +8,14 @@
         "time to build songs.",
         "",
         "Reads your set's clip",
-        "layout and tempo, then",
-        "lets you arrange pads",
-        "into an ordered song.",
+        "layout and tempo,",
+        "then lets you arrange",
+        "pads into an ordered",
+        "song.",
         "",
-        "Playback triggers pads",
-        "automatically based on",
-        "bar timing."
+        "Playback triggers",
+        "pads automatically",
+        "based on bar timing."
       ]
     },
     {
@@ -23,23 +24,24 @@
         "Each step sets pads",
         "for 4 tracks.",
         "",
-        "Select a step with jog",
-        "or step buttons, then",
-        "tap pads to assign.",
+        "Select a step with",
+        "jog or step buttons,",
+        "then tap pads to",
+        "assign.",
         "",
-        "First pad press copies",
-        "the previous step so",
-        "you only change what",
-        "differs.",
+        "First pad press",
+        "copies the previous",
+        "step so you only",
+        "change what differs.",
         "",
         "Shift+Pad on step 2+",
-        "sets track to",
-        "trailing quote \"",
-        "(continue).",
+        "sets track to trailing",
+        "quote \" (continue).",
         "",
-        "Steps show track clips",
-        "as column letters",
-        "(A-H) per track."
+        "Steps show track",
+        "clips as column",
+        "letters (A-H) per",
+        "track."
       ]
     },
     {
@@ -55,9 +57,10 @@
         "to the step where",
         "playback started.",
         "",
-        "Menu has Play Song and",
-        "Record Song items at",
-        "the bottom of the list."
+        "Menu has Play Song",
+        "and Record Song items",
+        "at the bottom of the",
+        "list."
       ]
     },
     {
@@ -68,7 +71,8 @@
         "",
         "Rec: record from the",
         " current step",
-        "Shift+Rec: record from",
+        "Shift+Rec: record",
+        "from",
         " the beginning",
         "Rec again: stop",
         "",
@@ -78,11 +82,12 @@
         "",
         "Tail setting is the",
         "last menu item. Click",
-        "to cycle: 0,1,2,4,8",
-        "bars (default 2).",
+        "to cycle: 0,1,2,4,8 bars",
+        "(default 2).",
         "",
         "Files saved to:",
-        " Recordings/Song Mode/",
+        " Recordings/",
+        "  Song Mode/",
         " with set name"
       ]
     },
@@ -160,8 +165,9 @@
         {
           "title": "Undo",
           "lines": [
-            "Press Undo to restore",
-            "the previous state.",
+            "Press Undo to",
+            "restore the previous",
+            "state.",
             "",
             "Supports up to 20",
             "undo levels.",
@@ -198,9 +204,10 @@
     {
       "title": "Persistence",
       "lines": [
-        "Song arrangements are",
-        "saved automatically",
-        "per set (by UUID).",
+        "Song arrangements",
+        "are saved",
+        "automatically per set",
+        "(by UUID).",
         "",
         "When you re-enter",
         "Song Mode for the",

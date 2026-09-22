@@ -1865,6 +1865,14 @@ src/modules/your-module/
 
 The host scans all installed module directories for `help.json` at runtime. Module help topics appear alphabetically in the "Modules" section of the Help viewer.
 
+**In dAVEBOx** the same file is read for a module loaded in a slot: its sound editor's **Module**
+page (the last page of the knob grid) offers a **Module Help** row, above Swap Module, only when the
+module's `help.json` parses and has a non-empty top-level `children[]`. Click opens dAVEBOx's own
+viewer: a topic list (jog picks, click opens), text pages the jog scrolls, Back climbs one level and
+then returns to the Module page. Lines are drawn as written, never wrapped — keep each within
+**124px** of the stock font (`tests/host/test_module_help_shape.sh` measures it for this repo's
+modules). A file that names its topics anything but `children` shows no row at all.
+
 ### Format
 
 Help content is a tree of sections and leaf topics:

@@ -65,6 +65,10 @@ the section into a versioned heading at release time.
   already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
+- **Module Help.** A module that ships help now has a **Module Help** row on its Module page
+  (the last page of its knobs, above Swap Module). It opens the module's topics: jog to pick,
+  click to open, jog scrolls the text, Back climbs out and returns to the Module page. Modules
+  without help show no row.
 - **Holding a step says what the jog does.** A short "JOG RIGHT / Edit step" card
   appears once a press becomes a hold, and goes as soon as you turn a knob or the
   jog, or let go. The JOG STEP footer hint shows on the track overview too, not

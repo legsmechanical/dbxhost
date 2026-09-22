@@ -3308,7 +3308,11 @@ export function hudCard(title, valueText) {
  *   `hdr` prints the label in the header font (caps chrome rows).
  *   `qual` is a small qualifier drawn just after the label — see the row loop.
  * sel: selected index. opts: { x=0, w=SCREEN_W, topY=11, rowH=10, visible
- *   (derived), emptyMsg }. `x`/`w` bound the list horizontally so the same
+ *   (derived), emptyMsg, start, labelInset=3, rightInset }.
+ *   `start` pins the first visible row — for a page with nothing selected
+ *   (sel -1) that still scrolls, e.g. help text. `labelInset`/`rightInset`
+ *   widen the text for such a page: the 3px left inset is the SELECTION BAR's
+ *   margin, which a page with no selection does not need. `x`/`w` bound the list horizontally so the same
  *   renderer serves a full screen and an overlay box.
  * Pure: no state reads; returns the first visible index (for callers that
  * align auxiliary drawing with the window). */
@@ -3357,12 +3361,13 @@ export function drawKitList(rows, sel, opts) {
      * as "this row is selected" on a screen where nothing can be. */
     const none = (sel | 0) < 0;
     const s = none ? -1 : Math.max(0, Math.min(n - 1, sel | 0));
-    const start = none ? 0
+    const start = o.start != null ? Math.max(0, Math.min(o.start | 0, Math.max(0, n - visible)))
+        : none ? 0
         : Math.max(0, Math.min(s - Math.floor(visible / 2), n - visible));
     const hasScroll = n > visible;
-    const rightEdge = boxX + boxW - (hasScroll ? 5 : 3);   /* value right-align x */
+    const rightEdge = boxX + boxW - (o.rightInset != null ? o.rightInset : (hasScroll ? 5 : 3));   /* value right-align x */
     const fillW = hasScroll ? boxW - 4 : boxW;
-    const labelX = boxX + 3;
+    const labelX = boxX + (o.labelInset != null ? o.labelInset : 3);
     for (let i = 0; i < visible; i++) {
         const idx = start + i;
         if (idx >= n) break;

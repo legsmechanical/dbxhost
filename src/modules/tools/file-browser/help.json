@@ -38,7 +38,8 @@
           "title": "Play",
           "lines": [
             "Preview WAV files",
-            "through Move speakers.",
+            "through Move",
+            "speakers.",
             "",
             "Select a .wav file,",
             "choose Play from the",
@@ -67,12 +68,13 @@
         {
           "title": "Rename",
           "lines": [
-            "Change the name of",
-            "a file or folder.",
+            "Change the name of a",
+            "file or folder.",
             "",
             "Opens the on-screen",
             "keyboard, pre-filled",
-            "with the current name."
+            "with the current",
+            "name."
           ]
         },
         {
