@@ -17,6 +17,20 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Fixed (pending)
+- **Switching projects no longer restarts Move.** A load swaps the project in
+  place in about four seconds, including a project you just created or copied.
+  A new project's first load used to bounce you back to the picker.
+- **Switching projects no longer creates stray projects.** A switch could make an
+  unwanted "Project 1" or "Project 2" and restart Move.
+- **After a power cut, dAVEBOx comes back on the project you were last in,** not
+  on whichever one you were in at the last clean exit.
+- **A new project can no longer open as an empty set.** Rarely (about one project
+  in a few hundred) the folder layout made Move open dAVEBOx's own data as the
+  song. Creation and the launch-time repair now always put the song first.
+- **Export works again.** It stopped at "EXPORT FAIL / NO TEMPLATE" because it
+  looked for its templates in the wrong place.
+- **The NEW PROJECT card asks its question** — "Create a new project on this
+  pad?" — instead of showing a header over No / Yes.
 - **If your projects can't be read at startup, dAVEBOx says so instead of
   guessing.** A "No project list" screen now offers Retry or Quit. Before, it
   quietly opened whichever project the device happened to boot into — so a
@@ -39,6 +53,15 @@ the section into a versioned heading at release time.
   three pages a knob *is* a track.
 
 ### Changed (pending)
+- **Renaming a project is instant, even the one you're in.** No more RENAMING /
+  RESTARTING. A name can use any character the keyboard types, "/" included —
+  the name is a label now, not the folder Move opens.
+- **Loading a project is one screen:** LOADING, the project's name, and a line
+  underneath saying what's happening (saving, loading the set, starting the
+  sequencer). It used to pass through four screens in two different styles.
+- **The project picker lights only what works there:** the project pads, plus
+  Copy and Delete (and Session/Note and Back when a project is loaded).
+  Everything else is dark, including the step buttons.
 - **A Conductor's Sound menu is just its type and its own settings.** It plays
   nothing, so the FX slots, the mixer controls, the LFOs and the presets are all
   gone from it — they were shaping a signal that isn't there. Whatever instrument

@@ -179,6 +179,14 @@ fields in `seq8_load_state` over bumping. See `dsp/CLAUDE.md` for the key list.
 single rmtree. **Never reintroduce pruners, a name index, or set-duplicate inheritance**; all three
 were deleted deliberately. [[schwung-state-colocation-model]]
 
+⭑⭑ **Since 2026-09-22 a project is `projects/<uuid>/{Move-Set-<id8>/Song.abl, <state>/}`**, and Move
+sees it only through one of TWO fixed slot symlinks (`standalone/scripts/library_slots.py`). The
+song folder's name is Move's and never shown (rarely `…-<n>`, when the listing order forces the song
+to move — `state_subdir.py`); the NAME the user sees is `<state>/name.txt`
+(`standalone/scripts/project_name.py`, JS `projectDisplayName`). **Never read a name off a folder** —
+`tests/host/test_project_name_readers.sh` fails if anything does. A rename writes the tag and moves
+nothing, so it never restarts Move.
+
 JS `init()` reads the UUID and compares it with the `state_uuid` `get_param`. A mismatch →
 `state_load=UUID` next tick → `pendingDspSync=5` → `syncClipsFromDsp()` → `restoreUiSidecar(true)`.
 The same path fires on resume when the set changed while suspended.
