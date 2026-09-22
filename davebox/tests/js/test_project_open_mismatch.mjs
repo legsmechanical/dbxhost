@@ -216,7 +216,14 @@ globalThis.stipple_rect = () => {};
 globalThis.draw_line = () => {};
 globalThis.set_pixel = () => {};
 globalThis.flush_display = () => {};
-globalThis.move_midi_internal_send = () => {};
+/* The last colour sent to each note LED (cable 0 note-on = an LED write). */
+const noteLED = new Map();
+const ccLED = new Map();                 /* the last colour on each BUTTON light */
+globalThis.move_midi_internal_send = (b) => {
+    if (b && (b[1] & 0xF0) === 0x90) noteLED.set(b[2], b[3]);
+    if (b && (b[1] & 0xF0) === 0xB0) ccLED.set(b[2], b[3]);
+    return true;
+};
 globalThis.set_led = () => {};
 globalThis.shadow_get_param = (slot, k) => {
     if (k === 'active_set_state') return hostState.state + '\n' + hostState.reason + '\n' + hostState.index;
@@ -778,6 +785,44 @@ step('⭐ ONE LOADING SCREEN from Load to the project: LOADING / name / the stag
     const handover = armFrames[armFrames.length - 1] || '';
     if (!/LOADING/.test(handover) || !/PROJECT 32/.test(handover) || !/LOADING SET/.test(handover))
         throw new Error('the frame left up for the host is not LOADING / PROJECT 32 / LOADING SET: ' + handover);
+});
+
+step('⭐ the picker lights ONLY what works there: steps dark, buttons dark but Copy/Delete (+Session/Back when loaded)', () => {
+    /* Josh, 2026-09-22: "the step buttons are lit on the project management
+     * ui" — then: "we need all buttons led's OFF except those that function in
+     * that mode (copy/delete ... with session/note and back available if a
+     * project is loaded)". The lit steps were steps 1-4 in RED — the session
+     * view's scene-row indicator (updateSceneMapLEDs), written every tick
+     * through the UNCACHED setLED by a painter that still ran under the
+     * picker; the picker's own painter asked its cache, saw OFF already sent,
+     * and never sent it. (Josh corrected my first reading, which blamed
+     * Shift's hints.) Shift is held here too, so both uncached painters are
+     * live when the picker opens. */
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(60);
+    S.pendingOpenProjectPicker = false; S.projectPadPicker = null;
+    cc(49, 127); ticks(4);                          /* Shift: lights the step hints */
+    const hinted = [];
+    for (let n = 16; n <= 31; n++) if (noteLED.get(n)) hinted.push(n);
+    if (!hinted.length) throw new Error('CONTROL: holding Shift lit no step hints — the provocation is gone');
+    dialogs.openProjectPadPicker();
+    ticks(3);
+    cc(49, 0); ticks(6);                            /* release Shift under the picker */
+    if (!S.projectPadPicker) throw new Error('precondition: the picker is not open');
+    const lit = [];
+    for (let n = 16; n <= 31; n++) if (noteLED.get(n)) lit.push('step' + (n - 15) + '=' + noteLED.get(n));
+    if (lit.length) throw new Error('step lights still lit under the picker: ' + lit.join(' '));
+    /* buttons: Copy 60, Delete 119 available; loaded, so Session/Note 50 and Back 51 too */
+    const allowed = { 60: 1, 119: 1, 50: 1, 51: 1 };
+    const wrong = [];
+    for (const [c, v] of ccLED) {
+        if (c >= 16 && c <= 31) { if (v) wrong.push('icon' + c + '=' + v); continue; }
+        if (!allowed[c] && v) wrong.push('cc' + c + '=' + v);
+    }
+    if (wrong.length) throw new Error('buttons lit that do nothing in the picker: ' + wrong.join(' '));
+    for (const c of [60, 119, 50, 51])
+        if (!ccLED.get(c)) throw new Error('cc' + c + ' works in the picker but is dark');
 });
 
 /* 5b. ⭐⭐ THE REQUEST. dAVEBOx authors `intended_set.txt` at the moment of the

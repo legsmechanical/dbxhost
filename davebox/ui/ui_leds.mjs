@@ -4,7 +4,7 @@ import {
     TRACK_COLORS, TRACK_DIM_COLORS, TRACK_PAD_BASE, SCENE_BTN_FLASH_MS,
     PAD_MODE_DRUM, BANKS,
     POLL_INTERVAL, TAP_TEMPO_FLASH_MS, PARAM_LED_BANKS, CONDUCT_LED_BANKS,
-    SEQ8_NAV_FLAGS
+    SEQ8_NAV_FLAGS, MoveNoteSession
 } from './ui_constants.mjs';
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
@@ -16,7 +16,8 @@ import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import {
     White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue,
-    DeepRed, DeepGreen, DeepMagenta, Mustard
+    DeepRed, DeepGreen, DeepMagenta, Mustard,
+    MoveBack, MoveCopy, MoveDelete
 } from '/data/UserData/schwung/shared/constants.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 
@@ -430,6 +431,28 @@ function paintProjectPickerLEDs() {
         cachedSetButtonLED(16 + i, LED_OFF);
     }
     return true;
+}
+
+/* ⭐ THE PICKER OWNS THE WHOLE SURFACE (Josh, 2026-09-22): "we need all
+ * buttons led's OFF except those that function in that mode (copy/delete ...
+ * with session/note and back available if a project is loaded)". The tick
+ * calls this INSTEAD of every other painter while the picker is up — the old
+ * way let the view painters run first and relied on this one to overwrite
+ * them, and a Shift hint written through the uncached setLED survived that,
+ * leaving step lights on under the picker. Every button dAVEBOx paints is
+ * dark here except the ones a press would do something with. */
+export function paintProjectPickerSurface() {
+    if (!S.ledInitComplete) return;
+    paintProjectPickerLEDs();                     /* pads + step lights/icons */
+    const loaded = !S.awaitingProjectSelect;      /* a project is open behind us */
+    for (const led of buildLedInitQueue()) {
+        if (led.kind !== 'cc' || (led.id >= 16 && led.id <= 31)) continue;
+        let color = LED_OFF;
+        if (led.id === MoveCopy || led.id === MoveDelete) color = 16;   /* dim: available */
+        else if (loaded && led.id === MoveNoteSession)    color = 16;
+        else if (loaded && led.id === MoveBack)           color = White;
+        cachedSetButtonLED(led.id, color);
+    }
 }
 
 export function updateSessionLEDs() {

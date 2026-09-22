@@ -42,7 +42,7 @@ import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
 import { sceneAllQueued, updateSceneMapLEDs } from './ui_scene.mjs';
 import { _padDispatchMutedNow, computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
     syncDrumClipContent } from './ui_drummodel.mjs';
-import { effectiveClip, updateStepLEDs, updateSessionLEDs, updateTrackLEDs, flashAtRate,
+import { effectiveClip, updateStepLEDs, updateSessionLEDs, updateTrackLEDs, paintProjectPickerSurface, flashAtRate,
     invalidateLEDCache, trackColor, setPaletteEntryRGB, reapplyPalette, forceRedraw,
     updatePerfModeLEDs, altIndicatorActive, clearAllLEDs, installFlagsWrap, removeFlagsWrap,
     buildLedInitQueue, drainLedInit, shiftClaimedByGesture } from './ui_leds.mjs';
@@ -1820,173 +1820,179 @@ export function _tickImpl() {
          * remote UI, Link, and any DSP-side start. */
         if (S.stepRecActive && S.playing) stepRecExit();
 
-        /* Transport LEDs */
-        setButtonLED(MovePlay, S.playing ? Green : LED_OFF);
-        if (S.moveCoRunTrack >= 0) {
-            /* Co-run: keep Rec dark — you can't record while a co-run target owns
-             * input, and in Move co-run Move firmware lights its own Record button
-             * (passes through under skip_led_clear). Force OFF every POLL_INTERVAL
-             * so our blanking re-asserts over that layer instead of being eaten. */
-            setButtonLED(MoveRec, LED_OFF, (S.tickCount % POLL_INTERVAL) === 0);
-        } else if (S.stepRecActive) {
-            /* Step record: solid WHITE — red belongs to live recording, and
-             * the cursor's white blink on the step row matches it. */
-            setButtonLED(MoveRec, White);
-        } else if (S.recordScheduledStop || S.recordPendingPage) {
-            /* recordScheduledStop = waiting for end-of-page to stop; recordPendingPage =
-             * waiting for next page boundary for DSP to flip recording=1. Both blink. */
-            setButtonLED(MoveRec, Math.floor(S.clockMs / 75) % 2 === 0 ? Red : LED_OFF);
-        } else if (S.mergeNoticePending) {
-            /* Live Merge NOTICE up, waiting for you to press Rec to start the
-             * count-in: flash red to draw the eye to the Record button. */
-            setButtonLED(MoveRec, Math.floor(S.clockMs / 110) % 2 === 0 ? Red : LED_OFF);
-        } else if (S.dspMergeState === 2 || S.dspMergeState === 3) {
-            /* Live Merge capturing (Shift+Sample): green. */
-            setButtonLED(MoveRec, Green);
-        } else if (S.dspMergeState === 1) {
-            /* Live Merge armed, waiting for the bar boundary: red. */
-            setButtonLED(MoveRec, Red);
+        /* The picker owns the whole surface: ONE painter, nothing under it
+         * (see paintProjectPickerSurface). */
+        if (S.projectPadPicker) {
+            paintProjectPickerSurface();
         } else {
-            /* Idle or CAPTURED (capture ended → LED off with Play). */
-            setButtonLED(MoveRec, S.recordArmed ? Red : LED_OFF);
-        }
-        /* Sample = bake, always available: dim ambient (same as Capture idle). */
-        setButtonLED(MoveSample, DarkGrey);
-        /* Back LED: lit where a TAP is functional (backs out of a dialog / menu /
-         * perf lock / Track-view alt-view or non-default bank); off at the home
-         * screens where a tap is a no-op. Hold-to-suspend works regardless. Dark
-         * during co-run — Back is ceded to the peer there and never reaches us. */
-        setButtonLED(MoveBack,
-            (S.moveCoRunTrack < 0 && backTapWouldAct())
-                ? White : LED_OFF);
-        /* Loop LED: flash White at 1/8 rate while Perf Mode view is locked (Session
-         * View only) or drum repeat latched; VividYellow for latch mode; dim available
-         * indicator (16) otherwise (always functional in both views). */
-        {
-            let loopColor = LED_OFF;
-            const _lt = S.activeTrack;
-            const _rptLatched = S.drumRepeatLatched[_lt] || S.drumRepeat2LatchedLanes[_lt].size > 0;
-            /* TARP-latched indicator: when the active track has ARP IN on +
-             * latched with notes in the buffer, blink the Loop button at the
-             * arp's step-fire rate in the track color. fire_count is a DSP
-             * monotonic counter — parity drives a 50% duty cycle synced to
-             * each fired note. Gated to melodic tracks (TARP doesn't run on
-             * drum) and yields to perfViewLocked / drum-rpt latch above. */
-            let _tarpBlinkActive = false;
-            let _tarpBlinkOn = false;
-            if (!(S.sessionView && S.perfViewLocked) && !_rptLatched) {
-                const _tarpOn = parseInt(dget('t' + _lt + '_tarp_on'), 10) === 1;
-                const _tarpLatch = parseInt(dget('t' + _lt + '_tarp_latch'), 10) === 1;
-                if (_tarpOn && _tarpLatch) {
-                    const _fc = parseInt(host_module_get_param('t' + _lt + '_tarp_fc'), 10) || 0;
-                    _tarpBlinkActive = true;
-                    _tarpBlinkOn = (_fc % 2) === 0;
+            /* Transport LEDs */
+            setButtonLED(MovePlay, S.playing ? Green : LED_OFF);
+            if (S.moveCoRunTrack >= 0) {
+                /* Co-run: keep Rec dark — you can't record while a co-run target owns
+                 * input, and in Move co-run Move firmware lights its own Record button
+                 * (passes through under skip_led_clear). Force OFF every POLL_INTERVAL
+                 * so our blanking re-asserts over that layer instead of being eaten. */
+                setButtonLED(MoveRec, LED_OFF, (S.tickCount % POLL_INTERVAL) === 0);
+            } else if (S.stepRecActive) {
+                /* Step record: solid WHITE — red belongs to live recording, and
+                 * the cursor's white blink on the step row matches it. */
+                setButtonLED(MoveRec, White);
+            } else if (S.recordScheduledStop || S.recordPendingPage) {
+                /* recordScheduledStop = waiting for end-of-page to stop; recordPendingPage =
+                 * waiting for next page boundary for DSP to flip recording=1. Both blink. */
+                setButtonLED(MoveRec, Math.floor(S.clockMs / 75) % 2 === 0 ? Red : LED_OFF);
+            } else if (S.mergeNoticePending) {
+                /* Live Merge NOTICE up, waiting for you to press Rec to start the
+                 * count-in: flash red to draw the eye to the Record button. */
+                setButtonLED(MoveRec, Math.floor(S.clockMs / 110) % 2 === 0 ? Red : LED_OFF);
+            } else if (S.dspMergeState === 2 || S.dspMergeState === 3) {
+                /* Live Merge capturing (Shift+Sample): green. */
+                setButtonLED(MoveRec, Green);
+            } else if (S.dspMergeState === 1) {
+                /* Live Merge armed, waiting for the bar boundary: red. */
+                setButtonLED(MoveRec, Red);
+            } else {
+                /* Idle or CAPTURED (capture ended → LED off with Play). */
+                setButtonLED(MoveRec, S.recordArmed ? Red : LED_OFF);
+            }
+            /* Sample = bake, always available: dim ambient (same as Capture idle). */
+            setButtonLED(MoveSample, DarkGrey);
+            /* Back LED: lit where a TAP is functional (backs out of a dialog / menu /
+             * perf lock / Track-view alt-view or non-default bank); off at the home
+             * screens where a tap is a no-op. Hold-to-suspend works regardless. Dark
+             * during co-run — Back is ceded to the peer there and never reaches us. */
+            setButtonLED(MoveBack,
+                (S.moveCoRunTrack < 0 && backTapWouldAct())
+                    ? White : LED_OFF);
+            /* Loop LED: flash White at 1/8 rate while Perf Mode view is locked (Session
+             * View only) or drum repeat latched; VividYellow for latch mode; dim available
+             * indicator (16) otherwise (always functional in both views). */
+            {
+                let loopColor = LED_OFF;
+                const _lt = S.activeTrack;
+                const _rptLatched = S.drumRepeatLatched[_lt] || S.drumRepeat2LatchedLanes[_lt].size > 0;
+                /* TARP-latched indicator: when the active track has ARP IN on +
+                 * latched with notes in the buffer, blink the Loop button at the
+                 * arp's step-fire rate in the track color. fire_count is a DSP
+                 * monotonic counter — parity drives a 50% duty cycle synced to
+                 * each fired note. Gated to melodic tracks (TARP doesn't run on
+                 * drum) and yields to perfViewLocked / drum-rpt latch above. */
+                let _tarpBlinkActive = false;
+                let _tarpBlinkOn = false;
+                if (!(S.sessionView && S.perfViewLocked) && !_rptLatched) {
+                    const _tarpOn = parseInt(dget('t' + _lt + '_tarp_on'), 10) === 1;
+                    const _tarpLatch = parseInt(dget('t' + _lt + '_tarp_latch'), 10) === 1;
+                    if (_tarpOn && _tarpLatch) {
+                        const _fc = parseInt(host_module_get_param('t' + _lt + '_tarp_fc'), 10) || 0;
+                        _tarpBlinkActive = true;
+                        _tarpBlinkOn = (_fc % 2) === 0;
+                    }
+                }
+                if (S.sessionView && S.perfViewLocked) {
+                    loopColor = flashAtRate(48) ? White : LED_OFF;
+                } else if (_rptLatched) {
+                    loopColor = flashAtRate(48) ? White : LED_OFF;
+                } else if (_tarpBlinkActive) {
+                    loopColor = _tarpBlinkOn ? trackColor(_lt) : LED_OFF;
+                } else if (S.sessionView && S.perfLatchMode) {
+                    loopColor = VividYellow;
+                } else {
+                    /* Loop's LED renders palette colors brighter than Delete/Copy;
+                     * scratch index 60 is a custom-RGB dim grey set in drainLedInit
+                     * so Loop's ambient visually matches Delete/Copy at idx 16. */
+                    loopColor = 60;
+                }
+                setButtonLED(MoveLoop, loopColor);
+            }
+            /* Capture: blink White only when a tap would actually commit buffered
+             * input (S.captureArmed — playing, or stopped in an empty session), dim
+             * ambient otherwise. Blinking on stopped+non-empty (a no-op) misled. */
+            setButtonLED(MoveCapture,
+                S.captureArmed
+                    ? ((Math.floor(S.clockMs / 220) % 2) ? White : LED_OFF)
+                    : DarkGrey);
+            {
+                const _muted      = S.trackMuted[S.activeTrack];
+                const _soloed     = S.trackSoloed[S.activeTrack];
+                const _muteBlink  = Math.floor(S.clockMs / 220) % 2;
+                setButtonLED(MoveMute, _muted ? 124 : (_soloed ? (_muteBlink ? 124 : 0) : 16));
+            }
+            /* Contextual button LEDs: dim available indicator (16) on actionable buttons. */
+            setButtonLED(MoveShift,       16);
+            setButtonLED(MoveNoteSession, 16);
+            /* Session/Track view button. In Schwung co-run the CC 50 press AND its
+             * LED are owned by the Schwung chain editor (Menu opens master/send FX,
+             * editor paints it white via its LED queue) — NOT a dAVEBOx exit. We
+             * can't win that LED (the editor's queue flush lands after us each
+             * frame), so just paint White to agree rather than fight. In Move co-run
+             * the button is disabled + dark; force OFF to override Move firmware.
+             * Global Menu / Tap Tempo keep the blink (no competing LED layer). */
+            if (S.moveCoRunTrack >= 0) {
+                /* Move co-run: Menu is the way OUT (P8a 1d), so it has to LOOK like
+                 * one — it was held dark back when it did nothing. Blink, the same
+                 * vocabulary Tap Tempo uses for "this button leaves". Forced every
+                 * POLL_INTERVAL to override Move firmware's pass-through writes,
+                 * which is why it is a force rather than a plain set. */
+                setButtonLED(MoveNoteSession,
+                             (Math.floor(S.clockMs / 220) % 2) ? White : LED_OFF,
+                             (S.tickCount % POLL_INTERVAL) === 0);
+            } else if (S.globalMenuOpen) {
+                /* Menu open: steady-lit (no blink) — Back exits the menu now, so the
+                 * button doesn't need to flash to advertise itself as the exit. */
+                setButtonLED(MoveNoteSession, White);
+            } else if (S.tapTempoOpen) {
+                const _exitBlink = (Math.floor(S.clockMs / 220) % 2) ? 16 : LED_OFF;
+                setButtonLED(MoveNoteSession, _exitBlink);
+            }
+            setButtonLED(MoveUndo,        16);
+            setButtonLED(MoveDelete,      16);
+            setButtonLED(MoveCopy,        16);
+            setButtonLED(MoveUp,          16);
+            setButtonLED(MoveDown,        16);
+            setButtonLED(MoveLeft,  S.sessionView ? LED_OFF : 16);
+            setButtonLED(MoveRight, S.sessionView ? LED_OFF : 16);
+            /* Shift-flash: buttons with a Shift-modified function blink 16/OFF while Shift is held.
+             * Sample uses DarkGrey/OFF since index 16 (RoyalBlue) shows wrong on that button. */
+            /* ⭑ Not while another gesture owns Shift — Capture's snapshot layer
+             * above all (Josh, 2026-09-10). Advertising the general shortcuts over
+             * a gesture that does not use them is a promise the press will break. */
+            if (S.shiftHeld && !shiftClaimedByGesture()) {
+                const _sf  = (Math.floor(S.clockMs / 220) % 2) ? 16 : LED_OFF;
+                setButtonLED(MoveNoteSession, _sf);
+                /* Shift+Rec = Live Merge; blink Rec only while merge is idle (an
+                 * active merge already owns the LED with its red/green state). */
+                if (S.dspMergeState === 0 && !S.recordArmed)
+                    setButtonLED(MoveRec, (Math.floor(S.clockMs / 220) % 2) ? Red : LED_OFF);
+                setButtonLED(MoveUndo,        _sf);
+                setButtonLED(MoveCopy,        _sf);
+                if (S.sessionView)  setButtonLED(MoveLoop, _sf);
+                if (!S.sessionView) setButtonLED(MoveMute, _sf);
+            }
+
+            if (S.sessionView) {
+                updateSessionLEDs();
+                if (S.loopHeld || S.perfViewLocked) updatePerfModeLEDs();
+                else updateSceneMapLEDs();
+                /* Scene-merge count-in flash overrides the scene grid for the lead-in bar. */
+                if (S.mergeCountingIn && S.countInQuarterMs > 0) {
+                    const elapsed  = S.clockMs - S.countInBeatStartMs;
+                    const flashOn  = (elapsed % S.countInQuarterMs) < (S.countInQuarterMs / 8);
+                    const flashClr = flashOn ? White : LED_OFF;
+                    for (let _i = 0; _i < 16; _i++) setLED(16 + _i, flashClr);
+                }
+            } else {
+                updateStepLEDs();
+                /* Count-in flash: blink all step buttons white at quarter-note rate
+                 * (recording count-in, or a Track-View solo-merge count-in). */
+                if (((S.recordArmed && S.recordCountingIn) || S.mergeCountingIn) && S.countInQuarterMs > 0) {
+                    const elapsed  = S.clockMs - S.countInBeatStartMs;
+                    const flashOn  = (elapsed % S.countInQuarterMs) < (S.countInQuarterMs / 8);
+                    const flashClr = flashOn ? White : LED_OFF;
+                    for (let _i = 0; _i < 16; _i++) setLED(16 + _i, flashClr);
                 }
             }
-            if (S.sessionView && S.perfViewLocked) {
-                loopColor = flashAtRate(48) ? White : LED_OFF;
-            } else if (_rptLatched) {
-                loopColor = flashAtRate(48) ? White : LED_OFF;
-            } else if (_tarpBlinkActive) {
-                loopColor = _tarpBlinkOn ? trackColor(_lt) : LED_OFF;
-            } else if (S.sessionView && S.perfLatchMode) {
-                loopColor = VividYellow;
-            } else {
-                /* Loop's LED renders palette colors brighter than Delete/Copy;
-                 * scratch index 60 is a custom-RGB dim grey set in drainLedInit
-                 * so Loop's ambient visually matches Delete/Copy at idx 16. */
-                loopColor = 60;
-            }
-            setButtonLED(MoveLoop, loopColor);
+            updateTrackLEDs();
         }
-        /* Capture: blink White only when a tap would actually commit buffered
-         * input (S.captureArmed — playing, or stopped in an empty session), dim
-         * ambient otherwise. Blinking on stopped+non-empty (a no-op) misled. */
-        setButtonLED(MoveCapture,
-            S.captureArmed
-                ? ((Math.floor(S.clockMs / 220) % 2) ? White : LED_OFF)
-                : DarkGrey);
-        {
-            const _muted      = S.trackMuted[S.activeTrack];
-            const _soloed     = S.trackSoloed[S.activeTrack];
-            const _muteBlink  = Math.floor(S.clockMs / 220) % 2;
-            setButtonLED(MoveMute, _muted ? 124 : (_soloed ? (_muteBlink ? 124 : 0) : 16));
-        }
-        /* Contextual button LEDs: dim available indicator (16) on actionable buttons. */
-        setButtonLED(MoveShift,       16);
-        setButtonLED(MoveNoteSession, 16);
-        /* Session/Track view button. In Schwung co-run the CC 50 press AND its
-         * LED are owned by the Schwung chain editor (Menu opens master/send FX,
-         * editor paints it white via its LED queue) — NOT a dAVEBOx exit. We
-         * can't win that LED (the editor's queue flush lands after us each
-         * frame), so just paint White to agree rather than fight. In Move co-run
-         * the button is disabled + dark; force OFF to override Move firmware.
-         * Global Menu / Tap Tempo keep the blink (no competing LED layer). */
-        if (S.moveCoRunTrack >= 0) {
-            /* Move co-run: Menu is the way OUT (P8a 1d), so it has to LOOK like
-             * one — it was held dark back when it did nothing. Blink, the same
-             * vocabulary Tap Tempo uses for "this button leaves". Forced every
-             * POLL_INTERVAL to override Move firmware's pass-through writes,
-             * which is why it is a force rather than a plain set. */
-            setButtonLED(MoveNoteSession,
-                         (Math.floor(S.clockMs / 220) % 2) ? White : LED_OFF,
-                         (S.tickCount % POLL_INTERVAL) === 0);
-        } else if (S.globalMenuOpen) {
-            /* Menu open: steady-lit (no blink) — Back exits the menu now, so the
-             * button doesn't need to flash to advertise itself as the exit. */
-            setButtonLED(MoveNoteSession, White);
-        } else if (S.tapTempoOpen) {
-            const _exitBlink = (Math.floor(S.clockMs / 220) % 2) ? 16 : LED_OFF;
-            setButtonLED(MoveNoteSession, _exitBlink);
-        }
-        setButtonLED(MoveUndo,        16);
-        setButtonLED(MoveDelete,      16);
-        setButtonLED(MoveCopy,        16);
-        setButtonLED(MoveUp,          16);
-        setButtonLED(MoveDown,        16);
-        setButtonLED(MoveLeft,  S.sessionView ? LED_OFF : 16);
-        setButtonLED(MoveRight, S.sessionView ? LED_OFF : 16);
-        /* Shift-flash: buttons with a Shift-modified function blink 16/OFF while Shift is held.
-         * Sample uses DarkGrey/OFF since index 16 (RoyalBlue) shows wrong on that button. */
-        /* ⭑ Not while another gesture owns Shift — Capture's snapshot layer
-         * above all (Josh, 2026-09-10). Advertising the general shortcuts over
-         * a gesture that does not use them is a promise the press will break. */
-        if (S.shiftHeld && !shiftClaimedByGesture()) {
-            const _sf  = (Math.floor(S.clockMs / 220) % 2) ? 16 : LED_OFF;
-            setButtonLED(MoveNoteSession, _sf);
-            /* Shift+Rec = Live Merge; blink Rec only while merge is idle (an
-             * active merge already owns the LED with its red/green state). */
-            if (S.dspMergeState === 0 && !S.recordArmed)
-                setButtonLED(MoveRec, (Math.floor(S.clockMs / 220) % 2) ? Red : LED_OFF);
-            setButtonLED(MoveUndo,        _sf);
-            setButtonLED(MoveCopy,        _sf);
-            if (S.sessionView)  setButtonLED(MoveLoop, _sf);
-            if (!S.sessionView) setButtonLED(MoveMute, _sf);
-        }
-
-        if (S.sessionView) {
-            updateSessionLEDs();
-            if (S.loopHeld || S.perfViewLocked) updatePerfModeLEDs();
-            else updateSceneMapLEDs();
-            /* Scene-merge count-in flash overrides the scene grid for the lead-in bar. */
-            if (S.mergeCountingIn && S.countInQuarterMs > 0) {
-                const elapsed  = S.clockMs - S.countInBeatStartMs;
-                const flashOn  = (elapsed % S.countInQuarterMs) < (S.countInQuarterMs / 8);
-                const flashClr = flashOn ? White : LED_OFF;
-                for (let _i = 0; _i < 16; _i++) setLED(16 + _i, flashClr);
-            }
-        } else {
-            updateStepLEDs();
-            /* Count-in flash: blink all step buttons white at quarter-note rate
-             * (recording count-in, or a Track-View solo-merge count-in). */
-            if (((S.recordArmed && S.recordCountingIn) || S.mergeCountingIn) && S.countInQuarterMs > 0) {
-                const elapsed  = S.clockMs - S.countInBeatStartMs;
-                const flashOn  = (elapsed % S.countInQuarterMs) < (S.countInQuarterMs / 8);
-                const flashClr = flashOn ? White : LED_OFF;
-                for (let _i = 0; _i < 16; _i++) setLED(16 + _i, flashClr);
-            }
-        }
-        updateTrackLEDs();
 
         /* Session overview blink: mark dirty when animation state toggles */
         if (S.sessionOverlayHeld) {
