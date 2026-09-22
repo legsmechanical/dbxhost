@@ -31,7 +31,12 @@ import { NUM_TRACKS, NUM_CLIPS, ACTION_POPUP_MS, PAD_MODE_CONDUCT } from './ui_c
  * same way SEQ8_STATE_PREFIX is; the fallback is Legacy's id, which is the one
  * build path that does not inject it. */
 const MODULE_ID = (typeof DAVEBOX_MODULE_ID === 'string') ? DAVEBOX_MODULE_ID : 'davebox';
-const EXPORT_MODULE_DIR = '/data/UserData/schwung/modules/tools/' + MODULE_ID;
+/* ⚠ OUR install, not stock's: under SA the module is laid into the host's own
+ * tree (davebox/scripts/install_sound.sh INSTALL_DIR). This read the STOCK
+ * tools dir, where no davebox-sound exists — so every template read returned
+ * null and export stopped at EXPORT FAIL / NO TEMPLATE before doing anything
+ * (found 2026-09-22 by reading the device: the path is absent there). */
+const EXPORT_MODULE_DIR = DAVEBOX_HOST_DIR + '/modules/tools/' + MODULE_ID;
 const EXPORT_OUT_DIR    = '/data/UserData/schwung/davebox-exports';
 /* Scratch workspace nested under the exports dir (keeps the schwung folder
  * uncluttered); created per export and removed afterward. */

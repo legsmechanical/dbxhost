@@ -61,6 +61,22 @@ grep -q 'define:DAVEBOX_MODULE_ID' scripts/build_sound.sh \
     && ok "build_sound.sh injects DAVEBOX_MODULE_ID" \
     || bad "build_sound.sh stopped injecting DAVEBOX_MODULE_ID — the JS falls back to Legacy's id"
 
+# 2b. ...and under OUR install root, the one install_sound.sh lays the module
+#     into. The id alone was fixed once and the ROOT was left on the stock tree,
+#     where no davebox-sound exists: export stopped at NO TEMPLATE on the device.
+#     Compared against the installer's own INSTALL_DIR, not a spelled literal.
+_inst="$(sed -n 's/^INSTALL_DIR="\(.*\)\/modules\/tools\/\${MODULE_ID}"$/\1/p' scripts/install_sound.sh)"
+_host="$(sed -n "s/^export const DAVEBOX_HOST_DIR = '\(.*\)';$/\1/p" ui/ui_engine.mjs)"
+if [ -z "$_inst" ] || [ -z "$_host" ]; then
+    bad "cannot read install_sound.sh INSTALL_DIR or DAVEBOX_HOST_DIR — this check cannot see its subject"
+elif [ "$_inst" != "$_host" ]; then
+    bad "the module installs under $_inst but DAVEBOX_HOST_DIR is $_host"
+elif grep -q "const EXPORT_MODULE_DIR = DAVEBOX_HOST_DIR + '/modules/tools/' + MODULE_ID;" ui/ui_export.mjs; then
+    ok "the export reads its templates from where install_sound.sh puts the module ($_inst)"
+else
+    bad "EXPORT_MODULE_DIR is not DAVEBOX_HOST_DIR/modules/tools/<id> — the export reads a dir the module is not in"
+fi
+
 # 3. The injected id must actually reach the built bundle. The define is easy to
 #    add and easy to lose, and losing it fails silently: the fallback is a valid
 #    string that happens to name the wrong directory.
