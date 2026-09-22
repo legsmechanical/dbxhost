@@ -240,7 +240,10 @@ globalThis.shadow_get_shift_held = () => 0;
  * because after a verdict it is the WRONG way to open a project: Move is sitting
  * on a default set it minted, and walking its overview loads nothing. */
 const selectArms = [];
-globalThis.shadow_select_arm = (k) => { selectArms.push(k); };
+/* What was ON SCREEN at the moment of the arm: the frame the host keeps up
+ * while Move switches sets (a headless run draws nothing of its own). */
+const armFrames = [];
+globalThis.shadow_select_arm = (k) => { selectArms.push(k); armFrames.push(frameText.join(' | ')); };
 globalThis.host_suspend_overtake = () => {};
 
 async function main() {
@@ -748,6 +751,33 @@ step('control: without a verdict, loading a pre-existing pad still uses the sele
      * own picker position; Move only ever sees the two slots, so pressing a pad
      * number would walk its overview to a position that is not there. */
     if (selectArms.indexOf(1) < 0) throw new Error('select actuator not armed with the SLOT for a normal switch: ' + JSON.stringify(selectArms) + ' ' + JSON.stringify(sysCmds));
+});
+
+step('⭐ ONE LOADING SCREEN from Load to the project: LOADING / name / the stage', () => {
+    /* Josh, 2026-09-22, with photos of the four screens a load passed through:
+     * "can we have one screen that just say 'Loading / Name' and under it,
+     * which part is being loaded?" So: no OPENING PROJECT pop-up over the old
+     * screen, the PICKED project named from the press, and the frame left up
+     * for the host's half says LOADING SET. */
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    S.pendingOpenProjectPicker = false;
+    sysCmds.length = 0; selectArms.length = 0; armFrames.length = 0;
+    S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    padTap(31);
+    ticks(2);
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    const first = frame();
+    if (/OPENING/.test(first)) throw new Error('the OPENING PROJECT pop-up is back: ' + first);
+    if (!/LOADING/.test(first) || !/PROJECT 32/.test(first) || !/SAVING/.test(first))
+        throw new Error('the press did not raise LOADING / PROJECT 32 / SAVING: ' + first);
+    ticks(6);
+    if (selectArms.indexOf(1) < 0) throw new Error('precondition: the switch never armed');
+    const handover = armFrames[armFrames.length - 1] || '';
+    if (!/LOADING/.test(handover) || !/PROJECT 32/.test(handover) || !/LOADING SET/.test(handover))
+        throw new Error('the frame left up for the host is not LOADING / PROJECT 32 / LOADING SET: ' + handover);
 });
 
 /* 5b. ⭐⭐ THE REQUEST. dAVEBOx authors `intended_set.txt` at the moment of the

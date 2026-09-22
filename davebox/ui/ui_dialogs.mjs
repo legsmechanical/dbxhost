@@ -1316,7 +1316,15 @@ function _pppLoad(p, k) {
      * saveState() is a no-op while awaiting a selection — there is nothing
      * loaded to save, and writing would clobber the project we are leaving. */
     closeProjectPadPicker();
-    showActionPopup('OPENING', 'PROJECT');
+    /* ⭐ ONE LOADING SCREEN, from the press to the project (Josh, 2026-09-22:
+     * "can we have one screen that just say 'Loading / Name' and under it,
+     * which part is being loaded?"). It starts here, naming the project PICKED
+     * — S.currentSetName is still the one being left — and only its stage line
+     * changes after this: SAVING, then LOADING SET (drawn as we hand over; the
+     * host keeps that frame up while Move switches), then STARTING THE
+     * SEQUENCER. It replaces an OPENING PROJECT pop-up over the old screen. */
+    S.switchLoading = { name: (p.byIndex[k] && p.byIndex[k].name) || '',
+                        stage: 'Saving', at: S.clockMs };
     /* ⭑ STOP THE OUTGOING PROJECT FIRST (Josh, 2026-09-02: "loading a new
      * project should immediately stop transport on current project"). The
      * switch parks us with the DSP still rolling — Move kept playing the old

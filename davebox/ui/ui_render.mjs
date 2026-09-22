@@ -1115,6 +1115,9 @@ function _modAscii(name) {
  * the three used to look like three different products. The host pair now
  * draws the same layout (shadow_ui.js drawLoadingLayout): a LOADING header,
  * the project NAME as the one big thing, and a small line naming the stage. */
+/* Longest a switch's loading screen may stand before the session shows again. */
+const SWITCH_LOADING_MAX_MS = 15000;
+
 export function drawLoadingScreen(name, stage) {
     clear_screen();
     drawKitHeader('Loading');
@@ -1714,6 +1717,13 @@ function drawUIBody() {
      * earlier and still wins the moment it opens.
      * NOT done by setting stateLoading: the picker's open condition in tick()
      * requires !stateLoading, so that would deadlock it closed. */
+    /* The switch's own loading screen (see _pppLoad). ⚠ It EXPIRES: a switch
+     * that fails somewhere we did not foresee must not leave the session
+     * behind a loading screen for good. The whole handover is ~4 s. */
+    if (S.switchLoading && S.clockMs - S.switchLoading.at < SWITCH_LOADING_MAX_MS) {
+        drawLoadingScreen(S.switchLoading.name, S.switchLoading.stage);
+        return;
+    }
     if (S.stateLoading || S.bootSplashMs > 0 ||
             (S.awaitingProjectSelect && !S.projectPadPicker)) {
         /* Loading screen (v3): plain text, no artwork. The dAVEBOx splash

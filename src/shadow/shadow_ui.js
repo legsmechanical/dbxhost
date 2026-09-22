@@ -1173,6 +1173,7 @@ let selectPhase = {
     launching: false,   /* trigger consumed, hook running / tool opening */
     hookWaitTicks: 0,
     statusLine: "",     /* "preparing" feedback while launching */
+    headless: false,    /* a tool's own switch: its loading frame stays up */
     /* Set-switch ordering (mid-session): when the selection targets a set
      * OTHER than the one loaded at phase entry, the resume must wait for the
      * host's SET_CHANGED reload (which also rewrites active_set.txt) —
@@ -16354,6 +16355,7 @@ function enterSelectPhaseView() {
     const _hpad = (typeof shadow_select_headless === "function")
         ? shadow_select_headless() : -1;
     if (_hpad >= 0) selectPhase.lastPad = _hpad;   /* name the TARGET from frame one */
+    selectPhase.headless = _hpad >= 0;
     view = VIEWS.SELECT_PHASE;
     selectRefreshList();
 }
@@ -16579,6 +16581,14 @@ function tickSelectPhase() {
  * The phase TITLE is not drawn here: the loading screen carries its own
  * header, and a second title line said nothing the name did not. */
 function drawSelectPhase() {
+    /* ⭐ A HEADLESS run is a tool switching sets on its own behalf, and the
+     * tool has already put ITS loading screen up — the last frame it drew
+     * before suspending, which stays in the framebuffer. Drawing ours over it
+     * made one load read as two products in two faces (Josh, 2026-09-22: "can
+     * we have one screen that just say 'Loading / Name' and under it, which
+     * part is being loaded?"). So draw nothing: the tool's frame IS the
+     * loading screen. A boot selection (not headless) still draws ours. */
+    if (selectPhase.headless) return;
     drawLoadingScreen(selectNameForIndex(selectPhase.lastPad >= 0 ? selectPhase.lastPad
                                                                   : selectPhase.current),
                       selectPhase.statusLine ||

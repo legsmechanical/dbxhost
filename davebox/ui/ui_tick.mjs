@@ -48,7 +48,7 @@ import { effectiveClip, updateStepLEDs, updateSessionLEDs, updateTrackLEDs, flas
     buildLedInitQueue, drainLedInit, shiftClaimedByGesture } from './ui_leds.mjs';
 import { schSlotForTrack, schSlotsForTrack, schSlotMasksAllTracks } from './ui_corun.mjs';
 import { pollPendingExport } from './ui_export.mjs';
-import { drawUI, sessMixerVisible, refreshInstrAbbrev } from './ui_render.mjs';
+import { drawUI, drawLoadingScreen, sessMixerVisible, refreshInstrAbbrev } from './ui_render.mjs';
 import { pollDSP,
     refreshPerClipBankParams, refreshDrumLaneBankParams, refreshSeqNotesIfCurrent,
     syncClipsFromDsp, syncClipsTargeted, syncMuteSoloFromDsp, restoreUiSidecar,
@@ -2218,6 +2218,7 @@ export function _tickImpl() {
          * actuator switch below. */
         const _prl = S.pendingProjectRelaunch;
         S.pendingProjectRelaunch = null;
+        if (S.switchLoading) S.switchLoading.stage = 'Restarting Move';
         host_system_cmd('sh /data/UserData/dbx-host/scripts/project-cmd.sh switch ' + _prl);
         return;
     } else if (S.pendingProjectSwitch !== null) {
@@ -2246,6 +2247,7 @@ export function _tickImpl() {
             console.log('project switch: could not prepare a slot for ' + _psw.uuid +
                         ' — NOT pressing');
             S.pendingProjectSwitch = null;
+            S.switchLoading = null;
             showActionPopup('COULD NOT', 'OPEN');
             openProjectPadPicker();
             return;
@@ -2262,6 +2264,11 @@ export function _tickImpl() {
          * gets a look in as soon as the next tick, and mid-handoff it would
          * read this as a dead end and re-arm the picker over the resume. */
         S.selectHandoffUntil = nowMs() + SELECT_HANDOFF_MS;
+        /* The LAST frame we draw before the host takes over, and the one it
+         * keeps on screen while Move switches sets (a headless run draws
+         * nothing of its own — shadow_ui.js drawSelectPhase). */
+        drawLoadingScreen((S.switchLoading && S.switchLoading.name) || _psw.name || '', 'Loading set');
+        S.switchLoading = null;
         shadow_select_arm(_sw.slot);
         host_suspend_overtake();
         return;

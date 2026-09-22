@@ -701,6 +701,7 @@ export const S = {
     _recNoteOns: [],
     _recNoteOffs: [],
     currentSetUuid: '',
+    switchLoading: null,    /* { name, stage, at } from the pick until we hand over */
     currentSetName: '',     /* the project's NAME tag — what the user sees */
     currentSetFolder: '',   /* Move's song folder (Move-Set-<id>) — paths only */
     /* Which USER PRESET each sound-mode component is on — {name, path, hash,
