@@ -17,6 +17,12 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Fixed (pending)
+- **A project whose song file can't be read is refused instead of loading
+  empty.** Its pad in the picker is dim red; loading it keeps you in the picker
+  with "CAN'T OPEN / Song file damaged" (or missing / empty), and its menu says
+  CAN'T OPEN where Load would be. Rename, Color and Delete still work. Before,
+  picking it silently dropped you back at the picker with nothing loaded, every
+  time.
 - **Switching projects no longer restarts Move.** A load swaps the project in
   place in about four seconds, including a project you just created or copied.
   A new project's first load used to bounce you back to the picker.
