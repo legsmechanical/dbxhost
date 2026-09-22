@@ -894,6 +894,13 @@ step('\u2b50\u2b50 JOSH\'S GESTURE: tap a blank pad, confirm Create, then Load â
     if (!p || !p.confirmNew || p.confirmNew.k !== 7)
         throw new Error('precondition: a plain tap on an empty pad did not ask to create: ' +
                         JSON.stringify(p && p.confirmNew));
+    /* ...and the card SAYS what Yes does. It shipped as a header over No/Yes
+     * with no question (Josh, at the device: "needs text under the header"):
+     * the body was gated on the whole sentence fitting ONE line, which it
+     * never does, so it was never drawn. Read off the frame, not the code. */
+    const card = frame();
+    if (!/create a new project/i.test(card) || !/on this pad\?/i.test(card))
+        throw new Error('the NEW PROJECT card asks no question: ' + card);
     cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);         /* Yes, create */
     ticks(2);
     if (!sysCmds.some((c) => /project-cmd\.sh new-at 7$/.test(c)))

@@ -1801,11 +1801,11 @@ function _drawProjectPadPicker_impl() {
      * dialog chassis is for, and its header already matches the kit's. */
     if (p.confirmNew) {
         drawKitHeader('New project');
-        const s4 = fit4x5('CREATE A NEW PROJECT ON THIS PAD?', 124);
-        if (fontWidth4x5(s4) <= 124 && s4.indexOf('?') >= 0) {
-            fontPrint4x5(Math.floor((128 - fontWidth4x5('CREATE A NEW PROJECT')) / 2), 18, 'CREATE A NEW PROJECT', 1);
-            fontPrint4x5(Math.floor((128 - fontWidth4x5('ON THIS PAD?')) / 2), 28, 'ON THIS PAD?', 1);
-        }
+        /* The question, through the same body helper every other confirm
+         * uses. It used to be gated on the WHOLE sentence fitting one line —
+         * which it never does — so the card showed a header over No/Yes and
+         * never said what Yes does (Josh, at the device, 2026-09-21). */
+        dlgLines(['Create a new project', 'on this pad?']);
         drawYesNoRow(p.confirmNew.sel);
         return;
     }
