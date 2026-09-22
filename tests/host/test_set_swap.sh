@@ -253,4 +253,70 @@ check "legacy: content intact"              bash -c "[ \"\$(cat '$SETS_DIR/$U1/S
 check "legacy: stash removed"               test ! -d "$SWAP_ROOT/native-stash"
 rm -rf "$T"
 
+# ---- 8. A POWER LOSS MID-SWITCH boots the slot Move last CONFIRMED -----------
+# The session is live on slot b. A switch has re-pointed the IDLE slot a at a
+# new project, and the power goes before the press. A reboot clears the mount,
+# so no exit ever runs and sa_song_index still says where the last CLEAN
+# session ended — slot a here. active_set.txt, written only on a confirmed
+# open, still names slot b. Boot must open slot b, and slot a must still hold
+# the project it was re-pointed at. Real slot links; no xattrs needed.
+SA=5107a000-0000-4000-8000-000000000000
+SB=5107b000-0000-4000-8000-000000000001
+mk_slots() { # env with two slot links onto a store: a -> P1, b -> P2
+    mk_env
+    rm -rf "${SWAP_ROOT:?}/library/$P1"
+    mkdir -p "$T/store/$P1" "$T/store/$P2" "$T/store/$P3"
+    ln -s "$T/store/$P1" "$SWAP_ROOT/library/$SA"
+    ln -s "$T/store/$P2" "$SWAP_ROOT/library/$SB"
+}
+P3=55555555-aaaa-4bbb-8ccc-000000000005   # the project a switch was heading to
+reboot_mid_switch() {
+    run enter                                   # the session
+    printf '%s\nProject Two\n' "$SB" > "$DBX_DIR/active_set.txt"   # confirmed on b
+    ln -s "$T/store/$P3" "$SWAP_ROOT/library/$SA.slottmp"          # the switch's
+    # rename(2), as _point() does — `mv` onto a link to a DIRECTORY moves into it
+    python3 -c 'import os,sys; os.rename(sys.argv[1], sys.argv[2])' \
+        "$SWAP_ROOT/library/$SA.slottmp" "$SWAP_ROOT/library/$SA"
+    "$HEAL_BIN" --umount-sets                   # the reboot clears the mount...
+    # ...and nothing else: no exit ran, so the marker still says sa-live.
+}
+
+mk_slots
+echo 0 > "$SWAP_ROOT/sa_song_index"             # the last CLEAN exit was on a
+reboot_mid_switch
+check "8 control: the reboot left a live-looking marker and nothing bound" \
+    test "$(phase)" = "sa-live (not bound)"
+run recover
+check "8 control: recovery did not rewrite the stale position (no exit could)" \
+    bash -c "[ \"\$(cat '$SWAP_ROOT/sa_song_index')\" = 0 ]"
+run enter
+check "8 boot opens slot b, the one Move last confirmed — not the stale 0" \
+    grep -q '"currentSongIndex": 1' "$SETTINGS_JSON"
+check "8 the re-pointed idle slot is intact, still on the switch's project" \
+    test "$(readlink "$SWAP_ROOT/library/$SA")" = "$T/store/$P3"
+check "8 the live slot is untouched" \
+    test "$(readlink "$SWAP_ROOT/library/$SB")" = "$T/store/$P2"
+rm -rf "$T"
+
+# A record that cannot be checked against the links is not trusted: a slot
+# whose link leads nowhere, or no slot at all, falls back to the saved position.
+mk_slots
+echo 0 > "$SWAP_ROOT/sa_song_index"
+reboot_mid_switch
+rm -rf "${T:?}/store/$P2"                       # slot b now dangles
+run recover; run enter
+check "8 a dangling live slot is not trusted — the saved position is used" \
+    grep -q '"currentSongIndex": 0' "$SETTINGS_JSON"
+rm -rf "$T"
+
+mk_slots
+echo 1 > "$SWAP_ROOT/sa_song_index"
+run enter
+printf '%s\nProject One\n' "$P1" > "$DBX_DIR/active_set.txt"   # a project id, not a slot
+run exit; echo 1 > "$SWAP_ROOT/sa_song_index"
+run enter
+check "8 an active_set.txt naming no slot falls back to the saved position" \
+    grep -q '"currentSongIndex": 1' "$SETTINGS_JSON"
+rm -rf "$T"
+
 [ "$fails" = 0 ] && echo "PASS: set-swap" || { echo "FAIL: set-swap" >&2; exit 1; }

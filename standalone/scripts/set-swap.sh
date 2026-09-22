@@ -195,6 +195,28 @@ for candidate in (active_set_uuid(),):
 SESSIDX_PY
 }
 
+# The slot index active_set.txt names, read from the LIBRARY itself (so it
+# answers whether or not Sets/ is bound — after a reboot it is not). Nothing
+# when the file names no slot, or a slot whose link does not lead to a project:
+# a record that cannot be checked against the links is not trusted.
+live_slot_index() {
+    python3 - "$LIBRARY" "$ACTIVE_SET_PATH" <<'LIVESLOT_PY' 2>/dev/null
+import os, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import library_slots as sl
+
+library, active_set_path = sys.argv[1], sys.argv[2]
+try:
+    with open(active_set_path) as f:
+        uuid = f.readline().strip()
+except OSError:
+    sys.exit(0)
+if uuid in sl.SLOT_IDS and sl.slot_target(library, uuid) \
+        and os.path.isdir(os.path.join(library, uuid)):
+    print(sl.SLOT_IDS.index(uuid))
+LIVESLOT_PY
+}
+
 # ---- verbs ------------------------------------------------------------------
 
 # The library carries a notice for every file surface we cannot filter.
@@ -265,8 +287,21 @@ do_enter() {
     # there is no second slot), and a constant here would put Move on a
     # position that does not exist on exactly the install least able to cope —
     # a fresh one.
-    _sa_idx=0
-    [ -f "$SA_INDEX_FILE" ] && _sa_idx="$(grep -E '^-?[0-9]+$' "$SA_INDEX_FILE" || echo 0)"
+    #
+    # ⭐ The LIVE SLOT comes first, from active_set.txt + the slot link. The
+    # saved position is written only by a CLEAN exit, so after a power loss or
+    # a killed launcher it still names wherever the last clean session ended —
+    # and every switch made since would be undone at boot. active_set.txt is
+    # written only once Move has CONFIRMED an open, and the slot it names is
+    # never the one a switch re-points, so a crash anywhere in a switch still
+    # boots the project Move last confirmed.
+    _sa_idx="$(live_slot_index || true)"
+    if [ -n "$_sa_idx" ]; then
+        log "live slot from active_set.txt: $_sa_idx"
+    else
+        _sa_idx=0
+        [ -f "$SA_INDEX_FILE" ] && _sa_idx="$(grep -E '^-?[0-9]+$' "$SA_INDEX_FILE" || echo 0)"
+    fi
     _nslots="$(python3 - "$LIBRARY" <<'NSLOT_PY' 2>/dev/null || echo 0
 import os, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
