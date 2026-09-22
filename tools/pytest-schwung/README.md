@@ -330,6 +330,23 @@ pins it with hand-checkable cases.
   it, and an unread screen is how a null result becomes a false bug report.
 * No golden-frame diffing helpers yet; compare byte counts or assert on
   `pixel()` regions.
+* **Shift+Step does not reach a module IN A SESSION** (2026-09-22). An injected
+  Shift CC arrives (the module logs it) but a step note after it does not, so
+  Shift+Step 1 cannot reopen dAVEBOx's project picker mid-session. The replay
+  path (`schwung_shim.c`, the `test_inject_ui_shm` drain) does publish notes, so
+  the loss is after it. **Workaround:** a FRESH session lands on the picker —
+  exit to stock and relaunch, then drive the picker from there.
+* **Start the daemon AFTER the session is up, and again after every relaunch.**
+  It maps the session's SHM at start; started too early (or left over from a
+  previous session) it exits with `shm_open(/dbxhost-control) failed`, and the
+  client sees `Connection reset by peer` — which reads like a network fault.
+  Check `/data/UserData/testd.log` before debugging the forward.
+* **Jog detents sent back-to-back are QUEUED, not dropped.** 80 detents in a
+  tight loop, then a click, landed the click long after the snapshot said
+  nothing happened. Wait a few frames per detent (`wait_frame(6)`) and read the
+  screen before concluding a gesture failed.
+* **`ssh -f … | grep` never returns** (the backgrounded ssh keeps the pipe
+  open). Start the forward with `ssh -o LogLevel=ERROR -f -N -L … >/dev/null 2>&1`.
 * The daemon serves **one client at a time**, and a dropped connection resets
   subscriptions.
 
