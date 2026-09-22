@@ -75,10 +75,47 @@ is(evaluateVisibility(io({ 'synth:on': '0' }), { param: 'on' }), false, '...and 
 is(normalizeVisibilityConditionKey('synth', null, -1, 'cutoff'), 'synth:cutoff', 'bare key gets the prefix');
 is(normalizeVisibilityConditionKey('synth', null, -1, 'fx:cutoff'), 'fx:cutoff',
    '⚠ a key that already carries a namespace is left ALONE');
-is(normalizeVisibilityConditionKey('synth', { child_prefix: 'op' }, 2, 'ratio'), 'synth:op2_ratio',
-   '⭑ inside a repeated element, a bare key means THIS child\'s param');
-is(normalizeVisibilityConditionKey('synth', { child_prefix: 'op' }, 2, 'op1_ratio'), 'synth:op1_ratio',
+/* A child level the way modules really declare one: a count, and the keys it
+ * lists. `ratio` is per-operator; anything it does not list is not. */
+const OPS = { child_prefix: 'op', child_count: 4, params: ['ratio', { key: 'level' }] };
+is(normalizeVisibilityConditionKey('synth', OPS, 2, 'ratio'), 'synth:op2_ratio',
+   '⭑ inside a repeated element, a LISTED key means THIS child\'s param');
+is(normalizeVisibilityConditionKey('synth', OPS, 2, 'level'), 'synth:op2_level',
+   '...listed as an object entry too');
+is(normalizeVisibilityConditionKey('synth', OPS, 2, 'op1_ratio'), 'synth:op1_ratio',
    '⚠ ...but a key that already names a child is not given a second index');
+is(normalizeVisibilityConditionKey('synth', OPS, -1, 'ratio'), 'synth:ratio',
+   'no instance on screen (index -1): the bare key');
+
+/* ⚠⚠ THE GLOBAL GATE. A drum module gates a pad's pages on which engine the
+ * focused pad runs -- `ui_engine`, listed on no level and served bare.
+ * Expanding it asked for `pad2_ui_engine`, nothing served it, "" compared equal
+ * to 0, and every pad got the sample pages (upstream hierChildKeyFor expands
+ * only listed keys). */
+const PADS = { child_prefix: 'pad', child_index_base: 1, child_count: 32,
+               params: ['sample', { key: 'filter_type' }, { key: 'resonance' }] };
+is(normalizeVisibilityConditionKey('dr', PADS, 1, 'ui_engine'), 'dr:ui_engine',
+   '⚠⚠ an UNLISTED key on a child level stays GLOBAL');
+const ENG = { 'dr:ui_engine': '1', 'dr:pad2_ui_engine': undefined };
+const dio = (idx) => ({ prefix: 'dr', childIndexOf: () => idx,
+    getParam: (k) => (k in ENG && ENG[k] !== undefined ? ENG[k] : '') });
+is(evaluateVisibility(dio(1), { param: 'ui_engine', equals: 0 }, PADS), false,
+   '...so a synth pad does NOT get the sample-only pages');
+is(evaluateVisibility(dio(1), { param: 'ui_engine', equals: 1 }, PADS), true,
+   '...and DOES get its engine\'s pages');
+
+/* ⚠ The index is zero-based and the module may count from 1: the second pad
+ * (index 1) is `pad2_`, as the controller resolves its VALUE keys. Built by
+ * hand as `${prefix}${index}_` it was `pad1_` -- the previous pad's filter. */
+is(normalizeVisibilityConditionKey('dr', PADS, 1, 'filter_type'), 'dr:pad2_filter_type',
+   '⚠ child_index_base is honoured: index 1 of a 1-based level is pad2_');
+const TPL = { child_key_template: 'p{index}_{key}', child_index_base: 1, child_index_digits: 2,
+              child_count: 16, knobs: ['type'] };
+is(normalizeVisibilityConditionKey('dr', TPL, 2, 'type'), 'dr:p03_type',
+   'a template level resolves the same way its value keys do');
+const PFX = { child_prefix: 'pad', child_count: 8, params: ['pad_vol'] };
+is(normalizeVisibilityConditionKey('dr', PFX, 3, 'pad_vol'), 'dr:pad3_pad_vol',
+   '⚠ a LISTED key that merely begins with the prefix is still per-instance');
 
 /* --- the bool parser's exact vocabulary ---------------------------------- */
 for (const v of [true, 1, '1', 'true', 'on', 'yes', 'TRUE', ' Yes ']) {
