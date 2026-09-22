@@ -67,8 +67,10 @@ inner = sorted(os.listdir(os.path.join(sets_dir, dirs[0])))
 # order fix) — so the second entry is matched by the rule, not spelled.
 sys.path.insert(0, "standalone/scripts")
 import state_subdir as ss
-folder = "Move-Set-" + dirs[0][:8]
-assert len(inner) == 2 and folder in inner, inner
+# Move-Set-<id8>, or Move-Set-<id8>-<n> when the listing order forced the
+# song to move (state_subdir.choose_state_name) — found BY its Song.abl.
+folder = ss.song_folder(os.path.join(sets_dir, dirs[0]))
+assert len(inner) == 2 and folder and folder.startswith("Move-Set-" + dirs[0][:8]), inner
 assert "Project 2" not in inner, "the user's name became a folder again: %r" % inner
 st = [n for n in inner if ss.is_state_name(n)]
 assert len(st) == 1, inner
@@ -133,7 +135,9 @@ import json, os, sys
 d = json.load(open(sys.argv[2]))
 cu = [x for x in d["projects"] if x["index"] == 5][0]["uuid"]
 kids = os.listdir(os.path.join(sys.argv[1], cu))
-assert "Move-Set-" + cu[:8] in kids and "Move-Set-11111111" not in kids, kids
+sys.path.insert(0, "standalone/scripts"); import state_subdir as ss
+own = ss.song_folder(os.path.join(sys.argv[1], cu))
+assert own and own.startswith("Move-Set-" + cu[:8]) and "Move-Set-11111111" not in kids, kids
 PY
     # S2: do_copy also stamps Move's OWN provenance xattrs (Fix D of the
     # 2026-09-14 new-project plan) -- song-color mirroring dbx-color, an

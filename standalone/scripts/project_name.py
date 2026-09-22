@@ -9,8 +9,10 @@ read a directory listing.
 
 The folder is Move's, and the name is ours. So:
 
-  · the song folder is `Move-Set-<first 8 of the project uuid>` — fixed for
-    the project's life, never the user's words, and named for what it holds;
+  · the song folder is `Move-Set-<first 8 of the project uuid>` — never the
+    user's words, and named for what it holds. (Rarely `...-<n>`: when the
+    listing order would put the state dir first, state_subdir moves the song —
+    so every reader finds the song by its Song.abl, never by this name.)
   · the name the user sees is `<state>/name.txt`, one line, any character but a
     newline.
 

@@ -16,6 +16,11 @@ correct on any filesystem, kernel or seed.
 ⚠ The same rule exists in C (src/host/dbx_state_subdir.h, mirrored byte-for-byte
 in davebox/dsp/) for the DSP and the host UI. check-config.sh pins the pattern
 and the retry bound in both. Change one, change both.
+⚠ ONE DELIBERATE DIFFERENCE: only this file may move the SONG folder when no
+state name can follow it (choose_state_name / fix_state_order). The C copies run
+inside a live session, where the song is Move's open set and must not move; every
+project is born here first (project-cmd), with Move not holding it, so by the
+time C resolves a state dir the order is already settled.
 
 ⚠ On a creation-ordered filesystem (tmpfs) no candidate ever lists after the
 song, the chooser exhausts its tries and falls back to the plain name. That is
@@ -105,13 +110,17 @@ def lists_after(uuid_dir, name, song):
     return name in kids and song in kids and kids.index(name) > kids.index(song)
 
 
-def choose_state_name(uuid_dir, song):
-    """Create and return a state dir name that lists after `song`.
+SONG_MAX_TRIES = 64
+STATE_TRIES_PER_SONG = 16
 
-    Each candidate is mkdir'd and the listing read back; a loser is rmdir'd and
-    the next tried. Falls back to the plain name (created) when nothing wins."""
-    for n in range(STATE_MAX_TRIES):
+
+def _probe_after(uuid_dir, song, tries, skip=None):
+    """The first state-dir candidate (up to `tries`) that lists after `song`,
+    found by mkdir + read the listing + rmdir. None when none does."""
+    for n in range(tries):
         name = candidate(n)
+        if name == skip:
+            continue
         path = os.path.join(uuid_dir, name)
         try:
             os.mkdir(path)
@@ -119,9 +128,57 @@ def choose_state_name(uuid_dir, song):
             if e.errno == errno.EEXIST:
                 continue          # not ours to probe with (and not a state dir we own)
             raise
-        if lists_after(uuid_dir, name, song):
-            return name
+        ok = lists_after(uuid_dir, name, song)
         os.rmdir(path)
+        if ok:
+            return name
+    return None
+
+
+def _next_song(uuid_dir, base, cur, n):
+    """Rename the song folder `cur` to `<base>-<n>`; returns the new name, or
+    None when that name is taken."""
+    name = "%s-%d" % (base, n)
+    if os.path.exists(os.path.join(uuid_dir, name)):
+        return None
+    os.rename(os.path.join(uuid_dir, cur), os.path.join(uuid_dir, name))
+    return name
+
+
+# ⭐ WHY THE SONG MAY MOVE TOO. The listing order is a hash of each name under a
+# per-filesystem seed, and a song name that hashes near the top of the range
+# lists AFTER almost every name — no state-dir candidate can follow it.
+# Measured 2026-09-22 on the test ext4: 3 of 400 fresh projects exhausted all
+# 256 state candidates and fell back to a plain `dAVEBOx` that lists FIRST, i.e.
+# Move would open the state dir as the set — deterministic for the name, so the
+# launch repair (same candidates) could not fix it either. Renaming only the
+# song left 3 in 3000 (when `dAVEBOx` itself hashes low, few song names beat
+# it), so the fallback varies BOTH: each new song name gets a fresh run of
+# state candidates. The song folder's name is ours (project_name.py) and every
+# reader finds the song by its Song.abl, never by name, so it may move.
+# ⚠ Same window rule as fix_state_order: never for a project Move holds open.
+
+
+def choose_state_name(uuid_dir, song):
+    """Create and return a state dir name that lists after the song folder.
+
+    Candidates are probed (mkdir, read the listing, rmdir); the winner is made
+    for real. When no candidate can follow `song`, the song is renamed
+    (`<song>-1`, `-2`, …) and candidates tried again. Falls back to the plain
+    name only if all of that fails."""
+    cur, tries = song, STATE_MAX_TRIES
+    for n in range(SONG_MAX_TRIES):
+        if n:
+            nxt = _next_song(uuid_dir, song, cur, n)
+            if not nxt:
+                continue
+            cur, tries = nxt, STATE_TRIES_PER_SONG
+        name = _probe_after(uuid_dir, cur, tries)
+        if name:
+            os.mkdir(os.path.join(uuid_dir, name))
+            if lists_after(uuid_dir, name, cur):
+                return name
+            os.rmdir(os.path.join(uuid_dir, name))
     os.makedirs(os.path.join(uuid_dir, STATE_BASE), exist_ok=True)
     return STATE_BASE
 
@@ -140,7 +197,9 @@ def ensure_state_subdir(uuid_dir):
 
 def fix_state_order(uuid_dir):
     """If the state dir lists BEFORE the song folder, rename it to a name that
-    lists after. Returns (old, new) when it moved something, else None.
+    lists after — or, when no name can follow the song, rename the song too
+    (see the note above choose_state_name). Returns (old, new) for the state
+    dir, prefixed "song " when it was the song that moved; None otherwise.
 
     ⚠ Only for a project Move is NOT holding open: launch (Move down), a copy
     that has just been made, or a rename of a closed project."""
@@ -149,25 +208,22 @@ def fix_state_order(uuid_dir):
     if not song or not have or lists_after(uuid_dir, have, song):
         return None
     old = os.path.join(uuid_dir, have)
-    for n in range(STATE_MAX_TRIES):
-        name = candidate(n)
-        if name == have:
-            continue
-        probe = os.path.join(uuid_dir, name)
-        try:
-            os.mkdir(probe)
-        except OSError as e:
-            if e.errno == errno.EEXIST:
+    cur, tries = song, STATE_MAX_TRIES
+    for n in range(SONG_MAX_TRIES):
+        if n:
+            nxt = _next_song(uuid_dir, song, cur, n)
+            if not nxt:
                 continue
-            raise
-        ok = lists_after(uuid_dir, name, song)
-        os.rmdir(probe)
-        if not ok:
+            cur, tries = nxt, STATE_TRIES_PER_SONG
+            if lists_after(uuid_dir, have, cur):
+                return ("song " + song, "song " + cur)
+        name = _probe_after(uuid_dir, cur, tries, skip=have)
+        if not name:
             continue
-        os.rename(old, probe)
-        if lists_after(uuid_dir, name, song):
-            return (have, name)
-        os.rename(probe, old)     # the listing disagreed after the move: put it back
+        os.rename(old, os.path.join(uuid_dir, name))
+        if lists_after(uuid_dir, name, cur):
+            return (have, name) if cur == song else ("song " + song + ", " + have, "song " + cur + ", " + name)
+        os.rename(os.path.join(uuid_dir, name), old)   # the listing disagreed: put it back
     return None
 
 
