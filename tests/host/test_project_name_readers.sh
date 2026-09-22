@@ -56,5 +56,28 @@ case "$build" in
     *)  bad "project_name.py is NOT staged — every project verb dies on the import on the device" ;;
 esac
 
+# ---- 4. the loading screen's names come from the TAG, performed -----------
+# select-list.sh feeds the host's "Loading <name>" screen by SLOT. Run it over a
+# real two-slot library whose song folders are the fixed Move-Set-<id> and whose
+# names live only in name.txt: a reader of the folder would say "Move-Set-…".
+T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+export DBX_DIR="$T/dbx" PROJECTS_DIR="$T/dbx/projects" LIBRARY_DIR="$T/dbx/sets/library"
+export SETTINGS_JSON="$T/Settings.json" DBX_PY_DIR="$PWD/standalone/scripts" PYTHONPYCACHEPREFIX="$T/pyc"
+mkdir -p "$LIBRARY_DIR"; printf '{"currentSongIndex": 1}\n' > "$SETTINGS_JSON"
+A=aaaaaaaa-0000-4000-8000-000000000001 B=bbbbbbbb-0000-4000-8000-000000000002
+for pr in "$A:Alpha" "$B:Beta / Two"; do
+    u="${pr%%:*}"; n="${pr#*:}"
+    mkdir -p "$PROJECTS_DIR/$u/Move-Set-${u:0:8}" "$PROJECTS_DIR/$u/dAVEBOx"
+    echo '{}' > "$PROJECTS_DIR/$u/Move-Set-${u:0:8}/Song.abl"
+    printf '%s\n' "$n" > "$PROJECTS_DIR/$u/dAVEBOx/name.txt"
+done
+ln -s "$PROJECTS_DIR/$A" "$LIBRARY_DIR/5107a000-0000-4000-8000-000000000000"
+ln -s "$PROJECTS_DIR/$B" "$LIBRARY_DIR/5107b000-0000-4000-8000-000000000001"
+sh standalone/scripts/select-list.sh >/dev/null 2>&1
+names="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["names"].get("0"), "|", d["names"].get("1"))' "$DBX_DIR/select_list.json" 2>&1)"
+[ "$names" = "Alpha | Beta / Two" ] \
+    && ok "select-list names each slot by its project's TAG (\"$names\")" \
+    || bad "select-list names: '$names' — expected 'Alpha | Beta / Two'"
+
 [ "$fail" = 0 ] && echo "PASS: the project name has one home"
 exit "$fail"

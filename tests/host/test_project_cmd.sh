@@ -154,6 +154,8 @@ PY
 import json
 d = json.load(open('$DBX_DIR/projects.json'))
 print([x for x in d['projects'] if x['index'] == 20][0]['uuid'])")
+    check "new-at: the project shows the name it was created with" \
+        grep -q '"name": "New At Project"' "$DBX_DIR/projects.json"
     python3 - "$PROJECTS_DIR/$_newat_uuid" <<'PY' && echo "  ok   new-at stamps Move's own provenance xattrs" || { echo "  FAIL new-at stamps Move provenance xattrs" >&2; fails=1; }
 import os, sys
 d = sys.argv[1]
