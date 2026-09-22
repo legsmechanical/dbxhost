@@ -975,6 +975,9 @@ function actionCardShowing() {
     if (!S.actionPopupCard || S.actionPopupEndTick < 0 || S.clockMs > S.actionPopupEndTick) return false;
     if (!S.actionPopupLines.length) return false;
     if (S.actionPopupDefers && (S.heldStep >= 0 || S.knobTouched >= 0)) return false;
+    /* The held-step jog hint is about THIS hold: it goes the moment the hold is
+     * used (a knob, the jog) or ends, rather than sitting over the cells. */
+    if (S.actionPopupStepHint && (S.heldStep < 0 || S.stepReveal || S.knobTouched >= 0)) return false;
     return true;
 }
 

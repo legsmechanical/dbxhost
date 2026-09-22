@@ -300,6 +300,7 @@ export function showActionPopupFor(ms, ...lines) {
      * drawUI). Only the gauge opts out — it wants the room for its bar. */
     S.actionPopupCard = true;
     S.actionPopupDefers = false;
+    S.actionPopupStepHint = false;
     S.screenDirty = true;
 }
 

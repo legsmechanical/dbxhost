@@ -4151,6 +4151,8 @@ function _onCC_knobs(d1, d2) {
              * here changed a parameter the user could not see (found on the
              * device 2026-09-22: drum Ratch on the reveal also locked ALL LANES
              * Dir at that step, and the lock then overrode every manual Dir). */
+            /* A turn uses the hold: the jog hint would sit over the cell being set. */
+            if (S.actionPopupStepHint) { S.actionPopupStepHint = false; S.actionPopupEndTick = -1; S.screenDirty = true; }
             if (S.stepReveal || S.activeBank === BANK_STEP) return;
             if (!S.sessionView) {
                 const _d = decodeDelta(d2);

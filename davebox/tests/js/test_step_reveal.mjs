@@ -41,8 +41,9 @@ globalThis.shadow_get_param = () => ''; globalThis.shadow_set_param = () => 1;
 globalThis.shadow_set_params = () => true; globalThis.shadow_get_params = () => '';
 globalThis.host_vol_block = () => {}; globalThis.host_edit_cc_block = () => {};
 globalThis.host_autosave_hold = () => {};
-globalThis.clear_screen = () => { fb.fill(0); };
-globalThis.print = (x, y, t, c) => { for (let i = 0; i < String(t).length * 6; i++) px(x + i, y, c); };
+globalThis.clear_screen = () => { fb.fill(0); printed.length = 0; };
+const printed = [];
+globalThis.print = (x, y, t, c) => { printed.push(String(t)); for (let i = 0; i < String(t).length * 6; i++) px(x + i, y, c); };
 globalThis.fill_rect = (x, y, w, h, c) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) px(x + i, y + j, c); };
 globalThis.draw_rect = (x, y, w, h, c) => { for (let i = 0; i < w; i++) { px(x + i, y, c); px(x + i, y + h - 1, c); } for (let j = 0; j < h; j++) { px(x, y + j, c); px(x + w - 1, y + j, c); } };
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
@@ -137,6 +138,36 @@ step('⚠ control: WITHOUT the reveal the same turn on a held step DOES lock CLI
     locks.length = 0;
     cc(77, 1); cc(77, 1); cc(77, 1);
     assert(locks.some(l => /clip_playback_dir|playback_dir/.test(l)), 'no lock and no Dir write — the bank path is not reached, so the reveal pin proves nothing');
+    release();
+});
+/* The held-step jog hint (Josh, 2026-09-22): a card saying what the jog does,
+ * once a press becomes a hold by time. Asserted on what is DRAWN. */
+const shows = () => { S.screenDirty = true; globalThis.tick(); return printed.includes('JOG RIGHT') && printed.includes('EDIT STEP'); };
+step('⚠ a held step shows the JOG RIGHT / EDIT STEP card on a bank page', () => {
+    fresh(1); holdStep5();
+    assert(shows(), 'no hint card drawn after the hold, printed: ' + JSON.stringify(printed));
+    release();
+});
+step('the hint goes for good once the jog is used — jogging back does not bring it back', () => {
+    fresh(1); holdStep5(); assert(shows(), 'control: shown');
+    right(); assert(!shows(), 'still up over the revealed step page');
+    left();  assert(!shows(), 'came back after jogging left');
+    release();
+});
+step('the hint goes the moment a knob is turned (it would sit over the cells being set)', () => {
+    fresh(1); holdStep5(); assert(shows(), 'control: shown');
+    cc(74, 1);
+    assert(!shows(), 'still up after a knob turn');
+    release();
+});
+step('the hint goes with the release', () => {
+    fresh(1); holdStep5(); assert(shows(), 'control: shown');
+    release();
+    assert(!shows(), 'still up after the step was released');
+});
+step('no hint on the STEP bank itself — the jog does nothing there under a hold', () => {
+    fresh(BANK_STEP); holdStep5();
+    assert(!shows(), 'hint drawn on the STEP bank');
     release();
 });
 step('releasing the step while revealed takes the reveal away', () => {

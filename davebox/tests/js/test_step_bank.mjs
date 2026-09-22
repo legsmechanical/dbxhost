@@ -137,7 +137,9 @@ function snapAt(tick) { const keep = S.tickCount; S.tickCount = tick; S.screenDi
 function litInRows(snap, y0, y1) { let n = 0; for (let y = y0; y < y1; y++) for (let x = 0; x < 128; x++) if (snap[y * 128 + x]) n++; return n; }
 step('⚠ a held step does NOT change the screen on another bank (NOTE FX card, pixel-identical)', () => {
     fresh(1); S.bankCardLatched = true;
-    const ref = S.tickCount + 50;
+    /* Read past the held-step jog hint (a timed card, STEP_JOG_HINT_MS, pinned
+     * in test_step_reveal): what this pins is the PAGE under it. */
+    const ref = S.tickCount + 250;
     const before = partsAt(ref);
     holdStep5();
     const during = partsAt(ref);

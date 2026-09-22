@@ -22,7 +22,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
-    POLL_INTERVAL, ROUTE_NONE } from './ui_constants.mjs';
+    POLL_INTERVAL, ROUTE_NONE, BANK_STEP, STEP_JOG_HINT_MS } from './ui_constants.mjs';
 
 import { S, standDownBankDisplay } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -34,7 +34,7 @@ import { morphTick } from './ui_snapmorph.mjs';
 import { reconcileParallelAll, parallelForgetPushed, parallelSweepTick } from './ui_parallel.mjs';
 import { autoBankTick } from './ui_automation_bank.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
-import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, hostIdentity, projectDisplayName,
+import { saveState, showActionPopup, showActionPopupFor, showTrackVolCard, uuidToStatePath, hostIdentity, projectDisplayName,
     commitSnapshot } from './ui_persistence.mjs';
 import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
          projectPickerTextEntryTick, requestSetForSlot, prepareSlotFor,
@@ -1708,11 +1708,28 @@ export function _tickImpl() {
             }
         }
 
+        /* The held-step jog hint ends for good once the hold is used or over —
+         * jogging back LEFT must not bring it back (see actionCardShowing). */
+        if (S.actionPopupStepHint && (S.heldStep < 0 || S.stepReveal || S.knobTouched >= 0)) {
+            S.actionPopupStepHint = false;
+            S.actionPopupEndTick = -1;
+            S.screenDirty = true;
+        }
+
         /* Step hold threshold: once elapsed, close the tap window so release won't toggle.
          * Also auto-assign empty step now so knobs work immediately in step edit. */
         if (S.heldStep >= 0 && S.heldStepBtn >= 0 && S.stepBtnPressedTick[S.heldStepBtn] >= 0 &&
                 ((S.clockMs - S.stepBtnPressedTick[S.heldStepBtn]) >= STEP_HOLD_MS ||
                  S.stepHoldPromote)) {           /* a lock was dialled: that IS a hold */
+            /* ⭑ Say what the jog does now (Josh, 2026-09-22: "there's no
+             * indication when you're holding a step that jogging will kick you
+             * right into step mode"). Only a hold that became one by TIME — a
+             * knob or jog turn already used it — and never where the jog does
+             * nothing under a hold (the STEP bank itself, spec §2). */
+            if (!S.stepHoldPromote && !S.sessionView && !S.stepReveal && S.activeBank !== BANK_STEP) {
+                showActionPopupFor(STEP_JOG_HINT_MS, 'JOG RIGHT', 'EDIT STEP');
+                S.actionPopupStepHint = true;
+            }
             S.stepHoldPromote = false;
             S.stepBtnPressedTick[S.heldStepBtn] = -1;
             S.stepWasHeld = true;

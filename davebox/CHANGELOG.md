@@ -51,8 +51,17 @@ the section into a versioned heading at release time.
   lights actively said a working control did nothing.
 - **The Conductor banks light each knob in its track's colour**, since on those
   three pages a knob *is* a track.
+- **Editing a step from the revealed step page no longer changes the bank
+  underneath.** Hold a step and turn the jog right to open its page: a knob there
+  also changed and locked the hidden bank's knob in the same position (on a drum
+  track, Ratchet also set All Lanes Direction), and that lock then overrode any
+  later manual change. Knobs on the step page now edit only the step. A lock
+  already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
+- **Holding a step says what the jog does.** A short "JOG RIGHT / EDIT STEP" card
+  appears once a press becomes a hold, and goes as soon as you turn a knob or the
+  jog, or let go. The JOG STEP footer hint stays too.
 - **Renaming a project is instant, even the one you're in.** No more RENAMING /
   RESTARTING. A name can use any character the keyboard types, "/" included —
   the name is a label now, not the folder Move opens.

@@ -445,6 +445,7 @@ export const S = {
     actionPopupHighlight: -1,
     actionPopupCard: false,     /* draw as the notice card (all but the gauge) */
     actionPopupDefers: false,   /* plain popup: waits while a step is held / knob touched */
+    actionPopupStepHint: false, /* the held-step jog hint: gone once the hold is used or ends */
     /* 0..1 fill for a popup that reads a LEVEL rather than an event; -1 = none.
      * Kept separate from the lines so the bar needs no string sniffing. */
     actionPopupGauge: -1,
