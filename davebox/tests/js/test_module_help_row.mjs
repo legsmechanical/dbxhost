@@ -79,6 +79,11 @@ FILES[MB + 'rrverb/help.json']   = JSON.stringify(HELP);
 FILES[MB + 'flatfx/module.json'] = '{"id":"flatfx"}';            /* no help.json */
 FILES[MB + 'badfx/module.json']  = '{"id":"badfx"}';
 FILES[MB + 'badfx/help.json']    = '{ this is not json';
+FILES[MB + 'emptyfx/module.json'] = '{"id":"emptyfx"}';
+FILES[MB + 'emptyfx/help.json']   = '{"title":"Empty","children":[]}';   /* parses, has no topics */
+const SG = '/data/UserData/schwung/modules/sound_generators/';
+FILES[SG + 'trksynth/module.json'] = '{"id":"trksynth"}';
+FILES[SG + 'trksynth/help.json']   = JSON.stringify({ title: 'TrkSynth', children: [{ title: 'Overview', lines: ['A synth.'] }] });
 for (const fn of ['host_ensure_dir',
                   'host_remove_dir', 'host_system_cmd', 'host_module_set_param',
                   'host_module_get_param', 'host_send_midi', 'move_midi_inject_to_move',
@@ -217,6 +222,49 @@ step('⚠ CONTROL: a BROKEN help file means no row, and nothing thrown', () => {
     const l = labelsOf();
     assert(!l.includes('Module Help') && l.includes('Swap Module'), 'rows: ' + JSON.stringify(l));
     assert(swallowed === null, 'an exception was swallowed: ' + swallowed);
+});
+
+step('⚠ CONTROL: a help file that parses but has NO topics gets no row', () => {
+    reenter('emptyfx');
+    walkTo('Module');
+    assert(!labelsOf().includes('Module Help'), 'rows: ' + JSON.stringify(labelsOf()));
+});
+
+/* ON A TRACK'S OWN SLOT an unclaimed knob is not inert: off the grid it falls
+ * to the track's LEVELS (levelsActive). The bus rig above cannot show that —
+ * a bus has no levels — so the knob swallow is pinned here. */
+step('⭐ on a TRACK synth: Module Help opens, and its knobs do NOT move the track\'s level', () => {
+    snd.soundExit(); ticks(2);
+    ASSIGN['synth:module'] = 'trksynth';
+    ASSIGN['synth:ui_hierarchy'] = HIER;
+    ASSIGN['synth:chain_params'] = ASSIGN['master_fx:fx1:chain_params'];
+    GS.sessionView = false;
+    for (let i = 0; i < 8; i++) GS.trackRoute[i] = 0;
+    GS.activeTrack = 1;
+    snd.soundEnter(1, 1); ticks(4);
+    for (let g = 0; snd.soundViewForTest() !== VIEW_EDIT; g++) {
+        assert(g < 8, 'rig: never reached the module editor, view ' + snd.soundViewForTest());
+        click(); ticks(4);
+    }
+    ticks(10);
+    walkTo('Module');
+    assert(labelsOf().includes('Module Help'), 'no row on a track synth: ' + JSON.stringify(labelsOf()));
+    click(); ticks(1);
+    while (((pp().page && pp().page.entries) || [])[0] && snd.soundViewForTest() === VIEW_EDIT) {
+        /* land the cursor on Module Help, whatever sits above it */
+        const rows = labelsOf();
+        const at = rows.indexOf('Module Help');
+        for (let i = 0; i < at; i++) { jog(1); ticks(1); }
+        click(); ticks(2);
+        break;
+    }
+    assert(snd.soundViewForTest() === VIEW_HELP, 'help did not open on the track synth, view ' + snd.soundViewForTest());
+    const before = JSON.stringify(ASSIGN);
+    for (let k = 71; k <= 78; k++) { cc(k, 1); cc(k, 1); }
+    ticks(2);
+    const after = JSON.parse(JSON.stringify(ASSIGN));
+    const changed = Object.keys(after).filter(k => JSON.parse(before)[k] !== after[k]);
+    assert(changed.length === 0, 'the knobs wrote: ' + JSON.stringify(changed));
 });
 
 if (failed) { console.log('FAIL: module help'); process.exit(1); }
