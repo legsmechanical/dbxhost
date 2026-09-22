@@ -94,6 +94,67 @@ def project_path(projects_dir, pid):
     return os.path.abspath(os.path.join(projects_dir, pid))
 
 
+# ⭐⭐ MOVE'S OWN SHAPE FOR A SET DIRECTORY — the tags Move writes on every set
+# it makes itself. A project born WITHOUT them is not an ordinary set to Move.
+#
+# Measured on device, 2026-09-21: `user.was-externally-modified` was the one
+# that mattered. A brand-new project lacked it; Move then filed that set LAST,
+# ignoring its `user.song-index` — so a new project put into slot 0 landed
+# behind slot 1, pad 0 pressed the set Move was already on, and the load timed
+# out. Every first load of a new project failed that way, and the same project
+# worked later, once Move had processed it and tagged it `true` itself. Stamping
+# the tag by hand on a never-loaded project made it load first time.
+#
+# A fix on 2026-09-14 ("provenance parity") stamped three of these and missed
+# this one, in one of five birth paths. Hence ONE function, called by every
+# path that makes a project AND by sync() for every project in the store, so a
+# project born without the shape — by any path, including one added later —
+# is healed the next time the library is synced.
+#
+# ⚠ Only ever ADDS a missing tag. Move rewrites these on sets it has seen (it
+# sets was-externally-modified to `true` once processed), and overwriting its
+# answer with ours would be us deciding a fact that is Move's to state.
+MOVE_SHAPE_DEFAULTS = (
+    ("user.local-cloud-state", lambda d: b"notSynced"),
+    ("user.was-externally-modified", lambda d: b"false"),
+    ("user.song-color", lambda d: _xattr_or(d, "user.dbx-color", b"0")),
+    ("user.last-modified-time", lambda d: _utc_now()),
+)
+
+
+def _xattr_or(project_dir, name, default):
+    try:
+        return os.getxattr(project_dir, name)
+    except (OSError, AttributeError):
+        return default
+
+
+def _utc_now():
+    import datetime
+    return (datetime.datetime.now(datetime.timezone.utc)
+            .strftime("%Y-%m-%dT%H:%M:%SZ").encode())
+
+
+def ensure_move_shape(project_dir):
+    """Add any of Move's own set tags this project is missing. Returns the
+    names added (empty when the project already looks Move-born)."""
+    added = []
+    for name, value in MOVE_SHAPE_DEFAULTS:
+        try:
+            os.getxattr(project_dir, name)
+            continue                    # present: Move's answer, or ours — keep it
+        except AttributeError:
+            return added                # a platform without user xattrs
+        except OSError:
+            pass
+        try:
+            os.setxattr(project_dir, name, value(project_dir))
+            added.append(name)
+        except (OSError, AttributeError):
+            pass                        # best effort, like every tag here
+    return added
+
+
 def _set_song_index(project_dir, idx):
     """Put Move's ordering index on a project, or take it off (idx None)."""
     try:
@@ -212,6 +273,12 @@ def sync(library, projects_dir, prefer=""):
     # only then do projects that left lose their tag. At no instant does a slot
     # lead to an untagged project — which Move would rank last, putting pad 0
     # on the other slot for the rest of the session.
+    # Every project must look Move-born BEFORE a slot can put it on show —
+    # see ensure_move_shape(). This is also what heals projects born before
+    # the fix, and any birth path that forgets.
+    for pid in ids:
+        ensure_move_shape(project_path(projects_dir, pid))
+
     on_show = {}
     for i, pid in enumerate(want):
         if pid:
@@ -292,6 +359,10 @@ def repoint(library, projects_dir, slot_index, pid):
     # Slot 1 never shows it — untagged sorts last, and slot 1 IS last — which
     # is why it looked slot-specific.
     target = project_path(projects_dir, pid)
+    # The switch can reach a project no sync has seen yet (created seconds ago
+    # on a path that forgot the shape) — so make sure here too, before Move can
+    # see it, for the same reason the index goes on first.
+    ensure_move_shape(target)
     _set_song_index(target, slot_index)
     _point(library, sid, target)
     landed = slot_target(library, sid)

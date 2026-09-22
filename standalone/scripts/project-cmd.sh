@@ -161,6 +161,14 @@ print(-1 if _p is None else _p)' "$1" 2>/dev/null || printf '%s\n' -1
 #                             the project looks Move-born to Move too.
 #   user.last-modified-time  ISO-8601 UTC, Move's own spelling.
 #   user.local-cloud-state   Move seeds "notSynced" on a locally-made set.
+#   user.was-externally-modified  "false" on a set Move made itself.
+# ⚠⚠ That last one was MISSING from this list, and it was the one that
+# mattered: without it Move filed a new project LAST whatever its song-index,
+# so every first load of a new project into slot 0 pressed the wrong set
+# (device, 2026-09-21). "Parity" here was three tags out of four.
+# library_slots.ensure_move_shape() is now the authority, and library-sync runs
+# it on every project, so a birth path that forgets is healed rather than
+# shipped. This helper stays for the colour, which only the caller knows.
 # Best-effort, like every xattr write in this file: a project this fails on
 # is simply missing Move's own metadata, not missing entirely.
 stamp_move_xattrs() { # set-dir color-value
@@ -169,6 +177,7 @@ _d, _c = sys.argv[1], sys.argv[2]
 os.setxattr(_d, 'user.song-color', _c.encode())
 os.setxattr(_d, 'user.last-modified-time', sys.argv[3].encode())
 os.setxattr(_d, 'user.local-cloud-state', b'notSynced')
+os.setxattr(_d, 'user.was-externally-modified', b'false')
 " "$1" "$2" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>/dev/null || true
 }
 
@@ -937,6 +946,8 @@ os.setxattr(np, "user.last-modified-time",
             datetime.datetime.now(datetime.timezone.utc)
             .strftime("%Y-%m-%dT%H:%M:%SZ").encode())
 os.setxattr(np, "user.local-cloud-state", b"notSynced")
+# The tag the first cut of this list forgot — see stamp_move_xattrs.
+os.setxattr(np, "user.was-externally-modified", b"false")
 
 # (No second half to hand-copy: since Phase C the HOST state — chains, slots,
 # FX — lives inside the set dir too, under <subdir>/host/, so the copytree
