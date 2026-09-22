@@ -836,7 +836,7 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
             return;
         }
     }
-
+    if (chain_reorder_set_param(inst, key, val)) return;   /* "fx:move" — chain_reorder.c */
     /* Per-component bypass flags. Handled BEFORE the prefix routes below
      * so we don't forward "bypassed" down to the sub-plugin's set_param. */
     if (strcmp(key, "synth:bypassed") == 0) {
