@@ -4145,6 +4145,13 @@ function _onCC_knobs(d1, d2) {
          * one parameter); any other bank knob still declines the hold, as
          * the held-step law says (nothing per-step to write). */
         if (S.heldStep >= 0) {
+            /* ⚠ Not while the STEP page owns the knobs — the reveal or the STEP
+             * bank itself. _onCC_stepedit has already applied the turn to the
+             * held step; the bank underneath is hidden, and a lock written on it
+             * here changed a parameter the user could not see (found on the
+             * device 2026-09-22: drum Ratch on the reveal also locked ALL LANES
+             * Dir at that step, and the lock then overrode every manual Dir). */
+            if (S.stepReveal || S.activeBank === BANK_STEP) return;
             if (!S.sessionView) {
                 const _d = decodeDelta(d2);
                 if (_d) bankKnobLockTurn(S.activeTrack, S.activeBank, d1 - 71, S.altMode, _d);

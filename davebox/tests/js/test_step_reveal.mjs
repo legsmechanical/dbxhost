@@ -12,6 +12,11 @@ function step(label, fn) { try { fn(); ok(label); } catch (e) { bad(label, e); }
 function assert(c, m) { if (!c) throw new Error(m); }
 
 const sets = [];
+/* Every step lock the automation editor writes is logged as `[auto] p-lock …`
+ * (ui_automation.mjs automationParamEdit) — the observable a lock leaves. */
+const locks = [];
+const _log = console.log;
+console.log = (...a) => { const m = a.join(' '); if (m.includes('[auto] p-lock')) locks.push(m); else _log(...a); };
 const fb = new Uint8Array(128 * 64);
 const fbHash = () => { let h = 0; for (let i = 0; i < fb.length; i++) h = (h * 31 + fb[i]) >>> 0; return h; };
 /* The frame in two parts: the BODY (above the footer row) and the FOOTER (the
@@ -29,6 +34,7 @@ globalThis.host_module_get_param = (k) => {
     if (k.endsWith('_notes')) return '60';
     if (k.endsWith('_vel')) return '100';
     if (k.endsWith('_gate')) return '12';
+    if (k.endsWith('_rand')) return '0';
     return '';
 };
 globalThis.shadow_get_param = () => ''; globalThis.shadow_set_param = () => 1;
@@ -76,6 +82,7 @@ function fresh(bank) {
     for (let i = 0; i < 64; i++) S.clipSteps[T][AC][i] = 0;
     S.clipSteps[T][AC][5] = 1; S.clipNonEmpty[T][AC] = true;
     S.knobTouched = -1; S.bankCardLatched = true; S.shiftHeld = false;
+    S.clipPlaybackDir[T][AC] = 0; S.bankParams[T][0][6] = 0;   /* CLIP Dir at its floor: a turn can move it */
     S.tickCount += 100;
 }
 function holdStep5() { note(STEP(5), 127); S.tickCount += 25; globalThis.tick(); }
@@ -111,6 +118,25 @@ step('⚠ while revealed the knobs edit the HELD STEP (K4 → _step_5_vel), not 
     fresh(1); holdStep5(); right();
     cc(74, 1); cc(74, 1);
     assert(sets.some(x => x.startsWith('t0_c0_step_5_vel=')), 'velocity written to step 5, got ' + JSON.stringify(sets));
+    release();
+});
+step('⚠⚠ while revealed a knob edits ONLY the step — the bank underneath gets no lock (CLIP K7 = Dir under the reveal\'s K7 = Prob)', () => {
+    /* Found on the device 2026-09-22: turning a knob on the reveal ALSO locked
+     * the hidden bank's knob at that step (ALL LANES Dir under drum Ratch), and
+     * the lock then overrode every manual change to that param. */
+    fresh(0); holdStep5(); right();
+    locks.length = 0;
+    cc(77, 1); cc(77, 1); cc(77, 1);
+    assert(sets.some(x => x.startsWith('t0_c0_step_5_rand=')), 'control: the step\'s Prob was written, got ' + JSON.stringify(sets));
+    assert(!sets.some(x => /playback_dir/.test(x)), 'the hidden CLIP Dir was written: ' + JSON.stringify(sets));
+    assert(locks.length === 0, 'a lock was written on the hidden bank: ' + JSON.stringify(locks));
+    release();
+});
+step('⚠ control: WITHOUT the reveal the same turn on a held step DOES lock CLIP Dir (the pin above has a subject)', () => {
+    fresh(0); holdStep5(); S.tickCount += 20; globalThis.tick();
+    locks.length = 0;
+    cc(77, 1); cc(77, 1); cc(77, 1);
+    assert(locks.some(l => /clip_playback_dir|playback_dir/.test(l)), 'no lock and no Dir write — the bank path is not reached, so the reveal pin proves nothing');
     release();
 });
 step('releasing the step while revealed takes the reveal away', () => {
