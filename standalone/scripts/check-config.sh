@@ -121,6 +121,17 @@ check "name tag file (python)"         "$HERE/scripts/project_name.py"       'NA
 check "name tag file (davebox)"        "$REPO/davebox/ui/ui_persistence.mjs" "PROJECT_NAME_FILE = 'name.txt'"
 check "project-cmd names by the tag"   "$HERE/scripts/project-cmd.sh"        "import project_name as pn"
 
+# An unreadable song: project-cmd's list says WHY in three words, and the
+# picker turns each into its notice line. Spelled once on each side, pinned here.
+check "song missing (python)"          "$HERE/scripts/state_subdir.py"       'SONG_MISSING = "missing"'
+check "song empty (python)"            "$HERE/scripts/state_subdir.py"       'SONG_EMPTY = "empty"'
+check "song invalid (python)"          "$HERE/scripts/state_subdir.py"       'SONG_INVALID = "invalid"'
+check "song missing (davebox)"         "$REPO/davebox/ui/ui_dialogs.mjs"     "missing: 'Song file missing'"
+check "song empty (davebox)"           "$REPO/davebox/ui/ui_dialogs.mjs"     "empty:   'Song file empty'"
+check "song invalid (davebox)"         "$REPO/davebox/ui/ui_dialogs.mjs"     "invalid: 'Song file damaged'"
+check "switch-slot refusal prefix"     "$HERE/scripts/project-cmd.sh"        'why="unreadable:%s"'
+check "picker reads that prefix"       "$REPO/davebox/ui/ui_dialogs.mjs"     "a.why.indexOf('unreadable:') === 0"
+
 # Ableton export: the UI and the DSP both spell the staging dir (the DSP writes
 # the render + automation files the UI reads). Both under OUR install.
 check "export dir (davebox UI)"        "$REPO/davebox/ui/ui_export.mjs"      "EXPORT_OUT_DIR    = DAVEBOX_HOST_DIR + '/davebox-exports'"

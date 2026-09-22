@@ -37,7 +37,7 @@ import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, showActionPopupFor, showTrackVolCard, uuidToStatePath, hostIdentity, projectDisplayName,
     commitSnapshot } from './ui_persistence.mjs';
 import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
-         projectPickerTextEntryTick, requestSetForSlot, prepareSlotFor,
+         projectPickerTextEntryTick, requestSetForSlot, prepareSlotFor, slotRefusedUnreadable, reopenPickerRefusingUnreadable,
          checkProjectOpened, lockAfterProjectLost } from './ui_dialogs.mjs';
 import { sceneAllQueued, updateSceneMapLEDs } from './ui_scene.mjs';
 import { _padDispatchMutedNow, computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
@@ -2272,6 +2272,8 @@ export function _tickImpl() {
                         ' — NOT pressing');
             S.pendingProjectSwitch = null;
             S.switchLoading = null;
+            /* The song broke after the picker listed it: say so, specifically. */
+            if (slotRefusedUnreadable()) { reopenPickerRefusingUnreadable(slotRefusedUnreadable()); return; }
             showActionPopup('COULD NOT', 'OPEN');
             openProjectPadPicker();
             return;

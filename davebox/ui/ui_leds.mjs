@@ -414,6 +414,13 @@ function paintProjectPickerLEDs() {
              * one is the only pad in the picker that is deliberately STILL. */
             if (p.deleteIdx === i)       color = blink ? Red : DeepRed;
             else if (p.copySrcIdx === i) color = blink ? Cyan : DarkGrey;
+            else if (proj.broken && !(p.current === i && !S.awaitingProjectSelect)) {
+                /* A song that cannot be opened (Josh, 2026-09-22): DIM red,
+                 * steady. Not bright Red — that is a colour a user can give a
+                 * project, and the delete confirm blinks it. Dim is this
+                 * surface's "not available"; the cursor still moves on it. */
+                color = (menuK === i) ? (blink ? DeepRed : LED_OFF) : DeepRed;
+            }
             else {
                 const isSel = (menuK === i), isCur = (p.current === i);
                 if (isSel && isCur)      color = blink ? White : own;

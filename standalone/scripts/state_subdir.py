@@ -28,6 +28,7 @@ the tests' problem only; the device is ext4. The S4 "Move did not open it"
 screen is the backstop if a device ever does the same.
 """
 import errno
+import json
 import fnmatch
 import os
 import re
@@ -85,6 +86,35 @@ def song_folder(uuid_dir):
         if not is_state_name(n) and os.path.isfile(os.path.join(uuid_dir, n, SONG_FILE)):
             return n
     return None
+
+
+# Why a project's song cannot be opened, or None when it can. The three words
+# are a contract with the picker (davebox/ui/ui_dialogs.mjs), pinned by
+# check-config.sh. The test is deliberately only "is there a non-empty file
+# that parses as a JSON object" — the same test normalize uses to skip a file —
+# and never a schema check: flagging a GOOD project locks the user out of it,
+# which is worse than letting Move refuse one it dislikes (that path already
+# has its own screen).
+SONG_MISSING = "missing"
+SONG_EMPTY = "empty"
+SONG_INVALID = "invalid"
+
+
+def song_status(uuid_dir):
+    folder = song_folder(uuid_dir)
+    if folder is None:
+        return SONG_MISSING
+    path = os.path.join(uuid_dir, folder, SONG_FILE)
+    try:
+        if os.path.getsize(path) == 0:
+            return SONG_EMPTY
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+    except OSError:
+        return SONG_MISSING
+    except (ValueError, UnicodeDecodeError):
+        return SONG_INVALID
+    return None if isinstance(doc, dict) else SONG_INVALID
 
 
 # (inner_dirs is GONE: it read a project's NAME off its folder. The name is a

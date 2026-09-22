@@ -18,7 +18,7 @@ import { drawKitHeader, drawKitList, fitHdr, hdrWidth, hdrPrint,
          drawKitBigValue, drawKitHintRow, drawKitMarkHeader, MV_FOOTER_Y } from './ui_movy.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import {
-    SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
+    SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup, showActionPopupFor,
     dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
     hostIdentity, projectIdOfEntry, projectDisplayName
 } from './ui_persistence.mjs';
@@ -509,7 +509,17 @@ export function projectOpenFailedMidi(data) {
     const click = (d1 === MoveMainButton && d2 === 127);
     const back  = (d1 === MoveBack && d2 === 127);
     if (!click && !back) return true;
+    /* Retry on a song that cannot be read would relaunch into nothing — and
+     * project-cmd `switch` refuses it, so this screen would sit locked until
+     * the session went down. Read the list first; if the pad's song is
+     * unreadable, go to the picker with the reason instead. */
+    let _retryBroken = null;
     if (click && f.sel === 0) {
+        const _l = _pppRunList();
+        const _pr = _l && _l.projects.find(x => x.index === f.pad);
+        _retryBroken = (_pr && _pr.broken) || null;
+    }
+    if (click && f.sel === 0 && !_retryBroken) {
         /* Retry: relaunch into the same pad through the existing switch path
          * (project-cmd `switch`, fired from the tick). The screen stays up,
          * locked, until the session goes down. */
@@ -536,6 +546,7 @@ export function projectOpenFailedMidi(data) {
         S.projectOpenFailed = null;
         S.projectPadPicker = null;
         openProjectPadPicker();
+        if (_retryBroken) _pppRefuseUnreadable(_retryBroken);
     }
     S.screenDirty = true;
     return true;
@@ -1170,7 +1181,7 @@ function _pppCloseOverlays(p) {
  * loaded and unloaded states have different row COUNTS, and dispatching a click
  * on a bare index would mean two index spaces to keep in step — the shape that
  * silently fires the wrong action the first time a row is inserted. */
-function _pppMenuModel(p, k) {
+export function _pppMenuModel(p, k) {
     const rows = [];
     if (_pppIsLoaded(p, k)) {
         /* Status first, then the way back INTO the project.
@@ -1182,6 +1193,10 @@ function _pppMenuModel(p, k) {
          * is not the same as "Back is discoverable". */
         rows.push({ kind: 'status', label: '(Current)' });
         rows.push({ kind: 'resume', label: 'Resume' });
+    } else if (_pppBroken(p, k)) {
+        /* No Load to offer. Rename, Color and Delete stay: none of them touch
+         * the song, and Delete is how a damaged project is cleared out. */
+        rows.push({ kind: 'status', label: "(Can't open)" });
     } else {
         rows.push({ kind: 'load', label: 'Load' });
     }
@@ -1204,7 +1219,7 @@ function _pppIsLoaded(p, k) {
 /* The first SELECTABLE row — index 1 when a (Current) status line occupies
  * row 0, so the cursor opens on Resume, which is the likeliest thing you came
  * here to do. */
-function _pppMenuTop(p, k) { return _pppIsLoaded(p, k) ? 1 : 0; }
+function _pppMenuTop(p, k) { return (_pppIsLoaded(p, k) || _pppBroken(p, k)) ? 1 : 0; }
 
 /* Put the picker back on the SELECTED project's screen. Since the 2026-08-15
  * cohesion pass that screen is the picker's only resting state, so every path
@@ -1260,10 +1275,25 @@ export function prepareSlotFor(projectUuid) {
     if (!projectUuid) return null;
     const live = hostIdentity().projectId || '';
     host_system_cmd('sh ' + PROJECT_CMD + ' switch-slot ' + projectUuid + ' ' + live);
+    _slotRefusedUnreadable = null;
     try {
         const a = JSON.parse(host_read_file('/data/UserData/dbx-host/slot_switch.json') || '{}');
+        if (a && !a.ok && typeof a.why === 'string' && a.why.indexOf('unreadable:') === 0)
+            _slotRefusedUnreadable = a.why.slice('unreadable:'.length);
         return (a && a.ok && typeof a.slot === 'number' && a.slot >= 0) ? a : null;
     } catch (e) { return null; }
+}
+
+/* Why the LAST prepareSlotFor refused, when the reason was an unreadable song
+ * (the file broke after the picker listed it): the word, or null. */
+let _slotRefusedUnreadable = null;
+export function slotRefusedUnreadable() { return _slotRefusedUnreadable; }
+
+/* The picker back up, with the reason — for a refusal found after the picker
+ * had already closed for the load. */
+export function reopenPickerRefusingUnreadable(why) {
+    openProjectPadPicker();
+    _pppRefuseUnreadable(why);
 }
 
 /* `viaRelaunch` says WHICH SESSION will answer this request, and therefore
@@ -1295,7 +1325,35 @@ function _pppWriteRequest(req, path) {
     return ok;
 }
 
+/* ⭐ A SONG MOVE CANNOT READ IS NEVER LOADED (Josh, 2026-09-22: "refuse to
+ * open with notice"). Move reports such a load as OPENED and the session comes
+ * back empty, so the only place the fault shows is the file — project-cmd's
+ * list reads it (`broken`, state_subdir.song_status) and switch-slot re-reads
+ * it at the pick. The three words are a contract, pinned by check-config.sh. */
+export const SONG_UNREADABLE_LINE = {
+    missing: 'Song file missing',
+    empty:   'Song file empty',
+    invalid: 'Song file damaged',
+};
+const UNREADABLE_CARD_MS = 2000;   /* a reason to READ, not a glance */
+
+/* Why this pad's project cannot be opened, or null. Never for the project that
+ * is actually playing: it is open already, and Move may be mid-write on it. */
+function _pppBroken(p, k) {
+    const pr = p.byIndex[k];
+    return (pr && pr.broken && !_pppIsLoaded(p, k)) ? pr.broken : null;
+}
+
+function _pppRefuseUnreadable(why) {
+    showActionPopupFor(UNREADABLE_CARD_MS, "CAN'T OPEN",
+                       SONG_UNREADABLE_LINE[why] || SONG_UNREADABLE_LINE.invalid);
+}
+
 function _pppLoad(p, k) {
+    /* Before anything closes the picker or saves: the refusal leaves you on
+     * the pad you pressed, with the reason on screen. */
+    const _why = _pppBroken(p, k);
+    if (_why) { console.log('project load: refused pad ' + k + ' (song ' + _why + ')'); _pppRefuseUnreadable(_why); return; }
     const _forceRelaunch = S.forceRelaunchNextLoad;
     if (k === p.current && !_forceRelaunch) {
         /* The already-current project. Under SELECT-BEFORE-LOAD this IS the
@@ -1372,6 +1430,13 @@ function _pppLoad(p, k) {
          * request NAMING that slot: the relaunch is how Move re-reads its set
          * list, not a substitute for identity. */
         const _sw = prepareSlotFor(_proj && _proj.uuid ? _proj.uuid : '');
+        if (!_sw && _slotRefusedUnreadable) {
+            /* Broke since the list was read: `switch` would refuse too, and the
+             * Loading screen would wait for a relaunch that never comes. */
+            S.switchLoading = null;
+            reopenPickerRefusingUnreadable(_slotRefusedUnreadable);
+            return;
+        }
         if (_sw) requestSetForSlot({ pad: k, uuid: _proj.uuid, name: _proj.name },
                                    _sw.slot_uuid, _sw.slot, true);
         else console.log('project relaunch: no slot prepared for pad ' + k +

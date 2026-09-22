@@ -350,6 +350,16 @@ def answer(ok, slot=-1, project="", why=""):
 if not os.path.isdir(os.path.join(projects_dir, target)):
     answer(False, why="no such project: %s" % target)
 
+# 0. a song Move cannot read is never handed to it — Move reports such a load
+# as OPENED, so nothing downstream could tell. Checked here, on the live file,
+# because it may have broken since the picker listed it. Not the live project:
+# that is open already, and Move may be mid-write on it.
+if target != live:
+    import state_subdir as ss
+    broken = ss.song_status(os.path.join(projects_dir, target))
+    if broken:
+        answer(False, why="unreadable:%s" % broken)
+
 # 2. already on show — press it, touch nothing.
 here = sl.slot_of_project(library, target)
 if here is not None:
@@ -444,6 +454,7 @@ import json, os, re, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
 import project_pad as pp
 import project_name as pn
+import state_subdir as ss
 projects_dir, settings, out = sys.argv[1], sys.argv[2], sys.argv[3]
 cur = 0
 try:
@@ -475,7 +486,11 @@ if os.path.isdir(projects_dir):
                 color = int(os.getxattr(p, "user.dbx-color").decode())
             except (OSError, ValueError):
                 pass
-        projects.append({"uuid": u, "name": name, "index": idx, "color": color})
+        # Why the song cannot be opened (null = it can): the picker marks the
+        # pad and refuses the load. See state_subdir.song_status.
+        broken = ss.song_status(p)
+        projects.append({"uuid": u, "name": name, "index": idx, "color": color,
+                         "broken": broken})
 # Unindexed projects sort last, stably.
 projects.sort(key=lambda x: (x["index"] is None, x["index"] if x["index"] is not None else 0, x["name"]))
 tmp = out + ".tmp"
@@ -825,6 +840,21 @@ do_switch() { # index
     if [ -f "$DBX_DIR/relaunch_requested" ]; then
         die "a relaunch is already queued (relaunch_requested exists) — refusing to queue a second one"
     fi
+    # A song Move cannot read is never relaunched into (same rule as
+    # switch-slot): Move would report it OPENED and the session would come
+    # back empty, with nothing to say why.
+    _sw_broken="$(python3 - "$PROJECTS_DIR" "$1" <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import library_slots as sl, project_pad as pp, state_subdir as ss
+projects_dir, pad = sys.argv[1], int(sys.argv[2])
+for pid in sl.project_ids(projects_dir):
+    p = os.path.join(projects_dir, pid)
+    if pp.pad_of(p) == pad:
+        print(ss.song_status(p) or ""); break
+PYEOF
+)"
+    [ -z "$_sw_broken" ] || die "switch: the song on pad $1 is unreadable ($_sw_broken) — not relaunching into it"
     save_song
     # ⚠ Do NOT write currentSongIndex here: Move is still alive, and its
     # SIGTERM teardown saves Settings.json — overwriting the value with its
