@@ -1294,6 +1294,32 @@ step('⚠ CONTROL: renaming ANOTHER project leaves the open project\'s shown nam
         throw new Error('control: renaming another project changed the open one\'s name');
 });
 
+step('⭑ Shift+tap on the project ALREADY LOADED just closes the picker — no switch, no request', () => {
+    /* The one gesture that reaches _pppLoad's "already current" branch in a live
+     * session: the menu offers Resume, not Load, on the loaded project, but
+     * Shift+tap loads directly. Without the branch this would SWITCH to the
+     * project Move already holds — re-pressing its own slot, which Move ignores,
+     * so the load waits out the timeout and bounces to the picker. */
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    S.pendingOpenProjectPicker = false; S.projectPadPicker = null;
+    S.currentSetUuid = P;
+    dialogs.openProjectPadPicker();
+    if (!S.projectPadPicker || S.projectPadPicker.current !== 0)
+        throw new Error('precondition: pad 0 is not the loaded project: ' +
+                        JSON.stringify(S.projectPadPicker && S.projectPadPicker.current));
+    sysCmds.length = 0; selectArms.length = 0; files.delete(INTENDED);
+    cc(49, 127); padTap(0); cc(49, 0);
+    ticks(6);
+    if (S.projectPadPicker) throw new Error('the picker stayed open');
+    if (S.pendingProjectSwitch || S.pendingProjectRelaunch !== null || selectArms.length ||
+        sysCmds.some((c) => /switch|new-at/.test(c)) || files.has(INTENDED) || S.switchLoading)
+        throw new Error('Shift+tap on the loaded project started a SWITCH: ' +
+                        JSON.stringify({ sw: S.pendingProjectSwitch, rl: S.pendingProjectRelaunch,
+                                         arms: selectArms, cmds: sysCmds, req: files.has(INTENDED) }));
+});
+
 if (failed) { console.error('FAIL: project_open_mismatch'); process.exit(1); }
 console.log('PASS: project_open_mismatch');
 }
