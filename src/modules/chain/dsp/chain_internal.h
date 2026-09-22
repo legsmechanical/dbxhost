@@ -966,12 +966,6 @@ typedef struct chain_instance {
  * nothing left allocated. Inline so a test that links only chain_mod.c or
  * chain_midi.c gets it too. Anything that builds a chain_instance_t by hand (tests) must
  * call it too — the fields are never NULL after it. */
-/* chain_reorder.c: move audio-FX position `from` to `to` (0-based), permuting
- * every per-position field and re-aiming "fxN" targets. 1 = moved, 0 = refused. */
-int chain_reorder_move(chain_instance_t *inst, int from, int to);
-/* "fx:move" through set_param; 1 = the key was this verb. */
-int chain_reorder_set_param(chain_instance_t *inst, const char *key, const char *val);
-
 static inline void chain_free_position_storage(chain_instance_t *inst) {
     for (int i = 0; i < MAX_AUDIO_FX; i++) {
         free(inst->fx_params[i]);       inst->fx_params[i] = NULL;
@@ -1038,6 +1032,12 @@ static inline void chain_reset_voice_bus(chain_instance_t *inst) {
 }
 
 #define CHAIN_INTERNAL __attribute__((visibility("hidden")))
+
+/* chain_reorder.c: move audio-FX position `from` to `to` (0-based), permuting
+ * every per-position field and re-aiming "fxN" targets. 1 = moved, 0 = refused. */
+CHAIN_INTERNAL int chain_reorder_move(chain_instance_t *inst, int from, int to);
+/* "fx:move" through set_param; 1 = the key was this verb. */
+CHAIN_INTERNAL int chain_reorder_set_param(chain_instance_t *inst, const char *key, const char *val);
 
 /* Get current time in milliseconds (for knob acceleration) */
 static inline uint64_t get_time_ms(void) {

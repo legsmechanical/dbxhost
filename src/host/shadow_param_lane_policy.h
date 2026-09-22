@@ -147,6 +147,17 @@ static inline int spl_key_eligible(const char *key)
         return 1;
     }
 
+    /* Chain reorders — "fx:move" on a slot and "<bus>:fx:move" on every bus.
+     * A permutation must be REFUSABLE with an answer (the dispatcher checks
+     * occupancy and a live render lane), and the lane cannot carry a refusal;
+     * nor may a burst of moves run back to back in one frame. Whole-segment
+     * match: a module's own `move` parameter ("fx1:move") stays eligible. */
+    {
+        size_t n = strlen(key);
+        if (n >= 7 && strcmp(key + n - 7, "fx:move") == 0 &&
+            (n == 7 || key[n - 8] == ':')) return 0;
+    }
+
     /* Shim specials whose SET has a side effect the caller reads back. */
     if (strncmp(key, "jack:", 5) == 0) return 0;
     if (strcmp(key, "suspend_overtake") == 0) return 0;

@@ -105,6 +105,12 @@ typedef struct {
      * Pushes the changed value to the web param notify ring for real-time
      * browser updates. May be NULL if web ring is not available. */
     void (*on_param_changed)(uint8_t slot, const char *key, const char *value);
+
+    /* Is a render-pool lane still inside this slot's chain? Normally never
+     * while params are applied (same SPI thread, after the render), but a lane
+     * can outlive a BAILED round. A chain edit that permutes positions
+     * ("fx:move") must not run under it. May be NULL (then: never busy). */
+    int (*slot_render_in_flight)(int slot);
 } chain_mgmt_host_t;
 
 /* ============================================================================

@@ -1805,6 +1805,12 @@ static uint32_t spi_slot_probe_burst_max;
  */
 static render_pool_t shadow_render_pool;          /* static: helpers hold its address forever */
 static int shadow_render_pool_inited = 0;
+/* A render-pool lane still inside `slot` (task == slot). See
+ * chain_mgmt_host_t.slot_render_in_flight. */
+static int shim_slot_render_in_flight(int slot) {
+    if (!shadow_render_pool_inited || slot < 0 || slot >= RENDER_POOL_MAX_TASKS) return 0;
+    return atomic_load_explicit(&shadow_render_pool.in_flight[slot], memory_order_acquire) != 0;
+}
 static int shadow_render_lanes_cfg = RENDER_POOL_MAX_LANES;   /* master_fx:render_lanes */
 
 typedef struct {
@@ -5376,6 +5382,7 @@ static void shim_init_subsystems(void)
             .get_bpm = shim_get_bpm,
             .get_beat_position = shadow_transport_beat_position,
             .on_param_changed = web_param_notify_push,
+            .slot_render_in_flight = shim_slot_render_in_flight,
         };
         chain_mgmt_init(&cm_host);
     }

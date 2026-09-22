@@ -13,6 +13,7 @@
 #include <strings.h>  /* strcasecmp */
 
 #include "shadow_chain_mgmt.h"
+#include "chain_move_check.h"
 #include "shim_worker.h"
 #include "master_fx_saved_state.h" /* object or opaque-string state at boot */
 #include "shadow_set_pages.h"
@@ -3356,6 +3357,20 @@ static void fx_slot_param_rest(master_fx_slot_t *s, const char *rest,
  * tests/host/test_param_buffers_not_on_stack.sh. SPI thread only. */
 static char s_set_value_copy[SHADOW_PARAM_VALUE_LEN];
 
+/* See the "fx:move" arm in shadow_param_apply_set_ex and chain_move_check.h.
+ * Occupancy is read back through the chain's own "fxN:module". */
+static int slot_fx_occupied(void *ctx, int pos) {
+    int slot = *(const int *)ctx;
+    if (!shadow_plugin_v2 || !shadow_plugin_v2->get_param) return 0;
+    char k[16], buf[64];
+    snprintf(k, sizeof(k), "fx%d:module", pos);
+    return shadow_plugin_v2->get_param(shadow_chain_slots[slot].instance, k, buf, sizeof(buf)) > 0;
+}
+static int shadow_fx_move_check(int slot, const char *value) {
+    int busy = host.slot_render_in_flight && host.slot_render_in_flight(slot);
+    return chain_fx_move_check(value, 4, busy, slot_fx_occupied, &slot);
+}
+
 int shadow_param_apply_set_ex(int slot, const char *key, const char *value,
                               int *io_error, int *io_result_len) {
     int dummy_err = 0, dummy_len = 0;
@@ -3731,6 +3746,17 @@ int shadow_param_apply_set_ex(int slot, const char *key, const char *value,
         *io_error = 3;
         *io_result_len = -1;
         return *io_error;
+    }
+
+    /* A chain REORDER ("fx:move" = "<from>><to>", 1-based) is checked HERE,
+     * where it can still be refused with an answer: the chain's set_param has
+     * no return value. Refused (15) unless both ends and every position the
+     * rotation crosses hold a module — the slot save writes positions
+     * COMPACTED, so a move through an empty position would not survive a
+     * reload. Busy (14) while a bailed render lane is still in this chain. */
+    if (strcmp(key, "fx:move") == 0) {
+        int e = shadow_fx_move_check(slot, value);
+        if (e) { *io_error = e; *io_result_len = -1; return e; }
     }
 
     {

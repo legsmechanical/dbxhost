@@ -33,6 +33,13 @@ int main(void) {
     OK(spl_key_eligible("jack:restore_leds") == 0,   "jack:restore_leds is EXCLUDED");
     OK(spl_key_eligible("suspend_overtake") == 0,    "suspend_overtake is EXCLUDED (hands over the surface)");
     OK(spl_key_eligible("passthrough") == 0,         "passthrough is EXCLUDED (re-routes audio for the session)");
+    /* Chain reorders: refusable with an answer, never a burst in one frame. */
+    OK(spl_key_eligible("fx:move") == 0,             "fx:move (slot chain reorder) is EXCLUDED");
+    OK(spl_key_eligible("master_fx:fx:move") == 0,   "master_fx:fx:move is EXCLUDED");
+    OK(spl_key_eligible("send_fx:a:fx:move") == 0,   "send_fx:a:fx:move is EXCLUDED");
+    OK(spl_key_eligible("move_fx:3:fx:move") == 0,   "move_fx:N:fx:move is EXCLUDED");
+    OK(spl_key_eligible("fx1:move") == 1,            "a module's own `move` param (fx1:move) stays ELIGIBLE");
+    OK(spl_key_eligible("synth:remove") == 1,        "a key merely ending in `move` stays ELIGIBLE");
     OK(spl_key_eligible("state") == 0,               "the bare `state` blob is EXCLUDED");
     OK(spl_key_eligible("synth:state") == 0,         "a `<prefix>:state` blob is EXCLUDED");
     OK(spl_key_eligible("overtake_dsp:state") == 0,  "overtake_dsp:state is EXCLUDED as a blob, not as a prefix");

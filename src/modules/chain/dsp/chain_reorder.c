@@ -7,10 +7,13 @@
  *
  *   FOUR FIXED POSITIONS, holes allowed. Upstream's chain is variable-length and
  *   compact; here fx1..fx4 are addressed independently and `fx_count` is a
- *   HIGH-WATER MARK (a position below it may be empty — both walks skip it). So
- *   a move permutes ALL MAX_AUDIO_FX positions, holes included, and only then
- *   recomputes the mark. Moving a module into an empty position is a swap with
- *   the hole.
+ *   HIGH-WATER MARK (a position below it may be empty — both walks skip it).
+ *   ⚠ A MOVE NEVER CROSSES A HOLE: both ends and everything between must hold
+ *   a module. The slot save writes positions COMPACTED and the load appends
+ *   (chain_patch.c), so an order with a hole in it does not survive a reload —
+ *   a move through one would come back different, with every "fxN" reference
+ *   outside this chain naming the wrong module. The shim refuses such a move
+ *   with an answer (shadow_fx_move_check); this refuses it again.
  *
  *   MOVE ONLY, AUDIO FX ONLY. No insert/remove verbs (positions are fixed) and
  *   MIDI FX are not moved (their storage is still inline).
@@ -84,13 +87,23 @@ static void chain_perm_retarget_all(chain_instance_t *inst, const int *map, int 
     }
 }
 
+/* The param-smoother is the largest per-position value field, and the permute
+ * refuses (silently, as a failed move) anything over its scratch size. */
+_Static_assert(sizeof(param_smoother_t) <= CHAIN_PERM_MAX_ELEM,
+               "param_smoother_t outgrew chain_permute.h's scratch: every fx:move would be refused");
+
 /*
  * Move position `from` to position `to`, both 0-based, rotating everything in
- * between. Returns 1 on success, 0 if refused (out of range, same position, an
- * owned buffer missing). Holes move like modules.
+ * between. Returns 1 on success, 0 if refused (out of range, same position, a
+ * hole anywhere in [from..to], an owned buffer missing).
  */
 int chain_reorder_move(chain_instance_t *inst, int from, int to) {
     if (!inst) return 0;
+    if (from < 0 || from >= MAX_AUDIO_FX || to < 0 || to >= MAX_AUDIO_FX) return 0;
+    {
+        int lo = from < to ? from : to, hi = from < to ? to : from;
+        for (int i = lo; i <= hi; i++) if (!inst->fx_instances[i]) return 0;
+    }
     chain_perm_array_t arrays[16];
     int n = chain_perm_collect_fx(inst, arrays);
     int map[CHAIN_PERM_MAX_POS];
