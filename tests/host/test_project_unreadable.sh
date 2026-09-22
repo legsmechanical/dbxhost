@@ -36,11 +36,13 @@ UG=aaaaaaaa-0000-4000-8000-00000000000a   # good: the real template
 UB=bbbbbbbb-0000-4000-8000-00000000000b   # garbage
 UE=cccccccc-0000-4000-8000-00000000000c   # zero bytes
 UM=dddddddd-0000-4000-8000-00000000000d   # no Song.abl at all
-for u in $UG $UB $UE; do mkdir -p "$PROJECTS_DIR/$u/Move-Set-${u:0:8}" "$PROJECTS_DIR/$u/dAVEBOx"; done
+UL=eeeeeeee-0000-4000-8000-00000000000e   # valid JSON, but not an object
+for u in $UG $UB $UE $UL; do mkdir -p "$PROJECTS_DIR/$u/Move-Set-${u:0:8}" "$PROJECTS_DIR/$u/dAVEBOx"; done
 mkdir -p "$PROJECTS_DIR/$UM/dAVEBOx"
 python3 standalone/scripts/make-template.py "$PROJECTS_DIR/$UG/Move-Set-${UG:0:8}/Song.abl" >/dev/null
 printf 'garbage' > "$PROJECTS_DIR/$UB/Move-Set-${UB:0:8}/Song.abl"
 : > "$PROJECTS_DIR/$UE/Move-Set-${UE:0:8}/Song.abl"
+echo '[1, 2]' > "$PROJECTS_DIR/$UL/Move-Set-${UL:0:8}/Song.abl"
 # Pads, so `switch <pad>` can name them (project_pad.py's xattr).
 i=0; for u in $UG $UB $UE $UM; do
     python3 -c 'import os,sys; sys.path.insert(0, os.environ["DBX_PY_DIR"]); import project_pad as pp
@@ -56,8 +58,8 @@ d = json.load(open(sys.argv[1]))
 print(" ".join("%s=%s" % (p["uuid"][:8], p.get("broken", "ABSENT")) for p in sorted(d["projects"], key=lambda p: p["uuid"])))
 PY
 )"
-want="aaaaaaaa=None bbbbbbbb=invalid cccccccc=empty dddddddd=missing"
-[ "$got" = "$want" ] && ok "list: healthy=null, garbage=invalid, empty=empty, no song=missing" \
+want="aaaaaaaa=None bbbbbbbb=invalid cccccccc=empty dddddddd=missing eeeeeeee=invalid"
+[ "$got" = "$want" ] && ok "list: healthy=null, garbage=invalid, empty=empty, no song=missing, JSON non-object=invalid" \
     || bad "list gave: $got (want $want)"
 
 # ---- switch-slot: the pick-time gate, on the live file ---------------------
