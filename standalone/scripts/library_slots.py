@@ -206,6 +206,19 @@ def sync(library, projects_dir, prefer=""):
         current[0] = prefer
     want = plan_slots(ids, current)
 
+    # ⚠ TAG BEFORE LINK, as in repoint(): this sync also runs MID-SESSION
+    # (delete, repair), with Move up and re-reading the library whenever a link
+    # moves. Every project about to go on show is tagged FIRST; the links move;
+    # only then do projects that left lose their tag. At no instant does a slot
+    # lead to an untagged project — which Move would rank last, putting pad 0
+    # on the other slot for the rest of the session.
+    on_show = {}
+    for i, pid in enumerate(want):
+        if pid:
+            on_show[pid] = i
+    for pid, i in on_show.items():
+        _set_song_index(project_path(projects_dir, pid), i)
+
     pointed, removed, strays = [], [], []
     for i, sid in enumerate(SLOT_IDS):
         link = os.path.join(library, sid)
@@ -224,12 +237,11 @@ def sync(library, projects_dir, prefer=""):
     # project each slot points at, and to no other. Re-derived from scratch on
     # every sync, which is also what heals a crash between a re-point and its
     # xattr write — the state is a pure function of where the links point.
-    on_show = {}
-    for i, pid in enumerate(want):
-        if pid:
-            on_show[pid] = i
+    # The incoming half was written above, before the links moved; this is the
+    # outgoing half, and it must come AFTER them.
     for pid in ids:
-        _set_song_index(project_path(projects_dir, pid), on_show.get(pid))
+        if pid not in on_show:
+            _set_song_index(project_path(projects_dir, pid), None)
 
     # Anything else in the library is not a slot. The per-project links the
     # previous phase made are exactly this, which is how the layout migrates.
@@ -268,10 +280,25 @@ def repoint(library, projects_dir, slot_index, pid):
     if pid and pid == other:
         raise ValueError("slot %d already holds %s — the two slots may not share a project"
                          % (1 - slot_index, pid))
-    _point(library, sid, project_path(projects_dir, pid))
+    # ⚠⚠ THE INDEX GOES ON BEFORE THE LINK MOVES — never after.
+    # Move re-reads the library when a slot link changes, and ranks an entry
+    # with no `user.song-index` LAST. The other order (rename, then tag) opens a
+    # window where slot 0 leads to an untagged project: Move re-ranks it behind
+    # slot 1 and does NOT re-rank when the tag lands a moment later. From then
+    # on pad 0 is the OTHER slot, so every switch to slot 0 presses the project
+    # Move is already on, Move says nothing, and the load times out as
+    # `unopened` (device, 2026-09-21: two in a row, one on a brand-new project
+    # and one on an old one whose tag the launch sync had cleared).
+    # Slot 1 never shows it — untagged sorts last, and slot 1 IS last — which
+    # is why it looked slot-specific.
+    target = project_path(projects_dir, pid)
+    _set_song_index(target, slot_index)
+    _point(library, sid, target)
     landed = slot_target(library, sid)
-    if landed == pid:
-        _set_song_index(project_path(projects_dir, pid), slot_index)
+    if landed != pid:
+        # The link did not move, so this project is not on show: take the tag
+        # back off rather than leave a second project claiming the index.
+        _set_song_index(target, None)
     return landed
 
 
