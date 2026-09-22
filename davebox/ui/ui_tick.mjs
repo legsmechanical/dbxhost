@@ -1791,7 +1791,7 @@ export function _tickImpl() {
              * only where the jog can open the page — AFTER the reads above,
              * since a melodic step's notes are only known from here. */
             if (_holdByTime && !S.stepReveal && stepRevealAvailable()) {
-                showActionPopupFor(STEP_JOG_HINT_MS, 'JOG RIGHT', 'EDIT STEP');
+                showActionPopupFor(STEP_JOG_HINT_MS, 'JOG RIGHT', 'Edit step');
                 S.actionPopupStepHint = true;
             }
         }

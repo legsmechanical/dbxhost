@@ -143,8 +143,8 @@ step('⚠ control: WITHOUT the reveal the same turn on a held step DOES lock CLI
 });
 /* The held-step jog hint (Josh, 2026-09-22): a card saying what the jog does,
  * once a press becomes a hold by time. Asserted on what is DRAWN. */
-const shows = () => { S.screenDirty = true; globalThis.tick(); return printed.includes('JOG RIGHT') && printed.includes('EDIT STEP'); };
-step('⚠ a held step shows the JOG RIGHT / EDIT STEP card on a bank page', () => {
+const shows = () => { S.screenDirty = true; globalThis.tick(); return printed.includes('JOG RIGHT') && printed.includes('Edit step'); };
+step('⚠ a held step shows the JOG RIGHT / Edit step card on a bank page', () => {
     fresh(1); holdStep5();
     assert(shows(), 'no hint card drawn after the hold, printed: ' + JSON.stringify(printed));
     release();

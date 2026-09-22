@@ -59,7 +59,7 @@ the section into a versioned heading at release time.
   already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
-- **Holding a step says what the jog does.** A short "JOG RIGHT / EDIT STEP" card
+- **Holding a step says what the jog does.** A short "JOG RIGHT / Edit step" card
   appears once a press becomes a hold, and goes as soon as you turn a knob or the
   jog, or let go. The JOG STEP footer hint shows on the track overview too, not
   only on a bank page.
