@@ -120,6 +120,12 @@ check "song folder prefix"             "$HERE/scripts/project_name.py"       'SO
 check "name tag file (python)"         "$HERE/scripts/project_name.py"       'NAME_FILE = "name.txt"'
 check "name tag file (davebox)"        "$REPO/davebox/ui/ui_persistence.mjs" "PROJECT_NAME_FILE = 'name.txt'"
 check "project-cmd names by the tag"   "$HERE/scripts/project-cmd.sh"        "import project_name as pn"
+
+# Ableton export: the UI and the DSP both spell the staging dir (the DSP writes
+# the render + automation files the UI reads). Both under OUR install.
+check "export dir (davebox UI)"        "$REPO/davebox/ui/ui_export.mjs"      "EXPORT_OUT_DIR    = DAVEBOX_HOST_DIR + '/davebox-exports'"
+check "export render (davebox DSP)"    "$REPO/davebox/dsp/seq8_bake.c"       'SEQ8_DBX_DIR "/davebox-exports/staging/render.txt"'
+check "export automation (davebox DSP)" "$REPO/davebox/dsp/seq8_bake.c"      'SEQ8_DBX_DIR "/davebox-exports/staging/automation.txt"'
 # set-swap.sh used to import this too, for newest_autosave_uuid()'s state-dir
 # glob — deleted (project-identity-design §3A A10): it was a live second guess
 # at session identity that could override active_set.txt, which the host now

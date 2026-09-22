@@ -37,9 +37,11 @@ const MODULE_ID = (typeof DAVEBOX_MODULE_ID === 'string') ? DAVEBOX_MODULE_ID : 
  * null and export stopped at EXPORT FAIL / NO TEMPLATE before doing anything
  * (found 2026-09-22 by reading the device: the path is absent there). */
 const EXPORT_MODULE_DIR = DAVEBOX_HOST_DIR + '/modules/tools/' + MODULE_ID;
-const EXPORT_OUT_DIR    = '/data/UserData/schwung/davebox-exports';
-/* Scratch workspace nested under the exports dir (keeps the schwung folder
- * uncluttered); created per export and removed afterward. */
+/* Finished bundles land in OUR install too, never stock's tree (Josh,
+ * 2026-09-22) — nothing of dAVEBOx SA's lives under /data/UserData/schwung. */
+const EXPORT_OUT_DIR    = DAVEBOX_HOST_DIR + '/davebox-exports';
+/* Scratch workspace nested under the exports dir; created per export and
+ * removed afterward. */
 const EXPORT_STAGING    = EXPORT_OUT_DIR + '/staging';
 const EXPORT_SCENES     = NUM_CLIPS;   /* dAVEBOx clip N -> scene N */
 /* DSP writes per-clip rendered notes here; JS reads them (must match

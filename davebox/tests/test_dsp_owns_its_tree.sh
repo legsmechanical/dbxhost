@@ -22,33 +22,32 @@ fails=0
 ok()   { echo "  ok   $1"; }
 bad()  { echo "FAIL: $1" >&2; fails=$((fails+1)); }
 
-# --- 1. No state/log destination in the DSP names the stock tree -----------
+# --- 1. No path in the DSP names the stock tree ----------------------------
 #
-# ALLOW-LIST, and each entry is a deliberate, argued exception rather than a
-# leftover. Keep it as short as it is; an allow-list that grows is a pin that
-# has stopped meaning anything.
-#
-#   seq8_bake.c EXPORT_*  — the MIDI-export staging dir, which is the stock
-#                           tree by agreement with ui_export.mjs (the export
-#                           lands where the user's other exports live). It is
-#                           NOT state and NOT a log. Listed, not blessed: if
-#                           the export ever moves, delete the exemption too.
-allowed_re='EXPORT_RENDER_PATH|EXPORT_PA_PATH'
+# No allow-list. The one exemption there was — the Ableton-export staging dir —
+# left the stock tree on 2026-09-22 with the finished bundles, and the rule
+# above said to delete the exemption when it did.
+stock_hits() { grep -rn -- "$STOCK" "$1" || true; }
 
-hits=$(grep -rn -- "$STOCK" dsp/ | grep -Ev "$allowed_re" || true)
+hits=$(stock_hits dsp/)
 if [ -z "$hits" ]; then
-    ok "no DSP state or log path names the stock install"
+    ok "no DSP path names the stock install"
 else
     bad "the DSP names the stock install:"
     echo "$hits" >&2
 fi
 
-# Positive control on the search itself: the grep MUST see the allow-listed
-# lines, or "no hits" above would only mean the pattern never matches anything.
-if grep -rn -- "$STOCK" dsp/ | grep -Eq "$allowed_re"; then
-    ok "⚠ control: the search does find the allow-listed export paths"
+# Positive control on the search itself: plant the literal in a copy of dsp/
+# and require the SAME search to find it, or "no hits" above would only mean
+# the pattern never matches anything.
+ctl=$(mktemp -d)
+trap 'rm -rf "$ctl"' EXIT
+cp -R dsp "$ctl/dsp"
+echo "#define PLANTED \"$STOCK/planted.txt\"" >> "$ctl/dsp/seq8_bake.c"
+if [ -n "$(stock_hits "$ctl/dsp")" ]; then
+    ok "⚠ control: the search finds a stock path planted in a copy of dsp/"
 else
-    bad "control: the search found NOTHING at all — this pin proves nothing"
+    bad "control: the search cannot see a planted stock path — this pin proves nothing"
 fi
 
 # --- 2. There is no fallback state file, by name or by shape --------------
