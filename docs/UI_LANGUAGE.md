@@ -767,6 +767,14 @@ available, so unavailability is communicated in the value, not the styling.
 
 Track identity is the organizing axis; everything else is a modifier on it.
 
+**A lit button promises that pressing it does something HERE.** A screen that owns the surface
+lights only the controls that act on it, and everything else is dark — Josh, 2026-09-22, on the
+project picker: *"we need all buttons led's OFF except those that function in that mode."* Such a
+screen is ONE painter that replaces the view painters, never a painter that runs after them and
+overwrites: an overwrite through the cache loses to any painter writing uncached every tick (the
+picker kept the session view's red scene-row steps lit that way). Worked example:
+`paintProjectPickerSurface` in `davebox/ui/ui_leds.mjs`.
+
 ```js
 TRACK_COLORS     = [Red, Blue, BrightGreen, Green, BrightPink, RoyalBlue, Mustard, DeepGreen]
 TRACK_DIM_COLORS = [66,  DarkBlue, DarkOlive, 86,   DeepWine,   96,        70,      86]
