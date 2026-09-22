@@ -126,7 +126,7 @@ Those 10 commits touch **no** `src/` or `schwung-manager/` file, so nothing was 
 | `a6fc6235` #415 | Enum list drew through device globals | **ALREADY HERE — the row was wrong.** ⭑ Corrected 2026-09-10: `src/shared/param_pages/enum_list.mjs` is **byte-identical to upstream** (`git diff upstream/main HEAD --` is empty), `ctx,` forwarded at the `drawMenuList` call with upstream's own comment. The file never diverged; nothing was owed to the library sync. |
 | `98b5c3c7` #393, `2ff52653` #387, `51c11134` #389, `ccbe11ac` `57c3d13c` #411, `c315b95d` #385 | CPU monitor, defaults on, metronome, pad_layout/voices, snapshot recall | **Later, as roadmap items** (snapshot recall = board item 18's mechanism) |
 | `5b6d4b18` #386, `121a79b6` #397 | Track tap = Stay; long-press Track toggles layers | **Assess first** — gesture surfaces davebox owns |
-| `2272a1eb` #392 | Save Stems | **Skipped** — overlaps davebox's export pipeline |
+| `2272a1eb` #392 | Save Stems | **Skipped** — overlaps davebox's export pipeline. ⚠ It also carries `paramPagesPaginate()` / the `paginate` chrome flag, which diffs as "a setting this fork lost". It is not a setting: only upstream's Global Settings passes `paginate: false` (so its list is not chunked at 8); every other screen gets `true`, the controller's default. Nothing to port — checked 2026-09-22. |
 | `c8cb169e` #405, `e36e8ab5` #410, `cfb9db55` #414 | drawCell frame, module card, frame_ctx primitives | **Already have** (this fork's own work, merged upstream; #414 to reconcile in the library sync) |
 | `949af236` #413, `bfcb2011` #382, `a25af5b8` #417 | Test card, release commits | **Skipped** — no code owed |
 

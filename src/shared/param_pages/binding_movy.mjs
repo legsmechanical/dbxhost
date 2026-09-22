@@ -394,10 +394,12 @@ function enterParamPages(slot, component, prefix, restorePageName, io, chrome, r
      * editor slot/component, which is stale while the grid is up — fine for a
      * component (the grid and the list agree on which one), wrong for a
      * synthesised contract, so an io may carry its own. */
-    /* ⚠ `paginate` is deliberately NOT added here. Upstream passes it; this
-     * tree does not, and paramPagesPaginate exists nowhere in it. That is its
-     * own finding, tracked separately -- reconciling it as a side effect of
-     * this change would make the two indistinguishable on the device. */
+    /* `paginate` is not passed, and that is correct. Upstream's
+     * paramPagesPaginate() is not a user setting: it returns false ONLY for a
+     * chrome that asks (Global Settings, so its list is not chunked at 8) and
+     * true otherwise -- which is the controller's default. It arrived with
+     * upstream #392 (Save Stems), skipped here whole (docs/UPSTREAM.md), and
+     * this tree has no Global Settings screen for it to serve. */
     entering = true;
     try {
         controller.load({
