@@ -43,7 +43,7 @@ import { renderPageMovy, drawFooter, drawHeader as drawHeaderMovy, drawBankBar,
          drawBrackets, drawPresetBody, displayValue, RULE_Y, LAYOUT_MOVY,
          movyHeaderFor, labelForCell, normalizedOf, widgetKindFor,
          MENU_LIST_X, MENU_LIST_Y, MENU_LIST_W } from "./render_page_movy.mjs";
-import { resolveViz, vizDiveTarget, VIZ_SWITCH } from "./viz.mjs";
+import { resolveViz, vizDiveTarget, VIZ_SWITCH, MAX_DECLARED_EXTRA_KEYS } from "./viz.mjs";
 import { widgetsGeneration } from "./widget_registry.mjs";
 import { createAnimState } from "./anim_state.mjs";
 import { drawMenuList } from "../menu_layout.mjs";
@@ -746,6 +746,10 @@ export function createController(io = {}) {
          * Cheaper and more exact than polling: only these keys can change what
          * is visible, and we already read every key on the page. */
         conditionKeys: new Set(),
+        /* A pad press or the module moving its own focus says the mode may
+         * have moved — spend the next rotation stop on the gates rather than
+         * waiting for their turn. See the gate stop. */
+        gatesDue: false,
         /* A write touched a gate driver; tick() owes one plan. Coalesced,
          * because an encoder sweep is a burst of writes and each one used to
          * buy a whole planPages — measured at 112 passes in one tick. */
@@ -1791,6 +1795,10 @@ export function createController(io = {}) {
         if (i === null) return;                 /* tri-state: not an answer */
         if (i === childIndexFor(name)) return;  /* already there */
         s.childIndex[name] = i;
+        /* The module moved its own focus — a pad was hit, a preset loaded.
+         * Whatever its mode is gated on may have moved with it, and unlike a
+         * knob turn nothing on this grid wrote anything. See the gate stop. */
+        if (s.conditionKeys && s.conditionKeys.size) s.gatesDue = true;
         dropChildLevelCache(name);
     }
 
@@ -1848,6 +1856,7 @@ export function createController(io = {}) {
         const k = livePressParam();
         if (!k) return false;
         setParam(`${s.prefix}:${k}`, "1");
+        if (s.conditionKeys && s.conditionKeys.size) s.gatesDue = true;
         return true;
     }
 
@@ -2245,6 +2254,55 @@ export function createController(io = {}) {
          * ~22ms of dead time on a page's first visit, a visible hitch on the
          * exact gesture this exists to smooth.
          */
+        /*
+         * A GATE KEY IS READ WHEN SOMETHING OUTSIDE THE GRID MOVED.
+         *
+         * `visible_if` hides a level or a cell whose condition is false, and
+         * the re-plan that brings it back is driven by the condition's value
+         * CHANGING -- which the controller only notices for keys it reads.
+         *
+         * ⚠ IT IS AN EVENT, NOT A POLL, and that distinction is the whole
+         * design. A gate whose value only ever changes BECAUSE OF A WRITE
+         * FROM THIS GRID already re-plans: the write path calls
+         * replanIfCondition, and the planner's evaluator reads whatever else
+         * it needs on demand. echidna-fx is built that way -- 18 derived
+         * flags per slot, all downstream of one Cat knob that IS a cell --
+         * and polling its ~72 condition keys would spend four stops a page
+         * refreshing values that were already correct, slowing the knobs it
+         * shares the rotation with for nothing.
+         *
+         * What has no path today is a gate that moves with NO grid
+         * interaction at all: a module whose mode lives outside the grid,
+         * where the pad you hit selects the voice and two voice types want
+         * different pages. So the gates are marked due exactly when the grid
+         * learns of such a move -- a live pad press (vouchLivePress) or the
+         * module's own focus changing (syncChildIndexFromModule) -- and are
+         * read one per tick from the next stop. Idle, this costs nothing at
+         * all.
+         *
+         * `conditionKeys` comes from the planner's pre-pass over EVERY level,
+         * including hidden ones, so a level that is off can come back on.
+         */
+        if (s.gatesDue) {
+            const due = [];
+            for (const k of s.conditionKeys) {
+                if (!k || p.keys.indexOf(k) >= 0) continue;   /* a cell is read anyway */
+                due.push(k);
+                if (due.length >= MAX_DECLARED_EXTRA_KEYS) break;
+            }
+            const k = due[s.gateAt || 0];
+            if (!k) { s.gatesDue = false; s.gateAt = 0; }
+            else {
+                s.gateAt = (s.gateAt || 0) + 1;
+                if (s.gateAt >= due.length) { s.gatesDue = false; s.gateAt = 0; }
+                const gv = getParam(fullKey(k));
+                const before = s.values[k];
+                if (gv !== null && gv !== undefined) s.values[k] = gv;
+                if (s.values[k] !== before) replanIfCondition(k);
+                return null;
+            }
+        }
+
         const warm = neighbourPrefetch(p);
         const stops = p.keys.length + 1 + extraKeys.length + (warm ? 1 : 0);
         const at = s.cursor % stops;
@@ -2318,7 +2376,13 @@ export function createController(io = {}) {
             const ek = extraKeys[at - p.keys.length - 1];
             if (!ek) return null;
             const ev = getParam(fullKey(ek));
+            const was = s.values[ek];
             if (ev !== null && ev !== undefined) s.values[ek] = ev;
+            /* This lane stores straight into s.values rather than going
+             * through acceptValue -- see the tri-state note above, which is
+             * deliberately different here. So the condition re-plan is made
+             * explicitly. */
+            if (s.values[ek] !== was) replanIfCondition(ek);
             return null;
         }
         const key = p.keys[at];

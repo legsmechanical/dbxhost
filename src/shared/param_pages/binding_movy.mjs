@@ -104,6 +104,22 @@ export function createParamPagesBinding(ctx) {
 /* The live controller, or null when the view is not open. One at a time: the
  * grid always shows a single component, and rebuilding on entry is cheap. */
 let controller = null;
+/*
+ * TRUE only inside enterParamPages, between the controller existing and the
+ * view flipping to PARAM_PAGES.
+ *
+ * ⚠ THE FIRST PLAN HAPPENS INSIDE THAT WINDOW. controller.load() below builds
+ * the page set, and evaluateVisibilityCondition decides whose slot a
+ * `visible_if` reads against by asking whether the grid is up -- which, on the
+ * way up, it is not. So the very first plan resolved every condition against
+ * the LIST editor's slot (-1 from here), read null, and took the fail-open
+ * branch: every gated level visible.
+ *
+ * setView is NOT moved ahead of the load to fix it: it closes the knob card
+ * and clears the touch set, a far larger blast radius than saying plainly that
+ * the grid is the context while it is being built.
+ */
+let entering = false;
 /* Which param accessors the live controller closes over, so switching between
  * a module and a synthesised contract (slot settings) rebuilds it instead of
  * silently keeping the old ones. */
@@ -378,10 +394,19 @@ function enterParamPages(slot, component, prefix, restorePageName, io, chrome, r
      * editor slot/component, which is stale while the grid is up — fine for a
      * component (the grid and the list agree on which one), wrong for a
      * synthesised contract, so an io may carry its own. */
-    controller.load({
-        slot, component, prefix: prefix || component,
-        visible: (io && io.visible) ? io.visible : ctx.evaluateVisibilityCondition,
-    });
+    /* ⚠ `paginate` is deliberately NOT added here. Upstream passes it; this
+     * tree does not, and paramPagesPaginate exists nowhere in it. That is its
+     * own finding, tracked separately -- reconciling it as a side effect of
+     * this change would make the two indistinguishable on the device. */
+    entering = true;
+    try {
+        controller.load({
+            slot, component, prefix: prefix || component,
+            visible: (io && io.visible) ? io.visible : ctx.evaluateVisibilityCondition,
+        });
+    } finally {
+        entering = false;
+    }
     /* "Knobs" IS schwung-movy's own knob-page layout now, not Schwung's
      * earlier dial/bar grid — see render_page_movy.mjs. "List" is the same
      * engine with the knob page arranged as five rows (LAYOUT_LIST). The
@@ -482,6 +507,14 @@ function paramPagesRefreshTrailing() {
 
 function paramPagesActive() {
     return controller !== null;
+}
+
+/**
+ * Is the grid the context for a visible_if, even though the view has not
+ * flipped to it yet? True only while enterParamPages builds the first plan.
+ */
+function paramPagesEntering() {
+    return entering;
 }
 
 /** Which component the grid is pointed at, for handing back to the list. */
@@ -1511,6 +1544,7 @@ function paramPagesMenuEntered() {
         handleParamPagesMidi,
         headerTitle,
         paramPagesActive,
+        paramPagesEntering,
         paramPagesCachedValue,
         paramPagesChildIndex,
         paramPagesComponent,

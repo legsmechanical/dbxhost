@@ -52,6 +52,7 @@ export const exitParamPages = _view.exitParamPages;
 export const paramPagesExitMenu = _view.paramPagesExitMenu;
 export const paramPagesRefreshTrailing = _view.paramPagesRefreshTrailing;
 export const paramPagesActive = _view.paramPagesActive;
+export const paramPagesEntering = _view.paramPagesEntering;
 export const paramPagesComponent = _view.paramPagesComponent;
 export const paramPagesSlot = _view.paramPagesSlot;
 export const currentParamPage = _view.currentParamPage;
