@@ -63,14 +63,15 @@ check "set-swap calls the mount verb"  "$HERE/scripts/set-swap.sh"  "--mount-set
 check "set-swap calls the umount verb" "$HERE/scripts/set-swap.sh"  "--umount-sets"
 
 # ⭑ THE PROJECT STORE. Projects live in $DBX_DIR/projects/; the set library
-# heal mounts is a VIEW of it, one symlink per project. Four scripts spell that
+# heal mounts is a VIEW of it, through two slot links. Three scripts spell that
 # root, and a slip in any one of them is silent in the worst way: the verb
 # enumerates an empty directory and reports zero projects, which is exactly
-# what a fresh install looks like. Pin all four, and pin that the rule they
-# share is imported rather than re-spelled.
+# what a fresh install looks like. Pin all three, and pin that the rule they
+# share is imported rather than re-spelled. (select-hook reads the LIBRARY:
+# it is handed a slot, and resolves the project through that slot's link.)
 check "project-cmd store root"         "$HERE/scripts/project-cmd.sh"  'PROJECTS_DIR="${PROJECTS_DIR:-$DBX_DIR/projects}"'
 check "select-list store root"         "$HERE/scripts/select-list.sh"  'PROJECTS_DIR="${PROJECTS_DIR:-$DBX_DIR/projects}"'
-check "select-hook store root"         "$HERE/scripts/select-hook.sh"  'PROJECTS_DIR="${PROJECTS_DIR:-$DBX_DIR/projects}"'
+check "select-hook library root"       "$HERE/scripts/select-hook.sh"  'LIBRARY_DIR="${LIBRARY_DIR:-$DBX_DIR/sets/library}"'
 check "launch.sh seeds the store"      "$HERE/scripts/launch.sh"       '$DBX_DIR/projects/$_tuuid'
 check "project-cmd library root"       "$HERE/scripts/project-cmd.sh"  'LIBRARY_DIR="${LIBRARY_DIR:-$DBX_DIR/sets/library}"'
 check "project-cmd imports the slots"  "$HERE/scripts/project-cmd.sh"  "import library_slots as sl"
@@ -80,11 +81,13 @@ check "launch.sh syncs the library"    "$HERE/scripts/launch.sh"       'project-
 # be one xattr; they are two now, and the split only stays split if exactly one
 # file spells the new name. That file is project_pad.py — pinned here, and
 # tests/host/test_project_pad_readers.sh fails if a second speller appears
-# anywhere in the tree. The three shell verbs must IMPORT it, never re-spell it.
+# anywhere in the tree. The shell verbs must IMPORT it, never re-spell it —
+# and select-list and select-hook must not read it at all: they are handed a
+# SLOT, so they resolve through library_slots.
 check "the picker-pad xattr name"      "$HERE/scripts/project_pad.py"  'PAD_XATTR = "user.dbx-pad"'
 check "project-cmd reads the pad"      "$HERE/scripts/project-cmd.sh"  "import project_pad as pp"
 check "select-list names by slot"     "$HERE/scripts/select-list.sh"  "import library_slots as sl"
-check "select-hook reads the pad"      "$HERE/scripts/select-hook.sh"  "import project_pad as pp"
+check "select-hook resolves by slot"   "$HERE/scripts/select-hook.sh"  "import library_slots as sl"
 
 # ⭑ THE TWO SLOTS. Move sees exactly these and never a project id. They are
 # fixtures, not projects: nothing may mint one, and nothing may spell them

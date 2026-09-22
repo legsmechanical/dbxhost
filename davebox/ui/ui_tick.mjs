@@ -2205,11 +2205,10 @@ export function _tickImpl() {
         S.screenDirty = true;
         return;
     } else if (S.pendingProjectRelaunch !== null) {
-        /* A project CREATED THIS SESSION: Move has never seen it, because it
-         * enumerates sets at LAUNCH. The select actuator would walk its overview
-         * to a pad Move believes is empty and load nothing, leaving davebox in
-         * the new project while Move still plays the old one's set — and Move
-         * saves the set it HAS open, so edits would land in the wrong project.
+        /* The RELAUNCH route, reached only from Retry after a load Move did
+         * not confirm (forceRelaunchNextLoad). A new project no longer comes
+         * here: it sits behind a slot like any other and loads through the
+         * normal switch below.
          *
          * project-cmd `switch` writes relaunch_song_index + relaunch_requested
          * and TERMs Move; the launcher's supervisor applies the index after Move

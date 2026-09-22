@@ -53,8 +53,12 @@ grep -q 'while :; do' "$ls" || fail "supervisor loop missing"
 
 # enter failure must refuse the launch — either a bare exit 1 or the refuse()
 # helper (which exits 1 after resuming the watchdog) within a few lines
-sed -n "${enter},$((enter+6))p" "$ls" | grep -qE 'exit 1|refuse ' ||
-  fail "a failed set-swap enter no longer refuses the launch"
+# ⚠ Capture, then match: `producer | grep -q` under pipefail is a race (the
+# producer can die of SIGPIPE when grep exits early, and the test exits 141
+# with no message — seen in the full suite, 2026-09-22).
+enter_win="$(sed -n "${enter},$((enter+6))p" "$ls")"
+case "$enter_win" in *"exit 1"*|*"refuse "*) ;; *)
+  fail "a failed set-swap enter no longer refuses the launch" ;; esac
 
 # refuse() must resume the watchdog before exiting — a refusal past the
 # watchdog pause otherwise strands the device frozen (observed 2026-08-10) —
@@ -66,11 +70,13 @@ sed -n "${enter},$((enter+6))p" "$ls" | grep -qE 'exit 1|refuse ' ||
 # nothing about whether the resume is there.
 refuse_def=$(body_line 'refuse() {')
 [ -n "$refuse_def" ] || fail "refuse() helper missing from launch.sh"
-refuse_body=$(sed -n "${refuse_def},\$p" "$ls" | awk 'NR==1{next} /^  \}/{exit} {print}')
-printf '%s' "$refuse_body" | grep -q 'resume-launcher' ||
-  fail "refuse() does not resume the watchdog"
-printf '%s' "$refuse_body" | grep -q 'set-swap.sh" exit' ||
-  fail "refuse() does not undo the library swap — a refusal would strand the user's sets hidden"
+# One awk over the file, no pipe: `sed | awk '{exit}'` killed sed with SIGPIPE
+# whenever awk stopped first, which is what made this test flaky.
+refuse_body=$(awk -v s="$refuse_def" 'NR<=s{next} /^  \}/{exit} {print}' "$ls")
+case "$refuse_body" in *resume-launcher*) ;; *)
+  fail "refuse() does not resume the watchdog" ;; esac
+case "$refuse_body" in *'set-swap.sh" exit'*) ;; *)
+  fail "refuse() does not undo the library swap — a refusal would strand the user's sets hidden" ;; esac
 
 # Single-quote ban: only the setsid open/close (and pre-block comments) may
 # carry one. Count quotes INSIDE the block body.

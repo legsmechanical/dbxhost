@@ -260,11 +260,12 @@ PYEOF
 # writing one names a position that does not exist, and Move mints its own
 # default song instead of opening a project.
 #
-# ⚠⚠ THIS EXISTS BECAUSE THE SAME TRANSLATION WAS WRITTEN THREE TIMES AND
-# MISSED ONCE. do_switch, select-hook and do_delete each write a boot position;
-# do_delete was missed, which is how deleting the OPEN project left the device
-# on a screen that never came back. One helper, so there is one place to be
-# wrong rather than three.
+# ⚠⚠ THIS EXISTS BECAUSE THE SAME TRANSLATION WAS NEEDED IN SEVERAL PLACES
+# AND MISSED TWICE. do_switch, do_delete and do_rename each turn a picker pad
+# into a boot position. do_delete was missed first, which is how deleting the
+# OPEN project left the device on a screen that never came back; do_rename
+# second. One helper, so there is one place to be wrong. (select-hook writes
+# one too, but it is HANDED a slot and needs no translation.)
 boot_slot_for_pad() { # picker-pad  -> slot index on stdout (0 if unplaceable)
     _bs_uuid="$(python3 - "$PROJECTS_DIR" "${1:-}" <<'PYEOF'
 import os, sys
@@ -1242,7 +1243,11 @@ PYEOF
             printf 'sh %s fix-order %s\n' \
                 "'$(printf '%s' "$DBX_PY_DIR/project-cmd.sh" | sed "s/'/'\\\\''/g")'" "'$_uuid'"
         } >> "$DBX_DIR/relaunch_patch.sh"
-        printf '%s\n' "$1" > "$DBX_DIR/relaunch_song_index"
+        # ⚠ A SLOT position, not the picker pad — the fourth boot-position
+        # writer, and the one that was missed (2026-09-22): a rename of the
+        # open project on pad 5 relaunched Move onto a position its two-slot
+        # library does not have.
+        printf '%s\n' "$(boot_slot_for_pad "$1")" > "$DBX_DIR/relaunch_song_index"
         # A rename issued while NOTHING is loaded (the boot picker) must bring
         # the fresh session back to the picker instead of auto-loading — the
         # caller says so with a literal third arg `reselect` and the launcher

@@ -26,16 +26,13 @@
 set -eu
 
 DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
-# ⭐ The PROJECT STORE, not Move's set library. This script inspects and can
-# BIRTH a project, and a birth into the library would put an entry in front of
-# Move that the store knows nothing about.
-PROJECTS_DIR="${PROJECTS_DIR:-$DBX_DIR/projects}"
+# Move's set library: the two slot links. The pressed slot is looked up HERE,
+# through its link — never by picker pad, and never by scanning the store.
+LIBRARY_DIR="${LIBRARY_DIR:-$DBX_DIR/sets/library}"
 SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
 OUT_JSON="$DBX_DIR/select_hook_result.json"
-# The python helpers beside this script (project_pad.py). ⚠ This script had no
-# need of them until the picker pad became its own xattr; without it every
-# python block here dies on the import, and the ones wrapped in
-# `2>/dev/null || true` would do it SILENTLY.
+# The python helpers beside this script (library_slots.py). ⚠ Without it the
+# lookup below dies on the import and the hook finds no song for any slot.
 DBX_PY_DIR="${DBX_PY_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 export DBX_PY_DIR
 # No __pycache__ beside the scripts (the install tree is a manifest-checked payload).
@@ -77,95 +74,46 @@ if [ "$IDX" = "current" ]; then
     [ -n "$IDX" ] || { result open; exit 0; }
 fi
 
-# An empty pad's "Empty Set" materializes its dir lazily — ask Move to save
-# first so there is a file to inspect (best-effort; also flushes user edits so
-# a relaunch loses nothing).
+# Flush Move's in-memory edits before the wiring check reads the file, so a
+# relaunch loses nothing (best-effort).
 dbus-send --system --print-reply --reply-timeout=4000 \
     --dest=com.ableton.move \
     /com/ableton/move/browser \
     com.ableton.move.Browser.saveSongIfDirty string: \
     >/dev/null 2>&1 || true
 
-SONG="$(python3 - "$PROJECTS_DIR" "$IDX" <<'PYEOF'
-import os, re, sys
+# ⚠⚠ $IDX IS A SLOT POSITION, NOT A PICKER PAD. The actuator presses Move's
+# pad 68+slot and the shim hands back that same number; `current` reads
+# currentSongIndex, which is a position in the library Move sees — two slots.
+# So the project is whatever that SLOT'S LINK leads to. This looked the number
+# up as a picker pad until 2026-09-22, so a switch to slot 1 checked (and could
+# rewire) whichever project sat on pad 1 — and, with nothing on pad 1, BIRTHED a
+# "Project 2" and restarted Move (device: a stray "Project 1" and "Project 2",
+# each minted by an ordinary switch).
+SONG="$(python3 - "$LIBRARY_DIR" "$IDX" <<'PYEOF'
+import os, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
-import project_pad as pp
-projects_dir, want = sys.argv[1], int(sys.argv[2])
-uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
-for u in os.listdir(projects_dir) if os.path.isdir(projects_dir) else []:
-    p = os.path.join(projects_dir, u)
-    if not os.path.isdir(p) or not uuid_re.match(u):
-        continue
-    if pp.pad_of(p) != want:
-        continue
-    for n in os.listdir(p):
-        f = os.path.join(p, n, "Song.abl")
+import library_slots as sl
+library, i = sys.argv[1], int(sys.argv[2])
+if 0 <= i < len(sl.SLOT_IDS):
+    d = os.path.join(library, sl.SLOT_IDS[i])
+    for n in (sorted(os.listdir(d)) if os.path.isdir(d) else []):
+        f = os.path.join(d, n, "Song.abl")
         if not n.startswith(".") and os.path.isfile(f):
             print(f)
-            sys.exit(0)
-sys.exit(0)
+            break
 PYEOF
 )"
 
 if [ -z "$SONG" ]; then
-    # Nothing on disk even after the save. Move materializes a new set ONLY
-    # when it saves, and an untouched "Empty Set" is never dirty — so a
-    # project born from an empty pad used to live purely in Move's memory
-    # and evaporate with the session ("sets showing up as never existing",
-    # hardware 2026-08-07). Do not depend on Move's lazy save at all: BIRTH
-    # the project ourselves from the template (Design B's own new-project
-    # path — correctly wired by construction, indexed to the tapped pad) and
-    # relaunch into it. Move's unsaved in-memory Empty Set is discarded by
-    # the relaunch, which is exactly what it was: nothing.
-    TEMPLATE_DIR="${TEMPLATE_DIR:-$DBX_DIR/sets/template}"
-    _tsrc="$(find "$TEMPLATE_DIR" -name Song.abl 2>/dev/null | head -n 1)"
-    if [ -z "$_tsrc" ]; then
-        echo "select-hook: no Song.abl for index $IDX and no template — opening unwired" >&2
-        result open
-        exit 0
-    fi
-    _uuid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())')"
-    _name="Project $((IDX + 1))"
-    mkdir -p "$PROJECTS_DIR/$_uuid/$_name"
-    cp "$_tsrc" "$PROJECTS_DIR/$_uuid/$_name/Song.abl"
-    # ⚠ The PICKER PAD only. Move's ordering index is a slot property now and
-    # library-sync below is the one thing that writes it.
-    python3 -c "import os,sys
-sys.path.insert(0, os.environ['DBX_PY_DIR'])
-import project_pad as pp
-pp.set_pad(sys.argv[1], int(sys.argv[2]))" \
-        "$PROJECTS_DIR/$_uuid" "$IDX" 2>/dev/null || true
-    # The project exists; it needs its slot before the relaunch enumerates the
-    # library looking for it. ⚠ This is the SECOND path that can mint a
-    # project (project-cmd's new/new-at is the first) and the one most likely
-    # to be forgotten — it fires on a pad Move could not open, not on anything
-    # the user asked for.
-    sh "$DBX_DIR/scripts/project-cmd.sh" library-sync >/dev/null 2>&1 || \
-        echo "select-hook: WARNING library sync failed after birthing $_uuid" >&2
-    # ⚠⚠ THE RELAUNCH INDEX IS A SLOT POSITION, NOT THE PICKER PAD. Move boots
-    # into `currentSongIndex` of the library it can SEE, which holds two slots
-    # — so writing the pad here would name a position that does not exist and
-    # Move would mint its own default song instead. Ask which slot the project
-    # landed on; if the library was already full, take one (a relaunch kills
-    # Move, so there is no live slot to protect at this moment — the one
-    # window where re-pointing anything is safe).
-    # ⚠ Same rule as project-cmd's boot_slot_for_pad, expressed on a uuid
-    # because that is what this path has. Three places write a boot position
-    # and one of them was missed once; if a fourth appears, give it the verb
-    # rather than another copy of these five lines.
-    _slot="$(sh "$DBX_DIR/scripts/project-cmd.sh" slot-of "$_uuid" 2>/dev/null || echo -1)"
-    if [ "$_slot" = "-1" ]; then
-        sh "$DBX_DIR/scripts/project-cmd.sh" point 0 "$_uuid" >/dev/null 2>&1 && _slot=0
-    fi
-    case "$_slot" in ''|*[!0-9]*) _slot=0 ;; esac
-    echo "select-hook: birthed \"$_name\" ($_uuid) on slot $_slot from template — relaunching"
-    printf '%s\n' "$_slot" > "$DBX_DIR/relaunch_song_index"
-    : > "$DBX_DIR/relaunch_requested"
-    result relaunch
-    setsid sh -c '
-      sleep 1
-      pkill -x MoveOriginal
-    ' >/dev/null 2>&1 &
+    # A slot always leads to a real project with a song (library-sync makes
+    # it so, and the actuator presses only slots that exist). Nothing here
+    # means the library is broken, not that the user wants a project — so
+    # say so and open, rather than mint one nobody asked for. (This used to
+    # birth a project from the template: that was the second minting path,
+    # and every birth it ever logged on a two-slot library was this bug.)
+    echo "select-hook: slot $IDX leads to no song — opening unchecked" >&2
+    result open
     exit 0
 fi
 

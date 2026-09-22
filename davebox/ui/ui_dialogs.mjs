@@ -1240,7 +1240,7 @@ function _pppOpenMenu(p, k) {
 /* Put a project on a slot and say which one to press.
  *
  * ⚠ Both routes to a project need this — the actuator switch AND the relaunch
- * a project created this session takes — and the second one is easy to forget,
+ * route (now only Retry) — and the second one is easy to forget,
  * because it looks like it is about Move re-reading its set list rather than
  * about identity. Forgetting it is exactly what happened: the relaunch route
  * authored NO request, so nothing could confirm what Move opened and every
@@ -1327,16 +1327,11 @@ function _pppLoad(p, k) {
      * its own ahead of the save, and the switch fires the tick after that. */
     if (S.playing) S.pendingStopBeforeSave = true;
     saveState();
-    /* ⚠⚠ A project CREATED THIS SESSION cannot be reached by the select
-     * actuator. Move enumerates its sets at LAUNCH, so a set made since then is
-     * not in the overview the actuator drives — it walks to a pad Move thinks is
-     * empty, nothing loads, and you end up nominally in the new project while
-     * Move is still playing the old one's set. Worse than cosmetic: Move saves
-     * the set it HAS open, so sound edits made "in" the new project land in the
-     * old one. Confirmed on hardware 2026-08-27.
-     * Those go through a Move RELAUNCH (project-cmd `switch`), which is the only
-     * thing that makes Move re-read the set list. */
-    /* ⚠ Same relaunch after PROJECT DID NOT OPEN -> Back (forceRelaunchNextLoad):
+    /* (A project CREATED THIS SESSION used to need a Move relaunch here: under
+     * one-entry-per-project, Move enumerated sets at launch and could not see
+     * a new one — confirmed on hardware 2026-08-27. Under two fixed slots the
+     * library never gains an entry, so it takes the normal switch; see below.)
+     * ⚠ The one relaunch left is after PROJECT DID NOT OPEN -> Back (forceRelaunchNextLoad):
      * Move is on a set it minted itself, and only a relaunch makes it open the
      * pad's real set. */
     S.forceRelaunchNextLoad = false;
@@ -1378,7 +1373,6 @@ function _pppLoad(p, k) {
                                     name: (_proj && _proj.name) ? _proj.name : '' };
 }
 
-/* Remember a create so the load after it knows to relaunch rather than select. */
 /* ⭑⭑ IS PAD k THE PROJECT THIS SESSION IS IN?
  *
  * One predicate, because three places ask it and they must never disagree:

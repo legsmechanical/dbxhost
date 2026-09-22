@@ -88,8 +88,10 @@ fi
 # the actuator presses a slot — so it reads library_slots, not the pad. That is
 # the fix for a real defect: keyed by pad it named whichever project sat on pad
 # 0 or 1, so the right project loaded under the wrong name.
-for f in standalone/scripts/project-cmd.sh \
-         standalone/scripts/select-hook.sh; do
+# ⚠ Nor is select-hook, for the same reason and the same defect: handed a slot
+# and looking it up as a pad, a switch to slot 1 checked the project on pad 1 —
+# and with nothing on pad 1 it minted a "Project 2" and restarted Move.
+for f in standalone/scripts/project-cmd.sh; do
     if grep -q 'import project_pad as pp' "$f"; then
         ok "$(basename "$f") reads the pad through the accessor"
     else
