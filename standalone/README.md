@@ -272,14 +272,19 @@ launcher-side files):
   **Shift+Back can leave the session to stock**), and **every** Move LED
   write is stripped — an earlier version passed the picker's own lights
   through, which let the native overview pads glow behind "Loading".
-- **shadow UI** (`src/shadow/shadow_ui.js`): shows "Loading <project>" for
-  the whole run, named from frame one via `shadow_select_headless()`. On the
+- **shadow UI** (`src/shadow/shadow_ui.js`): draws NOTHING for an armed
+  (headless) run — the tool drew its own loading screen as the last frame
+  before arming, and that frame stays up, so a switch reads as ONE screen
+  (dAVEBOx: LOADING / name / stage). A boot selection still draws the host's
+  "Loading <project>". On the
   shim's trigger it ends the phase, stages `boot_tool.json` (so every LATER
   relaunch direct-boots), runs `scripts/select-hook.sh <index>`, waits for
   the SET_CHANGED reload, and resumes the tool.
 - **select-hook.sh**: guarantees the chosen set has the template wiring
-  (tracks 1-4 on channels 1-4, MIDI out off). A native "Empty Set" or pad-copy
-  lacks it; the hook stages a **deferred** rewrite (`relaunch_patch.sh`,
+  (tracks 1-4 on channels 1-4, MIDI out off). ⚠ Its argument is the SLOT the
+  actuator pressed (0/1), resolved to a project through that slot's link —
+  never a picker pad; and it never creates a project (a slot with no song opens
+  unchecked). A set lacking the wiring gets a **deferred** rewrite (`relaunch_patch.sh`,
   applied by `launch.sh` only after Move exits — a live Move's SIGTERM save
   would clobber the write) and restarts Move through the supervisor loop,
   which then direct-boots the tool with the fixed set.

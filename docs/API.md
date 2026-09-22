@@ -397,12 +397,15 @@ shadow_overtake_send_external_async_active()  // -> bool: overtake DSP's midi_se
 // standalone/README.md "The set-select actuator"). Switches the loaded set
 // without a restart, presenting NO user surface: the shim drives Move's own
 // Set Overview behind a "Loading" screen and every physical control is a no-op.
+// ⚠ The host DRAWS NOTHING during an armed (headless) run: the arming tool's
+// last frame stays on screen, so the tool should draw its own loading screen
+// just before it arms (dAVEBOx does). A boot selection still draws the host's.
 shadow_select_arm(pad)         // start a run for pad 0-31. Tool parks itself first
                                //   (suspend_keeps_js); the selection resumes it.
                                //   pad is REQUIRED — out of range is refused with a log,
                                //   since there is no interactive flavour to fall back to.
 shadow_select_headless()       // -> the armed pad (0-31), or -1 when no run is active.
-                               //   Lets the loading screen name the TARGET from frame one.
+                               //   Marks the run as the tool's own (the host then draws nothing).
 shadow_select_phase_active()   // -> 1 while a run is in progress
 shadow_select_ready()          // -> 1 once the overview is open (entry machine finished)
 shadow_select_get_launch()     // -> -1 none | 0-31 chosen set index (auto-clears)
