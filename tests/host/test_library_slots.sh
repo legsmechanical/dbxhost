@@ -184,14 +184,15 @@ out="$(sh "$CMD" library-sync)"
 # the lowest remaining PICKER PAD into relaunch_song_index. Move boots into a
 # position in the library IT sees — two slots — so a pad names nothing, and the
 # device sat on the deleting screen with nothing to come back to.
-# Four places write that file. They must all translate. (do_rename was the
-# one missed the second time — a pad from its argument, written raw.)
+# The verbs that write that file must all translate. (do_rename was one, and
+# the one missed the second time; it stopped writing one when a rename stopped
+# moving anything — test_project_cmd.sh asserts it writes NOTHING now.)
 # ⚠ awk -v, not an interpolated pattern. The first cut wrote the function name
 # into a double-quoted awk program where the shell did NOT expand it, so awk
 # matched nothing, and the check reported "does not write a boot position" —
 # green, for both functions that certainly do. A body this check cannot find is
 # a FAILURE, never a pass.
-for _fn in do_switch do_delete do_rename; do
+for _fn in do_switch do_delete; do
     _body="$(awk -v f="^$_fn\\(\\)" '$0 ~ f, /^}/' "$CMD")"
     if [ -z "$_body" ]; then
         bad "$_fn not found in $CMD — the check cannot see what it is pinning"

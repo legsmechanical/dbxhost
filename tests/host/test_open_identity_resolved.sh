@@ -83,10 +83,14 @@ case "$_delete_body" in
     "") bad "do_delete not found — the check cannot see what it is pinning" ;;
     *)  bad "delete compares the raw entry — this is the one that hung the device" ;;
 esac
+# ⭐ rename no longer HAS an open-project decision: a name is a tag, nothing
+# moves, so the open project renames like any other. Pinned the other way now —
+# a rename that starts asking what is open again has grown back a branch.
 case "$_rename_body" in
-    *'$(resolve_open_project'*) ok "rename resolves what is open before deciding" ;;
     "") bad "do_rename not found — the check cannot see what it is pinning" ;;
-    *)  bad "rename compares the raw entry" ;;
+    *ACTIVE_SET_PATH*|*DBX_OPEN_UUID*|*resolve_open_project*)
+        bad "rename reads the open identity again — it has no reason to" ;;
+    *)  ok "rename makes no open-project decision (a name is a tag)" ;;
 esac
 
 # ⭑ set-swap is the DELIBERATE exception, and it is correct BY CONSTRUCTION:

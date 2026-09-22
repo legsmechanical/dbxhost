@@ -13,7 +13,8 @@ set -euo pipefail
 #      return the device's losing order on any filesystem: dAVEBOx, dAVEBOx~1
 #      and dAVEBOx~2 before "Project 32", dAVEBOx~3 after it. A control first
 #      proves the injection reproduces the bug (a plain dAVEBOx lists first);
-#      then `project-cmd.sh new-at 31` must leave the song folder first.
+#      then `project-cmd.sh new-at 31` must leave the song folder first (the
+#      order is injected with a Move-Set-* glob: the folder carries the id).
 #      Against the pre-fix project-cmd.sh this FAILS: seed_random_key made a
 #      plain dAVEBOx/ and kept it.
 #   2. REAL ORDER (ext4 only). new-at / copy / rename, then os.listdir()[0] must
@@ -124,24 +125,28 @@ d = fresh("dup")
 os.mkdir(os.path.join(d, "dAVEBOx")); os.mkdir(os.path.join(d, "dAVEBOx~3"))
 assert ss.state_subdir(d) == "dAVEBOx~3"
 assert ss.song_folder(d) == "Project 32"
-assert ss.inner_dirs(d) == ["Project 32"]
 PY
 then ok "pure rule under the device's losing order (control reproduces it)"; else bad "pure rule under the losing order"; fi
 
-# ---- 1b. the real verb, injected order: new-at 31 = "Project 32" ------------
+# ---- 1b. the real verb, injected order -------------------------------------
+# The song folder is Move-Set-<id8> now (a name tag carries "Project 32"), so the
+# losing order is injected with a GLOB in the song's place.
+LOSING_NEW='dAVEBOx|dAVEBOx~1|dAVEBOx~2|Move-Set-*|dAVEBOx~3'
 # `|| true`: on macOS python has no getxattr, so new-at's trailing normalize
 # dies — AFTER the song and the state dir exist, which is all this asserts.
-DBX_TEST_DIR_ORDER="$LOSING" sh "$CMD" new-at 31 >/dev/null 2>&1 || true
-if DBX_TEST_DIR_ORDER="$LOSING" python3 - "$PY" "$PROJECTS_DIR" <<'PY'
+DBX_TEST_DIR_ORDER="$LOSING_NEW" sh "$CMD" new-at 31 >/dev/null 2>&1 || true
+if DBX_TEST_DIR_ORDER="$LOSING_NEW" python3 - "$PY" "$PROJECTS_DIR" <<'PY'
 import os, sys
 sys.path.insert(0, sys.argv[1])
 import state_subdir as ss
 sets = sys.argv[2]
-u = [x for x in os.listdir(sets) if os.path.isdir(os.path.join(sets, x, "Project 32"))]
+u = [x for x in os.listdir(sets) if os.path.isdir(os.path.join(sets, x, "Move-Set-" + x[:8]))]
 assert len(u) == 1, os.listdir(sets)
 d = os.path.join(sets, u[0])
+# CONTROL: under this injection a plain dAVEBOx WOULD list first
+assert ss.listdir(d)[0] != "dAVEBOx", "plain dAVEBOx exists — the chooser did not run"
 first = ss.listdir(d)[0]
-assert first == "Project 32", "Move would open %r as the song: %r" % (first, ss.listdir(d))
+assert first == "Move-Set-" + u[0][:8], "Move would open %r as the song: %r" % (first, ss.listdir(d))
 st = ss.state_subdir(d)
 assert st and os.path.isfile(os.path.join(d, st, "new-project.json")), (st, os.listdir(d))
 PY
@@ -180,14 +185,14 @@ PY
     [ "$all_ok" = 1 ] && ok "ext4: new-at puts the song folder first on 14 pads (incl. 13 14 21 31)" \
                       || known "ext4: new-at puts the song folder first"
     sh "$CMD" copy 12 2 >/dev/null
-    real_first 2 && ok "ext4: copy (\" Copy\" renames the song) keeps the song first" || known "ext4: copy keeps the song first"
+    real_first 2 && ok "ext4: copy (renames the song folder to its own id) keeps the song first" || known "ext4: copy keeps the song first"
     export ACTIVE_SET_PATH="$T/active_set.txt"; : > "$ACTIVE_SET_PATH"
     rn_ok=1
     for nm in "Project 14" "Project 22" "Project 32" "Zed"; do
         sh "$CMD" rename 0 "$nm" >/dev/null
         real_first 0 || { echo "    rename to \"$nm\": state dir lists first" >&2; rn_ok=0; }
     done
-    [ "$rn_ok" = 1 ] && ok "ext4: rename re-orders (4 names)" || known "ext4: rename re-orders"
+    [ "$rn_ok" = 1 ] && ok "ext4: rename (a tag, moves nothing) leaves the song first (4 names)" || known "ext4: rename keeps the song first"
 else
     echo "  skip real-order checks (fs '$fstype', xattr $xattr_ok — needs ext4 + user xattrs, i.e. the device's filesystem)"
 fi

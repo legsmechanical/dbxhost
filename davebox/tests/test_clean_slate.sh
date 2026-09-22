@@ -144,8 +144,10 @@ printf '%s' "$_cp" | grep -q 'shutil.copytree(sp, np)' \
 printf '%s' "$_cp" | grep -q 'host_state_dir' \
     && bad "do_copy references a parallel host-state root again — that root died in Phase C" \
     || ok "do_copy has no parallel root to seed: the copytree carries BOTH halves"
-printf '%s' "$_cp" | grep -q 'inner = ss.inner_dirs(np)' \
-    && ok "do_copy skips the state dir (any dAVEBOx~n) when hunting the inner set" \
+# song_folder() is the reserved-name filter now: it takes the child holding
+# Song.abl that is NOT a state dir, so the rename can never hit dAVEBOx~n.
+printf '%s' "$_cp" | grep -q 'song = ss.song_folder(np)' \
+    && ok "do_copy skips the state dir (any dAVEBOx~n) when hunting the song folder" \
     || bad "do_copy lost the reserved-name filter — it can rename the STATE dir as the set"
 
 # The state dir's NAME is resolved, never spelled (set-folder order fix): it is

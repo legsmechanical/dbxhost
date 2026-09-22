@@ -86,13 +86,15 @@ function removeStagingDir() {
 
 /* ---- source-side reads (loaded Move set + Schwung chain config) ----------- */
 
-/* The loaded Move set's Song.abl. The inner folder name equals the active set
- * name (active_set.txt line 2 == S.currentSetName, verified on device). Returns
+/* The loaded Move set's Song.abl. The inner folder is Move's song folder, which
+ * the host reports as the identity's name (active_set.txt line 2) and the UI
+ * keeps as S.currentSetFolder — NOT S.currentSetName, which is the user's name
+ * tag and names no folder. Returns
  * the parsed object, or null if absent/unreadable/too large (4MB host cap;
  * largest real Song.abl observed ~217KB, so plain host_read_file is safe). */
 function loadMoveSong() {
-    if (!S.currentSetUuid || !S.currentSetName) return null;
-    const path = EXPORT_SETS_BASE_DIR + '/' + S.currentSetUuid + '/' + S.currentSetName + '/Song.abl';
+    if (!S.currentSetUuid || !S.currentSetFolder) return null;
+    const path = EXPORT_SETS_BASE_DIR + '/' + S.currentSetUuid + '/' + S.currentSetFolder + '/Song.abl';
     if (!host_file_exists(path)) return null;
     const raw = host_read_file(path);
     if (!raw) return null;

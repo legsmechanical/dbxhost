@@ -1,6 +1,6 @@
 """state_subdir.py — the ONE shell-side rule for naming a project's state dir.
 
-A dAVEBOx project is `Sets/<uuid>/{<Name>/, <state>/}`: Move's song folder and
+A dAVEBOx project is `Sets/<uuid>/{Move-Set-<id>/, <state>/}`: Move's song folder and
 dAVEBOx's state dir, side by side. Move opens the FIRST subfolder its directory
 listing returns as the song. On ext4 with dir_index that order is a hash of the
 name under a per-filesystem seed (measured 2026-09-14,
@@ -23,6 +23,7 @@ the tests' problem only; the device is ext4. The S4 "Move did not open it"
 screen is the backstop if a device ever does the same.
 """
 import errno
+import fnmatch
 import os
 import re
 
@@ -45,13 +46,16 @@ def listdir(d):
 
     DBX_TEST_DIR_ORDER ("a|b|c") is a TEST seam: names it lists come back in
     that order, ahead of everything else. It exists so a test can reproduce a
-    device's losing hash order on a filesystem that has a different one."""
+    device's losing hash order on a filesystem that has a different one. An
+    entry may be a glob (`Move-Set-*`): a song folder's name carries its
+    project's random id, so a test cannot spell it in advance."""
     names = os.listdir(d)
     rank = os.environ.get("DBX_TEST_DIR_ORDER")
     if rank:
-        order = rank.split("|")
-        known = [n for n in order if n in names]
-        names = known + [n for n in names if n not in order]
+        known = []
+        for pat in rank.split("|"):
+            known += [n for n in names if n not in known and fnmatch.fnmatchcase(n, pat)]
+        names = known + [n for n in names if n not in known]
     return names
 
 
@@ -78,9 +82,8 @@ def song_folder(uuid_dir):
     return None
 
 
-def inner_dirs(uuid_dir):
-    """Every non-state child dir, listing order — the old one-child filter."""
-    return [n for n in child_dirs(uuid_dir) if not is_state_name(n)]
+# (inner_dirs is GONE: it read a project's NAME off its folder. The name is a
+# tag now — project_name.py — and the folder is Move's.)
 
 
 def state_subdir(uuid_dir):

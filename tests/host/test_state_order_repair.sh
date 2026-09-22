@@ -4,14 +4,13 @@ set -euo pipefail
 # Migration for the set-folder order fix (S7): a project whose state dir lists
 # BEFORE its song folder is renamed to one that lists after, at launch (inside
 # repair-indices) and after every relaunch patch (the `fix-order` verb, which
-# is how a rename of the OPEN project gets re-ordered).
+# runs after every relaunch patch the launcher applies).
 #
 # The device's losing order is INJECTED (DBX_TEST_DIR_ORDER, see
 # standalone/scripts/state_subdir.py) so this runs on any filesystem: under it
 # `dAVEBOx` lists before "Project 32" and `dAVEBOx~3` is the first name after.
 # A healthy project under an order where it already wins is the silence
-# control. repair-indices and the open-rename path key off user.song-index,
-# so those two layers need user xattrs (Linux) and skip elsewhere.
+# control. repair-indices keys off the pad xattr, so that layer needs user xattrs (Linux) and skip elsewhere.
 
 cd "$(dirname "$0")/../.."
 export PYTHONDONTWRITEBYTECODE=1   # no __pycache__ in standalone/scripts
@@ -90,7 +89,7 @@ case "$body" in
     *)   bad "repair-indices lost the re-order pass" ;;
 esac
 
-# ---- xattr layers: repair-indices end to end, and the OPEN rename ----------
+# ---- xattr layer: repair-indices end to end ---------------------------------
 if python3 -c 'import os,sys; os.setxattr(sys.argv[1], "user.t", b"1")' "$PROJECTS_DIR" 2>/dev/null; then
     setx() { python3 -c "import os,sys; os.setxattr(sys.argv[1], sys.argv[2], sys.argv[3].encode())" "$@"; }
     U_R=dddddddd-0000-4000-8000-00000000000d
@@ -99,18 +98,11 @@ if python3 -c 'import os,sys; os.setxattr(sys.argv[1], "user.t", b"1")' "$PROJEC
     [ -d "$PROJECTS_DIR/$U_R/dAVEBOx~3" ] && printf '%s' "$out" | grep -q "$U_R state dir dAVEBOx -> dAVEBOx~3" \
         && ok "repair-indices re-orders a losing project and logs it" || bad "repair-indices: $out"
 
-    # OPEN project renamed to a losing name: the patch applies mv, then fix-order.
-    U_O=eeeeeeee-0000-4000-8000-00000000000e
-    mkproj "$U_O" "Old Name"; setx "$PROJECTS_DIR/$U_O" user.song-index 5; setx "$PROJECTS_DIR/$U_O" user.dbx-pad 5
-    export ACTIVE_SET_PATH="$T/active_set.txt"; printf '%s\nOld Name\n' "$U_O" > "$ACTIVE_SET_PATH"
-    sh "$CMD" rename 5 "Project 32" >/dev/null
-    grep -q "fix-order '$U_O'" "$DBX_DIR/relaunch_patch.sh" && ok "rename(open) queues fix-order for that project" \
-        || bad "rename(open) did not queue fix-order"
-    DBX_TEST_DIR_ORDER="$LOSING" sh "$DBX_DIR/relaunch_patch.sh" >/dev/null
-    [ -d "$PROJECTS_DIR/$U_O/Project 32" ] && [ -d "$PROJECTS_DIR/$U_O/dAVEBOx~3" ] \
-        && ok "applying the patch renames AND re-orders" || bad "patch: $(ls "$PROJECTS_DIR/$U_O")"
+    # (The OPEN-rename layer is gone: a rename writes a name TAG and never
+    # touches the song folder, so it cannot change the listing order at all —
+    # test_project_cmd.sh asserts the folder does not move.)
 else
-    echo "  skip repair-indices/open-rename layers (no user xattrs here; device is ext4+Linux)"
+    echo "  skip the repair-indices layer (no user xattrs here; device is ext4+Linux)"
 fi
 
 [ "$fails" = 0 ] && echo "PASS: state_order_repair" || { echo "FAIL: state_order_repair" >&2; exit 1; }

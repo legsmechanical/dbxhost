@@ -4,7 +4,7 @@
 - davebox/dsp/seq8.c|#ifndef SEQ8_SET_STATE_ROOT
 B davebox/dsp/seq8.c|dbx_project_dir(SEQ8_SET_STATE_ROOT, uuid, uuid_dir, sizeof(uuid_dir));
 - davebox/ui/ui_export.mjs|const EXPORT_SETS_BASE_DIR    = '/data/UserData/UserLibrary/Sets';
-R davebox/ui/ui_export.mjs|const path = EXPORT_SETS_BASE_DIR + '/' + S.currentSetUuid + '/' + S.currentSetName + '/Song.abl';
+R davebox/ui/ui_export.mjs|const path = EXPORT_SETS_BASE_DIR + '/' + S.currentSetUuid + '/' + S.currentSetFolder + '/Song.abl';
 - davebox/ui/ui_persistence.mjs|const SETS_DIR    = '/data/UserData/UserLibrary/Sets';
 B davebox/ui/ui_persistence.mjs|const dir = dbxProjectDir(SETS_DIR, uuid);
 B src/host/shadow_chain_mgmt.c|dbx_project_dir(SAMPLER_SETS_DIR, boot_uuid, set_root, sizeof(set_root));

@@ -34,7 +34,7 @@ import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
-import { showActionPopup, hostIdentity, resolveSetLoadDecision } from './ui_persistence.mjs';
+import { showActionPopup, hostIdentity, projectDisplayName, resolveSetLoadDecision } from './ui_persistence.mjs';
 import { checkProjectOpened, projectOpenFailedMidi,
          projectListFailedMidi } from './ui_dialogs.mjs';
 import { automationParamTouch, automationClearKey, automationToggleActive,
@@ -325,7 +325,10 @@ globalThis.init = function () {
     {
         const _id = hostIdentity();
         S.currentSetUuid = _id.state === 'open' ? _id.uuid : '';
-        S.currentSetName = _id.state === 'open' ? _id.name : '';
+        /* The NAME is the project's tag; `_id.name` is Move's song FOLDER,
+         * kept only for the one path that builds a file path from it. */
+        S.currentSetName   = _id.state === 'open' ? projectDisplayName(_id.uuid) : '';
+        S.currentSetFolder = _id.state === 'open' ? _id.name : '';
     }
     /* Did Move actually open the project the host resolved? The host's verdict
      * can land seconds after we start (it waits for Move's own load line), so

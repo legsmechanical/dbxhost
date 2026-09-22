@@ -80,7 +80,14 @@ let listFails = false;
  * would otherwise go unnoticed. */
 const SLOT1_UUID = '5107b000-0000-4000-8000-000000000001';
 let switchSlotFails = false;
+/* ⚠ THE DEVICE REFUSES a command that does not start with an allowed verb
+ * (js_host_system_cmd, src/shadow/shadow_ui.c) — it returns an error and runs
+ * NOTHING. A rig that ran everything passed a rename that the device would have
+ * dropped on the floor (2026-09-22: the bare script path, no `sh `). */
+const ALLOWED_CMD = /^(tar |cp |mv |mkdir |rm |ls |test |chmod |sh )/;
+const refusedCmds = [];
 globalThis.host_system_cmd = (c) => {
+    if (!ALLOWED_CMD.test(String(c))) { refusedCmds.push(String(c)); return -1; }
     sysCmds.push(String(c));
     const mk = /project-cmd\.sh new-at (\d+)$/.exec(String(c));
     if (mk) {
@@ -94,6 +101,13 @@ globalThis.host_system_cmd = (c) => {
         const k = parseInt(cp[2], 10);
         if (src && !rigProjects.some((q) => q.index === k))
             rigProjects.push({ uuid: rigUuidFor(k), name: src.name + ' copy', index: k, color: src.color });
+    }
+    /* rename writes the project's NAME TAG and moves nothing (project_name.py);
+     * the rig mirrors that onto the list the next `list` returns. */
+    const rn = /project-cmd\.sh rename (\d+) '((?:[^']|'\\'')*)'$/.exec(String(c));
+    if (rn) {
+        const q = rigProjects.find((x) => x.index === parseInt(rn[1], 10));
+        if (q) rigProjects = rigProjects.map((x) => x === q ? Object.assign({}, x, { name: rn[2].replace(/'\\''/g, "'") }) : x);
     }
     if (/project-cmd\.sh list$/.test(String(c))) {
         if (listFails) files.delete('/data/UserData/dbx-host/projects.json');
@@ -238,6 +252,7 @@ const tickmod = await import('../../ui/ui_tick.mjs');
 const render = await import('../../ui/ui_render.mjs');
 const shared = await import('/data/UserData/schwung/shared/session_state.mjs');
 const dialogs = await import('../../ui/ui_dialogs.mjs');
+const te = await import('/data/UserData/schwung/shared/text_entry.mjs');
 const fonts = await import('../../ui/ui_fonts_pp.mjs');
 fonts.setKitTextTrace((t) => frameText.push(String(t)));
 
@@ -1129,24 +1144,72 @@ step('⚠ CONTROL: deleting a project you are NOT in still deletes in place', ()
         throw new Error('control: the plain delete did not fire: ' + JSON.stringify(sysCmds));
 });
 
-/* 11. RENAME asks the same question as DELETE, and so does the warning.
- *     All three go through one predicate so they cannot drift apart; this pins
- *     that there is exactly one, and that it reads the LOADED project. */
-step('⭑ renaming the LOADED project takes the restart path while unconfirmed', () => {
+/* 11. ⭐ RENAMING THE PROJECT YOU ARE IN is a label change, performed.
+ *
+ * A name is a tag now (project_name.py) — nothing on disk moves, so the open
+ * project renames in place: no RENAMING/RESTARTING, no Move restart, and the
+ * name every screen shows (S.currentSetName: the loading screen, export)
+ * follows at once. This used to take a restart path, lock the picker, queue a
+ * folder move for the launcher and — once — boot Move onto a raw pad.
+ * Real gestures only: pad tap, jog to Rename, jog click, the on-screen
+ * keyboard's own jog/click to type one character and press Confirm. */
+const jog = (d) => cc(14, d > 0 ? 1 : 127);
+const click = () => { cc(3, 127); cc(3, 0); };
+step('⭐ renaming the OPEN project through the picker is instant: no restart, name follows', () => {
     boot(P, 'Project 1');
-    publish('pending', '', '', '', -1);
+    publish('open', '', P, 'Move-Set-aaaaaaaa', 0);
     S.currentSetUuid = P;
+    S.currentSetName = 'Project 1';
     S.pendingOpenProjectPicker = false; S.projectPadPicker = null;
     dialogs.openProjectPadPicker();
-    const src = readFileSync('ui/ui_dialogs.mjs', 'utf8');
-    /* the three sites must all route through the one predicate — a direct
-     * `=== p.current` comparison at any of them is the bug returning */
-    const uses = (src.match(/_pppIsOpenProject\(/g) || []).length;
-    if (uses < 4) throw new Error('expected the shared predicate at all three sites, saw ' + uses);
-    if (/if \(k === p\.current\) \{\n\s+\/\* The OPEN project renames/.test(src))
-        throw new Error('rename still compares against the unconfirmed current');
-    if (/p\.deleteIdx === p\.current/.test(src))
-        throw new Error('the delete warning still reads the unconfirmed current');
+    sysCmds.length = 0;
+    padTap(0); ticks(1);                       /* the open project's menu */
+    const p = S.projectPadPicker;
+    if (!p || !p.menu || p.menu.k !== 0) throw new Error('pad 0 did not open its menu');
+    jog(+1); ticks(1);                         /* Resume -> Rename */
+    click(); ticks(1);
+    if (!te.isTextEntryActive()) throw new Error('Rename did not open the keyboard');
+    if (te.getTextEntryBuffer() !== 'Project 1')
+        throw new Error('the keyboard did not start from the name: ' + te.getTextEntryBuffer());
+    click(); ticks(1);                         /* type the first key of the page */
+    const typed = te.getTextEntryBuffer();
+    if (typed.length !== 'Project 1'.length + 1) throw new Error('no character typed: ' + typed);
+    for (let i = 0; i < 120; i++) jog(+1);     /* clamps on the last key: Confirm */
+    ticks(1);
+    click(); ticks(2);
+    if (te.isTextEntryActive()) throw new Error('Confirm did not close the keyboard');
+    if (refusedCmds.length) throw new Error('the device would REFUSE: ' + JSON.stringify(refusedCmds));
+    const rn = sysCmds.filter((c) => /project-cmd\.sh rename 0 /.test(c));
+    if (rn.length !== 1) throw new Error('no rename command: ' + JSON.stringify(sysCmds));
+    if (S.projectPadPicker && S.projectPadPicker.restarting)
+        throw new Error('the open-project rename took the RESTART path: ' + S.projectPadPicker.restarting);
+    if (sysCmds.some((c) => /switch|relaunch|pkill/.test(c)))
+        throw new Error('a rename restarted something: ' + JSON.stringify(sysCmds));
+    if (S.currentSetName !== typed)
+        throw new Error('the shown name did not follow the rename: ' + S.currentSetName + ' vs ' + typed);
+    const shown = S.projectPadPicker && S.projectPadPicker.byIndex[0];
+    if (!shown || shown.name !== typed) throw new Error('the picker does not show the new name');
+});
+
+step('⚠ CONTROL: renaming ANOTHER project leaves the open project\'s shown name alone', () => {
+    boot(P, 'Project 1');
+    publish('open', '', P, 'Move-Set-aaaaaaaa', 0);
+    S.currentSetUuid = P;
+    S.currentSetName = 'Project 1';
+    S.pendingOpenProjectPicker = false; S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    sysCmds.length = 0;
+    padTap(31); ticks(1);                      /* not loaded: Load, Rename, Color */
+    jog(+1); ticks(1);                         /* Load -> Rename */
+    click(); ticks(1);
+    if (!te.isTextEntryActive()) throw new Error('Rename did not open the keyboard');
+    click(); ticks(1);
+    for (let i = 0; i < 120; i++) jog(+1);
+    ticks(1); click(); ticks(2);
+    if (!sysCmds.some((c) => /project-cmd\.sh rename 31 /.test(c)))
+        throw new Error('control: the rename did not fire: ' + JSON.stringify(sysCmds));
+    if (S.currentSetName !== 'Project 1')
+        throw new Error('control: renaming another project changed the open one\'s name');
 });
 
 if (failed) { console.error('FAIL: project_open_mismatch'); process.exit(1); }

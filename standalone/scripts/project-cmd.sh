@@ -33,9 +33,8 @@
 #                     and restart Move IN PLACE via the launcher's supervisor
 #                     loop (relaunch_requested)
 #   color <index> <n>    set (n < 0: clear) the pad-color palette index
-#   rename <index> <name> rename the inner set dir + name index; the OPEN
-#                     project defers the mv to relaunch_patch.sh and restarts
-#                     Move in place (see do_rename)
+#   rename <index> <name> write the project's name tag; moves nothing, so the
+#                     OPEN project renames in place too (see project_name.py)
 #   library-sync    move anything still living IN the library into the store,
 #                     then make the library show exactly one slot per project.
 #                     Run from launch.sh before set-swap enters; idempotent.
@@ -261,11 +260,12 @@ PYEOF
 # default song instead of opening a project.
 #
 # ⚠⚠ THIS EXISTS BECAUSE THE SAME TRANSLATION WAS NEEDED IN SEVERAL PLACES
-# AND MISSED TWICE. do_switch, do_delete and do_rename each turn a picker pad
-# into a boot position. do_delete was missed first, which is how deleting the
-# OPEN project left the device on a screen that never came back; do_rename
-# second. One helper, so there is one place to be wrong. (select-hook writes
-# one too, but it is HANDED a slot and needs no translation.)
+# AND MISSED TWICE. do_switch and do_delete each turn a picker pad into a boot
+# position (do_rename did too, until a rename stopped restarting Move).
+# do_delete was missed first, which is how deleting the OPEN project left the
+# device on a screen that never came back; do_rename second. One helper, so
+# there is one place to be wrong. (select-hook writes one too, but it is
+# HANDED a slot and needs no translation.)
 boot_slot_for_pad() { # picker-pad  -> slot index on stdout (0 if unplaceable)
     _bs_uuid="$(python3 - "$PROJECTS_DIR" "${1:-}" <<'PYEOF'
 import os, sys
@@ -428,12 +428,22 @@ PYEOF
     sync_library
 }
 
+# ---- a project's NAME is a tag; its song folder is fixed (project_name.py) ----
+song_folder_for() { # uuid -> the fixed song-folder name
+    python3 -c 'import os,sys; sys.path.insert(0, os.environ["DBX_PY_DIR"]); import project_name as pn
+print(pn.song_folder_name(sys.argv[1]))' "$1"
+}
+set_project_name() { # project-dir name
+    python3 -c 'import os,sys; sys.path.insert(0, os.environ["DBX_PY_DIR"]); import project_name as pn
+pn.set_name(sys.argv[1], sys.argv[2])' "$1" "$2"
+}
+
 do_list() {
     python3 - "$PROJECTS_DIR" "$SETTINGS_JSON" "$OUT_JSON" <<'PYEOF'
 import json, os, re, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
 import project_pad as pp
-import state_subdir as ss
+import project_name as pn
 projects_dir, settings, out = sys.argv[1], sys.argv[2], sys.argv[3]
 cur = 0
 try:
@@ -448,10 +458,8 @@ if os.path.isdir(projects_dir):
         p = os.path.join(projects_dir, u)
         if not os.path.isdir(p) or not uuid_re.match(u):
             continue
-        # ⚠ TWO children since Phase B: Move's inner <Name>/ AND the state
-        # dir. Filter, or the project can list under the state dir's name.
-        names = ss.inner_dirs(p)
-        name = names[0] if names else u[:8]
+        # The NAME is a tag (project_name.py), never the folder Move opens.
+        name = pn.name_of(p)
         idx = None
         color = None
         if hasattr(os, "getxattr"):
@@ -752,7 +760,7 @@ do_new() { # name
     [ -n "${1:-}" ] || die "new needs a name"
     [ -d "$TEMPLATE_DIR" ] || die "no template at $TEMPLATE_DIR"
     _uuid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())')"
-    _dst="$PROJECTS_DIR/$_uuid/$1"
+    _dst="$PROJECTS_DIR/$_uuid/$(song_folder_for "$_uuid")"
     mkdir -p "$_dst"
     # The template contains one <Name>/Song.abl; take the Song.abl regardless
     # of the template's own inner name.
@@ -763,6 +771,7 @@ do_new() { # name
     # After the copy (there is a file), before normalize (which re-reads it).
     randomize_instruments "$_dst/Song.abl"
     seed_random_key "$PROJECTS_DIR/$_uuid"
+    set_project_name "$PROJECTS_DIR/$_uuid" "$1"
     clear_full_velocity
     # Belt and braces: the template ships neutral, but a project is born here
     # and this is the one place that can promise it.
@@ -851,12 +860,14 @@ do_new_at() { # index [name]
     [ -n "$_src" ] || die "template has no Song.abl"
     _uuid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())')"
     _name="${2:-Project $(($1 + 1))}"
-    mkdir -p "$PROJECTS_DIR/$_uuid/$_name"
-    cp "$_src" "$PROJECTS_DIR/$_uuid/$_name/Song.abl"
+    _song="$PROJECTS_DIR/$_uuid/$(song_folder_for "$_uuid")"
+    mkdir -p "$_song"
+    cp "$_src" "$_song/Song.abl"
     # Random stock instruments, like Move native does on a new set.
     # After the copy (there is a file), before normalize (which re-reads it).
-    randomize_instruments "$PROJECTS_DIR/$_uuid/$_name/Song.abl"
+    randomize_instruments "$_song/Song.abl"
     seed_random_key "$PROJECTS_DIR/$_uuid"
+    set_project_name "$PROJECTS_DIR/$_uuid" "$_name"
     clear_full_velocity
     python3 -c "import os,sys
 sys.path.insert(0, os.environ['DBX_PY_DIR'])
@@ -876,9 +887,8 @@ pp.set_pad(sys.argv[1], int(sys.argv[2]))" \
     printf 'project-cmd: created "%s" (%s) at index %s\n' "$_name" "$_uuid" "$1"
 }
 
-# Duplicate a project onto another pad. Inner name gets Move's own " Copy"
-# suffix so the hosted module's copy-inheritance machinery (family lookup on
-# first open) treats it exactly like a native pad-copy.
+# Duplicate a project onto another pad. Its NAME gets Move's own " Copy"
+# suffix, as a native pad-copy's does; its song folder gets its own fixed name.
 do_copy() { # src-index dst-index
     case "${1:-}" in *[!0-9]*|"") die "copy needs a numeric source index" ;; esac
     case "${2:-}" in *[!0-9]*|"") die "copy needs a numeric destination index" ;; esac
@@ -886,6 +896,7 @@ do_copy() { # src-index dst-index
 import datetime, os, re, shutil, sys, uuid as uuidlib
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
 import project_pad as pp
+import project_name as pn
 import state_subdir as ss
 projects_dir, src, dst = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
@@ -912,18 +923,20 @@ if du:
 # duplicate is a snapshot BY CONSTRUCTION — the hand-copied module-state seeding
 # that used to live here, and the silently-tracks-its-source bug it fixed
 # (Josh, hardware, 2026-08-11), are both structurally impossible now.
-# The inner set dir is renamed to "<Name> Copy" AFTER the copy; the reserved
-# state subdir is skipped when hunting it (it is a sibling, not a set).
+# The copy's song folder is renamed to ITS OWN fixed name (the source's carries
+# the source's id), and the copy is named "<Name> Copy" in its name tag.
 nu = str(uuidlib.uuid4())
 np = os.path.join(projects_dir, nu)
 shutil.copytree(sp, np)
-inner = ss.inner_dirs(np)
-if not inner:
+song = ss.song_folder(np)
+if not song:
     shutil.rmtree(np)
-    sys.exit("project-cmd: ERROR: source has no inner set dir")
-os.rename(os.path.join(np, inner[0]), os.path.join(np, inner[0] + " Copy"))
-# " Copy" is a NEW song name, so it can list on the other side of the copied
-# state dir — re-run the order rule, or the duplicate opens as an empty set.
+    sys.exit("project-cmd: ERROR: source has no song folder")
+src_name = pn.name_of(sp)
+os.rename(os.path.join(np, song), os.path.join(np, pn.song_folder_name(np)))
+pn.set_name(np, src_name + " Copy")
+# A new song-folder name can list on the other side of the copied state dir —
+# re-run the order rule, or the duplicate opens as an empty set.
 moved = ss.fix_state_order(np)
 if moved:
     print("project-cmd: copy: state dir %s -> %s (lists after the song)" % moved)
@@ -975,7 +988,7 @@ do_delete() { # index
     # ---- deleting the OPEN project (Josh, 2026-08-24) -----------------------
     # Used to be refused outright, by two independent guards, because you cannot
     # rmtree a set the host has loaded and expect the session to survive it. The
-    # answer is the one do_rename already uses for the same problem: don't do it
+    # answer is the one do_rename used to use for the same problem: don't do it
     # NOW, hand it to the launcher to do after Move has exited, and restart in
     # place. `relaunch_patch.sh` runs in exactly that window — no process holding
     # the directory, and no dying Move able to save the set back into existence.
@@ -1030,8 +1043,7 @@ PYEOF
 )"
         save_song
         # ⭑ rm -rf, not rmtree-in-python: this line is executed by the LAUNCHER
-        # long after this script is gone. Quote it the way do_rename quotes its
-        # mv — a set directory is a uuid, but $PROJECTS_DIR need not be innocent.
+        # long after this script is gone. Quote every path — a set directory is a uuid, but $PROJECTS_DIR need not be innocent.
         printf 'rm -rf %s\n' \
             "'$(printf '%s' "$PROJECTS_DIR/$_open_del" | sed "s/'/'\\\\''/g")'" \
             >> "$DBX_DIR/relaunch_patch.sh"
@@ -1178,30 +1190,21 @@ PYEOF
     do_list
 }
 
-# Rename a project's INNER set dir — the name Move shows.
-# (The name→uuid index this used to maintain died with the inherit machinery in
-# Phase 0 of the state-co-location plan; a rename is just the mv now.)
-#
-# ⚠ The OPEN project cannot be renamed live: Move holds the song and its saves
-# write by path, so a live mv risks the dying save re-creating the old dir.
-# For the open project the rename is DEFERRED to the launcher's
-# relaunch_patch.sh hook (applied AFTER Move exits, before the in-place
-# restart) and rides the exact switch-in-place machinery do_switch proved:
-# save, queue, SIGTERM, supervisor relaunch at the same index. Non-open
-# projects rename immediately — the same liveness argument delete already
-# proved on hardware.
-
-do_rename() { # index newname [reselect]
+# Rename a project: its name TAG, nothing on disk moves (project_name.py).
+do_rename() { # index newname
     case "${1:-}" in *[!0-9]*|"") die "rename needs a numeric index" ;; esac
     [ -n "${2:-}" ] || die "rename needs a name"
-    case "$2" in */*) die "name must not contain /" ;; esac
-
-    _found="$(python3 - "$PROJECTS_DIR" "$1" <<'PYEOF'
+    # ⭐ A NAME IS A TAG (project_name.py), so a rename writes one small file
+    # and moves nothing — open project or not. It used to move the song folder
+    # Move opens, which for the OPEN project meant a deferred patch, a Move
+    # restart, and a boot position that was once written wrong. Any character
+    # but a newline is allowed; the name is no longer a path.
+    python3 - "$PROJECTS_DIR" "$1" "$2" <<'PYEOF' || die "rename failed"
 import os, re, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import project_name as pn
 import project_pad as pp
-import state_subdir as ss
-projects_dir, idx = sys.argv[1], int(sys.argv[2])
+projects_dir, idx, name = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 uuid_re = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F-]+$')
 for u in os.listdir(projects_dir):
     p = os.path.join(projects_dir, u)
@@ -1212,63 +1215,14 @@ for u in os.listdir(projects_dir):
             continue
     except (OSError, ValueError):
         continue
-    inner = ss.inner_dirs(p)
-    if not inner:
-        sys.exit("project-cmd: ERROR: project has no inner set dir")
-    print(u); print(inner[0])
+    try:
+        n = pn.set_name(p, name)
+    except ValueError:
+        sys.exit("project-cmd: ERROR: a name needs at least one character")
+    print('project-cmd: renamed index %d to "%s"' % (idx, n))
     sys.exit(0)
 sys.exit("project-cmd: ERROR: no project at index %d" % idx)
 PYEOF
-)" || die "no project at index $1"
-    _uuid="$(printf '%s\n' "$_found" | sed -n 1p)"
-    _old="$(printf '%s\n' "$_found" | sed -n 2p)"
-    [ "$_old" = "$2" ] && { do_list; return 0; }
-
-    # Same rule as do_delete: the caller's word first, the boot record second.
-    _open="${DBX_OPEN_UUID:-}"
-    [ -z "$_open" ] && [ -f "$ACTIVE_SET_PATH" ] && \
-        _open="$(head -n 1 "$ACTIVE_SET_PATH" | tr -d '[:space:]')"
-    _open="$(resolve_open_project "$_open")"
-    if [ "$_uuid" = "$_open" ]; then
-        # OPEN project: defer the mv to the launcher (post-exit), then restart
-        # Move in place at the same index — do_switch's exact shape. Append to
-        # relaunch_patch.sh rather than clobbering a pending patch.
-        save_song
-        {
-            printf 'mv %s %s\n' \
-                "'$PROJECTS_DIR/$_uuid/$(printf '%s' "$_old" | sed "s/'/'\\\\''/g")'" \
-                "'$PROJECTS_DIR/$_uuid/$(printf '%s' "$2"   | sed "s/'/'\\\\''/g")'"
-            # The new name can list on the other side of the state dir; the
-            # launcher also sweeps fix-order after every patch, this names it.
-            printf 'sh %s fix-order %s\n' \
-                "'$(printf '%s' "$DBX_PY_DIR/project-cmd.sh" | sed "s/'/'\\\\''/g")'" "'$_uuid'"
-        } >> "$DBX_DIR/relaunch_patch.sh"
-        # ⚠ A SLOT position, not the picker pad — the fourth boot-position
-        # writer, and the one that was missed (2026-09-22): a rename of the
-        # open project on pad 5 relaunched Move onto a position its two-slot
-        # library does not have.
-        printf '%s\n' "$(boot_slot_for_pad "$1")" > "$DBX_DIR/relaunch_song_index"
-        # A rename issued while NOTHING is loaded (the boot picker) must bring
-        # the fresh session back to the picker instead of auto-loading — the
-        # caller says so with a literal third arg `reselect` and the launcher
-        # honours the marker by re-arming fresh_session.
-        [ "${3:-}" = "reselect" ] && : > "$DBX_DIR/relaunch_reselect"
-        : > "$DBX_DIR/relaunch_requested"
-        setsid sh -c '
-          sleep 1
-          pkill -x MoveOriginal
-        ' >/dev/null 2>&1 &
-        printf 'project-cmd: rename of OPEN project queued (Move restarting in place)\n'
-        return 0
-    fi
-
-    mv "$PROJECTS_DIR/$_uuid/$_old" "$PROJECTS_DIR/$_uuid/$2"
-    # A new song name can list on the other side of the state dir: re-order.
-    python3 -c 'import os,sys; sys.path.insert(0, os.environ["DBX_PY_DIR"]); import state_subdir as ss
-m = ss.fix_state_order(sys.argv[1])
-if m: print("project-cmd: rename: state dir %s -> %s (lists after the song)" % m)' "$PROJECTS_DIR/$_uuid" \
-        || printf 'project-cmd: WARNING: rename: state-dir order check failed\n' >&2
-    printf 'project-cmd: renamed index %s to "%s"\n' "$1" "$2"
     do_list
 }
 
@@ -1508,7 +1462,7 @@ case "${1:-}" in
     point) _require_own_tree point; shift; do_point "${1:-}" "${2:-}" ;;
     slot-of) shift; do_slot_of "${1:-}" ;;
     switch-slot) _require_own_tree switch-slot; shift; do_switch_slot "${1:-}" "${2:-}" ;;
-    rename) _require_own_tree rename; shift; do_rename "${1:-}" "${2:-}" "${3:-}" ;;
+    rename) _require_own_tree rename; shift; do_rename "${1:-}" "${2:-}" ;;
     repair-indices) _require_own_tree repair-indices; do_repair_indices ;;
     fix-order) _require_own_tree fix-order; shift; do_fix_order "${1:-}" ;;
     *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>|library-sync|repair-indices|fix-order [uuid]" ;;

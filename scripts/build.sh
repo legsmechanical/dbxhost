@@ -893,6 +893,10 @@ if [ -d ./standalone ]; then
     # project verb, select-list and select-hook import it from beside
     # themselves; without it they die on the import and the picker is empty.
     cp ./standalone/scripts/project_pad.py ./build/scripts/
+    # project_name.py: the ONE place that spells a project's song-folder name
+    # and its name tag. project-cmd.sh and select-list.sh import it; without it
+    # every project verb dies on the import and the picker names nothing.
+    cp ./standalone/scripts/project_name.py ./build/scripts/
     # move-loaded-set-reader.sh: backgrounded by launch.sh to distill
     # MoveOriginal's own "About to load ..." boot line into
     # move_loaded_set.txt (see that script for the file contract).

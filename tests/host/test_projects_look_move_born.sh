@@ -85,8 +85,8 @@ d="$(dir_at_pad 3)"
             || bad "new-at made no project on pad 3 — the check cannot see its subject"
 
 sh "$CMD" new "Named One" >/dev/null 2>&1
-d="$(ls -d "$PROJECTS_DIR"/*/"Named One" 2>/dev/null | sed -n 1p)"
-[ -n "$d" ] && must_look_born "new (create by name)" "$(dirname "$d")" \
+d="$(grep -lx "Named One" "$PROJECTS_DIR"/*/dAVEBOx*/name.txt 2>/dev/null | sed -n 1p)"
+[ -n "$d" ] && must_look_born "new (create by name)" "$(dirname "$(dirname "$d")")" \
             || bad "new made no project — the check cannot see its subject"
 
 sh "$CMD" copy 3 9 >/dev/null 2>&1

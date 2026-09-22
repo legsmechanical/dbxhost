@@ -34,7 +34,7 @@ import { morphTick } from './ui_snapmorph.mjs';
 import { reconcileParallelAll, parallelForgetPushed, parallelSweepTick } from './ui_parallel.mjs';
 import { autoBankTick } from './ui_automation_bank.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
-import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, hostIdentity,
+import { saveState, showActionPopup, showTrackVolCard, uuidToStatePath, hostIdentity, projectDisplayName,
     commitSnapshot } from './ui_persistence.mjs';
 import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
          projectPickerTextEntryTick, requestSetForSlot, prepareSlotFor,
@@ -629,7 +629,8 @@ export function _tickImpl() {
         if ((!S.awaitingProjectSelect || _asked) &&
                 _id.state === 'open' && _id.uuid && _dspUuid !== _id.uuid) {
             S.currentSetUuid = _id.uuid;
-            S.currentSetName = _id.name;
+            S.currentSetName = projectDisplayName(_id.uuid);
+            S.currentSetFolder = _id.name;
             S.pendingSetLoad = true;
         }
         /* Self-heal window: the host's set reload can land seconds AFTER we

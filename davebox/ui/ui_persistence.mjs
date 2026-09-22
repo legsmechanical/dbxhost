@@ -80,6 +80,28 @@ export function projectIdOfEntry(uuid) {
     const cut = dir.lastIndexOf('/');
     return cut >= 0 ? dir.slice(cut + 1) : dir;
 }
+/* ⭐ THE NAME A USER SEES is a TAG in the project — `<state>/name.txt`, written
+ * by project-cmd (standalone/scripts/project_name.py, the rule's home). The
+ * song folder is Move's (`Move-Set-<id>`) and is never shown. Read on the
+ * events that change which project is open, never per tick. Falls back to the
+ * short project id, exactly as the Python side does. `uuid` is the LIBRARY
+ * entry (a slot); it resolves to the project the same way state paths do. */
+export const PROJECT_NAME_FILE = 'name.txt';
+export function projectDisplayName(uuid) {
+    if (!uuid) return '';
+    try {
+        const dir = dbxProjectDir(SETS_DIR, uuid);
+        const st = host_state_subdir(dir, false);
+        if (st) {
+            const t = host_read_file(dir + '/' + st + '/' + PROJECT_NAME_FILE);
+            const n = t ? String(t).split('\n')[0].trim() : '';
+            if (n) return n;
+        }
+    } catch (e) { /* fall through */ }
+    const pid = projectIdOfEntry(uuid);
+    return pid ? pid.slice(0, 8) : '';
+}
+
 /* Device-wide snapshots (item 18): one dir per slot beside the live state. */
 export function deviceSnapDir(uuid, n) { return setStateDir(uuid) + '/snapshots/' + (n | 0); }
 /* The hidden "before" take a recall makes so Undo can return to it (Josh,

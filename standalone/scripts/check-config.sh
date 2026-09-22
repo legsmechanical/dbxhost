@@ -72,7 +72,7 @@ check "set-swap calls the umount verb" "$HERE/scripts/set-swap.sh"  "--umount-se
 check "project-cmd store root"         "$HERE/scripts/project-cmd.sh"  'PROJECTS_DIR="${PROJECTS_DIR:-$DBX_DIR/projects}"'
 check "select-list store root"         "$HERE/scripts/select-list.sh"  'PROJECTS_DIR="${PROJECTS_DIR:-$DBX_DIR/projects}"'
 check "select-hook library root"       "$HERE/scripts/select-hook.sh"  'LIBRARY_DIR="${LIBRARY_DIR:-$DBX_DIR/sets/library}"'
-check "launch.sh seeds the store"      "$HERE/scripts/launch.sh"       '$DBX_DIR/projects/$_tuuid'
+check "launch.sh seeds via new-at"     "$HERE/scripts/launch.sh"       'project-cmd.sh" new-at 0 "Project 1"'
 check "project-cmd library root"       "$HERE/scripts/project-cmd.sh"  'LIBRARY_DIR="${LIBRARY_DIR:-$DBX_DIR/sets/library}"'
 check "project-cmd imports the slots"  "$HERE/scripts/project-cmd.sh"  "import library_slots as sl"
 check "launch.sh syncs the library"    "$HERE/scripts/launch.sh"       'project-cmd.sh" library-sync'
@@ -110,7 +110,16 @@ check "state_subdir.py base name"      "$HERE/scripts/state_subdir.py"       "ST
 check "state_subdir.py name pattern"   "$HERE/scripts/state_subdir.py"       "^$DBX_SUBDIR_NAME(~[0-9]+)?\$"
 check "state_subdir.py retry bound"    "$HERE/scripts/state_subdir.py"       "STATE_MAX_TRIES = 256"
 check "project-cmd imports the rule"   "$HERE/scripts/project-cmd.sh"        "import state_subdir as ss"
-check "select-list imports the rule"   "$HERE/scripts/select-list.sh"        "import state_subdir as ss"
+check "select-list names by the tag"   "$HERE/scripts/select-list.sh"        "import project_name as pn"
+
+# ⭑ THE PROJECT NAME IS A TAG. Move's song folder has a fixed name and the
+# user's name is one line in <state>/name.txt. project_name.py is the only
+# Python speller of both; dAVEBOx's reader spells the file name once more (JS
+# cannot import Python) and is pinned to the same literal here.
+check "song folder prefix"             "$HERE/scripts/project_name.py"       'SONG_PREFIX = "Move-Set-"'
+check "name tag file (python)"         "$HERE/scripts/project_name.py"       'NAME_FILE = "name.txt"'
+check "name tag file (davebox)"        "$REPO/davebox/ui/ui_persistence.mjs" "PROJECT_NAME_FILE = 'name.txt'"
+check "project-cmd names by the tag"   "$HERE/scripts/project-cmd.sh"        "import project_name as pn"
 # set-swap.sh used to import this too, for newest_autosave_uuid()'s state-dir
 # glob — deleted (project-identity-design §3A A10): it was a live second guess
 # at session identity that could override active_set.txt, which the host now

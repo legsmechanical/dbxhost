@@ -39,7 +39,7 @@ export PYTHONDONTWRITEBYTECODE=1
 python3 - "$LIBRARY_DIR" "$PROJECTS_DIR" "$SETTINGS_JSON" "$OUT_JSON" <<'PYEOF'
 import json, os, re, sys
 sys.path.insert(0, os.environ["DBX_PY_DIR"])
-import state_subdir as ss
+import project_name as pn
 import library_slots as sl
 library, projects_dir, settings, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 cur = 0
@@ -67,8 +67,7 @@ for i, sid in enumerate(sl.SLOT_IDS):
     p = os.path.join(projects_dir, pid)
     if not os.path.isdir(p):
         continue                       # dangling: name nothing rather than guess
-    inner = ss.inner_dirs(p)
-    names[str(i)] = inner[0] if inner else pid[:8]
+    names[str(i)] = pn.name_of(p)     # the name TAG, never the folder
 tmp = out + ".tmp"
 with open(tmp, "w") as f:
     json.dump({"title": "dAVEBOx projects", "current": cur, "names": names}, f)

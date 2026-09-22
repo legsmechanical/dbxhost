@@ -452,23 +452,13 @@ setsid --wait bash -c '
     # (The library could never answer this: it also carries a DO-NOT-EDIT
     # notice for the file surfaces we cannot filter, and now symlinks too.)
     if [ -d "$DBX_DIR/sets/template" ] && [ -z "$(ls -d "$DBX_DIR/projects"/*/ 2>/dev/null)" ]; then
-      _tuuid=$(cat /proc/sys/kernel/random/uuid)
-      mkdir -p "$DBX_DIR/projects/$_tuuid"
-      cp -r "$DBX_DIR/sets/template/." "$DBX_DIR/projects/$_tuuid/"
-      # Pin the seed to picker pad 0 so the first project sits on the first
-      # pad. Only the PAD: the ordering index Move reads belongs to whichever
-      # slot ends up pointing here, and library-sync below is the one thing
-      # that writes it. (No apostrophes in this body -- see the header.)
-      python3 -c "import os,sys
-sys.path.insert(0, sys.argv[2])
-import project_pad as pp
-pp.set_pad(sys.argv[1], 0)" \
-        "$DBX_DIR/projects/$_tuuid" "$DBX_DIR/scripts" 2>/dev/null || true
-      # …and give it the slot Move will enumerate. A seeded project with no
-      # slot is a fresh install that comes up on an empty picker.
-      sh "$DBX_DIR/scripts/project-cmd.sh" library-sync || \
-        echo "WARNING: library sync failed after seeding — continuing"
-      echo "seeded first project $_tuuid from template"
+      # Born through new-at, the SAME path as a project made from the picker,
+      # so the seed has the one project shape (a fixed song folder and a name
+      # tag) with nothing hand-rolled here to drift from it. Pad 0; new-at
+      # also gives it its slot (library-sync) before Move enumerates.
+      sh "$DBX_DIR/scripts/project-cmd.sh" new-at 0 "Project 1" || \
+        echo "WARNING: could not seed the first project — continuing"
+      echo "seeded first project on pad 0 from template"
     fi
     sh "$DBX_DIR/scripts/set-swap.sh" enter || {
       echo "set-swap enter failed — restoring"

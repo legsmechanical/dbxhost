@@ -701,7 +701,8 @@ export const S = {
     _recNoteOns: [],
     _recNoteOffs: [],
     currentSetUuid: '',
-    currentSetName: '',
+    currentSetName: '',     /* the project's NAME tag — what the user sees */
+    currentSetFolder: '',   /* Move's song folder (Move-Set-<id>) — paths only */
     /* Which USER PRESET each sound-mode component is on — {name, path, hash,
      * mod} keyed 'slot:comp' (ui_sound's presetRecKey). Persisted in the UI
      * sidecar (`upr`) and REPLACED WHOLESALE by restoreUiSidecar, so a project

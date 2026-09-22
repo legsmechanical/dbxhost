@@ -20,7 +20,7 @@ import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import {
     SNAPSHOT_CAP, snapshotLabel, saveState, loadSnapshotManifest, showActionPopup,
     dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
-    hostIdentity, projectIdOfEntry
+    hostIdentity, projectIdOfEntry, projectDisplayName
 } from './ui_persistence.mjs';
 import { invalidateLEDCache } from './ui_leds.mjs';
 import {
@@ -371,7 +371,8 @@ export function checkProjectOpened() {
             S.projectOpenFailed = null;
             S.forceRelaunchNextLoad = false;   /* Move did open it: nothing to force */
             S.currentSetUuid = id.uuid;
-            S.currentSetName = id.name;
+            S.currentSetName = projectDisplayName(id.uuid);
+            S.currentSetFolder = id.name;
             loadSelectedCurrentProject();
             S.screenDirty = true;
         }
@@ -450,6 +451,7 @@ function enterProjectOpenFailed(pad, name, reason) {
      * project the session was in before, and not the one that failed. */
     S.currentSetUuid = '';
     S.currentSetName = '';
+    S.currentSetFolder = '';
     S.awaitingProjectSelect = true;
     host_module_set_param('awaiting_select', '1');
     /* Anything already queued toward a save or a load is void now. */
@@ -1422,71 +1424,32 @@ function _pppDoRename_impl(k, name) {
     if (!p) return;
     p.renameActive = false;
     const proj = p.byIndex[k];
-    const trimmed = String(name || '').trim().replace(/\//g, '-');
+    /* ⭐ A NAME IS A TAG, NOT A FOLDER (project_name.py). Any character but a
+     * newline is allowed — "/" included — and a rename moves nothing, so the
+     * OPEN project renames in place like any other: no RENAMING/RESTARTING,
+     * no Move restart. (It used to move Move's song folder, which for the open
+     * project meant a deferred patch and a restart — and a picker lock, a
+     * `reselect` marker, and a "was it deferred?" probe to cope with them.) */
+    const trimmed = String(name || '').replace(/[\r\n]+/g, ' ').trim();
     if (!proj || !trimmed || trimmed === proj.name) { S.screenDirty = true; return; }
-    /* Two projects with one name would confuse the family lookup AND the
-     * name index (name -> uuid) — refuse up front. */
+    /* Two projects with one name read as one on every screen that names them
+     * — refuse up front. */
     for (let i = 0; i < p.projects.length; i++) {
         if (p.projects[i].uuid !== proj.uuid && p.projects[i].name === trimmed) {
             showActionPopup('NAME', 'TAKEN');
             return;
         }
     }
-    if (_pppIsOpenProject(p, k)) {
-        /* The OPEN project renames via the deferred switch-in-place path:
-         * project-cmd queues the mv for the launcher and restarts Move at the
-         * same index. Save our half first — same ordering as a switch.
-         *
-         * ⚠ LOCK THE PICKER FIRST. The SIGTERM lands ~1-2 s after the command
-         * returns, and any gesture accepted in that window races the teardown
-         * — on hardware (2026-08-12) a recolor + Load fired in the gap, the
-         * Load's select-handoff had its Move killed mid-walk, and the session
-         * came back with the module parked under the host UI. `restarting`
-         * makes every picker entry point a no-op until the restart takes us.
-         *
-         * From the BOOT picker (awaiting select) nothing is loaded and nobody
-         * chose anything, so the restart must come back to the picker —
-         * that is the `reselect` arg (launcher re-arms fresh_session). A
-         * rename inside a live session restarts back into the project, which
-         * is what "restart in place" means there. */
-        p.restarting = 'RENAMING';
-        _pppCloseOverlays(p);
-        S.screenDirty = true;
-        saveState();
-        showActionPopup('RENAMING', 'RESTARTING');
-        host_system_cmd(_pppCmdWithOpenUuid(PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed) +
-                        (S.awaitingProjectSelect ? ' reselect' : '')));
-        return;
-    }
-    const _queueBefore = _pppQueueSnapshot();
-    host_system_cmd(_pppCmdWithOpenUuid(PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed)));
+    const _wasOpen = _pppIsOpenProject(p, k);
+    /* No DBX_OPEN_UUID: a rename makes no open-project decision any more. */
+    host_system_cmd('sh ' + PROJECT_CMD + ' rename ' + k + ' ' + _shq(trimmed));
     const d = _pppRunList();
     if (d) _pppApplyList(p, d);
     const now = p.byIndex[k];
-    if (now && now.name === trimmed) { showActionPopup('PROJECT', 'RENAMED'); S.screenDirty = true; return; }
-
-    /* ⚠⚠ AN UNCHANGED NAME IS NOT A FAILURE. project-cmd makes its OWN
-     * determination of which project is open — deliberately, because one
-     * decider in JS is the shape that caused the loss the identity work
-     * exists to fix (see the comment on do_delete's `_open_del`). When it
-     * decides the project is open it QUEUES the mv for the launcher and
-     * restarts Move in place, so the name cannot have changed yet.
-     *
-     * We reached here believing nothing was open — which is true of dAVEBOx
-     * and false of MOVE, because at the boot picker Move is still holding the
-     * set it had. So the two halves disagreed, and this branch reported
-     * RENAME FAILED for a rename that was merely deferred. Worse than a wrong
-     * word: the rename then applied silently at the next launch, which reads
-     * as the box renaming a project on its own. (Josh, 2026-09-20: "just tried
-     * renaming project 1 and it gave me rename failed".)
-     *
-     * So ASK WHAT IT DECIDED rather than guessing again: a queued patch means
-     * deferred, and we take the same restarting path the open branch does. */
-    if (_pppQueueSnapshot() !== _queueBefore) {
-        p.restarting = 'RENAMING';
-        _pppCloseOverlays(p);
-        saveState();
-        showActionPopup('RENAMING', 'RESTARTING');
+    if (now && now.name === trimmed) {
+        /* The loading screen and export name the open project from this. */
+        if (_wasOpen) S.currentSetName = trimmed;
+        showActionPopup('PROJECT', 'RENAMED');
         S.screenDirty = true;
         return;
     }
@@ -1513,7 +1476,7 @@ function _pppCommitColor(p, k, colorIdx) {
 function _projectPadPickerClick_impl() {
     const p = S.projectPadPicker;
     if (!p) return;
-    if (p.restarting) return;      /* rename-of-current: teardown in flight */
+    if (p.restarting) return;      /* delete-of-current: teardown in flight */
     if (p.confirmNew) {
         const c = p.confirmNew;
         if (c.sel === 0) {          /* Yes — create, then open its menu */
@@ -1554,7 +1517,7 @@ function _projectPadPickerClick_impl() {
 function _projectPadPickerRotate_impl(delta) {
     const p = S.projectPadPicker;
     if (!p || !delta) return;
-    if (p.restarting) return;      /* rename-of-current: teardown in flight */
+    if (p.restarting) return;      /* delete-of-current: teardown in flight */
     if (p.confirmNew) {
         p.confirmNew.sel = p.confirmNew.sel === 0 ? 1 : 0;
     } else if (p.colorPick) {
@@ -1623,7 +1586,7 @@ function _projectPickerTextEntryTick_impl() {
 function _projectPadPickerTap_impl(k) {
     const p = S.projectPadPicker;
     if (!p) return;
-    if (p.restarting) return;      /* rename-of-current: teardown in flight */
+    if (p.restarting) return;      /* delete-of-current: teardown in flight */
     p.touchedIdx = k;
     const proj = p.byIndex[k];
 
@@ -1824,9 +1787,9 @@ function _drawProjectPadPicker_impl() {
      * yes/no confirm keeps the shared DIALOG chassis (§5.0 — dialogs are the
      * host family, and it is transient). */
     if (p.restarting) {
-        /* `restarting` carries its VERB rather than a bare true — two gestures
-         * now take this path (rename of the open project, delete of it) and a
-         * screen that says RENAMING through a delete is worse than no screen. */
+        /* `restarting` carries its VERB rather than a bare true. Only delete of
+         * the open project takes this path now (a rename moves nothing and no
+         * longer restarts); the verb stays so a second one cannot be mislabelled. */
         _drawProjectPickerHeader();
         drawKitList([{ label: p.restarting, hdr: true },
                      { note: 'Restarting' }, { note: 'the session...' }], -1,
