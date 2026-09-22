@@ -58,6 +58,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 const { BANKS, BANK_STEP, BANK_SOUND } = await import('../../ui/ui_constants.mjs');
 FOOTER_Y = (await import('../../ui/ui_movy.mjs')).MV_FOOTER_Y - 1;
 const snd = await import('../../ui/ui_sound.mjs');
+const rnd = await import('../../ui/ui_render.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 0;
@@ -169,6 +170,44 @@ step('no hint on the STEP bank itself — the jog does nothing there under a hol
     fresh(BANK_STEP); holdStep5();
     assert(!shows(), 'hint drawn on the STEP bank');
     release();
+});
+/* An EMPTY step has nothing on the step page (Josh, 2026-09-22: "should only
+ * work when you're holding a step with a note"): no reveal, no card, no pill. */
+function holdStep6() { note(STEP(6), 127); S.tickCount += 25; globalThis.tick(); }
+function release6() { note(STEP(6), 0); globalThis.tick(); }
+const jogPair = (h) => (h.find(p => p[0] === 'JOG') || [])[1] || null;
+step('⚠ an EMPTY held step: jog right reveals nothing, no card, and the bank footer offers no jog', () => {
+    fresh(1); holdStep6();
+    assert(S.heldStep === 6 && S.heldStepNotes.length === 0, 'control: step 6 held and empty');
+    assert(!shows(), 'hint card drawn on an empty step');
+    assert(jogPair(rnd.bankPageHints(1)) === null, 'footer jog pair on an empty step: ' + JSON.stringify(rnd.bankPageHints(1)));
+    right();
+    assert(S.stepReveal === false, 'revealed an empty step');
+    assert(S.activeBank === 1, 'the jog walked the bank under a hold');
+    release6();
+});
+step('control: the SAME bank with a filled step does offer JOG STEP', () => {
+    fresh(1); holdStep5();
+    assert(jogPair(rnd.bankPageHints(1)) === 'STEP', 'got ' + JSON.stringify(rnd.bankPageHints(1)));
+    release();
+});
+step('⚠ TRACK OVERVIEW (no bank card up): holding a filled step says JOG STEP, and the drawn footer changes', () => {
+    fresh(1); S.bankCardLatched = false;
+    const REF = S.tickCount + 250;               /* past the card's window: the footer is what is read */
+    const idle = partsAt(REF);
+    assert(jogPair(rnd.overviewHints()) === 'BANK', 'control: idle overview says JOG BANK');
+    holdStep5();
+    assert(jogPair(rnd.overviewHints()) === 'STEP', 'held overview says ' + JSON.stringify(rnd.overviewHints()));
+    const held = partsAt(REF);
+    assert(held.foot !== idle.foot, 'the drawn footer did not change under the hold');
+    right();
+    assert(S.stepReveal === true, 'and the jog does open the step page from the overview');
+    release();
+});
+step('TRACK OVERVIEW + an EMPTY held step: no jog pair (JOG BANK would promise a walk the hold suspends)', () => {
+    fresh(1); S.bankCardLatched = false; holdStep6();
+    assert(jogPair(rnd.overviewHints()) === null, 'got ' + JSON.stringify(rnd.overviewHints()));
+    release6();
 });
 step('releasing the step while revealed takes the reveal away', () => {
     fresh(1); holdStep5(); right();

@@ -61,7 +61,12 @@ the section into a versioned heading at release time.
 ### Changed (pending)
 - **Holding a step says what the jog does.** A short "JOG RIGHT / EDIT STEP" card
   appears once a press becomes a hold, and goes as soon as you turn a knob or the
-  jog, or let go. The JOG STEP footer hint stays too.
+  jog, or let go. The JOG STEP footer hint shows on the track overview too, not
+  only on a bank page.
+- **The jog opens the step page only for a step with a note.** An empty step has
+  nothing to edit there, so holding one shows no card and no JOG STEP hint, and
+  the jog does nothing. Press a pad while holding it and the step page is
+  available again.
 - **Renaming a project is instant, even the one you're in.** No more RENAMING /
   RESTARTING. A name can use any character the keyboard types, "/" included —
   the name is a label now, not the folder Move opens.

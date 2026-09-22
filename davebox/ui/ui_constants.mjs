@@ -622,7 +622,7 @@ export const BEAT_MARKER_PALETTE     = 49;  /* scratch index for 10%-white beat 
  * inside this window is the same flick, not a second instruction. */
 export const STEP_REVEAL_DEBOUNCE_MS = 150;
 /* How long the held-step jog hint card stays up if the hold goes unused. */
-export const STEP_JOG_HINT_MS = 1500;
+export const STEP_JOG_HINT_MS = 660;   /* Josh, 2026-09-22: "more like .66 seconds" */
 export const NO_NOTE_FLASH_MS = 600;
 export const TAP_TEMPO_FLASH_MS = 96;
 export const TAP_TEMPO_RESET_MS    = 2000; /* inactivity reset threshold */

@@ -27,7 +27,7 @@ import {
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay,
-         markJsUndoPatch } from './ui_state.mjs';
+         markJsUndoPatch, stepRevealAvailable } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
@@ -3803,6 +3803,8 @@ export function heldStepJog(d2) {
     if (delta === 0) return true;
     if (nowMs() - S.stepRevealJogTick < STEP_REVEAL_DEBOUNCE_MS) return true;
     if (S.activeBank === BANK_STEP) return true;
+    /* Nothing to reveal on an empty step; the hold still owns the jog. */
+    if (delta > 0 && !S.stepReveal && !stepRevealAvailable()) return true;
     if (delta > 0 && !S.stepReveal) { S.stepReveal = true;  S.stepRevealJogTick = nowMs(); forceRedraw(); }
     else if (delta < 0 && S.stepReveal) { S.stepReveal = false; S.stepRevealJogTick = nowMs(); forceRedraw(); }
     return true;

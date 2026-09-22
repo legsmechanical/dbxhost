@@ -4,7 +4,7 @@
  * Read: S.varName   Write: S.varName = v  or  S.arr[i] = v
  */
 
-import { PAD_MODE_CONDUCT, NUM_TRACKS } from './ui_constants.mjs';
+import { PAD_MODE_CONDUCT, NUM_TRACKS, BANK_STEP } from './ui_constants.mjs';
 /* ui_engine.mjs imports nothing local, so this cannot cycle. */
 import { CHAIN_SLOTS } from './ui_engine.mjs';
 
@@ -35,6 +35,17 @@ import { CHAIN_SLOTS } from './ui_engine.mjs';
  * by bumping S.tickCount; with S.clockFollowTicks the clock follows at the old
  * device cadence so "tickCount += 25" still crosses a 200 ms threshold. */
 export const TICK_MS_FOR_TESTS = 10.6;
+/* ⭑ Can the jog open the held step's page right now? A step is held, it HAS a
+ * note (the page edits a note's length/velocity/…; an empty step has nothing
+ * on it — Josh, 2026-09-22: "should only work when you're holding a step with
+ * a note"), and we are not already on the STEP bank. The jog, both footers and
+ * the hold's hint card all ask this, so none of them can promise what another
+ * refuses. A pad pressed during the hold adds a note and makes it true. */
+export function stepRevealAvailable() {
+    return S.heldStep >= 0 && S.heldStepNotes.length > 0 && !S.sessionView
+        && S.activeBank !== BANK_STEP;
+}
+
 export function nowMs() {
     return S.clockFollowTicks ? Math.round(S.tickCount * TICK_MS_FOR_TESTS) : Date.now();
 }

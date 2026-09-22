@@ -22,9 +22,9 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
-    POLL_INTERVAL, ROUTE_NONE, BANK_STEP, STEP_JOG_HINT_MS } from './ui_constants.mjs';
+    POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS } from './ui_constants.mjs';
 
-import { S, standDownBankDisplay } from './ui_state.mjs';
+import { S, standDownBankDisplay, stepRevealAvailable } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { tickPrefetch, dget, applyNewProjectSeed } from './ui_dsp_bridge.mjs';
 import { daveBoxTick, bannerDaveSync } from './ui_daves.mjs';
@@ -1721,15 +1721,7 @@ export function _tickImpl() {
         if (S.heldStep >= 0 && S.heldStepBtn >= 0 && S.stepBtnPressedTick[S.heldStepBtn] >= 0 &&
                 ((S.clockMs - S.stepBtnPressedTick[S.heldStepBtn]) >= STEP_HOLD_MS ||
                  S.stepHoldPromote)) {           /* a lock was dialled: that IS a hold */
-            /* ⭑ Say what the jog does now (Josh, 2026-09-22: "there's no
-             * indication when you're holding a step that jogging will kick you
-             * right into step mode"). Only a hold that became one by TIME — a
-             * knob or jog turn already used it — and never where the jog does
-             * nothing under a hold (the STEP bank itself, spec §2). */
-            if (!S.stepHoldPromote && !S.sessionView && !S.stepReveal && S.activeBank !== BANK_STEP) {
-                showActionPopupFor(STEP_JOG_HINT_MS, 'JOG RIGHT', 'EDIT STEP');
-                S.actionPopupStepHint = true;
-            }
+            const _holdByTime = !S.stepHoldPromote;   /* a knob/jog turn already used the hold */
             S.stepHoldPromote = false;
             S.stepBtnPressedTick[S.heldStepBtn] = -1;
             S.stepWasHeld = true;
@@ -1792,6 +1784,15 @@ export function _tickImpl() {
                  * on an empty step still places the last note (release path).
                  * Nothing to do but mark the hold as such. */
                 S.screenDirty = true;
+            }
+            /* ⭑ Say what the jog does now (Josh, 2026-09-22: "there's no
+             * indication when you're holding a step that jogging will kick you
+             * right into step mode"). Only a hold that became one by TIME, and
+             * only where the jog can open the page — AFTER the reads above,
+             * since a melodic step's notes are only known from here. */
+            if (_holdByTime && !S.stepReveal && stepRevealAvailable()) {
+                showActionPopupFor(STEP_JOG_HINT_MS, 'JOG RIGHT', 'EDIT STEP');
+                S.actionPopupStepHint = true;
             }
         }
 

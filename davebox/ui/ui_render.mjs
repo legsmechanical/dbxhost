@@ -6,7 +6,7 @@
  * Extracted from ui.js (Phase 5 of the modularity refactor, module 5, final).
  */
 
-import { S, PERF_FACTORY_PRESETS } from './ui_state.mjs';
+import { S, PERF_FACTORY_PRESETS, stepRevealAvailable } from './ui_state.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H } from './ui_daves.mjs';
 import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
@@ -559,13 +559,13 @@ function drawSessionFaderRow(cells, mode) {
  * not the most important three.
  *
  * ⚠ The row is CHROME. Nothing here reads or changes input state. */
-function bankPageHints(bank) {
+export function bankPageHints(bank) {
     /* ⭑ While a step is HELD the jog means something else (spec §2): on any
      * other bank a right turn REVEALS the step's page — so the pair says so,
      * in the same slot, and JOG BANK (which the hold suspends) is not shown.
      * On the STEP bank itself the jog does nothing under a hold: no pair. */
     const held = S.heldStep >= 0;
-    const hints = held ? (bank === BANK_STEP ? [] : [['JOG', 'STEP']]) : [['JOG', 'BANK']];
+    const hints = held ? (stepRevealAvailable() ? [['JOG', 'STEP']] : []) : [['JOG', 'BANK']];
     const drum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
     if (!drum && (bank === 4 || bank === 5)) hints.push(['CLK', 'STEP']);
     else if (bankHasAltParams(S.activeTrack, bank)) hints.push(['CLK', 'ALT']);
@@ -1061,7 +1061,7 @@ function drawOverviewTracks(hints) {
 /* What the jog does at rest on each overview — the footer says only what is
  * true HERE (the canon): in track view it walks the banks and a click opens the
  * card; in session view it walks the mixer mode and a click latches the mixer. */
-function overviewHints() {
+export function overviewHints() {
     /* CLK says EDIT, not BANK — the jog pair already names the bank (Josh); the
      * MENU pair names the OTHER overview a Note/Session tap switches to (Josh,
      * 2026-09-05: "MENU:[TRACK/GRID]"). */
@@ -1074,6 +1074,11 @@ function overviewHints() {
      * Shift+click is nothing here. */
     if (devSnapOpen()) return devSnapHints();   /* the snapshot layer (item 18), either view */
     if (S.shiftHeld) return [['JOG', 'TRACK'], ['\u2261', S.sessionView ? 'FX' : 'CONFIG']];
+    /* A held step owns the jog here too (heldStepJog runs ahead of the bank
+     * walk): JOG STEP when there is a note to edit, no jog pair when there is
+     * not — JOG BANK would promise a walk the hold suspends. */
+    if (S.heldStep >= 0 && !S.sessionView)
+        return (stepRevealAvailable() ? [['JOG', 'STEP']] : []).concat([['CLK', 'EDIT'], ['\u2261', 'SESS']]);
     return [['JOG', 'BANK'], ['CLK', 'EDIT'], ['\u2261', S.sessionView ? 'TRK' : 'SESS']];
 }
 
