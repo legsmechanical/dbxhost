@@ -209,6 +209,27 @@ step('TRACK OVERVIEW + an EMPTY held step: no jog pair (JOG BANK would promise a
     assert(jogPair(rnd.overviewHints()) === null, 'got ' + JSON.stringify(rnd.overviewHints()));
     release6();
 });
+step('⚠ the PRESS before it is a hold: both footers still say JOG BANK (a tap must not flicker them), then JOG STEP once it is a hold', () => {
+    /* Device, 2026-09-22: for the first 250 ms of a hold the footer had NO jog
+     * pair — a melodic step's notes are only read at the hold threshold. */
+    fresh(1); S.bankCardLatched = false;
+    note(STEP(5), 127); S.tickCount += 2; globalThis.tick();
+    assert(S.heldStep === 5 && S.stepBtnPressedTick[S.heldStepBtn] >= 0, 'control: still inside the tap window');
+    assert(jogPair(rnd.overviewHints()) === 'BANK', 'overview in the press window: ' + JSON.stringify(rnd.overviewHints()));
+    assert(jogPair(rnd.bankPageHints(1)) === 'BANK', 'bank page in the press window: ' + JSON.stringify(rnd.bankPageHints(1)));
+    S.tickCount += 25; globalThis.tick();
+    assert(jogPair(rnd.overviewHints()) === 'STEP', 'overview once held: ' + JSON.stringify(rnd.overviewHints()));
+    assert(jogPair(rnd.bankPageHints(1)) === 'STEP', 'bank page once held: ' + JSON.stringify(rnd.bankPageHints(1)));
+    release();
+});
+step('⚠ a filled MELODIC step can be revealed inside the press window, before its notes are read', () => {
+    fresh(1);
+    note(STEP(5), 127); S.tickCount += 2;
+    assert(S.heldStepNotes.length === 0, 'control: notes not read yet');
+    cc(14, 1);
+    assert(S.stepReveal === true, 'the jog refused a filled step because its notes were not read yet');
+    globalThis.tick(); release();
+});
 step('releasing the step while revealed takes the reveal away', () => {
     fresh(1); holdStep5(); right();
     assert(S.stepReveal === true, 'revealed');

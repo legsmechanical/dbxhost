@@ -40,10 +40,21 @@ export const TICK_MS_FOR_TESTS = 10.6;
  * on it — Josh, 2026-09-22: "should only work when you're holding a step with
  * a note"), and we are not already on the STEP bank. The jog, both footers and
  * the hold's hint card all ask this, so none of them can promise what another
- * refuses. A pad pressed during the hold adds a note and makes it true. */
+ * refuses. A pad pressed during the hold adds a note and makes it true.
+ * ⚠ "Has a note" is known at the PRESS (stepWasEmpty, from the step grid); a
+ * melodic step's heldStepNotes are only read at the hold threshold, and
+ * reading those alone left the footer with no jog pair for the first 250 ms
+ * of every hold (device, 2026-09-22). */
 export function stepRevealAvailable() {
-    return S.heldStep >= 0 && S.heldStepNotes.length > 0 && !S.sessionView
-        && S.activeBank !== BANK_STEP;
+    return S.heldStep >= 0 && (S.heldStepNotes.length > 0 || !S.stepWasEmpty)
+        && !S.sessionView && S.activeBank !== BANK_STEP;
+}
+
+/* Has the step press become a HOLD (past the tap window, or promoted by a
+ * turn)? Until then it may still be a tap that toggles the step, so the
+ * footers keep saying what they said — a tap must not flicker them. */
+export function stepHoldEstablished() {
+    return S.heldStep >= 0 && !(S.heldStepBtn >= 0 && S.stepBtnPressedTick[S.heldStepBtn] >= 0);
 }
 
 export function nowMs() {
