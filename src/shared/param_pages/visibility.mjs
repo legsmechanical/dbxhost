@@ -21,6 +21,8 @@
  * ⭑ Generic and upstreamable: nothing here names a consumer.
  */
 
+import { hasChildren, resolveChildKey } from "./child_key.mjs";
+
 /* ⚠ FAIL-OPEN IS THE HOST'S RULE, not a convenience. A condition naming a param
  * we cannot read returns TRUE — showing a control that should be hidden is a
  * cosmetic fault, hiding one the user needs is a functional one. */
@@ -53,17 +55,35 @@ export function compareConditionValue(actualRaw, expectedRaw) {
 
 /* A condition names a param by its BARE key; this turns it into the full key
  * the engine answers to. ⚠ Repeated elements are why childIndex exists: inside
- * a `child_prefix` level, `cutoff` means THIS child's cutoff (`op2_cutoff`),
- * and a key that already carries the prefix must not get a second one. */
+ * a child level, `cutoff` means THIS child's cutoff (`op2_cutoff`).
+ *
+ * ⚠⚠ ONLY A KEY THE LEVEL LISTS IS PER-INSTANCE, and this is the host's rule
+ * (upstream shadow_ui.js `hierChildKeyFor`), not a choice. A module gates its
+ * child levels on a GLOBAL key too -- a drum module's `ui_engine` says which
+ * engine the focused pad runs, sits on no level, and is served bare. Expanding
+ * every key turned it into `pad2_ui_engine`, which nothing serves: it read "",
+ * compared equal to 0, and every pad got the sample pages whatever it ran.
+ * Membership of the level's own list also covers a key that is already
+ * concrete (`op1_ratio` is never listed), which the old `startsWith` test
+ * guessed at -- and guessed wrong for a listed key that merely begins with the
+ * prefix.
+ *
+ * ⚠ `childIndex` is ZERO-BASED, the same index the controller hands
+ * resolveChildKey for a value key. Building `${child_prefix}${childIndex}_`
+ * here ignored `child_index_base` and templates, so on a module numbering its
+ * pads from 1 a condition read the PREVIOUS pad's value. One resolver for
+ * value keys and condition keys is what keeps them the same instance. */
+function listsKey(levelDef, rawKey) {
+    const listed = (k) => (typeof k === "string" ? k : (k && k.key)) === rawKey;
+    return (levelDef.knobs || []).some(listed) || (levelDef.params || []).some(listed);
+}
+
 export function normalizeVisibilityConditionKey(componentPrefix, levelDef, childIndex, rawKey) {
     if (!rawKey) return "";
     if (rawKey.includes(":")) return rawKey;
     if (!componentPrefix) return rawKey;
-    if (levelDef && levelDef.child_prefix && childIndex >= 0) {
-        if (rawKey.startsWith(levelDef.child_prefix)) {
-            return `${componentPrefix}:${rawKey}`;
-        }
-        return `${componentPrefix}:${levelDef.child_prefix}${childIndex}_${rawKey}`;
+    if (childIndex >= 0 && hasChildren(levelDef) && listsKey(levelDef, rawKey)) {
+        return `${componentPrefix}:${resolveChildKey(levelDef, childIndex, rawKey) || rawKey}`;
     }
     return `${componentPrefix}:${rawKey}`;
 }
