@@ -111,6 +111,41 @@ assert ss.song_folder(d) == "Project 32"
 PY
 then ok "pure rule under the device's losing order (control reproduces it)"; else bad "pure rule under the losing order"; fi
 
+# ---- 1a'. no state name can follow the song: the SONG moves ------------------
+# The order that broke 3 in 400 fresh projects on ext4: the song lists after
+# EVERY dAVEBOx candidate. Injected so it is deterministic: dAVEBOx* first, then
+# plain Move-Set-*, but a renamed song (Move-Set-*-1) ahead of them all.
+NOWIN='Move-Set-*-1|dAVEBOx*|Move-Set-*'
+if DBX_TEST_DIR_ORDER="$NOWIN" python3 - "$PY" "$T/nowin" <<'PY'
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import state_subdir as ss
+root = sys.argv[2]
+def fresh(name):
+    d = os.path.join(root, name); os.makedirs(os.path.join(d, "Move-Set-abcd1234"))
+    open(os.path.join(d, "Move-Set-abcd1234", "Song.abl"), "w").write("{}")
+    return d
+# CONTROL: under this order no candidate can follow the original song
+d = fresh("control")
+os.mkdir(os.path.join(d, "dAVEBOx~7"))
+assert not ss.lists_after(d, "dAVEBOx~7", "Move-Set-abcd1234"), ss.listdir(d)
+# creation: the chooser moves the song rather than fall back to a first-listing dAVEBOx
+d = fresh("create")
+st = ss.ensure_state_subdir(d)
+song = ss.song_folder(d)
+assert song == "Move-Set-abcd1234-1", (song, ss.listdir(d))
+assert ss.listdir(d)[0] == song, ss.listdir(d)
+assert ss.lists_after(d, st, song)
+# repair: a project already in the losing order is fixed by moving its song
+d = fresh("repair")
+os.mkdir(os.path.join(d, "dAVEBOx")); open(os.path.join(d, "dAVEBOx", "keep"), "w").write("k")
+m = ss.fix_state_order(d)
+assert m and m[0].startswith("song "), m
+assert ss.listdir(d)[0] == ss.song_folder(d) == "Move-Set-abcd1234-1", ss.listdir(d)
+assert open(os.path.join(d, ss.state_subdir(d), "keep")).read() == "k"
+PY
+then ok "no state name can follow the song: the chooser and the repair move the SONG (control reproduces it)"; else bad "the song-move fallback"; fi
+
 # ---- 1b. the real verb, injected order -------------------------------------
 # The song folder is Move-Set-<id8> now (a name tag carries "Project 32"), so the
 # losing order is injected with a GLOB in the song's place.
