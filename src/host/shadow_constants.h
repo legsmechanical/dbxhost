@@ -692,6 +692,23 @@ _Static_assert((1ull << (8 * sizeof(((shadow_midi_out_t *)0)->write_idx))) >
                    SHADOW_MIDI_OUT_BUFFER_SIZE,
                "shadow_midi_out_t.write_idx cannot address its own buffer");
 
+/* Room kept for everything that is NOT cable 0 (the Move's own LEDs, palette
+ * SysEx): external USB MIDI on cable 2 above all. LED traffic is bulky and
+ * self-healing — a refused LED write is reported, the caller does not cache it,
+ * and the next repaint resends it — while a dropped external packet is lost for
+ * good: a sustain-pedal release or a pitch bend returning to centre, left
+ * hanging on the connected instrument. So cable 0 may fill the buffer only up
+ * to this margin, and an LED flood can never crowd out external MIDI. */
+#define SHADOW_MIDI_OUT_EXT_HEADROOM 64   /* bytes = 16 packets */
+
+/* Does one 4-byte packet for `cable` fit at `write_idx`? The one admission
+ * rule, shared by the writer (shadow_ui.c js_shadow_midi_send) and its test. */
+static inline int shadow_midi_out_admits(uint16_t write_idx, int cable) {
+    int limit = SHADOW_MIDI_OUT_BUFFER_SIZE -
+                (cable == 0 ? SHADOW_MIDI_OUT_EXT_HEADROOM : 0);
+    return (int)write_idx + 4 <= limit;
+}
+
 /*
  * MIDI-to-DSP structure for shadow UI to send MIDI to chain DSP slots.
  * Used by overtake modules to route MIDI to sound generators/effects.

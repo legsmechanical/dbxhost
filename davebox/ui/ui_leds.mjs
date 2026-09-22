@@ -43,16 +43,17 @@ function effectiveDrumMute(t, l) {
     return false;
 }
 
+/* ⚠ Cache only what was SENT. The host refuses an LED write when its MIDI-out
+ * buffer is full — LEDs stop short of the end so external MIDI keeps room —
+ * and a colour cached as sent after a refusal is never retried. */
 function cachedSetLED(note, color) {
     if (lastSentNoteLED[note] === color) return;
-    lastSentNoteLED[note] = color;
-    setLED(note, color);
+    lastSentNoteLED[note] = setLED(note, color) === false ? -1 : color;
 }
 
 function cachedSetButtonLED(cc, color) {
     if (lastSentButtonLED[cc] === color) return;
-    lastSentButtonLED[cc] = color;
-    setButtonLED(cc, color);
+    lastSentButtonLED[cc] = setButtonLED(cc, color) === false ? -1 : color;
 }
 
 export function invalidateLEDCache() {

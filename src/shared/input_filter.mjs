@@ -77,17 +77,22 @@ const buttonCache = new Array(128).fill(-1);
  */
 
 /* Set LED color for a note (pad, step, etc.) */
+/* Returns false when the host REFUSED the write (its MIDI-out buffer was full)
+ * — nothing is cached then, so a caller keeping its own cache must not either.
+ * An unchanged (cached) colour returns true: the hardware already shows it. */
 export function setLED(note, color, force = false) {
-    if (!force && ledCache[note] === color) return;
+    if (!force && ledCache[note] === color) return true;
     const sent = move_midi_internal_send([0x09, MidiNoteOn, note, color]);
     ledCache[note] = sent ? color : -1;
+    return !!sent;
 }
 
 /* Set LED color via CC (for buttons) */
 export function setButtonLED(cc, color, force = false) {
-    if (!force && buttonCache[cc] === color) return;
+    if (!force && buttonCache[cc] === color) return true;
     const sent = move_midi_internal_send([0x0b, MidiCC, cc, color]);
     buttonCache[cc] = sent ? color : -1;
+    return !!sent;
 }
 
 /*

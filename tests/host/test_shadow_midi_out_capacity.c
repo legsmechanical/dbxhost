@@ -38,10 +38,12 @@ static void check(int cond, const char *what) {
     }
 }
 
-/* Byte-for-byte the write step of js_shadow_midi_send. Returns 1 if queued. */
+/* The write step of js_shadow_midi_send, through the SAME admission rule it
+ * calls (shadow_midi_out_admits) — the cable is the CIN byte's high nibble.
+ * Returns 1 if queued. */
 static int push_packet(shadow_midi_out_t *m, const uint8_t pkt[4]) {
     int write_offset = m->write_idx;
-    if (write_offset + 4 <= SHADOW_MIDI_OUT_BUFFER_SIZE) {
+    if (shadow_midi_out_admits((uint16_t)write_offset, (pkt[0] >> 4) & 0x0F)) {
         memcpy(&m->buffer[write_offset], pkt, 4);
         m->write_idx = (uint16_t)(write_offset + 4);
         return 1;
@@ -53,12 +55,13 @@ int main(void) {
     static shadow_midi_out_t m;
     const int CAPACITY = SHADOW_MIDI_OUT_BUFFER_SIZE / 4;
 
-    /* 1. THE WHOLE BUFFER IS REACHABLE. */
+    /* 1. THE WHOLE BUFFER IS REACHABLE (by external MIDI, cable 2 — cable 0
+     * stops short of the end on purpose, see section 6). */
     printf("every packet the buffer has room for is accepted\n");
     memset(&m, 0, sizeof(m));
     int queued = 0;
     for (int i = 0; i < CAPACITY; i++) {
-        uint8_t pkt[4] = { 0x09, 0x90, (uint8_t)i, 100 };
+        uint8_t pkt[4] = { 0x29, 0x90, (uint8_t)i, 100 };
         queued += push_packet(&m, pkt);
     }
     check(queued == CAPACITY, "all 128 packets queued, not 63");
@@ -77,7 +80,7 @@ int main(void) {
      * write_offset cannot reach 512, so the bounds check was unreachable and
      * a full buffer was indistinguishable from a successful write. */
     printf("a full buffer refuses, and says so\n");
-    uint8_t extra[4] = { 0x09, 0x90, 127, 100 };
+    uint8_t extra[4] = { 0x29, 0x90, 127, 100 };
     check(push_packet(&m, extra) == 0, "the packet past the end is refused");
     check(m.write_idx == SHADOW_MIDI_OUT_BUFFER_SIZE,
           "and a refused write does not advance the cursor");
@@ -96,6 +99,30 @@ int main(void) {
     printf("widening the field cost no memory\n");
     check(sizeof(shadow_midi_out_t) == 4 + SHADOW_MIDI_OUT_BUFFER_SIZE,
           "sizeof is unchanged at header + buffer");
+
+    /* 6. AN LED FLOOD CANNOT CROWD OUT EXTERNAL MIDI. A full repaint plus
+     * palette SysEx can exceed the buffer in one flush; the writer refused the
+     * NEWEST packet, which could be an external sustain-pedal release or a
+     * pitch bend returning to centre — lost for good, while a refused LED is
+     * resent by the next repaint. */
+    printf("LED traffic leaves room for external MIDI\n");
+    memset(&m, 0, sizeof(m));
+    int leds = 0;
+    for (int i = 0; i < CAPACITY; i++) {
+        uint8_t led[4] = { 0x09, 0x90, (uint8_t)i, 5 };     /* cable 0: a pad LED */
+        leds += push_packet(&m, led);
+    }
+    check(leds == CAPACITY - SHADOW_MIDI_OUT_EXT_HEADROOM / 4,
+          "cable 0 fills only up to the headroom (112 of 128)");
+    int ext = 0;
+    for (int i = 0; i < SHADOW_MIDI_OUT_EXT_HEADROOM / 4; i++) {
+        uint8_t cc[4] = { 0x2B, 0xB0, 64, 0 };               /* cable 2: sustain off */
+        ext += push_packet(&m, cc);
+    }
+    check(ext == SHADOW_MIDI_OUT_EXT_HEADROOM / 4,
+          "after an LED flood, 16 external packets still fit");
+    uint8_t one_more[4] = { 0x2B, 0xB0, 64, 0 };
+    check(push_packet(&m, one_more) == 0, "and the buffer still refuses past its end");
 
     if (failures) {
         printf("FAILURES: %d\n", failures);

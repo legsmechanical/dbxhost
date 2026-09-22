@@ -1467,9 +1467,10 @@ static JSValue js_shadow_midi_send(int cable, JSContext *ctx, JSValueConst this_
         /* Override cable number in CIN byte */
         packet[0] = (packet[0] & 0x0F) | (cable << 4);
 
-        /* Find space in buffer and write */
+        /* Find space in buffer and write. Cable 0 (LEDs) stops short of the
+         * end, so external MIDI always has room (SHADOW_MIDI_OUT_EXT_HEADROOM). */
         int write_offset = shadow_midi_out->write_idx;
-        if (write_offset + 4 <= SHADOW_MIDI_OUT_BUFFER_SIZE) {
+        if (shadow_midi_out_admits((uint16_t)write_offset, cable)) {
             memcpy(&shadow_midi_out->buffer[write_offset], packet, 4);
             shadow_midi_out->write_idx = (uint16_t)(write_offset + 4);
         } else {

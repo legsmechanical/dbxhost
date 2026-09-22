@@ -92,6 +92,13 @@ move_midi_internal_send([type, status, note, value])
 
 Cable numbers for external send: `0x00`-`0x0F` (shifted left 4 bits in real MIDI)
 
+Both return `false` when the host's MIDI-out buffer (512 bytes, shared by both,
+drained once per audio block) had no room — nothing was queued. Internal (LED)
+writes may fill it only up to 64 bytes short of the end, so a burst of LED
+updates can never crowd out external MIDI. A caller that caches LED state must
+cache only writes that returned `true`; `setLED`/`setButtonLED` in
+`input_filter.mjs` do, and return that result.
+
 Type codes for internal send:
 - `0x09` - Note messages (for LED control)
 - `0x0b` - CC messages (for LED control)
