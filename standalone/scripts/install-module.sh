@@ -48,5 +48,16 @@ if [ -f "$HERE/build/heal" ]; then
     echo "Staged bin/heal.new (blessed by heal on the next launch)."
 fi
 
+# ⚠ A DEVELOPER INSTALL CARRIES NO CATALOG PAYLOAD. payload/ is what a catalog
+# tarball unpacks beside the launcher, and bootstrap.sh lays it when there is no
+# install at all. This script updates the launcher and never refreshes payload/,
+# so on a developer device it sits at whatever release was last installed from
+# the catalog — measured 2026-09-21: dated Sep 5, from before the two-slot
+# library, with no library_slots.py. With no install present, that old tree
+# would be laid under THIS launcher and the two would disagree. Removed, so a
+# missing install refuses loudly ("no install and no payload") instead. A
+# catalog install brings its own payload, launcher and all, from one tarball.
+ssh "${HOST%%:*}" "if [ -d '$STOCK_TOOLS/$MODULE_ID/payload' ]; then rm -rf '$STOCK_TOOLS/$MODULE_ID/payload' && echo 'Removed the stale catalog payload (a developer install carries none).'; fi"
+
 echo "Installed. It appears in stock Schwung's Tools menu as 'dAVEBOx'."
 echo "A host restart is required before a newly added module is discovered."
