@@ -196,7 +196,15 @@ PY
     check "rename(open): mv queued in relaunch_patch.sh" \
         bash -c "grep -q 'Open Renamed' '$DBX_DIR/relaunch_patch.sh'"
     check "rename(open): relaunch requested" test -f "$DBX_DIR/relaunch_requested"
-    check "rename(open): same index queued" bash -c "[ \"\$(cat '$DBX_DIR/relaunch_song_index')\" = 7 ]"
+    # ⚠ The SLOT the project is on, not its picker pad (7). This used to assert
+    # 7 — the bug itself: Move boots into a position of the two-slot library
+    # it sees, and 7 is not one.
+    _rsi="$(cat "$DBX_DIR/relaunch_song_index")"
+    _lib="${LIBRARY_DIR:-$DBX_DIR/sets/library}"
+    _sid="$(python3 -c "import sys; sys.path.insert(0,'standalone/scripts'); import library_slots as sl
+i=int(sys.argv[1]); print(sl.SLOT_IDS[i] if 0<=i<2 else '')" "$_rsi" 2>/dev/null)"
+    check "rename(open): the boot position is the SLOT the project is on (not pad 7)" \
+        bash -c "[ -n '$_sid' ] && [ \"\$(basename \"\$(readlink '$_lib/$_sid')\")\" = '$U1' ]"
     sh "$DBX_DIR/relaunch_patch.sh"
     check "rename(open): queued mv applies" test -d "$PROJECTS_DIR/$U1/Open Renamed"
 else
