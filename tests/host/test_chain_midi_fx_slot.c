@@ -110,6 +110,7 @@ static void expect_slot_empty(chain_instance_t *inst, int slot) {
 /* The instance is ~1 MB of cached ui_hierarchy strings — heap, not stack. */
 static chain_instance_t *fresh_instance(void) {
     chain_instance_t *inst = calloc(1, sizeof(*inst));
+    chain_alloc_position_storage(inst);
     if (!inst) {
         fprintf(stderr, "FAIL: out of memory\n");
         exit(1);

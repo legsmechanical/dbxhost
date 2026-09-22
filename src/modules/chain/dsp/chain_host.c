@@ -58,6 +58,7 @@ static void* v2_create_instance(const char *module_dir, const char *config_json)
 
     chain_instance_t *inst = calloc(1, sizeof(chain_instance_t));
     if (!inst) return NULL;
+    if (chain_alloc_position_storage(inst) < 0) { free(inst); return NULL; }
 
     strncpy(inst->module_dir, module_dir, MAX_PATH_LEN - 1);
 
@@ -114,6 +115,7 @@ static void v2_destroy_instance(void *instance) {
     chain_bus_worker_stop(inst);
     chain_bus_release_all(inst);
 
+    chain_free_position_storage(inst);
     free(inst);
 }
 
@@ -337,7 +339,7 @@ static int v2_load_audio_fx_slot(chain_instance_t *inst, int slot, const char *f
         inst->fx_ui_hierarchy[slot][0] = '\0';
         return -1;
     }
-    parse_ui_hierarchy_cache(fx_dir, inst->fx_ui_hierarchy[slot], sizeof(inst->fx_ui_hierarchy[slot]));
+    parse_ui_hierarchy_cache(fx_dir, inst->fx_ui_hierarchy[slot], CHAIN_UI_HIERARCHY_LEN);
     inst->mod_param_refresh_ms_fx[slot] = 0;
 
     /* Read capabilities.requires_continuous_processing from module.json — stateful
@@ -728,7 +730,7 @@ int v2_load_audio_fx(chain_instance_t *inst, const char *fx_name) {
         inst->fx_ui_hierarchy[slot][0] = '\0';
         return -1;
     }
-    parse_ui_hierarchy_cache(fx_dir, inst->fx_ui_hierarchy[slot], sizeof(inst->fx_ui_hierarchy[slot]));
+    parse_ui_hierarchy_cache(fx_dir, inst->fx_ui_hierarchy[slot], CHAIN_UI_HIERARCHY_LEN);
     inst->mod_param_refresh_ms_fx[slot] = 0;
 
     inst->fx_count++;

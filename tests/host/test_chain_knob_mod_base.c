@@ -89,6 +89,7 @@ static void add_param(chain_instance_t *inst, int i, const char *key) {
 
 int main(void) {
     chain_instance_t *inst = calloc(1, sizeof(*inst));
+    chain_alloc_position_storage(inst);
     static plugin_api_v2_t fake_api;
     fake_api.api_version = 2;
     fake_api.set_param = fake_set_param;

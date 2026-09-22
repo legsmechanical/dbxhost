@@ -604,9 +604,15 @@ typedef struct chain_instance {
     /* Module parameter info */
     chain_param_info_t synth_params[MAX_CHAIN_PARAMS];
     int synth_param_count;
-    chain_param_info_t fx_params[MAX_AUDIO_FX][MAX_CHAIN_PARAMS];
+    /* ⭑ OUT OF LINE, one block per POSITION, allocated at create and never
+     * NULL (chain_alloc_position_storage). Inline they were ~1.1 MB + 64 KB
+     * per position inside this struct, so reordering the FX chain would have
+     * copied megabytes on the SPI callback; as pointers a move rotates them.
+     * ⚠ sizeof() on either is now a POINTER — size with MAX_CHAIN_PARAMS /
+     * CHAIN_UI_HIERARCHY_LEN. */
+    chain_param_info_t *fx_params[MAX_AUDIO_FX];    /* MAX_CHAIN_PARAMS each */
     int fx_param_counts[MAX_AUDIO_FX];
-    char fx_ui_hierarchy[MAX_AUDIO_FX][65536];  /* Cached ui_hierarchy JSON */
+    char *fx_ui_hierarchy[MAX_AUDIO_FX];            /* CHAIN_UI_HIERARCHY_LEN each; cached ui_hierarchy JSON */
 
     /* Patch state */
     patch_info_t patches[MAX_PATCHES];
@@ -954,6 +960,29 @@ typedef struct chain_instance {
     sem_t bus_worker_sem;
     int bus_worker_sem_ok;   /* sem_init succeeded; guards sem_destroy */
 } chain_instance_t;
+
+/* Per-position storage for the audio-FX positions (fx_params, fx_ui_hierarchy):
+ * allocated once per instance, freed with it. alloc returns 0, or -1 with
+ * nothing left allocated. Inline so a test that links only chain_mod.c or
+ * chain_midi.c gets it too. Anything that builds a chain_instance_t by hand (tests) must
+ * call it too — the fields are never NULL after it. */
+static inline void chain_free_position_storage(chain_instance_t *inst) {
+    for (int i = 0; i < MAX_AUDIO_FX; i++) {
+        free(inst->fx_params[i]);       inst->fx_params[i] = NULL;
+        free(inst->fx_ui_hierarchy[i]); inst->fx_ui_hierarchy[i] = NULL;
+    }
+}
+static inline int chain_alloc_position_storage(chain_instance_t *inst) {
+    for (int i = 0; i < MAX_AUDIO_FX; i++) {
+        inst->fx_params[i] = (chain_param_info_t *)calloc(MAX_CHAIN_PARAMS, sizeof(chain_param_info_t));
+        inst->fx_ui_hierarchy[i] = (char *)calloc(1, CHAIN_UI_HIERARCHY_LEN);
+        if (!inst->fx_params[i] || !inst->fx_ui_hierarchy[i]) {
+            chain_free_position_storage(inst);
+            return -1;
+        }
+    }
+    return 0;
+}
 
 /*
  * Is a plugin's chain_params answer worth serving, or should the module.json
