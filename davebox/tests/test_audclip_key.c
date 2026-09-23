@@ -57,6 +57,12 @@ static void test_swaps_on_the_beat(void) {
     HX_ASSERT(inst->global_tick % 4 != 0, "precondition: mid-beat");
     hx_set_param(h, "t1_audclip", "1 16 -1|a 0 60 100 24");
     HX_ASSERT(!inst->aud.active && inst->aud.pending == 1, "playing: the phrase went in before the beat");
+    /* the next STEP is not a beat: still waiting */
+    uint32_t g0 = inst->global_tick;
+    guard = 0;
+    while (inst->global_tick == g0 && guard++ < 2000) hx_render(h, 1);
+    HX_ASSERT(inst->global_tick % 4 != 0, "precondition: the next step is not a beat");
+    HX_ASSERT(!inst->aud.active, "the phrase went in on a step that is not a beat");
     guard = 0;
     while (inst->global_tick % 4 != 0 && guard++ < 4000) hx_render(h, 1);
     HX_ASSERT(inst->aud.active && !inst->aud.pending, "the phrase did not go in on the beat");
