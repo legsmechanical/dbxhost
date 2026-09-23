@@ -170,6 +170,8 @@ async function main() {
         const stop = writes.slice(before).find(w => w[1] === 'transport');
         assert(stop && stop[2] === 'stop', 'no transport stop was sent');
         assert(/^tick#/.test(stop[0]), 'the stop was not sent from a tick: ' + stop[0]);
+        assert(JSON.stringify(S.actionPopupLines) === '["STOPPED","FOR IMPORT"]',
+               'the stop was not announced: ' + JSON.stringify(S.actionPopupLines));
         S.playing = false;
     });
 
@@ -222,7 +224,9 @@ async function main() {
         turn(4, 20); turn(7, -20);
         assert(JSON.stringify([mi().startBar, mi().bars, mi().grid, mi().toIdx]) === snap, 'K5/K8 changed an option');
         assert(snd.soundPickStateForTest().view === 40, 'the screen changed');
-        assert(!writes.slice(before).some(w => w[0].startsWith('cc(7')), 'a knob wrote to the engine');
+        /* The pad map is re-sent by the tick on its own schedule; nothing else may move. */
+        const extra = writes.slice(before).filter(w => !/_padmap$/.test(w[1]));
+        assert(!extra.length, 'turning K5-K8 wrote to the engine: ' + JSON.stringify(extra.slice(0, 3)));
     });
 
     step('fewer bars than the part → notes CUT, and the click asks first; Back declines', () => {

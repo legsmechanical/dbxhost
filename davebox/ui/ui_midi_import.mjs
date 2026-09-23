@@ -98,11 +98,19 @@ export function miOpen(track) {
         preview: null, commit: null, stopTries: 0,
     };
     refreshFiles();
-    if (GS.playing) {
-        GS.pendingDefaultSetParams.push({ key: 'transport', val: 'stop' });
-        MI.stopTries = 1;
-        showActionPopup('STOPPED', 'FOR IMPORT');
-    }
+    stopTransport();
+}
+
+/* The ONE place playback is stopped: on opening, and again if Play is pressed
+ * while the screen is up. With the transport following Move a stop only asks,
+ * so this gives up after three rather than looping. */
+function stopTransport() {
+    if (!GS.playing || MI.stopTries >= 3) return;
+    if (GS.pendingDefaultSetParams.some(e => e.key === 'transport')) return;
+    previewStop();
+    GS.pendingDefaultSetParams.push({ key: 'transport', val: 'stop' });
+    if (!MI.stopTries) showActionPopup('STOPPED', 'FOR IMPORT');
+    MI.stopTries++;
 }
 
 /* Every way out ends here: sounding preview notes are released first. */
@@ -380,13 +388,7 @@ function commitTick() {
 export function miTick(inView, track) {
     if (!MI) return null;
     if (!inView || track !== MI.track) { miClose(); return inView ? 'close' : null; }
-    /* Play pressed while the screen is up: stopped again, once or twice. With
-     * the transport following Move it only asks, so do not loop on it. */
-    if (GS.playing && MI.stopTries < 3 && !GS.pendingDefaultSetParams.some(e => e.key === 'transport')) {
-        previewStop();
-        GS.pendingDefaultSetParams.push({ key: 'transport', val: 'stop' });
-        MI.stopTries++;
-    }
+    stopTransport();
     if (MI.stage === 'reading') {
         if (MI.readTicks++ < 1) return null;   /* one frame of READING first */
         const res = readFile(MI.file.path);
