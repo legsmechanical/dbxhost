@@ -9,7 +9,8 @@ import {
     MoveUp,
     MoveDown,
     MoveDelete,
-    MoveBack
+    MoveBack,
+    MovePlay
 } from '/data/UserData/schwung/shared/constants.mjs';
 
 import {
@@ -43,6 +44,7 @@ import { snapMorphApply } from './ui_snapmorph.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { daveBoxRotate } from './ui_daves.mjs';
+import { pbActive, pbOnKnob, pbOnJog, pbOnClick, pbOnBack, pbPadTap, pbClose } from './ui_phrase_browser.mjs';
 import {
     projectPickerTextEntryMidi,
     projectPadPickerTap, projectPadPickerRotate, projectPadPickerClick
@@ -636,6 +638,33 @@ function _onMidiInternalImpl(data) {
             else if (d1 === MoveDelete) { S.deleteHeld = d2 === 127; return; }
             else return;
         }
+    }
+
+    /* PHRASES (ui_phrase_browser): modal like the album. Its own knobs (K1-K4;
+     * K5-K8 do nothing), jog, click and Back; pads assign the selected
+     * instrument — and still SOUND, so a tap is also an audition (the engine
+     * plays them from the pad map, which this does not touch). Knob TOUCHES,
+     * Shift and Play fall through so their state stays true; Note/Session
+     * closes it and falls through (the escape law). Everything else is
+     * swallowed so nothing edits the track underneath. */
+    if (pbActive()) {
+        const hi = status & 0xF0;
+        if (hi === 0x90 || hi === 0x80) {
+            if (d1 >= 0 && d1 <= 7) { /* knob touch: falls through */ }
+            else {
+                if (hi === 0x90 && d2 > 0 && d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32)
+                    pbPadTap(d1 - TRACK_PAD_BASE);
+                return;
+            }
+        } else if (status === 0xB0) {
+            if (d1 >= 71 && d1 <= 78) { const _kd = decodeDelta(d2); if (_kd) pbOnKnob(d1 - 71, _kd); return; }
+            else if (d1 === MoveMainKnob) { const _jd = decodeDelta(d2); if (_jd) pbOnJog(_jd); return; }
+            else if (d1 === MoveMainButton) { if (d2 === 127) pbOnClick(S.shiftHeld); return; }
+            else if (d1 === MoveBack) { if (d2 === 127) pbOnBack(); return; }
+            else if (d1 === MoveNoteSession) { pbClose(); /* falls through */ }
+            else if (d1 === MoveShift || d1 === MovePlay) { /* falls through */ }
+            else return;
+        } else return;
     }
 
     /* Master volume knob (CC 79) + its capacitive touch (note 8): PLAIN turns

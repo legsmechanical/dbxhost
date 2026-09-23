@@ -966,6 +966,7 @@ A melodic clip's grid, direction, and note transforms.
 | 3 | `Shft` | **Shift** — rotate all notes by whole steps. *Alt:* **Nudge** (finer). | Yes | 0 |
 | 4 | `Lgto` | **Legato** — touch the knob and click the jog; lengthens every note to reach the next. Turning it does nothing. | Yes | — |
 | 5 | `InQ` | **Input Quantize** — snap recorded notes to the grid. | No | Off |
+| 6 | `Phrs` | **Phrases** — touch the knob and click the jog to open the [phrase library](#155-phrases). | Yes, on load | — |
 | 7 | `Dir` | **Direction** — Forward, Backward, or ping-pong. *Alt:* **Reverse Style**. | No | Fwd |
 | 8 | `SqFl` | **Follow** — scroll the step display to keep up with the playhead. | No | On |
 
@@ -997,6 +998,7 @@ The **selected lane's** grid — the drum counterpart to the CLIP bank.
 | 3 | `Shft` | **Shift.** *Alt:* **Nudge.** | Yes | 0 |
 | 4 | `Lgto` | **Legato** (this lane) — touch the knob and click the jog. | Yes | — |
 | 5 | `Eucl` | **Euclid** — spread N hits evenly across the lane. Hand-placed hits stay. | Yes | 0 |
+| 6 | `Phrs` | **Phrases** — touch the knob and click the jog to open the [phrase library](#155-phrases). | Yes, on load | — |
 | 7 | `Dir` | **Direction.** *Alt:* **Reverse Style.** | No | Fwd |
 | 8 | `SqFl` | **Follow.** | No | On |
 
@@ -1850,6 +1852,41 @@ notes (Undo brings it back with the rest). The file's
 tempo is not applied: the notes are in beats, so they play at your project's
 tempo, and bars follow the file's time signature. A clip holds up to 512 notes.
 On a drum track each note lands on the pad that plays its pitch in that clip.
+
+## 15.5 Phrases
+
+A library of short starter phrases (one or two bars) to drop into a clip or a
+drum lane. **Touch K6 on the CLIP bank (or the DRUM LANE bank) and click the jog.**
+
+- **K1 Type** — the instrument: bass, chords, leads, pads… or kick, snare, hats,
+  cymbals, toms, percussion. A drum track offers the drum types; a melodic track
+  offers everything (a drum phrase then plays notes — see below).
+- **K2 Style** — ALL, a genre, or BASIC (general-purpose phrases with no genre).
+- **K3 Time** — play the phrase at /8, /4, /2, x1, x2, x4 or x8 of its length.
+- **Jog** — opens the list of phrases over the page; turn to move through it,
+  click (or Back) to close it.
+- **Jog click** — load the phrase. It asks first if it would replace notes
+  (**Replace clip A?**); one **Undo** takes it back.
+- **Shift + jog click** — stop or start the preview. **Back** — leave with
+  nothing changed.
+
+**You hear each phrase as you choose it**, in place of what the track plays: in
+time with the song when the transport runs and the track is playing its clip,
+otherwise on its own. Melodic phrases land in your project's key and scale.
+
+**Drum phrases with several instruments** (a closed and an open hat, a snare and
+a clap…): **K4 Voice** picks an instrument, and **tapping a pad puts it there** —
+on a drum track the pad's lane, on a melodic track the pad's note — then moves on
+to the next instrument. The header shows the selected one and where it goes; the
+pads light where each instrument sits (the selected one flashes). Every tap is
+heard at once, so you can try instruments on different pads before loading.
+
+Loading a melodic phrase replaces the clip and clears its automation, like
+[Import MIDI](#154-import-a-midi-file); a drum phrase changes only the lanes it
+uses. The screen remembers where you were on each track.
+
+Your own phrase files go in `davebox-phrases/` in your user data folder (one
+`<type>.json` per instrument type); they are listed after the built-in ones.
 
 # 16. Settings & Sets
 

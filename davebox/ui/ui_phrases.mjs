@@ -42,9 +42,10 @@ export const PB_CAT_LABEL = { kick: 'KICK', snare: 'SNARE', hat: 'HAT', cymb: 'C
 export const isPbDrumCat = (c) => PB_DRUM_CATS.includes(c);
 
 /* K3 Time: a phrase at ×2 takes twice as long, at ÷2 half. */
+/* ASCII labels: the device fonts have no × or ÷. */
 export const PB_TIMES = [
-    { label: '÷8', f: 1 / 8 }, { label: '÷4', f: 1 / 4 }, { label: '÷2', f: 1 / 2 },
-    { label: '×1', f: 1 }, { label: '×2', f: 2 }, { label: '×4', f: 4 }, { label: '×8', f: 8 },
+    { label: '/8', f: 1 / 8 }, { label: '/4', f: 1 / 4 }, { label: '/2', f: 1 / 2 },
+    { label: 'x1', f: 1 }, { label: 'x2', f: 2 }, { label: 'x4', f: 4 }, { label: 'x8', f: 8 },
 ];
 export const PB_TIME_DEFAULT = 3;
 
