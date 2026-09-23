@@ -118,6 +118,16 @@ static void test_drum_lanes(void) {
     hx_destroy(h);
 }
 
+static void test_drum_replace(void) {
+    hx_t *h = hx_create(NULL);
+    hx_set_param(h, "t0_c0_import", "0 1 16|a 0 40 100 24");      /* lane 4 */
+    HX_ASSERT(geti(h, "t0_l4_note_count") == 1, "precondition");
+    hx_set_param(h, "t0_c0_import", "1 1 16|a 0 36 100 24");      /* replace */
+    HX_ASSERT(geti(h, "t0_l4_note_count") == 0, "drum replace kept an old hit on another lane");
+    HX_ASSERT(geti(h, "t0_l0_note_count") == 1, "drum replace lost the import");
+    hx_destroy(h);
+}
+
 static void test_drum_undo(void) {
     hx_t *h = hx_create(NULL);
     hx_set_param(h, "t0_c0_import", "1 1 16|a 0 36 100 24");
@@ -133,6 +143,7 @@ int main(void) {
     test_replace_and_undo();
     test_refused_while_recording();
     test_drum_lanes();
+    test_drum_replace();
     test_drum_undo();
     printf("PASS: midi import key (melodic, cap, clamp, replace, undo, recording, drum lanes)\n");
     return 0;
