@@ -902,6 +902,10 @@ typedef struct {
      * track). Channel-pressure mode doesn't need this — the synth's channel
      * AT register holds the value. */
     uint8_t   last_poly_at_press;
+    /* Pitches sounding from tN_audition (Import MIDI's preview), one bit each,
+     * so `alloff` can release exactly those and nothing a pad holds. Runtime
+     * only — never persisted. */
+    uint8_t   audition_held[16];
 } seq8_track_t;
 #define LRS_SET(tr, s)  ((tr)->live_recorded_steps[(s)>>3] |=  (uint8_t)(1u<<((s)&7)))
 #define LRS_TEST(tr, s) ((tr)->live_recorded_steps[(s)>>3] &   (1u<<((s)&7)))

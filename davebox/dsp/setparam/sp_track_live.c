@@ -73,6 +73,70 @@ static int sp_track_live(sp_ctx_t *cx) {
         return 1;
     }
 
+    if (!strcmp(sub, "audition")) {
+        /* tN_audition "on p v … off p … alloff" — Import MIDI's preview.
+         * Sounds notes through the track's own chain (play effects, route) like
+         * a pad would, but is NOT playing: no Retrospective Capture, no TRACK
+         * ARP, and nothing while the track is armed or recording (the preview
+         * would otherwise be heard mid-take). A drum pitch sounds on the
+         * active clip's lane that plays it, or not at all. `alloff` releases
+         * every pitch this key started and nothing else. */
+        const char *sp = val ? val : "";
+        int armed = tr->recording || tr->record_armed;
+        int drum = (tr->pad_mode == PAD_MODE_DRUM);
+        drum_clip_t *dc = drum ? tr->drum_clips[tr->active_clip] : NULL;
+        while (*sp) {
+            while (*sp == ' ') sp++;
+            if (!*sp) break;
+            int kind;   /* 1 on, 0 off, 2 alloff */
+            if (!strncmp(sp, "alloff", 6))                     { kind = 2; sp += 6; }
+            else if (sp[0] == 'o' && sp[1] == 'n' && (sp[2] == ' ' || !sp[2]))  { kind = 1; sp += 2; }
+            else if (sp[0] == 'o' && sp[1] == 'f' && sp[2] == 'f' && (sp[3] == ' ' || !sp[3])) { kind = 0; sp += 3; }
+            else break;
+            int pitch = -1, vel = SEQ_VEL;
+            if (kind != 2) {
+                while (*sp == ' ') sp++;
+                pitch = 0;
+                while (*sp >= '0' && *sp <= '9') pitch = pitch * 10 + (*sp++ - '0');
+                pitch = clamp_i(pitch, 0, 127);
+            }
+            if (kind == 1) {
+                while (*sp == ' ') sp++;
+                if (*sp >= '0' && *sp <= '9') { vel = 0; while (*sp >= '0' && *sp <= '9') vel = vel * 10 + (*sp++ - '0'); }
+                if (armed) continue;
+                int l = -1;
+                if (drum) {
+                    if (!dc) continue;
+                    for (l = 0; l < DRUM_LANES && dc->lanes[l].midi_note != (uint8_t)pitch; l++) {}
+                    if (l >= DRUM_LANES) continue;
+                }
+                if (tr->audition_held[pitch >> 3] & (1u << (pitch & 7))) {
+                    /* re-struck: end the previous one first */
+                    inst->emit_bypass_swing = 1;
+                    if (drum) drum_lane_note_off_imm(inst, tr, (uint8_t)pitch);
+                    else pfx_note_off_imm(inst, tr, (uint8_t)pitch);
+                    inst->emit_bypass_swing = 0;
+                }
+                inst->emit_bypass_swing = 1;
+                if (drum) drum_pfx_note_on(inst, tr, &tr->drum_lane_pfx[l], (uint8_t)pitch, (uint8_t)clamp_i(vel, 1, 127));
+                else pfx_note_on(inst, tr, (uint8_t)pitch, (uint8_t)clamp_i(vel, 1, 127));
+                inst->emit_bypass_swing = 0;
+                tr->audition_held[pitch >> 3] |= (uint8_t)(1u << (pitch & 7));
+                continue;
+            }
+            int lo = kind == 2 ? 0 : pitch, hi = kind == 2 ? 127 : pitch, q;
+            for (q = lo; q <= hi; q++) {
+                if (!(tr->audition_held[q >> 3] & (1u << (q & 7)))) continue;
+                tr->audition_held[q >> 3] &= (uint8_t)~(1u << (q & 7));
+                inst->emit_bypass_swing = 1;
+                if (drum) drum_lane_note_off_imm(inst, tr, (uint8_t)q);
+                else pfx_note_off_imm(inst, tr, (uint8_t)q);
+                inst->emit_bypass_swing = 0;
+            }
+        }
+        return 1;
+    }
+
     if (!strcmp(sub, "live_at")) {
         /* tN_live_at "<pitch> <pressure> <mode>" — live pad-pressure
          * aftertouch. mode: 1 = poly (0xA0, pitch carries the sounded note),
