@@ -3,8 +3,9 @@
 # Usage (in a dir holding the unzipped groove/ of groove-v1.0.0-midionly.zip):
 #   python3 gmd_drum_stats.py <family> [beat|fill] [--bars all|groove|fill] [--json out.json]
 #   <family>: 'rock' matches rock and rock/*; '=rock' matches exactly 'rock'; 'a,b' = union.
-#   A FILL BAR is a bar with any tom onset, or loud snare (vel > 60) on >= 3 of steps 9-16 other
-#   than 13; every other bar is a GROOVE BAR. --bars restricts the per-slot tables to one kind.
+#   A FILL BAR is a bar with tom onsets whose tom pattern differs from both neighbouring bars (a
+#   repeated tom pattern is a tom GROOVE, not a fill), or loud snare (vel > 60) on >= 3 of steps
+#   9-16 other than 13; every other bar is a GROOVE BAR. --bars restricts the per-slot tables to one kind.
 # Onsets quantised to the nearest 16th from tick 0 (GMD files start on a bar line); one onset per
 # (category, bar, slot), keeping the first hit's velocity. Timing deviation is in ticks at 96 PPQN
 # (24 ticks = one 16th). GHOST = velocity <= 45 (our threshold, not GMD's).
@@ -66,7 +67,9 @@ def main():
                 if n in S and slot not in grid[c][bar]: grid[c][bar][slot] = (v, dev)
             if n in CATS['hat']: (odd if q % 2 == 0 else even).append(dev)
         if len(odd) >= 16 and len(even) >= 16: swing.append(st.mean(even) - st.mean(odd))
-        isfill = [bool(grid['tom'][b]) or
+        tk_ = lambda b: frozenset(grid['tom'][b]) if 0 <= b < nb else None
+        tomfill = [bool(grid['tom'][b]) and tk_(b) != tk_(b - 1) and tk_(b) != tk_(b + 1) for b in range(nb)]
+        isfill = [tomfill[b] or
                   sum(1 for i, (v, _) in grid['snare'][b].items() if i >= 8 and i != 12 and v > 60) >= 3
                   for b in range(nb)]
         fs['all_bars'] += nb; fs['fill_bars'] += sum(isfill)

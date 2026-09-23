@@ -16,7 +16,8 @@ for r in csv.DictReader(open('groove/info.csv')):
         q = round(tk / s16); b, s = q // 16, q % 16
         if n in CATS['tom']: tom[b].add(s)
         if n in CATS['snare'] and v > 60 and s >= 8 and s != 12: sn[b].add(s)
-    fill = [bool(tom[b]) or len(sn[b]) >= 3 for b in range(nb)]
+    tk_ = lambda b: frozenset(tom[b]) if 0 <= b < nb else None
+    fill = [(bool(tom[b]) and tk_(b) != tk_(b - 1) and tk_(b) != tk_(b + 1)) or len(sn[b]) >= 3 for b in range(nb)]
     for b in range(nb):
         n4[b % 4] += 1; m4[b % 4] += fill[b]; n8[b % 8] += 1; m8[b % 8] += fill[b]
     k = 0
