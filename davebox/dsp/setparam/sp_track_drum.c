@@ -59,6 +59,7 @@ static int sp_track_drum(sp_ctx_t *cx) {
          * track records. */
         if (!strcmp(p2, "_import")) {
             if (tr->recording) return 1;
+            aud_release_track(inst, tidx);          /* undo must hold the original, not a preview */
             const char *s = val ? val : "";
             int flags = my_atoi(s);
             while (*s && *s != ' ') s++;

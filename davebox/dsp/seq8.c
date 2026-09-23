@@ -4622,6 +4622,19 @@ static clip_t *aud_live(seq8_instance_t *inst, int t, int c, int lane) {
     if (lane == 0xFF) return &tr->clips[c];
     return tr->drum_clips[c] ? &tr->drum_clips[c]->lanes[lane].clip : NULL;
 }
+/* Put the original back AT ONCE if a preview holds anything on track t, and
+ * forget the preview. The load keys call this first, so their undo snapshot is
+ * of the ORIGINAL clip, never of a phrase being auditioned. */
+static void aud_release_track(seq8_instance_t *inst, int t) {
+    audclip_t *a = &inst->aud;
+    if (a->track != t || (!a->active && !a->pending)) return;
+    if (a->active) {
+        clip_t *live = aud_live(inst, a->track, a->clip, a->lane);
+        if (live) memcpy(live, &a->backup, sizeof(clip_t));
+    }
+    a->active = 0;
+    a->pending = 0;
+}
 /* Swap the staged phrase in, or the original back. Runs on the beat from the
  * render loop while playing, at once while stopped; either way single-threaded
  * with set_param. The playhead is re-anchored to the master clock so the new

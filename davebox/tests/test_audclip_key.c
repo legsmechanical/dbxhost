@@ -107,7 +107,31 @@ static void test_project_load_drops_it(void) {
     hx_destroy(h);
 }
 
+/* Loading while a preview holds the clip: the load replaces it, and one Undo
+ * returns the ORIGINAL — never the auditioned phrase. */
+static void test_load_during_preview_undoes_to_original(void) {
+    hx_t *h = hx_create(NULL);
+    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+    hx_set_param(h, "t1_c0_note_add", "48 50 100 24");
+    hx_set_param(h, "t1_audclip", "1 16 -1|a 0 60 100 24");        /* previewing */
+    hx_set_param(h, "t1_c0_import", "1 1 16|a 0 60 100 24");       /* load it */
+    HX_ASSERT(!inst->aud.active && !inst->aud.pending, "the preview outlived the load");
+    snap(h, "t1_c0_ruisel");
+    HX_ASSERT(strstr(notes, "0:60:") && !strstr(notes, "48:50:"), "the load did not replace the clip");
+    hx_set_param(h, "undo_restore", "1");
+    snap(h, "t1_c0_ruisel");
+    HX_ASSERT(strstr(notes, "48:50:") && !strstr(notes, "0:60:"), "undo returned the preview, not the original");
+    /* drum lane too */
+    hx_set_param(h, "t0_l1_note_add", "96 100 12");
+    hx_set_param(h, "t0_audclip", "1 16 1|a 0 100 6;a 48 100 6");
+    hx_set_param(h, "t0_l1_import", "1 1 16|a 0 100 6;a 48 100 6");
+    hx_set_param(h, "undo_restore", "1");
+    HX_ASSERT(geti(h, "t0_l1_note_count") == 1, "drum: undo returned the preview, not the original");
+    hx_destroy(h);
+}
+
 int main(void) {
+    test_load_during_preview_undoes_to_original();
     test_stopped_swap_and_restore();
     test_swaps_on_the_beat();
     test_one_drum_lane();
