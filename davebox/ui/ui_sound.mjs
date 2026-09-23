@@ -27,7 +27,7 @@ import {
     engineListUserPresets, engineReadUserPreset,
     engineGetSlotParam, engineSetSlotParam, engineSaveState,
     engineGetChainParam, engineSetChainParam, engineModuleAbbrev,
-    engineLoadCardScript, engineCanvasOverlayShared, engineCanvasPageDrawer,
+    engineLoadCardScript, engineCanvasOverlayShared, engineCanvasPageDrawer, engineCanvasPageHook,
     engineCanvasNewVisit, engineCanvasForget,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
     slotIndex, moveBusForChannel, moveBusComp, moveBusPrefix,
@@ -11904,6 +11904,29 @@ function ppIo() {
             const fn = engineCanvasPageDrawer(S.slot + ':' + S.comp, specKeyFor(S.comp),
                                               S.moduleId, canvas);
             if (fn) fn(drawCtx, band, payload);
+        },
+        /*
+         * An ENTERABLE module-owned page (`enterable: true` — DR32's Resample):
+         * the controller makes it a door, and while it is entered hands the
+         * module the jog and the click as CC 14 / CC 3 and offers it Back first.
+         * This is the other half of drawCanvasPage — same overlay, same scoping.
+         */
+        canvasPageHook: (canvas, hook, payload) => {
+            if (S.slot < 0 || !S.comp || !S.moduleId) return undefined;
+            const slot = S.slot, comp = S.comp;
+            return engineCanvasPageHook(slot + ':' + comp, specKeyFor(comp), S.moduleId, canvas, hook, payload, {
+                /* The editor's own read/write contract: a read serves a write
+                 * still in flight, a write enters the verify ledger. */
+                getParam: (k) => {
+                    const w = inflightFor(slot, comp, k);
+                    return w ? String(w.val) : engineGet(slot, comp, k);
+                },
+                setParam: (k, v) => {
+                    const r = engineSet(slot, comp, k, String(v));
+                    trackInflight(slot, comp, k, String(v));
+                    return r;
+                },
+            });
         },
     };
 }

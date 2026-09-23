@@ -319,6 +319,14 @@ The fork's own `canvas_takes_click` and contextual-Back/Shift+Back experiments w
   device font. Each was built and reverted; a module carries its own font and draws its own chrome.
   `test_canvas_enterable.sh` pins the absence of a typeface on the ctx.
 
+- **The page half, ported 2026-09-22** (`e5c9cf46` + the `ctx.close` handling from `f9cf09e8`): an
+  `as_page` canvas declaring `enterable` is a DOOR — click enters, the jog and click go to the
+  module as CC 14 / CC 3, Back is offered to its `handleBack` first, `ctx.close()` leaves. Shared
+  code taken verbatim (`page_controller.mjs`, `page_plan.mjs`, `tests/host/test_canvas_page_door.sh`);
+  the **dAVEBOx surface** is the module editor's io (`ppIo().canvasPageHook` →
+  `engineCanvasPageHook`, `davebox/ui/ui_engine.mjs`), pinned by the gesture test
+  `davebox/tests/js/test_canvas_page_door.mjs`. Needed by DR32's Resample page.
+
 When #520 merges, re-diff it against this port — upstream may change shape in review.
 
 ## Insert FX reorder (`da427483`, `f8e98c1f`, `53df334e`) — ported, reshaped for four fixed positions
