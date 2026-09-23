@@ -15,6 +15,8 @@
  *   7. a malformed chord token cannot write past PAD_CHORD_MAX
  *   8. while recording, every chord note gets the audio-thread press and
  *      release stamps the recorder reads
+ *   9. get_param padmap_sig matches the JS checksum of the same payload
+ *      (padmapSig in ui_drummodel.mjs) — the Chord layout's self-heal
  */
 #include "harness.h"
 
@@ -214,6 +216,23 @@ static void scn_record_stamps(void) {
     printf("PASS: chord_pads recording stamps every chord note\n");
 }
 
+static void scn_padmap_sig(void) {
+    /* Both numbers were computed by the JS padmapSig() over these payloads;
+     * if either side's arithmetic drifts, the tick re-pushes forever. */
+    hx_t *h = fresh(CHORD_MAP " 0 0 0");
+    char buf[32];
+    hx_get_param(h, "padmap_sig", buf, sizeof(buf));
+    HX_ASSERT(strcmp(buf, "2088178764") == 0, "padmap_sig of the chord map differs from JS");
+    hx_destroy(h);
+    h = hx_create(NULL);
+    hx_set_param(h, "t1_padmap", "255 255 255 255 255 255 255 255 255 255 255 255 255 255 255 255 "
+                                 "255 255 255 255 255 255 255 255 255 255 255 255 255 255 255 255");
+    hx_get_param(h, "padmap_sig", buf, sizeof(buf));
+    HX_ASSERT(strcmp(buf, "831651072") == 0, "padmap_sig of an all-unmapped map differs from JS");
+    hx_destroy(h);
+    printf("PASS: chord_pads padmap_sig matches the JS checksum\n");
+}
+
 int main(void) {
     scn_plain();
     scn_chord_press_release();
@@ -223,5 +242,6 @@ int main(void) {
     scn_arp_latch_keeps_chord();
     scn_overlong_token();
     scn_record_stamps();
+    scn_padmap_sig();
     return 0;
 }

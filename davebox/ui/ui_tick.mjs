@@ -8,6 +8,7 @@
  * see docs/superpowers/plans/2026-07-10-refactor-phase6b-map.md).
  */
 
+import { chordLayoutOn } from './ui_chord_pads.mjs';
 import {
     MoveShift, MovePlay, MoveLeft, MoveRight, MoveUp, MoveDown, MoveMute, MoveDelete,
     MoveBack
@@ -516,7 +517,16 @@ export function _tickImpl() {
                 const _jsM = _muted ? 1 : 0;
                 if (_dspMi !== _jsM) computePadNoteMap();
             }
-            const _dspMap0 = dget('pad_note_map_0');
+            /* The Chord layout re-bakes the map on every chord (the strum row
+             * follows it), so pad 0 alone proves nothing there: compare the
+             * whole map's checksum instead — the same one read, not two. */
+            const _chordSig = chordLayoutOn(S.activeTrack);
+            if (_chordSig) {
+                const _sig = dget('padmap_sig');
+                if (_sig !== null && _sig !== undefined && _sig !== '' &&
+                        parseInt(_sig, 10) !== S.lastPadmapSig) computePadNoteMap();
+            }
+            const _dspMap0 = _chordSig ? null : dget('pad_note_map_0');
             if (_dspMap0 !== null && _dspMap0 !== undefined) {
                 const _dspMap0i = parseInt(_dspMap0, 10);
                 const _jsMap0 = _muted && S.sessionView ? 0xFF

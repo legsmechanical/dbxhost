@@ -123,6 +123,7 @@ const fonts = await import('../../ui/ui_fonts_pp.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
 const CP = await import('../../ui/ui_chord_pads.mjs');
 const persist = await import('../../ui/ui_persistence.mjs');
+globalThis.__dm = await import('../../ui/ui_drummodel.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 2;
@@ -317,6 +318,28 @@ step('⭐ the sidecar keeps the layout and the palette, and a project without th
     CP.restoreChordSidecar(js.chd);
     assert(S.chordPalette[2][6].stack === 1 && S.chordSettings[2].bass === 1, 'round trip');
     S.chordPalette[2][6].stack = 0; S.chordSettings[2].bass = 0;
+});
+step('the padmap checksum matches the engine\'s arithmetic (the numbers test_chord_pads.c pins)', () => {
+    const dm = globalThis.__dm;
+    assert(dm.padmapSig('60+64+67 57+60+64 72 73 74 75 76 77 67 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 101 0 0 0') === 2088178764, 'chord map');
+    assert(dm.padmapSig(new Array(32).fill('255').join(' ')) === 831651072, 'all unmapped');
+});
+step('⭐ a LOST padmap push heals: the tick reads the engine\'s checksum and re-pushes on a mismatch', () => {
+    ticks(10);
+    const was = globalThis.host_module_get_param;
+    let asked = 0;
+    globalThis.host_module_get_param = (k) => { if (k === 'padmap_sig') { asked++; return '12345'; } return was(k); };
+    sets.length = 0;
+    try { ticks(10); } finally { globalThis.host_module_get_param = was; }
+    assert(asked > 0, 'the tick never asked the engine');
+    assert(sets.some((x) => x[0] === 't2_padmap'), 'a mismatch did not re-push the map');
+    /* CONTROL: agreeing checksums push nothing. */
+    /* (the muted-flag heal beside it must agree too, or IT re-pushes) */
+    globalThis.host_module_get_param = (k) => (k === 'padmap_sig' ? String(S.lastPadmapSig)
+        : k === 'pad_dispatch_muted' ? '0' : was(k));
+    sets.length = 0;
+    try { ticks(10); } finally { globalThis.host_module_get_param = was; }
+    assert(!sets.some((x) => x[0] === 't2_padmap'), 'a matching checksum re-pushed anyway: ' + sets.length);
 });
 step('Shift + step 8 again leaves Chord for Scale; the map is plain again', () => {
     S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;

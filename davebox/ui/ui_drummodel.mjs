@@ -44,6 +44,19 @@ export function _padDispatchMutedNow() {
     return false;
 }
 
+/* The checksum the engine answers for get_param padmap_sig, over a padmap
+ * payload's 32 pad tokens ("p" or "p+p+p"). Same arithmetic as seq8.c. */
+export function padmapSig(payload) {
+    const toks = String(payload).split(' ');
+    let h = 0;
+    for (let i = 0; i < 32; i++) {
+        const tok = toks[i] || '255';
+        for (const n of tok.split('+')) h = ((h * 31 + ((Number(n) & 0xFF) + 1)) & 0x7fffffff);
+        h = ((h * 31 + 1000) & 0x7fffffff);
+    }
+    return h;
+}
+
 export function computePadNoteMap() {
     const t = S.activeTrack;
     for (let i = 0; i < 32; i++) S.padChordMap[i] = null;
@@ -171,6 +184,7 @@ export function computePadNoteMap() {
         payload += ' ' + ((isDrum && S.moveCoRunTrack >= 0) ? 1 : 0);
         host_module_set_param('t' + t + '_padmap', payload);
         S.lastPushedMuted = padDispatchMuted;
+        S.lastPadmapSig = padmapSig(payload);
     }
 }
 

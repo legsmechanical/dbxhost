@@ -6575,6 +6575,23 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         return snprintf(out, out_len, "%d", (int)inst->state_dirty);
     if (!strcmp(key, "pad_dispatch_muted"))
         return snprintf(out, out_len, "%d", inst ? (int)inst->pad_dispatch_muted : 0);
+    if (!strcmp(key, "padmap_sig")) {
+        /* A checksum of the active track's 32 pad tokens as the engine holds
+         * them — a Chord-layout pad counts every note. JS computes the same
+         * over the payload it last pushed (padmapSig in ui_drummodel.mjs) and
+         * re-pushes on a mismatch: a lost push leaves the strum row stale. */
+        uint32_t h = 0;
+        int t = inst ? inst->active_track : 0;
+        if (!inst || t >= NUM_TRACKS) return snprintf(out, out_len, "-1");
+        for (int i = 0; i < 32; i++) {
+            int n = inst->pad_chord_n[t][i];
+            if (n < 1) h = (h * 31u + (uint32_t)inst->pad_note_map[t][i] + 1u) & 0x7fffffffu;
+            else for (int k = 0; k < n; k++)
+                h = (h * 31u + (uint32_t)inst->pad_chord[t][i][k] + 1u) & 0x7fffffffu;
+            h = (h * 31u + 1000u) & 0x7fffffffu;
+        }
+        return snprintf(out, out_len, "%u", (unsigned)h);
+    }
     if (!strcmp(key, "pad_note_map_0"))
         return snprintf(out, out_len, "%d", inst ? (int)inst->pad_note_map[inst->active_track][0] : 255);
     if (!strcmp(key, "last_restore"))

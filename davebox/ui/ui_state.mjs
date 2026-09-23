@@ -1040,6 +1040,8 @@ export const S = {
     chordDirty: false,
     /* The slot whose card is up (a knob turned while it was held); -1 = none. */
     chordCardSlot: -1,
+    /* padmapSig() of the last padmap pushed — the Chord layout's self-heal. */
+    lastPadmapSig: -1,
     drumInpQuant: new Array(8).fill(0),   /* per-track drum input quantize index 0-8 */
     delayClockFb: new Array(8).fill(0),   /* per-track delay clock feedback -100..100, accessed via Shift+K1 on DELAY bank (K7 now hosts delay_retrig) */
     delayRetrig:  new Array(8).fill(0),   /* per-track delay retrig 0/1; K7 on DELAY bank */
