@@ -26,7 +26,6 @@ globalThis.host_read_file = () => '';
 globalThis.host_file_exists = () => false;
 globalThis.host_write_file = () => true;
 globalThis.shadow_get_param = () => '';
-globalThis.shadow_set_param = () => 1;
 globalThis.shadow_get_ui_flags = () => 0;
 globalThis.host_register_primary = () => true;
 globalThis.shadow_get_shift_held = () => 0;
@@ -84,6 +83,9 @@ globalThis.host_module_set_param = (k, v) => {
     if (m) landed.add(m[1] + ':' + m[2]);
 };
 globalThis.host_module_set_params = () => true;
+/* Slot and bus writes (levels, sends) go this way — recorded too, so a knob
+ * that fell through to the track's levels would show here. */
+globalThis.shadow_set_param = (slot, k, v) => { writes.push([ctxTag, 'slot' + slot + ':' + String(k), String(v)]); return 1; };
 globalThis.host_module_get_param = (k) => {
     const m = /^t(\d)_c(\d+)_(steps|drum_has_content)$/.exec(String(k));
     if (m && landed.has(m[1] + ':' + m[2])) return m[3] === 'steps' ? '1' + '0'.repeat(255) : '1';
