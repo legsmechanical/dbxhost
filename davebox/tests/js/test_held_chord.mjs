@@ -238,6 +238,22 @@ step('the key label spells its root the way the chord does: [B♭MIN] beside B�
     assert(t.includes('B♭ MINOR') && !t.some((x) => /^A# /.test(x)), 'key label: ' + JSON.stringify(t.filter((x) => /MINOR/.test(x))));
     S.padScale = 0;
 });
+step('⭐ on the narrowest row (Oct:+4, C# Blues) a long slash chord drops its bass — whole', () => {
+    S.padKey = 1; S.padScale = 11; S.trackOctave[2] = 4; ticks(1);
+    for (const n of [56, 58, 61, 64, 68]) ext(n, true);     /* A#MIN7(♭5) over G# */
+    ticks(1);
+    const b = bracketed();
+    assert(JSON.stringify(b) === '["[A#MIN7(\u266d5)]"]', 'drew ' + JSON.stringify(b));
+    for (const n of [56, 58, 61, 64, 68]) ext(n, false);
+    /* A cluster too wide for the row: whole note names, then "+" — never a
+     * name cut in half. */
+    for (const n of [60, 61, 62, 63, 64, 65, 66]) ext(n, true);
+    ticks(1);
+    const c = bracketed();
+    S.trackOctave[2] = 0;
+    assert(c.length === 1 && / \+\]$/.test(c[0]), 'drew ' + JSON.stringify(c));
+    assert(c[0].slice(1, -3).split(' ').every((t, i) => t === SH[i]), 'the notes are not whole names from the lowest: ' + c[0]);
+});
 step('a sequencer echo on a Move-routed track is not input', () => {
     /* Tick once after re-routing: the route change releases any external
      * notes held across it (flushHeldMoveExtNotes), by design. */
