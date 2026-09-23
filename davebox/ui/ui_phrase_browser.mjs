@@ -535,8 +535,8 @@ function cells() {
         { kind: 'enumsq', label: 'Time', name: 'Time', text: PB_TIMES[PB.time].label,
           options: PB_TIMES.map(x => x.label), sel: PB.time },
     ];
-    if (!PB.drum) out.push({ kind: 'enumsq', label: 'Oct', name: 'Octave', text: OCT_LABELS[PB.octave - PB_OCT_MIN],
-                             options: OCT_LABELS, sel: PB.octave - PB_OCT_MIN });
+    /* A plain signed number, no picker (Josh, 2026-09-23). */
+    if (!PB.drum) out.push({ kind: 'valsq', label: 'Oct', name: 'Octave', text: OCT_LABELS[PB.octave - PB_OCT_MIN] });
     if (voiceKnob() >= 0)
         out.push({ kind: 'valsq', label: 'Voice', name: 'Voice', text: voiceLabel(PB.voiceSel) });
     return out;

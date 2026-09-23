@@ -25,6 +25,7 @@ const CACHE = join(HERE, 'cache');
 const OUT = join(HERE, 'out');
 const LIB_DIR = join(HERE, '..', '..', 'phrases');
 const CURATION = join(HERE, 'curation.json');
+export const MAX_BARS = 4;
 export const LICENCE_ALLOW = ['CC0-1.0', 'CC-BY-4.0', 'MIT', 'Apache-2.0', 'PD', 'dAVEBOx'];
 
 /* Default audition tempo per genre tag (the research notes' typical tempo). */
@@ -112,6 +113,8 @@ function build(write) {
             const c = cur[p.id];
             if (!c || c.keep !== true) continue;
             if (!LICENCE_ALLOW.includes(p.lic)) { console.error(`REFUSED ${p.id}: licence ${p.lic}`); bad++; continue; }
+            /* Nothing longer than 4 bars ships (Josh, 2026-09-23). */
+            if (!(p.bars >= 1 && p.bars <= MAX_BARS)) { console.error(`REFUSED ${p.id}: ${p.bars} bars (max ${MAX_BARS})`); bad++; continue; }
             keep.push(Object.assign({}, p, c.name ? { name: c.name } : {}));
         }
         if (!keep.length) continue;
