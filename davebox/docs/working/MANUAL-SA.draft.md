@@ -550,8 +550,16 @@ covers writing, editing, and recording into one; the [Effects](#10-effects) and
 ## 6.1 Playing and placing notes
 
 The pads play notes from the current [key and scale](#162-key--scale). **+ / −**
-shifts the pad octave. To place notes on the grid, use the **16 step
-buttons**:
+shifts the pad octave.
+
+While you hold notes — on the pads or from an external keyboard — the screen
+shows them in brackets between the octave and the key: one note as its name
+(`[F#3]`, with middle C as C3), several as the chord they make (`[CMIN7]`,
+`[C/E]` when the lowest note isn't the root). A combination with no common
+name shows its notes (`[C C# D]`). Flat keys are spelled with flats (`[B♭]`).
+The Arp label steps aside while it shows.
+
+To place notes on the grid, use the **16 step buttons**:
 
 | Action | Result |
 |---|---|

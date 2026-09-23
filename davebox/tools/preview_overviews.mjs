@@ -65,6 +65,19 @@ function draw(slug){ globalThis.clear_screen(); render.drawUI(); shoot(slug); }
 S.sessionView = false; S.activeBank = 0; S.bankSelectTick = -1; S.jogTouched = false;
 draw('track-overview');
 
+/* TRACK VIEW with notes HELD — the note / chord indicator between the octave
+ * and the key/scale (it stands in for the Arp label while it shows). */
+const held = (slug, notes) => { S.liveActiveNotes.clear(); for (const n of notes) S.liveActiveNotes.add(n);
+    draw(slug); S.liveActiveNotes.clear(); };
+held('track-overview-held-note', [66]);                /* F#3 */
+held('track-overview-held-chord', [60, 63, 67, 70]);   /* C minor 7 */
+held('track-overview-held-inversion', [64, 67, 72]);   /* C major over E */
+held('track-overview-held-long', [61, 64, 67, 71]);    /* C# half-diminished */
+held('track-overview-held-unnamed', [60, 61, 62]);     /* a cluster: note names */
+S.padKey = 1; S.padScale = 7;
+held('track-overview-held-long-key', [61, 64, 67, 71]);
+S.padKey = 0; S.padScale = 0;
+
 /* TRACK VIEW with SHIFT held — the footer names the Shift chords. */
 S.shiftHeld = true; draw('track-overview-shift'); S.shiftHeld = false;
 

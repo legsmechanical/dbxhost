@@ -941,7 +941,7 @@ function _onMidiExternalImpl(data) {
                     S.pendingDrumLaneResyncLane  = recLane;
                 }
             }
-            extHeldNotes.set(d1, { track: t, recording: recCap });
+            extHeldNotes.set(d1, { track: t, recording: recCap, echo: isSeqEcho });
         } else if (msgType === 0x80 || (msgType === 0x90 && d2 === 0)) {
             const info = extHeldNotes.get(d1);
             const noteTrack = info ? info.track : t;
@@ -972,7 +972,7 @@ function _onMidiExternalImpl(data) {
         if (recCap) recordNoteOn(d1, vel, t, true);
         const prevInfo = extHeldNotes.get(d1);
         if (!prevInfo || !prevInfo.recording || !isSeqEcho) {
-            extHeldNotes.set(d1, { track: t, recording: recCap });
+            extHeldNotes.set(d1, { track: t, recording: recCap, echo: isSeqEcho });
         }
         if (S.heldStep >= 0 && !S.shiftHeld && !S.sessionView) {
             const ac = effectiveClip(t);

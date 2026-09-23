@@ -16,6 +16,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added (pending)
+- **See what you're playing.** While you hold notes on a melodic track, Track
+  View shows them in brackets between the octave and the key — the note
+  (`[F#3]`) or the chord it makes (`[CMIN7]`, `[C/E]`), from the pads or an
+  external keyboard. Flat keys spell with flats.
 ### Fixed (pending)
 - **A module page you can step into now works.** Some modules draw a page with
   its own choices on it (DR32's Resample page). Clicking it used to jump to the
