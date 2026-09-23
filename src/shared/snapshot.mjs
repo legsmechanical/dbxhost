@@ -193,6 +193,66 @@ export function planRestore(records, liveIds) {
     return { writes, skipped, reasons, added };
 }
 
+/*
+ * Put a REORDERED chain back in the snapshot's order before the restore.
+ *
+ * Insert FX can be moved (`fx:move`, a permutation — no module reloads, tails
+ * survive). A snapshot taken before a move then names the same modules at
+ * different positions, and planRestore, which matches by position, would skip
+ * every one as "swapped". When a chain's audio-FX positions hold exactly the
+ * snapshot's modules in another order, the recall MOVES them back first and
+ * then restores state as usual. Anything else — a module swapped in or out, a
+ * different set of occupied positions — is not a reorder, and is left to
+ * planRestore exactly as before.
+ *
+ * Only a chain whose occupied positions are the same in both AND contiguous
+ * from fx1: a move never crosses an empty position (the host refuses it —
+ * the slot save compacts, so a hole would not survive a reload).
+ *
+ * `records` / `liveIds` as planRestore takes them. Returns `{ moves, live }`:
+ *   moves  in order: { scope, slot, key, from, to } — `key` the move verb for
+ *          that chain ("fx:move" on a slot, "<bus prefix>fx:move" on a bus),
+ *          `scope` the chain's prefix without the position ("3:" for slot 3,
+ *          "master_fx:", "send_fx:a:", "move_fx:2:"), from/to 1-based;
+ *   live   liveIds as they will be once every move lands (a copy).
+ * The caller applies the moves one at a time and stops a chain at the first
+ * refusal — the plan assumes each lands.
+ */
+const REORDER_GROUP = /^(\d+:|master_fx:|send_fx:[ab]:|move_fx:\d+:)fx([1-4])$/;
+export function planReorders(records, liveIds) {
+    const live = Object.assign({}, liveIds || {});
+    const saved = {};                                   /* scope -> [_, id1..id4] */
+    for (const r of records || []) {
+        const m = r && r.moduleId && REORDER_GROUP.exec(String(r.prefix || ""));
+        if (!m) continue;
+        (saved[m[1]] = saved[m[1]] || ["", "", "", "", ""])[+m[2]] = r.moduleId;
+    }
+    const moves = [];
+    for (const scope of Object.keys(saved)) {
+        const want = saved[scope];
+        const have = [""];
+        for (let k = 1; k <= 4; k++) have.push(live[scope + "fx" + k] || "");
+        let n = 0;
+        while (n < 4 && want[n + 1]) n++;               /* occupied run from fx1 */
+        let ok = n >= 2;
+        for (let k = 1; k <= 4 && ok; k++) if (!!want[k] !== (k <= n) || !!have[k] !== (k <= n)) ok = false;
+        if (!ok) continue;
+        if (have.slice(1, n + 1).slice().sort().join("\n") !== want.slice(1, n + 1).slice().sort().join("\n")) continue;
+        const bus = !/^\d+:$/.test(scope);
+        const slot = bus ? 0 : parseInt(scope, 10);
+        for (let p = 1; p <= n; p++) {
+            if (have[p] === want[p]) continue;
+            let q = p + 1;
+            while (q <= n && have[q] !== want[p]) q++;
+            const [id] = have.splice(q, 1);
+            have.splice(p, 0, id);
+            moves.push({ scope, slot, key: (bus ? scope : "") + "fx:move", from: q, to: p });
+        }
+        for (let k = 1; k <= n; k++) live[scope + "fx" + k] = have[k];
+    }
+    return { moves, live };
+}
+
 /* The wire form of a BULK request (request_type 3/4, see shim_handle_param_bulk):
  * "<count>\n" then count × ("<len>\n" <bytes>). Lengths are BYTES — a state
  * blob may carry non-ASCII, so measure it as UTF-8, not as JS characters. */

@@ -7874,6 +7874,23 @@ function insertFxMove(c, from, to) {
         showActionPopup("CAN'T MOVE", 'Move it next to an effect');
         return false;
     }
+    insertFxFollow(c, from, to);
+    return true;
+}
+/* A move the HOST made — a snapshot recall putting a reordered chain back in
+ * the saved order (host_snapshot_recall's `moved`). The chain has already
+ * permuted; everything of ours that names a position follows it exactly as it
+ * follows a move made here. `scope` is the host's: "<slot>:" for a track chain
+ * (slot N is track N's chain), or the bus prefix. */
+export function insertFxMovedByHost(scope, from, to) {
+    from |= 0; to |= 0;
+    if (from < 1 || from > 4 || to < 1 || to > 4 || from === to) return;
+    const m = /^(\d+):$/.exec(String(scope || ''));
+    if (m) insertFxFollow({ slot: +m[1], track: +m[1], key: 'fx:move', scope: m[1] }, from | 0, to | 0);
+    else if (/^(master_fx|send_fx:[ab]|move_fx:\d+):$/.test(String(scope || '')))
+        insertFxFollow({ slot: 0, track: -1, key: scope + 'fx:move', scope }, from | 0, to | 0);
+}
+function insertFxFollow(c, from, to) {
     automationFxMoved(c.scope, from, to);
     const map = [0, 1, 2, 3, 4];
     map[from] = to;
@@ -7927,7 +7944,6 @@ function insertFxMove(c, from, to) {
     S.dirty = true;
     console.log('[sound] fx move ' + c.key + ' ' + from + '>' + to + ' (' + legsMoved +
                 ' macro leg(s), ' + recsMoved + ' preset record(s) followed)');
-    return true;
 }
 
 /* Drop what the swap invalidates, then let the caller load. Same two halves,

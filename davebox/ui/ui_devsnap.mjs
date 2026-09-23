@@ -39,7 +39,7 @@ import { showActionPopup, showActionPopupFor, deviceSnapDir, deviceSnapUndoDir, 
 import { markSnapshotUndo } from './ui_editops.mjs';
 import { engineGet, engineSet, engineSetSlotParam, moveBusComp,
          moveBusForChannel, engineLoadedModule, engineDescribe, engineGetMany } from './ui_engine.mjs';
-import { midiVal, midiSendValue, seqAutoSnapshot, seqAutoRestore } from './ui_sound.mjs';
+import { midiVal, midiSendValue, seqAutoSnapshot, seqAutoRestore, insertFxMovedByHost } from './ui_sound.mjs';
 import { forceRedraw, invalidateLEDCache } from './ui_leds.mjs';
 /* A SnapMorph caches the snapshots it morphs between when it seeds; a save
  * or a clear here is the one thing that changes them (Josh, device,
@@ -331,6 +331,10 @@ function recallDir(dir, n, undo, undoDirPath) {
     try { res = JSON.parse(host_snapshot_recall(dir, hostSlotArg(), undoDirPath || '', bfr.bus) || 'null'); } catch (e) { res = null; }
     if (!res || !res.ok) { showActionPopup('SNAPSHOT ' + (n + 1), 'Recall failed'); return false; }
     console.log('[devsnap] host recall ' + (nowMs() - r0) + ' ms (' + (res.restored | 0) + ' restored)');
+    /* Insert FX moved since the take were put back in the saved order by the
+     * host; automation, macros and preset records follow each move. */
+    if (Array.isArray(res.moved))
+        for (const mv of res.moved) if (mv) insertFxMovedByHost(mv.scope, mv.from, mv.to);
     if (undo && undoDirPath && !res.undoOk) undo = null;  /* no before-image → no undo unit */
     d.recalling = n; d.recallDir = dir; d.recallJson = json; d.since = nowMs(); d.recallUndo = undo || null;
     d.recallBusMoved = !!bfr.moved;

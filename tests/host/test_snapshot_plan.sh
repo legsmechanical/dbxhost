@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 node --input-type=module -e '
-import { parseSlotSnapshot, parseBusSnapshot, parseMasterFxSnapshot, planRestore,
+import { parseSlotSnapshot, parseBusSnapshot, parseMasterFxSnapshot, planRestore, planReorders,
          batchWrites, bulkEncodeItems, recallMessage, scopeForWrites }
     from "./src/shared/snapshot.mjs";
 
@@ -145,6 +145,36 @@ eq("an out-of-range slot index is dropped rather than flushed",
    scopeForWrites([{ prefix: "9:synth", slot: 9 }, { prefix: "-1:synth", slot: -1 }], 8).slots, []);
 eq("a null/undefined write list is empty scope, not a throw",
    scopeForWrites(null, 8), { slots: [], master: false, send: false, move: false });
+
+/* ---- planReorders: a moved chain goes back to the saved order ---------- */
+const R = (p, id) => ({ prefix: p, moduleId: id });
+const moves = (recs, live) => planReorders(recs, live).moves.map(m => m.key + " " + m.from + ">" + m.to);
+eq("a rotation of three comes back in two moves",
+   moves([R("3:fx1", "a"), R("3:fx2", "b"), R("3:fx3", "c")], { "3:fx1": "c", "3:fx2": "a", "3:fx3": "b" }),
+   ["fx:move 2>1", "fx:move 3>2"]);
+eq("...and the live map it hands planRestore is the saved order",
+   planReorders([R("3:fx1", "a"), R("3:fx2", "b")], { "3:fx1": "b", "3:fx2": "a", "3:synth": "s" }).live,
+   { "3:fx1": "a", "3:fx2": "b", "3:synth": "s" });
+eq("a bus moves by its own key (send / Move bus)",
+   moves([R("send_fx:a:fx1", "a"), R("send_fx:a:fx2", "b"), R("move_fx:2:fx1", "x"), R("move_fx:2:fx2", "y")],
+         { "send_fx:a:fx1": "b", "send_fx:a:fx2": "a", "move_fx:2:fx1": "y", "move_fx:2:fx2": "x" }),
+   ["send_fx:a:fx:move 2>1", "move_fx:2:fx:move 2>1"]);
+eq("already in order: no moves", moves([R("3:fx1", "a"), R("3:fx2", "b")], { "3:fx1": "a", "3:fx2": "b" }), []);
+eq("a module SWAPPED in: not a reorder, no moves",
+   moves([R("3:fx1", "a"), R("3:fx2", "b")], { "3:fx1": "b", "3:fx2": "z" }), []);
+eq("a module ADDED since (different occupancy): no moves",
+   moves([R("3:fx1", "a"), R("3:fx2", "b")], { "3:fx1": "b", "3:fx2": "a", "3:fx3": "c" }), []);
+eq("a HOLE in the live chain: no moves (a move never crosses one)",
+   moves([R("3:fx1", "a"), R("3:fx2", "b")], { "3:fx1": "b", "3:fx2": "", "3:fx3": "a" }), []);
+eq("the same module twice is still a permutation",
+   moves([R("3:fx1", "d"), R("3:fx2", "d"), R("3:fx3", "e")], { "3:fx1": "e", "3:fx2": "d", "3:fx3": "d" }),
+   ["fx:move 2>1", "fx:move 3>2"]);
+eq("MIDI FX and the synth are never moved",
+   moves([R("3:midi_fx1", "a"), R("3:midi_fx2", "b"), R("3:synth", "s")], { "3:midi_fx1": "b", "3:midi_fx2": "a" }), []);
+eq("two chains are planned independently",
+   planReorders([R("1:fx1", "a"), R("1:fx2", "b"), R("2:fx1", "a"), R("2:fx2", "b")],
+                { "1:fx1": "b", "1:fx2": "a", "2:fx1": "a", "2:fx2": "b" }).moves,
+   [{ scope: "1:", slot: 1, key: "fx:move", from: 2, to: 1 }]);
 
 if (fails) { console.error(`\n${fails} assertion(s) failed`); process.exit(1); }
 console.log("PASS: test_snapshot_plan");

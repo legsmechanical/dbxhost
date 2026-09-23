@@ -22,7 +22,8 @@ tick=$(awk '/^function snapshotRecallTick\(/{f=1} f{print} f&&/^}/{exit}' "$JS")
 echo "$tick" | grep -q 'shadow_set_params(b.slot, "chain:", bulkEncodeItems(b.items), false)' && say "ok   — a recall batch is ONE bulk SET per slot (non-transient, so autosave sees it)" || bad "recall does not use the bulk SET"
 echo "$rec" | grep -q 'while (snapshotRecallJob) snapshotRecallTick();' && say "ok   — INSTANT: every batch is written back-to-back inside the call (Josh: a brief freeze over a spread-out recall)" || bad "recall is not drained in the call"
 grep -q 'snapshotRecallTick();' "$JS" && [ "$(grep -c 'snapshotRecallTick();' "$JS")" -ge 2 ] && say "ok   — the job is driven from the host tick" || bad "tick hook missing"
-echo "$rec" | grep -q 'planRestore(records, snapshotLiveIds(busPrefixes, onlySlot, effBus))' && say "ok   — the id-guard plan runs against the LIVE module ids" || bad "no id-guard"
+echo "$rec" | grep -q 'planReorders(records, snapshotLiveIds(busPrefixes, onlySlot, effBus))' && say "ok   — the id-guard plan runs against the LIVE module ids (as the reorder moves will leave them)" || bad "no id-guard"
+echo "$rec" | grep -q 'if (refused.size) plan = planRestore(records, snapshotLiveIds(busPrefixes, onlySlot, effBus));' && say "ok   — ...and re-plans against the live ids when a reorder move was refused" || bad "no re-plan after a refused move"
 echo "$tick" | grep -q 'invalidateKnobValueCache();' && say "ok   — knob caches are dropped after a recall (the first-turn snap-back lesson)" || bad "knob caches not invalidated"
 
 # take: through the autosave writers, without the bail, then copy atomically
@@ -124,9 +125,9 @@ echo "$rec" | grep -q 'refreshSlotModuleSignature(i)' \
     && say "ok   — the slots the snapshot names are resynced BEFORE the id-guard reads the mirror" \
     || bad "the id-guard runs against a possibly-stale chainConfigs mirror"
 refresh_line=$(echo "$rec" | grep -n 'refreshSlotModuleSignature(i)' | head -1 | cut -d: -f1)
-plan_line=$(echo "$rec" | grep -n 'const plan = planRestore(' | head -1 | cut -d: -f1)
+plan_line=$(echo "$rec" | grep -n 'const reorder = planReorders(' | head -1 | cut -d: -f1)
 [ -n "$refresh_line" ] && [ -n "$plan_line" ] && [ "$refresh_line" -lt "$plan_line" ] \
-    && say "ok   — ...and it precedes planRestore (line $refresh_line < $plan_line)" || bad "the refresh does not precede the plan"
+    && say "ok   — ...and it precedes the plan (planReorders, then planRestore) (line $refresh_line < $plan_line)" || bad "the refresh does not precede the plan"
 echo "$rec" | grep -q 'p.indexOf("master_fx:") === 0 || p.indexOf("send_fx:") === 0 || p.indexOf("move_fx:") === 0) continue;' \
     && say "ok   — a BUS record (slot: 0) does not spuriously resync slot 0" || bad "bus records resync slot 0"
 

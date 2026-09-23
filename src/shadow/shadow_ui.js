@@ -40,7 +40,7 @@ import { decodeDelta } from '/data/UserData/schwung/shared/input_filter.mjs';
 import * as BusModel from '/data/UserData/schwung/shared/bus_model.mjs';
 /* Snapshot / recall — the PURE half (parsers, the restore planner, the bulk
  * packing). The host bindings below drive it; dAVEBOx owns the gesture. */
-import { parseSlotSnapshot, parseBusSnapshot, planRestore, batchWrites, bulkEncodeItems, bulkDecode, scopeForWrites }
+import { parseSlotSnapshot, parseBusSnapshot, planRestore, planReorders, batchWrites, bulkEncodeItems, bulkDecode, scopeForWrites }
     from '/data/UserData/schwung/shared/snapshot.mjs';
 /* The ONE definition of "this two-state control is a momentary button", shared
  * with the param-pages knob grid. See isTriggerParam below for why this file
@@ -6102,8 +6102,18 @@ function snapshotLiveIds(busPrefixes, onlySlot, moveBus) {
         }
         return live;
     }
-    for (let i = 1; i <= 4; i++)
-        live["master_fx:fx" + i] = (masterFxConfig["fx" + i] || {}).module || "";
+    /* ⚠ THE SHIM, not masterFxConfig. That mirror learns about a position only
+     * when this file loads it or the master save adopts the shim's answer, so
+     * a module loaded or MOVED by writing the shim directly (an overtake
+     * tool's `master_fx:fx:move`) leaves it stale — and a stale id that still
+     * matches the snapshot writes one module's state blob into another. It is
+     * also shared with whichever bus the host editor last opened. A failed
+     * read (null) falls back to the mirror: no worse than before. */
+    for (let i = 1; i <= 4; i++) {
+        const shimId = masterFxShimValue(i - 1, "name");
+        live["master_fx:fx" + i] = shimId !== null ? String(shimId)
+            : ((masterFxConfig["fx" + i] || {}).module || "");
+    }
     /* EVERY bus position, not only those the snapshot recorded (Josh,
      * 2026-09-05): a position with a module now and no record is "added since
      * the save" and gets bypassed by the plan. The host keeps no in-memory
@@ -6376,8 +6386,15 @@ function hostSnapshotRecall(dir, onlySlot, undoDir, moveBus) {
         const i = r.slot | 0;
         if (i >= 0 && i < SHADOW_UI_SLOTS && seen.indexOf(i) < 0) { seen.push(i); refreshSlotModuleSignature(i); }
     }
-    const plan = planRestore(records, snapshotLiveIds(busPrefixes, onlySlot, effBus));
-    /* The before-image, scoped to what the plan will actually touch. */
+    /* A chain holding the snapshot's modules in ANOTHER ORDER (insert FX were
+     * moved since the take) is moved back first — planReorders — so the
+     * restore below finds each module where the snapshot put it, instead of
+     * skipping them all as swapped. The plan is built against the order the
+     * moves will leave. */
+    const reorder = planReorders(records, snapshotLiveIds(busPrefixes, onlySlot, effBus));
+    let plan = planRestore(records, reorder.live);
+    /* The before-image, scoped to what the plan will actually touch — taken
+     * BEFORE the moves, so Undo brings the old order back too. */
     let undoOk = false;
     if (undoDir) {
         let res = null;
@@ -6386,6 +6403,25 @@ function hostSnapshotRecall(dir, onlySlot, undoDir, moveBus) {
         undoOk = !!(res && res.ok);
         if (!undoOk) debugLog("snapshot: before-take for undo FAILED into " + undoDir + " — recall proceeds without an undo");
     }
+    /* The moves, one at a time; a chain stops at its first refusal (a render
+     * still in flight, a module gone since the read). `moved` goes back to the
+     * caller, whose own references to positions (automation, macros) follow a
+     * move the same way they follow one it made itself. */
+    const moved = [];
+    const refused = new Set();
+    for (const mv of reorder.moves) {
+        if (refused.has(mv.scope)) continue;
+        let ok = false;
+        try { ok = !!shadow_set_param(mv.slot, mv.key, mv.from + ">" + mv.to); } catch (e) { ok = false; }
+        if (ok) moved.push({ scope: mv.scope, from: mv.from, to: mv.to });
+        else { refused.add(mv.scope); debugLog("snapshot: move " + mv.key + " " + mv.from + ">" + mv.to + " refused — that chain keeps its order"); }
+    }
+    for (const mv of moved)
+        if (/^\d+:$/.test(mv.scope)) refreshSlotModuleSignature(parseInt(mv.scope, 10));
+    if (moved.length) debugLog("snapshot: " + moved.length + " insert FX move(s) put the saved order back");
+    /* A refusal leaves that chain somewhere between the two orders: plan again
+     * against what is really there, so the id-guard still stands. */
+    if (refused.size) plan = planRestore(records, snapshotLiveIds(busPrefixes, onlySlot, effBus));
     for (const r of plan.reasons) {
         debugLog("snapshot: skipped " + r.prefix + " (" + r.reason +
                  (r.was ? ", was " + r.was : "") + (r.now ? ", now " + r.now : "") + ")");
@@ -6403,7 +6439,7 @@ function hostSnapshotRecall(dir, onlySlot, undoDir, moveBus) {
      * object stays so the finish work (cache drop, grid refresh, the result)
      * runs once, in one place, and status answers "done" the moment we return. */
     while (snapshotRecallJob) snapshotRecallTick();
-    return JSON.stringify(Object.assign(JSON.parse(hostSnapshotStatus()), { ok: true, undoOk }));
+    return JSON.stringify(Object.assign(JSON.parse(hostSnapshotStatus()), { ok: true, undoOk, moved }));
 }
 
 /* Drive the job: one bulk SET per step. Called back-to-back by hostSnapshotRecall

@@ -93,8 +93,10 @@ globalThis.host_snapshot_recall = (dir, slot, undoDir) => {
     if (undoDir) snapCalls.push(['take', undoDir, slot]);
     snapCalls.push(['recall', dir, slot]);
     recallPending = true;
-    return JSON.stringify({ ok: true, pending: true, undoOk: !!undoDir && !undoTakeFails });
+    return JSON.stringify({ ok: true, pending: true, undoOk: !!undoDir && !undoTakeFails, moved: recallMoved });
 };
+/* Insert FX the host MOVED back into the saved order during the recall. */
+let recallMoved = [];
 let statusSkipped = 1, statusAdded = 0;
 let undoTakeFails = false;   /* the host could not write the before-image */
 globalThis.host_snapshot_status = () => JSON.stringify({ pending: recallPending, skipped: statusSkipped, added: statusAdded, addedList: statusAdded ? ['master_fx:fx1'] : [] });
@@ -443,6 +445,29 @@ step_('⭑ the layer COVERS sound mode while open, and a store/recall card draws
     P.showActionPopup('UNDO');
     if (!S.actionPopupCard) throw new Error('a plain popup was not flagged as a card');
     if (!S.actionPopupDefers) throw new Error('a plain popup does not defer to held gestures');
+});
+
+step_('⭐ insert FX the recall MOVED back: macro legs follow each move (chain on its track, bus on every track)', () => {
+    S.trackMacros = S.trackMacros || [];
+    S.trackMacros[3] = [{ v: 0.5, legs: [{ kind: 'chain', comp: 'fx2', key: 'mix' }] }];
+    S.trackMacros[0] = [{ v: 0.1, legs: [{ kind: 'chain', comp: 'master_fx:fx1', key: 'size' },
+                                         { kind: 'chain', comp: 'fx2', key: 'tone' }] }];
+    recallMoved = [{ scope: '3:', from: 2, to: 1 }, { scope: 'master_fx:', from: 1, to: 2 }];
+    recallPending = false; advance(30);                         /* nothing left in flight */
+    S.sessionView = true; D.devSnapLeave(); D.devSnapEnter();     /* the SESSION layer, open */
+    snapSave(5);
+    const before = snapCalls.length;
+    try {
+        snapRecall(5);
+        if (!snapCalls.slice(before).some(c => c[0] === 'recall')) throw new Error('rig: the press recalled nothing');
+        recallPending = false; advance(30);
+    } finally { recallMoved = []; }
+    if (S.trackMacros[3][0].legs[0].comp !== 'fx1')
+        throw new Error('track 4\'s leg on fx2 did not follow the move to fx1: ' + S.trackMacros[3][0].legs[0].comp);
+    if (S.trackMacros[0][0].legs[0].comp !== 'master_fx:fx2')
+        throw new Error('the master leg did not follow: ' + S.trackMacros[0][0].legs[0].comp);
+    if (S.trackMacros[0][0].legs[1].comp !== 'fx2')
+        throw new Error('track 1\'s CHAIN leg moved on another track\'s move: ' + S.trackMacros[0][0].legs[1].comp);
 });
 
 if (failed) process.exit(1);
