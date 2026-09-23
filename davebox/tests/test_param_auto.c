@@ -94,6 +94,27 @@ int main(void) {
         OK("the inverse move restores the names; refused moves change nothing");
         hx_destroy(h);
     }
+    /* ---- a BUS reorder: bus-FX targets follow, whatever their lead field -- */
+    {
+        hx_t *h = hx_create(NULL);
+        pa_set(h, 0, 0, "0:move_fx:2:fx1:cutoff", 0, 100);
+        pa_set(h, 1, 0, "4:move_fx:2:fx2:mix", 0, 200);    /* same bus, another lead field */
+        pa_set(h, 0, 0, "0:move_fx:3:fx1:cutoff", 0, 300); /* ANOTHER Move bus */
+        pa_set(h, 0, 0, "0:fx1:cutoff", 0, 400);           /* slot 0's CHAIN fx1 — not the bus */
+        pa_set(h, 0, 0, "0:master_fx:fx1:room", 0, 500);
+        hx_set_param(h, "t0_pa_fx_move", "move_fx:2: 1 2");
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, " 0:move_fx:2:fx2:cutoff") && strstr(buf, " 4:move_fx:2:fx1:mix"), "bus 2's lanes swapped with their modules");
+        HX_ASSERT(strstr(buf, " 0:move_fx:3:fx1:cutoff"), "another Move bus is untouched");
+        HX_ASSERT(strstr(buf, " 0:fx1:cutoff"), "the slot-0 CHAIN target is untouched by a bus move");
+        HX_ASSERT(strstr(buf, " 0:master_fx:fx1:room"), "the master bus is untouched");
+        hx_set_param(h, "t0_pa_fx_move", "master_fx: 1 3");
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, " 0:master_fx:fx3:room"), "a master-bus move renames master targets");
+        HX_ASSERT(strstr(buf, " 0:fx1:cutoff"), "…and still not the slot chain");
+        OK("a bus move renames that bus's fxN targets (any lead field) and nothing else");
+        hx_destroy(h);
+    }
 
     /* ---- the clear gestures ----------------------------------------- */
     {

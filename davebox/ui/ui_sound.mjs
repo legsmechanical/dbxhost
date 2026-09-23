@@ -7788,41 +7788,56 @@ export function moduleChangeImpact(track, slot, comp) {
  * empty position (the slot save compacts, so it would not survive a reload) or
  * while the chain is still rendering; a refusal changes nothing and says so. */
 export function chainFxMove(track, slot, from, to) {
-    if (!(slot >= 0) || from === to) return false;
-    const ok = !!shadow_set_param(slot, 'fx:move', from + '>' + to);
+    if (!(slot >= 0)) return false;
+    return insertFxMove({ slot, track, key: 'fx:move', scope: String(slot) }, from, to);
+}
+/* The same for a BUS insert chain: `busPrefix` is "master_fx:", "send_fx:a:" or
+ * "move_fx:N:". A bus is shared, so macro legs on it follow on EVERY track. */
+export function busFxMove(busPrefix, from, to) {
+    return insertFxMove({ slot: 0, track: -1, key: busPrefix + 'fx:move', scope: busPrefix }, from, to);
+}
+function insertFxMove(c, from, to) {
+    if (from === to) return false;
+    const ok = !!shadow_set_param(c.slot, c.key, from + '>' + to);
     if (!ok) {
         showActionPopup("CAN'T MOVE", 'Move it next to an effect');
         return false;
     }
-    automationFxMoved(slot, from, to);
+    automationFxMoved(c.scope, from, to);
     const map = [0, 1, 2, 3, 4];
     map[from] = to;
     if (to > from) { for (let k = from + 1; k <= to; k++) map[k] = k - 1; }
     else           { for (let k = to; k < from; k++) map[k] = k + 1; }
-    const store = GS.trackMacros && GS.trackMacros[track];
+    /* Which leg comps this move renames: the chain's bare "fxK" on ONE track,
+     * or "<busprefix>fxK" on every track. */
+    const isBus = c.track < 0;
+    const legRe = isBus ? new RegExp('^' + c.scope.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + 'fx([1-4])$')
+                        : /^fx([1-4])$/;
+    const tracks = isBus ? Array.from({ length: (GS.trackMacros || []).length }, (_, t) => t) : [c.track];
     let legsMoved = 0;
-    if (store) {
+    for (const t of tracks) {
+        const store = GS.trackMacros && GS.trackMacros[t];
+        if (!store) continue;
         for (let i = 0; i < store.length; i++) {
             const mp = store[i]; if (!mp || !mp.legs) continue;
             let changed = false;
             const legs = mp.legs.map((leg) => {
-                const m = leg && leg.kind === 'chain' && /^fx([1-4])$/.exec(leg.comp);
+                const m = leg && leg.kind === 'chain' && typeof leg.comp === 'string' && legRe.exec(leg.comp);
                 if (!m || map[+m[1]] === +m[1]) return leg;
                 changed = true; legsMoved++;
-                return Object.assign({}, leg, { comp: 'fx' + map[+m[1]] });
+                return Object.assign({}, leg, { comp: leg.comp.slice(0, -1) + map[+m[1]] });
             });
             if (changed) {
                 store[i] = Object.assign({}, mp, { legs });
-                if (S.track === track) S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
+                if (S.track === t) S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
             }
         }
-        if (legsMoved) writeSidecar();
     }
+    if (legsMoved) writeSidecar();
     engineCanvasForget();
-    morphInvalidate(slot);
+    if (isBus) morphInvalidateBuses(); else morphInvalidate(c.slot);
     S.dirty = true;
-    console.log('[sound] fx move t' + track + ' slot ' + slot + ' fx' + from + '>fx' + to +
-                ' (' + legsMoved + ' macro leg(s) followed)');
+    console.log('[sound] fx move ' + c.key + ' ' + from + '>' + to + ' (' + legsMoved + ' macro leg(s) followed)');
     return true;
 }
 

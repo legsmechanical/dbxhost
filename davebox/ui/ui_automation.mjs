@@ -128,27 +128,27 @@ export function automationResetCaches() {
     listGen++;
 }
 
-/* A chain REORDER on `slot` moved FX `from` to `to` (1-based). Every target that
- * addresses that slot's audio FX by POSITION — "<slot>:fx<K>:<key>" — follows
- * its module: the DSP's store renames its table (pa_fx_move) and every map here
- * keyed by target text is renamed the same way, in ONE pass each (the map is a
- * bijection on K, so two names cannot collide; renaming one at a time would
- * move one twice). Returns the rename function so callers holding their own
- * target strings can apply the identical mapping. */
-export function fxMoveRenamer(slot, from, to) {
+/* An insert-FX REORDER moved position `from` to `to` (1-based). `scope` is the
+ * slot NUMBER for a track chain (targets "<slot>:fx<K>:<key>") or a BUS prefix —
+ * "master_fx:", "send_fx:a:", "move_fx:N:" — for a bus (targets
+ * "<n>:<busprefix>fx<K>:<key>", any <n>). Same rule as the DSP's
+ * pa_retarget_fx; every map here keyed by target text is renamed in ONE pass
+ * (a bijection on K: no collisions). Returns the renamer so callers holding
+ * target strings of their own apply the identical mapping. */
+export function fxMoveRenamer(scope, from, to) {
     const map = [0, 1, 2, 3, 4];
     map[from] = to;
     if (to > from) { for (let k = from + 1; k <= to; k++) map[k] = k - 1; }
     else           { for (let k = to; k < from; k++) map[k] = k + 1; }
-    const re = new RegExp('^' + slot + ':fx([1-4]):');
-    return (target) => {
-        const m = re.exec(target);
-        return m ? slot + ':fx' + map[+m[1]] + ':' + target.slice(m[0].length) : target;
-    };
+    const esc = String(scope).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = /^\d+$/.test(String(scope))
+        ? new RegExp('^(' + esc + ':fx)([1-4])(:)')
+        : new RegExp('^([^:]*:' + esc + 'fx)([1-4])(:)');
+    return (target) => target.replace(re, (all, a, k, c) => a + map[+k] + c);
 }
-export function automationFxMoved(slot, from, to) {
-    queueSet('t0_pa_fx_move', slot + ' ' + from + ' ' + to);
-    const rn = fxMoveRenamer(slot, from, to);
+export function automationFxMoved(scope, from, to) {
+    queueSet('t0_pa_fx_move', scope + ' ' + from + ' ' + to);
+    const rn = fxMoveRenamer(scope, from, to);
     const remap = (m, keyOf) => {
         const out = new Map();
         for (const [k, v] of m) out.set(keyOf(k), v);
@@ -162,7 +162,7 @@ export function automationFxMoved(slot, from, to) {
     /* NOT moduleWrites / liveSlot: a write already queued carries the OLD name
      * and reaches the DSP BEFORE pa_fx_move (queued after it), which renames it
      * with everything else; liveSlot is rebuilt at every flush. */
-    automationInvalidateMeta(slot);
+    automationInvalidateMeta(/^\d+$/.test(String(scope)) ? scope : undefined);
     listGen++;
     expectStaged();
 }

@@ -14,6 +14,7 @@
 
 #include "shadow_chain_mgmt.h"
 #include "chain_move_check.h"
+#include "bus_fx_move.h"
 #include "shim_worker.h"
 #include "master_fx_saved_state.h" /* object or opaque-string state at boot */
 #include "shadow_set_pages.h"
@@ -143,9 +144,26 @@ static uint32_t shadow_ui_request_seen = 0;
  * Initialization
  * ============================================================================ */
 
+static int bus_slot_cache_alloc(master_fx_slot_t *s) {
+    if (s->chain_params_cache) return 0;
+    s->chain_params_cache = (char *)calloc(1, MFX_CHAIN_PARAMS_CACHE_LEN);
+    return s->chain_params_cache ? 0 : -1;
+}
+int shadow_bus_slot_storage_init(void) {
+    int rc = 0;
+    for (int i = 0; i < MASTER_FX_SLOTS; i++) rc |= bus_slot_cache_alloc(&shadow_master_fx_slots[i]);
+    for (int b = 0; b < SEND_BUS_COUNT; b++)
+        for (int i = 0; i < SEND_FX_SLOTS; i++) rc |= bus_slot_cache_alloc(&shadow_send_fx_slots[b][i]);
+    for (int m = 0; m < MOVE_FX_SLOTS; m++)
+        for (int i = 0; i < MOVE_FX_BLOCKS; i++) rc |= bus_slot_cache_alloc(&shadow_move_fx_slots[m][i]);
+    return rc;
+}
+
 void chain_mgmt_init(const chain_mgmt_host_t *h) {
     host = *h;
     chain_mgmt_initialized = 1;
+    if (shadow_bus_slot_storage_init() != 0)
+        shadow_log("chain_mgmt: bus slot storage allocation FAILED");
 }
 
 /* ============================================================================
@@ -522,7 +540,11 @@ void shadow_chain_defaults(void) {
     shadow_recount_solo();
     /* Clear all master FX slots */
     for (int i = 0; i < MASTER_FX_SLOTS; i++) {
+        /* Keep the out-of-line cache: it is allocated once and never NULL. */
+        char *cache = shadow_master_fx_slots[i].chain_params_cache;
         memset(&shadow_master_fx_slots[i], 0, sizeof(master_fx_slot_t));
+        shadow_master_fx_slots[i].chain_params_cache = cache;
+        if (cache) cache[0] = '\0';
     }
 }
 
@@ -940,7 +962,7 @@ int shadow_send_fx_slot_load(int bus, int slot, const char *dsp_path) {
                             arr_end++;
                         }
                         int len = (int)(arr_end - arr_start);
-                        if (len > 0 && len < (int)sizeof(s->chain_params_cache) - 1) {
+                        if (len > 0 && len < MFX_CHAIN_PARAMS_CACHE_LEN - 1) {
                             memcpy(s->chain_params_cache, arr_start, len);
                             s->chain_params_cache[len] = '\0';
                             s->chain_params_cached = 1;
@@ -1082,7 +1104,7 @@ int shadow_move_fx_slot_load(int slot, int block, const char *dsp_path) {
                             arr_end++;
                         }
                         int len = (int)(arr_end - arr_start);
-                        if (len > 0 && len < (int)sizeof(s->chain_params_cache) - 1) {
+                        if (len > 0 && len < MFX_CHAIN_PARAMS_CACHE_LEN - 1) {
                             memcpy(s->chain_params_cache, arr_start, len);
                             s->chain_params_cache[len] = '\0';
                             s->chain_params_cached = 1;
@@ -1208,7 +1230,7 @@ int shadow_master_fx_slot_load_with_config(int slot, const char *dsp_path, const
                             arr_end++;
                         }
                         int len = (int)(arr_end - arr_start);
-                        if (len > 0 && len < (int)sizeof(s->chain_params_cache) - 1) {
+                        if (len > 0 && len < MFX_CHAIN_PARAMS_CACHE_LEN - 1) {
                             memcpy(s->chain_params_cache, arr_start, len);
                             s->chain_params_cache[len] = '\0';
                             s->chain_params_cached = 1;
@@ -1231,7 +1253,7 @@ int shadow_master_fx_slot_load_with_config(int slot, const char *dsp_path, const
                                     arr_end++;
                                 }
                                 int len = (int)(arr_end - arr_start);
-                                if (len > 0 && len < (int)sizeof(s->chain_params_cache) - 1) {
+                                if (len > 0 && len < MFX_CHAIN_PARAMS_CACHE_LEN - 1) {
                                     memcpy(s->chain_params_cache, arr_start, len);
                                     s->chain_params_cache[len] = '\0';
                                     s->chain_params_cached = 1;
@@ -3357,6 +3379,9 @@ static void fx_slot_param_rest(master_fx_slot_t *s, const char *rest,
  * tests/host/test_param_buffers_not_on_stack.sh. SPI thread only. */
 static char s_set_value_copy[SHADOW_PARAM_VALUE_LEN];
 
+/* The bus reorder itself: bus_fx_move.h (header-only so tests/host RUN it). */
+#define BUS_MOVE_ARM(call) do { int _e = (call); *io_error = _e; *io_result_len = _e ? -1 : 0; return _e; } while (0)
+
 /* See the "fx:move" arm in shadow_param_apply_set_ex and chain_move_check.h.
  * Occupancy is read back through the chain's own "fxN:module". */
 static int slot_fx_occupied(void *ctx, int pos) {
@@ -3391,6 +3416,13 @@ int shadow_param_apply_set_ex(int slot, const char *key, const char *value,
     /* Handle master FX chain params */
     if (strncmp(key, "master_fx:", 10) == 0) {
         const char *fx_key = key + 10;
+
+        /* Reorder the master FX chain (shadow_bus_fx_move). BEFORE the fxN:
+         * routing, which would otherwise hand "fx:move" to slot 0's plugin. */
+        if (strcmp(fx_key, "fx:move") == 0)
+            BUS_MOVE_ARM(shadow_bus_fx_move(shadow_master_fx_slots, MASTER_FX_SLOTS,
+                                            shadow_master_fx_lfos, MASTER_FX_LFO_COUNT,
+                                            mfx_runtime_chain_params_cached, value));
 
         /* Handle master FX LFO params: master_fx:lfo1:*, master_fx:lfo2:* */
         if (strncmp(fx_key, "lfo1:", 5) == 0 || strncmp(fx_key, "lfo2:", 5) == 0) {
@@ -3529,6 +3561,11 @@ int shadow_param_apply_set_ex(int slot, const char *key, const char *value,
             return *io_error;
         }
 
+        /* Reorder this send bus (shadow_bus_fx_move). No LFOs on a send bus. */
+        if (strcmp(rest, "fx:move") == 0)
+            BUS_MOVE_ARM(shadow_bus_fx_move(shadow_send_fx_slots[bus], SEND_FX_SLOTS,
+                                            NULL, 0, NULL, value));
+
         /* Bus-level params (no fxN prefix) */
         if (strcmp(rest, "return_level") == 0) {
             float lv = (value[0]) ? atof(value) : 1.0f;
@@ -3590,6 +3627,12 @@ int shadow_param_apply_set_ex(int slot, const char *key, const char *value,
             *io_result_len = -1;
             return *io_error;
         }
+
+        /* Reorder this Move FX bus (shadow_bus_fx_move); its LFOs follow. */
+        if (strcmp(rest, "fx:move") == 0)
+            BUS_MOVE_ARM(shadow_bus_fx_move(shadow_move_fx_slots[sl], MOVE_FX_BLOCKS,
+                                            shadow_move_fx_lfos[sl], MOVE_FX_LFO_COUNT,
+                                            NULL, value));
 
         /* Per-bus LFO params: move_fx:<N>:lfo1:* / lfo2:*. Same field vocabulary
          * as master_fx:lfoN:* — one editor in the module speaks both. */

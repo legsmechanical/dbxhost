@@ -160,30 +160,46 @@ static int pa_target_id(seq8_instance_t *inst, const char *target) {
     return -1;   /* target table full */
 }
 
-/* A chain REORDER moved FX position `from` to `to` (1-based) on chain slot
- * `slot` (the host's fx:move). Every target that addresses that slot's audio
- * FX by position — "<slot>:fx<K>:<key>" — follows its module, in ONE pass over
- * the table: the rename is a bijection on K, so two targets can never collide,
- * and doing it as a sequence of single renames would move one twice. Entries,
- * live hands and staged changes all refer to targets by INDEX, so they follow
- * for free. Returns how many targets were renamed. */
-static int pa_retarget_fx(seq8_instance_t *inst, int slot, int from, int to) {
-    if (from < 1 || from > 4 || to < 1 || to > 4 || from == to) return 0;
+/* An insert-FX REORDER moved position `from` to `to` (1-based) — on a track's
+ * chain or on a bus. `scope` names which:
+ *   "<slot>"      (digits)  the chain on that slot: targets "<slot>:fx<K>:<key>";
+ *   "<busprefix>" otherwise, e.g. "master_fx:", "send_fx:a:", "move_fx:2:":
+ *                 targets "<n>:<busprefix>fx<K>:<key>" for ANY <n> (a bus is not
+ *                 a slot; the leading field is whatever the automating screen
+ *                 used).
+ * Every such target follows its module, in ONE pass over the table: the rename
+ * is a bijection on K, so two targets can never collide, and a sequence of
+ * single renames would move one twice. Entries, live hands and staged changes
+ * all refer to targets by INDEX, so they follow for free. Returns how many
+ * targets were renamed. */
+static int pa_retarget_fx(seq8_instance_t *inst, const char *scope, int from, int to) {
+    if (!scope || !*scope || from < 1 || from > 4 || to < 1 || to > 4 || from == to) return 0;
     int map[5];                                   /* map[old] = new, 1-based */
     for (int k = 1; k <= 4; k++) map[k] = k;
     map[from] = to;
     if (to > from) { for (int k = from + 1; k <= to; k++) map[k] = k - 1; }
     else           { for (int k = to; k < from; k++) map[k] = k + 1; }
-    char pre[16];
-    int pl = snprintf(pre, sizeof(pre), "%d:fx", slot);
+    int is_slot = 1;
+    for (const char *c = scope; *c; c++) if (*c < '0' || *c > '9') { is_slot = 0; break; }
+    size_t sl = strlen(scope);
     int renamed = 0;
     for (int i = 0; i < PA_MAX_TARGETS; i++) {
         char *t = inst->pa_targets[i];
-        if (!t[0] || strncmp(t, pre, (size_t)pl) != 0) continue;
-        int k = t[pl] - '0';
-        if (k < 1 || k > 4 || t[pl + 1] != ':') continue;   /* fx10, fxN without a key: not ours */
+        if (!t[0]) continue;
+        char *fx;                                  /* points at "fx" of "fx<K>:" */
+        if (is_slot) {
+            if (strncmp(t, scope, sl) != 0 || t[sl] != ':') continue;
+            fx = t + sl + 1;
+        } else {
+            char *colon = strchr(t, ':');
+            if (!colon || strncmp(colon + 1, scope, sl) != 0) continue;
+            fx = colon + 1 + sl;
+        }
+        if (fx[0] != 'f' || fx[1] != 'x') continue;
+        int k = fx[2] - '0';
+        if (k < 1 || k > 4 || fx[3] != ':') continue;     /* fx10, a bare "fxN": not ours */
         if (map[k] == k) continue;
-        t[pl] = (char)('0' + map[k]);
+        fx[2] = (char)('0' + map[k]);
         renamed++;
     }
     return renamed;

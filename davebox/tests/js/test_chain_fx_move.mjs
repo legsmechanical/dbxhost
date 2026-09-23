@@ -15,7 +15,7 @@ function assert(c, m) { if (!c) throw new Error(m); }
 let hostAccepts = true;
 const slotSets = [];
 const bulk = [];
-let paList = '0 0 1 2 3:fx1:cutoff 0 0 100\n0 1 1 1 3:fx3:mix 0 0 100\n0 0 1 1 5:fx1:cutoff 0 0 100\n';
+let paList = '0 0 1 2 3:fx1:cutoff 0 0 100\n0 1 1 1 3:fx3:mix 0 0 100\n0 0 1 1 5:fx1:cutoff 0 0 100\n2 0 1 1 0:move_fx:2:fx1:tone 0 0 100\n';
 globalThis.shadow_set_param = (slot, key, val) => { slotSets.push(slot + ' ' + key + '=' + val); return hostAccepts ? 1 : 0; };
 globalThis.shadow_get_param = () => '';
 globalThis.host_module_get_param = (k) => (k === 'pa_list' ? paList : '');
@@ -48,6 +48,7 @@ function seed() {
 step('control: the seeded mirror names slot 3\'s fx1 and fx3', () => {
     seed();
     assert(JSON.stringify(targetsOf(0, 0)) === JSON.stringify(['3:fx1:cutoff', '5:fx1:cutoff']), 'clip 0: ' + JSON.stringify(targetsOf(0, 0)));
+    assert(JSON.stringify(targetsOf(2, 0)) === JSON.stringify(['0:move_fx:2:fx1:tone']), 'track 2: ' + JSON.stringify(targetsOf(2, 0)));
     assert(JSON.stringify(targetsOf(0, 1)) === JSON.stringify(['3:fx3:mix']), 'clip 1: ' + JSON.stringify(targetsOf(0, 1)));
 });
 step('⭐ moving slot 3\'s fx1 to fx3: the host is asked, and the mirror follows the modules', () => {
@@ -74,6 +75,19 @@ step('⚠ CONTROL: a move the host REFUSES changes nothing here — mirror, macr
     assert(JSON.stringify(targetsOf(0, 0)) === JSON.stringify(['3:fx1:cutoff', '5:fx1:cutoff']), 'mirror renamed anyway: ' + JSON.stringify(targetsOf(0, 0)));
     assert(GS.trackMacros[0][0].legs[0].comp === 'fx1', 'a macro leg moved anyway');
     assert(!bulk.some(b => b.indexOf('pa_fx_move') >= 0), 'the DSP store was told to rename anyway');
+});
+
+step('⭐ a BUS move (Move FX bus 2): the host gets the bus key, that bus\'s lanes and macro legs follow on every track', () => {
+    seed();
+    GS.trackMacros[2] = [{ v: 0.1, legs: [{ kind: 'chain', comp: 'move_fx:2:fx1', key: 'tone' }] }];
+    assert(snd.busFxMove('move_fx:2:', 1, 2) === true, 'the bus move reported failure');
+    assert(slotSets.includes('0 move_fx:2:fx:move=1>2'), 'the host was not asked on the bus key: ' + JSON.stringify(slotSets));
+    assert(JSON.stringify(targetsOf(2, 0)) === JSON.stringify(['0:move_fx:2:fx2:tone']), 'bus lane: ' + JSON.stringify(targetsOf(2, 0)));
+    assert(JSON.stringify(targetsOf(0, 0)) === JSON.stringify(['3:fx1:cutoff', '5:fx1:cutoff']), 'a CHAIN lane moved: ' + JSON.stringify(targetsOf(0, 0)));
+    assert(GS.trackMacros[2][0].legs[0].comp === 'move_fx:2:fx2', 'the bus macro leg is ' + GS.trackMacros[2][0].legs[0].comp);
+    assert(GS.trackMacros[0][0].legs[0].comp === 'fx1', 'a CHAIN macro leg moved on a bus move');
+    auto.automationTick();
+    assert(bulk.some(b => b.indexOf('t0_pa_fx_move') >= 0 && b.indexOf('move_fx:2: 1 2') >= 0), 'the store was not told: ' + JSON.stringify(bulk));
 });
 
 if (failed) { console.log('FAIL: chain fx move'); process.exit(1); }

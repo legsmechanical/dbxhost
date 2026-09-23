@@ -41,6 +41,8 @@
  * Types
  * ============================================================================ */
 
+#define MFX_CHAIN_PARAMS_CACHE_LEN 65536
+
 /* Master FX chain slot */
 typedef struct {
     void *handle;                    /* dlopen handle */
@@ -49,7 +51,12 @@ typedef struct {
     char module_path[256];           /* Full DSP path */
     char module_id[64];              /* Module ID for display */
     shadow_capture_rules_t capture;  /* Capture rules for this FX */
-    char chain_params_cache[65536];  /* Cached chain_params to avoid file I/O in audio thread */
+    /* Cached chain_params to avoid file I/O in the audio thread. OUT OF LINE
+     * (MFX_CHAIN_PARAMS_CACHE_LEN, allocated once per bus position at init and
+     * never NULL — shadow_bus_slot_storage_init) so a whole slot is ~400 B and
+     * a bus REORDER rotates slots instead of copying 64 KB each on the SPI
+     * callback. ⚠ sizeof() on it is a POINTER. */
+    char *chain_params_cache;
     int chain_params_cached;         /* 1 if cache is valid */
     void (*on_midi)(void *instance, const uint8_t *msg, int len, int source);  /* Optional MIDI handler */
     int bypassed;                    /* 1 = skip this MFX slot (dry passthrough), 0 = active */
@@ -374,6 +381,9 @@ static inline int shadow_move_fx_has_fx(int slot) {
 /* Initialize chain management with callbacks to shim functions.
  * Must be called before any other chain_mgmt function. */
 void chain_mgmt_init(const chain_mgmt_host_t *host);
+/* Allocate every bus slot's chain_params_cache (idempotent). Called by
+ * chain_mgmt_init; exposed for tests that use the bus arrays directly. */
+int shadow_bus_slot_storage_init(void);
 
 /* --- Logging --- */
 void shadow_log(const char *msg);

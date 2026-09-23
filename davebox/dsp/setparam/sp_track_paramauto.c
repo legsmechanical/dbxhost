@@ -191,16 +191,19 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         return 1;
     }
 
-    /* pa_fx_move: "<slot> <from> <to>" — the host moved FX `from` to `to`
-     * (1-based) on chain slot <slot>; targets on that slot's audio FX follow
-     * their modules (pa_retarget_fx). The track prefix is irrelevant: the
-     * target table is the project's. */
+    /* pa_fx_move: "<scope> <from> <to>" — an insert-FX REORDER moved position
+     * `from` to `to` (1-based) on a track chain (scope = its slot number) or a
+     * bus (scope = "master_fx:", "send_fx:a:", "move_fx:N:"); targets on those
+     * positions follow their modules (pa_retarget_fx). The track prefix of the
+     * key is irrelevant: the target table is the project's. */
     if (!strcmp(sub, "pa_fx_move")) {
-        int slot = 0, from = 0, to = 0;
-        PA_SKIP_SPACE(p); PA_UINT(p, slot);
+        char scope[32]; int n = 0, from = 0, to = 0;
+        PA_SKIP_SPACE(p);
+        while (*p && *p != ' ' && n < (int)sizeof(scope) - 1) scope[n++] = *p++;
+        scope[n] = '\0';
         PA_SKIP_SPACE(p); PA_UINT(p, from);
         PA_SKIP_SPACE(p); PA_UINT(p, to);
-        if (pa_retarget_fx(inst, slot, from, to) > 0) pa_mark_dirty(inst);
+        if (pa_retarget_fx(inst, scope, from, to) > 0) pa_mark_dirty(inst);
         return 1;
     }
 
