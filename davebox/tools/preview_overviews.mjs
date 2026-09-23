@@ -76,6 +76,13 @@ held('track-overview-held-long', [61, 64, 67, 71]);    /* C# half-diminished */
 held('track-overview-held-unnamed', [60, 61, 62]);     /* a cluster: note names */
 S.padKey = 1; S.padScale = 7;
 held('track-overview-held-long-key', [61, 64, 67, 71]);
+S.padKey = 5; S.padScale = 0;                           /* F major: flats */
+held('track-overview-held-flat-key', [58, 62, 65, 68]); /* B♭7 */
+held('track-overview-held-flat-halfdim', [62, 65, 68, 72]);  /* Dmin7(♭5) */
+S.padKey = 10; S.padScale = 1;                          /* B♭ minor: the key label too */
+held('track-overview-held-flat-minor', [58, 61, 65]);
+S.padKey = 1; S.padScale = 11;                          /* narrow: C# Blues, Oct:+4 */
+S.trackOctave[3] = 4; held('track-overview-held-narrow', [56, 61, 64, 68, 71]); S.trackOctave[3] = 0;
 S.padKey = 0; S.padScale = 0;
 
 /* TRACK VIEW with SHIFT held — the footer names the Shift chords. */

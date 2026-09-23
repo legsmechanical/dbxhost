@@ -89,6 +89,32 @@ export function chordLabel(pitches, flats) {
     return ps.map((n) => NAMES[n % 12]).filter((s, i, a) => a.indexOf(s) === i).join(' ');
 }
 
+/* The key's own root, spelled the way its chords are — so "[B♭MIN]" never sits
+ * beside "A# MINOR". */
+export function keyRootName(key, scale, plain) {
+    const n = (keyUsesFlats(key, scale) ? FLATS : SHARPS)[((key | 0) % 12 + 12) % 12];
+    /* `plain`: for the stock host font (menus, dialogs), which has lowercase
+     * but no ♭ glyph — "Bb", the ordinary typed spelling. */
+    return plain ? n.replace('\u266d', 'b') : n;
+}
+
+/* Shorten a label to fit `maxW` (measured by `widthOf`) without changing what
+ * it says: a chord first loses its slash bass (still the right chord), a note
+ * list its highest notes (still the notes it names). Never a cut mid-name —
+ * "C#MIN7(" or a missing "/G#" reads as a different chord. */
+export function fitHeldLabel(label, maxW, widthOf) {
+    if (widthOf(label) <= maxW) return label;
+    if (label.indexOf(' ') >= 0) {
+        const notes = label.split(' ');
+        while (notes.length > 1 && widthOf(notes.join(' ') + ' +') > maxW) notes.pop();
+        return notes.join(' ') + ' +';
+    }
+    const slash = label.indexOf('/');
+    if (slash > 0 && widthOf(label.slice(0, slash)) <= maxW) return label.slice(0, slash);
+    const m = /^[A-G][#\u266d]?/.exec(label);
+    return m ? m[0] : label;                               /* just the root, as a last resort */
+}
+
 /* The pitches being played INTO track t right now: pads and external MIDI.
  * Sequencer echoes returning on the MIDI input (a Move-routed track) are not
  * input and are left out. */

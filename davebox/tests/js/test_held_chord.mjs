@@ -39,7 +39,8 @@ globalThis.host_register_primary = () => true;
 globalThis.text_width = (t) => String(t).length * 6;
 
 async function main() {
-const { chordLabel, keyUsesFlats } = await import('../../ui/ui_chord.mjs');
+const { chordLabel, keyUsesFlats, fitHeldLabel, keyRootName } = await import('../../ui/ui_chord.mjs');
+const { fontWidth4x5 } = await import('../../ui/ui_fonts_pp.mjs');
 
 /* ---------------- 1. naming ---------------- */
 const SH = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -140,6 +141,20 @@ step('flat keys spell with ♭; sharp and keyless scales with #', () => {
            'G major, A minor, E minor and F# major are not');
     assert(keyUsesFlats(7, 2) && !keyUsesFlats(2, 2), 'G dorian (parent F) is flat, D dorian (parent C) is not');
     assert(!keyUsesFlats(5, 12), 'whole-tone has no key signature: sharps');
+    assert(keyRootName(10, 1) === 'B\u266d' && keyRootName(10, 1, true) === 'Bb' && keyRootName(9, 1, true) === 'A',
+           'the key root: B♭ on the overview, "Bb" in the stock font (no ♭ glyph there)');
+});
+
+step('⭐ a label too wide loses WHOLE parts — the slash bass, the top notes — never a cut mid-name', () => {
+    const w = fontWidth4x5;
+    const full = 'A#MIN7(\u266d5)/G#';
+    assert(fitHeldLabel(full, w(full), w) === full, 'a label that fits is untouched');
+    assert(fitHeldLabel(full, w(full) - 1, w) === 'A#MIN7(\u266d5)', 'got ' + fitHeldLabel(full, w(full) - 1, w));
+    assert(fitHeldLabel('C D E F G A B', w('C D E +'), w) === 'C D E +', 'got ' + fitHeldLabel('C D E F G A B', w('C D E +'), w));
+    for (let mw = 4; mw < 70; mw++) {                  /* whatever the width: a whole name, a root, or notes + */
+        const got = fitHeldLabel(full, mw, w);
+        assert(['A#MIN7(\u266d5)/G#', 'A#MIN7(\u266d5)', 'A#'].includes(got), mw + 'px → ' + got);
+    }
 });
 
 /* ---------------- 2. the screen ---------------- */
@@ -174,7 +189,7 @@ const bracketed = () => screenText().filter((t) => /^\[.*\]$/.test(t) && t !== '
 afterStep = () => {
     for (let n = 0; n < 128; n++) globalThis.onMidiMessageExternal(new Uint8Array([0x80, n, 0]));
     for (let i = 0; i < 32; i++) globalThis.onMidiMessageInternal(new Uint8Array([0x80, TRACK_PAD_BASE + i, 0]));
-    S.padKey = 0; S.trackRoute[2] = 0; S.seqActiveNotes.clear(); ticks(1);
+    S.padKey = 0; S.padScale = 0; S.trackRoute[2] = 0; S.seqActiveNotes.clear(); ticks(1);
 };
 const pad = (i, on) => globalThis.onMidiMessageInternal(new Uint8Array([on ? 0x90 : 0x80, TRACK_PAD_BASE + i, on ? 100 : 0]));
 const ext = (n, on) => globalThis.onMidiMessageExternal(new Uint8Array([on ? 0x90 : 0x80, n, on ? 100 : 0]));
@@ -213,6 +228,15 @@ step('the same chord in F major spells with flats', () => {
     assert(JSON.stringify(bracketed()) === '["[B♭]"]', 'drew ' + JSON.stringify(bracketed()));
     for (const n of [58, 62, 65]) ext(n, false);
     S.padKey = 0; ticks(1);
+});
+step('the key label spells its root the way the chord does: [B♭MIN] beside B♭ MINOR, never A# MINOR', () => {
+    S.padKey = 10; S.padScale = 1; ticks(1);
+    for (const n of [58, 61, 65]) ext(n, true);
+    ticks(1);
+    const t = screenText();
+    assert(JSON.stringify(bracketed()) === '["[B♭MIN]"]', 'drew ' + JSON.stringify(bracketed()));
+    assert(t.includes('B♭ MINOR') && !t.some((x) => /^A# /.test(x)), 'key label: ' + JSON.stringify(t.filter((x) => /MINOR/.test(x))));
+    S.padScale = 0;
 });
 step('a sequencer echo on a Move-routed track is not input', () => {
     /* Tick once after re-routing: the route change releases any external

@@ -13,7 +13,7 @@ import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev, faderGainToTravel} from './ui_engine.mjs';
 import { instrValueFor } from './ui_dsp_bridge.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
-import { chordLabel, heldInputNotes, keyUsesFlats } from './ui_chord.mjs';
+import { chordLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
@@ -2344,7 +2344,7 @@ function drawUIBody() {
             ? ' REC' : '';
         const oct     = S.trackOctave[S.activeTrack];
         const octStr  = 'Oct:' + (oct >= 0 ? '+' : '') + oct;
-        const keyScl  = NOTE_KEYS[S.padKey] + ' ' + (SCALE_DISPLAY[S.padScale] || '?');
+        const keyScl  = keyRootName(S.padKey, S.padScale) + ' ' + (SCALE_DISPLAY[S.padScale] || '?');
         const keySclW = ovwWidth(keyScl);
         const keySclX = 128 - 4 - keySclW;
         (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(S.activeTrack, S.activeBank) + recTag, false, true);
@@ -2356,7 +2356,7 @@ function drawUIBody() {
          * place for as long as it shows. */
         const _held = chordLabel(heldInputNotes(S.activeTrack), keyUsesFlats(S.padKey, S.padScale));
         const _heldL = 4 + ovwWidth(octStr) + 4, _heldR = keySclX - 4;
-        const _heldTxt = _held ? '[' + fit4x5(_held, _heldR - _heldL - ovwWidth('[]')) + ']' : '';
+        const _heldTxt = _held ? '[' + fitHeldLabel(_held, _heldR - _heldL - ovwWidth('[]') - 1, ovwWidth) + ']' : '';
         if (_heldTxt) {
             ovwPrint(Math.round((_heldL + _heldR - ovwWidth(_heldTxt)) / 2), 9, _heldTxt, 1);
         } else if (S.bankParams[S.activeTrack][5][0]) {

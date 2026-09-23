@@ -1,6 +1,7 @@
 import { S, conductorTrackIdx } from './ui_state.mjs';
+import { keyRootName } from './ui_chord.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
-import { STATE_VERSION, NOTE_KEYS, SCALE_DISPLAY,
+import { STATE_VERSION, SCALE_DISPLAY,
          NUM_CLIPS, PAD_MODE_DRUM, PAD_MODE_CONDUCT } from './ui_constants.mjs';
 /* ⭑ drawMenuList and menuLayoutDefaults are GONE from this file as of the
  * 2026-08-15 cohesion pass — every list here renders on the kit now (§5.0).
@@ -712,7 +713,7 @@ export function drawBakeSceneConfirm() {
 export function drawXposeConfirm() {
     clear_screen();
     dlgHeader('TRANSPOSE CLIPS?');
-    const tgt = NOTE_KEYS[S.confirmXposeKey] + ' ' + (SCALE_DISPLAY[S.confirmXposeScale] || '?');
+    const tgt = keyRootName(S.confirmXposeKey, S.confirmXposeScale, true) + ' ' + (SCALE_DISPLAY[S.confirmXposeScale] || '?');
     dlgLines(['To ' + tgt, 'All melodic clips']);
     drawYesNoRow(S.confirmXposeSel);
 }
