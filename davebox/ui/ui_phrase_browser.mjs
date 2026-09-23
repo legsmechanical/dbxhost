@@ -219,7 +219,9 @@ function queueAudition(tokens) {
 }
 
 function wantMode() {
-    if (!PB.hear || !cur() || PB.confirm) return null;
+    /* It keeps playing through the replace confirm: a preview that stops there
+     * reads as "cancelled" (Josh, 2026-09-23). */
+    if (!PB.hear || !cur()) return null;
     return (GS.playing && GS.trackClipPlaying[PB.track]) ? 'clip' : 'free';
 }
 

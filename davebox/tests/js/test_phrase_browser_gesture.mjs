@@ -296,8 +296,9 @@ async function main() {
     step('replacing a clip with notes asks first: Back says no, click says yes', () => {
         S.clipNonEmpty[1][S.trackActiveClip[1]] = true;
         let n = writes.length;
-        click(); ticks(2);
+        click(); ticks(6);
         assert(pb().confirm && !since(n, /_import$/).length, 'no confirm, or it wrote');
+        assert(!since(n, /^t1_audclip$/).some(w => w[2] === 'off') && pb().mode, 'the preview stopped on the confirm');
         back();
         assert(PB.pbActive() && !pb().confirm, 'Back left the browser instead of the confirm');
         click(); click(); ticks(3);
