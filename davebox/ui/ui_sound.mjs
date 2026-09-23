@@ -1057,6 +1057,12 @@ export function soundBusForTest() {
     return S.bus ? { id: S.bus.id, kind: S.bus.kind, door: S.busDoor ? S.busDoor.kind : null } : null;
 }
 export function soundPendingActionForTest() { return S.pendingAction; }
+/* Put a full-screen canvas up without a module on disk: the screen's INPUT
+ * rules are what a test of it needs, not a real overlay. */
+export function soundOpenCanvasForTest(meta, io) {
+    if (!canvasEditOpen({ key: meta.key, fullKey: meta.key, meta, comp: 'synth', slot: 0, io })) return false;
+    S.view = VIEW_CANVAS; S.dirty = true; return true;
+}
 export function soundQueueActionForTest(a) { S.pendingAction = a; }
 /* Audition test hooks: arm a preview baseline as the preset list would, and read it back. */
 export function soundArmAuditionForTest(origBlob, previewIdx) { S.origState = origBlob; S.previewIdx = previewIdx | 0; S.previewAt = 0; }
@@ -8856,9 +8862,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
         closeCanvasScreen();
         /* no return: the turn belongs to whatever is underneath now */
     } else
+    /* ⚠ Play (85) and Record (86) are the TRANSPORT, and sound mode never
+     * takes the transport (ui.js: sound mode claims knobs, jog and Back "and
+     * nothing else"). dAVEBOx is overtake-mode, so a CC kept here never reaches
+     * Move either: with a canvas up, Play and Record did nothing at all. */
     if (S.view === VIEW_CANVAS && canvasEditActive() &&
         d1 !== 49 && d1 !== 88 && d1 !== 79 && d1 !== 50 && d1 !== 51 &&
-        !(d1 === 86 && GS.shiftHeld)) {
+        d1 !== 85 && d1 !== 86) {
         canvasEditOnMidi(0xB0, d1, d2);
         if (canvasEditTakeClose()) closeCanvasScreen();
         S.dirty = true;
