@@ -84,7 +84,7 @@ import { setTrackMute, setTrackSolo, clearAllMuteSolo,
     copyDrumClip, cutDrumClip, clearRow,
     _switchActiveTrack, allLanesGate,
     resetFxBanks, resetBankParams, resetMidiFxChain, resetTarp, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
-import { _resolveLoopGesture } from './ui_input_pads.mjs';
+import { _resolveLoopGesture, chordApplyRevoice } from './ui_input_pads.mjs';
 
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
  * Single tap while locked → unlock + stop loop. */
@@ -3502,6 +3502,8 @@ function knobPick(k, dir, need) {
 /* After a slot or CHORD bank edit: re-bake the pads now when asked (the tick
  * does it otherwise). The palette is sidecar state, saved with the rest of it. */
 function _chordEdited() {
+    /* An edit to a HELD chord re-voiced it: book what it lost and gained. */
+    if (S.chordPendingRevoice) { chordApplyRevoice(S.chordPendingRevoice); S.chordPendingRevoice = null; }
     if (S.chordPadmapNow) { S.chordPadmapNow = false; computePadNoteMap(); }
 }
 

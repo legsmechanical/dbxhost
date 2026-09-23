@@ -319,6 +319,52 @@ step('⭐ the sidecar keeps the layout and the palette, and a project without th
     assert(S.chordPalette[2][6].stack === 1 && S.chordSettings[2].bass === 1, 'round trip');
     S.chordPalette[2][6].stack = 0; S.chordSettings[2].bass = 0;
 });
+step('⭐ recording: a re-voice books the note it adds and ends the note it drops', () => {
+    S.recordArmed = true; S.recordArmedTrack = 2;
+    S._recNoteOns.length = 0; S._recNoteOffs.length = 0;
+    pad(0, true); ticks(0);
+    const start = CP.padPitches(0, oct());
+    const ons0 = S._recNoteOns.map((e) => e.pitch);
+    assert(start.every((p) => ons0.indexOf(p) >= 0), 'the chord press was not recorded: ' + ons0);
+    S._recNoteOns.length = 0;
+    pad(15, true); pad(15, false);                       /* Inv+: C E G → E G C' */
+    const ons = S._recNoteOns.map((e) => e.pitch), offs = S._recNoteOffs.map((e) => e.pitch);
+    assert(eq(ons, [start[0] + 12]), 'the added note was not recorded: ' + ons);
+    assert(offs.indexOf(start[0]) >= 0, 'the dropped note was not ended: ' + offs);
+    pad(0, false);
+    S.recordArmed = false; S._recNoteOns.length = 0; S._recNoteOffs.length = 0;
+});
+step('⭐ recording: a strum pad re-striking a held chord note does not end its recording', () => {
+    S.recordArmed = true; S.recordArmedTrack = 2;
+    pad(5, true); ticks(1);
+    const pm = lastPadmap();
+    const shared = [...S.liveActiveNotes].find((p) => pm.slice(16, 24).map(Number).indexOf(p) >= 0);
+    const si = 16 + pm.slice(16, 24).map(Number).indexOf(shared);
+    S._recNoteOffs.length = 0;
+    pad(si, true); pad(si, false);
+    assert(S._recNoteOffs.every((e) => e.pitch !== shared), 'the strum release ended ' + shared + ' while the chord holds it');
+    pad(5, false);
+    assert(S._recNoteOffs.some((e) => e.pitch === shared), 'the last holder did not end it');
+    S.recordArmed = false; S._recNoteOns.length = 0; S._recNoteOffs.length = 0;
+});
+step('⭐ a held chord released AFTER a layout switch still leaves the held notes', () => {
+    pad(3, true); ticks(1);
+    assert(S.liveActiveNotes.size === 3, 'setup');
+    CP.setChordLayout(2, false); ticks(1);               /* the layout changed under the finger */
+    pad(3, false); ticks(1);
+    assert(S.liveActiveNotes.size === 0, 'stranded: ' + [...S.liveActiveNotes]);
+    CP.setChordLayout(2, true); CP.closeChordPopup(); ticks(2);
+});
+step('Inv held for the press, let go, then tapped: the walk goes on from the pressed voicing', () => {
+    const start = CP.padPitches(0, oct());
+    pad(15, true); ticks(1);                              /* Inv+ held: the map is inverted */
+    pad(0, true); pad(15, false);
+    sets.length = 0;
+    pad(15, true); pad(15, false);
+    const rv = sets.filter((x) => x[0] === 't2_chord_revoice').map((x) => x[1].split(' ')[1]);
+    assert(rv.length === 1 && eq(rv[0].split('+').map(Number), M.invert(start, 2)), 'walked to ' + rv + ' from ' + start);
+    pad(0, false); ticks(2);
+});
 step('the padmap checksum matches the engine\'s arithmetic (the numbers test_chord_pads.c pins)', () => {
     const dm = globalThis.__dm;
     assert(dm.padmapSig('60+64+67 57+60+64 72 73 74 75 76 77 67 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 101 0 0 0') === 2088178764, 'chord map');

@@ -60,16 +60,24 @@ export function closeChordPopup() {
     S.screenDirty = true;
 }
 
-/* The held-pad bookkeeping belongs to the ACTIVE track; a track switch or a
- * layout change drops it. */
+/* The modifiers and the slot card belong to the ACTIVE track's surface; a
+ * track switch or a layout change drops them. Held chords are NOT dropped:
+ * their pads are still down, and each release must still clear its notes
+ * from the books (the engine ends the voices itself on the switch). */
 export function resetChordTransient() {
     S.chordMods = [];
     S.chordHeldSlots = [];
     S.chordRevoice = 0;
     S.chordCardSlot = -1;
-    heldChords.clear();
     modsDown.clear();
 }
+
+/* A load or a new project: nothing is held any more. */
+export function clearHeldChords() { heldChords.clear(); }
+
+/* Is pad `pad` a held chord slot (on any track, in any layout)? Its release
+ * goes through chordSlotRelease whatever the surface is now. */
+export function chordPadHeld(pad) { return heldChords.has(pad); }
 
 /* ---- the pad map ------------------------------------------------------ */
 
@@ -164,11 +172,11 @@ function effKeyScale() {
     return { key, scale };
 }
 
-function chordFor(t, k, extraInv) {
+function chordFor(t, k, extraInv, baseInv) {
     const { key, scale } = effKeyScale();
     const c = ctxFor(t, key, scale);
     return slotChord(Object.assign({}, c, { slot: S.chordPalette[t][k], mods: stackMods(),
-        invDelta: heldInvDelta() + (extraInv | 0), settings: settingsOf(t),
+        invDelta: (baseInv === undefined ? heldInvDelta() : baseInv) + (extraInv | 0), settings: settingsOf(t),
         prev: S.chordLast[t] && S.chordLast[t].notes }));
 }
 
@@ -184,7 +192,8 @@ export function chordSlotPress(t, k) {
     } else {
         pitches = padPitches(k, sh);
         ch = chordFor(t, k, 0);
-        heldChords.set(k, { pitches: pitches.slice(), numeral: ch.numeral, name: ch.name, plain: ch.plain });
+        heldChords.set(k, { t, pitches: pitches.slice(), ever: pitches.slice(), baseInv: heldInvDelta(),
+                            numeral: ch.numeral, name: ch.name, plain: ch.plain });
     }
     S.chordRevoice = 0;
     S.chordHeldSlots = S.chordHeldSlots.filter((x) => x !== k).concat([k]);
@@ -197,15 +206,17 @@ export function chordSlotPress(t, k) {
     return pitches;
 }
 
-/* A slot pad came up. Returns the pitches it had started (to release from the
- * JS books; the engine ends them itself). */
+/* A slot pad came up. Returns every pitch it was booked with during the
+ * hold — not just the last voicing: a re-voice the engine never received
+ * (one set_param per audio buffer survives) must not leave its notes in the
+ * books. Clearing a note that is not sounding costs nothing. */
 export function chordSlotRelease(t, k) {
     const h = heldChords.get(k);
     heldChords.delete(k);
     S.chordHeldSlots = S.chordHeldSlots.filter((x) => x !== k);
     if (!S.chordHeldSlots.length) { S.chordRevoice = 0; S.chordCardSlot = -1; }
     S.screenDirty = true;
-    return h ? h.pitches : [];
+    return h ? h.ever : [];
 }
 
 /* Is pitch p held by a chord pad other than `exceptPad`? */
@@ -220,16 +231,19 @@ function revoiceHeld(t) {
     const k = S.chordHeldSlots[S.chordHeldSlots.length - 1];
     if (k === undefined) return null;
     const h = heldChords.get(k);
-    if (!h) return null;
-    const ch = chordFor(t, k, S.chordRevoice);
+    if (!h || h.t !== t) return null;
+    /* The walk starts from the inversion the chord was PRESSED with — an Inv
+     * pad held then, and let go since, still counts. */
+    const ch = chordFor(t, k, S.chordRevoice, h.baseInv);
     const sh = octShiftOf(t);
     const after = ch.notes.map((p) => p + sh).filter((p) => p >= 0 && p <= 127);
     if (!after.length) return null;
     host_module_set_param('t' + t + '_chord_revoice', k + ' ' + after.join('+'));
     const before = h.pitches;
-    heldChords.set(k, { pitches: after, numeral: ch.numeral, name: ch.name, plain: ch.plain });
+    const ever = h.ever.concat(after.filter((p) => h.ever.indexOf(p) < 0));
+    heldChords.set(k, Object.assign({}, h, { pitches: after, ever, numeral: ch.numeral, name: ch.name, plain: ch.plain }));
     S.chordLast[t] = Object.assign({}, S.chordLast[t] || {}, { slot: k, mods: stackMods(),
-        inv: heldInvDelta() + S.chordRevoice, notes: ch.notes, numeral: ch.numeral, name: ch.name, plain: ch.plain });
+        inv: h.baseInv + S.chordRevoice, notes: ch.notes, numeral: ch.numeral, name: ch.name, plain: ch.plain });
     return { pad: k, before, after };
 }
 
@@ -290,7 +304,7 @@ export function chordIndicator(t, anySounding) {
     if (!chordLayoutOn(t)) return null;
     const k = S.chordHeldSlots[S.chordHeldSlots.length - 1];
     const h = k !== undefined ? heldChords.get(k) : null;
-    if (h) return h.numeral + ' · ' + h.name;
+    if (h && h.t === t) return h.numeral + ' · ' + h.name;
     const set = settingsOf(t);
     if (set.select && !anySounding && S.chordLast[t]) {
         const { key, scale } = effKeyScale();
@@ -348,7 +362,7 @@ export function chordSlotKnob(t, k, knob, steps) {
     }
     if (JSON.stringify(s) === before) return false;
     /* The held chord sounds the edit; the map carries it to the next press. */
-    if (!settingsOf(t).select && heldChords.has(k)) revoiceHeld(t);
+    if (!settingsOf(t).select && heldChords.has(k)) S.chordPendingRevoice = revoiceHeld(t);
     S.pendingPadNoteMapRecompute = true;
     S.chordDirty = true;
     S.screenDirty = true;

@@ -22,7 +22,7 @@
  * Extracted from ui.js (Phase 6a of the modularity refactor, increment 1).
  */
 
-import { restoreChordSidecar, resetChordTransient } from './ui_chord_pads.mjs';
+import { restoreChordSidecar, resetChordTransient, clearHeldChords } from './ui_chord_pads.mjs';
 import {
     setButtonLED
 } from '/data/UserData/schwung/shared/input_filter.mjs';
@@ -1538,6 +1538,7 @@ export function restoreUiSidecar(applyDefaultsNow) {
             S.padLayoutChord[_t] = Array.isArray(us.pchd) ? !!us.pchd[_t] : false;
         restoreChordSidecar(us.chd);
         resetChordTransient();
+        clearHeldChords();
         for (let _t = 0; _t < NUM_TRACKS; _t++) {
             if (S.trackActiveBank[_t] === BANK_CHORD && !S.padLayoutChord[_t]) S.trackActiveBank[_t] = 0;
             S.chordLast[_t] = null;
@@ -1651,6 +1652,11 @@ export function restoreUiSidecar(applyDefaultsNow) {
         S.scaleAware   = 1;
         S.metronomeVol = 100;
         S.trackPadMode[0] = PAD_MODE_DRUM;
+        /* A fresh project starts on the Scale layout with default chords —
+         * never with the last project's. */
+        for (let _t = 0; _t < NUM_TRACKS; _t++) { S.padLayoutChord[_t] = false; S.chordLast[_t] = null; }
+        restoreChordSidecar(null);
+        resetChordTransient();
         /* Sync t0's drum lane data + drumClipNonEmpty from the freshly-reset
          * DSP. syncClipsFromDsp already ran earlier in the post-DSP-sync
          * drain, but its drum-sync block was gated on JS trackPadMode==DRUM,

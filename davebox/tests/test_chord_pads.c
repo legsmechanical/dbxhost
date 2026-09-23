@@ -15,6 +15,8 @@
  *   7. a malformed chord token cannot write past PAD_CHORD_MAX
  *   8. while recording, every chord note gets the audio-thread press and
  *      release stamps the recorder reads
+ *  10. a re-voice while recording stamps the notes it starts and ends
+ *  11. a padmap for ANOTHER track ends the chords still held on the old one
  *   9. get_param padmap_sig matches the JS checksum of the same payload
  *      (padmapSig in ui_drummodel.mjs) — the Chord layout's self-heal
  */
@@ -233,6 +235,41 @@ static void scn_padmap_sig(void) {
     printf("PASS: chord_pads padmap_sig matches the JS checksum\n");
 }
 
+static void scn_revoice_stamps(void) {
+    hx_t *h = fresh(CHORD_MAP);
+    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+    inst->tracks[1].recording = 1;
+    pad_on(h, 0, 100); hx_render(h, 2);
+    inst->on_midi_press_active[1][72] = 0;
+    inst->on_midi_release_active[1][60] = 0;
+    hx_set_param(h, "t1_chord_revoice", "0 64+67+72");
+    HX_ASSERT(inst->on_midi_press_active[1][72], "revoice: the new note has no press stamp");
+    HX_ASSERT(inst->on_midi_release_active[1][60], "revoice: the leaving note has no release stamp");
+    hx_destroy(h);
+    printf("PASS: chord_pads a re-voice while recording stamps both edges\n");
+}
+
+static void scn_track_switch_releases(void) {
+    hx_t *h = fresh(CHORD_MAP);
+    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+    pad_on(h, 0, 100); hx_render(h, 4);
+    hx_clear_capture(h);
+    hx_set_param(h, "t2_padmap", PLAIN_MAP);        /* the user switched to track 3 */
+    hx_render(h, 4);
+    HX_ASSERT(count_inject(60, 0) >= 1 && count_inject(64, 0) >= 1 && count_inject(67, 0) >= 1,
+              "a track switch left the old track's held chord sounding");
+    HX_ASSERT(inst->pad_live_n[1][0] == 0, "the old track still lists the pad as held");
+    /* CONTROL: a re-push for the SAME track ends nothing. */
+    hx_set_param(h, "t2_padmap", PLAIN_MAP);
+    pad_on(h, 3, 100); hx_render(h, 2);
+    hx_clear_capture(h);
+    hx_set_param(h, "t2_padmap", PLAIN_MAP " 0 0 0");
+    hx_render(h, 2);
+    HX_ASSERT(count_inject(63, 0) == 0, "a same-track re-push ended a held note");
+    hx_destroy(h);
+    printf("PASS: chord_pads a track switch ends the old track's held chords\n");
+}
+
 int main(void) {
     scn_plain();
     scn_chord_press_release();
@@ -243,5 +280,7 @@ int main(void) {
     scn_overlong_token();
     scn_record_stamps();
     scn_padmap_sig();
+    scn_revoice_stamps();
+    scn_track_switch_releases();
     return 0;
 }

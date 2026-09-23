@@ -1040,6 +1040,8 @@ export const S = {
     chordDirty: false,
     /* The slot whose card is up (a knob turned while it was held); -1 = none. */
     chordCardSlot: -1,
+    /* A re-voice a slot-card knob made, for the input handler to book. */
+    chordPendingRevoice: null,
     /* padmapSig() of the last padmap pushed — the Chord layout's self-heal. */
     lastPadmapSig: -1,
     drumInpQuant: new Array(8).fill(0),   /* per-track drum input quantize index 0-8 */

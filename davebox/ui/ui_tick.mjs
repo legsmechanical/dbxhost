@@ -23,7 +23,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
-    POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS } from './ui_constants.mjs';
+    POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS, BANK_CHORD } from './ui_constants.mjs';
 
 import { S, standDownBankDisplay, stepRevealAvailable } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -36,7 +36,7 @@ import { reconcileParallelAll, parallelForgetPushed, parallelSweepTick } from '.
 import { autoBankTick } from './ui_automation_bank.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, showActionPopupFor, showTrackVolCard, uuidToStatePath, hostIdentity, projectDisplayName,
-    commitSnapshot } from './ui_persistence.mjs';
+    commitSnapshot, writeSidecar } from './ui_persistence.mjs';
 import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
          projectPickerTextEntryTick, requestSetForSlot, prepareSlotFor, slotRefusedUnreadable, reopenPickerRefusingUnreadable,
          checkProjectOpened, lockAfterProjectLost } from './ui_dialogs.mjs';
@@ -140,6 +140,9 @@ function convertTrackType(t, toDrum) {
      * tN_padmap (without the barrier, same-buffer coalescing drops the convert). */
     if (trackHasAnyData(t)) syncClipsFromDsp();
     else host_module_get_param('t' + t + '_pad_mode');
+    /* A drum track has no Chord layout, so no CHORD bank either. */
+    if (S.trackActiveBank[t] === BANK_CHORD) S.trackActiveBank[t] = 0;
+    if (t === S.activeTrack && S.activeBank === BANK_CHORD) S.activeBank = 0;
     if (toDrum) {
         if (t === S.activeTrack && (S.activeBank === 2 || S.activeBank === 4)) S.activeBank = 0;
     } else {
@@ -164,6 +167,8 @@ function convertTrackToConduct(t) {
     host_module_set_param('t' + t + '_convert_to_conduct', '1');
     S.trackPadMode[t] = PAD_MODE_CONDUCT;
     S.pendingConductReadback = { t: t, prevMode: prevMode };
+    if (S.trackActiveBank[t] === BANK_CHORD) S.trackActiveBank[t] = 0;
+    if (t === S.activeTrack && S.activeBank === BANK_CHORD) S.activeBank = 0;
     /* Mirror convertTrackType's drain barrier: the convert set_param must drain
      * before computePadNoteMap pushes tN_padmap, or same-buffer tN_* coalescing
      * drops the convert (DSP never sets the role → false refusal). The first
@@ -485,6 +490,9 @@ export function _tickImpl() {
         }
     }
 
+    /* A slot or CHORD bank edit is saved once the knobs let go — never while
+     * the transport plays (a file write mid-bar), and only once per edit. */
+    if (S.chordDirty && S.knobTouched < 0 && !S.playing) { S.chordDirty = false; writeSidecar(); }
     /* A Chord-layout modifier or setting that could not push from its own
      * handler (ui_chord_pads.mjs). */
     if (S.chordPadmapNow) { S.chordPadmapNow = false; S.pendingPadNoteMapRecompute = true; }

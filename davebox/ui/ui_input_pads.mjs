@@ -35,7 +35,7 @@ import { applyBankParam, applyTrackConfig, readBankParams,
 import { soundVouchLivePress } from './ui_sound.mjs';
 import { chordLayoutOn, chordRowOf, chordSlotPress, chordSlotRelease, chordModPress,
     chordModRelease, chordPitchHeld, padPitches, ROW_SLOTS, ROW_MODS,
-    setChordLayout } from './ui_chord_pads.mjs';
+    setChordLayout, chordPadHeld } from './ui_chord_pads.mjs';
 import { handoffRecordingToTrack, recordNoteOn, recordNoteOff,
     openTapTempo, registerTapTempo, extNoteOffAll,
     stepRecPadPress, stepRecPadRelease } from './ui_record.mjs';
@@ -81,11 +81,29 @@ function _pitchHeldElsewhere(p, exceptPad) {
     return false;
 }
 
-function _chordApplyRevoice(rv) {
+/* A held chord was re-voiced: the notes it lost and gained, in the books —
+ * held notes, the recorder and step record. The engine stamped both edges
+ * itself (pad_revoice), so the recorder finds them. Exported for the slot
+ * card's knobs, which re-voice a held chord too. */
+export function chordApplyRevoice(rv) {
     if (!rv) return;
-    for (const p of rv.before) if (rv.after.indexOf(p) < 0 && !_pitchHeldElsewhere(p, rv.pad)) S.liveActiveNotes.delete(p);
-    for (const p of rv.after) S.liveActiveNotes.add(p);
+    const t = S.activeTrack;
+    for (const p of rv.before) {
+        if (rv.after.indexOf(p) >= 0 || _pitchHeldElsewhere(p, rv.pad)) continue;
+        S.liveActiveNotes.delete(p);
+        if (S.stepRecActive) stepRecPadRelease(p);
+        if (S.recordArmed) recordNoteOff(p);
+    }
+    for (const p of rv.after) {
+        if (rv.before.indexOf(p) >= 0) continue;
+        const had = S.liveActiveNotes.has(p);
+        S.liveActiveNotes.add(p);
+        if (had) continue;
+        if (S.stepRecActive) stepRecPadPress(p, stepEntryVelocity(t, S.lastPadVelocity, false));
+        if (S.recordArmed && t === S.recordArmedTrack) recordNoteOn(p, S.lastPadVelocity, S.recordArmedTrack);
+    }
 }
+const _chordApplyRevoice = chordApplyRevoice;
 
 function _chordPushNow() {
     if (S.chordPadmapNow) { S.chordPadmapNow = false; computePadNoteMap(); }
@@ -132,9 +150,9 @@ function _chordPadPress(padIdx, d2) {
 }
 
 /* A release on the slot or modifier row. Returns true when handled. */
-function _chordPadRelease(padIdx) {
+function _chordPadRelease(padIdx, slot) {
     const t = S.activeTrack;
-    const row = chordRowOf(padIdx);
+    const row = slot ? ROW_SLOTS : chordRowOf(padIdx);
     if (row === ROW_MODS) {
         _chordApplyRevoice(chordModRelease(t, padIdx - 8));
         _chordPushNow();
@@ -1943,6 +1961,9 @@ export function _onPadRelease(status, d1, d2) {
             S.screenDirty = true;
             return;
         }
+        /* A held chord slot releases through the chord books even if the
+         * track or the layout changed under the finger. */
+        if (padIdx < 8 && chordPadHeld(padIdx)) { _chordPadRelease(padIdx, true); return; }
         if (padIdx < 16 && !S.sessionView && chordLayoutOn(S.activeTrack) && _chordPadRelease(padIdx)) return;
         const pitch = padPitch[padIdx] >= 0 ? padPitch[padIdx] : S.padNoteMap[padIdx];
         if (pitch === 0xFF) return; /* OOB pad — press was skipped, nothing to release */
@@ -1965,10 +1986,13 @@ export function _onPadRelease(status, d1, d2) {
         }
         padPressTick[padIdx] = -1;
         /* STEP RECORD: the last release commits the chord and advances. */
-        if (S.stepRecActive && !S.sessionView &&
+        /* A pitch another held pad still holds keeps sounding (the engine
+         * ends it with the LAST holder), so it keeps recording too. */
+        const _stillHeld = S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM && _pitchHeldElsewhere(pitch, padIdx);
+        if (S.stepRecActive && !S.sessionView && !_stillHeld &&
                 S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM)
             stepRecPadRelease(pitch);
-        if (S.recordArmed) {
+        if (S.recordArmed && !_stillHeld) {
             const _t = S.activeTrack;
             if (S.trackPadMode[_t] === PAD_MODE_DRUM) {
                 if (_t === S.recordArmedTrack)

@@ -219,6 +219,16 @@ static int sp_track_live(sp_ctx_t *cx) {
          * Pushing on every computePadNoteMap recompute (not just init)
          * means the enable below survives DSP instance recreate
          * (state_load destroy/recreate path). */
+        /* The active track changed: melodic pads still held on the old one
+         * would otherwise never end (their releases arrive for the new
+         * track). End them now — a switch lets go of what you were holding. */
+        if (inst->active_track < NUM_TRACKS && inst->active_track != (uint8_t)tidx) {
+            int ot = inst->active_track;
+            seq8_track_t *otr = &inst->tracks[ot];
+            if (otr->pad_mode != PAD_MODE_DRUM)
+                for (int pi = 0; pi < 32; pi++)
+                    if (inst->pad_live_n[ot][pi]) pad_voices_off(inst, otr, ot, pi);
+        }
         capture_set_active_track(inst, tidx);
         /* This is the flag the live_notes branch above early-returns on:
          * once padmap enables inbound, on_midi owns live dispatch and a

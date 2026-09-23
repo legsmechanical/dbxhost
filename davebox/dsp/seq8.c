@@ -3624,6 +3624,26 @@ static void pad_voices_on(seq8_instance_t *inst, seq8_track_t *tr, int t, int pa
     inst->pad_live_pitch[t][pad] = n > 0 ? ps[0] : 0xFF;
 }
 
+/* Recording stamps for a note a re-voice starts or ends: the same
+ * audio-thread press/release ticks on_midi writes for a pad, so the recorder
+ * (sp_track_record) finds a stamp for every note that sounded. */
+static void pad_revoice_stamp(seq8_instance_t *inst, seq8_track_t *tr, int t,
+                              uint8_t pitch, int is_on) {
+    int pre = (!tr->recording && inst->count_in_ticks > 0 &&
+               inst->count_in_ticks <= (int32_t)(PPQN / 2) &&
+               (int)inst->count_in_track == t);
+    if (!tr->recording && !pre) return;
+    uint32_t tick;
+    if (pre) {
+        clip_t *cl = &tr->clips[tr->active_clip];
+        tick = (uint32_t)cl->loop_start * cl->ticks_per_step;
+    } else {
+        tick = tr->current_clip_tick;
+    }
+    if (is_on) { inst->on_midi_press_tick[t][pitch] = tick; inst->on_midi_press_active[t][pitch] = 1; }
+    else       { inst->on_midi_release_tick[t][pitch] = tick; inst->on_midi_release_active[t][pitch] = 1; }
+}
+
 /* Re-voice a HELD pad in place (Inv up/down, or a stack button tapped while
  * the chord sounds): notes it no longer has end, notes it gains start at the
  * press velocity, common notes carry on untouched. */
@@ -3646,13 +3666,14 @@ static void pad_revoice(seq8_instance_t *inst, seq8_track_t *tr, int t, int pad,
     for (int k = 0; k < on; k++) {
         int stays = 0;
         for (int j = 0; j < n; j++) if (ps[j] == old[k]) { stays = 1; break; }
-        if (!stays) pad_pitch_off(inst, tr, t, pad, old[k]);
+        if (!stays) { pad_revoice_stamp(inst, tr, t, old[k], 0); pad_pitch_off(inst, tr, t, pad, old[k]); }
     }
     inst->pad_chord_press = 1;
     for (int j = 0; j < n; j++) {
         int had = 0;
         for (int k = 0; k < keep; k++) if (inst->pad_live_chord[t][pad][k] == ps[j]) { had = 1; break; }
         if (had) continue;
+        pad_revoice_stamp(inst, tr, t, ps[j], 1);
         pad_pitch_on(inst, tr, t, pad, ps[j], vel);
         if (inst->pad_live_n[t][pad] < PAD_CHORD_MAX)
             inst->pad_live_chord[t][pad][inst->pad_live_n[t][pad]++] = ps[j];
