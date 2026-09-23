@@ -435,7 +435,8 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
             fprintf(fp, ",\"t%d_tr\":%d", t, (int)inst->tracks[t].transpose);
     for (t = 0; t < NUM_TRACKS; t++) {
         for (c = 0; c < NUM_CLIPS; c++) {
-            clip_t *cl = &inst->tracks[t].clips[c];
+            /* A phrase preview holding this clip saves the ORIGINAL. */
+            const clip_t *cl = aud_saved_clip(inst, t, c, 0xFF, &inst->tracks[t].clips[c]);
             fprintf(fp, ",\"t%dc%d_len\":%d", t, c, (int)cl->length);
             if (cl->loop_start != 0)
                 fprintf(fp, ",\"t%dc%d_ls\":%d", t, c, (int)cl->loop_start);
@@ -538,7 +539,7 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
                 uint16_t ni;
                 int wrote = 0;
                 for (ni = 0; ni < cl->note_count; ni++) {
-                    note_t *n = &cl->notes[ni];
+                    const note_t *n = &cl->notes[ni];
                     if (!n->active) continue;
                     if (!wrote) {
                         fprintf(fp, ",\"t%dc%d_n\":\"", t, c);
@@ -574,7 +575,7 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
             if (!inst->tracks[t].drum_clips[c]) continue;
             for (l = 0; l < DRUM_LANES; l++) {
                 drum_lane_t *dl = &inst->tracks[t].drum_clips[c]->lanes[l];
-                clip_t *dlc = &dl->clip;
+                const clip_t *dlc = aud_saved_clip(inst, t, c, l, &dl->clip);
                 uint16_t ni;
                 int has_active = 0;
                 for (ni = 0; ni < dlc->note_count; ni++)
@@ -595,7 +596,7 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
                     fprintf(fp, ",\"t%dc%dl%d_tps\":%d", t, c, l, (int)dlc->ticks_per_step);
                 int wrote = 0;
                 for (ni = 0; ni < dlc->note_count; ni++) {
-                    note_t *n = &dlc->notes[ni];
+                    const note_t *n = &dlc->notes[ni];
                     if (!n->active) continue;
                     if (!wrote) { fprintf(fp, ",\"t%dc%dl%d_n\":\"", t, c, l); wrote = 1; }
                     fprintf(fp, "%u:%d:%d:%d;",
@@ -799,6 +800,10 @@ static void seq8_save_state(seq8_instance_t *inst) {
 }
 
 static void seq8_load_state(seq8_instance_t *inst) {
+    /* A preview never outlives the project it was previewing in: the clips it
+     * would restore are about to be replaced. */
+    inst->aud.active = 0;
+    inst->aud.pending = 0;
     /* A load is the selection: from here on a project IS live and saving is
      * allowed again. Cleared up front, not on success — a missing/empty state
      * file is a legitimate brand-new project, and leaving the flag set would

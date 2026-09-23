@@ -84,6 +84,65 @@ static int sp_track_live(sp_ctx_t *cx) {
         return 1;
     }
 
+    if (!strcmp(sub, "audclip")) {
+        /* tN_audclip "<res_idx> <length_steps> <lane|-1>|a tick pitch vel gate;…"
+         * or "off" — the phrase library's in-time preview. The phrase is built
+         * on a copy of the track's current clip (or of one drum lane of it:
+         * play effects, direction and lane pitch carry over) and swapped in on
+         * the next beat; "off" puts the original back. Nothing is saved or
+         * undone: see audclip_t. Refused while the track records. A drum phrase
+         * is "a tick vel gate" (the lane's pitch). */
+        audclip_t *a = &inst->aud;
+        if (!strncmp(val ? val : "", "off", 3)) {
+            if (a->active) a->pending = 2;
+            else a->pending = 0;
+            if (a->pending && !inst->playing) aud_apply(inst);
+            return 1;
+        }
+        if (tr->recording || tr->record_armed) return 1;
+        const char *s = val ? val : "";
+        int ridx = clamp_i(my_atoi(s), 0, 5);
+        while (*s && *s != ' ') s++;
+        while (*s == ' ') s++;
+        int len = clamp_i(my_atoi(s), 1, SEQ_STEPS);
+        while (*s && *s != ' ') s++;
+        while (*s == ' ') s++;
+        int lane_in = my_atoi(s);
+        int lane = (lane_in < 0 || lane_in >= DRUM_LANES) ? 0xFF : lane_in;
+        const char *ops = strchr(s, '|');
+        ops = ops ? ops + 1 : "";
+        int c = (int)tr->active_clip;
+        if (lane != 0xFF && tr->pad_mode != PAD_MODE_DRUM) return 1;
+        /* A preview elsewhere ends first (the screen closes one before it opens
+         * another, but a stale one must never be left holding a clip). */
+        if (a->active && (a->track != tidx || a->clip != c || a->lane != (uint8_t)lane)) {
+            a->pending = 2;
+            aud_apply(inst);
+        }
+        clip_t *live = aud_live(inst, tidx, c, lane);
+        if (!live) return 1;
+        clip_t *st = &a->staged;
+        memcpy(st, a->active ? &a->backup : live, sizeof(clip_t));   /* built on the ORIGINAL */
+        clip_wipe_notes(st);
+        clip_import_frame(st, TPS_VALUES[ridx], (uint16_t)len);
+        uint8_t lane_pitch = lane != 0xFF ? tr->drum_clips[c]->lanes[lane].midi_note : 0;
+        while (*ops) {
+            while (*ops == ' ' || *ops == ';') ops++;
+            if (*ops != 'a') { while (*ops && *ops != ';') ops++; continue; }
+            if (lane == 0xFF) clip_note_apply_op(st, 'a', ops + 1);
+            else lane_note_apply_op(st, lane_pitch, 'a', ops + 1);
+            while (*ops && *ops != ';') ops++;
+        }
+        clip_compact_notes(st);
+        clip_build_steps_from_notes(st);
+        a->track = (uint8_t)tidx;
+        a->clip = (uint8_t)c;
+        a->lane = (uint8_t)lane;
+        a->pending = 1;
+        if (!inst->playing) aud_apply(inst);
+        return 1;
+    }
+
     if (!strcmp(sub, "audition")) {
         /* tN_audition "[clip C] on p v … off p … alloff" — Import MIDI's preview.
          * Sounds notes through the track's own chain (play effects, route) like

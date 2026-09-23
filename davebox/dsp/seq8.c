@@ -917,11 +917,26 @@ typedef struct {
 #define LRS_SET(tr, s)  ((tr)->live_recorded_steps[(s)>>3] |=  (uint8_t)(1u<<((s)&7)))
 #define LRS_TEST(tr, s) ((tr)->live_recorded_steps[(s)>>3] &   (1u<<((s)&7)))
 
+/* The phrase-library preview: a phrase swapped into one clip (or one drum
+ * lane) in place of what it holds, on the next beat, and the original put back
+ * when the preview ends. `backup` is the original; `staged` the phrase waiting
+ * for its beat. Nothing here is saved: the serializer reads `backup` for the
+ * previewed clip (aud_saved_clip), so a save mid-preview writes the original. */
+typedef struct {
+    uint8_t  active;          /* the phrase is in the clip now */
+    uint8_t  pending;         /* 1 = swap `staged` in, 2 = restore `backup` — at the next beat */
+    uint8_t  track, clip;
+    uint8_t  lane;            /* 0xFF = the melodic clip, else a drum lane */
+    clip_t   backup;
+    clip_t   staged;
+} audclip_t;
+
 typedef struct {
     float        sample_rate;
     uint32_t     block_count;
     FILE        *log_fp;
 
+    audclip_t    aud;
     seq8_track_t tracks[NUM_TRACKS];
     uint8_t      active_track;
 
@@ -1491,6 +1506,13 @@ typedef struct {
                                     * loop pushes trailing notes off the last bar
                                     * (dropped); smaller packs the take to the front. */
 } seq8_instance_t;
+
+/* What the serializer should write for clip (t,c) / lane: the original while a
+ * preview holds it. */
+static const clip_t *aud_saved_clip(const seq8_instance_t *inst, int t, int c, int lane, const clip_t *live) {
+    const audclip_t *a = &inst->aud;
+    return (a->active && a->track == t && a->clip == c && a->lane == (uint8_t)lane) ? &a->backup : live;
+}
 
 static const host_api_v1_t *g_host = NULL;
 static seq8_instance_t     *g_inst = NULL;
@@ -4592,6 +4614,44 @@ static void clip_import_frame(clip_t *cl, uint16_t tps, uint16_t len) {
     cl->length = len;
     cl->loop_start = 0;
     cl->occ_dirty = 1;
+}
+
+/* ---- phrase preview (tN_audclip) ---------------------------------------- */
+static clip_t *aud_live(seq8_instance_t *inst, int t, int c, int lane) {
+    seq8_track_t *tr = &inst->tracks[t];
+    if (lane == 0xFF) return &tr->clips[c];
+    return tr->drum_clips[c] ? &tr->drum_clips[c]->lanes[lane].clip : NULL;
+}
+/* Swap the staged phrase in, or the original back. Runs on the beat from the
+ * render loop while playing, at once while stopped; either way single-threaded
+ * with set_param. The playhead is re-anchored to the master clock so the new
+ * material lands in phase. */
+static void aud_apply(seq8_instance_t *inst) {
+    audclip_t *a = &inst->aud;
+    int p = a->pending;
+    a->pending = 0;
+    if (!p) return;
+    seq8_track_t *tr = &inst->tracks[a->track];
+    clip_t *live = aud_live(inst, a->track, a->clip, a->lane);
+    if (!live) { a->active = 0; return; }
+    if (p == 1) {
+        if (!a->active) { memcpy(&a->backup, live, sizeof(clip_t)); a->active = 1; }
+        memcpy(live, &a->staged, sizeof(clip_t));
+    } else if (a->active) {
+        memcpy(live, &a->backup, sizeof(clip_t));
+        a->active = 0;
+    }
+    int is_active = ((int)tr->active_clip == a->clip);
+    if (a->lane == 0xFF) {
+        if (is_active) silence_track_notes_v2(inst, tr);
+        if (is_active && inst->playing) melodic_anchor_playhead(inst, tr, live);
+        else if (is_active) { if (tr->current_step >= live->length) tr->current_step = 0; if (tr->tick_in_step >= live->ticks_per_step) tr->tick_in_step = 0; }
+    } else {
+        drum_pfx_note_off_imm(inst, tr, &tr->drum_lane_pfx[a->lane], tr->drum_clips[a->clip]->lanes[a->lane].midi_note);
+        if (is_active && inst->playing) drum_lane_anchor_playhead(inst, tr, a->lane, live);
+        else if (is_active) { tr->drum_current_step[a->lane] = 0; tr->drum_tick_in_step[a->lane] = 0; }
+    }
+    rui_mark(inst, a->track, a->clip);
 }
 
 /* Drum-lane note op for the remote piano roll. A lane is monophonic at a fixed
