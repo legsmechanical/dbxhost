@@ -56,6 +56,7 @@ export const PB_STYLE_BASIC = 'BASIC';
 /* How many instruments of one drum phrase the browser places (more are
  * dropped, and counted). */
 export const PB_MAX_VOICES = 6;
+export const PB_OCT_MIN = -3, PB_OCT_MAX = 3;
 export const PB_MAX_NOTES = 512;          /* MAX_NOTES_PER_CLIP, per clip or lane */
 const MAX_STEPS = 256;
 
@@ -110,6 +111,21 @@ export function styleList(phrases) {
     const out = [PB_STYLE_ALL, ...[...tags].sort()];
     if (basic) out.push(PB_STYLE_BASIC);
     return out;
+}
+
+/* The picker's list: EVERY phrase of the type, grouped by style (the genre
+ * tags in order, then BASIC); within a group the library's order. K2 Style is
+ * a jump to where a group starts (Josh, 2026-09-23: "phrase picker should
+ * scroll through everything in the selected type. style is just a way to jump
+ * to a particular part of that list"). → { list, styles, starts } */
+export const styleOf = (p) => p.g || PB_STYLE_BASIC;
+export function styleGroups(phrases) {
+    const styles = styleList(phrases).filter(x => x !== PB_STYLE_ALL);
+    const rank = new Map(styles.map((x, i) => [x, i]));
+    const list = phrases.map((p, i) => [p, i])
+        .sort((a, b) => rank.get(styleOf(a[0])) - rank.get(styleOf(b[0])) || a[1] - b[1]).map(x => x[0]);
+    const starts = styles.map(st => list.findIndex(p => styleOf(p) === st));
+    return { list, styles, starts };
 }
 
 export function filterPhrases(phrases, style) {
@@ -187,7 +203,8 @@ function scaleNote(t, g, f, ticks) {
 }
 
 /* Melodic: [{t, p, v, g}] in the project's key/scale at a time scale. */
-export function melodicNotes(p, timeIdx, key, scale) {
+/* `octave` shifts the whole phrase by octaves (K4 Octave). */
+export function melodicNotes(p, timeIdx, key, scale, octave) {
     const tm = timing(p, timeIdx);
     const out = [], seen = new Set();
     for (const n of decodePhrase(p)) {
@@ -196,7 +213,7 @@ export function melodicNotes(p, timeIdx, key, scale) {
         /* The degree moves with the key; the chromatic offset rides on top, so
          * a passing note stays a passing note instead of snapping into scale. */
         const dia = clamp(pitchInC(p.cat, p.mode, Object.assign({}, n, { acc: 0 })), 0, 127);
-        const pitch = clamp(remapPitch(dia, 0, MODE_SCALE[p.mode] ?? 1, key | 0, scale | 0) + (n.acc || 0), 0, 127);
+        const pitch = clamp(remapPitch(dia, 0, MODE_SCALE[p.mode] ?? 1, key | 0, scale | 0) + (n.acc || 0) + 12 * (octave | 0), 0, 127);
         const k = t * 128 + pitch;
         if (seen.has(k)) continue;
         seen.add(k);
@@ -291,10 +308,10 @@ export function defaultNoteAssign(voices, cat) {
 }
 /* [{t, p, v, g}]: voice i plays note noteAssign[i]; two voices on one note
  * that strike on the same tick make one hit, the louder. */
-export function drumAsMelodicNotes(p, timeIdx, voices, noteAssign) {
+export function drumAsMelodicNotes(p, timeIdx, voices, noteAssign, octave) {
     const tm = timing(p, timeIdx);
     const noteOf = new Map();
-    voices.forEach((v, i) => { if (i < noteAssign.length && noteAssign[i] >= 0) noteOf.set(v.pitch, clamp(noteAssign[i], 0, 127)); });
+    voices.forEach((v, i) => { if (i < noteAssign.length && noteAssign[i] >= 0) noteOf.set(v.pitch, clamp(noteAssign[i] + 12 * (octave | 0), 0, 127)); });
     const m = new Map();
     for (const n of decodePhrase(p)) {
         const pitch = noteOf.get(n.p);
@@ -346,7 +363,7 @@ export function lanesImportVal(tm, laneNotes, replacing) {
 
 /* Rows for the screen's note roll: melodic → one row per distinct pitch,
  * low at the bottom; drum → one row per voice. [{t, g, row}] plus rows. */
-export function rollOf(p, timeIdx, key, scale) {
+export function rollOf(p, timeIdx, key, scale, octave) {
     const tm = timing(p, timeIdx);
     if (isPbDrumCat(p.cat)) {
         const voices = drumVoices(p);
@@ -357,7 +374,7 @@ export function rollOf(p, timeIdx, key, scale) {
         });
         return { ticks: tm.ticks, rows: voices.length, notes };
     }
-    const ns = melodicNotes(p, timeIdx, key, scale);
+    const ns = melodicNotes(p, timeIdx, key, scale, octave);
     const pitches = [...new Set(ns.map(n => n.p))].sort((a, b) => b - a);
     const row = new Map(pitches.map((pp, i) => [pp, i]));
     return { ticks: tm.ticks, rows: pitches.length, notes: ns.map(n => ({ t: n.t, g: n.g, row: row.get(n.p), v: n.v })) };

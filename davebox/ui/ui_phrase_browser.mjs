@@ -6,11 +6,15 @@
  *
  *   K1 Type    the instrument category (a drum track: drum categories only;
  *              a melodic track: every category — a drum phrase plays notes)
- *   K2 Style   ALL, a genre name tag, or BASIC
- *   K3 Time    ÷8 … ×8
- *   K4 Voice   a drum phrase with several instruments: which one the pads set
- *   jog        opens the phrase PICKER (a list over the page, many at a time —
- *              Josh, 2026-09-23) and moves through it; click or Back closes it
+ *   K2 Style   jumps to where a style starts in the list (a genre name tag, or
+ *              BASIC); follows the phrase as the list is scrolled
+ *   K3 Time    /8 … x8
+ *   K4 Octave  melodic tracks: −3 … +3, heard and loaded (Josh, 2026-09-23)
+ *   K4 Voice   drum tracks (K5 on a melodic track): with a phrase of several
+ *              instruments, which one the pads set
+ *   jog        opens the phrase PICKER (every phrase of the type, many at a
+ *              time) and moves through it; it closes half a second after the
+ *              jog is let go (Josh, 2026-09-23), or on a click or Back
  *   click      load · Shift+click: preview on/off · Back: leave
  *   pads       put the selected instrument on the tapped pad (drum track: its
  *              lane; melodic track: its note) and step to the next one — Josh,
@@ -43,8 +47,8 @@ import {
     hdrPrint, hdrWidth, MV_FOOTER_Y,
 } from './ui_movy.mjs';
 import {
-    PB_DRUM_CATS, PB_MELODIC_CATS, PB_CAT_LABEL, PB_TIMES, PB_TIME_DEFAULT, PB_STYLE_ALL, PB_BAR,
-    isPbDrumCat, parseLibrary, mergeLibraries, styleList, filterPhrases, timing, melodicNotes,
+    PB_DRUM_CATS, PB_MELODIC_CATS, PB_CAT_LABEL, PB_TIMES, PB_TIME_DEFAULT, PB_BAR, PB_OCT_MIN, PB_OCT_MAX,
+    isPbDrumCat, parseLibrary, mergeLibraries, styleGroups, styleOf, timing, melodicNotes,
     drumVoices, defaultAssign, drumLaneNotes, defaultNoteAssign, drumAsMelodicNotes,
     melodicImportVal, melodicAudclipVal, laneImportVal, laneAudclipVal, lanesAudclipVal, lanesImportVal,
     rollOf, PB_MAX_VOICES,
@@ -59,7 +63,9 @@ export const PB_USER_DIR = '/data/UserData/davebox-phrases';
 export const PB_KNOB = 5;                 /* K6 on the CLIP / DRUM LANE bank */
 
 /* Detents per step — the editor's PICK / DELIBERATE rates. */
-const KNOB_SENS = [12, 12, 12, 6];
+const KNOB_SENS = [12, 12, 12, 12, 6];
+/* The picker closes this long after the jog is let go. */
+const PICKER_LINGER_MS = 500;
 
 let PB = null;
 const LIB = new Map();                    /* cat → phrases, read while the screen is open */
@@ -112,10 +118,10 @@ export function pbOpen(t) {
     const cats = order.filter(catExists);
     if (!cats.length) { showActionPopup('PHRASES', 'NO LIBRARY'); return false; }
     PB = {
-        track: t, drum, cats, catIdx: 0, styles: [PB_STYLE_ALL], styleIdx: 0, time: PB_TIME_DEFAULT,
+        track: t, drum, cats, catIdx: 0, styles: [], starts: [], time: PB_TIME_DEFAULT, octave: 0,
         all: [], list: [], idx: 0, voices: [], assign: [], voiceSel: 0,
         lane: drum ? (GS.activeDrumLane[t] | 0) : -1, clip: GS.trackActiveClip[t] | 0,
-        hear: true, confirm: false, picker: false, knobAcc: [0, 0, 0, 0],
+        hear: true, confirm: false, picker: false, jogTouched: false, jogLetGo: 0, knobAcc: [0, 0, 0, 0, 0],
         staged: null, mode: null, free: null,
     };
     const mem = pbMem[t];
@@ -136,7 +142,7 @@ export function pbClose() {
 
 function remember() {
     const p = cur();
-    pbMem[PB.track] = { cat: PB.cats[PB.catIdx], style: PB.styles[PB.styleIdx], time: PB.time, id: p ? p.id : null };
+    pbMem[PB.track] = { cat: PB.cats[PB.catIdx], time: PB.time, octave: PB.octave, id: p ? p.id : null };
 }
 
 /* ---- the selection ---- */
@@ -145,20 +151,15 @@ function cur() { return PB && PB.list.length ? PB.list[Math.max(0, Math.min(PB.l
 function curCat() { return PB.cats[PB.catIdx]; }
 
 function enterCategory(mem) {
-    PB.all = libraryOf(curCat());
-    PB.styles = styleList(PB.all);
-    const si = mem ? PB.styles.indexOf(mem.style) : -1;
-    PB.styleIdx = si >= 0 ? si : 0;
+    const g = styleGroups(libraryOf(curCat()));
+    PB.list = g.list; PB.styles = g.styles; PB.starts = g.starts;
     if (mem && mem.time >= 0 && mem.time < PB_TIMES.length) PB.time = mem.time;
-    enterStyle(mem ? mem.id : null);
-}
-
-function enterStyle(id) {
-    PB.list = filterPhrases(PB.all, PB.styles[PB.styleIdx]);
-    const i = id ? PB.list.findIndex(p => p.id === id) : -1;
+    if (mem && mem.octave >= PB_OCT_MIN && mem.octave <= PB_OCT_MAX) PB.octave = mem.octave;
+    const i = mem && mem.id ? PB.list.findIndex(p => p.id === mem.id) : -1;
     PB.idx = i >= 0 ? i : 0;
     enterPhrase();
 }
+function styleIdx() { const p = cur(); return p ? Math.max(0, PB.styles.indexOf(styleOf(p))) : 0; }
 
 /* A new phrase: its instruments, and where each goes by default. */
 function enterPhrase() {
@@ -186,8 +187,8 @@ function replacing() {
 function drumLanes() { return drumLaneNotes(cur(), PB.time, PB.voices, PB.assign); }
 function melodicOut() {
     const p = cur();
-    return isPbDrumCat(p.cat) ? drumAsMelodicNotes(p, PB.time, PB.voices, PB.assign)
-                              : melodicNotes(p, PB.time, GS.padKey | 0, GS.padScale | 0);
+    return isPbDrumCat(p.cat) ? drumAsMelodicNotes(p, PB.time, PB.voices, PB.assign, PB.octave)
+                              : melodicNotes(p, PB.time, GS.padKey | 0, GS.padScale | 0, PB.octave);
 }
 
 /* ---- the preview ---- */
@@ -217,7 +218,7 @@ function stopPreview() {
 }
 
 function stageKey(mode) {
-    return [mode, cur().id, PB.time, PB.assign.join(','), GS.padKey, GS.padScale].join('|');
+    return [mode, cur().id, PB.time, PB.octave, PB.assign.join(','), GS.padKey, GS.padScale].join('|');
 }
 
 function previewTick() {
@@ -323,9 +324,15 @@ function commit() {
 
 /* ---- input ---- */
 
+/* Which knob picks the voice: K4 on a drum track, K5 on a melodic one (K4 is
+ * Octave there). -1 when the phrase has one instrument. */
+function voiceKnob() { return PB.voices.length < 2 ? -1 : (PB.drum ? 3 : 4); }
+
 export function pbOnKnob(k, delta) {
-    if (!PB || PB.confirm || k > 3 || !delta) return;
-    if (k === 3 && PB.voices.length < 2) return;
+    if (!PB || PB.confirm || k > 4 || !delta) return;
+    const kind = k === 0 ? 'type' : k === 1 ? 'style' : k === 2 ? 'time'
+        : k === voiceKnob() ? 'voice' : (k === 3 && !PB.drum) ? 'octave' : null;
+    if (!kind) return;
     PB.knobAcc[k] += delta;
     const sens = KNOB_SENS[k];
     let steps = 0;
@@ -333,25 +340,36 @@ export function pbOnKnob(k, delta) {
     while (PB.knobAcc[k] <= -sens) { PB.knobAcc[k] += sens; steps--; }
     if (!steps) return;
     const clampI = (x, n) => Math.max(0, Math.min(n - 1, x));
-    if (k === 0) {
+    if (kind === 'type') {
         const was = PB.catIdx;
         PB.catIdx = clampI(PB.catIdx + steps, PB.cats.length);
-        if (PB.catIdx !== was) enterCategory({ style: PB_STYLE_ALL, time: PB.time, id: null });
-    } else if (k === 1) {
-        const was = PB.styleIdx;
-        PB.styleIdx = clampI(PB.styleIdx + steps, PB.styles.length);
-        if (PB.styleIdx !== was) enterStyle(cur() ? cur().id : null);
-    } else if (k === 2) {
+        if (PB.catIdx !== was) enterCategory({ time: PB.time, octave: PB.octave, id: null });
+    } else if (kind === 'style') {
+        const was = styleIdx();
+        const to = clampI(was + steps, PB.styles.length);
+        if (to !== was && PB.starts[to] >= 0) { PB.idx = PB.starts[to]; enterPhrase(); }
+    } else if (kind === 'time') {
         PB.time = clampI(PB.time + steps, PB_TIMES.length);
+    } else if (kind === 'octave') {
+        PB.octave = Math.max(PB_OCT_MIN, Math.min(PB_OCT_MAX, PB.octave + steps));
     } else {
         PB.voiceSel = clampI(PB.voiceSel + steps, PB.voices.length);
     }
     GS.screenDirty = true;
 }
 
+/* The jog's touch: the picker stays while it is held and goes half a second
+ * after it is let go. */
+export function pbJogTouch(on) {
+    if (!PB) return;
+    PB.jogTouched = !!on;
+    if (!on) PB.jogLetGo = nowMs();
+}
+
 export function pbOnJog(delta) {
     if (!PB || PB.confirm || !delta || !PB.list.length) return;
     PB.picker = true;
+    if (!PB.jogTouched) PB.jogLetGo = nowMs();       /* no touch seen: time from the turn */
     GS.screenDirty = true;
     const was = PB.idx;
     PB.idx = Math.max(0, Math.min(PB.list.length - 1, PB.idx + (delta > 0 ? 1 : -1)));
@@ -438,6 +456,7 @@ export function pbTick() {
      * leave. */
     if (GS.activeTrack !== PB.track || isDrumTrack(PB.track) !== PB.drum || GS.sessionView) { pbClose(); return; }
     if (GS.recordArmed) { pbClose(); return; }
+    if (PB.picker && !PB.jogTouched && nowMs() - PB.jogLetGo >= PICKER_LINGER_MS) { PB.picker = false; GS.screenDirty = true; }
     previewTick();
     if (PB.mode === 'free' || (nowMs() % 400) < 20) GS.screenDirty = true;
 }
@@ -460,15 +479,19 @@ function targetLabel(x) {
     return PB.drum ? 'P' + (x + 1) : noteName(x);
 }
 
+const OCT_LABELS = ['-3', '-2', '-1', '0', '+1', '+2', '+3'];
 function cells() {
     const cats = PB.cats.map(c => PB_CAT_LABEL[c] || c.toUpperCase());
+    const si = styleIdx();
     const out = [
         { kind: 'enumsq', label: 'Type', name: 'Type', text: cats[PB.catIdx], options: cats, sel: PB.catIdx },
-        { kind: 'enumsq', label: 'Style', name: 'Style', text: PB.styles[PB.styleIdx], options: PB.styles, sel: PB.styleIdx },
+        { kind: 'enumsq', label: 'Style', name: 'Style', text: PB.styles[si] || '--', options: PB.styles, sel: si },
         { kind: 'enumsq', label: 'Time', name: 'Time', text: PB_TIMES[PB.time].label,
           options: PB_TIMES.map(x => x.label), sel: PB.time },
     ];
-    if (PB.voices.length > 1) {
+    if (!PB.drum) out.push({ kind: 'enumsq', label: 'Oct', name: 'Octave', text: OCT_LABELS[PB.octave - PB_OCT_MIN],
+                             options: OCT_LABELS, sel: PB.octave - PB_OCT_MIN });
+    if (voiceKnob() >= 0) {
         const opts = PB.voices.map((_, i) => voiceLabel(i) + '>' + targetLabel(PB.assign[i]));
         out.push({ kind: 'enumsq', label: 'Voice', name: 'Voice', text: voiceLabel(PB.voiceSel),
                    options: opts, sel: PB.voiceSel });
@@ -490,14 +513,14 @@ function header() {
 function footer(shift, touched) {
     const verb = PB.hear ? 'STOP' : 'HEAR';
     if (shift) return [['CLK', verb], ['BACK', '']];
-    if (touched === 3 && PB.voices.length > 1) return [['TAP', 'ASSIGN'], ['BACK', '']];
+    if (touched >= 0 && touched === voiceKnob()) return [['TAP', 'ASSIGN'], ['BACK', '']];
     if (PB.picker) return [['JOG', 'PHRASE'], ['CLK', 'PICK'], ['BACK', '']];
     return [['JOG', 'PHRASE'], ['CLK', 'LOAD'], ['BACK', '']];
 }
 
 function drawRoll(y, h) {
     const p = cur();
-    const r = rollOf(p, PB.time, GS.padKey | 0, GS.padScale | 0);
+    const r = rollOf(p, PB.time, GS.padKey | 0, GS.padScale | 0, PB.octave);
     const tm = timing(p, PB.time);
     const opts = { rows: r.rows, barTicks: Math.round(PB_BAR * tm.f) };
     if (PB.mode === 'free' && PB.free && PB.free.playhead != null) opts.playhead = PB.free.playhead;

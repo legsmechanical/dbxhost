@@ -46,8 +46,9 @@ globalThis.set_pixel = _px;
  * three instruments), served where the module keeps it ---- */
 const LIBS = {
     bass: { v: 1, cat: 'bass', phrases: [
-        { id: 'bass.a', name: 'ROOT 8THS', g: '', bars: 1, mode: 'min', n: '0 0 0 0 100 40;48 0 0 0 90 40;96 4 0 0 90 40' },
-        { id: 'bass.b', name: 'ITALO 1', g: 'ITALO', bars: 1, mode: 'min', n: '0 0 0 0 100 20;24 0 1 0 90 20' },
+        { id: 'bass.a', name: 'ITALO ROOT', g: 'ITALO', bars: 1, mode: 'min', n: '0 0 0 0 100 40;48 0 0 0 90 40;96 4 0 0 90 40' },
+        { id: 'bass.b', name: 'OCTAVES', g: '', bars: 1, mode: 'min', n: '0 0 0 0 100 20;24 0 1 0 90 20' },
+        { id: 'bass.c', name: 'ITALO OCT', g: 'ITALO', bars: 1, mode: 'min', n: '0 0 0 0 100 20;24 0 1 0 90 20' },
     ] },
     hat: { v: 1, cat: 'hat', phrases: [
         { id: 'hat.a', name: 'HOUSE OFF', g: 'HOUSE', bars: 1, n: '48 100 12;144 100 12;240 100 12;336 100 12' },
@@ -175,6 +176,37 @@ async function main() {
         assert(!pb().picker && PB.pbActive(), 'Back in the picker left the browser');
     });
 
+    step('the picker stays while the jog is touched and goes half a second after it is let go', () => {
+        midi(0x90, 9, 127); jog(1); ticks(1);
+        assert(pb().picker, 'the jog did not open the picker');
+        ticks(80);
+        assert(pb().picker, 'the picker closed while the jog was still touched');
+        midi(0x80, 9, 0); ticks(20);
+        assert(pb().picker, 'the picker closed before half a second');
+        ticks(40);
+        assert(!pb().picker && PB.pbActive(), 'the picker did not go ~0.5 s after the jog was let go');
+    });
+
+    step('the picker lists every phrase of the type; K2 Style jumps to where a style starts', () => {
+        assert(pb().list.map(p => p.id).join(',') === 'bass.a,bass.c,bass.b' && pb().styles.join(',') === 'ITALO,BASIC',
+               'list/styles: ' + pb().list.map(p => p.id) + ' / ' + pb().styles);
+        turn(1, -12); ticks(1);
+        assert(pb().idx === 0, 'K2 left did not jump to ITALO');
+        turn(1, 12); ticks(1);
+        assert(pb().idx === 2 && pb().list[2].id === 'bass.b', 'K2 right did not jump to where BASIC starts: ' + pb().idx);
+        turn(1, -12); ticks(2);
+    });
+
+    step('K4 Octave on a melodic track: the preview and the load move by octaves', () => {
+        const n = writes.length;
+        turn(3, 12); ticks(2);
+        assert(pb().octave === 1, 'octave ' + pb().octave);
+        const ac = since(n, /^t1_audclip$/);
+        assert(ac.length && /\|a 0 48 100 /.test(ac[ac.length - 1][2]), 'preview not an octave up: ' + JSON.stringify(ac.slice(-1)));
+        turn(3, -12); ticks(2);
+        assert(pb().octave === 0, 'octave back ' + pb().octave);
+    });
+
     step('Shift+click stops the preview (the clip is put back) and starts it again', () => {
         let n = writes.length;
         shiftClick(); ticks(2);
@@ -203,6 +235,10 @@ async function main() {
         assert(pb().cats[pb().catIdx] === 'hat', 'K1 did not reach HAT');
         jog(1); click(); ticks(2);
         assert(pb().voices.length === 3 && pb().assign.join(',') === '42,46,44', 'defaults: ' + pb().assign);
+        turn(4, 6); ticks(1);
+        assert(pb().voiceSel === 1, 'K5 did not pick the voice on a melodic track');
+        turn(4, -6); ticks(1);
+        assert(pb().voiceSel === 0 && pb().octave === 0, 'K5 back');
         /* the pad's own note, as the track's pad map lays it out */
         const pi = 9, note = S.padNoteMap[pi] + (S.trackOctave[1] | 0) * 12;
         assert(S.padNoteMap[pi] !== 0xFF && !pb().assign.includes(note), 'precondition: pad ' + pi + ' plays ' + note);

@@ -1861,10 +1861,14 @@ drum lane. **Touch K6 on the CLIP bank (or the DRUM LANE bank) and click the jog
 - **K1 Type** — the instrument: bass, chords, leads, pads… or kick, snare, hats,
   cymbals, toms, percussion. A drum track offers the drum types; a melodic track
   offers everything (a drum phrase then plays notes — see below).
-- **K2 Style** — ALL, a genre, or BASIC (general-purpose phrases with no genre).
+- **K2 Style** — jump to a genre's phrases, or BASIC (general-purpose phrases
+  with no genre). It shows the style of the phrase you're on.
 - **K3 Time** — play the phrase at /8, /4, /2, x1, x2, x4 or x8 of its length.
-- **Jog** — opens the list of phrases over the page; turn to move through it,
-  click (or Back) to close it.
+- **K4 Octave** (melodic tracks) — move the phrase up or down to three octaves;
+  you hear it and it loads that way.
+- **Jog** — opens the list of every phrase of the type, grouped by style, over
+  the page; turn to move through it. It closes half a second after you let go
+  of the jog (or on a click or Back).
 - **Jog click** — load the phrase. It asks first if it would replace notes
   (**Replace clip A?**); one **Undo** takes it back.
 - **Shift + jog click** — stop or start the preview. **Back** — leave with
@@ -1875,7 +1879,7 @@ time with the song when the transport runs and the track is playing its clip,
 otherwise on its own. Melodic phrases land in your project's key and scale.
 
 **Drum phrases with several instruments** (a closed and an open hat, a snare and
-a clap…): **K4 Voice** picks an instrument, and **tapping a pad puts it there** —
+a clap…): **Voice** (K4 on a drum track, K5 on a melodic one) picks an instrument, and **tapping a pad puts it there** —
 on a drum track the pad's lane, on a melodic track the pad's note — then moves on
 to the next instrument. The header shows the selected one and where it goes; the
 pads light where each instrument sits (the selected one flashes). Every tap is

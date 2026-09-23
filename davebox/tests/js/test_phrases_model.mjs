@@ -7,7 +7,7 @@
 import {
     parseLibrary, mergeLibraries, styleList, filterPhrases, decodePhrase, pitchInC, remapPitch,
     timing, melodicNotes, drumVoices, defaultAssign, drumLaneNotes, melodicImportVal,
-    melodicAudclipVal, laneImportVal, laneAudclipVal, rollOf, PB_TIME_DEFAULT, PB_MAX_VOICES, defaultNoteAssign, drumAsMelodicNotes, lanesAudclipVal, lanesImportVal,
+    melodicAudclipVal, laneImportVal, laneAudclipVal, rollOf, PB_TIME_DEFAULT, PB_MAX_VOICES, defaultNoteAssign, drumAsMelodicNotes, lanesAudclipVal, lanesImportVal, styleGroups,
 } from '../../ui/ui_phrases.mjs';
 
 let failed = 0;
@@ -48,6 +48,25 @@ step('styles: ALL, the genre tags sorted, BASIC for the untagged; the filter fol
     assertEq(filterPhrases(ps, 'BASIC').map(p => p.id), ['2'], 'basic');
     assertEq(filterPhrases(ps, 'ACID').map(p => p.id), ['3'], 'tag');
     assert(!styleList(ps.slice(0, 1)).includes('BASIC'), 'BASIC only when something is untagged');
+});
+
+step('the picker list: every phrase, grouped by style (tags, then BASIC); starts mark each group', () => {
+    const ps = parseLibrary(lib('bass', [
+        { id: '1', name: 'A', g: 'TECHNO', n: '0 0 0 0 1 1' }, { id: '2', name: 'B', g: '', n: '0 0 0 0 1 1' },
+        { id: '3', name: 'C', g: 'ACID', n: '0 0 0 0 1 1' }, { id: '4', name: 'D', g: 'TECHNO', n: '0 0 0 0 1 1' },
+        { id: '5', name: 'E', g: 'ACID', n: '0 0 0 0 1 1' }])).phrases;
+    const g = styleGroups(ps);
+    assertEq(g.list.map(p => p.id), ['3', '5', '1', '4', '2'], 'order');
+    assertEq(g.styles, ['ACID', 'TECHNO', 'BASIC'], 'styles');
+    assertEq(g.starts, [0, 2, 4], 'starts');
+});
+
+step('octave: melodic phrases and drum-as-notes shift by whole octaves', () => {
+    const p = parseLibrary(lib('bass', [{ id: 'b', name: 'B', mode: 'min', n: '0 0 0 0 100 24' }])).phrases[0];
+    assertEq(melodicNotes(p, PB_TIME_DEFAULT, 0, 1, 2)[0].p, 60, 'up two');
+    assertEq(melodicNotes(p, PB_TIME_DEFAULT, 0, 1, -3)[0].p, 0, 'down three');
+    const d = parseLibrary(lib('hat', [{ id: 'h', name: 'H', n: '0 90 12' }])).phrases[0];
+    assertEq(drumAsMelodicNotes(d, PB_TIME_DEFAULT, drumVoices(d), [42], -1)[0].p, 30, 'drum notes too');
 });
 
 step('a melodic note in C: anchor, degree in its mode, octave, chromatic offset', () => {

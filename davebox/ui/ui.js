@@ -44,7 +44,7 @@ import { snapMorphApply } from './ui_snapmorph.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { daveBoxRotate } from './ui_daves.mjs';
-import { pbActive, pbOnKnob, pbOnJog, pbOnClick, pbOnBack, pbPadTap, pbClose } from './ui_phrase_browser.mjs';
+import { pbActive, pbOnKnob, pbOnJog, pbOnClick, pbOnBack, pbPadTap, pbClose, pbJogTouch } from './ui_phrase_browser.mjs';
 import {
     projectPickerTextEntryMidi,
     projectPadPickerTap, projectPadPickerRotate, projectPadPickerClick
@@ -651,6 +651,7 @@ function _onMidiInternalImpl(data) {
         const hi = status & 0xF0;
         if (hi === 0x90 || hi === 0x80) {
             if (d1 >= 0 && d1 <= 7) { /* knob touch: falls through */ }
+            else if (d1 === MoveMainTouch) { pbJogTouch(hi === 0x90 && d2 > 0); return; }
             else {
                 if (hi === 0x90 && d2 > 0 && d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32)
                     pbPadTap(d1 - TRACK_PAD_BASE);
