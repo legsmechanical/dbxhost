@@ -1098,6 +1098,51 @@ export function engineCanvasPageDrawer(slotKey, comp, moduleId, canvas) {
     return fn;
 }
 
+/*
+ * One hook on an ENTERABLE canvas page's overlay (`enterable: true` on an
+ * `as_page` canvas), with its return value — upstream's canvasPageHook, for
+ * dAVEBOx. While the page is entered the shared controller hands the module the
+ * jog and the click as CC 14 / CC 3 (`onMidi`), and offers it Back first
+ * (`handleBack`: true = "I went up a level", stay).
+ *
+ * The SAME overlay object the drawer draws with (engineCanvasOverlayShared
+ * caches the load), so the page's state does not depend on which hook asked.
+ * `access` = { getParam, setParam } by BARE key — only ui_sound knows the slot
+ * and component. ctx.close() is recorded and answered as `{ close: true }`,
+ * which the controller reads as "leave the door" and which outranks the hook's
+ * own return. A throw retires the page for the visit, like its drawer.
+ */
+const pageStates = new Map();       /* key -> the module's `ctx.state` */
+export function engineCanvasPageHook(slotKey, comp, moduleId, canvas, hook, payload, access) {
+    if (!canvas || !moduleId || !hook) return undefined;
+    const script = canvas.script || 'canvas.js';
+    const ref = canvas.overlay || '';
+    const key = slotKey + '|' + moduleId + '|' + script + '|' + ref;
+    if (pageDisabled.has(key)) return undefined;
+    const r = engineCanvasOverlayShared(slotKey, comp, moduleId, script, ref);
+    const ov = (ref && ref !== 'canvas_overlay') ? r.named : r.overlay;
+    if (!ov || typeof ov[hook] !== 'function') return undefined;
+    if (!pageStates.has(key)) pageStates.set(key, {});
+    const a = access || {};
+    const closed = { wanted: false };
+    const ctx = {
+        width: 128, height: 64,
+        state: pageStates.get(key),
+        getParam: (k) => (typeof a.getParam === 'function' ? a.getParam(String(k)) : null),
+        setParam: (k, v) => (typeof a.setParam === 'function' ? a.setParam(String(k), String(v)) : false),
+        now: () => Date.now(),
+        close: () => { closed.wanted = true; return true; },
+    };
+    try {
+        const out = ov[hook](ctx, payload || {});
+        return closed.wanted ? { close: true } : out;
+    } catch (e) {
+        pageDisabled.add(key);
+        console.log('[engine] canvas page ' + key + ' disabled after throw in ' + hook + ': ' + e);
+        return undefined;
+    }
+}
+
 /* A new editor visit: failures and one-strike retirements are asked again. */
 export function engineCanvasNewVisit() {
     for (const [k, r] of canvasLoads) if (!r.overlay && !r.named) canvasLoads.delete(k);

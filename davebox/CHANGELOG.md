@@ -17,6 +17,10 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Fixed (pending)
+- **A module page you can step into now works.** Some modules draw a page with
+  its own choices on it (DR32's Resample page). Clicking it used to jump to the
+  section list; now the click enters the page, the jog and click choose on it,
+  and Back leaves.
 - **A project whose song file can't be read is refused instead of loading
   empty.** Its pad in the picker is dim red; loading it keeps you in the picker
   with "CAN'T OPEN / Song file damaged" (or missing / empty), and its menu says
