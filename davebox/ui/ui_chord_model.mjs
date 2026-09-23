@@ -46,8 +46,14 @@ export function defaultPalette() {
     return p;
 }
 /* The CHORD bank's per-track settings. */
+/* Smooth: Off, Follow (each chord nearest the LAST one played), Anchor (every
+ * chord nearest ONE chosen slot's chord, so the palette sits in one hand
+ * position whatever order you play it in). Josh, 2026-09-23. */
+export const SMOOTH_MODES = ['Off', 'Follow', 'Anchor'];
+export const SMOOTH_OFF = 0, SMOOTH_FOLLOW = 1, SMOOTH_ANCHOR = 2;
+
 export function defaultChordSettings() {
-    return { voicing: 0, smooth: 0, bass: 0, bassOct: 1, strum: 0, select: 0 };
+    return { voicing: 0, smooth: 0, anchor: 0, bass: 0, bassOct: 1, strum: 0, select: 0 };
 }
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
@@ -155,7 +161,8 @@ export function slotFunction(deg) {
  *   o.mods           held row-2 modifiers (indices), optional
  *   o.invDelta       extra inversion steps (Inv-/+), optional
  *   o.settings       the CHORD bank settings
- *   o.prev           the last chord's notes, for Smooth
+ *   o.prev           the last chord's notes, for Smooth: Follow
+ *   o.anchor         the anchor slot's chord (anchorChord), for Smooth: Anchor
  * Returns { notes, name, numeral, plain } — `notes` ascending, at most
  * PAD_CHORD_MAX, all within 0..127 (anything outside is dropped). */
 export function slotChord(o) {
@@ -164,8 +171,10 @@ export function slotChord(o) {
     const f = stackFlags(slot.stack, o.mods);
     const { offs, plain } = stackOffsets(o.scale, slot.deg, f);
     let notes = offs.map((k) => o.root + degreeSemis(o.scale, slot.deg + k));
-    if (set.smooth && o.prev && o.prev.length) {
-        notes = smoothTo(notes, o.prev);
+    const target = set.smooth === SMOOTH_ANCHOR ? o.anchor
+                 : set.smooth === SMOOTH_FOLLOW ? o.prev : null;
+    if (target && target.length) {
+        notes = smoothTo(notes, target);
         notes = invert(notes, o.invDelta | 0);
     } else {
         notes = invert(notes, (slot.inv | 0) + (set.voicing | 0) + (o.invDelta | 0));
@@ -186,6 +195,15 @@ export function slotChord(o) {
     const flats = keyUsesFlats(o.key, o.scale);
     const rootPc = ((o.root + degreeSemis(o.scale, slot.deg)) % 12 + 12) % 12;
     return { notes, name: chordLabel(notes, flats, rootPc), numeral: numeral(o.scale, slot.deg), plain };
+}
+
+/* What Smooth: Anchor keeps every chord near: the anchor slot's own chord,
+ * as its inversion and the bank's Voicing place it — plain (no modifiers,
+ * spread, octave or bass), so the target does not move while you play. */
+export function anchorChord(o) {
+    const slot = Object.assign({}, o.slot || defaultSlot(0), { spread: 0, bass: 0, oct: 0 });
+    const settings = Object.assign({}, o.settings || defaultChordSettings(), { smooth: SMOOTH_OFF, bass: 0 });
+    return slotChord({ key: o.key, scale: o.scale, root: o.root, slot, settings }).notes;
 }
 
 /* Row 3: the chord's own notes (without an added bass), rising from `base`. */

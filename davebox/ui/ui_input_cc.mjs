@@ -4214,8 +4214,8 @@ function _onCC_knobs(d1, d2) {
             return;
         }
         if (S.activeBank === BANK_CHORD) {
-            /* Smooth, Bass and Slots are toggles: the deliberate divisor. */
-            const _st = knobStep(knobIdx, d2, (knobIdx === 1 || knobIdx === 2 || knobIdx === 6) ? KNOB_DELIB : KNOB_PICK);
+            /* Bass and Slots are toggles: the deliberate divisor. */
+            const _st = knobStep(knobIdx, d2, (knobIdx === 2 || knobIdx === 6) ? KNOB_DELIB : KNOB_PICK);
             if (_st && chordBankKnob(S.activeTrack, knobIdx, _st)) _chordEdited();
             return;
         }

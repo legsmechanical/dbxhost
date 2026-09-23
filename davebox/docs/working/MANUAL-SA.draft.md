@@ -599,8 +599,11 @@ and scale. A card explains the rows each time you switch to it; click the jog
 - **Top row:** the scale, with the key's root on the fourth pad — three notes
   below it, four above (`G A B C D E F G` in C major).
 - The **CHORD** bank (on the jog after LIVE ARP, on a Chord track only) sets
-  Voicing (moves every chord at once), Smooth (each chord takes the voicing
-  nearest the last one), Bass (adds the root below), Bass Octave, Strum (moves
+  Voicing (moves every chord at once), **Smooth** — *Off*; *Follow* (each chord
+  takes the voicing nearest the one you played last); *Anchor* (every chord takes
+  the voicing nearest one chord you choose on the **Anchor** knob, which appears
+  only in this mode — the palette sits in one hand position whatever order you
+  play it in) — Bass (adds the root below), Bass Octave, Strum (moves
   rows 3 and 4 by octaves) and **Slots: Play / Select**. In Select the chord pads
   are silent: they only choose what row 3 strums.
 - **To edit a chord, hold it while on the CHORD bank:** the page switches to that

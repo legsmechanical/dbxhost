@@ -301,6 +301,7 @@ step('⭐ on the CHORD bank, holding a chord shows its settings at once; K2 make
     /* K8 Reset is the stock trigger: a TURN does nothing, touch + jog click fires it. */
     pad(4, true); knob(7, +1); knobUp(7); ticks(1);
     assert(S.chordPalette[2][4].stack === 1, 'turning K8 reset the slot');
+    assert(CP.chordSlotCells(2, 4).cells[7].opens === true, 'Reset is not framed as a click');
     touch(7, true); cc(3, 127); cc(3, 0); ticks(1);
     assert(S.chordPalette[2][4].stack === 0, 'touch K8 + click did not reset');
     touch(7, false); pad(4, false); ticks(2);
@@ -324,8 +325,8 @@ step('⭐ Smooth, through the pads: after i in C minor the engine gets iv as C F
     const plain = lastPadmap()[3].split('+').map(Number);
     assert(eq(plain.map((p) => p - root), [5, 8, 12]), 'plain iv ' + plain);
     S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;
-    knob(1, +1, 20); knobUp(1); ticks(1);
-    assert(S.chordSettings[2].smooth === 1, 'Smooth did not turn on');
+    knob(1, +1); knobUp(1); ticks(1);
+    assert(S.chordSettings[2].smooth === 1, 'Smooth did not go to Follow');
     S.activeBank = 0; S.trackActiveBank[2] = 0;
     S.chordLast[2] = null;                               /* nothing played yet: i in root position */
     pad(0, true); pad(0, false); ticks(2);                 /* i */
@@ -344,7 +345,8 @@ step('⭐ Smooth, through the pads: after i in C minor the engine gets iv as C F
 step('the CHORD bank sits on this track\'s walk, after LIVE ARP; Slots → Select silences the slots', () => {
     S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;
     const cells = CP.chordBankCells(2);
-    assert(cells[1].kind === 'pill' && cells[2].kind === 'pill', 'Smooth and Bass are not toggles');
+    assert(cells[2].kind === 'pill', 'Bass is not a toggle');
+    assert(cells[1].kind === 'enumsq' && eq(cells[1].options, ['Off', 'Follow', 'Anchor']), 'Smooth is not Off/Follow/Anchor');
     knob(6, +1, 20); knobUp(6); ticks(2);
     assert(S.chordSettings[2].select === 1, 'Select not set');
     const pm = lastPadmap();
@@ -450,6 +452,38 @@ step('⭐ the CHORD bank is on the jog walk ONLY of a track on the Chord layout'
     const pure = globalThis.__pure;
     assert(pure.bankCycleForMode(0, 2).indexOf(BANK_CHORD) >= 0, 'missing on the Chord track');
     assert(pure.bankCycleForMode(0, 3).indexOf(BANK_CHORD) < 0, 'on the walk of a Scale track');
+});
+step('⭐ Smooth: Anchor — the Anchor knob appears only in that mode; every chord stays near the anchor, whatever came before', () => {
+    const KL = globalThis.__kl;
+    S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;
+    try {
+        assert(CP.chordBankCells(2)[5].kind === 'blank', 'Anchor showed in Off');
+        const before = S.chordSettings[2].anchor;
+        knob(5, +1); knobUp(5);
+        assert(S.chordSettings[2].anchor === before, 'the hidden Anchor knob still turned');
+        knob(1, +1); knobUp(1); knob(1, +1); knobUp(1); ticks(1);
+        assert(S.chordSettings[2].smooth === 2, 'not Anchor: ' + S.chordSettings[2].smooth);
+        const c5 = CP.chordBankCells(2)[5];
+        assert(c5.label === 'Anchr' && c5.text === 'I', 'Anchor cell ' + JSON.stringify(c5));
+        assert(KL.knobRingColor(5, KL.ringNormOfCell(c5)) !== 0, 'the Anchor ring is dark in Anchor mode');
+        const root = (S.padOctave[2] | 0) * 12 + oct();
+        const map = () => lastPadmap().slice(0, 8).map((t) => t.split('+').map((p) => Number(p) - root));
+        const m1 = map();
+        /* Anchored to I (0 4 7): IV comes as C F A, V as B D G — near I, not climbing. */
+        assert(eq(m1[3], [0, 5, 9]) && eq(m1[4], [-1, 2, 7]), 'anchored IV/V ' + JSON.stringify(m1));
+        /* Order does not matter: play vi, then the map is unchanged (Follow would move). */
+        pad(5, true); pad(5, false); ticks(2);
+        assert(eq(map(), m1), 'the anchored map moved after playing vi: ' + JSON.stringify(map()));
+        /* Move the anchor to vi: the palette re-centres on A C E. */
+        knob(5, +1); knobUp(5); knob(5, +1); knobUp(5); knob(5, +1); knobUp(5);
+        knob(5, +1); knobUp(5); knob(5, +1); knobUp(5); ticks(2);
+        assert(S.chordSettings[2].anchor === 5 && CP.chordBankCells(2)[5].text === 'vi', 'anchor not on vi');
+        assert(eq(map()[5], [9, 12, 16]) && eq(map()[0], [7, 12, 16]), 'centred on vi: ' + JSON.stringify(map()));
+    } finally {
+        S.chordSettings[2].smooth = 0; S.chordSettings[2].anchor = 0; S.chordLast[2] = null;
+        S.activeBank = 0; S.trackActiveBank[2] = 0;
+        globalThis.__dm.computePadNoteMap(); ticks(2);
+    }
 });
 step('Shift + step 8 again leaves Chord for Scale; the map is plain again', () => {
     S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;

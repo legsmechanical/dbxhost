@@ -25,7 +25,7 @@ import {
     NUM_SLOTS, STACKS, SPREADS, BASS_TONES, MOD_INV_DOWN, MOD_INV_UP,
     INV_MIN, INV_MAX, OCT_MIN, OCT_MAX,
     defaultPalette, defaultChordSettings, slotChord, strumRow, scaleRow, numeral,
-    slotFunction, invLabel, degreeSemis,
+    slotFunction, invLabel, degreeSemis, anchorChord, SMOOTH_MODES, SMOOTH_ANCHOR,
 } from './ui_chord_model.mjs';
 
 export const ROW_SLOTS = 0, ROW_MODS = 1, ROW_STRUM = 2, ROW_SCALE = 3;
@@ -108,6 +108,14 @@ function ctxFor(t, key, scale) {
     return { key, scale, root: (S.padOctave[t] | 0) * 12 + key };
 }
 
+/* The chord Smooth: Anchor keeps every slot near (null unless that mode). */
+function anchorFor(t, c) {
+    const set = S.chordSettings[t];
+    if (!set || set.smooth !== SMOOTH_ANCHOR) return null;
+    const k = Math.max(0, Math.min(NUM_SLOTS - 1, set.anchor | 0));
+    return anchorChord(Object.assign({}, c, { slot: S.chordPalette[t][k], settings: set }));
+}
+
 /* The chord the strum row plays: the last one played or selected, rebuilt
  * from its slot so a key change carries it along. Before any: the I chord. */
 export function strumChord(t, key, scale) {
@@ -132,11 +140,12 @@ export function fillChordPadMap(t, key, scale) {
     const mods = active ? stackMods() : [];
     const inv = active ? heldInvDelta() : 0;
     const prev = S.chordLast[t] && S.chordLast[t].notes;
+    const anchor = anchorFor(t, c);
     for (let i = 0; i < 32; i++) { S.padNoteMap[i] = 0xFF; S.padChordMap[i] = null; }
     if (!set.select) {
         for (let k = 0; k < NUM_SLOTS; k++) {
             const ch = slotChord(Object.assign({}, c, { slot: S.chordPalette[t][k], mods, invDelta: inv,
-                settings: set, prev }));
+                settings: set, prev, anchor }));
             if (!ch.notes.length) continue;
             S.padNoteMap[k] = ch.notes[0];
             S.padChordMap[k] = ch.notes.length > 1 ? ch.notes : null;
@@ -191,7 +200,7 @@ function chordFor(t, k, extraInv, baseInv) {
     const c = ctxFor(t, key, scale);
     return slotChord(Object.assign({}, c, { slot: S.chordPalette[t][k], mods: stackMods(),
         invDelta: (baseInv === undefined ? heldInvDelta() : baseInv) + (extraInv | 0), settings: settingsOf(t),
-        prev: S.chordLast[t] && S.chordLast[t].notes }));
+        prev: S.chordLast[t] && S.chordLast[t].notes, anchor: anchorFor(t, c) }));
 }
 
 /* A slot pad went down. Returns the pitches it sounds (empty in Select, where
@@ -355,7 +364,8 @@ export function chordSlotCells(t, k) {
             { kind: 'valsq', label: 'Bass', name: 'Bass', text: BASS_TONES[s.bass] || '--', ringNorm: pos(s.bass, 0, 3) },
             { kind: 'valsq', label: 'Oct', name: 'Octave', text: s.oct > 0 ? '+' + s.oct : String(s.oct), ringNorm: pos(s.oct, OCT_MIN, OCT_MAX) },
             /* A trigger, as on stock pages: touch K8 and click the jog. */
-            { kind: 'action', oneWay: true, label: 'Reset', name: 'Reset slot', text: '->', ringBound: true,
+            /* `opens`: stock's corner brackets — "this one is a click". */
+            { kind: 'action', oneWay: true, label: 'Reset', name: 'Reset slot', text: '->', ringBound: true, opens: true,
               btnPhase: buttonPhase(S.chordResetAt, nowMs(), S.knobTouched === 7) },
         ],
         plain: ch.plain,
@@ -413,17 +423,29 @@ registerRingCells(BANK_CHORD, () => {
 });
 
 const ON_OFF = ['Off', 'On'];
+/* The anchor's name on the bank: its slot's numeral ("I", "vi"). */
+function anchorLabel(t, k) {
+    const { scale } = effKeyScale();
+    return numeral(scale, S.chordPalette[t][k].deg);
+}
+
 export function chordBankCells(t) {
     const s = settingsOf(t);
     return [
         { kind: 'valsq', label: 'Voice', name: 'Voicing', text: s.voicing > 0 ? '+' + s.voicing : String(s.voicing),
           ringNorm: pos(s.voicing, INV_MIN, INV_MAX) },
-        { kind: 'pill', label: 'Smoth', name: 'Smooth', text: ON_OFF[s.smooth ? 1 : 0], norm: s.smooth ? 1 : 0 },
+        { kind: 'enumsq', label: 'Smoth', name: 'Smooth', text: SMOOTH_MODES[s.smooth | 0] || 'Off',
+          options: SMOOTH_MODES, sel: s.smooth | 0 },
         { kind: 'pill', label: 'Bass', name: 'Bass', text: ON_OFF[s.bass ? 1 : 0], norm: s.bass ? 1 : 0 },
         { kind: 'valsq', label: 'BsOct', name: 'Bass Octave', text: '-' + (s.bassOct | 0), ringNorm: pos(s.bassOct, 1, 2) },
         { kind: 'valsq', label: 'Strum', name: 'Strum Octave', text: s.strum > 0 ? '+' + s.strum : String(s.strum),
           ringNorm: pos(s.strum, -1, 2) },
-        { kind: 'blank', label: '' },
+        /* Anchor exists only in Smooth: Anchor (Josh, 2026-09-23) — otherwise
+         * the knob is empty, and its ring dark. */
+        s.smooth === SMOOTH_ANCHOR
+            ? { kind: 'valsq', label: 'Anchr', name: 'Anchor', text: anchorLabel(t, s.anchor | 0),
+                ringNorm: pos(s.anchor, 0, NUM_SLOTS - 1) }
+            : { kind: 'blank', label: '' },
         { kind: 'enumsq', label: 'Slots', name: 'Slots', text: s.select ? 'Select' : 'Play',
           options: ['Play', 'Select'], sel: s.select ? 1 : 0 },
         { kind: 'blank', label: '' },
@@ -436,7 +458,9 @@ export function chordBankKnob(t, knob, steps) {
     const before = JSON.stringify(s);
     switch (knob) {
         case 0: s.voicing = clamp(s.voicing + steps, INV_MIN, INV_MAX); break;
-        case 1: s.smooth = steps > 0 ? 1 : 0; break;
+        case 1: s.smooth = clamp(s.smooth + steps, 0, SMOOTH_MODES.length - 1); break;
+        case 5: if (s.smooth !== SMOOTH_ANCHOR) return false;
+                s.anchor = clamp((s.anchor | 0) + steps, 0, NUM_SLOTS - 1); break;
         case 2: s.bass = steps > 0 ? 1 : 0; break;
         case 3: s.bassOct = clamp(s.bassOct + steps, 1, 2); break;
         case 4: s.strum = clamp(s.strum + steps, -1, 2); break;
@@ -512,6 +536,14 @@ export function restoreChordSidecar(chd) {
                        bass: n(a[4], 0, 3, 0), oct: n(a[5], OCT_MIN, OCT_MAX, 0) };
         }
         S.chordPalette[t] = pal;
-        S.chordSettings[t] = Object.assign(defaultChordSettings(), e.s || {});
+        /* Settings are clamped like the palette: an out-of-range value would
+         * blank rows or pick a slot that does not exist. */
+        const d = defaultChordSettings(), v = e.s || {};
+        const n = (x, lo, hi, def) => (typeof x === 'number' && x >= lo && x <= hi) ? (x | 0) : def;
+        S.chordSettings[t] = {
+            voicing: n(v.voicing, INV_MIN, INV_MAX, d.voicing), smooth: n(v.smooth, 0, SMOOTH_MODES.length - 1, d.smooth),
+            anchor: n(v.anchor, 0, NUM_SLOTS - 1, d.anchor), bass: n(v.bass, 0, 1, d.bass),
+            bassOct: n(v.bassOct, 1, 2, d.bassOct), strum: n(v.strum, -1, 2, d.strum), select: n(v.select, 0, 1, d.select),
+        };
     }
 }
