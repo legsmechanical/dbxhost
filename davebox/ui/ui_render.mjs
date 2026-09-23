@@ -1839,10 +1839,11 @@ function drawUIBody() {
      * drawn above sound mode below). */
     if (S.heldStep >= 0 && S.activeBank === BANK_STEP && drawHeldStepPage()) return;
 
-    /* Chord layout: a held slot whose knobs have been turned shows its card
-     * (hold a slot + knobs edits what it saves — mirrors the held step). */
-    if (S.chordCardSlot >= 0 && chordEditSlot() === S.chordCardSlot) {
-        const _cs = chordSlotCells(S.activeTrack, S.chordCardSlot);
+    /* The CHORD bank is contextual: while a chord slot is held it shows that
+     * slot's settings (the knobs edit them), and its own settings otherwise.
+     * On any other bank a held chord changes nothing here. */
+    if (bank === BANK_CHORD && chordEditSlot() >= 0) {
+        const _cs = chordSlotCells(S.activeTrack, chordEditSlot());
         drawKitPage(_cs.title, _cs.cells, false,
             _cs.plain.length ? [[_cs.plain.join('/'), 'NOT IN KEY']] : null);
         /* The header is the CHORD, as it changes — "vi · AMIN7/C" — in the

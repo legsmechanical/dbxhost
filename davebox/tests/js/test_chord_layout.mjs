@@ -124,6 +124,7 @@ const tickmod = await import('../../ui/ui_tick.mjs');
 const CP = await import('../../ui/ui_chord_pads.mjs');
 const persist = await import('../../ui/ui_persistence.mjs');
 globalThis.__dm = await import('../../ui/ui_drummodel.mjs');
+globalThis.__pure = await import('../../ui/ui_pure.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 2;
@@ -268,8 +269,20 @@ step('⭐ Inv+ tapped on a held chord walks it one note, and each tap walks furt
     pad(0, false); ticks(1);
     assert(S.liveActiveNotes.size === 0, 'the walked notes were released: ' + [...S.liveActiveNotes]);
 });
-step('⭐ hold a slot + turn K2: the slot becomes a seventh, its card shows, the chord sounds it', () => {
+step('⭐ off the CHORD bank, a held chord leaves the knobs to their bank', () => {
+    S.activeBank = 1; S.trackActiveBank[2] = 1;                /* NOTE FX */
+    const before = JSON.stringify(S.chordPalette[2][4]);
     pad(4, true); ticks(1);
+    knob(1, +1); knobUp(1); ticks(1);
+    assert(JSON.stringify(S.chordPalette[2][4]) === before, 'a held chord was edited from NOTE FX');
+    assert(!screenText().some((x) => x === 'V · G'), 'the slot card showed off the CHORD bank');
+    pad(4, false); ticks(1);
+    S.activeBank = 0; S.trackActiveBank[2] = 0;
+});
+step('⭐ on the CHORD bank, holding a chord shows its settings at once; K2 makes it a seventh and it sounds', () => {
+    S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;
+    pad(4, true); ticks(1);
+    assert(screenText().some((x) => x === 'V · G'), 'no slot card on hold, before any knob');
     sets.length = 0;
     knob(1, +1); ticks(1);
     const t = screenText();
@@ -283,6 +296,7 @@ step('⭐ hold a slot + turn K2: the slot becomes a seventh, its card shows, the
     /* K8 resets it. */
     pad(4, true); knob(7, +1); knobUp(7); pad(4, false); ticks(2);
     assert(S.chordPalette[2][4].stack === 0 && lastPadmap()[4].split('+').length === 3, 'reset');
+    S.activeBank = 0; S.trackActiveBank[2] = 0;
 });
 step('the CHORD bank sits on this track\'s walk, after LIVE ARP; Slots → Select silences the slots', () => {
     S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;
@@ -386,6 +400,11 @@ step('⭐ a LOST padmap push heals: the tick reads the engine\'s checksum and re
     sets.length = 0;
     try { ticks(10); } finally { globalThis.host_module_get_param = was; }
     assert(!sets.some((x) => x[0] === 't2_padmap'), 'a matching checksum re-pushed anyway: ' + sets.length);
+});
+step('⭐ the CHORD bank is on the jog walk ONLY of a track on the Chord layout', () => {
+    const pure = globalThis.__pure;
+    assert(pure.bankCycleForMode(0, 2).indexOf(BANK_CHORD) >= 0, 'missing on the Chord track');
+    assert(pure.bankCycleForMode(0, 3).indexOf(BANK_CHORD) < 0, 'on the walk of a Scale track');
 });
 step('Shift + step 8 again leaves Chord for Scale; the map is plain again', () => {
     S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;

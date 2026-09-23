@@ -4192,10 +4192,13 @@ function _onCC_knobs(d1, d2) {
          * reaches the bank editor at all. */
         if (S.sessionView) { _sessionKnobParam(knobIdx, d2); return; }
 
-        /* Chord layout: HOLD A SLOT + knobs edits that slot (its card shows
-         * while it is held), like a held step. Otherwise the CHORD bank's own
-         * knobs. Both are one step per detent. */
-        if (chordEditSlot() >= 0) {
+        /* The CHORD bank is contextual (Josh, 2026-09-23: "we should do all
+         * chord edits through the chord bank"): holding a chord slot turns its
+         * knobs into that slot's settings; otherwise they are the bank's own.
+         * On every OTHER bank a held chord leaves the knobs alone, so sound
+         * and sequencer params stay playable while chords are held. One step
+         * per detent. */
+        if (S.activeBank === BANK_CHORD && chordEditSlot() >= 0) {
             S.chordCardSlot = chordEditSlot();
             const _st = knobStep(knobIdx, d2, KNOB_PICK);
             if (_st && chordSlotKnob(S.activeTrack, S.chordCardSlot, knobIdx, _st)) _chordEdited();

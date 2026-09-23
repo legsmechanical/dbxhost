@@ -598,15 +598,17 @@ and scale. A card explains the rows each time you switch to it; click the jog
 - **Row 3:** the notes of the last chord you played, rising — strum or pick them.
   They stay after you let go.
 - **Top row:** the scale.
-- **Hold a chord and turn a knob** to edit that chord: Root, Stack, Inversion,
-  Spread, Bass, Octave, and Reset on K8. The card's title shows the chord as you
-  change it. A stack that has no in-key version on that chord (sus4 on IV in a
-  major key) plays the plain chord and the card says so.
 - The **CHORD** bank (on the jog after LIVE ARP, on a Chord track only) sets
   Voicing (moves every chord at once), Smooth (each chord takes the voicing
   nearest the last one), Bass (adds the root below), Bass Octave, Strum (moves
   rows 3 and 4 by octaves) and **Slots: Play / Select**. In Select the chord pads
   are silent: they only choose what row 3 strums.
+- **To edit a chord, hold it while on the CHORD bank:** the page switches to that
+  chord — Root, Stack, Inversion, Spread, Bass, Octave, and Reset on K8 — with the
+  chord's name as the title, and switches back when you let go. On every other
+  bank a held chord leaves the knobs alone, so you can play chords and turn sound
+  or sequencer knobs at the same time. A stack that has no in-key version on that
+  chord (sus4 on IV in a major key) plays the plain chord and the page says so.
 - While you hold a chord, Track View names it with its numeral: `[vi · AMIN]`.
   Lowercase numerals are minor, ° is diminished.
 - Holding a step and tapping a chord writes the whole chord into the step.
