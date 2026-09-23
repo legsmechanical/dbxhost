@@ -144,8 +144,10 @@ const bracketed = () => screenText().filter((t) => /^\[.*\]$/.test(t) && t !== '
 const cc = (n, v) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, n, v]));
 const note = (n, on) => globalThis.onMidiMessageInternal(new Uint8Array([on ? 0x90 : 0x80, n, on ? 100 : 0]));
 const pad = (i, on) => note(TRACK_PAD_BASE + i, on);
-const knob = (k, d) => { note(k, true); cc(71 + k, d > 0 ? 10 : 118); };
-const knobUp = (k) => note(k, false);
+/* A knob touch is note 0-7 at velocity 127 (the hardware's touch-on). */
+const touch = (k, on) => globalThis.onMidiMessageInternal(new Uint8Array([on ? 0x90 : 0x80, k, on ? 127 : 0]));
+const knob = (k, d, n) => { touch(k, true); cc(71 + k, d > 0 ? (n || 10) : 128 - (n || 10)); };
+const knobUp = (k) => touch(k, false);
 /* The last tN_padmap the ENGINE was sent, as 35 tokens. */
 const lastPadmap = () => {
     for (let i = sets.length - 1; i >= 0; i--) if (sets[i][0] === 't2_padmap') return sets[i][1].split(' ');
@@ -170,6 +172,7 @@ step('⭐ Shift + step 8 walks Scale → Chrom → Chord, and landing on Chord r
     shiftStep8();
     assert(S.padLayoutChord[2], 'second press: Chord');
     assert(S.chordPopupOpen, 'the explainer is up');
+    assert(S.activeBank === BANK_CHORD && S.trackActiveBank[2] === BANK_CHORD, 'landing on Chord did not land on the CHORD bank: ' + S.activeBank);
     const t = screenText();
     assert(t.some((s) => s === 'CHORD MODE'), 'explainer title on screen: ' + JSON.stringify(t.slice(0, 8)));
     assert(t.some((s) => /STRUM/.test(s)), 'it explains the strum row');
@@ -192,6 +195,7 @@ step('⭐ jog click is OK: the explainer closes and the engine gets whole chords
     assert(eq(pm.slice(0, 8), want), 'slots ' + pm.slice(0, 8).join(' ') + ' want ' + want.join(' '));
     assert(pm.slice(8, 16).every((t) => t === '255'), 'the modifier row is silent in the engine: ' + pm.slice(8, 16));
     assert(pm.slice(24, 32).every((t) => t.indexOf('+') < 0 && t !== '255'), 'the scale row is one note a pad');
+    S.activeBank = 0; S.trackActiveBank[2] = 0;          /* the overview, for the steps below */
 });
 step('⭐ a slot press: the held notes are the chord, the screen reads [vi · AMIN]', () => {
     pad(5, true); ticks(1);
@@ -293,14 +297,20 @@ step('⭐ on the CHORD bank, holding a chord shows its settings at once; K2 make
     knobUp(1); pad(4, false); ticks(2);
     assert(lastPadmap()[4].split('+').length === 4, 'the next press plays V7: ' + lastPadmap()[4]);
     assert(!screenText().some((s) => /V · G7/.test(s)), 'the card outlived the hold');
-    /* K8 resets it. */
-    pad(4, true); knob(7, +1); knobUp(7); pad(4, false); ticks(2);
-    assert(S.chordPalette[2][4].stack === 0 && lastPadmap()[4].split('+').length === 3, 'reset');
+    /* K8 Reset is the stock trigger: a TURN does nothing, touch + jog click fires it. */
+    pad(4, true); knob(7, +1); knobUp(7); ticks(1);
+    assert(S.chordPalette[2][4].stack === 1, 'turning K8 reset the slot');
+    touch(7, true); cc(3, 127); cc(3, 0); ticks(1);
+    assert(S.chordPalette[2][4].stack === 0, 'touch K8 + click did not reset');
+    touch(7, false); pad(4, false); ticks(2);
+    assert(lastPadmap()[4].split('+').length === 3, 'the reset chord is not what the pad plays');
     S.activeBank = 0; S.trackActiveBank[2] = 0;
 });
 step('the CHORD bank sits on this track\'s walk, after LIVE ARP; Slots → Select silences the slots', () => {
     S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;
-    knob(6, +1); knobUp(6); ticks(2);
+    const cells = CP.chordBankCells(2);
+    assert(cells[1].kind === 'pill' && cells[2].kind === 'pill', 'Smooth and Bass are not toggles');
+    knob(6, +1, 20); knobUp(6); ticks(2);
     assert(S.chordSettings[2].select === 1, 'Select not set');
     const pm = lastPadmap();
     assert(pm.slice(0, 8).every((t) => t === '255'), 'Select: the engine must not sound the slots: ' + pm.slice(0, 8));
@@ -311,7 +321,7 @@ step('the CHORD bank sits on this track\'s walk, after LIVE ARP; Slots → Selec
     assert(eq(bracketed(), ['[vi · AMIN]']), 'Select, nothing sounding: the selected chord shows: ' + JSON.stringify(bracketed()));
     const strum = lastPadmap().slice(16, 24).map(Number);
     assert(strum.every((p) => [0, 4, 9].indexOf(p % 12) >= 0), 'the strum row follows the selection: ' + strum);
-    knob(6, -1); knobUp(6); ticks(2);
+    knob(6, -1, 20); knobUp(6); ticks(2);
     assert(S.chordSettings[2].select === 0 && lastPadmap()[0].indexOf('+') > 0, 'back to Play');
     S.activeBank = 0; S.trackActiveBank[2] = 0;
 });

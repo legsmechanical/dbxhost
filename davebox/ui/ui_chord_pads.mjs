@@ -17,7 +17,9 @@
  */
 
 import { S } from './ui_state.mjs';
-import { PAD_MODE_MELODIC_SCALE, BANK_CHORD } from './ui_constants.mjs';
+import { PAD_MODE_MELODIC_SCALE, BANK_CHORD, isSoundBank } from './ui_constants.mjs';
+import { buttonPhase } from './ui_movy.mjs';
+import { nowMs } from './ui_clock.mjs';
 import {
     NUM_SLOTS, STACKS, SPREADS, BASS_TONES, MOD_INV_DOWN, MOD_INV_UP,
     INV_MIN, INV_MAX, OCT_MIN, OCT_MAX,
@@ -47,7 +49,18 @@ export function setChordLayout(t, on) {
     S.padLayoutChord[t] = !!on;
     if (on) ensureChordState(t);
     if (t === S.activeTrack) resetChordTransient();
-    if (on && !was) S.chordPopupOpen = true;
+    if (on && !was) {
+        S.chordPopupOpen = true;
+        /* Landing on the layout lands on its bank (Josh, 2026-09-23). From
+         * the track's Settings page (sound mode owns the screen and the bank
+         * number then) it becomes where Back returns to instead. */
+        if (t === S.activeTrack && isSoundBank(S.activeBank)) {
+            S.trackSoundOrigin[t] = BANK_CHORD;
+        } else {
+            S.trackActiveBank[t] = BANK_CHORD;
+            if (t === S.activeTrack) S.activeBank = BANK_CHORD;
+        }
+    }
     /* Leaving the layout leaves its bank too. */
     if (!on && S.trackActiveBank[t] === BANK_CHORD) S.trackActiveBank[t] = 0;
     if (!on && t === S.activeTrack && S.activeBank === BANK_CHORD) S.activeBank = 0;
@@ -338,10 +351,25 @@ export function chordSlotCells(t, k) {
             { kind: 'valsq', label: 'Sprd', name: 'Spread', text: SPREADS[s.spread] || '--' },
             { kind: 'valsq', label: 'Bass', name: 'Bass', text: BASS_TONES[s.bass] || '--' },
             { kind: 'valsq', label: 'Oct', name: 'Octave', text: s.oct > 0 ? '+' + s.oct : String(s.oct) },
-            { kind: 'action', oneWay: true, label: 'Reset', name: 'Reset slot', text: '->' },
+            /* A trigger, as on stock pages: touch K8 and click the jog. */
+            { kind: 'action', oneWay: true, label: 'Reset', name: 'Reset slot', text: '->',
+              btnPhase: buttonPhase(S.chordResetAt, nowMs(), S.knobTouched === 7) },
         ],
         plain: ch.plain,
     };
+}
+
+/* K8 on the held slot's card: touch it and click the jog (the stock trigger
+ * gesture). Puts the slot back to its default chord; the press flashes. */
+export function chordSlotReset(t, k) {
+    ensureChordState(t);
+    Object.assign(S.chordPalette[t][k], { deg: k, stack: 0, inv: 0, spread: 0, bass: 0, oct: 0 });
+    const now = nowMs();
+    S.chordResetAt = (S.chordResetAt || []).filter((p) => now - p < 600).concat([now]);
+    if (!settingsOf(t).select && heldChords.has(k)) S.chordPendingRevoice = revoiceHeld(t);
+    S.pendingPadNoteMapRecompute = true;
+    S.chordDirty = true;
+    S.screenDirty = true;
 }
 
 /* One knob step on the held slot's card. Returns true when it changed. */
@@ -357,8 +385,7 @@ export function chordSlotKnob(t, k, knob, steps) {
         case 4: s.spread = clamp(s.spread + steps, 0, SPREADS.length - 1); break;
         case 5: s.bass = clamp(s.bass + steps, 0, BASS_TONES.length - 1); break;
         case 6: s.oct = clamp(s.oct + steps, OCT_MIN, OCT_MAX); break;
-        case 7: if (steps > 0) Object.assign(s, { deg: k, stack: 0, inv: 0, spread: 0, bass: 0, oct: 0 }); break;
-        default: return false;
+        default: return false;           /* K8 Reset is a click, not a turn */
     }
     if (JSON.stringify(s) === before) return false;
     /* The held chord sounds the edit; the map carries it to the next press. */
@@ -376,12 +403,13 @@ export function chordBankCells(t) {
     const s = settingsOf(t);
     return [
         { kind: 'valsq', label: 'Voice', name: 'Voicing', text: s.voicing > 0 ? '+' + s.voicing : String(s.voicing) },
-        { kind: 'valsq', label: 'Smoth', name: 'Smooth', text: ON_OFF[s.smooth ? 1 : 0] },
-        { kind: 'valsq', label: 'Bass', name: 'Bass', text: ON_OFF[s.bass ? 1 : 0] },
+        { kind: 'pill', label: 'Smoth', name: 'Smooth', text: ON_OFF[s.smooth ? 1 : 0], norm: s.smooth ? 1 : 0 },
+        { kind: 'pill', label: 'Bass', name: 'Bass', text: ON_OFF[s.bass ? 1 : 0], norm: s.bass ? 1 : 0 },
         { kind: 'valsq', label: 'BsOct', name: 'Bass Octave', text: '-' + (s.bassOct | 0) },
         { kind: 'valsq', label: 'Strum', name: 'Strum Octave', text: s.strum > 0 ? '+' + s.strum : String(s.strum) },
         { kind: 'blank', label: '' },
-        { kind: 'valsq', label: 'Slots', name: 'Slots', text: s.select ? 'Select' : 'Play' },
+        { kind: 'enumsq', label: 'Slots', name: 'Slots', text: s.select ? 'Select' : 'Play',
+          options: ['Play', 'Select'], sel: s.select ? 1 : 0 },
         { kind: 'blank', label: '' },
     ];
 }

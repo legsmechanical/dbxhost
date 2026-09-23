@@ -26,7 +26,7 @@ import {
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
-import { closeChordPopup, chordEditSlot, chordSlotKnob, chordBankKnob } from './ui_chord_pads.mjs';
+import { closeChordPopup, chordEditSlot, chordSlotKnob, chordBankKnob, chordSlotReset } from './ui_chord_pads.mjs';
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay,
          markJsUndoPatch, stepRevealAvailable } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -187,6 +187,15 @@ function _onCC_jog(d1, d2) {
             S.activeBank === BANK_AUTOMATION && S.bankCardLatched && autoBankJumpTarget()) {
         autoLaneJump();
         S.screenDirty = true;
+        forceRedraw();
+        return;
+    }
+    /* CHORD bank, a chord held, K8 touched: the click fires Reset (the stock
+     * trigger gesture — touch the knob, click the jog). */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && S.activeBank === BANK_CHORD &&
+            chordEditSlot() >= 0 && S.knobTouched === 7) {
+        chordSlotReset(S.activeTrack, chordEditSlot());
+        if (S.chordPendingRevoice) { chordApplyRevoice(S.chordPendingRevoice); S.chordPendingRevoice = null; }
         forceRedraw();
         return;
     }
@@ -4205,7 +4214,8 @@ function _onCC_knobs(d1, d2) {
             return;
         }
         if (S.activeBank === BANK_CHORD) {
-            const _st = knobStep(knobIdx, d2, KNOB_PICK);
+            /* Smooth, Bass and Slots are toggles: the deliberate divisor. */
+            const _st = knobStep(knobIdx, d2, (knobIdx === 1 || knobIdx === 2 || knobIdx === 6) ? KNOB_DELIB : KNOB_PICK);
             if (_st && chordBankKnob(S.activeTrack, knobIdx, _st)) _chordEdited();
             return;
         }
