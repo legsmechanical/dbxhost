@@ -468,13 +468,6 @@ export function paintProjectPickerSurface() {
 export function updateSessionLEDs() {
     if (!S.ledInitComplete) return;
     if (paintProjectPickerLEDs()) return;
-
-    /* The phrase library, while it has instruments to place: the pads show
-     * where each goes (ui_phrase_browser pbPadColors). */
-    {
-        const _pb = pbPadColors();
-        if (_pb) { for (let i = 0; i < 32; i++) cachedSetLED(TRACK_PAD_BASE + i, _pb[i]); return; }
-    }
     if (S.tapTempoOpen) {
         for (let i = 0; i < 32; i++) {
             const note  = TRACK_PAD_BASE + i;
@@ -606,6 +599,13 @@ export function updateTrackLEDs() {
     }
 
     if (paintProjectPickerLEDs()) return;
+
+    /* The phrase library, while it has sounds to place: the pads show where
+     * each goes — TRACK VIEW's painter, which is the one that runs under it (ui_phrase_browser pbPadColors). */
+    {
+        const _pb = pbPadColors();
+        if (_pb) { for (let i = 0; i < 32; i++) cachedSetLED(TRACK_PAD_BASE + i, _pb[i]); return; }
+    }
 
     if (S.tapTempoOpen) {
         for (let i = 0; i < 32; i++) {

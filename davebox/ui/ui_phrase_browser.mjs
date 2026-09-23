@@ -340,7 +340,7 @@ function commit() {
 
 /* Which knob picks the voice: K4 on a drum track, K5 on a melodic one (K4 is
  * Octave there). -1 when the phrase has one instrument. */
-function voiceKnob() { return PB.voices.length < 2 || PB.drum ? -1 : 4; }
+function voiceKnob() { return PB.voices.length < 1 || PB.drum ? -1 : 4; }
 
 export function pbOnKnob(k, delta) {
     if (!PB || PB.confirm || k > 4 || !delta) return;
@@ -435,13 +435,15 @@ export function pbPadTap(i) {
     if (!PB || PB.confirm || PB.voices.length < 1) return;
     let who = -1, target = -1;
     if (PB.drum) {
-        const snd = PB.voices.length > 1 ? soundOfPad(i) : -1;
+        const snd = soundOfPad(i);
         if (snd >= 0) { PB.held = snd; PB.voiceSel = snd; GS.screenDirty = true; return; }
-        who = PB.voices.length > 1 ? PB.held : 0;          /* -1 (nothing held): the tap does nothing */
+        /* Besides the default, holding a sound pad is the ONLY way to place
+         * one (Josh, 2026-09-23) — a lane tap alone just sounds the lane. */
+        who = PB.held;
         target = laneOfPad(i);
     } else {
-        if (PB.voices.length > 1 && GS.knobTouched !== 4) return;   /* hold K5 Voice first */
-        who = PB.voices.length > 1 ? PB.voiceSel : 0;
+        if (GS.knobTouched !== 4) return;              /* hold K5 Voice first */
+        who = PB.voiceSel;
         target = noteOfPad(i);
     }
     if (target < 0 || who < 0) return;
@@ -462,12 +464,11 @@ export function pbPadRelease(i) {
 export function pbPadColors() {
     if (!PB || !PB.voices.length) return null;
     const t = PB.track, out = new Array(32).fill(LED_OFF);
-    const multi = PB.voices.length > 1;
-    const colorOf = (v) => multi ? SOUND_COLORS[v % SOUND_COLORS.length] : TRACK_COLORS[t];
+    const colorOf = (v) => SOUND_COLORS[v % SOUND_COLORS.length];
     const hot = PB.drum ? PB.held : (GS.knobTouched === 4 ? PB.voiceSel : -1);
     for (let i = 0; i < 32; i++) {
         if (PB.drum) {
-            const snd = multi ? soundOfPad(i) : -1;
+            const snd = soundOfPad(i);
             if (snd >= 0) { out[i] = snd === hot ? White : colorOf(snd); continue; }
             const lane = laneOfPad(i);
             if (lane < 0) continue;
@@ -556,7 +557,7 @@ function footer(shift, touched) {
     if (shift) return [['CLK', verb], ['BACK', '']];
     /* Josh, 2026-09-23: RTPAD SOUND at rest, LFTPD SET while a sound is held. */
     if (panelOpen(touched)) return PB.drum ? [['LFTPD', 'SET'], ['AGAIN', 'OFF']] : [['TAP', 'NOTE'], ['AGAIN', 'OFF']];
-    if (PB.drum && PB.voices.length > 1 && !PB.picker) return [['RTPAD', 'SOUND'], ['CLK', 'LOAD']];   /* no room for BACK too; Back still leaves */
+    if (PB.drum && PB.voices.length >= 1 && !PB.picker) return [['RTPAD', 'SOUND'], ['CLK', 'LOAD']];   /* no room for BACK too; Back still leaves */
     if (PB.picker) return [['JOG', 'PHRASE'], ['CLK', 'PICK'], ['BACK', '']];
     return [['JOG', 'PHRASE'], ['CLK', 'LOAD'], ['BACK', '']];
 }
@@ -611,7 +612,7 @@ export function pbRender(touchedIdx, shift) {
  * track's K5 Voice is touched. One row per sound: its name, where it goes, a
  * picture of its part; the one the pads set is highlighted. */
 function panelOpen(touched) {
-    if (!PB || PB.voices.length < 2) return false;
+    if (!PB || PB.voices.length < 1) return false;
     return PB.drum ? PB.held >= 0 : touched === 4;
 }
 function drawSounds() {

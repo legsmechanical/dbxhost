@@ -666,6 +666,9 @@ function _onMidiInternalImpl(data) {
             else if (d1 === MoveBack) { if (d2 === 127) pbOnBack(); return; }
             else if (d1 === MoveNoteSession) { pbClose(); /* falls through */ }
             else if (d1 === MoveShift || d1 === MovePlay) { /* falls through */ }
+            /* Shift+volume is the active track's volume, everywhere (a plain turn
+             * is Move's main output, dropped just below). */
+            else if (d1 === 79) { /* falls through */ }
             else return;
         } else return;
     }

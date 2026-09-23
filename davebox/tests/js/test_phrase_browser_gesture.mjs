@@ -19,11 +19,14 @@ function assert(c, m) { if (!c) throw new Error(m); }
 
 for (const fn of ['host_system_cmd', 'host_ensure_dir', 'host_remove_dir', 'shadow_save_state_now',
     'host_vol_block', 'host_edit_cc_block', 'stipple_rect', 'draw_line', 'flush_display',
-    'move_midi_internal_send', 'set_led', 'host_open_service', 'host_close_service',
+    'set_led', 'host_open_service', 'host_close_service',
     'host_ext_midi_remap_clear', 'host_ext_midi_remap_set', 'host_ext_midi_remap_enable', 'host_send_midi',
     'move_midi_inject_to_move'])
     globalThis[fn] = () => 0;
 globalThis.host_write_file = () => true;
+/* The pad lights as SENT (setLED → move_midi_internal_send [0x09, 0x90, note, colour]). */
+const padLed = {};
+globalThis.move_midi_internal_send = (pkt) => { if (pkt && pkt[0] === 0x09 && pkt[1] === 0x90) padLed[pkt[2]] = pkt[3]; return 1; };
 globalThis.shadow_get_param = () => '';
 globalThis.shadow_get_ui_flags = () => 0;
 globalThis.host_register_primary = () => true;
@@ -216,6 +219,17 @@ async function main() {
         assert(since(n, /^t1_audclip$/).some(w => /-1\|/.test(w[2])), 'the preview did not come back');
     });
 
+    step('Shift + volume still sets the track volume under the browser; a plain turn stays Move\'s', () => {
+        S.tvDeltaAcc = 0;
+        cc(MoveShift, 127); cc(79, 1); cc(79, 1);
+        const acc = S.tvDeltaAcc;
+        cc(MoveShift, 0);
+        assert(acc === 2 && PB.pbActive(), 'Shift+volume did not reach the track volume: ' + acc);
+        S.tvDeltaAcc = 0; cc(79, 1);
+        assert(S.tvDeltaAcc === 0, 'a plain volume turn reached the track volume');
+        ticks(2);
+    });
+
     step('K5-K8 and the step buttons do nothing under the browser', () => {
         const n = writes.length, idx = pb().idx;
         const bp = JSON.stringify(S.bankParams[1][0]), dq = S.drumInpQuant[1], sf = JSON.stringify(S.clipSeqFollow[1]);
@@ -318,6 +332,13 @@ async function main() {
         assert(pb().assign.join(',') === '3,10,8', 'default lanes: ' + pb().assign);
         let ac = since(0, /^t0_audclip$/);
         assert(ac.length && /^1 16 -2\|L3;.*;L8;.*;L10;/.test(ac[ac.length - 1][2]), 'lanes preview: ' + JSON.stringify(ac.slice(-1)));
+        /* the lights as sent: the sounds on the right in their colours, no velocity zones */
+        ticks(4);
+        assert(padLed[68 + 4] === 7 && padLed[68 + 5] === 14 && padLed[68 + 6] === 23,
+               'sound pads not lit in their colours: ' + [padLed[72], padLed[73], padLed[74]]);
+        assert(padLed[68 + 7] === 0 && padLed[68 + 15] === 0 && padLed[68 + 31] === 0,
+               'a right-hand pad with no sound is still lit (velocity zones?): ' + [padLed[75], padLed[83], padLed[99]]);
+        assert(padLed[68 + 3] === 7, 'the first sound\'s lane (3) is not in its colour: ' + padLed[71]);
         /* the engine reads no right-hand pad as velocity or Note Repeat while it is open */
         const pm = since(0, /^t0_padmap$/).pop();
         assert(pm && pm[2].split(' ')[32] === '1', 'the engine pad mute is not up: ' + (pm && pm[2]));
@@ -351,6 +372,23 @@ async function main() {
         back(); ticks(3);
         const pm3 = since(n3, /^t0_padmap$/).pop();
         assert(pm3 && pm3[2].split(' ')[32] === '0', 'the engine pad mute stayed up after Back');
+    });
+
+    step('a one-sound drum phrase: a lane tap alone changes nothing; hold its sound pad and tap to move it', () => {
+        openOn(0); ticks(2);
+        jog(-1); click(); ticks(2);
+        assert(pb().list[pb().idx].id === 'hat.a' && pb().voices.length === 1, 'not on the one-sound phrase');
+        const before = pb().assign.join(',');
+        pad(1); ticks(1);
+        assert(pb().assign.join(',') === before, 'a lane tap without a hold moved the sound');
+        ticks(3);
+        assert(padLed[68 + 4] === 7, 'the one sound has no sound pad lit: ' + padLed[72]);
+        midi(0x90, 68 + 4, 100); ticks(1);
+        pad(2); ticks(1);
+        assert(pb().assign.join(',') === '2', 'hold + tap did not move it: ' + pb().assign);
+        pad(2); ticks(1);
+        assert(pb().assign.join(',') === '2', 'the only sound was taken off');
+        midi(0x80, 68 + 4, 0); back(); ticks(2);
     });
 
     step('a Conductor track refuses, and says why', () => {
