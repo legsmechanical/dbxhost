@@ -553,7 +553,7 @@ The pads play notes from the current [key and scale](#162-key--scale). **+ / −
 shifts the pad octave.
 
 While you hold notes (pads or an external keyboard), the screen names them in
-brackets between the octave and the key — the note (`[F#3]`) or the chord.
+brackets at the right of the key/scale row — the note (`[F#3]`) or the chord.
 Worth knowing:
 
 - Middle C is **C3**, as on Move.
@@ -561,8 +561,7 @@ Worth knowing:
   without its third — the usual shorthand, but not the whole chord.
 - A combination with no common name shows its notes instead (`[C C# D]`).
 - Flat keys spell with flats, the key label included (`B♭ MINOR`).
-- Only what you play is shown, never the sequencer's notes. The Arp label
-  steps aside while it's up.
+- Only what you play is shown, never the sequencer's notes.
 
 To place notes on the grid, use the **16 step buttons**:
 

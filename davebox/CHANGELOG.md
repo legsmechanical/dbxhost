@@ -17,6 +17,8 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added (pending)
+- **Track View's top row is key/scale on the left and what you're playing on
+  the right.** The octave and Arp labels are gone from it.
 - **Chord layout.** A third pad layout for Keys tracks (Shift + Step 8, or
   Settings > Layout): the bottom row plays eight chords in your key with one pad
   each, row 2 holds modifiers (7, 9, sus2, sus4, add9, 5) and inversion up/down,
@@ -24,7 +26,7 @@ the section into a versioned heading at release time.
   voicing, smooth voice leading, bass and a Select mode where the chord pads only
   pick what row 3 strums; hold a chord while on it to edit that chord.
 - **See what you're playing.** While you hold notes on a melodic track, Track
-  View shows them in brackets between the octave and the key — the note
+  View shows them in brackets at the right of the key/scale row — the note
   (`[F#3]`) or the chord it makes (`[CMIN7]`, `[C/E]`), from the pads or an
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.

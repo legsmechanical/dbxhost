@@ -202,22 +202,27 @@ afterStep = () => {
 const pad = (i, on) => globalThis.onMidiMessageInternal(new Uint8Array([on ? 0x90 : 0x80, TRACK_PAD_BASE + i, on ? 100 : 0]));
 const ext = (n, on) => globalThis.onMidiMessageExternal(new Uint8Array([on ? 0x90 : 0x80, n, on ? 100 : 0]));
 
-step('control: nothing held — no indicator, the Arp label is there', () => {
+step('control: nothing held — no indicator; key/scale is on the row, the octave and Arp labels are not', () => {
     const t = screenText();
     assert(bracketed().length === 0, 'drew ' + JSON.stringify(bracketed()));
-    assert(t.includes('ARP'), 'no Arp label: ' + JSON.stringify(t.slice(0, 8)));
+    assert(t.includes('C MAJOR'), 'no key/scale: ' + JSON.stringify(t.slice(0, 8)));
+    assert(!t.includes('ARP') && !t.some((x) => /^OCT:/.test(x)), 'the retired labels drew: ' + JSON.stringify(t.slice(0, 8)));
 });
-step('⭐ a pad held: its note, in brackets, where the Arp label was', () => {
+step('⭐ a pad held: its note, in brackets, right-aligned on the row', () => {
     const p = S.padNoteMap[0] + S.trackOctave[2] * 12;
     pad(0, true); ticks(1);
     const want = '[' + SH[p % 12] + (Math.floor(p / 12) - 2) + ']';
     assert(JSON.stringify(bracketed()) === JSON.stringify([want]), 'drew ' + JSON.stringify(bracketed()) + ', wanted ' + want);
-    assert(!screenText().includes('ARP'), 'the Arp label drew over it');
+    /* Right edge at 124 (the row's 4px margin), key/scale still at the left. */
+    const xs = [];
+    const was = globalThis.fill_rect;
+    globalThis.fill_rect = (x, y, w, h, c) => { if (y >= 9 && y <= 13 && c) xs.push(x + w); return was(x, y, w, h, c); };
+    try { screenText(); } finally { globalThis.fill_rect = was; }
+    assert(Math.max(...xs) === 124, 'the row ends at ' + Math.max(...xs) + ', not 124');
     pad(0, false); ticks(1);
 });
-step('⭐ released: the indicator is gone and the Arp label is back', () => {
+step('⭐ released: the indicator is gone', () => {
     assert(bracketed().length === 0, 'still drew ' + JSON.stringify(bracketed()));
-    assert(screenText().includes('ARP'), 'Arp label did not come back');
 });
 step('⭐ external MIDI C E♭ G B♭ held: [CMIN7]; one released: [CMIN]... then gone', () => {
     for (const n of [60, 63, 67, 70]) ext(n, true);
@@ -261,16 +266,16 @@ step('the key label spells its root the way the chord does: [B♭MIN] beside B�
     assert(t.includes('B♭ MINOR') && !t.some((x) => /^A# /.test(x)), 'key label: ' + JSON.stringify(t.filter((x) => /MINOR/.test(x))));
     S.padScale = 0;
 });
-step('⭐ on the narrowest row (Oct:+4, C# Blues) a long slash chord drops its bass — whole', () => {
+step('⭐ beside a wide key (C# Blues) a long slash chord fits whole; a cluster loses whole notes', () => {
     S.padKey = 1; S.padScale = 11; S.trackOctave[2] = 4; ticks(1);
     for (const n of [56, 58, 61, 64, 68]) ext(n, true);     /* A#MIN7(♭5) over G# */
     ticks(1);
     const b = bracketed();
-    assert(JSON.stringify(b) === '["[A#MIN7(\u266d5)]"]', 'drew ' + JSON.stringify(b));
+    assert(JSON.stringify(b) === '["[A#MIN7(\u266d5)/G#]"]', 'drew ' + JSON.stringify(b));
     for (const n of [56, 58, 61, 64, 68]) ext(n, false);
     /* A cluster too wide for the row: whole note names, then "+" — never a
      * name cut in half. */
-    for (const n of [60, 61, 62, 63, 64, 65, 66]) ext(n, true);
+    for (const n of [60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70]) ext(n, true);
     ticks(1);
     const c = bracketed();
     S.trackOctave[2] = 0;

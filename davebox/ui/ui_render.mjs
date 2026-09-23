@@ -2366,41 +2366,26 @@ function drawUIBody() {
         /* State 4: normal Track View */
         const recTag  = (S.recordArmed && !S.recordCountingIn && S.recordArmedTrack === S.activeTrack)
             ? ' REC' : '';
-        const oct     = S.trackOctave[S.activeTrack];
-        const octStr  = 'Oct:' + (oct >= 0 ? '+' : '') + oct;
         const keyScl  = keyRootName(S.padKey, S.padScale) + ' ' + (SCALE_DISPLAY[S.padScale] || '?');
         const keySclW = ovwWidth(keyScl);
-        const keySclX = 128 - 4 - keySclW;
         (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(S.activeTrack, S.activeBank) + recTag, false, true);
         /* info row at y=9 in the small header face (Josh, 2026-09-05) — 2px
-         * clear of the header; the glyphs end at y=13 and the scale rule is 15. */
-        ovwPrint(4, 9, octStr, 1);
-        /* Held notes / chord, in brackets, centred between the octave and the
-         * key/scale; only while something is held. It takes the Arp label's
-         * place for as long as it shows. */
+         * clear of the header; the glyphs end at y=13 and the scale rule is 15.
+         * Josh, 2026-09-23: key/scale on the LEFT, the held note/chord on the
+         * RIGHT; the octave and Arp labels are gone from this row. */
+        ovwPrint(4, 9, keyScl, 1);
+        if (S.scaleAware) fill_rect(4, 15, keySclW, 1, 1);
+        /* Held notes / chord, in brackets, right-aligned; only while something
+         * is held. */
         const _heldPs = heldInputNotes(S.activeTrack), _flats = keyUsesFlats(S.padKey, S.padScale);
         /* On the Chord layout a held slot reads "vi · AMIN7" (its numeral). */
         const _held = chordIndicator(S.activeTrack, _heldPs.length > 0) || chordLabel(_heldPs, _flats);
-        const _heldL = 4 + ovwWidth(octStr) + 4, _heldR = keySclX - 4;
+        const _heldL = 4 + keySclW + 6, _heldR = 128 - 4;
         /* Printed as spelled: names are capitals already, and a Chord-layout
          * numeral keeps its case ("vi" minor, "IV" major) — the face carries
          * lowercase i and v for exactly this. */
         const _heldTxt = _held ? '[' + fitHeldLabel(_held, _heldR - _heldL - fontWidth4x5('[]') - 1, fontWidth4x5, noteNames(_heldPs, _flats)) + ']' : '';
-        if (_heldTxt) {
-            fontPrint4x5(Math.round((_heldL + _heldR - fontWidth4x5(_heldTxt)) / 2), 9, _heldTxt, 1);
-        } else if (S.bankParams[S.activeTrack][5][0]) {
-            const arpW = ovwWidth('Arp');
-            if (S.bankParams[S.activeTrack][5][7]) {
-                /* Latch on: invert 'Arp' (black on white chip), 1px pad around
-                 * the 4x5 glyphs at (52, 9). */
-                fill_rect(51, 8, arpW + 2, 7, 1);
-                ovwPrint(52, 9, 'Arp', 0);
-            } else {
-                ovwPrint(52, 9, 'Arp', 1);
-            }
-        }
-        ovwPrint(keySclX, 9, keyScl, 1);
-        if (S.scaleAware) fill_rect(keySclX, 15, keySclW, 1, 1);
+        if (_heldTxt) fontPrint4x5(_heldR - fontWidth4x5(_heldTxt), 9, _heldTxt, 1);
         drawInfoRow2();
         drawOverviewTracks(overviewHints());
         drawPositionBar(S.activeTrack);
