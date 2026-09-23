@@ -57,7 +57,7 @@ const TYPES = [
     ['ADD9', [0, 4, 7, 14]], ['MIN(ADD9)', [0, 3, 7, 14]], ['5', [0, 7]],
     ['MIN7', [0, 3, 7, 10], [1]], ['MIN7(♭5)', [0, 3, 6, 10], [1]],
     ['7SUS4', [0, 5, 7, 10]], ['AUG7', [0, 4, 8, 10]],
-    ['7(NO3)', [0, 7, 10]], ['MAJ7(NO3)', [0, 7, 11]],
+    ['7\u02d9', [0, 7, 10]], ['MAJ7\u02d9', [0, 7, 11]],
     ['ADD9', [0, 4, 14]], ['MIN(ADD9)', [0, 3, 14]],
     ['6', [0, 4, 7, 9], false], ['MIN6', [0, 3, 7, 9], false], ['SUS2', [0, 2, 7], false],
     ['SUS4', [0, 5, 7], false], ['AUG', [0, 4, 8], false], ['DIM7', [0, 3, 6, 9], false],
@@ -93,6 +93,8 @@ step('the two-name inversions take the reading built on the bass: C E G A → C6
 const QUAL = new Map(TYPES.map(([q, iv]) => [q, iv]));
 QUAL.set('7', [0, 4, 7, 10]); QUAL.set('MAJ7', [0, 4, 7, 11]); QUAL.set('MIN7', [0, 3, 7, 10]);
 QUAL.set('ADD9', [0, 4, 7, 14]); QUAL.set('MIN(ADD9)', [0, 3, 7, 14]);
+/* The marked shells name the full chord; what is held is it without its third. */
+QUAL.set('7\u02d9', [0, 4, 7, 10]); QUAL.set('MAJ7\u02d9', [0, 4, 7, 11]);
 const pcOf = (name, names) => names.indexOf(name);
 function spells(label, ps, names) {
     const pcs = new Set(ps.map((p) => p % 12)), bass = Math.min(...ps) % 12;
@@ -106,6 +108,8 @@ function spells(label, ps, names) {
     /* A no-fifth shell spells its chord with the fifth absent. */
     const shell = new Set([...full].filter((pc) => pc !== (root + 7) % 12));
     const eq = (a) => a.size === pcs.size && [...a].every((x) => pcs.has(x));
+    const no3 = new Set([...full].filter((pc) => pc !== (root + 4) % 12));
+    if (q.endsWith('\u02d9')) return eq(no3) ? '' : 'marked as a no-third shell, but holds ' + [...pcs];
     return eq(full) || (['7', 'MAJ7', 'MIN7', 'ADD9', 'MIN(ADD9)'].includes(q) && eq(shell)) ? '' : 'names ' + [...full] + ', held ' + [...pcs];
 }
 step('⭐ property: a named chord spells EXACTLY the held notes and bass (20,000 random sets)', () => {
@@ -225,11 +229,11 @@ step('⭐ external MIDI C E♭ G B♭ held: [CMIN7]; one released: [CMIN]... the
     ticks(1);
     assert(bracketed().length === 0, 'still drew ' + JSON.stringify(bracketed()));
 });
-step('⭐ the reported case: A♭ E♭ G in C minor — a maj7 without its third — is named, and says so', () => {
+step('⭐ the reported case: A♭ E♭ G in C minor — a maj7 without its third — is A♭MAJ7 with the raised dot', () => {
     S.padKey = 0; S.padScale = 1; ticks(1);
     for (const n of [56, 63, 67]) ext(n, true);
     ticks(1);
-    assert(JSON.stringify(bracketed()) === '["[A\u266dMAJ7(NO3)]"]', 'drew ' + JSON.stringify(bracketed()));
+    assert(JSON.stringify(bracketed()) === '["[A\u266dMAJ7\u02d9]"]', 'drew ' + JSON.stringify(bracketed()));
 });
 step('three-note shapes in a key: only clusters and tritone shapes stay unnamed', () => {
     const sc = [0, 2, 3, 5, 7, 8, 10], un = [];

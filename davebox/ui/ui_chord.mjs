@@ -61,13 +61,18 @@ const CHORDS = [
     [[0, 3, 10], 'MIN7'],
     [[0, 4, 8, 10], 'AUG7'],
     /* Shells as pads voice them. Without its third a chord is neither major
-     * nor minor, so it says so — "A♭MAJ7" would claim a C that isn't held. */
-    [[0, 7, 10], '7(NO3)'],
-    [[0, 7, 11], 'MAJ7(NO3)'],
+     * nor minor: it takes the common shorthand plus a raised dot at the top
+     * right (SHELL_MARK), so "A♭MAJ7˙" never quite claims a C that isn't held. */
+    [[0, 7, 10], '7', true],
+    [[0, 7, 11], 'MAJ7', true],
     [[0, 2, 4], 'ADD9'],        /* no fifth — dropped as freely as in a 7th */
     [[0, 2, 3], 'MIN(ADD9)'],
 ];
 const BY_KEY = new Map(CHORDS.map(([iv, q]) => [iv.join(','), q]));
+const SHELL = new Set(CHORDS.filter((c) => c[2]).map(([iv]) => iv.join(',')));
+/* Josh, 2026-09-22: "use the common shorthand but with a little dot/asterisk
+ * in the top right corner to indicate it's non-standard". */
+export const SHELL_MARK = '\u02d9';
 
 export function noteLabel(n, flats) { return (flats ? FLATS : SHARPS)[n % 12] + (Math.floor(n / 12) - 2); }
 
@@ -88,8 +93,9 @@ export function chordLabel(pitches, flats) {
         const key = pcs.map((pc) => (pc - r + 12) % 12).sort((a, b) => a - b).join(',');
         if (!BY_KEY.has(key)) continue;
         const rank = CHORDS.findIndex(([iv]) => iv.join(',') === key);
-        if (r === bass) { best = { r, q: BY_KEY.get(key) }; break; }
-        if (!best || rank < best.rank) best = { r, q: BY_KEY.get(key), rank };
+        const q = BY_KEY.get(key) + (SHELL.has(key) ? SHELL_MARK : '');
+        if (r === bass) { best = { r, q }; break; }
+        if (!best || rank < best.rank) best = { r, q, rank };
     }
     if (best) return NAMES[best.r] + best.q + (best.r === bass ? '' : '/' + NAMES[bass]);
     return noteNames(ps, flats);

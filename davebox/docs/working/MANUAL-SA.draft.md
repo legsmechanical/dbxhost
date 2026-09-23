@@ -556,8 +556,9 @@ While you hold notes — on the pads or from an external keyboard — the screen
 shows them in brackets between the octave and the key: one note as its name
 (`[F#3]`, with middle C as C3), several as the chord they make (`[CMIN7]`,
 `[C/E]` when the lowest note isn't the root). A combination with no common
-name shows its notes (`[C C# D]`). A chord played without its third says so
-(`[A♭MAJ7(NO3)]`), since it is then neither major nor minor. Flat keys are spelled with flats (`[B♭]`).
+name shows its notes (`[C C# D]`). A chord played without its third gets a
+small raised dot after its name (`[A♭MAJ7˙]`): it is then neither major nor
+minor, so the name is the usual shorthand rather than the whole truth. Flat keys are spelled with flats (`[B♭]`).
 The Arp label steps aside while it shows.
 
 To place notes on the grid, use the **16 step buttons**:

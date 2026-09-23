@@ -74,6 +74,10 @@ held('track-overview-held-chord', [60, 63, 67, 70]);   /* C minor 7 */
 held('track-overview-held-inversion', [64, 67, 72]);   /* C major over E */
 held('track-overview-held-long', [61, 64, 67, 71]);    /* C# half-diminished */
 held('track-overview-held-unnamed', [60, 61, 62]);     /* a cluster: note names */
+S.padKey = 0; S.padScale = 1;                           /* C minor: shells without a third */
+held('track-overview-held-shell', [56, 63, 67]);       /* A♭ E♭ G */
+held('track-overview-held-shell-slash', [50, 55, 65]); /* D G F: G7 over D */
+S.padKey = 0; S.padScale = 0;
 S.padKey = 1; S.padScale = 7;
 held('track-overview-held-long-key', [61, 64, 67, 71]);
 S.padKey = 5; S.padScale = 0;                           /* F major: flats */
