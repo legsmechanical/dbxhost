@@ -13,6 +13,8 @@
  *   5. the release ends what the PRESS started, even if the map changed
  *   6. a latched Track Arp keeps a re-pressed chord (no plucking notes out)
  *   7. a malformed chord token cannot write past PAD_CHORD_MAX
+ *   8. while recording, every chord note gets the audio-thread press and
+ *      release stamps the recorder reads
  */
 #include "harness.h"
 
@@ -196,6 +198,22 @@ static void scn_overlong_token(void) {
     printf("PASS: chord_pads malformed tokens stay in bounds\n");
 }
 
+static void scn_record_stamps(void) {
+    hx_t *h = fresh(CHORD_MAP);
+    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+    inst->tracks[1].recording = 1;
+    pad_on(h, 0, 100); hx_render(h, 2);
+    HX_ASSERT(inst->on_midi_press_active[1][60] && inst->on_midi_press_active[1][64] &&
+              inst->on_midi_press_active[1][67], "a chord press must stamp every note");
+    /* The map changes mid-hold; the release still stamps what was pressed. */
+    hx_set_param(h, "t1_padmap", PLAIN_MAP);
+    pad_off(h, 0); hx_render(h, 2);
+    HX_ASSERT(inst->on_midi_release_active[1][60] && inst->on_midi_release_active[1][64] &&
+              inst->on_midi_release_active[1][67], "a chord release must stamp every pressed note");
+    hx_destroy(h);
+    printf("PASS: chord_pads recording stamps every chord note\n");
+}
+
 int main(void) {
     scn_plain();
     scn_chord_press_release();
@@ -204,5 +222,6 @@ int main(void) {
     scn_release_follows_press();
     scn_arp_latch_keeps_chord();
     scn_overlong_token();
+    scn_record_stamps();
     return 0;
 }
