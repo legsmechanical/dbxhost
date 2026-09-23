@@ -18,9 +18,8 @@
 
 import { S } from './ui_state.mjs';
 import { PAD_MODE_MELODIC_SCALE, BANK_CHORD, isSoundBank } from './ui_constants.mjs';
-import { buttonPhase } from './ui_movy.mjs';
+import { triggerFire, triggerPhase } from './ui_trigger.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
-import { nowMs } from './ui_clock.mjs';
 import {
     NUM_SLOTS, STACKS, SPREADS, BASS_TONES, MOD_INV_DOWN, MOD_INV_UP,
     INV_MIN, INV_MAX, OCT_MIN, OCT_MAX,
@@ -366,7 +365,7 @@ export function chordSlotCells(t, k) {
             /* A trigger, as on stock pages: touch K8 and click the jog. */
             /* `opens`: stock's corner brackets — "this one is a click". */
             { kind: 'action', oneWay: true, label: 'Reset', name: 'Reset slot', text: '->', ringBound: true, opens: true,
-              btnPhase: buttonPhase(S.chordResetAt, nowMs(), S.knobTouched === 7) },
+              btnPhase: triggerPhase('chordReset', S.knobTouched === 7) },
         ],
         plain: ch.plain,
     };
@@ -377,8 +376,7 @@ export function chordSlotCells(t, k) {
 export function chordSlotReset(t, k) {
     ensureChordState(t);
     Object.assign(S.chordPalette[t][k], { deg: k, stack: 0, inv: 0, spread: 0, bass: 0, oct: 0 });
-    const now = nowMs();
-    S.chordResetAt = (S.chordResetAt || []).filter((p) => now - p < 600).concat([now]);
+    triggerFire('chordReset');
     if (!settingsOf(t).select && heldChords.has(k)) S.chordPendingRevoice = revoiceHeld(t);
     S.pendingPadNoteMapRecompute = true;
     S.chordDirty = true;

@@ -301,9 +301,6 @@ export const S = {
     /* CLIP K8 / DRUM LANE K8 "Lgto" destructive confirm dialog. Set when the
      * user right-turns the Lgto knob. Sel: 0=OK (default, apply), 1=CANCEL.
      * Jog turn flips selection; jog click commits. */
-    confirmLgto: false,
-    confirmLgtoSel: 0,
-    confirmLgtoIsDrum: false,
     /* MACROS bank, Delete + jog click: clear EVERY macro assignment on the track
      * (Josh, 2026-09-13 — this REPLACES the 09-12 model's "values to defaults,
      * assignments unchanged"; it is now assignments, and only assignments).
@@ -1042,8 +1039,8 @@ export const S = {
     chordCardSlot: -1,
     /* A re-voice a slot-card knob made, for the input handler to book. */
     chordPendingRevoice: null,
-    /* Reset presses on the slot card, for the button's flash. */
-    chordResetAt: [],
+    /* ui_trigger: redraw until a trigger's press flash has run. */
+    triggerFlashUntil: 0,
     /* padmapSig() of the last padmap pushed — the Chord layout's self-heal. */
     lastPadmapSig: -1,
     drumInpQuant: new Array(8).fill(0),   /* per-track drum input quantize index 0-8 */

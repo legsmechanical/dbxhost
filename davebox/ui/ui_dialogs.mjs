@@ -591,16 +591,6 @@ export function drawBpmMoveInfo() {
     drawOkButton(52);
 }
 
-/* Destructive Lgto confirm dialog. Right-turn of CLIP K8 / DRUM LANE K8
- * opens this. OK applies; CANCEL aborts. Undoable. */
-export function drawLgtoConfirm() {
-    clear_screen();
-    dlgHeader(S.confirmLgtoIsDrum ? 'LEGATO (LANE)' : 'LEGATO (CLIP)');
-    dlgLines(['Extend notes to fill gaps.', 'Destructive.']);
-    drawDialogButtonRow(46, 13, [{ label: 'OK',     sel: S.confirmLgtoSel === 0 },
-                                 { label: 'Cancel', sel: S.confirmLgtoSel === 1 }], { x0: 6, x1: 122 });
-}
-
 /* MACROS bank, Delete + jog click: clear every macro ASSIGNMENT on the track.
  * Josh, 2026-09-13, asked for the confirmation explicitly — eight assignments are
  * real work to rebuild, and nothing else on that bank is destructive. */

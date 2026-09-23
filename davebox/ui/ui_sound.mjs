@@ -8759,7 +8759,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
      * The confirm is registered in `soundModeCovered()` so it can DRAW over this
      * bank — which is the same predicate that stops sound mode steering input. So
      * a handler placed in `soundOnCC` becomes unreachable at the exact moment its
-     * flag goes up. Every sibling confirm (confirmLgto, confirmXpose, confirmBake)
+     * flag goes up. Every sibling confirm (confirmXpose, confirmBake)
      * lives in ui_input_cc.mjs for this reason; ours is beside them now.
      *
      * ⚠ A JS test that calls `soundOnCC` DIRECTLY cannot see this, because it

@@ -17,6 +17,9 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added (pending)
+- **Legato fires like a stock button.** Touch its knob and click the jog (the
+  footer says CLK LEGATO, the button flashes); turning the knob no longer does
+  anything, and there is no confirm to answer. It can still be undone.
 - **Track View's top row is key/scale on the left and what you're playing on
   the right.** The octave and Arp labels are gone from it. The row below keeps
   only the velocity input (`Vel:Live`, right); the metronome and Fixed/Adaptive

@@ -97,6 +97,8 @@ export function fmtLen(v) { return LEN_LABELS[(v | 0)] || '--'; }
 /* CLIP K8 / DRUM LANE K8 "Lgto" — destructive one-shot action. The value
  * cell shows "->" indicating right-turn opens the confirm dialog. */
 export function fmtLgto() { return '->'; }
+/* Legato's knob on the CLIP / DRUM LANE bank (K4), a trigger (ui_trigger). */
+export const LGTO_KNOB = 3;
 export function fmtRes(v)    { return ['1/32','1/16','1/8','1/4','1/2','1bar'][v] || '1/16'; }
 export function fmtPct(v)    { return v + '%'; }
 export function fmtNote(v)   { return NOTE_KEYS[((v | 0) % 12 + 12) % 12]; }

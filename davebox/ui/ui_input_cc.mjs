@@ -22,11 +22,12 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS,
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, LGTO_KNOB, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
 import { closeChordPopup, chordEditSlot, chordSlotKnob, chordBankKnob, chordSlotReset } from './ui_chord_pads.mjs';
+import { triggerFire } from './ui_trigger.mjs';
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay,
          markJsUndoPatch, stepRevealAvailable } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -278,27 +279,14 @@ function _onCC_jog(d1, d2) {
         return;
     }
 
-    /* Lgto confirm: jog click commits (OK applies, CANCEL aborts). */
-    if (d1 === 3 && d2 === 127 && S.confirmLgto) {
-        const _sel = S.confirmLgtoSel | 0;
-        S.confirmLgto = false;
-        if (_sel === 0) {
-            const _t = S.activeTrack;
-            if (S.confirmLgtoIsDrum) {
-                const _l = S.activeDrumLane[_t];
-                host_module_set_param('t' + _t + '_l' + _l + '_lgto_apply', '1');
-                S.pendingDrumResync      = 2;
-                S.pendingDrumResyncTrack = _t;
-            } else {
-                host_module_set_param('t' + _t + '_lgto_apply', '1');
-                S.pendingStepsReread      = 2;
-                S.pendingStepsRereadTrack = _t;
-                S.pendingStepsRereadClip  = S.trackActiveClip[_t];
-            }
-            noteUndoUnit(); S.undoSeqArpSnapshot = null;
-            showActionPopup('LGTO', 'APPLIED');
-        }
-        S.screenDirty = true;
+    /* LEGATO is a trigger (ui_trigger): touch its knob (K4 on the CLIP or
+     * DRUM LANE bank) and click the jog. No confirm — the touch + click is the
+     * deliberate part, and it is undoable. Delete + click keeps its own
+     * meaning (reset the bank), so it is not taken here. */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
+            S.activeBank === 0 && S.knobTouched === LGTO_KNOB) {
+        applyLegato(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM);
+        triggerFire('lgto');
         forceRedraw();
         return;
     }
@@ -1028,14 +1016,6 @@ function modalDialogUp() {
             const delta = decodeDelta(d2);
             if (delta !== 0) {
                 S.recordBlockedDialogSel = S.recordBlockedDialogSel === 0 ? 1 : 0;
-                S.screenDirty = true;
-            }
-            return;
-        }
-        if (S.confirmLgto) {
-            const delta = decodeDelta(d2);
-            if (delta !== 0) {
-                S.confirmLgtoSel = S.confirmLgtoSel === 0 ? 1 : 0;
                 S.screenDirty = true;
             }
             return;
@@ -2066,7 +2046,7 @@ export function backTapWouldAct() {
         S.pendingMergePlacement || S.mergeSoloPlacement >= 0 ||
         S.capturePlaceTrack >= 0 || S.pendingSceneBakePicker ||
         S.confirmBakeScene || S.confirmBakeDrumLoopOpen || S.confirmXpose ||
-        S.confirmLgto || S.confirmBake || S.recordBlockedDialog ||
+        S.confirmBake || S.recordBlockedDialog ||
         S.bpmMoveInfo || S.tapTempoOpen || S.globalMenuOpen) return true;
     if (S.sessionView) return S.perfViewLocked;
     /* Track view: alt-view exits, then non-default bank steps back to 0. */
@@ -2119,7 +2099,7 @@ export function atOverview() {
         S.pendingMergePlacement || S.mergeSoloPlacement >= 0)       return false;
     if (S.capturePlaceTrack >= 0 || S.pendingSceneBakePicker)       return false;
     if (S.confirmBakeScene || S.confirmBakeDrumLoopOpen ||
-        S.confirmXpose || S.confirmLgto || S.confirmBake ||
+        S.confirmXpose || S.confirmBake ||
         S.recordBlockedDialog || S.bpmMoveInfo)                     return false;
     /* ⚠ The track-TYPE confirms belong here since the Conductor moved to the
      * instrument picker (2026-09-19): they are raised over SOUND MODE now, not
@@ -2178,7 +2158,6 @@ function returnToOverview() {
         if (S.globalMenuState) { S.globalMenuState.editing = false; S.globalMenuState.editValue = null; }
         S.lastSentMenuEditValue = null; S.bpmWasEditing = false;
     }
-    if (S.confirmLgto)         S.confirmLgto = false;
     if (S.confirmMacroClear)   macroClearConfirmReset();
     if (S.confirmBake)         { S.confirmBake = false; S.confirmBakeWrapPhase = false; }
     if (S.recordBlockedDialog) S.recordBlockedDialog = false;
@@ -2348,7 +2327,6 @@ function _backTap() {
                                      forceRedraw(); return; }
     if (S.confirmMacroClear)       { macroClearConfirmReset(); forceRedraw(); return; }
     if (S.chordPopupOpen)          { closeChordPopup(); forceRedraw(); return; }
-    if (S.confirmLgto)             { S.confirmLgto = false; forceRedraw(); return; }
     if (S.confirmBake)             { S.confirmBake = false; S.confirmBakeWrapPhase = false; forceRedraw(); return; }
     if (S.recordBlockedDialog)     { S.recordBlockedDialog = false; forceRedraw(); return; }
     if (S.bpmMoveInfo)             { S.bpmMoveInfo = false; forceRedraw(); return; }
@@ -3508,6 +3486,25 @@ function knobPick(k, dir, need) {
  * The sign always matches the caller's own `dir`, so a body written against
  * `dir` keeps working untouched -- which is what made converting 20 sites a
  * mechanical change rather than 20 judgement calls. */
+/* Apply legato to the active clip (or, on a drum track, the active lane):
+ * every note extends to the next. One undo unit. */
+function applyLegato(isDrum) {
+    const t = S.activeTrack;
+    if (isDrum) {
+        const l = S.activeDrumLane[t];
+        host_module_set_param('t' + t + '_l' + l + '_lgto_apply', '1');
+        S.pendingDrumResync      = 2;
+        S.pendingDrumResyncTrack = t;
+    } else {
+        host_module_set_param('t' + t + '_lgto_apply', '1');
+        S.pendingStepsReread      = 2;
+        S.pendingStepsRereadTrack = t;
+        S.pendingStepsRereadClip  = S.trackActiveClip[t];
+    }
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
+    showActionPopup('LGTO', 'APPLIED');
+}
+
 /* After a slot or CHORD bank edit: re-bake the pads now when asked (the tick
  * does it otherwise). The palette is sidecar state, saved with the rest of it. */
 function _chordEdited() {
@@ -4389,19 +4386,7 @@ function _onCC_knobs(d1, d2) {
                 }
                 return;
             }
-            if (knobIdx === 3) {
-                /* K4 = Lgto: destructive one-shot. Right-turn opens confirm dialog. */
-                if (S.knobLocked[knobIdx]) return;
-                if (dir !== 1) return;
-                if (knobStep(knobIdx, d2, KNOB_DELIB) !== 0) {
-                    S.confirmLgto       = true;
-                    S.confirmLgtoSel    = 0;
-                    S.confirmLgtoIsDrum = true;
-                    S.knobLocked[knobIdx] = true;
-                    forceRedraw();
-                }
-                return;
-            }
+            if (knobIdx === LGTO_KNOB) return;   /* Lgto: a trigger — touch + click, a turn does nothing */
             if (applyTableKnob(DRUM_LANE_SITES[knobIdx], knobIdx, d2, t, lane)) return;
             if (knobIdx === 6) {
                 /* K7 = Dir (per-lane playback direction, sens=16).
@@ -4707,17 +4692,8 @@ function _onCC_knobs(d1, d2) {
                     const t   = S.activeTrack;
                     const ac  = S.trackActiveClip[t];
                     const len = S.clipLength[t][ac];
-                    /* Lgto knob (CLIP K8): right-turn opens the destructive
-                     * confirm dialog. Left-turn is a no-op (one-way action). */
-                    if (pm.dspKey === 'lgto_apply') {
-                        if (dir !== 1) return;
-                        S.confirmLgto       = true;
-                        S.confirmLgtoSel    = 0;  /* default OK */
-                        S.confirmLgtoIsDrum = false;
-                        S.knobLocked[knobIdx] = true;
-                        forceRedraw();
-                        return;
-                    }
+                    /* Lgto: a trigger — touch + click fires it; a turn does nothing. */
+                    if (pm.dspKey === 'lgto_apply') return;
                     if (pm.lock) {
                         /* Beat Stretch: one-shot, then lock until touch release */
                         const canFire = dir === 1 ? (len * 2 <= 256) : (len >= 2);

@@ -15,6 +15,8 @@ import { instrValueFor } from './ui_dsp_bridge.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
 import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
+import { triggerPhase } from './ui_trigger.mjs';
+import { LGTO_KNOB } from './ui_constants.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
@@ -41,7 +43,7 @@ import { drawAutoMarkAt,
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawModuleSwapConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
     drawConvertToDrumConfirm, drawConvertToConductConfirm, drawMenuInfo, drawChordPopup,
-    drawLgtoConfirm, drawMacroClearConfirm, drawBakeConfirm, drawSnapshotPicker,
+    drawMacroClearConfirm, drawBakeConfirm, drawSnapshotPicker,
     drawBakeSceneConfirm, drawXposeConfirm,
     drawProjectPadPicker,
     drawProjectOpenFailed,
@@ -562,6 +564,8 @@ function drawSessionFaderRow(cells, mode) {
  *
  * ⚠ The row is CHROME. Nothing here reads or changes input state. */
 export function bankPageHints(bank) {
+    /* A touched TRIGGER knob says how to fire it, as stock's footer does. */
+    if (bank === 0 && S.knobTouched === LGTO_KNOB && !S.sessionView) return [['CLK', 'LEGATO']];
     /* ⭑ While a step is HELD the jog means something else (spec §2): on any
      * other bank a right turn REVEALS the step's page — so the pair says so,
      * in the same slot, and JOG BANK (which the hold suspends) is not shown.
@@ -757,7 +761,13 @@ function kitCellForKnob(knob, val) {
         base.norm = v ? 1 : 0;
         return base;
     }
-    if (knob.fmt === fmtLgto) { base.kind = 'action'; base.oneWay = true; return base; }
+    /* A trigger (ui_trigger): touch + jog click fires it; the cell wears the
+     * click brackets and the stock button's flash. */
+    if (knob.fmt === fmtLgto) {
+        base.kind = 'action'; base.oneWay = true; base.opens = true;
+        base.btnPhase = triggerPhase('lgto', S.knobTouched === LGTO_KNOB);
+        return base;
+    }
     /* ⭑⭑ THE BUTTON IS FOR FIRE-ACTIONS ONLY, and `scope: 'action'` is not that
      * test. Three params carry that scope and exactly ONE is a trigger:
      *
@@ -1360,7 +1370,7 @@ export function soundModeCovered() {
         S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.confirmModuleChange || S.bpmMoveInfo || S.recordBlockedDialog ||
         S.confirmConvertToDrum || S.confirmConvertToConduct ||
         (S.menuInfoLines && S.menuInfoLines.length > 0) || S.chordPopupOpen ||
-        S.confirmLgto || S.confirmXpose || S.confirmBakeScene || S.confirmBake ||
+        S.confirmXpose || S.confirmBakeScene || S.confirmBake ||
         S.confirmMacroClear ||   /* MACROS bank clear — opened FROM sound mode, so it must cover it */
         S.globalMenuOpen || S.tapTempoOpen ||
         (S.sessionView && (S.loopHeld || S.perfViewLocked)));
@@ -1673,7 +1683,6 @@ function drawUIBody() {
     if (S.confirmModuleChange) { drawModuleSwapConfirm(); return; }
     if (S.bpmMoveInfo) { drawBpmMoveInfo(); return; }
     if (S.recordBlockedDialog) { drawRecordBlockedDialog(); return; }
-    if (S.confirmLgto)         { drawLgtoConfirm();         return; }
     if (S.confirmMacroClear)   { drawMacroClearConfirm();   return; }
     if (S.confirmXpose) { drawXposeConfirm(); return; }
     if (S.confirmBakeScene) { drawBakeSceneConfirm(); return; }
@@ -2033,7 +2042,8 @@ function drawUIBody() {
                 { kind: 'valsq', label: S.altMode ? 'Nudge' : 'Shift',
                   name: S.altMode ? 'Nudge' : 'Clock Shift',
                   text: fmtSign(S.bankParams[t][0][2]) },
-                { kind: 'action', oneWay: true, label: 'Lgto', name: 'Apply Legato', text: '->' },
+                { kind: 'action', oneWay: true, label: 'Lgto', name: 'Apply Legato', text: '->', opens: true,
+                  btnPhase: triggerPhase('lgto', S.knobTouched === LGTO_KNOB) },
                 { kind: 'valsq', label: 'Eucld', name: 'Euclid Fill', text: String(eucN) },
                 { kind: 'blank', label: '' },
                 S.altMode

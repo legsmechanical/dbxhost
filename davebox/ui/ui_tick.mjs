@@ -9,6 +9,7 @@
  */
 
 import { chordLayoutOn } from './ui_chord_pads.mjs';
+import { triggerFlashing } from './ui_trigger.mjs';
 import {
     MoveShift, MovePlay, MoveLeft, MoveRight, MoveUp, MoveDown, MoveMute, MoveDelete,
     MoveBack
@@ -493,8 +494,8 @@ export function _tickImpl() {
     /* A slot or CHORD bank edit is saved once the knobs let go — never while
      * the transport plays (a file write mid-bar), and only once per edit. */
     if (S.chordDirty && S.knobTouched < 0 && !S.playing) { S.chordDirty = false; writeSidecar(); }
-    /* The Reset button's flash runs for ~0.5 s after a press. */
-    if (S.chordResetAt.length && nowMs() - S.chordResetAt[S.chordResetAt.length - 1] < 600) S.screenDirty = true;
+    /* A trigger button's press flash runs for ~0.5 s after the click. */
+    if (triggerFlashing()) S.screenDirty = true;
     /* A Chord-layout modifier or setting that could not push from its own
      * handler (ui_chord_pads.mjs). */
     if (S.chordPadmapNow) { S.chordPadmapNow = false; S.pendingPadNoteMapRecompute = true; }

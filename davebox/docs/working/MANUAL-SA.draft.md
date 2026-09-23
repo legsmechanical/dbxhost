@@ -964,7 +964,7 @@ A melodic clip's grid, direction, and note transforms.
 | 1 | `Res` | **Resolution** — the step grid size, rescaling note positions. *Alt:* **Zoom** (regrid without moving notes). | Yes | 1/16 |
 | 2 | `Stch` | **Stretch** — one detent doubles (right) or halves (left) the clip. | Yes | — |
 | 3 | `Shft` | **Shift** — rotate all notes by whole steps. *Alt:* **Nudge** (finer). | Yes | 0 |
-| 4 | `Lgto` | **Legato** — turn right to confirm; lengthens every note to reach the next. | Yes | — |
+| 4 | `Lgto` | **Legato** — touch the knob and click the jog; lengthens every note to reach the next. Turning it does nothing. | Yes | — |
 | 5 | `InQ` | **Input Quantize** — snap recorded notes to the grid. | No | Off |
 | 7 | `Dir` | **Direction** — Forward, Backward, or ping-pong. *Alt:* **Reverse Style**. | No | Fwd |
 | 8 | `SqFl` | **Follow** — scroll the step display to keep up with the playhead. | No | On |
@@ -995,7 +995,7 @@ The **selected lane's** grid — the drum counterpart to the CLIP bank.
 | 1 | `Res` | **Resolution.** *Alt:* **Zoom.** | Yes | 1/16 |
 | 2 | `Stch` | **Stretch.** | Yes | — |
 | 3 | `Shft` | **Shift.** *Alt:* **Nudge.** | Yes | 0 |
-| 4 | `Lgto` | **Legato** (this lane). | Yes | — |
+| 4 | `Lgto` | **Legato** (this lane) — touch the knob and click the jog. | Yes | — |
 | 5 | `Eucl` | **Euclid** — spread N hits evenly across the lane. Hand-placed hits stay. | Yes | 0 |
 | 7 | `Dir` | **Direction.** *Alt:* **Reverse Style.** | No | Fwd |
 | 8 | `SqFl` | **Follow.** | No | On |
