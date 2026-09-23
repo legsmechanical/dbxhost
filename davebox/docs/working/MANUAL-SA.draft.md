@@ -552,14 +552,17 @@ covers writing, editing, and recording into one; the [Effects](#10-effects) and
 The pads play notes from the current [key and scale](#162-key--scale). **+ / −**
 shifts the pad octave.
 
-While you hold notes — on the pads or from an external keyboard — the screen
-shows them in brackets between the octave and the key: one note as its name
-(`[F#3]`, with middle C as C3), several as the chord they make (`[CMIN7]`,
-`[C/E]` when the lowest note isn't the root). A combination with no common
-name shows its notes (`[C C# D]`). A chord played without its third gets a
-small raised dot after its name (`[A♭MAJ7˙]`): it is then neither major nor
-minor, so the name is the usual shorthand rather than the whole truth. Flat keys are spelled with flats (`[B♭]`).
-The Arp label steps aside while it shows.
+While you hold notes (pads or an external keyboard), the screen names them in
+brackets between the octave and the key — the note (`[F#3]`) or the chord.
+Worth knowing:
+
+- Middle C is **C3**, as on Move.
+- A **raised dot** after a chord name (`[A♭MAJ7˙]`) means the chord is played
+  without its third — the usual shorthand, but not the whole chord.
+- A combination with no common name shows its notes instead (`[C C# D]`).
+- Flat keys spell with flats, the key label included (`B♭ MINOR`).
+- Only what you play is shown, never the sequencer's notes. The Arp label
+  steps aside while it's up.
 
 To place notes on the grid, use the **16 step buttons**:
 
