@@ -381,6 +381,9 @@ async function main() {
         assert(pb().held === -1, 'letting go did not end the hold');
         ticks(3);
         assert(padLed[68 + 1] === 7 && padLed[68 + 18] === 14, 'the colours did not stay after letting go: ' + [padLed[69], padLed[86]]);
+        /* the lane opened on (3) lost its sound: it looks like any empty lane, not selected */
+        assert(padLed[68 + 3] === padLed[68 + 2] && padLed[68 + 3] !== 124 && padLed[68 + 3] !== 120,
+               'the lane opened on still shows as selected: ' + padLed[71] + ' vs an empty lane ' + padLed[70]);
         ac = since(0, /^t0_audclip$/);
         assert(/-2\|L1;.*L8;.*L10;/.test(ac[ac.length - 1][2]), 'after the hold, not every sound is heard: ' + ac[ac.length - 1][2].slice(0, 30));
         const n = writes.length;

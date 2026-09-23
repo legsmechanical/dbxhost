@@ -693,7 +693,11 @@ export function updateTrackLEDs() {
                 let color;
                 if (col < 4) {
                     const lane = S.drumLanePage[t] * 16 + row * 4 + col;
-                    const isActive = (lane === selLane);
+                    /* Under the phrase browser no lane shows as selected: its sounds
+                     * are what the lanes mark there, and the lane it was opened on
+                     * would otherwise keep a white highlight once its sound moved
+                     * away (Josh, 2026-09-23). The selection itself is untouched. */
+                    const isActive = (lane === selLane) && !_pbOv;
                     const hasHits  = S.drumLaneHasNotes[t][lane];
                     const laneNote = S.drumLaneNote[t][lane];
                     const sounding = S.liveActiveNotes.has(laneNote);
