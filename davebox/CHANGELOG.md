@@ -18,7 +18,9 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 ### Added (pending)
 - **Track View's top row is key/scale on the left and what you're playing on
-  the right.** The octave and Arp labels are gone from it.
+  the right.** The octave and Arp labels are gone from it. The row below keeps
+  only the velocity input (`Vel:Live`, right); the metronome and Fixed/Adaptive
+  labels are gone.
 - **Chord layout.** A third pad layout for Keys tracks (Shift + Step 8, or
   Settings > Layout): the bottom row plays eight chords in your key with one pad
   each, row 2 holds modifiers (7, 9, sus2, sus4, add9, 5) and inversion up/down,

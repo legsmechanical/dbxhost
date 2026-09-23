@@ -633,20 +633,10 @@ function formatStepRatch(raw) {
     return 'x' + raw;
 }
 
-function drawMetroIndicator() {
-    /* Match the Global Menu / Shift+Step6 popup wording exactly (one source of
-     * truth): Off / Cnt-In / Play / Always. */
-    const METRO_LABELS = [null, 'Cnt-In', 'Play', 'Always'];
-    const label = METRO_LABELS[S.metronomeOn];
-    if (label) {
-        /* Stock face (Josh, 2026-09-05: "replace any mcu font with the little
-         * stock font" on both overviews); row 2 of the overview sits at y=19. */
-        const tx = 8;
-        const tw = ovwWidth(label);
-        fill_rect(4, 19, 2, 2, 1);           /* left dot */
-        ovwPrint(tx, 17, label, 1);
-        fill_rect(tx + tw + 2, 19, 2, 2, 1); /* right dot */
-    }
+function drawRow2Labels() {
+    /* The metronome label left this row (Josh, 2026-09-23: "just get rid of
+     * the metronome indicator"); the mode is still in the Settings menu and
+     * on Shift + Step 6. */
     if (S.sessionView) {
         /* ⚠ Was a parallel 4-entry literal — the gateway made sessKnobMode
          * reach 4, modeNames[4].length threw, and the WHOLE session draw died
@@ -663,19 +653,11 @@ function drawMetroIndicator() {
         ovwPrint(lx, 17, lab, 1);
         fill_rect(lx, 23, lw, 1, 1);
     }
-    /* Velocity / Fixed/Adaptive indicators (track view only, row 2 at y=19,
-     * right-aligned in the stock face; Fix/Adap hugs the right edge, the
-     * velocity word sits mid-row) */
+    /* Velocity input, right-aligned (track view only). The Fixed/Adaptive
+     * word that sat here is gone (Josh, 2026-09-23). */
     if (!S.sessionView) {
-        const t  = S.activeTrack;
-        const ac = (!S.playing && S.trackQueuedClip[t] >= 0) ? S.trackQueuedClip[t] : S.trackActiveClip[t];
-        const _isDrum7   = S.trackPadMode[t] === PAD_MODE_DRUM;
-        const _isEmpty7  = _isDrum7 ? !S.drumClipNonEmpty[t][ac] : !S.clipNonEmpty[t][ac];
-        const _manualL7  = _isDrum7 ? S.drumLaneLengthManuallySet[t] : S.clipLengthManuallySet[t][ac];
-        /* Velocity input indicator (between metro and fixed/adap) */
-        ovwPrint(67, 17, fmtVelOverride(S.trackVelOverride[t]), 1);
-        const _fa = (_isEmpty7 && !_manualL7) ? 'Adap' : 'Fixed';   /* the full word fits beside LIVE (Josh, 2026-09-05) */
-        ovwPrint(128 - 4 - ovwWidth(_fa), 17, _fa, 1);
+        const _vel = 'Vel:' + fmtVelOverride(S.trackVelOverride[S.activeTrack]);
+        ovwPrint(128 - 4 - ovwWidth(_vel), 17, _vel, 1);
     }
 }
 
@@ -935,7 +917,7 @@ function drawInfoRow2() {
         hdrPrint(Math.round((128 - hdrWidth(_sn)) / 2),
                  _top + Math.floor((_h - 6) / 2), _sn, _on ? 0 : 1);
     } else {
-        drawMetroIndicator();
+        drawRow2Labels();
     }
 }
 
