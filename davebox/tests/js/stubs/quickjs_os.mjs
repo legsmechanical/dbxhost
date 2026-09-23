@@ -12,7 +12,14 @@
  * "no answer", which is what a caller reads as "no such file" — the right
  * default off-device.
  */
-export function stat() { return [null, 2 /* ENOENT */]; }
+/* A test that needs sizes or folders installs `globalThis.__stubStat`, a
+ * path -> { size, mode } map (mode 0o040000 = a directory). */
+export function stat(p) {
+    const m = globalThis.__stubStat;
+    const k = String(p);
+    if (m && Object.prototype.hasOwnProperty.call(m, k)) return [m[k], 0];
+    return [null, 2 /* ENOENT */];
+}
 export function open() { return -1; }
 export function read() { return 0; }
 export function seek() { return -1; }

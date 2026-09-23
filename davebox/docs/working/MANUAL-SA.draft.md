@@ -1813,6 +1813,44 @@ is also the only time you could hear them.
 
 ---
 
+## 15.4 Import a MIDI file
+
+**Sound menu → Import MIDI** (on any track except a Conductor, whatever it plays
+through) fills a clip from a standard MIDI file (`.mid`,
+`.midi`, `.smf`, `.kar`, `.rmi`). Put the file anywhere in your user data folder —
+the **Files** page of the Schwung web manager (`move.local:7700`) uploads there.
+The notes are copied into the clip; the file is not needed afterwards.
+
+Opening the screen **stops playback**, and it stays stopped when you leave.
+
+1. **Pick the file.** The browser shows folders and MIDI files only. Back goes up
+   a folder.
+2. **Pick a part** (files with more than one). Each shows its note count and a
+   miniature of its notes. **Shift + jog click** plays it through the track's own
+   sound; again to stop.
+3. **Set it up on the knobs:**
+   - **K1 Start** — the bar of the file to start from.
+   - **K2 Bars** — how many bars land in the clip.
+   - **K3 Grid** — the clip's step grid. A finer grid holds fewer bars: 1/16 holds
+     16 bars of 4/4, 1/8 holds 32.
+   - **K4 To** — the destination: the track's current clip, or any empty clip.
+
+   The picture underneath is the whole part. The brackets are what will land;
+   notes outside them are dotted. The footer warns when notes will be **cut**
+   (they start past the end), and on a drum track when notes have **no pad** (no
+   pad plays their pitch — they are left out). Shift + jog click previews from
+   the start bar, looping the bracketed bars.
+4. **Jog click imports.** It asks first only when notes will be cut, or when the
+   destination already has notes (**Replace clip A?**). One **Undo** takes the
+   whole import back.
+
+Only notes come in — no controllers, pitch bend or program changes — and the
+destination clip's own automation is cleared, so it plays exactly the file's
+notes (Undo brings it back with the rest). The file's
+tempo is not applied: the notes are in beats, so they play at your project's
+tempo, and bars follow the file's time signature. A clip holds up to 512 notes.
+On a drum track each note lands on the pad that plays its pitch in that clip.
+
 # 16. Settings & Sets
 
 Open the Settings menu with **Shift + Step 2**. It holds the **session-wide**

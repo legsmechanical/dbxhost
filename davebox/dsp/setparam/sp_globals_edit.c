@@ -514,6 +514,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                 memcpy(dst->step_random,  src->step_random,  SEQ_STEPS);
                 memcpy(dst->step_ratchet, src->step_ratchet, SEQ_STEPS);
                 dst->length     = src->length;
+                dst->ticks_per_step = src->ticks_per_step;
                 dst->loop_start = src->loop_start;
                 dst->active     = src->active;
                 dst->playback_dir = src->playback_dir;
@@ -540,6 +541,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                 memcpy(dst->step_random,  src->step_random,  SEQ_STEPS);
                 memcpy(dst->step_ratchet, src->step_ratchet, SEQ_STEPS);
                 dst->length        = src->length;
+                if (src->ticks_per_step) dst->ticks_per_step = src->ticks_per_step;   /* 0 = a snapshot from before tps was kept */
                 dst->loop_start    = src->loop_start;
                 dst->active        = src->active;
                 dst->playback_dir  = src->playback_dir;
@@ -650,6 +652,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                 memcpy(dst->step_random,  src->step_random,  SEQ_STEPS);
                 memcpy(dst->step_ratchet, src->step_ratchet, SEQ_STEPS);
                 dst->length     = src->length;
+                dst->ticks_per_step = src->ticks_per_step;
                 dst->loop_start = src->loop_start;
                 dst->active     = src->active;
                 dst->playback_dir = src->playback_dir;
@@ -676,6 +679,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                 memcpy(dst->step_random,  src->step_random,  SEQ_STEPS);
                 memcpy(dst->step_ratchet, src->step_ratchet, SEQ_STEPS);
                 dst->length       = src->length;
+                if (src->ticks_per_step) dst->ticks_per_step = src->ticks_per_step;   /* 0 = a snapshot from before tps was kept */
                 dst->loop_start   = src->loop_start;
                 dst->active       = src->active;
                 lane->pfx_params  = src->pfx_params;

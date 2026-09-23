@@ -61,6 +61,8 @@ import { registerRingCells } from './ui_knob_leds.mjs';
 import { moduleParallelDefault, setModuleParallelDefault, reconcileParallelSlot } from './ui_parallel.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { setChordLayout } from './ui_chord_pads.mjs';
+import { miOpen, miClose, miOnKnob, miOnJog, miOnClick, miOnBack, miTick, miRender,
+         miRingCells, miAnimating, miOffered } from './ui_midi_import.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
          automationClearKey, automationEntriesFor, automationFxMoved } from './ui_automation.mjs';
@@ -359,7 +361,10 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
        * ⚠ 23 because 22 is VIEW_WAV. These ids are declared in READING order,
        * not numeric order, so "the next number" is not the one under the
        * cursor. */
-      VIEW_CANVAS = 23;
+      VIEW_CANVAS = 23,
+      /* ⭑ IMPORT MIDI (2026-09-23): a file into a clip — ui_midi_import.mjs
+       * owns the whole screen; every handler here only delegates. */
+      VIEW_MIDI_IMPORT = 40;
 
 /* Chain-patch file ops (save_patch / delete_patch) are DSP-side and async —
  * the file appears/vanishes a beat after the request. Re-read the list this
@@ -1495,7 +1500,7 @@ function followPlan(fromView, route) {
     const chain = route === 0;
     const isEditorish = v === VIEW_EDIT || v === VIEW_MENU || v === VIEW_HELP || v === VIEW_FILE ||
         v === VIEW_PRESET_SRC || v === VIEW_PRESET_LIST || v === VIEW_PRESET_BAKED ||
-        v === VIEW_NOEDITOR || (ppOn && ppOwnsView());
+        v === VIEW_NOEDITOR || v === VIEW_MIDI_IMPORT || (ppOn && ppOwnsView());
     /* ⭑ RULED (Josh, 2026-09-05, after the build-23 pass: "there's too much
      * to account for with all the different track types"): from an EDITOR (or
      * any of its dive-outs) the switch lands on the new track's SOUND MENU, on
@@ -1738,6 +1743,7 @@ export function soundExit(opts) {
         String(new Error().stack || '').split('\n').slice(2, 5).map((l) => l.trim()).join(' | '));
     wavEditCloseIfOpen();
     canvasCloseIfOpen();      /* nothing may outlive sound mode itself */
+    miClose();
     S.help = null;
     /* …INCLUDING the MACROS-clear confirm, which is about a bank that only exists
      * while this mode is open. It draws over everything, so an exit that left it
@@ -3200,6 +3206,7 @@ function buildPickRows() {
          * host does carry master-FX LFOs, no dAVEBOx screen has ever exposed
          * them — offering that here would be a separate feature, not this one. */
         if (S.bus.kind === 'move' && !conductorMenu()) rows.push({ kind: 'settings', label: 'LFOs' });
+        if (S.bus.kind === 'move' && miOffered(S.track)) rows.push({ kind: 'midiimport', label: 'Import MIDI' });
         if (S.bus.kind === 'move') pushConfigRows(rows, S.track);
     } else {
         rows.push({ kind: 'trackto', label: INSTR_ROW_LABEL });
@@ -3222,7 +3229,13 @@ function buildPickRows() {
          * placeholder: it is what an EXT track HAS, and it is the row you need
          * to route it back. Track Control stays open on these tracks precisely
          * so that is reachable (see the follow in ui_tick). */
-        if (GS.trackRoute[S.track] === ROUTE_NONE) { S.pickRows = rows; S.pickRow = 0; return; }   /* NONE: even less than EXT — just the row that picks one */
+        /* NONE: even less than EXT — the row that picks one, and Import MIDI:
+         * a track with no instrument still plays a clip, and every melodic
+         * track imports whatever it routes to (Josh, 2026-09-23). */
+        if (GS.trackRoute[S.track] === ROUTE_NONE) {
+            rows.push({ kind: 'midiimport', label: 'Import MIDI' });
+            S.pickRows = rows; S.pickRow = 0; return;
+        }   /* NONE: even less than EXT — just the row that picks one */
         /* A MIDI-routed track has no chain and no bus, but it IS a track, and
          * davebox's own per-track settings — mode, layout, transpose, velocity
          * in, aftertouch — apply to a note stream leaving the port as much as
@@ -3231,6 +3244,7 @@ function buildPickRows() {
          * screen is its destination plus the CONFIG door, exactly as a Move
          * track's is. configRows itself decides which rows a MIDI track gets. */
         if (GS.trackRoute[S.track] === 2) {
+            rows.push({ kind: 'midiimport', label: 'Import MIDI' });
             pushConfigRows(rows, S.track);
             S.pickRows = rows; S.pickRow = 0; return;
         }
@@ -3280,6 +3294,7 @@ function buildPickRows() {
          * to the MACROS bank, so the LFOs are all that is behind this door. */
         rows.push({ kind: 'settings', label: 'LFOs' });
         rows.push({ kind: 'patches',  label: 'Presets' });
+        rows.push({ kind: 'midiimport', label: 'Import MIDI' });
         pushConfigRows(rows, S.track);
     }
     /* ---- grouping rules, each on a row of its own ----
@@ -4386,6 +4401,8 @@ const VIEW_TREE = {
      * the thing it drew. */
     [VIEW_CANVAS]:      { parent: VIEW_EDIT,       float: false,
                           crumb: () => canvasEditCrumb() || 'Canvas' },
+    /* ⚠ NOT backPure: Back steps through the import's own stages first. */
+    [VIEW_MIDI_IMPORT]: { parent: VIEW_BLOCKS,     float: false, crumb: () => 'Import MIDI' },
 };
 
 /* Applying an Instrument choice. Extracted so the PICKER and the old
@@ -6670,7 +6687,8 @@ function renderMacros() {
  * open on this track — including RESTING, which is the whole point: the
  * knobs work on the overview, so the rings say where they sit. */
 registerRingCells(BANK_MACROS, () => (S.active && !soundIsGlobal() && S.track === GS.activeTrack && S.track >= 0) ? macroCells(S.track, true) : null);
-registerRingCells(BANK_SOUND, () => (S.active && !soundIsGlobal() && S.track === GS.activeTrack && S.track >= 0 && S.view !== VIEW_EDIT) ? (midiTrack() ? midiMixCells() : levelCells()) : null);
+registerRingCells(BANK_SOUND, () => (S.active && !soundIsGlobal() && S.track === GS.activeTrack && S.track >= 0 && S.view !== VIEW_EDIT)
+    ? (S.view === VIEW_MIDI_IMPORT ? miRingCells() : (midiTrack() ? midiMixCells() : levelCells())) : null);
 
 export function renderMacrosPeek(track) {
     clear_screen();
@@ -7478,6 +7496,7 @@ function runActionBody(a) {
     else if (a.t === 'lfoparam')  openLfoParams(a.comp);
     else if (a.t === 'slotsave') engineSaveState();
     else if (a.t === 'patchlist')   openChainPatches();
+    else if (a.t === 'midiimport')  { miOpen(S.track); S.view = VIEW_MIDI_IMPORT; }
     else if (a.t === 'patchload')   doChainPatchLoad(a.index);
     else if (a.t === 'patchsave')   startPatchSave();
     else if (a.t === 'patchsaveas') startPatchSaveAs(S.patchCur || 'Chain');
@@ -8768,6 +8787,37 @@ export function soundOnCC(d1, d2, decodeDelta) {
 
     if (hostedTakes(d1, d2)) { S.dirty = true; return true; }
 
+    /* ⭑ IMPORT MIDI OWNS ITS SCREEN'S CONTROLS. All eight knobs are claimed —
+     * K5-K8 do nothing here, and unclaimed they would move the track's level
+     * unseen (the VIEW_WAV note below). Shift+jog still switches track, which
+     * closes the import through its tick. A Back HOLD stays the suspend. */
+    if (S.view === VIEW_MIDI_IMPORT) {
+        if (d1 >= 71 && d1 <= 78) {
+            const delta = decodeDelta(d2);
+            if (delta) miOnKnob(d1 - 71, delta);
+            S.dirty = true;
+            return true;
+        }
+        if (d1 === 14) {
+            if (S.shiftHeld) return false;
+            const delta = decodeDelta(d2);
+            if (delta) miOnJog(delta);
+            S.dirty = true;
+            return true;
+        }
+        if (d1 === 3) {
+            if (d2 >= 64 && miOnClick(S.shiftHeld) === 'close') S.view = VIEW_BLOCKS;
+            S.dirty = true;
+            return true;
+        }
+        if (d1 === 51 && d2 < 64 && !GS.backHoldFired) {
+            GS.backPressTick = -1;
+            if (miOnBack() === 'close') S.view = VIEW_BLOCKS;
+            S.dirty = true;
+            return true;
+        }
+    }
+
     /*
      * ⭐ A DIVED CANVAS OWNS THE INPUT, because it owns the screen.
      *
@@ -9637,6 +9687,10 @@ export function soundOnCC(d1, d2, decodeDelta) {
                  S.pickRows[S.pickRow].kind === 'patches') {
             S.pendingAction = { t: 'patchlist' };   /* store listing — tick only */
         }
+        else if (S.view === VIEW_BLOCKS && S.pickRows[S.pickRow] &&
+                 S.pickRows[S.pickRow].kind === 'midiimport') {
+            S.pendingAction = { t: 'midiimport' };  /* a folder listing — tick only */
+        }
         else if (S.view === VIEW_MODBUS) {
             const rows = ModBus.modBusRows(S.modBus, engineModuleAbbrev);
             const r = rows[S.modBusIdx];
@@ -10423,6 +10477,11 @@ export function soundTick() {
      * dropped note-off is a stuck note in Move AND in the slot synth. */
     if (S.view === VIEW_WAV) wavEditTick();
 
+    /* Import MIDI: the read, the preview clock and the write, and — asking the
+     * screen rather than the door — its close when anything else took the view. */
+    if (miTick(S.view === VIEW_MIDI_IMPORT, S.track) === 'close') { S.view = VIEW_BLOCKS; S.dirty = true; }
+    if (S.view === VIEW_MIDI_IMPORT && miAnimating()) S.dirty = true;
+
     /* ⭑ Only a canvas that ANIMATES is redrawn per tick. A static one (a
      * browser, a menu) redraws on input like every other screen, so it costs
      * nothing to leave open. */
@@ -10924,7 +10983,7 @@ function renderBlocks() {
          * ⚠ `chevron` and `value` are mutually exclusive there (chevron wins),
          * which is why the Move Generator row carries its marker in the value
          * string instead — it has to show WHICH instrument it opens. */
-        if (r.kind === 'settings' || r.kind === 'config' || r.kind === 'patches')
+        if (r.kind === 'settings' || r.kind === 'config' || r.kind === 'patches' || r.kind === 'midiimport')
             return { label: r.label, hdr: true, chevron: true };
         if (r.kind !== 'block') return { label: r.label, hdr: true };
         /* A bypassed block still says what it holds — you need to know WHAT is
@@ -12839,6 +12898,7 @@ export function soundRender() {
         return false;
     if (S.view === VIEW_PROMPT) renderPrompt();
     else if (S.view === VIEW_NOEDITOR) renderNoEditor();
+    else if (S.view === VIEW_MIDI_IMPORT) miRender(S.touchedIdx, S.shiftHeld);
     else if (S.view === VIEW_MACROS) renderMacros();
     else if (S.view === VIEW_BLOCKS) renderBlocks();
     else if (S.view === VIEW_BROWSE) renderBrowse();

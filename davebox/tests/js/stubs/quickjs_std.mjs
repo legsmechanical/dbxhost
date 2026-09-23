@@ -14,7 +14,25 @@ export function loadFile(path) {
     return null;
 }
 
-export function open() { return null; }
+/* Binary reads: a test that needs one installs `globalThis.__stubStdBinFiles`,
+ * a path -> Uint8Array map, and gets a FILE-like object back; anything else is
+ * "cannot open", as before. */
+export function open(path) {
+    const files = globalThis.__stubStdBinFiles;
+    if (!files || !Object.prototype.hasOwnProperty.call(files, path)) return null;
+    const bytes = files[path];
+    let pos = 0;
+    return {
+        read(buf, off, len) {
+            const n = Math.max(0, Math.min(len, bytes.length - pos));
+            new Uint8Array(buf, off, n).set(bytes.subarray(pos, pos + n));
+            pos += n;
+            return n;
+        },
+        seek(o) { pos = o; return 0; },
+        close() { return 0; },
+    };
+}
 export function popen() { return null; }
 export function printf() {}
 export function urlGet() { return null; }

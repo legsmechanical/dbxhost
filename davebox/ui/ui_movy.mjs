@@ -3125,7 +3125,9 @@ export function drawKitBankPage(cells, opts) {
     } else if (touched) {
         drawKitTouchedHeader(touched.name);
     } else {
-        if (opts.headerGlyph) drawKitBankHeader(opts.headerText, opts.headerGlyph, opts.headerRight);
+        /* A right-hand label draws with or without a glyph (Import MIDI's
+         * options page carries its warning there, and has no bank glyph). */
+        if (opts.headerGlyph || opts.headerRight) drawKitBankHeader(opts.headerText, opts.headerGlyph, opts.headerRight);
         else drawKitHeader(opts.headerText, opts.headerInvert, opts.headerMaxW);
         if (opts.pageCount > 0) drawKitPageBar(opts.pageIdx | 0, opts.pageCount, opts.pageGroups);
     }
@@ -3604,6 +3606,59 @@ export function drawKitChip(x, y, label, on) {
     }
     return w;
 }
+/* ⭑ A NOTE ROLL IN MINIATURE — Import MIDI's picture of a part (2026-09-23).
+ * Pure: a descriptor in, pixels out, no state.
+ *
+ *   notes     [{ t, g, row, dim }] — ticks from the span's start; `row` counts
+ *             UP from the bottom (0 = lowest); `dim` draws that note dotted
+ *   spanTicks the width of the whole picture, in ticks
+ *   opts      { rows, win: { from, to }, barTicks, playhead }
+ *
+ * `win` is what will land: it is bracketed, and every note whose onset falls
+ * outside it is DOTTED — it exists, it will not arrive. Under the notes a
+ * ruler ticks every bar (taller every fourth), thinned to every fourth bar
+ * when bars would crowd closer than 3px. `playhead` (ticks, from the span's
+ * start) is a column across the band. Returns nothing. */
+export function drawKitNoteRoll(x, y, w, h, notes, spanTicks, opts) {
+    const o = opts || {};
+    const span = Math.max(1, spanTicks | 0);
+    const rows = Math.max(1, o.rows | 0 || 1);
+    const px = (t) => x + Math.floor(Math.max(0, Math.min(span, t)) * w / span);
+    const py = (r) => y + h - 1 - (rows <= 1 ? Math.floor((h - 1) / 2)
+                                             : Math.floor(Math.max(0, Math.min(rows - 1, r)) * (h - 1) / (rows - 1)));
+    const win = o.win || null;
+    const inWin = (t) => !win || (t >= win.from && t < win.to);
+    for (const n of (notes || [])) {
+        const x0 = px(n.t);
+        const dotted = n.dim || !inWin(n.t);
+        /* At least 2px so a short hit reads as a mark, 3px when dotted so the
+         * gap in "x.x" is there to see. */
+        const x1 = Math.max(x0 + (dotted ? 3 : 2), px(n.t + n.g) - 1);
+        const yy = py(n.row);
+        for (let xx = x0; xx < x1 && xx < x + w; xx++)
+            if (!dotted || ((xx + yy) & 1) === 0) set_pixel(xx, yy, 1);
+    }
+    if (win) {
+        const wx0 = px(win.from), wx1 = Math.min(x + w - 1, px(win.to));
+        for (const [cx, dir] of [[wx0, 1], [wx1, -1]]) {
+            fill_rect(cx, y - 2, 1, h + 4, 1);
+            fill_rect(dir > 0 ? cx : cx - 2, y - 2, 3, 1, 1);
+            fill_rect(dir > 0 ? cx : cx - 2, y + h + 1, 3, 1, 1);
+        }
+    }
+    if (o.playhead != null) fill_rect(px(o.playhead), y - 1, 1, h + 2, 1);
+    const bt = o.barTicks | 0;
+    if (bt > 0) {
+        const bars = Math.ceil(span / bt);
+        const every = (w / Math.max(1, bars)) < 3 ? 4 : 1;
+        const ry = y + h + 3;
+        for (let b = 0; b <= bars; b += every) {
+            const bx = Math.min(x + w - 1, px(b * bt));
+            fill_rect(bx, ry, 1, (b % 4 === 0) ? 2 : 1, 1);
+        }
+    }
+}
+
 export function kitChipWidth(label) {
     return fontWidth4x5(String(label).toUpperCase()) + MV_HINT_PAD * 2;
 }

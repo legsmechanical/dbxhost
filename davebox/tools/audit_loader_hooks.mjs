@@ -42,14 +42,17 @@ export async function resolve(specifier, context, nextResolve) {
 const STUBS = {
     'std.mjs':
         'export function loadFile() { return null; }\n' +
-        'export function open() { return null; }\n' +
+        /* A preview that needs a binary file sets globalThis.__auditOpen(path)
+         * -> a FILE-like object; otherwise nothing opens. */
+        'export function open(p, m) { const f = globalThis.__auditOpen; return f ? f(String(p), m) : null; }\n' +
         'export function getenv() { return undefined; }\n' +
         'export function urlGet() { return null; }\n',
     'os.mjs':
         /* A preview that needs a listing (a module picker) sets
          * globalThis.__auditReaddir(path) -> names; otherwise empty. */
         'export function readdir(p) { const f = globalThis.__auditReaddir; return f ? [f(String(p)) || [], 0] : [[], -1]; }\n' +
-        'export function stat() { return [null, -1]; }\n' +
+        /* ...and globalThis.__auditStat(path) -> { size, mode } for sizes/folders. */
+        'export function stat(p) { const f = globalThis.__auditStat; const r = f ? f(String(p)) : null; return r ? [r, 0] : [null, -1]; }\n' +
         'export function remove() { return -1; }\n' +
         'export function mkdir() { return -1; }\n' +
         'export function rename() { return -1; }\n' +

@@ -8,6 +8,17 @@
  * Returns 1 when it handled the key (caller returns), 0 to fall through to
  * the sibling tN_ handlers. The tN_ guard and the tidx/sub/tr locals live in
  * the parent dispatcher now (seq8_set_param.c). */
+/* End one tN_audition note where it started — its drum lane, or the melodic
+ * chain — and forget it. */
+static void audition_release(seq8_instance_t *inst, seq8_track_t *tr, uint8_t q) {
+    tr->audition_held[q >> 3] &= (uint8_t)~(1u << (q & 7));
+    uint8_t l = tr->audition_lane[q];
+    inst->emit_bypass_swing = 1;
+    if (l < DRUM_LANES) drum_pfx_note_off_imm(inst, tr, &tr->drum_lane_pfx[l], q);
+    else pfx_note_off_imm(inst, tr, q);
+    inst->emit_bypass_swing = 0;
+}
+
 static int sp_track_live(sp_ctx_t *cx) {
     seq8_instance_t *inst = cx->inst;
     const char *val = cx->val;
@@ -69,6 +80,63 @@ static int sp_track_live(sp_ctx_t *cx) {
                 if (process)
                     live_note_off(inst, tr, (uint8_t)pitch);
             }
+        }
+        return 1;
+    }
+
+    if (!strcmp(sub, "audition")) {
+        /* tN_audition "[clip C] on p v … off p … alloff" — Import MIDI's preview.
+         * Sounds notes through the track's own chain (play effects, route) like
+         * a pad would, but is NOT playing: no Retrospective Capture, no TRACK
+         * ARP, and nothing while the track is armed or recording (the preview
+         * would otherwise be heard mid-take). On a drum track a pitch sounds on
+         * the lane that plays it in clip C (default: the active clip) — the
+         * import's destination — or not at all. `alloff` releases every pitch
+         * this key started and nothing else. */
+        const char *sp = val ? val : "";
+        int armed = tr->recording || tr->record_armed;
+        int mapc = (int)tr->active_clip;
+        while (*sp) {
+            while (*sp == ' ') sp++;
+            if (!*sp) break;
+            int kind;   /* 1 on, 0 off, 2 alloff, 3 clip */
+            if (!strncmp(sp, "alloff", 6))                     { kind = 2; sp += 6; }
+            else if (!strncmp(sp, "clip ", 5))                 { kind = 3; sp += 5; }
+            else if (sp[0] == 'o' && sp[1] == 'n' && (sp[2] == ' ' || !sp[2]))  { kind = 1; sp += 2; }
+            else if (sp[0] == 'o' && sp[1] == 'f' && sp[2] == 'f' && (sp[3] == ' ' || !sp[3])) { kind = 0; sp += 3; }
+            else break;
+            int pitch = -1, vel = SEQ_VEL;
+            if (kind != 2) {
+                while (*sp == ' ') sp++;
+                pitch = 0;
+                while (*sp >= '0' && *sp <= '9') pitch = pitch * 10 + (*sp++ - '0');
+            }
+            if (kind == 3) { mapc = clamp_i(pitch, 0, NUM_CLIPS - 1); continue; }
+            if (kind != 2) pitch = clamp_i(pitch, 0, 127);
+            if (kind == 1) {
+                while (*sp == ' ') sp++;
+                if (*sp >= '0' && *sp <= '9') { vel = 0; while (*sp >= '0' && *sp <= '9') vel = vel * 10 + (*sp++ - '0'); }
+                if (armed) continue;
+                int l = 0xFF;
+                if (tr->pad_mode == PAD_MODE_DRUM) {
+                    drum_clip_t *dc = tr->drum_clips[mapc];
+                    if (!dc) continue;
+                    for (l = 0; l < DRUM_LANES && dc->lanes[l].midi_note != (uint8_t)pitch; l++) {}
+                    if (l >= DRUM_LANES) continue;
+                }
+                if (tr->audition_held[pitch >> 3] & (1u << (pitch & 7)))
+                    audition_release(inst, tr, (uint8_t)pitch);        /* re-struck: end it first */
+                inst->emit_bypass_swing = 1;
+                if (l != 0xFF) drum_pfx_note_on(inst, tr, &tr->drum_lane_pfx[l], (uint8_t)pitch, (uint8_t)clamp_i(vel, 1, 127));
+                else pfx_note_on(inst, tr, (uint8_t)pitch, (uint8_t)clamp_i(vel, 1, 127));
+                inst->emit_bypass_swing = 0;
+                tr->audition_lane[pitch] = (uint8_t)l;
+                tr->audition_held[pitch >> 3] |= (uint8_t)(1u << (pitch & 7));
+                continue;
+            }
+            int lo = kind == 2 ? 0 : pitch, hi = kind == 2 ? 127 : pitch, q;
+            for (q = lo; q <= hi; q++)
+                if (tr->audition_held[q >> 3] & (1u << (q & 7))) audition_release(inst, tr, (uint8_t)q);
         }
         return 1;
     }

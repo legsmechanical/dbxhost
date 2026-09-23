@@ -48,6 +48,9 @@ All `tN_` keys: N = 0..7. All writes save state unless noted.
 | `tN_cC_clear` | set | any | Atomic wipe all steps + deactivate. |
 | `tN_cC_clear_keep` | set | any | Wipe all steps; preserves clip_playing/will_relaunch. Silences in-flight notes. |
 | `tN_cC_hard_reset` | set | any | `clip_init` (length=16, tps=24, all cleared). Undo snapshot, silence, pfx_sync. |
+| `tN_cC_import` | set | `"<flags> <res_idx> <len>\|a tick pitch vel gate;…"` | Import MIDI: one undo unit. Sets clip C's tps (`TPS_VALUES[res_idx]`), length (1–256) and loop start 0; flags bit0 = replace (wipe notes first). Clears a melodic clip's aftertouch automation (the UI sends `tN_pa_clear C` straight after for parameter automation; both inside the undo unit). Notes via `clip_note_apply_op` (512 cap, ticks clamped). Drum track: each note lands on the lane of clip C whose `midi_note` matches, any clip (not only the active one); unmatched dropped. Refused while recording. Clears the capture buffer. |
+| `tN_cC_lane_notes` | get | 32 space-sep ints | Drum: the pitch each lane of clip C plays (any clip; `tN_lL_lane_note` sees only the active one). |
+| `tN_audition` | set | `"[clip C] on p v … off p … alloff"` | Import MIDI's preview: sounds through the track's play effects and route like a pad, but never reaches Retrospective Capture or the TRACK ARP, is silent while armed/recording, and `alloff` releases only pitches this key started. Drum: the lane for the pitch in clip C (default the active clip), else nothing; a release goes to the lane its start used. |
 | `tN_recording` | set/get | `"0"` or `"1"` | 1=overdub (defers save); 0=disarm+flush. |
 | `tN_pfx_reset` | set | any | Atomically reset NOTE FX + HARMZ + MIDI DLY. |
 | `tN_pfx_snapshot` | get | 31 space-sep ints | [0-16]=NOTE FX K0-K4 / HARMZ K0-K3 / MIDI DLY K0-K7; [17-22]=SEQ ARP style/rate/oct/gate/steps/retrigger; [23-30]=step_vel[0..7]. |
