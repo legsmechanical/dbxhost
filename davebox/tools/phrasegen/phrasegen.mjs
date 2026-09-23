@@ -26,6 +26,8 @@ const OUT = join(HERE, 'out');
 const LIB_DIR = join(HERE, '..', '..', 'phrases');
 const CURATION = join(HERE, 'curation.json');
 export const MAX_BARS = 4;
+export const MAX_DRUM_SOUNDS = 3;
+export const MULTI_SOUND_CATS = ['hat', 'perc'];
 export const LICENCE_ALLOW = ['CC0-1.0', 'CC-BY-4.0', 'MIT', 'Apache-2.0', 'PD', 'dAVEBOx'];
 
 /* Default audition tempo per genre tag (the research notes' typical tempo). */
@@ -115,6 +117,13 @@ function build(write) {
             if (!LICENCE_ALLOW.includes(p.lic)) { console.error(`REFUSED ${p.id}: licence ${p.lic}`); bad++; continue; }
             /* Nothing longer than 4 bars ships (Josh, 2026-09-23). */
             if (!(p.bars >= 1 && p.bars <= MAX_BARS)) { console.error(`REFUSED ${p.id}: ${p.bars} bars (max ${MAX_BARS})`); bad++; continue; }
+            /* Drum phrases: at most 3 sounds, and only hats and percussion may
+             * have more than one (Josh, 2026-09-23). */
+            if (isDrumCat(cat)) {
+                const sounds = new Set(decodeNotes(cat, p.n).map(x => x.p ?? -1)).size;
+                const cap = MULTI_SOUND_CATS.includes(cat) ? MAX_DRUM_SOUNDS : 1;
+                if (sounds > cap) { console.error(`REFUSED ${p.id}: ${sounds} sounds (max ${cap} for ${cat})`); bad++; continue; }
+            }
             keep.push(Object.assign({}, p, c.name ? { name: c.name } : {}));
         }
         if (!keep.length) continue;
