@@ -11023,7 +11023,7 @@ function renderBrowse() {
      * checkbox: these rows are modules you LOAD, and a checkbox would say the
      * click toggles them when the click loads them. */
     renderInChain(S.browseList.map(m => m.id === MOVE_ROW_ID
-                      ? { label: String(m.name), indent: BROWSE_MOVE_INDENT }
+                      ? { label: String(m.name), indent: BROWSE_MOVE_INDENT, labelFont: 'hdr' }
                       : (mlIsMember(m) ? '\u00b7' : '') + loadedMark(m.loaded, String(m.name))),
                   S.browseIdx);
 }

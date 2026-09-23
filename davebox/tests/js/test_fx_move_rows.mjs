@@ -95,7 +95,11 @@ globalThis.print = (x, y, str) => { printed.push({ s: String(str), x: x | 0 }); 
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
 globalThis.fill_rect = () => {};
 globalThis.draw_rect = () => {};
-globalThis.set_pixel = () => {};
+/* A header-font label is pixel glyphs: its LEFT edge is its first ink. */
+globalThis.set_pixel = (x) => {
+    const last = printed[printed.length - 1];
+    if (last && last.hdr && (last.x == null || x < last.x)) last.x = x | 0;
+};
 
 async function main() {
 const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
@@ -115,7 +119,7 @@ const JOG = 14, CLICK = 3;
 
 function screen() {
     globalThis.clear_screen();
-    fonts.setKitTextTrace((t) => printed.push({ s: String(t) }));
+    fonts.setKitTextTrace((t) => printed.push({ s: String(t), hdr: true, x: null }));
     try { render.drawUI(); } finally { fonts.setKitTextTrace(null); }
     return printed.map(p => p.s.trim()).filter(Boolean);
 }
@@ -157,7 +161,9 @@ function browse(comp) {
     return b;
 }
 const MODULE_NAMES = Object.values(CATALOGUE);
-const ROWS = MODULE_NAMES.concat(MODULE_NAMES.map(n => '[' + n + ']'), ['<Move up', '>Move down', '[ none ]']);
+/* The Move rows are in the HEADER font, which draws capitals. */
+const UP = '<MOVE UP', DOWN = '>MOVE DOWN';
+const ROWS = MODULE_NAMES.concat(MODULE_NAMES.map(n => '[' + n + ']'), [UP, DOWN, '[ none ]']);
 
 step('setup: track 1 on a Schwung chain holding Delay, Chorus, Reverb', () => {
     globalThis.init();
@@ -183,22 +189,22 @@ step('⭐ FX 2\'s module list shows Move Up and Move Down directly under the loa
     const at = rows.indexOf('[Chorus]');
     if (rows.includes('Chorus')) throw new Error('the loaded module is also drawn WITHOUT brackets: ' + JSON.stringify(rows));
     if (at < 0) throw new Error('the loaded module is not on screen: ' + JSON.stringify(rows));
-    if (rows[at + 1] !== '<Move up')
+    if (rows[at + 1] !== UP)
         throw new Error('Move Up is not under the loaded module: ' + JSON.stringify(rows));
     /* The list shows a few rows at a time: scroll to Move Down and read again. */
     browseTo('>Move down');
     rows = onScreen(ROWS);
     const i = rows.indexOf('[Chorus]');
-    if (i < 0 || rows[i + 1] !== '<Move up' || rows[i + 2] !== '>Move down')
+    if (i < 0 || rows[i + 1] !== UP || rows[i + 2] !== DOWN)
         throw new Error('the Move rows are not under the loaded module: ' + JSON.stringify(rows));
 });
 
-step('the Move rows are INDENTED under the module; other modules are not bracketed', () => {
-    globalThis.clear_screen();
-    fonts.setKitTextTrace(null);
-    render.drawUI();
+step('the Move rows are INDENTED under the module, in the header font; other modules are not bracketed', () => {
+    screen();
     const xOf = (t) => { const p = printed.find(q => q.s === t); return p ? p.x : null; };
-    const mod = xOf('[Chorus]'), down = xOf('>Move down');
+    const mod = xOf('[Chorus]'), down = xOf(DOWN);
+    if (!printed.find(q => q.s === DOWN && q.hdr)) throw new Error('>Move down is not in the HEADER font');
+    if (printed.find(q => q.s === '[Chorus]' && q.hdr)) throw new Error('the module name moved to the header font too');
     if (mod == null || down == null) throw new Error('rows not printed: ' + JSON.stringify(printed.map(p => p.s)));
     if (!(down >= mod + 8)) throw new Error('Move down at x=' + down + ', module at x=' + mod + ' — not indented');
     const other = printed.map(p => p.s).filter(t => /^\[(Crush|Delay|Reverb)\]$/.test(t));
