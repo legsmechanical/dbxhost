@@ -286,8 +286,11 @@ step('⭐ off the CHORD bank, a held chord leaves the knobs to their bank', () =
 });
 step('⭐ on the CHORD bank, holding a chord shows its settings at once; K2 makes it a seventh and it sounds', () => {
     S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;
+    S.bankCardLatched = false; S.bankSelectTick = -1; S.knobTouched = -1;
     pad(4, true); ticks(1);
-    assert(screenText().some((x) => x === 'V · G'), 'no slot card on hold, before any knob');
+    assert(!screenText().some((x) => x === 'V · G'), 'the slot page came up over the resting overview');
+    S.bankCardLatched = true;
+    assert(screenText().some((x) => x === 'V · G'), 'no slot page on hold with the CHORD bank open, before any knob');
     sets.length = 0;
     knob(1, +1); ticks(1);
     const t = screenText();
@@ -302,10 +305,13 @@ step('⭐ on the CHORD bank, holding a chord shows its settings at once; K2 make
     pad(4, true); knob(7, +1); knobUp(7); ticks(1);
     assert(S.chordPalette[2][4].stack === 1, 'turning K8 reset the slot');
     assert(CP.chordSlotCells(2, 4).cells[7].opens === true, 'Reset is not framed as a click');
-    touch(7, true); cc(3, 127); cc(3, 0); ticks(1);
+    touch(7, true); ticks(1);
+    assert(screenText().some((x) => x === 'RESET') && screenText().some((x) => x === 'CLK'), 'no CLK RESET footer on the K8 touch');
+    cc(3, 127); cc(3, 0); ticks(1);
     assert(S.chordPalette[2][4].stack === 0, 'touch K8 + click did not reset');
     touch(7, false); pad(4, false); ticks(2);
     assert(lastPadmap()[4].split('+').length === 3, 'the reset chord is not what the pad plays');
+    S.bankCardLatched = false;
     S.activeBank = 0; S.trackActiveBank[2] = 0;
 });
 step('⭐ the CHORD bank\'s knob rings: every bound knob lit, the empty ones dark — bank page and slot page', () => {

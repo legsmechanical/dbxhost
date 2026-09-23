@@ -1824,10 +1824,14 @@ function drawUIBody() {
     /* The CHORD bank is contextual: while a chord slot is held it shows that
      * slot's settings (the knobs edit them), and its own settings otherwise.
      * On any other bank a held chord changes nothing here. */
-    if (bank === BANK_CHORD && chordEditSlot() >= 0) {
+    /* Only while the bank's page is up (latched, just chosen, or peeked by a
+     * knob touch) — never over the resting track overview (Josh, 2026-09-23). */
+    if (bank === BANK_CHORD && inTimeout && chordEditSlot() >= 0) {
         const _cs = chordSlotCells(S.activeTrack, chordEditSlot());
+        /* Touching K8 says how to fire it, as stock's trigger footer does. */
         drawKitPage(_cs.title, _cs.cells, false,
-            _cs.plain.length ? [[_cs.plain.join('/'), 'NOT IN KEY']] : null);
+            S.knobTouched === 7 ? [['CLK', 'RESET']]
+            : _cs.plain.length ? [[_cs.plain.join('/'), 'NOT IN KEY']] : null);
         /* The header is the CHORD, as it changes — "vi · AMIN7/C" — in the
          * small face, which keeps the numeral's case (the kit headers
          * uppercase, and "VI" would say major). */
