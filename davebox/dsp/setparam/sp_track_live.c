@@ -163,6 +163,23 @@ static int sp_track_live(sp_ctx_t *cx) {
         return 1;
     }
 
+    if (!strcmp(sub, "chord_revoice")) {
+        /* tN_chord_revoice "<pad> <p+p+p>" — the held Chord-layout pad <pad>
+         * (0..31) now sounds these pitches: what it no longer has ends, what
+         * it gains starts, common notes carry on. A pad not held is left
+         * alone (its next press reads the pushed padmap). */
+        const char *sp = val;
+        while (*sp == ' ') sp++;
+        int pad = 0, digits = 0;
+        while (*sp >= '0' && *sp <= '9') { pad = pad * 10 + (*sp++ - '0'); digits++; }
+        while (*sp == ' ') sp++;
+        uint8_t ch[PAD_CHORD_MAX];
+        int n = pad_parse_chord(&sp, ch);
+        if (digits && n > 0 && ch[0] <= 127 && pad < 32 && tr->pad_mode != PAD_MODE_DRUM)
+            pad_revoice(inst, tr, tidx, pad, ch, n);
+        return 1;
+    }
+
     if (!strcmp(sub, "padmap")) {
         /* tN_padmap "p0 p1 p2 ... p31" — 32 space-separated resolved
          * MIDI pitches for the 32 pads on track t. Pushed by JS whenever
@@ -174,11 +191,14 @@ static int sp_track_live(sp_ctx_t *cx) {
         for (i = 0; i < 32; i++) {
             while (*sp == ' ') sp++;
             if (!*sp) break;
-            int p = 0;
-            while (*sp >= '0' && *sp <= '9') { p = p * 10 + (*sp++ - '0'); }
-            if (p < 0)   p = 0xFF;
-            if (p > 255) p = 0xFF;
-            inst->pad_note_map[tidx][i] = (uint8_t)p;
+            /* A token is one pitch, or a Chord-layout pad's "p+p+p". A plain
+             * payload parses exactly as it always did. */
+            uint8_t ch[PAD_CHORD_MAX];
+            int n = pad_parse_chord(&sp, ch);
+            if (n == 0) break;
+            inst->pad_note_map[tidx][i] = ch[0];
+            memcpy(inst->pad_chord[tidx][i], ch, (size_t)n);
+            inst->pad_chord_n[tidx][i] = (uint8_t)n;
         }
         /* Anything we didn't read stays at its previous value. JS is
          * expected to always send the full 32-entry payload.
