@@ -3164,6 +3164,11 @@ export function drawKitBankPage(cells, opts) {
      * Josh judges it from the offline renders first. */
     const overlayUp = !opts.peekExpired && enumOverlayWouldDraw(cells, ov);
     if (opts.footer && !overlayUp) drawKitHintRow(MV_FOOTER_Y, opts.footer);
+    /* `opaquePicker`: the list owns everything under the header, so nothing on
+     * the page (the other cells, a picture drawn below them) shows around its
+     * box. Opt-in per page (Josh, 2026-09-23, for the phrase browser and Import
+     * MIDI: "make sure that the overlay pickers are opaque"). */
+    if (opts.opaquePicker && overlayUp && !opts.peekExpired) fill_rect(0, MV_HDR_H, SCREEN_W, 64 - MV_HDR_H, 0);
     if (!opts.peekExpired) drawKitEnumOverlay(cells, ov);
 }
 

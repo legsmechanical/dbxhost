@@ -565,7 +565,7 @@ export function miRender(touchedIdx, shift) {
         if (!enumOverlayWouldDraw(cells, touched)) drawRoll(36, 12, true);
         drawKitBankPage(cells, {
             headerText: '(' + (MI.track + 1) + ') ' + String(curPart().name).toUpperCase(),
-            headerRight: optionWarning() || 'IMPORT', touchedIdx: touched,
+            headerRight: optionWarning() || 'IMPORT', touchedIdx: touched, opaquePicker: true,
             footer: hearHint(shift, ['CLK', 'IMPORT']),
         });
         return;
