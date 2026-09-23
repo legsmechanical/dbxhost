@@ -98,7 +98,8 @@ step('a NONE track stays collapsed to the row that picks an instrument', () => {
     B.applyInstrChoice(2, C.INSTR_NONE);
     S.activeTrack = 2;
     const k = menuFor(2);
-    if (k.join(',') !== 'trackto') throw new Error('rows: ' + k.join(','));
+    /* NONE: the instrument row and Import MIDI (Josh, 2026-09-23: every melodic track imports). */
+    if (k.join(',') !== 'trackto,midiimport') throw new Error('rows: ' + k.join(','));
 });
 step('the MIDI track\'s config rows: mode, layout, transpose, velin, LOOPER, afttch (Josh, 09-05: the looper is a MIDI looper)', () => {
     S.activeTrack = 1;

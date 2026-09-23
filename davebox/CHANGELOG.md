@@ -20,8 +20,9 @@ the section into a versioned heading at release time.
 - **Import MIDI.** Sound menu → Import MIDI fills a clip from a MIDI file
   anywhere in your user data folder: pick the file, pick a part (with a
   preview), then set the start bar, bars, grid and destination clip on K1–K4
-  while a picture shows what lands and what is cut. Notes only; one Undo takes
-  it back. Playback stops while the screen is open.
+  while a picture shows what lands and what is cut. Notes only, and the clip's
+  existing automation is cleared; one Undo takes it all back. On every track
+  but a Conductor. Playback stops while the screen is open.
 - **Legato fires like a stock button.** Touch its knob and click the jog (the
   footer says CLK LEGATO, the button flashes); turning the knob no longer does
   anything, and there is no confirm to answer. It can still be undone.

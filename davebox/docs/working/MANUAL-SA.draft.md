@@ -1815,7 +1815,8 @@ is also the only time you could hear them.
 
 ## 15.4 Import a MIDI file
 
-**Sound menu → Import MIDI** fills a clip from a standard MIDI file (`.mid`,
+**Sound menu → Import MIDI** (on any track except a Conductor, whatever it plays
+through) fills a clip from a standard MIDI file (`.mid`,
 `.midi`, `.smf`, `.kar`, `.rmi`). Put the file anywhere in your user data folder —
 the **Files** page of the Schwung web manager (`move.local:7700`) uploads there.
 The notes are copied into the clip; the file is not needed afterwards.
@@ -1843,7 +1844,9 @@ Opening the screen **stops playback**, and it stays stopped when you leave.
    destination already has notes (**Replace clip A?**). One **Undo** takes the
    whole import back.
 
-Only notes come in — no controllers, pitch bend or program changes. The file's
+Only notes come in — no controllers, pitch bend or program changes — and the
+destination clip's own automation is cleared, so it plays exactly the file's
+notes (Undo brings it back with the rest). The file's
 tempo is not applied: the notes are in beats, so they play at your project's
 tempo, and bars follow the file's time signature. A clip holds up to 512 notes.
 On a drum track each note lands on the pad that plays its pitch in that clip.

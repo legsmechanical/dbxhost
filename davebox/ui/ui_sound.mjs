@@ -3229,7 +3229,13 @@ function buildPickRows() {
          * placeholder: it is what an EXT track HAS, and it is the row you need
          * to route it back. Track Control stays open on these tracks precisely
          * so that is reachable (see the follow in ui_tick). */
-        if (GS.trackRoute[S.track] === ROUTE_NONE) { S.pickRows = rows; S.pickRow = 0; return; }   /* NONE: even less than EXT — just the row that picks one */   /* NONE: even less than EXT — just the row that picks one */
+        /* NONE: even less than EXT — the row that picks one, and Import MIDI:
+         * a track with no instrument still plays a clip, and every melodic
+         * track imports whatever it routes to (Josh, 2026-09-23). */
+        if (GS.trackRoute[S.track] === ROUTE_NONE) {
+            rows.push({ kind: 'midiimport', label: 'Import MIDI' });
+            S.pickRows = rows; S.pickRow = 0; return;
+        }   /* NONE: even less than EXT — just the row that picks one */
         /* A MIDI-routed track has no chain and no bus, but it IS a track, and
          * davebox's own per-track settings — mode, layout, transpose, velocity
          * in, aftertouch — apply to a note stream leaving the port as much as

@@ -10,7 +10,8 @@
  *   confirm  only when the import replaces a clip that has notes, or cuts some
  *
  * ⭑ NOTES ONLY. The file's controllers, bends and programs never reach a clip
- * (ui_midifile.mjs does not return them). The file's tempo is not applied:
+ * (ui_midifile.mjs does not return them) — and the clip's own automation is
+ * cleared, so what plays is exactly the file's notes. The file's tempo is not applied:
  * notes are in beats, so they play at the project's tempo.
  *
  * ⭑ The transport STOPS when the screen opens and stays stopped: the read, the
@@ -31,6 +32,7 @@ import { nowMs } from './ui_clock.mjs';
 import { NUM_CLIPS, TPS_VALUES, SCENE_LETTERS, PAD_MODE_DRUM, PAD_MODE_CONDUCT } from './ui_constants.mjs';
 import { syncClipsTargeted } from './ui_dsp_bridge.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
+import { automationClearClipQueued } from './ui_automation.mjs';
 import {
     drawKitHeader, drawKitList, drawKitHintRow, drawKitBankPage, drawKitPrompt, drawKitNoteRoll,
     kitUseLayout, MV_FOOTER_Y,
@@ -367,6 +369,13 @@ function commitTick() {
         cm.key = 't' + t + '_c' + c + '_import';
         cm.val = importPayload();
         GS.pendingDefaultSetParams.push({ key: cm.key, val: cm.val });
+        /* The clip's automation goes with the import (Josh, 2026-09-23: "existing
+         * automation on a track should be cleared on import") — queued BEHIND
+         * the import, whose undo snapshot includes it, so one Undo restores both.
+         * Sent even when this screen's cache knows of none: the cache holds what
+         * has been read, not everything that exists. */
+        if (!automationClearClipQueued(GS.pendingDefaultSetParams, t, c))
+            GS.pendingDefaultSetParams.push({ key: 't' + t + '_pa_clear', val: String(c) });
         cm.phase = 'wait'; cm.wait = 0;
         /* The engine takes its undo snapshot inside the import, so Undo must
          * reach it — and not a stale JS-side unit first. Claimed now, so a screen

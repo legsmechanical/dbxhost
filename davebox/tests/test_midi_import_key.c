@@ -84,6 +84,20 @@ static void test_replace_and_undo(void) {
     hx_destroy(h);
 }
 
+/* An import clears the clip's pad-pressure automation (the UI's pa_clear takes
+ * the parameter automation right after), and one Undo brings it back. */
+static void test_clears_aftertouch_automation(void) {
+    hx_t *h = hx_create(NULL);
+    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+    at_auto_t *at = &inst->tracks[1].clip_at_auto[2];
+    at->count[0] = 5; at->pitch[0] = 60;
+    hx_set_param(h, "t1_c2_import", "0 1 16|a 0 60 100 24");
+    HX_ASSERT(at->count[0] == 0 && at->pitch[0] == AT_LANE_FREE, "the import left the clip's aftertouch automation");
+    hx_set_param(h, "undo_restore", "1");
+    HX_ASSERT(at->count[0] == 5 && at->pitch[0] == 60, "undo did not bring the aftertouch automation back");
+    hx_destroy(h);
+}
+
 static void test_refused_while_recording(void) {
     hx_t *h = hx_create(NULL);
     hx_set_param(h, "t1_recording", "1");
@@ -156,6 +170,7 @@ int main(void) {
     test_melodic_lands();
     test_melodic_cap_and_clamp();
     test_replace_and_undo();
+    test_clears_aftertouch_automation();
     test_refused_while_recording();
     test_drum_lanes();
     test_drum_replace();

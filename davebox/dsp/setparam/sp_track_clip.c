@@ -79,7 +79,8 @@ static int sp_track_clip(sp_ctx_t *cx) {
         /* tN_cC_import "<flags> <res_idx> <length_steps>|a tick pitch vel gate;…"
          * — fill clip C from an imported MIDI file in ONE step: one undo unit,
          * one silence, one finalize. flags bit0 = replace (wipe the clip's notes
-         * first; its automation is left alone — an import is notes only).
+         * first). A melodic clip's pad-pressure automation is cleared here; the
+         * UI clears its parameter automation with `pa_clear` straight after.
          * Sets the clip's resolution (TPS_VALUES[res_idx]) and length, loop
          * from 0. On a DRUM track each note lands on the lane of clip C whose
          * pitch it matches; a pitch no lane plays is dropped. Drum lane note ops
@@ -143,6 +144,12 @@ static int sp_track_clip(sp_ctx_t *cx) {
                 }
             } else {
                 undo_begin_single(inst, tidx, cidx);
+                /* An import replaces the clip's automation too (Josh, 2026-09-23):
+                 * its pad-pressure lanes here, its parameter automation by the
+                 * `pa_clear` the UI queues right behind this key — both after
+                 * the snapshot above, so one Undo brings them back. */
+                at_auto_reset(&tr->clip_at_auto[cidx]);
+                memset(tr->at_last_sent, 0xFF, AT_MAX_LANES);
                 if (is_active) { silence_track_notes_v2(inst, tr); pfx_sync_from_clip(tr); }
                 if (flags & 1) clip_wipe_notes(cl);
                 clip_import_frame(cl, tps, (uint16_t)len);

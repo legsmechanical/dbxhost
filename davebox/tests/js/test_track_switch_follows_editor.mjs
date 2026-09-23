@@ -206,7 +206,7 @@ step('⭑ CONFIG → NONE: a NONE track has no config — its Instrument-only me
     editops._switchActiveTrack(5);
     if (!snd.soundOpen() || snd.soundTrack() !== 5) throw new Error('did not follow');
     settle();
-    if (view() !== VIEW_BLOCKS || kinds() !== 'trackto') throw new Error('view ' + view() + ' rows ' + kinds());
+    if (view() !== VIEW_BLOCKS || kinds() !== 'trackto,midiimport') throw new Error('view ' + view() + ' rows ' + kinds());
     snd.soundExit();
 });
 
@@ -271,7 +271,7 @@ step('⭑ Schwung → NONE from the EDITOR: the Instrument-only menu, on its row
     editops._switchActiveTrack(5);
     if (!snd.soundOpen() || snd.soundTrack() !== 5) throw new Error('did not follow');
     settle();
-    if (!onInstrumentRow() || kinds() !== 'trackto') throw new Error('view ' + view() + ' rows ' + kinds());
+    if (!onInstrumentRow() || kinds() !== 'trackto,midiimport') throw new Error('view ' + view() + ' rows ' + kinds());
     snd.soundExit();
 });
 

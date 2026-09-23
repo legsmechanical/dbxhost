@@ -268,6 +268,11 @@ async function main() {
         assert(/^a 0 60 100 96$/.test(body.split(';')[0]), 'first note ' + body.split(';')[0]);
         assert(!mi() && snd.soundPickStateForTest().view === 0, 'the screen did not close back to the menu');
         assert(S.undoAvailable && !S.undoJs, 'Undo does not reach the import (a stale JS unit would take the press)');
+        /* the clip's automation goes too, AFTER the import (whose undo snapshot holds it) */
+        const all = writes.slice(before);
+        const iImp = all.findIndex(w => /_import$/.test(w[1]));
+        const iClr = all.findIndex(w => w[1] === 't1_pa_clear' && w[2] === String(S.trackActiveClip[1]));
+        assert(iClr > iImp, 'no automation clear after the import: ' + iImp + ' / ' + iClr);
     });
 
     step('a current clip with notes is offered as a REPLACE, behind a confirm', () => {
@@ -366,6 +371,13 @@ async function main() {
         assert(imp.length === 1, 'import writes: ' + imp.length);
         assert(JSON.stringify(S.actionPopupLines).indexOf('IMPORT FAILED') >= 0, 'popup ' + JSON.stringify(S.actionPopupLines));
         assert(!mi(), 'the screen stayed open');
+    });
+
+    step('a track with NO instrument still offers Import MIDI (every melodic track does)', () => {
+        S.trackPadMode[4] = 0; S.trackRoute[4] = 3;          /* ROUTE_NONE */
+        openMenuOn(4);
+        const k = snd.soundPickStateForTest().kinds;
+        assert(k.join(',') === 'trackto,midiimport', 'rows: ' + k.join(','));
     });
 
     step('a Conductor track has no Import MIDI row', () => {

@@ -261,7 +261,8 @@ step('⚠ CONTROL: a NONE track has no config rows at all, and no stray rule', (
     snd.soundExit(); GS.activeTrack = 5; snd.soundEnter(5, 5); ticks(3);
     snd.soundShowMenu(); ticks(2);
     const k = kinds();
-    assert(k.join(',') === 'trackto', 'a NONE track grew rows: ' + k.join(','));
+    /* NONE: the instrument row and Import MIDI (Josh, 2026-09-23: every melodic track imports). */
+    assert(k.join(',') === 'trackto,midiimport', 'a NONE track grew rows: ' + k.join(','));
 });
 
 if (failed) process.exit(1);
