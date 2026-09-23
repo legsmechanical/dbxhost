@@ -4457,7 +4457,8 @@ function openInstrPicker() {
     openEnumPicker(INSTR_ROW_LABEL,
                    rows.map(r => r.divider ? { divider: true }
                        : r.taken != null ? { note: r.label + ' - T' + (r.taken + 1), hdr: false }
-                       : (r.gen && mlIsMember(r.gen) ? '\u00b7' + r.label : r.label)),
+                       : (r.gen && mlIsMember(r.gen) ? '\u00b7' : '')
+                         + loadedMark(!!(r.gen && curGen && r.gen.id === curGen), r.label)),
                    cur < 0 ? 0 : cur, (i) => commitInstrPick(rows[i]));
     /* The picker keeps the ROWS, not just their labels: the shift-click toggle
      * needs the `gen` behind the cursor, and the labels alone have lost it. */
@@ -7559,6 +7560,9 @@ const LIST_ROW_ID = '__list_filter__';
 /* Move Up / Move Down, spliced under the loaded module (see browseMoveRows).
  * Controls like the filter row: never a module id, never a list member. */
 const MOVE_ROW_ID = '__move_fx__';
+const BROWSE_MOVE_INDENT = 12;          /* px: a few characters in the list font */
+/* A module picker names the module already loaded in brackets. */
+function loadedMark(loaded, name) { return loaded ? '[' + name + ']' : name; }
 function browseControlRow(m) { return !!m && (m.id === LIST_ROW_ID || m.id === MOVE_ROW_ID); }
 
 let mlState = null;        /* { version, lists } once loaded */
@@ -7661,7 +7665,14 @@ function openBrowse(comp, prompt) {
 
     /* [ none ] first, and the cursor never resting on it, are one decision —
      * see buildBrowseList, which owns both and is pinned by tests. */
-    const picked = buildBrowseList(catalogue, engineLoadedModule(S.slot, S.comp));
+    const loadedRaw = engineLoadedModule(S.slot, S.comp);
+    const picked = buildBrowseList(catalogue, loadedRaw);
+    /* The module ALREADY in this block is marked (drawn in brackets) — Josh,
+     * 2026-09-22: "if a module is loaded in that slot already, it should have
+     * brackets around it". Marked on a COPY: the catalogue's rows are shared. */
+    const loadedId = moduleIdOf(loadedRaw);
+    if (loadedId) picked.list = picked.list.map(m => (m && m.id && moduleIdOf(m.path || m.id) === loadedId)
+        ? Object.assign({}, m, { loaded: true }) : m);
     /*
      * The filter row goes in at 0, AFTER buildBrowseList has placed its cursor,
      * so that function keeps owning [ none ] and the cursor rule and this only
@@ -7720,8 +7731,10 @@ function browseMoveRows() {
         moduleIdOf(row.path || row.id) !== active) return;
     const holds = (k) => k >= 1 && k <= 4 && !!engineLoadedModule(S.slot, mv.compAt(k));
     const rows = [];
-    if (holds(mv.pos - 1)) rows.push({ id: MOVE_ROW_ID, name: 'Move Up', dir: -1 });
-    if (holds(mv.pos + 1)) rows.push({ id: MOVE_ROW_ID, name: 'Move Down', dir: 1 });
+    /* Indented under the module they move, and marked with the direction
+     * (Josh, 2026-09-22: "indented a few characters ... <Move up / >Move down"). */
+    if (holds(mv.pos - 1)) rows.push({ id: MOVE_ROW_ID, name: '<Move up', dir: -1 });
+    if (holds(mv.pos + 1)) rows.push({ id: MOVE_ROW_ID, name: '>Move down', dir: 1 });
     S.browseList.splice(S.browseIdx + 1, 0, ...rows);
 }
 
@@ -11009,7 +11022,9 @@ function renderBrowse() {
     /* A member of the list in play is marked with a leading dot. Not a
      * checkbox: these rows are modules you LOAD, and a checkbox would say the
      * click toggles them when the click loads them. */
-    renderInChain(S.browseList.map(m => (mlIsMember(m) ? '\u00b7' : '') + String(m.name)),
+    renderInChain(S.browseList.map(m => m.id === MOVE_ROW_ID
+                      ? { label: String(m.name), indent: BROWSE_MOVE_INDENT }
+                      : (mlIsMember(m) ? '\u00b7' : '') + loadedMark(m.loaded, String(m.name))),
                   S.browseIdx);
 }
 

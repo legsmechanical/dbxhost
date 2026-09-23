@@ -3468,22 +3468,25 @@ export function drawKitList(rows, sel, opts) {
          * needs to sit next to the NAME has nowhere else to go. */
         const qual = row.qual ? String(row.qual).toUpperCase() : '';
         const qw = qual ? mvWidth(qual) + QUAL_GAP : 0;
-        const availW = rightEdge - labelX - (vw ? vw + 4 : 0) - qw;
+        /* `indent` (px): a row that belongs to the one above it — the FX
+         * browser's Move up / Move down under the loaded module. */
+        const lx = labelX + (row.indent > 0 ? row.indent | 0 : 0);
+        const availW = rightEdge - lx - (vw ? vw + 4 : 0) - qw;
         let labelEnd = 3;
         if (_hostLabel) {
             while (label.length > 1 && text_width(label) > availW) label = label.slice(0, -1);
             /* +1: the 7-row host glyph sits one lower than the 6-row header
              * glyph in the same band, so the baselines agree with the values. */
-            print(labelX, y + 1, label, ink);
-            labelEnd = labelX + text_width(label);
+            print(lx, y + 1, label, ink);
+            labelEnd = lx + text_width(label);
         } else if (row.hdr) {
             while (label.length > 1 && hdrWidth(label) > availW) label = label.slice(0, -1);
-            hdrPrint(labelX, y, label, ink);
-            labelEnd = labelX + hdrWidth(label);
+            hdrPrint(lx, y, label, ink);
+            labelEnd = lx + hdrWidth(label);
         } else {
             while (label.length > 1 && mvWidth(label) > availW) label = label.slice(0, -1);
-            mvPrint(labelX, y + 1, label, ink);
-            labelEnd = labelX + mvWidth(label);
+            mvPrint(lx, y + 1, label, ink);
+            labelEnd = lx + mvWidth(label);
         }
         if (qual) mvPrint(labelEnd + QUAL_GAP, y + 1, qual, ink);
         if (val) mvPrint(rightEdge - vw, y + 1, val, ink);

@@ -91,7 +91,7 @@ globalThis.host_seed_module_defaults = () => [0, 0];
  * pixel glyphs, reported through the kit's text trace. */
 let printed = [];
 globalThis.clear_screen = () => { printed = []; };
-globalThis.print = (x, y, str) => { printed.push({ s: String(str) }); };
+globalThis.print = (x, y, str) => { printed.push({ s: String(str), x: x | 0 }); };
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
 globalThis.fill_rect = () => {};
 globalThis.draw_rect = () => {};
@@ -157,7 +157,7 @@ function browse(comp) {
     return b;
 }
 const MODULE_NAMES = Object.values(CATALOGUE);
-const ROWS = MODULE_NAMES.concat(['Move Up', 'Move Down', '[ none ]']);
+const ROWS = MODULE_NAMES.concat(MODULE_NAMES.map(n => '[' + n + ']'), ['<Move up', '>Move down', '[ none ]']);
 
 step('setup: track 1 on a Schwung chain holding Delay, Chorus, Reverb', () => {
     globalThis.init();
@@ -180,20 +180,33 @@ step('⭐ FX 2\'s module list shows Move Up and Move Down directly under the loa
     if (b.names[b.idx] !== 'Chorus')
         throw new Error('the cursor opens on ' + JSON.stringify(b.names[b.idx]) + ', not the loaded module');
     let rows = onScreen(ROWS);
-    const at = rows.indexOf('Chorus');
+    const at = rows.indexOf('[Chorus]');
+    if (rows.includes('Chorus')) throw new Error('the loaded module is also drawn WITHOUT brackets: ' + JSON.stringify(rows));
     if (at < 0) throw new Error('the loaded module is not on screen: ' + JSON.stringify(rows));
-    if (rows[at + 1] !== 'Move Up')
+    if (rows[at + 1] !== '<Move up')
         throw new Error('Move Up is not under the loaded module: ' + JSON.stringify(rows));
     /* The list shows a few rows at a time: scroll to Move Down and read again. */
-    browseTo('Move Down');
+    browseTo('>Move down');
     rows = onScreen(ROWS);
-    const i = rows.indexOf('Chorus');
-    if (i < 0 || rows[i + 1] !== 'Move Up' || rows[i + 2] !== 'Move Down')
+    const i = rows.indexOf('[Chorus]');
+    if (i < 0 || rows[i + 1] !== '<Move up' || rows[i + 2] !== '>Move down')
         throw new Error('the Move rows are not under the loaded module: ' + JSON.stringify(rows));
 });
 
+step('the Move rows are INDENTED under the module; other modules are not bracketed', () => {
+    globalThis.clear_screen();
+    fonts.setKitTextTrace(null);
+    render.drawUI();
+    const xOf = (t) => { const p = printed.find(q => q.s === t); return p ? p.x : null; };
+    const mod = xOf('[Chorus]'), down = xOf('>Move down');
+    if (mod == null || down == null) throw new Error('rows not printed: ' + JSON.stringify(printed.map(p => p.s)));
+    if (!(down >= mod + 8)) throw new Error('Move down at x=' + down + ', module at x=' + mod + ' — not indented');
+    const other = printed.map(p => p.s).filter(t => /^\[(Crush|Delay|Reverb)\]$/.test(t));
+    if (other.length) throw new Error('a module that is NOT loaded is bracketed: ' + JSON.stringify(other));
+});
+
 step('⭐⭐ on Move Down, click: the block list shows the NEW order, the moved block selected', () => {
-    browseTo('Move Down');
+    browseTo('>Move down');
     click();
     if (JSON.stringify(moves) !== JSON.stringify(['fx:move=2>3']))
         throw new Error('the host was asked ' + JSON.stringify(moves) + ', want ["2>3"]');
@@ -210,23 +223,23 @@ step('⭐⭐ on Move Down, click: the block list shows the NEW order, the moved 
 step('FX 1 offers only Move Down; the last filled block only Move Up (never toward an empty block)', () => {
     seedChain(['delay', 'chorus', 'reverb', '']);
     let rows = browse('fx1').names;
-    if (rows.includes('Move Up') || !rows.includes('Move Down'))
+    if (rows.includes('<Move up') || !rows.includes('>Move down'))
         throw new Error('FX 1 rows: ' + JSON.stringify(rows));
     rows = browse('fx3').names;
-    if (!rows.includes('Move Up') || rows.includes('Move Down'))
+    if (!rows.includes('<Move up') || rows.includes('>Move down'))
         throw new Error('FX 3 (FX 4 empty) rows: ' + JSON.stringify(rows));
 });
 
 step('an EMPTY block offers no Move rows at all', () => {
     const rows = browse('fx4').names;
-    if (rows.includes('Move Up') || rows.includes('Move Down'))
+    if (rows.includes('<Move up') || rows.includes('>Move down'))
         throw new Error('an empty block offered a move: ' + JSON.stringify(rows));
 });
 
 step('Shift+click on a Move row MOVES (it is not a module to file in a list)', () => {
     seedChain(['delay', 'chorus', 'reverb', '']);
     browse('fx2');
-    browseTo('Move Up');
+    browseTo('<Move up');
     shiftClick();
     if (JSON.stringify(moves) !== JSON.stringify(['fx:move=2>1']))
         throw new Error('the host was asked ' + JSON.stringify(moves));
@@ -236,7 +249,7 @@ step('Shift+click on a Move row MOVES (it is not a module to file in a list)', (
 step('⚠ CONTROL: a move the host REFUSES stays in the list, and nothing is loaded in its place', () => {
     seedChain(['delay', 'chorus', 'reverb', '']);
     browse('fx2');
-    browseTo('Move Down');
+    browseTo('>Move down');
     delete loaded.fx3;                      /* the neighbour emptied under us */
     click();
     if (!snd.soundBrowseStateForTest().browsing) throw new Error('a refused move left the list');
@@ -254,9 +267,9 @@ step('⭐ a MASTER FX insert moves too: its own rows, the bus\'s move key, the b
     jogMenuTo('master_fx:fx1'); shiftClick();
     const b = snd.soundBrowseStateForTest();
     if (!b.browsing) throw new Error('Shift+click did not open the bus insert\'s module list');
-    if (b.names.includes('Move Up') || !b.names.includes('Move Down'))
+    if (b.names.includes('<Move up') || !b.names.includes('>Move down'))
         throw new Error('Master FX 1 rows: ' + JSON.stringify(b.names));
-    browseTo('Move Down'); click();
+    browseTo('>Move down'); click();
     if (JSON.stringify(moves) !== JSON.stringify(['master_fx:fx:move=1>2']))
         throw new Error('the host was asked ' + JSON.stringify(moves));
     const st = snd.soundPickStateForTest();

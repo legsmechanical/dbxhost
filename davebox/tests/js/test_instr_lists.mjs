@@ -533,6 +533,19 @@ step('⭑ a DUPLICATE name is refused, and the keyboard comes back', () => {
         throw new Error('the duplicate was created anyway');
 });
 
+step('the generator ALREADY loaded on a Schwung track is drawn in brackets; the others are not', () => {
+    resetUi(); closeInstr();
+    S.trackRoute[0] = 0;
+    for (const k of Object.keys(loaded)) if (/:synth$/.test(k)) delete loaded[k];
+    for (let sl = 0; sl < 8; sl++) loaded[sl + ':synth'] = 'obxd';
+    ticks(4);
+    snd.soundExit(); ticks(2);
+    const o = openInstr().options.map(x => typeof x === 'string' ? x.replace(/^\u00b7/, '') : x);
+    if (o.indexOf('[OB-Xd]') < 0) throw new Error('the loaded generator is not bracketed: ' + JSON.stringify(o));
+    const marked = o.filter(x => typeof x === 'string' && /^\[.*\]$/.test(x) && x !== '[ none ]');
+    if (marked.length !== 1) throw new Error('want exactly one bracketed row, got ' + JSON.stringify(marked));
+});
+
 closeInstr();
 if (failed) process.exit(1);
 console.log('PASS: module lists filter the Instrument picker');

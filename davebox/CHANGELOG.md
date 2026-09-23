@@ -66,7 +66,9 @@ the section into a versioned heading at release time.
 
 ### Changed (pending)
 - **Reorder insert effects.** Shift + click an effect block to open its module
-  list: **Move Up** and **Move Down** sit under the loaded module. The effect
+  list: **<Move up** and **>Move down** sit indented under the loaded module.
+  Every module picker (effects and the Instrument list) now shows the module
+  already loaded in [brackets]. The effect
   moves without restarting (a reverb keeps its tail), and its automation, macro
   knobs and preset name move with it. Works on track chains and on the Master,
   Send and Move FX buses. A snapshot taken before a move restores the old order.

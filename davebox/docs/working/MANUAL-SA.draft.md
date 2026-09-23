@@ -360,8 +360,9 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   are on it, so a knob you turn there does what it always did.
   Conductor tracks don't have it. Its knobs are the track's levels — Volume, Pan, Send A, Send B — and they record and lock like any other parameter; the bottom row of the card is the door.
   **Reordering effects:** Shift + click an effect block (FX 1–4) to open its
-  module list. Under the loaded module sit **Move Up** and **Move Down**; pick
-  one to swap the effect with its neighbour. Each one appears only toward a
+  module list (the module already loaded shows in [brackets]). Indented under
+  it sit **<Move up** and **>Move down**; pick one to swap the effect with its
+  neighbour. Each one appears only toward a
   block that holds an effect. The effect keeps playing through the move (a
   reverb keeps its tail), and its automation, macro knobs and preset name go
   with it. The same rows reorder the Master, Send and Move FX buses. Recalling
