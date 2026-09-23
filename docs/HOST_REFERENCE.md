@@ -253,6 +253,23 @@ Types: `float` (min/max/step), `int` (min/max), `enum` (options). Optional: `def
 
 Chain host (`modules/chain/dsp/chain_host.c` — lifecycle/set+get_param/render; helpers split into `chain_{json,params,mod,midi,patch}.c`, shared decls in `chain_internal.h`) dlopens sub-plugins, forwards MIDI to sound generator, routes audio through FX. Patches in `/data/UserData/schwung/patches/*.json`. Built-in MIDI FX: chord, arp (up/down/up_down/random). Built-in audio FX: freeverb. MIDI sources can provide `ui_chain.js` for fullscreen chain UI.
 
+### Reordering audio FX (`fx:move`)
+
+`set_param("fx:move", "<from>><to>")` (1-based) moves one audio-FX position to another, rotating
+the positions between — a **permutation**, not a reload, so every module keeps running (a reverb
+keeps its tail) and the chain's own knob maps, LFO and modulation targets are re-aimed at the
+moved module (`chain_reorder.c`, over `src/host/chain_permute.h`). The buses take the same verb on
+their own prefix: `master_fx:fx:move`, `send_fx:<a|b>:fx:move`, `move_fx:<N>:fx:move`
+(`src/host/bus_fx_move.h`).
+
+The shim **refuses** a move — the set answers failure and nothing changes — when either end or
+anything between is an empty position (the slot save compacts, so a hole would not survive a
+reload), or while the render pool still has a lane inside that slot's chain
+(`chain_move_check.h`). Anything outside the chain that names a position by string (a caller's
+automation, macros, presets) is the caller's to follow. A snapshot recall that finds the saved
+modules in another order moves them back before restoring state, and lists the moves in its
+result (`moved: [{ scope, from, to }]`, `scope` = `"<slot>:"` or the bus prefix).
+
 ### Recording / capture
 
 Audio capture is shim-side: the Quantized Sampler (Shift+Vol+Sample) and Skipback

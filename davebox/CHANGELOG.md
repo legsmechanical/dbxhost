@@ -65,6 +65,11 @@ the section into a versioned heading at release time.
   already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
+- **Reorder insert effects.** Shift + click an effect block to open its module
+  list: **Move Up** and **Move Down** sit under the loaded module. The effect
+  moves without restarting (a reverb keeps its tail), and its automation, macro
+  knobs and preset name move with it. Works on track chains and on the Master,
+  Send and Move FX buses. A snapshot taken before a move restores the old order.
 - **Module Help.** A module that ships help now has a **Module Help** row on its Module page
   (the last page of its knobs, above Swap Module). It opens the module's topics: jog to pick,
   click to open, jog scrolls the text, Back climbs out and returns to the Module page. Modules

@@ -359,6 +359,13 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   anywhere else. The knobs still control the track's assignments while you
   are on it, so a knob you turn there does what it always did.
   Conductor tracks don't have it. Its knobs are the track's levels — Volume, Pan, Send A, Send B — and they record and lock like any other parameter; the bottom row of the card is the door.
+  **Reordering effects:** Shift + click an effect block (FX 1–4) to open its
+  module list. Under the loaded module sit **Move Up** and **Move Down**; pick
+  one to swap the effect with its neighbour. Each one appears only toward a
+  block that holds an effect. The effect keeps playing through the move (a
+  reverb keeps its tail), and its automation, macro knobs and preset name go
+  with it. The same rows reorder the Master, Send and Move FX buses. Recalling
+  a snapshot taken before a move puts the old order back.
 - **MACROS** follows SOUND + CONFIG: eight knobs you assign yourself, to any
   parameter of the track's sound — a synth or effect parameter, one of the
   levels, or one of dAVEBOx's own bank knobs (Playback Direction, the NOTE FX,

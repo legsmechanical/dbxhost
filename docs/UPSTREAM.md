@@ -321,6 +321,30 @@ The fork's own `canvas_takes_click` and contextual-Back/Shift+Back experiments w
 
 When #520 merges, re-diff it against this port — upstream may change shape in review.
 
+## Insert FX reorder (`da427483`, `f8e98c1f`, `53df334e`) — ported, reshaped for four fixed positions
+
+Ported 2026-09-22. Upstream renumbers a chain section by PERMUTING its per-position arrays (no
+module reloads, so a reverb keeps its tail) — `chain_permute.h` taken verbatim; the verb is
+upstream's spelling, `fx:move` = `"<from>><to>"`, 1-based.
+
+- **Taken:** `src/host/chain_permute.h` and its test; the permute-don't-reload design; owned
+  buffers rotated, never zeroed (`fx_params` / `fx_ui_hierarchy` moved out of line to make that
+  cheap — `chain_alloc_position_storage`).
+- **Reshaped:** this chain has FOUR FIXED positions with holes allowed (`fx_count` is a high-water
+  mark), not upstream's compact variable-length list. So `chain_reorder.c` is ours: audio FX only,
+  move only (no insert/remove verbs), and **a move never crosses an empty position** — the slot save
+  compacts, so a hole would not survive a reload. The shim refuses such a move with an answer
+  (`chain_move_check.h`), and refuses while the render pool still has a lane in the chain.
+- **Added here:** the same verb on the master, send and Move FX buses (`bus_fx_move.h`, with the
+  master's LFO targets retargeted); a snapshot recall that finds the saved modules in another order
+  moves them back before restoring state (`planReorders`, `shared/snapshot.mjs`) and reports the
+  moves (`moved`) so the caller's own references follow.
+- **dAVEBOx surface:** Move Up / Move Down rows under the loaded module in the FX browser
+  (`openBrowse` → `browseMoveRows`, `davebox/ui/ui_sound.mjs`) — upstream's Move Left / Right rows,
+  vertical. Automation, macro legs and the loaded-preset record follow a move
+  (`chainFxMove` / `busFxMove`). `davebox/tests/js/test_fx_move_rows.mjs` performs the gesture.
+- **NOT taken:** upstream's Shift+jog reorder gesture and its MIDI-FX section moves.
+
 ## Keep-list — paths this fork owns
 
 Divergence is concentrated, and these are the files where an upstream change is most likely to
