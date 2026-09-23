@@ -102,6 +102,27 @@ step('SnapMorph\'s cache for the slot is dropped (it tested "same module at this
     auto.automationTick();
 });
 
+step('the loaded-preset record follows the module (it is keyed by position): chain and bus', () => {
+    seed();
+    GS.presetRec = Object.create(null);
+    GS.presetRec['3:fx1'] = { name: 'Wide', path: '/p/wide', hash: 'h1', mod: 'chorus' };
+    GS.presetRec['3:fx3'] = { name: 'Hall', path: '/p/hall', hash: 'h3', mod: 'reverb' };
+    GS.presetRec['5:fx1'] = { name: 'Other', path: '/p/o', hash: 'h5', mod: 'delay' };
+    GS.presetRec['0:master_fx:fx2'] = { name: 'Glue', path: '/p/glue', hash: 'hm', mod: 'comp' };
+    assert(snd.chainFxMove(0, 3, 1, 3) === true, 'control: the move went through');
+    const names = (k) => GS.presetRec[k] && GS.presetRec[k].name;
+    assert(names('3:fx3') === 'Wide', 'fx1\'s record did not move to fx3: ' + JSON.stringify(GS.presetRec));
+    assert(names('3:fx2') === 'Hall', 'fx3\'s record did not shift to fx2: ' + JSON.stringify(GS.presetRec));
+    assert(!GS.presetRec['3:fx1'], 'fx1 still carries a record (nothing had one to move there)');
+    assert(names('5:fx1') === 'Other', 'another slot\'s record moved');
+    assert(names('0:master_fx:fx2') === 'Glue', 'a bus record moved on a CHAIN move');
+    assert(snd.busFxMove('master_fx:', 2, 1) === true, 'control: the bus move went through');
+    assert(names('0:master_fx:fx1') === 'Glue' && !GS.presetRec['0:master_fx:fx2'],
+           'the bus record did not follow: ' + JSON.stringify(GS.presetRec));
+    assert(names('3:fx3') === 'Wide', 'a CHAIN record moved on a bus move');
+    auto.automationTick();
+});
+
 if (failed) { console.log('FAIL: chain fx move'); process.exit(1); }
 console.log('PASS: a moved insert FX takes its automation and macros with it; a refused move changes nothing');
 }

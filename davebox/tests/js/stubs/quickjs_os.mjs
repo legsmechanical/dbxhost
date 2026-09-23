@@ -17,7 +17,15 @@ export function open() { return -1; }
 export function read() { return 0; }
 export function seek() { return -1; }
 export function close() { return 0; }
-export function readdir() { return [[], 2 /* ENOENT */]; }
+/* Default: no directory exists. A test that needs a listing (a module scan)
+ * opts in with __setReaddir({ '<dir>': ['a', 'b'] }) and clears it after. */
+let _readdirMap = null;
+export function __setReaddir(map) { _readdirMap = map || null; }
+export function readdir(p) {
+    const k = String(p);
+    if (_readdirMap && Object.prototype.hasOwnProperty.call(_readdirMap, k)) return [_readdirMap[k].slice(), 0];
+    return [[], 2 /* ENOENT */];
+}
 
 /* ⚠ realpath was MISSING until 2026-09-21, and its absence was invisible: the
  * one caller (ui_persistence's dbxProjectDir, the Phase-1 resolve seam) wraps

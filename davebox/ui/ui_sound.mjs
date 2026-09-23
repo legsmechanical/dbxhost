@@ -1217,7 +1217,8 @@ export function soundAtBlockRoot() { return S.active && S.view === VIEW_BLOCKS; 
  * gesture that never opened anything. */
 export function soundBrowseStateForTest() {
     return { browsing: S.active && S.view === VIEW_BROWSE,
-             prompt: S.browsePrompt, count: S.browseList.length };
+             prompt: S.browsePrompt, count: S.browseList.length,
+             names: S.browseList.map(m => String(m.name)), idx: S.browseIdx };
 }
 export function soundTrack() { return S.track; }
 export function soundSlot()  { return S.slot; }
@@ -7555,6 +7556,10 @@ function runDiscovery() {
  * list for both, at the path stock >= 1.1.0 already writes.
  */
 const LIST_ROW_ID = '__list_filter__';
+/* Move Up / Move Down, spliced under the loaded module (see browseMoveRows).
+ * Controls like the filter row: never a module id, never a list member. */
+const MOVE_ROW_ID = '__move_fx__';
+function browseControlRow(m) { return !!m && (m.id === LIST_ROW_ID || m.id === MOVE_ROW_ID); }
 
 let mlState = null;        /* { version, lists } once loaded */
 let mlReadOnly = false;    /* corrupt OR newer-than-us: never write */
@@ -7592,7 +7597,7 @@ function mlSave() {
  * the filter row. Written once because both callers need the same answer. */
 function mlRealIds(rows) {
     return (rows || [])
-        .filter(m => m && m.id && m.id !== LIST_ROW_ID)
+        .filter(m => m && m.id && !browseControlRow(m))
         .map(m => moduleIdOf(m.path || m.id));
 }
 
@@ -7605,7 +7610,7 @@ function mlEligible(rows) {
 }
 
 function mlIsMember(mod) {
-    if (!mod || !mod.id || mod.id === LIST_ROW_ID) return false;
+    if (!mod || !mod.id || browseControlRow(mod)) return false;
     mlEnsure();
     const id = moduleIdOf(mod.path || mod.id);
     const name = mlFilter || ModuleLists.FAVORITES;
@@ -7671,10 +7676,73 @@ function openBrowse(comp, prompt) {
     S.browseIdx = picked.idx + 1;
     if (S.browseIdx >= S.browseList.length) S.browseIdx = S.browseList.length - 1;
     if (S.browseIdx <= 0) S.browseIdx = Math.min(1, S.browseList.length - 1);
+    browseMoveRows();
     S.browsePrompt = prompt || '';
     S.view = VIEW_BROWSE;
     S.dirty = true;
     log('browse: ' + found.length + ' modules for ' + S.comp);
+}
+
+/* The block being browsed, if it sits in a chain that can REORDER: a track's
+ * fx1..fx4, or a master / send / Move bus insert. Null for everything else —
+ * the generator, MIDI FX, and a MODULE-bus insert (`bus<N>:fx<K>`), whose
+ * chain has no move verb. */
+function browseMoveTarget() {
+    if (!S.comp || ModBus.modBusParseInsertKey(S.comp)) return null;
+    if (S.bus) {
+        const p = S.bus.prefix;
+        const m = p && S.comp.indexOf(p) === 0 && /^fx([1-4])$/.exec(S.comp.slice(p.length));
+        if (!m) return null;
+        return { pos: +m[1], compAt: (k) => p + 'fx' + k, move: (f, t) => busFxMove(p, f, t) };
+    }
+    const m = /^fx([1-4])$/.exec(S.comp);
+    if (!m) return null;
+    return { pos: +m[1], compAt: (k) => 'fx' + k, move: (f, t) => chainFxMove(S.track, S.slot, f, t) };
+}
+
+/*
+ * ⭐ MOVE UP / MOVE DOWN, directly under the loaded module (Josh, 2026-09-22:
+ * "look at how upstream does it. it's an option under the module in the module
+ * list." Upstream's are Move Left / Right; dAVEBOx's block list is vertical).
+ *
+ * Offered only where they would DO something: toward a neighbour that HOLDS a
+ * module. An empty neighbour is refused by the host anyway — the slot save
+ * compacts, so an order with a hole in it does not survive a reload — and a
+ * row that answers a click with "can't" is a row that should not be there.
+ * The cursor stays on the loaded module; the rows sit below it.
+ */
+function browseMoveRows() {
+    const mv = browseMoveTarget();
+    if (!mv) return;
+    const active = moduleIdOf(engineLoadedModule(S.slot, S.comp));
+    const row = S.browseList[S.browseIdx];
+    if (!active || !row || !row.id || browseControlRow(row) ||
+        moduleIdOf(row.path || row.id) !== active) return;
+    const holds = (k) => k >= 1 && k <= 4 && !!engineLoadedModule(S.slot, mv.compAt(k));
+    const rows = [];
+    if (holds(mv.pos - 1)) rows.push({ id: MOVE_ROW_ID, name: 'Move Up', dir: -1 });
+    if (holds(mv.pos + 1)) rows.push({ id: MOVE_ROW_ID, name: 'Move Down', dir: 1 });
+    S.browseList.splice(S.browseIdx + 1, 0, ...rows);
+}
+
+/* Picking a Move row: the move, then the block list with the MOVED block
+ * selected, where the new order is what you see — upstream re-selects the
+ * moved component the same way. A refusal leaves you in the browser (the
+ * move itself said why). */
+function moveBrowsedBlock(dir) {
+    const mv = browseMoveTarget();
+    if (!mv) return;
+    const to = mv.pos + dir;
+    if (!mv.move(mv.pos, to)) return;
+    S.comp = mv.compAt(to);
+    const bi = BLOCKS.findIndex(b => b.comp === S.comp);
+    if (bi >= 0) S.blockIdx = bi;
+    S.banks = [];
+    S.view = VIEW_BLOCKS;
+    refreshBlockNames();
+    const r = S.pickRows.findIndex(p => p.kind === 'block' && p.comp === S.comp);
+    if (r >= 0) S.pickRow = r;
+    S.dirty = true;
 }
 
 function loadSelected() {
@@ -7684,6 +7752,8 @@ function loadSelected() {
      * the click site because the pick would otherwise write its synthetic id
      * into the slot as a module name. */
     if (mod.id === LIST_ROW_ID) return;
+    /* A move is not a module change: nothing is stranded, so no gate. */
+    if (mod.id === MOVE_ROW_ID) { moveBrowsedBlock(mod.dir); return; }
     /* ⚠ THE GATE, not the actor: this is the FX browser's commit -- Swap Module
      * lands here -- so it must ask before stranding that block's automation
      * exactly as the Instrument picker does. */
@@ -7782,6 +7852,7 @@ export function moduleChangeImpact(track, slot, comp) {
  *   dAVEBOx's AUTOMATION follows (the DSP store renames "<slot>:fxK:" targets,
  *     the JS mirror the same — automationFxMoved);
  *   MACRO legs on this track follow (sidecar), and the on-screen assignments;
+ *   the loaded-preset record follows (it is keyed by position);
  *   per-position caches are dropped (value metadata, canvases, SnapMorph).
  *
  * `from`/`to` are 1-based positions. The host REFUSES a move into or across an
@@ -7833,11 +7904,29 @@ function insertFxMove(c, from, to) {
             }
         }
     }
-    if (legsMoved) writeSidecar();
+    /* The loaded-preset record is keyed by POSITION (`<slot>:<comp>`, see
+     * presetRecKey), so it moves with the module too — left behind, the
+     * record's `mod` guard would drop it (another module sits there now) or,
+     * with the same module on both sides, name the wrong preset. */
+    const recComp = isBus ? c.scope + 'fx' : 'fx';
+    const recs = [];
+    for (let k = 1; k <= 4; k++) {
+        const key = c.slot + ':' + recComp + k;
+        recs[k] = GS.presetRec[key];
+        delete GS.presetRec[key];
+    }
+    let recsMoved = 0;
+    for (let k = 1; k <= 4; k++) {
+        if (!recs[k]) continue;
+        GS.presetRec[c.slot + ':' + recComp + map[k]] = recs[k];
+        if (map[k] !== k) recsMoved++;
+    }
+    if (legsMoved || recsMoved) writeSidecar();
     engineCanvasForget();
     if (isBus) morphInvalidateBuses(); else morphInvalidate(c.slot);
     S.dirty = true;
-    console.log('[sound] fx move ' + c.key + ' ' + from + '>' + to + ' (' + legsMoved + ' macro leg(s) followed)');
+    console.log('[sound] fx move ' + c.key + ' ' + from + '>' + to + ' (' + legsMoved +
+                ' macro leg(s), ' + recsMoved + ' preset record(s) followed)');
     return true;
 }
 
@@ -9642,6 +9731,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
         else if (S.view === VIEW_BROWSE) {
             const row = S.browseList[S.browseIdx];
             if (row && row.id === LIST_ROW_ID) S.pendingAction = { t: 'listcycle' };
+            /* A Move row is not a module: Shift+click has no list to file it in. */
+            else if (row && row.id === MOVE_ROW_ID) S.pendingAction = { t: 'load' };
             /* Shift+click opens the LISTS MENU for the module under the cursor;
              * plain click loads it.
              *
