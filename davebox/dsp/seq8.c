@@ -917,18 +917,25 @@ typedef struct {
 #define LRS_SET(tr, s)  ((tr)->live_recorded_steps[(s)>>3] |=  (uint8_t)(1u<<((s)&7)))
 #define LRS_TEST(tr, s) ((tr)->live_recorded_steps[(s)>>3] &   (1u<<((s)&7)))
 
-/* The phrase-library preview: a phrase swapped into one clip (or one drum
- * lane) in place of what it holds, on the next beat, and the original put back
- * when the preview ends. `backup` is the original; `staged` the phrase waiting
- * for its beat. Nothing here is saved: the serializer reads `backup` for the
- * previewed clip (aud_saved_clip), so a save mid-preview writes the original. */
+/* The phrase-library preview: a phrase swapped into one clip, or into one or
+ * several drum lanes, in place of what they hold, on the next beat, and the
+ * originals put back when the preview ends. `held` are the lanes the phrase is
+ * in now, each with its original in `backup`; `staged` the phrase waiting for
+ * its beat. A new staging may name other lanes: on its beat the new lanes go
+ * in and the lanes it no longer names come back, together. Nothing here is
+ * saved: the serializer reads `backup` for a previewed clip (aud_saved_clip),
+ * so a save mid-preview writes the original. */
+#define AUD_MAX_LANES 8
 typedef struct {
-    uint8_t  active;          /* the phrase is in the clip now */
-    uint8_t  pending;         /* 1 = swap `staged` in, 2 = restore `backup` — at the next beat */
+    uint8_t  active;          /* the phrase is in the clip now (n > 0) */
+    uint8_t  pending;         /* 1 = swap `staged` in, 2 = restore every `backup` — at the next beat */
     uint8_t  track, clip;
-    uint8_t  lane;            /* 0xFF = the melodic clip, else a drum lane */
-    clip_t   backup;
-    clip_t   staged;
+    uint8_t  n;                             /* lanes held */
+    uint8_t  lanes[AUD_MAX_LANES];          /* 0xFF = the melodic clip, else a drum lane */
+    uint8_t  sn;                            /* lanes staged */
+    uint8_t  slanes[AUD_MAX_LANES];
+    clip_t   backup[AUD_MAX_LANES];
+    clip_t   staged[AUD_MAX_LANES];
 } audclip_t;
 
 typedef struct {
@@ -1511,7 +1518,10 @@ typedef struct {
  * preview holds it. */
 static const clip_t *aud_saved_clip(const seq8_instance_t *inst, int t, int c, int lane, const clip_t *live) {
     const audclip_t *a = &inst->aud;
-    return (a->active && a->track == t && a->clip == c && a->lane == (uint8_t)lane) ? &a->backup : live;
+    int i;
+    if (a->active && a->track == t && a->clip == c)
+        for (i = 0; i < a->n; i++) if (a->lanes[i] == (uint8_t)lane) return &a->backup[i];
+    return live;
 }
 
 static const host_api_v1_t *g_host = NULL;
@@ -4627,43 +4637,66 @@ static clip_t *aud_live(seq8_instance_t *inst, int t, int c, int lane) {
  * of the ORIGINAL clip, never of a phrase being auditioned. */
 static void aud_release_track(seq8_instance_t *inst, int t) {
     audclip_t *a = &inst->aud;
+    int i;
     if (a->track != t || (!a->active && !a->pending)) return;
-    if (a->active) {
-        clip_t *live = aud_live(inst, a->track, a->clip, a->lane);
-        if (live) memcpy(live, &a->backup, sizeof(clip_t));
+    for (i = 0; i < a->n; i++) {
+        clip_t *live = aud_live(inst, a->track, a->clip, a->lanes[i]);
+        if (live) memcpy(live, &a->backup[i], sizeof(clip_t));
     }
+    a->n = 0;
+    a->sn = 0;
     a->active = 0;
     a->pending = 0;
 }
-/* Swap the staged phrase in, or the original back. Runs on the beat from the
- * render loop while playing, at once while stopped; either way single-threaded
- * with set_param. The playhead is re-anchored to the master clock so the new
- * material lands in phase. */
-static void aud_apply(seq8_instance_t *inst) {
-    audclip_t *a = &inst->aud;
-    int p = a->pending;
-    a->pending = 0;
-    if (!p) return;
-    seq8_track_t *tr = &inst->tracks[a->track];
-    clip_t *live = aud_live(inst, a->track, a->clip, a->lane);
-    if (!live) { a->active = 0; return; }
-    if (p == 1) {
-        if (!a->active) { memcpy(&a->backup, live, sizeof(clip_t)); a->active = 1; }
-        memcpy(live, &a->staged, sizeof(clip_t));
-    } else if (a->active) {
-        memcpy(live, &a->backup, sizeof(clip_t));
-        a->active = 0;
-    }
+/* After lane `lane` of the previewed clip changed under the playhead: end its
+ * sounding note and put its playhead in phase. */
+static void aud_settle(seq8_instance_t *inst, seq8_track_t *tr, audclip_t *a, uint8_t lane, clip_t *live) {
     int is_active = ((int)tr->active_clip == a->clip);
-    if (a->lane == 0xFF) {
+    if (lane == 0xFF) {
         if (is_active) silence_track_notes_v2(inst, tr);
         if (is_active && inst->playing) melodic_anchor_playhead(inst, tr, live);
         else if (is_active) { if (tr->current_step >= live->length) tr->current_step = 0; if (tr->tick_in_step >= live->ticks_per_step) tr->tick_in_step = 0; }
     } else {
-        drum_pfx_note_off_imm(inst, tr, &tr->drum_lane_pfx[a->lane], tr->drum_clips[a->clip]->lanes[a->lane].midi_note);
-        if (is_active && inst->playing) drum_lane_anchor_playhead(inst, tr, a->lane, live);
-        else if (is_active) { tr->drum_current_step[a->lane] = 0; tr->drum_tick_in_step[a->lane] = 0; }
+        drum_pfx_note_off_imm(inst, tr, &tr->drum_lane_pfx[lane], tr->drum_clips[a->clip]->lanes[lane].midi_note);
+        if (is_active && inst->playing) drum_lane_anchor_playhead(inst, tr, lane, live);
+        else if (is_active) { tr->drum_current_step[lane] = 0; tr->drum_tick_in_step[lane] = 0; }
     }
+}
+/* Swap the staged phrase in (and the lanes it no longer names back), or every
+ * original back. Runs on the beat from the render loop while playing, at once
+ * while stopped; either way single-threaded with set_param. Playheads are
+ * re-anchored to the master clock so the new material lands in phase. */
+static void aud_apply(seq8_instance_t *inst) {
+    audclip_t *a = &inst->aud;
+    int p = a->pending, i, j;
+    a->pending = 0;
+    if (!p) return;
+    seq8_track_t *tr = &inst->tracks[a->track];
+    if (p == 1) {
+        for (i = 0; i < a->sn; i++) {
+            clip_t *live = aud_live(inst, a->track, a->clip, a->slanes[i]);
+            if (!live) continue;
+            for (j = 0; j < a->n && a->lanes[j] != a->slanes[i]; j++) {}
+            if (j == a->n) {
+                if (a->n >= AUD_MAX_LANES) continue;
+                memcpy(&a->backup[a->n], live, sizeof(clip_t));
+                a->lanes[a->n++] = a->slanes[i];
+            }
+            memcpy(live, &a->staged[i], sizeof(clip_t));
+            aud_settle(inst, tr, a, a->slanes[i], live);
+        }
+    }
+    /* Lanes held but not (or no longer) staged come back. */
+    for (j = 0; j < a->n; ) {
+        int keep = 0;
+        if (p == 1) for (i = 0; i < a->sn; i++) if (a->slanes[i] == a->lanes[j]) { keep = 1; break; }
+        if (keep) { j++; continue; }
+        clip_t *live = aud_live(inst, a->track, a->clip, a->lanes[j]);
+        if (live) { memcpy(live, &a->backup[j], sizeof(clip_t)); aud_settle(inst, tr, a, a->lanes[j], live); }
+        a->n--;
+        if (j < a->n) { a->lanes[j] = a->lanes[a->n]; memcpy(&a->backup[j], &a->backup[a->n], sizeof(clip_t)); }
+    }
+    a->active = a->n > 0;
     rui_mark(inst, a->track, a->clip);
 }
 

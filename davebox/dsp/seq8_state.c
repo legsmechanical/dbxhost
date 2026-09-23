@@ -804,6 +804,8 @@ static void seq8_load_state(seq8_instance_t *inst) {
      * would restore are about to be replaced. */
     inst->aud.active = 0;
     inst->aud.pending = 0;
+    inst->aud.n = 0;
+    inst->aud.sn = 0;
     /* A load is the selection: from here on a project IS live and saving is
      * allowed again. Cleared up front, not on success — a missing/empty state
      * file is a legitimate brand-new project, and leaving the flag set would

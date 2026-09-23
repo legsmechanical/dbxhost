@@ -7,7 +7,7 @@
 import {
     parseLibrary, mergeLibraries, styleList, filterPhrases, decodePhrase, pitchInC, remapPitch,
     timing, melodicNotes, drumVoices, defaultAssign, drumLaneNotes, melodicImportVal,
-    melodicAudclipVal, laneImportVal, laneAudclipVal, rollOf, PB_TIME_DEFAULT, PB_MAX_VOICES, defaultNoteAssign, drumAsMelodicNotes,
+    melodicAudclipVal, laneImportVal, laneAudclipVal, rollOf, PB_TIME_DEFAULT, PB_MAX_VOICES, defaultNoteAssign, drumAsMelodicNotes, lanesAudclipVal, lanesImportVal,
 } from '../../ui/ui_phrases.mjs';
 
 let failed = 0;
@@ -144,6 +144,9 @@ step('engine payloads are the keys\' exact grammar', () => {
     const dn = [{ t: 0, v: 110, g: 20 }];
     assertEq(laneImportVal(tm, dn, false), '0 1 16|a 0 110 20', 'lane import');
     assertEq(laneAudclipVal(tm, 7, dn), '1 16 7|a 0 110 20', 'lane audclip');
+    const lanes = new Map([[9, [{ t: 48, v: 70, g: 6 }]], [2, [{ t: 0, v: 110, g: 20 }, { t: 96, v: 90, g: 6 }]]]);
+    assertEq(lanesAudclipVal(tm, lanes), '1 16 -2|L2;a 0 110 20;a 96 90 6;L9;a 48 70 6', 'several lanes, ascending');
+    assertEq(lanesImportVal(tm, lanes, true), '1 1 16|L2;a 0 110 20;a 96 90 6;L9;a 48 70 6', 'lanes import');
 });
 
 step('the roll: melodic rows high to low, drum rows by voice', () => {

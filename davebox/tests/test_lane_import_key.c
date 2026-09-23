@@ -60,7 +60,32 @@ static void test_refused_while_recording(void) {
     hx_destroy(h);
 }
 
+
+/* tN_lanes_import: several lanes, ONE undo unit, only the named lanes. */
+static void test_lanes_import(void) {
+    hx_t *h = hx_create(NULL);
+    hx_set_param(h, "t0_l0_note_add", "0 100 12");
+    hx_set_param(h, "t0_l3_note_add", "24 100 12");
+    hx_set_param(h, "t0_lanes_import", "1 2 8|L3;a 0 100 6;a 96 90 6;L5;a 48 70 6;L99;a 0 1 1");
+    HX_ASSERT(geti(h, "t0_l3_note_count") == 2 && geti(h, "t0_l5_note_count") == 1, "the named lanes did not load");
+    HX_ASSERT(geti(h, "t0_l3_tps") == 48 && geti(h, "t0_l5_length") == 8, "grid/length not set on the named lanes");
+    HX_ASSERT(geti(h, "t0_l0_note_count") == 1 && geti(h, "t0_l0_tps") == 24, "a lane not named changed");
+    hx_set_param(h, "undo_restore", "1");
+    HX_ASSERT(geti(h, "t0_l3_note_count") == 1 && geti(h, "t0_l5_note_count") == 0 && geti(h, "t0_l3_tps") == 24,
+              "one undo did not restore every lane");
+    /* merge (flags 0) keeps what a lane had */
+    hx_set_param(h, "t0_lanes_import", "0 1 16|L3;a 0 100 6");
+    HX_ASSERT(geti(h, "t0_l3_note_count") == 2, "merge lost the lane's hit");
+    /* refused on a melodic track and while recording */
+    hx_set_param(h, "t1_lanes_import", "1 1 16|L3;a 0 100 6");
+    hx_set_param(h, "t0_recording", "1");
+    hx_set_param(h, "t0_lanes_import", "1 1 16|L3;a 96 100 6");
+    HX_ASSERT(geti(h, "t0_l3_note_count") == 2, "loaded while recording");
+    hx_destroy(h);
+}
+
 int main(void) {
+    test_lanes_import();
     test_one_lane_only();
     test_replace_and_undo();
     test_in_phase_while_playing();

@@ -130,6 +130,55 @@ static void test_load_during_preview_undoes_to_original(void) {
     hx_destroy(h);
 }
 
+
+/* Several drum lanes at once (lane -2): all go in together; a re-staging that
+ * drops a lane puts that lane back on the same beat; off restores them all; a
+ * save mid-preview writes every original. */
+static void test_several_lanes(void) {
+    hx_t *h = hx_create(NULL);
+    hx_set_param(h, "t0_l1_note_add", "96 100 12");                     /* originals */
+    hx_set_param(h, "t0_l4_note_add", "192 100 12");
+    hx_set_param(h, "t0_audclip", "1 16 -2|L1;a 0 100 6;a 48 80 6;L4;a 24 90 6;L4;a 72 90 6;a 120 90 6");
+    HX_ASSERT(geti(h, "t0_l1_note_count") == 2, "lane 1 did not take its hits");
+    HX_ASSERT(geti(h, "t0_l4_note_count") == 1, "lane 4 took the repeated L4's hits, or none");
+    HX_ASSERT(geti(h, "t0_l0_note_count") == 0, "a lane not named changed");
+    static char st[262144];
+    hx_get_param(h, "state_full", st, (int)sizeof st);
+    HX_ASSERT(strstr(st, "48:") == NULL, "a save mid-preview wrote a previewed hit");
+    /* re-stage onto lanes 4 and 7: lane 1 comes back */
+    hx_set_param(h, "t0_audclip", "1 16 -2|L4;a 0 100 6;a 96 100 6;a 288 100 6;L7;a 0 50 6");
+    HX_ASSERT(geti(h, "t0_l1_note_count") == 1, "the dropped lane did not come back");
+    HX_ASSERT(geti(h, "t0_l4_note_count") == 3 && geti(h, "t0_l7_note_count") == 1, "the new staging did not go in");
+    hx_set_param(h, "t0_audclip", "off");
+    HX_ASSERT(geti(h, "t0_l1_note_count") == 1 && geti(h, "t0_l4_note_count") == 1 && geti(h, "t0_l7_note_count") == 0,
+              "off did not restore every lane");
+    /* a melodic track refuses lane previews */
+    hx_set_param(h, "t1_audclip", "1 16 -2|L1;a 0 100 6");
+    HX_ASSERT(!((seq8_instance_t *)h->inst)->aud.active, "a melodic track took a lane preview");
+    hx_destroy(h);
+}
+
+/* Several lanes swap on ONE beat while playing, the dropped one included. */
+static void test_several_lanes_one_beat(void) {
+    hx_t *h = hx_create(NULL);
+    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+    hx_set_param(h, "t0_l1_note_add", "96 100 12");
+    hx_set_param(h, "t0_launch_clip", "0");
+    hx_set_param(h, "transport", "play");
+    int guard = 0;
+    hx_set_param(h, "t0_audclip", "1 16 -2|L1;a 0 100 6;L2;a 0 100 6");
+    while (!inst->aud.active && guard++ < 4000) hx_render(h, 1);
+    while (inst->global_tick % 4 != 2 && guard++ < 8000) hx_render(h, 1);    /* mid-beat */
+    hx_set_param(h, "t0_audclip", "1 16 -2|L2;a 0 100 6;a 48 100 6;L3;a 0 100 6");
+    HX_ASSERT(geti(h, "t0_l1_note_count") == 1 && geti(h, "t0_l3_note_count") == 0, "precondition: nothing moved before the beat");
+    uint32_t g0 = inst->global_tick;
+    while (inst->aud.pending && guard++ < 8000) hx_render(h, 1);
+    HX_ASSERT(inst->global_tick % 4 == 0 && inst->global_tick > g0, "the swap was not on a beat");
+    HX_ASSERT(geti(h, "t0_l1_note_count") == 1 && geti(h, "t0_l2_note_count") == 2 && geti(h, "t0_l3_note_count") == 1,
+              "the lanes did not all change on that one beat");
+    hx_destroy(h);
+}
+
 int main(void) {
     test_load_during_preview_undoes_to_original();
     test_stopped_swap_and_restore();
@@ -137,6 +186,8 @@ int main(void) {
     test_one_drum_lane();
     test_refused_while_recording();
     test_project_load_drops_it();
-    printf("PASS: audclip key (swap, restore, save writes original, on the beat, one lane, recording, load)\n");
+    test_several_lanes();
+    test_several_lanes_one_beat();
+    printf("PASS: audclip key (swap, restore, save writes original, on the beat, one lane, several lanes, recording, load)\n");
     return 0;
 }

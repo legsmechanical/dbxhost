@@ -327,6 +327,20 @@ export function laneAudclipVal(tm, lane, notes) {
         notes.map(n => 'a ' + n.t + ' ' + n.v + ' ' + n.g).join(';');
 }
 
+/* Several lanes: tN_audclip (lane -2) and tN_lanes_import. `laneNotes` is
+ * drumLaneNotes' Map(lane → notes); lanes in ascending order. */
+function lanesBody(laneNotes) {
+    return [...laneNotes.keys()].sort((a, b) => a - b).map(l =>
+        'L' + l + (laneNotes.get(l).length ? ';' : '') +
+        laneNotes.get(l).map(n => 'a ' + n.t + ' ' + n.v + ' ' + n.g).join(';')).join(';');
+}
+export function lanesAudclipVal(tm, laneNotes) {
+    return tm.res + ' ' + tm.lengthSteps + ' -2|' + lanesBody(laneNotes);
+}
+export function lanesImportVal(tm, laneNotes, replacing) {
+    return (replacing ? 1 : 0) + ' ' + tm.res + ' ' + tm.lengthSteps + '|' + lanesBody(laneNotes);
+}
+
 /* ---- the roll ---- */
 
 /* Rows for the screen's note roll: melodic → one row per distinct pitch,
