@@ -3125,7 +3125,9 @@ export function drawKitBankPage(cells, opts) {
     } else if (touched) {
         drawKitTouchedHeader(touched.name);
     } else {
-        if (opts.headerGlyph) drawKitBankHeader(opts.headerText, opts.headerGlyph, opts.headerRight);
+        /* A right-hand label draws with or without a glyph (Import MIDI's
+         * options page carries its warning there, and has no bank glyph). */
+        if (opts.headerGlyph || opts.headerRight) drawKitBankHeader(opts.headerText, opts.headerGlyph, opts.headerRight);
         else drawKitHeader(opts.headerText, opts.headerInvert, opts.headerMaxW);
         if (opts.pageCount > 0) drawKitPageBar(opts.pageIdx | 0, opts.pageCount, opts.pageGroups);
     }

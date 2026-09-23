@@ -228,6 +228,33 @@ async function main() {
         turn(2, -12);
     });
 
+    step('the footer says SHFT HEAR, and CLK HEAR while Shift is down', () => {
+        const rest = MI.miHintsForTest(false).footer;
+        assert(JSON.stringify(rest[0]) === '["SHFT","HEAR"]' && JSON.stringify(rest[1]) === '["CLK","IMPORT"]',
+               'resting footer ' + JSON.stringify(rest));
+        const held = MI.miHintsForTest(true).footer;
+        assert(JSON.stringify(held[0]) === '["CLK","HEAR"]', 'Shift-held footer ' + JSON.stringify(held));
+        /* and the renderer is handed Shift from the key itself */
+        cc(MoveShift, 127);
+        const src = snd.soundPickStateForTest().shift;
+        cc(MoveShift, 0);
+        assert(src === true, 'sound mode did not see Shift go down');
+    });
+
+    step('a Grid / To option list covers the roll — the roll is not drawn under it', () => {
+        const rollInk = () => ink(34, 52);
+        const edge = () => { globalThis.clear_screen(); render.drawUI(); let n = 0;
+            for (let y = 34; y < 52; y++) for (let x = 0; x < 24; x++) n += FB[y * 128 + x]; return n; };
+        assert(edge() > 0, 'precondition: the roll draws at the left edge');
+        globalThis.onMidiMessageInternal(new Uint8Array([0x90, 2, 127]));   /* touch K3 (Grid) */
+        ticks(1);
+        const covered = edge();
+        globalThis.onMidiMessageInternal(new Uint8Array([0x80, 2, 0]));
+        ticks(1);
+        assert(covered === 0, 'the roll still shows beside the Grid list: ' + covered + ' px');
+        assert(rollInk() > 0, 'the roll did not come back after the touch');
+    });
+
     step('K5-K8 are claimed: turning them changes nothing and writes nothing', () => {
         /* The control: what the tick writes on its own over the same span. */
         const q0 = writes.length; ticks(16);
@@ -246,6 +273,9 @@ async function main() {
     step('fewer bars than the part → notes CUT, and the click asks first; Back declines', () => {
         turn(1, -36);                                  /* 8 → 2 bars */
         assert(mi().bars === 2 && mi().plan.cut > 0, 'no cut: ' + mi().bars + ' ' + mi().plan.cut);
+        const w = MI.miHintsForTest(false);
+        assert(w.warning === mi().plan.cut + ' CUT', 'header warning ' + w.warning);
+        assert(!w.footer.some(h => h[0] === '!'), 'a warning is back in the footer: ' + JSON.stringify(w.footer));
         click();
         assert(mi().stage === 'confirm', 'no confirm with notes cut');
         back();

@@ -86,7 +86,7 @@ globalThis.__auditOpen = (p) => { const b = FILES[p]; if (!b) return null; let p
 
 const shots = [];
 const shoot = (slug) => shots.push({ slug, fb: fb.slice() });
-const draw = (slug, touched) => { globalThis.clear_screen(); MI.miRender(touched ?? -1); shoot(slug); };
+const draw = (slug, touched, shift) => { globalThis.clear_screen(); MI.miRender(touched ?? -1, !!shift); shoot(slug); };
 const tick = (n) => { for (let i = 0; i < (n || 1); i++) MI.miTick(true, MI.miStateForTest().track); };
 const pick = (label) => { const b = MI.miStateForTest().browser; b.selectedIndex = b.items.findIndex(i => i.label === label); MI.miOnClick(false); tick(3); };
 const knob = (k, steps) => MI.miOnKnob(k, steps * (k < 2 ? 6 : 12));
@@ -101,6 +101,7 @@ draw('3-options-fits');
 knob(0, 2); knob(1, -4);                     /* start bar 3, 8 bars */
 draw('4-options-cut');
 draw('5-options-touch-start', 0);
+draw('5b-options-shift-held', -1, true);
 S.clipNonEmpty[2][0] = true; MI.miOnBack(); MI.miOnClick(false); knob(0, 2); knob(1, -4);
 while (MI.miStateForTest().choices[MI.miStateForTest().toIdx] !== 0) knob(3, -1);
 draw('6-options-replace');

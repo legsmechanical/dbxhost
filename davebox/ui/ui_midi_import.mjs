@@ -35,7 +35,7 @@ import { showActionPopup } from './ui_persistence.mjs';
 import { automationClearClipQueued } from './ui_automation.mjs';
 import {
     drawKitHeader, drawKitList, drawKitHintRow, drawKitBankPage, drawKitPrompt, drawKitNoteRoll,
-    kitUseLayout, MV_FOOTER_Y,
+    kitUseLayout, enumOverlayWouldDraw, MV_FOOTER_Y,
 } from './ui_movy.mjs';
 import {
     buildFilepathBrowserState, refreshFilepathBrowser,
@@ -57,6 +57,11 @@ let MI = null;
 
 export function miActive() { return !!MI; }
 export function miStateForTest() { return MI; }
+export function miHintsForTest(shift) {
+    if (!MI) return null;
+    return { footer: hearHint(!!shift, ['CLK', MI.stage === 'tracks' ? 'NEXT' : 'IMPORT']),
+             warning: MI.stage === 'opts' ? optionWarning() : null };
+}
 
 /* ---- the file browser ---- */
 
@@ -263,7 +268,7 @@ export function miOnClick(shift) {
     } else if (MI.stage === 'opts') {
         if (!MI.plan || !MI.plan.notes.length) return null;
         previewStop();
-        if (replacing() || planCut() > 0) MI.stage = 'confirm';
+        if (replacing() || planCut() > 0 || MI.plan.overCap > 0) MI.stage = 'confirm';
         else MI.commit = { phase: 'send' };
     } else if (MI.stage === 'confirm') {
         MI.commit = { phase: 'send' };
@@ -499,20 +504,30 @@ function optionCells() {
 }
 export function miRingCells() { return (MI && MI.stage === 'opts' && MI.result) ? optionCells() : null; }
 
-function optionFooter() {
+/* What will not land, said in the HEADER (where "IMPORT" would sit): the
+ * footer is for gestures, and a warning there pushed them off (Josh,
+ * 2026-09-23: "the over-limit notification obscures the other hints"). */
+function optionWarning() {
     const p = MI.plan;
-    const warn = !p ? null
-        : !p.notes.length ? ['!', 'NO NOTES HERE']
-        : planCut() > 0 ? ['!', planCut() + ' CUT']
-        : p.noPad > 0 ? ['!', p.noPad + ' NO PAD']
-        : p.overCap > 0 ? ['!', p.overCap + ' OVER LIMIT']
-        : replacing() ? ['!', 'REPLACES']
-        : null;
-    if (MI.preview) return [warn || ['CLK', 'IMPORT'], ['SHFT', 'STOP'], ['BACK', '']];
-    return warn ? [warn, ['CLK', 'IMPORT'], ['BACK', '']] : [['SHFT', 'HEAR'], ['CLK', 'IMPORT'], ['BACK', '']];
+    if (!p) return null;
+    if (!p.notes.length) return 'NO NOTES';
+    if (planCut() > 0) return planCut() + ' CUT';
+    if (p.overCap > 0) return p.overCap + ' OVER';
+    if (p.noPad > 0) return p.noPad + ' NO PAD';
+    if (replacing()) return 'REPLACES';
+    return null;
 }
 
-export function miRender(touchedIdx) {
+/* The preview's gesture is Shift + jog click. Resting, the footer says so
+ * (SHFT HEAR); while Shift is down it says what the click now does (CLK HEAR)
+ * — Josh, 2026-09-23: "shift-hear until shift is pressed and then it changes
+ * to click-hear". */
+function hearHint(shift, second) {
+    const verb = MI.preview ? 'STOP' : 'HEAR';
+    return shift ? [['CLK', verb], ['BACK', '']] : [['SHFT', verb], second, ['BACK', '']];
+}
+
+export function miRender(touchedIdx, shift) {
     if (!MI) return;
     clear_screen();
     if (MI.stage === 'files' || MI.stage === 'reading') {
@@ -537,17 +552,22 @@ export function miRender(touchedIdx) {
                                                  value: String(p.noteCount) }));
         drawKitList(rows, MI.part, { topY: 9, rowH: 10, visible: 3 });
         drawRoll(42, 10, false);
-        drawKitHintRow(MV_FOOTER_Y, [[ 'SHFT', MI.preview ? 'STOP' : 'HEAR'], ['CLK', 'NEXT'], ['BACK', '']]);
+        drawKitHintRow(MV_FOOTER_Y, hearHint(shift, ['CLK', 'NEXT']));
         return;
     }
     if (MI.stage === 'opts') {
         kitUseLayout('bank');
-        drawKitBankPage(optionCells(), {
+        const cells = optionCells();
+        const touched = touchedIdx >= 0 && touchedIdx < 4 ? touchedIdx : -1;
+        /* The roll first, so a Grid / To option list drawn by the page lands ON
+         * it; and not at all while that list is up — a modal owns the screen, and
+         * the roll's edges poking out either side read as part of the list. */
+        if (!enumOverlayWouldDraw(cells, touched)) drawRoll(36, 12, true);
+        drawKitBankPage(cells, {
             headerText: '(' + (MI.track + 1) + ') ' + String(curPart().name).toUpperCase(),
-            headerRight: 'IMPORT', touchedIdx: touchedIdx >= 0 && touchedIdx < 4 ? touchedIdx : -1,
+            headerRight: optionWarning() || 'IMPORT', touchedIdx: touched,
+            footer: hearHint(shift, ['CLK', 'IMPORT']),
         });
-        drawRoll(36, 12, true);
-        drawKitHintRow(MV_FOOTER_Y, optionFooter());
         return;
     }
     if (MI.stage === 'confirm') {
@@ -556,6 +576,7 @@ export function miRender(touchedIdx) {
         const lines = [String(curPart().name) + ' > TRACK ' + (MI.track + 1),
                        p.bars + ' BARS  ' + p.notes.length + ' NOTES'];
         if (planCut() > 0) lines.push(planCut() + ' NOTES CUT');
+        else if (p.overCap > 0) lines.push(p.overCap + ' OVER THE LIMIT');
         drawKitPrompt(replacing() ? 'REPLACE CLIP ' + SCENE_LETTERS[c] + '?' : 'IMPORT?', lines,
                       [['CLK', 'YES'], ['BACK', 'NO']]);
     }

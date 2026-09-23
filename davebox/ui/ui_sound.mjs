@@ -12898,7 +12898,7 @@ export function soundRender() {
         return false;
     if (S.view === VIEW_PROMPT) renderPrompt();
     else if (S.view === VIEW_NOEDITOR) renderNoEditor();
-    else if (S.view === VIEW_MIDI_IMPORT) miRender(S.touchedIdx);
+    else if (S.view === VIEW_MIDI_IMPORT) miRender(S.touchedIdx, S.shiftHeld);
     else if (S.view === VIEW_MACROS) renderMacros();
     else if (S.view === VIEW_BLOCKS) renderBlocks();
     else if (S.view === VIEW_BROWSE) renderBrowse();
