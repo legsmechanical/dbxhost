@@ -596,7 +596,8 @@ and scale. A card explains the rows each time you switch to it; click the jog
   is held to move it (each tap moves it further).
 - **Row 3:** the notes of the last chord you played, rising — strum or pick them.
   They stay after you let go.
-- **Top row:** the scale.
+- **Top row:** the scale, with the key's root on the fourth pad — three notes
+  below it, four above (`G A B C D E F G` in C major).
 - The **CHORD** bank (on the jog after LIVE ARP, on a Chord track only) sets
   Voicing (moves every chord at once), Smooth (each chord takes the voicing
   nearest the last one), Bass (adds the root below), Bass Octave, Strum (moves

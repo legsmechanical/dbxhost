@@ -109,7 +109,7 @@ step('bass: the slot\'s own tone below the chord, else the bank\'s root', () => 
 });
 step('the strum row is the chord\'s own notes rising; the scale row is the scale', () => {
     assert(eq(M.strumRow([57, 60, 64], 48), [48, 52, 57, 60, 64, 69, 72, 76]), M.strumRow([57, 60, 64], 48).join(' '));
-    assert(eq(M.scaleRow(0, 60), [60, 62, 64, 65, 67, 69, 71, 72]), 'C major from C3');
+    assert(eq(M.scaleRow(0, 60), [55, 57, 59, 60, 62, 64, 65, 67]), 'C major centred on C3 (4th pad): ' + M.scaleRow(0, 60));
 });
 
 /* ---------------- 2. the surface ---------------- */
@@ -316,6 +316,30 @@ step('⭐ the CHORD bank\'s knob rings: every bound knob lit, the empty ones dar
     assert(eq(lit(), [true, true, false, true, true, true, true, true]), 'slot page rings ' + JSON.stringify(lit()));
     pad(4, false); ticks(1);
     S.activeBank = 0; S.trackActiveBank[2] = 0;
+});
+step('⭐ Smooth, through the pads: after i in C minor the engine gets iv as C F A♭ (was F A♭ C)', () => {
+    S.padKey = 0; S.padScale = 1; globalThis.__dm.computePadNoteMap(); ticks(2);
+    try {
+    const root = (S.padOctave[2] | 0) * 12 + oct();
+    const plain = lastPadmap()[3].split('+').map(Number);
+    assert(eq(plain.map((p) => p - root), [5, 8, 12]), 'plain iv ' + plain);
+    S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;
+    knob(1, +1, 20); knobUp(1); ticks(1);
+    assert(S.chordSettings[2].smooth === 1, 'Smooth did not turn on');
+    S.activeBank = 0; S.trackActiveBank[2] = 0;
+    S.chordLast[2] = null;                               /* nothing played yet: i in root position */
+    pad(0, true); pad(0, false); ticks(2);                 /* i */
+    const iv = lastPadmap()[3].split('+').map(Number);
+    assert(eq(iv.map((p) => p - root), [0, 5, 8]), 'smoothed iv ' + iv.map((p) => p - root));
+    pad(3, true); ticks(1);
+    const held = [...S.liveActiveNotes].sort((a, b) => a - b);
+    assert(eq(held, iv), 'the pad played ' + held + ', the map said ' + iv);
+    pad(3, false); ticks(1);
+    } finally {
+        S.activeBank = 0; S.trackActiveBank[2] = 0;
+        S.chordSettings[2].smooth = 0; S.padScale = 0; S.chordLast[2] = null;
+        globalThis.__dm.computePadNoteMap(); ticks(2);
+    }
 });
 step('the CHORD bank sits on this track\'s walk, after LIVE ARP; Slots → Select silences the slots', () => {
     S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;

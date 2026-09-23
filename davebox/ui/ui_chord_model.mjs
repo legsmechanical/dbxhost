@@ -202,11 +202,14 @@ export function strumRow(chordNotes, base) {
     return out;
 }
 
-/* Row 4: eight scale notes rising from the tonic at `root`. */
+/* Row 4: eight scale notes with the tonic at `root` on the FOURTH pad —
+ * three scale notes below it, four above (G A B [C] D E F G in C major), the
+ * range a melody around the key mostly uses (Josh, 2026-09-23: "center it"). */
+export const SCALE_ROW_ROOT_PAD = 3;
 export function scaleRow(scale, root) {
     const out = [];
     for (let i = 0; i < 8; i++) {
-        const p = root + degreeSemis(scale, i);
+        const p = root + degreeSemis(scale, i - SCALE_ROW_ROOT_PAD);
         out.push(p >= 0 && p <= 127 ? p : 0xFF);
     }
     return out;
