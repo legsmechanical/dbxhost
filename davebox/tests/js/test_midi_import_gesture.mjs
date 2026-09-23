@@ -221,13 +221,17 @@ async function main() {
     });
 
     step('K5-K8 are claimed: turning them changes nothing and writes nothing', () => {
+        /* The control: what the tick writes on its own over the same span. */
+        const q0 = writes.length; ticks(16);
+        const background = new Set(writes.slice(q0).map(w => w[1]));
         const before = writes.length;
         const snap = JSON.stringify([mi().startBar, mi().bars, mi().grid, mi().toIdx]);
-        turn(4, 20); turn(7, -20);
-        assert(JSON.stringify([mi().startBar, mi().bars, mi().grid, mi().toIdx]) === snap, 'K5/K8 changed an option');
+        turn(4, 20); turn(5, 20); turn(6, -20); turn(7, -20);
+        ticks(12);                                     /* a level write is flushed on a later tick */
+        assert(JSON.stringify([mi().startBar, mi().bars, mi().grid, mi().toIdx]) === snap, 'K5-K8 changed an option');
         assert(snd.soundPickStateForTest().view === 40, 'the screen changed');
-        /* The pad map is re-sent by the tick on its own schedule; nothing else may move. */
-        const extra = writes.slice(before).filter(w => !/_padmap$/.test(w[1]));
+        /* The pad map and the parallel-mode sweep (one slot a pass) run on their own. */
+        const extra = writes.slice(before).filter(w => !background.has(w[1]) && !/_padmap$|:slot:parallel$/.test(w[1]));
         assert(!extra.length, 'turning K5-K8 wrote to the engine: ' + JSON.stringify(extra.slice(0, 3)));
     });
 
