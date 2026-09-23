@@ -463,17 +463,26 @@ export function pbPadRelease(i) {
 
 /* The pads the screen owns, as colours; null where the track's own lights
  * stay (Josh, 2026-09-23: the lane pads "should stay just how they always
- * are"). Drum track: the right-hand pads (the sounds; the held one white,
- * the rest dark). Melodic track: every pad, but only while K5 Voice is held —
+ * are"). Drum track: the right-hand pads (the sounds), and — only while a
+ * sound pad is held — the lanes that have a sound, in its colour (cycling
+ * through the colours when a lane has several). Melodic track: every pad, but only while K5 Voice is held —
  * where each sound's note is, the highlighted one white. Otherwise null. */
 export function pbPadColors() {
     if (!PB || !PB.voices.length) return null;
     const out = new Array(32).fill(null);
     if (PB.drum) {
+        /* While a sound pad is held (placing), each lane with a sound takes that
+         * sound's colour, matching its pad on the right; the held sound's pad
+         * and lane pulse together. Let go and the lanes are the track's again. */
+        const pulse = (nowMs() % 400) < 200;
+        const colorOf = (v) => (v === PB.held && pulse) ? White : SOUND_COLORS[v % SOUND_COLORS.length];
         for (let i = 0; i < 32; i++) {
-            if (i % 8 < 4) continue;
-            const snd = soundOfPad(i);
-            out[i] = snd < 0 ? LED_OFF : snd === PB.held ? White : SOUND_COLORS[snd % SOUND_COLORS.length];
+            if (i % 8 >= 4) { const snd = soundOfPad(i); out[i] = snd < 0 ? LED_OFF : colorOf(snd); continue; }
+            if (PB.held < 0) continue;
+            /* several sounds on one lane: cycle through their colours */
+            const lane = laneOfPad(i);
+            const here = PB.assign.map((a, v) => a === lane ? v : -1).filter(v => v >= 0);
+            if (here.length) out[i] = colorOf(here[Math.floor(nowMs() / 300) % here.length]);
         }
         return out;
     }

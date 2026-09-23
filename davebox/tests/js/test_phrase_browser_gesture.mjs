@@ -354,6 +354,9 @@ async function main() {
         /* hold sound 1 (pad 4: bottom row, first right-hand pad): only it is heard */
         midi(0x90, 68 + 4, 100); ticks(3);
         assert(pb().held === 0, 'holding the first sound pad did not select it');
+        /* placing: lanes with a sound match its pad's colour (sound 2 on lane 10: Cyan) */
+        ticks(3);
+        assert(padLed[68 + 18] === 14 && padLed[68 + 16] === 23, 'lanes do not match the sound colours while holding: ' + [padLed[86], padLed[84]]);
         ac = since(0, /^t0_audclip$/);
         assert(/^1 16 3\|/.test(ac[ac.length - 1][2]), 'holding did not solo the sound: ' + ac[ac.length - 1][2].slice(0, 20));
         assert(ink(12, 54) > 0, 'no sounds panel while holding');
@@ -361,9 +364,18 @@ async function main() {
         assert(pb().assign[0] === 1 && pb().held === 0, 'the lane tap did not move the held sound (or dropped the hold)');
         pad(1); ticks(1);
         assert(pb().assign[0] === -1, 'a second tap did not take it off');
+        /* two sounds on one lane: the lane cycles through both colours */
+        pad(18); ticks(1);
+        assert(pb().assign[0] === 10 && pb().assign[1] === 10, 'not sharing lane 10: ' + pb().assign);
+        const seen = new Set();
+        for (let k = 0; k < 90; k++) { ticks(1); seen.add(padLed[68 + 18]); }
+        assert(seen.has(14) && (seen.has(7) || seen.has(120)), 'the shared lane does not cycle both colours: ' + [...seen]);
         pad(1); ticks(1);
         midi(0x80, 68 + 4, 0); ticks(3);
         assert(pb().held === -1, 'letting go did not end the hold');
+        ticks(3);
+        const lanesAfter = [0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27].map(i => padLed[68 + i]);
+        assert(!lanesAfter.includes(14) && !lanesAfter.includes(23), 'the lanes kept sound colours after letting go: ' + lanesAfter);
         ac = since(0, /^t0_audclip$/);
         assert(/-2\|L1;.*L8;.*L10;/.test(ac[ac.length - 1][2]), 'after the hold, not every sound is heard: ' + ac[ac.length - 1][2].slice(0, 30));
         const n = writes.length;

@@ -1892,7 +1892,9 @@ clap…) let you choose where each sound goes:
 Nothing moves on to the next sound by itself, and every change is heard at once.
 By default a sound goes only on the lane you opened on or on an empty lane — never
 on a lane that has notes — so nothing of yours is replaced unless you put a sound
-there. The pads light where each sound sits.
+there. While you hold a sound pad, each lane that has a sound lights in that
+sound's colour (a lane with several cycles through them); let go and the lanes
+look as usual.
 
 Loading a melodic phrase replaces the clip and clears its automation, like
 [Import MIDI](#154-import-a-midi-file); a drum phrase changes only the lanes it
