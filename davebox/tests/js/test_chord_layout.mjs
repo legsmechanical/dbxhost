@@ -125,6 +125,7 @@ const CP = await import('../../ui/ui_chord_pads.mjs');
 const persist = await import('../../ui/ui_persistence.mjs');
 globalThis.__dm = await import('../../ui/ui_drummodel.mjs');
 globalThis.__pure = await import('../../ui/ui_pure.mjs');
+globalThis.__kl = await import('../../ui/ui_knob_leds.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 2;
@@ -304,6 +305,16 @@ step('⭐ on the CHORD bank, holding a chord shows its settings at once; K2 make
     assert(S.chordPalette[2][4].stack === 0, 'touch K8 + click did not reset');
     touch(7, false); pad(4, false); ticks(2);
     assert(lastPadmap()[4].split('+').length === 3, 'the reset chord is not what the pad plays');
+    S.activeBank = 0; S.trackActiveBank[2] = 0;
+});
+step('⭐ the CHORD bank\'s knob rings: every bound knob lit, the empty ones dark — bank page and slot page', () => {
+    const KL = globalThis.__kl;
+    S.activeBank = BANK_CHORD; S.trackActiveBank[2] = BANK_CHORD;
+    const lit = () => KL.ringCellsFor(BANK_CHORD).map((c) => KL.knobRingColor(0, KL.ringNormOfCell(c)) !== 0);
+    assert(eq(lit(), [true, true, true, true, true, false, true, false]), 'bank page rings ' + JSON.stringify(lit()));
+    pad(4, true); ticks(1);
+    assert(eq(lit(), [true, true, false, true, true, true, true, true]), 'slot page rings ' + JSON.stringify(lit()));
+    pad(4, false); ticks(1);
     S.activeBank = 0; S.trackActiveBank[2] = 0;
 });
 step('the CHORD bank sits on this track\'s walk, after LIVE ARP; Slots → Select silences the slots', () => {

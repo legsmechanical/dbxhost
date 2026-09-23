@@ -19,6 +19,7 @@
 import { S } from './ui_state.mjs';
 import { PAD_MODE_MELODIC_SCALE, BANK_CHORD, isSoundBank } from './ui_constants.mjs';
 import { buttonPhase } from './ui_movy.mjs';
+import { registerRingCells } from './ui_knob_leds.mjs';
 import { nowMs } from './ui_clock.mjs';
 import {
     NUM_SLOTS, STACKS, SPREADS, BASS_TONES, MOD_INV_DOWN, MOD_INV_UP,
@@ -343,16 +344,18 @@ export function chordSlotCells(t, k) {
     const size = ch.notes.length - (s.bass || settingsOf(t).bass ? 1 : 0);
     return {
         title: numeral(scale, s.deg) + ' · ' + ch.name,
+        /* ringNorm: where each knob sits, for its LED ring (4 white / 4 amber
+         * like every bank). */
         cells: [
-            { kind: 'valsq', label: 'Root', name: 'Root', text: numeral(scale, s.deg) },
-            { kind: 'valsq', label: 'Stack', name: 'Stack', text: STACKS[s.stack] || '--' },
+            { kind: 'valsq', label: 'Root', name: 'Root', text: numeral(scale, s.deg), ringNorm: pos(s.deg, -7, 14) },
+            { kind: 'valsq', label: 'Stack', name: 'Stack', text: STACKS[s.stack] || '--', ringNorm: pos(s.stack, 0, STACKS.length - 1) },
             { kind: 'blank', label: '' },
-            { kind: 'valsq', label: 'Inv', name: 'Inversion', text: invLabel(s.inv, size) },
-            { kind: 'valsq', label: 'Sprd', name: 'Spread', text: SPREADS[s.spread] || '--' },
-            { kind: 'valsq', label: 'Bass', name: 'Bass', text: BASS_TONES[s.bass] || '--' },
-            { kind: 'valsq', label: 'Oct', name: 'Octave', text: s.oct > 0 ? '+' + s.oct : String(s.oct) },
+            { kind: 'valsq', label: 'Inv', name: 'Inversion', text: invLabel(s.inv, size), ringNorm: pos(s.inv, INV_MIN, INV_MAX) },
+            { kind: 'valsq', label: 'Sprd', name: 'Spread', text: SPREADS[s.spread] || '--', ringNorm: pos(s.spread, 0, 1) },
+            { kind: 'valsq', label: 'Bass', name: 'Bass', text: BASS_TONES[s.bass] || '--', ringNorm: pos(s.bass, 0, 3) },
+            { kind: 'valsq', label: 'Oct', name: 'Octave', text: s.oct > 0 ? '+' + s.oct : String(s.oct), ringNorm: pos(s.oct, OCT_MIN, OCT_MAX) },
             /* A trigger, as on stock pages: touch K8 and click the jog. */
-            { kind: 'action', oneWay: true, label: 'Reset', name: 'Reset slot', text: '->',
+            { kind: 'action', oneWay: true, label: 'Reset', name: 'Reset slot', text: '->', ringBound: true,
               btnPhase: buttonPhase(S.chordResetAt, nowMs(), S.knobTouched === 7) },
         ],
         plain: ch.plain,
@@ -398,15 +401,28 @@ export function chordSlotKnob(t, k, knob, steps) {
 
 /* ---- the CHORD bank ------------------------------------------------------ */
 
+function pos(v, lo, hi) { return hi > lo ? ((v | 0) - lo) / (hi - lo) : 0; }
+
+/* The knob rings on the CHORD bank ride its cells — the held slot's page or
+ * the bank's own, whichever is on screen. */
+registerRingCells(BANK_CHORD, () => {
+    const t = S.activeTrack;
+    if (!chordLayoutOn(t)) return null;
+    const k = chordEditSlot();
+    return k >= 0 ? chordSlotCells(t, k).cells : chordBankCells(t);
+});
+
 const ON_OFF = ['Off', 'On'];
 export function chordBankCells(t) {
     const s = settingsOf(t);
     return [
-        { kind: 'valsq', label: 'Voice', name: 'Voicing', text: s.voicing > 0 ? '+' + s.voicing : String(s.voicing) },
+        { kind: 'valsq', label: 'Voice', name: 'Voicing', text: s.voicing > 0 ? '+' + s.voicing : String(s.voicing),
+          ringNorm: pos(s.voicing, INV_MIN, INV_MAX) },
         { kind: 'pill', label: 'Smoth', name: 'Smooth', text: ON_OFF[s.smooth ? 1 : 0], norm: s.smooth ? 1 : 0 },
         { kind: 'pill', label: 'Bass', name: 'Bass', text: ON_OFF[s.bass ? 1 : 0], norm: s.bass ? 1 : 0 },
-        { kind: 'valsq', label: 'BsOct', name: 'Bass Octave', text: '-' + (s.bassOct | 0) },
-        { kind: 'valsq', label: 'Strum', name: 'Strum Octave', text: s.strum > 0 ? '+' + s.strum : String(s.strum) },
+        { kind: 'valsq', label: 'BsOct', name: 'Bass Octave', text: '-' + (s.bassOct | 0), ringNorm: pos(s.bassOct, 1, 2) },
+        { kind: 'valsq', label: 'Strum', name: 'Strum Octave', text: s.strum > 0 ? '+' + s.strum : String(s.strum),
+          ringNorm: pos(s.strum, -1, 2) },
         { kind: 'blank', label: '' },
         { kind: 'enumsq', label: 'Slots', name: 'Slots', text: s.select ? 'Select' : 'Play',
           options: ['Play', 'Select'], sel: s.select ? 1 : 0 },
