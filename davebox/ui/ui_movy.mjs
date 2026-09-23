@@ -2785,6 +2785,10 @@ export function drawKitEnumOverlay(cells, touchedIdx) {
      * enumOverlayWouldDraw. Two copies would let the footer vanish under
      * nothing, or survive under a picker, and both read as a rendering bug. */
     if (!enumOverlayWouldDraw(cells, touchedIdx)) return;
+    /* ⭑ OPAQUE: the list owns everything under the header, so no cell, picture
+     * or hint shows around its box (Josh, 2026-09-23: "i like the opaque
+     * everywhere"). The header stays: it names the knob being turned. */
+    fill_rect(0, MV_HDR_H, SCREEN_W, 64 - MV_HDR_H, 0);
     drawKitListOverlay(cell.options, cell.sel | 0);
 }
 
@@ -3164,11 +3168,6 @@ export function drawKitBankPage(cells, opts) {
      * Josh judges it from the offline renders first. */
     const overlayUp = !opts.peekExpired && enumOverlayWouldDraw(cells, ov);
     if (opts.footer && !overlayUp) drawKitHintRow(MV_FOOTER_Y, opts.footer);
-    /* `opaquePicker`: the list owns everything under the header, so nothing on
-     * the page (the other cells, a picture drawn below them) shows around its
-     * box. Opt-in per page (Josh, 2026-09-23, for the phrase browser and Import
-     * MIDI: "make sure that the overlay pickers are opaque"). */
-    if (opts.opaquePicker && overlayUp && !opts.peekExpired) fill_rect(0, MV_HDR_H, SCREEN_W, 64 - MV_HDR_H, 0);
     if (!opts.peekExpired) drawKitEnumOverlay(cells, ov);
 }
 
