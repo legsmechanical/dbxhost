@@ -60,6 +60,12 @@ const CHORDS = [
     [[0, 4, 11], 'MAJ7'],
     [[0, 3, 10], 'MIN7'],
     [[0, 4, 8, 10], 'AUG7'],
+    /* Shells as pads voice them. Without its third a chord is neither major
+     * nor minor, so it says so — "A♭MAJ7" would claim a C that isn't held. */
+    [[0, 7, 10], '7(NO3)'],
+    [[0, 7, 11], 'MAJ7(NO3)'],
+    [[0, 2, 4], 'ADD9'],        /* no fifth — dropped as freely as in a 7th */
+    [[0, 2, 3], 'MIN(ADD9)'],
 ];
 const BY_KEY = new Map(CHORDS.map(([iv, q]) => [iv.join(','), q]));
 
@@ -86,7 +92,14 @@ export function chordLabel(pitches, flats) {
         if (!best || rank < best.rank) best = { r, q: BY_KEY.get(key), rank };
     }
     if (best) return NAMES[best.r] + best.q + (best.r === bass ? '' : '/' + NAMES[bass]);
-    return ps.map((n) => NAMES[n % 12]).filter((s, i, a) => a.indexOf(s) === i).join(' ');
+    return noteNames(ps, flats);
+}
+
+/* The held notes by name, lowest first, each pitch class once. */
+export function noteNames(pitches, flats) {
+    const NAMES = flats ? FLATS : SHARPS;
+    return [...pitches].sort((a, b) => a - b).map((n) => NAMES[n % 12])
+        .filter((s, i, a) => a.indexOf(s) === i).join(' ');
 }
 
 /* The key's own root, spelled the way its chords are — so "[B♭MIN]" never sits
@@ -99,20 +112,22 @@ export function keyRootName(key, scale, plain) {
 }
 
 /* Shorten a label to fit `maxW` (measured by `widthOf`) without changing what
- * it says: a chord first loses its slash bass (still the right chord), a note
- * list its highest notes (still the notes it names). Never a cut mid-name —
+ * it says: a chord first loses its slash bass (still the right chord), then
+ * becomes its `notes`; a note list loses its highest notes, marked "+". Never a cut mid-name —
  * "C#MIN7(" or a missing "/G#" reads as a different chord. */
-export function fitHeldLabel(label, maxW, widthOf) {
+export function fitHeldLabel(label, maxW, widthOf, notes) {
     if (widthOf(label) <= maxW) return label;
-    if (label.indexOf(' ') >= 0) {
-        const notes = label.split(' ');
-        while (notes.length > 1 && widthOf(notes.join(' ') + ' +') > maxW) notes.pop();
-        return notes.join(' ') + ' +';
+    if (label.indexOf(' ') < 0) {
+        const slash = label.indexOf('/');
+        if (slash > 0 && widthOf(label.slice(0, slash)) <= maxW) return label.slice(0, slash);
+        /* Never just the root: "[A♭]" reads as a major triad. The notes, then. */
+        if (!notes) return label;
+        if (widthOf(notes) <= maxW) return notes;
+        label = notes;
     }
-    const slash = label.indexOf('/');
-    if (slash > 0 && widthOf(label.slice(0, slash)) <= maxW) return label.slice(0, slash);
-    const m = /^[A-G][#\u266d]?/.exec(label);
-    return m ? m[0] : label;                               /* just the root, as a last resort */
+    const ns = label.split(' ');
+    while (ns.length > 1 && widthOf(ns.join(' ') + ' +') > maxW) ns.pop();
+    return ns.join(' ') + ' +';
 }
 
 /* The pitches being played INTO track t right now: pads and external MIDI.
