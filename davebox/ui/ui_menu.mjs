@@ -20,9 +20,10 @@ import {
     createMenuStack
 } from '/data/UserData/schwung/shared/menu_stack.mjs';
 
-import { NOTE_KEYS, SCALE_NAMES } from './ui_constants.mjs';
+import { SCALE_NAMES } from './ui_constants.mjs';
 
 import { S } from './ui_state.mjs';
+import { keyRootName } from './ui_chord.mjs';
 import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
 import { saveState, showActionPopup, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
@@ -114,7 +115,7 @@ function buildGlobalMenuItems() {
             get: function() { return S.padKey; },
             set: function(v) { xposePreviewSet(v, S.padScale); },
             options: [0,1,2,3,4,5,6,7,8,9,10,11],
-            format: function(v) { return NOTE_KEYS[((v | 0) % 12 + 12) % 12]; }
+            format: function(v) { return keyRootName(v, S.padScale, true); }
         }),
         createEnum('Scale', {
             get: function() { return S.padScale; },

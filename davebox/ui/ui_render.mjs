@@ -13,6 +13,7 @@ import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev, faderGainToTravel} from './ui_engine.mjs';
 import { instrValueFor } from './ui_dsp_bridge.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
+import { chordLabel, noteNames, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
@@ -2343,14 +2344,23 @@ function drawUIBody() {
             ? ' REC' : '';
         const oct     = S.trackOctave[S.activeTrack];
         const octStr  = 'Oct:' + (oct >= 0 ? '+' : '') + oct;
-        const keyScl  = NOTE_KEYS[S.padKey] + ' ' + (SCALE_DISPLAY[S.padScale] || '?');
+        const keyScl  = keyRootName(S.padKey, S.padScale) + ' ' + (SCALE_DISPLAY[S.padScale] || '?');
         const keySclW = ovwWidth(keyScl);
         const keySclX = 128 - 4 - keySclW;
         (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(S.activeTrack, S.activeBank) + recTag, false, true);
         /* info row at y=9 in the small header face (Josh, 2026-09-05) — 2px
          * clear of the header; the glyphs end at y=13 and the scale rule is 15. */
         ovwPrint(4, 9, octStr, 1);
-        if (S.bankParams[S.activeTrack][5][0]) {
+        /* Held notes / chord, in brackets, centred between the octave and the
+         * key/scale; only while something is held. It takes the Arp label's
+         * place for as long as it shows. */
+        const _heldPs = heldInputNotes(S.activeTrack), _flats = keyUsesFlats(S.padKey, S.padScale);
+        const _held = chordLabel(_heldPs, _flats);
+        const _heldL = 4 + ovwWidth(octStr) + 4, _heldR = keySclX - 4;
+        const _heldTxt = _held ? '[' + fitHeldLabel(_held, _heldR - _heldL - ovwWidth('[]') - 1, ovwWidth, noteNames(_heldPs, _flats)) + ']' : '';
+        if (_heldTxt) {
+            ovwPrint(Math.round((_heldL + _heldR - ovwWidth(_heldTxt)) / 2), 9, _heldTxt, 1);
+        } else if (S.bankParams[S.activeTrack][5][0]) {
             const arpW = ovwWidth('Arp');
             if (S.bankParams[S.activeTrack][5][7]) {
                 /* Latch on: invert 'Arp' (black on white chip), 1px pad around

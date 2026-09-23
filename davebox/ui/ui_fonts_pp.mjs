@@ -32,7 +32,7 @@
  * width functions; it is why the last glyph does not trail a blank column.
  */
 
-const CHARS4 = " !\"'()+,-./:0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ%<>=?*#&_\\^[]\u2261";
+const CHARS4 = " !\"'()+,-./:0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ%<>=?*#&_\\^[]\u2261\u266d\u02d9";
 
 /* Row bit values, 4-wide: col0=1 col1=2 col2=4 col3=8
  *   ....=0  #...=1  .#..=2  ##..=3  ..#.=4  #.#.=5  .##.=6  ###.=7
@@ -110,6 +110,12 @@ const G4 = [
      * 2026-09-05: "use a hamburger icon, which is what the button actually has
      * printed on it"). Three bars, 4 wide, on rows 0/2/4. davebox's own glyph. */
     [5, 0, 4, 5, 15, 0, 15, 0, 15],     /* ≡ */
+    /* ♭ (U+266D) — the chord indicator spells flat keys and ♭5 with it; the
+     * face has no lowercase, so a letter b would read as the note B. */
+    [4, 0, 3, 5, 1, 1, 3, 5, 3],        /* ♭ */
+    /* ˙ (U+02D9) — a raised dot: the chord indicator's "not the full chord"
+     * mark, top right of a name played without its third. */
+    [3, 0, 2, 5, 3, 3, 0, 0, 0],        /* ˙ */
 ];
 
 const FALLBACK_ADV4 = 5;

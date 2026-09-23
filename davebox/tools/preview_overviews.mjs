@@ -65,6 +65,30 @@ function draw(slug){ globalThis.clear_screen(); render.drawUI(); shoot(slug); }
 S.sessionView = false; S.activeBank = 0; S.bankSelectTick = -1; S.jogTouched = false;
 draw('track-overview');
 
+/* TRACK VIEW with notes HELD — the note / chord indicator between the octave
+ * and the key/scale (it stands in for the Arp label while it shows). */
+const held = (slug, notes) => { S.liveActiveNotes.clear(); for (const n of notes) S.liveActiveNotes.add(n);
+    draw(slug); S.liveActiveNotes.clear(); };
+held('track-overview-held-note', [66]);                /* F#3 */
+held('track-overview-held-chord', [60, 63, 67, 70]);   /* C minor 7 */
+held('track-overview-held-inversion', [64, 67, 72]);   /* C major over E */
+held('track-overview-held-long', [61, 64, 67, 71]);    /* C# half-diminished */
+held('track-overview-held-unnamed', [60, 61, 62]);     /* a cluster: note names */
+S.padKey = 0; S.padScale = 1;                           /* C minor: shells without a third */
+held('track-overview-held-shell', [56, 63, 67]);       /* A♭ E♭ G */
+held('track-overview-held-shell-slash', [50, 55, 65]); /* D G F: G7 over D */
+S.padKey = 0; S.padScale = 0;
+S.padKey = 1; S.padScale = 7;
+held('track-overview-held-long-key', [61, 64, 67, 71]);
+S.padKey = 5; S.padScale = 0;                           /* F major: flats */
+held('track-overview-held-flat-key', [58, 62, 65, 68]); /* B♭7 */
+held('track-overview-held-flat-halfdim', [62, 65, 68, 72]);  /* Dmin7(♭5) */
+S.padKey = 10; S.padScale = 1;                          /* B♭ minor: the key label too */
+held('track-overview-held-flat-minor', [58, 61, 65]);
+S.padKey = 1; S.padScale = 11;                          /* narrow: C# Blues, Oct:+4 */
+S.trackOctave[3] = 4; held('track-overview-held-narrow', [56, 61, 64, 68, 71]); S.trackOctave[3] = 0;
+S.padKey = 0; S.padScale = 0;
+
 /* TRACK VIEW with SHIFT held — the footer names the Shift chords. */
 S.shiftHeld = true; draw('track-overview-shift'); S.shiftHeld = false;
 

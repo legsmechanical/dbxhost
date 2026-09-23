@@ -66,6 +66,7 @@ import { soundEntryRecords, soundActive, soundOpen, soundResting, soundEnter, so
     soundEnteredInSession, soundConsumeLedDirty,
     soundConsumeCoRunRequest, soundShowMenu, soundSetBank, midiVal, midiSendValue } from './ui_sound.mjs';
 import { enterMoveNativeCoRun } from './ui_corun.mjs';
+import { heldIndicatorChanged } from './ui_chord.mjs';
 
 const BANK_DISPLAY_MS = 1000;
 const KNOB_TURN_HIGHLIGHT_MS = 600;               /* highlight after turn without touch */
@@ -2337,6 +2338,9 @@ export function _tickImpl() {
         const _ph = Math.floor(S.clockMs / 220) % 2;
         if (_ph !== S._altBlinkPhase) { S._altBlinkPhase = _ph; S.screenDirty = true; }
     }
+    /* The held-note indicator follows every press and release, whichever
+     * path it came by (pads, external MIDI, octave shift clearing the set). */
+    if (heldIndicatorChanged()) S.screenDirty = true;
     if (S.screenDirty && !isSuspended) { S.screenDirty = false; drawUI(); }
 
 };
