@@ -17,6 +17,12 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added (pending)
+- **Chord layout.** A third pad layout for Keys tracks (Shift + Step 8, or
+  Settings > Layout): the bottom row plays eight chords in your key with one pad
+  each, row 2 holds modifiers (7, 9, sus2, sus4, add9, 5) and inversion up/down,
+  row 3 strums the last chord, the top row is the scale. Hold a chord and turn
+  the knobs to edit it; the new CHORD bank sets voicing, smooth voice leading,
+  bass and a Select mode where the chord pads only pick what row 3 strums.
 - **See what you're playing.** While you hold notes on a melodic track, Track
   View shows them in brackets between the octave and the key — the note
   (`[F#3]`) or the chord it makes (`[CMIN7]`, `[C/E]`), from the pads or an
