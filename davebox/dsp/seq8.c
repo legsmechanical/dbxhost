@@ -710,6 +710,9 @@ typedef struct {
     uint8_t  step_ratchet[SEQ_STEPS];
     uint16_t length;
     uint16_t loop_start;
+    /* The lane's grid: an Import MIDI sets it, so undo has to put it back or the
+     * restored hits are rebuilt on the import's grid and play at the wrong speed. */
+    uint16_t ticks_per_step;
     uint8_t  active;
     /* Per-lane playback direction + reverse style snapshot so drum-clip
      * bake/undo restores K5 Dir and AltMode RvSt back to pre-bake values. */
@@ -906,6 +909,10 @@ typedef struct {
      * so `alloff` can release exactly those and nothing a pad holds. Runtime
      * only — never persisted. */
     uint8_t   audition_held[16];
+    /* …and, per pitch, the drum lane it sounded on (0xFF = melodic), so its
+     * release goes where its start went even if the lane map or the track's
+     * type changed in between. */
+    uint8_t   audition_lane[128];
 } seq8_track_t;
 #define LRS_SET(tr, s)  ((tr)->live_recorded_steps[(s)>>3] |=  (uint8_t)(1u<<((s)&7)))
 #define LRS_TEST(tr, s) ((tr)->live_recorded_steps[(s)>>3] &   (1u<<((s)&7)))
@@ -5654,6 +5661,7 @@ static void drum_row_snap(seq8_instance_t *inst, int row,
             memcpy(d->step_random,  src->step_random,  SEQ_STEPS);
             memcpy(d->step_ratchet, src->step_ratchet, SEQ_STEPS);
             d->length     = src->length;
+            d->ticks_per_step = src->ticks_per_step;
             d->loop_start = src->loop_start;
             d->active     = src->active;
             d->playback_dir = src->playback_dir;
@@ -5707,6 +5715,7 @@ static void drum_row_restore(seq8_instance_t *inst, int row,
             memcpy(dst->step_random,  s->step_random,  SEQ_STEPS);
             memcpy(dst->step_ratchet, s->step_ratchet, SEQ_STEPS);
             dst->length       = s->length;
+            if (s->ticks_per_step) dst->ticks_per_step = s->ticks_per_step;   /* 0 = a snapshot from before tps was kept */
             dst->loop_start   = s->loop_start;
             dst->active       = s->active;
             dst->playback_dir = s->playback_dir;
@@ -5831,6 +5840,7 @@ static void undo_begin_drum_clip(seq8_instance_t *inst, int t, int c) {
         memcpy(dst->step_random,  src->step_random,  SEQ_STEPS);
         memcpy(dst->step_ratchet, src->step_ratchet, SEQ_STEPS);
         dst->length     = src->length;
+        dst->ticks_per_step = src->ticks_per_step;
         dst->loop_start = src->loop_start;
         dst->active     = src->active;
         dst->playback_dir = src->playback_dir;
@@ -7414,6 +7424,17 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                 return snprintf(out, out_len, "%d", (int)cl->loop_start);
             if (!strncmp(p, "_active", 7))
                 return snprintf(out, out_len, "%d", (int)cl->active);
+            /* tN_cC_lane_notes — the pitch each of clip C's 32 drum lanes plays,
+             * space-separated. Lane pitches are per CLIP, and the tN_lL_ readers
+             * see only the active one; Import MIDI plans against its destination. */
+            if (!strcmp(p, "_lane_notes")) {
+                drum_clip_t *ldc = tr->drum_clips[cidx];
+                int ln, n = 0;
+                for (ln = 0; ln < DRUM_LANES && n < out_len - 5; ln++)
+                    n += snprintf(out + n, (size_t)(out_len - n), ln ? " %d" : "%d",
+                                  ldc ? (int)ldc->lanes[ln].midi_note : DRUM_BASE_NOTE + ln);
+                return n;
+            }
             if (!strncmp(p, "_drum_has_content", 17)) {
                 int dl, any = 0;
                 if (tr->drum_clips[cidx])

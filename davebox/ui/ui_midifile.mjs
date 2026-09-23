@@ -287,12 +287,14 @@ export function planImport(part, opts) {
     const lengthSteps = Math.min(IMPORT_MAX_STEPS, Math.ceil(bars * barT / tps));
     const drum = Array.isArray(o.laneNotes);
     const lane = drum ? new Map(o.laneNotes.map((p, l) => [p, l])) : null;
+    /* `before` = notes the start bar leaves out; `cut` = notes past the end.
+     * Both are notes that will not land. */
     const res = { notes: [], lengthSteps, maxBars, bars, barTicks: barT,
-                  cut: 0, shortened: 0, noPad: 0, overCap: 0 };
+                  before: 0, cut: 0, shortened: 0, noPad: 0, overCap: 0 };
     const perLane = new Array(32).fill(0);
     const dedupe = new Set();
     for (const n of (part ? part.notes : [])) {
-        if (n.t < from) continue;
+        if (n.t < from) { res.before++; continue; }
         if (n.t >= to) { res.cut++; continue; }
         let l = -1;
         if (drum) {

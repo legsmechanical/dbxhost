@@ -96,7 +96,42 @@ static void test_drum_lanes(void) {
     hx_destroy(h);
 }
 
+/* Lane pitches are per CLIP: preview through the import's destination clip. */
+static void test_drum_destination_clip(void) {
+    hx_t *h = hx_create(NULL);
+    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+    int ch = inst->tracks[0].channel;
+    hx_set_param(h, "t0_route", "schwung");
+    hx_set_param(h, "t0_l0_lane_note", "100");          /* active clip 0: lane 0 now plays 100 */
+    char ln[256]; hx_get_param(h, "t0_c1_lane_notes", ln, sizeof ln);
+    HX_ASSERT(!strncmp(ln, "36 37 38", 8), "clip 1's lane pitches not readable");
+    hx_get_param(h, "t0_c0_lane_notes", ln, sizeof ln);
+    HX_ASSERT(!strncmp(ln, "100 37", 6), "clip 0's edited lane pitch not reported");
+    hx_clear_capture(h);
+    hx_set_param(h, "t0_audition", "on 36 100");
+    HX_ASSERT(!hx_seen_note_on(h, ch, 36), "without a clip, the ACTIVE clip's lanes should decide");
+    hx_set_param(h, "t0_audition", "clip 1 on 36 100");
+    HX_ASSERT(hx_seen_note_on(h, ch, 36), "clip 1's lane for 36 did not sound");
+    hx_set_param(h, "t0_audition", "alloff");
+    HX_ASSERT(seen_off(ch, 36), "the destination-clip note was not released");
+    hx_destroy(h);
+}
+
+/* A release goes where its start went, even if the track changed type between. */
+static void test_release_survives_type_change(void) {
+    hx_t *h = hx_create(NULL);
+    hx_set_param(h, "t1_route", "schwung");
+    hx_set_param(h, "t1_audition", "on 60 100");
+    hx_set_param(h, "t1_pad_mode", "1");
+    hx_clear_capture(h);
+    hx_set_param(h, "t1_audition", "alloff");
+    HX_ASSERT(seen_off(1, 60), "a type change stranded an audition note");
+    hx_destroy(h);
+}
+
 int main(void) {
+    test_drum_destination_clip();
+    test_release_survives_type_change();
     test_sounds_and_releases();
     test_alloff_leaves_pads_alone();
     test_silent_when_armed();

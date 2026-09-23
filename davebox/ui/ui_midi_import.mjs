@@ -145,7 +145,17 @@ function destinationChoices(t) {
 function curPart() { return MI && MI.result ? MI.result.parts[MI.part] : null; }
 function destClip() { return MI.choices[MI.toIdx]; }
 function replacing() { return !clipEmpty(MI.track, destClip()); }
-function laneNotes() { return isDrumTrack(MI.track) ? GS.drumLaneNote[MI.track].slice(0, 32) : null; }
+/* The pitch each pad plays IN THE DESTINATION CLIP — lane pitches are per
+ * clip, and the engine matches against the destination's. Read in the tick
+ * (MI.lanes); until then, the active clip's, which is the right answer when
+ * the destination IS the active clip. */
+function laneNotes() {
+    if (!isDrumTrack(MI.track)) return null;
+    const c = MI.stage === 'opts' || MI.stage === 'confirm' ? destClip() : GS.trackActiveClip[MI.track];
+    if (MI.lanes && MI.lanes.clip === c) return MI.lanes.notes;
+    return GS.drumLaneNote[MI.track].slice(0, 32);
+}
+function planCut() { return MI.plan ? MI.plan.cut + MI.plan.before : 0; }
 
 /* A part's grid: the finest that holds the whole part, 1/16 at the finest. */
 function defaultGrid(part, ts) {
@@ -251,7 +261,7 @@ export function miOnClick(shift) {
     } else if (MI.stage === 'opts') {
         if (!MI.plan || !MI.plan.notes.length) return null;
         previewStop();
-        if (replacing() || MI.plan.cut > 0) MI.stage = 'confirm';
+        if (replacing() || planCut() > 0) MI.stage = 'confirm';
         else MI.commit = { phase: 'send' };
     } else if (MI.stage === 'confirm') {
         MI.commit = { phase: 'send' };
@@ -336,7 +346,10 @@ function previewTick() {
     }
     pv.lastTick = now;
     pv.playhead = now;
-    if (toks.length) queueAudition(MI.track, toks.join(' '));
+    if (toks.length) {
+        const viaClip = isDrumTrack(MI.track) && MI.stage === 'opts' ? 'clip ' + destClip() + ' ' : '';
+        queueAudition(MI.track, viaClip + toks.join(' '));
+    }
 }
 
 /* ---- the write ---- */
@@ -355,29 +368,26 @@ function commitTick() {
         cm.val = importPayload();
         GS.pendingDefaultSetParams.push({ key: cm.key, val: cm.val });
         cm.phase = 'wait'; cm.wait = 0;
+        /* The engine takes its undo snapshot inside the import, so Undo must
+         * reach it — and not a stale JS-side unit first. Claimed now, so a screen
+         * closed while the write settles still leaves Undo pointed at it. */
+        noteUndoUnit();
+        if (drum) GS.drumLaneLengthManuallySet[t] = true;
+        else GS.clipLengthManuallySet[t][c] = true;
         return null;
     }
     if (cm.phase === 'wait') {
-        /* Settle: the queue must have sent it, then give the engine a tick. */
+        /* Settle: the queue must have sent it; then look every few ticks for up
+         * to ~half a second. Never re-sent — a second send would be a second
+         * undo snapshot, and Undo would land on the first import. */
         if (GS.pendingDefaultSetParams.some(e => e.key === cm.key)) return null;
-        if (++cm.wait < 2) return null;
+        cm.wait++;
+        if (cm.wait < 2 || (cm.wait % 5) !== 2) return null;
         syncClipsTargeted((drum ? 'd ' : 'm ') + t + ' ' + c);
         const landed = drum ? !!GS.drumClipNonEmpty[t][c] : !!GS.clipNonEmpty[t][c];
-        if (!landed && !cm.retried) {
-            /* One retry, as a REPLACE so a partial landing cannot double up. */
-            cm.retried = true;
-            cm.val = '1' + cm.val.slice(1);
-            GS.pendingDefaultSetParams.push({ key: cm.key, val: cm.val });
-            cm.wait = 0;
-            return null;
-        }
-        if (drum) GS.drumLaneLengthManuallySet[t] = true;
-        else GS.clipLengthManuallySet[t][c] = true;
-        /* The engine took its undo snapshot in the import; Undo must reach it
-         * (and not a stale JS-side unit first). */
-        if (landed) noteUndoUnit();
+        if (!landed && cm.wait < 45) return null;
         showActionPopup(landed ? 'IMPORTED' : 'IMPORT FAILED',
-                        'CLIP ' + SCENE_LETTERS[c] + (landed ? ' · ' + MI.plan.notes.length + ' NOTES' : ''));
+                        'CLIP ' + SCENE_LETTERS[c] + (landed ? ' \u00b7 ' + MI.plan.notes.length + ' NOTES' : ''));
         miClose();
         return 'close';
     }
@@ -401,11 +411,26 @@ export function miTick(inView, track) {
             return null;
         }
         MI.result = res; MI.part = 0;
+        /* The file read, but not all of it: say so rather than import quietly. */
+        const WARN = { TRUNCATED: 'FILE CUT SHORT', DAMAGED: 'FILE DAMAGED',
+                       'NOTES OVER LIMIT': 'SOME NOTES SKIPPED', 'TOO MANY PARTS': 'FIRST 64 PARTS ONLY' };
+        const w = (res.warnings || []).find(k => WARN[k]);
+        if (w) showActionPopup(WARN[w], MI.file.name.toUpperCase());
         if (res.parts.length === 1) enterOptions();
         else MI.stage = 'tracks';
         return null;
     }
     if (MI.commit) return commitTick();
+    if (MI.stage === 'opts' && isDrumTrack(MI.track) && (!MI.lanes || MI.lanes.clip !== destClip())) {
+        const c = destClip();
+        const raw = host_module_get_param('t' + MI.track + '_c' + c + '_lane_notes');
+        const notes = String(raw || '').trim().split(/\s+/).map(Number);
+        if (notes.length === 32 && notes.every(n => n >= 0 && n <= 127)) {
+            MI.lanes = { clip: c, notes };
+            replan();
+            if (MI.preview) previewStart();
+        }
+    }
     if (MI.preview) previewTick();
     return null;
 }
@@ -469,7 +494,7 @@ function optionFooter() {
     const p = MI.plan;
     const warn = !p ? null
         : !p.notes.length ? ['!', 'NO NOTES HERE']
-        : p.cut > 0 ? ['!', p.cut + ' CUT']
+        : planCut() > 0 ? ['!', planCut() + ' CUT']
         : p.noPad > 0 ? ['!', p.noPad + ' NO PAD']
         : p.overCap > 0 ? ['!', p.overCap + ' OVER LIMIT']
         : replacing() ? ['!', 'REPLACES']
@@ -521,7 +546,7 @@ export function miRender(touchedIdx) {
         const c = destClip();
         const lines = [String(curPart().name) + ' > TRACK ' + (MI.track + 1),
                        p.bars + ' BARS  ' + p.notes.length + ' NOTES'];
-        if (p.cut > 0) lines.push(p.cut + ' NOTES CUT');
+        if (planCut() > 0) lines.push(planCut() + ' NOTES CUT');
         drawKitPrompt(replacing() ? 'REPLACE CLIP ' + SCENE_LETTERS[c] + '?' : 'IMPORT?', lines,
                       [['CLK', 'YES'], ['BACK', 'NO']]);
     }

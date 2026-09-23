@@ -146,7 +146,11 @@ static int sp_track_clip(sp_ctx_t *cx) {
                 if (is_active) { silence_track_notes_v2(inst, tr); pfx_sync_from_clip(tr); }
                 if (flags & 1) clip_wipe_notes(cl);
                 clip_import_frame(cl, tps, (uint16_t)len);
-                if (is_active && tr->tick_in_step >= tps) tr->tick_in_step = 0;
+                if (is_active) {
+                    /* The playhead stays inside the new clip (as `_length` keeps it). */
+                    if (tr->tick_in_step >= tps) tr->tick_in_step = 0;
+                    if (tr->current_step >= cl->length) tr->current_step = 0;
+                }
                 while (*ops) {
                     while (*ops == ' ' || *ops == ';') ops++;
                     if (*ops != 'a') { while (*ops && *ops != ';') ops++; continue; }

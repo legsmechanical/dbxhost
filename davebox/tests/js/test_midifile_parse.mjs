@@ -193,7 +193,7 @@ step('the window: before the start is left out, past the end is CUT, a crossing 
     ]);
     const r = planImport(p, { startBar: 3, bars: 2, tps: 24 });
     assertEq(r.notes.map(n => [n.t, n.g, n.p]), [[0, 96, 62], [2 * bar - 48, 48, 64]], 'landed');
-    assertEq([r.cut, r.shortened], [2, 1], 'counts');
+    assertEq([r.before, r.cut, r.shortened], [1, 2, 1], 'counts');
     assertEq(r.lengthSteps, 32, '2 bars of 1/16');
 });
 

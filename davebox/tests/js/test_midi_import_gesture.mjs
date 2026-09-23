@@ -70,7 +70,10 @@ globalThis.__stubStat = {
     '/data/UserData/beat.mid': { mode: REG, size: DRUMS.length },
     '/data/UserData/notes.txt': { mode: REG, size: 10 },
 };
-globalThis.__stubStdBinFiles = { '/data/UserData/song.mid': SONG, '/data/UserData/beat.mid': DRUMS };
+const CUTSHORT = SONG.slice(0, SONG.length - 20);
+globalThis.__stubStdBinFiles = { '/data/UserData/song.mid': SONG, '/data/UserData/beat.mid': DRUMS,
+                                 '/data/UserData/cut.mid': CUTSHORT };
+globalThis.__stubStat['/data/UserData/cut.mid'] = { mode: REG, size: CUTSHORT.length };
 
 /* The engine: records every write and answers the clip reads the import's
  * settle step makes, once the import key has arrived. */
@@ -86,7 +89,12 @@ globalThis.host_module_set_params = () => true;
 /* Slot and bus writes (levels, sends) go this way — recorded too, so a knob
  * that fell through to the track's levels would show here. */
 globalThis.shadow_set_param = (slot, k, v) => { writes.push([ctxTag, 'slot' + slot + ':' + String(k), String(v)]); return 1; };
+let laneNotesFor = {};              /* 't:c' -> '36 37 …' */
+let neverLands = false;
 globalThis.host_module_get_param = (k) => {
+    const ln = /^t(\d)_c(\d+)_lane_notes$/.exec(String(k));
+    if (ln) return laneNotesFor[ln[1] + ':' + ln[2]] || Array.from({ length: 32 }, (_, l) => 36 + l).join(' ');
+    if (neverLands) return '';
     const m = /^t(\d)_c(\d+)_(steps|drum_has_content)$/.exec(String(k));
     if (m && landed.has(m[1] + ':' + m[2])) return m[3] === 'steps' ? '1' + '0'.repeat(255) : '1';
     return '';
@@ -96,7 +104,7 @@ async function main() {
     const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
     stubParamPagesDevice();
     const osStub = await import('os');
-    osStub.__setReaddir({ '/data/UserData': ['UserLibrary', 'schwung', 'dbx-host', 'song.mid', 'beat.mid', 'notes.txt', '.hidden'],
+    osStub.__setReaddir({ '/data/UserData': ['UserLibrary', 'schwung', 'dbx-host', 'song.mid', 'beat.mid', 'cut.mid', 'notes.txt', '.hidden'],
                           '/data/UserData/UserLibrary': [] });
     await import('../../ui/ui.js');
     const { S } = await import('../../ui/ui_state.mjs');
@@ -285,6 +293,29 @@ async function main() {
         pickFile('beat.mid');
         assert(mi().stage === 'opts', 'a one-part file should go straight to the options: ' + mi().stage);
         assert(mi().plan.noPad === 1, 'no-pad count ' + mi().plan.noPad);
+        back();
+    });
+
+    step('a drum import plans against the DESTINATION clip\'s pads, and previews through them', () => {
+        const cur = S.trackActiveClip[0];
+        S.drumClipNonEmpty[0][cur] = true;                     /* so the default is another clip */
+        const dest = (cur + 1) % 16;
+        laneNotesFor['0:' + dest] = [20, ...Array.from({ length: 31 }, (_, l) => 37 + l)].join(' ');
+        openImport(0);
+        pickFile('beat.mid');
+        ticks(2);
+        assert(mi().choices[mi().toIdx] === dest, 'destination ' + mi().choices[mi().toIdx]);
+        assert(mi().plan.noPad === 1 && mi().plan.notes.every(n => n.p === 20),
+               'planned against the wrong pads: noPad ' + mi().plan.noPad + ' ' + JSON.stringify(mi().plan.notes.map(n => n.p)));
+        const b0 = writes.length;
+        /* the pad-20 hit sits a 1/16 in: run the clock until it sounds */
+        shiftClick();
+        const onOf = () => writes.slice(b0).find(w => w[1] === 't0_audition' && /\bon /.test(w[2]));
+        for (let i = 0; i < 40 && !onOf(); i++) ticks(1);
+        const aud = onOf();
+        assert(aud && aud[2].startsWith('clip ' + dest + ' '), 'the preview did not go through the destination: ' + (aud && aud[2]));
+        shiftClick();
+        S.drumClipNonEmpty[0][cur] = false;
         const before = writes.length;
         click(); ticks(8);
         const imp = writes.slice(before).find(w => /^t0_c\d+_import$/.test(w[1]));
@@ -301,6 +332,40 @@ async function main() {
         assert(writes.slice(before).some(w => w[1] === 't1_audition' && /alloff/.test(w[2])), 'Back left the preview sounding');
         back();                                         /* files → menu */
         assert(!mi() && snd.soundPickStateForTest().view === 0, 'Back from the files did not close');
+    });
+
+    step('notes BEFORE the start bar count as cut, and ask first', () => {
+        openImport(1);
+        pickFile('song.mid');
+        click();                                        /* Lead → options */
+        turn(0, 6);                                     /* start at bar 2 */
+        assert(mi().plan.before === 4 && mi().plan.cut === 0, 'before/cut ' + mi().plan.before + '/' + mi().plan.cut);
+        click();
+        assert(mi().stage === 'confirm', 'losing the first bar did not ask');
+        back(); back(); back();
+    });
+
+    step('a file that reads short says so', () => {
+        openImport(1);
+        pickFile('cut.mid');
+        assert(JSON.stringify(S.actionPopupLines) === '["FILE CUT SHORT","CUT"]', 'popup ' + JSON.stringify(S.actionPopupLines));
+        back(); back(); back();
+    });
+
+    step('an import the engine never confirms: ONE write, never re-sent, and it says it failed', () => {
+        neverLands = true;
+        openImport(1);
+        pickFile('song.mid');
+        click();
+        const cur = S.trackActiveClip[1];
+        while (mi().choices[mi().toIdx] === cur && mi().toIdx < mi().choices.length - 1) turn(3, 12);
+        const before = writes.length;
+        click(); ticks(60);
+        const imp = writes.slice(before).filter(w => /_import$/.test(w[1]));
+        neverLands = false;
+        assert(imp.length === 1, 'import writes: ' + imp.length);
+        assert(JSON.stringify(S.actionPopupLines).indexOf('IMPORT FAILED') >= 0, 'popup ' + JSON.stringify(S.actionPopupLines));
+        assert(!mi(), 'the screen stayed open');
     });
 
     step('a Conductor track has no Import MIDI row', () => {

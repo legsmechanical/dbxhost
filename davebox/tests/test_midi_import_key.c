@@ -135,6 +135,21 @@ static void test_drum_undo(void) {
     hx_set_param(h, "undo_restore", "1");
     HX_ASSERT(geti(h, "t0_l0_note_count") == 0, "undo did not take the drum import back");
     hx_destroy(h);
+
+    /* The GRID comes back too: undo rebuilds the hits on the lane's grid, so a
+     * grid left at the import's would play the restored pattern at the wrong
+     * speed. */
+    h = hx_create(NULL);
+    hx_set_param(h, "t0_c0_import", "0 1 16|a 0 36 100 24");     /* lane 0 on 1/16 */
+    hx_set_param(h, "t0_c0_import", "1 3 8|a 0 36 100 96");      /* replace on 1/4 */
+    HX_ASSERT(geti(h, "t0_l0_tps") == 96, "precondition: the import's grid");
+    hx_set_param(h, "undo_restore", "1");
+    HX_ASSERT(geti(h, "t0_l0_tps") == 24 && geti(h, "t0_l0_length") == 16,
+              "undo left the drum lanes on the import's grid");
+    hx_set_param(h, "redo_restore", "1");
+    HX_ASSERT(geti(h, "t0_l0_tps") == 96 && geti(h, "t0_l0_length") == 8,
+              "redo did not put the import's grid back");
+    hx_destroy(h);
 }
 
 int main(void) {
