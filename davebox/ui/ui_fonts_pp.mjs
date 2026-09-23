@@ -32,7 +32,7 @@
  * width functions; it is why the last glyph does not trail a blank column.
  */
 
-const CHARS4 = " !\"'()+,-./:0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ%<>=?*#&_\\^[]\u2261\u266d\u02d9";
+const CHARS4 = " !\"'()+,-./:0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ%<>=?*#&_\\^[]\u2261\u266d\u02d9iv\u00b0\u00b7";
 
 /* Row bit values, 4-wide: col0=1 col1=2 col2=4 col3=8
  *   ....=0  #...=1  .#..=2  ##..=3  ..#.=4  #.#.=5  .##.=6  ###.=7
@@ -116,6 +116,13 @@ const G4 = [
     /* ˙ (U+02D9) — a raised dot: the chord indicator's "not the full chord"
      * mark, top right of a name played without its third. */
     [3, 0, 2, 5, 3, 3, 0, 0, 0],        /* ˙ */
+    /* Lowercase i and v, ° and · — the Chord layout's roman numerals ("vi",
+     * "vii°") need case: minor degrees are lowercase. Only these two letters
+     * exist in lowercase; everything else in the face stays caps. */
+    [2, 0, 1, 5, 1, 0, 1, 1, 1],        /* i */
+    [4, 2, 3, 3, 5, 5, 2],              /* v */
+    [3, 0, 2, 2, 3, 3],                 /* ° */
+    [2, 2, 1, 1, 1],                    /* · */
 ];
 
 const FALLBACK_ADV4 = 5;

@@ -86,7 +86,7 @@ function rest() {
     S.pendingMergePlacement = false; S.mergeSoloPlacement = -1;
     S.capturePlaceTrack = -1; S.pendingSceneBakePicker = false;
     S.confirmBakeScene = false; S.confirmBakeDrumLoopOpen = false;
-    S.confirmXpose = false; S.confirmLgto = false; S.confirmBake = false;
+    S.confirmXpose = false; S.confirmBake = false;
     S.recordBlockedDialog = false; S.bpmMoveInfo = false;
     S.stepIntervalMode = false; S.altMode = false; S.allLanesConfirmed = false;
     if (!cc_mod.atOverview()) throw new Error('rig: could not reach the overview');
@@ -142,9 +142,9 @@ step('⭐ the escape is ONE press, not a Back — it does not peel one level', (
     /* A dialog stacked over the menu: Back would close the dialog and leave the
      * menu; the escape must take both in a single press. */
     rest();
-    S.globalMenuOpen = true; S.confirmLgto = true;
+    S.globalMenuOpen = true; S.confirmBake = true;
     press();
-    if (S.confirmLgto)   throw new Error('the dialog survived');
+    if (S.confirmBake)   throw new Error('the dialog survived');
     if (S.globalMenuOpen) throw new Error('only one level was peeled — that is Back, not the escape');
 });
 

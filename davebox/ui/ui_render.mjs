@@ -14,10 +14,13 @@ import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev, faderGainToTra
 import { instrValueFor } from './ui_dsp_bridge.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
+import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
+import { triggerPhase } from './ui_trigger.mjs';
+import { LGTO_KNOB } from './ui_constants.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
-    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION,
+    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD,
     INSTR_SCHWUNG, INSTR_MOVE_MAX, INSTR_MIDI_CH, INSTR_TRACK, INSTR_NONE, INSTR_CONDUCT,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
@@ -39,8 +42,8 @@ import { drawAutoMarkAt,
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawModuleSwapConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
-    drawConvertToDrumConfirm, drawConvertToConductConfirm, drawMenuInfo,
-    drawLgtoConfirm, drawMacroClearConfirm, drawBakeConfirm, drawSnapshotPicker,
+    drawConvertToDrumConfirm, drawConvertToConductConfirm, drawMenuInfo, drawChordPopup,
+    drawMacroClearConfirm, drawBakeConfirm, drawSnapshotPicker,
     drawBakeSceneConfirm, drawXposeConfirm,
     drawProjectPadPicker,
     drawProjectOpenFailed,
@@ -561,6 +564,8 @@ function drawSessionFaderRow(cells, mode) {
  *
  * ⚠ The row is CHROME. Nothing here reads or changes input state. */
 export function bankPageHints(bank) {
+    /* A touched TRIGGER knob says how to fire it, as stock's footer does. */
+    if (bank === 0 && S.knobTouched === LGTO_KNOB && !S.sessionView) return [['CLK', 'LEGATO']];
     /* ⭑ While a step is HELD the jog means something else (spec §2): on any
      * other bank a right turn REVEALS the step's page — so the pair says so,
      * in the same slot, and JOG BANK (which the hold suspends) is not shown.
@@ -632,20 +637,10 @@ function formatStepRatch(raw) {
     return 'x' + raw;
 }
 
-function drawMetroIndicator() {
-    /* Match the Global Menu / Shift+Step6 popup wording exactly (one source of
-     * truth): Off / Cnt-In / Play / Always. */
-    const METRO_LABELS = [null, 'Cnt-In', 'Play', 'Always'];
-    const label = METRO_LABELS[S.metronomeOn];
-    if (label) {
-        /* Stock face (Josh, 2026-09-05: "replace any mcu font with the little
-         * stock font" on both overviews); row 2 of the overview sits at y=19. */
-        const tx = 8;
-        const tw = ovwWidth(label);
-        fill_rect(4, 19, 2, 2, 1);           /* left dot */
-        ovwPrint(tx, 17, label, 1);
-        fill_rect(tx + tw + 2, 19, 2, 2, 1); /* right dot */
-    }
+function drawRow2Labels() {
+    /* The metronome label left this row (Josh, 2026-09-23: "just get rid of
+     * the metronome indicator"); the mode is still in the Settings menu and
+     * on Shift + Step 6. */
     if (S.sessionView) {
         /* ⚠ Was a parallel 4-entry literal — the gateway made sessKnobMode
          * reach 4, modeNames[4].length threw, and the WHOLE session draw died
@@ -662,19 +657,11 @@ function drawMetroIndicator() {
         ovwPrint(lx, 17, lab, 1);
         fill_rect(lx, 23, lw, 1, 1);
     }
-    /* Velocity / Fixed/Adaptive indicators (track view only, row 2 at y=19,
-     * right-aligned in the stock face; Fix/Adap hugs the right edge, the
-     * velocity word sits mid-row) */
+    /* Velocity input, right-aligned (track view only). The Fixed/Adaptive
+     * word that sat here is gone (Josh, 2026-09-23). */
     if (!S.sessionView) {
-        const t  = S.activeTrack;
-        const ac = (!S.playing && S.trackQueuedClip[t] >= 0) ? S.trackQueuedClip[t] : S.trackActiveClip[t];
-        const _isDrum7   = S.trackPadMode[t] === PAD_MODE_DRUM;
-        const _isEmpty7  = _isDrum7 ? !S.drumClipNonEmpty[t][ac] : !S.clipNonEmpty[t][ac];
-        const _manualL7  = _isDrum7 ? S.drumLaneLengthManuallySet[t] : S.clipLengthManuallySet[t][ac];
-        /* Velocity input indicator (between metro and fixed/adap) */
-        ovwPrint(67, 17, fmtVelOverride(S.trackVelOverride[t]), 1);
-        const _fa = (_isEmpty7 && !_manualL7) ? 'Adap' : 'Fixed';   /* the full word fits beside LIVE (Josh, 2026-09-05) */
-        ovwPrint(128 - 4 - ovwWidth(_fa), 17, _fa, 1);
+        const _vel = 'Vel:' + fmtVelOverride(S.trackVelOverride[S.activeTrack]);
+        ovwPrint(128 - 4 - ovwWidth(_vel), 17, _vel, 1);
     }
 }
 
@@ -774,7 +761,13 @@ function kitCellForKnob(knob, val) {
         base.norm = v ? 1 : 0;
         return base;
     }
-    if (knob.fmt === fmtLgto) { base.kind = 'action'; base.oneWay = true; return base; }
+    /* A trigger (ui_trigger): touch + jog click fires it; the cell wears the
+     * click brackets and the stock button's flash. */
+    if (knob.fmt === fmtLgto) {
+        base.kind = 'action'; base.oneWay = true; base.opens = true;
+        base.btnPhase = triggerPhase('lgto', S.knobTouched === LGTO_KNOB);
+        return base;
+    }
     /* ⭑⭑ THE BUTTON IS FOR FIRE-ACTIONS ONLY, and `scope: 'action'` is not that
      * test. Three params carry that scope and exactly ONE is a trigger:
      *
@@ -934,7 +927,7 @@ function drawInfoRow2() {
         hdrPrint(Math.round((128 - hdrWidth(_sn)) / 2),
                  _top + Math.floor((_h - 6) / 2), _sn, _on ? 0 : 1);
     } else {
-        drawMetroIndicator();
+        drawRow2Labels();
     }
 }
 
@@ -1376,8 +1369,8 @@ export function soundModeCovered() {
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
         S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.confirmModuleChange || S.bpmMoveInfo || S.recordBlockedDialog ||
         S.confirmConvertToDrum || S.confirmConvertToConduct ||
-        (S.menuInfoLines && S.menuInfoLines.length > 0) ||
-        S.confirmLgto || S.confirmXpose || S.confirmBakeScene || S.confirmBake ||
+        (S.menuInfoLines && S.menuInfoLines.length > 0) || S.chordPopupOpen ||
+        S.confirmXpose || S.confirmBakeScene || S.confirmBake ||
         S.confirmMacroClear ||   /* MACROS bank clear — opened FROM sound mode, so it must cover it */
         S.globalMenuOpen || S.tapTempoOpen ||
         (S.sessionView && (S.loopHeld || S.perfViewLocked)));
@@ -1690,7 +1683,6 @@ function drawUIBody() {
     if (S.confirmModuleChange) { drawModuleSwapConfirm(); return; }
     if (S.bpmMoveInfo) { drawBpmMoveInfo(); return; }
     if (S.recordBlockedDialog) { drawRecordBlockedDialog(); return; }
-    if (S.confirmLgto)         { drawLgtoConfirm();         return; }
     if (S.confirmMacroClear)   { drawMacroClearConfirm();   return; }
     if (S.confirmXpose) { drawXposeConfirm(); return; }
     if (S.confirmBakeScene) { drawBakeSceneConfirm(); return; }
@@ -1703,6 +1695,7 @@ function drawUIBody() {
     if (S.confirmConvertToDrum)    { drawConvertToDrumConfirm();    return; }
     if (S.confirmConvertToConduct) { drawConvertToConductConfirm(); return; }
     if (S.menuInfoLines.length > 0){ drawMenuInfo();                return; }
+    if (S.chordPopupOpen)          { drawChordPopup();              return; }
     if (S.globalMenuOpen || S.tapTempoOpen) { ensureGlobalMenuFresh(); drawGlobalMenu(); return; }
     /* Perf Mode OLED takeover (Session View + Loop held or locked) */
     if (S.sessionView && (S.loopHeld || S.perfViewLocked)) { drawPerfModeOled(); return; }
@@ -1836,6 +1829,32 @@ function drawUIBody() {
      * screen there; everywhere else it changes nothing (the reveal excepted,
      * drawn above sound mode below). */
     if (S.heldStep >= 0 && S.activeBank === BANK_STEP && drawHeldStepPage()) return;
+
+    /* The CHORD bank is contextual: while a chord slot is held it shows that
+     * slot's settings (the knobs edit them), and its own settings otherwise.
+     * On any other bank a held chord changes nothing here. */
+    /* Only while the bank's page is up (latched, just chosen, or peeked by a
+     * knob touch) — never over the resting track overview (Josh, 2026-09-23). */
+    if (bank === BANK_CHORD && inTimeout && chordEditSlot() >= 0) {
+        const _cs = chordSlotCells(S.activeTrack, chordEditSlot());
+        /* Touching K8 says how to fire it, as stock's trigger footer does. */
+        drawKitPage(_cs.title, _cs.cells, false,
+            S.knobTouched === 7 ? [['CLK', 'RESET']]
+            : _cs.plain.length ? [[_cs.plain.join('/'), 'NOT IN KEY']] : null);
+        /* The header is the CHORD, as it changes — "vi · AMIN7/C" — in the
+         * small face, which keeps the numeral's case (the kit headers
+         * uppercase, and "VI" would say major). */
+        fill_rect(0, 0, 128, MV_BAR_Y, 0);
+        const _ht = fit4x5(_cs.title, 124);
+        fontPrint4x5(Math.round((128 - fontWidth4x5(_ht)) / 2), 1, _ht, 1);
+        fill_rect(0, MV_BAR_Y, 128, 1, 1);
+        return;
+    }
+    if (bank === BANK_CHORD && inTimeout) {
+        drawKitPage(bankHeaderName(S.activeTrack, BANK_CHORD), chordBankCells(S.activeTrack), false,
+                    bankPageHints(BANK_CHORD));
+        return;
+    }
 
     /* Loop view: own priority state so screen is fully cleared first. Suppressed
      * on the unconfirmed drum ALL LANES bank so holding Loop surfaces the confirm
@@ -2023,7 +2042,8 @@ function drawUIBody() {
                 { kind: 'valsq', label: S.altMode ? 'Nudge' : 'Shift',
                   name: S.altMode ? 'Nudge' : 'Clock Shift',
                   text: fmtSign(S.bankParams[t][0][2]) },
-                { kind: 'action', oneWay: true, label: 'Lgto', name: 'Apply Legato', text: '->' },
+                { kind: 'action', oneWay: true, label: 'Lgto', name: 'Apply Legato', text: '->', opens: true,
+                  btnPhase: triggerPhase('lgto', S.knobTouched === LGTO_KNOB) },
                 { kind: 'valsq', label: 'Eucld', name: 'Euclid Fill', text: String(eucN) },
                 { kind: 'blank', label: '' },
                 S.altMode
@@ -2342,37 +2362,26 @@ function drawUIBody() {
         /* State 4: normal Track View */
         const recTag  = (S.recordArmed && !S.recordCountingIn && S.recordArmedTrack === S.activeTrack)
             ? ' REC' : '';
-        const oct     = S.trackOctave[S.activeTrack];
-        const octStr  = 'Oct:' + (oct >= 0 ? '+' : '') + oct;
         const keyScl  = keyRootName(S.padKey, S.padScale) + ' ' + (SCALE_DISPLAY[S.padScale] || '?');
         const keySclW = ovwWidth(keyScl);
-        const keySclX = 128 - 4 - keySclW;
         (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankHeaderName(S.activeTrack, S.activeBank) + recTag, false, true);
         /* info row at y=9 in the small header face (Josh, 2026-09-05) — 2px
-         * clear of the header; the glyphs end at y=13 and the scale rule is 15. */
-        ovwPrint(4, 9, octStr, 1);
-        /* Held notes / chord, in brackets, centred between the octave and the
-         * key/scale; only while something is held. It takes the Arp label's
-         * place for as long as it shows. */
+         * clear of the header; the glyphs end at y=13 and the scale rule is 15.
+         * Josh, 2026-09-23: key/scale on the LEFT, the held note/chord on the
+         * RIGHT; the octave and Arp labels are gone from this row. */
+        ovwPrint(4, 9, keyScl, 1);
+        if (S.scaleAware) fill_rect(4, 15, keySclW, 1, 1);
+        /* Held notes / chord, in brackets, right-aligned; only while something
+         * is held. */
         const _heldPs = heldInputNotes(S.activeTrack), _flats = keyUsesFlats(S.padKey, S.padScale);
-        const _held = chordLabel(_heldPs, _flats);
-        const _heldL = 4 + ovwWidth(octStr) + 4, _heldR = keySclX - 4;
-        const _heldTxt = _held ? '[' + fitHeldLabel(_held, _heldR - _heldL - ovwWidth('[]') - 1, ovwWidth, noteNames(_heldPs, _flats)) + ']' : '';
-        if (_heldTxt) {
-            ovwPrint(Math.round((_heldL + _heldR - ovwWidth(_heldTxt)) / 2), 9, _heldTxt, 1);
-        } else if (S.bankParams[S.activeTrack][5][0]) {
-            const arpW = ovwWidth('Arp');
-            if (S.bankParams[S.activeTrack][5][7]) {
-                /* Latch on: invert 'Arp' (black on white chip), 1px pad around
-                 * the 4x5 glyphs at (52, 9). */
-                fill_rect(51, 8, arpW + 2, 7, 1);
-                ovwPrint(52, 9, 'Arp', 0);
-            } else {
-                ovwPrint(52, 9, 'Arp', 1);
-            }
-        }
-        ovwPrint(keySclX, 9, keyScl, 1);
-        if (S.scaleAware) fill_rect(keySclX, 15, keySclW, 1, 1);
+        /* On the Chord layout a held slot reads "vi · AMIN7" (its numeral). */
+        const _held = chordIndicator(S.activeTrack, _heldPs.length > 0) || chordLabel(_heldPs, _flats);
+        const _heldL = 4 + keySclW + 6, _heldR = 128 - 4;
+        /* Printed as spelled: names are capitals already, and a Chord-layout
+         * numeral keeps its case ("vi" minor, "IV" major) — the face carries
+         * lowercase i and v for exactly this. */
+        const _heldTxt = _held ? '[' + fitHeldLabel(_held, _heldR - _heldL - fontWidth4x5('[]') - 1, fontWidth4x5, noteNames(_heldPs, _flats)) + ']' : '';
+        if (_heldTxt) fontPrint4x5(_heldR - fontWidth4x5(_heldTxt), 9, _heldTxt, 1);
         drawInfoRow2();
         drawOverviewTracks(overviewHints());
         drawPositionBar(S.activeTrack);

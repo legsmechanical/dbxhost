@@ -233,7 +233,7 @@ step('⭐ Back from a bus lands on the FX LIST, never the track prompt (the TRAC
 });
 
 step('⭐ the session screens DRAW at the gateway — the mode-label crash regression', () => {
-    /* A parallel 4-entry label array in drawMetroIndicator threw at
+    /* A parallel 4-entry label array in drawRow2Labels threw at
      * sessKnobMode=4 and killed the WHOLE session draw mid-frame — Josh saw
      * 'an incomplete session view... only the count-in indicator'. The
      * indicator reads the mode table now. Both screens must survive a draw

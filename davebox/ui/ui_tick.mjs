@@ -8,6 +8,8 @@
  * see docs/superpowers/plans/2026-07-10-refactor-phase6b-map.md).
  */
 
+import { chordLayoutOn } from './ui_chord_pads.mjs';
+import { triggerFlashing } from './ui_trigger.mjs';
 import {
     MoveShift, MovePlay, MoveLeft, MoveRight, MoveUp, MoveDown, MoveMute, MoveDelete,
     MoveBack
@@ -22,7 +24,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
-    POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS } from './ui_constants.mjs';
+    POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS, BANK_CHORD } from './ui_constants.mjs';
 
 import { S, standDownBankDisplay, stepRevealAvailable } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -35,7 +37,7 @@ import { reconcileParallelAll, parallelForgetPushed, parallelSweepTick } from '.
 import { autoBankTick } from './ui_automation_bank.mjs';
 import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
 import { saveState, showActionPopup, showActionPopupFor, showTrackVolCard, uuidToStatePath, hostIdentity, projectDisplayName,
-    commitSnapshot } from './ui_persistence.mjs';
+    commitSnapshot, writeSidecar } from './ui_persistence.mjs';
 import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
          projectPickerTextEntryTick, requestSetForSlot, prepareSlotFor, slotRefusedUnreadable, reopenPickerRefusingUnreadable,
          checkProjectOpened, lockAfterProjectLost } from './ui_dialogs.mjs';
@@ -139,6 +141,9 @@ function convertTrackType(t, toDrum) {
      * tN_padmap (without the barrier, same-buffer coalescing drops the convert). */
     if (trackHasAnyData(t)) syncClipsFromDsp();
     else host_module_get_param('t' + t + '_pad_mode');
+    /* A drum track has no Chord layout, so no CHORD bank either. */
+    if (S.trackActiveBank[t] === BANK_CHORD) S.trackActiveBank[t] = 0;
+    if (t === S.activeTrack && S.activeBank === BANK_CHORD) S.activeBank = 0;
     if (toDrum) {
         if (t === S.activeTrack && (S.activeBank === 2 || S.activeBank === 4)) S.activeBank = 0;
     } else {
@@ -163,6 +168,8 @@ function convertTrackToConduct(t) {
     host_module_set_param('t' + t + '_convert_to_conduct', '1');
     S.trackPadMode[t] = PAD_MODE_CONDUCT;
     S.pendingConductReadback = { t: t, prevMode: prevMode };
+    if (S.trackActiveBank[t] === BANK_CHORD) S.trackActiveBank[t] = 0;
+    if (t === S.activeTrack && S.activeBank === BANK_CHORD) S.activeBank = 0;
     /* Mirror convertTrackType's drain barrier: the convert set_param must drain
      * before computePadNoteMap pushes tN_padmap, or same-buffer tN_* coalescing
      * drops the convert (DSP never sets the role → false refusal). The first
@@ -484,6 +491,14 @@ export function _tickImpl() {
         }
     }
 
+    /* A slot or CHORD bank edit is saved once the knobs let go — never while
+     * the transport plays (a file write mid-bar), and only once per edit. */
+    if (S.chordDirty && S.knobTouched < 0 && !S.playing) { S.chordDirty = false; writeSidecar(); }
+    /* A trigger button's press flash runs for ~0.5 s after the click. */
+    if (triggerFlashing()) S.screenDirty = true;
+    /* A Chord-layout modifier or setting that could not push from its own
+     * handler (ui_chord_pads.mjs). */
+    if (S.chordPadmapNow) { S.chordPadmapNow = false; S.pendingPadNoteMapRecompute = true; }
     if (S.pendingPadNoteMapRecompute && S.pendingDefaultSetParams.length === 0
             && S.clearDrainHold === 0) {
         S.pendingPadNoteMapRecompute = false;
@@ -513,7 +528,16 @@ export function _tickImpl() {
                 const _jsM = _muted ? 1 : 0;
                 if (_dspMi !== _jsM) computePadNoteMap();
             }
-            const _dspMap0 = dget('pad_note_map_0');
+            /* The Chord layout re-bakes the map on every chord (the strum row
+             * follows it), so pad 0 alone proves nothing there: compare the
+             * whole map's checksum instead — the same one read, not two. */
+            const _chordSig = chordLayoutOn(S.activeTrack);
+            if (_chordSig) {
+                const _sig = dget('padmap_sig');
+                if (_sig !== null && _sig !== undefined && _sig !== '' &&
+                        parseInt(_sig, 10) !== S.lastPadmapSig) computePadNoteMap();
+            }
+            const _dspMap0 = _chordSig ? null : dget('pad_note_map_0');
             if (_dspMap0 !== null && _dspMap0 !== undefined) {
                 const _dspMap0i = parseInt(_dspMap0, 10);
                 const _jsMap0 = _muted && S.sessionView ? 0xFF

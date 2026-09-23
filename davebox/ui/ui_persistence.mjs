@@ -1,3 +1,4 @@
+import { chordSidecar } from './ui_chord_pads.mjs';
 import * as os from 'os';
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -374,6 +375,10 @@ export function writeSidecar() {
         tab: S.trackActiveBank.slice(),
         am: S.trackAtMode.slice(),
         pchr: S.padLayoutChromatic.map(function(b) { return b ? 1 : 0; }),
+        /* The Chord layout (additive on v:9, like pchr): which tracks are on
+         * it, and each such track's eight slots + CHORD bank settings. */
+        pchd: S.padLayoutChord.map(function(b) { return b ? 1 : 0; }),
+        chd: chordSidecar(),
         /* The macro store, per track: eight MAPPINGS or null (see
          * ui_state.trackMacros) — `{v, legs:[leg,…]}`, a leg being a typed
          * target plus lo/hi. Additive on v:9: absent → unseeded, and ui_sound

@@ -194,6 +194,7 @@ static void seq8_set_state_path(char *out, size_t sz, const char *uuid, int crea
 
 /* Drum mode */
 #define DRUM_LANES          32
+#define PAD_CHORD_MAX       6   /* notes on one Chord-layout pad */
 /* Baseline MIDI note for lane 0 — standard Ableton Drum Rack layout.
  * Lane L plays note (DRUM_BASE_NOTE + L). Verify against live device before shipping. */
 #define DRUM_BASE_NOTE      36
@@ -1368,6 +1369,20 @@ typedef struct {
      * same pitch even if pad_note_map was repushed mid-hold (e.g. a Key/Scale
      * preview re-layout). 0xFF = no note held on that pad. */
     uint8_t  pad_live_pitch[NUM_TRACKS][32];
+    /* Chord pads (the melodic Chord layout): a pad may carry up to
+     * PAD_CHORD_MAX pitches, pushed as "p+p+p" tokens in tN_padmap.
+     * pad_chord_n = 0 or 1 is an ordinary one-note pad (pad_note_map alone);
+     * pad_chord[..][0] always equals pad_note_map. pad_live_chord holds what
+     * a press actually started, so its release (and a re-voice) ends exactly
+     * those notes whatever the map says by then. */
+    uint8_t  pad_chord[NUM_TRACKS][32][PAD_CHORD_MAX];
+    uint8_t  pad_chord_n[NUM_TRACKS][32];
+    uint8_t  pad_live_chord[NUM_TRACKS][32][PAD_CHORD_MAX];
+    uint8_t  pad_live_n[NUM_TRACKS][32];
+    uint8_t  pad_live_vel[NUM_TRACKS][32];
+    /* Set while a chord pad dispatches: a latched Track Arp keeps a
+     * re-pressed chord rather than plucking its notes back out. */
+    uint8_t  pad_chord_press;
 
     /* JS-driven modal pad-dispatch mute. Set via the 33rd tN_padmap token
      * whenever JS's _padDispatchMutedNow() is true (Shift/Delete/Loop/Mute/
@@ -3481,8 +3496,10 @@ static void live_note_on(seq8_instance_t *inst, seq8_track_t *tr,
      * notes out of a latched chord without dropping the whole buffer. Gated
      * on retrigger=0 (with retrigger=1 the gesture block above already
      * replaced the buffer, so there's nothing meaningful to toggle) and
-     * held_physical==0 (don't drop notes the user is actively holding). */
-    if (tr->tarp_latch && !tr->tarp.retrigger) {
+     * held_physical==0 (don't drop notes the user is actively holding).
+     * Never for a CHORD pad: re-pressing the latched chord keeps it — the
+     * toggle would pull its notes out one by one. */
+    if (tr->tarp_latch && !tr->tarp.retrigger && !inst->pad_chord_press) {
         arp_engine_t *a = &tr->tarp;
         int _i;
         for (_i = 0; _i < a->held_count; _i++) {
@@ -3540,6 +3557,148 @@ static void live_note_off(seq8_instance_t *inst, seq8_track_t *tr,
     inst->emit_bypass_swing = 1;
     pfx_note_off_imm(inst, tr, pitch);
     inst->emit_bypass_swing = 0;
+}
+
+/* ---- Chord-layout pad voices ------------------------------------------
+ * A melodic pad press may start several pitches, and two held pads may share
+ * one (a chord slot and the strum row, or two overlapping chords). A pitch
+ * sounds while ANY held pad on the track holds it: the count is taken from
+ * the pads' own live lists rather than kept as a separate tally, so it can
+ * never drift from what is actually held. */
+static int pad_pitch_holders(const seq8_instance_t *inst, int t, int except_pad,
+                             uint8_t pitch) {
+    int n = 0;
+    for (int i = 0; i < 32; i++) {
+        if (i == except_pad) continue;
+        for (int k = 0; k < inst->pad_live_n[t][i]; k++)
+            if (inst->pad_live_chord[t][i][k] == pitch) { n++; break; }
+    }
+    return n;
+}
+
+/* Start `pitch` for pad `pad`. Already held by another pad: re-strike it
+ * without a second live_note_on (the arp counts physical presses, and it
+ * already holds the pitch), so each press still sounds. */
+static void pad_pitch_on(seq8_instance_t *inst, seq8_track_t *tr, int t, int pad,
+                         uint8_t pitch, uint8_t vel) {
+    if (pad_pitch_holders(inst, t, pad, pitch) == 0) {
+        live_note_on(inst, tr, pitch, vel);
+    } else if (!tr->tarp_on) {
+        inst->emit_bypass_swing = 1;
+        pfx_note_on(inst, tr, pitch, vel);      /* retrigger-guarded */
+        inst->emit_bypass_swing = 0;
+    }
+}
+
+/* End `pitch` for pad `pad` unless another held pad still holds it. */
+static void pad_pitch_off(seq8_instance_t *inst, seq8_track_t *tr, int t, int pad,
+                          uint8_t pitch) {
+    if (pad_pitch_holders(inst, t, pad, pitch) == 0)
+        live_note_off(inst, tr, pitch);
+}
+
+/* Release everything pad `pad` started. */
+static void pad_voices_off(seq8_instance_t *inst, seq8_track_t *tr, int t, int pad) {
+    uint8_t n = inst->pad_live_n[t][pad];
+    uint8_t ps[PAD_CHORD_MAX];
+    memcpy(ps, inst->pad_live_chord[t][pad], sizeof(ps));
+    inst->pad_live_n[t][pad] = 0;              /* before the holder scans */
+    inst->pad_live_pitch[t][pad] = 0xFF;
+    for (int k = 0; k < n; k++) pad_pitch_off(inst, tr, t, pad, ps[k]);
+}
+
+/* Start pitches `ps` on pad `pad`, recording them as its live voices. */
+static void pad_voices_on(seq8_instance_t *inst, seq8_track_t *tr, int t, int pad,
+                          const uint8_t *ps, int n, uint8_t vel) {
+    if (n > PAD_CHORD_MAX) n = PAD_CHORD_MAX;
+    inst->pad_chord_press = (n > 1);
+    for (int k = 0; k < n; k++) {
+        pad_pitch_on(inst, tr, t, pad, ps[k], vel);
+        /* Listed one at a time, so a pitch doubled inside one chord is not
+         * counted as held by "another" pad. */
+        inst->pad_live_chord[t][pad][k] = ps[k];
+        inst->pad_live_n[t][pad] = (uint8_t)(k + 1);
+    }
+    inst->pad_chord_press = 0;
+    inst->pad_live_vel[t][pad] = vel;
+    inst->pad_live_pitch[t][pad] = n > 0 ? ps[0] : 0xFF;
+}
+
+/* Recording stamps for a note a re-voice starts or ends: the same
+ * audio-thread press/release ticks on_midi writes for a pad, so the recorder
+ * (sp_track_record) finds a stamp for every note that sounded. */
+static void pad_revoice_stamp(seq8_instance_t *inst, seq8_track_t *tr, int t,
+                              uint8_t pitch, int is_on) {
+    int pre = (!tr->recording && inst->count_in_ticks > 0 &&
+               inst->count_in_ticks <= (int32_t)(PPQN / 2) &&
+               (int)inst->count_in_track == t);
+    if (!tr->recording && !pre) return;
+    uint32_t tick;
+    if (pre) {
+        clip_t *cl = &tr->clips[tr->active_clip];
+        tick = (uint32_t)cl->loop_start * cl->ticks_per_step;
+    } else {
+        tick = tr->current_clip_tick;
+    }
+    if (is_on) { inst->on_midi_press_tick[t][pitch] = tick; inst->on_midi_press_active[t][pitch] = 1; }
+    else       { inst->on_midi_release_tick[t][pitch] = tick; inst->on_midi_release_active[t][pitch] = 1; }
+}
+
+/* Re-voice a HELD pad in place (Inv up/down, or a stack button tapped while
+ * the chord sounds): notes it no longer has end, notes it gains start at the
+ * press velocity, common notes carry on untouched. */
+static void pad_revoice(seq8_instance_t *inst, seq8_track_t *tr, int t, int pad,
+                        const uint8_t *ps, int n) {
+    if (pad < 0 || pad >= 32 || inst->pad_live_n[t][pad] == 0) return;
+    if (n > PAD_CHORD_MAX) n = PAD_CHORD_MAX;
+    uint8_t old[PAD_CHORD_MAX];
+    int on = inst->pad_live_n[t][pad];
+    memcpy(old, inst->pad_live_chord[t][pad], sizeof(old));
+    uint8_t vel = inst->pad_live_vel[t][pad];
+    /* Leaving: drop from the live list first so the holder scan sees it gone. */
+    int keep = 0;
+    for (int k = 0; k < on; k++) {
+        int stays = 0;
+        for (int j = 0; j < n; j++) if (ps[j] == old[k]) { stays = 1; break; }
+        if (stays) inst->pad_live_chord[t][pad][keep++] = old[k];
+    }
+    inst->pad_live_n[t][pad] = (uint8_t)keep;
+    for (int k = 0; k < on; k++) {
+        int stays = 0;
+        for (int j = 0; j < n; j++) if (ps[j] == old[k]) { stays = 1; break; }
+        if (!stays) { pad_revoice_stamp(inst, tr, t, old[k], 0); pad_pitch_off(inst, tr, t, pad, old[k]); }
+    }
+    inst->pad_chord_press = 1;
+    for (int j = 0; j < n; j++) {
+        int had = 0;
+        for (int k = 0; k < keep; k++) if (inst->pad_live_chord[t][pad][k] == ps[j]) { had = 1; break; }
+        if (had) continue;
+        pad_revoice_stamp(inst, tr, t, ps[j], 1);
+        pad_pitch_on(inst, tr, t, pad, ps[j], vel);
+        if (inst->pad_live_n[t][pad] < PAD_CHORD_MAX)
+            inst->pad_live_chord[t][pad][inst->pad_live_n[t][pad]++] = ps[j];
+    }
+    inst->pad_chord_press = 0;
+    inst->pad_live_pitch[t][pad] = inst->pad_live_n[t][pad] ? inst->pad_live_chord[t][pad][0] : 0xFF;
+}
+
+/* Parse one pad token, "p" or "p+p+p", from *spp into out[]. Returns the
+ * number of notes stored (0 when no number is there). The first number is
+ * kept as given (255 = unmapped); any further one must be a real pitch, and
+ * at most PAD_CHORD_MAX are kept. */
+static int pad_parse_chord(const char **spp, uint8_t *out) {
+    const char *sp = *spp;
+    int n = 0;
+    while (*sp >= '0' && *sp <= '9') {
+        int p = 0;
+        while (*sp >= '0' && *sp <= '9') { if (p < 1000) p = p * 10 + (*sp - '0'); sp++; }
+        if (n == 0) out[n++] = (uint8_t)(p > 255 ? 0xFF : p);
+        else if (p <= 127 && out[0] <= 127 && n < PAD_CHORD_MAX) out[n++] = (uint8_t)p;
+        if (*sp != '+') break;
+        sp++;
+    }
+    *spp = sp;
+    return n;
 }
 
 /* Fire one TRACK ARP step: silence prior sounding, emit next picked note
@@ -4635,6 +4794,8 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
     memset(inst->perf_emitted_pitch, 0xFF, sizeof(inst->perf_emitted_pitch));
     memset(inst->pad_note_map, 0xFF, sizeof(inst->pad_note_map));
     memset(inst->pad_live_pitch, 0xFF, sizeof(inst->pad_live_pitch));
+    memset(inst->pad_chord_n, 0, sizeof(inst->pad_chord_n));
+    memset(inst->pad_live_n, 0, sizeof(inst->pad_live_n));
     memset(inst->ext_press_track, 0xFF, sizeof(inst->ext_press_track));
     memset(inst->pad_source_scratch, 0, sizeof(inst->pad_source_scratch)); /* PAD_SRC_NORMAL */
     memset(inst->drum_vel_zone_armed, 0, sizeof(inst->drum_vel_zone_armed));
@@ -5334,12 +5495,25 @@ static void on_midi(void *instance, const uint8_t *msg, int len, int source) {
             } else {
                 snap_tick = tr->current_clip_tick;
             }
-            if (is_on) {
-                inst->on_midi_press_tick[t][pitch]   = snap_tick;
-                inst->on_midi_press_active[t][pitch] = 1;
-            } else {
-                inst->on_midi_release_tick[t][pitch]   = snap_tick;
-                inst->on_midi_release_active[t][pitch] = 1;
+            /* A chord pad stamps every one of its pitches: the press from the
+             * map, the release from what the press actually started. */
+            const uint8_t *snap_ps = &pitch;
+            int snap_n = 1;
+            if (is_on && inst->pad_chord_n[t][padIdx] > 1) {
+                snap_ps = inst->pad_chord[t][padIdx]; snap_n = inst->pad_chord_n[t][padIdx];
+            } else if (!is_on && inst->pad_live_n[t][padIdx] > 0) {
+                snap_ps = inst->pad_live_chord[t][padIdx]; snap_n = inst->pad_live_n[t][padIdx];
+            }
+            for (int _k = 0; _k < snap_n; _k++) {
+                uint8_t sp_ = snap_ps[_k];
+                if (sp_ > 127) continue;
+                if (is_on) {
+                    inst->on_midi_press_tick[t][sp_]   = snap_tick;
+                    inst->on_midi_press_active[t][sp_] = 1;
+                } else {
+                    inst->on_midi_release_tick[t][sp_]   = snap_tick;
+                    inst->on_midi_release_active[t][sp_] = 1;
+                }
             }
         }
     }
@@ -5354,6 +5528,25 @@ static void on_midi(void *instance, const uint8_t *msg, int len, int source) {
      * drum pads, 2C adds the RPT_* variants. Reset after dispatch so a
      * stale value can't leak to the next call. */
     inst->pad_source_scratch[t] = (uint8_t)PAD_SRC_NORMAL;
+    if (tr->pad_mode != PAD_MODE_DRUM) {
+        /* Melodic: a pad may be a chord, and a pitch held by two pads lasts
+         * until the last of them lets go (pad_voices_on/off). */
+        if (is_on) {
+            if (inst->pad_dispatch_muted) { inst->pad_source_scratch[t] = (uint8_t)PAD_SRC_NORMAL; return; }
+            if (inst->pad_live_n[t][padIdx]) pad_voices_off(inst, tr, t, padIdx); /* missed release */
+            if (inst->pad_chord_n[t][padIdx] > 1)
+                pad_voices_on(inst, tr, t, padIdx, inst->pad_chord[t][padIdx],
+                              inst->pad_chord_n[t][padIdx], (uint8_t)effective_vel(tr, (int)d2));
+            else
+                pad_voices_on(inst, tr, t, padIdx, &pitch, 1, (uint8_t)effective_vel(tr, (int)d2));
+        } else if (inst->pad_live_n[t][padIdx]) {
+            pad_voices_off(inst, tr, t, padIdx);
+        } else if (!inst->pad_dispatch_muted) {
+            live_note_off(inst, tr, pitch);     /* idempotent, as before */
+        }
+        inst->pad_source_scratch[t] = (uint8_t)PAD_SRC_NORMAL;
+        return;
+    }
     if (is_on) {
         if (inst->pad_dispatch_muted) { inst->pad_source_scratch[t] = (uint8_t)PAD_SRC_NORMAL; return; }
         inst->pad_live_pitch[t][padIdx] = pitch;   /* remember for the matching release */
@@ -6403,6 +6596,23 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         return snprintf(out, out_len, "%d", (int)inst->state_dirty);
     if (!strcmp(key, "pad_dispatch_muted"))
         return snprintf(out, out_len, "%d", inst ? (int)inst->pad_dispatch_muted : 0);
+    if (!strcmp(key, "padmap_sig")) {
+        /* A checksum of the active track's 32 pad tokens as the engine holds
+         * them — a Chord-layout pad counts every note. JS computes the same
+         * over the payload it last pushed (padmapSig in ui_drummodel.mjs) and
+         * re-pushes on a mismatch: a lost push leaves the strum row stale. */
+        uint32_t h = 0;
+        int t = inst ? inst->active_track : 0;
+        if (!inst || t >= NUM_TRACKS) return snprintf(out, out_len, "-1");
+        for (int i = 0; i < 32; i++) {
+            int n = inst->pad_chord_n[t][i];
+            if (n < 1) h = (h * 31u + (uint32_t)inst->pad_note_map[t][i] + 1u) & 0x7fffffffu;
+            else for (int k = 0; k < n; k++)
+                h = (h * 31u + (uint32_t)inst->pad_chord[t][i][k] + 1u) & 0x7fffffffu;
+            h = (h * 31u + 1000u) & 0x7fffffffu;
+        }
+        return snprintf(out, out_len, "%u", (unsigned)h);
+    }
     if (!strcmp(key, "pad_note_map_0"))
         return snprintf(out, out_len, "%d", inst ? (int)inst->pad_note_map[inst->active_track][0] : 255);
     if (!strcmp(key, "last_restore"))

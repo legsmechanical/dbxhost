@@ -171,6 +171,10 @@ export function ringNormOfCell(cell) {
 }
 function ringNormOfCellValue(cell) {
     if (cell.kind === 'blank') return null;
+    /* A cell whose value is drawn as text but has a POSITION (the CHORD bank's
+     * Voicing, a slot's Inversion) says where it sits outright. */
+    if (typeof cell.ringNorm === 'number' && isFinite(cell.ringNorm))
+        return Math.max(0, Math.min(1, cell.ringNorm));
     if (cell.text === '--' && !cell.options) return null;
     switch (cell.kind) {
         case 'arc': case 'vbar': case 'faderail': case 'hbar':

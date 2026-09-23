@@ -60,6 +60,7 @@ import { applyTrackConfig, applyBankParam, readBankParams } from './ui_dsp_bridg
 import { registerRingCells } from './ui_knob_leds.mjs';
 import { moduleParallelDefault, setModuleParallelDefault, reconcileParallelSlot } from './ui_parallel.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
+import { setChordLayout } from './ui_chord_pads.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
          automationClearKey, automationEntriesFor, automationFxMoved } from './ui_automation.mjs';
@@ -507,12 +508,21 @@ function configRows(t) {
             set: (v) => requestTrackModeChange(t, v | 0) });
     }
     /* Pad layout is a melodic idea — a drum track's pads are its lanes. */
+    /* Chord (2) is a third layout: in-key chords on the bottom row
+     * (ui_chord_pads.mjs). Keys tracks only — a Conductor has no pads to lay out. */
+    const _chordOk = melodic && GS.trackPadMode[t] === 0;
     rows.push({ key: 'layout', label: 'Layout',
-        opts: [0, 1], fmt: (v) => (melodic ? (v ? 'Chrom' : 'Scale') : '-'),
-        get: () => (GS.padLayoutChromatic[t] ? 1 : 0),
+        opts: _chordOk ? [0, 1, 2] : [0, 1],
+        fmt: (v) => (melodic ? (v === 2 ? 'Chord' : v ? 'Chrom' : 'Scale') : '-'),
+        get: () => (GS.padLayoutChord[t] && _chordOk ? 2 : GS.padLayoutChromatic[t] ? 1 : 0),
         set: (v) => {
             if (!melodic) return;
-            GS.padLayoutChromatic[t] = v !== 0;
+            if (v === 2 && _chordOk) {
+                setChordLayout(t, true);
+            } else {
+                setChordLayout(t, false);
+                GS.padLayoutChromatic[t] = v !== 0;
+            }
             computePadNoteMap();
             forceRedraw();
         } });
@@ -8749,7 +8759,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
      * The confirm is registered in `soundModeCovered()` so it can DRAW over this
      * bank — which is the same predicate that stops sound mode steering input. So
      * a handler placed in `soundOnCC` becomes unreachable at the exact moment its
-     * flag goes up. Every sibling confirm (confirmLgto, confirmXpose, confirmBake)
+     * flag goes up. Every sibling confirm (confirmXpose, confirmBake)
      * lives in ui_input_cc.mjs for this reason; ours is beside them now.
      *
      * ⚠ A JS test that calls `soundOnCC` DIRECTLY cannot see this, because it

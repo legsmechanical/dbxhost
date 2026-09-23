@@ -17,8 +17,22 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added (pending)
+- **Legato fires like a stock button.** Touch its knob and click the jog (the
+  footer says CLK LEGATO, the button flashes); turning the knob no longer does
+  anything, and there is no confirm to answer. It can still be undone.
+- **Track View's top row is key/scale on the left and what you're playing on
+  the right.** The octave and Arp labels are gone from it. The row below keeps
+  only the velocity input (`Vel:Live`, right); the metronome and Fixed/Adaptive
+  labels are gone.
+- **Chord layout.** A third pad layout for Keys tracks (Shift + Step 8, or
+  Settings > Layout): the bottom row plays eight chords in your key with one pad
+  each, row 2 holds modifiers (7, 9, sus2, sus4, add9, 5) and inversion up/down,
+  row 3 strums the last chord, the top row is the scale. The new CHORD bank sets
+  voicing, smooth voice leading, bass and a Select mode where the chord pads only
+  pick what row 3 strums; hold a chord while on it to edit that chord. Smooth
+  can follow the last chord you played or stay anchored to one chord you pick.
 - **See what you're playing.** While you hold notes on a melodic track, Track
-  View shows them in brackets between the octave and the key — the note
+  View shows them in brackets at the right of the key/scale row — the note
   (`[F#3]`) or the chord it makes (`[CMIN7]`, `[C/E]`), from the pads or an
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.

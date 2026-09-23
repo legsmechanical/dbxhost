@@ -124,6 +124,35 @@ S.sessKnobMode = 1; for (let t = 0; t < 8; t++) S.sessVolLevel[t] = [0.5, 0.2, 0
 draw('session-mixer-pan');
 S.sessMixerLatched = false;
 
+/* CHORD LAYOUT (Layout → Chord): the explainer, a held slot's numeral in the
+ * indicator, the slot card mid-edit (and a stack with no in-key form), the
+ * CHORD bank card. */
+{
+    const CP = await import('../ui/ui_chord_pads.mjs');
+    const { computePadNoteMap } = await import('../ui/ui_drummodel.mjs');
+    const { BANK_CHORD } = await import('../ui/ui_constants.mjs');
+    S.sessionView = false; S.activeBank = 0; S.bankSelectTick = -1; S.padKey = 0; S.padScale = 0;
+    S.dspInboundEnabled = false;
+    CP.setChordLayout(3, true);
+    draw('chord-explainer');
+    CP.closeChordPopup(); computePadNoteMap();
+    const hold = (k) => { for (const p of CP.chordSlotPress(3, k)) S.liveActiveNotes.add(p); };
+    const drop = (k) => { CP.chordSlotRelease(3, k); S.liveActiveNotes.clear(); };
+    hold(5); draw('chord-held-vi'); drop(5);
+    S.chordMods = [0]; computePadNoteMap(); hold(4); draw('chord-held-V7-modifier'); drop(4); S.chordMods = []; computePadNoteMap();
+    hold(1); S.chordCardSlot = 1; CP.chordSlotKnob(3, 1, 1, 1); CP.chordSlotKnob(3, 1, 3, 1);
+    S.knobTouched = 3; draw('chord-slot-card'); S.knobTouched = -1; draw('chord-slot-card-resting');
+    CP.chordSlotKnob(3, 1, 7, 1); drop(1); S.chordCardSlot = -1;
+    hold(3); S.chordCardSlot = 3; CP.chordSlotKnob(3, 3, 1, 4);     /* SUS4 on IV: not in C major */
+    draw('chord-slot-card-not-in-key'); CP.chordSlotKnob(3, 3, 7, 1); drop(3); S.chordCardSlot = -1;
+    S.activeBank = BANK_CHORD; S.bankSelectTick = S.tickCount; S.bankCardLatched = true;
+    draw('chord-bank');
+    S.bankCardLatched = false; S.activeBank = 0; S.bankSelectTick = -1;
+    S.padKey = 9; S.padScale = 1; computePadNoteMap(); hold(1); draw('chord-held-A-minor-ii-dim'); drop(1);
+    S.padKey = 0; S.padScale = 0;
+    CP.setChordLayout(3, false); computePadNoteMap();
+}
+
 function writePng(fbuf,outPath){
   const iw=W*SCALE+2*PAD, ih=H*SCALE+2*PAD; const img=Buffer.alloc(iw*ih*4);
   for(let i=0;i<iw*ih;i++){img[i*4]=MAT[0];img[i*4+1]=MAT[1];img[i*4+2]=MAT[2];img[i*4+3]=255;}

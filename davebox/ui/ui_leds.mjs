@@ -16,9 +16,10 @@ import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import {
     White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue,
-    DeepRed, DeepGreen, DeepMagenta, Mustard,
+    DeepRed, DeepGreen, DeepMagenta, Mustard, BrightPink,
     MoveBack, MoveCopy, MoveDelete
 } from '/data/UserData/schwung/shared/constants.mjs';
+import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 
 const lastSentNoteLED   = new Array(128).fill(-1);
@@ -769,8 +770,22 @@ export function updateTrackLEDs() {
         const _tarpActive = (S.bankParams[S.activeTrack][5][7] | 0) !== 0 &&
                             (S.bankParams[S.activeTrack][5][0] | 0) !== 0;
         const _tarpHeld = _tarpActive ? S.tarpHeldNotes[S.activeTrack] : null;
+        const _chordOn = chordLayoutOn(S.activeTrack);
+        const _chordC = _chordOn ? { White, DarkGrey, LightGrey, Off: LED_OFF,
+            track: trackColor(S.activeTrack), trackDim: trackDimColor(S.activeTrack),
+            /* tonic / subdominant / dominant — Josh confirmed these three */
+            fn: [Cyan, Mustard, BrightPink] } : null;
         for (let i = 0; i < 32; i++) {
             let color;
+            /* The Chord layout colours its slot, modifier and strum rows by
+             * what they are; the scale row falls through to the scale colours. */
+            if (_chordOn) {
+                const _p = S.padNoteMap[i];
+                const _sh = _p === 0xFF ? -1 : _p + S.trackOctave[S.activeTrack] * 12;
+                const _snd = _sh >= 0 && (S.liveActiveNotes.has(_sh) || S.seqActiveNotes.has(_sh));
+                const _cc = chordPadColor(S.activeTrack, i, _snd, _chordC);
+                if (_cc !== null) { cachedSetLED(TRACK_PAD_BASE + i, _cc); continue; }
+            }
             /* OOB pads — either (a) sentinel from computePadNoteMap (base pitch
              * before track-octave was out of range), or (b) base + trackOctave
              * shift pushes the pitch out of [0,127]. Both must blank the LED so

@@ -553,7 +553,7 @@ The pads play notes from the current [key and scale](#162-key--scale). **+ / −
 shifts the pad octave.
 
 While you hold notes (pads or an external keyboard), the screen names them in
-brackets between the octave and the key — the note (`[F#3]`) or the chord.
+brackets at the right of the key/scale row — the note (`[F#3]`) or the chord.
 Worth knowing:
 
 - Middle C is **C3**, as on Move.
@@ -561,8 +561,7 @@ Worth knowing:
   without its third — the usual shorthand, but not the whole chord.
 - A combination with no common name shows its notes instead (`[C C# D]`).
 - Flat keys spell with flats, the key label included (`B♭ MINOR`).
-- Only what you play is shown, never the sequencer's notes. The Arp label
-  steps aside while it's up.
+- Only what you play is shown, never the sequencer's notes.
 
 To place notes on the grid, use the **16 step buttons**:
 
@@ -579,9 +578,43 @@ Steps past the clip's length are dimmed. (These step gestures work on drum steps
 too — see [Drum Clips](#7-drum-clips).)
 
 **Pad layout.** By default the pads show only in-scale notes, with the root in the
-track color (`Keys` layout). **Shift + Step 8** switches to a chromatic layout —
-all 12 semitones, with the in-scale notes highlighted. The **Layout** setting in
-the Settings menu does the same.
+track color (`Keys` layout). **Shift + Step 8** steps through three layouts —
+**Scale**, **Chrom** (all 12 semitones, in-scale notes highlighted) and
+**Chord** — and the **Layout** setting in the Settings menu does the same.
+
+**The Chord layout** plays a whole chord from one pad, always in the track's key
+and scale. A card explains the rows each time you switch to it; click the jog
+(or press Back) to dismiss it.
+
+- **Bottom row:** eight chords — I ii iii IV V vi vii° and I an octave up by
+  default, coloured by what they do (tonic, subdominant, dominant). They follow
+  key and scale changes.
+- **Row 2:** hold **7**, **9**, **sus2**, **sus4**, **add9** or **5** while you
+  press a chord to change it; pressed while a chord is held, it changes the chord
+  as it sounds. The last two pads, **Inv−** and **Inv+**, walk the chord's voicing
+  down or up one note — held before a chord for that press, tapped while a chord
+  is held to move it (each tap moves it further).
+- **Row 3:** the notes of the last chord you played, rising — strum or pick them.
+  They stay after you let go.
+- **Top row:** the scale, with the key's root on the fourth pad — three notes
+  below it, four above (`G A B C D E F G` in C major).
+- The **CHORD** bank (on the jog after LIVE ARP, on a Chord track only) sets
+  Voicing (moves every chord at once), **Smooth** — *Off*; *Follow* (each chord
+  takes the voicing nearest the one you played last); *Anchor* (every chord takes
+  the voicing nearest one chord you choose on the **Anchor** knob, which appears
+  only in this mode — the palette sits in one hand position whatever order you
+  play it in) — Bass (adds the root below), Bass Octave, Strum (moves
+  rows 3 and 4 by octaves) and **Slots: Play / Select**. In Select the chord pads
+  are silent: they only choose what row 3 strums.
+- **To edit a chord, hold it while on the CHORD bank:** the page switches to that
+  chord — Root, Stack, Inversion, Spread, Bass, Octave, and Reset on K8 — with the
+  chord's name as the title, and switches back when you let go. On every other
+  bank a held chord leaves the knobs alone, so you can play chords and turn sound
+  or sequencer knobs at the same time. A stack that has no in-key version on that
+  chord (sus4 on IV in a major key) plays the plain chord and the page says so.
+- While you hold a chord, Track View names it with its numeral: `[vi · AMIN]`.
+  Lowercase numerals are minor, ° is diminished.
+- Holding a step and tapping a chord writes the whole chord into the step.
 
 ## 6.2 Chords
 
@@ -931,7 +964,7 @@ A melodic clip's grid, direction, and note transforms.
 | 1 | `Res` | **Resolution** — the step grid size, rescaling note positions. *Alt:* **Zoom** (regrid without moving notes). | Yes | 1/16 |
 | 2 | `Stch` | **Stretch** — one detent doubles (right) or halves (left) the clip. | Yes | — |
 | 3 | `Shft` | **Shift** — rotate all notes by whole steps. *Alt:* **Nudge** (finer). | Yes | 0 |
-| 4 | `Lgto` | **Legato** — turn right to confirm; lengthens every note to reach the next. | Yes | — |
+| 4 | `Lgto` | **Legato** — touch the knob and click the jog; lengthens every note to reach the next. Turning it does nothing. | Yes | — |
 | 5 | `InQ` | **Input Quantize** — snap recorded notes to the grid. | No | Off |
 | 7 | `Dir` | **Direction** — Forward, Backward, or ping-pong. *Alt:* **Reverse Style**. | No | Fwd |
 | 8 | `SqFl` | **Follow** — scroll the step display to keep up with the playhead. | No | On |
@@ -962,7 +995,7 @@ The **selected lane's** grid — the drum counterpart to the CLIP bank.
 | 1 | `Res` | **Resolution.** *Alt:* **Zoom.** | Yes | 1/16 |
 | 2 | `Stch` | **Stretch.** | Yes | — |
 | 3 | `Shft` | **Shift.** *Alt:* **Nudge.** | Yes | 0 |
-| 4 | `Lgto` | **Legato** (this lane). | Yes | — |
+| 4 | `Lgto` | **Legato** (this lane) — touch the knob and click the jog. | Yes | — |
 | 5 | `Eucl` | **Euclid** — spread N hits evenly across the lane. Hand-placed hits stay. | Yes | 0 |
 | 7 | `Dir` | **Direction.** *Alt:* **Reverse Style.** | No | Fwd |
 | 8 | `SqFl` | **Follow.** | No | On |
@@ -1840,7 +1873,7 @@ route are hidden, so the list is shorter on a MIDI track or a Conductor.
 | Setting | Values | Notes |
 |---|---|---|
 | Mode | Keys, Drums | [Track type](#41-track-type). Scrolling previews; the click commits |
-| Layout | Scale, Chrom | Melodic pad layout |
+| Layout | Scale, Chrom, Chord | Melodic pad layout ([Chord](#61-playing-and-placing-notes)) |
 | Transpose | −24…+24 st | Shifts everything the track plays |
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |
 | Looper | On, Off | Feeds [Performance Mode](#13-performance-mode) |
@@ -1983,7 +2016,7 @@ views (`#seq` / `#mix` / `#sound` in the address bar can be bookmarked).
 | 5 | Tap Tempo | Both |
 | 6 | Metro (Cnt-In ↔ Always) | Both |
 | 7 | Swing | Both |
-| 8 | Chromatic layout / cycle right-pad mode | Track |
+| 8 | Pad layout (Scale → Chrom → Chord) / cycle right-pad mode | Track |
 | 9 | Scale | Both |
 | 10 | VelIn (Live ↔ 100) | Track |
 | 11 | LIVE ARP on/off | Track (melodic) |

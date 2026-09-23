@@ -33,6 +33,9 @@ import { applyBankParam, applyTrackConfig, readBankParams,
 /* One-way edge (ui_sound never imports this file), so no cycle to document.
  * Sound mode needs to know a pad press was LIVE — see soundVouchLivePress. */
 import { soundVouchLivePress } from './ui_sound.mjs';
+import { chordLayoutOn, chordRowOf, chordSlotPress, chordSlotRelease, chordModPress,
+    chordModRelease, chordPitchHeld, padPitches, ROW_SLOTS, ROW_MODS,
+    setChordLayout, chordPadHeld } from './ui_chord_pads.mjs';
 import { handoffRecordingToTrack, recordNoteOn, recordNoteOff,
     openTapTempo, registerTapTempo, extNoteOffAll,
     stepRecPadPress, stepRecPadRelease } from './ui_record.mjs';
@@ -64,6 +67,110 @@ const PERF_MOD_POPUP_MS = 500;
 const padPitch = new Array(32).fill(-1);
 const padPressTick = new Array(32).fill(-1);  /* tick when each pad was pressed, for drum tap-vs-hold detection */
 const DRUM_TAP_MS = 106;   /* taps shorter than this suppress the release note-off (10 ticks at the old 94 Hz) */
+
+/* ---- the Chord layout's slot and modifier rows ----------------------------
+ * Rows 3-4 (strum, scale) are ordinary one-note pads and take the normal path;
+ * these two rows are handled here. The engine plays a slot's chord itself
+ * (its padmap token carries every note); JS keeps the books. */
+
+/* Is pitch p still held by some other pad? Then its release must not drop it
+ * from the held notes: the engine keeps it sounding until the last pad lets go. */
+function _pitchHeldElsewhere(p, exceptPad) {
+    if (chordPitchHeld(p, exceptPad)) return true;
+    for (let i = 0; i < 32; i++) if (i !== exceptPad && padPitch[i] === p) return true;
+    return false;
+}
+
+/* A held chord was re-voiced: the notes it lost and gained, in the books —
+ * held notes, the recorder and step record. The engine stamped both edges
+ * itself (pad_revoice), so the recorder finds them. Exported for the slot
+ * card's knobs, which re-voice a held chord too. */
+export function chordApplyRevoice(rv) {
+    if (!rv) return;
+    const t = S.activeTrack;
+    for (const p of rv.before) {
+        if (rv.after.indexOf(p) >= 0 || _pitchHeldElsewhere(p, rv.pad)) continue;
+        S.liveActiveNotes.delete(p);
+        if (S.stepRecActive) stepRecPadRelease(p);
+        if (S.recordArmed) recordNoteOff(p);
+    }
+    for (const p of rv.after) {
+        if (rv.before.indexOf(p) >= 0) continue;
+        const had = S.liveActiveNotes.has(p);
+        S.liveActiveNotes.add(p);
+        if (had) continue;
+        if (S.stepRecActive) stepRecPadPress(p, stepEntryVelocity(t, S.lastPadVelocity, false));
+        if (S.recordArmed && t === S.recordArmedTrack) recordNoteOn(p, S.lastPadVelocity, S.recordArmedTrack);
+    }
+}
+const _chordApplyRevoice = chordApplyRevoice;
+
+function _chordPushNow() {
+    if (S.chordPadmapNow) { S.chordPadmapNow = false; computePadNoteMap(); }
+}
+
+/* A press on the slot or modifier row. Returns true when handled. */
+function _chordPadPress(padIdx, d2) {
+    const t = S.activeTrack;
+    const row = chordRowOf(padIdx);
+    if (row === ROW_MODS) {
+        _chordApplyRevoice(chordModPress(t, padIdx - 8));
+        _chordPushNow();
+        forceRedraw();
+        return true;
+    }
+    if (row !== ROW_SLOTS) return false;
+    const vel = effectiveVelocity(d2);
+    if (S.heldStep >= 0) {
+        /* Hold a step + tap a slot: the chord goes into the step (the same
+         * two-tick write as holding a chord and pressing a step). */
+        const pitches = padPitches(padIdx, (S.trackOctave[t] | 0) * 12);
+        if (!pitches.length) return true;
+        const ac = effectiveClip(t);
+        S.pendingChordToStep = { t, ac, step: S.heldStep,
+            wasEmpty: S.clipSteps[t][ac][S.heldStep] === 0, pitches,
+            vel: stepEntryVelocity(t, vel, false) };
+        S.stepBtnPressedTick[S.heldStepBtn] = -1;
+        S.stepWasHeld = true;
+        forceRedraw();
+        return true;
+    }
+    const pitches = chordSlotPress(t, padIdx);
+    for (const p of pitches) {
+        S.liveActiveNotes.add(p);
+        /* The engine already sounded the chord from the pad map; the JS
+         * live-note path is only the fallback for a map that never landed. */
+        if (!S.dspInboundEnabled) liveSendNote(t, 0x90, p, vel);
+        if (S.stepRecActive) stepRecPadPress(p, stepEntryVelocity(t, vel, false));
+        if (S.recordArmed && t === S.recordArmedTrack) recordNoteOn(p, vel, S.recordArmedTrack);
+    }
+    if (pitches.length) { S.lastPlayedNote = pitches[0]; S.lastPadVelocity = vel; }
+    forceRedraw();
+    return true;
+}
+
+/* A release on the slot or modifier row. Returns true when handled. */
+function _chordPadRelease(padIdx, slot) {
+    const t = S.activeTrack;
+    const row = slot ? ROW_SLOTS : chordRowOf(padIdx);
+    if (row === ROW_MODS) {
+        _chordApplyRevoice(chordModRelease(t, padIdx - 8));
+        _chordPushNow();
+        forceRedraw();
+        return true;
+    }
+    if (row !== ROW_SLOTS) return false;
+    const pitches = chordSlotRelease(t, padIdx);
+    for (const p of pitches) {
+        if (_pitchHeldElsewhere(p, padIdx)) continue;
+        S.liveActiveNotes.delete(p);
+        if (!S.dspInboundEnabled) liveSendNote(t, 0x80, p, 0);
+        if (S.stepRecActive) stepRecPadRelease(p);
+        if (S.recordArmed) recordNoteOff(p);
+    }
+    forceRedraw();
+    return true;
+}
 
 function _onPadPressTrackView(status, d1, d2) {
 
@@ -480,6 +587,9 @@ function _onPadPressTrackView(status, d1, d2) {
                     }
                 }
             }
+        } else if (!S.shiftHeld && padIdx < 16 && chordLayoutOn(S.activeTrack) &&
+                   _chordPadPress(padIdx, d2)) {
+            /* The Chord layout's slot and modifier rows (handled above). */
         } else if (S.heldStep >= 0 && !S.shiftHeld) {
             /* Step edit: tap pad to toggle note assignment for held step */
             if (S.padNoteMap[padIdx] === 0xFF) return; /* OOB pad — no note to toggle */
@@ -596,6 +706,8 @@ export function _onPadPress(status, d1, d2) {
          * selection is about to discard. To the user the presses simply do
          * nothing, which is the right outcome; this makes it true. */
         if (S.awaitingProjectSelect) return;
+        /* The Chord layout's explainer is up until OK: pads do nothing. */
+        if (S.chordPopupOpen && d1 >= 68 && d1 <= 99) return;
         /* Move-native co-run + drum-mode active track: inject a PLAIN pad-on
          * (cable-0, no Shift) so Move firmware both plays the drum AND focuses
          * that cell for editing — a plain tap selects on Move. dAVEBOx then
@@ -1368,9 +1480,19 @@ export function _onStepButtons(d1, d2) {
                     ['Velocity', 'Repeat Play (Rpt1)', 'Repeat Set (Rpt2)'],
                     S.drumPerformMode[t]);
             } else {
-                S.padLayoutChromatic[t] = !S.padLayoutChromatic[t];
+                /* Scale → Chrom → Chord → Scale. Landing on Chord raises
+                 * its explainer instead of the one-word popup. */
+                if (S.padLayoutChord[t]) {
+                    setChordLayout(t, false);
+                    S.padLayoutChromatic[t] = false;
+                } else if (S.padLayoutChromatic[t]) {
+                    setChordLayout(t, true);
+                } else {
+                    S.padLayoutChromatic[t] = true;
+                }
                 computePadNoteMap();
-                showActionPopup(S.padLayoutChromatic[t] ? 'CHROMATIC' : 'IN-SCALE');
+                if (!S.padLayoutChord[t])
+                    showActionPopup(S.padLayoutChromatic[t] ? 'CHROMATIC' : 'IN-SCALE');
             }
         } else if (idx === 9) {
             /* Step 10: toggle VelIn between Live and 100 */
@@ -1839,9 +1961,15 @@ export function _onPadRelease(status, d1, d2) {
             S.screenDirty = true;
             return;
         }
+        /* A held chord slot releases through the chord books even if the
+         * track or the layout changed under the finger. */
+        if (padIdx < 8 && chordPadHeld(padIdx)) { _chordPadRelease(padIdx, true); return; }
+        if (padIdx < 16 && !S.sessionView && chordLayoutOn(S.activeTrack) && _chordPadRelease(padIdx)) return;
         const pitch = padPitch[padIdx] >= 0 ? padPitch[padIdx] : S.padNoteMap[padIdx];
         if (pitch === 0xFF) return; /* OOB pad — press was skipped, nothing to release */
-        S.liveActiveNotes.delete(pitch);
+        /* A strum pad re-strikes a note a held chord slot also holds; that
+         * note stays held (and sounding) until the slot lets go too. */
+        if (!_pitchHeldElsewhere(pitch, padIdx)) S.liveActiveNotes.delete(pitch);
         if (S.pendingPrerollNote !== null) {
             const _prRelPitch = S.pendingPrerollNote.laneNote;
             if (_prRelPitch === pitch)
@@ -1858,10 +1986,13 @@ export function _onPadRelease(status, d1, d2) {
         }
         padPressTick[padIdx] = -1;
         /* STEP RECORD: the last release commits the chord and advances. */
-        if (S.stepRecActive && !S.sessionView &&
+        /* A pitch another held pad still holds keeps sounding (the engine
+         * ends it with the LAST holder), so it keeps recording too. */
+        const _stillHeld = S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM && _pitchHeldElsewhere(pitch, padIdx);
+        if (S.stepRecActive && !S.sessionView && !_stillHeld &&
                 S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM)
             stepRecPadRelease(pitch);
-        if (S.recordArmed) {
+        if (S.recordArmed && !_stillHeld) {
             const _t = S.activeTrack;
             if (S.trackPadMode[_t] === PAD_MODE_DRUM) {
                 if (_t === S.recordArmedTrack)
