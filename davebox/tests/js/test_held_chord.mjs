@@ -215,7 +215,15 @@ step('the same chord in F major spells with flats', () => {
     S.padKey = 0; ticks(1);
 });
 step('a sequencer echo on a Move-routed track is not input', () => {
-    S.trackRoute[2] = 1; S.seqActiveNotes.add(64);
+    /* Tick once after re-routing: the route change releases any external
+     * notes held across it (flushHeldMoveExtNotes), by design. */
+    S.trackRoute[2] = 1; ticks(2);
+    /* CONTROL first: a real keypress on the same Move-routed track DOES show —
+     * without it, "the echo drew nothing" passes on a screen that never draws. */
+    ext(65, true); ticks(1);
+    assert(JSON.stringify(bracketed()) === '["[F3]"]', 'control: a keypress on a Move-routed track drew ' + JSON.stringify(bracketed()));
+    ext(65, false); ticks(1);
+    S.seqActiveNotes.add(64);
     ext(64, true); ticks(1);
     assert(bracketed().length === 0, 'the echo drew ' + JSON.stringify(bracketed()));
     ext(64, false); S.seqActiveNotes.delete(64); S.trackRoute[2] = 0; ticks(1);
