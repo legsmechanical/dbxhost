@@ -439,9 +439,10 @@ export function pbPadTap(i) {
     if (PB.drum) {
         const snd = soundOfPad(i);
         if (snd >= 0) { PB.held = snd; PB.voiceSel = snd; GS.screenDirty = true; return; }
-        /* Besides the default, holding a sound pad is the ONLY way to place
-         * one (Josh, 2026-09-23) — a lane tap alone just sounds the lane. */
-        who = PB.held;
+        /* A phrase of several sounds: holding a sound pad is the only way to
+         * place one — a lane tap alone just sounds the lane. A phrase of ONE
+         * sound goes wherever a lane is tapped, held or not (Josh, 2026-09-23). */
+        who = PB.voices.length === 1 ? 0 : PB.held;
         target = laneOfPad(i);
     } else {
         if (GS.knobTouched !== 4) return;              /* hold K5 Voice first */

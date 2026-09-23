@@ -375,13 +375,12 @@ async function main() {
         assert(pm3 && pm3[2].split(' ')[32] === '0', 'the engine pad mute stayed up after Back');
     });
 
-    step('a one-sound drum phrase: a lane tap alone changes nothing; hold its sound pad and tap to move it', () => {
+    step('a one-sound drum phrase: a lane tap moves it; holding its sound pad and tapping works too', () => {
         openOn(0); ticks(2);
         jog(-1); click(); ticks(2);
         assert(pb().list[pb().idx].id === 'hat.a' && pb().voices.length === 1, 'not on the one-sound phrase');
-        const before = pb().assign.join(',');
         pad(1); ticks(1);
-        assert(pb().assign.join(',') === before, 'a lane tap without a hold moved the sound');
+        assert(pb().assign.join(',') === '1', 'a plain lane tap did not move the one sound: ' + pb().assign);
         ticks(3);
         assert(padLed[68 + 4] === 7, 'the one sound has no sound pad lit: ' + padLed[72]);
         midi(0x90, 68 + 4, 100); ticks(1);

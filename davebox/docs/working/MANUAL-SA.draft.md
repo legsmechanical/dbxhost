@@ -1884,7 +1884,8 @@ clap…) let you choose where each sound goes:
 - **On a drum track** the right-hand pads are the phrase's sounds, each in its
   own colour (footer: RTPAD SOUND). **Hold one** — you hear it alone and a panel
   lists every sound with its pad — and **tap lane pads on the left** to put it
-  there (LFTPD SET); tap a lane again to take it off. Let go when done.
+  there (LFTPD SET); tap a lane again to take it off. Let go when done. (A phrase
+  of just one sound goes to any lane you tap — no need to hold.)
 - **On a melodic track** hold **K5 Voice**: the panel shows each sound and its
   note; turn to a sound and tap a pad for its note (again: off).
 
