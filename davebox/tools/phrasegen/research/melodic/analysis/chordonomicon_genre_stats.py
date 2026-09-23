@@ -13,6 +13,11 @@ GROUPS = {
     'DNB': lambda mg, t: bool(t & {'drum and bass', 'liquid funk', 'jungle'}),
     'BREAKS': lambda mg, t: bool(t & {'breakbeat', 'big beat', 'nu skool breaks'}),
     'ELECTRO': lambda mg, t: 'electro' in t, 'SYNTHPOP': lambda mg, t: 'synthpop' in t,
+    'NEWWAVE': lambda mg, t: bool(t & {'new wave', 'new wave pop'}),
+    'POSTPUNK_GOTH': lambda mg, t: bool(t & {'post-punk', 'uk post-punk', 'american post-punk', 'gothic rock', 'dark wave', 'coldwave', 'deathrock', 'ethereal wave'}),
+    'ITALO': lambda mg, t: bool(t & {'italo disco', 'italo dance', 'hi-nrg'}),
+    'EBM': lambda mg, t: bool(t & {'ebm', 'electro-industrial', 'aggrotech'}),
+    'SYNTHWAVE': lambda mg, t: bool(t & {'synthwave', 'retrowave', 'outrun', 'darksynth'}),
 }
 PC = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11}
 def parse(c):
