@@ -61,6 +61,13 @@ docker run --rm \
   -w /repo \
   "$IMAGE" bash -c '
     set -uo pipefail
+    # The bind-mounted checkout is owned by the HOST user, and git refuses a
+    # repo whose owner is not the current (root) user: "dubious ownership".
+    # Docker Desktop does not report that owner consistently, so tests built
+    # on `git grep` found NOTHING in some runs and passed in others — a
+    # zero-match reads as "no such code". Trust /repo explicitly: this
+    # throwaway container only ever sees this one checkout.
+    git config --global --add safe.directory /repo
     rm -rf /ext4tmp/* 2>/dev/null || true
     export TMPDIR=/ext4tmp
     if [ "$(stat -f -c %T /ext4tmp)" != "ext2/ext3" ]; then
