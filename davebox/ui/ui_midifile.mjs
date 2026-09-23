@@ -202,8 +202,11 @@ export function smfParse(bytes) {
     const groups = [];
     raw.forEach((rt, idx) => {
         if (format === 0) {
+            /* One channel: it IS the file's one part, so it keeps the file's
+             * name for it. Several: each channel is a part, named by channel. */
+            const solo = rt.channels.length === 1;
             for (const ch of rt.channels) {
-                groups.push({ name: 'Ch ' + (ch + 1), channels: [ch],
+                groups.push({ name: (solo && rt.name) || ('Ch ' + (ch + 1)), channels: [ch],
                               notes: rt.notes.filter(n => n.ch === ch) });
             }
         } else if (rt.notes.length) {

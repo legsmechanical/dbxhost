@@ -83,7 +83,11 @@ step('a MIDI-routed track\'s menu is its destination + its own CONFIG rows, noth
     B.applyInstrChoice(1, C.INSTR_MIDI_CH + 4);
     if (S.trackRoute[1] !== 2) throw new Error('route=' + S.trackRoute[1]);
     S.activeTrack = 1;
-    const k = menuFor(1);
+    /* Import MIDI is the one door a MIDI track's menu carries — it fills a
+     * clip, which a MIDI track has — so it is set aside before the shape check. */
+    const all = menuFor(1);
+    if (all.filter(x => x === 'midiimport').length !== 1) throw new Error('no Import MIDI door: ' + all.join(','));
+    const k = all.filter(x => x !== 'midiimport');
     /* No chain, no bus — so: the destination, a rule, then the config rows. */
     if (k[0] !== 'trackto' || k[1] !== 'div') throw new Error('rows: ' + k.join(','));
     if (!k.slice(2).every(x => x === 'cfg')) throw new Error('rows: ' + k.join(','));

@@ -54,6 +54,11 @@ step('format 0 with two channels gives one part per channel', () => {
     assertEq(r.parts[1].notes, [{ t: 0, g: 96, p: 40, v: 90 }], 'ch2 notes');
 });
 
+step('format 0 with ONE channel keeps the file\'s track name', () => {
+    const f = file(header(0, 1, 96), track([[0, ...name('Groove')], [0, 0x99, 36, 100], [24, 0x89, 36, 0]]));
+    assertEq(smfParse(f).parts.map(p => p.name), ['Groove'], 'name');
+});
+
 step('format 1: the notes-less tempo track is not offered; names come from the file', () => {
     const f = file(header(1, 3, 480),
         track([[0, ...meta(0x51, [0x07, 0xa1, 0x20])], [0, ...meta(0x58, [3, 2, 24, 8])]]),

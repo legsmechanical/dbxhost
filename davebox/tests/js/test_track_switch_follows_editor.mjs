@@ -109,7 +109,9 @@ step('setup: routes — 2,3 Schwung · 4 MIDI · 5 NONE · 6 Move · 7 Conduct',
 /* A MIDI track's menu: its destination, a rule, then its own config rows — no
  * chain, no bus, and (since 2026-09-19) no CONFIG door, the rows being inline. */
 const isMidiMenu = () => {
-    const k = kinds().split(',');
+    /* Import MIDI is the one door a MIDI track's menu carries (it fills a
+     * clip, which a MIDI track has) — set aside before the shape check. */
+    const k = kinds().split(',').filter(x => x !== 'midiimport');
     return k[0] === 'trackto' && k[1] === 'div' && k.length > 2 &&
            k.slice(2).every(x => x === 'cfg');
 };
