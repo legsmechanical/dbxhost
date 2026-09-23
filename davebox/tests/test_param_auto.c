@@ -64,6 +64,37 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- a chain REORDER: targets follow their module ---------------- */
+    {
+        hx_t *h = hx_create(NULL);
+        pa_set(h, 0, 0, "2:fx1:cutoff", 0, 100);   /* slot 2, the module at fx1 */
+        pa_set(h, 0, 0, "2:fx3:mix", 0, 200);      /* slot 2, the module at fx3 */
+        pa_set(h, 1, 0, "5:fx1:cutoff", 0, 300);   /* ANOTHER slot's fx1 */
+        pa_set(h, 0, 0, "2:synth:gain", 0, 400);   /* the synth — not an FX position */
+        /* The host moved slot 2's fx1 to fx3: fx2 and fx3 shift up one. */
+        hx_set_param(h, "t0_pa_fx_move", "2 1 3");
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, " 2:fx3:cutoff"), "the fx1 module's lane now names fx3");
+        HX_ASSERT(strstr(buf, " 2:fx2:mix"), "the fx3 module's lane now names fx2");
+        HX_ASSERT(!strstr(buf, " 2:fx1:cutoff"), "no lane still names the old position");
+        HX_ASSERT(strstr(buf, " 5:fx1:cutoff"), "another slot's fx1 is untouched");
+        HX_ASSERT(strstr(buf, " 2:synth:gain"), "the synth's lane is untouched");
+        HX_ASSERT(list_count(buf) == 4, "a move renames lanes, it never adds or drops one");
+        OK("pa_fx_move renames the slot's fxN targets to follow their modules, and nothing else");
+
+        /* Round trip: moving back restores every name exactly. */
+        hx_set_param(h, "t0_pa_fx_move", "2 3 1");
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, " 2:fx1:cutoff") && strstr(buf, " 2:fx3:mix"), "the inverse move restores the names");
+        /* Refused values change nothing. */
+        hx_set_param(h, "t0_pa_fx_move", "2 2 2");
+        hx_set_param(h, "t0_pa_fx_move", "2 0 5");
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(strstr(buf, " 2:fx1:cutoff") && strstr(buf, " 2:fx3:mix"), "a same-position or out-of-range move renames nothing");
+        OK("the inverse move restores the names; refused moves change nothing");
+        hx_destroy(h);
+    }
+
     /* ---- the clear gestures ----------------------------------------- */
     {
         hx_t *h = hx_create(NULL);

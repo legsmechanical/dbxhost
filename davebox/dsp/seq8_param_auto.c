@@ -160,6 +160,35 @@ static int pa_target_id(seq8_instance_t *inst, const char *target) {
     return -1;   /* target table full */
 }
 
+/* A chain REORDER moved FX position `from` to `to` (1-based) on chain slot
+ * `slot` (the host's fx:move). Every target that addresses that slot's audio
+ * FX by position — "<slot>:fx<K>:<key>" — follows its module, in ONE pass over
+ * the table: the rename is a bijection on K, so two targets can never collide,
+ * and doing it as a sequence of single renames would move one twice. Entries,
+ * live hands and staged changes all refer to targets by INDEX, so they follow
+ * for free. Returns how many targets were renamed. */
+static int pa_retarget_fx(seq8_instance_t *inst, int slot, int from, int to) {
+    if (from < 1 || from > 4 || to < 1 || to > 4 || from == to) return 0;
+    int map[5];                                   /* map[old] = new, 1-based */
+    for (int k = 1; k <= 4; k++) map[k] = k;
+    map[from] = to;
+    if (to > from) { for (int k = from + 1; k <= to; k++) map[k] = k - 1; }
+    else           { for (int k = to; k < from; k++) map[k] = k + 1; }
+    char pre[16];
+    int pl = snprintf(pre, sizeof(pre), "%d:fx", slot);
+    int renamed = 0;
+    for (int i = 0; i < PA_MAX_TARGETS; i++) {
+        char *t = inst->pa_targets[i];
+        if (!t[0] || strncmp(t, pre, (size_t)pl) != 0) continue;
+        int k = t[pl] - '0';
+        if (k < 1 || k > 4 || t[pl + 1] != ':') continue;   /* fx10, fxN without a key: not ours */
+        if (map[k] == k) continue;
+        t[pl] = (char)('0' + map[k]);
+        renamed++;
+    }
+    return renamed;
+}
+
 /* Find only — never allocates a target slot. For a write that must not create
  * anything (a knob turned while stopped, which is automation only if it
  * already was). */

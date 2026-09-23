@@ -62,7 +62,7 @@ import { moduleParallelDefault, setModuleParallelDefault, reconcileParallelSlot 
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
-         automationClearKey, automationEntriesFor } from './ui_automation.mjs';
+         automationClearKey, automationEntriesFor, automationFxMoved } from './ui_automation.mjs';
 import { autoBankRestoreMenu } from './ui_automation_bank.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import * as ModuleLists from '/data/UserData/schwung/shared/module_lists.mjs';
@@ -7771,6 +7771,59 @@ export function moduleChangeImpact(track, slot, comp) {
             if (e && typeof e.target === 'string' && e.target.indexOf(prefix) === 0)
                 lanes.push([c, e.target]);
     return { legs, lanes, macros: legs.length, lanesN: lanes.length };
+}
+
+/* ⭐ MOVE an audio-FX block within a track's chain (Josh, 2026-09-22: reorder
+ * insert effects; the door is Move Up / Move Down under the loaded module in
+ * the FX browser, as upstream does it). One call, everything follows:
+ *
+ *   the CHAIN permutes its positions (host `fx:move`) — no module reloads, so a
+ *     reverb keeps its tail — and re-aims its own knob maps / LFOs / mod targets;
+ *   dAVEBOx's AUTOMATION follows (the DSP store renames "<slot>:fxK:" targets,
+ *     the JS mirror the same — automationFxMoved);
+ *   MACRO legs on this track follow (sidecar), and the on-screen assignments;
+ *   per-position caches are dropped (value metadata, canvases, SnapMorph).
+ *
+ * `from`/`to` are 1-based positions. The host REFUSES a move into or across an
+ * empty position (the slot save compacts, so it would not survive a reload) or
+ * while the chain is still rendering; a refusal changes nothing and says so. */
+export function chainFxMove(track, slot, from, to) {
+    if (!(slot >= 0) || from === to) return false;
+    const ok = !!shadow_set_param(slot, 'fx:move', from + '>' + to);
+    if (!ok) {
+        showActionPopup("CAN'T MOVE", 'Move it next to an effect');
+        return false;
+    }
+    automationFxMoved(slot, from, to);
+    const map = [0, 1, 2, 3, 4];
+    map[from] = to;
+    if (to > from) { for (let k = from + 1; k <= to; k++) map[k] = k - 1; }
+    else           { for (let k = to; k < from; k++) map[k] = k + 1; }
+    const store = GS.trackMacros && GS.trackMacros[track];
+    let legsMoved = 0;
+    if (store) {
+        for (let i = 0; i < store.length; i++) {
+            const mp = store[i]; if (!mp || !mp.legs) continue;
+            let changed = false;
+            const legs = mp.legs.map((leg) => {
+                const m = leg && leg.kind === 'chain' && /^fx([1-4])$/.exec(leg.comp);
+                if (!m || map[+m[1]] === +m[1]) return leg;
+                changed = true; legsMoved++;
+                return Object.assign({}, leg, { comp: 'fx' + map[+m[1]] });
+            });
+            if (changed) {
+                store[i] = Object.assign({}, mp, { legs });
+                if (S.track === track) S.knobAsn[i] = asnFromMacro(macroLeg0(store[i]));
+            }
+        }
+        if (legsMoved) writeSidecar();
+    }
+    engineCanvasForget();
+    morphInvalidate(slot);
+    S.dirty = true;
+    console.log('[sound] fx move t' + track + ' slot ' + slot + ' fx' + from + '>fx' + to +
+                ' (' + legsMoved + ' macro leg(s) followed)');
+    return true;
 }
 
 /* Drop what the swap invalidates, then let the caller load. Same two halves,

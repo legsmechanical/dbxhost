@@ -3,7 +3,7 @@
  * seq8_set_param.c immediately before set_param. NOT a standalone TU; never
  * compile or lint this file on its own.
  *
- * Covers: pa_set, pa_set2, pa_clear_key, pa_clear_step, pa_clear, pa_active,
+ * Covers: pa_set, pa_set2, pa_fx_move, pa_clear_key, pa_clear_step, pa_clear, pa_active,
  * pa_smooth, pa_wrap, pa_mode, pa_link, pa_rest, pa_rest_move, pa_loop, pa_scale, pa_live, pa_hold, pa_live_end.
  *
  * The dispatcher holds the writer lock and the seqlock around this handler.
@@ -188,6 +188,19 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         if (!e || !e->count) return 1;
         if (inst->playing && (e->flags & PA_FLAG_ACTIVE)) return 1;
         if (e->rest != (uint16_t)v) { e->rest = (uint16_t)v; pa_mark_dirty(inst); }
+        return 1;
+    }
+
+    /* pa_fx_move: "<slot> <from> <to>" — the host moved FX `from` to `to`
+     * (1-based) on chain slot <slot>; targets on that slot's audio FX follow
+     * their modules (pa_retarget_fx). The track prefix is irrelevant: the
+     * target table is the project's. */
+    if (!strcmp(sub, "pa_fx_move")) {
+        int slot = 0, from = 0, to = 0;
+        PA_SKIP_SPACE(p); PA_UINT(p, slot);
+        PA_SKIP_SPACE(p); PA_UINT(p, from);
+        PA_SKIP_SPACE(p); PA_UINT(p, to);
+        if (pa_retarget_fx(inst, slot, from, to) > 0) pa_mark_dirty(inst);
         return 1;
     }
 

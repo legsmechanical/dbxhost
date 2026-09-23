@@ -128,6 +128,45 @@ export function automationResetCaches() {
     listGen++;
 }
 
+/* A chain REORDER on `slot` moved FX `from` to `to` (1-based). Every target that
+ * addresses that slot's audio FX by POSITION — "<slot>:fx<K>:<key>" — follows
+ * its module: the DSP's store renames its table (pa_fx_move) and every map here
+ * keyed by target text is renamed the same way, in ONE pass each (the map is a
+ * bijection on K, so two names cannot collide; renaming one at a time would
+ * move one twice). Returns the rename function so callers holding their own
+ * target strings can apply the identical mapping. */
+export function fxMoveRenamer(slot, from, to) {
+    const map = [0, 1, 2, 3, 4];
+    map[from] = to;
+    if (to > from) { for (let k = from + 1; k <= to; k++) map[k] = k - 1; }
+    else           { for (let k = to; k < from; k++) map[k] = k + 1; }
+    const re = new RegExp('^' + slot + ':fx([1-4]):');
+    return (target) => {
+        const m = re.exec(target);
+        return m ? slot + ':fx' + map[+m[1]] + ':' + target.slice(m[0].length) : target;
+    };
+}
+export function automationFxMoved(slot, from, to) {
+    queueSet('t0_pa_fx_move', slot + ' ' + from + ' ' + to);
+    const rn = fxMoveRenamer(slot, from, to);
+    const remap = (m, keyOf) => {
+        const out = new Map();
+        for (const [k, v] of m) out.set(keyOf(k), v);
+        return out;
+    };
+    /* "<track> <clip> <target>" / "<track> <target>" / "<target>" */
+    const tailRename = (k) => { const i = k.lastIndexOf(' '); return i < 0 ? rn(k) : k.slice(0, i + 1) + rn(k.slice(i + 1)); };
+    stateByKey = remap(stateByKey, tailRename);
+    pending = remap(pending, rn);
+    gestures = remap(gestures, rn);
+    /* NOT moduleWrites / liveSlot: a write already queued carries the OLD name
+     * and reaches the DSP BEFORE pa_fx_move (queued after it), which renames it
+     * with everything else; liveSlot is rebuilt at every flush. */
+    automationInvalidateMeta(slot);
+    listGen++;
+    expectStaged();
+}
+
 /* Value metadata is per (slot, component) and lives as long as the module in
  * that slot does. Swapping the module — or loading a project, which can swap
  * every slot — must throw it away, or the next push maps into the OLD
