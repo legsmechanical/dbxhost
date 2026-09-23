@@ -10,12 +10,15 @@
 export const PPQN = 96;
 export const BAR = PPQN * 4;
 export const MODES = { maj: [0, 2, 4, 5, 7, 9, 11], min: [0, 2, 3, 5, 7, 8, 10] };
-export const DRUM_CATS = ['kick', 'snare', 'hat', 'tom', 'perc'];
-export const MELODIC_CATS = ['bass', 'chord', 'arp', 'lead', 'pad', 'fx'];
+export const DRUM_CATS = ['kick', 'snare', 'hat', 'cymb', 'tom', 'perc'];
+/* The shipped library uses the first six; the owner's private set also uses
+ * the RM1x's own categories (seq, sfx, keys, guitar, orch, ethnic). */
+export const MELODIC_CATS = ['bass', 'chord', 'arp', 'lead', 'pad', 'fx', 'seq', 'sfx', 'keys', 'guitar', 'orch', 'ethnic'];
 /* Where each melodic category sits (MIDI note of its C): fixed per category
  * (Josh, 2026-09-23). */
 /* fx: stabs, drones and one-note hits — anchored with chords and pads. */
-export const ANCHOR = { bass: 36, chord: 60, arp: 60, pad: 60, lead: 72, fx: 60 };
+export const ANCHOR = { bass: 36, chord: 60, arp: 60, pad: 60, lead: 72, fx: 60,
+                         seq: 60, sfx: 60, keys: 60, guitar: 48, orch: 60, ethnic: 60 };
 
 export const isDrumCat = (c) => DRUM_CATS.includes(c);
 
