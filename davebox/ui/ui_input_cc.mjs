@@ -22,10 +22,11 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS,
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
+import { closeChordPopup, chordEditSlot, chordSlotKnob, chordBankKnob } from './ui_chord_pads.mjs';
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay,
          markJsUndoPatch, stepRevealAvailable } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -478,7 +479,7 @@ function _onCC_jog(d1, d2) {
  * They are MODAL, so handling them first is correct whoever raised them. */
 function modalDialogUp() {
     return !!(S.confirmConvertToDrum || S.confirmConvertToConduct ||
-              (S.menuInfoLines && S.menuInfoLines.length > 0));
+              (S.menuInfoLines && S.menuInfoLines.length > 0) || S.chordPopupOpen);
 }
 
     if (d1 === 3 && d2 === 127 && (S.globalMenuOpen || modalDialogUp())) {
@@ -525,6 +526,11 @@ function modalDialogUp() {
             /* Single-button INFO dialog — any click dismisses. */
             S.menuInfoLines = [];
             S.screenDirty = true;
+            return;
+        }
+        if (S.chordPopupOpen) {
+            /* The Chord layout's explainer — OK. */
+            closeChordPopup();
             return;
         }
         if (S.confirmExportCondPhase) {
@@ -1324,7 +1330,7 @@ function modalDialogUp() {
 
 }
 
-const bankCycleFor = (track) => bankCycleForMode(S.trackPadMode[track]);
+const bankCycleFor = (track) => bankCycleForMode(S.trackPadMode[track], track);
 
 /* A bank knob's turn, heard by the automation owner as its seq: target — a
  * held step locks it, Record takes it, a plain turn is a plain turn — exactly
@@ -2332,6 +2338,7 @@ function _backTap() {
                                      S.lastSentMenuEditValue = null; S.bpmWasEditing = false;
                                      forceRedraw(); return; }
     if (S.confirmMacroClear)       { macroClearConfirmReset(); forceRedraw(); return; }
+    if (S.chordPopupOpen)          { closeChordPopup(); forceRedraw(); return; }
     if (S.confirmLgto)             { S.confirmLgto = false; forceRedraw(); return; }
     if (S.confirmBake)             { S.confirmBake = false; S.confirmBakeWrapPhase = false; forceRedraw(); return; }
     if (S.recordBlockedDialog)     { S.recordBlockedDialog = false; forceRedraw(); return; }
@@ -3492,6 +3499,12 @@ function knobPick(k, dir, need) {
  * The sign always matches the caller's own `dir`, so a body written against
  * `dir` keeps working untouched -- which is what made converting 20 sites a
  * mechanical change rather than 20 judgement calls. */
+/* After a slot or CHORD bank edit: re-bake the pads now when asked (the tick
+ * does it otherwise). The palette is sidecar state, saved with the rest of it. */
+function _chordEdited() {
+    if (S.chordPadmapNow) { S.chordPadmapNow = false; computePadNoteMap(); }
+}
+
 function knobStep(k, d2, need) {
     const steps = knobPick(k, decodeDelta(d2), need);
     return steps === 0 ? 0 : (steps > 0 ? 1 : -1);
@@ -4176,6 +4189,21 @@ function _onCC_knobs(d1, d2) {
          * doesn't draw them. Returning here means the session grid no longer
          * reaches the bank editor at all. */
         if (S.sessionView) { _sessionKnobParam(knobIdx, d2); return; }
+
+        /* Chord layout: HOLD A SLOT + knobs edits that slot (its card shows
+         * while it is held), like a held step. Otherwise the CHORD bank's own
+         * knobs. Both are one step per detent. */
+        if (chordEditSlot() >= 0) {
+            S.chordCardSlot = chordEditSlot();
+            const _st = knobStep(knobIdx, d2, KNOB_PICK);
+            if (_st && chordSlotKnob(S.activeTrack, S.chordCardSlot, knobIdx, _st)) _chordEdited();
+            return;
+        }
+        if (S.activeBank === BANK_CHORD) {
+            const _st = knobStep(knobIdx, d2, KNOB_PICK);
+            if (_st && chordBankKnob(S.activeTrack, knobIdx, _st)) _chordEdited();
+            return;
+        }
 
         const bank    = S.activeBank;
         /* Arp Steps interval-mode overlay: K1-K8 set per-step scale-degree

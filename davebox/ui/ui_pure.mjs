@@ -13,7 +13,8 @@
 
 import { S } from './ui_state.mjs';
 import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, NUM_STEPS, BANKS,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION } from './ui_constants.mjs';
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION,
+    BANK_CHORD } from './ui_constants.mjs';
 
 /* Live pad note input — isomorphic 4ths diatonic layout.
  * EXPORTED for ui.js's computePadNoteMap (impure, moves in Phase 5) — do not
@@ -79,12 +80,16 @@ export function bankDisplayName(padMode, bank) {
  *
  * ⚠ Pure: takes the pad MODE, not a track index, so ui_render and ui_input_cc
  * can both call it without either importing the other. */
-export function bankCycleForMode(padMode) {
+export function bankCycleForMode(padMode, t) {
     /* STEP sits after the clip banks on every walk — just before SOUND + CONFIG
      * where there is one, last on a Conductor (spec §2, 2026-09-02). */
     if (padMode === PAD_MODE_CONDUCT) return CONDUCT_BANK_CYCLE.concat([BANK_STEP]);
     /* … → STEP → SOUND + CONFIG → MACROS → AUTOMATION (spec §2). */
     if (padMode === PAD_MODE_DRUM)    return BANK_CYCLE_DRUM.concat([BANK_STEP, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION]);
+    /* A Chord-layout track adds its CHORD bank after LIVE ARP. */
+    const _t = t === undefined ? S.activeTrack : t;
+    if (S.padLayoutChord && S.padLayoutChord[_t])
+        return [0, 1, 2, 3, 4, 5, BANK_CHORD, BANK_STEP, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION];
     return [0, 1, 2, 3, 4, 5, BANK_STEP, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION];
 }
 

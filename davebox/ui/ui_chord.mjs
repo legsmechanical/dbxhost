@@ -78,8 +78,10 @@ export function noteLabel(n, flats) { return (flats ? FLATS : SHARPS)[n % 12] + 
 
 /* The label for a set of held pitches, without brackets; '' for none.
  * Unnamed combinations fall back to their note names, lowest first.
- * `flats` spells note names with ♭ instead of #. */
-export function chordLabel(pitches, flats) {
+ * `flats` spells note names with ♭ instead of #. `rootHint` (a pitch class)
+ * is the root when the caller KNOWS it — a Chord-layout slot built on A reads
+ * "AMIN7/C", not the equally true "C6" — used whenever it names the set. */
+export function chordLabel(pitches, flats, rootHint) {
     const NAMES = flats ? FLATS : SHARPS;
     const ps = [...new Set(pitches)].filter((n) => n >= 0 && n <= 127).sort((a, b) => a - b);
     if (ps.length === 0) return '';
@@ -87,7 +89,11 @@ export function chordLabel(pitches, flats) {
     if (pcs.length === 1) return noteLabel(ps[0], flats);       /* one note, or octaves of it */
     const bass = ps[0] % 12;
     /* Root position first, then each other pitch class as the root (slash). */
-    const roots = [bass, ...pcs.filter((pc) => pc !== bass).sort((a, b) => a - b)];
+    let roots = [bass, ...pcs.filter((pc) => pc !== bass).sort((a, b) => a - b)];
+    if (rootHint != null && pcs.indexOf(rootHint) >= 0) {
+        const key = pcs.map((pc) => (pc - rootHint + 12) % 12).sort((a, b) => a - b).join(',');
+        if (BY_KEY.has(key)) roots = [rootHint];
+    }
     let best = null;
     for (const r of roots) {
         const key = pcs.map((pc) => (pc - r + 12) % 12).sort((a, b) => a - b).join(',');

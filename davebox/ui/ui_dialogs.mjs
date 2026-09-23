@@ -153,6 +153,26 @@ export function drawMenuInfo() {
     drawOkButton(46);
 }
 
+/* The Chord layout's explainer — up every time a track lands on Chord, until
+ * OK (jog click or Back). Josh: "Should have an OK to dismiss so you can take
+ * time to read it". Bottom row first, the way the pads read. */
+export const CHORD_POPUP_LINES = [
+    'BOTTOM ROW: CHORDS IN YOUR KEY',
+    'ROW 2: HOLD + CHORD = CHANGE IT',
+    'ROW 3: STRUM THE LAST CHORD',
+    'TOP ROW: THE SCALE',
+    'HOLD A CHORD + KNOBS: EDIT IT',
+];
+export function drawChordPopup() {
+    clear_screen();
+    dlgHeader('CHORD MODE');
+    for (let i = 0; i < CHORD_POPUP_LINES.length; i++) {
+        const t = fit4x5(CHORD_POPUP_LINES[i], 124);
+        fontPrint4x5(Math.floor((128 - fontWidth4x5(t)) / 2), 12 + i * 7, t, 1);
+    }
+    drawOkButton(52);
+}
+
 function drawExportConfirm() {
     clear_screen();
     dlgHeader('EXPORT');

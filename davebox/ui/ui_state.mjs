@@ -1014,6 +1014,32 @@ export const S = {
     lastRemapMidiIn: -2,
     lastTarpStyle: new Array(8).fill(1),
     padLayoutChromatic: new Array(8).fill(false),
+    /* The Chord layout (per track). Wins over padLayoutChromatic while set;
+     * turning it off lands back on whichever of Scale/Chrom was chosen. */
+    padLayoutChord: new Array(8).fill(false),
+    /* Per track: eight chord slots ({deg, stack, inv, spread, bass, oct} —
+     * scale positions, never notes) and the CHORD bank's settings. Filled by
+     * ui_chord_pads.mjs at load; saved in the UI sidecar. */
+    chordPalette: [],
+    chordSettings: [],
+    /* Per track: the last chord played (or selected) — row 3 strums it.
+     * { slot, mods, inv } — rebuilt from the palette whenever the key changes. */
+    chordLast: new Array(8).fill(null),
+    /* Transient, the active track only: held row-2 modifier pads (0-7), the
+     * held slot pads in order of press, and Inv-/+ taps on the held chord. */
+    chordMods: [],
+    chordHeldSlots: [],
+    chordRevoice: 0,
+    /* The per-pad chords the pad map was built with (null = one note). */
+    padChordMap: new Array(32).fill(null),
+    /* Set on landing on the Chord layout: the explainer is up until OK. */
+    chordPopupOpen: false,
+    /* Push the pad map now (a modifier changed what the slots play), and
+     * save the sidecar (a slot or CHORD bank edit). */
+    chordPadmapNow: false,
+    chordDirty: false,
+    /* The slot whose card is up (a knob turned while it was held); -1 = none. */
+    chordCardSlot: -1,
     drumInpQuant: new Array(8).fill(0),   /* per-track drum input quantize index 0-8 */
     delayClockFb: new Array(8).fill(0),   /* per-track delay clock feedback -100..100, accessed via Shift+K1 on DELAY bank (K7 now hosts delay_retrig) */
     delayRetrig:  new Array(8).fill(0),   /* per-track delay retrig 0/1; K7 on DELAY bank */

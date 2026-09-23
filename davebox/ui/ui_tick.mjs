@@ -484,6 +484,9 @@ export function _tickImpl() {
         }
     }
 
+    /* A Chord-layout modifier or setting that could not push from its own
+     * handler (ui_chord_pads.mjs). */
+    if (S.chordPadmapNow) { S.chordPadmapNow = false; S.pendingPadNoteMapRecompute = true; }
     if (S.pendingPadNoteMapRecompute && S.pendingDefaultSetParams.length === 0
             && S.clearDrainHold === 0) {
         S.pendingPadNoteMapRecompute = false;

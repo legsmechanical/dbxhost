@@ -14,10 +14,11 @@ import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev, faderGainToTra
 import { instrValueFor } from './ui_dsp_bridge.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
+import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
-    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION,
+    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD,
     INSTR_SCHWUNG, INSTR_MOVE_MAX, INSTR_MIDI_CH, INSTR_TRACK, INSTR_NONE, INSTR_CONDUCT,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
@@ -39,7 +40,7 @@ import { drawAutoMarkAt,
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawModuleSwapConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
-    drawConvertToDrumConfirm, drawConvertToConductConfirm, drawMenuInfo,
+    drawConvertToDrumConfirm, drawConvertToConductConfirm, drawMenuInfo, drawChordPopup,
     drawLgtoConfirm, drawMacroClearConfirm, drawBakeConfirm, drawSnapshotPicker,
     drawBakeSceneConfirm, drawXposeConfirm,
     drawProjectPadPicker,
@@ -1376,7 +1377,7 @@ export function soundModeCovered() {
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
         S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.confirmModuleChange || S.bpmMoveInfo || S.recordBlockedDialog ||
         S.confirmConvertToDrum || S.confirmConvertToConduct ||
-        (S.menuInfoLines && S.menuInfoLines.length > 0) ||
+        (S.menuInfoLines && S.menuInfoLines.length > 0) || S.chordPopupOpen ||
         S.confirmLgto || S.confirmXpose || S.confirmBakeScene || S.confirmBake ||
         S.confirmMacroClear ||   /* MACROS bank clear — opened FROM sound mode, so it must cover it */
         S.globalMenuOpen || S.tapTempoOpen ||
@@ -1703,6 +1704,7 @@ function drawUIBody() {
     if (S.confirmConvertToDrum)    { drawConvertToDrumConfirm();    return; }
     if (S.confirmConvertToConduct) { drawConvertToConductConfirm(); return; }
     if (S.menuInfoLines.length > 0){ drawMenuInfo();                return; }
+    if (S.chordPopupOpen)          { drawChordPopup();              return; }
     if (S.globalMenuOpen || S.tapTempoOpen) { ensureGlobalMenuFresh(); drawGlobalMenu(); return; }
     /* Perf Mode OLED takeover (Session View + Loop held or locked) */
     if (S.sessionView && (S.loopHeld || S.perfViewLocked)) { drawPerfModeOled(); return; }
@@ -1836,6 +1838,27 @@ function drawUIBody() {
      * screen there; everywhere else it changes nothing (the reveal excepted,
      * drawn above sound mode below). */
     if (S.heldStep >= 0 && S.activeBank === BANK_STEP && drawHeldStepPage()) return;
+
+    /* Chord layout: a held slot whose knobs have been turned shows its card
+     * (hold a slot + knobs edits what it saves — mirrors the held step). */
+    if (S.chordCardSlot >= 0 && chordEditSlot() === S.chordCardSlot) {
+        const _cs = chordSlotCells(S.activeTrack, S.chordCardSlot);
+        drawKitPage(_cs.title, _cs.cells, false,
+            _cs.plain.length ? [[_cs.plain.join('/'), 'NOT IN KEY']] : null);
+        /* The header is the CHORD, as it changes — "vi · AMIN7/C" — in the
+         * small face, which keeps the numeral's case (the kit headers
+         * uppercase, and "VI" would say major). */
+        fill_rect(0, 0, 128, MV_BAR_Y, 0);
+        const _ht = fit4x5(_cs.title, 124);
+        fontPrint4x5(Math.round((128 - fontWidth4x5(_ht)) / 2), 1, _ht, 1);
+        fill_rect(0, MV_BAR_Y, 128, 1, 1);
+        return;
+    }
+    if (bank === BANK_CHORD && inTimeout) {
+        drawKitPage(bankHeaderName(S.activeTrack, BANK_CHORD), chordBankCells(S.activeTrack), false,
+                    bankPageHints(BANK_CHORD));
+        return;
+    }
 
     /* Loop view: own priority state so screen is fully cleared first. Suppressed
      * on the unconfirmed drum ALL LANES bank so holding Loop surfaces the confirm
@@ -2355,11 +2378,15 @@ function drawUIBody() {
          * key/scale; only while something is held. It takes the Arp label's
          * place for as long as it shows. */
         const _heldPs = heldInputNotes(S.activeTrack), _flats = keyUsesFlats(S.padKey, S.padScale);
-        const _held = chordLabel(_heldPs, _flats);
+        /* On the Chord layout a held slot reads "vi · AMIN7" (its numeral). */
+        const _held = chordIndicator(S.activeTrack, _heldPs.length > 0) || chordLabel(_heldPs, _flats);
         const _heldL = 4 + ovwWidth(octStr) + 4, _heldR = keySclX - 4;
-        const _heldTxt = _held ? '[' + fitHeldLabel(_held, _heldR - _heldL - ovwWidth('[]') - 1, ovwWidth, noteNames(_heldPs, _flats)) + ']' : '';
+        /* Printed as spelled: names are capitals already, and a Chord-layout
+         * numeral keeps its case ("vi" minor, "IV" major) — the face carries
+         * lowercase i and v for exactly this. */
+        const _heldTxt = _held ? '[' + fitHeldLabel(_held, _heldR - _heldL - fontWidth4x5('[]') - 1, fontWidth4x5, noteNames(_heldPs, _flats)) + ']' : '';
         if (_heldTxt) {
-            ovwPrint(Math.round((_heldL + _heldR - ovwWidth(_heldTxt)) / 2), 9, _heldTxt, 1);
+            fontPrint4x5(Math.round((_heldL + _heldR - fontWidth4x5(_heldTxt)) / 2), 9, _heldTxt, 1);
         } else if (S.bankParams[S.activeTrack][5][0]) {
             const arpW = ovwWidth('Arp');
             if (S.bankParams[S.activeTrack][5][7]) {

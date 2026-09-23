@@ -10,6 +10,7 @@ import { S } from './ui_state.mjs';
 import { PAD_MODE_DRUM, DRUM_LANES, DRUM_BASE_NOTE, NUM_CLIPS } from './ui_constants.mjs';
 import { SCALE_INTERVALS } from './ui_pure.mjs';
 import { dspGet } from './ui_dsp_get.mjs';
+import { chordLayoutOn, fillChordPadMap, padToken } from './ui_chord_pads.mjs';
 
 /* PHASE-1: helper for the pad-dispatch mute condition. Modal sources:
  * - sessionView                 — pads launch clips
@@ -27,6 +28,8 @@ export function _padDispatchMutedNow() {
      * the loaded project's instrument underneath (the modal gate in ui.js
      * only stops the JS side). Recomputed at picker open/close. */
     if (S.projectPadPicker) return true;
+    /* The Chord layout's explainer is modal until OK. */
+    if (S.chordPopupOpen) return true;
     /* captureHeld no longer mutes pads: the Capture+pad lane-select gesture
      * was removed (Capture is capture-only); Capture+scene is Session View,
      * where the sessionView check above already mutes. */
@@ -43,6 +46,7 @@ export function _padDispatchMutedNow() {
 
 export function computePadNoteMap() {
     const t = S.activeTrack;
+    for (let i = 0; i < 32; i++) S.padChordMap[i] = null;
     if (S.trackPadMode[t] === PAD_MODE_DRUM) {
         /* Drum mode: left half (cols 0-3) maps to drum lanes via drumPadToLane;
          * right half (cols 4-7) is velocity zones (no note dispatch).
@@ -76,7 +80,11 @@ export function computePadNoteMap() {
         const intervals = SCALE_INTERVALS[effScale] || SCALE_INTERVALS[0];
         S.padScaleSet.clear();
         for (let i = 0; i < intervals.length; i++) S.padScaleSet.add(intervals[i]);
-        if (S.padLayoutChromatic[t]) {
+        if (chordLayoutOn(t)) {
+            /* The Chord layout: slots, modifiers, strum and scale rows
+             * (ui_chord_pads.mjs). Slot pads carry whole chords. */
+            fillChordPadMap(t, effKey, effScale);
+        } else if (S.padLayoutChromatic[t]) {
             for (let i = 0; i < 32; i++) {
                 const col = i % 8;
                 const row = Math.floor(i / 8);
@@ -131,6 +139,8 @@ export function computePadNoteMap() {
             let out;
             if (padDispatchMuted && S.sessionView) {
                 out = 0xFF;
+            } else if (S.padChordMap[i]) {
+                out = padToken(i, octShift);      /* a Chord-layout slot: "p+p+p" */
             } else if (padDispatchMuted) {
                 const p = S.padNoteMap[i];
                 out = (p === 0xFF) ? 0xFF : Math.max(0, Math.min(127, p + octShift));

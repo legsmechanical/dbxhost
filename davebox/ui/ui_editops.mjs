@@ -6,6 +6,7 @@
  * Extracted from ui.js (Phase 5b prep, increment 4 of the modularity refactor).
  */
 
+import { resetChordTransient } from './ui_chord_pads.mjs';
 import {
     NUM_TRACKS, NUM_STEPS, DRUM_LANES,
     PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS, ACTION_POPUP_MS,
@@ -544,6 +545,8 @@ export function _switchActiveTrack(newT) {
      * cursor, journal and checkpoint are all per-clip. Any track switch ends
      * it (the ONE owner is ui_record; this is a dispatch, not a writer). */
     stepRecExit();
+    /* Held chord slots and modifiers belong to the track they were pressed on. */
+    resetChordTransient();
     /* A track switch used to LEAVE sound mode from every screen (Josh,
      * 2026-08-24); since 2026-09-05 it FOLLOWS — see _follow below. SOUND +
      * CONFIG is a BANK and a bank is per-track, so the new
