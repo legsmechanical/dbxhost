@@ -57,6 +57,15 @@ int main(void) {
 C
 cc -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Isrc/host -Isrc "$work/t.c" -o "$work/t"
 "$work/t"
+# Each arm's CONDITION, not just its call: disabling the condition leaves the
+# call text in place and would pass a call-only pin.
+for cond in 'if (strcmp(fx_key, "fx:move") == 0)' 'if (strcmp(rest, "fx:move") == 0)'; do
+  n=$(grep -cF "$cond" src/host/shadow_chain_mgmt.c || true)
+  if [ "$n" -ge 1 ]; then echo "  ok   the dispatcher tests: $cond ($n)"; else echo "  FAIL missing arm condition: $cond"; exit 1; fi
+done
+[ "$(grep -cF 'if (strcmp(rest, "fx:move") == 0)' src/host/shadow_chain_mgmt.c)" = 2 ] \
+  && echo "  ok   both the send and the Move-bus arms test their condition" \
+  || { echo "  FAIL expected the send AND Move-bus arms to test rest == fx:move"; exit 1; }
 for arm in 'shadow_bus_fx_move(shadow_master_fx_slots, MASTER_FX_SLOTS' \
            'shadow_bus_fx_move(shadow_send_fx_slots[bus], SEND_FX_SLOTS' \
            'shadow_bus_fx_move(shadow_move_fx_slots[sl], MOVE_FX_BLOCKS'; do

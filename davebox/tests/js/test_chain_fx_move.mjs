@@ -33,6 +33,7 @@ async function main() {
 const { S: GS } = await import('../../ui/ui_state.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
+const morph = await import('../../ui/ui_snapmorph.mjs');
 const targetsOf = (t, c) => auto.automationEntriesFor(t, c).map(e => e.target).sort();
 
 function seed() {
@@ -88,6 +89,17 @@ step('⭐ a BUS move (Move FX bus 2): the host gets the bus key, that bus\'s lan
     assert(GS.trackMacros[0][0].legs[0].comp === 'fx1', 'a CHAIN macro leg moved on a bus move');
     auto.automationTick();
     assert(bulk.some(b => b.indexOf('t0_pa_fx_move') >= 0 && b.indexOf('move_fx:2: 1 2') >= 0), 'the store was not told: ' + JSON.stringify(bulk));
+});
+
+step('SnapMorph\'s cache for the slot is dropped (it tested "same module at this position?" when it seeded)', () => {
+    seed();
+    const ents = morph.morphEntriesForTest();
+    ents.set('3:0', { stale: true }); ents.set('5:0', { other: true });
+    assert(snd.chainFxMove(0, 3, 1, 2) === true, 'control: the move went through');
+    assert(!ents.has('3:0'), 'slot 3\'s morph entry survived the move');
+    assert(ents.has('5:0'), 'another slot\'s morph entry was dropped too');
+    ents.clear();
+    auto.automationTick();
 });
 
 if (failed) { console.log('FAIL: chain fx move'); process.exit(1); }
