@@ -2,6 +2,12 @@
  * module reads (davebox/phrases/<cat>.json).
  *
  *   drum     n = "t v g;t v g;…"             one lane: tick, velocity, gate
+ *            n = "t v g p;…"                  several instruments (hats closed/
+ *                                              pedal/open, a crash in a hat
+ *                                              phrase…): p is the note's own
+ *                                              pitch; `pads` lists them by hit
+ *                                              count, and the browser assigns
+ *                                              each to a pad
  *   melodic  n = "t deg oct acc v g;…"       degree in the phrase's own mode
  *
  * Ticks are 96 per quarter note (PPQN). A melodic note is stored relative to
@@ -25,7 +31,7 @@ export const isDrumCat = (c) => DRUM_CATS.includes(c);
 export function encodeNotes(cat, notes) {
     const drum = isDrumCat(cat);
     return notes.slice().sort((a, b) => a.t - b.t || (a.deg || 0) - (b.deg || 0))
-        .map(n => drum ? [n.t, n.v, n.g].join(' ')
+        .map(n => drum ? (n.p != null ? [n.t, n.v, n.g, n.p] : [n.t, n.v, n.g]).join(' ')
                        : [n.t, n.deg, n.oct || 0, n.acc || 0, n.v, n.g].join(' '))
         .join(';');
 }
@@ -33,7 +39,7 @@ export function decodeNotes(cat, s) {
     const drum = isDrumCat(cat);
     return String(s || '').split(';').filter(Boolean).map(r => {
         const a = r.split(' ').map(Number);
-        return drum ? { t: a[0], v: a[1], g: a[2] }
+        return drum ? (a.length > 3 ? { t: a[0], v: a[1], g: a[2], p: a[3] } : { t: a[0], v: a[1], g: a[2] })
                     : { t: a[0], deg: a[1], oct: a[2], acc: a[3], v: a[4], g: a[5] };
     });
 }
