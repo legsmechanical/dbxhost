@@ -80,3 +80,6 @@ docs/superpowers/
 
 # Local ARM test binaries (built for the device; never shipped, never committed)
 arm-tests/
+
+# phrasegen: downloaded reference/ingest datasets and rendered candidates
+tools/phrasegen/cache/
