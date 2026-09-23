@@ -37,11 +37,11 @@ static void test_sounds_and_releases(void) {
     hx_set_param(h, "t1_audition", "on 60 100 on 64 90");
     HX_ASSERT(hx_seen_note_on(h, 1, 60) && hx_seen_note_on(h, 1, 64), "audition notes did not sound");
     HX_ASSERT(inst->cap_count == 0, "an audition note reached the Retrospective Capture buffer");
-    hx_set_param(h, "t1_audition", "off 60");
-    HX_ASSERT(seen_off(1, 60), "off did not release");
-    HX_ASSERT(!seen_off(1, 64), "off released a different pitch");
+    hx_set_param(h, "t1_audition", "off 64");
+    HX_ASSERT(seen_off(1, 64), "off did not release");
+    HX_ASSERT(!seen_off(1, 60), "off released a different pitch");
     hx_set_param(h, "t1_audition", "alloff");
-    HX_ASSERT(seen_off(1, 64), "alloff left a pitch sounding");
+    HX_ASSERT(seen_off(1, 60), "alloff left a pitch sounding");
     hx_destroy(h);
 }
 
