@@ -487,6 +487,18 @@ A raised physical button: cap, sides, base arc. **Idle** is an outline, **select
 - ⚠ The fill and the outline are **both** drawn on a highlighted cap, in that order: filling alone
   left the rim a pixel short at the shallow top and bottom.
 
+### 3.7.1 The note roll
+
+`drawKitNoteRoll(x, y, w, h, notes, spanTicks, { rows, win, barTicks, playhead })` — a part in
+miniature (Import MIDI's parts list and options page). One row per pitch (or per pad), bottom up;
+a ruler under it ticks each bar, taller every fourth, thinned to every fourth when bars crowd.
+
+- `win` is **what will land**: bracketed, and every note whose onset falls outside it is **dotted**.
+  Dotted is the §3.1 idea on a single row — the thing exists, it will not arrive.
+- A note is at least **2px** wide (3px when dotted, so the gap in `x.x` is visible): a 1px hit is
+  indistinguishable from noise at this scale.
+- Pure: descriptor in, pixels out. `tools/preview_midi_import.mjs` renders it in place.
+
 ### 3.8 The footer hint row
 
 `drawKitHintRow(y, hints)` — `[key, action]` pairs, most important first. The KEY is inverted into
