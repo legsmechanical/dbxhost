@@ -342,9 +342,15 @@ async function main() {
                'sound pads not lit in their colours: ' + [padLed[72], padLed[73], padLed[74]]);
         assert(padLed[68 + 7] === 0 && padLed[68 + 15] === 0 && padLed[68 + 31] === 0,
                'a right-hand pad with no sound is still lit (velocity zones?): ' + [padLed[75], padLed[83], padLed[99]]);
-        const lanesNow = [0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27].map(i => padLed[68 + i]);
-        assert(JSON.stringify(lanesNow) === JSON.stringify(lanesBefore) && lanesBefore.some(c => c),
-               'the lane pads changed under the browser: ' + lanesBefore + ' -> ' + lanesNow);
+        /* lanes with a sound (3, 8, 10 = pads 3, 16, 18) show its colour from the
+         * start; every other lane pad looks as it did before the browser opened */
+        assert(padLed[68 + 3] === 7 && padLed[68 + 16] === 23 && padLed[68 + 18] === 14,
+               'placed lanes are not in their sounds\' colours: ' + [padLed[71], padLed[84], padLed[86]]);
+        const LANES = [0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27];
+        const lanesNow = LANES.map(i => padLed[68 + i]);
+        const other = LANES.map((p, k) => [3, 16, 18].includes(p) ? null : k).filter(k => k != null);
+        assert(other.every(k => lanesNow[k] === lanesBefore[k]) && lanesBefore.some(c => c),
+               'a lane with no sound changed under the browser: ' + lanesBefore + ' -> ' + lanesNow);
         /* the engine reads no right-hand pad as velocity or Note Repeat while it is open */
         const pm = since(0, /^t0_padmap$/).pop();
         assert(pm && pm[2].split(' ')[32] === '1', 'the engine pad mute is not up: ' + (pm && pm[2]));
@@ -374,8 +380,7 @@ async function main() {
         midi(0x80, 68 + 4, 0); ticks(3);
         assert(pb().held === -1, 'letting go did not end the hold');
         ticks(3);
-        const lanesAfter = [0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27].map(i => padLed[68 + i]);
-        assert(!lanesAfter.includes(14) && !lanesAfter.includes(23), 'the lanes kept sound colours after letting go: ' + lanesAfter);
+        assert(padLed[68 + 1] === 7 && padLed[68 + 18] === 14, 'the colours did not stay after letting go: ' + [padLed[69], padLed[86]]);
         ac = since(0, /^t0_audclip$/);
         assert(/-2\|L1;.*L8;.*L10;/.test(ac[ac.length - 1][2]), 'after the hold, not every sound is heard: ' + ac[ac.length - 1][2].slice(0, 30));
         const n = writes.length;
