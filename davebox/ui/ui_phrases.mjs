@@ -243,32 +243,29 @@ export function drumVoices(p) {
 
 /* Where each voice goes by default. `lanePitches` is the 32 lanes' notes,
  * `laneUsed[l]` whether lane l has notes in the destination clip, `openLane`
- * the lane the browser was opened on. Order of preference per voice:
- * a layer → its base's lane; the first voice → the lane opened on; the lane
- * already playing that pitch; the next empty lane after the one opened on;
- * else the next lane not yet taken (which will be replaced). */
+ * the lane the browser was opened on. Per voice: a layer → its base's lane;
+ * the first voice → the lane opened on; an EMPTY lane already set to that
+ * pitch; the next empty lane after the one opened on; else -1 (not placed).
+ * ⭑ Never a lane that has notes other than the one opened on — nothing of the
+ * user's is replaced unless they put a sound there (Josh, 2026-09-23). */
 export function defaultAssign(voices, lanePitches, laneUsed, openLane) {
     const n = 32, taken = new Set(), out = [];
     const byPitch = new Map();
+    const free = (l) => !taken.has(l) && !(laneUsed && laneUsed[l]);
     for (let i = 0; i < voices.length && i < PB_MAX_VOICES; i++) {
         const v = voices[i];
         let lane = -1;
         if (v.layerOf != null && byPitch.has(v.layerOf)) lane = byPitch.get(v.layerOf);
         else if (i === 0) lane = openLane;
         else {
-            const m = (lanePitches || []).findIndex((pp, l) => pp === v.pitch && !taken.has(l));
+            const m = (lanePitches || []).findIndex((pp, l) => pp === v.pitch && free(l));
             if (m >= 0) lane = m;
             for (let k = 1; lane < 0 && k < n; k++) {
                 const l = (openLane + k) % n;
-                if (!taken.has(l) && !(laneUsed && laneUsed[l])) lane = l;
-            }
-            for (let k = 1; lane < 0 && k < n; k++) {
-                const l = (openLane + k) % n;
-                if (!taken.has(l)) lane = l;
+                if (free(l)) lane = l;
             }
         }
-        taken.add(lane);
-        byPitch.set(v.pitch, lane);
+        if (lane >= 0) { taken.add(lane); byPitch.set(v.pitch, lane); }
         out.push(lane);
     }
     return out;

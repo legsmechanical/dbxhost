@@ -11,6 +11,7 @@ import { PAD_MODE_DRUM, DRUM_LANES, DRUM_BASE_NOTE, NUM_CLIPS } from './ui_const
 import { SCALE_INTERVALS } from './ui_pure.mjs';
 import { dspGet } from './ui_dsp_get.mjs';
 import { chordLayoutOn, fillChordPadMap, padToken } from './ui_chord_pads.mjs';
+import { pbActive } from './ui_phrase_browser.mjs';
 
 /* PHASE-1: helper for the pad-dispatch mute condition. Modal sources:
  * - sessionView                 — pads launch clips
@@ -28,6 +29,12 @@ export function _padDispatchMutedNow() {
      * the loaded project's instrument underneath (the modal gate in ui.js
      * only stops the JS side). Recomputed at picker open/close. */
     if (S.projectPadPicker) return true;
+    /* The phrase library on a drum track: the right-hand pads are its SOUNDS,
+     * so the engine must not read them as velocity zones or Note Repeat
+     * (Josh, 2026-09-23: "make sure the drum assign pads don't trigger the
+     * performance mode pads that may be underneath them"). The lane pads keep
+     * sounding — a tap there is an audition. Recomputed at open/close. */
+    if (pbActive() && S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) return true;
     /* The Chord layout's explainer is modal until OK. */
     if (S.chordPopupOpen) return true;
     /* captureHeld no longer mutes pads: the Capture+pad lane-select gesture

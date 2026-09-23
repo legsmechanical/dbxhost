@@ -114,16 +114,16 @@ step('drum voices: pads order, layers only when their base is in the phrase', ()
     assertEq(drumVoices(one), [{ pitch: -1, hits: 2, layerOf: null }], 'one-pad phrase');
 });
 
-step('default pads: layer with its base, first on the lane opened, pitch match, next empty, then any', () => {
+step('default pads: layer with its base, first on the lane opened, an empty lane of that pitch, next empty, else none', () => {
     const lanePitches = Array.from({ length: 32 }, (_, l) => 36 + l);
-    const used = new Array(32).fill(false); used[5] = true; used[6] = true;
+    const used = new Array(32).fill(false); used[5] = true; used[6] = true; used[4] = true;
     const voices = [{ pitch: 38, layerOf: null }, { pitch: 39, layerOf: 38 }, { pitch: 42, layerOf: null },
-                    { pitch: 100, layerOf: null }];
-    assertEq(defaultAssign(voices, lanePitches, used, 4), [4, 4, 6, 7], 'openLane 4');
-    /* lane 6 plays 42 already, so it is chosen even though it has notes; the
-     * stranger goes to the first EMPTY lane after 4 (5 is used, 6 taken) */
+                    { pitch: 45, layerOf: null }, { pitch: 100, layerOf: null }];
+    /* 38 → lane 4 (opened on, though it has notes); 39 layers on it; 42's lane (6)
+     * has notes, so the next empty after 4 (7); 45's lane (9) is empty; 100 → 8 */
+    assertEq(defaultAssign(voices, lanePitches, used, 4), [4, 4, 7, 9, 8], 'openLane 4');
     const full = new Array(32).fill(true);
-    assertEq(defaultAssign([{ pitch: 1 }, { pitch: 2 }], lanePitches, full, 31), [31, 0], 'all full: next lane, wrapping');
+    assertEq(defaultAssign([{ pitch: 1 }, { pitch: 2 }], lanePitches, full, 31), [31, -1], 'no empty lane: not placed');
     const many = Array.from({ length: 9 }, (_, i) => ({ pitch: 200 + i, layerOf: null }));
     assertEq(defaultAssign(many, lanePitches, used, 0).length, PB_MAX_VOICES, 'voices capped');
 });

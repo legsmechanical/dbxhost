@@ -54,6 +54,7 @@ const shoot = (slug) => shots.push({ slug, fb: fb.slice() });
 const draw = (slug, touched, shift) => { globalThis.clear_screen(); PB.pbRender(touched ?? -1, !!shift); shoot(slug); };
 
 S.trackPadMode[2] = 0; S.trackActiveClip[2] = 0; S.clipNonEmpty[2][0] = false; S.activeTrack = 2;
+S.knobTouched = -1;
 PB.pbOpen(2);
 for (let i = 0; i < 4; i++) PB.pbOnJog(1);
 PB.pbOnClick(false);
@@ -76,7 +77,8 @@ const multi = st.list.findIndex(p => p.pads && p.pads.length >= 3);
 while (st.idx < multi) PB.pbOnJog(1);
 if (st.picker) PB.pbOnClick(false);   /* close the picker, if the jog opened it */
 draw('6-hat-multi-page');
-draw('7-touch-voice', 3);
+PB.pbPadTap(4); draw('7-holding-sound');
+PB.pbPadTap(1); draw('7b-holding-placed'); PB.pbPadRelease(4);
 PB.pbOnJog(1);
 draw('8-hat-picker');
 PB.pbClose();

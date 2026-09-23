@@ -1878,12 +1878,20 @@ drum lane. **Touch K6 on the CLIP bank (or the DRUM LANE bank) and click the jog
 time with the song when the transport runs and the track is playing its clip,
 otherwise on its own. Melodic phrases land in your project's key and scale.
 
-**Drum phrases with several instruments** (a closed and an open hat, a snare and
-a clap…): **Voice** (K4 on a drum track, K5 on a melodic one) picks an instrument, and **tapping a pad puts it there** —
-on a drum track the pad's lane, on a melodic track the pad's note — then moves on
-to the next instrument. The header shows the selected one and where it goes; the
-pads light where each instrument sits (the selected one flashes). Every tap is
-heard at once, so you can try instruments on different pads before loading.
+**Drum phrases with several sounds** (a closed and an open hat, a snare and a
+clap…) let you choose where each sound goes:
+
+- **On a drum track** the right-hand pads are the phrase's sounds, each in its
+  own colour (footer: RTPAD SOUND). **Hold one** — you hear it alone and a panel
+  lists every sound with its pad — and **tap lane pads on the left** to put it
+  there (LFTPD SET); tap a lane again to take it off. Let go when done.
+- **On a melodic track** hold **K5 Voice**: the panel shows each sound and its
+  note; turn to a sound and tap a pad for its note (again: off).
+
+Nothing moves on to the next sound by itself, and every change is heard at once.
+By default a sound goes only on the lane you opened on or on an empty lane — never
+on a lane that has notes — so nothing of yours is replaced unless you put a sound
+there. The pads light where each sound sits.
 
 Loading a melodic phrase replaces the clip and clears its automation, like
 [Import MIDI](#154-import-a-midi-file); a drum phrase changes only the lanes it

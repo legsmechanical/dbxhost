@@ -230,7 +230,7 @@ async function main() {
         assert(pb().idx === idx && PB.pbActive(), 'the selection moved or the browser closed');
     });
 
-    step('a drum phrase on a melodic track: pads set each instrument\'s NOTE, heard at once', () => {
+    step('a drum phrase on a melodic track: hold K5 and tap a pad for the highlighted sound\'s NOTE — nothing moves on', () => {
         turn(0, 12); ticks(2);
         assert(pb().cats[pb().catIdx] === 'hat', 'K1 did not reach HAT');
         jog(1); click(); ticks(2);
@@ -242,13 +242,21 @@ async function main() {
         /* the pad's own note, as the track's pad map lays it out */
         const pi = 9, note = S.padNoteMap[pi] + (S.trackOctave[1] | 0) * 12;
         assert(S.padNoteMap[pi] !== 0xFF && !pb().assign.includes(note), 'precondition: pad ' + pi + ' plays ' + note);
+        pad(pi);
+        assert(pb().assign.join(',') === '42,46,44', 'a tap without K5 held placed a sound');
         const n = writes.length;
+        touch(4, true); ticks(1);
+        assert(ink(12, 54) > 0 && PB.pbStateForTest(), 'no sounds panel with K5 held');
         pad(pi); ticks(2);
-        assert(pb().assign[0] === note && pb().voiceSel === 1, 'tap did not assign + advance: ' + pb().assign + ' sel ' + pb().voiceSel);
-        const ac = since(n, /^t1_audclip$/);
-        assert(ac.length && new RegExp(' ' + note + ' 90 ').test(ac[ac.length - 1][2]), 'the preview did not follow the tap: ' + JSON.stringify(ac));
+        assert(pb().assign[0] === note && pb().voiceSel === 0, 'tap did not place the highlighted sound, or moved on: ' + pb().assign + ' sel ' + pb().voiceSel);
         const colors = PB.pbPadColors();
-        assert(colors && colors[pi] !== 0, 'the assigned pad is dark');
+        assert(colors && colors[pi] !== 0, 'the placed pad is dark');
+        pad(pi); ticks(1);
+        assert(pb().assign[0] === -1, 'a second tap did not take it off');
+        pad(pi); ticks(2);
+        touch(4, false); ticks(2);
+        const ac = since(n, /^t1_audclip$/);
+        assert(ac.length && new RegExp(' ' + note + ' 90 ').test(ac[ac.length - 1][2]), 'the preview did not follow the tap: ' + JSON.stringify(ac.slice(-1)));
         globalThis.__pbNote = note;
     });
 
@@ -299,7 +307,7 @@ async function main() {
         back();
     });
 
-    step('a drum track: drum types only; several instruments on several lanes, taps move them, ONE load', () => {
+    step('a drum track: hold a sound pad (heard alone), tap lanes to place it or take it off, ONE load', () => {
         S.trackClipPlaying[0] = true;
         S.activeDrumLane[0] = 3; S.drumLanePage[0] = 0;
         for (let l = 0; l < 32; l++) { S.drumLaneNote[0][l] = 36 + l; S.drumLaneHasNotes[0][l] = false; }
@@ -310,18 +318,39 @@ async function main() {
         assert(pb().assign.join(',') === '3,10,8', 'default lanes: ' + pb().assign);
         let ac = since(0, /^t0_audclip$/);
         assert(ac.length && /^1 16 -2\|L3;.*;L8;.*;L10;/.test(ac[ac.length - 1][2]), 'lanes preview: ' + JSON.stringify(ac.slice(-1)));
-        /* pad 5 = row 0, col 5 → a velocity pad: ignored; pad 1 → lane 1 */
-        pad(5);
-        assert(pb().assign[0] === 3, 'a right-hand pad assigned');
-        pad(1); ticks(3);
-        assert(pb().assign[0] === 1 && pb().voiceSel === 1, 'pad 1 did not take the first instrument');
+        /* the engine reads no right-hand pad as velocity or Note Repeat while it is open */
+        const pm = since(0, /^t0_padmap$/).pop();
+        assert(pm && pm[2].split(' ')[32] === '1', 'the engine pad mute is not up: ' + (pm && pm[2]));
+        /* a lane tap with no sound held does nothing */
+        pad(1); ticks(1);
+        assert(pb().assign.join(',') === '3,10,8', 'a lane tap without a held sound placed one');
+        /* hold sound 1 (pad 4: bottom row, first right-hand pad): only it is heard */
+        midi(0x90, 68 + 4, 100); ticks(3);
+        assert(pb().held === 0, 'holding the first sound pad did not select it');
         ac = since(0, /^t0_audclip$/);
-        assert(/-2\|L1;/.test(ac[ac.length - 1][2]), 'the preview did not move to lane 1');
+        assert(/^1 16 3\|/.test(ac[ac.length - 1][2]), 'holding did not solo the sound: ' + ac[ac.length - 1][2].slice(0, 20));
+        assert(ink(12, 54) > 0, 'no sounds panel while holding');
+        pad(1); ticks(3);
+        assert(pb().assign[0] === 1 && pb().held === 0, 'the lane tap did not move the held sound (or dropped the hold)');
+        pad(1); ticks(1);
+        assert(pb().assign[0] === -1, 'a second tap did not take it off');
+        pad(1); ticks(1);
+        midi(0x80, 68 + 4, 0); ticks(3);
+        assert(pb().held === -1, 'letting go did not end the hold');
+        ac = since(0, /^t0_audclip$/);
+        assert(/-2\|L1;.*L8;.*L10;/.test(ac[ac.length - 1][2]), 'after the hold, not every sound is heard: ' + ac[ac.length - 1][2].slice(0, 30));
         const n = writes.length;
         click(); ticks(4);
         const imp = since(n, /import$/);
         assert(imp.length === 1 && imp[0][1] === 't0_lanes_import' && /^0 1 16\|L1;.*L8;.*L10;/.test(imp[0][2]),
                'drum load: ' + JSON.stringify(imp));
+        const pm2 = since(n, /^t0_padmap$/).pop();
+        assert(pm2 && pm2[2].split(' ')[32] === '0', 'the engine pad mute stayed up after closing');
+        openOn(0); ticks(2);
+        const n3 = writes.length;
+        back(); ticks(3);
+        const pm3 = since(n3, /^t0_padmap$/).pop();
+        assert(pm3 && pm3[2].split(' ')[32] === '0', 'the engine pad mute stayed up after Back');
     });
 
     step('a Conductor track refuses, and says why', () => {
