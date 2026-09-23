@@ -43,6 +43,7 @@ node_modules/.bin/esbuild ui/ui.js \
     --bundle \
     --external:'/data/UserData/schwung/*' \
     --external:os \
+    --external:std \
     --format=esm \
     --outfile=dist/davebox/ui.js \
     --log-level=warning

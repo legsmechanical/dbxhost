@@ -76,6 +76,90 @@ static int sp_track_clip(sp_ctx_t *cx) {
             return 1;
         }
 
+        /* tN_cC_import "<flags> <res_idx> <length_steps>|a tick pitch vel gate;…"
+         * — fill clip C from an imported MIDI file in ONE step: one undo unit,
+         * one silence, one finalize. flags bit0 = replace (wipe the clip's notes
+         * first; its automation is left alone — an import is notes only).
+         * Sets the clip's resolution (TPS_VALUES[res_idx]) and length, loop
+         * from 0. On a DRUM track each note lands on the lane of clip C whose
+         * pitch it matches; a pitch no lane plays is dropped. Drum lane note ops
+         * elsewhere address only the active clip, which is why this is one key.
+         * Refused while the track records. */
+        if (!strcmp(p, "_import")) {
+            if (tr->recording) return 1;
+            const char *s = val ? val : "";
+            int flags = my_atoi(s);
+            while (*s && *s != ' ') s++;
+            while (*s == ' ') s++;
+            int ridx = clamp_i(my_atoi(s), 0, 5);
+            while (*s && *s != ' ') s++;
+            while (*s == ' ') s++;
+            int len = clamp_i(my_atoi(s), 1, SEQ_STEPS);
+            const char *ops = strchr(s, '|');
+            ops = ops ? ops + 1 : "";
+            uint16_t tps = TPS_VALUES[ridx];
+            int is_active = ((int)tr->active_clip == cidx);
+            int is_drum = (tr->pad_mode == PAD_MODE_DRUM);
+
+            if (is_drum) {
+                if (!tr->drum_clips[cidx]) drum_clips_alloc(inst, tr);
+                drum_clip_t *dc = tr->drum_clips[cidx];
+                if (!dc) return 1;
+                undo_begin_drum_clip(inst, tidx, cidx);
+                if (is_active) silence_track_notes_v2(inst, tr);
+                int l;
+                for (l = 0; l < DRUM_LANES; l++) {
+                    clip_t *lc = &dc->lanes[l].clip;
+                    if (flags & 1) clip_wipe_notes(lc);
+                    clip_import_frame(lc, tps, (uint16_t)len);
+                    if (is_active) { tr->drum_current_step[l] = 0; tr->drum_tick_in_step[l] = 0; }
+                }
+                uint32_t touched = 0;
+                while (*ops) {
+                    while (*ops == ' ' || *ops == ';') ops++;
+                    if (*ops != 'a') { while (*ops && *ops != ';') ops++; continue; }
+                    ops++;
+                    /* "tick pitch vel gate" → lane of `pitch`, then "tick vel gate" */
+                    long a[4] = {0, 0, SEQ_VEL, GATE_TICKS}; int na = 0;
+                    while (na < 4) {
+                        while (*ops == ' ') ops++;
+                        if (!*ops || *ops == ';') break;
+                        a[na++] = my_atoi(ops);
+                        while (*ops && *ops != ' ' && *ops != ';') ops++;
+                    }
+                    if (na < 2) continue;
+                    for (l = 0; l < DRUM_LANES; l++) {
+                        if (dc->lanes[l].midi_note != (uint8_t)a[1]) continue;
+                        char buf[48];
+                        snprintf(buf, sizeof buf, "%ld %ld %ld", a[0], a[2], a[3]);
+                        if (lane_note_apply_op(&dc->lanes[l].clip, dc->lanes[l].midi_note, 'a', buf))
+                            touched |= (1u << l);
+                        break;
+                    }
+                }
+                for (l = 0; l < DRUM_LANES; l++) {
+                    clip_t *lc = &dc->lanes[l].clip;
+                    if ((touched & (1u << l)) || (flags & 1)) clip_note_finalize(inst, lc, tidx, cidx);
+                }
+            } else {
+                undo_begin_single(inst, tidx, cidx);
+                if (is_active) { silence_track_notes_v2(inst, tr); pfx_sync_from_clip(tr); }
+                if (flags & 1) clip_wipe_notes(cl);
+                clip_import_frame(cl, tps, (uint16_t)len);
+                if (is_active && tr->tick_in_step >= tps) tr->tick_in_step = 0;
+                while (*ops) {
+                    while (*ops == ' ' || *ops == ';') ops++;
+                    if (*ops != 'a') { while (*ops && *ops != ';') ops++; continue; }
+                    clip_note_apply_op(cl, 'a', ops + 1);
+                    while (*ops && *ops != ';') ops++;
+                }
+                clip_note_finalize(inst, cl, tidx, cidx);
+            }
+            rui_mark(inst, tidx, cidx);
+            inst->state_dirty = 1;
+            return 1;
+        }
+
         /* tN_cC_resolution "idx" (0-5): change THIS clip's ticks_per_step and
          * rescale its notes proportionally — remote-UI per-clip variant of
          * clip_resolution (which only targets the active clip). */

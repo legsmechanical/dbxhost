@@ -71,6 +71,7 @@ if [ -z "$SKIP_BUNDLE" ]; then
         --bundle \
         --external:'/data/UserData/schwung/*' \
         --external:os \
+        --external:std \
         --define:SEQ8_STATE_PREFIX="\"${STATE_PREFIX}\"" \
         --define:DAVEBOX_MODULE_ID="\"${MODULE_ID}\"" \
         --format=esm \

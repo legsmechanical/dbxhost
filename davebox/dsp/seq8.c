@@ -4544,6 +4544,45 @@ static void clip_note_finalize(seq8_instance_t *inst, clip_t *cl, int t, int c) 
     inst->state_dirty = 1;
 }
 
+/* Drop every note of a clip and its derived step view. Leaves resolution,
+ * length, play effects and automation alone — the caller sets what it needs.
+ * (MIDI import's replace; `_clear` does the same wipe plus its own resets.) */
+static void clip_wipe_notes(clip_t *cl) {
+    int i;
+    for (i = 0; i < SEQ_STEPS; i++) {
+        cl->steps[i] = 0;
+        memset(cl->step_notes[i], 0, 8);
+        cl->step_note_count[i] = 0;
+        cl->step_vel[i]  = (uint8_t)SEQ_VEL;
+        cl->step_gate[i] = (uint16_t)GATE_TICKS;
+        memset(cl->note_tick_offset[i], 0, 8 * sizeof(int16_t));
+    }
+    cl->active = 0;
+    cl->note_count = 0;
+    memset(cl->notes, 0, sizeof(cl->notes));
+    cl->occ_dirty = 1;
+}
+
+/* Set a clip's grid for an import: resolution, length, loop from the top.
+ * Existing notes (a merge into an empty clip has none) are rescaled to the
+ * new resolution as `_resolution` does, so nothing jumps position. */
+static void clip_import_frame(clip_t *cl, uint16_t tps, uint16_t len) {
+    uint16_t old = cl->ticks_per_step;
+    if (old && old != tps) {
+        uint16_t ni;
+        for (ni = 0; ni < cl->note_count; ni++) {
+            note_t *n = &cl->notes[ni];
+            n->tick = (uint32_t)((uint64_t)n->tick * tps / old);
+            uint32_t ng = (uint32_t)((uint64_t)n->gate * tps / old);
+            n->gate = (uint16_t)(ng < 1 ? 1 : (ng > 65535 ? 65535 : ng));
+        }
+    }
+    cl->ticks_per_step = tps;
+    cl->length = len;
+    cl->loop_start = 0;
+    cl->occ_dirty = 1;
+}
+
 /* Drum-lane note op for the remote piano roll. A lane is monophonic at a fixed
  * pitch (lane_note), so ops key off tick only; pitch is forced to lane_note.
  *   t tick [vel] [gate]   toggle a hit at tick (add if absent, else remove)

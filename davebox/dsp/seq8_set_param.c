@@ -774,7 +774,7 @@ static int capture_clears_on(const char *key, const char *val) {
         return cap_str_ends(op, "_toggle") || cap_str_ends(op, "_add") ||
                cap_str_ends(op, "_set_notes") || cap_str_ends(op, "_clear");
     static const char *const OPS[] = {
-        "_note_add", "_note_del", "_note_move", "_note_resize", "_notes_op",
+        "_note_add", "_note_del", "_note_move", "_note_resize", "_notes_op", "_import",
         "_clear", "_drum_clear", "_hard_reset", "_euclid_stamp",
     };
     size_t k;
