@@ -40,7 +40,6 @@ import { S as GS, noteUndoUnit } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import {
     PAD_MODE_DRUM, PAD_MODE_CONDUCT, SCENE_LETTERS, NOTE_KEYS, DRUM_LANES, LED_OFF,
-    TRACK_COLORS, TRACK_DIM_COLORS,
 } from './ui_constants.mjs';
 import { White, VividYellow, Cyan, NeonPink, BrightOrange, NeonGreen, ElectricViolet } from '/data/UserData/schwung/shared/constants.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
@@ -462,28 +461,27 @@ export function pbPadRelease(i) {
     if (soundOfPad(i) === PB.held) { PB.held = -1; GS.screenDirty = true; }
 }
 
-/* Every pad's colour while the screen is up, or null to leave the pads to the
- * track (a melodic phrase: nothing to place). */
+/* The pads the screen owns, as colours; null where the track's own lights
+ * stay (Josh, 2026-09-23: the lane pads "should stay just how they always
+ * are"). Drum track: the right-hand pads (the sounds; the held one white,
+ * the rest dark). Melodic track: every pad, but only while K5 Voice is held —
+ * where each sound's note is, the highlighted one white. Otherwise null. */
 export function pbPadColors() {
     if (!PB || !PB.voices.length) return null;
-    const t = PB.track, out = new Array(32).fill(LED_OFF);
-    const colorOf = (v) => SOUND_COLORS[v % SOUND_COLORS.length];
-    const hot = PB.drum ? PB.held : (GS.knobTouched === 4 ? PB.voiceSel : -1);
-    for (let i = 0; i < 32; i++) {
-        if (PB.drum) {
+    const out = new Array(32).fill(null);
+    if (PB.drum) {
+        for (let i = 0; i < 32; i++) {
+            if (i % 8 < 4) continue;
             const snd = soundOfPad(i);
-            if (snd >= 0) { out[i] = snd === hot ? White : colorOf(snd); continue; }
-            const lane = laneOfPad(i);
-            if (lane < 0) continue;
-            const v = PB.assign.indexOf(lane);
-            if (v >= 0) out[i] = (hot >= 0 && PB.assign[hot] === lane) ? White : colorOf(v);
-            else if (GS.drumLaneHasNotes[t][lane]) out[i] = TRACK_DIM_COLORS[t];
-        } else {
-            const note = noteOfPad(i);
-            if (note < 0) continue;
-            const v = PB.assign.indexOf(note);
-            if (v >= 0) out[i] = (hot >= 0 && PB.assign[hot] === note) ? White : colorOf(v);
+            out[i] = snd < 0 ? LED_OFF : snd === PB.held ? White : SOUND_COLORS[snd % SOUND_COLORS.length];
         }
+        return out;
+    }
+    if (GS.knobTouched !== 4) return null;
+    for (let i = 0; i < 32; i++) {
+        const note = noteOfPad(i);
+        const v = note < 0 ? -1 : PB.assign.indexOf(note);
+        out[i] = v < 0 ? LED_OFF : (PB.assign[PB.voiceSel] === note ? White : SOUND_COLORS[v % SOUND_COLORS.length]);
     }
     return out;
 }

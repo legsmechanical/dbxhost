@@ -326,6 +326,9 @@ async function main() {
         S.trackClipPlaying[0] = true;
         S.activeDrumLane[0] = 3; S.drumLanePage[0] = 0;
         for (let l = 0; l < 32; l++) { S.drumLaneNote[0][l] = 36 + l; S.drumLaneHasNotes[0][l] = false; }
+        S.drumLaneHasNotes[0][0] = true;
+        S.activeTrack = 0; S.activeBank = 0; ticks(6);
+        const lanesBefore = [0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27].map(i => padLed[68 + i]);
         openOn(0);
         assert(pb().cats.join(',') === 'hat', 'drum categories: ' + pb().cats);
         jog(1); click(); ticks(3);
@@ -339,7 +342,9 @@ async function main() {
                'sound pads not lit in their colours: ' + [padLed[72], padLed[73], padLed[74]]);
         assert(padLed[68 + 7] === 0 && padLed[68 + 15] === 0 && padLed[68 + 31] === 0,
                'a right-hand pad with no sound is still lit (velocity zones?): ' + [padLed[75], padLed[83], padLed[99]]);
-        assert(padLed[68 + 3] === 7, 'the first sound\'s lane (3) is not in its colour: ' + padLed[71]);
+        const lanesNow = [0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27].map(i => padLed[68 + i]);
+        assert(JSON.stringify(lanesNow) === JSON.stringify(lanesBefore) && lanesBefore.some(c => c),
+               'the lane pads changed under the browser: ' + lanesBefore + ' -> ' + lanesNow);
         /* the engine reads no right-hand pad as velocity or Note Repeat while it is open */
         const pm = since(0, /^t0_padmap$/).pop();
         assert(pm && pm[2].split(' ')[32] === '1', 'the engine pad mute is not up: ' + (pm && pm[2]));

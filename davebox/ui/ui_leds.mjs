@@ -600,11 +600,15 @@ export function updateTrackLEDs() {
 
     if (paintProjectPickerLEDs()) return;
 
-    /* The phrase library, while it has sounds to place: the pads show where
-     * each goes — TRACK VIEW's painter, which is the one that runs under it (ui_phrase_browser pbPadColors). */
-    {
-        const _pb = pbPadColors();
-        if (_pb) { for (let i = 0; i < 32; i++) cachedSetLED(TRACK_PAD_BASE + i, _pb[i]); return; }
+    /* The phrase library (ui_phrase_browser pbPadColors): a colour for each pad
+     * it owns, null for the rest. Owning EVERY pad (a melodic track while K5
+     * Voice is held) it paints them all here; owning some (a drum track's
+     * right-hand sound pads) it overrides just those in the drum painter
+     * below, and the lane pads look as they always do (Josh, 2026-09-23). */
+    const _pbOv = pbPadColors();
+    if (_pbOv && _pbOv.every(c => c != null)) {
+        for (let i = 0; i < 32; i++) cachedSetLED(TRACK_PAD_BASE + i, _pbOv[i]);
+        return;
     }
 
     if (S.tapTempoOpen) {
@@ -770,6 +774,7 @@ export function updateTrackLEDs() {
                     const zone = row * 4 + (col - 4);
                     color = (zone === velZone) ? White : DarkGrey;
                 }
+                if (_pbOv && _pbOv[i] != null) color = _pbOv[i];
                 cachedSetLED(TRACK_PAD_BASE + i, color);
             }
         } else {
