@@ -46,7 +46,9 @@ const STUBS = {
         'export function getenv() { return undefined; }\n' +
         'export function urlGet() { return null; }\n',
     'os.mjs':
-        'export function readdir() { return [[], -1]; }\n' +
+        /* A preview that needs a listing (a module picker) sets
+         * globalThis.__auditReaddir(path) -> names; otherwise empty. */
+        'export function readdir(p) { const f = globalThis.__auditReaddir; return f ? [f(String(p)) || [], 0] : [[], -1]; }\n' +
         'export function stat() { return [null, -1]; }\n' +
         'export function remove() { return -1; }\n' +
         'export function mkdir() { return -1; }\n' +

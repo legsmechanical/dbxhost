@@ -161,7 +161,7 @@ function browse(comp) {
     return b;
 }
 const MODULE_NAMES = Object.values(CATALOGUE);
-/* The Move rows are in the HEADER font, which draws capitals. */
+/* The Move rows are in the movy SMALL font (the crumb bar's), which draws capitals. */
 const UP = '<MOVE UP', DOWN = '>MOVE DOWN';
 const ROWS = MODULE_NAMES.concat(MODULE_NAMES.map(n => '[' + n + ']'), [UP, DOWN, '[ none ]']);
 
@@ -199,12 +199,12 @@ step('⭐ FX 2\'s module list shows Move Up and Move Down directly under the loa
         throw new Error('the Move rows are not under the loaded module: ' + JSON.stringify(rows));
 });
 
-step('the Move rows are INDENTED under the module, in the header font; other modules are not bracketed', () => {
+step('the Move rows are INDENTED under the module, in the small font; other modules are not bracketed', () => {
     screen();
     const xOf = (t) => { const p = printed.find(q => q.s === t); return p ? p.x : null; };
     const mod = xOf('[Chorus]'), down = xOf(DOWN);
-    if (!printed.find(q => q.s === DOWN && q.hdr)) throw new Error('>Move down is not in the HEADER font');
-    if (printed.find(q => q.s === '[Chorus]' && q.hdr)) throw new Error('the module name moved to the header font too');
+    if (!printed.find(q => q.s === DOWN && q.hdr)) throw new Error('>Move down is not in a kit (small) font');
+    if (printed.find(q => q.s === '[Chorus]' && q.hdr)) throw new Error('the module name moved out of the list font too');
     if (mod == null || down == null) throw new Error('rows not printed: ' + JSON.stringify(printed.map(p => p.s)));
     if (!(down >= mod + 8)) throw new Error('Move down at x=' + down + ', module at x=' + mod + ' — not indented');
     const other = printed.map(p => p.s).filter(t => /^\[(Crush|Delay|Reverb)\]$/.test(t));

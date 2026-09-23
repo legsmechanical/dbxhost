@@ -3454,10 +3454,11 @@ export function drawKitList(rows, sel, opts) {
          * steers the centred `note` rows above. Gating on it would have left
          * every unflagged row in the small font and made the rule a coin-flip
          * per row. */
-        /* `labelFont: 'hdr'` puts ONE row's label in the header font — the FX
-         * browser's Move rows, set apart from the module names above them. */
-        const _hdrRow = row.labelFont === 'hdr';
-        const _hostLabel = o.hostLabels !== false && !_hdrRow;
+        /* `labelFont: 'small'` puts ONE row's label in the movy small font (the
+         * crumb bar's) — the FX browser's Move rows, set apart from the module
+         * names above them. It falls to the small-font branch below. */
+        const _smallRow = row.labelFont === 'small';
+        const _hostLabel = o.hostLabels !== false && !_smallRow;
         let label = String(row.label || '');
         if (!(_hostLabel && o.mixedCase !== false)) label = label.toUpperCase();
         /* ⭑ `qual`: a DISAMBIGUATOR that rides with the label in the movy small
@@ -3482,7 +3483,7 @@ export function drawKitList(rows, sel, opts) {
              * glyph in the same band, so the baselines agree with the values. */
             print(lx, y + 1, label, ink);
             labelEnd = lx + text_width(label);
-        } else if (row.hdr || _hdrRow) {
+        } else if (row.hdr && !_smallRow) {
             while (label.length > 1 && hdrWidth(label) > availW) label = label.slice(0, -1);
             hdrPrint(lx, y, label, ink);
             labelEnd = lx + hdrWidth(label);
