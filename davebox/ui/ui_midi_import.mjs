@@ -26,7 +26,7 @@
  */
 import * as os from 'os';
 import * as std from 'std';
-import { S as GS } from './ui_state.mjs';
+import { S as GS, noteUndoUnit } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { NUM_CLIPS, TPS_VALUES, SCENE_LETTERS, PAD_MODE_DRUM, PAD_MODE_CONDUCT } from './ui_constants.mjs';
 import { syncClipsTargeted } from './ui_dsp_bridge.mjs';
@@ -373,6 +373,9 @@ function commitTick() {
         }
         if (drum) GS.drumLaneLengthManuallySet[t] = true;
         else GS.clipLengthManuallySet[t][c] = true;
+        /* The engine took its undo snapshot in the import; Undo must reach it
+         * (and not a stale JS-side unit first). */
+        if (landed) noteUndoUnit();
         showActionPopup(landed ? 'IMPORTED' : 'IMPORT FAILED',
                         'CLIP ' + SCENE_LETTERS[c] + (landed ? ' · ' + MI.plan.notes.length + ' NOTES' : ''));
         miClose();

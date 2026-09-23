@@ -246,6 +246,7 @@ async function main() {
     });
 
     step('nothing cut, empty clip → the click imports at once: ONE write, from a tick', () => {
+        S.undoAvailable = false; S.undoJs = { kind: 'stale' };
         const before = writes.length;
         click(); ticks(8);
         const imp = writes.slice(before).filter(w => /_import$/.test(w[1]));
@@ -258,6 +259,7 @@ async function main() {
         assert(body.split(';').length === 32, 'notes sent: ' + body.split(';').length);
         assert(/^a 0 60 100 96$/.test(body.split(';')[0]), 'first note ' + body.split(';')[0]);
         assert(!mi() && snd.soundPickStateForTest().view === 0, 'the screen did not close back to the menu');
+        assert(S.undoAvailable && !S.undoJs, 'Undo does not reach the import (a stale JS unit would take the press)');
     });
 
     step('a current clip with notes is offered as a REPLACE, behind a confirm', () => {
