@@ -9,7 +9,7 @@
  * construction, block counter from 1) with the pack key; the pack's "r" is the
  * number of rounds (20 when absent — packs use 8, which is several times
  * cheaper in an interpreter). Only the category being browsed is
- * decoded. tools/phrasegen writes packs with the same code (packChunk).
+ * decoded. The phrase generator writes packs with the same code (packChunk).
  */
 
 /* ---- ChaCha20 ---- */
@@ -160,7 +160,7 @@ export function packCategory(pack, cat, keyHex) {
     return text.charCodeAt(0) === 123 ? text : null;       /* '{' — a wrong key reads as garbage */
 }
 
-/* The writer's half (tools/phrasegen): one category's library text → chunk. */
+/* The writer's half (the phrase generator's): one category's library text → chunk. */
 export function packChunk(text, keyHex, nonceHex, rounds) {
     for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) > 126) throw new Error('pack chunk is not ASCII at ' + i);
     const key = hexToBytes(keyHex), nonce = hexToBytes(nonceHex);

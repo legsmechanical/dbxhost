@@ -1,7 +1,7 @@
 /* ui_phrases.mjs — the phrase library's model: pure, no host calls.
  *
- * A library file is one category (`<cat>.json`), written by
- * tools/phrasegen (lib/phrase.mjs holds the encoding; this file only reads it):
+ * A library file is one category (`<cat>.json`), written by the phrase
+ * generator (which holds the encoding; this file only reads it):
  *
  *   {"v":1,"cat":"hat","phrases":[{id,name,g,bars,feel,mode,src,lic,n,pads?,layers?}]}
  *
