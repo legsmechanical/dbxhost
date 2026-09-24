@@ -64,7 +64,7 @@ fader moves and nothing happens, because the instrument is silenced underneath i
 
 ## Why out-of-band project mutation is not defended against
 
-Phase 0 of the state-co-location plan (`docs/plans/2026-08-12-…`, 2026-08-12) deleted the whole
+Phase 0 of the state-co-location plan (2026-08-12; the plan doc was removed with `docs/plans/` on 2026-09-24 — git history has it) deleted the whole
 apparatus that used to guess a project's ancestry: the inherit picker, the name→uuid index, the
 copy-suffix family lookup, `copy_source.txt`, and the host's `Song.abl`-file-size duplicate
 heuristic. All of it answered one question — *"a set appeared that we have never seen; whose
@@ -173,6 +173,7 @@ overview section; `docs/ARCHITECTURE.md` and `docs/MIDI_INJECTION.md` are likewi
 inbound references respectively. Acting on the earlier wording would have deleted three live
 documents (checked 2026-09-16).
 
-Also checked the same day and found alive: `docs/superpowers/` (not empty — a plan and a spec) and
-`docs/plans/` (**29** inbound references including two live tests, `test_param_pages_viz.sh` and
-`test_param_pages_plan.sh` — moving it breaks the suite).
+Also checked the same day: `docs/superpowers/` and `docs/plans/`, then believed load-bearing ("two live
+tests"). That was wrong — the two tests (`test_param_pages_viz.sh`, `test_param_pages_plan.sh`) mention
+`docs/plans/` only in comments, and the files they named were already gone. Both folders, almost all
+of it inherited upstream planning, were deleted on 2026-09-24.
