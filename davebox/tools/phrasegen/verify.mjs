@@ -27,7 +27,11 @@ const pearson = (x, y) => { const mx = mean(x), my = mean(y); let n = 0, dx = 0,
 
 function bars(p) {                         /* per-bar lists of { s, v, g, t, deg, oct, acc } */
     const notes = decodeNotes(p.cat, p.n), out = [];
-    for (let b = 0; b < p.bars; b++) out.push(notes.filter(n => Math.floor(n.t / BAR) === b).map(n => Object.assign({ s: rawStep(n.t), sn: stepOf(n.t) }, n)));
+    /* a swung phrase records the step each note was written on (sk) */
+    const sk = p.sk ? p.sk.split(' ').map(Number) : null;
+    const at = notes.map((n, i) => sk ? { b: Math.floor(sk[i] / 16), sn: sk[i] % 16 + 1 } : { b: Math.floor(n.t / BAR), sn: stepOf(n.t) });
+    for (let b = 0; b < p.bars; b++) out.push(notes.map((n, i) => [n, at[i]]).filter(([, a]) => a.b === b)
+        .map(([n, a]) => Object.assign({ s: sk ? a.sn : rawStep(n.t), sn: a.sn }, n)));
     return out;
 }
 function profile(list) {

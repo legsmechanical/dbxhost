@@ -21,6 +21,7 @@ import { TAG_BPM, isTag, publicTag } from './lib/genres.mjs';
 import { profile, loadStyle, genPhrase, genDrum, loadGate, tooClose, PART_OF } from './lib/stats_gen.mjs';
 import { STYLE_FILES, FLAVOUR_NAME, PER_STYLE, PER_BASICS, PER_FLAVOUR, flavourUsable, countFor, drumCountFor } from './lib/style_plan.mjs';
 import { writeSmf } from './lib/smf.mjs';
+import { feelProfile, styleOfName, applyFeel, isQuantised, feelRng } from './lib/feel.mjs';
 import { createHash } from 'node:crypto';
 import { packChunk } from '../../ui/ui_phrase_pack.mjs';
 import { renderWav } from './lib/synth.mjs';
@@ -78,6 +79,18 @@ function admit(cat, c) {
     return Object.assign({}, c, { notes: tl.notes, bars });
 }
 
+/* The style's feel over a phrase written on the straight grid (lib/feel.mjs):
+ * swing, each part's push or drag, ghost notes. A phrase that carries its own
+ * timing keeps it. Its own random stream, so the phrase itself is unchanged.
+ * → { notes, feel, grv, sk } — sk: each note's written step, in stored order */
+function grooved(cat, notes, bars, styleName, id) {
+    if (!isQuantised(notes)) return null;
+    const [file, fk] = styleOfName(styleName || '');
+    const r = applyFeel(cat, notes, bars, feelProfile(file, fk), feelRng(id + '.feel'));
+    const ord = r.notes.slice().sort((a, b) => a.t - b.t || (a.deg || 0) - (b.deg || 0));
+    return { notes: r.notes, feel: r.feel, grv: r.grv, sk: ord.map(n => n._s).join(' ') };
+}
+
 async function loadRules(cat) {
     const f = join(HERE, 'rules', cat + '.mjs');
     if (!existsSync(f)) throw new Error('no rules for ' + cat);
@@ -123,9 +136,11 @@ async function gen(cats) {
                 if (seen.has(fp)) continue;
                 seen.add(fp);
                 made++;
-                out.push({ id, name: g.name(made), cat, g: g.tag || '', bars: ad.bars, feel: g.feel || 'straight',
+                const gv = (g.feel || 'straight') === 'straight' ? grooved(cat, notes, ad.bars, g.tag, id) : null;
+                out.push({ id, name: g.name(made), cat, g: g.tag || '', bars: ad.bars, feel: gv ? gv.feel : g.feel || 'straight',
                            mode: isDrumCat(cat) ? '' : (g.mode || 'min'), src: 'gen:' + id, lic: 'dAVEBOx',
-                           n: encodeNotes(cat, notes) });
+                           ...(gv ? { grv: gv.grv, sk: gv.sk } : {}),
+                           n: encodeNotes(cat, gv ? gv.notes : notes) });
             }
             if (made < g.count) console.warn(`  ${cat}/${g.tag || 'basic'} ${g.family || ''}: only ${made} of ${g.count} distinct candidates`);
         }
@@ -149,9 +164,13 @@ async function gen(cats) {
                 /* filed under the public tag, named for its own style */
                 const tag = isTag(publicTag(p.g)) ? publicTag(p.g) : '';
                 const style = tag ? p.g : '';
-                out.push({ id: cat + '.' + (style || 'basic').toLowerCase().replace(/\s+/g, '') + '.' + fnv8(p.bars + '|' + (p.pads || []).join(',') + '|' + encodeNotes(cat, p.notes)),
-                           name: '', style, desc: p.desc || '', cat, g: tag, bars: p.bars, feel: p.feel || 'straight', mode: '',
-                           src: p.src, lic: p.lic, attrib: p.attrib, pads: p.pads || undefined, n: encodeNotes(cat, p.notes) });
+                const id = cat + '.' + (style || 'basic').toLowerCase().replace(/\s+/g, '') + '.' + fnv8(p.bars + '|' + (p.pads || []).join(',') + '|' + encodeNotes(cat, p.notes));
+                /* open loops typed in on a grid are given their style's feel; a
+                 * recording, and the user's own library, play as they were made */
+                const gv = String(p.src).startsWith('lib:lmd:') && (p.feel || 'straight') === 'straight' ? grooved(cat, p.notes, p.bars, style, id) : null;
+                out.push({ id, name: '', style, desc: p.desc || '', cat, g: tag, bars: p.bars, feel: gv ? gv.feel : p.feel || 'straight', mode: '',
+                           src: p.src, lic: p.lic, attrib: p.attrib, pads: p.pads || undefined,
+                           ...(gv ? { grv: gv.grv, sk: gv.sk } : {}), n: encodeNotes(cat, gv ? gv.notes : p.notes) });
             }
         }
         /* generated from the measured statistics of every style and named style */
@@ -190,10 +209,11 @@ async function gen(cats) {
                         if (seen.has(fp)) continue;
                         seen.add(fp);
                         made++;
+                        const gv = grooved(cat, ad.notes, ad.bars, style, id);
                         out.push({ id, name: '', style: style && isTag(publicTag(style)) ? style : '', desc: '', cat,
-                                   g: style ? publicTag(style) : '', bars: ad.bars, feel: 'straight', mode: drum ? '' : r.mode,
-                                   ...(r.pads ? { pads: r.pads } : {}),
-                                   src: 'gen:' + id, lic: 'dAVEBOx', n: encodeNotes(cat, ad.notes) });
+                                   g: style ? publicTag(style) : '', bars: ad.bars, feel: gv ? gv.feel : 'straight', mode: drum ? '' : r.mode,
+                                   ...(r.pads ? { pads: r.pads } : {}), ...(gv ? { grv: gv.grv, sk: gv.sk } : {}),
+                                   src: 'gen:' + id, lic: 'dAVEBOx', n: encodeNotes(cat, gv ? gv.notes : ad.notes) });
                     }
                 }
             }

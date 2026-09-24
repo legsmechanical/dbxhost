@@ -65,12 +65,15 @@ for (const cat of cats) {
         const pcs = new Array(12).fill(0);
         for (const p of list) {
             const ns = decodeNotes(cat, p.n);
-            const on = [...new Set(ns.map(n => n.t))];
+            /* the step each note was written on: a swung phrase records it (sk),
+             * since rounding a swung onset can land on the next step */
+            const gsteps = p.sk ? p.sk.split(' ').map(Number) : ns.map(n => Math.round(n.t / (BAR / 16)));
+            const on = [...new Set(gsteps)];
             onsetsPerBar.push(on.length / p.bars);
             /* each distinct bar rhythm once: a repeated bar is not new evidence */
             const barsSeen = new Set();
             for (let b = 0; b < p.bars; b++) {
-                const r = on.filter(t => t >= b * BAR && t < (b + 1) * BAR).map(t => Math.round((t % BAR) / (BAR / 16)) % 16);
+                const r = on.filter(g => g >= b * 16 && g < (b + 1) * 16).map(g => g % 16).sort((x, y) => x - y);
                 const k = r.join(',');
                 if (barsSeen.has(k)) continue;
                 barsSeen.add(k);
