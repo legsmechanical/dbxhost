@@ -1855,14 +1855,16 @@ On a drum track each note lands on the pad that plays its pitch in that clip.
 
 ## 15.5 Phrases
 
-A library of short starter phrases (one or two bars) to drop into a clip or a
+A library of short starter phrases (one to four bars) to drop into a clip or a
 drum lane. **Touch K6 on the CLIP bank (or the DRUM LANE bank) and click the jog.**
 
-- **K1 Type** — the instrument: bass, chords, leads, pads… or kick, snare, hats,
-  cymbals, toms, percussion. A drum track offers the drum types; a melodic track
+- **K1 Type** — the instrument: bass, chords, leads, pads… or BEATS (whole kits
+  of up to eight sounds), kick, snare, hats, cymbals, toms, percussion. A drum
+  track offers the drum types; a melodic track
   offers everything (a drum phrase then plays notes — see below).
 - **K2 Style** — jump to a genre's phrases, or BASIC (general-purpose phrases
-  with no genre). It shows the style of the phrase you're on.
+  with no genre). It shows the style of the phrase you're on — its own, where
+  that is narrower than the genre (GOTH, while you're in NEW WAVE).
 - **K3 Time** — play the phrase at /8, /4, /2, x1, x2, x4 or x8 of its length.
 - **K4 Octave** (melodic tracks) — move the phrase up or down to three octaves;
   you hear it and it loads that way.
@@ -1890,9 +1892,12 @@ clap…) let you choose where each sound goes:
   note; turn to a sound and tap a pad for its note (again: off).
 
 Nothing moves on to the next sound by itself, and every change is heard at once.
-By default a sound goes only on the lane you opened on or on an empty lane — never
-on a lane that has notes — so nothing of yours is replaced unless you put a sound
-there. Each lane that has a sound lights in that sound's colour, matching its
+Where the sounds go at first is the **Phrase Map** setting (dAVEBOx menu): **Off**
+puts a sound only on the lane you opened on or on an empty lane — never on a lane
+that has notes — so nothing of yours is replaced unless you put a sound there;
+**GM** puts each sound on the lane playing its General MIDI note (kick on 36, snare
+on 38…); **Move** follows the layout of Move's own drum kits. Beats follow GM when
+it is Off. Each lane that has a sound lights in that sound's colour, matching its
 pad on the right (a lane with several cycles through them); the other lanes look
 as usual.
 
@@ -1900,14 +1905,20 @@ Loading a melodic phrase replaces the clip and clears its automation, like
 [Import MIDI](#154-import-a-midi-file); a drum phrase changes only the lanes it
 uses. The screen remembers where you were on each track.
 
-dAVEBOx comes with a built-in library of about 6,900 phrases: drums (kick, snare, hats,
-cymbals, toms, percussion — many played by real drummers) and melodic parts (bass, chords,
-arps, leads, pads, synth FX, sequences, keys, guitar), across BASIC plus these styles:
-ACID, AMBIENT, BREAKS, COUNTRY, DARKSYN, DISCO, DNB, ELECTRO, FUNK, GARAGE, HARDCORE, HIPHOP,
-HOUSE, INDIE, ITALO, JAZZ, LATIN, METAL, NEW WAVE, POP, PUNK, REGGAE, RNB, ROCK, TECHNO and
-TRANCE. A phrase's name says its own style when that is narrower than the one it is filed
-under — GOTH, DARKWAVE and SYNTHWAVE phrases are in NEW WAVE, EBM in DARKSYN, SYNTHPOP in
-POP, DUB in REGGAE, and so on.
+dAVEBOx comes with a built-in library of about 7,800 phrases: about 900 whole-kit beats,
+single drums (kick, snare, hats, cymbals, toms, percussion — many played by real drummers)
+and melodic parts (bass, chords, arps, leads, pads, synth FX, sequences, keys, guitar),
+across BASIC plus these styles: ACID, AMBIENT, BREAKS, COUNTRY, DARKSYN, DISCO, DNB,
+ELECTRO, FUNK, GARAGE, HARDCORE, HIPHOP, HOUSE, INDIE, ITALO, JAZZ, METAL, NEW WAVE, POP,
+PUNK, REGGAE, RNB, ROCK, TECHNO, TRANCE and WORLD. Narrower styles are filed under a broader
+one — GOTH, DARKWAVE and SYNTHWAVE in NEW WAVE, EBM in DARKSYN, LATIN and AFROBEAT in WORLD,
+DUB in REGGAE, and so on. Phrases play with their style's groove: its swing, the pushes and
+drags of each part, ghost notes, and in trap the fast hat rolls.
+
+A phrase's name says what it plays: the pattern (4 FLOOR, BACKBEAT, 8THS OPEN, TOM LINE),
+the chords as scale degrees (1-6-3-7 MIN), or the line's shape (OCTAVE 8THS, UP 16THS);
+FILL when it ends in a fill, ROLL for a hat roll, SWING or SHUFFLE when it swings, LIVE
+when a drummer played it.
 
 Your own phrase files go in `davebox-phrases/`
 in your user data folder (one `<type>.json` per instrument type); they are listed after
@@ -1937,6 +1948,7 @@ see [Track settings](#164-track-settings) below.
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Metro | When the metronome sounds — never, during the count-in, while playing, or always | Off, Cnt-In, Play, Always | Off |
 | Metro Vol | Metronome level | 0–150 % | 100 % |
+| Phrase Map | Where a drum phrase's sounds go at first — see [§15.5](#155-phrases) | Off, GM, Move | Off |
 | Beat Markers | Dim markers on the step buttons at 1, 5, 9, 13 | On, Off | On |
 | Export to Ableton | Write a Live bundle of the set — see [§14.3](#153-export-to-live) | action | — |
 | Save state / Load state | Save or restore a named snapshot — see [§15.3](#163-snapshots) | action | — |

@@ -23,8 +23,11 @@ the section into a versioned heading at release time.
   every phrase of that instrument. Each one is heard
   as you choose it — in time with the song, and in your key — and one click
   loads it (one Undo). Drum phrases with several instruments go on the pads you
-  tap, on a drum track or as notes on a melodic one. About 6,900 phrases ship,
-  drums and melodic parts across 26 styles plus BASIC.
+  tap, on a drum track or as notes on a melodic one. About 7,800 phrases ship —
+  whole-kit beats, single drums and melodic parts across 26 styles plus BASIC —
+  each with its style's groove and a name that says what it plays. The
+  Phrase Map setting chooses where a drum phrase's sounds go at first: Off,
+  General MIDI or Move's kit layout.
 - **Import MIDI.** Sound menu → Import MIDI fills a clip from a MIDI file
   anywhere in your user data folder: pick the file, pick a part (with a
   preview), then set the start bar, bars, grid and destination clip on K1–K4
