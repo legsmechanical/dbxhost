@@ -3,8 +3,8 @@
  *
  *   node tools/phrasegen/phrasegen.mjs gen    <cat…>   candidates → cache/candidates/<cat>.json
  *   node tools/phrasegen/phrasegen.mjs render <cat…>   .mid + .wav per candidate → out/<cat>/
- *   node tools/phrasegen/phrasegen.mjs build           candidates ∩ curation.json → phrases/
- *   node tools/phrasegen/phrasegen.mjs check           build in memory, diff against phrases/ (CI)
+ *   node tools/phrasegen/phrasegen.mjs pack            candidates − curation.json drops → phrases/*.pack
+ *   node tools/phrasegen/phrasegen.mjs check           pack in memory, compare with phrases/
  *
  * Candidates come from two places: generator RULES (rules/<cat>.mjs, one
  * function per genre, written from research/<genre>.md) and INGESTED open
@@ -19,6 +19,8 @@ import { fileURLToPath } from 'node:url';
 import { encodeNotes, decodeNotes, fingerprint, isDrumCat, pitchInC, BAR, trimLeading, drumSounds, collapseRepeats, coarseKey } from './lib/phrase.mjs';
 import { TAG_BPM, isTag } from './lib/genres.mjs';
 import { writeSmf } from './lib/smf.mjs';
+import { createHash } from 'node:crypto';
+import { packChunk } from '../../ui/ui_phrase_pack.mjs';
 import { renderWav } from './lib/synth.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -29,6 +31,7 @@ const CURATION = join(HERE, 'curation.json');
 /* An optional private source outside the repo: <dir>/tools/phrasegen-source.mjs
  * exporting ingest(cat, opts). Absent = skipped, with a warning. */
 const PRIVATE_DIR = process.env.PHRASEGEN_PRIVATE_DIR || '';
+const KEY_FILE = process.env.PHRASEGEN_KEY_FILE || (PRIVATE_DIR ? join(PRIVATE_DIR, 'keys', 'phrases.key') : '');
 export const MAX_BARS = 4;
 export const MAX_DRUM_SOUNDS = 3;
 export const MULTI_SOUND_CATS = ['hat', 'perc'];
@@ -130,7 +133,7 @@ async function gen(cats) {
                 if (seen.has(fp)) continue;
                 seen.add(fp);
                 const tag = isTag(p.g) ? p.g : '';
-                out.push({ id: cat + '.' + (tag || 'basic').toLowerCase().replace(/\s+/g, '') + '.' + fnv8(encodeNotes(cat, p.notes)),
+                out.push({ id: cat + '.' + (tag || 'basic').toLowerCase().replace(/\s+/g, '') + '.' + fnv8(p.bars + '|' + (p.pads || []).join(',') + '|' + encodeNotes(cat, p.notes)),
                            name: '', desc: p.desc || '', cat, g: tag, bars: p.bars, feel: p.feel || 'straight', mode: '',
                            src: p.src, lic: p.lic, attrib: p.attrib, pads: p.pads || undefined, n: encodeNotes(cat, p.notes) });
             }
@@ -161,42 +164,63 @@ function render(cats) {
     }
 }
 
-function build(write) {
+/* ---- packs ----
+ * The library ships as two packs (ui/ui_phrase_pack.mjs): phrases.pack, whose
+ * chunks are encrypted with the key in KEY_FILE, and phrases-open.pack, plain.
+ * A phrase goes to the open pack when its licence is in OPEN_LICENCES. Only the
+ * fields the browser reads ship. Nonces derive from each chunk's text, so the
+ * same candidates always build the same bytes. */
+const OPEN_LICENCES = ['CC-BY-4.0', 'CC0-1.0', 'PD'];
+const SHIP_FIELDS = ['id', 'name', 'g', 'bars', 'feel', 'mode', 'pads', 'layers', 'n'];
+function packs() {
     const cur = existsSync(CURATION) ? JSON.parse(readFileSync(CURATION, 'utf8')) : {};
-    const files = existsSync(join(CACHE, 'candidates')) ? readdirSync(join(CACHE, 'candidates')) : [];
-    let bad = 0;
-    const result = {};
+    const drop = new Set(cur.drop || []);
+    const files = existsSync(join(CACHE, 'candidates')) ? readdirSync(join(CACHE, 'candidates')).sort() : [];
+    const key = KEY_FILE && existsSync(KEY_FILE) ? readFileSync(KEY_FILE, 'utf8').trim() : '';
+    if (!key) throw new Error('no pack key (PHRASEGEN_KEY_FILE, or PHRASEGEN_PRIVATE_DIR/keys/phrases.key)');
+    const enc = {}, open = {};
+    let bad = 0, n = 0;
     for (const f of files) {
         const cat = f.replace(/\.json$/, '');
-        const list = JSON.parse(readFileSync(join(CACHE, 'candidates', f), 'utf8'));
-        const keep = [];
+        const list = JSON.parse(readFileSync(join(CACHE, 'candidates', f), 'utf8')).filter(p => !drop.has(p.id));
+        const split = { enc: [], open: [] };
         for (const p of list) {
-            const c = cur[p.id];
-            if (!c || c.keep !== true) continue;
             if (!LICENCE_ALLOW.includes(p.lic)) { console.error(`REFUSED ${p.id}: licence ${p.lic}`); bad++; continue; }
-            /* Nothing longer than 4 bars ships (Josh, 2026-09-23). */
-            if (!(p.bars >= 1 && p.bars <= MAX_BARS)) { console.error(`REFUSED ${p.id}: ${p.bars} bars (max ${MAX_BARS})`); bad++; continue; }
-            /* Drum phrases: at most 3 sounds, and only hats and percussion may
-             * have more than one (Josh, 2026-09-23). */
-            if (isDrumCat(cat)) {
-                const sounds = new Set(decodeNotes(cat, p.n).map(x => x.p ?? -1)).size;
-                const cap = MULTI_SOUND_CATS.includes(cat) ? MAX_DRUM_SOUNDS : 1;
-                if (sounds > cap) { console.error(`REFUSED ${p.id}: ${sounds} sounds (max ${cap} for ${cat})`); bad++; continue; }
-            }
-            keep.push(Object.assign({}, p, c.name ? { name: c.name } : {}));
+            if (!(p.bars >= 1 && p.bars <= MAX_BARS)) { console.error(`REFUSED ${p.id}: ${p.bars} bars`); bad++; continue; }
+            if (!(p.name && p.name.length <= 14 && p.name === p.name.toUpperCase())) { console.error(`REFUSED ${p.id}: name "${p.name}"`); bad++; continue; }
+            const ship = {};
+            for (const k of SHIP_FIELDS) if (p[k] != null && p[k] !== '') ship[k] = p[k];
+            if (!ship.g) ship.g = '';
+            (OPEN_LICENCES.includes(p.lic) ? split.open : split.enc).push(ship);
+            n++;
         }
-        if (!keep.length) continue;
-        result[cat] = JSON.stringify({ v: 1, cat, phrases: keep.map(({ cat: _c, ...rest }) => rest) }) + '\n';
+        if (split.open.length) open[cat] = JSON.stringify({ v: 1, cat, phrases: split.open });
+        if (split.enc.length) {
+            const text = JSON.stringify({ v: 1, cat, phrases: split.enc });
+            const nonce = createHash('sha256').update(cat + '\n' + text).digest('hex').slice(0, 24);
+            enc[cat] = packChunk(text, key, nonce);
+        }
     }
-    if (write) {
-        mkdirSync(LIB_DIR, { recursive: true });
-        for (const [cat, body] of Object.entries(result)) writeFileSync(join(LIB_DIR, cat + '.json'), body);
-    }
-    return { result, bad };
+    return { bad, n, enc: JSON.stringify({ v: 1, enc: true, chunks: enc }) + '\n',
+             open: JSON.stringify({ v: 1, enc: false, chunks: open }) + '\n' };
 }
 
 const [cmd, ...args] = process.argv.slice(2);
 if (cmd === 'gen') await gen(args);
 else if (cmd === 'render') render(args);
-else if (cmd === 'build') { const r = build(true); console.log(Object.keys(r.result).map(c => c).join(', ') || 'nothing kept'); process.exit(r.bad ? 1 : 0); }
-else { console.error('usage: phrasegen gen|render|build <cat…>'); process.exit(2); }
+else if (cmd === 'pack') {
+    const r = packs();
+    mkdirSync(LIB_DIR, { recursive: true });
+    writeFileSync(join(LIB_DIR, 'phrases.pack'), r.enc);
+    writeFileSync(join(LIB_DIR, 'phrases-open.pack'), r.open);
+    console.log(`packed ${r.n} phrases → ${LIB_DIR}`);
+    process.exit(r.bad ? 1 : 0);
+}
+else if (cmd === 'check') {
+    const r = packs();
+    const same = (f, t) => existsSync(join(LIB_DIR, f)) && readFileSync(join(LIB_DIR, f), 'utf8') === t;
+    const ok = same('phrases.pack', r.enc) && same('phrases-open.pack', r.open);
+    console.log(ok ? 'phrases: up to date' : 'phrases: OUT OF DATE — run phrasegen pack');
+    process.exit(ok && !r.bad ? 0 : 1);
+}
+else { console.error('usage: phrasegen gen|render|pack|check <cat…>'); process.exit(2); }

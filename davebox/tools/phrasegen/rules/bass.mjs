@@ -145,7 +145,7 @@ export default {
         fam('HOUSE', 'GROOVE', 5, 1, 'min', (rng) => houseGroove(rng, 1), (i) => 'HOUSE ' + i),
         fam('HOUSE', 'GROOVE2', 3, 2, 'min', (rng) => houseGroove(rng, 2), (i) => 'HOUSE TURN ' + i),
         fam('HOUSE', 'OFF', 2, 1, 'min', (rng) => houseOffbeat(rng, false), (i) => 'HOUSE OFF ' + i),
-        fam('HOUSE', 'OFFOCT', 2, 1, 'min', (rng) => houseOffbeat(rng, true), (i) => 'HOUSE OFF OCT ' + i),
+        fam('HOUSE', 'OFFOCT', 2, 1, 'min', (rng) => houseOffbeat(rng, true), (i) => 'HOUSE OCT ' + i),
         fam('HOUSE', 'ACID', 3, 1, 'min', houseAcid, (i) => 'HOUSE ACID ' + i),
         fam('FUNK', 'DORIAN', 4, 1, 'min', (rng) => funkLine(rng, 1, 'min'), (i) => 'FUNK ' + i),
         fam('FUNK', 'DOM7', 3, 1, 'maj', (rng) => funkLine(rng, 1, 'maj'), (i) => 'FUNK DOM ' + i),

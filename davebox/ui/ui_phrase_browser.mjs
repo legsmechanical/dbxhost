@@ -46,6 +46,7 @@ import { White, VividYellow, Cyan, NeonPink, BrightOrange, NeonGreen, ElectricVi
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { syncClipsTargeted } from './ui_dsp_bridge.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
+import { parsePack, packCats, packCategory } from './ui_phrase_pack.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { automationClearClipQueued } from './ui_automation.mjs';
 import {
@@ -60,12 +61,15 @@ import {
     rollOf, decodePhrase, PB_MAX_VOICES,
 } from './ui_phrases.mjs';
 
-/* Our module directory (see ui_export.mjs): the shipped library is
- * <module>/phrases/<cat>.json. The user's own files sit in one folder of the
- * user data, merged after the shipped set. */
+/* Our module directory (see ui_export.mjs): the shipped library is two packs
+ * in <module>/phrases (ui_phrase_pack.mjs) — phrases-open.pack, and
+ * phrases.pack, which needs the build's key. The user's own files
+ * (<cat>.json) sit in one folder of the user data, merged after them. */
 const MODULE_ID = (typeof DAVEBOX_MODULE_ID === 'string') ? DAVEBOX_MODULE_ID : 'davebox';
 export const PB_SHIPPED_DIR = DAVEBOX_HOST_DIR + '/modules/tools/' + MODULE_ID + '/phrases';
 export const PB_USER_DIR = '/data/UserData/davebox-phrases';
+const PACK_FILES = ['phrases-open.pack', 'phrases.pack'];
+const PACK_KEY = (typeof DAVEBOX_PHRASE_KEY === 'string') ? DAVEBOX_PHRASE_KEY : '';
 export const PB_KNOB = 5;                 /* K6 on the CLIP / DRUM LANE bank */
 
 /* Detents per step — the editor's PICK / DELIBERATE rates. */
@@ -81,21 +85,29 @@ let loadSync = null;                      /* after a load: refresh the clip view
 
 export function pbActive() { return !!PB; }
 export function pbStateForTest() { return PB; }
-export function pbResetForTest() { PB = null; LIB.clear(); loadSync = null; for (let i = 0; i < 8; i++) pbMem[i] = null; }
+export function pbResetForTest() { PB = null; LIB.clear(); PACKS = null; loadSync = null; for (let i = 0; i < 8; i++) pbMem[i] = null; }
 
 /* ---- the library ---- */
 
 function readText(path) {
     try { return host_file_exists(path) ? (host_read_file(path) || '') : ''; } catch (e) { return ''; }
 }
+/* The shipped packs, read once (they do not change while the module runs). */
+let PACKS = null;
+function packs() {
+    if (!PACKS) PACKS = PACK_FILES.map(f => parsePack(readText(PB_SHIPPED_DIR + '/' + f)));
+    return PACKS;
+}
+function packHas(pack, cat) { return !!pack && packCats(pack).includes(cat) && (!pack.enc || !!PACK_KEY); }
 function catExists(cat) {
-    try { return host_file_exists(PB_SHIPPED_DIR + '/' + cat + '.json') || host_file_exists(PB_USER_DIR + '/' + cat + '.json'); }
-    catch (e) { return false; }
+    if (packs().some(pk => packHas(pk, cat))) return true;
+    try { return host_file_exists(PB_USER_DIR + '/' + cat + '.json'); } catch (e) { return false; }
 }
 function libraryOf(cat) {
     if (!LIB.has(cat)) {
-        const docs = [PB_SHIPPED_DIR, PB_USER_DIR].map(d => {
-            const txt = readText(d + '/' + cat + '.json');
+        const texts = packs().map(pk => packHas(pk, cat) ? packCategory(pk, cat, PACK_KEY) : null)
+            .concat([readText(PB_USER_DIR + '/' + cat + '.json')]);
+        const docs = texts.map(txt => {
             const doc = txt ? parseLibrary(txt) : null;
             return doc && doc.cat === cat ? doc : null;
         });

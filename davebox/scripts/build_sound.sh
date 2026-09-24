@@ -66,6 +66,13 @@ if [ -z "$SKIP_BUNDLE" ]; then
         echo "Installing build dependencies..."
         npm install --silent
     fi
+    # The phrase library's pack key: a private file, never in the repo. Without
+    # it the build still works and ships only the plain pack's phrases.
+    PHRASE_KEY_FILE="${PHRASE_KEY_FILE:-${HOME}/.davebox/phrase.key}"
+    PHRASE_KEY=""
+    if [ -f "$PHRASE_KEY_FILE" ]; then PHRASE_KEY="$(tr -d '[:space:]' < "$PHRASE_KEY_FILE")"; fi
+    case "$PHRASE_KEY" in (*[!0-9a-f]*) echo "phrase key: not 64 hex characters — ignored" >&2; PHRASE_KEY="";; esac
+    [ -n "$PHRASE_KEY" ] && echo "Phrase library: key found" || echo "Phrase library: no key — encrypted pack will not load"
     echo "Bundling UI (state prefix: ${STATE_PREFIX})..."
     node_modules/.bin/esbuild ui/ui.js \
         --bundle \
@@ -74,6 +81,7 @@ if [ -z "$SKIP_BUNDLE" ]; then
         --external:std \
         --define:SEQ8_STATE_PREFIX="\"${STATE_PREFIX}\"" \
         --define:DAVEBOX_MODULE_ID="\"${MODULE_ID}\"" \
+        --define:DAVEBOX_PHRASE_KEY="\"${PHRASE_KEY}\"" \
         --format=esm \
         --outfile="dist/${MODULE_ID}/ui.js" \
         --log-level=warning
@@ -105,6 +113,9 @@ echo "Compiling DSP..."
     -lm
 
 cp sound/module.json "dist/${MODULE_ID}/module.json"
+# The phrase library: the packs and their credits (phrasegen pack writes them).
+mkdir -p "dist/${MODULE_ID}/phrases"
+cp phrases/phrases.pack phrases/phrases-open.pack phrases/CREDITS.md "dist/${MODULE_ID}/phrases/"
 cp web_ui.html       "dist/${MODULE_ID}/"
 # The remote UI's classic <script src> halves (web_ui_core.js, web_ui_seq.js and
 # any future sibling). Globbed so a new one ships without touching this line —

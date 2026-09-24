@@ -60,6 +60,8 @@ const LIBS = {
     ] },
 };
 let files = {};
+/* the build's pack key (esbuild --define DAVEBOX_PHRASE_KEY) */
+globalThis.DAVEBOX_PHRASE_KEY = 'c3'.repeat(32);
 globalThis.host_file_exists = (p) => Object.prototype.hasOwnProperty.call(files, p);
 globalThis.host_read_file = (p) => files[p] || '';
 
@@ -79,7 +81,12 @@ async function main() {
     const tickmod = await import('../../ui/ui_tick.mjs');
     const render = await import('../../ui/ui_render.mjs');
     const { MoveShift } = await import('/data/UserData/schwung/shared/constants.mjs');
-    for (const [cat, doc] of Object.entries(LIBS)) files[PB.PB_SHIPPED_DIR + '/' + cat + '.json'] = JSON.stringify(doc);
+    /* The shipped library as the module has it: the bass in the open pack, the
+     * hats in the encrypted pack (the key comes from the build's define). */
+    const { packChunk } = await import('../../ui/ui_phrase_pack.mjs');
+    files[PB.PB_SHIPPED_DIR + '/phrases-open.pack'] = JSON.stringify({ v: 1, enc: false, chunks: { bass: JSON.stringify(LIBS.bass) } });
+    files[PB.PB_SHIPPED_DIR + '/phrases.pack'] = JSON.stringify({ v: 1, enc: true,
+        chunks: { hat: packChunk(JSON.stringify(LIBS.hat), globalThis.DAVEBOX_PHRASE_KEY, '0102030405060708090a0b0c') } });
 
     function ticks(n) {
         for (let i = 0; i < n; i++) {
