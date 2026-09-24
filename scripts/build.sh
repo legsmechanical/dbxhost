@@ -841,6 +841,37 @@ rm -rf \
     ./build/modules/store \
     2>/dev/null || true
 
+# ...and everything this build STOPPED producing on 2026-09-24 (host cleanup).
+# build/ is incremental and the SA build cache republishes it, so without this
+# a removed artifact keeps shipping from an old build forever — the 32 MB
+# filebrowser included. Keep this list until every build/ and cache predating
+# the cleanup is gone.
+rm -rf \
+    ./build/modules/audio_fx \
+    ./build/modules/midi_fx \
+    ./build/modules/sound_generators \
+    ./build/modules/overtake \
+    ./build/modules/tools/wav-player \
+    ./build/modules/tools/file-browser \
+    ./build/modules/tools/song-mode \
+    ./build/bin/filebrowser \
+    ./build/licenses/FILEBROWSER_LICENSE.txt \
+    ./build/bin/display_ctl \
+    ./build/bin/jack_midi_connect \
+    ./build/lib/jack \
+    ./build/shadow/shadow_poc \
+    ./build/host/fonts \
+    ./build/host/logo-circle.png \
+    ./build/host/logo-splash.png \
+    ./build/host/logo-text.png \
+    ./build/host/schwung-print.png \
+    ./build/patches \
+    ./build/presets \
+    ./build/scripts/post-update.sh \
+    ./build/start.sh \
+    ./build/stop.sh \
+    2>/dev/null || true
+
 # Make shell scripts in modules executable
 find ./build/modules -type f -name "*.sh" -exec chmod +x {} \;
 
