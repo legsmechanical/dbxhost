@@ -58,17 +58,45 @@ int main(void) {
     HX_ASSERT(e && e->count == 2, "setup: two raw points, first later than the window start");
     HX_ASSERT(!(e->flags & PA_FLAG_WRAP_RESET), "setup: Wrap stays Carry (the default)");
 
-    pa_point_t pts[PA_ENTRY_POINTS + 1];
-    int n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 1);
+    pa_point_t pts[PA_ENTRY_POINTS + 2];
+    int n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 2);
 
-    HX_ASSERT(n == 3, "a lead point is prepended: 3 breakpoints, not the 2 raw ones");
+    HX_ASSERT(n == 4, "a lead point is prepended and a trail point appended: 4 breakpoints");
     HX_ASSERT(pts[0].tick == 0 && pts[0].val == 200,
               "lead point at the window start carries the LAST point's value (200) — "
               "Wrap: Carry, exactly what dAVEBOx plays there; the old export left Live "
               "holding the FIRST point's value (100) for ticks 0..96, which is wrong");
     HX_ASSERT(pts[1].tick == 96 && pts[1].val == 100, "then the recorded points, unchanged");
     HX_ASSERT(pts[2].tick == 240 && pts[2].val == 200, "then the recorded points, unchanged");
+    HX_ASSERT(pts[3].tick == 384 && pts[3].val == 200,
+              "Smooth off: the trail point at the window end holds the last value — what "
+              "dAVEBOx plays there, and what Live would hold anyway");
     OK("⭐ 6b2 follow-up: the export's first breakpoint matches what the lane actually plays");
+
+    /* ⭐ THE WRAP RAMP (Josh, 2026-09-24: "Wrap doesn't ramp from its last
+     * automation point to the first one"). Smooth on: after the last point
+     * (240 = 200) the lane ramps toward the NEXT pass's first point (96+384 =
+     * 480, value 100) straight across the loop end. At the window end (384)
+     * that is 200 + (100-200) * (384-240)/(480-240) = 140, and the lead point
+     * at 0 carries the same 140 (continuing to 100 at 96). Without the trail
+     * point Live held 200 flat from 240 to 384 and then JUMPED to 140. */
+    hx_set_param(h, "t0_pa_smooth", "0 1:fx1:mix 1");
+    HX_ASSERT(e->flags & PA_FLAG_SMOOTH, "setup: Smooth on");
+    n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 2);
+    HX_ASSERT(n == 4, "Smooth + Carry: lead + 2 raw + trail");
+    HX_ASSERT(pts[0].tick == 0 && pts[0].val == 140, "lead = the ramp's value at the loop start (140)");
+    HX_ASSERT(pts[3].tick == 384 && pts[3].val == 140,
+              "trail = the SAME value at the loop end, so Live draws one continuous ramp "
+              "last point -> loop end = loop start -> first point");
+    OK("⭐ Smooth + Carry: the export carries the wrap ramp across the loop end");
+
+    /* Reset: after the last point the lane holds it (Live does the same), so
+     * no trail point; the lead is the resting value (or the first point's). */
+    hx_set_param(h, "t0_pa_wrap", "0 1:fx1:mix 1");
+    HX_ASSERT(e->flags & PA_FLAG_WRAP_RESET, "setup: Wrap Reset");
+    n = pa_export_points(&in->tracks[0], e, pts, PA_ENTRY_POINTS + 2);
+    HX_ASSERT(pts[n - 1].tick == 240, "Reset: no trail point — the last breakpoint is the last recorded one");
+    OK("Reset: no trail point (the lane holds its last value, as Live does)");
 
     hx_destroy(h);
     printf("test_param_auto_export_lead: %d ok\n", ok_count);
