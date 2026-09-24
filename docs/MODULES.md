@@ -1251,6 +1251,9 @@ Supported condition fields:
 - `truthy`, `falsey`/`falsy`
 
 Visibility is evaluated dynamically; hidden entries are removed from list navigation and knob mappings for that level.
+A condition's `param` does not need a knob of its own. A condition declared on a child level is read
+for the instance the grid is showing: `{ "param": "type" }` on a `child_prefix: "pad"` level reads
+`pad3_type` while pad 3 is shown.
 
 ### Child Selectors (for repeated elements)
 
