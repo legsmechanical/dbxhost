@@ -86,13 +86,19 @@ export function parseLibrary(text) {
             n: p.n,
         });
     }
-    return { cat, phrases };
+    /* `replace: true` — this file stands for the whole category: the
+     * phrases shipped with the module are not listed beside it. */
+    return { cat, phrases, replace: doc.replace === true };
 }
 
 /* Several sources of one category (the shipped library, then the user's own
- * folder) → one list, shipped first. A later id already seen is dropped. */
+ * folder) → one list, shipped first. A later id already seen is dropped; a
+ * source marked `replace` drops everything before it. */
 export function mergeLibraries(docs) {
     const seen = new Set(), out = [];
+    /* A later source that REPLACES the category leaves only itself. */
+    const last = docs.map((d, i) => d && d.replace ? i : -1).reduce((a, b) => Math.max(a, b), -1);
+    if (last >= 0) docs = docs.slice(last);
     for (const d of docs) {
         if (!d) continue;
         for (const p of d.phrases) {

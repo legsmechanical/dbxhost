@@ -37,6 +37,9 @@ step('shipped phrases come first; a repeated id from a later source is dropped',
     const a = parseLibrary(lib('hat', [{ id: 'x', name: 'A', n: '0 1 1' }, { id: 'y', name: 'B', n: '0 1 1' }]));
     const b = parseLibrary(lib('hat', [{ id: 'y', name: 'MINE', n: '0 1 1' }, { id: 'z', name: 'C', n: '0 1 1' }]));
     assertEq(mergeLibraries([a, null, b]).map(p => p.name), ['A', 'B', 'C'], 'merge');
+    const r = parseLibrary(JSON.stringify({ v: 1, cat: 'hat', replace: true, phrases: [{ id: 'q', name: 'MINE', n: '0 1 1' }] }));
+    assertEq(mergeLibraries([a, r]).map(p => p.name), ['MINE'], 'a replacing library stands alone');
+    assertEq(mergeLibraries([a, null]).map(p => p.name), ['A', 'B'], 'no replace: shipped stays');
 });
 
 step('styles: ALL, BASIC for the untagged, then the genre tags sorted; the filter follows', () => {
