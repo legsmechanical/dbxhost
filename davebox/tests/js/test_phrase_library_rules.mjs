@@ -55,7 +55,8 @@ for (const [file, key] of sources) {
             assert(doc && doc.cat === cat, cat + ' is not a library');
             const raw = JSON.parse(text).phrases;
             assert(raw.length === doc.phrases.length, cat + ': ' + (raw.length - doc.phrases.length) + ' records unreadable');
-            for (const p of raw) all.push(Object.assign({ cat, file }, p));
+            /* judged as the browser reads them (defaults applied), names as stored */
+            doc.phrases.forEach((p, i) => all.push(Object.assign({ file }, p, { name: raw[i].name })));
         }
     });
 }

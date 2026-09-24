@@ -4,7 +4,7 @@
  * written by packChunk reads back only with its key; plain packs; bad input.
  */
 import {
-    chacha20Xor, hexToBytes, b64ToBytes, bytesToB64, parsePack, packCats, packCategory, packChunk,
+    chacha20Xor, hexToBytes, b64ToBytes, bytesToB64, parsePack, packCats, packCategory, packChunk, packCategoryJob,
 } from '../../ui/ui_phrase_pack.mjs';
 
 let failed = 0;
@@ -48,6 +48,21 @@ step('an encrypted pack reads back with its key, and not without it', () => {
     assert(packCategory(pack, 'kick', '') === null, 'no key read something');
     assert(packCategory(pack, 'hat', KEY) === null, 'a missing category read something');
     assert(!JSON.stringify(pack.chunks).includes('BASIC'), 'plaintext visible in the pack');
+});
+
+step('decoding in slices gives exactly what one go gives, at any slice size, and 8 rounds round-trip', () => {
+    const big = JSON.stringify({ v: 1, cat: 'kick', phrases: Array.from({ length: 200 }, (_, i) => ({ id: 'k' + i, name: 'BASIC ' + i, n: '0 100 12;96 ' + (i % 127) + ' 12' })) });
+    for (const r of [20, 8]) {
+        const pack = parsePack(JSON.stringify({ v: 1, enc: true, r, chunks: { kick: packChunk(big, KEY, '0a0b0c0d0e0f101112131415', r) } }));
+        assert(packCategory(pack, 'kick', KEY) === big, r + ' rounds: one go');
+        for (const slice of [64, 100, 4096, 1 << 20]) {
+            const job = packCategoryJob(pack, 'kick', KEY);
+            let guard = 0; while (!job.step(slice) && guard++ < 100000) {}
+            assert(job.text() === big, r + ' rounds, slice ' + slice + ': differs');
+        }
+        const wrong = packCategoryJob(pack, 'kick', OTHER); while (!wrong.step(4096)) {}
+        assert(wrong.text() === null, 'a wrong key decoded in slices');
+    }
 });
 
 step('a plain pack reads without a key; bad files are refused', () => {

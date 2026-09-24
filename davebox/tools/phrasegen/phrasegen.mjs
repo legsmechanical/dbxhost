@@ -229,6 +229,9 @@ function render(cats) {
  * same candidates always build the same bytes. */
 const OPEN_LICENCES = ['CC-BY-4.0', 'CC0-1.0', 'PD'];
 const SHIP_FIELDS = ['id', 'name', 'g', 'bars', 'feel', 'mode', 'pads', 'layers', 'n'];
+/* fields left out when they hold the reader's default (ui_phrases parseLibrary) */
+const SHIP_DEFAULTS = { bars: 1, feel: 'straight', mode: 'min' };
+export const PACK_ROUNDS = 8;
 function packs() {
     const cur = existsSync(CURATION) ? JSON.parse(readFileSync(CURATION, 'utf8')) : {};
     const drop = new Set(cur.drop || []);
@@ -246,8 +249,8 @@ function packs() {
             if (!(p.bars >= 1 && p.bars <= MAX_BARS)) { console.error(`REFUSED ${p.id}: ${p.bars} bars`); bad++; continue; }
             if (!(p.name && p.name.length <= 14 && p.name === p.name.toUpperCase())) { console.error(`REFUSED ${p.id}: name "${p.name}"`); bad++; continue; }
             const ship = {};
-            for (const k of SHIP_FIELDS) if (p[k] != null && p[k] !== '') ship[k] = p[k];
-            if (!ship.g) ship.g = '';
+            for (const k of SHIP_FIELDS) if (p[k] != null && p[k] !== '' && SHIP_DEFAULTS[k] !== p[k]) ship[k] = p[k];
+            if (ship.layers && !Object.keys(ship.layers).length) delete ship.layers;
             (OPEN_LICENCES.includes(p.lic) ? split.open : split.enc).push(ship);
             n++;
         }
@@ -255,10 +258,10 @@ function packs() {
         if (split.enc.length) {
             const text = JSON.stringify({ v: 1, cat, phrases: split.enc });
             const nonce = createHash('sha256').update(cat + '\n' + text).digest('hex').slice(0, 24);
-            enc[cat] = packChunk(text, key, nonce);
+            enc[cat] = packChunk(text, key, nonce, PACK_ROUNDS);
         }
     }
-    return { bad, n, enc: JSON.stringify({ v: 1, enc: true, chunks: enc }) + '\n',
+    return { bad, n, enc: JSON.stringify({ v: 1, enc: true, r: PACK_ROUNDS, chunks: enc }) + '\n',
              open: JSON.stringify({ v: 1, enc: false, chunks: open }) + '\n' };
 }
 

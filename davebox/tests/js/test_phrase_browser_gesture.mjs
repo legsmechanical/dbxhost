@@ -121,6 +121,16 @@ async function main() {
         ticks(8);
     });
 
+    step('the keyed pack is decoded in the background after start-up, a slice per tick', () => {
+        PB.pbResetForTest();
+        S.tickCount = 100; ticks(5);
+        assert(!PB.pbPrewarmedForTest('hat'), 'decoding started during start-up');
+        S.tickCount = 700;
+        let guard = 0; while (!PB.pbPrewarmedForTest('hat') && guard++ < 400) ticks(1);
+        assert(PB.pbPrewarmedForTest('hat'), 'the hats were never decoded in the background');
+        assert(guard > 1, 'decoded in a single tick, not in slices');
+    });
+
     step('a click alone, or with K4 (Legato) touched, does not open it; K6 touched + click does', () => {
         S.activeTrack = 1; S.activeBank = 0; ticks(2);
         click();

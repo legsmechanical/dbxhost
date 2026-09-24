@@ -46,7 +46,7 @@ import { White, VividYellow, Cyan, NeonPink, BrightOrange, NeonGreen, ElectricVi
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { syncClipsTargeted } from './ui_dsp_bridge.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
-import { parsePack, packCats, packCategory } from './ui_phrase_pack.mjs';
+import { parsePack, packCats, packCategory, packCategoryJob } from './ui_phrase_pack.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { automationClearClipQueued } from './ui_automation.mjs';
 import {
@@ -85,7 +85,7 @@ let loadSync = null;                      /* after a load: refresh the clip view
 
 export function pbActive() { return !!PB; }
 export function pbStateForTest() { return PB; }
-export function pbResetForTest() { PB = null; LIB.clear(); PACKS = null; loadSync = null; for (let i = 0; i < 8; i++) pbMem[i] = null; }
+export function pbResetForTest() { PB = null; LIB.clear(); PACKS = null; PACK_TEXT.clear(); prewarm = null; loadSync = null; for (let i = 0; i < 8; i++) pbMem[i] = null; }
 
 /* ---- the library ---- */
 
@@ -103,10 +103,46 @@ function catExists(cat) {
     if (packs().some(pk => packHas(pk, cat))) return true;
     try { return host_file_exists(PB_USER_DIR + '/' + cat + '.json'); } catch (e) { return false; }
 }
+/* A category's text from the packs, decoded once per session: decoding is the
+ * expensive part (an interpreter running the cipher), and the packs do not
+ * change while the module runs. */
+const PACK_TEXT = new Map();
+function packTexts(cat) {
+    if (!PACK_TEXT.has(cat)) PACK_TEXT.set(cat, packs().map(pk => packHas(pk, cat) ? packCategory(pk, cat, PACK_KEY) : null));
+    return PACK_TEXT.get(cat);
+}
+/* Decoding the keyed pack in the BACKGROUND: one small slice per UI tick
+ * (well under a millisecond on a Mac, a few on the Move), starting a few
+ * seconds after the module starts, so a category is ready before it is
+ * browsed. A category opened before its turn is decoded then (packTexts). */
+const PREWARM_AFTER_TICKS = 600;           /* ~6 s at the tick rate */
+const PREWARM_SLICE = 2048;                /* bytes of pack per tick */
+let prewarm = null;
+export function pbPrewarm() {
+    if (prewarm && prewarm.done) return;
+    if ((GS.tickCount | 0) < PREWARM_AFTER_TICKS) return;
+    const pk = packs();
+    const ei = pk.findIndex(p => p && p.enc);
+    if (!prewarm) prewarm = { done: ei < 0 || !PACK_KEY, queue: ei < 0 ? [] : packCats(pk[ei]), job: null, cat: null };
+    if (prewarm.done) return;
+    if (!prewarm.job) {
+        while (prewarm.queue.length && PACK_TEXT.has(prewarm.queue[0])) prewarm.queue.shift();
+        if (!prewarm.queue.length) { prewarm.done = true; return; }
+        prewarm.cat = prewarm.queue.shift();
+        prewarm.job = packCategoryJob(pk[ei], prewarm.cat, PACK_KEY);
+        if (!prewarm.job) return;
+    }
+    if (!prewarm.job.step(PREWARM_SLICE)) return;
+    const cat = prewarm.cat, text = prewarm.job.text();
+    prewarm.job = null;
+    if (!PACK_TEXT.has(cat))
+        PACK_TEXT.set(cat, pk.map((p, i) => i === ei ? text : (packHas(p, cat) ? packCategory(p, cat, PACK_KEY) : null)));
+}
+export function pbPrewarmedForTest(cat) { return PACK_TEXT.has(cat); }
+
 function libraryOf(cat) {
     if (!LIB.has(cat)) {
-        const texts = packs().map(pk => packHas(pk, cat) ? packCategory(pk, cat, PACK_KEY) : null)
-            .concat([readText(PB_USER_DIR + '/' + cat + '.json')]);
+        const texts = packTexts(cat).concat([readText(PB_USER_DIR + '/' + cat + '.json')]);
         const docs = texts.map(txt => {
             const doc = txt ? parseLibrary(txt) : null;
             return doc && doc.cat === cat ? doc : null;
@@ -512,6 +548,7 @@ export function pbPadColors() {
 /* ---- tick ---- */
 
 export function pbTick() {
+    pbPrewarm();
     if (loadSync) {
         const ls = loadSync;
         if (!GS.pendingDefaultSetParams.some(e => e.key === ls.key)) {
