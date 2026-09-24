@@ -17,9 +17,8 @@ import { parsePack, packCats, packCategory } from '../../ui/ui_phrase_pack.mjs';
 import { parseLibrary, decodePhrase, isPbDrumCat, PB_DRUM_CATS, PB_MELODIC_CATS } from '../../ui/ui_phrases.mjs';
 /* the public style tags a phrase may be filed under ('' = BASIC); the phrase
  * generator's own list must match this one */
-const TAGS = ['HOUSE', 'TECHNO', 'TRANCE', 'ELECTRO', 'DARKSYN', 'DISCO', 'FUNK', 'DNB', 'BREAKS', 'HIPHOP', 'RNB', 'GARAGE',
-    'ACID', 'REGGAE', 'AMBIENT', 'HARDCORE', 'ROCK', 'INDIE', 'METAL', 'PUNK', 'NEW WAVE', 'ITALO', 'POP', 'WORLD', 'JAZZ',
-    'COUNTRY', ''];
+const TAGS = ['HOUSE', 'TECHNO', 'TRANCE', 'DARKSYN', 'DISCO', 'DNB', 'BREAKS', 'HIPHOP', 'RNB', 'REGGAE', 'AMBIENT',
+    'ROCK', 'INDIE', 'NEW WAVE', 'POP', 'WORLD', 'JAZZ', 'COUNTRY', ''];
 
 let failed = 0;
 function step(l, fn) {
