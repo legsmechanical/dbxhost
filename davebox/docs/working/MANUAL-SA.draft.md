@@ -1914,10 +1914,10 @@ takes in goth, darkwave and synthwave, DARKSYN takes in EBM and industrial, WORL
 Latin and afrobeat, REGGAE takes in dub, and so on. Phrases play with their style's groove: its swing, the pushes and
 drags of each part, ghost notes, and in trap the fast hat rolls.
 
-A phrase's name says what it plays: the pattern (4 FLOOR, BACKBEAT, 8THS OPEN, TOM LINE),
-the chords as scale degrees (1-6-3-7 MIN), or the line's shape (OCTAVE 8THS, UP 16THS);
-FILL when it ends in a fill, ROLL for a hat roll, SWING or SHUFFLE when it swings, LIVE
-when a drummer played it.
+A phrase's name starts with its genre (GOTH, HOUSE — none for BASIC), then says what it
+plays: the pattern (4FLR, BKBT, 8THS OPEN, TLINE), the chords as scale degrees (1-6-3-7), or
+the line's shape (OCTAVE 8THS, UP 16THS); FILL when it ends in a fill, ROLL for a hat roll,
+SW or SHUF when it swings, LV when a drummer played it. Longer words are shortened to fit.
 
 Your own phrase files go in `davebox-phrases/`
 in your user data folder (one `<type>.json` per instrument type); they are listed after
