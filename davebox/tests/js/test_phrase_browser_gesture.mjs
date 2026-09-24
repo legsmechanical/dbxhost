@@ -353,7 +353,8 @@ async function main() {
                'a lane with no sound changed under the browser: ' + lanesBefore + ' -> ' + lanesNow);
         /* the engine reads no right-hand pad as velocity or Note Repeat while it is open */
         const pm = since(0, /^t0_padmap$/).pop();
-        assert(pm && pm[2].split(' ')[32] === '1', 'the engine pad mute is not up: ' + (pm && pm[2]));
+        assert(pm && pm[2].split(' ')[35] === '1' && pm[2].split(' ')[32] === '0',
+               'the right-hand pads are not inert, or the lane pads are muted: ' + (pm && pm[2]));
         /* a lane tap with no sound held does nothing */
         pad(1); ticks(1);
         assert(pb().assign.join(',') === '3,10,8', 'a lane tap without a held sound placed one');
@@ -392,20 +393,21 @@ async function main() {
         assert(imp.length === 1 && imp[0][1] === 't0_lanes_import' && /^0 1 16\|L1;.*L8;.*L10;/.test(imp[0][2]),
                'drum load: ' + JSON.stringify(imp));
         const pm2 = since(n, /^t0_padmap$/).pop();
-        assert(pm2 && pm2[2].split(' ')[32] === '0', 'the engine pad mute stayed up after closing');
+        assert(pm2 && pm2[2].split(' ')[35] === '0', 'the right-hand pads stayed inert after closing');
         openOn(0); ticks(2);
         const n3 = writes.length;
         back(); ticks(3);
         const pm3 = since(n3, /^t0_padmap$/).pop();
-        assert(pm3 && pm3[2].split(' ')[32] === '0', 'the engine pad mute stayed up after Back');
+        assert(pm3 && pm3[2].split(' ')[35] === '0', 'the right-hand pads stayed inert after Back');
     });
 
-    step('a one-sound drum phrase: a lane tap moves it; holding its sound pad and tapping works too', () => {
+    step('a one-sound drum phrase: a lane tap alone only plays the lane; hold its sound pad and tap to move it', () => {
         openOn(0); ticks(2);
         jog(-1); click(); ticks(2);
         assert(pb().list[pb().idx].id === 'hat.a' && pb().voices.length === 1, 'not on the one-sound phrase');
+        const before = pb().assign.join(',');
         pad(1); ticks(1);
-        assert(pb().assign.join(',') === '1', 'a plain lane tap did not move the one sound: ' + pb().assign);
+        assert(pb().assign.join(',') === before, 'a plain lane tap moved the one sound: ' + pb().assign);
         ticks(3);
         assert(padLed[68 + 4] === 7, 'the one sound has no sound pad lit: ' + padLed[72]);
         midi(0x90, 68 + 4, 100); ticks(1);

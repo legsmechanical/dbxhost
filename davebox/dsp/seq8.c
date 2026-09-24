@@ -1430,6 +1430,10 @@ typedef struct {
      * double-hit Move's injected pad). Distinct from the real pad-drop bug:
      * a 0xFF here is deliberate, so the DROP diagnostic skips it. */
     uint8_t  corun_left_silent;
+    /* The phrase library's browser owns a drum track's right-hand pads (they
+     * are its sounds): no velocity zone, Note Repeat or preview hit from them,
+     * while the lane pads play as always. 36th padmap token. */
+    uint8_t  drum_right_inert;
 
     /* Phase 1 / Bundle 2: pad-source intent scratch. Set by on_midi just
      * before calling live_note_on / drum_record_note_on / etc., reset at
@@ -5585,6 +5589,7 @@ static void on_midi(void *instance, const uint8_t *msg, int len, int source) {
      * track shortcut, modal holds, etc.), skip the right-half drum
      * classification too — otherwise Rpt1/Rpt2 latches on the prior
      * active track when the user is just switching tracks. */
+    if (tr->pad_mode == PAD_MODE_DRUM && inst->drum_right_inert && (padIdx % 8) >= 4) return;
     if (tr->pad_mode == PAD_MODE_DRUM && !inst->pad_dispatch_muted) {
         if (drum_pad_event(inst, tr, t, padIdx, d2, is_on)) {
             return;

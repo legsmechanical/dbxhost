@@ -29,12 +29,6 @@ export function _padDispatchMutedNow() {
      * the loaded project's instrument underneath (the modal gate in ui.js
      * only stops the JS side). Recomputed at picker open/close. */
     if (S.projectPadPicker) return true;
-    /* The phrase library on a drum track: the right-hand pads are its SOUNDS,
-     * so the engine must not read them as velocity zones or Note Repeat
-     * (Josh, 2026-09-23: "make sure the drum assign pads don't trigger the
-     * performance mode pads that may be underneath them"). The lane pads keep
-     * sounding — a tap there is an audition. Recomputed at open/close. */
-    if (pbActive() && S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) return true;
     /* The Chord layout's explainer is modal until OK. */
     if (S.chordPopupOpen) return true;
     /* captureHeld no longer mutes pads: the Capture+pad lane-select gesture
@@ -189,6 +183,11 @@ export function computePadNoteMap() {
          * so it excludes these benign 0xFF presses from the pad-drop
          * diagnostic. Mirrors coRunSilentLeft in computePadNoteMap. */
         payload += ' ' + ((isDrum && S.moveCoRunTrack >= 0) ? 1 : 0);
+        /* 36th token: the phrase browser owns a drum track's right-hand pads
+         * (its sounds) — the engine gives them no velocity zone, Note Repeat
+         * or hit, and the lane pads keep playing (Josh, 2026-09-23: they
+         * "don't actually trigger" under a full mute). */
+        payload += ' ' + ((isDrum && pbActive()) ? 1 : 0);
         host_module_set_param('t' + t + '_padmap', payload);
         S.lastPushedMuted = padDispatchMuted;
         S.lastPadmapSig = padmapSig(payload);

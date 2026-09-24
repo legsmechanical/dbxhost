@@ -21,7 +21,8 @@
  *              NOTE) by tapping the relevant pad"):
  *                drum track   the RIGHT-hand pads are the phrase's sounds; hold
  *                             one (heard alone) and tap lane pads on the left to
- *                             put it there, or again to take it off
+ *                             put it there, or again to take it off. The lane
+ *                             pads always PLAY, held or not (audition first)
  *                melodic      hold K5 Voice, turn to a sound, tap a pad for its
  *                             note (again: off)
  *              Nothing moves on to the next sound by itself.
@@ -438,10 +439,11 @@ export function pbPadTap(i) {
     if (PB.drum) {
         const snd = soundOfPad(i);
         if (snd >= 0) { PB.held = snd; PB.voiceSel = snd; GS.screenDirty = true; return; }
-        /* A phrase of several sounds: holding a sound pad is the only way to
-         * place one — a lane tap alone just sounds the lane. A phrase of ONE
-         * sound goes wherever a lane is tapped, held or not (Josh, 2026-09-23). */
-        who = PB.voices.length === 1 ? 0 : PB.held;
+        /* Besides the default, holding a sound pad and tapping a lane is the
+         * only way to place a sound — for a phrase of one sound too. A lane tap
+         * alone just plays the lane, so lanes can be auditioned first (Josh,
+         * 2026-09-23); the engine plays it, this only decides placement. */
+        who = PB.held;
         target = laneOfPad(i);
     } else {
         if (GS.knobTouched !== 4) return;              /* hold K5 Voice first */

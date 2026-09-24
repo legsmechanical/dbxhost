@@ -474,6 +474,14 @@ static int sp_track_live(sp_ctx_t *cx) {
             while (*sp >= '0' && *sp <= '9') { cls = cls * 10 + (*sp++ - '0'); }
             inst->corun_left_silent = (cls != 0) ? 1 : 0;
         }
+        /* 36th token = drum_right_inert (the phrase browser owns the
+         * right-hand drum pads). Absent = 0. */
+        while (*sp == ' ') sp++;
+        {
+            int dri = 0;
+            while (*sp >= '0' && *sp <= '9') { dri = dri * 10 + (*sp++ - '0'); }
+            inst->drum_right_inert = (dri != 0) ? 1 : 0;
+        }
         return 1;
     }
 
