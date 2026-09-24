@@ -1349,7 +1349,7 @@ const BTN_TRAVEL = 2;
  * read as an event with a consequence.
  *
  * The burst geometry is the startup animation's impact lines
- * (src/modules/tools/splash-test/ui.js): IMPACT_GAP 2 and a very SHORT line.
+ * (the former splash-test module, removed 2026-09-24): IMPACT_GAP 2 and a very SHORT line.
  * Unlike the splash, which holds three static lines for 20 ticks, these
  * EXPAND -- the gap grows as the burst travels outward and the stubs go with
  * it, which is what makes it read as radiating rather than as a decoration

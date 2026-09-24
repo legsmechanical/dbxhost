@@ -293,7 +293,7 @@ usage and the pruning rules: [`RATIONALE.md`](RATIONALE.md).
 
 1. `./scripts/build.sh` succeeds
 2. `./scripts/install.sh local --skip-modules --skip-confirmation`, verify on hardware
-3. Bump `src/host/version.txt` and `module-catalog.json` (host `latest_version` + download URL)
+3. Bump `src/host/version.txt` and `release.json` (version + download URL)
 4. Update `CLAUDE.md`, `docs/API.md`, `docs/MODULES.md`, `src/shared/help_content.json` and the
    manual for new/changed behaviour
 5. Update `help.json` in modified tool modules

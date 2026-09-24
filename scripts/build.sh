@@ -616,8 +616,6 @@ else
     echo "Skipping chain DSP (up to date)"
 fi
 
-# seq-test is dev-only (Addressing Move Synths reference); not built or shipped.
-
 echo "Building Audio FX plugins..."
 
 # Build Freeverb audio FX
@@ -971,18 +969,12 @@ ln -sf schwung ./build/move-anything
 
 # Copy all module files (js, mjs, json, sh) - preserves directory structure
 # Compiled .so files are built separately above
-# Dev-only modules excluded from release tarball (source kept in src/modules/):
-#   - tools/{ui,seq,config,splash}-test: dev scaffolding
-#   - text-test, standalone-example: dev scaffolding
-#   - controller: superseded by catalog "control" module (chaolue)
+# Excluded from the build (source kept in src/modules/ as documented examples):
+#   - tools/{seq,config}-test, controller: referenced by ADDRESSING_MOVE_SYNTHS.md / MODULES.md
 #   - store: on-device store retired — schwung-manager (move.local:7700) is
 #     the single install/update path; shadow keeps detection + pointers only
 echo "Copying module files..."
 find ./src/modules -type f \( -name "*.js" -o -name "*.mjs" -o -name "*.json" -o -name "*.sh" -o -name "*.py" -o -name "*.txt" \) \
-    -not -path "*/splash-test/*" \
-    -not -path "*/text-test/*" \
-    -not -path "*/standalone-example/*" \
-    -not -path "*/ui-test/*" \
     -not -path "*/seq-test/*" \
     -not -path "*/config-test/*" \
     -not -path "*/controller/*" \
@@ -992,8 +984,9 @@ find ./src/modules -type f \( -name "*.js" -o -name "*.mjs" -o -name "*.json" -o
     cp -u "$src" "$dest"
 done
 
-# Scrub any stale build artifacts from prior incremental builds so excluded
-# modules don't ship just because their directory still exists in ./build/.
+# Scrub stale build artifacts from prior incremental builds so removed or
+# excluded modules don't ship just because their directory still exists in
+# ./build/ (text-test, ui-test and splash-test were deleted from src/ 2026-09-24).
 rm -rf \
     ./build/modules/controller \
     ./build/modules/text-test \
