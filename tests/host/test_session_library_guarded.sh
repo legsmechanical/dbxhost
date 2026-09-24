@@ -44,17 +44,12 @@ grep -q 'SHARED_IMPORT_LOCAL     SCHWUNG_INSTALL_DIR "/shared/"' src/shadow/shad
     || bad "the shared-import rewrite is gone — a stock module would load stock's shared/"
 
 echo "the stock tree stays untouched:"
-# Both of these ship into or run from /data/UserData/schwung. Editing them is
+# schwung-manager runs from /data/UserData/schwung. (This tree's copy of the stock
+# file-browser module was deleted 2026-09-24 — sessions run stock's.) Editing them is
 # the boundary violation this test exists to keep from creeping back.
-if git -C . diff --quiet HEAD -- src/modules/tools/file-browser/ 2>/dev/null; then
-    ok "no working-tree edits to the stock file-browser module"
-fi
 grep -rq 'sessionOwnsPath\|standaloneSessionActive' schwung-manager/*.go 2>/dev/null \
     && bad "schwung-manager carries a session check — it lives in the stock tree" \
     || ok "schwung-manager is untouched"
-grep -q 'pathHiddenFromBrowsers\|session_state' src/modules/tools/file-browser/ui.js 2>/dev/null \
-    && bad "the file-browser module was edited — stock users run the stock copy of it" \
-    || ok "the file-browser module is untouched"
 
 echo "one definition of 'a session is live':"
 if grep -q '^function standaloneSessionActive' src/shadow/shadow_ui.js; then

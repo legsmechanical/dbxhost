@@ -1872,8 +1872,8 @@ page (the last page of the knob grid) offers a **Module Help** row, above Swap M
 module's `help.json` parses and has a non-empty top-level `children[]`. Click opens dAVEBOx's own
 viewer: a topic list (jog picks, click opens), text pages the jog scrolls, Back climbs one level and
 then returns to the Module page. Lines are drawn as written, never wrapped — keep each within
-**124px** of the stock font (`tests/host/test_module_help_shape.sh` measures it for this repo's
-modules). A file that names its topics anything but `children` shows no row at all.
+**124px** of the stock font (upstream's `tests/host/test_module_help_shape.sh` measures it; this
+repo ships no module help since 2026-09-24). A file that names its topics anything but `children` shows no row at all.
 
 ### Format
 

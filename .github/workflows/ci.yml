@@ -106,12 +106,6 @@ jobs:
             build/schwung-shim.so \
             build/display-server \
             build/modules/chain/dsp.so \
-            build/modules/audio_fx/freeverb/freeverb.so \
-            build/modules/midi_fx/chord/dsp.so \
-            build/modules/midi_fx/arp/dsp.so \
-            build/modules/midi_fx/velocity_scale/dsp.so \
-            build/modules/sound_generators/linein/dsp.so \
-            build/modules/tools/wav-player/dsp.so \
             build/bin/display_ctl \
             build/bin/jack_midi_connect \
             build/lib/jack/jack_shadow.so ; do

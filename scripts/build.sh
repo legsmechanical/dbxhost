@@ -245,12 +245,6 @@ mkdir -p ./build/bin/
 mkdir -p ./build/lib/
 mkdir -p ./build/licenses/
 mkdir -p ./build/modules/chain/
-mkdir -p ./build/modules/audio_fx/freeverb/
-mkdir -p ./build/modules/midi_fx/chord/
-mkdir -p ./build/modules/midi_fx/arp/
-mkdir -p ./build/modules/midi_fx/velocity_scale/
-mkdir -p ./build/modules/sound_generators/linein/
-mkdir -p ./build/modules/tools/wav-player/
 mkdir -p ./build/lib/jack
 
 # Generate bitmap font for host display (single source of truth: scripts/generate_font.py)
@@ -616,85 +610,10 @@ else
     echo "Skipping chain DSP (up to date)"
 fi
 
-echo "Building Audio FX plugins..."
-
-# Build Freeverb audio FX
-if needs_rebuild build/modules/audio_fx/freeverb/freeverb.so \
-    src/modules/audio_fx/freeverb/freeverb.c src/host/audio_fx_api_v1.h; then
-    echo "Building freeverb..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
-        src/modules/audio_fx/freeverb/freeverb.c \
-        -o build/modules/audio_fx/freeverb/freeverb.so \
-        -Isrc \
-        -lm
-else
-    echo "Skipping freeverb (up to date)"
-fi
-
-echo "Building MIDI FX plugins..."
-
-# Build Chord MIDI FX
-if needs_rebuild build/modules/midi_fx/chord/dsp.so \
-    src/modules/midi_fx/chord/dsp/chord.c src/host/midi_fx_api_v1.h; then
-    echo "Building chord MIDI FX..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
-        src/modules/midi_fx/chord/dsp/chord.c \
-        -o build/modules/midi_fx/chord/dsp.so \
-        -Isrc
-else
-    echo "Skipping chord MIDI FX (up to date)"
-fi
-
-# Build Arpeggiator MIDI FX
-if needs_rebuild build/modules/midi_fx/arp/dsp.so \
-    src/modules/midi_fx/arp/dsp/arp.c src/host/midi_fx_api_v1.h; then
-    echo "Building arp MIDI FX..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
-        src/modules/midi_fx/arp/dsp/arp.c \
-        -o build/modules/midi_fx/arp/dsp.so \
-        -Isrc
-else
-    echo "Skipping arp MIDI FX (up to date)"
-fi
-
-# Build Velocity Scale MIDI FX
-if needs_rebuild build/modules/midi_fx/velocity_scale/dsp.so \
-    src/modules/midi_fx/velocity_scale/dsp/velocity_scale.c src/host/midi_fx_api_v1.h; then
-    echo "Building velocity scale MIDI FX..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
-        src/modules/midi_fx/velocity_scale/dsp/velocity_scale.c \
-        -o build/modules/midi_fx/velocity_scale/dsp.so \
-        -Isrc -lm
-else
-    echo "Skipping velocity scale MIDI FX (up to date)"
-fi
-
-echo "Building Sound Generator plugins..."
-
-# Build Line In sound generator
-if needs_rebuild build/modules/sound_generators/linein/dsp.so \
-    src/modules/sound_generators/linein/linein.c src/host/plugin_api_v1.h; then
-    echo "Building line-in generator..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
-        src/modules/sound_generators/linein/linein.c \
-        -o build/modules/sound_generators/linein/dsp.so \
-        -Isrc \
-        -lm
-else
-    echo "Skipping line-in generator (up to date)"
-fi
-
-# Build WAV Player tool DSP
-if needs_rebuild build/modules/tools/wav-player/dsp.so \
-    src/modules/tools/wav-player/wav_player.c src/host/plugin_api_v1.h; then
-    echo "Building WAV Player tool DSP..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
-        src/modules/tools/wav-player/wav_player.c \
-        -o build/modules/tools/wav-player/dsp.so \
-        -Isrc
-else
-    echo "Skipping WAV Player tool DSP (up to date)"
-fi
+# Upstream's bundled modules (freeverb, chord, arp, velocity_scale, linein, wav-player,
+# file-browser, song-mode, rnbo-runner) are no longer built here: an SA session runs
+# stock's copies (layout-install.sh links every module category but chain to the stock
+# tree). Their sources were removed 2026-09-24.
 
 # Copy shared utilities (only if source is newer)
 for f in ./src/shared/*.mjs; do
