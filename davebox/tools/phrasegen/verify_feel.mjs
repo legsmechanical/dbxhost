@@ -12,7 +12,8 @@
  *               generated mean offset per step correlates (r ≥ 0.6), and the
  *               spread around it is 0.5–2× the measured jitter
  *   F3 ghosts   ghost share of the snare within ±0.05 of the style's
- *   F5 tight    share of phrases played machine-tight per role within ±0.08
+ *   F5 tight    share of phrases played machine-tight per role within four
+ *               standard errors (≥ ±0.04)
  *   F4 steps    every grooved note still sits nearest the step it was written
  *               on (its part's grid), so nothing reads as a different rhythm —
  *               over the generator's hat lines, and over the candidates
@@ -25,7 +26,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { decodeNotes, BAR } from './lib/phrase.mjs';
-import { feelRng as makeRng, drawGrid, feelProfile, applyFeel, fitGrid, gridTicks, stepOnGrid, tickOfStep, STRAIGHT, styleOfName } from './lib/feel.mjs';
+import { feelRng as makeRng, drawGrid, shareAbove, feelProfile, applyFeel, fitGrid, gridTicks, stepOnGrid, tickOfStep, STRAIGHT, styleOfName } from './lib/feel.mjs';
 import { STYLE_FILES, FLAVOUR_NAME } from './lib/style_plan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -74,8 +75,18 @@ for (const [file, fk, name] of groups) {
         if (g.r8 >= 0.54) { swung++; am8.push(g.r8); } else if (g.r16 >= 0.54) { swung++; am16.push(g.r16); }
     }
     const share = swung / N1, want = prof.swing.share;
+    /* a prior's range: the swung phrases' ratios are its spread above 0.54 */
+    if (prof.swing.dist && swung >= 100) {
+        const all = am8.concat(am16).sort((x, y) => x - y), d = prof.swing.dist;
+        const xs = [d[0] - (d[1] - d[0]), d[0], d[1], d[2], d[2] + (d[2] - d[1])].map(x => Math.max(0.5, Math.min(0.75, x)));
+        /* the median swung ratio: where the spread's upper half (from 0.54) splits */
+        let lo = 0.54, hi = 0.75;
+        for (let it = 0; it < 30; it++) { const mid = (lo + hi) / 2; if (shareAbove(xs.slice(1, 4), mid) > shareAbove(xs.slice(1, 4), 0.54) / 2) lo = mid; else hi = mid; }
+        const med = all[all.length >> 1];
+        if (Math.abs(med - lo) > 0.02) fail('F1', `${name}: median swung ratio ${med.toFixed(3)} vs the prior's ${lo.toFixed(3)}`);
+    }
     if (Math.abs(share - want) > 0.03) fail('F1', `${name}: swung ${share.toFixed(3)} vs ${want.toFixed(3)}`);
-    for (const [am, q, what] of [[am8, prof.swing.amount8, '8th'], [am16, prof.swing.amount16, '16th']]) {
+    for (const [am, q, what] of prof.swing.dist ? [] : [[am8, prof.swing.amount8, '8th'], [am16, prof.swing.amount16, '16th']]) {
         if (am.length < 100) continue;
         const expect = Math.min(0.75, Math.max(0.54, q[1]));
         /* the measured median splits the draws in two (a spread whose median
@@ -111,7 +122,9 @@ for (const [file, fk, name] of groups) {
             for (const n of r.notes) if (!n.ghost) { const s = n._s % 16; const o = n.t - n._s * 24; sum[s] += o; cnt[s]++; offs.push([s, o]); }
         }
         const hs = human / N;
-        if (Math.abs(hs - (1 - R.tight)) > 0.08) fail('F5', `${name} ${role}: human ${hs.toFixed(2)} vs ${(1 - R.tight).toFixed(2)}`);
+        /* four standard errors of a share over N phrases */
+        const pH = 1 - R.tight, tolH = Math.max(0.04, 4 * Math.sqrt(pH * (1 - pH) / N));
+        if (Math.abs(hs - pH) > tolH) fail('F5', `${name} ${role}: human ${hs.toFixed(2)} vs ${(1 - R.tight).toFixed(2)}`);
         const steps = [...new Set(line.map(n => (n.t / 24) % 16))];
         const meas = steps.map(s => R.offMean[s]), got = steps.map(s => cnt[s] ? sum[s] / cnt[s] : 0);
         const varied = meas.filter(x => Math.abs(x) >= 0.5).length >= 3 && Math.max(...meas) - Math.min(...meas) >= 1;

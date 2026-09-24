@@ -151,20 +151,26 @@ export function feelProfile(file, flavour) {
     let quantisation = null;
     const pri = hallmarkFeel(file, flavour);
     if (pri) {
-        if (pri.swing) {
-            const s = pri.swing, conf = pri.confidence;
-            const trusted = sw && !pri.measureUntrusted;
-            if (s.share != null) {
-                if (conf === 'high' || !trusted) swing.share = trusted ? Math.max(swing.share, s.share) : s.share;
-                else if (conf === 'medium') swing.share = (swing.share + Math.max(swing.share, s.share)) / 2;
+        /* The prior speaks where the MIDI cannot: when it is confident, when
+         * the measurement failed its known positives, or when there is none.
+         * The MIDI's swing share is a LOWER bound (most files were typed in on
+         * a grid) and undercounts the styles that swing. */
+        const usable = pri.confidence === 'high' || pri.confidence === 'medium' || pri.measureUntrusted || !sw;
+        if (usable && pri.swing && pri.swing.dist) {
+            /* where the style is mostly straight the MIDI sees it fine and its
+             * own share stands; where the prior's median swings, or the MIDI
+             * failed or is absent, the prior's range is used */
+            const ps = shareAbove(pri.swing.dist, 0.54);
+            if (pri.measureUntrusted || !sw || pri.swing.dist[1] >= 0.54) {
+                swing.dist = pri.swing.dist.map(x => Math.max(0.5, Math.min(0.75, x)));
+                swing.share = ps;
+                if (pri.swing.type8 != null) swing.type8 = pri.swing.type8;
+                swing.from = 'prior:' + pri.confidence;
             }
-            if (s.type8 != null && (conf === 'high' || !trusted)) swing.type8 = s.type8;
-            if (s.ratio && (conf === 'high' || !trusted)) { if (swing.type8 >= 0.5) swing.amount8 = s.ratio; else swing.amount16 = s.ratio; }
-            swing.from = 'prior:' + conf;
         }
-        quantisation = pri.quantisation || null;
+        if (usable) quantisation = pri.quantisation || null;
     }
-    swing.share = Math.min(0.9, swing.share);
+    if (!swing.dist) swing.share = Math.min(0.9, swing.share);
 
     const roleCache = new Map();
     const roles = (role) => {
@@ -195,6 +201,18 @@ export function feelProfile(file, flavour) {
     const p = { file, flavour, swing, roles };
     profCache.set(key, p);
     return p;
+}
+
+/* the share of a quartile spread (fromSpread's shape) at or above x */
+export function shareAbove(q, x) {
+    const [a, m, b] = q, xs = [a - (m - a), a, m, b, b + (b - m)];
+    let share = 0;
+    for (let k = 0; k < 4; k++) {
+        const lo = xs[k], hi = xs[k + 1];
+        if (hi <= lo) share += lo >= x ? 0.25 : 0;
+        else share += 0.25 * Math.max(0, Math.min(1, (hi - x) / (hi - lo)));
+    }
+    return share;
 }
 
 /* ---- laying a feel over a phrase ---- */
@@ -234,6 +252,13 @@ const GHOST_ROLES = new Set(['snare', 'clap', 'rim', 'kick']);
  * the outcome. → { r8, r16 } */
 export function drawGrid(prof, rng) {
     const u1 = rng.next(), u2 = rng.next(), a8 = fromSpread(rng, prof.swing.amount8, 0.54, 0.75), a16 = fromSpread(rng, prof.swing.amount16, 0.54, 0.75);
+    if (prof.swing.dist) {
+        /* the prior's range: this phrase's ratio, straight when it falls below 0.54 */
+        const r = fromSpread({ next: () => u1 }, prof.swing.dist, 0.5, 0.75);
+        if (MUTATE === 'noswing' || r < 0.54) return { r8: 0.5, r16: 0.5 };
+        if (MUTATE === 'bothswing75') return { r8: 0.75, r16: 0.75 };
+        return u2 < prof.swing.type8 ? { r8: r, r16: 0.5 } : { r8: 0.5, r16: r };
+    }
     if (MUTATE === 'noswing' || u1 >= prof.swing.share) return { r8: 0.5, r16: 0.5 };
     if (MUTATE === 'bothswing75') return { r8: 0.75, r16: 0.75 };
     return u2 < prof.swing.type8 ? { r8: a8, r16: 0.5 } : { r8: 0.5, r16: a16 };
