@@ -71,7 +71,6 @@ import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
  * the screen can disagree. */
 import { bankCardVisible, sessMixerVisible, soundModeCovered } from './ui_render.mjs';
 import { closeDaveBox } from './ui_daves.mjs';
-import { pbOpen, pbClose, pbActive, PB_KNOB } from './ui_phrase_browser.mjs';
 import { devSnapOpen, devSnapLeave, devSnapUndo, devSnapRedo } from './ui_devsnap.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
     refreshPerClipBankParams, resyncDrumTrack,
@@ -288,16 +287,6 @@ function _onCC_jog(d1, d2) {
             S.activeBank === 0 && S.knobTouched === LGTO_KNOB) {
         applyLegato(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM);
         triggerFire('lgto');
-        forceRedraw();
-        return;
-    }
-
-    /* PHRASES is a trigger too: touch K6 on the CLIP or DRUM LANE bank and
-     * click the jog to open the phrase library (ui_phrase_browser). */
-    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
-            S.activeBank === 0 && S.knobTouched === PB_KNOB) {
-        triggerFire('phrases');
-        pbOpen(S.activeTrack);
         forceRedraw();
         return;
     }
@@ -2177,7 +2166,6 @@ function returnToOverview() {
     /* ⚠ closeDaveBox WITHOUT the openGlobalMenu Back pairs it with — Back peels
      * back to the menu it came from; this goes home. */
     if (S.daveBox)             closeDaveBox();
-    if (pbActive())            pbClose();
     if (S.projectPadPicker)    closeProjectPadPicker();   /* startup case handled by noOverviewYet */
 
     /* 2. The global menu and every confirm nested in it, all at once. */

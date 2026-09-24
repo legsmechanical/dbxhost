@@ -11,7 +11,6 @@ import { PAD_MODE_DRUM, DRUM_LANES, DRUM_BASE_NOTE, NUM_CLIPS } from './ui_const
 import { SCALE_INTERVALS } from './ui_pure.mjs';
 import { dspGet } from './ui_dsp_get.mjs';
 import { chordLayoutOn, fillChordPadMap, padToken } from './ui_chord_pads.mjs';
-import { pbActive } from './ui_phrase_browser.mjs';
 
 /* PHASE-1: helper for the pad-dispatch mute condition. Modal sources:
  * - sessionView                 — pads launch clips
@@ -183,11 +182,6 @@ export function computePadNoteMap() {
          * so it excludes these benign 0xFF presses from the pad-drop
          * diagnostic. Mirrors coRunSilentLeft in computePadNoteMap. */
         payload += ' ' + ((isDrum && S.moveCoRunTrack >= 0) ? 1 : 0);
-        /* 36th token: the phrase browser owns a drum track's right-hand pads
-         * (its sounds) — the engine gives them no velocity zone, Note Repeat
-         * or hit, and the lane pads keep playing (Josh, 2026-09-23: they
-         * "don't actually trigger" under a full mute). */
-        payload += ' ' + ((isDrum && pbActive()) ? 1 : 0);
         host_module_set_param('t' + t + '_padmap', payload);
         S.lastPushedMuted = padDispatchMuted;
         S.lastPadmapSig = padmapSig(payload);

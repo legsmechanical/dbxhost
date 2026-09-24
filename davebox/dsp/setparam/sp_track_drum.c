@@ -51,44 +51,6 @@ static int sp_track_drum(sp_ctx_t *cx) {
             return 1;
         }
 
-        /* tN_lL_import "<flags> <res_idx> <length_steps>|a tick vel gate;…" —
-         * fill ONE lane of the active drum clip from a phrase: one undo unit
-         * (the whole clip's snapshot, grids included), that lane's grid and
-         * length only — lanes are independent. flags bit0 = replace (wipe
-         * the lane first). Hits take the lane's own pitch. Refused while the
-         * track records. */
-        if (!strcmp(p2, "_import")) {
-            if (tr->recording) return 1;
-            aud_release_track(inst, tidx);          /* undo must hold the original, not a preview */
-            const char *s = val ? val : "";
-            int flags = my_atoi(s);
-            while (*s && *s != ' ') s++;
-            while (*s == ' ') s++;
-            int ridx = clamp_i(my_atoi(s), 0, 5);
-            while (*s && *s != ' ') s++;
-            while (*s == ' ') s++;
-            int len = clamp_i(my_atoi(s), 1, SEQ_STEPS);
-            const char *ops = strchr(s, '|');
-            ops = ops ? ops + 1 : "";
-            undo_begin_drum_clip(inst, tidx, (int)tr->active_clip);
-            /* Only this lane's sounding hit ends; the rest of the kit plays on. */
-            drum_pfx_note_off_imm(inst, tr, &tr->drum_lane_pfx[lane_idx], dlane->midi_note);
-            if (flags & 1) clip_wipe_notes(dlc);
-            clip_import_frame(dlc, TPS_VALUES[ridx], (uint16_t)len);
-            /* Loaded while playing: land in phase with the master clock, as a
-             * mid-play clip switch does, so the lane stays locked to the kit. */
-            if (inst->playing) drum_lane_anchor_playhead(inst, tr, lane_idx, dlc);
-            else { tr->drum_current_step[lane_idx] = 0; tr->drum_tick_in_step[lane_idx] = 0; }
-            while (*ops) {
-                while (*ops == ' ' || *ops == ';') ops++;
-                if (*ops != 'a') { while (*ops && *ops != ';') ops++; continue; }
-                lane_note_apply_op(dlc, dlane->midi_note, 'a', ops + 1);
-                while (*ops && *ops != ';') ops++;
-            }
-            clip_note_finalize(inst, dlc, tidx, (int)tr->active_clip);
-            return 1;
-        }
-
         /* Remote-UI drum-grid edits (monophonic lane; pitch = lane note). */
         if (!strcmp(p2, "_note_toggle")) { if (lane_note_apply_op(dlc, dlane->midi_note, 't', val)) clip_note_finalize(inst, dlc, tidx, (int)tr->active_clip); return 1; }
         if (!strcmp(p2, "_note_add"))    { if (lane_note_apply_op(dlc, dlane->midi_note, 'a', val)) clip_note_finalize(inst, dlc, tidx, (int)tr->active_clip); return 1; }

@@ -8,7 +8,6 @@
  * see docs/superpowers/plans/2026-07-10-refactor-phase6b-map.md).
  */
 
-import { pbTick } from './ui_phrase_browser.mjs';
 import { chordLayoutOn } from './ui_chord_pads.mjs';
 import { triggerFlashing } from './ui_trigger.mjs';
 import {
@@ -2065,9 +2064,6 @@ export function _tickImpl() {
         /* Dave Box scan: the album's vertical pan is tick-driven, like the
          * blink below — the draw path only paints what the tick advanced. */
         if (S.daveBox) daveBoxTick();
-
-        /* The phrase library: its preview, its exits, and the refresh after a load. */
-        pbTick();
 
         /* ALL LANES blink: mark dirty when "ALL" blink toggles (bank header + loop-held overlay) */
         if (S.activeBank === 7 && S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {

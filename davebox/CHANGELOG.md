@@ -17,13 +17,6 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added (pending)
-- **Phrases.** Touch K6 on the CLIP or DRUM LANE bank and click the jog for a
-  library of one- and two-bar starter phrases: pick the instrument, jump to a
-  style, set a time scale (/8 to x8) and an octave; the jog opens the list of
-  every phrase of that instrument. Each one is heard
-  as you choose it — in time with the song, and in your key — and one click
-  loads it (one Undo). Drum phrases with several instruments go on the pads you
-  tap, on a drum track or as notes on a melodic one.
 - **Import MIDI.** Sound menu → Import MIDI fills a clip from a MIDI file
   anywhere in your user data folder: pick the file, pick a part (with a
   preview), then set the start bar, bars, grid and destination clip on K1–K4

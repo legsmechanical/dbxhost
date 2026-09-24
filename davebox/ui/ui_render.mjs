@@ -17,7 +17,6 @@ import { chordLabel, noteNames, heldInputNotes, keyUsesFlats, keyRootName, fitHe
 import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
 import { LGTO_KNOB } from './ui_constants.mjs';
-import { pbActive, pbRender, PB_KNOB } from './ui_phrase_browser.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
@@ -567,7 +566,6 @@ function drawSessionFaderRow(cells, mode) {
 export function bankPageHints(bank) {
     /* A touched TRIGGER knob says how to fire it, as stock's footer does. */
     if (bank === 0 && S.knobTouched === LGTO_KNOB && !S.sessionView) return [['CLK', 'LEGATO']];
-    if (bank === 0 && S.knobTouched === PB_KNOB && !S.sessionView) return [['CLK', 'PHRASES']];
     /* ⭑ While a step is HELD the jog means something else (spec §2): on any
      * other bank a right turn REVEALS the step's page — so the pair says so,
      * in the same slot, and JOG BANK (which the hold suspends) is not shown.
@@ -748,15 +746,6 @@ function _discreteOpts(knob) {
     const opts = [];
     for (let i = knob.min; i <= knob.max; i++) opts.push(_offDash(knob.fmt(i)));
     return opts;
-}
-
-/* K6 on the CLIP / DRUM LANE bank: the phrase library, a trigger like Legato
- * (touch + jog click opens it). */
-function drawPhraseBrowser() { pbRender(S.knobTouched, S.shiftHeld); }
-
-function phrasesTriggerCell() {
-    return { kind: 'action', oneWay: true, label: 'Phrs', name: 'Phrases', text: '->', opens: true,
-             btnPhase: triggerPhase('phrases', S.knobTouched === PB_KNOB) };
 }
 
 function kitCellForKnob(knob, val) {
@@ -1374,7 +1363,7 @@ export function bankCardVisible() {
 }
 
 export function soundModeCovered() {
-    return !!(devSnapOpen() || S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox || pbActive() ||
+    return !!(devSnapOpen() || S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox ||
         S.projectPadPicker || S.pendingSceneBakePicker ||
         S.mergePlacing || S.mergeNoticePending || S.pendingMergePlacement ||
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
@@ -1641,7 +1630,6 @@ function drawUIBody() {
     S._altPrevTrack = S.activeTrack;
     if (S.sessionOverlayHeld) { drawSessionOverview(); return; }
     if (S.daveBox) { drawDaveBox(); return; }
-    if (pbActive()) { drawPhraseBrowser(); return; }
     if (S.snapshotPicker) { drawSnapshotPicker(); return; }
     /* ⭑ The exit confirm outranks the picker (2026-09-16). Hold-Back already
      * raised it from here — checkBackHold() has no picker guard — but the
@@ -2057,7 +2045,7 @@ function drawUIBody() {
                 { kind: 'action', oneWay: true, label: 'Lgto', name: 'Apply Legato', text: '->', opens: true,
                   btnPhase: triggerPhase('lgto', S.knobTouched === LGTO_KNOB) },
                 { kind: 'valsq', label: 'Eucld', name: 'Euclid Fill', text: String(eucN) },
-                phrasesTriggerCell(),
+                { kind: 'blank', label: '' },
                 S.altMode
                     ? toggleCell('Revrs', 'Reverse Style', _dlRev,
                                  fmtRevStyle(1), fmtRevStyle(0))
@@ -2328,7 +2316,6 @@ function drawUIBody() {
                                       fmtRevStyle(1), fmtRevStyle(0)));
                 continue;
             }
-            if (bank === 0 && k === PB_KNOB) { cells.push(phrasesTriggerCell()); continue; }
             const cell = kitCellForKnob(knobs[k], vals[k]);
             if (S.altMode) {
                 if      (knobs[k].dspKey === 'clock_shift')     { cell.label = 'Nudge'; cell.name = 'Nudge'; }
