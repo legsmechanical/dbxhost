@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encodeNotes, decodeNotes, fingerprint, isDrumCat, pitchInC, BAR, trimLeading, drumSounds, collapseRepeats, coarseKey } from './lib/phrase.mjs';
-import { TAG_BPM, isTag } from './lib/genres.mjs';
+import { TAG_BPM, isTag, publicTag } from './lib/genres.mjs';
 import { writeSmf } from './lib/smf.mjs';
 import { createHash } from 'node:crypto';
 import { packChunk } from '../../ui/ui_phrase_pack.mjs';
@@ -79,14 +79,15 @@ async function loadRules(cat) {
 }
 
 /* rules: { genres: [{ tag, count, feel, bars, mode?, make(rng, i) -> notes, name(i) }] } */
-/* Names: "<TAG> <nn>" per tag in list order ("BASIC" for none), with the
- * source's descriptor when it fits in 14 characters ("FUNK LIVE 03").
- * Generated phrases keep the names their rules gave them. */
+/* Names: "<STYLE> <nn>" per style in list order ("BASIC" for none) — the
+ * phrase's own style, which may be narrower than the tag it is filed under
+ * ("GOTH 04" in NEW WAVE) — with the source's descriptor when it fits in 14
+ * characters ("FUNK LIVE 03"). Generated phrases keep their rules' names. */
 function nameAll(list) {
     const n = new Map();
     for (const p of list) {
         if (p.name) continue;
-        const tag = p.g || 'BASIC', key = tag + '|' + (p.desc || '');
+        const tag = p.style || p.g || 'BASIC', key = tag + '|' + (p.desc || '');
         n.set(key, (n.get(key) || 0) + 1);
         const num = String(n.get(key)).padStart(2, '0');
         const withDesc = p.desc ? tag + ' ' + p.desc + ' ' + num : '';
@@ -125,16 +126,25 @@ async function gen(cats) {
         /* ingested phrases (licence carried per phrase) */
         for (const ing of (rules.ingest || [])) {
             const fn = await loadSource(ing.source || 'gmd');
-            if (!fn) { console.warn(`  ${cat}: source ${ing.source} not available — skipped`); continue; }
+            if (!fn) {
+                /* A skipped source writes a smaller library that looks complete:
+                 * refuse, unless the skip is deliberate. */
+                if (process.env.PHRASEGEN_ALLOW_MISSING !== '1')
+                    throw new Error(`${cat}: source ${ing.source} not available (set PHRASEGEN_PRIVATE_DIR, or PHRASEGEN_ALLOW_MISSING=1 to build without it)`);
+                console.warn(`  ${cat}: source ${ing.source} not available — SKIPPED (PHRASEGEN_ALLOW_MISSING=1)`);
+                continue;
+            }
             for (const raw of fn(cat, ing)) {
                 const p = admit(cat, raw);
                 if (!p) continue;
                 const fp = coarseKey(cat, p.notes, p.bars);
                 if (seen.has(fp)) continue;
                 seen.add(fp);
-                const tag = isTag(p.g) ? p.g : '';
-                out.push({ id: cat + '.' + (tag || 'basic').toLowerCase().replace(/\s+/g, '') + '.' + fnv8(p.bars + '|' + (p.pads || []).join(',') + '|' + encodeNotes(cat, p.notes)),
-                           name: '', desc: p.desc || '', cat, g: tag, bars: p.bars, feel: p.feel || 'straight', mode: '',
+                /* filed under the public tag, named for its own style */
+                const tag = isTag(publicTag(p.g)) ? publicTag(p.g) : '';
+                const style = tag ? p.g : '';
+                out.push({ id: cat + '.' + (style || 'basic').toLowerCase().replace(/\s+/g, '') + '.' + fnv8(p.bars + '|' + (p.pads || []).join(',') + '|' + encodeNotes(cat, p.notes)),
+                           name: '', style, desc: p.desc || '', cat, g: tag, bars: p.bars, feel: p.feel || 'straight', mode: '',
                            src: p.src, lic: p.lic, attrib: p.attrib, pads: p.pads || undefined, n: encodeNotes(cat, p.notes) });
             }
         }
