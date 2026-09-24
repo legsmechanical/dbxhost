@@ -18,6 +18,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { encodeNotes, decodeNotes, fingerprint, isDrumCat, pitchInC, BAR, trimLeading, drumSounds, collapseRepeats, coarseKey } from './lib/phrase.mjs';
 import { TAG_BPM, isTag, publicTag } from './lib/genres.mjs';
+import { profile, loadStyle, genPhrase, loadGate, tooClose, PART_OF } from './lib/stats_gen.mjs';
+import { STYLE_FILES, FLAVOUR_NAME, PER_STYLE, PER_BASICS, PER_FLAVOUR, flavourUsable, countFor } from './lib/style_plan.mjs';
 import { writeSmf } from './lib/smf.mjs';
 import { createHash } from 'node:crypto';
 import { packChunk } from '../../ui/ui_phrase_pack.mjs';
@@ -122,6 +124,44 @@ async function gen(cats) {
                            n: encodeNotes(cat, notes) });
             }
             if (made < g.count) console.warn(`  ${cat}/${g.tag || 'basic'} ${g.family || ''}: only ${made} of ${g.count} distinct candidates`);
+        }
+        /* generated from the measured statistics of every style and named style */
+        if (rules.stats) {
+            const gate = loadGate(PRIVATE_DIR ? join(PRIVATE_DIR, 'reference', 'fingerprints.json') : '');
+            if (!gate && process.env.PHRASEGEN_ALLOW_MISSING !== '1')
+                throw new Error(`${cat}: similarity gate not available (set PHRASEGEN_PRIVATE_DIR, or PHRASEGEN_ALLOW_MISSING=1)`);
+            let refused = 0;
+            for (const [file, tag] of Object.entries(STYLE_FILES)) {
+                const st = loadStyle(file);
+                if (!st) continue;
+                const groups = [[null, tag, file === 'basics' ? PER_BASICS : PER_STYLE]];
+                for (const [fk, f] of Object.entries(st.flavours || {}))
+                    if (flavourUsable(f) && FLAVOUR_NAME[fk]) groups.push([fk, FLAVOUR_NAME[fk], PER_FLAVOUR]);
+                for (const [fk, style, base] of groups) {
+                    const prof = profile(file, fk);
+                    if (!prof) continue;
+                    const part = prof.part(PART_OF[cat]);
+                    const want = countFor(base, cat, part, prof, file, fk);
+                    let made = 0, tries = 0;
+                    while (made < want && tries++ < want * 30) {
+                        const id = cat + '.' + (style || 'basic').toLowerCase().replace(/\s+/g, '') + '.g' + String(tries).padStart(3, '0');
+                        /* major / minor in the measured proportion across the group */
+                        const r = genPhrase(cat, prof, makeRng(id), (made + 0.5) / want < prof.minor ? 'min' : 'maj');
+                        if (!r) continue;
+                        const ad = admit(cat, { notes: r.notes, bars: r.bars });
+                        if (!ad || ad.notes.length < (cat === 'fx' || cat === 'pad' ? 1 : 2)) continue;
+                        if (tooClose(gate, cat, ad.notes, ad.bars)) { refused++; continue; }
+                        const fp = coarseKey(cat, ad.notes, ad.bars);
+                        if (seen.has(fp)) continue;
+                        seen.add(fp);
+                        made++;
+                        out.push({ id, name: '', style: style && isTag(publicTag(style)) ? style : '', desc: '', cat,
+                                   g: style ? publicTag(style) : '', bars: ad.bars, feel: 'straight', mode: r.mode,
+                                   src: 'gen:' + id, lic: 'dAVEBOx', n: encodeNotes(cat, ad.notes) });
+                    }
+                }
+            }
+            if (refused) console.log(`  ${cat}: ${refused} too close to the reference collection — refused`);
         }
         /* ingested phrases (licence carried per phrase) */
         for (const ing of (rules.ingest || [])) {
