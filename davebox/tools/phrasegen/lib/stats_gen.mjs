@@ -40,7 +40,9 @@ export function profile(styleFile, flavour) {
     const t = f && f.targets ? f.targets : null;
     const part = (name) => {
         const fp = t && t.parts && t.parts[name];
-        if (fp && fp.density_per_bar && (fp.songs || 0) >= 4) return fp;
+        /* a named style's own part numbers need 6+ songs behind them; fewer
+         * is noise, and the parent style's numbers stand in */
+        if (fp && fp.density_per_bar && (fp.songs || 0) >= 6) return fp;
         const bp = base.parts && base.parts[name];
         if (bp && bp.density_per_bar) return bp;
         return basics && basics.parts ? basics.parts[name] : null;
@@ -168,9 +170,11 @@ export function genPhrase(cat, prof, rng, forceMode) {
     /* length: rhythm that repeats every bar → mostly 1-bar phrases; the rest 2
      * (and a few 4) — starter phrases, never longer than the library allows */
     const lr = P.loop_share_rhythm || { '1': 0.4 };
-    const bars = pickW(rng, [[1, 0.35 + (lr['1'] || 0) * 0.6], [2, 0.5], [4, 0.12]]);
+    let bars = pickW(rng, [[1, 0.35 + (lr['1'] || 0) * 0.6], [2, 0.5], [4, 0.12]]);
     const loop = pickLoop(rng, prof, mode);
-    const cpb = cat === 'pad' ? (loop.length > bars ? Math.min(2, Math.ceil(loop.length / bars)) : 1)
+    /* a pad changes chord once a bar: the phrase is as long as its loop */
+    if (cat === 'pad') bars = loop.length <= 2 ? loop.length : 4;
+    const cpb = cat === 'pad' ? 1
                               : (fromQ(rng, prof.change, 0.5, 2) > 1.3 || loop.length > bars * 1 ? Math.min(2, Math.max(1, Math.ceil(loop.length / bars))) : 1);
     const slotLen = BAR / cpb;
     const chordAt = (t) => loop[Math.floor(t / slotLen) % loop.length];
@@ -180,7 +184,11 @@ export function genPhrase(cat, prof, rng, forceMode) {
     const chromatic = pcw.reduce((a, w, pc) => a + (MODES[mode].includes(pc) ? 0 : w), 0) / pcw.reduce((a, w) => a + w, 0);
     const anchor = ANCHOR[cat] ?? 60;
     const reg = P.register ? P.register[1] : anchor + 4;
-    const center = Math.round((reg - anchor) / 12) * 12;        /* octave the part lives in, relative to the anchor */
+    /* the octave the part lives in, relative to the anchor — chords, pads and
+     * keys voiced around C4-C5 whatever high stabs the measurement caught */
+    let center = Math.round((reg - anchor) / 12) * 12;
+    if (cat === 'chord' || cat === 'pad' || cat === 'keys') center = Math.max(-12, Math.min(0, center));
+    if (cat === 'lead') center = Math.min(12, center);
     const len16 = P.len16 || [1, 2, 3];
     const iv = P.interval_share || { '0': 0.3, '2': 0.2, '-2': 0.2 };
     const repeatP = iv['0'] || 0.2;
@@ -198,7 +206,14 @@ export function genPhrase(cat, prof, rng, forceMode) {
             rhythms.push(Array.from({ length: Math.floor(16 / r) }, (_, i) => i * r));
             continue;
         }
-        if (cat === 'pad') want = Math.min(want, 2);
+        /* pads start on the one and hold; a second entry falls where the
+         * style's pads enter (its measured onsets) */
+        if (cat === 'pad') {
+            const more = barSteps(rng, P, Math.min(3, Math.max(1, want))).filter(x => x !== 0);
+            const second = cpb > 1 ? 1 : Math.max(0, Math.min(1, ((P.density_per_bar || [1, 1.5, 2])[1]) - 1));
+            rhythms.push([0].concat(more.slice(0, rng.next() < second ? 1 : 0)));
+            continue;
+        }
         rhythms.push(barSteps(rng, P, Math.max(1, want)));
     }
     const onsets = [];
@@ -282,7 +297,8 @@ export function genPhrase(cat, prof, rng, forceMode) {
         });
     } else {                                                             /* chord, pad, keys, guitar: voiced chords */
         const poly = P.poly || {};
-        const voices = Math.max(2, Math.min(4, Math.round(fromQ(rng, poly.voices, 2, 4))));
+        /* at least a triad (a guitar may play a two-note power chord) */
+        const voices = Math.max(cat === 'guitar' ? 2 : 3, Math.min(4, Math.round(fromQ(rng, poly.voices, 2, 4))));
         const pow = cat === 'guitar' && poly.quality && rng.next() < (poly.quality.pow || 0);
         const inv = poly.inversion_share ? poly.inversion_share[1] : 0.3;
         onsets.forEach((t, i) => {
