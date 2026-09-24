@@ -1863,8 +1863,7 @@ drum lane. **Touch K6 on the CLIP bank (or the DRUM LANE bank) and click the jog
   track offers the drum types; a melodic track
   offers everything (a drum phrase then plays notes — see below).
 - **K2 Style** — jump to a genre's phrases, or BASIC (general-purpose phrases
-  with no genre). It shows the style of the phrase you're on — its own, where
-  that is narrower than the genre (GOTH, while you're in NEW WAVE).
+  with no genre). It shows the style of the phrase you're on.
 - **K3 Time** — play the phrase at /8, /4, /2, x1, x2, x4 or x8 of its length.
 - **K4 Octave** (melodic tracks) — move the phrase up or down to three octaves;
   you hear it and it loads that way.
@@ -1910,9 +1909,9 @@ single drums (kick, snare, hats, cymbals, toms, percussion — many played by re
 and melodic parts (bass, chords, arps, leads, pads, synth FX, sequences, keys, guitar),
 across BASIC plus these styles: ACID, AMBIENT, BREAKS, COUNTRY, DARKSYN, DISCO, DNB,
 ELECTRO, FUNK, GARAGE, HARDCORE, HIPHOP, HOUSE, INDIE, ITALO, JAZZ, METAL, NEW WAVE, POP,
-PUNK, REGGAE, RNB, ROCK, TECHNO, TRANCE and WORLD. Narrower styles are filed under a broader
-one — GOTH, DARKWAVE and SYNTHWAVE in NEW WAVE, EBM in DARKSYN, LATIN and AFROBEAT in WORLD,
-DUB in REGGAE, and so on. Phrases play with their style's groove: its swing, the pushes and
+PUNK, REGGAE, RNB, ROCK, TECHNO, TRANCE and WORLD. Each style covers its genres — NEW WAVE
+takes in goth, darkwave and synthwave, DARKSYN takes in EBM and industrial, WORLD takes in
+Latin and afrobeat, REGGAE takes in dub, and so on. Phrases play with their style's groove: its swing, the pushes and
 drags of each part, ghost notes, and in trap the fast hat rolls.
 
 A phrase's name says what it plays: the pattern (4 FLOOR, BACKBEAT, 8THS OPEN, TOM LINE),

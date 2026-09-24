@@ -219,8 +219,8 @@ async function main() {
         assert(pb().idx === 0, 'K2 left did not jump to BASIC');
         turn(1, 12); ticks(1);
         assert(pb().idx === 2 && pb().list[2].id === 'bass.b', 'K2 right did not jump to where ITALO starts: ' + pb().idx);
-        /* the Style cell names the phrase's own style where it is narrower than its tag */
-        assert(PB.pbRingCells()[1].text === 'HI-NRG', 'Style cell: ' + PB.pbRingCells()[1].text);
+        /* the Style cell names the defined style, never a genre inside it */
+        assert(PB.pbRingCells()[1].text === 'ITALO', 'Style cell: ' + PB.pbRingCells()[1].text);
         turn(1, -12); ticks(2);
         assert(PB.pbRingCells()[1].text === 'BASIC', 'Style cell at BASIC: ' + PB.pbRingCells()[1].text);
     });

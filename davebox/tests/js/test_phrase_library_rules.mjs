@@ -73,9 +73,9 @@ step('every phrase obeys the library rules', () => {
         const why = [];
         if (ids.has(p.id)) why.push('duplicate id');
         ids.add(p.id);
-        /* a name is unique beside its style (the browser's Style knob shows both) */
-        const nk = p.cat + '|' + p.g + '|' + (p.s || '') + '|' + p.name;
-        if (names.has(nk)) why.push('duplicate name in ' + p.cat + ' / ' + (p.s || p.g || 'BASIC'));
+        /* a name is unique within its style (the browser's Style knob shows it beside the name) */
+        const nk = p.cat + '|' + p.g + '|' + p.name;
+        if (names.has(nk)) why.push('duplicate name in ' + p.cat + ' / ' + (p.g || 'BASIC'));
         names.set(nk, 1);
         if (!(typeof p.name === 'string' && p.name.length >= 1 && p.name.length <= 14 && p.name === p.name.toUpperCase())) why.push('name');
         if (!TAGS.includes(p.g || '')) why.push('style ' + p.g);
