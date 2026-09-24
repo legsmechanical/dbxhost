@@ -1866,7 +1866,7 @@ drum lane. **Touch K6 on the CLIP bank (or the DRUM LANE bank) and click the jog
 - **K3 Time** — play the phrase at /8, /4, /2, x1, x2, x4 or x8 of its length.
 - **K4 Octave** (melodic tracks) — move the phrase up or down to three octaves;
   you hear it and it loads that way.
-- **Jog** — opens the list of every phrase of the type, grouped by style, over
+- **Jog** — opens the list of every phrase of the type — BASIC first, then each style — over
   the page; turn to move through it. It closes half a second after you let go
   of the jog (or on a click or Back).
 - **Jog click** — load the phrase. It asks first if it would replace notes

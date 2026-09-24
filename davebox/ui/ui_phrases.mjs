@@ -108,16 +108,17 @@ export function styleList(phrases) {
     const tags = new Set();
     let basic = false;
     for (const p of phrases) { if (p.g) tags.add(p.g); else basic = true; }
-    const out = [PB_STYLE_ALL, ...[...tags].sort()];
+    /* BASIC (the general-purpose phrases) comes first (Josh, 2026-09-24). */
+    const out = [PB_STYLE_ALL];
     if (basic) out.push(PB_STYLE_BASIC);
-    return out;
+    return out.concat([...tags].sort());
 }
 
-/* The picker's list: EVERY phrase of the type, grouped by style (the genre
- * tags in order, then BASIC); within a group the library's order. K2 Style is
+/* The picker's list: EVERY phrase of the type, grouped by style (BASIC, then
+ * the genre tags in order); within a group the library's order. K2 Style is
  * a jump to where a group starts (Josh, 2026-09-23: "phrase picker should
  * scroll through everything in the selected type. style is just a way to jump
- * to a particular part of that list"). → { list, styles, starts } */
+ * to a particular part of that list"); BASIC first. → { list, styles, starts } */
 export const styleOf = (p) => p.g || PB_STYLE_BASIC;
 export function styleGroups(phrases) {
     const styles = styleList(phrases).filter(x => x !== PB_STYLE_ALL);

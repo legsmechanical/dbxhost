@@ -13,6 +13,7 @@ import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { decodeNotes, isDrumCat, pitchInC } from './lib/phrase.mjs';
+import { TAG_BPM } from './lib/genres.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const [outDir, ...cats] = process.argv.slice(2);
@@ -20,7 +21,15 @@ if (!outDir) { console.error('usage: review.mjs <outdir> [cat…]'); process.exi
 const list = (cats.length ? cats : ['hat', 'bass']);
 mkdirSync(join(outDir, 'audio'), { recursive: true });
 
-const GENRE_BPM = { HOUSE: 124, FUNK: 100, DNB: 172, '': 120 };
+const GENRE_BPM = TAG_BPM;
+/* The page's heading and intro: REVIEW_TITLE / REVIEW_INTRO (HTML) override the defaults. */
+const TITLE = process.env.REVIEW_TITLE || 'Phrase library — sample';
+const INTRO = process.env.REVIEW_INTRO || '';
+/* Where a phrase came from, as the page labels it. */
+function srcLabel(p) {
+    const s = String(p.src || '');
+    return s.startsWith('lib:gmd') ? 'GROOVE MIDI' : s.startsWith('lib:lmd') ? 'LAKH' : s.startsWith('own:') ? 'COLLECTION' : 'GENERATED';
+}
 const groups = [];
 for (const cat of list) {
     const ph = JSON.parse(readFileSync(join(HERE, 'cache', 'candidates', cat + '.json'), 'utf8'));
@@ -29,7 +38,7 @@ for (const cat of list) {
         const n = decodeNotes(cat, p.n);
         return {
             id: p.id, name: p.name, g: p.g || 'BASIC', bars: p.bars, feel: p.feel,
-            live: p.lic !== 'dAVEBOx', bpm: GENRE_BPM[p.g || ''] || 120,
+            live: p.lic !== 'dAVEBOx', from: srcLabel(p), bpm: GENRE_BPM[p.g || ''] || 120,
             /* [tick, vel, gate, pitch] — pitch null for drums */
             n: n.map(x => [x.t, x.v, x.g, isDrumCat(cat) ? null : pitchInC(cat, p.mode, x)]),
         };
@@ -38,7 +47,7 @@ for (const cat of list) {
 }
 const DATA = JSON.stringify(groups);
 
-const html = `<title>Phrase Library Sample</title>
+const html = `<title>${TITLE}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
 <style>
@@ -73,8 +82,8 @@ button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 </style>
 <main>
 <header style="display:grid;gap:10px">
-<h1>Phrase library — first sample</h1>
-<p>Hats and bass across House, Funk and Drum &amp; Bass, plus plain basics. <span class="live">LIVE</span> phrases are real drummers from the Groove MIDI Dataset (CC BY 4.0); the rest are generated from the research. Each plays twice, with a soft kick on the beat for time; bass is in C. The sounds are deliberately plain — judge the rhythm, the velocities and the notes. Long hat notes stand for open hats.</p>
+<h1>${TITLE}</h1>
+${INTRO ? '<p>' + INTRO + '</p>' : ''}
 <p>Mark each one <b>Keep</b> or <b>Drop</b> — your picks are saved as you go and I read them back.</p>
 <div class="status" id="status">Connecting…</div>
 </header>
@@ -138,7 +147,7 @@ for (const gr of GROUPS) {
     if (r.g !== lastG) { const h = document.createElement('h3'); h.textContent = r.g === 'BASIC' ? 'Basics (no genre)' : r.g; sec.appendChild(h); rows = document.createElement('div'); rows.className = 'rows'; sec.appendChild(rows); lastG = r.g; }
     const row = document.createElement('div'); row.className = 'row'; row.id = 'r-' + r.id;
     row.innerHTML = '<button class="play" aria-label="Play ' + r.name + '">▶</button>'
-      + '<div><div class="name">' + r.name + '</div><div class="meta">' + r.bars + ' bar' + (r.bars > 1 ? 's' : '') + ' · ' + r.feel + ' · ' + r.bpm + ' bpm' + (r.live ? ' · <span class="live">LIVE</span>' : '') + '</div></div>'
+      + '<div><div class="name">' + r.name + '</div><div class="meta">' + r.bars + ' bar' + (r.bars > 1 ? 's' : '') + ' · ' + r.feel + ' · ' + r.bpm + ' bpm · <span class="live">' + r.from + '</span></div></div>'
       + '<canvas aria-hidden="true"></canvas>'
       + '<div class="picks"><button class="k" aria-pressed="false">Keep</button><button class="d" aria-pressed="false">Drop</button></div>';
     row.querySelector('.play').onclick = (e) => play(e.currentTarget, r.id);

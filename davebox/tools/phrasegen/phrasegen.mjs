@@ -16,7 +16,8 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { encodeNotes, decodeNotes, fingerprint, isDrumCat, pitchInC, BAR } from './lib/phrase.mjs';
+import { encodeNotes, decodeNotes, fingerprint, isDrumCat, pitchInC, BAR, trimLeading, drumSounds } from './lib/phrase.mjs';
+import { TAG_BPM, isTag } from './lib/genres.mjs';
 import { writeSmf } from './lib/smf.mjs';
 import { renderWav } from './lib/synth.mjs';
 
@@ -25,14 +26,45 @@ const CACHE = join(HERE, 'cache');
 const OUT = join(HERE, 'out');
 const LIB_DIR = join(HERE, '..', '..', 'phrases');
 const CURATION = join(HERE, 'curation.json');
+/* An optional private source outside the repo: <dir>/tools/phrasegen-source.mjs
+ * exporting ingest(cat, opts). Absent = skipped, with a warning. */
+const PRIVATE_DIR = process.env.PHRASEGEN_PRIVATE_DIR || '';
 export const MAX_BARS = 4;
 export const MAX_DRUM_SOUNDS = 3;
 export const MULTI_SOUND_CATS = ['hat', 'perc'];
 export const LICENCE_ALLOW = ['CC0-1.0', 'CC-BY-4.0', 'MIT', 'Apache-2.0', 'PD', 'dAVEBOx'];
 
-/* Default audition tempo per genre tag (the research notes' typical tempo). */
-const GENRE_BPM = { HOUSE: 124, FUNK: 100, DNB: 172, TECHNO: 130, DISCO: 118, ROCK: 120, '': 120 };
-const DRUM_PITCH = { kick: 36, snare: 38, hat: 42, tom: 45, perc: 56 };
+const GENRE_BPM = TAG_BPM;
+const DRUM_PITCH = { kick: 36, snare: 38, hat: 42, cymb: 51, tom: 45, perc: 56 };
+const VOICE = { kick: 'kick', snare: 'snare', hat: 'hat', cymb: 'hat', tom: 'tom', perc: 'perc' };
+
+/* 32-bit FNV-1a, hex — stable ids for ingested phrases. */
+function fnv8(str) { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8, '0'); }
+
+async function loadSource(name) {
+    if (name === 'own') {
+        if (!PRIVATE_DIR) return null;
+        const f = join(PRIVATE_DIR, 'tools', 'phrasegen-source.mjs');
+        return existsSync(f) ? (await import(f)).ingest : null;
+    }
+    return (await import('./ingest/' + name + '.mjs')).ingest;
+}
+
+/* The library's rules, for every candidate from every source: no empty
+ * leading bar, 1–MAX_BARS bars, drum sound limits, and — for drums other
+ * than kicks — at least two velocity levels. Returns the fixed-up candidate
+ * or null. */
+function admit(cat, c) {
+    const tl = trimLeading(c.notes, c.bars || 1);
+    const bars = tl.bars;
+    if (!(bars >= 1 && bars <= MAX_BARS) || !tl.notes.length) return null;
+    if (isDrumCat(cat)) {
+        const cap = MULTI_SOUND_CATS.includes(cat) ? MAX_DRUM_SOUNDS : 1;
+        if (drumSounds(tl.notes) > cap) return null;
+        if (cat !== 'kick' && new Set(tl.notes.map(n => Math.round(n.v / 8))).size < 2) return null;
+    }
+    return Object.assign({}, c, { notes: tl.notes, bars });
+}
 
 async function loadRules(cat) {
     const f = join(HERE, 'rules', cat + '.mjs');
@@ -41,42 +73,66 @@ async function loadRules(cat) {
 }
 
 /* rules: { genres: [{ tag, count, feel, bars, mode?, make(rng, i) -> notes, name(i) }] } */
+/* Names: "<TAG> <nn>" per tag in list order ("BASIC" for none), with the
+ * source's descriptor when it fits in 14 characters ("FUNK LIVE 03").
+ * Generated phrases keep the names their rules gave them. */
+function nameAll(list) {
+    const n = new Map();
+    for (const p of list) {
+        if (p.name) continue;
+        const tag = p.g || 'BASIC', key = tag + '|' + (p.desc || '');
+        n.set(key, (n.get(key) || 0) + 1);
+        const num = String(n.get(key)).padStart(2, '0');
+        const withDesc = p.desc ? tag + ' ' + p.desc + ' ' + num : '';
+        p.name = (withDesc && withDesc.length <= 14) ? withDesc : (tag + ' ' + num).slice(0, 14);
+    }
+}
+
 async function gen(cats) {
     const { makeRng } = await import('./lib/rng.mjs');
     mkdirSync(join(CACHE, 'candidates'), { recursive: true });
     for (const cat of cats) {
         const rules = await loadRules(cat);
         const seen = new Set(), out = [];
-        for (const g of rules.genres) {
+        for (const g of (rules.genres || [])) {
             let made = 0, tries = 0;
             while (made < g.count && tries++ < g.count * 40) {
                 const fam = (g.tag || 'basic') + (g.family ? '-' + g.family : '');
                 const id = cat + '.' + fam.toLowerCase().replace(/\s+/g, '') + '.' + String(tries).padStart(3, '0');
                 const rng = makeRng(id);
-                const notes = g.make(rng, made);
-                if (!notes || !notes.length) continue;
+                const made0 = g.make(rng, made);
+                if (!made0 || !made0.length) continue;
+                const ad = admit(cat, { notes: made0, bars: g.bars || 1 });
+                if (!ad) continue;
+                const notes = ad.notes;
                 if (rules.accept && !rules.accept(notes, g)) continue;
                 const fp = fingerprint(cat, notes);
                 if (seen.has(fp)) continue;
                 seen.add(fp);
                 made++;
-                out.push({ id, name: g.name(made), cat, g: g.tag || '', bars: g.bars || 1, feel: g.feel || 'straight',
+                out.push({ id, name: g.name(made), cat, g: g.tag || '', bars: ad.bars, feel: g.feel || 'straight',
                            mode: isDrumCat(cat) ? '' : (g.mode || 'min'), src: 'gen:' + id, lic: 'dAVEBOx',
                            n: encodeNotes(cat, notes) });
             }
             if (made < g.count) console.warn(`  ${cat}/${g.tag || 'basic'} ${g.family || ''}: only ${made} of ${g.count} distinct candidates`);
         }
-        /* ingested phrases (open libraries, licence carried per phrase) */
+        /* ingested phrases (licence carried per phrase) */
         for (const ing of (rules.ingest || [])) {
-            const { ingestGmd } = await import('./ingest/gmd.mjs');
-            for (const p of ingestGmd(cat, ing.style, ing.count, ing.tag, ing.name)) {
-                const fp = fingerprint(cat, p.notes);
+            const fn = await loadSource(ing.source || 'gmd');
+            if (!fn) { console.warn(`  ${cat}: source ${ing.source} not available — skipped`); continue; }
+            for (const raw of fn(cat, ing)) {
+                const p = admit(cat, raw);
+                if (!p) continue;
+                const fp = fingerprint(cat, p.notes) + '|' + (p.notes.map(n => n.p ?? '').join(','));
                 if (seen.has(fp)) continue;
                 seen.add(fp);
-                out.push({ id: p.id, name: p.name, cat, g: p.g, bars: p.bars, feel: p.feel, mode: '',
-                           src: p.src, lic: p.lic, attrib: p.attrib, n: encodeNotes(cat, p.notes) });
+                const tag = isTag(p.g) ? p.g : '';
+                out.push({ id: cat + '.' + (tag || 'basic').toLowerCase().replace(/\s+/g, '') + '.' + fnv8(encodeNotes(cat, p.notes)),
+                           name: '', desc: p.desc || '', cat, g: tag, bars: p.bars, feel: p.feel || 'straight', mode: '',
+                           src: p.src, lic: p.lic, attrib: p.attrib, pads: p.pads || undefined, n: encodeNotes(cat, p.notes) });
             }
         }
+        nameAll(out);
         writeFileSync(join(CACHE, 'candidates', cat + '.json'), JSON.stringify(out, null, 0));
         console.log(`${cat}: ${out.length} candidates`);
     }
@@ -84,7 +140,7 @@ async function gen(cats) {
 
 function eventsOf(p) {
     const notes = decodeNotes(p.cat, p.n);
-    if (isDrumCat(p.cat)) return notes.map(n => ({ t: n.t, v: n.v, g: n.g, p: DRUM_PITCH[p.cat], voice: p.cat }));
+    if (isDrumCat(p.cat)) return notes.map(n => ({ t: n.t, v: n.v, g: n.g, p: n.p ?? DRUM_PITCH[p.cat], voice: VOICE[p.cat] }));
     return notes.map(n => ({ t: n.t, v: n.v, g: n.g, p: pitchInC(p.cat, p.mode, n), voice: 'bass' }));
 }
 

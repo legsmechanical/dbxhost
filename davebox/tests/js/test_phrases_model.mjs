@@ -39,26 +39,26 @@ step('shipped phrases come first; a repeated id from a later source is dropped',
     assertEq(mergeLibraries([a, null, b]).map(p => p.name), ['A', 'B', 'C'], 'merge');
 });
 
-step('styles: ALL, the genre tags sorted, BASIC for the untagged; the filter follows', () => {
+step('styles: ALL, BASIC for the untagged, then the genre tags sorted; the filter follows', () => {
     const ps = parseLibrary(lib('bass', [
         { id: '1', name: 'X', g: 'TECHNO', n: '0 0 0 0 1 1' }, { id: '2', name: 'Y', g: '', n: '0 0 0 0 1 1' },
         { id: '3', name: 'Z', g: 'ACID', n: '0 0 0 0 1 1' }])).phrases;
-    assertEq(styleList(ps), ['ALL', 'ACID', 'TECHNO', 'BASIC'], 'styles');
+    assertEq(styleList(ps), ['ALL', 'BASIC', 'ACID', 'TECHNO'], 'styles: BASIC first');
     assertEq(filterPhrases(ps, 'ALL').length, 3, 'all');
     assertEq(filterPhrases(ps, 'BASIC').map(p => p.id), ['2'], 'basic');
     assertEq(filterPhrases(ps, 'ACID').map(p => p.id), ['3'], 'tag');
     assert(!styleList(ps.slice(0, 1)).includes('BASIC'), 'BASIC only when something is untagged');
 });
 
-step('the picker list: every phrase, grouped by style (tags, then BASIC); starts mark each group', () => {
+step('the picker list: every phrase, grouped by style (BASIC, then tags); starts mark each group', () => {
     const ps = parseLibrary(lib('bass', [
         { id: '1', name: 'A', g: 'TECHNO', n: '0 0 0 0 1 1' }, { id: '2', name: 'B', g: '', n: '0 0 0 0 1 1' },
         { id: '3', name: 'C', g: 'ACID', n: '0 0 0 0 1 1' }, { id: '4', name: 'D', g: 'TECHNO', n: '0 0 0 0 1 1' },
         { id: '5', name: 'E', g: 'ACID', n: '0 0 0 0 1 1' }])).phrases;
     const g = styleGroups(ps);
-    assertEq(g.list.map(p => p.id), ['3', '5', '1', '4', '2'], 'order');
-    assertEq(g.styles, ['ACID', 'TECHNO', 'BASIC'], 'styles');
-    assertEq(g.starts, [0, 2, 4], 'starts');
+    assertEq(g.list.map(p => p.id), ['2', '3', '5', '1', '4'], 'order');
+    assertEq(g.styles, ['BASIC', 'ACID', 'TECHNO'], 'styles');
+    assertEq(g.starts, [0, 1, 3], 'starts');
 });
 
 step('octave: melodic phrases and drum-as-notes shift by whole octaves', () => {

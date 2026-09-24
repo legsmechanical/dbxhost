@@ -17,8 +17,8 @@ export const PPQN = 96;
 export const BAR = PPQN * 4;
 export const MODES = { maj: [0, 2, 4, 5, 7, 9, 11], min: [0, 2, 3, 5, 7, 8, 10] };
 export const DRUM_CATS = ['kick', 'snare', 'hat', 'cymb', 'tom', 'perc'];
-/* The shipped library uses the first six; the owner's private set also uses
- * the RM1x's own categories (seq, sfx, keys, guitar, orch, ethnic). */
+/* The shipped library uses the first six; a user's own library may also use
+ * seq, sfx, keys, guitar, orch and ethnic. */
 export const MELODIC_CATS = ['bass', 'chord', 'arp', 'lead', 'pad', 'fx', 'seq', 'sfx', 'keys', 'guitar', 'orch', 'ethnic'];
 /* Where each melodic category sits (MIDI note of its C): fixed per category
  * (Josh, 2026-09-23). */
@@ -55,3 +55,14 @@ export function fingerprint(cat, notes) {
     return notes.map(n => n.t + ':' + Math.round(n.v / 16) + (isDrumCat(cat) ? '' : ':' + n.deg + '.' + (n.oct || 0) + '.' + (n.acc || 0)))
         .sort().join(',');
 }
+
+/* A phrase never starts with an empty bar: move the notes so the first bar
+ * with a note is bar 1, and shorten the phrase to match. → { notes, bars } */
+export function trimLeading(notes, bars) {
+    if (!notes.length) return { notes, bars };
+    const first = Math.floor(Math.min(...notes.map(n => n.t)) / BAR);
+    if (first <= 0) return { notes, bars };
+    return { notes: notes.map(n => Object.assign({}, n, { t: n.t - first * BAR })), bars: Math.max(1, bars - first) };
+}
+/* How many distinct sounds a drum phrase uses (a one-pad phrase: 1). */
+export function drumSounds(notes) { return new Set(notes.map(n => n.p ?? -1)).size; }

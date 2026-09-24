@@ -49,9 +49,9 @@ globalThis.set_pixel = _px;
  * three instruments), served where the module keeps it ---- */
 const LIBS = {
     bass: { v: 1, cat: 'bass', phrases: [
-        { id: 'bass.a', name: 'ITALO ROOT', g: 'ITALO', bars: 1, mode: 'min', n: '0 0 0 0 100 40;48 0 0 0 90 40;96 4 0 0 90 40' },
-        { id: 'bass.b', name: 'OCTAVES', g: '', bars: 1, mode: 'min', n: '0 0 0 0 100 20;24 0 1 0 90 20' },
-        { id: 'bass.c', name: 'ITALO OCT', g: 'ITALO', bars: 1, mode: 'min', n: '0 0 0 0 100 20;24 0 1 0 90 20' },
+        { id: 'bass.a', name: 'ROOT 8THS', g: '', bars: 1, mode: 'min', n: '0 0 0 0 100 40;48 0 0 0 90 40;96 4 0 0 90 40' },
+        { id: 'bass.b', name: 'ITALO OCT', g: 'ITALO', bars: 1, mode: 'min', n: '0 0 0 0 100 20;24 0 1 0 90 20' },
+        { id: 'bass.c', name: 'OCTAVES', g: '', bars: 1, mode: 'min', n: '0 0 0 0 100 20;24 0 1 0 90 20' },
     ] },
     hat: { v: 1, cat: 'hat', phrases: [
         { id: 'hat.a', name: 'HOUSE OFF', g: 'HOUSE', bars: 1, n: '48 100 12;144 100 12;240 100 12;336 100 12' },
@@ -191,12 +191,12 @@ async function main() {
     });
 
     step('the picker lists every phrase of the type; K2 Style jumps to where a style starts', () => {
-        assert(pb().list.map(p => p.id).join(',') === 'bass.a,bass.c,bass.b' && pb().styles.join(',') === 'ITALO,BASIC',
+        assert(pb().list.map(p => p.id).join(',') === 'bass.a,bass.c,bass.b' && pb().styles.join(',') === 'BASIC,ITALO',
                'list/styles: ' + pb().list.map(p => p.id) + ' / ' + pb().styles);
         turn(1, -12); ticks(1);
-        assert(pb().idx === 0, 'K2 left did not jump to ITALO');
+        assert(pb().idx === 0, 'K2 left did not jump to BASIC');
         turn(1, 12); ticks(1);
-        assert(pb().idx === 2 && pb().list[2].id === 'bass.b', 'K2 right did not jump to where BASIC starts: ' + pb().idx);
+        assert(pb().idx === 2 && pb().list[2].id === 'bass.b', 'K2 right did not jump to where ITALO starts: ' + pb().idx);
         turn(1, -12); ticks(2);
     });
 
