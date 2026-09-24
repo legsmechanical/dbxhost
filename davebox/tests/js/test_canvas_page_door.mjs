@@ -48,6 +48,8 @@ const PAGE_OK = "\nglobalThis.canvas_overlay.drawPage = function (ctx, payload) 
     + "  ctx.state.n = (ctx.state.n || 0) + 1;\n"
     + "  globalThis.__hooks.push(['onMidi', Array.from(m.data), ctx.state.n]);\n"
     + "  if (m.data[1] === 3 && globalThis.__closeOnClick) ctx.close();\n"
+    + "  if (globalThis.__callDiveMethods) globalThis.__dive = [ctx.shiftHeld(), ctx.measureText('abc'),\n"
+    + "      ctx.getValue(), typeof ctx.setValue, typeof ctx.random()];\n"
     + "};\n"
     + "globalThis.canvas_overlay.handleBack = function (ctx) {\n"
     + "  globalThis.__hooks.push(['handleBack']);\n"
@@ -236,6 +238,27 @@ step('⭐⭐ entered: the jog and the click reach the MODULE as CC 14 / CC 3, an
     if (!onDoor()) throw new Error('the jog paged away while entered: on ' + JSON.stringify(pageName()));
     if (globalThis.__hooks.filter(h => h[0] === 'onMidi').map(h => h[2]).join() !== '1,2,3')
         throw new Error('ctx.state did not persist across hooks: ' + JSON.stringify(globalThis.__hooks));
+});
+
+step('⭐ the state onMidi moved reaches drawPage (upstream #534): a cursor the module moves can be drawn', () => {
+    globalThis.__pageCalls.length = 0;
+    frame();
+    const last = globalThis.__pageCalls[globalThis.__pageCalls.length - 1];
+    if (!last) throw new Error('drawPage was not called');
+    if (!last.payload.state || last.payload.state.n !== 3)
+        throw new Error('drawPage got state ' + JSON.stringify(last.payload.state) + ', the hooks counted 3');
+});
+
+step('a dive script\'s methods work from a page hook (shiftHeld, measureText, getValue, setValue, random)', () => {
+    globalThis.__callDiveMethods = true; globalThis.__dive = null; globalThis.__hooks.length = 0;
+    cc(14, 1); ticks(2);
+    globalThis.__callDiveMethods = false;
+    if (!globalThis.__dive) throw new Error('the hook threw before recording — ' + engineLog.slice(-2).join(' | '));
+    const [shift, w, val, setv, rnd] = globalThis.__dive;
+    if (shift !== false || w !== 17 || typeof val !== 'string' || setv !== 'function' || rnd !== 'number')
+        throw new Error('unexpected ' + JSON.stringify(globalThis.__dive));
+    if (engineLog.some(m => m.indexOf('disabled after throw') >= 0))
+        throw new Error('the page was retired: ' + engineLog.join(' | '));
 });
 
 step('Back is the module\'s first: true stays in, then a decline leaves the door (still on the page)', () => {

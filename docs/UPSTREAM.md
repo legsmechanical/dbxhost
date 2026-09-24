@@ -100,7 +100,7 @@ nothing about the capability. Rows below that rest on a filename alone are marke
 | `35260e0b` #510 | Docs: `BOOT_TARGETS.md` design note | **Skipped** — docs only. |
 | `1491fe1d` #400 | `shadow_ui.js`: clear the loaded-preset record (`currentUserPresets`) when a chain position changes hands, so an incoming module's My Presets page didn't read the outgoing module's name | **Already here, independently.** dAVEBOx never uses the host's `enterComponentSelect`/`currentUserPresets` path (it picks through `applyModulePick`, `davebox/ui/ui_sound.mjs:7596`) — it has its own `presetRecord()`/`setPresetRecord()` (`ui_sound.mjs:2178`), keyed by `slot:comp` and immune to this bug **by construction**: the accessor checks `r.mod !== S.moduleId` and drops the stale record lazily on every read, rather than needing an eager clear on the swap gesture. No port needed. |
 | `485740bc` #396 | `shadow_ui.js` + `component_load_gate.mjs`: a chain component that draws its own param grid (ships `ui_chain.js`) now gets the host's trailing "My Presets"/"Module" pages too | **Not applicable.** This is entirely the host's own chain editor / `enterParamPages` trailing-page mechanism — the surface named in the gate above as one dAVEBOx never opens. dAVEBOx already builds its own "My Presets" (`openPresets()`, `ui_sound.mjs:2218`) and Module Menu row independent of this host plumbing, so there is nothing to plumb dAVEBOx into. |
-| `820e2db1` #465 | `src/shared/param_pages/page_controller.mjs`: coalesce `replanIfCondition` writes to one `planPages()` per tick (an encoder sweep on DR32's send-effect page cost 112 full replans in one 10.6 ms tick) | **Already here.** `dbxhost/src/shared/param_pages/page_controller.mjs` — the shared file `davebox/ui/ui_sound.mjs`'s `createParamPagesBinding` runs on — already has `replanOwed`/`flushReplan()`/`replanNow()` at the same call sites (`tick()` line ~2106, `replanIfCondition` ~3645). No drift, no port needed. |
+| `820e2db1` #465 | `src/shared/param_pages/page_controller.mjs`: coalesce `replanIfCondition` writes to one `planPages()` per tick (an encoder sweep on DR32's send-effect page cost 112 full replans in one 10.6 ms tick) | **Already here.** `dbxhost/src/shared/param_pages/page_controller.mjs` — the shared file `davebox/ui/ui_sound.mjs`'s `createParamPagesBinding` runs on — already has `replanOwed`/`flushReplan()`/`replanNow()` at the same call sites (`tick()` line ~2106, `replanIfCondition` ~3645). No drift, no port needed. ⚠ **Corrected 2026-09-24: the feature was here, Charles's review commit `ba6803c2` (on the same PR) was NOT** — ported then, see "Corrections to our own PRs". |
 | `0aee5d89` #500 | `src/host/shadow_resample.c` + `shadow_dbus.c` + `shim_worker.c`: delete the screen-reader-text sampler-source classifier (a bare substring match that never saw a true positive and gated a resample-bridge mode, `mode 1`, that no shipped UI could select) and its dead 4th argument; fix a real JS/C disagreement on migrating the retired mode-1 value | **Applicable & worth porting — needs Josh.** `dbxhost/src/host/shadow_resample.c` carries the identical pre-fix code: `native_resample_bridge_mode_from_text`, the same mode-1 hole, and (unverified here) the same JS `parseResampleBridgeMode` migration gap in `src/shadow/shadow_ui.js`. This is host-level audio-input routing plumbing with no screen of its own — it runs in the background regardless of which UI has focus, so the gate's "name the dAVEBOx screen" question doesn't apply the way it does to a UI port. It is real dead-code removal plus a correctness fix (mode-1 backward-compat migration agreement between the C boot-time reader and the JS runtime reader) on a shared audio-routing path both installs carry. Low urgency (no live bug observed — mode 1 is equally unreachable here), but it is a genuine simplification+bugfix on live host code, not chrome. Filed on the board. |
 | `2e406933` #504 | New `clip_regions.c`/`clip_state.c`/`editor_bar_announce.h` + `schwung-manager/clip_debug.go`: decode which Move Session-view clip is playing per track and where in it, from the cable-0 LED stream, behind a `clip_state_on` diagnostic toggle | **Not applicable.** This decodes Move's own native **Session-view clip launch** grid (`move_ui_mode`, pad LED channels 9/14) — a surface dAVEBOx does not co-run with; dAVEBOx takes over the pads for its own sequencer and never puts Move in native Session mode while it holds the surface. Diagnostic/telemetry feature (`schwung-manager` debug endpoint) with no dAVEBOx-reachable behavior. |
 
@@ -299,6 +299,22 @@ float gain; and ONE producer of a bus send key rather than upstream's two. Full 
 `default_buses` (#464, with #466/#467) landed 2026-09-08 — see the window above for its
 divergences. Pieces 2 (send-FX chain editing) and 3 (the async FX load ring) are NOT ported.
 
+## Corrections to our own PRs (2026-09-24)
+
+Charles corrected several of this fork's upstream PRs on the way in. Every correction to a PR
+merged through 2026-09-23 was checked against this tree by reading the code, not by a marker grep.
+The **watermark does not move** for this: the other upstream commits since `35260e0b` are still
+unreviewed.
+
+| Upstream | Correction | Decision |
+|---|---|---|
+| `90cbe206` on #426 | `pad_observe` restated every tick; press predicate moved to `page_input.mjs` | **Already here** — `reconcilePadObserve` in `src/shared/param_pages/binding_movy.mjs` calls `host_pad_observe` every tick with no mirror. |
+| `60df0d23` #434, follow-up to #428 | One wave-format table for the cell and the editor | **Already here** (row above). |
+| `#438`, follow-up to #429 | Copy gesture reads the focus itself; no partial paste; notice survives release | **Already here** (row above). |
+| `ba6803c2` on #465 | `replanNow()` null-hierarchy guard; `replanOwed` cleared at every fresh plan; the test stops claiming 112 passes | **Ported** 2026-09-24. The guards are untested, as upstream: a swap test cannot tell them apart, because the first tick after any load re-plans on its incoming gate reads. |
+| `07857f6e` on #533 | The gate lane reads a per-pad gate for the pad on screen (`gateWireKey`), not as its bare template; `dropChildLevelCache` drops per-instance gates; `validate_contract` accepts `key`/`param_key` | **Ported** 2026-09-24. The upstream NEIGHBOUR LANE note was already in this file, so it was not added twice. dAVEBOx surface: the module editor (`ui_sound.mjs`) on a module whose pages change per pad. |
+| `27bccd08` #534, follow-up to #520 | `ctx.close()` records a wish; page `state` reaches `drawPage`; page hook ctx gets the dive's methods | **Two of three ported to dAVEBOx's own canvas-page host** (`davebox/ui/ui_engine.mjs`): `state` reaches `drawPage`, and the hook ctx has `getValue`/`setValue`/`measureText`/`shiftHeld`/`random`. Pinned by `davebox/tests/js/test_canvas_page_door.mjs`. `close()` already recorded the wish here. The `shadow_ui.js` half is the host's own canvas view, which dAVEBOx never opens, so it is **not taken**. |
+
 ## Canvas contract (#520) — ported while the PR is open
 
 Ported 2026-09-17 from charlesvestal/schwung#520 (open, 11 commits) so both hosts carry ONE shape.
@@ -327,7 +343,9 @@ The fork's own `canvas_takes_click` and contextual-Back/Shift+Back experiments w
   `engineCanvasPageHook`, `davebox/ui/ui_engine.mjs`), pinned by the gesture test
   `davebox/tests/js/test_canvas_page_door.mjs`. Needed by DR32's Resample page.
 
-When #520 merges, re-diff it against this port — upstream may change shape in review.
+**#520 merged 2026-09-23** (`5a294bf0`), with the same 11 commits this port took plus a merge of
+`main` (#530's live values, not ours). Charles's review fixes arrived separately as **#534**
+(`27bccd08`) — see "Corrections to our own PRs" below for what of it applies here.
 
 ## Insert FX reorder (`da427483`, `f8e98c1f`, `53df334e`) — ported, reshaped for four fixed positions
 

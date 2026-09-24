@@ -12,6 +12,14 @@
 # level walk, a grouping, a row alignment and a fingerprint, on a device whose
 # whole tick is 10.6 ms. The picker did not feel slow; it hung.
 #
+# ⚠⚠ THIS TEST DOES NOT REPRODUCE THAT NUMBER (upstream's review of #465, ported
+# with it). `onKnobTurn` already throttles its setParam AND its re-plan to one
+# per SETPARAM_THROTTLE_MS per key, so the write path cannot buy 112 passes: with
+# `replanIfCondition` reverted to `replanNow()`, the 112-detent burst below costs
+# TWO passes. What this pins is that a burst costs no more than one detent. The
+# 2912 came from somewhere this test does not look — do not read a green run as
+# the dr32 hang being explained.
+#
 # ⚠⚠ AND THE FIRST DIAGNOSIS OF THIS WAS WRONG, which is why the test asserts the
 # PASS COUNT and not a read count. I read the histogram as "112 evaluations each
 # re-asking a key ten times" and said so out loud. `evaluateVisibility` makes
@@ -77,10 +85,8 @@ ctl.load({
   visible: () => { evals += 1; return true; },
 });
 
-const perPass = (() => {
-  evals = 0; clock += 20; ctl.tick();
-  return evals;   /* whatever a settled tick costs; 0 when nothing is owed */
-})();
+/* Settle whatever the load left owed, so the counts below start from zero. */
+clock += 20; ctl.tick();
 
 /* The mode knob, driven exactly as the hardware drives it. */
 const modeSlot = (() => {
@@ -110,9 +116,29 @@ const ONE_PASS = evals;
 
   clock += 20; ctl.tick();
   ok(evals === ONE_PASS,
-     "⭐⭐ the whole burst costs ONE pass, not 112 (" + evals + " evaluations, one pass = " + ONE_PASS + ")");
-  ok(evals * 112 !== 0 && evals < ONE_PASS * 2,
-     "...and certainly not 112x — that was " + (ONE_PASS * 112) + " evaluations before this change");
+     "⭐⭐ the whole burst costs ONE pass (" + evals + " evaluations, one pass = " + ONE_PASS + ")");
+}
+
+/* ---- and the cost does not grow with the burst -------------------------- */
+{
+  /* THE property, stated as one: 1 detent and 112 detents cost the same. Before
+   * this change the 112-detent burst cost 2 passes where a single turn cost 1
+   * — the write throttle had already capped it, which is why the pre-change
+   * number is 2 and not 112 (see the header). A burst that costs strictly more
+   * than a single turn is the regression this guards.
+   * (No apostrophes in here: the whole script is one single-quoted shell arg.) */
+  clock += 20; ctl.tick();
+  evals = 0;
+  clock += 20; ctl.onKnobTurn(modeSlot, 1, clock);
+  clock += 20; ctl.tick();
+  const one = evals;
+
+  clock += 20; ctl.tick();
+  evals = 0;
+  for (let i = 0; i < 112; i++) ctl.onKnobTurn(modeSlot, i % 2 ? 1 : -1, clock);
+  clock += 20; ctl.tick();
+  ok(evals === one,
+     "112 detents cost exactly what 1 detent costs (" + evals + " vs " + one + ")");
 }
 
 /* ---- it must still actually happen, and before anything is drawn -------- */

@@ -1082,6 +1082,9 @@ export function engineCanvasPageDrawer(slotKey, comp, moduleId, canvas) {
                     preset: p.preset || null,
                     nowMs: typeof p.nowMs === 'number' ? p.nowMs : Date.now(),
                     width: band.w, height: band.h,
+                    /* The object the page's hooks see as ctx.state, so a cursor
+                     * onMidi moves can be drawn (upstream #534). */
+                    state: pageState(key),
                 });
             } catch (e) {
                 pageDisabled.add(key);
@@ -1113,6 +1116,11 @@ export function engineCanvasPageDrawer(slotKey, comp, moduleId, canvas) {
  * own return. A throw retires the page for the visit, like its drawer.
  */
 const pageStates = new Map();       /* key -> the module's `ctx.state` */
+/* Per SLOT (the key starts with slotKey), and shared by the hooks and drawPage. */
+function pageState(key) {
+    if (!pageStates.has(key)) pageStates.set(key, {});
+    return pageStates.get(key);
+}
 export function engineCanvasPageHook(slotKey, comp, moduleId, canvas, hook, payload, access) {
     if (!canvas || !moduleId || !hook) return undefined;
     const script = canvas.script || 'canvas.js';
@@ -1122,15 +1130,25 @@ export function engineCanvasPageHook(slotKey, comp, moduleId, canvas, hook, payl
     const r = engineCanvasOverlayShared(slotKey, comp, moduleId, script, ref);
     const ov = (ref && ref !== 'canvas_overlay') ? r.named : r.overlay;
     if (!ov || typeof ov[hook] !== 'function') return undefined;
-    if (!pageStates.has(key)) pageStates.set(key, {});
     const a = access || {};
     const closed = { wanted: false };
+    /* The same non-drawing surface a dive's hooks get (ui_canvas.mjs makeCtx),
+     * so one script serves both routes: a dive script calling shiftHeld() or
+     * getValue() from onMidi must not throw -- and be retired -- on a page. */
     const ctx = {
         width: 128, height: 64,
-        state: pageStates.get(key),
+        state: pageState(key),
         getParam: (k) => (typeof a.getParam === 'function' ? a.getParam(String(k)) : null),
         setParam: (k, v) => (typeof a.setParam === 'function' ? a.setParam(String(k), String(v)) : false),
+        getValue: () => (canvas.key && typeof a.getParam === 'function'
+            ? String(a.getParam(String(canvas.key)) || '') : ''),
+        setValue: (v) => (canvas.key && typeof a.setParam === 'function'
+            ? a.setParam(String(canvas.key), String(v)) : false),
+        measureText: (t) => (typeof text_width === 'function'
+            ? text_width(String(t == null ? '' : t)) : String(t == null ? '' : t).length * 6),
+        shiftHeld: () => (typeof a.shiftHeld === 'function' ? !!a.shiftHeld() : false),
         now: () => Date.now(),
+        random: () => Math.random(),
         close: () => { closed.wanted = true; return true; },
     };
     try {

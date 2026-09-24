@@ -32,7 +32,8 @@ import {
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
     slotIndex, moveBusForChannel, moveBusComp, moveBusPrefix,
     faderStep, faderWire, faderFormatDb, faderGainToTravel, SHIFT_VOL_THROW, trackLevelCardText,
-    PAGE_KNOB, pageFloatStep, pageIntStep, pageIntDetents, engineModuleHelp } from './ui_engine.mjs';
+    PAGE_KNOB, pageFloatStep, pageIntStep, pageIntDetents, engineModuleHelp,
+    engineHostsOwnUi } from './ui_engine.mjs';
 /* MODULE buses — a splittable module's voice groups. ⚠ NOT davebox's `S.bus`,
  * which is a MIXER POSITION; ui_modbus.mjs's header says why the source keeps
  * them apart even though the screens never collide. */
@@ -689,6 +690,9 @@ const S = {
     comp: 'synth',
 
     banks: [],
+    /* discover() skipped the flat banks because the page grid is on screen;
+     * built by ensureBanks() only if davebox's own editor has to draw. */
+    banksDeferred: false,
     sections: [],
     bankIdx: 0,
     moduleId: '',
@@ -1287,6 +1291,12 @@ export function soundMenuForTest() {
  * that cannot tell which editor is running would either contort itself to
  * satisfy both or quietly stop measuring anything. */
 export function soundPpEditorForTest() { return PP_EDITOR; }
+/* DBX-173: whether discovery deferred davebox's own banks, and how many exist. */
+export function soundBanksForTest() { return { deferred: S.banksDeferred, count: S.banks.length }; }
+/* The state drawParamPages' decline leaves behind (renderSound sets it when the
+ * grid will not draw a page); the next tick hands the screen to davebox's own
+ * editor, which is what needs the deferred banks. */
+export function soundDeclineGridForTest() { if (ppOn) ppDeclinedDraw = true; }
 
 /* ⚠ No in-flight value edit survives (re)opening the menu. The flag is sound
  * mode's own state, so leaving and coming back would otherwise arrive with the
@@ -1676,6 +1686,7 @@ export function soundRetarget(track, slot) {
     S.menuRowsCache = [];
     S.menuEditing = false;
     S.banks = [];
+    S.banksDeferred = false;
     S.sections = [];
     S.bankIdx = 0;
     S.moduleId = '';
@@ -7542,9 +7553,16 @@ function runDiscovery() {
      * time you glance at another param) but never a module swap. */
     if (id !== S.moduleId) { wavEditCloseIfOpen(); canvasCloseIfOpen(); wavForgetComponent(S.comp, S.slot); ppWidgetsForget(); }
     S.moduleId = id;
-    if (!id) { S.banks = []; S.sections = []; S.dirty = true; return; }
-    const res = discover(S.slot, S.comp);
+    if (!id) { S.banks = []; S.banksDeferred = false; S.sections = []; S.dirty = true; return; }
+    /* The page grid will draw this module, so the flat banks -- davebox's own
+     * editor, its FALLBACK -- are not built now (DBX-173: DR32's 32 pads made
+     * them 1441 pages, most of the time it took to open the editor). A module
+     * that declares host_canvas_ui still gets the full pass: hosting needs the
+     * kit the full pass loads. */
+    const defer = PP_EDITOR && S.active && S.slot >= 0 && !engineHostsOwnUi(S.comp, id);
+    const res = discover(S.slot, S.comp, { skipBanks: defer });
     S.banks = res.banks;
+    S.banksDeferred = !!res.banksDeferred;
     S.hosted = res.hostedOverlay || null;
     hostedReset();
     S.presetSpec = res.presetSpec || null;
@@ -7574,6 +7592,29 @@ function runDiscovery() {
     log('discover: ' + id + ' (' + S.comp + ') -> ' + res.banks.length +
         ' banks, ' + res.paramCount + ' params, via ' + res.source +
         ' env=' + res.envCount + ' filt=' + res.filtCount);
+    pollValues(true);
+    /* Hand the screen to the grid NOW rather than on the next tick's ppSync:
+     * the frame drawn in between would otherwise be davebox's own editor, with
+     * no banks to draw. */
+    if (S.banksDeferred) ppSync();
+    S.dirty = true;
+}
+
+/* Build the flat banks discovery deferred, once davebox's own editor really is
+ * the one on screen: the grid is off for this module, or declined the page.
+ * Runs from soundTick -- it reads params, which a MIDI handler may not. */
+function ensureBanks() {
+    if (!S.banksDeferred) return;
+    if (S.view !== VIEW_EDIT || (ppApplies() && !ppDeclinedDraw)) return;
+    S.banksDeferred = false;
+    const res = discover(S.slot, S.comp);
+    S.banks = res.banks;
+    S.sections = res.kitSections || deriveSections(res.banks);
+    S.bankIdx = 0;
+    S.values = {};
+    S.rawValues = {};
+    log('discover (deferred banks): ' + S.moduleId + ' (' + S.comp + ') -> ' + res.banks.length +
+        ' banks, ' + res.paramCount + ' params, via ' + res.source);
     pollValues(true);
     S.dirty = true;
 }
@@ -7786,6 +7827,7 @@ function moveBrowsedBlock(dir) {
     const bi = BLOCKS.findIndex(b => b.comp === S.comp);
     if (bi >= 0) S.blockIdx = bi;
     S.banks = [];
+    S.banksDeferred = false;
     S.view = VIEW_BLOCKS;
     refreshBlockNames();
     const r = S.pickRows.findIndex(p => p.kind === 'block' && p.comp === S.comp);
@@ -8125,6 +8167,7 @@ function applyModulePick(mod) {
      * returns null metadata and the module looks empty. */
     S.pendingDiscover = 6;
     S.banks = [];
+    S.banksDeferred = false;
     S.livePress = null;                /* the outgoing module's, not the incoming one's */
     S.padVouch = false;
     S.view = mod.id ? VIEW_EDIT : VIEW_BLOCKS;
@@ -8238,6 +8281,20 @@ function engineEcho(w, raw) {
                     const opt = c.options[Math.round(wn)];
                     return opt != null && String(opt).trim() === rs;
                 }
+            }
+        }
+        /* ...else from the module's own metadata. The banks are davebox's own
+         * editor and are not built while the page grid is on screen
+         * (S.banksDeferred), but the grid's writes come through this ledger
+         * too. authoritativeMeta resolves a per-instance key (`pad3_type`)
+         * through its child level; the options live in chain_params. */
+        if (w.comp === S.comp) {
+            const m = authoritativeMeta(w.key, S.cpMap, S.levels);
+            const opts = (m && m.options && m.options.length) ? m.options
+                : (m && m.key && S.cpMap && S.cpMap[m.key] && S.cpMap[m.key].options) || null;
+            if (opts && opts.length) {
+                const opt = opts[Math.round(wn)];
+                return opt != null && String(opt).trim() === rs;
             }
         }
     }
@@ -10541,6 +10598,7 @@ export function soundTick() {
     /* ⭑ AHEAD of discovery: when the editor is on, davebox's own bank model is
      * not what is being drawn, and running both would pay for two contracts. */
     ppSync();
+    ensureBanks();
     /* Right behind the grid's own reconcile, so the frame that first draws the
      * editor already has the module's widgets when the reads are settled. */
     ppWidgetsTick();
@@ -12005,6 +12063,7 @@ function ppIo() {
                     trackInflight(slot, comp, k, String(v));
                     return r;
                 },
+                shiftHeld: () => S.shiftHeld === true,
             });
         },
     };
@@ -12592,6 +12651,9 @@ function renderEdit() {
      * including on the empty branch below: the bindings are module state and a
      * surface that forgets to select draws with whichever map ran last. */
     kitUseLayout('sound');
+    /* Deferred banks: the next tick builds them (ensureBanks) or the grid
+     * takes the screen. One frame of header, not "NO PARAMS". */
+    if (S.banksDeferred) { drawKitHeaderParamPages(blockLabel(), '', false); return; }
     if (!S.banks.length) {
         drawKitHeaderParamPages(blockLabel(), '', false);
         centreText(28, S.moduleId ? 'NO PARAMS' : 'EMPTY');
