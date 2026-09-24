@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { decodeNotes, MODES, BAR } from './lib/phrase.mjs';
 import { profile, PART_OF, loadStyle, genPhrase, genDrum } from './lib/stats_gen.mjs';
 import { makeRng } from './lib/rng.mjs';
+import { genDrumFamily } from './lib/drum_gen.mjs';
 import { STYLE_FILES, FLAVOUR_NAME, drumCountFor } from './lib/style_plan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -130,7 +131,8 @@ for (const [file, tag] of Object.entries(STYLE_FILES)) {
         judged++;
         const sim = new Array(16).fill(0);
         for (let i = 0; i < 300; i++) {
-            const r = genDrum(cat, prof, makeRng('verify-d.' + cat + '.' + file + '.' + i));
+            const rng = makeRng('verify-d.' + cat + '.' + file + '.' + i);
+            const r = genDrumFamily(cat, tag, rng) || genDrum(cat, prof, rng);
             if (r) for (const n of r.notes) sim[Math.round((n.t % BAR) / (BAR / 16)) % 16]++;
         }
         const r = corr(sim, P.step_onset_prob);

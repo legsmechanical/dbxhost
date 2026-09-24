@@ -22,6 +22,8 @@ import { profile, loadStyle, genPhrase, genDrum, loadGate, tooClose, PART_OF } f
 import { STYLE_FILES, FLAVOUR_NAME, PER_STYLE, PER_BASICS, PER_FLAVOUR, flavourUsable, countFor, drumCountFor } from './lib/style_plan.mjs';
 import { writeSmf } from './lib/smf.mjs';
 import { feelProfile, styleOfName, applyFeel, isQuantised, feelRng } from './lib/feel.mjs';
+import { genDrumFamily, laneMaker } from './lib/drum_gen.mjs';
+import { laneOf, assembleBeat, renderBeat, poolsFor, LANE_CATS } from './lib/beat_layer.mjs';
 import { createHash } from 'node:crypto';
 import { packChunk } from '../../ui/ui_phrase_pack.mjs';
 import { renderWav } from './lib/synth.mjs';
@@ -173,6 +175,8 @@ async function gen(cats) {
                            ...(gv ? { grv: gv.grv, sk: gv.sk } : {}), n: encodeNotes(cat, gv ? gv.notes : p.notes) });
             }
         }
+        /* beats layered from the single-drum phrases of one style (lib/beat_layer.mjs) */
+        if (rules.layer) out.push(...layerBeats(cat, out, seen));
         /* generated from the measured statistics of every style and named style */
         if (rules.stats) {
             const drum = isDrumCat(cat);
@@ -200,7 +204,8 @@ async function gen(cats) {
                     while (made < want && tries++ < want * 30) {
                         const id = cat + '.' + (style || 'basic').toLowerCase().replace(/\s+/g, '') + '.g' + String(tries).padStart(3, '0');
                         /* major / minor in the measured proportion across the group */
-                        const r = drum ? genDrum(cat, prof, makeRng(id)) : genPhrase(cat, prof, makeRng(id), (made + 0.5) / want < prof.minor ? 'min' : 'maj');
+                        const rng = makeRng(id);
+                        const r = drum ? (genDrumFamily(cat, style, rng) || genDrum(cat, prof, rng)) : genPhrase(cat, prof, rng, (made + 0.5) / want < prof.minor ? 'min' : 'maj');
                         if (!r) continue;
                         const ad = admit(cat, { notes: r.notes, bars: r.bars });
                         if (!ad || ad.notes.length < (cat === 'fx' || cat === 'pad' ? 1 : 2)) continue;
@@ -223,6 +228,75 @@ async function gen(cats) {
         writeFileSync(join(CACHE, 'candidates', cat + '.json'), JSON.stringify(out, null, 0));
         console.log(`${cat}: ${out.length} candidates`);
     }
+}
+
+/* Layered beats per style and named style. Lanes are the single-drum
+ * candidates already built, from every source (gen those first); a style
+ * with real whole-kit beats gets fewer layered ones. */
+function mergePools(a, b) {
+    const out = {};
+    for (const c of LANE_CATS) out[c] = ((a && a[c]) || []).concat((b && b[c]) || []);
+    return out;
+}
+function layerBeats(cat, real, seen) {
+    const byStyle = new Map();
+    for (const c of LANE_CATS) {
+        const f = join(CACHE, 'candidates', c + '.json');
+        if (!existsSync(f)) throw new Error(`beat: no ${c} candidates — run gen ${LANE_CATS.join(' ')} first`);
+        for (const p of JSON.parse(readFileSync(f, 'utf8'))) {
+            if (!/^(gen|lib|own):/.test(String(p.src))) continue;
+            const ln = laneOf(p);
+            if (!ln) continue;
+            ln.lic = p.lic; ln.attrib = p.attrib;
+            const k = p.style || p.g || '';
+            if (!byStyle.has(k)) byStyle.set(k, {});
+            (byStyle.get(k)[c] = byStyle.get(k)[c] || []).push(ln);
+        }
+    }
+    const realPerTag = new Map();
+    for (const p of real) realPerTag.set(p.g || '', (realPerTag.get(p.g || '') || 0) + 1);
+    const groups = [];
+    for (const tag of Object.values(STYLE_FILES)) groups.push([tag, null, Math.max(6, 16 - Math.floor((realPerTag.get(tag) || 0) / 4))]);
+    for (const name of Object.values(FLAVOUR_NAME)) { const [file, fk] = styleOfName(name); if (fk) groups.push([name, STYLE_FILES[file], 5]); }
+    const out = [];
+    const { makeRng } = { makeRng: feelRng };
+    for (const [style, parent, want] of groups) {
+        let pools = poolsFor(style, byStyle, parent);
+        pools.make = laneMaker(style);
+        if (!pools.kick.length && !pools.snare.length) continue;
+        const used = new Map();
+        let made = 0, tries = 0;
+        while (made < want && tries++ < want * 24) {
+            /* a named style whose own lanes cannot make its families borrows its
+             * parent style's, still chosen by its own numbers */
+            if (tries === want * 12 + 1 && parent != null) { pools = poolsFor(style, new Map([[style, mergePools(byStyle.get(style), byStyle.get(parent))]]), null); pools.make = laneMaker(style); }
+            const rng = makeRng('beat.layer.' + (style || 'basic') + '.' + tries);
+            const b = assembleBeat(style, pools, rng, used);
+            if (!b) continue;
+            const r = renderBeat(style, b, rng);
+            const ad = admit(cat, { notes: r.notes, bars: r.bars });
+            if (!ad || ad.bars !== r.bars) continue;
+            const fp = coarseKey(cat, ad.notes, ad.bars);
+            if (seen.has(fp)) continue;
+            seen.add(fp);
+            for (const l of b.lanes) used.set(l.id, (used.get(l.id) || 0) + 1);
+            made++;
+            const byHits = new Map(); for (const n of ad.notes) byHits.set(n.p, (byHits.get(n.p) || 0) + 1);
+            const pads = [...byHits.entries()].sort((a, b) => b[1] - a[1]).map(([p]) => p);
+            const open = b.lanes.find(l => l.lic === 'CC-BY-4.0');
+            const pub = style ? publicTag(style) : '';
+            const ord = ad.notes.slice().sort((a, c) => a.t - c.t);
+            const sk = ord.every(n => n._s != null) ? { grv: r.grid, sk: ord.map(n => n._s).join(' ') } : {};
+            /* id from the beat itself: fresh lanes' ids are only unique within a pass */
+            out.push({ id: 'beat.' + (style || 'basic').toLowerCase().replace(/\s+/g, '') + '.l' + fnv8(ad.bars + '|' + encodeNotes(cat, ad.notes)),
+                       name: '', style: style && isTag(pub) ? style : '', desc: '', cat, g: pub, bars: ad.bars, feel: r.feel, mode: '',
+                       pads, layers: {}, src: 'gen:layer:' + b.lanes.map(l => l.id).join('+'),
+                       lic: open ? 'CC-BY-4.0' : 'dAVEBOx', ...(open ? { attrib: open.attrib } : {}), ...sk,
+                       n: encodeNotes(cat, ad.notes) });
+        }
+        if (made < want) console.warn(`  beat/${style || 'BASIC'}: layered ${made} of ${want}`);
+    }
+    return out;
 }
 
 function eventsOf(p) {

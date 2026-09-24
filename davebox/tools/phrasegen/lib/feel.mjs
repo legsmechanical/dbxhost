@@ -108,7 +108,7 @@ export function styleOfName(name) {
 }
 
 /* the groove role a note plays */
-const DRUM_ROLE = { 35: 'kick', 36: 'kick', 37: 'rim', 38: 'snare', 40: 'snare', 39: 'clap', 42: 'chh', 44: 'phh', 46: 'ohh',
+export const DRUM_ROLE = { 35: 'kick', 36: 'kick', 37: 'rim', 38: 'snare', 40: 'snare', 39: 'clap', 42: 'chh', 44: 'phh', 46: 'ohh',
     49: 'crash', 57: 'crash', 51: 'ride', 59: 'ride', 53: 'ride', 41: 'toms', 43: 'toms', 45: 'toms', 47: 'toms', 48: 'toms', 50: 'toms' };
 const CAT_ROLE = { kick: 'kick', snare: 'snare', hat: 'chh', cymb: 'ride', tom: 'toms', perc: 'perc',
     bass: 'bass', chord: 'chords', pad: 'chords', keys: 'keys', guitar: 'guitar', lead: 'lead', fx: 'lead', arp: 'arp', seq: 'seq' };
