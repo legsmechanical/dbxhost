@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const FILE = join(dirname(fileURLToPath(import.meta.url)), '..', 'research', 'lmd', 'analysis', 'out', 'ingest_candidates.json');
 export const ATTRIB = 'Lakh MIDI Dataset (Colin Raffel, 2016), CC BY 4.0';
-const TAG = { newwave: 'NEW WAVE', postpunk: 'POST PUNK', synthpop: 'SYNTHPOP', italo: 'ITALO', ebm: 'EBM' };
+const TAG = { newwave: 'NEW WAVE', postpunk: 'POST PUNK', synthpop: 'SYNTHPOP', italo: 'ITALO', ebm: 'ELECTRO' };
 const LANE_CAT = { kick: 'kick', snare: 'snare', hat: 'hat', perc: 'perc', cymb: 'cymb', tom: 'tom' };
 
 export function ingest(cat, opts) {
