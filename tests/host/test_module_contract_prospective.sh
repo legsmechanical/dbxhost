@@ -91,6 +91,15 @@ EXEMPT = {
   # So triage is human, once per key, here — and that is the check's actual
   # promise: not "it knows what a contract key is", but "nothing new reaches the
   # docs without someone deciding". Keep the reasons; they are the whole value.
+}
+
+# Names an example INVENTED — kept apart from EXEMPT because the 'honoured' test
+# below means nothing for them. A fork that uses the word `notes` or `snare` for
+# its own purposes is a NAME COLLISION, not a fork honouring a contract field:
+# on 2026-09-24 all three of notes/pads/snare "failed" as honoured because the
+# chord model, MIDI import and the phrase library use those words. Still
+# checked for going stale upstream.
+EXAMPLE_NAMES = {
   'pads':          'a LEVEL ID in the voice-poc example, not a field',
   'pad_settings':  'a LEVEL ID in a davebox-facing example, not a field',
   'snare':         'a VOICE ID in the split-voices example, not a field',
@@ -194,7 +203,8 @@ KNOWN = {
 }
 
 gaps = sorted(k for k in universe
-              if k not in EXEMPT and uses(upstream, k) and not uses(fork, k))
+              if k not in EXEMPT and k not in EXAMPLE_NAMES
+              and uses(upstream, k) and not uses(fork, k))
 
 new_gaps    = [g for g in gaps if g not in KNOWN]
 closed_gaps = [k for k in KNOWN if k not in gaps]
@@ -209,15 +219,16 @@ gaps = new_gaps
 # fork HONOURS is not an exemption, it is a leftover — and it would have hidden the
 # fact that this fork's host half does read show_value/show_footer and does host
 # module canvases, which is why both inherited entries were deleted (2026-09-07).
-stale = [k for k in EXEMPT if not uses(upstream, k)]
-honoured = [k for k in EXEMPT if uses(fork, k)]
+stale = [k for k in list(EXEMPT) + list(EXAMPLE_NAMES) if not uses(upstream, k)]
+honoured = [k for k in EXEMPT if uses(fork, k)]   # not EXAMPLE_NAMES: collisions expected
 if stale or honoured:
     if stale:    print('FAIL: exemptions upstream no longer reads: ' + ', '.join(sorted(stale)))
     if honoured: print('FAIL: exemptions this fork ALREADY honours (not exemptions): '
                        + ', '.join(sorted(honoured)))
     print('      A stale exemption is where the next real gap hides.')
     sys.exit(1)
-print(f'  ok   — every exemption still names a key upstream reads ({len(EXEMPT)})')
+print(f'  ok   — every exemption still names a key upstream reads '
+      f'({len(EXEMPT)} exempt, {len(EXAMPLE_NAMES)} example names)')
 
 if fails:
     print('\nFAIL: a control did not hold, so this run proves nothing.')
