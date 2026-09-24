@@ -44,7 +44,7 @@ the tarball at `bin/schwung-testd`:
 
 ```sh
 ./scripts/build.sh
-./scripts/install.sh local --skip-modules --skip-confirmation
+./standalone/scripts/install-sa.sh
 ```
 
 ### 2. Start the daemon on Move

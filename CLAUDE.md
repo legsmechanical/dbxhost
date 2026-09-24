@@ -132,15 +132,15 @@ Keep each isolated in its own commit so it is easy to exclude when cherry-pickin
 ## Build / Deploy
 
 ```bash
-./scripts/build.sh                                        # Docker cross-build
-./scripts/package.sh                                      # schwung.tar.gz
-./scripts/install.sh local --skip-modules --skip-confirmation
-./scripts/uninstall.sh                                    # restore stock Move
+./scripts/build.sh                                        # Docker cross-build (host only)
+./standalone/scripts/install-sa.sh                        # build + deploy host AND davebox
+./standalone/scripts/install-sa.sh --davebox-only         # the davebox module only
 ```
 
-**Never scp individual files** — the install script owns setuid, symlinks, feature config and the
-service restart. `install.sh` always ends in a reboot; running it over the USB-ethernet tether works
-and is the preferred path. **Manager-only changes skip `install.sh`**: `schwung-manager` is a
+**Never scp individual files** — the install script owns setuid, symlinks and the layout. It
+refuses to deploy over a live SA session (`--force` overrides); the build takes effect at the next
+launch from stock's Tools menu. Upstream's stock installer (`scripts/install.sh`/`uninstall.sh`/
+`package.sh`) was removed 2026-09-24 — no SA path used it. **Manager-only changes**: `schwung-manager` is a
 self-contained Go binary (embeds templates/static), so build the ARM binary, scp to
 `/data/UserData/schwung/schwung-manager` as `ableton` (temp name + `mv -f` to dodge ETXTBSY), then
 `scripts/restart_move.sh` — no reboot.
@@ -292,7 +292,7 @@ usage and the pruning rules: [`RATIONALE.md`](RATIONALE.md).
 ## Release Checklist
 
 1. `./scripts/build.sh` succeeds
-2. `./scripts/install.sh local --skip-modules --skip-confirmation`, verify on hardware
+2. `./standalone/scripts/install-sa.sh`, verify on hardware
 3. Bump `src/host/version.txt` and `release.json` (version + download URL)
 4. Update `CLAUDE.md`, `docs/API.md`, `docs/MODULES.md`, `src/shared/help_content.json` and the
    manual for new/changed behaviour

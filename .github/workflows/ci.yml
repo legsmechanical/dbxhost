@@ -116,7 +116,3 @@ jobs:
           test -f build/link-subscriber && \
             file build/link-subscriber | grep -q 'aarch64' || \
             { echo "WARN: link-subscriber not built (submodule missing?)"; }
-      - name: Verify packaged tarball
-        run: |
-          test -f schwung.tar.gz
-          tar -tzf schwung.tar.gz | grep -q 'schwung$'

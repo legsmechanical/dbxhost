@@ -159,10 +159,10 @@ if [ -z "$CROSS_PREFIX" ] && [ ! -f "/.dockerenv" ]; then
 
     echo ""
     echo "=== Done ==="
-    echo "Output: $REPO_ROOT/schwung.tar.gz"
+    echo "Output: $REPO_ROOT/build/"
     echo ""
-    echo "To install on Move:"
-    echo "  ./scripts/install.sh local"
+    echo "To install dAVEBOx SA on a Move:"
+    echo "  ./standalone/scripts/install-sa.sh"
     exit 0
 fi
 
@@ -682,10 +682,7 @@ cp ./src/shim-entrypoint.sh ./build/
 cp ./src/restart-move.sh ./build/ 2>/dev/null || true
 cp ./src/launch-standalone.sh ./build/ 2>/dev/null || true
 
-# Copy post-update script (run by Module Store after host updates)
 mkdir -p ./build/scripts
-cp ./scripts/post-update.sh ./build/scripts/
-chmod +x ./build/scripts/post-update.sh
 
 # Standalone-session payload. These are RUNTIME dependencies of a standalone
 # install, resolved by absolute path inside the install tree:
