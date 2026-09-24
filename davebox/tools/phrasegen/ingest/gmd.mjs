@@ -2,7 +2,8 @@
  * with attribution (research/SOURCES.md; the LICENSE file in the download).
  *
  * Real drummers, full kits. This cuts one instrument ROLE out of a style's
- * beat files, one bar at a time: onsets snapped to the 16th grid, velocities
+ * beat files, one bar at a time: timing kept as played (the groove is the
+ * style), velocities
  * kept exactly as played (they are the point — "velocity dynamics are key").
  * The dataset lives in cache/groove (gitignored); ingest refuses to run
  * without its LICENSE file present. */
@@ -73,7 +74,7 @@ function beatBars(style, count, max) {
     return out.filter((_, i) => i % step === 0).slice(0, count);
 }
 
-/* opts: { style, count } → candidates of one bar, 16th grid, velocities as played. */
+/* opts: { style, count } → candidates of one bar, timing and velocities as played. */
 export function ingest(cat, opts) {
     if (cat === 'beat') {
         if (!existsSync(join(ROOT, 'LICENSE'))) throw new Error('GMD not in cache/groove (or its LICENSE is missing)');
@@ -97,18 +98,18 @@ export function ingest(cat, opts) {
         for (let k = 0; k < 3 && out.length < count * 3; k++) {
             const b = 1 + Math.floor(rng.next() * Math.max(1, lastBar - 2));
             const inBar = notes.filter(n => n.t >= b * 384 - 12 && n.t < (b + 1) * 384 - 12);
-            const bySlot = new Map();
+            /* timing as played (swing, push and drag are the style) — two hits
+             * of one sound within 6 ticks are one, the louder */
+            const hits = [];
             for (const n of inBar) {
-                const slot = Math.max(0, Math.min(15, Math.round((n.t - b * 384) / 24)));
-                const p = role.map[n.p];
-                const key = slot * 128 + (p < 0 ? 0 : p);
-                const prev = bySlot.get(key);
-                if (!prev || n.v > prev.v)
-                    bySlot.set(key, Object.assign({ t: slot * 24, v: n.v, g: role.open && role.open.includes(p) ? 26 : 6 }, p >= 0 ? { p } : {}));
+                const p = role.map[n.p], t = Math.max(0, Math.min(383, n.t - b * 384));
+                const dup = hits.find(h => (h.p ?? -1) === (p >= 0 ? p : -1) && Math.abs(h.t - t) < 6);
+                if (dup) { if (n.v > dup.v) dup.v = n.v; continue; }
+                hits.push(Object.assign({ t, v: n.v, g: role.open && role.open.includes(p) ? 26 : 6 }, p >= 0 ? { p } : {}));
             }
-            const hits = [...bySlot.values()].sort((a, c) => a.t - c.t || (a.p || 0) - (c.p || 0));
+            hits.sort((a, c) => a.t - c.t || (a.p || 0) - (c.p || 0));
             if (hits.length < 4) continue;
-            const fp = hits.map(h => h.t + ':' + (h.p || 0) + ':' + Math.round(h.v / 16)).join(',');
+            const fp = hits.map(h => Math.round(h.t / 12) + ':' + (h.p || 0) + ':' + Math.round(h.v / 16)).join(',');
             if (seen.has(fp)) continue;
             seen.add(fp);
             out.push({ notes: hits, src: 'lib:gmd:' + f + ':' + b });
