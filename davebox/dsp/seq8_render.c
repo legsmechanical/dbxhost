@@ -193,6 +193,8 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
 
     inst->block_count++;
     if (frames > 0) inst->rui_frames += (uint64_t)frames;  /* device clock (remote UI) */
+    /* Stopped: there is no beat to wait for. */
+    if (inst->aud.pending && !inst->playing) aud_apply(inst);
 
     /* Advance sample counters and fire queued events for all tracks. */
     int t;
@@ -1053,6 +1055,8 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
         if (inst->master_tick_in_step >= TICKS_PER_STEP) {
             inst->master_tick_in_step = 0;
             inst->global_tick++;
+            /* A phrase preview swaps on the beat (phrase library). */
+            if (inst->aud.pending && inst->global_tick % 4 == 0) aud_apply(inst);
         }
         inst->arp_master_tick++;
         clock_send_f8_tick(inst);  /* continuous 24-PPQN clock out while playing (free-run master) */

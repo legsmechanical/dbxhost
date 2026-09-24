@@ -88,6 +88,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
          * Refused while the track records. */
         if (!strcmp(p, "_import")) {
             if (tr->recording) return 1;
+            aud_release_track(inst, tidx);          /* undo must hold the original, not a preview */
             const char *s = val ? val : "";
             int flags = my_atoi(s);
             while (*s && *s != ' ') s++;
@@ -113,7 +114,10 @@ static int sp_track_clip(sp_ctx_t *cx) {
                     clip_t *lc = &dc->lanes[l].clip;
                     if (flags & 1) clip_wipe_notes(lc);
                     clip_import_frame(lc, tps, (uint16_t)len);
-                    if (is_active) { tr->drum_current_step[l] = 0; tr->drum_tick_in_step[l] = 0; }
+                    if (is_active) {
+                        if (inst->playing) drum_lane_anchor_playhead(inst, tr, l, lc);
+                        else { tr->drum_current_step[l] = 0; tr->drum_tick_in_step[l] = 0; }
+                    }
                 }
                 uint32_t touched = 0;
                 while (*ops) {
@@ -154,9 +158,13 @@ static int sp_track_clip(sp_ctx_t *cx) {
                 if (flags & 1) clip_wipe_notes(cl);
                 clip_import_frame(cl, tps, (uint16_t)len);
                 if (is_active) {
-                    /* The playhead stays inside the new clip (as `_length` keeps it). */
-                    if (tr->tick_in_step >= tps) tr->tick_in_step = 0;
-                    if (tr->current_step >= cl->length) tr->current_step = 0;
+                    /* Playing: land in phase with the master clock, as a mid-play
+                     * clip switch does. Stopped: the playhead stays inside the clip. */
+                    if (inst->playing) melodic_anchor_playhead(inst, tr, cl);
+                    else {
+                        if (tr->tick_in_step >= tps) tr->tick_in_step = 0;
+                        if (tr->current_step >= cl->length) tr->current_step = 0;
+                    }
                 }
                 while (*ops) {
                     while (*ops == ' ' || *ops == ';') ops++;

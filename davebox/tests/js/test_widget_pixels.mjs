@@ -245,7 +245,11 @@ step('peekExpired takes the option list down, and is OFF by default', () => {
     const up = shot(() => draw(ENUM, { touchedIdx: 0, overlayIdx: 0 }));
     const down = shot(() => draw(ENUM, { touchedIdx: 0, overlayIdx: 0, peekExpired: true }));
     assert(!same(up, down), 'peekExpired did not take the list down');
-    assert(ink(down) < ink(up), 'the "expired" page has MORE ink than the list');
+    /* The list is OPAQUE (Josh, 2026-09-23: "i like the opaque everywhere"):
+     * with it up, nothing shows beside its box; with it down, the cells do. */
+    const leftStrip = (f) => { let n = 0; for (let y = 12; y < 56; y++) for (let x = 0; x < 8; x++) n += f[y * 128 + x] ? 1 : 0; return n; };
+    assert(leftStrip(up) === 0, 'the page shows beside the option list: ' + leftStrip(up) + ' px');
+    assert(leftStrip(down) > 0, 'with the list down, the cells beside it are not drawn');
     /* Omitting the flag must keep today's hold-to-show behaviour exactly. */
     assert(same(up, shot(() => draw(ENUM, { touchedIdx: 0, overlayIdx: 0, peekExpired: false }))),
            'peekExpired defaults to on');

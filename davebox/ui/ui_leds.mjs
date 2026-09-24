@@ -1,3 +1,4 @@
+import { pbPadColors } from './ui_phrase_browser.mjs';
 import { S } from './ui_state.mjs';
 import {
     NUM_STEPS, NUM_TRACKS, LED_OFF, LEDS_PER_FRAME,
@@ -599,6 +600,17 @@ export function updateTrackLEDs() {
 
     if (paintProjectPickerLEDs()) return;
 
+    /* The phrase library (ui_phrase_browser pbPadColors): a colour for each pad
+     * it owns, null for the rest. Owning EVERY pad (a melodic track while K5
+     * Voice is held) it paints them all here; owning some (a drum track's
+     * right-hand sound pads) it overrides just those in the drum painter
+     * below, and the lane pads look as they always do (Josh, 2026-09-23). */
+    const _pbOv = pbPadColors();
+    if (_pbOv && _pbOv.every(c => c != null)) {
+        for (let i = 0; i < 32; i++) cachedSetLED(TRACK_PAD_BASE + i, _pbOv[i]);
+        return;
+    }
+
     if (S.tapTempoOpen) {
         for (let i = 0; i < 32; i++) {
             const note  = TRACK_PAD_BASE + i;
@@ -681,7 +693,11 @@ export function updateTrackLEDs() {
                 let color;
                 if (col < 4) {
                     const lane = S.drumLanePage[t] * 16 + row * 4 + col;
-                    const isActive = (lane === selLane);
+                    /* Under the phrase browser no lane shows as selected: its sounds
+                     * are what the lanes mark there, and the lane it was opened on
+                     * would otherwise keep a white highlight once its sound moved
+                     * away (Josh, 2026-09-23). The selection itself is untouched. */
+                    const isActive = (lane === selLane) && !_pbOv;
                     const hasHits  = S.drumLaneHasNotes[t][lane];
                     const laneNote = S.drumLaneNote[t][lane];
                     const sounding = S.liveActiveNotes.has(laneNote);
@@ -762,6 +778,7 @@ export function updateTrackLEDs() {
                     const zone = row * 4 + (col - 4);
                     color = (zone === velZone) ? White : DarkGrey;
                 }
+                if (_pbOv && _pbOv[i] != null) color = _pbOv[i];
                 cachedSetLED(TRACK_PAD_BASE + i, color);
             }
         } else {
