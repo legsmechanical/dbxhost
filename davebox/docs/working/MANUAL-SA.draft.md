@@ -1904,8 +1904,9 @@ Loading a melodic phrase replaces the clip and clears its automation, like
 [Import MIDI](#154-import-a-midi-file); a drum phrase changes only the lanes it
 uses. The screen remembers where you were on each track.
 
-dAVEBOx comes with a built-in library of about 7,800 phrases: about 900 whole-kit beats,
-single drums (kick, snare, hats, cymbals, toms, percussion — many played by real drummers)
+dAVEBOx comes with a built-in library of about 1,100 phrases, chosen to be representative of
+each style and its genres — a style with a wide range gets more, a narrow one fewer: whole-kit
+beats, single drums (kick, snare, hats, cymbals, toms, percussion — many played by real drummers)
 and melodic parts (bass, chords, arps, leads, pads, synth FX, sequences, keys, guitar),
 across BASIC plus these styles: AMBIENT, BREAKS, COUNTRY, DARKSYN, DISCO, DNB, HIPHOP,
 HOUSE, INDIE, JAZZ, NEW WAVE, POP, REGGAE, RNB, ROCK, TECHNO, TRANCE and WORLD. Each style

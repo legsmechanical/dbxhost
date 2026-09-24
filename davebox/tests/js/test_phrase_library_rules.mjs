@@ -93,5 +93,12 @@ step('every phrase obeys the library rules', () => {
     console.log(`         (${all.length} phrases checked)`);
 });
 
+step('every style has phrases of its own, not only its genres\', in beats, hats, bass and chords', () => {
+    const missing = [];
+    for (const tag of TAGS) for (const cat of ['beat', 'hat', 'bass', 'chord'])
+        if (!all.some(p => p.cat === cat && (p.g || '') === tag && !p.s)) missing.push((tag || 'BASIC') + ' ' + cat);
+    assert(!missing.length, 'no own phrases: ' + missing.join(', '));
+});
+
 if (failed) { console.error('FAIL: phrase library rules'); process.exit(1); }
 console.log('PASS: phrase library rules');
