@@ -1221,7 +1221,21 @@ export function activeSection(sections, bankIdx) {
  * Returns { banks: [{name, cells}], paramCount, source } where `source` says
  * which discovery path produced the layout — useful when a module lays out
  * badly and you need to know whether to blame the hierarchy or the fallback. */
-export function discover(slot, comp) {
+/*
+ * `opts.skipBanks`: describe the module but do NOT build the flat bank list.
+ *
+ * The banks feed ONE surface, dAVEBOx's own flat editor (ui_sound renderEdit),
+ * and that editor is only the FALLBACK when the shared page grid is on screen.
+ * Building them is the expensive part of discovery for a module with repeated
+ * elements: DR32 declares 45 child levels x 32 pads, which this walk expands to
+ * 1441 pages and 8161 cells for a list nobody draws. The caller builds them
+ * later, on demand, if the fallback is ever shown.
+ *
+ * Skipped with the banks: the canvaskit adoption (it only replaces banks), and
+ * so the canvas.js evaluation it needs. Only for a module that does NOT declare
+ * `host_canvas_ui` -- the caller checks that, because hosting needs the kit.
+ */
+export function discover(slot, comp, opts = {}) {
     /* Discovery runs when a slot's module is (re)loaded: whatever automation
      * cached about this slot's parameter ranges is now about a module that
      * may no longer be there. */
@@ -1303,8 +1317,10 @@ export function discover(slot, comp) {
     }
 
     let source = 'hierarchy';
+    const skipBanks = !!opts.skipBanks;
+    if (skipBanks) source = 'deferred';
 
-    if (root) {
+    if (root && !skipBanks) {
         /* Root's own knobs are the "Main" page; every other reachable level
          * comes from the walk (which already deduped against root's key list). */
         const rootEntries = keysOf(root.knobs).filter(e => isVisible(visIo, root, e.key));
@@ -1319,7 +1335,7 @@ export function discover(slot, comp) {
 
     /* Fallback: module published chain_params but no usable hierarchy. Chunk the
      * publish order. `ui_*` keys are the module's own UI state, not user params. */
-    if (banks.length === 0 && cpOrder.length) {
+    if (!skipBanks && banks.length === 0 && cpOrder.length) {
         source = 'chain_params';
         const keys = cpOrder.filter(k => k.indexOf('ui_') !== 0);
         addLevel(banks, 'Params', keys.map(k => cellFor(k, null)));
@@ -1327,7 +1343,8 @@ export function discover(slot, comp) {
 
     /* Any filepath param the layout missed is worth surfacing — it's usually the
      * most important control the module has (the sample/ROM/bank to load). */
-    const orphanFiles = cpOrder.filter(k => !seen[k] && cpMap[k].type === 'filepath');
+    const orphanFiles = skipBanks ? []
+        : cpOrder.filter(k => !seen[k] && cpMap[k].type === 'filepath');
     if (orphanFiles.length) {
         addLevel(banks, 'Files', orphanFiles.map(k => cellFor(k, null)));
     }
@@ -1340,7 +1357,7 @@ export function discover(slot, comp) {
      * curves, the module-wide model enum) runs over the adopted banks. */
     let kitSections = null;
     let hostedOverlay = null;
-    const kitModuleId = engineLoadedModule(slot, comp);
+    const kitModuleId = skipBanks ? null : engineLoadedModule(slot, comp);
     if (kitModuleId) {
         const kit = engineLoadKitStructure(comp, kitModuleId);
         const adopted = adoptKitStructure(kit, (k) => authoritativeMeta(k, cpMap, levels));
@@ -1426,6 +1443,8 @@ export function discover(slot, comp) {
 
     return {
         banks, paramCount, source, hierReason, envCount, filtCount, filtPairs,
+        /* True when the banks were deliberately NOT built (opts.skipBanks). */
+        banksDeferred: skipBanks,
         /* Author-authored section rows when the kit supplied them; null
          * means the caller should derive its own. */
         kitSections,
