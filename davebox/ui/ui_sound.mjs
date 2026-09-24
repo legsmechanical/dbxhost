@@ -12005,6 +12005,7 @@ function ppIo() {
                     trackInflight(slot, comp, k, String(v));
                     return r;
                 },
+                shiftHeld: () => S.shiftHeld === true,
             });
         },
     };
