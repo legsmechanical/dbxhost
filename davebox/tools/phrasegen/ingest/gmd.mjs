@@ -25,7 +25,7 @@ const ROLE = {
     cymb:  { map: { 51: -1, 59: -1, 53: -1 } },
 };
 /* GMD style folder → public tag */
-export const STYLE_TAG = { rock: 'ROCK', punk: 'PUNK', funk: 'FUNK', soul: 'FUNK', hiphop: 'HIPHOP',
+export const STYLE_TAG = { rock: 'ROCK', punk: 'PUNK', funk: 'FUNK', soul: 'SOUL', hiphop: 'HIPHOP',
                            pop: 'POP', 'dance/disco': 'DISCO', 'dance/breakbeat': 'BREAKS' };
 
 /* opts: { style, count } → candidates of one bar, 16th grid, velocities as played. */
