@@ -22,13 +22,13 @@ comes from `analysis/*.py`; nothing is hand-entered.
 | **`lmd_matched_h5`** (MSD per-track metadata for the matched tracks) | artist/title/year, Echo Nest `artist_terms` (+weights), MusicBrainz `artist_mbtags` | Million Song Dataset metadata: free for research ("MSD is a freely-available collection"); the Echo Nest terms are artist-level. Used only to SELECT songs, never shipped. |
 | **MSD Last.fm dataset** (`lastfm_tags.db`, 2011) | track-level genre tags | **"Research only, strictly non-commercial"** (millionsongdataset.com/lastfm). Used only to SELECT songs; no tag data is shipped or needed at runtime. If that is a concern, re-run `lmd_select.py` with Last.fm evidence disabled — about a quarter of the target songs (155 of 606) came from it. |
 
-Downloads live outside the repo in `/Users/josh/phrasegen-cache/lmd/` (lmd_matched 1.4 GB, h5 6.6 GB,
+Downloads live outside the repo in `~/phrasegen-cache/lmd/` (lmd_matched 1.4 GB, h5 6.6 GB,
 lastfm_tags.db 0.6 GB, plus a venv with `pretty_midi`, `h5py`, `numpy`).
 
 ## Pipeline (reproduce)
 
 ```sh
-C=/Users/josh/phrasegen-cache/lmd; PY=$C/venv/bin/python; cd analysis
+C=~/phrasegen-cache/lmd; PY=$C/venv/bin/python; cd analysis
 $PY lmd_meta.py $C $C/meta.json                                   # metadata table (~1 min)
 $PY lmd_select.py $C/meta.json out/selection.json out/selection_report.txt
 $PY -W ignore lmd_measure.py out/selection.json $C/lmd_matched $C/songs.jsonl   # ~4 min
@@ -185,3 +185,7 @@ most are `accented` (same accent shape every pass). Hats and perc (tambourine/sh
 with accent shapes) dominate; kick and snare loops with real dynamics are fewer because most
 transcriptions keep those two lanes near-flat. The owner's ruling covers single-lane drum patterns
 (timing + dynamics); nothing melodic is listed.
+
+**Published copy:** in `analysis/out/selection.json` the per-song selection evidence taken from
+the Last.fm tag data (research-only, non-commercial) is replaced with `tag`; re-running
+`lmd_select.py` locally regenerates the full evidence.
