@@ -53,6 +53,10 @@ const LIBS = {
         { id: 'bass.b', name: 'ITALO OCT', g: 'ITALO', bars: 1, mode: 'min', n: '0 0 0 0 100 20;24 0 1 0 90 20' },
         { id: 'bass.c', name: 'OCTAVES', g: '', bars: 1, mode: 'min', n: '0 0 0 0 100 20;24 0 1 0 90 20' },
     ] },
+    beat: { v: 1, cat: 'beat', phrases: [
+        { id: 'beat.a', name: 'ROCK LIVE 01', g: 'ROCK', bars: 1, pads: [42, 36, 38, 46, 49, 51, 45, 39],
+          n: '0 100 6 36;0 80 6 42;0 70 6 49;48 60 6 42;96 110 6 38;96 60 6 42;144 70 26 46;192 100 6 36;192 60 6 42;240 50 6 51;288 110 6 38;288 60 6 42;312 60 6 45;336 70 6 39;360 60 6 42' },
+    ] },
     hat: { v: 1, cat: 'hat', phrases: [
         { id: 'hat.a', name: 'HOUSE OFF', g: 'HOUSE', bars: 1, n: '48 100 12;144 100 12;240 100 12;336 100 12' },
         { id: 'hat.b', name: 'HATS 3', g: 'HOUSE', bars: 1, pads: [42, 46, 44],
@@ -86,7 +90,8 @@ async function main() {
     const { packChunk } = await import('../../ui/ui_phrase_pack.mjs');
     files[PB.PB_SHIPPED_DIR + '/phrases-open.pack'] = JSON.stringify({ v: 1, enc: false, chunks: { bass: JSON.stringify(LIBS.bass) } });
     files[PB.PB_SHIPPED_DIR + '/phrases.pack'] = JSON.stringify({ v: 1, enc: true,
-        chunks: { hat: packChunk(JSON.stringify(LIBS.hat), globalThis.DAVEBOX_PHRASE_KEY, '0102030405060708090a0b0c') } });
+        chunks: { hat: packChunk(JSON.stringify(LIBS.hat), globalThis.DAVEBOX_PHRASE_KEY, '0102030405060708090a0b0c'),
+                  beat: packChunk(JSON.stringify(LIBS.beat), globalThis.DAVEBOX_PHRASE_KEY, '0202030405060708090a0b0c') } });
 
     function ticks(n) {
         for (let i = 0; i < n; i++) {
@@ -139,7 +144,7 @@ async function main() {
         assert(!PB.pbActive(), 'K4 + click opened the browser');
         openOn(1);
         assert(PB.pbActive(), 'K6 touch + click did not open the browser');
-        assert(pb().cats.join(',') === 'bass,hat', 'categories on a melodic track: ' + pb().cats);
+        assert(pb().cats.join(',') === 'bass,beat,hat', 'categories on a melodic track: ' + pb().cats);
         assert(ink(30, 55) > 0, 'the browser drew no phrase name or roll');
     });
 
@@ -262,7 +267,7 @@ async function main() {
     });
 
     step('a drum phrase on a melodic track: hold K5 and tap a pad for the highlighted sound\'s NOTE — nothing moves on', () => {
-        turn(0, 12); ticks(2);
+        turn(0, 24); ticks(2);
         assert(pb().cats[pb().catIdx] === 'hat', 'K1 did not reach HAT');
         jog(1); click(); ticks(2);
         assert(pb().voices.length === 3 && pb().assign.join(',') === '42,46,44', 'defaults: ' + pb().assign);
@@ -347,7 +352,9 @@ async function main() {
         S.activeTrack = 0; S.activeBank = 0; ticks(6);
         const lanesBefore = [0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27].map(i => padLed[68 + i]);
         openOn(0);
-        assert(pb().cats.join(',') === 'hat', 'drum categories: ' + pb().cats);
+        assert(pb().cats.join(',') === 'beat,hat', 'drum categories: ' + pb().cats);
+        turn(0, 12); ticks(2);
+        assert(pb().cats[pb().catIdx] === 'hat', 'K1 did not reach HAT');
         jog(1); click(); ticks(3);
         /* 42 → the lane opened on (3); 46 → lane 10 plays 46; 44 → lane 8 plays 44 */
         assert(pb().assign.join(',') === '3,10,8', 'default lanes: ' + pb().assign);
@@ -433,6 +440,54 @@ async function main() {
         pad(2); ticks(1);
         assert(pb().assign.join(',') === '2', 'the only sound was taken off');
         midi(0x80, 68 + 4, 0); back(); ticks(2);
+    });
+
+    step('BEATS on a drum track: first type; 8 sounds go to the kit lanes playing their GM notes, one load of 8 lanes', () => {
+        S.trackClipPlaying[0] = true; S.activeDrumLane[0] = 20; S.drumLanePage[0] = 0;
+        for (let l = 0; l < 32; l++) { S.drumLaneNote[0][l] = 36 + l; S.drumLaneHasNotes[0][l] = l < 16; }
+        openOn(0);
+        assert(pb().cats[0] === 'beat' && pb().cats[pb().catIdx] === 'beat' || pb().cats.includes('beat'), 'no BEATS type');
+        while (pb().cats[pb().catIdx] !== 'beat') turn(0, -12);
+        ticks(2);
+        assert(pb().voices.length === 8, 'beat voices: ' + pb().voices.length);
+        const byPitch = Object.fromEntries(pb().voices.map((v, i) => [v.pitch, pb().assign[i]]));
+        assert(byPitch[36] === 0 && byPitch[38] === 2 && byPitch[42] === 6 && byPitch[46] === 10 && byPitch[49] === 13,
+               'not placed by GM note (onto the kit\'s lanes): ' + JSON.stringify(byPitch));
+        /* holding a sound pad names it in the header */
+        const hi = pb().voices.findIndex(v => v.pitch === 46);
+        midi(0x90, 68 + (Math.floor(hi / 4) * 8) + 4 + (hi % 4), 100); ticks(2);
+        assert(pb().held === hi, 'did not hold the open hat');
+        assert(ink(12, 54) > 0, 'no sounds panel with 8 sounds');
+        midi(0x80, 68 + (Math.floor(hi / 4) * 8) + 4 + (hi % 4), 0); ticks(2);
+        const n = writes.length;
+        click(); ticks(2);
+        assert(pb().confirm, 'replacing kit lanes did not ask first');
+        click(); ticks(4);
+        const imp = since(n, /import$/);
+        assert(imp.length === 1 && imp[0][1] === 't0_lanes_import' && (imp[0][2].match(/L\d+/g) || []).length === 8,
+               'beat load: ' + JSON.stringify(imp).slice(0, 200));
+        assert(/^1 /.test(imp[0][2]), 'a replacing load not flagged');
+    });
+
+    step('Phrase Map GM maps an ordinary drum phrase by GM note too; Move uses Move\'s kit layout', () => {
+        PB.setPbMapMode('gm');
+        for (let l = 0; l < 32; l++) S.drumLaneHasNotes[0][l] = true;
+        openOn(0);
+        while (pb().cats[pb().catIdx] !== 'hat') turn(0, 12);
+        jog(1); click(); ticks(2);
+        assert(pb().list[pb().idx].id === 'hat.b', 'not on the 3-sound hat');
+        assert(pb().assign.join(',') === '6,10,8', 'hats not mapped by GM with the setting on: ' + pb().assign);
+        back(); ticks(2);
+        PB.setPbMapMode('move');
+        openOn(0);
+        while (pb().cats[pb().catIdx] !== 'beat') turn(0, -12);
+        ticks(2);
+        const byPitch = Object.fromEntries(pb().voices.map((v, i) => [v.pitch, pb().assign[i]]));
+        /* Move: kick 36 → lane 0, crash 49 → 13, mid tom 45 → 9, ride 51 → 15 */
+        assert(byPitch[36] === 0 && byPitch[49] === 13 && byPitch[45] === 9 && byPitch[51] === 15,
+               'not placed by Move\'s layout: ' + JSON.stringify(byPitch));
+        PB.setPbMapMode('off');
+        back(); ticks(2);
     });
 
     step('a Conductor track refuses, and says why', () => {

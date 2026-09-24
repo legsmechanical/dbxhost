@@ -5,7 +5,8 @@
  * the build key is present (PHRASE_KEY_FILE or ~/.davebox/phrase.key): a known
  * category; 1–4 bars; no empty leading bar; a public style tag; a unique id and
  * a unique upper-case name of 14 characters or fewer; drums at most three
- * sounds, more than one only for hats and percussion. Plus: the pack files name
+ * sounds, more than one only for hats and percussion — a beat (a whole kit)
+ * up to eight. Plus: the pack files name
  * nothing but the phrases, and the credits ship beside them.
  * Without the key the encrypted pack is NOT checked, and this says so.
  */
@@ -79,7 +80,7 @@ step('every phrase obeys the library rules', () => {
         else if (Math.min(...notes.map(n => n.t)) >= 384) why.push('empty leading bar');
         if (isPbDrumCat(p.cat)) {
             const sounds = new Set(notes.map(n => n.p)).size;
-            const cap = (p.cat === 'hat' || p.cat === 'perc') ? 3 : 1;
+            const cap = p.cat === 'beat' ? 8 : (p.cat === 'hat' || p.cat === 'perc') ? 3 : 1;
             if (sounds > cap) why.push(sounds + ' sounds');
         }
         if (why.length) bad.push(p.file + ' ' + p.cat + ' ' + p.id + ': ' + why.join(', '));

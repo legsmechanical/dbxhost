@@ -42,7 +42,7 @@ import { nowMs } from './ui_clock.mjs';
 import {
     PAD_MODE_DRUM, PAD_MODE_CONDUCT, SCENE_LETTERS, NOTE_KEYS, DRUM_LANES, LED_OFF,
 } from './ui_constants.mjs';
-import { White, VividYellow, Cyan, NeonPink, BrightOrange, NeonGreen, ElectricViolet } from '/data/UserData/schwung/shared/constants.mjs';
+import { White, VividYellow, Cyan, NeonPink, BrightOrange, NeonGreen, ElectricViolet, BrightRed, Lime } from '/data/UserData/schwung/shared/constants.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { syncClipsTargeted } from './ui_dsp_bridge.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -58,7 +58,7 @@ import {
     isPbDrumCat, parseLibrary, mergeLibraries, styleGroups, styleOf, timing, melodicNotes,
     drumVoices, defaultAssign, drumLaneNotes, defaultNoteAssign, drumAsMelodicNotes,
     melodicImportVal, melodicAudclipVal, laneImportVal, laneAudclipVal, lanesAudclipVal, lanesImportVal,
-    rollOf, decodePhrase, PB_MAX_VOICES,
+    rollOf, decodePhrase, PB_MAX_VOICES, pbMaxVoices,
 } from './ui_phrases.mjs';
 
 /* Our module directory (see ui_export.mjs): the shipped library is two packs
@@ -85,7 +85,30 @@ let loadSync = null;                      /* after a load: refresh the clip view
 
 export function pbActive() { return !!PB; }
 export function pbStateForTest() { return PB; }
-export function pbResetForTest() { PB = null; LIB.clear(); PACKS = null; PACK_TEXT.clear(); prewarm = null; loadSync = null; for (let i = 0; i < 8; i++) pbMem[i] = null; }
+export function pbResetForTest() { PB = null; LIB.clear(); PACKS = null; PACK_TEXT.clear(); prewarm = null; mapMode = null; loadSync = null; for (let i = 0; i < 8; i++) pbMem[i] = null; }
+
+/* ---- the Phrase Map setting (Settings menu; device-global) ----
+ * Where a drum phrase's sounds go by default: 'off' = the lane opened on and
+ * empty lanes; 'gm' = the lanes playing their General MIDI notes; 'move' = the
+ * lanes of Move's factory-kit layout (ui_phrases mappedNotes). A BEAT always
+ * maps — by GM when the setting is off. */
+const MAP_PREF_PATH = DAVEBOX_HOST_DIR + '/phrase-map.txt';
+export const PB_MAP_MODES = ['off', 'gm', 'move'];
+let mapMode = null;
+export function pbMapMode() {
+    if (mapMode === null) {
+        let v = 'off';
+        try { if (host_file_exists(MAP_PREF_PATH)) v = String(host_read_file(MAP_PREF_PATH) || '').trim(); } catch (e) { v = 'off'; }
+        mapMode = PB_MAP_MODES.includes(v) ? v : 'off';
+    }
+    return mapMode;
+}
+export function setPbMapMode(v) {
+    mapMode = PB_MAP_MODES.includes(v) ? v : 'off';
+    let wrote = false;
+    try { wrote = !!host_write_file(MAP_PREF_PATH, mapMode + '\n'); } catch (e) { wrote = false; }
+    if (!wrote) console.log('[phrases] could not persist the phrase map setting to ' + MAP_PREF_PATH);
+}
 
 /* ---- the library ---- */
 
@@ -222,11 +245,12 @@ function enterPhrase() {
     const p = cur();
     PB.voiceSel = 0;
     PB.held = -1;
-    PB.voices = p && isPbDrumCat(p.cat) ? drumVoices(p).slice(0, PB_MAX_VOICES) : [];
+    PB.voices = p && isPbDrumCat(p.cat) ? drumVoices(p).slice(0, pbMaxVoices(p.cat)) : [];
     if (!p || !isPbDrumCat(p.cat)) PB.assign = [];
     else if (PB.drum) {
         const t = PB.track;
-        PB.assign = defaultAssign(PB.voices, GS.drumLaneNote[t], GS.drumLaneHasNotes[t], PB.lane);
+        PB.assign = defaultAssign(PB.voices, GS.drumLaneNote[t], GS.drumLaneHasNotes[t], PB.lane,
+                                  pbMapMode() !== 'off' ? pbMapMode() : (p.cat === 'beat' ? 'gm' : 'off'), pbMaxVoices(p.cat));
     } else PB.assign = defaultNoteAssign(PB.voices, p.cat);
     GS.screenDirty = true;
 }
@@ -458,7 +482,7 @@ export function pbOnBack() {
 }
 
 /* The sounds' own pad colours (drum track, right-hand pads), in order. */
-const SOUND_COLORS = [VividYellow, Cyan, NeonPink, BrightOrange, NeonGreen, ElectricViolet];
+const SOUND_COLORS = [VividYellow, Cyan, NeonPink, BrightOrange, NeonGreen, ElectricViolet, BrightRed, Lime];
 
 /* A drum track's right-hand pad as a sound index, or -1. Sounds fill the
  * bottom row first: pads 4-7, then 12-13. */
@@ -570,8 +594,8 @@ export function pbTick() {
 
 /* ---- drawing ---- */
 
-const VOICE_NAME = { 35: 'KICK', 36: 'KICK', 37: 'RIM', 38: 'SNARE', 39: 'CLAP', 40: 'SNARE', 41: 'TOM',
-    42: 'HAT', 43: 'TOM', 44: 'PEDAL', 45: 'TOM', 46: 'OPEN', 47: 'TOM', 48: 'TOM', 49: 'CRASH',
+const VOICE_NAME = { 35: 'KICK', 36: 'KICK', 37: 'RIM', 38: 'SNARE', 39: 'CLAP', 40: 'SNARE', 41: 'LO TOM',
+    42: 'HAT', 43: 'LO TOM', 44: 'PEDAL', 45: 'MID TOM', 46: 'OPEN', 47: 'MID TOM', 48: 'HI TOM', 49: 'CRASH',
     50: 'TOM', 51: 'RIDE', 52: 'CHINA', 53: 'BELL', 54: 'TAMB', 55: 'SPLSH', 56: 'COWBL', 57: 'CRASH',
     59: 'RIDE', 60: 'BONGO', 61: 'BONGO', 62: 'CONGA', 63: 'CONGA', 64: 'CONGA', 69: 'CABAS',
     70: 'SHAKR', 75: 'CLAVE', 76: 'BLOCK', 77: 'BLOCK' };
@@ -608,6 +632,11 @@ export function pbRingCells() { return PB && !PB.confirm ? cells() : null; }
  * how many there are. */
 function header() {
     const t = PB.track;
+    /* holding a sound pad names it, and where it goes ("(1) OPEN > PAD 11") */
+    if (PB.drum && PB.held >= 0 && PB.voices[PB.held]) {
+        const a = PB.assign[PB.held];
+        return '(' + (t + 1) + ') ' + voiceLabel(PB.held) + ' > ' + (a >= 0 ? 'PAD ' + (a + 1) : '--');
+    }
     if (PB.voices.length > 1 && PB.drum) return '(' + (t + 1) + ') ' + PB.voices.length + ' SOUNDS';
     if (PB.drum) return '(' + (t + 1) + ') PAD ' + ((PB.assign[0] ?? PB.lane) + 1);
     return '(' + (t + 1) + ') CLIP ' + SCENE_LETTERS[PB.clip];
@@ -683,9 +712,12 @@ function drawSounds() {
     const hot = PB.drum ? PB.held : PB.voiceSel;
     const tm = timing(cur(), PB.time);
     const notes = decodePhrase(cur());
-    const rowH = 7, top = Y + 3;
+    const rowH = 7, top = Y + 3, fit = Math.floor((H - 4) / rowH);
+    /* more sounds than rows (a beat): a window that keeps the one being set in view */
+    const first = Math.max(0, Math.min(PB.voices.length - fit, hot - Math.floor(fit / 2)));
     PB.voices.forEach((v, i) => {
-        const y = top + i * rowH, on = i === hot, c = on ? 0 : 1;
+        if (i < first || i >= first + fit) return;
+        const y = top + (i - first) * rowH, on = i === hot, c = on ? 0 : 1;
         if (on) fill_rect(X + 2, y - 1, W - 4, rowH, 1);
         mvPrint(X + 5, y, voiceLabel(i), c);
         const a = PB.assign[i];

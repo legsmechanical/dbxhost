@@ -36,7 +36,9 @@ const PRIVATE_DIR = process.env.PHRASEGEN_PRIVATE_DIR || '';
 const KEY_FILE = process.env.PHRASEGEN_KEY_FILE || (PRIVATE_DIR ? join(PRIVATE_DIR, 'keys', 'phrases.key') : '');
 export const MAX_BARS = 4;
 export const MAX_DRUM_SOUNDS = 3;
-export const MULTI_SOUND_CATS = ['hat', 'perc'];
+export const MULTI_SOUND_CATS = ['hat', 'perc', 'beat'];
+/* a full beat: up to 8 sounds (the in-time preview's lane limit) */
+export const BEAT_MAX_SOUNDS = 8;
 export const LICENCE_ALLOW = ['CC0-1.0', 'CC-BY-4.0', 'MIT', 'Apache-2.0', 'PD', 'dAVEBOx'];
 
 const GENRE_BPM = TAG_BPM;
@@ -65,8 +67,10 @@ function admit(cat, c) {
     const bars = tl.bars;
     if (!(bars >= 1 && bars <= MAX_BARS) || !tl.notes.length) return null;
     if (isDrumCat(cat)) {
-        const cap = MULTI_SOUND_CATS.includes(cat) ? MAX_DRUM_SOUNDS : 1;
+        const cap = cat === 'beat' ? BEAT_MAX_SOUNDS : MULTI_SOUND_CATS.includes(cat) ? MAX_DRUM_SOUNDS : 1;
         if (drumSounds(tl.notes) > cap) return null;
+        /* a beat is a kit: a kick or a snare, and at least two sounds */
+        if (cat === 'beat' && (drumSounds(tl.notes) < 2 || !tl.notes.some(n => n.p === 36 || n.p === 38))) return null;
         /* too basic to be useful: a single hit (a cymbal crash excepted) */
         if (cat !== 'cymb' && tl.notes.length < 2) return null;
         if (cat !== 'kick' && new Set(tl.notes.map(n => Math.round(n.v / 8))).size < 2) return null;

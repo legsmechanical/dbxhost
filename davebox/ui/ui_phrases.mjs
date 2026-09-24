@@ -28,14 +28,14 @@ import { TPS_VALUES } from './ui_constants.mjs';
 export const PB_PPQN = 96;
 export const PB_BAR = PB_PPQN * 4;
 
-export const PB_DRUM_CATS = ['kick', 'snare', 'hat', 'cymb', 'tom', 'perc'];
+export const PB_DRUM_CATS = ['beat', 'kick', 'snare', 'hat', 'cymb', 'tom', 'perc'];
 export const PB_MELODIC_CATS = ['bass', 'chord', 'arp', 'lead', 'pad', 'fx',
                                 'seq', 'sfx', 'keys', 'guitar', 'orch', 'ethnic'];
 /* The MIDI note of each melodic category's C — fixed per category (Josh,
  * 2026-09-23). */
 export const PB_ANCHOR = { bass: 36, chord: 60, arp: 60, pad: 60, lead: 72, fx: 60,
                            seq: 60, sfx: 60, keys: 60, guitar: 48, orch: 60, ethnic: 60 };
-export const PB_CAT_LABEL = { kick: 'KICK', snare: 'SNARE', hat: 'HAT', cymb: 'CYMBAL', tom: 'TOM',
+export const PB_CAT_LABEL = { beat: 'BEATS', kick: 'KICK', snare: 'SNARE', hat: 'HAT', cymb: 'CYMBAL', tom: 'TOM',
     perc: 'PERC', bass: 'BASS', chord: 'CHORD', arp: 'ARP', lead: 'LEAD', pad: 'PAD', fx: 'SYNTH FX',
     seq: 'SEQUENCE', sfx: 'SOUND FX', keys: 'KEYS', guitar: 'GUITAR', orch: 'ORCH', ethnic: 'ETHNIC' };
 
@@ -56,6 +56,9 @@ export const PB_STYLE_BASIC = 'BASIC';
 /* How many instruments of one drum phrase the browser places (more are
  * dropped, and counted). */
 export const PB_MAX_VOICES = 6;
+/* A full beat is a kit: up to 8 sounds (the in-time preview's lane limit). */
+export const PB_BEAT_VOICES = 8;
+export const pbMaxVoices = (cat) => cat === 'beat' ? PB_BEAT_VOICES : PB_MAX_VOICES;
 export const PB_OCT_MIN = -3, PB_OCT_MAX = 3;
 export const PB_MAX_NOTES = 512;          /* MAX_NOTES_PER_CLIP, per clip or lane */
 const MAX_STEPS = 256;
@@ -255,15 +258,43 @@ export function drumVoices(p) {
  * pitch; the next empty lane after the one opened on; else -1 (not placed).
  * ⭑ Never a lane that has notes other than the one opened on — nothing of the
  * user's is replaced unless they put a sound there (Josh, 2026-09-23). */
-export function defaultAssign(voices, lanePitches, laneUsed, openLane) {
+/* Where a sound's note lands in a mapping (the Phrase Map setting):
+ *   'gm'    General MIDI — the sound's own note
+ *   'move'  Move's factory-kit layout (measured over its 77 kits, 2026-09-24):
+ *           GM on 36-47 and 49 (toms folded to 43 / 45 / 47), and the
+ *           percussion GM puts above 51 on Move's percussion pads 50 / 48 / 51
+ *           — everything within its 16 pads */
+const MOVE_MAP = { 35: 36, 36: 36, 37: 37, 38: 38, 40: 40, 39: 39, 42: 42, 22: 42, 44: 44, 46: 46, 26: 46,
+                   41: 43, 43: 43, 45: 45, 47: 45, 48: 47, 50: 47, 49: 49, 52: 49, 55: 49, 57: 49, 51: 51, 53: 51, 59: 51 };
+const MOVE_PERC = [50, 48, 51];
+export function mappedNotes(voices, mode) {
+    let perc = 0;
+    return voices.map(v => {
+        if (!mode || mode === 'off' || v.pitch < 0) return null;
+        if (mode === 'gm') return v.pitch;
+        if (v.pitch in MOVE_MAP) return MOVE_MAP[v.pitch];
+        return MOVE_PERC[perc++ % MOVE_PERC.length];
+    });
+}
+
+export function defaultAssign(voices, lanePitches, laneUsed, openLane, gm, max) {
     const n = 32, taken = new Set(), out = [];
     const byPitch = new Map();
     const free = (l) => !taken.has(l) && !(laneUsed && laneUsed[l]);
-    for (let i = 0; i < voices.length && i < PB_MAX_VOICES; i++) {
+    for (let i = 0; i < voices.length && i < (max || PB_MAX_VOICES); i++) {
         const v = voices[i];
         let lane = -1;
+        /* GM mapping (a beat, or the Phrase Drums GM Map setting): each sound
+         * to the lane that plays its General MIDI note — even one with notes,
+         * which the load then replaces (it asks first; one Undo) */
+        /* `gm`: true (GM), 'gm', 'move', or falsy (no mapping) */
+        const mode = gm === true ? 'gm' : gm;
+        const target = mode && mode !== 'off' ? mappedNotes([v], mode)[0] : null;
+        const want = mode === 'move' && !(v.pitch in MOVE_MAP) ? mappedNotes(voices.slice(0, i + 1), mode)[i] : target;
+        const gmLane = want != null ? (lanePitches || []).findIndex((pp, l) => pp === want && !taken.has(l)) : -1;
         if (v.layerOf != null && byPitch.has(v.layerOf)) lane = byPitch.get(v.layerOf);
-        else if (i === 0) lane = openLane;
+        else if (gmLane >= 0) lane = gmLane;
+        else if (i === 0 && !(want != null)) lane = openLane;
         else {
             const m = (lanePitches || []).findIndex((pp, l) => pp === v.pitch && free(l));
             if (m >= 0) lane = m;
@@ -306,9 +337,9 @@ export function drumLaneNotes(p, timeIdx, voices, assign) {
  * tapping a pad (Josh, 2026-09-23: "this note from the sequence goes on this
  * drum track pad (or melodic track NOTE)"). The default note is the
  * instrument's own drum pitch — a one-pad phrase uses its category's. */
-export const PB_DRUM_NOTE = { kick: 36, snare: 38, hat: 42, cymb: 49, tom: 45, perc: 56 };
+export const PB_DRUM_NOTE = { beat: 36, kick: 36, snare: 38, hat: 42, cymb: 49, tom: 45, perc: 56 };
 export function defaultNoteAssign(voices, cat) {
-    return voices.slice(0, PB_MAX_VOICES).map(v => v.pitch >= 0 ? v.pitch : (PB_DRUM_NOTE[cat] ?? 36));
+    return voices.slice(0, pbMaxVoices(cat)).map(v => v.pitch >= 0 ? v.pitch : (PB_DRUM_NOTE[cat] ?? 36));
 }
 /* [{t, p, v, g}]: voice i plays note noteAssign[i]; two voices on one note
  * that strike on the same tick make one hit, the louder. */

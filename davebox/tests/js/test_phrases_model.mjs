@@ -7,7 +7,7 @@
 import {
     parseLibrary, mergeLibraries, styleList, filterPhrases, decodePhrase, pitchInC, remapPitch,
     timing, melodicNotes, drumVoices, defaultAssign, drumLaneNotes, melodicImportVal,
-    melodicAudclipVal, laneImportVal, laneAudclipVal, rollOf, PB_TIME_DEFAULT, PB_MAX_VOICES, defaultNoteAssign, drumAsMelodicNotes, lanesAudclipVal, lanesImportVal, styleGroups,
+    melodicAudclipVal, laneImportVal, laneAudclipVal, rollOf, PB_TIME_DEFAULT, PB_MAX_VOICES, defaultNoteAssign, drumAsMelodicNotes, lanesAudclipVal, lanesImportVal, styleGroups, mappedNotes,
 } from '../../ui/ui_phrases.mjs';
 
 let failed = 0;
@@ -129,6 +129,25 @@ step('default pads: layer with its base, first on the lane opened, an empty lane
     assertEq(defaultAssign([{ pitch: 1 }, { pitch: 2 }], lanePitches, full, 31), [31, -1], 'no empty lane: not placed');
     const many = Array.from({ length: 9 }, (_, i) => ({ pitch: 200 + i, layerOf: null }));
     assertEq(defaultAssign(many, lanePitches, used, 0).length, PB_MAX_VOICES, 'voices capped');
+});
+
+step('GM mapping: each sound to the lane playing its note, even one with notes; the rest as before', () => {
+    const lanePitches = Array.from({ length: 32 }, (_, l) => 36 + l);
+    const used = new Array(32).fill(true);
+    const kit = [{ pitch: 36 }, { pitch: 38 }, { pitch: 42 }, { pitch: 46 }, { pitch: 200 }];
+    assertEq(defaultAssign(kit, lanePitches, used, 5, true, 8), [0, 2, 6, 10, -1], 'GM onto used lanes; an unplayable pitch unplaced');
+    const empty = new Array(32).fill(false);
+    assertEq(defaultAssign([{ pitch: 36 }, { pitch: 200 }], lanePitches, empty, 5, true, 8), [0, 6], 'no GM lane: next empty after the lane opened on');
+    const eight = Array.from({ length: 10 }, (_, i) => ({ pitch: 36 + i }));
+    assertEq(defaultAssign(eight, lanePitches, empty, 0, true, 8).length, 8, 'a beat places up to 8');
+    assertEq(defaultAssign(kit, lanePitches, used, 5).slice(0, 2), [5, -1], 'without GM: the lane opened on, never a used lane');
+});
+
+step('Move mapping: Move\'s kit layout — toms folded, percussion onto its perc pads, all within 16 pads', () => {
+    const v = [36, 38, 42, 46, 41, 48, 56, 54, 70, 51].map(pitch => ({ pitch }));
+    assertEq(mappedNotes(v, 'move'), [36, 38, 42, 46, 43, 47, 50, 48, 51, 51], 'move');
+    assertEq(mappedNotes(v, 'gm'), [36, 38, 42, 46, 41, 48, 56, 54, 70, 51], 'gm is the sound\'s own note');
+    assert(mappedNotes(v, 'move').every(n => n >= 36 && n <= 51), 'outside Move\'s 16 pads');
 });
 
 step('drum lane notes: two voices on one lane strike once, the louder wins', () => {

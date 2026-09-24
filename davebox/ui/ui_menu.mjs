@@ -25,6 +25,7 @@ import { SCALE_NAMES } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
+import { pbMapMode, setPbMapMode, PB_MAP_MODES } from './ui_phrase_browser.mjs';
 import { saveState, showActionPopup, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { forceRedraw } from './ui_leds.mjs';
@@ -182,6 +183,15 @@ function buildGlobalMenuItems() {
             },
             min: 0, max: 150, step: 1,
             format: function(v) { return String(v | 0) + '%'; }
+        }),
+        /* The phrase library's drum placement (Josh, 2026-09-24): where a drum
+         * phrase's sounds go — Off (the lane opened on, empty lanes), GM (the
+         * lanes playing their General MIDI notes) or Move (Move's kit layout). */
+        createEnum('Phrase Map', {
+            get: function() { return pbMapMode(); },
+            set: function(v) { setPbMapMode(v); },
+            options: PB_MAP_MODES,
+            format: function(v) { return ({ off: 'Off', gm: 'GM', move: 'Move' })[v] || 'Off'; }
         }),
         createToggle('Beat Marks', {
             get: function() { return S.beatMarkersEnabled; },

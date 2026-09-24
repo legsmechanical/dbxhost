@@ -16,7 +16,7 @@
 export const PPQN = 96;
 export const BAR = PPQN * 4;
 export const MODES = { maj: [0, 2, 4, 5, 7, 9, 11], min: [0, 2, 3, 5, 7, 8, 10] };
-export const DRUM_CATS = ['kick', 'snare', 'hat', 'cymb', 'tom', 'perc'];
+export const DRUM_CATS = ['beat', 'kick', 'snare', 'hat', 'cymb', 'tom', 'perc'];
 /* The shipped library uses the first six; a user's own library may also use
  * seq, sfx, keys, guitar, orch and ethnic. */
 export const MELODIC_CATS = ['bass', 'chord', 'arp', 'lead', 'pad', 'fx', 'seq', 'sfx', 'keys', 'guitar', 'orch', 'ethnic'];
