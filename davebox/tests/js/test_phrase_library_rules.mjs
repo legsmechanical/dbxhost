@@ -17,9 +17,8 @@ import { parsePack, packCats, packCategory } from '../../ui/ui_phrase_pack.mjs';
 import { parseLibrary, decodePhrase, isPbDrumCat, PB_DRUM_CATS, PB_MELODIC_CATS } from '../../ui/ui_phrases.mjs';
 /* the public style tags a phrase may be filed under ('' = BASIC); the phrase
  * generator's own list must match this one */
-const TAGS = ['HOUSE', 'TECHNO', 'TRANCE', 'ELECTRO', 'DARKSYN', 'DISCO', 'FUNK', 'DNB', 'BREAKS', 'HIPHOP', 'RNB', 'GARAGE',
-    'ACID', 'REGGAE', 'AMBIENT', 'HARDCORE', 'ROCK', 'INDIE', 'METAL', 'PUNK', 'NEW WAVE', 'ITALO', 'POP', 'WORLD', 'JAZZ',
-    'COUNTRY', ''];
+const TAGS = ['HOUSE', 'TECHNO', 'TRANCE', 'DARKSYN', 'DISCO', 'DNB', 'BREAKS', 'HIPHOP', 'RNB', 'REGGAE', 'AMBIENT',
+    'ROCK', 'INDIE', 'NEW WAVE', 'POP', 'WORLD', 'JAZZ', 'COUNTRY', ''];
 
 let failed = 0;
 function step(l, fn) {
@@ -92,6 +91,13 @@ step('every phrase obeys the library rules', () => {
     }
     assert(!bad.length, bad.length + ' phrases break the rules, e.g.\n    ' + bad.slice(0, 8).join('\n    '));
     console.log(`         (${all.length} phrases checked)`);
+});
+
+step('every style has phrases of its own, not only its genres\', in beats, hats, bass and chords', () => {
+    const missing = [];
+    for (const tag of TAGS) for (const cat of ['beat', 'hat', 'bass', 'chord'])
+        if (!all.some(p => p.cat === cat && (p.g || '') === tag && !p.s)) missing.push((tag || 'BASIC') + ' ' + cat);
+    assert(!missing.length, 'no own phrases: ' + missing.join(', '));
 });
 
 if (failed) { console.error('FAIL: phrase library rules'); process.exit(1); }

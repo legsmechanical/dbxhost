@@ -1904,20 +1904,21 @@ Loading a melodic phrase replaces the clip and clears its automation, like
 [Import MIDI](#154-import-a-midi-file); a drum phrase changes only the lanes it
 uses. The screen remembers where you were on each track.
 
-dAVEBOx comes with a built-in library of about 7,800 phrases: about 900 whole-kit beats,
-single drums (kick, snare, hats, cymbals, toms, percussion — many played by real drummers)
+dAVEBOx comes with a built-in library of about 1,100 phrases, chosen to be representative of
+each style and its genres — a style with a wide range gets more, a narrow one fewer: whole-kit
+beats, single drums (kick, snare, hats, cymbals, toms, percussion — many played by real drummers)
 and melodic parts (bass, chords, arps, leads, pads, synth FX, sequences, keys, guitar),
-across BASIC plus these styles: ACID, AMBIENT, BREAKS, COUNTRY, DARKSYN, DISCO, DNB,
-ELECTRO, FUNK, GARAGE, HARDCORE, HIPHOP, HOUSE, INDIE, ITALO, JAZZ, METAL, NEW WAVE, POP,
-PUNK, REGGAE, RNB, ROCK, TECHNO, TRANCE and WORLD. Each style covers its genres — NEW WAVE
-takes in goth, darkwave and synthwave, DARKSYN takes in EBM and industrial, WORLD takes in
-Latin and afrobeat, REGGAE takes in dub, and so on. Phrases play with their style's groove: its swing, the pushes and
+across BASIC plus these styles: AMBIENT, BREAKS, COUNTRY, DARKSYN, DISCO, DNB, HIPHOP,
+HOUSE, INDIE, JAZZ, NEW WAVE, POP, REGGAE, RNB, ROCK, TECHNO, TRANCE and WORLD. Each style
+has phrases of its own and of its genres — HOUSE takes in acid and garage, BREAKS electro
+and hardcore, ROCK blues, punk and metal, RNB soul and funk, NEW WAVE goth, darkwave and
+synthwave, DARKSYN EBM and industrial, WORLD Latin and afrobeat, REGGAE dub, and so on. Phrases play with their style's groove: its swing, the pushes and
 drags of each part, ghost notes, and in trap the fast hat rolls.
 
-A phrase's name says what it plays: the pattern (4 FLOOR, BACKBEAT, 8THS OPEN, TOM LINE),
-the chords as scale degrees (1-6-3-7 MIN), or the line's shape (OCTAVE 8THS, UP 16THS);
-FILL when it ends in a fill, ROLL for a hat roll, SWING or SHUFFLE when it swings, LIVE
-when a drummer played it.
+A phrase's name starts with its genre (GOTH, HOUSE — none for BASIC), then says what it
+plays: the pattern (4FLR, BKBT, 8THS OPEN, TLINE), the chords as scale degrees (1-6-3-7), or
+the line's shape (OCTAVE 8THS, UP 16THS); FILL when it ends in a fill, ROLL for a hat roll,
+SW or SHUF when it swings, LV when a drummer played it. Longer words are shortened to fit.
 
 Your own phrase files go in `davebox-phrases/`
 in your user data folder (one `<type>.json` per instrument type); they are listed after

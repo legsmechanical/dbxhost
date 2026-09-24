@@ -742,6 +742,6 @@ function drawPicker() {
     draw_rect(PICK_X, PICK_Y, PICK_W, h, 1);
     /* The small movy font (Josh, 2026-09-23: "phrases listed in movy font to
      * allow users to see more at a time"): six rows where the listing font fits four. */
-    const rows = PB.list.map(p => ({ label: p.name, labelFont: 'small', value: p.bars + (p.bars > 1 ? ' BARS' : ' BAR') }));
+    const rows = PB.list.map(p => ({ label: p.name, labelFont: 'small', value: p.bars + 'Br' }));   /* "Br" leaves the name room (Josh, 2026-09-24) */
     drawKitList(rows, PB.idx, { x: PICK_X + 1, w: PICK_W - 2, topY: PICK_Y + 3, h: h - 3, rowH: 7 });
 }
