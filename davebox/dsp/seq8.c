@@ -6080,6 +6080,25 @@ static int seq8_remote_snapshot(seq8_instance_t *inst, char *out, int out_len) {
     return n;
 }
 
+/* The window a lane plays in, for the export: the clip's loop (a drum clip's
+ * drum clock) or the lane's own Loop/Rate window. 0 when there is no owning
+ * track to take it from. */
+static int pa_export_window(const seq8_track_t *tr, const pa_entry_t *e,
+                            uint32_t *ws, uint32_t *wl, uint32_t *step_ticks) {
+    if (!tr || e->clip >= NUM_CLIPS) return 0;
+    uint32_t clip_start, clip_ticks;
+    if (tr->pad_mode == PAD_MODE_DRUM && tr->drum_clips[e->clip]) {
+        pa_drum_window(tr, e->clip, &clip_start, &clip_ticks, step_ticks);
+    } else {
+        const clip_t *pcl = &tr->clips[e->clip];
+        *step_ticks = pcl->ticks_per_step ? pcl->ticks_per_step : (uint32_t)TICKS_PER_STEP;
+        clip_start = (uint32_t)pcl->loop_start * *step_ticks;
+        clip_ticks = (uint32_t)pcl->length * *step_ticks;
+    }
+    pa_entry_window(e, clip_start, clip_ticks, ws, wl);
+    return 1;
+}
+
 /* pa_export_points: the exact breakpoint sequence pa_export writes for one
  * lane (its own scale already applied) — factored out of pa_export so it is
  * white-box testable without the device-only EXPORT_PA_PATH file write.
@@ -6105,34 +6124,44 @@ static int seq8_remote_snapshot(seq8_instance_t *inst, char *out, int out_len) {
 static int pa_export_points(const seq8_track_t *tr, const pa_entry_t *e,
                             pa_point_t *pts, int cap) {
     int n = 0;
-    if (tr && e->clip < NUM_CLIPS) {
-        uint32_t clip_start, clip_ticks, step_ticks;
-        if (tr->pad_mode == PAD_MODE_DRUM && tr->drum_clips[e->clip]) {
-            pa_drum_window(tr, e->clip, &clip_start, &clip_ticks, &step_ticks);
-        } else {
-            const clip_t *pcl = &tr->clips[e->clip];
-            step_ticks = pcl->ticks_per_step ? pcl->ticks_per_step : (uint32_t)TICKS_PER_STEP;
-            clip_start = (uint32_t)pcl->loop_start * step_ticks;
-            clip_ticks = (uint32_t)pcl->length * step_ticks;
-        }
-        uint32_t ws, wl;
-        pa_entry_window(e, clip_start, clip_ticks, &ws, &wl);
-        if (wl && e->count && e->points[0].tick > ws && n < cap) {
-            uint16_t v;
-            int ev = (e->flags & PA_FLAG_PUNCH)
-                     ? pa_eval_punch(e, ws, ws, wl, step_ticks, &v)
-                     : pa_eval_window(e, ws, ws, wl, &v);
-            if (ev) {
-                pts[n].tick = (uint16_t)ws;
-                pts[n].val  = (ev == PA_EVAL_REST) ? v : pa_scaled(e, v);
-                n++;
-            }
+    uint32_t ws = 0, wl = 0, step_ticks = TICKS_PER_STEP;
+    const int have_window = pa_export_window(tr, e, &ws, &wl, &step_ticks);
+    if (have_window && wl && e->count && e->points[0].tick > ws && n < cap) {
+        uint16_t v;
+        int ev = (e->flags & PA_FLAG_PUNCH)
+                 ? pa_eval_punch(e, ws, ws, wl, step_ticks, &v)
+                 : pa_eval_window(e, ws, ws, wl, &v);
+        if (ev) {
+            pts[n].tick = (uint16_t)ws;
+            pts[n].val  = (ev == PA_EVAL_REST) ? v : pa_scaled(e, v);
+            n++;
         }
     }
     for (int k = 0; k < (int)e->count && k < PA_ENTRY_POINTS && n < cap; k++) {
         pts[n].tick = e->points[k].tick;
         pts[n].val  = pa_scaled(e, e->points[k].val);
         n++;
+    }
+    /* ...and the TRAIL point, the other half of the same wrap (Josh, testing the
+     * lead point on 2026-09-24: "Wrap doesn't ramp from its last automation point
+     * to the first one"). After a lane's last point inside its window, Wrap:
+     * Carry with Smooth keeps ramping toward the NEXT pass's first point, right
+     * across the loop end — but Live holds its last breakpoint flat to the end
+     * and then jumps to the lead value. A point at the window END carrying what
+     * the evaluator plays there (the same value the lead point carries) makes
+     * Live draw one continuous line: last point -> loop end = loop start -> first
+     * point. Carry only: under Reset the lane holds its last value after the
+     * last point (Live already does), and Punch has no ramps at all. */
+    if (have_window && n > 0 && n < cap
+        && !(e->flags & (PA_FLAG_PUNCH | PA_FLAG_WRAP_RESET))) {
+        uint32_t we = ws + wl;
+        uint16_t v;
+        if (wl && we <= 0xFFFF && pts[n - 1].tick < we
+            && pa_eval_window(e, we, ws, wl, &v) == 1) {
+            pts[n].tick = (uint16_t)we;
+            pts[n].val  = pa_scaled(e, v);
+            n++;
+        }
     }
     return n;
 }
@@ -6573,8 +6602,8 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
             /* The SCALE is applied here, as it is at playback: what leaves in
              * the export is what the lane plays, not the raw points. */
             const seq8_track_t *etr = (e->track < NUM_TRACKS) ? &inst->tracks[e->track] : 0;
-            pa_point_t xpts[PA_ENTRY_POINTS + 1];
-            int xn = pa_export_points(etr, e, xpts, PA_ENTRY_POINTS + 1);
+            pa_point_t xpts[PA_ENTRY_POINTS + 2];     /* + lead + trail */
+            int xn = pa_export_points(etr, e, xpts, PA_ENTRY_POINTS + 2);
             for (int k = 0; k < xn; k++)
                 fprintf(pf, "%u:%u ", (unsigned)xpts[k].tick, (unsigned)xpts[k].val);
             fputc('\n', pf);

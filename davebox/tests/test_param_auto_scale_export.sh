@@ -17,6 +17,6 @@ echo "$pts_blk" | grep -q 'pa_scaled(e, e->points\[k\].val)' && echo "  ok   —
 
 exp_blk=$(awk '/if \(!strcmp\(key, "pa_export"\)\)/{f=1} f{print} f&&/return snprintf\(out, out_len, "%d", lanes\)/{exit}' dsp/seq8.c)
 [ -n "$exp_blk" ] || { echo "FAIL: pa_export block not found"; exit 1; }
-echo "$exp_blk" | grep -q 'pa_export_points(etr, e, xpts, PA_ENTRY_POINTS + 1)' && echo "  ok   — pa_export writes its points through pa_export_points" || { echo "FAIL: pa_export no longer calls pa_export_points"; exit 1; }
+echo "$exp_blk" | grep -q 'pa_export_points(etr, e, xpts, PA_ENTRY_POINTS + 2)' && echo "  ok   — pa_export writes its points through pa_export_points" || { echo "FAIL: pa_export no longer calls pa_export_points"; exit 1; }
 echo "$exp_blk" | grep -q 'pa_scale_pct(e));' && echo "  ok   — ...and the lane header carries the percent" || { echo "FAIL: header lacks the scale"; exit 1; }
 echo "PASS: test_param_auto_scale_export.sh"
