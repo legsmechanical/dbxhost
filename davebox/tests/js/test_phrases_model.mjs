@@ -26,11 +26,11 @@ step('a library file is read; bad records are skipped, names upper-cased and cut
     assert(parseLibrary(JSON.stringify({ v: 2, cat: 'hat', phrases: [] })) === null, 'wrong version');
     assert(parseLibrary(lib('banjo', [])) === null, 'unknown category');
     const d = parseLibrary(lib('hat', [
-        { id: 'a', name: 'house hats long name', g: 'house', bars: 1, n: '0 100 12' },
+        { id: 'a', name: 'house hats long name', g: 'house', s: 'deep', bars: 1, n: '0 100 12' },
         { id: 'b', name: 'no notes', n: '' },
         { name: 'no id', n: '0 1 1' },
     ]));
-    assertEq(d.phrases.map(p => [p.id, p.name, p.g]), [['a', 'HOUSE HATS LON', 'HOUSE']], 'records');
+    assertEq(d.phrases.map(p => [p.id, p.name, p.g, p.s]), [['a', 'HOUSE HATS LON', 'HOUSE', 'DEEP']], 'records');
 });
 
 step('shipped phrases come first; a repeated id from a later source is dropped', () => {

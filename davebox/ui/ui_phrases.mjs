@@ -3,7 +3,7 @@
  * A library file is one category (`<cat>.json`), written by the phrase
  * generator (which holds the encoding; this file only reads it):
  *
- *   {"v":1,"cat":"hat","phrases":[{id,name,g,bars,feel,mode,src,lic,n,pads?,layers?}]}
+ *   {"v":1,"cat":"hat","phrases":[{id,name,g,s?,bars,feel,mode,n,pads?,layers?}]}
  *
  *   drum     n = "t v g;…"        one pad
  *            n = "t v g p;…"      several instruments; `pads` lists their
@@ -81,6 +81,8 @@ export function parseLibrary(text) {
         phrases.push({
             id: p.id, name: p.name.slice(0, 14).toUpperCase(), cat,
             g: typeof p.g === 'string' ? p.g.toUpperCase() : '',
+            /* its own style when narrower than the tag it is filed under (GOTH in NEW WAVE) */
+            s: typeof p.s === 'string' ? p.s.slice(0, 14).toUpperCase() : '',
             bars: Math.max(1, Math.min(16, p.bars | 0 || 1)),
             feel: typeof p.feel === 'string' ? p.feel : 'straight',
             mode: p.mode === 'maj' ? 'maj' : 'min',

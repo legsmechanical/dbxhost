@@ -50,7 +50,7 @@ globalThis.set_pixel = _px;
 const LIBS = {
     bass: { v: 1, cat: 'bass', phrases: [
         { id: 'bass.a', name: 'ROOT 8THS', g: '', bars: 1, mode: 'min', n: '0 0 0 0 100 40;48 0 0 0 90 40;96 4 0 0 90 40' },
-        { id: 'bass.b', name: 'ITALO OCT', g: 'ITALO', bars: 1, mode: 'min', n: '0 0 0 0 100 20;24 0 1 0 90 20' },
+        { id: 'bass.b', name: 'ITALO OCT', g: 'ITALO', s: 'hi-nrg', bars: 1, mode: 'min', n: '0 0 0 0 100 20;24 0 1 0 90 20' },
         { id: 'bass.c', name: 'OCTAVES', g: '', bars: 1, mode: 'min', n: '0 0 0 0 100 20;24 0 1 0 90 20' },
     ] },
     beat: { v: 1, cat: 'beat', phrases: [
@@ -219,7 +219,10 @@ async function main() {
         assert(pb().idx === 0, 'K2 left did not jump to BASIC');
         turn(1, 12); ticks(1);
         assert(pb().idx === 2 && pb().list[2].id === 'bass.b', 'K2 right did not jump to where ITALO starts: ' + pb().idx);
+        /* the Style cell names the phrase's own style where it is narrower than its tag */
+        assert(PB.pbRingCells()[1].text === 'HI-NRG', 'Style cell: ' + PB.pbRingCells()[1].text);
         turn(1, -12); ticks(2);
+        assert(PB.pbRingCells()[1].text === 'BASIC', 'Style cell at BASIC: ' + PB.pbRingCells()[1].text);
     });
 
     step('K4 Octave on a melodic track: the preview and the load move by octaves', () => {

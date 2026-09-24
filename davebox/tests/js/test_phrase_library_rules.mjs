@@ -4,7 +4,7 @@
  * Every phrase in phrases/phrases-open.pack, and in phrases/phrases.pack when
  * the build key is present (PHRASE_KEY_FILE or ~/.davebox/phrase.key): a known
  * category; 1–4 bars; no empty leading bar; a public style tag; a unique id and
- * a unique upper-case name of 14 characters or fewer; drums at most three
+ * an upper-case name of 14 characters or fewer, unique within its style; drums at most three
  * sounds, more than one only for hats and percussion — a beat (a whole kit)
  * up to eight. Plus: the pack files name
  * nothing but the phrases, and the credits ship beside them.
@@ -73,8 +73,9 @@ step('every phrase obeys the library rules', () => {
         const why = [];
         if (ids.has(p.id)) why.push('duplicate id');
         ids.add(p.id);
-        const nk = p.cat + '|' + p.name;
-        if (names.has(nk)) why.push('duplicate name in ' + p.cat);
+        /* a name is unique beside its style (the browser's Style knob shows both) */
+        const nk = p.cat + '|' + p.g + '|' + (p.s || '') + '|' + p.name;
+        if (names.has(nk)) why.push('duplicate name in ' + p.cat + ' / ' + (p.s || p.g || 'BASIC'));
         names.set(nk, 1);
         if (!(typeof p.name === 'string' && p.name.length >= 1 && p.name.length <= 14 && p.name === p.name.toUpperCase())) why.push('name');
         if (!TAGS.includes(p.g || '')) why.push('style ' + p.g);

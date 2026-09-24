@@ -616,7 +616,8 @@ function cells() {
     const si = styleIdx();
     const out = [
         { kind: 'enumsq', label: 'Type', name: 'Type', text: cats[PB.catIdx], options: cats, sel: PB.catIdx },
-        { kind: 'enumsq', label: 'Style', name: 'Style', text: PB.styles[si] || '--', options: PB.styles, sel: si },
+        /* the phrase's own style (GOTH) where it is narrower than the tag the knob jumps between */
+        { kind: 'enumsq', label: 'Style', name: 'Style', text: (cur() && cur().s) || PB.styles[si] || '--', options: PB.styles, sel: si },
         { kind: 'enumsq', label: 'Time', name: 'Time', text: PB_TIMES[PB.time].label,
           options: PB_TIMES.map(x => x.label), sel: PB.time },
     ];
