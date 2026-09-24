@@ -136,9 +136,9 @@ const fam = (tag, family, count, bars, feel, build, namer) => ({
 export default {
     /* real drummers: funk hat bars from the Groove MIDI Dataset (CC BY 4.0) */
     ingest: [
-        { source: 'own', count: 12 },
-        ...['rock', 'punk', 'funk', 'hiphop', 'soul', 'pop', 'dance/disco', 'dance/breakbeat'].map(style => ({ source: 'gmd', style, count: 2 })),
-        { source: 'lmd', count: 8 },
+        { source: 'own' },
+        ...['rock', 'punk', 'funk', 'hiphop', 'soul', 'pop', 'dance/disco', 'dance/breakbeat'].map(style => ({ source: 'gmd', style, count: 24 })),
+        { source: 'lmd' },
     ],
     genres: [
         /* HOUSE */

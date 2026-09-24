@@ -16,7 +16,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { encodeNotes, decodeNotes, fingerprint, isDrumCat, pitchInC, BAR, trimLeading, drumSounds } from './lib/phrase.mjs';
+import { encodeNotes, decodeNotes, fingerprint, isDrumCat, pitchInC, BAR, trimLeading, drumSounds, collapseRepeats, coarseKey } from './lib/phrase.mjs';
 import { TAG_BPM, isTag } from './lib/genres.mjs';
 import { writeSmf } from './lib/smf.mjs';
 import { renderWav } from './lib/synth.mjs';
@@ -55,12 +55,15 @@ async function loadSource(name) {
  * than kicks — at least two velocity levels. Returns the fixed-up candidate
  * or null. */
 function admit(cat, c) {
-    const tl = trimLeading(c.notes, c.bars || 1);
+    const t0 = trimLeading(c.notes, c.bars || 1);
+    const tl = collapseRepeats(t0.notes, t0.bars);
     const bars = tl.bars;
     if (!(bars >= 1 && bars <= MAX_BARS) || !tl.notes.length) return null;
     if (isDrumCat(cat)) {
         const cap = MULTI_SOUND_CATS.includes(cat) ? MAX_DRUM_SOUNDS : 1;
         if (drumSounds(tl.notes) > cap) return null;
+        /* too basic to be useful: a single hit (a cymbal crash excepted) */
+        if (cat !== 'cymb' && tl.notes.length < 2) return null;
         if (cat !== 'kick' && new Set(tl.notes.map(n => Math.round(n.v / 8))).size < 2) return null;
     }
     return Object.assign({}, c, { notes: tl.notes, bars });
@@ -106,7 +109,7 @@ async function gen(cats) {
                 if (!ad) continue;
                 const notes = ad.notes;
                 if (rules.accept && !rules.accept(notes, g)) continue;
-                const fp = fingerprint(cat, notes);
+                const fp = coarseKey(cat, notes, ad.bars);
                 if (seen.has(fp)) continue;
                 seen.add(fp);
                 made++;
@@ -123,7 +126,7 @@ async function gen(cats) {
             for (const raw of fn(cat, ing)) {
                 const p = admit(cat, raw);
                 if (!p) continue;
-                const fp = fingerprint(cat, p.notes) + '|' + (p.notes.map(n => n.p ?? '').join(','));
+                const fp = coarseKey(cat, p.notes, p.bars);
                 if (seen.has(fp)) continue;
                 seen.add(fp);
                 const tag = isTag(p.g) ? p.g : '';

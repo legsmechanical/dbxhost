@@ -62,7 +62,36 @@ export function trimLeading(notes, bars) {
     if (!notes.length) return { notes, bars };
     const first = Math.floor(Math.min(...notes.map(n => n.t)) / BAR);
     if (first <= 0) return { notes, bars };
+    /* Trimming a 4-bar phrase to 3 would loop out of step with 4/4: rotate it
+     * instead — start on the first bar with notes and carry the empty bar
+     * round to the end, so the loop keeps its length. */
+    if (bars - first === 3)
+        return { notes: notes.map(n => Object.assign({}, n, { t: ((n.t - first * BAR) + bars * BAR) % (bars * BAR) }))
+                              .sort((a, b) => a.t - b.t), bars };
     return { notes: notes.map(n => Object.assign({}, n, { t: n.t - first * BAR })), bars: Math.max(1, bars - first) };
 }
 /* How many distinct sounds a drum phrase uses (a one-pad phrase: 1). */
 export function drumSounds(notes) { return new Set(notes.map(n => n.p ?? -1)).size; }
+
+/* A phrase whose bars all repeat is that one bar (and a 4-bar phrase whose
+ * halves repeat is 2 bars) — so a loop and its own 1-bar version are one
+ * phrase. → { notes, bars } */
+export function collapseRepeats(notes, bars) {
+    const barKey = (b, len) => notes.filter(n => n.t >= b * BAR && n.t < (b + len) * BAR)
+        .map(n => (n.t - b * BAR) + ':' + n.v + ':' + (n.p ?? '') + ':' + n.g).join(',');
+    for (const len of [1, 2]) {
+        if (bars <= len || bars % len) continue;
+        const first = barKey(0, len);
+        let same = true;
+        for (let b = len; b < bars && same; b += len) same = barKey(b, len) === first;
+        if (same) return { notes: notes.filter(n => n.t < len * BAR), bars: len };
+    }
+    return { notes, bars };
+}
+/* Near-duplicate key: 16th-grid onsets, four velocity levels, and the sound
+ * (drums) or degree (melodic). Two phrases with one key are one phrase. */
+export function coarseKey(cat, notes, bars) {
+    const lvl = (v) => v <= 48 ? 0 : v <= 80 ? 1 : v <= 108 ? 2 : 3;
+    return bars + '|' + notes.map(n => Math.round(n.t / 24) + ':' + lvl(n.v) + ':' +
+        (isDrumCat(cat) ? (n.p ?? '') : n.deg + '.' + (n.oct || 0) + '.' + (n.acc || 0))).sort().join(',');
+}
