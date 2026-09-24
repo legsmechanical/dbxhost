@@ -1900,8 +1900,10 @@ Loading a melodic phrase replaces the clip and clears its automation, like
 [Import MIDI](#154-import-a-midi-file); a drum phrase changes only the lanes it
 uses. The screen remembers where you were on each track.
 
-Your own phrase files go in `davebox-phrases/` in your user data folder (one
-`<type>.json` per instrument type); they are listed after the built-in ones.
+dAVEBOx comes with a built-in library. Your own phrase files go in `davebox-phrases/`
+in your user data folder (one `<type>.json` per instrument type); they are listed after
+the built-in ones — or instead of them, for a file marked `"replace": true`.
+Credits for the phrases adapted from open datasets are in the module's `phrases/CREDITS.md`.
 
 # 16. Settings & Sets
 
