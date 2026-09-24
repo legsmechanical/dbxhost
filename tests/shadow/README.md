@@ -16,21 +16,16 @@ Verifies that `shadowModeDebounce` resets when ANY part of the hotkey combo is r
 ### test_shadow_filter_hotkey_cc.sh
 Verifies that shift CC (0x31) is NOT filtered in the post-ioctl MIDI filter. This allows the hotkey combo (Shift+Vol+Knob1) to work for exiting shadow mode.
 
-### test_set_page_shortcut_requires_volume_touch.sh
-Verifies set-page switching requires Shift+Vol+Left/Right (not Shift+Left/Right alone).
-
 ## Running Tests
 
 ```bash
-cd move-anything
 ./tests/shadow/test_shadow_display_order.sh
 ./tests/shadow/test_shadow_filter_hotkey_cc.sh
 ./tests/shadow/test_shadow_hotkey_debounce.sh
-./tests/shadow/test_set_page_shortcut_requires_volume_touch.sh
 ./tests/shadow/test_shadow_ui_order.sh
 ```
 
-Or run all:
+Or run all, against the known-failing list (this is what the commit hook and CI do):
 ```bash
-for t in tests/shadow/*.sh; do echo "=== $t ===" && bash "$t"; done
+bash tests/run-ungated.sh
 ```
