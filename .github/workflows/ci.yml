@@ -105,10 +105,7 @@ jobs:
             build/schwung \
             build/schwung-shim.so \
             build/display-server \
-            build/modules/chain/dsp.so \
-            build/bin/display_ctl \
-            build/bin/jack_midi_connect \
-            build/lib/jack/jack_shadow.so ; do
+            build/modules/chain/dsp.so ; do
             printf '%-48s ' "$f"
             test -f "$f" || { echo "MISSING"; exit 1; }
             file "$f" | grep -q 'aarch64' || { echo "WRONG ARCH"; file "$f"; exit 1; }

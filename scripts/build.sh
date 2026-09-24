@@ -245,7 +245,6 @@ mkdir -p ./build/bin/
 mkdir -p ./build/lib/
 mkdir -p ./build/licenses/
 mkdir -p ./build/modules/chain/
-mkdir -p ./build/lib/jack
 
 # Generate bitmap font for host display (single source of truth: scripts/generate_font.py)
 if needs_rebuild build/host/font.png scripts/generate_font.py; then
@@ -255,18 +254,8 @@ else
     echo "Skipping font generation (up to date)"
 fi
 
-# Generate Tamzen bitmap fonts at multiple sizes
-TAMZEN_SIZES="5x9 6x12 7x13 7x14 8x15 8x16 10x20"
-mkdir -p build/host/fonts
-for size in $TAMZEN_SIZES; do
-    height=$(echo $size | cut -d'x' -f2)
-    bdf="fonts/tamzen/Tamzen${size}r.bdf"
-    out="build/host/fonts/tamzen-${height}.png"
-    if needs_rebuild "$out" "$bdf" scripts/generate_font.py; then
-        echo "Generating Tamzen ${size} font..."
-        python3 scripts/generate_font.py --bdf "$bdf" --deploy-png "$out"
-    fi
-done
+# (Tamzen PNGs are no longer rendered: nothing loads host/fonts/. The BDFs stay —
+# src/shared/param_pages' font_tamzen6x12.mjs is generated from them.)
 
 if [ "$SCREEN_READER_ENABLED" = "1" ]; then
     echo "Screen reader build: enabled (dual engine: eSpeak-NG + Flite)"
@@ -386,18 +375,6 @@ else
     echo "Skipping unified log CLI (up to date)"
 fi
 
-# Build Shadow Instrument POC (reference example - not used in production)
-if needs_rebuild build/shadow/shadow_poc \
-    examples/shadow_poc.c src/host/shadow_constants.h; then
-    echo "Building Shadow POC..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 \
-        examples/shadow_poc.c \
-        -o build/shadow/shadow_poc \
-        -Isrc -Isrc/host \
-        -lm -ldl -lrt
-else
-    echo "Skipping Shadow POC (up to date)"
-fi
 
 # Build Shadow UI host (uses shared display bindings from js_display.c)
 if needs_rebuild build/shadow/shadow_ui \
@@ -680,52 +657,8 @@ else
     echo "Skipping display server (up to date)"
 fi
 
-# Build JACK shadow driver (loaded by jackd when RNBO/JACK is used)
-if needs_rebuild build/lib/jack/jack_shadow.so \
-    src/lib/jack2/shadow/JackShadowDriver.cpp \
-    src/lib/jack2/shadow/JackShadowDriver.h \
-    src/lib/schwung_jack_shm.h; then
-    echo "Building JACK shadow driver..."
-    "${CROSS_PREFIX}g++" ${SCHWUNG_CFLAGS} -g -O2 -fPIC -std=c++17 \
-        -DSERVER_SIDE \
-        -Isrc/lib/jack2 -Isrc/lib/jack2/common -Isrc/lib/jack2/common/jack \
-        -Isrc/lib/jack2/linux -Isrc/lib/jack2/shadow -Isrc/lib/jack2/posix \
-        -Isrc/lib \
-        -c src/lib/jack2/shadow/JackShadowDriver.cpp \
-        -o build/jack_shadow_driver.o
-    "${CROSS_PREFIX}g++" ${SCHWUNG_CFLAGS} -shared \
-        build/jack_shadow_driver.o \
-        -o build/lib/jack/jack_shadow.so \
-        -lrt -lpthread
-    rm -f build/jack_shadow_driver.o
-else
-    echo "Skipping JACK shadow driver (up to date)"
-fi
 
-# Build display_ctl (toggles RNBO display override via shared memory)
-if needs_rebuild build/bin/display_ctl \
-    src/tools/display_ctl.c src/lib/schwung_jack_shm.h; then
-    echo "Building display_ctl..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O2 \
-        src/tools/display_ctl.c \
-        -o build/bin/display_ctl \
-        -Isrc \
-        -lrt
-else
-    echo "Skipping display_ctl (up to date)"
-fi
 
-# Build jack_midi_connect (connects system:midi_capture_ext to RNBO patcher MIDI inputs)
-if needs_rebuild build/bin/jack_midi_connect \
-    src/tools/jack_midi_connect.c; then
-    echo "Building jack_midi_connect..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O2 \
-        src/tools/jack_midi_connect.c \
-        -o build/bin/jack_midi_connect \
-        -ldl
-else
-    echo "Skipping jack_midi_connect (up to date)"
-fi
 
 # Build schwung-heal (setuid-root helper that mirrors data-partition shim
 # and entrypoint to /usr/lib + /opt/move). Needed because everything from
@@ -743,11 +676,6 @@ fi
 # Copy shadow UI files (always — ExFAT timestamps can confuse cp -u)
 cp ./src/shadow/shadow_ui.js ./build/shadow/
 cp ./src/shadow/*.mjs ./build/shadow/ 2>/dev/null || true
-
-# Copy image assets to host directory
-if [ -d "./assets" ]; then
-    cp -u ./assets/*.png ./build/host/ 2>/dev/null || true
-fi
 
 # Copy scripts and assets
 cp ./src/shim-entrypoint.sh ./build/
@@ -919,14 +847,6 @@ rm -rf \
 # Make shell scripts in modules executable
 find ./build/modules -type f -name "*.sh" -exec chmod +x {} \;
 
-# Copy patches directory (only if source is newer)
-mkdir -p ./build/patches
-cp -u ./src/patches/*.json ./build/patches/ 2>/dev/null || true
-
-# Copy track presets (only if source is newer)
-mkdir -p ./build/presets/track_presets
-cp -u ./src/presets/track_presets/*.json ./build/presets/track_presets/ 2>/dev/null || true
-
 # Copy curl binary (host_http_download backend: catalog detection,
 # move-manual refresh)
 if [ -f "./libs/curl/curl" ]; then
@@ -935,14 +855,6 @@ if [ -f "./libs/curl/curl" ]; then
     echo "Bundled curl binary"
 else
     echo "Warning: libs/curl/curl not found - downloads will not work without it"
-fi
-
-# Copy filebrowser binary (if present)
-if [ -f "./libs/filebrowser/filebrowser" ]; then
-    mkdir -p ./build/bin/
-    cp -u ./libs/filebrowser/filebrowser ./build/bin/
-    cp -u ./libs/filebrowser/LICENSE ./build/licenses/FILEBROWSER_LICENSE.txt 2>/dev/null || true
-    echo "Bundled filebrowser binary"
 fi
 
 # eSpeak-NG data directory is copied to build/espeak-ng-data/ above
