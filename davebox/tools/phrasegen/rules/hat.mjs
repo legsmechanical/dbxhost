@@ -134,6 +134,7 @@ const fam = (tag, family, count, bars, feel, build, namer) => ({
 });
 
 export default {
+    stats: true,   /* generated drums top styles up (lib/stats_gen.mjs genDrum) */
     /* real drummers: funk hat bars from the Groove MIDI Dataset (CC BY 4.0) */
     ingest: [
         { source: 'own' },

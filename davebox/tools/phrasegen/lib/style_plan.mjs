@@ -38,3 +38,25 @@ export function countFor(base, cat, part, prof, file, flavour) {
     if ((cat === 'arp' || cat === 'seq') && (ELECTRONIC.has(file) || ELECTRONIC_FLAVOURS.has(flavour))) p = Math.max(p, 0.7);
     return Math.max(2, Math.round(base * Math.max(0.3, Math.min(1, p * 1.5))));
 }
+
+/* Generated drums top up a style: many where it has little real material,
+ * a few where it has plenty (real phrases win the duplicate check). A drum
+ * type the style barely uses (a measured median of no hits) gets none, except
+ * toms, which are fills. */
+/* Styles whose drum measurements are unusable (research/refs/README.md: the
+ * DnB files sit at the wrong tempo): drums from real material only. */
+export const NO_DRUM_MODEL = new Set(['dnb']);
+export function drumCountFor(cat, prof, realCount, isFlavour, file) {
+    if (NO_DRUM_MODEL.has(file)) return 0;
+    const D = prof.drums();
+    const P = D && D[cat];
+    if (!P) return 0;
+    if (cat !== 'tom' && (P.songs_using || 0) < 0.2) return 0;
+    /* a drum the style's grooves seldom play (median under half a hit a bar)
+     * is not generated: the model would invent a part the style doesn't have */
+    if (cat !== 'tom' && (!P.hits_per_bar || P.hits_per_bar[1] < 0.5)) return 0;
+    /* tom fills barely differ by style: a couple per style, none per named style */
+    if (cat === 'tom') return isFlavour ? 0 : 2;
+    const target = cat === 'cymb' ? (isFlavour ? 3 : 6) : (isFlavour ? 5 : 10);
+    return Math.max(isFlavour ? 3 : 2, target - Math.floor(realCount / 4));
+}

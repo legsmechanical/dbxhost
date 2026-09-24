@@ -59,7 +59,13 @@ export function profile(styleFile, flavour) {
     if (!loops.min.length) loops.min.push(['i VI VII', 1], ['i iv', 1], ['i VII', 0.6]);
     const minor = (t && typeof t.minor_share === 'number') ? t.minor_share : (base.minor_share ?? 0.4);
     const change = (t && t.harmony && t.harmony.change_per_bar) || (base.harmony && base.harmony.change_per_bar) || [0.8, 1, 1.3];
-    return { part, loops, minor, change };
+    /* drums: the flavour's measured drum part when it has songs, else the parent's */
+    const drums = () => {
+        const fd = t && t.parts && t.parts.drums;
+        if (fd && fd.kick && (t.songs || 0) >= 4) return fd;
+        return (base.parts && base.parts.drums) || (basics && basics.parts && basics.parts.drums) || null;
+    };
+    return { part, loops, minor, change, drums };
 }
 
 /* ---- sampling helpers ---- */
@@ -334,4 +340,48 @@ export function tooClose(gate, cat, notes, bars) {
         }
     }
     return false;
+}
+
+/* ---- drums ----
+ * One drum type (one sound; hats may add the open hat as a second) from a
+ * style's measured drum part: hits per bar from its quartiles, steps by the
+ * per-step profile, velocities by mean + accent, open hats on the off-beats as
+ * often as measured, and — for toms, which grooves seldom use — a fill that
+ * builds into the next bar. */
+export const DRUM_PART = { kick: 'kick', snare: 'snare', hat: 'hat', tom: 'tom', perc: 'perc', cymb: 'cymb' };
+export function genDrum(cat, prof, rng) {
+    const D = prof.drums();
+    const P = D && D[DRUM_PART[cat]];
+    if (!P || !P.step_onset_prob) return null;
+    const bars = rng.next() < 0.3 ? 2 : 1;
+    const flat = rng.next() < ((D.flat_share || 0) * 0.5);
+    const notes = [];
+    let first = null;
+    for (let b = 0; b < bars; b++) {
+        let steps;
+        if (cat === 'tom') {
+            const n = 3 + Math.floor(rng.next() * 5);
+            const pool = []; for (let st = 8; st < 16; st++) pool.push(st);
+            steps = pool.filter(() => rng.next() < n / 8).sort((a, c) => a - c);
+            if (steps.length < 2) steps = [12, 14];
+        } else if (b > 0 && rng.next() < 0.75) steps = first;
+        else steps = barSteps(rng, P, Math.max(1, Math.round(fromQ(rng, P.hits_per_bar, 1, 16))));
+        if (b === 0) first = steps;
+        /* the second bar of a 2-bar phrase may end in a fill, as measured */
+        if (b === bars - 1 && bars > 1 && cat !== 'tom' && rng.next() < (D.fill_bar_share || 0.1) * 3)
+            steps = [...new Set(steps.filter(x => x < 12).concat([12, 13, 14, 15].filter(() => rng.next() < 0.6)))].sort((a, c) => a - c);
+        for (const st of steps) {
+            const v = cat === 'tom' ? Math.round(70 + st * 3 + gauss(rng) * 6) : velAt(rng, P, st, flat);
+            const n = { t: b * BAR + st * STEP, v: Math.max(1, Math.min(127, v)), g: 6 };
+            if (cat === 'hat') {
+                const off = st % 4 === 2;
+                const open = rng.next() < (D.open_hat_share || 0) * (off ? 3 : 0.3);
+                n.p = open ? 46 : 42;
+                if (open) n.g = 26;
+            }
+            notes.push(n);
+        }
+    }
+    if (cat === 'hat' && !notes.some(n => n.p === 46)) notes.forEach(n => { delete n.p; });
+    return notes.length ? { notes, bars, pads: cat === 'hat' && notes.some(n => n.p === 46) ? [42, 46] : null } : null;
 }

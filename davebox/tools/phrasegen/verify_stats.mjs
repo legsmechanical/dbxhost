@@ -19,9 +19,9 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { decodeNotes, MODES, BAR } from './lib/phrase.mjs';
-import { profile, PART_OF, loadStyle, genPhrase } from './lib/stats_gen.mjs';
+import { profile, PART_OF, loadStyle, genPhrase, genDrum } from './lib/stats_gen.mjs';
 import { makeRng } from './lib/rng.mjs';
-import { STYLE_FILES, FLAVOUR_NAME } from './lib/style_plan.mjs';
+import { STYLE_FILES, FLAVOUR_NAME, drumCountFor } from './lib/style_plan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const cats = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(PART_OF);
@@ -114,6 +114,24 @@ for (const cat of cats) {
             if (tv > 0.45) why.push(`generator pitch TV ${tv.toFixed(2)} over 300`);
         }
         if (why.length) { fails++; lines.push(`FAIL ${cat} ${key} (${list.length}): ${why.join('; ')}`); }
+    }
+}
+/* drums: the generator's per-step profile for each style's drum types */
+for (const [file, tag] of Object.entries(STYLE_FILES)) {
+    const prof = profile(file, null);
+    const D = prof && prof.drums();
+    if (!D) continue;
+    for (const cat of ['kick', 'snare', 'hat', 'perc', 'cymb']) {
+        const P = D[cat];
+        if (!P || !P.step_onset_prob || !drumCountFor(cat, prof, 0, false, file)) continue;   /* only what is generated */
+        judged++;
+        const sim = new Array(16).fill(0);
+        for (let i = 0; i < 300; i++) {
+            const r = genDrum(cat, prof, makeRng('verify-d.' + cat + '.' + file + '.' + i));
+            if (r) for (const n of r.notes) sim[Math.round((n.t % BAR) / (BAR / 16)) % 16]++;
+        }
+        const r = corr(sim, P.step_onset_prob);
+        if (r < 0.8) { fails++; lines.push(`FAIL drum ${cat} ${tag || 'BASIC'}: generator rhythm r=${r.toFixed(2)} over 300`); }
     }
 }
 console.log(lines.join('\n'));
