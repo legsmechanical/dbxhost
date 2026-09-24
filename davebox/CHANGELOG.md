@@ -23,7 +23,8 @@ the section into a versioned heading at release time.
   every phrase of that instrument. Each one is heard
   as you choose it — in time with the song, and in your key — and one click
   loads it (one Undo). Drum phrases with several instruments go on the pads you
-  tap, on a drum track or as notes on a melodic one.
+  tap, on a drum track or as notes on a melodic one. About 6,900 phrases ship,
+  drums and melodic parts across 26 styles plus BASIC.
 - **Import MIDI.** Sound menu → Import MIDI fills a clip from a MIDI file
   anywhere in your user data folder: pick the file, pick a part (with a
   preview), then set the start bar, bars, grid and destination clip on K1–K4

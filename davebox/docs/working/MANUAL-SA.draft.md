@@ -1900,7 +1900,16 @@ Loading a melodic phrase replaces the clip and clears its automation, like
 [Import MIDI](#154-import-a-midi-file); a drum phrase changes only the lanes it
 uses. The screen remembers where you were on each track.
 
-dAVEBOx comes with a built-in library. Your own phrase files go in `davebox-phrases/`
+dAVEBOx comes with a built-in library of about 6,900 phrases: drums (kick, snare, hats,
+cymbals, toms, percussion — many played by real drummers) and melodic parts (bass, chords,
+arps, leads, pads, synth FX, sequences, keys, guitar), across BASIC plus these styles:
+ACID, AMBIENT, BREAKS, COUNTRY, DARKSYN, DISCO, DNB, ELECTRO, FUNK, GARAGE, HARDCORE, HIPHOP,
+HOUSE, INDIE, ITALO, JAZZ, LATIN, METAL, NEW WAVE, POP, PUNK, REGGAE, RNB, ROCK, TECHNO and
+TRANCE. A phrase's name says its own style when that is narrower than the one it is filed
+under — GOTH, DARKWAVE and SYNTHWAVE phrases are in NEW WAVE, EBM in DARKSYN, SYNTHPOP in
+POP, DUB in REGGAE, and so on.
+
+Your own phrase files go in `davebox-phrases/`
 in your user data folder (one `<type>.json` per instrument type); they are listed after
 the built-in ones — or instead of them, for a file marked `"replace": true`.
 Credits for the phrases adapted from open datasets are in the module's `phrases/CREDITS.md`.
