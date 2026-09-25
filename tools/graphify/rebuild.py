@@ -41,12 +41,9 @@ EXCLUDE_SUFFIX = (".min.js", ".bundle.js")
 # came from here, so "how does X work" returned dissolved plans and unimplemented
 # designs -- "G10 (dissolved 2026-08-06)", "standalone_active marker (retired)",
 # "Host Support Packs (design, unimplemented)" -- as though they described the system.
-# The FILES stay (docs/plans is referenced by 29 places incl. two live tests); they are
-# only kept out of the graph.
+# The FILES stay; they are only kept out of the graph. (The host's inherited docs/plans,
+# docs/archive and docs/superpowers were deleted outright on 2026-09-24.)
 STALE_DOC_PREFIXES = (
-    "docs/plans/",
-    "docs/archive/",
-    "docs/superpowers/",
     "davebox/docs/working/",
     "davebox/docs/archive/",
 )

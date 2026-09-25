@@ -7,8 +7,8 @@ pages of eight knobs, and draws them. The native shadow UI is one consumer; a
 tool module (a sequencer drawing the same grid under its own header, capturing
 parameter locks) is meant to be another.
 
-Background and the fleet evidence behind every decision:
-[`docs/plans/2026-07-26-param-pages-audit.md`](../../../docs/plans/2026-07-26-param-pages-audit.md).
+Background and the fleet evidence behind every decision: the upstream param-pages audit
+(`docs/plans/2026-07-26-param-pages-audit.md` in upstream Schwung; not kept in this tree).
 
 ## The rules that make it shareable
 
@@ -108,7 +108,7 @@ A group of related params (an ADSR, cutoff+resonance) can draw as one picture
 spanning the cells its roles occupy, instead of separate dial/bar cells. This
 is opt-in — `renderPage` only draws what `o.viz` gives it — so resolving a
 group is a separate step the caller does once per page, kept apart from
-drawing on purpose (`docs/plans/2026-07-26-param-pages-audit.md` §13.5):
+drawing on purpose (upstream's param-pages audit, §13.5):
 
 ```js
 import { resolveViz } from "shared/param_pages/viz.mjs";
@@ -213,8 +213,8 @@ click) or gives the jog to the value, which prints as `[value]`. Back steps out
 one level at a time. An opaque param has no jog behaviour at all, exactly as it
 has none on the grid.
 
-Not yet selected by `param_view` — see §4.1 of
-`docs/superpowers/specs/2026-08-23-one-list-engine-design.md`; that seam is
+Not yet selected by `param_view` (the one-list-engine design, §4.1 — not kept in
+this tree); that seam is
 global and gets its own act. Preview it with
 `node tools/param-pages/preview.mjs <id> --layout list [--enter|--edit]`.
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run tests/{shadow,store,build} against tests/known-failing.txt.
+# Run tests/{shadow,store} against tests/known-failing.txt. (tests/build went
+# with upstream's stock installer, 2026-09-24.)
 #
 # These 69 tests were executed by NOTHING until 2026-09-16 — not the commit
 # hook, not CI — so 26 of them had been failing for an unknown length of time
@@ -21,7 +22,7 @@ LIST="tests/known-failing.txt"
 known=$(grep -v '^#' "$LIST" | grep -v '^[[:space:]]*$' | sort)
 
 pass=0; fail=0; regress=""; fixed=""
-for t in tests/shadow/*.sh tests/store/*.sh tests/build/*.sh; do
+for t in tests/shadow/*.sh tests/store/*.sh; do
     [ -f "$t" ] || continue
     rel="${t#tests/}"
     if timeout 300 bash "$t" >/dev/null 2>&1; then

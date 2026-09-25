@@ -23,7 +23,7 @@ Modules (src/modules/<id>/):
 Key sources: `src/schwung_host.c` (host runtime), `src/schwung_shim.c` (LD_PRELOAD shim), `src/host/module_manager.c`, `src/host/menu_ui.js`, `src/host/plugin_api_v1.h`.
 
 Built-in modules: `chain`, `file-browser`, `song-mode`, `wav-player`.
-Source-only (not in release tarball): `controller` (superseded by catalog `control`), `tools/{ui,seq,config,splash}-test`, `text-test`.
+Source-only (not built or shipped; kept as documented examples): `controller` (superseded by catalog `control`), `tools/{seq,config}-test`.
 
 ### JS Module Lifecycle
 

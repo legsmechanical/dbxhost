@@ -16,20 +16,6 @@
 #
 # Fixing one means working out what the invariant was and where it lives now.
 # Do that when you are already in that area, not as a batch.
-shadow/test_link_subscriber_monitor_thread.sh
-shadow/test_master_fx_resample_bridge_setting.sh
-shadow/test_native_resample_bridge.sh
-shadow/test_native_resample_bridge_mfx_gain.sh
-shadow/test_native_resample_bridge_persistence.sh
-shadow/test_native_resample_bridge_premaster_gain.sh
-shadow/test_native_resample_diag_tooling.sh
-shadow/test_parked_overtake_shim_isolation.sh
-shadow/test_set_copy_detection_guard.sh
-shadow/test_set_page_shortcut_requires_volume_touch.sh
-shadow/test_set_switch_empty_state_clear.sh
-shadow/test_set_switch_pending_new_set_blank_state.sh
-shadow/test_set_switch_restore_reliability.sh
-shadow/test_set_switch_song_index_retry.sh
 shadow/test_shadow_display_order.sh
 shadow/test_shadow_filter_hotkey_cc.sh
 shadow/test_shadow_hide_on_volume_touch.sh
@@ -38,4 +24,3 @@ shadow/test_shadow_modulation_label_hooks.sh
 shadow/test_shadow_shortcut_release_volume_flash_guard.sh
 shadow/test_shadow_slot_lfo_set_persistence_hooks.sh
 shadow/test_shadow_ui_order.sh
-shadow/test_store_single_install_path.sh

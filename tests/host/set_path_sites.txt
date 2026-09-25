@@ -17,8 +17,6 @@ B src/host/shadow_chain_mgmt.c|dbx_project_dir(SAMPLER_SETS_DIR, boot_uuid, set_
 - src/host/shadow_set_pages.c|DIR *sets_dir = opendir(SAMPLER_SETS_DIR);
 - src/host/shadow_set_pages.c|snprintf(uuid_path, sizeof(uuid_path), "%s/%s", SAMPLER_SETS_DIR, entry->d_name);
 - src/host/shadow_set_pages.h|#include "shadow_sampler.h"   /* SAMPLER_SETS_DIR — the per-set state root since co-location */
-- src/modules/tools/song-mode/ui.js|const SETS_DIR   = "/data/UserData/UserLibrary/Sets";
-R src/modules/tools/song-mode/ui.js|const directPath = SETS_DIR + "/" + uuid + "/" + name + "/Song.abl";
 - src/shadow/shadow_ui.js|const SETS_DIR = "/data/UserData/UserLibrary/Sets";
 - src/shadow/shadow_ui.js|const SETS_LIBRARY_DIR = "/data/UserData/UserLibrary/Sets";
 - src/shadow/shadow_ui.js|const entries = os.readdir(SETS_DIR) || [];

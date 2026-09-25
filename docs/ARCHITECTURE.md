@@ -107,7 +107,7 @@ The shim owns these subsystems:
 - **Screen reader / TTS** — D-Bus filter captures Move's
   `com.ableton.move.ScreenReader.text` signals, debounces them, and
   hands off to the TTS engine (`tts_engine_dispatch.c`,
-  espeak/Flite). See `docs/tts-architecture.md`.
+  espeak/Flite).
 - **Realtime safety** — every code path on the SPI callback is
   non-allocating and non-blocking; logging uses a snapshot drained by
   a background thread. See `docs/REALTIME_SAFETY.md`.
@@ -150,9 +150,7 @@ The full set of JS bindings is enumerated in `docs/API.md`.
 The shim reads `/schwung-link-in` from the SPI callback (no
 allocation, no locks) and routes each Move track through the matching
 shadow slot's audio FX chain when `Move->Schwung` routing is enabled.
-See `docs/LINK_AUDIO_WIRE_FORMAT.md` for the wire-format reference and
-`docs/plans/2026-04-17-link-audio-official-api-migration.md` for the
-migration plan.
+The Link Audio section of `docs/HOST_REFERENCE.md` is the current reference.
 
 ## The SPI mailbox
 

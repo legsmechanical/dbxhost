@@ -5856,7 +5856,7 @@ static int spi_granular_count = 0;
 /* XMOS jack-detect / SysEx logger — dormant unless flag file exists.
  * Flag: /data/UserData/schwung/log_xmos_sysex_on
  * Output: /data/UserData/schwung/xmos_sysex.txt
- * Used by scripts/collect-diagnostics.sh and the schwung-manager web UI to
+ * Used by the schwung-manager web UI to
  * capture host↔XMOS MIDI traffic during the "hollow / phasey audio" bug
  * investigation. Zero overhead when the flag file is absent.
  * State shared between pre/post transfer callbacks.
