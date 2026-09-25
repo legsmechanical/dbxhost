@@ -597,9 +597,10 @@ export function _switchActiveTrack(newT) {
     /* The outgoing track remembers its bank — unless that bank is SOUND +
      * CONFIG / MACROS reached by a GESTURE (Shift+hold, Shift+pad, a follow),
      * which never records (Josh, 2026-09-05: "NOTHING should set a bank other
-     * than the usual bank jog"). Latched bank mode means the jog walked there,
-     * and that does record, like every other bank (08-25). */
-    if (!isSoundBank(S.activeBank) || S.bankCardLatched)
+     * than the usual bank jog"). The walk records a sound bank at its ENTRY
+     * (takeBankIdentity / soundSetBank), so nothing to do here; recording on
+     * "latched" also caught a shortcut taken from a latched card (09-24). */
+    if (!isSoundBank(S.activeBank))
         S.trackActiveBank[S.activeTrack] = S.activeBank;
     S.activeTrack = newT | 0;
     S.instrAbbrevAt = 0;                  /* the header's [instrument] follows the track */

@@ -24,7 +24,7 @@ HOST's side.**
 
 | the module publishes | the host uses it only if |
 |---|---|
-| `get_param("split_voices")` → `[{"id","label"},…]` | it knows to ask for that key |
+| `get_param("split_voices")` → `[{"id","label","notes"?},…]` | it knows to ask for that key |
 | exported symbol `move_plugin_render_split` | it knows to `dlsym` that name |
 
 A host that knows neither — stock Schwung **< 1.3.0** — asks for neither and calls neither, so the
@@ -60,6 +60,13 @@ the same voices with the same block counter.
 - **Ids should be stable across content changes; labels may follow the content.** DR32 uses
   `pad1..pad32` (its own param prefix) as ids and the loaded sample name as the label, so a saved
   bus assignment survives a kit change.
+- **Optional: `"notes":[…]` says which MIDI notes sound the voice** —
+  `{"id":"pad3","label":"Snare B","notes":[38,39]}`. A host may use it to find the voice a played
+  note belongs to; dAVEBOx's bus voice picker moves its cursor to the voice a pad sounds. List every
+  note that reaches the voice, including aliases (a second pad on the same voice), in the note
+  numbers the module RECEIVES. Omit it rather than guess: a host must never infer a voice from a
+  list position, because pads and voices are not one-to-one in every module. The host's C parser
+  (`split_voices_parse.h`) reads only `id`, so the key costs nothing where it is not used.
 - **`main_out` carries what belongs to no voice** — a send return, a master stage. It is the same
   buffer an unassigned voice is handed.
 - **A separate exported symbol, never a field appended to `plugin_api_v2_t`.** Extending that

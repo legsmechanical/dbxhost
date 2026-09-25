@@ -305,7 +305,7 @@ typedef struct {
  * Sole emit path while on=1: arp owns active_notes[primary] keying. */
 #define ARP_MAX_HELD     16
 #define ARP_MAX_OCTAVES  4
-#define ARP_MAX_CYCLE    (ARP_MAX_HELD * ARP_MAX_OCTAVES) /* 64 */
+#define ARP_MAX_CYCLE    (ARP_MAX_HELD * ARP_MAX_OCTAVES) /* 64: the note pool's cap; arp_build_pool trims the octave count to fit (16 notes x 5 copies would be 80) */
 #define ARP_RATE_DEFAULT 1                                /* 1/16 */
 
 /* SEQ ARP rate index → master 96-PPQN ticks per arp step.

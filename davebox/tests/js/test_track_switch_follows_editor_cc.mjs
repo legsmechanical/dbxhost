@@ -148,7 +148,7 @@ step('⭑ fast burst that ENDS on the NONE track: its Instrument-only menu', () 
     jog(1); jog(1);                                    /* 3 → 5 */
     settle();
     if (S.activeTrack !== 5 || !snd.soundOpen()) throw new Error('track ' + S.activeTrack + ' open ' + snd.soundOpen());
-    if (!onInstrumentRow() || kinds() !== 'trackto,midiimport') throw new Error('view ' + view() + ' rows ' + kinds());
+    if (!onInstrumentRow() || kinds() !== 'trackto,div,midiimport') throw new Error('view ' + view() + ' rows ' + kinds());
     shift(false); settle();
 });
 

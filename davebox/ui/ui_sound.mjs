@@ -1274,6 +1274,7 @@ export function markSoundDirty() { S.dirty = true; }
  * Move-routed track opens its bus, not a chain slot). */
 /* The current view, for a caller that needs to record where the user was. */
 export function soundViewForTest() { return S.view; }
+export function soundModBusVoiceIdxForTest() { return S.modBusVoiceIdx; }
 /* ui_sound's own `S.deleteHeld` — the modifier latch. Exposed because the
  * MACROS-clear gesture must RELEASE it itself (its release never arrives, see
  * the opener), and a latched Delete silently clears automation on every later
@@ -3077,6 +3078,14 @@ export function soundEnterBuses() {
     log('buses: open');
 }
 
+/* Straight into MASTER FX from session view (Shift + hold Note/Session, Josh
+ * 2026-09-24). It is the list's own door plus the Master row's own click, so
+ * Back lands on the SESSION FX list exactly as if the row had been clicked. */
+export function soundEnterMasterFx() {
+    soundEnterBuses();
+    S.pendingAction = { t: 'bus', bus: FX_BUSES[0], door: { kind: 'session' } };
+}
+
 function enterBus(bus, door) {
     S.busDoor = door || null;
     S.bus = bus;
@@ -3179,6 +3188,54 @@ function conductorMenu() {
     return !soundIsGlobal() && S.track >= 0 && GS.trackPadMode[S.track] === PMC;
 }
 
+/* ⭑ THE TRACK SOUND MENU'S ORDER AND GROUPS (Josh, 2026-09-24, laid out with
+ * the Sound menu arranger). Each track type builds the rows it HAS; this puts
+ * them in one order, with a rule between groups that are present. Mute and Solo
+ * left the menu — the Mute button owns them. A row this table does not name
+ * keeps its place at the end, so a new row can never silently vanish. */
+const TRACK_MENU_GROUPS = [
+    ['Instmt/Dest', 'MIDI FX', 'FX'],
+    ['Volume', 'Pan', 'Send A', 'Send B', 'Buses'],
+    ['Presets'],
+    ['LFOs'],
+    ['Mode', 'Layout'],
+    ['Transpose', 'VelIn', 'AftTch'],
+    ['Looper'],
+    ['Import MIDI'],
+    ['Parallel'],
+];
+const TRACK_MENU_DROPPED = { muted: true, soloed: true };
+function trackMenuSlot(r) {
+    if (r.kind === 'trackto') return 'Instmt/Dest';
+    if (r.kind === 'block') return r.label === 'MIDI FX' ? 'MIDI FX' : 'FX';
+    if (r.kind === 'modbus') return 'Buses';
+    if (r.kind === 'patches') return 'Presets';
+    if (r.kind === 'settings') return 'LFOs';
+    if (r.kind === 'midiimport') return 'Import MIDI';
+    return r.label;                               /* buslevel / cfg: by name */
+}
+function orderTrackMenu(rows) {
+    const bySlot = new Map(), extra = [];
+    const known = new Set([].concat(...TRACK_MENU_GROUPS));
+    for (const r of rows) {
+        if (r.kind === 'div') continue;
+        if (r.kind === 'buslevel' && r.spec && TRACK_MENU_DROPPED[r.spec.key]) continue;
+        const k = trackMenuSlot(r);
+        if (!known.has(k)) { extra.push(r); continue; }
+        if (!bySlot.has(k)) bySlot.set(k, []);
+        bySlot.get(k).push(r);                    /* FX 1..4 keep their own order */
+    }
+    const out = [];
+    const groups = TRACK_MENU_GROUPS.map((g) => [].concat(...g.map((k) => bySlot.get(k) || [])));
+    if (extra.length) groups.push(extra);
+    for (const g of groups) {
+        if (!g.length) continue;
+        if (out.length) out.push({ kind: 'div' });
+        out.push(...g);
+    }
+    return out;
+}
+
 function buildPickRows() {
     const rows = [];
     if (S.bus) {
@@ -3237,7 +3294,7 @@ function buildPickRows() {
          * stranded: both address the parked chain, so a preset that loads
          * effects you cannot see would be worse than not offering it. They come
          * back with the instrument. */
-        if (conductorMenu()) { pushConfigRows(rows, S.track); S.pickRows = rows; S.pickRow = 0; return; }
+        if (conductorMenu()) { pushConfigRows(rows, S.track); S.pickRows = orderTrackMenu(rows); S.pickRow = 0; return; }
         /* An EXT-routed track (MIDI out, or playing another track's instrument)
          * has no chain and no bus, so it has no sound to show and no mixer
          * position to set — every other row here would be backed by nothing.
@@ -3251,7 +3308,7 @@ function buildPickRows() {
          * track imports whatever it routes to (Josh, 2026-09-23). */
         if (GS.trackRoute[S.track] === ROUTE_NONE) {
             rows.push({ kind: 'midiimport', label: 'Import MIDI' });
-            S.pickRows = rows; S.pickRow = 0; return;
+            S.pickRows = orderTrackMenu(rows); S.pickRow = 0; return;
         }   /* NONE: even less than EXT — just the row that picks one */
         /* A MIDI-routed track has no chain and no bus, but it IS a track, and
          * davebox's own per-track settings — mode, layout, transpose, velocity
@@ -3263,7 +3320,7 @@ function buildPickRows() {
         if (GS.trackRoute[S.track] === 2) {
             rows.push({ kind: 'midiimport', label: 'Import MIDI' });
             pushConfigRows(rows, S.track);
-            S.pickRows = rows; S.pickRow = 0; return;
+            S.pickRows = orderTrackMenu(rows); S.pickRow = 0; return;
         }
         /* ⭑ No Generator row (Josh, 2026-09-04): the INSTRUMENT row is the
          * generator's door now — click enters it, Shift+click picks another —
@@ -3325,25 +3382,30 @@ function buildPickRows() {
      *
      * ⚠ These are REAL rows, so every index-based path has to step over them —
      * see pickStep() and the cursor restore below. */
-    const _lastOf = (k) => { let i = -1; rows.forEach((r, n) => { if (r.kind === k) i = n; }); return i; };
-    const _after = [_lastOf('trackto'), _lastOf('block'), _lastOf('buslevel')]
-        .filter(i => i >= 0 && i < rows.length - 1)
-        .sort((a, b) => b - a);                 /* descending: splice from the end */
-    for (const i of _after) rows.splice(i + 1, 0, { kind: 'div' });
-
-    S.pickRows = rows;
+    if (S.bus && S.bus.kind !== 'move') {
+        /* A SESSION bus (Master / Send FX) keeps its own short list. */
+        const _lastOf = (k) => { let i = -1; rows.forEach((r, n) => { if (r.kind === k) i = n; }); return i; };
+        const _after = [_lastOf('trackto'), _lastOf('block'), _lastOf('buslevel')]
+            .filter(i => i >= 0 && i < rows.length - 1)
+            .sort((a, b) => b - a);                 /* descending: splice from the end */
+        for (const i of _after) rows.splice(i + 1, 0, { kind: 'div' });
+        S.pickRows = rows;
+    } else {
+        S.pickRows = orderTrackMenu(rows);
+    }
     /* Keep the cursor on the component it was on — the row INDEX shifts when a
      * host lacks fx3/4, and a bus context has different rows entirely. */
     /* ⭑ The generator has no block row since 2026-09-04 — its component
      * lands on the INSTRUMENT row, which is its door (Josh: "it landed on the
      * generator item. now it needs to land on instrument"). */
+    const pr = S.pickRows;
     const at = S.comp === 'synth'
-        ? rows.findIndex(r => r.kind === 'trackto')
-        : rows.findIndex(r => r.kind === 'block' && r.comp === S.comp);
+        ? pr.findIndex(r => r.kind === 'trackto')
+        : pr.findIndex(r => r.kind === 'block' && r.comp === S.comp);
     if (at >= 0) S.pickRow = at;
-    if (S.pickRow >= rows.length) S.pickRow = 0;
+    if (S.pickRow >= pr.length) S.pickRow = 0;
     /* Never rest on a rule. */
-    if (rows[S.pickRow] && rows[S.pickRow].kind === 'div') S.pickRow = pickStep(1);
+    if (pr[S.pickRow] && pr[S.pickRow].kind === 'div') S.pickRow = pickStep(1);
 }
 
 function probeCaps() {
@@ -8391,6 +8453,17 @@ function queueWrite(key, val, comp) {
  * the note we EMIT, which is the module's to map.
  */
 export function soundVouchLivePress(track, note, padNote) {
+    /* ⭑ In the bus VOICE picker a pad also MOVES THE CURSOR to the voice it
+     * plays (Josh, 2026-09-24: "pad N should play the pad and jump to it in the
+     * list but not toggle it. jog click always required for toggle"). The pad
+     * has already sounded; this only points at it. The module says which notes
+     * sound which voice (split_voices `notes`); a module that does not say
+     * leaves the cursor where it is rather than guessing by position. */
+    if (S.active && S.view === VIEW_MODBUS_VOICES && track === S.track) {
+        const rows = ModBus.modBusVoiceRows(S.modBus, S.modBusGroup);
+        const i = rows.findIndex((r) => r.notes && r.notes.indexOf(note) >= 0);
+        if (i >= 0 && i !== S.modBusVoiceIdx) { S.modBusVoiceIdx = i; S.dirty = true; }
+    }
     /* `livePress` comes from the hierarchy of the block CURRENTLY open, so it
      * is null unless the module being looked at is one that asked for this.
      * That self-gates the whole feature — no module-id test needed. */
@@ -11102,11 +11175,35 @@ function renderBuses() {
      * sound-config's, not a pop-up overlay on top of the bank card") — kit
      * header + kit list, no backdrop, no float. Its rows lead into bus
      * editors, which is the 08-27 criterion for a full screen anyway. */
+    /* ⭑ Dressed like SOUND+CFG itself (Josh, 2026-09-24: "style it to look
+     * more like sound menu. Put a divider between master effects the two send
+     * effects"): the bank header with its glyph, rows in the menu's own case
+     * rather than as titles, a rule under Master, and the click hint.
+     * The divider is a DRAWN row only — the cursor still walks FX_BUSES, so the
+     * rule is never a stop and click / Shift+click keep indexing the bus. */
     clear_screen();
-    drawKitHeader('SESSION FX', false);
-    drawKitList(FX_BUSES.map(b => ({ label: b.title, hdr: true, chevron: true })),
-                S.busIdx, {});
+    kitUseLayout('bank');
+    drawKitBankHeader('SESSION FX', 'audio', '');
+    fill_rect(0, MV_BAR_Y, 128, 1, 0);
+    const { rows, sel } = busMenuRows();
+    drawKitList(rows, sel, {});
+    fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0);
+    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'OPEN']]);
 }
+/* The Session FX list's row names, in the Sound menu's case. The bus screens
+ * keep FX_BUSES' titles for their own headers. */
+const BUS_MENU_LABEL = { master: 'Master FX', sendA: 'Send FX A', sendB: 'Send FX B' };
+/* The drawn rows (a rule after Master) and which of them the cursor is on. */
+function busMenuRows() {
+    const rows = [], rowOf = [];
+    FX_BUSES.forEach((b, i) => {
+        if (i === 1) rows.push({ divider: true });
+        rowOf[i] = rows.length;
+        rows.push({ label: BUS_MENU_LABEL[b.id] || b.title, hdr: true, chevron: true });
+    });
+    return { rows, sel: rowOf[S.busIdx] || 0 };
+}
+export function soundBusMenuRowsForTest() { return busMenuRows(); }
 
 /* What to CALL the block being edited.
  *

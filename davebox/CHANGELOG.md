@@ -29,6 +29,20 @@ the section into a versioned heading at release time.
   each with its style's groove and a name that says what it plays. The
   Phrase Map setting chooses where a drum phrase's sounds go at first: Off,
   General MIDI or Move's kit layout.
+- **A project load unwraps a Dave.** Loading a project deals a Dave into your
+  Dave Box and shows him full screen under a `<PROJECT> [LOADING...]` header
+  while the set loads.
+- **Shortcut icons show what's on.** Without Shift, the Step 6 icon stays lit
+  while the metronome plays (Play or Always), and in Track View Step 10 while
+  fixed velocity is on and Step 11 while the track arp is on.
+- **Scroll the clip window from Track View.** Shift + the top track button
+  moves the four visible clips up one, Shift + the bottom one moves them down —
+  the same window for every track.
+- **Master FX in one gesture.** In Session View, Shift + hold Note/Session opens
+  Master FX (a tap still opens the Session FX list).
+- **Pads find voices in the bus voice picker.** A pad still plays and the list
+  jumps to the voice it sounds; the jog click still toggles. Works with modules
+  that say which notes play which voice.
 - **Import MIDI.** Sound menu → Import MIDI fills a clip from a MIDI file
   anywhere in your user data folder: pick the file, pick a part (with a
   preview), then set the start bar, bars, grid and destination clip on K1–K4
@@ -61,6 +75,19 @@ the section into a versioned heading at release time.
   reloaded with every other lane at 1 bar, and a snare added later on bar 3
   never played. Every lane now keeps its length, loop, step size, pad note,
   direction and effects, notes or not.
+- **Arp octaves now join the notes the style orders.** Down, Up/Down, Down/Up,
+  Converge and Diverge play across the whole octave range instead of repeating
+  the phrase per octave, and negative octaves extend downward. Applies to the
+  live arp, the sequencer arp and Print. Unprinted clips that use these styles
+  with an octave range sound different.
+- **The bank no longer snaps back to SOUND+CFG** after a Shift shortcut into
+  the sound menu from a bank card.
+- **Chord pads keep playing while the Chord explainer is open.**
+- **A new or never-saved project no longer inherits the last project's pad
+  octaves.**
+- **No list wraps from the end back to the start** — the Dave Box, snapshot and
+  project pickers, the tempo list and Left/Right on a menu setting stop at
+  their ends.
 - **A module page you can step into now works.** Some modules draw a page with
   its own choices on it (DR32's Resample page). Clicking it used to jump to the
   section list; now the click enters the page, the jog and click choose on it,
@@ -113,6 +140,20 @@ the section into a versioned heading at release time.
   already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
+- **Melodic pads start one octave up** in new and cleared projects.
+- **Stop saves the project immediately.**
+- **All lights go dark the moment a project starts loading.**
+- **Shift + Step 2 opens Project Settings** (it was the global settings menu —
+  everything in it but the Daves rows is saved with the project).
+- **Project Settings is regrouped** — tempo and swing, metronome, clock, key,
+  launch, MIDI in, projects, snapshots, export, exits, host, Daves — and Tap
+  Tempo left it (Shift + Step 5 still opens it).
+- **The Session FX list looks like the Sound menu**, with a rule between Master
+  FX and the sends.
+- **The Sound menu's top row reads Instmt/Dest.**
+- **The Sound menu is regrouped**: the chain, then Volume / Pan / Send A / Send
+  B / Buses, Presets, LFOs, the track settings, Import MIDI and Parallel. Mute
+  and Solo left it — they're on the Mute button.
 - **Reorder insert effects.** Shift + click an effect block to open its module
   list: **<Move up** and **>Move down** sit indented under the loaded module.
   Every module picker (effects and the Instrument list) now shows the module

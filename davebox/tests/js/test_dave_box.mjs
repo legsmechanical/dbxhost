@@ -87,9 +87,12 @@ step('the album lists collected Daves in permanent order, junk and dupes tolerat
                    '< DAVE 21/' + T + ' \u00b7 RARE >'];
     if (JSON.stringify(metas) !== JSON.stringify(wantM)) throw new Error(JSON.stringify(metas));
     if (names[2] !== 'DAVE DAVIES') throw new Error('name line wrong: ' + JSON.stringify(names));
-    if (daves.daveBoxMeta() !== wantM[0]) throw new Error('did not wrap forward');
+    /* The album STOPS at its ends — no list wraps (Josh, 2026-09-24). */
+    if (daves.daveBoxMeta() !== wantM[2]) throw new Error('wrapped forward past the last Dave');
+    for (let i = 0; i < 5; i++) daves.daveBoxRotate(-1);
+    if (daves.daveBoxMeta() !== wantM[0]) throw new Error('did not stop at the first Dave: ' + daves.daveBoxMeta());
     daves.daveBoxRotate(-1);
-    if (daves.daveBoxMeta() !== wantM[2]) throw new Error('did not wrap backward');
+    if (daves.daveBoxMeta() !== wantM[0]) throw new Error('wrapped backward past the first Dave');
     daves.closeDaveBox();
 });
 
@@ -102,7 +105,9 @@ step('⭐ the SCAN loops top to bottom and back, and the WHOLE image gets its tu
     /* Josh, 2026-08-31: the footer obscured too much — the frame pans behind
      * it so every row is eventually visible. Coverage is the claim, so the
      * assertion is the SET of offsets, not the waveform. */
-    seenFileContent = '1\n';
+    /* TWO Daves: the album stops at its ends now, so browsing needs a
+     * neighbour to restart the scan on. */
+    seenFileContent = '1\n3\n';
     if (!daves.openDaveBox()) throw new Error('did not open');
     if (S.daveBox.yOff !== 0) throw new Error('did not start at the top');
     /* ⭑ IMMEDIATE: no opening hold — the first glide step lands within one
@@ -119,8 +124,15 @@ step('⭐ the SCAN loops top to bottom and back, and the WHOLE image gets its tu
     for (let t = 0; t < 400; t++) dtick();
     if (S.daveBox.yOff === 0) { /* may legitimately be 0 mid-loop; force off-top */ }
     while (S.daveBox.yOff === 0) dtick();
-    daves.daveBoxRotate(1);
+    /* toward whichever neighbour exists: the album stops at its ends */
+    daves.daveBoxRotate(S.daveBox.idx < S.daveBox.list.length - 1 ? 1 : -1);
     if (S.daveBox.yOff !== 0) throw new Error('a fresh Dave did not start at the top');
+    /* a turn past the END changes nothing — the same Dave keeps scanning */
+    while (S.daveBox.yOff === 0) dtick();
+    const _y = S.daveBox.yOff, _i = S.daveBox.idx;
+    daves.daveBoxRotate(_i === 0 ? -1 : 1);
+    if (S.daveBox.idx !== _i || S.daveBox.yOff !== _y)
+        throw new Error('a turn past the end restarted the scan (idx ' + S.daveBox.idx + ', yOff ' + S.daveBox.yOff + ')');
     daves.closeDaveBox();
 });
 

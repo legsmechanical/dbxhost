@@ -184,7 +184,7 @@ enterSound(); openRow('settings');
 for (let g = 0; g < 12; g++) { jog(1); }
 draw(); shoot('track', 'Sound Control, scrolled', 'sub-rows + chevrons');
 
-/* The Instrument/Type picker — Conductor sits between the Move rows and the
+/* The Instmt/Dest picker — Conductor sits between the Move rows and the
  * generators (2026-09-19). */
 enterSound();
 snd.soundOpenInstrPicker(4);

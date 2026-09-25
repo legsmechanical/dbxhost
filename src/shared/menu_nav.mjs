@@ -249,7 +249,9 @@ function applyValueChange(item, delta, shiftHeld) {
         const opts = item.options || [];
         if (opts.length === 0) return false;
         const idx = opts.indexOf(currentVal);
-        const newIdx = (idx + delta + opts.length) % opts.length;
+        /* Clamp, like adjustValue: the Left/Right quick-adjust must not wrap
+         * where the jog edit stops (lists stop at their ends). */
+        const newIdx = Math.max(0, Math.min(opts.length - 1, idx + delta));
         newVal = opts[newIdx];
     } else if (item.type === MenuItemType.TOGGLE) {
         newVal = !currentVal;

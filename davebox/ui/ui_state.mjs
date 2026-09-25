@@ -4,7 +4,7 @@
  * Read: S.varName   Write: S.varName = v  or  S.arr[i] = v
  */
 
-import { PAD_MODE_CONDUCT, NUM_TRACKS, BANK_STEP } from './ui_constants.mjs';
+import { PAD_MODE_CONDUCT, NUM_TRACKS, BANK_STEP, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 /* ui_engine.mjs imports nothing local, so this cannot cycle. */
 import { CHAIN_SLOTS } from './ui_engine.mjs';
 
@@ -453,7 +453,7 @@ export const S = {
     jogTouched: false,
     stretchBlockedEndTick: -1,
     noNoteFlashEndTick: -1,
-    trackOctave: new Array(8).fill(0),
+    trackOctave: new Array(8).fill(DEFAULT_TRACK_OCTAVE),
     actionPopupEndTick: -1,
     actionPopupLines: [],
     /* True when standalone/scripts/preflight.sh found a stock-tree seam broken
@@ -721,6 +721,7 @@ export const S = {
     _recNoteOns: [],
     _recNoteOffs: [],
     currentSetUuid: '',
+    loadDave: null,         /* frame index of the Dave this project load dealt, or null */
     switchLoading: null,    /* { name, stage, at } from the pick until we hand over */
     currentSetName: '',     /* the project's NAME tag — what the user sees */
     currentSetFolder: '',   /* Move's song folder (Move-Set-<id>) — paths only */

@@ -127,7 +127,7 @@ const wrote = (re) => writes.filter(([, k]) => re.test(k)).map(([, k, v]) => k +
 
 snd.soundSetGeneratorScanForTest(() => [{ id: 'nusaw', name: 'NuSaw' }, { id: 'obxd', name: 'OB-Xd' }]);
 
-/* Open track t's Instrument/Type picker through the real gesture. */
+/* Open track t's Instmt/Dest picker through the real gesture. */
 function openPicker(t) {
     snd.soundExit();
     S.activeTrack = t;
@@ -135,7 +135,7 @@ function openPicker(t) {
     ticks(6);
     const st = snd.soundPickStateForTest();
     assert(st.kinds[st.row] === 'trackto',
-           'the menu did not land on the Instrument/Type row: ' + st.kinds[st.row]);
+           'the menu did not land on the Instmt/Dest row: ' + st.kinds[st.row]);
     cc(MoveShift, 127); cc(3, 127); cc(3, 0); cc(MoveShift, 0);
     ticks(4);
     /* ⚠ The row's grammar depends on what the track HAS: with an instrument
@@ -200,6 +200,7 @@ step('⭐ Back on that confirm is NO, over sound mode, and converts nothing', ()
 });
 
 step('⭐ Yes converts it, and the row then READS Conductor', () => {
+    S.trackOctave[0] = C.DEFAULT_TRACK_OCTAVE;          /* a melodic track on the +1 default */
     openPicker(0);
     pick('Conductor');
     ticks(2);
@@ -207,6 +208,9 @@ step('⭐ Yes converts it, and the row then READS Conductor', () => {
     yes();
     ticks(4);
     assert(S.trackPadMode[0] === PAD_MODE_CONDUCT, 'Yes did not convert: ' + S.trackPadMode[0]);
+    /* The Conductor's home pad must play the root at octave 4, its no-shift
+     * point — so it starts on octave 0, not the melodic +1 (2026-09-24). */
+    assert(S.trackOctave[0] === 0, 'a new Conductor kept the melodic octave ' + S.trackOctave[0] + ': its home pad would transpose everything');
     assert(B.instrValueFor(0) === INSTR_CONDUCT, 'the readback does not say Conductor');
     assert(C.fmtInstr(B.instrValueFor(0)) === 'Conductor',
            'formats as ' + C.fmtInstr(B.instrValueFor(0)));
@@ -258,7 +262,9 @@ step('⚠ CONTROL: an ordinary track still has its chain and mixer rows', () => 
     snd.soundExit(); S.activeTrack = 1; snd.soundEnter(1, 1); ticks(3);
     snd.soundShowMenu(); ticks(2);
     const k = snd.soundPickStateForTest().kinds;
-    assert(k.includes('block') && k.includes('buslevel'),
+    /* The mixer rows left the Sound menu (Josh, 2026-09-24) — only Send A/B
+     * stay, and only where the host has sends — so the chain is the control. */
+    assert(k.includes('block') && k.includes('settings'),
            'a normal track lost its chain rows: ' + k.join(','));
     assert(k.includes('settings') && k.includes('patches'),
            'a normal track lost LFOs/Presets: ' + k.join(','));

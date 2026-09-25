@@ -101,14 +101,16 @@ step('setup: three Schwung tracks and a MIDI one', () => {
     GS.playing = false;
 });
 
-step('⭐ the config rows are the LAST thing in the menu, behind a rule', () => {
+step('⭐ the config rows sit in their ruled groups at the foot (Josh, 2026-09-24): Mode Layout | Transpose VelIn AftTch | Looper | Import MIDI | Parallel', () => {
     snd.soundExit(); snd.soundEnter(0, 0); ticks(3); snd.soundShowMenu(); ticks(2);
     const k = kinds();
     const firstCfg = k.indexOf('cfg');
     assert(firstCfg > 0, 'no config rows in the menu: ' + k.join(','));
     assert(k[firstCfg - 1] === 'div', 'no rule above the config rows: ' + k.join(','));
-    assert(k.slice(firstCfg).every((x) => x === 'cfg'),
-           'something sits BELOW the config rows: ' + k.join(','));
+    const st = snd.soundPickStateForTest();
+    const tail = st.kinds.slice(firstCfg).map((x, i) => x === 'div' ? '---' : st.labels[firstCfg + i]).join('|');
+    assert(/^Mode\|Layout\|---\|Transpose\|VelIn(\|AftTch)?\|---\|Looper\|---\|Import MIDI\|---\|Parallel$/.test(tail),
+           'the foot is not in the ruled order: ' + tail);
     assert(!k.includes('config'), 'the CONFIG door is still there: ' + k.join(','));
     /* The doors it used to sit with are still above it, in their old order. */
     assert(k.indexOf('settings') < firstCfg && k.indexOf('patches') < firstCfg,
@@ -262,7 +264,7 @@ step('⚠ CONTROL: a NONE track has no config rows at all, and no stray rule', (
     snd.soundShowMenu(); ticks(2);
     const k = kinds();
     /* NONE: the instrument row and Import MIDI (Josh, 2026-09-23: every melodic track imports). */
-    assert(k.join(',') === 'trackto,midiimport', 'a NONE track grew rows: ' + k.join(','));
+    assert(k.join(',') === 'trackto,div,midiimport', 'a NONE track grew rows: ' + k.join(','));
 });
 
 if (failed) process.exit(1);

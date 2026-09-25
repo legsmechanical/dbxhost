@@ -17,7 +17,7 @@
  * that breaks first. */
 
 import { S } from './ui_state.mjs';
-import { SPLASH_FRAMES, SPLASH_COUNT, DAVES } from './ui_splash.mjs';
+import { SPLASH_FRAMES, SPLASH_COUNT, DAVES, pickSplashIdx } from './ui_splash.mjs';
 import { hdrPrint, hdrWidth, mvPrint, mvWidth } from './ui_movy.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { forceRedraw } from './ui_leds.mjs';
@@ -92,7 +92,10 @@ export function daveBoxRotate(delta) {
     const d = S.daveBox;
     if (!d || !delta) return;
     const n = d.list.length;
-    d.idx = ((d.idx + (delta > 0 ? 1 : -1)) % n + n) % n;
+    /* Stops at the first and last Dave — no list wraps (Josh, 2026-09-24). */
+    const next = Math.max(0, Math.min(n - 1, d.idx + (delta > 0 ? 1 : -1)));
+    if (next === d.idx) return;
+    d.idx = next;
     /* A fresh Dave scans from the top — and is already moving. */
     d.yOff = 0; d.dir = 1; d.holdUntil = 0; d.stepAt = S.clockMs;
     forceRedraw();
@@ -246,6 +249,45 @@ export function daveBoxMeta() {
     if (!d) return '';
     const dave = DAVES[d.list[d.idx]];
     return '< DAVE ' + dave.n + '/' + SPLASH_COUNT + ' \u00b7 ' + dave.r + ' >';
+}
+
+/* ── UNWRAP A DAVE ON PROJECT LOAD (Josh, 2026-09-15: "Unwrap a Dave only when
+ * loading a project, not on launch from tools menu") ──
+ *
+ * The launch-splash gacha, moved to where it was asked for: a project load
+ * deals one Dave (the same weighted pick as the host's, pickSplashIdx), records
+ * it in the collection exactly as the host did (dedup on write, best-effort),
+ * and the load's own screen shows it. Returns the frame index. */
+export function dealDave() {
+    const idx = pickSplashIdx();
+    const num = DAVES[idx] ? String(DAVES[idx].n) : null;
+    if (num !== null) {
+        try {
+            const seen = host_file_exists(SEEN_PATH) ? (host_read_file(SEEN_PATH) || '') : '';
+            if (seen.split('\n').indexOf(num) < 0) host_write_file(SEEN_PATH, seen + num + '\n');
+        } catch (e) { /* the collection is best-effort, as on the host */ }
+    }
+    return idx;
+}
+
+/* The loading screen with its Dave (Josh, 2026-09-24): ONE black header in the
+ * small movy face — "<PROJECT> [LOADING...]" — and the Dave filling the rest.
+ * It is the frame the host keeps on screen while Move loads the set, so it is
+ * drawn still, the whole frame from the top. A long name is trimmed; the bracketed
+ * LOADING... always shows. */
+export const LOAD_BAND_H = 9;
+export function drawDaveLoading(idx, name) {
+    clear_screen();
+    /* The whole Dave, where it sits; the header goes OVER its top rows rather
+     * than pushing it down (Josh, 2026-09-24). */
+    blitFrameRows(idx, 0, 0, 64);
+    fill_rect(0, 0, 128, LOAD_BAND_H, 0);
+    const tag = '[LOADING...]';
+    let n = String(name || '').toUpperCase();
+    const room = 124 - mvWidth(' ' + tag);
+    while (n && mvWidth(n) > room) n = n.slice(0, -1);
+    const t = n ? n + ' ' + tag : tag;
+    mvPrint(Math.max(0, Math.floor((128 - mvWidth(t)) / 2)), 2, t, 1);
 }
 
 export function drawDaveBox() {

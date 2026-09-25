@@ -113,7 +113,7 @@ const isMidiMenu = () => {
      * clip, which a MIDI track has) — set aside before the shape check. */
     const k = kinds().split(',').filter(x => x !== 'midiimport');
     return k[0] === 'trackto' && k[1] === 'div' && k.length > 2 &&
-           k.slice(2).every(x => x === 'cfg');
+           k.slice(2).every(x => x === 'cfg' || x === 'div');   /* ruled groups, 2026-09-24 */
 };
 const onInstrumentRow = () => view() === VIEW_BLOCKS && kinds().split(',')[snd.soundPickStateForTest().row] === 'trackto';
 step('⭑ Schwung → Schwung: the switch from an EDITOR lands on the new track\'s sound menu, INSTRUMENT row', () => {
@@ -206,7 +206,7 @@ step('⭑ CONFIG → NONE: a NONE track has no config — its Instrument-only me
     editops._switchActiveTrack(5);
     if (!snd.soundOpen() || snd.soundTrack() !== 5) throw new Error('did not follow');
     settle();
-    if (view() !== VIEW_BLOCKS || kinds() !== 'trackto,midiimport') throw new Error('view ' + view() + ' rows ' + kinds());
+    if (view() !== VIEW_BLOCKS || kinds() !== 'trackto,div,midiimport') throw new Error('view ' + view() + ' rows ' + kinds());
     snd.soundExit();
 });
 
@@ -271,7 +271,7 @@ step('⭑ Schwung → NONE from the EDITOR: the Instrument-only menu, on its row
     editops._switchActiveTrack(5);
     if (!snd.soundOpen() || snd.soundTrack() !== 5) throw new Error('did not follow');
     settle();
-    if (!onInstrumentRow() || kinds() !== 'trackto,midiimport') throw new Error('view ' + view() + ' rows ' + kinds());
+    if (!onInstrumentRow() || kinds() !== 'trackto,div,midiimport') throw new Error('view ' + view() + ' rows ' + kinds());
     snd.soundExit();
 });
 

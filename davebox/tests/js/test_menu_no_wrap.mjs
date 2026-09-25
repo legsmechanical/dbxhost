@@ -65,6 +65,8 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const nav = await import('/data/UserData/schwung/shared/menu_nav.mjs');
+const D = await import('../../ui/ui_dialogs.mjs');
+const CC_LEFT = 62, CC_RIGHT = 63;
 
 const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 
@@ -85,6 +87,20 @@ step('menu_nav: an interior step still moves (clamp is not a freeze)', () => {
     const state = { editing: true, editValue: 'B', selectedIndex: 0 };
     nav.handleMenuInput({ cc: 14, value: 1, items: [item], state, stack: [], onBack: () => {} });
     if (state.editValue !== 'C') throw new Error('interior step did not move: ' + state.editValue);
+});
+
+step('menu_nav: the Left/Right QUICK-ADJUST clamps too (not editing), both ends (2026-09-24)', () => {
+    const item = { type: 'enum', options: ['A', 'B', 'C'], get: () => cur, set: (v) => { cur = v; } };
+    let cur = 'C';
+    const state = { editing: false, selectedIndex: 0 };
+    nav.handleMenuInput({ cc: CC_RIGHT, value: 127, items: [item], state, stack: [], onBack: () => {} });
+    if (cur !== 'C') throw new Error('Right wrapped past the end to ' + cur);
+    cur = 'A';
+    nav.handleMenuInput({ cc: CC_LEFT, value: 127, items: [item], state, stack: [], onBack: () => {} });
+    if (cur !== 'A') throw new Error('Left wrapped past the start to ' + cur);
+    cur = 'B';
+    nav.handleMenuInput({ cc: CC_RIGHT, value: 127, items: [item], state, stack: [], onBack: () => {} });
+    if (cur !== 'C') throw new Error('an interior Right did not move: ' + cur);
 });
 
 step('global menu (real dispatch): enum edit clamps both ways', () => {
@@ -178,6 +194,29 @@ step('source pin: the mixer mode walk does not modulo again (ui_input_cc)', () =
     const src = readFileSync('ui/ui_input_cc.mjs', 'utf8');
     if (/sessKnobMode[^;]*%\s*4/.test(src))
         throw new Error('the mixer mode walk wraps again');
+});
+
+step('the snapshot picker stops at both ends (real rotate)', () => {
+    const dlg = D;
+    S.snapshotPicker = { snaps: ['a', 'b', 'c'], sel: 2, confirm: null };
+    dlg.snapshotPickerRotate(1);
+    if (S.snapshotPicker.sel !== 2) throw new Error('wrapped past the end to ' + S.snapshotPicker.sel);
+    S.snapshotPicker.sel = 0;
+    dlg.snapshotPickerRotate(-1);
+    if (S.snapshotPicker.sel !== 0) throw new Error('wrapped past the start to ' + S.snapshotPicker.sel);
+    dlg.snapshotPickerRotate(1);
+    if (S.snapshotPicker.sel !== 1) throw new Error('an interior step did not move');
+    S.snapshotPicker = null;
+});
+step('source pins: the project picker, tempo list and Dave box do not modulo-wrap again (2026-09-24)', () => {
+    const dlg = readFileSync('ui/ui_dialogs.mjs', 'utf8');
+    if (/colorPick\.sel[^;]*%/.test(dlg)) throw new Error('the colour pick wraps again');
+    if (/menu\.sel = [^;]*%/.test(dlg)) throw new Error('the project picker menu wraps again');
+    if (/p\.sel = [^;]*%/.test(dlg)) throw new Error('the snapshot picker wraps again');
+    const cc = readFileSync('ui/ui_input_cc.mjs', 'utf8');
+    if (/tempoSelectIdx = [^;]*%/.test(cc)) throw new Error('the tempo list wraps again');
+    const dv = readFileSync('ui/ui_daves.mjs', 'utf8');
+    if (/d\.idx = [^;]*%/.test(dv)) throw new Error('the Dave box wraps again');
 });
 
 step('source pins: no % wrap in slotCfgStep / Instrument picker (ui_sound)', () => {

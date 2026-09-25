@@ -85,34 +85,34 @@ function enterTrack0() {
     snd.soundTick();       /* drains the pendingAction: names -> refreshBlockNames -> probeCaps + buildPickRows */
 }
 
-step('door OPEN: Buses sits right after Send B and right before Mute', () => {
+/* ⭑ THE RULED ORDER (Josh, 2026-09-24, from the Sound menu arranger): the
+ * mixer group is Volume Pan Send A Send B Buses, behind a rule, then Presets;
+ * Mute and Solo left the menu. Read as labels with the rules, so a lost rule
+ * or a row that comes back fails. */
+const shape = () => {
+    const st = snd.soundPickStateForTest();
+    return st.kinds.map((k, i) => k === 'div' ? '---' : st.labels[i]);
+};
+step('door OPEN: the mixer group is Volume, Pan, Send A, Send B, Buses — then a rule and Presets', () => {
     splitAnswer = VOICES;
     enterTrack0();
-    const labels = snd.soundPickStateForTest().labels;
-    const iSendB = labels.indexOf('Send B');
-    const iBuses = labels.indexOf('Buses');
-    const iMute  = labels.indexOf('Mute');
-    const iSolo  = labels.indexOf('Solo');
-    if (iSendB < 0 || iBuses < 0 || iMute < 0 || iSolo < 0)
-        throw new Error('missing expected row(s): ' + JSON.stringify(labels));
-    if (iBuses !== iSendB + 1)
-        throw new Error('Buses is not immediately after Send B: ' + JSON.stringify(labels));
-    if (iMute !== iBuses + 1)
-        throw new Error('Mute is not immediately after Buses: ' + JSON.stringify(labels));
-    if (iSolo !== iMute + 1)
-        throw new Error('Solo is not immediately after Mute: ' + JSON.stringify(labels));
+    const l = shape();
+    const i = l.indexOf('Volume');
+    const got = l.slice(i - 1, i + 7).join('|');
+    if (got !== '---|Volume|Pan|Send A|Send B|Buses|---|Presets')
+        throw new Error('mixer group: ' + got + ' in ' + JSON.stringify(l));
+    if (l.includes('Mute') || l.includes('Solo')) throw new Error('Mute/Solo are back: ' + JSON.stringify(l));
 });
 
-step('door CLOSED (absent): no Buses row, and the level block is still Volume..Solo in order', () => {
+step('door CLOSED (absent): no Buses row, and the group ends at Send B', () => {
     splitAnswer = '';
     enterTrack0();
-    const labels = snd.soundPickStateForTest().labels;
-    if (labels.includes('Buses'))
-        throw new Error('Buses row present with the door closed: ' + JSON.stringify(labels));
-    const levels = labels.filter((l) => ['Volume', 'Pan', 'Send A', 'Send B', 'Mute', 'Solo'].includes(l));
-    const want = ['Volume', 'Pan', 'Send A', 'Send B', 'Mute', 'Solo'];
-    if (JSON.stringify(levels) !== JSON.stringify(want))
-        throw new Error('level order: ' + JSON.stringify(levels));
+    const l = shape();
+    if (l.includes('Buses'))
+        throw new Error('Buses row present with the door closed: ' + JSON.stringify(l));
+    const i = l.indexOf('Volume');
+    const got = l.slice(i, i + 5).join('|');
+    if (got !== 'Volume|Pan|Send A|Send B|---') throw new Error('mixer group: ' + got);
 });
 
 }
