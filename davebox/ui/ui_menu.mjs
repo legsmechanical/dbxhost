@@ -3,8 +3,7 @@
  * key/scale, save/load/quit) and opening/refreshing the menu against the
  * active track. The TRACK section dissolved on 2026-08-13 — every per-track
  * setting lives in Track Control now — so this menu is global settings plus one
- * door into it. Tap Tempo (openTapTempo) comes from ui_record.mjs;
- * key/scale preview (xposePreviewSet) comes from ui_xpose.mjs.
+ * door into it. Key/scale preview (xposePreviewSet) comes from ui_xpose.mjs.
  * Extracted from ui.js (Phase 5 of the modularity refactor, module 4).
  */
 
@@ -25,12 +24,11 @@ import { SCALE_NAMES } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
-import { saveState, showActionPopup, loadSnapshotManifest } from './ui_persistence.mjs';
+import { saveState, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { forceRedraw } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK } from './ui_corun.mjs';
 import { requestExport } from './ui_export.mjs';
-import { openTapTempo } from './ui_record.mjs';
 import { xposePreviewSet } from './ui_xpose.mjs';
 
 /* ------------------------------------------------------------------ */
@@ -62,7 +60,61 @@ function buildGlobalMenuItems() {
          * ui_dialogs' requestTrackModeChange, and the confirms it raises draw
          * above Track Control rather than here. */
         /* No leading divider: with the track section gone this menu is global
-         * throughout, and a 'Global' rule with nothing above it labels nothing. */
+         * throughout, and a 'Global' rule with nothing above it labels nothing.
+         *
+         * ⭑ ORDER AND GROUPS ruled by Josh, 2026-09-24 (laid out with the menu
+         * arranger): tempo + swing / metronome / clock / key / launch + beat
+         * marks / MIDI in / projects / snapshots / export / exits / host / Daves.
+         * Tap Tempo left the menu — Shift + Step 5 is its door. Suspend and Quit
+         * now sit together in one group, replacing the 09-19 rule between them. */
+
+        createValue('BPM', {
+            get: function() {
+                const v = parseFloat(host_module_get_param('bpm'));
+                return (v > 0 && isFinite(v)) ? Math.round(v) : 120;
+            },
+            /* Read-only while following — Move owns tempo (DSP also ignores writes). */
+            set: function(v) {
+                if (S.clockFollowOn) return;
+                host_module_set_param('bpm', String(Math.round(v)));
+            },
+            min: 40, max: 250, step: 1,
+            format: function(v) { return S.clockFollowOn ? 'Move' : String(Math.round(v)); }
+        }),
+        createValue('Swing Amt', {
+            get: function() { return S.swingAmt; },
+            set: function(v) { S.swingAmt = v; host_module_set_param('swing_amt', String(v)); },
+            min: 0, max: 100,
+            format: function(v) { return Math.round(50 + v * 0.25) + '%'; }
+        }),
+        createEnum('Swing Res', {
+            get: function() { return S.swingRes; },
+            set: function(v) { S.swingRes = v; host_module_set_param('swing_res', String(v)); },
+            options: [0, 1],
+            format: function(v) { return ['1/16','1/8'][v] || '1/16'; }
+        }),
+        createDivider(),
+        createEnum('Metro', {
+            get: function() { return S.metronomeOn; },
+            set: function(v) {
+                S.metronomeOn = v | 0;
+                host_module_set_param('metro_on', String(S.metronomeOn));
+            },
+            options: [0, 1, 2, 3],
+            format: function(v) {
+                return ['Off', 'Cnt-In', 'Play', 'Always'][v | 0];
+            }
+        }),
+        createValue('Metro Vol', {
+            get: function() { return S.metronomeVol; },
+            set: function(v) {
+                S.metronomeVol = v | 0;
+                host_module_set_param('metro_vol', String(S.metronomeVol));
+            },
+            min: 0, max: 150, step: 1,
+            format: function(v) { return String(v | 0) + '%'; }
+        }),
+        createDivider(),
         /* Clock Follow: follow Move's MIDI clock + transport. Default off =
          * unchanged internal free-run. When on, BPM is read-only (EXT) and Play
          * drives Move (single source of truth). */
@@ -89,23 +141,7 @@ function buildGlobalMenuItems() {
             options: [0, 1],
             format: function(v) { return S.clockFollowOn ? '—' : (v ? 'On' : 'Off'); }
         }),
-        createValue('BPM', {
-            get: function() {
-                const v = parseFloat(host_module_get_param('bpm'));
-                return (v > 0 && isFinite(v)) ? Math.round(v) : 120;
-            },
-            /* Read-only while following — Move owns tempo (DSP also ignores writes). */
-            set: function(v) {
-                if (S.clockFollowOn) return;
-                host_module_set_param('bpm', String(Math.round(v)));
-            },
-            min: 40, max: 250, step: 1,
-            format: function(v) { return S.clockFollowOn ? 'Move' : String(Math.round(v)); }
-        }),
-        createAction('Tap Tempo', function() {
-            if (S.clockFollowOn) { showActionPopup('TEMPO: MOVE'); return; }
-            openTapTempo();
-        }),
+        createDivider(),
         /* Key/Scale: turning the knob previews a transpose of all melodic clips
          * (live, uncommitted); the click commits behind a confirm (see the
          * jog-click intercept + xpose* helpers). set() runs as the menu-edit
@@ -131,6 +167,7 @@ function buildGlobalMenuItems() {
             },
             onLabel: 'On', offLabel: 'Off'
         }),
+        createDivider(),
         createEnum('Launch', {
             get: function() { return S.launchQuant; },
             set: function(v) {
@@ -142,18 +179,12 @@ function buildGlobalMenuItems() {
                 return ['Now','1/16','1/8','1/4','1/2','1-bar'][v] || '1-bar';
             }
         }),
-        createValue('Swing Amt', {
-            get: function() { return S.swingAmt; },
-            set: function(v) { S.swingAmt = v; host_module_set_param('swing_amt', String(v)); },
-            min: 0, max: 100,
-            format: function(v) { return Math.round(50 + v * 0.25) + '%'; }
+        createToggle('Beat Marks', {
+            get: function() { return S.beatMarkersEnabled; },
+            set: function(v) { S.beatMarkersEnabled = v; forceRedraw(); },
+            onLabel: 'On', offLabel: 'Off'
         }),
-        createEnum('Swing Res', {
-            get: function() { return S.swingRes; },
-            set: function(v) { S.swingRes = v; host_module_set_param('swing_res', String(v)); },
-            options: [0, 1],
-            format: function(v) { return ['1/16','1/8'][v] || '1/16'; }
-        }),
+        createDivider(),
         createEnum('MIDI In', {
             get: function() { return S.midiInChannel; },
             set: function(v) {
@@ -163,42 +194,7 @@ function buildGlobalMenuItems() {
             options: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16],
             format: function(v) { return v === 0 ? 'All' : String(v); }
         }),
-        createEnum('Metro', {
-            get: function() { return S.metronomeOn; },
-            set: function(v) {
-                S.metronomeOn = v | 0;
-                host_module_set_param('metro_on', String(S.metronomeOn));
-            },
-            options: [0, 1, 2, 3],
-            format: function(v) {
-                return ['Off', 'Cnt-In', 'Play', 'Always'][v | 0];
-            }
-        }),
-        createValue('Metro Vol', {
-            get: function() { return S.metronomeVol; },
-            set: function(v) {
-                S.metronomeVol = v | 0;
-                host_module_set_param('metro_vol', String(S.metronomeVol));
-            },
-            min: 0, max: 150, step: 1,
-            format: function(v) { return String(v | 0) + '%'; }
-        }),
-        createToggle('Beat Marks', {
-            get: function() { return S.beatMarkersEnabled; },
-            set: function(v) { S.beatMarkersEnabled = v; forceRedraw(); },
-            onLabel: 'On', offLabel: 'Off'
-        }),
-        createAction('Export to Ableton', function() {
-            requestExport();
-        }),
-        createAction('Save state', function() {
-            S.confirmSaveCount = loadSnapshotManifest(S.currentSetUuid).length;
-            S.confirmSaveState = true;
-            S.confirmSaveSel   = 1;   /* default No */
-        }),
-        createAction('Load state', function() {
-            openLoadSnapshot();
-        }),
+        createDivider(),
         /* Projects: open dAVEBOx's own pad picker (v3) — 32 pads = project
          * slots, drawn by us, no restart and no native surface involved. It
          * closes the menu itself. Shift+Step 1 is the shortcut twin.
@@ -207,19 +203,25 @@ function buildGlobalMenuItems() {
         createAction('Projects...', function() {
             openProjectPadPicker();
         }),
+        createDivider(),
+        createAction('Save state', function() {
+            S.confirmSaveCount = loadSnapshotManifest(S.currentSetUuid).length;
+            S.confirmSaveState = true;
+            S.confirmSaveSel   = 1;   /* default No */
+        }),
+        createAction('Load state', function() {
+            openLoadSnapshot();
+        }),
         createAction('Clear Sess', function() {
             S.confirmClearSession = true;
             S.confirmClearSel     = 1;
             S.screenDirty         = true;
         }),
-        /* Host Settings: the host's Global Settings screen, opened as an
-         * overlay SERVICE on top of the running session (claims re-derive on
-         * close). This replaced the deleted Shift+Vol+Step2 / Shift+Step2-hold
-         * host gestures (2026-08-09) — the menu entry is now the only door. */
-        createAction('Host Settings...', function() {
-            host_open_service('global_settings', { keep_mask: DAVEBOX_PICKER_KEEP_MASK });
-            S.globalMenuOpen = false;
+        createDivider(),
+        createAction('Export to Ableton', function() {
+            requestExport();
         }),
+        createDivider(),
         createAction('Suspend session', function() {
             /* Park dAVEBOx in the background — after the exit confirm
              * (Josh, 2026-09-05); Yes runs _suspendModule.
@@ -228,11 +230,6 @@ function buildGlobalMenuItems() {
             S.confirmExit = 'suspend'; S.confirmExitSel = 1;
             S.globalMenuOpen = false;
         }),
-        /* ⭑ The two exits are separated (Josh, 2026-09-19). Since suspend came
-         * off hold-Back the row above is its ONLY door, so it is now a place
-         * you must come to — and it sat one detent from Quit, which leaves the
-         * session entirely. A rule between them rather than nothing. */
-        createDivider(),
         createAction('Quit', function() {
             /* Confirm first (Josh, 2026-09-05); Yes runs exitSessionNow():
              * save, then the exit a tick later so the save lands.
@@ -252,9 +249,15 @@ function buildGlobalMenuItems() {
             S.confirmExit = 'quit'; S.confirmExitSel = 1;
             S.globalMenuOpen = false;
         }),
-        /* ── the easter egg lives past the exit rows, behind its own rule
-         * (Josh, device pass 2026-08-31): the album for the launch-splash
-         * gacha — every Dave ever dealt, jog-driven. ui_daves.mjs. */
+        createDivider(),
+        /* Host Settings: the host's Global Settings screen, opened as an
+         * overlay SERVICE on top of the running session (claims re-derive on
+         * close). This replaced the deleted Shift+Vol+Step2 / Shift+Step2-hold
+         * host gestures (2026-08-09) — the menu entry is now the only door. */
+        createAction('Host Settings...', function() {
+            host_open_service('global_settings', { keep_mask: DAVEBOX_PICKER_KEEP_MASK });
+            S.globalMenuOpen = false;
+        }),
         createDivider(),
         /* The Daves switch (Josh, 2026-09-05): On = a collected Dave scrolls
          * through the session banner while playing; Off = the static wordmark.
