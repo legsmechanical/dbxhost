@@ -576,7 +576,14 @@ export function pollDSP() {
     if (!snap) return;
     const v = snap.split(' ');
     if (v.length < 53) return;
+    const _wasPlaying = S.playing;
     S.playing = (v[0] === '1');
+    /* Transport STOP saves the project at once (Josh, 2026-09-24: "on transport
+     * stop"). The stopped-and-quiet save below would get there a second later —
+     * or never, while the user keeps editing — so the stop edge takes the one
+     * save the 09-02 ruling leaves open: the transport is no longer running. The
+     * DSP still serializes only if something changed. */
+    if (_wasPlaying && !S.playing) S.saveNowOnce = true;
     /* The host's mid-session slot autosave holds while the transport runs —
      * the same law as the project save (spec §2): a save is a serialization
      * on the SPI thread, and playback is when that thread is the constraint.
