@@ -476,12 +476,12 @@ A track's **type** sets how you enter notes into it and how it sequences them.
 |---|---|---|
 | Melodic | **Mode → Keys** | Scale-snapped notes on the pads and steps — [Melodic Clips](#6-melodic-clips) |
 | Drum | **Mode → Drums** | 32 drum lanes, each its own step sequence — [Drum Clips](#7-drum-clips) |
-| Conductor | **Instrument/Type → Conductor** | Plays no notes of its own; transposes the other tracks — [The Conductor](#8-the-conductor) |
+| Conductor | **Instmt/Dest → Conductor** | Plays no notes of its own; transposes the other tracks — [The Conductor](#8-the-conductor) |
 
 **Keys and Drums** are the **Mode** row at the foot of the track's Sound menu.
 Scrolling previews the candidate type; clicking commits it.
 
-**Conductor** is chosen in the **Instrument/Type** picker instead — the same list
+**Conductor** is chosen in the **Instmt/Dest** picker instead — the same list
 you pick an instrument from, just after the Move instruments. It sits there rather
 than with Keys and Drums because it is not a way of sequencing a track: it changes
 what the track *is*, and it plays nothing. To turn a Conductor back into an
@@ -501,7 +501,7 @@ defaults.
   track switches at once.
 - **To or from Conductor** keeps your notes and is only available with the
   transport stopped. Only one Conductor can exist in a set at a time. Both
-  directions are done from the **Instrument/Type** picker.
+  directions are done from the **Instmt/Dest** picker.
 
 ---
 
@@ -865,13 +865,13 @@ sequence a progression on the Conductor, and every responding track follows it.
 
 ## 8.1 Creating one
 
-Open the track's **Instrument/Type** picker — the top row of its Sound menu — and
+Open the track's **Instmt/Dest** picker — the top row of its Sound menu — and
 choose **Conductor**, which sits just after the Move instruments. The transport
 must be stopped. Its notes carry over; its effects, arps, and automation reset.
 
 **Mute** pauses its conducting — the responders snap back to their written pitch.
 
-A Conductor plays nothing, so its Sound menu is short: the Instrument/Type row and
+A Conductor plays nothing, so its Sound menu is short: the Instmt/Dest row and
 the track's own settings, with no FX slots, mixer controls, LFOs or presets. None
 of that is lost — whatever instrument the track had is **parked**, and it comes
 back with everything attached when you choose an instrument again from that same
@@ -1478,15 +1478,15 @@ and levels and times are still adjusted by turning. Backing out of a picker
 leaves the setting as it was.
 
 **Schwung tracks** open dAVEBOx's own sound editor. It starts on the track's
-chain — the **Instrument/Type** row, then MIDI FX and **FX 1-4** — and the jog
+chain — the **Instmt/Dest** row, then MIDI FX and **FX 1-4** — and the jog
 picks a row; the track's own settings sit at the very foot of the same list,
 below a divider (see [Track settings](#164-track-settings)).
-The Instrument/Type row names the track's generator (or its Move instrument,
+The Instmt/Dest row names the track's generator (or its Move instrument,
 MIDI channel or followed track); **click** it to enter the generator's editor
 (or Move's, on a Move instrument), **Shift + click** to change the instrument.
 A MIDI channel or a followed track has nothing to enter, so a plain click does
 nothing there; a track with no generator yet reads `--`, and the click opens
-the picker. On the Instrument/Type and effect rows a hint band pops over the foot of
+the picker. On the Instmt/Dest and effect rows a hint band pops over the foot of
 the menu saying what the click and the Shift chord do — the same band the bank
 cards wear. That picker is one list in
 groups with a line between them: **None**, Move 1-4, **Conductor**, every Schwung
@@ -1918,7 +1918,7 @@ route are hidden, so the list is shorter on a MIDI track or a Conductor.
 | AftTch | Off, Poly, Channel | Pad-pressure aftertouch (melodic) |
 | Parallel | On, Off | Whether this instrument may render on another core — set per instrument, device-wide |
 
-Where the track's notes GO is the **Instrument/Type** row at the top of the same
+Where the track's notes GO is the **Instmt/Dest** row at the top of the same
 menu, not a setting here — see [Editing a track's sound](#143-editing-a-tracks-sound).
 
 ## 16.5 Sets & compatibility

@@ -127,7 +127,7 @@ const wrote = (re) => writes.filter(([, k]) => re.test(k)).map(([, k, v]) => k +
 
 snd.soundSetGeneratorScanForTest(() => [{ id: 'nusaw', name: 'NuSaw' }, { id: 'obxd', name: 'OB-Xd' }]);
 
-/* Open track t's Instrument/Type picker through the real gesture. */
+/* Open track t's Instmt/Dest picker through the real gesture. */
 function openPicker(t) {
     snd.soundExit();
     S.activeTrack = t;
@@ -135,7 +135,7 @@ function openPicker(t) {
     ticks(6);
     const st = snd.soundPickStateForTest();
     assert(st.kinds[st.row] === 'trackto',
-           'the menu did not land on the Instrument/Type row: ' + st.kinds[st.row]);
+           'the menu did not land on the Instmt/Dest row: ' + st.kinds[st.row]);
     cc(MoveShift, 127); cc(3, 127); cc(3, 0); cc(MoveShift, 0);
     ticks(4);
     /* ⚠ The row's grammar depends on what the track HAS: with an instrument

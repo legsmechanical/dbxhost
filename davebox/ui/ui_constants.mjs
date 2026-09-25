@@ -157,7 +157,7 @@ export const INSTR_CONDUCT    = 50;
 /* The label on the row that opens the picker. A CONSTANT because it is not just
  * a caption: four places test the string to recognise this picker, and a rename
  * that missed one left a silently dead branch. */
-export const INSTR_ROW_LABEL  = 'Instrument/Type';
+export const INSTR_ROW_LABEL  = 'Instmt/Dest';
 export const ROUTE_NONE       = 3;      /* S.trackRoute value; DSP `t<N>_route` = 'none' */
 
 export function fmtInstr(v) {
