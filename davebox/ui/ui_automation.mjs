@@ -23,6 +23,8 @@ import { POLL_INTERVAL, SEQ_AUTO_TARGETS, seqAutoAutomatable, BANK_SHORT, PAD_MO
 import { moveBusComp } from './ui_engine.mjs';
 /* The tick's prefetch (a cycle with ui_dsp_bridge, used only inside functions). */
 import { dget } from './ui_dsp_bridge.mjs';
+/* The record notice (a cycle with ui_persistence, used only inside functions). */
+import { showActionPopupFor } from './ui_persistence.mjs';
 
 /* ------------------------------------------------------------------ */
 /* THE TRANSPORT — everything crosses in BULK                           */
@@ -404,10 +406,16 @@ export function automationStepTicks(track, clip) {
 export function rowCycle(track, clip, target) {
     const s = stateByKey.get(stateKey(track, clip, target));
     if (!s) return null;
+    return cycleOf(track, clip, s.loop | 0);
+}
+
+/* The geometry behind rowCycle, for a lane whose own Loop is `loop` ticks
+ * (0 = it follows the clip, or the selected pad on a drum track). */
+function cycleOf(track, clip, loop) {
     const tps = automationStepTicks(track, clip);
     let off, len, follows;
-    if ((s.loop | 0) > 0) {
-        off = 0; len = Math.max(1, Math.round(s.loop / tps)); follows = false;
+    if (loop > 0) {
+        off = 0; len = Math.max(1, Math.round(loop / tps)); follows = false;
     } else if (S.trackPadMode[track] === PAD_MODE_DRUM) {
         off = S.drumLaneLoopStart[track] | 0; len = S.drumLaneLength[track] || 16; follows = true;
     } else {
@@ -416,6 +424,16 @@ export function rowCycle(track, clip, target) {
     }
     return { off, len, tps, pages: Math.max(1, Math.ceil(len / 16)),
              text: follows ? 'CLIP' : cycleText(len, tps), follows };
+}
+
+/* The length a recording onto `target` runs over, always as a length — the
+ * record notice exists because a set full of lanes at different lengths is
+ * hard to keep in your head, so "CLIP" would answer nothing. A target with no
+ * lane yet follows the clip (or pad) like any new lane. */
+export function recordCycleText(track, clip, target) {
+    const s = stateByKey.get(stateKey(track, clip, target));
+    const cy = cycleOf(track, clip, s ? (s.loop | 0) : 0);
+    return cycleText(cy.len, cy.tps);
 }
 
 /* The step unit's name when it is not 1/16 — a step of `tps` ticks is a
@@ -979,6 +997,10 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
      * to be recorded — book the one undo for the gesture. */
     ensureRest(g, target, prevNorm());
     if (S.recordArmed) ensureCheckpoint(g);
+    /* Every recording start says how long the lane it lands on is (Josh,
+     * 2026-09-24): lanes at many different lengths are hard to keep track of.
+     * Not the parameter — you just turned it. */
+    if (!g.live && S.recordArmed) showActionPopupFor(1000, '\u25CF LANE: ' + recordCycleText(track, clip, target));
     /* The DSP may be recording whatever our Record mirror says, so the drain
      * gate opens now and is corrected by one presence read when the gesture
      * ends (endGesture) — a wrong "no automation" here would leave a fresh
