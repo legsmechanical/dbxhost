@@ -157,7 +157,11 @@ export const INSTR_CONDUCT    = 50;
 /* The label on the row that opens the picker. A CONSTANT because it is not just
  * a caption: four places test the string to recognise this picker, and a rename
  * that missed one left a silently dead branch. */
-export const INSTR_ROW_LABEL  = 'Instrument/Type';
+export const INSTR_ROW_LABEL  = 'Instmt/Dest';
+/* The octave a melodic track's pads start on (S.trackOctave; ±4 around 0).
+ * +1 since 2026-09-24 (Josh). A saved project keeps its own octaves; this is
+ * what a new, cleared or never-saved project starts from. */
+export const DEFAULT_TRACK_OCTAVE = 1;
 export const ROUTE_NONE       = 3;      /* S.trackRoute value; DSP `t<N>_route` = 'none' */
 
 export function fmtInstr(v) {

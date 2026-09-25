@@ -34,7 +34,7 @@ import {
     TPS_VALUES, BANKS, PAD_MODE_DRUM, BANK_SOUND, isSoundBank, BANK_AUTOMATION, BANK_CHORD,
     INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK, moveInstrOwner, moveInstrDuplicates,
     MoveRec, LED_OFF, parseActionRaw, INSTR_NONE, ROUTE_NONE,
-    INSTR_CONDUCT, PAD_MODE_CONDUCT } from './ui_constants.mjs';
+    INSTR_CONDUCT, PAD_MODE_CONDUCT, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
 import { S } from './ui_state.mjs';
@@ -576,12 +576,19 @@ export function pollDSP() {
     if (!snap) return;
     const v = snap.split(' ');
     if (v.length < 53) return;
+    const _wasPlaying = S.playing;
     S.playing = (v[0] === '1');
     /* The host's mid-session slot autosave holds while the transport runs —
      * the same law as the project save (spec §2): a save is a serialization
      * on the SPI thread, and playback is when that thread is the constraint.
      * Edge only: the host keeps the flag, and a call a tick is a wasted tick. */
     autosaveHoldFollow(S.playing);
+    /* Transport STOP saves the project at once (Josh, 2026-09-24: "on transport
+     * stop"). The stopped-and-quiet save below would get there a second later —
+     * or never, while the user keeps editing — so the stop edge takes the one
+     * save the 09-02 ruling leaves open: the transport is no longer running. The
+     * DSP still serializes only if something changed. */
+    if (_wasPlaying && !S.playing) S.saveNowOnce = true;
     for (let t = 0; t < NUM_TRACKS; t++) {
         const newStep = parseInt(v[1 + t], 10) | 0;
         S.trackCurrentStep[t] = newStep;
@@ -1486,12 +1493,12 @@ export function restoreUiSidecar(applyDefaultsNow) {
                 }
             }
         }
-        if (us.v >= 7 && Array.isArray(us.to)) {
-            for (let _t = 0; _t < NUM_TRACKS; _t++) {
-                const _o = us.to[_t];
-                if (typeof _o === 'number')
-                    S.trackOctave[_t] = Math.max(-4, Math.min(4, _o | 0));
-            }
+        /* A sidecar without octaves (older than v7, or a hole in the list)
+         * starts that track on the default — never on the last project's. */
+        for (let _t = 0; _t < NUM_TRACKS; _t++) {
+            const _o = (us.v >= 7 && Array.isArray(us.to)) ? us.to[_t] : undefined;
+            S.trackOctave[_t] = (typeof _o === 'number')
+                ? Math.max(-4, Math.min(4, _o | 0)) : DEFAULT_TRACK_OCTAVE;
         }
         if (us.v >= 8 && Array.isArray(us.tab)) {
             for (let _t = 0; _t < NUM_TRACKS; _t++) {
@@ -1658,6 +1665,8 @@ export function restoreUiSidecar(applyDefaultsNow) {
         /* A fresh project starts on the Scale layout with default chords —
          * never with the last project's. */
         for (let _t = 0; _t < NUM_TRACKS; _t++) { S.padLayoutChord[_t] = false; S.chordLast[_t] = null; }
+        /* ...and on the default pad octave, never the last project's. */
+        for (let _t = 0; _t < NUM_TRACKS; _t++) S.trackOctave[_t] = DEFAULT_TRACK_OCTAVE;
         restoreChordSidecar(null);
         resetChordTransient();
         /* Sync t0's drum lane data + drumClipNonEmpty from the freshly-reset

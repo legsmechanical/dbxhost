@@ -23,7 +23,8 @@ import {
     dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
     hostIdentity, projectIdOfEntry, projectDisplayName
 } from './ui_persistence.mjs';
-import { invalidateLEDCache } from './ui_leds.mjs';
+import { invalidateLEDCache, clearAllLEDs } from './ui_leds.mjs';
+import { dealDave } from './ui_daves.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
     closeTextEntry,
@@ -254,7 +255,7 @@ function drawGlobalEnumPick() {
     drawGlobalMenuList();
     drawKitBackdropDim();
     drawKitStackedList(1, S.globalEnumPick.options, S.globalEnumPick.sel, {});
-    drawKitCrumbs(['Global', S.globalEnumPick.label]);
+    drawKitCrumbs(['Project', S.globalEnumPick.label]);
 }
 
 export function drawGlobalMenu() {
@@ -289,7 +290,9 @@ function drawGlobalMenuList() {
      * value in [brackets], and drawKitList would add a second pair — the screen
      * would read "[[MINOR]]". Two components implementing one grammar; the
      * value's owner keeps it. */
-    drawKitHeader('GLOBAL', false);
+    /* 'PROJECT SETTINGS' (Josh, 2026-09-24): everything here but the Daves
+     * rows is stored per project, so that is what the screen is called. */
+    drawKitHeader('PROJECT SETTINGS', false);
     drawKitList(S.globalMenuItems.map(function(item, index) {
         if (isDivider(item)) return { divider: true };
         const isEditing = S.globalMenuState.editing && index === S.globalMenuState.selectedIndex;
@@ -793,7 +796,8 @@ export function snapshotPickerRotate(delta) {
         p.confirm.sel = p.confirm.sel === 0 ? 1 : 0;
     } else {
         const n = p.snaps.length;
-        if (n > 0) p.sel = (p.sel + (delta > 0 ? 1 : n - 1)) % n;
+        /* Stops at both ends — no list wraps (Josh, 2026-09-24). */
+        if (n > 0) p.sel = Math.max(0, Math.min(n - 1, p.sel + (delta > 0 ? 1 : -1)));
     }
     S.screenDirty = true;
 }
@@ -1394,6 +1398,11 @@ function _pppLoad(p, k) {
      * SEQUENCER. It replaces an OPENING PROJECT pop-up over the old screen. */
     S.switchLoading = { name: (p.byIndex[k] && p.byIndex[k].name) || '',
                         stage: 'Saving', at: S.clockMs };
+    /* ...and every LED goes dark NOW, not at the handover a few ticks later
+     * (Josh, 2026-09-24). The tick paints nothing while switchLoading is up, so
+     * they stay dark; the OLED keeps the loading screen. */
+    invalidateLEDCache();
+    clearAllLEDs();
     /* ⭑ STOP THE OUTGOING PROJECT FIRST (Josh, 2026-09-02: "loading a new
      * project should immediately stop transport on current project"). The
      * switch parks us with the DSP still rolling — Move kept playing the old
@@ -1454,9 +1463,16 @@ function _pppLoad(p, k) {
                          ' — Move will boot wherever it was');
         S.pendingProjectRelaunch = k;
     }
-    else S.pendingProjectSwitch = { pad: k,
-                                    uuid: (_proj && _proj.uuid) ? _proj.uuid : '',
-                                    name: (_proj && _proj.name) ? _proj.name : '' };
+    else {
+        S.pendingProjectSwitch = { pad: k,
+                                   uuid: (_proj && _proj.uuid) ? _proj.uuid : '',
+                                   name: (_proj && _proj.name) ? _proj.name : '' };
+        /* ⭑ This load UNWRAPS A DAVE (Josh, 2026-09-15). Only on this path: a
+         * relaunch restarts Move, and the host deals its own there. Dealt
+         * before the first loading frame, shown on every one until the
+         * sequencer is up. */
+        S.loadDave = dealDave();
+    }
 }
 
 /* ⭑⭑ IS PAD k THE PROJECT THIS SESSION IS IN?
@@ -1606,15 +1622,16 @@ function _projectPadPickerRotate_impl(delta) {
         p.confirmNew.sel = p.confirmNew.sel === 0 ? 1 : 0;
     } else if (p.colorPick) {
         const n = PROJECT_COLORS.length;
-        p.colorPick.sel = (p.colorPick.sel + (delta > 0 ? 1 : n - 1)) % n;
+        /* Stops at both ends — no list wraps (Josh, 2026-09-24). */
+        p.colorPick.sel = Math.max(0, Math.min(n - 1, p.colorPick.sel + (delta > 0 ? 1 : -1)));
         invalidateLEDCache();     /* live preview on the target pad */
     } else if (p.menu) {
         const n = _pppMenuModel(p, p.menu.k).length;
         const top = _pppMenuTop(p, p.menu.k);
-        /* Wrap across the SELECTABLE rows only — the (CURRENT) status line is
-         * not a stop, the same contract dividers have in drawKitList. */
-        const span = n - top;
-        p.menu.sel = top + (((p.menu.sel - top) + (delta > 0 ? 1 : span - 1)) % span);
+        /* Move across the SELECTABLE rows only — the (CURRENT) status line is
+         * not a stop, the same contract dividers have in drawKitList — and stop
+         * at both ends: no list wraps (Josh, 2026-09-24). */
+        p.menu.sel = Math.max(top, Math.min(n - 1, p.menu.sel + (delta > 0 ? 1 : -1)));
     } else {
         return;
     }

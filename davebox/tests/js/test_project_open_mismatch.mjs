@@ -261,6 +261,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
 const render = await import('../../ui/ui_render.mjs');
 const shared = await import('/data/UserData/schwung/shared/session_state.mjs');
+const { DAVES } = await import('../../ui/ui_splash.mjs');
 const dialogs = await import('../../ui/ui_dialogs.mjs');
 const te = await import('/data/UserData/schwung/shared/text_entry.mjs');
 const fonts = await import('../../ui/ui_fonts_pp.mjs');
@@ -728,7 +729,7 @@ step('verdict -> Back -> pick pad 31 -> Load RELAUNCHES into it (project-cmd swi
     cc(BACK, 127); cc(BACK, 0);
     ticks(2);
     if (!S.projectPadPicker) throw new Error('Back did not open the picker');
-    sysCmds.length = 0; selectArms.length = 0;
+    sysCmds.length = 0; selectArms.length = 0; S.loadDave = null;
     padTap(31);
     ticks(2);
     const p = S.projectPadPicker;
@@ -739,6 +740,9 @@ step('verdict -> Back -> pick pad 31 -> Load RELAUNCHES into it (project-cmd swi
     if (sw.length !== 1) throw new Error('expected one relaunch switch to 31, got: ' + JSON.stringify(sysCmds));
     if (selectArms.length) throw new Error('the select actuator was armed: ' + JSON.stringify(selectArms));
     if (S.forceRelaunchNextLoad) throw new Error('the one-shot flag was not consumed');
+    /* A relaunch restarts Move and the HOST deals that launch's Dave: dealing
+     * here too would put a second one in the album. */
+    if (S.loadDave !== null) throw new Error('a relaunch dealt a Dave on the module side too: ' + S.loadDave);
 });
 step('control: without a verdict, loading a pre-existing pad still uses the select actuator', () => {
     boot(P, 'Project 1');
@@ -778,13 +782,73 @@ step('⭐ ONE LOADING SCREEN from Load to the project: LOADING / name / the stag
     cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
     const first = frame();
     if (/OPENING/.test(first)) throw new Error('the OPENING PROJECT pop-up is back: ' + first);
-    if (!/LOADING/.test(first) || !/PROJECT 32/.test(first) || !/SAVING/.test(first))
-        throw new Error('the press did not raise LOADING / PROJECT 32 / SAVING: ' + first);
+    /* An ordinary load unwraps a Dave, and that screen is ONE header (Josh,
+     * 2026-09-24: "<project name> [Loading...]") — the stage line gave way. */
+    if (!/PROJECT 32 \[LOADING\.\.\.\]/.test(first))
+        throw new Error('the press did not raise "PROJECT 32 [LOADING...]": ' + first);
     ticks(6);
     if (selectArms.indexOf(1) < 0) throw new Error('precondition: the switch never armed');
     const handover = armFrames[armFrames.length - 1] || '';
-    if (!/LOADING/.test(handover) || !/PROJECT 32/.test(handover) || !/LOADING SET/.test(handover))
-        throw new Error('the frame left up for the host is not LOADING / PROJECT 32 / LOADING SET: ' + handover);
+    if (!/PROJECT 32 \[LOADING\.\.\.\]/.test(handover))
+        throw new Error('the frame left up for the host is not "PROJECT 32 [LOADING...]": ' + handover);
+});
+
+step('⭐ LOAD blanks EVERY LED at the press and keeps them dark while it saves (Josh, 2026-09-24)', () => {
+    /* "Have all leds turn off immediately when project load starts. Keep
+     * oled." The press used to close the picker and hand the lights back to
+     * the ordinary painters, which relit the OLD project's pads and buttons
+     * until the handover cleared them a few ticks later. */
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    S.pendingOpenProjectPicker = false;
+    S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    padTap(31);
+    ticks(2);
+    const litNow = () => {
+        const out = [];
+        for (const [n, v] of noteLED) if (v) out.push('note' + n + '=' + v);
+        for (const [c, v] of ccLED) if (v) out.push('cc' + c + '=' + v);
+        return out;
+    };
+    if (!litNow().length) throw new Error('CONTROL: nothing is lit under the picker — the check below would be vacuous');
+    /* Hold the switch in its SAVING phase, where the old painters used to run:
+     * the tick drains the switch at once otherwise. */
+    selectArms.length = 0;
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    if (!S.switchLoading) throw new Error('precondition: the load did not start');
+    const atPress = litNow();
+    if (atPress.length) throw new Error('lit at the press: ' + atPress.slice(0, 8).join(' '));
+    const _sw = S.pendingProjectSwitch; S.pendingProjectSwitch = null;   /* park the drain */
+    /* 40 ticks: closing the picker re-queues the LED init, which drains 8 a
+     * frame; the ordinary painters come back only once it completes. */
+    ticks(40);
+    const saving = litNow();
+    S.pendingProjectSwitch = _sw;
+    if (saving.length) throw new Error('relit while saving: ' + saving.slice(0, 8).join(' '));
+    if (!/LOADING/.test(frame())) throw new Error('the OLED lost the loading screen');
+    ticks(6);
+});
+
+step('⭐ an ordinary LOAD unwraps a Dave: dealt at the press, recorded in the album, shown until the sequencer is up (Josh, 2026-09-15)', () => {
+    const SEEN = '/data/UserData/dbx-host/daves-seen.txt';
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    files.delete(SEEN);
+    S.loadDave = null;
+    S.pendingOpenProjectPicker = false; S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    padTap(31); ticks(2);
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    const idx = S.loadDave;
+    if (!(idx >= 0 && idx < DAVES.length)) throw new Error('no Dave dealt at the press: ' + idx);
+    const seen = (files.get(SEEN) || '').split('\n');
+    if (seen.indexOf(String(DAVES[idx].n)) < 0) throw new Error('the dealt Dave was not recorded: ' + JSON.stringify(seen));
+    if (!/PROJECT 32/.test(frame())) throw new Error('the loading frame lost the project name: ' + frame());
+    ticks(6);
+    if (S.loadDave !== idx) throw new Error('the Dave changed or vanished during the handover');
 });
 
 step('⭐ the picker lights ONLY what works there: steps dark, buttons dark but Copy/Delete (+Session/Back when loaded)', () => {

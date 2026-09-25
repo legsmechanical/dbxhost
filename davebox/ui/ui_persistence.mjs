@@ -3,7 +3,7 @@ import * as os from 'os';
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { isSoundBank, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, BANKS, ACTION_POPUP_MS,
-         VOL_CARD_MS } from './ui_constants.mjs';
+         VOL_CARD_MS, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 
 /* Basename prefix for every file this module owns. Mirrors the C-side
@@ -348,9 +348,12 @@ export function writeSidecar() {
      * exception here is exactly why it did not: trackActiveBank stayed on the
      * bank you walked through (AUTOMATION), and that stale value is what the
      * exit restore, the co-run landing and the next launch all read. */
-    /* ...except a sound bank reached by GESTURE, which is not the track's bank
-     * (Josh, 2026-09-05) — only the jog's walk records those. */
-    if (!isSoundBank(S.activeBank) || S.bankCardLatched)
+    /* ...except a sound bank, which is recorded at its ENTRY and only when the
+     * jog walked there (Josh, 2026-09-05: gestures never record). Recording it
+     * here too — as this did whenever bank mode was latched — wrote SOUND+CFG
+     * onto the track after any SHORTCUT into sound mode from a latched card,
+     * and the track came back on it (Josh, 2026-09-24). */
+    if (!isSoundBank(S.activeBank))
         S.trackActiveBank[S.activeTrack] = S.activeBank;
     /* ⭑ No identity, no write — and no fallback either. The path builders now
      * THROW rather than invent a destination, so this is the one place that has
@@ -558,7 +561,7 @@ export function doClearSession() {
         S.trackChannel[_t] = 1; S.trackRoute[_t] = 0; S.trackPadMode[_t] = 0;
         S.trackMidiTo[_t] = 0;   /* plays its own instrument */
         S.trackVelOverride[_t] = 0; S.trackLooper[_t] = 1;
-        S.trackOctave[_t] = 0;
+        S.trackOctave[_t] = DEFAULT_TRACK_OCTAVE;
         S.drumVelZoneArmed[_t] = false;
         for (let _b = 3; _b <= 4; _b++) {
             for (let _k = 0; _k < 8; _k++) {

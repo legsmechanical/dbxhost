@@ -707,8 +707,9 @@ export function _onPadPress(status, d1, d2) {
          * selection is about to discard. To the user the presses simply do
          * nothing, which is the right outcome; this makes it true. */
         if (S.awaitingProjectSelect) return;
-        /* The Chord layout's explainer is up until OK: pads do nothing. */
-        if (S.chordPopupOpen && d1 >= 68 && d1 <= 99) return;
+        /* The Chord layout's explainer does NOT hold the pads: they play the
+         * chords under it, so you can try the layout while reading it (Josh,
+         * 2026-09-24). Only the jog click / Back belong to the explainer. */
         /* Move-native co-run + drum-mode active track: inject a PLAIN pad-on
          * (cable-0, no Shift) so Move firmware both plays the drum AND focuses
          * that cell for editing — a plain tap selects on Move. dAVEBOx then
