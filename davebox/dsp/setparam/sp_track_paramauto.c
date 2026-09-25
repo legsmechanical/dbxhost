@@ -339,6 +339,30 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* pa_view: "<clip> <target>" — the lane selected on the AUTOMATION bank,
+     * whose current position state_snapshot reports for its playhead; "-"
+     * views nothing. A lookup, never an intern: viewing must not create a
+     * target. The slot is written LAST so the audio thread never pairs a new
+     * slot with a stale target. */
+    if (!strcmp(sub, "pa_view")) {
+        tr->pa_view_slot = 0;
+        tr->pa_view_target = 0;
+        tr->pa_view_lt = -1;
+        PA_SKIP_SPACE(p);
+        if (*p == '-' || !*p) return 1;
+        int clip = 0;
+        PA_UINT(p, clip);
+        PA_TARGET(p, tgt);
+        if (clip < 0 || clip >= NUM_CLIPS) return 1;
+        const int id = pa_target_lookup(inst, tgt);
+        if (id < 0) return 1;
+        pa_entry_t *e = pa_find(inst, tidx, clip, id);
+        if (!e) return 1;
+        tr->pa_view_target = (uint16_t)(id + 1);
+        tr->pa_view_slot = (uint16_t)((e - inst->pa_entries) + 1);
+        return 1;
+    }
+
     /* pa_loop: "<clip> <target> <len> <off> <res>" — the independent loop
      * window and resolution. Nothing in v1's UI writes this; the key exists so
      * the store, its file format and its playback path all carry the feature

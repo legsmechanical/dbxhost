@@ -6,7 +6,7 @@
 # 8 are meaningful — so a test can pass locally and fail in CI with no bug in
 # the code under test. This image lets the suite run on glibc before a push.
 #
-# Mirrors .github/workflows/ci.yml's host-tests job: ubuntu + ripgrep. node is
+# Mirrors .github/workflows/ci.yml's host-tests job: ubuntu + ripgrep + Pillow. node is
 # added explicitly because the GitHub runner image ships it ambiently and the
 # job never installs it — ~51 of the .sh tests shell out to node and would
 # otherwise fail here for a reason CI never sees.
@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ripgrep \
       nodejs \
       python3 \
+      python3-pil \
       ca-certificates \
       git \
     && rm -rf /var/lib/apt/lists/*

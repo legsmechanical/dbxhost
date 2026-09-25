@@ -26,9 +26,16 @@ typedef struct FontChar {
 } FontChar;
 
 /* Font structure (bitmap or TTF) */
+/* Glyphs past ASCII (a bitmap font's .dat may list any codepoint): looked up
+ * by codepoint, since text arrives from JS as UTF-8. */
+#define FONT_EXT_MAX 64
+
 typedef struct Font {
     int charSpacing;
-    FontChar charData[256];
+    FontChar charData[256];      /* ASCII, indexed by byte */
+    int extCp[FONT_EXT_MAX];
+    FontChar extData[FONT_EXT_MAX];
+    int extCount;
     int is_ttf;
     stbtt_fontinfo ttf_info;
     unsigned char *ttf_buffer;
@@ -66,8 +73,8 @@ int js_display_set_font(const char *path);
 int js_display_get_font_height(void);
 
 /* Glyph rendering */
-int js_display_glyph(Font *fnt, char c, int sx, int sy, int color);
-int js_display_glyph_ttf(Font *fnt, char c, int sx, int sy, int color);
+int js_display_glyph(Font *fnt, int cp, int sx, int sy, int color);
+int js_display_glyph_ttf(Font *fnt, int cp, int sx, int sy, int color);
 
 /* QuickJS bindings - register with JS_SetPropertyStr */
 JSValue js_display_bind_set_pixel(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv);

@@ -952,6 +952,16 @@ FONT = {
         '.....',
         '.....',
     ],
+    # Record: a solid dot on the cap height's middle rows.
+    '●': [
+        '.....',
+        '.###.',
+        '#####',
+        '#####',
+        '#####',
+        '.###.',
+        '.....',
+    ],
 }
 
 def parse_bdf(bdf_path):

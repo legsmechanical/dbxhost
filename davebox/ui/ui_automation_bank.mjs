@@ -28,13 +28,14 @@
  * read per project load and per edit); labels use the owner's metadata cache
  * (one chain_params read per component, ever). */
 
-import { S, noteUndoUnit } from './ui_state.mjs';
-import { BANK_AUTOMATION, PAD_MODE_DRUM, midiTargetIsMidi } from './ui_constants.mjs';
+import { S, noteUndoUnit, armBankDisplay } from './ui_state.mjs';
+import { BANK_AUTOMATION, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS } from './ui_constants.mjs';
+import { readBankParams } from './ui_dsp_bridge.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey,
          automationToggleActive, automationToggleSmooth, automationToggleWrap, automationToggleMode, automationToggleLink, automationSmoothable,
          automationSetLoop, automationSetRate, automationRateText, automationSetScale,
-         automationClearClip, automationListGen, automationStepTicks } from './ui_automation.mjs';
+         automationClearClip, automationListGen, automationStepTicks, rowCycle } from './ui_automation.mjs';
 import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
          drawBrackets, kitUseLayout, MV_FOOTER_Y } from './ui_movy.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -50,7 +51,7 @@ function st() {
     return S.autoBank;
 }
 export function autoBankReset() {
-    if (S.autoBank) { S.autoBank.menu = false; S.autoBank.ops = null; S.autoBank.loopEdit = false; S.autoBank.rateEdit = false; S.autoBank.scaleEdit = false; }
+    if (S.autoBank) { S.autoBank.menu = false; S.autoBank.ops = null; S.autoBank.loopEdit = false; S.autoBank.rateEdit = false; S.autoBank.scaleEdit = false; S.autoBank.cycleTarget = null; }
 }
 export function autoBankMenuOpen() { return !!(S.autoBank && (S.autoBank.menu || S.autoBank.ops)); }
 
@@ -88,10 +89,15 @@ export function autoBankRows(track, clip) {
     if (S.clipAtHas[track] && S.clipAtHas[track][clip]) rows.push({ kind: 'at', label: 'Aftertouch (pads)' });
     return rows;
 }
-function rowValue(r) {
+/* The value column is the lane's CYCLE (Josh, 2026-09-24): "4 BAR", "13 ST",
+ * "13 ST/32", or "CLIP" when it follows the clip — with lanes at different
+ * lengths, how long each one loops is the thing that is hard to remember.
+ * Muted still reads OFF; Smooth lives in the row's ops as a setting. */
+function rowValue(r, track, clip) {
     if (r.kind === 'at') return 'PADS';
     if (!r.active) return 'OFF';
-    return r.smooth ? 'SMTH' : 'ON';
+    const cy = rowCycle(track, clip, r.target);
+    return cy ? cy.text : 'ON';
 }
 function loopText(steps) { return steps > 0 ? (steps + ' ST') : 'CLIP'; }
 function scaleText(pct) { return (isFinite(pct) ? pct : 100) + '%'; }
@@ -144,11 +150,15 @@ export function drawAutomationBankBody() {
     const a = st();
     if (!S.bankCardLatched) autoBankReset();       /* the peek shows the plain card */
     const rows = autoBankRows(t, c);
-    const listRows = rows.map(r => ({ label: r.label, value: rowValue(r) }));
+    const listRows = rows.map(r => ({ label: r.label, value: rowValue(r, t, c) }));
     if (a.menu) listRows.push({ label: 'Clear all', hdr: true });
     if (a.sel >= listRows.length) a.sel = Math.max(0, listRows.length - 1);
     kitUseLayout('bank');
-    drawKitList(listRows, a.menu ? a.sel : -1, { emptyMsg: 'NO AUTOMATION' });
+    /* A multi-page cycle draws the track overview's page bar at rows 50–53
+     * (ui_render), so the list stops at four rows above it. */
+    const barShown = !!(S.autoCycle && S.autoCycle.t === t && S.autoCycle.pages > 1);
+    drawKitList(listRows, a.menu ? a.sel : -1,
+                barShown ? { emptyMsg: 'NO AUTOMATION', visible: 4 } : { emptyMsg: 'NO AUTOMATION' });
     /* The editor's bracketed corners on the resting card: "press jog to
      * interact" — the one mark the OLED language uses for that. */
     if (!a.menu) drawBrackets(0, LIST_TOP - 1, 128, MV_FOOTER_Y - LIST_TOP);
@@ -326,7 +336,7 @@ export function autoBankBack() {
     if (a.rateEdit) { a.rateEdit = false; return true; }
     if (a.scaleEdit) { a.scaleEdit = false; return true; }
     if (a.ops) { a.ops = null; return true; }
-    if (a.menu) { a.menu = false; return true; }
+    if (a.menu) { a.menu = false; a.cycleTarget = null; return true; }
     return false;
 }
 /* Delete + jog click on the card, and the menu's last row. */
@@ -373,12 +383,141 @@ function selectedTarget(t, c) {
     return r && r.kind === 'entry' ? r.target : null;
 }
 
+/* The gradient's values: one read per page for the whole clip
+ * (tN_cC_pa_vals_<base>_<tps>), refreshed when the page, the lane list or the
+ * clip changes, and on a slow cadence otherwise (recorded points change values
+ * without changing the list) — never per tick: a read is a whole SPI frame. */
+let valsCache = { key: null, map: null, at: -1e9 };
+const VALS_REFRESH_MS = 400;
+function autoLaneValsTick(t, c, target) {
+    const cy = S.autoCycle;
+    const base = ((cy.off >> 4) + cy.page) * 16;
+    const key = t + ' ' + c + ' ' + base + ' ' + cy.tps + ' ' + automationListGen();
+    if (valsCache.key !== key || S.clockMs - valsCache.at >= VALS_REFRESH_MS) {
+        const raw = host_module_get_param('t' + t + '_c' + c + '_pa_vals_' + base + '_' + cy.tps);
+        valsCache.at = S.clockMs;
+        if (raw !== null && raw !== undefined) {
+            const map = new Map();
+            for (const line of String(raw).split('\n')) {
+                const sp = line.lastIndexOf(' ');
+                if (sp <= 0) continue;
+                const hex = line.slice(sp + 1), v = [];
+                for (let s = 0; s < 16; s++) { const x = parseInt(hex.substr(s * 2, 2), 16); v.push(x === 255 || !isFinite(x) ? -1 : x); }
+                map.set(line.slice(0, sp), v);
+            }
+            valsCache.key = key; valsCache.map = map;
+        } else if (valsCache.key !== key) {
+            valsCache.map = null;             /* a failed read of a NEW page shows no stale colours */
+        }
+    }
+    S.autoLaneVals = (valsCache.key === key && valsCache.map) ? (valsCache.map.get(target) || null) : null;
+}
+
+/* The lane the DSP is told to report a position for (tN_pa_view) — sent only
+ * when the selection CHANGES, and "-" to the old track when it ends, so the
+ * playhead costs no read (it rides state_snapshot, polled anyway). */
+let viewSent = null;             /* { t, key } */
+function syncPaView(t, c, target) {
+    const key = target === null ? null : c + ' ' + target;
+    if (viewSent && viewSent.t === t && viewSent.key === key) return;
+    if (viewSent) S.pendingDefaultSetParams.push({ key: 't' + viewSent.t + '_pa_view', val: '-' });
+    viewSent = key === null ? null : { t, key };
+    if (key !== null) S.pendingDefaultSetParams.push({ key: 't' + t + '_pa_view', val: key });
+}
+
+/* ⭐ HOLD A POINT, EDIT IT (Josh, 2026-09-24): "When an automation lane is
+ * selected, either by having the cursor over it or being in it's overlay
+ * menu, holding a step with an automation point from that lane should
+ * temporarily take you to the bank that param lives on, allowing you to
+ * quickly edit the automation value on that point. Releasing the step takes
+ * you back to where you were."
+ *
+ * The jump shows the parameter's bank with the step still HELD, so a knob
+ * turn is the existing held-step lock (automationParamEdit writes _pa_set2 at
+ * that step, in the lane's own steps). Nothing here edits a value.
+ *   - the bank is shown via S.activeBank ONLY: never applyBankPick or
+ *     autoBankReset (they wipe the menu), and never trackActiveBank — the
+ *     track's remembered bank stays AUTOMATION (corrected on the way back if
+ *     anything recorded the jump);
+ *   - the step row keeps the lane's cycle (S.autoCycle is held from the stash);
+ *   - v1 covers davebox's own parameters (seq: targets, alt page included);
+ *     any other target pops NO EDITOR and the hold stays an automation hold. */
+let holdJump = null;
+export function autoHoldJumpActive() { return !!holdJump; }
+export function autoHoldJumpStep() { return holdJump ? holdJump.step : -1; }
+export function autoHoldJumpBegin(absStep) {
+    if (holdJump || !autoBankIsActive() || !S.bankCardLatched) return false;
+    const cy = S.autoCycle, m = S.autoBankLit;
+    if (!cy || cy.t !== S.activeTrack || !m || m.charCodeAt(absStep) !== 49) return false;
+    const tgt = String(cy.target);
+    const sat = tgt.indexOf('seq:') === 0 ? SEQ_AUTO_TARGETS[tgt.split(':')[2]] : null;
+    if (!sat) { showActionPopup('NO EDITOR'); return false; }
+    const a = st();
+    holdJump = { track: cy.t, clip: cy.c, bank: sat.bank, altWas: !!S.altMode, sel: a.sel,
+                 opsSel: a.ops ? a.ops.sel : -1, cycle: Object.assign({}, cy), step: absStep };
+    S.activeBank = sat.bank;
+    S.altMode = !!sat.alt;
+    /* Render drops alt mode on ANY bank change (its diff guard, ui_render):
+     * this change is deliberate, so it is the guard's new baseline — or Clock
+     * Feedback's alt page would vanish on the first frame. */
+    S._altPrevBank = sat.bank; S._altPrevTrack = S.activeTrack;
+    if (sat.bank === 7) S.allLanesConfirmed = false;
+    readBankParams(cy.t, sat.bank);
+    armBankDisplay();
+    return true;
+}
+/* Release (or any clear of the held step, via autoBankTick's edge): back to
+ * the AUTOMATION menu, the same row, page and ops; the track's remembered
+ * bank corrected if anything recorded the jump. */
+export function autoHoldJumpEnd() {
+    const j = holdJump;
+    if (!j) return;
+    holdJump = null;
+    if (S.activeTrack === j.track && S.activeBank === j.bank) {
+        S.activeBank = BANK_AUTOMATION;
+        S.altMode = j.altWas;
+        S._altPrevBank = BANK_AUTOMATION; S._altPrevTrack = S.activeTrack;
+        autoBankRestoreMenu(j.sel);
+        const a = st();
+        a.cycleTarget = j.cycle.target; a.cycleTrack = j.cycle.t; a.cycleClip = j.cycle.c;
+        a.cyclePage = j.cycle.page;
+        if (j.opsSel >= 0) {
+            const r = autoBankRows(j.track, j.clip).find(x => x.kind === 'entry' && x.target === j.cycle.target);
+            if (r) a.ops = { rows: opsFor(j.track, j.clip, r), sel: j.opsSel, row: r };
+        }
+    }
+    if (S.trackActiveBank[j.track] === j.bank) S.trackActiveBank[j.track] = BANK_AUTOMATION;
+}
+
 export function autoBankTick() {
     S.autoBankLit = null;
-    if (!autoBankIsActive() || !S.bankCardLatched || S.moveCoRunTrack >= 0) return;
+    S.autoCycle = null;
+    S.autoLaneVals = null;
+    /* The held step went away without our release (a track switch, a suspend,
+     * any of the other clear sites): the jump ends here. */
+    if (holdJump && S.heldStep < 0) autoHoldJumpEnd();
+    if (holdJump) {
+        /* Mid-jump: the step row stays the lane's — its cycle, its colours. */
+        S.autoCycle = holdJump.cycle;
+        S.autoBankLit = litCache.map ? (litCache.map.get(holdJump.cycle.target) || '') : null;
+        const vk = valsCache.map;
+        S.autoLaneVals = vk ? (vk.get(holdJump.cycle.target) || null) : null;
+        return;
+    }
+    if (!autoBankIsActive() || !S.bankCardLatched || S.moveCoRunTrack >= 0) {
+        if (viewSent) syncPaView(viewSent.t, 0, null);
+        return;
+    }
     const t = S.activeTrack, c = effectiveClip(t);
     const target = selectedTarget(t, c);
-    if (target === null) return;
+    syncPaView(t, c, target);
+    /* No row selected: forget the lane's page, so the next time a row is
+     * picked it opens where the clip is being viewed, not where it was left.
+     * (Closing the menu forgets it too — Back and a click can land between
+     * two ticks.) */
+    if (target === null) { if (S.autoBank) S.autoBank.cycleTarget = null; return; }
+    updateAutoCycle(t, c, target);
+    if (S.autoCycle) autoLaneValsTick(t, c, target);
     const key = t + ' ' + c + ' ' + automationListGen();
     if (litCache.key !== key) {
         /* A failed read (null) is not "no steps": keep the old map off the
@@ -396,6 +535,36 @@ export function autoBankTick() {
         litTryMs = -1e9;
     }
     S.autoBankLit = litCache.map.get(target) || '';
+}
+
+/* ⭐ THE GRID FOLLOWS THE ROW (Josh, 2026-09-24). The selected lane's cycle,
+ * with the page being viewed — kept while that lane stays selected; picking a
+ * different lane (or closing the menu) starts afresh. */
+function updateAutoCycle(t, c, target) {
+    const cy = rowCycle(t, c, target);
+    if (!cy) return;
+    const a = st();
+    if (a.cycleTarget !== target || a.cycleTrack !== t || a.cycleClip !== c) {
+        a.cycleTarget = target; a.cycleTrack = t; a.cycleClip = c;
+        /* A lane that follows the clip opens on the page you were already
+         * looking at; a lane with its own cycle opens on its first page. */
+        const viewed = S.trackPadMode[t] === PAD_MODE_DRUM ? (S.drumStepPage[t] | 0) : (S.trackCurrentPage[t] | 0);
+        a.cyclePage = cy.follows ? viewed - (cy.off >> 4) : 0;
+    }
+    a.cyclePage = Math.max(0, Math.min(cy.pages - 1, a.cyclePage | 0));
+    S.autoCycle = { t, c, target, off: cy.off, len: cy.len, tps: cy.tps,
+                    pages: cy.pages, page: a.cyclePage, text: cy.text };
+}
+/* Left/Right while a row is selected: page through ITS cycle, clamped at the
+ * ends. True when consumed — a one-page cycle still consumes them (nothing to
+ * page to, and the pad's grid is not what is on the buttons). */
+export function autoCyclePageStep(delta) {
+    const cy = S.autoCycle;
+    if (!cy || cy.t !== S.activeTrack || !autoBankIsActive()) return false;
+    const a = st();
+    a.cyclePage = Math.max(0, Math.min(cy.pages - 1, (a.cyclePage | 0) + (delta < 0 ? -1 : 1)));
+    cy.page = a.cyclePage;
+    return true;
 }
 
 /* Which slot this track's chain targets live in — for tests and labels. */

@@ -898,6 +898,14 @@ typedef struct {
      * lane at /2 plays over two). See pa_entry_tick. */
     uint32_t  pa_cycle;
     uint32_t  pa_last_ct;
+    /* The AUTOMATION bank's selected lane (tN_pa_view), for its playhead: the
+     * pool slot + 1 and the target id + 1 (0 = none — so a calloc'd instance
+     * views nothing), and the lane tick playback last evaluated it at, written
+     * by pa_playback_scan (AUDIO THREAD; one aligned word) and reported in
+     * state_snapshot. Display only. */
+    uint16_t  pa_view_slot;
+    uint16_t  pa_view_target;
+    int32_t   pa_view_lt;
     /* Last poly-AT pressure value received via tN_live_at. Replayed on every
      * arp/TARP step so new voices spawn with the pressure currently being
      * applied (without this, holding pressure steady means no AT stream and
@@ -7185,6 +7193,14 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         pos += snprintf(out + pos, (size_t)(out_len - pos), " %d", (int)inst->looper_state);
         pos += snprintf(out + pos, (size_t)(out_len - pos), " %d", (int)inst->merge_state);
         pos += snprintf(out + pos, (size_t)(out_len - pos), " %d", (int)inst->merge_solo_track);
+        /* [57..64] per track: the AUTOMATION bank's selected lane's current
+         * tick in its own lane ticks (tN_pa_view), -1 when there is none or
+         * it is not playing. */
+        for (t = 0; t < NUM_TRACKS; t++) {
+            const seq8_track_t *vt = &inst->tracks[t];
+            const int on = inst->playing && vt->clip_playing && vt->pa_view_slot;
+            pos += snprintf(out + pos, (size_t)(out_len - pos), " %d", on ? (int)vt->pa_view_lt : -1);
+        }
         return pos;
     }
 
@@ -7612,6 +7628,59 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     mask[top] = '\0';
                     int w = snprintf(out + n, (size_t)(out_len - n), "%s %s\n",
                                      inst->pa_targets[e->target], mask);
+                    if (w < 0 || n + w >= out_len) { out[n] = '\0'; break; }   /* see pa_list */
+                    n += w;
+                }
+                pa_unlock(inst);
+                return n;
+            }
+            /* tN_cC_pa_vals_<base>_<tps>: what every automated lane of this
+             * clip PLAYS at each of 16 steps, base .. base+15, a step being
+             * <tps> ticks — the AUTOMATION bank paints them as an intensity
+             * gradient on the step row (Josh, 2026-09-24, from Legacy).
+             *
+             * One line per lane: "<target> <32 hex chars>\n" — 16 values,
+             * two digits each, 00..7f (the 14-bit value scaled to 0..127),
+             * "ff" where the lane has no value (outside its window). Evaluated
+             * by the SAME functions playback calls — Mode, Wrap, Smooth and
+             * Scale all apply, the resting value unscaled — so the colours
+             * are what you hear, not the raw points. ONE read per page for the
+             * whole clip (a target name can outgrow a param key, so it is not
+             * in the key). */
+            if (!strncmp(p, "_pa_vals_", 9)) {
+                const char *q = p + 9;
+                uint32_t base = 0, vtps = 0;
+                while (*q >= '0' && *q <= '9') base = base * 10 + (uint32_t)(*q++ - '0');
+                if (*q++ != '_') return -1;
+                while (*q >= '0' && *q <= '9') vtps = vtps * 10 + (uint32_t)(*q++ - '0');
+                if (*q || !vtps || base >= SEQ_STEPS) return -1;
+                int n = 0;
+                if (out_len > 0) out[0] = '\0';
+                pa_lock(inst);
+                for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+                    pa_entry_t *e = &inst->pa_entries[i];
+                    if (!e->used || !e->count || e->track != tidx || e->clip != cidx) continue;
+                    char hex[33];
+                    uint32_t ws = 0, wl = 0, st = TICKS_PER_STEP;
+                    const int have = pa_export_window(tr, e, &ws, &wl, &st);
+                    for (int s = 0; s < 16; s++) {
+                        const uint32_t tk = (base + (uint32_t)s) * vtps;
+                        int v7 = -1;
+                        if (have && wl && tk >= ws && tk < ws + wl) {
+                            uint16_t v;
+                            const int ev = (e->flags & PA_FLAG_PUNCH)
+                                         ? pa_eval_punch(e, tk, ws, wl, st, &v)
+                                         : pa_eval_window(e, tk, ws, wl, &v);
+                            if (ev) {
+                                const uint32_t v14 = (ev == PA_EVAL_REST) ? v : pa_scaled(e, v);
+                                v7 = (int)((v14 * 127u + PA_VAL_MAX / 2) / PA_VAL_MAX);
+                                if (v7 > 127) v7 = 127;
+                            }
+                        }
+                        snprintf(hex + s * 2, 3, "%02x", v7 < 0 ? 0xff : v7);
+                    }
+                    int w = snprintf(out + n, (size_t)(out_len - n), "%s %s\n",
+                                     inst->pa_targets[e->target], hex);
                     if (w < 0 || n + w >= out_len) { out[n] = '\0'; break; }   /* see pa_list */
                     n += w;
                 }

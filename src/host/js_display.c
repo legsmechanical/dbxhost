@@ -356,7 +356,16 @@ Font* js_display_load_font(const char *filename, int charSpacing) {
 
     for (int i = 0; i < numChars; i++) {
         int cp = codepoints[i];
-        if (cp < 0 || cp >= 256) continue; /* skip out-of-range codepoints */
+        if (cp < 0) continue;
+        /* ASCII lives in charData by byte; anything else in the ext table by
+         * codepoint. Storing a codepoint 128..255 in charData made it
+         * unreachable: text is UTF-8, so no single byte ever names it. */
+        FontChar *slot;
+        if (cp < 128) slot = &out->charData[cp];
+        else if (out->extCount < FONT_EXT_MAX) {
+            out->extCp[out->extCount] = cp;
+            slot = &out->extData[out->extCount++];
+        } else continue;
 
         int x0 = i * charW;
 
@@ -378,7 +387,7 @@ Font* js_display_load_font(const char *filename, int charSpacing) {
             fc.width = charW;
             fc.height = height;
             fc.data = calloc(charW * height, 1);
-            out->charData[cp] = fc;
+            *slot = fc;
             continue;
         }
         int glyphW = endX - startX + 1;
@@ -395,7 +404,7 @@ Font* js_display_load_font(const char *filename, int charSpacing) {
                 fc.data[y * glyphW + x] = image[idx + 3] > 0 ? 1 : 0;
             }
         }
-        out->charData[cp] = fc;
+        *slot = fc;
     }
 
     stbi_image_free(image);
@@ -454,7 +463,29 @@ Font* js_display_load_ttf_font(const char *filename, int pixel_height) {
  * Glyph Rendering
  * ============================================================================ */
 
-int js_display_glyph_ttf(Font *fnt, char c, int sx, int sy, int color) {
+/* The next codepoint of a UTF-8 string, advancing *s. A malformed byte reads
+ * as itself, so bad input still advances and still measures. */
+static int utf8_next(const unsigned char **s) {
+    const unsigned char *p = *s;
+    int cp = *p++;
+    if ((cp & 0xE0) == 0xC0 && (p[0] & 0xC0) == 0x80) {
+        cp = ((cp & 0x1F) << 6) | (p[0] & 0x3F); p += 1;
+    } else if ((cp & 0xF0) == 0xE0 && (p[0] & 0xC0) == 0x80 && (p[1] & 0xC0) == 0x80) {
+        cp = ((cp & 0x0F) << 12) | ((p[0] & 0x3F) << 6) | (p[1] & 0x3F); p += 2;
+    }
+    *s = p;
+    return cp;
+}
+
+/* The bitmap glyph for a codepoint, or NULL when the font has none. */
+static const FontChar *font_char(const Font *fnt, int cp) {
+    if (cp >= 0 && cp < 128) return fnt->charData[cp].data ? &fnt->charData[cp] : NULL;
+    for (int i = 0; i < fnt->extCount; i++)
+        if (fnt->extCp[i] == cp) return fnt->extData[i].data ? &fnt->extData[i] : NULL;
+    return NULL;
+}
+
+int js_display_glyph_ttf(Font *fnt, int c, int sx, int sy, int color) {
     int advance = 0, lsb = 0;
     stbtt_GetCodepointHMetrics(&fnt->ttf_info, c, &advance, &lsb);
 
@@ -488,9 +519,10 @@ int js_display_glyph_ttf(Font *fnt, char c, int sx, int sy, int color) {
     return sx + (int)(advance * fnt->ttf_scale);
 }
 
-int js_display_glyph(Font *fnt, char c, int sx, int sy, int color) {
-    FontChar fc = fnt->charData[(int)(unsigned char)c];
-    if (!fc.data) return sx + fnt->charSpacing;
+int js_display_glyph(Font *fnt, int cp, int sx, int sy, int color) {
+    const FontChar *g = font_char(fnt, cp);
+    if (!g) return sx + fnt->charSpacing;
+    FontChar fc = *g;
     for (int y = 0; y < fc.height; y++) {
         for (int x = 0; x < fc.width; x++) {
             if (fc.data[y * fc.width + x]) {
@@ -515,11 +547,13 @@ void js_display_print(int x, int y, const char *string, int color) {
     if (!g_font) return;
 
     int cursor = x;
-    for (size_t i = 0; i < strlen(string); i++) {
+    const unsigned char *p = (const unsigned char *)string;
+    while (*p) {
+        int cp = utf8_next(&p);
         if (g_font->is_ttf) {
-            cursor = js_display_glyph_ttf(g_font, string[i], cursor, y, color);
+            cursor = js_display_glyph_ttf(g_font, cp, cursor, y, color);
         } else {
-            cursor = js_display_glyph(g_font, string[i], cursor, y, color);
+            cursor = js_display_glyph(g_font, cp, cursor, y, color);
         }
     }
 }
@@ -533,16 +567,17 @@ int js_display_text_width(const char *string) {
     if (!g_font) return 0;
 
     int width = 0;
-    for (size_t i = 0; i < strlen(string); i++) {
-        unsigned char c = (unsigned char)string[i];
+    const unsigned char *p = (const unsigned char *)string;
+    while (*p) {
+        int c = utf8_next(&p);
         if (g_font->is_ttf) {
             int advance = 0, lsb = 0;
             stbtt_GetCodepointHMetrics(&g_font->ttf_info, c, &advance, &lsb);
             width += (int)(advance * g_font->ttf_scale);
         } else {
-            FontChar fc = g_font->charData[c];
-            if (fc.data) {
-                width += fc.width + g_font->charSpacing;
+            const FontChar *fc = font_char(g_font, c);
+            if (fc) {
+                width += fc->width + g_font->charSpacing;
             } else {
                 width += g_font->charSpacing;
             }

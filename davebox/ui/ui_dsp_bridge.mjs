@@ -635,6 +635,9 @@ export function pollDSP() {
      * than trusting the JS mirror to survive — the single-track flow places
      * DSP-side on merge_stop, so this mostly backs the transport-stop edge. */
     const _dspSolo = (v.length >= 57) ? (parseInt(v[56], 10) | 0) : 255;
+    /* [57..64] the AUTOMATION bank's selected lane's position, per track. */
+    for (let t = 0; t < NUM_TRACKS; t++)
+        S.autoLanePos[t] = v.length >= 58 + t ? (parseInt(v[57 + t], 10) | 0) : -1;
     const _soloTrack = _dspSolo !== 255 ? _dspSolo
                      : (S.mergeSingleTrack >= 0 ? S.mergeSingleTrack : -1);
     /* Arm confirmation: no longer fails on "no empty slot" — placement is
