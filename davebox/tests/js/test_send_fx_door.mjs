@@ -152,6 +152,33 @@ step('⚠⚠ THE OLD REGRESSION: a bus opened from the SESSION list still goes B
     S.sessionView = false;
 });
 
+step('⭐ CONTROL: Shift + TAP Note/Session in session view opens the SESSION FX list, no bus', () => {
+    snd.soundExit(); ticks(2);
+    S.sessionView = true;
+    shift(true); cc(50, 127); ticks(2); cc(50, 0); shift(false); ticks(3);
+    if (view() !== VIEW_BUSES) throw new Error('a tap did not open the session FX list, view ' + view());
+    if (snd.soundBusForTest()) throw new Error('a tap went into a bus');
+});
+
+step('⭐⭐ Shift + HOLD Note/Session in session view lands IN Master FX (Josh, 2026-09-24)', () => {
+    snd.soundExit(); ticks(2);
+    S.sessionView = true;
+    shift(true); cc(50, 127);
+    ticks(60);                                          /* past the 450 ms hold */
+    cc(50, 0); shift(false); ticks(4);
+    const bus = snd.soundBusForTest();
+    if (!bus) throw new Error('no bus opened, view ' + view());
+    if (bus.id !== 'master') throw new Error('landed on ' + bus.id + ', wanted master');
+    if (bus.door !== 'session') throw new Error('door ' + bus.door + ', wanted session');
+});
+
+step('⭐ BACK from there is the SESSION FX list', () => {
+    back(); ticks(4);
+    if (snd.soundBusForTest()) throw new Error('still on a bus');
+    if (view() !== VIEW_BUSES) throw new Error('Back went to view ' + view() + ', wanted the session FX list');
+    S.sessionView = false;
+});
+
 process.exit(failed);
 }
 main();

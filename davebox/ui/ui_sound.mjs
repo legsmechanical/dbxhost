@@ -3077,6 +3077,14 @@ export function soundEnterBuses() {
     log('buses: open');
 }
 
+/* Straight into MASTER FX from session view (Shift + hold Note/Session, Josh
+ * 2026-09-24). It is the list's own door plus the Master row's own click, so
+ * Back lands on the SESSION FX list exactly as if the row had been clicked. */
+export function soundEnterMasterFx() {
+    soundEnterBuses();
+    S.pendingAction = { t: 'bus', bus: FX_BUSES[0], door: { kind: 'session' } };
+}
+
 function enterBus(bus, door) {
     S.busDoor = door || null;
     S.bus = bus;

@@ -62,7 +62,7 @@ import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam } from './ui_sound.mjs';
 import { soundActive, soundOpen, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
-    soundViewForTest, soundEnterBuses, macroClearConfirmAnswer,
+    soundViewForTest, soundEnterBuses, soundEnterMasterFx, macroClearConfirmAnswer,
     macroClearConfirmReset, macroClearConfirmOpen } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
@@ -2462,10 +2462,10 @@ if (S.sessionView) {
      * active underneath defeating the click gate. The click path never hit this
      * because it enters FROM the latched mixer page.
      *
-     * ⚠ The HOLD (wantInstrument) has no session counterpart — there is no one
-     * instrument to jump to — so it stays a no-op rather than inventing a
-     * destination. */
-    if (wantInstrument) return;
+     * ⭑ The HOLD goes one level deeper: straight into MASTER FX (Josh,
+     * 2026-09-24: "shift+hold note/session in session view takes you directly
+     * to master effects menu"). Back from there is the SESSION FX list. */
+    if (wantInstrument) { soundEnterMasterFx(); forceRedraw(); return; }
     /* ⭑ The latch is soundEnterBuses' own job (it is the ONE door into this
      * list, and the jog-click door needs it just as much) — not repeated here. */
     soundEnterBuses();
