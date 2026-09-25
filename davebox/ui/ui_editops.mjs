@@ -26,7 +26,7 @@ import { refreshPerClipBankParams, resetPerClipBankParamsToDefault,
  * append to S.pendingDefaultSetParams so the automation clear lands AFTER the
  * clear that took the undo snapshot — see their banner in ui_automation.mjs. */
 import { automationClearClipQueued, automationClearBanksQueued,
-         automationNoteListChangedElsewhere } from './ui_automation.mjs';
+         automationNoteListChangedElsewhere, automationCarryFilter } from './ui_automation.mjs';
 
 /* Record a MELODIC clip whose automation mirror (clipAtHas) the editop cannot
  * fill purely in JS — pollDSP's local-rev path
@@ -475,11 +475,14 @@ export function copyDrumClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'drum_clip_copy', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
-    /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
-     * by pa_list, so ask for a re-read — otherwise the copy PLAYS automation
-     * the bank cannot see, and any gesture that checks the mirror first
-     * silently does nothing. ⚠ _markLocalTouch refreshes the AFTERTOUCH
+    /* The DSP copies the automation with the lanes (pa_copy_clip, each with
+     * its cycle); this module's mirror is fed only by pa_list, so ask for a
+     * re-read — otherwise the copy PLAYS automation the bank cannot see, and
+     * any gesture that checks the mirror first silently does nothing. Across
+     * tracks, module lanes the destination cannot play are cleared after
+     * (automationCarryFilter). ⚠ _markLocalTouch refreshes the AFTERTOUCH
      * mirror, which is a different store wearing the same word. */
+    automationCarryFilter(srcT, srcC, dstT, dstC);
     automationNoteListChangedElsewhere();
     S.drumClipNonEmpty[dstT][dstC] = S.drumClipNonEmpty[srcT][srcC];
     if (dstC === S.trackActiveClip[dstT]) { S.pendingDrumResync = 2; S.pendingDrumResyncTrack = dstT; }
@@ -490,11 +493,9 @@ export function cutDrumClip(srcT, srcC, dstT, dstC) {
     if (srcT === dstT && srcC === dstC) return;
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     S.pendingDefaultSetParams.push({ key: 'drum_clip_cut', val: `${srcT} ${srcC} ${dstT} ${dstC}`, _local: true });
-    /* The DSP moved LANES (pa_copy_clip); this module's mirror is fed only
-     * by pa_list, so ask for a re-read — otherwise the copy PLAYS automation
-     * the bank cannot see, and any gesture that checks the mirror first
-     * silently does nothing. ⚠ _markLocalTouch refreshes the AFTERTOUCH
-     * mirror, which is a different store wearing the same word. */
+    /* The DSP MOVES the automation with the lanes (pa_move_clip); see
+     * copyDrumClip for the re-read and the carry filter. */
+    automationCarryFilter(srcT, srcC, dstT, dstC);
     automationNoteListChangedElsewhere();
     S.drumClipNonEmpty[dstT][dstC] = S.drumClipNonEmpty[srcT][srcC];
     S.drumClipNonEmpty[srcT][srcC] = false;

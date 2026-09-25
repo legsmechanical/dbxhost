@@ -20,7 +20,7 @@ import { POLL_INTERVAL, SEQ_AUTO_TARGETS, seqAutoAutomatable, BANK_SHORT, PAD_MO
 /* The move_fx: prefix has exactly one builder, and a source invariant pins
  * that (tests/test_move_fx_prefix_owner.sh). Build it here and the suite fails
  * — correctly: two builders are two things to keep in step. */
-import { moveBusComp } from './ui_engine.mjs';
+import { moveBusComp, engineLoadedModuleOrNull } from './ui_engine.mjs';
 /* The tick's prefetch (a cycle with ui_dsp_bridge, used only inside functions). */
 import { dget } from './ui_dsp_bridge.mjs';
 /* The record notice (a cycle with ui_persistence, used only inside functions). */
@@ -292,6 +292,59 @@ function dropOrphanSeqLanes() {
  * looking like a successful refresh. The tick does the reading. */
 export function automationNoteListChangedElsewhere() {
     presenceStale = true;
+}
+
+/* ---- THE CARRY FILTER (cross-track clip copy) ---------------------------
+ * A copied clip takes its automation with it, re-pointed at the destination
+ * track (the DSP's pa_copy_clip). A level (volume, pan, sends) or a dAVEBOx
+ * knob means the same thing on any track; a MODULE's parameter does only if
+ * the destination has that same module in the same place (Josh, 2026-09-24:
+ * not carrying module automation "makes sense", unlike "params constant
+ * across the same clip-type"). The rest is cleared after the copy lands and
+ * counted in a notice.
+ *
+ * The lanes are taken from the SOURCE's mirror at the gesture — a read after
+ * the copy can fail (pa_list answers null), and a failed read would leave a
+ * stranger's parameter playing. The modules are compared on the next TICK:
+ * a slot read from inside the MIDI handler that made the gesture returns
+ * nothing. A read that fails keeps the lane — never delete what could not
+ * be checked. The clears ride the same ordered queue as the copy, so they
+ * land after it and inside its undo. */
+const carryPending = [];
+function moduleCompOf(target) {
+    const parts = String(target).split(':');
+    if (parts.length < 3 || !/^\d+$/.test(parts[0])) return null;      /* seq:, cc:, at, pb */
+    const comp = parts.slice(1, -1).join(':');
+    return (comp === 'synth' || /^fx\d+$/.test(comp) || /^midi_fx\d+$/.test(comp)
+            || /^move_fx:\d+:fx\d+$/.test(comp)) ? comp : null;
+}
+export function automationCarryFilter(srcT, srcC, dstT, dstC) {
+    if (srcT === dstT) return;
+    const lanes = [];
+    for (const e of automationEntriesFor(srcT, srcC)) {
+        const comp = moduleCompOf(e.target);
+        if (comp) lanes.push({ rest: e.target.slice(e.target.indexOf(':') + 1), comp });
+    }
+    if (lanes.length) carryPending.push({ srcT, dstT, dstC, lanes });
+}
+function carryTick() {
+    while (carryPending.length) {
+        const job = carryPending.shift();
+        let dropped = 0;
+        for (const l of job.lanes) {
+            const a = engineLoadedModuleOrNull(job.srcT, l.comp);
+            const b = engineLoadedModuleOrNull(job.dstT, l.comp);
+            if (a === null || b === null) continue;                 /* could not tell: keep */
+            if (a && a === b) continue;                             /* the same module: it carries */
+            S.pendingDefaultSetParams.push({ key: 't' + job.dstT + '_pa_clear_key',
+                                             val: job.dstC + ' ' + job.dstT + ':' + l.rest });
+            dropped++;
+        }
+        if (dropped) {
+            showActionPopupFor(2000, 'AUTOMATION', dropped + (dropped === 1 ? ' LANE' : ' LANES') + ' NOT CARRIED');
+            presenceStale = true;
+        }
+    }
 }
 
 export function automationRefreshPresence() {
@@ -727,6 +780,7 @@ function clipChanged() {
 export function automationForgetClipsForTest() { lastClipSeen = null; }
 
 export function automationTick() {
+    if (carryPending.length) carryTick();
     gesturesTick();
     flushModuleWrites();
     /* ⚠ NOT while a pa-clear write is still queued — see queuedClearOutstanding.
