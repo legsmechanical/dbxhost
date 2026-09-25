@@ -11110,11 +11110,35 @@ function renderBuses() {
      * sound-config's, not a pop-up overlay on top of the bank card") — kit
      * header + kit list, no backdrop, no float. Its rows lead into bus
      * editors, which is the 08-27 criterion for a full screen anyway. */
+    /* ⭑ Dressed like SOUND+CFG itself (Josh, 2026-09-24: "style it to look
+     * more like sound menu. Put a divider between master effects the two send
+     * effects"): the bank header with its glyph, rows in the menu's own case
+     * rather than as titles, a rule under Master, and the click hint.
+     * The divider is a DRAWN row only — the cursor still walks FX_BUSES, so the
+     * rule is never a stop and click / Shift+click keep indexing the bus. */
     clear_screen();
-    drawKitHeader('SESSION FX', false);
-    drawKitList(FX_BUSES.map(b => ({ label: b.title, hdr: true, chevron: true })),
-                S.busIdx, {});
+    kitUseLayout('bank');
+    drawKitBankHeader('SESSION FX', 'audio', '');
+    fill_rect(0, MV_BAR_Y, 128, 1, 0);
+    const { rows, sel } = busMenuRows();
+    drawKitList(rows, sel, {});
+    fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0);
+    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'OPEN']]);
 }
+/* The Session FX list's row names, in the Sound menu's case. The bus screens
+ * keep FX_BUSES' titles for their own headers. */
+const BUS_MENU_LABEL = { master: 'Master FX', sendA: 'Send FX A', sendB: 'Send FX B' };
+/* The drawn rows (a rule after Master) and which of them the cursor is on. */
+function busMenuRows() {
+    const rows = [], rowOf = [];
+    FX_BUSES.forEach((b, i) => {
+        if (i === 1) rows.push({ divider: true });
+        rowOf[i] = rows.length;
+        rows.push({ label: BUS_MENU_LABEL[b.id] || b.title, hdr: true, chevron: true });
+    });
+    return { rows, sel: rowOf[S.busIdx] || 0 };
+}
+export function soundBusMenuRowsForTest() { return busMenuRows(); }
 
 /* What to CALL the block being edited.
  *
