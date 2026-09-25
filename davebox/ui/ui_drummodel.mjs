@@ -28,8 +28,7 @@ export function _padDispatchMutedNow() {
      * the loaded project's instrument underneath (the modal gate in ui.js
      * only stops the JS side). Recomputed at picker open/close. */
     if (S.projectPadPicker) return true;
-    /* The Chord layout's explainer is modal until OK. */
-    if (S.chordPopupOpen) return true;
+    /* The Chord layout's explainer is NOT listed: the pads play under it. */
     /* captureHeld no longer mutes pads: the Capture+pad lane-select gesture
      * was removed (Capture is capture-only); Capture+scene is Session View,
      * where the sessionView check above already mutes. */

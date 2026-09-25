@@ -178,19 +178,21 @@ step('⭐ Shift + step 8 walks Scale → Chrom → Chord, and landing on Chord r
     assert(t.some((s) => s === 'CHORD MODE'), 'explainer title on screen: ' + JSON.stringify(t.slice(0, 8)));
     assert(t.some((s) => /STRUM/.test(s)), 'it explains the strum row');
 });
-step('⭐ while the explainer is up the pads are muted in the ENGINE (padmap mute token) and do nothing', () => {
+step('⭐ while the explainer is up the pads PLAY chords (Josh, 2026-09-24: they keep working until OK)', () => {
     ticks(2);
     const pm = lastPadmap();
-    assert(pm[32] === '1', 'mute token ' + pm[32]);
+    assert(pm[32] === '0', 'the engine was muted under the explainer: mute token ' + pm[32]);
     pad(5, true); ticks(1);
-    assert(S.liveActiveNotes.size === 0, 'a pad under the explainer played');
-    pad(5, false);
+    assert(S.liveActiveNotes.size > 0, 'a pad under the explainer did not play');
+    assert(S.chordPopupOpen, 'a pad press closed the explainer — only OK / Back should');
+    pad(5, false); ticks(1);
+    assert(S.liveActiveNotes.size === 0, 'released, still held: ' + [...S.liveActiveNotes]);
 });
 step('⭐ jog click is OK: the explainer closes and the engine gets whole chords on the bottom row', () => {
     cc(3, 127); cc(3, 0); ticks(2);
     assert(!S.chordPopupOpen, 'still up');
     const pm = lastPadmap();
-    assert(pm[32] === '0', 'pads still muted after OK');
+    assert(pm[32] === '0', 'pads muted after OK');
     const want = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => M.slotChord({ key: 0, scale: 0, root: (S.padOctave[2] | 0) * 12,
         slot: M.defaultSlot(k), settings: set0 }).notes.map((p) => p + oct()).join('+'));
     assert(eq(pm.slice(0, 8), want), 'slots ' + pm.slice(0, 8).join(' ') + ' want ' + want.join(' '));
