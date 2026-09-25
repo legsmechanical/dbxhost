@@ -10961,8 +10961,11 @@ export function renderGatewayCard(title, line2) {
 /* The track flavour's card — both renderPrompt and the peek draw THIS, so the
  * strings live once. */
 export function renderTrackGatewayCard(track) {
-    renderGatewayCard('SOUND + CONFIG', 'TRACK ' + (track + 1) + ' SOUND & CONFIG');
+    renderGatewayCard('SOUND + CONFIG', trackMenuDoorLine(track));
 }
+/* The track's menu is TRACK CONFIG (2026-09-25); the bank card's door names it. */
+const TRACK_MENU_TITLE = 'TRACK CONFIG';
+function trackMenuDoorLine(track) { return 'TRACK ' + (track + 1) + ' CONFIG'; }
 
 function renderPrompt() {
     /* The bank card IS a knob page now (spec §2): the five levels, the
@@ -10990,7 +10993,7 @@ function renderPrompt() {
      * the card is a DOOR: the row says so (Josh: "reinstate 'Click for track
      * [n] sound & config'"). */
     centreText(MV_ROW1_Y + 2, 'CLICK TO ENTER');
-    centreText(MV_ROW1_Y + 12, 'TRACK ' + (S.track + 1) + ' SOUND & CONFIG');
+    centreText(MV_ROW1_Y + 12, trackMenuDoorLine(S.track));
 }
 
 /* The NO INSTRUMENT EDITOR screen: the bank header (track + instrument, like
@@ -10998,11 +11001,11 @@ function renderPrompt() {
 function renderNoEditor() {
     clear_screen();
     kitUseLayout('bank');
-    drawKitBankHeader('SOUND+CFG', 'audio', bankHeaderRight(false));
+    drawKitBankHeader(TRACK_MENU_TITLE, null, bankHeaderRight(false));
     centreText(MV_ROW1_Y - 8, 'NO INSTRUMENT EDITOR');
     centreText(MV_ROW1_Y + 2, 'FOR ' + noEditorWords(S.track).toUpperCase());
-    centreText(MV_ROW1_Y + 14, 'PRESS BACK FOR TRACK');
-    centreText(MV_ROW1_Y + 24, 'SOUND & CONFIG');
+    centreText(MV_ROW1_Y + 14, 'PRESS BACK FOR');
+    centreText(MV_ROW1_Y + 24, TRACK_MENU_TITLE);
     fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0);
     drawKitHintRow(MV_FOOTER_Y, [['BACK', 'MENU']]);
 }
@@ -11047,8 +11050,12 @@ function renderBlocks() {
          * stands under the CONFIG / SOUND CONTROL stacks too (renderInChain
          * dims and stacks over it), so those screens carry it as well.
          * (Before: 'SOUND + CONFIG' with no track marker, 2026-08-23.) */
-        drawKitBankHeader('SOUND+CFG', 'audio', bankHeaderRight(false));
-        lastMenuHeader = { name: 'SOUND+CFG', glyph: 'audio', right: bankHeaderRight(false) };
+        /* ⭑ Named TRACK CONFIG, with no glyph (Josh, 2026-09-25: "change the
+         * sound & config menu to TRACK CONFIG and get rid of the little icon on
+         * the header left"). The MENU only: the SOUND+CFG bank card keeps its
+         * own name and glyph. */
+        drawKitBankHeader(TRACK_MENU_TITLE, null, bankHeaderRight(false));
+        lastMenuHeader = { name: TRACK_MENU_TITLE, glyph: null, right: bankHeaderRight(false) };
     }
     /* The bank-position bar, continued: this screen is the LAST segment of the
      * jog's bank cycle, so it keeps the same indicator the clip banks carry —

@@ -1455,7 +1455,7 @@ stopped sends a MIDI panic on every channel.
 the track's route. Its **door** is one jog turn past the last
 [parameter bank](#35-parameter-banks) — so you never have to leave the track's
 banks to reach it, and the door is remembered per track like any other bank.
-Click to enter.
+Click to enter the track's menu, titled **TRACK CONFIG**.
 
 Once open the editor **stays up until you leave it**: unlike a bank, it does not
 fall back to the track overview when you take your hand off the jog. **Back**

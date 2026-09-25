@@ -60,6 +60,7 @@ const C = await import('../../ui/ui_constants.mjs');
 const B = await import('../../ui/ui_dsp_bridge.mjs');
 const R = await import('../../ui/ui_render.mjs');
 const sound = await import('../../ui/ui_sound.mjs');
+const { fontWidth4x5, fit4x5 } = await import('../../ui/ui_fonts_pp.mjs');
 function step(l, fn) { try { fn(); ok(l); } catch (e) { bad(l, e); } }
 function ticks(n) { for (let i = 0; i < n; i++) globalThis.tick(); }
 function draw() { globalThis.clear_screen(); R.drawUI(); }
@@ -70,17 +71,27 @@ step('setup', () => {
     S.trackRoute[2] = 0; S.activeTrack = 2;
     ticks(2);
 });
-step('the sound MENU on a Schwung track wears the bank header: audio glyph, SOUND+CFG, T3[<abbr>]', () => {
+step('the sound MENU on a Schwung track is TRACK CONFIG with no glyph, and T3[<abbr>] at the right', () => {
     sound.soundEnter(2, 2); sound.soundShowMenu(); ticks(2);
     R.refreshInstrAbbrev();
     draw();
     const h = sound.soundMenuHeaderForTest();
     if (!h) throw new Error('no header drawn');
-    if (h.glyph !== 'audio' || h.name !== 'SOUND+CFG') throw new Error('header ' + JSON.stringify(h));
+    /* Josh, 2026-09-25: "change the sound & config menu to TRACK CONFIG and
+     * get rid of the little icon on the header left". */
+    if (h.glyph != null || h.name !== 'TRACK CONFIG') throw new Error('header ' + JSON.stringify(h));
     const want = R.bankHeaderRight(false);
     if (h.right !== want) throw new Error('right ' + JSON.stringify(h.right) + ' vs the bank card\'s ' + JSON.stringify(want));
     if (!/^T3\[.+\]$/.test(h.right)) throw new Error('right label is not T3[ABBR]: ' + h.right);
     if (h.right.indexOf(' ') >= 0) throw new Error('a space crept in: ' + h.right);
+});
+step('TRACK CONFIG fits whole beside the widest right label (no glyph, x = 2)', () => {
+    /* drawKitBankHeader's budget with no glyph: SCREEN_W - 2 - 2 - (right + 4). */
+    for (const right of ['T8[NONE]', 'T16[CH16]', 'T8[MV16]']) {
+        const budget = 128 - 2 - 2 - (fontWidth4x5(right) + 4);
+        if (fit4x5('TRACK CONFIG', budget) !== 'TRACK CONFIG')
+            throw new Error('cut beside ' + right + ': ' + fit4x5('TRACK CONFIG', budget) + ' (budget ' + budget + ')');
+    }
 });
 step('...and the CONFIG screen stacked over it keeps that header', () => {
     sound.soundQueueActionForTest({ t: 'slotcfg', which: 'config' }); ticks(2);

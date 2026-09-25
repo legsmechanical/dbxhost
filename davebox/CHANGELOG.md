@@ -128,6 +128,10 @@ the section into a versioned heading at release time.
   already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
+- **The track's menu is TRACK CONFIG.** The menu you open from the SOUND +
+  CONFIG card (or with Shift + Note/Session) is titled TRACK CONFIG, with no
+  icon in its header. The card's door reads CLICK TO ENTER / TRACK 3 CONFIG.
+  The bank itself keeps its name.
 - **Melodic pads start one octave up** in new and cleared projects.
 - **Stop saves the project immediately.**
 - **All lights go dark the moment a project starts loading.**
