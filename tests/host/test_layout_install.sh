@@ -25,6 +25,9 @@ printf 'payload verb\n' > "$SRC/modules/audio_fx/verb/x"  # must NOT be copied (
 mkdir -p "$DBX/bin" "$DBX/help" "$DBX/presets"
 printf 'old\n' > "$DBX/bin/keepme"                        # not in the payload: must survive (merge)
 touch "$DBX/bin/davebox-heal" "$DBX/bin/davebox-heal.new"   # the pre-09-05 helper path
+mkdir -p "$DBX/lib/jack" "$DBX/host/fonts" "$STOCK/bin"      # files the 2026-09-24 cleanup stopped shipping
+touch "$DBX/bin/filebrowser" "$DBX/lib/jack/jack_shadow.so" "$DBX/host/fonts/tamzen-9.png" "$DBX/host/logo-text.png"
+printf 'stock\n' > "$STOCK/bin/display_ctl"; ln -s "$STOCK/bin/display_ctl" "$DBX/bin/display_ctl"   # a LINK: must survive
 printf 'stale\n' > "$DBX/help/old.md"                     # help is MIRRORED: must go
 printf 'copy\n' > "$DBX/presets/local.json"               # a real copy of a shared dir: moved aside
 ln -s "$STOCK/active_set.txt" "$DBX/active_set.txt"       # private state as a link: un-linked
@@ -35,6 +38,9 @@ sh "$SRC/scripts/layout-install.sh" "$SRC" "$DBX" "$STOCK" > "$T/out" 2>&1 || { 
 [ -x "$DBX/schwung" ] && ok "payload files land (schwung, executable)" || bad "schwung missing"
 [ -f "$DBX/bin/keepme" ] && ok "MERGE: a file the payload does not ship survives" || bad "bin/ was replaced"
 [ ! -e "$DBX/bin/davebox-heal" ] && [ ! -e "$DBX/bin/davebox-heal.new" ] && ok "RETIRE: the old bin/davebox-heal[.new] is removed (helper lives in the module dir now)" || bad "stale davebox-heal survived"
+[ ! -e "$DBX/bin/filebrowser" ] && [ ! -e "$DBX/lib/jack" ] && [ ! -e "$DBX/host/fonts" ] && [ ! -e "$DBX/host/logo-text.png" ] \
+    && ok "RETIRE: files the cleanup stopped shipping are removed from an existing install" || bad "a retired file survived: $(ls "$DBX/bin" "$DBX/host" 2>/dev/null | tr '\n' ' ')"
+[ -L "$DBX/bin/display_ctl" ] && [ -f "$STOCK/bin/display_ctl" ] && ok "...but a retired NAME that is a symlink is left alone, and its target untouched" || bad "retire followed or removed a symlink"
 [ -f "$DBX/bin/schwung-heal" ] && ok "bin/ gained the payload's files beside it" || bad "bin merge failed"
 [ ! -f "$DBX/help/old.md" ] && [ -f "$DBX/help/ch1.md" ] && ok "help/ is MIRRORED (stale page gone, new page in)" || bad "help mirror"
 [ -L "$DBX/presets" ] && [ "$(readlink "$DBX/presets")" = "$STOCK/presets" ] && ok "presets is a link into stock" || bad "presets not linked"
