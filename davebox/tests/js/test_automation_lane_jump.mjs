@@ -148,7 +148,7 @@ function assertNotRecorded(what) {
            what + ': the jump RECORDED bank ' + S.trackActiveBank[T] + ' on the track');
 }
 /* A jump onto a BANK records it, SOUND+CFG and MACROS included, like the
- * davebox-bank jump always has (Josh, 2026-09-25, DBX-188 call c). */
+ * davebox-bank jump always has (Josh, 2026-09-25, call c, 2026-09-25). */
 function assertRecorded(what, bank) {
     assert(S.trackActiveBank[T] === bank,
            what + ': the jump did not record bank ' + bank + ' (track on ' + S.trackActiveBank[T] + ')');

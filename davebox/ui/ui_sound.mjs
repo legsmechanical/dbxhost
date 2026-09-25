@@ -1291,7 +1291,7 @@ export function soundMenuForTest() {
  * that cannot tell which editor is running would either contort itself to
  * satisfy both or quietly stop measuring anything. */
 export function soundPpEditorForTest() { return PP_EDITOR; }
-/* DBX-173: whether discovery deferred davebox's own banks, and how many exist. */
+/* 2026-09-24: whether discovery deferred davebox's own banks, and how many exist. */
 export function soundBanksForTest() { return { deferred: S.banksDeferred, count: S.banks.length }; }
 /* The state drawParamPages' decline leaves behind (renderSound sets it when the
  * grid will not draw a page); the next tick hands the screen to davebox's own
@@ -1333,7 +1333,7 @@ export function soundEnter(track, slot) {
      * track stored there, the tick reconcile, the co-run return — and the bank
      * now OFFERS the menu rather than being it. `soundOpenMenu()` is the door
      * for the gesture that asks for the menu by name.
-     * ⭑ The screen is the TRACK'S BANK's (DBX-188, 2026-09-24): its card on
+     * ⭑ The screen is the TRACK'S BANK's (2026-09-24): its card on
      * SOUND+CFG, its page on MACROS, and the menu on any other bank — sound
      * mode no longer takes the bank to open, so a card can only show while the
      * track is on that bank. */
@@ -1400,7 +1400,7 @@ function flushForRetarget() {
  * writes the bank, live or recorded: only the jog walk, the lane jump, the
  * Chord layout and the sidecar do, exactly as for every bank. The two card
  * screens exist only while the track is ON that bank; any other bank opens the
- * menu. (Before DBX-188, opening the menu by any gesture took BANK_SOUND and a
+ * menu. (Before 2026-09-24, opening the menu by any gesture took BANK_SOUND and a
  * set of patches tried to undo that: an origin crumb, record-only-on-the-walk,
  * save/switch skips. They are gone.) */
 function soundCardViewFor(bank) {
@@ -1783,7 +1783,7 @@ export function soundExit() {
     ppSuppressOnce = false; ppRestorePage = null;
     if (S.busLevelDirty) engineSaveState();
     S.active = false;
-    /* ⭑ An exit NEVER touches the bank (DBX-188): sound mode does not own it.
+    /* ⭑ An exit NEVER touches the bank (2026-09-24): sound mode does not own it.
      * Whatever bank the track is on — SOUND+CFG included — it is still on. */
     clearBusContext();
     S.pendingAction = null;
@@ -2832,7 +2832,7 @@ export function soundEnterMove(track) {
      * the bug Josh hit on device: a MOVE-routed track walked straight into the
      * full menu while a Schwung one stopped at the prompt, and the gesture,
      * which enters through this same path, looked broken on Move tracks.
-     * ⭑ By the track's bank (DBX-188), as in soundEnter. */
+     * ⭑ By the track's bank (2026-09-24), as in soundEnter. */
     S.view = soundCardViewFor(GS.activeBank);
     S.pickRow = 0;
     S.comp = '';                /* no chain component is in scope on a Move bus */
@@ -2893,7 +2893,7 @@ export function soundGestureReturn() {
     if (g.autoSel != null) {
         /* A LANE JUMP (plan 6c2) came from the AUTOMATION menu: back onto that
          * bank — recorded again, since the jump recorded where it landed like
-         * any bank step (DBX-188) — into the menu, cursor on the lane. */
+         * any bank step (2026-09-24) — into the menu, cursor on the lane. */
         soundExit();
         GS.activeBank = BANK_AUTOMATION;
         GS.trackActiveBank[g.track] = BANK_AUTOMATION;
@@ -2908,7 +2908,7 @@ export function soundGestureReturn() {
         S.presetMsg = '';
         S.dirty = true;
     } else {
-        /* Out, onto the bank you pressed from — it never moved (DBX-188) — and
+        /* Out, onto the bank you pressed from — it never moved (2026-09-24) — and
          * onto the SCREEN you pressed from (Josh, 2026-09-05): a latched card
          * comes back as the card. On SOUND+CFG / MACROS that screen is sound
          * mode's own card, so it stays open there rather than closing. */
@@ -7564,7 +7564,7 @@ function runDiscovery() {
     S.moduleId = id;
     if (!id) { S.banks = []; S.banksDeferred = false; S.sections = []; S.dirty = true; return; }
     /* The page grid will draw this module, so the flat banks -- davebox's own
-     * editor, its FALLBACK -- are not built now (DBX-173: DR32's 32 pads made
+     * editor, its FALLBACK -- are not built now (DR32's 32 pads made
      * them 1441 pages, most of the time it took to open the editor). A module
      * that declares host_canvas_ui still gets the full pass: hosting needs the
      * kit the full pass loads. */
@@ -10176,7 +10176,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * that appears in BOTH the click and Back handlers and landed in
              * the CLICK path, so opening a block from the menu went to the
              * prompt instead. */
-            /* ⭑ DBX-188: Back goes to the screen under the menu, which is the
+            /* ⭑ Since 2026-09-24: Back goes to the screen under the menu, which is the
              * TRACK'S BANK — its card on SOUND+CFG / MACROS, otherwise sound mode
              * closes onto that bank (its card if latched). The bank never moves,
              * and a SOUND+CFG card never appears over a track that is not on it. */

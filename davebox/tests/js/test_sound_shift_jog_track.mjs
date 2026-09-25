@@ -217,7 +217,7 @@ step('⭑ Shift+jog FOLLOWS (2026-09-05) — the new Move track lands on ITS bus
      * closing the screen. */
     if (!snd.soundActive())
         throw new Error('sound mode CLOSED on the switch — the retired 08-24 rule');
-    /* DBX-188: the MENU follows, the bank does not — track 6 is on its own. */
+    /* Since 2026-09-24: the MENU follows, the bank does not — track 6 is on its own. */
     if (S.activeBank !== 3)
         throw new Error('the new track is not on its own bank 3: bank ' + S.activeBank);
     if (snd.soundTrack() !== 6) throw new Error('sound mode still on track ' + snd.soundTrack());
@@ -263,7 +263,7 @@ step('⭑ the follow does NOT record SOUND + CONFIG on the tracks it lands on �
     S.ledInitComplete = true;
     S.bankCardLatched = false;                 /* a GESTURE entry, not the jog */
     snd.soundEnter(2, 2);
-    /* DBX-188: opening sound mode by gesture takes no bank at all. */
+    /* Since 2026-09-24: opening sound mode by gesture takes no bank at all. */
     if (S.activeBank !== 6) throw new Error('a gesture entry changed the live bank to ' + S.activeBank);
     if (S.trackActiveBank[2] !== 6) throw new Error('a gesture entry RECORDED the bank on track 2: ' + S.trackActiveBank[2]);
     snd.soundShowMenu();                       /* a screen you are IN (the prompt at rest would not follow) */
@@ -363,7 +363,7 @@ step('⭑ Shift+PAD means exactly what Shift+jog means — one rule, every route
 
     snd.soundExit();
     for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; }
-    /* DBX-188: track 2 is ON SOUND + CONFIG (the jog put it there); track 4 is
+    /* Since 2026-09-24: track 2 is ON SOUND + CONFIG (the jog put it there); track 4 is
      * on bank 1. The latched card is the track's BANK, so Shift+pad — like
      * Shift+jog — shows each track's own bank, and coming back restores it. */
     S.trackActiveBank[2] = BANK_SOUND;

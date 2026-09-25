@@ -1,4 +1,4 @@
-/* tests/js/test_deferred_banks.mjs — DBX-173: opening a module with repeated
+/* tests/js/test_deferred_banks.mjs — opening a module with repeated
  * elements must not build davebox's own flat banks while the page grid is the
  * editor on screen.
  *

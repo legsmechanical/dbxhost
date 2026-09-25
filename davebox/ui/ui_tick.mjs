@@ -1460,7 +1460,7 @@ export function _tickImpl() {
             S.pendingSoundEnterSilent = true;
         } else if (soundOpen() && soundResting() && !isSoundBank(S.activeBank)
                    && S.pendingSoundEnterTrack < 0 && !soundHasPendingAction()) {
-            /* The converse (DBX-188): a resting sound mode whose track is no
+            /* The converse (2026-09-24): a resting sound mode whose track is no
              * longer on SOUND+CFG / MACROS — moved off by a non-jog writer such
              * as the Chord layout landing — closes. The resting mode exists only
              * to serve those two banks' knobs. */
@@ -1489,7 +1489,7 @@ export function _tickImpl() {
                  * place. */
                 if (_wantMenu) soundShowMenu();
                 /* The card / MACROS page comes from the track's bank, chosen
-                 * inside soundEnter (DBX-188) — the entry never sets the bank. */
+                 * inside soundEnter (2026-09-24) — the entry never sets the bank. */
                 /* A RETURN, not a gesture: the user switched tracks, they did
                  * not ask to see this screen. Both entry paths stamp the bank
                  * display window unconditionally (Shift+Note NEEDS that — see
@@ -1562,7 +1562,7 @@ export function _tickImpl() {
                  * default bank, which is the reset he saw.
                  * ⚠ Only the VIEW toggle. Shift+Note/Session still CLOSES (it is
                  * the deliberate way out), and lands on the default bank. */
-                soundExit();                 /* never touches the bank (DBX-188) */
+                soundExit();                 /* never touches the bank (2026-09-24) */
                 invalidateLEDCache();
                 forceRedraw();
             }

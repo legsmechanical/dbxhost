@@ -258,7 +258,7 @@ step('⭑⭑ leaving the editor RETRACES the hold — back to where you were', (
     /* from the PROMPT */
     sound.soundExit(); ticks(4);
     S.trackRoute[0] = 0;
-    /* The prompt is the SOUND+CFG bank's screen: the track is on it (DBX-188). */
+    /* The prompt is the SOUND+CFG bank's screen: the track is on it (2026-09-24). */
     S.activeBank = S.trackActiveBank[0] = BANK_SOUND;
     sound.soundEnter(0, 0); ticks(2);
     if (view() !== VIEW_PROMPT) throw new Error('setup: not on the prompt');
@@ -484,7 +484,7 @@ step('⚠ control: with no gesture crumb, Menu is NOT a closer', () => {
     /* RE-PINNED 2026-09-05: a gesture entry no longer RECORDS the bank (only the
      * jog does), so leave-vs-close is read off the LIVE bank: a LEAVE keeps the
      * SOUND + CONFIG identity on the mirror, a CLOSE hands the origin back. */
-    /* DBX-188: no exit moves the bank, so the observable is simply that the
+    /* Since 2026-09-24: no exit moves the bank, so the observable is simply that the
      * track is still on SOUND + CONFIG, recorded and live. */
     if (S.activeBank !== BANK_SOUND || S.trackActiveBank[0] !== BANK_SOUND)
         throw new Error('the press moved the bank (live ' + S.activeBank + ', recorded ' + S.trackActiveBank[0] + ')');
@@ -670,7 +670,7 @@ step('⭐⭐ bank mode latched on bank 3, Shift+tap into the sound menu, then a 
     S.activeBank = 3; S.trackActiveBank[0] = 3; S.bankCardLatched = true;
     shiftNoteTap(); ticks(3);
     if (!sound.soundOpen()) throw new Error('rig: the tap did not open the sound menu');
-    /* DBX-188: opening the menu never takes the bank at all. */
+    /* Since 2026-09-24: opening the menu never takes the bank at all. */
     if (S.activeBank !== 3) throw new Error('opening the menu changed the live bank to ' + S.activeBank);
     persist.writeSidecar();
     if (S.trackActiveBank[0] !== 3)

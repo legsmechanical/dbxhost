@@ -895,7 +895,7 @@ export const S = {
      * other way out so it can never go stale.
      * ⚠⚠ Lives on davebox's GLOBAL state, NOT sound mode's own `S` — setting it
      * there is silently inert. [[schwung-davebox-two-state-objects]]
-     * The BANK is not in it: no gesture changes the bank (DBX-188). */
+     * The BANK is not in it: no gesture changes the bank (2026-09-24). */
     genReturn: null,            /* {track, wasActive, view, latched, autoSel?} | null — autoSel: a LANE JUMP's row (plan 6c2) */
     autoReturn: null,           /* {track, bank, sel} | null — a lane jump onto a davebox bank; spent by the next track-view Back */
     /* THE MACRO STORE (spec §2, 2026-09-02): per track, eight targets or null.

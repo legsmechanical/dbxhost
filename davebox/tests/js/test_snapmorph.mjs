@@ -483,7 +483,7 @@ step('setup: track 5 is a Move track on Move 2; two snapshots hold its bus FX an
 });
 step('the target picker offers SnapMorph on a Move track', () => {
     /* ⚠ Counted from BEFORE the entry: a track already on MACROS opens straight
-     * onto its page (DBX-188), so the seed can start inside these ticks. */
+     * onto its page (2026-09-24), so the seed can start inside these ticks. */
     reads = [];
     snd.soundEnter(TM, TM); ticks(3); snd.soundShowMenu(); snd.soundSetBank(BANK_MACROS);
     ticks(2);

@@ -584,7 +584,7 @@ export const BANK_RESPONDER = 8, BANK_OCTAVE = 9, BANK_WHEN = 10;
 /* The SOUND + CONFIG bank: a bank like every other (Josh, 2026-09-24: "bottom
  * line is that sound+config bank shouldn't get any treatment and work just
  * like every other bank"). Only the jog walk, the lane jump, the Chord layout
- * and the sidecar set it — never sound mode, which is the MENU (DBX-188). Its
+ * and the sidecar set it — never sound mode, which is the MENU (2026-09-24). Its
  * card is sound mode's screen, re-opened from the bank on arrival, since
  * BANKS[11] is a stub. */
 export const BANK_SOUND = 11;

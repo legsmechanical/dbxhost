@@ -53,7 +53,7 @@ export function setChordLayout(t, on) {
         S.chordPopupOpen = true;
         /* Landing on the layout lands on its bank (Josh, 2026-09-23) — from
          * anywhere, the Sound menu included: the menu never owns the bank
-         * (DBX-188). A resting MACROS / SOUND+CFG mode closes on the next tick. */
+         * (2026-09-24). A resting MACROS / SOUND+CFG mode closes on the next tick. */
         S.trackActiveBank[t] = BANK_CHORD;
         if (t === S.activeTrack) S.activeBank = BANK_CHORD;
     }

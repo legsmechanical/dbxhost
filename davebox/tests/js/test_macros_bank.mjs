@@ -154,7 +154,7 @@ function enterTrack(t) {
     for (let i = 0; i < 8; i++) GS.trackRoute[i] = 0;   /* all Schwung */
     GS.activeTrack = t;
     /* The track is ON SOUND+CFG, as the jog walk leaves it: the card is the
-     * bank's screen and sound mode shows it only there (DBX-188). */
+     * bank's screen and sound mode shows it only there (2026-09-24). */
     GS.activeBank = GS.trackActiveBank[t] = BANK_SOUND;
     snd.soundEnter(t, t);
     ticks(3);                                           /* land the entry action */

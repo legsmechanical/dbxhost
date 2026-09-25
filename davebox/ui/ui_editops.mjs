@@ -591,7 +591,7 @@ export function _switchActiveTrack(newT) {
      * lands, and the NEXT detent then read "sound is open" and FOLLOWED — into
      * the following track's menu, active. Resting is not a screen you are in;
      * the follow is only for a screen you are in. */
-    /* ⭑ A CARD does not follow (DBX-188): the SOUND+CFG card and the MACROS
+    /* ⭑ A CARD does not follow (2026-09-24): the SOUND+CFG card and the MACROS
      * page are the track's BANK, and a track switch shows the new track's own
      * bank, as for every bank. Only a screen you are IN — the menu, an editor —
      * follows (09-05), and it changes no bank. */
@@ -618,7 +618,7 @@ export function _switchActiveTrack(newT) {
      * that FOLLOW the track (Shift+pad, launchers, remote UI) are unaffected.
      * SILENT: arriving is not a bank gesture, so the display window stays shut. */
     if (_follow) {
-        /* The screen follows; the bank is the new track's own (DBX-188). */
+        /* The screen follows; the bank is the new track's own (2026-09-24). */
         soundFollowTrack(S.activeTrack);
     } else if (isSoundBank(S.activeBank)) {
         S.pendingSoundEnterTrack = S.activeTrack;

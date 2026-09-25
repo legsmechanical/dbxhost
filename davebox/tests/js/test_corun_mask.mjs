@@ -244,7 +244,7 @@ step('⚠ CONTROL: outside co-run, Copy is OURS and is not forwarded', () => {
  * ⚠ trackActiveBank must move too: soundExit and every track-switch site
  * restore activeBank from it, so setting only the live value gets undone by
  * whichever runs first. */
-step('⭑ entering co-run leaves the track on the bank it was on (DBX-188)', () => {
+step('⭑ entering co-run leaves the track on the bank it was on (2026-09-24)', () => {
     /* Josh, 2026-09-25, accepting call b: co-run no longer moves the bank. The
      * 08-24 clip-bank landing existed because the Sound menu used to put the
      * track on SOUND+CFG, leaving whatever the jog last walked through

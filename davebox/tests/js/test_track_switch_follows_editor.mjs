@@ -124,7 +124,7 @@ step('⭑ Schwung → Schwung: the switch from an EDITOR lands on the new track\
     if (snd.soundTrack() !== 3) throw new Error('sound mode still points at track ' + snd.soundTrack());
     settle();                                       /* the retarget action, then the instrument row */
     if (!onInstrumentRow()) throw new Error('landed on view ' + view() + ' row ' + snd.soundPickStateForTest().row + ' (' + kinds() + '), not the Instrument row');
-    /* The SCREEN follows; the bank is track 3's own (DBX-188: the menu never
+    /* The SCREEN follows; the bank is track 3's own (Since 2026-09-24: the menu never
      * owns a bank). */
     if (S.activeBank !== S.trackActiveBank[3]) throw new Error('the bank is not track 3\'s own (' + S.activeBank + ' vs ' + S.trackActiveBank[3] + ')');
     if (S.trackActiveBank[3] === BANK_SOUND) throw new Error('the follow RECORDED the sound bank on track 3 — only the jog records a bank (Josh, 2026-09-05)');
@@ -248,7 +248,7 @@ step('⭑ an open ENUM PICKER closes WITHOUT committing and the switch follows i
     snd.soundExit();
 });
 
-step('⭑ the MACROS page and the SOUND+CFG card do NOT follow — they are the track\'s BANK (DBX-188)', () => {
+step('⭑ the MACROS page and the SOUND+CFG card do NOT follow — they are the track\'s BANK (2026-09-24)', () => {
     /* Josh, 2026-09-24: the SOUND+CFG bank works like every other bank. A
      * latched bank card shows the NEW track's own bank after a switch; only a
      * screen you are IN (the menu, an editor) follows. */

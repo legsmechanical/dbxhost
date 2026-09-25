@@ -9,7 +9,7 @@ import './_bulk_get_stub.mjs';
  * recorded; walking onto the bank records it at once; suspend, track switches and
  * Back all leave it where it was. Every step performs the real gesture through
  * onMidiMessageInternal + the tick and asserts the recorded bank, the live bank and
- * what sound mode is doing. Plan: DBX-188 (Fable, 2026-09-24).
+ * what sound mode is doing. Plan: Fable, 2026-09-24.
  */
 let failed = 0;
 function ok(label) { console.log(`  ok   — ${label}`); }

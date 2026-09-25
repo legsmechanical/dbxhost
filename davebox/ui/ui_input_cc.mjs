@@ -1339,7 +1339,7 @@ function seqAutoEdit(track, bank, k, altMode, nv, cur) {
  * opens — the record moves, the header and knobs follow). */
 function walkBanks(delta, rest) {
     const cyc = bankCycleFor(S.activeTrack);
-    /* The bank is recorded the moment the walk lands on it (DBX-188), SOUND+CFG
+    /* The bank is recorded the moment the walk lands on it (2026-09-24), SOUND+CFG
      * and MACROS included, so the live bank IS the position even while their
      * sound-mode entry is still queued for the next tick. */
     const cur = S.activeBank;
@@ -1366,7 +1366,7 @@ export function applyBankPick(rest) {
     S.bankPickerSel = -1;
     if (idx < 0 || idx >= cyc.length) return;
     const next = cyc[idx];
-    /* SOUND + CONFIG and MACROS are banks like any other (DBX-188): recorded
+    /* SOUND + CONFIG and MACROS are banks like any other (2026-09-24): recorded
      * and saved the moment the walk lands, exactly as below. Their screens are
      * sound mode's, so a closed mode is queued to open on the next tick (entry
      * reads the chain on the tick budget); an open one switches card in place. */
@@ -1425,7 +1425,7 @@ function autoLaneJump() {
          * Stamped with the SAME return crumb Shift+Note's hold uses, plus the
          * lane: soundGestureReturn brings you back into the menu. */
         S.genReturn = { track: t, wasActive: false, view: -1, latched: true, autoSel: j.sel };
-        /* Recorded where it lands, like the davebox-bank jump below (DBX-188). */
+        /* Recorded where it lands, like the davebox-bank jump below (2026-09-24). */
         if (soundOpen()) soundExit();
         S.activeBank = macros ? BANK_MACROS : BANK_SOUND;
         S.trackActiveBank[t] = S.activeBank;

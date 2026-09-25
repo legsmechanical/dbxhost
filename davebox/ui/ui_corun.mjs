@@ -238,7 +238,7 @@ export function enterMoveNativeCoRun(t, origin) {
      * 08-25 change, and MORE so: SOUND + CONFIG now records ITSELF there, so
      * without this write a track entering co-run from that screen would be
      * stored on BANK_SOUND and walk straight back into it on the way out. */
-    /* ⭑ DBX-188 (Josh, 2026-09-25, accepting the plan): co-run no longer moves
+    /* ⭑ (Josh, 2026-09-25, accepting the plan): co-run no longer moves
      * the bank. The 08-24 clip-bank landing existed because the Sound menu used
      * to put the track on its own bank, so the one underneath was whatever the
      * jog last walked through (AUTOMATION). The menu no longer touches the bank:
@@ -348,7 +348,7 @@ function cleanupAfterMoveNativeCoRun() {
     if (_origin === 'sound' && _originTrack >= 0 && S.trackRoute[_originTrack] === 1) {
         S.pendingSoundEnterTrack = _originTrack;
         /* Back to the MENU, where the SYNTH row you came from is — the card
-         * only exists on SOUND+CFG, and the bank never moved (DBX-188). */
+         * only exists on SOUND+CFG, and the bank never moved (2026-09-24). */
         S.pendingSoundEnterMenu = true;
     }
 }
