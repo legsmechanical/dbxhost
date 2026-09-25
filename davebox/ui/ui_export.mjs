@@ -464,9 +464,12 @@ function paValueFor(what, norm) {
 }
 
 /* Parse the DSP's dump. One lane per line:
- *   "<track> <clip> <target> <flags> <loop_len> <resolution>|<tick>:<val> ..."
- * Tolerant by design — a torn last line is dropped rather than throwing, since
- * the alternative is losing a whole export to one bad byte. */
+ *   "<track> <clip> <target> <flags> <loop_len> <resolution> <scale%>
+ *    [<ws> <wl> <p0> <mul> <div>]|<tick>:<val> ..."
+ * The bracketed five are the lane's CLOCK on the export timeline (see
+ * pa_export_clock) — kept as `clock` for paTile. Tolerant by design — a torn
+ * last line is dropped rather than throwing, since the alternative is losing a
+ * whole export to one bad byte. */
 function parsePaDump(body) {
     const lanes = [];
     if (!body) return lanes;
@@ -488,7 +491,13 @@ function parsePaDump(body) {
             const val  = parseInt(toks[k].slice(c + 1), 10);
             if (isFinite(tick) && isFinite(val)) points.push({ tick: tick, val: val });
         }
-        if (points.length) lanes.push({ track: track, clip: clip, target: target, points: points });
+        let clock = null;
+        if (head.length >= 12) {
+            const n = head.slice(7, 12).map(x => parseInt(x, 10));
+            if (n.every(isFinite) && n[1] > 0 && n[3] > 0 && n[4] > 0)
+                clock = { ws: n[0], wl: n[1], p0: n[2], mul: n[3], div: n[4] };
+        }
+        if (points.length) lanes.push({ track: track, clip: clip, target: target, points: points, clock: clock });
     }
     return lanes;
 }
@@ -527,6 +536,41 @@ function paSampleAt(points, tick) {
     return last.val;
 }
 
+/* THE LANE'S CYCLE, LAID ACROSS THE CLIP (Josh, 2026-09-24: drum automation
+ * has its own cycle; "drum lanes can be any length"). The dump's points are
+ * one cycle in LANE ticks — the lead and trail points close it, so one pass
+ * is the whole curve, wrap included. On the export timeline the lane starts
+ * at `p0` and advances mul/div lane ticks per tick, so a point at lane tick q
+ * plays at export ticks ((q - p0) mod wl + k·wl)·div/mul. Tile that across
+ * [0, span], with the curve's own values at both edges. A lane with no clock
+ * (an older dump) keeps its raw points. Capped at 4096 breakpoints. */
+const PA_TILE_CAP = 4096;
+function paTile(lane, span) {
+    const k = lane.clock;
+    if (!k || !(span > 0) || !lane.points.length) return lane.points;
+    const r = k.mul / k.div, per = k.wl / r;
+    const cyc = lane.points.filter(p => p.tick >= k.ws && p.tick <= k.ws + k.wl);
+    if (!cyc.length || !(per > 0)) return lane.points;
+    /* the first export tick at which the lane is at ws (in [0, per)) */
+    const tws = ((((k.ws - k.p0) % k.wl) + k.wl) % k.wl) / r;
+    const all = [];
+    for (let base = tws - per; base <= span && all.length < PA_TILE_CAP * 2; base += per)
+        for (const p of cyc) all.push({ tick: base + (p.tick - k.ws) / r, val: p.val });
+    const out = [];
+    const at = (t) => paSampleAt(all, t);
+    out.push({ tick: 0, val: at(0) });
+    for (const p of all) if (p.tick > 0 && p.tick < span && out.length < PA_TILE_CAP - 1) out.push(p);
+    out.push({ tick: span, val: at(span) });
+    /* One breakpoint per time: a cycle's trail and the next one's lead meet
+     * on the same tick with the same value. */
+    const d = [];
+    for (const p of out) {
+        if (d.length && Math.abs(d[d.length - 1].tick - p.tick) < 1e-9) d[d.length - 1] = p;
+        else d.push(p);
+    }
+    return d;
+}
+
 /* A mixer lane -> Ableton breakpoints, times in CLIP-RELATIVE BEATS. */
 function paBreakpoints(lane, what) {
     return lane.points.map(function(pt) {
@@ -563,7 +607,7 @@ function paAttachPerNote(notes, lane, what, semis) {
 }
 
 export function exportPaForTest() {
-    return { parsePaDump, classifyPaTarget, paValueFor, paSampleAt, paBreakpoints,
+    return { parsePaDump, classifyPaTarget, paValueFor, paSampleAt, paBreakpoints, paTile,
              paAttachPerNote, PA_VAL_MAX, PA_TICKS_PER_BEAT };
 }
 
@@ -669,7 +713,7 @@ function buildClip(t, c, isDrum, ctx) {
 
     /* ⭑ Automation rides the RENDERED notes, not the written ones — `legal`
      * is post-pfx and legalized, and is what actually ships. */
-    paDecorateClip(t, c, legal, ctx);
+    paDecorateClip(t, c, legal, ctx, span > 0 ? span : 96);
     const endBeats  = (span > 0 ? span : 96) / 96;     /* content extent (N cycles) */
     const loopBeats = (cycle > 0 ? cycle : span) / 96; /* default brace = one cycle */
     return {
@@ -689,12 +733,14 @@ function buildClip(t, c, isDrum, ctx) {
 /* Attach this clip's automation: per-note for AT/PB, and a clip envelope for
  * every automated mixer field (whose id was allocated on the track). Mutates
  * `notes` and stashes the envelopes for buildClip to hang on the clip. */
-function paDecorateClip(t, c, notes, ctx) {
+function paDecorateClip(t, c, notes, ctx, span) {
     ctx.paEnvelopes = [];
     if (!ctx || !ctx.paLanes) return;
     for (let i = 0; i < ctx.paLanes.length; i++) {
-        const lane = ctx.paLanes[i];
-        if (lane.track !== t || lane.clip !== c) continue;
+        const raw = ctx.paLanes[i];
+        if (raw.track !== t || raw.clip !== c) continue;
+        /* The lane's cycle across the whole exported clip, in export ticks. */
+        const lane = raw.clock ? Object.assign({}, raw, { points: paTile(raw, span) }) : raw;
         const what = classifyPaTarget(lane.target);
         if (!what) continue;
         if (what.kind === 'note') {

@@ -6442,6 +6442,33 @@ static int pa_export_window(const seq8_track_t *tr, const pa_entry_t *e,
     return 1;
 }
 
+/* The lane's CLOCK against the export's timeline, so the UI can lay the lane's
+ * cycle end to end across the exported clip (a 13-step drum cycle under a
+ * 4-bar clip, a melodic lane with its own Loop: exported once, Live held the
+ * last value for the rest). Both renders start at the clip's (a drum lane's)
+ * loop start, so export tick 0 is: a drum cycle's own start (it runs on the
+ * master clock from 0), else the lane tick playback computes at the clip's
+ * first tick. `p0` = that lane tick; the lane then advances mul/div lane ticks
+ * per export tick, wrapping inside [ws, ws + wl). */
+static int pa_export_clock(const seq8_track_t *tr, const pa_entry_t *e,
+                           uint32_t *ws, uint32_t *wl, uint32_t *p0, uint32_t *mul, uint32_t *div) {
+    uint32_t st;
+    if (!pa_export_window(tr, e, ws, wl, &st) || !*wl) return 0;
+    *mul = *div = 1;
+    if (e->resolution) pa_rate(e->resolution, mul, div);
+    if (pa_drum_cycled(tr, e)) { *p0 = e->loop_off; return 1; }
+    uint32_t cs = 0, ct_len = 0;
+    if (tr->pad_mode == PAD_MODE_DRUM && tr->drum_clips[e->clip]) {
+        pa_drum_window(tr, e->clip, &cs, &ct_len, &st);
+    } else {
+        const clip_t *pcl = &tr->clips[e->clip];
+        const uint32_t t = pcl->ticks_per_step ? pcl->ticks_per_step : (uint32_t)TICKS_PER_STEP;
+        cs = (uint32_t)pcl->loop_start * t; ct_len = (uint32_t)pcl->length * t;
+    }
+    *p0 = pa_entry_tick(e, cs, ct_len, 0);
+    return 1;
+}
+
 /* pa_export_points: the exact breakpoint sequence pa_export writes for one
  * lane (its own scale already applied) — factored out of pa_export so it is
  * white-box testable without the device-only EXPORT_PA_PATH file write.
@@ -6957,12 +6984,21 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         for (int i = 0; i < PA_MAX_ENTRIES; i++) {
             pa_entry_t *e = &inst->pa_entries[i];
             if (!e->used || !e->count) continue;
-            fprintf(pf, "%d %d %s %d %d %d %d|",
+            const seq8_track_t *etr = (e->track < NUM_TRACKS) ? &inst->tracks[e->track] : 0;
+            fprintf(pf, "%d %d %s %d %d %d %d",
                     (int)e->track, (int)e->clip, inst->pa_targets[e->target],
                     (int)e->flags, (int)e->loop_len, (int)e->resolution, pa_scale_pct(e));
+            /* The lane's clock on the export timeline — "<ws> <wl> <p0> <mul>
+             * <div>" (pa_export_clock) — so the UI tiles the cycle across the
+             * clip. Absent when there is no window to tile in. */
+            {
+                uint32_t ws, wl, p0, mul, div;
+                if (etr && pa_export_clock(etr, e, &ws, &wl, &p0, &mul, &div))
+                    fprintf(pf, " %u %u %u %u %u", ws, wl, p0, mul, div);
+            }
+            fputc('|', pf);
             /* The SCALE is applied here, as it is at playback: what leaves in
              * the export is what the lane plays, not the raw points. */
-            const seq8_track_t *etr = (e->track < NUM_TRACKS) ? &inst->tracks[e->track] : 0;
             pa_point_t xpts[PA_ENTRY_POINTS + 2];     /* + lead + trail */
             int xn = pa_export_points(etr, e, xpts, PA_ENTRY_POINTS + 2);
             for (int k = 0; k < xn; k++)

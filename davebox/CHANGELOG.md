@@ -76,6 +76,10 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **Exported automation repeats like it plays.** A drum parameter with its own
+  cycle, or a melodic one with its own Loop, used to export once and then hold
+  its last value for the rest of the clip in Live. It now repeats across the
+  whole clip, at its own length and rate.
 - **Arp octaves now join the notes the style orders.** Down, Up/Down, Down/Up,
   Converge and Diverge play across the whole octave range instead of repeating
   the phrase per octave, and negative octaves extend downward. Applies to the
