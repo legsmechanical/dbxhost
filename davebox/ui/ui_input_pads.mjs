@@ -1531,6 +1531,26 @@ export function _onStepButtons(d1, d2) {
             showActionPopup('QUANT 100%');
         }
         forceRedraw();
+    } else if (!S.shiftHeld && S.autoCycle && S.autoCycle.t === S.activeTrack) {
+        /* ⭐ AN AUTOMATION HOLD (Josh, 2026-09-24): while a lane is selected on
+         * the AUTOMATION bank the step buttons are ITS cycle, so a press holds
+         * that step of the lane — and never toggles, creates or clears a note
+         * (the notes are not even shown). The held step is in the lane's own
+         * steps (automationStepTicks), which is what a lock is written in. A
+         * press outside the cycle (a dark step) does nothing. */
+        const cy = S.autoCycle;
+        const absStep = ((cy.off >> 4) + cy.page) * 16 + idx;
+        S.stepBtnPressedTick[idx] = nowMs();
+        if (S.heldStep < 0 && absStep >= cy.off && absStep < cy.off + cy.len) {
+            S.heldStepBtn   = idx;
+            S.stepHoldCkpt  = false;
+            S.heldStep      = absStep;
+            S.heldStepAuto  = true;
+            S.stepWasEmpty  = true;              /* nothing for the tick to read */
+            S.heldStepNotes = [];
+            S.drumHeldReadPending = false;
+            forceRedraw();
+        }
     } else if (!S.shiftHeld && S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank !== 6) {
         /* Drum mode: tap toggles hit; hold enters step edit (Leng/Vel).
          * Press records time and state; toggle/clear deferred to release. */
@@ -1541,6 +1561,7 @@ export function _onStepButtons(d1, d2) {
         if (S.heldStep < 0) {
             S.heldStepBtn = idx;
             S.stepHoldCkpt = false;
+            S.heldStepAuto = false;
             S.heldStep    = absStep;
             const cur   = S.drumLaneSteps[t][lane][absStep];
             if (cur !== '0') {
@@ -1615,6 +1636,7 @@ export function _onStepButtons(d1, d2) {
             const absP   = S.trackCurrentPage[S.activeTrack] * 16 + idx;
             S.heldStepBtn  = idx;
             S.stepHoldCkpt = false;
+            S.heldStepAuto = false;
             S.heldStep     = absP;
             const pref_p = 't' + S.activeTrack + '_c' + ac_p + '_step_' + absP;
             /* get_param returns null in MIDI context — use clipSteps mirror to detect
@@ -1808,7 +1830,11 @@ export function _onPadRelease(status, d1, d2) {
          * service has no writer left. Removing the reader with it, rather than
          * leaving a branch that can never be taken. */
         if (btn === S.heldStepBtn) {
-            if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank !== 6) {
+            if (S.heldStepAuto) {
+                /* An automation hold: nothing to commit on release — no note
+                 * toggles, clears or reassigns. */
+                S.stepBtnPressedTick[btn] = -1;
+            } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank !== 6) {
                 /* Drum step release: tap toggles, hold-release exits + vel confirm */
                 const t    = S.activeTrack;
                 const lane = S.activeDrumLane[t];
@@ -1909,6 +1935,7 @@ export function _onPadRelease(status, d1, d2) {
             /* Always exit step edit on release of the held button */
             S.heldStepBtn   = -1;
             S.stepReveal    = false;
+            S.heldStepAuto  = false;
             S.heldStep      = -1;
             S.heldStepNotes = [];
             S.stepWasEmpty  = false;

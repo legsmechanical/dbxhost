@@ -946,6 +946,9 @@ export const S = {
      * step (-1 = none) — the step row's intensity gradient. Set by
      * autoBankTick; null = not read yet (or no row). */
     autoLaneVals: null,
+    /* True while the held step is an AUTOMATION hold (a step of the selected
+     * lane's cycle on the AUTOMATION bank) — its release commits no note edit. */
+    heldStepAuto: false,
     /* THE MIDI KNOB VALUES (spec §2b): per track, target -> last value sent
      * (7-bit for cc:<n> / at, 14-bit for pb). CCs have no readback, so this
      * is the knob's truth across relaunches (sidecar `mcv`). */
