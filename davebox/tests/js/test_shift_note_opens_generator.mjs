@@ -258,6 +258,8 @@ step('⭑⭑ leaving the editor RETRACES the hold — back to where you were', (
     /* from the PROMPT */
     sound.soundExit(); ticks(4);
     S.trackRoute[0] = 0;
+    /* The prompt is the SOUND+CFG bank's screen: the track is on it (2026-09-24). */
+    S.activeBank = S.trackActiveBank[0] = BANK_SOUND;
     sound.soundEnter(0, 0); ticks(2);
     if (view() !== VIEW_PROMPT) throw new Error('setup: not on the prompt');
     shiftNoteHold(); ticks(6);
@@ -466,6 +468,7 @@ step('⚠ control: with no gesture crumb, Menu is NOT a closer', () => {
     S.sessionView = false;
     S.activeTrack = 0;
     S.trackRoute[0] = 0;
+    S.activeBank = S.trackActiveBank[0] = BANK_SOUND;   /* on the bank, as the walk leaves it */
     ticks(8);
     sound.soundEnter(0, 0);                 /* a BANK-WALK style entry: no crumb */
     ticks(4);
@@ -481,8 +484,10 @@ step('⚠ control: with no gesture crumb, Menu is NOT a closer', () => {
     /* RE-PINNED 2026-09-05: a gesture entry no longer RECORDS the bank (only the
      * jog does), so leave-vs-close is read off the LIVE bank: a LEAVE keeps the
      * SOUND + CONFIG identity on the mirror, a CLOSE hands the origin back. */
-    if (S.activeBank !== BANK_SOUND)
-        throw new Error('Menu acted as a CLOSER without a gesture crumb (bank ' + S.activeBank + '), reversing the 08-25 retirement');
+    /* Since 2026-09-24: no exit moves the bank, so the observable is simply that the
+     * track is still on SOUND + CONFIG, recorded and live. */
+    if (S.activeBank !== BANK_SOUND || S.trackActiveBank[0] !== BANK_SOUND)
+        throw new Error('the press moved the bank (live ' + S.activeBank + ', recorded ' + S.trackActiveBank[0] + ')');
 });
 
 /* CONTROL 2 — the crumb cannot outlive its screen and strand a stale return. */
@@ -495,16 +500,19 @@ step('⚠ control: leaving by any other route SPENDS the crumb', () => {
     S.trackRoute[0] = 0;
     S.activeBank = 5;
     ticks(8);
-    shiftNote();                            /* arms the crumb */
+    S.trackActiveBank[0] = 5;
+    shiftNoteHold();                        /* arms the crumb (the HOLD stamps it; a tap does not) */
     ticks(4);
+    if (!S.genReturn) throw new Error('rig: the gesture armed no crumb');
     sound.soundExit();                      /* ...but we leave another way */
     ticks(4);
+    if (S.genReturn) throw new Error('an exit left the crumb armed — a later press would retrace a gesture it never made');
     sound.soundEnter(0, 0);                 /* a fresh, crumb-less entry */
     ticks(4);
     menuPress();
     ticks(4);
-    if (S.activeBank !== BANK_SOUND)
-        throw new Error('a STALE crumb from an earlier gesture drove this exit (landed on bank ' + S.activeBank + ') — the "banks land somewhere I did not leave them" bug the crumb exists to avoid');
+    if (S.activeBank !== 5 || S.trackActiveBank[0] !== 5)
+        throw new Error('the bank moved (live ' + S.activeBank + ', recorded ' + S.trackActiveBank[0] + ') — the "banks land somewhere I did not leave them" bug');
 });
 
 /* ⭑ AN EMPTY GENERATOR OPENS THE PICKER (Josh, 2026-08-27). It used to drop you
@@ -662,7 +670,8 @@ step('⭐⭐ bank mode latched on bank 3, Shift+tap into the sound menu, then a 
     S.activeBank = 3; S.trackActiveBank[0] = 3; S.bankCardLatched = true;
     shiftNoteTap(); ticks(3);
     if (!sound.soundOpen()) throw new Error('rig: the tap did not open the sound menu');
-    if (S.activeBank !== BANK_SOUND) throw new Error('rig: sound mode did not take the bank identity: ' + S.activeBank);
+    /* Since 2026-09-24: opening the menu never takes the bank at all. */
+    if (S.activeBank !== 3) throw new Error('opening the menu changed the live bank to ' + S.activeBank);
     persist.writeSidecar();
     if (S.trackActiveBank[0] !== 3)
         throw new Error('a save recorded bank ' + S.trackActiveBank[0] + ' on the track — a gesture wrote the bank');

@@ -157,7 +157,7 @@ function ownEditorStep(label, fn) {
 step('setup: the synth block opens, and an editor has it', () => {
     openSynth();
     /* davebox's own editor reads its values at discovery. The page grid does
-     * not: with the grid on screen davebox's banks are deferred (DBX-173) and
+     * not: with the grid on screen davebox's banks are deferred (2026-09-24) and
      * nothing polls them, so the grid being up is the proof discovery ran. */
     if (snd.soundPpEditorForTest()) return;
     if (snd.soundValueForTest('cutoff') == null)

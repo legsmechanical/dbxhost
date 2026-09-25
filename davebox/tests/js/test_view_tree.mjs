@@ -217,6 +217,7 @@ step('⭑⭑ BOTH entry flavours land on the bank\'s prompt, not the menu', () =
     const view = () => snd.soundPickStateForTest().view;
     snd.soundExit(); for (let i = 0; i < 3; i++) snd.soundTick();
     for (let t = 0; t < 8; t++) GS.trackRoute[t] = 0;
+    GS.activeBank = 11; for (let t = 0; t < 8; t++) GS.trackActiveBank[t] = 11;   /* the card is the SOUND+CFG bank's (2026-09-24) */
     snd.soundEnter(2, 2);
     if (view() !== VIEW_PROMPT)
         throw new Error('a Schwung track entered on view ' + view() + ', not the prompt');

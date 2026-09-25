@@ -88,6 +88,12 @@ the section into a versioned heading at release time.
   reloaded with every other lane at 1 bar, and a snare added later on bar 3
   never played. Every lane now keeps its length, loop, step size, pad note,
   direction and effects, notes or not.
+- **SOUND + CONFIG and MACROS behave like every other bank.** A track on them stays
+  there through suspend, track switches and Back; opening the Sound menu by a
+  shortcut no longer moves the bank (Back from it returns to where you were, never
+  to STEP or to a SOUND + CONFIG card you did not choose); switching tracks from
+  the card shows the new track's own bank; and working in a Move instrument's
+  editor no longer resets the bank.
 - **Arp octaves now join the notes the style orders.** Down, Up/Down, Down/Up,
   Converge and Diverge play across the whole octave range instead of repeating
   the phrase per octave, and negative octaves extend downward. Applies to the
@@ -101,6 +107,12 @@ the section into a versioned heading at release time.
 - **No list wraps from the end back to the start** — the Dave Box, snapshot and
   project pickers, the tempo list and Left/Right on a menu setting stop at
   their ends.
+- **Empty drum lanes keep their length after a reload.** A drum lane with no
+  notes used to come back as one bar, at the default step size, with its pad
+  note and play effects reset — so a 4-bar clip with hits only on the kick
+  reloaded with every other lane at 1 bar, and a snare added later on bar 3
+  never played. Every lane now keeps its length, loop, step size, pad note,
+  direction and effects, notes or not.
 - **A module page you can step into now works.** Some modules draw a page with
   its own choices on it (DR32's Resample page). Clicking it used to jump to the
   section list; now the click enters the page, the jog and click choose on it,

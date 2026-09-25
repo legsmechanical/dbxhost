@@ -68,7 +68,7 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
-const { BANK_SOUND, ROUTE_NONE, PAD_MODE_CONDUCT, INSTR_ROW_LABEL } = await import('../../ui/ui_constants.mjs');
+const { BANK_SOUND, BANK_MACROS, ROUTE_NONE, PAD_MODE_CONDUCT, INSTR_ROW_LABEL } = await import('../../ui/ui_constants.mjs');
 const editops = await import('../../ui/ui_editops.mjs');
 
 const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_SLOTCFG = 8, VIEW_BUSES = 9, VIEW_LFO = 14,
@@ -97,7 +97,7 @@ function enterEditor(t) {
 
 step('setup: routes — 2,3 Schwung · 4 MIDI · 5 NONE · 6 Move · 7 Conduct', () => {
     S.sessionView = false; S.globalMenuOpen = false; S.ledInitComplete = true;
-    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackActiveBank[t] = t % 3; S.trackSoundOrigin[t] = -1; }
+    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackActiveBank[t] = t % 3; }
     S.trackRoute[4] = 2; S.trackRoute[5] = ROUTE_NONE; S.trackRoute[6] = 1;
     S.trackPadMode[7] = PAD_MODE_CONDUCT;
     S.playing = true;
@@ -124,7 +124,9 @@ step('⭑ Schwung → Schwung: the switch from an EDITOR lands on the new track\
     if (snd.soundTrack() !== 3) throw new Error('sound mode still points at track ' + snd.soundTrack());
     settle();                                       /* the retarget action, then the instrument row */
     if (!onInstrumentRow()) throw new Error('landed on view ' + view() + ' row ' + snd.soundPickStateForTest().row + ' (' + kinds() + '), not the Instrument row');
-    if (S.activeBank !== BANK_SOUND) throw new Error('the bank identity did not follow (' + S.activeBank + ')');
+    /* The SCREEN follows; the bank is track 3's own (Since 2026-09-24: the menu never
+     * owns a bank). */
+    if (S.activeBank !== S.trackActiveBank[3]) throw new Error('the bank is not track 3\'s own (' + S.activeBank + ' vs ' + S.trackActiveBank[3] + ')');
     if (S.trackActiveBank[3] === BANK_SOUND) throw new Error('the follow RECORDED the sound bank on track 3 — only the jog records a bank (Josh, 2026-09-05)');
 });
 
@@ -246,17 +248,26 @@ step('⭑ an open ENUM PICKER closes WITHOUT committing and the switch follows i
     snd.soundExit();
 });
 
-step('⭑ MACROS → MACROS, prompt → prompt', () => {
-    S.bankCardLatched = true;                       /* in BANK MODE these are screens you are IN; unlatched they REST (no follow) */
-    enterMenu(2);
-    snd.soundQueueActionForTest({ t: 'view', view: VIEW_MACROS }); globalThis.tick();
+step('⭑ the MACROS page and the SOUND+CFG card do NOT follow — they are the track\'s BANK (2026-09-24)', () => {
+    /* Josh, 2026-09-24: the SOUND+CFG bank works like every other bank. A
+     * latched bank card shows the NEW track's own bank after a switch; only a
+     * screen you are IN (the menu, an editor) follows. */
+    if (snd.soundOpen()) snd.soundExit();
+    S.bankCardLatched = true;
+    S.trackActiveBank[2] = BANK_MACROS; S.trackActiveBank[3] = BANK_SOUND; S.trackActiveBank[4] = 1;
+    S.activeTrack = 2; S.activeBank = BANK_MACROS; settle();
+    if (view() !== VIEW_MACROS) throw new Error('rig: track 3 is not on its MACROS page: view ' + view());
     editops._switchActiveTrack(3); settle();
-    if (view() !== VIEW_MACROS) throw new Error('MACROS did not follow: view ' + view());
-    snd.soundQueueActionForTest({ t: 'view', view: VIEW_PROMPT }); globalThis.tick();
-    editops._switchActiveTrack(2); settle();
-    if (view() !== VIEW_PROMPT) throw new Error('the prompt did not follow: view ' + view());
-    snd.soundExit();
+    if (S.activeBank !== BANK_SOUND || view() !== VIEW_PROMPT)
+        throw new Error('track 4 (on SOUND+CFG) did not show ITS card: bank ' + S.activeBank + ' view ' + view());
+    if (S.trackActiveBank[2] !== BANK_MACROS) throw new Error('track 3 lost MACROS: ' + S.trackActiveBank[2]);
+    editops._switchActiveTrack(4); settle();
+    if (S.activeBank !== 1) throw new Error('track 5 is not on its own bank: ' + S.activeBank);
+    if (snd.soundActive()) throw new Error('the SOUND+CFG card followed onto a track on bank 1');
+    if (S.trackActiveBank[3] !== BANK_SOUND) throw new Error('track 4 lost SOUND+CFG: ' + S.trackActiveBank[3]);
     S.bankCardLatched = false;
+    if (snd.soundOpen()) snd.soundExit();
+    S.activeTrack = 2; S.activeBank = S.trackActiveBank[2] = 0; S.trackActiveBank[3] = 0; S.trackActiveBank[4] = 1;
 });
 step('⚠ the Session FX gateway is GLOBAL: the switch keeps it open, unchanged', () => {
     enterMenu(2);
@@ -305,20 +316,19 @@ step('⚠ from the MENU (not the editor) a switch onto a MIDI track still lands 
     snd.soundExit();
 });
 
-step('⭑ prompt → Move: the bank PROMPT follows as the prompt; MACROS → MACROS on a Move track too', () => {
-    enterMenu(2);
-    /* In BANK MODE (the card latched): the prompt and MACROS are screens you are
-     * IN. Unlatched they are the RESTING state, which a switch does not follow
-     * (see the fast-scroll step below). */
+step('⭑ a Move track on SOUND+CFG shows ITS card after a switch; a card never follows onto a track on another bank', () => {
+    if (snd.soundOpen()) snd.soundExit();
     S.bankCardLatched = true;
-    snd.soundQueueActionForTest({ t: 'view', view: VIEW_PROMPT }); globalThis.tick();
+    S.trackActiveBank[2] = BANK_SOUND; S.trackActiveBank[6] = BANK_SOUND;
+    S.activeTrack = 2; S.activeBank = BANK_SOUND; settle();
     editops._switchActiveTrack(6); settle();
-    if (view() !== VIEW_PROMPT) throw new Error('view ' + view() + ', expected the bus prompt');
-    snd.soundQueueActionForTest({ t: 'view', view: VIEW_MACROS }); globalThis.tick();
+    if (S.activeBank !== BANK_SOUND || view() !== VIEW_PROMPT) throw new Error('the Move track did not show its SOUND+CFG card: bank ' + S.activeBank + ' view ' + view());
+    S.trackActiveBank[2] = BANK_MACROS;
     editops._switchActiveTrack(2); settle();
-    if (view() !== VIEW_MACROS) throw new Error('MACROS did not follow off a Move bus: view ' + view());
+    if (view() !== VIEW_MACROS) throw new Error('track 3 on MACROS did not show its page: view ' + view());
     S.bankCardLatched = false;
     snd.soundExit();
+    S.activeBank = S.trackActiveBank[2] = 0; S.trackActiveBank[6] = 0;
 });
 
 step('⭑ Shift+JOG from inside the EDITOR steps the track and lands on the new track\'s menu, Instrument row (Josh, 2026-09-05)', () => {
@@ -381,6 +391,7 @@ step('⚠⚠ a FAST Shift+scroll across a track recorded on SOUND + CONFIG does 
     S.trackActiveBank[4] = 11;           /* BANK_SOUND */
     S.trackActiveBank[5] = 0; S.trackActiveBank[6] = 0;
     S.activeTrack = 3; S.activeBank = S.trackActiveBank[3] = 1;
+    S.bankCardLatched = false;           /* AT REST — an earlier step left bank mode latched */
     editops._switchActiveTrack(4);
     globalThis.tick();                                   /* the resting gateway lands */
     if (!snd.soundOpen() || snd.soundActive()) throw new Error('arrival on a sound-bank track must be a RESTING open, got open=' + snd.soundOpen() + ' active=' + snd.soundActive());

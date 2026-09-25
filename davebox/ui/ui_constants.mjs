@@ -581,23 +581,19 @@ export const BANKS = [
 
 /* Conductor bank indices. Bank 0 (CLIP) is reused as the "Conduct" bank. */
 export const BANK_RESPONDER = 8, BANK_OCTAVE = 9, BANK_WHEN = 10;
-/* Sound mode's bank identity — assigned to S.activeBank by soundEnter /
- * soundRetarget / soundEnterMove (melodic + drum; a Conductor keeps its own
- * bank), and RECORDED into trackActiveBank exactly like every other bank
- * (Josh, 2026-08-25: "it records itself, like all the others"). It therefore
- * persists in the sidecar's `tab` and is restored on load by re-ENTERING the
- * screen — BANKS[11] is a stub, so the bank number alone draws nothing.
- * ⚠ Before that ruling the identity was transient and both trackActiveBank
- * sync sites guarded against writing it; the guards are gone, and the "bank to
- * come back to" half they were carrying now lives in S.trackSoundOrigin. */
+/* The SOUND + CONFIG bank: a bank like every other (Josh, 2026-09-24: "bottom
+ * line is that sound+config bank shouldn't get any treatment and work just
+ * like every other bank"). Only the jog walk, the lane jump, the Chord layout
+ * and the sidecar set it — never sound mode, which is the MENU (2026-09-24). Its
+ * card is sound mode's screen, re-opened from the bank on arrival, since
+ * BANKS[11] is a stub. */
 export const BANK_SOUND = 11;
 /* The STEP bank: the step editor as a bank, sitting just before SOUND + CONFIG
  * on every jog walk (and last on a Conductor's). See BANKS[12]. */
 export const BANK_STEP = 12;
-/* The MACROS bank: sound mode's SECOND bank identity (see BANKS[13]). Sound
- * mode is on exactly one of {BANK_SOUND, BANK_MACROS} while open — `isSoundBank`
- * is the one predicate every identity site reads, so a third can be added in
- * one place. Last on the melodic and drum walks; a Conductor has neither. */
+/* The MACROS bank (see BANKS[13]): the second bank whose screen is sound mode's
+ * (`isSoundBank`). A bank like any other, as BANK_SOUND. After SOUND + CONFIG
+ * on the melodic and drum walks; a Conductor has neither. */
 export const BANK_MACROS = 13;
 /* The AUTOMATION bank: last on the melodic and drum walks, after MACROS. See BANKS[14]. */
 export const BANK_AUTOMATION = 14;
@@ -609,13 +605,6 @@ export function isSoundBank(b) { return b === BANK_SOUND || b === BANK_MACROS; }
  * CONDUCT on a Conductor. All three are index 0: the bank a track is on when a
  * session is first created, and where Back lands from any other bank. */
 export const BANK_DEFAULT = 0;
-
-/* The bank immediately BEFORE SOUND + CONFIG on the jog — STEP since
- * 2026-09-02 (bankCycleForMode appends it after the clip banks on both the
- * melodic and the drum walk). Where the top-edge left turn lands when no
- * origin was remembered: a track restored from the sidecar on SOUND + CONFIG,
- * or arrived at by a track switch. Keep in lockstep with bankCycleForMode. */
-export const BANK_SOUND_PREV = BANK_STEP;
 
 /* JS tick rate on device (~94 Hz measured). Older constants were calibrated
  * against a mistaken 196 Hz assumption — derive new timings from this. */

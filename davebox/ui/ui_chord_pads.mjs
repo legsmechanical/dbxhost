@@ -51,15 +51,11 @@ export function setChordLayout(t, on) {
     if (t === S.activeTrack) resetChordTransient();
     if (on && !was) {
         S.chordPopupOpen = true;
-        /* Landing on the layout lands on its bank (Josh, 2026-09-23). From
-         * the track's Settings page (sound mode owns the screen and the bank
-         * number then) it becomes where Back returns to instead. */
-        if (t === S.activeTrack && isSoundBank(S.activeBank)) {
-            S.trackSoundOrigin[t] = BANK_CHORD;
-        } else {
-            S.trackActiveBank[t] = BANK_CHORD;
-            if (t === S.activeTrack) S.activeBank = BANK_CHORD;
-        }
+        /* Landing on the layout lands on its bank (Josh, 2026-09-23) — from
+         * anywhere, the Sound menu included: the menu never owns the bank
+         * (2026-09-24). A resting MACROS / SOUND+CFG mode closes on the next tick. */
+        S.trackActiveBank[t] = BANK_CHORD;
+        if (t === S.activeTrack) S.activeBank = BANK_CHORD;
     }
     /* Leaving the layout leaves its bank too. */
     if (!on && S.trackActiveBank[t] === BANK_CHORD) S.trackActiveBank[t] = 0;

@@ -48,7 +48,7 @@ globalThis.host_ext_midi_remap_enable = () => {};
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
-const { BANKS, BANK_STEP, BANK_SOUND, BANK_SOUND_PREV, PAD_MODE_DRUM, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
+const { BANKS, BANK_STEP, BANK_SOUND, PAD_MODE_DRUM, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
 FOOTER_Y = (await import('../../ui/ui_movy.mjs')).MV_FOOTER_Y - 1;
 const { bankCycleForMode, bankDisplayName } = await import('../../ui/ui_pure.mjs');
 
@@ -85,7 +85,6 @@ step('the STEP bank exists and sits just before SOUND + CONFIG on the melodic an
     assert(mel.indexOf(BANK_STEP) === mel.indexOf(BANK_SOUND) - 1, 'melodic: STEP just before SOUND');
     assert(drum.indexOf(BANK_STEP) === drum.indexOf(BANK_SOUND) - 1, 'drum: STEP just before SOUND');
     assert(con[con.length - 1] === BANK_STEP, 'conductor: … STEP');
-    assert(BANK_SOUND_PREV === BANK_STEP, 'the top-edge left turn from SOUND + CONFIG lands on STEP');
     assert(bankDisplayName(0, BANK_STEP) === 'STEP' && bankDisplayName(PAD_MODE_CONDUCT, BANK_STEP) === 'C-STEP', 'named like every bank');
 });
 

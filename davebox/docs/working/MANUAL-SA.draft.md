@@ -422,9 +422,13 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   Steps editor).
 - **Back** dismisses whatever is on screen — it unlatches and returns to the
   track overview. It never changes which bank you are on.
-- **Each track remembers the bank it was on** — SOUND + CONFIG included. Scroll
-  away to another track and back, or quit and relaunch, and you land on the bank
-  you left that track on.
+- **Each track remembers the bank it was on** — SOUND + CONFIG and MACROS
+  included, exactly like every other bank. Scroll away to another track and back,
+  suspend, or quit and relaunch, and you land on the bank you left that track on.
+- **Opening the Sound menu never changes the bank.** However you open it
+  (Shift + Note/Session, Shift + hold, a lane jump into an editor), Back returns you
+  to the bank you were on. Only turning the jog changes a track's bank (and a lane
+  jump onto a bank, which lands on it).
 
 ## 3.6 Project Settings
 

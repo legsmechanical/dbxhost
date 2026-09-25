@@ -92,7 +92,7 @@ function enterEditor(t) {
  * onMidiMessageInternal, with and without ticks between detents. */
 step('setup: routes — 2,3 Schwung · 4 MIDI · 5 NONE · 6 Move · 7 Schwung', () => {
     S.sessionView = false; S.globalMenuOpen = false; S.ledInitComplete = true;
-    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackActiveBank[t] = t % 3; S.trackSoundOrigin[t] = -1; }
+    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackActiveBank[t] = t % 3; }
     S.trackRoute[4] = 2; S.trackRoute[5] = ROUTE_NONE; S.trackRoute[6] = 1;
     S.playing = true;
     if (!globalThis.onMidiMessageInternal) throw new Error('no CC entry point');

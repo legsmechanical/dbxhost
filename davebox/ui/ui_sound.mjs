@@ -53,7 +53,7 @@ import { bankCardVisible, sessMixerVisible, bankHeaderRight } from './ui_render.
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
-import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, INSTR_CONDUCT, INSTR_ROW_LABEL, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_SOUND_PREV, BANK_MACROS, isSoundBank, BANKS, fmtPlayDir, fmtSign,
+import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, INSTR_CONDUCT, INSTR_ROW_LABEL, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, ROUTE_NONE, TRACK_PAD_BASE } from './ui_constants.mjs';
@@ -927,7 +927,6 @@ const S = {
     levelPoll: 0,               /* the SOUND + CONFIG card's round-robin re-read cursor */
     midiValsDirty: false,       /* a MIDI knob moved: sidecar write owed (on release) */
     pbShiftTurned: false,       /* this touch turned the bend with Shift: latch on release */
-    bankHome: BANK_SOUND,       /* which bank identity the open mode carries */
 
     /* LFO editor (P7 absorb): lfoN:* slot params, values cached at open and
      * kept current optimistically on edit (reads are SHM round-trips). */
@@ -1168,7 +1167,7 @@ export function soundCommitLfoTargetForTest(compKey, paramKey) {
 }
 export function soundMacrosForTest() {
     return {
-        active: macrosActive(), view: S.view, bankHome: S.bankHome,
+        active: macrosActive(), view: S.view,
         store: macroStore().slice(), cells: S.macCells.slice(), vals: S.macVals.slice(),
         accum: S.knobAccum.slice(), cursor: S.knobIdx,
         drawn: macroCells(S.track, true),
@@ -1292,7 +1291,7 @@ export function soundMenuForTest() {
  * that cannot tell which editor is running would either contort itself to
  * satisfy both or quietly stop measuring anything. */
 export function soundPpEditorForTest() { return PP_EDITOR; }
-/* DBX-173: whether discovery deferred davebox's own banks, and how many exist. */
+/* 2026-09-24: whether discovery deferred davebox's own banks, and how many exist. */
 export function soundBanksForTest() { return { deferred: S.banksDeferred, count: S.banks.length }; }
 /* The state drawParamPages' decline leaves behind (renderSound sets it when the
  * grid will not draw a page); the next tick hands the screen to davebox's own
@@ -1306,10 +1305,8 @@ export function soundDeclineGridForTest() { if (ppOn) ppDeclinedDraw = true; }
 export function soundShowMenu() {
     S.cfgRowEditing = false; S.cfgRowPreview = null; S.cfgRowKey = null;
     if (!S.active) return;
-    /* The menu is SOUND + CONFIG's: asked for from the MACROS identity (the
-     * Shift+Note gesture on a track resting there), the bank switches first
-     * so Back out of the menu lands on the card the menu belongs to. */
-    if (S.bankHome === BANK_MACROS) soundSetBank(BANK_SOUND, false);   /* a gesture asked: no recording (2026-09-05) */
+    /* Opening the menu never changes the bank (Josh, 2026-09-24: the SOUND+CFG
+     * bank is a bank like any other) — from MACROS, Back returns to MACROS. */
     S.view = VIEW_BLOCKS;
     S.dirty = true;
 }
@@ -1320,7 +1317,6 @@ export function soundEnter(track, slot) {
      * mechanism so every door is covered. */
     if (GS.sessionView) return;
     S.active = true;
-    takeBankIdentity(track);
     armBankDisplay();   /* the banks' display window: the screen
                                          * shows, then falls back to the overview
                                          * unless the jog is touched (soundRender) */
@@ -1336,8 +1332,12 @@ export function soundEnter(track, slot) {
      * here is the bank — the jog reaching SOUND + CONFIG, a track switch onto a
      * track stored there, the tick reconcile, the co-run return — and the bank
      * now OFFERS the menu rather than being it. `soundOpenMenu()` is the door
-     * for the gesture that asks for the menu by name. */
-    S.view = VIEW_PROMPT;
+     * for the gesture that asks for the menu by name.
+     * ⭑ The screen is the TRACK'S BANK's (2026-09-24): its card on
+     * SOUND+CFG, its page on MACROS, and the menu on any other bank — sound
+     * mode no longer takes the bank to open, so a card can only show while the
+     * track is on that bank. */
+    S.view = soundCardViewFor(GS.activeBank);
     /* ⚠ SYNC to the physical key, do not assume it is up. Clearing this on a
      * retarget made Shift+jog a ONE-SHOT: stepping a track retargets, the
      * retarget forgot Shift was still down, and the next turn was read as an
@@ -1394,79 +1394,52 @@ function flushForRetarget() {
     }
 }
 
-/* SOUND + CONFIG is its own BANK (Josh, 2026-08-23), and it RECORDS ITSELF
- * like every other bank (Josh, 2026-08-25). S.activeBank becomes BANK_SOUND, so
- * sequencing, LEDs and the fallback overview all run their standard-bank
- * branches whatever bank the jog came from (AUTO's step editing included) —
- * and trackActiveBank takes it too, so the track IS on this bank as far as the
- * sidecar, the track switch and the exit restore are concerned.
- *
- * ⭑ That recording is the whole of the 08-25 fix. It was the ONE bank in the
- * walk that never wrote itself down, so trackActiveBank stayed STALE on the
- * bank you arrived from (always AUTOMATION — the only neighbour), and the exit
- * restore, the co-run landing and "banks land somewhere I did not leave them"
- * all fell out of that single omission.
- *
- * The bank to come BACK to on a top-edge left turn is the half trackActiveBank
- * used to carry implicitly; it now has its own store, trackSoundOrigin.
- * Conductor tracks keep their own bank: they have no sound bank in the cycle,
- * and their screens key on banks 0/8/9/10. */
-/* Set by the tick around an entry the JOG's bank walk queued (see
- * pendingSoundEnterRecord): that entry records the bank on the track; every
- * other entry — a gesture — does not. */
-let entryRecords = false;
-export function soundEntryRecords(on) { entryRecords = !!on; }
-
-function takeBankIdentity(track, bank) {
-    if (GS.trackPadMode[track] === PMC) return;
-    const b = isSoundBank(bank) ? bank : BANK_SOUND;
-    /* Remember where we came from BEFORE overwriting the live mirror, and only
-     * on a genuine arrival — a retarget onto a track already on one of this
-     * mode's banks must not overwrite its origin with that bank. */
-    if (!isSoundBank(GS.activeBank) && !isSoundBank(GS.trackActiveBank[track]))
-        GS.trackSoundOrigin[track] = GS.activeBank | 0;
-    S.bankHome = b;
-    GS.activeBank = b;
-    if (entryRecords) GS.trackActiveBank[track] = b;   /* the JOG's walk, and only it */
-    /* ⭑ Otherwise NOT RECORDED (Josh, 2026-09-05: "an instrument editor isn't the sound
-     * and config bank. Sound config is just a way to get there. NOTHING should
-     * set a bank other than the usual bank jog."). Entering by gesture —
-     * Shift+hold Note/Session, Shift+pad, the follow, a launcher, the remote
-     * UI — takes the identity for the OPEN mode (bankHome, the live mirror)
-     * but leaves the track's remembered bank alone; only the jog's bank walk
-     * writes trackActiveBank (ui_input_cc). This reverses the 08-25 "records
-     * itself like every other bank" law for gesture entries — see
-     * schwung-sound-config-is-a-recorded-bank (RE-RULED). */
+/* ⭑ SOUND + CONFIG and MACROS are BANKS LIKE ANY OTHER (Josh, 2026-09-24:
+ * "bottom line is that sound+config bank shouldn't get any treatment and work
+ * just like every other bank"). Sound mode — the MENU and its screens — never
+ * writes the bank, live or recorded: only the jog walk, the lane jump, the
+ * Chord layout and the sidecar do, exactly as for every bank. The two card
+ * screens exist only while the track is ON that bank; any other bank opens the
+ * menu. (Before 2026-09-24, opening the menu by any gesture took BANK_SOUND and a
+ * set of patches tried to undo that: an origin crumb, record-only-on-the-walk,
+ * save/switch skips. They are gone.) */
+function soundCardViewFor(bank) {
+    return bank === BANK_MACROS ? VIEW_MACROS : bank === BANK_SOUND ? VIEW_PROMPT : VIEW_BLOCKS;
 }
 
-/* ⭑ Sound mode's SECOND identity (spec §2): SOUND + CONFIG and MACROS are two
- * stops on the bank walk carried by ONE open mode. Arriving at either while
- * the mode is open changes the screen and the recorded bank, never the mode —
- * the walk between them is a screen switch, and the exit restore, the track
- * switch and the sidecar read whichever is recorded. Closed, the walk queues
- * an entry that lands here (ui_tick consumes pendingSoundEnterMacros). */
-/* `record` (default true): the bank WALK between the two identities records
- * the bank like every jog step; a gesture path passes false. */
-export function soundSetBank(bank, record = true) {
+/* Is the screen the SOUND+CFG card or the MACROS page — the bank itself, as
+ * opposed to the menu or anything opened from it? */
+export function soundHasPendingAction() { return !!S.pendingAction; }
+export function soundOnCard() {
+    return S.active && !soundIsGlobal() && (S.view === VIEW_PROMPT || S.view === VIEW_MACROS);
+}
+
+/* Back out of the menu to the screen UNDER it, which is the track's bank: on
+ * SOUND+CFG / MACROS that is the card (latched) or the resting overview; on any
+ * other bank, sound mode closes and that bank is there — its card if bank mode
+ * is latched. Never changes the bank or the latch. */
+export function soundBackToBank() {
+    if (!soundIsGlobal() && S.track === GS.activeTrack && isSoundBank(GS.activeBank)) {
+        S.view = soundCardViewFor(GS.activeBank);
+        S.touchedIdx = -1;
+        S.presetMsg = '';
+        S.dirty = true;
+        return;
+    }
+    soundExit();
+}
+
+/* The jog's walk between the two cards while the mode is open: a bank step
+ * like any other, so it records. The caller saves the sidecar. */
+export function soundSetBank(bank) {
     if (!S.active || soundIsGlobal() || S.track < 0 || !isSoundBank(bank)) return;
-    if (GS.trackPadMode[S.track] === PMC) return;
-    if (bank === BANK_MACROS) S.view = VIEW_MACROS;
-    else if (S.bankHome === BANK_MACROS || S.view === VIEW_MACROS) S.view = VIEW_PROMPT;
-    S.bankHome = bank;
+    S.view = soundCardViewFor(bank);
     GS.activeBank = bank;
-    if (record) GS.trackActiveBank[S.track] = bank;
+    GS.trackActiveBank[S.track] = bank;
     S.touchedIdx = -1;
     S.dirty = true;
 }
 
-/* Where the JOG's top-edge left turn lands: the bank this track was entered
- * from, or — for a track restored from the sidecar already on it, or arrived at
- * by a track switch — the bank the jog would have come through anyway. ⚠ Only
- * the jog reads this. A CLOSE (Back and friends) goes to the DEFAULT bank. */
-function soundOriginBank(track) {
-    const o = GS.trackSoundOrigin[track];
-    return (typeof o === 'number' && o >= 0 && !isSoundBank(o)) ? (o | 0) : BANK_SOUND_PREV;
-}
 
 /* ⭑ ITEM 20 (Josh, 2026-09-05: "Yes, follow into the editor"). A track switch
  * made from INSIDE a module editor lands in the NEW track's editor. The 08-24
@@ -1539,10 +1512,8 @@ function followPlan(fromView, route) {
          * track with no LFOs at all (MIDI, or no instrument) falls back to its
          * menu. Was `chain ?`, which sent a Move track to its menu. */
         return { editor: false, then: (chain || route === 1) ? { t: 'lfo', lfo: S.lfoNum | 0 } : null };
-    if (v === VIEW_MACROS) return { editor: false, then: { t: 'view', view: VIEW_MACROS } };
     if (v === VIEW_KNOBS || v === VIEW_KNOBLEGS || v === VIEW_KNOB_TARGET || v === VIEW_KNOB_PARAM)
         return { editor: false, then: { t: 'knobs' } };
-    if (v === VIEW_PROMPT) return { editor: false, then: { t: 'view', view: VIEW_PROMPT } };
     if (v === VIEW_BUSES) return { editor: false, then: { t: 'view', view: VIEW_BUSES } };
     return { editor: false, then: null };            /* menu, browser, slot presets */
 }
@@ -1617,7 +1588,6 @@ export function soundRetarget(track, slot) {
     if (!(S.bus && S.bus.kind === 'global')) wavEditCloseIfOpen();
     if (!(S.bus && S.bus.kind === 'global')) canvasCloseIfOpen();
     flushForRetarget();
-    takeBankIdentity(track, S.bankHome);
 
     S.track = track;
     /* A SESSION bus is global — following the active track must not drag its
@@ -1754,10 +1724,10 @@ function clearBusContext() {
  *                                recorded on this bank, so returning returns
  *                                here.
  */
-export function soundExit(opts) {
+export function soundExit() {
     /* S1 INSTRUMENTATION: "a fast scroll can dump you to the track overview" —
      * name who closed sound mode. debug.log only; exits are rare. */
-    log('exit: view ' + S.view + ' track ' + S.track + ' opts ' + JSON.stringify(opts || null) + ' from ' +
+    log('exit: view ' + S.view + ' track ' + S.track + ' from ' +
         String(new Error().stack || '').split('\n').slice(2, 5).map((l) => l.trim()).join(' | '));
     wavEditCloseIfOpen();
     canvasCloseIfOpen();      /* nothing may outlive sound mode itself */
@@ -1767,8 +1737,6 @@ export function soundExit(opts) {
      * while this mode is open. It draws over everything, so an exit that left it
      * standing would paint it on the track overview with no way to dismiss it. */
     macroClearConfirmReset();
-    const _opts = (opts && typeof opts === 'object') ? opts : {};
-    const _leaving = _opts.leaving === true;
     /* Any exit at all spends the gesture crumb. A crumb that outlives its screen
      * is how a return point goes stale and lands you somewhere you never were —
      * see the note on genReturn in ui_state. */
@@ -1815,35 +1783,8 @@ export function soundExit(opts) {
     ppSuppressOnce = false; ppRestorePage = null;
     if (S.busLevelDirty) engineSaveState();
     S.active = false;
-    /* CLOSING hands the bank back; LEAVING keeps it. On a close the track stops
-     * being on SOUND + CONFIG — in the live mirror AND in trackActiveBank,
-     * which now records this bank like any other, so the two must move together
-     * or the next load/switch would put you straight back on a screen you just
-     * closed. The origin crumb is spent either way it is read, so it is dropped
-     * here and re-earned by the next entry. */
-    if (!_leaving && !soundIsGlobal() && S.track >= 0) {
-        /* No explicit destination ⇒ the bank this track was entered from.
-         * soundOriginBank() already falls back sensibly when there is no crumb
-         * (the neighbour the jog would have come through), so a close never has
-         * to invent a bank. See the docblock above for why BANK_DEFAULT is gone. */
-        const _back = (typeof _opts.landOn === 'number') ? (_opts.landOn | 0)
-                                                         : soundOriginBank(S.track);
-        if (isSoundBank(GS.trackActiveBank[S.track]))
-            GS.trackActiveBank[S.track] = _back;
-        if (isSoundBank(GS.activeBank) && S.track === GS.activeTrack)
-            GS.activeBank = _back;
-        GS.trackSoundOrigin[S.track] = -1;
-    }
-    /* A global bus (Master/Send FX) never took a track's bank, but it can be
-     * open while activeBank still reads BANK_SOUND from a track flavour that
-     * preceded it. RESYNC from the record rather than picking a bank: if the
-     * active track really is recorded on SOUND + CONFIG then BANK_SOUND is the
-     * truth, and the tick invariant re-opens its screen the moment track view
-     * is showing. Forcing a default here instead would leave the live mirror
-     * disagreeing with the record — the track's screen would not come back. */
-    if (isSoundBank(GS.activeBank) && !_leaving)
-        GS.activeBank = GS.trackActiveBank[GS.activeTrack] | 0;
-    S.bankHome = BANK_SOUND;
+    /* ⭑ An exit NEVER touches the bank (2026-09-24): sound mode does not own it.
+     * Whatever bank the track is on — SOUND+CFG included — it is still on. */
     clearBusContext();
     S.pendingAction = null;
     S.followDest = null;
@@ -2871,7 +2812,6 @@ export function soundEnterMove(track) {
     const wasActive = S.active;
     if (S.active) flushForRetarget();
     S.active = true;
-    takeBankIdentity(track);
     /* Only a genuine ENTRY opens the banks' display window. Arriving here as the
      * track-FOLLOW — Shift+jog stepping onto a Move-routed track, ui_tick's
      * reconcile block — is not a bank gesture, and stamping made the SOUND +
@@ -2891,8 +2831,9 @@ export function soundEnterMove(track) {
      * reconcile — so both must land on the same screen. Missing this here was
      * the bug Josh hit on device: a MOVE-routed track walked straight into the
      * full menu while a Schwung one stopped at the prompt, and the gesture,
-     * which enters through this same path, looked broken on Move tracks. */
-    S.view = VIEW_PROMPT;
+     * which enters through this same path, looked broken on Move tracks.
+     * ⭑ By the track's bank (2026-09-24), as in soundEnter. */
+    S.view = soundCardViewFor(GS.activeBank);
     S.pickRow = 0;
     S.comp = '';                /* no chain component is in scope on a Move bus */
     /* Sync, never assume up — see the note in soundEnter. */
@@ -2949,25 +2890,31 @@ export function soundGestureReturn() {
     if (!g || !S.active) return false;
     if (g.track !== S.track) { GS.genReturn = null; return false; }
     GS.genReturn = null;                      /* spent, whichever way it goes */
-    if (g.wasActive) {
-        /* ⭑ The SCREEN you pressed from, not just "the menu". After the respec
-         * the bank has a prompt of its own, and pressing the gesture there and
-         * being returned to the MENU would be a screen you were never on.
-         * Older crumbs carry no `view`; they mean the menu, which is what it
-         * always used to be. */
-        S.view = (g.view === VIEW_PROMPT) ? VIEW_PROMPT : VIEW_BLOCKS;
+    if (g.autoSel != null) {
+        /* A LANE JUMP (plan 6c2) came from the AUTOMATION menu: back onto that
+         * bank — recorded again, since the jump recorded where it landed like
+         * any bank step (2026-09-24) — into the menu, cursor on the lane. */
+        soundExit();
+        GS.activeBank = BANK_AUTOMATION;
+        GS.trackActiveBank[g.track] = BANK_AUTOMATION;
+        GS.bankCardLatched = true;
+        armBankDisplay();
+        autoBankRestoreMenu(g.autoSel);
+    } else if (g.wasActive) {
+        /* ⭑ The SCREEN you pressed from: the menu, or the card / MACROS page
+         * if that is where the gesture was pressed. */
+        S.view = (g.view === VIEW_PROMPT || g.view === VIEW_MACROS) ? g.view : VIEW_BLOCKS;
         S.pendingAction = { t: 'names' };
         S.presetMsg = '';
         S.dirty = true;
     } else {
-        soundExit({ landOn: g.bank });        /* out, onto the bank you pressed from */
-        /* ...and onto the SCREEN you pressed from (Josh, 2026-09-05: "back should
-         * land you on the previous screen you were on"): a latched bank CARD
-         * comes back as the card, not as the overview with that bank recorded. */
+        /* Out, onto the bank you pressed from — it never moved (2026-09-24) — and
+         * onto the SCREEN you pressed from (Josh, 2026-09-05): a latched card
+         * comes back as the card. On SOUND+CFG / MACROS that screen is sound
+         * mode's own card, so it stays open there rather than closing. */
+        soundBackToBank();
         if (g.latched) { GS.bankCardLatched = true; armBankDisplay(); }
-        /* A LANE JUMP (plan 6c2) came from the AUTOMATION menu: back into the
-         * menu, the cursor on the lane you jumped from. */
-        if (g.autoSel != null) autoBankRestoreMenu(g.autoSel);
+        else if (soundOnCard()) standDownBankDisplay(true);
     }
     return true;
 }
@@ -7617,7 +7564,7 @@ function runDiscovery() {
     S.moduleId = id;
     if (!id) { S.banks = []; S.banksDeferred = false; S.sections = []; S.dirty = true; return; }
     /* The page grid will draw this module, so the flat banks -- davebox's own
-     * editor, its FALLBACK -- are not built now (DBX-173: DR32's 32 pads made
+     * editor, its FALLBACK -- are not built now (DR32's 32 pads made
      * them 1441 pages, most of the time it took to open the editor). A module
      * that declares host_canvas_ui still gets the full pass: hosting needs the
      * kit the full pass loads. */
@@ -10229,18 +10176,18 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * that appears in BOTH the click and Back handlers and landed in
              * the CLICK path, so opening a block from the menu went to the
              * prompt instead. */
-            if (GS.bankCardLatched) {
-                if (S.bus) {
-                    /* Move flavour: the card keeps its bus context — same
-                     * level-edit flush leaveBus does on the way up. */
-                    S.busLevelEditing = false;
-                    if (S.busLevelDirty) { S.busLevelDirty = false; S.pendingAction = { t: 'slotsave' }; }
-                }
-                S.view = VIEW_PROMPT;
-            } else {
-                soundExit();
-                standDownBankDisplay(true);
+            /* ⭑ Since 2026-09-24: Back goes to the screen under the menu, which is the
+             * TRACK'S BANK — its card on SOUND+CFG / MACROS, otherwise sound mode
+             * closes onto that bank (its card if latched). The bank never moves,
+             * and a SOUND+CFG card never appears over a track that is not on it. */
+            if (S.bus && isSoundBank(GS.activeBank)) {
+                /* Move flavour: the card keeps its bus context — same
+                 * level-edit flush leaveBus does on the way up. */
+                S.busLevelEditing = false;
+                if (S.busLevelDirty) { S.busLevelDirty = false; S.pendingAction = { t: 'slotsave' }; }
             }
+            soundBackToBank();
+            if (!GS.bankCardLatched) standDownBankDisplay(true);
             S.dirty = true;
             return true;
         }
