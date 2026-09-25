@@ -6437,7 +6437,8 @@ static int pa_export_window(const seq8_track_t *tr, const pa_entry_t *e,
         clip_start = (uint32_t)pcl->loop_start * *step_ticks;
         clip_ticks = (uint32_t)pcl->length * *step_ticks;
     }
-    pa_entry_window(e, clip_start, clip_ticks, ws, wl);
+    pa_lane_window(tr, e, clip_start, clip_ticks, ws, wl);
+    *step_ticks = pa_lane_step(tr, e, *step_ticks);   /* a drum lane's own step */
     return 1;
 }
 
@@ -6895,7 +6896,8 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     /* pa_list: every automated (track, clip, target) with its flags and point
      * count — one round trip for the whole project, because a per-entry read
      * would cost an SPI frame each. Format, one entry per line:
-     *   "<track> <clip> <flags> <count> <target> <loop_len> <resolution> <scale%>"
+     *   "<track> <clip> <flags> <count> <target> <loop_len> <resolution> <scale%>
+     *    [<loop_off> <step_ticks>]"
      * (loop_len and the rate code appended 2026-09-03 for the AUTOMATION bank,
      * the scale percent 2026-09-05; a
      * target never contains a space, so a reader that stops at the target is
@@ -6986,7 +6988,16 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         for (int i = 0; i < PA_MAX_ENTRIES; i++) {
             pa_entry_t *e = &inst->pa_entries[i];
             if (!e->used || !e->count) continue;
-            int w = snprintf(out + n, (size_t)(out_len - n), "%d %d %d %d %s %d %d %d\n",
+            /* Fields 9-10, the lane's loop START and STEP (a drum lane's
+             * cycle), only when either is set: a melodic project's list is
+             * byte-identical to before, and the answer never grows for it. */
+            int w = (e->loop_off || e->step_ticks)
+                  ? snprintf(out + n, (size_t)(out_len - n), "%d %d %d %d %s %d %d %d %d %d\n",
+                             (int)e->track, (int)e->clip, (int)e->flags,
+                             (int)e->count, inst->pa_targets[e->target],
+                             (int)e->loop_len, (int)e->resolution, pa_scale_pct(e),
+                             (int)e->loop_off, (int)e->step_ticks)
+                  : snprintf(out + n, (size_t)(out_len - n), "%d %d %d %d %s %d %d %d\n",
                              (int)e->track, (int)e->clip, (int)e->flags,
                              (int)e->count, inst->pa_targets[e->target],
                              (int)e->loop_len, (int)e->resolution, pa_scale_pct(e));
@@ -7507,9 +7518,12 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     pa_entry_t *e = &inst->pa_entries[i];
                     if (!e->used || !e->count || e->track != tidx || e->clip != cidx) continue;
                     int top = 0;
+                    /* A drum lane with a cycle counts in ITS step, the grid
+                     * the AUTOMATION bank shows it on. */
+                    const uint32_t etps = pa_lane_step(tr, e, tps);
                     memset(mask, '0', SEQ_STEPS);
                     for (int k = 0; k < (int)e->count && k < PA_ENTRY_POINTS; k++) {
-                        uint32_t s = (uint32_t)e->points[k].tick / tps;
+                        uint32_t s = (uint32_t)e->points[k].tick / etps;
                         if (s >= SEQ_STEPS) continue;
                         mask[s] = '1';
                         if ((int)s + 1 > top) top = (int)s + 1;

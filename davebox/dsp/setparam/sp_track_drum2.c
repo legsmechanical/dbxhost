@@ -63,7 +63,7 @@ static int sp_track_drum2(sp_ctx_t *cx) {
          * lane), so it scales as THAT lane's notes do. */
         uint32_t lk_s, lk_l, lk_tps;
         pa_drum_window(tr, (int)tr->active_clip, &lk_s, &lk_l, &lk_tps);
-        pa_link_scale(inst, tidx, (int)tr->active_clip, 1, new_tps, lk_tps);
+        pa_link_drum_resolution(inst, tidx, (int)tr->active_clip, new_tps, lk_tps);
         int l_ar;
         for (l_ar = 0; l_ar < DRUM_LANES; l_ar++) {
             clip_t *dlc = &dc_ar->lanes[l_ar].clip;
@@ -320,8 +320,8 @@ static int sp_track_drum2(sp_ctx_t *cx) {
             uint32_t lk_s, lk_l, lk_tps;
             pa_drum_window(tr, (int)tr->active_clip, &lk_s, &lk_l, &lk_tps);
             if (lk_l >= 2 * lk_tps)
-                pa_link_rotate(inst, tidx, (int)tr->active_clip, 1,
-                               dir == 1 ? (int32_t)lk_tps : -(int32_t)lk_tps, lk_l);
+                pa_link_drum_shift(inst, tidx, (int)tr->active_clip,
+                                   dir == 1 ? (int32_t)lk_tps : -(int32_t)lk_tps, lk_l, 1);
         }
         int l_al;
         for (l_al = 0; l_al < DRUM_LANES; l_al++) {
@@ -391,7 +391,7 @@ static int sp_track_drum2(sp_ctx_t *cx) {
         if (dir == 1 || dir == -1) {   /* Note link: one tick, wrapping in the drum window */
             uint32_t lk_s, lk_l, lk_tps;
             pa_drum_window(tr, (int)tr->active_clip, &lk_s, &lk_l, &lk_tps);
-            pa_link_rotate(inst, tidx, (int)tr->active_clip, 1, dir, lk_l);
+            pa_link_drum_shift(inst, tidx, (int)tr->active_clip, dir, lk_l, 0);
         }
         int l_al;
         for (l_al = 0; l_al < DRUM_LANES; l_al++) {
@@ -559,7 +559,7 @@ static int sp_track_drum2(sp_ctx_t *cx) {
             uint32_t lk_s, lk_l, lk_tps;
             pa_drum_window(tr, (int)tr->active_clip, &lk_s, &lk_l, &lk_tps);
             if (lk_l && (lk_l / lk_tps) * 2 <= SEQ_STEPS)
-                pa_link_copy(inst, tidx, (int)tr->active_clip, 1, 0, lk_l, lk_l);
+                pa_link_drum_double(inst, tidx, (int)tr->active_clip, lk_l);
         }
         for (l_al = 0; l_al < DRUM_LANES; l_al++) {
             clip_t *dlc = &dc_al->lanes[l_al].clip;
