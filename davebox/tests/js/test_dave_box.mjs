@@ -127,6 +127,12 @@ step('⭐ the SCAN loops top to bottom and back, and the WHOLE image gets its tu
     /* toward whichever neighbour exists: the album stops at its ends */
     daves.daveBoxRotate(S.daveBox.idx < S.daveBox.list.length - 1 ? 1 : -1);
     if (S.daveBox.yOff !== 0) throw new Error('a fresh Dave did not start at the top');
+    /* a turn past the END changes nothing — the same Dave keeps scanning */
+    while (S.daveBox.yOff === 0) dtick();
+    const _y = S.daveBox.yOff, _i = S.daveBox.idx;
+    daves.daveBoxRotate(_i === 0 ? -1 : 1);
+    if (S.daveBox.idx !== _i || S.daveBox.yOff !== _y)
+        throw new Error('a turn past the end restarted the scan (idx ' + S.daveBox.idx + ', yOff ' + S.daveBox.yOff + ')');
     daves.closeDaveBox();
 });
 
