@@ -407,7 +407,7 @@ async function main() {
         S.trackPadMode[4] = 0; S.trackRoute[4] = 3;          /* ROUTE_NONE */
         openMenuOn(4);
         const k = snd.soundPickStateForTest().kinds;
-        assert(k.join(',') === 'trackto,midiimport', 'rows: ' + k.join(','));
+        assert(k.join(',') === 'trackto,div,midiimport', 'rows: ' + k.join(','));
     });
 
     step('a Conductor track has no Import MIDI row', () => {

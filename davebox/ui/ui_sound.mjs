@@ -3188,6 +3188,54 @@ function conductorMenu() {
     return !soundIsGlobal() && S.track >= 0 && GS.trackPadMode[S.track] === PMC;
 }
 
+/* ⭑ THE TRACK SOUND MENU'S ORDER AND GROUPS (Josh, 2026-09-24, laid out with
+ * the Sound menu arranger). Each track type builds the rows it HAS; this puts
+ * them in one order, with a rule between groups that are present. Mute and Solo
+ * left the menu — the Mute button owns them. A row this table does not name
+ * keeps its place at the end, so a new row can never silently vanish. */
+const TRACK_MENU_GROUPS = [
+    ['Instmt/Dest', 'MIDI FX', 'FX'],
+    ['Volume', 'Pan', 'Send A', 'Send B', 'Buses'],
+    ['Presets'],
+    ['LFOs'],
+    ['Mode', 'Layout'],
+    ['Transpose', 'VelIn', 'AftTch'],
+    ['Looper'],
+    ['Import MIDI'],
+    ['Parallel'],
+];
+const TRACK_MENU_DROPPED = { muted: true, soloed: true };
+function trackMenuSlot(r) {
+    if (r.kind === 'trackto') return 'Instmt/Dest';
+    if (r.kind === 'block') return r.label === 'MIDI FX' ? 'MIDI FX' : 'FX';
+    if (r.kind === 'modbus') return 'Buses';
+    if (r.kind === 'patches') return 'Presets';
+    if (r.kind === 'settings') return 'LFOs';
+    if (r.kind === 'midiimport') return 'Import MIDI';
+    return r.label;                               /* buslevel / cfg: by name */
+}
+function orderTrackMenu(rows) {
+    const bySlot = new Map(), extra = [];
+    const known = new Set([].concat(...TRACK_MENU_GROUPS));
+    for (const r of rows) {
+        if (r.kind === 'div') continue;
+        if (r.kind === 'buslevel' && r.spec && TRACK_MENU_DROPPED[r.spec.key]) continue;
+        const k = trackMenuSlot(r);
+        if (!known.has(k)) { extra.push(r); continue; }
+        if (!bySlot.has(k)) bySlot.set(k, []);
+        bySlot.get(k).push(r);                    /* FX 1..4 keep their own order */
+    }
+    const out = [];
+    const groups = TRACK_MENU_GROUPS.map((g) => [].concat(...g.map((k) => bySlot.get(k) || [])));
+    if (extra.length) groups.push(extra);
+    for (const g of groups) {
+        if (!g.length) continue;
+        if (out.length) out.push({ kind: 'div' });
+        out.push(...g);
+    }
+    return out;
+}
+
 function buildPickRows() {
     const rows = [];
     if (S.bus) {
@@ -3246,7 +3294,7 @@ function buildPickRows() {
          * stranded: both address the parked chain, so a preset that loads
          * effects you cannot see would be worse than not offering it. They come
          * back with the instrument. */
-        if (conductorMenu()) { pushConfigRows(rows, S.track); S.pickRows = rows; S.pickRow = 0; return; }
+        if (conductorMenu()) { pushConfigRows(rows, S.track); S.pickRows = orderTrackMenu(rows); S.pickRow = 0; return; }
         /* An EXT-routed track (MIDI out, or playing another track's instrument)
          * has no chain and no bus, so it has no sound to show and no mixer
          * position to set — every other row here would be backed by nothing.
@@ -3260,7 +3308,7 @@ function buildPickRows() {
          * track imports whatever it routes to (Josh, 2026-09-23). */
         if (GS.trackRoute[S.track] === ROUTE_NONE) {
             rows.push({ kind: 'midiimport', label: 'Import MIDI' });
-            S.pickRows = rows; S.pickRow = 0; return;
+            S.pickRows = orderTrackMenu(rows); S.pickRow = 0; return;
         }   /* NONE: even less than EXT — just the row that picks one */
         /* A MIDI-routed track has no chain and no bus, but it IS a track, and
          * davebox's own per-track settings — mode, layout, transpose, velocity
@@ -3272,7 +3320,7 @@ function buildPickRows() {
         if (GS.trackRoute[S.track] === 2) {
             rows.push({ kind: 'midiimport', label: 'Import MIDI' });
             pushConfigRows(rows, S.track);
-            S.pickRows = rows; S.pickRow = 0; return;
+            S.pickRows = orderTrackMenu(rows); S.pickRow = 0; return;
         }
         /* ⭑ No Generator row (Josh, 2026-09-04): the INSTRUMENT row is the
          * generator's door now — click enters it, Shift+click picks another —
@@ -3334,25 +3382,30 @@ function buildPickRows() {
      *
      * ⚠ These are REAL rows, so every index-based path has to step over them —
      * see pickStep() and the cursor restore below. */
-    const _lastOf = (k) => { let i = -1; rows.forEach((r, n) => { if (r.kind === k) i = n; }); return i; };
-    const _after = [_lastOf('trackto'), _lastOf('block'), _lastOf('buslevel')]
-        .filter(i => i >= 0 && i < rows.length - 1)
-        .sort((a, b) => b - a);                 /* descending: splice from the end */
-    for (const i of _after) rows.splice(i + 1, 0, { kind: 'div' });
-
-    S.pickRows = rows;
+    if (S.bus && S.bus.kind !== 'move') {
+        /* A SESSION bus (Master / Send FX) keeps its own short list. */
+        const _lastOf = (k) => { let i = -1; rows.forEach((r, n) => { if (r.kind === k) i = n; }); return i; };
+        const _after = [_lastOf('trackto'), _lastOf('block'), _lastOf('buslevel')]
+            .filter(i => i >= 0 && i < rows.length - 1)
+            .sort((a, b) => b - a);                 /* descending: splice from the end */
+        for (const i of _after) rows.splice(i + 1, 0, { kind: 'div' });
+        S.pickRows = rows;
+    } else {
+        S.pickRows = orderTrackMenu(rows);
+    }
     /* Keep the cursor on the component it was on — the row INDEX shifts when a
      * host lacks fx3/4, and a bus context has different rows entirely. */
     /* ⭑ The generator has no block row since 2026-09-04 — its component
      * lands on the INSTRUMENT row, which is its door (Josh: "it landed on the
      * generator item. now it needs to land on instrument"). */
+    const pr = S.pickRows;
     const at = S.comp === 'synth'
-        ? rows.findIndex(r => r.kind === 'trackto')
-        : rows.findIndex(r => r.kind === 'block' && r.comp === S.comp);
+        ? pr.findIndex(r => r.kind === 'trackto')
+        : pr.findIndex(r => r.kind === 'block' && r.comp === S.comp);
     if (at >= 0) S.pickRow = at;
-    if (S.pickRow >= rows.length) S.pickRow = 0;
+    if (S.pickRow >= pr.length) S.pickRow = 0;
     /* Never rest on a rule. */
-    if (rows[S.pickRow] && rows[S.pickRow].kind === 'div') S.pickRow = pickStep(1);
+    if (pr[S.pickRow] && pr[S.pickRow].kind === 'div') S.pickRow = pickStep(1);
 }
 
 function probeCaps() {

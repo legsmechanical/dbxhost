@@ -258,7 +258,9 @@ step('⚠ CONTROL: an ordinary track still has its chain and mixer rows', () => 
     snd.soundExit(); S.activeTrack = 1; snd.soundEnter(1, 1); ticks(3);
     snd.soundShowMenu(); ticks(2);
     const k = snd.soundPickStateForTest().kinds;
-    assert(k.includes('block') && k.includes('buslevel'),
+    /* The mixer rows left the Sound menu (Josh, 2026-09-24) — only Send A/B
+     * stay, and only where the host has sends — so the chain is the control. */
+    assert(k.includes('block') && k.includes('settings'),
            'a normal track lost its chain rows: ' + k.join(','));
     assert(k.includes('settings') && k.includes('patches'),
            'a normal track lost LFOs/Presets: ' + k.join(','));
