@@ -353,6 +353,13 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                 dst->lanes[l].midi_note = dst_midi_note;
                 clip_migrate_to_notes(dc);
             }
+            /* The clip's automation goes with it, each lane with its cycle,
+             * replacing whatever the destination had (it used to keep its OLD
+             * lanes under the new notes). The pads' aftertouch too. A lane on
+             * another track's module parameter the destination cannot play is
+             * cleared by the UI afterwards (automationCarryFilter). */
+            inst->tracks[dstT].clip_at_auto[dstC] = inst->tracks[srcT].clip_at_auto[srcC];
+            pa_copy_clip(inst, srcT, srcC, dstT, dstC);
             if (dstC == (int)inst->tracks[dstT].active_clip)
                 pfx_sync_from_clip(&inst->tracks[dstT]);
             rui_mark(inst, dstT, dstC);   /* only the destination clip changed */
@@ -412,6 +419,11 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                 drum_pfx_params_init(&src->lanes[l].pfx_params);
                 src->lanes[l].midi_note = src_midi_note;
             }
+            /* The automation MOVES with the notes: onto the destination, off the
+             * emptied source (it used to stay there, playing on no notes). */
+            dstTr->clip_at_auto[dstC] = srcTr->clip_at_auto[srcC];
+            at_auto_reset(&srcTr->clip_at_auto[srcC]);
+            pa_move_clip(inst, srcT, srcC, dstT, dstC);
             if (dstC == (int)dstTr->active_clip)
                 pfx_sync_from_clip(dstTr);
             if (srcC == (int)srcTr->active_clip)

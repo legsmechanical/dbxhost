@@ -35,7 +35,8 @@ import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey,
          automationToggleActive, automationToggleSmooth, automationToggleWrap, automationToggleMode, automationToggleLink, automationSmoothable,
          automationSetLoop, automationSetRate, automationRateText, automationSetScale,
-         automationClearClip, automationListGen, automationStepTicks, rowCycle } from './ui_automation.mjs';
+         automationClearClip, automationListGen, automationStepTicks, rowCycle,
+         cycleText, automationMatchPad, padCycle } from './ui_automation.mjs';
 import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
          drawBrackets, kitUseLayout, MV_FOOTER_Y } from './ui_movy.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -82,7 +83,7 @@ export function autoBankRows(track, clip) {
         rows.push({ kind: 'entry', target: e.target, label: automationTargetLabel(e.target),
                     active: e.active, smooth: e.smooth, wrapReset: !!e.wrapReset, punch: !!e.punch,
                     linked: e.linked !== false,
-                    count: e.count, loop: e.loop, res: e.res,
+                    count: e.count, loop: e.loop, res: e.res, lo: e.lo | 0, st: e.st | 0,
                     scale: isFinite(e.scale) ? e.scale : 100 });
     }
     rows.sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
@@ -106,10 +107,21 @@ function wrapText(reset) { return reset ? 'Reset' : 'Carry'; }
 function modeText(punch) { return punch ? 'Punch' : 'Curve'; }
 function linkText(linked) { return linked ? 'On' : 'Off'; }
 
+/* A row's step in ticks: a drum lane's own (its cycle's grid), else the
+ * clip's / pad's. */
+function rowTps(track, clip, r) {
+    return (r.st > 0 && r.loop > 0) ? r.st : automationStepTicks(track, clip);
+}
 /* Loop length in STEPS for the row (the store keeps ticks). */
 function rowLoopSteps(track, clip, r) {
-    const tps = automationStepTicks(track, clip);
+    const tps = rowTps(track, clip, r);
     return r.loop > 0 ? Math.max(1, Math.round(r.loop / tps)) : 0;
+}
+/* The Loop row's value: on a drum track the lane's CYCLE, never CLIP (every
+ * drum lane has one); elsewhere steps, or CLIP to follow the clip. */
+function loopValue(track, clip, r, steps) {
+    if (S.trackPadMode[track] === PAD_MODE_DRUM && steps > 0) return cycleText(steps, rowTps(track, clip, r));
+    return loopText(steps);
 }
 
 function opsFor(track, clip, r) {
@@ -136,7 +148,13 @@ function opsFor(track, clip, r) {
     /* LINK (plan 6c): does the lane move with its notes? Shown in both modes —
      * a Punch lock follows its note as much as a curve does. */
     ops.push({ op: 'link', label: 'Link', value: linkText(r.linked) });
-    ops.push({ op: 'loop', label: 'Loop', value: loopText(rowLoopSteps(track, clip, r)) });
+    ops.push({ op: 'loop', label: 'Loop', value: loopValue(track, clip, r, rowLoopSteps(track, clip, r)) });
+    /* A drum lane's cycle is a snapshot of the pad it was recorded on; Match
+     * pad re-takes it from the pad selected NOW (its value, before you press). */
+    if (S.trackPadMode[track] === PAD_MODE_DRUM) {
+        const p = padCycle(track);
+        ops.push({ op: 'match', label: 'Match pad', value: cycleText(p.len, p.tps) });
+    }
     ops.push({ op: 'rate', label: 'Rate', value: automationRateText(r.res) });
     ops.push({ op: 'scale', label: 'Scale', value: scaleText(r.scale) });
     return ops;
@@ -168,7 +186,7 @@ export function drawAutomationBankBody() {
             label: o.label,
             value: (o.op === 'loop' || o.op === 'rate' || o.op === 'scale')
                 ? ((a.loopEdit || a.rateEdit || a.scaleEdit) && i === a.ops.sel ? '<' + o.value + '>' : o.value)
-                : (o.op === 'smooth' || o.op === 'wrap' || o.op === 'mode' || o.op === 'link') ? o.value : undefined,
+                : (o.op === 'smooth' || o.op === 'wrap' || o.op === 'mode' || o.op === 'link' || o.op === 'match') ? o.value : undefined,
         }));
         drawKitBackdropDim(0, LIST_TOP, 128, MV_FOOTER_Y - LIST_TOP);
         /* ⚠ bottomY: STOP THE BOX ABOVE THE FOOTER. Without it the stacked
@@ -239,6 +257,17 @@ function runOp(t, c, a) {
         a.ops = null;
         return;
     }
+    if (o.op === 'match') {
+        /* One press: the lane's cycle is the selected pad's. The pop-up stays
+         * open on the new Loop value. */
+        if (automationMatchPad(t, c, r.target)) {
+            const p = padCycle(t);
+            r.loop = p.len * p.tps; r.lo = p.off * p.tps; r.st = p.tps;
+            const lr = a.ops.rows.find(x => x.op === 'loop');
+            if (lr) lr.value = loopValue(t, c, r, p.len);
+        }
+        return;
+    }
     if (o.op === 'delete') {
         if (automationClearKey(t, c, r.target)) showActionPopup('AUTOMATION', 'DELETED');
     } else if (o.op === 'active') {
@@ -305,19 +334,22 @@ export function autoBankJog(delta) {
             return true;
         }
         if (a.loopEdit) {
-            /* A drum track counts in its active lane's steps, up to that lane's
-             * length (the DSP clamps a loop to the drum window anyway). */
-            const max = S.trackPadMode[t] === PAD_MODE_DRUM ? (S.drumLaneLength[t] || 16)
+            /* A drum lane counts in ITS OWN steps, 1 up — its cycle may run past
+             * every pad (it plays in full), up to what the store's 16-bit tick
+             * holds from where it starts. A melodic lane: 0 (CLIP) up to its
+             * clip's length. */
+            const r = a.ops.row, drum = S.trackPadMode[t] === PAD_MODE_DRUM;
+            const tps = rowTps(t, c, r);
+            const max = drum ? Math.max(1, Math.min(256, Math.floor((65535 - (r.lo | 0)) / tps)))
                       : ((S.clipLength[t] && S.clipLength[t][c]) || 16);
-            const nv = Math.max(0, Math.min(max, a.loopVal + delta));
+            const nv = Math.max(drum ? 1 : 0, Math.min(max, a.loopVal + delta));
             if (nv !== a.loopVal) {
                 a.loopVal = nv;
-                const tps = automationStepTicks(t, c);
-                automationSetLoop(t, c, a.ops.row.target, nv > 0 ? nv * tps : 0, !a.loopCkpt);
+                automationSetLoop(t, c, r.target, nv > 0 ? nv * tps : 0, !a.loopCkpt);
                 a.loopCkpt = true;
-                a.ops.row.loop = nv > 0 ? nv * tps : 0;
+                r.loop = nv > 0 ? nv * tps : 0;
                 const lr = a.ops.rows.find(x => x.op === 'loop');
-                if (lr) lr.value = loopText(nv);
+                if (lr) lr.value = loopValue(t, c, r, nv);
             }
         } else {
             a.ops.sel = Math.max(0, Math.min(a.ops.rows.length - 1, a.ops.sel + delta));

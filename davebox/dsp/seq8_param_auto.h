@@ -114,6 +114,11 @@ typedef struct {
     uint16_t target;             /* interned target id */
     uint16_t val;                /* the live value, 0..PA_VAL_MAX */
     uint32_t last_snap;          /* last cell written (RECORD); 0xFFFFFFFF = none */
+    /* DRUM CYCLE SNAPSHOT: the active pad's (loop start, length, step) in
+     * ticks at the moment the hand went down — what a NEW lane recorded by
+     * this hand is given as its cycle. Written on the SPI thread BEFORE the
+     * `used` release store, like `target`. cyc_len 0 = not a drum track. */
+    uint16_t cyc_off, cyc_len, cyc_st;
 } pa_live_t;
 
 /* One parameter's captured sweep, awaiting a Capture tap. Written on the
@@ -128,6 +133,10 @@ typedef struct {
     uint16_t target;             /* index into pa_targets */
     uint16_t count;
     uint16_t cell;               /* cell width in ticks, as written */
+    /* The drum cycle the points were captured against (the lane's own, or the
+     * hand's snapshot for a new lane); cyc_len 0 = none. The commit gives it
+     * to a lane that has none yet. */
+    uint16_t cyc_off, cyc_len, cyc_st;
     pa_point_t points[PA_CAP_POINTS];
 } pa_cap_t;
 
@@ -147,6 +156,12 @@ typedef struct {
     uint16_t loop_len;
     uint16_t loop_off;
     uint16_t resolution;
+    /* A DRUM lane's step, in ticks: the unit of the pad it was recorded on
+     * (Punch lasts one; the AUTOMATION bank's grid counts in it). With
+     * loop_len/loop_off it is the lane's CYCLE — a snapshot, never a follow:
+     * on a drum track every lane carries one, set when it is first written,
+     * and nothing but its own Loop / Match changes it. 0 on melodic lanes. */
+    uint16_t step_ticks;
     /* Last value playback sent, so an unchanged parameter is not re-pushed
      * every tick — at ~2.9 ms a push, that is the difference between a
      * working feature and a stalled one. Audio-thread owned. */

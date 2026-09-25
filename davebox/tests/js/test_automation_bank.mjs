@@ -199,7 +199,7 @@ step('Smooth/Stepped is an op HERE (every numeric param): cutoff offers it, voic
     cc(14, 4); cc(14, 4); ticks(2);
     assert(menu().loopVal === 8, 'jog sets steps, got ' + menu().loopVal);
     /* ⭑ Applies on every change (Josh, 2026-09-03), ONE checkpoint per edit session. */
-    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 0'), '8 steps × 24 ticks, got ' + JSON.stringify(sets));
+    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 0 0'), '8 steps × 24 ticks, got ' + JSON.stringify(sets));
     assert(sets.filter(x => x.startsWith('t0_c0_undo_checkpoint=')).length === 1, 'one checkpoint for the session');
     sets.length = 0;
     click(); ticks(2);
@@ -214,9 +214,9 @@ step('Smooth/Stepped is an op HERE (every numeric param): cutoff offers it, voic
     assert(menu().rateEdit === true, 'Rate: click edits');
     sets.length = 0;
     cc(14, 2); ticks(2);                                  /* x1 -> x4 */
-    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 7'), 'x4 (code 7) with the 8-step loop kept, got ' + JSON.stringify(sets));
+    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 7 0'), 'x4 (code 7) with the 8-step loop kept, got ' + JSON.stringify(sets));
     cc(14, 127); cc(14, 127); cc(14, 127); cc(14, 127); cc(14, 127); cc(14, 127); ticks(2);   /* down to /4 */
-    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 3'), '/4 (code 3), got ' + JSON.stringify(sets));
+    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 3 0'), '/4 (code 3), got ' + JSON.stringify(sets));
     cc(14, 127); cc(14, 127); cc(14, 127); ticks(1);
     assert(menu().rateVal === 1, 'clamps at /16, got ' + menu().rateVal);
     back(); ticks(1); assert(!menu().rateEdit && menu().ops, 'Back leaves the edit, ops stay');

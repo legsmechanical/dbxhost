@@ -326,19 +326,22 @@ int main(void) {
         DPTS("96:5000", "a refused ALL LANES compress moves no automation");
         hx_destroy(h);
 
-        /* The window is the LONGEST lane: lane 4 at 32 steps makes a point on
-         * step 29 part of the rotation (a 16-step window would not reach it). */
+        /* The window is the automation lane's OWN CYCLE (2026-09-24; it was
+         * the longest drum lane): written from lane 4, a 32-step pad, the
+         * lane's cycle is 32 steps, so a point on step 29 rotates with it and
+         * wraps at ITS end — while lane 1, the one with notes, is 16. */
         h = hx_create(NULL);
         hx_set_param(h, "t0_l0_note_add", "96 100 12");
         hx_set_param(h, "t0_l3_clip_length", "32");
+        hx_set_param(h, "t0_active_drum_lane", "3");
         hx_set_param(h, "t0_pa_set", "0 " DL " 696 5000");              /* step 29 */
         hx_set_param(h, "t0_all_lanes_clock_shift", "1");
-        DPTS("720:5000", "Clock Shift rotates inside the LONGEST lane's window (step 29 -> 30)");
+        DPTS("720:5000", "Clock Shift rotates inside the lane's own 32-step cycle (step 29 -> 30)");
         hx_set_param(h, "t0_all_lanes_clock_shift", "1");
         hx_set_param(h, "t0_all_lanes_clock_shift", "1");
         DPTS("0:5000", "and wraps at ITS end (step 31 -> 0), not at 16");
         hx_destroy(h);
-        OK("drum: a refused compress moves nothing; the rotation wraps at the longest lane's end");
+        OK("drum: a refused compress moves nothing; the rotation wraps at the automation lane's own cycle");
 
         /* UNDO takes the automation back WITH the notes. The drum clip snapshot
          * used to hold notes only, so an undone ALL LANES Double left the copied

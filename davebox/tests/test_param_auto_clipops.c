@@ -205,6 +205,40 @@ int main(void) {
         OK("⚠ undo/redo keep a restored lane's name; a name no VALID snapshot needs is still freed");
     }
 
+    /* ---- DRUM clip copy / cut carry the automation, cycles and all ------ */
+    {
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+        hx_set_param(h, "t0_l0_note_add", "0 100 24");        /* track 0: drum */
+        hx_set_param(h, "t1_pad_mode", "1");                   /* track 1: drum */
+        hx_set_param(h, "t1_l0_note_add", "0 100 24");
+        hx_set_param(h, "t0_l2_clip_length", "12");
+        hx_set_param(h, "t0_active_drum_lane", "2");
+        pa_set(h, 0, 0, "0:slot:pan", 24, 4000);               /* a 12-step cycle */
+        pa_set(h, 1, 2, "1:slot:volume", 0, 9000);             /* the destination's OLD lane */
+        hx_set_param(h, "drum_clip_copy", "0 0 1 2");
+        HX_ASSERT(has(h, 1, 2, " 1:slot:pan "), "⭐ the drum copy carries the lane, re-pointed at track 1");
+        HX_ASSERT(!has(h, 1, 2, "slot:volume"), "⭐ ...and REPLACES the destination's old lanes");
+        HX_ASSERT(has(h, 0, 0, " 0:slot:pan "), "the source keeps its lane");
+        {
+            const pa_entry_t *e = NULL;
+            for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+                const pa_entry_t *x = &in->pa_entries[i];
+                if (x->used && x->count && x->track == 1 && x->clip == 2) e = x;
+            }
+            HX_ASSERT(e && e->loop_len == 288 && e->step_ticks == 24, "and with its 12-step cycle");
+        }
+        hx_set_param(h, "undo_restore", "1");
+        HX_ASSERT(has(h, 1, 2, "1:slot:volume") && !has(h, 1, 2, "slot:pan"), "one undo puts the destination's own lane back");
+        OK("⭐ a drum clip copy carries its automation and cycles, replacing the destination's; undo reverts it");
+
+        hx_set_param(h, "drum_clip_cut", "0 0 1 3");
+        HX_ASSERT(has(h, 1, 3, " 1:slot:pan "), "the cut moves the lane to the destination");
+        HX_ASSERT(!has(h, 0, 0, "slot:pan"), "⭐ and strands nothing on the emptied source");
+        OK("a drum clip cut moves its automation off the source");
+        hx_destroy(h);
+    }
+
     printf("PASS: test_param_auto_clipops (%d checks)\n", ok_count);
     return 0;
 }

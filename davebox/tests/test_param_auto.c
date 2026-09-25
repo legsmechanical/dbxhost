@@ -5,6 +5,10 @@
  * automation persists as a section of the project's one state file — surviving
  * a reload, and absent when the project has none. (The curve model is
  * test_param_auto_eval.c.) */
+/* ⚠ Track 0 is a DRUM track in a fresh instance, and a drum lane runs on its
+ * own cycle off the master clock (2026-09-25) — not on the clip tick these
+ * cases hand in. They are about the clip-clock path, so track 0 is made
+ * melodic first; the drum cycle has its own test (test_param_auto_drum_cycle). */
 #include "harness.h"
 #include <string.h>
 #include <stdio.h>
@@ -38,6 +42,7 @@ int main(void) {
     /* ---- writes, and what the readback reports ---------------------- */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         HX_ASSERT(h, "create failed");
         pa_set(h, 1, 2, "0:fx1:cutoff", 0, 4000);
         pa_set(h, 1, 2, "0:fx1:cutoff", 48, 9000);
@@ -67,6 +72,7 @@ int main(void) {
     /* ---- a chain REORDER: targets follow their module ---------------- */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         pa_set(h, 0, 0, "2:fx1:cutoff", 0, 100);   /* slot 2, the module at fx1 */
         pa_set(h, 0, 0, "2:fx3:mix", 0, 200);      /* slot 2, the module at fx3 */
         pa_set(h, 1, 0, "5:fx1:cutoff", 0, 300);   /* ANOTHER slot's fx1 */
@@ -97,6 +103,7 @@ int main(void) {
     /* ---- a BUS reorder: bus-FX targets follow, whatever their lead field -- */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         pa_set(h, 0, 0, "0:move_fx:2:fx1:cutoff", 0, 100);
         pa_set(h, 1, 0, "4:move_fx:2:fx2:mix", 0, 200);    /* same bus, another lead field */
         pa_set(h, 0, 0, "0:move_fx:3:fx1:cutoff", 0, 300); /* ANOTHER Move bus */
@@ -119,6 +126,7 @@ int main(void) {
     /* ---- the clear gestures ----------------------------------------- */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         pa_set(h, 0, 0, "0:fx1:cutoff", 0, 100);
         pa_set(h, 0, 0, "0:fx1:cutoff", 24, 200);
         pa_set(h, 0, 0, "0:fx2:mix", 24, 300);
@@ -150,6 +158,7 @@ int main(void) {
     /* ---- deactivate keeps the data ---------------------------------- */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         pa_set(h, 0, 0, "cc:7", 0, 500);
         hx_set_param(h, "t0_pa_active", "0 cc:7 0");
         pa_list(h, buf, sizeof(buf));
@@ -168,6 +177,7 @@ int main(void) {
          * PA_MAX_TARGETS — which is why an earlier version of this test, that
          * only wrote distinct targets, never reached the other two limits. */
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         char tgt[32];
         for (int i = 0; i < PA_MAX_TARGETS + 8; i++) {
             snprintf(tgt, sizeof(tgt), "0:fx1:p%d", i);
@@ -280,6 +290,7 @@ int main(void) {
          * this entry. Demonstrated before the fix: two such entries stored fine
          * and the reload came back completely empty. */
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         pa_set(h, 0, 0, "0:fx1:cu}t", 0, 100);
         pa_set(h, 0, 0, "a\"b", 0, 100);
         pa_set(h, 0, 0, "back\\slash", 0, 100);
@@ -304,6 +315,7 @@ int main(void) {
          * dirty or the deferred save never runs and the work survives only a
          * clean suspend — lost on a crash or a kill. */
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         char dirty[8], sink[4096];
         hx_get_param(h, "state_full", sink, sizeof(sink));      /* consume dirty */
         hx_get_param(h, "state_dirty", dirty, sizeof(dirty));
@@ -328,6 +340,7 @@ int main(void) {
          * that the sentinel knew nothing about. */
         FILE *f = fopen(state, "w"); HX_ASSERT(f, "fixture"); fprintf(f, "{\"v\":0}"); fclose(f);
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         pa_set(h, 0, 0, "cc:74", 0, 5000);
         { seq8_instance_t *in = (seq8_instance_t *)h->inst;
           strncpy(in->state_path, state, sizeof(in->state_path) - 1);
@@ -380,6 +393,8 @@ int main(void) {
         snprintf(autof, sizeof(autof), "%s/seq8sa-auto.json", dir);
 
         hx_t *h = hx_create(NULL);
+
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         hx_set_param(h, "state_path", state);
         pa_set(h, 2, 5, "1:synth:filter", 12, 7777);
         hx_set_param(h, "t2_pa_smooth", "5 1:synth:filter 1");
@@ -447,6 +462,7 @@ int main(void) {
          * version of this check passed against a handler that did fall
          * through. */
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         char rev_before[32] = {0}, rev_after[32] = {0};
         hx_get_param(h, "rui_rev", rev_before, sizeof(rev_before));
         hx_set_param(h, "t0_pa_nonsense", "0 0:fx1:x 1 1");

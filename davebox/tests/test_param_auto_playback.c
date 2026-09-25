@@ -5,6 +5,10 @@
  * are emitted here while every chain or bus parameter is STAGED for JS to
  * push. This pins the staging half — what lands in the queue, what does not,
  * and that a parameter is released back to rest rather than abandoned. */
+/* ⚠ Track 0 is a DRUM track in a fresh instance, and a drum lane runs on its
+ * own cycle off the master clock (2026-09-25) — not on the clip tick these
+ * cases hand in. They are about the clip-clock path, so track 0 is made
+ * melodic first; the drum cycle has its own test (test_param_auto_drum_cycle). */
 #include "harness.h"
 #include <string.h>
 #include <stdio.h>
@@ -42,6 +46,7 @@ int main(void) {
     /* ---- what the DSP stages, and what it keeps for itself ---------- */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
 
         /* A chain parameter and a MIDI parameter, both automated. */
@@ -70,6 +75,7 @@ int main(void) {
         /* At ~2.9 ms a push, re-sending a parameter that has not moved is the
          * difference between a working feature and a stalled tick. */
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         pa_set(h, 0, 0, "1:fx1:cutoff", 0, 5000);
 
@@ -95,6 +101,7 @@ int main(void) {
     /* ---- deactivated automation does not play ----------------------- */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         pa_set(h, 0, 0, "1:fx1:cutoff", 0, 5000);
         hx_set_param(h, "t0_pa_active", "0 1:fx1:cutoff 0");
@@ -108,6 +115,7 @@ int main(void) {
     /* ---- the rest follows the knob while nothing drives it ----------- */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
         pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
@@ -144,6 +152,7 @@ int main(void) {
          * persists what it was left holding. So stopping must put the
          * parameter back where it was before automation touched it. */
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
         pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
@@ -184,6 +193,7 @@ int main(void) {
      * simply did not follow it. ONE rule, both paths. */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         /* No pa_rest — exactly the shape pa_cap_commit leaves behind. */
         pa_set(h, 0, 0, "1:fx1:cutoff", 0, 3000);
@@ -219,6 +229,7 @@ int main(void) {
      * → [[test-the-path-not-the-function]] */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
 
         hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
@@ -261,6 +272,7 @@ int main(void) {
      * distinguishable; with different targets, releasing alone looks correct. */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
 
         /* clip 0 rests at 2000, clip 1 rests at 5000 — same parameter. */
@@ -302,6 +314,7 @@ int main(void) {
      * overwrite it. */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
 
         pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
@@ -344,6 +357,7 @@ int main(void) {
      * `pa_write_begin` without its `end` is precisely "a write is in flight". */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
 
         hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
@@ -382,6 +396,7 @@ int main(void) {
      * feature was built to fix. → [[test-the-path-not-the-function]] */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
 
         hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
@@ -436,6 +451,7 @@ int main(void) {
      * this block existed. */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
 
         /* clip 0 drives the parameter; clip 1 has a lane the user then DELETES. */
@@ -475,6 +491,7 @@ int main(void) {
      * expensive of the two to have missed. */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
 
         hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
@@ -517,6 +534,7 @@ int main(void) {
          * at 2852 us against a ~10.6 ms tick. What does not fit is not lost —
          * it is simply still "changed" next tick, so the scan picks it up then. */
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         char tgt[32];
         const int N = PA_TICK_MAX_STAGE * 3;
@@ -544,6 +562,7 @@ int main(void) {
     /* ---- but if it ever does overflow, it says so -------------------- */
     {
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         /* Straight at the ring: the scan's own budget makes this unreachable in
          * normal play, which is exactly why the condition needs to be visible
@@ -570,6 +589,7 @@ int main(void) {
          * the head and lose or tear an entry — exactly under the stop, when
          * the values being staged are the ones that put parameters back. */
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
         pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
@@ -608,6 +628,7 @@ int main(void) {
          * the cap would never be reached while the first ones kept moving —
          * silently, forever. The scan resumes where it was cut off. */
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         char tgt[32], key[32], v[64];
         const int N = PA_TICK_MAX_STAGE + 4;
@@ -642,6 +663,7 @@ int main(void) {
          * behind newer values for the same target — that would hand the reader
          * the older value last. */
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         pa_set(h, 0, 0, "1:fx1:cutoff", 0, 1000);          /* interns the target */
         pa_playback_scan(in, &in->tracks[0], 0, 0, 0, 384, NULL);
@@ -666,6 +688,7 @@ int main(void) {
          * was before automation touched it — whether or not the transport is
          * running, and staged by the audio thread, the ring's one producer. */
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         hx_set_param(h, "t0_pa_rest", "0 1:fx1:cutoff 2000");
         pa_set(h, 0, 0, "1:fx1:cutoff", 0, 9000);
@@ -725,6 +748,7 @@ int main(void) {
          * override: playback leaves the target alone until the hand comes off,
          * then re-asserts. The DSP's own flags decide which — JS only reports. */
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         seq8_track_t *tr = &in->tracks[0];
 
@@ -800,6 +824,7 @@ int main(void) {
          * than acted on: half of one edit and half of another is a value that
          * was never written to anything. */
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         pa_set(h, 0, 0, "1:fx1:cutoff", 0, 7000);
 
@@ -825,6 +850,7 @@ int main(void) {
          * hook: single-threaded code cannot otherwise produce the race. */
         extern void (*pa_test_midscan_hook)(seq8_instance_t *inst);
         hx_t *h = hx_create(NULL);
+        hx_set_param(h, "t0_pad_mode", "0");   /* melodic: see the note at the top */
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         pa_set(h, 0, 0, "1:fx1:cutoff", 0, 7000);
 

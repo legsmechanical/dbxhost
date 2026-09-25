@@ -29,6 +29,25 @@ the section into a versioned heading at release time.
   each with its style's groove and a name that says what it plays. The
   Phrase Map setting chooses where a drum phrase's sounds go at first: Off,
   General MIDI or Move's kit layout.
+- **Drum automation loops at the pad you recorded it on.** On a drum track,
+  each automated parameter now has its own cycle — the length of the pad that
+  was selected when you recorded or locked it — instead of the longest lane's.
+  A sweep recorded on a 12-step hat repeats every 12 steps. The AUTOMATION
+  bank shows it on each row; **Loop** changes it and **Match pad** sets it to
+  the selected pad. Older projects keep the timing they had.
+- **The AUTOMATION bank shows each lane on its own terms.** Every row shows
+  the length it repeats over (4 BAR, 13 ST, or CLIP when it follows the clip).
+  With the cursor on a row, the step buttons, pages and header show that
+  lane: steps coloured by the value it plays (dim to bright, as in dAVEBOx
+  Legacy), its own pages on Left / Right with the track overview's position
+  bar, and its own playhead. Pressing a step there no longer edits notes.
+- **Hold a step to edit its automation.** On the AUTOMATION bank, hold a step
+  that has a value and you land on that parameter's bank (header **<AUTO S7**);
+  turn the knob to change the value on that step, let go to come back to the
+  same row. dAVEBOx's own bank knobs for now; other parameters say NO EDITOR.
+- **Recording says how long the lane is.** Every time you start recording
+  automation, a notice shows **● LANE: 2 BAR** (or 13 ST) — the cycle the move
+  will repeat on.
 - **A project load unwraps a Dave.** Loading a project deals a Dave into your
   Dave Box and shows him full screen under a `<PROJECT> [LOADING...]` header
   while the set loads.
@@ -43,19 +62,6 @@ the section into a versioned heading at release time.
 - **Pads find voices in the bus voice picker.** A pad still plays and the list
   jumps to the voice it sounds; the jog click still toggles. Works with modules
   that say which notes play which voice.
-- **The AUTOMATION bank shows each lane on its own terms.** Every row shows
-  the length it repeats over (4 BAR, 13 ST, or CLIP when it follows the clip).
-  With the cursor on a row, the step buttons, pages and header show that
-  lane: steps coloured by the value it plays (dim to bright, as in dAVEBOx
-  Legacy), its own pages on Left / Right with the track overview's position
-  bar, and its own playhead. Pressing a step there no longer edits notes.
-- **Hold a step to edit its automation.** On the AUTOMATION bank, hold a step
-  that has a value and you land on that parameter's bank (header **<AUTO S7**);
-  turn the knob to change the value on that step, let go to come back to the
-  same row. dAVEBOx's own bank knobs for now; other parameters say NO EDITOR.
-- **Recording says how long the lane is.** Every time you start recording
-  automation, a notice shows **● LANE: 2 BAR** (or 13 ST) — the cycle the move
-  will repeat on.
 - **Import MIDI.** Sound menu → Import MIDI fills a clip from a MIDI file
   anywhere in your user data folder: pick the file, pick a part (with a
   preview), then set the start bar, bars, grid and destination clip on K1–K4
@@ -94,6 +100,10 @@ the section into a versioned heading at release time.
   to STEP or to a SOUND + CONFIG card you did not choose); switching tracks from
   the card shows the new track's own bank; and working in a Move instrument's
   editor no longer resets the bank.
+- **Exported automation repeats like it plays.** A drum parameter with its own
+  cycle, or a melodic one with its own Loop, used to export once and then hold
+  its last value for the rest of the clip in Live. It now repeats across the
+  whole clip, at its own length and rate.
 - **Arp octaves now join the notes the style orders.** Down, Up/Down, Down/Up,
   Converge and Diverge play across the whole octave range instead of repeating
   the phrase per octave, and negative octaves extend downward. Applies to the

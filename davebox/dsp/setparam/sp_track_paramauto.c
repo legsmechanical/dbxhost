@@ -70,6 +70,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         if (!pa_may_write(inst, tidx, id)) return 1;
         pa_entry_t *e = pa_get(inst, tidx, clip, id);
         if (!e) { inst->pa_store_full = PA_FULL_ENTRIES; return 1; }
+        pa_cycle_adopt_active(tr, clip, e);   /* a new drum lane: the pad it was written from */
         if (!pa_set_point(e, (uint16_t)tick, (uint16_t)v)) inst->pa_store_full = PA_FULL_POINTS;
         e->last_sent_valid = 0;   /* the knob that wrote this also moved the live value */
         pa_mark_dirty(inst);
@@ -92,6 +93,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         if (!pa_may_write(inst, tidx, id)) return 1;
         pa_entry_t *e = pa_get(inst, tidx, clip, id);
         if (!e) { inst->pa_store_full = PA_FULL_ENTRIES; return 1; }
+        pa_cycle_adopt_active(tr, clip, e);   /* see pa_set */
         pa_clear_range(e, (uint16_t)from, (uint16_t)to);
         if (!pa_set_point(e, (uint16_t)from, (uint16_t)v)) inst->pa_store_full = PA_FULL_POINTS;
         e->last_sent_valid = 0;   /* see pa_set */
@@ -363,24 +365,34 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         return 1;
     }
 
-    /* pa_loop: "<clip> <target> <len> <off> <res>" — the independent loop
-     * window and resolution. Nothing in v1's UI writes this; the key exists so
-     * the store, its file format and its playback path all carry the feature
-     * from the start, and restoring per-parameter polymetric automation later
-     * is UI work rather than a storage change. */
+    /* pa_loop: "<clip> <target> <len> <off> <res> [<step>]" — the lane's own
+     * loop window and rate; the optional 6th token its step in ticks (a drum
+     * lane's cycle unit). On a DRUM track a lane always has a cycle, so len 0
+     * — "follow the clip" on a melodic lane — means MATCH THE ACTIVE PAD: the
+     * pad's start, length and step become the lane's cycle. */
     if (!strcmp(sub, "pa_loop")) {
-        int clip = 0, len = 0, off = 0, res = 0;
+        int clip = 0, len = 0, off = 0, res = 0, st = -1;
         PA_SKIP_SPACE(p); PA_UINT(p, clip);
         PA_TARGET(p, tgt);
         PA_SKIP_SPACE(p); PA_UINT(p, len);
         PA_SKIP_SPACE(p); PA_UINT(p, off);
         PA_SKIP_SPACE(p); PA_UINT(p, res);
+        PA_SKIP_SPACE(p);
+        if (*p >= '0' && *p <= '9') { PA_UINT(p, st); }
         if (clip < 0 || clip >= NUM_CLIPS) return 1;
         pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_id(inst, tgt));
         if (e) {
-            e->loop_len   = (uint16_t)len;
-            e->loop_off   = (uint16_t)off;
             e->resolution = (uint16_t)res;
+            if (tr->pad_mode == PAD_MODE_DRUM && len == 0) {
+                e->loop_len = 0;
+                pa_cycle_adopt_active(tr, clip, e);
+            } else {
+                if (off > 0xFFFF) off = 0xFFFF;
+                if (off + len > 0xFFFF) len = 0xFFFF - off;
+                e->loop_len   = (uint16_t)len;
+                e->loop_off   = (uint16_t)off;
+                if (st >= 0) e->step_ticks = (uint16_t)st;
+            }
             pa_mark_dirty(inst);
         }
         return 1;
