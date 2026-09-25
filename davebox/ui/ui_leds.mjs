@@ -160,7 +160,6 @@ function paintAutoLane(cy) {
         const abs = base + i;
         let color;
         if (abs < cy.off || abs >= end) color = DarkGrey;
-        else if (abs === play) color = White;            /* the playhead wins */
         else if (!vals) color = LED_OFF;
         else {
             const v = vals[i];
@@ -171,6 +170,8 @@ function paintAutoLane(cy) {
         setLED(16 + i, color);
     }
     if (!vals) paintAutoBankLit(base, cy.off, end);
+    /* The playhead, last: it wins over the gradient, the point blink and the
+     * white points of the no-values state. */
     if (play >= base && play < base + 16 && play < end) setLED(16 + play - base, White);
 }
 

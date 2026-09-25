@@ -34,6 +34,7 @@ int main(void) {
     HX_ASSERT(snap_field(h, 57) == -1, "nothing viewed: -1");
     hx_set_param(h, "t0_pa_view", "0 1:synth:nope");
     HX_ASSERT(in->tracks[0].pa_view_slot == 0, "a target with no lane views nothing");
+    HX_ASSERT(pa_target_lookup(in, "1:synth:nope") < 0, "...and viewing it did NOT create the target");
     hx_set_param(h, "t0_pa_view", "0 1:synth:cutoff");
     HX_ASSERT(in->tracks[0].pa_view_slot != 0, "the lane is viewed");
     HX_ASSERT(snap_field(h, 57) == -1, "stopped: -1");
@@ -61,6 +62,10 @@ int main(void) {
     OK("⭐ the viewed lane's position follows its OWN loop, the same arithmetic playback uses");
 
     HX_ASSERT(snap_field(h, 58) == -1, "another track: -1");
+    hx_set_param(h, "transport", "stop");
+    hx_render(h, 5);
+    HX_ASSERT(snap_field(h, 57) == -1, "after the transport STOPS: -1, not the last position");
+    OK("stopping the transport takes the position away");
     hx_set_param(h, "t0_pa_view", "-");
     HX_ASSERT(snap_field(h, 57) == -1 && in->tracks[0].pa_view_slot == 0, "\"-\" clears the view");
     OK("\"-\" views nothing; other tracks report -1");
