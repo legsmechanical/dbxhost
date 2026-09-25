@@ -385,6 +385,51 @@ export function automationStepTicks(track, clip) {
     return (S.clipTPS[track] && S.clipTPS[track][clip]) || 24;
 }
 
+/* ⭐ A LANE'S CYCLE — the one source of truth for "how long does this
+ * automation loop, and on what grid" (Josh, 2026-09-24: every row shows it,
+ * and the AUTO bank's grid, paging, page bar and playhead follow it).
+ *
+ *   { off, len, tps, pages, text, follows }
+ *     off / len  — the window, in STEPS of `tps` ticks (off = first step)
+ *     pages      — ceil(len / 16), the step-button pages it spans
+ *     text       — the value column: "4 BAR", "13 ST", "13 ST/32", or
+ *                  "CLIP" when the lane follows its clip
+ *     follows    — true when the lane has no Loop of its own
+ *
+ * A lane with its own Loop is that window; one without follows the clip (a
+ * melodic clip's loop window, or — today, on a drum track — the selected
+ * pad's, which is what the step row and `_pa_steps` already use). When drum
+ * automation gets per-lane cycles, only this function changes. Null for a
+ * target the owner does not know. */
+export function rowCycle(track, clip, target) {
+    const s = stateByKey.get(stateKey(track, clip, target));
+    if (!s) return null;
+    const tps = automationStepTicks(track, clip);
+    let off, len, follows;
+    if ((s.loop | 0) > 0) {
+        off = 0; len = Math.max(1, Math.round(s.loop / tps)); follows = false;
+    } else if (S.trackPadMode[track] === PAD_MODE_DRUM) {
+        off = S.drumLaneLoopStart[track] | 0; len = S.drumLaneLength[track] || 16; follows = true;
+    } else {
+        off = (S.clipLoopStart[track] && S.clipLoopStart[track][clip]) | 0;
+        len = (S.clipLength[track] && S.clipLength[track][clip]) || 16; follows = true;
+    }
+    return { off, len, tps, pages: Math.max(1, Math.ceil(len / 16)),
+             text: follows ? 'CLIP' : cycleText(len, tps), follows };
+}
+
+/* The step unit's name when it is not 1/16 — a step of `tps` ticks is a
+ * 1/(384/tps) note (96 ticks per beat). */
+const STEP_UNIT = { 12: '/32', 48: '/8', 96: '/4', 192: '/2', 384: '/1' };
+/* "4 BAR" when the cycle is whole bars (16 sixteenths each), else its length
+ * in its OWN steps, with the unit when it is not 1/16: "13 ST", "13 ST/32".
+ * Never fractional bars: "0.81 BAR" says nothing about the grid. */
+export function cycleText(steps, tps) {
+    const ticks = steps * tps;
+    if (ticks > 0 && ticks % 384 === 0) return (ticks / 384) + ' BAR';
+    return steps + ' ST' + (tps === 24 ? '' : (STEP_UNIT[tps] || ''));
+}
+
 /* The mixer levels publish no chain_params — they are host strip state, not
  * a module's parameters — so their ranges are declared here, once, in the
  * host's own units: a slot or bus Volume is a 0..4 gain (unity 1), Pan 0..1

@@ -34,7 +34,7 @@ import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey,
          automationToggleActive, automationToggleSmooth, automationToggleWrap, automationToggleMode, automationToggleLink, automationSmoothable,
          automationSetLoop, automationSetRate, automationRateText, automationSetScale,
-         automationClearClip, automationListGen, automationStepTicks } from './ui_automation.mjs';
+         automationClearClip, automationListGen, automationStepTicks, rowCycle } from './ui_automation.mjs';
 import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
          drawBrackets, kitUseLayout, MV_FOOTER_Y } from './ui_movy.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -88,10 +88,15 @@ export function autoBankRows(track, clip) {
     if (S.clipAtHas[track] && S.clipAtHas[track][clip]) rows.push({ kind: 'at', label: 'Aftertouch (pads)' });
     return rows;
 }
-function rowValue(r) {
+/* The value column is the lane's CYCLE (Josh, 2026-09-24): "4 BAR", "13 ST",
+ * "13 ST/32", or "CLIP" when it follows the clip — with lanes at different
+ * lengths, how long each one loops is the thing that is hard to remember.
+ * Muted still reads OFF; Smooth lives in the row's ops as a setting. */
+function rowValue(r, track, clip) {
     if (r.kind === 'at') return 'PADS';
     if (!r.active) return 'OFF';
-    return r.smooth ? 'SMTH' : 'ON';
+    const cy = rowCycle(track, clip, r.target);
+    return cy ? cy.text : 'ON';
 }
 function loopText(steps) { return steps > 0 ? (steps + ' ST') : 'CLIP'; }
 function scaleText(pct) { return (isFinite(pct) ? pct : 100) + '%'; }
@@ -144,7 +149,7 @@ export function drawAutomationBankBody() {
     const a = st();
     if (!S.bankCardLatched) autoBankReset();       /* the peek shows the plain card */
     const rows = autoBankRows(t, c);
-    const listRows = rows.map(r => ({ label: r.label, value: rowValue(r) }));
+    const listRows = rows.map(r => ({ label: r.label, value: rowValue(r, t, c) }));
     if (a.menu) listRows.push({ label: 'Clear all', hdr: true });
     if (a.sel >= listRows.length) a.sel = Math.max(0, listRows.length - 1);
     kitUseLayout('bank');
