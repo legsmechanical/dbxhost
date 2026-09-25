@@ -85,7 +85,12 @@ export function parseSplitVoices(raw) {
     const voices = arr.map((v, i) => {
         const id = (v && typeof v === "object" && typeof v.id === "string") ? v.id : "";
         const label = (v && typeof v === "object" && v.label) ? String(v.label) : id;
-        return { id, label: label || `Voice ${i + 1}`, index: i };
+        /* OPTIONAL `notes`: the MIDI notes that sound this voice, so a host can
+         * find the voice a pad plays (MODULE_BUSES.md). Only 0..127 integers
+         * survive; absent or empty means "not declared", never "no notes". */
+        const notes = (v && typeof v === "object" && Array.isArray(v.notes))
+            ? v.notes.filter((n) => Number.isInteger(n) && n >= 0 && n <= 127) : [];
+        return { id, label: label || `Voice ${i + 1}`, index: i, notes };
     });
     return { unresolved: false, voices };
 }
@@ -285,7 +290,8 @@ export function voiceRows(config, voices, busIndex) {
     for (const v of voices || []) {
         if (!v.id) continue;   /* a hole in the module's own list */
         const on = owner[v.id] === undefined ? -1 : owner[v.id];
-        rows.push({ kind: "voice", id: v.id, label: v.label, on, mine: on === busIndex });
+        rows.push({ kind: "voice", id: v.id, label: v.label, on, mine: on === busIndex,
+                    notes: v.notes || [] });
     }
     const known = {};
     for (const v of voices || []) if (v.id) known[v.id] = true;

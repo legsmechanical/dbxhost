@@ -1274,6 +1274,7 @@ export function markSoundDirty() { S.dirty = true; }
  * Move-routed track opens its bus, not a chain slot). */
 /* The current view, for a caller that needs to record where the user was. */
 export function soundViewForTest() { return S.view; }
+export function soundModBusVoiceIdxForTest() { return S.modBusVoiceIdx; }
 /* ui_sound's own `S.deleteHeld` — the modifier latch. Exposed because the
  * MACROS-clear gesture must RELEASE it itself (its release never arrives, see
  * the opener), and a latched Delete silently clears automation on every later
@@ -8399,6 +8400,17 @@ function queueWrite(key, val, comp) {
  * the note we EMIT, which is the module's to map.
  */
 export function soundVouchLivePress(track, note, padNote) {
+    /* ⭑ In the bus VOICE picker a pad also MOVES THE CURSOR to the voice it
+     * plays (Josh, 2026-09-24: "pad N should play the pad and jump to it in the
+     * list but not toggle it. jog click always required for toggle"). The pad
+     * has already sounded; this only points at it. The module says which notes
+     * sound which voice (split_voices `notes`); a module that does not say
+     * leaves the cursor where it is rather than guessing by position. */
+    if (S.active && S.view === VIEW_MODBUS_VOICES && track === S.track) {
+        const rows = ModBus.modBusVoiceRows(S.modBus, S.modBusGroup);
+        const i = rows.findIndex((r) => r.notes && r.notes.indexOf(note) >= 0);
+        if (i >= 0 && i !== S.modBusVoiceIdx) { S.modBusVoiceIdx = i; S.dirty = true; }
+    }
     /* `livePress` comes from the hierarchy of the block CURRENTLY open, so it
      * is null unless the module being looked at is one that asked for this.
      * That self-gates the whole feature — no module-id test needed. */
