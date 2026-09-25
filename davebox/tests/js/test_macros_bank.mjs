@@ -153,6 +153,9 @@ function enterTrack(t) {
     GS.sessionView = false;
     for (let i = 0; i < 8; i++) GS.trackRoute[i] = 0;   /* all Schwung */
     GS.activeTrack = t;
+    /* The track is ON SOUND+CFG, as the jog walk leaves it: the card is the
+     * bank's screen and sound mode shows it only there (DBX-188). */
+    GS.activeBank = GS.trackActiveBank[t] = BANK_SOUND;
     snd.soundEnter(t, t);
     ticks(3);                                           /* land the entry action */
     /* ⚠ Sound mode ENTERS ON THE BANK'S PROMPT now, not the menu (Josh,
@@ -227,7 +230,6 @@ step('setup: sound mode on a Schwung track; soundSetBank(MACROS) lands the page 
     assert(snd.soundViewForTest() === VIEW_MACROS, 'view MACROS, got ' + snd.soundViewForTest());
     assert(M().active, 'the knobs are the macros');
     assert(GS.activeBank === BANK_MACROS && GS.trackActiveBank[2] === BANK_MACROS, 'recorded: ' + GS.activeBank + '/' + GS.trackActiveBank[2]);
-    assert(M().bankHome === BANK_MACROS, 'bankHome');
 });
 step('⚠ MIGRATION: the chain\'s knob_N store is read ONCE (spread over ticks) into davebox\'s store, then persisted in the sidecar as `mac`', () => {
     reads = []; sidecars = [];
@@ -670,6 +672,7 @@ step('the jog is DECLINED on MACROS (the walk owns it); the click opens the list
     assert(GS.activeBank === BANK_MACROS && GS.trackActiveBank[2] === BANK_MACROS, 'Back never changes the bank, got ' + GS.activeBank);
 });
 step('soundSetBank walks MACROS ↔ SOUND + CONFIG in place: the mode stays open, the screen and the record switch', () => {
+    GS.activeBank = GS.trackActiveBank[2] = BANK_SOUND;
     snd.soundEnter(2, 2); ticks(3);
     assert(snd.soundViewForTest() === VIEW_PROMPT && GS.activeBank === BANK_SOUND, 'on the prompt');
     snd.soundSetBank(BANK_MACROS);

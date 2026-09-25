@@ -511,11 +511,7 @@ function _jogTouchRelease() {
      * "scrolling back from the top of the sound+config bank ... does not
      * immediately show the picker overlay like it should." One-shot, cleared
      * whether or not it fires. */
-    if (S.bankWindowKeepOnRelease) {
-        S.bankWindowKeepOnRelease = false;
-    } else {
-        standDownBankDisplay();
-    }
+    standDownBankDisplay();
     forceRedraw();
 }
 

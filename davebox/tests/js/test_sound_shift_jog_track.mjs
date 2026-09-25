@@ -254,7 +254,7 @@ step('⭑ the follow does NOT record SOUND + CONFIG on the tracks it lands on �
      * banks by construction. Only a JOG walk (bank mode latched, the bank
      * walk in ui_input_cc) writes trackActiveBank. */
     snd.soundExit();
-    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOrigin[t] = -1; }
+    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; }
     S.trackActiveBank[2] = 6;                  /* track 2 starts on AUTOMATION */
     S.trackActiveBank[3] = 1;                  /* track 3's own bank */
     S.activeTrack = 2;
@@ -301,7 +301,7 @@ step('⚠ a track CLOSED deliberately does not come back on SOUND + CONFIG', () 
     /* Leaving remembers; CLOSING hands the bank back. Without this half the
      * recording is write-only and every track you ever opened the screen on
      * would re-open it forever — the opposite bug, and just as silent. */
-    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOrigin[t] = -1; }
+    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; }
     S.trackActiveBank[2] = 6; S.trackActiveBank[3] = 1;
     S.activeTrack = 2;
     S.activeBank = 6;                          /* the live mirror agrees — it is
@@ -360,7 +360,7 @@ step('⭑ Shift+PAD means exactly what Shift+jog means — one rule, every route
         new Uint8Array([0x90, 68 + t, 127]));
 
     snd.soundExit();
-    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOrigin[t] = -1; }
+    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; }
     S.trackActiveBank[2] = 6;                  /* track 2 starts on AUTOMATION */
     S.trackActiveBank[4] = 1;                  /* track 4's own bank */
     S.activeTrack = 2;

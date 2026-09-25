@@ -160,13 +160,12 @@ step('⭑ melodic: right past STEP (the last clip-side bank) enters SOUND + CONF
     /* The screen IS a bank (Josh, 2026-08-23) and it RECORDS ITSELF like every
      * other one (Josh, 2026-08-25): activeBank takes the BANK_SOUND identity so
      * every bank-keyed behaviour runs its standard branch, AND trackActiveBank
-     * takes it too — that write is the whole fix. The bank to come back to is
-     * the separate crumb, trackSoundOrigin. */
+     * takes it too — that write is the whole fix. (No origin crumb since
+     * DBX-188: nothing but the walk moves the bank, so there is nothing to
+     * come back to.) */
     if (S.activeBank !== BANK_SOUND) throw new Error('activeBank did not take the sound identity: ' + S.activeBank);
     if (S.trackActiveBank[2] !== BANK_SOUND)
         throw new Error('the bank did not record itself: ' + S.trackActiveBank[2]);
-    if (S.trackSoundOrigin[2] !== BANK_STEP)
-        throw new Error('the origin crumb was not kept: ' + S.trackSoundOrigin[2]);
 });
 
 step('⭑⭑ ...and the next right turn WALKS THE BANKS — the prompt is a bank', () => {
@@ -582,7 +581,7 @@ step('⭑⭑ THE FIX, end to end: a track left on SOUND + CONFIG comes back on i
 
     /* Quit and relaunch: sound mode closed, banks blank, then the sidecar back. */
     snd.soundExit();
-    for (let t = 0; t < 8; t++) { S.trackActiveBank[t] = 0; S.trackSoundOrigin[t] = -1; }
+    for (let t = 0; t < 8; t++) { S.trackActiveBank[t] = 0; }
     S.activeBank = 0;
     globalThis.host_file_exists = (path) => String(path).indexOf('ui-state') >= 0;
     globalThis.host_read_file = (path) => (String(path).indexOf('ui-state') >= 0 ? body : '');
