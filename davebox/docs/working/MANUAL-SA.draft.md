@@ -1253,9 +1253,20 @@ follow the clip), **Rate** (/16 to ×16, the loop stretching to match), and
 parameter like pan or pitch bend, toward and away from its centre). The
 last row is **Clear clip**, and **Delete + click** on the card does the same.
 Every operation is one undo, and **Back** closes one layer at a time. Conductor
-tracks don't have this bank. On a **drum track**, automation runs the length of
-the **longest lane**; shorter lanes loop inside it. The full description is in
+tracks don't have this bank. The full description is in
 [Parameter banks](#35-parameter-banks).
+
+**On a drum track**, automation belongs to the whole track — every pad plays
+it — and each automated parameter has its **own cycle**: the length, start
+and step size of the pad that was selected when you first recorded or locked
+it. Select a 12-step hat, record a filter sweep, and that sweep repeats every
+12 steps while the 16-step kick carries on around it. The cycle stays put:
+recording more onto it from another pad, editing it, or changing the pads'
+lengths afterwards doesn't change it. Two operations do: **Loop** sets it in
+the parameter's own steps (it can run longer than any pad — it plays in
+full), and **Match pad** makes it the selected pad's. ALL LANES Clock Shift,
+Nudge, Resolution, Beat Stretch and Double move each parameter's automation
+inside its own cycle.
 
 ## 11.3 MIDI targets
 

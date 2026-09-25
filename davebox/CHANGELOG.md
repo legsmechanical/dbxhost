@@ -17,6 +17,12 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added (pending)
+- **Drum automation loops at the pad you recorded it on.** On a drum track,
+  each automated parameter now has its own cycle — the length of the pad that
+  was selected when you recorded or locked it — instead of the longest lane's.
+  A sweep recorded on a 12-step hat repeats every 12 steps. The AUTOMATION
+  bank shows it on each row; **Loop** changes it and **Match pad** sets it to
+  the selected pad. Older projects keep the timing they had.
 - **The AUTOMATION bank shows each lane on its own terms.** Every row shows
   the length it repeats over (4 BAR, 13 ST, or CLIP when it follows the clip).
   With the cursor on a row, the step buttons, pages and header show that
