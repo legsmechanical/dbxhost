@@ -831,7 +831,10 @@ step('⭐⭐ THE DIAL FOLLOWS THE HAND: an INVERTED range no longer draws the kn
     assert(atBottom != null && atBottom < 0.1,
            'knob at the bottom of an inverted range draws near 0, got ' + atBottom);
     ASSIGN['synth:cutoff'] = '0.1000';         /* as a turn UP would leave it */
-    ticks(10);
+    /* A FULL poll round: the stopped poll re-reads ONE knob every 8 ticks,
+     * round-robin over eight, so a knob comes round within 72 ticks — waiting
+     * 10 only passed when the cursor happened to sit on K1. */
+    ticks(72);
     const atTop = M().drawn[0].norm;
     assert(atTop != null && atTop > 0.9,
            '⭑ and at the TOP it draws near 1 — the dial rose while the parameter FELL, got ' + atTop);

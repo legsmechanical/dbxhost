@@ -243,7 +243,9 @@ step('⚠ conductor: the cycle ends at STEP — no sound-mode bank', () => {
 });
 
 step('⚠ a deferred entry still SHOWS, and the jog leaves by walking the cycle', () => {
-    reset(PAD_MODE_MELODIC_SCALE, 3);
+    /* The deferred entry the walk queues AFTER recording the bank (DBX-188):
+     * the track is already on SOUND + CONFIG when it lands. */
+    reset(PAD_MODE_MELODIC_SCALE, BANK_SOUND);
     S.pendingSoundEnterTrack = 2; globalThis.tick(); snd.soundTick();
     if (!snd.soundActive()) throw new Error('control: deferred entry did not open');
     /* This entry has NO jog behind it, so soundEnter itself must arm the
@@ -266,7 +268,7 @@ step('⭑ and BACK from the prompt leaves BANK MODE and keeps the bank (2026-09-
      * which Josh saw as the knobs changing mode on the way out. Now Back only
      * unlatches: the track stays on SOUND + CONFIG, the mode stays open
      * RESTING (the overview shows, the knobs are the levels). */
-    reset(PAD_MODE_MELODIC_SCALE, 3);
+    reset(PAD_MODE_MELODIC_SCALE, BANK_SOUND);          /* on the bank (DBX-188) */
     S.pendingSoundEnterTrack = 2; globalThis.tick(); snd.soundTick();
     if (!snd.soundActive()) throw new Error('control: deferred entry did not open');
     send(51, 127); send(51, 0); globalThis.tick(); snd.soundTick();
@@ -386,16 +388,15 @@ step('⭑⭑ the bank RECORDS ITSELF: sidecar write + Shift+jog track switch', (
     if (S.activeTrack !== 3) throw new Error('control: track did not switch');
     if (S.trackActiveBank[2] !== BANK_SOUND)
         throw new Error('leaving forgot the bank on track 2: ' + S.trackActiveBank[2]);
-    /* ⭑ 2026-09-05 (item 20, Josh: "tracks should switch under everything"):
-     * the switch FOLLOWS — sound mode stays open on track 3 with the identity
-     * ON — but (RE-RULED the same day: "NOTHING should set a bank other than
-     * the usual bank jog") track 3 is NOT recorded on SOUND + CONFIG by the
-     * follow: it keeps its own bank (2). Track 2 keeps SOUND + CONFIG because
-     * the JOG put it there. */
-    if (!snd.soundActive()) throw new Error('sound mode CLOSED on the Shift+jog switch — the 08-24 rule, not the 09-05 one');
-    if (S.activeBank !== BANK_SOUND) throw new Error('the follow did not carry the identity: bank ' + S.activeBank);
+    /* ⭑ DBX-188 (Josh, 2026-09-24/25): the SOUND + CONFIG CARD is the track's
+     * BANK, so a switch from it shows the NEW track's own bank — the card does
+     * not follow (only a screen you are IN, the menu or an editor, does).
+     * Track 3 is on bank 2; track 2 keeps SOUND + CONFIG because the jog put it
+     * there. */
+    if (S.activeBank !== 2) throw new Error('track 3 is not on its own bank: ' + S.activeBank);
+    if (snd.soundActive()) throw new Error('the SOUND + CONFIG card followed onto a track on bank 2');
     if (S.trackActiveBank[3] !== 2)
-        throw new Error('the follow RECORDED the sound bank on track 3 (' + S.trackActiveBank[3] + ') — only the jog records a bank');
+        throw new Error('track 3 was recorded on ' + S.trackActiveBank[3] + ', not its own bank 2');
     snd.soundExit();
 });
 

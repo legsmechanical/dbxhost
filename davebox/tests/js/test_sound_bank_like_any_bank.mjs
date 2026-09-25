@@ -62,6 +62,8 @@ const snd = await import('../../ui/ui_sound.mjs');
 const menu = await import('../../ui/ui_menu.mjs');
 const editops = await import('../../ui/ui_editops.mjs');
 const persist = await import('../../ui/ui_persistence.mjs');
+const chord = await import('../../ui/ui_chord_pads.mjs');
+const { BANK_CHORD } = await import('../../ui/ui_constants.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 0;
@@ -176,6 +178,15 @@ step('(7) Shift+hold from a track resting on MACROS, then Back: MACROS, never th
     for (let g = 0; g < 4 && snd.soundActive() && snd.soundViewForTest() !== VIEW_MACROS; g++) { back(); ticks(3); }
     assert(snd.soundViewForTest() !== VIEW_BLOCKS || !snd.soundActive(), 'Back landed on the Sound menu: ' + JSON.stringify(state(0)));
     assert(S.activeBank === BANK_MACROS && S.trackActiveBank[0] === BANK_MACROS, 'not on MACROS: ' + JSON.stringify(state(0)));
+});
+
+step('(9) a non-jog bank writer (the Chord layout) moves a track resting on MACROS to CHORD, and the resting mode closes', () => {
+    put(0, BANK_MACROS, false);
+    assert(snd.soundOpen() && snd.soundResting(), 'rig: MACROS is not resting open');
+    chord.setChordLayout(0, true); ticks(4);
+    assert(S.activeBank === BANK_CHORD && S.trackActiveBank[0] === BANK_CHORD, 'the layout did not land on CHORD: ' + JSON.stringify(state(0)));
+    assert(!snd.soundOpen(), 'sound mode stayed open over the CHORD bank');
+    chord.setChordLayout(0, false); S.chordPopupOpen = false; ticks(2);
 });
 
 step('(8) CONTROL: walking off SOUND+CFG with the jog still records the next bank (the walk is the one writer)', () => {
