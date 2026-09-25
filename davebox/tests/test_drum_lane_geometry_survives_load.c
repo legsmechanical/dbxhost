@@ -72,6 +72,10 @@ int main(void) {
         dl->midi_note = 50;
         dl->pfx_params.delay_level = 0;                      /* init is 127 */
     }
+    /* lane 4: empty, own length, effects UNTOUCHED (delay level at its init
+     * 127) — the absent `_dpdl` must read back as 127, not the 0 a lane with
+     * notes defaults to. */
+    lane(inst, 0, 0, 4)->length = 20;
 
     n = serialize(inst);
     HX_ASSERT(strstr(big, "\"t0c0_lg\":\"64:0:24\""),
@@ -89,7 +93,7 @@ int main(void) {
 
     inst = reload(&h, n);
     for (int l = 0; l < DRUM_LANES; l++) {
-        if (l == 3) continue;
+        if (l == 3 || l == 4) continue;
         HX_ASSERT(lane(inst, 0, 0, l)->length == 64,
                   "⭐ every lane of the 4-bar clip is 4 bars after a reload");
     }
@@ -102,6 +106,9 @@ int main(void) {
         HX_ASSERT(dl->midi_note == 50, "an empty lane keeps its pad note");
         HX_ASSERT(dl->pfx_params.delay_level == 0, "an empty lane keeps its play-effects");
     }
+    HX_ASSERT(lane(inst, 0, 0, 4)->length == 20
+              && inst->tracks[0].drum_clips[0]->lanes[4].pfx_params.delay_level == 127,
+              "an empty lane with only its own length keeps the init delay level (127)");
     HX_ASSERT(inst->tracks[0].drum_clips[0]->lanes[5].pfx_params.delay_level == 127,
               "control: an untouched empty lane still reloads at the init delay level");
     HX_ASSERT(lane(inst, 0, 1, 7)->length == SEQ_STEPS_DEFAULT,
