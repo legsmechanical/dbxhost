@@ -173,6 +173,8 @@ function paintAutoLane(cy) {
     /* The playhead, last: it wins over the gradient, the point blink and the
      * white points of the no-values state. */
     if (play >= base && play < base + 16 && play < end) setLED(16 + play - base, White);
+    /* An automation hold: the held step solid White (over the point blink). */
+    if (S.heldStepAuto && S.heldStep >= base && S.heldStep < base + 16) setLED(16 + S.heldStep - base, White);
 }
 
 /* The selected lane's playing STEP in its cycle (absolute, like the grid), or

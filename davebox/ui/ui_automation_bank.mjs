@@ -28,8 +28,9 @@
  * read per project load and per edit); labels use the owner's metadata cache
  * (one chain_params read per component, ever). */
 
-import { S, noteUndoUnit } from './ui_state.mjs';
-import { BANK_AUTOMATION, PAD_MODE_DRUM, midiTargetIsMidi } from './ui_constants.mjs';
+import { S, noteUndoUnit, armBankDisplay } from './ui_state.mjs';
+import { BANK_AUTOMATION, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS } from './ui_constants.mjs';
+import { readBankParams } from './ui_dsp_bridge.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey,
          automationToggleActive, automationToggleSmooth, automationToggleWrap, automationToggleMode, automationToggleLink, automationSmoothable,
@@ -424,10 +425,85 @@ function syncPaView(t, c, target) {
     if (key !== null) S.pendingDefaultSetParams.push({ key: 't' + t + '_pa_view', val: key });
 }
 
+/* ⭐ HOLD A POINT, EDIT IT (Josh, 2026-09-24): "When an automation lane is
+ * selected, either by having the cursor over it or being in it's overlay
+ * menu, holding a step with an automation point from that lane should
+ * temporarily take you to the bank that param lives on, allowing you to
+ * quickly edit the automation value on that point. Releasing the step takes
+ * you back to where you were."
+ *
+ * The jump shows the parameter's bank with the step still HELD, so a knob
+ * turn is the existing held-step lock (automationParamEdit writes _pa_set2 at
+ * that step, in the lane's own steps). Nothing here edits a value.
+ *   - the bank is shown via S.activeBank ONLY: never applyBankPick or
+ *     autoBankReset (they wipe the menu), and never trackActiveBank — the
+ *     track's remembered bank stays AUTOMATION (corrected on the way back if
+ *     anything recorded the jump);
+ *   - the step row keeps the lane's cycle (S.autoCycle is held from the stash);
+ *   - v1 covers davebox's own parameters (seq: targets, alt page included);
+ *     any other target pops NO EDITOR and the hold stays an automation hold. */
+let holdJump = null;
+export function autoHoldJumpActive() { return !!holdJump; }
+export function autoHoldJumpStep() { return holdJump ? holdJump.step : -1; }
+export function autoHoldJumpBegin(absStep) {
+    if (holdJump || !autoBankIsActive() || !S.bankCardLatched) return false;
+    const cy = S.autoCycle, m = S.autoBankLit;
+    if (!cy || cy.t !== S.activeTrack || !m || m.charCodeAt(absStep) !== 49) return false;
+    const tgt = String(cy.target);
+    const sat = tgt.indexOf('seq:') === 0 ? SEQ_AUTO_TARGETS[tgt.split(':')[2]] : null;
+    if (!sat) { showActionPopup('NO EDITOR'); return false; }
+    const a = st();
+    holdJump = { track: cy.t, clip: cy.c, bank: sat.bank, altWas: !!S.altMode, sel: a.sel,
+                 opsSel: a.ops ? a.ops.sel : -1, cycle: Object.assign({}, cy), step: absStep };
+    S.activeBank = sat.bank;
+    S.altMode = !!sat.alt;
+    /* Render drops alt mode on ANY bank change (its diff guard, ui_render):
+     * this change is deliberate, so it is the guard's new baseline — or Clock
+     * Feedback's alt page would vanish on the first frame. */
+    S._altPrevBank = sat.bank; S._altPrevTrack = S.activeTrack;
+    if (sat.bank === 7) S.allLanesConfirmed = false;
+    readBankParams(cy.t, sat.bank);
+    armBankDisplay();
+    return true;
+}
+/* Release (or any clear of the held step, via autoBankTick's edge): back to
+ * the AUTOMATION menu, the same row, page and ops; the track's remembered
+ * bank corrected if anything recorded the jump. */
+export function autoHoldJumpEnd() {
+    const j = holdJump;
+    if (!j) return;
+    holdJump = null;
+    if (S.activeTrack === j.track && S.activeBank === j.bank) {
+        S.activeBank = BANK_AUTOMATION;
+        S.altMode = j.altWas;
+        S._altPrevBank = BANK_AUTOMATION; S._altPrevTrack = S.activeTrack;
+        autoBankRestoreMenu(j.sel);
+        const a = st();
+        a.cycleTarget = j.cycle.target; a.cycleTrack = j.cycle.t; a.cycleClip = j.cycle.c;
+        a.cyclePage = j.cycle.page;
+        if (j.opsSel >= 0) {
+            const r = autoBankRows(j.track, j.clip).find(x => x.kind === 'entry' && x.target === j.cycle.target);
+            if (r) a.ops = { rows: opsFor(j.track, j.clip, r), sel: j.opsSel, row: r };
+        }
+    }
+    if (S.trackActiveBank[j.track] === j.bank) S.trackActiveBank[j.track] = BANK_AUTOMATION;
+}
+
 export function autoBankTick() {
     S.autoBankLit = null;
     S.autoCycle = null;
     S.autoLaneVals = null;
+    /* The held step went away without our release (a track switch, a suspend,
+     * any of the other clear sites): the jump ends here. */
+    if (holdJump && S.heldStep < 0) autoHoldJumpEnd();
+    if (holdJump) {
+        /* Mid-jump: the step row stays the lane's — its cycle, its colours. */
+        S.autoCycle = holdJump.cycle;
+        S.autoBankLit = litCache.map ? (litCache.map.get(holdJump.cycle.target) || '') : null;
+        const vk = valsCache.map;
+        S.autoLaneVals = vk ? (vk.get(holdJump.cycle.target) || null) : null;
+        return;
+    }
     if (!autoBankIsActive() || !S.bankCardLatched || S.moveCoRunTrack >= 0) {
         if (viewSent) syncPaView(viewSent.t, 0, null);
         return;

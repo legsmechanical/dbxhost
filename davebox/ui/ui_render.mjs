@@ -58,7 +58,7 @@ import {
     bankHasAltParams, altIndicatorActive, autoLanePlayStep
 } from './ui_leds.mjs';
 import { soundRender, renderGatewayCard, renderTrackGatewayCard, renderMacrosPeek } from './ui_sound.mjs';
-import { drawAutomationBankBody, autoBankMenuOpen } from './ui_automation_bank.mjs';
+import { drawAutomationBankBody, autoBankMenuOpen, autoHoldJumpActive, autoHoldJumpStep } from './ui_automation_bank.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
@@ -88,6 +88,12 @@ export function bankHeaderGlyph(bank) {
  * instrument. Session view has no track to name. */
 export function bankHeaderRight(bare) {
     if (S.sessionView) return '';
+    /* A hold-jump from the AUTOMATION bank: this bank is TEMPORARY — say so,
+     * and which step of the lane the knob will set ("<AUTO S7"). */
+    if (autoHoldJumpActive()) {
+        const cy = S.autoCycle;
+        return '<AUTO S' + (autoHoldJumpStep() - (cy ? cy.off : 0) + 1);
+    }
     const instr = '[' + (S.instrAbbrev || '--') + ']';
     return bare ? instr : 'T' + (S.activeTrack + 1) + instr;   /* T3[OBXD] — no space (Josh) */
 }

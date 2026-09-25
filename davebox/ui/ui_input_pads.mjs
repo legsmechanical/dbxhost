@@ -13,6 +13,7 @@ import {
     NO_NOTE_FLASH_MS
 } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
+import { autoHoldJumpBegin, autoHoldJumpEnd } from './ui_automation_bank.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { automationClearStep } from './ui_automation.mjs';
 import { devSnapOpen, devSnapClear, devSnapRecall, devSnapSave } from './ui_devsnap.mjs';
@@ -1549,6 +1550,9 @@ export function _onStepButtons(d1, d2) {
             S.stepWasEmpty  = true;              /* nothing for the tick to read */
             S.heldStepNotes = [];
             S.drumHeldReadPending = false;
+            /* A step holding a POINT of the lane jumps to the parameter's
+             * bank for as long as it is held (a step without one stays here). */
+            autoHoldJumpBegin(absStep);
             forceRedraw();
         }
     } else if (!S.shiftHeld && S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank !== 6) {
@@ -1832,8 +1836,9 @@ export function _onPadRelease(status, d1, d2) {
         if (btn === S.heldStepBtn) {
             if (S.heldStepAuto) {
                 /* An automation hold: nothing to commit on release — no note
-                 * toggles, clears or reassigns. */
+                 * toggles, clears or reassigns — and a jump comes back. */
                 S.stepBtnPressedTick[btn] = -1;
+                autoHoldJumpEnd();
             } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank !== 6) {
                 /* Drum step release: tap toggles, hold-release exits + vel confirm */
                 const t    = S.activeTrack;
