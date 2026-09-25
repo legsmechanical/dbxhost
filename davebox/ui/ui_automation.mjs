@@ -218,7 +218,11 @@ function parseList(list) {
         stateByKey.set(stateKey(f[0], f[1], f[4]),
                        { flags: parseInt(f[2], 10) | 0, count: parseInt(f[3], 10) | 0,
                          loop: parseInt(f[5], 10) | 0, res: parseInt(f[6], 10) | 0,
-                         scale: isFinite(sc) ? sc : 100 });
+                         scale: isFinite(sc) ? sc : 100,
+                         /* fields 9-10 (2026-09-25): the loop's START and the
+                          * lane's STEP, in ticks — a drum lane's cycle. Absent
+                          * on a lane that has neither. */
+                         lo: parseInt(f[8], 10) | 0, st: parseInt(f[9], 10) | 0 });
     }
 }
 
@@ -309,7 +313,7 @@ export function automationStateFor(track, clip, target) {
              wrapReset: !!(s.flags & FLAG_WRAP_RESET), punch: !!(s.flags & FLAG_PUNCH),
              linked: !(s.flags & FLAG_UNLINKED),
              count: s.count, loop: s.loop | 0, res: s.res | 0,
-             scale: isFinite(s.scale) ? s.scale : 100 };
+             scale: isFinite(s.scale) ? s.scale : 100, lo: s.lo | 0, st: s.st | 0 };
 }
 /* Every automated target of one clip — the AUTOMATION bank's list. */
 export function automationEntriesFor(track, clip) {
@@ -320,7 +324,8 @@ export function automationEntriesFor(track, clip) {
         out.push({ target: k.slice(pfx.length), active: !!(s.flags & FLAG_ACTIVE), smooth: !!(s.flags & FLAG_SMOOTH),
                    wrapReset: !!(s.flags & FLAG_WRAP_RESET), punch: !!(s.flags & FLAG_PUNCH),
              linked: !(s.flags & FLAG_UNLINKED),
-                   count: s.count, loop: s.loop | 0, res: s.res | 0, scale: isFinite(s.scale) ? s.scale : 100 });
+                   count: s.count, loop: s.loop | 0, res: s.res | 0, scale: isFinite(s.scale) ? s.scale : 100,
+                   lo: s.lo | 0, st: s.st | 0 });
     }
     return out;
 }
@@ -406,16 +411,20 @@ export function automationStepTicks(track, clip) {
 export function rowCycle(track, clip, target) {
     const s = stateByKey.get(stateKey(track, clip, target));
     if (!s) return null;
-    return cycleOf(track, clip, s.loop | 0);
+    return cycleOf(track, clip, s.loop | 0, s.lo | 0, s.st | 0);
 }
 
 /* The geometry behind rowCycle, for a lane whose own Loop is `loop` ticks
- * (0 = it follows the clip, or the selected pad on a drum track). */
-function cycleOf(track, clip, loop) {
-    const tps = automationStepTicks(track, clip);
+ * from `lo`, on a step of `st` ticks (0 = the clip's / pad's step). A drum
+ * lane always has one (its CYCLE, set from the pad it was recorded on); a
+ * lane with loop 0 follows the clip, or the selected pad before a drum lane
+ * has been written. */
+function cycleOf(track, clip, loop, lo, st) {
+    let tps = automationStepTicks(track, clip);
     let off, len, follows;
     if (loop > 0) {
-        off = 0; len = Math.max(1, Math.round(loop / tps)); follows = false;
+        if (st > 0) tps = st;
+        off = Math.round((lo | 0) / tps); len = Math.max(1, Math.round(loop / tps)); follows = false;
     } else if (S.trackPadMode[track] === PAD_MODE_DRUM) {
         off = S.drumLaneLoopStart[track] | 0; len = S.drumLaneLength[track] || 16; follows = true;
     } else {
@@ -432,7 +441,7 @@ function cycleOf(track, clip, loop) {
  * lane yet follows the clip (or pad) like any new lane. */
 export function recordCycleText(track, clip, target) {
     const s = stateByKey.get(stateKey(track, clip, target));
-    const cy = cycleOf(track, clip, s ? (s.loop | 0) : 0);
+    const cy = s ? cycleOf(track, clip, s.loop | 0, s.lo | 0, s.st | 0) : cycleOf(track, clip, 0, 0, 0);
     return cycleText(cy.len, cy.tps);
 }
 
@@ -959,7 +968,10 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
     /* A held step wins over everything: the turn writes that step, playing or
      * not. Stepped hold means the lock lasts until the next point. */
     if (S.heldStep >= 0) {
-        const tps = automationStepTicks(track, clip);
+        /* A step held on the AUTOMATION grid is a step of THAT lane's cycle,
+         * on its own grid (a drum lane's step need not be the pad's). */
+        const tps = (S.heldStepAuto && S.autoCycle && S.autoCycle.t === track)
+                  ? S.autoCycle.tps : automationStepTicks(track, clip);
         const from = S.heldStep * tps, to = from + tps - 1;
         ensureRest(g, target, prevNorm());
         ensureCheckpoint(g);
@@ -1134,10 +1146,32 @@ export function automationSetLoop(track, clip, target, loopTicks, checkpoint) {
     if (!s) return false;
     const len = Math.max(0, loopTicks | 0);
     if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
-    queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' ' + len + ' 0 ' + (s.res | 0));
+    /* The start and step ride along unchanged (a drum lane's cycle keeps its
+     * place and its grid when only its length is dialled). */
+    queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' ' + len + ' ' + (s.lo | 0) + ' ' + (s.res | 0) + ' ' + (s.st | 0));
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.loop = len;
     return true;
+}
+/* A drum lane's Match pad: its cycle becomes the selected pad's — start,
+ * length and step (pa_loop with length 0 on a drum track). The mirror takes
+ * the pad's geometry now, so the row reads right before the next list. */
+export function automationMatchPad(track, clip, target) {
+    const s = automationStateFor(track, clip, target);
+    if (!s || S.trackPadMode[track] !== PAD_MODE_DRUM) return false;
+    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' 0 0 ' + (s.res | 0));
+    const cur = stateByKey.get(stateKey(track, clip, target));
+    if (cur) {
+        const p = padCycle(track);
+        cur.loop = p.len * p.tps; cur.lo = p.off * p.tps; cur.st = p.tps;
+    }
+    return true;
+}
+/* The selected pad as a cycle, in its own steps. */
+export function padCycle(track) {
+    const tps = S.drumLaneTPS[track] || 24;
+    return { off: S.drumLaneLoopStart[track] | 0, len: S.drumLaneLength[track] || 16, tps };
 }
 /* The AUTOMATION bank's Rate row: the lane's playback rate as a CODE, 1 (/16)
  * … 5 (x1) … 9 (x16); 0 = unset = x1. Rides pa_loop's third field, with the
@@ -1149,7 +1183,7 @@ export function automationSetRate(track, clip, target, code, checkpoint) {
     if (!s) return false;
     const c = Math.max(1, Math.min(9, code | 0));
     if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
-    queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' ' + (s.loop | 0) + ' 0 ' + c);
+    queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' ' + (s.loop | 0) + ' ' + (s.lo | 0) + ' ' + c + ' ' + (s.st | 0));
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.res = c;
     return true;
