@@ -3336,6 +3336,14 @@ function _onCC_side(d1, d2) {
             forceRedraw();
             if (scooped > 0) showActionPopup('CAPTURED', 'TO ROW ' + (clipIdx + 1));
             else             showActionPopup('NOTHING', 'TO CAPTURE');
+        } else if (!S.sessionView && S.shiftHeld && (idx === 3 || idx === 0)) {
+            /* Shift + TOP track button scrolls the clip window up one row,
+             * Shift + BOTTOM scrolls it down (Josh, 2026-09-24). The window
+             * (S.sceneRow) is shared by every track, so switching tracks keeps
+             * you looking through the same rows. Shift+Up/Down stays free for
+             * the octave. Nothing launches: a plain press still does that. */
+            const _nr = idx === 3 ? S.sceneRow - 1 : S.sceneRow + 1;
+            if (_nr >= 0 && _nr <= NUM_CLIPS - 4) { S.sceneRow = _nr; invalidateLEDCache(); forceRedraw(); }
         } else if (S.sessionView) {
             S.sceneBtnFlashTick[idx] = nowMs();
             /* Shift+side-button forces next-bar boundary launch regardless of
