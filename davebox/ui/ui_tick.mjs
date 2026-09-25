@@ -1867,6 +1867,11 @@ export function _tickImpl() {
          * (see paintProjectPickerSurface). */
         if (S.projectPadPicker) {
             paintProjectPickerSurface();
+        } else if (S.switchLoading) {
+            /* A project LOAD owns the lights: dark from the press until the
+             * handover (Josh, 2026-09-24: "Have all leds turn off immediately
+             * when project load starts. Keep oled."). _pppLoad blanked them;
+             * painting nothing here is what keeps them blank while it saves. */
         } else {
             /* Transport LEDs */
             setButtonLED(MovePlay, S.playing ? Green : LED_OFF);

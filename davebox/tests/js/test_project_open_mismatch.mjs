@@ -787,6 +787,42 @@ step('⭐ ONE LOADING SCREEN from Load to the project: LOADING / name / the stag
         throw new Error('the frame left up for the host is not LOADING / PROJECT 32 / LOADING SET: ' + handover);
 });
 
+step('⭐ LOAD blanks EVERY LED at the press and keeps them dark while it saves (Josh, 2026-09-24)', () => {
+    /* "Have all leds turn off immediately when project load starts. Keep
+     * oled." The press used to close the picker and hand the lights back to
+     * the ordinary painters, which relit the OLD project's pads and buttons
+     * until the handover cleared them a few ticks later. */
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    S.pendingOpenProjectPicker = false;
+    S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    padTap(31);
+    ticks(2);
+    const litNow = () => {
+        const out = [];
+        for (const [n, v] of noteLED) if (v) out.push('note' + n + '=' + v);
+        for (const [c, v] of ccLED) if (v) out.push('cc' + c + '=' + v);
+        return out;
+    };
+    if (!litNow().length) throw new Error('CONTROL: nothing is lit under the picker — the check below would be vacuous');
+    /* Hold the switch in its SAVING phase, where the old painters used to run:
+     * the tick drains the switch at once otherwise. */
+    selectArms.length = 0;
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    if (!S.switchLoading) throw new Error('precondition: the load did not start');
+    const atPress = litNow();
+    if (atPress.length) throw new Error('lit at the press: ' + atPress.slice(0, 8).join(' '));
+    const _sw = S.pendingProjectSwitch; S.pendingProjectSwitch = null;   /* park the drain */
+    ticks(12);
+    const saving = litNow();
+    S.pendingProjectSwitch = _sw;
+    if (saving.length) throw new Error('relit while saving: ' + saving.slice(0, 8).join(' '));
+    if (!/LOADING/.test(frame())) throw new Error('the OLED lost the loading screen');
+    ticks(6);
+});
+
 step('⭐ the picker lights ONLY what works there: steps dark, buttons dark but Copy/Delete (+Session/Back when loaded)', () => {
     /* Josh, 2026-09-22: "the step buttons are lit on the project management
      * ui" — then: "we need all buttons led's OFF except those that function in

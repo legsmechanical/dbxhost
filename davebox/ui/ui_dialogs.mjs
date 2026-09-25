@@ -23,7 +23,7 @@ import {
     dropSnapshots, applySnapshotToLive, loadSelectedCurrentProject,
     hostIdentity, projectIdOfEntry, projectDisplayName
 } from './ui_persistence.mjs';
-import { invalidateLEDCache } from './ui_leds.mjs';
+import { invalidateLEDCache, clearAllLEDs } from './ui_leds.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
     closeTextEntry,
@@ -1395,6 +1395,11 @@ function _pppLoad(p, k) {
      * SEQUENCER. It replaces an OPENING PROJECT pop-up over the old screen. */
     S.switchLoading = { name: (p.byIndex[k] && p.byIndex[k].name) || '',
                         stage: 'Saving', at: S.clockMs };
+    /* ...and every LED goes dark NOW, not at the handover a few ticks later
+     * (Josh, 2026-09-24). The tick paints nothing while switchLoading is up, so
+     * they stay dark; the OLED keeps the loading screen. */
+    invalidateLEDCache();
+    clearAllLEDs();
     /* ⭑ STOP THE OUTGOING PROJECT FIRST (Josh, 2026-09-02: "loading a new
      * project should immediately stop transport on current project"). The
      * switch parks us with the DSP still rolling — Move kept playing the old
