@@ -187,6 +187,19 @@ step('⭐ Loop edits in the lane\'s steps and keeps its start and step; never CL
     click(); ticks(1);                                       /* done */
 });
 
+step('Rate keeps the lane\'s cycle, start and step (x2 on the 1-step cycle)', () => {
+    click(); ticks(1);                                       /* ops again */
+    const a = S.autoBank;
+    const ri = a.ops.rows.findIndex(o => o.op === 'rate');
+    jog(ri - a.ops.sel); ticks(1);
+    click(); ticks(1);                                       /* edit */
+    sets.length = 0;
+    jog(1); ticks(2);
+    assert(sets.some(s => s === 't0_pa_loop=0 seq:0:all_lanes_playback_dir 12 0 6 12'),
+           'length 12, start 0, x2 (6), step 12, got ' + JSON.stringify(sets.filter(s => s.indexOf('pa_loop') >= 0)));
+    click(); ticks(1);
+});
+
 step('⭐ Match pad shows the selected pad\'s cycle and, clicked, asks for it', () => {
     click(); ticks(1);
     const a = S.autoBank;
@@ -197,7 +210,7 @@ step('⭐ Match pad shows the selected pad\'s cycle and, clicked, asks for it', 
     assert(printed.some(x => /^match pad$/i.test(x)), 'the row\'s label is drawn, got ' + JSON.stringify(printed));
     sets.length = 0;
     click(); ticks(2);
-    assert(sets.some(s => s === 't0_pa_loop=0 seq:0:all_lanes_playback_dir 0 0 5'), 'pa_loop length 0 = match the pad, got ' + JSON.stringify(sets));
+    assert(sets.some(s => s === 't0_pa_loop=0 seq:0:all_lanes_playback_dir 0 0 6'), 'pa_loop length 0 = match the pad (the x2 rate kept), got ' + JSON.stringify(sets));
     const lr = a.ops.rows.find(o => o.op === 'loop');
     assert(lr && lr.value === '1 BAR', 'the Loop row now reads the pad\'s 1 BAR, got ' + JSON.stringify(lr));
     back(); back();
