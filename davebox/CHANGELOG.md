@@ -125,7 +125,9 @@ the section into a versioned heading at release time.
 - **Melodic pads start one octave up** in new and cleared projects.
 - **Stop saves the project immediately.**
 - **All lights go dark the moment a project starts loading.**
-- **The global menu is regrouped** — tempo and swing, metronome, clock, key,
+- **Shift + Step 2 opens Project Settings** (it was the global settings menu —
+  everything in it but the Daves rows is saved with the project).
+- **Project Settings is regrouped** — tempo and swing, metronome, clock, key,
   launch, MIDI in, projects, snapshots, export, exits, host, Daves — and Tap
   Tempo left it (Shift + Step 5 still opens it).
 - **The Session FX list looks like the Sound menu**, with a rule between Master

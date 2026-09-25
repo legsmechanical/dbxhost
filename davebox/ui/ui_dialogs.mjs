@@ -255,7 +255,7 @@ function drawGlobalEnumPick() {
     drawGlobalMenuList();
     drawKitBackdropDim();
     drawKitStackedList(1, S.globalEnumPick.options, S.globalEnumPick.sel, {});
-    drawKitCrumbs(['Global', S.globalEnumPick.label]);
+    drawKitCrumbs(['Project', S.globalEnumPick.label]);
 }
 
 export function drawGlobalMenu() {
@@ -290,7 +290,9 @@ function drawGlobalMenuList() {
      * value in [brackets], and drawKitList would add a second pair — the screen
      * would read "[[MINOR]]". Two components implementing one grammar; the
      * value's owner keeps it. */
-    drawKitHeader('GLOBAL', false);
+    /* 'PROJECT SETTINGS' (Josh, 2026-09-24): everything here but the Daves
+     * rows is stored per project, so that is what the screen is called. */
+    drawKitHeader('PROJECT SETTINGS', false);
     drawKitList(S.globalMenuItems.map(function(item, index) {
         if (isDivider(item)) return { divider: true };
         const isEditing = S.globalMenuState.editing && index === S.globalMenuState.selectedIndex;

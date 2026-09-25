@@ -54,6 +54,14 @@ if (JSON.stringify(got) !== JSON.stringify(want)) {
     failed = 1;
 } else console.log('  ok   — the global menu is in the ruled order, with its groups');
 if (got.indexOf('Tap Tempo') >= 0) { console.error('  FAIL — Tap Tempo is back in the menu'); failed = 1; }
+/* The screen is PROJECT SETTINGS (Josh, 2026-09-24) — read off the drawn header. */
+const fonts = await import('../../ui/ui_fonts_pp.mjs');
+const dlg = await import('../../ui/ui_dialogs.mjs');
+const text = [];
+fonts.setKitTextTrace((t) => text.push(t));
+try { dlg.drawGlobalMenu(); } finally { fonts.setKitTextTrace(null); }
+if (text.indexOf('PROJECT SETTINGS') < 0) { console.error('  FAIL — the header is not PROJECT SETTINGS: ' + JSON.stringify(text.slice(0, 4))); failed = 1; }
+else console.log('  ok   — the screen is called PROJECT SETTINGS');
 process.exit(failed);
 }
 main();

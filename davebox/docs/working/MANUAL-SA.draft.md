@@ -183,7 +183,7 @@ untouched, and brings the projects in; leaving puts everything back exactly as
 it was. Move native and official Schwung never see the projects, and dAVEBOx
 never sees — or changes — your Move sets.
 
-**The project picker** opens with **Settings menu → Projects...** or
+**The project picker** opens with **Project Settings → Projects...** or
 **Shift + Step 1**, from anywhere. The pads become your project shelf — one
 pad per project, 32 slots:
 
@@ -238,7 +238,7 @@ Any of these hands the device back, saving your work first:
 
 | Action | Result |
 |---|---|
-| **Settings menu → Quit** | Saves, then returns to official Schwung |
+| **Project Settings → Quit** | Saves, then returns to official Schwung |
 | **Shift + Back** | Same, from anywhere |
 | **Reboot** | Always returns to official Schwung |
 
@@ -254,7 +254,7 @@ never modified, so there is nothing to repair.
 
 ## Set tempo, key, and scale
 
-These live in the **Settings menu** (**Shift + Step 2**):
+These live in the **Project Settings** (**Shift + Step 2**):
 
 - **BPM** sets the tempo.
 - **Key** and **Scale** set the root and scale that melodic tracks snap to.
@@ -426,9 +426,9 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   away to another track and back, or quit and relaunch, and you land on the bank
   you left that track on.
 
-## 3.6 The Settings menu
+## 3.6 Project Settings
 
-**Shift + Step 2** opens the Settings menu — the session-wide settings. (A track's
+**Shift + Step 2** opens **Project Settings** — the settings saved with the project (all but the Daves rows, which are the device's). (A track's
 own settings live at the foot of its Sound menu, not here — see
 [Track settings](#164-track-settings).) The full list is in
 [Settings & Sets](#16-settings--sets), and many settings have a **Shift + Step**
@@ -440,9 +440,9 @@ dAVEBOx saves your set automatically whenever you leave it:
 
 | Action | Result |
 |---|---|
-| **Settings menu → Suspend session** | Suspend — dAVEBOx keeps playing in the background |
+| **Project Settings → Suspend session** | Suspend — dAVEBOx keeps playing in the background |
 | **Shift + Back** | Save and hand the device back to official Schwung |
-| **Settings menu → Quit** | Save and hand the device back to official Schwung |
+| **Project Settings → Quit** | Save and hand the device back to official Schwung |
 
 There is no manual "save." For named backups you can return to, use
 [Save state](#163-snapshots).
@@ -581,7 +581,7 @@ too — see [Drum Clips](#7-drum-clips).)
 **Pad layout.** By default the pads show only in-scale notes, with the root in the
 track color (`Keys` layout). **Shift + Step 8** steps through three layouts —
 **Scale**, **Chrom** (all 12 semitones, in-scale notes highlighted) and
-**Chord** — and the **Layout** setting in the Settings menu does the same.
+**Chord** — and the **Layout** setting in Project Settings does the same.
 
 **The Chord layout** plays a whole chord from one pad, always in the track's key
 and scale. A card explains the rows each time you switch to it; click the jog
@@ -1045,7 +1045,7 @@ Everything runs the same chain — the live modifier at the front, the effects a
  SEQUENCED NOTES ──────────────────────────┘
 ```
 
-Global [swing](#161-global-settings) is applied after the chain;
+Global [swing](#161-project-settings) is applied after the chain;
 [Performance Mode](#13-performance-mode) comes last.
 
 ## 10.1 NOTE FX
@@ -1428,7 +1428,7 @@ once for a multitimbral rig.
 ## 14.2 External MIDI in and out
 
 A USB-A controller plays the **active track**, its notes moved onto that track's
-channel; filter by channel with **MIDI In** in the Settings menu. Whether the
+channel; filter by channel with **MIDI In** in Project Settings. Whether the
 effects chain shapes live input depends on the route:
 
 | Route | Effects on external input |
@@ -1444,7 +1444,7 @@ stopped sends a MIDI panic on every channel.
 ## 14.3 Editing a track's sound
 
 > **Sub-screens look like the screen they came from.** Every list in dAVEBOx —
-> track settings and its sub-screens, the Settings menu, the project screens —
+> track settings and its sub-screens, Project Settings, the project screens —
 > shares one layout: a filled title bar, rows in the same face, the selected row
 > filled white, a scrollbar down the right when there's more than fits. A `>` at
 > the right of a row means it opens something; a value at the right means the
@@ -1700,7 +1700,7 @@ module decides which drum a pad means, so this follows its own kit mapping. Modu
 that don't offer per-drum editing are unaffected.
 
 **Mute + jog-click** on a block row bypasses that effect without muting the track.
-(The `Edit Synth… / Edit Slot…` rows this used to describe left the Settings menu
+(The `Edit Synth… / Edit Slot…` rows this used to describe left Project Settings
 in August — a track's chain is edited from its own Sound menu now.)
 
 ## 14.4 Clock Follow
@@ -1763,7 +1763,7 @@ destination to place the take.
 
 ## 15.3 Export to Live
 
-**Settings menu → Export to Ableton** writes an `.ablbundle` that desktop Live opens
+**Project Settings → Export to Ableton** writes an `.ablbundle` that desktop Live opens
 directly (transport stopped). Download it from the Schwung web manager
 (`move.local:7700`) in your browser. It opens as **8 MIDI tracks × 16 scene slots**
 with tempo and key.
@@ -1858,11 +1858,11 @@ On a drum track each note lands on the pad that plays its pitch in that clip.
 
 # 16. Settings & Sets
 
-Open the Settings menu with **Shift + Step 2**. It holds the **session-wide**
-settings. Anything belonging to one track lives on that track's own Sound menu —
+Open **Project Settings** with **Shift + Step 2**. It holds the settings saved
+with each **project**. Anything belonging to one track lives on that track's own Sound menu —
 see [Track settings](#164-track-settings) below.
 
-## 16.1 Global settings
+## 16.1 Project settings
 
 | Setting | What it does | Values | Default |
 |---|---|---|---|
@@ -1912,7 +1912,7 @@ and survive **Clear Session**.
 ## 16.4 Track settings
 
 **At the foot of the track's own Sound menu**, below a divider — not in the
-Settings menu. Click a row to give it the jog, turn to change the value, then
+Project Settings. Click a row to give it the jog, turn to change the value, then
 click (or **Back**) to let go. Entries that don't apply to the track's type or
 route are hidden, so the list is shorter on a MIDI track or a Conductor.
 
@@ -2043,7 +2043,7 @@ views (`#seq` / `#mix` / `#sound` in the address bar can be bookmarked).
 | Undo / Shift + Undo | Undo / redo |
 | Note/Session (tap / hold) | On an overview: switch / peek view — anywhere else: return to the overview |
 | Shift + Note/Session (tap / hold) | This track's sound editor / straight to its instrument — in Session view, the Master/Send FX list / straight into Master FX |
-| Shift + Step 2 | Settings menu |
+| Shift + Step 2 | Project Settings |
 
 ### Drum track (additions)
 
@@ -2059,7 +2059,7 @@ views (`#seq` / `#mix` / `#sound` in the address bar can be bookmarked).
 
 | Step | Action | Views |
 |---|---|---|
-| 2 | Settings menu (globals) | Both |
+| 2 | Project Settings | Both |
 | 5 | Tap Tempo | Both |
 | 6 | Metro (Cnt-In ↔ Always) — icon lit while it plays (Play / Always) | Both |
 | 7 | Swing | Both |
