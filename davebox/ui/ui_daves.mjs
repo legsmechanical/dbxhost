@@ -270,19 +270,24 @@ export function dealDave() {
     return idx;
 }
 
-/* The loading screen with its Dave: the frame above the Dave Box's own footer
- * band, the project name in the header caps and the stage beneath. It is the
- * frame the host keeps on screen while Move loads the set, so it is drawn
- * still — no scan. */
-export function drawDaveLoading(idx, name, stage) {
+/* The loading screen with its Dave (Josh, 2026-09-24): ONE black header in the
+ * small movy face — "<PROJECT> [LOADING...]" — and the Dave filling the rest.
+ * It is the frame the host keeps on screen while Move loads the set, so it is
+ * drawn still, centred on the face. A long name is trimmed; the bracketed
+ * LOADING... always shows. */
+export const LOAD_BAND_H = 9;
+export function drawDaveLoading(idx, name) {
     clear_screen();
-    /* Still, so the window sits at the MIDDLE of the scan's travel: the face,
-     * not the top of the head. */
-    blitFrameRows(idx, DAVE_SCAN_MAX >> 1, 0, 64 - DAVE_FOOTER_H);
-    fill_rect(0, 64 - DAVE_FOOTER_H, 128, DAVE_FOOTER_H, 0);
-    const n = String(name || '').toUpperCase(), st = String(stage || '').toUpperCase();
-    if (n) hdrPrint(Math.max(0, Math.floor((128 - hdrWidth(n)) / 2)), 48, n, 1);
-    if (st) mvPrint(Math.max(0, Math.floor((128 - mvWidth(st)) / 2)), 57, st, 1);
+    const rows = 64 - LOAD_BAND_H;
+    const src = Math.max(0, Math.floor((64 - rows) / 2));
+    blitFrameRows(idx, src, LOAD_BAND_H, rows);
+    fill_rect(0, 0, 128, LOAD_BAND_H, 0);
+    const tag = '[LOADING...]';
+    let n = String(name || '').toUpperCase();
+    const room = 124 - mvWidth(' ' + tag);
+    while (n && mvWidth(n) > room) n = n.slice(0, -1);
+    const t = n ? n + ' ' + tag : tag;
+    mvPrint(Math.max(0, Math.floor((128 - mvWidth(t)) / 2)), 2, t, 1);
 }
 
 export function drawDaveBox() {

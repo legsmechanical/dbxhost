@@ -1124,10 +1124,9 @@ export function drawLoadingScreen(name, stage) {
     /* A project load that dealt a Dave shows it, from the press to the
      * sequencer (S.loadDave, set in _pppLoad, cleared when the load is done). */
     if (S.loadDave !== null && S.loadDave !== undefined) {
-        drawDaveLoading(S.loadDave, name, stage);
-        /* The one loading screen's grammar survives the art (Josh, 2026-09-22:
-         * "Loading / Name" and under it the stage): the LOADING bar on top. */
-        drawKitHeader('Loading');
+        /* The Dave's own layout (Josh, 2026-09-24): name on top, LOADING
+         * beneath; the stage line gives way to the art. */
+        drawDaveLoading(S.loadDave, name);
         return;
     }
     clear_screen();

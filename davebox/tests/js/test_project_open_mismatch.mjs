@@ -782,13 +782,15 @@ step('⭐ ONE LOADING SCREEN from Load to the project: LOADING / name / the stag
     cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
     const first = frame();
     if (/OPENING/.test(first)) throw new Error('the OPENING PROJECT pop-up is back: ' + first);
-    if (!/LOADING/.test(first) || !/PROJECT 32/.test(first) || !/SAVING/.test(first))
-        throw new Error('the press did not raise LOADING / PROJECT 32 / SAVING: ' + first);
+    /* An ordinary load unwraps a Dave, and that screen is ONE header (Josh,
+     * 2026-09-24: "<project name> [Loading...]") — the stage line gave way. */
+    if (!/PROJECT 32 \[LOADING\.\.\.\]/.test(first))
+        throw new Error('the press did not raise "PROJECT 32 [LOADING...]": ' + first);
     ticks(6);
     if (selectArms.indexOf(1) < 0) throw new Error('precondition: the switch never armed');
     const handover = armFrames[armFrames.length - 1] || '';
-    if (!/LOADING/.test(handover) || !/PROJECT 32/.test(handover) || !/LOADING SET/.test(handover))
-        throw new Error('the frame left up for the host is not LOADING / PROJECT 32 / LOADING SET: ' + handover);
+    if (!/PROJECT 32 \[LOADING\.\.\.\]/.test(handover))
+        throw new Error('the frame left up for the host is not "PROJECT 32 [LOADING...]": ' + handover);
 });
 
 step('⭐ LOAD blanks EVERY LED at the press and keeps them dark while it saves (Josh, 2026-09-24)', () => {
