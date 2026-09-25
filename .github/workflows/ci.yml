@@ -31,8 +31,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
-      - name: Install ripgrep
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Install ripgrep + Pillow (test_font_utf8 builds the real font)
+        run: sudo apt-get update && sudo apt-get install -y ripgrep python3-pil
       - name: C unit tests (MPSC writer, etc.)
         run: make -C tests/host test
       - name: Contract / invariant / native-compile tests
