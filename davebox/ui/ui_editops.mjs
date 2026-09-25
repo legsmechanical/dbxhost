@@ -267,6 +267,7 @@ export function copyClip(srcT, srcC, dstT, dstC) {
      * the bank cannot see, and any gesture that checks the mirror first
      * silently does nothing. ⚠ _markLocalTouch refreshes the AFTERTOUCH
      * mirror, which is a different store wearing the same word. */
+    automationCarryFilter(srcT, srcC, dstT, dstC);   /* across tracks: drop lanes the dst module cannot play */
     automationNoteListChangedElsewhere();
     _markLocalTouch(dstT, dstC);   /* dst automation copied DSP-side; re-read to mirror */
     S.clipSteps[dstT][dstC] = S.clipSteps[srcT][srcC].slice();
@@ -290,6 +291,7 @@ export function cutClip(srcT, srcC, dstT, dstC) {
      * the bank cannot see, and any gesture that checks the mirror first
      * silently does nothing. ⚠ _markLocalTouch refreshes the AFTERTOUCH
      * mirror, which is a different store wearing the same word. */
+    automationCarryFilter(srcT, srcC, dstT, dstC);   /* see copyClip */
     automationNoteListChangedElsewhere();
     _markLocalTouch(dstT, dstC);   /* dst gets src's automation, src cleared — re-read both */
     _markLocalTouch(srcT, srcC);

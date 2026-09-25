@@ -29,6 +29,12 @@ the section into a versioned heading at release time.
   each with its style's groove and a name that says what it plays. The
   Phrase Map setting chooses where a drum phrase's sounds go at first: Off,
   General MIDI or Move's kit layout.
+- **A copied clip takes its automation — the parts that fit.** Copying or
+  cutting a clip (drum or melodic) to another track brings along automation
+  of levels and dAVEBOx's own knobs, and of instrument or effect parameters
+  when the destination has the same instrument or effect in the same place.
+  The rest stays behind, and a notice says how many (**1 LANE NOT
+  CARRIED**). A drum clip copy used to leave its automation behind entirely.
 - **Drum automation loops at the pad you recorded it on.** On a drum track,
   each automated parameter now has its own cycle — the length of the pad that
   was selected when you recorded or locked it — instead of the longest lane's.
