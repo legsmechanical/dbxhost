@@ -91,7 +91,11 @@ const sound = await import('../../ui/ui_sound.mjs');
  * ones — importing it from there yields `undefined`, the CC never matches, and
  * every assertion below reports "the gesture did nothing" while testing nothing.
  * Caught by printing the constant when the first assertion failed. */
-const { MoveNoteSession, BANK_SOUND, BANK_DEFAULT, INSTR_ROW_LABEL } = await import('../../ui/ui_constants.mjs');
+const { MoveNoteSession, BANK_SOUND, BANK_DEFAULT, INSTR_ROW_LABEL, BANK_STEP } = await import('../../ui/ui_constants.mjs');
+const persist = await import('../../ui/ui_persistence.mjs');
+const editops = await import('../../ui/ui_editops.mjs');
+const { bankCycleForMode } = await import('../../ui/ui_pure.mjs');
+const bankCycleFor = (t) => bankCycleForMode(S.trackPadMode[t], t);
 const { MoveShift } = await import('/data/UserData/schwung/shared/constants.mjs');
 const MoveBack = 51;   /* the Back button's CC */
 
@@ -643,6 +647,53 @@ step('⭑ Back out of a HOLD-opened editor lands on the latched CARD you pressed
     if (S.activeBank !== 3) throw new Error('landed on bank ' + S.activeBank + ', pressed from 3');
     if (!S.bankCardLatched) throw new Error('the CARD was latched when pressed; Back landed on the overview');
     S.bankCardLatched = false;
+});
+
+/* ⭑⭑ A GESTURE NEVER RECORDS A SOUND BANK — not even in bank mode (Josh,
+ * 2026-09-24: "Bank seems to be resetting to sound+config often"). The entry
+ * itself obeyed the 09-05 rule; the leak was the SAVE and the TRACK SWITCH,
+ * which recorded the live bank whenever bank mode was latched, on the belief
+ * that latched meant "the jog walked there". A shortcut into sound mode while a
+ * bank card is latched made that false, and the track came back on SOUND+CFG. */
+step('⭐⭐ bank mode latched on bank 3, Shift+tap into the sound menu, then a SAVE: the track stays on bank 3', () => {
+    S.sessionView = false; S.activeTrack = 0; S.trackRoute[0] = 0;
+    if (sound.soundOpen()) sound.soundExit();
+    ticks(2);
+    S.activeBank = 3; S.trackActiveBank[0] = 3; S.bankCardLatched = true;
+    shiftNoteTap(); ticks(3);
+    if (!sound.soundOpen()) throw new Error('rig: the tap did not open the sound menu');
+    if (S.activeBank !== BANK_SOUND) throw new Error('rig: sound mode did not take the bank identity: ' + S.activeBank);
+    persist.writeSidecar();
+    if (S.trackActiveBank[0] !== 3)
+        throw new Error('a save recorded bank ' + S.trackActiveBank[0] + ' on the track — a gesture wrote the bank');
+});
+step('⭐⭐ ...and a TRACK SWITCH from there leaves the track on bank 3 too', () => {
+    editops._switchActiveTrack(1); ticks(3);
+    if (S.trackActiveBank[0] !== 3)
+        throw new Error('the track switch recorded bank ' + S.trackActiveBank[0] + ' on the track it left');
+    if (sound.soundOpen()) sound.soundExit();
+    S.bankCardLatched = false; ticks(2);
+    editops._switchActiveTrack(0); ticks(3);
+    if (S.activeTrack !== 0) throw new Error('rig: could not return to track 1');
+});
+step('⚠ CONTROL: the jog WALK onto SOUND+CFG still records it, latched or not', () => {
+    S.activeBank = BANK_STEP; S.trackActiveBank[0] = BANK_STEP; S.bankCardLatched = true;
+    if (sound.soundOpen()) sound.soundExit();
+    ticks(2);
+    if (sound.soundOpen()) throw new Error('rig: sound mode is still open before the walk');
+    const cyc = bankCycleFor(0);
+    const iStep = cyc.indexOf(BANK_STEP), iSound = cyc.indexOf(BANK_SOUND);
+    if (iStep < 0 || iSound < 0) throw new Error('rig: the cycle lacks STEP or SOUND: ' + cyc);
+    for (let g = 0; g < 20 && S.activeBank !== BANK_SOUND; g++) {
+        globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 14, iSound > iStep ? 1 : 127]));
+        ticks(3);
+    }
+    if (S.activeBank !== BANK_SOUND) throw new Error('rig: the walk never reached SOUND+CFG (bank ' + S.activeBank + ')');
+    persist.writeSidecar();
+    if (S.trackActiveBank[0] !== BANK_SOUND)
+        throw new Error('the WALK did not record SOUND+CFG: ' + S.trackActiveBank[0]);
+    if (sound.soundOpen()) sound.soundExit();
+    S.bankCardLatched = false; S.activeBank = 0; S.trackActiveBank[0] = 0; ticks(2);
 });
 
 if (failed) process.exit(1);

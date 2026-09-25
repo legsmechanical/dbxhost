@@ -348,9 +348,12 @@ export function writeSidecar() {
      * exception here is exactly why it did not: trackActiveBank stayed on the
      * bank you walked through (AUTOMATION), and that stale value is what the
      * exit restore, the co-run landing and the next launch all read. */
-    /* ...except a sound bank reached by GESTURE, which is not the track's bank
-     * (Josh, 2026-09-05) — only the jog's walk records those. */
-    if (!isSoundBank(S.activeBank) || S.bankCardLatched)
+    /* ...except a sound bank, which is recorded at its ENTRY and only when the
+     * jog walked there (Josh, 2026-09-05: gestures never record). Recording it
+     * here too — as this did whenever bank mode was latched — wrote SOUND+CFG
+     * onto the track after any SHORTCUT into sound mode from a latched card,
+     * and the track came back on it (Josh, 2026-09-24). */
+    if (!isSoundBank(S.activeBank))
         S.trackActiveBank[S.activeTrack] = S.activeBank;
     /* ⭑ No identity, no write — and no fallback either. The path builders now
      * THROW rather than invent a destination, so this is the one place that has
