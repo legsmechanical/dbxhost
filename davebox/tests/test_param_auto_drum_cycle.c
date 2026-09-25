@@ -129,6 +129,25 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- the snapshot is taken as the HAND goes down, not at the first write */
+    {
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *in = (seq8_instance_t *)h->inst;
+        hx_set_param(h, "t0_l0_note_add", "0 100 24");
+        hx_set_param(h, "t0_l2_clip_length", "12");
+        hx_set_param(h, "t0_active_drum_lane", "2");
+        hx_set_param(h, "transport", "play_focus:0:0");
+        in->tracks[0].recording = 1;
+        hx_set_param(h, "t0_pa_live", TG " 2000");             /* hand down on the 12-step pad */
+        hx_set_param(h, "t0_active_drum_lane", "0");          /* ...then a 16-step pad, before any tick */
+        for (int i = 0; i < 10; i++) { hx_set_param(h, "t0_pa_live", TG " 2500"); hx_render(h, 40); }
+        hx_set_param(h, "t0_pa_live_end", TG);
+        HX_ASSERT(cycle_of(h, &ll, &lo, &st) && ll == 12 * 24,
+                  "the cycle is the pad under the hand when it went down (12), not the one at the first write (16)");
+        OK("the snapshot is taken at hand-down");
+        hx_destroy(h);
+    }
+
     /* ---- a 4-bar lane keeps its cycle; a step-40 lock PLAYS ------------ */
     {
         hx_t *h = hx_create(NULL);
@@ -143,6 +162,26 @@ int main(void) {
         lock(h, 4, 24, 5000);                                 /* written from it */
         HX_ASSERT(cycle_of(h, &ll, &lo, &st) && ll == 64 * 24,
                   "⭐ writing from a 1-bar pad onto the 4-bar lane leaves its cycle at 1536");
+        hx_set_param(h, "transport", "play_focus:0:0");      /* RECORD onto it from the 1-bar pad */
+        in->tracks[0].recording = 1;
+        const int before = entry(in, TG)->count;
+        while (in->global_tick < 8) {                         /* steps 0..7: over the step-4 lock */
+            hx_set_param(h, "t0_pa_live", TG " 6000");
+            hx_render(h, 5);
+        }
+        hx_set_param(h, "t0_pa_live_end", TG);
+        in->tracks[0].recording = 0;
+        hx_set_param(h, "transport", "stop");
+        HX_ASSERT(entry(in, TG)->count > before, "setup: the recording really wrote points");
+        HX_ASSERT(cycle_of(h, &ll, &lo, &st) && ll == 64 * 24,
+                  "⭐ RECORDING onto it from the 1-bar pad leaves its cycle at 1536 too");
+        {   /* put the locks back over what that recording wrote */
+            char v[96];
+            snprintf(v, sizeof v, "0 " TG " 0 %d 1000", 8 * 24 - 1);
+            hx_set_param(h, "t0_pa_set2", v);
+        }
+        lock(h, 4, 24, 5000);
+        hx_set_param(h, "t0_pa_smooth", "0 " TG " 0");       /* a recording turns Smooth on: back to steps */
         hx_set_param(h, "t0_l5_clip_length", "16");           /* the 4-bar pad, shortened */
         HX_ASSERT(cycle_of(h, &ll, &lo, &st) && ll == 64 * 24, "shortening the pad afterwards changes nothing");
         hx_set_param(h, "transport", "play_focus:0:0");
