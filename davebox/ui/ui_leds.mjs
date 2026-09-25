@@ -131,6 +131,17 @@ function paintAutoBankLit(base, lsBase, winEnd) {
     }
 }
 
+/* The selected automation lane's page of its own cycle: steps outside it
+ * DarkGrey (the colour every step row uses outside its window), the lane's
+ * points blinking over the rest. Pages sit on the same 16-step boundaries as
+ * the clip's own grid (the first is the one holding the window's start), so a
+ * lane that follows the clip lights exactly the buttons the clip would. */
+function paintAutoLane(cy) {
+    const base = ((cy.off >> 4) + cy.page) * 16, end = cy.off + cy.len;
+    for (let i = 0; i < 16; i++) setLED(16 + i, (base + i < cy.off || base + i >= end) ? DarkGrey : LED_OFF);
+    paintAutoBankLit(base, cy.off, end);
+}
+
 export function updateStepLEDs() {
     if (!S.ledInitComplete) return;
     /* ⭐⭐ THE SAVE FLASH OWNS THE ROW OUTRIGHT (Josh, 2026-09-10: "blink works,
@@ -253,6 +264,15 @@ export function updateStepLEDs() {
             }
             return;
         }
+    }
+
+    /* ⭐ A SELECTED AUTOMATION ROW OWNS THE STEP ROW (Josh, 2026-09-24): its
+     * cycle's page, not the pad's or clip's — and no notes, which cannot be
+     * edited here ("we don't need to see the notes on the step buttons in
+     * automation mode b/c we can't interact with them"). */
+    if (S.autoCycle && S.autoCycle.t === S.activeTrack) {
+        paintAutoLane(S.autoCycle);
+        return;
     }
 
     /* Drum mode: step buttons show active lane's steps — identical visualization to melodic. */

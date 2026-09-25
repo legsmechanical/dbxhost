@@ -936,6 +936,12 @@ export const S = {
      * '0'/'1' string indexed by absolute step — blinked white on the step row
      * (ui_leds). Set each tick by autoBankTick; null = nothing to show. */
     autoBankLit: null,
+    /* ⭐ THE SELECTED ROW'S CYCLE (Josh, 2026-09-24): while a lane is selected
+     * on the AUTOMATION bank, the step buttons, Left/Right, the page bar and
+     * the playhead are THAT lane's — { t, c, target, off, len, tps, pages,
+     * page } from rowCycle, with the page being viewed. Set each tick by
+     * autoBankTick; null = no row selected, the pad's/clip's grid as ever. */
+    autoCycle: null,
     /* THE MIDI KNOB VALUES (spec §2b): per track, target -> last value sent
      * (7-bit for cc:<n> / at, 14-bit for pb). CCs have no readback, so this
      * is the knob's truth across relaunches (sidecar `mcv`). */

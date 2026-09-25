@@ -50,7 +50,7 @@ function st() {
     return S.autoBank;
 }
 export function autoBankReset() {
-    if (S.autoBank) { S.autoBank.menu = false; S.autoBank.ops = null; S.autoBank.loopEdit = false; S.autoBank.rateEdit = false; S.autoBank.scaleEdit = false; }
+    if (S.autoBank) { S.autoBank.menu = false; S.autoBank.ops = null; S.autoBank.loopEdit = false; S.autoBank.rateEdit = false; S.autoBank.scaleEdit = false; S.autoBank.cycleTarget = null; }
 }
 export function autoBankMenuOpen() { return !!(S.autoBank && (S.autoBank.menu || S.autoBank.ops)); }
 
@@ -153,7 +153,11 @@ export function drawAutomationBankBody() {
     if (a.menu) listRows.push({ label: 'Clear all', hdr: true });
     if (a.sel >= listRows.length) a.sel = Math.max(0, listRows.length - 1);
     kitUseLayout('bank');
-    drawKitList(listRows, a.menu ? a.sel : -1, { emptyMsg: 'NO AUTOMATION' });
+    /* A multi-page cycle draws the track overview's page bar at rows 50–53
+     * (ui_render), so the list stops at four rows above it. */
+    const barShown = !!(S.autoCycle && S.autoCycle.t === t && S.autoCycle.pages > 1);
+    drawKitList(listRows, a.menu ? a.sel : -1,
+                barShown ? { emptyMsg: 'NO AUTOMATION', visible: 4 } : { emptyMsg: 'NO AUTOMATION' });
     /* The editor's bracketed corners on the resting card: "press jog to
      * interact" — the one mark the OLED language uses for that. */
     if (!a.menu) drawBrackets(0, LIST_TOP - 1, 128, MV_FOOTER_Y - LIST_TOP);
@@ -331,7 +335,7 @@ export function autoBankBack() {
     if (a.rateEdit) { a.rateEdit = false; return true; }
     if (a.scaleEdit) { a.scaleEdit = false; return true; }
     if (a.ops) { a.ops = null; return true; }
-    if (a.menu) { a.menu = false; return true; }
+    if (a.menu) { a.menu = false; a.cycleTarget = null; return true; }
     return false;
 }
 /* Delete + jog click on the card, and the menu's last row. */
@@ -380,10 +384,16 @@ function selectedTarget(t, c) {
 
 export function autoBankTick() {
     S.autoBankLit = null;
+    S.autoCycle = null;
     if (!autoBankIsActive() || !S.bankCardLatched || S.moveCoRunTrack >= 0) return;
     const t = S.activeTrack, c = effectiveClip(t);
     const target = selectedTarget(t, c);
-    if (target === null) return;
+    /* No row selected: forget the lane's page, so the next time a row is
+     * picked it opens where the clip is being viewed, not where it was left.
+     * (Closing the menu forgets it too — Back and a click can land between
+     * two ticks.) */
+    if (target === null) { if (S.autoBank) S.autoBank.cycleTarget = null; return; }
+    updateAutoCycle(t, c, target);
     const key = t + ' ' + c + ' ' + automationListGen();
     if (litCache.key !== key) {
         /* A failed read (null) is not "no steps": keep the old map off the
@@ -401,6 +411,36 @@ export function autoBankTick() {
         litTryMs = -1e9;
     }
     S.autoBankLit = litCache.map.get(target) || '';
+}
+
+/* ⭐ THE GRID FOLLOWS THE ROW (Josh, 2026-09-24). The selected lane's cycle,
+ * with the page being viewed — kept while that lane stays selected; picking a
+ * different lane (or closing the menu) starts afresh. */
+function updateAutoCycle(t, c, target) {
+    const cy = rowCycle(t, c, target);
+    if (!cy) return;
+    const a = st();
+    if (a.cycleTarget !== target || a.cycleTrack !== t || a.cycleClip !== c) {
+        a.cycleTarget = target; a.cycleTrack = t; a.cycleClip = c;
+        /* A lane that follows the clip opens on the page you were already
+         * looking at; a lane with its own cycle opens on its first page. */
+        const viewed = S.trackPadMode[t] === PAD_MODE_DRUM ? (S.drumStepPage[t] | 0) : (S.trackCurrentPage[t] | 0);
+        a.cyclePage = cy.follows ? viewed - (cy.off >> 4) : 0;
+    }
+    a.cyclePage = Math.max(0, Math.min(cy.pages - 1, a.cyclePage | 0));
+    S.autoCycle = { t, c, target, off: cy.off, len: cy.len, tps: cy.tps,
+                    pages: cy.pages, page: a.cyclePage, text: cy.text };
+}
+/* Left/Right while a row is selected: page through ITS cycle, clamped at the
+ * ends. True when consumed — a one-page cycle still consumes them (nothing to
+ * page to, and the pad's grid is not what is on the buttons). */
+export function autoCyclePageStep(delta) {
+    const cy = S.autoCycle;
+    if (!cy || cy.t !== S.activeTrack || !autoBankIsActive()) return false;
+    const a = st();
+    a.cyclePage = Math.max(0, Math.min(cy.pages - 1, (a.cyclePage | 0) + (delta < 0 ? -1 : 1)));
+    cy.page = a.cyclePage;
+    return true;
 }
 
 /* Which slot this track's chain targets live in — for tests and labels. */

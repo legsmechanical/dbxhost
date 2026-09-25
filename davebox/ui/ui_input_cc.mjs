@@ -53,7 +53,7 @@ import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
 import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen,
-         autoBankJumpTarget, autoBankRestoreMenu } from './ui_automation_bank.mjs';
+         autoBankJumpTarget, autoBankRestoreMenu, autoCyclePageStep } from './ui_automation_bank.mjs';
 import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAfterNotes,
          automationCaptureClear, automationClearBanksQueued } from './ui_automation.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
@@ -3121,6 +3121,9 @@ function _onCC_transport(d1, d2) {
             stepRecArrow(d1 === MoveRight ? 1 : -1);
             return;
         }
+        /* A selected AUTOMATION row owns the arrows: they page ITS cycle, and
+         * the pad's/clip's page (and SeqFollow) are left alone. */
+        if (autoCyclePageStep(d1 === MoveRight ? 1 : -1)) { S.screenDirty = true; return; }
         if (S.trackPadMode[_t_lr] === PAD_MODE_DRUM) {
             var lsBase = S.drumLaneLoopStart[_t_lr] | 0;
             var startPage = lsBase >> 4;

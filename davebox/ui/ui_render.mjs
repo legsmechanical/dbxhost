@@ -123,7 +123,7 @@ function markSeqAuto(cell, bank, k, altMode) {
     if (st) cell.auto = st.active ? 'auto' : 'auto-off';
 }
 
-function drawBankHeading(name, showTrack, bareHdr) {
+function drawBankHeading(name, showTrack, bareHdr, rightOverride) {
     /* bareHdr: the resting track overview draws the TRACK ROW, which already
      * names the active track (Josh, 2026-08-31: "it's redundant — you can see
      * active track on the track number row") — its right label keeps only the
@@ -131,7 +131,7 @@ function drawBankHeading(name, showTrack, bareHdr) {
      * with no track row in sight (2026-08-25). */
     /* session view's mixer pages are AUDIO banks whatever the track's bank is */
     drawKitBankHeader(bankHeadingText(name), S.sessionView ? 'audio' : bankHeaderGlyph(S.activeBank),
-                      bankHeaderRight(bareHdr));
+                      rightOverride != null ? rightOverride : bankHeaderRight(bareHdr));
 }
 /* The heading STRING: the name, with the Conductor's "C-" blink (phase driven
  * in the tick loop; the header font is fixed-advance so the name stays
@@ -1269,14 +1269,36 @@ function drawPositionBar(t) {
     const ac     = effectiveClip(t);
     const lsBase = S.clipLoopStart[t][ac] | 0;
     const len    = S.clipLength[t][ac];
-    const startPage = lsBase >> 4;
-    const winPages  = Math.max(1, Math.ceil(len / 16));
-    /* View/play pages are translated into window-relative space so the bar
-     * always anchors at the window's first page on the left edge. */
-    const viewPage = Math.max(0, Math.min(S.trackCurrentPage[t] - startPage, winPages - 1));
-    const cs = S.trackCurrentStep[t];
-    const playPage = (S.playing && S.trackClipPlaying[t] && cs >= lsBase && cs < lsBase + len)
-                   ? Math.floor((cs - lsBase) / 16) : -1;
+    const cs     = S.trackCurrentStep[t];
+    /* Extent markers: small vertical ticks just outside the bar edges to
+     * hint that clip content exists before / after the visible window. */
+    const steps = S.clipSteps[t][ac];
+    let hasLeft = false, hasRight = false;
+    for (let s = 0; s < lsBase; s++) if (steps[s] !== 0) { hasLeft = true; break; }
+    for (let s = lsBase + len; s < NUM_STEPS; s++) if (steps[s] !== 0) { hasRight = true; break; }
+    drawPositionBarGeom({ lsBase, len, viewPage: S.trackCurrentPage[t] - (lsBase >> 4),
+                          playStep: (S.playing && S.trackClipPlaying[t]) ? cs : -1,
+                          hasLeft, hasRight });
+}
+
+/* ⭐ THE PAGE BAR, one drawing for every screen that shows one (Josh,
+ * 2026-09-24: the AUTOMATION bank's "bar length and position indicator should
+ * mimic the style used in track overview" — so it IS the track overview's):
+ * rows 50–53, one segment per 16-step page of the window across 120 px from
+ * x=4 with 1 px gaps; the page being VIEWED solid, the page PLAYING outlined,
+ * the rest a 1 px underline; the playhead a 1 px tick mapped across the
+ * window's pixel span, inverted on the solid segment; extent ticks outside
+ * either edge when content lies beyond the window.
+ *   lsBase / len — the window, in steps (the bar starts at its first page)
+ *   viewPage     — the viewed page, window-relative (clamped here)
+ *   playStep     — the playing step (absolute), or -1: not playing */
+export function drawPositionBarGeom(o) {
+    const lsBase = o.lsBase | 0, len = Math.max(1, o.len | 0);
+    const winPages = Math.max(1, Math.ceil(len / 16));
+    const viewPage = Math.max(0, Math.min(o.viewPage | 0, winPages - 1));
+    const cs = o.playStep;
+    const playing = cs >= lsBase && cs < lsBase + len;
+    const playPage = playing ? Math.floor((cs - lsBase) / 16) : -1;
     const barY = 50, barH = 4, segGap = 1;   /* 2026-09-05: the hint footer owns row 57 */
     const segW   = Math.max(2, Math.floor((120 - (winPages - 1) * segGap) / winPages));
     const startX = 4;
@@ -1291,21 +1313,15 @@ function drawPositionBar(t) {
         }
     }
     /* Playhead dot mapped across the window's pixel span (not full 128px). */
-    if (S.playing && S.trackClipPlaying[t] && cs >= lsBase && cs < lsBase + len) {
+    if (playing) {
         const winPxW = winPages * (segW + segGap) - segGap;
         const dotX = startX + Math.floor((cs - lsBase) * winPxW / Math.max(1, len));
         const viewSegStart = startX + viewPage * (segW + segGap);
         const onSolid = dotX >= viewSegStart && dotX < viewSegStart + segW;
         fill_rect(dotX, barY, 1, barH, onSolid ? 0 : 1);
     }
-    /* Extent markers: small vertical ticks just outside the bar edges to
-     * hint that clip content exists before / after the visible window. */
-    const steps = S.clipSteps[t][ac];
-    let hasLeft = false, hasRight = false;
-    for (let s = 0; s < lsBase; s++) if (steps[s] !== 0) { hasLeft = true; break; }
-    for (let s = lsBase + len; s < NUM_STEPS; s++) if (steps[s] !== 0) { hasRight = true; break; }
-    if (hasLeft)  fill_rect(startX - 2, barY + 1, 1, barH - 2, 1);
-    if (hasRight) {
+    if (o.hasLeft)  fill_rect(startX - 2, barY + 1, 1, barH - 2, 1);
+    if (o.hasRight) {
         const xRight = startX + winPages * (segW + segGap) - segGap + 1;
         fill_rect(xRight, barY + 1, 1, barH - 2, 1);
     }
@@ -2010,8 +2026,15 @@ function drawUIBody() {
          * and its ops (ui_automation_bank). The heading is a bank heading. */
         if (bank === BANK_AUTOMATION) {
             clear_screen();
-            drawBankHeading(bankDisplayName(S.trackPadMode[S.activeTrack], BANK_AUTOMATION), false, false);
+            /* With a row selected, the header's right label is ITS cycle and the
+             * page being viewed ("2 BAR PG 1/2"), and a multi-page cycle gets
+             * the track overview's page bar — the grid follows the row. */
+            const cy = (S.autoCycle && S.autoCycle.t === S.activeTrack) ? S.autoCycle : null;
+            drawBankHeading(bankDisplayName(S.trackPadMode[S.activeTrack], BANK_AUTOMATION), false, false,
+                            cy ? cy.text + (cy.pages > 1 ? ' PG ' + (cy.page + 1) + '/' + cy.pages : '') : null);
             drawAutomationBankBody();
+            if (cy && cy.pages > 1)
+                drawPositionBarGeom({ lsBase: cy.off, len: cy.len, viewPage: cy.page, playStep: -1 });
             return;
         }
         if (bank === BANK_STEP) {
@@ -2391,44 +2414,14 @@ function drawUIBody() {
 function drawDrumPositionBar(t) {
     const lsBase = S.drumLaneLoopStart[t] | 0;
     const len    = S.drumLaneLength[t];
-    const startPage = lsBase >> 4;
-    const winPages  = Math.max(1, Math.ceil(len / 16));
-    const viewPage  = Math.max(0, Math.min(S.drumStepPage[t] - startPage, winPages - 1));
-    const cs        = S.drumCurrentStep[t];
-    const playPage  = (S.playing && S.trackClipPlaying[t] && cs >= lsBase && cs < lsBase + len)
-                    ? Math.floor((cs - lsBase) / 16) : -1;
-    const barY = 50, barH = 4, segGap = 1;   /* 2026-09-05: the hint footer owns row 57 */
-    const segW   = Math.max(2, Math.floor((120 - (winPages - 1) * segGap) / winPages));
-    const startX = 4;
-    for (let pg = 0; pg < winPages; pg++) {
-        const x = startX + pg * (segW + segGap);
-        if (pg === viewPage) {
-            fill_rect(x, barY, segW, barH, 1);
-        } else if (pg === playPage) {
-            fill_rect(x, barY, segW, 1, 1);
-            fill_rect(x, barY + barH - 1, segW, 1, 1);
-            fill_rect(x, barY, 1, barH, 1);
-            fill_rect(x + segW - 1, barY, 1, barH, 1);
-        } else {
-            fill_rect(x, barY + barH - 1, segW, 1, 1);
-        }
-    }
-    if (S.playing && S.trackClipPlaying[t] && cs >= lsBase && cs < lsBase + len) {
-        const winPxW = winPages * (segW + segGap) - segGap;
-        const dotX = startX + Math.floor((cs - lsBase) * winPxW / Math.max(1, len));
-        const viewSegStart = startX + viewPage * (segW + segGap);
-        const onSolid = dotX >= viewSegStart && dotX < viewSegStart + segW;
-        fill_rect(dotX, barY, 1, barH, onSolid ? 0 : 1);
-    }
+    const cs     = S.drumCurrentStep[t];
     /* Extent markers from the active lane's step mirror. */
     const lane  = S.activeDrumLane[t];
     const steps = S.drumLaneSteps[t][lane];
     let hasLeft = false, hasRight = false;
     for (let s = 0; s < lsBase; s++) if (steps[s] !== '0') { hasLeft = true; break; }
     for (let s = lsBase + len; s < 256; s++) if (steps[s] !== '0') { hasRight = true; break; }
-    if (hasLeft)  fill_rect(startX - 2, barY + 1, 1, barH - 2, 1);
-    if (hasRight) {
-        const xRight = startX + winPages * (segW + segGap) - segGap + 1;
-        fill_rect(xRight, barY + 1, 1, barH - 2, 1);
-    }
+    drawPositionBarGeom({ lsBase, len, viewPage: S.drumStepPage[t] - (lsBase >> 4),
+                          playStep: (S.playing && S.trackClipPlaying[t]) ? cs : -1,
+                          hasLeft, hasRight });
 }
