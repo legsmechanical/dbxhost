@@ -66,6 +66,18 @@ assert(Math.abs(tm[0].val - (100 + 800 * 100 / 156)) < 1e-6 && Math.abs(tm[1].ti
        'a lane starting at lane tick 100: tick 0 carries its value there, and its 156 point lands at export 56',
        JSON.stringify(tm.slice(0, 3)));
 
+/* ⭐ THE PATH: the clip decorator — what buildClip calls — hangs the TILED
+ * breakpoints on the envelope, not the one-pass points. */
+{
+    const ctx = { paLanes: [lane13], paMixerIds: [{ pan: 7 }], paBendSemis: [] };
+    PA.paDecorateClip(0, 0, [], ctx, 1536);
+    const env = ctx.paEnvelopes[0];
+    assert(env && env.parameterId === 7 && env.breakpoints.length === want13.length
+           && env.breakpoints[2].time === 312 / 96,
+           '⭐ the exported envelope carries the tiled cycle (11 breakpoints, the second pass at beat 3.25)',
+           JSON.stringify(env));
+}
+
 /* The old dump shape (no clock): the raw points, as before. */
 const old = PA.parsePaDump('0 0 0:slot:pan 3 0 0 100|0:100 156:900 \n')[0];
 assert(old && old.clock === null && PA.paTile(old, 1536) === old.points, 'CONTROL: a lane with no clock keeps its raw points');

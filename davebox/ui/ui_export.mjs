@@ -607,7 +607,7 @@ function paAttachPerNote(notes, lane, what, semis) {
 }
 
 export function exportPaForTest() {
-    return { parsePaDump, classifyPaTarget, paValueFor, paSampleAt, paBreakpoints, paTile,
+    return { parsePaDump, classifyPaTarget, paValueFor, paSampleAt, paBreakpoints, paTile, paDecorateClip,
              paAttachPerNote, PA_VAL_MAX, PA_TICKS_PER_BEAT };
 }
 

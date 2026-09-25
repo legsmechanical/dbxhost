@@ -320,36 +320,39 @@ int main(void) {
         hx_t *h = hx_create(NULL);
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
         hx_set_param(h, "t0_l0_note_add", "0 100 24");
+        /* Lane 3 is the LONGEST (40 x 12 = 480 > 384) and starts at step 2:
+         * the longest-lane window would put the lane at 24 + 24 = 48 at the
+         * export's first tick; its own cycle starts at 24. */
         hx_set_param(h, "t0_l3_clip_resolution", "0");
-        hx_set_param(h, "t0_l3_clip_length", "13");
+        hx_set_param(h, "t0_l3_clip_length", "40");
         in->tracks[0].drum_clips[0]->lanes[3].clip.loop_start = 2;   /* no loop-start key: set it */
         hx_set_param(h, "t0_active_drum_lane", "3");
         lock(h, 3, 12, 4000);
         uint32_t ws, wl, p0, mul, div;
         pa_entry_t *e = entry(in, TG);
-        HX_ASSERT(e && e->loop_off == 24, "setup: a cycle starting at step 2 of 1/32 (tick 24)");
+        HX_ASSERT(e && e->loop_off == 24 && e->loop_len == 480, "setup: a 40-step 1/32 cycle starting at tick 24");
         HX_ASSERT(pa_export_clock(&in->tracks[0], e, &ws, &wl, &p0, &mul, &div)
-                  && ws == 24 && wl == 156 && p0 == 24 && mul == 1 && div == 1,
+                  && ws == 24 && wl == 480 && p0 == 24 && mul == 1 && div == 1,
                   "⭐ a drum cycle starts the export at its own start (every drum lane renders from its loop start)");
-        hx_set_param(h, "t0_pa_loop", "0 " TG " 156 24 6 12");  /* Rate x2 */
+        hx_set_param(h, "t0_pa_loop", "0 " TG " 480 24 6 12");  /* Rate x2 */
         HX_ASSERT(pa_export_clock(&in->tracks[0], e, &ws, &wl, &p0, &mul, &div) && mul == 2 && div == 1,
                   "and carries its rate");
         hx_destroy(h);
 
-        /* Melodic: a 16-step clip whose loop starts at step 4, and a lane
-         * with its own 8-step Loop. At the clip's first rendered tick (96)
-         * playback puts that lane at 96 % 192 = 96. */
+        /* Melodic: a 16-step clip whose loop starts at step 12, and a lane
+         * with its own 8-step Loop. At the clip's first rendered tick (288)
+         * playback puts that lane at 288 % 192 = 96 — not at 288. */
         h = hx_create(NULL);
         in = (seq8_instance_t *)h->inst;
         hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
-        in->tracks[1].clips[0].loop_start = 4;
+        in->tracks[1].clips[0].loop_start = 12;
         hx_set_param(h, "t1_pa_set", "0 1:synth:cutoff 0 100");
         hx_set_param(h, "t1_pa_loop", "0 1:synth:cutoff 192 0 0");
         e = entry(in, "1:synth:cutoff");
-        HX_ASSERT(in->tracks[1].clips[0].loop_start == 4, "setup: the clip's loop starts at step 4");
+        HX_ASSERT(in->tracks[1].clips[0].loop_start == 12, "setup: the clip's loop starts at step 12");
         HX_ASSERT(pa_export_clock(&in->tracks[1], e, &ws, &wl, &p0, &mul, &div)
                   && ws == 0 && wl == 192 && p0 == 96,
-                  "⭐ a melodic Loop lane starts the export where playback has it at the clip's first tick (96)");
+                  "⭐ a melodic Loop lane starts the export where playback has it at the clip's first tick (96, not 288)");
         OK("the export clock: a drum cycle from its own start, a melodic lane where playback puts it");
         hx_destroy(h);
     }
