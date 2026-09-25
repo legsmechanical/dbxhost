@@ -932,7 +932,10 @@ function modalDialogUp() {
             const delta = decodeDelta(d2);
             if (delta !== 0) {
                 const n = S.tempoSelectBpms.length;
-                S.tempoSelectIdx = (S.tempoSelectIdx + (delta > 0 ? 1 : n - 1)) % n;
+                /* Stops at both ends — no list wraps (Josh, 2026-09-24). */
+                const _ti = Math.max(0, Math.min(n - 1, S.tempoSelectIdx + (delta > 0 ? 1 : -1)));
+                if (_ti === S.tempoSelectIdx) return;
+                S.tempoSelectIdx = _ti;
                 host_module_set_param('t' + S.tempoSelectTrack + '_capture_retempo',
                                       String(S.tempoSelectIdx));
                 S.screenDirty = true;

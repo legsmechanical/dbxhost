@@ -793,7 +793,8 @@ export function snapshotPickerRotate(delta) {
         p.confirm.sel = p.confirm.sel === 0 ? 1 : 0;
     } else {
         const n = p.snaps.length;
-        if (n > 0) p.sel = (p.sel + (delta > 0 ? 1 : n - 1)) % n;
+        /* Stops at both ends — no list wraps (Josh, 2026-09-24). */
+        if (n > 0) p.sel = Math.max(0, Math.min(n - 1, p.sel + (delta > 0 ? 1 : -1)));
     }
     S.screenDirty = true;
 }
@@ -1606,15 +1607,16 @@ function _projectPadPickerRotate_impl(delta) {
         p.confirmNew.sel = p.confirmNew.sel === 0 ? 1 : 0;
     } else if (p.colorPick) {
         const n = PROJECT_COLORS.length;
-        p.colorPick.sel = (p.colorPick.sel + (delta > 0 ? 1 : n - 1)) % n;
+        /* Stops at both ends — no list wraps (Josh, 2026-09-24). */
+        p.colorPick.sel = Math.max(0, Math.min(n - 1, p.colorPick.sel + (delta > 0 ? 1 : -1)));
         invalidateLEDCache();     /* live preview on the target pad */
     } else if (p.menu) {
         const n = _pppMenuModel(p, p.menu.k).length;
         const top = _pppMenuTop(p, p.menu.k);
-        /* Wrap across the SELECTABLE rows only — the (CURRENT) status line is
-         * not a stop, the same contract dividers have in drawKitList. */
-        const span = n - top;
-        p.menu.sel = top + (((p.menu.sel - top) + (delta > 0 ? 1 : span - 1)) % span);
+        /* Move across the SELECTABLE rows only — the (CURRENT) status line is
+         * not a stop, the same contract dividers have in drawKitList — and stop
+         * at both ends: no list wraps (Josh, 2026-09-24). */
+        p.menu.sel = Math.max(top, Math.min(n - 1, p.menu.sel + (delta > 0 ? 1 : -1)));
     } else {
         return;
     }

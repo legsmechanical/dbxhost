@@ -92,7 +92,10 @@ export function daveBoxRotate(delta) {
     const d = S.daveBox;
     if (!d || !delta) return;
     const n = d.list.length;
-    d.idx = ((d.idx + (delta > 0 ? 1 : -1)) % n + n) % n;
+    /* Stops at the first and last Dave — no list wraps (Josh, 2026-09-24). */
+    const next = Math.max(0, Math.min(n - 1, d.idx + (delta > 0 ? 1 : -1)));
+    if (next === d.idx) return;
+    d.idx = next;
     /* A fresh Dave scans from the top — and is already moving. */
     d.yOff = 0; d.dir = 1; d.holdUntil = 0; d.stepAt = S.clockMs;
     forceRedraw();
