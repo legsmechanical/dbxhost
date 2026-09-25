@@ -815,7 +815,9 @@ step('⭐ LOAD blanks EVERY LED at the press and keeps them dark while it saves 
     const atPress = litNow();
     if (atPress.length) throw new Error('lit at the press: ' + atPress.slice(0, 8).join(' '));
     const _sw = S.pendingProjectSwitch; S.pendingProjectSwitch = null;   /* park the drain */
-    ticks(12);
+    /* 40 ticks: closing the picker re-queues the LED init, which drains 8 a
+     * frame; the ordinary painters come back only once it completes. */
+    ticks(40);
     const saving = litNow();
     S.pendingProjectSwitch = _sw;
     if (saving.length) throw new Error('relit while saving: ' + saving.slice(0, 8).join(' '));
