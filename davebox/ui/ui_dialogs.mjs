@@ -24,6 +24,7 @@ import {
     hostIdentity, projectIdOfEntry, projectDisplayName
 } from './ui_persistence.mjs';
 import { invalidateLEDCache, clearAllLEDs } from './ui_leds.mjs';
+import { dealDave } from './ui_daves.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
     closeTextEntry,
@@ -1460,9 +1461,16 @@ function _pppLoad(p, k) {
                          ' — Move will boot wherever it was');
         S.pendingProjectRelaunch = k;
     }
-    else S.pendingProjectSwitch = { pad: k,
-                                    uuid: (_proj && _proj.uuid) ? _proj.uuid : '',
-                                    name: (_proj && _proj.name) ? _proj.name : '' };
+    else {
+        S.pendingProjectSwitch = { pad: k,
+                                   uuid: (_proj && _proj.uuid) ? _proj.uuid : '',
+                                   name: (_proj && _proj.name) ? _proj.name : '' };
+        /* ⭑ This load UNWRAPS A DAVE (Josh, 2026-09-15). Only on this path: a
+         * relaunch restarts Move, and the host deals its own there. Dealt
+         * before the first loading frame, shown on every one until the
+         * sequencer is up. */
+        S.loadDave = dealDave();
+    }
 }
 
 /* ⭑⭑ IS PAD k THE PROJECT THIS SESSION IS IN?

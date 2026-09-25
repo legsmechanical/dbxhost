@@ -261,6 +261,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
 const render = await import('../../ui/ui_render.mjs');
 const shared = await import('/data/UserData/schwung/shared/session_state.mjs');
+const { DAVES } = await import('../../ui/ui_splash.mjs');
 const dialogs = await import('../../ui/ui_dialogs.mjs');
 const te = await import('/data/UserData/schwung/shared/text_entry.mjs');
 const fonts = await import('../../ui/ui_fonts_pp.mjs');
@@ -728,7 +729,7 @@ step('verdict -> Back -> pick pad 31 -> Load RELAUNCHES into it (project-cmd swi
     cc(BACK, 127); cc(BACK, 0);
     ticks(2);
     if (!S.projectPadPicker) throw new Error('Back did not open the picker');
-    sysCmds.length = 0; selectArms.length = 0;
+    sysCmds.length = 0; selectArms.length = 0; S.loadDave = null;
     padTap(31);
     ticks(2);
     const p = S.projectPadPicker;
@@ -739,6 +740,9 @@ step('verdict -> Back -> pick pad 31 -> Load RELAUNCHES into it (project-cmd swi
     if (sw.length !== 1) throw new Error('expected one relaunch switch to 31, got: ' + JSON.stringify(sysCmds));
     if (selectArms.length) throw new Error('the select actuator was armed: ' + JSON.stringify(selectArms));
     if (S.forceRelaunchNextLoad) throw new Error('the one-shot flag was not consumed');
+    /* A relaunch restarts Move and the HOST deals that launch's Dave: dealing
+     * here too would put a second one in the album. */
+    if (S.loadDave !== null) throw new Error('a relaunch dealt a Dave on the module side too: ' + S.loadDave);
 });
 step('control: without a verdict, loading a pre-existing pad still uses the select actuator', () => {
     boot(P, 'Project 1');
@@ -823,6 +827,26 @@ step('⭐ LOAD blanks EVERY LED at the press and keeps them dark while it saves 
     if (saving.length) throw new Error('relit while saving: ' + saving.slice(0, 8).join(' '));
     if (!/LOADING/.test(frame())) throw new Error('the OLED lost the loading screen');
     ticks(6);
+});
+
+step('⭐ an ordinary LOAD unwraps a Dave: dealt at the press, recorded in the album, shown until the sequencer is up (Josh, 2026-09-15)', () => {
+    const SEEN = '/data/UserData/dbx-host/daves-seen.txt';
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    files.delete(SEEN);
+    S.loadDave = null;
+    S.pendingOpenProjectPicker = false; S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    padTap(31); ticks(2);
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    const idx = S.loadDave;
+    if (!(idx >= 0 && idx < DAVES.length)) throw new Error('no Dave dealt at the press: ' + idx);
+    const seen = (files.get(SEEN) || '').split('\n');
+    if (seen.indexOf(String(DAVES[idx].n)) < 0) throw new Error('the dealt Dave was not recorded: ' + JSON.stringify(seen));
+    if (!/PROJECT 32/.test(frame())) throw new Error('the loading frame lost the project name: ' + frame());
+    ticks(6);
+    if (S.loadDave !== idx) throw new Error('the Dave changed or vanished during the handover');
 });
 
 step('⭐ the picker lights ONLY what works there: steps dark, buttons dark but Copy/Delete (+Session/Back when loaded)', () => {

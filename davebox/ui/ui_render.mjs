@@ -7,7 +7,7 @@
  */
 
 import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished } from './ui_state.mjs';
-import { drawDaveBox, drawBannerDave, BANNER_H } from './ui_daves.mjs';
+import { drawDaveBox, drawBannerDave, BANNER_H, drawDaveLoading } from './ui_daves.mjs';
 import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
 import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev, faderGainToTravel} from './ui_engine.mjs';
@@ -1121,6 +1121,15 @@ function _modAscii(name) {
 const SWITCH_LOADING_MAX_MS = 15000;
 
 export function drawLoadingScreen(name, stage) {
+    /* A project load that dealt a Dave shows it, from the press to the
+     * sequencer (S.loadDave, set in _pppLoad, cleared when the load is done). */
+    if (S.loadDave !== null && S.loadDave !== undefined) {
+        drawDaveLoading(S.loadDave, name, stage);
+        /* The one loading screen's grammar survives the art (Josh, 2026-09-22:
+         * "Loading / Name" and under it the stage): the LOADING bar on top. */
+        drawKitHeader('Loading');
+        return;
+    }
     clear_screen();
     drawKitHeader('Loading');
     const n = String(name || '').toUpperCase();

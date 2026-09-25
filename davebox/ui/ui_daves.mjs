@@ -17,7 +17,7 @@
  * that breaks first. */
 
 import { S } from './ui_state.mjs';
-import { SPLASH_FRAMES, SPLASH_COUNT, DAVES } from './ui_splash.mjs';
+import { SPLASH_FRAMES, SPLASH_COUNT, DAVES, pickSplashIdx } from './ui_splash.mjs';
 import { hdrPrint, hdrWidth, mvPrint, mvWidth } from './ui_movy.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { forceRedraw } from './ui_leds.mjs';
@@ -249,6 +249,40 @@ export function daveBoxMeta() {
     if (!d) return '';
     const dave = DAVES[d.list[d.idx]];
     return '< DAVE ' + dave.n + '/' + SPLASH_COUNT + ' \u00b7 ' + dave.r + ' >';
+}
+
+/* ── UNWRAP A DAVE ON PROJECT LOAD (Josh, 2026-09-15: "Unwrap a Dave only when
+ * loading a project, not on launch from tools menu") ──
+ *
+ * The launch-splash gacha, moved to where it was asked for: a project load
+ * deals one Dave (the same weighted pick as the host's, pickSplashIdx), records
+ * it in the collection exactly as the host did (dedup on write, best-effort),
+ * and the load's own screen shows it. Returns the frame index. */
+export function dealDave() {
+    const idx = pickSplashIdx();
+    const num = DAVES[idx] ? String(DAVES[idx].n) : null;
+    if (num !== null) {
+        try {
+            const seen = host_file_exists(SEEN_PATH) ? (host_read_file(SEEN_PATH) || '') : '';
+            if (seen.split('\n').indexOf(num) < 0) host_write_file(SEEN_PATH, seen + num + '\n');
+        } catch (e) { /* the collection is best-effort, as on the host */ }
+    }
+    return idx;
+}
+
+/* The loading screen with its Dave: the frame above the Dave Box's own footer
+ * band, the project name in the header caps and the stage beneath. It is the
+ * frame the host keeps on screen while Move loads the set, so it is drawn
+ * still — no scan. */
+export function drawDaveLoading(idx, name, stage) {
+    clear_screen();
+    /* Still, so the window sits at the MIDDLE of the scan's travel: the face,
+     * not the top of the head. */
+    blitFrameRows(idx, DAVE_SCAN_MAX >> 1, 0, 64 - DAVE_FOOTER_H);
+    fill_rect(0, 64 - DAVE_FOOTER_H, 128, DAVE_FOOTER_H, 0);
+    const n = String(name || '').toUpperCase(), st = String(stage || '').toUpperCase();
+    if (n) hdrPrint(Math.max(0, Math.floor((128 - hdrWidth(n)) / 2)), 48, n, 1);
+    if (st) mvPrint(Math.max(0, Math.floor((128 - mvWidth(st)) / 2)), 57, st, 1);
 }
 
 export function drawDaveBox() {

@@ -896,6 +896,7 @@ export function _tickImpl() {
             parallelForgetPushed();
             reconcileParallelAll();
             S.stateLoading = false;
+            S.loadDave = null;          /* the load that dealt it is done */
             /* Load completion is an INPUT-STATE BARRIER for touch state. The
              * resync above blocks the tick for seconds, the shim's UI MIDI
              * ring is 64 slots with silent tail-drop (shadow_ui_midi_publish),

@@ -721,6 +721,7 @@ export const S = {
     _recNoteOns: [],
     _recNoteOffs: [],
     currentSetUuid: '',
+    loadDave: null,         /* frame index of the Dave this project load dealt, or null */
     switchLoading: null,    /* { name, stage, at } from the pick until we hand over */
     currentSetName: '',     /* the project's NAME tag — what the user sees */
     currentSetFolder: '',   /* Move's song folder (Move-Set-<id>) — paths only */
