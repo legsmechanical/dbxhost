@@ -43,6 +43,12 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **Empty drum lanes keep their length after a reload.** A drum lane with no
+  notes used to come back as one bar, at the default step size, with its pad
+  note and play effects reset — so a 4-bar clip with hits only on the kick
+  reloaded with every other lane at 1 bar, and a snare added later on bar 3
+  never played. Every lane now keeps its length, loop, step size, pad note,
+  direction and effects, notes or not.
 - **A module page you can step into now works.** Some modules draw a page with
   its own choices on it (DR32's Resample page). Clicking it used to jump to the
   section list; now the click enters the page, the jog and click choose on it,
