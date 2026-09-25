@@ -380,6 +380,78 @@ static int compute_bake_emit_positions(uint8_t pdir, uint8_t audio_reverse,
                                        uint32_t rel_tick, uint32_t gate,
                                        uint32_t positions_out[2]);
 
+/* The clip's BASE lane geometry — the (length, loop start, step size)
+ * shared by the most lanes; ties go to the lowest lane. Lanes that match it
+ * write no geometry keys at all. */
+static void drum_clip_base_geom(const drum_clip_t *dc, int *len, int *ls, int *tps) {
+    int best = -1, best_n = 0, l, m;
+    for (l = 0; l < DRUM_LANES; l++) {
+        const clip_t *a = &dc->lanes[l].clip;
+        int n = 0;
+        for (m = 0; m < DRUM_LANES; m++) {
+            const clip_t *b = &dc->lanes[m].clip;
+            if (b->length == a->length && b->loop_start == a->loop_start
+                && b->ticks_per_step == a->ticks_per_step) n++;
+        }
+        if (n > best_n) { best_n = n; best = l; }
+    }
+    const clip_t *w = &dc->lanes[best < 0 ? 0 : best].clip;
+    *len = w->length; *ls = w->loop_start; *tps = w->ticks_per_step;
+}
+
+/* Does a lane with no notes carry anything besides geometry that a
+ * reload would lose? Compared against what a SKIPPED lane reloads as — the
+ * init values (drum_lanes_init / drum_pfx_params_init) — NOT against the
+ * loader's absent-key defaults, which differ for delay_level (init 127,
+ * absent 0): measuring against 0 would write every untouched empty lane. */
+static int drum_lane_extras_nondefault(const drum_lane_t *dl, int l) {
+    const clip_t *dlc = &dl->clip;
+    drum_pfx_params_t d;
+    drum_pfx_params_init(&d);
+    const drum_pfx_params_t *p = &dl->pfx_params;
+    return dl->midi_note != (uint8_t)(DRUM_BASE_NOTE + l)
+        || dlc->playback_dir != 0 || dlc->playback_audio_reverse != 0
+        || p->gate_time != d.gate_time || p->velocity_offset != d.velocity_offset
+        || p->quantize != d.quantize || p->delay_time_idx != d.delay_time_idx
+        || p->delay_level != d.delay_level || p->repeat_times != d.repeat_times
+        || p->fb_velocity != d.fb_velocity || p->fb_gate_time != d.fb_gate_time
+        || p->fb_clock != d.fb_clock || p->delay_retrig != d.delay_retrig
+        || p->note_length_mode != d.note_length_mode;
+}
+
+/* Read up to `n` colon-separated non-negative ints ("64:0:24", or an
+ * empty lane's "len:ls:tps:mn:pd:par") into v[], leaving any field that does
+ * not parse — or is not there — at the value it came in with. Validation is
+ * the caller's, so a damaged string cannot set anything illegal. */
+static void drum_parse_ints(const char *p, int *v, int n) {
+    int i;
+    for (i = 0; i < n && *p && *p != '"'; i++) {
+        int x = 0, any = 0;
+        while (*p >= '0' && *p <= '9') { x = x * 10 + (*p++ - '0'); any = 1; }
+        if (any) v[i] = x;
+        if (*p == ':') p++; else break;
+    }
+}
+
+/* What a fresh lane's delay_level is (drum_pfx_params_init) — the default an
+ * EMPTY lane's `_dpdl` is written and read against. */
+static int drum_lane_init_delay_level(void) {
+    drum_pfx_params_t d;
+    drum_pfx_params_init(&d);
+    return d.delay_level;
+}
+
+/* The same clamps the per-key loader always applied: length 1..SEQ_STEPS, the
+ * loop start inside the storage, and a step size from TPS_VALUES only. */
+static void drum_lane_set_geom(clip_t *dlc, int len, int ls, int tps) {
+    int vi, valid = 0;
+    dlc->length = (uint16_t)clamp_i(len, 1, SEQ_STEPS);
+    dlc->loop_start = (uint16_t)clamp_i(ls, 0, SEQ_STEPS - (int)dlc->length);
+    for (vi = 0; vi < 6; vi++)
+        if (tps == (int)TPS_VALUES[vi]) { valid = 1; break; }
+    dlc->ticks_per_step = valid ? (uint16_t)tps : TICKS_PER_STEP;
+}
+
 static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
     int t, c;
     fprintf(fp, "{\"v\":36,\"playing\":%d", inst->playing);
@@ -562,7 +634,23 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
             }
         }
     }
-    /* Drum lane data (sparse — only drum-mode tracks, only lanes with notes) */
+    /* Drum lane data (sparse — only drum-mode tracks).
+     *
+     * ⭐ EMPTY LANES (2026-09-24): a lane with NO notes used to be skipped whole, so
+     * its length, loop start, step size, direction, pad note and play-effects
+     * settings were lost on reload — set a clip to 4 bars with ALL LANES, put
+     * hits on the kick only, and every other lane came back as 1 bar. Now:
+     *   - `tNcN_lg` "len:ls:tps" — the clip's BASE geometry, the triple most of
+     *     its 32 lanes share (written only when it is not the default), so an
+     *     ALL LANES edit costs one key per clip, not 32;
+     *   - a lane with notes writes `_len`/`_ls`/`_tps` only where it differs
+     *     from that base;
+     *   - a lane with no notes writes `_g` "len:ls:tps" (its geometry, and the
+     *     marker that the lane exists) only when it differs from the base or
+     *     carries another non-default setting.
+     * Size: `_g` is ~28 bytes, so even every empty lane of every clip of 8 drum
+     * tracks at a distinct geometry stays well inside state_buf —
+     * test_drum_lane_geometry_survives_load.c pins the worst case. */
     for (t = 0; t < NUM_TRACKS; t++) {
         if (inst->tracks[t].pad_mode != PAD_MODE_DRUM) continue;
         for (c = 0; c < NUM_CLIPS; c++) {
@@ -572,6 +660,10 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
              * slot must skip it — dereferencing NULL here crashed the host
              * (SIGSEGV) on the next state_full poll after a clip clear. */
             if (!inst->tracks[t].drum_clips[c]) continue;
+            int bl, bs, bt;
+            drum_clip_base_geom(inst->tracks[t].drum_clips[c], &bl, &bs, &bt);
+            if (bl != SEQ_STEPS_DEFAULT || bs != 0 || bt != TICKS_PER_STEP)
+                fprintf(fp, ",\"t%dc%d_lg\":\"%d:%d:%d\"", t, c, bl, bs, bt);
             for (l = 0; l < DRUM_LANES; l++) {
                 drum_lane_t *dl = &inst->tracks[t].drum_clips[c]->lanes[l];
                 clip_t *dlc = &dl->clip;
@@ -579,19 +671,31 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
                 int has_active = 0;
                 for (ni = 0; ni < dlc->note_count; ni++)
                     if (dlc->notes[ni].active) { has_active = 1; break; }
-                if (!has_active) continue;
-                if (dl->midi_note != (uint8_t)(DRUM_BASE_NOTE + l))
+                const int geom_differs = dlc->length != bl || dlc->loop_start != bs
+                                      || dlc->ticks_per_step != bt;
+                if (!has_active) {
+                    if (!geom_differs && !drum_lane_extras_nondefault(dl, l)) continue;
+                    /* One packed key: "len:ls:tps:mn:pd:par" — a separate key
+                     * per field cost twice the bytes, and in the worst case
+                     * (every empty lane distinct) that is the difference
+                     * between fitting state_buf and a refused save. */
+                    fprintf(fp, ",\"t%dc%dl%d_g\":\"%d:%d:%d:%d:%d:%d\"", t, c, l,
+                            (int)dlc->length, (int)dlc->loop_start, (int)dlc->ticks_per_step,
+                            (int)dl->midi_note, (int)dlc->playback_dir,
+                            (int)dlc->playback_audio_reverse);
+                }
+                if (has_active && dl->midi_note != (uint8_t)(DRUM_BASE_NOTE + l))
                     fprintf(fp, ",\"t%dc%dl%d_mn\":%d", t, c, l, (int)dl->midi_note);
-                if (dlc->length != SEQ_STEPS_DEFAULT)
+                if (has_active && dlc->length != bl)
                     fprintf(fp, ",\"t%dc%dl%d_len\":%d", t, c, l, (int)dlc->length);
-                if (dlc->loop_start != 0)
+                if (has_active && dlc->loop_start != bs)
                     fprintf(fp, ",\"t%dc%dl%d_ls\":%d", t, c, l, (int)dlc->loop_start);
                 /* Playback direction (v=35); sparse: 0=Forward = default, omitted. */
-                if (dlc->playback_dir != 0)
+                if (has_active && dlc->playback_dir != 0)
                     fprintf(fp, ",\"t%dc%dl%d_pd\":%d", t, c, l, (int)dlc->playback_dir);
-                if (dlc->playback_audio_reverse != 0)
+                if (has_active && dlc->playback_audio_reverse != 0)
                     fprintf(fp, ",\"t%dc%dl%d_par\":%d", t, c, l, (int)dlc->playback_audio_reverse);
-                if (dlc->ticks_per_step != TICKS_PER_STEP)
+                if (has_active && dlc->ticks_per_step != bt)
                     fprintf(fp, ",\"t%dc%dl%d_tps\":%d", t, c, l, (int)dlc->ticks_per_step);
                 int wrote = 0;
                 for (ni = 0; ni < dlc->note_count; ni++) {
@@ -613,14 +717,20 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
                     snprintf(k, sizeof(k), "t%dc%dl%d_sx", t, c, l);
                     write_step_hex_arr(fp, k, dlc->step_ratchet, dlc->length);
                 }
-                /* Per-lane drum pfx params (sparse — only non-default) */
+                /* Per-lane drum pfx params (sparse — only non-default).
+                 * ⚠ Empty lanes: "default" differs by lane kind for delay_level. A
+                 * lane with notes has always been read with an absent `_dpdl`
+                 * = 0 (so its untouched 127 is written); an EMPTY lane (`_g`,
+                 * new) is read against the init value 127, so an untouched one
+                 * writes nothing — ~17 bytes on every empty lane otherwise. */
                 {
                     const drum_pfx_params_t *dp = &dl->pfx_params;
+                    const int dl_default = has_active ? 0 : drum_lane_init_delay_level();
                     if (dp->gate_time       != 100) fprintf(fp, ",\"t%dc%dl%d_dpg\":%d",   t, c, l, dp->gate_time);
                     if (dp->velocity_offset != 0)   fprintf(fp, ",\"t%dc%dl%d_dpvo\":%d",  t, c, l, dp->velocity_offset);
                     if (dp->quantize        != 0)   fprintf(fp, ",\"t%dc%dl%d_dpq\":%d",   t, c, l, dp->quantize);
                     if (dp->delay_time_idx  != DEFAULT_DRUM_DELAY_TIME_IDX) fprintf(fp, ",\"t%dc%dl%d_dpdt\":%d", t, c, l, dp->delay_time_idx);
-                    if (dp->delay_level     != 0)   fprintf(fp, ",\"t%dc%dl%d_dpdl\":%d",  t, c, l, dp->delay_level);
+                    if (dp->delay_level     != dl_default) fprintf(fp, ",\"t%dc%dl%d_dpdl\":%d",  t, c, l, dp->delay_level);
                     if (dp->repeat_times    != 0)   fprintf(fp, ",\"t%dc%dl%d_dpdr\":%d",  t, c, l, dp->repeat_times);
                     if (dp->fb_velocity     != 0)   fprintf(fp, ",\"t%dc%dl%d_dpfbv\":%d", t, c, l, dp->fb_velocity);
                     if (dp->fb_gate_time    != 0)   fprintf(fp, ",\"t%dc%dl%d_dpfbg\":%d", t, c, l, dp->fb_gate_time);
@@ -1270,38 +1380,61 @@ static void seq8_load_state(seq8_instance_t *inst) {
         for (c = 0; c < NUM_CLIPS; c++) {
             int l;
             if (!inst->tracks[t].drum_clips[c]) continue;  /* empty slot — nullable */
+            /* The clip's base lane geometry ("len:ls:tps"); absent =
+             * the defaults, which is exactly what every older file means. */
+            int bl = SEQ_STEPS_DEFAULT, bs = 0, bt = TICKS_PER_STEP;
+            {
+                char lgk[24];
+                kb(lgk, "t", t, "c", c, "", -1, "_lg");
+                const char *lg = json_str_at(buf, lgk);
+                if (lg) { int v[3] = { bl, bs, bt }; drum_parse_ints(lg, v, 3); bl = v[0]; bs = v[1]; bt = v[2]; }
+            }
             for (l = 0; l < DRUM_LANES; l++) {
                 drum_lane_t *dl = &inst->tracks[t].drum_clips[c]->lanes[l];
                 clip_t *dlc = &dl->clip;
                 char search[48];
-                const char *lane_notes;
+                const char *lane_notes, *lane_geom;
                 kb(search, "t", t, "c", c, "l", l, "_n");
                 lane_notes = json_str_at(buf, search);
-                if (!lane_notes) continue;
-                snprintf(key, sizeof(key), "t%dc%dl%d_mn", t, c, l);
-                dl->midi_note = (uint8_t)clamp_i(
-                    json_get_int(buf, key, DRUM_BASE_NOTE + l), 0, 127);
-                snprintf(key, sizeof(key), "t%dc%dl%d_len", t, c, l);
-                dlc->length = (uint16_t)clamp_i(
-                    json_get_int(buf, key, SEQ_STEPS_DEFAULT), 1, SEQ_STEPS);
-                snprintf(key, sizeof(key), "t%dc%dl%d_ls", t, c, l);
-                dlc->loop_start = (uint16_t)clamp_i(
-                    json_get_int(buf, key, 0), 0, SEQ_STEPS - (int)dlc->length);
-                /* Playback direction (v=35); default 0=Forward when sparse-absent. */
-                snprintf(key, sizeof(key), "t%dc%dl%d_pd", t, c, l);
-                dlc->playback_dir = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 3);
-                dlc->pp_dir_state = initial_pp_dir(dlc->playback_dir);
-                snprintf(key, sizeof(key), "t%dc%dl%d_par", t, c, l);
-                dlc->playback_audio_reverse = (uint8_t)clamp_i(json_get_int(buf, key, 0), 0, 1);
-                snprintf(key, sizeof(key), "t%dc%dl%d_tps", t, c, l);
-                {
-                    int raw_tps = json_get_int(buf, key, (int)TICKS_PER_STEP);
-                    int vi, valid = 0;
-                    for (vi = 0; vi < 6; vi++)
-                        if (raw_tps == (int)TPS_VALUES[vi]) { valid = 1; break; }
-                    dlc->ticks_per_step = valid ? (uint16_t)raw_tps : TICKS_PER_STEP;
+                kb(search, "t", t, "c", c, "l", l, "_g");
+                lane_geom = lane_notes ? NULL : json_str_at(buf, search);
+                if (!lane_notes && !lane_geom) {
+                    /* Nothing else was saved for this lane: it is the base. */
+                    drum_lane_set_geom(dlc, bl, bs, bt);
+                    continue;
                 }
+                /* An empty lane (`_g`) carries len:ls:tps:mn:pd:par in one key;
+                 * a lane with notes, its sparse per-field keys as always. */
+                int gv[6] = { bl, bs, bt, DRUM_BASE_NOTE + l, 0, 0 };
+                if (lane_geom) drum_parse_ints(lane_geom, gv, 6);
+                if (!lane_geom) {
+                    snprintf(key, sizeof(key), "t%dc%dl%d_mn", t, c, l);
+                    gv[3] = json_get_int(buf, key, DRUM_BASE_NOTE + l);
+                }
+                dl->midi_note = (uint8_t)clamp_i(gv[3], 0, 127);
                 {
+                    int gl = gv[0], gs = gv[1], gt = gv[2];
+                    if (!lane_geom) {
+                        snprintf(key, sizeof(key), "t%dc%dl%d_len", t, c, l);
+                        gl = json_get_int(buf, key, bl);
+                        snprintf(key, sizeof(key), "t%dc%dl%d_ls", t, c, l);
+                        gs = json_get_int(buf, key, bs);
+                        snprintf(key, sizeof(key), "t%dc%dl%d_tps", t, c, l);
+                        gt = json_get_int(buf, key, bt);
+                    }
+                    drum_lane_set_geom(dlc, gl, gs, gt);
+                }
+                /* Playback direction (v=35); default 0=Forward when sparse-absent. */
+                if (!lane_geom) {
+                    snprintf(key, sizeof(key), "t%dc%dl%d_pd", t, c, l);
+                    gv[4] = json_get_int(buf, key, 0);
+                    snprintf(key, sizeof(key), "t%dc%dl%d_par", t, c, l);
+                    gv[5] = json_get_int(buf, key, 0);
+                }
+                dlc->playback_dir = (uint8_t)clamp_i(gv[4], 0, 3);
+                dlc->pp_dir_state = initial_pp_dir(dlc->playback_dir);
+                dlc->playback_audio_reverse = (uint8_t)clamp_i(gv[5], 0, 1);
+                if (lane_notes) {
                     /* Reuse the pointer the presence probe above already found.
                      * The old code re-scanned and then dereferenced WITHOUT a
                      * NULL check, safe only because the probe guaranteed a hit. */
@@ -1348,7 +1481,10 @@ static void seq8_load_state(seq8_instance_t *inst) {
                     snprintf(key, sizeof(key), "t%dc%dl%d_dpdt",  t, c, l);
                     dp->delay_time_idx  = clamp_i(json_get_int(buf, key, DEFAULT_DRUM_DELAY_TIME_IDX), 0, NUM_CLOCK_VALUES - 1);
                     snprintf(key, sizeof(key), "t%dc%dl%d_dpdl",  t, c, l);
-                    dp->delay_level     = clamp_i(json_get_int(buf, key, 0), 0, 127);
+                    /* ⚠ Empty lanes: an empty lane's absent `_dpdl` is the init value
+                     * (see the writer); a lane with notes keeps its old default 0. */
+                    dp->delay_level     = clamp_i(json_get_int(buf, key,
+                                              lane_geom ? drum_lane_init_delay_level() : 0), 0, 127);
                     snprintf(key, sizeof(key), "t%dc%dl%d_dpdr",  t, c, l);
                     dp->repeat_times    = clamp_i(json_get_int(buf, key, 0), 0, MAX_REPEATS);
                     snprintf(key, sizeof(key), "t%dc%dl%d_dpfbv", t, c, l);
