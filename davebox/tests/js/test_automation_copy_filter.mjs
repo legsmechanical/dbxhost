@@ -129,7 +129,10 @@ function setup() {
 
 step('⭐ to a track with a DIFFERENT synth: the synth lane is cleared, the rest carry', () => {
     setup();
-    MODS = { '0 synth': 'obxd', '1 synth': 'dx7', '0 fx1': 'reverb', '1 fx1': 'reverb' };
+    /* Every read answers — the level's "module" differing too, so a filter
+     * that wrongly treated a level as a module lane would drop pan. */
+    MODS = { '0 synth': 'obxd', '1 synth': 'dx7', '0 fx1': 'reverb', '1 fx1': 'reverb',
+             '0 slot': 'a', '1 slot': 'b' };
     copyGesture(0, 1);
     const ci = sets.findIndex(s => s === 'drum_clip_copy=0 0 1 0');
     assert(ci >= 0, 'the copy was sent, got ' + JSON.stringify(sets));
