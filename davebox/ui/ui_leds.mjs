@@ -541,7 +541,8 @@ export function updateTrackLEDs() {
         }
     }
 
-    /* Step icon LEDs (CCs 16-31): light shortcut hints while Shift held in Track View.
+    /* Step icon LEDs (CCs 16-31): light shortcut hints while Shift held in Track View,
+     * and the metronome / fixed-velocity / track-arp icons as STATUS without it.
      * Force-send every POLL_INTERVAL to override any native Move state that bypasses caches.
      * Suppress icons too while Shift+Shft/Res knob is being touched (matches the step
      * button main-LED fall-through to the normal step view). */
@@ -571,6 +572,19 @@ export function updateTrackLEDs() {
                         else if (i === 9)                       on = true;
                         else if (i === 10 && !isDrum)           on = true;
                         else if (i === 14 || i === 15)          on = true;
+                    }
+                }
+                /* ⭑ STATUS, not just a hint (Josh, 2026-09-24): with Shift UP, a
+                 * shortcut's icon stays lit while the thing it toggles is on —
+                 * the metronome when it sounds during playback (Play / Always),
+                 * and in Track View fixed velocity and the track arp when they
+                 * act on the active track. Shift held keeps the hint grammar. */
+                if (!S.shiftHeld && !_compoundHeld) {
+                    if (i === 5 && (S.metronomeOn | 0) >= 2)                 on = true;
+                    if (!S.sessionView) {
+                        if (i === 9 && (S.trackVelOverride[S.activeTrack] | 0) !== 0) on = true;
+                        if (i === 10 && !isDrum && S.bankParams[S.activeTrack] &&
+                            (S.bankParams[S.activeTrack][5][0] | 0) !== 0)   on = true;
                     }
                 }
                 /* ALL LANES unconfirmed: gated double-fill/quantize shortcuts dark */

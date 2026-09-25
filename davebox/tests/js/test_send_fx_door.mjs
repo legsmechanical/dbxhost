@@ -53,6 +53,7 @@ await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const bridge = await import('../../ui/ui_dsp_bridge.mjs');
+const fonts = await import('../../ui/ui_fonts_pp.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 2;
@@ -149,6 +150,58 @@ step('⚠⚠ THE OLD REGRESSION: a bus opened from the SESSION list still goes B
     if (view() !== VIEW_BUSES)
         throw new Error('⭑⭑ Back from a SESSION-opened bus went to view ' + view()
             + ' — this is the 2026 regression, returning');
+    S.sessionView = false;
+});
+
+step('⭐ the SESSION FX list is dressed like the Sound menu: menu-case rows, a rule under Master, CLK OPEN (Josh, 2026-09-24)', () => {
+    snd.soundExit(); ticks(2);
+    S.sessionView = true;
+    snd.soundEnterBuses(); ticks(3);
+    const text = [], rules = [];
+    fonts.setKitTextTrace((t) => text.push(t));
+    const fr = globalThis.fill_rect;
+    globalThis.fill_rect = (x, y, w, h, v) => { if (v && h === 1 && w >= 100) rules.push(y); };
+    try { snd.soundRender(); } finally { fonts.setKitTextTrace(null); globalThis.fill_rect = fr; }
+    for (const want of ['SESSION FX', 'OPEN'])
+        if (text.indexOf(want) < 0) throw new Error('missing "' + want + '": ' + JSON.stringify(text));
+    const m = snd.soundBusMenuRowsForTest();
+    const shape = m.rows.map((r) => r.divider ? '---' : r.label).join('|');
+    if (shape !== 'Master FX|---|Send FX A|Send FX B') throw new Error('rows ' + shape);
+    if (m.sel !== 0) throw new Error('cursor row ' + m.sel);
+    if (!rules.length) throw new Error('no divider rule drawn');
+    /* the rule is not a stop: one jog from Master lands on Send FX A */
+    jog(1); ticks(1);
+    if (snd.soundBusMenuRowsForTest().sel !== 2) throw new Error('the cursor landed on the rule');
+    click(); ticks(4);
+    const bus = snd.soundBusForTest();
+    if (!bus || bus.id !== 'sendA') throw new Error('one jog + click opened ' + (bus && bus.id) + ', wanted sendA');
+    back(); ticks(3);
+});
+
+step('⭐ CONTROL: Shift + TAP Note/Session in session view opens the SESSION FX list, no bus', () => {
+    snd.soundExit(); ticks(2);
+    S.sessionView = true;
+    shift(true); cc(50, 127); ticks(2); cc(50, 0); shift(false); ticks(3);
+    if (view() !== VIEW_BUSES) throw new Error('a tap did not open the session FX list, view ' + view());
+    if (snd.soundBusForTest()) throw new Error('a tap went into a bus');
+});
+
+step('⭐⭐ Shift + HOLD Note/Session in session view lands IN Master FX (Josh, 2026-09-24)', () => {
+    snd.soundExit(); ticks(2);
+    S.sessionView = true;
+    shift(true); cc(50, 127);
+    ticks(60);                                          /* past the 450 ms hold */
+    cc(50, 0); shift(false); ticks(4);
+    const bus = snd.soundBusForTest();
+    if (!bus) throw new Error('no bus opened, view ' + view());
+    if (bus.id !== 'master') throw new Error('landed on ' + bus.id + ', wanted master');
+    if (bus.door !== 'session') throw new Error('door ' + bus.door + ', wanted session');
+});
+
+step('⭐ BACK from there is the SESSION FX list', () => {
+    back(); ticks(4);
+    if (snd.soundBusForTest()) throw new Error('still on a bus');
+    if (view() !== VIEW_BUSES) throw new Error('Back went to view ' + view() + ', wanted the session FX list');
     S.sessionView = false;
 });
 

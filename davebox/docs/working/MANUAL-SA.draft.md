@@ -183,7 +183,7 @@ untouched, and brings the projects in; leaving puts everything back exactly as
 it was. Move native and official Schwung never see the projects, and dAVEBOx
 never sees — or changes — your Move sets.
 
-**The project picker** opens with **Settings menu → Projects...** or
+**The project picker** opens with **Project Settings → Projects...** or
 **Shift + Step 1**, from anywhere. The pads become your project shelf — one
 pad per project, 32 slots:
 
@@ -238,7 +238,7 @@ Any of these hands the device back, saving your work first:
 
 | Action | Result |
 |---|---|
-| **Settings menu → Quit** | Saves, then returns to official Schwung |
+| **Project Settings → Quit** | Saves, then returns to official Schwung |
 | **Shift + Back** | Same, from anywhere |
 | **Reboot** | Always returns to official Schwung |
 
@@ -254,7 +254,7 @@ never modified, so there is nothing to repair.
 
 ## Set tempo, key, and scale
 
-These live in the **Settings menu** (**Shift + Step 2**):
+These live in the **Project Settings** (**Shift + Step 2**):
 
 - **BPM** sets the tempo.
 - **Key** and **Scale** set the root and scale that melodic tracks snap to.
@@ -426,9 +426,9 @@ in [Clip Timing & Grid](#9-clip-timing--grid), [Effects](#10-effects), and
   away to another track and back, or quit and relaunch, and you land on the bank
   you left that track on.
 
-## 3.6 The Settings menu
+## 3.6 Project Settings
 
-**Shift + Step 2** opens the Settings menu — the session-wide settings. (A track's
+**Shift + Step 2** opens **Project Settings** — the settings saved with the project (all but the Daves rows, which are the device's). (A track's
 own settings live at the foot of its Sound menu, not here — see
 [Track settings](#164-track-settings).) The full list is in
 [Settings & Sets](#16-settings--sets), and many settings have a **Shift + Step**
@@ -440,9 +440,9 @@ dAVEBOx saves your set automatically whenever you leave it:
 
 | Action | Result |
 |---|---|
-| **Settings menu → Suspend session** | Suspend — dAVEBOx keeps playing in the background |
+| **Project Settings → Suspend session** | Suspend — dAVEBOx keeps playing in the background |
 | **Shift + Back** | Save and hand the device back to official Schwung |
-| **Settings menu → Quit** | Save and hand the device back to official Schwung |
+| **Project Settings → Quit** | Save and hand the device back to official Schwung |
 
 There is no manual "save." For named backups you can return to, use
 [Save state](#163-snapshots).
@@ -476,12 +476,12 @@ A track's **type** sets how you enter notes into it and how it sequences them.
 |---|---|---|
 | Melodic | **Mode → Keys** | Scale-snapped notes on the pads and steps — [Melodic Clips](#6-melodic-clips) |
 | Drum | **Mode → Drums** | 32 drum lanes, each its own step sequence — [Drum Clips](#7-drum-clips) |
-| Conductor | **Instrument/Type → Conductor** | Plays no notes of its own; transposes the other tracks — [The Conductor](#8-the-conductor) |
+| Conductor | **Instmt/Dest → Conductor** | Plays no notes of its own; transposes the other tracks — [The Conductor](#8-the-conductor) |
 
 **Keys and Drums** are the **Mode** row at the foot of the track's Sound menu.
 Scrolling previews the candidate type; clicking commits it.
 
-**Conductor** is chosen in the **Instrument/Type** picker instead — the same list
+**Conductor** is chosen in the **Instmt/Dest** picker instead — the same list
 you pick an instrument from, just after the Move instruments. It sits there rather
 than with Keys and Drums because it is not a way of sequencing a track: it changes
 what the track *is*, and it plays nothing. To turn a Conductor back into an
@@ -501,7 +501,7 @@ defaults.
   track switches at once.
 - **To or from Conductor** keeps your notes and is only available with the
   transport stopped. Only one Conductor can exist in a set at a time. Both
-  directions are done from the **Instrument/Type** picker.
+  directions are done from the **Instmt/Dest** picker.
 
 ---
 
@@ -550,7 +550,8 @@ covers writing, editing, and recording into one; the [Effects](#10-effects) and
 ## 6.1 Playing and placing notes
 
 The pads play notes from the current [key and scale](#162-key--scale). **+ / −**
-shifts the pad octave.
+shifts the pad octave; a new track's pads start one octave up (a Conductor's start
+at its no-shift home).
 
 While you hold notes (pads or an external keyboard), the screen names them in
 brackets at the right of the key/scale row — the note (`[F#3]`) or the chord.
@@ -580,7 +581,7 @@ too — see [Drum Clips](#7-drum-clips).)
 **Pad layout.** By default the pads show only in-scale notes, with the root in the
 track color (`Keys` layout). **Shift + Step 8** steps through three layouts —
 **Scale**, **Chrom** (all 12 semitones, in-scale notes highlighted) and
-**Chord** — and the **Layout** setting in the Settings menu does the same.
+**Chord** — and the **Layout** setting in Project Settings does the same.
 
 **The Chord layout** plays a whole chord from one pad, always in the track's key
 and scale. A card explains the rows each time you switch to it; click the jog
@@ -865,13 +866,13 @@ sequence a progression on the Conductor, and every responding track follows it.
 
 ## 8.1 Creating one
 
-Open the track's **Instrument/Type** picker — the top row of its Sound menu — and
+Open the track's **Instmt/Dest** picker — the top row of its Sound menu — and
 choose **Conductor**, which sits just after the Move instruments. The transport
 must be stopped. Its notes carry over; its effects, arps, and automation reset.
 
 **Mute** pauses its conducting — the responders snap back to their written pitch.
 
-A Conductor plays nothing, so its Sound menu is short: the Instrument/Type row and
+A Conductor plays nothing, so its Sound menu is short: the Instmt/Dest row and
 the track's own settings, with no FX slots, mixer controls, LFOs or presets. None
 of that is lost — whatever instrument the track had is **parked**, and it comes
 back with everything attached when you choose an instrument again from that same
@@ -1044,7 +1045,7 @@ Everything runs the same chain — the live modifier at the front, the effects a
  SEQUENCED NOTES ──────────────────────────┘
 ```
 
-Global [swing](#161-global-settings) is applied after the chain;
+Global [swing](#161-project-settings) is applied after the chain;
 [Performance Mode](#13-performance-mode) comes last.
 
 ## 10.1 NOTE FX
@@ -1110,7 +1111,7 @@ An arpeggiator running after Delay, on both sequenced and live notes.
 |---|---|---|---|
 | 1 | `Styl` | Style — Up, Down, Up/Down, Converge, Diverge, Ordered, Random, and more | Off |
 | 2 | `Rate` | Arp rate | 1/16 |
-| 3 | `Oct` | Octave range (±4) | Off |
+| 3 | `Oct` | Octave range (±4) — the extra octaves join the notes the style orders (Down +1 plays from the top octave down); negative extends downward | Off |
 | 4 | `Gate` | Note length (under 100 % shortens, over lengthens) | 100 % |
 | 5 | `Stps` | How silenced steps behave — rest (`Mute`) or skip (`Step`) | Mute |
 | 6 | `Rtrg` | Restart the arp on each new note | On |
@@ -1427,7 +1428,7 @@ once for a multitimbral rig.
 ## 14.2 External MIDI in and out
 
 A USB-A controller plays the **active track**, its notes moved onto that track's
-channel; filter by channel with **MIDI In** in the Settings menu. Whether the
+channel; filter by channel with **MIDI In** in Project Settings. Whether the
 effects chain shapes live input depends on the route:
 
 | Route | Effects on external input |
@@ -1443,7 +1444,7 @@ stopped sends a MIDI panic on every channel.
 ## 14.3 Editing a track's sound
 
 > **Sub-screens look like the screen they came from.** Every list in dAVEBOx —
-> track settings and its sub-screens, the Settings menu, the project screens —
+> track settings and its sub-screens, Project Settings, the project screens —
 > shares one layout: a filled title bar, rows in the same face, the selected row
 > filled white, a scrollbar down the right when there's more than fits. A `>` at
 > the right of a row means it opens something; a value at the right means the
@@ -1478,15 +1479,19 @@ and levels and times are still adjusted by turning. Backing out of a picker
 leaves the setting as it was.
 
 **Schwung tracks** open dAVEBOx's own sound editor. It starts on the track's
-chain — the **Instrument/Type** row, then MIDI FX and **FX 1-4** — and the jog
-picks a row; the track's own settings sit at the very foot of the same list,
-below a divider (see [Track settings](#164-track-settings)).
-The Instrument/Type row names the track's generator (or its Move instrument,
+chain — the **Instmt/Dest** row, then MIDI FX and **FX 1-4** — and the jog
+picks a row. Below the chain, in groups with a line between them: the levels
+(**Volume, Pan, Send A, Send B**, and **Buses** where the instrument has them),
+**Presets**, **LFOs**, then the track's own settings (**Mode, Layout** ·
+**Transpose, VelIn, AftTch** · **Looper**), **Import MIDI** and **Parallel** (see
+[Track settings](#164-track-settings)). Other track types show the same order with
+only the rows they have. Mute and solo are on the **Mute** button.
+The Instmt/Dest row names the track's generator (or its Move instrument,
 MIDI channel or followed track); **click** it to enter the generator's editor
 (or Move's, on a Move instrument), **Shift + click** to change the instrument.
 A MIDI channel or a followed track has nothing to enter, so a plain click does
 nothing there; a track with no generator yet reads `--`, and the click opens
-the picker. On the Instrument/Type and effect rows a hint band pops over the foot of
+the picker. On the Instmt/Dest and effect rows a hint band pops over the foot of
 the menu saying what the click and the Shift chord do — the same band the bank
 cards wear. That picker is one list in
 groups with a line between them: **None**, Move 1-4, **Conductor**, every Schwung
@@ -1695,7 +1700,7 @@ module decides which drum a pad means, so this follows its own kit mapping. Modu
 that don't offer per-drum editing are unaffected.
 
 **Mute + jog-click** on a block row bypasses that effect without muting the track.
-(The `Edit Synth… / Edit Slot…` rows this used to describe left the Settings menu
+(The `Edit Synth… / Edit Slot…` rows this used to describe left Project Settings
 in August — a track's chain is edited from its own Sound menu now.)
 
 ## 14.4 Clock Follow
@@ -1758,7 +1763,7 @@ destination to place the take.
 
 ## 15.3 Export to Live
 
-**Settings menu → Export to Ableton** writes an `.ablbundle` that desktop Live opens
+**Project Settings → Export to Ableton** writes an `.ablbundle` that desktop Live opens
 directly (transport stopped). Download it from the Schwung web manager
 (`move.local:7700`) in your browser. It opens as **8 MIDI tracks × 16 scene slots**
 with tempo and key.
@@ -1853,32 +1858,35 @@ On a drum track each note lands on the pad that plays its pitch in that clip.
 
 # 16. Settings & Sets
 
-Open the Settings menu with **Shift + Step 2**. It holds the **session-wide**
-settings. Anything belonging to one track lives on that track's own Sound menu —
+Open **Project Settings** with **Shift + Step 2**. It holds the settings saved
+with each **project**. Anything belonging to one track lives on that track's own Sound menu —
 see [Track settings](#164-track-settings) below.
 
-## 16.1 Global settings
+## 16.1 Project settings
 
 | Setting | What it does | Values | Default |
 |---|---|---|---|
+| BPM | Tempo | 40–250 | 120 |
+| Swing Amt | Swing depth — 50 % is straight, 66 % is triplet swing | 50–75 % | 50 % |
+| Swing Res | Which grid positions get the swing | 1/16, 1/8 | 1/16 |
+| Metro | When the metronome sounds — never, during the count-in, while playing, or always | Off, Cnt-In, Play, Always | Off |
+| Metro Vol | Metronome level | 0–150 % | 100 % |
 | Clock Follow | Lock to Move's transport and tempo — see [§13.4](#144-clock-follow) | Off, Move | Off |
 | Clock Out | Send MIDI clock out USB-A to drive external gear — see [§13.5](#145-clock-out) | Off, On | Off |
-| BPM | Tempo | 40–250 | 120 |
-| Tap Tempo | Tap the pads to set the tempo by feel | action | — |
 | Key | The session's root note — see [§15.2](#162-key--scale) | C…B | C |
 | Scale | The scale melodic tracks snap to — see [§15.2](#162-key--scale) | (below) | Major |
 | Scale Aware | Whether scale-aware params move by scale degree (On) or semitone (Off) | On, Off | On |
 | Launch Quant | When a launched clip or scene actually starts — at once (Now) or on the next boundary | Now … 1 bar | Now |
-| Swing Amt | Swing depth — 50 % is straight, 66 % is triplet swing | 50–75 % | 50 % |
-| Swing Res | Which grid positions get the swing | 1/16, 1/8 | 1/16 |
-| MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
-| Metro | When the metronome sounds — never, during the count-in, while playing, or always | Off, Cnt-In, Play, Always | Off |
-| Metro Vol | Metronome level | 0–150 % | 100 % |
 | Beat Markers | Dim markers on the step buttons at 1, 5, 9, 13 | On, Off | On |
-| Export to Ableton | Write a Live bundle of the set — see [§14.3](#153-export-to-live) | action | — |
+| MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Save state / Load state | Save or restore a named snapshot — see [§15.3](#163-snapshots) | action | — |
 | Clear Session | Reset the whole instance (confirms first) | action | — |
+| Export to Ableton | Write a Live bundle of the set — see [§14.3](#153-export-to-live) | action | — |
 | Quit | Save and exit to Schwung | action | — |
+
+The menu groups these with a line between each group, in this order; **Projects...**,
+**Suspend session**, **Host Settings...** and the **Daves** rows sit in it too. Tap
+Tempo is **Shift + Step 5**.
 
 **Scales:** Major, Minor, Dorian, Phrygian, Lydian, Mixolydian, Locrian, Harmonic
 Minor, Melodic Minor, Pentatonic Major, Pentatonic Minor, Blues, Whole Tone,
@@ -1904,7 +1912,7 @@ and survive **Clear Session**.
 ## 16.4 Track settings
 
 **At the foot of the track's own Sound menu**, below a divider — not in the
-Settings menu. Click a row to give it the jog, turn to change the value, then
+Project Settings. Click a row to give it the jog, turn to change the value, then
 click (or **Back**) to let go. Entries that don't apply to the track's type or
 route are hidden, so the list is shorter on a MIDI track or a Conductor.
 
@@ -1918,7 +1926,7 @@ route are hidden, so the list is shorter on a MIDI track or a Conductor.
 | AftTch | Off, Poly, Channel | Pad-pressure aftertouch (melodic) |
 | Parallel | On, Off | Whether this instrument may render on another core — set per instrument, device-wide |
 
-Where the track's notes GO is the **Instrument/Type** row at the top of the same
+Where the track's notes GO is the **Instmt/Dest** row at the top of the same
 menu, not a setting here — see [Editing a track's sound](#143-editing-a-tracks-sound).
 
 ## 16.5 Sets & compatibility
@@ -2019,6 +2027,7 @@ views (`#seq` / `#mix` / `#sound` in the address bar can be bookmarked).
 | Step tap / hold | Toggle / edit |
 | +/− / Left-Right | Octave / page |
 | Side buttons | Switch clips |
+| Shift + top / bottom side button | Scroll the four visible clips up / down one (the same window for every track) |
 | Jog turn / click | Cycle banks / alt-parameters |
 | Shift + jog / Shift + bottom pad | Switch tracks |
 | Loop (hold) / Loop + jog | Loop view / clip length |
@@ -2033,8 +2042,8 @@ views (`#seq` / `#mix` / `#sound` in the address bar can be bookmarked).
 | Delete + Play | Deactivate clips (running) · panic (stopped) |
 | Undo / Shift + Undo | Undo / redo |
 | Note/Session (tap / hold) | On an overview: switch / peek view — anywhere else: return to the overview |
-| Shift + Note/Session (tap / hold) | This track's sound editor / straight to its instrument — in Session view, the Master/Send FX list |
-| Shift + Step 2 | Settings menu |
+| Shift + Note/Session (tap / hold) | This track's sound editor / straight to its instrument — in Session view, the Master/Send FX list / straight into Master FX |
+| Shift + Step 2 | Project Settings |
 
 ### Drum track (additions)
 
@@ -2050,14 +2059,14 @@ views (`#seq` / `#mix` / `#sound` in the address bar can be bookmarked).
 
 | Step | Action | Views |
 |---|---|---|
-| 2 | Settings menu (globals) | Both |
+| 2 | Project Settings | Both |
 | 5 | Tap Tempo | Both |
-| 6 | Metro (Cnt-In ↔ Always) | Both |
+| 6 | Metro (Cnt-In ↔ Always) — icon lit while it plays (Play / Always) | Both |
 | 7 | Swing | Both |
 | 8 | Pad layout (Scale → Chrom → Chord) / cycle right-pad mode | Track |
 | 9 | Scale | Both |
-| 10 | VelIn (Live ↔ 100) | Track |
-| 11 | LIVE ARP on/off | Track (melodic) |
+| 10 | VelIn (Live ↔ 100) — icon lit while fixed | Track |
+| 11 | LIVE ARP on/off — icon lit while on | Track (melodic) |
 | 15 | Double-and-fill loop | Track |
 | 16 | Quantize 100 % | Track |
 

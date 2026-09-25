@@ -1,5 +1,5 @@
 /* seq8_arp.c — SEQ ARP engine (chain-stage arpeggiator on captured held notes).
- * Contents: arp_add_note, arp_remove_note, arp_silence, arp_build_ordered,
+ * Contents: arp_add_note, arp_remove_note, arp_silence, arp_build_pool,
  * arp_pick_next_pos, arp_compute_step, arp_fire_step, arp_tick. #include'd into
  * seq8.c's single TU at the original position; never compiled standalone.
  * NOTE: the TRACK ARP engine (tarp_ functions) stays in core — those functions
@@ -69,24 +69,31 @@ static void arp_silence(seq8_instance_t *inst, seq8_track_t *tr) {
     arp_clear_runtime(a);
 }
 
-/* Build the style-ordered list of held-buffer indices. ordered[i] is the held
- * buffer index playing at cycle position i within one octave. Length = held_count. */
-static int arp_build_ordered(const arp_engine_t *a, uint8_t *ordered) {
+/* Build the style-ordered NOTE POOL: every held note in every octave copy,
+ * ordered by the style as ONE list (Josh, 2026-09-24: "the octave notes don't
+ * factor into how the style sorts notes" — they used to be the styled phrase
+ * repeated per octave, so Down +1 played G E C G' E' C').
+ *
+ * pool_pitch[p] is the (unclamped) pitch at cycle position p, pool_held[p] the
+ * held-buffer index it came from (its velocity). Returns the pool length P.
+ *  - Negative octaves extend the pool DOWNWARD.
+ *  - Play Order (7) is the played phrase, then the phrase transposed one octave
+ *    at a time in the octave's direction — the fill order below, unsorted.
+ *  - No de-duplication: a chord already spanning an octave keeps both copies.
+ *  - N*(K+1) can exceed ARP_MAX_CYCLE (16 notes at +/-4 = 80), so the octave
+ *    count K is trimmed BEFORE the pool is built — clamping a styled pool would
+ *    drop whichever end the style put last, i.e. possibly the notes held.
+ * Rebuilt on every step from held_*[], exactly as the old per-octave order
+ * was: no cached pool, no new state. */
+static int arp_build_pool(const arp_engine_t *a, int16_t *pool_pitch, uint8_t *pool_held) {
     int N = a->held_count;
     if (N == 0) return 0;
-    int i, j;
-    /* Pitch-sorted ascending: parallel arrays of (pitch, held-index). */
-    uint8_t pitch_asc[ARP_MAX_HELD];
-    uint8_t idx_asc[ARP_MAX_HELD];
-    for (i = 0; i < N; i++) { pitch_asc[i] = a->held_pitch[i]; idx_asc[i] = (uint8_t)i; }
-    for (i = 1; i < N; i++) {
-        uint8_t pv = pitch_asc[i], iv = idx_asc[i];
-        for (j = i; j > 0 && pitch_asc[j - 1] > pv; j--) {
-            pitch_asc[j] = pitch_asc[j - 1]; idx_asc[j] = idx_asc[j - 1];
-        }
-        pitch_asc[j] = pv; idx_asc[j] = iv;
-    }
-    /* Insertion-order sorted: by held_order. */
+    int i, j, k;
+    int sign = a->octaves < 0 ? -1 : 1;
+    int K = a->octaves < 0 ? -(int)a->octaves : (int)a->octaves;
+    while (K > 0 && N * (K + 1) > ARP_MAX_CYCLE) K--;
+
+    /* Held indices in PLAY order (held_order ascending). */
     uint8_t order_val[ARP_MAX_HELD];
     uint8_t order_idx[ARP_MAX_HELD];
     for (i = 0; i < N; i++) { order_val[i] = a->held_order[i]; order_idx[i] = (uint8_t)i; }
@@ -97,42 +104,47 @@ static int arp_build_ordered(const arp_engine_t *a, uint8_t *ordered) {
         }
         order_val[j] = ov; order_idx[j] = oi;
     }
+    /* Fill: the played phrase, octave by octave. */
+    int P = 0;
+    for (k = 0; k <= K; k++)
+        for (j = 0; j < N; j++) {
+            uint8_t hi = order_idx[j];
+            pool_pitch[P] = (int16_t)((int)a->held_pitch[hi] + 12 * sign * k);
+            pool_held[P]  = hi;
+            P++;
+        }
 
     /* Style values: 0=Off (callers gate before reaching here), 1=Up, 2=Dn,
      * 3=U/D, 4=D/U, 5=Cnv, 6=Div, 7=Ord, 8=Rnd, 9=RnO. */
-    switch (a->style) {
-    case 1: case 3: /* Up; UpDown derives from Up */
-        for (i = 0; i < N; i++) ordered[i] = idx_asc[i];
-        break;
-    case 2: case 4: /* Down; DownUp derives from Down */
-        for (i = 0; i < N; i++) ordered[i] = idx_asc[N - 1 - i];
-        break;
-    case 5: /* Converge: high, low, 2nd-high, 2nd-low, ... */
-        for (i = 0; i < N; i++) {
-            int rank = (i % 2 == 0) ? (N - 1 - i / 2) : (i / 2);
-            if (rank < 0) rank = 0; if (rank >= N) rank = N - 1;
-            ordered[i] = idx_asc[rank];
+    if (a->style == 7) return P;                       /* Play Order: the fill order */
+
+    /* Everything else starts from the pool sorted ascending. STABLE (strict >),
+     * so equal pitches keep the lower-octave copy first. */
+    for (i = 1; i < P; i++) {
+        int16_t pv = pool_pitch[i]; uint8_t hv = pool_held[i];
+        for (j = i; j > 0 && pool_pitch[j - 1] > pv; j--) {
+            pool_pitch[j] = pool_pitch[j - 1]; pool_held[j] = pool_held[j - 1];
         }
-        break;
-    case 6: /* Diverge: opposite of Converge */
-        for (i = 0; i < N; i++) {
-            int rev = N - 1 - i;
-            int rank = (rev % 2 == 0) ? (N - 1 - rev / 2) : (rev / 2);
-            if (rank < 0) rank = 0; if (rank >= N) rank = N - 1;
-            ordered[i] = idx_asc[rank];
-        }
-        break;
-    case 7: /* Play Order */
-        for (i = 0; i < N; i++) ordered[i] = order_idx[i];
-        break;
-    case 8: case 9: /* Random / Random Other — base order, randomness applied later */
-        for (i = 0; i < N; i++) ordered[i] = idx_asc[i];
-        break;
-    default:
-        for (i = 0; i < N; i++) ordered[i] = idx_asc[i];
-        break;
+        pool_pitch[j] = pv; pool_held[j] = hv;
     }
-    return N;
+    if (a->style == 2 || a->style == 4) {              /* Down; DownUp derives from Down */
+        for (i = 0, j = P - 1; i < j; i++, j--) {
+            int16_t tp = pool_pitch[i]; pool_pitch[i] = pool_pitch[j]; pool_pitch[j] = tp;
+            uint8_t th = pool_held[i];  pool_held[i]  = pool_held[j];  pool_held[j]  = th;
+        }
+    } else if (a->style == 5 || a->style == 6) {       /* Converge / Diverge, by rank */
+        int16_t sp[ARP_MAX_CYCLE]; uint8_t sh[ARP_MAX_CYCLE];
+        for (i = 0; i < P; i++) { sp[i] = pool_pitch[i]; sh[i] = pool_held[i]; }
+        for (i = 0; i < P; i++) {
+            int r = (a->style == 5) ? i : (P - 1 - i);
+            int rank = (r % 2 == 0) ? (P - 1 - r / 2) : (r / 2);
+            if (rank < 0) rank = 0; if (rank >= P) rank = P - 1;
+            pool_pitch[i] = sp[rank]; pool_held[i] = sh[rank];
+        }
+    }
+    /* 1 Up, 3 UpDown, 8 Random, 9 Random Other: ascending (randomness is applied
+     * to the position later). */
+    return P;
 }
 
 /* Pick the next logical position 0..(span-1) and update random_used / ud_dir / cyc_pos.
@@ -190,26 +202,17 @@ static int arp_pick_next_pos(arp_engine_t *a, play_fx_t *fx, int span) {
 static int arp_compute_step(arp_engine_t *a, play_fx_t *fx,
                              uint8_t *out_pitch, uint8_t *out_vel) {
     if (a->held_count == 0) return 0;
-    uint8_t ordered[ARP_MAX_HELD];
-    int N = arp_build_ordered(a, ordered);
-    if (N == 0) return 0;
-    int oct_signed = (int)a->octaves;
-    /* 0=Off (no extra octaves), +/-N adds N extra octave copies; span = N*(|oct|+1) */
-    int abs_oct = (oct_signed < 0 ? -oct_signed : oct_signed) + 1;
-    int span = N * abs_oct;
-    if (span > ARP_MAX_CYCLE) span = ARP_MAX_CYCLE;
+    int16_t pool_pitch[ARP_MAX_CYCLE];
+    uint8_t pool_held[ARP_MAX_CYCLE];
+    int span = arp_build_pool(a, pool_pitch, pool_held);   /* <= ARP_MAX_CYCLE by construction */
+    if (span <= 0) return 0;
 
     int pos = arp_pick_next_pos(a, fx, span);
     if (pos < 0) return 0;
-    int oct_step = pos / N;
-    /* Negative octaves descend: oct_step shifts pitch by -12 per step. */
-    int oct_off  = oct_signed < 0 ? -oct_step : oct_step;
-    int idx      = pos % N;
-    int held     = ordered[idx];
-    int pitch    = (int)a->held_pitch[held] + 12 * oct_off;
-    if (pitch < 0) pitch = 0; if (pitch > 127) pitch = 127;
+    int pitch = pool_pitch[pos];
+    if (pitch < 0) pitch = 0; if (pitch > 127) pitch = 127;   /* clamp at emit, never before sorting */
     *out_pitch = (uint8_t)pitch;
-    *out_vel   = a->held_vel[held];
+    *out_vel   = a->held_vel[pool_held[pos]];
     return 1;
 }
 

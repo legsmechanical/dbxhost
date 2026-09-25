@@ -90,7 +90,9 @@ step('a MIDI-routed track\'s menu is its destination + its own CONFIG rows, noth
     const k = all.filter(x => x !== 'midiimport');
     /* No chain, no bus — so: the destination, a rule, then the config rows. */
     if (k[0] !== 'trackto' || k[1] !== 'div') throw new Error('rows: ' + k.join(','));
-    if (!k.slice(2).every(x => x === 'cfg')) throw new Error('rows: ' + k.join(','));
+    /* The config rows come in their ruled groups (Josh, 2026-09-24), so rules
+     * sit between them. */
+    if (!k.slice(2).every(x => x === 'cfg' || x === 'div')) throw new Error('rows: ' + k.join(','));
     if (k.includes('config')) throw new Error('the CONFIG door came back: ' + k.join(','));
     if (k.includes('block') || k.includes('buslevel')) throw new Error('rows: ' + k.join(','));
 });
@@ -99,7 +101,7 @@ step('a NONE track stays collapsed to the row that picks an instrument', () => {
     S.activeTrack = 2;
     const k = menuFor(2);
     /* NONE: the instrument row and Import MIDI (Josh, 2026-09-23: every melodic track imports). */
-    if (k.join(',') !== 'trackto,midiimport') throw new Error('rows: ' + k.join(','));
+    if (k.join(',') !== 'trackto,div,midiimport') throw new Error('rows: ' + k.join(','));
 });
 step('the MIDI track\'s config rows: mode, layout, transpose, velin, LOOPER, afttch (Josh, 09-05: the looper is a MIDI looper)', () => {
     S.activeTrack = 1;

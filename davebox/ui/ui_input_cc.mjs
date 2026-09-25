@@ -62,7 +62,7 @@ import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam } from './ui_sound.mjs';
 import { soundActive, soundOpen, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
-    soundViewForTest, soundEnterBuses, macroClearConfirmAnswer,
+    soundViewForTest, soundEnterBuses, soundEnterMasterFx, macroClearConfirmAnswer,
     macroClearConfirmReset, macroClearConfirmOpen } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
@@ -932,7 +932,10 @@ function modalDialogUp() {
             const delta = decodeDelta(d2);
             if (delta !== 0) {
                 const n = S.tempoSelectBpms.length;
-                S.tempoSelectIdx = (S.tempoSelectIdx + (delta > 0 ? 1 : n - 1)) % n;
+                /* Stops at both ends — no list wraps (Josh, 2026-09-24). */
+                const _ti = Math.max(0, Math.min(n - 1, S.tempoSelectIdx + (delta > 0 ? 1 : -1)));
+                if (_ti === S.tempoSelectIdx) return;
+                S.tempoSelectIdx = _ti;
                 host_module_set_param('t' + S.tempoSelectTrack + '_capture_retempo',
                                       String(S.tempoSelectIdx));
                 S.screenDirty = true;
@@ -2462,10 +2465,10 @@ if (S.sessionView) {
      * active underneath defeating the click gate. The click path never hit this
      * because it enters FROM the latched mixer page.
      *
-     * ⚠ The HOLD (wantInstrument) has no session counterpart — there is no one
-     * instrument to jump to — so it stays a no-op rather than inventing a
-     * destination. */
-    if (wantInstrument) return;
+     * ⭑ The HOLD goes one level deeper: straight into MASTER FX (Josh,
+     * 2026-09-24: "shift+hold note/session in session view takes you directly
+     * to master effects menu"). Back from there is the SESSION FX list. */
+    if (wantInstrument) { soundEnterMasterFx(); forceRedraw(); return; }
     /* ⭑ The latch is soundEnterBuses' own job (it is the ONE door into this
      * list, and the jog-click door needs it just as much) — not repeated here. */
     soundEnterBuses();
@@ -3336,6 +3339,14 @@ function _onCC_side(d1, d2) {
             forceRedraw();
             if (scooped > 0) showActionPopup('CAPTURED', 'TO ROW ' + (clipIdx + 1));
             else             showActionPopup('NOTHING', 'TO CAPTURE');
+        } else if (!S.sessionView && S.shiftHeld && (idx === 3 || idx === 0)) {
+            /* Shift + TOP track button scrolls the clip window up one row,
+             * Shift + BOTTOM scrolls it down (Josh, 2026-09-24). The window
+             * (S.sceneRow) is shared by every track, so switching tracks keeps
+             * you looking through the same rows. Shift+Up/Down stays free for
+             * the octave. Nothing launches: a plain press still does that. */
+            const _nr = idx === 3 ? S.sceneRow - 1 : S.sceneRow + 1;
+            if (_nr >= 0 && _nr <= NUM_CLIPS - 4) { S.sceneRow = _nr; invalidateLEDCache(); forceRedraw(); }
         } else if (S.sessionView) {
             S.sceneBtnFlashTick[idx] = nowMs();
             /* Shift+side-button forces next-bar boundary launch regardless of
