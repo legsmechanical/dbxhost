@@ -200,6 +200,7 @@ step('⭐ Back on that confirm is NO, over sound mode, and converts nothing', ()
 });
 
 step('⭐ Yes converts it, and the row then READS Conductor', () => {
+    S.trackOctave[0] = C.DEFAULT_TRACK_OCTAVE;          /* a melodic track on the +1 default */
     openPicker(0);
     pick('Conductor');
     ticks(2);
@@ -207,6 +208,9 @@ step('⭐ Yes converts it, and the row then READS Conductor', () => {
     yes();
     ticks(4);
     assert(S.trackPadMode[0] === PAD_MODE_CONDUCT, 'Yes did not convert: ' + S.trackPadMode[0]);
+    /* The Conductor's home pad must play the root at octave 4, its no-shift
+     * point — so it starts on octave 0, not the melodic +1 (2026-09-24). */
+    assert(S.trackOctave[0] === 0, 'a new Conductor kept the melodic octave ' + S.trackOctave[0] + ': its home pad would transpose everything');
     assert(B.instrValueFor(0) === INSTR_CONDUCT, 'the readback does not say Conductor');
     assert(C.fmtInstr(B.instrValueFor(0)) === 'Conductor',
            'formats as ' + C.fmtInstr(B.instrValueFor(0)));

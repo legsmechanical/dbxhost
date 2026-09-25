@@ -167,7 +167,13 @@ function convertTrackToConduct(t) {
     const prevMode = S.trackPadMode[t];
     host_module_set_param('t' + t + '_convert_to_conduct', '1');
     S.trackPadMode[t] = PAD_MODE_CONDUCT;
-    S.pendingConductReadback = { t: t, prevMode: prevMode };
+    /* A Conductor transposes from the key's root at octave 4 (DSP
+     * conductor_set_offset_from_note), and its HOME pad must play exactly that
+     * — so it starts on octave 0, not the melodic default of +1 (2026-09-24),
+     * or every note it plays would shift the other tracks up an octave. */
+    const prevOctave = S.trackOctave[t];
+    S.trackOctave[t] = 0;
+    S.pendingConductReadback = { t: t, prevMode: prevMode, prevOctave: prevOctave };
     if (S.trackActiveBank[t] === BANK_CHORD) S.trackActiveBank[t] = 0;
     if (t === S.activeTrack && S.activeBank === BANK_CHORD) S.activeBank = 0;
     /* Mirror convertTrackType's drain barrier: the convert set_param must drain
@@ -471,6 +477,7 @@ export function _tickImpl() {
             /* Refused — a different track already holds the role. Revert. */
             S.conductorTrack = _val;
             S.trackPadMode[_rb.t] = _rb.prevMode;
+            if (typeof _rb.prevOctave === 'number') S.trackOctave[_rb.t] = _rb.prevOctave;
             computePadNoteMap();
             invalidateLEDCache();
             forceRedraw();
@@ -485,6 +492,7 @@ export function _tickImpl() {
              * "exists" popup. */
             S.conductorTrack = _val;
             S.trackPadMode[_rb.t] = _rb.prevMode;
+            if (typeof _rb.prevOctave === 'number') S.trackOctave[_rb.t] = _rb.prevOctave;
             computePadNoteMap();
             invalidateLEDCache();
             forceRedraw();
