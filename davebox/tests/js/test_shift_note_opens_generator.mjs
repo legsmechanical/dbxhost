@@ -436,12 +436,16 @@ step('⭐ SESSION VIEW: Shift+Menu jumps to the MASTER/SEND FX list — and it m
         throw new Error('the collapse left a live level edit armed — the next Back is a dead press');
     if (sound.soundRender() !== true) throw new Error('the list stopped drawing after a re-press');
 
-    /* The HOLD has no session counterpart and must not invent one. */
+    /* The HOLD goes one level deeper: straight into MASTER FX (Josh,
+     * 2026-09-24 — it used to have no session meaning). */
     sound.soundExit(); S.sessMixerLatched = false;
     shiftNoteHold();
+    ticks(3);
+    const _bus = sound.soundBusForTest();
+    if (!_bus || _bus.id !== 'master')
+        throw new Error('the HOLD did not open MASTER FX in session view: ' + JSON.stringify(_bus));
+    sound.soundExit(); S.sessMixerLatched = false;
     ticks(2);
-    if (sound.soundActive())
-        throw new Error('the HOLD opened something in session view — it has no counterpart');
     S.sessionView = false;
 });
 
