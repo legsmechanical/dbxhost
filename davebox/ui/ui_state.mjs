@@ -942,6 +942,10 @@ export const S = {
      * page } from rowCycle, with the page being viewed. Set each tick by
      * autoBankTick; null = no row selected, the pad's/clip's grid as ever. */
     autoCycle: null,
+    /* The selected lane's values on the viewed page of its cycle, 0..127 per
+     * step (-1 = none) — the step row's intensity gradient. Set by
+     * autoBankTick; null = not read yet (or no row). */
+    autoLaneVals: null,
     /* THE MIDI KNOB VALUES (spec §2b): per track, target -> last value sent
      * (7-bit for cc:<n> / at, 14-bit for pb). CCs have no readback, so this
      * is the knob's truth across relaunches (sidecar `mcv`). */

@@ -7507,6 +7507,59 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                 pa_unlock(inst);
                 return n;
             }
+            /* tN_cC_pa_vals_<base>_<tps>: what every automated lane of this
+             * clip PLAYS at each of 16 steps, base .. base+15, a step being
+             * <tps> ticks — the AUTOMATION bank paints them as an intensity
+             * gradient on the step row (Josh, 2026-09-24, from Legacy).
+             *
+             * One line per lane: "<target> <32 hex chars>\n" — 16 values,
+             * two digits each, 00..7f (the 14-bit value scaled to 0..127),
+             * "ff" where the lane has no value (outside its window). Evaluated
+             * by the SAME functions playback calls — Mode, Wrap, Smooth and
+             * Scale all apply, the resting value unscaled — so the colours
+             * are what you hear, not the raw points. ONE read per page for the
+             * whole clip (a target name can outgrow a param key, so it is not
+             * in the key). */
+            if (!strncmp(p, "_pa_vals_", 9)) {
+                const char *q = p + 9;
+                uint32_t base = 0, vtps = 0;
+                while (*q >= '0' && *q <= '9') base = base * 10 + (uint32_t)(*q++ - '0');
+                if (*q++ != '_') return -1;
+                while (*q >= '0' && *q <= '9') vtps = vtps * 10 + (uint32_t)(*q++ - '0');
+                if (*q || !vtps || base >= SEQ_STEPS) return -1;
+                int n = 0;
+                if (out_len > 0) out[0] = '\0';
+                pa_lock(inst);
+                for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+                    pa_entry_t *e = &inst->pa_entries[i];
+                    if (!e->used || !e->count || e->track != tidx || e->clip != cidx) continue;
+                    char hex[33];
+                    uint32_t ws = 0, wl = 0, st = TICKS_PER_STEP;
+                    const int have = pa_export_window(tr, e, &ws, &wl, &st);
+                    for (int s = 0; s < 16; s++) {
+                        const uint32_t tk = (base + (uint32_t)s) * vtps;
+                        int v7 = -1;
+                        if (have && wl && tk >= ws && tk < ws + wl) {
+                            uint16_t v;
+                            const int ev = (e->flags & PA_FLAG_PUNCH)
+                                         ? pa_eval_punch(e, tk, ws, wl, st, &v)
+                                         : pa_eval_window(e, tk, ws, wl, &v);
+                            if (ev) {
+                                const uint32_t v14 = (ev == PA_EVAL_REST) ? v : pa_scaled(e, v);
+                                v7 = (int)((v14 * 127u + PA_VAL_MAX / 2) / PA_VAL_MAX);
+                                if (v7 > 127) v7 = 127;
+                            }
+                        }
+                        snprintf(hex + s * 2, 3, "%02x", v7 < 0 ? 0xff : v7);
+                    }
+                    int w = snprintf(out + n, (size_t)(out_len - n), "%s %s\n",
+                                     inst->pa_targets[e->target], hex);
+                    if (w < 0 || n + w >= out_len) { out[n] = '\0'; break; }   /* see pa_list */
+                    n += w;
+                }
+                pa_unlock(inst);
+                return n;
+            }
             if (!strncmp(p, "_length", 7))
                 return snprintf(out, out_len, "%d", (int)cl->length);
             if (!strncmp(p, "_loop_start", 11))

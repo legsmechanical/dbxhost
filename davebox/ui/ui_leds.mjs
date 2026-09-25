@@ -17,6 +17,7 @@ import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import {
     White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue,
     DeepRed, DeepGreen, DeepMagenta, Mustard, BrightPink,
+    DeepBrownYellow, BrightOrange, Tan,
     MoveBack, MoveCopy, MoveDelete
 } from '/data/UserData/schwung/shared/constants.mjs';
 import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
@@ -131,15 +132,43 @@ function paintAutoBankLit(base, lsBase, winEnd) {
     }
 }
 
-/* The selected automation lane's page of its own cycle: steps outside it
- * DarkGrey (the colour every step row uses outside its window), the lane's
- * points blinking over the rest. Pages sit on the same 16-step boundaries as
- * the clip's own grid (the first is the one holding the window's start), so a
- * lane that follows the clip lights exactly the buttons the clip would. */
+/* ⭐ THE INTENSITY GRADIENT (Josh, 2026-09-24: "implement the automation
+ * intensity colors on the steps that davebox legacy used"). Legacy's seven
+ * levels, by palette index — Legacy's ui_leds CC_GRAD [76, 29, 29, 3, 4, 67,
+ * 127]: dim brown-yellow through mustard, orange and tan to the top. ⚠ On this
+ * fork's palette 127 is RED (White is 120), so Legacy's "full white" top reads
+ * red here; it is kept as Legacy had it, for Josh to grade on the device. */
+export const AUTO_GRAD = [DeepBrownYellow, Mustard, Mustard, BrightOrange, Tan, 67, Red];
+/* A 0..127 value's level — Legacy's rule: 0 is level 0, the rest spread over
+ * levels 1..6. */
+export function autoGradLevel(v) { return v === 0 ? 0 : Math.min(6, 1 + Math.floor((v - 1) * 6 / 127)); }
+
+/* The selected automation lane's page of its own cycle. Each step shows the
+ * value the lane PLAYS there as the gradient (S.autoLaneVals, from the DSP);
+ * a step holding a real point blinks OFF briefly so points read apart from the
+ * curve between them; steps outside the cycle are DarkGrey (the colour every
+ * step row uses outside its window). Pages sit on the same 16-step boundaries
+ * as the clip's own grid, so a lane that follows the clip lights exactly the
+ * buttons the clip would. Until the values have been read, the points blink
+ * white over dark steps (the one-read-behind state, and a failed read). */
 function paintAutoLane(cy) {
     const base = ((cy.off >> 4) + cy.page) * 16, end = cy.off + cy.len;
-    for (let i = 0; i < 16; i++) setLED(16 + i, (base + i < cy.off || base + i >= end) ? DarkGrey : LED_OFF);
-    paintAutoBankLit(base, cy.off, end);
+    const vals = S.autoLaneVals, m = S.autoBankLit;
+    const blinkOff = (S.clockMs % 500) < 45;             /* Legacy: 4 of 47 ticks */
+    for (let i = 0; i < 16; i++) {
+        const abs = base + i;
+        let color;
+        if (abs < cy.off || abs >= end) color = DarkGrey;
+        else if (!vals) color = LED_OFF;
+        else {
+            const v = vals[i];
+            color = v < 0 ? LED_OFF
+                  : (blinkOff && m && m.charCodeAt(abs) === 49) ? LED_OFF
+                  : AUTO_GRAD[autoGradLevel(v)];
+        }
+        setLED(16 + i, color);
+    }
+    if (!vals) paintAutoBankLit(base, cy.off, end);
 }
 
 export function updateStepLEDs() {

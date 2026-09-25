@@ -382,9 +382,40 @@ function selectedTarget(t, c) {
     return r && r.kind === 'entry' ? r.target : null;
 }
 
+/* The gradient's values: one read per page for the whole clip
+ * (tN_cC_pa_vals_<base>_<tps>), refreshed when the page, the lane list or the
+ * clip changes, and on a slow cadence otherwise (recorded points change values
+ * without changing the list) — never per tick: a read is a whole SPI frame. */
+let valsCache = { key: null, map: null, at: -1e9 };
+const VALS_REFRESH_MS = 400;
+function autoLaneValsTick(t, c, target) {
+    const cy = S.autoCycle;
+    const base = ((cy.off >> 4) + cy.page) * 16;
+    const key = t + ' ' + c + ' ' + base + ' ' + cy.tps + ' ' + automationListGen();
+    if (valsCache.key !== key || S.clockMs - valsCache.at >= VALS_REFRESH_MS) {
+        const raw = host_module_get_param('t' + t + '_c' + c + '_pa_vals_' + base + '_' + cy.tps);
+        valsCache.at = S.clockMs;
+        if (raw !== null && raw !== undefined) {
+            const map = new Map();
+            for (const line of String(raw).split('\n')) {
+                const sp = line.lastIndexOf(' ');
+                if (sp <= 0) continue;
+                const hex = line.slice(sp + 1), v = [];
+                for (let s = 0; s < 16; s++) { const x = parseInt(hex.substr(s * 2, 2), 16); v.push(x === 255 || !isFinite(x) ? -1 : x); }
+                map.set(line.slice(0, sp), v);
+            }
+            valsCache.key = key; valsCache.map = map;
+        } else if (valsCache.key !== key) {
+            valsCache.map = null;             /* a failed read of a NEW page shows no stale colours */
+        }
+    }
+    S.autoLaneVals = (valsCache.key === key && valsCache.map) ? (valsCache.map.get(target) || null) : null;
+}
+
 export function autoBankTick() {
     S.autoBankLit = null;
     S.autoCycle = null;
+    S.autoLaneVals = null;
     if (!autoBankIsActive() || !S.bankCardLatched || S.moveCoRunTrack >= 0) return;
     const t = S.activeTrack, c = effectiveClip(t);
     const target = selectedTarget(t, c);
@@ -394,6 +425,7 @@ export function autoBankTick() {
      * two ticks.) */
     if (target === null) { if (S.autoBank) S.autoBank.cycleTarget = null; return; }
     updateAutoCycle(t, c, target);
+    if (S.autoCycle) autoLaneValsTick(t, c, target);
     const key = t + ' ' + c + ' ' + automationListGen();
     if (litCache.key !== key) {
         /* A failed read (null) is not "no steps": keep the old map off the
