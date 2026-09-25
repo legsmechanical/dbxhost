@@ -273,14 +273,14 @@ export function dealDave() {
 /* The loading screen with its Dave (Josh, 2026-09-24): ONE black header in the
  * small movy face — "<PROJECT> [LOADING...]" — and the Dave filling the rest.
  * It is the frame the host keeps on screen while Move loads the set, so it is
- * drawn still, centred on the face. A long name is trimmed; the bracketed
+ * drawn still, the whole frame from the top. A long name is trimmed; the bracketed
  * LOADING... always shows. */
 export const LOAD_BAND_H = 9;
 export function drawDaveLoading(idx, name) {
     clear_screen();
-    const rows = 64 - LOAD_BAND_H;
-    const src = Math.max(0, Math.floor((64 - rows) / 2));
-    blitFrameRows(idx, src, LOAD_BAND_H, rows);
+    /* The whole Dave, where it sits; the header goes OVER its top rows rather
+     * than pushing it down (Josh, 2026-09-24). */
+    blitFrameRows(idx, 0, 0, 64);
     fill_rect(0, 0, 128, LOAD_BAND_H, 0);
     const tag = '[LOADING...]';
     let n = String(name || '').toUpperCase();
