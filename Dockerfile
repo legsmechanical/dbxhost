@@ -48,20 +48,8 @@ CMD set -e && \
     cd /build && \
     CROSS_PREFIX=aarch64-linux-gnu- ./scripts/build.sh && \
     echo "" && \
-    if [ ! -f /build/schwung.tar.gz ] || \
-       [ -n "$(find /build/build -newer /build/schwung.tar.gz -print -quit 2>/dev/null)" ]; then \
-        echo "Packaging..." && \
-        CROSS_PREFIX=aarch64-linux-gnu- ./scripts/package.sh; \
-    else \
-        echo "Package is up to date, skipping"; \
-    fi && \
-    echo "" && \
     echo "=== Build Artifacts ===" && \
     file /build/build/schwung && \
     file /build/build/schwung-shim.so && \
-    file /build/build/modules/sf2/dsp.so 2>/dev/null || echo "SF2 module DSP: not found" && \
-    echo "" && \
-    echo "=== Package Created ===" && \
-    ls -lh /build/schwung.tar.gz && \
     echo "" && \
     echo "Build complete!"

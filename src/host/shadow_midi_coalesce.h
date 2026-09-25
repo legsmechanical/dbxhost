@@ -5,7 +5,7 @@
  * shadow_forward_midi(), which publishes to SHM_SHADOW_MIDI ("MIDI to shadow
  * DSP") — a segment NOTHING in the running system maps. `fuser` on a live
  * device shows no process attached to /dev/shm/dbxhost-midi at all, and the
- * only reader in the tree is examples/shadow_poc.c.
+ * only reader the tree ever had was examples/shadow_poc.c (removed 2026-09-24).
  *
  * The ring a tool actually reads is a DIFFERENT one: SHM_SHADOW_UI_MIDI, filled
  * post-ioctl by schwung_shim.c::shadow_ui_midi_publish() from the UNFILTERED

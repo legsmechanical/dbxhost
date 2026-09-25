@@ -481,8 +481,7 @@ That means:
   changes. Persist any iframe-side UI state via `setParam` or
   your own storage; don't rely on the iframe surviving slot swaps.
 - Available since schwung-manager landed the Remote UI custom
-  HTML support (see `docs/plans/2026-04-08-remote-ui-plan.md`
-  Task 5). Bump `min_host_version` in your catalog entry if your
+  HTML support. Bump `min_host_version` in your catalog entry if your
   module depends on it.
 
 ### Remote UI for overtake tools (the Tool tab)
@@ -1873,8 +1872,8 @@ page (the last page of the knob grid) offers a **Module Help** row, above Swap M
 module's `help.json` parses and has a non-empty top-level `children[]`. Click opens dAVEBOx's own
 viewer: a topic list (jog picks, click opens), text pages the jog scrolls, Back climbs one level and
 then returns to the Module page. Lines are drawn as written, never wrapped — keep each within
-**124px** of the stock font (`tests/host/test_module_help_shape.sh` measures it for this repo's
-modules). A file that names its topics anything but `children` shows no row at all.
+**124px** of the stock font (upstream's `tests/host/test_module_help_shape.sh` measures it; this
+repo ships no module help since 2026-09-24). A file that names its topics anything but `children` shows no row at all.
 
 ### Format
 

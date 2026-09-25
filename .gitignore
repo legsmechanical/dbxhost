@@ -32,3 +32,6 @@ standalone/build/
 # python bytecode from running a script under test
 __pycache__/
 *.pyc
+
+# Claude Code runtime lock
+.claude/scheduled_tasks.lock

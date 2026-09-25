@@ -260,6 +260,8 @@ commits — version bumps and changelog, no code).
   `scrollable_text.mjs`, at upstream's 124px line budget. `tests/host/test_module_help_shape.sh`
   taken from `866408b73`; this fork's file-browser and song-mode help were rewrapped to pass it
   (our wording kept — upstream's song-mode rewrite documents stems this fork does not have).
+  ⚠ 2026-09-24: those modules and the test were REMOVED — SA runs stock's copies, so this tree
+  ships no help.json and the test had nothing left to measure.
   NOT taken: the shared `drawScrollbar` half (the kit list already owns one rail), and the
   earlier note's "dAVEBOx itself among them" / stock-tree fix — dAVEBOx has no slot modules of
   its own and is an overtake. Original note: **WORTH TAKING; Josh, 2026-09-10:

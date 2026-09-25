@@ -151,13 +151,14 @@ fi
 # R — READS through the entry (fetches Song.abl, enumerates) and keeps no path.
 #     Deliberately NOT resolved: a read through a window is correct as-is, and
 #     resolving it would buy nothing. Tagged so it reads as a decision rather
-#     than as four sites somebody forgot.
+#     than as sites somebody forgot. (R was 4 until 2026-09-24, when this tree's
+#     copy of the stock song-mode module — one read-through — was removed.)
 builders=$(grep -c '^B ' "$INVENTORY" 2>/dev/null | tr -d ' ')
 reads=$(grep -c '^R ' "$INVENTORY" 2>/dev/null | tr -d ' ')
-if [ "${builders:-0}" -eq 4 ] && [ "${reads:-0}" -eq 4 ]; then
-    ok "4 resolved builders (B) + 4 deliberate read-throughs (R)"
+if [ "${builders:-0}" -eq 4 ] && [ "${reads:-0}" -eq 3 ]; then
+    ok "4 resolved builders (B) + 3 deliberate read-throughs (R)"
 else
-    bad "path-site split is B=${builders:-0} R=${reads:-0}, pinned at B=4 R=4"
+    bad "path-site split is B=${builders:-0} R=${reads:-0}, pinned at B=4 R=3"
     grep -E '^[BR] ' "$INVENTORY" 2>/dev/null | sed 's/^/    /' >&2
 fi
 

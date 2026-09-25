@@ -65,6 +65,20 @@ echo "      payload in place"
 for stale in davebox-heal davebox-heal.new; do
     if [ -e "$DBX_DIR/bin/$stale" ]; then rm -f "$DBX_DIR/bin/$stale"; echo "      retired: bin/$stale (the helper lives in the launcher module dir now)"; fi
 done
+# Everything the build STOPPED shipping in the 2026-09-24 host cleanup. Rule 1
+# (merge, never replace) means a dropped file otherwise stays on every existing
+# install forever — measured on the device after the first cleanup install: the
+# 32 MB filebrowser, the JACK tools, the Tamzen PNGs and the logos were all still
+# there. Real files and dirs only, inside $DBX_DIR: a SYMLINK is never followed
+# or removed here (shared names link into the stock tree).
+for stale in bin/filebrowser bin/display_ctl bin/jack_midi_connect lib/jack \
+             licenses/FILEBROWSER_LICENSE.txt shadow/shadow_poc scripts/post-update.sh \
+             host/fonts host/logo-circle.png host/logo-splash.png host/logo-text.png \
+             host/schwung-print.png start.sh stop.sh; do
+    p="$DBX_DIR/$stale"
+    [ -L "$p" ] && continue
+    if [ -e "$p" ]; then rm -rf "$p"; echo "      retired: $stale (no longer shipped)"; fi
+done
 
 # ---- 2. workspace separation ------------------------------------------------
 cd "$DBX_DIR"

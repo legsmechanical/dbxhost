@@ -159,10 +159,10 @@ if [ -z "$CROSS_PREFIX" ] && [ ! -f "/.dockerenv" ]; then
 
     echo ""
     echo "=== Done ==="
-    echo "Output: $REPO_ROOT/schwung.tar.gz"
+    echo "Output: $REPO_ROOT/build/"
     echo ""
-    echo "To install on Move:"
-    echo "  ./scripts/install.sh local"
+    echo "To install dAVEBOx SA on a Move:"
+    echo "  ./standalone/scripts/install-sa.sh"
     exit 0
 fi
 
@@ -245,13 +245,6 @@ mkdir -p ./build/bin/
 mkdir -p ./build/lib/
 mkdir -p ./build/licenses/
 mkdir -p ./build/modules/chain/
-mkdir -p ./build/modules/audio_fx/freeverb/
-mkdir -p ./build/modules/midi_fx/chord/
-mkdir -p ./build/modules/midi_fx/arp/
-mkdir -p ./build/modules/midi_fx/velocity_scale/
-mkdir -p ./build/modules/sound_generators/linein/
-mkdir -p ./build/modules/tools/wav-player/
-mkdir -p ./build/lib/jack
 
 # Generate bitmap font for host display (single source of truth: scripts/generate_font.py)
 if needs_rebuild build/host/font.png scripts/generate_font.py; then
@@ -261,18 +254,8 @@ else
     echo "Skipping font generation (up to date)"
 fi
 
-# Generate Tamzen bitmap fonts at multiple sizes
-TAMZEN_SIZES="5x9 6x12 7x13 7x14 8x15 8x16 10x20"
-mkdir -p build/host/fonts
-for size in $TAMZEN_SIZES; do
-    height=$(echo $size | cut -d'x' -f2)
-    bdf="fonts/tamzen/Tamzen${size}r.bdf"
-    out="build/host/fonts/tamzen-${height}.png"
-    if needs_rebuild "$out" "$bdf" scripts/generate_font.py; then
-        echo "Generating Tamzen ${size} font..."
-        python3 scripts/generate_font.py --bdf "$bdf" --deploy-png "$out"
-    fi
-done
+# (Tamzen PNGs are no longer rendered: nothing loads host/fonts/. The BDFs stay —
+# src/shared/param_pages' font_tamzen6x12.mjs is generated from them.)
 
 if [ "$SCREEN_READER_ENABLED" = "1" ]; then
     echo "Screen reader build: enabled (dual engine: eSpeak-NG + Flite)"
@@ -392,18 +375,6 @@ else
     echo "Skipping unified log CLI (up to date)"
 fi
 
-# Build Shadow Instrument POC (reference example - not used in production)
-if needs_rebuild build/shadow/shadow_poc \
-    examples/shadow_poc.c src/host/shadow_constants.h; then
-    echo "Building Shadow POC..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 \
-        examples/shadow_poc.c \
-        -o build/shadow/shadow_poc \
-        -Isrc -Isrc/host \
-        -lm -ldl -lrt
-else
-    echo "Skipping Shadow POC (up to date)"
-fi
 
 # Build Shadow UI host (uses shared display bindings from js_display.c)
 if needs_rebuild build/shadow/shadow_ui \
@@ -616,87 +587,10 @@ else
     echo "Skipping chain DSP (up to date)"
 fi
 
-# seq-test is dev-only (Addressing Move Synths reference); not built or shipped.
-
-echo "Building Audio FX plugins..."
-
-# Build Freeverb audio FX
-if needs_rebuild build/modules/audio_fx/freeverb/freeverb.so \
-    src/modules/audio_fx/freeverb/freeverb.c src/host/audio_fx_api_v1.h; then
-    echo "Building freeverb..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
-        src/modules/audio_fx/freeverb/freeverb.c \
-        -o build/modules/audio_fx/freeverb/freeverb.so \
-        -Isrc \
-        -lm
-else
-    echo "Skipping freeverb (up to date)"
-fi
-
-echo "Building MIDI FX plugins..."
-
-# Build Chord MIDI FX
-if needs_rebuild build/modules/midi_fx/chord/dsp.so \
-    src/modules/midi_fx/chord/dsp/chord.c src/host/midi_fx_api_v1.h; then
-    echo "Building chord MIDI FX..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
-        src/modules/midi_fx/chord/dsp/chord.c \
-        -o build/modules/midi_fx/chord/dsp.so \
-        -Isrc
-else
-    echo "Skipping chord MIDI FX (up to date)"
-fi
-
-# Build Arpeggiator MIDI FX
-if needs_rebuild build/modules/midi_fx/arp/dsp.so \
-    src/modules/midi_fx/arp/dsp/arp.c src/host/midi_fx_api_v1.h; then
-    echo "Building arp MIDI FX..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
-        src/modules/midi_fx/arp/dsp/arp.c \
-        -o build/modules/midi_fx/arp/dsp.so \
-        -Isrc
-else
-    echo "Skipping arp MIDI FX (up to date)"
-fi
-
-# Build Velocity Scale MIDI FX
-if needs_rebuild build/modules/midi_fx/velocity_scale/dsp.so \
-    src/modules/midi_fx/velocity_scale/dsp/velocity_scale.c src/host/midi_fx_api_v1.h; then
-    echo "Building velocity scale MIDI FX..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
-        src/modules/midi_fx/velocity_scale/dsp/velocity_scale.c \
-        -o build/modules/midi_fx/velocity_scale/dsp.so \
-        -Isrc -lm
-else
-    echo "Skipping velocity scale MIDI FX (up to date)"
-fi
-
-echo "Building Sound Generator plugins..."
-
-# Build Line In sound generator
-if needs_rebuild build/modules/sound_generators/linein/dsp.so \
-    src/modules/sound_generators/linein/linein.c src/host/plugin_api_v1.h; then
-    echo "Building line-in generator..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
-        src/modules/sound_generators/linein/linein.c \
-        -o build/modules/sound_generators/linein/dsp.so \
-        -Isrc \
-        -lm
-else
-    echo "Skipping line-in generator (up to date)"
-fi
-
-# Build WAV Player tool DSP
-if needs_rebuild build/modules/tools/wav-player/dsp.so \
-    src/modules/tools/wav-player/wav_player.c src/host/plugin_api_v1.h; then
-    echo "Building WAV Player tool DSP..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 -shared -fPIC \
-        src/modules/tools/wav-player/wav_player.c \
-        -o build/modules/tools/wav-player/dsp.so \
-        -Isrc
-else
-    echo "Skipping WAV Player tool DSP (up to date)"
-fi
+# Upstream's bundled modules (freeverb, chord, arp, velocity_scale, linein, wav-player,
+# file-browser, song-mode, rnbo-runner) are no longer built here: an SA session runs
+# stock's copies (layout-install.sh links every module category but chain to the stock
+# tree). Their sources were removed 2026-09-24.
 
 # Copy shared utilities (only if source is newer)
 for f in ./src/shared/*.mjs; do
@@ -763,52 +657,8 @@ else
     echo "Skipping display server (up to date)"
 fi
 
-# Build JACK shadow driver (loaded by jackd when RNBO/JACK is used)
-if needs_rebuild build/lib/jack/jack_shadow.so \
-    src/lib/jack2/shadow/JackShadowDriver.cpp \
-    src/lib/jack2/shadow/JackShadowDriver.h \
-    src/lib/schwung_jack_shm.h; then
-    echo "Building JACK shadow driver..."
-    "${CROSS_PREFIX}g++" ${SCHWUNG_CFLAGS} -g -O2 -fPIC -std=c++17 \
-        -DSERVER_SIDE \
-        -Isrc/lib/jack2 -Isrc/lib/jack2/common -Isrc/lib/jack2/common/jack \
-        -Isrc/lib/jack2/linux -Isrc/lib/jack2/shadow -Isrc/lib/jack2/posix \
-        -Isrc/lib \
-        -c src/lib/jack2/shadow/JackShadowDriver.cpp \
-        -o build/jack_shadow_driver.o
-    "${CROSS_PREFIX}g++" ${SCHWUNG_CFLAGS} -shared \
-        build/jack_shadow_driver.o \
-        -o build/lib/jack/jack_shadow.so \
-        -lrt -lpthread
-    rm -f build/jack_shadow_driver.o
-else
-    echo "Skipping JACK shadow driver (up to date)"
-fi
 
-# Build display_ctl (toggles RNBO display override via shared memory)
-if needs_rebuild build/bin/display_ctl \
-    src/tools/display_ctl.c src/lib/schwung_jack_shm.h; then
-    echo "Building display_ctl..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O2 \
-        src/tools/display_ctl.c \
-        -o build/bin/display_ctl \
-        -Isrc \
-        -lrt
-else
-    echo "Skipping display_ctl (up to date)"
-fi
 
-# Build jack_midi_connect (connects system:midi_capture_ext to RNBO patcher MIDI inputs)
-if needs_rebuild build/bin/jack_midi_connect \
-    src/tools/jack_midi_connect.c; then
-    echo "Building jack_midi_connect..."
-    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O2 \
-        src/tools/jack_midi_connect.c \
-        -o build/bin/jack_midi_connect \
-        -ldl
-else
-    echo "Skipping jack_midi_connect (up to date)"
-fi
 
 # Build schwung-heal (setuid-root helper that mirrors data-partition shim
 # and entrypoint to /usr/lib + /opt/move). Needed because everything from
@@ -827,20 +677,12 @@ fi
 cp ./src/shadow/shadow_ui.js ./build/shadow/
 cp ./src/shadow/*.mjs ./build/shadow/ 2>/dev/null || true
 
-# Copy image assets to host directory
-if [ -d "./assets" ]; then
-    cp -u ./assets/*.png ./build/host/ 2>/dev/null || true
-fi
-
 # Copy scripts and assets
 cp ./src/shim-entrypoint.sh ./build/
 cp ./src/restart-move.sh ./build/ 2>/dev/null || true
 cp ./src/launch-standalone.sh ./build/ 2>/dev/null || true
 
-# Copy post-update script (run by Module Store after host updates)
 mkdir -p ./build/scripts
-cp ./scripts/post-update.sh ./build/scripts/
-chmod +x ./build/scripts/post-update.sh
 
 # Standalone-session payload. These are RUNTIME dependencies of a standalone
 # install, resolved by absolute path inside the install tree:
@@ -971,18 +813,12 @@ ln -sf schwung ./build/move-anything
 
 # Copy all module files (js, mjs, json, sh) - preserves directory structure
 # Compiled .so files are built separately above
-# Dev-only modules excluded from release tarball (source kept in src/modules/):
-#   - tools/{ui,seq,config,splash}-test: dev scaffolding
-#   - text-test, standalone-example: dev scaffolding
-#   - controller: superseded by catalog "control" module (chaolue)
+# Excluded from the build (source kept in src/modules/ as documented examples):
+#   - tools/{seq,config}-test, controller: referenced by ADDRESSING_MOVE_SYNTHS.md / MODULES.md
 #   - store: on-device store retired — schwung-manager (move.local:7700) is
 #     the single install/update path; shadow keeps detection + pointers only
 echo "Copying module files..."
 find ./src/modules -type f \( -name "*.js" -o -name "*.mjs" -o -name "*.json" -o -name "*.sh" -o -name "*.py" -o -name "*.txt" \) \
-    -not -path "*/splash-test/*" \
-    -not -path "*/text-test/*" \
-    -not -path "*/standalone-example/*" \
-    -not -path "*/ui-test/*" \
     -not -path "*/seq-test/*" \
     -not -path "*/config-test/*" \
     -not -path "*/controller/*" \
@@ -992,8 +828,9 @@ find ./src/modules -type f \( -name "*.js" -o -name "*.mjs" -o -name "*.json" -o
     cp -u "$src" "$dest"
 done
 
-# Scrub any stale build artifacts from prior incremental builds so excluded
-# modules don't ship just because their directory still exists in ./build/.
+# Scrub stale build artifacts from prior incremental builds so removed or
+# excluded modules don't ship just because their directory still exists in
+# ./build/ (text-test, ui-test and splash-test were deleted from src/ 2026-09-24).
 rm -rf \
     ./build/modules/controller \
     ./build/modules/text-test \
@@ -1004,16 +841,39 @@ rm -rf \
     ./build/modules/store \
     2>/dev/null || true
 
+# ...and everything this build STOPPED producing on 2026-09-24 (host cleanup).
+# build/ is incremental and the SA build cache republishes it, so without this
+# a removed artifact keeps shipping from an old build forever — the 32 MB
+# filebrowser included. Keep this list until every build/ and cache predating
+# the cleanup is gone.
+rm -rf \
+    ./build/modules/audio_fx \
+    ./build/modules/midi_fx \
+    ./build/modules/sound_generators \
+    ./build/modules/overtake \
+    ./build/modules/tools/wav-player \
+    ./build/modules/tools/file-browser \
+    ./build/modules/tools/song-mode \
+    ./build/bin/filebrowser \
+    ./build/licenses/FILEBROWSER_LICENSE.txt \
+    ./build/bin/display_ctl \
+    ./build/bin/jack_midi_connect \
+    ./build/lib/jack \
+    ./build/shadow/shadow_poc \
+    ./build/host/fonts \
+    ./build/host/logo-circle.png \
+    ./build/host/logo-splash.png \
+    ./build/host/logo-text.png \
+    ./build/host/schwung-print.png \
+    ./build/patches \
+    ./build/presets \
+    ./build/scripts/post-update.sh \
+    ./build/start.sh \
+    ./build/stop.sh \
+    2>/dev/null || true
+
 # Make shell scripts in modules executable
 find ./build/modules -type f -name "*.sh" -exec chmod +x {} \;
-
-# Copy patches directory (only if source is newer)
-mkdir -p ./build/patches
-cp -u ./src/patches/*.json ./build/patches/ 2>/dev/null || true
-
-# Copy track presets (only if source is newer)
-mkdir -p ./build/presets/track_presets
-cp -u ./src/presets/track_presets/*.json ./build/presets/track_presets/ 2>/dev/null || true
 
 # Copy curl binary (host_http_download backend: catalog detection,
 # move-manual refresh)
@@ -1023,14 +883,6 @@ if [ -f "./libs/curl/curl" ]; then
     echo "Bundled curl binary"
 else
     echo "Warning: libs/curl/curl not found - downloads will not work without it"
-fi
-
-# Copy filebrowser binary (if present)
-if [ -f "./libs/filebrowser/filebrowser" ]; then
-    mkdir -p ./build/bin/
-    cp -u ./libs/filebrowser/filebrowser ./build/bin/
-    cp -u ./libs/filebrowser/LICENSE ./build/licenses/FILEBROWSER_LICENSE.txt 2>/dev/null || true
-    echo "Bundled filebrowser binary"
 fi
 
 # eSpeak-NG data directory is copied to build/espeak-ng-data/ above
