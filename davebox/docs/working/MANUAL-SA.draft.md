@@ -1268,6 +1268,12 @@ full), and **Match pad** makes it the selected pad's. ALL LANES Clock Shift,
 Nudge, Resolution, Beat Stretch and Double move each parameter's automation
 inside its own cycle.
 
+**Copying or cutting a clip** takes its automation with it. To another track,
+automation of the track's levels and of dAVEBOx's own knobs always comes
+along; automation of an instrument or effect parameter comes along only when
+the destination has the same instrument or effect in the same place. Anything
+left behind is counted in a notice (**AUTOMATION / 1 LANE NOT CARRIED**).
+
 ## 11.3 MIDI targets
 
 A macro can point at **Aftertouch** or **Pitch Bend** on any track, and at any

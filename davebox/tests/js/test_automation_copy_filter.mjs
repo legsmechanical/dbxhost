@@ -75,7 +75,7 @@ globalThis.host_ext_midi_remap_enable = () => {};
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
-const { BANKS, BANK_AUTOMATION, PAD_MODE_DRUM } = await import('../../ui/ui_constants.mjs');
+const { BANKS, BANK_AUTOMATION, PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE } = await import('../../ui/ui_constants.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const render = await import('../../ui/ui_render.mjs');
 const { fontPrint4x5 } = await import('../../ui/ui_fonts_pp.mjs');
@@ -166,6 +166,49 @@ step('CONTROL: an empty destination slot does not carry a module lane', () => {
     const clears = sets.filter(s => s.startsWith('t1_pa_clear_key='));
     assert(clears.length === 2, 'both module lanes cleared, got ' + JSON.stringify(clears));
     assert(S.actionPopupLines.join(' ') === 'AUTOMATION 2 LANES NOT CARRIED', 'counted, got ' + JSON.stringify(S.actionPopupLines));
+});
+
+function setupMelodic() {
+    setup();
+    for (const t of [0, 1, 2]) S.trackPadMode[t] = PAD_MODE_MELODIC_SCALE;
+}
+
+step('⭐ MELODIC copy to a track with a different synth: the synth lane is cleared, the rest carry', () => {
+    setupMelodic();
+    MODS = { '0 synth': 'obxd', '1 synth': 'dx7', '0 fx1': 'reverb', '1 fx1': 'reverb', '0 slot': 'a', '1 slot': 'b' };
+    copyGesture(0, 1);
+    const ci = sets.findIndex(s => s === 'clip_copy=0 0 1 0');
+    assert(ci >= 0, 'the melodic copy was sent, got ' + JSON.stringify(sets));
+    const clears = sets.filter(s => s.startsWith('t1_pa_clear_key='));
+    assert(JSON.stringify(clears) === JSON.stringify(['t1_pa_clear_key=0 1:synth:cutoff']), 'only the synth lane, got ' + JSON.stringify(clears));
+    assert(sets.indexOf(clears[0]) > ci, 'the clear lands AFTER the copy');
+    assert(S.actionPopupLines.join(' ') === 'AUTOMATION 1 LANE NOT CARRIED', 'counted, got ' + JSON.stringify(S.actionPopupLines));
+});
+
+step('MELODIC cut (Shift) to a track with a different synth: filtered the same way', () => {
+    setupMelodic();
+    MODS = { '0 synth': 'obxd', '2 synth': 'dx7', '0 fx1': 'reverb', '2 fx1': 'reverb' };
+    cc(49, 127); ticks(1);
+    cc(COPY, 127); ticks(1);
+    note(clipPad(0, 0), 127); note(clipPad(0, 0), 0); ticks(1);
+    cc(49, 0); ticks(1);
+    note(clipPad(0, 2), 127); note(clipPad(0, 2), 0); ticks(1);
+    cc(COPY, 0); ticks(3);
+    const ci = sets.findIndex(s => s === 'clip_cut=0 0 2 0');
+    assert(ci >= 0, 'the cut was sent, got ' + JSON.stringify(sets));
+    const clears = sets.filter(s => s.startsWith('t2_pa_clear_key='));
+    assert(JSON.stringify(clears) === JSON.stringify(['t2_pa_clear_key=0 2:synth:cutoff']), 'only the synth lane, got ' + JSON.stringify(clears));
+});
+
+step('MELODIC copy within the SAME track: nothing is filtered', () => {
+    setupMelodic();
+    MODS = { '0 synth': 'obxd', '0 fx1': 'reverb' };
+    cc(COPY, 127); ticks(1);
+    note(clipPad(0, 0), 127); note(clipPad(0, 0), 0); ticks(1);
+    note(clipPad(1, 0), 127); note(clipPad(1, 0), 0); ticks(1);
+    cc(COPY, 0); ticks(3);
+    assert(sets.some(s => s === 'clip_copy=0 0 0 1'), 'setup: copied within the track, got ' + JSON.stringify(sets));
+    assert(!sets.some(s => s.indexOf('_pa_clear_key') >= 0), 'nothing cleared');
 });
 
 if (failed) { console.error('FAIL: test_automation_copy_filter'); process.exit(1); }
