@@ -189,7 +189,8 @@ Prove the negative before believing it: hide the tool, break the glob, confirm i
 
 CI (`.github/workflows/ci.yml`) runs host-tests, davebox-tests, go and cross-compile on every push
 and PR. It is advisory — `main` is unprotected — so the local hook is the real gate.
-`tests/{shadow,store,build}` are **not** run by anything and their failing count is unknown.
+`tests/{shadow,store}` run through `tests/run-ungated.sh` (hook + CI) against
+`tests/known-failing.txt` — a ratchet: an unlisted failure or a listed test that now passes goes red.
 
 Enable the unified logger:
 ```bash
