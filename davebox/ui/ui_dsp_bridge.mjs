@@ -34,7 +34,7 @@ import {
     TPS_VALUES, BANKS, PAD_MODE_DRUM, BANK_SOUND, isSoundBank, BANK_AUTOMATION, BANK_CHORD,
     INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK, moveInstrOwner, moveInstrDuplicates,
     MoveRec, LED_OFF, parseActionRaw, INSTR_NONE, ROUTE_NONE,
-    INSTR_CONDUCT, PAD_MODE_CONDUCT } from './ui_constants.mjs';
+    INSTR_CONDUCT, PAD_MODE_CONDUCT, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 
 import { S } from './ui_state.mjs';
@@ -1483,12 +1483,12 @@ export function restoreUiSidecar(applyDefaultsNow) {
                 }
             }
         }
-        if (us.v >= 7 && Array.isArray(us.to)) {
-            for (let _t = 0; _t < NUM_TRACKS; _t++) {
-                const _o = us.to[_t];
-                if (typeof _o === 'number')
-                    S.trackOctave[_t] = Math.max(-4, Math.min(4, _o | 0));
-            }
+        /* A sidecar without octaves (older than v7, or a hole in the list)
+         * starts that track on the default — never on the last project's. */
+        for (let _t = 0; _t < NUM_TRACKS; _t++) {
+            const _o = (us.v >= 7 && Array.isArray(us.to)) ? us.to[_t] : undefined;
+            S.trackOctave[_t] = (typeof _o === 'number')
+                ? Math.max(-4, Math.min(4, _o | 0)) : DEFAULT_TRACK_OCTAVE;
         }
         if (us.v >= 8 && Array.isArray(us.tab)) {
             for (let _t = 0; _t < NUM_TRACKS; _t++) {
@@ -1655,6 +1655,8 @@ export function restoreUiSidecar(applyDefaultsNow) {
         /* A fresh project starts on the Scale layout with default chords —
          * never with the last project's. */
         for (let _t = 0; _t < NUM_TRACKS; _t++) { S.padLayoutChord[_t] = false; S.chordLast[_t] = null; }
+        /* ...and on the default pad octave, never the last project's. */
+        for (let _t = 0; _t < NUM_TRACKS; _t++) S.trackOctave[_t] = DEFAULT_TRACK_OCTAVE;
         restoreChordSidecar(null);
         resetChordTransient();
         /* Sync t0's drum lane data + drumClipNonEmpty from the freshly-reset
