@@ -1481,6 +1481,16 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
     /* The lane clock's cycle count: the clip tick wrapped since last tick. */
     if (ct < tr->pa_last_ct) tr->pa_cycle++;
     tr->pa_last_ct = ct;
+    /* The AUTOMATION bank's selected lane: where it is right now, in its OWN
+     * lane ticks — the same pa_entry_tick the evaluation below uses, so the
+     * playhead can never disagree with what plays. Before the scan (which may
+     * stop at its per-tick cap before reaching the lane); O(1), one slot. */
+    if (tr->pa_view_slot) {
+        const pa_entry_t *ve = &inst->pa_entries[(tr->pa_view_slot - 1) % PA_MAX_ENTRIES];
+        tr->pa_view_lt = (ve->used && ve->track == track && ve->clip == clip
+                          && ve->target + 1 == tr->pa_view_target)
+                       ? (int32_t)pa_entry_tick(ve, ct, clip_ticks, tr->pa_cycle) : -1;
+    }
     uint32_t seq0 = pa_read_seq(inst);
     if (seq0 & 1u) return;                   /* a write is in flight; next tick */
 

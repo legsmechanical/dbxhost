@@ -949,6 +949,9 @@ export const S = {
     /* True while the held step is an AUTOMATION hold (a step of the selected
      * lane's cycle on the AUTOMATION bank) — its release commits no note edit. */
     heldStepAuto: false,
+    /* Per track: the AUTOMATION bank's selected lane's current tick in its own
+     * lane ticks (state_snapshot 57..64, tN_pa_view), -1 = none / not playing. */
+    autoLanePos: new Array(8).fill(-1),
     /* THE MIDI KNOB VALUES (spec §2b): per track, target -> last value sent
      * (7-bit for cc:<n> / at, 14-bit for pb). CCs have no readback, so this
      * is the knob's truth across relaunches (sidecar `mcv`). */

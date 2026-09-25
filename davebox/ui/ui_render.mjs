@@ -55,7 +55,7 @@ import { bankCyclePos, bankCycleForMode, bankDisplayName } from './ui_pure.mjs';
 import { syncDrumRepeatState } from './ui_drummodel.mjs';
 import {
     effectiveClip,
-    bankHasAltParams, altIndicatorActive
+    bankHasAltParams, altIndicatorActive, autoLanePlayStep
 } from './ui_leds.mjs';
 import { soundRender, renderGatewayCard, renderTrackGatewayCard, renderMacrosPeek } from './ui_sound.mjs';
 import { drawAutomationBankBody, autoBankMenuOpen } from './ui_automation_bank.mjs';
@@ -2034,7 +2034,7 @@ function drawUIBody() {
                             cy ? cy.text + (cy.pages > 1 ? ' PG ' + (cy.page + 1) + '/' + cy.pages : '') : null);
             drawAutomationBankBody();
             if (cy && cy.pages > 1)
-                drawPositionBarGeom({ lsBase: cy.off, len: cy.len, viewPage: cy.page, playStep: -1 });
+                drawPositionBarGeom({ lsBase: cy.off, len: cy.len, viewPage: cy.page, playStep: autoLanePlayStep(cy) });
             return;
         }
         if (bank === BANK_STEP) {

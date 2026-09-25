@@ -898,6 +898,14 @@ typedef struct {
      * lane at /2 plays over two). See pa_entry_tick. */
     uint32_t  pa_cycle;
     uint32_t  pa_last_ct;
+    /* The AUTOMATION bank's selected lane (tN_pa_view), for its playhead: the
+     * pool slot + 1 and the target id + 1 (0 = none — so a calloc'd instance
+     * views nothing), and the lane tick playback last evaluated it at, written
+     * by pa_playback_scan (AUDIO THREAD; one aligned word) and reported in
+     * state_snapshot. Display only. */
+    uint16_t  pa_view_slot;
+    uint16_t  pa_view_target;
+    int32_t   pa_view_lt;
     /* Last poly-AT pressure value received via tN_live_at. Replayed on every
      * arp/TARP step so new voices spawn with the pressure currently being
      * applied (without this, holding pressure steady means no AT stream and
@@ -7074,6 +7082,14 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         pos += snprintf(out + pos, (size_t)(out_len - pos), " %d", (int)inst->looper_state);
         pos += snprintf(out + pos, (size_t)(out_len - pos), " %d", (int)inst->merge_state);
         pos += snprintf(out + pos, (size_t)(out_len - pos), " %d", (int)inst->merge_solo_track);
+        /* [57..64] per track: the AUTOMATION bank's selected lane's current
+         * tick in its own lane ticks (tN_pa_view), -1 when there is none or
+         * it is not playing. */
+        for (t = 0; t < NUM_TRACKS; t++) {
+            const seq8_track_t *vt = &inst->tracks[t];
+            const int on = inst->playing && vt->clip_playing && vt->pa_view_slot;
+            pos += snprintf(out + pos, (size_t)(out_len - pos), " %d", on ? (int)vt->pa_view_lt : -1);
+        }
         return pos;
     }
 

@@ -412,13 +412,29 @@ function autoLaneValsTick(t, c, target) {
     S.autoLaneVals = (valsCache.key === key && valsCache.map) ? (valsCache.map.get(target) || null) : null;
 }
 
+/* The lane the DSP is told to report a position for (tN_pa_view) — sent only
+ * when the selection CHANGES, and "-" to the old track when it ends, so the
+ * playhead costs no read (it rides state_snapshot, polled anyway). */
+let viewSent = null;             /* { t, key } */
+function syncPaView(t, c, target) {
+    const key = target === null ? null : c + ' ' + target;
+    if (viewSent && viewSent.t === t && viewSent.key === key) return;
+    if (viewSent) S.pendingDefaultSetParams.push({ key: 't' + viewSent.t + '_pa_view', val: '-' });
+    viewSent = key === null ? null : { t, key };
+    if (key !== null) S.pendingDefaultSetParams.push({ key: 't' + t + '_pa_view', val: key });
+}
+
 export function autoBankTick() {
     S.autoBankLit = null;
     S.autoCycle = null;
     S.autoLaneVals = null;
-    if (!autoBankIsActive() || !S.bankCardLatched || S.moveCoRunTrack >= 0) return;
+    if (!autoBankIsActive() || !S.bankCardLatched || S.moveCoRunTrack >= 0) {
+        if (viewSent) syncPaView(viewSent.t, 0, null);
+        return;
+    }
     const t = S.activeTrack, c = effectiveClip(t);
     const target = selectedTarget(t, c);
+    syncPaView(t, c, target);
     /* No row selected: forget the lane's page, so the next time a row is
      * picked it opens where the clip is being viewed, not where it was left.
      * (Closing the menu forgets it too — Back and a click can land between

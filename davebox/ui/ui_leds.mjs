@@ -155,10 +155,12 @@ function paintAutoLane(cy) {
     const base = ((cy.off >> 4) + cy.page) * 16, end = cy.off + cy.len;
     const vals = S.autoLaneVals, m = S.autoBankLit;
     const blinkOff = (S.clockMs % 500) < 45;             /* Legacy: 4 of 47 ticks */
+    const play = autoLanePlayStep(cy);
     for (let i = 0; i < 16; i++) {
         const abs = base + i;
         let color;
         if (abs < cy.off || abs >= end) color = DarkGrey;
+        else if (abs === play) color = White;            /* the playhead wins */
         else if (!vals) color = LED_OFF;
         else {
             const v = vals[i];
@@ -169,6 +171,18 @@ function paintAutoLane(cy) {
         setLED(16 + i, color);
     }
     if (!vals) paintAutoBankLit(base, cy.off, end);
+    if (play >= base && play < base + 16 && play < end) setLED(16 + play - base, White);
+}
+
+/* The selected lane's playing STEP in its cycle (absolute, like the grid), or
+ * -1: the DSP reports the lane's own tick (state_snapshot), which is exactly
+ * what playback evaluates it at — no clock arithmetic is redone here. */
+export function autoLanePlayStep(cy) {
+    if (!cy || !S.playing) return -1;
+    const lt = S.autoLanePos[cy.t];
+    if (!(lt >= 0) || !cy.tps) return -1;
+    const s = Math.floor(lt / cy.tps);
+    return (s >= cy.off && s < cy.off + cy.len) ? s : -1;
 }
 
 export function updateStepLEDs() {
