@@ -131,6 +131,9 @@ the section into a versioned heading at release time.
 - **The Session FX list looks like the Sound menu**, with a rule between Master
   FX and the sends.
 - **The Sound menu's top row reads Instmt/Dest.**
+- **The Sound menu is regrouped**: the chain, then Volume / Pan / Send A / Send
+  B / Buses, Presets, LFOs, the track settings, Import MIDI and Parallel. Mute
+  and Solo left it — they're on the Mute button.
 - **Reorder insert effects.** Shift + click an effect block to open its module
   list: **<Move up** and **>Move down** sit indented under the loaded module.
   Every module picker (effects and the Instrument list) now shows the module

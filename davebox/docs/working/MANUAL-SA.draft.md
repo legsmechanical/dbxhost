@@ -550,7 +550,8 @@ covers writing, editing, and recording into one; the [Effects](#10-effects) and
 ## 6.1 Playing and placing notes
 
 The pads play notes from the current [key and scale](#162-key--scale). **+ / −**
-shifts the pad octave.
+shifts the pad octave; a new track's pads start one octave up (a Conductor's start
+at its no-shift home).
 
 While you hold notes (pads or an external keyboard), the screen names them in
 brackets at the right of the key/scale row — the note (`[F#3]`) or the chord.
@@ -1110,7 +1111,7 @@ An arpeggiator running after Delay, on both sequenced and live notes.
 |---|---|---|---|
 | 1 | `Styl` | Style — Up, Down, Up/Down, Converge, Diverge, Ordered, Random, and more | Off |
 | 2 | `Rate` | Arp rate | 1/16 |
-| 3 | `Oct` | Octave range (±4) | Off |
+| 3 | `Oct` | Octave range (±4) — the extra octaves join the notes the style orders (Down +1 plays from the top octave down); negative extends downward | Off |
 | 4 | `Gate` | Note length (under 100 % shortens, over lengthens) | 100 % |
 | 5 | `Stps` | How silenced steps behave — rest (`Mute`) or skip (`Step`) | Mute |
 | 6 | `Rtrg` | Restart the arp on each new note | On |
@@ -1479,8 +1480,12 @@ leaves the setting as it was.
 
 **Schwung tracks** open dAVEBOx's own sound editor. It starts on the track's
 chain — the **Instmt/Dest** row, then MIDI FX and **FX 1-4** — and the jog
-picks a row; the track's own settings sit at the very foot of the same list,
-below a divider (see [Track settings](#164-track-settings)).
+picks a row. Below the chain, in groups with a line between them: the levels
+(**Volume, Pan, Send A, Send B**, and **Buses** where the instrument has them),
+**Presets**, **LFOs**, then the track's own settings (**Mode, Layout** ·
+**Transpose, VelIn, AftTch** · **Looper**), **Import MIDI** and **Parallel** (see
+[Track settings](#164-track-settings)). Other track types show the same order with
+only the rows they have. Mute and solo are on the **Mute** button.
 The Instmt/Dest row names the track's generator (or its Move instrument,
 MIDI channel or followed track); **click** it to enter the generator's editor
 (or Move's, on a Move instrument), **Shift + click** to change the instrument.
@@ -1861,24 +1866,27 @@ see [Track settings](#164-track-settings) below.
 
 | Setting | What it does | Values | Default |
 |---|---|---|---|
+| BPM | Tempo | 40–250 | 120 |
+| Swing Amt | Swing depth — 50 % is straight, 66 % is triplet swing | 50–75 % | 50 % |
+| Swing Res | Which grid positions get the swing | 1/16, 1/8 | 1/16 |
+| Metro | When the metronome sounds — never, during the count-in, while playing, or always | Off, Cnt-In, Play, Always | Off |
+| Metro Vol | Metronome level | 0–150 % | 100 % |
 | Clock Follow | Lock to Move's transport and tempo — see [§13.4](#144-clock-follow) | Off, Move | Off |
 | Clock Out | Send MIDI clock out USB-A to drive external gear — see [§13.5](#145-clock-out) | Off, On | Off |
-| BPM | Tempo | 40–250 | 120 |
-| Tap Tempo | Tap the pads to set the tempo by feel | action | — |
 | Key | The session's root note — see [§15.2](#162-key--scale) | C…B | C |
 | Scale | The scale melodic tracks snap to — see [§15.2](#162-key--scale) | (below) | Major |
 | Scale Aware | Whether scale-aware params move by scale degree (On) or semitone (Off) | On, Off | On |
 | Launch Quant | When a launched clip or scene actually starts — at once (Now) or on the next boundary | Now … 1 bar | Now |
-| Swing Amt | Swing depth — 50 % is straight, 66 % is triplet swing | 50–75 % | 50 % |
-| Swing Res | Which grid positions get the swing | 1/16, 1/8 | 1/16 |
-| MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
-| Metro | When the metronome sounds — never, during the count-in, while playing, or always | Off, Cnt-In, Play, Always | Off |
-| Metro Vol | Metronome level | 0–150 % | 100 % |
 | Beat Markers | Dim markers on the step buttons at 1, 5, 9, 13 | On, Off | On |
-| Export to Ableton | Write a Live bundle of the set — see [§14.3](#153-export-to-live) | action | — |
+| MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Save state / Load state | Save or restore a named snapshot — see [§15.3](#163-snapshots) | action | — |
 | Clear Session | Reset the whole instance (confirms first) | action | — |
+| Export to Ableton | Write a Live bundle of the set — see [§14.3](#153-export-to-live) | action | — |
 | Quit | Save and exit to Schwung | action | — |
+
+The menu groups these with a line between each group, in this order; **Projects...**,
+**Suspend session**, **Host Settings...** and the **Daves** rows sit in it too. Tap
+Tempo is **Shift + Step 5**.
 
 **Scales:** Major, Minor, Dorian, Phrygian, Lydian, Mixolydian, Locrian, Harmonic
 Minor, Melodic Minor, Pentatonic Major, Pentatonic Minor, Blues, Whole Tone,
@@ -2019,6 +2027,7 @@ views (`#seq` / `#mix` / `#sound` in the address bar can be bookmarked).
 | Step tap / hold | Toggle / edit |
 | +/− / Left-Right | Octave / page |
 | Side buttons | Switch clips |
+| Shift + top / bottom side button | Scroll the four visible clips up / down one (the same window for every track) |
 | Jog turn / click | Cycle banks / alt-parameters |
 | Shift + jog / Shift + bottom pad | Switch tracks |
 | Loop (hold) / Loop + jog | Loop view / clip length |
@@ -2033,7 +2042,7 @@ views (`#seq` / `#mix` / `#sound` in the address bar can be bookmarked).
 | Delete + Play | Deactivate clips (running) · panic (stopped) |
 | Undo / Shift + Undo | Undo / redo |
 | Note/Session (tap / hold) | On an overview: switch / peek view — anywhere else: return to the overview |
-| Shift + Note/Session (tap / hold) | This track's sound editor / straight to its instrument — in Session view, the Master/Send FX list |
+| Shift + Note/Session (tap / hold) | This track's sound editor / straight to its instrument — in Session view, the Master/Send FX list / straight into Master FX |
 | Shift + Step 2 | Settings menu |
 
 ### Drum track (additions)
@@ -2052,12 +2061,12 @@ views (`#seq` / `#mix` / `#sound` in the address bar can be bookmarked).
 |---|---|---|
 | 2 | Settings menu (globals) | Both |
 | 5 | Tap Tempo | Both |
-| 6 | Metro (Cnt-In ↔ Always) | Both |
+| 6 | Metro (Cnt-In ↔ Always) — icon lit while it plays (Play / Always) | Both |
 | 7 | Swing | Both |
 | 8 | Pad layout (Scale → Chrom → Chord) / cycle right-pad mode | Track |
 | 9 | Scale | Both |
-| 10 | VelIn (Live ↔ 100) | Track |
-| 11 | LIVE ARP on/off | Track (melodic) |
+| 10 | VelIn (Live ↔ 100) — icon lit while fixed | Track |
+| 11 | LIVE ARP on/off — icon lit while on | Track (melodic) |
 | 15 | Double-and-fill loop | Track |
 | 16 | Quantize 100 % | Track |
 
