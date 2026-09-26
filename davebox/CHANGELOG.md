@@ -57,6 +57,9 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **TRACK CONFIG's hint band sits cleanly under the list.** When the CLK EDIT /
+  SHFT CHANGE hints pop up, the list shows four rows above them instead of a
+  fifth row peeking out from under the band.
 - **A muted or soloed drum lane's tag no longer covers the velocity.** In the
   drum overview MUTED / SOLOED now sits at the left of the second info row,
   with VEL on the right.

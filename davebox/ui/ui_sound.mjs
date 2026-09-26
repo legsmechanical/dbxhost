@@ -11093,10 +11093,15 @@ function renderBlocks() {
      * the two gestures with no on-screen trace. It POPS OVER the menu's foot
      * on the rows that carry the grammar (Josh: "pop up over the menu at the
      * bottom on items where it's relevant") — the list keeps all five rows,
-     * and the band takes the bottom of the fifth only while the cursor is on
-     * such a row. Three clear rows above the pills, the canon's spacing. */
-    drawKitList(S.pickRows.map(_cell), S.pickRow, {});
+     * and gives up the fifth only while the cursor is on such a row.
+     * ⚠ The list STOPS at four rows while the band is up, rather than drawing
+     * a fifth for the band to cover: the band starts 3 rows above the pills,
+     * which is inside the fifth row, so that row's glyph tops showed above it
+     * ("FX 3" as a sliver). Four rows keeps the same window (the cursor sits
+     * two rows down either way), a scrollbar that ends above the band, and a
+     * selected row that can never be the one under it. */
     const hints = menuRowHints(S.pickRows[S.pickRow]);
+    drawKitList(S.pickRows.map(_cell), S.pickRow, hints.length ? { visible: 4 } : {});
     if (hints.length) {
         fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0);
         drawKitHintRow(MV_FOOTER_Y, hints);
