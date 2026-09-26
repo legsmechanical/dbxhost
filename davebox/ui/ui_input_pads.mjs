@@ -1551,8 +1551,8 @@ export function _onStepButtons(d1, d2) {
             S.stepWasEmpty  = true;              /* nothing for the tick to read */
             S.heldStepNotes = [];
             S.drumHeldReadPending = false;
-            /* A step holding a POINT of the lane jumps to the parameter's
-             * bank for as long as it is held (a step without one stays here). */
+            /* Any step of the lane jumps to where the parameter is edited
+             * for as long as it is held — a point to change, or a new one. */
             autoHoldJumpBegin(absStep);
             forceRedraw();
         }

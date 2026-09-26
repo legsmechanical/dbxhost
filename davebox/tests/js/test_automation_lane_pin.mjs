@@ -338,6 +338,21 @@ step('⭐ a MOVE-routed track (its lanes on slot 0, by BUS): Volume and an inser
     }
 });
 
+step('⭐ leaving the track leaves the AUTOMATION menu: back on it, the card shows and a click opens the list', () => {
+    openMenuOn(TARGETS.seq); ticks(2);
+    assert(S.autoBank.menu, 'rig: menu open');
+    const swap = (t) => { cc(49, 127); shiftHeld = 1; note(68 + t, 127); note(68 + t, 0); cc(49, 0); shiftHeld = 0; ticks(2); };
+    swap(0);
+    assert(S.activeTrack === 0, 'rig: on track 1');
+    swap(T);
+    assert(S.activeTrack === T && S.activeBank === BANK_AUTOMATION, 'rig: back on AUTOMATION');
+    assert(!S.autoBank.menu && !S.autoBank.ops, 'the menu was still open on return: ' + JSON.stringify(S.autoBank));
+    assert(!S.autoCycle, 'the lane was still on the steps on return');
+    click(); ticks(1);
+    assert(S.autoBank.menu, 'one click did not open the list');
+    back(); ticks(1);
+});
+
 step('CONTROL: deleting the pinned lane ends the pin', () => {
     openMenuOn(TARGETS.level); ticks(2);
     shiftClick(); ticks(4);

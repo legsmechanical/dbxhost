@@ -27,6 +27,7 @@ import { refreshPerClipBankParams, resetPerClipBankParamsToDefault,
  * clear that took the undo snapshot — see their banner in ui_automation.mjs. */
 import { automationClearClipQueued, automationClearBanksQueued,
          automationNoteListChangedElsewhere, automationCarryFilter } from './ui_automation.mjs';
+import { autoBankReset, autoLanePinClear } from './ui_automation_bank.mjs';
 
 /* Record a MELODIC clip whose automation mirror (clipAtHas) the editop cannot
  * fill purely in JS — pollDSP's local-rev path
@@ -603,6 +604,10 @@ export function _switchActiveTrack(newT) {
     if (soundOpen() && !soundIsGlobal() && !_follow) soundExit();
     /* The outgoing track remembers its bank, whatever it is. */
     S.trackActiveBank[S.activeTrack] = S.activeBank;
+    /* Leaving a track leaves the AUTOMATION menu (Josh, 2026-09-25): coming
+     * back shows the AUTOMATION card, one click from the list — never the
+     * previous track's cursor, ops or lane still open on the steps. */
+    if ((newT | 0) !== S.activeTrack) { autoBankReset(); autoLanePinClear(); }
     S.activeTrack = newT | 0;
     S.instrAbbrevAt = 0;                  /* the header's [instrument] follows the track */
     S.activeBank = S.trackActiveBank[S.activeTrack] | 0;

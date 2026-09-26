@@ -162,10 +162,15 @@ step('setup: the menu, cursor on the DELAY Level lane', () => {
     levelRow = S.autoBank.sel;
 });
 
-step('a step WITHOUT a point stays on the AUTOMATION bank', () => {
+step('⭐ an EMPTY step jumps too, and its knob writes a NEW point there (Josh, 2026-09-25)', () => {
     note(STEP(3), 127); ticks(3);
-    assert(S.activeBank === BANK_AUTOMATION, 'no jump from an empty step, bank ' + S.activeBank);
+    assert(S.activeBank === DELAY, 'an empty step did not jump, bank ' + S.activeBank);
+    sets.length = 0;
+    cc(72, 1); ticks(2);                               /* K2 = DELAY Level */
+    const w = sets.find(x => x.startsWith('t0_pa_set2=0 seq:0:delay_level '));
+    assert(w && w.split(' ').slice(2, 4).join(' ') === '72 95', 'no new point on step 4 (ticks 72..95): ' + JSON.stringify(sets));
     note(STEP(3), 0); ticks(2);
+    assert(S.activeBank === BANK_AUTOMATION, 'release did not come back, bank ' + S.activeBank);
 });
 
 step('⭐ holding the point jumps to DELAY, marked temporary; the track still remembers AUTOMATION', () => {

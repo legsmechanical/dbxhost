@@ -561,8 +561,12 @@ export function autoHoldJumpActive() { return !!holdJump; }
 export function autoHoldJumpStep() { return holdJump ? holdJump.step : -1; }
 export function autoHoldJumpBegin(absStep) {
     if (holdJump || lanePin || !autoBankIsActive() || !S.bankCardLatched) return false;
-    const cy = S.autoCycle, m = S.autoBankLit;
-    if (!cy || cy.t !== S.activeTrack || !m || m.charCodeAt(absStep) !== 49) return false;
+    const cy = S.autoCycle;
+    /* ANY step of the cycle jumps, not only one holding a point (Josh,
+     * 2026-09-25: "this should work on ANY step, not just ones with data, so
+     * that new automation steps can be added as well as old automation steps
+     * edited"). The caller keeps the press inside the cycle. */
+    if (!cy || cy.t !== S.activeTrack) return false;
     const tgt = String(cy.target);
     const sat = tgt.indexOf('seq:') === 0 ? SEQ_AUTO_TARGETS[tgt.split(':')[2]] : null;
     const home = sat ? null : laneHome(tgt, cy.t);
