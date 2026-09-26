@@ -1125,7 +1125,7 @@ do nothing; the jog does everything.
 - Each row shows its **cycle**, the length it repeats over: **4 BAR**, **13 ST**
   (steps, when it isn't whole bars; **13 ST/32** when its steps aren't sixteenths),
   or **CLIP** when it follows the clip. A muted row reads **OFF**, a cleared one
-  **EMPTY**, and the pads' aftertouch **PADS**.
+  **EMPTY** and its length, and the pads' aftertouch **PADS**.
 - With nothing automated the bank reads *NO AUTOMATION*.
 
 **Click the jog** for the menu. With the cursor on a row, the step buttons, pages and
@@ -1169,8 +1169,10 @@ screen show **that row's lane**, not the clip's notes:
 - **Rate** — /16 to ×16, the loop stretching to match.
 - **Scale** — 0–200 %: how far the lane moves (toward zero, or on a centred
   parameter like pan or pitch bend, toward and away from its centre).
-- **Clear** — every value goes, but the lane stays with its settings (it reads
-  **EMPTY**, ready for new values).
+- **Clear** — every value goes, but the lane stays with its settings, its length
+  included (it reads **EMPTY** and its length, e.g. **EMPTY 4 BAR**, ready for new
+  values). On a drum track, set Loop on the empty lane and new recording or step
+  input lands at that length.
 - **Delete** — the lane goes altogether.
 
 The last row is **Clear all**; **Delete + click** on the card does the same. Every

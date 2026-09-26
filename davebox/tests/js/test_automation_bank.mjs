@@ -231,6 +231,10 @@ step('⭐ CLEAR empties the lane with a checkpoint and KEEPS its row, reading EM
     S.actionPopupLines = []; S.actionPopupEndTick = 0; S.actionPopupEndMs = 0;   /* the notice over the list: gone */
     globalThis.clear_screen(); render.drawUI();
     assert(drawnMv('EMPTY'), 'the cleared row does not read EMPTY on screen');
+    /* ...and it keeps its LENGTH on the row (Josh, 2026-09-26): this melodic
+     * lane follows the clip, so it reads EMPTY CLIP; a lane with its own Loop
+     * reads e.g. EMPTY 4 BAR. */
+    assert(drawnMv('EMPTY CLIP'), 'the cleared row does not show its length');
     auto.automationRefreshPresence(); ticks(1);
     assert(ab.autoBankRows(T, C).some(r => r.target === '0:synth:cutoff'), 'after the DSP list the lane is gone');
 });
