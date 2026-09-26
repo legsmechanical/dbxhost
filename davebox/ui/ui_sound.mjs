@@ -2929,11 +2929,14 @@ export function soundGestureArmed() { return !!GS.genReturn; }
  * the lane). Returns false — and changes nothing — when the component has no
  * module loaded any more. */
 export function soundJumpToParam(track, comp, key, autoSel) {
-    const slot = slotIndex(track);
+    /* A Move bus insert (move_fx:N:fxK) lives on the bus, not a chain slot:
+     * its editor is entered through the bus (move_fx keys ignore the slot). */
+    const bus = /^move_fx:\d+:fx\d+$/.test(comp);
+    const slot = bus ? 0 : slotIndex(track);
     if (!engineLoadedModule(slot, comp)) return false;
     GS.genReturn = { track, wasActive: false, view: -1, bank: GS.activeBank | 0,
                      latched: !!GS.bankCardLatched, autoSel };
-    soundEnter(track, slot);
+    if (bus) soundEnterMove(track); else soundEnter(track, slot);
     ppJumpKey = { slot, comp, key };
     S.pendingAction = { t: 'open', comp };
     return true;

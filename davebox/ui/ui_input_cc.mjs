@@ -54,7 +54,7 @@ import { effectiveClip, forceRedraw, invalidateLEDCache,
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
 import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen,
          autoBankJumpTarget, autoBankRestoreMenu, autoCyclePageStep,
-         autoLanePinJump, autoLanePinClear } from './ui_automation_bank.mjs';
+         autoLanePinJump, autoLanePinClear, laneHome } from './ui_automation_bank.mjs';
 import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAfterNotes,
          automationCaptureClear, automationClearBanksQueued } from './ui_automation.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
@@ -1457,14 +1457,10 @@ function autoLaneJump() {
         armBankDisplay();
         return;
     }
-    const i = tgt.indexOf(':');
-    const slot = parseInt(tgt.slice(0, i), 10);
-    const rest = tgt.slice(i + 1);
-    const k = rest.lastIndexOf(':');                /* a key has no colon; a comp may (move_fx:1:fx1) */
-    const comp = k < 0 ? rest : rest.slice(0, k), key = k < 0 ? '' : rest.slice(k + 1);
-    if (i < 0 || !isFinite(slot) || slot !== t) { showActionPopup('NO EDITOR'); return; }
-    if (comp === 'slot' || comp.indexOf('move_fx') === 0) { soundCard(false); return; }
-    if (soundJumpToParam(t, comp, key, j.sel)) autoLanePinJump(tgt, 'sound', -1);
+    const home = laneHome(tgt, t);
+    if (!home) { showActionPopup('NO EDITOR'); return; }
+    if (home.kind === 'level') { soundCard(false); return; }
+    if (soundJumpToParam(t, home.comp, home.key, j.sel)) autoLanePinJump(tgt, 'sound', -1);
     else showActionPopup('NOT LOADED');
 }
 

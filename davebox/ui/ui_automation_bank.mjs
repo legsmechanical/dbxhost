@@ -42,6 +42,7 @@ import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
          drawBrackets, kitUseLayout, MV_FOOTER_Y } from './ui_movy.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
+import { moveBusForChannel } from './ui_engine.mjs';
 
 const LIST_TOP = 11;                 /* the kit list's own default */
 
@@ -526,28 +527,35 @@ function lanePinTick() {
 }
 
 let holdJump = null;
-/* A module parameter's lane on this track's own slot -> { comp, key }, or
- * null. A Move bus insert (move_fx:N:fxK) is not one yet: it opens through
- * the bus editor, which this jump does not reach. */
-function moduleParamOf(tgt, t) {
+/* ⭐ WHERE A LANE IS EDITED — one answer for both jumps (Shift + click and
+ * the hold). { kind, comp, key } or null (not this track's, or nowhere):
+ *   seq     a davebox bank knob (SEQ_AUTO_TARGETS)
+ *   midi    a MIDI target: MACROS
+ *   level   the track's levels (`<slot>:slot:*`) or its Move bus's
+ *           (`0:move_fx:N:*`): SOUND+CFG
+ *   module  a chain component's parameter: its editor
+ *   busfx   a Move bus insert's parameter (`0:move_fx:N:fxK:key`): its editor
+ * ⚠ A Move bus lane is on slot 0 whatever the track (move_fx keys ignore the
+ * slot), so it belongs to the track by its BUS, not its slot. */
+export function laneHome(tgt, t) {
+    tgt = String(tgt);
+    if (midiTargetIsMidi(tgt)) return { kind: 'midi' };
+    if (tgt.indexOf('seq:') === 0) return SEQ_AUTO_TARGETS[tgt.split(':')[2]] ? { kind: 'seq' } : null;
     const i = tgt.indexOf(':');
-    if (i < 0 || parseInt(tgt.slice(0, i), 10) !== t) return null;
+    if (i < 0) return null;
+    const slot = parseInt(tgt.slice(0, i), 10);
     const rest = tgt.slice(i + 1), k = rest.lastIndexOf(':');
-    if (k <= 0) return null;
+    if (!isFinite(slot) || k <= 0) return null;
     const comp = rest.slice(0, k), key = rest.slice(k + 1);
-    if (comp === 'slot' || comp.indexOf('move_fx') === 0 || comp.indexOf('send_fx') === 0 || !key) return null;
-    return { comp, key };
-}
-/* Where a non-davebox lane's value is edited on a sound BANK: the track's
- * levels (slot:* and its Move bus levels) on SOUND+CFG, a MIDI target on
- * MACROS; -1 for anything else (a module parameter lives in its editor). */
-function soundBankFor(tgt, t) {
-    if (midiTargetIsMidi(tgt)) return BANK_MACROS;
-    const i = tgt.indexOf(':');
-    if (i < 0 || parseInt(tgt.slice(0, i), 10) !== t) return -1;
-    const rest = tgt.slice(i + 1), k = rest.lastIndexOf(':');
-    const comp = k < 0 ? rest : rest.slice(0, k);
-    return (comp === 'slot' || /^move_fx:\d+$/.test(comp)) ? BANK_SOUND : -1;
+    const mb = /^move_fx:(\d+)(:fx\d+)?$/.exec(comp);
+    if (mb) {
+        if (S.trackRoute[t] !== 1 || moveBusForChannel(S.trackChannel[t]) !== parseInt(mb[1], 10)) return null;
+        return { kind: mb[2] ? 'busfx' : 'level', comp, key };
+    }
+    if (slot !== schSlotForTrack(t)) return null;
+    if (comp === 'slot') return { kind: 'level', comp, key };
+    if (comp.indexOf('send_fx') === 0 || comp.indexOf('bus') === 0) return null;
+    return { kind: 'module', comp, key };
 }
 export function autoHoldJumpActive() { return !!holdJump; }
 export function autoHoldJumpStep() { return holdJump ? holdJump.step : -1; }
@@ -557,8 +565,9 @@ export function autoHoldJumpBegin(absStep) {
     if (!cy || cy.t !== S.activeTrack || !m || m.charCodeAt(absStep) !== 49) return false;
     const tgt = String(cy.target);
     const sat = tgt.indexOf('seq:') === 0 ? SEQ_AUTO_TARGETS[tgt.split(':')[2]] : null;
-    const sb = sat ? -1 : soundBankFor(tgt, cy.t);
-    const mp = (sat || sb >= 0) ? null : moduleParamOf(tgt, cy.t);
+    const home = sat ? null : laneHome(tgt, cy.t);
+    const sb = !home ? -1 : home.kind === 'midi' ? BANK_MACROS : home.kind === 'level' ? BANK_SOUND : -1;
+    const mp = (home && (home.kind === 'module' || home.kind === 'busfx')) ? home : null;
     if (!sat && sb < 0 && !mp) { showActionPopup('NO EDITOR'); return false; }
     const a = st();
     if (mp) {

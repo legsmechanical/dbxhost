@@ -78,7 +78,13 @@ globalThis.host_module_get_param = (k) => {
     if (/_pa_vals_\d+_\d+$/.test(k)) return VALS;
     return '';
 };
-globalThis.shadow_get_param = (slot, key) => (slot === 1 && key in CHAIN ? CHAIN[key] : (/:(osc_|cutoff|reso)/.test(key) ? '0.5' : ''));
+const BUSCHAIN = {
+    'move_fx:2:fx1:module': 'nusaw',
+    'move_fx:2:fx1:ui_hierarchy': HIER,
+    'move_fx:2:fx1:chain_params': CHAIN['synth:chain_params'],
+};
+globalThis.shadow_get_param = (slot, key) => (slot === 1 && key in CHAIN ? CHAIN[key]
+    : (key in BUSCHAIN ? BUSCHAIN[key] : (/:(osc_|cutoff|reso|volume)/.test(key) ? '0.5' : '')));
 globalThis.shadow_set_param = () => 1;
 globalThis.shadow_set_params = () => true; globalThis.shadow_get_params = () => '';
 globalThis.shadow_send_midi_to_dsp = () => {};
@@ -294,6 +300,40 @@ step('⭐ HOLD a MIDI point -> MACROS while held; release -> the same row', () =
     note(STEP(3), 0); ticks(2);
     assert(S.activeBank === BANK_AUTOMATION && !snd.soundOpen() && S.autoBank.sel === idx, 'release did not come back to the row');
     back(); ticks(1);
+});
+
+step('⭐ a MOVE-routed track (its lanes on slot 0, by BUS): Volume and an insert reach their screens by both gestures', () => {
+    const savedList = LIST, savedSteps = STEPS, savedVals = VALS;
+    const MV = '0:move_fx:2:volume', MFX = '0:move_fx:2:fx1:cutoff';
+    S.trackRoute[T] = 1; S.trackChannel[T] = 2;        /* Move 2 = bus 2 */
+    LIST = [MV, MFX].map(tg => T + ' 0 1 2 ' + tg + ' 0').join('\n') + '\n';
+    STEPS = [MV, MFX].map(tg => tg + ' 0001000000000000').join('\n') + '\n';
+    VALS = [MV, MFX].map(tg => tg + ' ' + '7f'.repeat(16)).join('\n') + '\n';
+    auto.automationRefreshPresence();
+    try {
+        let idx = openMenuOn(MV); ticks(2);
+        shiftClick(); ticks(4);
+        assert(snd.soundOpen() && S.activeBank === BANK_SOUND, 'Shift+click on the bus Volume lane: not SOUND + CONFIG (bank ' + S.activeBank + ')');
+        assertLaneOnSteps(MV, 'bus Volume after the jump');
+        back(); ticks(4); back(); ticks(1);
+        idx = openMenuOn(MV); ticks(2);
+        note(STEP(3), 127); ticks(4);
+        assert(snd.soundOpen() && S.activeBank === BANK_SOUND, 'holding a bus Volume point: not SOUND + CONFIG (bank ' + S.activeBank + ')');
+        note(STEP(3), 0); ticks(2);
+        assert(S.activeBank === BANK_AUTOMATION && !snd.soundOpen() && S.autoBank.sel === idx, 'bus Volume release did not come back');
+        back(); ticks(1);
+        idx = openMenuOn(MFX); ticks(2);
+        note(STEP(3), 127); ticks(10);
+        assert(snd.soundOpen() && snd.soundViewForTest() === VIEW_EDIT, 'holding a bus insert point: not in its editor (view ' + snd.soundViewForTest() + ')');
+        const pp = snd.soundPPForTest();
+        assert(pp.on && pp.page && (pp.page.keys || []).indexOf('cutoff') >= 0, 'the insert editor is not on the page holding cutoff');
+        note(STEP(3), 0); ticks(2);
+        assert(!snd.soundOpen() && S.autoBank.sel === idx, 'bus insert release did not come back');
+        back(); ticks(1);
+    } finally {
+        S.trackRoute[T] = 0; S.trackChannel[T] = T + 1;
+        LIST = savedList; STEPS = savedSteps; VALS = savedVals; auto.automationRefreshPresence();
+    }
 });
 
 step('CONTROL: deleting the pinned lane ends the pin', () => {
