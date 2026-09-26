@@ -115,6 +115,7 @@ const auto = await import('../../ui/ui_automation.mjs');
 const bank = await import('../../ui/ui_automation_bank.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const render = await import('../../ui/ui_render.mjs');
+const movy = await import('../../ui/ui_movy.mjs');
 globalThis.__inp = await import('../../ui/ui_input_cc.mjs');
 const VIEW_EDIT = 1;
 
@@ -250,6 +251,15 @@ step('⭐ HOLD a Volume point -> SOUND + CONFIG while held; its knob writes THAT
     const idx = openMenuOn(TARGETS.level); ticks(2);
     note(STEP(3), 127); ticks(4);
     assert(snd.soundOpen() && S.activeBank === BANK_SOUND, 'not on SOUND + CONFIG while held: bank ' + S.activeBank + ' open ' + snd.soundOpen());
+    /* The Volume cell: marked, highlighted, showing the lane's value (full
+     * scale at every step) rather than the knob's. */
+    snd.soundLevelValSetForTest(0, 0.25);              /* the knob's own value, pinned for the comparison */
+    globalThis.clear_screen(); render.drawUI();
+    const kc = movy.kitCellsForTest();
+    assert(kc && kc.cells[0] && kc.cells[0].lock && kc.touched === 0, 'Volume is not marked and highlighted: ' + JSON.stringify(kc));
+    const heldText = kc.cells[0].text;
+    const fo = bank.autoLaneFocus();
+    assert(fo && fo.norm === 16383, 'the focus is not the lane\'s full-scale value: ' + JSON.stringify(fo));
     assert(S.trackActiveBank[T] === BANK_AUTOMATION, 'the hold RECORDED bank ' + S.trackActiveBank[T] + ' on the track');
     assert(S.autoCycle && S.autoCycle.target === TARGETS.level, 'the steps left the lane during the hold');
     sets.length = 0;
@@ -262,6 +272,15 @@ step('⭐ HOLD a Volume point -> SOUND + CONFIG while held; its knob writes THAT
     assert(S.activeBank === BANK_AUTOMATION && !snd.soundOpen(), 'release did not come back: bank ' + S.activeBank + ' open ' + snd.soundOpen());
     assert(S.autoBank.menu && S.autoBank.sel === idx, 'not on the same row: ' + JSON.stringify(S.autoBank));
     assert(S.trackActiveBank[T] === BANK_AUTOMATION, 'the track is left on bank ' + S.trackActiveBank[T]);
+    /* CONTROL: the same cell with NO step held (a Shift+click jump) shows the
+     * knob's own value — so the held value above was the lane's. */
+    shiftClick(); ticks(4);
+    snd.soundLevelValSetForTest(0, 0.25);
+    globalThis.clear_screen(); render.drawUI();
+    const kc2 = movy.kitCellsForTest();
+    assert(kc2.cells[0].lock && kc2.touched !== 0, 'the pinned, unheld Volume cell: ' + JSON.stringify(kc2));
+    assert(kc2.cells[0].text !== heldText, 'the held cell showed the knob\'s own value (' + heldText + ')');
+    back(); ticks(4);
     back(); ticks(1);
 });
 
@@ -271,6 +290,17 @@ step('⭐ HOLD a module point -> its EDITOR on the page holding the key; the kno
     assert(snd.soundOpen() && snd.soundViewForTest() === VIEW_EDIT, 'not in the editor while held: view ' + snd.soundViewForTest());
     const pp = snd.soundPPForTest();
     assert(pp.on && pp.page && (pp.page.keys || []).indexOf('cutoff') >= 0, 'not on the page holding cutoff: ' + JSON.stringify(pp.page && pp.page.keys));
+    /* The cutoff cell: the lock corner and the lane's value at the held step. */
+    ticks(1);
+    const ci = pp.page.keys.indexOf('cutoff');
+    const dec = JSON.parse(snd.soundPPForTest().focusDec || 'null');
+    const want = auto.automationWireValue(TARGETS.chain, 16383);
+    assert(dec && dec[ci] && dec[ci].locked && dec[ci].value === want,
+           'the editor does not mark cutoff with the lane\'s value ' + want + ': ' + JSON.stringify(dec));
+    assert(Object.keys(dec).length === 1, 'another cell is marked: ' + JSON.stringify(dec));
+    /* ...and it reached the editor's controller, not just dAVEBOx's memo. */
+    const held = snd.soundPPForTest().decorations;
+    assert(held && held[ci] && held[ci].locked && held[ci].value === want, 'the controller holds ' + JSON.stringify(held));
     assert(S.trackActiveBank[T] === BANK_AUTOMATION && S.activeBank === BANK_AUTOMATION, 'a bank moved: ' + S.activeBank + '/' + S.trackActiveBank[T]);
     assert(S.autoCycle && S.autoCycle.target === TARGETS.chain, 'the steps left the lane during the hold');
     sets.length = 0;
@@ -334,6 +364,46 @@ step('⭐ a MOVE-routed track (its lanes on slot 0, by BUS): Volume and an inser
         back(); ticks(1);
     } finally {
         S.trackRoute[T] = 0; S.trackChannel[T] = T + 1;
+        LIST = savedList; STEPS = savedSteps; VALS = savedVals; auto.automationRefreshPresence();
+    }
+});
+
+step('⭐ leaving the track leaves the AUTOMATION menu: back on it, the card shows and a click opens the list', () => {
+    openMenuOn(TARGETS.seq); ticks(2);
+    assert(S.autoBank.menu, 'rig: menu open');
+    const swap = (t) => { cc(49, 127); shiftHeld = 1; note(68 + t, 127); note(68 + t, 0); cc(49, 0); shiftHeld = 0; ticks(2); };
+    swap(0);
+    assert(S.activeTrack === 0, 'rig: on track 1');
+    swap(T);
+    assert(S.activeTrack === T && S.activeBank === BANK_AUTOMATION, 'rig: back on AUTOMATION');
+    assert(!S.autoBank.menu && !S.autoBank.ops, 'the menu was still open on return: ' + JSON.stringify(S.autoBank));
+    assert(!S.autoCycle, 'the lane was still on the steps on return');
+    click(); ticks(1);
+    assert(S.autoBank.menu, 'one click did not open the list');
+    back(); ticks(1);
+});
+
+step('⭐ a CLEARED (empty, kept) lane: its steps are dark, and holding one still jumps to add a value', () => {
+    const savedList = LIST, savedSteps = STEPS, savedVals = VALS;
+    LIST = LIST.split('\n').map(l => l.indexOf(' ' + TARGETS.seq + ' ') >= 0 ? l.replace(/^(\d+ \d+ )(\d+) (\d+)/, (m, a, f) => a + (parseInt(f, 10) | 32) + ' 0') : l).join('\n');
+    STEPS = STEPS.split('\n').filter(l => l.indexOf(TARGETS.seq) < 0).join('\n');
+    VALS = VALS.split('\n').filter(l => l.indexOf(TARGETS.seq) < 0).join('\n');
+    auto.automationRefreshPresence();
+    try {
+        const idx = openMenuOn(TARGETS.seq); ticks(2);
+        for (let n = 0; n < 40; n++) ticks(1);
+        assert(S.autoCycle && S.autoCycle.target === TARGETS.seq, 'the empty lane is not on the steps');
+        assert(S.autoLaneVals && S.autoLaneVals.every(v => v < 0), 'the empty lane has values: ' + JSON.stringify(S.autoLaneVals));
+        assert(leds[STEP(0)] === 0 && leds[STEP(9)] === 0, 'the empty lane\'s steps are not dark: ' + leds[STEP(0)] + ', ' + leds[STEP(9)]);
+        note(STEP(6), 127); ticks(3);
+        assert(S.activeBank === seq.bank, 'holding a step of the empty lane did not jump: bank ' + S.activeBank);
+        sets.length = 0;
+        cc(71 + seq.k, 1); ticks(2);
+        assert(sets.some(x => x.indexOf('_pa_set2=') >= 0 && x.indexOf(TARGETS.seq + ' 144 167') >= 0), 'no new value on step 7: ' + JSON.stringify(sets));
+        note(STEP(6), 0); ticks(2);
+        assert(S.activeBank === BANK_AUTOMATION && S.autoBank.sel === idx, 'release did not come back');
+        back(); ticks(1);
+    } finally {
         LIST = savedList; STEPS = savedSteps; VALS = savedVals; auto.automationRefreshPresence();
     }
 });

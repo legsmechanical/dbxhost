@@ -19,20 +19,27 @@ static void pa_set(hx_t *h, const char *tgt, int tick, int val) {
     hx_set_param(h, "t0_pa_set", v);
 }
 
-/* The 16 values of `tgt`'s line in the answer, -1 for "ff"; 0 if absent. */
-static int vals_for(const char *ans, const char *tgt, int *v) {
+/* The 16 values of `tgt`'s line in the answer, -1 for "ffff"; 0 if absent.
+ * `v` is on the gradient's 0..127 (derived as the UI does), `raw` the 14-bit
+ * value itself when non-NULL. */
+static int vals_for14(const char *ans, const char *tgt, int *v, int *raw) {
     char key[96];
     snprintf(key, sizeof(key), "%s ", tgt);
     const char *p = strstr(ans, key);
     if (!p) return 0;
     p += strlen(key);
     for (int s = 0; s < 16; s++) {
+        char d[5] = { 0 };
+        memcpy(d, p + s * 4, 4);
         unsigned x = 0;
-        if (sscanf(p + s * 2, "%2x", &x) != 1) return 0;
-        v[s] = x == 0xff ? -1 : (int)x;
+        if (sscanf(d, "%4x", &x) != 1) return 0;
+        const int v14 = x == 0xffff ? -1 : (int)x;
+        if (raw) raw[s] = v14;
+        v[s] = v14 < 0 ? -1 : (v14 * 127 + 8191) / 16383;
     }
     return 1;
 }
+static int vals_for(const char *ans, const char *tgt, int *v) { return vals_for14(ans, tgt, v, NULL); }
 
 int main(void) {
     hx_t *h = hx_create(NULL);
@@ -49,6 +56,13 @@ int main(void) {
     HX_ASSERT(v[0] == 0 && v[15] == 127, "the ramp runs 0 → 127 across the page");
     for (int s = 1; s < 16; s++) HX_ASSERT(v[s] > v[s - 1], "Smooth: every step higher than the last");
     HX_ASSERT(v[8] >= 66 && v[8] <= 70, "step 9 is about 8/15 of the way (68)");
+    {
+        int raw[16];
+        vals_for14(ans, "1:synth:cutoff", v, raw);
+        HX_ASSERT(raw[15] == 16383 && raw[0] == 0, "the ends read their exact 14-bit values");
+        HX_ASSERT(raw[8] > 8738 - 40 && raw[8] < 8738 + 40, "step 9 reads at FULL resolution (~8738 of 16383), not 7-bit");
+        HX_ASSERT(raw[8] % 129 != 0 || raw[7] % 129 != 0, "the values are not merely 7-bit values scaled up");
+    }
     OK("⭐ a Smooth ramp reads as the ramp playback plays, step by step");
 
     /* Scale 50 % halves what plays. */

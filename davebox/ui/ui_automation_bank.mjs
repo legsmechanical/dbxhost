@@ -33,11 +33,11 @@ import { BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, PAD_MODE_DRUM, midiTargetIsMi
 import { soundOpen, soundExit, soundJumpToParam } from './ui_sound.mjs';
 import { readBankParams } from './ui_dsp_bridge.mjs';
 import { effectiveClip } from './ui_leds.mjs';
-import { automationEntriesFor, automationTargetLabel, automationClearKey,
+import { automationEntriesFor, automationTargetLabel, automationClearKey, automationClearPoints,
          automationToggleActive, automationToggleSmooth, automationToggleWrap, automationToggleMode, automationToggleLink, automationSmoothable,
          automationSetLoop, automationSetRate, automationRateText, automationSetScale,
          automationClearClip, automationListGen, automationStepTicks, rowCycle,
-         cycleText, automationMatchPad, padCycle } from './ui_automation.mjs';
+         cycleText, automationMatchPad, padCycle, automationStateFor, automationWireValue } from './ui_automation.mjs';
 import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
          drawBrackets, kitUseLayout, MV_FOOTER_Y } from './ui_movy.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -102,6 +102,7 @@ export function autoBankRows(track, clip) {
 function rowValue(r, track, clip) {
     if (r.kind === 'at') return 'PADS';
     if (!r.active) return 'OFF';
+    if (!r.count) return 'EMPTY';                 /* cleared and kept: nothing in it yet */
     const cy = rowCycle(track, clip, r.target);
     return cy ? cy.text : 'ON';
 }
@@ -131,8 +132,9 @@ function loopValue(track, clip, r, steps) {
 
 function opsFor(track, clip, r) {
     if (r.kind === 'at') return [{ op: 'delete', label: 'Delete' }];
-    const ops = [{ op: 'delete', label: 'Delete' },
-                 { op: 'active', label: r.active ? 'Mute' : 'Unmute' }];
+    /* Delete is LAST, Clear beside it (Josh, 2026-09-25: "delete should be
+     * moved to the bottom of the automation menu"). */
+    const ops = [{ op: 'active', label: r.active ? 'Mute' : 'Unmute' }];
     const i = r.target.indexOf(':');
     const slot = parseInt(r.target.slice(0, i), 10), fullKey = r.target.slice(i + 1);
     /* ⭑ SET-AND-FORGET SETTINGS READ AS SETTINGS (Josh, 2026-09-11): a static
@@ -162,6 +164,8 @@ function opsFor(track, clip, r) {
     }
     ops.push({ op: 'rate', label: 'Rate', value: automationRateText(r.res) });
     ops.push({ op: 'scale', label: 'Scale', value: scaleText(r.scale) });
+    ops.push({ op: 'clear', label: 'Clear' });
+    ops.push({ op: 'delete', label: 'Delete' });
     return ops;
 }
 
@@ -280,6 +284,8 @@ function runOp(t, c, a) {
     }
     if (o.op === 'delete') {
         if (automationClearKey(t, c, r.target)) showActionPopup('AUTOMATION', 'DELETED');
+    } else if (o.op === 'clear') {
+        if (automationClearPoints(t, c, r.target)) showActionPopup('AUTOMATION', 'CLEARED');
     } else if (o.op === 'active') {
         const on = automationToggleActive(t, c, r.target);
         if (on !== null) showActionPopup('AUTOMATION', on ? 'ON' : 'MUTED');
@@ -431,6 +437,10 @@ function selectedTarget(t, c) {
  * without changing the list) — never per tick: a read is a whole SPI frame. */
 let valsCache = { key: null, map: null, at: -1e9 };
 const VALS_REFRESH_MS = 400;
+/* A lane the page read has no line for (an empty, cleared lane): no value on
+ * any step — dark inside its cycle, which stays on the buttons to hold. */
+const EMPTY_VALS = new Array(16).fill(-1);
+EMPTY_VALS.v14 = new Array(16).fill(-1);
 function autoLaneValsTick(t, c, target) {
     const cy = S.autoCycle;
     const base = ((cy.off >> 4) + cy.page) * 16;
@@ -443,8 +453,27 @@ function autoLaneValsTick(t, c, target) {
             for (const line of String(raw).split('\n')) {
                 const sp = line.lastIndexOf(' ');
                 if (sp <= 0) continue;
-                const hex = line.slice(sp + 1), v = [];
-                for (let s = 0; s < 16; s++) { const x = parseInt(hex.substr(s * 2, 2), 16); v.push(x === 255 || !isFinite(x) ? -1 : x); }
+                /* Four hex digits a step: the 14-bit value, ffff = none. The
+                 * gradient's 0..127 is derived from it, rounded as the DSP
+                 * used to; `v14` keeps the full value for a jump destination
+                 * to show in the parameter's units. (Two digits a step is the
+                 * older 7-bit form, read as such.) */
+                const hex = line.slice(sp + 1), v = [], v14 = [];
+                const wide = hex.length >= 64;
+                for (let s = 0; s < 16; s++) {
+                    if (wide) {
+                        const x = parseInt(hex.substr(s * 4, 4), 16);
+                        const ok = isFinite(x) && x !== 0xffff;
+                        v14.push(ok ? x : -1);
+                        v.push(ok ? Math.min(127, Math.floor((x * 127 + 8191) / 16383)) : -1);
+                    } else {
+                        const x = parseInt(hex.substr(s * 2, 2), 16);
+                        const ok = isFinite(x) && x !== 255;
+                        v.push(ok ? x : -1);
+                        v14.push(ok ? Math.round(x * 16383 / 127) : -1);
+                    }
+                }
+                v.v14 = v14;
                 map.set(line.slice(0, sp), v);
             }
             valsCache.key = key; valsCache.map = map;
@@ -452,7 +481,9 @@ function autoLaneValsTick(t, c, target) {
             valsCache.map = null;             /* a failed read of a NEW page shows no stale colours */
         }
     }
-    S.autoLaneVals = (valsCache.key === key && valsCache.map) ? (valsCache.map.get(target) || null) : null;
+    const got = (valsCache.key === key && valsCache.map) ? (valsCache.map.get(target) || null) : null;
+    const st0 = got ? null : automationStateFor(t, c, target);
+    S.autoLaneVals = got || ((valsCache.key === key && valsCache.map && st0 && !st0.count) ? EMPTY_VALS : null);
 }
 
 /* The lane the DSP is told to report a position for (tN_pa_view) — sent only
@@ -526,6 +557,34 @@ function lanePinTick() {
     return true;
 }
 
+/* ⭐ THE LANE IN FOCUS on a jump destination (Josh, 2026-09-25: "highlight
+ * the param the lane belongs to and show the value that the automation step
+ * is setting"). { target, step, norm, wire } while a hold jump or a lane pin
+ * is up on this track, else null. `step` is the held step (-1 when none);
+ * `norm`/`wire` are what the lane plays there — the knob's own last lock
+ * while the values read has not caught up (and only at Scale 100 %, since
+ * the read is what plays, scaled) — in 14 bits and in the parameter's units. */
+export function autoLaneFocus() {
+    const t = S.activeTrack;
+    const cy = (holdJump && holdJump.track === t) ? holdJump.cycle
+             : (lanePin && lanePin.t === t && S.autoCycle && S.autoCycle.target === lanePin.target) ? S.autoCycle : null;
+    if (!cy) return null;
+    const target = cy.target;
+    let step = -1, norm = null;
+    if (S.heldStepAuto && S.heldStep >= 0) {
+        step = S.heldStep;
+        const L = S.autoLockLast, stt = automationStateFor(t, cy.c, target);
+        if (L && L.track === t && L.clip === cy.c && L.target === target && L.step === step &&
+                L.at >= valsCache.at && (!stt || stt.scale === 100)) {
+            norm = L.norm;
+        } else {
+            const v = S.autoLaneVals, i = step - ((cy.off >> 4) + cy.page) * 16;
+            if (v && v.v14 && i >= 0 && i < 16 && v.v14[i] >= 0) norm = v.v14[i];
+        }
+    }
+    return { target, step, norm, wire: norm == null ? null : automationWireValue(target, norm) };
+}
+
 let holdJump = null;
 /* ⭐ WHERE A LANE IS EDITED — one answer for both jumps (Shift + click and
  * the hold). { kind, comp, key } or null (not this track's, or nowhere):
@@ -561,8 +620,12 @@ export function autoHoldJumpActive() { return !!holdJump; }
 export function autoHoldJumpStep() { return holdJump ? holdJump.step : -1; }
 export function autoHoldJumpBegin(absStep) {
     if (holdJump || lanePin || !autoBankIsActive() || !S.bankCardLatched) return false;
-    const cy = S.autoCycle, m = S.autoBankLit;
-    if (!cy || cy.t !== S.activeTrack || !m || m.charCodeAt(absStep) !== 49) return false;
+    const cy = S.autoCycle;
+    /* ANY step of the cycle jumps, not only one holding a point (Josh,
+     * 2026-09-25: "this should work on ANY step, not just ones with data, so
+     * that new automation steps can be added as well as old automation steps
+     * edited"). The caller keeps the press inside the cycle. */
+    if (!cy || cy.t !== S.activeTrack) return false;
     const tgt = String(cy.target);
     const sat = tgt.indexOf('seq:') === 0 ? SEQ_AUTO_TARGETS[tgt.split(':')[2]] : null;
     const home = sat ? null : laneHome(tgt, cy.t);
@@ -639,11 +702,15 @@ export function autoBankTick() {
      * any of the other clear sites): the jump ends here. */
     if (holdJump && S.heldStep < 0) autoHoldJumpEnd();
     if (holdJump) {
-        /* Mid-jump: the step row stays the lane's — its cycle, its colours. */
-        S.autoCycle = holdJump.cycle;
-        S.autoBankLit = litCache.map ? (litCache.map.get(holdJump.cycle.target) || '') : null;
-        const vk = valsCache.map;
-        S.autoLaneVals = vk ? (vk.get(holdJump.cycle.target) || null) : null;
+        /* Mid-jump: the step row stays the lane's — its cycle, its colours —
+         * and its values keep refreshing on their slow cadence, so what the
+         * destination shows for the held step follows what was locked. */
+        const j = holdJump;
+        S.autoCycle = j.cycle;
+        if (S.activeTrack === j.track) {
+            autoLaneValsTick(j.track, j.clip, j.cycle.target);
+            feedLit(j.track, j.clip, j.cycle.target);
+        }
         return;
     }
     if (lanePin && lanePinTick()) return;

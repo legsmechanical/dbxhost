@@ -187,7 +187,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         PA_SKIP_SPACE(p); PA_UINT(p, v);
         if (clip < 0 || clip >= NUM_CLIPS) return 1;
         pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_lookup(inst, tgt));
-        if (!e || !e->count) return 1;
+        if (!e || !pa_entry_live(e)) return 1;           /* a cleared lane's rest still follows */
         if (inst->playing && (e->flags & PA_FLAG_ACTIVE)) return 1;
         if (e->rest != (uint16_t)v) { e->rest = (uint16_t)v; pa_mark_dirty(inst); }
         return 1;
@@ -221,6 +221,27 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* pa_clear_points: "<clip> <target>" — the AUTOMATION bank's Clear
+     * (Josh, 2026-09-25): every point of that lane goes, the lane STAYS —
+     * listed, saved, its Loop / cycle, Rate, Scale, Mode, Smooth, Wrap, Link
+     * and Active kept — so new automation can be recorded or locked into it.
+     * The parameter goes back to rest, as a Delete puts it. */
+    if (!strcmp(sub, "pa_clear_points")) {
+        int clip = 0;
+        PA_SKIP_SPACE(p); PA_UINT(p, clip);
+        PA_TARGET(p, tgt);
+        if (clip < 0 || clip >= NUM_CLIPS) return 1;
+        pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_id(inst, tgt));
+        if (e && pa_entry_live(e)) {
+            e->count = 0;
+            e->flags |= PA_FLAG_KEEP;
+            e->last_sent_valid = 0;
+            __atomic_store_n(&e->release, 1, __ATOMIC_RELEASE);
+            pa_mark_dirty(inst);
+        }
+        return 1;
+    }
+
     /* pa_clear_step: "<clip> <from> <to>" — Delete + step. Clears EVERY
      * parameter's points in that tick span, which is the one-gesture meaning of
      * "delete what is automated here". */
@@ -233,8 +254,11 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         for (int i = 0; i < PA_MAX_ENTRIES; i++) {
             pa_entry_t *e = &inst->pa_entries[i];
             if (!e->used || e->track != tidx || e->clip != clip) continue;
+            const int had = e->count;
             pa_clear_range(e, (uint16_t)from, (uint16_t)to);
-            if (!e->count) pa_entry_retire(e);   /* nothing left to play: back to rest */
+            /* Nothing left to play: back to rest. A lane that was already
+             * empty (cleared and kept) is left as it is. */
+            if (had && !e->count) pa_entry_retire(e);
         }
         pa_mark_dirty(inst);
         return 1;

@@ -2590,6 +2590,9 @@ export function drawAutoMarkAt(cx, cy, filled) {
 
 function drawCellWidget(col, rowY, cell, touched, anim, nowMs) {
     if (cell.auto === 'auto' || cell.auto === 'auto-off') drawAutoMark(col, rowY, cell.auto === 'auto');
+    /* The LANE IN FOCUS on a jump from the AUTOMATION bank: the param pages'
+     * lock mark, the top-left 2x2 (the one corner nothing else uses). */
+    if (cell.lock) fill_rect(col * MV_CELL_W + 1, rowY, 2, 2, 1);
     const kx = col * MV_CELL_W + Math.floor((MV_CELL_W - MV_KW) / 2);
     /* ⭑ THE ENUM SQUARE HAS ITS OWN, WIDER SLOT (28 vs the 20px widget box), so
      * it gets its own origin. Centred in the same 32px cell, so a page of mixed
@@ -2727,7 +2730,13 @@ function drawCellLabel(col, lblY, cell, touched) {
  * individual widgets to one envelope graphic drawn across the span. Their
  * LABEL strips still render, so A/D/S/R stay named and touch-swap to their
  * values as usual. Omitted by davebox, which has no env banks. */
+/* What drawKitCells last drew: each cell's label, text and lock mark, and the
+ * highlighted index — the cells print through mvPrint, which a test cannot
+ * see (same reason as levelCardTextForTest). */
+let kitCellsLast = null;
+export function kitCellsForTest() { return kitCellsLast; }
 export function drawKitCells(cells, touchedIdx, env, filt, eq, samp, anim, nowMs) {
+    kitCellsLast = { touched: touchedIdx, cells: cells.map(c => c ? { label: c.label, text: c.text, lock: !!c.lock } : null) };
     /* ⭑ EVERY SPAN IS DECLARED, NONE IS DETECTED. env / filt / eq / samp all
      * arrive from the caller with an explicit start (and count where it can
      * vary); this file never sniffs a param name to decide a bank has an EQ.
@@ -3135,7 +3144,10 @@ export function drawKitBankPage(cells, opts) {
         else drawKitHeader(opts.headerText, opts.headerInvert, opts.headerMaxW);
         if (opts.pageCount > 0) drawKitPageBar(opts.pageIdx | 0, opts.pageCount, opts.pageGroups);
     }
-    drawKitCells(cells, t, opts.env, opts.filt, opts.eq, opts.samp,
+    /* A held automation step on the lane a jump came from highlights ITS cell
+     * (opts.focusIdx) while the header stays the card's. */
+    const hi = t >= 0 ? t : (opts.focusIdx != null && opts.focusIdx >= 0 ? opts.focusIdx : -1);
+    drawKitCells(cells, hi, opts.env, opts.filt, opts.eq, opts.samp,
                  opts.anim, opts.nowMs);
     /* The option-list overlay covers the 3 cells away from the touched knob, so
      * it must NOT appear on a bare orienting touch — only once that knob is

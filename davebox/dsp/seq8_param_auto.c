@@ -324,7 +324,7 @@ static int pa_target_referenced(const seq8_instance_t *inst, int target) {
 static pa_entry_t *pa_evict_zombie(seq8_instance_t *inst, int keep) {
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         pa_entry_t *e = &inst->pa_entries[i];
-        if (!e->used || e->count) continue;
+        if (!e->used || e->count || (e->flags & PA_FLAG_KEEP)) continue;   /* a kept lane is not a zombie */
         if (__atomic_load_n(&e->release, __ATOMIC_ACQUIRE)) continue;   /* rest not yet re-asserted */
         if (pa_target_in_hand(inst, e->target)) continue;
         int zt = e->target;
@@ -382,6 +382,7 @@ static void pa_entry_free(pa_entry_t *e) {
 static void pa_entry_retire(pa_entry_t *e) {
     if (!e) return;
     e->count = 0;
+    e->flags &= (uint8_t)~PA_FLAG_KEEP;   /* retired: no longer a kept lane */
     e->loop_len = e->loop_off = e->resolution = e->step_ticks = 0;
     e->last_sent_valid = 0;
     __atomic_store_n(&e->release, 1, __ATOMIC_RELEASE);
@@ -399,7 +400,7 @@ static void pa_pin_clip_length(seq8_instance_t *inst, int track, int clip, uint3
     pa_write_begin(inst);
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         pa_entry_t *e = &inst->pa_entries[i];
-        if (!e->used || e->track != track || e->clip != clip || !e->count) continue;
+        if (e->track != track || e->clip != clip || !pa_entry_live(e)) continue;
         if (e->loop_len) continue;                       /* already its own window */
         e->loop_len = (uint16_t)(old_ticks > 0xFFFFu ? 0xFFFFu : old_ticks);
         e->loop_off = 0;
@@ -1199,14 +1200,14 @@ static void pa_serialize(seq8_instance_t *inst, FILE *fp) {
 static void pa_serialize_locked(seq8_instance_t *inst, FILE *fp) {
     int any = 0;
     for (int i = 0; i < PA_MAX_ENTRIES && !any; i++)
-        if (inst->pa_entries[i].used && inst->pa_entries[i].count) any = 1;
+        if (pa_entry_live(&inst->pa_entries[i])) any = 1;
     if (!any) return;            /* sparse: no automation writes no key at all */
 
     fprintf(fp, ",\"pav\":%d,\"pa\":[", PA_SECTION_VERSION);
     int first = 1;
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         pa_entry_t *e = &inst->pa_entries[i];
-        if (!e->used || !e->count) continue;
+        if (!pa_entry_live(e)) continue;
         if (!first) fputc(',', fp);
         first = 0;
         fprintf(fp, "{\"t\":%d,\"c\":%d,\"k\":\"%s\",\"f\":%d",
@@ -1236,7 +1237,7 @@ static void pa_serialize_locked(seq8_instance_t *inst, FILE *fp) {
 static void pa_pin_drum_cycles(seq8_instance_t *inst) {
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         pa_entry_t *e = &inst->pa_entries[i];
-        if (!e->used || !e->count || e->loop_len) continue;
+        if (!pa_entry_live(e) || e->loop_len) continue;
         if (e->track >= NUM_TRACKS || e->clip >= NUM_CLIPS) continue;
         const seq8_track_t *tr = &inst->tracks[e->track];
         if (tr->pad_mode != PAD_MODE_DRUM || !tr->drum_clips[e->clip]) continue;
@@ -1342,7 +1343,7 @@ static void pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen)
                         if (pp < end && *pp == ';') pp++;
                     }
                 }
-                if (!e->count) pa_entry_free(e);
+                if (!pa_entry_live(e)) pa_entry_free(e);   /* a kept, cleared lane stays */
             }
         }
         p = end + 1;
