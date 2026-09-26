@@ -80,6 +80,24 @@ the section into a versioned heading at release time.
 - **Copy + step on a drum track copies the step you're looking at.** Past the
   first page it copied, pasted onto and cut from the matching step on page 1
   instead.
+- **The SnapMorph snapshot list lines up.** Snapshot names start at the same
+  place whether or not they carry a pick number, and a track with no
+  snapshots says NO SNAPSHOTS instead of a clipped line.
+- **A Conductor's NOTE FX bank is headed C-NOTE FX,** like its other banks.
+- **The AUTOMATION list stays above its hints.** It shows four rows and
+  scrolls, instead of a fifth row running into the footer.
+- **TRACK CONFIG's hint band sits cleanly under the list.** When the CLK EDIT /
+  SHFT CHANGE hints pop up, the list shows four rows above them instead of a
+  fifth row peeking out from under the band.
+- **A muted or soloed drum lane's tag no longer covers the velocity.** In the
+  drum overview MUTED / SOLOED now sits at the left of the second info row,
+  with VEL on the right.
+- **The arp step editor's header reads cleanly.** On SEQ ARP and LIVE ARP's
+  step pitch page the SHIFT hint no longer covers the track and instrument
+  label.
+- **Conductor C-WHEN fits its values.** Each track's Next/Now sits in its own
+  box instead of running into its neighbours; drum tracks, which never respond,
+  are left blank as on C-RESPONDER.
 - **SOUND + CONFIG and MACROS behave like every other bank.** A track on them stays
   there through suspend, track switches and Back; opening the Sound menu by a
   shortcut no longer moves the bank (Back from it returns to where you were, never

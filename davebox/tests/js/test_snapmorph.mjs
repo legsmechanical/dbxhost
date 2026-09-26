@@ -23,6 +23,9 @@ let failed = 0;
 function ok(label) { console.log(`  ok   — ${label}`); }
 function bad(label, e) { console.error(`  FAIL — ${label}: ${e && e.stack ? e.stack : e}`); failed = 1; }
 function step(label, fn) { try { fn(); ok(label); } catch (e) { bad(label, e); } }
+/* A slot row as the list shows it: the pick order is the row's `mark`, drawn in
+ * the list's left gutter (so the names align), not a prefix in its label. */
+function shownRow(p) { return (p.mark ? p.mark + ' ' : '') + p.label; }
 function assert(c, m) { if (!c) throw new Error(m); }
 
 let reads = [];
@@ -168,19 +171,19 @@ step('SnapMorph lists the FILLED snapshot slots only; a click TOGGLES one in, th
     for (let i = 0; i < ti; i++) jog(1);
     click(); ticks(1);
     assert(snd.soundViewForTest() === VIEW_KNOB_PARAM, 'the slot list, view ' + snd.soundViewForTest());
-    let rows = snd.soundKnobParamsForTest().map(p => p.label);
+    let rows = snd.soundKnobParamsForTest().map(shownRow);
     assert(rows.length === 2 && /Snapshot 1$/.test(rows[0]) && /Snapshot 2$/.test(rows[1]), 'slots 1 and 2 (3 is empty), got ' + JSON.stringify(rows));
     assert(!/\[/.test(rows[0]), 'nothing chosen yet: ' + rows[0]);
     click();                                                 /* Snapshot 1 */
     assert(snd.soundViewForTest() === VIEW_KNOB_PARAM, 'the list STAYS OPEN after a pick');
     let leg = morphLeg();
     assert(leg && leg.snaps.length === 1 && leg.snaps[0] === 0, 'one pick = a leg with one snapshot, got ' + JSON.stringify(legsOf()));
-    rows = snd.soundKnobParamsForTest().map(p => p.label);
+    rows = snd.soundKnobParamsForTest().map(shownRow);
     assert(/^\[1\] Snapshot 1$/.test(rows[0]), 'marked with its ORDER, got ' + JSON.stringify(rows));
     jog(1); click();                                         /* Snapshot 2 */
     leg = morphLeg();
     assert(leg.snaps.length === 2 && leg.snaps[1] === 1, 'second pick appends, got ' + JSON.stringify(leg.snaps));
-    rows = snd.soundKnobParamsForTest().map(p => p.label);
+    rows = snd.soundKnobParamsForTest().map(shownRow);
     assert(/^\[2\] Snapshot 2$/.test(rows[1]), 'order 2, got ' + rows[1]);
     assert(leg.lo === 0 && leg.hi === 1, 'whole range');
     const mac = lastMac();
@@ -193,7 +196,7 @@ step('a second click on a chosen slot takes it OUT (pick order re-counts); picke
     assert(!morphLeg() && mp() === null, 'last removal drops the leg and the knob is unassigned, got ' + JSON.stringify(mp()));
     jog(1); click(); jog(-1); click();                       /* 2 then 1: path B → A */
     assert(morphLeg().snaps.join() === '1,0', 'pick order is the path, got ' + morphLeg().snaps.join());
-    const rows = snd.soundKnobParamsForTest().map(p => p.label);
+    const rows = snd.soundKnobParamsForTest().map(shownRow);
     assert(/^\[2\] Snapshot 1$/.test(rows[0]) && /^\[1\] Snapshot 2$/.test(rows[1]), 'marks follow the order, got ' + JSON.stringify(rows));
     /* Put it back to A → B for the rest of the file. */
     click(); jog(1); click(); jog(-1); click(); jog(1); click();

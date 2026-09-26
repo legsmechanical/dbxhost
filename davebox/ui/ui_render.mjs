@@ -30,7 +30,7 @@ import {
     fmtDly, fmtArpStyle, fmtArpSteps, fmtDiq, fmtPlain, fmtLgto, fmtPitchRnd
 } from './ui_constants.mjs';
 import { drawAutoMarkAt,
-    drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitBankHeader,
+    drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitBankHeader, kitBankGlyphWidth,
     kitUseLayout,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
     drawVFader, mvPrint, mvWidth, rectOutline, plotLine,
@@ -173,11 +173,15 @@ function drawConductTrackGrid(header, valFn, inertLabel, footer) {
     drawKitPage(header, cells, false, footer);
 }
 
-/* Conductor RESPONDER grid: per-track TOGGLE bar (like the DELAY Retrig toggle)
- * showing each track's responder on/off state instead of an ON/off value box.
- * The Conductor's own cell and drum tracks (which never respond) stay blank —
- * distinct from an "off" track, which shows an empty framed bar. */
-function drawConductToggleGrid(header, onFn, footer) {
+/* Conductor two-state grid (RESPONDER, WHEN): one two-state cell per track,
+ * drawn by toggleCell — so RESPONDER's ON/off is a TOGGLE bar (like the DELAY
+ * Retrig toggle) and WHEN's Now/Next, a pair of words, is an enum box that
+ * prints the word inside the cell. (WHEN used to hand the words to the big
+ * value face, which is sized for numbers: "Next" overflowed its 32px cell and
+ * ran into the next one.) The Conductor's own cell and drum tracks (which
+ * never respond) stay blank — distinct from an "off" track. */
+function drawConductToggleGrid(header, onFn, footer, onText, offText) {
+    if (onText == null) { onText = 'ON'; offText = 'off'; }
     const cells = [];
     for (let i = 0; i < 8; i++) {
         if (i === S.activeTrack) {
@@ -186,7 +190,7 @@ function drawConductToggleGrid(header, onFn, footer) {
             cells.push({ kind: 'blank', label: 'Tr' + (i + 1) });
         } else {
             const on = !!onFn(i);
-            cells.push(toggleCell('Tr' + (i + 1), 'Track ' + (i + 1), on, 'ON', 'off'));
+            cells.push(toggleCell('Tr' + (i + 1), 'Track ' + (i + 1), on, onText, offText));
         }
     }
     drawKitPage(header, cells, false, footer);
@@ -1929,12 +1933,21 @@ function drawUIBody() {
             if (_velPage) drawKitTouchedHeader('Velocity: ' + (_v === 0 ? 'Off' : _v > 127 ? 'Thru' : _v));
             else          drawKitTouchedHeader('Pitch: ' + (_v > 0 ? '+' : '') + _v);
         } else {
-            drawBankHeading(_velPage ? 'Step Vel' : 'Step Pitch');
+            const _hName = _velPage ? 'Step Vel' : 'Step Pitch';
+            drawBankHeading(_hName);
             if (!_velPage) {
                 /* micro-font hint that Shift flips to the velocity page —
-                 * black on the filled header bar, tucked LEFT of the alt
-                 * arrow (which sits at x=121-126) */
-                pf3Print(118 - pf3Width('SHIFT'), 2, 'SHIFT', 0);
+                 * black on the filled header bar, in the GAP between the name
+                 * and the right label (T1[MV1]). Both ends are MEASURED, the
+                 * way drawKitBankHeader lays them out: a fixed x once drew it
+                 * straight over the right label. Dropped rather than crammed
+                 * when a long instrument name leaves no gap. */
+                const _rt  = String(bankHeaderRight()).toUpperCase();
+                const _rw  = _rt ? fontWidth4x5(_rt) + 4 : 0;
+                const _hx  = 128 - 2 - _rw - pf3Width('SHIFT');
+                const _gw  = kitBankGlyphWidth(bankHeaderGlyph(S.activeBank));
+                const _nEnd = 2 + (_gw ? _gw + 3 : 0) + fontWidth4x5(_hName.toUpperCase());
+                if (_hx >= _nEnd + 4) pf3Print(_hx, 2, 'SHIFT', 0);
             }
         }
         const _colW = 16, _barW = 10, _top = 14, _bot = 54, _numY = 57;
@@ -1991,7 +2004,9 @@ function drawUIBody() {
         } else if (bank === BANK_OCTAVE) {
             drawConductTrackGrid(_ch, function(k){ if (S.trackPadMode[k] === PAD_MODE_DRUM) return '--'; const o = S.condOct[S.trackActiveClip[S.activeTrack] | 0][k]; return o === 0 ? '--' : (o > 0 ? '+' + o : '' + o); }, 'Cndct', bankPageHints(bank));
         } else { /* BANK_WHEN */
-            drawConductTrackGrid(_ch, function(k){ return S.trackPadMode[k] === PAD_MODE_DRUM ? '--' : (S.condWhen[S.trackActiveClip[S.activeTrack] | 0][k] ? 'Now' : 'Next'); }, 'Cndct', bankPageHints(bank));
+            const _wc = S.trackActiveClip[S.activeTrack] | 0;
+            drawConductToggleGrid(_ch, function(k){ return S.condWhen[_wc][k]; },
+                                  bankPageHints(bank), 'Now', 'Next');
         }
         return;
     }
@@ -2254,7 +2269,7 @@ function drawUIBody() {
             }
             cells.push(kitCellForKnob(knobs[k], vals[k]));
         }
-        drawKitPage(BANKS[1].name, cells, false, bankPageHints(1));
+        drawKitPage(bankHeaderName(S.activeTrack, 1), cells, false, bankPageHints(1));
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 3) {
         /* Drum MIDI DLY: K1-K4 same as melodic, K5=Gate, K6=Clk, K7=Retrg, K8 empty.
          * Drum has no Pfb (no per-lane pitch) and no Rnd (no random pitch fb),
@@ -2275,7 +2290,7 @@ function drawUIBody() {
             toggleCell('Retrg', 'Retrig', vals[6], fmtBool(1), fmtBool(0)),
             { kind: 'blank', label: '' },
         ];
-        drawKitPage(BANKS[3].name, cells, false, bankPageHints(3));
+        drawKitPage(bankHeaderName(S.activeTrack, 3), cells, false, bankPageHints(3));
 
         } else {
         /* Bank overview — canvaskit grid (widgets + label strips + touch swap) */
@@ -2356,12 +2371,16 @@ function drawUIBody() {
         (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankName, false, true);
         /* info row at y=9, in the STOCK face (2026-09-05) — 2px clear of the header */
         ovwPrint(4, 9, bankGroup + '  Pad:' + name + oct + ' (' + note + ')', 1);
+        /* The lane's mute/solo tag sits LEFT on the second info row: the
+         * right end of that row is the velocity input (drawRow2Labels), and
+         * a right-aligned tag drew straight over it. The left end has been
+         * free since the metronome label left the row. */
         const laneBit = 1 << lane;
         if (S.drumLaneSolo[t] & laneBit) {
-            ovwPrint(128 - 4 - ovwWidth('SOLOED'), 17, 'SOLOED', 1);
+            ovwPrint(4, 17, 'SOLOED', 1);
         } else if (S.drumLaneMute[t] & laneBit) {
             if (Math.floor(S.clockMs / 440) % 2 === 0)
-                ovwPrint(128 - 4 - ovwWidth('MUTED'), 17, 'MUTED', 1);
+                ovwPrint(4, 17, 'MUTED', 1);
         }
         drawInfoRow2();
         drawOverviewTracks(overviewHints());

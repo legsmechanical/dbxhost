@@ -148,7 +148,12 @@ export function drawAutomationBankBody() {
     if (a.menu) listRows.push({ label: 'Clear all', hdr: true });
     if (a.sel >= listRows.length) a.sel = Math.max(0, listRows.length - 1);
     kitUseLayout('bank');
-    drawKitList(listRows, a.menu ? a.sel : -1, { emptyMsg: 'NO AUTOMATION' });
+    /* ⚠ h: the list's box ENDS AT THE FOOTER. Left to the screen's height it
+     * drew a fifth row down through the hint pills (Aftertouch ran into
+     * CLK MENU); four rows fit above them and the list scrolls, as it does in
+     * the ops pop-up below. */
+    drawKitList(listRows, a.menu ? a.sel : -1,
+                { emptyMsg: 'NO AUTOMATION', h: MV_FOOTER_Y - LIST_TOP });
     /* The editor's bracketed corners on the resting card: "press jog to
      * interact" — the one mark the OLED language uses for that. */
     if (!a.menu) drawBrackets(0, LIST_TOP - 1, 128, MV_FOOTER_Y - LIST_TOP);
