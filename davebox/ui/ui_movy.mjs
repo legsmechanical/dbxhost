@@ -2602,6 +2602,15 @@ function drawCellWidget(col, rowY, cell, touched, anim, nowMs) {
      * The column index is both; the param name is neither (two banks can share
      * one, and an alt-mode swap changes it under a value that did not move). */
     const ak = anim ? ('c' + col + (rowY < MV_ROW1_Y ? 'a' : 'b')) : null;
+    /* ⭑ A NUMBER TURNS AS AN ARC (Josh, 2026-09-26). A numeric value that rests
+     * as a read-out (an octave, a semitone offset, a count, a rate) becomes an
+     * arc while its knob is touched: clockwise sweeps the arc clockwise, where a
+     * vertical list ran the other way. The value itself stays in the label
+     * strip and the header. `touchArc` = { norm 0..1, bip }. */
+    if (touched && cell.touchArc) {
+        drawArcKnob(kx, rowY, cell.touchArc.norm, !!cell.touchArc.bip);
+        return;
+    }
     /* ⭑ THE MODULATION DOT IS A DESCRIPTOR FIELD, NOT A DETECTION. A cell whose
      * caller never sets `modNorm` draws exactly the pixels it drew before — and
      * davebox sets it nowhere today, so nothing on any shipping page moves.
@@ -3191,7 +3200,9 @@ export function drawKitBankPage(cells, opts) {
  * drawKitEnumOverlay's own guard, called by both, so the two cannot drift. */
 export function enumOverlayWouldDraw(cells, idx) {
     const cell = idx >= 0 ? cells[idx] : null;
-    return !!(cell && cell.options && cell.options.length > 2 && (cell.sel | 0) >= 0);
+    /* A NUMBER never gets the list (Josh, 2026-09-26: "A for all"): a cell that
+     * carries `touchArc` turns into an arc while touched instead. */
+    return !!(cell && !cell.touchArc && cell.options && cell.options.length > 2 && (cell.sel | 0) >= 0);
 }
 
 /* Turn-to-reveal value zoom — the non-picker counterpart to drawKitEnumOverlay.
