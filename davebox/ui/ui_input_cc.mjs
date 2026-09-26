@@ -1199,6 +1199,9 @@ function modalDialogUp() {
                      * Instrument picker took on 08-23: a list of choices has two
                      * ends, and rolling past one of them reads as the knob having
                      * skipped rather than as having arrived. */
+                    /* The bank map on the mixer cards too (Josh, 2026-09-26: "need
+                     * the same overlay while viewing the mixer mode cards"). */
+                    S.bankNavKind = 'session';
                     const _skPrev = S.sessKnobMode;
                     S.sessKnobMode = Math.max(0, Math.min(SESS_KNOB_MODES.length - 1,
                                                           S.sessKnobMode + (delta > 0 ? 1 : -1)));
