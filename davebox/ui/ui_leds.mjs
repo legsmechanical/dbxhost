@@ -241,7 +241,8 @@ export function updateStepLEDs() {
             const isDrum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
             const _allLanesLocked = isDrum && S.activeBank === 7 && !S.allLanesConfirmed;
             for (let i = 0; i < 16; i++) {
-                let on = i === 1 || i === 2 || (i >= 4 && i <= 6) || i === 8;
+                /* Step3 stays dark: Shift+Step3 was retired (2026-07-27). */
+                let on = i === 1 || (i >= 4 && i <= 6) || i === 8;
                 /* Step1 = project picker (set-select gate) — davebox host only */
                 if (i === 0) on = true;
                 if (i === 7 || i === 9 || (i === 10 && !isDrum) || i === 14
@@ -567,8 +568,9 @@ export function updateTrackLEDs() {
                     if (i === 1 || (i >= 4 && i <= 6) || i === 8) on = true; /* shared shortcuts */
                     if (i === 0)                                 on = true; /* Step1 = project picker */
                     if (!S.sessionView) {
-                        if (i === 2)                            on = true; /* Step3 = Edit Slot/Synth — Track View only */
-                        else if (i === 7)                       on = true;
+                        /* Step3 stays dark: Shift+Step3 (Edit Slot/Synth) was
+                         * retired 2026-07-27 and does nothing now. */
+                        if (i === 7)                            on = true;
                         else if (i === 9)                       on = true;
                         else if (i === 10 && !isDrum)           on = true;
                         else if (i === 14 || i === 15)          on = true;
@@ -605,7 +607,7 @@ export function updateTrackLEDs() {
      * Suppressed when a compound modifier is held (Shift+Mute/Delete/Copy/Loop). */
     if (S.sessionView && S.shiftHeld && !shiftClaimedByGesture()) {
         for (let i = 0; i < 16; i++) {
-            let on = i === 1 || (i >= 4 && i <= 6) || i === 8; /* shared shortcuts only — Step3 (Edit Slot/Synth) is Track View only */
+            let on = i === 1 || (i >= 4 && i <= 6) || i === 8; /* shared shortcuts only (Step3 is not a shortcut in either view) */
             if (i === 0) on = true; /* Step1 = project picker */
             setLED(16 + i, on ? LightGrey : LED_OFF);
         }

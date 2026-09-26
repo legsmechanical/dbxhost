@@ -57,6 +57,9 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **Holding Shift in Track View no longer lights Step 3.** Its shortcut was
+  retired (the sound editor is Shift + Note/Session), so the icon and the step
+  light advertised a press that did nothing.
 - **Delete + jog click on RPT GROOVE resets the lane's groove** even with no
   repeat mode on. It used to reset the drum track's hidden live arp instead and
   say LIVE ARP RESET.

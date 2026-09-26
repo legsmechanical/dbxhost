@@ -33,9 +33,11 @@ globalThis.host_ext_midi_remap_clear = () => {}; globalThis.host_ext_midi_remap_
 globalThis.host_ext_midi_remap_enable = () => {}; globalThis.host_autosave_hold = () => {};
 globalThis.shadow_save_state_now = () => 1;
 const icon = {};                                   /* CC number -> last value sent */
+const light = {};                                  /* step LIGHT (NoteOn) number -> last value */
 globalThis.move_midi_internal_send = (m) => {
     const a = Array.from(m);
     if (a.length >= 4 && (a[1] & 0xF0) === 0xB0 && a[2] >= 16 && a[2] <= 31) icon[a[2]] = a[3];
+    if (a.length >= 4 && (a[1] & 0xF0) === 0x90 && a[2] >= 16 && a[2] <= 31) light[a[2]] = a[3];
     return true;
 };
 
@@ -43,6 +45,8 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const { PAD_MODE_DRUM } = await import('../../ui/ui_constants.mjs');
+globalThis.__dbxLeds = await import('../../ui/ui_leds.mjs');
+globalThis.__dbxSound = await import('../../ui/ui_sound.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 2;
@@ -96,6 +100,31 @@ step('Shift held keeps the hint grammar: the icons are the shortcut hints', () =
     assert(lit(10) && lit(11) && lit(6), 'the Shift hints went dark');
     S.shiftHeld = false; settle();
     assert(!lit(10) && !lit(11), 'hints stayed lit after Shift');
+});
+
+/* ⚠ Shift + Step 3 was RETIRED (the sound editor is Shift + Note/Session now)
+ * and does nothing — so neither its icon nor its step light may advertise it.
+ * It kept lighting in Track View after the gesture was gone. */
+step('⚠ Shift held in Track View: Step 3 stays dark — its shortcut was retired', () => {
+    const { invalidateLEDCache } = globalThis.__dbxLeds;
+    S.sessionView = false; S.shiftHeld = true; invalidateLEDCache(); settle();
+    assert(lit(2), 'CONTROL: Step 2\'s icon (Project Settings) is not lit — the overlay is not up');
+    assert((light[17] | 0) !== 0, 'CONTROL: Step 2\'s light is not lit — the overlay is not up');
+    const bad = [];
+    if (lit(3)) bad.push('the Step 3 ICON is lit');
+    if ((light[18] | 0) !== 0) bad.push('the Step 3 LIGHT is lit');
+    S.shiftHeld = false; settle();
+    assert(!bad.length, bad.join(' and ') + ' for a shortcut that does nothing');
+});
+step('⚠ and Shift + Step 3 really does nothing — no screen opens, no popup', () => {
+    S.sessionView = false; S.actionPopupLines = [];
+    const before = JSON.stringify([S.globalMenuOpen, globalThis.__dbxSound.soundOpen(), S.activeBank]);
+    const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
+    const note = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([d2 > 0 ? 0x90 : 0x80, d1, d2]));
+    cc(49, 127); note(18, 127); note(18, 0); cc(49, 0);
+    const after = JSON.stringify([S.globalMenuOpen, globalThis.__dbxSound.soundOpen(), S.activeBank]);
+    assert(before === after, 'Shift + Step 3 changed something: ' + before + ' -> ' + after);
+    assert(!(S.actionPopupLines || []).length, 'a popup appeared: ' + S.actionPopupLines);
 });
 
 process.exit(failed);
