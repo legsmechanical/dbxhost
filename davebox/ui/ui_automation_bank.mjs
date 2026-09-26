@@ -182,6 +182,11 @@ export function drawAutomationBankBody() {
     if (!a.menu) drawBrackets(0, LIST_TOP - 1, 128, MV_FOOTER_Y - LIST_TOP);
     let hints;
     if (a.ops) {
+        /* Match pad reads the pad selected NOW: a pad tapped while the
+         * pop-up is open changes it (Josh, 2026-09-25: it "stays at 12steps
+         * regardless of what pad i'm using"). */
+        const mr = a.ops.rows.find(o => o.op === 'match');
+        if (mr) { const p = padCycle(t); mr.value = cycleText(p.len, p.tps); }
         const ors = a.ops.rows.map((o, i) => ({
             label: o.label,
             value: (o.op === 'loop' || o.op === 'rate' || o.op === 'scale')
