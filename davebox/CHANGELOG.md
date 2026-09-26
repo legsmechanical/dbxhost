@@ -1,15 +1,6 @@
 # Changelog
 
 All notable changes to dAVEBOx are documented here.
-- **Three more Daves join the pool.** Welcome, GILMOUR, DAVID NO, and the
-  rare DAVIE JAMES DIO — 34 to collect.
-- **Dave Box: the card view.** Each Dave now shows his name in big caps with
-  his number and rarity beneath — and the portrait slowly pans up and down
-  behind the label, so the whole image gets its moment.
-- **The Dave Box.** Every launch deals you one random Dave as the splash —
-  some are rarer than others — and every Dave you've ever been dealt lives in
-  a jog-driven album under Settings > Dave Box, each with his permanent
-  number. Collect all 31.
 
 Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 `[Unreleased]` as user-facing changes land; `scripts/cut_release.sh` finalizes
@@ -20,6 +11,19 @@ the section into a versioned heading at release time.
 - **A project load unwraps a Dave.** Loading a project deals a Dave into your
   Dave Box and shows him full screen under a `<PROJECT> [LOADING...]` header
   while the set loads.
+- **The Dave Box.** Loading a project deals you one random Dave — some are
+  rarer than others — and every Dave you've ever been dealt lives in a
+  jog-driven album under Settings → Open Your Dave Box, each with his
+  permanent number. Launching dAVEBOx from the Tools menu shows no Dave.
+- **Dave Box: the card view.** Each Dave now shows his name in big caps with
+  his number and rarity beneath — and the portrait slowly pans up and down
+  behind the label, so the whole image gets its moment.
+- **Three more Daves join the pool.** Welcome, GILMOUR, DAVID NO, and the
+  rare DAVIE JAMES DIO — 34 to collect.
+- **Mute snapshots and Performance presets save with Shift + step.** Mute +
+  Shift + step saves a mute snapshot and Loop + Shift + step a Performance
+  preset; the step alone recalls, at once on the press, and Delete + step
+  clears — the same as the Capture snapshot row.
 - **Shortcut icons show what's on.** Without Shift, the Step 6 icon stays lit
   while the metronome plays (Play or Always), and in Track View Step 10 while
   fixed velocity is on and Step 11 while the track arp is on.
@@ -57,6 +61,18 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **Saving a mute snapshot saves the project.** A new snapshot used to wait in
+  memory until something else changed, so it could be lost if you left before
+  then. Deleting one already saved.
+- **Holding Shift in Track View no longer lights Step 3.** Its shortcut was
+  retired (the sound editor is Shift + Note/Session), so the icon and the step
+  light advertised a press that did nothing.
+- **Delete + jog click on RPT GROOVE resets the lane's groove** even with no
+  repeat mode on. It used to reset the drum track's hidden live arp instead and
+  say LIVE ARP RESET.
+- **Copy + step on a drum track copies the step you're looking at.** Past the
+  first page it copied, pasted onto and cut from the matching step on page 1
+  instead.
 - **SOUND + CONFIG and MACROS behave like every other bank.** A track on them stays
   there through suspend, track switches and Back; opening the Sound menu by a
   shortcut no longer moves the bank (Back from it returns to where you were, never
@@ -509,8 +525,7 @@ the section into a versioned heading at release time.
   recording; the merge flow is unchanged from the notice onward. The
   Quantized Sampler moved with it: hold Shift and touch the volume knob,
   then press Sample.
-- **A new splash pool — 31 Daves.** The launch artwork rotates through a fully
-  recurated set; every launch greets you with a different Dave.
+- **A new Dave pool — 31 Daves.** A fully recurated set of portraits.
 ### Features (pending, cont.)
 - **Note/Session is the way out.** From anywhere that isn't a plain overview —
   a bank view, a menu, the sound editor, a dialog, a picker — one press takes

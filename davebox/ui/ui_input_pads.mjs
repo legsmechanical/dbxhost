@@ -1412,7 +1412,11 @@ export function _onStepButtons(d1, d2) {
          * Copy+Shift gesture. After a cut-paste the destination becomes the new
          * source, so the cut content can be pasted onto further steps. */
         const ac     = effectiveClip(S.activeTrack);
-        const absIdx = S.trackCurrentPage[S.activeTrack] * 16 + idx;
+        /* A drum track pages with drumStepPage (Left/Right), not the melodic
+         * page — the same choice Delete + step makes below. */
+        const absIdx = (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM
+            ? S.drumStepPage[S.activeTrack]
+            : S.trackCurrentPage[S.activeTrack]) * 16 + idx;
         if (!S.copySrc) {
             S.copySrc = S.shiftHeld
                 ? { kind: 'cut_step', absStep: absIdx }

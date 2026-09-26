@@ -17,7 +17,7 @@ import { nowMs } from './ui_clock.mjs';
 import { soundActive, soundOpen, soundExit, soundIsGlobal, soundInEditor, soundFollowTrack, soundOnCard } from './ui_sound.mjs';
 import { isTextEntryActive } from '/data/UserData/schwung/shared/text_entry.mjs';
 import { stepRecExit } from './ui_record.mjs';
-import { clipHasContent } from './ui_pure.mjs';
+import { clipHasContent, bankDisplayName } from './ui_pure.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { effectiveClip, invalidateLEDCache, forceRedraw } from './ui_leds.mjs';
 import { refreshPerClipBankParams, resetPerClipBankParamsToDefault,
@@ -906,8 +906,30 @@ export function resetBankParams(t, bank) {
      * do not read it as proving this guard. */
     if (bank === BANK_STEP) return null;             /* the sequence itself */
     if (bank >= 1 && bank <= 4) { resetSingleFxBank(t, bank); return BANKS[bank].name; }
+    /* Bank 5 is a different bank on a drum track: RPT GROOVE, not LIVE ARP.
+     * ⚠ It used to reset the drum track's live arp — which no drum screen
+     * shows — and pop "LIVE ARP RESET" while the groove on screen stayed put. */
+    if (bank === 5 && S.trackPadMode[t] === PAD_MODE_DRUM) {
+        resetRptGroove(t, S.activeDrumLane[t]);
+        return bankDisplayName(PAD_MODE_DRUM, 5);
+    }
     if (bank === 5)             { resetTarp(t);             return BANKS[5].name; }
     return null;                                     /* 0, 7, SOUND, MACROS, AUTOMATION: own paths */
+}
+
+/* RPT GROOVE: one drum lane's repeat groove (gate mask, its length, and the
+ * per-step velocity and nudge) back to the defaults. Not automatable, so there
+ * is no automation to follow it. The DSP write is queued, not sent: this runs
+ * from the jog handler, where a synchronous set_param would coalesce. */
+export function resetRptGroove(t, lane) {
+    S.drumRepeatGate[t][lane]    = 0xFF;
+    S.drumRepeatGateLen[t][lane] = 8;
+    for (let s = 0; s < 8; s++) {
+        S.drumRepeatVelScale[t][lane][s] = 255;
+        S.drumRepeatNudge[t][lane][s]    = 0;
+    }
+    S.pendingDefaultSetParams.push({ key: 't' + t + '_l' + lane + '_repeat_groove_reset', val: '1' });
+    S.screenDirty = true;
 }
 
 /* Shift + Delete + jog click: the sequencer's MIDI FX chain, and only that.

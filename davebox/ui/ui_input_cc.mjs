@@ -84,7 +84,7 @@ import { setTrackMute, setTrackSolo, clearAllMuteSolo,
     clearClip, hardResetClip, copyClip, cutClip, copyRow, cutRow,
     copyDrumClip, cutDrumClip, clearRow,
     _switchActiveTrack, allLanesGate,
-    resetFxBanks, resetBankParams, resetMidiFxChain, resetTarp, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
+    resetFxBanks, resetBankParams, resetMidiFxChain, resetTarp, resetRptGroove, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
 import { _resolveLoopGesture, chordApplyRevoice } from './ui_input_pads.mjs';
 
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
@@ -652,17 +652,10 @@ function modalDialogUp() {
         }
         if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
             if (S.drumPerformMode[S.activeTrack] > 0) {
-                /* Rpt/Rpt2 mode: Delete+jog = reset current lane groove params */
-                const _rt = S.activeTrack;
-                const _rl = S.activeDrumLane[_rt];
-                S.drumRepeatGate[_rt][_rl]    = 0xFF;
-                S.drumRepeatGateLen[_rt][_rl] = 8;
-                for (let _s = 0; _s < 8; _s++) {
-                    S.drumRepeatVelScale[_rt][_rl][_s] = 255;
-                    S.drumRepeatNudge[_rt][_rl][_s]    = 0;
-                }
-                /* Defer reset push — synchronous from jog handler coalesces. */
-                S.pendingDefaultSetParams.push({ key: 't' + _rt + '_l' + _rl + '_repeat_groove_reset', val: '1' });
+                /* Rpt/Rpt2 mode: Delete+jog = reset current lane groove params,
+                 * whichever bank is up. On the RPT GROOVE bank itself the
+                 * bank-reset arm below does the same, repeat mode or not. */
+                resetRptGroove(S.activeTrack, S.activeDrumLane[S.activeTrack]);
                 showActionPopup('RPT GROOVE', 'RESET');
             } else {
                 /* Drum: Delete+jog = reset THE BANK YOU ARE ON (resetBankParams
