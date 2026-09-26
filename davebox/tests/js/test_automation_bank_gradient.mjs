@@ -74,6 +74,7 @@ globalThis.host_ext_midi_remap_clear = () => {}; globalThis.host_ext_midi_remap_
 globalThis.host_ext_midi_remap_enable = () => {};
 
 async function main() {
+globalThis.__menu = await import('../../ui/ui_menu.mjs');
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const { BANKS, BANK_AUTOMATION } = await import('../../ui/ui_constants.mjs');
@@ -168,6 +169,21 @@ step('a failed read shows the points blinking white over dark steps, not stale c
     assert(seen[4].has(C_.White) && seen[4].has(0), 'the point at step 5 blinks white: ' + [...seen[4]]);
     for (const i of [0, 8, 15]) assert(seen[i].size === 1 && seen[i].has(0), `step ${i + 1} dark, no stale colour: ${[...seen[i]]}`);
     VALS = saved;
+});
+
+step('⭐ with the global menu open over this card, the click goes to the MENU, not the card', () => {
+    const { openGlobalMenu } = globalThis.__menu;
+    const a = S.autoBank;
+    const before = JSON.stringify({ menu: a && a.menu, ops: !!(a && a.ops) });
+    openGlobalMenu();
+    assert(S.globalMenuOpen, 'setup: the menu is open');
+    const depth = S.globalMenuStack.depth ? S.globalMenuStack.depth() : JSON.stringify(S.globalMenuStack);
+    click(); ticks(1);
+    const after = JSON.stringify({ menu: S.autoBank && S.autoBank.menu, ops: !!(S.autoBank && S.autoBank.ops) });
+    assert(after === before, 'the card did not take the click: ' + before + ' -> ' + after);
+    const depth2 = S.globalMenuStack.depth ? S.globalMenuStack.depth() : JSON.stringify(S.globalMenuStack);
+    assert(!S.globalMenuOpen || depth2 !== depth || S.menuInfoLines || S.exportDoneDialog, 'the menu acted on the click');
+    S.globalMenuOpen = false;
 });
 
 if (failed) { console.error('FAIL: test_automation_bank_gradient'); process.exit(1); }

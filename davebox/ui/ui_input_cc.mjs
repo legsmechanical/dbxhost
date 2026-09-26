@@ -200,17 +200,6 @@ function _onCC_jog(d1, d2) {
         forceRedraw();
         return;
     }
-    /* THE AUTOMATION BANK (latched): the click enters its menu / runs the
-     * selected op; Delete + click is the CLEAR CLIP shortcut (spec §2).
-     * Ahead of the generic Delete + click (which resets the bank's params)
-     * and of the alt-param toggle; no modal above is open at this point. */
-    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && S.moveCoRunTrack < 0 &&
-            S.activeBank === BANK_AUTOMATION && S.bankCardLatched) {
-        if (S.deleteHeld) autoBankClearClip(); else autoBankClick();
-        S.screenDirty = true;
-        forceRedraw();
-        return;
-    }
     /* Scene bake confirm: two-phase jog flow — loop count, then wrap yes/no. */
     if (d1 === 3 && d2 === 127 && S.confirmBakeScene) {
         if (S.confirmBakeSceneCondPhase) {
@@ -610,6 +599,20 @@ function modalDialogUp() {
         return;
     }
 
+    /* THE AUTOMATION BANK (latched): the click enters its menu / runs the
+     * selected op; Delete + click is the CLEAR CLIP shortcut (spec §2).
+     * Ahead of the generic Delete + click (which resets the bank's params)
+     * and of the alt-param toggle — but AFTER every confirm, dialog and the
+     * global menu above: it used to sit ahead of them, so a click on the
+     * menu's Export to Ableton (or any confirm) with this card up ran the
+     * card's op instead (Josh, 2026-09-25). */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && S.moveCoRunTrack < 0 &&
+            S.activeBank === BANK_AUTOMATION && S.bankCardLatched) {
+        if (S.deleteHeld) autoBankClearClip(); else autoBankClick();
+        S.screenDirty = true;
+        forceRedraw();
+        return;
+    }
     if (d1 === 3 && d2 === 127 && S.shiftHeld && S.deleteHeld && !S.sessionView) {
         /* ⭐ SHIFT + DELETE + JOG CLICK = the sequencer's MIDI FX CHAIN, and only
          * that (Josh, 2026-09-12): banks 1-4, and their automation.
