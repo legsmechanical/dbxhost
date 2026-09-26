@@ -73,6 +73,9 @@ export function autoBankRestoreMenu(sel) {
     a.menu = true; a.ops = null;
     a.loopEdit = false; a.rateEdit = false; a.scaleEdit = false;
     a.sel = Math.max(0, sel | 0);
+    /* Back from a jump: the menu takes the lane over again, on the page the
+     * pin was showing (cycleTarget still names it, so the row keeps it). */
+    lanePin = null;
 }
 
 /* The rows: every entry of the current clip (sorted by label so the list is
@@ -479,11 +482,53 @@ function syncPaView(t, c, target) {
  *   - the step row keeps the lane's cycle (S.autoCycle is held from the stash);
  *   - v1 covers davebox's own parameters (seq: targets, alt page included);
  *     any other target pops NO EDITOR and the hold stays an automation hold. */
+/* ⭐ THE LANE PIN (Josh, 2026-09-25: after a Shift + click jump the steps
+ * keep showing the lane until Back — "this should work on any automated
+ * param"). The jump leaves the AUTOMATION bank (a davebox bank, SOUND+CFG,
+ * MACROS) or opens an editor over it; the pin keeps the step row on the lane
+ * you jumped from — its cycle, page, colours and playhead — so a held step
+ * edits that step with the destination's knob. It lives only while the jump's
+ * own return crumb does: Back (autoBankRestoreMenu), any other way out of the
+ * destination, a track or clip change, Session view, co-run, or the lane
+ * being deleted ends it. */
+let lanePin = null;             /* { t, c, target, page, crumb: 'auto'|'sound', bank } */
+export function autoLanePinActive() { return !!lanePin; }
+export function autoLanePinClear() { lanePin = null; }
+export function autoLanePinJump(target, crumb, bank) {
+    const t = S.activeTrack, c = effectiveClip(t), a = st();
+    const page = (a.cycleTarget === target && a.cycleTrack === t && a.cycleClip === c) ? (a.cyclePage | 0) : 0;
+    lanePin = { t, c, target, page, crumb, bank };
+}
+function lanePinAlive(p) {
+    if (S.activeTrack !== p.t || effectiveClip(p.t) !== p.c || S.sessionView || S.moveCoRunTrack >= 0) return false;
+    /* The jump's return crumb: a davebox bank keeps S.autoReturn until a
+     * track-view Back spends it; sound mode keeps genReturn (with the lane's
+     * row) until it exits by any path. */
+    if (p.crumb === 'auto') return !!S.autoReturn && S.activeBank === p.bank;
+    return !!(S.genReturn && S.genReturn.autoSel != null);
+}
+/* True when the pin fed the step row this tick. */
+function lanePinTick() {
+    const p = lanePin;
+    if (!lanePinAlive(p)) { lanePin = null; return false; }
+    const a = st();
+    if (a.cycleTarget !== p.target || a.cycleTrack !== p.t || a.cycleClip !== p.c) {
+        a.cycleTarget = p.target; a.cycleTrack = p.t; a.cycleClip = p.c; a.cyclePage = p.page;
+    }
+    updateAutoCycle(p.t, p.c, p.target);
+    if (!S.autoCycle) { lanePin = null; return false; }     /* the lane is gone */
+    p.page = S.autoCycle.page;
+    syncPaView(p.t, p.c, p.target);
+    autoLaneValsTick(p.t, p.c, p.target);
+    feedLit(p.t, p.c, p.target);
+    return true;
+}
+
 let holdJump = null;
 export function autoHoldJumpActive() { return !!holdJump; }
 export function autoHoldJumpStep() { return holdJump ? holdJump.step : -1; }
 export function autoHoldJumpBegin(absStep) {
-    if (holdJump || !autoBankIsActive() || !S.bankCardLatched) return false;
+    if (holdJump || lanePin || !autoBankIsActive() || !S.bankCardLatched) return false;
     const cy = S.autoCycle, m = S.autoBankLit;
     if (!cy || cy.t !== S.activeTrack || !m || m.charCodeAt(absStep) !== 49) return false;
     const tgt = String(cy.target);
@@ -541,6 +586,7 @@ export function autoBankTick() {
         S.autoLaneVals = vk ? (vk.get(holdJump.cycle.target) || null) : null;
         return;
     }
+    if (lanePin && lanePinTick()) return;
     if (!autoBankIsActive() || !S.bankCardLatched || S.moveCoRunTrack >= 0) {
         if (viewSent) syncPaView(viewSent.t, 0, null);
         return;
@@ -555,6 +601,12 @@ export function autoBankTick() {
     if (target === null) { if (S.autoBank) S.autoBank.cycleTarget = null; return; }
     updateAutoCycle(t, c, target);
     if (S.autoCycle) autoLaneValsTick(t, c, target);
+    feedLit(t, c, target);
+}
+
+/* The lane's points (the step row's '1' map), read once per list generation
+ * and on a slow retry after a failed read. */
+function feedLit(t, c, target) {
     const key = t + ' ' + c + ' ' + automationListGen();
     if (litCache.key !== key) {
         /* A failed read (null) is not "no steps": keep the old map off the
@@ -597,7 +649,7 @@ function updateAutoCycle(t, c, target) {
  * page to, and the pad's grid is not what is on the buttons). */
 export function autoCyclePageStep(delta) {
     const cy = S.autoCycle;
-    if (!cy || cy.t !== S.activeTrack || !autoBankIsActive()) return false;
+    if (!cy || cy.t !== S.activeTrack || !(autoBankIsActive() || lanePin)) return false;
     const a = st();
     a.cyclePage = Math.max(0, Math.min(cy.pages - 1, (a.cyclePage | 0) + (delta < 0 ? -1 : 1)));
     cy.page = a.cyclePage;
