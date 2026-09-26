@@ -244,22 +244,21 @@ step('⚠ CONTROL: outside co-run, Copy is OURS and is not forwarded', () => {
  * ⚠ trackActiveBank must move too: soundExit and every track-switch site
  * restore activeBank from it, so setting only the live value gets undone by
  * whichever runs first. */
-step('⭑ entering co-run lands on the CLIP bank, not whatever was underneath', () => {
+step('⭑ entering co-run leaves the track on the bank it was on (2026-09-24)', () => {
+    /* Josh, 2026-09-25, accepting call b: co-run no longer moves the bank. The
+     * 08-24 clip-bank landing existed because the Sound menu used to put the
+     * track on SOUND+CFG, leaving whatever the jog last walked through
+     * underneath; the menu no longer touches the bank. */
     S.sessionView = false;
     S.moveCoRunTrack = -1;
     S.activeTrack = 2;
     S.trackChannel[2] = 1; S.trackRoute[2] = 1;
-    S.activeBank = 6;                       /* AUTOMATION — what SOUND + CONFIG leaves behind */
-    S.trackActiveBank[2] = 6;
+    S.activeBank = 3; S.trackActiveBank[2] = 3;
 
     corun.enterMoveNativeCoRun(2, 'sound');
 
-    if (S.activeBank !== 0)
-        throw new Error('co-run kept bank ' + S.activeBank +
-                        (S.activeBank === 6 ? ' (AUTOMATION — steps edit lanes, row reads dead)' : ''));
-    if (S.trackActiveBank[2] !== 0)
-        throw new Error('trackActiveBank still ' + S.trackActiveBank[2] +
-                        ' — soundExit or a track switch would put the old bank straight back');
+    if (S.activeBank !== 3 || S.trackActiveBank[2] !== 3)
+        throw new Error('co-run moved the bank: live ' + S.activeBank + ' recorded ' + S.trackActiveBank[2]);
     S.moveCoRunTrack = -1;
 });
 

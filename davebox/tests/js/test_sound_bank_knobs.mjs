@@ -253,7 +253,8 @@ step('holding Mute paints the eight knob rings (five levels, three unlit) — th
     cc(88, 0); ticks(1);
 });
 step('the bank card renders the level page (cells + footer), not the old gateway text', () => {
-    snd.soundExit(); GS.activeTrack = 2; snd.soundEnter(2, 2); ticks(3);   /* the entry lands on the CARD */
+    snd.soundExit(); GS.activeTrack = 2; GS.activeBank = GS.trackActiveBank[2] = 11;   /* on SOUND+CFG (2026-09-24) */
+    snd.soundEnter(2, 2); ticks(3);   /* the entry lands on the CARD */
     assert(snd.soundPickStateForTest().view === 18, 'on the prompt card, view ' + snd.soundPickStateForTest().view);
     GS.bankCardLatched = true;                  /* the bank-display law: the card shows while the bank view is open */
     draw();

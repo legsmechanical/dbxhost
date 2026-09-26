@@ -353,8 +353,7 @@ export function writeSidecar() {
      * here too — as this did whenever bank mode was latched — wrote SOUND+CFG
      * onto the track after any SHORTCUT into sound mode from a latched card,
      * and the track came back on it (Josh, 2026-09-24). */
-    if (!isSoundBank(S.activeBank))
-        S.trackActiveBank[S.activeTrack] = S.activeBank;
+    S.trackActiveBank[S.activeTrack] = S.activeBank;   /* every bank alike (2026-09-24) */
     /* ⭑ No identity, no write — and no fallback either. The path builders now
      * THROW rather than invent a destination, so this is the one place that has
      * to decide what a save with no project MEANS, and it means "not yet",

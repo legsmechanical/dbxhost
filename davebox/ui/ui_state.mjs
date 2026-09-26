@@ -889,38 +889,15 @@ export const S = {
     tvCardUntil: -1,
     tvCardText: '',
     tvCardFrac: 0,
-    /* Where a left turn off the top of SOUND + CONFIG lands, per track.
-     * SOUND + CONFIG RECORDS ITSELF in `trackActiveBank` like every other bank
-     * (Josh, 2026-08-25), so that array can no longer double as "the bank to
-     * come back to" the way it did while the identity was transient — this is
-     * that half, split out. -1 = no remembered origin, and the exit falls back
-     * to the bank immediately before SOUND + CONFIG on the jog (BANK_SOUND_PREV
-     * — where a plain left turn would have come from anyway), which is what a
-     * track restored from the sidecar or arrived at by a track switch gets.
-     * Session-only: the origin is a navigation crumb, not project state. */
     /* Where a GESTURE-entered generator editor returns to (Josh, 2026-08-26:
      * "it should exit back to the place the user was when they did the gesture
      * to enter it"). Stamped at the press, consumed by the exit, cleared by any
      * other way out so it can never go stale.
      * ⚠⚠ Lives on davebox's GLOBAL state, NOT sound mode's own `S` — setting it
      * there is silently inert. [[schwung-davebox-two-state-objects]]
-     * ⚠ It is NOT trackSoundOrigin: that crumb is only written when ARRIVING
-     * from a non-SOUND bank, so pressing the gesture while already on
-     * SOUND + CONFIG writes nothing and the exit would land on a stale origin
-     * from an earlier entry — the exact "banks land somewhere I did not leave
-     * them" bug the crumb was invented to cure. */
-    genReturn: null,            /* {track, wasActive, view, bank, latched, autoSel?} | null — autoSel: a LANE JUMP's row (plan 6c2) */
+     * The BANK is not in it: no gesture changes the bank (2026-09-24). */
+    genReturn: null,            /* {track, wasActive, view, latched, autoSel?} | null — autoSel: a LANE JUMP's row (plan 6c2) */
     autoReturn: null,           /* {track, bank, sel} | null — a lane jump onto a davebox bank; spent by the next track-view Back */
-    /* ONE-SHOT: "the next jog release must not tear the bank window down".
-     * Set by the sound-mode top-edge exit, which is a real bank ARRIVAL made
-     * mid-turn — so by the time the finger lifts, standDownBankDisplay's
-     * same-input-pass guard has expired and the window it armed is killed.
-     * Every other bank change commits ON the release and is protected for free.
-     * ⚠ Set only while the jog is actually touched, so a release is guaranteed
-     * to follow and consume it; otherwise it would linger and swallow the next
-     * unrelated release's teardown. */
-    bankWindowKeepOnRelease: false,
-    trackSoundOrigin: new Array(8).fill(-1),
     /* THE MACRO STORE (spec §2, 2026-09-02): per track, eight targets or null.
      * A target is a typed record — { kind: 'chain', comp, key } for a parameter
      * of a chain component (a Move bus's insert FX included: comp is the full
@@ -973,8 +950,6 @@ export const S = {
 
 
     pendingSoundEnterSilent: false, /* the queued entry is a RETURN, not a gesture — do not open the bank display window */
-    pendingSoundEnterMacros: false, /* the queued entry lands on the MACROS page, not the SOUND + CONFIG prompt */
-    pendingSoundEnterRecord: false,  /* the JOG's bank walk queued this entry: the only entry that RECORDS the bank on the track (Josh, 2026-09-05) */
     pendingSoundEnterTrack: -1, /* Sound mode entry queued from the Shift-release dispatch or the track menu. Entry's shadow_get/set_param traffic must run on the tick budget — hence the deferral. */
     pendingUndoSync: 0,
     pendingDefaultSetParams: [],

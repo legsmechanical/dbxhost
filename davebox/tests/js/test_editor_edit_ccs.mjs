@@ -160,7 +160,7 @@ step('setup: track view, Schwung routes, a claiming module on every slot', () =>
     globalThis.init();
     S.awaitingProjectSelect = false; S.ledInitComplete = true;
     S.sessionView = false; S.globalMenuOpen = false;
-    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOrigin[t] = -1; }
+    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; }
     S.playing = false;
     if (!globalThis.onMidiMessageInternal) throw new Error('no CC entry point');
 });
