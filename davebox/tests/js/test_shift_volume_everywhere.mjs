@@ -170,7 +170,7 @@ step('4. the AUTOMATION bank card', () => {
 
 step('5. SOUND + CONFIG cards (the block list)', () => {
     snd.soundExit(); ticks(2);
-    S.activeBank = 0; S.trackActiveBank[T] = 0; S.bankCardLatched = false;
+    S.activeBank = 11; S.trackActiveBank[T] = 11; S.bankCardLatched = false;   /* ON SOUND+CFG (2026-09-24) */
     snd.soundEnter(T, T); ticks(4);                /* lands on the door (prompt, resting) */
     cc(3, 127); cc(3, 0); ticks(3);                /* first click LATCHES the door (active-as-bank) */
     if (!snd.soundActive() || snd.soundViewForTest() !== 18)

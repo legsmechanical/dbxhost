@@ -14,7 +14,7 @@ import {
 } from './ui_constants.mjs';
 import { S, noteUndoUnit, markJsUndo } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { soundActive, soundOpen, soundExit, soundIsGlobal, soundInEditor, soundFollowTrack } from './ui_sound.mjs';
+import { soundActive, soundOpen, soundExit, soundIsGlobal, soundInEditor, soundFollowTrack, soundOnCard } from './ui_sound.mjs';
 import { isTextEntryActive } from '/data/UserData/schwung/shared/text_entry.mjs';
 import { stepRecExit } from './ui_record.mjs';
 import { clipHasContent } from './ui_pure.mjs';
@@ -594,17 +594,15 @@ export function _switchActiveTrack(newT) {
      * lands, and the NEXT detent then read "sound is open" and FOLLOWED — into
      * the following track's menu, active. Resting is not a screen you are in;
      * the follow is only for a screen you are in. */
-    const _follow = soundActive() && !soundIsGlobal() && !isTextEntryActive() &&
+    /* ⭑ A CARD does not follow (2026-09-24): the SOUND+CFG card and the MACROS
+     * page are the track's BANK, and a track switch shows the new track's own
+     * bank, as for every bank. Only a screen you are IN — the menu, an editor —
+     * follows (09-05), and it changes no bank. */
+    const _follow = soundActive() && !soundOnCard() && !soundIsGlobal() && !isTextEntryActive() &&
                     S.trackPadMode[newT | 0] !== PAD_MODE_CONDUCT;
-    if (soundOpen() && !soundIsGlobal() && !_follow) soundExit({ leaving: true });
-    /* The outgoing track remembers its bank — unless that bank is SOUND +
-     * CONFIG / MACROS reached by a GESTURE (Shift+hold, Shift+pad, a follow),
-     * which never records (Josh, 2026-09-05: "NOTHING should set a bank other
-     * than the usual bank jog"). The walk records a sound bank at its ENTRY
-     * (takeBankIdentity / soundSetBank), so nothing to do here; recording on
-     * "latched" also caught a shortcut taken from a latched card (09-24). */
-    if (!isSoundBank(S.activeBank))
-        S.trackActiveBank[S.activeTrack] = S.activeBank;
+    if (soundOpen() && !soundIsGlobal() && !_follow) soundExit();
+    /* The outgoing track remembers its bank, whatever it is. */
+    S.trackActiveBank[S.activeTrack] = S.activeBank;
     S.activeTrack = newT | 0;
     S.instrAbbrevAt = 0;                  /* the header's [instrument] follows the track */
     S.activeBank = S.trackActiveBank[S.activeTrack] | 0;
@@ -623,14 +621,11 @@ export function _switchActiveTrack(newT) {
      * that FOLLOW the track (Shift+pad, launchers, remote UI) are unaffected.
      * SILENT: arriving is not a bank gesture, so the display window stays shut. */
     if (_follow) {
-        /* The follow takes the bank identity for the new track itself
-         * (takeBankIdentity inside the retarget), so the recorded bank and the
-         * open screen move together — the same law as every other arrival. */
+        /* The screen follows; the bank is the new track's own (2026-09-24). */
         soundFollowTrack(S.activeTrack);
     } else if (isSoundBank(S.activeBank)) {
         S.pendingSoundEnterTrack = S.activeTrack;
         S.pendingSoundEnterSilent = true;
-        S.pendingSoundEnterMacros = (S.activeBank === BANK_MACROS);
     }
     if (S.activeBank === 7) S.allLanesConfirmed = false;
     /* Focused-clip-by-default: ONLY while transport is running — entering a track

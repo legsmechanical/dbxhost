@@ -482,8 +482,10 @@ step('setup: track 5 is a Move track on Move 2; two snapshots hold its bus FX an
     GS.trackMacros[TM][KM] = { v: 0, legs: [{ kind: 'morph', snaps: [0, 1], lo: 0, hi: 1 }] };
 });
 step('the target picker offers SnapMorph on a Move track', () => {
+    /* ⚠ Counted from BEFORE the entry: a track already on MACROS opens straight
+     * onto its page (2026-09-24), so the seed can start inside these ticks. */
+    reads = [];
     snd.soundEnter(TM, TM); ticks(3); snd.soundShowMenu(); snd.soundSetBank(BANK_MACROS);
-    reads = [];                                              /* the seed starts on the next tick */
     ticks(2);
     const names = snd.soundKnobTargetsForTest().map(t => t.name);
     assert(names.indexOf('SnapMorph') >= 0, 'offered on a Move track: ' + JSON.stringify(names));

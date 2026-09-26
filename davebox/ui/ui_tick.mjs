@@ -63,7 +63,7 @@ import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
          SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS, SESS_KNOB_MODES, faderStep, faderWire, faderFormatDb, faderGainToTravel, SHIFT_VOL_THROW, trackLevelCardText} from './ui_engine.mjs';
-import { soundEntryRecords, soundActive, soundOpen, soundResting, soundEnter, soundEnterMove, soundExit,
+import { soundHasPendingAction, soundActive, soundOpen, soundResting, soundEnter, soundEnterMove, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
     soundEnteredInSession, soundConsumeLedDirty,
     soundConsumeCoRunRequest, soundShowMenu, soundSetBank, midiVal, midiSendValue } from './ui_sound.mjs';
@@ -1446,7 +1446,7 @@ export function _tickImpl() {
          * through into sound-mode handling (the S+C-as-active-bank bug).
          *
          * SILENT — arriving is not a bank gesture. ⚠ Conductor tracks never
-         * take this bank (takeBankIdentity skips them); the pad-mode check keeps
+         * have this bank on their walk; the pad-mode check keeps
          * a hand-edited sidecar from opening a screen they have no row for. */
         /* ⭑ BOTH sound banks open AT REST (unlatched — soundResting, 2026-09-03):
          * their knobs (the macros, the levels) work on the overview like any
@@ -1458,7 +1458,13 @@ export function _tickImpl() {
                 && S.trackPadMode[S.activeTrack] !== PAD_MODE_CONDUCT) {
             S.pendingSoundEnterTrack = S.activeTrack;
             S.pendingSoundEnterSilent = true;
-            S.pendingSoundEnterMacros = (S.activeBank === BANK_MACROS);
+        } else if (soundOpen() && soundResting() && !isSoundBank(S.activeBank)
+                   && S.pendingSoundEnterTrack < 0 && !soundHasPendingAction()) {
+            /* The converse (2026-09-24): a resting sound mode whose track is no
+             * longer on SOUND+CFG / MACROS — moved off by a non-jog writer such
+             * as the Chord layout landing — closes. The resting mode exists only
+             * to serve those two banks' knobs. */
+            soundExit();
         }
         if (S.pendingSoundEnterTrack >= 0) {
             const _st = S.pendingSoundEnterTrack;
@@ -1471,12 +1477,7 @@ export function _tickImpl() {
             S.pendingSoundEnterMenu = false;
             const _silent = S.pendingSoundEnterSilent;
             S.pendingSoundEnterSilent = false;
-            const _macros = S.pendingSoundEnterMacros;
-            S.pendingSoundEnterMacros = false;
-            const _record = S.pendingSoundEnterRecord;
-            S.pendingSoundEnterRecord = false;
             if (_st === S.activeTrack && !soundOpen()) {
-                soundEntryRecords(_record);          /* only the jog's walk records (2026-09-05) */
                 /* The ROUTE picks the flavour: a Move-routed track's sound is
                  * its Move instrument bus, a Schwung-routed one's is its chain.
                  * Slot is addressed directly per track — always resolvable. */
@@ -1487,10 +1488,8 @@ export function _tickImpl() {
                  * the menu. Consumed here so the route logic stays in one
                  * place. */
                 if (_wantMenu) soundShowMenu();
-                /* The bank named MACROS: the same entry, landing on its page
-                 * (the second identity of sound mode — see BANK_MACROS). */
-                else if (_macros) soundSetBank(BANK_MACROS, _record);
-                soundEntryRecords(false);
+                /* The card / MACROS page comes from the track's bank, chosen
+                 * inside soundEnter (2026-09-24) — the entry never sets the bank. */
                 /* A RETURN, not a gesture: the user switched tracks, they did
                  * not ask to see this screen. Both entry paths stamp the bank
                  * display window unconditionally (Shift+Note NEEDS that — see
@@ -1563,7 +1562,7 @@ export function _tickImpl() {
                  * default bank, which is the reset he saw.
                  * ⚠ Only the VIEW toggle. Shift+Note/Session still CLOSES (it is
                  * the deliberate way out), and lands on the default bank. */
-                soundExit({ leaving: true });
+                soundExit();                 /* never touches the bank (2026-09-24) */
                 invalidateLEDCache();
                 forceRedraw();
             }

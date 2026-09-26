@@ -183,9 +183,9 @@ step('⭑ Shift+jog FOLLOWS (2026-09-05) — the new Move track lands on ITS bus
      * failure modes. */
     snd.soundExit();
     S.trackRoute[5] = 1; S.trackRoute[6] = 1;      /* Move-routed */
-    S.trackActiveBank[5] = 11;                     /* never persisted, but prove it is not read */
+    S.trackActiveBank[5] = 11;                     /* track 5 is ON SOUND + CONFIG */
     S.trackActiveBank[6] = 3;                      /* track 6's OWN bank */
-    S.activeTrack = 5;
+    S.activeTrack = 5; S.activeBank = 11;
     S.ledInitComplete = true;
     snd.soundEnterMove(5);
     /* ⚠ Entry lands on the BANK'S PROMPT now (Josh, 2026-08-28: the bank is a
@@ -193,7 +193,7 @@ step('⭑ Shift+jog FOLLOWS (2026-09-05) — the new Move track lands on ITS bus
     snd.soundShowMenu();
     if (!snd.soundOpen()) throw new Error('control failed: sound mode did not open');
     if (S.activeBank !== 11)
-        throw new Error('control failed: the bank identity was not taken (' + S.activeBank + ')');
+        throw new Error('control failed: track 5 is not on SOUND + CONFIG (' + S.activeBank + ')');
 
     S.bankSelectTick = -1;                         /* the Shift edge's clear */
     shift(true);
@@ -217,8 +217,9 @@ step('⭑ Shift+jog FOLLOWS (2026-09-05) — the new Move track lands on ITS bus
      * closing the screen. */
     if (!snd.soundActive())
         throw new Error('sound mode CLOSED on the switch — the retired 08-24 rule');
-    if (S.activeBank !== 11)
-        throw new Error('the new track did not land on SOUND + CONFIG: bank ' + S.activeBank);
+    /* Since 2026-09-24: the MENU follows, the bank does not — track 6 is on its own. */
+    if (S.activeBank !== 3)
+        throw new Error('the new track is not on its own bank 3: bank ' + S.activeBank);
     if (snd.soundTrack() !== 6) throw new Error('sound mode still on track ' + snd.soundTrack());
     if (_stamp >= 0)
         throw new Error('the switch re-opened the bank display window (tick ' + _stamp + ')');
@@ -254,7 +255,7 @@ step('⭑ the follow does NOT record SOUND + CONFIG on the tracks it lands on �
      * banks by construction. Only a JOG walk (bank mode latched, the bank
      * walk in ui_input_cc) writes trackActiveBank. */
     snd.soundExit();
-    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOrigin[t] = -1; }
+    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; }
     S.trackActiveBank[2] = 6;                  /* track 2 starts on AUTOMATION */
     S.trackActiveBank[3] = 1;                  /* track 3's own bank */
     S.activeTrack = 2;
@@ -262,7 +263,8 @@ step('⭑ the follow does NOT record SOUND + CONFIG on the tracks it lands on �
     S.ledInitComplete = true;
     S.bankCardLatched = false;                 /* a GESTURE entry, not the jog */
     snd.soundEnter(2, 2);
-    if (S.activeBank !== BANK_SOUND) throw new Error('control: identity not taken for the OPEN mode');
+    /* Since 2026-09-24: opening sound mode by gesture takes no bank at all. */
+    if (S.activeBank !== 6) throw new Error('a gesture entry changed the live bank to ' + S.activeBank);
     if (S.trackActiveBank[2] !== 6) throw new Error('a gesture entry RECORDED the bank on track 2: ' + S.trackActiveBank[2]);
     snd.soundShowMenu();                       /* a screen you are IN (the prompt at rest would not follow) */
 
@@ -301,7 +303,7 @@ step('⚠ a track CLOSED deliberately does not come back on SOUND + CONFIG', () 
     /* Leaving remembers; CLOSING hands the bank back. Without this half the
      * recording is write-only and every track you ever opened the screen on
      * would re-open it forever — the opposite bug, and just as silent. */
-    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOrigin[t] = -1; }
+    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; }
     S.trackActiveBank[2] = 6; S.trackActiveBank[3] = 1;
     S.activeTrack = 2;
     S.activeBank = 6;                          /* the live mirror agrees — it is
@@ -360,46 +362,44 @@ step('⭑ Shift+PAD means exactly what Shift+jog means — one rule, every route
         new Uint8Array([0x90, 68 + t, 127]));
 
     snd.soundExit();
-    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackSoundOrigin[t] = -1; }
-    S.trackActiveBank[2] = 6;                  /* track 2 starts on AUTOMATION */
-    S.trackActiveBank[4] = 1;                  /* track 4's own bank */
+    for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; }
+    /* Since 2026-09-24: track 2 is ON SOUND + CONFIG (the jog put it there); track 4 is
+     * on bank 1. The latched card is the track's BANK, so Shift+pad — like
+     * Shift+jog — shows each track's own bank, and coming back restores it. */
+    S.trackActiveBank[2] = BANK_SOUND;
+    S.trackActiveBank[4] = 1;
     S.activeTrack = 2;
-    S.activeBank = 6;
+    S.activeBank = BANK_SOUND;
     S.sessionView = false;
     S.ledInitComplete = true;
+    S.bankCardLatched = true;
     snd.soundEnter(2, 2);
-    if (S.activeBank !== BANK_SOUND) throw new Error('control: identity not taken');
-    S.bankCardLatched = true;                  /* bank mode: the return re-opens
-                                                * only here (the one law) */
+    if (!snd.soundActive()) throw new Error('control: the SOUND + CONFIG card is not up');
 
     shift(true);
-    /* The Shift edge clears the window (both edges do); with the switch now
-     * FOLLOWING, nothing else clears the stamp soundEnter above legitimately
-     * wrote, so mirror the edge here or the read below sees that entry's stamp. */
     S.bankSelectTick = -1;
     padSelect(4); globalThis.tick();
     if (S.activeTrack !== 4)
         throw new Error('control: Shift+pad did not select track 4 (' + S.activeTrack + ')');
-    /* One rule, every route — and since 2026-09-05 that rule is the FOLLOW. */
-    if (!snd.soundActive())
-        throw new Error('Shift+pad CLOSED sound mode — it must mean what the jog means, which follows now');
-    if (S.activeBank !== BANK_SOUND)
-        throw new Error('track 4 did not land on SOUND + CONFIG: ' + S.activeBank);
+    if (S.activeBank !== 1)
+        throw new Error('track 4 is not on its own bank 1: ' + S.activeBank);
+    if (snd.soundActive())
+        throw new Error('the SOUND + CONFIG card followed onto a track on bank 1');
 
     /* ...and back onto track 2, which was LEFT on the bank: it returns. */
-    padSelect(2); globalThis.tick();
+    padSelect(2); globalThis.tick(); globalThis.tick();
     const _stamp = S.bankSelectTick;           /* ⚠⚠ read with Shift still DOWN */
     shift(false);
     if (S.activeTrack !== 2) throw new Error('did not return to track 2');
-    if (!snd.soundActive())
-        throw new Error('Shift+pad back onto the track did not restore SOUND + CONFIG');
     if (S.activeBank !== BANK_SOUND)
         throw new Error('came back on bank ' + S.activeBank);
+    if (!snd.soundOpen())
+        throw new Error('Shift+pad back onto the track did not restore SOUND + CONFIG');
     if (_stamp >= 0)
         throw new Error('the return opened the bank display window (tick ' + _stamp + ')');
     snd.soundExit();
     S.bankCardLatched = false;
-    S.activeBank = 0;
+    S.activeBank = 0; S.trackActiveBank[2] = 0;
 });
 
 step('⚠ a SESSION bus is not a track sound — a track switch leaves it alone', () => {

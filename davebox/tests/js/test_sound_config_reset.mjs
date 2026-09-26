@@ -82,6 +82,7 @@ function enterTrack(t) {
     GS.sessionView = false;
     for (let i = 0; i < 8; i++) GS.trackRoute[i] = 0;   /* all Schwung */
     GS.activeTrack = t;
+    GS.activeBank = GS.trackActiveBank[t] = 11;         /* on SOUND+CFG: its card is the entry (2026-09-24) */
     snd.soundEnter(t, t);
     ticks(4);
 }

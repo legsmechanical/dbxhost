@@ -86,6 +86,12 @@ the section into a versioned heading at release time.
   cycle, or a melodic one with its own Loop, used to export once and then hold
   its last value for the rest of the clip in Live. It now repeats across the
   whole clip, at its own length and rate.
+- **SOUND + CONFIG and MACROS behave like every other bank.** A track on them stays
+  there through suspend, track switches and Back; opening the Sound menu by a
+  shortcut no longer moves the bank (Back from it returns to where you were, never
+  to STEP or to a SOUND + CONFIG card you did not choose); switching tracks from
+  the card shows the new track's own bank; and working in a Move instrument's
+  editor no longer resets the bank.
 - **Arp octaves now join the notes the style orders.** Down, Up/Down, Down/Up,
   Converge and Diverge play across the whole octave range instead of repeating
   the phrase per octave, and negative octaves extend downward. Applies to the

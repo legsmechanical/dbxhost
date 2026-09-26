@@ -60,7 +60,7 @@ import { sessStripTargets } from './ui_engine.mjs';
 import { seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam } from './ui_sound.mjs';
-import { soundActive, soundOpen, soundExit, soundSetBank, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
+import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, soundEnterBuses, soundEnterMasterFx, macroClearConfirmAnswer,
     macroClearConfirmReset, macroClearConfirmOpen } from './ui_sound.mjs';
@@ -1342,11 +1342,10 @@ function seqAutoEdit(track, bank, k, altMode, nv, cur) {
  * opens — the record moves, the header and knobs follow). */
 function walkBanks(delta, rest) {
     const cyc = bankCycleFor(S.activeTrack);
-    /* ⚠ A queued sound-mode entry IS the current position: the live mirror
-     * only takes the bank when the entry lands (a tick later), and a second
-     * detent before that must walk on from the queued stop, not re-select it. */
-    const cur = (S.pendingSoundEnterTrack === S.activeTrack)
-        ? (S.pendingSoundEnterMacros ? BANK_MACROS : BANK_SOUND) : S.activeBank;
+    /* The bank is recorded the moment the walk lands on it (2026-09-24), SOUND+CFG
+     * and MACROS included, so the live bank IS the position even while their
+     * sound-mode entry is still queued for the next tick. */
+    const cur = S.activeBank;
     const at = cyc.indexOf(cur);
     const next = Math.max(0, Math.min(cyc.length - 1, (at < 0 ? 0 : at) + delta));
     if (next !== at) {
@@ -1370,23 +1369,25 @@ export function applyBankPick(rest) {
     S.bankPickerSel = -1;
     if (idx < 0 || idx >= cyc.length) return;
     const next = cyc[idx];
-    /* SOUND + CONFIG and MACROS are the two bank identities of SOUND MODE.
-     * Closed: queue the entry, naming which of the two to land on. Open: the
-     * mode switches screens in place — the walk between them never tears the
-     * mode down (soundSetBank records the new identity). */
+    /* SOUND + CONFIG and MACROS are banks like any other (2026-09-24): recorded
+     * and saved the moment the walk lands, exactly as below. Their screens are
+     * sound mode's, so a closed mode is queued to open on the next tick (entry
+     * reads the chain on the tick budget); an open one switches card in place. */
     if (isSoundBank(next)) {
-        if (!soundOpen()) {
+        if (soundOpen() && !soundIsGlobal()) {
+            soundSetBank(next);
+        } else {
+            S.activeBank = next;
+            S.trackActiveBank[t] = next;
             S.globalMenuOpen = false;
             S.lastSentMenuEditValue = null;
             S.pendingSoundEnterTrack = t;
-            S.pendingSoundEnterMacros = (next === BANK_MACROS);
-            S.pendingSoundEnterRecord = true;        /* the jog walked here: this entry records the bank */
-            if (rest) S.pendingSoundEnterSilent = true; else armBankDisplay();
-        } else if (next !== S.activeBank) {
-            soundSetBank(next);
-            if (!rest) armBankDisplay();
+            if (rest) S.pendingSoundEnterSilent = true;
         }
+        if (!rest) armBankDisplay();
+        writeSidecar();
         S.screenDirty = true;
+        forceRedraw();
         return;
     }
     if (next === S.activeBank) { forceRedraw(); return; }
@@ -1426,14 +1427,16 @@ function autoLaneJump() {
          * the track's flavour — chain or Move bus — and can land on MACROS.
          * Stamped with the SAME return crumb Shift+Note's hold uses, plus the
          * lane: soundGestureReturn brings you back into the menu. */
-        S.genReturn = { track: t, wasActive: false, view: -1, bank: BANK_AUTOMATION,
-                        latched: true, autoSel: j.sel };
+        S.genReturn = { track: t, wasActive: false, view: -1, latched: true, autoSel: j.sel };
+        /* Recorded where it lands, like the davebox-bank jump below (2026-09-24). */
+        if (soundOpen()) soundExit();
+        S.activeBank = macros ? BANK_MACROS : BANK_SOUND;
+        S.trackActiveBank[t] = S.activeBank;
         S.globalMenuOpen = false;
         S.lastSentMenuEditValue = null;
         S.pendingSoundEnterTrack = t;
-        S.pendingSoundEnterMacros = !!macros;
-        S.pendingSoundEnterRecord = false;          /* a gesture, not the jog's walk */
         armBankDisplay();
+        writeSidecar();
     };
     if (midiTargetIsMidi(tgt)) { soundCard(true); return; }
     if (tgt.indexOf('seq:') === 0) {
@@ -2200,7 +2203,7 @@ function returnToOverview() {
      *    that track's screen would then not come back. Resync from the RECORD,
      *    never by picking a default — a genuine BANK_SOUND memory must survive. */
     if (soundOpen()) {
-        soundExit({ leaving: true });
+        soundExit();
         if (isSoundBank(S.activeBank) &&
             !isSoundBank(S.trackActiveBank[S.activeTrack] | 0))
             S.activeBank = S.trackActiveBank[S.activeTrack] | 0;
@@ -2514,10 +2517,12 @@ if (!wantInstrument) {
  * ⚠ This crumb is the one the CLOSER used to stamp. Removing the closer left
  * it written by nobody, which I flagged as dead; it was not dead, it was
  * waiting for the gesture that needed it. */
+/* ACTIVE, not merely open: a track resting on SOUND+CFG / MACROS holds sound
+ * mode open behind the overview, and that is not "already in it" — Back must
+ * retrace to the overview (or the card), not to a screen you were not on. */
 S.genReturn = { track: _gt,
-                wasActive: soundOpen(),
-                view: soundOpen() ? soundViewForTest() : -1,
-                bank: S.activeBank | 0,
+                wasActive: soundActive(),
+                view: soundActive() ? soundViewForTest() : -1,
                 latched: !!S.bankCardLatched };   /* the card vs the overview (2026-09-05) */
 if (S.trackRoute[_gt] === 1) {
     enterMoveNativeCoRun(_gt);

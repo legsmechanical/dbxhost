@@ -141,16 +141,17 @@ function assertBackToLane(idx, what, cleared) {
     assert(S.trackActiveBank[T] === BANK_AUTOMATION,
            what + ': the track is left recorded on bank ' + S.trackActiveBank[T]);
 }
-/* A gesture entry does NOT record the bank it lands on (the rule since
- * 2026-09-05: only the jog's walk records) — or leaving without Back would
- * leave the track sitting on a bank it was sent to.
- * ⚠ NOT asserted for the MACROS landing: writeSidecar records any bank reached
- * while the card is LATCHED ("latched means the jog walked there",
- * ui_persistence), and the jump keeps the card up. The return corrects it
- * (asserted above), so the wrinkle is confined to leaving by another route. */
+/* The MODULE-editor jump opens an editor, which is not a bank: it records
+ * nothing. */
 function assertNotRecorded(what) {
     assert(S.trackActiveBank[T] === BANK_AUTOMATION,
            what + ': the jump RECORDED bank ' + S.trackActiveBank[T] + ' on the track');
+}
+/* A jump onto a BANK records it, SOUND+CFG and MACROS included, like the
+ * davebox-bank jump always has (Josh, 2026-09-25, call c, 2026-09-25). */
+function assertRecorded(what, bank) {
+    assert(S.trackActiveBank[T] === bank,
+           what + ': the jump did not record bank ' + bank + ' (track on ' + S.trackActiveBank[T] + ')');
 }
 
 step('CONTROL: a PLAIN click on a lane still opens its ops', () => {
@@ -185,7 +186,7 @@ step('⭐ level lane -> SOUND + CONFIG; Back -> the menu on that lane', () => {
     const idx = openMenuOn(TARGETS.level);
     shiftClick(); ticks(4);
     assert(snd.soundOpen() && S.activeBank === BANK_SOUND, 'not on SOUND + CONFIG: bank ' + S.activeBank);
-    assertNotRecorded('level');
+    assertRecorded('level', BANK_SOUND);
     assertBackToLane(idx, 'level', true);
 });
 
@@ -193,6 +194,7 @@ step('⭐ MIDI lane -> MACROS; Back -> the menu on that lane', () => {
     const idx = openMenuOn(TARGETS.midi);
     shiftClick(); ticks(4);
     assert(snd.soundOpen() && S.activeBank === BANK_MACROS, 'not on MACROS: bank ' + S.activeBank);
+    assertRecorded('midi', BANK_MACROS);
     assertBackToLane(idx, 'midi', true);
 });
 
