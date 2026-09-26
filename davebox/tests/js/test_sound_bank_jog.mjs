@@ -69,6 +69,9 @@ const persistMod = await import('../../ui/ui_persistence.mjs');
 const bridgeMod = await import('../../ui/ui_dsp_bridge.mjs');
 const pureMod = await import('../../ui/ui_pure.mjs');
 const { PAD_MODE_DRUM, PAD_MODE_CONDUCT, PAD_MODE_MELODIC_SCALE, BANK_WHEN, BANK_SOUND, BANK_STEP } = constsMod;
+/* The melodic walk's stop before SOUND + CONFIG: SEQ ARP, the last FX bank
+ * (categories, 2026-09-26). Drum's is still STEP. */
+const MEL_BEFORE_SOUND = 4;
 
 const send  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 const note  = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0x90, d1, d2]));
@@ -153,8 +156,8 @@ step('control: a right turn from CLIP moves to NOTE FX (the bank walk is live)',
     if (snd.soundActive()) throw new Error('entered sound mode from CLIP');
 });
 
-step('⭑ melodic: right past STEP (the last clip-side bank) enters SOUND + CONFIG', () => {
-    reset(PAD_MODE_MELODIC_SCALE, BANK_STEP);
+step('⭑ melodic: right past SEQ ARP (the last FX bank) enters SOUND + CONFIG', () => {
+    reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
     right();
     if (!snd.soundActive()) throw new Error('sound mode did not open');
     /* The screen IS a bank (Josh, 2026-08-23) and it RECORDS ITSELF like every
@@ -184,14 +187,14 @@ step('⭑⭑ ...and the next right turn WALKS THE BANKS — the prompt is a bank
      * right turn correctly clamps and proves nothing. My first version of this
      * step turned right and read the clamp as a swallowed jog. */
     left();
-    if (S.activeBank !== BANK_STEP)
+    if (S.activeBank !== MEL_BEFORE_SOUND)
         throw new Error('the jog did not walk off the bank — still on ' + S.activeBank);
 });
 
 step('⚠ CONTROL: the CLICK is what opens the menu, and then the jog walks ROWS', () => {
     /* The other half. Without this the step above passes on a build where the
      * jog is declined because the menu is unreachable at all. */
-    reset(PAD_MODE_MELODIC_SCALE, BANK_STEP);
+    reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
     right();                            /* onto the bank -> its prompt */
     snd.soundTick();
     send(3, 127); send(3, 0);           /* jog click — the prompt's door */
@@ -219,27 +222,27 @@ step('⭑ the MENU top edge CLAMPS; Back exits to the CARD; the card walks out',
         throw new Error('Back did not land on the card (view ' + snd.soundViewForTest() + ')');
     left(); globalThis.tick();
     if (snd.soundActive()) throw new Error('the card did not walk out on a left turn');
-    if (S.activeBank !== BANK_STEP) throw new Error('did not land on STEP (the bank before SOUND + CONFIG): ' + S.activeBank);
+    if (S.activeBank !== MEL_BEFORE_SOUND) throw new Error('did not land on SEQ ARP (the bank before SOUND + CONFIG): ' + S.activeBank);
     left();
-    /* 5 (LIVE ARP) since 2026-09-03: the old AUTO bank 6 left the walk; AUTOMATION is last, after MACROS. */
-    if (S.activeBank !== 5) throw new Error('bank walk did not resume leftward onto LIVE ARP: ' + S.activeBank);
+    /* Melodic since 2026-09-26: … DELAY, SEQ ARP, SOUND + CONFIG (FX, then MIX). */
+    if (S.activeBank !== 3) throw new Error('bank walk did not resume leftward onto DELAY: ' + S.activeBank);
 });
 
-step('⭑ drum: right past STEP (after the end of BANK_CYCLE_DRUM) enters too', () => {
-    reset(PAD_MODE_DRUM, BANK_STEP);
+step('⭑ drum: right past DELAY (the last FX bank) enters too', () => {
+    reset(PAD_MODE_DRUM, 3);
     right();
     if (!snd.soundActive()) throw new Error('sound mode did not open on a drum track');
     snd.soundTick();
     left(); globalThis.tick();                         /* the CARD walks out */
     if (snd.soundActive()) throw new Error('the card did not walk out on a drum track');
-    if (S.activeBank !== BANK_STEP) throw new Error('did not land on STEP: ' + S.activeBank);
+    if (S.activeBank !== 3) throw new Error('did not land on DELAY: ' + S.activeBank);
 });
 
-step('⚠ conductor: the cycle ends at STEP — no sound-mode bank', () => {
-    reset(PAD_MODE_CONDUCT, BANK_STEP);
+step('⚠ conductor: the cycle ends at TIMING — no sound-mode bank', () => {
+    reset(PAD_MODE_CONDUCT, BANK_WHEN);
     right();
     if (snd.soundActive()) throw new Error('a Conductor track entered sound mode from the jog');
-    if (S.activeBank !== BANK_STEP) throw new Error('bank moved: ' + S.activeBank);
+    if (S.activeBank !== BANK_WHEN) throw new Error('bank moved: ' + S.activeBank);
 });
 
 step('⚠ a deferred entry still SHOWS, and the jog leaves by walking the cycle', () => {
@@ -259,7 +262,7 @@ step('⚠ a deferred entry still SHOWS, and the jog leaves by walking the cycle'
      * straight to the bank walk, so leaving is the ordinary cycle step to
      * AUTOMATION. Returning to the ORIGIN is BACK's job, asserted below. */
     left();
-    if (S.activeBank !== BANK_STEP)
+    if (S.activeBank !== MEL_BEFORE_SOUND)
         throw new Error('the jog did not walk off the bank: ' + S.activeBank);
 });
 
@@ -292,7 +295,7 @@ step('⭑⭑ the TOP LEVEL keeps THE ONE LAW: bank mode or knob peek, never othe
      * Every branch here fails silently on device (a card that never yields
      * just looks like the old behaviour). */
     const jogTouch   = (on) => globalThis.onMidiMessageInternal(new Uint8Array([on ? 0x90 : 0x80, 9, on ? 127 : 0]));
-    reset(PAD_MODE_MELODIC_SCALE, BANK_STEP);
+    reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
     right();                             /* enter SOUND + CONFIG, in bank mode */
     if (!snd.soundActive()) throw new Error('did not enter');
     snd.soundTick();
@@ -355,7 +358,7 @@ step('⭑⭑ the bank RECORDS ITSELF: sidecar write + Shift+jog track switch', (
      * the co-run landing and "banks land somewhere I did not leave them" all
      * read that stale value. Josh ruled it records itself, like all the others. */
     const { writeSidecar } = persistMod;
-    reset(PAD_MODE_MELODIC_SCALE, BANK_STEP);
+    reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
     right();                             /* enter from STEP */
     if (!snd.soundActive() || S.activeBank !== BANK_SOUND)
         throw new Error('control: not in sound mode with the identity on');
@@ -413,8 +416,8 @@ step('⭑ BACK lands on the bank you CAME FROM — same as the jog\'s left turn'
      * here: whichever way you leave, you land on the bank you came from. Driven
      * through the real CC — MoveBack is 51 — so this proves dispatch, not
      * spelling. */
-    reset(PAD_MODE_MELODIC_SCALE, BANK_STEP);
-    right();                                   /* enter from STEP (the bank before it) */
+    reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
+    right();                                   /* enter from SEQ ARP (the bank before it) */
     if (!snd.soundActive()) throw new Error('control: did not enter sound mode');
     send(51, 127); send(51, 0); globalThis.tick();
     /* ⚠ 2026-09-03: Back KEEPS the bank (unlatches; the mode rests). The
@@ -425,12 +428,12 @@ step('⭑ BACK lands on the bank you CAME FROM — same as the jog\'s left turn'
 
     /* ...and the jog agrees, which is now the point rather than the contrast.
      * The jog's exit lives on the CARD now (the menu clamps, 2026-09-01). */
-    reset(PAD_MODE_MELODIC_SCALE, BANK_STEP);
+    reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
     right();
     snd.soundTick();
     left(); globalThis.tick();
     if (snd.soundActive()) throw new Error('control: the card\'s left turn did not exit');
-    if (S.activeBank !== BANK_STEP)
+    if (S.activeBank !== MEL_BEFORE_SOUND)
         throw new Error('the jog exit landed on ' + S.activeBank + ', not the bank it came from');
     /* ⭑ AND IT MUST ARM THE DISPLAY WINDOW, like every other bank change on the
      * walk. Josh, on hardware 2026-08-26: "scrolling back from the top of the
@@ -502,7 +505,7 @@ step('⭑ NOTE/SESSION is a LEAVE: the view toggle must not reset the track\'s b
      * back: the first assertion is that the VIEW actually changed. */
     const noteSession = () => { send(50, 127); globalThis.tick(); send(50, 0); globalThis.tick(); };
 
-    reset(PAD_MODE_MELODIC_SCALE, BANK_STEP);
+    reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
     right();                                   /* into SOUND + CONFIG */
     if (!snd.soundActive()) throw new Error('control: did not enter sound mode');
 
@@ -564,7 +567,7 @@ step('⭑⭑ THE FIX, end to end: a track left on SOUND + CONFIG comes back on i
      * was 0-7, so a persisted 11 loaded SILENTLY as 0) -> the tick invariant
      * re-opens the screen, because BANKS[11] is a stub that draws nothing. */
     const { writeSidecar } = persistMod;
-    reset(PAD_MODE_MELODIC_SCALE, BANK_STEP);
+    reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
     right();                                   /* enter SOUND + CONFIG from AUTOMATION */
     if (!snd.soundActive()) throw new Error('control: did not enter sound mode');
 

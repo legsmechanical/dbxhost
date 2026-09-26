@@ -679,11 +679,11 @@ screen('step-editor-drum', '7.1 Placing hits', 'Editing a held drum hit',
 
 /* 8 — Conductor banks */
 const COND_BANKS = [
-    [0, 'bank-cond-conduct', 'C-CONDUCT', 'The Conductor\'s own timing and direction, plus Cond Lock (CDLK) on knob 6.'],
-    [1, 'bank-cond-notefx', 'C-NOTE FX', 'Shapes the Conductor\'s note before the shift: octave, offset and random.'],
-    [C.BANK_RESPONDER, 'bank-cond-responder', 'C-RESPONDER', 'On = the track follows the Conductor.'],
-    [C.BANK_OCTAVE, 'bank-cond-octave', 'C-OCTAVE', 'An extra octave per track.'],
-    [C.BANK_WHEN, 'bank-cond-when', 'C-WHEN', 'Per track: Next (at its next note) or Now (retriggered at once).'],
+    [0, 'bank-cond-conduct', 'CLIP', 'The Conductor\'s own timing and direction, plus Cond Lock (CDLK) on knob 6.'],
+    [1, 'bank-cond-notefx', 'NOTE FX', 'Shapes the Conductor\'s note before the shift: octave, offset and random.'],
+    [C.BANK_RESPONDER, 'bank-cond-responder', 'ON/OFF', 'On = the track follows the Conductor.'],
+    [C.BANK_OCTAVE, 'bank-cond-octave', 'OCTAVE', 'An extra octave per track.'],
+    [C.BANK_WHEN, 'bank-cond-when', 'TIMING', 'Per track: Next (at its next note) or Now (retriggered at once).'],
 ];
 for (const [b, slug, title, caption] of COND_BANKS)
     screen(slug, '12.3 The Conductor\'s banks', title + ' bank', caption, () => {

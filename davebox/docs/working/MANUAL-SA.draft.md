@@ -251,9 +251,17 @@ picks which bank. Each track has its own walk, in this order:
 
 | Track | Banks, in jog order |
 |---|---|
-| **Melodic** | CLIP → NOTE FX → HARMONY → DELAY → SEQ ARP → LIVE ARP → (CHORD, in the Chord layout) → STEP → SOUND + CONFIG → MACROS → AUTOMATION |
-| **Drum** | ALL LANES → DRUM LANE → NOTE FX → DELAY → RPT GROOVE → STEP → SOUND + CONFIG → MACROS → AUTOMATION |
-| **Conductor** | C-CONDUCT → C-NOTE FX → C-RESPONDER → C-OCTAVE → C-WHEN → C-STEP |
+| **Melodic** | **IN:** (CHORD, in the Chord layout) → LIVE ARP · **CTRL:** MACROS → AUTOMATION · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · SOUND + CONFIG |
+| **Drum** | **IN:** RPT GROOVE · **CTRL:** MACROS → AUTOMATION · **SEQ:** STEP → ALL LANES → DRUM LANE · **FX** (the selected lane's): NOTE FX → DELAY · SOUND + CONFIG |
+| **Conductor** | CLIP → STEP → NOTE FX · **RSPD:** ON/OFF → OCTAVE → TIMING |
+
+A melodic track starts on **CLIP** and a drum track on **DRUM LANE**, both in
+the middle of the walk: turn left for what plays into the track, right for its
+effects (in the order the notes pass through them) and, last, SOUND + CONFIG.
+The banks are grouped: **IN** (what you play in), **CTRL** (what moves the
+parameters), **SEQ** (the sequence) and **FX** (the note effects — on a drum
+track, the selected lane's, so the map shows them under DRUM LANE). A Conductor
+starts on **CLIP**; its **RSPD** group is how the other tracks respond.
 
 The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--grid),
 [Sequencer Effects](#9-sequencer-effects), [STEP](#63-editing-notes),
@@ -263,7 +271,8 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 - **Turn the jog** on the track overview to step through the banks: the header
   names the bank and the knobs follow it. While your hand is on the jog, a column
   on the left lists the track's banks with the current one highlighted in the
-  middle; it goes as soon as you let go.
+  middle; it goes as soon as you let go. On a melodic track the column shows the
+  groups: each group's name sits to the left of a line beside its banks.
 - **Click the jog** to open the **bank view** — that bank's page, held on screen;
   keep turning to walk from there. In the bank view a click switches to the bank's
   **alternate** parameters (a down-arrow in the header marks a bank that has them,
@@ -279,13 +288,13 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   list instead, over a dimmed copy of the page.
 - **Every bank lights its knob rings:** knobs 1–4 white, 5–8 amber, brightness
   following the value. A **dark** ring means nothing is on that knob here. The
-  Conductor's RESPONDER, OCTAVE and WHEN banks light each knob in its track's color.
+  Conductor's ON/OFF, OCTAVE and TIMING banks light each knob in its track's color.
 
 **Resetting a bank:**
 
 | Gesture | Result |
 |---|---|
-| **Delete + jog click** | Reset every parameter in the active bank (not ALL LANES, STEP, or the Conductor's RESPONDER, OCTAVE and WHEN). One-shot actions (Stretch, Shift, Legato) are left alone. On a drum track's RPT GROOVE bank, or any bank while Note Repeat is on, it resets the selected lane's groove |
+| **Delete + jog click** | Reset every parameter in the active bank (not ALL LANES, STEP, or the Conductor's ON/OFF, OCTAVE and TIMING). One-shot actions (Stretch, Shift, Legato) are left alone. On a drum track's RPT GROOVE bank, or any bank while Note Repeat is on, it resets the selected lane's groove |
 | **Delete + jog click** on **MACROS** | Unassign all eight macros on the track (**asks first**). Values and automation are left alone |
 | **Shift + Delete + jog click** | Reset all the sequencer effects — NOTE FX, HARMONY, DELAY and SEQ ARP. The CLIP, lane, STEP, MACROS, SOUND + CONFIG and AUTOMATION banks are left alone |
 | **Shift + Delete + side button** | Reset the whole clip — notes and all parameters |
@@ -1299,18 +1308,17 @@ last). The bottom-left pad is an octave down.
 
 ## 12.3 The Conductor's banks
 
-A Conductor's jog walks six banks, each headed **`C-`**. C-RESPONDER, C-OCTAVE,
-C-WHEN and Cond Lock belong to the Conductor's current clip, so different Conductor clips
+A Conductor's jog walks six banks. ON/OFF, OCTAVE, TIMING and Cond Lock belong to the Conductor's current clip, so different Conductor clips
 can steer different tracks:
 
 | Bank | Controls |
 |---|---|
-| **C-CONDUCT** | The CLIP bank's timing and direction, with **Cond Lock** (`CDLK`) on knob 6: *Off* holds the shift only for each note's length; *Lock* holds it until the next Conductor note. |
-| **C-NOTE FX** | Shapes the Conductor's note before the shift is worked out — an octave, an offset, and a per-note random amount. Knobs 3–6 show `-`. |
-| **C-RESPONDER** | An on/off cell per track (`TR1…TR8`) — on (the default) means the track follows. A drum track's cell is empty; the Conductor's own reads `CNDCT`. |
-| **C-OCTAVE** | A per-track octave (**−4…+4**) added on top of the shift while the Conductor sounds. |
-| **C-WHEN** | Per track: **Next** (a responder takes the shift at its next note) or **Now** (a sounding note is retriggered at the new pitch at once). |
-| **C-STEP** | Edits the held step, as on any track. |
+| **CLIP** | The clip's timing and direction, with **Cond Lock** (`CDLK`) on knob 6: *Off* holds the shift only for each note's length; *Lock* holds it until the next Conductor note. |
+| **STEP** | Edits the held step, as on any track. |
+| **NOTE FX** | Shapes the Conductor's note before the shift is worked out — an octave, an offset, and a per-note random amount. Knobs 3–6 show `-`. |
+| **ON/OFF** | An on/off cell per track (`TR1…TR8`) — on (the default) means the track follows. A drum track's cell is empty; the Conductor's own reads `CNDCT`. |
+| **OCTAVE** | A per-track octave (**−4…+4**) added on top of the shift while the Conductor sounds. |
+| **TIMING** | Per track: **Next** (a responder takes the shift at its next note) or **Now** (a sounding note is retriggered at the new pitch at once). |
 
 ## 12.4 Making it permanent
 

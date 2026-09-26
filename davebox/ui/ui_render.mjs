@@ -16,7 +16,7 @@ import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
 import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
-import { LGTO_KNOB } from './ui_constants.mjs';
+import { LGTO_KNOB, BANKNAV_HOLD_MS } from './ui_constants.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
@@ -51,7 +51,7 @@ import {
 } from './ui_dialogs.mjs';
 import { isBooleanPair } from './ui_cells.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
-import { bankCyclePos, bankCycleForMode, bankDisplayName } from './ui_pure.mjs';
+import { bankCyclePos, bankCycleForMode, bankCategoriesForMode, bankDisplayName } from './ui_pure.mjs';
 import { syncDrumRepeatState } from './ui_drummodel.mjs';
 import {
     effectiveClip,
@@ -78,10 +78,21 @@ import { registerRingCells } from './ui_knob_leds.mjs';
  * budget: drawKitBankHeader measures the right label and gives the name the
  * rest. The STEP, SOUND + CONFIG and MACROS pages wear the same header
  * (2026-09-03: "just like pre-existing ones"). */
-export function bankHeaderGlyph(bank) {
+export function bankHeaderGlyph(bank, padMode) {
+    const mode = padMode === undefined ? S.trackPadMode[S.activeTrack] : padMode;
     if (bank === BANK_SOUND) return 'audio';
     if (bank === BANK_MACROS || bank === BANK_AUTOMATION) return 'perf';
-    return 'seq';        /* clip, lanes, note fx, harmony, delay, arps, step, drum, conductor */
+    /* Bank 0 is CLIP on a melodic track and DRUM LANE on a drum one; bank 7 is
+     * ALL LANES (a Conductor's bank 0 is CONDUCT and keeps the note pair). */
+    if (mode === PAD_MODE_DRUM && bank === 7) return 'lanes';
+    if (mode === PAD_MODE_DRUM && bank === 0) return 'drum';
+    if (mode !== PAD_MODE_CONDUCT && mode !== PAD_MODE_DRUM && bank === 0) return 'clip';
+    return 'seq';        /* note fx, harmony, delay, arps, step, rpt groove, conductor */
+}
+/* The HEADER's glyph: ALL LANES blinks its icon (the list never blinks). */
+function headerGlyphNow(bank) {
+    const g = bankHeaderGlyph(bank);
+    return (g === 'lanes' && Math.floor(S.clockMs / 220) % 2 !== 0) ? 'lanesOff' : g;
 }
 /* The right label. `bare` = the resting track overview, whose TRACK ROW already
  * names the track (Josh, 2026-08-31: "it's redundant") — it keeps only the
@@ -150,16 +161,14 @@ function drawBankHeading(name, showTrack, bareHdr, rightOverride) {
      * instrument. Bank cards name the track: a latched card holds the screen
      * with no track row in sight (2026-08-25). */
     /* session view's mixer pages are AUDIO banks whatever the track's bank is */
-    drawKitBankHeader(bankHeadingText(name), S.sessionView ? 'audio' : bankHeaderGlyph(S.activeBank),
+    drawKitBankHeader(bankHeadingText(name), S.sessionView ? 'audio' : headerGlyphNow(S.activeBank),
                       rightOverride != null ? rightOverride : bankHeaderRight(bareHdr));
 }
-/* The heading STRING: the name, with the Conductor's "C-" blink (phase driven
- * in the tick loop; the header font is fixed-advance so the name stays
- * steady). Split out so the STEP page can draw the same text. */
+/* The heading STRING. The Conductor's blinking "C-" prefix is gone (Josh,
+ * 2026-09-26: "get rid of conductor track "C-" append at front in heading and
+ * overlay"), so this is the name as given; kept as the one seam the bank
+ * header and the STEP page share. */
 function bankHeadingText(name) {
-    if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT &&
-            name.charAt(0) === 'C' && name.charAt(1) === '-')
-        return (S._altBlinkPhase !== 1 ? 'C-' : '  ') + name.slice(2);
     return name;
 }
 
@@ -1472,16 +1481,22 @@ export function bankNavItems() {
     }
     const mode = S.trackPadMode[S.activeTrack];
     const cyc = bankCycleForMode(mode, S.activeTrack);
+    /* Each bank's category, when it sits in one that is drawn as a group. */
+    const cat = {};
+    bankCategoriesForMode(mode, S.activeTrack).forEach((g, gi) => {
+        if (g.label) for (const b of g.banks) cat[b] = { id: gi, label: g.label, depth: g.depth | 0 };
+    });
     return {
         items: cyc.map((b) => {
             const n = bankDisplayName(mode, b);
-            return { name: BANKNAV_SHORT[n] || n, glyph: bankHeaderGlyph(b) };
+            return { name: BANKNAV_SHORT[n] || n, glyph: bankHeaderGlyph(b, mode), cat: cat[b] || null };
         }),
         cur: Math.max(0, cyc.indexOf(S.activeBank)),
     };
 }
 function drawBankNav() {
-    if (!S.bankNavKind || !S.jogTouched) return;
+    if (!S.bankNavKind) return;
+    if (!S.jogTouched && S.clockMs - S.bankNavTurnMs >= BANKNAV_HOLD_MS) return;
     const nav = bankNavItems();
     drawKitBankNavColumn(nav.items, nav.cur);
 }
@@ -2159,7 +2174,7 @@ function drawUIBody() {
             drawKitPage(bankHeaderName(S.activeTrack, 0), cells, false, bankPageHints(0));
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 7 && !S.allLanesConfirmed) {
             /* ALL LANES confirmation screen */
-            drawKitHeader((Math.floor(S.clockMs / 220) % 2 === 0 ? 'ALL' : '   ') + ' LANES', false);
+            drawBankHeading('ALL LANES', false);   /* the icon blinks (headerGlyphNow) */
             print(10, 18, 'Edits will affect', 1);
             print(10, 28, 'all lanes. Proceed?', 1);
             fill_rect(40, 44, 48, 16, 1);
@@ -2198,9 +2213,8 @@ function drawUIBody() {
                 toggleCell('RSync', 'Repeat Sync', S.bankParams[t][7][7],
                            fmtBool(1), fmtBool(0)),
             ];
-            /* blinking "ALL" prefix: the header font is fixed-advance, so a
-             * space prefix keeps "LANES" steady */
-            drawKitPage((Math.floor(S.clockMs / 220) % 2 === 0 ? 'ALL' : '   ') + ' LANES', cells, false,
+            /* The ICON blinks now, not an "ALL" prefix (headerGlyphNow). */
+            drawKitPage('ALL LANES', cells, false,
                         bankPageHints(7));
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 1) {
         /* Drum NOTE/NOTEFX bank: K1=Gate K2=Vel K3=Qnt */
@@ -2458,9 +2472,7 @@ function drawUIBody() {
          * written out here, where only this screen could see them. The BLINK
          * stays local: it is this header's animation, not part of the name. */
         const _bnStatic = bankHeaderName(t, S.activeBank);
-        const bankName  = S.activeBank === 7
-            ? (Math.floor(S.clockMs / 220) % 2 === 0 ? 'ALL' : '   ') + ' LANES'
-            : _bnStatic;
+        const bankName  = _bnStatic;   /* ALL LANES blinks its icon, not its name */
         (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankName, false, true);
         /* info row at y=9, in the STOCK face (2026-09-05) — 2px clear of the header */
         ovwPrint(4, 9, bankGroup + '  Pad:' + name + oct + ' (' + note + ')', 1);

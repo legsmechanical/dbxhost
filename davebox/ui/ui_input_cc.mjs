@@ -34,7 +34,7 @@ import { nowMs } from './ui_clock.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
          PAGE_KNOB, pageFloatStep } from './ui_engine.mjs';
-import { scaleNudgeNote, stepEntryVelocity, BANK_CYCLE_DRUM, CONDUCT_BANK_CYCLE,
+import { scaleNudgeNote, stepEntryVelocity,
          bankCycleForMode } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
          showActionPopupGauge } from './ui_persistence.mjs';
@@ -1201,7 +1201,7 @@ function modalDialogUp() {
                      * skipped rather than as having arrived. */
                     /* The bank map on the mixer cards too (Josh, 2026-09-26: "need
                      * the same overlay while viewing the mixer mode cards"). */
-                    S.bankNavKind = 'session';
+                    S.bankNavKind = 'session'; S.bankNavTurnMs = nowMs();
                     const _skPrev = S.sessKnobMode;
                     S.sessKnobMode = Math.max(0, Math.min(SESS_KNOB_MODES.length - 1,
                                                           S.sessKnobMode + (delta > 0 ? 1 : -1)));
@@ -1295,7 +1295,7 @@ function modalDialogUp() {
                      * path — the deferred BANK_SOUND entry, the sound-mode exit
                      * on walk-away, the param refresh and the sidecar all live
                      * there. */
-                    S.bankNavKind = 'track';
+                    S.bankNavKind = 'track'; S.bankNavTurnMs = nowMs();
                     walkBanks(delta, false);
                 } else if (!S.sessionView && S.moveCoRunTrack < 0) {
                     /* ⭑ THE WALK UNDER THE OVERVIEW (Josh, 2026-09-04): at rest
@@ -1305,13 +1305,13 @@ function modalDialogUp() {
                      * it, and a click latches bank mode ON it. A sound bank
                      * opens RESTING (silent entry). No display window is armed:
                      * nothing is shown that was not showing. */
-                    S.bankNavKind = 'track';
+                    S.bankNavKind = 'track'; S.bankNavTurnMs = nowMs();
                     walkBanks(delta, true);
                 } else if (S.sessionView && !S.perfViewLocked && S.moveCoRunTrack < 0) {
                     /* ...and the session twin: the mixer MODE walks under the
                      * session overview; its mode indicator (the short name at
                      * the top right, ui_render) follows. */
-                    S.bankNavKind = 'session';
+                    S.bankNavKind = 'session'; S.bankNavTurnMs = nowMs();
                     const _prev = S.sessKnobMode;
                     S.sessKnobMode = Math.max(0, Math.min(SESS_KNOB_MODES.length - 1,
                                                           S.sessKnobMode + (delta > 0 ? 1 : -1)));
@@ -1401,6 +1401,13 @@ export function applyBankPick(rest) {
      * the jog back instead, so the exit has to live where the bank is actually
      * committed. */
     if (soundOpen()) soundExit();
+    /* ...and a sound entry still QUEUED from the detent before is cancelled
+     * the same way: two quick detents across MACROS (LIVE ARP → MACROS →
+     * AUTOMATION before a tick) otherwise opened sound mode over AUTOMATION,
+     * because the tick's entry does not look at the bank. */
+    S.pendingSoundEnterTrack = -1;
+    S.pendingSoundEnterSilent = false;
+    S.pendingSoundEnterMenu = false;
     S.activeBank = next;
     S.trackActiveBank[t] = next;
     if (next === 7) S.allLanesConfirmed = false;

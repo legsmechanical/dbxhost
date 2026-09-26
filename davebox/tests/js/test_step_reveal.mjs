@@ -263,7 +263,7 @@ step('⚠ a jog turn inside the tap window PROMOTES the press: the release does 
     assert(!sets.some(x => x.includes('_step_5_clear')) && !S.pendingDefaultSetParams.some(p => p.key.includes('_step_5_clear')), 'step 5 survived');
 });
 step('⚠ from SOUND + CONFIG (sound mode active): the reveal draws over it, and left returns to it with sound mode still active', () => {
-    fresh(BANK_STEP); S.bankCardLatched = true;
+    fresh(4); S.bankCardLatched = true;            /* SEQ ARP: the melodic stop before SOUND + CONFIG */
     right();                                       /* walk onto SOUND + CONFIG */
     globalThis.tick(); globalThis.tick();
     assert(snd.soundActive(), 'control: sound mode opened');

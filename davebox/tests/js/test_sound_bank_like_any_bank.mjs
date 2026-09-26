@@ -86,7 +86,7 @@ const shiftNote = (holdTicks) => {
 const shiftNoteTap  = () => { shiftNote(0); ticks(4); };
 const shiftNoteHold = () => { shiftNote(46); ticks(4); };
 const VIEW_BLOCKS = 0, VIEW_PROMPT = 18, VIEW_MACROS = 19;
-const NOTEFX = 1;
+const NOTEFX = 1, SEQ_ARP = 4;
 const sidecarBank = (t) => { const j = JSON.parse(files.get(UIP) || '{}'); return Array.isArray(j.tab) ? j.tab[t] : undefined; };
 const state = (t) => ({ live: S.activeBank, rec: S.trackActiveBank[t], open: snd.soundOpen(), active: snd.soundActive(),
                         view: snd.soundViewForTest(), latched: !!S.bankCardLatched });
@@ -104,7 +104,7 @@ const menuAction = (label) => {
 ticks(3);
 
 step('(1) the jog walk at rest onto SOUND+CFG records it AT ONCE and saves the sidecar in the same call', () => {
-    put(0, BANK_STEP, false);
+    put(0, SEQ_ARP, false);                          /* the melodic stop before SOUND+CFG */
     files.delete(UIP);
     jog(1);                                          /* no tick yet */
     assert(S.trackActiveBank[0] === BANK_SOUND, 'not recorded at the turn: ' + JSON.stringify(state(0)));
@@ -191,11 +191,11 @@ step('(9) a non-jog bank writer (the Chord layout) moves a track resting on MACR
 
 step('(8) CONTROL: walking off SOUND+CFG with the jog still records the next bank (the walk is the one writer)', () => {
     put(0, BANK_SOUND, true);
-    const cyc = [0, 1, 2, 3, 4, 5, BANK_STEP, BANK_SOUND, BANK_MACROS];
-    jog(1); ticks(4);
-    assert(S.trackActiveBank[0] === BANK_MACROS && S.activeBank === BANK_MACROS, 'the walk to MACROS: ' + JSON.stringify(state(0)));
-    jog(-1); jog(-1); ticks(4);
-    assert(S.trackActiveBank[0] === BANK_STEP, 'the walk back to STEP: ' + JSON.stringify(state(0)) + ' ' + cyc.length);
+    /* Melodic since 2026-09-26: … DELAY, SEQ ARP, SOUND+CFG — the walk's last stop. */
+    jog(-1); ticks(4);
+    assert(S.trackActiveBank[0] === SEQ_ARP && S.activeBank === SEQ_ARP, 'the walk to SEQ ARP: ' + JSON.stringify(state(0)));
+    jog(-1); ticks(4);
+    assert(S.trackActiveBank[0] === 3, 'the walk on to DELAY: ' + JSON.stringify(state(0)));
     S.bankCardLatched = false;
 });
 

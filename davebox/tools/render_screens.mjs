@@ -218,7 +218,7 @@ const CUSTOM_KIT = [
         ],
     },
     {
-        file: 'bank-conductor-octave', section: '8.3 Conductor banks (C-OCTAVE)', header: 'C-OCTAVE',
+        file: 'bank-conductor-octave', section: '8.3 Conductor banks (OCTAVE)', header: 'OCTAVE',
         footer: hintsPlain,
         cells: [
             { kind: 'valsq', label: 'Tr1', name: 'Track 1', text: '+1' },

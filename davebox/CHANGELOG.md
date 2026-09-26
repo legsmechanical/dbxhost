@@ -16,6 +16,9 @@ the section into a versioned heading at release time.
 - **A bank map while you turn the jog.** On the track overview, a bank page or
   the session overview, a column on the left lists every bank (or session bank)
   with the one you are on highlighted in the middle, and goes when you let go.
+  On a melodic track it shows the banks in groups — IN, CTRL, SEQ, FX.
+  It stays up while you turn even if the jog briefly stops sensing your hand.
+  It shows bank names only.
 - **Numbers turn as an arc.** An octave, offset, rate, length or count no longer
   opens a list that scrolls the opposite way to the knob: while you touch the
   knob, its cell becomes an arc that follows it. Named choices keep their list.
@@ -113,6 +116,8 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **A fast turn across MACROS no longer opens it over the next bank.** Two
+  quick jog detents past MACROS could leave its screen open on AUTOMATION.
 - **Jumping to a module parameter from automation keeps the module's page as it
   is.** Holding a step on a lane for, say, a filter cutoff used to land on a page
   of plain knobs with the filter curve and envelope gone. The parameter's cell is
@@ -237,6 +242,18 @@ the section into a versioned heading at release time.
   already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
+- **The banks are in a new order, in groups.** Melodic: IN (Chord, Live Arp),
+  CTRL (Macros, Automation), SEQ (Step, Clip), FX (Note FX, Harmony, Delay,
+  Seq Arp — the order the notes pass through them), then Sound + Config. Drum:
+  IN (Rpt Groove), CTRL, SEQ (Step, All Lanes, Drum Lane), FX (Note FX, Delay —
+  shown under Drum Lane, since they are the lane's), then Sound + Config.
+  Conductor: Clip, Step, Note FX, then RSPD (On/Off, Octave, Timing). A track
+  still starts on Clip (Drum Lane on a drum track).
+- **Conductor banks lose the "C-" prefix,** and three are renamed: Conduct is
+  now **CLIP**, Responder **ON/OFF**, When **TIMING**.
+- **CLIP, DRUM LANE and ALL LANES have their own header icons** — a clip slot,
+  a drum, and a 3×3 grid — in the bank header. ALL LANES now
+  blinks its icon instead of the word ALL.
 - **The manual is easier to learn from.** The Quick Start is now inside the
   downloadable manual, and chapter 3 covers the basics every screen shares:
   reading the screen, how menus work, and choosing a track's sound. New pad

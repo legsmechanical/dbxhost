@@ -36,14 +36,8 @@ export const SCALE_INTERVALS = [
     [0, 2, 3, 5, 6, 8, 9, 11],     /* 13 Diminished      */
 ];
 
-/* ⚠ Bank 6 (the old AUTO) LEFT the walk 2026-09-03: the AUTOMATION bank
- * (BANK_AUTOMATION) replaces it, after MACROS, on every walk. */
-export const BANK_CYCLE_DRUM = [7, 0, 1, 3, 5];
-
-/* Conductor cycles 5 banks: Conduct(0=CLIP) → NOTE FX(1) → Responder → Octave
- * → When. Single source of truth for both the jog nav (_onCC_jog) and the
- * header position strip (bankCyclePos below) — they must stay in lockstep. */
-export const CONDUCT_BANK_CYCLE = [0, 1, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN];
+/* The drum and Conductor walks live in bankCategoriesForMode, like the
+ * melodic one. (⚠ Bank 6, the old AUTO, left every walk 2026-09-03.) */
 
 /* THE name of a bank on a given track — one source for the card header, the
  * bank picker, and anything else that shows a bank to the user.
@@ -61,9 +55,14 @@ export const CONDUCT_BANK_CYCLE = [0, 1, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN]
  * ⚠ STATIC: the blinking variants (the drum ALL/blank on ALL LANES, the
  * Conductor C- blink) are the HEADER's animation, applied on top. A list of
  * names must not blink. */
+/* The Conductor's banks carry no "C-" prefix and three of them have their own
+ * names (Josh, 2026-09-26: "get rid of conductor track "C-" append at front in
+ * heading and overlay"; CLIP "rename conduct", ON/OFF "RENAME RESPONDER",
+ * TIMING "RENAME WHEN"). */
+const CONDUCT_NAMES = { 0: 'CLIP', [BANK_RESPONDER]: 'ON/OFF', [BANK_WHEN]: 'TIMING' };
 export function bankDisplayName(padMode, bank) {
     const base = (BANKS[bank] && BANKS[bank].name) || '?';
-    if (padMode === PAD_MODE_CONDUCT) return 'C-' + (bank === 0 ? 'CONDUCT' : base);
+    if (padMode === PAD_MODE_CONDUCT) return CONDUCT_NAMES[bank] || base;
     if (padMode === PAD_MODE_DRUM) {
         if (bank === 0) return 'DRUM LANE';
         if (bank === 5) return 'RPT GROOVE';
@@ -83,14 +82,46 @@ export function bankDisplayName(padMode, bank) {
 export function bankCycleForMode(padMode, t) {
     /* STEP sits after the clip banks on every walk — just before SOUND + CONFIG
      * where there is one, last on a Conductor (spec §2, 2026-09-02). */
-    if (padMode === PAD_MODE_CONDUCT) return CONDUCT_BANK_CYCLE.concat([BANK_STEP]);
-    /* … → STEP → SOUND + CONFIG → MACROS → AUTOMATION (spec §2). */
-    if (padMode === PAD_MODE_DRUM)    return BANK_CYCLE_DRUM.concat([BANK_STEP, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION]);
-    /* A Chord-layout track adds its CHORD bank after LIVE ARP. */
+    /* Every track type walks its categories in order (below). */
+    const out = [];
+    for (const g of bankCategoriesForMode(padMode, t)) for (const b of g.banks) out.push(b);
+    return out;
+}
+
+/* Every walk, in CATEGORIES (Josh, 2026-09-26): what comes in, what controls
+ * it, the sequence, the note FX in signal order, then the mix. The bank
+ * navigation overlay draws each category that CAN hold several banks as a
+ * labelled group — IN keeps its label with only LIVE ARP (CHORD joins it on a
+ * Chord-layout track), and the drum IN with only RPT GROOVE ("keep in
+ * category even though there's only 1 bank"). A category of one (`label`
+ * null) is a plain row. `depth` 1 nests the group under the row above it: the
+ * drum FX apply to the selected DRUM LANE ("need to have this indented under
+ * drum lane since they apply per-lane").
+ * Bank 0 stays each track's start and Back bank (BANK_DEFAULT); only the walk
+ * moved. */
+export function bankCategoriesForMode(padMode, t) {
+    if (padMode === PAD_MODE_CONDUCT) return [
+        { label: null,   banks: [0] },
+        { label: null,   banks: [BANK_STEP] },
+        { label: null,   banks: [1] },
+        { label: 'RSPD', banks: [BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN] },
+    ];
+    if (padMode === PAD_MODE_DRUM) return [
+        { label: 'IN',   banks: [5] },
+        { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
+        { label: 'SEQ',  banks: [BANK_STEP, 7, 0] },
+        { label: 'FX',   banks: [1, 3], depth: 1 },
+        { label: null,   banks: [BANK_SOUND] },
+    ];
     const _t = t === undefined ? S.activeTrack : t;
-    if (S.padLayoutChord && S.padLayoutChord[_t])
-        return [0, 1, 2, 3, 4, 5, BANK_CHORD, BANK_STEP, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION];
-    return [0, 1, 2, 3, 4, 5, BANK_STEP, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION];
+    const chord = !!(S.padLayoutChord && S.padLayoutChord[_t]);
+    return [
+        { label: 'IN',   banks: (chord ? [BANK_CHORD] : []).concat([5]) },
+        { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
+        { label: 'SEQ',  banks: [BANK_STEP, 0] },
+        { label: 'FX',   banks: [1, 2, 3, 4] },
+        { label: null,   banks: [BANK_SOUND] },
+    ];
 }
 
 /* Bank position in the jog-cycle order, for the header position strip. Melodic
