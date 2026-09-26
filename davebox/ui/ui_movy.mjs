@@ -2592,7 +2592,9 @@ function drawCellWidget(col, rowY, cell, touched, anim, nowMs) {
     if (cell.auto === 'auto' || cell.auto === 'auto-off') drawAutoMark(col, rowY, cell.auto === 'auto');
     /* The LANE IN FOCUS on a jump from the AUTOMATION bank: the param pages'
      * lock mark, the top-left 2x2 (the one corner nothing else uses). */
-    if (cell.lock) fill_rect(col * MV_CELL_W + 1, rowY, 2, 2, 1);
+    /* (The lane-in-focus corner mark is gone — Josh, 2026-09-26: "we can do away
+     * wiht the corner mark as long as the param value is highlighted". A
+     * `lock` cell is drawn HIGHLIGHTED instead, in drawKitCells.) */
     const kx = col * MV_CELL_W + Math.floor((MV_CELL_W - MV_KW) / 2);
     /* ⭑ THE ENUM SQUARE HAS ITS OWN, WIDER SLOT (28 vs the 20px widget box), so
      * it gets its own origin. Centred in the same 32px cell, so a page of mixed
@@ -2745,7 +2747,12 @@ function drawCellLabel(col, lblY, cell, touched) {
 let kitCellsLast = null;
 export function kitCellsForTest() { return kitCellsLast; }
 export function drawKitCells(cells, touchedIdx, env, filt, eq, samp, anim, nowMs) {
-    kitCellsLast = { touched: touchedIdx, cells: cells.map(c => c ? { label: c.label, text: c.text, lock: !!c.lock } : null) };
+    /* ⭑ THE LANE IN FOCUS IS HIGHLIGHTED (a jump or pin from the AUTOMATION
+     * bank marks its parameter's cell `lock`): its label strip inverts like a
+     * touched knob's, whenever no knob is touched. It replaced a 2x2 corner
+     * mark — the highlight already said which parameter the lane drives. */
+    const lit = (k) => k === touchedIdx || (touchedIdx < 0 && !!(cells[k] && cells[k].lock));
+    kitCellsLast = { touched: touchedIdx, cells: cells.map((c, k) => c ? { label: c.label, text: c.text, lock: !!c.lock, lit: lit(k) } : null) };
     /* ⭑ EVERY SPAN IS DECLARED, NONE IS DETECTED. env / filt / eq / samp all
      * arrive from the caller with an explicit start (and count where it can
      * vary); this file never sniffs a param name to decide a bank has an EQ.
@@ -2775,7 +2782,7 @@ export function drawKitCells(cells, touchedIdx, env, filt, eq, samp, anim, nowMs
          * same over a box, an arc, or a span graphic that covered this cell —
          * which is why it is here and not inside any widget. */
         if (cell.opens) drawBrackets(col * MV_CELL_W, rowY, MV_CELL_W, MV_KH);
-        drawCellLabel(col, lblY, cell, k === touchedIdx);
+        drawCellLabel(col, lblY, cell, lit(k));
     }
     if (env) {
         drawKitEnvelopeRow(env.start < 4 ? MV_ROW0_Y : MV_ROW1_Y, cells, env);

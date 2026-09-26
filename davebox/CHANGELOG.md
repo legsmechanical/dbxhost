@@ -17,7 +17,8 @@ the section into a versioned heading at release time.
 - **Buses on the instrument editor's Module page** — the same screen as the
   Sound menu's Buses row, for instruments that split their voices.
 - **Step recording shows the tie.** Holding pads and pressing **>** lights the
-  steps the note now covers.
+  steps the note is held over in the tail colour; the note's own step looks like
+  any other note.
 - **A copied clip takes its automation — the parts that fit.** Copying or
   cutting a clip (drum or melodic) to another track brings along automation
   of levels and dAVEBOx's own knobs, and of instrument or effect parameters
@@ -107,6 +108,10 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **Jumping to a module parameter from automation keeps the module's page as it
+  is.** Holding a step on a lane for, say, a filter cutoff used to land on a page
+  of plain knobs with the filter curve and envelope gone. The parameter's cell is
+  now highlighted instead of carrying a small corner mark, on every page.
 - **A new Conductor's pads are centred on "no shift".** Its bottom-row pads used
   to drop every responding track by two octaves; the no-shift note now sits in the
   middle of the grid, so the pads reach down as well as up.

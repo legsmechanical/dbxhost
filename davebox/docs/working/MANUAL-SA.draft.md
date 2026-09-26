@@ -604,8 +604,8 @@ blinks white — the cursor, starting at the first step of the page you're viewi
 - **Play a pad** (or several together for a chord): the notes land on the cursor
   step, and the cursor moves on when you let go.
 - **> with pads held** ties the note a step longer, each press extending it;
-  **< with pads held** takes one step back off. The steps the note covers light
-  up as you go, as they do when you hold a step.
+  **< with pads held** takes one step back off. The steps the note is held over
+  light in the tail colour as you go, as they do when you hold a step.
 - **> alone** is a rest: the cursor moves on, writing nothing.
 - **<** steps back and **erases what you entered there this session**. Notes
   already in the clip stay.
@@ -1139,9 +1139,10 @@ screen show **that row's lane**, not the clip's notes:
   bank, its module's page (on a per-pad parameter, that pad), SOUND + CONFIG for a
   level, MACROS for a MIDI target. Turn its knob to change the value on that step;
   let go to come back, on the same row and page. On a bank the header shows
-  **<AUTO S7** (step 7). The parameter's cell is marked with a small corner, and
-  while the step is held it shows the value the lane plays there — shown only, the
-  parameter doesn't move until you turn the knob.
+  **<AUTO S7** (step 7). The parameter's cell is highlighted, and while the step
+  is held it shows the value the lane plays there — shown only, the parameter
+  doesn't move until you turn the knob. A module's page keeps its graphics (filter
+  curve, envelope) while you're there.
 - **Shift + click** a row to jump to where that parameter is edited; **Back**
   returns you to this menu, on the same row. The step buttons keep showing the lane
   there, so you can hold a step and turn the knob to set it.

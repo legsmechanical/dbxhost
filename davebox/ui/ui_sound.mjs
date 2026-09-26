@@ -11799,7 +11799,8 @@ function ppRestoreFor(slot, comp) {
 }
 
 /* THE LANE IN FOCUS on the editor (a jump from the AUTOMATION bank, Josh
- * 2026-09-25): the lane's cell on the visible page carries the lock corner,
+ * 2026-09-25): the lane's cell on the visible page is HIGHLIGHTED (it had a
+ * lock corner until Josh, 2026-09-26: "we can do away wiht the corner mark"),
  * and while a step is held it shows what the lane plays there. Set every
  * tick the grid is up — the page, the held step and the value all move — and
  * cleared the moment there is nothing to show. */
@@ -11814,7 +11815,7 @@ function ppFocusSync() {
         const fk = f.target.slice(i + 1);
         for (let k = 0; k < 8; k++) {
             if (paramPagesFullKeyAt(k) !== fk) continue;
-            dec = { [k]: f.wire != null ? { locked: true, value: f.wire } : { locked: true } };
+            dec = { [k]: f.wire != null ? { highlight: true, value: f.wire } : { highlight: true } };
             break;
         }
     }
