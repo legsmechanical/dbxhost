@@ -64,9 +64,19 @@ const jog = (d) => midi(0xB0, 14, d > 0 ? d : 128 + d);
 const tick = () => { S.tickCount++; globalThis.tick(); };
 const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const MID_Y = ((kit.MV_BANKNAV_ROWS - 1) >> 1) * kit.MV_BANKNAV_ROW_H + 1;
-/* The middle row is inverted: across the column's left edge it is solid ink. */
-const midRowLit = (f) => { let n = 0; for (let y = MID_Y - 1; y < MID_Y + 8; y++) n += f[y * W + 1]; return n; };
-const columnUp = (f) => midRowLit(f) >= 9;
+/* The middle row is inverted: a wide band of the column's left half is solid
+ * ink down the whole row. (Counted across x, not read at one x: a row inside a
+ * category starts its highlight past the category gutter.) */
+const midRowSolidCols = (f) => {
+    let n = 0;
+    for (let x = 0; x < 64; x++) {
+        let all = true;
+        for (let y = MID_Y - 1; y < MID_Y + 8; y++) if (!f[y * W + x]) { all = false; break; }
+        if (all) n++;
+    }
+    return n;
+};
+const columnUp = (f) => midRowSolidCols(f) >= 10;   /* measured: off 0-2, on 15+ */
 
 step('⚠ CONTROL: a touch with no turn shows no column', () => {
     S.activeBank = 0; S.trackActiveBank[2] = 0; S.bankSelectTick = -1;

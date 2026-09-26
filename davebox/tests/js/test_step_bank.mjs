@@ -79,11 +79,11 @@ function fresh(bank) {
 function holdStep5() { note(STEP(5), 127); S.tickCount += 25; globalThis.tick(); }
 
 /* ---- registration ------------------------------------------------------ */
-step('the STEP bank exists and sits just before SOUND + CONFIG on the melodic and drum walks, last on a Conductor', () => {
+step('the STEP bank exists: just before CLIP on the melodic walk (SEQ), just before SOUND + CONFIG on the drum walk, last on a Conductor', () => {
     assert(BANKS[BANK_STEP] && BANKS[BANK_STEP].name === 'STEP', 'BANKS[BANK_STEP] is STEP');
     const mel = bankCycleForMode(0), drum = bankCycleForMode(PAD_MODE_DRUM), con = bankCycleForMode(PAD_MODE_CONDUCT);
-    /* … STEP, SOUND + CONFIG, MACROS, AUTOMATION — STEP is the stop before SOUND + CONFIG. */
-    assert(mel.indexOf(BANK_STEP) === mel.indexOf(BANK_SOUND) - 1, 'melodic: STEP just before SOUND');
+    /* Melodic: SEQ is STEP, CLIP. Drum: … STEP, SOUND + CONFIG, MACROS, AUTOMATION. */
+    assert(mel.indexOf(BANK_STEP) === mel.indexOf(0) - 1, 'melodic: STEP just before CLIP');
     assert(drum.indexOf(BANK_STEP) === drum.indexOf(BANK_SOUND) - 1, 'drum: STEP just before SOUND');
     assert(con[con.length - 1] === BANK_STEP, 'conductor: … STEP');
     assert(bankDisplayName(0, BANK_STEP) === 'STEP' && bankDisplayName(PAD_MODE_CONDUCT, BANK_STEP) === 'C-STEP', 'named like every bank');

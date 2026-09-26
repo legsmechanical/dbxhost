@@ -86,11 +86,32 @@ export function bankCycleForMode(padMode, t) {
     if (padMode === PAD_MODE_CONDUCT) return CONDUCT_BANK_CYCLE.concat([BANK_STEP]);
     /* … → STEP → SOUND + CONFIG → MACROS → AUTOMATION (spec §2). */
     if (padMode === PAD_MODE_DRUM)    return BANK_CYCLE_DRUM.concat([BANK_STEP, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION]);
-    /* A Chord-layout track adds its CHORD bank after LIVE ARP. */
+    /* Melodic walks its categories in order (below). */
+    const out = [];
+    for (const g of bankCategoriesForMode(padMode, t)) for (const b of g.banks) out.push(b);
+    return out;
+}
+
+/* The melodic walk, in CATEGORIES (Josh, 2026-09-26): what comes in, what
+ * controls it, the sequence, the note FX in signal order, then the mix. The
+ * bank navigation overlay draws each category that CAN hold several banks as a
+ * labelled group — IN keeps its label with only LIVE ARP, because CHORD joins
+ * it on a Chord-layout track. A category of one (`label` null) is a plain row.
+ * CLIP stays the start and the Back bank (BANK_DEFAULT); only the walk moved.
+ *
+ * Drum and Conductor have no categories yet: [] — their walks are
+ * bankCycleForMode's own, drawn as plain rows. */
+export function bankCategoriesForMode(padMode, t) {
+    if (padMode === PAD_MODE_CONDUCT || padMode === PAD_MODE_DRUM) return [];
     const _t = t === undefined ? S.activeTrack : t;
-    if (S.padLayoutChord && S.padLayoutChord[_t])
-        return [0, 1, 2, 3, 4, 5, BANK_CHORD, BANK_STEP, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION];
-    return [0, 1, 2, 3, 4, 5, BANK_STEP, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION];
+    const chord = !!(S.padLayoutChord && S.padLayoutChord[_t]);
+    return [
+        { label: 'IN',   banks: (chord ? [BANK_CHORD] : []).concat([5]) },
+        { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
+        { label: 'SEQ',  banks: [BANK_STEP, 0] },
+        { label: 'FX',   banks: [1, 2, 3, 4] },
+        { label: null,   banks: [BANK_SOUND] },
+    ];
 }
 
 /* Bank position in the jog-cycle order, for the header position strip. Melodic

@@ -1585,6 +1585,15 @@ const KIT_BANK_GLYPHS = {
     seq:   ['..####', '..#..#', '..#..#', '##..##', '##..##'],   /* a beamed pair of notes */
     audio: ['....#',  '..#.#',  '..#.#',  '#.#.#',  '#.#.#' ],   /* rising bars */
     perf:  ['.###.',  '#..##',  '#.#.#',  '#...#',  '.###.' ],   /* a knob with its pointer */
+    /* Josh's picks, 2026-09-26: "B for clip, B for drum, A for all. lanes - but
+     * make it a full grid of 16" → then "all lanes - do 3x3 grid". */
+    clip:  ['######', '#.####', '#..###', '#.####', '######'],  /* a clip slot, play arrow */
+    drum:  ['.####.', '#....#', '######', '#....#', '.####.'],  /* a drum (DRUM LANE) */
+    lanes: ['#.#.#',  '.....',  '#.#.#',  '.....',  '#.#.#' ],  /* a 3x3 grid (ALL LANES) */
+    /* ALL LANES' off phase: the icon blinks, the name holds still (Josh,
+     * 2026-09-26: "on all lanes, have the icon blink instead of the "ALL"") —
+     * same width, so the name does not move. */
+    lanesOff: ['.....', '.....', '.....', '.....', '.....'],
 };
 export function kitBankGlyphWidth(kind) {
     const g = KIT_BANK_GLYPHS[kind];
@@ -3046,24 +3055,49 @@ export function drawKitCrumbs(parts) {
  * font (Josh: "small font"), each after its bank's header glyph. The page to
  * the right is knocked back, the column itself is opaque.
  *
- * `items` = [{ name, glyph }] in walk order; `cur` = index of the current one. */
+ * `items` = [{ name, glyph, cat }] in walk order; `cur` = index of the current one.
+ *
+ * CATEGORIES (Josh, 2026-09-26, "E"): an item with `cat` ({ id, label }) sits in
+ * a group. Its rows are indented past a gutter holding a plain vertical line
+ * down the group's VISIBLE rows, and the label centred horizontally in the
+ * space left of that line and vertically on the visible part of the group
+ * ("The category name itself should be perfectly vertical centered within the
+ * category scope"). An item with no `cat` is a plain row, fully left, as
+ * before. The highlight starts at the row's own indent, so it never covers a
+ * label. */
 export const MV_BANKNAV_ROW_H = 9, MV_BANKNAV_ROWS = 7;
 export function drawKitBankNavColumn(items, cur) {
     if (!items || !items.length) return;
-    const MID = (MV_BANKNAV_ROWS - 1) >> 1;
+    const ROW = MV_BANKNAV_ROW_H, MID = (MV_BANKNAV_ROWS - 1) >> 1;
+    let lw = 0;
+    for (const it of items) if (it.cat) lw = Math.max(lw, mvWidth(it.cat.label));
+    const lineX = 2 + lw + 3, GUT = lineX + 4;
+    const x0Of = (it) => (it.cat ? GUT : 3);
     let w = 0;
-    for (const it of items) w = Math.max(w, kitBankGlyphWidth(it.glyph) + 3 + mvWidth(it.name));
-    const PW = Math.min(SCREEN_W - 16, w + 7);
+    for (const it of items) w = Math.max(w, x0Of(it) + kitBankGlyphWidth(it.glyph) + 3 + mvWidth(it.name));
+    const PW = Math.min(SCREEN_W - 16, w + 4);
     drawKitBackdropDim(PW + 1, 0, SCREEN_W - PW - 1, 64);
     fill_rect(0, 0, PW, 64, 0);
     fill_rect(PW, 0, 1, 64, 1);
+    const vis = [];
     for (let r = 0; r < MV_BANKNAV_ROWS; r++) {
         const i = cur + (r - MID);
         if (i < 0 || i >= items.length) continue;
-        const y = r * MV_BANKNAV_ROW_H + 1, on = r === MID, fg = on ? 0 : 1;
-        if (on) fill_rect(0, y - 1, PW, MV_BANKNAV_ROW_H + 1, 1);
-        drawKitBankGlyph(items[i].glyph, 3, y + 1, fg);
-        mvPrint(3 + kitBankGlyphWidth(items[i].glyph) + 3, y + 1, items[i].name, fg);
+        const it = items[i], y = r * ROW + 1, on = r === MID, fg = on ? 0 : 1;
+        const x0 = x0Of(it);
+        if (on) { const hx = it.cat ? x0 - 2 : 0; fill_rect(hx, y - 1, PW - hx, ROW + 1, 1); }
+        drawKitBankGlyph(it.glyph, x0, y + 1, fg);
+        mvPrint(x0 + kitBankGlyphWidth(it.glyph) + 3, y + 1, it.name, fg);
+        if (it.cat) {
+            const g = vis.length && vis[vis.length - 1].id === it.cat.id ? vis[vis.length - 1] : null;
+            if (g) g.b = r; else vis.push({ id: it.cat.id, label: it.cat.label, a: r, b: r });
+        }
+    }
+    for (const g of vis) {
+        const top = g.a * ROW + 2, bot = g.b * ROW + ROW - 2;
+        const tw = mvWidth(g.label);
+        mvPrint(1 + Math.round((lineX - 1 - tw) / 2), Math.round((top + bot) / 2 - 2.5), g.label, 1);
+        fill_rect(lineX, top, 1, bot - top, 1);
     }
 }
 

@@ -111,19 +111,20 @@ eq(_clipIsEmpty(1, 2), false, '_clipIsEmpty drum non-empty');
 S.activeTrack = 0;
 S.trackPadMode[0] = 0;
 S.activeBank = 3;
-eqObj(bankCyclePos(), { idx: 3, count: 10 }, 'bankCyclePos melodic mid');
+eqObj(bankCyclePos(), { idx: 7, count: 10 }, 'bankCyclePos melodic mid');   /* DELAY, third in FX */
 S.activeBank = 9;                          /* not on the walk -> 0 */
 eqObj(bankCyclePos(), { idx: 0, count: 10 }, 'bankCyclePos melodic not-in-cycle');
 S.activeBank = -2;                         /* not on the walk -> 0 */
 eqObj(bankCyclePos(), { idx: 0, count: 10 }, 'bankCyclePos melodic clamp-low');
-S.activeBank = BANK_STEP;                  /* STEP sits just before SOUND + CONFIG */
-eqObj(bankCyclePos(), { idx: 6, count: 10 }, 'bankCyclePos melodic STEP bank');
+/* Melodic walk since 2026-09-26: LIVE ARP | MACROS AUTOMATION | STEP CLIP | NOTE FX HARMONY DELAY SEQ ARP | SOUND */
+S.activeBank = BANK_STEP;                  /* SEQ: STEP, CLIP */
+eqObj(bankCyclePos(), { idx: 3, count: 10 }, 'bankCyclePos melodic STEP bank');
 S.activeBank = BANK_SOUND;                 /* sound mode's identity -> last segment */
-eqObj(bankCyclePos(), { idx: 7, count: 10 }, 'bankCyclePos melodic sound bank');
-S.activeBank = BANK_MACROS;                /* MACROS follows SOUND + CONFIG — the last segment */
-eqObj(bankCyclePos(), { idx: 8, count: 10 }, 'bankCyclePos melodic MACROS bank');
-S.activeBank = BANK_AUTOMATION;            /* last since 2026-09-03; the old bank 6 is off the walk */
-eqObj(bankCyclePos(), { idx: 9, count: 10 }, 'bankCyclePos melodic AUTOMATION bank');
+eqObj(bankCyclePos(), { idx: 9, count: 10 }, 'bankCyclePos melodic sound bank');
+S.activeBank = BANK_MACROS;                /* CTRL: MACROS, AUTOMATION, after LIVE ARP */
+eqObj(bankCyclePos(), { idx: 1, count: 10 }, 'bankCyclePos melodic MACROS bank');
+S.activeBank = BANK_AUTOMATION;            /* the old bank 6 is off the walk */
+eqObj(bankCyclePos(), { idx: 2, count: 10 }, 'bankCyclePos melodic AUTOMATION bank');
 S.activeBank = 6;
 eqObj(bankCyclePos(), { idx: 0, count: 10 }, 'bankCyclePos melodic old bank 6 is not on the walk');
 /* Drum branch: indexOf into [7,0,1,3,5,6] */

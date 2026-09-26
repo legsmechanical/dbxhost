@@ -1412,6 +1412,13 @@ export function applyBankPick(rest) {
      * the jog back instead, so the exit has to live where the bank is actually
      * committed. */
     if (soundOpen()) soundExit();
+    /* ...and a sound entry still QUEUED from the detent before is cancelled
+     * the same way: two quick detents across MACROS (LIVE ARP → MACROS →
+     * AUTOMATION before a tick) otherwise opened sound mode over AUTOMATION,
+     * because the tick's entry does not look at the bank. */
+    S.pendingSoundEnterTrack = -1;
+    S.pendingSoundEnterSilent = false;
+    S.pendingSoundEnterMenu = false;
     S.activeBank = next;
     S.trackActiveBank[t] = next;
     if (next === 7) S.allLanesConfirmed = false;

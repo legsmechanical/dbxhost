@@ -132,12 +132,12 @@ function reset() {
 step('⭑ the turn WALKS the banks directly — one detent, one bank, no overlay', () => {
     reset();
     S.bankCardLatched = true;              /* the walk lives inside the bank view */
-    const cyc = bankCycleForMode(0);
+    const cyc = bankCycleForMode(0), next = cyc[cyc.indexOf(0) + 1];
     jog(1); globalThis.tick();
     if (S.bankPickerSel >= 0) throw new Error('an overlay opened — the picker is retired');
-    if (S.activeBank !== cyc[1])
-        throw new Error('one detent landed on ' + S.activeBank + ', expected ' + cyc[1]);
-    if (S.trackActiveBank[2] !== cyc[1])
+    if (S.activeBank !== next)
+        throw new Error('one detent landed on ' + S.activeBank + ', expected ' + next);
+    if (S.trackActiveBank[2] !== next)
         throw new Error('the per-track record did not follow: ' + S.trackActiveBank[2]);
     if (S.bankSelectTick < 0) throw new Error('the walked-to bank has no display window');
 });
@@ -145,48 +145,55 @@ step('⭑ the turn WALKS the banks directly — one detent, one bank, no overlay
 step('⭑ ...and clamps at the first bank', () => {
     reset();
     S.bankCardLatched = true;
+    const first = bankCycleForMode(0)[0];
+    S.activeBank = first; S.trackActiveBank[2] = first;
     jog(-1); globalThis.tick();
-    if (S.activeBank !== 0) throw new Error('walked below the first bank: ' + S.activeBank);
+    if (S.activeBank !== first) throw new Error('walked below the first bank: ' + S.activeBank);
 });
 
-step('⭑ walking onto SOUND + CONFIG lands the DOOR; on to MACROS is a screen switch; walking off leaves', () => {
+step('⭑ walking onto SOUND + CONFIG lands the DOOR; it is the last stop; walking off leaves', () => {
     reset();
     S.bankCardLatched = true;
     const cyc = bankCycleForMode(0);
-    /* Up to SOUND + CONFIG. */
-    for (let i = 0; i < cyc.indexOf(BANK_SOUND); i++) { jog(1); }
+    /* From CLIP up to SOUND + CONFIG, the end of the melodic walk (2026-09-26). */
+    for (let i = cyc.indexOf(0); i < cyc.indexOf(BANK_SOUND); i++) { jog(1); }
     globalThis.tick(); globalThis.tick();          /* the entry defers to tick */
     if (!snd.soundActive()) throw new Error('the walk did not open the door');
     if (S.activeBank !== BANK_SOUND) throw new Error('not on SOUND + CONFIG: ' + S.activeBank);
-    /* One more: MACROS — the mode stays open, the screen and the record switch. */
     jog(1); globalThis.tick();
-    if (!snd.soundActive()) throw new Error('walking onto MACROS closed sound mode');
-    if (S.activeBank !== BANK_MACROS || S.trackActiveBank[2] !== BANK_MACROS)
-        throw new Error('MACROS did not record itself: ' + S.activeBank + '/' + S.trackActiveBank[2]);
-    /* On to AUTOMATION (last since 2026-09-03): sound mode leaves; back left it re-opens on MACROS. */
-    jog(1); globalThis.tick();
-    if (S.activeBank !== BANK_AUTOMATION || snd.soundActive()) throw new Error('MACROS -> AUTOMATION should leave sound mode: ' + S.activeBank);
-    jog(-1); globalThis.tick(); globalThis.tick();
-    if (S.activeBank !== BANK_MACROS || !snd.soundActive()) throw new Error('AUTOMATION -> MACROS should re-open on the page: ' + S.activeBank);
-    /* Back to the door, still open; then off it, closed. */
-    jog(-1); globalThis.tick();
-    if (!snd.soundActive() || S.activeBank !== BANK_SOUND)
-        throw new Error('MACROS -> SOUND + CONFIG should keep the mode open on the door: ' + S.activeBank);
+    if (!snd.soundActive() || S.activeBank !== BANK_SOUND) throw new Error('the last stop did not clamp: ' + S.activeBank);
     jog(-1); globalThis.tick();
     if (snd.soundActive()) throw new Error('walking off the door did not leave sound mode');
     if (S.activeBank !== cyc[cyc.indexOf(BANK_SOUND) - 1])
         throw new Error('did not land on the neighbour bank: ' + S.activeBank);
 });
 
-step('⭑ two detents before the tick: the queued door counts as the position (STEP → SOUND → MACROS)', () => {
+step('⭑ MACROS opens sound mode on its page from LIVE ARP; on to AUTOMATION leaves; back re-opens; back again leaves', () => {
     reset();
     S.bankCardLatched = true;
-    const cyc = bankCycleForMode(0);
-    for (let i = 0; i < cyc.indexOf(BANK_MACROS); i++) { jog(1); }   /* no tick between */
+    S.activeBank = 5; S.trackActiveBank[2] = 5;       /* LIVE ARP, just before CTRL */
+    jog(1); globalThis.tick(); globalThis.tick();
+    if (!snd.soundActive()) throw new Error('walking onto MACROS did not open sound mode');
+    if (S.activeBank !== BANK_MACROS || S.trackActiveBank[2] !== BANK_MACROS)
+        throw new Error('MACROS did not record itself: ' + S.activeBank + '/' + S.trackActiveBank[2]);
+    jog(1); globalThis.tick();
+    if (S.activeBank !== BANK_AUTOMATION || snd.soundActive()) throw new Error('MACROS -> AUTOMATION should leave sound mode: ' + S.activeBank);
+    jog(-1); globalThis.tick(); globalThis.tick();
+    if (S.activeBank !== BANK_MACROS || !snd.soundActive()) throw new Error('AUTOMATION -> MACROS should re-open on the page: ' + S.activeBank);
+    jog(-1); globalThis.tick();
+    if (snd.soundActive()) throw new Error('MACROS -> LIVE ARP did not leave sound mode');
+    if (S.activeBank !== 5) throw new Error('did not land on LIVE ARP: ' + S.activeBank);
+});
+
+step('⭑ two detents before the tick: the queued MACROS counts as the position (LIVE ARP → MACROS → AUTOMATION)', () => {
+    reset();
+    S.bankCardLatched = true;
+    S.activeBank = 5; S.trackActiveBank[2] = 5;
+    jog(1); jog(1);                                   /* no tick between */
     globalThis.tick(); globalThis.tick();
-    if (!snd.soundActive()) throw new Error('the walk did not open sound mode');
-    if (S.activeBank !== BANK_MACROS)
-        throw new Error('the second detent re-selected the door instead of walking on: ' + S.activeBank);
+    if (S.activeBank !== BANK_AUTOMATION)
+        throw new Error('the second detent re-selected MACROS instead of walking on: ' + S.activeBank);
+    if (snd.soundActive()) throw new Error('the queued MACROS entry opened sound mode over AUTOMATION');
 });
 
 step('⚠ SHIFT+jog steps the TRACK — the walk is the unshifted turn', () => {
