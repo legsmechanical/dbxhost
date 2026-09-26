@@ -30,7 +30,7 @@ import {
     fmtDly, fmtArpStyle, fmtArpSteps, fmtDiq, fmtPlain, fmtLgto, fmtPitchRnd
 } from './ui_constants.mjs';
 import { drawAutoMarkAt,
-    drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitBankHeader,
+    drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitBankHeader, kitBankGlyphWidth,
     kitUseLayout,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
     drawVFader, mvPrint, mvWidth, rectOutline, plotLine,
@@ -1933,12 +1933,21 @@ function drawUIBody() {
             if (_velPage) drawKitTouchedHeader('Velocity: ' + (_v === 0 ? 'Off' : _v > 127 ? 'Thru' : _v));
             else          drawKitTouchedHeader('Pitch: ' + (_v > 0 ? '+' : '') + _v);
         } else {
-            drawBankHeading(_velPage ? 'Step Vel' : 'Step Pitch');
+            const _hName = _velPage ? 'Step Vel' : 'Step Pitch';
+            drawBankHeading(_hName);
             if (!_velPage) {
                 /* micro-font hint that Shift flips to the velocity page —
-                 * black on the filled header bar, tucked LEFT of the alt
-                 * arrow (which sits at x=121-126) */
-                pf3Print(118 - pf3Width('SHIFT'), 2, 'SHIFT', 0);
+                 * black on the filled header bar, in the GAP between the name
+                 * and the right label (T1[MV1]). Both ends are MEASURED, the
+                 * way drawKitBankHeader lays them out: a fixed x once drew it
+                 * straight over the right label. Dropped rather than crammed
+                 * when a long instrument name leaves no gap. */
+                const _rt  = String(bankHeaderRight()).toUpperCase();
+                const _rw  = _rt ? fontWidth4x5(_rt) + 4 : 0;
+                const _hx  = 128 - 2 - _rw - pf3Width('SHIFT');
+                const _gw  = kitBankGlyphWidth(bankHeaderGlyph(S.activeBank));
+                const _nEnd = 2 + (_gw ? _gw + 3 : 0) + fontWidth4x5(_hName.toUpperCase());
+                if (_hx >= _nEnd + 4) pf3Print(_hx, 2, 'SHIFT', 0);
             }
         }
         const _colW = 16, _barW = 10, _top = 14, _bot = 54, _numY = 57;

@@ -57,6 +57,9 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **The arp step editor's header reads cleanly.** On SEQ ARP and LIVE ARP's
+  step pitch page the SHIFT hint no longer covers the track and instrument
+  label.
 - **Conductor C-WHEN fits its values.** Each track's Next/Now sits in its own
   box instead of running into its neighbours; drum tracks, which never respond,
   are left blank as on C-RESPONDER.
