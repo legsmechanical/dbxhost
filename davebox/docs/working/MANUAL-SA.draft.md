@@ -134,8 +134,10 @@ Every new project is ready to play:
 
 - **Tracks 1–4** play Move's four instruments, loaded with a random stock drum kit,
   bass and two polyphonic sounds, like a new Move set.
-- **Tracks 5–8** each have an empty Schwung chain, silent until you pick an
-  instrument in the track's [TRACK CONFIG](#143-choosing-an-instrument) menu.
+- **Tracks 5–8** each have an empty Schwung chain, ready for a Schwung module and
+  silent until you pick one in the track's
+  [TRACK CONFIG](#143-choosing-an-instrument) menu. Until then the header and
+  TRACK CONFIG show **--** for their instrument.
 - You can point any track somewhere else later — see
   [Choosing an instrument](#143-choosing-an-instrument).
 
@@ -604,8 +606,8 @@ blinks white — the cursor, starting at the first step of the page you're viewi
 - **Play a pad** (or several together for a chord): the notes land on the cursor
   step, and the cursor moves on when you let go.
 - **> with pads held** ties the note a step longer, each press extending it;
-  **< with pads held** takes one step back off. The steps the note covers light
-  up as you go, as they do when you hold a step.
+  **< with pads held** takes one step back off. The steps the note is held over
+  light in the tail colour as you go, as they do when you hold a step.
 - **> alone** is a rest: the cursor moves on, writing nothing.
 - **<** steps back and **erases what you entered there this session**. Notes
   already in the clip stay.
@@ -1123,7 +1125,7 @@ do nothing; the jog does everything.
 - Each row shows its **cycle**, the length it repeats over: **4 BAR**, **13 ST**
   (steps, when it isn't whole bars; **13 ST/32** when its steps aren't sixteenths),
   or **CLIP** when it follows the clip. A muted row reads **OFF**, a cleared one
-  **EMPTY**, and the pads' aftertouch **PADS**.
+  **EMPTY** and its length, and the pads' aftertouch **PADS**.
 - With nothing automated the bank reads *NO AUTOMATION*.
 
 **Click the jog** for the menu. With the cursor on a row, the step buttons, pages and
@@ -1139,9 +1141,10 @@ screen show **that row's lane**, not the clip's notes:
   bank, its module's page (on a per-pad parameter, that pad), SOUND + CONFIG for a
   level, MACROS for a MIDI target. Turn its knob to change the value on that step;
   let go to come back, on the same row and page. On a bank the header shows
-  **<AUTO S7** (step 7). The parameter's cell is marked with a small corner, and
-  while the step is held it shows the value the lane plays there — shown only, the
-  parameter doesn't move until you turn the knob.
+  **<AUTO S7** (step 7). The parameter's cell is highlighted, and while the step
+  is held it shows the value the lane plays there — shown only, the parameter
+  doesn't move until you turn the knob. A module's page keeps its graphics (filter
+  curve, envelope) while you're there.
 - **Shift + click** a row to jump to where that parameter is edited; **Back**
   returns you to this menu, on the same row. The step buttons keep showing the lane
   there, so you can hold a step and turn the knob to set it.
@@ -1163,11 +1166,17 @@ screen show **that row's lane**, not the clip's notes:
   loop copies it forward (on a drum track, the ALL LANES versions). *Off*: it stays
   put whatever you do to the notes.
 - **Loop** — the parameter's own loop length in steps, or CLIP to follow the clip.
+  It can be shorter than the clip (it repeats inside it) or longer, up to 256
+  steps (it runs across several passes of the clip). A lane with its own Loop
+  runs in step with the song, and restarts when its clip is launched at
+  **Launch 1-bar** — see [Launching clips](#121-launching-clips).
 - **Rate** — /16 to ×16, the loop stretching to match.
 - **Scale** — 0–200 %: how far the lane moves (toward zero, or on a centred
   parameter like pan or pitch bend, toward and away from its centre).
-- **Clear** — every value goes, but the lane stays with its settings (it reads
-  **EMPTY**, ready for new values).
+- **Clear** — every value goes, but the lane stays with its settings, its length
+  included (it reads **EMPTY** and its length, e.g. **EMPTY 4 BAR**, ready for new
+  values). On a drum track, set Loop on the empty lane and new recording or step
+  input lands at that length.
 - **Delete** — the lane goes altogether.
 
 The last row is **Clear all**; **Delete + click** on the card does the same. Every
@@ -1224,6 +1233,11 @@ Pan, Send A, Send B).
 | **Shift + Delete + clip** | Reset the clip completely |
 
 - Launching a clip replaces whatever was playing **on that track**.
+- **Where a launched clip starts** depends on **Launch** in Project Settings. At
+  **1-bar** it starts from its beginning — its notes, every drum lane, and any
+  automation lane with its own Loop. At every other setting (Now, 1/16 … 1/2) it
+  launches **in step with the song**: it plays from wherever it would be had it
+  been running since you pressed Play.
 - Switching to a track launches its focused clip only if that clip is empty.
 - Keep holding **Copy** to paste one clip into several slots; releasing Copy
   empties the clipboard.
@@ -1879,7 +1893,7 @@ see [Track settings](#174-track-settings) below.
 | Key | The session's root note — see [§17.2](#172-key--scale) | C…B | random |
 | Scale | The scale melodic tracks snap to — see [§17.2](#172-key--scale) | (below) | random |
 | Scale Aware | Whether scale-aware params move by scale degree (On) or semitone (Off) | On, Off | On |
-| Launch | When a launched clip or scene actually starts — at once (Now) or on the next boundary | Now, 1/16, 1/8, 1/4, 1/2, 1-bar | Now |
+| Launch | When a launched clip or scene actually starts — at once (Now) or on the next boundary. At 1-bar it starts from its beginning; otherwise in step with the song ([§12.1](#121-launching-clips)) | Now, 1/16, 1/8, 1/4, 1/2, 1-bar | Now |
 | Beat Marks | Dim markers on the step buttons at 1, 5, 9, 13 | On, Off | On |
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Projects... | The project picker — see [Projects](#projects--davebox-has-its-own-workspace) | action | — |

@@ -719,6 +719,25 @@ step('the waveform morphs between shapes, and never out of an unread one', () =>
     assert(same(w('saw', 0, 'saw', null), sawStatic), 'a missing store still morphed');
 });
 
+step('the lane in focus is HIGHLIGHTED like a touched knob, and has no corner mark', () => {
+    const locked = PAGE.map((c, i) => (i === 2 ? Object.assign({}, c, { lock: true }) : c));
+    const touched = shot(() => draw(PAGE, { touchedIdx: 2 }));
+    const focus = shot(() => draw(locked));
+    const plain = shot(() => draw(PAGE));
+    /* The label strip of cell C (row 0, col 2) inverts exactly as a touch does;
+     * compare only the cells, below the header (a touch also renames the header). */
+    const rect = (f, x0, y0, w, h) => { const o = []; for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) o.push(f[y * 128 + x]); return o; };
+    const label = (f) => rect(f, 64, kit.MV_LBL0_Y, 32, 7);
+    const widget = (f) => rect(f, 64, kit.MV_ROW0_Y, 32, kit.MV_KH);
+    assert(!same(label(focus), label(plain)), 'the lane in focus has a plain label strip');
+    assert(same(label(focus), label(touched)), 'the lane in focus label is not inverted like a touched one');
+    /* No corner mark: the widget itself is untouched. */
+    assert(same(widget(focus), widget(plain)), 'the lane in focus still draws a mark on its widget');
+    /* ...and a touch elsewhere takes the highlight: one lit cell at a time. */
+    const both = shot(() => draw(locked, { touchedIdx: 5 }));
+    assert(same(both, shot(() => draw(PAGE, { touchedIdx: 5 }))), 'two cells lit at once');
+});
+
 step('the footer reserves BACK before laying anything else out', () => {
     /* ⚠⚠ THE FIT RULE, and the reason this is a primitive and not a loop. A
      * naive left-to-right layout drops whatever does not fit — which on a

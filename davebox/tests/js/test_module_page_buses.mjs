@@ -52,7 +52,8 @@ globalThis.shadow_get_param = (slot, key) => ASSIGN[key] || '';
 globalThis.shadow_set_param = (slot, key, val) => { ASSIGN[key] = String(val); return 1; };
 globalThis.shadow_send_midi_to_dsp = () => {};
 globalThis.fill_rect = () => {}; globalThis.draw_rect = () => {};
-globalThis.stipple_rect = () => {}; globalThis.set_pixel = () => {};
+let stipples = 0;
+globalThis.stipple_rect = () => { stipples++; }; globalThis.set_pixel = () => {};
 globalThis.clear_screen = () => {};
 /* Recorded, not a no-op — the My Presets row-overlap regression test below
  * needs to see where every print() lands. */
@@ -158,8 +159,12 @@ step('⭐⭐ THE GESTURE: click in, jog to Buses, click — the bus list is on s
     for (let i = 0; i < at; i++) { jog(1); ticks(1); }
     click(); ticks(3);
     assert(snd.soundViewForTest() === VIEW_MODBUS, 'view is ' + snd.soundViewForTest());
+    stipples = 0;
     const t = screen();
     assert(t.some((s) => s.indexOf('Drums') >= 0), 'the bus list is not drawn: ' + JSON.stringify(t));
+    /* The SOUND MENU's overlay (Josh, 2026-09-26): the list floats over a
+     * dimmed backdrop, as it does from the Sound menu — not a bare full screen. */
+    assert(stipples > 0, 'the bus list is drawn full-screen, not as the Sound menu overlay');
 });
 step('a bus opens from there, and Back climbs back to the list', () => {
     click(); ticks(2);

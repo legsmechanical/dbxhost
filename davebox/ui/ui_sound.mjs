@@ -5328,12 +5328,11 @@ function renderInChain(rows, sel, emptyMsg, opts) {
      *
      * ⚠ The track-view path is untouched — same function, different arrival.
      *
-     * The Buses errand has depth of its own (a bus, its voices, its chain):
-     * every screen under it stays a full screen, or the second level would
-     * float over the Sound menu you never came through. */
-    if (ppErrandView !== null && (S.view === ppErrandView ||
-            (ppErrandView === VIEW_MODBUS && (S.view === VIEW_MODBUS_GROUP ||
-             S.view === VIEW_MODBUS_VOICES || S.view === VIEW_MODBUS_CHAIN)))) {
+     * ⭑ EXCEPT THE BUSES: from the Module page they float exactly as they do
+     * from the Sound menu (Josh, 2026-09-26: "can we just use theh sound menu
+     * overlay on the module page?"). Only Back differs — it returns to the
+     * editor (ppErrandView). */
+    if (ppErrandView !== null && ppErrandView !== VIEW_MODBUS && S.view === ppErrandView) {
         /* ⚠⚠ CLEAR FIRST. Nothing else does on this path: every render function
          * in soundRender owns its own clear, and the overlay path below got one
          * for free from renderBlocks() drawing the backdrop. Returning early
@@ -10953,8 +10952,10 @@ export function renderGatewayCard(title, line2) {
      * on any surface that reads a binding (see renderBlocks). */
     kitUseLayout('bank');
     drawKitHeader(title, false);
-    centreText(26, 'CLICK TO ENTER');
-    centreText(40, line2);
+    /* The door's NAME in the middle, the gesture in the footer (Josh,
+     * 2026-09-26, the footer audit: "agree with all recommendations"). */
+    centreText(30, line2);
+    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'ENTER']]);
 }
 
 /* The track flavour's card — both renderPrompt and the peek draw THIS, so the
@@ -10998,15 +10999,14 @@ function renderPrompt() {
 }
 
 /* The NO INSTRUMENT EDITOR screen: the bank header (track + instrument, like
- * every card), two centred lines, and a footer that names the one way on. */
+ * every card), two centred lines, and a footer that names the one way on (the
+ * old "PRESS BACK FOR / TRACK CONFIG" lines repeated it and were trimmed). */
 function renderNoEditor() {
     clear_screen();
     kitUseLayout('bank');
     drawKitBankHeader(TRACK_MENU_TITLE, null, bankHeaderRight(false));
     centreText(MV_ROW1_Y - 8, 'NO INSTRUMENT EDITOR');
     centreText(MV_ROW1_Y + 2, 'FOR ' + noEditorWords(S.track).toUpperCase());
-    centreText(MV_ROW1_Y + 14, 'PRESS BACK FOR');
-    centreText(MV_ROW1_Y + 24, TRACK_MENU_TITLE);
     fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0);
     drawKitHintRow(MV_FOOTER_Y, [['BACK', 'MENU']]);
 }
@@ -11799,7 +11799,8 @@ function ppRestoreFor(slot, comp) {
 }
 
 /* THE LANE IN FOCUS on the editor (a jump from the AUTOMATION bank, Josh
- * 2026-09-25): the lane's cell on the visible page carries the lock corner,
+ * 2026-09-25): the lane's cell on the visible page is HIGHLIGHTED (it had a
+ * lock corner until Josh, 2026-09-26: "we can do away wiht the corner mark"),
  * and while a step is held it shows what the lane plays there. Set every
  * tick the grid is up — the page, the held step and the value all move — and
  * cleared the moment there is nothing to show. */
@@ -11814,7 +11815,7 @@ function ppFocusSync() {
         const fk = f.target.slice(i + 1);
         for (let k = 0; k < 8; k++) {
             if (paramPagesFullKeyAt(k) !== fk) continue;
-            dec = { [k]: f.wire != null ? { locked: true, value: f.wire } : { locked: true } };
+            dec = { [k]: f.wire != null ? { highlight: true, value: f.wire } : { highlight: true } };
             break;
         }
     }
@@ -12803,8 +12804,8 @@ function renderEdit() {
     if (S.banksDeferred) { drawKitHeaderParamPages(blockLabel(), '', false); return; }
     if (!S.banks.length) {
         drawKitHeaderParamPages(blockLabel(), '', false);
-        centreText(28, S.moduleId ? 'NO PARAMS' : 'EMPTY');
-        centreText(40, S.moduleId ? 'CLICK FOR PRESETS' : 'CLICK TO PICK');
+        centreText(30, S.moduleId ? 'NO PARAMS' : 'EMPTY');
+        drawKitHintRow(MV_FOOTER_Y, [['CLK', S.moduleId ? 'PRESETS' : 'PICK'], ['BACK', 'OUT']]);
         return;
     }
     const bank = S.banks[S.bankIdx];

@@ -110,6 +110,19 @@ step('⭐ session overview: the turn walks the session banks and the column list
     S.sessionView = false;
 });
 
+step('⭐ session MIXER card (latched): the turn walks the mixer modes and the column lists them', () => {
+    S.sessionView = true; S.sessKnobMode = 0; S.sessMixerLatched = true;
+    touchJog(); tick();
+    jog(1); tick();
+    assert(S.sessKnobMode === 1, 'mixer mode ' + S.sessKnobMode);
+    const nav = render.bankNavItems();
+    assert(nav.items[nav.cur].name === 'PAN', 'centred ' + nav.items[nav.cur].name);
+    assert(columnUp(frame()), 'no column on the latched mixer card');
+    releaseJog(); tick();
+    assert(!columnUp(frame()), 'the mixer-card column outlived the release');
+    S.sessMixerLatched = false; S.sessionView = false;
+});
+
 if (failed) { console.log('FAIL: bank nav overlay'); process.exit(1); }
 console.log('PASS: the bank column shows while the jog walks and goes on release');
 }
