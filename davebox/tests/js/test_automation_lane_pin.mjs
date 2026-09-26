@@ -269,9 +269,16 @@ step('⭐ HOLD a Volume point -> SOUND + CONFIG while held; its knob writes THAT
     assert(f[2] === '72' && f[3] === '95', 'the lock is not on step 4 (ticks 72..95): ' + w[w.length - 1]);
     note(STEP(3), 0); ticks(2);
     assert(S.activeBank === BANK_AUTOMATION && !snd.soundOpen(), 'release did not come back: bank ' + S.activeBank + ' open ' + snd.soundOpen());
-    void heldText;
     assert(S.autoBank.menu && S.autoBank.sel === idx, 'not on the same row: ' + JSON.stringify(S.autoBank));
     assert(S.trackActiveBank[T] === BANK_AUTOMATION, 'the track is left on bank ' + S.trackActiveBank[T]);
+    /* CONTROL: the same cell with NO step held (a Shift+click jump) shows the
+     * knob's own value — so the held value above was the lane's. */
+    shiftClick(); ticks(4);
+    globalThis.clear_screen(); render.drawUI();
+    const kc2 = movy.kitCellsForTest();
+    assert(kc2.cells[0].lock && kc2.touched !== 0, 'the pinned, unheld Volume cell: ' + JSON.stringify(kc2));
+    assert(kc2.cells[0].text !== heldText, 'the held cell showed the knob\'s own value (' + heldText + ')');
+    back(); ticks(4);
     back(); ticks(1);
 });
 
