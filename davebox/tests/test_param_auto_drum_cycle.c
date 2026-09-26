@@ -340,8 +340,11 @@ int main(void) {
         hx_destroy(h);
 
         /* Melodic: a 16-step clip whose loop starts at step 12, and a lane
-         * with its own 8-step Loop. At the clip's first rendered tick (288)
-         * playback puts that lane at 288 % 192 = 96 — not at 288. */
+         * with its own 8-step Loop. Since 2026-09-26 every lane with its own
+         * Loop runs on the master clock, drum or melodic (Josh: a Loop can be
+         * shorter or longer than its clip), so an exported clip starts it at
+         * its OWN start — as a Launch 1-bar launch restarts it — like a drum
+         * cycle. (It used to be the clip tick folded into the loop: 96.) */
         h = hx_create(NULL);
         in = (seq8_instance_t *)h->inst;
         hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
@@ -351,9 +354,9 @@ int main(void) {
         e = entry(in, "1:synth:cutoff");
         HX_ASSERT(in->tracks[1].clips[0].loop_start == 12, "setup: the clip's loop starts at step 12");
         HX_ASSERT(pa_export_clock(&in->tracks[1], e, &ws, &wl, &p0, &mul, &div)
-                  && ws == 0 && wl == 192 && p0 == 96,
-                  "⭐ a melodic Loop lane starts the export where playback has it at the clip's first tick (96, not 288)");
-        OK("the export clock: a drum cycle from its own start, a melodic lane where playback puts it");
+                  && ws == 0 && wl == 192 && p0 == 0,
+                  "⭐ a melodic Loop lane starts the export at its own start, like a drum cycle (0, not 96 or 288)");
+        OK("the export clock: every lane with its own Loop starts from its own start");
         hx_destroy(h);
     }
 

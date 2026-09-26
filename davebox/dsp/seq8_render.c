@@ -668,6 +668,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                     tr->queued_clip  = -1;
                     tr->clip_playing = 1;
                     PA_LANE_CLOCK_RESET(tr);
+                    PA_LANE_ORIGIN_AT_LAUNCH(inst, tr);
                     clip_send_program(tr, &tr->clips[tr->active_clip]);
                     /* Clear any lingering recording-suppressor flags on the
                      * newly-active clip. Without this, notes recorded in a
@@ -679,7 +680,16 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                         for (_dl = 0; _dl < DRUM_LANES; _dl++) {
                             clip_t *_nc = &tr->drum_clips[tr->active_clip]->lanes[_dl].clip;
                             clip_clear_suppress(_nc);
-                            drum_lane_anchor_playhead(inst, tr, _dl, _nc);
+                            /* Launch 1-bar restarts EVERYTHING from its beginning,
+                             * drum lanes included (Josh, 2026-09-26); every other
+                             * setting keeps each lane in step with the song. */
+                            if (inst->launch_quant == 5) {
+                                tr->drum_current_step[_dl] = initial_clip_step(_nc->loop_start, _nc->length, _nc->playback_dir);
+                                _nc->pp_dir_state = initial_pp_dir(_nc->playback_dir);
+                                tr->drum_tick_in_step[_dl] = 0;
+                            } else {
+                                drum_lane_anchor_playhead(inst, tr, _dl, _nc);
+                            }
                         }
                     } else if (tr->pad_mode != PAD_MODE_DRUM) {
                         pfx_sync_from_clip(tr);
@@ -740,6 +750,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                         tr->queued_clip  = -1;
                         tr->clip_playing = 1;
                         PA_LANE_CLOCK_RESET(tr);
+                        PA_LANE_ORIGIN_AT_LAUNCH(inst, tr);
                         clip_send_program(tr, &tr->clips[tr->active_clip]);
                         /* Clear lingering recording-suppressor flags on the
                          * newly-launched clip — see queued-launch path above. */
@@ -748,7 +759,16 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                             for (_dl = 0; _dl < DRUM_LANES; _dl++) {
                                 clip_t *_nc = &tr->drum_clips[tr->active_clip]->lanes[_dl].clip;
                                 clip_clear_suppress(_nc);
-                                drum_lane_anchor_playhead(inst, tr, _dl, _nc);
+                                /* Launch 1-bar restarts EVERYTHING from its beginning,
+                                 * drum lanes included (Josh, 2026-09-26); every other
+                                 * setting keeps each lane in step with the song. */
+                                if (inst->launch_quant == 5) {
+                                    tr->drum_current_step[_dl] = initial_clip_step(_nc->loop_start, _nc->length, _nc->playback_dir);
+                                    _nc->pp_dir_state = initial_pp_dir(_nc->playback_dir);
+                                    tr->drum_tick_in_step[_dl] = 0;
+                                } else {
+                                    drum_lane_anchor_playhead(inst, tr, _dl, _nc);
+                                }
                             }
                         } else if (tr->pad_mode != PAD_MODE_DRUM) {
                             pfx_sync_from_clip(tr);

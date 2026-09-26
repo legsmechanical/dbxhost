@@ -1166,6 +1166,10 @@ screen show **that row's lane**, not the clip's notes:
   loop copies it forward (on a drum track, the ALL LANES versions). *Off*: it stays
   put whatever you do to the notes.
 - **Loop** — the parameter's own loop length in steps, or CLIP to follow the clip.
+  It can be shorter than the clip (it repeats inside it) or longer, up to 256
+  steps (it runs across several passes of the clip). A lane with its own Loop
+  runs in step with the song, and restarts when its clip is launched at
+  **Launch 1-bar** — see [Launching clips](#121-launching-clips).
 - **Rate** — /16 to ×16, the loop stretching to match.
 - **Scale** — 0–200 %: how far the lane moves (toward zero, or on a centred
   parameter like pan or pitch bend, toward and away from its centre).
@@ -1229,6 +1233,11 @@ Pan, Send A, Send B).
 | **Shift + Delete + clip** | Reset the clip completely |
 
 - Launching a clip replaces whatever was playing **on that track**.
+- **Where a launched clip starts** depends on **Launch** in Project Settings. At
+  **1-bar** it starts from its beginning — its notes, every drum lane, and any
+  automation lane with its own Loop. At every other setting (Now, 1/16 … 1/2) it
+  launches **in step with the song**: it plays from wherever it would be had it
+  been running since you pressed Play.
 - Switching to a track launches its focused clip only if that clip is empty.
 - Keep holding **Copy** to paste one clip into several slots; releasing Copy
   empties the clipboard.
@@ -1884,7 +1893,7 @@ see [Track settings](#174-track-settings) below.
 | Key | The session's root note — see [§17.2](#172-key--scale) | C…B | random |
 | Scale | The scale melodic tracks snap to — see [§17.2](#172-key--scale) | (below) | random |
 | Scale Aware | Whether scale-aware params move by scale degree (On) or semitone (Off) | On, Off | On |
-| Launch | When a launched clip or scene actually starts — at once (Now) or on the next boundary | Now, 1/16, 1/8, 1/4, 1/2, 1-bar | Now |
+| Launch | When a launched clip or scene actually starts — at once (Now) or on the next boundary. At 1-bar it starts from its beginning; otherwise in step with the song ([§12.1](#121-launching-clips)) | Now, 1/16, 1/8, 1/4, 1/2, 1-bar | Now |
 | Beat Marks | Dim markers on the step buttons at 1, 5, 9, 13 | On, Off | On |
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Projects... | The project picker — see [Projects](#projects--davebox-has-its-own-workspace) | action | — |

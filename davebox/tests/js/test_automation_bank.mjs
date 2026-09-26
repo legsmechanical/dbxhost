@@ -255,6 +255,13 @@ step('Smooth/Stepped is an op HERE (every numeric param): cutoff offers it, voic
     /* ⭑ Applies on every change (Josh, 2026-09-03), ONE checkpoint per edit session. */
     assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 0 0'), '8 steps × 24 ticks, got ' + JSON.stringify(sets));
     assert(sets.filter(x => x.startsWith('t0_c0_undo_checkpoint=')).length === 1, 'one checkpoint for the session');
+    /* ⭐ A melodic lane's Loop runs PAST its 16-step clip (Josh, 2026-09-26):
+     * 32 steps = 768 ticks, on the master clock. It used to stop at 16. */
+    cc(14, 24); ticks(2);
+    assert(menu().loopVal === 32, 'the Loop goes past the 16-step clip, got ' + menu().loopVal);
+    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 768 0 0 0'), '32 steps × 24 ticks, got ' + JSON.stringify(sets));
+    cc(14, 104); ticks(2);                                   /* -24: back to 8 for the checks below */
+    assert(menu().loopVal === 8, 'back to 8, got ' + menu().loopVal);
     sets.length = 0;
     click(); ticks(2);
     assert(!sets.some(x => x.startsWith('t0_pa_loop=')), 'the click writes nothing more');

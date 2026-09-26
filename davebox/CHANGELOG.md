@@ -8,6 +8,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added (pending)
+- **Melodic automation lanes can be longer (or shorter) than their clip.** An
+  automation lane's Loop now goes up to 256 steps on a melodic track too: a
+  4-bar filter sweep can run under a 1-bar clip, and a short lane repeats
+  inside it. Recording and holding a step land on the lane's own length, so you
+  can Clear a lane, set its length, and record into it.
 - **A bank map while you turn the jog.** On the track overview, a bank page or
   the session overview, a column on the left lists every bank (or session bank)
   with the one you are on highlighted in the middle, and goes when you let go.
@@ -232,6 +237,11 @@ the section into a versioned heading at release time.
   already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
+- **Launch 1-bar restarts everything; every other setting stays in step with
+  the song.** At Launch 1-bar a launched clip starts from its beginning — drum
+  lanes now included (they used to keep the song's position) and automation
+  lanes with their own Loop. At Now … 1/2 everything launches in step with the
+  song.
 - **Gestures are named in the footer everywhere.** Holding Loop shows
   **STEP PAGE** / **JOG STEP** pills instead of two lines of instructions; the
   SOUND + CONFIG peek and the Master FX door show **CLK ENTER**; an editor with
