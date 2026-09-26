@@ -1585,6 +1585,15 @@ const KIT_BANK_GLYPHS = {
     seq:   ['..####', '..#..#', '..#..#', '##..##', '##..##'],   /* a beamed pair of notes */
     audio: ['....#',  '..#.#',  '..#.#',  '#.#.#',  '#.#.#' ],   /* rising bars */
     perf:  ['.###.',  '#..##',  '#.#.#',  '#...#',  '.###.' ],   /* a knob with its pointer */
+    /* Josh's picks, 2026-09-26: "B for clip, B for drum, A for all. lanes - but
+     * make it a full grid of 16" → then "all lanes - do 3x3 grid". */
+    clip:  ['######', '#.####', '#..###', '#.####', '######'],  /* a clip slot, play arrow */
+    drum:  ['.####.', '#....#', '######', '#....#', '.####.'],  /* a drum (DRUM LANE) */
+    lanes: ['#.#.#',  '.....',  '#.#.#',  '.....',  '#.#.#' ],  /* a 3x3 grid (ALL LANES) */
+    /* ALL LANES' off phase: the icon blinks, the name holds still (Josh,
+     * 2026-09-26: "on all lanes, have the icon blink instead of the "ALL"") —
+     * same width, so the name does not move. */
+    lanesOff: ['.....', '.....', '.....', '.....', '.....'],
 };
 export function kitBankGlyphWidth(kind) {
     const g = KIT_BANK_GLYPHS[kind];
