@@ -290,7 +290,9 @@ The banks are covered where they belong: [Clip Timing & Grid](#9-clip-timing--gr
 [AUTOMATION](#11-automation).
 
 - **Turn the jog** on the track overview to step through the banks: the header
-  names the bank and the knobs follow it.
+  names the bank and the knobs follow it. While your hand is on the jog, a column
+  on the left lists the track's banks with the current one highlighted in the
+  middle; it goes as soon as you let go.
 - **Click the jog** to open the **bank view** — that bank's page, held on screen;
   keep turning to walk from there. In the bank view a click switches to the bank's
   **alternate** parameters (a down-arrow in the header marks a bank that has them,
@@ -300,6 +302,10 @@ The banks are covered where they belong: [Clip Timing & Grid](#9-clip-timing--gr
 - **Shift + jog** steps through the **tracks**, not the banks.
 - **Each track remembers its bank**, SOUND + CONFIG and MACROS included — across
   track switches, suspend, and quit and relaunch.
+- **Turning a knob** that sets a number (an octave, an offset, a rate, a length,
+  a count) turns its cell into an arc while you touch it, so the value moves the
+  way the knob does. A knob with named choices (arp style, direction) opens its
+  list instead, over a dimmed copy of the page.
 - **Every bank lights its knob rings:** knobs 1–4 white, 5–8 amber, brightness
   following the value. A **dark** ring means nothing is on that knob here. The
   Conductor's RESPONDER, OCTAVE and WHEN banks light each knob in its track's color.
@@ -307,7 +313,8 @@ The banks are covered where they belong: [Clip Timing & Grid](#9-clip-timing--gr
 **In Session View** the jog walks the mixer instead:
 
 - Volume, Pan, Send A, Send B, then the SESSION FX door to the Master and send
-  buses. The indicator at the top right follows; a click opens the page.
+  buses. The indicator at the top right follows; a click opens the page. The same
+  column on the left lists them while you turn.
 - Mixer knobs record automation like any other: turn one while recording and it
   records into that track's clip.
 - A track that plays another track's instrument has no strip; its column shows a
@@ -597,7 +604,8 @@ blinks white — the cursor, starting at the first step of the page you're viewi
 - **Play a pad** (or several together for a chord): the notes land on the cursor
   step, and the cursor moves on when you let go.
 - **> with pads held** ties the note a step longer, each press extending it;
-  **< with pads held** takes one step back off.
+  **< with pads held** takes one step back off. The steps the note covers light
+  up as you go, as they do when you hold a step.
 - **> alone** is a rest: the cursor moves on, writing nothing.
 - **<** steps back and **erases what you entered there this session**. Notes
   already in the clip stay.
@@ -1505,8 +1513,9 @@ The last two pages are the same for every module:
   auditions as you scroll; **[Save current…]** sits at its top, and **Shift +
   click** deletes one. **Save**, **Save As** and **Delete** sit beside it.
 - **Module** — **Module Menu** (the module's full parameter list, for settings the
-  knob pages don't show), **Module Help** (when the module has it), **Swap
-  Module** and **Remove Module** (the way to empty an effect slot). Swapping or
+  knob pages don't show), **Module Help** (when the module has it), **Buses**
+  (when the instrument can split its voices — the same screen as the Sound menu's
+  Buses row), **Swap Module** and **Remove Module** (the way to empty an effect slot). Swapping or
   removing asks first if macros or automation would be left behind.
 
 **Drum modules follow the pad you hit:** playing a pad brings that drum's
@@ -1538,7 +1547,7 @@ instrument, effects and [macros](#146-the-macros-bank):
 | **Retrigger** | Restart the wave with each note |
 
 **Buses** appears below Send B only on an instrument that can split its voices,
-such as a drum module. It lists the instrument's buses and **New Bus**. Each bus
+such as a drum module (and on the instrument editor's **Module** page). It lists the instrument's buses and **New Bus**. Each bus
 has:
 
 - **Voices** — which voices play through it. Play a pad and the list jumps to that

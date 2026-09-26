@@ -949,6 +949,10 @@ export const S = {
      * pad-mode and neither contiguous nor ordered by index. -1 = closed.
      * Transient: the gesture ends with the Shift release that commits it. */
     bankPickerSel: -1,
+    /* THE BANK NAVIGATION OVERLAY (Josh, 2026-09-26): up while the jog walks the
+     * banks (a bank card, the track overview) or the session banks (the session
+     * overview), gone on the jog's touch release. 'track' | 'session' | null. */
+    bankNavKind: null,
     /* Tick of the last picker turn, for the SETTLE fallback. The gesture
      * normally ends with the jog-touch release, but a turn can arrive with no
      * touch at all (the capacitive read can miss a quick flick, and the remote

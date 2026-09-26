@@ -1292,6 +1292,7 @@ function modalDialogUp() {
                      * path — the deferred BANK_SOUND entry, the sound-mode exit
                      * on walk-away, the param refresh and the sidecar all live
                      * there. */
+                    S.bankNavKind = 'track';
                     walkBanks(delta, false);
                 } else if (!S.sessionView && S.moveCoRunTrack < 0) {
                     /* ⭑ THE WALK UNDER THE OVERVIEW (Josh, 2026-09-04): at rest
@@ -1301,11 +1302,13 @@ function modalDialogUp() {
                      * it, and a click latches bank mode ON it. A sound bank
                      * opens RESTING (silent entry). No display window is armed:
                      * nothing is shown that was not showing. */
+                    S.bankNavKind = 'track';
                     walkBanks(delta, true);
                 } else if (S.sessionView && !S.perfViewLocked && S.moveCoRunTrack < 0) {
                     /* ...and the session twin: the mixer MODE walks under the
                      * session overview; its mode indicator (the short name at
                      * the top right, ui_render) follows. */
+                    S.bankNavKind = 'session';
                     const _prev = S.sessKnobMode;
                     S.sessKnobMode = Math.max(0, Math.min(SESS_KNOB_MODES.length - 1,
                                                           S.sessKnobMode + (delta > 0 ? 1 : -1)));

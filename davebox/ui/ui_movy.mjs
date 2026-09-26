@@ -3022,6 +3022,39 @@ export function drawKitCrumbs(parts) {
  * layout — the bank picker (Shift+jog in track view) is the second caller.
  * ⚠ One implementation on purpose: two copies of this maths drift by a pixel
  * and then read as two different controls. */
+/* THE BANK NAVIGATION COLUMN: where you are in the bank order, while the jog
+ * walks it (Josh, 2026-09-26: "Lists every bank and highlights the current one
+ * as they're jogged through. Current one is centered in the middle of the
+ * screen - ones that are off page can scroll in from top or bottom. Include the
+ * header icons next to the names.").
+ *
+ * A column on the LEFT, as wide as its longest entry, full height; the current
+ * entry sits on the middle row, inverted, and the list slides past it, so the
+ * rows above the first bank and below the last stay empty. Names in the small
+ * font (Josh: "small font"), each after its bank's header glyph. The page to
+ * the right is knocked back, the column itself is opaque.
+ *
+ * `items` = [{ name, glyph }] in walk order; `cur` = index of the current one. */
+export const MV_BANKNAV_ROW_H = 9, MV_BANKNAV_ROWS = 7;
+export function drawKitBankNavColumn(items, cur) {
+    if (!items || !items.length) return;
+    const MID = (MV_BANKNAV_ROWS - 1) >> 1;
+    let w = 0;
+    for (const it of items) w = Math.max(w, kitBankGlyphWidth(it.glyph) + 3 + mvWidth(it.name));
+    const PW = Math.min(SCREEN_W - 16, w + 7);
+    drawKitBackdropDim(PW + 1, 0, SCREEN_W - PW - 1, 64);
+    fill_rect(0, 0, PW, 64, 0);
+    fill_rect(PW, 0, 1, 64, 1);
+    for (let r = 0; r < MV_BANKNAV_ROWS; r++) {
+        const i = cur + (r - MID);
+        if (i < 0 || i >= items.length) continue;
+        const y = r * MV_BANKNAV_ROW_H + 1, on = r === MID, fg = on ? 0 : 1;
+        if (on) fill_rect(0, y - 1, PW, MV_BANKNAV_ROW_H + 1, 1);
+        drawKitBankGlyph(items[i].glyph, 3, y + 1, fg);
+        mvPrint(3 + kitBankGlyphWidth(items[i].glyph) + 3, y + 1, items[i].name, fg);
+    }
+}
+
 export function drawKitListOverlay(options, sel, opts) {
     /* ⭑ The box AUTO-SIZES to its longest label (Josh, 2026-08-25). It starts at
      * the kit's zoom footprint — so a short enum looks exactly as it always has,

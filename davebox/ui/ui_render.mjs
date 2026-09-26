@@ -34,7 +34,7 @@ import { drawAutoMarkAt,
     kitUseLayout,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
     drawVFader, mvPrint, mvWidth, rectOutline, plotLine,
-    drawLevelCard, drawKitBackdropDim,
+    drawLevelCard, drawKitBackdropDim, drawKitBankNavColumn,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
     drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y,
@@ -1459,6 +1459,33 @@ function drawTrackVolCard() {
  * control an enum param opens, over whatever screen is underneath. An OVERLAY
  * rather than a screen, like the volume card — the gesture is a hold, and what
  * it is browsing away from should stay visible behind it. */
+/* The bank navigation overlay while the jog walks (S.bankNavKind, armed by the
+ * walk in ui_input_cc, cleared by the jog's touch release in ui.js). Drawn only
+ * while the jog is touched, so it can never outlive the hand on it. The long
+ * SOUND + CONFIG is shortened here, and only here (Josh: "abbreviation is
+ * fine") — it would otherwise take most of the screen. */
+const BANKNAV_SHORT = { 'SOUND + CONFIG': 'SOUND+CFG' };
+export function bankNavItems() {
+    if (S.bankNavKind === 'session') {
+        return { items: SESS_KNOB_MODES.map((m) => ({ name: m.label, glyph: 'audio' })),
+                 cur: S.sessKnobMode | 0 };
+    }
+    const mode = S.trackPadMode[S.activeTrack];
+    const cyc = bankCycleForMode(mode, S.activeTrack);
+    return {
+        items: cyc.map((b) => {
+            const n = bankDisplayName(mode, b);
+            return { name: BANKNAV_SHORT[n] || n, glyph: bankHeaderGlyph(b) };
+        }),
+        cur: Math.max(0, cyc.indexOf(S.activeBank)),
+    };
+}
+function drawBankNav() {
+    if (!S.bankNavKind || !S.jogTouched) return;
+    const nav = bankNavItems();
+    drawKitBankNavColumn(nav.items, nav.cur);
+}
+
 function drawBankPicker() {
     if (S.bankPickerSel < 0) return;
     const cyc = bankCycleForMode(S.trackPadMode[S.activeTrack]);
@@ -1503,6 +1530,7 @@ export function drawUI() {
     drawBankLatchBox();
     drawTrackVolCard();
     drawBankPicker();
+    drawBankNav();
     /* THE NOTICE CARD, above everything (Josh, 2026-09-05: "the confirmation
      * overlays pop up wherever you are when you save/recall, same for session
      * view"): a card notice is drawn here, last, whatever screen the body
