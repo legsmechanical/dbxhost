@@ -298,12 +298,9 @@ step('⭐ HOLD a module point -> its EDITOR on the page holding the key; the kno
     assert(dec && dec[ci] && dec[ci].locked && dec[ci].value === want,
            'the editor does not mark cutoff with the lane\'s value ' + want + ': ' + JSON.stringify(dec));
     assert(Object.keys(dec).length === 1, 'another cell is marked: ' + JSON.stringify(dec));
-    /* ...and it reaches the DRAWN editor: the lock corner is a 2x2 fill. */
-    const rects = [];
-    const saveFill = globalThis.fill_rect;
-    globalThis.fill_rect = (x, y, w, h, c) => { if (w === 2 && h === 2 && c) rects.push([x, y]); };
-    try { globalThis.clear_screen(); render.drawUI(); } finally { globalThis.fill_rect = saveFill; }
-    assert(rects.length >= 1, 'no lock corner drawn in the editor');
+    /* ...and it reached the editor's controller, not just dAVEBOx's memo. */
+    const held = snd.soundPPForTest().decorations;
+    assert(held && held[ci] && held[ci].locked && held[ci].value === want, 'the controller holds ' + JSON.stringify(held));
     assert(S.trackActiveBank[T] === BANK_AUTOMATION && S.activeBank === BANK_AUTOMATION, 'a bank moved: ' + S.activeBank + '/' + S.trackActiveBank[T]);
     assert(S.autoCycle && S.autoCycle.target === TARGETS.chain, 'the steps left the lane during the hold');
     sets.length = 0;

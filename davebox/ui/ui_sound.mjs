@@ -167,7 +167,7 @@ const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         paramPagesPickerOpen, paramPagesMenuEntered,
         paramPagesRefreshTrailing, paramPagesFullKeyAt, paramPagesRepaintKnobs,
         paramPagesCachedValue, paramPagesLevelNameOf,
-        paramPagesPageLabel, paramPagesSetDecorations } = PP;
+        paramPagesPageLabel, paramPagesSetDecorations, paramPagesDecorations } = PP;
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 /* ⚠⚠ THE CANONICAL SPECIFIER, AND IT IS LOAD-BEARING. The registry is the
  * one the grid reads only because both names normalise to the same module:
@@ -1078,6 +1078,8 @@ export function soundPPForTest() {
         on: ppOn, page: ppOn ? currentParamPage() : null, applies: ppApplies(),
         /* The lane-focus decorations last handed to the editor (JSON or null). */
         focusDec: ppFocusDec,
+        /* ...and what the editor's controller actually holds. */
+        decorations: ppOn ? paramPagesDecorations() : null,
         /* ⭑ The TERMS, so a test can prove which one decided. A control that
          * asserts only `!applies` passes for any reason at all — including a
          * precondition it lost by accident. */
