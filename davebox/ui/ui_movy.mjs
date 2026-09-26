@@ -2602,6 +2602,15 @@ function drawCellWidget(col, rowY, cell, touched, anim, nowMs) {
      * The column index is both; the param name is neither (two banks can share
      * one, and an alt-mode swap changes it under a value that did not move). */
     const ak = anim ? ('c' + col + (rowY < MV_ROW1_Y ? 'a' : 'b')) : null;
+    /* ⭑ A NUMBER TURNS AS AN ARC (Josh, 2026-09-26). A numeric value that rests
+     * as a read-out (an octave, a semitone offset, a count, a rate) becomes an
+     * arc while its knob is touched: clockwise sweeps the arc clockwise, where a
+     * vertical list ran the other way. The value itself stays in the label
+     * strip and the header. `touchArc` = { norm 0..1, bip }. */
+    if (touched && cell.touchArc) {
+        drawArcKnob(kx, rowY, cell.touchArc.norm, !!cell.touchArc.bip);
+        return;
+    }
     /* ⭑ THE MODULATION DOT IS A DESCRIPTOR FIELD, NOT A DETECTION. A cell whose
      * caller never sets `modNorm` draws exactly the pixels it drew before — and
      * davebox sets it nowhere today, so nothing on any shipping page moves.
@@ -2794,10 +2803,13 @@ export function drawKitEnumOverlay(cells, touchedIdx) {
      * enumOverlayWouldDraw. Two copies would let the footer vanish under
      * nothing, or survive under a picker, and both read as a rendering bug. */
     if (!enumOverlayWouldDraw(cells, touchedIdx)) return;
-    /* ⭑ OPAQUE: the list owns everything under the header, so no cell, picture
-     * or hint shows around its box (Josh, 2026-09-23: "i like the opaque
-     * everywhere"). The header stays: it names the knob being turned. */
-    fill_rect(0, MV_HDR_H, SCREEN_W, 64 - MV_HDR_H, 0);
+    /* ⭑ The BOX is opaque, the page behind it is DIMMED (Josh, 2026-09-26: "the
+     * opaque ruling meant simply that that nothing under the picker BOX should
+     * show through it"). drawKitListOverlay blanks its own box; everything
+     * under the header is knocked back to a checkerboard, so the page reads as
+     * behind the list rather than beside it. The header stays: it names the
+     * knob being turned. */
+    drawKitBackdropDim(0, MV_HDR_H, SCREEN_W, 64 - MV_HDR_H);
     drawKitListOverlay(cell.options, cell.sel | 0);
 }
 
@@ -3010,6 +3022,39 @@ export function drawKitCrumbs(parts) {
  * layout — the bank picker (Shift+jog in track view) is the second caller.
  * ⚠ One implementation on purpose: two copies of this maths drift by a pixel
  * and then read as two different controls. */
+/* THE BANK NAVIGATION COLUMN: where you are in the bank order, while the jog
+ * walks it (Josh, 2026-09-26: "Lists every bank and highlights the current one
+ * as they're jogged through. Current one is centered in the middle of the
+ * screen - ones that are off page can scroll in from top or bottom. Include the
+ * header icons next to the names.").
+ *
+ * A column on the LEFT, as wide as its longest entry, full height; the current
+ * entry sits on the middle row, inverted, and the list slides past it, so the
+ * rows above the first bank and below the last stay empty. Names in the small
+ * font (Josh: "small font"), each after its bank's header glyph. The page to
+ * the right is knocked back, the column itself is opaque.
+ *
+ * `items` = [{ name, glyph }] in walk order; `cur` = index of the current one. */
+export const MV_BANKNAV_ROW_H = 9, MV_BANKNAV_ROWS = 7;
+export function drawKitBankNavColumn(items, cur) {
+    if (!items || !items.length) return;
+    const MID = (MV_BANKNAV_ROWS - 1) >> 1;
+    let w = 0;
+    for (const it of items) w = Math.max(w, kitBankGlyphWidth(it.glyph) + 3 + mvWidth(it.name));
+    const PW = Math.min(SCREEN_W - 16, w + 7);
+    drawKitBackdropDim(PW + 1, 0, SCREEN_W - PW - 1, 64);
+    fill_rect(0, 0, PW, 64, 0);
+    fill_rect(PW, 0, 1, 64, 1);
+    for (let r = 0; r < MV_BANKNAV_ROWS; r++) {
+        const i = cur + (r - MID);
+        if (i < 0 || i >= items.length) continue;
+        const y = r * MV_BANKNAV_ROW_H + 1, on = r === MID, fg = on ? 0 : 1;
+        if (on) fill_rect(0, y - 1, PW, MV_BANKNAV_ROW_H + 1, 1);
+        drawKitBankGlyph(items[i].glyph, 3, y + 1, fg);
+        mvPrint(3 + kitBankGlyphWidth(items[i].glyph) + 3, y + 1, items[i].name, fg);
+    }
+}
+
 export function drawKitListOverlay(options, sel, opts) {
     /* ⭑ The box AUTO-SIZES to its longest label (Josh, 2026-08-25). It starts at
      * the kit's zoom footprint — so a short enum looks exactly as it always has,
@@ -3188,7 +3233,9 @@ export function drawKitBankPage(cells, opts) {
  * drawKitEnumOverlay's own guard, called by both, so the two cannot drift. */
 export function enumOverlayWouldDraw(cells, idx) {
     const cell = idx >= 0 ? cells[idx] : null;
-    return !!(cell && cell.options && cell.options.length > 2 && (cell.sel | 0) >= 0);
+    /* A NUMBER never gets the list (Josh, 2026-09-26: "A for all"): a cell that
+     * carries `touchArc` turns into an arc while touched instead. */
+    return !!(cell && !cell.touchArc && cell.options && cell.options.length > 2 && (cell.sel | 0) >= 0);
 }
 
 /* Turn-to-reveal value zoom — the non-picker counterpart to drawKitEnumOverlay.

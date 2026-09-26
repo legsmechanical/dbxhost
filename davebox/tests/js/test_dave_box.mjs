@@ -36,6 +36,7 @@ globalThis.clear_screen = () => { fills = []; px = []; };
 globalThis.print = () => {};
 globalThis.fill_rect = (x, y, w, h, v) => { fills.push({ x, y, w, h, v }); };
 globalThis.draw_rect = () => {};
+globalThis.stipple_rect = () => {};
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
 globalThis.set_pixel = (x, y) => { px.push({ x, y }); };
 globalThis.move_midi_internal_send = () => {};

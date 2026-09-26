@@ -5326,8 +5326,14 @@ function renderInChain(rows, sel, emptyMsg, opts) {
      * backdrop you did not come through, since the editor cannot be the backdrop
      * (it hands the frame to the grid).
      *
-     * ⚠ The track-view path is untouched — same function, different arrival. */
-    if (ppErrandView !== null && S.view === ppErrandView) {
+     * ⚠ The track-view path is untouched — same function, different arrival.
+     *
+     * The Buses errand has depth of its own (a bus, its voices, its chain):
+     * every screen under it stays a full screen, or the second level would
+     * float over the Sound menu you never came through. */
+    if (ppErrandView !== null && (S.view === ppErrandView ||
+            (ppErrandView === VIEW_MODBUS && (S.view === VIEW_MODBUS_GROUP ||
+             S.view === VIEW_MODBUS_VOICES || S.view === VIEW_MODBUS_CHAIN)))) {
         /* ⚠⚠ CLEAR FIRST. Nothing else does on this path: every render function
          * in soundRender owns its own clear, and the overlay path below got one
          * for free from renderBlocks() drawing the backdrop. Returning early
@@ -7498,6 +7504,9 @@ function runActionBody(a) {
         ModBus.modBusRefreshConfig(S.modBus, S.slot);
         S.modBusIdx = 0;
         S.view = VIEW_MODBUS;
+        /* From the module editor's Module page: Back at the bus list returns to
+         * the editor, and the list draws as a full screen (the errand rule). */
+        if (a.errand) ppErrandView = VIEW_MODBUS;
         S.dirty = true;
     }
     else if (a.t === 'view')    { S.view = a.view | 0; S.dirty = true; }
@@ -12076,6 +12085,13 @@ function ppIo() {
                      * "no help" would be a door to nothing. Cached per module. */
                     ...(engineModuleHelp(S.comp, S.moduleId)
                         ? [{ label: 'Module Help', action: 'module_help' }] : []),
+                    /* ⭑ BUSES: a second door to the Sound menu's Buses screen
+                     * (Josh, 2026-09-26: "Just another way in to the same
+                     * interface as the buses item on sound menu"). The same
+                     * predicate as that row, so the two doors never disagree:
+                     * only a module that splits its voices offers it. */
+                    ...(ModBus.modBusDoorState(S.modBus) === 'open'
+                        ? [{ label: ModBus.MODBUS_LABEL, action: 'module_buses' }] : []),
                     { label: 'Swap Module', action: 'swap_module' },
                     /* ⭑ REMOVE IS THE `[ none ]` PICK, reached through the same
                      * applyModulePick — not a second way to clear a slot. */
@@ -12150,6 +12166,9 @@ function ppIo() {
             /* openMenu reads the engine, so it runs from the tick (like the
              * preset hub's door); the crumb is set there, once the menu is up. */
             else if (action === 'module_menu') S.pendingAction = { t: 'menu', errand: true };
+            /* The bus reads are TICK ONLY (see the 'modbus' action), so this
+             * queues the very same entry the Sound menu's row does. */
+            else if (action === 'module_buses') S.pendingAction = { t: 'modbus', errand: true };
             else log('pp: unknown menu action ' + action);
             S.dirty = true;
         },

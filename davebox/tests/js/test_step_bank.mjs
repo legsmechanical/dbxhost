@@ -39,6 +39,7 @@ globalThis.clear_screen = () => { fb.fill(0); };
 globalThis.print = (x, y, t, c) => { for (let i = 0; i < String(t).length * 6; i++) px(x + i, y, c); };
 globalThis.fill_rect = (x, y, w, h, c) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) px(x + i, y + j, c); };
 globalThis.draw_rect = (x, y, w, h, c) => { for (let i = 0; i < w; i++) { px(x + i, y, c); px(x + i, y + h - 1, c); } for (let j = 0; j < h; j++) { px(x, y + j, c); px(x + w - 1, y + j, c); } };
+globalThis.stipple_rect = () => {};
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
 globalThis.set_pixel = px; globalThis.move_midi_internal_send = () => {};
 globalThis.move_midi_external_send = () => {}; globalThis.set_led = () => {};

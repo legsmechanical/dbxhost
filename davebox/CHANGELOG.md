@@ -8,6 +8,16 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added (pending)
+- **A bank map while you turn the jog.** On the track overview, a bank page or
+  the session overview, a column on the left lists every bank (or session bank)
+  with the one you are on highlighted in the middle, and goes when you let go.
+- **Numbers turn as an arc.** An octave, offset, rate, length or count no longer
+  opens a list that scrolls the opposite way to the knob: while you touch the
+  knob, its cell becomes an arc that follows it. Named choices keep their list.
+- **Buses on the instrument editor's Module page** — the same screen as the
+  Sound menu's Buses row, for instruments that split their voices.
+- **Step recording shows the tie.** Holding pads and pressing **>** lights the
+  steps the note now covers.
 - **Phrases.** Touch K6 on the CLIP or DRUM LANE bank and click the jog for a
   library of one- and two-bar starter phrases: pick the instrument, jump to a
   style, set a time scale (/8 to x8) and an octave; the jog opens the list of
@@ -237,6 +247,7 @@ the section into a versioned heading at release time.
   already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
+- **Pop-up lists and notices sit over a dimmed page** instead of a blank one.
 - **The track's menu is TRACK CONFIG.** The menu you open from the SOUND +
   CONFIG card (or with Shift + Note/Session) is titled TRACK CONFIG, with no
   icon in its header. The card's door reads CLICK TO ENTER / TRACK 3 CONFIG.
