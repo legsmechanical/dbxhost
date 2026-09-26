@@ -34,7 +34,7 @@ import { drawAutoMarkAt,
     kitUseLayout,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
     drawVFader, mvPrint, mvWidth, rectOutline, plotLine,
-    drawLevelCard,
+    drawLevelCard, drawKitBackdropDim,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
     drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y,
@@ -972,6 +972,9 @@ export function drawNoticeCard(lines, highlight = -1) {
     if (!n) return;
     const h = n * CARD_LINE_H + CARD_PAD * 2 - 1;
     const y = Math.max(0, Math.floor((64 - h) / 2));
+    /* Over a DIMMED screen, like every picker (Josh, 2026-09-26): the card is
+     * opaque, what it interrupts stays visible but knocked back. */
+    drawKitBackdropDim();
     fill_rect(CARD_X, y, CARD_W, h, 0);
     draw_rect(CARD_X, y, CARD_W, h, 1);
     /* Every line CENTRED in the box, horizontally as well as vertically (Josh,

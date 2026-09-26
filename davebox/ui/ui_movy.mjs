@@ -2794,10 +2794,13 @@ export function drawKitEnumOverlay(cells, touchedIdx) {
      * enumOverlayWouldDraw. Two copies would let the footer vanish under
      * nothing, or survive under a picker, and both read as a rendering bug. */
     if (!enumOverlayWouldDraw(cells, touchedIdx)) return;
-    /* ⭑ OPAQUE: the list owns everything under the header, so no cell, picture
-     * or hint shows around its box (Josh, 2026-09-23: "i like the opaque
-     * everywhere"). The header stays: it names the knob being turned. */
-    fill_rect(0, MV_HDR_H, SCREEN_W, 64 - MV_HDR_H, 0);
+    /* ⭑ The BOX is opaque, the page behind it is DIMMED (Josh, 2026-09-26: "the
+     * opaque ruling meant simply that that nothing under the picker BOX should
+     * show through it"). drawKitListOverlay blanks its own box; everything
+     * under the header is knocked back to a checkerboard, so the page reads as
+     * behind the list rather than beside it. The header stays: it names the
+     * knob being turned. */
+    drawKitBackdropDim(0, MV_HDR_H, SCREEN_W, 64 - MV_HDR_H);
     drawKitListOverlay(cell.options, cell.sel | 0);
 }
 
