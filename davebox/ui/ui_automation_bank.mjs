@@ -37,7 +37,7 @@ import { automationEntriesFor, automationTargetLabel, automationClearKey, automa
          automationToggleActive, automationToggleSmooth, automationToggleWrap, automationToggleMode, automationToggleLink, automationSmoothable,
          automationSetLoop, automationSetRate, automationRateText, automationSetScale,
          automationClearClip, automationListGen, automationStepTicks, rowCycle,
-         cycleText, automationMatchPad, padCycle, automationStateFor } from './ui_automation.mjs';
+         cycleText, automationMatchPad, padCycle, automationStateFor, automationWireValue } from './ui_automation.mjs';
 import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
          drawBrackets, kitUseLayout, MV_FOOTER_Y } from './ui_movy.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -557,6 +557,34 @@ function lanePinTick() {
     return true;
 }
 
+/* ⭐ THE LANE IN FOCUS on a jump destination (Josh, 2026-09-25: "highlight
+ * the param the lane belongs to and show the value that the automation step
+ * is setting"). { target, step, norm, wire } while a hold jump or a lane pin
+ * is up on this track, else null. `step` is the held step (-1 when none);
+ * `norm`/`wire` are what the lane plays there — the knob's own last lock
+ * while the values read has not caught up (and only at Scale 100 %, since
+ * the read is what plays, scaled) — in 14 bits and in the parameter's units. */
+export function autoLaneFocus() {
+    const t = S.activeTrack;
+    const cy = (holdJump && holdJump.track === t) ? holdJump.cycle
+             : (lanePin && lanePin.t === t && S.autoCycle && S.autoCycle.target === lanePin.target) ? S.autoCycle : null;
+    if (!cy) return null;
+    const target = cy.target;
+    let step = -1, norm = null;
+    if (S.heldStepAuto && S.heldStep >= 0) {
+        step = S.heldStep;
+        const L = S.autoLockLast, stt = automationStateFor(t, cy.c, target);
+        if (L && L.track === t && L.clip === cy.c && L.target === target && L.step === step &&
+                L.at >= valsCache.at && (!stt || stt.scale === 100)) {
+            norm = L.norm;
+        } else {
+            const v = S.autoLaneVals, i = step - ((cy.off >> 4) + cy.page) * 16;
+            if (v && v.v14 && i >= 0 && i < 16 && v.v14[i] >= 0) norm = v.v14[i];
+        }
+    }
+    return { target, step, norm, wire: norm == null ? null : automationWireValue(target, norm) };
+}
+
 let holdJump = null;
 /* ⭐ WHERE A LANE IS EDITED — one answer for both jumps (Shift + click and
  * the hold). { kind, comp, key } or null (not this track's, or nowhere):
@@ -674,11 +702,15 @@ export function autoBankTick() {
      * any of the other clear sites): the jump ends here. */
     if (holdJump && S.heldStep < 0) autoHoldJumpEnd();
     if (holdJump) {
-        /* Mid-jump: the step row stays the lane's — its cycle, its colours. */
-        S.autoCycle = holdJump.cycle;
-        S.autoBankLit = litCache.map ? (litCache.map.get(holdJump.cycle.target) || '') : null;
-        const vk = valsCache.map;
-        S.autoLaneVals = vk ? (vk.get(holdJump.cycle.target) || null) : null;
+        /* Mid-jump: the step row stays the lane's — its cycle, its colours —
+         * and its values keep refreshing on their slow cadence, so what the
+         * destination shows for the held step follows what was locked. */
+        const j = holdJump;
+        S.autoCycle = j.cycle;
+        if (S.activeTrack === j.track) {
+            autoLaneValsTick(j.track, j.clip, j.cycle.target);
+            feedLit(j.track, j.clip, j.cycle.target);
+        }
         return;
     }
     if (lanePin && lanePinTick()) return;

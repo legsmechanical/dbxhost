@@ -608,6 +608,18 @@ function wireValue(slot, comp, key, norm) {
     return String(Math.round(q * 1e6) / 1e6);
 }
 
+/* A 14-bit value of `target` in the parameter's own units, as a string — what
+ * a knob cell shows — or null when the target has no such form. */
+export function automationWireValue(target, norm) {
+    const tg = String(target);
+    if (midiTargetIsMidi(tg)) {
+        const n = Math.max(0, Math.min(16383, norm | 0));
+        return String(tg === 'pb' ? n : Math.round(n * 127 / 16383));
+    }
+    const pr = pushPair(tg, norm);
+    return pr && pr.val != null ? String(pr.val) : null;
+}
+
 /* "<slot>:<comp>:<key>" -> { slot, key, val } in the parameter's own units.
  * Bus levels ("bus:<n>:<field>") are the other shape; anything else is null
  * rather than guessed at. */
@@ -1065,6 +1077,9 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
          * the tap window, auto-assigns an empty step's note). */
         S.stepHoldPromote = true;
         queueSet('t' + track + '_pa_set2', clip + ' ' + target + ' ' + from + ' ' + to + ' ' + norm);
+        /* What the jump destination shows for the held step until the next
+         * values read catches up (autoLaneFocus). */
+        S.autoLockLast = { track, clip, target, step: S.heldStep, norm, at: S.clockMs };
         automationNoteWrite();
         console.log('[auto] p-lock t' + track + ' c' + clip + ' step ' + S.heldStep + ' ' + target + ' = ' + norm);
         return;

@@ -58,7 +58,7 @@ import {
     bankHasAltParams, altIndicatorActive, autoLanePlayStep
 } from './ui_leds.mjs';
 import { soundRender, renderGatewayCard, renderTrackGatewayCard, renderMacrosPeek } from './ui_sound.mjs';
-import { drawAutomationBankBody, autoBankMenuOpen, autoHoldJumpActive, autoHoldJumpStep } from './ui_automation_bank.mjs';
+import { drawAutomationBankBody, autoBankMenuOpen, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus } from './ui_automation_bank.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
@@ -121,12 +121,26 @@ export function refreshInstrAbbrev() {
 }
 
 /* The automation circle on a bank card's cell, for a knob on the seq: list. */
-function markSeqAuto(cell, bank, k, altMode) {
+/* A bank knob's cell with the LANE IN FOCUS applied (autoLaneFocus): the lock
+ * mark when it is the lane's knob, and — while a step is held — the value the
+ * lane plays there instead of the knob's. `hi` = highlight this cell. */
+function kitFocusCell(knob, val, bank, k, focus) {
+    const on = !!focus && seqAutoTargetForKnob(S.activeTrack, bank, k, false) === focus.target;
+    const held = on && focus.wire != null;
+    const cell = kitCellForKnob(knob, held ? Number(focus.wire) : val);
+    if (on) cell.lock = true;
+    return { cell, hi: held };
+}
+function markSeqAuto(cell, bank, k, altMode, focus) {
     const t = S.activeTrack;
     const tg = seqAutoTargetForKnob(t, bank, k, altMode);
-    if (!tg) return;
+    if (!tg) return false;
     const st = automationStateFor(t, effectiveClip(t), tg);
     if (st) cell.auto = st.active ? 'auto' : 'auto-off';
+    /* The lane a jump came from (autoLaneFocus): the lock mark, and true so
+     * the caller can show the held step's value in the cell. */
+    if (focus && focus.target === tg) { cell.lock = true; return true; }
+    return false;
 }
 
 function drawBankHeading(name, showTrack, bareHdr, rightOverride) {
@@ -585,12 +599,15 @@ export function bankPageHints(bank) {
     return hints;
 }
 
-function drawKitPage(name, cells, inverted, footer) {
+function drawKitPage(name, cells, inverted, footer, focusIdx) {
     /* BANK's map: this is davebox's own track-view bank card, which has no page
      * strip and so starts its grid a row higher. Must be first — every kit draw
      * call below reads the layout bindings. */
     kitUseLayout('bank');
     const t = S.knobTouched;
+    /* A held step on the lane a jump came from HIGHLIGHTS its cell (the
+     * touched look) while the header keeps saying where you are (<AUTO S#). */
+    const hi = t >= 0 ? t : (focusIdx >= 0 ? focusIdx : -1);
     const touched = t >= 0 && cells[t] && cells[t].name ? cells[t] : null;
     if (touched) drawKitTouchedHeader(touched.name);
     else (inverted ? drawBankHeadingInverted : drawBankHeading)(name, false);
@@ -600,7 +617,7 @@ function drawKitPage(name, cells, inverted, footer) {
      * NAMED picker, so the card already says which bank it is in words, and a
      * position strip repeats that in a form you have to count.
      * bankCyclePos() still exists for sound mode's param pages. */
-    drawKitCells(cells, t);
+    drawKitCells(cells, hi);
     /* ⭑ NO value zoom on a bank page (Josh, 2026-08-26: "i've been meaning to
      * retire that"). Turning a knob widget no longer throws a magnified copy of
      * the cell over the middle of the screen — the cell itself already updates,
@@ -2269,6 +2286,8 @@ function drawUIBody() {
          * offset is derived. K3-K6 (Vel/Qnt/Len/Gate) are inert/greyed. */
         const _conductNfx = S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT;
         const cells = [];
+        const _focus = autoLaneFocus();
+        let _focusIdx = -1;
         for (let k = 0; k < 8; k++) {
             if (k === 6) { cells.push({ kind: 'blank', label: '' }); continue; }  /* K7 blocked */
             if (_conductNfx && (k === 2 || k === 3 || k === 4 || k === 5)) {
@@ -2281,9 +2300,11 @@ function drawUIBody() {
                              text: RND_ALG_NAMES_NFX[_md], options: RND_ALG_NAMES_NFX, sel: _md });
                 continue;
             }
-            cells.push(kitCellForKnob(knobs[k], vals[k]));
+            const _fc = kitFocusCell(knobs[k], vals[k], 1, k, _focus);
+            if (_fc.hi) _focusIdx = cells.length;
+            cells.push(_fc.cell);
         }
-        drawKitPage(BANKS[1].name, cells, false, bankPageHints(1));
+        drawKitPage(BANKS[1].name, cells, false, bankPageHints(1), _focusIdx);
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 3) {
         /* Drum MIDI DLY: K1-K4 same as melodic, K5=Gate, K6=Clk, K7=Retrg, K8 empty.
          * Drum has no Pfb (no per-lane pitch) and no Rnd (no random pitch fb),
@@ -2292,11 +2313,11 @@ function drawUIBody() {
         const t    = S.activeTrack;
         const vals = S.bankParams[t][3];
         const knobs = BANKS[3].knobs;
+        const _focus = autoLaneFocus();
+        const _fcs = [0, 1, 2, 3].map(k => kitFocusCell(knobs[k], vals[k], 3, k, _focus));
+        const _focusIdx = _fcs.findIndex(f => f.hi);
         const cells = [
-            kitCellForKnob(knobs[0], vals[0]),
-            kitCellForKnob(knobs[1], vals[1]),
-            kitCellForKnob(knobs[2], vals[2]),
-            kitCellForKnob(knobs[3], vals[3]),
+            _fcs[0].cell, _fcs[1].cell, _fcs[2].cell, _fcs[3].cell,
             { kind: 'frac', label: 'Gate', name: 'Gate', text: _offDash(fmtGateMod(vals[4])),
               options: [0,1,2,3,4,5,6,7,8,9,10].map(fmtGateMod).map(_offDash), sel: vals[4] | 0 },
             { kind: 'arcbip', label: 'ClkFb', name: 'Clock Feedback', text: fmtSign(vals[5]),
@@ -2304,7 +2325,7 @@ function drawUIBody() {
             toggleCell('Retrg', 'Retrig', vals[6], fmtBool(1), fmtBool(0)),
             { kind: 'blank', label: '' },
         ];
-        drawKitPage(BANKS[3].name, cells, false, bankPageHints(3));
+        drawKitPage(BANKS[3].name, cells, false, bankPageHints(3), _focusIdx);
 
         } else {
         /* Bank overview — canvaskit grid (widgets + label strips + touch swap) */
@@ -2313,6 +2334,8 @@ function drawUIBody() {
         const _isDrum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
         const RND_ALG_NAMES = ['Pure', 'Gaus', 'Walk'];
         const cells = [];
+        const _focus = autoLaneFocus();
+        let _focusIdx = -1;
         for (let k = 0; k < 8; k++) {
             /* Conduct bank (CLIP bank 0 on a Conductor) K6 = CdLk lock toggle.
              * Melodic/drum CLIP K6 stays the generic stub (unchanged). */
@@ -2340,10 +2363,14 @@ function drawUIBody() {
                 continue;
             }
             if (_delayShiftClkF) {
-                const _cv = S.delayClockFb[S.activeTrack] | 0;
+                let _cv = S.delayClockFb[S.activeTrack] | 0;
+                if (_focus && _focus.wire != null && seqAutoTargetForKnob(S.activeTrack, bank, k, true) === _focus.target) {
+                    _cv = parseInt(_focus.wire, 10) | 0;
+                    _focusIdx = cells.length;
+                }
                 const _cc = { kind: 'arcbip', label: 'ClkFb', name: 'Clock Feedback',
                               text: fmtSign(_cv), signed: Math.max(-1, Math.min(1, _cv / 127)) };
-                markSeqAuto(_cc, bank, k, true);
+                markSeqAuto(_cc, bank, k, true, _focus);
                 cells.push(_cc);
                 continue;
             }
@@ -2353,17 +2380,22 @@ function drawUIBody() {
                                       fmtRevStyle(1), fmtRevStyle(0)));
                 continue;
             }
-            const cell = kitCellForKnob(knobs[k], vals[k]);
+            /* A held step on the lane in focus: its cell shows what the LANE
+             * plays at that step, not where the knob sits. */
+            const _isFocus = _focus && _focus.wire != null &&
+                             seqAutoTargetForKnob(S.activeTrack, bank, k, false) === _focus.target;
+            const cell = kitCellForKnob(knobs[k], _isFocus ? Number(_focus.wire) : vals[k]);
+            if (_isFocus) _focusIdx = cells.length;
             if (S.altMode) {
                 if      (knobs[k].dspKey === 'clock_shift')     { cell.label = 'Nudge'; cell.name = 'Nudge'; }
                 else if (knobs[k].dspKey === 'clip_resolution') { cell.label = 'Zoom'; cell.name = 'Zoom'; }
             }
             /* The bank knob IS the parameter a macro can point at, so its
              * automation shows HERE too (Josh, 2026-09-03): the circle. */
-            markSeqAuto(cell, bank, k, false);
+            markSeqAuto(cell, bank, k, false, _focus);
             cells.push(cell);
         }
-        drawKitPage(bankHeaderName(S.activeTrack, bank), cells, false, bankPageHints(bank));
+        drawKitPage(bankHeaderName(S.activeTrack, bank), cells, false, bankPageHints(bank), _focusIdx);
         }
 
     } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {

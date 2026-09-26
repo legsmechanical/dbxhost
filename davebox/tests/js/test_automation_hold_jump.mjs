@@ -107,9 +107,11 @@ globalThis.host_ext_midi_remap_enable = () => {};
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
-const { BANKS, BANK_AUTOMATION } = await import('../../ui/ui_constants.mjs');
+const { BANKS, BANK_AUTOMATION, SEQ_AUTO_TARGETS } = await import('../../ui/ui_constants.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
+const bank = await import('../../ui/ui_automation_bank.mjs');
 const render = await import('../../ui/ui_render.mjs');
+globalThis.__movy = await import('../../ui/ui_movy.mjs');
 const { fontPrint4x5 } = await import('../../ui/ui_fonts_pp.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
@@ -173,6 +175,16 @@ step('⭐ an EMPTY step jumps too, and its knob writes a NEW point there (Josh, 
     assert(S.activeBank === BANK_AUTOMATION, 'release did not come back, bank ' + S.activeBank);
 });
 
+/* The Level lane plays full scale at step 7 (the knob itself sits elsewhere). */
+const LEVEL_AT7 = SEQ_AUTO_TARGETS.delay_level.max;
+step('setup: the lane\'s values, full scale at step 7', () => {
+    const W = new Array(16).fill(-1); W[6] = 16383;
+    const hex = W.map(v => (v < 0 ? 0xffff : v).toString(16).padStart(4, '0')).join('');
+    VALS = () => 'seq:0:delay_level ' + hex + '\n';
+    S.bankParams[T][DELAY][1] = SEQ_AUTO_TARGETS.delay_level.min;
+    auto.automationRefreshPresence(); ticks(3);
+});
+
 step('⭐ holding the point jumps to DELAY, marked temporary; the track still remembers AUTOMATION', () => {
     note(STEP(6), 127); ticks(3);
     assert(S.activeBank === DELAY, 'the DELAY card is up, bank ' + S.activeBank);
@@ -181,11 +193,30 @@ step('⭐ holding the point jumps to DELAY, marked temporary; the track still re
     assert(drawnHdr('<AUTO S7'), 'the header says "<AUTO S7"');
 });
 
+step('⭐ the lane\'s knob is MARKED and HIGHLIGHTED and shows the value the lane plays at the held step', () => {
+    const movy = globalThis.__movy;
+    globalThis.clear_screen(); render.drawUI();
+    const kc = movy.kitCellsForTest();
+    assert(kc && kc.cells[1] && kc.cells[1].lock, 'the Level cell carries no lock mark: ' + JSON.stringify(kc));
+    assert(kc.touched === 1, 'the Level cell is not highlighted (touched ' + (kc && kc.touched) + ')');
+    assert(!kc.cells.some((c, i) => i !== 1 && c && c.lock), 'another cell is marked');
+    const f = bank.autoLaneFocus();
+    assert(f && f.step === 6 && f.wire != null, 'no focus value for step 7: ' + JSON.stringify(f));
+    assert(String(kc.cells[1].text).indexOf(String(LEVEL_AT7)) >= 0, 'the cell shows ' + kc.cells[1].text + ', not the lane\'s ' + LEVEL_AT7 + ' at step 7');
+});
+
 step('⭐ the knob writes the point AT THAT STEP (a span over step 7)', () => {
     sets.length = 0;
     cc(72, 1); ticks(2); cc(72, 1); ticks(2); cc(72, 1); ticks(3);
     const w = sets.filter(s => s.startsWith('t0_pa_set2=0 seq:0:delay_level 144 167 '));
     assert(w.length >= 1, 'a lock over ticks 144..167, got ' + JSON.stringify(sets.filter(s => s.indexOf('pa_') >= 0)));
+    /* The cell shows the value just dialled at once — no read has happened. */
+    const lastNorm = parseInt(w[w.length - 1].split(' ').pop(), 10);
+    const f = bank.autoLaneFocus();
+    assert(f && f.norm === lastNorm, 'the focus did not follow the knob: ' + JSON.stringify(f) + ' vs ' + lastNorm);
+    globalThis.clear_screen(); render.drawUI();
+    const kc = globalThis.__movy.kitCellsForTest();
+    assert(String(kc.cells[1].text).indexOf(String(f.wire)) >= 0, 'the cell shows ' + kc.cells[1].text + ', not the dialled ' + f.wire);
 });
 
 step('⭐ release → the AUTOMATION menu, the same row, and nothing remembered DELAY', () => {
