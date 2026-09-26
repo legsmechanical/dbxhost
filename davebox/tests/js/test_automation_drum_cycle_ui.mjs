@@ -41,8 +41,11 @@ globalThis.host_module_get_param = (k) => {
     if (k === 'pa_list') return LIST;
     const m = /^(t\d+_c\d+)_pa_steps$/.exec(k);
     if (m) return STEPS[m[1]] || '';
+    const l = /^t\d+_l(\d+)_(length|loop_start|tps)$/.exec(k);
+    if (l && LANES[l[1]]) return String(LANES[l[1]][l[2]]);
     return '';
 };
+let LANES = {};                          /* lane -> { length, loop_start, tps }, the DSP's per-pad answers */
 globalThis.shadow_get_param = (slot, key) => {
     if (key === 'synth:chain_params') return JSON.stringify([
         { key: 'cutoff', name: 'Cutoff', type: 'float', min: 0, max: 1 },
@@ -214,6 +217,30 @@ step('⭐ Match pad shows the selected pad\'s cycle and, clicked, asks for it', 
     const lr = a.ops.rows.find(o => o.op === 'loop');
     assert(lr && lr.value === '1 BAR', 'the Loop row now reads the pad\'s 1 BAR, got ' + JSON.stringify(lr));
     back(); back();
+});
+
+step('⭐ a pad TAPPED while the pop-up is open changes what Match pad shows and does', () => {
+    LANES = { 0: { length: 12, loop_start: 0, tps: 24 }, 1: { length: 7, loop_start: 0, tps: 24 } };
+    note(68, 100); note(68, 0); ticks(2);            /* pad 1 = lane 0, the 12-step pad */
+    click(); ticks(2); click(); ticks(1);            /* the list, then the lane's pop-up */
+    const a = S.autoBank;
+    let mi = a.ops.rows.findIndex(o => o.op === 'match');
+    jog(mi - a.ops.sel); ticks(1);
+    printed.length = 0; drawScreen();
+    const mv = () => a.ops.rows.find(o => o.op === 'match').value;   /* what the drawn row carries */
+    assert(mv() === '12 ST', 'Match pad reads the 12-step pad, got ' + mv());
+    note(69, 100); note(69, 0); ticks(2);            /* pad 2 = lane 1, the 7-step pad */
+    assert(S.activeDrumLane[T] === 1 && S.drumLaneLength[T] === 7, 'setup: lane 1 (7 steps) selected, got lane ' + S.activeDrumLane[T] + ' len ' + S.drumLaneLength[T]);
+    assert(a.ops, 'the pop-up is still open after the pad tap');
+    printed.length = 0; drawScreen();
+    assert(mv() === '7 ST', 'Match pad now reads the 7-step pad, got ' + mv());
+    sets.length = 0;
+    click(); ticks(2);
+    assert(sets.some(s => s.startsWith('t0_pa_loop=0 seq:0:all_lanes_playback_dir 0 0')), 'the match was sent, got ' + JSON.stringify(sets));
+    const lr = a.ops.rows.find(o => o.op === 'loop');
+    assert(lr && lr.value === '7 ST', 'the Loop row takes the 7-step pad, got ' + JSON.stringify(lr));
+    back(); back();
+    LANES = {};
 });
 
 step('CONTROL: a melodic track has no Match pad and its Loop can be CLIP', () => {
