@@ -1176,8 +1176,10 @@ Two ways, both covered where the knobs are:
 
 - **Record it.** With the transport playing and Record armed, turn a knob and
   the move is written at the playhead, loop after loop, until you stop.
-  Parameters you don't touch keep what they had. See
-  [Recording](#64-recording).
+  Parameters you don't touch keep what they had. Each time you start, a
+  notice says how long the lane you're recording onto is — **● LANE: 2 BAR**,
+  or **● LANE: 13 ST** for a length that isn't whole bars — so you know the
+  cycle the move will repeat on. See [Recording](#64-recording).
 - **Lock a step.** Hold a step and turn a knob and that step takes a **lock** —
   a value the parameter jumps to when the step plays. See
   [Editing notes](#63-editing-notes).
@@ -1207,17 +1209,44 @@ muted is left where your hand put it.
 
 **AUTOMATION** is the last bank on the jog: the **list of everything automated
 in the current clip** — parameters, levels, MIDI targets, and the pads'
-aftertouch — each with its state (ON, OFF, or SMTH). Its knobs do nothing; the
-jog is the whole surface.
+aftertouch. Each row shows its **cycle**, the length it repeats over: **4 BAR**,
+**13 ST** (steps, when it isn't whole bars; **13 ST/32** when its steps are
+not sixteenths), or **CLIP** when it simply follows the clip. A muted row says
+**OFF**; the pads' aftertouch says **PADS**. Its knobs do nothing; the jog is
+the whole surface.
 
-**Click the jog** for the menu. As the cursor moves onto a row, the **step
-buttons blink white** on every step where that parameter has a value set — its
-step locks, and any step a recorded move passes through. **Shift + click** a row
-to jump to where that parameter is edited — its bank, its module's page, SOUND +
-CONFIG for a level, or MACROS for a MIDI target — and **Back** from there
-returns you to this menu, on the same row. Click a row for
-its operations:
-**Delete**, **Mute** / **Unmute**, **Mode** (*Curve* plays the lane as a continuous
+**Click the jog** for the menu. **With the cursor on a row, the step buttons,
+pages and screen show that row's lane** — not the clip's notes, which can't be
+edited here:
+
+- **The step buttons** are coloured by the value the lane plays on each step,
+  dim for low and bright for high, in the colours dAVEBOx Legacy used. A step
+  holding a value you set (a lock, or a recorded point) blinks off briefly.
+  Steps past the end of the cycle are dark grey.
+- **Pages.** Left / Right page through the lane's own length — a 4-bar lane
+  under a 1-bar clip has four pages. The header shows the cycle and the page
+  (**2 BAR PG 1/2**), with the same position bar as the track overview.
+- **The playhead** is where *that lane* is in its own cycle, on the step
+  buttons and the position bar — a lane with its own loop runs round inside
+  the clip at its own length.
+- **Pressing a step** here never touches notes. **Hold a step with a value
+  set** and you jump to where that parameter is edited — its bank, its
+  instrument's or effect's page (on a per-pad parameter, that pad), SOUND +
+  CONFIG for a level, MACROS for a MIDI target. Turn its knob to change the
+  value on that step, and let go to come back to this menu, on the same row
+  and page. On a bank the header shows **<AUTO S7** (step 7). Wherever you
+  land, the parameter's cell is marked with a small corner, and while the step
+  is held it is highlighted and shows the value the lane plays on that step —
+  only shown: the parameter itself does not move until you turn the knob.
+
+**Back** closes the menu and the step buttons show the clip again.
+
+**Shift + click** a row to jump to where that parameter is edited — its bank,
+its module's page, SOUND + CONFIG for a level, or MACROS for a MIDI target —
+and **Back** from there returns you to this menu, on the same row. The step
+buttons keep showing the lane while you are there, so you can hold a step and
+turn the knob to set that step. Click a row for its operations:
+**Mute** / **Unmute**, **Mode** (*Curve* plays the lane as a continuous
 envelope; *Punch* makes each lock last just its own step, with the parameter back at
 rest on every other step — Smooth and Wrap don't apply there and are hidden),
 **Smooth** (*On* glides between values, *Off*
@@ -1228,12 +1257,34 @@ parameter's automation is transformed with the note sequence — Resolution and
 Beat Stretch scale it, Clock Shift and Nudge move it, doubling the loop copies
 it forward; on a drum track, the ALL LANES versions of those. *Off*: it stays
 where it is whatever you do to the notes), **Loop** (that parameter's own loop length in steps, or CLIP to
-follow the clip), and **Rate** (/16 to ×16, the loop stretching to match). The
+follow the clip), **Rate** (/16 to ×16, the loop stretching to match), and
+**Scale** (0–200%: how far the lane moves — toward zero, or on a centred
+parameter like pan or pitch bend, toward and away from its centre), then
+**Clear** (every value on the lane goes, but the lane stays with its settings —
+it reads **EMPTY**, ready to record or lock new values into) and **Delete**
+(the lane goes altogether). Both are undoable. The
 last row is **Clear clip**, and **Delete + click** on the card does the same.
 Every operation is one undo, and **Back** closes one layer at a time. Conductor
-tracks don't have this bank. On a **drum track**, automation runs the length of
-the **longest lane**; shorter lanes loop inside it. The full description is in
+tracks don't have this bank. The full description is in
 [Parameter banks](#35-parameter-banks).
+
+**On a drum track**, automation belongs to the whole track — every pad plays
+it — and each automated parameter has its **own cycle**: the length, start
+and step size of the pad that was selected when you first recorded or locked
+it. Select a 12-step hat, record a filter sweep, and that sweep repeats every
+12 steps while the 16-step kick carries on around it. The cycle stays put:
+recording more onto it from another pad, editing it, or changing the pads'
+lengths afterwards doesn't change it. Two operations do: **Loop** sets it in
+the parameter's own steps (it can run longer than any pad — it plays in
+full), and **Match pad** makes it the selected pad's. ALL LANES Clock Shift,
+Nudge, Resolution, Beat Stretch and Double move each parameter's automation
+inside its own cycle.
+
+**Copying or cutting a clip** takes its automation with it. To another track,
+automation of the track's levels and of dAVEBOx's own knobs always comes
+along; automation of an instrument or effect parameter comes along only when
+the destination has the same instrument or effect in the same place. Anything
+left behind is counted in a notice (**AUTOMATION / 1 LANE NOT CARRIED**).
 
 ## 11.3 MIDI targets
 

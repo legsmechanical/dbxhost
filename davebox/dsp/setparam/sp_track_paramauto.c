@@ -70,6 +70,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         if (!pa_may_write(inst, tidx, id)) return 1;
         pa_entry_t *e = pa_get(inst, tidx, clip, id);
         if (!e) { inst->pa_store_full = PA_FULL_ENTRIES; return 1; }
+        pa_cycle_adopt_active(tr, clip, e);   /* a new drum lane: the pad it was written from */
         if (!pa_set_point(e, (uint16_t)tick, (uint16_t)v)) inst->pa_store_full = PA_FULL_POINTS;
         e->last_sent_valid = 0;   /* the knob that wrote this also moved the live value */
         pa_mark_dirty(inst);
@@ -92,6 +93,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         if (!pa_may_write(inst, tidx, id)) return 1;
         pa_entry_t *e = pa_get(inst, tidx, clip, id);
         if (!e) { inst->pa_store_full = PA_FULL_ENTRIES; return 1; }
+        pa_cycle_adopt_active(tr, clip, e);   /* see pa_set */
         pa_clear_range(e, (uint16_t)from, (uint16_t)to);
         if (!pa_set_point(e, (uint16_t)from, (uint16_t)v)) inst->pa_store_full = PA_FULL_POINTS;
         e->last_sent_valid = 0;   /* see pa_set */
@@ -185,7 +187,7 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         PA_SKIP_SPACE(p); PA_UINT(p, v);
         if (clip < 0 || clip >= NUM_CLIPS) return 1;
         pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_lookup(inst, tgt));
-        if (!e || !e->count) return 1;
+        if (!e || !pa_entry_live(e)) return 1;           /* a cleared lane's rest still follows */
         if (inst->playing && (e->flags & PA_FLAG_ACTIVE)) return 1;
         if (e->rest != (uint16_t)v) { e->rest = (uint16_t)v; pa_mark_dirty(inst); }
         return 1;
@@ -219,6 +221,27 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* pa_clear_points: "<clip> <target>" — the AUTOMATION bank's Clear
+     * (Josh, 2026-09-25): every point of that lane goes, the lane STAYS —
+     * listed, saved, its Loop / cycle, Rate, Scale, Mode, Smooth, Wrap, Link
+     * and Active kept — so new automation can be recorded or locked into it.
+     * The parameter goes back to rest, as a Delete puts it. */
+    if (!strcmp(sub, "pa_clear_points")) {
+        int clip = 0;
+        PA_SKIP_SPACE(p); PA_UINT(p, clip);
+        PA_TARGET(p, tgt);
+        if (clip < 0 || clip >= NUM_CLIPS) return 1;
+        pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_id(inst, tgt));
+        if (e && pa_entry_live(e)) {
+            e->count = 0;
+            e->flags |= PA_FLAG_KEEP;
+            e->last_sent_valid = 0;
+            __atomic_store_n(&e->release, 1, __ATOMIC_RELEASE);
+            pa_mark_dirty(inst);
+        }
+        return 1;
+    }
+
     /* pa_clear_step: "<clip> <from> <to>" — Delete + step. Clears EVERY
      * parameter's points in that tick span, which is the one-gesture meaning of
      * "delete what is automated here". */
@@ -231,8 +254,11 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         for (int i = 0; i < PA_MAX_ENTRIES; i++) {
             pa_entry_t *e = &inst->pa_entries[i];
             if (!e->used || e->track != tidx || e->clip != clip) continue;
+            const int had = e->count;
             pa_clear_range(e, (uint16_t)from, (uint16_t)to);
-            if (!e->count) pa_entry_retire(e);   /* nothing left to play: back to rest */
+            /* Nothing left to play: back to rest. A lane that was already
+             * empty (cleared and kept) is left as it is. */
+            if (had && !e->count) pa_entry_retire(e);
         }
         pa_mark_dirty(inst);
         return 1;
@@ -339,24 +365,58 @@ static int sp_track_paramauto(sp_ctx_t *cx) {
         return 1;
     }
 
-    /* pa_loop: "<clip> <target> <len> <off> <res>" — the independent loop
-     * window and resolution. Nothing in v1's UI writes this; the key exists so
-     * the store, its file format and its playback path all carry the feature
-     * from the start, and restoring per-parameter polymetric automation later
-     * is UI work rather than a storage change. */
+    /* pa_view: "<clip> <target>" — the lane selected on the AUTOMATION bank,
+     * whose current position state_snapshot reports for its playhead; "-"
+     * views nothing. A lookup, never an intern: viewing must not create a
+     * target. The slot is written LAST so the audio thread never pairs a new
+     * slot with a stale target. */
+    if (!strcmp(sub, "pa_view")) {
+        tr->pa_view_slot = 0;
+        tr->pa_view_target = 0;
+        tr->pa_view_lt = -1;
+        PA_SKIP_SPACE(p);
+        if (*p == '-' || !*p) return 1;
+        int clip = 0;
+        PA_UINT(p, clip);
+        PA_TARGET(p, tgt);
+        if (clip < 0 || clip >= NUM_CLIPS) return 1;
+        const int id = pa_target_lookup(inst, tgt);
+        if (id < 0) return 1;
+        pa_entry_t *e = pa_find(inst, tidx, clip, id);
+        if (!e) return 1;
+        tr->pa_view_target = (uint16_t)(id + 1);
+        tr->pa_view_slot = (uint16_t)((e - inst->pa_entries) + 1);
+        return 1;
+    }
+
+    /* pa_loop: "<clip> <target> <len> <off> <res> [<step>]" — the lane's own
+     * loop window and rate; the optional 6th token its step in ticks (a drum
+     * lane's cycle unit). On a DRUM track a lane always has a cycle, so len 0
+     * — "follow the clip" on a melodic lane — means MATCH THE ACTIVE PAD: the
+     * pad's start, length and step become the lane's cycle. */
     if (!strcmp(sub, "pa_loop")) {
-        int clip = 0, len = 0, off = 0, res = 0;
+        int clip = 0, len = 0, off = 0, res = 0, st = -1;
         PA_SKIP_SPACE(p); PA_UINT(p, clip);
         PA_TARGET(p, tgt);
         PA_SKIP_SPACE(p); PA_UINT(p, len);
         PA_SKIP_SPACE(p); PA_UINT(p, off);
         PA_SKIP_SPACE(p); PA_UINT(p, res);
+        PA_SKIP_SPACE(p);
+        if (*p >= '0' && *p <= '9') { PA_UINT(p, st); }
         if (clip < 0 || clip >= NUM_CLIPS) return 1;
         pa_entry_t *e = pa_find(inst, tidx, clip, pa_target_id(inst, tgt));
         if (e) {
-            e->loop_len   = (uint16_t)len;
-            e->loop_off   = (uint16_t)off;
             e->resolution = (uint16_t)res;
+            if (tr->pad_mode == PAD_MODE_DRUM && len == 0) {
+                e->loop_len = 0;
+                pa_cycle_adopt_active(tr, clip, e);
+            } else {
+                if (off > 0xFFFF) off = 0xFFFF;
+                if (off + len > 0xFFFF) len = 0xFFFF - off;
+                e->loop_len   = (uint16_t)len;
+                e->loop_off   = (uint16_t)off;
+                if (st >= 0) e->step_ticks = (uint16_t)st;
+            }
             pa_mark_dirty(inst);
         }
         return 1;

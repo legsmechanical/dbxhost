@@ -199,6 +199,21 @@ const T = 0, C = 0, SLOT = 1;
     check(sets.filter(x => x.includes('undo_checkpoint')).length === 1, 'ONE checkpoint per gesture');
 }
 
+/* ---- a REPEATED element's key records in the bare key's range --------- */
+{
+    /* DR32 pad 3's Transpose is `pad3_transpose`; chain_params lists only the
+     * bare key. Recorded exactly, any value >= 1 was full scale (device,
+     * 2026-09-25). octave is int -2..2: 1 is three quarters of the way. */
+    reset({ playing: true, recordArmed: false });
+    automationParamTouch(T, C, SLOT, 'synth:pad3_octave', true);
+    automationParamEdit(T, C, SLOT, 'synth:pad3_octave', '1', '0');
+    tick();
+    check(sets[0] === 't0_pa_rest=0 1:synth:pad3_octave 8192' && sets[1] === 't0_pa_live=1:synth:pad3_octave 12287',
+          '⭐ pad3_octave records in octave\'s -2..2 (rest 0 -> 8192, live 1 -> 12287), got ' + JSON.stringify(sets));
+    automationParamTouch(T, C, SLOT, 'synth:pad3_octave', false);
+    tick();
+}
+
 /* ---- a refused module write is retried whole, in order ----------------- */
 {
     reset({ playing: true, recordArmed: true });

@@ -757,6 +757,12 @@ export function engineModuleAbbrev(moduleId) {
 export function engineLoadedModule(slot, comp) {
     return shadow_get_param(slot, moduleReadKey(comp)) || '';
 }
+/* The same read, but a failed one is null rather than "" — for a caller
+ * that must not mistake "could not tell" for "no module there". */
+export function engineLoadedModuleOrNull(slot, comp) {
+    const v = shadow_get_param(slot, moduleReadKey(comp));
+    return (v === null || v === undefined) ? null : String(v);
+}
 
 export function engineLoadModule(slot, comp, moduleId) {
     return shadow_set_param(slot, comp + ':module', String(moduleId));

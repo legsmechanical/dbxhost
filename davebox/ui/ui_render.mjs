@@ -55,10 +55,10 @@ import { bankCyclePos, bankCycleForMode, bankDisplayName } from './ui_pure.mjs';
 import { syncDrumRepeatState } from './ui_drummodel.mjs';
 import {
     effectiveClip,
-    bankHasAltParams, altIndicatorActive
+    bankHasAltParams, altIndicatorActive, autoLanePlayStep
 } from './ui_leds.mjs';
 import { soundRender, renderGatewayCard, renderTrackGatewayCard, renderMacrosPeek } from './ui_sound.mjs';
-import { drawAutomationBankBody, autoBankMenuOpen } from './ui_automation_bank.mjs';
+import { drawAutomationBankBody, autoBankMenuOpen, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus } from './ui_automation_bank.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
@@ -88,6 +88,12 @@ export function bankHeaderGlyph(bank) {
  * instrument. Session view has no track to name. */
 export function bankHeaderRight(bare) {
     if (S.sessionView) return '';
+    /* A hold-jump from the AUTOMATION bank: this bank is TEMPORARY — say so,
+     * and which step of the lane the knob will set ("<AUTO S7"). */
+    if (autoHoldJumpActive()) {
+        const cy = S.autoCycle;
+        return '<AUTO S' + (autoHoldJumpStep() - (cy ? cy.off : 0) + 1);
+    }
     const instr = '[' + (S.instrAbbrev || '--') + ']';
     return bare ? instr : 'T' + (S.activeTrack + 1) + instr;   /* T3[OBXD] — no space (Josh) */
 }
@@ -115,15 +121,29 @@ export function refreshInstrAbbrev() {
 }
 
 /* The automation circle on a bank card's cell, for a knob on the seq: list. */
-function markSeqAuto(cell, bank, k, altMode) {
+/* A bank knob's cell with the LANE IN FOCUS applied (autoLaneFocus): the lock
+ * mark when it is the lane's knob, and — while a step is held — the value the
+ * lane plays there instead of the knob's. `hi` = highlight this cell. */
+function kitFocusCell(knob, val, bank, k, focus) {
+    const on = !!focus && seqAutoTargetForKnob(S.activeTrack, bank, k, false) === focus.target;
+    const held = on && focus.wire != null;
+    const cell = kitCellForKnob(knob, held ? Number(focus.wire) : val);
+    if (on) cell.lock = true;
+    return { cell, hi: held };
+}
+function markSeqAuto(cell, bank, k, altMode, focus) {
     const t = S.activeTrack;
     const tg = seqAutoTargetForKnob(t, bank, k, altMode);
-    if (!tg) return;
+    if (!tg) return false;
     const st = automationStateFor(t, effectiveClip(t), tg);
     if (st) cell.auto = st.active ? 'auto' : 'auto-off';
+    /* The lane a jump came from (autoLaneFocus): the lock mark, and true so
+     * the caller can show the held step's value in the cell. */
+    if (focus && focus.target === tg) { cell.lock = true; return true; }
+    return false;
 }
 
-function drawBankHeading(name, showTrack, bareHdr) {
+function drawBankHeading(name, showTrack, bareHdr, rightOverride) {
     /* bareHdr: the resting track overview draws the TRACK ROW, which already
      * names the active track (Josh, 2026-08-31: "it's redundant — you can see
      * active track on the track number row") — its right label keeps only the
@@ -131,7 +151,7 @@ function drawBankHeading(name, showTrack, bareHdr) {
      * with no track row in sight (2026-08-25). */
     /* session view's mixer pages are AUDIO banks whatever the track's bank is */
     drawKitBankHeader(bankHeadingText(name), S.sessionView ? 'audio' : bankHeaderGlyph(S.activeBank),
-                      bankHeaderRight(bareHdr));
+                      rightOverride != null ? rightOverride : bankHeaderRight(bareHdr));
 }
 /* The heading STRING: the name, with the Conductor's "C-" blink (phase driven
  * in the tick loop; the header font is fixed-advance so the name stays
@@ -579,12 +599,15 @@ export function bankPageHints(bank) {
     return hints;
 }
 
-function drawKitPage(name, cells, inverted, footer) {
+function drawKitPage(name, cells, inverted, footer, focusIdx) {
     /* BANK's map: this is davebox's own track-view bank card, which has no page
      * strip and so starts its grid a row higher. Must be first — every kit draw
      * call below reads the layout bindings. */
     kitUseLayout('bank');
     const t = S.knobTouched;
+    /* A held step on the lane a jump came from HIGHLIGHTS its cell (the
+     * touched look) while the header keeps saying where you are (<AUTO S#). */
+    const hi = t >= 0 ? t : (focusIdx >= 0 ? focusIdx : -1);
     const touched = t >= 0 && cells[t] && cells[t].name ? cells[t] : null;
     if (touched) drawKitTouchedHeader(touched.name);
     else (inverted ? drawBankHeadingInverted : drawBankHeading)(name, false);
@@ -594,7 +617,7 @@ function drawKitPage(name, cells, inverted, footer) {
      * NAMED picker, so the card already says which bank it is in words, and a
      * position strip repeats that in a form you have to count.
      * bankCyclePos() still exists for sound mode's param pages. */
-    drawKitCells(cells, t);
+    drawKitCells(cells, hi);
     /* ⭑ NO value zoom on a bank page (Josh, 2026-08-26: "i've been meaning to
      * retire that"). Turning a knob widget no longer throws a magnified copy of
      * the cell over the middle of the screen — the cell itself already updates,
@@ -1277,14 +1300,36 @@ function drawPositionBar(t) {
     const ac     = effectiveClip(t);
     const lsBase = S.clipLoopStart[t][ac] | 0;
     const len    = S.clipLength[t][ac];
-    const startPage = lsBase >> 4;
-    const winPages  = Math.max(1, Math.ceil(len / 16));
-    /* View/play pages are translated into window-relative space so the bar
-     * always anchors at the window's first page on the left edge. */
-    const viewPage = Math.max(0, Math.min(S.trackCurrentPage[t] - startPage, winPages - 1));
-    const cs = S.trackCurrentStep[t];
-    const playPage = (S.playing && S.trackClipPlaying[t] && cs >= lsBase && cs < lsBase + len)
-                   ? Math.floor((cs - lsBase) / 16) : -1;
+    const cs     = S.trackCurrentStep[t];
+    /* Extent markers: small vertical ticks just outside the bar edges to
+     * hint that clip content exists before / after the visible window. */
+    const steps = S.clipSteps[t][ac];
+    let hasLeft = false, hasRight = false;
+    for (let s = 0; s < lsBase; s++) if (steps[s] !== 0) { hasLeft = true; break; }
+    for (let s = lsBase + len; s < NUM_STEPS; s++) if (steps[s] !== 0) { hasRight = true; break; }
+    drawPositionBarGeom({ lsBase, len, viewPage: S.trackCurrentPage[t] - (lsBase >> 4),
+                          playStep: (S.playing && S.trackClipPlaying[t]) ? cs : -1,
+                          hasLeft, hasRight });
+}
+
+/* ⭐ THE PAGE BAR, one drawing for every screen that shows one (Josh,
+ * 2026-09-24: the AUTOMATION bank's "bar length and position indicator should
+ * mimic the style used in track overview" — so it IS the track overview's):
+ * rows 50–53, one segment per 16-step page of the window across 120 px from
+ * x=4 with 1 px gaps; the page being VIEWED solid, the page PLAYING outlined,
+ * the rest a 1 px underline; the playhead a 1 px tick mapped across the
+ * window's pixel span, inverted on the solid segment; extent ticks outside
+ * either edge when content lies beyond the window.
+ *   lsBase / len — the window, in steps (the bar starts at its first page)
+ *   viewPage     — the viewed page, window-relative (clamped here)
+ *   playStep     — the playing step (absolute), or -1: not playing */
+export function drawPositionBarGeom(o) {
+    const lsBase = o.lsBase | 0, len = Math.max(1, o.len | 0);
+    const winPages = Math.max(1, Math.ceil(len / 16));
+    const viewPage = Math.max(0, Math.min(o.viewPage | 0, winPages - 1));
+    const cs = o.playStep;
+    const playing = cs >= lsBase && cs < lsBase + len;
+    const playPage = playing ? Math.floor((cs - lsBase) / 16) : -1;
     const barY = 50, barH = 4, segGap = 1;   /* 2026-09-05: the hint footer owns row 57 */
     const segW   = Math.max(2, Math.floor((120 - (winPages - 1) * segGap) / winPages));
     const startX = 4;
@@ -1299,21 +1344,15 @@ function drawPositionBar(t) {
         }
     }
     /* Playhead dot mapped across the window's pixel span (not full 128px). */
-    if (S.playing && S.trackClipPlaying[t] && cs >= lsBase && cs < lsBase + len) {
+    if (playing) {
         const winPxW = winPages * (segW + segGap) - segGap;
         const dotX = startX + Math.floor((cs - lsBase) * winPxW / Math.max(1, len));
         const viewSegStart = startX + viewPage * (segW + segGap);
         const onSolid = dotX >= viewSegStart && dotX < viewSegStart + segW;
         fill_rect(dotX, barY, 1, barH, onSolid ? 0 : 1);
     }
-    /* Extent markers: small vertical ticks just outside the bar edges to
-     * hint that clip content exists before / after the visible window. */
-    const steps = S.clipSteps[t][ac];
-    let hasLeft = false, hasRight = false;
-    for (let s = 0; s < lsBase; s++) if (steps[s] !== 0) { hasLeft = true; break; }
-    for (let s = lsBase + len; s < NUM_STEPS; s++) if (steps[s] !== 0) { hasRight = true; break; }
-    if (hasLeft)  fill_rect(startX - 2, barY + 1, 1, barH - 2, 1);
-    if (hasRight) {
+    if (o.hasLeft)  fill_rect(startX - 2, barY + 1, 1, barH - 2, 1);
+    if (o.hasRight) {
         const xRight = startX + winPages * (segW + segGap) - segGap + 1;
         fill_rect(xRight, barY + 1, 1, barH - 2, 1);
     }
@@ -2018,8 +2057,15 @@ function drawUIBody() {
          * and its ops (ui_automation_bank). The heading is a bank heading. */
         if (bank === BANK_AUTOMATION) {
             clear_screen();
-            drawBankHeading(bankDisplayName(S.trackPadMode[S.activeTrack], BANK_AUTOMATION), false, false);
+            /* With a row selected, the header's right label is ITS cycle and the
+             * page being viewed ("2 BAR PG 1/2"), and a multi-page cycle gets
+             * the track overview's page bar — the grid follows the row. */
+            const cy = (S.autoCycle && S.autoCycle.t === S.activeTrack) ? S.autoCycle : null;
+            drawBankHeading(bankDisplayName(S.trackPadMode[S.activeTrack], BANK_AUTOMATION), false, false,
+                            cy ? cy.text + (cy.pages > 1 ? ' PG ' + (cy.page + 1) + '/' + cy.pages : '') : null);
             drawAutomationBankBody();
+            if (cy && cy.pages > 1)
+                drawPositionBarGeom({ lsBase: cy.off, len: cy.len, viewPage: cy.page, playStep: autoLanePlayStep(cy) });
             return;
         }
         if (bank === BANK_STEP) {
@@ -2240,6 +2286,8 @@ function drawUIBody() {
          * offset is derived. K3-K6 (Vel/Qnt/Len/Gate) are inert/greyed. */
         const _conductNfx = S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT;
         const cells = [];
+        const _focus = autoLaneFocus();
+        let _focusIdx = -1;
         for (let k = 0; k < 8; k++) {
             if (k === 6) { cells.push({ kind: 'blank', label: '' }); continue; }  /* K7 blocked */
             if (_conductNfx && (k === 2 || k === 3 || k === 4 || k === 5)) {
@@ -2252,9 +2300,11 @@ function drawUIBody() {
                              text: RND_ALG_NAMES_NFX[_md], options: RND_ALG_NAMES_NFX, sel: _md });
                 continue;
             }
-            cells.push(kitCellForKnob(knobs[k], vals[k]));
+            const _fc = kitFocusCell(knobs[k], vals[k], 1, k, _focus);
+            if (_fc.hi) _focusIdx = cells.length;
+            cells.push(_fc.cell);
         }
-        drawKitPage(BANKS[1].name, cells, false, bankPageHints(1));
+        drawKitPage(BANKS[1].name, cells, false, bankPageHints(1), _focusIdx);
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 3) {
         /* Drum MIDI DLY: K1-K4 same as melodic, K5=Gate, K6=Clk, K7=Retrg, K8 empty.
          * Drum has no Pfb (no per-lane pitch) and no Rnd (no random pitch fb),
@@ -2263,11 +2313,11 @@ function drawUIBody() {
         const t    = S.activeTrack;
         const vals = S.bankParams[t][3];
         const knobs = BANKS[3].knobs;
+        const _focus = autoLaneFocus();
+        const _fcs = [0, 1, 2, 3].map(k => kitFocusCell(knobs[k], vals[k], 3, k, _focus));
+        const _focusIdx = _fcs.findIndex(f => f.hi);
         const cells = [
-            kitCellForKnob(knobs[0], vals[0]),
-            kitCellForKnob(knobs[1], vals[1]),
-            kitCellForKnob(knobs[2], vals[2]),
-            kitCellForKnob(knobs[3], vals[3]),
+            _fcs[0].cell, _fcs[1].cell, _fcs[2].cell, _fcs[3].cell,
             { kind: 'frac', label: 'Gate', name: 'Gate', text: _offDash(fmtGateMod(vals[4])),
               options: [0,1,2,3,4,5,6,7,8,9,10].map(fmtGateMod).map(_offDash), sel: vals[4] | 0 },
             { kind: 'arcbip', label: 'ClkFb', name: 'Clock Feedback', text: fmtSign(vals[5]),
@@ -2275,7 +2325,7 @@ function drawUIBody() {
             toggleCell('Retrg', 'Retrig', vals[6], fmtBool(1), fmtBool(0)),
             { kind: 'blank', label: '' },
         ];
-        drawKitPage(BANKS[3].name, cells, false, bankPageHints(3));
+        drawKitPage(BANKS[3].name, cells, false, bankPageHints(3), _focusIdx);
 
         } else {
         /* Bank overview — canvaskit grid (widgets + label strips + touch swap) */
@@ -2284,6 +2334,8 @@ function drawUIBody() {
         const _isDrum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
         const RND_ALG_NAMES = ['Pure', 'Gaus', 'Walk'];
         const cells = [];
+        const _focus = autoLaneFocus();
+        let _focusIdx = -1;
         for (let k = 0; k < 8; k++) {
             /* Conduct bank (CLIP bank 0 on a Conductor) K6 = CdLk lock toggle.
              * Melodic/drum CLIP K6 stays the generic stub (unchanged). */
@@ -2311,10 +2363,14 @@ function drawUIBody() {
                 continue;
             }
             if (_delayShiftClkF) {
-                const _cv = S.delayClockFb[S.activeTrack] | 0;
+                let _cv = S.delayClockFb[S.activeTrack] | 0;
+                if (_focus && _focus.wire != null && seqAutoTargetForKnob(S.activeTrack, bank, k, true) === _focus.target) {
+                    _cv = parseInt(_focus.wire, 10) | 0;
+                    _focusIdx = cells.length;
+                }
                 const _cc = { kind: 'arcbip', label: 'ClkFb', name: 'Clock Feedback',
                               text: fmtSign(_cv), signed: Math.max(-1, Math.min(1, _cv / 127)) };
-                markSeqAuto(_cc, bank, k, true);
+                markSeqAuto(_cc, bank, k, true, _focus);
                 cells.push(_cc);
                 continue;
             }
@@ -2324,17 +2380,22 @@ function drawUIBody() {
                                       fmtRevStyle(1), fmtRevStyle(0)));
                 continue;
             }
-            const cell = kitCellForKnob(knobs[k], vals[k]);
+            /* A held step on the lane in focus: its cell shows what the LANE
+             * plays at that step, not where the knob sits. */
+            const _isFocus = _focus && _focus.wire != null &&
+                             seqAutoTargetForKnob(S.activeTrack, bank, k, false) === _focus.target;
+            const cell = kitCellForKnob(knobs[k], _isFocus ? Number(_focus.wire) : vals[k]);
+            if (_isFocus) _focusIdx = cells.length;
             if (S.altMode) {
                 if      (knobs[k].dspKey === 'clock_shift')     { cell.label = 'Nudge'; cell.name = 'Nudge'; }
                 else if (knobs[k].dspKey === 'clip_resolution') { cell.label = 'Zoom'; cell.name = 'Zoom'; }
             }
             /* The bank knob IS the parameter a macro can point at, so its
              * automation shows HERE too (Josh, 2026-09-03): the circle. */
-            markSeqAuto(cell, bank, k, false);
+            markSeqAuto(cell, bank, k, false, _focus);
             cells.push(cell);
         }
-        drawKitPage(bankHeaderName(S.activeTrack, bank), cells, false, bankPageHints(bank));
+        drawKitPage(bankHeaderName(S.activeTrack, bank), cells, false, bankPageHints(bank), _focusIdx);
         }
 
     } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
@@ -2399,44 +2460,14 @@ function drawUIBody() {
 function drawDrumPositionBar(t) {
     const lsBase = S.drumLaneLoopStart[t] | 0;
     const len    = S.drumLaneLength[t];
-    const startPage = lsBase >> 4;
-    const winPages  = Math.max(1, Math.ceil(len / 16));
-    const viewPage  = Math.max(0, Math.min(S.drumStepPage[t] - startPage, winPages - 1));
-    const cs        = S.drumCurrentStep[t];
-    const playPage  = (S.playing && S.trackClipPlaying[t] && cs >= lsBase && cs < lsBase + len)
-                    ? Math.floor((cs - lsBase) / 16) : -1;
-    const barY = 50, barH = 4, segGap = 1;   /* 2026-09-05: the hint footer owns row 57 */
-    const segW   = Math.max(2, Math.floor((120 - (winPages - 1) * segGap) / winPages));
-    const startX = 4;
-    for (let pg = 0; pg < winPages; pg++) {
-        const x = startX + pg * (segW + segGap);
-        if (pg === viewPage) {
-            fill_rect(x, barY, segW, barH, 1);
-        } else if (pg === playPage) {
-            fill_rect(x, barY, segW, 1, 1);
-            fill_rect(x, barY + barH - 1, segW, 1, 1);
-            fill_rect(x, barY, 1, barH, 1);
-            fill_rect(x + segW - 1, barY, 1, barH, 1);
-        } else {
-            fill_rect(x, barY + barH - 1, segW, 1, 1);
-        }
-    }
-    if (S.playing && S.trackClipPlaying[t] && cs >= lsBase && cs < lsBase + len) {
-        const winPxW = winPages * (segW + segGap) - segGap;
-        const dotX = startX + Math.floor((cs - lsBase) * winPxW / Math.max(1, len));
-        const viewSegStart = startX + viewPage * (segW + segGap);
-        const onSolid = dotX >= viewSegStart && dotX < viewSegStart + segW;
-        fill_rect(dotX, barY, 1, barH, onSolid ? 0 : 1);
-    }
+    const cs     = S.drumCurrentStep[t];
     /* Extent markers from the active lane's step mirror. */
     const lane  = S.activeDrumLane[t];
     const steps = S.drumLaneSteps[t][lane];
     let hasLeft = false, hasRight = false;
     for (let s = 0; s < lsBase; s++) if (steps[s] !== '0') { hasLeft = true; break; }
     for (let s = lsBase + len; s < 256; s++) if (steps[s] !== '0') { hasRight = true; break; }
-    if (hasLeft)  fill_rect(startX - 2, barY + 1, 1, barH - 2, 1);
-    if (hasRight) {
-        const xRight = startX + winPages * (segW + segGap) - segGap + 1;
-        fill_rect(xRight, barY + 1, 1, barH - 2, 1);
-    }
+    drawPositionBarGeom({ lsBase, len, viewPage: S.drumStepPage[t] - (lsBase >> 4),
+                          playStep: (S.playing && S.trackClipPlaying[t]) ? cs : -1,
+                          hasLeft, hasRight });
 }
