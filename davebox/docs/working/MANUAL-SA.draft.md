@@ -134,8 +134,10 @@ Every new project is ready to play:
 
 - **Tracks 1–4** play Move's four instruments, loaded with a random stock drum kit,
   bass and two polyphonic sounds, like a new Move set.
-- **Tracks 5–8** each have an empty Schwung chain, silent until you pick an
-  instrument in the track's [TRACK CONFIG](#143-choosing-an-instrument) menu.
+- **Tracks 5–8** each have an empty Schwung chain, ready for a Schwung module and
+  silent until you pick one in the track's
+  [TRACK CONFIG](#143-choosing-an-instrument) menu. Until then the header and
+  TRACK CONFIG show **--** for their instrument.
 - You can point any track somewhere else later — see
   [Choosing an instrument](#143-choosing-an-instrument).
 
