@@ -366,9 +366,8 @@ step('⭑⭑ NO bank header can reach the alt-param arrow, with the track prefix
      * cannot produce (a Conductor on AUTOMATION), and a pin that fails on an
      * unreachable case teaches people to loosen it.
      * ⭑ Known exception, accepted: CONVERTING a track to Conductor while it
-     * sits on AUTOMATION leaves it on a bank outside the cycle, and
-     * 'C-AUTOMATION' with the prefix is 125px — fitHdr trims it. Reachable only
-     * that way, and the trim is graceful. */
+     * sits on AUTOMATION leaves it on a bank outside the cycle. Reachable only
+     * that way. */
     for (const b of bankCycleForMode(padMode)) {
         if (!BANKS[b] || !BANKS[b].name) continue;
         /* ⚠ BANK_SOUND is excluded, and only it: its screen is sound mode's own,
@@ -403,8 +402,9 @@ step('⭑⭑ each track type shows ITS OWN bank names, in the picker and the hea
         0: { 0: 'CLIP', 1: 'NOTE FX', 5: 'LIVE ARP', 14: 'AUTOMATION', 12: 'STEP' },
         [PAD_MODE_DRUM]:    { 0: 'DRUM LANE', 1: 'NOTE FX', 5: 'RPT GROOVE',
                               14: 'AUTOMATION', 7: 'ALL LANES', 12: 'STEP' },
-        [PAD_MODE_CONDUCT]: { 0: 'C-CONDUCT', 1: 'C-NOTE FX', 8: 'C-RESPONDER',
-                              9: 'C-OCTAVE', 10: 'C-WHEN', 12: 'C-STEP' },
+        /* no "C-" prefix, three renames (Josh, 2026-09-26) */
+        [PAD_MODE_CONDUCT]: { 0: 'CLIP', 1: 'NOTE FX', 8: 'ON/OFF',
+                              9: 'OCTAVE', 10: 'TIMING', 12: 'STEP' },
     };
     for (const mode of Object.keys(EXPECT)) {
         for (const bank of Object.keys(EXPECT[mode])) {
@@ -425,7 +425,7 @@ step('⚠ ...and the render calls that function rather than naming banks itself'
     for (const line of src.split('\n')) {
         const code = line.trim();
         if (code.startsWith('*') || code.startsWith('/*') || code.startsWith('//')) continue;
-        if (/'(DRUM LANE|RPT GROOVE|REPEAT GROOVE|C-CONDUCT)'/.test(code)) strays.push(code);
+        if (/'(DRUM LANE|RPT GROOVE|REPEAT GROOVE|ON\/OFF|TIMING)'/.test(code)) strays.push(code);
     }
     if (strays.length)
         throw new Error('the render names banks itself again:\n  ' + strays.join('\n  '));

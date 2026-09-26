@@ -3073,10 +3073,16 @@ const bankNavGlyphW = (g) => (MV_BANKNAV_ICONS ? kitBankGlyphWidth(g) + 3 : 0);
 export function drawKitBankNavColumn(items, cur) {
     if (!items || !items.length) return;
     const ROW = MV_BANKNAV_ROW_H, MID = (MV_BANKNAV_ROWS - 1) >> 1;
-    let lw = 0;
-    for (const it of items) if (it.cat) lw = Math.max(lw, mvWidth(it.cat.label));
-    const lineX = 2 + lw + 3, GUT = lineX + 4;
-    const x0Of = (it) => (it.cat ? GUT : 3);
+    /* One gutter per nesting depth: depth 0 starts at the left edge, depth 1
+     * where a depth-0 group's rows start (under DRUM LANE's name). Each is as
+     * wide as its longest label. */
+    const lw = [0, 0];
+    for (const it of items) if (it.cat) { const d = it.cat.depth ? 1 : 0; lw[d] = Math.max(lw[d], mvWidth(it.cat.label)); }
+    const base = [0, 0], lineX = [0, 0], gut = [3, 3];
+    lineX[0] = 2 + lw[0] + 3; gut[0] = lineX[0] + 4;
+    base[1] = lw[0] ? gut[0] - 2 : 0;
+    lineX[1] = base[1] + 2 + lw[1] + 3; gut[1] = lineX[1] + 4;
+    const x0Of = (it) => (it.cat ? gut[it.cat.depth ? 1 : 0] : 3);
     let w = 0;
     for (const it of items) w = Math.max(w, x0Of(it) + bankNavGlyphW(it.glyph) + mvWidth(it.name));
     const PW = Math.min(SCREEN_W - 16, w + 4);
@@ -3094,14 +3100,14 @@ export function drawKitBankNavColumn(items, cur) {
         mvPrint(x0 + bankNavGlyphW(it.glyph), y + 1, it.name, fg);
         if (it.cat) {
             const g = vis.length && vis[vis.length - 1].id === it.cat.id ? vis[vis.length - 1] : null;
-            if (g) g.b = r; else vis.push({ id: it.cat.id, label: it.cat.label, a: r, b: r });
+            if (g) g.b = r; else vis.push({ id: it.cat.id, label: it.cat.label, d: it.cat.depth ? 1 : 0, a: r, b: r });
         }
     }
     for (const g of vis) {
         const top = g.a * ROW + 2, bot = g.b * ROW + ROW - 2;
-        const tw = mvWidth(g.label);
-        mvPrint(1 + Math.round((lineX - 1 - tw) / 2), Math.round((top + bot) / 2 - 2.5), g.label, 1);
-        fill_rect(lineX, top, 1, bot - top, 1);
+        const tw = mvWidth(g.label), L = lineX[g.d], B = base[g.d];
+        mvPrint(B + 1 + Math.round((L - B - 1 - tw) / 2), Math.round((top + bot) / 2 - 2.5), g.label, 1);
+        fill_rect(L, top, 1, bot - top, 1);
     }
 }
 

@@ -608,7 +608,7 @@ export const BANK_DEFAULT = 0;
 /* How long the bank map outlives its last detent without a touch: bridges the
  * jog touch sensor dropping out mid-turn, short enough that letting go after
  * the turn still reads as the column going at once. */
-export const BANKNAV_HOLD_MS = 150;   /* Josh, 2026-09-26: 150 */
+export const BANKNAV_HOLD_MS = 100;   /* Josh, 2026-09-26: "do 100ms" */
 
 /* JS tick rate on device (~94 Hz measured). Older constants were calibrated
  * against a mistaken 196 Hz assumption — derive new timings from this. */

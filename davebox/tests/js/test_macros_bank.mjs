@@ -204,12 +204,12 @@ GS.pendingDspSync = 0; GS.pendingSetLoad = false; GS.currentSetUuid = 'test-uuid
 const lastMac = () => { for (let i = sidecars.length - 1; i >= 0; i--) { try { const j = JSON.parse(sidecars[i].body); if (j && j.mac) return j.mac; } catch (e) {} } return null; };
 
 /* ---- registration ------------------------------------------------------ */
-step('MACROS is bank 13, isSoundBank covers both identities, and it opens CTRL after LIVE ARP on the melodic walk and follows SOUND + CONFIG on the drum walk; a Conductor has neither', () => {
+step('MACROS is bank 13, isSoundBank covers both identities, and it opens CTRL after LIVE ARP on the melodic walk and after RPT GROOVE on the drum walk; a Conductor has neither', () => {
     assert(BANKS[BANK_MACROS] && BANKS[BANK_MACROS].name === 'MACROS', 'BANKS[13] is MACROS');
     assert(isSoundBank(BANK_SOUND) && isSoundBank(BANK_MACROS) && !isSoundBank(BANK_STEP) && !isSoundBank(0), 'isSoundBank');
     const mel = bankCycleForMode(0), drum = bankCycleForMode(PAD_MODE_DRUM), con = bankCycleForMode(PAD_MODE_CONDUCT);
     assert(mel.indexOf(BANK_MACROS) === mel.indexOf(5) + 1, 'melodic: … LIVE ARP, MACROS');
-    assert(drum.indexOf(BANK_MACROS) === drum.indexOf(BANK_SOUND) + 1, 'drum: … SOUND, MACROS');
+    assert(drum.indexOf(BANK_MACROS) === drum.indexOf(5) + 1, 'drum: … RPT GROOVE, MACROS');
     assert(con.indexOf(BANK_MACROS) < 0 && con.indexOf(BANK_SOUND) < 0, 'conductor: no sound banks');
 });
 

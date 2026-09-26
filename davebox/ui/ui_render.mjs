@@ -165,13 +165,11 @@ function drawBankHeading(name, showTrack, bareHdr, rightOverride) {
     drawKitBankHeader(bankHeadingText(name), S.sessionView ? 'audio' : headerGlyphNow(S.activeBank),
                       rightOverride != null ? rightOverride : bankHeaderRight(bareHdr));
 }
-/* The heading STRING: the name, with the Conductor's "C-" blink (phase driven
- * in the tick loop; the header font is fixed-advance so the name stays
- * steady). Split out so the STEP page can draw the same text. */
+/* The heading STRING. The Conductor's blinking "C-" prefix is gone (Josh,
+ * 2026-09-26: "get rid of conductor track "C-" append at front in heading and
+ * overlay"), so this is the name as given; kept as the one seam the bank
+ * header and the STEP page share. */
 function bankHeadingText(name) {
-    if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT &&
-            name.charAt(0) === 'C' && name.charAt(1) === '-')
-        return (S._altBlinkPhase !== 1 ? 'C-' : '  ') + name.slice(2);
     return name;
 }
 
@@ -1497,7 +1495,7 @@ export function bankNavItems() {
     /* Each bank's category, when it sits in one that is drawn as a group. */
     const cat = {};
     bankCategoriesForMode(mode, S.activeTrack).forEach((g, gi) => {
-        if (g.label) for (const b of g.banks) cat[b] = { id: gi, label: g.label };
+        if (g.label) for (const b of g.banks) cat[b] = { id: gi, label: g.label, depth: g.depth | 0 };
     });
     return {
         items: cyc.map((b) => {

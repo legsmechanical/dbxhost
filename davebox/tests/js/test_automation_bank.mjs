@@ -80,11 +80,11 @@ const draw = () => { painted = 0; globalThis.clear_screen(); render.drawUI(); };
 const T = 0, C = 0;
 const menu = () => S.autoBank || {};
 
-step('AUTOMATION is bank 14, after MACROS on the melodic walk (CTRL) and last on the drum walk; the old bank 6 is off them; a Conductor has none', () => {
+step('AUTOMATION is bank 14, after MACROS on the melodic and drum walks (CTRL); the old bank 6 is off them; a Conductor has none', () => {
     assert(BANKS[BANK_AUTOMATION] && BANKS[BANK_AUTOMATION].name === 'AUTOMATION', 'BANKS[14]');
     const mel = bankCycleForMode(0), drum = bankCycleForMode(PAD_MODE_DRUM), con = bankCycleForMode(PAD_MODE_CONDUCT);
     assert(mel.indexOf(BANK_AUTOMATION) === mel.indexOf(BANK_MACROS) + 1 && mel.indexOf(BANK_MACROS) >= 0, 'melodic: CTRL is MACROS, AUTOMATION');
-    assert(drum[drum.length - 1] === BANK_AUTOMATION && drum.indexOf(6) < 0 && mel.indexOf(6) < 0, 'drum: … AUTOMATION; bank 6 gone');
+    assert(drum.indexOf(BANK_AUTOMATION) === drum.indexOf(BANK_MACROS) + 1 && drum.indexOf(6) < 0 && mel.indexOf(6) < 0, 'drum: CTRL is MACROS, AUTOMATION; bank 6 gone');
     assert(con.indexOf(BANK_AUTOMATION) < 0, 'conductor: none');
 });
 step('the card lists the clip\'s automation from the owner\'s cache: labels, ON/OFF/SMTH, the pads\' aftertouch as its own row; the knobs are a no-op', () => {

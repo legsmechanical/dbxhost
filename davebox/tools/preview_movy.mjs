@@ -95,7 +95,7 @@ frame('ALL LANES (drum, resting)', [
 ], { headerText: 'ALL LANES', pageIdx: 0, pageCount: 6, touchedIdx: -1 });
 
 /* 6 — Conductor OCTAVE grid (per-track value squares) */
-frame('C-OCTAVE (conductor grid)', [
+frame('OCTAVE (conductor grid)', [
     { kind: 'valsq', label: 'Tr1', name: 'Track 1', text: '+1' },
     { kind: 'blank', label: 'Cndct' },
     { kind: 'valsq', label: 'Tr3', name: 'Track 3', text: '--' },
@@ -104,7 +104,7 @@ frame('C-OCTAVE (conductor grid)', [
     { kind: 'valsq', label: 'Tr6', name: 'Track 6', text: '--' },
     { kind: 'valsq', label: 'Tr7', name: 'Track 7', text: '+3' },
     { kind: 'valsq', label: 'Tr8', name: 'Track 8', text: '--' },
-], { headerText: 'C-OCTAVE', pageIdx: 3, pageCount: 5, touchedIdx: -1 });
+], { headerText: 'OCTAVE', pageIdx: 3, pageCount: 5, touchedIdx: -1 });
 
 /* 7 — drum REPEAT GROOVE (gate bars + % labels), step 3 touched */
 frame('REPEAT GROOVE (step 3 touched)', [

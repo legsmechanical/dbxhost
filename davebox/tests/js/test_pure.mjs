@@ -100,10 +100,8 @@ eq(_clipIsEmpty(1, 2), true, '_clipIsEmpty drum empty (ignores clipNonEmpty)');
 S.drumClipNonEmpty[1][2] = true;
 eq(_clipIsEmpty(1, 2), false, '_clipIsEmpty drum non-empty');
 
-/* -- bankCyclePos(): melodic track -> {idx: clamp(activeBank,0,6), count:8};
- *    drum track -> i=BANK_CYCLE_DRUM.indexOf(activeBank) with
- *    BANK_CYCLE_DRUM=[7,0,1,3,5,6], {idx: i<0?0:i, count:7}. Reads
- *    S.trackPadMode[S.activeTrack] + S.activeBank.
+/* -- bankCyclePos(): the bank's index in bankCycleForMode's walk, 0 when it
+ *    is not on it. Reads S.trackPadMode[S.activeTrack] + S.activeBank.
  *    Counts are ONE MORE than the clip-bank cycles since 2026-08-23: the last
  *    segment is the SOUND + CONFIG screen, whose idx the clip banks never
  *    reach (its own render draws the bar with idx = count-1). --
@@ -127,40 +125,40 @@ S.activeBank = BANK_AUTOMATION;            /* the old bank 6 is off the walk */
 eqObj(bankCyclePos(), { idx: 2, count: 10 }, 'bankCyclePos melodic AUTOMATION bank');
 S.activeBank = 6;
 eqObj(bankCyclePos(), { idx: 0, count: 10 }, 'bankCyclePos melodic old bank 6 is not on the walk');
-/* Drum branch: indexOf into [7,0,1,3,5,6] */
+/* Drum walk since 2026-09-26: RPT GROOVE | MACROS AUTOMATION | STEP ALL LANES DRUM LANE | NOTE FX DELAY | SOUND */
 S.trackPadMode[0] = PAD_MODE_DRUM;
-S.activeBank = 7;                          /* indexOf(7) = 0 */
-eqObj(bankCyclePos(), { idx: 0, count: 9 }, 'bankCyclePos drum bank7');
+S.activeBank = 7;
+eqObj(bankCyclePos(), { idx: 4, count: 9 }, 'bankCyclePos drum bank7');
 S.activeBank = 6;                          /* off the walk since 2026-09-03 */
 eqObj(bankCyclePos(), { idx: 0, count: 9 }, 'bankCyclePos drum bank6 (retired)');
 S.activeBank = 2;                          /* indexOf(2) = -1 -> idx 0 */
 eqObj(bankCyclePos(), { idx: 0, count: 9 }, 'bankCyclePos drum not-in-cycle');
 S.activeBank = BANK_SOUND;
-eqObj(bankCyclePos(), { idx: 6, count: 9 }, 'bankCyclePos drum sound bank');
+eqObj(bankCyclePos(), { idx: 8, count: 9 }, 'bankCyclePos drum sound bank');
 S.activeBank = BANK_STEP;
-eqObj(bankCyclePos(), { idx: 5, count: 9 }, 'bankCyclePos drum STEP bank');
+eqObj(bankCyclePos(), { idx: 3, count: 9 }, 'bankCyclePos drum STEP bank');
 S.activeBank = BANK_MACROS;
-eqObj(bankCyclePos(), { idx: 7, count: 9 }, 'bankCyclePos drum MACROS bank');
+eqObj(bankCyclePos(), { idx: 1, count: 9 }, 'bankCyclePos drum MACROS bank');
 S.activeBank = BANK_AUTOMATION;
-eqObj(bankCyclePos(), { idx: 8, count: 9 }, 'bankCyclePos drum AUTOMATION bank');
+eqObj(bankCyclePos(), { idx: 2, count: 9 }, 'bankCyclePos drum AUTOMATION bank');
 
-/* -- bankCyclePos() conductor branch (fix: bankCyclePos drift, phase 5b) --
- * A Conductor track jog-cycles 5 banks (see _onCC_jog / CONDUCT_BANK_CYCLE in
- * ui_pure.mjs): [0, 1, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN]. Before this
- * fix a conductor track fell into the melodic 0..6/count:7 path, so the
- * header strip mis-rendered 7 positions instead of the real 5. */
+/* -- bankCyclePos() conductor branch --
+ * Conductor walk since 2026-09-26: CLIP, STEP, NOTE FX, then RSPD (ON/OFF,
+ * OCTAVE, TIMING). */
 S.trackPadMode[0] = PAD_MODE_CONDUCT;
-S.activeBank = 0;                          /* indexOf(0) = 0 */
+S.activeBank = 0;
 eqObj(bankCyclePos(), { idx: 0, count: 6 }, 'bankCyclePos conduct bank0 (CLIP)');
-S.activeBank = 1;                          /* indexOf(1) = 1 */
-eqObj(bankCyclePos(), { idx: 1, count: 6 }, 'bankCyclePos conduct bank1 (NOTE FX)');
-S.activeBank = BANK_RESPONDER;             /* indexOf = 2 */
-eqObj(bankCyclePos(), { idx: 2, count: 6 }, 'bankCyclePos conduct Responder');
-S.activeBank = BANK_OCTAVE;                /* indexOf = 3 */
-eqObj(bankCyclePos(), { idx: 3, count: 6 }, 'bankCyclePos conduct Octave');
-S.activeBank = BANK_WHEN;                  /* indexOf = 4 */
-eqObj(bankCyclePos(), { idx: 4, count: 6 }, 'bankCyclePos conduct When');
-S.activeBank = 3;                          /* not in CONDUCT_BANK_CYCLE -> idx 0 */
+S.activeBank = BANK_STEP;
+eqObj(bankCyclePos(), { idx: 1, count: 6 }, 'bankCyclePos conduct STEP');
+S.activeBank = 1;
+eqObj(bankCyclePos(), { idx: 2, count: 6 }, 'bankCyclePos conduct bank1 (NOTE FX)');
+S.activeBank = BANK_RESPONDER;
+eqObj(bankCyclePos(), { idx: 3, count: 6 }, 'bankCyclePos conduct Responder');
+S.activeBank = BANK_OCTAVE;
+eqObj(bankCyclePos(), { idx: 4, count: 6 }, 'bankCyclePos conduct Octave');
+S.activeBank = BANK_WHEN;
+eqObj(bankCyclePos(), { idx: 5, count: 6 }, 'bankCyclePos conduct When');
+S.activeBank = 3;                          /* not on the walk -> idx 0 */
 eqObj(bankCyclePos(), { idx: 0, count: 6 }, 'bankCyclePos conduct not-in-cycle');
 
 /* -- scaleNudgeNote(note,dir,key,scale) (ui.js:651-661) --

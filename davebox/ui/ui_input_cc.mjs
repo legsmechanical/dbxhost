@@ -34,7 +34,7 @@ import { nowMs } from './ui_clock.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
          PAGE_KNOB, pageFloatStep } from './ui_engine.mjs';
-import { scaleNudgeNote, stepEntryVelocity, BANK_CYCLE_DRUM, CONDUCT_BANK_CYCLE,
+import { scaleNudgeNote, stepEntryVelocity,
          bankCycleForMode } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
          showActionPopupGauge } from './ui_persistence.mjs';
