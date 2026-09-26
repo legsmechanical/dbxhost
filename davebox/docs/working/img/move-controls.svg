@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="5 -5 992 455" font-family="'Source Sans 3', system-ui, sans-serif" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="5 -5 992 560" font-family="'Source Sans 3', system-ui, sans-serif" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
   <title>Ableton Move top panel, labelled for dAVEBOx</title>
   <desc>Top-down line drawing of Move: display and jog wheel at the left, eight knobs along the top with Volume at the top right, the 4 by 8 pad grid with four side buttons to its left, sixteen step buttons below the pads, Play and Record at the bottom left, and the named buttons in two columns at the right. Each control is labelled with what it does in dAVEBOx.</desc>
   <g stroke-width="1.2">
@@ -225,6 +225,21 @@
       <text x="510.02" y="388.7" text-anchor="middle">Track View: the clip’s steps</text>
       <text x="510.02" y="411.7" text-anchor="middle">Session View: scenes</text>
       <text x="510.02" y="434.7" text-anchor="middle">Shift + step: shortcuts</text>
+    </g>
+    <!-- what the buttons do (a key under the device: the rows beside them are too tight) -->
+    <g font-size="19" fill-opacity="0.72">
+      <text x="24" y="392" text-anchor="start"><tspan font-weight="600" fill-opacity="1">Play</tspan> start / stop</text>
+      <text x="24" y="415" text-anchor="start"><tspan font-weight="600" fill-opacity="1">Record</tspan> record · Shift: step record</text>
+      <text x="700" y="372" text-anchor="start"><tspan font-weight="600" fill-opacity="1">Capture</tspan> keep what you played</text>
+      <text x="700" y="395" text-anchor="start"><tspan font-weight="600" fill-opacity="1">Sample</tspan> bake · Shift: Live Merge</text>
+      <text x="700" y="418" text-anchor="start"><tspan font-weight="600" fill-opacity="1">Loop</tspan> hold: loop length</text>
+      <text x="700" y="441" text-anchor="start"><tspan font-weight="600" fill-opacity="1">Mute</tspan> mute · Shift: solo</text>
+      <text x="700" y="464" text-anchor="start"><tspan font-weight="600" fill-opacity="1">Delete / Copy</tspan> + an item: clear / copy</text>
+      <text x="700" y="487" text-anchor="start"><tspan font-weight="600" fill-opacity="1">Undo</tspan> undo · Shift: redo</text>
+    </g>
+    <g font-size="19" fill-opacity="0.72" text-anchor="middle">
+      <text x="501" y="522"><tspan font-weight="600" fill-opacity="1">Shift +</tspan> jog: switch track · Note/Session: TRACK CONFIG · Back: leave dAVEBOx</text>
+      <text x="501" y="546"><tspan font-weight="600" fill-opacity="1">Shift +</tspan> Step 1: projects · Step 2: Project Settings · bottom-row pad: track</text>
     </g>
   </g>
 </svg>
