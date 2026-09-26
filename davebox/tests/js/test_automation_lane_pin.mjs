@@ -290,6 +290,14 @@ step('⭐ HOLD a module point -> its EDITOR on the page holding the key; the kno
     assert(snd.soundOpen() && snd.soundViewForTest() === VIEW_EDIT, 'not in the editor while held: view ' + snd.soundViewForTest());
     const pp = snd.soundPPForTest();
     assert(pp.on && pp.page && (pp.page.keys || []).indexOf('cutoff') >= 0, 'not on the page holding cutoff: ' + JSON.stringify(pp.page && pp.page.keys));
+    /* The cutoff cell: the lock corner and the lane's value at the held step. */
+    ticks(1);
+    const ci = pp.page.keys.indexOf('cutoff');
+    const dec = JSON.parse(snd.soundPPForTest().focusDec || 'null');
+    const want = auto.automationWireValue(TARGETS.chain, 16383);
+    assert(dec && dec[ci] && dec[ci].locked && dec[ci].value === want,
+           'the editor does not mark cutoff with the lane\'s value ' + want + ': ' + JSON.stringify(dec));
+    assert(Object.keys(dec).length === 1, 'another cell is marked: ' + JSON.stringify(dec));
     assert(S.trackActiveBank[T] === BANK_AUTOMATION && S.activeBank === BANK_AUTOMATION, 'a bank moved: ' + S.activeBank + '/' + S.trackActiveBank[T]);
     assert(S.autoCycle && S.autoCycle.target === TARGETS.chain, 'the steps left the lane during the hold');
     sets.length = 0;

@@ -573,6 +573,14 @@ function paramPagesLevelNameOf(levelDef) {
 
 /** The full parameter key under physical knob `slot` on the current page,
  *  or null. See controller.fullKeyAt. */
+/** Per-slot decorations for the visible page: `{ [slot]: { locked, value } }`
+ *  or null. `locked` draws the lock corner; `value` replaces what the cell
+ *  shows (a sequencer showing a held step's automation). Kept by the
+ *  controller until replaced. */
+function paramPagesSetDecorations(d) {
+    if (controller && typeof controller.setDecorations === 'function') controller.setDecorations(d);
+}
+
 function paramPagesFullKeyAt(slot) {
     return (controller && typeof controller.fullKeyAt === "function")
         ? controller.fullKeyAt(slot) : null;
@@ -1556,6 +1564,7 @@ function paramPagesMenuEntered() {
         paramPagesExitMenu,
         paramPagesFooterHints,
         paramPagesFullKeyAt,
+        paramPagesSetDecorations,
         paramPagesRepaintKnobs,
         paramPagesGoTo,
         paramPagesJumpIndex,

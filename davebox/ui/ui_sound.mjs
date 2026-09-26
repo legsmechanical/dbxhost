@@ -167,7 +167,7 @@ const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         paramPagesPickerOpen, paramPagesMenuEntered,
         paramPagesRefreshTrailing, paramPagesFullKeyAt, paramPagesRepaintKnobs,
         paramPagesCachedValue, paramPagesLevelNameOf,
-        paramPagesPageLabel } = PP;
+        paramPagesPageLabel, paramPagesSetDecorations } = PP;
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 /* ⚠⚠ THE CANONICAL SPECIFIER, AND IT IS LOAD-BEARING. The registry is the
  * one the grid reads only because both names normalise to the same module:
@@ -1076,6 +1076,8 @@ export function soundAuditionStateForTest() { return { hasOriginal: S.origState 
 export function soundPPForTest() {
     return {
         on: ppOn, page: ppOn ? currentParamPage() : null, applies: ppApplies(),
+        /* The lane-focus decorations last handed to the editor (JSON or null). */
+        focusDec: ppFocusDec,
         /* ⭑ The TERMS, so a test can prove which one decided. A control that
          * asserts only `!applies` passes for any reason at all — including a
          * precondition it lost by accident. */
@@ -11764,6 +11766,32 @@ function ppRestoreFor(slot, comp) {
     return (r && r.slot === slot && r.comp === comp) ? r.name : null;
 }
 
+/* THE LANE IN FOCUS on the editor (a jump from the AUTOMATION bank, Josh
+ * 2026-09-25): the lane's cell on the visible page carries the lock corner,
+ * and while a step is held it shows what the lane plays there. Set every
+ * tick the grid is up — the page, the held step and the value all move — and
+ * cleared the moment there is nothing to show. */
+let ppFocusDec = null;
+function ppFocusSync() {
+    /* A new editor starts with no decorations: forget what the last one had. */
+    if (!ppOn) { ppFocusDec = null; return; }
+    let dec = null;
+    const f = ppOn && S.track === GS.activeTrack ? autoLaneFocus() : null;
+    if (f) {
+        const i = f.target.indexOf(':');
+        const fk = f.target.slice(i + 1);
+        for (let k = 0; k < 8; k++) {
+            if (paramPagesFullKeyAt(k) !== fk) continue;
+            dec = { [k]: f.wire != null ? { locked: true, value: f.wire } : { locked: true } };
+            break;
+        }
+    }
+    const sig = dec ? JSON.stringify(dec) : null;
+    if (sig === ppFocusDec) return;
+    ppFocusDec = sig;
+    paramPagesSetDecorations(dec);
+    S.dirty = true;
+}
 function ppSync() {
     if (ppSuppressOnce && S.view === VIEW_EDIT) {
         /* Consumed on arrival, not on departure: the dive target IS VIEW_EDIT,
@@ -11804,6 +11832,7 @@ function ppSync() {
     }
     /* Left the editor entirely: the decline belonged to that entry. */
     if (S.view !== VIEW_EDIT && !(ppOn && ppOwnsView())) ppDeclinedDraw = false;
+    ppFocusSync();
 }
 
 /* ---- module-supplied in-grid widgets (upstream #420 / #450 / #472) ---------
