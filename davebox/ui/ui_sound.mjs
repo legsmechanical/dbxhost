@@ -67,7 +67,7 @@ import { miOpen, miClose, miOnKnob, miOnJog, miOnClick, miOnBack, miTick, miRend
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
          automationClearKey, automationEntriesFor, automationFxMoved } from './ui_automation.mjs';
-import { autoBankRestoreMenu } from './ui_automation_bank.mjs';
+import { autoBankRestoreMenu, autoLaneFocus } from './ui_automation_bank.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import * as ModuleLists from '/data/UserData/schwung/shared/module_lists.mjs';
 import { MoveKnob1, Red, White } from '/data/UserData/schwung/shared/constants.mjs';
@@ -1936,11 +1936,17 @@ function midiCellFor(target, v, spec) {
 function midiMixCells() {
     const t = S.track, c = effectiveClip(t);
     const cells = [];
+    cells.focusIdx = -1;
+    const focus = t === GS.activeTrack ? autoLaneFocus() : null;
     for (let i = 0; i < 8; i++) {
         const sp = MIDI_MIX_SPECS[i];
         if (!sp) { cells.push({ kind: 'blank', label: '' }); continue; }
         if (sp.target) {
-            const cell = midiCellFor(sp.target, midiVal(t, sp.target), sp);
+            const fo = focus && focus.target === sp.target;
+            const fv = fo && focus.wire != null ? parseInt(focus.wire, 10) : NaN;
+            if (isFinite(fv)) cells.focusIdx = i;
+            const cell = midiCellFor(sp.target, isFinite(fv) ? fv : midiVal(t, sp.target), sp);
+            if (fo) cell.lock = true;
             const st = automationStateFor(t, c, sp.target);
             if (st) cell.auto = st.active ? 'auto' : 'auto-off';
             cells.push(cell);
@@ -2086,12 +2092,21 @@ function flushLevelSave() {
 function levelCells() {
     const t = S.track, c = effectiveClip(t);
     const cells = [];
+    cells.focusIdx = -1;
+    const focus = t === GS.activeTrack ? autoLaneFocus() : null;
     for (let i = 0; i < 8; i++) {
         const m = levelPageSpec(i);
         if (!m) { cells.push({ kind: 'blank', label: '' }); continue; }
-        const v = S.levelVals[i];
-        const st = automationStateFor(t, c, S.slot + ':' + levelFullKey(i));
+        const tg = S.slot + ':' + levelFullKey(i);
+        /* The lane a jump came from: marked, and while a step is held it
+         * shows what the lane plays there (autoLaneFocus). */
+        const fo = focus && focus.target === tg;
+        const fv = fo && focus.wire != null ? parseFloat(focus.wire) : NaN;
+        const v = isFinite(fv) ? fv : S.levelVals[i];
+        if (isFinite(fv)) cells.focusIdx = i;
+        const st = automationStateFor(t, c, tg);
         const cell = { label: m.label, name: m.name, text: m.fmt(v) };
+        if (fo) cell.lock = true;
         if (m.widget === 'arcbip') { cell.kind = 'arcbip'; cell.signed = Math.max(-1, Math.min(1, (v - 0.5) * 2)); }
         else { cell.kind = m.widget;
                /* A fader's bar shows TRAVEL — see THE FADER LAW in ui_engine. */
@@ -6572,6 +6587,8 @@ function macroCells(track, live) {
     const t = track, c = effectiveClip(t);
     const store = macroStore(t);
     const cells = [];
+    cells.focusIdx = -1;
+    const focus = (live && t === GS.activeTrack) ? autoLaneFocus() : null;
     for (let i = 0; i < 8; i++) {
         const mp = store[i];
         const m = macroLeg0(mp);
@@ -6591,8 +6608,14 @@ function macroCells(track, live) {
                 for (const leg of mp.legs) {
                     if (!macroLive(leg)) continue;
                     const tg = macroAutoTarget(leg, t, i);
+                    if (focus && tg === focus.target) {
+                        /* A leg is the lane: marked and highlighted — a mapped
+                         * knob has no one value to show for it. */
+                        cellM.lock = true;
+                        if (focus.step >= 0) cells.focusIdx = i;
+                    }
                     const st = tg ? automationStateFor(t, c, tg) : null;
-                    if (st) { cellM.auto = st.active ? 'auto' : 'auto-off'; if (st.active) break; }
+                    if (st) { cellM.auto = st.active ? 'auto' : 'auto-off'; if (st.active && !focus) break; }
                 }
             }
             cells.push(cellM);
@@ -6620,7 +6643,8 @@ function macroCells(track, live) {
             cell = bankMacroCell(m, meta, bankMacroValue(m, t));
         } else if (m.kind === 'midi') {
             if (!midiTargetOnRoute(m.target, t)) { cells.push(unassigned()); continue; }
-            cell = midiCellFor(m.target, midiVal(t, m.target));
+            const fv = focus && focus.target === m.target && focus.wire != null ? parseInt(focus.wire, 10) : NaN;
+            cell = midiCellFor(m.target, isFinite(fv) ? fv : midiVal(t, m.target));
         } else {
             /* ⚠⚠ TWO CACHES, ONE DISPLAY. `macCells/macVals` are the PLAIN
              * path's; `macLegCells/macLegVals` are the v-driven path's, filled
@@ -6689,6 +6713,7 @@ function macroCells(track, live) {
             const tg = macroAutoTarget(m, t, i);
             const st = tg ? automationStateFor(t, c, tg) : null;
             if (st) cell.auto = st.active ? 'auto' : 'auto-off';
+            if (focus && tg === focus.target) { cell.lock = true; if (focus.step >= 0) cells.focusIdx = i; }
         }
         cells.push(cell);
     }
@@ -6703,9 +6728,10 @@ function macroCardHints() {
 function renderMacros() {
     clear_screen();
     kitUseLayout('bank');
-    drawKitBankPage(macroCells(S.track, true), {
+    const mc = macroCells(S.track, true);
+    drawKitBankPage(mc, {
         headerText: 'MACROS', headerGlyph: 'perf', headerRight: bankHeaderRight(false),
-        touchedIdx: S.touchedIdx,
+        touchedIdx: S.touchedIdx, focusIdx: mc.focusIdx,
         footer: macroCardHints(),
     });
 }
@@ -10922,18 +10948,20 @@ function renderPrompt() {
     if (midiTrack()) {
         /* A MIDI track: the standard controllers and the clip's Program /
          * Bank; the door is the footer's CLK MENU (spec §2b). */
-        drawKitBankPage(midiMixCells(), {
+        const mc = midiMixCells();
+        drawKitBankPage(mc, {
             headerText: 'SOUND+CFG', headerGlyph: 'audio', headerRight: bankHeaderRight(false),
-            touchedIdx: S.touchedIdx,
+            touchedIdx: S.touchedIdx, focusIdx: mc.focusIdx,
             footer: levelCardHints(),
         });
         return;
     }
     /* ⚠ 'SOUND+CFG': the full name does not fit beside "T3 [OBXD]" on the right
      * (measured) — the same budget that made SEQUENCE ARP SEQ ARP. */
-    drawKitBankPage(levelCells(), {
+    const lc = levelCells();
+    drawKitBankPage(lc, {
         headerText: 'SOUND+CFG', headerGlyph: 'audio', headerRight: bankHeaderRight(false),
-        touchedIdx: S.touchedIdx,
+        touchedIdx: S.touchedIdx, focusIdx: lc.focusIdx,
         footer: levelCardHints(),
     });
     /* The bottom row is empty (Module Level left the page, 2026-09-03), and

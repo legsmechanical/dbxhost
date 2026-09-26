@@ -3144,7 +3144,10 @@ export function drawKitBankPage(cells, opts) {
         else drawKitHeader(opts.headerText, opts.headerInvert, opts.headerMaxW);
         if (opts.pageCount > 0) drawKitPageBar(opts.pageIdx | 0, opts.pageCount, opts.pageGroups);
     }
-    drawKitCells(cells, t, opts.env, opts.filt, opts.eq, opts.samp,
+    /* A held automation step on the lane a jump came from highlights ITS cell
+     * (opts.focusIdx) while the header stays the card's. */
+    const hi = t >= 0 ? t : (opts.focusIdx != null && opts.focusIdx >= 0 ? opts.focusIdx : -1);
+    drawKitCells(cells, hi, opts.env, opts.filt, opts.eq, opts.samp,
                  opts.anim, opts.nowMs);
     /* The option-list overlay covers the 3 cells away from the touched knob, so
      * it must NOT appear on a bare orienting touch — only once that knob is

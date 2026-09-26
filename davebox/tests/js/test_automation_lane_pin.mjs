@@ -115,6 +115,7 @@ const auto = await import('../../ui/ui_automation.mjs');
 const bank = await import('../../ui/ui_automation_bank.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const render = await import('../../ui/ui_render.mjs');
+const movy = await import('../../ui/ui_movy.mjs');
 globalThis.__inp = await import('../../ui/ui_input_cc.mjs');
 const VIEW_EDIT = 1;
 
@@ -250,6 +251,14 @@ step('⭐ HOLD a Volume point -> SOUND + CONFIG while held; its knob writes THAT
     const idx = openMenuOn(TARGETS.level); ticks(2);
     note(STEP(3), 127); ticks(4);
     assert(snd.soundOpen() && S.activeBank === BANK_SOUND, 'not on SOUND + CONFIG while held: bank ' + S.activeBank + ' open ' + snd.soundOpen());
+    /* The Volume cell: marked, highlighted, showing the lane's value (full
+     * scale at every step) rather than the knob's. */
+    globalThis.clear_screen(); render.drawUI();
+    const kc = movy.kitCellsForTest();
+    assert(kc && kc.cells[0] && kc.cells[0].lock && kc.touched === 0, 'Volume is not marked and highlighted: ' + JSON.stringify(kc));
+    const heldText = kc.cells[0].text;
+    const fo = bank.autoLaneFocus();
+    assert(fo && fo.norm === 16383, 'the focus is not the lane\'s full-scale value: ' + JSON.stringify(fo));
     assert(S.trackActiveBank[T] === BANK_AUTOMATION, 'the hold RECORDED bank ' + S.trackActiveBank[T] + ' on the track');
     assert(S.autoCycle && S.autoCycle.target === TARGETS.level, 'the steps left the lane during the hold');
     sets.length = 0;
@@ -260,6 +269,7 @@ step('⭐ HOLD a Volume point -> SOUND + CONFIG while held; its knob writes THAT
     assert(f[2] === '72' && f[3] === '95', 'the lock is not on step 4 (ticks 72..95): ' + w[w.length - 1]);
     note(STEP(3), 0); ticks(2);
     assert(S.activeBank === BANK_AUTOMATION && !snd.soundOpen(), 'release did not come back: bank ' + S.activeBank + ' open ' + snd.soundOpen());
+    void heldText;
     assert(S.autoBank.menu && S.autoBank.sel === idx, 'not on the same row: ' + JSON.stringify(S.autoBank));
     assert(S.trackActiveBank[T] === BANK_AUTOMATION, 'the track is left on bank ' + S.trackActiveBank[T]);
     back(); ticks(1);
