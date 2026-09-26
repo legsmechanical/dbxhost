@@ -2269,7 +2269,7 @@ function drawUIBody() {
             }
             cells.push(kitCellForKnob(knobs[k], vals[k]));
         }
-        drawKitPage(BANKS[1].name, cells, false, bankPageHints(1));
+        drawKitPage(bankHeaderName(S.activeTrack, 1), cells, false, bankPageHints(1));
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 3) {
         /* Drum MIDI DLY: K1-K4 same as melodic, K5=Gate, K6=Clk, K7=Retrg, K8 empty.
          * Drum has no Pfb (no per-lane pitch) and no Rnd (no random pitch fb),
@@ -2290,7 +2290,7 @@ function drawUIBody() {
             toggleCell('Retrg', 'Retrig', vals[6], fmtBool(1), fmtBool(0)),
             { kind: 'blank', label: '' },
         ];
-        drawKitPage(BANKS[3].name, cells, false, bankPageHints(3));
+        drawKitPage(bankHeaderName(S.activeTrack, 3), cells, false, bankPageHints(3));
 
         } else {
         /* Bank overview — canvaskit grid (widgets + label strips + touch swap) */
