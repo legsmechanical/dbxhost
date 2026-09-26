@@ -311,7 +311,8 @@ step('⭐⭐ MOVE-TRACK PARITY: same click, same Back law as a Schwung track', (
      * you out of sound AND bank mode where a Schwung track stepped to the card. */
     rest();
     S.trackRoute[2] = 1;                             /* Move-routed */
-    S.trackActiveBank[2] = 11; S.activeBank = 11;
+    /* The door is the CONFIG bank since 2026-09-26 (MIX has none). */
+    S.trackActiveBank[2] = 16; S.activeBank = 16;
     globalThis.tick(); globalThis.tick();
     if (sndMod.soundActive()) throw new Error('move flavour open at rest — one law violated');
     click(); globalThis.tick(); globalThis.tick();

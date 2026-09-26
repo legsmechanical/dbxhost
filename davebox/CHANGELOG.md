@@ -8,6 +8,9 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added (pending)
+- **A CONFIG bank, first on every track's walk.** It shows the track's TRACK
+  CONFIG menu at rest, in corner brackets; click to use it. Conductor tracks
+  have it too. Shift + Note/Session still opens the menu from anywhere.
 - **Melodic automation lanes can be longer (or shorter) than their clip.** An
   automation lane's Loop now goes up to 256 steps on a melodic track too: a
   4-bar filter sweep can run under a 1-bar clip, and a short lane repeats
@@ -264,6 +267,8 @@ the section into a versioned heading at release time.
   already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
+- **SOUND + CONFIG is now MIX.** It keeps the track's level knobs (or a MIDI
+  track's controllers); its click no longer opens the menu — that is CONFIG's.
 - **The banks are in a new order, in groups.** Melodic: IN (Chord, Live Arp),
   CTRL (Macros, Automation), SEQ (Step, Clip), FX (Note FX, Harmony, Delay,
   Seq Arp — the order the notes pass through them), then Sound + Config. Drum:

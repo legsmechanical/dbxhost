@@ -251,13 +251,14 @@ picks which bank. Each track has its own walk, in this order:
 
 | Track | Banks, in jog order |
 |---|---|
-| **Melodic** | **IN:** (CHORD, in the Chord layout) → LIVE ARP · **CTRL:** MACROS → AUTOMATION · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · SOUND + CONFIG |
-| **Drum** | **IN:** RPT GROOVE · **CTRL:** MACROS → AUTOMATION · **SEQ:** STEP → ALL LANES → DRUM LANE · **FX** (the selected lane's): NOTE FX → DELAY · SOUND + CONFIG |
-| **Conductor** | CLIP → STEP → NOTE FX · **RSPD:** ON/OFF → OCTAVE → TIMING |
+| **Melodic** | CONFIG · **IN:** (CHORD, in the Chord layout) → LIVE ARP · **CTRL:** MACROS → AUTOMATION · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · MIX |
+| **Drum** | CONFIG · **IN:** RPT GROOVE · **CTRL:** MACROS → AUTOMATION · **SEQ:** STEP → ALL LANES → DRUM LANE · **FX** (the selected lane's): NOTE FX → DELAY · MIX |
+| **Conductor** | CONFIG → CLIP → STEP → NOTE FX · **RSPD:** ON/OFF → OCTAVE → TIMING |
 
 A melodic track starts on **CLIP** and a drum track on **DRUM LANE**, both in
 the middle of the walk: turn left for what plays into the track, right for its
-effects (in the order the notes pass through them) and, last, SOUND + CONFIG.
+effects (in the order the notes pass through them) and, last, MIX. The first
+bank on every walk is **CONFIG**, the track's TRACK CONFIG menu.
 The banks are grouped: **IN** (what you play in), **CTRL** (what moves the
 parameters), **SEQ** (the sequence) and **FX** (the note effects — on a drum
 track, the selected lane's, so the map shows them under DRUM LANE). A Conductor
@@ -265,7 +266,7 @@ starts on **CLIP**; its **RSPD** group is how the other tracks respond.
 
 The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--grid),
 [Sequencer Effects](#9-sequencer-effects), [STEP](#63-editing-notes),
-[SOUND + CONFIG and MACROS](#14-sound--track-config), and
+[CONFIG, MIX and MACROS](#14-sound--track-config), and
 [AUTOMATION](#10-automation).
 
 - **Turn the jog** on the track overview to step through the banks: the header
@@ -280,7 +281,7 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 - **Back** closes the bank view without changing the bank, so the knobs keep
   working from the overview.
 - **Shift + jog** steps through the **tracks**, not the banks.
-- **Each track remembers its bank**, SOUND + CONFIG and MACROS included — across
+- **Each track remembers its bank**, CONFIG, MIX and MACROS included — across
   track switches, suspend, and quit and relaunch.
 - **Turning a knob** that sets a number (an octave, an offset, a rate, a length,
   a count) turns its cell into an arc while you touch it, so the value moves the
@@ -296,7 +297,7 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 |---|---|
 | **Delete + jog click** | Reset every parameter in the active bank (not ALL LANES, STEP, or the Conductor's ON/OFF, OCTAVE and TIMING). One-shot actions (Stretch, Shift, Legato) are left alone. On a drum track's RPT GROOVE bank, or any bank while Note Repeat is on, it resets the selected lane's groove |
 | **Delete + jog click** on **MACROS** | Unassign all eight macros on the track (**asks first**). Values and automation are left alone |
-| **Shift + Delete + jog click** | Reset all the sequencer effects — NOTE FX, HARMONY, DELAY and SEQ ARP. The CLIP, lane, STEP, MACROS, SOUND + CONFIG and AUTOMATION banks are left alone |
+| **Shift + Delete + jog click** | Reset all the sequencer effects — NOTE FX, HARMONY, DELAY and SEQ ARP. The CLIP, lane, STEP, MACROS, MIX and AUTOMATION banks are left alone |
 | **Shift + Delete + side button** | Reset the whole clip — notes and all parameters |
 
 - **Resets are undoable:** **Undo** takes back a bank reset or a macro clear;
@@ -338,8 +339,8 @@ a **Shift + Step** shortcut (see the [Quick Reference](#19-quick-reference)).
 
 Each track's sound is set in its own menu, **TRACK CONFIG**:
 
-1. Turn the jog to the **SOUND + CONFIG** bank and click — or press
-   **Shift + Note/Session** from anywhere in Track View.
+1. Turn the jog to the **CONFIG** bank — the first on the walk — and click; or
+   press **Shift + Note/Session** from anywhere in Track View.
 2. **Shift + click** the top row, **Instmt/Dest**, to choose what the track plays:
    one of Move's four instruments, a Schwung instrument, a MIDI channel, and more.
 3. **Click** Instmt/Dest to edit the instrument. On a Move track this opens Move's
@@ -1056,7 +1057,7 @@ A recorded (smooth) move glides from its last value back to its first across the
 loop point.
 
 **What can be automated:** the module editor's pages, the levels on
-**SOUND + CONFIG** and in the session mixer, the eight **MACROS**, and these
+**MIX** and in the session mixer, the eight **MACROS**, and these
 dAVEBOx bank knobs — CLIP and ALL LANES direction, NOTE FX (all but `LEN>`),
 HARMONY, DELAY, and SEQ ARP (all but `STEPS`). On a drum track, NOTE FX is set per
 lane and isn't automated. See [Parameter banks](#36-parameter-banks) and
@@ -1093,7 +1094,7 @@ screen show **that row's lane**, not the clip's notes:
   clip has four pages. The header shows the cycle and page (**2 BAR PG 1/2**).
 - **The playhead** shows where that lane is in its own cycle.
 - **Hold a step with a value set** to jump to where that parameter is edited — its
-  bank, its module's page (on a per-pad parameter, that pad), SOUND + CONFIG for a
+  bank, its module's page (on a per-pad parameter, that pad), MIX for a
   level, MACROS for a MIDI target. Turn its knob to change the value on that step;
   let go to come back, on the same row and page. On a bank the header shows
   **<AUTO S7** (step 7). The parameter's cell is highlighted, and while the step
@@ -1308,7 +1309,7 @@ last). The bottom-left pad is an octave down.
 
 ## 12.3 The Conductor's banks
 
-A Conductor's jog walks six banks. ON/OFF, OCTAVE, TIMING and Cond Lock belong to the Conductor's current clip, so different Conductor clips
+A Conductor's jog walks seven banks, starting on CONFIG (its TRACK CONFIG menu). ON/OFF, OCTAVE, TIMING and Cond Lock belong to the Conductor's current clip, so different Conductor clips
 can steer different tracks:
 
 | Bank | Controls |
@@ -1442,18 +1443,20 @@ pads and step buttons stay with the sequencer, so you can keep playing.
 
 ## 14.1 Opening TRACK CONFIG
 
-Open it from the **SOUND + CONFIG** bank, after STEP on the jog. Its knobs are the
-track's levels (**Volume, Pan, Send A, Send B** on knobs 1–4), and its bottom row
-reads *CLICK TO ENTER / TRACK 3 CONFIG*. On a MIDI track the knobs are that track's
-controllers instead — Expression, Pan, Mod, Sustain, Program, Bank MSB and Bank
-LSB.
+Open it from the **CONFIG** bank, the first on every track's jog walk. Its card
+is the menu itself, at rest inside corner brackets; click and the menu is live —
+the jog moves its cursor and a click uses the row. CONFIG has no knobs.
+
+The track's levels are on **MIX**, the last bank on the walk (**Volume, Pan,
+Send A, Send B** on knobs 1–4). On a MIDI track MIX holds that track's controllers
+instead — Expression, Pan, Mod, Sustain, Program, Bank MSB and Bank LSB.
 
 | Gesture | Result |
 |---|---|
-| **Click the jog** on SOUND + CONFIG | Open TRACK CONFIG |
+| **Click the jog** on CONFIG | Open TRACK CONFIG (from the overview, the first click opens the card) |
 | **Shift + Note/Session** (Track View) | Open it from anywhere — from deep inside it, back to its top in one press |
 | **Shift + hold Note/Session** (Track View) | Go straight to the track's instrument |
-| **Back** | Step out one level; from the top, back to the SOUND + CONFIG card |
+| **Back** | Step out one level; from the top, back to the bank's card |
 | **Note/Session** | Return to the track overview; coming back brings the screen with it |
 
 - Once open, the menu **stays up until you leave it**.
@@ -1563,7 +1566,7 @@ The last two pages are the same for every module:
   removing asks first if macros or automation would be left behind.
 
 **How the knobs feel** — in a module's editor, on MACROS, and for pan and the
-sends on SOUND + CONFIG and in the session mixer:
+sends on MIX and in the session mixer:
 
 - Every knob sweeps its whole range in the same gesture; turning faster moves
   further.
@@ -1610,7 +1613,7 @@ has:
 
 ## 14.6 The MACROS bank
 
-**MACROS** comes one step past SOUND + CONFIG on the jog. Its eight knobs play
+**MACROS** opens the CTRL group on the jog, before AUTOMATION. Its eight knobs play
 whatever you assign to them, and each cell shows its target's value the way the
 module editor does — a dial, a big number, a list square, a fader for a level. A
 knob with no target, or whose target was swapped away, shows `--` and reads
@@ -2297,7 +2300,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 
 | Control | Action |
 |---|---|
-| Jog to SOUND + CONFIG, then click · Shift + Note/Session | Open it |
+| Jog to CONFIG, then click · Shift + Note/Session | Open it |
 | Shift + click Instmt/Dest | Choose what the track plays |
 | Click Instmt/Dest | Edit the instrument (on a Move track, Move's own editor) |
 | Click an empty FX row · Shift + click an FX row | Add an effect · swap or move it |

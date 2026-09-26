@@ -549,7 +549,9 @@ export const BANKS = [
      * branch — sequencing behaves exactly as on a standard bank, whatever
      * bank the jog came from. All stubs: ui_sound owns the knobs there. The
      * entry exists so generic BANKS[S.activeBank] readers stay safe. */
-    { name: 'SOUND + CONFIG', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
+    /* Named MIX since 2026-09-26 (Josh: "change sound+config to just "mix""):
+     * the levels card, no longer the door to TRACK CONFIG — that is BANKS[16]. */
+    { name: 'MIX', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
     /* 12 — STEP (BANK_STEP) — the step editor AS a bank (Josh, 2026-09-02,
      * spec §2 "the held step, one law"): its knobs are Note/Oct/Leng/Vel/
      * Nudg/Iter/Prob/Ratch (drum: Leng/Vel/Nudg/-/Iter/Prob/Ratch/-), and they
@@ -577,11 +579,18 @@ export const BANKS = [
      * track whose pads are on the Chord layout. JS-only values, saved in the
      * sidecar; ui_chord_pads owns the cells and the knobs. */
     { name: 'CHORD', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
+    /* 16 — CONFIG (BANK_CONFIG) — the TRACK CONFIG menu AS a bank (Josh,
+     * 2026-09-26: "I'd like the track config menu to live as a menu on a bank";
+     * "no knobs.  it literally shows the menu with the "click to enter" corner
+     * brackets and clicking allows you to navigate and use the menu"). First
+     * on every walk. All stubs: sound mode owns the screen, and the bank has no
+     * knobs. */
+    { name: 'CONFIG', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
 ];
 
 /* Conductor bank indices. Bank 0 (CLIP) is reused as the "Conduct" bank. */
 export const BANK_RESPONDER = 8, BANK_OCTAVE = 9, BANK_WHEN = 10;
-/* The SOUND + CONFIG bank: a bank like every other (Josh, 2026-09-24: "bottom
+/* The MIX bank (was SOUND + CONFIG): a bank like every other (Josh, 2026-09-24: "bottom
  * line is that sound+config bank shouldn't get any treatment and work just
  * like every other bank"). Only the jog walk, the lane jump, the Chord layout
  * and the sidecar set it — never sound mode, which is the MENU (2026-09-24). Its
@@ -599,7 +608,10 @@ export const BANK_MACROS = 13;
 export const BANK_AUTOMATION = 14;
 /* The CHORD bank (see BANKS[15]): after LIVE ARP on a Chord-layout track's walk. */
 export const BANK_CHORD = 15;
-export function isSoundBank(b) { return b === BANK_SOUND || b === BANK_MACROS; }
+/* The CONFIG bank (see BANKS[16]): first on every walk; its card is the TRACK
+ * CONFIG menu at rest, the third bank whose screen is sound mode's. */
+export const BANK_CONFIG = 16;
+export function isSoundBank(b) { return b === BANK_SOUND || b === BANK_MACROS || b === BANK_CONFIG; }
 
 /* The track's DEFAULT bank — CLIP on a melodic track, DRUM LANE on a drum one,
  * CONDUCT on a Conductor. All three are index 0: the bank a track is on when a

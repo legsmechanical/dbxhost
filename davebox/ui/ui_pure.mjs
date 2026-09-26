@@ -14,7 +14,7 @@
 import { S } from './ui_state.mjs';
 import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, NUM_STEPS, BANKS,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION,
-    BANK_CHORD } from './ui_constants.mjs';
+    BANK_CHORD, BANK_CONFIG, isSoundBank } from './ui_constants.mjs';
 
 /* Live pad note input — isomorphic 4ths diatonic layout.
  * EXPORTED for ui.js's computePadNoteMap (impure, moves in Phase 5) — do not
@@ -73,19 +73,23 @@ export function bankDisplayName(padMode, bank) {
 
 /* The banks a track can reach on the jog, in jog order — the SAME strip the
  * unshifted turn walks, so the bank picker (Shift+jog) is a VIEW of the
- * existing navigation rather than a second model of it. Melodic ends on
- * SOUND + CONFIG because the walk does; a Conductor track does not have it
- * (Josh, 2026-08-23).
+ * existing navigation rather than a second model of it. Every walk starts on
+ * CONFIG; melodic and drum end on MIX, which a Conductor does not have.
  *
  * ⚠ Pure: takes the pad MODE, not a track index, so ui_render and ui_input_cc
  * can both call it without either importing the other. */
 export function bankCycleForMode(padMode, t) {
-    /* STEP sits after the clip banks on every walk — just before SOUND + CONFIG
-     * where there is one, last on a Conductor (spec §2, 2026-09-02). */
     /* Every track type walks its categories in order (below). */
     const out = [];
     for (const g of bankCategoriesForMode(padMode, t)) for (const b of g.banks) out.push(b);
     return out;
+}
+
+/* A sound bank (MIX, MACROS, CONFIG) that is on this track's walk — so its
+ * screen may open. A Conductor has CONFIG but neither MIX nor MACROS, and a
+ * stale record of those must never open a screen it has no row for. */
+export function soundBankOnWalk(padMode, bank, t) {
+    return isSoundBank(bank) && bankCycleForMode(padMode, t).indexOf(bank) >= 0;
 }
 
 /* Every walk, in CATEGORIES (Josh, 2026-09-26): what comes in, what controls
@@ -101,12 +105,14 @@ export function bankCycleForMode(padMode, t) {
  * moved. */
 export function bankCategoriesForMode(padMode, t) {
     if (padMode === PAD_MODE_CONDUCT) return [
+        { label: null,   banks: [BANK_CONFIG] },
         { label: null,   banks: [0] },
         { label: null,   banks: [BANK_STEP] },
         { label: null,   banks: [1] },
         { label: 'RSPD', banks: [BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN] },
     ];
     if (padMode === PAD_MODE_DRUM) return [
+        { label: null,   banks: [BANK_CONFIG] },
         { label: 'IN',   banks: [5] },
         { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
         { label: 'SEQ',  banks: [BANK_STEP, 7, 0] },
@@ -116,6 +122,7 @@ export function bankCategoriesForMode(padMode, t) {
     const _t = t === undefined ? S.activeTrack : t;
     const chord = !!(S.padLayoutChord && S.padLayoutChord[_t]);
     return [
+        { label: null,   banks: [BANK_CONFIG] },
         { label: 'IN',   banks: (chord ? [BANK_CHORD] : []).concat([5]) },
         { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
         { label: 'SEQ',  banks: [BANK_STEP, 0] },
