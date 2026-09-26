@@ -52,6 +52,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 const C = await import('../../ui/ui_constants.mjs');
 const render = await import('../../ui/ui_render.mjs');
 const kit = await import('../../ui/ui_movy.mjs');
+const pure = await import('../../ui/ui_pure.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 2;
@@ -62,6 +63,10 @@ const touchJog = () => midi(0x90, 9, 127);
 const releaseJog = () => midi(0x80, 9, 0);
 const jog = (d) => midi(0xB0, 14, d > 0 ? d : 128 + d);
 const tick = () => { S.tickCount++; globalThis.tick(); };
+/* The UI clock follows the ticks, so the hold window can be crossed on purpose. */
+S.clockFollowTicks = true; S.tickCount = 1000;
+const holdTicks = Math.ceil(C.BANKNAV_HOLD_MS / 10.6) + 1;
+const settle = () => { S.tickCount += holdTicks; globalThis.tick(); };
 const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const MID_Y = ((kit.MV_BANKNAV_ROWS - 1) >> 1) * kit.MV_BANKNAV_ROW_H + 1;
 /* The middle row is inverted: a wide band of the column's left half is solid
@@ -102,10 +107,35 @@ step('the column follows the walk, and shortens SOUND + CONFIG', () => {
     assert(columnUp(frame()), 'no column over the SOUND + CONFIG page');
     assert(swallowed === null, 'swallowed: ' + swallowed);
 });
-step('⭐ release: the column is gone', () => {
+step('⭐ release: the column goes once the last detent is BANKNAV_HOLD_MS old', () => {
     releaseJog(); tick();
+    assert(columnUp(frame()), 'a release right on a detent dropped the column (the sensor drops out mid-turn)');
+    settle();
     assert(!columnUp(frame()), 'the column outlived the release');
     assert(S.bankNavKind === null, 'still armed: ' + S.bankNavKind);
+});
+step('⭐⭐ THE TOUCH DROPS OUT MID-TURN (device, 2026-09-26): the column stays up and follows the walk', () => {
+    S.activeBank = 0; S.trackActiveBank[2] = 0;
+    touchJog(); tick(); jog(1); tick();
+    const b1 = S.activeBank;
+    releaseJog(); tick();                      /* the sensor lets go... */
+    jog(1); tick();                            /* ...while the hand keeps turning */
+    assert(S.activeBank !== b1, 'control: the walk did not move');
+    assert(columnUp(frame()), 'the banks scrolled with no column');
+    const nav = render.bankNavItems();
+    assert(S.bankNavKind === 'track' && nav.cur === pure.bankCycleForMode(S.trackPadMode[2], 2).indexOf(S.activeBank), 'the column does not follow the walk');
+    touchJog(); tick();                        /* the touch comes back */
+    assert(columnUp(frame()), 'the re-touch blinked the column off');
+    jog(1); tick();
+    assert(columnUp(frame()), 'no column after the re-touch');
+    releaseJog(); settle();
+    assert(!columnUp(frame()), 'the column outlived the hold');
+});
+step('⚠ CONTROL: a touch long after the last turn still shows nothing', () => {
+    settle();
+    touchJog(); tick();
+    assert(!columnUp(frame()), 'a bare touch raised the column');
+    releaseJog(); settle();
 });
 step('⭐ session overview: the turn walks the session banks and the column lists them', () => {
     S.sessionView = true; S.sessKnobMode = 0;
@@ -115,7 +145,7 @@ step('⭐ session overview: the turn walks the session banks and the column list
     const nav = render.bankNavItems();
     assert(nav.items[nav.cur].name === 'SEND A', 'centred ' + nav.items[nav.cur].name);
     assert(columnUp(frame()), 'no column on the session overview');
-    releaseJog(); tick();
+    releaseJog(); settle();
     assert(!columnUp(frame()), 'the session column outlived the release');
     S.sessionView = false;
 });
@@ -128,7 +158,7 @@ step('⭐ session MIXER card (latched): the turn walks the mixer modes and the c
     const nav = render.bankNavItems();
     assert(nav.items[nav.cur].name === 'PAN', 'centred ' + nav.items[nav.cur].name);
     assert(columnUp(frame()), 'no column on the latched mixer card');
-    releaseJog(); tick();
+    releaseJog(); settle();
     assert(!columnUp(frame()), 'the mixer-card column outlived the release');
     S.sessMixerLatched = false; S.sessionView = false;
 });

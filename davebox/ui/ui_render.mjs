@@ -16,7 +16,7 @@ import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
 import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
-import { LGTO_KNOB } from './ui_constants.mjs';
+import { LGTO_KNOB, BANKNAV_HOLD_MS } from './ui_constants.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
@@ -1497,7 +1497,8 @@ export function bankNavItems() {
     };
 }
 function drawBankNav() {
-    if (!S.bankNavKind || !S.jogTouched) return;
+    if (!S.bankNavKind) return;
+    if (!S.jogTouched && S.clockMs - S.bankNavTurnMs >= BANKNAV_HOLD_MS) return;
     const nav = bankNavItems();
     drawKitBankNavColumn(nav.items, nav.cur);
 }

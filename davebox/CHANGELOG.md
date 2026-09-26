@@ -17,6 +17,7 @@ the section into a versioned heading at release time.
   the session overview, a column on the left lists every bank (or session bank)
   with the one you are on highlighted in the middle, and goes when you let go.
   On a melodic track it shows the banks in groups — IN, CTRL, SEQ, FX.
+  It stays up while you turn even if the jog briefly stops sensing your hand.
 - **Numbers turn as an arc.** An octave, offset, rate, length or count no longer
   opens a list that scrolls the opposite way to the knob: while you touch the
   knob, its cell becomes an arc that follows it. Named choices keep their list.
