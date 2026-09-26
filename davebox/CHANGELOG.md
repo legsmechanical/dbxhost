@@ -40,6 +40,11 @@ the section into a versioned heading at release time.
   instrument's or effect's page (the right pad, on a per-pad parameter), SOUND
   + CONFIG for a level, MACROS for a MIDI target; turn the knob to change the
   value on that step, let go to come back to the same row.
+- **Clear a lane without losing it.** A lane's options on the AUTOMATION
+  bank now end with **Clear** and **Delete**. Clear removes every value but
+  keeps the lane and its settings (loop, rate, scale, mode), reading **EMPTY**
+  until you record or lock something new into it; it is undoable and saved
+  with the project.
 - **A lane jump keeps the lane on the steps.** After Shift + click on a lane,
   the step buttons keep showing that lane until you press Back, so you can
   hold a step there and set its value with the knob in front of you.

@@ -1243,7 +1243,7 @@ its module's page, SOUND + CONFIG for a level, or MACROS for a MIDI target —
 and **Back** from there returns you to this menu, on the same row. The step
 buttons keep showing the lane while you are there, so you can hold a step and
 turn the knob to set that step. Click a row for its operations:
-**Delete**, **Mute** / **Unmute**, **Mode** (*Curve* plays the lane as a continuous
+**Mute** / **Unmute**, **Mode** (*Curve* plays the lane as a continuous
 envelope; *Punch* makes each lock last just its own step, with the parameter back at
 rest on every other step — Smooth and Wrap don't apply there and are hidden),
 **Smooth** (*On* glides between values, *Off*
@@ -1256,7 +1256,10 @@ it forward; on a drum track, the ALL LANES versions of those. *Off*: it stays
 where it is whatever you do to the notes), **Loop** (that parameter's own loop length in steps, or CLIP to
 follow the clip), **Rate** (/16 to ×16, the loop stretching to match), and
 **Scale** (0–200%: how far the lane moves — toward zero, or on a centred
-parameter like pan or pitch bend, toward and away from its centre). The
+parameter like pan or pitch bend, toward and away from its centre), then
+**Clear** (every value on the lane goes, but the lane stays with its settings —
+it reads **EMPTY**, ready to record or lock new values into) and **Delete**
+(the lane goes altogether). Both are undoable. The
 last row is **Clear clip**, and **Delete + click** on the card does the same.
 Every operation is one undo, and **Back** closes one layer at a time. Conductor
 tracks don't have this bank. The full description is in

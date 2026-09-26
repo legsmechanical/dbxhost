@@ -357,11 +357,14 @@ export function automationRefreshPresence() {
 /* The lane flag bits — PA_FLAG_* in dsp/seq8_param_auto.h. UNLINKED is Link: Off
  * (set = off), so every lane written before Note link reads linked. */
 const FLAG_ACTIVE = 1, FLAG_SMOOTH = 2, FLAG_UNLINKED = 4, FLAG_WRAP_RESET = 8, FLAG_PUNCH = 16;
+/* KEEP (PA_FLAG_KEEP): a lane emptied by Clear and kept — listed with no points. */
+const FLAG_KEEP = 32;
+const laneLive = (s) => !!s && (s.count > 0 || !!(s.flags & FLAG_KEEP));
 
 /* null = not automated; else { active, smooth, wrapReset, count, loop }. */
 export function automationStateFor(track, clip, target) {
     const s = stateByKey.get(stateKey(track, clip, target));
-    if (!s || !s.count) return null;
+    if (!laneLive(s)) return null;
     return { active: !!(s.flags & FLAG_ACTIVE), smooth: !!(s.flags & FLAG_SMOOTH),
              wrapReset: !!(s.flags & FLAG_WRAP_RESET), punch: !!(s.flags & FLAG_PUNCH),
              linked: !(s.flags & FLAG_UNLINKED),
@@ -373,7 +376,7 @@ export function automationEntriesFor(track, clip) {
     const out = [];
     const pfx = track + ' ' + clip + ' ';
     for (const [k, s] of stateByKey) {
-        if (k.indexOf(pfx) !== 0 || !s.count) continue;
+        if (k.indexOf(pfx) !== 0 || !laneLive(s)) continue;
         out.push({ target: k.slice(pfx.length), active: !!(s.flags & FLAG_ACTIVE), smooth: !!(s.flags & FLAG_SMOOTH),
                    wrapReset: !!(s.flags & FLAG_WRAP_RESET), punch: !!(s.flags & FLAG_PUNCH),
              linked: !(s.flags & FLAG_UNLINKED),
@@ -1125,6 +1128,20 @@ export function automationClearKey(track, clip, target, checkpoint) {
     if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
     queueSet('t' + track + '_pa_clear_key', clip + ' ' + target);
     stateByKey.delete(stateKey(track, clip, target));
+    listGen++;
+    expectStaged();
+    return true;
+}
+
+/* The AUTOMATION bank's Clear (Josh, 2026-09-25): every point of the lane
+ * goes, the lane and its settings stay (pa_clear_points, PA_FLAG_KEEP), so new
+ * automation can be added to it. One undo. */
+export function automationClearPoints(track, clip, target) {
+    if (!automationStateFor(track, clip, target)) return false;
+    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    queueSet('t' + track + '_pa_clear_points', clip + ' ' + target);
+    const s = stateByKey.get(stateKey(track, clip, target));
+    if (s) { s.count = 0; s.flags |= FLAG_KEEP; }
     listGen++;
     expectStaged();
     return true;

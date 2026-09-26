@@ -353,6 +353,31 @@ step('⭐ leaving the track leaves the AUTOMATION menu: back on it, the card sho
     back(); ticks(1);
 });
 
+step('⭐ a CLEARED (empty, kept) lane: its steps are dark, and holding one still jumps to add a value', () => {
+    const savedList = LIST, savedSteps = STEPS, savedVals = VALS;
+    LIST = LIST.split('\n').map(l => l.indexOf(' ' + TARGETS.seq + ' ') >= 0 ? l.replace(/^(\d+ \d+ )(\d+) (\d+)/, (m, a, f) => a + (parseInt(f, 10) | 32) + ' 0') : l).join('\n');
+    STEPS = STEPS.split('\n').filter(l => l.indexOf(TARGETS.seq) < 0).join('\n');
+    VALS = VALS.split('\n').filter(l => l.indexOf(TARGETS.seq) < 0).join('\n');
+    auto.automationRefreshPresence();
+    try {
+        const idx = openMenuOn(TARGETS.seq); ticks(2);
+        for (let n = 0; n < 40; n++) ticks(1);
+        assert(S.autoCycle && S.autoCycle.target === TARGETS.seq, 'the empty lane is not on the steps');
+        assert(S.autoLaneVals && S.autoLaneVals.every(v => v < 0), 'the empty lane has values: ' + JSON.stringify(S.autoLaneVals));
+        assert(leds[STEP(0)] === 0 && leds[STEP(9)] === 0, 'the empty lane\'s steps are not dark: ' + leds[STEP(0)] + ', ' + leds[STEP(9)]);
+        note(STEP(6), 127); ticks(3);
+        assert(S.activeBank === seq.bank, 'holding a step of the empty lane did not jump: bank ' + S.activeBank);
+        sets.length = 0;
+        cc(71 + seq.k, 1); ticks(2);
+        assert(sets.some(x => x.indexOf('_pa_set2=') >= 0 && x.indexOf(TARGETS.seq + ' 144 167') >= 0), 'no new value on step 7: ' + JSON.stringify(sets));
+        note(STEP(6), 0); ticks(2);
+        assert(S.activeBank === BANK_AUTOMATION && S.autoBank.sel === idx, 'release did not come back');
+        back(); ticks(1);
+    } finally {
+        LIST = savedList; STEPS = savedSteps; VALS = savedVals; auto.automationRefreshPresence();
+    }
+});
+
 step('CONTROL: deleting the pinned lane ends the pin', () => {
     openMenuOn(TARGETS.level); ticks(2);
     shiftClick(); ticks(4);

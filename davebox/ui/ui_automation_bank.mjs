@@ -33,11 +33,11 @@ import { BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, PAD_MODE_DRUM, midiTargetIsMi
 import { soundOpen, soundExit, soundJumpToParam } from './ui_sound.mjs';
 import { readBankParams } from './ui_dsp_bridge.mjs';
 import { effectiveClip } from './ui_leds.mjs';
-import { automationEntriesFor, automationTargetLabel, automationClearKey,
+import { automationEntriesFor, automationTargetLabel, automationClearKey, automationClearPoints,
          automationToggleActive, automationToggleSmooth, automationToggleWrap, automationToggleMode, automationToggleLink, automationSmoothable,
          automationSetLoop, automationSetRate, automationRateText, automationSetScale,
          automationClearClip, automationListGen, automationStepTicks, rowCycle,
-         cycleText, automationMatchPad, padCycle } from './ui_automation.mjs';
+         cycleText, automationMatchPad, padCycle, automationStateFor } from './ui_automation.mjs';
 import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
          drawBrackets, kitUseLayout, MV_FOOTER_Y } from './ui_movy.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
@@ -102,6 +102,7 @@ export function autoBankRows(track, clip) {
 function rowValue(r, track, clip) {
     if (r.kind === 'at') return 'PADS';
     if (!r.active) return 'OFF';
+    if (!r.count) return 'EMPTY';                 /* cleared and kept: nothing in it yet */
     const cy = rowCycle(track, clip, r.target);
     return cy ? cy.text : 'ON';
 }
@@ -131,8 +132,9 @@ function loopValue(track, clip, r, steps) {
 
 function opsFor(track, clip, r) {
     if (r.kind === 'at') return [{ op: 'delete', label: 'Delete' }];
-    const ops = [{ op: 'delete', label: 'Delete' },
-                 { op: 'active', label: r.active ? 'Mute' : 'Unmute' }];
+    /* Delete is LAST, Clear beside it (Josh, 2026-09-25: "delete should be
+     * moved to the bottom of the automation menu"). */
+    const ops = [{ op: 'active', label: r.active ? 'Mute' : 'Unmute' }];
     const i = r.target.indexOf(':');
     const slot = parseInt(r.target.slice(0, i), 10), fullKey = r.target.slice(i + 1);
     /* ⭑ SET-AND-FORGET SETTINGS READ AS SETTINGS (Josh, 2026-09-11): a static
@@ -162,6 +164,8 @@ function opsFor(track, clip, r) {
     }
     ops.push({ op: 'rate', label: 'Rate', value: automationRateText(r.res) });
     ops.push({ op: 'scale', label: 'Scale', value: scaleText(r.scale) });
+    ops.push({ op: 'clear', label: 'Clear' });
+    ops.push({ op: 'delete', label: 'Delete' });
     return ops;
 }
 
@@ -280,6 +284,8 @@ function runOp(t, c, a) {
     }
     if (o.op === 'delete') {
         if (automationClearKey(t, c, r.target)) showActionPopup('AUTOMATION', 'DELETED');
+    } else if (o.op === 'clear') {
+        if (automationClearPoints(t, c, r.target)) showActionPopup('AUTOMATION', 'CLEARED');
     } else if (o.op === 'active') {
         const on = automationToggleActive(t, c, r.target);
         if (on !== null) showActionPopup('AUTOMATION', on ? 'ON' : 'MUTED');
@@ -431,6 +437,9 @@ function selectedTarget(t, c) {
  * without changing the list) — never per tick: a read is a whole SPI frame. */
 let valsCache = { key: null, map: null, at: -1e9 };
 const VALS_REFRESH_MS = 400;
+/* A lane the page read has no line for (an empty, cleared lane): no value on
+ * any step — dark inside its cycle, which stays on the buttons to hold. */
+const EMPTY_VALS = new Array(16).fill(-1);
 function autoLaneValsTick(t, c, target) {
     const cy = S.autoCycle;
     const base = ((cy.off >> 4) + cy.page) * 16;
@@ -452,7 +461,9 @@ function autoLaneValsTick(t, c, target) {
             valsCache.map = null;             /* a failed read of a NEW page shows no stale colours */
         }
     }
-    S.autoLaneVals = (valsCache.key === key && valsCache.map) ? (valsCache.map.get(target) || null) : null;
+    const got = (valsCache.key === key && valsCache.map) ? (valsCache.map.get(target) || null) : null;
+    const st0 = got ? null : automationStateFor(t, c, target);
+    S.autoLaneVals = got || ((valsCache.key === key && valsCache.map && st0 && !st0.count) ? EMPTY_VALS : null);
 }
 
 /* The lane the DSP is told to report a position for (tN_pa_view) — sent only
