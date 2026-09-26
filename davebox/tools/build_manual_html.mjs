@@ -25,13 +25,18 @@ const SRC = resolve(ROOT, opt('--src', 'docs/working/MANUAL-SA.draft.md'));
 const OUT = resolve(ROOT, opt('--out', 'docs/manual/index.html'));
 const SCREENS = opt('--screens', null);
 
+/* The Quick Start (QUICKSTART.md) is folded into the page as an unnumbered walkthrough after
+ * Getting Started — a release download has no second file to link to. */
+const QS = 'QS';
+const QS_SRC = resolve(ROOT, 'QUICKSTART.md');
+
 /* The manual's chapters, grouped into the parts the sidebar shows. Chapter numbers are the
  * manual's own; a chapter missing from this table lands in the last part rather than vanishing. */
 const PARTS = [
-    { title: 'Getting started', chapters: [1, 2, 3] },
-    { title: 'Making clips', chapters: [4, 5, 6, 7, 8] },
-    { title: 'Shaping clips', chapters: [9, 10, 11] },
-    { title: 'Playing live', chapters: [12, 13] },
+    { title: 'Getting started', chapters: [1, 2, QS, 3] },
+    { title: 'Making clips', chapters: [4, 5, 6, 7] },
+    { title: 'Shaping clips', chapters: [8, 9, 10] },
+    { title: 'Songs & performance', chapters: [11, 12, 13] },
     { title: 'Sound & routing', chapters: [14, 15] },
     { title: 'Getting it out', chapters: [16] },
     { title: 'Setup', chapters: [17, 18] },
@@ -93,7 +98,9 @@ function inline(src, opts = { gestures: true }) {
     s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, href) => {
         const ext = /^https?:/.test(href);
         let h = href;
-        if (/^(MANUAL|QUICKSTART)\.md$/.test(href))
+        if (href === 'QUICKSTART.md') h = '#quick-start';                    // folded into this page
+        else if (/^MANUAL-SA\.md(#|$)/.test(href)) h = href.slice('MANUAL-SA.md'.length) || '#';
+        else if (/^MANUAL\.md$/.test(href))
             h = 'https://github.com/legsmechanical/dbxhost/blob/main/davebox/' + href;
         return `<a href="${escAttr(h)}"${ext || h !== href ? ' target="_blank" rel="noopener"' : ''}>${label}</a>`;
     });
@@ -232,12 +239,10 @@ const MANUAL_SCREENS = new Set([
     'capture-tempo',           // the tempo chooser and its take strip
     'track-drum',              // the drum overview
     'bank-cond-responder',     // which tracks follow
-    'bank-cond-octave',        // per-track octaves
     'bank-clip',               // a bank page: eight knobs, eight cells
     'bank-repeat-groove',      // the groove bars
     'bank-automation',         // the list of what's automated
     'session-overview',        // Session View
-    'session-mixer-volume',    // the session mixer
     'perf-mode-mods',          // Performance Mode with mods engaged
     'sound-card',              // the SOUND + CONFIG door
     'track-config',            // the TRACK CONFIG menu
@@ -308,7 +313,8 @@ function renderTable(b) {
     const ctrlCols = head.map((h) => /^(control|gesture|press|step)\b/i.test(h));
     const knobTable = head.some((h) => /^on screen$/i.test(h));   // a bank's knob table: bold names are parameters
     const cell = (c, j) => {
-        if (ctrlCols[j]) { const k = markButtons(esc(c)); if (k) return `<span class="keys">${k}</span>`; }
+        // A plain control cell is all keys; one with its own markdown (bold, links) goes through inline().
+        if (ctrlCols[j] && !/[*`[]/.test(c)) { const k = markButtons(esc(c)); if (k) return `<span class="keys">${k}</span>`; }
         return inline(c, { gestures: !knobTable });
     };
     return `<div class="tablewrap"><table><thead><tr>${b.head.map((h) => `<th>${inline(h)}</th>`).join('')}</tr></thead><tbody>` +
@@ -361,6 +367,18 @@ for (const b of blocks) {
     (cur ? cur.body : intro).push(b);
 }
 
+/* The Quick Start, minus what the manual's own intro already says: its title, the "What is
+ * dAVEBOx?" box and the pointer to the Legacy manual. */
+if (existsSync(QS_SRC)) {
+    const qsBlocks = parseBlocks(readFileSync(QS_SRC, 'utf8').replace(/<!--[\s\S]*?-->/g, '').split('\n'))
+        .filter((b) => !(b.type === 'h' && b.level === 1)
+            && !(b.type === 'quote' && /What is dAVEBOx/.test(JSON.stringify(b)))
+            && !(b.type === 'p' && /MANUAL\.md/.test(b.text)));
+    const at = chapters.findIndex((c) => c.num === 2) + 1;
+    chapters.splice(at, 0, { num: QS, title: 'Quick Start', id: slugify('Quick Start', used), body: qsBlocks, sections: [] });
+}
+const numLabel = (c) => (typeof c.num === 'number' ? c.num + '. ' : '');
+
 function renderChapterBody(ch) {
     let html = '';
     let pending = screensBySection.get(normHeading(ch.title)) ? [...screensBySection.get(normHeading(ch.title))] : null;
@@ -398,10 +416,11 @@ function renderChapterBody(ch) {
 const chapterHtml = chapters.map((ch, idx) => {
     const body = renderChapterBody(ch);
     const prev = chapters[idx - 1], next = chapters[idx + 1];
-    const pager = `<nav class="pager">${prev ? `<a class="prev" href="#${prev.id}"><span>Previous</span>${prev.num}. ${esc(prev.title)}</a>` : '<span></span>'}` +
-        `${next ? `<a class="next" href="#${next.id}"><span>Next</span>${next.num}. ${esc(next.title)}</a>` : '<span></span>'}</nav>`;
+    const pager = `<nav class="pager">${prev ? `<a class="prev" href="#${prev.id}"><span>Previous</span>${numLabel(prev)}${esc(prev.title)}</a>` : '<span></span>'}` +
+        `${next ? `<a class="next" href="#${next.id}"><span>Next</span>${numLabel(next)}${esc(next.title)}</a>` : '<span></span>'}</nav>`;
+    const kicker = typeof ch.num === 'number' ? `Chapter ${ch.num}` : 'Walkthrough';
     return `<section class="chapter" id="${ch.id}" data-num="${ch.num}">` +
-        `<header class="chhead"><div class="chnum">Chapter ${ch.num}</div><h1>${inline(ch.title)}</h1></header>\n${body}\n${pager}</section>`;
+        `<header class="chhead"><div class="chnum">${kicker}</div><h1>${inline(ch.title)}</h1></header>\n${body}\n${pager}</section>`;
 }).join('\n');
 
 const unplaced = screens.filter((s) => !placedScreens.has(s));
@@ -426,7 +445,7 @@ if (orphans.length) PARTS[PARTS.length - 1].chapters.push(...orphans);
 const navHtml = PARTS.map((p) => `<div class="part"><div class="ptitle">${esc(p.title)}</div><ol>` +
     p.chapters.filter((n) => byNum.has(n)).map((n) => {
         const c = byNum.get(n);
-        return `<li data-ch="${c.id}"><a href="#${c.id}"><span class="n">${c.num}</span>${esc(c.title)}</a>` +
+        return `<li data-ch="${c.id}"><a href="#${c.id}"><span class="n">${typeof c.num === 'number' ? c.num : '▸'}</span>${esc(c.title)}</a>` +
             (c.sections.length ? `<ol class="subs">${c.sections.map((s) => `<li><a href="#${s.id}">${inline(s.title.replace(/^\d+\.\d+\s+/, ''))}</a></li>`).join('')}</ol>` : '') + '</li>';
     }).join('') + '</ol></div>').join('');
 
@@ -443,4 +462,4 @@ const html = readFileSync(join(ROOT, 'tools/manual_template.html'), 'utf8')
 
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, html);
-console.log(`[manual] ${chapters.length} chapters, ${placedScreens.size} screens placed, ${(html.length / 1024).toFixed(0)} KB -> ${OUT}`);
+console.log(`[manual] ${chapters.filter((c) => typeof c.num === 'number').length} chapters + quick start, ${placedScreens.size} screens placed, ${(html.length / 1024).toFixed(0)} KB -> ${OUT}`);

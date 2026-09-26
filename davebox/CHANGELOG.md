@@ -247,6 +247,12 @@ the section into a versioned heading at release time.
 - **CLIP, DRUM LANE and ALL LANES have their own header icons** — a clip slot,
   a drum, and a 3×3 grid — in the bank header and the bank map. ALL LANES now
   blinks its icon instead of the word ALL.
+- **The manual is easier to learn from.** The Quick Start is now inside the
+  downloadable manual, and chapter 3 covers the basics every screen shares:
+  reading the screen, how menus work, and choosing a track's sound. New pad
+  diagrams show the melodic, Chord, drum and Session layouts; the chapters run in
+  learning order (the Conductor moved after Arranging), and one table compares
+  every kind of preset and snapshot.
 - **Launch 1-bar restarts everything; every other setting stays in step with
   the song.** At Launch 1-bar a launched clip starts from its beginning — drum
   lanes now included (they used to keep the song's position) and automation

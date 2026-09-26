@@ -207,7 +207,7 @@
       <text x="863.8" y="234.43">Copy</text>
       <text x="769.8" y="265.93">Undo</text>
       <text x="863.8" y="265.93">Shift<tspan dx="6" font-size="19" font-weight="400" fill-opacity="0.72">modifier</tspan></text>
-      <text x="769.8" y="302.83">Arrows · + / −</text>
+      <text x="769.8" y="302.83">Left / Right · + / −</text>
       <text x="510.02" y="365.7" text-anchor="middle">Step buttons 1–16</text>
     </g>
     <g font-size="19" fill-opacity="0.72">
@@ -215,13 +215,13 @@
       <text x="230" y="206.18" text-anchor="end">click: open / select</text>
       <text x="84" y="262.43" text-anchor="end">step out</text>
       <text x="230" y="262.43" text-anchor="end">switch views</text>
-      <text x="230" y="316.93" text-anchor="end">launch clips</text>
+      <text x="230" y="316.93" text-anchor="end">launch clips · scenes</text>
       <text x="324.4" y="49" text-anchor="end">Track View: notes / drum lanes</text>
       <text x="324.4" y="72" text-anchor="end">Session View: the clip grid</text>
       <text x="510.25" y="70" text-anchor="middle">the current bank’s parameters</text>
       <text x="769.8" y="117" text-anchor="start">master level</text>
       <text x="769.8" y="140" text-anchor="start">Shift + Volume: this track</text>
-      <text x="769.8" y="326" text-anchor="start">◀ ▶ pages · + / − octave</text>
+      <text x="769.8" y="326" text-anchor="start">pages · + / − octave</text>
       <text x="510.02" y="388.7" text-anchor="middle">Track View: the clip’s steps</text>
       <text x="510.02" y="411.7" text-anchor="middle">Session View: scenes</text>
       <text x="510.02" y="434.7" text-anchor="middle">Shift + step: shortcuts</text>
