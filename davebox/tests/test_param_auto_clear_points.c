@@ -161,6 +161,34 @@ int main(void) {
     HX_ASSERT(cycle_of(h, &ll, &lo, &st) && ll == 288, "⭐ the kept lane keeps its 12-step cycle under a 16-step pad");
     OK("⭐ a lock into a cleared lane keeps the lane's own cycle");
 
+    /* ---- a FULL store never recycles a kept lane --------------------------- */
+    {
+        hx_set_param(h, "t0_pa_clear_points", "0 " TG);
+        hx_set_param(h, "transport", "play_focus:0:0");
+        hx_render(h, 40);                                     /* its rest re-asserted */
+        hx_set_param(h, "transport", "stop");
+        hx_render(h, 5);
+        HX_ASSERT(listed(h, &fl, &cnt) && cnt == 0, "setup: kept and empty");
+        char k[64], v[96];
+        for (int t = 1; t < 8; t++)
+            for (int c = 0; c < 16; c++)
+                for (int g = 0; g < 2; g++) {
+                    snprintf(k, sizeof k, "t%d_pa_set2", t);
+                    snprintf(v, sizeof v, "%d %d:synth:p%d 0 23 5000", c, t, g);
+                    hx_set_param(h, k, v);
+                }
+        HX_ASSERT(in->pa_store_full, "setup: the store filled");
+        HX_ASSERT(listed(h, &fl, &cnt) && cnt == 0, "⭐ a full store recycled the kept lane");
+        /* Back to a store with room for what follows. */
+        for (int t = 1; t < 8; t++) for (int c = 0; c < 16; c++) {
+            snprintf(k, sizeof k, "t%d_pa_clear", t);
+            snprintf(v, sizeof v, "%d", c);
+            hx_set_param(h, k, v);
+        }
+        in->pa_store_full = 0;
+    }
+    OK("a full store never recycles a cleared, kept lane");
+
     /* ---- Delete + step on the EMPTY lane leaves it; Delete removes it ------ */
     hx_set_param(h, "t0_pa_clear_points", "0 " TG);
     hx_set_param(h, "t0_pa_clear_step", "0 0 383");
