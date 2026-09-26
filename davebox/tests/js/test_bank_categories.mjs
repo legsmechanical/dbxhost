@@ -60,6 +60,8 @@ const touchJog = () => midi(0x90, 9, 127);
 const releaseJog = () => midi(0x80, 9, 0);
 const jog = (d) => midi(0xB0, 14, d > 0 ? d : 128 + d);
 const tick = () => { S.tickCount++; globalThis.tick(); };
+S.clockFollowTicks = true; S.tickCount = 1000;   /* the UI clock follows the ticks */
+const settle = () => { S.tickCount += Math.ceil(C.BANKNAV_HOLD_MS / 10.6) + 1; globalThis.tick(); };
 const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const px = (f, x, y) => f[y * W + x];
 const ROW = kit.MV_BANKNAV_ROW_H, MID = (kit.MV_BANKNAV_ROWS - 1) >> 1, MID_Y = MID * ROW + 1;
@@ -91,7 +93,7 @@ step('⭐⭐ THE GESTURE: from CLIP the jog walks left through SEQ, CTRL, IN and
     const right = [];
     for (let i = 0; i < 5; i++) { jog(1); tick(); right.push(S.activeBank); }
     assert(JSON.stringify(right) === JSON.stringify([1, 2, 3, 4, C.BANK_SOUND]), 'right: ' + right);
-    releaseJog(); tick();
+    releaseJog(); settle();
     assert(!S.bankNavKind, 'the column outlived the release');
 });
 step('⭐ a row in a category is indented past the gutter, its highlight too; the category has a line and a label', () => {

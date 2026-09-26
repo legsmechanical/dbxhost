@@ -953,6 +953,11 @@ export const S = {
      * banks (a bank card, the track overview) or the session banks (the session
      * overview), gone on the jog's touch release. 'track' | 'session' | null. */
     bankNavKind: null,
+    /* nowMs() of the last detent that walked it. The jog's touch sensor drops
+     * out for a moment while the hand turns (Josh, on device 2026-09-26: "the
+     * overlay disappears briefly and the banks scroll absent an overlay"), so a
+     * recent turn holds the column up too — see BANKNAV_HOLD_MS. */
+    bankNavTurnMs: 0,
     /* Tick of the last picker turn, for the SETTLE fallback. The gesture
      * normally ends with the jog-touch release, but a turn can arrive with no
      * touch at all (the capacitive read can miss a quick flick, and the remote

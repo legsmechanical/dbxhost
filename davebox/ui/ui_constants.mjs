@@ -605,6 +605,10 @@ export function isSoundBank(b) { return b === BANK_SOUND || b === BANK_MACROS; }
  * CONDUCT on a Conductor. All three are index 0: the bank a track is on when a
  * session is first created, and where Back lands from any other bank. */
 export const BANK_DEFAULT = 0;
+/* How long the bank map outlives its last detent without a touch: bridges the
+ * jog touch sensor dropping out mid-turn, short enough that letting go after
+ * the turn still reads as the column going at once. */
+export const BANKNAV_HOLD_MS = 300;
 
 /* JS tick rate on device (~94 Hz measured). Older constants were calibrated
  * against a mistaken 196 Hz assumption — derive new timings from this. */

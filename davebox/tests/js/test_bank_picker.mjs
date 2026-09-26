@@ -115,6 +115,7 @@ function reset() {
     S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
     S.awaitingProjectSelect = false; S.loopHeld = false; S.shiftHeld = false;
     S.bankPickerSel = -1; S.bankCardLatched = false;
+    S.bankNavKind = null;          /* a previous step's turn holds the bank map up for BANKNAV_HOLD_MS */
     S.activeTrack = 2; S.activeBank = 0;
     for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; S.trackPadMode[t] = 0; S.trackActiveBank[t] = 0; }
     if (!S.bankParams) S.bankParams = Array.from({ length: 8 }, () =>

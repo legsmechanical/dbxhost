@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 956 430" font-family="'Source Sans 3', system-ui, sans-serif" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <title>Session View pads</title>
+  <desc>Session View turns the pads into the clip grid: eight columns, one per track, and four rows of clips. The four side buttons launch the row beside them as a scene; + and − scroll the rows through all 16. The sixteen step buttons launch scenes 1 to 16, and the eight knobs above are each track’s mixer strip.</desc>
+  <g stroke-width="1.2">
+    <rect x="190.0" y="254.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="268.0" y="254.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="346.0" y="254.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="424.0" y="254.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="502.0" y="254.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="580.0" y="254.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="658.0" y="254.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="736.0" y="254.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="158" y="260" width="16" height="34" rx="8" fill="currentColor" fill-opacity="0.06"/>
+    <line x1="166" y1="268" x2="166" y2="286" stroke-width="1.6"/>
+    <rect x="190.0" y="200.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="268.0" y="200.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="346.0" y="200.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="424.0" y="200.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="502.0" y="200.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="580.0" y="200.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="658.0" y="200.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="736.0" y="200.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="158" y="206" width="16" height="34" rx="8" fill="currentColor" fill-opacity="0.06"/>
+    <line x1="166" y1="214" x2="166" y2="232" stroke-width="1.6"/>
+    <rect x="190.0" y="146.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="268.0" y="146.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="346.0" y="146.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="424.0" y="146.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="502.0" y="146.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="580.0" y="146.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="658.0" y="146.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="736.0" y="146.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="158" y="152" width="16" height="34" rx="8" fill="currentColor" fill-opacity="0.06"/>
+    <line x1="166" y1="160" x2="166" y2="178" stroke-width="1.6"/>
+    <rect x="190.0" y="92.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="268.0" y="92.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="346.0" y="92.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="424.0" y="92.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="502.0" y="92.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="580.0" y="92.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="658.0" y="92.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="736.0" y="92.0" width="70" height="46" rx="3" fill="currentColor" fill-opacity="0.08"/>
+    <rect x="158" y="98" width="16" height="34" rx="8" fill="currentColor" fill-opacity="0.06"/>
+    <line x1="166" y1="106" x2="166" y2="124" stroke-width="1.6"/>
+    <circle cx="225.0" cy="48" r="13" fill="currentColor" fill-opacity="0.08"/>
+    <circle cx="303.0" cy="48" r="13" fill="currentColor" fill-opacity="0.08"/>
+    <circle cx="381.0" cy="48" r="13" fill="currentColor" fill-opacity="0.08"/>
+    <circle cx="459.0" cy="48" r="13" fill="currentColor" fill-opacity="0.08"/>
+    <circle cx="537.0" cy="48" r="13" fill="currentColor" fill-opacity="0.08"/>
+    <circle cx="615.0" cy="48" r="13" fill="currentColor" fill-opacity="0.08"/>
+    <circle cx="693.0" cy="48" r="13" fill="currentColor" fill-opacity="0.08"/>
+    <circle cx="771.0" cy="48" r="13" fill="currentColor" fill-opacity="0.08"/>
+    <circle cx="209.2" cy="342" r="9" fill="currentColor" fill-opacity="0.06"/>
+    <circle cx="247.8" cy="342" r="9" fill="currentColor" fill-opacity="0.06"/>
+    <circle cx="286.2" cy="342" r="9" fill="currentColor" fill-opacity="0.06"/>
+    <circle cx="324.8" cy="342" r="9" fill="currentColor" fill-opacity="0.06"/>
+    <circle cx="363.2" cy="342" r="9" fill="currentColor" fill-opacity="0.06"/>
+    <circle cx="401.8" cy="342" r="9" fill="currentColor" fill-opacity="0.06"/>
+    <circle cx="440.2" cy="342" r="9" fill="currentColor" fill-opacity="0.06"/>
+    <circle cx="478.8" cy="342" r="9" fill="currentColor" fill-opacity="0.06"/>
+    <circle cx="517.2" cy="342" r="9" fill="currentColor" fill-opacity="0.06"/>
+    <circle cx="555.8" cy="342" r="9" fill="currentColor" fill-opacity="0.06"/>
+    <circle cx="594.2" cy="342" r="9" fill="currentColor" fill-opacity="0.06"/>
+    <circle cx="632.8" cy="342" r="9" fill="currentColor" fill-opacity="0.06"/>
+    <circle cx="671.2" cy="342" r="9" fill="currentColor" fill-opacity="0.06"/>
+    <circle cx="709.8" cy="342" r="9" fill="currentColor" fill-opacity="0.06"/>
+    <circle cx="748.2" cy="342" r="9" fill="currentColor" fill-opacity="0.06"/>
+    <circle cx="786.8" cy="342" r="9" fill="currentColor" fill-opacity="0.06"/>
+  </g>
+  <g stroke-width="0.9" stroke-opacity="0.6">
+    <polyline points="100,313.0 100,277.0 156,277.0"/>
+    <polyline points="190,358 190,364 806,364 806,358"/>
+  </g>
+  <g fill="currentColor" stroke="none" fill-opacity="0.8">
+    <circle cx="156" cy="277.0" r="1.8"/>
+  </g>
+  <g fill="currentColor" stroke="none">
+    <text x="225.0" y="79.0" font-weight="600" text-anchor="middle">1</text>
+    <text x="303.0" y="79.0" font-weight="600" text-anchor="middle">2</text>
+    <text x="381.0" y="79.0" font-weight="600" text-anchor="middle">3</text>
+    <text x="459.0" y="79.0" font-weight="600" text-anchor="middle">4</text>
+    <text x="537.0" y="79.0" font-weight="600" text-anchor="middle">5</text>
+    <text x="615.0" y="79.0" font-weight="600" text-anchor="middle">6</text>
+    <text x="693.0" y="79.0" font-weight="600" text-anchor="middle">7</text>
+    <text x="771.0" y="79.0" font-weight="600" text-anchor="middle">8</text>
+    <text x="824.0" y="284.0" fill-opacity="0.8">row 4</text>
+    <text x="824.0" y="230.0" fill-opacity="0.8">row 3</text>
+    <text x="824.0" y="176.0" fill-opacity="0.8">row 2</text>
+    <text x="824.0" y="122.0" fill-opacity="0.8">row 1</text>
+    <text x="130.0" y="79.0" font-weight="600" text-anchor="end">Track</text>
+    <text x="130.0" y="54.0" font-weight="600" text-anchor="end">Knobs</text>
+    <text x="824.0" y="54.0" font-size="18" fill-opacity="0.72">mixer strips</text>
+    <text x="100.0" y="335.0" font-weight="600" text-anchor="middle">Side buttons</text>
+    <text x="100.0" y="357.0" font-size="18" fill-opacity="0.72" text-anchor="middle">launch its row</text>
+    <text x="498.0" y="388.0" font-weight="600" text-anchor="middle">Step buttons: launch scene 1–16</text>
+    <text x="498.0" y="416" font-size="18" fill-opacity="0.72" text-anchor="middle">tap a clip: launch / stop · <tspan font-weight="600" fill-opacity="1">Shift +</tspan> clip: open it in Track View</text>
+    <text x="824.0" y="338.0" font-size="18" fill-opacity="0.72">+ / − scroll</text>
+    <text x="824.0" y="359.0" font-size="18" fill-opacity="0.72">rows 1–16</text>
+  </g>
+</svg>

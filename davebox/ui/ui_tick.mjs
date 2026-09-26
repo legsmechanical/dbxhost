@@ -25,7 +25,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
-    POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS, BANK_CHORD, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
+    POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS, BANK_CHORD, DEFAULT_TRACK_OCTAVE, BANKNAV_HOLD_MS } from './ui_constants.mjs';
 
 import { S, standDownBankDisplay, stepRevealAvailable } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -1215,6 +1215,12 @@ export function _tickImpl() {
          * because the other still held the screen. One reason, one place. */
         if (S.bankSelectTick >= 0 && (S.clockMs - S.bankSelectTick) >= BANK_DISPLAY_MS) {
             standDownBankDisplay();
+            S.screenDirty = true;
+        }
+        /* The bank map with no hand on the jog retires once its last detent is
+         * BANKNAV_HOLD_MS old (the release declined while a turn was fresh). */
+        if (S.bankNavKind && !S.jogTouched && S.clockMs - S.bankNavTurnMs >= BANKNAV_HOLD_MS) {
+            S.bankNavKind = null;
             S.screenDirty = true;
         }
         /* Overlay expiry: clear timer here so drawUI() can gate on flag alone */
