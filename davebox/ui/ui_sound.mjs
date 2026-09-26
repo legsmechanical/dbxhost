@@ -9694,11 +9694,14 @@ export function soundOnCC(d1, d2, decodeDelta) {
                      * the row. A MIDI channel or a followed track has nothing to
                      * enter, so the plain click is a NO-OP there (Josh: "for
                      * consistency" — click never picks once a choice is made).
-                     * The one exception is a Schwung track with no generator
-                     * yet: no choice has been made, so the click is the picker. */
+                     * The exceptions are a Schwung track with no generator yet
+                     * and a track set to None: nothing is chosen, so the click
+                     * is the picker (Josh, 2026-09-26: None "Open the picker" —
+                     * its hint band already said CLK EDIT while the click did
+                     * nothing). */
                     const route = GS.trackRoute[S.track];
                     const gen = route === 0 ? (S.pickRows[S.pickRow].gen || '') : '';
-                    if (S.shiftHeld || (route === 0 && !gen)) openInstrPicker();
+                    if (S.shiftHeld || (route === 0 && !gen) || route === ROUTE_NONE) openInstrPicker();
                     else if (route === 0) S.pendingAction = { t: 'open', comp: 'synth' };
                     else if (route === 1) S.coRunRequest = S.bus ? S.bus.track : S.track;
                     /* route 2: nothing to enter, nothing happens */
