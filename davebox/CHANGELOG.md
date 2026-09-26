@@ -144,8 +144,8 @@ the section into a versioned heading at release time.
   drum overview MUTED / SOLOED now sits at the left of the second info row,
   with VEL on the right.
 - **The arp step editor's header reads cleanly.** On SEQ ARP and LIVE ARP's
-  step pitch page the SHIFT hint no longer covers the track and instrument
-  label.
+  step pitch page, Shift is named in the footer (**SHFT VELOCITY**, as on every
+  other screen) instead of in the header over the track and instrument label.
 - **Conductor C-WHEN fits its values.** Each track's Next/Now sits in its own
   box instead of running into its neighbours; drum tracks, which never respond,
   are left blank as on C-RESPONDER.

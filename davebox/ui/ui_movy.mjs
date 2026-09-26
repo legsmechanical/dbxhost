@@ -2435,7 +2435,12 @@ export function isBackHint(h) {
 
 /* `hints` = [key, action] pairs, MOST IMPORTANT FIRST. Returns how many were
  * drawn, so a caller can tell that it over-asked. */
+/* The last hint row drawn — its pills print through the 4x5 font, which a test
+ * cannot read off the screen. */
+let kitHintsLast = null;
+export function kitHintsForTest() { return kitHintsLast; }
 export function drawKitHintRow(y, hints) {
+    kitHintsLast = hints ? hints.filter(Boolean).map((h) => h.slice ? h.slice() : h) : null;
     if (!hints || !hints.length) return 0;
     const ty = (y == null ? MV_FOOTER_Y : y) + Math.floor((MV_FOOTER_H - FONT4_HEIGHT) / 2);
     const list = hints.filter(Boolean);

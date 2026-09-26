@@ -2017,22 +2017,14 @@ function drawUIBody() {
         } else {
             const _hName = _velPage ? 'Step Vel' : 'Step Pitch';
             drawBankHeading(_hName);
-            if (!_velPage) {
-                /* micro-font hint that Shift flips to the velocity page —
-                 * black on the filled header bar, in the GAP between the name
-                 * and the right label (T1[MV1]). Both ends are MEASURED, the
-                 * way drawKitBankHeader lays them out: a fixed x once drew it
-                 * straight over the right label. Dropped rather than crammed
-                 * when a long instrument name leaves no gap. */
-                const _rt  = String(bankHeaderRight()).toUpperCase();
-                const _rw  = _rt ? fontWidth4x5(_rt) + 4 : 0;
-                const _hx  = 128 - 2 - _rw - pf3Width('SHIFT');
-                const _gw  = kitBankGlyphWidth(bankHeaderGlyph(S.activeBank));
-                const _nEnd = 2 + (_gw ? _gw + 3 : 0) + fontWidth4x5(_hName.toUpperCase());
-                if (_hx >= _nEnd + 4) pf3Print(_hx, 2, 'SHIFT', 0);
-            }
         }
-        const _colW = 16, _barW = 10, _top = 14, _bot = 54, _numY = 57;
+        /* The Shift page is announced in the FOOTER, as every other screen's
+         * modifiers are (Josh, 2026-09-26: "instead of having the shift
+         * indicator on the header, we need to add a footer pill hint and adjust
+         * the rest of the screen accordingly"). The bars and step numbers sit
+         * above it. */
+        drawKitHintRow(MV_FOOTER_Y, _velPage ? [['BACK', 'OUT']] : [['SHFT', 'VELOCITY'], ['BACK', 'OUT']]);
+        const _colW = 16, _barW = 10, _top = 14, _bot = 45, _numY = 48;
         const _cy = Math.floor((_top + _bot) / 2);
         if (_velPage) fill_rect(0, _bot + 1, 128, 1, 1);   /* velocity baseline */
         else for (let x = 0; x < 128; x += 2) set_pixel(x, _cy, 1);
