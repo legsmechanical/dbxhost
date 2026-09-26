@@ -69,6 +69,16 @@ step('the step numbers and bars end above the footer', () => {
     /* Rows between the numbers and the footer band stay clear. */
     let ink = 0; for (let y = kit.MV_FOOTER_Y - 2; y < kit.MV_FOOTER_Y; y++) for (let x = 0; x < 128; x++) ink += plain[y * 128 + x];
     assert(ink === 0, 'something runs into the footer: ' + ink + ' px in the rows above it');
+    /* Step 5's number (column 5, x ~66..78) sits ABOVE the footer: drawn in the
+     * number row, and that stretch of the footer (between the SHFT and BACK
+     * pills) is empty. */
+    let above = 0, inFooter = 0;
+    for (let x = 66; x < 79; x++) {
+        for (let y = kit.MV_FOOTER_Y - 12; y < kit.MV_FOOTER_Y - 2; y++) above += plain[y * 128 + x];
+        for (let y = kit.MV_FOOTER_Y; y < 64; y++) inFooter += plain[y * 128 + x];
+    }
+    assert(above > 0, 'step 5 has no number above the footer');
+    assert(inFooter === 0, 'something is drawn in the footer between the pills: ' + inFooter + ' px');
 });
 step('Shift held: the velocity page, no SHFT pill', () => {
     S.shiftHeld = true;
