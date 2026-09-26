@@ -39,7 +39,9 @@ the section into a versioned heading at release time.
   that has a value and you land where that parameter is edited — its bank, its
   instrument's or effect's page (the right pad, on a per-pad parameter), SOUND
   + CONFIG for a level, MACROS for a MIDI target; turn the knob to change the
-  value on that step, let go to come back to the same row.
+  value on that step, let go to come back to the same row. The parameter's
+  cell is marked there, and while the step is held it is highlighted and shows
+  that step's value (shown only — the parameter does not jump to it).
 - **Clear a lane without losing it.** A lane's options on the AUTOMATION
   bank now end with **Clear** and **Delete**. Clear removes every value but
   keeps the lane and its settings (loop, rate, scale, mode), reading **EMPTY**

@@ -1234,7 +1234,10 @@ edited here:
   instrument's or effect's page (on a per-pad parameter, that pad), SOUND +
   CONFIG for a level, MACROS for a MIDI target. Turn its knob to change the
   value on that step, and let go to come back to this menu, on the same row
-  and page. On a bank the header shows **<AUTO S7** (step 7).
+  and page. On a bank the header shows **<AUTO S7** (step 7). Wherever you
+  land, the parameter's cell is marked with a small corner, and while the step
+  is held it is highlighted and shows the value the lane plays on that step —
+  only shown: the parameter itself does not move until you turn the knob.
 
 **Back** closes the menu and the step buttons show the clip again.
 
