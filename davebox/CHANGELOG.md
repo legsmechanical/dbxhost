@@ -61,6 +61,13 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **A new Conductor's pads are centred on "no shift".** Its bottom-row pads used
+  to drop every responding track by two octaves; the no-shift note now sits in the
+  middle of the grid, so the pads reach down as well as up.
+- **A track set to None opens its instrument list on a click.** The hint said
+  CLK EDIT, but only Shift + click did anything.
+- **One name for every note.** Middle C is C3 everywhere, as on Move — the step
+  editor, the drum note box and the browser's piano roll used to call it C4.
 - **Saving a mute snapshot saves the project.** A new snapshot used to wait in
   memory until something else changed, so it could be lost if you left before
   then. Deleting one already saved.
