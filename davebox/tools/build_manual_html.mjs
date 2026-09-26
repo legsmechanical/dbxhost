@@ -38,16 +38,34 @@ const PARTS = [
     { title: 'Reference', chapters: [19] },
 ];
 
-/* Hardware controls, drawn as keycaps where a bold run or a quick-reference cell names ONLY
- * controls ("Shift + Step 2", "Delete + jog click"). A bold run with any other word stays bold. */
-const CONTROL_RE = new RegExp('^(?:' + [
-    'Shift', 'Back', 'Play', 'Record', 'Rec', 'Loop', 'Capture', 'Sample', 'Mute', 'Delete', 'Copy',
-    'Undo', 'Redo', 'Note/Session', 'Menu', 'Metro', 'Step \\d+', 'Steps? \\d+[–-]\\d+', 'Step',
-    'jog(?: (?:click|turn|wheel))?', 'Jog(?: (?:click|turn|wheel))?', '(?:[Cc]lick|[Tt]urn) the jog(?: wheel)?',
-    '(?:bottom |top |lane |side |a |the )?pads?', '(?:top |bottom )?side button', 'Side buttons?',
-    '\\+ ?\\/ ?[−-]', '[+−-]', 'Left', 'Right', 'Up', 'Down', 'Left-Right', 'Up/Down', 'Volume knob',
-    '[Cc]lick', '[Tt]urn', 'K\\d', 'knob \\d', 'Knob \\d', 'Loop \\(hold\\)', 'Mute \\(hold\\)', 'tap', 'hold',
-].join('|') + ')$');
+/* Hardware BUTTONS are drawn as keycaps — the labelled ones on the panel, plus the step buttons,
+ * the jog and the Volume knob. One rule everywhere: inside a bold gesture and in a table's control
+ * column, each button name becomes a keycap and every other word stays plain text, so "Shift" looks
+ * the same alone as it does in "Shift + Step 2" or "Mute + touch knob 1–8".
+ * ⚠ The same words also name things that are NOT buttons: automation operations (Delete, Mute,
+ * Loop), menu rows (Delete, Copy), a CLIP knob (Shift). A bold run in a list of other bold names
+ * (a sentence or bullet that also bolds a non-button word) or in a knob table stays bold. */
+const BUTTON_WORDS = ['Note/Session', 'Shift', 'Back', 'Play', 'Record', 'Loop', 'Capture', 'Sample',
+    'Mute', 'Delete', 'Copy', 'Undo', 'Volume', 'Menu'];
+const BUTTON_RE = new RegExp('(^|[^\\w/])(' + [
+    'Note/Session', 'Steps? \\d+(?:\\s?[–-]\\s?\\d+)?', '[Jj]og(?: wheel)?', '\\+ ?/ ?[−-]', 'Left ?/ ?Right',
+    ...BUTTON_WORDS.filter((w) => w !== 'Note/Session'),
+].join('|') + ')(?![\\w/])', 'g');
+const LONE_SIGN = /^[+−]$/;
+const isButtonWord = (w) => { BUTTON_RE.lastIndex = 0; const m = BUTTON_RE.exec(' ' + w); return !!m && m[2].length === w.length; };
+
+/* Mark the buttons in an ESCAPED run of text; returns null when there are none. */
+function markButtons(escText) {
+    let hit = false;
+    const parts = escText.split(/(\s\+\s)/);
+    const out = parts.map((part, i) => {
+        if (i % 2) return ' <span class="kjoin">+</span> ';
+        if (LONE_SIGN.test(part.trim())) { hit = true; return `<kbd>${part.trim()}</kbd>`; }
+        BUTTON_RE.lastIndex = 0;
+        return part.replace(BUTTON_RE, (m, pre, w) => { hit = true; return `${pre}<kbd>${w}</kbd>`; });
+    }).join('');
+    return hit ? out : null;
+}
 
 /* ───────────────────────── markdown subset ───────────────────────── */
 
@@ -65,15 +83,7 @@ function slugify(text, used) {
     return s;
 }
 
-function keycaps(text) {
-    // "Shift + Step 2" → <kbd>Shift</kbd> + <kbd>Step 2</kbd>, only if every part is a control.
-    const parts = text.split(/\s+(\+|\/|·|or)\s+/);
-    const words = parts.filter((_, i) => i % 2 === 0).map((p) => p.trim());
-    if (!words.length || !words.every((w) => CONTROL_RE.test(w))) return null;
-    return parts.map((p, i) => (i % 2 ? ` <span class="kjoin">${esc(p)}</span> ` : `<kbd>${esc(p.trim())}</kbd>`)).join('');
-}
-
-function inline(src) {
+function inline(src, opts = { gestures: true }) {
     // Code spans first, stashed so nothing inside them is reinterpreted.
     const stash = [];
     const put = (html) => { stash.push(html); return `\u0000${stash.length - 1}\u0000`; };
@@ -87,8 +97,17 @@ function inline(src) {
             h = 'https://github.com/legsmechanical/dbxhost/blob/main/davebox/' + href;
         return `<a href="${escAttr(h)}"${ext || h !== href ? ' target="_blank" rel="noopener"' : ''}>${label}</a>`;
     });
-    s = s.replace(/\*\*([^*]+)\*\*/g, (_, b) => {
-        const k = keycaps(b.replace(/&amp;/g, '&'));
+    // A bold run beside other bold NAMES that aren't buttons is a list of names (operations, menu
+    // rows), not a gesture — those keep plain bold.
+    const bolds = [...s.matchAll(/\*\*([^*]+)\*\*/g)].map((m) => m[1]);
+    const nameList = bolds.filter((b) => !markButtons(b)).length >= 2;
+    s = s.replace(/\*\*([^*]+)\*\*/g, (m, b, at, whole) => {
+        // …and within such a block, a lone button word is a NAME only when it sits in the list itself:
+        // right beside another bold run, or after a comma ("…), **Loop** (its own loop length)").
+        const before = whole.slice(Math.max(0, at - 10), at), after = whole.slice(at + m.length, at + m.length + 10);
+        const inList = /(,|\/|\band)\s*$/.test(before) && /(\*\*|\))\s*(,|\/|\band)\s*$/.test(before)
+            || /^\s*(,|\/|and\b)\s*\*\*/.test(after);
+        const k = !opts.gestures || (nameList && isButtonWord(b) && inList) ? null : markButtons(b);
         return k ? `<span class="keys">${k}</span>` : `<strong>${b}</strong>`;
     });
     s = s.replace(/(^|[^\w*])\*([^*\s][^*]*?)\*(?!\w)/g, '$1<em>$2</em>');
@@ -197,9 +216,43 @@ function pngFromFb(fbBytes) {
 
 const normHeading = (t) => t.toLowerCase().replace(/^[\d.]+\s+/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
+/* ⭐ THE SCREENS THE MANUAL SHOWS — chosen one by one, not "everything the renderer makes".
+ * A screen earns a place only if it shows the reader something the text can't: a screen's layout
+ * the first time they meet it, or a picture (bars, a grid, a chooser strip, bracketed notes).
+ * Left out on purpose: confirm and warning dialogs, notices and pop-ups (they explain themselves),
+ * near-duplicates (a second overview with another bank name), and bank pages whose knobs the table
+ * beside them already lists (Josh, 2026-09-26: "give careful consideration to each screen shot used
+ * and ask whether it serves a clear purpose"). The renderer still draws them all, for audits. */
+const MANUAL_SCREENS = new Set([
+    'projects-other',          // the project picker
+    'menu-project-settings',   // the first list the reader meets
+    'track-melodic-playing',   // Track View
+    'bank-chord-slot',         // editing a held chord
+    'step-editor-melodic',     // the note editor
+    'capture-tempo',           // the tempo chooser and its take strip
+    'track-drum',              // the drum overview
+    'bank-cond-responder',     // which tracks follow
+    'bank-cond-octave',        // per-track octaves
+    'bank-clip',               // a bank page: eight knobs, eight cells
+    'bank-repeat-groove',      // the groove bars
+    'bank-automation',         // the list of what's automated
+    'session-overview',        // Session View
+    'session-mixer-volume',    // the session mixer
+    'perf-mode-mods',          // Performance Mode with mods engaged
+    'sound-card',              // the SOUND + CONFIG door
+    'track-config',            // the TRACK CONFIG menu
+    'instrument-picker',       // the Instmt/Dest picker
+    'block-editor',            // a module's own editor
+    'macros-card',             // the MACROS bank
+    'macros-multi',            // one knob, several targets
+    'snapmorph-slots',         // the order snapshots are picked in
+    'import-options',          // the import knobs and the part's picture
+]);
 let screens = [];
 if (SCREENS) {
-    screens = JSON.parse(readFileSync(resolve(SCREENS), 'utf8'));
+    screens = JSON.parse(readFileSync(resolve(SCREENS), 'utf8')).filter((s) => MANUAL_SCREENS.has(s.slug));
+    const missing = [...MANUAL_SCREENS].filter((slug) => !screens.some((s) => s.slug === slug));
+    if (missing.length) { console.error('[manual] the renderer no longer makes: ' + missing.join(', ')); process.exit(1); }
     for (const s of screens) s.src = pngFromFb(Buffer.from(s.fb, 'base64'));
 }
 const screensBySection = new Map();
@@ -216,14 +269,26 @@ function figureHtml(list) {
     return `<div class="figs${list.length > 1 ? ' multi' : ''}">${figs}</div>`;
 }
 
-/* A legacy <img src="img/x.png"> in the draft: embed the committed PNG, framed like the rest. */
-function legacyImgHtml(tag) {
+/* An <img> in the draft. Three kinds:
+ *  - an SVG diagram — inlined, so its currentColor strokes follow the page's theme;
+ *  - a browser screenshot (img/web-*.png) — framed as a photo;
+ *  - an old OLED screenshot — dropped: every OLED picture comes from the renderer, drawn by the
+ *    real UI, and a committed PNG is exactly the kind of copy that goes stale. */
+function draftImgHtml(tag) {
     const src = /src="([^"]+)"/.exec(tag)?.[1];
     const alt = /alt="([^"]*)"/.exec(tag)?.[1] || '';
     const path = src && resolve(dirname(SRC), src);
-    if (!path || !existsSync(path)) return '';
-    const data = 'data:image/png;base64,' + readFileSync(path).toString('base64');
-    return `<div class="figs"><figure class="oled legacy"><img src="${data}" alt="${escAttr(alt)}"><figcaption>${esc(alt)}</figcaption></figure></div>`;
+    if (!path || !existsSync(path)) { console.warn('[manual] missing image: ' + src); return ''; }
+    const cap = alt ? `<figcaption>${esc(alt)}</figcaption>` : '';
+    if (/\.svg$/i.test(src)) {
+        const svg = readFileSync(path, 'utf8').replace(/<\?xml[^>]*>\s*/, '').replace(/<svg\b/, `<svg role="img" aria-label="${escAttr(alt)}"`);
+        return `<div class="figs"><figure class="diagram">${svg}${cap}</figure></div>`;
+    }
+    if (/(^|\/)web-[^/]*\.png$/i.test(src)) {
+        const data = 'data:image/png;base64,' + readFileSync(path).toString('base64');
+        return `<div class="figs"><figure class="shot"><img src="${data}" alt="${escAttr(alt)}" loading="lazy">${cap}</figure></div>`;
+    }
+    return '';
 }
 
 /* ───────────────────────── render ───────────────────────── */
@@ -239,10 +304,12 @@ function renderList(b) {
 }
 
 function renderTable(b) {
-    const ctrlCols = b.head.map((h) => /^(control|gesture|press|step)$/i.test(h.replace(/\*/g, '')));
+    const head = b.head.map((h) => h.replace(/\*/g, ''));
+    const ctrlCols = head.map((h) => /^(control|gesture|press|step)\b/i.test(h));
+    const knobTable = head.some((h) => /^on screen$/i.test(h));   // a bank's knob table: bold names are parameters
     const cell = (c, j) => {
-        if (ctrlCols[j]) { const k = keycaps(c); if (k) return `<span class="keys">${k}</span>`; }
-        return inline(c);
+        if (ctrlCols[j]) { const k = markButtons(esc(c)); if (k) return `<span class="keys">${k}</span>`; }
+        return inline(c, { gestures: !knobTable });
     };
     return `<div class="tablewrap"><table><thead><tr>${b.head.map((h) => `<th>${inline(h)}</th>`).join('')}</tr></thead><tbody>` +
         b.rows.map((r) => `<tr>${r.map((c, j) => `<td>${cell(c, j)}</td>`).join('')}</tr>`).join('') + '</tbody></table></div>';
@@ -270,7 +337,7 @@ function renderBlocks(bs) {
         case 'table': return renderTable(b);
         case 'quote': return renderQuote(b);
         case 'code': return `<pre class="diagram">${esc(b.text)}</pre>`;
-        case 'img': return legacyImgHtml(b.html);
+        case 'img': return draftImgHtml(b.html);
         case 'hr': return '';
         case 'raw': return b.html.replace(/^<details>$/, '<details class="fold">');
         default: return '';
@@ -299,7 +366,6 @@ function renderChapterBody(ch) {
     let pending = screensBySection.get(normHeading(ch.title)) ? [...screensBySection.get(normHeading(ch.title))] : null;
     if (pending) pending.forEach((s) => placedScreens.add(s));
     let seenPara = false;
-    let sectionHasScreens = !!pending;  // the old committed PNGs step aside where real screens exist
     /* Up to two screens follow the section's opening paragraph; the rest close the section, after
      * the text they illustrate, rather than stacking up ahead of it. */
     let tail = [];
@@ -318,12 +384,9 @@ function renderChapterBody(ch) {
             html += `<h${lvl} id="${id}"><a class="anchor" href="#${id}" aria-hidden="true">#</a>${inline(b.text)}</h${lvl}>\n`;
             const hit = screensBySection.get(normHeading(b.text));
             if (hit) { pending = hit.filter((s) => !placedScreens.has(s)); pending.forEach((s) => placedScreens.add(s)); }
-            if (b.level <= 2) sectionHasScreens = !!hit;
-            else if (hit) sectionHasScreens = true;
             seenPara = false;
             continue;
         }
-        if (b.type === 'img' && sectionHasScreens) continue;
         html += renderBlocks([b]);
         if (!seenPara && (b.type === 'p' || b.type === 'table' || b.type === 'list')) { seenPara = true; flushPending(); }
     }

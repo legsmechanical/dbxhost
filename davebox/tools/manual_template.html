@@ -228,6 +228,11 @@ figure.oled { margin: 0; }
   image-rendering: pixelated; image-rendering: crisp-edges;
   filter: drop-shadow(0 0 1.5px rgba(200, 220, 255, .45));
 }
+figure.diagram { margin: 0; color: var(--ink); }
+figure.diagram svg { display: block; width: 100%; height: auto; max-width: 100%; }
+figure.shot { margin: 0; }
+figure.shot img { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--rule); box-shadow: var(--shadow); }
+figure.shot figcaption, figure.diagram figcaption { max-width: none; }
 figure.legacy img { border-radius: 10px; max-width: 26rem; width: 100%; image-rendering: pixelated; }
 figcaption { font-size: .88rem; line-height: 1.45; color: var(--muted); margin-top: .55rem; max-width: 26rem; }
 .figs.multi figcaption { max-width: none; }

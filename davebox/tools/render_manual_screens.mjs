@@ -514,7 +514,7 @@ function screen(slug, section, title, caption, setup, opts = {}) {
 
 /* 5 / 6 — Track View */
 screen('track-melodic-playing', '5. Track View', 'Track View — melodic track playing',
-    'Track 1 playing its clip: the header names the bank, the key and scale sit below it, and the bar at the foot shows the clip\'s two pages with the playhead.',
+    'The header names the bank; the bar along the foot shows the clip\'s pages and the playhead.',
     () => {});
 screen('track-melodic-chord-held', '6.1 Playing and placing notes', 'Track View — naming a held chord',
     'Holding three pads: the chord you are playing is named in brackets at the right of the key/scale row.',
@@ -533,7 +533,7 @@ screen('track-empty-clip', '5.1 Switching clips', 'Track View — an empty clip'
     'Track 4 on an empty clip: nothing on the steps, a single page in the bar.',
     () => { selectTrack(3); });
 screen('track-drum', '7. Drum Clips', 'Track View — drum track',
-    'A drum track: the header row names the lane bank and the selected pad\'s note, e.g. Pad: C1 (36).',
+    'The lane bank and the selected lane\'s note.',
     () => { selectTrack(1); });
 screen('track-conductor', '8. The Conductor', 'Track View — the Conductor',
     'The Conductor track (T8): its banks are headed C-, and its header names it [CNDT].',
@@ -541,12 +541,12 @@ screen('track-conductor', '8. The Conductor', 'Track View — the Conductor',
 
 /* 12 — Session View */
 screen('session-overview', '12. Arranging', 'Session View',
-    'Session View: the dAVEBOx banner, the mixer page the jog is on, and each track\'s playing clip letter under its number.',
+    'The mixer page the jog is on, and each track\'s playing clip.',
     () => { tap(MoveNoteSession); ticks(3); if (!S.sessionView) throw new Error('Note/Session did not switch view'); });
 
 /* 3.5 / 9 / 10 — the banks (melodic) */
 const MEL_BANKS = [
-    [0, 'bank-clip', '9.1 CLIP bank', 'CLIP bank', 'The CLIP bank on a melodic track: resolution, stretch, shift, legato, input quantize, direction and follow.'],
+    [0, 'bank-clip', '9.1 CLIP bank', 'CLIP bank', 'Each cell is the knob above it.'],
     [1, 'bank-notefx', '10.1 NOTE FX', 'NOTE FX bank', 'NOTE FX: octave, offset, velocity, quantize, length, gate and random.'],
     [2, 'bank-harmony', '10.2 HARMONY', 'HARMONY bank', 'HARMONY: an octave voice and three harmony intervals.'],
     [3, 'bank-delay', '10.3 DELAY', 'DELAY bank', 'DELAY: rate, level, repeats, velocity and pitch feedback, gate, retrigger and random.'],
@@ -590,7 +590,7 @@ screen('bank-step-idle', '6.3 Editing notes', 'STEP bank — no step held',
     'The STEP bank with nothing held: it asks you to hold a step.',
     () => { toBank(C.BANK_STEP); });
 screen('step-editor-melodic', '6.3 Editing notes', 'Editing a held note',
-    'Holding step 5 on the STEP bank: the note box on the left, then length, velocity, nudge and the per-step conditions.',
+    'Hold a step: the note, then length, velocity, nudge and the per-step conditions.',
     () => {
         toBank(C.BANK_STEP);
         ENGINE['t0_c0_step_20_iter'] = String((2) | (3 << 4));
@@ -659,8 +659,8 @@ screen('note-repeat-modes', '7.3 Note Repeat', 'Choosing the right-pad mode',
         press(MoveShift); noteOn(STEP(7), 127); noteOff(STEP(7)); release(MoveShift); ticks(2);
         if (!S.drumPerformMode[1]) throw new Error('Shift+Step 8 did not change the right-pad mode');
     }, { align: false });
-screen('bank-repeat-groove', 'RPT GROOVE', 'REPEAT GROOVE bank',
-    'REPEAT GROOVE: a velocity bar for each step of the lane\'s 8-step gate mask (a dotted bar is Thru — the pad\'s own velocity).',
+screen('bank-repeat-groove', 'RPT GROOVE', 'RPT GROOVE bank',
+    'A velocity per gate step; a dotted bar is Thru (the pad\'s own velocity).',
     () => {
         selectTrack(1);
         press(MoveShift); noteOn(STEP(7), 127); noteOff(STEP(7)); release(MoveShift);
@@ -681,8 +681,8 @@ screen('step-editor-drum', '7.1 Placing hits', 'Editing a held drum hit',
 const COND_BANKS = [
     [0, 'bank-cond-conduct', 'C-CONDUCT', 'The Conductor\'s own timing and direction, plus Cond Lock (CDLK) on knob 6.'],
     [1, 'bank-cond-notefx', 'C-NOTE FX', 'Shapes the Conductor\'s note before the shift: octave, offset and random.'],
-    [C.BANK_RESPONDER, 'bank-cond-responder', 'C-RESPONDER', 'An on/off cell per track — on means the track follows the Conductor.'],
-    [C.BANK_OCTAVE, 'bank-cond-octave', 'C-OCTAVE', 'A per-track octave added on top of the shift.'],
+    [C.BANK_RESPONDER, 'bank-cond-responder', 'C-RESPONDER', 'On = the track follows the Conductor.'],
+    [C.BANK_OCTAVE, 'bank-cond-octave', 'C-OCTAVE', 'An extra octave per track.'],
     [C.BANK_WHEN, 'bank-cond-when', 'C-WHEN', 'Per track: Next (at its next note) or Now (retriggered at once).'],
 ];
 for (const [b, slug, title, caption] of COND_BANKS)
@@ -718,7 +718,7 @@ const toSession = () => { tap(MoveNoteSession); ticks(3); if (!S.sessionView) th
 
 /* 12 — Session View: the mixer pages */
 screen('session-mixer-volume', '12.5 Volume', 'Session mixer — Volume',
-    'Clicking the jog in Session View opens the mixer page: a fader per track, the number under each.',
+    'A fader per track.',
     () => { toSession(); click(); ticks(2); if (!S.sessMixerLatched) throw new Error('click did not open the mixer'); });
 screen('session-mixer-touched', '12.5 Volume', 'Session mixer — turning a fader',
     'Turning a knob on the mixer page: the header names the track and its level, and the value replaces its number.',
@@ -758,7 +758,7 @@ screen('perf-mode', '13. Performance Mode', 'Performance Mode',
     'Loop tapped in Session View: Performance Mode, nothing engaged yet — the footer shows the Hold, Sync and Latch states.',
     () => { toSession(); tap(MoveLoop); ticks(2); if (!S.perfViewLocked) throw new Error('Loop tap did not lock Performance Mode'); });
 screen('perf-mode-mods', '13.2 The grid', 'Performance Mode — mods engaged',
-    'A capture length held and three mods latched: the screen lists what is engaged and the rate chip shows the loop length.',
+    'The engaged mods, and the loop length.',
     () => {
         toSession(); tap(MoveLoop); ticks(2);
         noteOn(PAD(2), 100);                        /* bottom row: a 1/8 capture length, held */
@@ -776,7 +776,7 @@ screen('capture-nothing', '6.5 Capture', 'Capture with nothing buffered',
     'Tapping Capture when nothing has been played says so.',
     () => { tap(MoveCapture); ticks(2); }, { align: false });
 screen('capture-tempo', '6.5 Capture', 'Capture — the tempo chooser',
-    'Capture in a stopped, empty set: the jog picks among the detected tempo and its neighbours, over your take drawn against the bars.',
+    'Turn the jog through the detected tempos; your take is drawn against the bars.',
     () => {
         stopTransport();
         for (let t = 0; t < 8; t++) for (let c = 0; c < 16; c++) {
@@ -871,7 +871,7 @@ function menuTo(label) {
     if (S.globalMenuState.selectedIndex !== idx) throw new Error('jog never reached ' + label);
 }
 screen('menu-project-settings', '3.6 Project Settings', 'Project Settings',
-    'Shift + Step 2 opens Project Settings: tempo and swing at the top, grouped with a line between each group.',
+    'Shift + Step 2. Every list in dAVEBOx looks like this.',
     () => { openSettings(); });
 screen('menu-clock', '15.3 Clock Follow', 'Project Settings — Clock Follow and Clock Out',
     'Scrolled to the clock rows: Clock Follow (Off or Move) and Clock Out.',
@@ -942,7 +942,7 @@ screen('projects-current', 'Projects — dAVEBOx has its own workspace', 'Projec
     'Shift + Step 1: the picker opens on the project you are in — marked Current, with Resume to go back to it.',
     () => { openProjects(); });
 screen('projects-other', 'Projects — dAVEBOx has its own workspace', 'Project picker — another project',
-    'Tap another project\'s pad: its name, then Load, Rename and Color.',
+    'The selected project and what you can do with it.',
     () => { openProjects(); noteOn(PAD(1), 100); noteOff(PAD(1)); ticks(2); });
 screen('projects-color', 'Projects — dAVEBOx has its own workspace', 'Project picker — Color',
     'Color lists the palette; the pad previews each colour as the jog moves.',
@@ -976,7 +976,7 @@ screen('bank-chord', '6.1 Playing and placing notes', 'CHORD bank',
     () => { for (let i = 0; i < 2; i++) { press(MoveShift); noteOn(STEP(7), 127); noteOff(STEP(7)); release(MoveShift); ticks(2); }
             click(); ticks(2); toBank(C.BANK_CHORD); });
 screen('bank-chord-slot', '6.1 Playing and placing notes', 'CHORD bank — editing a chord',
-    'Holding a chord pad on the CHORD bank: the page becomes that chord — root, stack, inversion, spread, bass, octave — titled with its name.',
+    'Hold a chord pad on the CHORD bank to edit that chord.',
     () => { for (let i = 0; i < 2; i++) { press(MoveShift); noteOn(STEP(7), 127); noteOff(STEP(7)); release(MoveShift); ticks(2); }
             click(); ticks(2); toBank(C.BANK_CHORD); noteOn(PAD(5), 100); ticks(4); });
 
@@ -1006,7 +1006,7 @@ function jogToLabel(label) {
     if (b.selectedIndex !== want) throw new Error('jog never reached ' + label);
 }
 screen('track-config', '14.2 The menu', 'TRACK CONFIG — a Schwung track',
-    'Shift + Note/Session on track 5: TRACK CONFIG, starting on the chain — the instrument, then MIDI FX and the effect blocks.',
+    'The track\'s chain first: instrument, MIDI FX, effects.',
     () => { selectTrack(4); openTrackConfig(); });
 screen('track-config-levels', '14.2 The menu', 'TRACK CONFIG — levels and presets',
     'Further down the same menu, below a line: the track\'s levels — Volume, Pan, Send A and Send B.',
@@ -1018,14 +1018,14 @@ screen('track-config-move', '14.2 The menu', 'TRACK CONFIG — a Move track',
     'On a track playing a Move instrument the chain row names it (Move 1); the rest of the menu is the Move bus\'s effects and levels.',
     () => { openTrackConfig(); });
 screen('instrument-picker', '14.3 Choosing an instrument', 'The Instmt/Dest picker',
-    'Shift + click on the Instmt/Dest row: one list — None, Move 1–4, Conductor, the Schwung instruments (the loaded one in brackets), MIDI channels and the tracks this one may follow.',
+    'Everything a track can play, in one list; the loaded one is in brackets.',
     () => {
         selectTrack(4); openTrackConfig();
         press(MoveShift); click(); release(MoveShift); ticks(4);
         if (!SND.soundEnumPickForTest()) throw new Error('Shift+click did not open the picker');
     });
 screen('block-editor', '14.4 Editing a module', 'Editing an instrument',
-    'Click on the Instmt/Dest row: the instrument\'s own editor — the knobs edit its parameters and the jog turns the pages.',
+    'The knobs edit its parameters; the jog turns the pages.',
     () => { selectTrack(4); openTrackConfig(); click(); ticks(8); });
 
 screen('fx-browser', '14.2 The menu', 'Adding an effect',
@@ -1034,10 +1034,10 @@ screen('fx-browser', '14.2 The menu', 'Adding an effect',
             if (SND.soundPickStateForTest().labels[SND.soundPickStateForTest().row] !== 'FX 2') throw new Error('not on FX 2');
             click(); ticks(6); });
 screen('sound-card', '14.1 Opening TRACK CONFIG', 'The SOUND + CONFIG card',
-    'On the SOUND + CONFIG bank (one past STEP) a knob touch peeks its card: the knobs are the track\'s levels — Volume touched here — and a click enters TRACK CONFIG.',
+    'The knobs are the track\'s levels; click to open TRACK CONFIG.',
     () => { selectTrack(4); toBank(C.BANK_SOUND, false); knobTouch(0); ticks(4); });
 screen('macros-card', '14.6 The MACROS bank', 'The MACROS bank',
-    'MACROS, one step past SOUND + CONFIG: eight knobs you assign yourself, each drawn with its target\'s own widget; K6 drives two parameters, so it shows its own position as MAC1.',
+    'Each knob shows its target; a knob driving several (MAC1) shows its own position.',
     () => { selectTrack(4); toBank(C.BANK_MACROS); ticks(8); });
 const openMacroList = () => {
     selectTrack(4); toBank(C.BANK_MACROS); ticks(8); click(); ticks(4);
@@ -1046,7 +1046,7 @@ screen('macros-list', '14.6 The MACROS bank', 'MACROS — the assignment list',
     'Clicking the jog on MACROS lists K1–K8 with each knob\'s mapping written compactly; an unassigned knob reads --.',
     () => { openMacroList(); });
 screen('macros-multi', 'One knob, several parameters', 'One knob, several targets',
-    'Clicking K6 in the list: everything that knob drives, each with its own Lo and Hi — here the reverb runs backwards (Hi below Lo).',
+    'Everything one knob drives, each with its own range.',
     () => { openMacroList(); for (let g = 0; g < 5; g++) { jog(1); ticks(1); } click(); ticks(4); });
 screen('macros-targets', '14.6 The MACROS bank', 'MACROS — choosing a target',
     'Clicking an unassigned knob goes straight to choosing: a block, a bank, Levels, MIDI — or SnapMorph, last.',
@@ -1078,7 +1078,7 @@ screen('import-parts', '16.4 Import a MIDI file', 'Import MIDI — pick a part',
     'A file with several parts: each with its note count and a miniature of its notes.',
     () => { stopTransport(); openImport(3); jogToLabel('Bach Invention 8.mid'); click(); ticks(4); });
 screen('import-options', '16.4 Import a MIDI file', 'Import MIDI — the knobs',
-    'The part on the knobs: K1 start bar, K2 bars, K3 grid, K4 destination, over the whole part with the imported bars bracketed.',
+    'The brackets mark what will land in the clip.',
     () => { stopTransport(); openImport(3); jogToLabel('Bach Invention 8.mid'); click(); ticks(4); click(); ticks(4); });
 screen('import-options-cut', '16.4 Import a MIDI file', 'Import MIDI — notes that will be cut',
     'Moving the start and length: the footer warns when notes would be cut.',
@@ -1086,7 +1086,7 @@ screen('import-options-cut', '16.4 Import a MIDI file', 'Import MIDI — notes t
             knobTouch(0); knobTurn(0, 12); knobRelease(0); knobTouch(1); knobTurn(1, -24); knobRelease(1); ticks(2); });
 
 screen('snapmorph-slots', '14.7 Sound snapshots & SnapMorph', 'SnapMorph — choosing snapshots',
-    'SnapMorph lists the track\'s saved snapshots; click them in the order the knob should travel — here Snapshot 4 is [1], the bottom of the turn, and Snapshot 1 is [2].',
+    'Click snapshots in the order the knob travels: [1] is the bottom of the turn.',
     () => { openMacroList(); for (let g = 0; g < 6; g++) { jog(1); ticks(1); } click(); ticks(4);
             for (let g = 0; g < 20; g++) { jog(1); ticks(1); } click(); ticks(4);
             jog(2); ticks(1); click(); ticks(2); jog(-2); ticks(1); click(); ticks(2); });
@@ -1099,7 +1099,7 @@ function withAutomation() {
     AUTO.automationNoteListChangedElsewhere();
 }
 screen('bank-automation', '11.2 The AUTOMATION bank', 'AUTOMATION bank',
-    'The AUTOMATION bank lists everything automated in the clip, each with its state — ON, OFF or SMTH — and the pads\' aftertouch last.',
+    'Everything automated in the clip, with its state.',
     () => { selectTrack(4); withAutomation(); ticks(8);
             toBank(C.BANK_AUTOMATION); ticks(8);});
 screen('automation-menu', '11.2 The AUTOMATION bank', 'AUTOMATION — the menu',
