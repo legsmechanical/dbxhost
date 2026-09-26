@@ -246,7 +246,7 @@ the section into a versioned heading at release time.
   Seq Arp — the order the notes pass through them), then Sound + Config. A
   track still starts on Clip, now in the middle of the walk.
 - **CLIP, DRUM LANE and ALL LANES have their own header icons** — a clip slot,
-  a drum, and a 3×3 grid — in the bank header and the bank map. ALL LANES now
+  a drum, and a 3×3 grid — in the bank header. ALL LANES now
   blinks its icon instead of the word ALL.
 - **The manual is easier to learn from.** The Quick Start is now inside the
   downloadable manual, and chapter 3 covers the basics every screen shares:

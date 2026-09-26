@@ -3066,6 +3066,10 @@ export function drawKitCrumbs(parts) {
  * before. The highlight starts at the row's own indent, so it never covers a
  * label. */
 export const MV_BANKNAV_ROW_H = 9, MV_BANKNAV_ROWS = 7;
+/* Names only, no bank glyphs (Josh, 2026-09-26: "do a build with no icons on
+ * the overlay"). The items still carry their glyph; true draws it again. */
+export const MV_BANKNAV_ICONS = false;
+const bankNavGlyphW = (g) => (MV_BANKNAV_ICONS ? kitBankGlyphWidth(g) + 3 : 0);
 export function drawKitBankNavColumn(items, cur) {
     if (!items || !items.length) return;
     const ROW = MV_BANKNAV_ROW_H, MID = (MV_BANKNAV_ROWS - 1) >> 1;
@@ -3074,7 +3078,7 @@ export function drawKitBankNavColumn(items, cur) {
     const lineX = 2 + lw + 3, GUT = lineX + 4;
     const x0Of = (it) => (it.cat ? GUT : 3);
     let w = 0;
-    for (const it of items) w = Math.max(w, x0Of(it) + kitBankGlyphWidth(it.glyph) + 3 + mvWidth(it.name));
+    for (const it of items) w = Math.max(w, x0Of(it) + bankNavGlyphW(it.glyph) + mvWidth(it.name));
     const PW = Math.min(SCREEN_W - 16, w + 4);
     drawKitBackdropDim(PW + 1, 0, SCREEN_W - PW - 1, 64);
     fill_rect(0, 0, PW, 64, 0);
@@ -3086,8 +3090,8 @@ export function drawKitBankNavColumn(items, cur) {
         const it = items[i], y = r * ROW + 1, on = r === MID, fg = on ? 0 : 1;
         const x0 = x0Of(it);
         if (on) { const hx = it.cat ? x0 - 2 : 0; fill_rect(hx, y - 1, PW - hx, ROW + 1, 1); }
-        drawKitBankGlyph(it.glyph, x0, y + 1, fg);
-        mvPrint(x0 + kitBankGlyphWidth(it.glyph) + 3, y + 1, it.name, fg);
+        if (MV_BANKNAV_ICONS) drawKitBankGlyph(it.glyph, x0, y + 1, fg);
+        mvPrint(x0 + bankNavGlyphW(it.glyph), y + 1, it.name, fg);
         if (it.cat) {
             const g = vis.length && vis[vis.length - 1].id === it.cat.id ? vis[vis.length - 1] : null;
             if (g) g.b = r; else vis.push({ id: it.cat.id, label: it.cat.label, a: r, b: r });
