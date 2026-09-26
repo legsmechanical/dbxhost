@@ -34,7 +34,7 @@ import { drawAutoMarkAt,
     kitUseLayout,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
     drawVFader, mvPrint, mvWidth, rectOutline, plotLine,
-    drawLevelCard,
+    drawLevelCard, drawKitBackdropDim, drawKitBankNavColumn,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
     drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y,
@@ -775,6 +775,16 @@ function _discreteOpts(knob) {
     return opts;
 }
 
+/* A numeric cell that would otherwise open the option list: while touched it
+ * turns into an arc (ui_movy drawCellWidget) and never opens the list. The arc
+ * reads the cell's position in its own range; `bip` centres it (a signed range
+ * such as -4..+4). The list stays on the cell for the knob-ring LEDs. */
+function withTouchArc(cell, bip) {
+    const n = cell.options ? cell.options.length : 0;
+    cell.touchArc = { norm: n > 1 ? Math.max(0, Math.min(1, (cell.sel | 0) / (n - 1))) : 0, bip: !!bip };
+    return cell;
+}
+
 function kitCellForKnob(knob, val) {
     if (!knob || !knob.abbrev) return { kind: 'blank', label: '' };
     const v = val | 0;
@@ -834,14 +844,14 @@ function kitCellForKnob(knob, val) {
         base.options = [];
         for (let i = knob.min; i <= knob.max; i++) base.options.push(_offDash(knob.fmt(i)));
         base.sel = v - knob.min;
-        return base;
+        return withTouchArc(base, false);
     }
     if (KIT_RATE_FMTS.indexOf(knob.fmt) >= 0) {
         base.kind = 'valsq'; base.text = _offDash(text);
         base.options = [];
         for (let i = knob.min; i <= knob.max; i++) base.options.push(_offDash(knob.fmt(i)));
         base.sel = v - knob.min;
-        return base;
+        return withTouchArc(base, false);
     }
     if (KIT_ENUM_FMTS.indexOf(knob.fmt) >= 0) {
         base.kind = 'enumsq';
@@ -862,7 +872,7 @@ function kitCellForKnob(knob, val) {
         if (knob.max <= 24) {
             base.kind = 'valsq'; base.text = _offDash(text);
             base.options = _discreteOpts(knob); base.sel = v - knob.min;
-            return base;
+            return withTouchArc(base, true);
         }
         base.kind = 'arcbip';
         const halfR = Math.max(1, Math.max(knob.max, -knob.min));
@@ -872,12 +882,12 @@ function kitCellForKnob(knob, val) {
     if (knob.fmt === fmtPlain && knob.max <= 16) {   /* counts (Repts) */
         base.kind = 'valsq'; base.text = _offDash(text);
         base.options = _discreteOpts(knob); base.sel = v - knob.min;
-        return base;
+        return withTouchArc(base, false);
     }
     if (knob.fmt === fmtPitchRnd) {                  /* Pitch Random 0..24 ("OFF" at 0) */
         base.kind = 'valsq'; base.text = _offDash(text);
         base.options = _discreteOpts(knob); base.sel = v - knob.min;
-        return base;
+        return withTouchArc(base, false);
     }
     base.kind = 'arc';
     base.norm = Math.max(0, Math.min(1, (v - knob.min) / ((knob.max - knob.min) || 1)));
@@ -972,6 +982,9 @@ export function drawNoticeCard(lines, highlight = -1) {
     if (!n) return;
     const h = n * CARD_LINE_H + CARD_PAD * 2 - 1;
     const y = Math.max(0, Math.floor((64 - h) / 2));
+    /* Over a DIMMED screen, like every picker (Josh, 2026-09-26): the card is
+     * opaque, what it interrupts stays visible but knocked back. */
+    drawKitBackdropDim();
     fill_rect(CARD_X, y, CARD_W, h, 0);
     draw_rect(CARD_X, y, CARD_W, h, 1);
     /* Every line CENTRED in the box, horizontally as well as vertically (Josh,
@@ -1446,6 +1459,33 @@ function drawTrackVolCard() {
  * control an enum param opens, over whatever screen is underneath. An OVERLAY
  * rather than a screen, like the volume card — the gesture is a hold, and what
  * it is browsing away from should stay visible behind it. */
+/* The bank navigation overlay while the jog walks (S.bankNavKind, armed by the
+ * walk in ui_input_cc, cleared by the jog's touch release in ui.js). Drawn only
+ * while the jog is touched, so it can never outlive the hand on it. The long
+ * SOUND + CONFIG is shortened here, and only here (Josh: "abbreviation is
+ * fine") — it would otherwise take most of the screen. */
+const BANKNAV_SHORT = { 'SOUND + CONFIG': 'SOUND+CFG' };
+export function bankNavItems() {
+    if (S.bankNavKind === 'session') {
+        return { items: SESS_KNOB_MODES.map((m) => ({ name: m.label, glyph: 'audio' })),
+                 cur: S.sessKnobMode | 0 };
+    }
+    const mode = S.trackPadMode[S.activeTrack];
+    const cyc = bankCycleForMode(mode, S.activeTrack);
+    return {
+        items: cyc.map((b) => {
+            const n = bankDisplayName(mode, b);
+            return { name: BANKNAV_SHORT[n] || n, glyph: bankHeaderGlyph(b) };
+        }),
+        cur: Math.max(0, cyc.indexOf(S.activeBank)),
+    };
+}
+function drawBankNav() {
+    if (!S.bankNavKind || !S.jogTouched) return;
+    const nav = bankNavItems();
+    drawKitBankNavColumn(nav.items, nav.cur);
+}
+
 function drawBankPicker() {
     if (S.bankPickerSel < 0) return;
     const cyc = bankCycleForMode(S.trackPadMode[S.activeTrack]);
@@ -1490,6 +1530,7 @@ export function drawUI() {
     drawBankLatchBox();
     drawTrackVolCard();
     drawBankPicker();
+    drawBankNav();
     /* THE NOTICE CARD, above everything (Josh, 2026-09-05: "the confirmation
      * overlays pop up wherever you are when you save/recall, same for session
      * view"): a card notice is drawn here, last, whatever screen the body
@@ -1532,7 +1573,8 @@ export function heldStepCells() {
                   norm: (S.stepEditRand === 0 ? 100 : S.stepEditRand) / 100 },
                 { kind: 'valsq', label: 'Ratch', name: 'Ratchet',
                   text: S.stepEditRatch <= 1 ? '--' : String(S.stepEditRatch),
-                  options: ['--', '2', '3', '4'], sel: S.stepEditRatch <= 1 ? 0 : S.stepEditRatch - 1 },
+                  options: ['--', '2', '3', '4'], sel: S.stepEditRatch <= 1 ? 0 : S.stepEditRatch - 1,
+                  touchArc: { norm: S.stepEditRatch <= 1 ? 0 : (S.stepEditRatch - 1) / 3, bip: false } },
                 { kind: 'blank', label: '' },
             ];
     }
@@ -1568,7 +1610,8 @@ export function heldStepCells() {
           norm: (S.stepEditRand === 0 ? 100 : S.stepEditRand) / 100 },
         { kind: 'valsq', label: 'Ratch', name: 'Ratchet',
           text: S.stepEditRatch <= 1 ? '--' : String(S.stepEditRatch),
-          options: ['--', '2', '3', '4'], sel: S.stepEditRatch <= 1 ? 0 : S.stepEditRatch - 1 },
+          options: ['--', '2', '3', '4'], sel: S.stepEditRatch <= 1 ? 0 : S.stepEditRatch - 1,
+                  touchArc: { norm: S.stepEditRatch <= 1 ? 0 : (S.stepEditRatch - 1) / 3, bip: false } },
     ];
 }
 /* ⭐ Held or not, the rings read the cells the PAGE draws — one source, so the
@@ -2103,9 +2146,9 @@ function drawUIBody() {
             const _dlRev = S.drumLanePlaybackAudioReverse[t][lane] | 0;
             const _dlDir = S.drumLanePlaybackDir[t][lane] | 0;
             const cells = [
-                { kind: 'frac', label: S.altMode ? 'Zoom' : 'Res',
+                withTouchArc({ kind: 'frac', label: S.altMode ? 'Zoom' : 'Res',
                   name: S.altMode ? 'Zoom' : 'Resolution', text: fmtRes(tpsIdx),
-                  options: [0,1,2,3,4,5].map(fmtRes), sel: tpsIdx },
+                  options: [0,1,2,3,4,5].map(fmtRes), sel: tpsIdx }),
                 { kind: 'valsq', label: 'Strch', name: 'Beat Stretch',
                   text: fmtStretch(S.bankParams[t][0][1]) },
                 { kind: 'valsq', label: S.altMode ? 'Nudge' : 'Shift',
@@ -2142,8 +2185,8 @@ function drawUIBody() {
             const _inq = S.drumInpQuant[t] | 0;
             const cells = [
                 rv < 0 ? { kind: 'frac', label: 'Res', name: 'Resolution', text: '--' }
-                       : { kind: 'frac', label: 'Res', name: 'Resolution', text: fmtRes(rv),
-                           options: [0,1,2,3,4,5].map(fmtRes), sel: rv },
+                       : withTouchArc({ kind: 'frac', label: 'Res', name: 'Resolution', text: fmtRes(rv),
+                           options: [0,1,2,3,4,5].map(fmtRes), sel: rv }),
                 { kind: 'valsq', label: 'Strch', name: 'Beat Stretch',
                   text: fmtStretch(S.bankParams[t][7][1]) },
                 { kind: 'valsq', label: S.altMode ? 'Nudge' : 'Shift',
@@ -2154,8 +2197,8 @@ function drawUIBody() {
                             text: fmtPct(qv), norm: Math.min(1, qv / 100) },
                 { kind: 'valsq', label: 'VelIn', name: 'Velocity Input',
                   text: fmtVelOverride(S.trackVelOverride[t]) },
-                { kind: 'frac', label: 'InQnt', name: 'Input Quantize',
-                  text: _offDash(DIQ_LABELS[_inq]), options: DIQ_LABELS.map(_offDash), sel: _inq },
+                withTouchArc({ kind: 'frac', label: 'InQnt', name: 'Input Quantize',
+                  text: _offDash(DIQ_LABELS[_inq]), options: DIQ_LABELS.map(_offDash), sel: _inq }),
                 dv < 0 ? { kind: 'valsq', label: S.altMode ? 'Revrs' : 'Dir',
                            name: S.altMode ? 'Reverse Style' : 'Playback Dir', text: '--' }
                        : (S.altMode
@@ -2190,8 +2233,8 @@ function drawUIBody() {
               signed: Math.max(-1, Math.min(1, (vals[1] | 0) / 127)) },
             { kind: 'arc', label: 'Quant', name: 'Quantize', text: fmtPct(vals[2]),
               norm: Math.max(0, Math.min(1, (vals[2] | 0) / 100)) },
-            { kind: 'valsq', label: 'Len>', name: 'Note Length', text: fmtLen(_lenMode),
-              options: LEN_OPTS, sel: _lenMode },
+            withTouchArc({ kind: 'valsq', label: 'Len>', name: 'Note Length', text: fmtLen(_lenMode),
+              options: LEN_OPTS, sel: _lenMode }),
             { kind: 'arc', label: '>Gate', name: 'Gate Time', text: fmtPct(vals[0]),
               norm: Math.max(0, Math.min(1, (vals[0] | 0) / 400)) },
             { kind: 'blank', label: '' },
@@ -2333,8 +2376,8 @@ function drawUIBody() {
         const _focusIdx = _fcs.findIndex(f => f.hi);
         const cells = [
             _fcs[0].cell, _fcs[1].cell, _fcs[2].cell, _fcs[3].cell,
-            { kind: 'frac', label: 'Gate', name: 'Gate', text: _offDash(fmtGateMod(vals[4])),
-              options: [0,1,2,3,4,5,6,7,8,9,10].map(fmtGateMod).map(_offDash), sel: vals[4] | 0 },
+            withTouchArc({ kind: 'frac', label: 'Gate', name: 'Gate', text: _offDash(fmtGateMod(vals[4])),
+              options: [0,1,2,3,4,5,6,7,8,9,10].map(fmtGateMod).map(_offDash), sel: vals[4] | 0 }),
             { kind: 'arcbip', label: 'ClkFb', name: 'Clock Feedback', text: fmtSign(vals[5]),
               signed: Math.max(-1, Math.min(1, (vals[5] | 0) / 127)) },
             toggleCell('Retrg', 'Retrig', vals[6], fmtBool(1), fmtBool(0)),

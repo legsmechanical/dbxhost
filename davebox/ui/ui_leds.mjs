@@ -429,6 +429,19 @@ export function updateStepLEDs() {
         }
     }
 
+    /* STEP RECORD tie: while the pads are held, the entry's tail shows in the
+     * held step's span colour, growing with each '>' (Josh, 2026-09-26: "the TIE
+     * gesture should show the note tail like it shows when holding a note step
+     * as you're creating the tie"). A tie of N steps writes a gate that sounds
+     * on exactly N steps (_srGateFor), so the span is S.stepRecChordLen. The
+     * cursor sits one past the tail and keeps its blink. */
+    if (S.stepRecActive && S.stepRecHeld.size > 0 && S.stepRecWroteStep >= 0) {
+        for (let i = 0; i < 16; i++) {
+            const offset = base + i - S.stepRecWroteStep;
+            if (offset >= 0 && offset < S.stepRecChordLen) setLED(16 + i, 56);
+        }
+    }
+
     /* Gate overlay: K3 (Dur) touched while in step edit — visualize gate length on step buttons. */
     if (S.heldStep >= 0 && S.knobTouched === 2 && S.heldStepNotes.length > 0) {
         const _acTps = S.clipTPS[S.activeTrack][effectiveClip(S.activeTrack)] || 24;

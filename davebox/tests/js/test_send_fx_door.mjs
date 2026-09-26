@@ -41,6 +41,7 @@ globalThis.shadow_get_params = () => ''; globalThis.shadow_set_params = () => tr
 globalThis.host_vol_block = () => {}; globalThis.host_edit_cc_block = () => {};
 globalThis.clear_screen = () => {}; globalThis.print = () => {};
 globalThis.fill_rect = () => {}; globalThis.draw_rect = () => {};
+globalThis.stipple_rect = () => {};
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
 globalThis.set_pixel = () => {}; globalThis.move_midi_internal_send = () => true;
 globalThis.move_midi_external_send = () => {}; globalThis.set_led = () => {};
