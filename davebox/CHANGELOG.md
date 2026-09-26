@@ -57,6 +57,9 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **The SnapMorph snapshot list lines up.** Snapshot names start at the same
+  place whether or not they carry a pick number, and a track with no
+  snapshots says NO SNAPSHOTS instead of a clipped line.
 - **A Conductor's NOTE FX bank is headed C-NOTE FX,** like its other banks.
 - **The AUTOMATION list stays above its hints.** It shows four rows and
   scrolls, instead of a fifth row running into the footer.

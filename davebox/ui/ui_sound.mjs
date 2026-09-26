@@ -4074,11 +4074,16 @@ function knobParamList(target) {
          * and morphs once two are in. Pick ORDER is the morph's path. */
         const leg = morphLegBeingEdited();
         const chosen = leg ? leg.snaps : [];
+        /* The pick order rides as the row's `mark`, in the list's gutter —
+         * not as a "[1] " prefix with space-padded siblings, which never lines
+         * up in a proportional font. No slots = an EMPTY list, so the list's
+         * own centred empty state says so (renderKnobParam), as every other
+         * empty list does; a click on nothing commits nothing. */
         for (const n of morphSnapshotSlots(S.track)) {
             const at = chosen.indexOf(n);
-            params.push({ key: 'snap:' + n, label: (at >= 0 ? '[' + (at + 1) + '] ' : '    ') + 'Snapshot ' + (n + 1) });
+            params.push({ key: 'snap:' + n, label: 'Snapshot ' + (n + 1),
+                          mark: at >= 0 ? '[' + (at + 1) + ']' : '' });
         }
-        if (!params.length) params.push({ key: '', label: '(no track snapshots)' });
         return params;
     }
     if (target.indexOf('bank:') === 0) {
@@ -5369,7 +5374,8 @@ function renderKnobTarget() {
 function renderKnobParam() {
     /* One step deeper in the same chain — so the root is still the KNOBS screen
      * and the TARGET picker beneath is a sliver, not a redraw. */
-    renderInChain(S.knobParams.map(p => p.label), S.knobParamIdx, 'NO PARAMS');
+    renderInChain(S.knobParams.map(p => (p.mark != null ? { label: p.label, mark: p.mark } : p.label)),
+                  S.knobParamIdx, S.knobTarget === MORPH_TARGET ? 'NO SNAPSHOTS' : 'NO PARAMS');
 }
 
 /* ---- MACROS: the bank of eight assignable parameters (spec §2) ----------

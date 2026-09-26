@@ -3310,9 +3310,10 @@ export function hudCard(title, valueText) {
  * on overflow, and the normative edit grammar: an editing row's value renders
  * in [brackets] (UI_LANGUAGE §6) — not a '*' marker.
  *
- * rows: strings, or { label, value?, qual?, chevron? ('>'), editing?, hdr? }.
+ * rows: strings, or { label, value?, qual?, mark?, chevron? ('>'), editing?, hdr? }.
  *   `hdr` prints the label in the header font (caps chrome rows).
  *   `qual` is a small qualifier drawn just after the label — see the row loop.
+ *   `mark` is a short tag in a left GUTTER before the label — see markGutter.
  * sel: selected index. opts: { x=0, w=SCREEN_W, topY=11, rowH=10, visible
  *   (derived), emptyMsg, start, labelInset=3, rightInset }.
  *   `start` pins the first visible row — for a page with nothing selected
@@ -3374,6 +3375,33 @@ export function drawKitList(rows, sel, opts) {
     const rightEdge = boxX + boxW - (o.rightInset != null ? o.rightInset : (hasScroll ? 5 : 3));   /* value right-align x */
     const fillW = hasScroll ? boxW - 4 : boxW;
     const labelX = boxX + (o.labelInset != null ? o.labelInset : 3);
+    /* ⭑ `mark`: a short tag BEFORE the label (the SnapMorph list's pick order,
+     * "[1]"), in a gutter as wide as the widest mark in the WHOLE list, so
+     * every name starts at the same x whether its row is marked or not. A row
+     * with `mark: ''` is unmarked but still aligned.
+     * ⚠ Why a gutter and not a prefix in the label: the label fonts are
+     * proportional, so neither padding with spaces nor "[1] " vs "[2] " lines
+     * the names up — both were a pixel or two out on the device. Measured in
+     * the row's own label font, over every row (not just the visible window),
+     * so the names do not shift as the list scrolls. */
+    const _rowObj = (r) => (typeof r === 'string') ? { label: r } : (r || {});
+    const _labelFontWidth = (row, t) => {
+        const small = row.labelFont === 'small';
+        if (o.hostLabels !== false && !small) return text_width(t);
+        return (row.hdr && !small) ? hdrWidth(t) : mvWidth(t);
+    };
+    const _markText = (row) => {
+        const m = String(row.mark);
+        const host = o.hostLabels !== false && row.labelFont !== 'small';
+        return (host && o.mixedCase !== false) ? m : m.toUpperCase();
+    };
+    let markGutter = 0;
+    for (let i = 0; i < n; i++) {
+        const row = _rowObj(rows[i]);
+        if (row.mark == null) continue;
+        const m = _markText(row);
+        markGutter = Math.max(markGutter, (m ? _labelFontWidth(row, m) : 0) + _labelFontWidth(row, ' '));
+    }
     for (let i = 0; i < visible; i++) {
         const idx = start + i;
         if (idx >= n) break;
@@ -3480,7 +3508,14 @@ export function drawKitList(rows, sel, opts) {
         const qw = qual ? mvWidth(qual) + QUAL_GAP : 0;
         /* `indent` (px): a row that belongs to the one above it — the FX
          * browser's Move up / Move down under the loaded module. */
-        const lx = labelX + (row.indent > 0 ? row.indent | 0 : 0);
+        const mx = labelX + (row.indent > 0 ? row.indent | 0 : 0);
+        if (row.mark != null && row.mark !== '') {
+            const m = _markText(row);
+            if (_hostLabel) print(mx, y + 1, m, ink);
+            else if (row.hdr && !_smallRow) hdrPrint(mx, y, m, ink);
+            else mvPrint(mx, y + 1, m, ink);
+        }
+        const lx = mx + markGutter;
         const availW = rightEdge - lx - (vw ? vw + 4 : 0) - qw;
         let labelEnd = 3;
         if (_hostLabel) {
