@@ -57,6 +57,9 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **Copy + step on a drum track copies the step you're looking at.** Past the
+  first page it copied, pasted onto and cut from the matching step on page 1
+  instead.
 - **SOUND + CONFIG and MACROS behave like every other bank.** A track on them stays
   there through suspend, track switches and Back; opening the Sound menu by a
   shortcut no longer moves the bank (Back from it returns to where you were, never
