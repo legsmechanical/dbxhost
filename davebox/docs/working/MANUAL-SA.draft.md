@@ -135,8 +135,9 @@ track sequences them:
 ## Nothing to set up
 
 Every dAVEBOx project is created ready to play: tracks 1–4 play Move's four
-instruments, and tracks 5–8 each have their own Schwung chain — pick an instrument
-for one in its [TRACK CONFIG](#143-choosing-an-instrument) menu. A new project gets
+instruments, and tracks 5–8 each have their own Schwung chain. Those chains start
+empty — a track stays silent until you pick an instrument for it in its
+[TRACK CONFIG](#143-choosing-an-instrument) menu. A new project gets
 a random stock drum kit, bass and two polyphonic sounds on Move's four tracks, like
 a new Move set. You can point any track somewhere else later — see
 [Choosing an instrument](#143-choosing-an-instrument).
@@ -385,7 +386,9 @@ everywhere**, the project picker included.
 
 Because dAVEBOx **is** the session here, Quit and Shift + Back do not drop you into
 a Schwung menu — they restart Move on your official install. Suspend is the one
-that keeps dAVEBOx alive in the background.
+that keeps dAVEBOx alive in the background. To come back, hold **Shift** and hold
+**Step 13** for half a second (or press Shift + Step 13 twice quickly); picking
+**dAVEBOx** in the Tools menu resumes it too, with everything as you left it.
 
 ---
 
