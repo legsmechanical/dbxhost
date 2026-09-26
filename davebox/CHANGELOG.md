@@ -215,6 +215,12 @@ the section into a versioned heading at release time.
   already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
+- **The manual is easier to learn from.** The Quick Start is now inside the
+  downloadable manual, and chapter 3 covers the basics every screen shares:
+  reading the screen, how menus work, and choosing a track's sound. New pad
+  diagrams show the melodic, Chord, drum and Session layouts; the chapters run in
+  learning order (the Conductor moved after Arranging), and one table compares
+  every kind of preset and snapshot.
 - **The track's menu is TRACK CONFIG.** The menu you open from the SOUND +
   CONFIG card (or with Shift + Note/Session) is titled TRACK CONFIG, with no
   icon in its header. The card's door reads CLICK TO ENTER / TRACK 3 CONFIG.

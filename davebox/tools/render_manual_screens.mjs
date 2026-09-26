@@ -513,8 +513,8 @@ function screen(slug, section, title, caption, setup, opts = {}) {
 }
 
 /* 5 / 6 — Track View */
-screen('track-melodic-playing', '5. Track View', 'Track View — melodic track playing',
-    'The header names the bank; the bar along the foot shows the clip\'s pages and the playhead.',
+screen('track-melodic-playing', '3.4 Reading the screen', 'Track View — melodic track playing',
+    'The Track View overview: the bank and the instrument, the key, each track\'s clip, the page bar and what the controls do.',
     () => {});
 screen('track-melodic-chord-held', '6.1 Playing and placing notes', 'Track View — naming a held chord',
     'Holding three pads: the chord you are playing is named in brackets at the right of the key/scale row.',
@@ -535,40 +535,40 @@ screen('track-empty-clip', '5.1 Switching clips', 'Track View — an empty clip'
 screen('track-drum', '7. Drum Clips', 'Track View — drum track',
     'The lane bank and the selected lane\'s note.',
     () => { selectTrack(1); });
-screen('track-conductor', '8. The Conductor', 'Track View — the Conductor',
+screen('track-conductor', '12. The Conductor', 'Track View — the Conductor',
     'The Conductor track (T8): its banks are headed C-, and its header names it [CNDT].',
     () => { selectTrack(7); });
 
 /* 12 — Session View */
-screen('session-overview', '12. Arranging', 'Session View',
+screen('session-overview', '11. Arranging', 'Session View',
     'The mixer page the jog is on, and each track\'s playing clip.',
     () => { tap(MoveNoteSession); ticks(3); if (!S.sessionView) throw new Error('Note/Session did not switch view'); });
 
 /* 3.5 / 9 / 10 — the banks (melodic) */
 const MEL_BANKS = [
-    [0, 'bank-clip', '9.1 CLIP bank', 'CLIP bank', 'Each cell is the knob above it.'],
-    [1, 'bank-notefx', '10.1 NOTE FX', 'NOTE FX bank', 'NOTE FX: octave, offset, velocity, quantize, length, gate and random.'],
-    [2, 'bank-harmony', '10.2 HARMONY', 'HARMONY bank', 'HARMONY: an octave voice and three harmony intervals.'],
-    [3, 'bank-delay', '10.3 DELAY', 'DELAY bank', 'DELAY: rate, level, repeats, velocity and pitch feedback, gate, retrigger and random.'],
-    [4, 'bank-seqarp', '10.4 SEQ ARP', 'SEQ ARP bank', 'SEQ ARP: style, rate, octave, gate, steps mode, retrigger and sync.'],
+    [0, 'bank-clip', '8.1 CLIP bank', 'CLIP bank', 'Each cell is the knob above it.'],
+    [1, 'bank-notefx', '9.1 NOTE FX', 'NOTE FX bank', 'NOTE FX: octave, offset, velocity, quantize, length, gate and random.'],
+    [2, 'bank-harmony', '9.2 HARMONY', 'HARMONY bank', 'HARMONY: an octave voice and three harmony intervals.'],
+    [3, 'bank-delay', '9.3 DELAY', 'DELAY bank', 'DELAY: rate, level, repeats, velocity and pitch feedback, gate, retrigger and random.'],
+    [4, 'bank-seqarp', '9.4 SEQ ARP', 'SEQ ARP bank', 'SEQ ARP: style, rate, octave, gate, steps mode, retrigger and sync.'],
     [5, 'bank-livearp', 'LIVE ARP', 'LIVE ARP bank', 'LIVE ARP: the SEQ ARP controls plus Latch, for what you play live.'],
 ];
 for (const [b, slug, section, title, caption] of MEL_BANKS)
     screen(slug, section, title, caption, () => { toBank(b); });
 
-screen('bank-overview-walk', '3.5 Parameter banks', 'Walking the banks from the overview',
+screen('bank-overview-walk', '3.6 Parameter banks', 'Walking the banks from the overview',
     'Turning the jog on the track overview moves through the banks underneath it — the header names the bank (here DELAY) and nothing opens.',
     () => { toBank(3, false); });
-screen('bank-clip-alt', '9.1 CLIP bank', 'CLIP bank — alternate parameters',
+screen('bank-clip-alt', '8.1 CLIP bank', 'CLIP bank — alternate parameters',
     'Clicking the jog on the CLIP bank swaps in the alternates: Zoom, Nudge and Reverse Style.',
     () => { toBank(0); click(); ticks(2); if (!S.altMode) throw new Error('click did not enter alt'); });
-screen('bank-knob-touched', '3.5 Parameter banks', 'Touching a knob',
+screen('bank-knob-touched', '3.6 Parameter banks', 'Touching a knob',
     'Touching knob 1 on NOTE FX: the header spells out the parameter it controls.',
     () => { toBank(1); knobTouch(0); ticks(2); });
-screen('bank-value-popup', '3.5 Parameter banks', 'Turning a list parameter',
+screen('bank-value-popup', '3.6 Parameter banks', 'Turning a list parameter',
     'Turning SEQ ARP\'s Style knob opens its list over the page; the highlight follows the knob (here moved from Off to Down).',
     () => { toBank(4); knobTouch(0); knobTurn(0, 20); ticks(2); });
-screen('bank-seqarp-steps', '10.4 SEQ ARP', 'SEQ ARP — per-step pitch editor',
+screen('bank-seqarp-steps', '9.4 SEQ ARP', 'SEQ ARP — per-step pitch editor',
     'Clicking the jog on SEQ ARP opens the per-step editor: knobs 1–8 set each step\'s pitch offset.',
     () => {
         toBank(4);
@@ -579,7 +579,7 @@ screen('bank-seqarp-steps', '10.4 SEQ ARP', 'SEQ ARP — per-step pitch editor',
         knobTouch(4); knobTurn(4, -3); knobRelease(4);
         ticks(2);
     });
-screen('bank-seqarp-steps-vel', '10.4 SEQ ARP', 'SEQ ARP — per-step velocity',
+screen('bank-seqarp-steps-vel', '9.4 SEQ ARP', 'SEQ ARP — per-step velocity',
     'Holding Shift in the per-step editor shows each step\'s velocity instead (Thru passes the played velocity).',
     () => {
         toBank(4); click(); ticks(2);
@@ -607,7 +607,7 @@ screen('step-editor-reveal', '6.3 Editing notes', 'Revealing the held step from 
         jog(1); ticks(2);
         if (!S.stepReveal) throw new Error('jog right did not reveal');
     });
-screen('step-editor-chord', '6.2 Chords', 'A held step holding a chord',
+screen('step-editor-chord', '6.2 Several notes on one step', 'A held step holding a chord',
     'A step with three notes: the note box names the lowest and counts the rest (+2).',
     () => {
         selectTrack(2);
@@ -640,16 +640,16 @@ screen('notice-undo', '6.7 Undo', 'Undo feedback',
 
 /* 7 — drum banks */
 const DRUM_BANKS = [
-    [0, 'bank-drumlane', '9.2 DRUM LANE bank', 'DRUM LANE bank', 'The selected lane\'s grid: resolution, stretch, shift, legato, euclid, direction and follow.'],
-    [1, 'bank-drum-notefx', '10.1 NOTE FX', 'NOTE FX on a drum track', 'On a drum track knobs 1 and 2 set the lane\'s MIDI note; knobs 3–6 shape that lane.'],
-    [3, 'bank-drum-delay', '10.3 DELAY', 'DELAY on a drum track', 'DELAY on a drum track: knobs 5–7 become gate, clock feedback and retrigger.'],
+    [0, 'bank-drumlane', '8.2 DRUM LANE bank', 'DRUM LANE bank', 'The selected lane\'s grid: resolution, stretch, shift, legato, euclid, direction and follow.'],
+    [1, 'bank-drum-notefx', '9.1 NOTE FX', 'NOTE FX on a drum track', 'On a drum track knobs 1 and 2 set the lane\'s MIDI note; knobs 3–6 shape that lane.'],
+    [3, 'bank-drum-delay', '9.3 DELAY', 'DELAY on a drum track', 'DELAY on a drum track: knobs 5–7 become gate, clock feedback and retrigger.'],
 ];
 for (const [b, slug, section, title, caption] of DRUM_BANKS)
     screen(slug, section, title, caption, () => { selectTrack(1); toBank(b); });
-screen('bank-allanes-confirm', '9.3 ALL LANES bank', 'ALL LANES — confirm',
+screen('bank-allanes-confirm', '8.3 ALL LANES bank', 'ALL LANES — confirm',
     'ALL LANES opens on a confirm, because its knobs rewrite every lane; click the jog to proceed.',
     () => { selectTrack(1); toBank(7); });
-screen('bank-allanes', '9.3 ALL LANES bank', 'ALL LANES bank',
+screen('bank-allanes', '8.3 ALL LANES bank', 'ALL LANES bank',
     'Confirmed: one setting for all 32 lanes — resolution, stretch, shift, quantize, velocity input, input quantize, direction and repeat sync.',
     () => { selectTrack(1); toBank(7); click(); ticks(2); if (!S.allLanesConfirmed) throw new Error('not confirmed'); });
 screen('note-repeat-modes', '7.3 Note Repeat', 'Choosing the right-pad mode',
@@ -686,7 +686,7 @@ const COND_BANKS = [
     [C.BANK_WHEN, 'bank-cond-when', 'C-WHEN', 'Per track: Next (at its next note) or Now (retriggered at once).'],
 ];
 for (const [b, slug, title, caption] of COND_BANKS)
-    screen(slug, '8.3 The Conductor\'s banks', title + ' bank', caption, () => {
+    screen(slug, '12.3 The Conductor\'s banks', title + ' bank', caption, () => {
         selectTrack(7);
         if (b === C.BANK_OCTAVE) { S.condOct[0][0] = 1; S.condOct[0][3] = -1; S.condOct[0][5] = 2; }
         if (b === C.BANK_RESPONDER) { S.condResp[0][2] = 0; }
@@ -717,16 +717,16 @@ function stopTransport() {
 const toSession = () => { tap(MoveNoteSession); ticks(3); if (!S.sessionView) throw new Error('no session view'); };
 
 /* 12 — Session View: the mixer pages */
-screen('session-mixer-volume', '12.5 Volume', 'Session mixer — Volume',
+screen('session-mixer-volume', '11.5 Volume', 'Session mixer — Volume',
     'A fader per track.',
     () => { toSession(); click(); ticks(2); if (!S.sessMixerLatched) throw new Error('click did not open the mixer'); });
-screen('session-mixer-touched', '12.5 Volume', 'Session mixer — turning a fader',
+screen('session-mixer-touched', '11.5 Volume', 'Session mixer — turning a fader',
     'Turning a knob on the mixer page: the header names the track and its level, and the value replaces its number.',
     () => { toSession(); click(); ticks(2); knobTouch(2); knobTurn(2, -3); ticks(2); });
-screen('session-mixer-pan', '3.5 Parameter banks', 'Session mixer — Pan',
+screen('session-mixer-pan', '3.6 Parameter banks', 'Session mixer — Pan',
     'One jog step on: the Pan page, a bipolar dial per track.',
     () => { toSession(); jog(1); ticks(2); click(); ticks(2); if (S.sessKnobMode !== 1) throw new Error('not on Pan: ' + S.sessKnobMode); });
-screen('session-mixer-senda', '3.5 Parameter banks', 'Session mixer — Send A',
+screen('session-mixer-senda', '3.6 Parameter banks', 'Session mixer — Send A',
     'The Send A page: how much of each track feeds the first send bus.',
     () => { toSession(); jog(2); ticks(2); click(); ticks(2); });
 screen('session-fx-door', '14.8 Master FX and the sends', 'Session mixer — Master & Send FX door',
@@ -734,7 +734,7 @@ screen('session-fx-door', '14.8 Master FX and the sends', 'Session mixer — Mas
     () => { toSession(); jog(4); ticks(2); click(); ticks(2); });
 
 /* 12.3 — mute & solo, seen on the track row */
-screen('session-muted', '12.3 Mute & solo', 'A muted track',
+screen('session-muted', '11.3 Mute & solo', 'A muted track',
     'Track 3 muted (in Session View, hold Mute and touch knob 3): its number blinks in the track row — caught here on the off beat.',
     () => {
         toSession();
@@ -745,7 +745,7 @@ screen('session-muted', '12.3 Mute & solo', 'A muted track',
         /* the blink's OFF half, so the mute shows */
         for (let g = 0; g < 60 && Math.floor(S.clockMs / 220) % 2 === 0; g++) ticks(1);
     }, { align: false });
-screen('session-soloed', '12.3 Mute & solo', 'A soloed track',
+screen('session-soloed', '11.3 Mute & solo', 'A soloed track',
     'Track 5 soloed (in Session View, hold Shift + Mute and touch knob 5): its number shows filled in.',
     () => {
         toSession();
@@ -870,7 +870,7 @@ function menuTo(label) {
         { jog(S.globalMenuState.selectedIndex < idx ? 1 : -1); ticks(1); }
     if (S.globalMenuState.selectedIndex !== idx) throw new Error('jog never reached ' + label);
 }
-screen('menu-project-settings', '3.6 Project Settings', 'Project Settings',
+screen('menu-project-settings', '3.7 Menus & Project Settings', 'Project Settings',
     'Shift + Step 2. Every list in dAVEBOx looks like this.',
     () => { openSettings(); });
 screen('menu-clock', '15.3 Clock Follow', 'Project Settings — Clock Follow and Clock Out',
@@ -922,13 +922,13 @@ screen('export-conductor', '16.3 Export to Live', 'Export — Apply Conductor?',
     () => { stopTransport(); openSettings(); menuTo('Export to Ableton'); click(); ticks(4);
             jog(-1); ticks(1); click(); ticks(2);
             if (!S.confirmExportCondPhase) throw new Error('no Apply Conductor step'); });
-screen('quit-confirm', '3.7 Saving, suspending & exiting', 'Quit',
+screen('quit-confirm', '3.9 Saving, suspending & exiting', 'Quit',
     'Project Settings → Quit: save and leave the session.',
     () => { openSettings(); menuTo('Quit'); click(); ticks(2); if (S.confirmExit !== 'quit') throw new Error('no quit confirm'); });
-screen('suspend-confirm', '3.7 Saving, suspending & exiting', 'Suspend session',
+screen('suspend-confirm', '3.9 Saving, suspending & exiting', 'Suspend session',
     'Project Settings → Suspend session: park dAVEBOx in the background.',
     () => { openSettings(); menuTo('Suspend session'); click(); ticks(2); if (S.confirmExit !== 'suspend') throw new Error('no suspend confirm'); });
-screen('exiting', '3.7 Saving, suspending & exiting', 'Exiting',
+screen('exiting', '3.9 Saving, suspending & exiting', 'Exiting',
     'The last frame before the device is handed back.',
     () => { openSettings(); menuTo('Quit'); click(); ticks(2); jog(-1); ticks(1); click(); ticks(12);
             if (!S.exitFarewell) throw new Error('no farewell screen'); });
@@ -938,26 +938,26 @@ const openProjects = () => {
     press(MoveShift); noteOn(STEP(0), 127); noteOff(STEP(0)); release(MoveShift); ticks(2);
     if (!S.projectPadPicker) throw new Error('Shift + Step 1 did not open the project picker');
 };
-screen('projects-current', 'Projects — dAVEBOx has its own workspace', 'Project picker — the open project',
+screen('projects-current', '17.5 Projects', 'Project picker — the open project',
     'Shift + Step 1: the picker opens on the project you are in — marked Current, with Resume to go back to it.',
     () => { openProjects(); });
-screen('projects-other', 'Projects — dAVEBOx has its own workspace', 'Project picker — another project',
+screen('projects-other', 'Open dAVEBOx', 'Project picker — another project',
     'The selected project and what you can do with it.',
     () => { openProjects(); noteOn(PAD(1), 100); noteOff(PAD(1)); ticks(2); });
-screen('projects-color', 'Projects — dAVEBOx has its own workspace', 'Project picker — Color',
+screen('projects-color', '17.5 Projects', 'Project picker — Color',
     'Color lists the palette; the pad previews each colour as the jog moves.',
     () => { openProjects(); noteOn(PAD(1), 100); noteOff(PAD(1)); ticks(2);
             for (let g = 0; g < 3; g++) { jog(1); ticks(1); } click(); ticks(2); jog(2); ticks(2);
             if (!S.projectPadPicker.colorPick) throw new Error('Color did not open'); });
-screen('projects-new', 'Projects — dAVEBOx has its own workspace', 'Project picker — a new project',
+screen('projects-new', '17.5 Projects', 'Project picker — a new project',
     'Tapping an empty pad asks before creating a project there.',
     () => { openProjects(); noteOn(PAD(9), 100); noteOff(PAD(9)); ticks(2);
             if (!S.projectPadPicker.confirmNew) throw new Error('no new-project confirm'); });
-screen('projects-delete', 'Projects — dAVEBOx has its own workspace', 'Project picker — delete',
+screen('projects-delete', '17.5 Projects', 'Project picker — delete',
     'Hold Delete and tap a project: tap it again to confirm.',
     () => { openProjects(); press(MoveDelete); noteOn(PAD(2), 100); noteOff(PAD(2)); ticks(2);
             if (S.projectPadPicker.deleteIdx !== 2) throw new Error('delete not armed'); });
-screen('projects-copy', 'Projects — dAVEBOx has its own workspace', 'Project picker — copy',
+screen('projects-copy', '17.5 Projects', 'Project picker — copy',
     'Hold Copy and tap a project, then tap an empty pad to copy it there.',
     () => { openProjects(); press(MoveCopy); noteOn(PAD(2), 100); noteOff(PAD(2)); ticks(2);
             if (S.projectPadPicker.copySrcIdx !== 2) throw new Error('copy not armed'); });
@@ -975,7 +975,7 @@ screen('bank-chord', '6.1 Playing and placing notes', 'CHORD bank',
     'On a Chord-layout track the CHORD bank follows LIVE ARP: voicing, smoothing, bass, strum and slot mode.',
     () => { for (let i = 0; i < 2; i++) { press(MoveShift); noteOn(STEP(7), 127); noteOff(STEP(7)); release(MoveShift); ticks(2); }
             click(); ticks(2); toBank(C.BANK_CHORD); });
-screen('bank-chord-slot', '6.1 Playing and placing notes', 'CHORD bank — editing a chord',
+screen('bank-chord-slot', 'The Chord layout', 'CHORD bank — editing a chord',
     'Hold a chord pad on the CHORD bank to edit that chord.',
     () => { for (let i = 0; i < 2; i++) { press(MoveShift); noteOn(STEP(7), 127); noteOff(STEP(7)); release(MoveShift); ticks(2); }
             click(); ticks(2); toBank(C.BANK_CHORD); noteOn(PAD(5), 100); ticks(4); });
@@ -1018,11 +1018,12 @@ screen('track-config-move', '14.2 The menu', 'TRACK CONFIG — a Move track',
     'On a track playing a Move instrument the chain row names it (Move 1); the rest of the menu is the Move bus\'s effects and levels.',
     () => { openTrackConfig(); });
 screen('instrument-picker', '14.3 Choosing an instrument', 'The Instmt/Dest picker',
-    'Everything a track can play, in one list; the loaded one is in brackets.',
+    'The top of the picker: the list filter, None, then Move\'s instruments — one another track already plays shows that track and is stepped over. The Conductor, Schwung instruments, MIDI channels and other tracks follow.',
     () => {
         selectTrack(4); openTrackConfig();
         press(MoveShift); click(); release(MoveShift); ticks(4);
         if (!SND.soundEnumPickForTest()) throw new Error('Shift+click did not open the picker');
+        jog(-12); ticks(2);   /* the top of the list: its first groups */
     });
 screen('block-editor', '14.4 Editing a module', 'Editing an instrument',
     'The knobs edit its parameters; the jog turns the pages.',
@@ -1098,14 +1099,14 @@ function withAutomation() {
     ENGINE.t4_c0_at_has = '1'; S.clipAtHas[4][0] = true;
     AUTO.automationNoteListChangedElsewhere();
 }
-screen('bank-automation', '11.2 The AUTOMATION bank', 'AUTOMATION bank',
+screen('bank-automation', '10.2 The AUTOMATION bank', 'AUTOMATION bank',
     'Everything automated in the clip, with its state.',
     () => { selectTrack(4); withAutomation(); ticks(8);
             toBank(C.BANK_AUTOMATION); ticks(8);});
-screen('automation-menu', '11.2 The AUTOMATION bank', 'AUTOMATION — the menu',
+screen('automation-menu', '10.2 The AUTOMATION bank', 'AUTOMATION — the menu',
     'Click the jog for the menu; turn to a row and click for its operations.',
     () => { selectTrack(4); withAutomation(); ticks(8); toBank(C.BANK_AUTOMATION); ticks(8); click(); ticks(4); jog(1); ticks(2); });
-screen('automation-ops', '11.2 The AUTOMATION bank', 'AUTOMATION — a parameter\'s operations',
+screen('automation-ops', '10.2 The AUTOMATION bank', 'AUTOMATION — a parameter\'s operations',
     'A row\'s operations: Delete, Mute, Mode, Smooth, Wrap, Link, Loop and Rate.',
     () => { selectTrack(4); withAutomation(); ticks(8); toBank(C.BANK_AUTOMATION); ticks(8); click(); ticks(4); jog(1); ticks(2); click(); ticks(4); });
 
@@ -1118,7 +1119,7 @@ screen('snapshot-layer-session', '14.7 Sound snapshots & SnapMorph', 'The device
     () => { toSession(); press(MoveCapture); ticks(90); if (!S.devSnap || !S.devSnap.open) throw new Error('no snapshot layer'); });
 
 /* 12.5 — Shift + Volume */
-screen('track-volume-card', '12.5 Volume', 'Shift + Volume',
+screen('track-volume-card', '11.5 Volume', 'Shift + Volume',
     'Shift + Volume adjusts the active track\'s level from anywhere; a card shows it over the current screen.',
     () => { press(MoveShift); cc(79, 127); cc(79, 127); ticks(2); }, { align: false });
 
@@ -1129,7 +1130,7 @@ screen('drum-lane-muted', '7.4 Copying, clearing & muting lanes', 'A muted drum 
             if (!(S.drumLaneMute[1] & 1)) throw new Error('lane 1 not muted'); });
 
 /* 4.1 / 8.1 — type changes */
-screen('conductor-exists', '8.1 Creating one', 'Only one Conductor',
+screen('conductor-exists', '12.1 Creating one', 'Only one Conductor',
     'Choosing Conductor for a second track: the set already has one, so the info dialog says so.',
     () => { stopTransport(); selectTrack(3); openTrackConfig(); press(MoveShift); click(); release(MoveShift); ticks(4);
             const p = SND.soundEnumPickForTest(); const want = p.options.indexOf('Conductor');
@@ -1145,18 +1146,18 @@ screen('convert-drums', '4.2 Changing type', 'Changing Keys to Drums',
             if (!S.confirmConvertToDrum) throw new Error('no convert confirm'); });
 
 /* 12.4 — mute snapshots */
-screen('mute-snapshot-saved', '12.4 Mute snapshots', 'Saving a mute snapshot',
+screen('mute-snapshot-saved', '11.4 Mute snapshots', 'Saving a mute snapshot',
     'In Session View, hold Mute and press Shift + a step button: the current mute/solo state is saved to that slot.',
     () => { toSession(); press(MoveMute); press(MoveShift); noteOn(STEP(2), 127); noteOff(STEP(2)); ticks(2); }, { align: false });
 
 /* 9 — Delete + jog click on MACROS asks first */
-screen('macros-clear-confirm', '9. Clip Timing & Grid', 'Clearing all macros',
+screen('macros-clear-confirm', '8. Clip Timing & Grid', 'Clearing all macros',
     'Delete + jog click on MACROS unassigns all eight knobs — it asks first.',
     () => { selectTrack(4); toBank(C.BANK_MACROS); ticks(8); press(MoveDelete); click(); ticks(2);
             if (!S.confirmMacroClear) throw new Error('no macro clear confirm'); });
 
 /* 16.5 — a set from an older dAVEBOx */
-screen('state-mismatch', '17.5 Projects & compatibility', 'A set from another version',
+screen('state-mismatch', '17.5 Projects', 'A set from another version',
     'Opening a project saved by a different dAVEBOx version: No (the default) leaves it untouched, Yes erases it and starts clean.',
     () => { ENGINE.state_version_mismatch = '1'; globalThis.init(); ticks(2);
             if (!S.confirmStateWipe) throw new Error('the load decision did not ask'); });

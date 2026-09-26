@@ -35,7 +35,7 @@ Settings; dAVEBOx warns you if it is off.
    project you last had open is already selected.)
 
 You can come back to the picker at any time with **Shift + Step 1**. More in the
-manual's [Projects](MANUAL-SA.md#projects--davebox-has-its-own-workspace) section.
+manual's [Projects](MANUAL-SA.md#175-projects) section.
 
 ---
 
@@ -112,21 +112,22 @@ your clips hold notes, it asks whether to move them too. See
 
 ---
 
-## Lesson 3 — Shape the sound with effects
+## Lesson 3 — Shape the notes with sequencer effects
 
-Every clip carries its own effects, reached through the parameter banks.
+Every clip carries its own **sequencer effects** — they work on the notes, not the
+sound — reached through the parameter banks.
 
 1. Make sure you're on your melodic track (track 3) in Track View.
 2. **Turn the jog wheel** to cycle the banks. Watch the screen header and stop on
    **DELAY**.
-3. Turn **K3** (*REPTS*) up to **3** — each note now echoes three times.
-4. Turn **K5** (*PITFB*) to **+5** — the echoes climb in pitch as they repeat.
+3. Turn **knob 3** (*REPTS*) up to **3** — each note now echoes three times.
+4. Turn **knob 5** (*PITFB*) to **+5** — the echoes climb in pitch as they repeat.
 
-These settings belong to *this clip only*. Effects are non-destructive: they
+These settings belong to *this clip only*. They're non-destructive: they
 transform playback without changing your written notes, so returning a knob to its
 default undoes it cleanly. Explore the other banks (NOTE FX, HARMONY, SEQ ARP) the
 same way — turn the jog, turn the knobs. The
-[Effects](MANUAL-SA.md#10-effects) chapter covers every one.
+[Sequencer Effects](MANUAL-SA.md#9-sequencer-effects) chapter covers every one.
 
 ---
 
@@ -143,14 +144,14 @@ a row of clips across all tracks is a **scene**.
 3. **Tap track 3's row-1 clip** to launch it again, then its row-2 clip — track 3
    swaps patterns while the drums keep going. Launching one clip only replaces
    what was playing *on that track*.
-4. To switch a whole row at once, tap a **scene launcher** (the buttons left of
+4. To switch a whole row at once, tap a **side button** (the buttons left of
    the grid, top one = row 1) or a **step button** (step 1 = row 1, step 2 =
    row 2…). Launch row 2: the drums stop, because their row-2 cell is empty.
    Launch row 1 and everything comes back.
 
 Launching a *single* clip changes only its track. Launching a *scene* switches
 every track at once — an empty cell in that row silences its track. More in
-[Arranging](MANUAL-SA.md#12-arranging) and [Scenes](MANUAL-SA.md#122-scenes).
+[Arranging](MANUAL-SA.md#11-arranging) and [Scenes](MANUAL-SA.md#112-scenes).
 
 ---
 
@@ -199,9 +200,9 @@ keeps up to 16 timestamped snapshots per project. See
 
 You now know enough to make complete patterns. When you're ready for more:
 
-- **Choosing sounds** — give tracks 5–8 a Schwung instrument, add effects, and
-  set levels from each track's TRACK CONFIG menu:
-  [Sound & Track Config](MANUAL-SA.md#14-sound--track-config).
+- **Choosing sounds** — give tracks 5–8 a Schwung instrument, add audio effects,
+  and set levels from each track's TRACK CONFIG menu:
+  [Choosing a track's sound](MANUAL-SA.md#38-choosing-a-tracks-sound).
 - **Editing notes precisely** — hold a step and turn the jog right for its note
   settings (length, velocity, nudge, probability, ratchets):
   [Editing notes](MANUAL-SA.md#63-editing-notes).
@@ -210,9 +211,9 @@ You now know enough to make complete patterns. When you're ready for more:
 - **Recording live** — press **Record** to capture pad playing into a clip:
   [Recording](MANUAL-SA.md#64-recording).
 - **Automation** — record knob moves that play back with the clip:
-  [Automation](MANUAL-SA.md#11-automation).
+  [Automation](MANUAL-SA.md#10-automation).
 - **The Conductor** — a track that transposes all the others in real time:
-  [The Conductor](MANUAL-SA.md#8-the-conductor).
+  [The Conductor](MANUAL-SA.md#12-the-conductor).
 - **Exporting to Ableton Live** — **Project Settings → Export to Ableton** renders
   the whole project to an `.ablbundle`: [Export to Live](MANUAL-SA.md#163-export-to-live).
 
