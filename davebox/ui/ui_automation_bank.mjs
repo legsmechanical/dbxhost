@@ -102,8 +102,12 @@ export function autoBankRows(track, clip) {
 function rowValue(r, track, clip) {
     if (r.kind === 'at') return 'PADS';
     if (!r.active) return 'OFF';
-    if (!r.count) return 'EMPTY';                 /* cleared and kept: nothing in it yet */
     const cy = rowCycle(track, clip, r.target);
+    /* Cleared and kept: nothing in it yet — but it keeps its LENGTH, which is
+     * what the next recording or step input lands on (Josh, 2026-09-26: "can
+     * we have empty lanes still have a length? that way you can clear
+     * automation make a really long or short lane and start recording"). */
+    if (!r.count) return cy ? 'EMPTY ' + cy.text : 'EMPTY';
     return cy ? cy.text : 'ON';
 }
 function loopText(steps) { return steps > 0 ? (steps + ' ST') : 'CLIP'; }

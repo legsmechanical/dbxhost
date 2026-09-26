@@ -134,8 +134,10 @@ Every new project is ready to play:
 
 - **Tracks 1–4** play Move's four instruments, loaded with a random stock drum kit,
   bass and two polyphonic sounds, like a new Move set.
-- **Tracks 5–8** each have an empty Schwung chain, silent until you pick an
-  instrument in the track's [TRACK CONFIG](#143-choosing-an-instrument) menu.
+- **Tracks 5–8** each have an empty Schwung chain, ready for a Schwung module and
+  silent until you pick one in the track's
+  [TRACK CONFIG](#143-choosing-an-instrument) menu. Until then the header and
+  TRACK CONFIG show **--** for their instrument.
 - You can point any track somewhere else later — see
   [Choosing an instrument](#143-choosing-an-instrument).
 
@@ -604,8 +606,8 @@ blinks white — the cursor, starting at the first step of the page you're viewi
 - **Play a pad** (or several together for a chord): the notes land on the cursor
   step, and the cursor moves on when you let go.
 - **> with pads held** ties the note a step longer, each press extending it;
-  **< with pads held** takes one step back off. The steps the note covers light
-  up as you go, as they do when you hold a step.
+  **< with pads held** takes one step back off. The steps the note is held over
+  light in the tail colour as you go, as they do when you hold a step.
 - **> alone** is a rest: the cursor moves on, writing nothing.
 - **<** steps back and **erases what you entered there this session**. Notes
   already in the clip stay.
@@ -1125,7 +1127,7 @@ do nothing; the jog does everything.
 - Each row shows its **cycle**, the length it repeats over: **4 BAR**, **13 ST**
   (steps, when it isn't whole bars; **13 ST/32** when its steps aren't sixteenths),
   or **CLIP** when it follows the clip. A muted row reads **OFF**, a cleared one
-  **EMPTY**, and the pads' aftertouch **PADS**.
+  **EMPTY** and its length, and the pads' aftertouch **PADS**.
 - With nothing automated the bank reads *NO AUTOMATION*.
 
 **Click the jog** for the menu. With the cursor on a row, the step buttons, pages and
@@ -1141,9 +1143,10 @@ screen show **that row's lane**, not the clip's notes:
   bank, its module's page (on a per-pad parameter, that pad), SOUND + CONFIG for a
   level, MACROS for a MIDI target. Turn its knob to change the value on that step;
   let go to come back, on the same row and page. On a bank the header shows
-  **<AUTO S7** (step 7). The parameter's cell is marked with a small corner, and
-  while the step is held it shows the value the lane plays there — shown only, the
-  parameter doesn't move until you turn the knob.
+  **<AUTO S7** (step 7). The parameter's cell is highlighted, and while the step
+  is held it shows the value the lane plays there — shown only, the parameter
+  doesn't move until you turn the knob. A module's page keeps its graphics (filter
+  curve, envelope) while you're there.
 - **Shift + click** a row to jump to where that parameter is edited; **Back**
   returns you to this menu, on the same row. The step buttons keep showing the lane
   there, so you can hold a step and turn the knob to set it.
@@ -1168,8 +1171,10 @@ screen show **that row's lane**, not the clip's notes:
 - **Rate** — /16 to ×16, the loop stretching to match.
 - **Scale** — 0–200 %: how far the lane moves (toward zero, or on a centred
   parameter like pan or pitch bend, toward and away from its centre).
-- **Clear** — every value goes, but the lane stays with its settings (it reads
-  **EMPTY**, ready for new values).
+- **Clear** — every value goes, but the lane stays with its settings, its length
+  included (it reads **EMPTY** and its length, e.g. **EMPTY 4 BAR**, ready for new
+  values). On a drum track, set Loop on the empty lane and new recording or step
+  input lands at that length.
 - **Delete** — the lane goes altogether.
 
 The last row is **Clear all**; **Delete + click** on the card does the same. Every

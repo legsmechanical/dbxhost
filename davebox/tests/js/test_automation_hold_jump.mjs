@@ -200,6 +200,7 @@ step('⭐ the lane\'s knob is MARKED and HIGHLIGHTED and shows the value the lan
     assert(kc && kc.cells[1] && kc.cells[1].lock, 'the Level cell carries no lock mark: ' + JSON.stringify(kc));
     assert(kc.touched === 1, 'the Level cell is not highlighted (touched ' + (kc && kc.touched) + ')');
     assert(!kc.cells.some((c, i) => i !== 1 && c && c.lock), 'another cell is marked');
+    assert(kc.cells[1].lit && !kc.cells.some((c, i) => i !== 1 && c && c.lit), 'the Level cell is not the highlighted one: ' + JSON.stringify(kc));
     const f = bank.autoLaneFocus();
     assert(f && f.step === 6 && f.wire != null, 'no focus value for step 7: ' + JSON.stringify(f));
     assert(String(kc.cells[1].text).indexOf(String(LEVEL_AT7)) >= 0, 'the cell shows ' + kc.cells[1].text + ', not the lane\'s ' + LEVEL_AT7 + ' at step 7');

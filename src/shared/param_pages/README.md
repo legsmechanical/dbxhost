@@ -65,7 +65,9 @@ renderPage(ctx, {
     page: pages[pageIndex], metaIndex, values,      // values: { key: rawValue }
     title: "T1 > OB-XD", pageIndex, pageCount: pages.length,
     touched,          // physical knob 0-7 being held, or -1
-    decorations,      // per-slot { value, locked } — how a sequencer shows p-locks
+    decorations,      // per-slot { value, locked, highlight } — how a sequencer shows p-locks.
+                      //   `locked` draws a corner and stands module graphics down (a picture
+                      //   could hide it); `highlight` draws the cell as held and keeps them
     layout,           // LAYOUT_DIAL (default) | LAYOUT_BAR
     revealValues,     // dial layout: swap every label for its value while a
                       //   modifier is held — eight glances, not eight touches

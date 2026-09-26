@@ -5328,12 +5328,11 @@ function renderInChain(rows, sel, emptyMsg, opts) {
      *
      * ⚠ The track-view path is untouched — same function, different arrival.
      *
-     * The Buses errand has depth of its own (a bus, its voices, its chain):
-     * every screen under it stays a full screen, or the second level would
-     * float over the Sound menu you never came through. */
-    if (ppErrandView !== null && (S.view === ppErrandView ||
-            (ppErrandView === VIEW_MODBUS && (S.view === VIEW_MODBUS_GROUP ||
-             S.view === VIEW_MODBUS_VOICES || S.view === VIEW_MODBUS_CHAIN)))) {
+     * ⭑ EXCEPT THE BUSES: from the Module page they float exactly as they do
+     * from the Sound menu (Josh, 2026-09-26: "can we just use theh sound menu
+     * overlay on the module page?"). Only Back differs — it returns to the
+     * editor (ppErrandView). */
+    if (ppErrandView !== null && ppErrandView !== VIEW_MODBUS && S.view === ppErrandView) {
         /* ⚠⚠ CLEAR FIRST. Nothing else does on this path: every render function
          * in soundRender owns its own clear, and the overlay path below got one
          * for free from renderBlocks() drawing the backdrop. Returning early
@@ -11799,7 +11798,8 @@ function ppRestoreFor(slot, comp) {
 }
 
 /* THE LANE IN FOCUS on the editor (a jump from the AUTOMATION bank, Josh
- * 2026-09-25): the lane's cell on the visible page carries the lock corner,
+ * 2026-09-25): the lane's cell on the visible page is HIGHLIGHTED (it had a
+ * lock corner until Josh, 2026-09-26: "we can do away wiht the corner mark"),
  * and while a step is held it shows what the lane plays there. Set every
  * tick the grid is up — the page, the held step and the value all move — and
  * cleared the moment there is nothing to show. */
@@ -11814,7 +11814,7 @@ function ppFocusSync() {
         const fk = f.target.slice(i + 1);
         for (let k = 0; k < 8; k++) {
             if (paramPagesFullKeyAt(k) !== fk) continue;
-            dec = { [k]: f.wire != null ? { locked: true, value: f.wire } : { locked: true } };
+            dec = { [k]: f.wire != null ? { highlight: true, value: f.wire } : { highlight: true } };
             break;
         }
     }

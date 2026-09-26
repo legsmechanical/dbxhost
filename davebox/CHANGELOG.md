@@ -17,7 +17,8 @@ the section into a versioned heading at release time.
 - **Buses on the instrument editor's Module page** — the same screen as the
   Sound menu's Buses row, for instruments that split their voices.
 - **Step recording shows the tie.** Holding pads and pressing **>** lights the
-  steps the note now covers.
+  steps the note is held over in the tail colour; the note's own step looks like
+  any other note.
 - **Phrases.** Touch K6 on the CLIP or DRUM LANE bank and click the jog for a
   library of one- and two-bar starter phrases: pick the instrument, jump to a
   style, set a time scale (/8 to x8) and an octave; the jog opens the list of
@@ -119,6 +120,10 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **Jumping to a module parameter from automation keeps the module's page as it
+  is.** Holding a step on a lane for, say, a filter cutoff used to land on a page
+  of plain knobs with the filter curve and envelope gone. The parameter's cell is
+  now highlighted instead of carrying a small corner mark, on every page.
 - **Empty drum lanes keep their length after a reload.** A drum lane with no
   notes used to come back as one bar, at the default step size, with its pad
   note and play effects reset — so a 4-bar clip with hits only on the kick
@@ -157,8 +162,8 @@ the section into a versioned heading at release time.
   drum overview MUTED / SOLOED now sits at the left of the second info row,
   with VEL on the right.
 - **The arp step editor's header reads cleanly.** On SEQ ARP and LIVE ARP's
-  step pitch page the SHIFT hint no longer covers the track and instrument
-  label.
+  step pitch page, Shift is named in the footer (**SHFT VELOCITY**, as on every
+  other screen) instead of in the header over the track and instrument label.
 - **Conductor C-WHEN fits its values.** Each track's Next/Now sits in its own
   box instead of running into its neighbours; drum tracks, which never respond,
   are left blank as on C-RESPONDER.

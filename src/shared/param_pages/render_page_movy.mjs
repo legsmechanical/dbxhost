@@ -2425,9 +2425,18 @@ export function drawKnobRow(ctx, o, row, rowY, lblY, geom) {
      * being highlighted. Falls back to the single `touched` when a caller does
      * not supply the set.
      */
-    const held = Array.isArray(o.touchedSlots) && o.touchedSlots.length
+    const heldKnobs = Array.isArray(o.touchedSlots) && o.touchedSlots.length
         ? o.touchedSlots
         : (typeof touched === "number" && touched >= 0 ? [touched] : []);
+    /*
+     * A caller can HIGHLIGHT a slot without a finger on it: a decoration with
+     * `highlight: true` draws the cell as held (a sequencer pointing at the
+     * parameter one of its lanes drives, for instance). Only while no knob is
+     * held, so a real touch is never ambiguous.
+     */
+    const held = heldKnobs.length ? heldKnobs
+        : (decorations ? Object.keys(decorations)
+            .filter((s) => decorations[s] && decorations[s].highlight).map(Number) : []);
     /*
      * What each widget animates.
      *
