@@ -51,7 +51,7 @@ import {
 } from './ui_dialogs.mjs';
 import { isBooleanPair } from './ui_cells.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
-import { bankCyclePos, bankCycleForMode, bankDisplayName } from './ui_pure.mjs';
+import { bankCyclePos, bankCycleForMode, bankCategoriesForMode, bankDisplayName } from './ui_pure.mjs';
 import { syncDrumRepeatState } from './ui_drummodel.mjs';
 import {
     effectiveClip,
@@ -1483,10 +1483,15 @@ export function bankNavItems() {
     }
     const mode = S.trackPadMode[S.activeTrack];
     const cyc = bankCycleForMode(mode, S.activeTrack);
+    /* Each bank's category, when it sits in one that is drawn as a group. */
+    const cat = {};
+    bankCategoriesForMode(mode, S.activeTrack).forEach((g, gi) => {
+        if (g.label) for (const b of g.banks) cat[b] = { id: gi, label: g.label };
+    });
     return {
         items: cyc.map((b) => {
             const n = bankDisplayName(mode, b);
-            return { name: BANKNAV_SHORT[n] || n, glyph: bankHeaderGlyph(b, mode) };
+            return { name: BANKNAV_SHORT[n] || n, glyph: bankHeaderGlyph(b, mode), cat: cat[b] || null };
         }),
         cur: Math.max(0, cyc.indexOf(S.activeBank)),
     };

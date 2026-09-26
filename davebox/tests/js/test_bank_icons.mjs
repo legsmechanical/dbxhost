@@ -90,7 +90,7 @@ step('the bank map never blinks: ALL LANES lists the grid in both phases', () =>
     assert(items().find((x) => x.name === 'DRUM LANE').glyph === 'drum', 'DRUM LANE in the map');
     S.bankNavKind = null;
     S.trackPadMode[0] = MEL; S.bankNavKind = 'track';
-    assert(render.bankNavItems().items[0].glyph === 'clip', 'CLIP in the melodic map');
+    assert(render.bankNavItems().items.find((x) => x.name === 'CLIP').glyph === 'clip', 'CLIP in the melodic map');
     S.bankNavKind = null; S.bankCardLatched = false;
 });
 

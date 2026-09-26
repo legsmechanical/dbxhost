@@ -282,9 +282,15 @@ picks which bank. Each track has its own walk, in this order:
 
 | Track | Banks, in jog order |
 |---|---|
-| **Melodic** | CLIP → NOTE FX → HARMONY → DELAY → SEQ ARP → LIVE ARP → (CHORD, in the Chord layout) → STEP → SOUND + CONFIG → MACROS → AUTOMATION |
+| **Melodic** | **IN:** (CHORD, in the Chord layout) → LIVE ARP · **CTRL:** MACROS → AUTOMATION · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · SOUND + CONFIG |
 | **Drum** | ALL LANES → DRUM LANE → NOTE FX → DELAY → RPT GROOVE → STEP → SOUND + CONFIG → MACROS → AUTOMATION |
 | **Conductor** | C-CONDUCT → C-NOTE FX → C-RESPONDER → C-OCTAVE → C-WHEN → C-STEP |
+
+A melodic track starts on **CLIP**, in the middle of its walk: turn left for
+what plays into the track, right for its effects (in the order the notes pass
+through them) and, last, SOUND + CONFIG. The melodic banks are grouped: **IN**
+(what you play in), **CTRL** (what moves the parameters), **SEQ** (the
+sequence) and **FX** (the note effects).
 
 The banks are covered where they belong: [Clip Timing & Grid](#9-clip-timing--grid),
 [Effects](#10-effects), [STEP](#63-editing-notes),
@@ -294,7 +300,8 @@ The banks are covered where they belong: [Clip Timing & Grid](#9-clip-timing--gr
 - **Turn the jog** on the track overview to step through the banks: the header
   names the bank and the knobs follow it. While your hand is on the jog, a column
   on the left lists the track's banks with the current one highlighted in the
-  middle; it goes as soon as you let go.
+  middle; it goes as soon as you let go. On a melodic track the column shows the
+  groups: each group's name sits to the left of a line beside its banks.
 - **Click the jog** to open the **bank view** — that bank's page, held on screen;
   keep turning to walk from there. In the bank view a click switches to the bank's
   **alternate** parameters (a down-arrow in the header marks a bank that has them,
