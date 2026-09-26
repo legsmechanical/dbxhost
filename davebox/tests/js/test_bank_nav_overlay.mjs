@@ -98,13 +98,13 @@ step('⭐⭐ THE GESTURE: touch + turn on the track overview walks the bank AND 
     assert(columnUp(frame()), 'no column on the left while jogging');
     assert(swallowed === null, 'swallowed: ' + swallowed);
 });
-step('the column follows the walk, and shortens SOUND + CONFIG', () => {
+step('the column follows the walk to MIX', () => {
     for (let i = 0; i < 12 && S.activeBank !== C.BANK_SOUND; i++) { jog(1); tick(); }
     const nav = render.bankNavItems();
-    assert(nav.items[nav.cur].name === 'SOUND+CFG', 'centred ' + nav.items[nav.cur].name);
-    assert(nav.items.every((it) => it.glyph), 'an entry has no glyph');
-    /* SOUND + CONFIG's page is sound mode's screen: the column must sit over it too. */
-    assert(columnUp(frame()), 'no column over the SOUND + CONFIG page');
+    assert(nav.items[nav.cur].name === 'MIX', 'centred ' + nav.items[nav.cur].name);
+    assert(nav.items.every((it) => it.glyph || it.name === 'CONFIG'), 'an entry has no glyph');   /* CONFIG wears none, like its menu */
+    /* MIX's page is sound mode's screen: the column must sit over it too. */
+    assert(columnUp(frame()), 'no column over the MIX page');
     assert(swallowed === null, 'swallowed: ' + swallowed);
 });
 step('⭐ release: the column goes once the last detent is BANKNAV_HOLD_MS old', () => {

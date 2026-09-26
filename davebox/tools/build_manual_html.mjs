@@ -244,7 +244,8 @@ const MANUAL_SCREENS = new Set([
     'bank-automation',         // the list of what's automated
     'session-overview',        // Session View
     'perf-mode-mods',          // Performance Mode with mods engaged
-    'sound-card',              // the SOUND + CONFIG door
+    'config-card',             // the CONFIG bank
+    'sound-card',              // the MIX card
     'track-config',            // the TRACK CONFIG menu
     'instrument-picker',       // the Instmt/Dest picker
     'block-editor',            // a module's own editor

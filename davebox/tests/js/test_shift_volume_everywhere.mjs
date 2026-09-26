@@ -168,15 +168,16 @@ step('4. the AUTOMATION bank card', () => {
     assertGesture('automation bank', 'slot:volume', T);
 });
 
-step('5. SOUND + CONFIG cards (the block list)', () => {
+step('5. the MIX card and the TRACK CONFIG menu (the block list)', () => {
     snd.soundExit(); ticks(2);
-    S.activeBank = 11; S.trackActiveBank[T] = 11; S.bankCardLatched = false;   /* ON SOUND+CFG (2026-09-24) */
-    snd.soundEnter(T, T); ticks(4);                /* lands on the door (prompt, resting) */
-    cc(3, 127); cc(3, 0); ticks(3);                /* first click LATCHES the door (active-as-bank) */
+    S.activeBank = 11; S.trackActiveBank[T] = 11; S.bankCardLatched = false;   /* ON MIX */
+    snd.soundEnter(T, T); ticks(4);                /* lands on the MIX card (prompt, resting) */
+    cc(3, 127); cc(3, 0); ticks(3);                /* the click LATCHES the card */
     if (!snd.soundActive() || snd.soundViewForTest() !== 18)
-        throw new Error('rig: door not latched, active=' + snd.soundActive() + ' view ' + snd.soundViewForTest());
-    assertGesture('door (latched)', 'slot:volume', T);
-    cc(3, 127); cc(3, 0); ticks(3);                /* second click ENTERS the block list */
+        throw new Error('rig: MIX not latched, active=' + snd.soundActive() + ' view ' + snd.soundViewForTest());
+    assertGesture('MIX (latched)', 'slot:volume', T);
+    /* MIX is no door since 2026-09-26: the menu opens as Shift+Note's tap opens it. */
+    snd.soundShowMenu(); ticks(3);
     if (!snd.soundActive() || snd.soundViewForTest() !== 0)
         throw new Error('rig: cards not up, active=' + snd.soundActive() + ' view ' + snd.soundViewForTest());
     assertGesture('cards', 'slot:volume', T);
@@ -208,8 +209,7 @@ step('8. the enum picker over a card', () => {
     snd.soundExit(); ticks(2);
     snd.soundEnter(T, T); ticks(4);
     for (let b = 0; b < 4 && snd.soundViewForTest() !== 0 && snd.soundViewForTest() !== 18; b++) { cc(51, 127); cc(51, 0); ticks(2); }
-    if (snd.soundViewForTest() === 18) { cc(3, 127); cc(3, 0); ticks(3); }   /* latch the door */
-    if (snd.soundViewForTest() === 18) { cc(3, 127); cc(3, 0); ticks(3); }   /* → the list */
+    if (snd.soundViewForTest() === 18) { snd.soundShowMenu(); ticks(3); }    /* MIX has no door: the menu as Shift+Note opens it */
     if (snd.soundViewForTest() !== 0) throw new Error('rig: not on the list, view ' + snd.soundViewForTest());
     for (let g = 0; g < 20 && snd.soundPickStateForTest().row !== 0; g++) { cc(14, 127); ticks(1); }
     shift(true); cc(3, 127); cc(3, 0); shift(false); ticks(3);   /* Shift+click the Instrument row → the picker */

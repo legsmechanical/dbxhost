@@ -114,9 +114,10 @@ function step(label, fn) {
  * this does it for them so every call site does not have to remember. */
 function openMenuIfPrompt() {
     if (!snd.soundActive()) return;
-    /* view 18 = the prompt; the click is its door. */
+    /* view 18 = the MIX card, no door since 2026-09-26: the menu opens as
+     * Shift+Note's tap opens it, over the bank. */
     if (snd.soundPickStateForTest().view === 18) {
-        send(3, 127); send(3, 0); globalThis.tick(); snd.soundTick();
+        snd.soundShowMenu(); globalThis.tick(); snd.soundTick();
     }
 }
 function toTop() {
@@ -191,19 +192,26 @@ step('⭑⭑ ...and the next right turn WALKS THE BANKS — the prompt is a bank
         throw new Error('the jog did not walk off the bank — still on ' + S.activeBank);
 });
 
-step('⚠ CONTROL: the CLICK is what opens the menu, and then the jog walks ROWS', () => {
+step('⚠ CONTROL: the MIX click opens nothing; the CONFIG click opens the menu, and then the jog walks ROWS', () => {
     /* The other half. Without this the step above passes on a build where the
      * jog is declined because the menu is unreachable at all. */
     reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
-    right();                            /* onto the bank -> its prompt */
+    right();                            /* onto MIX -> its card */
     snd.soundTick();
-    send(3, 127); send(3, 0);           /* jog click — the prompt's door */
+    send(3, 127); send(3, 0);
     globalThis.tick(); snd.soundTick();
+    if (snd.soundPickStateForTest().view !== 18) throw new Error('the MIX click opened view ' + snd.soundPickStateForTest().view);
+    reset(PAD_MODE_MELODIC_SCALE, 5);   /* LIVE ARP, just right of CONFIG */
+    left();                             /* onto CONFIG -> its card */
+    snd.soundTick();
+    send(3, 127); send(3, 0);           /* the CONFIG card's door */
+    globalThis.tick(); snd.soundTick();
+    if (snd.soundPickStateForTest().view !== 0) throw new Error('the CONFIG click did not open the menu: ' + snd.soundPickStateForTest().view);
     const r0 = snd.soundPickStateForTest().row;
     right();
     const r1 = snd.soundPickStateForTest().row;
     if (r1 <= r0) throw new Error('inside the menu the cursor did not move: ' + r0 + ' -> ' + r1);
-    if (S.activeBank !== BANK_SOUND)
+    if (S.activeBank !== 16)
         throw new Error('the identity was lost underneath: ' + S.activeBank);
 });
 
@@ -218,14 +226,15 @@ step('⭑ the MENU top edge CLAMPS; Back exits to the CARD; the card walks out',
     if (snd.soundPickStateForTest().row !== 0) throw new Error('the clamp moved the cursor');
     send(51, 127); send(51, 0); globalThis.tick();     /* Back */
     if (!snd.soundActive()) throw new Error('Back left sound mode — it must land on the card');
-    if (snd.soundViewForTest() !== 18)                 /* VIEW_PROMPT */
+    /* The menu was opened from the CONFIG card (the step above), so Back lands
+     * on THAT card — 24, VIEW_CFGCARD. */
+    if (snd.soundViewForTest() !== 24)
         throw new Error('Back did not land on the card (view ' + snd.soundViewForTest() + ')');
-    left(); globalThis.tick();
-    if (snd.soundActive()) throw new Error('the card did not walk out on a left turn');
-    if (S.activeBank !== MEL_BEFORE_SOUND) throw new Error('did not land on SEQ ARP (the bank before SOUND + CONFIG): ' + S.activeBank);
-    left();
-    /* Melodic since 2026-09-26: … DELAY, SEQ ARP, SOUND + CONFIG (FX, then MIX). */
-    if (S.activeBank !== 3) throw new Error('bank walk did not resume leftward onto DELAY: ' + S.activeBank);
+    right(); globalThis.tick();
+    if (snd.soundActive()) throw new Error('the card did not walk out on a right turn');
+    if (S.activeBank !== 5) throw new Error('did not land on LIVE ARP (the bank after CONFIG): ' + S.activeBank);
+    right();
+    if (S.activeBank !== 13) throw new Error('bank walk did not resume rightward onto MACROS: ' + S.activeBank);
 });
 
 step('⭑ drum: right past DELAY (the last FX bank) enters too', () => {
@@ -468,7 +477,7 @@ step('⭑ leaving by the card\'s walk arms the window — and NO overlay opens',
      * the old "reopen the picker on the way out" behaviour inverts: leaving
      * must arm the display window (never a silent arrival — Josh, 2026-08-26)
      * and must NOT leave any overlay state behind. */
-    reset(PAD_MODE_MELODIC_SCALE, 6);           /* a KEY track, entered from AUTOMATION */
+    reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);   /* a KEY track, walking onto MIX */
     right();
     snd.soundTick();
     note(9, 127);

@@ -35,7 +35,7 @@ import { automationTick, automationPollWarnings } from './ui_automation.mjs';
 import { morphTick } from './ui_snapmorph.mjs';
 import { reconcileParallelAll, parallelForgetPushed, parallelSweepTick } from './ui_parallel.mjs';
 import { autoBankTick } from './ui_automation_bank.mjs';
-import { clipHasContent, stepEntryVelocity } from './ui_pure.mjs';
+import { clipHasContent, stepEntryVelocity, soundBankOnWalk } from './ui_pure.mjs';
 import { saveState, showActionPopup, showActionPopupFor, showTrackVolCard, uuidToStatePath, hostIdentity, projectDisplayName,
     commitSnapshot, writeSidecar } from './ui_persistence.mjs';
 import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
@@ -1467,9 +1467,9 @@ export function _tickImpl() {
          * `!soundActive()` gate then never latched bank mode and clicks fell
          * through into sound-mode handling (the S+C-as-active-bank bug).
          *
-         * SILENT — arriving is not a bank gesture. ⚠ Conductor tracks never
-         * have this bank on their walk; the pad-mode check keeps
-         * a hand-edited sidecar from opening a screen they have no row for. */
+         * SILENT — arriving is not a bank gesture. ⚠ Only a sound bank ON the
+         * track's walk opens: a Conductor has CONFIG but not MIX or MACROS, and
+         * a stale record must not open a screen it has no row for. */
         /* ⭑ BOTH sound banks open AT REST (unlatched — soundResting, 2026-09-03):
          * their knobs (the macros, the levels) work on the overview like any
          * bank's, and Back never changes the bank. The 09-01 bug was the
@@ -1477,7 +1477,7 @@ export function _tickImpl() {
         if (!S.sessionView && !soundOpen() && isSoundBank(S.activeBank)
                 && S.pendingSoundEnterTrack < 0 && S.moveCoRunTrack < 0
                 && !S.awaitingProjectSelect
-                && S.trackPadMode[S.activeTrack] !== PAD_MODE_CONDUCT) {
+                && soundBankOnWalk(S.trackPadMode[S.activeTrack], S.activeBank, S.activeTrack)) {
             S.pendingSoundEnterTrack = S.activeTrack;
             S.pendingSoundEnterSilent = true;
         } else if (soundOpen() && soundResting() && !isSoundBank(S.activeBank)

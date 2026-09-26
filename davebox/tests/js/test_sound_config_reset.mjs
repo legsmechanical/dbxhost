@@ -174,8 +174,8 @@ step('⚠⚠ CONTROL: inside the MODULE EDITOR the gesture does NOT reset the ba
      * knobs are the MODULE's, so the click keeps whatever meaning it had there.
      *
      * ⚠ The first cut of this control PASSED for the wrong reason — one click
-     * does not reach the editor (entry lands on view 18, one click → the block
-     * list 0, TWO → the editor 1), so it was still asserting on the bank card and
+     * does not reach the editor (entry lands on view 18, the menu → the block
+     * list 0, a click → the editor 1), so it was still asserting on the bank card and
      * "the gesture did not fire in the editor" was never tested at all. Hence the
      * explicit view assertions: a control that cannot reach its own precondition
      * is worse than no control. → [[a-check-that-cries-wolf-is-worse-than-none]] */
@@ -187,7 +187,8 @@ step('⚠⚠ CONTROL: inside the MODULE EDITOR the gesture does NOT reset the ba
     assert(before !== null, 'setup failed: volume was never written');
     assert(parseFloat(before) !== 1, 'setup failed: volume is already at its default');
 
-    click(); ticks(3);
+    /* MIX is no door since 2026-09-26: the menu opens as Shift+Note's tap opens it. */
+    snd.soundShowMenu(); ticks(3);
     assert(snd.soundViewForTest() === VIEW_BLOCKS,
            'expected the block list, got view ' + snd.soundViewForTest());
     click(); ticks(3);

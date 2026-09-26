@@ -17,7 +17,7 @@ import { nowMs } from './ui_clock.mjs';
 import { soundActive, soundOpen, soundExit, soundIsGlobal, soundInEditor, soundFollowTrack, soundOnCard } from './ui_sound.mjs';
 import { isTextEntryActive } from '/data/UserData/schwung/shared/text_entry.mjs';
 import { stepRecExit } from './ui_record.mjs';
-import { clipHasContent, bankDisplayName } from './ui_pure.mjs';
+import { clipHasContent, bankDisplayName, soundBankOnWalk } from './ui_pure.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { effectiveClip, invalidateLEDCache, forceRedraw } from './ui_leds.mjs';
 import { refreshPerClipBankParams, resetPerClipBankParamsToDefault,
@@ -628,7 +628,7 @@ export function _switchActiveTrack(newT) {
     if (_follow) {
         /* The screen follows; the bank is the new track's own (2026-09-24). */
         soundFollowTrack(S.activeTrack);
-    } else if (isSoundBank(S.activeBank)) {
+    } else if (soundBankOnWalk(S.trackPadMode[S.activeTrack], S.activeBank, S.activeTrack)) {
         S.pendingSoundEnterTrack = S.activeTrack;
         S.pendingSoundEnterSilent = true;
     }
