@@ -173,11 +173,15 @@ function drawConductTrackGrid(header, valFn, inertLabel, footer) {
     drawKitPage(header, cells, false, footer);
 }
 
-/* Conductor RESPONDER grid: per-track TOGGLE bar (like the DELAY Retrig toggle)
- * showing each track's responder on/off state instead of an ON/off value box.
- * The Conductor's own cell and drum tracks (which never respond) stay blank —
- * distinct from an "off" track, which shows an empty framed bar. */
-function drawConductToggleGrid(header, onFn, footer) {
+/* Conductor two-state grid (RESPONDER, WHEN): one two-state cell per track,
+ * drawn by toggleCell — so RESPONDER's ON/off is a TOGGLE bar (like the DELAY
+ * Retrig toggle) and WHEN's Now/Next, a pair of words, is an enum box that
+ * prints the word inside the cell. (WHEN used to hand the words to the big
+ * value face, which is sized for numbers: "Next" overflowed its 32px cell and
+ * ran into the next one.) The Conductor's own cell and drum tracks (which
+ * never respond) stay blank — distinct from an "off" track. */
+function drawConductToggleGrid(header, onFn, footer, onText, offText) {
+    if (onText == null) { onText = 'ON'; offText = 'off'; }
     const cells = [];
     for (let i = 0; i < 8; i++) {
         if (i === S.activeTrack) {
@@ -186,7 +190,7 @@ function drawConductToggleGrid(header, onFn, footer) {
             cells.push({ kind: 'blank', label: 'Tr' + (i + 1) });
         } else {
             const on = !!onFn(i);
-            cells.push(toggleCell('Tr' + (i + 1), 'Track ' + (i + 1), on, 'ON', 'off'));
+            cells.push(toggleCell('Tr' + (i + 1), 'Track ' + (i + 1), on, onText, offText));
         }
     }
     drawKitPage(header, cells, false, footer);
@@ -1991,7 +1995,9 @@ function drawUIBody() {
         } else if (bank === BANK_OCTAVE) {
             drawConductTrackGrid(_ch, function(k){ if (S.trackPadMode[k] === PAD_MODE_DRUM) return '--'; const o = S.condOct[S.trackActiveClip[S.activeTrack] | 0][k]; return o === 0 ? '--' : (o > 0 ? '+' + o : '' + o); }, 'Cndct', bankPageHints(bank));
         } else { /* BANK_WHEN */
-            drawConductTrackGrid(_ch, function(k){ return S.trackPadMode[k] === PAD_MODE_DRUM ? '--' : (S.condWhen[S.trackActiveClip[S.activeTrack] | 0][k] ? 'Now' : 'Next'); }, 'Cndct', bankPageHints(bank));
+            const _wc = S.trackActiveClip[S.activeTrack] | 0;
+            drawConductToggleGrid(_ch, function(k){ return S.condWhen[_wc][k]; },
+                                  bankPageHints(bank), 'Now', 'Next');
         }
         return;
     }
