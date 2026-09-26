@@ -259,6 +259,26 @@ step('⭐ HOLD a Volume point -> SOUND + CONFIG while held; its knob writes THAT
     back(); ticks(1);
 });
 
+step('⭐ HOLD a module point -> its EDITOR on the page holding the key; the knob writes THAT step; release -> the same row', () => {
+    const idx = openMenuOn(TARGETS.chain); ticks(2);
+    note(STEP(3), 127); ticks(10);
+    assert(snd.soundOpen() && snd.soundViewForTest() === VIEW_EDIT, 'not in the editor while held: view ' + snd.soundViewForTest());
+    const pp = snd.soundPPForTest();
+    assert(pp.on && pp.page && (pp.page.keys || []).indexOf('cutoff') >= 0, 'not on the page holding cutoff: ' + JSON.stringify(pp.page && pp.page.keys));
+    assert(S.trackActiveBank[T] === BANK_AUTOMATION && S.activeBank === BANK_AUTOMATION, 'a bank moved: ' + S.activeBank + '/' + S.trackActiveBank[T]);
+    assert(S.autoCycle && S.autoCycle.target === TARGETS.chain, 'the steps left the lane during the hold');
+    sets.length = 0;
+    cc(71 + pp.page.keys.indexOf('cutoff'), 1); ticks(2);
+    const w = sets.filter(x => x.indexOf('_pa_set2=') >= 0 && x.indexOf(TARGETS.chain) >= 0);
+    assert(w.length >= 1, 'the editor knob wrote no lock, got ' + JSON.stringify(sets));
+    const f = w[w.length - 1].split('=')[1].split(' ');
+    assert(f[2] === '72' && f[3] === '95', 'the lock is not on step 4 (ticks 72..95): ' + w[w.length - 1]);
+    note(STEP(3), 0); ticks(2);
+    assert(!snd.soundOpen() && S.activeBank === BANK_AUTOMATION, 'release did not close the editor');
+    assert(S.autoBank.menu && S.autoBank.sel === idx, 'not on the same row: ' + JSON.stringify(S.autoBank));
+    back(); ticks(1);
+});
+
 step('a press and release inside ONE tick never opens sound mode', () => {
     openMenuOn(TARGETS.level); ticks(2);
     note(STEP(3), 127); note(STEP(3), 0); ticks(4);

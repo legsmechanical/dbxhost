@@ -30,7 +30,7 @@
 
 import { S, noteUndoUnit, armBankDisplay } from './ui_state.mjs';
 import { BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS } from './ui_constants.mjs';
-import { soundOpen, soundExit } from './ui_sound.mjs';
+import { soundOpen, soundExit, soundJumpToParam } from './ui_sound.mjs';
 import { readBankParams } from './ui_dsp_bridge.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey,
@@ -526,6 +526,18 @@ function lanePinTick() {
 }
 
 let holdJump = null;
+/* A module parameter's lane on this track's own slot -> { comp, key }, or
+ * null. A Move bus insert (move_fx:N:fxK) is not one yet: it opens through
+ * the bus editor, which this jump does not reach. */
+function moduleParamOf(tgt, t) {
+    const i = tgt.indexOf(':');
+    if (i < 0 || parseInt(tgt.slice(0, i), 10) !== t) return null;
+    const rest = tgt.slice(i + 1), k = rest.lastIndexOf(':');
+    if (k <= 0) return null;
+    const comp = rest.slice(0, k), key = rest.slice(k + 1);
+    if (comp === 'slot' || comp.indexOf('move_fx') === 0 || comp.indexOf('send_fx') === 0 || !key) return null;
+    return { comp, key };
+}
 /* Where a non-davebox lane's value is edited on a sound BANK: the track's
  * levels (slot:* and its Move bus levels) on SOUND+CFG, a MIDI target on
  * MACROS; -1 for anything else (a module parameter lives in its editor). */
@@ -546,8 +558,18 @@ export function autoHoldJumpBegin(absStep) {
     const tgt = String(cy.target);
     const sat = tgt.indexOf('seq:') === 0 ? SEQ_AUTO_TARGETS[tgt.split(':')[2]] : null;
     const sb = sat ? -1 : soundBankFor(tgt, cy.t);
-    if (!sat && sb < 0) { showActionPopup('NO EDITOR'); return false; }
+    const mp = (sat || sb >= 0) ? null : moduleParamOf(tgt, cy.t);
+    if (!sat && sb < 0 && !mp) { showActionPopup('NO EDITOR'); return false; }
     const a = st();
+    if (mp) {
+        /* A module parameter: its editor, on the page holding the key, for as
+         * long as the step is held. The bank stays AUTOMATION underneath (an
+         * editor is not a bank), so release only has to close the editor. */
+        if (!soundJumpToParam(cy.t, mp.comp, mp.key, a.sel)) { showActionPopup('NOT LOADED'); return false; }
+        holdJump = { track: cy.t, clip: cy.c, bank: BANK_AUTOMATION, sound: true, altWas: !!S.altMode, sel: a.sel,
+                     opsSel: a.ops ? a.ops.sel : -1, cycle: Object.assign({}, cy), step: absStep };
+        return true;
+    }
     holdJump = { track: cy.t, clip: cy.c, bank: sat ? sat.bank : sb, sound: !sat, altWas: !!S.altMode, sel: a.sel,
                  opsSel: a.ops ? a.ops.sel : -1, cycle: Object.assign({}, cy), step: absStep };
     if (!sat) {
