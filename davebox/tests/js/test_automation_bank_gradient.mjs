@@ -186,6 +186,19 @@ step('⭐ with the global menu open over this card, the click goes to the MENU, 
     S.globalMenuOpen = false;
 });
 
+step('⭐ the FULL-resolution answer (4 hex a step): the gradient derives its level, the 14-bit value is kept', () => {
+    const saved = VALS;
+    const W = [0, 8192, 16383, -1, 100, 12000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    VALS = () => '0:synth:cutoff ' + W.map(v => (v < 0 ? 0xffff : v).toString(16).padStart(4, '0')).join('') + '\n';
+    auto.automationRefreshPresence();                  /* a new list generation: a new read */
+    ticks(3);
+    const lv = S.autoLaneVals;
+    assert(lv && lv.v14, 'no values read: ' + JSON.stringify(lv));
+    assert(lv.v14[1] === 8192 && lv.v14[2] === 16383 && lv.v14[3] === -1 && lv.v14[5] === 12000, 'the 14-bit values: ' + JSON.stringify(lv.v14));
+    assert(lv[0] === 0 && lv[1] === 64 && lv[2] === 127 && lv[3] === -1 && lv[4] === 1, 'the derived 0..127: ' + JSON.stringify(lv.slice(0, 6)));
+    VALS = saved; auto.automationRefreshPresence(); ticks(2);
+});
+
 if (failed) { console.error('FAIL: test_automation_bank_gradient'); process.exit(1); }
 console.log('PASS: test_automation_bank_gradient');
 }

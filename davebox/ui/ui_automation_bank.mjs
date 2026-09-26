@@ -440,6 +440,7 @@ const VALS_REFRESH_MS = 400;
 /* A lane the page read has no line for (an empty, cleared lane): no value on
  * any step — dark inside its cycle, which stays on the buttons to hold. */
 const EMPTY_VALS = new Array(16).fill(-1);
+EMPTY_VALS.v14 = new Array(16).fill(-1);
 function autoLaneValsTick(t, c, target) {
     const cy = S.autoCycle;
     const base = ((cy.off >> 4) + cy.page) * 16;
@@ -452,8 +453,27 @@ function autoLaneValsTick(t, c, target) {
             for (const line of String(raw).split('\n')) {
                 const sp = line.lastIndexOf(' ');
                 if (sp <= 0) continue;
-                const hex = line.slice(sp + 1), v = [];
-                for (let s = 0; s < 16; s++) { const x = parseInt(hex.substr(s * 2, 2), 16); v.push(x === 255 || !isFinite(x) ? -1 : x); }
+                /* Four hex digits a step: the 14-bit value, ffff = none. The
+                 * gradient's 0..127 is derived from it, rounded as the DSP
+                 * used to; `v14` keeps the full value for a jump destination
+                 * to show in the parameter's units. (Two digits a step is the
+                 * older 7-bit form, read as such.) */
+                const hex = line.slice(sp + 1), v = [], v14 = [];
+                const wide = hex.length >= 64;
+                for (let s = 0; s < 16; s++) {
+                    if (wide) {
+                        const x = parseInt(hex.substr(s * 4, 4), 16);
+                        const ok = isFinite(x) && x !== 0xffff;
+                        v14.push(ok ? x : -1);
+                        v.push(ok ? Math.min(127, Math.floor((x * 127 + 8191) / 16383)) : -1);
+                    } else {
+                        const x = parseInt(hex.substr(s * 2, 2), 16);
+                        const ok = isFinite(x) && x !== 255;
+                        v.push(ok ? x : -1);
+                        v14.push(ok ? Math.round(x * 16383 / 127) : -1);
+                    }
+                }
+                v.v14 = v14;
                 map.set(line.slice(0, sp), v);
             }
             valsCache.key = key; valsCache.map = map;

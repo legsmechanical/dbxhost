@@ -7578,9 +7578,12 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
              * <tps> ticks — the AUTOMATION bank paints them as an intensity
              * gradient on the step row (Josh, 2026-09-24, from Legacy).
              *
-             * One line per lane: "<target> <32 hex chars>\n" — 16 values,
-             * two digits each, 00..7f (the 14-bit value scaled to 0..127),
-             * "ff" where the lane has no value (outside its window). Evaluated
+             * One line per lane: "<target> <64 hex chars>\n" — 16 values,
+             * four digits each, the full 14-bit value 0000..3fff, "ffff" where
+             * the lane has no value (outside its window). Full resolution
+             * because the jump destinations SHOW a held step's value in the
+             * parameter's own units (Josh, 2026-09-25); the step-row gradient
+             * derives its 7 bits from it. Evaluated
              * by the SAME functions playback calls — Mode, Wrap, Smooth and
              * Scale all apply, the resting value unscaled — so the colours
              * are what you hear, not the raw points. ONE read per page for the
@@ -7599,24 +7602,23 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                 for (int i = 0; i < PA_MAX_ENTRIES; i++) {
                     pa_entry_t *e = &inst->pa_entries[i];
                     if (!e->used || !e->count || e->track != tidx || e->clip != cidx) continue;
-                    char hex[33];
+                    char hex[65];
                     uint32_t ws = 0, wl = 0, st = TICKS_PER_STEP;
                     const int have = pa_export_window(tr, e, &ws, &wl, &st);
                     for (int s = 0; s < 16; s++) {
                         const uint32_t tk = (base + (uint32_t)s) * vtps;
-                        int v7 = -1;
+                        int v14 = -1;
                         if (have && wl && tk >= ws && tk < ws + wl) {
                             uint16_t v;
                             const int ev = (e->flags & PA_FLAG_PUNCH)
                                          ? pa_eval_punch(e, tk, ws, wl, st, &v)
                                          : pa_eval_window(e, tk, ws, wl, &v);
                             if (ev) {
-                                const uint32_t v14 = (ev == PA_EVAL_REST) ? v : pa_scaled(e, v);
-                                v7 = (int)((v14 * 127u + PA_VAL_MAX / 2) / PA_VAL_MAX);
-                                if (v7 > 127) v7 = 127;
+                                v14 = (int)((ev == PA_EVAL_REST) ? v : pa_scaled(e, v));
+                                if (v14 > PA_VAL_MAX) v14 = PA_VAL_MAX;
                             }
                         }
-                        snprintf(hex + s * 2, 3, "%02x", v7 < 0 ? 0xff : v7);
+                        snprintf(hex + s * 4, 5, "%04x", v14 < 0 ? 0xffff : v14);
                     }
                     int w = snprintf(out + n, (size_t)(out_len - n), "%s %s\n",
                                      inst->pa_targets[e->target], hex);
