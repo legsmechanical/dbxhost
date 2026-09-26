@@ -13,7 +13,7 @@ import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev, faderGainToTravel} from './ui_engine.mjs';
 import { instrValueFor } from './ui_dsp_bridge.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
-import { chordLabel, noteNames, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
+import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
 import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
 import { LGTO_KNOB } from './ui_constants.mjs';
@@ -671,10 +671,10 @@ const PERF_MOD_NAMES = [
     '½time','3Skip','Phnm','Sprs','Gltch','Stggr','Shfl','Back',
 ];
 
-function midiNoteName(n) {
-    const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-    return names[n % 12] + (Math.floor(n / 12) - 1);
-}
+/* Note names follow Move: middle C (60) is C3. ONE naming for every screen —
+ * this box used to say C4 while the held-note readout and the drum overview
+ * said C3, so one pad had two names (Josh, 2026-09-26: C3 = 60, like Move). */
+function midiNoteName(n) { return noteLabel(n, false); }
 
 /* True when (track-type, bank) exposes alt params reachable via S.altMode.
  * Melodic: CLIP(0), DELAY(3), AUTO/CC(6 — CC-assign). Drum: DRUM LANE(0),

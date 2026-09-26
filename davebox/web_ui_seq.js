@@ -871,7 +871,7 @@ try{ const v=localStorage.getItem("dbx_velOpen"); if(v!=null) velOpen=JSON.parse
 function saveBands(){ try{ localStorage.setItem("dbx_velOpen",JSON.stringify(velOpen)); }catch(e){} }
 let selStep=-1;   /* selected step index for the step-param editor (or -1) */
 const NOTE_NAMES=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
-const noteName=n=>NOTE_NAMES[((n%12)+12)%12]+(Math.floor(n/12)-1);
+const noteName=n=>NOTE_NAMES[((n%12)+12)%12]+(Math.floor(n/12)-2);  // middle C (60) = C3, as on Move and the device
 const BLACK_KEY=[0,1,0,1,0,0,1,0,1,0,1,0];
 let tool="draw";                 /* "draw" | "select" | "erase" */
 let selSet=new Set();            /* multi-selection (Select tool): keys "tick:pitch" */
