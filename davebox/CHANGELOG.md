@@ -57,6 +57,9 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **A muted or soloed drum lane's tag no longer covers the velocity.** In the
+  drum overview MUTED / SOLOED now sits at the left of the second info row,
+  with VEL on the right.
 - **The arp step editor's header reads cleanly.** On SEQ ARP and LIVE ARP's
   step pitch page the SHIFT hint no longer covers the track and instrument
   label.

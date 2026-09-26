@@ -2371,12 +2371,16 @@ function drawUIBody() {
         (S.activeBank === 5 ? drawBankHeadingInverted : drawBankHeading)(bankName, false, true);
         /* info row at y=9, in the STOCK face (2026-09-05) — 2px clear of the header */
         ovwPrint(4, 9, bankGroup + '  Pad:' + name + oct + ' (' + note + ')', 1);
+        /* The lane's mute/solo tag sits LEFT on the second info row: the
+         * right end of that row is the velocity input (drawRow2Labels), and
+         * a right-aligned tag drew straight over it. The left end has been
+         * free since the metronome label left the row. */
         const laneBit = 1 << lane;
         if (S.drumLaneSolo[t] & laneBit) {
-            ovwPrint(128 - 4 - ovwWidth('SOLOED'), 17, 'SOLOED', 1);
+            ovwPrint(4, 17, 'SOLOED', 1);
         } else if (S.drumLaneMute[t] & laneBit) {
             if (Math.floor(S.clockMs / 440) % 2 === 0)
-                ovwPrint(128 - 4 - ovwWidth('MUTED'), 17, 'MUTED', 1);
+                ovwPrint(4, 17, 'MUTED', 1);
         }
         drawInfoRow2();
         drawOverviewTracks(overviewHints());
