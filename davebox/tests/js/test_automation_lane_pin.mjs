@@ -211,7 +211,9 @@ for (const [kind, where] of KINDS) {
         assertLaneOnSteps(target, kind + ' after the jump');
         /* A held step here is an automation hold ON THIS SCREEN — no second jump. */
         const bankBefore = S.activeBank, openBefore = snd.soundOpen();
+        S.actionPopupLines = [];
         note(STEP(3), 127); ticks(1);
+        assert(!(S.actionPopupLines || []).some(l => /NO EDITOR/.test(l)), kind + ': the hold tried a second jump: ' + JSON.stringify(S.actionPopupLines));
         assert(S.heldStepAuto && S.heldStep === 3, kind + ': the press is not an automation hold of step 4 (' + S.heldStep + ')');
         assert(S.activeBank === bankBefore && snd.soundOpen() === openBefore, kind + ': the hold jumped somewhere else');
         note(STEP(3), 0); ticks(1);
@@ -235,6 +237,18 @@ step('⭐ a seq knob turned with a step held on the pinned lane writes the lock 
     const f = w[w.length - 1].split('=')[1].split(' ');
     assert(f[2] === '120' && f[3] === '143', 'the lock is not on step 6 (ticks 120..143): ' + w[w.length - 1]);
     note(STEP(5), 0); ticks(1);
+    back(); ticks(2); back(); ticks(1);
+});
+
+step('CONTROL: deleting the pinned lane ends the pin', () => {
+    openMenuOn(TARGETS.level); ticks(2);
+    shiftClick(); ticks(4);
+    assert(bank.autoLanePinActive() && S.autoCycle, 'rig: pinned');
+    const saved = LIST;
+    LIST = LIST.split('\n').filter(l => l.indexOf(TARGETS.level) < 0).join('\n');
+    auto.automationRefreshPresence(); ticks(2);
+    assert(!bank.autoLanePinActive() && !S.autoCycle, 'a deleted lane stayed on the steps');
+    LIST = saved; auto.automationRefreshPresence();
     back(); ticks(2); back(); ticks(1);
 });
 
