@@ -898,6 +898,14 @@ typedef struct {
      * lane at /2 plays over two). See pa_entry_tick. */
     uint32_t  pa_cycle;
     uint32_t  pa_last_ct;
+    /* The AUTOMATION bank's selected lane (tN_pa_view), for its playhead: the
+     * pool slot + 1 and the target id + 1 (0 = none — so a calloc'd instance
+     * views nothing), and the lane tick playback last evaluated it at, written
+     * by pa_playback_scan (AUDIO THREAD; one aligned word) and reported in
+     * state_snapshot. Display only. */
+    uint16_t  pa_view_slot;
+    uint16_t  pa_view_target;
+    int32_t   pa_view_lt;
     /* Last poly-AT pressure value received via tN_live_at. Replayed on every
      * arp/TARP step so new voices spawn with the pressure currently being
      * applied (without this, holding pressure steady means no AT stream and
@@ -6429,7 +6437,35 @@ static int pa_export_window(const seq8_track_t *tr, const pa_entry_t *e,
         clip_start = (uint32_t)pcl->loop_start * *step_ticks;
         clip_ticks = (uint32_t)pcl->length * *step_ticks;
     }
-    pa_entry_window(e, clip_start, clip_ticks, ws, wl);
+    pa_lane_window(tr, e, clip_start, clip_ticks, ws, wl);
+    *step_ticks = pa_lane_step(tr, e, *step_ticks);   /* a drum lane's own step */
+    return 1;
+}
+
+/* The lane's CLOCK against the export's timeline, so the UI can lay the lane's
+ * cycle end to end across the exported clip (a 13-step drum cycle under a
+ * 4-bar clip, a melodic lane with its own Loop: exported once, Live held the
+ * last value for the rest). Both renders start at the clip's (a drum lane's)
+ * loop start, so export tick 0 is: a drum cycle's own start (it runs on the
+ * master clock from 0), else the lane tick playback computes at the clip's
+ * first tick. `p0` = that lane tick; the lane then advances mul/div lane ticks
+ * per export tick, wrapping inside [ws, ws + wl). */
+static int pa_export_clock(const seq8_track_t *tr, const pa_entry_t *e,
+                           uint32_t *ws, uint32_t *wl, uint32_t *p0, uint32_t *mul, uint32_t *div) {
+    uint32_t st;
+    if (!pa_export_window(tr, e, ws, wl, &st) || !*wl) return 0;
+    *mul = *div = 1;
+    if (e->resolution) pa_rate(e->resolution, mul, div);
+    if (pa_drum_cycled(tr, e)) { *p0 = e->loop_off; return 1; }
+    uint32_t cs = 0, ct_len = 0;
+    if (tr->pad_mode == PAD_MODE_DRUM && tr->drum_clips[e->clip]) {
+        pa_drum_window(tr, e->clip, &cs, &ct_len, &st);
+    } else {
+        const clip_t *pcl = &tr->clips[e->clip];
+        const uint32_t t = pcl->ticks_per_step ? pcl->ticks_per_step : (uint32_t)TICKS_PER_STEP;
+        cs = (uint32_t)pcl->loop_start * t; ct_len = (uint32_t)pcl->length * t;
+    }
+    *p0 = pa_entry_tick(e, cs, ct_len, 0);
     return 1;
 }
 
@@ -6887,7 +6923,8 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     /* pa_list: every automated (track, clip, target) with its flags and point
      * count — one round trip for the whole project, because a per-entry read
      * would cost an SPI frame each. Format, one entry per line:
-     *   "<track> <clip> <flags> <count> <target> <loop_len> <resolution> <scale%>"
+     *   "<track> <clip> <flags> <count> <target> <loop_len> <resolution> <scale%>
+     *    [<loop_off> <step_ticks>]"
      * (loop_len and the rate code appended 2026-09-03 for the AUTOMATION bank,
      * the scale percent 2026-09-05; a
      * target never contains a space, so a reader that stops at the target is
@@ -6947,12 +6984,21 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         for (int i = 0; i < PA_MAX_ENTRIES; i++) {
             pa_entry_t *e = &inst->pa_entries[i];
             if (!e->used || !e->count) continue;
-            fprintf(pf, "%d %d %s %d %d %d %d|",
+            const seq8_track_t *etr = (e->track < NUM_TRACKS) ? &inst->tracks[e->track] : 0;
+            fprintf(pf, "%d %d %s %d %d %d %d",
                     (int)e->track, (int)e->clip, inst->pa_targets[e->target],
                     (int)e->flags, (int)e->loop_len, (int)e->resolution, pa_scale_pct(e));
+            /* The lane's clock on the export timeline — "<ws> <wl> <p0> <mul>
+             * <div>" (pa_export_clock) — so the UI tiles the cycle across the
+             * clip. Absent when there is no window to tile in. */
+            {
+                uint32_t ws, wl, p0, mul, div;
+                if (etr && pa_export_clock(etr, e, &ws, &wl, &p0, &mul, &div))
+                    fprintf(pf, " %u %u %u %u %u", ws, wl, p0, mul, div);
+            }
+            fputc('|', pf);
             /* The SCALE is applied here, as it is at playback: what leaves in
              * the export is what the lane plays, not the raw points. */
-            const seq8_track_t *etr = (e->track < NUM_TRACKS) ? &inst->tracks[e->track] : 0;
             pa_point_t xpts[PA_ENTRY_POINTS + 2];     /* + lead + trail */
             int xn = pa_export_points(etr, e, xpts, PA_ENTRY_POINTS + 2);
             for (int k = 0; k < xn; k++)
@@ -6977,8 +7023,17 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         pa_lock(inst);                      /* the latch may be writing */
         for (int i = 0; i < PA_MAX_ENTRIES; i++) {
             pa_entry_t *e = &inst->pa_entries[i];
-            if (!e->used || !e->count) continue;
-            int w = snprintf(out + n, (size_t)(out_len - n), "%d %d %d %d %s %d %d %d\n",
+            if (!pa_entry_live(e)) continue;          /* a cleared, kept lane lists with count 0 */
+            /* Fields 9-10, the lane's loop START and STEP (a drum lane's
+             * cycle), only when either is set: a melodic project's list is
+             * byte-identical to before, and the answer never grows for it. */
+            int w = (e->loop_off || e->step_ticks)
+                  ? snprintf(out + n, (size_t)(out_len - n), "%d %d %d %d %s %d %d %d %d %d\n",
+                             (int)e->track, (int)e->clip, (int)e->flags,
+                             (int)e->count, inst->pa_targets[e->target],
+                             (int)e->loop_len, (int)e->resolution, pa_scale_pct(e),
+                             (int)e->loop_off, (int)e->step_ticks)
+                  : snprintf(out + n, (size_t)(out_len - n), "%d %d %d %d %s %d %d %d\n",
                              (int)e->track, (int)e->clip, (int)e->flags,
                              (int)e->count, inst->pa_targets[e->target],
                              (int)e->loop_len, (int)e->resolution, pa_scale_pct(e));
@@ -7074,6 +7129,14 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         pos += snprintf(out + pos, (size_t)(out_len - pos), " %d", (int)inst->looper_state);
         pos += snprintf(out + pos, (size_t)(out_len - pos), " %d", (int)inst->merge_state);
         pos += snprintf(out + pos, (size_t)(out_len - pos), " %d", (int)inst->merge_solo_track);
+        /* [57..64] per track: the AUTOMATION bank's selected lane's current
+         * tick in its own lane ticks (tN_pa_view), -1 when there is none or
+         * it is not playing. */
+        for (t = 0; t < NUM_TRACKS; t++) {
+            const seq8_track_t *vt = &inst->tracks[t];
+            const int on = inst->playing && vt->clip_playing && vt->pa_view_slot;
+            pos += snprintf(out + pos, (size_t)(out_len - pos), " %d", on ? (int)vt->pa_view_lt : -1);
+        }
         return pos;
     }
 
@@ -7491,9 +7554,12 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     pa_entry_t *e = &inst->pa_entries[i];
                     if (!e->used || !e->count || e->track != tidx || e->clip != cidx) continue;
                     int top = 0;
+                    /* A drum lane with a cycle counts in ITS step, the grid
+                     * the AUTOMATION bank shows it on. */
+                    const uint32_t etps = pa_lane_step(tr, e, tps);
                     memset(mask, '0', SEQ_STEPS);
                     for (int k = 0; k < (int)e->count && k < PA_ENTRY_POINTS; k++) {
-                        uint32_t s = (uint32_t)e->points[k].tick / tps;
+                        uint32_t s = (uint32_t)e->points[k].tick / etps;
                         if (s >= SEQ_STEPS) continue;
                         mask[s] = '1';
                         if ((int)s + 1 > top) top = (int)s + 1;
@@ -7501,6 +7567,61 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                     mask[top] = '\0';
                     int w = snprintf(out + n, (size_t)(out_len - n), "%s %s\n",
                                      inst->pa_targets[e->target], mask);
+                    if (w < 0 || n + w >= out_len) { out[n] = '\0'; break; }   /* see pa_list */
+                    n += w;
+                }
+                pa_unlock(inst);
+                return n;
+            }
+            /* tN_cC_pa_vals_<base>_<tps>: what every automated lane of this
+             * clip PLAYS at each of 16 steps, base .. base+15, a step being
+             * <tps> ticks — the AUTOMATION bank paints them as an intensity
+             * gradient on the step row (Josh, 2026-09-24, from Legacy).
+             *
+             * One line per lane: "<target> <64 hex chars>\n" — 16 values,
+             * four digits each, the full 14-bit value 0000..3fff, "ffff" where
+             * the lane has no value (outside its window). Full resolution
+             * because the jump destinations SHOW a held step's value in the
+             * parameter's own units (Josh, 2026-09-25); the step-row gradient
+             * derives its 7 bits from it. Evaluated
+             * by the SAME functions playback calls — Mode, Wrap, Smooth and
+             * Scale all apply, the resting value unscaled — so the colours
+             * are what you hear, not the raw points. ONE read per page for the
+             * whole clip (a target name can outgrow a param key, so it is not
+             * in the key). */
+            if (!strncmp(p, "_pa_vals_", 9)) {
+                const char *q = p + 9;
+                uint32_t base = 0, vtps = 0;
+                while (*q >= '0' && *q <= '9') base = base * 10 + (uint32_t)(*q++ - '0');
+                if (*q++ != '_') return -1;
+                while (*q >= '0' && *q <= '9') vtps = vtps * 10 + (uint32_t)(*q++ - '0');
+                if (*q || !vtps || base >= SEQ_STEPS) return -1;
+                int n = 0;
+                if (out_len > 0) out[0] = '\0';
+                pa_lock(inst);
+                for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+                    pa_entry_t *e = &inst->pa_entries[i];
+                    if (!e->used || !e->count || e->track != tidx || e->clip != cidx) continue;
+                    char hex[65];
+                    uint32_t ws = 0, wl = 0, st = TICKS_PER_STEP;
+                    const int have = pa_export_window(tr, e, &ws, &wl, &st);
+                    for (int s = 0; s < 16; s++) {
+                        const uint32_t tk = (base + (uint32_t)s) * vtps;
+                        int v14 = -1;
+                        if (have && wl && tk >= ws && tk < ws + wl) {
+                            uint16_t v;
+                            const int ev = (e->flags & PA_FLAG_PUNCH)
+                                         ? pa_eval_punch(e, tk, ws, wl, st, &v)
+                                         : pa_eval_window(e, tk, ws, wl, &v);
+                            if (ev) {
+                                v14 = (int)((ev == PA_EVAL_REST) ? v : pa_scaled(e, v));
+                                if (v14 > PA_VAL_MAX) v14 = PA_VAL_MAX;
+                            }
+                        }
+                        snprintf(hex + s * 4, 5, "%04x", v14 < 0 ? 0xffff : v14);
+                    }
+                    int w = snprintf(out + n, (size_t)(out_len - n), "%s %s\n",
+                                     inst->pa_targets[e->target], hex);
                     if (w < 0 || n + w >= out_len) { out[n] = '\0'; break; }   /* see pa_list */
                     n += w;
                 }

@@ -17,6 +17,7 @@ import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import {
     White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue,
     DeepRed, DeepGreen, DeepMagenta, Mustard, BrightPink,
+    DeepBrownYellow, BrightOrange, Tan,
     MoveBack, MoveCopy, MoveDelete
 } from '/data/UserData/schwung/shared/constants.mjs';
 import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
@@ -121,14 +122,76 @@ export function stepSaveFlashOn() {
  * row as it is, so the notes under a lock stay readable — the step-record
  * cursor's shape. The copy-source blink's 220 ms phase. Inside the loop window
  * only: a point outside it never plays. */
+/* The automation point blink: 200 ms on, 100 ms off (Josh, 2026-09-25: the
+ * Legacy 45 ms off was "too short, i'd say cycle between like 200ms on 100ms
+ * off"). Shared by the value view and the not-yet-read white points. */
+export const AUTO_POINT_ON_MS = 200, AUTO_POINT_OFF_MS = 100;
+export function autoPointOff(ms) { return (ms % (AUTO_POINT_ON_MS + AUTO_POINT_OFF_MS)) >= AUTO_POINT_ON_MS; }
+
 function paintAutoBankLit(base, lsBase, winEnd) {
     const m = S.autoBankLit;
-    if (!m || !(Math.floor(S.clockMs / 220) % 2)) return;
+    if (!m || autoPointOff(S.clockMs)) return;
     for (let i = 0; i < 16; i++) {
         const absStep = base + i;
         if (absStep < lsBase || absStep >= winEnd) continue;
         if (m.charCodeAt(absStep) === 49) setLED(16 + i, White);   /* '1' */
     }
+}
+
+/* ⭐ THE INTENSITY GRADIENT (Josh, 2026-09-24: "implement the automation
+ * intensity colors on the steps that davebox legacy used"). Legacy's seven
+ * levels, by palette index — Legacy's ui_leds CC_GRAD [76, 29, 29, 3, 4, 67,
+ * 127]: dim brown-yellow through mustard, orange and tan to the top. ⚠ On this
+ * fork's palette 127 is RED (White is 120), so Legacy's "full white" top reads
+ * red here; it is kept as Legacy had it, for Josh to grade on the device. */
+export const AUTO_GRAD = [DeepBrownYellow, Mustard, Mustard, BrightOrange, Tan, 67, Red];
+/* A 0..127 value's level — Legacy's rule: 0 is level 0, the rest spread over
+ * levels 1..6. */
+export function autoGradLevel(v) { return v === 0 ? 0 : Math.min(6, 1 + Math.floor((v - 1) * 6 / 127)); }
+
+/* The selected automation lane's page of its own cycle. Each step shows the
+ * value the lane PLAYS there as the gradient (S.autoLaneVals, from the DSP);
+ * a step holding a real point blinks OFF briefly so points read apart from the
+ * curve between them; steps outside the cycle are DarkGrey (the colour every
+ * step row uses outside its window). Pages sit on the same 16-step boundaries
+ * as the clip's own grid, so a lane that follows the clip lights exactly the
+ * buttons the clip would. Until the values have been read, the points blink
+ * white over dark steps (the one-read-behind state, and a failed read). */
+function paintAutoLane(cy) {
+    const base = ((cy.off >> 4) + cy.page) * 16, end = cy.off + cy.len;
+    const vals = S.autoLaneVals, m = S.autoBankLit;
+    const blinkOff = autoPointOff(S.clockMs);
+    const play = autoLanePlayStep(cy);
+    for (let i = 0; i < 16; i++) {
+        const abs = base + i;
+        let color;
+        if (abs < cy.off || abs >= end) color = DarkGrey;
+        else if (!vals) color = LED_OFF;
+        else {
+            const v = vals[i];
+            color = v < 0 ? LED_OFF
+                  : (blinkOff && m && m.charCodeAt(abs) === 49) ? LED_OFF
+                  : AUTO_GRAD[autoGradLevel(v)];
+        }
+        setLED(16 + i, color);
+    }
+    if (!vals) paintAutoBankLit(base, cy.off, end);
+    /* The playhead, last: it wins over the gradient, the point blink and the
+     * white points of the no-values state. */
+    if (play >= base && play < base + 16 && play < end) setLED(16 + play - base, White);
+    /* An automation hold: the held step solid White (over the point blink). */
+    if (S.heldStepAuto && S.heldStep >= base && S.heldStep < base + 16) setLED(16 + S.heldStep - base, White);
+}
+
+/* The selected lane's playing STEP in its cycle (absolute, like the grid), or
+ * -1: the DSP reports the lane's own tick (state_snapshot), which is exactly
+ * what playback evaluates it at — no clock arithmetic is redone here. */
+export function autoLanePlayStep(cy) {
+    if (!cy || !S.playing) return -1;
+    const lt = S.autoLanePos[cy.t];
+    if (!(lt >= 0) || !cy.tps) return -1;
+    const s = Math.floor(lt / cy.tps);
+    return (s >= cy.off && s < cy.off + cy.len) ? s : -1;
 }
 
 export function updateStepLEDs() {
@@ -254,6 +317,15 @@ export function updateStepLEDs() {
             }
             return;
         }
+    }
+
+    /* ⭐ A SELECTED AUTOMATION ROW OWNS THE STEP ROW (Josh, 2026-09-24): its
+     * cycle's page, not the pad's or clip's — and no notes, which cannot be
+     * edited here ("we don't need to see the notes on the step buttons in
+     * automation mode b/c we can't interact with them"). */
+    if (S.autoCycle && S.autoCycle.t === S.activeTrack) {
+        paintAutoLane(S.autoCycle);
+        return;
     }
 
     /* Drum mode: step buttons show active lane's steps — identical visualization to melodic. */

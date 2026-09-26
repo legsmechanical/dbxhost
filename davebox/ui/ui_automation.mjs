@@ -20,9 +20,11 @@ import { POLL_INTERVAL, SEQ_AUTO_TARGETS, seqAutoAutomatable, BANK_SHORT, PAD_MO
 /* The move_fx: prefix has exactly one builder, and a source invariant pins
  * that (tests/test_move_fx_prefix_owner.sh). Build it here and the suite fails
  * — correctly: two builders are two things to keep in step. */
-import { moveBusComp } from './ui_engine.mjs';
+import { moveBusComp, engineLoadedModuleOrNull } from './ui_engine.mjs';
 /* The tick's prefetch (a cycle with ui_dsp_bridge, used only inside functions). */
 import { dget } from './ui_dsp_bridge.mjs';
+/* The record notice (a cycle with ui_persistence, used only inside functions). */
+import { showActionPopupFor } from './ui_persistence.mjs';
 
 /* ------------------------------------------------------------------ */
 /* THE TRANSPORT — everything crosses in BULK                           */
@@ -216,7 +218,11 @@ function parseList(list) {
         stateByKey.set(stateKey(f[0], f[1], f[4]),
                        { flags: parseInt(f[2], 10) | 0, count: parseInt(f[3], 10) | 0,
                          loop: parseInt(f[5], 10) | 0, res: parseInt(f[6], 10) | 0,
-                         scale: isFinite(sc) ? sc : 100 });
+                         scale: isFinite(sc) ? sc : 100,
+                         /* fields 9-10 (2026-09-25): the loop's START and the
+                          * lane's STEP, in ticks — a drum lane's cycle. Absent
+                          * on a lane that has neither. */
+                         lo: parseInt(f[8], 10) | 0, st: parseInt(f[9], 10) | 0 });
     }
 }
 
@@ -288,6 +294,59 @@ export function automationNoteListChangedElsewhere() {
     presenceStale = true;
 }
 
+/* ---- THE CARRY FILTER (cross-track clip copy) ---------------------------
+ * A copied clip takes its automation with it, re-pointed at the destination
+ * track (the DSP's pa_copy_clip). A level (volume, pan, sends) or a dAVEBOx
+ * knob means the same thing on any track; a MODULE's parameter does only if
+ * the destination has that same module in the same place (Josh, 2026-09-24:
+ * not carrying module automation "makes sense", unlike "params constant
+ * across the same clip-type"). The rest is cleared after the copy lands and
+ * counted in a notice.
+ *
+ * The lanes are taken from the SOURCE's mirror at the gesture — a read after
+ * the copy can fail (pa_list answers null), and a failed read would leave a
+ * stranger's parameter playing. The modules are compared on the next TICK:
+ * a slot read from inside the MIDI handler that made the gesture returns
+ * nothing. A read that fails keeps the lane — never delete what could not
+ * be checked. The clears ride the same ordered queue as the copy, so they
+ * land after it and inside its undo. */
+const carryPending = [];
+function moduleCompOf(target) {
+    const parts = String(target).split(':');
+    if (parts.length < 3 || !/^\d+$/.test(parts[0])) return null;      /* seq:, cc:, at, pb */
+    const comp = parts.slice(1, -1).join(':');
+    return (comp === 'synth' || /^fx\d+$/.test(comp) || /^midi_fx\d+$/.test(comp)
+            || /^move_fx:\d+:fx\d+$/.test(comp)) ? comp : null;
+}
+export function automationCarryFilter(srcT, srcC, dstT, dstC) {
+    if (srcT === dstT) return;
+    const lanes = [];
+    for (const e of automationEntriesFor(srcT, srcC)) {
+        const comp = moduleCompOf(e.target);
+        if (comp) lanes.push({ rest: e.target.slice(e.target.indexOf(':') + 1), comp });
+    }
+    if (lanes.length) carryPending.push({ srcT, dstT, dstC, lanes });
+}
+function carryTick() {
+    while (carryPending.length) {
+        const job = carryPending.shift();
+        let dropped = 0;
+        for (const l of job.lanes) {
+            const a = engineLoadedModuleOrNull(job.srcT, l.comp);
+            const b = engineLoadedModuleOrNull(job.dstT, l.comp);
+            if (a === null || b === null) continue;                 /* could not tell: keep */
+            if (a && a === b) continue;                             /* the same module: it carries */
+            S.pendingDefaultSetParams.push({ key: 't' + job.dstT + '_pa_clear_key',
+                                             val: job.dstC + ' ' + job.dstT + ':' + l.rest });
+            dropped++;
+        }
+        if (dropped) {
+            showActionPopupFor(2000, 'AUTOMATION', dropped + (dropped === 1 ? ' LANE' : ' LANES') + ' NOT CARRIED');
+            presenceStale = true;
+        }
+    }
+}
+
 export function automationRefreshPresence() {
     const list = host_module_get_param('pa_list');
     if (list !== null && list !== undefined) anyAutomation = !!(list && list.length);
@@ -298,27 +357,31 @@ export function automationRefreshPresence() {
 /* The lane flag bits — PA_FLAG_* in dsp/seq8_param_auto.h. UNLINKED is Link: Off
  * (set = off), so every lane written before Note link reads linked. */
 const FLAG_ACTIVE = 1, FLAG_SMOOTH = 2, FLAG_UNLINKED = 4, FLAG_WRAP_RESET = 8, FLAG_PUNCH = 16;
+/* KEEP (PA_FLAG_KEEP): a lane emptied by Clear and kept — listed with no points. */
+const FLAG_KEEP = 32;
+const laneLive = (s) => !!s && (s.count > 0 || !!(s.flags & FLAG_KEEP));
 
 /* null = not automated; else { active, smooth, wrapReset, count, loop }. */
 export function automationStateFor(track, clip, target) {
     const s = stateByKey.get(stateKey(track, clip, target));
-    if (!s || !s.count) return null;
+    if (!laneLive(s)) return null;
     return { active: !!(s.flags & FLAG_ACTIVE), smooth: !!(s.flags & FLAG_SMOOTH),
              wrapReset: !!(s.flags & FLAG_WRAP_RESET), punch: !!(s.flags & FLAG_PUNCH),
              linked: !(s.flags & FLAG_UNLINKED),
              count: s.count, loop: s.loop | 0, res: s.res | 0,
-             scale: isFinite(s.scale) ? s.scale : 100 };
+             scale: isFinite(s.scale) ? s.scale : 100, lo: s.lo | 0, st: s.st | 0 };
 }
 /* Every automated target of one clip — the AUTOMATION bank's list. */
 export function automationEntriesFor(track, clip) {
     const out = [];
     const pfx = track + ' ' + clip + ' ';
     for (const [k, s] of stateByKey) {
-        if (k.indexOf(pfx) !== 0 || !s.count) continue;
+        if (k.indexOf(pfx) !== 0 || !laneLive(s)) continue;
         out.push({ target: k.slice(pfx.length), active: !!(s.flags & FLAG_ACTIVE), smooth: !!(s.flags & FLAG_SMOOTH),
                    wrapReset: !!(s.flags & FLAG_WRAP_RESET), punch: !!(s.flags & FLAG_PUNCH),
              linked: !(s.flags & FLAG_UNLINKED),
-                   count: s.count, loop: s.loop | 0, res: s.res | 0, scale: isFinite(s.scale) ? s.scale : 100 });
+                   count: s.count, loop: s.loop | 0, res: s.res | 0, scale: isFinite(s.scale) ? s.scale : 100,
+                   lo: s.lo | 0, st: s.st | 0 });
     }
     return out;
 }
@@ -385,6 +448,71 @@ export function automationStepTicks(track, clip) {
     return (S.clipTPS[track] && S.clipTPS[track][clip]) || 24;
 }
 
+/* ⭐ A LANE'S CYCLE — the one source of truth for "how long does this
+ * automation loop, and on what grid" (Josh, 2026-09-24: every row shows it,
+ * and the AUTO bank's grid, paging, page bar and playhead follow it).
+ *
+ *   { off, len, tps, pages, text, follows }
+ *     off / len  — the window, in STEPS of `tps` ticks (off = first step)
+ *     pages      — ceil(len / 16), the step-button pages it spans
+ *     text       — the value column: "4 BAR", "13 ST", "13 ST/32", or
+ *                  "CLIP" when the lane follows its clip
+ *     follows    — true when the lane has no Loop of its own
+ *
+ * A lane with its own Loop is that window; one without follows the clip (a
+ * melodic clip's loop window, or — today, on a drum track — the selected
+ * pad's, which is what the step row and `_pa_steps` already use). When drum
+ * automation gets per-lane cycles, only this function changes. Null for a
+ * target the owner does not know. */
+export function rowCycle(track, clip, target) {
+    const s = stateByKey.get(stateKey(track, clip, target));
+    if (!s) return null;
+    return cycleOf(track, clip, s.loop | 0, s.lo | 0, s.st | 0);
+}
+
+/* The geometry behind rowCycle, for a lane whose own Loop is `loop` ticks
+ * from `lo`, on a step of `st` ticks (0 = the clip's / pad's step). A drum
+ * lane always has one (its CYCLE, set from the pad it was recorded on); a
+ * lane with loop 0 follows the clip, or the selected pad before a drum lane
+ * has been written. */
+function cycleOf(track, clip, loop, lo, st) {
+    let tps = automationStepTicks(track, clip);
+    let off, len, follows;
+    if (loop > 0) {
+        if (st > 0) tps = st;
+        off = Math.round((lo | 0) / tps); len = Math.max(1, Math.round(loop / tps)); follows = false;
+    } else if (S.trackPadMode[track] === PAD_MODE_DRUM) {
+        off = S.drumLaneLoopStart[track] | 0; len = S.drumLaneLength[track] || 16; follows = true;
+    } else {
+        off = (S.clipLoopStart[track] && S.clipLoopStart[track][clip]) | 0;
+        len = (S.clipLength[track] && S.clipLength[track][clip]) || 16; follows = true;
+    }
+    return { off, len, tps, pages: Math.max(1, Math.ceil(len / 16)),
+             text: follows ? 'CLIP' : cycleText(len, tps), follows };
+}
+
+/* The length a recording onto `target` runs over, always as a length — the
+ * record notice exists because a set full of lanes at different lengths is
+ * hard to keep in your head, so "CLIP" would answer nothing. A target with no
+ * lane yet follows the clip (or pad) like any new lane. */
+export function recordCycleText(track, clip, target) {
+    const s = stateByKey.get(stateKey(track, clip, target));
+    const cy = s ? cycleOf(track, clip, s.loop | 0, s.lo | 0, s.st | 0) : cycleOf(track, clip, 0, 0, 0);
+    return cycleText(cy.len, cy.tps);
+}
+
+/* The step unit's name when it is not 1/16 — a step of `tps` ticks is a
+ * 1/(384/tps) note (96 ticks per beat). */
+const STEP_UNIT = { 12: '/32', 48: '/8', 96: '/4', 192: '/2', 384: '/1' };
+/* "4 BAR" when the cycle is whole bars (16 sixteenths each), else its length
+ * in its OWN steps, with the unit when it is not 1/16: "13 ST", "13 ST/32".
+ * Never fractional bars: "0.81 BAR" says nothing about the grid. */
+export function cycleText(steps, tps) {
+    const ticks = steps * tps;
+    if (ticks > 0 && ticks % 384 === 0) return (ticks / 384) + ' BAR';
+    return steps + ' ST' + (tps === 24 ? '' : (STEP_UNIT[tps] || ''));
+}
+
 /* The mixer levels publish no chain_params — they are host strip state, not
  * a module's parameters — so their ranges are declared here, once, in the
  * host's own units: a slot or bus Volume is a 0..4 gain (unity 1), Pan 0..1
@@ -438,13 +566,32 @@ function componentMeta(slot, comp) {
     return m;
 }
 
+/* One parameter's metadata. A REPEATED element's key (DR32's
+ * `pad3_transpose`, minijv's `sram_part_0_partlevel`) is not in chain_params,
+ * which publishes the BARE key (`transpose`) — see childSpec in ui_discover.
+ * Missing that turned an int -48..48 into a 0..1 float, so a recorded
+ * Transpose played back as 0 or 1 semitone (device, 2026-09-25). The exact
+ * key wins; otherwise the longest bare key the full key ends with, after an
+ * "_" and an element index. */
+function paramMeta(slot, comp, key) {
+    const m = componentMeta(slot, comp);
+    if (m[key]) return m[key];
+    let best = '';
+    for (const k in m) {
+        const cut = key.length - k.length - 1;
+        if (cut > 0 && k.length > best.length && key.charCodeAt(cut) === 95 /* _ */ &&
+                key.endsWith(k) && /\d/.test(key.slice(0, cut))) best = k;
+    }
+    return best ? m[best] : undefined;
+}
+
 /* 14-bit normalized -> the string the parameter actually takes.
  *
  * The DSP stores automation normalized because only JS has the metadata that
  * says what a parameter's units are; this is where that knowledge is applied. */
 function wireValue(slot, comp, key, norm) {
     const t = Math.max(0, Math.min(16383, norm)) / 16383;
-    const p = componentMeta(slot, comp)[key];
+    const p = paramMeta(slot, comp, key);
     if (!p) return String(Math.round(t * 100) / 100);      /* assume 0..1 */
 
     if (p.type === 'enum' && Array.isArray(p.options) && p.options.length) {
@@ -459,6 +606,18 @@ function wireValue(slot, comp, key, norm) {
     const step = (typeof p.step === 'number' && p.step > 0) ? p.step : 0.01;
     const q = Math.round((v - min) / step) * step + min;
     return String(Math.round(q * 1e6) / 1e6);
+}
+
+/* A 14-bit value of `target` in the parameter's own units, as a string — what
+ * a knob cell shows — or null when the target has no such form. */
+export function automationWireValue(target, norm) {
+    const tg = String(target);
+    if (midiTargetIsMidi(tg)) {
+        const n = Math.max(0, Math.min(16383, norm | 0));
+        return String(tg === 'pb' ? n : Math.round(n * 127 / 16383));
+    }
+    const pr = pushPair(tg, norm);
+    return pr && pr.val != null ? String(pr.val) : null;
 }
 
 /* "<slot>:<comp>:<key>" -> { slot, key, val } in the parameter's own units.
@@ -655,6 +814,7 @@ function clipChanged() {
 export function automationForgetClipsForTest() { lastClipSeen = null; }
 
 export function automationTick() {
+    if (carryPending.length) carryTick();
     gesturesTick();
     flushModuleWrites();
     /* ⚠ NOT while a pa-clear write is still queued — see queuedClearOutstanding.
@@ -781,7 +941,7 @@ function queueSet(key, val, coalesce) {
 
 /* The parameter's wire string -> 14-bit normalized. The inverse of wireValue. */
 function normValue(slot, comp, key, wire) {
-    const p = componentMeta(slot, comp)[key];
+    const p = paramMeta(slot, comp, key);
     let v = parseFloat(wire);
     if (isNaN(v)) v = 0;
     let t;
@@ -896,7 +1056,10 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
     /* A held step wins over everything: the turn writes that step, playing or
      * not. Stepped hold means the lock lasts until the next point. */
     if (S.heldStep >= 0) {
-        const tps = automationStepTicks(track, clip);
+        /* A step held on the AUTOMATION grid is a step of THAT lane's cycle,
+         * on its own grid (a drum lane's step need not be the pad's). */
+        const tps = (S.heldStepAuto && S.autoCycle && S.autoCycle.t === track)
+                  ? S.autoCycle.tps : automationStepTicks(track, clip);
         const from = S.heldStep * tps, to = from + tps - 1;
         ensureRest(g, target, prevNorm());
         ensureCheckpoint(g);
@@ -914,6 +1077,9 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
          * the tap window, auto-assigns an empty step's note). */
         S.stepHoldPromote = true;
         queueSet('t' + track + '_pa_set2', clip + ' ' + target + ' ' + from + ' ' + to + ' ' + norm);
+        /* What the jump destination shows for the held step until the next
+         * values read catches up (autoLaneFocus). */
+        S.autoLockLast = { track, clip, target, step: S.heldStep, norm, at: S.clockMs };
         automationNoteWrite();
         console.log('[auto] p-lock t' + track + ' c' + clip + ' step ' + S.heldStep + ' ' + target + ' = ' + norm);
         return;
@@ -934,6 +1100,10 @@ export function automationParamEdit(track, clip, slot, fullKey, wire, prevWire) 
      * to be recorded — book the one undo for the gesture. */
     ensureRest(g, target, prevNorm());
     if (S.recordArmed) ensureCheckpoint(g);
+    /* Every recording start says how long the lane it lands on is (Josh,
+     * 2026-09-24): lanes at many different lengths are hard to keep track of.
+     * Not the parameter — you just turned it. */
+    if (!g.live && S.recordArmed) showActionPopupFor(1000, '\u25CF LANE: ' + recordCycleText(track, clip, target));
     /* The DSP may be recording whatever our Record mirror says, so the drain
      * gate opens now and is corrected by one presence read when the gesture
      * ends (endGesture) — a wrong "no automation" here would leave a fresh
@@ -978,6 +1148,20 @@ export function automationClearKey(track, clip, target, checkpoint) {
     return true;
 }
 
+/* The AUTOMATION bank's Clear (Josh, 2026-09-25): every point of the lane
+ * goes, the lane and its settings stay (pa_clear_points, PA_FLAG_KEEP), so new
+ * automation can be added to it. One undo. */
+export function automationClearPoints(track, clip, target) {
+    if (!automationStateFor(track, clip, target)) return false;
+    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    queueSet('t' + track + '_pa_clear_points', clip + ' ' + target);
+    const s = stateByKey.get(stateKey(track, clip, target));
+    if (s) { s.count = 0; s.flags |= FLAG_KEEP; }
+    listGen++;
+    expectStaged();
+    return true;
+}
+
 /* Delete + step: every parameter's points in that step. */
 export function automationClearStep(track, clip, step) {
     const tps = automationStepTicks(track, clip);
@@ -993,7 +1177,7 @@ export function automationClearStep(track, clip, step) {
 export function automationSmoothable(slot, fullKey) {
     if (slot === 'midi' || midiTargetIsMidi(fullKey)) return true;   /* a controller sweep ramps */
     const [comp, key] = splitFullKey(fullKey);
-    const p = componentMeta(slot, comp)[key];
+    const p = paramMeta(slot, comp, key);
     /* Every NUMERIC parameter ramps (device, 2026-09-05: "smooth option is
      * missing" — the tested synth declares cutoff as an int 0..127, and the
      * row was floats-only). The lane interpolates in its own 14-bit domain and
@@ -1067,10 +1251,32 @@ export function automationSetLoop(track, clip, target, loopTicks, checkpoint) {
     if (!s) return false;
     const len = Math.max(0, loopTicks | 0);
     if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
-    queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' ' + len + ' 0 ' + (s.res | 0));
+    /* The start and step ride along unchanged (a drum lane's cycle keeps its
+     * place and its grid when only its length is dialled). */
+    queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' ' + len + ' ' + (s.lo | 0) + ' ' + (s.res | 0) + ' ' + (s.st | 0));
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.loop = len;
     return true;
+}
+/* A drum lane's Match pad: its cycle becomes the selected pad's — start,
+ * length and step (pa_loop with length 0 on a drum track). The mirror takes
+ * the pad's geometry now, so the row reads right before the next list. */
+export function automationMatchPad(track, clip, target) {
+    const s = automationStateFor(track, clip, target);
+    if (!s || S.trackPadMode[track] !== PAD_MODE_DRUM) return false;
+    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' 0 0 ' + (s.res | 0));
+    const cur = stateByKey.get(stateKey(track, clip, target));
+    if (cur) {
+        const p = padCycle(track);
+        cur.loop = p.len * p.tps; cur.lo = p.off * p.tps; cur.st = p.tps;
+    }
+    return true;
+}
+/* The selected pad as a cycle, in its own steps. */
+export function padCycle(track) {
+    const tps = S.drumLaneTPS[track] || 24;
+    return { off: S.drumLaneLoopStart[track] | 0, len: S.drumLaneLength[track] || 16, tps };
 }
 /* The AUTOMATION bank's Rate row: the lane's playback rate as a CODE, 1 (/16)
  * … 5 (x1) … 9 (x16); 0 = unset = x1. Rides pa_loop's third field, with the
@@ -1082,7 +1288,7 @@ export function automationSetRate(track, clip, target, code, checkpoint) {
     if (!s) return false;
     const c = Math.max(1, Math.min(9, code | 0));
     if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
-    queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' ' + (s.loop | 0) + ' 0 ' + c);
+    queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' ' + (s.loop | 0) + ' ' + (s.lo | 0) + ' ' + c + ' ' + (s.st | 0));
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.res = c;
     return true;
@@ -1104,7 +1310,7 @@ export function automationBipolarCenter(target) {
     const key  = m[m.length - 1];
     if (isNaN(slot)) return null;
     if (key === 'pan' && isLevelComponent(comp)) return normValue(slot, comp, key, '0.5');
-    const p = componentMeta(slot, comp)[key];
+    const p = paramMeta(slot, comp, key);
     if (!p) return null;
     if (typeof p.center === 'number') return normValue(slot, comp, key, String(p.center));
     if (typeof p.min === 'number' && typeof p.max === 'number' && p.min < 0 && p.max > 0)

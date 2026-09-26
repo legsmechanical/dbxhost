@@ -45,7 +45,8 @@ globalThis.shadow_set_params = () => true; globalThis.shadow_get_params = () => 
 globalThis.host_vol_block = () => {}; globalThis.host_edit_cc_block = () => {};
 globalThis.host_autosave_hold = () => {};
 globalThis.clear_screen = () => { fb.fill(0); };
-globalThis.print = (x, y, t, c) => { for (let i = 0; i < String(t).length * 6; i++) px(x + i, y, c); };
+const printed = [];
+globalThis.print = (x, y, t, c) => { printed.push(String(t)); for (let i = 0; i < String(t).length * 6; i++) px(x + i, y, c); };
 globalThis.fill_rect = (x, y, w, h, c) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) px(x + i, y + j, c); };
 globalThis.draw_rect = (x, y, w, h, c) => { for (let i = 0; i < w; i++) { px(x + i, y, c); px(x + i, y + h - 1, c); } };
 globalThis.stipple_rect = () => {};
@@ -172,9 +173,13 @@ step('jog click: the MENU (cursor); click a row: its OPS; Delete runs with a che
     click(); ticks(1);
     assert(menu().ops && menu().ops.row.label === 'Lvl>Volume', 'ops for the row under the cursor');
     const ops = menu().ops.rows.map(o => o.op);
-    assert(ops[0] === 'delete' && ops.indexOf('active') >= 0 && ops.indexOf('loop') >= 0, 'ops: ' + JSON.stringify(ops));
+    /* Delete LAST, Clear just above it (Josh, 2026-09-25). */
+    assert(ops[ops.length - 1] === 'delete' && ops[ops.length - 2] === 'clear' &&
+           ops.indexOf('active') >= 0 && ops.indexOf('loop') >= 0, 'ops: ' + JSON.stringify(ops));
     sets.length = 0;
     const target = menu().ops.row.target;
+    for (let i = 0; i < ops.length - 1; i++) cc(14, 1);
+    ticks(1);
     click();                                             /* Delete */
     /* The stub IS the DSP: after the write crosses, its list no longer has the row. */
     LIST = LIST.split('\n').filter(l => l && l.indexOf(' ' + target + ' ') < 0).join('\n') + '\n';
@@ -183,6 +188,51 @@ step('jog click: the MENU (cursor); click a row: its OPS; Delete runs with a che
     assert(sets.some(x => x === 't0_pa_clear_key=0 ' + target), 'pa_clear_key for the row, got ' + JSON.stringify(sets));
     assert(!menu().ops && menu().menu, 'back on the menu');
     assert(!ab.autoBankRows(T, C).some(r => r.target === target), 'the row is gone from the list');
+});
+/* `text` in the list's value font, drawn anywhere on screen exactly (both polarities). */
+async function _mv() { return (await import('../../ui/ui_movy.mjs')).mvPrint; }
+const mvPrint = await _mv();
+function drawnMv(text) {
+    const save = fb.slice(); fb.fill(0);
+    mvPrint(0, 0, text, 1);
+    const ink = []; for (let y = 0; y < 64; y++) for (let x = 0; x < 128; x++) if (fb[y * 128 + x]) ink.push([x, y]);
+    fb.set(save);
+    if (!ink.length) throw new Error('the font drew nothing');
+    const w = Math.max(...ink.map(q => q[0])) + 1, h = Math.max(...ink.map(q => q[1])) + 1;
+    const on = new Set(ink.map(([x, y]) => y * 128 + x));
+    for (const pol of [1, 0]) for (let oy = 0; oy + h <= 64; oy++) for (let ox = 0; ox + w <= 128; ox++) {
+        let m = true;
+        for (let y = 0; y < h && m; y++) for (let x = 0; x < w; x++) if ((fb[(oy + y) * 128 + ox + x] === pol) !== on.has(y * 128 + x)) { m = false; break; }
+        if (m) return true;
+    }
+    return false;
+}
+step('⭐ CLEAR empties the lane with a checkpoint and KEEPS its row, reading EMPTY', () => {
+    const rows = ab.autoBankRows(T, C);
+    const ci = rows.findIndex(r => r.label === 'Syn>Cutoff');
+    menu().sel = ci; click(); ticks(1);
+    const ops = menu().ops.rows.map(o => o.op);
+    const k = ops.indexOf('clear');
+    assert(k >= 0, 'no Clear op: ' + JSON.stringify(ops));
+    for (let i = 0; i < k; i++) cc(14, 1);
+    ticks(1);
+    sets.length = 0;
+    click();
+    /* The DSP's list agrees as the write crosses: count 0 with the keep bit. */
+    LIST = LIST.split('\n').map(l => l.indexOf(' 0:synth:cutoff ') >= 0 ? l.replace(/^(\d+ \d+ )(\d+) (\d+)/, (m, a, f) => a + (parseInt(f, 10) | 32) + ' 0') : l).join('\n');
+    ticks(2);
+    assert(sets.some(x => x.startsWith('t0_c0_undo_checkpoint=')), 'Clear booked no checkpoint: ' + JSON.stringify(sets));
+    assert(sets.some(x => x === 't0_pa_clear_points=0 0:synth:cutoff'), 'no pa_clear_points, got ' + JSON.stringify(sets));
+    assert(!sets.some(x => x.indexOf('pa_clear_key') >= 0), 'Clear DELETED the lane');
+    const row = ab.autoBankRows(T, C).find(r => r.target === '0:synth:cutoff');
+    assert(row, 'the cleared lane left the list');
+    assert(!menu().ops && menu().menu, 'Clear did not close its pop-up back to the list');
+    assert(S.actionPopupLines.join(' ') === 'AUTOMATION CLEARED', 'no CLEARED notice: ' + JSON.stringify(S.actionPopupLines));
+    S.actionPopupLines = []; S.actionPopupEndTick = 0; S.actionPopupEndMs = 0;   /* the notice over the list: gone */
+    globalThis.clear_screen(); render.drawUI();
+    assert(drawnMv('EMPTY'), 'the cleared row does not read EMPTY on screen');
+    auto.automationRefreshPresence(); ticks(1);
+    assert(ab.autoBankRows(T, C).some(r => r.target === '0:synth:cutoff'), 'after the DSP list the lane is gone');
 });
 step('Smooth/Stepped is an op HERE (every numeric param): cutoff offers it, voices (int) too; Loop edits in steps and writes pa_loop in ticks', () => {
     S.clipTPS[T][C] = 24; S.clipLength[T][C] = 16;
@@ -199,7 +249,7 @@ step('Smooth/Stepped is an op HERE (every numeric param): cutoff offers it, voic
     cc(14, 4); cc(14, 4); ticks(2);
     assert(menu().loopVal === 8, 'jog sets steps, got ' + menu().loopVal);
     /* ⭑ Applies on every change (Josh, 2026-09-03), ONE checkpoint per edit session. */
-    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 0'), '8 steps × 24 ticks, got ' + JSON.stringify(sets));
+    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 0 0'), '8 steps × 24 ticks, got ' + JSON.stringify(sets));
     assert(sets.filter(x => x.startsWith('t0_c0_undo_checkpoint=')).length === 1, 'one checkpoint for the session');
     sets.length = 0;
     click(); ticks(2);
@@ -214,9 +264,9 @@ step('Smooth/Stepped is an op HERE (every numeric param): cutoff offers it, voic
     assert(menu().rateEdit === true, 'Rate: click edits');
     sets.length = 0;
     cc(14, 2); ticks(2);                                  /* x1 -> x4 */
-    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 7'), 'x4 (code 7) with the 8-step loop kept, got ' + JSON.stringify(sets));
+    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 7 0'), 'x4 (code 7) with the 8-step loop kept, got ' + JSON.stringify(sets));
     cc(14, 127); cc(14, 127); cc(14, 127); cc(14, 127); cc(14, 127); cc(14, 127); ticks(2);   /* down to /4 */
-    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 3'), '/4 (code 3), got ' + JSON.stringify(sets));
+    assert(sets.some(x => x === 't0_pa_loop=0 0:synth:cutoff 192 0 3 0'), '/4 (code 3), got ' + JSON.stringify(sets));
     cc(14, 127); cc(14, 127); cc(14, 127); ticks(1);
     assert(menu().rateVal === 1, 'clamps at /16, got ' + menu().rateVal);
     back(); ticks(1); assert(!menu().rateEdit && menu().ops, 'Back leaves the edit, ops stay');
@@ -276,11 +326,11 @@ step('Back closes one layer at a time: ops → menu → card → out of bank mod
 });
 step('Delete + jog click on the card CLEARS THE CLIP (pa_clear + at_clear, one checkpoint); the list empties', () => {
     S.bankCardLatched = true; sets.length = 0;
-    cc(119, 127); click(); cc(119, 0); LIST = ''; ticks(3);
+    cc(119, 127); click(); cc(119, 0); LIST = ''; ticks(8);   /* past a poll after the clear crosses */
     assert(sets.some(x => x === 't0_pa_clear=0'), 'pa_clear, got ' + JSON.stringify(sets));
     assert(sets.some(x => x === 't0_c0_at_clear=1'), 'the aftertouch lane too');
     assert(sets.filter(x => x.startsWith('t0_c0_undo_checkpoint=')).length >= 1, 'a checkpoint');
-    assert(ab.autoBankRows(T, C).length === 0, 'empty list');
+    assert(ab.autoBankRows(T, C).length === 0, 'empty list: ' + JSON.stringify(ab.autoBankRows(T, C).map(r => r.label)));
 });
 step('while the menu is open the jog is the menu\'s (no walk); after Back the walk resumes and the menu state is dropped', () => {
     click(); ticks(1); assert(menu().menu, 'menu open');

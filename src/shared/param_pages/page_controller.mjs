@@ -33,7 +33,7 @@
 import { planPages, pickMode, PAGE_KNOBS, PAGE_MENU, PAGE_PRESET, PAGE_ITEMS,
          buildTrailingPages, makeClaimer } from "./page_plan.mjs";
 import { resolveChildKey, childIndexParam, childIndexToWire, childIndexFromWire,
-         childName, childLabel, childPressParam } from "./child_key.mjs";
+         childName, childLabel, childPressParam, childCount } from "./child_key.mjs";
 import { focusParamOf, voicesOf, voiceIndexFromLevel,
          voiceIndexFromWire, padLayoutOf, focusToken, focusPressParamOf } from "./voices.mjs";
 import { buildMetaIndex, inferFromValue, isTurnable, flipsOnClick, enumIndexOf, KIND_ENUM, KIND_OPAQUE
@@ -1293,9 +1293,27 @@ export function createController(io = {}) {
         const pages = s.pages || [];
         for (let i = 0; i < pages.length; i++) {
             const pg = pages[i];
-            const hit = pg && (s.restoreName ? pg.name === s.restoreName
-                                             : (Array.isArray(pg.keys) && pg.keys.indexOf(s.restoreKey) >= 0));
+            let hit = pg && (s.restoreName ? pg.name === s.restoreName
+                                           : (Array.isArray(pg.keys) && pg.keys.indexOf(s.restoreKey) >= 0));
+            /*
+             * A REPEATED element's concrete key (pad2_transpose) is not in any
+             * page's keys -- they are bare (transpose) and address whichever
+             * element is selected. Landing on the page is only half of it: the
+             * element must be selected too, or the knob under the finger is a
+             * different pad's parameter.
+             */
+            let child = -1;
+            if (!hit && pg && s.restoreKey && pg.childLevel && Array.isArray(pg.keys)) {
+                const n = childCount(pg.childLevel);
+                for (let ci = 0; ci < n && child < 0; ci++) {
+                    for (const k of pg.keys) {
+                        if (resolveChildKey(pg.childLevel, ci, k) === s.restoreKey) { child = ci; break; }
+                    }
+                }
+                hit = child >= 0;
+            }
             if (hit) {
+                if (child >= 0 && childIndexFor(pg.level) !== child) selectChild(pg.level, child);
                 s.pageIndex = i;
                 s.restoreName = null;
                 s.restoreKey = null;
@@ -1770,7 +1788,20 @@ export function createController(io = {}) {
         }
     }
 
-    function dropChildLevelCache(levelName) {
+/*
+     * Select element `i` of a repeated level, as a pick from its instance list
+     * does: locally, then told to the MODULE when it owns the focus, and the
+     * level's cached values dropped (they belonged to the previous element).
+     */
+    function selectChild(levelName, i) {
+        s.childIndex[levelName] = i;
+        const def = childLevelDef(levelName);
+        const idxParam = childIndexParam(def);
+        if (idxParam) setParam(`${s.prefix}:${idxParam}`, childIndexToWire(def, i));
+        dropChildLevelCache(levelName);
+    }
+
+        function dropChildLevelCache(levelName) {
         /* The borrowed metadata belonged to the instance we just left -- above
          * all filepath_param, which still names the previous pad's file. */
         installChildAliases();

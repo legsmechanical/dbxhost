@@ -373,6 +373,7 @@ export function prerollGateTicks(countInDurMs, pressedDurMs, maxTicks) {
     return Math.max(1, Math.min(maxTicks, Math.round(pressedDurMs * dspPerMs)));
 }
 
+let _tickGapLogMs = -1e9;
 export function _tickImpl() {
     /* ⭑⭑ STUCK-MODIFIER RECONCILE — heal a Shift release that never arrived.
      *
@@ -431,6 +432,16 @@ export function _tickImpl() {
         S.clockMs = nowMs();
         const _dtMs = _prevMs > 0 ? Math.max(0, S.clockMs - _prevMs) : 0;
         if (S.bootSplashMs > 0) S.bootSplashMs = Math.max(0, S.bootSplashMs - _dtMs);
+        /* PROBE (2026-09-25, Josh: the blinking automation steps "seem to hang
+         * for a brief moment every now and again"): a gap between ticks long
+         * enough to see is the whole UI pausing, not the blink — name it in
+         * debug.log with what was on screen, at most once a second. Remove
+         * once the cause is known. */
+        if (_dtMs > 120 && S.clockMs - _tickGapLogMs > 1000) {
+            _tickGapLogMs = S.clockMs;
+            console.log('[tick] gap ' + Math.round(_dtMs) + ' ms bank=' + S.activeBank +
+                        ' lane=' + (S.autoCycle ? 1 : 0) + ' playing=' + (S.playing ? 1 : 0));
+        }
     }
     tickPrefetch();                              /* the tick's one read — see ui_dsp_bridge */
     /* The bank header's [instrument]: one shadow read a second, or at once after

@@ -324,7 +324,7 @@ static int pa_target_referenced(const seq8_instance_t *inst, int target) {
 static pa_entry_t *pa_evict_zombie(seq8_instance_t *inst, int keep) {
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         pa_entry_t *e = &inst->pa_entries[i];
-        if (!e->used || e->count) continue;
+        if (!e->used || e->count || (e->flags & PA_FLAG_KEEP)) continue;   /* a kept lane is not a zombie */
         if (__atomic_load_n(&e->release, __ATOMIC_ACQUIRE)) continue;   /* rest not yet re-asserted */
         if (pa_target_in_hand(inst, e->target)) continue;
         int zt = e->target;
@@ -382,7 +382,8 @@ static void pa_entry_free(pa_entry_t *e) {
 static void pa_entry_retire(pa_entry_t *e) {
     if (!e) return;
     e->count = 0;
-    e->loop_len = e->loop_off = e->resolution = 0;
+    e->flags &= (uint8_t)~PA_FLAG_KEEP;   /* retired: no longer a kept lane */
+    e->loop_len = e->loop_off = e->resolution = e->step_ticks = 0;
     e->last_sent_valid = 0;
     __atomic_store_n(&e->release, 1, __ATOMIC_RELEASE);
 }
@@ -399,7 +400,7 @@ static void pa_pin_clip_length(seq8_instance_t *inst, int track, int clip, uint3
     pa_write_begin(inst);
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         pa_entry_t *e = &inst->pa_entries[i];
-        if (!e->used || e->track != track || e->clip != clip || !e->count) continue;
+        if (e->track != track || e->clip != clip || !pa_entry_live(e)) continue;
         if (e->loop_len) continue;                       /* already its own window */
         e->loop_len = (uint16_t)(old_ticks > 0xFFFFu ? 0xFFFFu : old_ticks);
         e->loop_off = 0;
@@ -793,7 +794,15 @@ typedef struct {
     uint32_t num, den;
     int32_t  d;
     uint32_t w;
+    uint32_t base;      /* ROTATE wraps inside [base, base + w) */
     uint32_t src, dst, span;
+    /* ALL LANES, read per drum lane against ITS OWN cycle (see
+     * pa_drum_link_op): the new step for a resolution change (0 = a plain
+     * scale), a rotate by whole steps (d is then only a direction), and a
+     * double that copies the cycle forward and doubles it. */
+    uint32_t new_step;
+    int      by_step;
+    int      double_cycle;
 } pa_link_op_t;
 
 /* The lane plays on the clip's own clock: no Loop window, Rate x1 (0 = never
@@ -821,7 +830,8 @@ static int pa_link_entry(pa_entry_t *e, const pa_link_op_t *op) {
         if (op->op == PA_LINK_SCALE) {
             t = (uint32_t)((uint64_t)t * op->num / op->den);
         } else if (op->op == PA_LINK_ROTATE) {
-            if (t < op->w) t = (uint32_t)((((int64_t)t + op->d) % (int64_t)op->w + op->w) % op->w);
+            if (t >= op->base && t < op->base + op->w)
+                t = op->base + (uint32_t)((((int64_t)(t - op->base) + op->d) % (int64_t)op->w + op->w) % op->w);
         } else if (t >= op->dst && t < op->dst + op->span) {
             continue;                                   /* COPY: replaced */
         }
@@ -864,6 +874,40 @@ static int pa_link_entry(pa_entry_t *e, const pa_link_op_t *op) {
  * its hidden melodic clip — so a melodic clip op reaching a drum track moved no
  * note that plays, and must move no automation either. Only an ALL LANES op
  * (op->drum) may move a drum track's lanes (RULED 2026-09-11). */
+/* An ALL LANES op on one drum lane WITH A CYCLE: the lane moves inside its own
+ * cycle, in its own steps, the way each drum lane moves its own notes (Josh,
+ * 2026-09-24: every automation lane has its own cycle). Fills `eop` and
+ * updates the cycle; 0 = nothing to do for this lane. Holds the writer lock. */
+static int pa_drum_link_op(pa_entry_t *e, const pa_link_op_t *op, pa_link_op_t *eop) {
+    *eop = *op;
+    const uint32_t st = e->step_ticks ? e->step_ticks : (uint32_t)TICKS_PER_STEP;
+    if (op->op == PA_LINK_SCALE) {
+        if (op->new_step) { eop->num = op->new_step; eop->den = st; }
+        if (!eop->num || !eop->den || eop->num == eop->den) return 0;
+        uint16_t l = pa_scale_u16(e->loop_len, eop->num, eop->den);
+        uint16_t o = pa_scale_u16(e->loop_off, eop->num, eop->den);
+        if ((uint32_t)o + l > 0xFFFFu) l = (uint16_t)(0xFFFFu - o);
+        e->loop_len = l ? l : 1;
+        e->loop_off = o;
+        if (op->new_step) e->step_ticks = (uint16_t)op->new_step;
+        return 1;
+    }
+    if (op->op == PA_LINK_ROTATE) {
+        eop->base = e->loop_off;
+        eop->w    = e->loop_len;
+        eop->d    = op->by_step ? (op->d < 0 ? -(int32_t)st : (int32_t)st) : op->d;
+        return eop->w > (uint32_t)(eop->d < 0 ? -eop->d : eop->d);
+    }
+    if (op->op == PA_LINK_COPY && op->double_cycle) {
+        uint32_t l = e->loop_len;
+        if ((uint32_t)e->loop_off + 2 * l > 0xFFFFu || (2 * l) / st > SEQ_STEPS) return 0;
+        eop->src = e->loop_off; eop->dst = e->loop_off + l; eop->span = l;
+        e->loop_len = (uint16_t)(2 * l);
+        return 1;
+    }
+    return 1;
+}
+
 static void pa_link_clip(seq8_instance_t *inst, int track, int clip, const pa_link_op_t *op) {
     if ((inst->tracks[track].pad_mode == PAD_MODE_DRUM) != (op->drum != 0)) return;
     int changed = 0, full = 0;
@@ -873,7 +917,11 @@ static void pa_link_clip(seq8_instance_t *inst, int track, int clip, const pa_li
         pa_entry_t *e = &inst->pa_entries[i];
         if (!e->used || e->track != track || e->clip != clip || !e->count) continue;
         if (e->flags & PA_FLAG_UNLINKED) continue;
-        if (op->op == PA_LINK_SCALE) {
+        pa_link_op_t eop = *op;
+        if (op->drum && e->loop_len) {
+            /* A drum lane with its cycle: moved inside that cycle. */
+            if (!pa_drum_link_op(e, op, &eop)) continue;
+        } else if (op->op == PA_LINK_SCALE) {
             if (e->loop_len) {
                 uint16_t l = pa_scale_u16(e->loop_len, op->num, op->den);
                 e->loop_len = l ? l : 1;
@@ -882,7 +930,7 @@ static void pa_link_clip(seq8_instance_t *inst, int track, int clip, const pa_li
         } else if (!pa_follows_clip(e)) {
             continue;
         }
-        if (!pa_link_entry(e, op)) full = 1;
+        if (!pa_link_entry(e, &eop)) full = 1;
         changed = 1;
     }
     if (full) inst->pa_store_full = PA_FULL_POINTS;
@@ -902,6 +950,29 @@ static void pa_link_rotate(seq8_instance_t *inst, int track, int clip, int drum,
     pa_link_op_t op = { .op = PA_LINK_ROTATE, .drum = drum, .d = d, .w = w };
     pa_link_clip(inst, track, clip, &op);
 }
+/* ALL LANES only (drum): the forms that read each lane's own cycle — see
+ * pa_drum_link_op. A lane without a cycle (the pads' aftertouch) gets the
+ * plain op on the longest-lane window, as before. */
+static void pa_link_drum_resolution(seq8_instance_t *inst, int track, int clip,
+                                    uint32_t new_tps, uint32_t win_tps) {
+    pa_link_op_t op = { .op = PA_LINK_SCALE, .drum = 1, .num = new_tps, .den = win_tps,
+                        .new_step = new_tps };
+    if (!new_tps || !win_tps) return;
+    pa_link_clip(inst, track, clip, &op);
+}
+static void pa_link_drum_shift(seq8_instance_t *inst, int track, int clip,
+                               int32_t d, uint32_t w, int by_step) {
+    if (!w || !d) return;
+    pa_link_op_t op = { .op = PA_LINK_ROTATE, .drum = 1, .d = d, .w = w, .by_step = by_step };
+    pa_link_clip(inst, track, clip, &op);
+}
+static void pa_link_drum_double(seq8_instance_t *inst, int track, int clip, uint32_t win) {
+    if (!win) return;
+    pa_link_op_t op = { .op = PA_LINK_COPY, .drum = 1, .src = 0, .dst = win, .span = win,
+                        .double_cycle = 1 };
+    pa_link_clip(inst, track, clip, &op);
+}
+
 static void pa_link_copy(seq8_instance_t *inst, int track, int clip, int drum,
                          uint32_t src, uint32_t dst, uint32_t span) {
     if (!span || src == dst) return;
@@ -956,6 +1027,97 @@ static uint32_t pa_drum_clip_tick(const seq8_instance_t *inst, const seq8_track_
     uint32_t abs = (uint32_t)inst->global_tick * (uint32_t)TICKS_PER_STEP
                  + (uint32_t)inst->master_tick_in_step;
     return start + (*len ? (abs % *len) : 0);
+}
+
+/* ------------------------------------------------------------------ */
+/* DRUM CYCLES (Josh, 2026-09-24)                                       */
+/*                                                                      */
+/* A drum track's automation is SHARED by its 32 lanes, and each        */
+/* automation lane has its own CYCLE: (loop_off, loop_len, step_ticks), */
+/* all in ticks — the pad that was active when it was first written, a  */
+/* snapshot. Edits never change it; only its own Loop does. It runs on  */
+/* the MASTER clock (one lane tick per master tick, like every drum     */
+/* lane), so a 12-step cycle under a 16-step pad is a true polymeter,   */
+/* and a cycle longer than every pad plays in full — never clamped.     */
+/*                                                                      */
+/* A drum entry with loop_len 0 has no cycle yet (fresh, retired, or    */
+/* the pads' aftertouch) and plays as before: the longest-lane window.  */
+/*                                                                      */
+/* ⚠ THE ONE OWNER of "where is this lane and what window is it in":     */
+/* playback, the recorder, the view position, the step map, the value   */
+/* read and the export all ask here.                                    */
+
+static int pa_drum_cycled(const seq8_track_t *tr, const pa_entry_t *e) {
+    return tr && tr->pad_mode == PAD_MODE_DRUM && e->loop_len;
+}
+
+/* The master clock in lane ticks (one per master tick). */
+static uint32_t pa_master_abs(const seq8_instance_t *inst) {
+    return (uint32_t)inst->global_tick * (uint32_t)TICKS_PER_STEP
+         + (uint32_t)inst->master_tick_in_step;
+}
+
+/* The active pad's geometry in `clip`, as a cycle. Clamped so every tick of
+ * the cycle fits the store's 16-bit tick. 0 when the clip has no drum lanes. */
+static int pa_active_pad_cycle(const seq8_track_t *tr, int clip,
+                               uint16_t *off, uint16_t *len, uint16_t *st) {
+    const drum_clip_t *dc = (clip >= 0 && clip < NUM_CLIPS) ? tr->drum_clips[clip] : NULL;
+    if (!dc) return 0;
+    const clip_t *lc = &dc->lanes[tr->active_drum_lane % DRUM_LANES].clip;
+    uint32_t t = lc->ticks_per_step ? lc->ticks_per_step : (uint32_t)TICKS_PER_STEP;
+    uint32_t o = (uint32_t)lc->loop_start * t, l = (uint32_t)lc->length * t;
+    if (!l) return 0;
+    if (o > 0xFFFFu - 1) o = 0;
+    if (o + l > 0xFFFFu) l = 0xFFFFu - o;
+    *off = (uint16_t)o; *len = (uint16_t)l; *st = (uint16_t)t;
+    return 1;
+}
+
+/* Give a drum lane its cycle if it has none: the one moment it is set
+ * automatically. Callers hold the writer lock. */
+static void pa_cycle_adopt(const seq8_track_t *tr, pa_entry_t *e,
+                           uint16_t off, uint16_t len, uint16_t st) {
+    if (!tr || tr->pad_mode != PAD_MODE_DRUM || e->loop_len || !len) return;
+    e->loop_off = off; e->loop_len = len; e->step_ticks = st;
+}
+static void pa_cycle_adopt_active(const seq8_track_t *tr, int clip, pa_entry_t *e) {
+    uint16_t o, l, t;
+    if (tr && tr->pad_mode == PAD_MODE_DRUM && !e->loop_len && pa_active_pad_cycle(tr, clip, &o, &l, &t))
+        pa_cycle_adopt(tr, e, o, l, t);
+}
+
+/* Where lane `e` is now, in its own ticks. `ct`/`clip_ticks`/`cycle`: the
+ * clip clock, for everything that is not a drum cycle. */
+static uint32_t pa_lane_tick(const seq8_instance_t *inst, const seq8_track_t *tr,
+                             const pa_entry_t *e, uint32_t ct, uint32_t clip_ticks, uint32_t cycle) {
+    if (!pa_drum_cycled(tr, e)) return pa_entry_tick(e, ct, clip_ticks, cycle);
+    uint64_t abs = pa_master_abs(inst);
+    if (e->resolution) {
+        uint32_t mul, div;
+        pa_rate(e->resolution, &mul, &div);
+        abs = abs * mul / div;
+    }
+    return (uint32_t)e->loop_off + (uint32_t)(abs % e->loop_len);
+}
+
+/* Where a RECORDING hand writes on lane `e`: its own cycle at x1 (Rate is a
+ * playback transform — see pa_record_tick), else the clip tick. */
+static uint32_t pa_lane_rec_tick(const seq8_instance_t *inst, const seq8_track_t *tr,
+                                 const pa_entry_t *e, uint32_t ct) {
+    if (!pa_drum_cycled(tr, e)) return ct;
+    return (uint32_t)e->loop_off + pa_master_abs(inst) % e->loop_len;
+}
+
+/* The window lane `e` plays inside. */
+static void pa_lane_window(const seq8_track_t *tr, const pa_entry_t *e,
+                           uint32_t clip_start, uint32_t clip_ticks, uint32_t *ws, uint32_t *wl) {
+    if (pa_drum_cycled(tr, e)) { *ws = e->loop_off; *wl = e->loop_len; return; }
+    pa_entry_window(e, clip_start, clip_ticks, ws, wl);
+}
+
+/* Lane `e`'s step (Punch's length). */
+static uint32_t pa_lane_step(const seq8_track_t *tr, const pa_entry_t *e, uint32_t step_ticks) {
+    return (pa_drum_cycled(tr, e) && e->step_ticks) ? (uint32_t)e->step_ticks : step_ticks;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1038,14 +1200,14 @@ static void pa_serialize(seq8_instance_t *inst, FILE *fp) {
 static void pa_serialize_locked(seq8_instance_t *inst, FILE *fp) {
     int any = 0;
     for (int i = 0; i < PA_MAX_ENTRIES && !any; i++)
-        if (inst->pa_entries[i].used && inst->pa_entries[i].count) any = 1;
+        if (pa_entry_live(&inst->pa_entries[i])) any = 1;
     if (!any) return;            /* sparse: no automation writes no key at all */
 
     fprintf(fp, ",\"pav\":%d,\"pa\":[", PA_SECTION_VERSION);
     int first = 1;
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         pa_entry_t *e = &inst->pa_entries[i];
-        if (!e->used || !e->count) continue;
+        if (!pa_entry_live(e)) continue;
         if (!first) fputc(',', fp);
         first = 0;
         fprintf(fp, "{\"t\":%d,\"c\":%d,\"k\":\"%s\",\"f\":%d",
@@ -1054,6 +1216,7 @@ static void pa_serialize_locked(seq8_instance_t *inst, FILE *fp) {
         if (e->loop_len)   fprintf(fp, ",\"ll\":%d", (int)e->loop_len);
         if (e->loop_off)   fprintf(fp, ",\"lo\":%d", (int)e->loop_off);
         if (e->resolution) fprintf(fp, ",\"rs\":%d", (int)e->resolution);
+        if (e->step_ticks) fprintf(fp, ",\"st\":%d", (int)e->step_ticks);
         if (e->scale_off)  fprintf(fp, ",\"sc\":%d", pa_scale_pct(e));   /* sparse: 100 % writes nothing */
         if (e->scale_ctr1) fprintf(fp, ",\"cc\":%d", (int)e->scale_ctr1 - 1);   /* bipolar centre; absent = unipolar */
         fprintf(fp, ",\"p\":\"");
@@ -1062,6 +1225,29 @@ static void pa_serialize_locked(seq8_instance_t *inst, FILE *fp) {
         fprintf(fp, "\"}");
     }
     fprintf(fp, "]");
+}
+
+/* LOAD DEFAULT for drum cycles: a drum lane saved before lanes carried
+ * cycles (loop_len 0) is given the window it has always played in — the
+ * longest lane's — once, and keeps it from then on. A default, not a mode
+ * (Josh, 2026-09-24: no "Longest lane" mode; "i don't care about old
+ * projects"). The pads' aftertouch lane ("at") keeps following the longest
+ * lane: it is written by the pads on that window. Runs after the drum lanes
+ * are loaded (seq8_load_state parses them first). Caller holds the lock. */
+static void pa_pin_drum_cycles(seq8_instance_t *inst) {
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+        pa_entry_t *e = &inst->pa_entries[i];
+        if (!pa_entry_live(e) || e->loop_len) continue;
+        if (e->track >= NUM_TRACKS || e->clip >= NUM_CLIPS) continue;
+        const seq8_track_t *tr = &inst->tracks[e->track];
+        if (tr->pad_mode != PAD_MODE_DRUM || !tr->drum_clips[e->clip]) continue;
+        if (!strcmp(inst->pa_targets[e->target], "at")) continue;
+        uint32_t ws, wl, st;
+        pa_drum_window(tr, e->clip, &ws, &wl, &st);
+        if (!wl || ws > 0xFFFFu - 1) continue;
+        if (ws + wl > 0xFFFFu) wl = 0xFFFFu - ws;
+        e->loop_off = (uint16_t)ws; e->loop_len = (uint16_t)wl; e->step_ticks = (uint16_t)st;
+    }
 }
 
 /* Parse the "pa" section out of a loaded state blob. `buf` is the whole
@@ -1075,6 +1261,7 @@ static void pa_parse(seq8_instance_t *inst, const char *buf, size_t blen) {
     pa_lock(inst);
     pa_write_begin(inst);
     pa_parse_locked(inst, buf, blen);
+    pa_pin_drum_cycles(inst);
     memset(inst->pa_live, 0, sizeof(inst->pa_live));
     pa_write_end(inst);
     pa_unlock(inst);
@@ -1120,6 +1307,7 @@ static void pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen)
                 e->loop_len   = (uint16_t)pa_json_int(obj, end, "ll", 0);
                 e->loop_off   = (uint16_t)pa_json_int(obj, end, "lo", 0);
                 e->resolution = (uint16_t)pa_json_int(obj, end, "rs", 0);
+                e->step_ticks = (uint16_t)pa_json_int(obj, end, "st", 0);
                 {   /* absent (every file before 2026-09-05) = 100 % */
                     int sc = pa_json_int(obj, end, "sc", 100);
                     if (sc < PA_SCALE_MIN) sc = PA_SCALE_MIN;
@@ -1155,7 +1343,7 @@ static void pa_parse_locked(seq8_instance_t *inst, const char *buf, size_t blen)
                         if (pp < end && *pp == ';') pp++;
                     }
                 }
-                if (!e->count) pa_entry_free(e);
+                if (!pa_entry_live(e)) pa_entry_free(e);   /* a kept, cleared lane stays */
             }
         }
         p = end + 1;
@@ -1234,8 +1422,13 @@ static void pa_live_set(seq8_instance_t *inst, seq8_track_t *tr, int track,
              * write. It only keeps playback's hands off the target. */
             l->mode      = (!hold_only && tr->recording && inst->playing)
                            ? PA_LIVE_RECORD : PA_LIVE_OVERRIDE;
-            /* Publish the target before `used`, so the audio thread never
-             * sees a used slot with a stale target. */
+            /* The drum cycle a NEW lane recorded by this hand gets: the pad
+             * active NOW, as the hand goes down — switching pads while it
+             * records changes nothing (Josh, 2026-09-24). */
+            if (tr->pad_mode == PAD_MODE_DRUM)
+                pa_active_pad_cycle(tr, (int)tr->active_clip, &l->cyc_off, &l->cyc_len, &l->cyc_st);
+            /* Publish the target (and the snapshot) before `used`, so the
+             * audio thread never sees a used slot with a stale target. */
             __atomic_store_n(&l->used, 1, __ATOMIC_RELEASE);
             break;
         }
@@ -1318,6 +1511,17 @@ static void pa_cap_write(seq8_instance_t *inst, int track, int clip, int target,
     c->count++;
 }
 
+/* The drum cycle a capture lane was written against (see pa_record_tick). */
+static void pa_cap_cycle(seq8_instance_t *inst, int track, int target,
+                         uint16_t off, uint16_t len, uint16_t st) {
+    for (int i = 0; i < PA_CAP_LANES; i++) {
+        pa_cap_t *k = &inst->pa_cap[i];
+        if (k->used && k->track == track && k->target == (uint16_t)target) {
+            k->cyc_off = off; k->cyc_len = len; k->cyc_st = st; return;
+        }
+    }
+}
+
 /* Drop captured sweeps. `track` < 0 means every track (a transport edge);
  * otherwise just that one (a Capture commit, or Shift+Capture). Callable from
  * either thread: it only clears `used`, and a concurrent capture write can at
@@ -1369,6 +1573,7 @@ static int pa_cap_commit(seq8_instance_t *inst, int track, int clip) {
         if (!pa_may_write(inst, track, (int)c->target)) { c->used = 0; c->count = 0; continue; }
         pa_entry_t *e = pa_get(inst, track, clip, (int)c->target);
         if (!e) { inst->pa_store_full = PA_FULL_ENTRIES; continue; }
+        pa_cycle_adopt(&inst->tracks[track], e, c->cyc_off, c->cyc_len, c->cyc_st);
         uint16_t cell = c->cell ? c->cell : 1;
         for (int p = 0; p < c->count; p++) {
             uint16_t s = c->points[p].tick;
@@ -1409,10 +1614,21 @@ static void pa_record_tick(seq8_instance_t *inst, seq8_track_t *tr, int track, i
          * recorder below; only the destination differs. No seqlock bump: the
          * capture buffer has no audio-thread reader to tear. */
         if (l->mode == PA_LIVE_OVERRIDE) {
-            uint32_t snap = (ct / cell) * cell;
+            /* A drum capture is written against the cycle it will land in:
+             * the lane's own if it has one, else the hand's snapshot. */
+            uint16_t co = 0, cl = 0, cs = 0;
+            uint32_t pos = ct;
+            if (tr->pad_mode == PAD_MODE_DRUM) {
+                const pa_entry_t *ex = pa_find(inst, track, clip, (int)tgt);
+                if (ex && ex->loop_len) { co = ex->loop_off; cl = ex->loop_len; cs = ex->step_ticks; }
+                else { co = l->cyc_off; cl = l->cyc_len; cs = l->cyc_st; }
+                if (cl) pos = (uint32_t)co + pa_master_abs(inst) % cl;
+            }
+            uint32_t snap = (pos / cell) * cell;
             if (l->last_snap != snap) {
                 uint16_t s = (uint16_t)(snap > 0xFFFFu - cell ? 0xFFFFu - cell : snap);
                 pa_cap_write(inst, track, clip, (int)tgt, s, (uint16_t)cell, l->val);
+                pa_cap_cycle(inst, track, (int)tgt, co, cl, cs);
                 l->last_snap = snap;
             }
             pa_unlock(inst);
@@ -1420,12 +1636,17 @@ static void pa_record_tick(seq8_instance_t *inst, seq8_track_t *tr, int track, i
         }
         pa_write_begin(inst);
         pa_entry_t *e = pa_get(inst, track, clip, (int)tgt);
+        /* A drum lane's cycle: the hand's snapshot, the first time it is
+         * written. A lane that already has one keeps it (the cycle is a
+         * snapshot; re-taking it would re-time every point already there). */
+        if (e) pa_cycle_adopt(tr, e, l->cyc_off, l->cyc_len, l->cyc_st);
         /* ⚠ Recorded in CLIP time, whatever the lane's rate: the lane is
          * always the x1 reference and Rate is a PLAYBACK transform of the
          * whole cycle (Josh, 2026-09-03 — recording along the sped-up lane
-         * clock made page 2 of a sweep overwrite page 1). */
-        uint32_t snap = (ct / cell) * cell;
-        (void)clip_ticks; (void)tr;
+         * clock made page 2 of a sweep overwrite page 1). A drum lane's
+         * "clip time" is its own cycle at x1. */
+        uint32_t snap = ((e ? pa_lane_rec_tick(inst, tr, e, ct) : ct) / cell) * cell;
+        (void)clip_ticks;
         if (e && l->last_snap == snap) { pa_write_end(inst); pa_unlock(inst); continue; }
         if (!e) inst->pa_store_full = PA_FULL_ENTRIES;
         else {
@@ -1481,6 +1702,16 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
     /* The lane clock's cycle count: the clip tick wrapped since last tick. */
     if (ct < tr->pa_last_ct) tr->pa_cycle++;
     tr->pa_last_ct = ct;
+    /* The AUTOMATION bank's selected lane: where it is right now, in its OWN
+     * lane ticks — the same pa_entry_tick the evaluation below uses, so the
+     * playhead can never disagree with what plays. Before the scan (which may
+     * stop at its per-tick cap before reaching the lane); O(1), one slot. */
+    if (tr->pa_view_slot) {
+        const pa_entry_t *ve = &inst->pa_entries[(tr->pa_view_slot - 1) % PA_MAX_ENTRIES];
+        tr->pa_view_lt = (ve->used && ve->track == track && ve->clip == clip
+                          && ve->target + 1 == tr->pa_view_target)
+                       ? (int32_t)pa_lane_tick(inst, tr, ve, ct, clip_ticks, tr->pa_cycle) : -1;
+    }
     uint32_t seq0 = pa_read_seq(inst);
     if (seq0 & 1u) return;                   /* a write is in flight; next tick */
 
@@ -1524,9 +1755,9 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
 
         uint16_t v;
         uint32_t ws, wl;
-        pa_entry_window(e, clip_start, clip_ticks, &ws, &wl);
-        uint32_t lt = pa_entry_tick(e, ct, clip_ticks, tr->pa_cycle);
-        int ev = (e->flags & PA_FLAG_PUNCH) ? pa_eval_punch(e, lt, ws, wl, step_ticks, &v)
+        pa_lane_window(tr, e, clip_start, clip_ticks, &ws, &wl);
+        uint32_t lt = pa_lane_tick(inst, tr, e, ct, clip_ticks, tr->pa_cycle);
+        int ev = (e->flags & PA_FLAG_PUNCH) ? pa_eval_punch(e, lt, ws, wl, pa_lane_step(tr, e, step_ticks), &v)
                                             : pa_eval_window(e, lt, ws, wl, &v);
         if (!ev) continue;
         if (ev != PA_EVAL_REST) v = pa_scaled(e, v);   /* the lane's scale; never the resting value */

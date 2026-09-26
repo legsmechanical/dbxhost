@@ -67,7 +67,7 @@ import { miOpen, miClose, miOnKnob, miOnJog, miOnClick, miOnBack, miTick, miRend
 import { forceRedraw, effectiveClip } from './ui_leds.mjs';
 import { automationParamEdit, automationParamTouch, automationStateFor, automationToggleActive,
          automationClearKey, automationEntriesFor, automationFxMoved } from './ui_automation.mjs';
-import { autoBankRestoreMenu } from './ui_automation_bank.mjs';
+import { autoBankRestoreMenu, autoLaneFocus } from './ui_automation_bank.mjs';
 import { setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 import * as ModuleLists from '/data/UserData/schwung/shared/module_lists.mjs';
 import { MoveKnob1, Red, White } from '/data/UserData/schwung/shared/constants.mjs';
@@ -167,7 +167,7 @@ const { enterParamPages, exitParamPages, tickParamPages, drawParamPages,
         paramPagesPickerOpen, paramPagesMenuEntered,
         paramPagesRefreshTrailing, paramPagesFullKeyAt, paramPagesRepaintKnobs,
         paramPagesCachedValue, paramPagesLevelNameOf,
-        paramPagesPageLabel } = PP;
+        paramPagesPageLabel, paramPagesSetDecorations, paramPagesDecorations } = PP;
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 /* ⚠⚠ THE CANONICAL SPECIFIER, AND IT IS LOAD-BEARING. The registry is the
  * one the grid reads only because both names normalise to the same module:
@@ -1076,6 +1076,10 @@ export function soundAuditionStateForTest() { return { hasOriginal: S.origState 
 export function soundPPForTest() {
     return {
         on: ppOn, page: ppOn ? currentParamPage() : null, applies: ppApplies(),
+        /* The lane-focus decorations last handed to the editor (JSON or null). */
+        focusDec: ppFocusDec,
+        /* ...and what the editor's controller actually holds. */
+        decorations: ppOn ? paramPagesDecorations() : null,
         /* ⭑ The TERMS, so a test can prove which one decided. A control that
          * asserts only `!applies` passes for any reason at all — including a
          * precondition it lost by accident. */
@@ -1147,6 +1151,7 @@ export function soundFileBrowserForTest() {
 export function soundKnobTargetsForTest() { return knobTargetList(); }
 export function soundKnobParamsForTest() { return S.knobParams; }
 export function soundLevelCellsForTest() { return midiTrack() ? midiMixCells() : levelCells(); }
+export function soundLevelValSetForTest(i, v) { S.levelVals[i] = v; }
 export function soundMacroMergeForTest() { macroMergeAfterPatch(); }
 /* Drives the view directly so a Back edge can be exercised without walking the
  * whole entry gesture. ⚠ Test-only: the real transitions go through the
@@ -1936,11 +1941,17 @@ function midiCellFor(target, v, spec) {
 function midiMixCells() {
     const t = S.track, c = effectiveClip(t);
     const cells = [];
+    cells.focusIdx = -1;
+    const focus = t === GS.activeTrack ? autoLaneFocus() : null;
     for (let i = 0; i < 8; i++) {
         const sp = MIDI_MIX_SPECS[i];
         if (!sp) { cells.push({ kind: 'blank', label: '' }); continue; }
         if (sp.target) {
-            const cell = midiCellFor(sp.target, midiVal(t, sp.target), sp);
+            const fo = focus && focus.target === sp.target;
+            const fv = fo && focus.wire != null ? parseInt(focus.wire, 10) : NaN;
+            if (isFinite(fv)) cells.focusIdx = i;
+            const cell = midiCellFor(sp.target, isFinite(fv) ? fv : midiVal(t, sp.target), sp);
+            if (fo) cell.lock = true;
             const st = automationStateFor(t, c, sp.target);
             if (st) cell.auto = st.active ? 'auto' : 'auto-off';
             cells.push(cell);
@@ -2086,12 +2097,21 @@ function flushLevelSave() {
 function levelCells() {
     const t = S.track, c = effectiveClip(t);
     const cells = [];
+    cells.focusIdx = -1;
+    const focus = t === GS.activeTrack ? autoLaneFocus() : null;
     for (let i = 0; i < 8; i++) {
         const m = levelPageSpec(i);
         if (!m) { cells.push({ kind: 'blank', label: '' }); continue; }
-        const v = S.levelVals[i];
-        const st = automationStateFor(t, c, S.slot + ':' + levelFullKey(i));
+        const tg = S.slot + ':' + levelFullKey(i);
+        /* The lane a jump came from: marked, and while a step is held it
+         * shows what the lane plays there (autoLaneFocus). */
+        const fo = focus && focus.target === tg;
+        const fv = fo && focus.wire != null ? parseFloat(focus.wire) : NaN;
+        const v = isFinite(fv) ? fv : S.levelVals[i];
+        if (isFinite(fv)) cells.focusIdx = i;
+        const st = automationStateFor(t, c, tg);
         const cell = { label: m.label, name: m.name, text: m.fmt(v) };
+        if (fo) cell.lock = true;
         if (m.widget === 'arcbip') { cell.kind = 'arcbip'; cell.signed = Math.max(-1, Math.min(1, (v - 0.5) * 2)); }
         else { cell.kind = m.widget;
                /* A fader's bar shows TRAVEL — see THE FADER LAW in ui_engine. */
@@ -2929,11 +2949,14 @@ export function soundGestureArmed() { return !!GS.genReturn; }
  * the lane). Returns false — and changes nothing — when the component has no
  * module loaded any more. */
 export function soundJumpToParam(track, comp, key, autoSel) {
-    const slot = slotIndex(track);
+    /* A Move bus insert (move_fx:N:fxK) lives on the bus, not a chain slot:
+     * its editor is entered through the bus (move_fx keys ignore the slot). */
+    const bus = /^move_fx:\d+:fx\d+$/.test(comp);
+    const slot = bus ? 0 : slotIndex(track);
     if (!engineLoadedModule(slot, comp)) return false;
     GS.genReturn = { track, wasActive: false, view: -1, bank: GS.activeBank | 0,
                      latched: !!GS.bankCardLatched, autoSel };
-    soundEnter(track, slot);
+    if (bus) soundEnterMove(track); else soundEnter(track, slot);
     ppJumpKey = { slot, comp, key };
     S.pendingAction = { t: 'open', comp };
     return true;
@@ -6575,6 +6598,8 @@ function macroCells(track, live) {
     const t = track, c = effectiveClip(t);
     const store = macroStore(t);
     const cells = [];
+    cells.focusIdx = -1;
+    const focus = (live && t === GS.activeTrack) ? autoLaneFocus() : null;
     for (let i = 0; i < 8; i++) {
         const mp = store[i];
         const m = macroLeg0(mp);
@@ -6594,8 +6619,14 @@ function macroCells(track, live) {
                 for (const leg of mp.legs) {
                     if (!macroLive(leg)) continue;
                     const tg = macroAutoTarget(leg, t, i);
+                    if (focus && tg === focus.target) {
+                        /* A leg is the lane: marked and highlighted — a mapped
+                         * knob has no one value to show for it. */
+                        cellM.lock = true;
+                        if (focus.step >= 0) cells.focusIdx = i;
+                    }
                     const st = tg ? automationStateFor(t, c, tg) : null;
-                    if (st) { cellM.auto = st.active ? 'auto' : 'auto-off'; if (st.active) break; }
+                    if (st) { cellM.auto = st.active ? 'auto' : 'auto-off'; if (st.active && !focus) break; }
                 }
             }
             cells.push(cellM);
@@ -6623,7 +6654,8 @@ function macroCells(track, live) {
             cell = bankMacroCell(m, meta, bankMacroValue(m, t));
         } else if (m.kind === 'midi') {
             if (!midiTargetOnRoute(m.target, t)) { cells.push(unassigned()); continue; }
-            cell = midiCellFor(m.target, midiVal(t, m.target));
+            const fv = focus && focus.target === m.target && focus.wire != null ? parseInt(focus.wire, 10) : NaN;
+            cell = midiCellFor(m.target, isFinite(fv) ? fv : midiVal(t, m.target));
         } else {
             /* ⚠⚠ TWO CACHES, ONE DISPLAY. `macCells/macVals` are the PLAIN
              * path's; `macLegCells/macLegVals` are the v-driven path's, filled
@@ -6692,6 +6724,7 @@ function macroCells(track, live) {
             const tg = macroAutoTarget(m, t, i);
             const st = tg ? automationStateFor(t, c, tg) : null;
             if (st) cell.auto = st.active ? 'auto' : 'auto-off';
+            if (focus && tg === focus.target) { cell.lock = true; if (focus.step >= 0) cells.focusIdx = i; }
         }
         cells.push(cell);
     }
@@ -6706,9 +6739,10 @@ function macroCardHints() {
 function renderMacros() {
     clear_screen();
     kitUseLayout('bank');
-    drawKitBankPage(macroCells(S.track, true), {
+    const mc = macroCells(S.track, true);
+    drawKitBankPage(mc, {
         headerText: 'MACROS', headerGlyph: 'perf', headerRight: bankHeaderRight(false),
-        touchedIdx: S.touchedIdx,
+        touchedIdx: S.touchedIdx, focusIdx: mc.focusIdx,
         footer: macroCardHints(),
     });
 }
@@ -10931,18 +10965,20 @@ function renderPrompt() {
     if (midiTrack()) {
         /* A MIDI track: the standard controllers and the clip's Program /
          * Bank; the door is the footer's CLK MENU (spec §2b). */
-        drawKitBankPage(midiMixCells(), {
+        const mc = midiMixCells();
+        drawKitBankPage(mc, {
             headerText: 'SOUND+CFG', headerGlyph: 'audio', headerRight: bankHeaderRight(false),
-            touchedIdx: S.touchedIdx,
+            touchedIdx: S.touchedIdx, focusIdx: mc.focusIdx,
             footer: levelCardHints(),
         });
         return;
     }
     /* ⚠ 'SOUND+CFG': the full name does not fit beside "T3 [OBXD]" on the right
      * (measured) — the same budget that made SEQUENCE ARP SEQ ARP. */
-    drawKitBankPage(levelCells(), {
+    const lc = levelCells();
+    drawKitBankPage(lc, {
         headerText: 'SOUND+CFG', headerGlyph: 'audio', headerRight: bankHeaderRight(false),
-        touchedIdx: S.touchedIdx,
+        touchedIdx: S.touchedIdx, focusIdx: lc.focusIdx,
         footer: levelCardHints(),
     });
     /* The bottom row is empty (Module Level left the page, 2026-09-03), and
@@ -11753,6 +11789,32 @@ function ppRestoreFor(slot, comp) {
     return (r && r.slot === slot && r.comp === comp) ? r.name : null;
 }
 
+/* THE LANE IN FOCUS on the editor (a jump from the AUTOMATION bank, Josh
+ * 2026-09-25): the lane's cell on the visible page carries the lock corner,
+ * and while a step is held it shows what the lane plays there. Set every
+ * tick the grid is up — the page, the held step and the value all move — and
+ * cleared the moment there is nothing to show. */
+let ppFocusDec = null;
+function ppFocusSync() {
+    /* A new editor starts with no decorations: forget what the last one had. */
+    if (!ppOn) { ppFocusDec = null; return; }
+    let dec = null;
+    const f = ppOn && S.track === GS.activeTrack ? autoLaneFocus() : null;
+    if (f) {
+        const i = f.target.indexOf(':');
+        const fk = f.target.slice(i + 1);
+        for (let k = 0; k < 8; k++) {
+            if (paramPagesFullKeyAt(k) !== fk) continue;
+            dec = { [k]: f.wire != null ? { locked: true, value: f.wire } : { locked: true } };
+            break;
+        }
+    }
+    const sig = dec ? JSON.stringify(dec) : null;
+    if (sig === ppFocusDec) return;
+    ppFocusDec = sig;
+    paramPagesSetDecorations(dec);
+    S.dirty = true;
+}
 function ppSync() {
     if (ppSuppressOnce && S.view === VIEW_EDIT) {
         /* Consumed on arrival, not on departure: the dive target IS VIEW_EDIT,
@@ -11793,6 +11855,7 @@ function ppSync() {
     }
     /* Left the editor entirely: the decline belonged to that entry. */
     if (S.view !== VIEW_EDIT && !(ppOn && ppOwnsView())) ppDeclinedDraw = false;
+    ppFocusSync();
 }
 
 /* ---- module-supplied in-grid widgets (upstream #420 / #450 / #472) ---------

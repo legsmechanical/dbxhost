@@ -130,6 +130,20 @@ const tick = () => { S.tickCount++; tickPrefetch(); automationTick(); };
     check(fireAndForget === 0, '⚠ nothing goes through the per-parameter paths, blocking or not');
 }
 
+/* ---- a REPEATED element's key takes the bare key's range -------------- */
+{
+    /* DR32's Transpose on pad 3 is `pad3_transpose`; chain_params lists only
+     * `transpose` (int -48..48). Looked up exactly, it read as 0..1 and a
+     * recorded sweep played back as 0 or 1 (device, 2026-09-25). */
+    fresh();
+    staged = ['0:synth:pad3_octave 16383', '0:synth:sram_part_0_mode 16383', '0:synth:pad3_octave_x 16383'].join('\n');
+    tick();
+    const w = (k) => (writes.find(x => x.key === k) || {}).val;
+    check(w('synth:pad3_octave') === '2', '⭐ pad3_octave takes octave\'s int -2..2: full scale is "2", got ' + w('synth:pad3_octave'));
+    check(w('synth:sram_part_0_mode') === '2', 'a template-shaped key (sram_part_0_mode) takes mode\'s enum, got ' + w('synth:sram_part_0_mode'));
+    check(w('synth:pad3_octave_x') === '1', 'CONTROL: a key that only CONTAINS a bare key stays 0..1, got ' + w('synth:pad3_octave_x'));
+}
+
 /* ---- slots are requests; the budget is requests per tick ---------------- */
 {
     fresh();
