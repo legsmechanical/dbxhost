@@ -56,8 +56,9 @@ Nothing on your Move is modified permanently:
 
 - Your official Schwung install is untouched, and **a reboot returns you to it**
   (unless you made dAVEBOx your boot default).
-- Samples, presets, patches and modules are shared between the two.
-- Your Move sets are not: dAVEBOx keeps its own [projects](#175-projects).
+- Samples, presets and modules are shared between the two; settings are not —
+  see [dAVEBOx and official Schwung](#176-davebox-and-official-schwung).
+- Your Move sets are not shared: dAVEBOx keeps its own [projects](#175-projects).
 
 ---
 
@@ -302,7 +303,7 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 ## 3.7 Menus & Project Settings
 
 **Shift + Step 2** opens **Project Settings** — the settings saved with the project
-(except **Host Settings...** and the Daves rows, which apply to the whole device).
+(except **Host Settings...** and the Daves rows, which apply to every project).
 The full list is in [Settings & Projects](#17-settings--projects); many settings have
 a **Shift + Step** shortcut (see the [Quick Reference](#19-quick-reference)).
 
@@ -1901,14 +1902,14 @@ see [Track settings](#174-track-settings) below.
 | Export to Ableton | Write a Live bundle of the project — see [§16.3](#163-export-to-live) | action | — |
 | Suspend session | Park dAVEBOx and go back to Move (asks first) — see [§3.9](#39-saving-suspending--exiting) | action | — |
 | Quit | Save and hand the device back to official Schwung (asks first) | action | — |
-| Host Settings... | Schwung's own settings, over the top of dAVEBOx | action | — |
+| Host Settings... | dAVEBOx's copy of Schwung's settings (display, audio and more), over the top of dAVEBOx — see [§17.6](#176-davebox-and-official-schwung) | action | — |
 | Daves | While playing, a collected Dave scrolls behind the Session View banner | On, Off | Off |
 | Open Your Dave Box | Every Dave you've been dealt — one each time a project loads | action | — |
 
 - The menu groups these with a line between each group, in this order.
 - A new project starts in a random key and scale.
-- **Host Settings...** and the **Daves** rows apply to the whole device, not the
-  project.
+- **Host Settings...** and the **Daves** rows apply to every project, not just this
+  one.
 - A **Dave** is a small portrait dAVEBOx deals you each time a project loads — just
   for fun. **Open Your Dave Box** shows your collection.
 - **Tap Tempo** is **Shift + Step 5**: tap any pad in time, turn the jog to adjust,
@@ -2031,6 +2032,27 @@ project, 32 slots:
   settings and sound; the project settings; mute/solo state and all snapshots;
   Performance Mode presets 9–16; and Note Repeat masks and rates.
 
+## 17.6 dAVEBOx and official Schwung
+
+dAVEBOx runs on its own copy of the Schwung host, installed beside official
+Schwung; only one of them runs at a time. What you install or make is shared; each
+keeps its own settings.
+
+| What | Between the two |
+|---|---|
+| **Instruments, audio effects, MIDI FX** | **Shared.** Install or update them in official Schwung and they're in dAVEBOx's pickers. dAVEBOx can't install modules itself. |
+| **Tools** (**Shift + Step 13**) | **Shared.** But a tool installed in official Schwung *after* dAVEBOx shows in dAVEBOx's Tools menu only once dAVEBOx is next installed. |
+| **Module presets** and **chain presets** | **Shared.** Save one in either and it's there in both. |
+| **The instrument picker's lists** | **Shared.** One set of lists. |
+| **Samples and files** | **Shared.** The Files page shows the same folders from either. |
+| **Move sets and dAVEBOx projects** | **Separate.** See [Projects](#175-projects). |
+| **Schwung's settings** | **Separate.** **Host Settings...** here and Global Settings in official Schwung are two copies; a change in one doesn't reach the other. |
+| **The web manager** (`move.local:7700`) | **dAVEBOx's own** during a session. Its Help is this manual and its Config is dAVEBOx's settings. Install modules from official Schwung's. |
+| **Parallel, Daves, exports and logs** | **dAVEBOx's own.** |
+
+Shared presets and lists are stored in official Schwung's folders, so removing or
+resetting official Schwung removes them too.
+
 ---
 
 # 18. The Browser Editor
@@ -2043,7 +2065,7 @@ dAVEBOx editor.
 - A slim ribbon along the top links to **Mirror** (a live view of the Move's
   screen), **Files** (upload to and download from the device), **Help** (this
   manual and the quick start, one page per chapter, served by the Move), **Config**
-  and **System**. Each opens in a new tab with the same ribbon and an **Editor**
+  (dAVEBOx's own settings) and **System**. Each opens in a new tab with the same ribbon and an **Editor**
   link back.
 - The editor mirrors the device both ways. If no session is running, the page
   waits and opens the editor when one starts.
