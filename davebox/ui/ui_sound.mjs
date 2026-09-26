@@ -4097,11 +4097,16 @@ function knobParamList(target) {
          * and morphs once two are in. Pick ORDER is the morph's path. */
         const leg = morphLegBeingEdited();
         const chosen = leg ? leg.snaps : [];
+        /* The pick order rides as the row's `mark`, in the list's gutter —
+         * not as a "[1] " prefix with space-padded siblings, which never lines
+         * up in a proportional font. No slots = an EMPTY list, so the list's
+         * own centred empty state says so (renderKnobParam), as every other
+         * empty list does; a click on nothing commits nothing. */
         for (const n of morphSnapshotSlots(S.track)) {
             const at = chosen.indexOf(n);
-            params.push({ key: 'snap:' + n, label: (at >= 0 ? '[' + (at + 1) + '] ' : '    ') + 'Snapshot ' + (n + 1) });
+            params.push({ key: 'snap:' + n, label: 'Snapshot ' + (n + 1),
+                          mark: at >= 0 ? '[' + (at + 1) + ']' : '' });
         }
-        if (!params.length) params.push({ key: '', label: '(no track snapshots)' });
         return params;
     }
     if (target.indexOf('bank:') === 0) {
@@ -5392,7 +5397,8 @@ function renderKnobTarget() {
 function renderKnobParam() {
     /* One step deeper in the same chain — so the root is still the KNOBS screen
      * and the TARGET picker beneath is a sliver, not a redraw. */
-    renderInChain(S.knobParams.map(p => p.label), S.knobParamIdx, 'NO PARAMS');
+    renderInChain(S.knobParams.map(p => (p.mark != null ? { label: p.label, mark: p.mark } : p.label)),
+                  S.knobParamIdx, S.knobTarget === MORPH_TARGET ? 'NO SNAPSHOTS' : 'NO PARAMS');
 }
 
 /* ---- MACROS: the bank of eight assignable parameters (spec §2) ----------
@@ -9728,11 +9734,14 @@ export function soundOnCC(d1, d2, decodeDelta) {
                      * the row. A MIDI channel or a followed track has nothing to
                      * enter, so the plain click is a NO-OP there (Josh: "for
                      * consistency" — click never picks once a choice is made).
-                     * The one exception is a Schwung track with no generator
-                     * yet: no choice has been made, so the click is the picker. */
+                     * The exceptions are a Schwung track with no generator yet
+                     * and a track set to None: nothing is chosen, so the click
+                     * is the picker (Josh, 2026-09-26: None "Open the picker" —
+                     * its hint band already said CLK EDIT while the click did
+                     * nothing). */
                     const route = GS.trackRoute[S.track];
                     const gen = route === 0 ? (S.pickRows[S.pickRow].gen || '') : '';
-                    if (S.shiftHeld || (route === 0 && !gen)) openInstrPicker();
+                    if (S.shiftHeld || (route === 0 && !gen) || route === ROUTE_NONE) openInstrPicker();
                     else if (route === 0) S.pendingAction = { t: 'open', comp: 'synth' };
                     else if (route === 1) S.coRunRequest = S.bus ? S.bus.track : S.track;
                     /* route 2: nothing to enter, nothing happens */
@@ -11129,10 +11138,15 @@ function renderBlocks() {
      * the two gestures with no on-screen trace. It POPS OVER the menu's foot
      * on the rows that carry the grammar (Josh: "pop up over the menu at the
      * bottom on items where it's relevant") — the list keeps all five rows,
-     * and the band takes the bottom of the fifth only while the cursor is on
-     * such a row. Three clear rows above the pills, the canon's spacing. */
-    drawKitList(S.pickRows.map(_cell), S.pickRow, {});
+     * and gives up the fifth only while the cursor is on such a row.
+     * ⚠ The list STOPS at four rows while the band is up, rather than drawing
+     * a fifth for the band to cover: the band starts 3 rows above the pills,
+     * which is inside the fifth row, so that row's glyph tops showed above it
+     * ("FX 3" as a sliver). Four rows keeps the same window (the cursor sits
+     * two rows down either way), a scrollbar that ends above the band, and a
+     * selected row that can never be the one under it. */
     const hints = menuRowHints(S.pickRows[S.pickRow]);
+    drawKitList(S.pickRows.map(_cell), S.pickRow, hints.length ? { visible: 4 } : {});
     if (hints.length) {
         fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0);
         drawKitHintRow(MV_FOOTER_Y, hints);

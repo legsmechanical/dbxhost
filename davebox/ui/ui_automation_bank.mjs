@@ -181,11 +181,15 @@ export function drawAutomationBankBody() {
     if (a.menu) listRows.push({ label: 'Clear all', hdr: true });
     if (a.sel >= listRows.length) a.sel = Math.max(0, listRows.length - 1);
     kitUseLayout('bank');
-    /* A multi-page cycle draws the track overview's page bar at rows 50–53
-     * (ui_render), so the list stops at four rows above it. */
+    /* ⚠ h: the list's box ENDS AT THE FOOTER. Left to the screen's height it
+     * drew a fifth row down through the hint pills (Aftertouch ran into
+     * CLK MENU); four rows fit above them and the list scrolls, as it does in
+     * the ops pop-up below. A multi-page cycle also draws the track overview's
+     * page bar at rows 50–53 (ui_render), so the list keeps to four rows then. */
     const barShown = !!(S.autoCycle && S.autoCycle.t === t && S.autoCycle.pages > 1);
-    drawKitList(listRows, a.menu ? a.sel : -1,
-                barShown ? { emptyMsg: 'NO AUTOMATION', visible: 4 } : { emptyMsg: 'NO AUTOMATION' });
+    const listOpts = { emptyMsg: 'NO AUTOMATION', h: MV_FOOTER_Y - LIST_TOP };
+    if (barShown) listOpts.visible = 4;
+    drawKitList(listRows, a.menu ? a.sel : -1, listOpts);
     /* The editor's bracketed corners on the resting card: "press jog to
      * interact" — the one mark the OLED language uses for that. */
     if (!a.menu) drawBrackets(0, LIST_TOP - 1, 128, MV_FOOTER_Y - LIST_TOP);

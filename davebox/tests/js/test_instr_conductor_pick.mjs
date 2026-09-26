@@ -96,6 +96,7 @@ const snd = await import('../../ui/ui_sound.mjs');
 const B = await import('../../ui/ui_dsp_bridge.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
 const C = await import('../../ui/ui_constants.mjs');
+const DM = await import('../../ui/ui_drummodel.mjs');
 const { MoveNoteSession, INSTR_CONDUCT, INSTR_SCHWUNG, PAD_MODE_CONDUCT } = C;
 const { MoveShift } = await import('/data/UserData/schwung/shared/constants.mjs');
 
@@ -200,7 +201,7 @@ step('⭐ Back on that confirm is NO, over sound mode, and converts nothing', ()
 });
 
 step('⭐ Yes converts it, and the row then READS Conductor', () => {
-    S.trackOctave[0] = C.DEFAULT_TRACK_OCTAVE;          /* a melodic track on the +1 default */
+    S.trackOctave[0] = 3;          /* a melodic track moved off the default — the convert must reset it */
     openPicker(0);
     pick('Conductor');
     ticks(2);
@@ -208,9 +209,21 @@ step('⭐ Yes converts it, and the row then READS Conductor', () => {
     yes();
     ticks(4);
     assert(S.trackPadMode[0] === PAD_MODE_CONDUCT, 'Yes did not convert: ' + S.trackPadMode[0]);
-    /* The Conductor's home pad must play the root at octave 4, its no-shift
-     * point — so it starts on octave 0, not the melodic +1 (2026-09-24). */
-    assert(S.trackOctave[0] === 0, 'a new Conductor kept the melodic octave ' + S.trackOctave[0] + ': its home pad would transpose everything');
+    /* WHERE "NO SHIFT" LANDS, measured on the pads themselves: the DSP's zero
+     * is the key's root at MIDI 60, and a new Conductor must put it in the
+     * MIDDLE of the grid, reaching down as well as up (Josh, 2026-09-26). Pinned
+     * by what the pads PLAY, not by the stored octave — the 09-24 value (0)
+     * passed an octave assertion while every bottom-row pad dropped the other
+     * tracks by two octaves. */
+    S.padOctave[0] = 3;   /* the DSP's own default (seq8.c pad_octave = 3); this rig's stub reads back 0 */
+    S.activeTrack = 0; DM.computePadNoteMap();
+    const zero = S.padKey + 60;
+    const shiftAt = (row, col) => S.padNoteMap[row * 8 + col] + S.trackOctave[0] * 12 - zero;
+    assert(shiftAt(0, 0) === -12, 'bottom-left pad shifts ' + shiftAt(0, 0) + ' semitones, want an octave down (-12)');
+    let midZero = false;
+    for (let row = 1; row <= 2; row++) for (let col = 0; col < 8; col++) if (shiftAt(row, col) === 0) midZero = true;
+    assert(midZero, 'no pad in the middle two rows plays the no-shift root');
+    assert(shiftAt(3, 7) > 0, 'the top-right pad does not shift up: ' + shiftAt(3, 7));
     assert(B.instrValueFor(0) === INSTR_CONDUCT, 'the readback does not say Conductor');
     assert(C.fmtInstr(B.instrValueFor(0)) === 'Conductor',
            'formats as ' + C.fmtInstr(B.instrValueFor(0)));
@@ -300,6 +313,21 @@ step('⚠ CONTROL: an ordinary pick still routes — Conductor did not break the
     ticks(4);
     assert(wrote(/^t2_route$/).length, 'an ordinary pick stopped writing a route');
     assert(S.trackPadMode[2] !== PAD_MODE_CONDUCT, 'an ordinary pick converted the track');
+});
+
+step('⭐ on a None track a PLAIN click opens the picker — nothing is chosen yet', () => {
+    B.applyInstrChoice(3, C.INSTR_NONE);
+    ticks(2);
+    snd.soundExit();
+    S.activeTrack = 3;
+    cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+    ticks(6);
+    const st = snd.soundPickStateForTest();
+    assert(st.kinds[st.row] === 'trackto', 'the menu did not land on the Instmt/Dest row: ' + st.kinds[st.row]);
+    cc(3, 127); cc(3, 0);                       /* a plain click, no Shift */
+    ticks(4);
+    assert(snd.soundEnumPickForTest(), 'a plain click on a None track did nothing — its hint says CLK EDIT');
+    cc(51, 127); cc(51, 0); ticks(2);          /* Back out, leaving it None */
 });
 
 process.exit(failed);

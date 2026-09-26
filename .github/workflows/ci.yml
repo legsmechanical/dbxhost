@@ -67,6 +67,11 @@ jobs:
       # a job that tested nothing.
       - run: npm ci
       - run: bash tests/run.sh
+      # The HTML manual ships as a release download, built on the tag. Build it
+      # here on every push too: its screen renderer boots the real UI and exits
+      # non-zero on a screen that throws or names a heading the manual lost, so
+      # the break shows up on the commit that caused it, not on release day.
+      - run: bash scripts/build_manual_html.sh
 
   # ----------------------------------------------------------------------- go
   # schwung-manager (on-device module store / updater service).

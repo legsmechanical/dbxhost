@@ -1,15 +1,6 @@
 # Changelog
 
 All notable changes to dAVEBOx are documented here.
-- **Three more Daves join the pool.** Welcome, GILMOUR, DAVID NO, and the
-  rare DAVIE JAMES DIO — 34 to collect.
-- **Dave Box: the card view.** Each Dave now shows his name in big caps with
-  his number and rarity beneath — and the portrait slowly pans up and down
-  behind the label, so the whole image gets its moment.
-- **The Dave Box.** Every launch deals you one random Dave as the splash —
-  some are rarer than others — and every Dave you've ever been dealt lives in
-  a jog-driven album under Settings > Dave Box, each with his permanent
-  number. Collect all 31.
 
 Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 `[Unreleased]` as user-facing changes land; `scripts/cut_release.sh` finalizes
@@ -68,6 +59,19 @@ the section into a versioned heading at release time.
 - **A project load unwraps a Dave.** Loading a project deals a Dave into your
   Dave Box and shows him full screen under a `<PROJECT> [LOADING...]` header
   while the set loads.
+- **The Dave Box.** Loading a project deals you one random Dave — some are
+  rarer than others — and every Dave you've ever been dealt lives in a
+  jog-driven album under Settings → Open Your Dave Box, each with his
+  permanent number. Launching dAVEBOx from the Tools menu shows no Dave.
+- **Dave Box: the card view.** Each Dave now shows his name in big caps with
+  his number and rarity beneath — and the portrait slowly pans up and down
+  behind the label, so the whole image gets its moment.
+- **Three more Daves join the pool.** Welcome, GILMOUR, DAVID NO, and the
+  rare DAVIE JAMES DIO — 34 to collect.
+- **Mute snapshots and Performance presets save with Shift + step.** Mute +
+  Shift + step saves a mute snapshot and Loop + Shift + step a Performance
+  preset; the step alone recalls, at once on the press, and Delete + step
+  clears — the same as the Capture snapshot row.
 - **Shortcut icons show what's on.** Without Shift, the Step 6 icon stays lit
   while the metronome plays (Play or Always), and in Track View Step 10 while
   fixed velocity is on and Step 11 while the track arp is on.
@@ -111,6 +115,47 @@ the section into a versioned heading at release time.
   reloaded with every other lane at 1 bar, and a snare added later on bar 3
   never played. Every lane now keeps its length, loop, step size, pad note,
   direction and effects, notes or not.
+- **A new Conductor's pads are centred on "no shift".** Its bottom-row pads used
+  to drop every responding track by two octaves; the no-shift note now sits in the
+  middle of the grid, so the pads reach down as well as up.
+- **A track set to None opens its instrument list on a click.** The hint said
+  CLK EDIT, but only Shift + click did anything.
+- **One name for every note.** Middle C is C3 everywhere, as on Move — the step
+  editor, the drum note box and the browser's piano roll used to call it C4.
+- **Saving a mute snapshot saves the project.** A new snapshot used to wait in
+  memory until something else changed, so it could be lost if you left before
+  then. Deleting one already saved.
+- **Holding Shift in Track View no longer lights Step 3.** Its shortcut was
+  retired (the sound editor is Shift + Note/Session), so the icon and the step
+  light advertised a press that did nothing.
+- **Delete + jog click on RPT GROOVE resets the lane's groove** even with no
+  repeat mode on. It used to reset the drum track's hidden live arp instead and
+  say LIVE ARP RESET.
+- **Copy + step on a drum track copies the step you're looking at.** Past the
+  first page it copied, pasted onto and cut from the matching step on page 1
+  instead.
+- **The SnapMorph snapshot list lines up.** Snapshot names start at the same
+  place whether or not they carry a pick number, and a track with no
+  snapshots says NO SNAPSHOTS instead of a clipped line.
+- **A Conductor's NOTE FX bank is headed C-NOTE FX,** like its other banks.
+- **The AUTOMATION list stays above its hints.** It shows four rows and
+  scrolls, instead of a fifth row running into the footer.
+- **TRACK CONFIG's hint band sits cleanly under the list.** When the CLK EDIT /
+  SHFT CHANGE hints pop up, the list shows four rows above them instead of a
+  fifth row peeking out from under the band.
+- **A muted or soloed drum lane's tag no longer covers the velocity.** In the
+  drum overview MUTED / SOLOED now sits at the left of the second info row,
+  with VEL on the right.
+- **The arp step editor's header reads cleanly.** On SEQ ARP and LIVE ARP's
+  step pitch page the SHIFT hint no longer covers the track and instrument
+  label.
+- **Conductor C-WHEN fits its values.** Each track's Next/Now sits in its own
+  box instead of running into its neighbours; drum tracks, which never respond,
+  are left blank as on C-RESPONDER.
+- **Exported automation repeats like it plays.** A drum parameter with its own
+  cycle, or a melodic one with its own Loop, used to export once and then hold
+  its last value for the rest of the clip in Live. It now repeats across the
+  whole clip, at its own length and rate.
 - **SOUND + CONFIG and MACROS behave like every other bank.** A track on them stays
   there through suspend, track switches and Back; opening the Sound menu by a
   shortcut no longer moves the bank (Back from it returns to where you were, never
@@ -567,8 +612,7 @@ the section into a versioned heading at release time.
   recording; the merge flow is unchanged from the notice onward. The
   Quantized Sampler moved with it: hold Shift and touch the volume knob,
   then press Sample.
-- **A new splash pool — 31 Daves.** The launch artwork rotates through a fully
-  recurated set; every launch greets you with a different Dave.
+- **A new Dave pool — 31 Daves.** A fully recurated set of portraits.
 ### Features (pending, cont.)
 - **Note/Session is the way out.** From anywhere that isn't a plain overview —
   a bank view, a menu, the sound editor, a dialog, a picker — one press takes

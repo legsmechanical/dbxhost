@@ -751,6 +751,7 @@ a button.
   | `hdr: true` | the row in the HEADER font (see §5.0) |
   | `value` | right-aligned, always the label font |
   | `qual: '…'` | a small qualifier drawn just AFTER the label, in the movy font, subtracted from the label's own width. For a disambiguator that belongs to the NAME rather than to the right-hand column — a module row is `NAME  fx1  >`, so the right edge is already spent on the chevron. ⚠ Use it only where the qualifier carries information (see §5.0's *qualify on collision only*) |
+  | `mark: '…'` | a short tag in a left GUTTER before the label, as wide as the widest mark in the list, so every name starts at the same x — the SnapMorph list's pick order `[1]`. `mark: ''` is an unmarked row that still aligns. ⚠ Never a prefix in the label padded with spaces: the label fonts are proportional, so that never lines up |
   | `chevron: true` | a `>` in the value position — a door |
   | `editing: true` | wraps the value in `[brackets]`. ⚠ Only if the caller is not already bracketing it: `formatItemValue` does, and both together render `[[MINOR]]` |
   | `divider: true` | a rule on its own row. ⚠ Costs a whole row — worth it on a ~15-row screen, not on a 3-row one |
