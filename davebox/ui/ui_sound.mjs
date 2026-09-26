@@ -1147,6 +1147,7 @@ export function soundFileBrowserForTest() {
 export function soundKnobTargetsForTest() { return knobTargetList(); }
 export function soundKnobParamsForTest() { return S.knobParams; }
 export function soundLevelCellsForTest() { return midiTrack() ? midiMixCells() : levelCells(); }
+export function soundLevelValSetForTest(i, v) { S.levelVals[i] = v; }
 export function soundMacroMergeForTest() { macroMergeAfterPatch(); }
 /* Drives the view directly so a Back edge can be exercised without walking the
  * whole entry gesture. ⚠ Test-only: the real transitions go through the

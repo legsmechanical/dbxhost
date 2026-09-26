@@ -253,6 +253,7 @@ step('⭐ HOLD a Volume point -> SOUND + CONFIG while held; its knob writes THAT
     assert(snd.soundOpen() && S.activeBank === BANK_SOUND, 'not on SOUND + CONFIG while held: bank ' + S.activeBank + ' open ' + snd.soundOpen());
     /* The Volume cell: marked, highlighted, showing the lane's value (full
      * scale at every step) rather than the knob's. */
+    snd.soundLevelValSetForTest(0, 0.25);              /* the knob's own value, pinned for the comparison */
     globalThis.clear_screen(); render.drawUI();
     const kc = movy.kitCellsForTest();
     assert(kc && kc.cells[0] && kc.cells[0].lock && kc.touched === 0, 'Volume is not marked and highlighted: ' + JSON.stringify(kc));
@@ -274,6 +275,7 @@ step('⭐ HOLD a Volume point -> SOUND + CONFIG while held; its knob writes THAT
     /* CONTROL: the same cell with NO step held (a Shift+click jump) shows the
      * knob's own value — so the held value above was the lane's. */
     shiftClick(); ticks(4);
+    snd.soundLevelValSetForTest(0, 0.25);
     globalThis.clear_screen(); render.drawUI();
     const kc2 = movy.kitCellsForTest();
     assert(kc2.cells[0].lock && kc2.touched !== 0, 'the pinned, unheld Volume cell: ' + JSON.stringify(kc2));
