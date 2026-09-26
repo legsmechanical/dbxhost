@@ -1230,17 +1230,19 @@ edited here:
   buttons and the position bar — a lane with its own loop runs round inside
   the clip at its own length.
 - **Pressing a step** here never touches notes. **Hold a step with a value
-  set** and you jump to the bank that parameter lives on, the header marked
-  **<AUTO S7** (step 7); turn its knob to change the value on that step, and
-  let go to come back to this menu, on the same row and page. This works for
-  dAVEBOx's own bank knobs; for other parameters it says **NO EDITOR**.
+  set** and you jump to where that parameter is edited — its bank, its
+  instrument's or effect's page (on a per-pad parameter, that pad), SOUND +
+  CONFIG for a level, MACROS for a MIDI target. Turn its knob to change the
+  value on that step, and let go to come back to this menu, on the same row
+  and page. On a bank the header shows **<AUTO S7** (step 7).
 
 **Back** closes the menu and the step buttons show the clip again.
 
 **Shift + click** a row to jump to where that parameter is edited — its bank,
 its module's page, SOUND + CONFIG for a level, or MACROS for a MIDI target —
-and **Back** from there returns you to this menu, on the same row. Click a row
-for its operations:
+and **Back** from there returns you to this menu, on the same row. The step
+buttons keep showing the lane while you are there, so you can hold a step and
+turn the knob to set that step. Click a row for its operations:
 **Delete**, **Mute** / **Unmute**, **Mode** (*Curve* plays the lane as a continuous
 envelope; *Punch* makes each lock last just its own step, with the parameter back at
 rest on every other step — Smooth and Wrap don't apply there and are hidden),

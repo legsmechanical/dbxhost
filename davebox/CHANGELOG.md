@@ -36,9 +36,13 @@ the section into a versioned heading at release time.
   Legacy), its own pages on Left / Right with the track overview's position
   bar, and its own playhead. Pressing a step there no longer edits notes.
 - **Hold a step to edit its automation.** On the AUTOMATION bank, hold a step
-  that has a value and you land on that parameter's bank (header **<AUTO S7**);
-  turn the knob to change the value on that step, let go to come back to the
-  same row. dAVEBOx's own bank knobs for now; other parameters say NO EDITOR.
+  that has a value and you land where that parameter is edited — its bank, its
+  instrument's or effect's page (the right pad, on a per-pad parameter), SOUND
+  + CONFIG for a level, MACROS for a MIDI target; turn the knob to change the
+  value on that step, let go to come back to the same row.
+- **A lane jump keeps the lane on the steps.** After Shift + click on a lane,
+  the step buttons keep showing that lane until you press Back, so you can
+  hold a step there and set its value with the knob in front of you.
 - **Recording says how long the lane is.** Every time you start recording
   automation, a notice shows **● LANE: 2 BAR** (or 13 ST) — the cycle the move
   will repeat on.
