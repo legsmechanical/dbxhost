@@ -1034,8 +1034,11 @@ screen('fx-browser', '14.2 The menu', 'Adding an effect',
     () => { selectTrack(4); openTrackConfig(); soundRowTo('block'); jog(2); ticks(1);
             if (SND.soundPickStateForTest().labels[SND.soundPickStateForTest().row] !== 'FX 2') throw new Error('not on FX 2');
             click(); ticks(6); });
-screen('sound-card', '14.1 Opening TRACK CONFIG', 'The SOUND + CONFIG card',
-    'The knobs are the track\'s levels; click to open TRACK CONFIG.',
+screen('config-card', '14.1 Opening TRACK CONFIG', 'The CONFIG bank',
+    'The first bank on every walk shows the TRACK CONFIG menu at rest, inside the corner brackets; click to use it.',
+    () => { selectTrack(4); toBank(C.BANK_CONFIG); ticks(8); });
+screen('sound-card', '14.1 Opening TRACK CONFIG', 'The MIX card',
+    'The last bank: the knobs are the track\'s levels.',
     () => { selectTrack(4); toBank(C.BANK_SOUND, false); knobTouch(0); ticks(4); });
 screen('macros-card', '14.6 The MACROS bank', 'The MACROS bank',
     'Each knob shows its target; a knob driving several (MAC1) shows its own position.',
@@ -1054,8 +1057,8 @@ screen('macros-targets', '14.6 The MACROS bank', 'MACROS — choosing a target',
     () => { openMacroList(); for (let g = 0; g < 6; g++) { jog(1); ticks(1); } click(); ticks(4); for (let g = 0; g < 20; g++) { jog(1); ticks(1); } });
 
 /* 14.3 — a MIDI track (route: a MIDI channel) */
-screen('midi-track-card', '14.1 Opening TRACK CONFIG', 'SOUND + CONFIG on a MIDI track',
-    'On a track sending MIDI, the SOUND + CONFIG card is a standard controller: Expression (touched here), Pan, Mod wheel and Sustain, then the clip\'s Program and Bank.',
+screen('midi-track-card', '14.1 Opening TRACK CONFIG', 'MIX on a MIDI track',
+    'On a track sending MIDI, the MIX card is a standard controller: Expression (touched here), Pan, Mod wheel and Sustain, then the clip\'s Program and Bank.',
     () => {
         selectTrack(3);
         S.trackRoute[3] = 2; S.trackChannel[3] = 10; ENGINE.t3_route = 'external'; ENGINE.t3_channel = '10';

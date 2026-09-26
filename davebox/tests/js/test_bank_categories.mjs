@@ -71,21 +71,21 @@ const GUT = lineX + 4;
 const onBank = (b) => { S.activeBank = b; S.trackActiveBank[2] = b; S.bankNavKind = 'track'; S.jogTouched = true; };
 const inkLeftOfLine = (f, y0, y1) => { let n = 0; for (let y = y0; y < y1; y++) for (let x = 0; x < lineX - 1; x++) n += px(f, x, y); return n; };
 
-const MEL = [5, C.BANK_MACROS, C.BANK_AUTOMATION, C.BANK_STEP, 0, 1, 2, 3, 4, C.BANK_SOUND];
+const MEL = [C.BANK_CONFIG, 5, C.BANK_MACROS, C.BANK_AUTOMATION, C.BANK_STEP, 0, 1, 2, 3, 4, C.BANK_SOUND];
 step('⭐ the melodic walk is IN, CTRL, SEQ, FX, MIX; a Chord-layout track adds CHORD at the head of IN', () => {
     S.padLayoutChord = [false, false, false, false, false, false, false, false];
     assert(JSON.stringify(P.bankCycleForMode(0, 2)) === JSON.stringify(MEL), 'plain: ' + P.bankCycleForMode(0, 2));
     S.padLayoutChord[2] = true;
-    assert(JSON.stringify(P.bankCycleForMode(0, 2)) === JSON.stringify([C.BANK_CHORD].concat(MEL)), 'chord: ' + P.bankCycleForMode(0, 2));
+    assert(JSON.stringify(P.bankCycleForMode(0, 2)) === JSON.stringify([C.BANK_CONFIG, C.BANK_CHORD].concat(MEL.slice(1))), 'chord: ' + P.bankCycleForMode(0, 2));
     S.padLayoutChord[2] = false;
     assert(C.BANK_DEFAULT === 0, 'CLIP stays the start and Back bank');
 });
-step('⭐⭐ THE GESTURE: from CLIP the jog walks left through SEQ, CTRL, IN and right through FX to SOUND + CONFIG, the column following', () => {
+step('⭐⭐ THE GESTURE: from CLIP the jog walks left through SEQ, CTRL, IN and right through FX to MIX, the column following', () => {
     S.activeBank = 0; S.trackActiveBank[2] = 0; S.bankSelectTick = -1;
     touchJog(); tick();
     const seen = [];
-    for (let i = 0; i < 5; i++) { jog(-1); tick(); seen.push(S.activeBank); }
-    assert(JSON.stringify(seen) === JSON.stringify([C.BANK_STEP, C.BANK_AUTOMATION, C.BANK_MACROS, 5, 5]), 'left: ' + seen);
+    for (let i = 0; i < 4; i++) { jog(-1); tick(); seen.push(S.activeBank); }
+    assert(JSON.stringify(seen) === JSON.stringify([C.BANK_STEP, C.BANK_AUTOMATION, C.BANK_MACROS, 5]), 'left: ' + seen);
     const nav = render.bankNavItems();
     assert(nav.items[nav.cur].name === 'LIVE ARP' && nav.items[nav.cur].cat && nav.items[nav.cur].cat.label === 'IN', 'centred ' + JSON.stringify(nav.items[nav.cur]));
     for (let i = 0; i < 4; i++) { jog(1); tick(); }
@@ -136,8 +136,8 @@ step('⭐ a category of one (MIX: SOUND + CONFIG) is a plain row, fully left', (
     const f = frame();
     assert(px(f, 1, MID_Y + 3), 'the plain row\'s highlight does not start at the left edge');
 });
-const DRUM = [5, C.BANK_MACROS, C.BANK_AUTOMATION, C.BANK_STEP, 7, 0, 1, 3, C.BANK_SOUND];
-const COND = [0, C.BANK_STEP, 1, C.BANK_RESPONDER, C.BANK_OCTAVE, C.BANK_WHEN];
+const DRUM = [C.BANK_CONFIG, 5, C.BANK_MACROS, C.BANK_AUTOMATION, C.BANK_STEP, 7, 0, 1, 3, C.BANK_SOUND];
+const COND = [C.BANK_CONFIG, 0, C.BANK_STEP, 1, C.BANK_RESPONDER, C.BANK_OCTAVE, C.BANK_WHEN];
 step('⭐ the drum walk is IN, CTRL, SEQ, FX (under DRUM LANE), MIX; the Conductor walk is CLIP, STEP, NOTE FX, RSPD', () => {
     assert(JSON.stringify(P.bankCycleForMode(C.PAD_MODE_DRUM, 2)) === JSON.stringify(DRUM), 'drum: ' + P.bankCycleForMode(C.PAD_MODE_DRUM, 2));
     assert(JSON.stringify(P.bankCycleForMode(C.PAD_MODE_CONDUCT, 2)) === JSON.stringify(COND), 'conductor: ' + P.bankCycleForMode(C.PAD_MODE_CONDUCT, 2));
@@ -172,10 +172,10 @@ step('⭐ Conductor: no "C-" anywhere; CLIP, STEP, NOTE FX plain; ON/OFF, OCTAVE
     S.trackPadMode[2] = C.PAD_MODE_CONDUCT;
     onBank(0);
     const names = render.bankNavItems().items.map((x) => x.name);
-    assert(JSON.stringify(names) === JSON.stringify(['CLIP', 'STEP', 'NOTE FX', 'ON/OFF', 'OCTAVE', 'TIMING']), 'names: ' + names);
+    assert(JSON.stringify(names) === JSON.stringify(['CONFIG', 'CLIP', 'STEP', 'NOTE FX', 'ON/OFF', 'OCTAVE', 'TIMING']), 'names: ' + names);
     const items = render.bankNavItems().items;
-    assert(items.slice(0, 3).every((x) => x.cat === null), 'CLIP/STEP/NOTE FX have a category');
-    assert(items.slice(3).every((x) => x.cat && x.cat.label === 'RSPD'), 'the RSPD group');
+    assert(items.slice(0, 4).every((x) => x.cat === null), 'CONFIG/CLIP/STEP/NOTE FX have a category');
+    assert(items.slice(4).every((x) => x.cat && x.cat.label === 'RSPD'), 'the RSPD group');
     assert(px(frame(), 1, MID_Y + 3), 'CLIP is not a plain row');
     S.trackPadMode[2] = C.PAD_MODE_MELODIC_SCALE; S.bankNavKind = null; S.jogTouched = false;
 });

@@ -262,20 +262,22 @@ step('⚠ a jog turn inside the tap window PROMOTES the press: the release does 
     globalThis.tick(); release();
     assert(!sets.some(x => x.includes('_step_5_clear')) && !S.pendingDefaultSetParams.some(p => p.key.includes('_step_5_clear')), 'step 5 survived');
 });
-step('⚠ from SOUND + CONFIG (sound mode active): the reveal draws over it, and left returns to it with sound mode still active', () => {
-    fresh(4); S.bankCardLatched = true;            /* SEQ ARP: the melodic stop before SOUND + CONFIG */
-    right();                                       /* walk onto SOUND + CONFIG */
+step('⚠ from MIX (sound mode active): the reveal draws over it, and left returns to it with sound mode still active', () => {
+    fresh(4); S.bankCardLatched = true;            /* SEQ ARP: the melodic stop before MIX */
+    right();                                       /* walk onto MIX */
     globalThis.tick(); globalThis.tick();
     assert(snd.soundActive(), 'control: sound mode opened');
     const REF = 7000;
-    const card = frameAt(REF);
+    /* The BODY: MIX's footer names the jog (JOG BANK, JOG STEP while a step is
+     * held), so the footer differs by design once the step is down. */
+    const card = partsAt(REF).body;
     holdStep5();
     right();
     assert(S.stepReveal === true && snd.soundActive(), 'revealed; sound mode still active underneath');
     assert(frameAt(REF) !== card, 'the step page replaced the card');
     left();
     assert(S.stepReveal === false && snd.soundActive(), 'returned; sound mode still active');
-    assert(frameAt(REF) === card, 'the card is back, pixel for pixel');
+    assert(partsAt(REF).body === card, 'the card is back, pixel for pixel');
     release();
 });
 

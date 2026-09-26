@@ -53,7 +53,7 @@ import { bankCardVisible, sessMixerVisible, bankHeaderRight } from './ui_render.
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
-import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, INSTR_CONDUCT, INSTR_ROW_LABEL, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION, isSoundBank, BANKS, fmtPlayDir, fmtSign,
+import { instrOptions, instrPickerRows, moveInstrOwner, fmtInstr, INSTR_SCHWUNG, INSTR_NONE, INSTR_MIDI_CH, INSTR_CONDUCT, INSTR_ROW_LABEL, NUM_CLIPS, fmtVelOverride, BANK_SOUND, BANK_MACROS, BANK_AUTOMATION, BANK_CONFIG, isSoundBank, BANKS, fmtPlayDir, fmtSign,
          BANK_MACRO_ALLOW, BANK_SHORT, seqAutoKeyFor, SEQ_AUTO_TARGETS,
          midiTargetIsMidi, midiTargetCC, midiTargetName, midiTargetShort, midiTargetMax, midiTargetDefault, midiTargetTo14, PB_CENTRE,
          PAD_MODE_CONDUCT as PMC, PAD_MODE_DRUM as PMD, ROUTE_NONE, TRACK_PAD_BASE } from './ui_constants.mjs';
@@ -101,7 +101,7 @@ import {
     drawKitBankPage, drawKitHeader, drawKitBankHeader, drawKitHeaderParamPages,
     drawKitSectionPicker, drawKitList, drawKitListOverlay, drawKitHintRow, MV_FOOTER_Y,
     kitUseLayout,
-    drawKitStackedList, drawKitBackdropDim, drawKitCrumbs, kitStackBox,
+    drawKitStackedList, drawKitBackdropDim, drawKitCrumbs, kitStackBox, drawBrackets,
     MV_BAR_Y,
     hdrPrint, mvPrint, mvWidth, shapeSample, plotLine, hudCard, drawLevelCard, MV_ROW1_Y } from './ui_movy.mjs';
 import { bankCyclePos, bankCycleForMode } from './ui_pure.mjs';
@@ -363,6 +363,11 @@ const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_BROWSE = 2,
        * not numeric order, so "the next number" is not the one under the
        * cursor. */
       VIEW_CANVAS = 23,
+      /* ⭑ THE CONFIG BANK's card (Josh, 2026-09-26): the TRACK CONFIG list at
+       * rest, inside the door's corner brackets; a click makes it live
+       * (VIEW_BLOCKS). A card like VIEW_PROMPT / VIEW_MACROS. ⚠ 24: the next
+       * free id — 30-34 and 40 are taken further down. */
+      VIEW_CFGCARD = 24,
       /* ⭑ IMPORT MIDI (2026-09-23): a file into a clip — ui_midi_import.mjs
        * owns the whole screen; every handler here only delegates. */
       VIEW_MIDI_IMPORT = 40;
@@ -1202,7 +1207,7 @@ export function soundResting() {
      * between two detents, read as resting, and the next detent CLOSED sound
      * mode — the overview dump (device, 2026-09-05). */
     if (followInFlight()) return false;
-    return !!(S.active && (S.view === VIEW_MACROS || S.view === VIEW_PROMPT) && !soundIsGlobal() && !GS.bankCardLatched);
+    return !!(S.active && isCardView(S.view) && !soundIsGlobal() && !GS.bankCardLatched);
 }
 /* Where the screen is GOING, not where it is. Every follow lands through a
  * queued action (retarget → then), so between two detents faster than a tick
@@ -1408,15 +1413,18 @@ function flushForRetarget() {
  * menu. (Before 2026-09-24, opening the menu by any gesture took BANK_SOUND and a
  * set of patches tried to undo that: an origin crumb, record-only-on-the-walk,
  * save/switch skips. They are gone.) */
+/* The three bank cards — MIX, MACROS, CONFIG — as opposed to the menu or
+ * anything opened from it. */
+function isCardView(v) { return v === VIEW_PROMPT || v === VIEW_MACROS || v === VIEW_CFGCARD; }
 function soundCardViewFor(bank) {
-    return bank === BANK_MACROS ? VIEW_MACROS : bank === BANK_SOUND ? VIEW_PROMPT : VIEW_BLOCKS;
+    return bank === BANK_MACROS ? VIEW_MACROS : bank === BANK_SOUND ? VIEW_PROMPT : bank === BANK_CONFIG ? VIEW_CFGCARD : VIEW_BLOCKS;
 }
 
 /* Is the screen the SOUND+CFG card or the MACROS page — the bank itself, as
  * opposed to the menu or anything opened from it? */
 export function soundHasPendingAction() { return !!S.pendingAction; }
 export function soundOnCard() {
-    return S.active && !soundIsGlobal() && (S.view === VIEW_PROMPT || S.view === VIEW_MACROS);
+    return S.active && !soundIsGlobal() && isCardView(S.view);
 }
 
 /* Back out of the menu to the screen UNDER it, which is the track's bank: on
@@ -1547,7 +1555,7 @@ export function soundFollowTrack(track) {
          * page, the gateway — or its prompt, which is where soundEnterMove lands. */
         soundEnterMove(track);
         const th = plan.then;
-        if (th && th.t === 'view' && (th.view === VIEW_MACROS || th.view === VIEW_BUSES)) S.view = th.view;
+        if (th && th.t === 'view' && (th.view === VIEW_MACROS || th.view === VIEW_BUSES || th.view === VIEW_CFGCARD)) S.view = th.view;
         else if (!(th && th.t === 'view' && th.view === VIEW_PROMPT)) {
             soundShowMenu();
             if (th && th.t === 'slotcfg' && th.which === 'config') S.pendingAction = th;
@@ -1619,14 +1627,14 @@ export function soundRetarget(track, slot) {
      * BANK'S PROMPT it must leave you there. Switching tracks is not asking for
      * the menu, and promoting the prompt into it on every track step is the
      * other half of the same bug. */
-    const wasPrompt = S.view === VIEW_PROMPT, wasMacros = S.view === VIEW_MACROS;
+    const wasPrompt = S.view === VIEW_PROMPT, wasMacros = S.view === VIEW_MACROS, wasCfg = S.view === VIEW_CFGCARD;
     const keepPlace = !leftMoveBus && S.view === VIEW_EDIT;
     if (leftMoveBus) {
         /* Leaving a Move bus: nothing about WHERE you were transfers, because
          * the rows aren't the same rows. Land on the new track's picker, on its
          * synth — not on an fx index that meant a bus insert a moment ago. */
         clearBusContext();
-        S.view = wasMacros ? VIEW_MACROS : wasPrompt ? VIEW_PROMPT : VIEW_BLOCKS;
+        S.view = wasMacros ? VIEW_MACROS : wasPrompt ? VIEW_PROMPT : wasCfg ? VIEW_CFGCARD : VIEW_BLOCKS;
         S.pickRow = 0;
         S.comp = 'synth';
         S.blockIdx = 1;
@@ -1907,7 +1915,14 @@ function levelPageSpec(idx) {
  * editor — the bank card, the block list, the settings — for a track (a global
  * bus has no track and keeps its own rows). */
 function levelsActive() {
-    return !!(S.active && S.view !== VIEW_EDIT && !soundIsGlobal() && !macrosActive() && !midiTrack());
+    return !!(S.active && S.view !== VIEW_EDIT && !soundIsGlobal() && !macrosActive() && !midiTrack() && !onConfigBank());
+}
+/* The CONFIG bank has NO knobs (Josh, 2026-09-26: "no knobs"): on its card and
+ * in the menu entered from it, the levels (and a MIDI track's mix) are off.
+ * Keyed on the BANK, not the view: the menu opened by Shift+Note from another
+ * bank keeps the level knobs it always had. */
+function onConfigBank() {
+    return !soundIsGlobal() && S.track >= 0 && S.track === GS.activeTrack && GS.activeBank === BANK_CONFIG;
 }
 
 /* ── A MIDI TRACK'S SOUND + CONFIG CARD (spec §2b): the standard controllers
@@ -1926,7 +1941,7 @@ const MIDI_MIX_SPECS = [
     null,
 ];
 function midiTrack() { return !!(S.active && !soundIsGlobal() && S.track >= 0 && GS.trackRoute[S.track] === 2); }
-function midiMixActive() { return midiTrack() && S.view !== VIEW_EDIT && !macrosActive(); }
+function midiMixActive() { return midiTrack() && S.view !== VIEW_EDIT && !macrosActive() && !onConfigBank(); }
 function midiCellFor(target, v, spec) {
     const cell = { label: (spec && spec.label) || midiTargetShort(target),
                    name: ((spec && spec.name) || midiTargetName(target)).toUpperCase(),
@@ -2122,10 +2137,10 @@ function levelCells() {
     return cells;
 }
 function levelCardHints() {
-    /* The click is the door (no on-screen trace, so it leads); the jog walks
-     * banks — or, with a step held, reveals its page (spec §2). */
+    /* MIX is no door (2026-09-26): the jog walks banks — or, with a step
+     * held, reveals its page (spec §2) — and Back leaves. */
     const jog = GS.heldStep >= 0 ? ['JOG', 'STEP'] : ['JOG', 'BANK'];
-    return [['CLK', 'MENU'], jog, ['BACK', 'OUT']];
+    return [jog, ['BACK', 'OUT']];
 }
 
 function volTarget() {
@@ -2923,7 +2938,7 @@ export function soundGestureReturn() {
     } else if (g.wasActive) {
         /* ⭑ The SCREEN you pressed from: the menu, or the card / MACROS page
          * if that is where the gesture was pressed. */
-        S.view = (g.view === VIEW_PROMPT || g.view === VIEW_MACROS) ? g.view : VIEW_BLOCKS;
+        S.view = isCardView(g.view) ? g.view : VIEW_BLOCKS;
         S.pendingAction = { t: 'names' };
         S.presetMsg = '';
         S.dirty = true;
@@ -9207,7 +9222,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * Shift, switches track — both without a second copy here.
          * ⚠ The block below ends in an unconditional `return true`, so without
          * this the prompt would swallow every turn. */
-        if (S.view === VIEW_PROMPT || S.view === VIEW_MACROS) return false;
+        if (isCardView(S.view)) return false;
         /* ---- Shift+jog = SWITCH TRACK, in the menu only ----
          *
          * Declining the CC is the whole implementation: davebox's own jog
@@ -9536,7 +9551,11 @@ export function soundOnCC(d1, d2, decodeDelta) {
             }
             return true;
         }
-        if (S.view === VIEW_PROMPT) { S.view = VIEW_BLOCKS; S.dirty = true; return true; }
+        /* MIX has no door since 2026-09-26 (Josh: "take the click to enter the
+         * menu off of sound+config"): its click means nothing. */
+        if (S.view === VIEW_PROMPT) return true;
+        /* The CONFIG card: the click makes the list live, from its top. */
+        if (S.view === VIEW_CFGCARD) { S.pickRow = 0; soundShowMenu(); return true; }
         if (S.view === VIEW_NOEDITOR) { soundShowMenu(); return true; }   /* the click means what Back means here */
         /* MACROS: the click opens the assign list, which floats over the page
          * (no engine reads — the list is the store). */
@@ -10156,12 +10175,12 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.dirty = true;
             return true;
         }
-        if ((S.view === VIEW_MACROS || S.view === VIEW_PROMPT) && soundLaneJumpReturn()) {
+        if (isCardView(S.view) && soundLaneJumpReturn()) {
             /* Reached by a LANE JUMP from the AUTOMATION menu: back there. */
             S.dirty = true;
             return true;
         }
-        if (S.view === VIEW_MACROS || S.view === VIEW_PROMPT) {
+        if (isCardView(S.view)) {
             /* THE CARDS (MACROS, SOUND + CONFIG): Back is out of BANK MODE and
              * nothing else — "Back never changes which bank you are on" (the
              * manual; Josh 2026-09-03: leaving these banks put the knobs on a
@@ -10324,7 +10343,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
             }
         } else if (S.busLevelEditing) {
             S.busLevelEditing = false;
-        } else if (S.bus && S.view !== VIEW_PROMPT) {
+        } else if (S.bus && S.view !== VIEW_PROMPT && S.view !== VIEW_CFGCARD) {
             /* One level up is wherever the bus was entered FROM — the track's
              * picker, or the session-wide bus list. leaveBus knows which.
              * ⚠ NOT the prompt: a MOVE flavour stands at the gateway card WITH
@@ -10958,18 +10977,31 @@ export function renderGatewayCard(title, line2) {
     drawKitHintRow(MV_FOOTER_Y, [['CLK', 'ENTER']]);
 }
 
-/* The track flavour's card — both renderPrompt and the peek draw THIS, so the
- * strings live once. */
+/* The MIX card while sound mode is CLOSED (the one-tick gap before a queued
+ * entry, a knob peek at rest): the header and the footer, no values yet — the
+ * reads are sound mode's. */
 export function renderTrackGatewayCard(track) {
-    renderGatewayCard('SOUND + CONFIG', trackMenuDoorLine(track));
+    clear_screen();
+    kitUseLayout('bank');
+    drawKitBankHeader(BANKS[BANK_SOUND].name, 'audio', bankHeaderRight(false));
+    drawKitHintRow(MV_FOOTER_Y, [['JOG', GS.heldStep >= 0 ? 'STEP' : 'BANK'], ['BACK', 'OUT']]);
 }
-/* The track's menu is TRACK CONFIG (2026-09-25); the bank card's door names it. */
+/* The CONFIG card in the same gap: the header, the brackets, the rows only if
+ * sound mode last built them for this track. */
+export function renderConfigCardPeek(track) {
+    if (S.active && S.track === track) { renderConfigCard(); return; }
+    clear_screen();
+    kitUseLayout('bank');
+    drawKitBankHeader(TRACK_MENU_TITLE, null, bankHeaderRight(false));
+    drawBrackets(0, CFG_LIST_TOP - 1, 128, MV_FOOTER_Y - CFG_LIST_TOP);
+    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'MENU'], ['JOG', 'BANK'], ['BACK', 'OUT']]);
+}
+/* The track's menu is TRACK CONFIG (2026-09-25). */
 const TRACK_MENU_TITLE = 'TRACK CONFIG';
-function trackMenuDoorLine(track) { return 'TRACK ' + (track + 1) + ' CONFIG'; }
 
 function renderPrompt() {
-    /* The bank card IS a knob page now (spec §2): the five levels, the
-     * automation circles, and the door in the footer. */
+    /* The MIX card is a knob page (spec §2): the levels and the automation
+     * circles. */
     clear_screen();
     kitUseLayout('bank');
     if (midiTrack()) {
@@ -10977,25 +11009,20 @@ function renderPrompt() {
          * Bank; the door is the footer's CLK MENU (spec §2b). */
         const mc = midiMixCells();
         drawKitBankPage(mc, {
-            headerText: 'SOUND+CFG', headerGlyph: 'audio', headerRight: bankHeaderRight(false),
+            headerText: BANKS[BANK_SOUND].name, headerGlyph: 'audio', headerRight: bankHeaderRight(false),
             touchedIdx: S.touchedIdx, focusIdx: mc.focusIdx,
             footer: levelCardHints(),
         });
         return;
     }
-    /* ⚠ 'SOUND+CFG': the full name does not fit beside "T3 [OBXD]" on the right
-     * (measured) — the same budget that made SEQUENCE ARP SEQ ARP. */
     const lc = levelCells();
     drawKitBankPage(lc, {
-        headerText: 'SOUND+CFG', headerGlyph: 'audio', headerRight: bankHeaderRight(false),
+        headerText: BANKS[BANK_SOUND].name, headerGlyph: 'audio', headerRight: bankHeaderRight(false),
         touchedIdx: S.touchedIdx, focusIdx: lc.focusIdx,
         footer: levelCardHints(),
     });
-    /* The bottom row is empty (Module Level left the page, 2026-09-03), and
-     * the card is a DOOR: the row says so (Josh: "reinstate 'Click for track
-     * [n] sound & config'"). */
-    centreText(MV_ROW1_Y + 2, 'CLICK TO ENTER');
-    centreText(MV_ROW1_Y + 12, trackMenuDoorLine(S.track));
+    /* The bottom row stays empty: MIX is no longer a door (2026-09-26) — the
+     * menu is the CONFIG bank's. */
 }
 
 /* The NO INSTRUMENT EDITOR screen: the bank header (track + instrument, like
@@ -11009,6 +11036,94 @@ function renderNoEditor() {
     centreText(MV_ROW1_Y + 2, 'FOR ' + noEditorWords(S.track).toUpperCase());
     fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0);
     drawKitHintRow(MV_FOOTER_Y, [['BACK', 'MENU']]);
+}
+
+/* One menu row as drawKitList draws it — the live menu (renderBlocks) and the
+ * CONFIG bank's resting card (renderConfigCard) draw the SAME rows.
+ * ⚠⚠ This builds a NEW object per row, so anything set on the pickRow has to
+ * be forwarded EXPLICITLY. */
+function pickRowCell(r, idx) {
+    if (r.kind === 'buslevel') {
+        /* `fmt` where the spec carries one — a bus VOLUME is a gain and
+         * reads as one (GAIN_FMT), the same notation the slot's Volume row
+         * and the knob read-out use. Sends and returns are 0..1 proportions
+         * and stay a percentage, which is the default here. */
+        return { label: r.label, hdr: true,
+                 value: r.spec.toggle ? (r.val ? 'ON' : 'OFF')
+                      : r.spec.fmt   ? r.spec.fmt(r.val || 0)
+                                      : (Math.round((r.val || 0) * 100) + '%'),
+                 editing: idx === S.pickRow && S.busLevelEditing };
+    }
+    if (r.kind === 'trackto') {
+        const v = S.instrEditing ? S.instrSel : instrValueFor(S.track);
+        const route = GS.trackRoute[S.track];
+        /* A Schwung track names its GENERATOR (the door it opens); a Move
+         * track its Move instrument; MIDI its channel or track. The ` >`
+         * rides in the value like the old Move Generator row's did —
+         * chevron and value are exclusive in drawKitList. */
+        /* ⚠ A Conductor used to show '-' here because the row named a
+         * DESTINATION and a Conductor has none. It names the TYPE too now,
+         * and fmtInstr answers 'Conductor' — via instrValueFor, which tests
+         * pad mode first. */
+        let txt = GS.trackPadMode[S.track] === PMC ? fmtInstr(INSTR_CONDUCT)
+                /* No generator yet reads as NOTHING, not "Schwung": the
+                 * route is bookkeeping the user never chose (Josh,
+                 * 2026-09-04) — what they have is no instrument. */
+                : (route === 0 && !S.instrEditing) ? (r.gen ? r.gen + ' >' : '--')
+                : (route === 1 && !S.instrEditing) ? fmtInstr(v) + ' >'
+                : fmtInstr(v);
+        return { label: r.label, hdr: true,
+                 value: S.instrEditing ? '[' + txt + ']' : txt };
+    }
+    if (r.kind === 'div') return { divider: true };
+    if (r.kind === 'cfg') {
+        /* Read LIVE through the row's own getter rather than from a cache
+         * kept beside the list: these rows are rebuilt whenever the menu is,
+         * and an index-aligned value array is exactly what goes stale when
+         * the row set changes under it (which it does — pad mode and route
+         * both add and remove rows here).
+         * ⚠ While a commit-on-click row is being scrubbed the PREVIEW shows,
+         * not the committed value — otherwise the screen would say Keys while
+         * the cursor sits on Drums. */
+        const editing = (idx === S.pickRow) && S.cfgRowEditing && S.cfgRowKey === r.spec.key;
+        const v = (editing && S.cfgRowPreview !== null) ? S.cfgRowPreview : r.spec.get();
+        return { label: r.label, hdr: true,
+                 value: r.spec.fmt ? r.spec.fmt(v) : String(v),
+                 editing };
+    }
+    /* Doors get the chevron drawKitList draws for a sub-row. They used to
+     * fall through to the bare branch below, which sets neither value nor
+     * chevron, so nothing on screen said they opened anything.
+     * ⚠ `chevron` and `value` are mutually exclusive there (chevron wins),
+     * which is why the Move Generator row carries its marker in the value
+     * string instead — it has to show WHICH instrument it opens. */
+    if (r.kind === 'settings' || r.kind === 'config' || r.kind === 'patches' || r.kind === 'midiimport')
+        return { label: r.label, hdr: true, chevron: true };
+    if (r.kind !== 'block') return { label: r.label, hdr: true };
+    /* A bypassed block still says what it holds — you need to know WHAT is
+     * switched out — so the state rides as a prefix. Matches the host's 'B'. */
+    return { label: r.label, hdr: true,
+             value: (r.bypassed ? 'B ' : '') + String(r.name || '-').toUpperCase() };
+}
+
+/* ⭑ THE CONFIG BANK's CARD (Josh, 2026-09-26: "it literally shows the menu
+ * with the "click to enter" corner brackets and clicking allows you to navigate
+ * and use the menu"): the menu's own header and rows, at rest — no cursor, the
+ * door's corner brackets round the list, the AUTOMATION card's shape. A click
+ * makes it live (VIEW_BLOCKS); Back from the live menu's top comes back here.
+ * The bank has no knobs, so there are no cells. */
+const CFG_LIST_TOP = 11;               /* the kit list's own default */
+function renderConfigCard() {
+    clear_screen();
+    kitUseLayout('bank');
+    drawKitBankHeader(TRACK_MENU_TITLE, null, bankHeaderRight(false));
+    lastMenuHeader = { name: TRACK_MENU_TITLE, glyph: null, right: bankHeaderRight(false) };
+    drawKitList(S.pickRows.map(pickRowCell), -1, { h: MV_FOOTER_Y - CFG_LIST_TOP });
+    drawBrackets(0, CFG_LIST_TOP - 1, 128, MV_FOOTER_Y - CFG_LIST_TOP);
+    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'MENU'], ['JOG', GS.heldStep >= 0 ? 'STEP' : 'BANK'], ['BACK', 'OUT']]);
+}
+export function soundConfigCardForTest() {
+    return { view: S.view, card: S.view === VIEW_CFGCARD, rows: S.pickRows.map((r) => r.kind) };
 }
 
 /* What renderBlocks last drew as its header — for tests; the kit's drawers
@@ -11071,75 +11186,7 @@ function renderBlocks() {
          * previous screen left on that row. */
         fill_rect(0, MV_BAR_Y, 128, 1, 0);
     }
-    /* ⚠⚠ This builds a NEW object per row, so anything set on the pickRow has to
-     * be forwarded EXPLICITLY. It is the second time that has bitten: the doors
-     * had no chevron for the same reason, and the grouping rules' flag reached
-     * drawKitList not at all, so they never drew. (They are their own ROWS now,
-     * which sidesteps the whole class — a row cannot be forgotten by a mapper
-     * that iterates rows.) */
-    const _cell = (r, idx) => {
-        if (r.kind === 'buslevel') {
-            /* `fmt` where the spec carries one — a bus VOLUME is a gain and
-             * reads as one (GAIN_FMT), the same notation the slot's Volume row
-             * and the knob read-out use. Sends and returns are 0..1 proportions
-             * and stay a percentage, which is the default here. */
-            return { label: r.label, hdr: true,
-                     value: r.spec.toggle ? (r.val ? 'ON' : 'OFF')
-                          : r.spec.fmt   ? r.spec.fmt(r.val || 0)
-                                          : (Math.round((r.val || 0) * 100) + '%'),
-                     editing: idx === S.pickRow && S.busLevelEditing };
-        }
-        if (r.kind === 'trackto') {
-            const v = S.instrEditing ? S.instrSel : instrValueFor(S.track);
-            const route = GS.trackRoute[S.track];
-            /* A Schwung track names its GENERATOR (the door it opens); a Move
-             * track its Move instrument; MIDI its channel or track. The ` >`
-             * rides in the value like the old Move Generator row's did —
-             * chevron and value are exclusive in drawKitList. */
-            /* ⚠ A Conductor used to show '-' here because the row named a
-             * DESTINATION and a Conductor has none. It names the TYPE too now,
-             * and fmtInstr answers 'Conductor' — via instrValueFor, which tests
-             * pad mode first. */
-            let txt = GS.trackPadMode[S.track] === PMC ? fmtInstr(INSTR_CONDUCT)
-                    /* No generator yet reads as NOTHING, not "Schwung": the
-                     * route is bookkeeping the user never chose (Josh,
-                     * 2026-09-04) — what they have is no instrument. */
-                    : (route === 0 && !S.instrEditing) ? (r.gen ? r.gen + ' >' : '--')
-                    : (route === 1 && !S.instrEditing) ? fmtInstr(v) + ' >'
-                    : fmtInstr(v);
-            return { label: r.label, hdr: true,
-                     value: S.instrEditing ? '[' + txt + ']' : txt };
-        }
-        if (r.kind === 'div') return { divider: true };
-        if (r.kind === 'cfg') {
-            /* Read LIVE through the row's own getter rather than from a cache
-             * kept beside the list: these rows are rebuilt whenever the menu is,
-             * and an index-aligned value array is exactly what goes stale when
-             * the row set changes under it (which it does — pad mode and route
-             * both add and remove rows here).
-             * ⚠ While a commit-on-click row is being scrubbed the PREVIEW shows,
-             * not the committed value — otherwise the screen would say Keys while
-             * the cursor sits on Drums. */
-            const editing = (idx === S.pickRow) && S.cfgRowEditing && S.cfgRowKey === r.spec.key;
-            const v = (editing && S.cfgRowPreview !== null) ? S.cfgRowPreview : r.spec.get();
-            return { label: r.label, hdr: true,
-                     value: r.spec.fmt ? r.spec.fmt(v) : String(v),
-                     editing };
-        }
-        /* Doors get the chevron drawKitList draws for a sub-row. They used to
-         * fall through to the bare branch below, which sets neither value nor
-         * chevron, so nothing on screen said they opened anything.
-         * ⚠ `chevron` and `value` are mutually exclusive there (chevron wins),
-         * which is why the Move Generator row carries its marker in the value
-         * string instead — it has to show WHICH instrument it opens. */
-        if (r.kind === 'settings' || r.kind === 'config' || r.kind === 'patches' || r.kind === 'midiimport')
-            return { label: r.label, hdr: true, chevron: true };
-        if (r.kind !== 'block') return { label: r.label, hdr: true };
-        /* A bypassed block still says what it holds — you need to know WHAT is
-         * switched out — so the state rides as a prefix. Matches the host's 'B'. */
-        return { label: r.label, hdr: true,
-                 value: (r.bypassed ? 'B ' : '') + String(r.name || '-').toUpperCase() };
-    };
+    /* The rows: pickRowCell (above). */
     /* This screen was the TEST CASE for the menu type rule (2026-08-27); the
      * rule is drawKitList's default now, so there is nothing to pass.
      * ⭑ The FOOTER (Josh, 2026-09-04): the same pill band the bank cards wear,
@@ -11155,7 +11202,7 @@ function renderBlocks() {
      * two rows down either way), a scrollbar that ends above the band, and a
      * selected row that can never be the one under it. */
     const hints = menuRowHints(S.pickRows[S.pickRow]);
-    drawKitList(S.pickRows.map(_cell), S.pickRow, hints.length ? { visible: 4 } : {});
+    drawKitList(S.pickRows.map(pickRowCell), S.pickRow, hints.length ? { visible: 4 } : {});
     if (hints.length) {
         fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0);
         drawKitHintRow(MV_FOOTER_Y, hints);
@@ -13109,7 +13156,7 @@ export function soundRender() {
      * old reads here (GS.jogTouched, the transient bankSelectTick window) were
      * exactly the retired display drivers, and they were the "jog touch peeks
      * the card" half of the S+C-as-active-bank bug. */
-    if ((S.view === VIEW_PROMPT || S.view === VIEW_MACROS) &&
+    if (isCardView(S.view) &&
             !soundIsGlobal() && !S.enterSession &&
             !S.instrEditing && !S.busLevelEditing &&
             S.touchedIdx < 0 && !S.volTouched &&
@@ -13117,6 +13164,7 @@ export function soundRender() {
             !bankCardVisible())
         return false;
     if (S.view === VIEW_PROMPT) renderPrompt();
+    else if (S.view === VIEW_CFGCARD) renderConfigCard();
     else if (S.view === VIEW_NOEDITOR) renderNoEditor();
     else if (S.view === VIEW_MIDI_IMPORT) miRender(S.touchedIdx, S.shiftHeld);
     else if (S.view === VIEW_MACROS) renderMacros();

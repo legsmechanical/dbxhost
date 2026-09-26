@@ -20,7 +20,7 @@ import { LGTO_KNOB, BANKNAV_HOLD_MS } from './ui_constants.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
-    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD,
+    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG,
     INSTR_SCHWUNG, INSTR_MOVE_MAX, INSTR_MIDI_CH, INSTR_TRACK, INSTR_NONE, INSTR_CONDUCT,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
@@ -57,7 +57,7 @@ import {
     effectiveClip,
     bankHasAltParams, altIndicatorActive, autoLanePlayStep
 } from './ui_leds.mjs';
-import { soundRender, renderGatewayCard, renderTrackGatewayCard, renderMacrosPeek } from './ui_sound.mjs';
+import { soundRender, renderGatewayCard, renderTrackGatewayCard, renderConfigCardPeek, renderMacrosPeek } from './ui_sound.mjs';
 import { drawAutomationBankBody, autoBankMenuOpen, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus } from './ui_automation_bank.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
@@ -81,6 +81,9 @@ import { registerRingCells } from './ui_knob_leds.mjs';
 export function bankHeaderGlyph(bank, padMode) {
     const mode = padMode === undefined ? S.trackPadMode[S.activeTrack] : padMode;
     if (bank === BANK_SOUND) return 'audio';
+    /* CONFIG wears no glyph, like the TRACK CONFIG menu it shows (Josh,
+     * 2026-09-25: "get rid of the little icon on the header left"). */
+    if (bank === BANK_CONFIG) return null;
     if (bank === BANK_MACROS || bank === BANK_AUTOMATION) return 'perf';
     /* Bank 0 is CLIP on a melodic track and DRUM LANE on a drum one; bank 7 is
      * ALL LANES (a Conductor's bank 0 is CONDUCT and keeps the note pair). */
@@ -1470,10 +1473,8 @@ function drawTrackVolCard() {
  * it is browsing away from should stay visible behind it. */
 /* The bank navigation overlay while the jog walks (S.bankNavKind, armed by the
  * walk in ui_input_cc, cleared by the jog's touch release in ui.js). Drawn only
- * while the jog is touched, so it can never outlive the hand on it. The long
- * SOUND + CONFIG is shortened here, and only here (Josh: "abbreviation is
- * fine") — it would otherwise take most of the screen. */
-const BANKNAV_SHORT = { 'SOUND + CONFIG': 'SOUND+CFG' };
+ * while the jog is touched, so it can never outlive the hand on it. (The
+ * SOUND+CFG shortening went with the rename to MIX.) */
 export function bankNavItems() {
     if (S.bankNavKind === 'session') {
         return { items: SESS_KNOB_MODES.map((m) => ({ name: m.label, glyph: 'audio' })),
@@ -1489,7 +1490,7 @@ export function bankNavItems() {
     return {
         items: cyc.map((b) => {
             const n = bankDisplayName(mode, b);
-            return { name: BANKNAV_SHORT[n] || n, glyph: bankHeaderGlyph(b, mode), cat: cat[b] || null };
+            return { name: n, glyph: bankHeaderGlyph(b, mode), cat: cat[b] || null };
         }),
         cur: Math.max(0, cyc.indexOf(S.activeBank)),
     };
@@ -2107,6 +2108,10 @@ function drawUIBody() {
          * eight-cell kit page. */
         if (bank === BANK_SOUND) {
             renderTrackGatewayCard(S.activeTrack);
+            return;
+        }
+        if (bank === BANK_CONFIG) {
+            renderConfigCardPeek(S.activeTrack);
             return;
         }
         /* MACROS at rest, same gap: the page from the store, values as last
