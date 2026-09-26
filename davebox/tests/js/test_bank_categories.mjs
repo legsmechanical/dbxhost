@@ -136,13 +136,47 @@ step('⭐ a category of one (MIX: SOUND + CONFIG) is a plain row, fully left', (
     const f = frame();
     assert(px(f, 1, MID_Y + 3), 'the plain row\'s highlight does not start at the left edge');
 });
-step('⚠ CONTROL: drum and Conductor tracks have no categories yet — plain rows as before', () => {
-    S.trackPadMode[2] = C.PAD_MODE_DRUM; onBank(0);
-    assert(render.bankNavItems().items.every((it) => it.cat === null), 'a drum row has a category');
-    const f = frame();
-    assert(px(f, 1, MID_Y + 3), 'the drum column is not plain');
+const DRUM = [5, C.BANK_MACROS, C.BANK_AUTOMATION, C.BANK_STEP, 7, 0, 1, 3, C.BANK_SOUND];
+const COND = [0, C.BANK_STEP, 1, C.BANK_RESPONDER, C.BANK_OCTAVE, C.BANK_WHEN];
+step('⭐ the drum walk is IN, CTRL, SEQ, FX (under DRUM LANE), MIX; the Conductor walk is CLIP, STEP, NOTE FX, RSPD', () => {
+    assert(JSON.stringify(P.bankCycleForMode(C.PAD_MODE_DRUM, 2)) === JSON.stringify(DRUM), 'drum: ' + P.bankCycleForMode(C.PAD_MODE_DRUM, 2));
+    assert(JSON.stringify(P.bankCycleForMode(C.PAD_MODE_CONDUCT, 2)) === JSON.stringify(COND), 'conductor: ' + P.bankCycleForMode(C.PAD_MODE_CONDUCT, 2));
+});
+step('⭐ drum: IN keeps its category with only RPT GROOVE; FX nests under DRUM LANE with its own line; SOUND + CONFIG is plain', () => {
+    S.trackPadMode[2] = C.PAD_MODE_DRUM;
+    onBank(5);
+    let it = render.bankNavItems(); it = it.items[it.cur];
+    assert(it.cat && it.cat.label === 'IN' && !it.cat.depth, 'RPT GROOVE: ' + JSON.stringify(it));
+    let f = frame();
+    assert(px(f, lineX, MID_Y + 3) && inkLeftOfLine(f, MID_Y, MID_Y + ROW - 1) > 0, 'no IN line and label beside RPT GROOVE');
+    onBank(1);                                        /* NOTE FX in the middle, DRUM LANE above it */
+    it = render.bankNavItems(); it = it.items[it.cur];
+    assert(it.cat && it.cat.label === 'FX' && it.cat.depth === 1, 'NOTE FX: ' + JSON.stringify(it));
+    f = frame();
+    const lineX1 = GUT + kit.mvWidth('FX') + 3, GUT1 = lineX1 + 4;
+    assert(!px(f, GUT - 1, MID_Y + 3) && !px(f, GUT1 - 3, MID_Y + 3), 'the nested highlight covers the FX gutter');
+    assert(px(f, GUT1 - 2, MID_Y + 3), 'the nested highlight does not start at its indent');
+    const top = MID * ROW + 2, bot = (MID + 1) * ROW + ROW - 2;   /* NOTE FX, DELAY */
+    for (let y = top; y < bot; y++) assert(px(f, lineX1, y), 'no FX line at y ' + y);
+    for (let y = top; y < bot; y++) assert(!px(f, lineX, y), 'the SEQ line runs on beside FX at y ' + y);
+    let fxInk = 0;
+    for (let y = top; y < bot; y++) for (let x = GUT - 2; x < lineX1 - 1; x++) fxInk += px(f, x, y);
+    assert(fxInk > 0, 'no FX label under DRUM LANE');
+    assert(px(f, lineX, (MID - 1) * ROW + 3), 'the SEQ line is gone beside DRUM LANE');
+    onBank(C.BANK_SOUND);
+    it = render.bankNavItems(); it = it.items[it.cur];
+    assert(it.cat === null, 'SOUND + CONFIG has a category');
+    assert(px(frame(), 1, MID_Y + 3), 'SOUND + CONFIG is not a plain row');
+});
+step('⭐ Conductor: no "C-" anywhere; CLIP, STEP, NOTE FX plain; ON/OFF, OCTAVE, TIMING under RSPD', () => {
     S.trackPadMode[2] = C.PAD_MODE_CONDUCT;
-    assert(render.bankNavItems().items.every((it) => it.cat === null), 'a Conductor row has a category');
+    onBank(0);
+    const names = render.bankNavItems().items.map((x) => x.name);
+    assert(JSON.stringify(names) === JSON.stringify(['CLIP', 'STEP', 'NOTE FX', 'ON/OFF', 'OCTAVE', 'TIMING']), 'names: ' + names);
+    const items = render.bankNavItems().items;
+    assert(items.slice(0, 3).every((x) => x.cat === null), 'CLIP/STEP/NOTE FX have a category');
+    assert(items.slice(3).every((x) => x.cat && x.cat.label === 'RSPD'), 'the RSPD group');
+    assert(px(frame(), 1, MID_Y + 3), 'CLIP is not a plain row');
     S.trackPadMode[2] = C.PAD_MODE_MELODIC_SCALE; S.bankNavKind = null; S.jogTouched = false;
 });
 

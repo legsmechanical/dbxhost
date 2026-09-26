@@ -18,6 +18,7 @@ the section into a versioned heading at release time.
   with the one you are on highlighted in the middle, and goes when you let go.
   On a melodic track it shows the banks in groups — IN, CTRL, SEQ, FX.
   It stays up while you turn even if the jog briefly stops sensing your hand.
+  It shows bank names only.
 - **Numbers turn as an arc.** An octave, offset, rate, length or count no longer
   opens a list that scrolls the opposite way to the knob: while you touch the
   knob, its cell becomes an arc that follows it. Named choices keep their list.
@@ -241,10 +242,15 @@ the section into a versioned heading at release time.
   already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
-- **The melodic banks are in a new order, in groups.** IN (Chord, Live Arp),
+- **The banks are in a new order, in groups.** Melodic: IN (Chord, Live Arp),
   CTRL (Macros, Automation), SEQ (Step, Clip), FX (Note FX, Harmony, Delay,
-  Seq Arp — the order the notes pass through them), then Sound + Config. A
-  track still starts on Clip, now in the middle of the walk.
+  Seq Arp — the order the notes pass through them), then Sound + Config. Drum:
+  IN (Rpt Groove), CTRL, SEQ (Step, All Lanes, Drum Lane), FX (Note FX, Delay —
+  shown under Drum Lane, since they are the lane's), then Sound + Config.
+  Conductor: Clip, Step, Note FX, then RSPD (On/Off, Octave, Timing). A track
+  still starts on Clip (Drum Lane on a drum track).
+- **Conductor banks lose the "C-" prefix,** and three are renamed: Conduct is
+  now **CLIP**, Responder **ON/OFF**, When **TIMING**.
 - **CLIP, DRUM LANE and ALL LANES have their own header icons** — a clip slot,
   a drum, and a 3×3 grid — in the bank header. ALL LANES now
   blinks its icon instead of the word ALL.

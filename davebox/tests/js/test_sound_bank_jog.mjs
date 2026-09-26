@@ -228,21 +228,21 @@ step('⭑ the MENU top edge CLAMPS; Back exits to the CARD; the card walks out',
     if (S.activeBank !== 3) throw new Error('bank walk did not resume leftward onto DELAY: ' + S.activeBank);
 });
 
-step('⭑ drum: right past STEP (after the end of BANK_CYCLE_DRUM) enters too', () => {
-    reset(PAD_MODE_DRUM, BANK_STEP);
+step('⭑ drum: right past DELAY (the last FX bank) enters too', () => {
+    reset(PAD_MODE_DRUM, 3);
     right();
     if (!snd.soundActive()) throw new Error('sound mode did not open on a drum track');
     snd.soundTick();
     left(); globalThis.tick();                         /* the CARD walks out */
     if (snd.soundActive()) throw new Error('the card did not walk out on a drum track');
-    if (S.activeBank !== BANK_STEP) throw new Error('did not land on STEP: ' + S.activeBank);
+    if (S.activeBank !== 3) throw new Error('did not land on DELAY: ' + S.activeBank);
 });
 
-step('⚠ conductor: the cycle ends at STEP — no sound-mode bank', () => {
-    reset(PAD_MODE_CONDUCT, BANK_STEP);
+step('⚠ conductor: the cycle ends at TIMING — no sound-mode bank', () => {
+    reset(PAD_MODE_CONDUCT, BANK_WHEN);
     right();
     if (snd.soundActive()) throw new Error('a Conductor track entered sound mode from the jog');
-    if (S.activeBank !== BANK_STEP) throw new Error('bank moved: ' + S.activeBank);
+    if (S.activeBank !== BANK_WHEN) throw new Error('bank moved: ' + S.activeBank);
 });
 
 step('⚠ a deferred entry still SHOWS, and the jog leaves by walking the cycle', () => {
