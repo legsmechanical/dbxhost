@@ -217,6 +217,12 @@ in a single-process test. [[schwung-atomic-write-inode-is-the-only-pin]]
   `tests/run.sh`.
 - Skip the draft for internal-only changes (refactors, DSP plumbing, build, debug logging).
 - Keep it lean and user-facing — [[schwung-davebox-manual-lean-userfacing]].
+- ⭑ **The HTML manual is generated too.** `scripts/build_manual_html.sh` renders every OLED screen
+  from the real UI (`tools/render_manual_screens.mjs` boots `ui.js` and drives real gestures) and
+  builds one self-contained page from the draft (`tools/build_manual_html.mjs` +
+  `tools/manual_template.html`) into `dist/manual/`. Each screen names the manual heading it
+  illustrates; the renderer exits non-zero on a heading that no longer exists, so a renamed section
+  shows up there — fix the screen's `section`, not the check.
 - ⭑ **The browser Help page IS the draft.** `scripts/gen_help.py` splits it (plus `QUICKSTART.md`)
   into one page per chapter under `$DBX_DIR/help/`, which `schwung-manager` renders at `/help`;
   `install-host.sh` regenerates it on every host deploy, and mirrors that one directory rather
