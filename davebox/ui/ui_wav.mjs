@@ -375,7 +375,7 @@ export function renderWavEdit() {
      * that reads as a silent sample. */
     if (!path) {
         centre('No sample linked', 26);
-        if (wavEditFileKey()) centre('shift+click to choose one', 37);
+        /* (Shift + click to choose one is the footer's SHFT CLK FILE.) */
         footer();
         lastFrame = { path: '', reason: 'no file', markers: [] };
         return true;

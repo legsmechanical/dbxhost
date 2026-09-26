@@ -21,8 +21,6 @@
  * ⚠ The old bank-6 machinery (CC lanes, its LEDs, its step editor) is not on
  * the walk any more and is deleted in P8; its per-clip AT lane still records
  * pad pressure, so it is listed here as a row of its own kind (Delete only).
- * ⚠ Resolution (`pa_loop`'s third field) is stored but has no playback effect
- * yet (pa_entry_tick reads loop_len/loop_off only), so it is not offered.
  *
  * Reads: none per tick. The list is the automation owner's cache (one pa_list
  * read per project load and per edit); labels use the owner's metadata cache
@@ -102,8 +100,12 @@ export function autoBankRows(track, clip) {
 function rowValue(r, track, clip) {
     if (r.kind === 'at') return 'PADS';
     if (!r.active) return 'OFF';
-    if (!r.count) return 'EMPTY';                 /* cleared and kept: nothing in it yet */
     const cy = rowCycle(track, clip, r.target);
+    /* Cleared and kept: nothing in it yet — but it keeps its LENGTH, which is
+     * what the next recording or step input lands on (Josh, 2026-09-26: "can
+     * we have empty lanes still have a length? that way you can clear
+     * automation make a really long or short lane and start recording"). */
+    if (!r.count) return cy ? 'EMPTY ' + cy.text : 'EMPTY';
     return cy ? cy.text : 'ON';
 }
 function loopText(steps) { return steps > 0 ? (steps + ' ST') : 'CLIP'; }
@@ -354,14 +356,14 @@ export function autoBankJog(delta) {
             return true;
         }
         if (a.loopEdit) {
-            /* A drum lane counts in ITS OWN steps, 1 up — its cycle may run past
-             * every pad (it plays in full), up to what the store's 16-bit tick
-             * holds from where it starts. A melodic lane: 0 (CLIP) up to its
-             * clip's length. */
+            /* A lane counts in ITS OWN steps and may run past its clip or pad —
+             * it plays in full on the master clock (Josh, 2026-09-26: a Loop can
+             * be shorter or longer than its clip) — up to 256 steps, or what the
+             * store's 16-bit tick holds from where it starts. A drum lane from 1;
+             * a melodic one from 0, which is CLIP (follow the clip). */
             const r = a.ops.row, drum = S.trackPadMode[t] === PAD_MODE_DRUM;
             const tps = rowTps(t, c, r);
-            const max = drum ? Math.max(1, Math.min(256, Math.floor((65535 - (r.lo | 0)) / tps)))
-                      : ((S.clipLength[t] && S.clipLength[t][c]) || 16);
+            const max = Math.max(1, Math.min(256, Math.floor((65535 - (r.lo | 0)) / tps)));
             const nv = Math.max(drum ? 1 : 0, Math.min(max, a.loopVal + delta));
             if (nv !== a.loopVal) {
                 a.loopVal = nv;

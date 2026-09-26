@@ -8,6 +8,22 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added (pending)
+- **Melodic automation lanes can be longer (or shorter) than their clip.** An
+  automation lane's Loop now goes up to 256 steps on a melodic track too: a
+  4-bar filter sweep can run under a 1-bar clip, and a short lane repeats
+  inside it. Recording and holding a step land on the lane's own length, so you
+  can Clear a lane, set its length, and record into it.
+- **A bank map while you turn the jog.** On the track overview, a bank page or
+  the session overview, a column on the left lists every bank (or session bank)
+  with the one you are on highlighted in the middle, and goes when you let go.
+- **Numbers turn as an arc.** An octave, offset, rate, length or count no longer
+  opens a list that scrolls the opposite way to the knob: while you touch the
+  knob, its cell becomes an arc that follows it. Named choices keep their list.
+- **Buses on the instrument editor's Module page** — the same screen as the
+  Sound menu's Buses row, for instruments that split their voices.
+- **Step recording shows the tie.** Holding pads and pressing **>** lights the
+  steps the note is held over in the tail colour; the note's own step looks like
+  any other note.
 - **A copied clip takes its automation — the parts that fit.** Copying or
   cutting a clip (drum or melodic) to another track brings along automation
   of levels and dAVEBOx's own knobs, and of instrument or effect parameters
@@ -97,6 +113,12 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **Jumping to a module parameter from automation keeps the module's page as it
+  is.** Holding a step on a lane for, say, a filter cutoff used to land on a page
+  of plain knobs with the filter curve and envelope gone. The parameter's cell is
+  now highlighted instead of carrying a small corner mark, on every page, and
+  while you hold a step the page's graphics preview that step's value (the filter
+  curve takes the cutoff the step will play).
 - **A new Conductor's pads are centred on "no shift".** Its bottom-row pads used
   to drop every responding track by two octaves; the no-shift note now sits in the
   middle of the grid, so the pads reach down as well as up.
@@ -129,8 +151,8 @@ the section into a versioned heading at release time.
   drum overview MUTED / SOLOED now sits at the left of the second info row,
   with VEL on the right.
 - **The arp step editor's header reads cleanly.** On SEQ ARP and LIVE ARP's
-  step pitch page the SHIFT hint no longer covers the track and instrument
-  label.
+  step pitch page, Shift is named in the footer (**SHFT VELOCITY**, as on every
+  other screen) instead of in the header over the track and instrument label.
 - **Conductor C-WHEN fits its values.** Each track's Next/Now sits in its own
   box instead of running into its neighbours; drum tracks, which never respond,
   are left blank as on C-RESPONDER.
@@ -221,6 +243,18 @@ the section into a versioned heading at release time.
   diagrams show the melodic, Chord, drum and Session layouts; the chapters run in
   learning order (the Conductor moved after Arranging), and one table compares
   every kind of preset and snapshot.
+- **Launch 1-bar restarts everything; every other setting stays in step with
+  the song.** At Launch 1-bar a launched clip starts from its beginning — drum
+  lanes now included (they used to keep the song's position) and automation
+  lanes with their own Loop. At Now … 1/2 everything launches in step with the
+  song.
+- **Gestures are named in the footer everywhere.** Holding Loop shows
+  **STEP PAGE** / **JOG STEP** pills instead of two lines of instructions; the
+  SOUND + CONFIG peek and the Master FX door show **CLK ENTER**; an editor with
+  no parameters shows **CLK PRESETS** (or **CLK PICK**); the repeated
+  instruction lines on the NO INSTRUMENT EDITOR and WAV "No sample linked"
+  screens are gone (their footers already said it).
+- **Pop-up lists and notices sit over a dimmed page** instead of a blank one.
 - **The track's menu is TRACK CONFIG.** The menu you open from the SOUND +
   CONFIG card (or with Shift + Note/Session) is titled TRACK CONFIG, with no
   icon in its header. The card's door reads CLICK TO ENTER / TRACK 3 CONFIG.

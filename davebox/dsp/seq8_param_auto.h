@@ -44,7 +44,11 @@
  * slower than x1 spans several clip cycles, and the clip and its lanes must
  * start together — at every transport start (all tracks) and every clip
  * launch (that track). Two fields, one macro, so no site can reset half. */
-#define PA_LANE_CLOCK_RESET(tr) do { (tr)->pa_cycle = 0; (tr)->pa_last_ct = 0; } while (0)
+#define PA_LANE_CLOCK_RESET(tr) do { (tr)->pa_cycle = 0; (tr)->pa_last_ct = 0; (tr)->pa_origin = 0; } while (0)
+/* A clip LAUNCH: cycled lanes restart from their beginning at Launch 1-bar
+ * (launch_quant 5), and stay in step with the song at every other setting. */
+#define PA_LANE_ORIGIN_AT_LAUNCH(inst, tr) do { (tr)->pa_origin = (inst)->launch_quant == 5 \
+        ? (uint32_t)(inst)->global_tick * (uint32_t)TICKS_PER_STEP + (uint32_t)(inst)->master_tick_in_step : 0; } while (0)
 #define PA_LANE_CLOCK_RESET_ALL(inst) do { for (int _pt = 0; _pt < NUM_TRACKS; _pt++) PA_LANE_CLOCK_RESET(&(inst)->tracks[_pt]); } while (0)
 
 #define PA_LIVE_MAX          8   /* targets one track can have under a hand at once */

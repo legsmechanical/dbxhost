@@ -4546,6 +4546,35 @@ export function createController(io = {}) {
     function setLayout(layout) { s.layout = layout; }
     function setReveal(on) { s.revealValues = !!on; }
     function setDecorations(d) { s.decorations = d || null; }
+    /* Do the live decorations need the graphics DOWN? Only a LOCK does: a
+     * graphic replacing several slots with one picture would hide which of
+     * them carries the lock corner. A `highlight` (the cell drawn as held) and
+     * a replaced `value` read in the label strip, which a graphic never covers,
+     * so a page that only highlights keeps its filter curve and envelope. */
+    /* The values a frame DRAWS with: the live ones, except that a slot whose
+     * decoration carries a `value` shows that value everywhere on the page --
+     * the cell already did, and now a graphic spanning it does too (a filter
+     * curve previews the cutoff a held step will play, not the knob's). */
+    function shownValues() {
+        const d = s.decorations;
+        if (!d) return s.values;
+        const keys = (page() && page().keys) || [];
+        let out = null;
+        for (const slot in d) {
+            const dec = d[slot];
+            const key = keys[slot | 0];
+            if (!dec || dec.value === undefined || dec.value === null || !key) continue;
+            if (!out) out = Object.assign({}, s.values);
+            out[key] = dec.value;
+        }
+        return out || s.values;
+    }
+    function decorationsHideViz() {
+        const d = s.decorations;
+        if (!d) return false;
+        for (const k in d) if (d[k] && d[k].locked) return true;
+        return false;
+    }
 
     /* Movy layout is a whole separate renderer (its own header and knob grid,
      * not a `layout` value render_page.mjs understands — see
@@ -4641,7 +4670,7 @@ export function createController(io = {}) {
             const drawGrid = () => {
             if (knobsAsList()) { drawKnobsAsList(ctx, title, footer, pageChrome, footerBand); return; }
             renderPageMovy(ctx, {
-                page: page(), metaIndex: s.metaIndex, values: s.values,
+                page: page(), metaIndex: s.metaIndex, values: shownValues(),
                 title: title || "", pageIndex: s.pageIndex, pageCount: s.pages.length,
                 touched: s.hintLines ? -1 : s.touched,
                 /* A custom UI page's body drawer — inert for every ordinary
@@ -4681,7 +4710,7 @@ export function createController(io = {}) {
                  * four cells cannot show which of the four is locked. Without
                  * this the lock marks would land on cells whose widget had been
                  * absorbed into a graphic. */
-                viz: (vizEnabled && !s.decorations) ? vizGroups() : [],
+                viz: (vizEnabled && !decorationsHideViz()) ? vizGroups() : [],
                 /*
                  * The trigger button's press animation. Both of these have to
                  * come from here: the renderer is pure and reads the clock off
@@ -4889,7 +4918,7 @@ export function createController(io = {}) {
             return;
         }
         renderPage(ctx, {
-            page: page(), metaIndex: s.metaIndex, values: s.values,
+            page: page(), metaIndex: s.metaIndex, values: shownValues(),
             title: title || "", pageIndex: s.pageIndex, pageCount: s.pages.length,
             touched: s.touched, decorations: s.decorations,
             layout: s.layout, revealValues: s.revealValues, rect,
@@ -4903,9 +4932,9 @@ export function createController(io = {}) {
             pageGroups: pageGroups(),
             /* A sequencer's parameter-lock decorations are per SLOT; a
              * graphic replacing several slots with one picture would hide
-             * which of them is locked, so graphics stand down while
-             * decorations are active. */
-            viz: (vizEnabled && !s.decorations) ? vizGroups() : [],
+             * which of them is locked, so graphics stand down while a LOCK
+             * is decorated (decorationsHideViz). */
+            viz: (vizEnabled && !decorationsHideViz()) ? vizGroups() : [],
             /*
              * A CUSTOM UI PAGE's body drawer. Only a page carrying `canvas`
              * uses it, so this is inert for every ordinary page — and absent

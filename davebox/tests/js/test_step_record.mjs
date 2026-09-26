@@ -45,8 +45,16 @@ globalThis.host_module_get_param = () => ''; globalThis.shadow_get_param = () =>
 globalThis.shadow_set_param = () => 1; globalThis.host_vol_block = () => {};
 globalThis.host_edit_cc_block = () => {}; globalThis.clear_screen = () => {};
 globalThis.print = () => {}; globalThis.fill_rect = () => {}; globalThis.draw_rect = () => {};
+globalThis.stipple_rect = () => {};
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
-globalThis.set_pixel = () => {}; globalThis.move_midi_internal_send = () => {};
+globalThis.set_pixel = () => {};
+/* The step LEDs as the surface last received them. setLED caches and sends only
+ * a CHANGE, so the last colour sent per note IS the button's state. The packet
+ * is [CIN, status, note, colour]; step buttons are notes 16..31. */
+const ledNow = {};
+globalThis.move_midi_internal_send = (m) => { const a = Array.from(m);
+    if (a.length >= 4 && (a[1] & 0xF0) === 0x90) ledNow[a[2]] = a[3];
+    return true; };
 globalThis.move_midi_external_send = () => {}; globalThis.set_led = () => {};
 globalThis.host_ext_midi_remap_clear = () => {}; globalThis.host_ext_midi_remap_set = () => {};
 globalThis.host_ext_midi_remap_enable = () => {};
@@ -202,6 +210,30 @@ step('⭐ TIE: \'>\' with a pad held grows the gate a full step and \'<\' un-tie
         throw new Error('un-tie did not restore the default gate: ' + JSON.stringify(gates));
     padUp(PAD);
     if (S.stepRecCursor !== 1) throw new Error('release after un-tie should land on step 1');
+});
+
+step('⭐ TIE shows the entry\'s TAIL on the steps AFTER the note while the pad is held', () => {
+    rest();
+    rec.stepRecEnter(); clearQ();
+    S.clockMs = 1000;                                  /* cursor blink phase: whatever — the tail is not the cursor */
+    padDn(PAD);
+    cc(HC.MoveRight, 127); cc(HC.MoveRight, 0);
+    cc(HC.MoveRight, 127); cc(HC.MoveRight, 0);        /* a 3-step tie: steps 0..2 */
+    S.tickCount++; globalThis.tick();
+    /* The note's own step is an ordinary active step; the tail is the steps AFTER it. */
+    if (ledNow[16] === 56) throw new Error('the note\'s own step took the tail colour');
+    if (!ledNow[16]) throw new Error('the note\'s own step is dark');
+    const tail = [17, 18].map((n) => ledNow[n]);
+    if (tail.some((c) => c !== 56)) throw new Error('tie tail not drawn in the span colour: ' + JSON.stringify(tail));
+    if (ledNow[19] === 56 || ledNow[20] === 56) throw new Error('the tail runs past the tie: ' + ledNow[19] + ',' + ledNow[20]);
+    cc(HC.MoveLeft, 127); cc(HC.MoveLeft, 0);          /* un-tie one: the tail shrinks with it */
+    S.tickCount++; globalThis.tick();
+    if (ledNow[18] === 56) throw new Error('un-tie left the tail at step 2');
+    if (ledNow[17] !== 56) throw new Error('un-tie took the whole tail: ' + ledNow[17]);
+    padUp(PAD);
+    S.tickCount++; globalThis.tick();
+    /* Released: the entry is written — steps show as notes, no span. */
+    if ([17, 18].some((n) => ledNow[n] === 56)) throw new Error('the tail outlived the hold');
 });
 
 step('⭐ \'>\' bare is a REST; the cursor CLAMPS at the clip\'s last step', () => {

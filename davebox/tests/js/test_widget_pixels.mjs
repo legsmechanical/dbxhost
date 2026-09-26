@@ -37,7 +37,14 @@ globalThis.draw_rect = (x, y, w, h, v) => {
     globalThis.fill_rect(x, y, w, 1, v); globalThis.fill_rect(x, y + h - 1, w, 1, v);
     globalThis.fill_rect(x, y, 1, h, v); globalThis.fill_rect(x + w - 1, y, 1, h, v);
 };
-globalThis.stipple_rect = () => {};
+/* The host's checkerboard knock-back (src/host/stipple.h): write `v` on every
+ * other pixel by absolute parity. Real, not a no-op, so a dimmed page can be
+ * told from a blank one and from an untouched one. */
+globalThis.stipple_rect = (x, y, w, h, v, phase) => {
+    for (let j = y; j < y + h; j++)
+        for (let i = x + ((((x + j) & 1) === (phase & 1)) ? 0 : 1); i < x + w; i += 2)
+            globalThis.set_pixel(i, j, v);
+};
 globalThis.clear_screen = () => { fb.fill(0); };
 globalThis.print = () => {};
 globalThis.text_width = (t) => String(t).length * 6;
@@ -245,11 +252,27 @@ step('peekExpired takes the option list down, and is OFF by default', () => {
     const up = shot(() => draw(ENUM, { touchedIdx: 0, overlayIdx: 0 }));
     const down = shot(() => draw(ENUM, { touchedIdx: 0, overlayIdx: 0, peekExpired: true }));
     assert(!same(up, down), 'peekExpired did not take the list down');
-    /* The list is OPAQUE (Josh, 2026-09-23: "i like the opaque everywhere"):
-     * with it up, nothing shows beside its box; with it down, the cells do. */
-    const leftStrip = (f) => { let n = 0; for (let y = 12; y < 56; y++) for (let x = 0; x < 8; x++) n += f[y * 128 + x] ? 1 : 0; return n; };
-    assert(leftStrip(up) === 0, 'the page shows beside the option list: ' + leftStrip(up) + ' px');
-    assert(leftStrip(down) > 0, 'with the list down, the cells beside it are not drawn');
+    /* The BOX is opaque and the page behind it is DIMMED (Josh, 2026-09-26:
+     * "the opaque ruling meant simply that that nothing under the picker BOX
+     * should show through it"). Beside the box the page shows knocked back —
+     * some of its ink, never all of it, and never a solid run — and the box
+     * holds nothing of the page. */
+    const px = (f, x0, x1, y0, y1) => { let n = 0; for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) n += f[y * 128 + x] ? 1 : 0; return n; };
+    const adjacent = (f, x0, x1, y0, y1) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1 - 1; x++) if (f[y * 128 + x] && f[y * 128 + x + 1]) return true; return false; };
+    const upL = px(up, 0, 30, 14, 56), downL = px(down, 0, 30, 14, 56);
+    assert(downL > 0, 'with the list down, the cells beside it are not drawn');
+    assert(upL > 0, 'the page beside the option list is blank, not dimmed');
+    assert(upL < downL, 'the page beside the option list is not knocked back: ' + upL + ' of ' + downL + ' px');
+    assert(!adjacent(up, 0, 30, 14, 56), 'the dimmed page has two lit pixels side by side');
+    /* Inside the box (clear of its outline and text columns): only list ink.
+     * The same list over an EMPTY page must draw the identical box. */
+    const EMPTY = [ENUM[0], null, null, null, null, null, null, null];
+    const bare = shot(() => draw(EMPTY, { touchedIdx: 0, overlayIdx: 0 }));
+    let inBox = 0;
+    for (let y = kit.MV_ZOOM_Y; y < kit.MV_ZOOM_Y + kit.MV_ZOOM_H; y++)
+        for (let x = kit.MV_ZOOM_X; x < kit.MV_ZOOM_X + kit.MV_ZOOM_W; x++)
+            if (up[y * 128 + x] !== bare[y * 128 + x]) inBox++;
+    assert(inBox === 0, 'the page shows through the option list box: ' + inBox + ' px');
     /* Omitting the flag must keep today's hold-to-show behaviour exactly. */
     assert(same(up, shot(() => draw(ENUM, { touchedIdx: 0, overlayIdx: 0, peekExpired: false }))),
            'peekExpired defaults to on');
@@ -694,6 +717,25 @@ step('the waveform morphs between shapes, and never out of an unread one', () =>
     assert(same(w('saw', kit.MV_WAVE_MORPH_MS + 1, 'saw', st), sawStatic),
            'the morph never settled');
     assert(same(w('saw', 0, 'saw', null), sawStatic), 'a missing store still morphed');
+});
+
+step('the lane in focus is HIGHLIGHTED like a touched knob, and has no corner mark', () => {
+    const locked = PAGE.map((c, i) => (i === 2 ? Object.assign({}, c, { lock: true }) : c));
+    const touched = shot(() => draw(PAGE, { touchedIdx: 2 }));
+    const focus = shot(() => draw(locked));
+    const plain = shot(() => draw(PAGE));
+    /* The label strip of cell C (row 0, col 2) inverts exactly as a touch does;
+     * compare only the cells, below the header (a touch also renames the header). */
+    const rect = (f, x0, y0, w, h) => { const o = []; for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) o.push(f[y * 128 + x]); return o; };
+    const label = (f) => rect(f, 64, kit.MV_LBL0_Y, 32, 7);
+    const widget = (f) => rect(f, 64, kit.MV_ROW0_Y, 32, kit.MV_KH);
+    assert(!same(label(focus), label(plain)), 'the lane in focus has a plain label strip');
+    assert(same(label(focus), label(touched)), 'the lane in focus label is not inverted like a touched one');
+    /* No corner mark: the widget itself is untouched. */
+    assert(same(widget(focus), widget(plain)), 'the lane in focus still draws a mark on its widget');
+    /* ...and a touch elsewhere takes the highlight: one lit cell at a time. */
+    const both = shot(() => draw(locked, { touchedIdx: 5 }));
+    assert(same(both, shot(() => draw(PAGE, { touchedIdx: 5 }))), 'two cells lit at once');
 });
 
 step('the footer reserves BACK before laying anything else out', () => {

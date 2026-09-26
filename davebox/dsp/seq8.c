@@ -898,6 +898,13 @@ typedef struct {
      * lane at /2 plays over two). See pa_entry_tick. */
     uint32_t  pa_cycle;
     uint32_t  pa_last_ct;
+    /* Where every CYCLED lane (a lane with its own Loop) on this track counts
+     * from, on the master clock: 0 = the song (Play), or the master tick of a
+     * launch at Launch 1-bar — which restarts EVERYTHING from its beginning
+     * (Josh, 2026-09-26: "1bar needs to restart at the beginning for
+     * EVERYTHING.  any other setting launches in step with song for
+     * EVERYTHING"). */
+    uint32_t  pa_origin;
     /* The AUTOMATION bank's selected lane (tN_pa_view), for its playhead: the
      * pool slot + 1 and the target id + 1 (0 = none — so a calloc'd instance
      * views nothing), and the lane tick playback last evaluated it at, written
@@ -6456,7 +6463,7 @@ static int pa_export_clock(const seq8_track_t *tr, const pa_entry_t *e,
     if (!pa_export_window(tr, e, ws, wl, &st) || !*wl) return 0;
     *mul = *div = 1;
     if (e->resolution) pa_rate(e->resolution, mul, div);
-    if (pa_drum_cycled(tr, e)) { *p0 = e->loop_off; return 1; }
+    if (pa_lane_cycled(tr, e)) { *p0 = e->loop_off; return 1; }
     uint32_t cs = 0, ct_len = 0;
     if (tr->pad_mode == PAD_MODE_DRUM && tr->drum_clips[e->clip]) {
         pa_drum_window(tr, e->clip, &cs, &ct_len, &st);

@@ -279,6 +279,8 @@ step('⭐ HOLD a Volume point -> SOUND + CONFIG while held; its knob writes THAT
     globalThis.clear_screen(); render.drawUI();
     const kc2 = movy.kitCellsForTest();
     assert(kc2.cells[0].lock && kc2.touched !== 0, 'the pinned, unheld Volume cell: ' + JSON.stringify(kc2));
+    /* No corner mark any more: the pinned lane's cell is HIGHLIGHTED even with no step held. */
+    assert(kc2.cells[0].lit && !kc2.cells.some((c, i) => i !== 0 && c && c.lit), 'the pinned lane\'s cell is not the one highlighted: ' + JSON.stringify(kc2));
     assert(kc2.cells[0].text !== heldText, 'the held cell showed the knob\'s own value (' + heldText + ')');
     back(); ticks(4);
     back(); ticks(1);
@@ -290,17 +292,18 @@ step('⭐ HOLD a module point -> its EDITOR on the page holding the key; the kno
     assert(snd.soundOpen() && snd.soundViewForTest() === VIEW_EDIT, 'not in the editor while held: view ' + snd.soundViewForTest());
     const pp = snd.soundPPForTest();
     assert(pp.on && pp.page && (pp.page.keys || []).indexOf('cutoff') >= 0, 'not on the page holding cutoff: ' + JSON.stringify(pp.page && pp.page.keys));
-    /* The cutoff cell: the lock corner and the lane's value at the held step. */
+    /* The cutoff cell: HIGHLIGHTED (no lock corner — a lock would stand the
+     * module's graphics down) with the lane's value at the held step. */
     ticks(1);
     const ci = pp.page.keys.indexOf('cutoff');
     const dec = JSON.parse(snd.soundPPForTest().focusDec || 'null');
     const want = auto.automationWireValue(TARGETS.chain, 16383);
-    assert(dec && dec[ci] && dec[ci].locked && dec[ci].value === want,
+    assert(dec && dec[ci] && dec[ci].highlight && !dec[ci].locked && dec[ci].value === want,
            'the editor does not mark cutoff with the lane\'s value ' + want + ': ' + JSON.stringify(dec));
     assert(Object.keys(dec).length === 1, 'another cell is marked: ' + JSON.stringify(dec));
     /* ...and it reached the editor's controller, not just dAVEBOx's memo. */
     const held = snd.soundPPForTest().decorations;
-    assert(held && held[ci] && held[ci].locked && held[ci].value === want, 'the controller holds ' + JSON.stringify(held));
+    assert(held && held[ci] && held[ci].highlight && held[ci].value === want, 'the controller holds ' + JSON.stringify(held));
     assert(S.trackActiveBank[T] === BANK_AUTOMATION && S.activeBank === BANK_AUTOMATION, 'a bank moved: ' + S.activeBank + '/' + S.trackActiveBank[T]);
     assert(S.autoCycle && S.autoCycle.target === TARGETS.chain, 'the steps left the lane during the hold');
     sets.length = 0;

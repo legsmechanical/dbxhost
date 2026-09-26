@@ -2435,7 +2435,12 @@ export function isBackHint(h) {
 
 /* `hints` = [key, action] pairs, MOST IMPORTANT FIRST. Returns how many were
  * drawn, so a caller can tell that it over-asked. */
+/* The last hint row drawn — its pills print through the 4x5 font, which a test
+ * cannot read off the screen. */
+let kitHintsLast = null;
+export function kitHintsForTest() { return kitHintsLast; }
 export function drawKitHintRow(y, hints) {
+    kitHintsLast = hints ? hints.filter(Boolean).map((h) => h.slice ? h.slice() : h) : null;
     if (!hints || !hints.length) return 0;
     const ty = (y == null ? MV_FOOTER_Y : y) + Math.floor((MV_FOOTER_H - FONT4_HEIGHT) / 2);
     const list = hints.filter(Boolean);
@@ -2592,7 +2597,9 @@ function drawCellWidget(col, rowY, cell, touched, anim, nowMs) {
     if (cell.auto === 'auto' || cell.auto === 'auto-off') drawAutoMark(col, rowY, cell.auto === 'auto');
     /* The LANE IN FOCUS on a jump from the AUTOMATION bank: the param pages'
      * lock mark, the top-left 2x2 (the one corner nothing else uses). */
-    if (cell.lock) fill_rect(col * MV_CELL_W + 1, rowY, 2, 2, 1);
+    /* (The lane-in-focus corner mark is gone — Josh, 2026-09-26: "we can do away
+     * wiht the corner mark as long as the param value is highlighted". A
+     * `lock` cell is drawn HIGHLIGHTED instead, in drawKitCells.) */
     const kx = col * MV_CELL_W + Math.floor((MV_CELL_W - MV_KW) / 2);
     /* ⭑ THE ENUM SQUARE HAS ITS OWN, WIDER SLOT (28 vs the 20px widget box), so
      * it gets its own origin. Centred in the same 32px cell, so a page of mixed
@@ -2602,6 +2609,15 @@ function drawCellWidget(col, rowY, cell, touched, anim, nowMs) {
      * The column index is both; the param name is neither (two banks can share
      * one, and an alt-mode swap changes it under a value that did not move). */
     const ak = anim ? ('c' + col + (rowY < MV_ROW1_Y ? 'a' : 'b')) : null;
+    /* ⭑ A NUMBER TURNS AS AN ARC (Josh, 2026-09-26). A numeric value that rests
+     * as a read-out (an octave, a semitone offset, a count, a rate) becomes an
+     * arc while its knob is touched: clockwise sweeps the arc clockwise, where a
+     * vertical list ran the other way. The value itself stays in the label
+     * strip and the header. `touchArc` = { norm 0..1, bip }. */
+    if (touched && cell.touchArc) {
+        drawArcKnob(kx, rowY, cell.touchArc.norm, !!cell.touchArc.bip);
+        return;
+    }
     /* ⭑ THE MODULATION DOT IS A DESCRIPTOR FIELD, NOT A DETECTION. A cell whose
      * caller never sets `modNorm` draws exactly the pixels it drew before — and
      * davebox sets it nowhere today, so nothing on any shipping page moves.
@@ -2736,7 +2752,12 @@ function drawCellLabel(col, lblY, cell, touched) {
 let kitCellsLast = null;
 export function kitCellsForTest() { return kitCellsLast; }
 export function drawKitCells(cells, touchedIdx, env, filt, eq, samp, anim, nowMs) {
-    kitCellsLast = { touched: touchedIdx, cells: cells.map(c => c ? { label: c.label, text: c.text, lock: !!c.lock } : null) };
+    /* ⭑ THE LANE IN FOCUS IS HIGHLIGHTED (a jump or pin from the AUTOMATION
+     * bank marks its parameter's cell `lock`): its label strip inverts like a
+     * touched knob's, whenever no knob is touched. It replaced a 2x2 corner
+     * mark — the highlight already said which parameter the lane drives. */
+    const lit = (k) => k === touchedIdx || (touchedIdx < 0 && !!(cells[k] && cells[k].lock));
+    kitCellsLast = { touched: touchedIdx, cells: cells.map((c, k) => c ? { label: c.label, text: c.text, lock: !!c.lock, lit: lit(k) } : null) };
     /* ⭑ EVERY SPAN IS DECLARED, NONE IS DETECTED. env / filt / eq / samp all
      * arrive from the caller with an explicit start (and count where it can
      * vary); this file never sniffs a param name to decide a bank has an EQ.
@@ -2766,7 +2787,7 @@ export function drawKitCells(cells, touchedIdx, env, filt, eq, samp, anim, nowMs
          * same over a box, an arc, or a span graphic that covered this cell —
          * which is why it is here and not inside any widget. */
         if (cell.opens) drawBrackets(col * MV_CELL_W, rowY, MV_CELL_W, MV_KH);
-        drawCellLabel(col, lblY, cell, k === touchedIdx);
+        drawCellLabel(col, lblY, cell, lit(k));
     }
     if (env) {
         drawKitEnvelopeRow(env.start < 4 ? MV_ROW0_Y : MV_ROW1_Y, cells, env);
@@ -2794,10 +2815,13 @@ export function drawKitEnumOverlay(cells, touchedIdx) {
      * enumOverlayWouldDraw. Two copies would let the footer vanish under
      * nothing, or survive under a picker, and both read as a rendering bug. */
     if (!enumOverlayWouldDraw(cells, touchedIdx)) return;
-    /* ⭑ OPAQUE: the list owns everything under the header, so no cell, picture
-     * or hint shows around its box (Josh, 2026-09-23: "i like the opaque
-     * everywhere"). The header stays: it names the knob being turned. */
-    fill_rect(0, MV_HDR_H, SCREEN_W, 64 - MV_HDR_H, 0);
+    /* ⭑ The BOX is opaque, the page behind it is DIMMED (Josh, 2026-09-26: "the
+     * opaque ruling meant simply that that nothing under the picker BOX should
+     * show through it"). drawKitListOverlay blanks its own box; everything
+     * under the header is knocked back to a checkerboard, so the page reads as
+     * behind the list rather than beside it. The header stays: it names the
+     * knob being turned. */
+    drawKitBackdropDim(0, MV_HDR_H, SCREEN_W, 64 - MV_HDR_H);
     drawKitListOverlay(cell.options, cell.sel | 0);
 }
 
@@ -3010,6 +3034,39 @@ export function drawKitCrumbs(parts) {
  * layout — the bank picker (Shift+jog in track view) is the second caller.
  * ⚠ One implementation on purpose: two copies of this maths drift by a pixel
  * and then read as two different controls. */
+/* THE BANK NAVIGATION COLUMN: where you are in the bank order, while the jog
+ * walks it (Josh, 2026-09-26: "Lists every bank and highlights the current one
+ * as they're jogged through. Current one is centered in the middle of the
+ * screen - ones that are off page can scroll in from top or bottom. Include the
+ * header icons next to the names.").
+ *
+ * A column on the LEFT, as wide as its longest entry, full height; the current
+ * entry sits on the middle row, inverted, and the list slides past it, so the
+ * rows above the first bank and below the last stay empty. Names in the small
+ * font (Josh: "small font"), each after its bank's header glyph. The page to
+ * the right is knocked back, the column itself is opaque.
+ *
+ * `items` = [{ name, glyph }] in walk order; `cur` = index of the current one. */
+export const MV_BANKNAV_ROW_H = 9, MV_BANKNAV_ROWS = 7;
+export function drawKitBankNavColumn(items, cur) {
+    if (!items || !items.length) return;
+    const MID = (MV_BANKNAV_ROWS - 1) >> 1;
+    let w = 0;
+    for (const it of items) w = Math.max(w, kitBankGlyphWidth(it.glyph) + 3 + mvWidth(it.name));
+    const PW = Math.min(SCREEN_W - 16, w + 7);
+    drawKitBackdropDim(PW + 1, 0, SCREEN_W - PW - 1, 64);
+    fill_rect(0, 0, PW, 64, 0);
+    fill_rect(PW, 0, 1, 64, 1);
+    for (let r = 0; r < MV_BANKNAV_ROWS; r++) {
+        const i = cur + (r - MID);
+        if (i < 0 || i >= items.length) continue;
+        const y = r * MV_BANKNAV_ROW_H + 1, on = r === MID, fg = on ? 0 : 1;
+        if (on) fill_rect(0, y - 1, PW, MV_BANKNAV_ROW_H + 1, 1);
+        drawKitBankGlyph(items[i].glyph, 3, y + 1, fg);
+        mvPrint(3 + kitBankGlyphWidth(items[i].glyph) + 3, y + 1, items[i].name, fg);
+    }
+}
+
 export function drawKitListOverlay(options, sel, opts) {
     /* ⭑ The box AUTO-SIZES to its longest label (Josh, 2026-08-25). It starts at
      * the kit's zoom footprint — so a short enum looks exactly as it always has,
@@ -3188,7 +3245,9 @@ export function drawKitBankPage(cells, opts) {
  * drawKitEnumOverlay's own guard, called by both, so the two cannot drift. */
 export function enumOverlayWouldDraw(cells, idx) {
     const cell = idx >= 0 ? cells[idx] : null;
-    return !!(cell && cell.options && cell.options.length > 2 && (cell.sel | 0) >= 0);
+    /* A NUMBER never gets the list (Josh, 2026-09-26: "A for all"): a cell that
+     * carries `touchArc` turns into an arc while touched instead. */
+    return !!(cell && !cell.touchArc && cell.options && cell.options.length > 2 && (cell.sel | 0) >= 0);
 }
 
 /* Turn-to-reveal value zoom — the non-picker counterpart to drawKitEnumOverlay.

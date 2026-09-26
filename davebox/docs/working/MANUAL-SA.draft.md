@@ -136,7 +136,8 @@ Every new project is ready to play:
 - **Tracks 1–4** play Move's four instruments, loaded with a random stock drum kit,
   bass and two polyphonic sounds, like a new Move set. Track 1 is a drum track.
 - **Tracks 5–8** each have an empty Schwung chain, silent until you
-  [choose a sound](#38-choosing-a-tracks-sound) for them.
+  [choose a sound](#38-choosing-a-tracks-sound) for them. Until then the header and
+  TRACK CONFIG show **--** for their instrument.
 
 Tracks that play Move instruments need **Link** turned on in Move's System
 Settings; dAVEBOx warns you if it's off.
@@ -260,7 +261,9 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 [AUTOMATION](#10-automation).
 
 - **Turn the jog** on the track overview to step through the banks: the header
-  names the bank and the knobs follow it.
+  names the bank and the knobs follow it. While your hand is on the jog, a column
+  on the left lists the track's banks with the current one highlighted in the
+  middle; it goes as soon as you let go.
 - **Click the jog** to open the **bank view** — that bank's page, held on screen;
   keep turning to walk from there. In the bank view a click switches to the bank's
   **alternate** parameters (a down-arrow in the header marks a bank that has them,
@@ -270,6 +273,10 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 - **Shift + jog** steps through the **tracks**, not the banks.
 - **Each track remembers its bank**, SOUND + CONFIG and MACROS included — across
   track switches, suspend, and quit and relaunch.
+- **Turning a knob** that sets a number (an octave, an offset, a rate, a length,
+  a count) turns its cell into an arc while you touch it, so the value moves the
+  way the knob does. A knob with named choices (arp style, direction) opens its
+  list instead, over a dimmed copy of the page.
 - **Every bank lights its knob rings:** knobs 1–4 white, 5–8 amber, brightness
   following the value. A **dark** ring means nothing is on that knob here. The
   Conductor's RESPONDER, OCTAVE and WHEN banks light each knob in its track's color.
@@ -293,7 +300,8 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 **In Session View** the jog walks the mixer instead:
 
 - Volume, Pan, Send A, Send B, then the SESSION FX card for the Master and send
-  buses. The indicator at the top right follows; a click opens the page.
+  buses. The indicator at the top right follows; a click opens the page. The same
+  column on the left lists them while you turn.
 - Mixer knobs record automation like any other: turn one while recording and it
   records into that track's clip.
 - A track that plays another track's instrument has no strip; its column shows a
@@ -621,7 +629,8 @@ blinks white — the cursor, starting at the first step of the page you're viewi
 - **Play a pad** (or several together for a chord): the notes land on the cursor
   step, and the cursor moves on when you let go.
 - **Right with pads held** ties the note a step longer, each press extending it;
-  **Left with pads held** takes one step back off.
+  **Left with pads held** takes one step back off. The steps the note is held over
+  light in the tail colour as you go, as they do when you hold a step.
 - **Right** alone is a rest: the cursor moves on, writing nothing.
 - **Left** steps back and **erases what you entered there this session**. Notes
   already in the clip stay.
@@ -1062,7 +1071,7 @@ do nothing; the jog does everything.
 - Each row shows its **cycle**, the length it repeats over: **4 BAR**, **13 ST**
   (steps, when it isn't whole bars; **13 ST/32** when its steps aren't sixteenths),
   or **CLIP** when it follows the clip. A muted row reads **OFF**, a cleared one
-  **EMPTY**, and the pads' aftertouch **PADS**.
+  **EMPTY** and its length, and the pads' aftertouch **PADS**.
 - With nothing automated the bank reads *NO AUTOMATION*.
 
 **Click the jog** for the menu. With the cursor on a row, the step buttons, pages and
@@ -1078,9 +1087,10 @@ screen show **that row's lane**, not the clip's notes:
   bank, its module's page (on a per-pad parameter, that pad), SOUND + CONFIG for a
   level, MACROS for a MIDI target. Turn its knob to change the value on that step;
   let go to come back, on the same row and page. On a bank the header shows
-  **<AUTO S7** (step 7). The parameter's cell is marked with a small corner, and
-  while the step is held it shows the value the lane plays there — shown only, the
-  parameter doesn't move until you turn the knob.
+  **<AUTO S7** (step 7). The parameter's cell is highlighted, and while the step
+  is held it shows the value the lane plays there — shown only, the parameter
+  doesn't move until you turn the knob. A module's page keeps its graphics (filter
+  curve, envelope) while you're there.
 - **Shift + click** a row to jump to where that parameter is edited; **Back**
   returns you to this menu, on the same row. The step buttons keep showing the lane
   there, so you can hold a step and turn the knob to set it.
@@ -1102,11 +1112,17 @@ screen show **that row's lane**, not the clip's notes:
   loop copies it forward (on a drum track, the ALL LANES versions). *Off*: it stays
   put whatever you do to the notes.
 - **Loop** — the parameter's own loop length in steps, or CLIP to follow the clip.
+  It can be shorter than the clip (it repeats inside it) or longer, up to 256
+  steps (it runs across several passes of the clip). A lane with its own Loop
+  runs in step with the song, and restarts when its clip is launched at
+  **Launch 1-bar** — see [Launching clips](#111-launching-clips).
 - **Rate** — /16 to ×16, the loop stretching to match.
 - **Scale** — 0–200 %: how far the lane moves (toward zero, or on a centred
   parameter like pan or pitch bend, toward and away from its centre).
-- **Clear** — every value goes, but the lane stays with its settings (it reads
-  **EMPTY**, ready for new values).
+- **Clear** — every value goes, but the lane stays with its settings, its length
+  included (it reads **EMPTY** and its length, e.g. **EMPTY 4 BAR**, ready for new
+  values). On a drum track, set Loop on the empty lane and new recording or step
+  input lands at that length.
 - **Delete** — the lane goes altogether.
 
 The last row is **Clear all**; **Delete + click** on the card does the same. Every
@@ -1171,6 +1187,11 @@ Clips launch **at once** by default. To have them wait for the next beat or bar,
 | **Shift + Delete + clip** | Reset the clip completely |
 
 - Launching a clip replaces whatever was playing **on that track**.
+- **Where a launched clip starts** depends on **Launch** in Project Settings. At
+  **1-bar** it starts from its beginning — its notes, every drum lane, and any
+  automation lane with its own Loop. At every other setting (Now, 1/16 … 1/2) it
+  launches **in step with the song**: it plays from wherever it would be had it
+  been running since you pressed Play.
 - Switching to a track launches its current clip only if that clip is empty.
 - Keep holding **Copy** to paste one clip into several slots; releasing Copy
   empties the clipboard.
@@ -1528,8 +1549,9 @@ The last two pages are the same for every module:
   auditions as you scroll; **[Save current…]** sits at its top, and **Shift +
   click** deletes one. **Save**, **Save As** and **Delete** sit beside it.
 - **Module** — **Module Menu** (the module's full parameter list, for settings the
-  knob pages don't show), **Module Help** (when the module has it), **Swap
-  Module** and **Remove Module** (the way to empty an effect slot). Swapping or
+  knob pages don't show), **Module Help** (when the module has it), **Buses**
+  (when the instrument can split its voices — the same screen as the Sound menu's
+  Buses row), **Swap Module** and **Remove Module** (the way to empty an effect slot). Swapping or
   removing asks first if macros or automation would be left behind.
 
 **How the knobs feel** — in a module's editor, on MACROS, and for pan and the
@@ -1570,7 +1592,7 @@ instrument, effects and [macros](#146-the-macros-bank):
 | **Retrigger** | Restart the wave with each note |
 
 **Buses** appears below Send B only on an instrument that can split its voices,
-such as a drum module. It lists the instrument's buses and **New Bus**. Each bus
+such as a drum module (and on the instrument editor's **Module** page). It lists the instrument's buses and **New Bus**. Each bus
 has:
 
 - **Voices** — which voices play through it. Play a pad and the list jumps to that
@@ -1893,7 +1915,7 @@ see [Track settings](#174-track-settings) below.
 | Key | The project's root note — see [§17.2](#172-key--scale) | C…B | random |
 | Scale | The scale melodic tracks snap to — see [§17.2](#172-key--scale) | (below) | random |
 | Scale Aware | Whether scale-aware params move by scale degree (On) or semitone (Off) | On, Off | On |
-| Launch | When a launched clip or scene actually starts — at once (Now) or on the next boundary | Now, 1/16, 1/8, 1/4, 1/2, 1-bar | Now |
+| Launch | When a launched clip or scene actually starts — at once (Now) or on the next boundary. At 1-bar it starts from its beginning; otherwise in step with the song ([§11.1](#111-launching-clips)) | Now, 1/16, 1/8, 1/4, 1/2, 1-bar | Now |
 | Beat Marks | Dim markers on the step buttons at 1, 5, 9, 13 | On, Off | On |
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Projects... | The project picker — see [Projects](#175-projects) | action | — |

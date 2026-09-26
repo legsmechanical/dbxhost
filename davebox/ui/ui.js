@@ -489,6 +489,8 @@ globalThis.onMidiMessageInternal = function (data) { try { _onMidiInternalImpl(d
  * site remembering the rule. */
 function _jogTouchRelease() {
     S.jogTouched = false;
+    /* The bank navigation overlay goes the moment the hand leaves the jog. */
+    if (S.bankNavKind) { S.bankNavKind = null; S.screenDirty = true; }
     /* Letting go COMMITS an open pick, as the click does (Josh, 2026-08-25:
      * both feel natural and serve different purposes — the click chooses while
      * you stay in contact, the release is "I am done, take it").
@@ -775,7 +777,7 @@ function _onMidiInternalImpl(data) {
                     /* SEQ ARP K5 / TRACK ARP K5 touch: switch pads to vel-slider editor immediately. */
                     if ((S.activeBank === 4 && d1 === 4) || (S.activeBank === 5 && d1 === 4)) forceRedraw();
                 }
-                if (d1 === MoveMainTouch && !S.globalMenuOpen && !S.shiftHeld) { S.jogTouched = true; forceRedraw(); }
+                if (d1 === MoveMainTouch && !S.globalMenuOpen && !S.shiftHeld) { S.jogTouched = true; S.bankNavKind = null; forceRedraw(); }
             } else if (d2 < 64) {
                 if (d1 <= 7) {
                     if (S.sessionView) {
