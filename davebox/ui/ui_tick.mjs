@@ -24,7 +24,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
-    POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS, BANK_CHORD } from './ui_constants.mjs';
+    POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS, BANK_CHORD, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 
 import { S, standDownBankDisplay, stepRevealAvailable } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -167,12 +167,17 @@ function convertTrackToConduct(t) {
     const prevMode = S.trackPadMode[t];
     host_module_set_param('t' + t + '_convert_to_conduct', '1');
     S.trackPadMode[t] = PAD_MODE_CONDUCT;
-    /* A Conductor transposes from the key's root at octave 4 (DSP
-     * conductor_set_offset_from_note), and its HOME pad must play exactly that
-     * — so it starts on octave 0, not the melodic default of +1 (2026-09-24),
-     * or every note it plays would shift the other tracks up an octave. */
+    /* A Conductor transposes from the key's root at MIDI 60 (DSP
+     * conductor_set_offset_from_note). It starts on the melodic default octave
+     * (+1), which puts that no-shift root in the MIDDLE of the grid (in a
+     * seven-note scale: the bottom row's last pad, the second row's fifth, the
+     * third row's second; the bottom-left pad is an octave down), so the pads
+     * reach down as well as up (Josh, 2026-09-26: "Middle of the grid"). ⚠ Octave 0 — the 09-24
+     * value — was meant to put no-shift on the bottom-left pad, but the pads'
+     * own root sits two octaves under 60, so every bottom-row pad dropped the
+     * other tracks by two octaves. Measured, not reasoned: tests pin the pad. */
     const prevOctave = S.trackOctave[t];
-    S.trackOctave[t] = 0;
+    S.trackOctave[t] = DEFAULT_TRACK_OCTAVE;
     S.pendingConductReadback = { t: t, prevMode: prevMode, prevOctave: prevOctave };
     if (S.trackActiveBank[t] === BANK_CHORD) S.trackActiveBank[t] = 0;
     if (t === S.activeTrack && S.activeBank === BANK_CHORD) S.activeBank = 0;

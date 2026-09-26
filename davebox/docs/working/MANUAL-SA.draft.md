@@ -488,8 +488,7 @@ covers writing, editing, and recording into one; the [Effects](#10-effects) and
 ## 6.1 Playing and placing notes
 
 The pads play notes from the current [key and scale](#172-key--scale). **+ / −**
-shifts the pad octave; a new track's pads start one octave up (a Conductor's start
-at its no-shift home).
+shifts the pad octave; a new track's pads start one octave up.
 
 While you hold notes (pads or an external keyboard), the screen names them in
 brackets at the right of the key/scale row — the note (`[F#3]`) or the chord.
@@ -844,8 +843,11 @@ picker. That is also how you turn a Conductor back into an ordinary track.
 
 ## 8.2 How the shift works
 
-Zero transposition is the **session root at octave 4** — the default pad note. Play
-that and nothing shifts; play higher and the responders rise, lower and they fall.
+Zero transposition is the **session's root note at middle C's octave (C3)**. On a
+new Conductor that note sits in the middle of the pad grid — in a seven-note scale,
+the second row's fifth pad, and the same note on the third row's second pad and the
+bottom row's last. Play it and nothing shifts; play higher and the responders rise,
+lower and they fall. The bottom-left pad is an octave down.
 The Conductor's own octave scales the move, so an octave up on the Conductor is an
 octave of transposition.
 
@@ -1166,7 +1168,8 @@ first across the loop point.
 Which knobs? The ones on the module editor's pages, the levels on
 **SOUND + CONFIG** and in the session mixer, the eight **MACROS**, and dAVEBOx's own
 bank knobs — CLIP and ALL LANES direction, NOTE FX (all but `LEN>`), HARMONY,
-DELAY, and SEQ ARP (all but `STEPS`). See
+DELAY, and SEQ ARP (all but `STEPS`). On a drum track, NOTE FX is set per lane and
+is not automated. See
 [Parameter banks](#35-parameter-banks) and [Effects](#10-effects).
 
 An automated knob says so where it lives: a dot on its cell, and a blinking
@@ -1519,7 +1522,7 @@ the screen, jog, knobs, **Back** and **Mute**; the pads, step buttons and transp
 stay with dAVEBOx. Press **Note/Session** to come back.
 
 A MIDI channel or a followed track has nothing to open, so a plain click does
-nothing there.
+nothing there. On a track set to **None**, a plain click opens the picker.
 
 ## 14.4 Editing a module
 
