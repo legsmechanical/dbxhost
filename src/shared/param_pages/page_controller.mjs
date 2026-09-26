@@ -4551,6 +4551,24 @@ export function createController(io = {}) {
      * them carries the lock corner. A `highlight` (the cell drawn as held) and
      * a replaced `value` read in the label strip, which a graphic never covers,
      * so a page that only highlights keeps its filter curve and envelope. */
+    /* The values a frame DRAWS with: the live ones, except that a slot whose
+     * decoration carries a `value` shows that value everywhere on the page --
+     * the cell already did, and now a graphic spanning it does too (a filter
+     * curve previews the cutoff a held step will play, not the knob's). */
+    function shownValues() {
+        const d = s.decorations;
+        if (!d) return s.values;
+        const keys = (page() && page().keys) || [];
+        let out = null;
+        for (const slot in d) {
+            const dec = d[slot];
+            const key = keys[slot | 0];
+            if (!dec || dec.value === undefined || dec.value === null || !key) continue;
+            if (!out) out = Object.assign({}, s.values);
+            out[key] = dec.value;
+        }
+        return out || s.values;
+    }
     function decorationsHideViz() {
         const d = s.decorations;
         if (!d) return false;
@@ -4652,7 +4670,7 @@ export function createController(io = {}) {
             const drawGrid = () => {
             if (knobsAsList()) { drawKnobsAsList(ctx, title, footer, pageChrome, footerBand); return; }
             renderPageMovy(ctx, {
-                page: page(), metaIndex: s.metaIndex, values: s.values,
+                page: page(), metaIndex: s.metaIndex, values: shownValues(),
                 title: title || "", pageIndex: s.pageIndex, pageCount: s.pages.length,
                 touched: s.hintLines ? -1 : s.touched,
                 /* A custom UI page's body drawer — inert for every ordinary
@@ -4900,7 +4918,7 @@ export function createController(io = {}) {
             return;
         }
         renderPage(ctx, {
-            page: page(), metaIndex: s.metaIndex, values: s.values,
+            page: page(), metaIndex: s.metaIndex, values: shownValues(),
             title: title || "", pageIndex: s.pageIndex, pageCount: s.pages.length,
             touched: s.touched, decorations: s.decorations,
             layout: s.layout, revealValues: s.revealValues, rect,

@@ -111,7 +111,9 @@ the section into a versioned heading at release time.
 - **Jumping to a module parameter from automation keeps the module's page as it
   is.** Holding a step on a lane for, say, a filter cutoff used to land on a page
   of plain knobs with the filter curve and envelope gone. The parameter's cell is
-  now highlighted instead of carrying a small corner mark, on every page.
+  now highlighted instead of carrying a small corner mark, on every page, and
+  while you hold a step the page's graphics preview that step's value (the filter
+  curve takes the cutoff the step will play).
 - **A new Conductor's pads are centred on "no shift".** Its bottom-row pads used
   to drop every responding track by two octaves; the no-shift note now sits in the
   middle of the grid, so the pads reach down as well as up.
