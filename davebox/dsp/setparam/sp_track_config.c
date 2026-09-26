@@ -87,6 +87,10 @@ static int sp_track_config(sp_ctx_t *cx) {
              * the incoming one asserts its own rest (Josh, 2026-09-13). */
             pa_switch_request(inst, tidx, (int)tr->active_clip, new_cidx);
             tr->active_clip      = (uint8_t)new_cidx;
+            /* Launch Now: cycled lanes stay in step with the song (a 1-bar
+             * launch's origin must not survive into this clip). One aligned
+             * 32-bit store, read by the audio thread — no tearing. */
+            tr->pa_origin        = 0;
             pfx_sync_from_clip(tr);
             if (tr->tick_in_step >= tr->clips[new_cidx].ticks_per_step)
                 tr->tick_in_step = 0;

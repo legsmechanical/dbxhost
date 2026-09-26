@@ -1243,9 +1243,9 @@ export function automationToggleLink(track, clip, target) {
     return linked;
 }
 
-/* The AUTOMATION bank's Loop row: an entry's own loop window, in clip TICKS
- * (0 = follow the clip). Offset stays 0 and resolution is not surfaced —
- * pa_entry_tick reads loop_len/loop_off only. */
+/* The AUTOMATION bank's Loop row: an entry's own loop window, in TICKS (0 =
+ * follow the clip). A lane with one runs on the master clock, drum or melodic,
+ * and may be shorter or longer than its clip. */
 export function automationSetLoop(track, clip, target, loopTicks, checkpoint) {
     const s = automationStateFor(track, clip, target);
     if (!s) return false;

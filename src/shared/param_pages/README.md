@@ -67,7 +67,8 @@ renderPage(ctx, {
     touched,          // physical knob 0-7 being held, or -1
     decorations,      // per-slot { value, locked, highlight } — how a sequencer shows p-locks.
                       //   `locked` draws a corner and stands module graphics down (a picture
-                      //   could hide it); `highlight` draws the cell as held and keeps them
+                      //   could hide it); `highlight` draws the cell as held and keeps them.
+                      //   A `value` is what the page draws for that slot -- cell AND graphic
     layout,           // LAYOUT_DIAL (default) | LAYOUT_BAR
     revealValues,     // dial layout: swap every label for its value while a
                       //   modifier is held — eight glances, not eight touches

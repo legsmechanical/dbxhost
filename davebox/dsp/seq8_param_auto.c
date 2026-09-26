@@ -1047,14 +1047,24 @@ static uint32_t pa_drum_clip_tick(const seq8_instance_t *inst, const seq8_track_
 /* playback, the recorder, the view position, the step map, the value   */
 /* read and the export all ask here.                                    */
 
-static int pa_drum_cycled(const seq8_track_t *tr, const pa_entry_t *e) {
-    return tr && tr->pad_mode == PAD_MODE_DRUM && e->loop_len;
+/* ⭑ ANY lane with its own Loop is CYCLED — drum or melodic (Josh, 2026-09-26:
+ * a melodic lane's Loop can be shorter or longer than its clip, and runs on
+ * the same clock). A melodic lane has no cycle until its Loop row gives it
+ * one; it follows the clip until then. */
+static int pa_lane_cycled(const seq8_track_t *tr, const pa_entry_t *e) {
+    return tr && e->loop_len;
 }
 
 /* The master clock in lane ticks (one per master tick). */
 static uint32_t pa_master_abs(const seq8_instance_t *inst) {
     return (uint32_t)inst->global_tick * (uint32_t)TICKS_PER_STEP
          + (uint32_t)inst->master_tick_in_step;
+}
+/* ...counted from the track's lane origin: the song, or a Launch 1-bar launch
+ * (tr->pa_origin, PA_LANE_ORIGIN_AT_LAUNCH). */
+static uint32_t pa_lane_abs(const seq8_instance_t *inst, const seq8_track_t *tr) {
+    uint32_t a = pa_master_abs(inst);
+    return (tr && a >= tr->pa_origin) ? a - tr->pa_origin : a;
 }
 
 /* The active pad's geometry in `clip`, as a cycle. Clamped so every tick of
@@ -1090,8 +1100,8 @@ static void pa_cycle_adopt_active(const seq8_track_t *tr, int clip, pa_entry_t *
  * clip clock, for everything that is not a drum cycle. */
 static uint32_t pa_lane_tick(const seq8_instance_t *inst, const seq8_track_t *tr,
                              const pa_entry_t *e, uint32_t ct, uint32_t clip_ticks, uint32_t cycle) {
-    if (!pa_drum_cycled(tr, e)) return pa_entry_tick(e, ct, clip_ticks, cycle);
-    uint64_t abs = pa_master_abs(inst);
+    if (!pa_lane_cycled(tr, e)) return pa_entry_tick(e, ct, clip_ticks, cycle);
+    uint64_t abs = pa_lane_abs(inst, tr);
     if (e->resolution) {
         uint32_t mul, div;
         pa_rate(e->resolution, &mul, &div);
@@ -1104,20 +1114,20 @@ static uint32_t pa_lane_tick(const seq8_instance_t *inst, const seq8_track_t *tr
  * playback transform — see pa_record_tick), else the clip tick. */
 static uint32_t pa_lane_rec_tick(const seq8_instance_t *inst, const seq8_track_t *tr,
                                  const pa_entry_t *e, uint32_t ct) {
-    if (!pa_drum_cycled(tr, e)) return ct;
-    return (uint32_t)e->loop_off + pa_master_abs(inst) % e->loop_len;
+    if (!pa_lane_cycled(tr, e)) return ct;
+    return (uint32_t)e->loop_off + pa_lane_abs(inst, tr) % e->loop_len;
 }
 
 /* The window lane `e` plays inside. */
 static void pa_lane_window(const seq8_track_t *tr, const pa_entry_t *e,
                            uint32_t clip_start, uint32_t clip_ticks, uint32_t *ws, uint32_t *wl) {
-    if (pa_drum_cycled(tr, e)) { *ws = e->loop_off; *wl = e->loop_len; return; }
+    if (pa_lane_cycled(tr, e)) { *ws = e->loop_off; *wl = e->loop_len; return; }
     pa_entry_window(e, clip_start, clip_ticks, ws, wl);
 }
 
 /* Lane `e`'s step (Punch's length). */
 static uint32_t pa_lane_step(const seq8_track_t *tr, const pa_entry_t *e, uint32_t step_ticks) {
-    return (pa_drum_cycled(tr, e) && e->step_ticks) ? (uint32_t)e->step_ticks : step_ticks;
+    return (pa_lane_cycled(tr, e) && e->step_ticks) ? (uint32_t)e->step_ticks : step_ticks;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1618,11 +1628,13 @@ static void pa_record_tick(seq8_instance_t *inst, seq8_track_t *tr, int track, i
              * the lane's own if it has one, else the hand's snapshot. */
             uint16_t co = 0, cl = 0, cs = 0;
             uint32_t pos = ct;
-            if (tr->pad_mode == PAD_MODE_DRUM) {
+            /* The lane's own Loop wins on ANY track; a drum lane without one
+             * takes the hand's snapshot; a melodic one follows the clip. */
+            {
                 const pa_entry_t *ex = pa_find(inst, track, clip, (int)tgt);
                 if (ex && ex->loop_len) { co = ex->loop_off; cl = ex->loop_len; cs = ex->step_ticks; }
-                else { co = l->cyc_off; cl = l->cyc_len; cs = l->cyc_st; }
-                if (cl) pos = (uint32_t)co + pa_master_abs(inst) % cl;
+                else if (tr->pad_mode == PAD_MODE_DRUM) { co = l->cyc_off; cl = l->cyc_len; cs = l->cyc_st; }
+                if (cl) pos = (uint32_t)co + pa_lane_abs(inst, tr) % cl;
             }
             uint32_t snap = (pos / cell) * cell;
             if (l->last_snap != snap) {

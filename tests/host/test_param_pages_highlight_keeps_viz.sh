@@ -16,7 +16,8 @@ cd "$(dirname "$0")/../.."
 # Measured as pixel differences against the undecorated frame: the lock frame
 # differs where the graphic went (the CONTROL that a graphic is on the page at
 # all); the highlight frame must differ from the plain one almost nowhere the
-# lock frame does, and must differ somewhere (the highlight is visible).
+# lock frame does, and must differ somewhere (the highlight is visible). A
+# decoration VALUE is drawn by the graphic too (the curve previews it).
 #
 # NO APOSTROPHES inside the node script (single-quoted bash string).
 
@@ -85,6 +86,14 @@ for (const [name, f] of [["highlight", hiSlot], ["highlight + value", hiVal]]) {
   ok(both < L.size * 0.2, name + ": the graphic STAYS -- only " + both + " of the " + L.size
      + " px a lock changes also changed");
 }
+
+/* THE GRAPHIC PREVIEWS THE HELD VALUE: a decoration value moves the curve,
+ * not only the label -- and the same value as the live one moves nothing
+ * (the control that the difference is the VALUE, not the decoration). */
+const same = paint({ 0: { highlight: true, value: "0.5" } });
+ok(diff(hiSlot.ascii, same.ascii).size === 0, "control: the live value as the decoration value draws the same frame");
+ok(diff(hiSlot.ascii, hiVal.ascii).size > 40,
+   "a held value of 0.9 reshapes the graphic (" + diff(hiSlot.ascii, hiVal.ascii).size + " px changed)");
 
 if (fail) { console.log("FAIL: " + fail); process.exit(1); }
 console.log("PASS: a highlight keeps module graphics; a lock stands them down");
