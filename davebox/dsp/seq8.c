@@ -7023,7 +7023,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         pa_lock(inst);                      /* the latch may be writing */
         for (int i = 0; i < PA_MAX_ENTRIES; i++) {
             pa_entry_t *e = &inst->pa_entries[i];
-            if (!e->used || !e->count) continue;
+            if (!pa_entry_live(e)) continue;          /* a cleared, kept lane lists with count 0 */
             /* Fields 9-10, the lane's loop START and STEP (a drum lane's
              * cycle), only when either is set: a melodic project's list is
              * byte-identical to before, and the answer never grows for it. */

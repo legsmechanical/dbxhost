@@ -91,6 +91,14 @@
                                   * STEP, then the RESTING value (Josh, 2026-09-11).
                                   * Clear = Curve, the default. Wrap / Smooth do not
                                   * apply in Punch. */
+#define PA_FLAG_KEEP       0x20  /* CLEARED, KEPT (Josh, 2026-09-25: Clear "clears
+                                  * the automation data on the lane (undoable) but
+                                  * leaves it in place to add new automation to").
+                                  * An entry with no points and this bit is a real,
+                                  * listed, saved lane with all its settings — it
+                                  * just plays nothing. Without it a pointless
+                                  * entry is a retired zombie. Older builds ignore
+                                  * the bit and drop the empty lane on load. */
 
 typedef struct {
     uint16_t tick;               /* clip-relative tick; a 256-step clip at 24 tps fits u16 */
@@ -190,6 +198,11 @@ typedef struct {
     uint16_t scale_ctr1;
     pa_point_t points[PA_ENTRY_POINTS];
 } pa_entry_t;
+
+/* A lane the user can see: it has points, or it was cleared and kept. */
+static inline int pa_entry_live(const pa_entry_t *e) {
+    return e->used && (e->count || (e->flags & PA_FLAG_KEEP));
+}
 
 #define PA_SCALE_MIN   0
 #define PA_SCALE_MAX 200
