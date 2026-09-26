@@ -327,6 +327,8 @@ step('⭐ a MOVE-routed track (its lanes on slot 0, by BUS): Volume and an inser
         assert(snd.soundOpen() && snd.soundViewForTest() === VIEW_EDIT, 'holding a bus insert point: not in its editor (view ' + snd.soundViewForTest() + ')');
         const pp = snd.soundPPForTest();
         assert(pp.on && pp.page && (pp.page.keys || []).indexOf('cutoff') >= 0, 'the insert editor is not on the page holding cutoff');
+        const bus = snd.soundBusForTest();
+        assert(bus && bus.id === 'move2', 'the insert editor was entered as a chain slot, not through bus 2: ' + JSON.stringify(bus));
         note(STEP(3), 0); ticks(2);
         assert(!snd.soundOpen() && S.autoBank.sel === idx, 'bus insert release did not come back');
         back(); ticks(1);
