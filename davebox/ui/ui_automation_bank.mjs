@@ -29,7 +29,8 @@
  * (one chain_params read per component, ever). */
 
 import { S, noteUndoUnit, armBankDisplay } from './ui_state.mjs';
-import { BANK_AUTOMATION, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS } from './ui_constants.mjs';
+import { BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS } from './ui_constants.mjs';
+import { soundOpen, soundExit } from './ui_sound.mjs';
 import { readBankParams } from './ui_dsp_bridge.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey,
@@ -525,6 +526,17 @@ function lanePinTick() {
 }
 
 let holdJump = null;
+/* Where a non-davebox lane's value is edited on a sound BANK: the track's
+ * levels (slot:* and its Move bus levels) on SOUND+CFG, a MIDI target on
+ * MACROS; -1 for anything else (a module parameter lives in its editor). */
+function soundBankFor(tgt, t) {
+    if (midiTargetIsMidi(tgt)) return BANK_MACROS;
+    const i = tgt.indexOf(':');
+    if (i < 0 || parseInt(tgt.slice(0, i), 10) !== t) return -1;
+    const rest = tgt.slice(i + 1), k = rest.lastIndexOf(':');
+    const comp = k < 0 ? rest : rest.slice(0, k);
+    return (comp === 'slot' || /^move_fx:\d+$/.test(comp)) ? BANK_SOUND : -1;
+}
 export function autoHoldJumpActive() { return !!holdJump; }
 export function autoHoldJumpStep() { return holdJump ? holdJump.step : -1; }
 export function autoHoldJumpBegin(absStep) {
@@ -533,10 +545,20 @@ export function autoHoldJumpBegin(absStep) {
     if (!cy || cy.t !== S.activeTrack || !m || m.charCodeAt(absStep) !== 49) return false;
     const tgt = String(cy.target);
     const sat = tgt.indexOf('seq:') === 0 ? SEQ_AUTO_TARGETS[tgt.split(':')[2]] : null;
-    if (!sat) { showActionPopup('NO EDITOR'); return false; }
+    const sb = sat ? -1 : soundBankFor(tgt, cy.t);
+    if (!sat && sb < 0) { showActionPopup('NO EDITOR'); return false; }
     const a = st();
-    holdJump = { track: cy.t, clip: cy.c, bank: sat.bank, altWas: !!S.altMode, sel: a.sel,
+    holdJump = { track: cy.t, clip: cy.c, bank: sat ? sat.bank : sb, sound: !sat, altWas: !!S.altMode, sel: a.sel,
                  opsSel: a.ops ? a.ops.sel : -1, cycle: Object.assign({}, cy), step: absStep };
+    if (!sat) {
+        /* A level (SOUND+CFG) or a MIDI target (MACROS): the sound bank for as
+         * long as the step is held, through the ordinary deferred entry (the
+         * tick opens it). The track's remembered bank is NOT moved. */
+        S.activeBank = sb;
+        S.pendingSoundEnterTrack = cy.t;
+        armBankDisplay();
+        return true;
+    }
     S.activeBank = sat.bank;
     S.altMode = !!sat.alt;
     /* Render drops alt mode on ANY bank change (its diff guard, ui_render):
@@ -555,6 +577,13 @@ export function autoHoldJumpEnd() {
     const j = holdJump;
     if (!j) return;
     holdJump = null;
+    if (j.sound) {
+        /* Close the sound bank's screen BEFORE the bank goes back: the tick's
+         * reconcile only agrees with a resting sound mode while the bank is a
+         * sound bank. A release inside the entry tick cancels the entry. */
+        if (S.pendingSoundEnterTrack === j.track) S.pendingSoundEnterTrack = -1;
+        if (soundOpen()) soundExit();
+    }
     if (S.activeTrack === j.track && S.activeBank === j.bank) {
         S.activeBank = BANK_AUTOMATION;
         S.altMode = j.altWas;

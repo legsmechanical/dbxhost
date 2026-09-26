@@ -240,6 +240,42 @@ step('⭐ a seq knob turned with a step held on the pinned lane writes the lock 
     back(); ticks(2); back(); ticks(1);
 });
 
+step('⭐ HOLD a Volume point -> SOUND + CONFIG while held; its knob writes THAT step; release -> the same row', () => {
+    const idx = openMenuOn(TARGETS.level); ticks(2);
+    note(STEP(3), 127); ticks(4);
+    assert(snd.soundOpen() && S.activeBank === BANK_SOUND, 'not on SOUND + CONFIG while held: bank ' + S.activeBank + ' open ' + snd.soundOpen());
+    assert(S.trackActiveBank[T] === BANK_AUTOMATION, 'the hold RECORDED bank ' + S.trackActiveBank[T] + ' on the track');
+    assert(S.autoCycle && S.autoCycle.target === TARGETS.level, 'the steps left the lane during the hold');
+    sets.length = 0;
+    cc(71, 1); ticks(2);                               /* K1 = Volume */
+    const w = sets.filter(x => x.indexOf('_pa_set2=') >= 0 && x.indexOf(TARGETS.level) >= 0);
+    assert(w.length >= 1, 'K1 wrote no lock for the lane, got ' + JSON.stringify(sets));
+    const f = w[w.length - 1].split('=')[1].split(' ');
+    assert(f[2] === '72' && f[3] === '95', 'the lock is not on step 4 (ticks 72..95): ' + w[w.length - 1]);
+    note(STEP(3), 0); ticks(2);
+    assert(S.activeBank === BANK_AUTOMATION && !snd.soundOpen(), 'release did not come back: bank ' + S.activeBank + ' open ' + snd.soundOpen());
+    assert(S.autoBank.menu && S.autoBank.sel === idx, 'not on the same row: ' + JSON.stringify(S.autoBank));
+    assert(S.trackActiveBank[T] === BANK_AUTOMATION, 'the track is left on bank ' + S.trackActiveBank[T]);
+    back(); ticks(1);
+});
+
+step('a press and release inside ONE tick never opens sound mode', () => {
+    openMenuOn(TARGETS.level); ticks(2);
+    note(STEP(3), 127); note(STEP(3), 0); ticks(4);
+    assert(!snd.soundOpen() && S.activeBank === BANK_AUTOMATION, 'a tap opened SOUND + CONFIG: bank ' + S.activeBank + ' open ' + snd.soundOpen());
+    back(); ticks(1);
+});
+
+step('⭐ HOLD a MIDI point -> MACROS while held; release -> the same row', () => {
+    const idx = openMenuOn(TARGETS.midi); ticks(2);
+    note(STEP(3), 127); ticks(4);
+    assert(snd.soundOpen() && S.activeBank === BANK_MACROS, 'not on MACROS while held: bank ' + S.activeBank);
+    assert(S.trackActiveBank[T] === BANK_AUTOMATION, 'the hold RECORDED bank ' + S.trackActiveBank[T]);
+    note(STEP(3), 0); ticks(2);
+    assert(S.activeBank === BANK_AUTOMATION && !snd.soundOpen() && S.autoBank.sel === idx, 'release did not come back to the row');
+    back(); ticks(1);
+});
+
 step('CONTROL: deleting the pinned lane ends the pin', () => {
     openMenuOn(TARGETS.level); ticks(2);
     shiftClick(); ticks(4);
