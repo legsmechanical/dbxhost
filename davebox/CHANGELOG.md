@@ -57,6 +57,9 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **Saving a mute snapshot saves the project.** A new snapshot used to wait in
+  memory until something else changed, so it could be lost if you left before
+  then. Deleting one already saved.
 - **Holding Shift in Track View no longer lights Step 3.** Its shortcut was
   retired (the sound editor is Shift + Note/Session), so the icon and the step
   light advertised a press that did nothing.

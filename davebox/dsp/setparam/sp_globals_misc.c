@@ -289,6 +289,7 @@ static int sp_globals_misc(sp_ctx_t *cx) {
             inst->snap_drum_eff_mute[n][t] = uv;
         }
         inst->snap_valid[n] = 1;
+        inst->state_dirty = 1;   /* a snapshot is project state (sn<N>_*), as snap_delete knows */
         return 1;
     }
 
