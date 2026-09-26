@@ -122,9 +122,15 @@ export function stepSaveFlashOn() {
  * row as it is, so the notes under a lock stay readable — the step-record
  * cursor's shape. The copy-source blink's 220 ms phase. Inside the loop window
  * only: a point outside it never plays. */
+/* The automation point blink: 200 ms on, 100 ms off (Josh, 2026-09-25: the
+ * Legacy 45 ms off was "too short, i'd say cycle between like 200ms on 100ms
+ * off"). Shared by the value view and the not-yet-read white points. */
+export const AUTO_POINT_ON_MS = 200, AUTO_POINT_OFF_MS = 100;
+export function autoPointOff(ms) { return (ms % (AUTO_POINT_ON_MS + AUTO_POINT_OFF_MS)) >= AUTO_POINT_ON_MS; }
+
 function paintAutoBankLit(base, lsBase, winEnd) {
     const m = S.autoBankLit;
-    if (!m || !(Math.floor(S.clockMs / 220) % 2)) return;
+    if (!m || autoPointOff(S.clockMs)) return;
     for (let i = 0; i < 16; i++) {
         const absStep = base + i;
         if (absStep < lsBase || absStep >= winEnd) continue;
@@ -154,7 +160,7 @@ export function autoGradLevel(v) { return v === 0 ? 0 : Math.min(6, 1 + Math.flo
 function paintAutoLane(cy) {
     const base = ((cy.off >> 4) + cy.page) * 16, end = cy.off + cy.len;
     const vals = S.autoLaneVals, m = S.autoBankLit;
-    const blinkOff = (S.clockMs % 500) < 45;             /* Legacy: 4 of 47 ticks */
+    const blinkOff = autoPointOff(S.clockMs);
     const play = autoLanePlayStep(cy);
     for (let i = 0; i < 16; i++) {
         const abs = base + i;

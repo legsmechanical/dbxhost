@@ -121,6 +121,12 @@ step('the level rule is Legacy\'s: 0 → level 0, then six levels up to 127', ()
            'Legacy\'s palette indices, got ' + JSON.stringify(L.AUTO_GRAD));
 });
 
+step('the point blink is 200 ms on, 100 ms off', () => {
+    const offs = []; for (let ms = 0; ms < 600; ms += 10) if (L.autoPointOff(ms)) offs.push(ms);
+    assert(offs.length === 20 && offs[0] === 200 && offs[9] === 290 && offs[10] === 500,
+           'off exactly 200..299 and 500..599, got ' + JSON.stringify(offs));
+});
+
 step('⭐ a selected lane paints its values as the gradient — no notes — and its point blinks OFF', () => {
     click(); ticks(3);
     assert(S.autoLaneVals && S.autoLaneVals[15] === 127, 'values read: ' + JSON.stringify(S.autoLaneVals));
