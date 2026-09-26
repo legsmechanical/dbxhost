@@ -232,6 +232,12 @@ the section into a versioned heading at release time.
   already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
+- **Gestures are named in the footer everywhere.** Holding Loop shows
+  **STEP PAGE** / **JOG STEP** pills instead of two lines of instructions; the
+  SOUND + CONFIG peek and the Master FX door show **CLK ENTER**; an editor with
+  no parameters shows **CLK PRESETS** (or **CLK PICK**); the repeated
+  instruction lines on the NO INSTRUMENT EDITOR and WAV "No sample linked"
+  screens are gone (their footers already said it).
 - **Pop-up lists and notices sit over a dimmed page** instead of a blank one.
 - **The track's menu is TRACK CONFIG.** The menu you open from the SOUND +
   CONFIG card (or with Shift + Note/Session) is titled TRACK CONFIG, with no

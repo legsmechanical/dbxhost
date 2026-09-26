@@ -10952,8 +10952,10 @@ export function renderGatewayCard(title, line2) {
      * on any surface that reads a binding (see renderBlocks). */
     kitUseLayout('bank');
     drawKitHeader(title, false);
-    centreText(26, 'CLICK TO ENTER');
-    centreText(40, line2);
+    /* The door's NAME in the middle, the gesture in the footer (Josh,
+     * 2026-09-26, the footer audit: "agree with all recommendations"). */
+    centreText(30, line2);
+    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'ENTER']]);
 }
 
 /* The track flavour's card — both renderPrompt and the peek draw THIS, so the
@@ -10997,15 +10999,14 @@ function renderPrompt() {
 }
 
 /* The NO INSTRUMENT EDITOR screen: the bank header (track + instrument, like
- * every card), two centred lines, and a footer that names the one way on. */
+ * every card), two centred lines, and a footer that names the one way on (the
+ * old "PRESS BACK FOR / TRACK CONFIG" lines repeated it and were trimmed). */
 function renderNoEditor() {
     clear_screen();
     kitUseLayout('bank');
     drawKitBankHeader(TRACK_MENU_TITLE, null, bankHeaderRight(false));
     centreText(MV_ROW1_Y - 8, 'NO INSTRUMENT EDITOR');
     centreText(MV_ROW1_Y + 2, 'FOR ' + noEditorWords(S.track).toUpperCase());
-    centreText(MV_ROW1_Y + 14, 'PRESS BACK FOR');
-    centreText(MV_ROW1_Y + 24, TRACK_MENU_TITLE);
     fill_rect(0, MV_FOOTER_Y - 3, 128, 64 - (MV_FOOTER_Y - 3), 0);
     drawKitHintRow(MV_FOOTER_Y, [['BACK', 'MENU']]);
 }
@@ -12803,8 +12804,8 @@ function renderEdit() {
     if (S.banksDeferred) { drawKitHeaderParamPages(blockLabel(), '', false); return; }
     if (!S.banks.length) {
         drawKitHeaderParamPages(blockLabel(), '', false);
-        centreText(28, S.moduleId ? 'NO PARAMS' : 'EMPTY');
-        centreText(40, S.moduleId ? 'CLICK FOR PRESETS' : 'CLICK TO PICK');
+        centreText(30, S.moduleId ? 'NO PARAMS' : 'EMPTY');
+        drawKitHintRow(MV_FOOTER_Y, [['CLK', S.moduleId ? 'PRESETS' : 'PICK'], ['BACK', 'OUT']]);
         return;
     }
     const bank = S.banks[S.bankIdx];

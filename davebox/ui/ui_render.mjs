@@ -1954,18 +1954,19 @@ function drawUIBody() {
      * on the unconfirmed drum ALL LANES bank so holding Loop surfaces the confirm
      * screen (below) instead of the clip-length view for a gated gesture. */
     if (S.loopHeld && !(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7 && !S.allLanesConfirmed)) {
-        const _loopL2 = 'STEP BTN=by page';
-        const _loopL3 = 'JOG TURN=by step';
-        const _loopX2 = Math.floor((128 - _loopL2.length * 6) / 2);
-        const _loopX3 = Math.floor((128 - _loopL3.length * 6) / 2);
+        /* The gestures are FOOTER pills, as on every other screen (Josh,
+         * 2026-09-26: "agree with all recommendations" — the footer audit):
+         * step buttons change the length by a page, the jog by a step. The
+         * length itself sits in the middle of the screen. */
         function _drawLoopSteps(steps) {
             const _l4  = 'Steps: ' + steps + '/256';
             const _l4x = Math.floor((128 - _l4.length * 6) / 2);
             const _nvX = _l4x + 7 * 6;
             const _nvW = (_l4.length - 7) * 6;
-            fill_rect(_nvX - 1, 50, _nvW + 2, 14, 1);
-            print(_l4x, 52, 'Steps: ', 1);
-            print(_nvX, 52, steps + '/256', 0);
+            fill_rect(_nvX - 1, 28, _nvW + 2, 14, 1);
+            print(_l4x, 30, 'Steps: ', 1);
+            print(_nvX, 30, steps + '/256', 0);
+            drawKitHintRow(MV_FOOTER_Y, [['STEP', 'PAGE'], ['JOG', 'STEP']]);
         }
         if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
             const t   = S.activeTrack;
@@ -1978,16 +1979,12 @@ function drawUIBody() {
                 print(Math.floor((128 - 11 * 6) / 2), 4, 'Lane length', 1);
             }
             fill_rect(0, 15, 128, 1, 1);
-            print(_loopX2, 22, _loopL2, 1);
-            print(_loopX3, 34, _loopL3, 1);
             _drawLoopSteps(len);
         } else {
             const ac_l    = effectiveClip(S.activeTrack);
             const steps_l = S.clipLength[S.activeTrack][ac_l];
             print(Math.floor((128 - 11 * 6) / 2), 4, 'Clip Length', 1);
             fill_rect(0, 15, 128, 1, 1);
-            print(_loopX2, 22, _loopL2, 1);
-            print(_loopX3, 34, _loopL3, 1);
             _drawLoopSteps(steps_l);
         }
         return;
