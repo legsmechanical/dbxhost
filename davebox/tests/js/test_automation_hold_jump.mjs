@@ -210,7 +210,7 @@ step('Clock Feedback lives on DELAY\'s ALT page: the jump shows it, and release 
     assert(S.activeBank === BANK_AUTOMATION && S.altMode === false, 'alt restored to off');
 });
 
-step('a module lane has no editor in v1: NO EDITOR, and the bank stays', () => {
+step('a module lane whose module is not loaded: no jump, and the bank stays', () => {
     jog(2); ticks(2);                                    /* Clock Fb → Level → the module lane */
     assert(S.autoCycle.target === '0:synth:cutoff', 'cursor on the module lane');
     note(STEP(6), 127); ticks(3);

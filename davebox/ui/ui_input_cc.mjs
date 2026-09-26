@@ -53,7 +53,8 @@ import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
 import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen,
-         autoBankJumpTarget, autoBankRestoreMenu, autoCyclePageStep } from './ui_automation_bank.mjs';
+         autoBankJumpTarget, autoBankRestoreMenu, autoCyclePageStep,
+         autoLanePinJump, autoLanePinClear, laneHome } from './ui_automation_bank.mjs';
 import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAfterNotes,
          automationCaptureClear, automationClearBanksQueued } from './ui_automation.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
@@ -1380,6 +1381,7 @@ export function applyBankPick(rest) {
     S.bankPickerSel = -1;
     if (idx < 0 || idx >= cyc.length) return;
     const next = cyc[idx];
+    autoLanePinClear();                /* a bank chosen by hand ends a lane jump's pin */
     /* SOUND + CONFIG and MACROS are banks like any other (2026-09-24): recorded
      * and saved the moment the walk lands, exactly as below. Their screens are
      * sound mode's, so a closed mode is queued to open on the next tick (entry
@@ -1439,6 +1441,7 @@ function autoLaneJump() {
          * Stamped with the SAME return crumb Shift+Note's hold uses, plus the
          * lane: soundGestureReturn brings you back into the menu. */
         S.genReturn = { track: t, wasActive: false, view: -1, latched: true, autoSel: j.sel };
+        autoLanePinJump(tgt, 'sound', -1);   /* the steps keep the lane until the crumb is spent */
         /* Recorded where it lands, like the davebox-bank jump below (2026-09-24). */
         if (soundOpen()) soundExit();
         S.activeBank = macros ? BANK_MACROS : BANK_SOUND;
@@ -1456,6 +1459,7 @@ function autoLaneJump() {
         /* A davebox bank is not sound mode: it gets its own one-shot crumb,
          * spent by the next track-view Back (see _handleBack). */
         S.autoReturn = { track: t, bank: st.bank, sel: j.sel };
+        autoLanePinJump(tgt, 'auto', st.bank);   /* before the reset forgets the lane's page */
         autoBankReset();
         S.activeBank = st.bank;
         S.trackActiveBank[t] = st.bank;
@@ -1464,14 +1468,11 @@ function autoLaneJump() {
         armBankDisplay();
         return;
     }
-    const i = tgt.indexOf(':');
-    const slot = parseInt(tgt.slice(0, i), 10);
-    const rest = tgt.slice(i + 1);
-    const k = rest.lastIndexOf(':');                /* a key has no colon; a comp may (move_fx:1:fx1) */
-    const comp = k < 0 ? rest : rest.slice(0, k), key = k < 0 ? '' : rest.slice(k + 1);
-    if (i < 0 || !isFinite(slot) || slot !== t) { showActionPopup('NO EDITOR'); return; }
-    if (comp === 'slot' || comp.indexOf('move_fx') === 0) { soundCard(false); return; }
-    if (!soundJumpToParam(t, comp, key, j.sel)) showActionPopup('NOT LOADED');
+    const home = laneHome(tgt, t);
+    if (!home) { showActionPopup('NO EDITOR'); return; }
+    if (home.kind === 'level') { soundCard(false); return; }
+    if (soundJumpToParam(t, home.comp, home.key, j.sel)) autoLanePinJump(tgt, 'sound', -1);
+    else showActionPopup('NOT LOADED');
 }
 
 /* ⭑ THE SHIFT EDGE HAS ONE OWNER.
@@ -4875,6 +4876,8 @@ function _switchViewCleanup() {
      * returnToOverview, plus soundExit in ui_sound.mjs. */
     macroClearConfirmReset();
     autoBankReset();
+    autoLanePinClear();
+    S.autoReturn = null;           /* a lane jump's Back crumb does not survive a view switch */
     stepRecExit();
     standDownBankDisplay(true);
     S.heldStepBtn        = -1;

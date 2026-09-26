@@ -29,7 +29,8 @@
  * (one chain_params read per component, ever). */
 
 import { S, noteUndoUnit, armBankDisplay } from './ui_state.mjs';
-import { BANK_AUTOMATION, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS } from './ui_constants.mjs';
+import { BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS } from './ui_constants.mjs';
+import { soundOpen, soundExit, soundJumpToParam } from './ui_sound.mjs';
 import { readBankParams } from './ui_dsp_bridge.mjs';
 import { effectiveClip } from './ui_leds.mjs';
 import { automationEntriesFor, automationTargetLabel, automationClearKey,
@@ -41,6 +42,7 @@ import { drawKitList, drawKitStackedList, drawKitBackdropDim, drawKitHintRow,
          drawBrackets, kitUseLayout, MV_FOOTER_Y } from './ui_movy.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
+import { moveBusForChannel } from './ui_engine.mjs';
 
 const LIST_TOP = 11;                 /* the kit list's own default */
 
@@ -73,6 +75,9 @@ export function autoBankRestoreMenu(sel) {
     a.menu = true; a.ops = null;
     a.loopEdit = false; a.rateEdit = false; a.scaleEdit = false;
     a.sel = Math.max(0, sel | 0);
+    /* Back from a jump: the menu takes the lane over again, on the page the
+     * pin was showing (cycleTarget still names it, so the row keeps it). */
+    lanePin = null;
 }
 
 /* The rows: every entry of the current clip (sorted by label so the list is
@@ -479,19 +484,112 @@ function syncPaView(t, c, target) {
  *   - the step row keeps the lane's cycle (S.autoCycle is held from the stash);
  *   - v1 covers davebox's own parameters (seq: targets, alt page included);
  *     any other target pops NO EDITOR and the hold stays an automation hold. */
+/* ⭐ THE LANE PIN (Josh, 2026-09-25: after a Shift + click jump the steps
+ * keep showing the lane until Back — "this should work on any automated
+ * param"). The jump leaves the AUTOMATION bank (a davebox bank, SOUND+CFG,
+ * MACROS) or opens an editor over it; the pin keeps the step row on the lane
+ * you jumped from — its cycle, page, colours and playhead — so a held step
+ * edits that step with the destination's knob. It lives only while the jump's
+ * own return crumb does: Back (autoBankRestoreMenu), any other way out of the
+ * destination, a track or clip change, Session view, co-run, or the lane
+ * being deleted ends it. */
+let lanePin = null;             /* { t, c, target, page, crumb: 'auto'|'sound', bank } */
+export function autoLanePinActive() { return !!lanePin; }
+export function autoLanePinClear() { lanePin = null; }
+export function autoLanePinJump(target, crumb, bank) {
+    const t = S.activeTrack, c = effectiveClip(t), a = st();
+    const page = (a.cycleTarget === target && a.cycleTrack === t && a.cycleClip === c) ? (a.cyclePage | 0) : 0;
+    lanePin = { t, c, target, page, crumb, bank };
+}
+function lanePinAlive(p) {
+    if (S.activeTrack !== p.t || effectiveClip(p.t) !== p.c || S.sessionView || S.moveCoRunTrack >= 0) return false;
+    /* The jump's return crumb: a davebox bank keeps S.autoReturn until a
+     * track-view Back spends it; sound mode keeps genReturn (with the lane's
+     * row) until it exits by any path. */
+    if (p.crumb === 'auto') return !!S.autoReturn && S.activeBank === p.bank;
+    return !!(S.genReturn && S.genReturn.autoSel != null);
+}
+/* True when the pin fed the step row this tick. */
+function lanePinTick() {
+    const p = lanePin;
+    if (!lanePinAlive(p)) { lanePin = null; return false; }
+    const a = st();
+    if (a.cycleTarget !== p.target || a.cycleTrack !== p.t || a.cycleClip !== p.c) {
+        a.cycleTarget = p.target; a.cycleTrack = p.t; a.cycleClip = p.c; a.cyclePage = p.page;
+    }
+    updateAutoCycle(p.t, p.c, p.target);
+    if (!S.autoCycle) { lanePin = null; return false; }     /* the lane is gone */
+    p.page = S.autoCycle.page;
+    syncPaView(p.t, p.c, p.target);
+    autoLaneValsTick(p.t, p.c, p.target);
+    feedLit(p.t, p.c, p.target);
+    return true;
+}
+
 let holdJump = null;
+/* ⭐ WHERE A LANE IS EDITED — one answer for both jumps (Shift + click and
+ * the hold). { kind, comp, key } or null (not this track's, or nowhere):
+ *   seq     a davebox bank knob (SEQ_AUTO_TARGETS)
+ *   midi    a MIDI target: MACROS
+ *   level   the track's levels (`<slot>:slot:*`) or its Move bus's
+ *           (`0:move_fx:N:*`): SOUND+CFG
+ *   module  a chain component's parameter: its editor
+ *   busfx   a Move bus insert's parameter (`0:move_fx:N:fxK:key`): its editor
+ * ⚠ A Move bus lane is on slot 0 whatever the track (move_fx keys ignore the
+ * slot), so it belongs to the track by its BUS, not its slot. */
+export function laneHome(tgt, t) {
+    tgt = String(tgt);
+    if (midiTargetIsMidi(tgt)) return { kind: 'midi' };
+    if (tgt.indexOf('seq:') === 0) return SEQ_AUTO_TARGETS[tgt.split(':')[2]] ? { kind: 'seq' } : null;
+    const i = tgt.indexOf(':');
+    if (i < 0) return null;
+    const slot = parseInt(tgt.slice(0, i), 10);
+    const rest = tgt.slice(i + 1), k = rest.lastIndexOf(':');
+    if (!isFinite(slot) || k <= 0) return null;
+    const comp = rest.slice(0, k), key = rest.slice(k + 1);
+    const mb = /^move_fx:(\d+)(:fx\d+)?$/.exec(comp);
+    if (mb) {
+        if (S.trackRoute[t] !== 1 || moveBusForChannel(S.trackChannel[t]) !== parseInt(mb[1], 10)) return null;
+        return { kind: mb[2] ? 'busfx' : 'level', comp, key };
+    }
+    if (slot !== schSlotForTrack(t)) return null;
+    if (comp === 'slot') return { kind: 'level', comp, key };
+    if (comp.indexOf('send_fx') === 0 || comp.indexOf('bus') === 0) return null;
+    return { kind: 'module', comp, key };
+}
 export function autoHoldJumpActive() { return !!holdJump; }
 export function autoHoldJumpStep() { return holdJump ? holdJump.step : -1; }
 export function autoHoldJumpBegin(absStep) {
-    if (holdJump || !autoBankIsActive() || !S.bankCardLatched) return false;
+    if (holdJump || lanePin || !autoBankIsActive() || !S.bankCardLatched) return false;
     const cy = S.autoCycle, m = S.autoBankLit;
     if (!cy || cy.t !== S.activeTrack || !m || m.charCodeAt(absStep) !== 49) return false;
     const tgt = String(cy.target);
     const sat = tgt.indexOf('seq:') === 0 ? SEQ_AUTO_TARGETS[tgt.split(':')[2]] : null;
-    if (!sat) { showActionPopup('NO EDITOR'); return false; }
+    const home = sat ? null : laneHome(tgt, cy.t);
+    const sb = !home ? -1 : home.kind === 'midi' ? BANK_MACROS : home.kind === 'level' ? BANK_SOUND : -1;
+    const mp = (home && (home.kind === 'module' || home.kind === 'busfx')) ? home : null;
+    if (!sat && sb < 0 && !mp) { showActionPopup('NO EDITOR'); return false; }
     const a = st();
-    holdJump = { track: cy.t, clip: cy.c, bank: sat.bank, altWas: !!S.altMode, sel: a.sel,
+    if (mp) {
+        /* A module parameter: its editor, on the page holding the key, for as
+         * long as the step is held. The bank stays AUTOMATION underneath (an
+         * editor is not a bank), so release only has to close the editor. */
+        if (!soundJumpToParam(cy.t, mp.comp, mp.key, a.sel)) { showActionPopup('NOT LOADED'); return false; }
+        holdJump = { track: cy.t, clip: cy.c, bank: BANK_AUTOMATION, sound: true, altWas: !!S.altMode, sel: a.sel,
+                     opsSel: a.ops ? a.ops.sel : -1, cycle: Object.assign({}, cy), step: absStep };
+        return true;
+    }
+    holdJump = { track: cy.t, clip: cy.c, bank: sat ? sat.bank : sb, sound: !sat, altWas: !!S.altMode, sel: a.sel,
                  opsSel: a.ops ? a.ops.sel : -1, cycle: Object.assign({}, cy), step: absStep };
+    if (!sat) {
+        /* A level (SOUND+CFG) or a MIDI target (MACROS): the sound bank for as
+         * long as the step is held, through the ordinary deferred entry (the
+         * tick opens it). The track's remembered bank is NOT moved. */
+        S.activeBank = sb;
+        S.pendingSoundEnterTrack = cy.t;
+        armBankDisplay();
+        return true;
+    }
     S.activeBank = sat.bank;
     S.altMode = !!sat.alt;
     /* Render drops alt mode on ANY bank change (its diff guard, ui_render):
@@ -510,6 +608,13 @@ export function autoHoldJumpEnd() {
     const j = holdJump;
     if (!j) return;
     holdJump = null;
+    if (j.sound) {
+        /* Close the sound bank's screen BEFORE the bank goes back: the tick's
+         * reconcile only agrees with a resting sound mode while the bank is a
+         * sound bank. A release inside the entry tick cancels the entry. */
+        if (S.pendingSoundEnterTrack === j.track) S.pendingSoundEnterTrack = -1;
+        if (soundOpen()) soundExit();
+    }
     if (S.activeTrack === j.track && S.activeBank === j.bank) {
         S.activeBank = BANK_AUTOMATION;
         S.altMode = j.altWas;
@@ -541,6 +646,7 @@ export function autoBankTick() {
         S.autoLaneVals = vk ? (vk.get(holdJump.cycle.target) || null) : null;
         return;
     }
+    if (lanePin && lanePinTick()) return;
     if (!autoBankIsActive() || !S.bankCardLatched || S.moveCoRunTrack >= 0) {
         if (viewSent) syncPaView(viewSent.t, 0, null);
         return;
@@ -555,6 +661,12 @@ export function autoBankTick() {
     if (target === null) { if (S.autoBank) S.autoBank.cycleTarget = null; return; }
     updateAutoCycle(t, c, target);
     if (S.autoCycle) autoLaneValsTick(t, c, target);
+    feedLit(t, c, target);
+}
+
+/* The lane's points (the step row's '1' map), read once per list generation
+ * and on a slow retry after a failed read. */
+function feedLit(t, c, target) {
     const key = t + ' ' + c + ' ' + automationListGen();
     if (litCache.key !== key) {
         /* A failed read (null) is not "no steps": keep the old map off the
@@ -597,7 +709,7 @@ function updateAutoCycle(t, c, target) {
  * page to, and the pad's grid is not what is on the buttons). */
 export function autoCyclePageStep(delta) {
     const cy = S.autoCycle;
-    if (!cy || cy.t !== S.activeTrack || !autoBankIsActive()) return false;
+    if (!cy || cy.t !== S.activeTrack || !(autoBankIsActive() || lanePin)) return false;
     const a = st();
     a.cyclePage = Math.max(0, Math.min(cy.pages - 1, (a.cyclePage | 0) + (delta < 0 ? -1 : 1)));
     cy.page = a.cyclePage;
