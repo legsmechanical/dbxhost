@@ -434,11 +434,14 @@ export function updateStepLEDs() {
      * gesture should show the note tail like it shows when holding a note step
      * as you're creating the tie"). A tie of N steps writes a gate that sounds
      * on exactly N steps (_srGateFor), so the span is S.stepRecChordLen. The
-     * cursor sits one past the tail and keeps its blink. */
+     * cursor sits one past the tail and keeps its blink. The note's OWN step
+     * stays an ordinary active step; only the steps after it are tail (Josh,
+     * 2026-09-26: "the initial note on should look like all the other active
+     * step indicators with only the subsequent steps having the tail color"). */
     if (S.stepRecActive && S.stepRecHeld.size > 0 && S.stepRecWroteStep >= 0) {
         for (let i = 0; i < 16; i++) {
             const offset = base + i - S.stepRecWroteStep;
-            if (offset >= 0 && offset < S.stepRecChordLen) setLED(16 + i, 56);
+            if (offset >= 1 && offset < S.stepRecChordLen) setLED(16 + i, 56);
         }
     }
 
