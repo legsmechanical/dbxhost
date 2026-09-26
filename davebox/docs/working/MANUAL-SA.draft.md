@@ -241,40 +241,11 @@ Changing Key or Scale offers to move your existing notes with it — see
 
 ## 3.1 The controls
 
-While dAVEBOx is open, Move's controls map like this:
+<img src="img/move-controls.svg" alt="Move's top panel, labelled with what each control does in dAVEBOx">
 
-```
-   ┌─────────────────────────────────────────┐
-   │              OLED screen                │   Volume
-   └─────────────────────────────────────────┘
-
-  Jog     ①   ②   ③   ④   ⑤   ⑥   ⑦   ⑧      ← eight knobs
-
-       ┌──┐   ┌──┬──┬──┬──┬──┬──┬──┬──┐
-       │  │   │  │  │  │  │  │  │  │  │   top row
-     4 side   ├──┼──┼──┼──┼──┼──┼──┼──┤
-     buttons  │  │  │  │  │  │  │  │  │   4 × 8 pad grid
-       │  │   ├──┼──┼──┼──┼──┼──┼──┼──┤
-       └──┘   │  │  │  │  │  │  │  │  │   bottom row
-              └──┴──┴──┴──┴──┴──┴──┴──┘
-
-            [ 1][ 2][ 3][ 4] … [13][14][15][16]   ← 16 step buttons
-```
-
-| Control | Role |
-|---|---|
-| **Knobs 1–8** | Adjust the active bank's parameters. |
-| **Jog** | Turn to cycle parameter banks and scroll lists. |
-| **Volume** | Master output level. **Shift+Volume**: active track's volume. |
-| **Pad grid** | Plays notes and drum lanes, or shows the clip grid. |
-| **Side buttons** | Track View: launch or stop the active track's clips (**Shift** + top / bottom scrolls the clips shown). Session View: launch that row. |
-| **Step buttons 1–16** | Show the active clip's steps, or launch scenes. |
-
-The **named buttons** — Play, Record, Loop, Mute, Delete, Copy, Capture, Sample,
-Undo, Back, Note/Session, Shift, +/−, and the arrows — each have their own job and
-double as *modifiers* when held with another control, written "**Modifier + X**"
-(e.g. **Shift + Note/Session**). Every gesture is listed in the
-[Quick Reference](#19-quick-reference).
+- The named buttons each have their own job, and double as *modifiers* when held with
+  another control. A held combination is written **Shift + Note/Session**.
+- Every gesture is listed in the [Quick Reference](#19-quick-reference).
 
 ## 3.2 Transport
 
