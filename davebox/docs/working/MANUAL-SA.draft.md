@@ -891,7 +891,7 @@ those); the rest only change how the clip plays.
 
 | Gesture | Result |
 |---|---|
-| **Delete + jog click** | Reset every parameter in the active bank (not ALL LANES, STEP, or the Conductor's RESPONDER, OCTAVE and WHEN). One-shot actions (Stretch, Shift, Legato) hold no value, so they are left alone. On a drum track while Note Repeat is on, it resets the selected lane's groove instead |
+| **Delete + jog click** | Reset every parameter in the active bank (not ALL LANES, STEP, or the Conductor's RESPONDER, OCTAVE and WHEN). One-shot actions (Stretch, Shift, Legato) hold no value, so they are left alone. On a drum track's RPT GROOVE bank — or on any bank while Note Repeat is on — it resets the selected lane's groove |
 | **Delete + jog click** on **MACROS** | Unassign all eight macros on the track. **Asks first** — jog to choose, click to answer. Values and automation are left alone |
 | **Shift + Delete + jog click** | Reset the whole MIDI effect chain — NOTE FX, HARMONY, DELAY and SEQ ARP |
 | **Shift + Delete + side button** | Reset the whole clip — notes and all parameters |
@@ -1132,7 +1132,7 @@ off with the last style.
 |---|---|---|
 | 1–8 | **Velocity** per gate step — `Thru` (the pad's own velocity) or a value 1–127 | **Nudge** per gate step (±50 % of the step) |
 
-**Delete + jog click**, while a repeat mode is on, resets the selected lane's groove.
+**Delete + jog click** resets the selected lane's groove, whether or not a repeat mode is on.
 
 ---
 
