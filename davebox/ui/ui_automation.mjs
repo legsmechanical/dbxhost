@@ -563,13 +563,32 @@ function componentMeta(slot, comp) {
     return m;
 }
 
+/* One parameter's metadata. A REPEATED element's key (DR32's
+ * `pad3_transpose`, minijv's `sram_part_0_partlevel`) is not in chain_params,
+ * which publishes the BARE key (`transpose`) — see childSpec in ui_discover.
+ * Missing that turned an int -48..48 into a 0..1 float, so a recorded
+ * Transpose played back as 0 or 1 semitone (device, 2026-09-25). The exact
+ * key wins; otherwise the longest bare key the full key ends with, after an
+ * "_" and an element index. */
+function paramMeta(slot, comp, key) {
+    const m = componentMeta(slot, comp);
+    if (m[key]) return m[key];
+    let best = '';
+    for (const k in m) {
+        const cut = key.length - k.length - 1;
+        if (cut > 0 && k.length > best.length && key.charCodeAt(cut) === 95 /* _ */ &&
+                key.endsWith(k) && /\d/.test(key.slice(0, cut))) best = k;
+    }
+    return best ? m[best] : undefined;
+}
+
 /* 14-bit normalized -> the string the parameter actually takes.
  *
  * The DSP stores automation normalized because only JS has the metadata that
  * says what a parameter's units are; this is where that knowledge is applied. */
 function wireValue(slot, comp, key, norm) {
     const t = Math.max(0, Math.min(16383, norm)) / 16383;
-    const p = componentMeta(slot, comp)[key];
+    const p = paramMeta(slot, comp, key);
     if (!p) return String(Math.round(t * 100) / 100);      /* assume 0..1 */
 
     if (p.type === 'enum' && Array.isArray(p.options) && p.options.length) {
@@ -907,7 +926,7 @@ function queueSet(key, val, coalesce) {
 
 /* The parameter's wire string -> 14-bit normalized. The inverse of wireValue. */
 function normValue(slot, comp, key, wire) {
-    const p = componentMeta(slot, comp)[key];
+    const p = paramMeta(slot, comp, key);
     let v = parseFloat(wire);
     if (isNaN(v)) v = 0;
     let t;
@@ -1126,7 +1145,7 @@ export function automationClearStep(track, clip, step) {
 export function automationSmoothable(slot, fullKey) {
     if (slot === 'midi' || midiTargetIsMidi(fullKey)) return true;   /* a controller sweep ramps */
     const [comp, key] = splitFullKey(fullKey);
-    const p = componentMeta(slot, comp)[key];
+    const p = paramMeta(slot, comp, key);
     /* Every NUMERIC parameter ramps (device, 2026-09-05: "smooth option is
      * missing" — the tested synth declares cutoff as an int 0..127, and the
      * row was floats-only). The lane interpolates in its own 14-bit domain and
@@ -1259,7 +1278,7 @@ export function automationBipolarCenter(target) {
     const key  = m[m.length - 1];
     if (isNaN(slot)) return null;
     if (key === 'pan' && isLevelComponent(comp)) return normValue(slot, comp, key, '0.5');
-    const p = componentMeta(slot, comp)[key];
+    const p = paramMeta(slot, comp, key);
     if (!p) return null;
     if (typeof p.center === 'number') return normValue(slot, comp, key, String(p.center));
     if (typeof p.min === 'number' && typeof p.max === 'number' && p.min < 0 && p.max > 0)
