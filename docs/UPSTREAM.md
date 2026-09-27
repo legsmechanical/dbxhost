@@ -41,8 +41,8 @@ whole discipline — a **watermark** plus a short table, replacing the 11-patch 
 
 | | |
 |---|---|
-| **Last upstream commit reviewed** | `35260e0b` — *docs: a standalone tool is one file from being a boot target, and `exec` is the wrong file (#510)*, 2026-09-13 |
-| **Reviewed on** | 2026-09-14 (`8e1d99f4`..`upstream/main`, 23 commits) |
+| **Last upstream commit reviewed** | `66e5a854` — *release: 1.5.0 (#548)*, 2026-09-27 (tag `v1.5.0`) |
+| **Reviewed on** | 2026-09-27 (`35260e0b`..`v1.5.0`, 226 commits) — several ports are OWED, see that window |
 | **Merge base** | `a46f32b2` — *Merge pull request #179: bump host to 0.11.6*, 2026-07-19 |
 
 To advance it:
@@ -86,6 +86,98 @@ one: it says the commit was seen and the decision is owed. What is not allowed i
 fork splits the shadow UI differently from upstream — there is no `shadow_ui_global_grid.mjs`
 here, and the settings live in `shadow_ui_settings.mjs` — so "upstream's file is absent" says
 nothing about the capability. Rows below that rest on a filename alone are marked as such.
+
+### Reviewed 2026-09-27 — `35260e0b` → `v1.5.0` (226 commits, 13 of them merges)
+
+Every commit in the window has a row (checked by script: 226 hashes, 226 listed). Read from code
+only — nothing here was measured on the device. "Port owed before release" means the port is
+required before dAVEBOx's first release and has **not** been done yet; when it lands, the row
+changes to "Ported" with the commit.
+
+| Upstream | What | Decision |
+|---|---|---|
+| `d15112fa` #545 | Envelope viz `mode` role: the picture draws A-H-D or A-S-R as the voice plays it | **Port owed before release.** `viz_draw.mjs` `drawEnvelope` ignores the role (`viz.mjs:245` carries it), so DR32 0.4.0 (which declares it, `span:false`) draws A-H-D in A-S-R mode in dAVEBOx's module editor. Applies cleanly. |
+| `dff2624a` #515 | Line In slot parked on silence (heard as a gate); `requires_continuous_processing` for generators, implied by `consumes_line_input`; `json_get_flag_in_section` | **Port owed before release, hand-apply** — the render here is split into `shadow_render_slot_task`. Also fixes a bug that is ours independently: the FX loader reads `requires_continuous_processing` with `json_get_int_in_section` (`chain_host.c:363`), so the documented spelling `true` reads as 0 and every FX declaring it (rrverb10, echidna-fx, monomodule-fx) is parked on silence. Take it WITH #547. |
+| `9e1839c0` #547 | Resample bridge writes AUDIO_IN last, so a Line In slot never reads its own mix | **Port owed before release, hand-apply** (bridge at `schwung_shim.c:7668` runs before the slot render). `audio_in_restore.h` does not exist here — drop that hunk. ⚠ Read from code, unverified on device: the overtake AUDIO_IN restore runs every frame of an overtake session and overwrites the bridge, so Resample-on-Mix may record the jack during a dAVEBOx session; moving the call fixes that too. Independent of #500. |
+| `988ed244`, `bb0b2a6e`, `839e0f5c` | Outbound UI MIDI: a one-writer/one-reader ring (`ui_midi_out_ring.h`); a message is written whole or refused whole; outbound length must be a multiple of 4; inbound damaged SysEx dropped whole | **Port owed before release (the outbound half).** Live race here: `shadow_midi.c:541-550` reads `write_idx`, copies, then zeroes and memsets while `shadow_ui` (another process) may be appending — a packet JS was told was sent is erased; `js_shadow_midi_send` writes a prefix and drops the tail. Carries LEDs, palette SysEx and raw external CC/pitch bend. ⚠ Keep this fork's 64-byte cable-0 headroom (`shadow_midi_out_admits`). The inbound half of `839e0f5c` is N/A (no inbound SysEx parser in dAVEBOx). |
+| `c1a172cb`, `6eea5aee`, `c5fda6f0`, `c0aa518e`, `a0371068`, `351e7d90`, `cce06c58`, `54f989d0`, `8be965a0`, `82943c5f`, `259989dd`, `d08f03d0`, `a1697424`, `d7af52e2`, `3aa95b3c`, `b230987d`, `77005ad9` | The outbound MIDI **carry** (`ui_midi_out_carry.h`) and its follow-ups: overflow is delayed not destroyed, paced placement, whole-message placement, last frame's own packets cleared, one drain per frame, counters, cable-2 SysEx retry; build derives shim header deps | **Port owed before release, as the `v1.5.0` END STATE, not commit by commit** — intermediate states carry bugs (`259989dd` without `b230987d` + `77005ad9` wipes whole messages). Needs **#364 `4b591964`** (2026-08-31), which predates the previous watermark and was never taken or listed — a ledger gap found by this pass. Here `shadow_midi.c:579` stops at the first packet that does not fit the mailbox and the rest of the batch is lost silently. Decide `MSG_RETRIES` explicitly. `d7af52e2`'s build half is already here more broadly (`scripts/build.sh:191`). |
+| `1dfd31f5` | Shim → shadow_ui MIDI delivered in arrival order (both sides walk a ring) | **Port owed before release.** Lowest-free-slot producer + index-order consumer reorder a burst of pad/button/knob/external MIDI reaching dAVEBOx. ⚠ The fork-only knob-detent reserve (`shadow_ui_midi_policy.h`) is index-based and must be redone for a ring cursor. |
+| `7776fa11` #519 | param_pages: skip the re-plan when the contract is byte-identical | **Port owed before release, hand-merge** (`page_controller.mjs:1106`/`:1171`). Each wasted reload is ≈65 ms on a large module on the preset/selection settle path of dAVEBOx's module editor. |
+| `ae715afc` #511 | viz: LP>HP drawn as two corners; LFO shapes EXP DN/UP, SQU UP/DN, RAMP DN | **Port owed before release.** Applies cleanly. Without it those names draw as a sine and LP>HP as a band-pass in dAVEBOx's editor. |
+| `6f696f63` #530 | `touch_observe` (knob/jog touch edges to the synth, MIDI source 5); fullscreen canvas `extra_keys` + `fullscreen_live_ms` + `onValues` | **Split.** `onValues`/`fullscreen_live_ms`: **port owed before release** into dAVEBOx's canvas dive (`davebox/ui/ui_canvas.mjs`) — upstream's MODULES.md now sends meter/playhead authors to it, and a canvas relying on it freezes here. Do NOT take the draw-path ctx strip (`DRAW_PATH_HOOKS`); older read-in-draw modules rely on it here. `touch_observe`: **not taken** — no module in the fleet declares it, and whether touches should reach a synth while dAVEBOx owns the knobs is a product decision. |
+| `e63dc2a0` #542 | A held step's lock value drives the graphic, not the live value | **Optional.** Clean apply; not triggerable in dAVEBOx today (its lane-focus decoration never lands in `modValues`). |
+| `407d3041` #540 | Slot mute/solo follows Move's track, live and from `Song.abl` at boot/set load | **Not taken.** Every dAVEBOx project keeps Move's mixer neutral, so the Song.abl sync would force every slot unmuted/unsoloed on every load and wipe dAVEBOx's own slot Mute/Solo. The live half is inert in overtake. If ever taken, it must skip dbx-host sessions. |
+| `d72a3cf8` | Solo is additive (several slots soloed) | **Not taken — a product decision.** Here solo is exclusive by design (`shadow_chain_set_solo`, `shadow_recount_solo`), across chain slots AND Move FX buses; a port adapts both families. |
+| `54818013`, `d851b9d0` | Slot pan: stereo balance −1..+1, equal-power | **Already here, DIVERGENT — never cherry-pick.** This fork has `slot:pan` as 0..1 with a linear balance (`shadow_chain_mgmt.h:320-327`), used by dAVEBOx. Same key, different range: a cherry-pick would misread every saved pan. The curve is a separate question. |
+| `d396d36d`, `e2b67735`, `3b721d0e` | Empty/inactive slot drains its own sends and follows its fader in the Move passthrough; E16 web mirror | **N/A** — this fork has no empty-slot passthrough; Move tracks go to their own Move FX bus with its own level/sends. The rest is E16. |
+| `23cb8aad`, `61bc4064` | Master filter: one knob, LP left / HP right, off at centre; `M_PI` for strict C | **Not taken — future feature** (see below). Its surfaces are a host settings screen and the E16 mixer. If taken, take `61bc4064` with it (the libc trap). |
+| `1543007e` #541 | `io.isAutomated`: automated params get their own mark and `:base`/`:effective` motion | **Not taken — ours supersedes.** dAVEBOx's `isModulated` returns `"auto"`/`"auto-off"` and the library draws its own mark; this fork deliberately does NOT read `:base` for automated keys (each read is a wasted SPI round trip). |
+| `ee791b7d` #543 | Opt-ins: `turn:"absolute"`, `display:"big"`, `io.allowEnumPeek`, `anim.activity()` | **Deferred — degrades gracefully.** A module declaring them gets the pre-1.5 look and feel (any turn toggles a two-option enum). No local module declares any. `turn` is a 6-line port if one does. |
+| `37a0ac7f` #533 | Gated pages: a module's own mode chooses the page set | **Already here** (ported 2026-09-21 with its correction `07857f6e`, see "Corrections to our own PRs"). |
+| `9c4ada04` #538 | Module picker "Sort by Type" by catalog category | **Not taken — future feature** for dAVEBOx's own pickers; upstream's lands in the host picker dAVEBOx never opens. |
+| `e7376af6` #516, `e52c1c20` #517 | Remote UI: a component's panel was folded; `viz.extra_keys` reach the browser and stay live | **Not taken yet — web surface.** A #516 port must also add fx3/fx4: `schwung-manager/static/remote-ui.js` `COMPONENT_KEYS` lacks them though the Go side has them. |
+| `948e0ec6` #512, `de5268dc` #537, `57494b27` #546, `407c2250` | Manager: module web-UI link, beta channel flag, Platforms tab removed, mirror-stream write deadline | **N/A** — store/manager surfaces this fork does not carry. |
+| `0ae48972` #509, `0a2a0376` #518, `94d4642d` #523, `6977c4c6` #528, `d7974867` #526, `8d0ac976` #525, `e2c09798` #524 | Automation lanes (record a knob against Move's clip), then removed from main | **N/A.** Net effect is NOT zero upstream (clip-state diagnostics and some `param_pages` refactors stay), but none of the leftovers is here and dAVEBOx has its own automation. Merge hazard only: upstream `param_pages` patches now carry context lines this tree lacks. |
+| `43e3c3b7` #527 | `param-slow` elapsed time in signed ns (a false 71-minute accusation) | **Already here, independently** (`timespec_delta_us`, `src/host/timespec_delta.h`). |
+| `d7968fec` | Display server: free a closed page's stream slot; 3 s keepalive to stream clients | **Optional.** The E16 half is N/A; the ping loop would free a closed mirror page's slot on a static screen. |
+| `cebf6b94` | Forward the E16's two-byte CIN 6; hand JS only real SysEx bytes | **N/A** — the filter here already forwards it; dAVEBOx parses no inbound SysEx. |
+| `0baa6958` | Revert two E16 display-latency changes | **N/A** — never had them. |
+| `66e5a854` #548 | Release 1.5.0: version bump, release notes | **Skipped** — upstream release tooling. This fork's `src/host/version.txt` still reads 1.1.1 (see Module compatibility). |
+| `18704e35`, `97c000fc`, `8e9ff1e8`, `387bccac`, `407de5e5`, `0cdadf31`, `d6241d18`, `67e8f4c6`, `aeaa573f`, `b6b507de`, `885ab0f0`, `2d4284eb`, `848cf89e`, `1ac394ec`, `b0ffc51d`, `ba019f99`, `cbef40b7`, `ab3e7c43`, `fd3e033f`, `e4b7a4cb`, `8c9ed98d`, `53c71222`, `a6d88277`, `9c81d797`, `857b9e70`, `bcfacb22`, `98961043`, `c211eef6`, `39f64210`, `174ef716`, `fe33c564`, `12785b59`, `533a3642`, `93111bad`, `aafc843d`, `b5aa9725`, `c36ce910`, `31109ce9`, `af76f29a`, `a9868170`, `bec50f8f`, `4825de95`, `0a89ee0e`, `e50b9e2a`, `54460263`, `14944547`, `35e976da`, `970782f0`, `23b0a107`, `893b4d90`, `8e290c08`, `90b45fee`, `8b0d3cc5`, `7ef8da3c`, `e7e1de6f`, `cc76d308`, `0c43649e`, `9b04fe2a`, `2124d2d1`, `b2de604e`, `aa78dbb5`, `96bde3a3`, `474ea939`, `05bcdacb`, `bfb2dd91`, `01a6b849`, `ca9eb35f`, `cf436fc4`, `d4cc619b`, `854afcca`, `8bdd6bac`, `27bccd08`, `5a294bf0`, `86bd7c5e`, `ef0c7108`, `4b84a8c5`, `f37366e2`, `a91f2855`, `d23f8c0a`, `4daa5d7c`, `bfaa662f`, `079ec307`, `f59c0ae4`, `04d97687`, `1ea1c2dd`, `9a258216`, `61ea9799`, `43d3643d`, `ea518191`, `5ce395bc`, `b166f1ba`, `83a742ff`, `3219e3dc`, `e8f68bd3`, `5234523f`, `03e91b52`, `cc8dd5aa`, `dae0f534`, `cd807044`, `d63f79ac`, `270d2a49`, `28b174af`, `8b124f4d`, `5a3ea8d9`, `bdf2b1d4`, `f976ea4b`, `75808a7b`, `745db506`, `5ff3e11d`, `ebbd16d5`, `77e9108f`, `7f2ff53b`, `6e3b7040`, `7aa6310e`, `55061bc0`, `24beb9f6`, `e142cf46`, `71221c21`, `44779ea5`, `df1086f6`, `4deec385`, `74742ccc`, `bac8f570`, `6b73db0c`, `ebc53bf6`, `4dbbe644`, `3525a2b1`, `5a0f3f09`, `7768cf65`, `7abb6ffa`, `edfa20df`, `ae560254`, `e9ca8ef9` (#544, #539) | OXI E16 + Faderfox EC4 as full control surfaces (Map/Knobs/Custom layouts, E16 Mixer, Follow Focus), the generic CC map (Shift+Vol+Sample learn, per-Set `controls.json`), the manager Controls page, their tests and bench tools | **Not taken — future feature** (see below). As shipped it cannot work in a dAVEBOx session: the shim gates surface input and the CC map on `!overtake_mode`, dAVEBOx replaces `onMidiMessageExternal`, and Follow Focus reads only the shadow UI's own views. The learn chord Shift+Vol+Sample is dAVEBOx's quantized-sampler chord. ~13.4k lines under `src/` touching five keep-list files. |
+| `8c58a376`, `f6d604d7`, `39893fcb`, `122ae3e8`, `e44ddaa0`, `15e03d66`, `6a287257`, `9e59e19d`, `2299d72c`, `391056c5`, `51b63b77`, `0ffd27c1`, `0c919577`, `1d8a755a`, `239cd000`, `27de536d`, `62b12ce7`, `a67bc7a5`, `460abe80`, `9f2ad5f0`, `87c6dcf6` | Catalog additions (Loopex, Trance Gate, SIMIAN, CHONK, Piano Practice, …), E16 design notes, plans and task bookkeeping | **Skipped** — catalog, docs and upstream release tooling; no `src/` change. |
+| `9b539425`, `909c2da6`, `05edf96f`, `54962b58`, `734068bf`, `37926822`, `e452a910`, `30817852`, `2fdbe7c0`, `84852783`, `715c3135`, `21368244`, `7149abb8` | Merge commits (#544 and the E16 task branches) | **No content of their own** — the commits they bring in have rows above. |
+
+**Pre-watermark gaps found by this pass** (the commit-list rule above, broken once more):
+- **#364 `4b591964`** (2026-08-31) — "SysEx out: a packet that does not fit is delayed, not
+  destroyed". Never taken, never listed; the carry port above needs it.
+- **#367 `67740e54`** — `capabilities.wants_sysex`. Absent here: a slot module that asks for SysEx
+  gets none. Only upstream's `sysex_probe` declares it. Not taken.
+
+#### Module compatibility at 1.5
+
+What a module written for Schwung 1.5 can declare or call, and what it gets here:
+
+- **ABI: unchanged.** `plugin_api_v2_t`, `audio_fx_api_v1/v2.h` and `midi_fx_api_v1.h` are
+  byte-identical to `v1.5.0`. `host_api_v1_t` changed only by comments and a `_Static_assert`.
+- **JS globals: none module-facing.** Upstream added 11 (`host_cc_claim_set`, `host_cc_learn`,
+  `host_external_surface`, `host_ui_midi_pace`, `host_ui_midi_foreign`, `host_e16_mirror`,
+  `host_step_observe`, `move_midi_cable_send`, `shadow_get_held_step`,
+  `shadow_get_held_step_is_hold`, `shadow_get_delete_held`) and removed none; all are used only by
+  upstream's own shadow UI. None exists here.
+- **Nothing crashes or refuses to load.** What misbehaves silently until the ports above land:
+  - an FX's `requires_continuous_processing: true` (ignored — parked on silence);
+  - the envelope `mode` role (wrong picture);
+  - the #511 LFO/filter names (wrong picture);
+  - a fullscreen canvas relying on `onValues` (frozen);
+  - a Line In generator (gated on silence).
+- **Degrades gracefully:** `turn`/`display:"big"`/`allowEnumPeek`/`anim.activity` (#543),
+  `ui_pages` (a surface-only fallback), `subcategory` (#538), Remote UI `extra_keys` (#517), the
+  jog touch reaching a canvas (the shim forwards touches 0–7 only).
+- **Version gating: none, by design.** dAVEBOx lists and loads any installed module whatever its
+  `min_host_version` — the only gate is stock's manager, against stock's own version. This fork's
+  `src/host/version.txt` still reads **1.1.1** and feeds the splash's "Schwung base" caption.
+- **`host_api_v1_t` tail — a named divergence.** Upstream ends in `reserved[8]` at +120 (sizeof
+  184); this fork puts `midi_send_internal_slot` at +120 and `clock_output_enabled` at +128 with no
+  reserved tail (sizeof 136). A 1.5-header module never calls reserved, so it is safe; a module
+  that copies its own 184-byte `sizeof` over-reads 48 readable bytes it never calls.
+- **Borrowed stock modules:** in this window only `sound_generators/linein/module.json` changed
+  (it now declares `requires_continuous_processing`), which this fork ignores for generators until
+  #515 is ported.
+
+#### Worth building later (not taken in this window)
+
+- **E16 / EC4 control surfaces + generic CC map (#544, #539).** Needs, at least: surface input
+  allowed through in overtake (a module opt-in, or dAVEBOx forwarding its external-MIDI handler),
+  a Follow Focus source that dAVEBOx's module editor publishes, settings rows in dAVEBOx's own
+  menu, a learn gesture that is not Shift+Vol+Sample, and the E16 Mixer mapped onto dAVEBOx's bus
+  mixer rather than slot volumes (the neutral-mixer rule). Size L.
+- **Additive solo** (`d72a3cf8`) — both solo families here would change.
+- **Master DJ filter** (`23cb8aad`) — needs a dAVEBOx control to live on.
+- **Sort by Type** (#538) in dAVEBOx's instrument picker and FX browser.
+- **`touch_observe`** (#530) — once there is a module that wants touches while dAVEBOx owns the
+  knobs.
+- **#543 opt-ins** — when a module declares them.
+- **Remote UI** #516 / #517, with fx3/fx4 added to `COMPONENT_KEYS`.
 
 ### Reviewed 2026-09-14 — `8e1d99f4` → `upstream/main` (23 commits)
 
@@ -305,8 +397,8 @@ divergences. Pieces 2 (send-FX chain editing) and 3 (the async FX load ring) are
 
 Charles corrected several of this fork's upstream PRs on the way in. Every correction to a PR
 merged through 2026-09-23 was checked against this tree by reading the code, not by a marker grep.
-The **watermark does not move** for this: the other upstream commits since `35260e0b` are still
-unreviewed.
+The watermark did not move for this; the rest of the window was reviewed on 2026-09-27 (see
+that window).
 
 | Upstream | Correction | Decision |
 |---|---|---|
