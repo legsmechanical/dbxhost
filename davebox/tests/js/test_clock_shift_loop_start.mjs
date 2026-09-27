@@ -16,7 +16,7 @@ import './_bulk_get_stub.mjs';
  * not start at step 1 (Josh: "refuse transforms when loop start isn't at one
  * and direct them to crop"; "these should require clip start at 1 too for
  * consistency"). So the late-loop steps below now assert that NOTHING is sent
- * and the LOOP NOT AT 1 / CROP FIRST notice shows; the loop-at-step-1 controls
+ * and the LOOP STARTS AFTER STEP 1 / CROP FIRST notice shows; the loop-at-step-1 controls
  * keep the mirrors pinned. Crop itself: tests/js/test_crop.mjs. */
 let failed = 0;
 const ok = (l) => console.log(`  ok   — ${l}`);
@@ -104,7 +104,7 @@ step('⭐⭐ THE GESTURE, loop at step 65: a turn either way sends nothing and s
         const fired = turnOnce(d);
         release();
         assert(fired < 0 && !sets.some((x) => /_clock_shift=/.test(x)), 'sent ' + JSON.stringify(sets));
-        assert((S.actionPopupLines || []).join(' / ') === 'LOOP NOT AT 1 / CROP FIRST',
+        assert((S.actionPopupLines || []).join(' / ') === 'LOOP STARTS AFTER / STEP 1 / CROP FIRST',
             'no notice: ' + JSON.stringify(S.actionPopupLines));
         const st = S.clipSteps[T][0];
         assert(st[70] === 1 && st[127] === 1 && st[3] === 1 && st[71] === 0 && st[64] === 0, 'the mirror moved');
@@ -203,7 +203,7 @@ step('⭐ Zoom on a loop that starts late is not sent, and says CROP FIRST', () 
     sets.length = 0; S.actionPopupLines = [];
     zoomDown();
     assert(!sets.some((x) => /_clip_resolution_zoom=/.test(x)), 'sent ' + JSON.stringify(sets));
-    assert((S.actionPopupLines || []).join(' / ') === 'LOOP NOT AT 1 / CROP FIRST', 'no notice');
+    assert((S.actionPopupLines || []).join(' / ') === 'LOOP STARTS AFTER / STEP 1 / CROP FIRST', 'no notice');
     assert(S.clipTPS[T][0] === 24 && S.clipLength[T][0] === 32 && S.clipLoopStart[T][0] === 16, 'the mirror changed');
 });
 step('CONTROL: Zoom to 1/32 at step 1 doubles the length', () => {

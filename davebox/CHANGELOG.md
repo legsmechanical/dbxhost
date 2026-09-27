@@ -263,8 +263,8 @@ the section into a versioned heading at release time.
 ### Changed (pending)
 - **Every clip transform needs the loop to start at step 1.** Shift, Nudge,
   Stretch (both ways), Legato and Zoom do nothing on a loop that starts later —
-  on ALL LANES, if any lane's does — and the screen says **LOOP NOT AT 1 / CROP
-  FIRST**. Crop puts the loop there.
+  on ALL LANES, if any lane's does — and the screen says **LOOP STARTS AFTER
+  STEP 1 / CROP FIRST**. Crop puts the loop there.
 - **ALL LANES knob 5 is Crop.** Velocity input (VelIn) is on TRACK CONFIG and
   Shift + Step 10.
 - **SOUND + CONFIG is now MIX.** It keeps the track's level knobs (or a MIDI
