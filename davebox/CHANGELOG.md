@@ -251,6 +251,9 @@ the section into a versioned heading at release time.
   already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
+- **Every project load unwraps a Dave, on its own.** Opening the project Move
+  already has loaded when dAVEBOx starts now deals one too, and it stays up at
+  least two seconds; the "PROJECT … LOADING" band over the Dave is gone.
 - **SOUND + CONFIG is now MIX.** It keeps the track's level knobs (or a MIDI
   track's controllers); its click no longer opens the menu — that is CONFIG's.
 - **The banks are in a new order, in groups.** Melodic: IN (Chord, Live Arp),

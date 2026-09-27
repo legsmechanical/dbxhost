@@ -962,7 +962,7 @@ screen('projects-copy', '17.5 Projects', 'Project picker — copy',
     () => { openProjects(); press(MoveCopy); noteOn(PAD(2), 100); noteOff(PAD(2)); ticks(2);
             if (S.projectPadPicker.copySrcIdx !== 2) throw new Error('copy not armed'); });
 screen('projects-loading', 'Open dAVEBOx', 'Loading a project',
-    'Load chosen: the project\'s name over a Dave while it opens.',
+    'Load chosen: a newly dealt Dave fills the screen while the project opens.',
     () => { openProjects(); noteOn(PAD(1), 100); noteOff(PAD(1)); ticks(2); click();
             if (!S.switchLoading) throw new Error('no loading screen'); }, { align: false });
 

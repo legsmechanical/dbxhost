@@ -267,27 +267,32 @@ export function dealDave() {
             if (seen.split('\n').indexOf(num) < 0) host_write_file(SEEN_PATH, seen + num + '\n');
         } catch (e) { /* the collection is best-effort, as on the host */ }
     }
+    S.loadDaveAt = S.clockMs;
     return idx;
 }
 
-/* The loading screen with its Dave (Josh, 2026-09-24): ONE black header in the
- * small movy face — "<PROJECT> [LOADING...]" — and the Dave filling the rest.
+/* The shortest a load's Dave stands (Josh, 2026-09-26: a Dave is unwrapped on
+ * every project load, the one whose set Move already holds included — and that
+ * load takes a moment, so without a floor its Dave would only flash). */
+export const LOAD_DAVE_MIN_MS = 2000;
+/* Once a tick: the Dave goes when its load is done AND it has stood its
+ * minimum — never while any stage of a load is still running. */
+export function loadDaveTick() {
+    if (S.loadDave === null || S.loadDave === undefined) return;
+    if (S.stateLoading || S.pendingSetLoad || S.switchLoading || S.pendingProjectSwitch) return;
+    if (S.clockMs - S.loadDaveAt < LOAD_DAVE_MIN_MS) return;
+    S.loadDave = null;
+    S.screenDirty = true;
+}
+
+/* The loading screen with its Dave: the whole Dave, nothing over it (Josh,
+ * 2026-09-26: "take "project [x] loading" overlay off the dave unwrapped on
+ * project load" — the "<PROJECT> [LOADING...]" band of 2026-09-24 is gone).
  * It is the frame the host keeps on screen while Move loads the set, so it is
- * drawn still, the whole frame from the top. A long name is trimmed; the bracketed
- * LOADING... always shows. */
-export const LOAD_BAND_H = 9;
-export function drawDaveLoading(idx, name) {
+ * drawn still, the whole frame from the top. */
+export function drawDaveLoading(idx) {
     clear_screen();
-    /* The whole Dave, where it sits; the header goes OVER its top rows rather
-     * than pushing it down (Josh, 2026-09-24). */
     blitFrameRows(idx, 0, 0, 64);
-    fill_rect(0, 0, 128, LOAD_BAND_H, 0);
-    const tag = '[LOADING...]';
-    let n = String(name || '').toUpperCase();
-    const room = 124 - mvWidth(' ' + tag);
-    while (n && mvWidth(n) > room) n = n.slice(0, -1);
-    const t = n ? n + ' ' + tag : tag;
-    mvPrint(Math.max(0, Math.floor((128 - mvWidth(t)) / 2)), 2, t, 1);
 }
 
 export function drawDaveBox() {
