@@ -179,6 +179,34 @@ step('⭐ a drum lane: Stretch x2 is not sent when its doubled loop would pass s
     S.trackPadMode[T] = C.PAD_MODE_MELODIC_SCALE;
 });
 
+/* Shift + K1 on CLIP is Zoom (keep the timing, change the steps). Resolution
+ * K1 is index 1 (1/16) here; a turn LEFT goes to index 0 (1/32). */
+const zoomDown = () => {
+    S.altMode = true;
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 0, 127]));
+    const before = sets.length;
+    for (let i = 0; i < 60 && !sets.slice(before).some((x) => /_clip_resolution_zoom=/.test(x)); i++) { cc(71, 127); ticks(1); }
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 0, 0])); ticks(1);
+    S.altMode = false;
+};
+step('⭐ Zoom to 1/32 on a loop that starts late: the loop start doubles with the length (Josh, 2026-09-26)', () => {
+    S.clipLength[T][0] = 32; S.clipLoopStart[T][0] = 16; S.clipTPS[T][0] = 24;
+    S.bankParams[T][0][0] = 1;                       /* Res = 1/16 */
+    sets.length = 0;
+    zoomDown();
+    assert(sets.includes('t' + T + '_clip_resolution_zoom=0'), 'sent ' + JSON.stringify(sets));
+    assert(S.clipTPS[T][0] === 12 && S.clipLength[T][0] === 64, 'tps/length ' + S.clipTPS[T][0] + '/' + S.clipLength[T][0]);
+    assert(S.clipLoopStart[T][0] === 32, 'the loop start did not follow: ' + S.clipLoopStart[T][0]);
+});
+step('⭐ Zoom is not sent when the scaled window would pass step 256', () => {
+    S.clipLength[T][0] = 128; S.clipLoopStart[T][0] = 100; S.clipTPS[T][0] = 24;
+    S.bankParams[T][0][0] = 1;
+    sets.length = 0;
+    zoomDown();
+    assert(!sets.some((x) => /_clip_resolution_zoom=/.test(x)), 'sent a zoom that cannot fit: ' + JSON.stringify(sets));
+    assert(S.clipLength[T][0] === 128 && S.clipLoopStart[T][0] === 100, 'the mirror changed anyway');
+});
+
 step('and nothing was swallowed into the JS error log', () => {
     assert(jsErrors === '', 'seq8-jserr.log got: ' + jsErrors.slice(0, 300));
 });

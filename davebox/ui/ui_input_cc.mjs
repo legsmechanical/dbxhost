@@ -4361,8 +4361,11 @@ function _onCC_knobs(d1, d2) {
                     if (nv !== curIdx) {
                         if (S.altMode) {
                             const newTps = TPS_VALUES[nv];
-                            const newLen = Math.ceil(S.drumLaneLength[t] * S.drumLaneTPS[t] / newTps);
-                            if (newLen > 256) {
+                            /* The loop window keeps its time (the engine's rule). */
+                            const lsTicks = (S.drumLaneLoopStart[t] | 0) * S.drumLaneTPS[t];
+                            const newLs = Math.floor(lsTicks / newTps);
+                            const newLen = Math.ceil((lsTicks + S.drumLaneLength[t] * S.drumLaneTPS[t]) / newTps) - newLs;
+                            if (newLen < 1 || newLs + newLen > 256) {
                                 showActionPopup('NOTES OUT', 'OF RANGE');
                                 forceRedraw();
                             } else if (S.heldStep >= 0) {
@@ -4370,6 +4373,7 @@ function _onCC_knobs(d1, d2) {
                             } else {
                                 S.drumLaneTPS[t]    = newTps;
                                 S.drumLaneLength[t] = newLen;
+                                S.drumLaneLoopStart[t] = newLs;
                                 S.bankParams[t][0][knobIdx] = nv;
                                 const maxPage = Math.max(0, Math.ceil(newLen / 16) - 1);
                                 if (S.drumStepPage[t] > maxPage) S.drumStepPage[t] = maxPage;
@@ -4843,9 +4847,15 @@ function _onCC_knobs(d1, d2) {
                             const _ac  = effectiveClip(_t);
                             const _old_tps = S.clipTPS[_t][_ac];
                             const _new_tps = TPS_VALUES[nv];
-                            const _old_ticks = S.clipLength[_t][_ac] * _old_tps;
-                            const _new_len = Math.ceil(_old_ticks / _new_tps);
-                            if (_new_len > 256) {
+                            /* The loop window keeps its time (Josh, 2026-09-26:
+                             * a zoom on a loop that did not start on page one
+                             * played past it) — the engine's rule, mirrored:
+                             * the start scales (back to the step before, off
+                             * the grid) and the length still reaches the old end. */
+                            const _ls_ticks = (S.clipLoopStart[_t][_ac] | 0) * _old_tps;
+                            const _new_ls = Math.floor(_ls_ticks / _new_tps);
+                            const _new_len = Math.ceil((_ls_ticks + S.clipLength[_t][_ac] * _old_tps) / _new_tps) - _new_ls;
+                            if (_new_len < 1 || _new_ls + _new_len > 256) {
                                 showActionPopup('NOTES OUT', 'OF RANGE');
                                 forceRedraw();
                             } else if (S.heldStep >= 0 || (S.recordArmed && !S.recordCountingIn && S.recordArmedTrack === _t)) {
@@ -4854,6 +4864,7 @@ function _onCC_knobs(d1, d2) {
                                 S.bankParams[S.activeTrack][bank][knobIdx] = nv;
                                 S.clipTPS[_t][_ac]    = _new_tps;
                                 S.clipLength[_t][_ac] = _new_len;
+                                S.clipLoopStart[_t][_ac] = _new_ls;
                                 const _maxPage = Math.max(0, Math.ceil(_new_len / 16) - 1);
                                 if (S.trackCurrentPage[_t] > _maxPage) S.trackCurrentPage[_t] = _maxPage;
                                 host_module_set_param('t' + _t + '_clip_resolution_zoom', String(nv));
