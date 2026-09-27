@@ -127,6 +127,12 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **A project too big to save now says so, and the limit is four times larger.**
+  A very full project could pass the save limit and silently stop saving as you
+  went. The limit is now about 1 MB, and past it a notice reads PROJECT TOO BIG /
+  SAVES ON QUIT ONLY / REMOVE SOME CLIPS (quitting or suspending still saves it in
+  full); once it fits again it saves as you go and says PROJECT SAVED. A save that fails to write (storage full) is retried and reported as
+  SAVE FAILED / CHECK STORAGE.
 - **Launching from stock's Tools menu is about four seconds quicker.** After
   Schwung's 09-26 update the launcher waited out a timeout on every launch, with
   the Tools menu still on screen and scrollable; it now moves straight on.

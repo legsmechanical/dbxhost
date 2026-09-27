@@ -357,6 +357,13 @@ edit while stopped, at the end of a recording, and whenever you suspend, quit or
 switch projects. It never saves during playback, and there's no manual save. For
 named backups, use [Save state](#173-snapshots).
 
+A project has a size limit (about 1 MB — far more than most projects use). Past
+it, dAVEBOx shows **PROJECT TOO BIG / SAVES ON QUIT ONLY / REMOVE SOME CLIPS**
+and stops saving as you go — your work is still written in full when you quit or
+suspend; remove some clips and it saves as you go again, showing **PROJECT SAVED**.
+If a save cannot be written (storage full), it shows **SAVE FAILED / CHECK
+STORAGE** and tries again.
+
 | Action | Result |
 |---|---|
 | **Shift + Back** | Save and hand the device back to official Schwung, from anywhere |
