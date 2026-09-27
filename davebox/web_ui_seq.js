@@ -224,7 +224,8 @@ function renderClipUtil(){
       `<button class="sm" id="trShR"${dis} title="Clock-shift right">⟹</button>`+
       `<button class="sm" id="trNuL"${dis} title="Nudge left">◀</button>`+
       `<button class="sm" id="trNuR"${dis} title="Nudge right">▶</button>`+
-      `<button class="sm" id="trLg"${dis} title="Legato">Legato</button></div>`+
+      `<button class="sm" id="trLg"${dis} title="Legato">Legato</button>`+
+      `<button class="sm" id="trCrop"${dis} title="Crop to loop: the loop moves to step 1 and everything outside it is removed. Shift, Nudge, Stretch, Legato and Zoom need the loop at step 1.">Crop</button></div>`+
     `<div class="hint"><b>Bake FX → notes</b> (undoable)</div>`+
     `<div class="btnrow"><label style="flex:0 0 auto;font-size:12px">×<select id="bkN" style="width:auto;padding:5px 5px"><option>1</option><option>2</option><option>4</option></select></label>`+
       `<button class="sm" id="bkWrap" title="wrap MIDI-delay tails past the clip end back to the start">Wrap</button>`+
@@ -239,7 +240,8 @@ function renderClipUtil(){
     el.querySelector("#trShR").onclick=()=>tr("clock_shift","1");
     el.querySelector("#trNuL").onclick=()=>tr("nudge","-1");
     el.querySelector("#trNuR").onclick=()=>tr("nudge","1");
-    el.querySelector("#trLg").onclick=()=>tr("lgto_apply",""); }
+    el.querySelector("#trLg").onclick=()=>tr("lgto_apply","");
+    el.querySelector("#trCrop").onclick=()=>tr("crop","1"); }
 }
 /* Drum lane utilities: transforms (per-lane = SAFE; all_lanes_* atomic when scope=All),
  * Euclidean fill, lane Clear/hard-Reset, All-Lanes double-fill, undo/redo. */
@@ -259,7 +261,8 @@ function renderLaneUtil(){
       `<button class="sm" id="laShR" title="right">⟹</button>`+
       `<button class="sm" id="laNuL" title="Nudge left">◀</button>`+
       `<button class="sm" id="laNuR" title="right">▶</button>`+
-      (allLanes?"":`<button class="sm" id="laLg" title="Legato">Legato</button>`)+`</div>`+
+      (allLanes?"":`<button class="sm" id="laLg" title="Legato">Legato</button>`)+
+      `<button class="sm" id="laCrop" title="Crop to loop${allLanes?" (every lane)":""}: the loop moves to step 1 and everything outside it is removed. Shift, Nudge, Stretch, Legato and Zoom need the loop at step 1${allLanes?" on every lane":""}.">Crop</button></div>`+
     `<div class="kv"><span>Euclidean</span><span class="stp">`+
       `<input id="euN" type="number" min="0" max="${eMax}" value="${dleu[key]}">`+
       `<button class="sm" id="euApply">Fill</button></span></div>`+
@@ -285,6 +288,7 @@ function renderLaneUtil(){
   el.querySelector("#laNuL").onclick=()=>lt("nudge","-1","all_lanes_nudge");
   el.querySelector("#laNuR").onclick=()=>lt("nudge","1","all_lanes_nudge");
   const lg=el.querySelector("#laLg"); if(lg) lg.onclick=()=>lt("lgto_apply","",null);   /* no all-lanes legato */
+  el.querySelector("#laCrop").onclick=()=>lt("crop","1","all_lanes_crop");
   el.querySelector("#euApply").onclick=()=>{ const n=Math.max(0,Math.min(eMax,+el.querySelector("#euN").value|0));
     const prev=dleu[key]||0; if(prev===n) return;
     R.setParam(P+`t${t}_l${lane}_euclid_stamp`,`${prev} ${n} 100`); dleu[key]=n; afterEdit(); pullSoon(); };

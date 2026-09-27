@@ -2575,18 +2575,23 @@ static inline uint32_t compute_effective_gate_ticks(
     return eff;
 }
 
-/* Destructive legato: for each note in `cl`, set its gate to the distance
- * between this note's tick and the next note's tick anywhere in the clip
- * (clip end for the last note). Same-tick chord notes share one gate. */
+/* Destructive legato: for each note in the loop window, set its gate to the
+ * distance between this note's tick and the next note's tick in the window
+ * (the window's end for the last note). Same-tick chord notes share one gate.
+ * Notes outside [loop_start, loop_start + length) are not played, so they are
+ * neither changed nor anyone's "next". */
 static void apply_legato_to_clip(clip_t *cl) {
     if (cl->note_count == 0) return;
     uint16_t tps = cl->ticks_per_step ? cl->ticks_per_step : (uint16_t)TICKS_PER_STEP;
-    uint32_t clip_end_tick = (uint32_t)cl->length * tps;
+    uint32_t win_start = (uint32_t)cl->loop_start * tps;
+    uint32_t win_end   = win_start + (uint32_t)cl->length * tps;
     uint16_t i, j;
     for (i = 0; i < cl->note_count; i++) {
         note_t *n = &cl->notes[i];
         if (!n->active) continue;
-        uint32_t next_tick = clip_end_tick;
+        if (n->tick < win_start || n->tick >= win_end) continue;
+        /* every candidate below lies past n->tick, so inside the window */
+        uint32_t next_tick = win_end;
         for (j = 0; j < cl->note_count; j++) {
             if (j == i) continue;
             note_t *m = &cl->notes[j];
@@ -4727,6 +4732,325 @@ static void clip_migrate_to_notes(clip_t *cl) {
                              cl->step_notes[s][ni], cl->step_vel[s]);
             if (cl->note_count >= MAX_NOTES_PER_CLIP) return;
         }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* LOOP-WINDOW TRANSFORMS                                               */
+/*                                                                      */
+/* Clock Shift, Nudge and Beat Stretch act on the steps the clip PLAYS: */
+/* [loop_start, loop_start + length). They used to index [0, length),   */
+/* so on a clip whose loop did not start at step 1 they moved notes the */
+/* clip never plays (and Beat Stretch /2 wiped the rest of the clip).   */
+/* With loop_start 0 each is exactly the old code — pinned against a    */
+/* verbatim copy in tests/test_clock_shift_loop_start.c.                */
+/* Step arrays only: callers rebuild notes[] (clip_migrate_to_notes).   */
+/* ------------------------------------------------------------------ */
+
+/* Rotate the window by one step: dir 1 = later (the last step wraps to the
+ * first), anything else = earlier. Updates clock_shift_pos and active. */
+static void clip_rotate_window(clip_t *cl, int dir) {
+    const int len = (int)cl->length;
+    const int first = (int)cl->loop_start;
+    if (len < 2 || first + len > SEQ_STEPS) return;
+    const int last = first + len - 1;
+    const size_t n = (size_t)(len - 1);
+    uint8_t tmp_s, tmp_nc, tmp_ns[8], tmp_v;
+    uint16_t tmp_g;
+    int16_t tmp_toff[8];
+    int from = dir == 1 ? last : first;    /* the step that wraps */
+    int to   = dir == 1 ? first : last;
+    int src  = dir == 1 ? first : first + 1;
+    int dst  = dir == 1 ? first + 1 : first;
+    tmp_s  = cl->steps[from];
+    memcpy(tmp_ns, cl->step_notes[from], 8);
+    tmp_nc = cl->step_note_count[from];
+    tmp_v  = cl->step_vel[from];
+    tmp_g  = cl->step_gate[from];
+    memcpy(tmp_toff, cl->note_tick_offset[from], 8 * sizeof(int16_t));
+    memmove(&cl->steps[dst],               &cl->steps[src],               n);
+    memmove(&cl->step_notes[dst][0],       &cl->step_notes[src][0],       n * 8);
+    memmove(&cl->step_note_count[dst],     &cl->step_note_count[src],     n);
+    memmove(&cl->step_vel[dst],            &cl->step_vel[src],            n);
+    memmove(&cl->step_gate[dst],           &cl->step_gate[src],           n * 2);
+    memmove(&cl->note_tick_offset[dst][0], &cl->note_tick_offset[src][0], n * 8 * sizeof(int16_t));
+    cl->steps[to]           = tmp_s;
+    memcpy(cl->step_notes[to], tmp_ns, 8);
+    cl->step_note_count[to] = tmp_nc;
+    cl->step_vel[to]        = tmp_v;
+    cl->step_gate[to]       = tmp_g;
+    memcpy(cl->note_tick_offset[to], tmp_toff, 8 * sizeof(int16_t));
+    cl->clock_shift_pos = (uint16_t)((cl->clock_shift_pos + (uint16_t)(dir == 1 ? 1 : len - 1))
+                                     % (uint16_t)len);
+    int i, any = 0;
+    for (i = first; i <= last; i++) if (cl->steps[i]) { any = 1; break; }
+    cl->active = (uint8_t)any;
+}
+
+/* Nudge every note in the window by `dir` (+1/-1) ticks. A note that crosses
+ * a step's midpoint moves to the neighbouring step, wrapping inside the
+ * window. `at_midpoint`: the drum lanes cross AT the midpoint (>=), melodic
+ * clips only PAST it (>) — two different feels, kept as they were. */
+static void clip_nudge_window(clip_t *cl, int dir, int at_midpoint) {
+    const int len = (int)cl->length;
+    const int ls  = (int)cl->loop_start;
+    if (len < 1 || ls + len > SEQ_STEPS) return;
+    int tps = (int)cl->ticks_per_step;
+    int midpoint = tps / 2;
+    /* crossing notes bounded at notes[] capacity; dst_off preserves absolute timing */
+    struct { int16_t dst, dst_off; uint8_t pitch, vel, active; uint16_t gate; } cross[512];
+    int ncross = 0;
+    int s, ni, wi;
+    for (s = ls; s < ls + len; s++) {
+        if (cl->step_note_count[s] == 0) continue;
+        wi = 0;
+        for (ni = 0; ni < (int)cl->step_note_count[s]; ni++) {
+            int new_off = (int)cl->note_tick_offset[s][ni] + dir;
+            if (at_midpoint ? new_off >= midpoint : new_off > midpoint) {
+                if (ncross < 512) {
+                    cross[ncross].dst     = (int16_t)(ls + (s - ls + 1) % len);
+                    cross[ncross].dst_off = (int16_t)(new_off - tps);
+                    cross[ncross].pitch   = cl->step_notes[s][ni];
+                    cross[ncross].vel     = cl->step_vel[s];
+                    cross[ncross].gate    = cl->step_gate[s];
+                    cross[ncross].active  = cl->steps[s];
+                    ncross++;
+                }
+            } else if (new_off < -midpoint) {
+                if (ncross < 512) {
+                    cross[ncross].dst     = (int16_t)(ls + (s - ls - 1 + len) % len);
+                    cross[ncross].dst_off = (int16_t)(new_off + tps);
+                    cross[ncross].pitch   = cl->step_notes[s][ni];
+                    cross[ncross].vel     = cl->step_vel[s];
+                    cross[ncross].gate    = cl->step_gate[s];
+                    cross[ncross].active  = cl->steps[s];
+                    ncross++;
+                }
+            } else {
+                cl->step_notes[s][wi]       = cl->step_notes[s][ni];
+                cl->note_tick_offset[s][wi] = (int16_t)new_off;
+                wi++;
+            }
+        }
+        for (ni = wi; ni < (int)cl->step_note_count[s]; ni++) {
+            cl->step_notes[s][ni]       = 0;
+            cl->note_tick_offset[s][ni] = 0;
+        }
+        cl->step_note_count[s] = (uint8_t)wi;
+        if (wi == 0) {
+            cl->steps[s]     = 0;
+            cl->step_vel[s]  = (uint8_t)SEQ_VEL;
+            cl->step_gate[s] = (uint16_t)GATE_TICKS;
+        }
+    }
+    { int ci;
+      for (ci = 0; ci < ncross; ci++) {
+        int dst = (int)cross[ci].dst;
+        if (cl->step_note_count[dst] >= 8) continue;
+        int slot = (int)cl->step_note_count[dst];
+        cl->step_notes[dst][slot]       = cross[ci].pitch;
+        cl->note_tick_offset[dst][slot] = cross[ci].dst_off;
+        if (slot == 0) {
+            cl->step_vel[dst]  = cross[ci].vel;
+            cl->step_gate[dst] = cross[ci].gate;
+        }
+        if (cross[ci].active) cl->steps[dst] = 1;
+        cl->step_note_count[dst]++;
+      }
+    }
+    { int any2 = 0;
+      for (s = ls; s < ls + len; s++) if (cl->steps[s]) { any2 = 1; break; }
+      cl->active = (uint8_t)any2;
+    }
+    cl->nudge_pos += (int16_t)dir;
+}
+
+/* Can Beat Stretch run? 1 = yes; 0 = refused (x2 would carry the window past
+ * the last step, or /2 of a 1-step window); -1 = /2 blocked because two active
+ * steps would land on one. Touches nothing. */
+static int clip_stretch_check(const clip_t *cl, int dir) {
+    const int len = (int)cl->length;
+    const int ls  = (int)cl->loop_start;
+    int i;
+    if (dir == 1) return (ls + len * 2 > SEQ_STEPS) ? 0 : 1;
+    if (len < 2 || ls + len > SEQ_STEPS) return 0;
+    uint8_t seen[SEQ_STEPS];
+    memset(seen, 0, sizeof(seen));
+    for (i = 0; i < len; i++) {
+        if (cl->steps[ls + i]) {
+            if (seen[i / 2]) return -1;
+            seen[i / 2] = 1;
+        }
+    }
+    return 1;
+}
+
+/* Beat Stretch x2 (dir 1) or /2 inside the window, anchored at loop_start.
+ * Only [loop_start, loop_start + the larger length) changes. Call only after
+ * clip_stretch_check returned 1. Updates length, stretch_exp and active. */
+static void clip_stretch_window(clip_t *cl, int dir) {
+    const int len = (int)cl->length;
+    const int ls  = (int)cl->loop_start;
+    int i, ni2;
+    /* gate cap: per-clip resolution; capped at uint16_t max for large TPS */
+    int gmax_bs = SEQ_STEPS * cl->ticks_per_step; if (gmax_bs > 65535) gmax_bs = 65535;
+    int off_clamp = cl->ticks_per_step - 1;
+    if (dir == 1) {
+        int new_len = len * 2;
+        for (i = len - 1; i >= 1; i--) {
+            int s = ls + i, d = ls + i * 2;
+            int ng = (int)cl->step_gate[s] * 2;
+            if (ng > gmax_bs) ng = gmax_bs;
+            cl->steps[d]           = cl->steps[s];
+            memcpy(cl->step_notes[d], cl->step_notes[s], 8);
+            cl->step_note_count[d] = cl->step_note_count[s];
+            cl->step_vel[d]        = cl->step_vel[s];
+            cl->step_gate[d]       = (uint16_t)ng;
+            for (ni2 = 0; ni2 < 8; ni2++) {
+                int nt = (int)cl->note_tick_offset[s][ni2] * 2;
+                if (nt > off_clamp) nt = off_clamp; else if (nt < -off_clamp) nt = -off_clamp;
+                cl->note_tick_offset[d][ni2] = (int16_t)nt;
+            }
+            cl->steps[s] = 0;
+        }
+        /* the window's first step stays; scale its gate and offsets too */
+        {
+            int ng = (int)cl->step_gate[ls] * 2;
+            if (ng > gmax_bs) ng = gmax_bs;
+            cl->step_gate[ls] = (uint16_t)ng;
+            for (ni2 = 0; ni2 < 8; ni2++) {
+                int nt = (int)cl->note_tick_offset[ls][ni2] * 2;
+                if (nt > off_clamp) nt = off_clamp; else if (nt < -off_clamp) nt = -off_clamp;
+                cl->note_tick_offset[ls][ni2] = (int16_t)nt;
+            }
+        }
+        for (i = 1; i < new_len; i += 2) {
+            int d = ls + i;
+            cl->steps[d]           = 0;
+            memset(cl->step_notes[d], 0, 8);
+            cl->step_note_count[d] = 0;
+            cl->step_vel[d]        = SEQ_VEL;
+            cl->step_gate[d]       = GATE_TICKS;
+            memset(cl->note_tick_offset[d], 0, 8 * sizeof(int16_t));
+        }
+        cl->length = (uint16_t)new_len;
+        cl->stretch_exp++;
+    } else {
+        /* Window-relative scratch: slot x is step ls + x. */
+        uint8_t  tmp_steps[SEQ_STEPS];
+        uint8_t  tmp_notes[SEQ_STEPS][8];
+        uint8_t  tmp_nc[SEQ_STEPS];
+        uint8_t  tmp_vel[SEQ_STEPS];
+        uint16_t tmp_gate[SEQ_STEPS];
+        int16_t  tmp_tick_offset[SEQ_STEPS][8];
+        for (i = 0; i < len; i++) {
+            tmp_steps[i] = 0;
+            memset(tmp_notes[i], 0, 8);
+            tmp_nc[i]   = 0;
+            tmp_vel[i]  = SEQ_VEL;
+            tmp_gate[i] = GATE_TICKS;
+            memset(tmp_tick_offset[i], 0, 8 * sizeof(int16_t));
+        }
+        /* First pass: active steps — these win any destination conflict */
+        for (i = 0; i < len; i++) {
+            int s = ls + i, d = i / 2;
+            if (cl->steps[s] && !tmp_steps[d]) {
+                int ng = ((int)cl->step_gate[s] + 1) / 2;
+                if (ng < 1) ng = 1;
+                tmp_steps[d] = 1;
+                memcpy(tmp_notes[d], cl->step_notes[s], 8);
+                tmp_nc[d]   = cl->step_note_count[s];
+                tmp_vel[d]  = cl->step_vel[s];
+                tmp_gate[d] = (uint16_t)ng;
+                for (ni2 = 0; ni2 < 8; ni2++)
+                    tmp_tick_offset[d][ni2] = (int16_t)((int)cl->note_tick_offset[s][ni2] / 2);
+            }
+        }
+        /* Second pass: inactive steps with notes — fill empty destinations only */
+        for (i = 0; i < len; i++) {
+            int s = ls + i, d = i / 2;
+            if (!cl->steps[s] && cl->step_note_count[s] > 0 && tmp_nc[d] == 0) {
+                int ng = ((int)cl->step_gate[s] + 1) / 2;
+                if (ng < 1) ng = 1;
+                /* tmp_steps[d] stays 0 (inactive) */
+                memcpy(tmp_notes[d], cl->step_notes[s], 8);
+                tmp_nc[d]   = cl->step_note_count[s];
+                tmp_vel[d]  = cl->step_vel[s];
+                tmp_gate[d] = (uint16_t)ng;
+                for (ni2 = 0; ni2 < 8; ni2++)
+                    tmp_tick_offset[d][ni2] = (int16_t)((int)cl->note_tick_offset[s][ni2] / 2);
+            }
+        }
+        /* Back into the window only: whatever lies outside it is not ours. */
+        memcpy(&cl->steps[ls],               tmp_steps,       (size_t)len);
+        memcpy(&cl->step_notes[ls][0],       tmp_notes,       (size_t)len * 8);
+        memcpy(&cl->step_note_count[ls],     tmp_nc,          (size_t)len);
+        memcpy(&cl->step_vel[ls],            tmp_vel,         (size_t)len);
+        memcpy(&cl->step_gate[ls],           tmp_gate,        (size_t)len * sizeof(uint16_t));
+        memcpy(&cl->note_tick_offset[ls][0], tmp_tick_offset, (size_t)len * 8 * sizeof(int16_t));
+        cl->length = (uint16_t)(len / 2);
+        cl->stretch_exp--;
+    }
+    int any = 0;
+    for (i = ls; i < ls + (int)cl->length; i++) if (cl->steps[i]) { any = 1; break; }
+    cl->active = (uint8_t)any;
+}
+
+/* CROP: the loop window becomes the whole clip. Its steps move to
+ * [0, length), everything else is cleared, loop_start becomes 0 and the
+ * length stays. Every clip transform (Clock Shift, Nudge, Beat Stretch,
+ * Legato, Zoom) needs the loop at step 1 and points the user here when it is
+ * not; the window-aware helpers above stay correct for any loop start.
+ * clip_crop_needed: 1 = the crop would change something (the loop starts
+ * past step 1, or a step past the loop end holds a note). Touches nothing. */
+static int clip_crop_needed(const clip_t *cl) {
+    int s;
+    if (cl->loop_start) return 1;
+    for (s = (int)cl->length; s < SEQ_STEPS; s++)
+        if (cl->steps[s] || cl->step_note_count[s]) return 1;
+    return 0;
+}
+
+/* Step arrays only: callers rebuild notes[] (clip_migrate_to_notes), move the
+ * playhead and the automation (pa_link_crop, with the window read BEFORE this). */
+static void clip_crop_window(clip_t *cl) {
+    const int ls = (int)cl->loop_start;
+    int len = (int)cl->length;
+    int s, n;
+    if (ls + len > SEQ_STEPS) len = SEQ_STEPS - ls;
+    if (len < 0) len = 0;
+    if (ls > 0 && len > 0) {
+        const size_t k = (size_t)len;
+        memmove(&cl->steps[0],               &cl->steps[ls],               k);
+        memmove(&cl->step_notes[0][0],       &cl->step_notes[ls][0],       k * 8);
+        memmove(&cl->step_note_count[0],     &cl->step_note_count[ls],     k);
+        memmove(&cl->step_vel[0],            &cl->step_vel[ls],            k);
+        memmove(&cl->step_gate[0],           &cl->step_gate[ls],           k * sizeof(uint16_t));
+        memmove(&cl->note_tick_offset[0][0], &cl->note_tick_offset[ls][0], k * 8 * sizeof(int16_t));
+        memmove(&cl->step_iter[0],           &cl->step_iter[ls],           k);
+        memmove(&cl->step_random[0],         &cl->step_random[ls],         k);
+        memmove(&cl->step_ratchet[0],        &cl->step_ratchet[ls],        k);
+    }
+    for (s = len; s < SEQ_STEPS; s++) {
+        cl->steps[s]           = 0;
+        memset(cl->step_notes[s], 0, 8);
+        cl->step_note_count[s] = 0;
+        cl->step_vel[s]        = SEQ_VEL;
+        cl->step_gate[s]       = GATE_TICKS;
+        memset(cl->note_tick_offset[s], 0, 8 * sizeof(int16_t));
+        cl->step_iter[s]       = 0;
+        cl->step_random[s]     = 0;
+        cl->step_ratchet[s]    = 0;
+    }
+    /* An early note on the new first step would sit before tick 0, which the
+     * note list wraps to the clip's END: it lands on step 1 instead. */
+    for (n = 0; n < 8; n++)
+        if (cl->note_tick_offset[0][n] < 0) cl->note_tick_offset[0][n] = 0;
+    cl->loop_start = 0;
+    {
+        int any = 0;
+        for (s = 0; s < len; s++) if (cl->steps[s]) { any = 1; break; }
+        cl->active = (uint8_t)any;
     }
 }
 
@@ -7904,6 +8228,19 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
 
         if (!strcmp(sub, "all_lanes_stretch_result")) {
             return snprintf(out, out_len, "%d", inst->all_lanes_stretch_result);
+        }
+        /* How many lanes of the active drum clip loop from past step 1 — ALL
+         * LANES Shift / Nudge / Stretch are refused while any does. "0" on a
+         * melodic track (or an unallocated clip). */
+        if (!strcmp(sub, "lanes_off_grid")) {
+            int n = 0;
+            const drum_clip_t *dc = tr->pad_mode == PAD_MODE_DRUM
+                                    ? tr->drum_clips[tr->active_clip] : NULL;
+            if (dc) {
+                int l;
+                for (l = 0; l < DRUM_LANES; l++) if (dc->lanes[l].clip.loop_start) n++;
+            }
+            return snprintf(out, out_len, "%d", n);
         }
 
         return pfx_get(tr, sub, out, out_len);

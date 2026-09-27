@@ -295,7 +295,7 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 
 | Gesture | Result |
 |---|---|
-| **Delete + jog click** | Reset every parameter in the active bank (not ALL LANES, STEP, or the Conductor's ON/OFF, OCTAVE and TIMING). One-shot actions (Stretch, Shift, Legato) are left alone. On a drum track's RPT GROOVE bank, or any bank while Note Repeat is on, it resets the selected lane's groove |
+| **Delete + jog click** | Reset every parameter in the active bank (not ALL LANES, STEP, or the Conductor's ON/OFF, OCTAVE and TIMING). One-shot actions (Stretch, Shift, Legato, Crop) are left alone. On a drum track's RPT GROOVE bank, or any bank while Note Repeat is on, it resets the selected lane's groove |
 | **Delete + jog click** on **MACROS** | Unassign all eight macros on the track (**asks first**). Values and automation are left alone |
 | **Shift + Delete + jog click** | Reset all the sequencer effects — NOTE FX, HARMONY, DELAY and SEQ ARP. The CLIP, lane, STEP, MACROS, MIX and AUTOMATION banks are left alone |
 | **Shift + Delete + side button** | Reset the whole clip — notes and all parameters |
@@ -724,6 +724,12 @@ is held:
 Notes outside the loop are kept and return when you widen it. For example, to make
 a 2-bar clip on the 1/16 grid, hold **Loop** and tap **Step 2**.
 
+The clip transforms — Stretch, Shift, Nudge, Legato and Zoom — need the loop to
+start on **step 1**; on a loop that starts later they do nothing and the screen says
+**LOOP STARTS AFTER STEP 1 / CROP FIRST**. **Crop** (CLIP knob 6: touch it and click the jog)
+makes the loop the whole clip: it moves to step 1 and everything outside it is
+removed. One Undo brings it back.
+
 ## 6.7 Undo
 
 **Undo** reverses the last edit; **Shift + Undo** redoes it. Undo is one step deep
@@ -773,6 +779,10 @@ Each lane has its own loop length: **Loop + jog** on the selected lane. On the
 ALL LANES bank, Loop + jog and the loop-page gestures set every lane at once.
 Lanes of different lengths (kick 16, hat 12, percussion 10) make a polyrhythm
 from one clip.
+
+As on a melodic clip, the transforms need a lane's loop to start on step 1 —
+on ALL LANES, every lane's. **Crop** moves it there: DRUM LANE knob 6 for the
+selected lane, ALL LANES knob 5 for every lane.
 
 ## 7.3 Note Repeat
 
@@ -832,12 +842,12 @@ A melodic clip's grid, direction, and note transforms.
 
 | Knob | On screen | What it does | Rewrites notes | Default |
 |---|---|---|---|---|
-| 1 | `RES` | **Resolution** — keeps the pattern's steps and changes how long a step is. *Alt* (`ZOOM`): keeps the timing and changes how many steps it takes. | Yes | 1/16 |
-| 2 | `STRCH` | **Stretch** — turn right to double the clip, left to halve it; one change per touch (let go to do it again). Refused (*COMPRESS LIMIT*) when notes would collide. | Yes | — |
-| 3 | `SHIFT` | **Shift** — rotate all notes by whole steps. *Alt* (`NUDGE`): finer. | Yes | 0 |
-| 4 | `LGTO` | **Legato** — touch the knob and click the jog; lengthens every note to reach the next. Turning it does nothing. | Yes | — |
+| 1 | `RES` | **Resolution** — keeps the pattern's steps and changes how long a step is. *Alt* (`ZOOM`): keeps the timing and changes how many steps it takes (needs the loop at step 1). | Yes | 1/16 |
+| 2 | `STRCH` | **Stretch** — turn right to double the clip, left to halve it; one change per touch (let go to do it again). Refused (*COMPRESS LIMIT*) when notes would collide, and doubling is refused past step 256. Needs the loop at step 1 (*LOOP STARTS AFTER STEP 1 / CROP FIRST*). | Yes | — |
+| 3 | `SHIFT` | **Shift** — rotate the notes in the loop by whole steps; a note pushed off the loop's end comes round to its start. *Alt* (`NUDGE`): finer. Needs the loop at step 1. | Yes | 0 |
+| 4 | `LGTO` | **Legato** — touch the knob and click the jog; lengthens every note in the loop to reach the next (the last to the loop's end). Turning it does nothing. Needs the loop at step 1. | Yes | — |
 | 5 | `INQNT` | **Input Quantize** — snap recorded notes to the grid (Off, 1/64 … 1/4t). One value per track, shared with ALL LANES. | No | Off |
-| 6 | — | *(empty)* | | |
+| 6 | `CROP` | **Crop** — touch the knob and click the jog: the loop becomes the whole clip — it moves to step 1 and everything outside it is removed (automation too). One Undo. Turning it does nothing. | Yes | — |
 | 7 | `DIR` | **Direction** — Forward, Backward, or ping-pong. *Alt* (`REVRS`): **Reverse Style**. | No | Fwd |
 | 8 | `SEQFL` | **Follow** — scroll the step display to keep up with the playhead. | No | On |
 
@@ -866,12 +876,13 @@ The **selected lane's** grid — the drum counterpart to the CLIP bank.
 | 3 | `SHIFT` | **Shift.** *Alt:* `NUDGE`. | Yes | 0 |
 | 4 | `LGTO` | **Legato** (this lane) — touch the knob and click the jog. | Yes | — |
 | 5 | `EUCLD` | **Euclid** — spread N hits evenly across the lane. Hand-placed hits stay. | Yes | 0 |
-| 6 | — | *(empty)* | | |
+| 6 | `CROP` | **Crop** (this lane) — touch the knob and click the jog. | Yes | — |
 | 7 | `DIR` | **Direction.** *Alt* (`REVRS`): **Reverse Style.** | No | Fwd |
 | 8 | `SEQFL` | **Follow.** | No | On |
 
 Lane length is **Loop + jog**; the lane's MIDI note is on the
-[NOTE FX bank](#91-note-fx).
+[NOTE FX bank](#91-note-fx). Zoom, Stretch, Shift and Legato need the lane's loop
+at step 1 — **Crop** puts it there.
 
 ## 8.3 ALL LANES bank
 
@@ -886,10 +897,14 @@ question.
 | 2 | `STRCH` | **Stretch** all lanes (`NO ROOM` if any can't fit) | Yes |
 | 3 | `SHIFT` | **Shift.** *Alt:* `NUDGE`. | Yes |
 | 4 | `QUANT` | **Quantize** all lanes at playback | No |
-| 5 | `VELIN` | Velocity input override for the track (Live, 1–127) | No |
+| 5 | `CROP` | **Crop** every lane — touch the knob and click the jog | Yes |
 | 6 | `INQNT` | Recording input quantize for the track | No |
 | 7 | `DIR` | **Direction** for all lanes. *Alt* (`REVRS`): **Reverse Style.** | No |
 | 8 | `RSYNC` | **Repeat Sync** — held repeats wait for the beat grid (On) or fire at once (Off) | No |
+
+Stretch and Shift are refused (*LOOP STARTS AFTER STEP 1 / CROP FIRST*) if **any** lane's loop
+starts later than step 1. The track's velocity input (**VelIn**) is on
+[TRACK CONFIG](#174-track-settings) and **Shift + Step 10**.
 
 ---
 
@@ -1123,8 +1138,10 @@ screen show **that row's lane**, not the clip's notes:
   parameter to where the knob sits at rest, until the first lock or recorded move
   comes round.
 - **Link** — *On* (default): the automation is transformed with the note sequence —
-  Resolution and Beat Stretch scale it, Clock Shift and Nudge move it, doubling the
-  loop copies it forward (on a drum track, the ALL LANES versions). *Off*: it stays
+  Resolution and Beat Stretch scale it, Clock Shift and Nudge move it (inside the
+  clip's loop, as they move its notes), doubling the loop copies it forward, and
+  Crop moves it to step 1 with the loop and removes what lay outside (on a drum
+  track, the ALL LANES versions; a lane with its own Loop is left as it is). *Off*: it stays
   put whatever you do to the notes.
 - **Loop** — the parameter's own loop length in steps, or CLIP to follow the clip.
   It can be shorter than the clip (it repeats inside it) or longer, up to 256

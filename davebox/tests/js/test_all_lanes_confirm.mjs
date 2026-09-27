@@ -84,12 +84,19 @@ ticks(2);
 for (let g = 0; g < 20 && S.activeBank !== 7; g++) { cc(14, 127); ticks(1); }   /* ALL LANES is FIRST on the drum walk */
 step('setup: the jog walk reaches ALL LANES', () => assert(S.activeBank === 7, 'on bank ' + S.activeBank));
 
-/* K1 Res · K2 Stch · K3 Shft · K4 Qnt · K6 InQ · K7 Dir · K8 SyncRpt. K5 VelIn
- * writes through applyTrackConfig; any write at all counts for it. */
+/* K1 Res · K2 Stch · K3 Shft · K4 Qnt · K6 InQ · K7 Dir · K8 SyncRpt are TURNED.
+ * K5 is Crop since 2026-09-27 (it was VelIn): a trigger, fired by touch + click,
+ * so it has its own step below. */
 const KNOBS = [[0, 1, /_all_lanes_clip_resolution=/], [1, 1, /_all_lanes_beat_stretch=/],
                [2, 1, /_all_lanes_clock_shift=/],     [3, 1, /_drum_lanes_qnt=/],
-               [4, 1, /./],                           [5, 1, /_diq=/],
+               [5, 1, /_diq=/],
                [6, 1, /_all_lanes_playback_dir=/],    [7, 1, /_drum_repeat_sync=/]];
+const touchClick = (k) => {
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, k, 127]));
+    click();
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, k, 0]));
+    ticks(1);
+};
 
 step('CONTROL: before the OK, ALL LANES knobs write nothing (the gate gates)', () => {
     click();                                            /* latch only */
@@ -113,6 +120,14 @@ step('⭐ after the OK, EVERY ALL LANES knob reaches the DSP', () => {
         if (!sets.some(x => re.test(x))) dead.push('K' + (k + 1));
     }
     assert(dead.length === 0, 'knobs that wrote nothing: ' + dead.join(' '));
+});
+
+step('⭐ after the OK, K5 (Crop) fires on touch + click, and a turn writes nothing', () => {
+    sets.length = 0;
+    turn(4, 1);
+    assert(sets.filter(x => /^t0_/.test(x)).length === 0, 'a K5 turn wrote ' + JSON.stringify(sets.slice(0, 6)));
+    touchClick(4);
+    assert(sets.includes('t0_all_lanes_crop=1'), 'touch + click did not crop: ' + JSON.stringify(sets.slice(0, 6)));
 });
 
 step('⭐ and nothing was swallowed into the JS error log', () => {

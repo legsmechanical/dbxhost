@@ -1040,8 +1040,10 @@ export function readBankParams(t, bankIdx) {
             continue;
         }
         if (pm.scope === 'action') {
-            /* beat_stretch and clock_shift display per-touch labels (0 at rest) rather than absolute position */
-            if (pm.dspKey === 'beat_stretch' || pm.dspKey === 'clock_shift') { S.bankParams[t][bankIdx][k] = 0; continue; }
+            /* beat_stretch and clock_shift display per-touch labels (0 at rest)
+             * rather than absolute position; crop is a trigger with no value
+             * to read back (skipping it saves a round trip). */
+            if (pm.dspKey === 'beat_stretch' || pm.dspKey === 'clock_shift' || pm.dspKey === 'crop') { S.bankParams[t][bankIdx][k] = 0; continue; }
             const stateKey = 't' + t + '_' + pm.dspKey + pm.actionSuffix;
             const raw = dspGet(stateKey);
             S.bankParams[t][bankIdx][k] = parseActionRaw(raw, pm.def);

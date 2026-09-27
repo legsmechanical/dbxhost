@@ -299,6 +299,24 @@ int main(void) {
         HX_ASSERT(rev(h) == r + 1, "all_lanes_nudge must bump rui_rev");
     }
 
+    /* ---- Crop (melodic, lane, ALL LANES): each needs a loop off step 1 to
+     * have anything to do; a no-op crop changes nothing and must NOT bump. ---- */
+    {
+        unsigned r;
+        hx_set_param(h, "t1_c0_step_6_toggle", "60 100");
+        hx_set_param(h, "t1_c0_loop_set", "262148");          /* start 4, length 4 */
+        r = rev(h); hx_set_param(h, "t1_crop", "1");
+        HX_ASSERT(rev(h) == r + 1, "tN_crop must bump rui_rev");
+        r = rev(h); hx_set_param(h, "t1_crop", "1");
+        HX_ASSERT(rev(h) == r, "a no-op tN_crop must NOT bump rui_rev");
+        hx_set_param(h, "t3_l5_loop_set", "262148");
+        r = rev(h); hx_set_param(h, "t3_l5_crop", "1");
+        HX_ASSERT(rev(h) == r + 1, "tN_lL_crop must bump rui_rev");
+        hx_set_param(h, "t3_all_lanes_loop_set", "262148");
+        r = rev(h); hx_set_param(h, "t3_all_lanes_crop", "1");
+        HX_ASSERT(rev(h) == r + 1, "all_lanes_crop must bump rui_rev");
+    }
+
     /* ---- handler-tail sweep (2026-07-18): same-class rev-bump gaps left by the
      * initial Theme-1 sweep — drum lane-config ops (browser-visible via rui_dlanes
      * / rui_lane / rui_pfx) + globals clip_cut / row_copy / row_cut. ---- */

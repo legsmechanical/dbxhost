@@ -133,7 +133,11 @@ All writes are `R.setParam(P+key, value)` (P = `"overtake_dsp:"`), each followed
   > grandfathered globals work; otherwise piggyback onto a `tN_*` push.
 - **Per-track:** `tN_route` (`schwung`/`move`/`external`), `tN_channel` (1-based), `tN_mute`,
   `tN_solo`, `tN_convert_to_conduct`/`_melodic`/`_drum`, `tN_launch_clip`,
-  `tN_all_lanes_*`.
+  `tN_all_lanes_*`; the active-clip transforms `tN_beat_stretch`, `tN_clock_shift`,
+  `tN_nudge`, `tN_lgto_apply`, `tN_crop` (and per lane `tN_lL_*`, ALL LANES
+  `tN_all_lanes_crop`). ⚠ The transforms are refused by the DSP (silently — the
+  page just sees nothing change) while the loop does not start at step 1; the
+  Crop button fixes that. See `DAVEBOX_API.md` → *Loop at step 1*.
 - **Per-clip (`tN_cC_*`):** `ruisel` (select), `clear`/`hard_reset`, `loop_set` (packed
   `(ls<<16)|len`), `resolution`, `dir`, `pfx_set`, `cond_resp`/`_oct`/`_when`/`_lock`,
   `step_S_*`,

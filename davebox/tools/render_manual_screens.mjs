@@ -640,7 +640,7 @@ screen('notice-undo', '6.7 Undo', 'Undo feedback',
 
 /* 7 — drum banks */
 const DRUM_BANKS = [
-    [0, 'bank-drumlane', '8.2 DRUM LANE bank', 'DRUM LANE bank', 'The selected lane\'s grid: resolution, stretch, shift, legato, euclid, direction and follow.'],
+    [0, 'bank-drumlane', '8.2 DRUM LANE bank', 'DRUM LANE bank', 'The selected lane\'s grid: resolution, stretch, shift, legato, euclid, crop, direction and follow.'],
     [1, 'bank-drum-notefx', '9.1 NOTE FX', 'NOTE FX on a drum track', 'On a drum track knobs 1 and 2 set the lane\'s MIDI note; knobs 3–6 shape that lane.'],
     [3, 'bank-drum-delay', '9.3 DELAY', 'DELAY on a drum track', 'DELAY on a drum track: knobs 5–7 become gate, clock feedback and retrigger.'],
 ];
@@ -650,7 +650,7 @@ screen('bank-allanes-confirm', '8.3 ALL LANES bank', 'ALL LANES — confirm',
     'ALL LANES opens on a confirm, because its knobs rewrite every lane; click the jog to proceed.',
     () => { selectTrack(1); toBank(7); });
 screen('bank-allanes', '8.3 ALL LANES bank', 'ALL LANES bank',
-    'Confirmed: one setting for all 32 lanes — resolution, stretch, shift, quantize, velocity input, input quantize, direction and repeat sync.',
+    'Confirmed: one setting for all 32 lanes — resolution, stretch, shift, quantize, crop, input quantize, direction and repeat sync.',
     () => { selectTrack(1); toBank(7); click(); ticks(2); if (!S.allLanesConfirmed) throw new Error('not confirmed'); });
 screen('note-repeat-modes', '7.3 Note Repeat', 'Choosing the right-pad mode',
     'Shift + Step 8 on a drum track cycles the right pads between velocity zones and the two repeat modes; the card shows which is on.',

@@ -114,23 +114,24 @@ step('setup: the ring rule is reachable at all (a known-lit bank)', () => {
 });
 
 /* ⭐ THE ASK. Bank 0 was absent from PARAM_LED_BANKS, so every ring was dark. */
-step('⭐ the CLIP bank lights its rings, hue-split, with the unassigned knob dark', () => {
+/* ⓘ CLIP K6 was the one UNASSIGNED knob (dark) until 2026-09-27; it is Crop
+ * now, so every CLIP knob lights. */
+step('⭐ the CLIP bank lights its rings, hue-split, Crop (K6) included', () => {
     const r = rings(0, 0);
     const on = lit(r);
-    assert(on[5] === false, 'CLIP knob 6 is UNASSIGNED and must stay dark: ' + show(r));
-    for (const k of [0, 1, 2, 3, 4, 6, 7]) {
+    for (let k = 0; k < 8; k++) {
         assert(on[k], 'CLIP knob ' + (k + 1) + ' is dark but does something: ' + show(r));
     }
     assertHueSplit(r, 'CLIP');
-    /* ⚠ The ACTION knobs (Stretch/Shift/Legato) have no value to report — they
-     * were the reason a naive "ride the value" enrolment still left them dark. */
-    for (const k of [1, 2, 3]) {
+    /* ⚠ The ACTION knobs (Stretch/Shift/Legato/Crop) have no value to report —
+     * they were the reason a naive "ride the value" enrolment still left them dark. */
+    for (const k of [1, 2, 3, 5]) {
         assert(r[k] === (k < 4 ? WHITE : AMBER)[0],
                'CLIP action knob ' + (k + 1) + ' is not at the floor: ' + show(r));
     }
 });
 
-/* ⚠⚠ Bank 7's K1/K4/K5/K6/K7 are `scope: 'stub'` AND fully working, handled by
+/* ⚠⚠ Bank 7's K1/K4/K6/K7 are `scope: 'stub'` AND fully working, handled by
  * their own code. Reading the flag as "absent" left five live knobs dark. */
 step('⭐ the ALL LANES bank lights every knob, custom-handled ones included', () => {
     const r = rings(7, 1);                        /* a DRUM track */
