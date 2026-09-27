@@ -4380,7 +4380,9 @@ function _onCC_knobs(d1, d2) {
                 /* K2 = Stch (beat stretch, lock, sens=16) */
                 if (S.knobLocked[knobIdx]) return;
                 const len = S.drumLaneLength[t];
-                const canFire = dir === 1 ? (len * 2 <= 256) : (len >= 2);
+                /* x2 doubles the lane's loop window from its start: the DSP
+                 * refuses when that passes step 256 (loop start included). */
+                const canFire = dir === 1 ? ((S.drumLaneLoopStart[t] | 0) + len * 2 <= 256) : (len >= 2);
                 if (!canFire) return;
                 if (knobStep(knobIdx, d2, KNOB_DELIB) !== 0) {
                     host_module_set_param('t' + t + '_l' + lane + '_beat_stretch', String(dir));
@@ -4721,11 +4723,14 @@ function _onCC_knobs(d1, d2) {
                     const t   = S.activeTrack;
                     const ac  = S.trackActiveClip[t];
                     const len = S.clipLength[t][ac];
+                    /* The loop window is [ls, ls + len): Stretch and Shift act on
+                     * it, and S.clipSteps is indexed by ABSOLUTE step. */
+                    const ls  = S.clipLoopStart[t][ac] | 0;
                     /* Lgto: a trigger — touch + click fires it; a turn does nothing. */
                     if (pm.dspKey === 'lgto_apply') return;
                     if (pm.lock) {
                         /* Beat Stretch: one-shot, then lock until touch release */
-                        const canFire = dir === 1 ? (len * 2 <= 256) : (len >= 2);
+                        const canFire = dir === 1 ? (ls + len * 2 <= 256) : (len >= 2);
                         if (canFire) {
                             host_module_set_param('t' + t + '_' + pm.dspKey, String(dir));
                             S.knobLocked[knobIdx] = true;
@@ -4737,22 +4742,22 @@ function _onCC_knobs(d1, d2) {
                                 const steps = S.clipSteps[t][ac];
                                 if (dir === 1) {
                                     for (let si = len - 1; si >= 1; si--) {
-                                        steps[si * 2] = steps[si];
-                                        steps[si] = 0;
+                                        steps[ls + si * 2] = steps[ls + si];
+                                        steps[ls + si] = 0;
                                     }
-                                    for (let si = 1; si < len * 2; si += 2) steps[si] = 0;
+                                    for (let si = 1; si < len * 2; si += 2) steps[ls + si] = 0;
                                     S.clipLength[t][ac] = len * 2;
                                 } else {
                                     const halfLen = len >> 1;
                                     const tmp = new Array(halfLen).fill(0);
                                     for (let si = 0; si < len; si++) {
-                                        if (steps[si] === 1 && !tmp[si >> 1]) tmp[si >> 1] = 1;
+                                        if (steps[ls + si] === 1 && !tmp[si >> 1]) tmp[si >> 1] = 1;
                                     }
                                     for (let si = 0; si < len; si++) {
-                                        if (steps[si] === 2 && !tmp[si >> 1]) tmp[si >> 1] = 2;
+                                        if (steps[ls + si] === 2 && !tmp[si >> 1]) tmp[si >> 1] = 2;
                                     }
-                                    for (let si = 0; si < len; si++) steps[si] = 0;
-                                    for (let si = 0; si < halfLen; si++) steps[si] = tmp[si];
+                                    for (let si = 0; si < len; si++) steps[ls + si] = 0;
+                                    for (let si = 0; si < halfLen; si++) steps[ls + si] = tmp[si];
                                     S.clipLength[t][ac] = halfLen;
                                 }
                                 /* Clamp page index to new length */
@@ -4774,16 +4779,22 @@ function _onCC_knobs(d1, d2) {
                         } else if (len >= 2) {
                             /* Clock Shift: continuous rotation, no lock */
                             host_module_set_param('t' + t + '_' + pm.dspKey, String(dir));
+                            /* Mirror the DSP's rotation of the loop window for an
+                             * instant redraw, then re-read the truth (as Nudge does). */
                             const steps = S.clipSteps[t][ac];
+                            const end = ls + len - 1;
                             if (dir === 1) {
-                                const last = steps[len - 1];
-                                for (let si = len - 1; si > 0; si--) steps[si] = steps[si - 1];
-                                steps[0] = last;
+                                const last = steps[end];
+                                for (let si = end; si > ls; si--) steps[si] = steps[si - 1];
+                                steps[ls] = last;
                             } else {
-                                const first = steps[0];
-                                for (let si = 0; si < len - 1; si++) steps[si] = steps[si + 1];
-                                steps[len - 1] = first;
+                                const first = steps[ls];
+                                for (let si = ls; si < end; si++) steps[si] = steps[si + 1];
+                                steps[end] = first;
                             }
+                            S.pendingStepsReread      = 2;
+                            S.pendingStepsRereadTrack = t;
+                            S.pendingStepsRereadClip  = ac;
                             S.clockShiftTouchDelta += dir;
                             S.bankParams[t][bank][knobIdx] = S.clockShiftTouchDelta;
                         }

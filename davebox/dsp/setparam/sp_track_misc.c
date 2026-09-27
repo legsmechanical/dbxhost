@@ -61,57 +61,12 @@ static int sp_track_misc(sp_ctx_t *cx) {
         clip_t *cl = &tr->clips[tr->active_clip];
         int len = (int)cl->length;
         if (len < 2) return 1;
-        uint8_t tmp_s, tmp_nc, tmp_ns[8], tmp_v;
-        uint16_t tmp_g;
-        int16_t tmp_toff[8];
-        if (dir == 1) {
-            tmp_s    = cl->steps[len-1];
-            memcpy(tmp_ns, cl->step_notes[len-1], 8);
-            tmp_nc   = cl->step_note_count[len-1];
-            tmp_v    = cl->step_vel[len-1];
-            tmp_g    = cl->step_gate[len-1];
-            memcpy(tmp_toff, cl->note_tick_offset[len-1], 8 * sizeof(int16_t));
-            memmove(&cl->steps[1],              &cl->steps[0],              (size_t)(len-1));
-            memmove(&cl->step_notes[1][0],      &cl->step_notes[0][0],      (size_t)(len-1) * 8);
-            memmove(&cl->step_note_count[1],    &cl->step_note_count[0],    (size_t)(len-1));
-            memmove(&cl->step_vel[1],           &cl->step_vel[0],           (size_t)(len-1));
-            memmove(&cl->step_gate[1],          &cl->step_gate[0],          (size_t)(len-1) * 2);
-            memmove(&cl->note_tick_offset[1][0], &cl->note_tick_offset[0][0], (size_t)(len-1) * 8 * sizeof(int16_t));
-            cl->steps[0]           = tmp_s;
-            memcpy(cl->step_notes[0], tmp_ns, 8);
-            cl->step_note_count[0] = tmp_nc;
-            cl->step_vel[0]        = tmp_v;
-            cl->step_gate[0]       = tmp_g;
-            memcpy(cl->note_tick_offset[0], tmp_toff, 8 * sizeof(int16_t));
-            cl->clock_shift_pos = (uint16_t)((cl->clock_shift_pos + 1) % (uint16_t)len);
-        } else {
-            tmp_s    = cl->steps[0];
-            memcpy(tmp_ns, cl->step_notes[0], 8);
-            tmp_nc   = cl->step_note_count[0];
-            tmp_v    = cl->step_vel[0];
-            tmp_g    = cl->step_gate[0];
-            memcpy(tmp_toff, cl->note_tick_offset[0], 8 * sizeof(int16_t));
-            memmove(&cl->steps[0],              &cl->steps[1],              (size_t)(len-1));
-            memmove(&cl->step_notes[0][0],      &cl->step_notes[1][0],      (size_t)(len-1) * 8);
-            memmove(&cl->step_note_count[0],    &cl->step_note_count[1],    (size_t)(len-1));
-            memmove(&cl->step_vel[0],           &cl->step_vel[1],           (size_t)(len-1));
-            memmove(&cl->step_gate[0],          &cl->step_gate[1],          (size_t)(len-1) * 2);
-            memmove(&cl->note_tick_offset[0][0], &cl->note_tick_offset[1][0], (size_t)(len-1) * 8 * sizeof(int16_t));
-            cl->steps[len-1]           = tmp_s;
-            memcpy(cl->step_notes[len-1], tmp_ns, 8);
-            cl->step_note_count[len-1] = tmp_nc;
-            cl->step_vel[len-1]        = tmp_v;
-            cl->step_gate[len-1]       = tmp_g;
-            memcpy(cl->note_tick_offset[len-1], tmp_toff, 8 * sizeof(int16_t));
-            cl->clock_shift_pos = (uint16_t)((cl->clock_shift_pos + (uint16_t)(len-1)) % (uint16_t)len);
-        }
-        /* Note link: the same rotation, one step, inside [0, len) as the steps. */
+        clip_rotate_window(cl, dir);
+        /* Note link: the same rotation, one step, inside the loop window. */
         pa_link_rotate(inst, tidx, (int)tr->active_clip, 0,
+                       (uint32_t)cl->loop_start * cl->ticks_per_step,
                        dir == 1 ? (int32_t)cl->ticks_per_step : -(int32_t)cl->ticks_per_step,
                        (uint32_t)len * cl->ticks_per_step);
-        int i, any = 0;
-        for (i = 0; i < len; i++) if (cl->steps[i]) { any = 1; break; }
-        cl->active = (uint8_t)any;
         clip_migrate_to_notes(cl);
         rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
         return 1;
@@ -124,78 +79,13 @@ static int sp_track_misc(sp_ctx_t *cx) {
         clip_t *cl = &tr->clips[tr->active_clip];
         int len = (int)cl->length;
         if (len < 1) return 1;
-        int tps = (int)cl->ticks_per_step;
-        int midpoint = tps / 2;
-        /* crossing notes bounded at notes[] capacity; dst_off preserves absolute timing */
-        struct { int16_t dst, dst_off; uint8_t pitch, vel, active; uint16_t gate; } cross[512];
-        int ncross = 0;
-        int s, ni, wi;
-        for (s = 0; s < len; s++) {
-            if (cl->step_note_count[s] == 0) continue;
-            wi = 0;
-            for (ni = 0; ni < (int)cl->step_note_count[s]; ni++) {
-                int new_off = (int)cl->note_tick_offset[s][ni] + dir;
-                if (new_off > midpoint) {
-                    /* crossed midpoint forward — same threshold as step overlay */
-                    if (ncross < 512) {
-                        cross[ncross].dst     = (int16_t)((s + 1) % len);
-                        cross[ncross].dst_off = (int16_t)(new_off - tps);
-                        cross[ncross].pitch   = cl->step_notes[s][ni];
-                        cross[ncross].vel     = cl->step_vel[s];
-                        cross[ncross].gate    = cl->step_gate[s];
-                        cross[ncross].active  = cl->steps[s];
-                        ncross++;
-                    }
-                } else if (new_off < -midpoint) {
-                    /* crossed midpoint backward */
-                    if (ncross < 512) {
-                        cross[ncross].dst     = (int16_t)((s - 1 + len) % len);
-                        cross[ncross].dst_off = (int16_t)(new_off + tps);
-                        cross[ncross].pitch   = cl->step_notes[s][ni];
-                        cross[ncross].vel     = cl->step_vel[s];
-                        cross[ncross].gate    = cl->step_gate[s];
-                        cross[ncross].active  = cl->steps[s];
-                        ncross++;
-                    }
-                } else {
-                    cl->step_notes[s][wi]       = cl->step_notes[s][ni];
-                    cl->note_tick_offset[s][wi] = (int16_t)new_off;
-                    wi++;
-                }
-            }
-            for (ni = wi; ni < (int)cl->step_note_count[s]; ni++) {
-                cl->step_notes[s][ni]       = 0;
-                cl->note_tick_offset[s][ni] = 0;
-            }
-            cl->step_note_count[s] = (uint8_t)wi;
-            if (wi == 0) {
-                cl->steps[s]     = 0;
-                cl->step_vel[s]  = (uint8_t)SEQ_VEL;
-                cl->step_gate[s] = (uint16_t)GATE_TICKS;
-            }
-        }
-        { int ci;
-          for (ci = 0; ci < ncross; ci++) {
-            int dst = (int)cross[ci].dst;
-            if (cl->step_note_count[dst] >= 8) continue;
-            int slot = (int)cl->step_note_count[dst];
-            cl->step_notes[dst][slot]       = cross[ci].pitch;
-            cl->note_tick_offset[dst][slot] = cross[ci].dst_off;
-            if (slot == 0) {
-                cl->step_vel[dst]  = cross[ci].vel;
-                cl->step_gate[dst] = cross[ci].gate;
-            }
-            if (cross[ci].active) cl->steps[dst] = 1;
-            cl->step_note_count[dst]++;
-          }
-        }
-        { int any2 = 0;
-          for (s = 0; s < len; s++) if (cl->steps[s]) { any2 = 1; break; }
-          cl->active = (uint8_t)any2;
-        }
-        cl->nudge_pos += (int16_t)dir;
-        /* Note link: a note moved by `dir` ticks, wrapping round [0, len). */
-        pa_link_rotate(inst, tidx, (int)tr->active_clip, 0, dir, (uint32_t)len * (uint32_t)tps);
+        /* Melodic crosses a step only PAST its midpoint — the step overlay's
+         * threshold (a drum lane crosses AT it). */
+        clip_nudge_window(cl, dir, 0);
+        /* Note link: a note moved by `dir` ticks, wrapping round the loop window. */
+        pa_link_rotate(inst, tidx, (int)tr->active_clip, 0,
+                       (uint32_t)cl->loop_start * cl->ticks_per_step, dir,
+                       (uint32_t)len * cl->ticks_per_step);
         clip_migrate_to_notes(cl);
         rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
         return 1;
@@ -204,139 +94,20 @@ static int sp_track_misc(sp_ctx_t *cx) {
     if (!strcmp(sub, "beat_stretch")) {
         int dir = my_atoi(val);
         clip_t *cl = &tr->clips[tr->active_clip];
-        int len = (int)cl->length;
-        int i, ni2, new_len, any;
-        uint8_t  tmp_steps[SEQ_STEPS];
-        uint8_t  tmp_notes[SEQ_STEPS][8];
-        uint8_t  tmp_nc[SEQ_STEPS];
-        uint8_t  tmp_vel[SEQ_STEPS];
-        uint16_t tmp_gate[SEQ_STEPS];
-        int16_t  tmp_tick_offset[SEQ_STEPS][8];
-        /* gate cap: per-clip resolution; capped at uint16_t max for large TPS */
-        { int gmax_bs = SEQ_STEPS * cl->ticks_per_step; if (gmax_bs > 65535) gmax_bs = 65535;
-        int off_clamp = cl->ticks_per_step - 1;
-
-        if (dir == 1) {
-            /* EXPAND x2: clamp if doubling would exceed 256 steps */
-            if (len * 2 > SEQ_STEPS) { return 1; }
-            new_len = len * 2;
-            for (i = len - 1; i >= 1; i--) {
-                int ng = (int)cl->step_gate[i] * 2;
-                if (ng > gmax_bs) ng = gmax_bs;
-                cl->steps[i*2]           = cl->steps[i];
-                memcpy(cl->step_notes[i*2], cl->step_notes[i], 8);
-                cl->step_note_count[i*2] = cl->step_note_count[i];
-                cl->step_vel[i*2]        = cl->step_vel[i];
-                cl->step_gate[i*2]       = (uint16_t)ng;
-                for (ni2 = 0; ni2 < 8; ni2++) {
-                    int nt = (int)cl->note_tick_offset[i][ni2] * 2;
-                    if (nt > off_clamp) nt = off_clamp; else if (nt < -off_clamp) nt = -off_clamp;
-                    cl->note_tick_offset[i*2][ni2] = (int16_t)nt;
-                }
-                cl->steps[i] = 0;
-            }
-            /* step 0 stays, scale its gate and offsets too */
-            {
-                int ng = (int)cl->step_gate[0] * 2;
-                if (ng > gmax_bs) ng = gmax_bs;
-                cl->step_gate[0] = (uint16_t)ng;
-                for (ni2 = 0; ni2 < 8; ni2++) {
-                    int nt = (int)cl->note_tick_offset[0][ni2] * 2;
-                    if (nt > off_clamp) nt = off_clamp; else if (nt < -off_clamp) nt = -off_clamp;
-                    cl->note_tick_offset[0][ni2] = (int16_t)nt;
-                }
-            }
-            for (i = 1; i < new_len; i += 2) {
-                cl->steps[i]           = 0;
-                memset(cl->step_notes[i], 0, 8);
-                cl->step_note_count[i] = 0;
-                cl->step_vel[i]        = SEQ_VEL;
-                cl->step_gate[i]       = GATE_TICKS;
-                memset(cl->note_tick_offset[i], 0, 8 * sizeof(int16_t));
-            }
-            cl->length = (uint16_t)new_len;
-            cl->stretch_exp++;
-            tr->stretch_blocked = 0;
-            pa_link_scale(inst, tidx, (int)tr->active_clip, 0, 2, 1);   /* Note link */
-        } else {
-            /* COMPRESS /2: dry-run collision check — abort entirely if any two
-             * active steps would map to the same destination position. */
-            if (len < 2) return 1;
-            {
-                uint8_t seen[SEQ_STEPS];
-                memset(seen, 0, sizeof(seen));
-                for (i = 0; i < len; i++) {
-                    if (cl->steps[i]) {
-                        int dst = i / 2;
-                        if (seen[dst]) {
-                            tr->stretch_blocked = 1;
-                            return 1;
-                        }
-                        seen[dst] = 1;
-                    }
-                }
-            }
-            tr->stretch_blocked = 0;
-            new_len = len / 2;
-            memset(tmp_steps, 0, sizeof(tmp_steps));
-            for (i = 0; i < SEQ_STEPS; i++) {
-                memset(tmp_notes[i], 0, 8);
-                tmp_nc[i]   = 0;
-                tmp_vel[i]  = SEQ_VEL;
-                tmp_gate[i] = GATE_TICKS;
-                memset(tmp_tick_offset[i], 0, 8 * sizeof(int16_t));
-            }
-            /* First pass: active steps — these win any destination conflict */
-            for (i = 0; i < len; i++) {
-                if (cl->steps[i]) {
-                    int dst = i / 2;
-                    if (!tmp_steps[dst]) {
-                        int ng = ((int)cl->step_gate[i] + 1) / 2;
-                        if (ng < 1) ng = 1;
-                        tmp_steps[dst] = 1;
-                        memcpy(tmp_notes[dst], cl->step_notes[i], 8);
-                        tmp_nc[dst]   = cl->step_note_count[i];
-                        tmp_vel[dst]  = cl->step_vel[i];
-                        tmp_gate[dst] = (uint16_t)ng;
-                        for (ni2 = 0; ni2 < 8; ni2++) {
-                            int nt = (int)cl->note_tick_offset[i][ni2] / 2;
-                            tmp_tick_offset[dst][ni2] = (int16_t)nt;
-                        }
-                    }
-                }
-            }
-            /* Second pass: inactive steps with notes — fill empty destinations only */
-            for (i = 0; i < len; i++) {
-                if (!cl->steps[i] && cl->step_note_count[i] > 0) {
-                    int dst = i / 2;
-                    if (tmp_nc[dst] == 0) {
-                        int ng = ((int)cl->step_gate[i] + 1) / 2;
-                        if (ng < 1) ng = 1;
-                        /* tmp_steps[dst] stays 0 (inactive) */
-                        memcpy(tmp_notes[dst], cl->step_notes[i], 8);
-                        tmp_nc[dst]   = cl->step_note_count[i];
-                        tmp_vel[dst]  = cl->step_vel[i];
-                        tmp_gate[dst] = (uint16_t)ng;
-                        for (ni2 = 0; ni2 < 8; ni2++) {
-                            int nt = (int)cl->note_tick_offset[i][ni2] / 2;
-                            tmp_tick_offset[dst][ni2] = (int16_t)nt;
-                        }
-                    }
-                }
-            }
-            memcpy(cl->steps,           tmp_steps,       sizeof(tmp_steps));
-            memcpy(cl->step_notes,      tmp_notes,       sizeof(tmp_notes));
-            memcpy(cl->step_note_count, tmp_nc,          sizeof(tmp_nc));
-            memcpy(cl->step_vel,        tmp_vel,         sizeof(tmp_vel));
-            memcpy(cl->step_gate,       tmp_gate,        sizeof(tmp_gate));
-            memcpy(cl->note_tick_offset, tmp_tick_offset, sizeof(tmp_tick_offset));
-            cl->length = (uint16_t)new_len;
-            cl->stretch_exp--;
-            /* Note link — only here, past the collision check: a blocked
-             * compress moved no notes, so it moves no automation. */
-            pa_link_scale(inst, tidx, (int)tr->active_clip, 0, 1, 2);
-        }
-        } /* end gmax_bs/off_clamp block */
+        /* x2 / /2 inside the loop window, anchored at its start. x2 is refused
+         * when the doubled window would pass the last step; /2 is BLOCKED
+         * (stretch_blocked, which JS reads) when two active steps would land
+         * on one — then nothing moves at all. */
+        int can = clip_stretch_check(cl, dir == 1 ? 1 : -1);
+        if (can == 0) return 1;
+        if (can < 0) { tr->stretch_blocked = 1; return 1; }
+        tr->stretch_blocked = 0;
+        clip_stretch_window(cl, dir == 1 ? 1 : -1);
+        /* Note link — only past the check: a blocked compress moved no notes,
+         * so it moves no automation. Scaled from the window's start. */
+        pa_link_scale(inst, tidx, (int)tr->active_clip, 0,
+                      (uint32_t)cl->loop_start * cl->ticks_per_step,
+                      dir == 1 ? 2 : 1, dir == 1 ? 1 : 2);
 
         {
             uint16_t _le = (uint16_t)(cl->loop_start + cl->length);
@@ -351,10 +122,6 @@ static int sp_track_misc(sp_ctx_t *cx) {
                 melodic_anchor_playhead(inst, tr, cl);
         }
 
-        any = 0;
-        for (i = 0; i < (int)cl->length; i++)
-            if (cl->steps[i]) { any = 1; break; }
-        cl->active = (uint8_t)any;
         clip_migrate_to_notes(cl);
 
         rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
