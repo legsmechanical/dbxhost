@@ -54,6 +54,13 @@ DBX_HEAL_DIR=$DBX_STOCK_DIR/modules/tools/$DBX_LAUNCHER_ID/bin
 DBX_HEAL_NAME=heal
 DBX_HEAL=$DBX_HEAL_DIR/$DBX_HEAL_NAME
 
+# The UNINSTALLER (2026-09-27): a separate stock Tools module, because a user who
+# removed dAVEBOx through the manager has no dAVEBOx left to uninstall from. It
+# carries its own blessed helper, built with -DHEAL_UNINSTALL_ONLY — HEAL_DIR is
+# compiled in, so it needs its own build, and that build can only take away.
+DBX_UNINSTALL_ID=davebox-uninstall
+DBX_UNINSTALL_HEAL_DIR=$DBX_STOCK_DIR/modules/tools/$DBX_UNINSTALL_ID/bin
+
 # Session liveness lock. The launcher takes an exclusive flock on this file
 # and holds it for the life of the session, with the supervisor PID as the
 # payload — so "is a session live" is answered by the kernel (lock held /

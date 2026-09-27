@@ -58,6 +58,20 @@ check "bless.sh calls the verb"        "$HERE/scripts/install-privileged.sh" "--
 # heal COMPOSES this from its DBX_DIR define (pinned above), so pin the suffix.
 check "heal SA library path"           "$HERE/src/davebox-heal.c"   'DBX_DIR "/sets/library"'
 check "heal mount verb"                "$HERE/src/davebox-heal.c"   "--mount-sets"
+
+# The uninstaller (2026-09-27): a separate stock Tools module whose script and
+# screen carry their paths as literals (they run under STOCK, beside no
+# config.sh). A DBX_DIR change that missed them would "uninstall" the wrong
+# directory — or none — while the user's real install stayed put.
+check "uninstall.sh DBX_DIR"           "$HERE/uninstall/uninstall.sh" "DBX_DIR:-$DBX_DIR}"
+check "uninstall.sh stock dir"         "$HERE/uninstall/uninstall.sh" "STOCK_DIR:-$DBX_STOCK_DIR}"
+check "uninstall.sh launcher module"   "$HERE/uninstall/uninstall.sh" "modules/tools/$DBX_LAUNCHER_ID\""
+check "uninstall.sh session lock"      "$HERE/uninstall/uninstall.sh" "\$SHM_DIR/$(basename "$DBX_SESSION_LOCK")"
+check "uninstall.sh shim path"         "$HERE/uninstall/uninstall.sh" "/usr/lib/$DBX_SHIM_SONAME"
+check "uninstall.sh verb"              "$HERE/uninstall/uninstall.sh" "--uninstall-root"
+check "heal uninstall verb"            "$HERE/src/davebox-heal.c"     "\"--uninstall-root\""
+check "ui.js module dir"               "$HERE/uninstall/ui.js"        "'$DBX_STOCK_DIR/modules/tools/$DBX_UNINSTALL_ID'"
+check "uninstaller module id"          "$HERE/uninstall/module.json"  "\"id\": \"$DBX_UNINSTALL_ID\""
 check "heal umount verb"               "$HERE/src/davebox-heal.c"   "--umount-sets"
 check "set-swap calls the mount verb"  "$HERE/scripts/set-swap.sh"  "--mount-sets"
 check "set-swap calls the umount verb" "$HERE/scripts/set-swap.sh"  "--umount-sets"
