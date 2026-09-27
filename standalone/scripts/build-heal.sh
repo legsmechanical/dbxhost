@@ -4,7 +4,8 @@
 # This was previously compiled by hand and lived in no build script, so the one
 # setuid-root binary in the system was also the one with no reproducible recipe.
 #
-# Output: build/davebox-heal (install it via install-privileged.sh, once, ever).
+# Output: build/heal (install it via install-privileged.sh, once, ever) and
+# build/heal-uninstall (the uninstaller module's copy).
 
 set -e
 
@@ -42,4 +43,12 @@ echo "=== davebox-heal ($CC, DBX_DIR=$DBX_DIR) ==="
       -o "$OUT/$DBX_HEAL_NAME" "$HERE/src/davebox-heal.c"
 
 echo "built $OUT/$DBX_HEAL_NAME"
+
+# The uninstaller's copy: same source, only --umount-sets / --uninstall-root,
+# and HEAL_DIR pointing at the uninstaller module's own bin/.
+"$CC" -O2 -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -static \
+      -DHEAL_UNINSTALL_ONLY \
+      -DDBX_DIR="\"$DBX_DIR\"" -DHEAL_DIR="\"$DBX_UNINSTALL_HEAL_DIR\"" \
+      -o "$OUT/$DBX_HEAL_NAME-uninstall" "$HERE/src/davebox-heal.c"
+echo "built $OUT/$DBX_HEAL_NAME-uninstall"
 "${CROSS_PREFIX}size" "$OUT/$DBX_HEAL_NAME" 2>/dev/null || true

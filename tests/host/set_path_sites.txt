@@ -27,6 +27,7 @@ R src/shadow/shadow_ui.js|const subEntries = os.readdir(SETS_DIR + "/" + uuid) |
 - src/shared/session_state.mjs|if (p === SET_LIBRARY_DIR) return true;
 - src/shared/session_state.mjs|return p.indexOf(SET_LIBRARY_DIR + "/") === 0;
 - standalone/src/davebox-heal.c|#define SETS_DIR     "/data/UserData/UserLibrary/Sets"
+- standalone/src/davebox-heal.c|#ifndef SETS_DIR     /* overridable for the test build only */
 - standalone/src/davebox-heal.c|SA_LIBRARY, SETS_DIR, strerror(errno));
 - standalone/src/davebox-heal.c|SETS_DIR);
 - standalone/src/davebox-heal.c|fprintf(stderr, "davebox-heal: bound %s -> %s\n", SA_LIBRARY, SETS_DIR);

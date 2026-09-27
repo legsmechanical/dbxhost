@@ -57,6 +57,11 @@ jobs:
           tar -tzf davebox-sa-module.tar.gz | grep -x 'davebox-sa/payload/bin/heal'
           tar -tzf davebox-sa-module.tar.gz | grep -x 'davebox-sa/payload/scripts/bootstrap.sh'
           ls -la davebox-sa-module.tar.gz
+      - name: Assemble the uninstaller tarball (release asset only, never the catalog)
+        run: |
+          ./standalone/scripts/build-uninstall-release.sh .
+          tar -tzf davebox-uninstall-module.tar.gz | grep -x 'davebox-uninstall/bin/heal.new'
+          tar -tzf davebox-uninstall-module.tar.gz | grep -x 'davebox-uninstall/uninstall.sh'
       - name: Build the HTML manual
         run: |
           bash davebox/scripts/build_manual_html.sh "$PWD/dAVEBOx-SA-manual.html"
@@ -66,6 +71,7 @@ jobs:
         with:
           files: |
             davebox-sa-module.tar.gz
+            davebox-uninstall-module.tar.gz
             dAVEBOx-SA-manual.html
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

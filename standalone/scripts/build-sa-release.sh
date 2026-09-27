@@ -8,6 +8,11 @@
 #   davebox-sa/
 #     module.json                 the launcher (standalone: true)
 #     standalone                  = standalone/scripts/launch.sh
+#     boot-entry.sh               = standalone/boot-target/entry.sh — the boot
+#                                 selector's exec. module.json's boot_target block
+#                                 names it, and stock's manager registers the row
+#                                 (owned by this module, removed with it; the
+#                                 boot DEFAULT is never touched).
 #     payload/                    the dbx-host tree, laid by layout-install.sh
 #       schwung, shadow/, scripts/, lib/, help/, sets/template, splash*, bless.sh …
 #       bin/heal                  the privileged helper — STAGED by bootstrap.sh as
@@ -47,6 +52,7 @@ M="$stage/$ID"; P="$M/payload"
 mkdir -p "$P/bin" "$P/modules/tools"
 cp "$HERE/module/module.json" "$M/module.json"
 cp "$HERE/scripts/launch.sh" "$M/standalone"; chmod +x "$M/standalone"
+cp "$HERE/boot-target/entry.sh" "$M/boot-entry.sh"; chmod +x "$M/boot-entry.sh"
 # the host tree, minus what is shared or linked on the device
 # tests/ is the developer suite; it never runs on a user's device (and MUST not —
 # its fixtures resolve real paths). Dropped from the catalog tarball (Josh, 2026-09-05).

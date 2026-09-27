@@ -334,7 +334,7 @@ it from within schwung tools without issues"*), and they run **one launcher body
 
 ```
 Tools menu   → stock's launch-standalone.sh → modules/tools/davebox-sa/standalone
-boot picker  → boot-targets/davebox/entry.sh → the SAME file, with --boot
+boot picker  → <module>/boot-entry.sh       → the SAME file, with --boot
 ```
 
 `boot-target/{boot.json,entry.sh}` are installed by `scripts/install-boot-target.sh`

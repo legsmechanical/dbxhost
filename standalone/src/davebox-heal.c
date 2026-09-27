@@ -80,7 +80,9 @@
 #define DBX_DIR      "/data/UserData/dbx-host"
 #endif
 #define SRC_SHIM     DBX_DIR "/schwung-shim.so"
+#ifndef DST_SHIM
 #define DST_SHIM     "/usr/lib/davebox-shim.so"
+#endif
 /* Where this binary LIVES (2026-09-05): inside the launcher module's dir in
  * STOCK's tools tree — because that is the one place stock's own schwung-heal
  * will bless a staged helper (charlesvestal/schwung#419: `bin/heal.new` →
@@ -110,6 +112,13 @@
 #define RESTORE_UNIT_PATH "/etc/systemd/system/davebox-restore.service"
 #endif
 #define RESTORE_UNIT_NAME "davebox-restore.service"
+/* The link `systemctl enable` makes (WantedBy=multi-user.target). Removed by
+ * --uninstall-root directly as well as through `disable`, so a unit file that
+ * is already gone cannot leave a dangling link behind. */
+#ifndef RESTORE_WANTS_PATH
+#define RESTORE_WANTS_PATH "/etc/systemd/system/multi-user.target.wants/davebox-restore.service"
+#endif
+#ifndef HEAL_UNINSTALL_ONLY  /* only the install writes the unit */
 static const char RESTORE_UNIT_TEXT[] =
     "[Unit]\n"
     "Description=davebox: restore native set library after an interrupted session\n"
@@ -125,12 +134,16 @@ static const char RESTORE_UNIT_TEXT[] =
     "[Install]\n"
     "WantedBy=multi-user.target\n";
 
+#endif
+
 /* The ONLY bind mount this helper may make: this install's project library,
  * over Move's (non-configurable) set library. Both hardcoded — see the note
  * above. SETS_DIR is Move's own path and is deliberately NOT derived from
  * DBX_DIR: it belongs to the firmware, not to us. */
 #define SA_LIBRARY   DBX_DIR "/sets/library"
+#ifndef SETS_DIR     /* overridable for the test build only */
 #define SETS_DIR     "/data/UserData/UserLibrary/Sets"
+#endif
 
 /* uid/gid of the account Move runs as. Hardcoded rather than resolved through
  * getpwnam(): a setuid binary should not pull in NSS, which can load arbitrary
@@ -139,6 +152,7 @@ static const char RESTORE_UNIT_TEXT[] =
 #define ABLETON_UID 1000
 #define USERS_GID   100
 
+#ifndef HEAL_UNINSTALL_ONLY  /* copying is install-only */
 /* owner_uid/owner_gid < 0 means "leave as root" (used for our own binary). */
 static int copy_atomic(const char *src, const char *dst, mode_t perms,
                        int owner_uid, int owner_gid) {
@@ -215,6 +229,8 @@ static int copy_atomic(const char *src, const char *dst, mode_t perms,
     return 0;
 }
 
+#endif
+
 /* Run `systemctl <verb> move-launcher.service` and wait for it.
  *
  * Why this exists: move-launcher.service is supervised with Restart=on-failure,
@@ -254,6 +270,7 @@ static int systemctl_run(const char *verb, const char *unit) {
     fprintf(stderr, "davebox-heal: systemctl %s %s\n", verb, unit ? unit : "");
     return 0;
 }
+#ifndef HEAL_UNINSTALL_ONLY  /* install-only verbs */
 static int launcher_unit(const char *verb) { return systemctl_run(verb, MOVE_UNIT); }
 
 /* Install the boot-recovery unit (see RESTORE_UNIT_TEXT): write it atomically
@@ -297,6 +314,8 @@ static int install_restore_unit(void) {
     return 0;
 }
 
+#endif
+
 /* Is SETS_DIR currently a mount point? Compares its st_dev with its parent's:
  * a bind mount from the SAME filesystem keeps st_dev equal, so that test alone
  * is not enough — we also compare st_ino against the source, which is what a
@@ -314,6 +333,7 @@ static int sets_is_bound(void) {
             st_target.st_ino == st_source.st_ino) ? 1 : 0;
 }
 
+#ifndef HEAL_UNINSTALL_ONLY  /* mounting is install-only */
 /* Bind the standalone library over Move's set library. Idempotent: a second
  * call is a no-op rather than a second stacked mount. */
 static int sets_mount(void) {
@@ -341,6 +361,8 @@ static int sets_mount(void) {
     return 0;
 }
 
+#endif
+
 /* Undo it. Not-mounted is SUCCESS, not an error: every teardown path calls this
  * unconditionally (session exit, the launcher's refuse paths, crash recovery),
  * and they must not fail because there was nothing to undo.
@@ -365,6 +387,47 @@ static int sets_umount(void) {
     return -1;
 }
 
+/* Undo every root-owned thing an install made (2026-09-27, the uninstaller):
+ * the Sets bind mount, the boot-recovery unit (disable, remove, reload) and the
+ * mirrored shim in /usr/lib. All three paths are the compile-time constants
+ * above; nothing is taken from input. Idempotent — "already gone" is success,
+ * so a half-finished uninstall can simply be run again.
+ *
+ * ORDER: the mount first, and a failure there stops everything. The unit is
+ * what brings the user's own Sets back after a crash, so it must not be removed
+ * while our library might still be bound over theirs. */
+static int unlink_if_present(const char *path) {
+    if (unlink(path) == 0) {
+        fprintf(stderr, "davebox-heal: removed %s\n", path);
+        return 0;
+    }
+    if (errno == ENOENT) return 0;
+    fprintf(stderr, "davebox-heal: unlink %s: %s\n", path, strerror(errno));
+    return -1;
+}
+
+static int uninstall_root(void) {
+    if (sets_umount() != 0) {
+        fprintf(stderr, "davebox-heal: Sets still bound — removing nothing else\n");
+        return -1;
+    }
+    int rc = 0;
+    struct stat st;
+    if (stat(RESTORE_UNIT_PATH, &st) == 0) {
+        /* A failed disable is not fatal: the link is removed by hand below. */
+        (void)systemctl_run("disable", RESTORE_UNIT_NAME);
+        if (unlink_if_present(RESTORE_UNIT_PATH) != 0) rc = -1;
+        if (unlink_if_present(RESTORE_WANTS_PATH) != 0) rc = -1;
+        if (systemctl_run("daemon-reload", NULL) != 0) rc = -1;
+    } else if (unlink_if_present(RESTORE_WANTS_PATH) != 0) {
+        rc = -1;
+    }
+    if (unlink_if_present(DST_SHIM) != 0) rc = -1;
+    if (rc == 0) fprintf(stderr, "davebox-heal: root-owned files removed\n");
+    return rc;
+}
+
+#ifndef HEAL_UNINSTALL_ONLY  /* the shim mirror is install-only */
 /* Returns 1 if the files differ, or on any read error — re-copying is
  * idempotent and safe, skipping a real difference is not. */
 static int contents_differ(const char *a, const char *b) {
@@ -410,6 +473,8 @@ static int dst_setuid_ok(const char *path) {
     return (st.st_mode & S_ISUID) ? 1 : 0;
 }
 
+#endif
+
 int main(int argc, char **argv) {
 #ifndef HEAL_TESTING
     if (setgid(0) < 0) { /* non-fatal */ }
@@ -427,6 +492,19 @@ int main(int argc, char **argv) {
         fprintf(stderr, "davebox-heal: at most one argument\n");
         return 1;
     }
+#ifdef HEAL_UNINSTALL_ONLY
+    /* The UNINSTALLER's copy (2026-09-27). It lives in a different module dir
+     * (HEAL_DIR is compiled in), and all it may ever do is take things AWAY:
+     * unbind the Sets mount and remove what an install put in /usr/lib and
+     * /etc/systemd. No mount, no launcher control, no self-update, no mirror —
+     * so blessing it grants nothing an install did not already have. */
+    if (argc == 2 && strcmp(argv[1], "--umount-sets") == 0)
+        return sets_umount() == 0 ? 0 : 2;
+    if (argc == 2 && strcmp(argv[1], "--uninstall-root") == 0)
+        return uninstall_root() == 0 ? 0 : 2;
+    fprintf(stderr, "davebox-heal (uninstall): expected --umount-sets or --uninstall-root\n");
+    return 1;
+#else
     if (argc == 2) {
         if (strcmp(argv[1], "--pause-launcher") == 0)
             return launcher_unit("stop") == 0 ? 0 : 2;
@@ -438,9 +516,11 @@ int main(int argc, char **argv) {
             return sets_umount() == 0 ? 0 : 2;
         if (strcmp(argv[1], "--install-restore-unit") == 0)
             return install_restore_unit() == 0 ? 0 : 2;
+        if (strcmp(argv[1], "--uninstall-root") == 0)
+            return uninstall_root() == 0 ? 0 : 2;
         fprintf(stderr, "davebox-heal: unknown argument %s (expected "
                         "--pause-launcher, --resume-launcher, --mount-sets, "
-                        "--umount-sets or --install-restore-unit)\n", argv[1]);
+                        "--umount-sets, --install-restore-unit or --uninstall-root)\n", argv[1]);
         return 1;
     }
 
@@ -493,4 +573,5 @@ int main(int argc, char **argv) {
     }
 
     return rc;
+#endif
 }
