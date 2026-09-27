@@ -1884,6 +1884,10 @@ lane, so they exist only while a note is sounding.
   Schwung track exports as a placeholder.
 - **Automation inside a Schwung module**, and dAVEBOx's own bank parameters —
   neither exists in Live.
+- **The part of a lane that runs past its clip.** A lane can be longer than its
+  clip in dAVEBOx — a 4-bar filter sweep over a 1-bar loop — but in Live a clip's
+  automation loops with the clip, so the export keeps only the stretch inside the
+  clip and repeats it.
 
 ## 16.4 Import a MIDI file
 
