@@ -1546,6 +1546,9 @@ export function restoreUiSidecar(applyDefaultsNow) {
          * lands on its default bank. */
         for (let _t = 0; _t < NUM_TRACKS; _t++)
             S.padLayoutChord[_t] = Array.isArray(us.pchd) ? !!us.pchd[_t] : false;
+        /* The Piano layout (additive on v:9): absent → no track on it. */
+        for (let _t = 0; _t < NUM_TRACKS; _t++)
+            S.padLayoutPiano[_t] = Array.isArray(us.ppno) ? !!us.ppno[_t] : false;
         restoreChordSidecar(us.chd);
         resetChordTransient();
         clearHeldChords();
@@ -1664,7 +1667,7 @@ export function restoreUiSidecar(applyDefaultsNow) {
         S.trackPadMode[0] = PAD_MODE_DRUM;
         /* A fresh project starts on the Scale layout with default chords —
          * never with the last project's. */
-        for (let _t = 0; _t < NUM_TRACKS; _t++) { S.padLayoutChord[_t] = false; S.chordLast[_t] = null; }
+        for (let _t = 0; _t < NUM_TRACKS; _t++) { S.padLayoutChord[_t] = false; S.padLayoutPiano[_t] = false; S.chordLast[_t] = null; }
         /* ...and on the default pad octave, never the last project's. */
         for (let _t = 0; _t < NUM_TRACKS; _t++) S.trackOctave[_t] = DEFAULT_TRACK_OCTAVE;
         restoreChordSidecar(null);
