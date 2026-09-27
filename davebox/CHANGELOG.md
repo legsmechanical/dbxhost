@@ -8,6 +8,10 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added (pending)
+- **Crop.** Touch knob 6 on the CLIP or DRUM LANE bank (knob 5 on ALL LANES) and
+  click the jog: the loop becomes the whole clip — it moves to step 1 and
+  everything outside it is removed, linked automation included. One Undo brings
+  it back. The browser's Transform buttons have it too.
 - **A Piano pad layout for melodic tracks.** Two keyboard octaves from C — the
   lower on the bottom two rows, the higher on the top two — white keys below,
   black keys between them. Shift + Step 8 now steps Scale → Chrom → Piano →
@@ -123,17 +127,12 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
-- **Resolution Zoom keeps a late-starting loop in place.** Zooming a clip (or a
-  drum lane) whose loop didn't start at step 1 changed its length but not where
-  the loop starts, so it played a different stretch of the clip. The loop start
-  now moves with it (a loop start between two of the new steps moves back one,
-  and the loop grows to still cover the old one).
-- **Clock Shift, Nudge, Beat Stretch and Legato work on a clip whose loop doesn't
-  start at step 1.** They used to act on the first steps of the clip rather than
-  the ones it plays, so on such a clip Shift seemed to do nothing. They now move
-  the notes inside the loop (on drum lanes and ALL LANES too, each lane in its own
-  loop), and linked automation moves with them. Beat Stretch no longer erases
-  notes outside the loop.
+- **The clip transforms no longer touch notes the clip doesn't play.** On a clip
+  whose loop didn't start at step 1, Clock Shift, Nudge, Beat Stretch and Legato
+  acted on the first steps of the clip instead of the loop (so Shift seemed to do
+  nothing, and Stretch erased notes outside the loop), and Zoom moved the loop to
+  a different stretch of the clip. They now need the loop at step 1 and say so —
+  see **Crop**.
 - **The Chord layout's explainer card goes when you leave Chord** — by Shift +
   Step 8 or the Layout row — instead of staying on screen.
 - **A fast turn across MACROS no longer opens it over the next bank.** Two
@@ -262,6 +261,12 @@ the section into a versioned heading at release time.
   already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
+- **Every clip transform needs the loop to start at step 1.** Shift, Nudge,
+  Stretch (both ways), Legato and Zoom do nothing on a loop that starts later —
+  on ALL LANES, if any lane's does — and the screen says **LOOP NOT AT 1 / CROP
+  FIRST**. Crop puts the loop there.
+- **ALL LANES knob 5 is Crop.** Velocity input (VelIn) is on TRACK CONFIG and
+  Shift + Step 10.
 - **SOUND + CONFIG is now MIX.** It keeps the track's level knobs (or a MIDI
   track's controllers); its click no longer opens the menu — that is CONFIG's.
 - **The banks are in a new order, in groups.** Melodic: IN (Chord, Live Arp),

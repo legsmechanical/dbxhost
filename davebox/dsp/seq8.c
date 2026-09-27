@@ -4996,6 +4996,64 @@ static void clip_stretch_window(clip_t *cl, int dir) {
     cl->active = (uint8_t)any;
 }
 
+/* CROP: the loop window becomes the whole clip. Its steps move to
+ * [0, length), everything else is cleared, loop_start becomes 0 and the
+ * length stays. Every clip transform (Clock Shift, Nudge, Beat Stretch,
+ * Legato, Zoom) needs the loop at step 1 and points the user here when it is
+ * not; the window-aware helpers above stay correct for any loop start.
+ * clip_crop_needed: 1 = the crop would change something (the loop starts
+ * past step 1, or a step past the loop end holds a note). Touches nothing. */
+static int clip_crop_needed(const clip_t *cl) {
+    int s;
+    if (cl->loop_start) return 1;
+    for (s = (int)cl->length; s < SEQ_STEPS; s++)
+        if (cl->steps[s] || cl->step_note_count[s]) return 1;
+    return 0;
+}
+
+/* Step arrays only: callers rebuild notes[] (clip_migrate_to_notes), move the
+ * playhead and the automation (pa_link_crop, with the window read BEFORE this). */
+static void clip_crop_window(clip_t *cl) {
+    const int ls = (int)cl->loop_start;
+    int len = (int)cl->length;
+    int s, n;
+    if (ls + len > SEQ_STEPS) len = SEQ_STEPS - ls;
+    if (len < 0) len = 0;
+    if (ls > 0 && len > 0) {
+        const size_t k = (size_t)len;
+        memmove(&cl->steps[0],               &cl->steps[ls],               k);
+        memmove(&cl->step_notes[0][0],       &cl->step_notes[ls][0],       k * 8);
+        memmove(&cl->step_note_count[0],     &cl->step_note_count[ls],     k);
+        memmove(&cl->step_vel[0],            &cl->step_vel[ls],            k);
+        memmove(&cl->step_gate[0],           &cl->step_gate[ls],           k * sizeof(uint16_t));
+        memmove(&cl->note_tick_offset[0][0], &cl->note_tick_offset[ls][0], k * 8 * sizeof(int16_t));
+        memmove(&cl->step_iter[0],           &cl->step_iter[ls],           k);
+        memmove(&cl->step_random[0],         &cl->step_random[ls],         k);
+        memmove(&cl->step_ratchet[0],        &cl->step_ratchet[ls],        k);
+    }
+    for (s = len; s < SEQ_STEPS; s++) {
+        cl->steps[s]           = 0;
+        memset(cl->step_notes[s], 0, 8);
+        cl->step_note_count[s] = 0;
+        cl->step_vel[s]        = SEQ_VEL;
+        cl->step_gate[s]       = GATE_TICKS;
+        memset(cl->note_tick_offset[s], 0, 8 * sizeof(int16_t));
+        cl->step_iter[s]       = 0;
+        cl->step_random[s]     = 0;
+        cl->step_ratchet[s]    = 0;
+    }
+    /* An early note on the new first step would sit before tick 0, which the
+     * note list wraps to the clip's END: it lands on step 1 instead. */
+    for (n = 0; n < 8; n++)
+        if (cl->note_tick_offset[0][n] < 0) cl->note_tick_offset[0][n] = 0;
+    cl->loop_start = 0;
+    {
+        int any = 0;
+        for (s = 0; s < len; s++) if (cl->steps[s]) { any = 1; break; }
+        cl->active = (uint8_t)any;
+    }
+}
+
 static void seq8_clear_state(seq8_instance_t *inst) {
     int t, c;
     send_panic(inst);
@@ -8170,6 +8228,19 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
 
         if (!strcmp(sub, "all_lanes_stretch_result")) {
             return snprintf(out, out_len, "%d", inst->all_lanes_stretch_result);
+        }
+        /* How many lanes of the active drum clip loop from past step 1 — ALL
+         * LANES Shift / Nudge / Stretch are refused while any does. "0" on a
+         * melodic track (or an unallocated clip). */
+        if (!strcmp(sub, "lanes_off_grid")) {
+            int n = 0;
+            const drum_clip_t *dc = tr->pad_mode == PAD_MODE_DRUM
+                                    ? tr->drum_clips[tr->active_clip] : NULL;
+            if (dc) {
+                int l;
+                for (l = 0; l < DRUM_LANES; l++) if (dc->lanes[l].clip.loop_start) n++;
+            }
+            return snprintf(out, out_len, "%d", n);
         }
 
         return pfx_get(tr, sub, out, out_len);

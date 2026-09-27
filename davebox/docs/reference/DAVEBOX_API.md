@@ -24,10 +24,15 @@ All `tN_` keys: N = 0..7. All writes save state unless noted.
 
 | Key | Dir | Format | Notes |
 |-----|-----|--------|-------|
-| `tN_beat_stretch` | set | `"1"` or `"-1"` | Expand/compress the active clip's loop window, anchored at `loop_start`; refused when `loop_start + 2*length > 256`. |
+| `tN_beat_stretch` | set | `"1"` or `"-1"` | Expand/compress the active clip's loop window; refused when `2*length > 256`, and (both ways) while `loop_start != 0` — see *Loop at step 1*. |
 | `tN_beat_stretch_factor` | get | `"1x"`, `"x2"`, `"/2"`, … | |
 | `tN_beat_stretch_blocked` | get | `"0"` or `"1"` | 1 if last compress blocked. |
-| `tN_clock_shift` | set | `"1"` or `"-1"` | Rotate the steps of the loop window `[loop_start, loop_start+length)` right/left; steps outside it are untouched. |
+| `tN_clock_shift` | set | `"1"` or `"-1"` | Rotate the steps of the loop window right/left; steps outside it are untouched. Refused while `loop_start != 0`. |
+| `tN_nudge` | set | `"1"`, `"-1"`, `"0"` | ±1 tick on every note in the loop window (refused while `loop_start != 0`); `"0"` resets the `nudge_pos` counter (always runs). |
+| `tN_lgto_apply` | set | any | Legato on the active clip; undoable. Refused while `loop_start != 0`. |
+| `tN_clip_resolution_zoom` | set | `"0"`–`"5"` | Resolution keeping every note's time (the length rescales). Refused while `loop_start != 0`. |
+| `tN_crop` | set | any | **Crop**: the active clip's loop window becomes the whole clip — its steps move to step 0, everything outside `[loop_start, loop_start+length)` is removed (steps, notes, trig conditions), `loop_start` = 0, the length stays. Linked automation that follows the clip moves with the notes (points outside the window are removed); lanes on their own Loop/Rate and unlinked lanes are untouched. One undo unit. Nothing to crop (loop at 0, nothing past the end) = no-op, no undo snapshot. |
+| `tN_lanes_off_grid` | get | integer string | Drum track: how many lanes of the active clip have `loop_start != 0` (ALL LANES transforms are refused while > 0). `"0"` on a melodic track. |
 | `tN_clock_shift_pos` | get | integer string | |
 | `tN_clip_length` | set/get | `"1"`..`"256"` | Active clip length. |
 | `tN_clip_resolution` | set | `"0"`–`"5"` | tps index into TPS_VALUES. Proportional rescale. No-op while recording. |
@@ -184,7 +189,11 @@ distinct parameters project-wide.
 
 All operate on active clip's lane L of track N.
 
-`tN_lL_lane_note` (get/set midi_note) · `tN_lL_clip_length` (set) · `tN_lL_steps` (get: 256-char '0'/'1'/'2'; **active-clip-implicit** — defer JS read 2 ticks after clip switch; step-centric, reads `steps[s]`/`step_note_count[s]` directly) · `tN_lL_note_count` · `tN_lL_length` · `tN_lL_current_step` · `tN_lL_step_S_toggle "vel"` · `tN_lL_step_S_clear` · `tN_lL_step_S_vel` · `tN_lL_step_S_gate` · `tN_lL_step_S_nudge` · `tN_lL_step_S_reassign` (move/merge to dest step) · `tN_lL_copy_to "dstLane"` (copy all step data; preserves dst midi_note; undo snapshots full drum clip) · `tN_lL_cut_to "dstLane"` (copy_to + `clip_init` src + silence src; preserves both midi_notes; undo snapshots full clip) · `tN_lL_mute "0|1"` · `tN_lL_solo "0|1"` · `tN_drum_mute_all_clear` · `tN_drum_lane_mute` (get: uint32 bitmask) · `tN_drum_lane_solo` (get: uint32 bitmask) · `tN_cC_drum_has_content` (get: '1' if any lane has notes) · `tN_drum_active_lanes` (get: bitmask, bit L set if lane has hit at current step) · `tN_drum_lanes_qnt "0–100"` (set quantize on all 32 lanes atomically).
+`tN_lL_lane_note` (get/set midi_note) · `tN_lL_clip_length` (set) · `tN_lL_crop` (Crop this lane — see `tN_crop`; touches no automation; one drum-clip undo unit) · `tN_lL_steps` (get: 256-char '0'/'1'/'2'; **active-clip-implicit** — defer JS read 2 ticks after clip switch; step-centric, reads `steps[s]`/`step_note_count[s]` directly) · `tN_lL_note_count` · `tN_lL_length` · `tN_lL_current_step` · `tN_lL_step_S_toggle "vel"` · `tN_lL_step_S_clear` · `tN_lL_step_S_vel` · `tN_lL_step_S_gate` · `tN_lL_step_S_nudge` · `tN_lL_step_S_reassign` (move/merge to dest step) · `tN_lL_copy_to "dstLane"` (copy all step data; preserves dst midi_note; undo snapshots full drum clip) · `tN_lL_cut_to "dstLane"` (copy_to + `clip_init` src + silence src; preserves both midi_notes; undo snapshots full clip) · `tN_lL_mute "0|1"` · `tN_lL_solo "0|1"` · `tN_drum_mute_all_clear` · `tN_drum_lane_mute` (get: uint32 bitmask) · `tN_drum_lane_solo` (get: uint32 bitmask) · `tN_cC_drum_has_content` (get: '1' if any lane has notes) · `tN_drum_active_lanes` (get: bitmask, bit L set if lane has hit at current step) · `tN_drum_lanes_qnt "0–100"` (set quantize on all 32 lanes atomically).
+
+**ALL LANES** (`tN_all_lanes_*`): `tN_all_lanes_crop` crops every lane in its own window (one undo unit; automation lanes without their own cycle move with the drum window — the longest lane's — read before the crop; cycled lanes are untouched). `tN_all_lanes_clock_shift`, `tN_all_lanes_nudge` (±1) and `tN_all_lanes_beat_stretch` are refused on EVERY lane while any lane's `loop_start != 0` (`all_lanes_stretch_result` is left alone); `tN_all_lanes_nudge "0"` still resets the counters.
+
+**Loop at step 1**: every clip transform — Clock Shift, Nudge (±1), Beat Stretch (both ways), Legato and Resolution Zoom, melodic (`tN_*`), per lane (`tN_lL_*`) and ALL LANES — needs `loop_start == 0`. Otherwise the DSP ignores the key silently; the device UI sends nothing and shows *LOOP NOT AT 1 / CROP FIRST*. Plain Resolution (`clip_resolution`, which keeps steps) is not affected.
 
 **Global drum clip**: `drum_clip_copy "srcT srcC dstT dstC"` (all 32 lanes; preserves dst midi_notes; undo snapshots dst only) · `drum_clip_cut "srcT srcC dstT dstC"` (copy + silence + `clip_init` each src lane; restores src midi_notes).
 

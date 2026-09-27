@@ -99,6 +99,14 @@ export function fmtLen(v) { return LEN_LABELS[(v | 0)] || '--'; }
 export function fmtLgto() { return '->'; }
 /* Legato's knob on the CLIP / DRUM LANE bank (K4), a trigger (ui_trigger). */
 export const LGTO_KNOB = 3;
+/* CLIP K6 / DRUM LANE K6 / ALL LANES K5 "Crop" — a trigger like Legato: the
+ * loop window becomes the whole clip (moved to step 1, the rest removed). */
+export function fmtCrop() { return '->'; }
+export const CROP_KNOB = 5;             /* CLIP / DRUM LANE bank (K6) */
+export const ALL_LANES_CROP_KNOB = 4;   /* ALL LANES bank (K5) */
+/* The notice when Shift / Nudge / Stretch x2 are refused because the loop
+ * does not start at step 1 (LOOP NOT AT 1 / CROP FIRST). */
+export const LOOP_NOT_AT_1_MS = 1200;
 export function fmtRes(v)    { return ['1/32','1/16','1/8','1/4','1/2','1bar'][v] || '1/16'; }
 export function fmtPct(v)    { return v + '%'; }
 export function fmtNote(v)   { return NOTE_KEYS[((v | 0) % 12 + 12) % 12]; }
@@ -443,16 +451,16 @@ const _CR  = _mkCustom(_XR);
 
 export const BANKS = [
     /* 0 — CLIP (pad 92) — K1=Res, K2=Stch (Beat Stretch), K3=Shft (Clock
-     * Shift, Shift+turn=Nudge), K4=Lgto (destructive one-shot — opens
-     * confirm dialog on right-turn), K5=InQ (custom handling, mirrors drum
-     * ALL LANES K5), K6 unassigned, K7=Dir, K8=SqFl. */
+     * Shift, Shift+turn=Nudge), K4=Lgto (trigger: touch + jog click),
+     * K5=InQ (custom handling, mirrors drum ALL LANES K6), K6=Crop (trigger:
+     * touch + jog click), K7=Dir, K8=SqFl. */
     { name: 'CLIP', knobs: [
         p('Res',  'Resolution',      'clip_resolution', 'clip',   0, 5,   1,   fmtRes, 8),
         p('Strch', 'Beat Stretch',    'beat_stretch',    'action', 0, 0,   0,   fmtStretch, 16, '_factor', true),
         p('Shift', 'Clock Shift',     'clock_shift',     'action', 0, 0,   0,   fmtSign,    8),
         p('Lgto', 'Apply Legato',   'lgto_apply',       'action', 0, 0,   0,   fmtLgto,    16, '_factor', true),
         p('InQnt',  'Input Quantize', 'diq',              'track', 0, 8, 0,  fmtDiq, 5),
-        _X,
+        p('Crop', 'Crop to Loop',   'crop',             'action', 0, 0,   0,   fmtCrop,    16, '_factor', true),
         p('Dir',  'Playback Dir',   'clip_playback_dir', 'clip',  0, 3,   0,   fmtPlayDir, 8),
         p('SeqFl', 'Seq Follow',      null,              'seqfollow', 0, 1, 1,  fmtBool, 16),
     ]},
@@ -524,14 +532,15 @@ export const BANKS = [
     { name: 'AUTO (retired)', knobs: [_X, _X, _X, _X, _X, _X, _X, _X] },
     /* 7 — ALL LANES (drum pad 92) — macro controls across all 32 drum lanes.
      * K1=Res (all-lane resolution, custom), K2=Stch, K3=Shft (alt=Nudge),
-     * K4=Qnt (custom), K5=VelIn (custom), K6=InQ (custom),
+     * K4=Qnt (custom), K5=Crop (trigger: touch + jog click; VelIn lives on
+     * TRACK CONFIG and Shift + Step 10), K6=InQ (custom),
      * K7=Dir (all-lane playback dir, alt=RvSt, custom), K8=SyncRpt. */
     { name: 'ALL LANES', knobs: [
         _CR,  /* K1: Res — all-lane resolution, custom handling, def=-1 */
         p('Strch', 'Beat Stretch', 'beat_stretch', 'action', 0, 0,  0,  fmtStretch, 16, '_factor', true),
         p('Shift', 'Clock Shift',  'clock_shift',  'action', 0, 0,  0,  fmtSign,    8),
         _CQ,  /* K4: Qnt — quantize all lanes, custom handling, def=-1 */
-        _C,   /* K5: VelIn — custom handling via trackVelOverride */
+        p('Crop', 'Crop to Loop', 'crop', 'action', 0, 0, 0, fmtCrop, 16, '_factor', true),   /* K5: every lane */
         _C,   /* K6: InQ — per-track drum input quantize, custom handling */
         _CR,  /* K7: Dir — all-lane playback dir, custom handling, def=-1 */
         p('RSync', 'Repeat Sync', 'drum_repeat_sync', 'track', 0, 1, 1, fmtBool, 16),
