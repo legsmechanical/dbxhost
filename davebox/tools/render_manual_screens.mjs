@@ -968,16 +968,16 @@ screen('projects-loading', 'Open dAVEBOx', 'Loading a project',
 
 /* Dialogs raised by the chord layout / type changes */
 screen('chord-layout-card', '6.1 Playing and placing notes', 'The Chord layout card',
-    'Switching a track to the Chord layout (Shift + Step 8, twice from Scale) explains the rows until you click OK.',
-    () => { for (let i = 0; i < 2; i++) { press(MoveShift); noteOn(STEP(7), 127); noteOff(STEP(7)); release(MoveShift); ticks(2); }
+    'Switching a track to the Chord layout (Shift + Step 8, three times from Scale) explains the rows until you click OK.',
+    () => { for (let i = 0; i < 3; i++) { press(MoveShift); noteOn(STEP(7), 127); noteOff(STEP(7)); release(MoveShift); ticks(2); }
             if (!S.chordPopupOpen) throw new Error('no chord card'); });
 screen('bank-chord', '6.1 Playing and placing notes', 'CHORD bank',
     'On a Chord-layout track the CHORD bank follows LIVE ARP: voicing, smoothing, bass, strum and slot mode.',
-    () => { for (let i = 0; i < 2; i++) { press(MoveShift); noteOn(STEP(7), 127); noteOff(STEP(7)); release(MoveShift); ticks(2); }
+    () => { for (let i = 0; i < 3; i++) { press(MoveShift); noteOn(STEP(7), 127); noteOff(STEP(7)); release(MoveShift); ticks(2); }
             click(); ticks(2); toBank(C.BANK_CHORD); });
 screen('bank-chord-slot', 'The Chord layout', 'CHORD bank — editing a chord',
     'Hold a chord pad on the CHORD bank to edit that chord.',
-    () => { for (let i = 0; i < 2; i++) { press(MoveShift); noteOn(STEP(7), 127); noteOff(STEP(7)); release(MoveShift); ticks(2); }
+    () => { for (let i = 0; i < 3; i++) { press(MoveShift); noteOn(STEP(7), 127); noteOff(STEP(7)); release(MoveShift); ticks(2); }
             click(); ticks(2); toBank(C.BANK_CHORD); noteOn(PAD(5), 100); ticks(4); });
 
 screen('loading-sequencer', 'Open dAVEBOx', 'Starting the sequencer',
