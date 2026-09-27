@@ -1012,6 +1012,10 @@ export const S = {
     lastRemapMidiIn: -2,
     lastTarpStyle: new Array(8).fill(1),
     padLayoutChromatic: new Array(8).fill(false),
+    /* The Piano layout (per track; Josh, 2026-09-26): two piano octaves, the
+     * higher on the top two rows. Wins over padLayoutChromatic; the Chord
+     * layout wins over it. */
+    padLayoutPiano: new Array(8).fill(false),
     /* The Chord layout (per track). Wins over padLayoutChromatic while set;
      * turning it off lands back on whichever of Scale/Chrom was chosen. */
     padLayoutChord: new Array(8).fill(false),

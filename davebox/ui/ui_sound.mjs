@@ -492,6 +492,7 @@ const SLOT_LEVELS = [
  *
  * ⚠ Built per open, not once: which rows apply depends on the track's pad mode
  * and route, and both change under this screen. */
+export function configRowsForTest(t) { return configRows(t); }
 function configRows(t) {
     const melodic = GS.trackPadMode[t] === 0;
     const rows = [];
@@ -520,19 +521,22 @@ function configRows(t) {
     }
     /* Pad layout is a melodic idea — a drum track's pads are its lanes. */
     /* Chord (2) is a third layout: in-key chords on the bottom row
-     * (ui_chord_pads.mjs). Keys tracks only — a Conductor has no pads to lay out. */
+     * (ui_chord_pads.mjs); Piano (3) two keyboard octaves (2026-09-26). Keys
+     * tracks only — a Conductor has no pads to lay out. The list runs in the
+     * Shift + Step 8 order: Scale, Chrom, Piano, Chord. */
     const _chordOk = melodic && GS.trackPadMode[t] === 0;
     rows.push({ key: 'layout', label: 'Layout',
-        opts: _chordOk ? [0, 1, 2] : [0, 1],
-        fmt: (v) => (melodic ? (v === 2 ? 'Chord' : v ? 'Chrom' : 'Scale') : '-'),
-        get: () => (GS.padLayoutChord[t] && _chordOk ? 2 : GS.padLayoutChromatic[t] ? 1 : 0),
+        opts: _chordOk ? [0, 1, 3, 2] : [0, 1],
+        fmt: (v) => (melodic ? (v === 2 ? 'Chord' : v === 3 ? 'Piano' : v ? 'Chrom' : 'Scale') : '-'),
+        get: () => (GS.padLayoutChord[t] && _chordOk ? 2 : GS.padLayoutPiano[t] && _chordOk ? 3 : GS.padLayoutChromatic[t] ? 1 : 0),
         set: (v) => {
             if (!melodic) return;
             if (v === 2 && _chordOk) {
                 setChordLayout(t, true);
             } else {
                 setChordLayout(t, false);
-                GS.padLayoutChromatic[t] = v !== 0;
+                GS.padLayoutChromatic[t] = v === 1;
+                GS.padLayoutPiano[t] = v === 3 && _chordOk;
             }
             computePadNoteMap();
             forceRedraw();

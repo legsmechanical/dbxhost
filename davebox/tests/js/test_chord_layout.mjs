@@ -166,12 +166,15 @@ step('control: a fresh track is on the Scale layout, one note per pad', () => {
     const pm = lastPadmap();
     assert(pm && pm.slice(0, 32).every((t) => t.indexOf('+') < 0), 'a plain map carries no chords');
 });
-step('⭐ Shift + step 8 walks Scale → Chrom → Chord, and landing on Chord raises the explainer', () => {
+step('⭐ Shift + step 8 walks Scale → Chrom → Piano → Chord, and landing on Chord raises the explainer', () => {
     shiftStep8();
     assert(S.padLayoutChromatic[2] && !S.padLayoutChord[2], 'first press: Chrom');
     assert(!S.chordPopupOpen, 'no explainer on Chrom');
     shiftStep8();
-    assert(S.padLayoutChord[2], 'second press: Chord');
+    assert(S.padLayoutPiano[2] && !S.padLayoutChord[2], 'second press: Piano');
+    assert(!S.chordPopupOpen, 'no explainer on Piano');
+    shiftStep8();
+    assert(S.padLayoutChord[2], 'third press: Chord');
     assert(S.chordPopupOpen, 'the explainer is up');
     assert(S.activeBank === BANK_CHORD && S.trackActiveBank[2] === BANK_CHORD, 'landing on Chord did not land on the CHORD bank: ' + S.activeBank);
     const t = screenText();

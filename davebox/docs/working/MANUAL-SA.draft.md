@@ -496,14 +496,19 @@ too — see [Drum Clips](#7-drum-clips).
 ### Pad layouts
 
 **Shift + Step 8** (or the **Layout** row in the track's TRACK
-CONFIG menu) steps through three layouts, and the screen flashes IN-SCALE or
-CHROMATIC:
+CONFIG menu) steps through four layouts, and the screen flashes IN-SCALE,
+CHROMATIC or PIANO:
 
 - **Scale** (default) — only in-scale notes, with the root in the track color. Each
   row starts three scale notes above the row below.
 - **Chrom** — all 12 semitones, in-scale notes highlighted. Each row carries on
   from the end of the row below.
-- **Chord** — below.
+- **Piano** — two keyboard octaves from C: the lower octave on the bottom two
+  rows, the higher on the top two. Each octave's bottom row is the white keys
+  (C to the next C) and the row above it the black keys, each sitting between
+  its two white keys; pads with no black key are dark and silent. The root is in
+  the track color and in-scale keys are brighter than the rest.
+- **Chord** — below. Leaving it takes its explainer card with it.
 
 <img src="img/pads-melodic.svg" alt="The Scale layout in C major at the default octave: each row starts three scale notes above the row below, the root is filled, and Shift turns the bottom row into track select.">
 
@@ -2071,7 +2076,7 @@ are hidden, so the list is shorter on a MIDI track or a Conductor.
 | Setting | Values | Notes |
 |---|---|---|
 | Mode | Keys, Drums | [Track type](#41-track-type). Scrolling previews; the click commits |
-| Layout | Scale, Chrom, Chord | Melodic pad layout ([Chord](#the-chord-layout)); reads `-` on a drum track |
+| Layout | Scale, Chrom, Piano, Chord | Melodic pad layout ([Chord](#the-chord-layout)); reads `-` on a drum track |
 | Transpose | −24…+24 st | Shifts everything the track plays |
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |
 | Looper | On, Off | Feeds [Performance Mode](#13-performance-mode) |
@@ -2316,7 +2321,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | 5 | Tap Tempo | Both |
 | 6 | Metro (Cnt-In ↔ Always) — icon lit while it plays (Play / Always) | Both |
 | 7 | Swing — jump to Swing Amt in Project Settings | Both |
-| 8 | Pad layout (Scale → Chrom → Chord) / cycle right-pad mode | Track |
+| 8 | Pad layout (Scale → Chrom → Piano → Chord) / cycle right-pad mode | Track |
 | 9 | Scale — jump to Scale in Project Settings | Both |
 | 10 | VelIn (Live ↔ 100) — icon lit while fixed | Track |
 | 11 | LIVE ARP on/off — icon lit while on | Track (melodic) |

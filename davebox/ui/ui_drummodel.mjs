@@ -7,7 +7,7 @@
  */
 
 import { S } from './ui_state.mjs';
-import { PAD_MODE_DRUM, DRUM_LANES, DRUM_BASE_NOTE, NUM_CLIPS } from './ui_constants.mjs';
+import { PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, DRUM_LANES, DRUM_BASE_NOTE, NUM_CLIPS } from './ui_constants.mjs';
 import { SCALE_INTERVALS } from './ui_pure.mjs';
 import { dspGet } from './ui_dsp_get.mjs';
 import { chordLayoutOn, fillChordPadMap, padToken } from './ui_chord_pads.mjs';
@@ -57,6 +57,15 @@ export function padmapSig(payload) {
     return h;
 }
 
+/* The Piano layout's rows, in semitones above C: the white keys, and each
+ * black key over the white key to its right (C# over D); -1 = no key. */
+const PIANO_WHITE = [0, 2, 4, 5, 7, 9, 11, 12];
+const PIANO_BLACK = [-1, 1, 3, -1, 6, 8, 10, -1];
+/* A Keys track on the Piano layout (and not on Chord, which wins). */
+export function pianoLayoutOn(t) {
+    return !!S.padLayoutPiano[t] && S.trackPadMode[t] === PAD_MODE_MELODIC_SCALE && !chordLayoutOn(t);
+}
+
 export function computePadNoteMap() {
     const t = S.activeTrack;
     for (let i = 0; i < 32; i++) S.padChordMap[i] = null;
@@ -97,6 +106,21 @@ export function computePadNoteMap() {
             /* The Chord layout: slots, modifiers, strum and scale rows
              * (ui_chord_pads.mjs). Slot pads carry whole chords. */
             fillChordPadMap(t, effKey, effScale);
+        } else if (pianoLayoutOn(t)) {
+            /* The Piano layout (Josh, 2026-09-26: "lays the pads out like to 2
+             * piano octaves. Top 2 pad rows are higher octave, bottom two are
+             * lower"): each octave is a white row C D E F G A B C with its
+             * black row above, each black key over the white key to its right
+             * ("between the whites"); no black key there → a dark, silent pad.
+             * Always from C — a keyboard, not a scale. */
+            const base = S.padOctave[t] * 12;
+            for (let i = 0; i < 32; i++) {
+                const col = i % 8;
+                const row = Math.floor(i / 8);
+                const st = (row & 1) ? PIANO_BLACK[col] : PIANO_WHITE[col];
+                const p = st < 0 ? -1 : base + (row >= 2 ? 12 : 0) + st;
+                S.padNoteMap[i] = (p < 0 || p > 127) ? 0xFF : p;
+            }
         } else if (S.padLayoutChromatic[t]) {
             for (let i = 0; i < 32; i++) {
                 const col = i % 8;

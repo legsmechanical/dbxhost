@@ -8,6 +8,10 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added (pending)
+- **A Piano pad layout for melodic tracks.** Two keyboard octaves from C — the
+  lower on the bottom two rows, the higher on the top two — white keys below,
+  black keys between them. Shift + Step 8 now steps Scale → Chrom → Piano →
+  Chord; it is also on the Layout row.
 - **A CONFIG bank, first on every track's walk.** It shows the track's TRACK
   CONFIG menu at rest, in corner brackets; click to use it. Conductor tracks
   have it too. Shift + Note/Session still opens the menu from anywhere.
@@ -131,6 +135,8 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **The Chord layout's explainer card goes when you leave Chord** — by Shift +
+  Step 8 or the Layout row — instead of staying on screen.
 - **A fast turn across MACROS no longer opens it over the next bank.** Two
   quick jog detents past MACROS could leave its screen open on AUTOMATION.
 - **Jumping to a module parameter from automation keeps the module's page as it
