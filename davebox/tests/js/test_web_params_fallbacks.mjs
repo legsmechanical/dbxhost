@@ -92,6 +92,7 @@ step('⚠ CONTROL: no hierarchy and no chain_params still says "no parameters"',
 step('a hierarchy with levels but no "root" starts at the first level', () => {
     const m = mount({ levels: { main: { params: ['tune'] }, env: { params: ['decay'] } } }, DR32ISH);
     assert(m.text().includes('Tune'), 'first level not shown: ' + m.text());
+    assert(!m.text().includes('Kit'), 'listed every param rather than the first level: ' + m.text());
 });
 step('⭐ a module with MODES starts at its active mode\'s level (case-insensitive), and a mode change re-roots', () => {
     const h = { modes: ['patch', 'performance'], levels: { patch: { params: ['tune'] }, performance: { params: ['decay'] } } };
