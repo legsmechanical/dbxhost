@@ -252,6 +252,26 @@ export function resolveSetLoadDecision() {
  * that there is nothing to do. */
 export function loadSelectedCurrentProject() {
     if (!S.awaitingProjectSelect) return;
+    /* ⭐ The project being loaded is the one the host CONFIRMED open — adopt
+     * it here, for every caller. init() leaves the identity empty while the
+     * host is still `pending` (on purpose), and the tick will not adopt a
+     * later confirmation while awaiting; but the picker reads the confirmation
+     * fresh, marks that project current and lands here. Loading with the
+     * stale empty identity sent state_load "" — which the DSP refuses — and
+     * the watchdog put the picker back (Josh, 2026-09-27: "the last used
+     * project 'neato' wouldn't load", five presses running). */
+    const _id = hostIdentity();
+    if (_id.state === 'open' && _id.uuid) {
+        S.currentSetUuid = _id.uuid;
+        S.currentSetName = projectDisplayName(_id.uuid);
+        S.currentSetFolder = _id.name;
+    }
+    if (!S.currentSetUuid) {
+        /* Nothing confirmed to load: leave the picker to the watchdog rather
+         * than send a load the DSP can only refuse. */
+        console.log('project load: no confirmed identity yet — not loading');
+        return;
+    }
     resolveSetLoadDecision();
     if (!S.confirmStateWipe)
         S.pendingSetLoad = true;
