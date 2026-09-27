@@ -477,6 +477,8 @@ function toBank(b, open = true) {
     const dir = cyc.indexOf(b) < cyc.indexOf(S.activeBank) ? -1 : 1;
     for (let g = 0; g < 24 && S.activeBank !== b; g++) { jog(dir); ticks(1); }
     if (S.activeBank !== b) throw new Error('jog never reached bank ' + b + ' (at ' + S.activeBank + ')');
+    /* The bank map stands for a moment after the last detent — let it go, so the card is what shows. */
+    for (let g = 0; g < 200 && S.clockMs - (S.bankNavTurnMs || 0) < 300; g++) ticks(1);
     if (open) { click(); ticks(2); }
 }
 function selectTrack(t) {
@@ -971,7 +973,7 @@ screen('chord-layout-card', '6.1 Playing and placing notes', 'The Chord layout c
     'Switching a track to the Chord layout (Shift + Step 8, three times from Scale) explains the rows until you click OK.',
     () => { for (let i = 0; i < 3; i++) { press(MoveShift); noteOn(STEP(7), 127); noteOff(STEP(7)); release(MoveShift); ticks(2); }
             if (!S.chordPopupOpen) throw new Error('no chord card'); });
-screen('bank-chord', '6.1 Playing and placing notes', 'CHORD bank',
+screen('bank-chord', 'The Chord layout', 'CHORD bank',
     'On a Chord-layout track the CHORD bank follows LIVE ARP: voicing, smoothing, bass, strum and slot mode.',
     () => { for (let i = 0; i < 3; i++) { press(MoveShift); noteOn(STEP(7), 127); noteOff(STEP(7)); release(MoveShift); ticks(2); }
             click(); ticks(2); toBank(C.BANK_CHORD); });

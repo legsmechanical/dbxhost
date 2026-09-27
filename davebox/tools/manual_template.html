@@ -17,9 +17,9 @@
   --accent-2: #1f8fa6;
   --link: #9c2268;
   --hl: #fae3f0;
-  --key-bg: #221b3a;
-  --key-ink: #f3f0ff;
-  --key-edge: #0e0a1c;
+  --key-bg: #ffffff;
+  --key-ink: #000000;
+  --key-edge: #000000;
   --like: #16707a;
   --like-bg: #e2f2f4;
   --warn: #9e540c;
@@ -38,7 +38,7 @@
     color-scheme: dark;
     --ground: #110e1b; --surface: #181426; --ink: #ebe7f5; --ink-soft: #cdc6e0; --muted: #9a92b3;
     --rule: #2a2440; --rule-soft: #1f1a30; --accent: #ff5fa8; --accent-2: #4fd3e3; --link: #ff8cc2; --hl: #3a1a33;
-    --key-bg: #e9e4f7; --key-ink: #16122a; --key-edge: #8e86a8;
+    --key-bg: #ffffff; --key-ink: #000000; --key-edge: #000000;
     --like: #5fd3dc; --like-bg: #10242a; --warn: #ffb45c; --warn-bg: #2b1d14; --note-bg: #1d1830;
     --bezel: #07050d; --bezel-edge: #332b4a;
     --shadow: 0 1px 2px rgba(0,0,0,.45), 0 8px 24px rgba(8,4,20,.45);
@@ -48,7 +48,7 @@
   color-scheme: dark;
   --ground: #110e1b; --surface: #181426; --ink: #ebe7f5; --ink-soft: #cdc6e0; --muted: #9a92b3;
   --rule: #2a2440; --rule-soft: #1f1a30; --accent: #ff5fa8; --accent-2: #4fd3e3; --link: #ff8cc2; --hl: #3a1a33;
-  --key-bg: #e9e4f7; --key-ink: #16122a; --key-edge: #8e86a8;
+  --key-bg: #ffffff; --key-ink: #000000; --key-edge: #000000;
   --like: #5fd3dc; --like-bg: #10242a; --warn: #ffb45c; --warn-bg: #2b1d14; --note-bg: #1d1830;
   --bezel: #07050d; --bezel-edge: #332b4a;
   --shadow: 0 1px 2px rgba(0,0,0,.45), 0 8px 24px rgba(8,4,20,.45);
@@ -177,12 +177,16 @@ li::marker { color: var(--muted); }
 strong { font-weight: 700; }
 code { font: 500 .86em var(--f-mono); background: var(--note-bg); padding: .08em .35em; border-radius: 4px; }
 
+/* a numbered section's content sits indented under its heading */
+.secbody { padding-left: 1.6rem; }
+@media (max-width: 640px) { .secbody { padding-left: .75rem; } }
+
 /* hardware controls as keycaps */
 kbd {
   font: 700 .74em/1 var(--f-mono); letter-spacing: .01em; white-space: nowrap;
   color: var(--key-ink); background: var(--key-bg);
-  padding: .26em .5em .3em; border-radius: 5px;
-  box-shadow: inset 0 -2px 0 var(--key-edge);
+  padding: .2em .45em .24em; border-radius: 5px;
+  border: 1px solid var(--key-edge);
   position: relative; top: -.08em;
 }
 .keys { white-space: normal; }

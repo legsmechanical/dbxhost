@@ -227,9 +227,10 @@ const normHeading = (t) => t.toLowerCase().replace(/^[\d.]+\s+/, '').replace(/[^
  * A screen earns a place only if it shows the reader something the text can't: a screen's layout
  * the first time they meet it, or a picture (bars, a grid, a chooser strip, bracketed notes).
  * Left out on purpose: confirm and warning dialogs, notices and pop-ups (they explain themselves),
- * near-duplicates (a second overview with another bank name), and bank pages whose knobs the table
- * beside them already lists (Josh, 2026-09-26: "give careful consideration to each screen shot used
- * and ask whether it serves a clear purpose"). The renderer still draws them all, for audits. */
+ * and near-duplicates (a second overview with another bank name) (Josh, 2026-09-26: "give careful
+ * consideration to each screen shot used and ask whether it serves a clear purpose"). But every
+ * section about a bank shows that bank's card (Josh, 2026-09-27: "every section focused on a bank's
+ * operation needs to show the bank card"). The renderer still draws them all, for audits. */
 const MANUAL_SCREENS = new Set([
     'projects-other',          // the project picker
     'menu-project-settings',   // the first list the reader meets
@@ -240,6 +241,18 @@ const MANUAL_SCREENS = new Set([
     'track-drum',              // the drum overview
     'bank-cond-responder',     // which tracks follow
     'bank-clip',               // a bank page: eight knobs, eight cells
+    'bank-drumlane',           // DRUM LANE bank
+    'bank-allanes',            // ALL LANES bank
+    'bank-notefx',             // NOTE FX bank
+    'bank-harmony',            // HARMONY bank
+    'bank-delay',              // DELAY bank
+    'bank-seqarp',             // SEQ ARP bank
+    'bank-livearp',            // LIVE ARP bank
+    'bank-chord',              // CHORD bank
+    'bank-cond-conduct',       // C-CONDUCT bank
+    'bank-cond-notefx',        // C-NOTE FX bank
+    'bank-cond-octave',        // C-OCTAVE bank
+    'bank-cond-when',          // C-WHEN bank
     'bank-repeat-groove',      // the groove bars
     'bank-automation',         // the list of what's automated
     'session-overview',        // Session View
@@ -393,14 +406,20 @@ function renderChapterBody(ch) {
         pending = null;
     };
     const flushTail = () => { if (tail.length) html += figureHtml(tail); tail = []; };
+    /* A section's content (everything under an h2, h3s included) sits indented under its heading. */
+    let inSec = false;
     for (const b of ch.body) {
         if (b.type === 'h') {
             flushPending();
             flushTail();
             const id = slugify(b.text, used);
             const lvl = Math.min(b.level, 4);
-            if (b.level === 2) ch.sections.push({ id, title: b.text });
+            if (b.level === 2) {
+                ch.sections.push({ id, title: b.text });
+                if (inSec) html += '</div>\n';
+            }
             html += `<h${lvl} id="${id}"><a class="anchor" href="#${id}" aria-hidden="true">#</a>${inline(b.text)}</h${lvl}>\n`;
+            if (b.level === 2) { html += '<div class="secbody">\n'; inSec = true; }
             const hit = screensBySection.get(normHeading(b.text));
             if (hit) { pending = hit.filter((s) => !placedScreens.has(s)); pending.forEach((s) => placedScreens.add(s)); }
             seenPara = false;
@@ -411,6 +430,7 @@ function renderChapterBody(ch) {
     }
     flushPending();
     flushTail();
+    if (inSec) html += '</div>\n';
     return html;
 }
 
