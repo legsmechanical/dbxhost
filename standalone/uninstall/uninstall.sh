@@ -21,7 +21,7 @@
 # the launcher rebuilds the set library from projects/ and seeds "Project 1"
 # only when there are none; the first-launch install lays only its own files:
 #   projects/ projects.json davebox-exports/       the user's work
-#   daves-seen.txt daves-window.txt phrase-map.txt parallel-modules.txt
+#   daves-seen.txt daves-window.txt bank-view-map.txt phrase-map.txt parallel-modules.txt
 #   active_set.txt sets/sa_song_index              last project open
 #   sa_master_volume shadow_config.json config/    settings
 #   quarantine/ sets/quarantine/                   work set aside, never deleted:
@@ -70,7 +70,7 @@ OPEN_TOOL_CMD="$STOCK_DIR/open_tool_cmd.json"
 
 # Top-level names under $DBX_DIR that are the user's, never removed. sets/ is
 # special-cased: only the KEEP_IN_SETS names survive inside it.
-KEEP="projects projects.json davebox-exports daves-seen.txt daves-window.txt phrase-map.txt parallel-modules.txt active_set.txt sa_master_volume shadow_config.json config quarantine"
+KEEP="projects projects.json davebox-exports daves-seen.txt daves-window.txt bank-view-map.txt phrase-map.txt parallel-modules.txt active_set.txt sa_master_volume shadow_config.json config quarantine"
 KEEP_IN_SETS="sa_song_index quarantine"
 
 DRY=1

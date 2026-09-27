@@ -274,6 +274,8 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   on the left lists the track's banks with the current one highlighted in the
   middle; it goes as soon as you let go. On a melodic track the column shows the
   groups: each group's name sits to the left of a line beside its banks.
+  In the bank view the column can be turned off: **Bank Map on Lock** in the
+  global menu.
 - **Click the jog** to open the **bank view** — that bank's page, held on screen;
   keep turning to walk from there. In the bank view a click switches to the bank's
   **alternate** parameters (a down-arrow in the header marks a bank that has them,
@@ -1961,6 +1963,7 @@ see [Track settings](#174-track-settings) below.
 | Scale Aware | Whether scale-aware params move by scale degree (On) or semitone (Off) | On, Off | On |
 | Launch | When a launched clip or scene actually starts — at once (Now) or on the next boundary. At 1-bar it starts from its beginning; otherwise in step with the song ([§11.1](#111-launching-clips)) | Now, 1/16, 1/8, 1/4, 1/2, 1-bar | Now |
 | Beat Marks | Dim markers on the step buttons at 1, 5, 9, 13 | On, Off | On |
+| Bank Map on Lock | Whether the bank column comes up while the jog walks the banks from the bank view (or the session mixer card) — see [§3.6](#36-parameter-banks). The overview always shows it | On, Off | On |
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Projects... | The project picker — see [Projects](#175-projects) | action | — |
 | Save state / Load state | Save or restore a named snapshot — see [§17.3](#173-snapshots) | action | — |
