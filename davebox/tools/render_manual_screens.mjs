@@ -730,7 +730,7 @@ screen('session-mixer-senda', '3.6 Parameter banks', 'Session mixer — Send A',
     'The Send A page: how much of each track feeds the first send bus.',
     () => { toSession(); jog(2); ticks(2); click(); ticks(2); });
 screen('session-fx-door', '14.8 Master FX and the sends', 'Session mixer — Master & Send FX door',
-    'In Session View the jog past Send B reaches the SESSION FX card; click it for the Master and Send FX buses.',
+    'In Session View the jog past Send B reaches the SESSION FX card: the Master and Send FX list at rest; click to use it.',
     () => { toSession(); jog(4); ticks(2); click(); ticks(2); });
 
 /* 12.3 — mute & solo, seen on the track row */

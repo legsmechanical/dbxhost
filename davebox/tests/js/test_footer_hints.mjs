@@ -63,9 +63,9 @@ step('⭐ holding Loop (melodic): STEP PAGE and JOG STEP in the footer', () => {
     assert(swallowed === null, 'swallowed: ' + swallowed);
     S.loopHeld = false;
 });
-step('⭐ the door card: CLK ENTER in the footer', () => {
-    fb.fill(0); snd.renderGatewayCard('MASTER FX', 'SESSION FX');
-    assert(has('CLK', 'ENTER'), 'pills: ' + hints());
+step('⭐ the SESSION FX card (the list at rest): CLK MENU in the footer', () => {
+    fb.fill(0); snd.renderSessionFxCard();
+    assert(has('CLK', 'MENU'), 'pills: ' + hints());
 });
 
 if (failed) { console.log('FAIL: footer hints'); process.exit(1); }

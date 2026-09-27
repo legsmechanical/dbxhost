@@ -1716,7 +1716,7 @@ and **SEND FX B** — each with four effect blocks, edited exactly like a track'
   share one reverb or delay. Each send's **Return** level sets how much comes back
   into the mix.
 
-To reach them, turn the jog in Session View past Send B to the **SESSION FX** card
+To reach them, turn the jog in Session View past Send B to the **SESSION FX** card — the Master and Send FX list at rest, in corner brackets —
 and click — or press **Shift + Note/Session** (hold it to go straight to Master FX).
 
 ---
