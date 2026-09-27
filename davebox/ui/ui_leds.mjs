@@ -21,6 +21,7 @@ import {
     MoveBack, MoveCopy, MoveDelete
 } from '/data/UserData/schwung/shared/constants.mjs';
 import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
+import { pianoLayoutOn } from './ui_drummodel.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 
 const lastSentNoteLED   = new Array(128).fill(-1);
@@ -917,6 +918,7 @@ export function updateTrackLEDs() {
             const semitone = ((S.padNoteMap[i] % 12) - _effKey + 12) % 12;
             const inScale  = S.padScaleSet.has(semitone);
             const chromatic = S.padLayoutChromatic[S.activeTrack];
+            const piano = pianoLayoutOn(S.activeTrack);
             /* ⭑ The lit pad stays TRACK-COLOURED in co-run (Josh, 2026-08-24:
              * keep the distinct scheme, but "the last pressed pad" must still
              * read as this track). The rest of the inversion below is untouched
@@ -925,6 +927,11 @@ export function updateTrackLEDs() {
              * lane already takes the real track colour. */
             color = (sounding || inHeld || inLatch)
                     ? (_inCoRunPad ? trackColor(S.activeTrack) : White)
+                  : piano ? (S.padNoteMap[i] % 12 === _effKey ? rootColor
+                             /* The Piano keeps every key lit so the keyboard
+                              * reads: in-scale brighter than out. */
+                             : inScale ? (_inCoRunPad ? nonRootColor : LightGrey)
+                             : (_inCoRunPad ? LED_OFF : DarkGrey))
                   : (chromatic && !inScale) ? LED_OFF
                   : (S.padNoteMap[i] % 12 === _effKey ? rootColor : nonRootColor);
             cachedSetLED(TRACK_PAD_BASE + i, color);

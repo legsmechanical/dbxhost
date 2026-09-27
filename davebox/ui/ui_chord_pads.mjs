@@ -57,6 +57,10 @@ export function setChordLayout(t, on) {
         S.trackActiveBank[t] = BANK_CHORD;
         if (t === S.activeTrack) S.activeBank = BANK_CHORD;
     }
+    /* Leaving the layout takes its explainer with it (Josh, 2026-09-26: "chord
+     * mode instructions and confirmation should go away when you switch to a
+     * different pad mode"). */
+    if (!on && was) S.chordPopupOpen = false;
     /* Leaving the layout leaves its bank too. */
     if (!on && S.trackActiveBank[t] === BANK_CHORD) S.trackActiveBank[t] = 0;
     if (!on && t === S.activeTrack && S.activeBank === BANK_CHORD) S.activeBank = 0;

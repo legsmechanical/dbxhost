@@ -1467,7 +1467,7 @@ export function _onStepButtons(d1, d2) {
         const t      = S.activeTrack;
         const isDrum = S.trackPadMode[t] === PAD_MODE_DRUM;
         if (idx === 7) {
-            /* Step 8 (Track View only): drum=cycle perform mode; melodic=toggle chromatic */
+            /* Step 8 (Track View only): drum=cycle perform mode; melodic=cycle the pad layout */
             if (isDrum) {
                 if (S.drumPerformMode[t] === 1) {
                     host_module_set_param('t' + t + '_drum_repeat_stop', '1');
@@ -1486,19 +1486,23 @@ export function _onStepButtons(d1, d2) {
                     ['Velocity', 'Repeat Play (Rpt1)', 'Repeat Set (Rpt2)'],
                     S.drumPerformMode[t]);
             } else {
-                /* Scale → Chrom → Chord → Scale. Landing on Chord raises
-                 * its explainer instead of the one-word popup. */
+                /* Scale → Chrom → Piano → Chord → Scale. Landing on Chord
+                 * raises its explainer instead of the one-word popup. */
                 if (S.padLayoutChord[t]) {
                     setChordLayout(t, false);
                     S.padLayoutChromatic[t] = false;
-                } else if (S.padLayoutChromatic[t]) {
+                    S.padLayoutPiano[t] = false;
+                } else if (S.padLayoutPiano[t]) {
                     setChordLayout(t, true);
+                } else if (S.padLayoutChromatic[t]) {
+                    S.padLayoutChromatic[t] = false;
+                    S.padLayoutPiano[t] = true;
                 } else {
                     S.padLayoutChromatic[t] = true;
                 }
                 computePadNoteMap();
                 if (!S.padLayoutChord[t])
-                    showActionPopup(S.padLayoutChromatic[t] ? 'CHROMATIC' : 'IN-SCALE');
+                    showActionPopup(S.padLayoutPiano[t] ? 'PIANO' : S.padLayoutChromatic[t] ? 'CHROMATIC' : 'IN-SCALE');
             }
         } else if (idx === 9) {
             /* Step 10: toggle VelIn between Live and 100 */
