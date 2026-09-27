@@ -1187,9 +1187,8 @@ export function drawLoadingScreen(name, stage) {
     /* A project load that dealt a Dave shows it, from the press to the
      * sequencer (S.loadDave, set in _pppLoad, cleared when the load is done). */
     if (S.loadDave !== null && S.loadDave !== undefined) {
-        /* The Dave's own layout (Josh, 2026-09-24): name on top, LOADING
-         * beneath; the stage line gives way to the art. */
-        drawDaveLoading(S.loadDave, name);
+        /* The Dave alone (2026-09-26); the stage line gives way to the art. */
+        drawDaveLoading(S.loadDave);
         return;
     }
     clear_screen();
@@ -1858,6 +1857,11 @@ function drawUIBody() {
          * says one thing: which set is loading. (The host actuator shows
          * "Loading <name>" during its half; this is the davebox half.) */
         drawLoadingScreen(S.currentSetName || '', 'Starting the sequencer');
+        return;
+    }
+    /* A load's Dave outstays the load until its minimum (loadDaveTick). */
+    if (S.loadDave !== null && S.loadDave !== undefined) {
+        drawDaveLoading(S.loadDave);
         return;
     }
 
