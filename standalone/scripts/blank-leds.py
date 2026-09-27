@@ -89,12 +89,28 @@ def wait_for_room(mm, need, gap):
     return True
 
 
+class UnknownLayout(Exception):
+    """The ring is not the layout above — a stock update changed it."""
+
+
 def blank(shm_path, rounds, gap):
     """Returns True when every write landed; False when the shim stopped
     draining and part of the payload was abandoned — the caller's log line
-    must not say "blanked" for a surface that is still lit."""
+    must not say "blanked" for a surface that is still lit.
+
+    ⚠⚠ REFUSES A RING IT DOES NOT KNOW, AT ONCE (2026-09-27). Stock's 09-26
+    update made its ring 4100 bytes with a different header; read as ours,
+    write_idx came out ~56,000, wait_for_room could never pass, and each of
+    the three calls a Tools launch makes burned its full 2 s deadline — with
+    stock's Tools menu still live and scrollable the whole time (Josh:
+    "the tool menu on stock lingers for a good while"). Blanking nothing
+    quickly beats blanking nothing slowly."""
+    if os.path.getsize(shm_path) != HDR + BUF_SIZE:
+        raise UnknownLayout()
     with open(shm_path, "r+b") as f:
         mm = mmap.mmap(f.fileno(), HDR + BUF_SIZE)
+        if read_widx(mm) > MAX_FRAME:
+            raise UnknownLayout()
         # Repeated deliberately. At boot we are racing the shim's first frames,
         # and an attempt that finds no room is a surface that stays lit with
         # nothing to say so. Idempotent: writing dark twice is dark.
@@ -131,6 +147,8 @@ def main():
         # never blocks a launch, it makes quiesce say WARNING instead of
         # claiming a blank that did not land (a check that cries wolf, 08-31).
         return 0 if blank(a.shm, a.rounds, a.gap) else 3
+    except UnknownLayout:
+        return 5              # a ring we do not know: skip it, at once
     except OSError:
         return 4              # never block a launch over LEDs
 
