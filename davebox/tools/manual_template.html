@@ -177,6 +177,10 @@ li::marker { color: var(--muted); }
 strong { font-weight: 700; }
 code { font: 500 .86em var(--f-mono); background: var(--note-bg); padding: .08em .35em; border-radius: 4px; }
 
+/* a numbered section's content sits indented under its heading */
+.secbody { padding-left: 1.6rem; }
+@media (max-width: 640px) { .secbody { padding-left: .75rem; } }
+
 /* hardware controls as keycaps */
 kbd {
   font: 700 .74em/1 var(--f-mono); letter-spacing: .01em; white-space: nowrap;

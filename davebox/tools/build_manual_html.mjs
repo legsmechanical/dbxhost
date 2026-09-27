@@ -393,14 +393,20 @@ function renderChapterBody(ch) {
         pending = null;
     };
     const flushTail = () => { if (tail.length) html += figureHtml(tail); tail = []; };
+    /* A section's content (everything under an h2, h3s included) sits indented under its heading. */
+    let inSec = false;
     for (const b of ch.body) {
         if (b.type === 'h') {
             flushPending();
             flushTail();
             const id = slugify(b.text, used);
             const lvl = Math.min(b.level, 4);
-            if (b.level === 2) ch.sections.push({ id, title: b.text });
+            if (b.level === 2) {
+                ch.sections.push({ id, title: b.text });
+                if (inSec) html += '</div>\n';
+            }
             html += `<h${lvl} id="${id}"><a class="anchor" href="#${id}" aria-hidden="true">#</a>${inline(b.text)}</h${lvl}>\n`;
+            if (b.level === 2) { html += '<div class="secbody">\n'; inSec = true; }
             const hit = screensBySection.get(normHeading(b.text));
             if (hit) { pending = hit.filter((s) => !placedScreens.has(s)); pending.forEach((s) => placedScreens.add(s)); }
             seenPara = false;
@@ -411,6 +417,7 @@ function renderChapterBody(ch) {
     }
     flushPending();
     flushTail();
+    if (inSec) html += '</div>\n';
     return html;
 }
 
