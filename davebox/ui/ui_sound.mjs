@@ -10961,26 +10961,6 @@ function centreText(y, text) {
  * The track number comes from S.track, not the active track: on this screen
  * they are the same, but the sound mode's own notion is the one every other row
  * on the way in uses. */
-/* ⭑ ONE DRAWER for every gateway card, exported and generalized: the prompt
- * view draws it while sound mode is open, ui_render draws it for the
- * knob-touch PEEK of a track remembered on SOUND + CONFIG (the mode is closed
- * at rest — Josh, 2026-09-01, THE ONE LAW — so the peek cannot go through
- * renderPrompt), and the session view's SESSION FX door wears it too. A
- * second hand-drawn copy is how cards drift apart (review finding: the
- * session door had grown exactly that). */
-export function renderGatewayCard(title, line2) {
-    clear_screen();
-    /* ⚠ BANK's map, explicitly — this card is a bank card and is reached
-     * from callers with different prior layouts. Selecting is not optional
-     * on any surface that reads a binding (see renderBlocks). */
-    kitUseLayout('bank');
-    drawKitHeader(title, false);
-    /* The door's NAME in the middle, the gesture in the footer (Josh,
-     * 2026-09-26, the footer audit: "agree with all recommendations"). */
-    centreText(30, line2);
-    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'ENTER']]);
-}
-
 /* The MIX card while sound mode is CLOSED (the one-tick gap before a queued
  * entry, a knob peek at rest): the header and the footer, no values yet — the
  * reads are sound mode's. */
@@ -11268,6 +11248,24 @@ function busMenuRows() {
     return { rows, sel: rowOf[S.busIdx] || 0 };
 }
 export function soundBusMenuRowsForTest() { return busMenuRows(); }
+
+/* ⭑ THE SESSION FX CARD = the list at rest (Josh, 2026-09-26: "can we make
+ * session view "session effects" card the session effects menu like with did
+ * with the the track config bank and track config menu?"): the list's own
+ * header and rows, no cursor, the door's corner brackets round them — the
+ * CONFIG card's shape. The click opens the list live (soundEnterBuses, via the
+ * session click in ui_input_cc); Back from the list comes back here. Drawn by
+ * ui_render's session mixer while sound mode is closed. */
+const SFX_LIST_TOP = 11;               /* the kit list's own default */
+export function renderSessionFxCard() {
+    clear_screen();
+    kitUseLayout('bank');
+    drawKitBankHeader('SESSION FX', 'audio', '');
+    fill_rect(0, MV_BAR_Y, 128, 1, 0);
+    drawKitList(busMenuRows().rows, -1, { h: MV_FOOTER_Y - SFX_LIST_TOP });
+    drawBrackets(0, SFX_LIST_TOP - 1, 128, MV_FOOTER_Y - SFX_LIST_TOP);
+    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'MENU'], ['BACK', 'OUT']]);
+}
 
 /* What to CALL the block being edited.
  *
