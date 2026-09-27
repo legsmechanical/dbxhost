@@ -7,7 +7,8 @@
 #   (no argument)  the Schwung Tools menu, via stock's launch-standalone.sh —
 #                  the original path, and the default.
 #   --boot         the stock boot SELECTOR (schwung >= 1.3.0), via
-#                  /data/UserData/boot-targets/davebox/entry.sh.
+#                  <stock>/modules/tools/davebox-sa/boot-entry.sh (the row
+#                  the stock manager registers from the module.json boot_target).
 #
 # ⚠ An ARGUMENT, not an environment variable — see the note above the parse.
 #
@@ -259,6 +260,16 @@ setsid --wait bash -c '
     unit --pause-launcher || \
       echo "WARNING: could not pause move-launcher early; a respawn may flash native Move"
   fi
+
+  # NO DAVE ON A COLD LAUNCH, from ANY door (Josh 2026-09-27, after booting from
+  # the picker: "daves should only unwrap on project load"). The host splash
+  # deals a Dave unless it finds a fresh stage-1 marker, and only
+  # quiesce-stock.sh used to write one -- so the boot door and the
+  # stock-pre-killed Tools door (neither runs quiesce) both unwrapped a Dave.
+  # Written HERE, after the entry branch, it covers all three. Only a cold
+  # launch reaches this line: the project-load relaunch restarts Move from the
+  # supervisor loop below and never passes here, so it still deals its Dave.
+  printf "%s skip\n" "$(date +%s)" > "$DBX_DIR/splash-stage1.txt" 2>/dev/null || true
 
   # Check every seam we have on the stock tree and say so in this log. Runs
   # here, after the entry branch has settled the stack and before we build the

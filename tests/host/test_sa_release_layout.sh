@@ -24,6 +24,11 @@ L="$(tar -tzf "$tb")"
 has(){ printf '%s\n' "$L" | grep -qx "$1"; }
 has "davebox-sa/module.json" && ok "one top-level dir named after the module id, with module.json" || bad "module.json not at davebox-sa/"
 has "davebox-sa/standalone" && ok "the standalone executable (launch.sh)" || bad "no standalone"
+has "davebox-sa/boot-entry.sh" && ok "boot-entry.sh ships in the module dir (module.json's boot_target exec)" || bad "no boot-entry.sh"
+tar -xzf "$tb" -C "$T" davebox-sa/boot-entry.sh davebox-sa/module.json 2>/dev/null
+[ -x "$T/davebox-sa/boot-entry.sh" ] && cmp -s "$T/davebox-sa/boot-entry.sh" standalone/boot-target/entry.sh \
+    && ok "...executable, and the repo's entry.sh" || bad "boot-entry.sh not executable or not entry.sh"
+grep -q '"exec": "boot-entry.sh"' "$T/davebox-sa/module.json" && ok "the shipped module.json declares that exec" || bad "module.json boot_target exec"
 has "davebox-sa/payload/bin/heal" && ok "the helper travels UNBLESSED in payload/bin/" || bad "payload/bin/heal missing"
 has "davebox-sa/bin/heal" && bad "a pre-blessed bin/heal in the module dir (the manager would chown it anyway)" || ok "no bin/heal in the module dir itself"
 has "davebox-sa/payload/scripts/bootstrap.sh" && has "davebox-sa/payload/scripts/layout-install.sh" && has "davebox-sa/payload/scripts/config.sh" && ok "bootstrap, layout and config ride along" || bad "bootstrap/layout/config missing"

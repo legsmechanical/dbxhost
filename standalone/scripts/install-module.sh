@@ -33,12 +33,15 @@ mkdir -p "$tmp/$MODULE_ID"
 cp "$HERE/module/module.json" "$tmp/$MODULE_ID/module.json"
 cp "$HERE/scripts/launch.sh"  "$tmp/$MODULE_ID/standalone"
 chmod +x "$tmp/$MODULE_ID/standalone"
+cp "$HERE/boot-target/entry.sh" "$tmp/$MODULE_ID/boot-entry.sh"   # module.json's boot_target exec
+chmod +x "$tmp/$MODULE_ID/boot-entry.sh"
 
 ssh "${HOST%%:*}" "mkdir -p '$STOCK_TOOLS/$MODULE_ID'"
 scp -q "$tmp/$MODULE_ID/module.json" "$HOST:$STOCK_TOOLS/$MODULE_ID/module.json"
 scp -q "$tmp/$MODULE_ID/standalone"  "$HOST:$STOCK_TOOLS/$MODULE_ID/standalone"
+scp -q "$tmp/$MODULE_ID/boot-entry.sh" "$HOST:$STOCK_TOOLS/$MODULE_ID/boot-entry.sh"
 # scp does not preserve the executable bit reliably across these paths.
-ssh "${HOST%%:*}" "chmod +x '$STOCK_TOOLS/$MODULE_ID/standalone'"
+ssh "${HOST%%:*}" "chmod +x '$STOCK_TOOLS/$MODULE_ID/standalone' '$STOCK_TOOLS/$MODULE_ID/boot-entry.sh'"
 # The privileged helper is STAGED here too (2026-09-05): stock's schwung-heal
 # (schwung#419) or our own blessed heal installs bin/heal.new → bin/heal. Never
 # ship a pre-blessed `heal` — the manager chowns a module dir on install.
