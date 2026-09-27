@@ -276,6 +276,9 @@ the section into a versioned heading at release time.
 - **Every project load unwraps a Dave, on its own.** Opening the project Move
   already has loaded when dAVEBOx starts now deals one too, and it stays up at
   least two seconds; the "PROJECT … LOADING" band over the Dave is gone.
+- **The SESSION FX card shows its list.** In Session View the card past Send B
+  is now the Master and Send FX list at rest, in corner brackets, like the CONFIG
+  bank; click to use it.
 - **SOUND + CONFIG is now MIX.** It keeps the track's level knobs (or a MIDI
   track's controllers); its click no longer opens the menu — that is CONFIG's.
 - **The banks are in a new order, in groups.** Melodic: IN (Chord, Live Arp),

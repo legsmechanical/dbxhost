@@ -58,7 +58,7 @@ import {
     effectiveClip,
     bankHasAltParams, altIndicatorActive, autoLanePlayStep
 } from './ui_leds.mjs';
-import { soundRender, renderGatewayCard, renderTrackGatewayCard, renderConfigCardPeek, renderMacrosPeek } from './ui_sound.mjs';
+import { soundRender, renderTrackGatewayCard, renderConfigCardPeek, renderMacrosPeek, renderSessionFxCard } from './ui_sound.mjs';
 import { drawAutomationBankBody, autoBankMenuOpen, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus } from './ui_automation_bank.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
@@ -384,14 +384,11 @@ function drawStepEditKitPage(title, cells, noteBox, footer, noStepHeld) {
  * track sitting at zero, which draws an empty widget. */
 function drawSessionMixerPage() {
     const mode = SESS_KNOB_MODES[S.sessKnobMode];
-    /* The gateway renders the SOUND + CONFIG door idiom: a prompt, not a
-     * grid — the click is the entry, the knobs are inert. */
+    /* The gateway is the Master & Send FX list AT REST, in the door's corner
+     * brackets (2026-09-26, like the CONFIG bank): the click opens it live,
+     * the knobs are inert. */
     if (mode.widget === 'gateway') {
-        /* The SOUND + CONFIG door's exact dress, through the ONE drawer
-         * (Josh, 2026-09-01: "should use same font as sound+config entry bank
-         * on track view") — a hand-drawn copy here is how the two doors would
-         * drift apart. */
-        renderGatewayCard(mode.label, 'MASTER & SEND FX');
+        renderSessionFxCard();
         return;
     }
     const cells = [];

@@ -22,13 +22,12 @@ f=ui/ui_sound.mjs
 body() { awk "/^(export )?function $1\\(/,/^}/" "$f"; }
 
 # Helpers that clear on behalf of their caller — each verified here, not assumed,
-# so one of them quietly losing its clear fails too. renderGatewayCard is the
-# shared gateway-card drawer (2026-09-01); renderTrackGatewayCard is its
-# track-flavour caller (renderPrompt clears through both) — qualification is
+# so one of them quietly losing its clear fails too. renderTrackGatewayCard is
+# the MIX card's gap drawer — qualification is
 # against the clearers ACCUMULATED SO FAR, so a helper may clear via another
 # helper as long as it is listed after it.
 clearers="clear_screen"
-for h in renderBlocks renderLfo renderInChain drawTextEntry renderGatewayCard renderTrackGatewayCard; do
+for h in renderBlocks renderLfo renderInChain drawTextEntry renderTrackGatewayCard; do
     if grep -qE "($clearers)\(" <<<"$(body "$h")"; then
         clearers="$clearers|$h"
     fi
