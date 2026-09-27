@@ -141,44 +141,52 @@ a:hover {
     color: var(--accent);
 }
 
-/* ---- Header ----
-   Slimmed 2026-08-21 to read as the same bar as the browser editor's own site
-   ribbon (davebox/web_ui.html #site), so moving between the editor, Mirror,
-   Files, Help, Config and System feels like one app rather than a jump to a
-   different site. NOT taken all the way down to the editor's 26px: these are
-   document pages that get used on a phone, and the nav links have to stay a
-   real touch target. ⚠ Keep the link SET and ORDER in step with that ribbon. */
-header {
-    background: var(--bg-card);
-    border-bottom: 1px solid var(--border);
-}
-
-.header-inner {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 0 var(--space-xl);
+/* ---- The site ribbon ----
+   The editor's own (davebox/web_ui.html #site), copied value for value —
+   height, colours, type — so every page carries the same bar as root (Josh,
+   2026-09-27). Literal colours rather than this sheet's tokens: the editor's
+   palette is its own, and the ribbon has to match IT. ⚠ Keep in step. */
+#site {
     display: flex;
     align-items: center;
-    gap: var(--space-lg);
-    min-height: 36px;
+    gap: 10px;
+    height: 26px;
+    padding: 0 12px;
+    background: #0b0d11;
+    border-bottom: 1px solid #1b212b;
+    font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-.site-name {
-    font-size: 0.9375rem;
+#site .sitebrand {
     font-weight: 700;
-    color: var(--accent);
+    letter-spacing: .5px;
+    font-size: 12px;
+    color: #e9ebf0;
     text-decoration: none;
-    white-space: nowrap;
-    letter-spacing: -0.02em;
 }
 
-.site-name:visited {
-    color: var(--accent);
+#site .sitebrand .dot {
+    color: #39d0c8;
 }
 
-.site-name:hover {
-    color: var(--accent);
+#site .sitelinks {
+    margin-left: auto;
+    display: flex;
+    gap: 2px;
+}
+
+#site .sitelinks a {
+    color: #5a606c;
+    font-size: 11px;
     text-decoration: none;
+    padding: 3px 7px;
+    border-radius: 4px;
+}
+
+#site .sitelinks a:hover,
+#site .sitelinks a[aria-current="page"] {
+    color: #e9ebf0;
+    background: #21262f;
 }
 
 nav ul {
@@ -1974,52 +1982,7 @@ code {
 }
 
 /* ---- Responsive ---- */
-/* ---- Hamburger Menu ---- */
-.nav-toggle {
-    display: none;
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    font-size: 1.5rem;
-    cursor: pointer;
-    padding: var(--space-xs);
-    margin-left: auto;
-    min-height: var(--min-touch);
-    min-width: var(--min-touch);
-    align-items: center;
-    justify-content: center;
-}
-
-.nav-toggle:hover {
-    color: var(--text);
-}
-
 @media (max-width: 768px) {
-    .nav-toggle {
-        display: inline-flex;
-    }
-
-    .header-inner {
-        flex-wrap: wrap;
-        padding: var(--space-sm) 0;
-        gap: 0;
-    }
-
-    .header-inner {
-        padding: 0 var(--space-md);
-    }
-
-    header nav {
-        display: none;
-        width: 100%;
-        border-top: 1px solid var(--border);
-        padding: var(--space-sm) 0;
-    }
-
-    header nav.nav-open {
-        display: block;
-    }
-
     nav ul {
         flex-direction: column;
         gap: 0;
