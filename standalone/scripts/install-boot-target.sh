@@ -7,7 +7,16 @@
 # is untouched, and both entrances end up running the same launcher.
 #
 #   /data/UserData/boot-targets/davebox/boot.json
-#   /data/UserData/boot-targets/davebox/entry.sh
+#   (exec -> <stock>/modules/tools/davebox-sa/boot-entry.sh, which this also
+#    copies into the module dir)
+#
+# ⭐ A USER install needs none of this (2026-09-27, Josh: "can we have the
+# davebox install add the row?"): module.json declares a `boot_target` block and
+# stock's manager registers the row itself — owned by the module, removed with
+# it. This script is the developer path, and it writes the row so the manager
+# ADOPTS it: an unowned row whose exec lies inside the declaring module's dir is
+# the one hand-written shape the manager takes over (its "adopting
+# self-registered boot target"); any other exec it refuses as installed by hand.
 #
 # ⚠⚠ IT MUST NEVER WRITE `boot-targets/default`. Registering adds a ROW; it does
 # not take the boot. The picker sets the default only when the user jog-clicks a
@@ -78,11 +87,16 @@ say "--- registering dAVEBOx as a boot target ($BOOT_DIR)"
 $SSH "mkdir -p '$BOOT_DIR'"
 scp -q -o ConnectTimeout=10 "$HERE/boot-target/boot.json" \
     "${MOVE_USER}@${MOVE_HOST}:$BOOT_DIR/.boot.json.tmp"
+MOD_ENTRY="$DBX_STOCK_DIR/modules/tools/$DBX_LAUNCHER_ID/boot-entry.sh"
+$SSH "test -d '$(dirname "$MOD_ENTRY")'" || {
+    echo "      REFUSING: $(dirname "$MOD_ENTRY") is not installed — install the launcher module first" >&2
+    exit 1; }
 scp -q -o ConnectTimeout=10 "$HERE/boot-target/entry.sh" \
-    "${MOVE_USER}@${MOVE_HOST}:$BOOT_DIR/.entry.sh.tmp"
-$SSH "chmod 0755 '$BOOT_DIR/.entry.sh.tmp' &&
-      mv -f '$BOOT_DIR/.entry.sh.tmp' '$BOOT_DIR/entry.sh' &&
-      mv -f '$BOOT_DIR/.boot.json.tmp' '$BOOT_DIR/boot.json'"
+    "${MOVE_USER}@${MOVE_HOST}:$MOD_ENTRY.tmp"
+$SSH "chmod 0755 '$MOD_ENTRY.tmp' &&
+      mv -f '$MOD_ENTRY.tmp' '$MOD_ENTRY' &&
+      mv -f '$BOOT_DIR/.boot.json.tmp' '$BOOT_DIR/boot.json' &&
+      rm -f '$BOOT_DIR/entry.sh'"   # the pre-2026-09-27 copy, beside the row
 
 # Clear any strike the watchdog recorded against us. Three failed boots trip a
 # FORCED picker, strikes never decay, and a fresh install is a fresh claim —
@@ -90,20 +104,20 @@ $SSH "chmod 0755 '$BOOT_DIR/.entry.sh.tmp' &&
 # is about to work.
 $SSH "rm -f '$BOOT_DIR/healthy'"
 
-say "      boot.json + entry.sh installed"
+say "      boot.json + boot-entry.sh installed"
 
 # Verify by CONTENT, not by exit code: the row is worthless if the selector
 # cannot read an exec out of it or the script is not executable.
 _exec="$($SSH "sed -n 's/.*\"exec\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p' '$BOOT_DIR/boot.json' | head -n1" || true)"
-if [ "$_exec" != "$BOOT_DIR/entry.sh" ]; then
-    echo "      REFUSING: boot.json exec reads '$_exec', expected '$BOOT_DIR/entry.sh'" >&2
+if [ "$_exec" != "$MOD_ENTRY" ]; then
+    echo "      REFUSING: boot.json exec reads '$_exec', expected '$MOD_ENTRY'" >&2
     exit 1
 fi
-$SSH "test -x '$BOOT_DIR/entry.sh'" || {
-    echo "      REFUSING: $BOOT_DIR/entry.sh is not executable — the selector would skip it" >&2
+$SSH "test -x '$MOD_ENTRY'" || {
+    echo "      REFUSING: $MOD_ENTRY is not executable — the selector would skip it" >&2
     exit 1
 }
-say "      verified: exec -> $_exec, entry.sh executable"
+say "      verified: exec -> $_exec, executable"
 
 _default="$($SSH "head -n1 '$BOOT_ROOT/default' 2>/dev/null" || true)"
 say "      boot default is '${_default:-<unset>}' — UNCHANGED by this install"

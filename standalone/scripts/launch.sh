@@ -7,7 +7,8 @@
 #   (no argument)  the Schwung Tools menu, via stock's launch-standalone.sh —
 #                  the original path, and the default.
 #   --boot         the stock boot SELECTOR (schwung >= 1.3.0), via
-#                  /data/UserData/boot-targets/davebox/entry.sh.
+#                  <stock>/modules/tools/davebox-sa/boot-entry.sh (the row
+#                  the stock manager registers from the module.json boot_target).
 #
 # ⚠ An ARGUMENT, not an environment variable — see the note above the parse.
 #

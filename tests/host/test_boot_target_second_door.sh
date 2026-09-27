@@ -275,8 +275,16 @@ fi
 # silently skipped.
 check "boot.json quotes its exec value (an unquoted one parses as empty)" \
       grep -qE '"exec"[[:space:]]*:[[:space:]]*"/' "$BOOTJSON"
-check "boot.json's exec points at the INSTALLED entry.sh, not the repo copy" \
-      grep -qF '"/data/UserData/boot-targets/davebox/entry.sh"' "$BOOTJSON"
+# ⭐ INSIDE the launcher module's dir (2026-09-27): that is the only exec stock's
+# manager will ADOPT from a hand-written row (bootExecInsidePayload), so the dev
+# row and the manager's own registration from module.json converge on one row.
+check "boot.json's exec points at the module's INSTALLED boot-entry.sh, not the repo copy" \
+      grep -qF '"/data/UserData/schwung/modules/tools/davebox-sa/boot-entry.sh"' "$BOOTJSON"
+check "module.json declares the same row for the manager to register (after id/name)" \
+      python3 -c "
+import json,sys; t=open('standalone/module/module.json').read(); m=json.loads(t)
+b=m['boot_target']; assert b=={'id':'davebox','name':'dAVEBOx','exec':'boot-entry.sh'}, b
+assert t.index('\"boot_target\"') > t.index('\"id\"') and t.index('\"boot_target\"') > t.index('\"name\"')"
 check "boot.json declares a name for the picker row" \
       grep -qE '"name"[[:space:]]*:[[:space:]]*"' "$BOOTJSON"
 # One "exec" only — a second occurrence above the real one would shadow it.
