@@ -146,12 +146,12 @@ step('...but a note past the loop end IS something to crop', () => {
 });
 
 /* ---- refusals: melodic -------------------------------------------------- */
-step('⭐ loop not at 1: CLIP K3 (Clock Shift) sends nothing and says LOOP NOT AT 1 / CROP FIRST', () => {
+step('⭐ loop not at 1: CLIP K3 (Clock Shift) sends nothing and says LOOP STARTS AFTER STEP 1 / CROP FIRST', () => {
     setupClip(16, 32);
     clearPopup(); sets.length = 0;
     touch(2); turn(2, 1); untouch(2);
     assert(!sets.some(moved), 'sent ' + JSON.stringify(sets));
-    assert(lines() === 'LOOP NOT AT 1 / CROP FIRST', 'popup ' + lines());
+    assert(lines() === 'LOOP STARTS AFTER / STEP 1 / CROP FIRST', 'popup ' + lines());
 });
 step('⭐ loop not at 1: Shift + K3 (Nudge) sends nothing and says so', () => {
     clearPopup(); sets.length = 0;
@@ -159,14 +159,14 @@ step('⭐ loop not at 1: Shift + K3 (Nudge) sends nothing and says so', () => {
     touch(2); turn(2, -1); untouch(2);
     S.altMode = false;
     assert(!sets.some(moved), 'sent ' + JSON.stringify(sets));
-    assert(lines() === 'LOOP NOT AT 1 / CROP FIRST', 'popup ' + lines());
+    assert(lines() === 'LOOP STARTS AFTER / STEP 1 / CROP FIRST', 'popup ' + lines());
 });
 step('⭐ loop not at 1: K2 (Stretch) sends nothing either way and says so', () => {
     for (const d of [1, -1]) {
         clearPopup(); sets.length = 0;
         touch(1); turn(1, d); untouch(1);
         assert(!sets.some((x) => /_beat_stretch=/.test(x)), 'stretch ' + d + ' sent ' + JSON.stringify(sets));
-        assert(lines() === 'LOOP NOT AT 1 / CROP FIRST', 'popup ' + lines());
+        assert(lines() === 'LOOP STARTS AFTER / STEP 1 / CROP FIRST', 'popup ' + lines());
         assert(S.clipLength[T][0] === 32, 'length changed: ' + S.clipLength[T][0]);
     }
 });
@@ -174,7 +174,7 @@ step('⭐ loop not at 1: touch K4 (Legato) + click sends nothing and says so', (
     clearPopup(); sets.length = 0;
     touch(C.LGTO_KNOB); click(); untouch(C.LGTO_KNOB);
     assert(!sets.some((x) => /lgto_apply=/.test(x)), 'sent ' + JSON.stringify(sets));
-    assert(lines() === 'LOOP NOT AT 1 / CROP FIRST', 'popup ' + lines());
+    assert(lines() === 'LOOP STARTS AFTER / STEP 1 / CROP FIRST', 'popup ' + lines());
 });
 step('⭐ loop not at 1: Shift + K1 (Zoom) sends nothing and says so', () => {
     clearPopup(); sets.length = 0;
@@ -183,7 +183,7 @@ step('⭐ loop not at 1: Shift + K1 (Zoom) sends nothing and says so', () => {
     touch(0); turn(0, -1); untouch(0);
     S.altMode = false;
     assert(!sets.some((x) => /_clip_resolution/.test(x)), 'sent ' + JSON.stringify(sets));
-    assert(lines() === 'LOOP NOT AT 1 / CROP FIRST', 'popup ' + lines());
+    assert(lines() === 'LOOP STARTS AFTER / STEP 1 / CROP FIRST', 'popup ' + lines());
     assert(S.clipTPS[T][0] === 24 && S.clipLoopStart[T][0] === 16, 'the mirror changed');
 });
 step('after a Crop, K3 sends Clock Shift again', () => {
@@ -224,7 +224,7 @@ step('⭐ DRUM LANE, loop not at 1: K3, K2 both ways, Legato and Zoom are refuse
         clearPopup(); sets.length = 0;
         gesture();
         assert(!sets.some((x) => re.test(x)), label + ' sent ' + JSON.stringify(sets));
-        assert(lines() === 'LOOP NOT AT 1 / CROP FIRST', label + ' popup ' + lines());
+        assert(lines() === 'LOOP STARTS AFTER / STEP 1 / CROP FIRST', label + ' popup ' + lines());
     };
     refusedBy('K3', () => { touch(2); turn(2, 1); untouch(2); }, /_clock_shift=|_nudge=-?[1-9]/);
     refusedBy('K2 right', () => { touch(1); turn(1, 1); untouch(1); }, /_beat_stretch=/);
@@ -266,12 +266,12 @@ step('⭐ ALL LANES, a lane off step 1: K3 and K2 (both ways) are refused', () =
     clearPopup(); sets.length = 0;
     touch(2); turn(2, 1); untouch(2);
     assert(!sets.some((x) => /all_lanes_(clock_shift=|nudge=-?[1-9])/.test(x)), 'K3 sent ' + JSON.stringify(sets));
-    assert(lines() === 'LOOP NOT AT 1 / CROP FIRST', 'popup ' + lines());
+    assert(lines() === 'LOOP STARTS AFTER / STEP 1 / CROP FIRST', 'popup ' + lines());
     for (const d of [1, -1]) {
         clearPopup();
         touch(1); turn(1, d); untouch(1);
         assert(!sets.some((x) => /all_lanes_beat_stretch=/.test(x)), 'K2 ' + d + ' sent ' + JSON.stringify(sets));
-        assert(lines() === 'LOOP NOT AT 1 / CROP FIRST', 'popup ' + lines());
+        assert(lines() === 'LOOP STARTS AFTER / STEP 1 / CROP FIRST', 'popup ' + lines());
     }
 });
 step('CONTROL: no lane off step 1, ALL LANES K3 sends', () => {

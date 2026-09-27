@@ -728,7 +728,7 @@ a 2-bar clip on the 1/16 grid, hold **Loop** and tap **Step 2**.
 
 The clip transforms — Stretch, Shift, Nudge, Legato and Zoom — need the loop to
 start on **step 1**; on a loop that starts later they do nothing and the screen says
-**LOOP NOT AT 1 / CROP FIRST**. **Crop** (CLIP knob 6: touch it and click the jog)
+**LOOP STARTS AFTER STEP 1 / CROP FIRST**. **Crop** (CLIP knob 6: touch it and click the jog)
 makes the loop the whole clip: it moves to step 1 and everything outside it is
 removed. One Undo brings it back.
 
@@ -845,7 +845,7 @@ A melodic clip's grid, direction, and note transforms.
 | Knob | On screen | What it does | Rewrites notes | Default |
 |---|---|---|---|---|
 | 1 | `RES` | **Resolution** — keeps the pattern's steps and changes how long a step is. *Alt* (`ZOOM`): keeps the timing and changes how many steps it takes (needs the loop at step 1). | Yes | 1/16 |
-| 2 | `STRCH` | **Stretch** — turn right to double the clip, left to halve it; one change per touch (let go to do it again). Refused (*COMPRESS LIMIT*) when notes would collide, and doubling is refused past step 256. Needs the loop at step 1 (*LOOP NOT AT 1 / CROP FIRST*). | Yes | — |
+| 2 | `STRCH` | **Stretch** — turn right to double the clip, left to halve it; one change per touch (let go to do it again). Refused (*COMPRESS LIMIT*) when notes would collide, and doubling is refused past step 256. Needs the loop at step 1 (*LOOP STARTS AFTER STEP 1 / CROP FIRST*). | Yes | — |
 | 3 | `SHIFT` | **Shift** — rotate the notes in the loop by whole steps; a note pushed off the loop's end comes round to its start. *Alt* (`NUDGE`): finer. Needs the loop at step 1. | Yes | 0 |
 | 4 | `LGTO` | **Legato** — touch the knob and click the jog; lengthens every note in the loop to reach the next (the last to the loop's end). Turning it does nothing. Needs the loop at step 1. | Yes | — |
 | 5 | `INQNT` | **Input Quantize** — snap recorded notes to the grid (Off, 1/64 … 1/4t). One value per track, shared with ALL LANES. | No | Off |
@@ -904,7 +904,7 @@ question.
 | 7 | `DIR` | **Direction** for all lanes. *Alt* (`REVRS`): **Reverse Style.** | No |
 | 8 | `RSYNC` | **Repeat Sync** — held repeats wait for the beat grid (On) or fire at once (Off) | No |
 
-Stretch and Shift are refused (*LOOP NOT AT 1 / CROP FIRST*) if **any** lane's loop
+Stretch and Shift are refused (*LOOP STARTS AFTER STEP 1 / CROP FIRST*) if **any** lane's loop
 starts later than step 1. The track's velocity input (**VelIn**) is on
 [TRACK CONFIG](#174-track-settings) and **Shift + Step 10**.
 

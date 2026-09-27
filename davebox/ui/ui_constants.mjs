@@ -105,7 +105,7 @@ export function fmtCrop() { return '->'; }
 export const CROP_KNOB = 5;             /* CLIP / DRUM LANE bank (K6) */
 export const ALL_LANES_CROP_KNOB = 4;   /* ALL LANES bank (K5) */
 /* The notice when Shift / Nudge / Stretch x2 are refused because the loop
- * does not start at step 1 (LOOP NOT AT 1 / CROP FIRST). */
+ * does not start at step 1 (LOOP STARTS AFTER STEP 1 / CROP FIRST). */
 export const LOOP_NOT_AT_1_MS = 1200;
 export function fmtRes(v)    { return ['1/32','1/16','1/8','1/4','1/2','1bar'][v] || '1/16'; }
 export function fmtPct(v)    { return v + '%'; }

@@ -3623,7 +3623,9 @@ function applyCrop(isDrum, allLanes) {
 /* Clock Shift, Nudge and Beat Stretch x2 need the loop at step 1: say so, and
  * where to go. Not the deferring popup — the knob is still being touched. */
 function refuseLoopNotAtOne() {
-    showActionPopupFor(LOOP_NOT_AT_1_MS, 'LOOP NOT AT 1', 'CROP FIRST');
+    /* Josh's wording (2026-09-27): "LOOP STARTS AFTER STEP 1 / CROP FIRST".
+     * Three lines: the first does not fit the card's width in one. */
+    showActionPopupFor(LOOP_NOT_AT_1_MS, 'LOOP STARTS AFTER', 'STEP 1', 'CROP FIRST');
     forceRedraw();
 }
 

@@ -196,7 +196,7 @@ All operate on active clip's lane L of track N.
 
 **ALL LANES** (`tN_all_lanes_*`): `tN_all_lanes_crop` crops every lane in its own window (one undo unit; automation lanes without their own cycle move with the drum window — the longest lane's — read before the crop; cycled lanes are untouched). `tN_all_lanes_clock_shift`, `tN_all_lanes_nudge` (±1) and `tN_all_lanes_beat_stretch` are refused on EVERY lane while any lane's `loop_start != 0` (`all_lanes_stretch_result` is left alone); `tN_all_lanes_nudge "0"` still resets the counters.
 
-**Loop at step 1**: every clip transform — Clock Shift, Nudge (±1), Beat Stretch (both ways), Legato and Resolution Zoom, melodic (`tN_*`), per lane (`tN_lL_*`) and ALL LANES — needs `loop_start == 0`. Otherwise the DSP ignores the key silently; the device UI sends nothing and shows *LOOP NOT AT 1 / CROP FIRST*. Plain Resolution (`clip_resolution`, which keeps steps) is not affected.
+**Loop at step 1**: every clip transform — Clock Shift, Nudge (±1), Beat Stretch (both ways), Legato and Resolution Zoom, melodic (`tN_*`), per lane (`tN_lL_*`) and ALL LANES — needs `loop_start == 0`. Otherwise the DSP ignores the key silently; the device UI sends nothing and shows *LOOP STARTS AFTER STEP 1 / CROP FIRST*. Plain Resolution (`clip_resolution`, which keeps steps) is not affected.
 
 **Global drum clip**: `drum_clip_copy "srcT srcC dstT dstC"` (all 32 lanes; preserves dst midi_notes; undo snapshots dst only) · `drum_clip_cut "srcT srcC dstT dstC"` (copy + silence + `clip_init` each src lane; restores src midi_notes).
 
