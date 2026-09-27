@@ -123,6 +123,9 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **Launching from stock's Tools menu is about four seconds quicker.** After
+  Schwung's 09-26 update the launcher waited out a timeout on every launch, with
+  the Tools menu still on screen and scrollable; it now moves straight on.
 - **The Chord layout's explainer card goes when you leave Chord** — by Shift +
   Step 8 or the Layout row — instead of staying on screen.
 - **A fast turn across MACROS no longer opens it over the next bank.** Two
