@@ -4,6 +4,13 @@
 
 {{define "content"}}
 <div class="page-header">
+    {{if .Shortcuts}}
+    <nav aria-label="Shortcuts" class="file-shortcuts">
+        {{range .Shortcuts}}
+        <a href="/files?path={{.Path}}"{{if eq .Path $.Dir}} aria-current="page"{{end}}>{{.Label}}</a>
+        {{end}}
+    </nav>
+    {{end}}
     {{if .Breadcrumbs}}
     <nav aria-label="Breadcrumb" class="breadcrumb">
         <ol>

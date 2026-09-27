@@ -292,6 +292,29 @@ footer {
     color: var(--text-muted);
 }
 
+/* ---- File browser shortcuts (-file-shortcuts) ---- */
+.file-shortcuts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-sm);
+}
+
+.file-shortcuts a {
+    display: inline-block;
+    padding: var(--space-xs) var(--space-sm);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.file-shortcuts a[aria-current="page"] {
+    border-color: var(--accent);
+}
+
 /* ---- Breadcrumbs ---- */
 .breadcrumb ol {
     list-style: none;
