@@ -123,6 +123,11 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **Resolution Zoom keeps a late-starting loop in place.** Zooming a clip (or a
+  drum lane) whose loop didn't start at step 1 changed its length but not where
+  the loop starts, so it played a different stretch of the clip. The loop start
+  now moves with it (a loop start between two of the new steps moves back one,
+  and the loop grows to still cover the old one).
 - **Clock Shift, Nudge, Beat Stretch and Legato work on a clip whose loop doesn't
   start at step 1.** They used to act on the first steps of the clip rather than
   the ones it plays, so on such a clip Shift seemed to do nothing. They now move

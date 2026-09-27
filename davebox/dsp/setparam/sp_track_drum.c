@@ -315,13 +315,17 @@ static int sp_track_drum(sp_ctx_t *cx) {
             uint16_t new_tps = TPS_VALUES[idx];
             uint16_t old_tps = dlc->ticks_per_step;
             if (new_tps == old_tps) return 1;
-            uint32_t old_ticks = (uint32_t)dlc->length * (uint32_t)old_tps;
-            uint32_t new_len32 = (old_ticks + (uint32_t)new_tps - 1) / (uint32_t)new_tps;
-            if (new_len32 > SEQ_STEPS) return 1;
+            /* The lane's loop window keeps its time: see clip_resolution_zoom. */
+            uint32_t ls_ticks  = (uint32_t)dlc->loop_start * (uint32_t)old_tps;
+            uint32_t end_ticks = ls_ticks + (uint32_t)dlc->length * (uint32_t)old_tps;
+            uint32_t new_ls32  = ls_ticks / new_tps;
+            uint32_t new_len32 = (end_ticks + (uint32_t)new_tps - 1) / (uint32_t)new_tps - new_ls32;
+            if (new_len32 < 1 || new_ls32 + new_len32 > SEQ_STEPS) return 1;
             uint32_t abs_tick = (uint32_t)tr->drum_current_step[lane_idx] * (uint32_t)old_tps
                               + tr->drum_tick_in_step[lane_idx];
             dlc->ticks_per_step = new_tps;
             dlc->length = (uint16_t)new_len32;
+            dlc->loop_start = (uint16_t)new_ls32;
             tr->drum_current_step[lane_idx] = (uint16_t)(abs_tick / (uint32_t)new_tps);
             tr->drum_tick_in_step[lane_idx] = abs_tick % (uint32_t)new_tps;
             {

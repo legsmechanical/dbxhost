@@ -477,6 +477,51 @@ int main(void) {
         hx_destroy(h);
     }
 
+    /* ---- Resolution ZOOM keeps the loop window's time --------------------- */
+    /* Josh, 2026-09-26: "it's probably the zoom.... it didn't actually double
+     * the length when i set it" — the zoom scaled the length but left the loop
+     * start in the old steps, so the window moved to a different stretch of
+     * the music and played past it. */
+    {
+        hx_t *h = hx_create(NULL);
+        toggle(h, 20); toggle(h, 40);
+        loop_set(h, 16, 32);                          /* window 16..47 at 1/16 */
+        clip_t *cl = mclip(h);
+        hx_set_param(h, "t1_clip_resolution_zoom", "0");   /* 1/32 */
+        HX_ASSERT(cl->ticks_per_step == 12, "zoom to 1/32 ran");
+        HX_ASSERT(cl->length == 64, "zoom: the length doubles");
+        HX_ASSERT(cl->loop_start == 32, "zoom: the loop start doubles with it (same time)");
+        HX_ASSERT(has_note_at(cl, 20 * TPS) && cl->steps[40], "zoom: the note keeps its time, at step 40");
+        hx_set_param(h, "t1_clip_resolution_zoom", "1");   /* back to 1/16 */
+        HX_ASSERT(cl->ticks_per_step == 24 && cl->length == 32 && cl->loop_start == 16, "zoom back restores the window");
+        loop_set(h, 3, 32);
+        hx_set_param(h, "t1_clip_resolution_zoom", "2");   /* 1/8: step 3 is between two of its steps */
+        HX_ASSERT(cl->ticks_per_step == 48 && cl->loop_start == 1 && cl->length == 17,
+                  "off the grid: the start goes back a step and the window still covers the old one (72..840t -> 48..864t)");
+        hx_set_param(h, "t1_clip_resolution_zoom", "1");
+        loop_set(h, 100, 128);
+        hx_set_param(h, "t1_clip_resolution_zoom", "0");   /* 200 + 256 > 256 */
+        HX_ASSERT(cl->ticks_per_step == 24 && cl->loop_start == 100 && cl->length == 128,
+                  "zoom refused when the scaled window would pass step 256");
+        OK("Resolution Zoom scales the loop start with the length, covers an off-grid window, and refuses what cannot fit");
+        hx_destroy(h);
+    }
+    {
+        hx_t *h = hx_create(NULL);
+        dtoggle(h, 0, 20);
+        dloop_set(h, 0, 16, 32);
+        clip_t *dl = lane(h, 0);
+        hx_set_param(h, "t0_l0_clip_resolution_zoom", "0");
+        HX_ASSERT(dl->ticks_per_step == 12 && dl->length == 64 && dl->loop_start == 32 && dl->steps[40],
+                  "lane zoom: the window keeps its time");
+        dloop_set(h, 0, 100, 128);
+        hx_set_param(h, "t0_l0_clip_resolution_zoom", "1");
+        hx_set_param(h, "t0_l0_clip_resolution_zoom", "0");
+        HX_ASSERT(dl->loop_start + dl->length <= SEQ_STEPS, "lane zoom never passes step 256");
+        OK("a drum lane's Resolution Zoom keeps its loop window's time");
+        hx_destroy(h);
+    }
+
     /* ---- Legato ------------------------------------------------------------ */
     {
         hx_t *h = melodic();                         /* 3, 70, 127, 200; window 64..127 */

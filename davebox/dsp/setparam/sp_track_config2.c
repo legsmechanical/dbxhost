@@ -62,14 +62,23 @@ static int sp_track_config2(sp_ctx_t *cx) {
         clip_t *cl = &tr->clips[tr->active_clip];
         uint16_t old_tps = cl->ticks_per_step;
         if (new_tps == old_tps) return 1;
-        uint32_t old_ticks = (uint32_t)cl->length * (uint32_t)old_tps;
-        uint32_t new_len32 = (old_ticks + (uint32_t)new_tps - 1) / (uint32_t)new_tps;
-        if (new_len32 > SEQ_STEPS) return 1;
+        /* The loop window keeps its TIME too (Josh, 2026-09-26: a zoom on a
+         * loop that did not start on page one played past it): its start is
+         * counted in steps, so it scales with them. A start between two of the
+         * new steps goes back to the step before it, and the length still
+         * reaches the old end, so the new window covers the old one. A window
+         * that would pass step 256 refuses. */
+        uint32_t ls_ticks  = (uint32_t)cl->loop_start * (uint32_t)old_tps;
+        uint32_t end_ticks = ls_ticks + (uint32_t)cl->length * (uint32_t)old_tps;
+        uint32_t new_ls32  = ls_ticks / new_tps;
+        uint32_t new_len32 = (end_ticks + (uint32_t)new_tps - 1) / (uint32_t)new_tps - new_ls32;
+        if (new_len32 < 1 || new_ls32 + new_len32 > SEQ_STEPS) return 1;
         /* Every note keeps its absolute tick, so automation (Note link) has
          * nothing to follow here. */
         uint32_t abs_clip_tick = (uint32_t)tr->current_step * (uint32_t)old_tps + tr->tick_in_step;
         cl->ticks_per_step = new_tps;
         cl->length = (uint16_t)new_len32;
+        cl->loop_start = (uint16_t)new_ls32;
         tr->current_step = (uint16_t)(abs_clip_tick / (uint32_t)new_tps);
         tr->tick_in_step  = abs_clip_tick % (uint32_t)new_tps;
         {

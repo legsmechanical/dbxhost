@@ -489,10 +489,12 @@ int main(void) {
             HX_ASSERT(c12->playback_audio_reverse == 1, "_playback_audio_reverse: ->1");
             hx_set_param(h, "t3_l12_clip_resolution", "2");   /* TPS_VALUES[2]=48 */
             HX_ASSERT(c12->ticks_per_step == 48, "_clip_resolution: idx2 -> tps 48");
-            /* _clip_resolution_zoom preserves absolute time: 8@48 (=384t) -> ceil(384/96)=4@96 */
+            /* _clip_resolution_zoom preserves absolute time, loop window included:
+             * ls 3 @48 = tick 144, end 144 + 8*48 = 528. @96 the start goes back
+             * to step 1 (tick 96) and the length reaches ceil(528/96) = 6: 5 steps. */
             hx_set_param(h, "t3_l12_clip_resolution_zoom", "3");   /* TPS_VALUES[3]=96 */
             HX_ASSERT(c12->ticks_per_step == 96, "_clip_resolution_zoom: tps->96");
-            HX_ASSERT(c12->length == 4, "_clip_resolution_zoom: length recomputed 8@48 -> 4@96");
+            HX_ASSERT(c12->loop_start == 1 && c12->length == 5, "_clip_resolution_zoom: window 3+8@48 -> 1+5@96 (covers it)");
         }
 
         /* _clear vs _hard_reset: clear PRESERVES clip geometry + groove; hard_reset
