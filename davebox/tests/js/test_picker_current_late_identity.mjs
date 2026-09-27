@@ -59,6 +59,7 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const dlg = await import('../../ui/ui_dialogs.mjs');
+const { loadSelectedCurrentProject: loadCurrent } = await import('../../ui/ui_persistence.mjs');
 S.clockFollowTicks = true; S.tickCount = 1000;
 const ticks = (n) => { for (let i = 0; i < n; i++) { S.tickCount++; globalThis.tick(); } };
 
@@ -83,6 +84,16 @@ step('⭐⭐ picking it LOADS it: state_load names neato, never the empty identi
     assert(loads.length >= 1, 'no state_load sent; sets: ' + JSON.stringify(sets.slice(0, 12)));
     assert(!loads.includes(''), 'sent state_load with the EMPTY identity: ' + JSON.stringify(loads));
     assert(loads[0] === 'p-neato', 'state_load names ' + JSON.stringify(loads[0]));
+});
+
+step('⚠ with NOTHING confirmed, the load sends nothing (the DSP could only refuse it)', () => {
+    identity = 'pending';
+    S.awaitingProjectSelect = true; S.currentSetUuid = ''; S.pendingSetLoad = false;
+    sets.length = 0;
+    loadCurrent();
+    ticks(3);
+    const loads = sets.filter(([k]) => k === 'state_load');
+    assert(loads.length === 0, 'sent a load with no identity: ' + JSON.stringify(loads));
 });
 
 if (failed) { console.log('FAIL: picking the open project after a late confirmation'); process.exit(1); }
