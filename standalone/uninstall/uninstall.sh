@@ -24,6 +24,8 @@
 #   daves-seen.txt daves-window.txt phrase-map.txt parallel-modules.txt
 #   active_set.txt sets/sa_song_index              last project open
 #   sa_master_volume shadow_config.json config/    settings
+#   quarantine/ sets/quarantine/                   work set aside, never deleted:
+#                 saves parked with no project, and orphan project folders
 # Everything else under $DBX_DIR goes, and so does everything an install put
 # anywhere else: the root-owned shim and boot-recovery unit (through our own
 # blessed helper), the boot-selector row (handing `default` back to schwung if
@@ -67,9 +69,9 @@ PRESET_CACHE="$STOCK_DIR/cache/davebox-presetnames"
 OPEN_TOOL_CMD="$STOCK_DIR/open_tool_cmd.json"
 
 # Top-level names under $DBX_DIR that are the user's, never removed. sets/ is
-# special-cased: only sets/sa_song_index survives inside it.
-KEEP="projects projects.json davebox-exports daves-seen.txt daves-window.txt phrase-map.txt parallel-modules.txt active_set.txt sa_master_volume shadow_config.json config"
-KEEP_IN_SETS="sa_song_index"
+# special-cased: only the KEEP_IN_SETS names survive inside it.
+KEEP="projects projects.json davebox-exports daves-seen.txt daves-window.txt phrase-map.txt parallel-modules.txt active_set.txt sa_master_volume shadow_config.json config quarantine"
+KEEP_IN_SETS="sa_song_index quarantine"
 
 DRY=1
 PROBLEMS=0
@@ -103,6 +105,10 @@ is_kept() {
     case " $KEEP " in *" $1 "*) return 0 ;; esac
     return 1
 }
+is_kept_in_sets() {
+    case " $KEEP_IN_SETS " in *" $1 "*) return 0 ;; esac
+    return 1
+}
 
 anything_installed() {
     [ -d "$SA_MOD_DIR" ] || [ -d "$BOOT_ROOT/davebox" ] || [ -d "$PRESET_CACHE" ] ||
@@ -114,7 +120,7 @@ anything_installed() {
         is_kept "$_e" && continue
         if [ "$_e" = sets ]; then
             for _s in $(ls -A "$DBX_DIR/sets" 2>/dev/null); do
-                [ "$_s" = "$KEEP_IN_SETS" ] || _found=0
+                is_kept_in_sets "$_s" || _found=0
             done
             continue
         fi
@@ -212,7 +218,7 @@ step_dbx_dir() {
         if is_kept "$_e"; then say "  keep:  $_e"; continue; fi
         if [ "$_e" = sets ] && [ -d "$DBX_DIR/sets" ] && [ ! -L "$DBX_DIR/sets" ]; then
             for _s in $(ls -A "$DBX_DIR/sets"); do
-                if [ "$_s" = "$KEEP_IN_SETS" ]; then say "  keep:  sets/$_s"; continue; fi
+                if is_kept_in_sets "$_s"; then say "  keep:  sets/$_s"; continue; fi
                 act "remove sets/$_s" rm -rf "$DBX_DIR/sets/$_s"
             done
             continue
