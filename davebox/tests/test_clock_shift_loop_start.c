@@ -23,6 +23,15 @@
  *     the window's end;
  *   - with loop_start 0 the rotate and nudge are byte-for-byte the old code
  *     (reference copies below, run over random clips).
+ *
+ * ⚠ Since Crop (2026-09-27) Clock Shift, Nudge and Beat Stretch x2 are REFUSED
+ * while the loop does not start at step 1 (Josh: "refuse transforms when loop
+ * start isn't at one and direct them to crop"). Their in-window helpers are
+ * kept, so each such case below first asserts the key's refusal (nothing in the
+ * clip or the automation store changes — see refused()), then runs the helper
+ * exactly as the handler used to (the in_window_* functions). Beat Stretch /2,
+ * Legato and Zoom still run in the window and still go through their keys.
+ * The refusal itself is pinned in tests/test_crop_loop_start.c.
  */
 #include "harness.h"
 #include <string.h>
@@ -117,6 +126,144 @@ static const char *pts(hx_t *h, int track, const char *tgt) {
     const char *_g = pts(h, track, tgt); \
     if (strcmp(_g, want)) { printf("  FAIL — %s\n    got  \"%s\"\n    want \"%s\"\n", msg, _g, want); exit(1); } \
 } while (0)
+
+/* ---- the refusal, then the helper the handler used to run ----------------- */
+static clip_t rf_clip;
+static drum_clip_t rf_drum;
+static pa_entry_t rf_pa[PA_MAX_ENTRIES];
+
+/* `key=val` is refused while a loop is off step 1: nothing in the track's
+ * active clip, its drum lanes or the automation store changes. */
+static void refused(hx_t *h, int track, const char *key, const char *val) {
+    seq8_instance_t *in = (seq8_instance_t *)h->inst;
+    seq8_track_t *tr = &in->tracks[track];
+    drum_clip_t *dc = tr->drum_clips[tr->active_clip];
+    memcpy(&rf_clip, &tr->clips[tr->active_clip], sizeof rf_clip);
+    if (dc) memcpy(&rf_drum, dc, sizeof rf_drum);
+    memcpy(rf_pa, in->pa_entries, sizeof rf_pa);
+    hx_set_param(h, key, val);
+    char msg[128];
+    snprintf(msg, sizeof msg, "loop off step 1: %s=%s must change nothing", key, val);
+    HX_ASSERT(!memcmp(&rf_clip, &tr->clips[tr->active_clip], sizeof rf_clip), msg);
+    HX_ASSERT(!dc || !memcmp(&rf_drum, dc, sizeof rf_drum), msg);
+    HX_ASSERT(!memcmp(rf_pa, in->pa_entries, sizeof rf_pa), msg);
+}
+
+/* melodic (track 1): what t1_clock_shift / t1_nudge / t1_beat_stretch=1 did */
+static void in_window_shift(hx_t *h, int dir) {
+    refused(h, 1, "t1_clock_shift", dir == 1 ? "1" : "-1");
+    seq8_instance_t *in = (seq8_instance_t *)h->inst;
+    clip_t *cl = mclip(h);
+    clip_rotate_window(cl, dir);
+    pa_link_rotate(in, 1, 0, 0, (uint32_t)cl->loop_start * cl->ticks_per_step,
+                   dir == 1 ? (int32_t)cl->ticks_per_step : -(int32_t)cl->ticks_per_step,
+                   (uint32_t)cl->length * cl->ticks_per_step);
+    clip_migrate_to_notes(cl);
+}
+static void in_window_nudge(hx_t *h, int dir) {
+    refused(h, 1, "t1_nudge", dir == 1 ? "1" : "-1");
+    seq8_instance_t *in = (seq8_instance_t *)h->inst;
+    clip_t *cl = mclip(h);
+    clip_nudge_window(cl, dir, 0);
+    pa_link_rotate(in, 1, 0, 0, (uint32_t)cl->loop_start * cl->ticks_per_step, dir,
+                   (uint32_t)cl->length * cl->ticks_per_step);
+    clip_migrate_to_notes(cl);
+}
+static void in_window_x2(hx_t *h) {
+    refused(h, 1, "t1_beat_stretch", "1");
+    seq8_instance_t *in = (seq8_instance_t *)h->inst;
+    clip_t *cl = mclip(h);
+    if (clip_stretch_check(cl, 1) != 1) return;
+    clip_stretch_window(cl, 1);
+    pa_link_scale(in, 1, 0, 0, (uint32_t)cl->loop_start * cl->ticks_per_step, 2, 1);
+    clip_migrate_to_notes(cl);
+}
+static void in_window_half(hx_t *h) {
+    refused(h, 1, "t1_beat_stretch", "-1");
+    seq8_instance_t *in = (seq8_instance_t *)h->inst;
+    clip_t *cl = mclip(h);
+    if (clip_stretch_check(cl, -1) != 1) return;
+    clip_stretch_window(cl, -1);
+    pa_link_scale(in, 1, 0, 0, (uint32_t)cl->loop_start * cl->ticks_per_step, 1, 2);
+    clip_migrate_to_notes(cl);
+}
+/* what t1_lgto_apply did */
+static void in_window_legato(hx_t *h) {
+    refused(h, 1, "t1_lgto_apply", "1");
+    apply_legato_to_clip(mclip(h));
+}
+/* one drum lane (track 0) */
+static void in_window_lane_shift(hx_t *h, int l, int dir) {
+    char k[32]; snprintf(k, sizeof k, "t0_l%d_clock_shift", l);
+    refused(h, 0, k, dir == 1 ? "1" : "-1");
+    clip_rotate_window(lane(h, l), dir);
+    clip_migrate_to_notes(lane(h, l));
+}
+static void in_window_lane_nudge(hx_t *h, int l, int dir) {
+    char k[32]; snprintf(k, sizeof k, "t0_l%d_nudge", l);
+    refused(h, 0, k, dir == 1 ? "1" : "-1");
+    clip_nudge_window(lane(h, l), dir, 1);
+    clip_migrate_to_notes(lane(h, l));
+}
+static void in_window_lane_x2(hx_t *h, int l) {
+    char k[32]; snprintf(k, sizeof k, "t0_l%d_beat_stretch", l);
+    refused(h, 0, k, "1");
+    if (clip_stretch_check(lane(h, l), 1) != 1) return;
+    clip_stretch_window(lane(h, l), 1);
+    clip_migrate_to_notes(lane(h, l));
+}
+static void in_window_lane_half(hx_t *h, int l) {
+    char k[32]; snprintf(k, sizeof k, "t0_l%d_beat_stretch", l);
+    refused(h, 0, k, "-1");
+    if (clip_stretch_check(lane(h, l), -1) != 1) return;
+    clip_stretch_window(lane(h, l), -1);
+    clip_migrate_to_notes(lane(h, l));
+}
+/* ALL LANES (track 0) */
+static void in_window_all_shift(hx_t *h, int dir) {
+    refused(h, 0, "t0_all_lanes_clock_shift", dir == 1 ? "1" : "-1");
+    seq8_instance_t *in = (seq8_instance_t *)h->inst;
+    seq8_track_t *tr = &in->tracks[0];
+    uint32_t lk_s, lk_l, lk_tps;
+    pa_drum_window(tr, (int)tr->active_clip, &lk_s, &lk_l, &lk_tps);
+    if (lk_l >= 2 * lk_tps)
+        pa_link_drum_shift(in, 0, (int)tr->active_clip, lk_s,
+                           dir == 1 ? (int32_t)lk_tps : -(int32_t)lk_tps, lk_l, 1);
+    for (int l = 0; l < DRUM_LANES; l++) {
+        if ((int)lane(h, l)->length < 2) continue;
+        clip_rotate_window(lane(h, l), dir);
+        clip_migrate_to_notes(lane(h, l));
+    }
+}
+static void in_window_all_nudge(hx_t *h, int dir) {
+    refused(h, 0, "t0_all_lanes_nudge", dir == 1 ? "1" : "-1");
+    seq8_instance_t *in = (seq8_instance_t *)h->inst;
+    seq8_track_t *tr = &in->tracks[0];
+    uint32_t lk_s, lk_l, lk_tps;
+    pa_drum_window(tr, (int)tr->active_clip, &lk_s, &lk_l, &lk_tps);
+    pa_link_drum_shift(in, 0, (int)tr->active_clip, lk_s, dir, lk_l, 0);
+    for (int l = 0; l < DRUM_LANES; l++) {
+        clip_nudge_window(lane(h, l), dir, 1);
+        clip_migrate_to_notes(lane(h, l));
+    }
+}
+/* returns 1 when every lane passed the pre-flight and all stretched */
+static int in_window_all_stretch(hx_t *h, int dir) {
+    refused(h, 0, "t0_all_lanes_beat_stretch", dir == 1 ? "1" : "-1");
+    seq8_instance_t *in = (seq8_instance_t *)h->inst;
+    seq8_track_t *tr = &in->tracks[0];
+    for (int l = 0; l < DRUM_LANES; l++)
+        if (clip_stretch_check(lane(h, l), dir) != 1) return 0;
+    uint32_t lk_s, lk_l, lk_tps;
+    pa_drum_window(tr, (int)tr->active_clip, &lk_s, &lk_l, &lk_tps);
+    pa_link_scale(in, 0, (int)tr->active_clip, 1, lk_s, dir == 1 ? 2 : 1, dir == 1 ? 1 : 2);
+    for (int l = 0; l < DRUM_LANES; l++) {
+        clip_stretch_window(lane(h, l), dir);
+        clip_migrate_to_notes(lane(h, l));
+    }
+    return 1;
+}
+static int in_window_all_x2(hx_t *h) { return in_window_all_stretch(h, 1); }
 
 /* ---- the old code, verbatim in behaviour, for the loop_start == 0 check -- */
 static void ref_rotate(clip_t *cl, int dir) {
@@ -259,7 +406,7 @@ int main(void) {
     {
         hx_t *h = melodic();
         clip_t *cl = mclip(h);
-        hx_set_param(h, "t1_clock_shift", "1");
+        in_window_shift(h, 1);
         HX_ASSERT(cl->steps[71] && !cl->steps[70], "+1: step 70 moves to 71");
         HX_ASSERT(cl->steps[64] && !cl->steps[127], "+1: step 127 wraps to 64, the window's start");
         HX_ASSERT(cl->steps[3] && cl->steps[200] && !cl->steps[4] && !cl->steps[201], "+1: steps outside the window stay put");
@@ -268,11 +415,11 @@ int main(void) {
                   "+1: the note list follows");
         HX_ASSERT(cl->active, "+1: the clip stays active");
         OK("melodic Clock Shift +1 rotates the loop window, wrapping at ITS end");
-        hx_set_param(h, "t1_clock_shift", "-1");
+        in_window_shift(h, -1);
         HX_ASSERT(cl->steps[70] && cl->steps[127] && !cl->steps[71] && !cl->steps[64], "-1: back where they were");
         HX_ASSERT(cl->steps[3] && cl->steps[200], "-1: outside still untouched");
         HX_ASSERT(cl->clock_shift_pos == 0, "-1: clock_shift_pos back to 0");
-        hx_set_param(h, "t1_clock_shift", "-1");
+        in_window_shift(h, -1);
         HX_ASSERT(cl->steps[69] && cl->steps[126], "-1 again: one step earlier");
         HX_ASSERT(cl->clock_shift_pos == LEN - 1, "-1 from 0: clock_shift_pos wraps to length-1");
         OK("melodic Clock Shift -1 undoes +1, and counts back round the window");
@@ -283,9 +430,9 @@ int main(void) {
     {
         hx_t *h = melodic();
         clip_t *cl = mclip(h);
-        for (int i = 0; i < 12; i++) hx_set_param(h, "t1_nudge", "1");
+        for (int i = 0; i < 12; i++) in_window_nudge(h, 1);
         HX_ASSERT(cl->steps[70] && !cl->steps[71], "12 x +1 at tps 24: still on step 70 (melodic threshold is past the midpoint)");
-        hx_set_param(h, "t1_nudge", "1");
+        in_window_nudge(h, 1);
         HX_ASSERT(cl->steps[71] && !cl->steps[70], "13 x +1: moved on to step 71");
         HX_ASSERT(cl->note_tick_offset[71][0] == 13 - TPS, "13 x +1: offset carried (-11)");
         HX_ASSERT(cl->steps[64] && !cl->steps[127], "13 x +1: step 127 wraps to 64, inside the window");
@@ -300,7 +447,7 @@ int main(void) {
         toggle(h, 3); toggle(h, 64); toggle(h, 70);
         loop_set(h, LS, LEN);
         clip_t *cl = mclip(h);
-        for (int i = 0; i < 13; i++) hx_set_param(h, "t1_nudge", "-1");
+        for (int i = 0; i < 13; i++) in_window_nudge(h, -1);
         HX_ASSERT(cl->steps[69] && !cl->steps[70], "13 x -1: step 70 moved back to 69");
         HX_ASSERT(cl->steps[127] && !cl->steps[64], "13 x -1: step 64 wraps back to 127, the window's end");
         HX_ASSERT(cl->note_tick_offset[127][0] == TPS - 13, "13 x -1: offset carried (+11)");
@@ -314,11 +461,11 @@ int main(void) {
         toggle(h, 70);
         loop_set(h, LS, LEN);
         clip_t *cl = mclip(h);
-        hx_set_param(h, "t1_clock_shift", "1");
+        in_window_shift(h, 1);
         HX_ASSERT(cl->steps[71] && cl->active, "Clock Shift: active is read from the window");
-        hx_set_param(h, "t1_nudge", "1");
+        in_window_nudge(h, 1);
         HX_ASSERT(cl->active, "Nudge: active is read from the window");
-        hx_set_param(h, "t1_beat_stretch", "-1");
+        in_window_half(h);
         HX_ASSERT(cl->active && cl->length == 32, "Beat Stretch: active is read from the window");
         OK("a clip with notes only in its window stays active through Shift, Nudge and Stretch");
         hx_destroy(h);
@@ -332,19 +479,19 @@ int main(void) {
         pa_set(h, 1, MTG, 127 * TPS, 300);
         pa_set(h, 1, MTG, 200 * TPS, 400);         /* after the window */
         PTS_EQ(1, MTG, "240:100 1680:200 3048:300 4800:400", "setup: the points");
-        hx_set_param(h, "t1_clock_shift", "1");
+        in_window_shift(h, 1);
         PTS_EQ(1, MTG, "240:100 1536:300 1704:200 4800:400",
                "Clock Shift: 70 -> 71, 127 wraps to 64, outside unmoved");
-        hx_set_param(h, "t1_clock_shift", "-1");
+        in_window_shift(h, -1);
         PTS_EQ(1, MTG, "240:100 1680:200 3048:300 4800:400", "Clock Shift -1: back");
         OK("melodic Clock Shift rotates linked automation inside the window");
-        hx_set_param(h, "t1_nudge", "-1");
+        in_window_nudge(h, -1);
         PTS_EQ(1, MTG, "240:100 1679:200 3047:300 4800:400", "Nudge -1: one tick earlier");
-        hx_set_param(h, "t1_nudge", "1");
-        hx_set_param(h, "t1_nudge", "1");
+        in_window_nudge(h, 1);
+        in_window_nudge(h, 1);
         PTS_EQ(1, MTG, "240:100 1681:200 3049:300 4800:400", "Nudge +1 x2");
         pa_set(h, 1, MTG, 128 * TPS - 1, 500);     /* the window's last tick */
-        hx_set_param(h, "t1_nudge", "1");
+        in_window_nudge(h, 1);
         PTS_EQ(1, MTG, "240:100 1536:500 1682:200 3050:300 4800:400", "Nudge: the last tick wraps to the window's first");
         OK("melodic Nudge moves linked automation inside the window, wrapping at its end");
         hx_destroy(h);
@@ -357,16 +504,16 @@ int main(void) {
         dloop_set(h, 0, LS, LEN);
         clip_t *dl = lane(h, 0);
         HX_ASSERT(dl->loop_start == LS && dl->length == LEN, "setup: the lane window");
-        hx_set_param(h, "t0_l0_clock_shift", "1");
+        in_window_lane_shift(h, 0, 1);
         HX_ASSERT(dl->steps[71] && !dl->steps[70] && dl->steps[64] && !dl->steps[127], "lane +1: inside the window");
         HX_ASSERT(dl->steps[3] && !dl->steps[4], "lane +1: outside untouched");
         HX_ASSERT(dl->clock_shift_pos == 1, "lane +1: clock_shift_pos");
-        hx_set_param(h, "t0_l0_clock_shift", "-1");
+        in_window_lane_shift(h, 0, -1);
         HX_ASSERT(dl->steps[70] && dl->steps[127] && dl->clock_shift_pos == 0, "lane -1: back");
         OK("a drum lane's Clock Shift rotates its own window");
-        for (int i = 0; i < 11; i++) hx_set_param(h, "t0_l0_nudge", "1");
+        for (int i = 0; i < 11; i++) in_window_lane_nudge(h, 0, 1);
         HX_ASSERT(dl->steps[70] && !dl->steps[71], "lane 11 x +1: not yet");
-        hx_set_param(h, "t0_l0_nudge", "1");
+        in_window_lane_nudge(h, 0, 1);
         HX_ASSERT(dl->steps[71] && !dl->steps[70], "lane 12 x +1: crosses (the drum threshold is AT the midpoint)");
         HX_ASSERT(dl->steps[64] && !dl->steps[127], "lane nudge: 127 wraps to 64");
         HX_ASSERT(dl->steps[3] && dl->note_tick_offset[3][0] == 0, "lane nudge: outside untouched");
@@ -393,7 +540,7 @@ int main(void) {
         pa_set(h, 0, DTG2, 10 * TPS, 23);
         pa_entry_t *nc = pentry(h, 0, DTG2);
         nc->loop_len = 0; nc->loop_off = 0; nc->step_ticks = 0;
-        hx_set_param(h, "t0_all_lanes_clock_shift", "1");
+        in_window_all_shift(h, 1);
         clip_t *l0 = lane(h, 0), *l5 = lane(h, 5);
         HX_ASSERT(l0->steps[71] && !l0->steps[70] && l0->steps[64] && !l0->steps[127], "lane 0: its window 64..127");
         HX_ASSERT(l0->steps[3], "lane 0: outside untouched");
@@ -402,13 +549,13 @@ int main(void) {
         PTS_EQ(0, DTG, "1536:12 1704:11", "the cycled automation lane: inside its cycle");
         PTS_EQ(0, DTG2, "240:23 1536:22 1704:21", "the un-cycled automation lane: inside the longest lane's window");
         OK("ALL LANES Clock Shift moves automation in the window, start included");
-        hx_set_param(h, "t0_all_lanes_nudge", "-1");
+        in_window_all_nudge(h, -1);
         PTS_EQ(0, DTG2, "240:23 1703:21 3071:22", "ALL LANES Nudge -1: one tick, the first tick wrapping to the last");
-        hx_set_param(h, "t0_all_lanes_nudge", "1");
-        hx_set_param(h, "t0_all_lanes_nudge", "1");
+        in_window_all_nudge(h, 1);
+        in_window_all_nudge(h, 1);
         pa_set(h, 0, DTG2, 128 * TPS - 1, 24);
         nc->loop_len = 0; nc->loop_off = 0; nc->step_ticks = 0;
-        hx_set_param(h, "t0_all_lanes_nudge", "1");
+        in_window_all_nudge(h, 1);
         PTS_EQ(0, DTG2, "240:23 1536:24 1538:22 1706:21", "ALL LANES Nudge: the window's last tick wraps to its first");
         HX_ASSERT(l0->nudge_pos == 2, "ALL LANES Nudge: lane nudge_pos");
         OK("ALL LANES Nudge moves automation in the window, start included");
@@ -423,14 +570,14 @@ int main(void) {
         pa_set(h, 1, MTG, 10 * TPS, 1);
         pa_set(h, 1, MTG, 70 * TPS, 2);
         clip_t *cl = mclip(h);
-        hx_set_param(h, "t1_beat_stretch", "1");
+        in_window_x2(h);
         HX_ASSERT(cl->length == 64 && cl->loop_start == LS, "x2: the window doubles from its start");
         HX_ASSERT(cl->steps[64] && cl->steps[76] && cl->steps[126], "x2: 64 -> 64, 70 -> 76, 95 -> 126");
         HX_ASSERT(!cl->steps[70] && !cl->steps[95], "x2: the old places are empty");
         HX_ASSERT(cl->steps[3] && cl->steps[200], "x2: outside the window untouched");
         PTS_EQ(1, MTG, "240:1 1824:2", "x2: automation scales from the window's start");
         OK("Beat Stretch x2 works inside the window");
-        hx_set_param(h, "t1_beat_stretch", "-1");
+        in_window_half(h);
         HX_ASSERT(cl->length == 32, "/2: back to 32");
         HX_ASSERT(cl->steps[64] && cl->steps[70] && cl->steps[95], "/2: back where they were");
         HX_ASSERT(!cl->steps[76] && !cl->steps[126], "/2: the doubled places are empty");
@@ -439,7 +586,7 @@ int main(void) {
         PTS_EQ(1, MTG, "240:1 1680:2", "/2: automation back");
         OK("Beat Stretch /2 works inside the window and keeps notes outside it");
         loop_set(h, LS, 100);                         /* 64 + 200 > 256; 2 x 100 alone is not */
-        hx_set_param(h, "t1_beat_stretch", "1");
+        in_window_x2(h);
         HX_ASSERT(cl->length == 100 && cl->loop_start == LS, "x2 refused when the doubled window passes step 256");
         HX_ASSERT(cl->loop_start + cl->length <= SEQ_STEPS, "the window stays inside storage");
         OK("Beat Stretch x2 is refused when loop start + 2 x length > 256");
@@ -450,12 +597,12 @@ int main(void) {
         dtoggle(h, 0, 3); dtoggle(h, 0, 70); dtoggle(h, 0, 95);
         dloop_set(h, 0, LS, 32);
         clip_t *dl = lane(h, 0);
-        hx_set_param(h, "t0_l0_beat_stretch", "1");
+        in_window_lane_x2(h, 0);
         HX_ASSERT(dl->length == 64 && dl->steps[76] && dl->steps[126] && !dl->steps[70], "lane x2: in its window");
-        hx_set_param(h, "t0_l0_beat_stretch", "-1");
+        in_window_lane_half(h, 0);
         HX_ASSERT(dl->length == 32 && dl->steps[70] && dl->steps[95] && dl->steps[3], "lane /2: back, outside kept");
         dloop_set(h, 0, LS, 100);
-        hx_set_param(h, "t0_l0_beat_stretch", "1");
+        in_window_lane_x2(h, 0);
         HX_ASSERT(dl->length == 100, "lane x2 refused past step 256");
         OK("a drum lane's Beat Stretch works inside its window");
         for (int l = 0; l < DRUM_LANES; l++) dloop_set(h, l, LS, 32);
@@ -463,16 +610,13 @@ int main(void) {
         pa_set(h, 0, DTG2, 70 * TPS, 2);
         pa_entry_t *nc = pentry(h, 0, DTG2);
         nc->loop_len = 0; nc->loop_off = 0; nc->step_ticks = 0;
-        hx_set_param(h, "t0_all_lanes_beat_stretch", "1");
-        seq8_instance_t *in = (seq8_instance_t *)h->inst;
-        HX_ASSERT(in->all_lanes_stretch_result == 1, "ALL LANES x2 ran");
+        HX_ASSERT(in_window_all_x2(h), "ALL LANES x2 ran");
         HX_ASSERT(dl->length == 64 && dl->steps[76] && dl->steps[126] && dl->steps[3], "ALL LANES x2: in the window");
         PTS_EQ(0, DTG2, "240:1 1824:2", "ALL LANES x2: un-cycled automation scales from the window's start");
-        hx_set_param(h, "t0_all_lanes_beat_stretch", "-1");
+        in_window_all_stretch(h, -1);
         HX_ASSERT(dl->length == 32 && dl->steps[70] && dl->steps[95] && dl->steps[3], "ALL LANES /2: back, outside kept");
         dloop_set(h, 7, LS, 100);
-        hx_set_param(h, "t0_all_lanes_beat_stretch", "1");
-        HX_ASSERT(in->all_lanes_stretch_result == -1 && dl->length == 32, "ALL LANES x2 refused when one lane would pass 256");
+        HX_ASSERT(!in_window_all_x2(h) && dl->length == 32, "ALL LANES x2 refused when one lane would pass 256");
         OK("ALL LANES Beat Stretch works inside each lane's window");
         hx_destroy(h);
     }
@@ -482,28 +626,29 @@ int main(void) {
      * the length when i set it" — the zoom scaled the length but left the loop
      * start in the old steps, so the window moved to a different stretch of
      * the music and played past it. */
+    /* ⚠ Since Crop (2026-09-27) Zoom needs the loop at step 1 like every clip
+     * transform, so on a loop starting later it is REFUSED; the window scaling
+     * it kept is exercised below on a loop at step 1. */
     {
         hx_t *h = hx_create(NULL);
         toggle(h, 20); toggle(h, 40);
         loop_set(h, 16, 32);                          /* window 16..47 at 1/16 */
         clip_t *cl = mclip(h);
+        refused(h, 1, "t1_clip_resolution_zoom", "0");
+        HX_ASSERT(cl->ticks_per_step == 24 && cl->loop_start == 16 && cl->length == 32, "zoom refused off step 1");
+        OK("Resolution Zoom is refused while the loop does not start at step 1");
+        loop_set(h, 0, 32);
         hx_set_param(h, "t1_clip_resolution_zoom", "0");   /* 1/32 */
         HX_ASSERT(cl->ticks_per_step == 12, "zoom to 1/32 ran");
-        HX_ASSERT(cl->length == 64, "zoom: the length doubles");
-        HX_ASSERT(cl->loop_start == 32, "zoom: the loop start doubles with it (same time)");
+        HX_ASSERT(cl->length == 64 && cl->loop_start == 0, "zoom: the length doubles, the start stays at 1");
         HX_ASSERT(has_note_at(cl, 20 * TPS) && cl->steps[40], "zoom: the note keeps its time, at step 40");
         hx_set_param(h, "t1_clip_resolution_zoom", "1");   /* back to 1/16 */
-        HX_ASSERT(cl->ticks_per_step == 24 && cl->length == 32 && cl->loop_start == 16, "zoom back restores the window");
-        loop_set(h, 3, 32);
-        hx_set_param(h, "t1_clip_resolution_zoom", "2");   /* 1/8: step 3 is between two of its steps */
-        HX_ASSERT(cl->ticks_per_step == 48 && cl->loop_start == 1 && cl->length == 17,
-                  "off the grid: the start goes back a step and the window still covers the old one (72..840t -> 48..864t)");
-        hx_set_param(h, "t1_clip_resolution_zoom", "1");
-        loop_set(h, 100, 128);
-        hx_set_param(h, "t1_clip_resolution_zoom", "0");   /* 200 + 256 > 256 */
-        HX_ASSERT(cl->ticks_per_step == 24 && cl->loop_start == 100 && cl->length == 128,
+        HX_ASSERT(cl->ticks_per_step == 24 && cl->length == 32 && cl->loop_start == 0, "zoom back restores the window");
+        loop_set(h, 0, 200);
+        hx_set_param(h, "t1_clip_resolution_zoom", "0");   /* 400 > 256 */
+        HX_ASSERT(cl->ticks_per_step == 24 && cl->loop_start == 0 && cl->length == 200,
                   "zoom refused when the scaled window would pass step 256");
-        OK("Resolution Zoom scales the loop start with the length, covers an off-grid window, and refuses what cannot fit");
+        OK("Resolution Zoom at step 1 keeps the time and refuses what cannot fit");
         hx_destroy(h);
     }
     {
@@ -511,14 +656,17 @@ int main(void) {
         dtoggle(h, 0, 20);
         dloop_set(h, 0, 16, 32);
         clip_t *dl = lane(h, 0);
+        refused(h, 0, "t0_l0_clip_resolution_zoom", "0");
+        HX_ASSERT(dl->ticks_per_step == 24 && dl->loop_start == 16, "lane zoom refused off step 1");
+        dloop_set(h, 0, 0, 32);
         hx_set_param(h, "t0_l0_clip_resolution_zoom", "0");
-        HX_ASSERT(dl->ticks_per_step == 12 && dl->length == 64 && dl->loop_start == 32 && dl->steps[40],
-                  "lane zoom: the window keeps its time");
-        dloop_set(h, 0, 100, 128);
+        HX_ASSERT(dl->ticks_per_step == 12 && dl->length == 64 && dl->loop_start == 0 && dl->steps[40],
+                  "lane zoom at step 1: the window keeps its time");
+        dloop_set(h, 0, 0, 200);
         hx_set_param(h, "t0_l0_clip_resolution_zoom", "1");
         hx_set_param(h, "t0_l0_clip_resolution_zoom", "0");
         HX_ASSERT(dl->loop_start + dl->length <= SEQ_STEPS, "lane zoom never passes step 256");
-        OK("a drum lane's Resolution Zoom keeps its loop window's time");
+        OK("a drum lane's Resolution Zoom is refused off step 1 and keeps its time at step 1");
         hx_destroy(h);
     }
 
@@ -528,7 +676,7 @@ int main(void) {
         toggle(h, 80);
         clip_t *cl = mclip(h);
         uint16_t g3 = cl->step_gate[3], g200 = cl->step_gate[200];
-        hx_set_param(h, "t1_lgto_apply", "1");
+        in_window_legato(h);
         HX_ASSERT(cl->step_gate[70] == 10 * TPS, "70 fills to the next in-window note, 80");
         HX_ASSERT(cl->step_gate[80] == 47 * TPS, "80 fills to 127");
         HX_ASSERT(cl->step_gate[127] == 1 * TPS, "127, the last, fills to the window's end");

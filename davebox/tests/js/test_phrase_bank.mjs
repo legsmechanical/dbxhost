@@ -185,7 +185,7 @@ async function main() {
         assert([71, 72, 73, 74, 75, 76, 77, 78].some((k) => (ring[k] | 0) !== 0), 'the control lit no ring');
     });
 
-    step('⭐ CLIP K6 is empty again: no trigger cell, no CLK PHRASES, and touch + click opens nothing', () => {
+    step('⭐ CLIP K6 is no longer the phrases trigger: no CLK PHRASES, and touch + click opens no browser', () => {
         onBank(2, 0); S.bankCardLatched = true; ticks(2);
         touch(5, true); ticks(1);
         const hints = render.bankPageHints(0);
@@ -194,7 +194,8 @@ async function main() {
         click();
         touch(5, false); ticks(1);
         assert(!PB.pbActive(), 'K6 + click on CLIP opened the browser');
-        assert(k6 && !k6.label && !k6.text, 'CLIP K6 is not the empty cell: ' + JSON.stringify(k6));
+        /* K6 is CROP here (main's), not a phrases trigger. */
+        assert(k6 && !/phrase/i.test(String(k6.label || '')), 'CLIP K6 is still the phrases trigger: ' + JSON.stringify(k6));
         assert(!JSON.stringify(hints).includes('PHRASES'), 'hints: ' + JSON.stringify(hints));
         assert(s.text.indexOf('Phrs') < 0 && s.text.indexOf('Phrases') < 0, 'CLIP still shows the Phrases cell: ' + JSON.stringify(s.text));
         S.bankCardLatched = false; ticks(2);
@@ -206,7 +207,7 @@ async function main() {
         const k6 = ((kit.kitCellsForTest() || {}).cells || [])[5];
         click(); touch(5, false); ticks(1);
         assert(!PB.pbActive(), 'K6 + click on DRUM LANE opened the browser');
-        assert(k6 && !k6.label && !k6.text, 'DRUM LANE K6 is not the empty cell: ' + JSON.stringify(k6));
+        assert(k6 && !/phrase/i.test(String(k6.label || '')), 'DRUM LANE K6 is still the phrases trigger: ' + JSON.stringify(k6));
         const seen = [];
         for (let i = 0; i < 3; i++) { jog(-1); seen.push(S.activeBank); }
         assert(JSON.stringify(seen) === JSON.stringify([7, C.BANK_STEP, C.BANK_PHRASE]), 'left: ' + seen);

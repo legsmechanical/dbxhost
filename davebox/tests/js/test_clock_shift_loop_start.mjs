@@ -10,7 +10,14 @@ import './_bulk_get_stub.mjs';
  *
  * Performed through the real gesture: touch K3 on the CLIP bank of a melodic
  * track, turn it (CC 73) detent by detent with ticks between — the path that
- * accumulates detents into one ±1 fire — and release. */
+ * accumulates detents into one ±1 fire — and release.
+ *
+ * ⚠ Since Crop (2026-09-27) every clip transform is REFUSED while the loop does
+ * not start at step 1 (Josh: "refuse transforms when loop start isn't at one
+ * and direct them to crop"; "these should require clip start at 1 too for
+ * consistency"). So the late-loop steps below now assert that NOTHING is sent
+ * and the LOOP NOT AT 1 / CROP FIRST notice shows; the loop-at-step-1 controls
+ * keep the mirrors pinned. Crop itself: tests/js/test_crop.mjs. */
 let failed = 0;
 const ok = (l) => console.log(`  ok   — ${l}`);
 const bad = (l, e) => { console.error(`  FAIL — ${l}: ${e && e.stack ? e.stack : e}`); failed = 1; };
@@ -90,35 +97,18 @@ step('setup: K3 of the CLIP bank is Clock Shift', () => {
     assert(Array.isArray(S.clipLoopStart[T]), 'S.clipLoopStart is not per-track, per-clip');
 });
 
-step('⭐⭐ THE GESTURE: a turn right sends t4_clock_shift and the pads move INSIDE the loop window', () => {
+step('⭐⭐ THE GESTURE, loop at step 65: a turn either way sends nothing and says CROP FIRST', () => {
     setupClip();
-    sets.length = 0;
-    const fired = turnOnce(1);
-    assert(fired >= 0, 'no clock_shift fired in 40 detents: ' + JSON.stringify(sets.slice(0, 8)));
-    assert(sets.includes('t' + T + '_clock_shift=1'), 'sent ' + JSON.stringify(sets));
-    const st = S.clipSteps[T][0];
-    assert(st[71] === 1 && st[70] === 0, 'step 70 did not move to 71: [70]=' + st[70] + ' [71]=' + st[71]);
-    assert(st[64] === 1 && st[127] === 0, 'step 127 did not wrap to 64, the window start: [64]=' + st[64] + ' [127]=' + st[127]);
-    assert(st[3] === 1 && st[4] === 0, 'a step OUTSIDE the window moved: [3]=' + st[3] + ' [4]=' + st[4]);
-    assert(st[0] === 0 && st[63] === 0, 'the rotation touched [0, 64): [0]=' + st[0] + ' [63]=' + st[63]);
-});
-
-step('⭐ ...and it schedules a re-read of the clip from the DSP', () => {
-    assert(S.pendingStepsReread > 0 && S.pendingStepsRereadTrack === T && S.pendingStepsRereadClip === 0,
-        'no re-read armed: ' + S.pendingStepsReread + ' t' + S.pendingStepsRereadTrack + ' c' + S.pendingStepsRereadClip);
-    reads.length = 0;
-    ticks(3);
-    assert(reads.includes('t' + T + '_c0_steps'), 'the re-read never asked for the steps: ' + JSON.stringify(reads));
-    release();
-});
-
-step('a turn left moves them back', () => {
-    sets.length = 0;
-    const fired = turnOnce(-1);
-    assert(fired >= 0 && sets.includes('t' + T + '_clock_shift=-1'), 'sent ' + JSON.stringify(sets));
-    const st = S.clipSteps[T][0];
-    assert(st[70] === 1 && st[127] === 1 && st[71] === 0 && st[64] === 0 && st[3] === 1, 'not restored');
-    release();
+    for (const d of [1, -1]) {
+        sets.length = 0; S.actionPopupLines = [];
+        const fired = turnOnce(d);
+        release();
+        assert(fired < 0 && !sets.some((x) => /_clock_shift=/.test(x)), 'sent ' + JSON.stringify(sets));
+        assert((S.actionPopupLines || []).join(' / ') === 'LOOP NOT AT 1 / CROP FIRST',
+            'no notice: ' + JSON.stringify(S.actionPopupLines));
+        const st = S.clipSteps[T][0];
+        assert(st[70] === 1 && st[127] === 1 && st[3] === 1 && st[71] === 0 && st[64] === 0, 'the mirror moved');
+    }
 });
 
 step('CONTROL: loop start 0 still rotates [0, length)', () => {
@@ -128,7 +118,13 @@ step('CONTROL: loop start 0 still rotates [0, length)', () => {
     st[15] = 1; st[20] = 1;
     sets.length = 0;
     turnOnce(1);
+    assert(sets.includes('t' + T + '_clock_shift=1'), 'sent ' + JSON.stringify(sets));
     assert(st[0] === 1 && st[15] === 0 && st[20] === 1, '[0]=' + st[0] + ' [15]=' + st[15] + ' [20]=' + st[20]);
+    assert(S.pendingStepsReread > 0 && S.pendingStepsRereadTrack === T && S.pendingStepsRereadClip === 0,
+        'no re-read armed');
+    reads.length = 0;
+    ticks(3);
+    assert(reads.includes('t' + T + '_c0_steps'), 'the re-read never asked for the steps: ' + JSON.stringify(reads));
     release();
 });
 
@@ -140,27 +136,39 @@ const stretch = (d) => {
     ticks(1);
 };
 
-step('⭐ Beat Stretch x2 mirrors the DSP inside the loop window', () => {
+step('⭐ Beat Stretch on a loop at step 65 is not sent, either way', () => {
     S.clipLength[T][0] = 32; S.clipLoopStart[T][0] = 64;
     const st = S.clipSteps[T][0];
     for (let i = 0; i < st.length; i++) st[i] = 0;
     st[64] = 1; st[70] = 1; st[95] = 1; st[3] = 1; st[200] = 1;
     sets.length = 0;
+    stretch(1); stretch(-1);
+    assert(!sets.some((x) => /_beat_stretch=/.test(x)), 'sent ' + JSON.stringify(sets));
+    assert(S.clipLength[T][0] === 32 && st[70] === 1 && st[76] === 0, 'the mirror changed');
+});
+step('CONTROL: Beat Stretch x2 at step 1 mirrors the DSP', () => {
+    S.clipLength[T][0] = 32; S.clipLoopStart[T][0] = 0;
+    const st = S.clipSteps[T][0];
+    for (let i = 0; i < st.length; i++) st[i] = 0;
+    st[0] = 1; st[6] = 1; st[31] = 1; st[200] = 1;
+    sets.length = 0;
     stretch(1);
     assert(sets.includes('t' + T + '_beat_stretch=1'), 'sent ' + JSON.stringify(sets));
     assert(S.clipLength[T][0] === 64, 'length ' + S.clipLength[T][0]);
-    assert(st[64] === 1 && st[76] === 1 && st[126] === 1 && st[70] === 0 && st[95] === 0,
-        'not stretched from the window start: ' + [64, 70, 76, 95, 126].map((i) => i + '=' + st[i]).join(' '));
-    assert(st[3] === 1 && st[200] === 1, 'a step outside the window changed');
+    assert(st[0] === 1 && st[12] === 1 && st[62] === 1 && st[6] === 0 && st[31] === 0,
+        'not stretched: ' + [0, 6, 12, 31, 62].map((i) => i + '=' + st[i]).join(' '));
 });
 
-step('⭐ Beat Stretch x2 is not sent when the doubled loop would pass step 256 (loop start included)', () => {
+step('⭐ Beat Stretch x2 is not sent on a late loop (refused), nor when the doubled loop would pass step 256', () => {
     S.clipLength[T][0] = 100; S.clipLoopStart[T][0] = 64;
     sets.length = 0;
     stretch(1);
     assert(!sets.some((x) => /_beat_stretch=/.test(x)), 'sent ' + JSON.stringify(sets));
     assert(S.clipLength[T][0] === 100, 'length ' + S.clipLength[T][0]);
-    S.clipLoopStart[T][0] = 0;                        /* CONTROL: 2 x 100 alone fits */
+    S.clipLength[T][0] = 200; S.clipLoopStart[T][0] = 0;   /* at step 1, 2 x 200 does not fit */
+    stretch(1);
+    assert(!sets.some((x) => /_beat_stretch=/.test(x)), 'sent a stretch past 256: ' + JSON.stringify(sets));
+    S.clipLength[T][0] = 100;                         /* CONTROL: 2 x 100 fits */
     stretch(1);
     assert(sets.includes('t' + T + '_beat_stretch=1'), 'the control did not fire: ' + JSON.stringify(sets));
 });
@@ -189,22 +197,31 @@ const zoomDown = () => {
     globalThis.onMidiMessageInternal(new Uint8Array([0x90, 0, 0])); ticks(1);
     S.altMode = false;
 };
-step('⭐ Zoom to 1/32 on a loop that starts late: the loop start doubles with the length (Josh, 2026-09-26)', () => {
+step('⭐ Zoom on a loop that starts late is not sent, and says CROP FIRST', () => {
     S.clipLength[T][0] = 32; S.clipLoopStart[T][0] = 16; S.clipTPS[T][0] = 24;
     S.bankParams[T][0][0] = 1;                       /* Res = 1/16 */
+    sets.length = 0; S.actionPopupLines = [];
+    zoomDown();
+    assert(!sets.some((x) => /_clip_resolution_zoom=/.test(x)), 'sent ' + JSON.stringify(sets));
+    assert((S.actionPopupLines || []).join(' / ') === 'LOOP NOT AT 1 / CROP FIRST', 'no notice');
+    assert(S.clipTPS[T][0] === 24 && S.clipLength[T][0] === 32 && S.clipLoopStart[T][0] === 16, 'the mirror changed');
+});
+step('CONTROL: Zoom to 1/32 at step 1 doubles the length', () => {
+    S.clipLength[T][0] = 32; S.clipLoopStart[T][0] = 0; S.clipTPS[T][0] = 24;
+    S.bankParams[T][0][0] = 1;
     sets.length = 0;
     zoomDown();
     assert(sets.includes('t' + T + '_clip_resolution_zoom=0'), 'sent ' + JSON.stringify(sets));
-    assert(S.clipTPS[T][0] === 12 && S.clipLength[T][0] === 64, 'tps/length ' + S.clipTPS[T][0] + '/' + S.clipLength[T][0]);
-    assert(S.clipLoopStart[T][0] === 32, 'the loop start did not follow: ' + S.clipLoopStart[T][0]);
+    assert(S.clipTPS[T][0] === 12 && S.clipLength[T][0] === 64 && S.clipLoopStart[T][0] === 0,
+        'tps/length/start ' + S.clipTPS[T][0] + '/' + S.clipLength[T][0] + '/' + S.clipLoopStart[T][0]);
 });
 step('⭐ Zoom is not sent when the scaled window would pass step 256', () => {
-    S.clipLength[T][0] = 128; S.clipLoopStart[T][0] = 100; S.clipTPS[T][0] = 24;
+    S.clipLength[T][0] = 200; S.clipLoopStart[T][0] = 0; S.clipTPS[T][0] = 24;
     S.bankParams[T][0][0] = 1;
     sets.length = 0;
     zoomDown();
     assert(!sets.some((x) => /_clip_resolution_zoom=/.test(x)), 'sent a zoom that cannot fit: ' + JSON.stringify(sets));
-    assert(S.clipLength[T][0] === 128 && S.clipLoopStart[T][0] === 100, 'the mirror changed anyway');
+    assert(S.clipLength[T][0] === 200 && S.clipLoopStart[T][0] === 0, 'the mirror changed anyway');
 });
 
 step('and nothing was swallowed into the JS error log', () => {

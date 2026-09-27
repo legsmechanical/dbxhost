@@ -62,6 +62,9 @@ static int sp_track_config2(sp_ctx_t *cx) {
         clip_t *cl = &tr->clips[tr->active_clip];
         uint16_t old_tps = cl->ticks_per_step;
         if (new_tps == old_tps) return 1;
+        /* Like every clip transform, Zoom needs the loop at step 1 (CROP
+         * FIRST); the window scaling below stays for the loop it then has. */
+        if (cl->loop_start) return 1;
         /* The loop window keeps its TIME too (Josh, 2026-09-26: a zoom on a
          * loop that did not start on page one played past it): its start is
          * counted in steps, so it scales with them. A start between two of the

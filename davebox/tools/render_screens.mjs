@@ -110,8 +110,9 @@ function kitCellForKnob(knob, val) {
         return base;
     }
     if (knob.fmt === C.fmtLgto) { base.kind = 'action'; base.oneWay = true; return base; }
+    if (knob.fmt === C.fmtCrop) { base.kind = 'action'; base.oneWay = true; return base; }
     /* ⚠ MIRRORS ui_render's rule, which is `valsq` since 2026-08-29: only Lgto
-     * (above) is a real fire-action. Strch and Shift hold signed values, so a
+     * and Crop (above) are real fire-actions. Strch and Shift hold signed values, so a
      * pushbutton is the wrong picture for them — see the long note at
      * ui_render.mjs's copy of this branch for why they are not arcbip either.
      * Pinned by tests/js/test_cellkind_parity.mjs, because this whole function
@@ -198,7 +199,7 @@ const CUSTOM_KIT = [
             { kind: 'valsq', label: 'Shift', name: 'Clock Shift', text: '+0' },
             { kind: 'action', oneWay: true, label: 'Lgto', name: 'Apply Legato', text: '->' },
             { kind: 'valsq', label: 'Eucld', name: 'Euclid Fill', text: '0' },
-            { kind: 'blank', label: '' },
+            { kind: 'action', oneWay: true, label: 'Crop', name: 'Crop to Loop', text: '->' },
             { kind: 'dirsq', label: 'Dir', name: 'Playback Dir', text: 'Fwd', options: DIR, sel: 0 },
             { kind: 'pill', label: 'SeqFl', name: 'Seq Follow', text: 'ON', norm: 1 },
         ],
@@ -211,7 +212,7 @@ const CUSTOM_KIT = [
             { kind: 'valsq', label: 'Strch', name: 'Beat Stretch', text: '1x' },
             { kind: 'valsq', label: 'Shift', name: 'Clock Shift', text: '+0' },
             { kind: 'valsq', label: 'Quant', name: 'Quantize', text: '--' },
-            { kind: 'valsq', label: 'VelIn', name: 'Velocity Input', text: 'Live' },
+            { kind: 'action', oneWay: true, label: 'Crop', name: 'Crop to Loop', text: '->' },
             enumC('InQnt', 'Input Quantize', DIQ, 0),
             { kind: 'dirsq', label: 'Dir', name: 'Playback Dir', text: 'Fwd', options: DIR, sel: 0 },
             { kind: 'pill', label: 'RSync', name: 'Repeat Sync', text: 'ON', norm: 1 },

@@ -16,7 +16,7 @@ import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
 import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
-import { LGTO_KNOB, BANKNAV_HOLD_MS } from './ui_constants.mjs';
+import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, BANKNAV_HOLD_MS } from './ui_constants.mjs';
 import { pbActive, pbRender } from './ui_phrase_browser.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
@@ -28,7 +28,7 @@ import {
     col4, col5,
     fmtSign, fmtStretch, fmtLen, fmtRes, fmtPct, fmtBool, fmtGateMod,
     fmtArpRate, fmtVelOverride, fmtPlayDir, fmtRevStyle,
-    fmtDly, fmtArpStyle, fmtArpSteps, fmtDiq, fmtPlain, fmtLgto, fmtPitchRnd
+    fmtDly, fmtArpStyle, fmtArpSteps, fmtDiq, fmtPlain, fmtLgto, fmtCrop, fmtPitchRnd
 } from './ui_constants.mjs';
 import { drawAutoMarkAt,
     drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitBankHeader, kitBankGlyphWidth,
@@ -600,6 +600,9 @@ function drawSessionFaderRow(cells, mode) {
 export function bankPageHints(bank) {
     /* A touched TRIGGER knob says how to fire it, as stock's footer does. */
     if (bank === 0 && S.knobTouched === LGTO_KNOB && !S.sessionView) return [['CLK', 'LEGATO']];
+    if (!S.sessionView && ((bank === 0 && S.knobTouched === CROP_KNOB) ||
+            (bank === 7 && S.knobTouched === ALL_LANES_CROP_KNOB &&
+             S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM))) return [['CLK', 'CROP']];
     /* ⭑ While a step is HELD the jog means something else (spec §2): on any
      * other bank a right turn REVEALS the step's page — so the pair says so,
      * in the same slot, and JOG BANK (which the hold suspends) is not shown.
@@ -833,6 +836,11 @@ function kitCellForKnob(knob, val) {
     if (knob.fmt === fmtLgto) {
         base.kind = 'action'; base.oneWay = true; base.opens = true;
         base.btnPhase = triggerPhase('lgto', S.knobTouched === LGTO_KNOB);
+        return base;
+    }
+    if (knob.fmt === fmtCrop) {
+        base.kind = 'action'; base.oneWay = true; base.opens = true;
+        base.btnPhase = triggerPhase('crop', S.knobTouched === CROP_KNOB);
         return base;
     }
     /* ⭑⭑ THE BUTTON IS FOR FIRE-ACTIONS ONLY, and `scope: 'action'` is not that
@@ -2196,7 +2204,8 @@ function drawUIBody() {
                 { kind: 'action', oneWay: true, label: 'Lgto', name: 'Apply Legato', text: '->', opens: true,
                   btnPhase: triggerPhase('lgto', S.knobTouched === LGTO_KNOB) },
                 { kind: 'valsq', label: 'Eucld', name: 'Euclid Fill', text: String(eucN) },
-                { kind: 'blank', label: '' },
+                { kind: 'action', oneWay: true, label: 'Crop', name: 'Crop to Loop', text: '->', opens: true,
+                  btnPhase: triggerPhase('crop', S.knobTouched === CROP_KNOB) },
                 S.altMode
                     ? toggleCell('Revrs', 'Reverse Style', _dlRev,
                                  fmtRevStyle(1), fmtRevStyle(0))
@@ -2234,8 +2243,8 @@ function drawUIBody() {
                 qv <= 0 ? { kind: 'valsq', label: 'Quant', name: 'Quantize', text: '--' }
                         : { kind: 'arc', label: 'Quant', name: 'Quantize',
                             text: fmtPct(qv), norm: Math.min(1, qv / 100) },
-                { kind: 'valsq', label: 'VelIn', name: 'Velocity Input',
-                  text: fmtVelOverride(S.trackVelOverride[t]) },
+                { kind: 'action', oneWay: true, label: 'Crop', name: 'Crop to Loop', text: '->', opens: true,
+                  btnPhase: triggerPhase('crop', S.knobTouched === ALL_LANES_CROP_KNOB) },
                 withTouchArc({ kind: 'frac', label: 'InQnt', name: 'Input Quantize',
                   text: _offDash(DIQ_LABELS[_inq]), options: DIQ_LABELS.map(_offDash), sel: _inq }),
                 dv < 0 ? { kind: 'valsq', label: S.altMode ? 'Revrs' : 'Dir',

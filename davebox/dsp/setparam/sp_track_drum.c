@@ -301,7 +301,9 @@ static int sp_track_drum(sp_ctx_t *cx) {
 
         if (!strcmp(p2, "_beat_stretch")) {
             int dir = my_atoi(val);
-            /* In the lane's loop window — see the melodic beat_stretch. */
+            /* In the lane's loop window — see the melodic beat_stretch. Needs
+             * the loop at step 1 (CROP FIRST), both ways. */
+            if (dlc->loop_start) return 1;
             int can = clip_stretch_check(dlc, dir == 1 ? 1 : -1);
             if (can == 0) return 1;
             if (can < 0) { tr->stretch_blocked = 1; return 1; }
@@ -327,6 +329,7 @@ static int sp_track_drum(sp_ctx_t *cx) {
         if (!strcmp(p2, "_clock_shift")) {
             int dir = my_atoi(val);
             if ((int)dlc->length < 2) return 1;
+            if (dlc->loop_start) return 1;     /* needs the loop at step 1 (CROP FIRST) */
             clip_rotate_window(dlc, dir);      /* the lane's loop window */
             clip_migrate_to_notes(dlc);
             rui_mark(inst, tidx, (int)tr->active_clip);
@@ -338,6 +341,7 @@ static int sp_track_drum(sp_ctx_t *cx) {
             int dir = my_atoi(val);
             if (dir == 0) { dlc->nudge_pos = 0; inst->state_dirty = 1; return 1; }
             if (dir != 1 && dir != -1) return 1;
+            if (dlc->loop_start) return 1;     /* needs the loop at step 1 (CROP FIRST) */
             if ((int)dlc->length < 1) return 1;
             /* A drum lane crosses a step AT its midpoint (melodic: past it). */
             clip_nudge_window(dlc, dir, 1);
@@ -347,12 +351,34 @@ static int sp_track_drum(sp_ctx_t *cx) {
             return 1;
         }
 
+        /* tN_lL_crop: this lane's loop window becomes the whole lane (see the
+         * melodic tN_crop). No automation: a drum track's automation runs on
+         * the whole clip's window, which one lane does not move. */
+        if (!strcmp(p2, "_crop")) {
+            if (!clip_crop_needed(dlc)) return 1;
+            undo_begin_drum_clip(inst, tidx, (int)tr->active_clip);
+            const uint16_t ls = dlc->loop_start;
+            clip_crop_window(dlc);
+            if (tr->drum_current_step[lane_idx] >= ls
+                    && tr->drum_current_step[lane_idx] < ls + dlc->length)
+                tr->drum_current_step[lane_idx] = (uint16_t)(tr->drum_current_step[lane_idx] - ls);
+            else
+                tr->drum_current_step[lane_idx] = 0;
+            if (inst->playing)
+                drum_lane_anchor_playhead(inst, tr, lane_idx, dlc);
+            clip_migrate_to_notes(dlc);
+            rui_mark(inst, tidx, (int)tr->active_clip);
+            inst->state_dirty = 1;
+            return 1;
+        }
+
         if (!strcmp(p2, "_clip_resolution_zoom")) {
             if (tr->recording) return 1;
             int idx = clamp_i(my_atoi(val), 0, 5);
             uint16_t new_tps = TPS_VALUES[idx];
             uint16_t old_tps = dlc->ticks_per_step;
             if (new_tps == old_tps) return 1;
+            if (dlc->loop_start) return 1;     /* needs the loop at step 1 (CROP FIRST) */
             /* The lane's loop window keeps its time: see clip_resolution_zoom. */
             uint32_t ls_ticks  = (uint32_t)dlc->loop_start * (uint32_t)old_tps;
             uint32_t end_ticks = ls_ticks + (uint32_t)dlc->length * (uint32_t)old_tps;
@@ -401,6 +427,7 @@ static int sp_track_drum(sp_ctx_t *cx) {
          * Each note's gate becomes (next-active-tick − this-tick); last-
          * active note's gate fills to clip_end. Undoable. */
         if (!strcmp(p2, "_lgto_apply")) {
+            if (dlc->loop_start) return 1;     /* needs the loop at step 1 (CROP FIRST) */
             undo_begin_drum_clip(inst, tidx, (int)tr->active_clip);
             apply_legato_to_clip(&dlane->clip);
             rui_mark(inst, tidx, (int)tr->active_clip);

@@ -61,6 +61,8 @@ static int sp_track_misc(sp_ctx_t *cx) {
         clip_t *cl = &tr->clips[tr->active_clip];
         int len = (int)cl->length;
         if (len < 2) return 1;
+        /* Needs the loop at step 1 — the UI says CROP FIRST. */
+        if (cl->loop_start) return 1;
         clip_rotate_window(cl, dir);
         /* Note link: the same rotation, one step, inside the loop window. */
         pa_link_rotate(inst, tidx, (int)tr->active_clip, 0,
@@ -77,6 +79,7 @@ static int sp_track_misc(sp_ctx_t *cx) {
         if (dir == 0) { tr->clips[tr->active_clip].nudge_pos = 0; return 1; }
         if (dir != 1 && dir != -1) return 1;
         clip_t *cl = &tr->clips[tr->active_clip];
+        if (cl->loop_start) return 1;   /* needs the loop at step 1 (CROP FIRST) */
         int len = (int)cl->length;
         if (len < 1) return 1;
         /* Melodic crosses a step only PAST its midpoint — the step overlay's
@@ -97,7 +100,9 @@ static int sp_track_misc(sp_ctx_t *cx) {
         /* x2 / /2 inside the loop window, anchored at its start. x2 is refused
          * when the doubled window would pass the last step; /2 is BLOCKED
          * (stretch_blocked, which JS reads) when two active steps would land
-         * on one — then nothing moves at all. */
+         * on one — then nothing moves at all. Needs the loop at step 1 (CROP
+         * FIRST), both ways. */
+        if (cl->loop_start) return 1;
         int can = clip_stretch_check(cl, dir == 1 ? 1 : -1);
         if (can == 0) return 1;
         if (can < 0) { tr->stretch_blocked = 1; return 1; }
@@ -168,10 +173,37 @@ static int sp_track_misc(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* tN_crop: the loop window becomes the whole clip (clip_crop_window) —
+     * its steps move to step 1, everything outside is removed, the length
+     * stays — and linked automation follows the notes. Undoable. Nothing to
+     * crop: no snapshot, nothing changes. */
+    if (!strcmp(sub, "crop")) {
+        clip_t *cl = &tr->clips[tr->active_clip];
+        if (!clip_crop_needed(cl)) return 1;
+        undo_begin_single(inst, tidx, (int)tr->active_clip);
+        const uint32_t tps = cl->ticks_per_step;
+        const uint16_t ls  = cl->loop_start;
+        /* the window, read before the crop resets loop_start */
+        pa_link_crop(inst, tidx, (int)tr->active_clip, 0,
+                     (uint32_t)ls * tps, (uint32_t)cl->length * tps);
+        clip_crop_window(cl);
+        if (tr->current_step >= ls && tr->current_step < ls + cl->length)
+            tr->current_step = (uint16_t)(tr->current_step - ls);
+        else
+            tr->current_step = 0;
+        if (inst->playing)
+            melodic_anchor_playhead(inst, tr, cl);
+        clip_migrate_to_notes(cl);
+        inst->state_dirty = 1;
+        rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
+        return 1;
+    }
+
     /* tN_lgto_apply: destructive legato on the active clip. Each note's
      * gate becomes (next-active-tick − this-tick); last-active note's
      * gate fills to clip_end. Undoable. */
     if (!strcmp(sub, "lgto_apply")) {
+        if (tr->clips[tr->active_clip].loop_start) return 1;   /* CROP FIRST */
         undo_begin_single(inst, tidx, (int)tr->active_clip);
         apply_legato_to_clip(&tr->clips[tr->active_clip]);
         pfx_sync_from_clip(tr);

@@ -22,7 +22,8 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS,
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_PHRASE, LGTO_KNOB, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_PHRASE, LGTO_KNOB,
+    CROP_KNOB, ALL_LANES_CROP_KNOB, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
@@ -37,7 +38,7 @@ import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
 import { scaleNudgeNote, stepEntryVelocity,
          bankCycleForMode } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
-         showActionPopupGauge } from './ui_persistence.mjs';
+         showActionPopupFor, showActionPopupGauge } from './ui_persistence.mjs';
 import {
     openSaveSnapshot, closeSnapshotPicker,
     snapshotPickerRotate, snapshotPickerClick,
@@ -280,6 +281,25 @@ function _onCC_jog(d1, d2) {
         triggerFire('lgto');
         forceRedraw();
         return;
+    }
+
+    /* CROP is a trigger too: touch its knob (K6 on the CLIP or DRUM LANE bank,
+     * K5 on ALL LANES) and click. On ALL LANES before its OK the click only
+     * confirms (below), exactly as for every other ALL LANES knob. */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld) {
+        const _drum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
+        if (S.activeBank === 0 && S.knobTouched === CROP_KNOB) {
+            applyCrop(_drum, false);
+            triggerFire('crop');
+            forceRedraw();
+            return;
+        }
+        if (_drum && S.activeBank === 7 && S.allLanesConfirmed && S.knobTouched === ALL_LANES_CROP_KNOB) {
+            applyCrop(true, true);
+            triggerFire('crop');
+            forceRedraw();
+            return;
+        }
     }
 
     /* State version mismatch dialog: Yes = wipe + clean start; No = exit module. */
@@ -3534,6 +3554,8 @@ function knobPick(k, dir, need) {
  * every note extends to the next. One undo unit. */
 function applyLegato(isDrum) {
     const t = S.activeTrack;
+    const ls = isDrum ? (S.drumLaneLoopStart[t] | 0) : (S.clipLoopStart[t][S.trackActiveClip[t]] | 0);
+    if (ls > 0) { refuseLoopNotAtOne(); return false; }   /* CROP FIRST, like every transform */
     if (isDrum) {
         const l = S.activeDrumLane[t];
         host_module_set_param('t' + t + '_l' + l + '_lgto_apply', '1');
@@ -3547,6 +3569,68 @@ function applyLegato(isDrum) {
     }
     noteUndoUnit(); S.undoSeqArpSnapshot = null;
     showActionPopup('LGTO', 'APPLIED');
+    return true;
+}
+
+/* CROP: the loop window becomes the whole clip — its steps move to step 1,
+ * everything outside is removed, the length stays (the DSP's tN_crop /
+ * tN_lL_crop / tN_all_lanes_crop). Undoable, one unit. When the UI can tell
+ * there is nothing to crop (the loop already starts at step 1 and nothing
+ * lies past its end) it says so and sends nothing; ALL LANES cannot see every
+ * lane, so it always sends (the DSP ignores a crop with nothing to do). */
+function applyCrop(isDrum, allLanes) {
+    const t = S.activeTrack;
+    if (allLanes) {
+        host_module_set_param('t' + t + '_all_lanes_crop', '1');
+        S.drumLaneLoopStart[t] = 0;
+        S.drumStepPage[t] = 0;
+        S.pendingDrumResync = 2; S.pendingDrumResyncTrack = t;
+    } else if (isDrum) {
+        const l   = S.activeDrumLane[t];
+        const ls  = S.drumLaneLoopStart[t] | 0;
+        const len = S.drumLaneLength[t];
+        const st  = S.drumLaneSteps[t][l];
+        let past = false;
+        for (let s = ls + len; s < st.length && !past; s++) if (st[s] !== '0') past = true;
+        if (ls === 0 && !past) { showActionPopup('NOTHING TO', 'CROP'); return false; }
+        host_module_set_param('t' + t + '_l' + l + '_crop', '1');
+        S.drumLaneLoopStart[t] = 0;
+        S.drumStepPage[t] = 0;
+        S.pendingDrumLaneResync = 2; S.pendingDrumLaneResyncTrack = t; S.pendingDrumLaneResyncLane = l;
+    } else {
+        const ac    = S.trackActiveClip[t];
+        const ls    = S.clipLoopStart[t][ac] | 0;
+        const len   = S.clipLength[t][ac];
+        const steps = S.clipSteps[t][ac];
+        let past = false;
+        for (let s = ls + len; s < steps.length && !past; s++) if (steps[s]) past = true;
+        if (ls === 0 && !past) { showActionPopup('NOTHING TO', 'CROP'); return false; }
+        host_module_set_param('t' + t + '_crop', '1');
+        /* Mirror for an instant redraw, then re-read the truth. */
+        for (let s = 0; s < len; s++) steps[s] = steps[ls + s] | 0;
+        for (let s = len; s < steps.length; s++) steps[s] = 0;
+        S.clipLoopStart[t][ac] = 0;
+        S.trackCurrentPage[t] = 0;
+        S.pendingStepsReread      = 2;
+        S.pendingStepsRereadTrack = t;
+        S.pendingStepsRereadClip  = ac;
+    }
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
+    showActionPopup('CROPPED');
+    return true;
+}
+
+/* Clock Shift, Nudge and Beat Stretch x2 need the loop at step 1: say so, and
+ * where to go. Not the deferring popup — the knob is still being touched. */
+function refuseLoopNotAtOne() {
+    showActionPopupFor(LOOP_NOT_AT_1_MS, 'LOOP NOT AT 1', 'CROP FIRST');
+    forceRedraw();
+}
+
+/* ALL LANES: how many lanes of the active drum clip loop from past step 1
+ * (the DSP's count — the UI mirrors only the active lane's loop). */
+function lanesOffGrid(t) {
+    return parseInt(host_module_get_param('t' + t + '_lanes_off_grid'), 10) || 0;
 }
 
 /* After a slot or CHORD bank edit: re-bake the pads now when asked (the tick
@@ -4362,7 +4446,9 @@ function _onCC_knobs(d1, d2) {
                     const curIdx = Math.max(0, TPS_VALUES.indexOf(S.drumLaneTPS[t]));
                     const nv = Math.max(0, Math.min(5, curIdx + dir));
                     if (nv !== curIdx) {
-                        if (S.altMode) {
+                        if (S.altMode && (S.drumLaneLoopStart[t] | 0) > 0) {
+                            refuseLoopNotAtOne();   /* Zoom: CROP FIRST, like every transform */
+                        } else if (S.altMode) {
                             const newTps = TPS_VALUES[nv];
                             /* The loop window keeps its time (the engine's rule). */
                             const lsTicks = (S.drumLaneLoopStart[t] | 0) * S.drumLaneTPS[t];
@@ -4404,6 +4490,12 @@ function _onCC_knobs(d1, d2) {
                 const canFire = dir === 1 ? ((S.drumLaneLoopStart[t] | 0) + len * 2 <= 256) : (len >= 2);
                 if (!canFire) return;
                 if (knobStep(knobIdx, d2, KNOB_DELIB) !== 0) {
+                    /* Every clip transform needs the loop at step 1. */
+                    if ((S.drumLaneLoopStart[t] | 0) > 0) {
+                        S.knobLocked[knobIdx] = true;
+                        refuseLoopNotAtOne();
+                        return;
+                    }
                     host_module_set_param('t' + t + '_l' + lane + '_beat_stretch', String(dir));
                     S.knobLocked[knobIdx] = true;
                     const blocked = host_module_get_param('t' + t + '_beat_stretch_blocked') === '1';
@@ -4423,6 +4515,7 @@ function _onCC_knobs(d1, d2) {
             if (knobIdx === 2) {
                 /* K3 = Shft (clock shift, sens=8). Alt = Nudge (sens=4, faster). */
                 if (knobStep(knobIdx, d2, (S.altMode ? 4 : 8)) !== 0) {
+                    if ((S.drumLaneLoopStart[t] | 0) > 0) { refuseLoopNotAtOne(); return; }
                     if (S.altMode) {
                         S.bankParams[t][0][knobIdx] += dir;
                         host_module_set_param('t' + t + '_l' + lane + '_nudge', String(dir));
@@ -4437,6 +4530,7 @@ function _onCC_knobs(d1, d2) {
                 return;
             }
             if (knobIdx === LGTO_KNOB) return;   /* Lgto: a trigger — touch + click, a turn does nothing */
+            if (knobIdx === CROP_KNOB) return;   /* Crop: a trigger too */
             if (applyTableKnob(DRUM_LANE_SITES[knobIdx], knobIdx, d2, t, lane)) return;
             if (knobIdx === 6) {
                 /* K7 = Dir (per-lane playback direction, sens=16).
@@ -4477,7 +4571,7 @@ function _onCC_knobs(d1, d2) {
                 return;
             }
         }
-        /* ALL LANES bank (drum, bank 7): K1=Res K2=Stch K3=Shft K4=Qnt K5=VelIn K6=InQ K7=Dir K8=SyncRpt */
+        /* ALL LANES bank (drum, bank 7): K1=Res K2=Stch K3=Shft K4=Qnt K5=Crop K6=InQ K7=Dir K8=SyncRpt */
         if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 7 && !S.allLanesConfirmed) {
             S.screenDirty = true;
             return;
@@ -4501,6 +4595,12 @@ function _onCC_knobs(d1, d2) {
                 /* K2 = Stch: beat stretch all lanes, lock, sens=16 */
                 if (S.knobLocked[knobIdx]) return;
                 if (knobStep(knobIdx, d2, KNOB_DELIB) !== 0) {
+                    /* Needs every lane's loop at step 1 (the DSP refuses too). */
+                    if (lanesOffGrid(t) > 0) {
+                        S.knobLocked[knobIdx] = true;
+                        refuseLoopNotAtOne();
+                        return;
+                    }
                     host_module_set_param('t' + t + '_all_lanes_beat_stretch', String(dir));
                     S.knobLocked[knobIdx] = true;
                     S.bankParams[t][7][1] += dir;
@@ -4513,6 +4613,7 @@ function _onCC_knobs(d1, d2) {
             if (knobIdx === 2) {
                 /* K3 = Shft: clock shift all lanes, sens=8. Alt = Nudge (sens=1). */
                 if (knobStep(knobIdx, d2, (S.altMode ? 1 : KNOB_PICK)) !== 0) {
+                    if (lanesOffGrid(t) > 0) { refuseLoopNotAtOne(); return; }
                     if (S.altMode) {
                         S.bankParams[t][7][2] += dir;
                         host_module_set_param('t' + t + '_all_lanes_nudge', String(dir));
@@ -4526,16 +4627,9 @@ function _onCC_knobs(d1, d2) {
                 }
                 return;
             }
-            if (knobIdx === 4) {
-                /* K5 = VelIn: track velocity override, cont accel */
-                const _v5 = ccKnobDelta(d2, knobIdx);
-                if (_v5 === 0) return;
-                const cur7v = S.trackVelOverride[t];
-                const nv = Math.max(0, Math.min(127, cur7v + _v5));
-                if (nv !== cur7v) applyTrackConfig(t, 'track_vel_override', nv);
-                S.screenDirty = true;
-                return;
-            }
+            /* K5 = Crop: a trigger (touch + click) — a turn does nothing. VelIn,
+             * which sat here, is on TRACK CONFIG and Shift + Step 10. */
+            if (knobIdx === ALL_LANES_CROP_KNOB) return;
             if (knobIdx === 6) {
                 /* K7 = Dir: set playback direction on all 32 lanes, sens=16.
                  * Alt = RvSt (audio reverse on all lanes), sens=4. */
@@ -4745,8 +4839,15 @@ function _onCC_knobs(d1, d2) {
                     /* The loop window is [ls, ls + len): Stretch and Shift act on
                      * it, and S.clipSteps is indexed by ABSOLUTE step. */
                     const ls  = S.clipLoopStart[t][ac] | 0;
-                    /* Lgto: a trigger — touch + click fires it; a turn does nothing. */
-                    if (pm.dspKey === 'lgto_apply') return;
+                    /* Lgto and Crop: triggers — touch + click fires them; a turn does nothing. */
+                    if (pm.dspKey === 'lgto_apply' || pm.dspKey === 'crop') return;
+                    /* Clock Shift, Nudge and Stretch (every clip transform) need
+                     * the loop at step 1 — the DSP refuses too. */
+                    if (ls > 0 && (pm.dspKey === 'clock_shift' || pm.lock)) {
+                        if (pm.lock) S.knobLocked[knobIdx] = true;
+                        refuseLoopNotAtOne();
+                        return;
+                    }
                     if (pm.lock) {
                         /* Beat Stretch: one-shot, then lock until touch release */
                         const canFire = dir === 1 ? (ls + len * 2 <= 256) : (len >= 2);
@@ -4858,7 +4959,9 @@ function _onCC_knobs(d1, d2) {
                             const _ls_ticks = (S.clipLoopStart[_t][_ac] | 0) * _old_tps;
                             const _new_ls = Math.floor(_ls_ticks / _new_tps);
                             const _new_len = Math.ceil((_ls_ticks + S.clipLength[_t][_ac] * _old_tps) / _new_tps) - _new_ls;
-                            if (_new_len < 1 || _new_ls + _new_len > 256) {
+                            if (_ls_ticks > 0) {
+                                refuseLoopNotAtOne();   /* CROP FIRST, like every transform */
+                            } else if (_new_len < 1 || _new_ls + _new_len > 256) {
                                 showActionPopup('NOTES OUT', 'OF RANGE');
                                 forceRedraw();
                             } else if (S.heldStep >= 0 || (S.recordArmed && !S.recordCountingIn && S.recordArmedTrack === _t)) {

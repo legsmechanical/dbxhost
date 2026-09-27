@@ -10,6 +10,15 @@
  * Returns 1 when it handled the key (caller returns), 0 to fall through to
  * the sibling tN_ handlers. The tN_ guard and the tidx/sub/tr locals live in
  * the parent dispatcher now (seq8_set_param.c). */
+/* Any lane of this drum clip looping from past step 1? ALL LANES Clock Shift,
+ * Nudge and Beat Stretch are refused on EVERY lane while one is (the UI
+ * says CROP FIRST; tN_lanes_off_grid is the same count for JS). */
+static int drum_any_lane_off_grid(const drum_clip_t *dc) {
+    int l;
+    for (l = 0; l < DRUM_LANES; l++) if (dc->lanes[l].clip.loop_start) return 1;
+    return 0;
+}
+
 static int sp_track_drum2(sp_ctx_t *cx) {
     seq8_instance_t *inst = cx->inst;
     const char *val = cx->val;
@@ -133,6 +142,7 @@ static int sp_track_drum2(sp_ctx_t *cx) {
         int dir = my_atoi(val) == 1 ? 1 : -1;
         drum_clip_t *dc_al = tr->drum_clips[tr->active_clip];
         if (!dc_al) return 1;
+        if (drum_any_lane_off_grid(dc_al)) return 1;   /* CROP FIRST, both ways */
         int l_al;
         /* Pre-flight: check all lanes before modifying any */
         for (l_al = 0; l_al < DRUM_LANES; l_al++) {
@@ -195,6 +205,7 @@ static int sp_track_drum2(sp_ctx_t *cx) {
         int dir = my_atoi(val);
         drum_clip_t *dc_al = tr->drum_clips[tr->active_clip];
         if (!dc_al) return 1;
+        if (drum_any_lane_off_grid(dc_al)) return 1;   /* CROP FIRST */
         {   /* Note link: one step of the drum window, inside [start, start + length). */
             uint32_t lk_s, lk_l, lk_tps;
             pa_drum_window(tr, (int)tr->active_clip, &lk_s, &lk_l, &lk_tps);
@@ -220,6 +231,8 @@ static int sp_track_drum2(sp_ctx_t *cx) {
         int dir = my_atoi(val);
         drum_clip_t *dc_al = tr->drum_clips[tr->active_clip];
         if (!dc_al) return 1;
+        /* dir 0 (the counter reset) still runs; ±1 needs every loop at step 1 */
+        if ((dir == 1 || dir == -1) && drum_any_lane_off_grid(dc_al)) return 1;
         if (dir == 1 || dir == -1) {   /* Note link: one tick, wrapping in the drum window */
             uint32_t lk_s, lk_l, lk_tps;
             pa_drum_window(tr, (int)tr->active_clip, &lk_s, &lk_l, &lk_tps);
@@ -233,6 +246,56 @@ static int sp_track_drum2(sp_ctx_t *cx) {
             if ((int)dlc->length < 1) continue;
             clip_nudge_window(dlc, dir, 1);   /* the drum threshold: AT the midpoint */
             clip_migrate_to_notes(dlc);
+        }
+        rui_mark(inst, tidx, (int)tr->active_clip);
+        inst->state_dirty = 1;
+        return 1;
+    }
+
+    if (!strcmp(sub, "all_lanes_crop")) {
+        /* tN_all_lanes_crop — Crop on every lane of the active drum clip, each
+         * in its own loop window (see the melodic tN_crop). ONE undo unit; no
+         * lane with anything to crop -> no snapshot, nothing changes.
+         * Automation: lanes without a cycle move with the drum window (the
+         * longest lane's), read BEFORE the crop; cycled lanes stay put. */
+        drum_clip_t *dc_al = tr->drum_clips[tr->active_clip];
+        if (!dc_al) return 1;
+        int l_al, any = 0;
+        for (l_al = 0; l_al < DRUM_LANES; l_al++)
+            if (clip_crop_needed(&dc_al->lanes[l_al].clip)) { any = 1; break; }
+        if (!any) return 1;
+        undo_begin_drum_clip(inst, tidx, (int)tr->active_clip);
+        {
+            uint32_t lk_s, lk_l, lk_tps;
+            pa_drum_window(tr, (int)tr->active_clip, &lk_s, &lk_l, &lk_tps);
+            pa_link_crop(inst, tidx, (int)tr->active_clip, 1, lk_s, lk_l);
+        }
+        for (l_al = 0; l_al < DRUM_LANES; l_al++) {
+            clip_t *dlc = &dc_al->lanes[l_al].clip;
+            if (!clip_crop_needed(dlc)) continue;
+            const uint16_t ls = dlc->loop_start;
+            clip_crop_window(dlc);
+            if (tr->drum_current_step[l_al] >= ls && tr->drum_current_step[l_al] < ls + dlc->length)
+                tr->drum_current_step[l_al] = (uint16_t)(tr->drum_current_step[l_al] - ls);
+            else
+                tr->drum_current_step[l_al] = 0;
+            /* Anchor BEFORE the suppress pass (the helper clears it). */
+            if (inst->playing)
+                drum_lane_anchor_playhead(inst, tr, l_al, dlc);
+            clip_migrate_to_notes(dlc);
+            /* Notes that moved behind the playhead must not fire again this pass. */
+            if (tr->clip_playing) {
+                uint32_t cct = (uint32_t)tr->drum_current_step[l_al]
+                               * (uint32_t)dlc->ticks_per_step
+                               + tr->drum_tick_in_step[l_al];
+                int qnt = dc_al->lanes[l_al].pfx_params.quantize;
+                uint16_t ni2;
+                for (ni2 = 0; ni2 < dlc->note_count; ni2++) {
+                    note_t *n = &dlc->notes[ni2];
+                    if (effective_note_tick(n, dlc, qnt) < cct)
+                        n->suppress_until_wrap = 1;
+                }
+            }
         }
         rui_mark(inst, tidx, (int)tr->active_clip);
         inst->state_dirty = 1;
