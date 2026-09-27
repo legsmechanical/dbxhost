@@ -146,6 +146,7 @@ type wsHierarchy struct {
 	Slot      uint8           `json:"slot"`
 	Component string          `json:"component"`
 	Data      json.RawMessage `json:"data"`
+	Module    string          `json:"module,omitempty"` // the module loaded there, when known
 	Empty     bool            `json:"empty,omitempty"`
 	Failed    bool            `json:"failed,omitempty"`
 }
@@ -540,7 +541,7 @@ func (ru *RemoteUI) handleSubscribe(ctx context.Context, c *ruClient, msg wsMess
 		if url := ru.findModuleWebUI(synthID); url != "" {
 			ru.sendCustomUI(ctx, c, slot, "synth", url)
 		}
-		ru.sendHierarchy(ctx, c, slot, "synth")
+		ru.sendHierarchy(ctx, c, slot, "synth", "")
 		ru.sendChainParams(ctx, c, slot, "synth")
 	}
 
@@ -558,7 +559,7 @@ func (ru *RemoteUI) handleSubscribe(ctx context.Context, c *ruClient, msg wsMess
 			continue
 		}
 		if comp != "synth" {
-			ru.sendHierarchy(ctx, c, slot, comp)
+			ru.sendHierarchy(ctx, c, slot, comp, "")
 			ru.sendChainParams(ctx, c, slot, comp)
 		}
 		// Fetch initial param values (one-time on subscribe).
@@ -891,16 +892,23 @@ func (ru *RemoteUI) handleGetHierarchy(ctx context.Context, c *ruClient, msg wsM
 		// read, instead of a hierarchy, a param list and values that all come
 		// back empty — measured on the device, each empty position held the
 		// queue up by 0.4–2 s, and the instrument waited behind them.
+		module := ""
 		if isChainComponent(comp) {
-			if mod, ok := ru.readParam(slot, comp+"_module", 2); ok && mod == "" {
+			mod, ok := ru.readParam(slot, comp+"_module", 2)
+			if ok && mod == "" {
 				ru.writeJSON(ctx, c, wsHierarchy{Type: "hierarchy", Slot: slot, Component: comp, Data: json.RawMessage(`{}`), Empty: true})
 				ru.writeJSON(ctx, c, wsChainParams{Type: "chain_params", Slot: slot, Component: comp, Data: json.RawMessage(`[]`), Empty: true})
 				return
 			}
+			module = mod
 		}
-		ru.sendHierarchy(ctx, c, slot, comp)
+		ru.sendHierarchy(ctx, c, slot, comp, module)
 		ru.sendChainParams(ctx, c, slot, comp)
-		ru.sendInitialParamValues(ctx, c, slot, comp)
+		// Values in the BACKGROUND: the metadata of every position the client
+		// asked for arrives first, and the values fill in behind it. Served in
+		// line, one module with many values held the next position's card
+		// back (dr32's 28 one-by-one reads kept FX 1 waiting ~4 s).
+		go ru.sendInitialParamValues(ctx, c, slot, comp)
 		return
 	}
 	ru.sendSlotInfo(ctx, c, slot)
@@ -915,7 +923,7 @@ func (ru *RemoteUI) handleGetHierarchy(ctx context.Context, c *ruClient, msg wsM
 				ru.sendCustomUI(ctx, c, slot, comp, url)
 			}
 		}
-		ru.sendHierarchy(ctx, c, slot, comp)
+		ru.sendHierarchy(ctx, c, slot, comp, "")
 		ru.sendChainParams(ctx, c, slot, comp)
 	}
 }
@@ -1016,7 +1024,7 @@ func (ru *RemoteUI) handleSubscribeMasterFx(ctx context.Context, c *ruClient) {
 			continue
 		}
 		compName := "master_fx:" + fxSlot
-		ru.sendHierarchy(ctx, c, 0, compName)
+		ru.sendHierarchy(ctx, c, 0, compName, "")
 		ru.sendChainParams(ctx, c, 0, compName)
 		ru.sendInitialParamValues(ctx, c, 0, compName)
 	}
@@ -1599,14 +1607,14 @@ func (ru *RemoteUI) sendMasterFxInfo(ctx context.Context, c *ruClient) {
 	ru.writeJSON(ctx, c, info)
 }
 
-func (ru *RemoteUI) sendHierarchy(ctx context.Context, c *ruClient, slot uint8, component string) {
+func (ru *RemoteUI) sendHierarchy(ctx context.Context, c *ruClient, slot uint8, component, module string) {
 	raw, ok := ru.readParam(slot, component+":ui_hierarchy", 3)
 	js := json.RawMessage(`{}`)
 	var probe json.RawMessage
 	if raw != "" && json.Unmarshal([]byte(raw), &probe) == nil {
 		js = json.RawMessage(raw)
 	}
-	ru.writeJSON(ctx, c, wsHierarchy{Type: "hierarchy", Slot: slot, Component: component, Data: js, Failed: !ok})
+	ru.writeJSON(ctx, c, wsHierarchy{Type: "hierarchy", Slot: slot, Component: component, Data: js, Module: module, Failed: !ok})
 }
 
 func (ru *RemoteUI) sendChainParams(ctx context.Context, c *ruClient, slot uint8, component string) {
@@ -1791,6 +1799,15 @@ func (ru *RemoteUI) notifyLoop(ctx context.Context) {
 			for _, c := range changes {
 				if wire, ok := mixerShmToWire(c.Slot, c.Key); ok {
 					mixerChanges[wire] = c.Value
+					// an instrument change carries its display name too, as
+					// the subscribe seed does
+					if strings.HasSuffix(wire, ":synth_module") {
+						name := ""
+						if c.Value != "" {
+							name = ru.moduleDisplayName(c.Value)
+						}
+						mixerChanges[strings.TrimSuffix(wire, "synth_module")+"synth_name"] = name
+					}
 				}
 				if c.Slot == 0 && c.Key == overtakeParamPrefix+"rui_poll" {
 					// F4 push: the shim probes the overtake tool's rui_poll
@@ -2097,7 +2114,7 @@ func (ru *RemoteUI) broadcastSlotInfo(ctx context.Context, slot uint8) {
 // broadcastHierarchy sends hierarchy for a component to all subscribers of a slot.
 func (ru *RemoteUI) broadcastHierarchy(ctx context.Context, slot uint8, component string) {
 	for _, c := range ru.subscribedClients(slot) {
-		ru.sendHierarchy(ctx, c, slot, component)
+		ru.sendHierarchy(ctx, c, slot, component, "")
 	}
 }
 
@@ -2164,7 +2181,7 @@ func (ru *RemoteUI) broadcastMasterFxInfo(ctx context.Context) {
 
 func (ru *RemoteUI) broadcastMasterFxHierarchy(ctx context.Context, compName string) {
 	for _, c := range ru.masterFxSubscribedClients() {
-		ru.sendHierarchy(ctx, c, 0, compName)
+		ru.sendHierarchy(ctx, c, 0, compName, "")
 	}
 }
 

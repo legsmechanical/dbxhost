@@ -28,6 +28,22 @@ func TestMixerKeyRoundTrip(t *testing.T) {
 	}
 }
 
+// An instrument load reaches the mixer namespace as its identity — read-only:
+// the wire form is still refused as a write (TestMixerKeyRejects).
+func TestMixerInstrumentIdentity(t *testing.T) {
+	for _, key := range []string{"synth:module", "synth_module"} {
+		if wire, ok := mixerShmToWire(6, key); !ok || wire != "chain:6:synth_module" {
+			t.Errorf("shmToWire(6,%q) = (%q,%v), want (chain:6:synth_module,true)", key, wire, ok)
+		}
+	}
+	if _, ok := mixerShmToWire(8, "synth:module"); ok {
+		t.Errorf("an out-of-range position's instrument was accepted")
+	}
+	if _, ok := mixerShmToWire(2, "fx1:module"); ok {
+		t.Errorf("an effect's module is not the instrument identity")
+	}
+}
+
 func TestMixerKeyRejects(t *testing.T) {
 	badWire := []string{
 		"chain:8:volume",       // beyond SHADOW_CHAIN_INSTANCES

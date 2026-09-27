@@ -86,6 +86,9 @@ if (R && typeof R.onComponentData === "function") {
       if (c.retryTimer) return;
     }
     if (msg.empty) c.knownEmpty = true;
+    /* the manager names what is loaded there: the panel decision below needs
+     * no wait on the mixer namespace, which can lag an instrument change */
+    if (msg.module) c.moduleId = msg.module;
     if (msg.type === "hierarchy") { c.hierarchy = msg.data || null; c.gotHierarchy = true; }
     else { c.chainParams = msg.data || []; c.gotParams = true; }
     sndCardBody(c);
@@ -314,7 +317,7 @@ function sndCardBody(c) {
    * KNOWN, then either embed it or fall back to the generated editor. */
   if (c.comp === "synth" && c.rendered === undefined) {
     c.rendered = "pending-panel";
-    const id = mixKV["chain:" + c.slot + ":synth_module"] || "";
+    const id = c.moduleId || mixKV["chain:" + c.slot + ":synth_module"] || "";
     const done = d => {
       if (c.rendered !== "pending-panel") return;
       c.rendered = undefined;
