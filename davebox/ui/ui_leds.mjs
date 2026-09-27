@@ -8,7 +8,7 @@ import {
 } from './ui_constants.mjs';
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
-import { arpVelLevel } from './ui_pure.mjs';
+import { arpVelLevel, drumVelocityToZone } from './ui_pure.mjs';
 import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell } from './ui_knob_leds.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { devSnapOpen, devSnapLedFor } from './ui_devsnap.mjs';
@@ -769,7 +769,14 @@ export function updateTrackLEDs() {
             /* Left 4 cols (col 0-3): lane selectors; Right 4 cols (col 4-7): velocity zones */
             const t        = S.activeTrack;
             const selLane  = S.activeDrumLane[t];
-            const velZone  = S.drumLastVelZone[t];
+            /* A HELD step with a hit shows ITS velocity on the velocity pads
+             * — the nearest pad (Josh, 2026-09-27: "should show the step's
+             * approximate velocity on the velocity pads"). Only once its real
+             * velocity is read (the press holds a placeholder until the hold
+             * threshold); an automation hold is not a note edit. */
+            const heldVel  = S.heldStep >= 0 && !S.heldStepAuto && S.heldStepNotes.length > 0
+                             && !S.drumHeldReadPending;
+            const velZone  = heldVel ? drumVelocityToZone(S.stepEditVel) : S.drumLastVelZone[t];
             const tc       = _inCoRunPad ? White     : trackColor(t);
             const td       = _inCoRunPad ? LightGrey : trackDimColor(t);
             /* True track colors for the co-run lane inversion: in co-run the

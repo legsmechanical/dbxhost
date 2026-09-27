@@ -772,7 +772,8 @@ show the selected lane.
 **Velocity zones** (the right 4×4) set the velocity of the hits you place next —
 16 zones from 8 (bottom-left) to 127 (top-right). A zone pad also plays the
 selected lane at that velocity; with a step held it sets that hit's velocity, or
-places the hit if the step was empty.
+places the hit if the step was empty. While you hold a step with a hit, the zone
+nearest its velocity lights white.
 
 **A lane's sound** is set by its MIDI note, on the [NOTE FX bank](#91-note-fx):
 knob 1 moves it by an octave, knob 2 by a semitone. The screen shows the note,
