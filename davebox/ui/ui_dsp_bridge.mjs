@@ -404,7 +404,9 @@ function noteSaveRefused(uuid) {
     S.saveRefused = true;
     S.saveRefusedUuid = uuid;
     S.saveRefusedInputTick = S.lastInputTick;
-    showActionPopupFor(SAVE_NOTICE_MS, 'PROJECT TOO BIG', 'NOT SAVED', 'REMOVE SOME CLIPS');
+    /* Josh, 2026-09-27: "SAVES ON QUIT ONLY" — the save-as-you-go refuses, but
+     * Quit / Suspend / snapshot save (seq8_save_state) write the whole file. */
+    showActionPopupFor(SAVE_NOTICE_MS, 'PROJECT TOO BIG', 'SAVES ON QUIT ONLY', 'REMOVE SOME CLIPS');
     console.log('[dbx] PROJECT TOO BIG: save refused, over the 1 MB state limit — not written' +
                 (again ? ' (again)' : ''));
 }
