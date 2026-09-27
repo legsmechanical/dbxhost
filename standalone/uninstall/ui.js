@@ -77,18 +77,20 @@ function lines(rows, y0) {
     for (const r of rows) { print(2, y, r, 1); y += LINE_H; }
 }
 
-const KEPT = ['Projects + settings kept', 'in /data/UserData/', 'dbx-host'];
+/* Every line fits stock's 5x7 proportional font in 124 px (measured against the
+ * device's font.png; tests/host/test_uninstall_ui.sh checks every screen). */
+const KEPT = ['Projects & settings', 'kept in /data/', 'UserData/dbx-host'];
 
 function screenRows() {
     switch (state) {
         case 'live':
             return ['DAVEBOX IS RUNNING', ['Quit dAVEBOx first,', 'then open this again.', '', 'Back: exit']];
         case 'absent':
-            return ['NOTHING TO UNINSTALL', ['dAVEBOx is not here.', ...KEPT, 'Click: remove this tool']];
+            return ['NOTHING TO UNINSTALL', ['dAVEBOx is not here.', ...KEPT, 'Click: remove tool']];
         case 'installed':
             return ['UNINSTALL DAVEBOX?', [...KEPT, 'Click: uninstall', 'Back: cancel']];
         case 'confirm':
-            return ['ARE YOU SURE?', ['dAVEBOx will be removed.', ...KEPT.slice(0, 1), 'Click again: uninstall', 'Back: cancel']];
+            return ['ARE YOU SURE?', ['This removes dAVEBOx', 'Projects & settings', 'are kept.', 'Click again: uninstall', 'Back: cancel']];
         case 'running': {
             const dots = '.'.repeat(1 + (Math.floor((now() - startedAt) / 400) % 3));
             return ['UNINSTALLING', ['Removing dAVEBOx' + dots, '', 'Keep the Move on.']];
@@ -130,5 +132,14 @@ globalThis.onMidiMessageInternal = function (data) {
     else if (state === 'confirm' || state === 'absent') startRun();
 };
 
+/* For the off-device test only: every screen the UI can show. */
+globalThis.__uninstallAllScreensForTest = function () {
+    const saved = [state, rc], out = [];
+    for (const st of ['live', 'absent', 'installed', 'confirm', 'running'])
+        { state = st; out.push(screenRows()); }
+    for (const r of [0, 2, 3, 4, -1]) { state = 'done'; rc = r; out.push(screenRows()); }
+    [state, rc] = saved;
+    return out;
+};
 /* For the off-device test only. */
 globalThis.__uninstallStateForTest = function () { return { state, rc }; };

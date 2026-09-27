@@ -9,7 +9,7 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 command -v node >/dev/null 2>&1 || { echo "FAIL: node required"; exit 1; }
-T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+export T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 
 mk() {  # $1 = live | installed
     F="$T/f"; rm -rf "$F"
@@ -75,7 +75,7 @@ has() { grep -q -- "$2" <<<"$(grep "^$1:" "$T/out")"; }
 
 echo "a normal uninstall, by gesture:"
 mk installed; drive uninstall > "$T/out" 2>&1
-has open "UNINSTALL DAVEBOX?" && has open "Projects + settings kept" && has open "dbx-host" && ok "opens on the question, saying projects are kept in dbx-host" || { bad "open"; cat "$T/out"; }
+has open "UNINSTALL DAVEBOX?" && has open "Projects & settings" && has open "dbx-host" && ok "opens on the question, saying projects are kept in dbx-host" || { bad "open"; cat "$T/out"; }
 has click1 "ARE YOU SURE?" && ok "first click asks again" || bad "click1: $(grep '^click1' "$T/out")"
 has back "UNINSTALL DAVEBOX?" && ok "Back from the second question returns to the first" || bad "back"
 has click2 "UNINSTALLING" && ok "second click starts it" || bad "click2: $(grep '^click2' "$T/out")"
@@ -92,6 +92,26 @@ mk live; drive clicks > "$T/out" 2>&1
 has open "DAVEBOX IS RUNNING" && has open "Quit dAVEBOx first" && ok "says to quit dAVEBOx first" || { bad "open"; cat "$T/out"; }
 grep -q "^RUNCMD=none" "$T/out" && ok "clicks start nothing" || bad "$(grep RUNCMD "$T/out")"
 grep -q "^exited=true" "$T/out" && [ -f "$T/f/dbx/schwung" ] && ok "Back exits, nothing removed" || bad "state"
+
+echo "every screen fits the display (Josh 2026-09-27: "text on ui overflows the screen"):"
+# Per-glyph widths of stock's font.png, measured from the device's atlas (1.4.0):
+# text_width() = sum(glyph + 1). The UI prints at x=2 on a 128-px screen, so a
+# line must be <= 124; rows start at y=14, 10 apart, so at most 5 fit under the title.
+WIDTHS='{" ":5,"!":1,"\"":3,"#":5,"$":5,"%":5,"&":5,"'\''":2,"(":3,")":3,"*":5,"+":5,",":2,"-":5,".":2,"/":5,"0":5,"1":3,"2":5,"3":5,"4":5,"5":5,"6":5,"7":5,"8":5,"9":5,":":2,";":2,"<":4,"=":5,">":4,"?":5,"@":5,"A":5,"B":5,"C":5,"D":5,"E":5,"F":5,"G":5,"H":5,"I":3,"J":5,"K":5,"L":5,"M":5,"N":5,"O":5,"P":5,"Q":5,"R":5,"S":5,"T":5,"U":5,"V":5,"W":5,"X":5,"Y":5,"Z":5,"[":3,"\\":5,"]":3,"^":5,"_":5,"`":3,"a":5,"b":5,"c":4,"d":5,"e":5,"f":5,"g":5,"h":5,"i":3,"j":4,"k":4,"l":3,"m":5,"n":5,"o":5,"p":5,"q":5,"r":5,"s":5,"t":5,"u":5,"v":5,"w":5,"x":5,"y":5,"z":5,"{":3,"|":1,"}":3,"~":5}' node --input-type=module -e '
+import fs from "fs";
+Object.assign(globalThis, { host_system_cmd: () => 0, host_read_file: () => "installed", host_file_exists: () => false,
+    host_exit_module: () => {}, clear_screen: () => {}, fill_rect: () => {}, print: () => {} });
+const F = process.env.T + "/ui-screens.mjs";
+fs.writeFileSync(F, fs.readFileSync("standalone/uninstall/ui.js", "utf8")); await import(F);
+const W = JSON.parse(process.env.WIDTHS), tw = (s) => [...s].reduce((a, c) => a + (W[c] ?? 99) + 1, 0);
+let bad = 0, lines = 0;
+for (const [title, rows] of globalThis.__uninstallAllScreensForTest()) {
+    if (rows.length > 5) { console.log("  FAIL — " + title + ": " + rows.length + " rows (max 5)"); bad = 1; }
+    for (const l of [title, ...rows]) { lines++; if (tw(l) > 124) { console.log("  FAIL — " + tw(l) + " px > 124: " + l); bad = 1; } }
+}
+console.log(bad ? "  FAIL — overflow" : "  ok   — all " + lines + " lines of all 10 screens fit (<= 124 px, <= 5 rows)");
+process.exit(bad);
+' || fail=1
 
 [ $fail = 0 ] && echo "PASS: $(basename "$0")" || echo "FAIL: $(basename "$0")"
 exit $fail
