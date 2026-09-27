@@ -227,9 +227,10 @@ const normHeading = (t) => t.toLowerCase().replace(/^[\d.]+\s+/, '').replace(/[^
  * A screen earns a place only if it shows the reader something the text can't: a screen's layout
  * the first time they meet it, or a picture (bars, a grid, a chooser strip, bracketed notes).
  * Left out on purpose: confirm and warning dialogs, notices and pop-ups (they explain themselves),
- * near-duplicates (a second overview with another bank name), and bank pages whose knobs the table
- * beside them already lists (Josh, 2026-09-26: "give careful consideration to each screen shot used
- * and ask whether it serves a clear purpose"). The renderer still draws them all, for audits. */
+ * and near-duplicates (a second overview with another bank name) (Josh, 2026-09-26: "give careful
+ * consideration to each screen shot used and ask whether it serves a clear purpose"). But every
+ * section about a bank shows that bank's card (Josh, 2026-09-27: "every section focused on a bank's
+ * operation needs to show the bank card"). The renderer still draws them all, for audits. */
 const MANUAL_SCREENS = new Set([
     'projects-other',          // the project picker
     'menu-project-settings',   // the first list the reader meets
@@ -240,6 +241,18 @@ const MANUAL_SCREENS = new Set([
     'track-drum',              // the drum overview
     'bank-cond-responder',     // which tracks follow
     'bank-clip',               // a bank page: eight knobs, eight cells
+    'bank-drumlane',           // DRUM LANE bank
+    'bank-allanes',            // ALL LANES bank
+    'bank-notefx',             // NOTE FX bank
+    'bank-harmony',            // HARMONY bank
+    'bank-delay',              // DELAY bank
+    'bank-seqarp',             // SEQ ARP bank
+    'bank-livearp',            // LIVE ARP bank
+    'bank-chord',              // CHORD bank
+    'bank-cond-conduct',       // C-CONDUCT bank
+    'bank-cond-notefx',        // C-NOTE FX bank
+    'bank-cond-octave',        // C-OCTAVE bank
+    'bank-cond-when',          // C-WHEN bank
     'bank-repeat-groove',      // the groove bars
     'bank-automation',         // the list of what's automated
     'session-overview',        // Session View
