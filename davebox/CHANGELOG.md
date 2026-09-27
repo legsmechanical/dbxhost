@@ -135,6 +135,12 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
+- **Clock Shift, Nudge, Beat Stretch and Legato work on a clip whose loop doesn't
+  start at step 1.** They used to act on the first steps of the clip rather than
+  the ones it plays, so on such a clip Shift seemed to do nothing. They now move
+  the notes inside the loop (on drum lanes and ALL LANES too, each lane in its own
+  loop), and linked automation moves with them. Beat Stretch no longer erases
+  notes outside the loop.
 - **The Chord layout's explainer card goes when you leave Chord** — by Shift +
   Step 8 or the Layout row — instead of staying on screen.
 - **A fast turn across MACROS no longer opens it over the next bank.** Two

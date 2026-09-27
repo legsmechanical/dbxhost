@@ -24,10 +24,10 @@ All `tN_` keys: N = 0..7. All writes save state unless noted.
 
 | Key | Dir | Format | Notes |
 |-----|-----|--------|-------|
-| `tN_beat_stretch` | set | `"1"` or `"-1"` | Expand/compress active clip. |
+| `tN_beat_stretch` | set | `"1"` or `"-1"` | Expand/compress the active clip's loop window, anchored at `loop_start`; refused when `loop_start + 2*length > 256`. |
 | `tN_beat_stretch_factor` | get | `"1x"`, `"x2"`, `"/2"`, … | |
 | `tN_beat_stretch_blocked` | get | `"0"` or `"1"` | 1 if last compress blocked. |
-| `tN_clock_shift` | set | `"1"` or `"-1"` | Rotate all steps right/left. |
+| `tN_clock_shift` | set | `"1"` or `"-1"` | Rotate the steps of the loop window `[loop_start, loop_start+length)` right/left; steps outside it are untouched. |
 | `tN_clock_shift_pos` | get | integer string | |
 | `tN_clip_length` | set/get | `"1"`..`"256"` | Active clip length. |
 | `tN_clip_resolution` | set | `"0"`–`"5"` | tps index into TPS_VALUES. Proportional rescale. No-op while recording. |

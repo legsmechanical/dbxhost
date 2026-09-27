@@ -784,8 +784,8 @@ static int pa_eval_punch(const pa_entry_t *e, uint32_t t, uint32_t ws, uint32_t 
 /* anything to follow. Copying a STEP carries no locks either — Link is */
 /* about transforming the sequence, not pinning locks to notes (Josh).  */
 
-#define PA_LINK_SCALE  0   /* tick × num / den */
-#define PA_LINK_ROTATE 1   /* tick + d, wrapping inside [0, w) */
+#define PA_LINK_SCALE  0   /* from base: base + (tick - base) × num / den */
+#define PA_LINK_ROTATE 1   /* tick + d, wrapping inside [base, base + w) */
 #define PA_LINK_COPY   2   /* [src, src+span) copied onto [dst, dst+span), replacing it */
 
 typedef struct {
@@ -794,7 +794,10 @@ typedef struct {
     uint32_t num, den;
     int32_t  d;
     uint32_t w;
-    uint32_t base;      /* ROTATE wraps inside [base, base + w) */
+    /* ROTATE wraps inside [base, base + w); SCALE scales away from base (the
+     * loop window's start: the notes stretch from there), leaving the ticks
+     * before it where they are. */
+    uint32_t base;
     uint32_t src, dst, span;
     /* ALL LANES, read per drum lane against ITS OWN cycle (see
      * pa_drum_link_op): the new step for a resolution change (0 = a plain
@@ -828,7 +831,8 @@ static int pa_link_entry(pa_entry_t *e, const pa_link_op_t *op) {
     for (int i = 0; i < e->count; i++) {
         uint32_t t = e->points[i].tick;
         if (op->op == PA_LINK_SCALE) {
-            t = (uint32_t)((uint64_t)t * op->num / op->den);
+            if (t >= op->base)
+                t = op->base + (uint32_t)((uint64_t)(t - op->base) * op->num / op->den);
         } else if (op->op == PA_LINK_ROTATE) {
             if (t >= op->base && t < op->base + op->w)
                 t = op->base + (uint32_t)((((int64_t)(t - op->base) + op->d) % (int64_t)op->w + op->w) % op->w);
@@ -882,6 +886,7 @@ static int pa_drum_link_op(pa_entry_t *e, const pa_link_op_t *op, pa_link_op_t *
     *eop = *op;
     const uint32_t st = e->step_ticks ? e->step_ticks : (uint32_t)TICKS_PER_STEP;
     if (op->op == PA_LINK_SCALE) {
+        eop->base = 0;   /* the cycle itself rescales from 0 (loop_off with it) */
         if (op->new_step) { eop->num = op->new_step; eop->den = st; }
         if (!eop->num || !eop->den || eop->num == eop->den) return 0;
         uint16_t l = pa_scale_u16(e->loop_len, eop->num, eop->den);
@@ -922,6 +927,10 @@ static void pa_link_clip(seq8_instance_t *inst, int track, int clip, const pa_li
             /* A drum lane with its cycle: moved inside that cycle. */
             if (!pa_drum_link_op(e, op, &eop)) continue;
         } else if (op->op == PA_LINK_SCALE) {
+            /* A lane on its own clock rescales its Loop from 0 (below), so its
+             * points must too; only a lane following the clip stretches from
+             * the clip's loop window. */
+            if (!pa_follows_clip(e)) eop.base = 0;
             if (e->loop_len) {
                 uint16_t l = pa_scale_u16(e->loop_len, op->num, op->den);
                 e->loop_len = l ? l : 1;
@@ -940,14 +949,17 @@ static void pa_link_clip(seq8_instance_t *inst, int track, int clip, const pa_li
 }
 
 /* `drum`: the caller is an ALL LANES op (see pa_link_clip's guard). */
-static void pa_link_scale(seq8_instance_t *inst, int track, int clip, int drum, uint32_t num, uint32_t den) {
+/* `base`: the tick the loop window starts at (loop_start × ticks per step). */
+static void pa_link_scale(seq8_instance_t *inst, int track, int clip, int drum,
+                          uint32_t base, uint32_t num, uint32_t den) {
     if (!num || !den || num == den) return;
-    pa_link_op_t op = { .op = PA_LINK_SCALE, .drum = drum, .num = num, .den = den };
+    pa_link_op_t op = { .op = PA_LINK_SCALE, .drum = drum, .base = base, .num = num, .den = den };
     pa_link_clip(inst, track, clip, &op);
 }
-static void pa_link_rotate(seq8_instance_t *inst, int track, int clip, int drum, int32_t d, uint32_t w) {
+static void pa_link_rotate(seq8_instance_t *inst, int track, int clip, int drum,
+                           uint32_t base, int32_t d, uint32_t w) {
     if (!w || !d) return;
-    pa_link_op_t op = { .op = PA_LINK_ROTATE, .drum = drum, .d = d, .w = w };
+    pa_link_op_t op = { .op = PA_LINK_ROTATE, .drum = drum, .base = base, .d = d, .w = w };
     pa_link_clip(inst, track, clip, &op);
 }
 /* ALL LANES only (drum): the forms that read each lane's own cycle — see
@@ -961,9 +973,10 @@ static void pa_link_drum_resolution(seq8_instance_t *inst, int track, int clip,
     pa_link_clip(inst, track, clip, &op);
 }
 static void pa_link_drum_shift(seq8_instance_t *inst, int track, int clip,
-                               int32_t d, uint32_t w, int by_step) {
+                               uint32_t base, int32_t d, uint32_t w, int by_step) {
     if (!w || !d) return;
-    pa_link_op_t op = { .op = PA_LINK_ROTATE, .drum = 1, .d = d, .w = w, .by_step = by_step };
+    pa_link_op_t op = { .op = PA_LINK_ROTATE, .drum = 1, .base = base, .d = d, .w = w,
+                        .by_step = by_step };
     pa_link_clip(inst, track, clip, &op);
 }
 static void pa_link_drum_double(seq8_instance_t *inst, int track, int clip, uint32_t win) {

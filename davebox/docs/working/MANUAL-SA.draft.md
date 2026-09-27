@@ -833,9 +833,9 @@ A melodic clip's grid, direction, and note transforms.
 | Knob | On screen | What it does | Rewrites notes | Default |
 |---|---|---|---|---|
 | 1 | `RES` | **Resolution** — keeps the pattern's steps and changes how long a step is. *Alt* (`ZOOM`): keeps the timing and changes how many steps it takes. | Yes | 1/16 |
-| 2 | `STRCH` | **Stretch** — turn right to double the clip, left to halve it; one change per touch (let go to do it again). Refused (*COMPRESS LIMIT*) when notes would collide. | Yes | — |
-| 3 | `SHIFT` | **Shift** — rotate all notes by whole steps. *Alt* (`NUDGE`): finer. | Yes | 0 |
-| 4 | `LGTO` | **Legato** — touch the knob and click the jog; lengthens every note to reach the next. Turning it does nothing. | Yes | — |
+| 2 | `STRCH` | **Stretch** — turn right to double the clip, left to halve it; one change per touch (let go to do it again). Works on the loop, from its start: notes outside the loop stay as they are. Refused (*COMPRESS LIMIT*) when notes would collide, and doubling is refused when the loop would run past step 256. | Yes | — |
+| 3 | `SHIFT` | **Shift** — rotate the notes in the loop by whole steps; a note pushed off the loop's end comes round to its start. *Alt* (`NUDGE`): finer. | Yes | 0 |
+| 4 | `LGTO` | **Legato** — touch the knob and click the jog; lengthens every note in the loop to reach the next (the last to the loop's end). Turning it does nothing. | Yes | — |
 | 5 | `INQNT` | **Input Quantize** — snap recorded notes to the grid (Off, 1/64 … 1/4t). One value per track, shared with ALL LANES. | No | Off |
 | 6 | `PHRS` | **Phrases** — touch the knob and click the jog to open the [phrase library](#165-phrases). | Yes, on load | — |
 | 7 | `DIR` | **Direction** — Forward, Backward, or ping-pong. *Alt* (`REVRS`): **Reverse Style**. | No | Fwd |
@@ -1123,8 +1123,8 @@ screen show **that row's lane**, not the clip's notes:
   parameter to where the knob sits at rest, until the first lock or recorded move
   comes round.
 - **Link** — *On* (default): the automation is transformed with the note sequence —
-  Resolution and Beat Stretch scale it, Clock Shift and Nudge move it, doubling the
-  loop copies it forward (on a drum track, the ALL LANES versions). *Off*: it stays
+  Resolution and Beat Stretch scale it, Clock Shift and Nudge move it (inside the
+  clip's loop, as they move its notes), doubling the loop copies it forward (on a drum track, the ALL LANES versions). *Off*: it stays
   put whatever you do to the notes.
 - **Loop** — the parameter's own loop length in steps, or CLIP to follow the clip.
   It can be shorter than the clip (it repeats inside it) or longer, up to 256
