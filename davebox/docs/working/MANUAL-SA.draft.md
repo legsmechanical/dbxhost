@@ -1555,7 +1555,7 @@ the click and the Shift chord do.
 - **List: All** (the top row) filters the generators to a list of your own. Click
   it to choose a list or make one (**New List…**, **Rename**, **Delete**,
   **Clear**); **Shift + click** a generator to add it to a list or take it out.
-  Members are marked `·`.
+  Your **Favorites** wear a `★`, in every list and in the effect browser.
 - If a change would leave macros or automation lanes with nothing to drive, dAVEBOx
   says how many and asks first (**CHANGE TO …?**).
 

@@ -4557,7 +4557,7 @@ function openInstrPicker() {
     openEnumPicker(INSTR_ROW_LABEL,
                    rows.map(r => r.divider ? { divider: true }
                        : r.taken != null ? { note: r.label + ' - T' + (r.taken + 1), hdr: false }
-                       : (r.gen && mlIsMember(r.gen) ? '\u00b7' : '')
+                       : (r.gen && mlIsFavorite(r.gen) ? FAV_MARK : '')
                          + loadedMark(!!(r.gen && curGen && r.gen.id === curGen), r.label)),
                    cur < 0 ? 0 : cur, (i) => commitInstrPick(rows[i]));
     /* The picker keeps the ROWS, not just their labels: the shift-click toggle
@@ -7765,12 +7765,15 @@ function mlEligible(rows) {
     return ModuleLists.listsWithAnyOf(mlState, mlRealIds(rows));
 }
 
-function mlIsMember(mod) {
+/* A favorite wears a star (Josh, 2026-09-27: "Add a star next to modules in
+ * the favorites list"), under every filter — the star says FAVORITE, not "in
+ * the list you are looking at". It replaced a middle dot that marked the list
+ * in play and never drew: the host font has no such glyph. */
+const FAV_MARK = '\u2605 ';
+function mlIsFavorite(mod) {
     if (!mod || !mod.id || browseControlRow(mod)) return false;
     mlEnsure();
-    const id = moduleIdOf(mod.path || mod.id);
-    const name = mlFilter || ModuleLists.FAVORITES;
-    return ModuleLists.isMember(mlState, name, id);
+    return ModuleLists.isMember(mlState, ModuleLists.FAVORITES, moduleIdOf(mod.path || mod.id));
 }
 
 /* `idx` retargets the block first. Shift+click arrives from the block PICKER,
@@ -11315,12 +11318,12 @@ function renderBrowse() {
     /* ⚠ The prompt (why the browser opened) rides the header band, which the
      * crumb bar now owns — so an EMPTY-block browse says so in the crumb rather
      * than over the backdrop. */
-    /* A member of the list in play is marked with a leading dot. Not a
-     * checkbox: these rows are modules you LOAD, and a checkbox would say the
-     * click toggles them when the click loads them. */
+    /* A favorite is marked with a leading star. Not a checkbox: these rows are
+     * modules you LOAD, and a checkbox would say the click toggles them when
+     * the click loads them. */
     renderInChain(S.browseList.map(m => m.id === MOVE_ROW_ID
                       ? { label: String(m.name), indent: BROWSE_MOVE_INDENT, labelFont: 'small' }
-                      : (mlIsMember(m) ? '\u00b7' : '') + loadedMark(m.loaded, String(m.name))),
+                      : (mlIsFavorite(m) ? FAV_MARK : '') + loadedMark(m.loaded, String(m.name))),
                   S.browseIdx);
 }
 

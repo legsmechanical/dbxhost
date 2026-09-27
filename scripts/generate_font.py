@@ -962,6 +962,26 @@ FONT = {
         '.###.',
         '.....',
     ],
+    # Middle dot: the Lists menu's mark on the list in play.
+    '·': [
+        '.....',
+        '.....',
+        '.....',
+        '..#..',
+        '.....',
+        '.....',
+        '.....',
+    ],
+    # Favorite: a star, marking a module in the Favorites list.
+    '★': [
+        '..#..',
+        '..#..',
+        '#####',
+        '.###.',
+        '.#.#.',
+        '#...#',
+        '.....',
+    ],
 }
 
 def parse_bdf(bdf_path):
