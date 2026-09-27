@@ -128,14 +128,14 @@ function runCounting(n, first) {
     }
     return shows;
 }
-const TOO_BIG = ['PROJECT TOO BIG', 'NOT SAVED', 'REMOVE SOME CLIPS'];
+const TOO_BIG = ['PROJECT TOO BIG', 'SAVES ON QUIT ONLY', 'REMOVE SOME CLIPS'];
 
 step('precondition: the three card lines fit the notice card (116 px, 2 px margins)', () => {
     for (const l of TOO_BIG) assert(globalThis.text_width(l) <= 112, l + ' is too wide');
 });
 
 let shows1 = 0;
-step('⭐ (1) a refused save shows PROJECT TOO BIG / NOT SAVED / REMOVE SOME CLIPS — once', () => {
+step('⭐ (1) a refused save shows PROJECT TOO BIG / SAVES ON QUIT ONLY / REMOVE SOME CLIPS — once', () => {
     input(); ticks(1);
     shows1 = runCounting(QUIET, 'PROJECT TOO BIG');
     assert(dsp.chunk0Reads >= 1, 'no save attempt was made');
