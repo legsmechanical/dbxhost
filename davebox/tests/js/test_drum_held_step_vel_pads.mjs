@@ -98,6 +98,16 @@ step('a loud step lights the top pad', () => {
     assert(eq(whiteZones(), [15]), 'lit: ' + JSON.stringify(whiteZones()));
     note(0x80, 16 + 3, 0); ticks(3);
 });
+step('⚠ inside the tap window (before the read) the pads do NOT show the press\'s placeholder velocity', () => {
+    S.drumLastVelZone[0] = 3; STEP_VEL = '40';
+    note(0x90, 16 + 3, 127); ticks(5);             /* ~53 ms: a tap, not yet a hold */
+    assert(S.heldStep === 3 && S.drumHeldReadPending, 'setup: the read already ran');
+    assert(eq(whiteZones(), [3]), 'the placeholder showed: lit ' + JSON.stringify(whiteZones()));
+    ticks(holdTicks);
+    assert(eq(whiteZones(), [pure.drumVelocityToZone(40)]), 'after the read: lit ' + JSON.stringify(whiteZones()));
+    note(0x80, 16 + 3, 0); ticks(3);
+    S.drumLastVelZone[0] = 12; ticks(2);
+});
 step('CONTROL: holding an EMPTY step shows the last velocity played', () => {
     note(0x90, 16 + 5, 127); ticks(holdTicks);
     assert(S.heldStep === 5, 'setup: not held');
