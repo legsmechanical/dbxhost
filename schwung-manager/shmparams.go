@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -9,6 +10,12 @@ import (
 	"syscall"
 	"time"
 )
+
+// errParamRefused: the host ANSWERED, and the answer was "no" — the key is not
+// one this module has (its error flag), or it returned no value. A definite
+// reply, unlike a busy channel or a response timeout: retrying it only repeats
+// the no, and cost every empty chain position about a second.
+var errParamRefused = errors.New("param refused by the host")
 
 // ShmParams provides access to the shadow_param_t shared memory segment for
 // getting and setting module parameters. The protocol is request/response:
@@ -219,14 +226,14 @@ func (s *ShmParams) GetParam(slot uint8, key string) (string, error) {
 	// Check error flag.
 	if s.data[paramOffError] != 0 {
 		s.data[paramOffRequestType] = 0
-		return "", fmt.Errorf("param get error (slot=%d key=%q)", slot, key)
+		return "", fmt.Errorf("param get error (slot=%d key=%q): %w", slot, key, errParamRefused)
 	}
 
 	// Read result.
 	resultLen := int32(binary.LittleEndian.Uint32(s.data[paramOffResultLen:]))
 	if resultLen < 0 {
 		s.data[paramOffRequestType] = 0
-		return "", fmt.Errorf("param get failed (result_len=%d)", resultLen)
+		return "", fmt.Errorf("param get failed (result_len=%d): %w", resultLen, errParamRefused)
 	}
 	if int(resultLen) > paramValueLen {
 		resultLen = int32(paramValueLen)

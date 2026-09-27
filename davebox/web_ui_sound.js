@@ -38,7 +38,12 @@ const SND_CHAIN_COMPONENTS = [
   { comp: "fx4", role: "FX 4" }
 ];
 const SND_MOVE_FX = ["fx1", "fx2", "fx3", "fx4"];
-const SND_EMPTY_AFTER = 2500;   /* ms with no reply → treat the position as empty */
+const SND_EMPTY_AFTER = 6000;   /* ms with no reply at all → treat the position as empty */
+const SND_RETRIES = 3;          /* re-asks for a component whose read failed */
+/* The order the positions are ASKED for (the manager answers one request at a
+ * time): the instrument first, then its effects, MIDI FX last. The cards are
+ * still drawn in signal order. */
+const SND_ASK_ORDER = ["synth", "fx1", "fx2", "fx3", "fx4", "midi_fx1"];
 
 let soundVisible = false;
 let soundSig = "";              /* identity of what's on screen; a change rebuilds */
@@ -70,9 +75,19 @@ if (R && typeof R.onComponentData === "function") {
     if (!msg || !msg.component) return;
     const c = sndComps[msg.slot + "|" + msg.component];
     if (!c) return;
+    if (msg.type !== "hierarchy" && msg.type !== "chain_params") return;
+    /* A read that never got an answer (busy channel) is not "no parameters":
+     * ask again, a few times, and keep showing "loading…" meanwhile. */
+    if (msg.failed) {
+      if ((c.retries || 0) < SND_RETRIES && !c.retryTimer) {
+        c.retries = (c.retries || 0) + 1;
+        c.retryTimer = setTimeout(() => { c.retryTimer = 0; if (sndComps[msg.slot + "|" + msg.component] === c) R.requestComponent(c.slot, c.comp); }, 300);
+      }
+      if (c.retryTimer) return;
+    }
+    if (msg.empty) c.knownEmpty = true;
     if (msg.type === "hierarchy") { c.hierarchy = msg.data || null; c.gotHierarchy = true; }
-    else if (msg.type === "chain_params") { c.chainParams = msg.data || []; c.gotParams = true; }
-    else return;
+    else { c.chainParams = msg.data || []; c.gotParams = true; }
     sndCardBody(c);
   });
 }
@@ -120,6 +135,7 @@ function sndModuleName(c) {
   return "";
 }
 function sndIsEmpty(c) {
+  if (c.knownEmpty) return true;            /* the manager says nothing is loaded here */
   const hasH = !!(c.hierarchy && c.hierarchy.levels && Object.keys(c.hierarchy.levels).length);
   const hasP = !!(c.chainParams && c.chainParams.length);
   return !hasH && !hasP && !sndModuleName(c);
@@ -192,10 +208,23 @@ function renderSound() {
   } else {
     for (const spec of SND_CHAIN_COMPONENTS) chain.appendChild(sndCard(t, spec.comp, spec.role));
   }
+  sndAskAll();
   row.appendChild(sndMixCard(t));
   /* restore where this track's stack was scrolled to last time */
   document.getElementById("sound").scrollTop = sndScroll[t] || 0;
   sndTick();
+}
+
+/** Ask for every card's component, the instrument first (SND_ASK_ORDER). */
+function sndAskAll() {
+  const rank = c => { const i = SND_ASK_ORDER.indexOf(c.comp.replace(/^move_fx:\d+:/, "")); return i < 0 ? 99 : i; };
+  const cards = Object.keys(sndComps).map(k => sndComps[k]).filter(c => !c.asked);
+  cards.sort((a, b) => rank(a) - rank(b));
+  for (const c of cards) {
+    c.asked = true;
+    R.requestComponent(c.slot, c.comp);
+    c.timer = setTimeout(() => { c.timer = 0; sndCardBody(c); }, SND_EMPTY_AFTER);
+  }
 }
 
 /** A card with no controls — a role heading and a line of prose. */
@@ -244,8 +273,7 @@ function sndCard(slot, comp, role) {
   el.appendChild(body);
   c.el = el; c.body = body;
 
-  R.requestComponent(slot, comp);
-  c.timer = setTimeout(() => { c.timer = 0; sndCardBody(c); }, SND_EMPTY_AFTER);
+  /* asked for by sndAskAll, in SND_ASK_ORDER, once the whole stack exists */
   sndCardBody(c);
   return el;
 }
@@ -267,7 +295,7 @@ function sndCardBody(c) {
   if (modEl) modEl.textContent = name;
   sndPaintBypass(c);
 
-  const waiting = !c.gotHierarchy && !c.gotParams && c.timer;
+  const waiting = !c.gotHierarchy && !c.gotParams && (c.timer || !c.asked);
   if (waiting) return;                       /* still the "loading…" placeholder */
   const empty = sndIsEmpty(c);
   const bp = c.el.querySelector(".sndbypass");
@@ -541,6 +569,7 @@ function sndTeardown() {
   for (const k in sndComps) {
     const c = sndComps[k];
     if (c.timer) clearTimeout(c.timer);
+    if (c.retryTimer) clearTimeout(c.retryTimer);
     if (c.editor) c.editor.destroy();
     delete sndComps[k];
   }
