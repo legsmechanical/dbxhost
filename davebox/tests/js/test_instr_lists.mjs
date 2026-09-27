@@ -15,6 +15,7 @@
  * this cost a day.
  */
 import './_bulk_get_stub.mjs';
+import HFONT from '../../tools/host_font_5x7.json';
 
 let failed = 0;
 function ok(l) { console.log(`  ok   — ${l}`); }
@@ -352,8 +353,8 @@ step('Add files it, and the picker comes back with it MARKED', () => {
     if (!fav || fav.modules.indexOf('nusaw') < 0)
         throw new Error('nusaw is not in Favorites: ' + listsFile);
     const o = snd.soundEnumPickForTest().options;
-    if (o.indexOf('\u00b7NuSaw') < 0)
-        throw new Error('no member mark after filing: '
+    if (o.indexOf('\u2605 NuSaw') < 0)
+        throw new Error('no favorite star after filing: '
                         + JSON.stringify(o.filter(x => typeof x === 'string' && x.indexOf('NuSaw') >= 0)));
 });
 
@@ -540,10 +541,22 @@ step('the generator ALREADY loaded on a Schwung track is drawn in brackets; the 
     for (let sl = 0; sl < 8; sl++) loaded[sl + ':synth'] = 'obxd';
     ticks(4);
     snd.soundExit(); ticks(2);
-    const o = openInstr().options.map(x => typeof x === 'string' ? x.replace(/^\u00b7/, '') : x);
+    const o = openInstr().options.map(x => typeof x === 'string' ? x.replace(/^\u2605 /, '') : x);
     if (o.indexOf('[OB-Xd]') < 0) throw new Error('the loaded generator is not bracketed: ' + JSON.stringify(o));
     const marked = o.filter(x => typeof x === 'string' && /^\[.*\]$/.test(x) && x !== '[ none ]');
     if (marked.length !== 1) throw new Error('want exactly one bracketed row, got ' + JSON.stringify(marked));
+});
+
+step('⭐ every character the picker and its Lists menu print is IN the host font (a missing glyph draws nothing)', () => {
+    resetUi();
+    const seen = new Set();
+    const take = (opts) => opts.forEach(x => { if (typeof x === 'string') for (const ch of x) seen.add(ch); });
+    take(openInstr().options);
+    jogTo(0); cc(3, 127); cc(3, 0); ticks(2);
+    take(snd.soundEnumPickForTest().options);
+    if (!seen.has('\u2605')) throw new Error('control: no star among the rows — the check proves nothing');
+    const missing = [...seen].filter(ch => !(ch in HFONT));
+    if (missing.length) throw new Error('not in the host font: ' + JSON.stringify(missing));
 });
 
 closeInstr();

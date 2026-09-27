@@ -453,7 +453,8 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
        the browser editor, Mirror, Files, Help, Config and System read as one app
        rather than a tool that links out to a different site. Slim on purpose —
        it is navigation, not a toolbar. ⚠ Keep it in step with base.html and with
-       `.site-*` in the manager's style.css; they are two copies of one design
+       `#site` in the manager's style.css (tests/host/test_site_ribbon_sync.sh
+       holds the links and values); they are two copies of one design
        because the editor must also render in the OFFLINE PREVIEW, where nothing
        from /static is served. -->
   <div id="site">

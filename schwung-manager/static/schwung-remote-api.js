@@ -189,6 +189,7 @@
     // the Sound view's generated editors). cb gets the raw message
     // ({type, slot, component, data}).
     var componentListeners = [];
+    var pendingComponentRequests = [];   // requestComponent calls made before the socket opened
     function emitComponent(msg) {
         for (var i = 0; i < componentListeners.length; i++) {
             try { componentListeners[i](msg); } catch (e) { /* keep alive */ }
@@ -252,6 +253,7 @@
             if (listenedSlot !== null) {
                 ws.send(JSON.stringify({ type: "listen_slot", slot: listenedSlot }));
             }
+            while (pendingComponentRequests.length) ws.send(pendingComponentRequests.shift());
         };
 
         ws.onmessage = function (e) {
@@ -343,9 +345,11 @@
         // generated editors). Metadata arrives via onComponentData; values
         // via onParamChange (second arg = the message's slot).
         requestComponent: function (compSlot, component) {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: "get_hierarchy", slot: compSlot, component: component }));
-            }
+            var m = JSON.stringify({ type: "get_hierarchy", slot: compSlot, component: component });
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send(m);
+            /* not open yet (first load, or a reconnect): send it on open —
+             * dropping it left a card on "loading…" until its timeout */
+            else pendingComponentRequests.push(m);
         },
         onComponentData: function (cb) { componentListeners.push(cb); },
 

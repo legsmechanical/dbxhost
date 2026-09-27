@@ -369,6 +369,50 @@ type App struct {
 	shm       *ShmConfig // via shmConfig() ONLY — lazy: the manager starts BEFORE the host under SA
 	shmParams *ShmParams // shared memory for param get/set (nil if not on device)
 	remoteUI  *RemoteUI  // set in main() after construction; used by the landing route
+	// Links shown atop the file browser (-file-shortcuts), in flag order.
+	fileShortcuts []fileShortcut
+}
+
+// fileShortcut is one link atop the file browser: a label and the directory
+// it opens.
+type fileShortcut struct {
+	Label string
+	Path  string
+}
+
+// parseFileShortcuts reads -file-shortcuts: comma-separated Label=/abs/path
+// pairs. A pair with no label, or a path that is not absolute, is dropped.
+func parseFileShortcuts(s string) []fileShortcut {
+	var out []fileShortcut
+	for _, pair := range strings.Split(s, ",") {
+		label, path, ok := strings.Cut(strings.TrimSpace(pair), "=")
+		label, path = strings.TrimSpace(label), strings.TrimSpace(path)
+		if !ok || label == "" || !filepath.IsAbs(path) {
+			continue
+		}
+		out = append(out, fileShortcut{Label: label, Path: filepath.Clean(path)})
+	}
+	return out
+}
+
+// visibleFileShortcuts is the shortcuts whose directory exists inside an
+// allowed root: a link to a folder that is not there yet would open an error.
+func (app *App) visibleFileShortcuts() []fileShortcut {
+	var out []fileShortcut
+	for _, sc := range app.fileShortcuts {
+		inRoot := false
+		for _, root := range app.fileSvc.AllowedRoots {
+			rc := filepath.Clean(root)
+			if sc.Path == rc || strings.HasPrefix(sc.Path, rc+string(filepath.Separator)) {
+				inRoot = true
+				break
+			}
+		}
+		if st, err := os.Stat(sc.Path); inRoot && err == nil && st.IsDir() {
+			out = append(out, sc)
+		}
+	}
+	return out
 }
 
 // shmConfig returns the control segment, attaching lazily: under SA the
@@ -538,6 +582,7 @@ func (app *App) handleFiles(w http.ResponseWriter, r *http.Request) {
 		"ParentDir":   parentDir,
 		"Entries":     entries,
 		"Breadcrumbs": crumbs,
+		"Shortcuts":   app.visibleFileShortcuts(),
 		"Flash":       r.URL.Query().Get("flash"),
 		"Active":      "files",
 	}
@@ -1200,6 +1245,7 @@ func main() {
 	displayBackend := flag.String("display-backend", "127.0.0.1:7681", "Address of display server")
 	baseFlag := flag.String("base", "", "Host install dir (default: probe <root>/schwung)")
 	shmPrefixFlag := flag.String("shm-prefix", "", "Override the built-in SHM prefix (dev use)")
+	shortcutsFlag := flag.String("file-shortcuts", "", "Comma-separated Label=/abs/path links shown atop the file browser")
 	// Deprecated flags — accepted but ignored for backwards compatibility with old entrypoints.
 	flag.String("move-backend", "", "(deprecated, ignored)")
 	flag.String("schwung-host", "", "(deprecated, ignored)")
@@ -1274,6 +1320,8 @@ func main() {
 		logger:    logger,
 		shm:       shm,
 		shmParams: shmParams,
+
+		fileShortcuts: parseFileShortcuts(*shortcutsFlag),
 	}
 
 	mux := http.NewServeMux()

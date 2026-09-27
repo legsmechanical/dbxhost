@@ -553,8 +553,12 @@ setsid --wait bash -c '
       tail -c 102400 "$mgr_log" > "$mgr_log.tmp" 2>/dev/null && mv "$mgr_log.tmp" "$mgr_log"
     fi
     if [ -x "$DBX_DIR/schwung-manager" ]; then
+      # The file browser opens with a link to the exports folder; made here so
+      # the link is there before the first export.
+      mkdir -p "$DBX_DIR/davebox-exports" 2>/dev/null || true
       "$DBX_DIR/schwung-manager" -port 7700 -roots /data/UserData/ \
-        -base "$DBX_DIR" >>"$mgr_log" 2>&1 &
+        -base "$DBX_DIR" -file-shortcuts "dAVEBOx exports=$DBX_DIR/davebox-exports" \
+        >>"$mgr_log" 2>&1 &
       echo "started schwung-manager ($!)"
     fi
     # OLED mirror source (SSE on :7681, proxied by the manager at /mirror).

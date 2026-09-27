@@ -163,6 +163,66 @@ step('⭐ session MIXER card (latched): the turn walks the mixer modes and the c
     S.sessMixerLatched = false; S.sessionView = false;
 });
 
+/* BANK VIEW MAP (Josh, 2026-09-27: "Global toggle to disable bank navigation
+ * overlay when bank cards are locked"). The switch is flipped through the
+ * global menu's own item, so the test also proves the item is there. */
+const menu = await import('../../ui/ui_menu.mjs');
+const prefs = await import('../../ui/ui_prefs.mjs');
+const written = {};
+const _hwf = globalThis.host_write_file;
+globalThis.host_write_file = (p, b) => { written[p] = String(b); return _hwf(p, b); };
+const menuItems = () => { menu.openGlobalMenu(); const it = S.globalMenuItems; S.globalMenuOpen = false; return it; };
+const mapItem = () => menuItems().find((it) => it && it.label === 'Bank Map on Lock');
+step('the global menu has Bank Map on Lock, right under Beat Marks, On by default', () => {
+    const items = menuItems(), i = items.findIndex((it) => it && it.label === 'Bank Map on Lock');
+    assert(i > 0, 'no Bank Map on Lock item');
+    assert(items[i - 1].label === 'Beat Marks', 'not under Beat Marks: ' + items[i - 1].label);
+    assert(prefs.bankViewMapOn() === true, 'default is not On');
+});
+const latchedWalk = () => {
+    S.sessionView = false; S.activeBank = 0; S.trackActiveBank[2] = 0;
+    midi(0xB0, 3, 127); midi(0xB0, 3, 0); tick();          /* jog click: the bank view */
+    assert(S.bankCardLatched, 'control: the click did not open the bank view');
+    touchJog(); tick(); jog(1); tick();
+    assert(S.activeBank !== 0, 'control: the walk did not move');
+};
+step('⭐ Bank Map on Lock ON: the bank view shows the column while walking', () => {
+    latchedWalk();
+    assert(columnUp(frame()), 'no column in the bank view with the switch on');
+    releaseJog(); settle();
+});
+step('⭐⭐ Bank Map on Lock OFF: the bank view walks with no column; the overview keeps it', () => {
+    const it = mapItem(); it.set(false);
+    assert(written[prefs.BANK_VIEW_MAP_PATH] === '0\n', 'not persisted: ' + JSON.stringify(written));
+    latchedWalk();
+    assert(!columnUp(frame()), 'the column is up in the bank view with the switch off');
+    releaseJog(); settle();
+    midi(0xB0, 51, 127); midi(0xB0, 51, 0); tick();         /* Back: to the overview */
+    assert(!S.bankCardLatched, 'control: Back did not leave the bank view');
+    touchJog(); tick(); jog(1); tick();
+    assert(columnUp(frame()), 'the switch took the column off the overview too');
+    releaseJog(); settle();
+});
+step('⭐ Bank Map on Lock OFF: the latched session mixer card walks with no column', () => {
+    S.sessionView = true; S.sessKnobMode = 0; S.sessMixerLatched = true;
+    touchJog(); tick(); jog(1); tick();
+    assert(S.sessKnobMode === 1, 'control: mixer mode ' + S.sessKnobMode);
+    assert(!columnUp(frame()), 'column on the latched mixer card with the switch off');
+    releaseJog(); settle();
+    S.sessMixerLatched = false; S.sessionView = false;
+    mapItem().set(true);
+    assert(written[prefs.BANK_VIEW_MAP_PATH] === '1\n', 'On not persisted');
+});
+step('the switch is read from its file at launch (0 = off, absent = on)', () => {
+    globalThis.host_file_exists = (p) => p === prefs.BANK_VIEW_MAP_PATH;
+    globalThis.host_read_file = (p) => (p === prefs.BANK_VIEW_MAP_PATH ? '0\n' : '');
+    S.bankViewMapOn = null;
+    assert(prefs.bankViewMapOn() === false, 'a 0 file reads as on');
+    globalThis.host_file_exists = () => false; globalThis.host_read_file = () => '';
+    S.bankViewMapOn = null;
+    assert(prefs.bankViewMapOn() === true, 'no file reads as off');
+});
+
 if (failed) { console.log('FAIL: bank nav overlay'); process.exit(1); }
 console.log('PASS: the bank column shows while the jog walks and goes on release');
 }

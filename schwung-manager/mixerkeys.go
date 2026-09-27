@@ -66,6 +66,16 @@ func mixerWireToShm(wire string) (slot uint8, key string, ok bool) {
 // mixerShmToWire translates a notify-ring change to the wire form, or
 // ok=false when the change is not part of the mixer surface.
 func mixerShmToWire(slot uint8, key string) (wire string, ok bool) {
+	// The instrument identity, READ-ONLY on the wire (mixerWireToShm refuses
+	// it): loading an instrument is a set of "synth:module", and without this
+	// the page kept the name it was seeded with until a reload — the Sound
+	// view stayed on the old instrument's card.
+	if key == "synth:module" || key == "synth_module" {
+		if slot >= maxChainSlots {
+			return "", false
+		}
+		return "chain:" + strconv.Itoa(int(slot)) + ":synth_module", true
+	}
 	if k, found := strings.CutPrefix(key, "slot:"); found {
 		if !mixerStripKeys[k] || slot >= maxChainSlots {
 			return "", false

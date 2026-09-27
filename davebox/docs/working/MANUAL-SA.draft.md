@@ -274,6 +274,8 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   on the left lists the track's banks with the current one highlighted in the
   middle; it goes as soon as you let go. On a melodic track the column shows the
   groups: each group's name sits to the left of a line beside its banks.
+  In the bank view the column can be turned off: **Bank Map on Lock** in the
+  global menu.
 - **Click the jog** to open the **bank view** — that bank's page, held on screen;
   keep turning to walk from there. In the bank view a click switches to the bank's
   **alternate** parameters (a down-arrow in the header marks a bank that has them,
@@ -770,7 +772,8 @@ show the selected lane.
 **Velocity zones** (the right 4×4) set the velocity of the hits you place next —
 16 zones from 8 (bottom-left) to 127 (top-right). A zone pad also plays the
 selected lane at that velocity; with a step held it sets that hit's velocity, or
-places the hit if the step was empty.
+places the hit if the step was empty. While you hold a step with a hit, the zone
+nearest its velocity lights white.
 
 **A lane's sound** is set by its MIDI note, on the [NOTE FX bank](#91-note-fx):
 knob 1 moves it by an octave, knob 2 by a semitone. The screen shows the note,
@@ -1553,7 +1556,7 @@ the click and the Shift chord do.
 - **List: All** (the top row) filters the generators to a list of your own. Click
   it to choose a list or make one (**New List…**, **Rename**, **Delete**,
   **Clear**); **Shift + click** a generator to add it to a list or take it out.
-  Members are marked `·`.
+  Your **Favorites** wear a `★`, in every list and in the effect browser.
 - If a change would leave macros or automation lanes with nothing to drive, dAVEBOx
   says how many and asks first (**CHANGE TO …?**).
 
@@ -1961,6 +1964,7 @@ see [Track settings](#174-track-settings) below.
 | Scale Aware | Whether scale-aware params move by scale degree (On) or semitone (Off) | On, Off | On |
 | Launch | When a launched clip or scene actually starts — at once (Now) or on the next boundary. At 1-bar it starts from its beginning; otherwise in step with the song ([§11.1](#111-launching-clips)) | Now, 1/16, 1/8, 1/4, 1/2, 1-bar | Now |
 | Beat Marks | Dim markers on the step buttons at 1, 5, 9, 13 | On, Off | On |
+| Bank Map on Lock | Whether the bank column comes up while the jog walks the banks from the bank view (or the session mixer card) — see [§3.6](#36-parameter-banks). The overview always shows it | On, Off | On |
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Projects... | The project picker — see [Projects](#175-projects) | action | — |
 | Save state / Load state | Save or restore a named snapshot — see [§17.3](#173-snapshots) | action | — |

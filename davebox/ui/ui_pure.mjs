@@ -192,6 +192,12 @@ export function drumVelZoneToVelocity(zone) {
     return Math.round((zone + 1) * 127 / 16);
 }
 
+/** The velocity zone 0-15 whose pad plays nearest to a MIDI velocity — the
+ *  inverse of drumVelZoneToVelocity, clamped for velocities below zone 0's. */
+export function drumVelocityToZone(vel) {
+    return Math.max(0, Math.min(15, Math.round((vel | 0) * 16 / 127) - 1));
+}
+
 export function effectiveVelocity(rawVel) { return rawVel; }
 
 /* Step-entry velocity. Single source of truth used by every step-write site.
