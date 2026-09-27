@@ -34,8 +34,8 @@ the section into a versioned heading at release time.
 - **Step recording shows the tie.** Holding pads and pressing **>** lights the
   steps the note is held over in the tail colour; the note's own step looks like
   any other note.
-- **Phrases.** Touch K6 on the CLIP or DRUM LANE bank and click the jog for a
-  library of one- and two-bar starter phrases: pick the instrument, jump to a
+- **Phrases.** Its own bank, PHRASE, first in SEQ (left of STEP): click the jog
+  on its card for a library of one- and two-bar starter phrases: pick the instrument, jump to a
   style, set a time scale (/8 to x8) and an octave; the jog opens the list of
   every phrase of that instrument. Each one is heard
   as you choose it — in time with the song, and in your key — and one click
@@ -287,6 +287,10 @@ the section into a versioned heading at release time.
   already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
+- **Phrases has its own bank.** The phrase library opens from the new PHRASE
+  bank, first in SEQ on melodic and drum tracks (PHRASE, STEP, CLIP): click the
+  jog on its card, and Back returns to it. Knob 6 on CLIP and DRUM LANE is empty
+  again.
 - **Every project load unwraps a Dave, on its own.** Opening the project Move
   already has loaded when dAVEBOx starts now deals one too, and it stays up at
   least two seconds; the "PROJECT … LOADING" band over the Dave is gone.

@@ -22,7 +22,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS,
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, LGTO_KNOB, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_PHRASE, LGTO_KNOB, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
@@ -72,7 +72,7 @@ import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
  * the screen can disagree. */
 import { bankCardVisible, sessMixerVisible, soundModeCovered } from './ui_render.mjs';
 import { closeDaveBox } from './ui_daves.mjs';
-import { pbOpen, pbClose, pbActive, PB_KNOB } from './ui_phrase_browser.mjs';
+import { pbOpen, pbClose, pbActive } from './ui_phrase_browser.mjs';
 import { devSnapOpen, devSnapLeave, devSnapUndo, devSnapRedo } from './ui_devsnap.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
     refreshPerClipBankParams, resyncDrumTrack,
@@ -278,16 +278,6 @@ function _onCC_jog(d1, d2) {
             S.activeBank === 0 && S.knobTouched === LGTO_KNOB) {
         applyLegato(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM);
         triggerFire('lgto');
-        forceRedraw();
-        return;
-    }
-
-    /* PHRASES is a trigger too: touch K6 on the CLIP or DRUM LANE bank and
-     * click the jog to open the phrase library (ui_phrase_browser). */
-    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
-            S.activeBank === 0 && S.knobTouched === PB_KNOB) {
-        triggerFire('phrases');
-        pbOpen(S.activeTrack);
         forceRedraw();
         return;
     }
@@ -621,6 +611,19 @@ function modalDialogUp() {
     if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && S.moveCoRunTrack < 0 &&
             S.activeBank === BANK_AUTOMATION && S.bankCardLatched) {
         if (S.deleteHeld) autoBankClearClip(); else autoBankClick();
+        S.screenDirty = true;
+        forceRedraw();
+        return;
+    }
+    /* THE PHRASE BANK (latched): the click opens the phrase library for the
+     * active track (pbOpen says why when it refuses). Back from the browser is
+     * the browser's own (ui.js), so it lands back on this card, still latched.
+     * Unlatched (the overview), the generic click below latches the card first
+     * — THE ONE LAW. Same place in the order as the AUTOMATION card, for the
+     * same reason: every confirm and the global menu above win. */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld && S.moveCoRunTrack < 0 &&
+            S.activeBank === BANK_PHRASE && S.bankCardLatched) {
+        pbOpen(S.activeTrack);
         S.screenDirty = true;
         forceRedraw();
         return;

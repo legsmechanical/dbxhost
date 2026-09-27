@@ -251,8 +251,8 @@ picks which bank. Each track has its own walk, in this order:
 
 | Track | Banks, in jog order |
 |---|---|
-| **Melodic** | CONFIG · **IN:** (CHORD, in the Chord layout) → LIVE ARP · **CTRL:** MACROS → AUTOMATION · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · MIX |
-| **Drum** | CONFIG · **IN:** RPT GROOVE · **CTRL:** MACROS → AUTOMATION · **SEQ:** STEP → ALL LANES → DRUM LANE · **FX** (the selected lane's): NOTE FX → DELAY · MIX |
+| **Melodic** | CONFIG · **IN:** (CHORD, in the Chord layout) → LIVE ARP · **CTRL:** MACROS → AUTOMATION · **SEQ:** PHRASE → STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · MIX |
+| **Drum** | CONFIG · **IN:** RPT GROOVE · **CTRL:** MACROS → AUTOMATION · **SEQ:** PHRASE → STEP → ALL LANES → DRUM LANE · **FX** (the selected lane's): NOTE FX → DELAY · MIX |
 | **Conductor** | CONFIG → CLIP → STEP → NOTE FX · **RSPD:** ON/OFF → OCTAVE → TIMING |
 
 A melodic track starts on **CLIP** and a drum track on **DRUM LANE**, both in
@@ -260,12 +260,14 @@ the middle of the walk: turn left for what plays into the track, right for its
 effects (in the order the notes pass through them) and, last, MIX. The first
 bank on every walk is **CONFIG**, the track's TRACK CONFIG menu.
 The banks are grouped: **IN** (what you play in), **CTRL** (what moves the
-parameters), **SEQ** (the sequence) and **FX** (the note effects — on a drum
-track, the selected lane's, so the map shows them under DRUM LANE). A Conductor
+parameters), **SEQ** (the sequence — from what writes every step, the
+[PHRASE](#165-phrases) library, down to the clip that works on the steps there
+are) and **FX** (the note effects — on a drum track, the selected lane's, so
+the map shows them under DRUM LANE). A Conductor
 starts on **CLIP**; its **RSPD** group is how the other tracks respond.
 
 The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--grid),
-[Sequencer Effects](#9-sequencer-effects), [STEP](#63-editing-notes),
+[Sequencer Effects](#9-sequencer-effects), [STEP](#63-editing-notes), [PHRASE](#165-phrases),
 [CONFIG, MIX and MACROS](#14-sound--track-config), and
 [AUTOMATION](#10-automation).
 
@@ -837,7 +839,7 @@ A melodic clip's grid, direction, and note transforms.
 | 3 | `SHIFT` | **Shift** — rotate the notes in the loop by whole steps; a note pushed off the loop's end comes round to its start. *Alt* (`NUDGE`): finer. | Yes | 0 |
 | 4 | `LGTO` | **Legato** — touch the knob and click the jog; lengthens every note in the loop to reach the next (the last to the loop's end). Turning it does nothing. | Yes | — |
 | 5 | `INQNT` | **Input Quantize** — snap recorded notes to the grid (Off, 1/64 … 1/4t). One value per track, shared with ALL LANES. | No | Off |
-| 6 | `PHRS` | **Phrases** — touch the knob and click the jog to open the [phrase library](#165-phrases). | Yes, on load | — |
+| 6 | — | *(empty)* | | |
 | 7 | `DIR` | **Direction** — Forward, Backward, or ping-pong. *Alt* (`REVRS`): **Reverse Style**. | No | Fwd |
 | 8 | `SEQFL` | **Follow** — scroll the step display to keep up with the playhead. | No | On |
 
@@ -866,7 +868,7 @@ The **selected lane's** grid — the drum counterpart to the CLIP bank.
 | 3 | `SHIFT` | **Shift.** *Alt:* `NUDGE`. | Yes | 0 |
 | 4 | `LGTO` | **Legato** (this lane) — touch the knob and click the jog. | Yes | — |
 | 5 | `EUCLD` | **Euclid** — spread N hits evenly across the lane. Hand-placed hits stay. | Yes | 0 |
-| 6 | `PHRS` | **Phrases** — touch the knob and click the jog to open the [phrase library](#165-phrases). | Yes, on load | — |
+| 6 | — | *(empty)* | | |
 | 7 | `DIR` | **Direction.** *Alt* (`REVRS`): **Reverse Style.** | No | Fwd |
 | 8 | `SEQFL` | **Follow.** | No | On |
 
@@ -1906,7 +1908,11 @@ Opening the screen **stops playback**, and it stays stopped when you leave.
 ## 16.5 Phrases
 
 A library of short starter phrases (one to four bars) to drop into a clip or a
-drum lane. **Touch K6 on the CLIP bank (or the DRUM LANE bank) and click the jog.**
+drum lane. It has its own bank, **PHRASE**, first in SEQ on melodic and drum
+tracks (just left of STEP): its card says PHRASE LIBRARY in corner brackets —
+**click the jog** there to open the library (from the overview, the first click
+holds the card and the second opens it). The bank has no knobs. **Back** from
+the library returns to the card. A Conductor has no PHRASE bank.
 
 - **K1 Type** — the instrument: bass, chords, leads, pads… or BEATS (whole kits
   of up to eight sounds), kick, snare, hats, cymbals, toms, percussion. A drum

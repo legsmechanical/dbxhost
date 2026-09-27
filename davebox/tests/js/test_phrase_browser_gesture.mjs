@@ -1,7 +1,8 @@
 /* tests/js/test_phrase_browser_gesture.mjs — the phrase library, through the
  * real gestures.
  *
- * Touch K6 on the CLIP / DRUM LANE bank and click the jog: the browser opens.
+ * The PHRASE bank (first in SEQ), its card latched, and a jog click: the
+ * browser opens (the door itself is tests/js/test_phrase_bank.mjs).
  * From there: K1 type, K2 style, K3 time, the jog, Shift+click for the
  * preview, pads to place a drum phrase's instruments (on lanes of a drum track,
  * on notes of a melodic one), the load (one engine write), the replace
@@ -85,6 +86,7 @@ async function main() {
     const tickmod = await import('../../ui/ui_tick.mjs');
     const render = await import('../../ui/ui_render.mjs');
     const { MoveShift } = await import('/data/UserData/schwung/shared/constants.mjs');
+    const { BANK_PHRASE } = await import('../../ui/ui_constants.mjs');
     /* The shipped library as the module has it: the bass in the open pack, the
      * hats in the encrypted pack (the key comes from the build's define). */
     const { packChunk } = await import('../../ui/ui_phrase_pack.mjs');
@@ -112,10 +114,12 @@ async function main() {
         for (let y = y0; y < y1; y++) for (let x = 0; x < 128; x++) n += FB[y * 128 + x]; return n; };
     const pb = () => PB.pbStateForTest();
     const since = (n, re) => writes.slice(n).filter(w => re.test(w[1]));
+    /* The door: the PHRASE bank's card, latched, and a click. */
     function openOn(track) {
-        S.activeTrack = track; S.activeBank = 0; S.sessionView = false;
+        S.activeTrack = track; S.activeBank = BANK_PHRASE; S.trackActiveBank[track] = BANK_PHRASE;
+        S.sessionView = false; S.bankCardLatched = true;
         ticks(2);
-        touch(5, true); click(); touch(5, false); ticks(2);
+        click(); ticks(2);
     }
 
     step('setup: track 2 melodic, track 1 drums', () => {
@@ -136,26 +140,22 @@ async function main() {
         assert(guard > 1, 'decoded in a single tick, not in slices');
     });
 
-    step('a click alone, or with K4 (Legato) touched, does not open it; K6 touched + click does', () => {
-        S.activeTrack = 1; S.activeBank = 0; ticks(2);
+    step('a click on CLIP, or with K6 touched there, does not open it; a click on the latched PHRASE card does', () => {
+        S.activeTrack = 1; S.activeBank = 0; S.bankCardLatched = true; ticks(2);
         click();
-        assert(!PB.pbActive(), 'a bare click opened the browser');
-        touch(3, true); click(); touch(3, false); ticks(1);
-        assert(!PB.pbActive(), 'K4 + click opened the browser');
+        assert(!PB.pbActive(), 'a click on CLIP opened the browser');
+        touch(5, true); click(); touch(5, false); ticks(1);
+        assert(!PB.pbActive(), 'K6 + click on CLIP opened the browser');
         openOn(1);
-        assert(PB.pbActive(), 'K6 touch + click did not open the browser');
+        assert(PB.pbActive(), 'a click on the PHRASE card did not open the browser');
         assert(pb().cats.join(',') === 'bass,beat,hat', 'categories on a melodic track: ' + pb().cats);
         assert(ink(30, 55) > 0, 'the browser drew no phrase name or roll');
     });
 
-    step('K6 on the CLIP bank shows the Phrases trigger, and the footer says CLK PHRASES while touched', () => {
+    step('Back closes it onto the PHRASE card, still latched', () => {
         back(); ticks(2);
         assert(!PB.pbActive(), 'Back did not close');
-        S.activeTrack = 1; S.activeBank = 0; ticks(1);
-        touch(5, true); ticks(1);
-        const hints = render.bankPageHints(0);
-        touch(5, false); ticks(1);
-        assert(JSON.stringify(hints) === '[["CLK","PHRASES"]]', 'hints: ' + JSON.stringify(hints));
+        assert(S.activeBank === BANK_PHRASE && S.bankCardLatched, 'bank ' + S.activeBank + ' latched ' + S.bankCardLatched);
     });
 
     step('stopped: the preview plays the phrase alone, through the track (audition)', () => {
@@ -494,8 +494,9 @@ async function main() {
     });
 
     step('a Conductor track refuses, and says why', () => {
-        S.trackPadMode[2] = 2;   /* PAD_MODE_CONDUCT */
-        openOn(2);
+        S.trackPadMode[2] = 2;   /* PAD_MODE_CONDUCT: no PHRASE bank on its walk, so asked directly */
+        S.activeTrack = 2; ticks(2);
+        PB.pbOpen(2); ticks(1);
         assert(!PB.pbActive(), 'opened on a Conductor');
         assert(S.actionPopupLines && S.actionPopupLines[1] === 'NOT ON CONDUCTOR', 'popup: ' + JSON.stringify(S.actionPopupLines));
     });

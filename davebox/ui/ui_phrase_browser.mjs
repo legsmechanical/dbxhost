@@ -1,8 +1,8 @@
 /* ui_phrase_browser.mjs — the phrase library's screen.
  *
- * Opened by touching K6 on the CLIP or DRUM LANE bank and clicking the jog
- * (a trigger, like Legato). A modal over the track: its own knobs, jog, Back
- * and pads; Play, Shift and Note/Session keep working.
+ * Opened from the PHRASE bank (first in SEQ): a click on its latched card
+ * (ui_input_cc). A modal over the track: its own knobs, jog, Back and pads;
+ * Play, Shift and Note/Session keep working. Back closes it onto that card.
  *
  *   K1 Type    the instrument category (a drum track: drum categories only;
  *              a melodic track: every category — a drum phrase plays notes)
@@ -70,7 +70,6 @@ export const PB_SHIPPED_DIR = DAVEBOX_HOST_DIR + '/modules/tools/' + MODULE_ID +
 export const PB_USER_DIR = '/data/UserData/davebox-phrases';
 const PACK_FILES = ['phrases-open.pack', 'phrases.pack'];
 const PACK_KEY = (typeof DAVEBOX_PHRASE_KEY === 'string') ? DAVEBOX_PHRASE_KEY : '';
-export const PB_KNOB = 5;                 /* K6 on the CLIP / DRUM LANE bank */
 
 /* Detents per step — the editor's PICK / DELIBERATE rates. */
 const KNOB_SENS = [12, 12, 12, 12, 6];

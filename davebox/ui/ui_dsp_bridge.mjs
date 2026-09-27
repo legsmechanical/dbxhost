@@ -31,7 +31,7 @@ import { automationRefreshPresence, automationInvalidateMeta, automationWantsDra
 
 import {
     NUM_TRACKS, NUM_CLIPS, NUM_STEPS, DRUM_LANES, POLL_INTERVAL,
-    TPS_VALUES, BANKS, PAD_MODE_DRUM, BANK_SOUND, isSoundBank, BANK_AUTOMATION, BANK_CHORD,
+    TPS_VALUES, BANKS, PAD_MODE_DRUM, BANK_SOUND, isSoundBank, BANK_AUTOMATION, BANK_CHORD, BANK_PHRASE,
     INSTR_MOVE_MAX, INSTR_SCHWUNG, INSTR_MIDI_CH, INSTR_TRACK, moveInstrOwner, moveInstrDuplicates,
     MoveRec, LED_OFF, parseActionRaw, INSTR_NONE, ROUTE_NONE,
     INSTR_CONDUCT, PAD_MODE_CONDUCT, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
@@ -40,7 +40,7 @@ import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 import { S } from './ui_state.mjs';
 import { slotIndex, syncLinkAudioRoutingFromRoutes,
          invalidateLinkAudioRoutingCache, linkAudioRoutingJustEnabled } from './ui_engine.mjs';
-import { clipHasContent, _clipIsEmpty } from './ui_pure.mjs';
+import { clipHasContent, _clipIsEmpty, bankCycleForMode } from './ui_pure.mjs';
 import { showActionPopup, writeSidecar, uuidToStatePath, uuidToUiStatePath,
          uuidToNewProjectPath } from './ui_persistence.mjs';
 import { computePadNoteMap, setActiveDrumLane, syncDrumClipContent,
@@ -1514,7 +1514,13 @@ export function restoreUiSidecar(applyDefaultsNow) {
                 S.trackActiveBank[_t] = (typeof _b !== 'number') ? 0
                     : (_b === 6) ? BANK_AUTOMATION
                     : ((_b >= 0 && _b <= 7) || isSoundBank(_b) || _b === BANK_AUTOMATION
-                       || _b === BANK_CHORD) ? (_b | 0) : 0;
+                       || _b === BANK_CHORD) ? (_b | 0)
+                    /* PHRASE: only where it is on the track's walk (not a
+                     * Conductor's) — anywhere else it would be a bank the jog
+                     * cannot leave by the walk it draws. */
+                    : (_b === BANK_PHRASE &&
+                       bankCycleForMode(S.trackPadMode[_t], _t).indexOf(BANK_PHRASE) >= 0) ? BANK_PHRASE
+                    : 0;
             }
             /* Sync live mirror to the restored active track. Subsequent
              * post-restore validity checks (e.g. hide bank 7 on melodic) still

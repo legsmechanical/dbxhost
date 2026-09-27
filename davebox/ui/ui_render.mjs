@@ -17,11 +17,11 @@ import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRoot
 import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
 import { LGTO_KNOB, BANKNAV_HOLD_MS } from './ui_constants.mjs';
-import { pbActive, pbRender, PB_KNOB } from './ui_phrase_browser.mjs';
+import { pbActive, pbRender } from './ui_phrase_browser.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
-    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG,
+    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG, BANK_PHRASE,
     INSTR_SCHWUNG, INSTR_MOVE_MAX, INSTR_MIDI_CH, INSTR_TRACK, INSTR_NONE, INSTR_CONDUCT,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
@@ -39,7 +39,7 @@ import { drawAutoMarkAt,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
     drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y,
-    drawKitBigValue, drawKitPrompt, drawKitChip, kitChipWidth
+    drawKitBigValue, drawKitPrompt, drawKitChip, kitChipWidth, drawBrackets
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawModuleSwapConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
@@ -600,7 +600,6 @@ function drawSessionFaderRow(cells, mode) {
 export function bankPageHints(bank) {
     /* A touched TRIGGER knob says how to fire it, as stock's footer does. */
     if (bank === 0 && S.knobTouched === LGTO_KNOB && !S.sessionView) return [['CLK', 'LEGATO']];
-    if (bank === 0 && S.knobTouched === PB_KNOB && !S.sessionView) return [['CLK', 'PHRASES']];
     /* ⭑ While a step is HELD the jog means something else (spec §2): on any
      * other bank a right turn REVEALS the step's page — so the pair says so,
      * in the same slot, and JOG BANK (which the hold suspends) is not shown.
@@ -786,13 +785,24 @@ function _discreteOpts(knob) {
     return opts;
 }
 
-/* K6 on the CLIP / DRUM LANE bank: the phrase library, a trigger like Legato
- * (touch + jog click opens it). */
+/* The phrase library (ui_phrase_browser), opened from the PHRASE bank's card. */
 function drawPhraseBrowser() { pbRender(S.knobTouched, S.shiftHeld); }
 
-function phrasesTriggerCell() {
-    return { kind: 'action', oneWay: true, label: 'Phrs', name: 'Phrases', text: '->', opens: true,
-             btnPhase: triggerPhase('phrases', S.knobTouched === PB_KNOB) };
+/* The PHRASE bank's card: the bank header, PHRASE LIBRARY centred inside the
+ * door's corner brackets (the mark the CONFIG and SESSION FX cards wear for
+ * "click to enter"), and no cells — the bank has no knobs. The box is the
+ * CONFIG card's list box, so the three doors line up. */
+export const PHRASE_CARD_TEXT = 'PHRASE LIBRARY';
+function drawPhraseBankCard() {
+    clear_screen();
+    kitUseLayout('bank');
+    drawBankHeading(bankHeaderName(S.activeTrack, BANK_PHRASE), false);
+    const top = 10, h = MV_FOOTER_Y - 11;
+    drawBrackets(0, top, 128, h);
+    mvPrint(Math.round((128 - mvWidth(PHRASE_CARD_TEXT)) / 2), top + Math.floor((h - 5) / 2), PHRASE_CARD_TEXT, 1);
+    const held = stepHoldEstablished();
+    const jog = held ? (stepRevealAvailable() ? [['JOG', 'STEP']] : []) : [['JOG', 'BANK']];
+    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'OPEN']].concat(jog, [['BACK', 'OUT']]));
 }
 
 /* A numeric cell that would otherwise open the option list: while touched it
@@ -2148,6 +2158,13 @@ function drawUIBody() {
                 drawPositionBarGeom({ lsBase: cy.off, len: cy.len, viewPage: cy.page, playStep: autoLanePlayStep(cy) });
             return;
         }
+        /* PHRASE: the door to the phrase library — no knobs, just the words
+         * inside the corner brackets (the CONFIG / SESSION FX door mark); a
+         * click opens the browser (ui_input_cc). */
+        if (bank === BANK_PHRASE) {
+            drawPhraseBankCard();
+            return;
+        }
         if (bank === BANK_STEP) {
             /* STEP with nothing held: no cells, just "Hold step to edit". A held
              * step is drawn by the step-edit block above, before the card gate —
@@ -2179,7 +2196,7 @@ function drawUIBody() {
                 { kind: 'action', oneWay: true, label: 'Lgto', name: 'Apply Legato', text: '->', opens: true,
                   btnPhase: triggerPhase('lgto', S.knobTouched === LGTO_KNOB) },
                 { kind: 'valsq', label: 'Eucld', name: 'Euclid Fill', text: String(eucN) },
-                phrasesTriggerCell(),
+                { kind: 'blank', label: '' },
                 S.altMode
                     ? toggleCell('Revrs', 'Reverse Style', _dlRev,
                                  fmtRevStyle(1), fmtRevStyle(0))
@@ -2459,7 +2476,6 @@ function drawUIBody() {
                                       fmtRevStyle(1), fmtRevStyle(0)));
                 continue;
             }
-            if (bank === 0 && k === PB_KNOB) { cells.push(phrasesTriggerCell()); continue; }
             /* A held step on the lane in focus: its cell shows what the LANE
              * plays at that step, not where the knob sits. */
             const _isFocus = _focus && _focus.wire != null &&

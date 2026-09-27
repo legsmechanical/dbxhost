@@ -71,7 +71,7 @@ const GUT = lineX + 4;
 const onBank = (b) => { S.activeBank = b; S.trackActiveBank[2] = b; S.bankNavKind = 'track'; S.jogTouched = true; };
 const inkLeftOfLine = (f, y0, y1) => { let n = 0; for (let y = y0; y < y1; y++) for (let x = 0; x < lineX - 1; x++) n += px(f, x, y); return n; };
 
-const MEL = [C.BANK_CONFIG, 5, C.BANK_MACROS, C.BANK_AUTOMATION, C.BANK_STEP, 0, 1, 2, 3, 4, C.BANK_SOUND];
+const MEL = [C.BANK_CONFIG, 5, C.BANK_MACROS, C.BANK_AUTOMATION, C.BANK_PHRASE, C.BANK_STEP, 0, 1, 2, 3, 4, C.BANK_SOUND];
 step('⭐ the melodic walk is IN, CTRL, SEQ, FX, MIX; a Chord-layout track adds CHORD at the head of IN', () => {
     S.padLayoutChord = [false, false, false, false, false, false, false, false];
     assert(JSON.stringify(P.bankCycleForMode(0, 2)) === JSON.stringify(MEL), 'plain: ' + P.bankCycleForMode(0, 2));
@@ -84,11 +84,11 @@ step('⭐⭐ THE GESTURE: from CLIP the jog walks left through SEQ, CTRL, IN and
     S.activeBank = 0; S.trackActiveBank[2] = 0; S.bankSelectTick = -1;
     touchJog(); tick();
     const seen = [];
-    for (let i = 0; i < 4; i++) { jog(-1); tick(); seen.push(S.activeBank); }
-    assert(JSON.stringify(seen) === JSON.stringify([C.BANK_STEP, C.BANK_AUTOMATION, C.BANK_MACROS, 5]), 'left: ' + seen);
+    for (let i = 0; i < 5; i++) { jog(-1); tick(); seen.push(S.activeBank); }
+    assert(JSON.stringify(seen) === JSON.stringify([C.BANK_STEP, C.BANK_PHRASE, C.BANK_AUTOMATION, C.BANK_MACROS, 5]), 'left: ' + seen);
     const nav = render.bankNavItems();
     assert(nav.items[nav.cur].name === 'LIVE ARP' && nav.items[nav.cur].cat && nav.items[nav.cur].cat.label === 'IN', 'centred ' + JSON.stringify(nav.items[nav.cur]));
-    for (let i = 0; i < 4; i++) { jog(1); tick(); }
+    for (let i = 0; i < 5; i++) { jog(1); tick(); }
     assert(S.activeBank === 0, 'back on CLIP: ' + S.activeBank);
     const right = [];
     for (let i = 0; i < 5; i++) { jog(1); tick(); right.push(S.activeBank); }
@@ -97,11 +97,11 @@ step('⭐⭐ THE GESTURE: from CLIP the jog walks left through SEQ, CTRL, IN and
     assert(!S.bankNavKind, 'the column outlived the release');
 });
 step('⭐ a row in a category is indented past the gutter, its highlight too; the category has a line and a label', () => {
-    onBank(0);                                        /* CLIP: SEQ is STEP, CLIP */
+    onBank(0);                                        /* CLIP: SEQ is PHRASE, STEP, CLIP */
     const f = frame();
     assert(!px(f, 1, MID_Y + 3), 'the highlight covers the category gutter');
     assert(px(f, GUT - 2, MID_Y + 3) && px(f, GUT - 1, MID_Y + 3), 'the highlight does not start at the row\'s indent');
-    const top = (MID - 1) * ROW + 2, bot = MID * ROW + ROW - 2;
+    const top = (MID - 2) * ROW + 2, bot = MID * ROW + ROW - 2;
     for (let y = top; y < bot; y++) assert(px(f, lineX, y), 'no line at y ' + y);
     assert(!px(f, lineX, top - 1) && !px(f, lineX, bot), 'the line runs past its group');
     assert(inkLeftOfLine(f, top, bot) > 0, 'no SEQ label');
@@ -136,7 +136,7 @@ step('⭐ a category of one (MIX: SOUND + CONFIG) is a plain row, fully left', (
     const f = frame();
     assert(px(f, 1, MID_Y + 3), 'the plain row\'s highlight does not start at the left edge');
 });
-const DRUM = [C.BANK_CONFIG, 5, C.BANK_MACROS, C.BANK_AUTOMATION, C.BANK_STEP, 7, 0, 1, 3, C.BANK_SOUND];
+const DRUM = [C.BANK_CONFIG, 5, C.BANK_MACROS, C.BANK_AUTOMATION, C.BANK_PHRASE, C.BANK_STEP, 7, 0, 1, 3, C.BANK_SOUND];
 const COND = [C.BANK_CONFIG, 0, C.BANK_STEP, 1, C.BANK_RESPONDER, C.BANK_OCTAVE, C.BANK_WHEN];
 step('⭐ the drum walk is IN, CTRL, SEQ, FX (under DRUM LANE), MIX; the Conductor walk is CLIP, STEP, NOTE FX, RSPD', () => {
     assert(JSON.stringify(P.bankCycleForMode(C.PAD_MODE_DRUM, 2)) === JSON.stringify(DRUM), 'drum: ' + P.bankCycleForMode(C.PAD_MODE_DRUM, 2));
