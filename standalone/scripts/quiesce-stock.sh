@@ -107,9 +107,12 @@ blank_leds() {
         say "WARNING: $BLANK_LEDS missing — LEDs will hold the stock menu"
         return 0
     fi
-    python3 "$BLANK_LEDS" --shm /dev/shm/schwung-midi-out >/dev/null 2>&1 \
-        && say "LEDs blanked (stock ring)" \
-        || say "WARNING: LED blank failed"
+    python3 "$BLANK_LEDS" --shm /dev/shm/schwung-midi-out >/dev/null 2>&1
+    case $? in
+        0) say "LEDs blanked (stock ring)" ;;
+        5) say "LED blank skipped: stock's ring is a layout we do not know (skipped at once, no wait)" ;;
+        *) say "WARNING: LED blank failed" ;;
+    esac
     return 0
 }
 
