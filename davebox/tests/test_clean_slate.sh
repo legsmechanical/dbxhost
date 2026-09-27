@@ -24,12 +24,14 @@ echo "clean slate on project switch:"
 #    NOW; state_path is assigned by the same set_param that resets the instance,
 #    so state_uuid flips exactly when the memory becomes the new project's.
 #    A write keyed off S.currentSetUuid is the bug itself.
-if grep -q "host_write_file(uuidToStatePath(S.currentSetUuid), _st)" ui/ui_dsp_bridge.mjs; then
+#    (The write goes through writeStateBlob, which keeps a failed write for a
+#    retry — the destination is still computed here, from the DSP's uuid.)
+if grep -q "uuidToStatePath(S.currentSetUuid), _st)" ui/ui_dsp_bridge.mjs; then
     bad "the deferred save is keyed off S.currentSetUuid again — mid-switch it files the OLD project's state under the NEW project's uuid"
 else
     ok "the deferred save is not keyed off S.currentSetUuid"
 fi
-grep -q "host_write_file(uuidToStatePath(_dspUuid), _st)" ui/ui_dsp_bridge.mjs \
+grep -q "writeStateBlob(_dspUuid, uuidToStatePath(_dspUuid), _st)" ui/ui_dsp_bridge.mjs \
     && ok "the deferred save writes to the DSP's own state_uuid" \
     || bad "the deferred save no longer derives its destination from state_uuid"
 grep -q "_dspUuid && _dspUuid === S.currentSetUuid" ui/ui_dsp_bridge.mjs \

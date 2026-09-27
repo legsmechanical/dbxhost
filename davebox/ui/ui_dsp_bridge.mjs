@@ -41,7 +41,7 @@ import { S } from './ui_state.mjs';
 import { slotIndex, syncLinkAudioRoutingFromRoutes,
          invalidateLinkAudioRoutingCache, linkAudioRoutingJustEnabled } from './ui_engine.mjs';
 import { clipHasContent, _clipIsEmpty } from './ui_pure.mjs';
-import { showActionPopup, writeSidecar, uuidToStatePath, uuidToUiStatePath,
+import { showActionPopup, showActionPopupFor, writeSidecar, uuidToStatePath, uuidToUiStatePath,
          uuidToNewProjectPath } from './ui_persistence.mjs';
 import { computePadNoteMap, setActiveDrumLane, syncDrumClipContent,
     syncDrumLaneSteps, syncDrumLanesMeta, syncDrumRepeatState } from './ui_drummodel.mjs';
@@ -304,6 +304,7 @@ function localAutomationResync() {
  *
  * Cost: one extra round-trip per 32 KB, on save only — a few milliseconds
  * occasionally, against a ceiling that silently ate projects. */
+const STATE_CHUNK_BOUND = 32;
 function fetchStateChunked() {
     const first = host_module_get_param('state_chunk_0');
     if (!first || !first.length) return '';        /* not dirty, or refused */
@@ -320,8 +321,10 @@ function fetchStateChunked() {
 
     let out = first;
     /* Bounded: a project cannot legitimately need this many chunks, and an
-     * unbounded loop would hang the tick if the DSP ever kept serving. */
-    for (let i = 1; out.length < want && i < 16; i++) {
+     * unbounded loop would hang the tick if the DSP ever kept serving.
+     * 32 x 32 KB = the DSP's 1 MB state_buf — the bound must cover it, or a
+     * project the DSP serves whole arrives short and is never written. */
+    for (let i = 1; out.length < want && i < STATE_CHUNK_BOUND; i++) {
         const part = host_module_get_param('state_chunk_' + i);
         if (!part || !part.length) break;
         out += part;
@@ -347,7 +350,8 @@ function fetchStateChunked() {
  * meaning — a single read and a bulk read return the same string for the
  * same key (both "" for an empty value). */
 const POLL_KEYS = ['bpm', 'rui_rev', 'clock_follow_on', 'clock_send_on', 'clock_follow_fallback',
-                   'capture_pending', 'capture_info', 'state_snapshot', 'state_uuid'];
+                   'capture_pending', 'capture_info', 'state_snapshot', 'state_uuid',
+                   'save_refused'];
 
 /* THE TICK'S ONE READ. Rebuilt every tick at the top of _tickImpl, before
  * anything reads: the keys the tick wants every tick (the metronome's beat
@@ -384,6 +388,56 @@ export function dget(k) { return _pre.has(k) ? _pre.get(k) : host_module_get_par
 export function tickWants(k) { return _pre.has(k); }
 /* Ticks of quiet before a save while stopped; ~1 s at the ~94 Hz tick. */
 const SAVE_QUIET_MS = 1000;   /* one second of hardware quiet while stopped (spec §2) */
+/* How long the save notices stay up: they report something you did not just
+ * do, so they are a READ, not a glance. */
+const SAVE_NOTICE_MS = 2500;
+/* A state write that failed is retried this often, this many times, then
+ * dropped (the next edit makes a fresh blob and a fresh attempt). */
+const SAVE_RETRY_MS = 1000;
+const SAVE_RETRY_MAX = 5;
+
+/* The project is too big to save: the DSP refused chunk 0 on size
+ * (save_refused). Said on screen for every refused ATTEMPT — and an attempt
+ * is made only after new input, so it is said once per edit, not per poll. */
+function noteSaveRefused(uuid) {
+    const again = S.saveRefused && S.saveRefusedUuid === uuid;
+    S.saveRefused = true;
+    S.saveRefusedUuid = uuid;
+    S.saveRefusedInputTick = S.lastInputTick;
+    showActionPopupFor(SAVE_NOTICE_MS, 'PROJECT TOO BIG', 'NOT SAVED', 'REMOVE SOME CLIPS');
+    console.log('[dbx] PROJECT TOO BIG: save refused, over the 1 MB state limit — not written' +
+                (again ? ' (again)' : ''));
+}
+
+/* Write an assembled state blob. host_write_file is crash-atomic and returns
+ * false when the write did not land (storage full, I/O error); the DSP has
+ * already marked the state clean on serving the last chunk, so a dropped
+ * failure would be a save nobody retries. Keep the blob and retry it. */
+function writeStateBlob(uuid, path, blob) {
+    host_ensure_dir(path.replace(/\/[^\/]+$/, ''));
+    if (host_write_file(path, blob)) {
+        if (S.pendingStateWrite) console.log('[dbx] state write recovered: ' + path);
+        S.pendingStateWrite = null;
+        if (S.saveRefused) {
+            /* The save that was refused has now gone through — say so, but
+             * only for the project that was refused. */
+            if (S.saveRefusedUuid === uuid) showActionPopupFor(SAVE_NOTICE_MS, 'PROJECT SAVED');
+            S.saveRefused = false;
+            S.saveRefusedUuid = '';
+        }
+        return true;
+    }
+    if (!S.pendingStateWrite) {
+        /* Once per failure episode; the retries below stay quiet. */
+        showActionPopupFor(SAVE_NOTICE_MS, 'SAVE FAILED', 'CHECK STORAGE');
+        console.log('[dbx] state write FAILED: ' + path + ' (' + blob.length + ' bytes) — will retry');
+        S.pendingStateWrite = { uuid: uuid, path: path, blob: blob, tries: 1, at: S.clockMs };
+    } else {
+        S.pendingStateWrite = { uuid: uuid, path: path, blob: blob,
+                                tries: S.pendingStateWrite.tries + 1, at: S.clockMs };
+    }
+    return false;
+}
 
 /* Whether the host's autosave is currently held for the transport (edge-tracked). */
 let autosaveHeld = false;
@@ -972,17 +1026,49 @@ export function pollDSP() {
      * thread, and during a recorded sweep the old rule fired one every poll.
      * The DSP keeps its dirty flag until a save completes, so waiting loses
      * nothing; quit, suspend and project switch save on their own paths. */
+    /* TOO BIG TO SAVE. Chunk 0 comes back empty both when there is nothing to
+     * save and when the DSP refused the project on size; `save_refused` (in
+     * the poll's bulk read) tells them apart. It is read one poll AFTER an
+     * empty attempt — the prefetch at the top of this tick predates the
+     * attempt — so no extra round-trip rides the common "nothing to save"
+     * poll. */
+    if (S.saveAwaitVerdict) {
+        const _u = S.saveAwaitVerdict;
+        S.saveAwaitVerdict = '';
+        if (pget('save_refused') === '1') noteSaveRefused(_u);
+    }
     const _saveAllowed = S.saveNowOnce ||
         (!S.playing && (S.clockMs - S.lastInputTick) >= SAVE_QUIET_MS);
     if (_saveAllowed && S.currentSetUuid && !S.awaitingProjectSelect &&
             !S.pendingSetLoad && S.pendingDspSync === 0) {
+        const _forced = S.saveNowOnce;
         S.saveNowOnce = false;
         const _dspUuid = (pget('state_uuid') || '');
-        if (_dspUuid && _dspUuid === S.currentSetUuid) {
+        /* BACK-OFF: a refused project is re-serialized on the SPI thread by
+         * every attempt, and nothing has changed until the user does
+         * something — so after a refusal, attempt again only once there has
+         * been input since (or the stop edge forces it). */
+        const _backedOff = S.saveRefused && S.saveRefusedUuid === _dspUuid && !_forced &&
+            S.lastInputTick <= S.saveRefusedInputTick && pget('save_refused') === '1';
+        let _wrote = false;
+        if (_dspUuid && _dspUuid === S.currentSetUuid && !_backedOff) {
             const _st = fetchStateChunked();
             if (_st && _st.length > 2) {
-                host_ensure_dir(uuidToStatePath(_dspUuid).replace(/\/[^\/]+$/, ''));
-                host_write_file(uuidToStatePath(_dspUuid), _st);
+                writeStateBlob(_dspUuid, uuidToStatePath(_dspUuid), _st);
+                _wrote = true;
+            } else {
+                S.saveAwaitVerdict = _dspUuid;
+            }
+        }
+        /* A write that failed earlier, and nothing newer has replaced it. */
+        const _pw = S.pendingStateWrite;
+        if (!_wrote && _pw && (S.clockMs - _pw.at) >= SAVE_RETRY_MS) {
+            if (_pw.tries >= SAVE_RETRY_MAX) {
+                console.log('[dbx] state write FAILED ' + _pw.tries + ' times: ' + _pw.path +
+                            ' — giving up until the next edit');
+                S.pendingStateWrite = null;
+            } else {
+                writeStateBlob(_pw.uuid, _pw.path, _pw.blob);
             }
         }
     }
