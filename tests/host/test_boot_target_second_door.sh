@@ -269,6 +269,24 @@ else
     ok "it does not clear the healthy marker on a normal quit"
 fi
 
+# ---- no Dave on a cold launch, from any door ---------------------------------
+# Josh 2026-09-27, after the first boot from the picker: "daves should only
+# unwrap on project load". The host splash deals a Dave unless a fresh
+# splash-stage1.txt says stage 1 was decided; quiesce-stock.sh (the stock-alive
+# Tools door) was the only writer, so the BOOT door dealt one. launch.sh now
+# writes it after the entry branch, which every cold launch passes and the
+# project-load relaunch (inside the supervisor loop) never does.
+_m=$(grep -n 'skip.*splash-stage1.txt' "$LAUNCH" | head -1 | cut -d: -f1)
+_boot=$(grep -n 'entry: BOOT selector' "$LAUNCH" | head -1 | cut -d: -f1)
+_loop=$(grep -n '^  while :; do' "$LAUNCH" | head -1 | cut -d: -f1)
+_relaunch=$(grep -n 'relaunch requested' "$LAUNCH" | head -1 | cut -d: -f1)
+check "launch.sh writes the no-Dave stage-1 marker itself" test -n "$_m"
+check "...AFTER the entry branch (so the boot door gets it too)" test "${_m:-0}" -gt "${_boot:-99999}"
+check "...BEFORE the supervisor loop (a project-load relaunch never rewrites it)" \
+      test "${_m:-99999}" -lt "${_loop:-0}" -a "${_loop:-0}" -lt "${_relaunch:-0}"
+check "the host still reads that marker as skip-the-Dave" \
+      grep -q 'parts\[1\] === "skip"' src/shadow/shadow_ui.js
+
 # ---- the contract's own rules ----------------------------------------------
 # boot.json is read by an awk/C parser that takes the FIRST occurrence of a key
 # and requires a QUOTED value; an unquoted exec reads back empty and the row is
