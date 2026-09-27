@@ -1185,6 +1185,7 @@ CHAIN_INTERNAL int json_get_int(const char *json, const char *key, int *out);
 CHAIN_INTERNAL int json_get_bool(const char *json, const char *key, int *out);
 CHAIN_INTERNAL int json_get_int_in_section(const char *json, const char *section_key, const char *key, int *out);
 CHAIN_INTERNAL int json_get_bool_in_section(const char *json, const char *section_key, const char *key, int *out);
+CHAIN_INTERNAL int json_get_flag_in_section(const char *json, const char *section_key, const char *key);
 CHAIN_INTERNAL int json_get_section_bounds(const char *json, const char *section_key, const char **out_start, const char **out_end);
 CHAIN_INTERNAL int json_get_string(const char *json, const char *key, char *out, int out_len);
 CHAIN_INTERNAL int json_get_string_in_section(const char *json, const char *section_key, const char *key, char *out, int out_len);

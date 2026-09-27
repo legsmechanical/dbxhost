@@ -300,6 +300,20 @@ int json_get_bool_in_section(const char *json, const char *section_key,
     return ret;
 }
 
+/* A capability flag, however the module spells it: `true` (what modules write
+ * and docs/MODULES.md documents) or a non-zero number. Reading a flag with
+ * json_get_int alone ignores `true` — atoi("true") is 0 — which is how an audio
+ * FX declaring requires_continuous_processing was idle-parked on silence
+ * anyway. Same helper as upstream's (#515). Returns 1 when set, 0 otherwise. */
+int json_get_flag_in_section(const char *json, const char *section_key,
+                             const char *key) {
+    int v = 0;
+    if (json_get_bool_in_section(json, section_key, key, &v) == 0 && v) return 1;
+    v = 0;
+    if (json_get_int_in_section(json, section_key, key, &v) == 0 && v) return 1;
+    return 0;
+}
+
 /*
  * Check if a JSON value is an object (starts with '{') vs string/primitive
  */
