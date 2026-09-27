@@ -921,6 +921,8 @@ static void seq8_load_state(seq8_instance_t *inst) {
      * file is a legitimate brand-new project, and leaving the flag set would
      * silently discard everything the user then recorded into it. */
     inst->awaiting_select = 0;
+    /* "Too big to save" described the project being replaced, not this one. */
+    inst->save_refused = 0;
     FILE *fp = fopen(inst->state_path, "r");
     if (!fp) return;
     fseek(fp, 0, SEEK_END);

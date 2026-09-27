@@ -222,10 +222,25 @@ Handlers set `inst->state_dirty = 1` — **no file I/O on the audio thread.**
 
 JS `pollDSP()` pulls the blob in **chunks** every `POLL_INTERVAL` ticks — `state_chunk_0`,
 `_1`, … until an empty one — and writes the assembled string with `host_write_file` (~2 ms).
-Chunk 0 serializes via `fmemopen` into `inst->state_buf` (**262144**) and records
+Chunk 0 serializes via `fmemopen` into `inst->state_buf` (**1 MB**, `1u << 20`) and records
 `state_snap_len`; later chunks are served from that same snapshot, so an edit landing mid-fetch
 cannot splice two versions of a project together. JS compares the total against
-`state_snap_len` and writes **nothing** on a mismatch.
+`state_snap_len` and writes **nothing** on a mismatch. ⚠ JS's chunk loop is bounded
+(`STATE_CHUNK_BOUND` = 32 × 32 KB in `ui_dsp_bridge.mjs`) — raise it with `state_buf`, or a
+project the DSP serves whole arrives short and is never written.
+
+**Too big to save.** A serialization that does not fit `state_buf` is refused (a prefix would load
+as a smaller project): chunk 0 returns empty, `state_dirty` stays set, and **`save_refused`** reads
+1 — a condition, cleared by the next chunk-0 serialization that fits (or a load), never by reading
+it. The refusal logs once, on the 0→1 edge. JS reads the flag in the poll's bulk read one poll after
+an empty attempt, shows PROJECT TOO BIG, and backs off: no new attempt (so no new SPI-thread
+serialize) until there has been input since or the stop edge forces one. The deliberate refusals
+(`awaiting_select`, version mismatch) never set it. ⚠ The synchronous `save` path
+(`seq8_save_state`: Quit, Suspend, snapshot) writes straight to a file and has no such limit.
+
+A `host_write_file` that returns false is kept (`S.pendingStateWrite`) and retried once a second,
+at most five times, with one SAVE FAILED card per episode — the DSP has already marked the state
+clean by then, so nothing else would retry it.
 
 ⚠⚠ **Why chunked, and the trap it closes.** A single `get_param` crosses the shadow parameter
 transport, whose value buffer is `SHADOW_PARAM_VALUE_LEN` = **65536** — *not* the size of

@@ -150,6 +150,12 @@ the section into a versioned heading at release time.
   the notes inside the loop (on drum lanes and ALL LANES too, each lane in its own
   loop), and linked automation moves with them. Beat Stretch no longer erases
   notes outside the loop.
+- **A project too big to save now says so, and the limit is four times larger.**
+  A very full project could pass the save limit and silently stop saving as you
+  went. The limit is now about 1 MB, and past it a notice reads PROJECT TOO BIG /
+  NOT SAVED / REMOVE SOME CLIPS; once it fits again it saves and says PROJECT
+  SAVED. A save that fails to write (storage full) is retried and reported as
+  SAVE FAILED / CHECK STORAGE.
 - **Launching from stock's Tools menu is about four seconds quicker.** After
   Schwung's 09-26 update the launcher waited out a timeout on every launch, with
   the Tools menu still on screen and scrollable; it now moves straight on.

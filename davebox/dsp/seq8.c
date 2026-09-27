@@ -1347,10 +1347,16 @@ typedef struct {
      * thread only ever sets state_dirty. Sized for a full project INCLUDING
      * its automation — the serializer refuses rather than truncates if this is
      * ever exceeded, and the chunked readback means the transport no longer
-     * caps it. */
-    char    state_buf[262144];
+     * caps it. 1 MB: a project of dense clips passed the old 256 KB and was
+     * refused with nothing on screen. JS's chunk loop bound must cover it. */
+    char    state_buf[1u << 20];
     uint8_t state_dirty;
     uint32_t state_snap_len;      /* bytes of state_buf held by the current chunked snapshot */
+    /* The last chunk-0 serialization did not fit state_buf. A CONDITION, not an
+     * event: set by the refusal, cleared by the next serialization that fits,
+     * never by being read. JS reads it (get_param save_refused) to tell the
+     * user, and to stop asking again until something has changed. */
+    uint8_t  save_refused;
 
     /* Per-parameter automation (Front 3). Resident pool — see
      * seq8_param_auto.c for the model. Serialized as a section of the one
@@ -7117,14 +7123,26 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
             long _pos = ftell(_fp);
             fclose(_fp);
             if (_pos < 0 || _pos >= (long)(sizeof(inst->state_buf) - 1)) {
-                /* Refuse rather than serve a prefix. state_buf is sized for a
-                 * full project including automation, so this means something
-                 * has grown past what the format anticipated — the store's own
-                 * caps should have prevented it. */
-                seq8_ilog(inst, "state_chunk: serialization exceeded state_buf; refusing");
+                /* Refuse rather than serve a prefix: a cut blob loads as a
+                 * silently smaller project. state_dirty stays set — nothing was
+                 * saved — and save_refused tells JS WHY chunk 0 came back empty,
+                 * which it otherwise cannot tell from "nothing to save".
+                 * Logged on the EDGE only: this runs on the SPI thread, and JS
+                 * may ask again before the user has shrunk anything. The size
+                 * is the LIMIT: fmemopen stops counting at its buffer, so the
+                 * real length is unknown here, only that it is larger. */
+                if (!inst->save_refused) {
+                    char _m[96];
+                    snprintf(_m, sizeof(_m),
+                             "state_chunk: serialization exceeded state_buf (over %u bytes); refusing",
+                             (unsigned)(sizeof(inst->state_buf) - 1));
+                    seq8_ilog(inst, _m);
+                }
+                inst->save_refused = 1;
                 inst->state_buf[0] = '\0';
                 return 0;
             }
+            inst->save_refused = 0;
             inst->state_buf[_pos] = '\0';
             inst->state_snap_len = (uint32_t)_pos;
             /* NOT marked clean here: that happens when the LAST chunk is
@@ -7211,6 +7229,10 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     }
     if (!strcmp(key, "state_dirty"))
         return snprintf(out, out_len, "%d", (int)inst->state_dirty);
+    /* save_refused: 1 while the project is too big for state_buf (the last
+     * chunk-0 attempt was refused on size). Reading it changes nothing. */
+    if (!strcmp(key, "save_refused"))
+        return snprintf(out, out_len, "%d", inst ? (int)inst->save_refused : 0);
     if (!strcmp(key, "pad_dispatch_muted"))
         return snprintf(out, out_len, "%d", inst ? (int)inst->pad_dispatch_muted : 0);
     if (!strcmp(key, "padmap_sig")) {

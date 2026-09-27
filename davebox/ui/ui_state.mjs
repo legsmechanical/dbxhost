@@ -510,6 +510,17 @@ export const S = {
      * and a one-shot "save at the next poll" raised at the Record-off edge. */
     lastInputTick: 0,
     saveNowOnce: false,
+    /* The project is too big to save (the DSP refused it on size): which
+     * project, and the input tick at the refusal — no new attempt until there
+     * has been input since. saveAwaitVerdict: the uuid of an attempt that came
+     * back empty, judged on the next poll. */
+    saveRefused: false,
+    saveRefusedUuid: '',
+    saveRefusedInputTick: 0,
+    saveAwaitVerdict: '',
+    /* A state write host_write_file refused: {uuid, path, blob, tries, at},
+     * retried until it lands or SAVE_RETRY_MAX. */
+    pendingStateWrite: null,
     stepEditVel: 100,
     stepEditGate: 12,
     stepEditNudge: 0,
