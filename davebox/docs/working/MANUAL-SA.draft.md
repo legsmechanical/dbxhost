@@ -2034,7 +2034,7 @@ project, 32 slots:
   longer exists, the screen says **Select project** until you tap a pad.
 - **Tap a project** to select it; turn the jog to choose a row, click to select.
   While a project loads, the lights go dark and a newly dealt Dave fills the screen
-  under its name. Load stops playback first.
+  — including the project Move already has loaded when dAVEBOx starts. Load stops playback first.
   - **Rename** opens the on-screen keyboard and takes effect at once, even on the
     open project. Two projects can't share a name (**NAME TAKEN**).
   - **Color** lists the palette: the jog moves through it and the pad previews

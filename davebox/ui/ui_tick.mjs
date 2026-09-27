@@ -29,7 +29,7 @@ import {
 import { S, standDownBankDisplay, stepRevealAvailable } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { tickPrefetch, dget, applyNewProjectSeed } from './ui_dsp_bridge.mjs';
-import { daveBoxTick, bannerDaveSync } from './ui_daves.mjs';
+import { daveBoxTick, bannerDaveSync, loadDaveTick } from './ui_daves.mjs';
 import { devSnapOpen, devSnapEnter, devSnapTick, DEVSNAP_HOLD_MS } from './ui_devsnap.mjs';
 import { automationTick, automationPollWarnings } from './ui_automation.mjs';
 import { morphTick } from './ui_snapmorph.mjs';
@@ -447,6 +447,7 @@ export function _tickImpl() {
     /* The bank header's [instrument]: one shadow read a second, or at once after
      * a track switch / instrument change (S.instrAbbrevAt = 0). Never per frame. */
     if (S.clockMs >= S.instrAbbrevAt) refreshInstrAbbrev();
+    loadDaveTick();
     checkBackHold();   /* self-managed Back: fire suspend once a held Back crosses the long-press threshold */
     checkShiftNoteHold();  /* Shift+Note/Session: the HOLD fires at the threshold, not on release */
 
@@ -920,7 +921,7 @@ export function _tickImpl() {
             parallelForgetPushed();
             reconcileParallelAll();
             S.stateLoading = false;
-            S.loadDave = null;          /* the load that dealt it is done */
+            /* The Dave stays until it has stood its minimum (loadDaveTick). */
             /* Load completion is an INPUT-STATE BARRIER for touch state. The
              * resync above blocks the tick for seconds, the shim's UI MIDI
              * ring is 64 slots with silent tail-drop (shadow_ui_midi_publish),

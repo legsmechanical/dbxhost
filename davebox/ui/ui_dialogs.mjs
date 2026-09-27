@@ -1376,6 +1376,11 @@ function _pppLoad(p, k) {
          * project is live, "Load" on the current one just closes the picker. */
         closeProjectPadPicker();
         if (S.awaitingProjectSelect) {
+            /* This IS a load, so it unwraps a Dave like every other (Josh,
+             * 2026-09-26: "make sure that a dave is unwrapped when opening a
+             * project that has its set already loaded"). Not on the Resume
+             * below: nothing loads there. */
+            S.loadDave = dealDave();
             /* The pick IS the load here, and checkProjectOpened stands down
              * while awaiting — so the "did Move open it" window is measured
              * from the pick, not from init. The switch path needs no such line:

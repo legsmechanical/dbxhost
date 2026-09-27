@@ -782,15 +782,16 @@ step('⭐ ONE LOADING SCREEN from Load to the project: LOADING / name / the stag
     cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
     const first = frame();
     if (/OPENING/.test(first)) throw new Error('the OPENING PROJECT pop-up is back: ' + first);
-    /* An ordinary load unwraps a Dave, and that screen is ONE header (Josh,
-     * 2026-09-24: "<project name> [Loading...]") — the stage line gave way. */
-    if (!/PROJECT 32 \[LOADING\.\.\.\]/.test(first))
-        throw new Error('the press did not raise "PROJECT 32 [LOADING...]": ' + first);
+    /* An ordinary load unwraps a Dave, and since 2026-09-26 the Dave stands
+     * ALONE (Josh: "take "project [x] loading" overlay off the dave") — no
+     * header, no name, no stage line: no text at all. */
+    if (S.loadDave === null) throw new Error('precondition: no Dave dealt');
+    if (first.trim()) throw new Error('text over the Dave at the press: ' + first);
     ticks(6);
     if (selectArms.indexOf(1) < 0) throw new Error('precondition: the switch never armed');
-    const handover = armFrames[armFrames.length - 1] || '';
-    if (!/PROJECT 32 \[LOADING\.\.\.\]/.test(handover))
-        throw new Error('the frame left up for the host is not "PROJECT 32 [LOADING...]": ' + handover);
+    const handover = armFrames[armFrames.length - 1];
+    if (handover === undefined) throw new Error('no frame captured at the handover');
+    if (handover.trim()) throw new Error('text over the Dave left up for the host: ' + handover);
 });
 
 step('⭐ LOAD blanks EVERY LED at the press and keeps them dark while it saves (Josh, 2026-09-24)', () => {
@@ -827,7 +828,7 @@ step('⭐ LOAD blanks EVERY LED at the press and keeps them dark while it saves 
     const saving = litNow();
     S.pendingProjectSwitch = _sw;
     if (saving.length) throw new Error('relit while saving: ' + saving.slice(0, 8).join(' '));
-    if (!/LOADING/.test(frame())) throw new Error('the OLED lost the loading screen');
+    if (S.loadDave === null || frame().trim()) throw new Error('the OLED lost the Dave: ' + frame());
     ticks(6);
 });
 
@@ -846,7 +847,7 @@ step('⭐ an ordinary LOAD unwraps a Dave: dealt at the press, recorded in the a
     if (!(idx >= 0 && idx < DAVES.length)) throw new Error('no Dave dealt at the press: ' + idx);
     const seen = (files.get(SEEN) || '').split('\n');
     if (seen.indexOf(String(DAVES[idx].n)) < 0) throw new Error('the dealt Dave was not recorded: ' + JSON.stringify(seen));
-    if (!/PROJECT 32/.test(frame())) throw new Error('the loading frame lost the project name: ' + frame());
+    if (/PROJECT 32|LOADING/.test(frame())) throw new Error('the name band is back over the Dave: ' + frame());
     ticks(6);
     if (S.loadDave !== idx) throw new Error('the Dave changed or vanished during the handover');
 });
@@ -964,6 +965,7 @@ step('⚠ CONTROL: the already-current pad asks for NOTHING', () => {
     boot(P, 'Project 1');
     hostPublish(P, 'Project 1', 0, P);
     ticks(40);
+    S.loadDave = null;                            /* a Dave left by an earlier step's load */
     S.pendingOpenProjectPicker = false;
     files.delete(INTENDED);
     S.projectPadPicker = null;
@@ -974,6 +976,41 @@ step('⚠ CONTROL: the already-current pad asks for NOTHING', () => {
     ticks(6);
     if (files.has(INTENDED))
         throw new Error('the current-pad shortcut wrote a request: ' + JSON.stringify(files.get(INTENDED)));
+    /* ...and in a LIVE session that pad is Resume: nothing loads, no Dave. */
+    if (S.loadDave !== null) throw new Error('Resume on the open project dealt a Dave');
+});
+
+step('⭐⭐ picking the project whose set Move ALREADY holds, at session start, unwraps a Dave too — and it stands its minimum (Josh, 2026-09-26)', () => {
+    /* "make sure that a dave is unwrapped when opening a project that has its
+     * set already loaded after davebox launch." That pick is a load (the
+     * already-current fast path: Move is asked for nothing) — it used to show
+     * the plain LOADING screen and deal nothing. */
+    const SEEN = '/data/UserData/dbx-host/daves-seen.txt';
+    boot(P, 'Project 1');
+    hostPublish(P, 'Project 1', 0, P);
+    ticks(40);
+    files.delete(SEEN);
+    S.loadDave = null;
+    S.awaitingProjectSelect = true;               /* select-before-load: nothing loaded yet */
+    S.pendingOpenProjectPicker = false; S.projectPadPicker = null;
+    dialogs.openProjectPadPicker();
+    padTap(0);                                    /* pad 0 IS the set Move holds */
+    ticks(2);
+    cc(JOG_CLICK, 127); cc(JOG_CLICK, 0);
+    const idx = S.loadDave;
+    if (!(idx >= 0 && idx < DAVES.length)) throw new Error('no Dave dealt on the already-loaded pick: ' + idx);
+    if ((files.get(SEEN) || '').split('\n').indexOf(String(DAVES[idx].n)) < 0) throw new Error('not recorded in the album');
+    if (!S.pendingSetLoad && !S.stateLoading) throw new Error('precondition: the pick did not load');
+    if (frame().trim()) throw new Error('text over the Dave: ' + frame());
+    /* Let the load finish, well inside the minimum (11 ms a tick): still up. */
+    for (let g = 0; g < 60 && (S.stateLoading || S.pendingSetLoad); g++) ticks(1);
+    if (S.stateLoading || S.pendingSetLoad) throw new Error('precondition: the load never finished');
+    if (S.clockMs - S.loadDaveAt >= 2000) throw new Error('precondition: the load outlasted the minimum, the next check proves nothing');
+    if (S.loadDave !== idx) throw new Error('the Dave went with the load — it flashed');
+    if (frame().trim()) throw new Error('the session came back over the Dave: ' + frame());
+    /* ...then it goes once it has stood 2 s. */
+    ticks(Math.ceil(2000 / 11) + 2);
+    if (S.loadDave !== null) throw new Error('the Dave outstayed its minimum');
 });
 
 step('⭑ RETRY re-issues the SAME request (the verdict screen has no uuid of its own)', () => {
