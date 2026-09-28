@@ -155,6 +155,20 @@ void shadow_forward_external_cc_to_out(void);
 /* Inject shadow UI MIDI output into the mailbox before ioctl. */
 void shadow_inject_ui_midi_out(void);
 
+/* Outbound (shadow_ui -> MIDI_OUT) counters, cumulative since launch. Written
+ * by shadow_inject_ui_midi_out on the SPI callback, read by the shim's 5 s
+ * timing report — REAL globals: the carry header's counters are per-TU
+ * statics, and a reader in another file saw its own zeros forever (upstream
+ * 82943c5f). `placed` is the positive control: zeros everywhere mean nothing
+ * unless something was placed. `repeated` = packets of ours still in the
+ * mailbox a frame later (cleared, never sent twice). */
+extern volatile uint32_t shim_ui_midi_out_placed;
+extern volatile uint32_t shim_ui_midi_out_drops;
+extern volatile uint32_t shim_ui_midi_out_repeated;
+extern volatile uint32_t shim_ui_midi_out_foreign;
+extern volatile uint32_t shim_ui_midi_out_retries;
+extern volatile uint32_t shim_ui_midi_out_unretryable;
+
 /* Drain MIDI-to-DSP buffer from shadow UI and dispatch to chain slots. */
 void shadow_drain_ui_midi_dsp(void);
 

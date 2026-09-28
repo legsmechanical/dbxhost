@@ -9907,6 +9907,17 @@ static void *spi_timing_logger_thread(void *arg)
             unified_log("spi_timing", LOG_LEVEL_DEBUG,
                 "UI-MIDI ring drops: sticky=%u yield=%u",
                 ui_midi_drop_sticky, ui_midi_drop_yield);
+            /* The OUTBOUND side (shadow_ui -> MIDI_OUT, the carry). `placed` is
+             * the positive control: a window of zeros means nothing unless
+             * something was placed. `drops` = refused by a full carry,
+             * `repeated` = our packets still in the mailbox a frame later
+             * (cleared, not sent twice), `foreign` = Move's own cable-2 packets
+             * seen while a message of ours was going out. Cumulative. */
+            unified_log("spi_timing", LOG_LEVEL_DEBUG,
+                "UI-MIDI out: placed=%u drops=%u repeated=%u foreign=%u retries=%u unretryable=%u",
+                shim_ui_midi_out_placed, shim_ui_midi_out_drops,
+                shim_ui_midi_out_repeated, shim_ui_midi_out_foreign,
+                shim_ui_midi_out_retries, shim_ui_midi_out_unretryable);
             /* The param LANE. `drained` is cumulative since launch (the delta
              * between two lines 5 s apart is the rate); `max` is the most
              * records ever applied in ONE frame, and `bytes_max` the deepest

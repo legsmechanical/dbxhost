@@ -13,6 +13,8 @@
 #include "shadow_overlay.h"  /* MIDI channel indicator globals */
 #include "host/surface_trace.h"
 #include "shadow_midi_coalesce.h"
+#include "ui_midi_out_ring.h"
+#include "ui_midi_out_carry.h"
 
 /* ============================================================================
  * External cable-2 dispatch ring
@@ -523,37 +525,57 @@ void shadow_forward_external_cc_to_out(void)
  * Shadow UI MIDI inject/drain
  * ============================================================================ */
 
-/* Inject shadow UI MIDI out into mailbox before ioctl. */
-void shadow_inject_ui_midi_out(void)
+/* Outbound counters — see shadow_midi.h. */
+volatile uint32_t shim_ui_midi_out_placed = 0;
+volatile uint32_t shim_ui_midi_out_drops = 0;
+volatile uint32_t shim_ui_midi_out_repeated = 0;
+volatile uint32_t shim_ui_midi_out_foreign = 0;
+volatile uint32_t shim_ui_midi_out_retries = 0;
+volatile uint32_t shim_ui_midi_out_unretryable = 0;
+
+/* Packets from shadow_ui that did not fit in a previous frame's MIDI_OUT.
+ * See ui_midi_out_carry.h for why they now have somewhere to live
+ * (upstream #364 and its 1.5 follow-ups, ported as the v1.5.0 end state). */
+static ui_midi_carry_t ui_midi_carry;
+
+static void ui_midi_out_ingest(shadow_midi_out_t *midi_out_shm)
 {
-    shadow_midi_out_t *midi_out_shm = *host_shadow_midi_out_shm;
-    static uint8_t last_ready = 0;
+    if (ui_midi_out_used(midi_out_shm) == 0) return;
 
-    if (!midi_out_shm) return;
-    if (midi_out_shm->ready == last_ready) return;
+    /* Backpressure: leave the SHM ring alone while the carry is deep. It
+     * fills, js_shadow_midi_send() starts returning false, and a caller that
+     * paces on that return value is pacing on the actual mailbox. read_idx is
+     * NOT committed — this snapshot is deferred, not skipped. */
+    if (!ui_midi_carry_wants_more(&ui_midi_carry)) return;
 
-    last_ready = midi_out_shm->ready;
+    /* THE WHOLE SNAPSHOT FITS, OR WE TAKE NONE OF IT: the carry drops the
+     * NEWEST packet when full, one at a time, so an overrun would leave a
+     * message's head queued and its tail gone — a truncated SysEx. Deferring
+     * costs latency, never a corrupt message.
+     *
+     * ONE snapshot of the producer's index, for the capacity test AND the
+     * copy; then a barrier, because ARM64 may reorder the index load and the
+     * byte loads, and a copy of bytes the producer had not yet written is a
+     * corrupt packet (upstream 77005ad9). */
+    uint16_t copy_len = ui_midi_out_used(midi_out_shm);
+    __sync_synchronize();
+    {
+        int free_bytes = UI_MIDI_CARRY_BYTES - ui_midi_carry.len;
+        if ((int)copy_len > free_bytes) return;
+    }
+
     if (host_init_led_queue) host_init_led_queue();
 
-    /* Snapshot buffer first, then reset write_idx.
-     * Copy before resetting to avoid a race where the JS process writes
-     * new data between our reset and memcpy. */
-    int snapshot_len = midi_out_shm->write_idx;
+    /* Copy, then RELEASE — and nothing else is written to the segment. The
+     * consumer owns read_idx alone; write_idx and the buffer belong to
+     * shadow_ui, a different process. The old code here reset write_idx and
+     * memset the buffer after copying, erasing any packet shadow_ui appended
+     * in between — after it had already told its caller "sent". */
     uint8_t local_buf[SHADOW_MIDI_OUT_BUFFER_SIZE];
-    int copy_len = snapshot_len < (int)SHADOW_MIDI_OUT_BUFFER_SIZE
-                 ? snapshot_len : (int)SHADOW_MIDI_OUT_BUFFER_SIZE;
-    if (copy_len > 0) {
-        memcpy(local_buf, midi_out_shm->buffer, copy_len);
-    }
-    __sync_synchronize();
-    midi_out_shm->write_idx = 0;
-    memset(midi_out_shm->buffer, 0, SHADOW_MIDI_OUT_BUFFER_SIZE);
+    ui_midi_out_copy(midi_out_shm, local_buf, copy_len);
+    ui_midi_out_commit(midi_out_shm, copy_len);
 
-    /* Inject into shadow_mailbox at MIDI_OUT_OFFSET */
-    uint8_t *midi_out = host_shadow_mailbox + MIDI_OUT_OFFSET;
-
-    int hw_offset = 0;
-    for (int i = 0; i < copy_len; i += 4) {
+    for (int i = 0; i < (int)copy_len; i += 4) {
         uint8_t cin = local_buf[i];
         uint8_t cable = (cin >> 4) & 0x0F;
         uint8_t status = local_buf[i + 1];
@@ -567,20 +589,43 @@ void shadow_inject_ui_midi_out(void)
             continue;  /* Don't copy directly, will be flushed later */
         }
 
-        /* All other messages: copy directly to mailbox */
-        /* MIDI_OUT region is 80 bytes; display starts at 80. Don't write past. */
-        while (hw_offset < HW_MIDI_OUT_SIZE) {
-            if (midi_out[hw_offset] == 0 && midi_out[hw_offset+1] == 0 &&
-                midi_out[hw_offset+2] == 0 && midi_out[hw_offset+3] == 0) {
-                break;
-            }
-            hw_offset += 4;
-        }
-        if (hw_offset >= HW_MIDI_OUT_SIZE) break;  /* Buffer full */
-
-        memcpy(&midi_out[hw_offset], &local_buf[i], 4);
-        hw_offset += 4;
+        /* Everything else goes through the carry — including packets that
+         * would have fit this frame. Placing some here and queueing the rest
+         * would put this frame's packets AHEAD of a message still draining
+         * from the last one. One queue, one order. (It used to be copied
+         * straight into free mailbox slots, and whatever did not fit this
+         * frame was DROPPED — a sustain release or a SysEx tail, gone.) */
+        ui_midi_carry_push(&ui_midi_carry, &local_buf[i]);
     }
+}
+
+/* Inject shadow UI MIDI out into mailbox before ioctl. */
+void shadow_inject_ui_midi_out(void)
+{
+    shadow_midi_out_t *midi_out_shm = *host_shadow_midi_out_shm;
+
+    if (!midi_out_shm) return;
+
+    uint8_t *midi_out = host_shadow_mailbox + MIDI_OUT_OFFSET;
+
+    /* ONE DRAIN PER FRAME, after this frame's packets are taken in, on every
+     * frame, JS or no JS: the drain opens by clearing LAST frame's packets of
+     * ours still sitting in the mailbox (the post-ioctl sync copies MIDI_OUT
+     * back from hardware, so a packet Move did not overwrite would otherwise
+     * go out twice — for a SysEx, a corrupt message). A second drain in the
+     * same frame would find the first one's packets and wipe them unsent
+     * (upstream b230987d). The pace is the compile-time
+     * UI_MIDI_CARRY_PACKETS_PER_FRAME; upstream's control-block pace and
+     * foreign publish serve the E16 and are not carried here. */
+    ui_midi_out_ingest(midi_out_shm);
+
+    ui_midi_carry_drain(&ui_midi_carry, midi_out, HW_MIDI_OUT_SIZE);
+    shim_ui_midi_out_drops = (uint32_t)ui_midi_carry.drops;
+    shim_ui_midi_out_placed = (uint32_t)ui_midi_carry_placed_count();
+    shim_ui_midi_out_repeated = (uint32_t)ui_midi_carry_stranded_count();
+    shim_ui_midi_out_foreign = (uint32_t)ui_midi_carry_foreign_count();
+    shim_ui_midi_out_retries = (uint32_t)ui_midi_carry_retry_count();
+    shim_ui_midi_out_unretryable = (uint32_t)ui_midi_carry_unretryable_count();
 }
 
 /* Drain MIDI inject buffer into Move's MIDI_IN (post-ioctl).

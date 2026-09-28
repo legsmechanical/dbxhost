@@ -680,9 +680,13 @@ typedef struct shadow_midi_out_t {
      * costs nothing — it takes one of the reserved bytes, so sizeof is
      * unchanged and both mappers (shadow_ui.c:83, schwung_shim.c:3417) use
      * sizeof. */
-    volatile uint16_t write_idx;     /* Shadow UI increments after writing */
-    volatile uint8_t ready;          /* Toggle to signal new data */
-    volatile uint8_t reserved[1];
+    /* A single-producer single-consumer RING since upstream 988ed244: both
+     * indices are free-running byte counts, the producer (shadow_ui) owns
+     * write_idx and the bytes, the consumer (the shim) owns read_idx alone and
+     * never writes the buffer. read_idx took the old `ready` + reserved byte,
+     * so sizeof is unchanged. See ui_midi_out_ring.h. */
+    volatile uint16_t write_idx;     /* producer: bytes ever written (mod 2^16) */
+    volatile uint16_t read_idx;      /* consumer: bytes ever taken (mod 2^16) */
     uint8_t buffer[SHADOW_MIDI_OUT_BUFFER_SIZE];  /* USB-MIDI packets (4 bytes each) */
 } shadow_midi_out_t;
 
@@ -701,12 +705,14 @@ _Static_assert((1ull << (8 * sizeof(((shadow_midi_out_t *)0)->write_idx))) >
  * to this margin, and an LED flood can never crowd out external MIDI. */
 #define SHADOW_MIDI_OUT_EXT_HEADROOM 64   /* bytes = 16 packets */
 
-/* Does one 4-byte packet for `cable` fit at `write_idx`? The one admission
- * rule, shared by the writer (shadow_ui.c js_shadow_midi_send) and its test. */
-static inline int shadow_midi_out_admits(uint16_t write_idx, int cable) {
-    int limit = SHADOW_MIDI_OUT_BUFFER_SIZE -
-                (cable == 0 ? SHADOW_MIDI_OUT_EXT_HEADROOM : 0);
-    return (int)write_idx + 4 <= limit;
+/* Does a `len`-byte message for `cable` fit, with `free_bytes` of ring room
+ * left? The one admission rule, shared by the writer (shadow_ui.c
+ * js_shadow_midi_send) and its test: cable 0 may not take the last
+ * SHADOW_MIDI_OUT_EXT_HEADROOM bytes. Whole message or nothing — the writer
+ * never lands a prefix (a truncated SysEx is a corrupt one). */
+static inline int shadow_midi_out_admits(int free_bytes, int cable, int len) {
+    int room = free_bytes - (cable == 0 ? SHADOW_MIDI_OUT_EXT_HEADROOM : 0);
+    return len > 0 && len <= room;
 }
 
 /*
