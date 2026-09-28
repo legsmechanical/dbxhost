@@ -29,7 +29,7 @@
 # Everything else under $DBX_DIR goes, and so does everything an install put
 # anywhere else: the root-owned shim and boot-recovery unit (through our own
 # blessed helper), the boot-selector row (handing `default` back to schwung if
-# it named us), stock's preset-name cache, the dAVEBOx Tools module and, LAST,
+# it named us), the dAVEBOx Tools module and, LAST,
 # this module.
 #
 # ORDER is the safety argument:
@@ -65,7 +65,6 @@ SA_MOD_DIR="$STOCK_DIR/modules/tools/davebox-sa"
 HEAL="$MOD_DIR/bin/heal"
 SA_HEAL="$SA_MOD_DIR/bin/heal"
 LIBRARY="$DBX_DIR/sets/library"
-PRESET_CACHE="$STOCK_DIR/cache/davebox-presetnames"
 OPEN_TOOL_CMD="$STOCK_DIR/open_tool_cmd.json"
 
 # Top-level names under $DBX_DIR that are the user's, never removed. sets/ is
@@ -111,7 +110,7 @@ is_kept_in_sets() {
 }
 
 anything_installed() {
-    [ -d "$SA_MOD_DIR" ] || [ -d "$BOOT_ROOT/davebox" ] || [ -d "$PRESET_CACHE" ] ||
+    [ -d "$SA_MOD_DIR" ] || [ -d "$BOOT_ROOT/davebox" ] ||
         [ -e "$SHIM_PATH" ] || [ -e "$UNIT_PATH" ] && return 0
     [ -d "$DBX_DIR" ] || return 1
     _found=1
@@ -200,8 +199,11 @@ step_boot_target() {
 
 step_stock_leftovers() {
     say "Stock Schwung leftovers:"
-    [ -d "$PRESET_CACHE" ] && act "remove $PRESET_CACHE" rm -rf "$PRESET_CACHE"
-    if grep -q 'davebox' "$OPEN_TOOL_CMD" 2>/dev/null; then
+    # stock cache/davebox-presetnames is dAVEBOx LEGACY's: ours lives in $DBX_DIR/cache
+    # and goes with the rest of the install. Never touch the stock one.
+    # Only OUR tool ids: dAVEBOx Legacy is tool_id "davebox", and a pending
+    # command for it is not ours to delete.
+    if grep -Eq '"(davebox-sound|davebox-sa)"' "$OPEN_TOOL_CMD" 2>/dev/null; then
         act "remove a pending dAVEBOx open_tool_cmd.json" rm -f "$OPEN_TOOL_CMD"
     fi
     for _f in "$SHM_DIR"/dbxhost-* "$SESSION_LOCK"; do
