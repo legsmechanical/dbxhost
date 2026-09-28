@@ -1251,8 +1251,12 @@ Supported condition fields:
 
 Visibility is evaluated dynamically; hidden entries are removed from list navigation and knob mappings for that level.
 A condition's `param` does not need a knob of its own. A condition declared on a child level is read
-for the instance the grid is showing: `{ "param": "type" }` on a `child_prefix: "pad"` level reads
-`pad3_type` while pad 3 is shown.
+for the instance the grid is showing when the gate is per-instance. **List the key on the level** to
+make it so — that is the rule the condition itself is evaluated by: `{ "param": "type" }` on a
+`child_prefix: "pad"` level that lists `type` reads `pad3_type` while pad 3 is shown. (The gate lane
+also treats a key as per-instance when the module declares the concrete key, `pad3_type`, but the
+evaluator does not, so do not rely on that alone.) A key the level does not list is module-wide and
+read bare (DR32's `ui_engine`, which describes the focused pad and is served under that one name).
 
 ### Child Selectors (for repeated elements)
 
