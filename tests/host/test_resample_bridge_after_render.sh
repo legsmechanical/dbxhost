@@ -29,7 +29,7 @@ n=$(printf '%s\n' "$bridge" | grep -c . || true)
 # post_fn must run before the hooked ioctl returns, or "after the render" is
 # after Move has already read the mailbox and Resample gets the jack.
 lib=src/lib/schwung_spi_lib.c
-post=$(grep -n 'g_spi.post_fn(g_spi.ctx' "$lib" | head -1 | cut -d: -f1)
+post=$(grep -n 'g_spi.post_fn(g_spi.ctx' "$lib" | sed -n 1p | cut -d: -f1)
 ret=$(awk -v p="$post" 'NR>p && /return ret;/ {print NR; exit}' "$lib")
 [ -n "$post" ] && [ -n "$ret" ] || { echo "FAIL: could not find post_fn / return in $lib"; exit 1; }
 
