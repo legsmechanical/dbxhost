@@ -35,6 +35,7 @@
 #include "host/js_host_common.h"
 #include "host/shadow_midi_inject_writer.h"
 #include "host/ui_midi_out_ring.h"
+#include "host/ui_midi_dsp_ring.h"
 #include "../host/unified_log.h"
 #include "host/schwung_trace.h"
 #include "host/surface_trace.h"   /* Phase 2: JS-side OTLP spans (js.tick, param.get) */
@@ -1602,21 +1603,10 @@ static JSValue js_shadow_send_midi_to_dsp(JSContext *ctx, JSValueConst this_val,
     uint8_t slot_tag = 0;
     if (slot >= 0 && slot < SHADOW_CHAIN_INSTANCES)
         slot_tag = (uint8_t)(slot + 1);
-    int write_offset = shadow_midi_dsp->write_idx;
-    int dropped = 0;
-    if (write_offset + 4 <= SHADOW_MIDI_DSP_BUFFER_SIZE) {
-        shadow_midi_dsp->buffer[write_offset] = msg[0];
-        shadow_midi_dsp->buffer[write_offset + 1] = msg[1];
-        shadow_midi_dsp->buffer[write_offset + 2] = msg[2];
-        shadow_midi_dsp->buffer[write_offset + 3] = slot_tag;
-        shadow_midi_dsp->write_idx = (uint16_t)(write_offset + 4);
-    } else {
-        dropped = 1;
-    }
-
-    /* Signal shim that data is ready (barrier ensures buffer writes are visible first) */
-    __sync_synchronize();
-    shadow_midi_dsp->ready++;
+    /* One frame, pushed whole through the ring (ui_midi_dsp_ring.h): never a
+     * write to read_idx, never an in-place write the shim could see half-done. */
+    uint8_t frame[4] = { msg[0], msg[1], msg[2], slot_tag };
+    int dropped = ui_midi_dsp_push(shadow_midi_dsp, frame, 4) ? 0 : 1;
 
     /* Same "silent success" trap as js_shadow_midi_send: a caller that treats
      * this return as fire-and-forget will retry on JS_FALSE (or at least know
@@ -1632,9 +1622,9 @@ static JSValue js_shadow_send_midi_to_dsp(JSContext *ctx, JSValueConst this_val,
             last_report = now;
             unified_log("shadow_ui", LOG_LEVEL_DEBUG,
                         "shadow MIDI to DSP: buffer full, dropped %d packet(s) "
-                        "(%ld total) - more than %d bytes queued in one flush",
+                        "(%ld total) - more than %d bytes queued between drains",
                         dropped, shadow_midi_dsp_drops,
-                        SHADOW_MIDI_DSP_BUFFER_SIZE);
+                        UI_MIDI_DSP_CAPACITY);
         }
         return JS_FALSE;
     }

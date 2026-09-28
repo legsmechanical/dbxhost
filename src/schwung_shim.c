@@ -3315,7 +3315,6 @@ static uint8_t *display_live_shm = NULL;
 static shadow_midi_out_t *shadow_midi_out_shm = NULL;  /* MIDI output from shadow UI */
 static uint8_t last_shadow_midi_out_ready = 0;
 static shadow_midi_dsp_t *shadow_midi_dsp_shm = NULL;  /* MIDI to DSP from shadow UI */
-static uint8_t last_shadow_midi_dsp_ready = 0;
 static shadow_midi_inject_t *shadow_midi_inject_shm = NULL;  /* MIDI inject into Move's MIDI_IN */
 /* The TEST BUS's own surface-input ring (schwung-testd → here, dev-only).
  *
@@ -9914,10 +9913,11 @@ static void *spi_timing_logger_thread(void *arg)
              * (cleared, not sent twice), `foreign` = Move's own cable-2 packets
              * seen while a message of ours was going out. Cumulative. */
             unified_log("spi_timing", LOG_LEVEL_DEBUG,
-                "UI-MIDI out: placed=%u drops=%u repeated=%u foreign=%u retries=%u unretryable=%u",
+                "UI-MIDI out: placed=%u drops=%u repeated=%u foreign=%u retries=%u unretryable=%u dsp_discarded=%u",
                 shim_ui_midi_out_placed, shim_ui_midi_out_drops,
                 shim_ui_midi_out_repeated, shim_ui_midi_out_foreign,
-                shim_ui_midi_out_retries, shim_ui_midi_out_unretryable);
+                shim_ui_midi_out_retries, shim_ui_midi_out_unretryable,
+                shim_ui_midi_dsp_discarded);
             /* The param LANE. `drained` is cumulative since launch (the delta
              * between two lines 5 s apart is the rate); `max` is the most
              * records ever applied in ONE frame, and `bytes_max` the deepest

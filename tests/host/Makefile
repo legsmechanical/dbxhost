@@ -65,6 +65,8 @@ TARGETS = $(BUILD_DIR)/test_project_path \
           $(BUILD_DIR)/test_ui_midi_out_ring \
           $(BUILD_DIR)/test_ui_midi_out_carry \
           $(BUILD_DIR)/test_ui_midi_out_ring_threads \
+          $(BUILD_DIR)/test_ui_midi_dsp_ring \
+          $(BUILD_DIR)/test_ui_midi_dsp_ring_threads \
           $(BUILD_DIR)/test_midi_in_compact \
           $(BUILD_DIR)/test_master_fx_saved_state \
           $(BUILD_DIR)/test_json_compact \

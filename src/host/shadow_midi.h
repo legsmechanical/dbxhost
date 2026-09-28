@@ -171,6 +171,7 @@ extern volatile uint32_t shim_ui_midi_out_unretryable;
 
 /* Drain MIDI-to-DSP buffer from shadow UI and dispatch to chain slots. */
 void shadow_drain_ui_midi_dsp(void);
+extern volatile uint32_t shim_ui_midi_dsp_discarded;
 
 /* Drain MIDI inject buffer into Move's MIDI_IN (post-ioctl). */
 void shadow_drain_midi_inject(void);

@@ -14,6 +14,7 @@
 #include "host/surface_trace.h"
 #include "shadow_midi_coalesce.h"
 #include "ui_midi_out_ring.h"
+#include "ui_midi_dsp_ring.h"
 #include "ui_midi_out_carry.h"
 
 /* ============================================================================
@@ -808,30 +809,24 @@ int shadow_chain_midi_inject(const uint8_t *msg, int len)
     return 0;
 }
 
-/* Drain MIDI-to-DSP buffer from shadow UI and dispatch to chain slots. */
+/* Frames the MIDI-to-DSP drain released unread because the ring held a count
+ * no producer can leave (see ui_midi_dsp_take). Cumulative; on the shim's
+ * spi_timing line. Should stay 0. */
+volatile uint32_t shim_ui_midi_dsp_discarded = 0;
+
+/* Drain the MIDI-to-DSP ring from shadow UI and dispatch to chain slots.
+ * Takes everything queued and releases it; writes read_idx and nothing else in
+ * the segment (ui_midi_dsp_ring.h). */
 void shadow_drain_ui_midi_dsp(void)
 {
     shadow_midi_dsp_t *midi_dsp_shm = *host_shadow_midi_dsp_shm;
-    static uint8_t last_ready = 0;
-
     if (!midi_dsp_shm) return;
-    if (midi_dsp_shm->ready == last_ready) return;
 
-    last_ready = midi_dsp_shm->ready;
-
-    /* Snapshot buffer before resetting to avoid race with JS writer.
-     * Barrier ensures we see the buffer data that corresponds to the ready signal. */
-    __sync_synchronize();
-    int snapshot_len = midi_dsp_shm->write_idx;
     uint8_t local_buf[SHADOW_MIDI_DSP_BUFFER_SIZE];
-    int copy_len = snapshot_len < (int)SHADOW_MIDI_DSP_BUFFER_SIZE
-                 ? snapshot_len : (int)SHADOW_MIDI_DSP_BUFFER_SIZE;
-    if (copy_len > 0) {
-        memcpy(local_buf, midi_dsp_shm->buffer, copy_len);
-    }
-    __sync_synchronize();
-    midi_dsp_shm->write_idx = 0;
-    memset(midi_dsp_shm->buffer, 0, SHADOW_MIDI_DSP_BUFFER_SIZE);
+    uint32_t discarded = 0;
+    int copy_len = ui_midi_dsp_take(midi_dsp_shm, local_buf, &discarded);
+    if (discarded) shim_ui_midi_dsp_discarded += discarded;
+    if (copy_len == 0) return;
 
     static int midi_log_count = 0;
     int log_on = host_midi_out_log_enabled ? host_midi_out_log_enabled() : 0;

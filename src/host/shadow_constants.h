@@ -723,25 +723,20 @@ static inline int shadow_midi_out_admits(int free_bytes, int cable, int len) {
  * (legacy zero-pad), 1..N = deliver directly to slot tag-1.
  */
 typedef struct shadow_midi_dsp_t {
-    /* uint16_t, for the same reason as shadow_midi_out_t.write_idx above: the
-     * buffer is 512 bytes and this is a BYTE offset into it. As a uint8_t it
-     * saturated at 255, so the `write_offset + 4 <= SHADOW_MIDI_DSP_BUFFER_SIZE`
-     * bounds check in js_shadow_send_midi_to_dsp could never fire — a uint8_t
-     * cannot reach 512. At offset 252 the 65th packet of one flush wrapped
-     * write_idx 252 -> 0 (256 truncated to 8 bits), silently rewinding the
-     * buffer so later packets overwrote packet 1, and the shim's drain
-     * (shadow_midi.c:shadow_drain_ui_midi_dsp, `snapshot_len = write_idx`)
-     * then only ever saw `(4N mod 256)` bytes. Nothing counted the loss and
-     * js_shadow_send_midi_to_dsp still returned JS_TRUE either way. Found
-     * 2026-09-15 on-device: a load left a note held, and this ring was first
-     * suspected and cleared as the direct cause, but was lossy regardless and
-     * is fixed here as a latent copy of the already-fixed OUT-ring bug.
-     * Widening costs nothing — it takes one of the reserved bytes, so sizeof
-     * is unchanged and both mappers (shadow_ui.c, schwung_shim.c) use
-     * sizeof. */
-    volatile uint16_t write_idx;     /* Shadow UI increments after writing */
-    volatile uint8_t ready;          /* Toggle to signal new data */
-    volatile uint8_t reserved[1];
+    /* A single-producer single-consumer RING (ui_midi_dsp_ring.h), the same
+     * discipline as shadow_midi_out_t: both indices are free-running byte
+     * counts, the producer (shadow_ui) owns write_idx and the bytes, the
+     * consumer (the shim) owns read_idx alone and never writes the buffer.
+     * It replaced a write_idx + `ready` toggle whose drain reset write_idx to 0
+     * and memset the buffer while shadow_ui could be appending — erasing a
+     * frame the sender had been told was delivered. read_idx took `ready` and
+     * the reserved byte, so sizeof is unchanged.
+     *
+     * uint16 and free-running: before that, write_idx was a uint8_t BYTE
+     * OFFSET that could not reach 512, so the 65th frame of a flush wrapped
+     * it to 0 and overwrote frame 1 (found 2026-09-15). */
+    volatile uint16_t write_idx;     /* producer: bytes ever written (mod 2^16) */
+    volatile uint16_t read_idx;      /* consumer: bytes ever taken (mod 2^16) */
     uint8_t buffer[SHADOW_MIDI_DSP_BUFFER_SIZE];  /* MIDI frames (4 bytes each: status, d1, d2, slot tag) */
 } shadow_midi_dsp_t;
 
