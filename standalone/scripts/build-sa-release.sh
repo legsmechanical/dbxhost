@@ -63,6 +63,10 @@ cp -R "$BUILD_DIR/modules/chain" "$P/modules/chain"
 cp -R "$DAVEBOX_DIST" "$P/modules/tools/davebox-sound"
 cp "$HEAL_BIN" "$P/bin/heal"; chmod 755 "$P/bin/heal"
 printf '%s\n' "$SA_VERSION" > "$P/sa-version.txt"
+# A TEST build (0.0.x) ships with the debug log ON (Josh, 2026-09-28: "some
+# reasonable logging always on (even for testers)"). The log is capped
+# (src/host/unified_log.c), so this cannot fill a user's disk.
+case "$SA_VERSION" in 0.0.*) : > "$P/debug_log_on"; echo "test build $SA_VERSION: debug log on by default" ;; esac
 chmod +x "$P/scripts/"*.sh "$P/bless.sh" 2>/dev/null || true
 
 mkdir -p "$OUT"

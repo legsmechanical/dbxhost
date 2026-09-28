@@ -84,6 +84,9 @@ setsid --wait bash -c '
   DBX_DIR=/data/UserData/dbx-host
   HEAL=/data/UserData/schwung/modules/tools/davebox-sa/bin/heal   # the blessed helper (2026-09-05: inside the launcher module dir; no apostrophes in this body)
   LOG=$DBX_DIR/launch.log
+  # Capped: Move prints a memory line every minute into this log for the whole
+  # session, so past 1 MB it becomes launch.log.1 (one previous kept).
+  [ "$(wc -c < "$LOG" 2>/dev/null || echo 0)" -gt 1048576 ] && mv -f "$LOG" "$LOG.1"
   exec >>"$LOG" 2>&1
   echo "=== davebox host launch $(date) ==="
 

@@ -5161,6 +5161,12 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
 
     inst->sample_rate    = (g_host && g_host->sample_rate > 0)
                            ? (float)g_host->sample_rate : 44100.0f;
+    {   /* Capped, like the host's debug.log: past 1 MB this log becomes
+         * <name>.log.1 (one previous kept) before it is opened again. */
+        struct stat st;
+        if (stat(SEQ8_LOG_PATH, &st) == 0 && st.st_size > 1048576)
+            rename(SEQ8_LOG_PATH, SEQ8_LOG_PATH ".1");
+    }
     inst->log_fp         = fopen(SEQ8_LOG_PATH, "a");
 
     inst->rui_sel_lane  = -1;  /* remote-UI: melodic by default (calloc zeros the rest) */
