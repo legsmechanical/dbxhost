@@ -58,5 +58,14 @@ grep -q "B LAST" "$T/debug.log" && ok "B's last line landed in the NEW debug.log
 total=$(( $(wc -c < "$T/debug.log") + $(wc -c < "$T/debug.log.1" 2>/dev/null || echo 0) ))
 [ "$total" -le $((3 * CAP)) ] && ok "both files together stay bounded ($total bytes)" || bad "total $total"
 
+echo "a log deleted under a running writer is recreated (clearing the log to start fresh):"
+rm -f "$T/debug.log" "$T/debug.log.1"
+"$T/w" 400 D 2 >/dev/null &       # opens the file, then waits
+sleep 1
+rm -f "$T/debug.log"
+wait
+[ -f "$T/debug.log" ] && grep -q "D LAST" "$T/debug.log" && ok "the writer recreated debug.log and kept logging" \
+    || bad "the writer kept writing into the deleted file"
+
 [ $fail = 0 ] && echo "PASS: the unified log is capped, and every writer follows a rotation"
 exit $fail
