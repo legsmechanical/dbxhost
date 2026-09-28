@@ -179,8 +179,17 @@ command -v "$NM_BIN" >/dev/null 2>&1 || NM_BIN="nm"
 # inside the container — an override that is not forwarded on that command line
 # never arrives, which is how the first negative control of this very check
 # passed while demanding a compiler that was not used.
+# ⚠ `strings` comes from the builder's binutils: an arm64 builder (a Mac) has
+# the native one, an amd64 builder (CI) only the cross one. Picked like nm
+# above, and a missing tool is said as such, never read as "no version".
 EXPECT_GCC="${EXPECT_GCC:-12.2.0}"
-_got_gcc="$(strings "dist/${MODULE_ID}/dsp.so" 2>/dev/null | grep -m1 -oE '^GCC: \(.*\) [0-9.]+' | grep -oE '[0-9.]+$' || true)"
+STRINGS_BIN="${CROSS_PREFIX}strings"
+command -v "$STRINGS_BIN" >/dev/null 2>&1 || STRINGS_BIN="strings"
+if ! command -v "$STRINGS_BIN" >/dev/null 2>&1; then
+    echo "Error: no strings tool (${CROSS_PREFIX}strings or strings) — cannot verify the toolchain" >&2
+    exit 1
+fi
+_got_gcc="$("$STRINGS_BIN" "dist/${MODULE_ID}/dsp.so" 2>/dev/null | grep -m1 -oE '^GCC: \(.*\) [0-9.]+' | grep -oE '[0-9.]+$' || true)"
 if [ -z "$_got_gcc" ]; then
     echo "Error: dist/${MODULE_ID}/dsp.so carries no GCC version — cannot verify the toolchain" >&2
     exit 1
