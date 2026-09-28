@@ -59,6 +59,7 @@ void (*shadow_chain_process_fx)(void *instance, int16_t *buf, int frames) = NULL
 void (*shadow_chain_drain_sends)(void *instance, int32_t *const *accum,
                                  int n_sends, int frames, float slot_gain) = NULL;
 int (*shadow_chain_fx_requires_continuous)(void *instance) = NULL;
+int (*shadow_chain_synth_requires_continuous)(void *instance) = NULL;
 int (*shadow_chain_take_midi_tick_wake)(void *instance) = NULL;
 /* Run a message through a slot's MIDI FX and get the result back, sent nowhere.
  * ⚠ NULL-CHECK IT for the same reason as the wake above: this host can be
@@ -1495,6 +1496,8 @@ int shadow_inprocess_load_chain(void) {
         dlsym(shadow_dsp_handle, "chain_drain_sends");
     shadow_chain_fx_requires_continuous = (int (*)(void *))
         dlsym(shadow_dsp_handle, "chain_fx_requires_continuous");
+    shadow_chain_synth_requires_continuous = (int (*)(void *))
+        dlsym(shadow_dsp_handle, "chain_synth_requires_continuous");
     shadow_chain_take_midi_tick_wake = (int (*)(void *))
         dlsym(shadow_dsp_handle, "chain_take_midi_tick_wake");
     shadow_chain_midi_fx_apply = (int (*)(void *, const uint8_t *, int, uint8_t (*)[3], int *, int))
@@ -1508,6 +1511,8 @@ int shadow_inprocess_load_chain(void) {
             (void*)shadow_chain_fx_requires_continuous,
             (void*)shadow_chain_take_midi_tick_wake,
             (void*)shadow_chain_midi_fx_apply);
+    unified_log("shim", LOG_LEVEL_INFO, "chain dlsym: synth_keep_alive=%p",
+            (void*)shadow_chain_synth_requires_continuous);
 
     /* Determine boot state directory */
     char boot_state_dir[512];

@@ -735,6 +735,16 @@ typedef struct chain_instance {
      * module.json; shim must never park the slot as fx_idle so stateful FX
      * (loopers, modulated delays) keep advancing internal time during silence. */
     int fx_requires_continuous[MAX_AUDIO_FX];
+
+    /* 1 = the SYNTH must never be parked by the shim's silence-skip either.
+     * Set when the sound generator's module.json declares
+     * capabilities.requires_continuous_processing, and IMPLIED for any synth
+     * that consumes line input (synth_consumes_line_input): such a module's
+     * output follows a jack the host never inspects and it receives no MIDI,
+     * so once the shim parks it on silence nothing exists to wake it inside
+     * the ~0.5 s probe interval -- which reads to the user as the input being
+     * gated (upstream #515). */
+    int synth_requires_continuous;
     
     /*
      * Scratch for chain_mod_refresh_target_param_cache's parse.
