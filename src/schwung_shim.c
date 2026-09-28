@@ -710,6 +710,25 @@ static int shadow_slot_fx_idle[SHADOW_CHAIN_INSTANCES];
  * looper's write position otherwise stops during silence and the loop "only
  * returns when there's signal". SPI thread: a function-pointer call and one
  * pass over the block, no I/O, no locks. */
+static inline void shadow_slot_fx_track_idle(int s, const int16_t *fx_buf);
+
+/* Is this slot's FX chain PARKED (skipped) for this block? Every skip site
+ * asks here. A slot that parked BEFORE a continuous-processing FX was loaded
+ * into it would otherwise stay parked until audio arrived — the keep-alive in
+ * shadow_slot_fx_track_idle only runs when the chain runs (measured on device
+ * 2026-09-27: rrverb10 loaded into a silent, parked slot read 0 us of FX). */
+static inline int shadow_slot_fx_parked(int s)
+{
+    if (!(shadow_slot_fx_idle[s] && shadow_slot_idle[s])) return 0;
+    if (shadow_chain_fx_requires_continuous &&
+        shadow_chain_fx_requires_continuous(shadow_chain_slots[s].instance)) {
+        shadow_slot_fx_idle[s] = 0;
+        shadow_slot_fx_silence_frames[s] = 0;
+        return 0;
+    }
+    return 1;
+}
+
 static inline void shadow_slot_fx_track_idle(int s, const int16_t *fx_buf)
 {
     if (shadow_chain_fx_requires_continuous &&
@@ -2015,7 +2034,7 @@ slot_run_deferred_fx:
                sizeof(shadow_slot_fx_deferred[s]));
         shadow_slot_fx_deferred_valid[s] = 1;
     } else if (same_frame_fx && shadow_chain_process_fx) {
-        if (shadow_slot_fx_idle[s] && shadow_slot_idle[s]) {
+        if (shadow_slot_fx_parked(s)) {
             /* Both idle — FX output is silence */
             shadow_slot_fx_deferred_valid[s] = 1;
         } else {
@@ -2668,7 +2687,7 @@ static void shadow_inprocess_mix_from_buffer(void) {
                  * The Link Audio term that used to qualify this is gone with
                  * Move>Slot — a Move track is always peeled to its own bus
                  * (handled above), so it never gives the synth chain work. */
-                if (shadow_slot_fx_idle[s] && shadow_slot_idle[s]) continue;
+                if (shadow_slot_fx_parked(s)) continue;
 
                 /* Latency comp: delay the local synth output to match the
                  * Link Audio path before combining. The nudge in
@@ -2878,7 +2897,7 @@ skip_la_rebuild:
 
             /* Use deferred FX output if available (FX ran in post-ioctl) */
             if (shadow_slot_fx_deferred_valid[s]) {
-                if (shadow_slot_fx_idle[s] && shadow_slot_idle[s]) continue;
+                if (shadow_slot_fx_parked(s)) continue;
 
                 int16_t *fx_buf = shadow_slot_fx_deferred[s];
 
@@ -2910,7 +2929,7 @@ skip_la_rebuild:
                 accumulate_bus_sends(s, send_accum);
             } else if (shadow_slot_deferred_valid[s]) {
                 /* Fallback: FX not deferred — run inline (legacy path) */
-                if (shadow_slot_fx_idle[s] && shadow_slot_idle[s]) continue;
+                if (shadow_slot_fx_parked(s)) continue;
 
                 int16_t fx_buf[FRAMES_PER_BLOCK * 2];
                 memcpy(fx_buf, shadow_slot_deferred[s], sizeof(fx_buf));

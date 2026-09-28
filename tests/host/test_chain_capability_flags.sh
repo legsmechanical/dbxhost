@@ -42,4 +42,13 @@ if ! awk '/^static inline void shadow_slot_fx_track_idle/,/^}/' "$sh" | grep -q 
 else echo "  ok   that place honours requires_continuous_processing"; fi
 if [ "$calls" -lt 3 ]; then echo "  FAIL only $calls FX path(s) call shadow_slot_fx_track_idle (want 3)"; fail=1
 else echo "  ok   all $calls FX paths go through it"; fi
+# ...and a slot that parked BEFORE such an FX was loaded wakes: every skip asks
+# shadow_slot_fx_parked, which honours the flag (no bare idle&&idle skip left).
+bare="$(grep -c 'shadow_slot_fx_idle\[s\] && shadow_slot_idle\[s\]' "$sh" || true)"
+asks="$(grep -c 'if (shadow_slot_fx_parked(s))' "$sh" || true)"
+if [ "$bare" != 1 ]; then echo "  FAIL $bare bare fx-idle skip checks (want 1, inside shadow_slot_fx_parked)"; fail=1
+elif [ "$asks" -lt 4 ]; then echo "  FAIL only $asks skip sites ask shadow_slot_fx_parked (want 4)"; fail=1
+elif ! awk '/^static inline int shadow_slot_fx_parked/,/^}/' "$sh" | grep -q 'shadow_chain_fx_requires_continuous('; then
+  echo "  FAIL shadow_slot_fx_parked does not consult the flag"; fail=1
+else echo "  ok   all $asks skip sites wake a parked slot for a continuous FX"; fi
 [ $fail = 0 ] && echo "PASS: capability flag parse sites + the shim keep-alive" || { echo "FAIL: capability flags"; exit 1; }
