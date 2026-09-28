@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.1] — 2026-09-28 (test build, not in the Schwung catalog)
 ### Added (pending)
 - **Crop.** Touch knob 6 on the CLIP or DRUM LANE bank (knob 5 on ALL LANES) and
   click the jog: the loop becomes the whole clip — it moves to step 1 and

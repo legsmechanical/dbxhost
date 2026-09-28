@@ -179,7 +179,7 @@ Settings; dAVEBOx warns you if it's off.
 ## Open dAVEBOx
 
 Open Schwung's tool menu — **Shift + Step 13** (the star) — and choose
-**dAVEBOx**. The lights go out for a few seconds while Move restarts under the
+**dAVEBOx SA**. The lights go out for a few seconds while Move restarts under the
 dAVEBOx host, then you land on the **project picker**: one pad per project.
 
 - **Click the jog wheel** to load the project you had open last — its pad pulses
@@ -412,7 +412,7 @@ STORAGE** and tries again.
   official install, **your own Move sets included**.
 - **Suspend** keeps dAVEBOx running in the background. To come back, hold
   **Shift** and hold **Step 13** for half a second (or press Shift + Step 13 twice
-  quickly), or pick **dAVEBOx** in the Tools menu — everything is as you left it.
+  quickly), or pick **dAVEBOx SA** in the Tools menu — everything is as you left it.
 - If dAVEBOx is your boot default, hold **Back** at power-on and pick **Schwung**
   to go back.
 
