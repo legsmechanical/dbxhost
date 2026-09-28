@@ -53,6 +53,11 @@ func (app *App) handleHelpManual(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// /help frames this, and SecurityHeaders' X-Frame-Options: DENY would
+	// leave the frame "refused to connect" (seen on the device, 2026-09-28).
+	// SAMEORIGIN, as the module web UIs' assets do: cross-origin framing is
+	// still denied.
+	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 	w.Header().Set("Cache-Control", "no-cache")
 	http.ServeFile(w, r, app.helpManualPath())
 }

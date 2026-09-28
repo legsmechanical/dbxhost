@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/charlesvestal/schwung/schwung-manager/middleware"
 )
 
 // The manual writes its own cross-references as GitHub anchors ("see §16.2"
@@ -208,6 +210,13 @@ func TestHelpShowsTheHTMLManual(t *testing.T) {
 	}
 	if strings.Contains(body, "?doc=10-intro") {
 		t.Errorf("with manual.html: the chapter list is still shown")
+	}
+	// Through the real middleware: the frame only loads if the manual itself
+	// may be framed by its own origin.
+	mrec := httptest.NewRecorder()
+	middleware.SecurityHeaders(http.HandlerFunc(app.handleHelpManual)).ServeHTTP(mrec, httptest.NewRequest("GET", "/help/manual.html", nil))
+	if xfo := mrec.Header().Get("X-Frame-Options"); xfo != "SAMEORIGIN" {
+		t.Errorf("/help/manual.html X-Frame-Options = %q, want SAMEORIGIN (DENY blanks the Help frame)", xfo)
 	}
 	rec := get(app.handleHelpManual, "/help/manual.html")
 	if rec.Code != 200 || rec.Body.String() != doc || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
