@@ -222,7 +222,9 @@ in a single-process test. [[schwung-atomic-write-inode-is-the-only-pin]]
   builds one self-contained page from the draft (`tools/build_manual_html.mjs` +
   `tools/manual_template.html`) into `dist/manual/`. It ships as a **release download**
   (`release.yml` attaches `dAVEBOx-SA-manual.html` beside the module tarball), and CI builds it on
-  every push. Each screen names the manual heading it
+  every push. A reference copy is also committed at `docs/manual/dAVEBOx-SA-manual.html`
+  (Josh, 2026-09-28, "so i can reference them as i go"); it is a SNAPSHOT — refresh it with
+  `bash scripts/build_manual_html.sh docs/manual/dAVEBOx-SA-manual.html` when the draft changes. Each screen names the manual heading it
   illustrates; the renderer exits non-zero on a heading that no longer exists, so a renamed section
   shows up there — fix the screen's `section`, not the check.
 - ⭑ **The browser Help page IS the draft.** `scripts/gen_help.py` splits it (plus `QUICKSTART.md`)
