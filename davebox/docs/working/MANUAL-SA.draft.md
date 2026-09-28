@@ -14,7 +14,8 @@ effect chain, or an external synth on the USB-A port.
 dAVEBOx runs inside [Schwung](https://github.com/charlesvestal/schwung) and takes
 over Move's pads, knobs and screen while it's open. It uses Move's vocabulary —
 tracks and clips — and a **Like Move** note flags where something works as it does
-on Move.
+on Move. [Coming from Move](#coming-from-move) sums up what carries over and what's
+different.
 
 > 🚀 **New here?** Start with the [**Quick Start**](QUICKSTART.md): about fifteen
 > minutes from a new project to a looping pattern with effects and scenes. This
@@ -124,6 +125,45 @@ sequences them:
 | **Melodic** | Scale-snapped notes on the pads and steps — see [Melodic Clips](#6-melodic-clips) |
 | **Drum** | The pads become 32 drum lanes, each its own step sequence — see [Drum Clips](#7-drum-clips) |
 | **Conductor** | Plays no notes of its own; it transposes the other tracks live — see [The Conductor](#12-the-conductor) |
+
+## Coming from Move
+
+dAVEBOx borrows Move's ideas and most of its gestures, so much of what your hands
+already know works here.
+
+**Works as on Move:**
+
+- **Tracks, clips and the Note/Session button.** dAVEBOx calls the two views
+  **Track View** and **Session View**.
+- **Playing and placing notes:** the pads play in key and scale; press a pad then a
+  step (or hold a step, then press pads) to place notes. **Left / Right** move
+  between pages.
+- **Capture:** play first, then press Capture to keep it.
+- **Loop:** hold it to see the clip's pages on the step buttons; **Loop + jog**
+  changes the length.
+- **Automation:** turn a knob while recording. **Mute + touch** a knob switches its
+  automation off, **Delete + touch** clears it, and holding a step while you turn a
+  knob sets a value for that step. Holding Mute lights automated knobs red.
+- **Copy, Delete and Undo** work on steps and clips the same way.
+- **Shift + Step shortcuts** mostly sit where Move puts them: 1 your projects, 2
+  settings, 5 tempo, 6 metronome, 7 swing, 9 key & scale, 10 fixed velocity,
+  11 arpeggiator, 15 double the loop, 16 quantize.
+
+**Where dAVEBOx differs:**
+
+| On Move | In dAVEBOx |
+|---|---|
+| 4 tracks, chosen with the track buttons | **8 tracks**: tracks 1–4 play Move's instruments, 5–8 Schwung instruments. Choose one with **Shift + jog**, or **Shift + a bottom-row pad** in Track View — see [Selecting a track](#35-selecting-a-track) |
+| The buttons left of the pads select tracks | They launch the track's clips in Track View, and scenes in Session View |
+| Session Mode: a row per track, a column per scene, 8 clips per track | Session View: a **column** per track, a **row** per scene, **16 clips** per track, 4 rows at a time (**+ / −** scroll) — see [Arranging](#11-arranging) |
+| Slide a finger down a column to play a scene | Press a **side button** or a **step button** — see [Scenes](#112-scenes) |
+| The knobs play the selected device; the jog picks the device | The knobs play a **bank** — clip settings, sequencer effects, sound, macros, automation — and the jog walks the banks — see [Parameter banks](#36-parameter-banks) |
+| Hold a step: the jog sets length, Volume sets velocity | Hold a step: the knobs set pitch, length, velocity, nudge and more — see [Editing notes](#63-editing-notes) |
+| Browse a track's presets with the jog | On a Move track, open Move's own editor from the track's menu and browse there — see [Choosing a track's sound](#38-choosing-a-tracks-sound) |
+| Mute + a track button mutes; add Shift to solo | **Mute** / **Shift + Mute** in Track View; in Session View, **Mute + touch** a track's knob — see [Mute & solo](#113-mute--solo) |
+| Hold a track button and turn Volume | **Shift + Volume** sets the active track's volume; in Session View the knobs are a mixer |
+| Shift + Step 8 turns on 16 Pitches for a drum track | **Shift + Step 8** switches the right-hand pads between velocity zones and Note Repeat — see [Drum Clips](#7-drum-clips) |
+| Sets, in the Set Overview | **Projects**, in the project picker (**Shift + Step 1**). Your Move sets are left alone — see [Projects](#175-projects) |
 
 ---
 
