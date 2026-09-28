@@ -18,6 +18,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
+#include <unistd.h>
 
 #include "shadow_constants.h"
 #include "ui_midi_out_ring.h"
@@ -73,7 +75,20 @@ static void *consumer(void *arg) {
     return NULL;
 }
 
+/* A broken ring can leave either side spinning forever (a producer waiting
+ * for room that is never released, a consumer waiting for bytes that never
+ * come). That is a FAILURE, not a hang: a test that can hang cannot be
+ * mutation-tested. */
+static void on_alarm(int sig) {
+    (void)sig;
+    static const char m[] = "FAIL: ring stalled (watchdog, 20 s)\n";
+    (void)!write(1, m, sizeof m - 1);
+    _exit(1);
+}
+
 int main(void) {
+    signal(SIGALRM, on_alarm);
+    alarm(20);
     memset(&ring, 0, sizeof ring);
     pthread_t a, b;
     pthread_create(&b, NULL, consumer, NULL);
