@@ -18,5 +18,16 @@ esac
 grep -q '\[ "\$RJ" = "\$VERSION" \]' .github/workflows/release.yml \
     && echo "ok   the workflow checks the tag against release.json" \
     || { echo "FAIL: the workflow no longer checks the tag against release.json"; fail=1; }
-[ $fail = 0 ] && echo "PASS: the release keeps the host's base version"
+# EVERY release ships the uninstaller beside the module (Josh, 2026-09-28:
+# "the uninstaller tarball needs to be included with every release") -- built
+# AND attached, not merely built.
+for a in davebox-sa-module.tar.gz davebox-uninstall-module.tar.gz dAVEBOx-SA-manual.html; do
+    awk '/uses: softprops\/action-gh-release/,0' .github/workflows/release.yml | grep -q "^ *$a\$" \
+        && echo "ok   the release attaches $a" \
+        || { echo "FAIL: the release does not attach $a"; fail=1; }
+done
+grep -q 'build-uninstall-release.sh' .github/workflows/release.yml \
+    && echo "ok   the release builds the uninstaller" \
+    || { echo "FAIL: the release no longer builds the uninstaller"; fail=1; }
+[ $fail = 0 ] && echo "PASS: the release keeps the host's base version and ships the uninstaller"
 exit $fail

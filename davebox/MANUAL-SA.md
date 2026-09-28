@@ -163,6 +163,24 @@ already know works here.
 
 # 2. Getting Started
 
+## Install and remove
+
+dAVEBOx SA is not in the Schwung module catalog yet: you install it by hand,
+from the files on its [release page](https://github.com/legsmechanical/dbxhost/releases).
+It needs Schwung 1.3.0 or newer.
+
+1. Download **davebox-sa-module.tar.gz** from the release.
+2. Open Schwung Manager in a browser (**move.local**), go to **Modules**, open
+   **Install Custom Module**, choose the file under **From Tarball**, and click
+   **Install from File**.
+3. On the Move, open Schwung's tool menu — **Shift + Step 13** — and choose
+   **dAVEBOx SA**. The first launch finishes installing by itself.
+
+To remove it, install **davebox-uninstall-module.tar.gz** from the same release the
+same way, quit dAVEBOx, and choose **Uninstall dAVEBOx** in the tool menu. Your
+projects and settings stay in `/data/UserData/dbx-host`, so a later install picks
+them up.
+
 ## Nothing to set up
 
 Every new project is ready to play:
