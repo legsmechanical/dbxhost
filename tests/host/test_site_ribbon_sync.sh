@@ -32,7 +32,7 @@ if ed and mg:
     if not bad: print('  ok   — brand and %d links identical: %s' % (len(ed[1]), ' · '.join(l for _, l in ed[1])))
 # The look: the editor's ribbon values appear in the manager's #site rules.
 css = open('schwung-manager/static/style.css', encoding='utf-8').read()
-for v in ('height: 26px', 'background: #0b0d11', 'border-bottom: 1px solid #1b212b', 'font-size: 11px', 'color: #39d0c8'):
+for v in ('height: 34px', 'background: #0b0d11', 'border-bottom: 1px solid #1b212b', 'font-size: 15px', 'font-size: 13px', 'color: #a9afbb', 'color: #39d0c8'):
     if v not in css: fail('the manager ribbon lacks the editor value %r' % v)
 if re.search(r'<header\b', open('schwung-manager/templates/base.html', encoding='utf-8').read()):
     fail('base.html still has its own <header> bar')

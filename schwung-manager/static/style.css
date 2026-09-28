@@ -149,9 +149,9 @@ a:hover {
 #site {
     display: flex;
     align-items: center;
-    gap: 10px;
-    height: 26px;
-    padding: 0 12px;
+    gap: 12px;
+    height: 34px;
+    padding: 0 14px;
     background: #0b0d11;
     border-bottom: 1px solid #1b212b;
     font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -160,7 +160,7 @@ a:hover {
 #site .sitebrand {
     font-weight: 700;
     letter-spacing: .5px;
-    font-size: 12px;
+    font-size: 15px;
     color: #e9ebf0;
     text-decoration: none;
 }
@@ -176,10 +176,10 @@ a:hover {
 }
 
 #site .sitelinks a {
-    color: #5a606c;
-    font-size: 11px;
+    color: #a9afbb;
+    font-size: 13px;
     text-decoration: none;
-    padding: 3px 7px;
+    padding: 4px 9px;
     border-radius: 4px;
 }
 
