@@ -1075,6 +1075,12 @@ export function soundOpenCanvasForTest(meta, io) {
     if (!canvasEditOpen({ key: meta.key, fullKey: meta.key, meta, comp: 'synth', slot: 0, io })) return false;
     S.view = VIEW_CANVAS; S.dirty = true; return true;
 }
+/* The canvas screen through its REAL io (the live feed's reads and clock), on
+ * the current slot/component — the door a hierarchy dive uses. */
+export function soundOpenCanvasScreenForTest(fullKey, meta) {
+    if (!openCanvasScreen(fullKey, meta, null)) return false;
+    S.view = VIEW_CANVAS; S.dirty = true; return true;
+}
 export function soundQueueActionForTest(a) { S.pendingAction = a; }
 /* Audition test hooks: arm a preview baseline as the preset list would, and read it back. */
 export function soundArmAuditionForTest(origBlob, previewIdx) { S.origState = origBlob; S.previewIdx = previewIdx | 0; S.previewAt = 0; }
@@ -10650,9 +10656,11 @@ export function soundTick() {
      * browser, a menu) redraws on input like every other screen, so it costs
      * nothing to leave open. */
     if (S.view === VIEW_CANVAS && canvasEditActive()) {
-        canvasEditTick();
+        /* onValues is an event and may close(); a delivery redraws even a
+         * canvas with no tick hook of its own. */
+        const _fresh = canvasEditTick();
         if (canvasEditTakeClose()) closeCanvasScreen();
-        else if (canvasEditAnimates()) S.dirty = true;
+        else if (_fresh || canvasEditAnimates()) S.dirty = true;
     }
 
     /* ⭑ THE BROWSER'S AUDITION, and its close.
@@ -12700,6 +12708,8 @@ function openCanvasScreen(fullKey, meta, divedFrom) {
             },
             getParam: (k) => settledValue(k, S.comp),
             setParam: (k, v) => queueWrite(ppBare(k) || k, v),
+            /* the live feed's clock: the UI's own, so tests can drive it */
+            nowMs: () => nowMs(),
             getValue: () => settledValue(bare, S.comp),
             setValue: (v) => queueWrite(bare, v),
             /* Shift as STATE, matching stock's ctx.shiftHeld -- a module drawing
