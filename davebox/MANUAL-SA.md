@@ -357,7 +357,7 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 ## 3.7 Menus & Project Settings
 
 **Shift + Step 2** opens **Project Settings** — the settings saved with the project
-(except **Host Settings...** and the Daves rows, which apply to every project).
+(except **Host Settings...**, which applies to every project).
 The full list is in [Settings & Projects](#17-settings--projects); many settings have
 a **Shift + Step** shortcut (see the [Quick Reference](#19-quick-reference)).
 
@@ -2007,15 +2007,10 @@ see [Track settings](#174-track-settings) below.
 | Suspend session | Park dAVEBOx and go back to Move (asks first) — see [§3.9](#39-saving-suspending--exiting) | action | — |
 | Quit | Save and hand the device back to official Schwung (asks first) | action | — |
 | Host Settings... | dAVEBOx's copy of Schwung's settings (display, audio and more), over the top of dAVEBOx — see [§17.6](#176-davebox-and-official-schwung) | action | — |
-| Daves | While playing, a collected Dave scrolls behind the Session View banner | On, Off | Off |
-| Open Your Dave Box | Every Dave you've been dealt — one each time a project loads | action | — |
 
 - The menu groups these with a line between each group, in this order.
 - A new project starts in a random key and scale.
-- **Host Settings...** and the **Daves** rows apply to every project, not just this
-  one.
-- A **Dave** is a small portrait dAVEBOx deals you each time a project loads — just
-  for fun. **Open Your Dave Box** shows your collection.
+- **Host Settings...** applies to every project, not just this one.
 - **Tap Tempo** is **Shift + Step 5**: tap any pad in time, turn the jog to adjust,
   click to set.
 
@@ -2099,8 +2094,7 @@ project, 32 slots:
   Load, closing the picker (so do Back and Note/Session). If your last project no
   longer exists, the screen says **Select project** until you tap a pad.
 - **Tap a project** to select it; turn the jog to choose a row, click to select.
-  While a project loads, the lights go dark and a newly dealt Dave fills the screen
-  — including the project Move already has loaded when dAVEBOx starts. Load stops playback first.
+  While a project loads, the lights go dark. Load stops playback first.
   - **Rename** opens the on-screen keyboard and takes effect at once, even on the
     open project. Two projects can't share a name (**NAME TAKEN**).
   - **Color** lists the palette: the jog moves through it and the pad previews
@@ -2152,7 +2146,7 @@ keeps its own settings.
 | **Move sets and dAVEBOx projects** | **Separate.** See [Projects](#175-projects). |
 | **Schwung's settings** | **Separate.** **Host Settings...** here and Global Settings in official Schwung are two copies; a change in one doesn't reach the other. |
 | **The web manager** (`move.local:7700`) | **dAVEBOx's own** during a session. Its Help is this manual and its Config is dAVEBOx's settings. Install modules from official Schwung's. |
-| **Parallel, Daves, exports and logs** | **dAVEBOx's own.** |
+| **Parallel, exports and logs** | **dAVEBOx's own.** |
 
 Shared presets and lists are stored in official Schwung's folders, so removing or
 resetting official Schwung removes them too.
