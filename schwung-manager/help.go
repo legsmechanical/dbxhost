@@ -1,10 +1,14 @@
 package main
 
-// The Help page is the dAVEBOx documentation shell: it lists and renders
-// markdown files from <base>/help/, which the install payload generates by
-// splitting the manual into one file per chapter (see the generator in the
-// module's scripts/). The page shows an empty state when that directory is
-// absent. The renderer below is a deliberate markdown SUBSET — headings
+// The Help page is the dAVEBOx documentation shell. ⭐ It shows THE MANUAL —
+// the full HTML one, screens and all (Josh, 2026-09-28: "we need the full
+// davebox html manual to show up on the help page") — from
+// <base>/help/manual.html, which every release payload carries, framed under
+// the site ribbon. Without that file it falls back to the markdown chapters
+// in <base>/help/ (the manual split one file per chapter by the module's
+// scripts/gen_help.py), and to an empty state without those.
+//
+// The fallback's renderer below is a deliberate markdown SUBSET — headings
 // (anchored), paragraphs, bullet and numbered lists, fenced code, pipe tables,
 // blockquotes, horizontal rules, links, bold/italic/inline code — kept
 // dependency-free so the manager stays a single vendored-free binary.
@@ -31,6 +35,27 @@ type helpDoc struct {
 }
 
 func (app *App) helpDir() string { return filepath.Join(app.basePath, "help") }
+
+// helpManualName is the built HTML manual inside helpDir.
+const helpManualName = "manual.html"
+
+func (app *App) helpManualPath() string { return filepath.Join(app.helpDir(), helpManualName) }
+
+func (app *App) hasHelpManual() bool {
+	st, err := os.Stat(app.helpManualPath())
+	return err == nil && st.Mode().IsRegular()
+}
+
+// handleHelpManual serves the HTML manual itself — the document the Help page
+// frames. It is one self-contained page we build, never user content.
+func (app *App) handleHelpManual(w http.ResponseWriter, r *http.Request) {
+	if !app.hasHelpManual() {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-cache")
+	http.ServeFile(w, r, app.helpManualPath())
+}
 
 // listHelpDocs returns the available docs sorted by file name, so authors
 // control ordering with numeric prefixes (10-intro.md, 20-tracks.md) which
@@ -69,6 +94,9 @@ func (app *App) handleHelp(w http.ResponseWriter, r *http.Request) {
 		"Title":  "Help",
 		"Active": "help",
 		"Docs":   docs,
+	}
+	if r.URL.Query().Get("doc") == "" && app.hasHelpManual() {
+		data["Manual"] = "/help/" + helpManualName
 	}
 	if doc := r.URL.Query().Get("doc"); doc != "" && helpDocNameRe.MatchString(doc) {
 		raw, err := os.ReadFile(filepath.Join(app.helpDir(), doc+".md"))

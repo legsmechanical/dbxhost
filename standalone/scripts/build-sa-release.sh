@@ -15,6 +15,8 @@
 #                                 boot DEFAULT is never touched).
 #     payload/                    the dbx-host tree, laid by layout-install.sh
 #       schwung, shadow/, scripts/, lib/, help/, sets/template, splash*, bless.sh …
+#       help/manual.html          the full HTML manual — the manager's Help page
+#                                 (built by davebox/scripts/build_manual_html.sh)
 #       bin/heal                  the privileged helper — STAGED by bootstrap.sh as
 #                                 bin/heal.new for stock heal to bless. ⚠ NEVER a
 #                                 pre-blessed bin/heal in the module dir: the manager
@@ -28,7 +30,7 @@
 # copies), every stock module category (linked on the device by the layout).
 #
 #   ./standalone/scripts/build-sa-release.sh [out-dir]
-# Env for tests: BUILD_DIR, HEAL_BIN, DAVEBOX_DIST, SA_VERSION.
+# Env for tests: BUILD_DIR, HEAL_BIN, DAVEBOX_DIST, SA_VERSION, MANUAL_HTML.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
@@ -36,6 +38,7 @@ REPO_ROOT="$(cd "$HERE/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-$REPO_ROOT/build}"
 HEAL_BIN="${HEAL_BIN:-$HERE/build/$DBX_HEAL_NAME}"
 DAVEBOX_DIST="${DAVEBOX_DIST:-$REPO_ROOT/davebox/dist/davebox-sound}"
+MANUAL_HTML="${MANUAL_HTML:-$REPO_ROOT/davebox/dist/manual/dAVEBOx-SA-manual.html}"
 OUT="${1:-$REPO_ROOT}"
 ID="$DBX_LAUNCHER_ID"
 SA_VERSION="${SA_VERSION:-$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$HERE/module/module.json" | head -1)}"
@@ -45,6 +48,9 @@ for f in "$BUILD_DIR/schwung" "$BUILD_DIR/shadow/shadow_ui" "$BUILD_DIR/scripts/
          "$DAVEBOX_DIST/module.json" "$DAVEBOX_DIST/dsp.so" "$DAVEBOX_DIST/ui.js"; do
     [ -e "$f" ] || { echo "ERROR: missing $f — build the host (build-host.sh), heal (build-heal.sh) and davebox (davebox/scripts/build_sound.sh) first" >&2; exit 1; }
 done
+# The Help page IS the manual (Josh, 2026-09-28): a release without it would
+# show testers an empty Help page, so it is required, never skipped.
+[ -s "$MANUAL_HTML" ] || { echo "ERROR: missing $MANUAL_HTML — the HTML manual (davebox/scripts/build_manual_html.sh) is the Help page" >&2; exit 1; }
 [ -d "$BUILD_DIR/modules/chain" ] || { echo "ERROR: $BUILD_DIR/modules/chain missing (the owned chain host)" >&2; exit 1; }
 
 stage="$(mktemp -d)"; trap 'rm -rf "$stage"' EXIT
@@ -62,6 +68,7 @@ rsync -a --exclude='/modules' --exclude='/presets' --exclude='/patches' --exclud
 cp -R "$BUILD_DIR/modules/chain" "$P/modules/chain"
 cp -R "$DAVEBOX_DIST" "$P/modules/tools/davebox-sound"
 cp "$HEAL_BIN" "$P/bin/heal"; chmod 755 "$P/bin/heal"
+mkdir -p "$P/help"; cp "$MANUAL_HTML" "$P/help/manual.html"
 printf '%s\n' "$SA_VERSION" > "$P/sa-version.txt"
 # A TEST build (0.0.x) ships with the debug log ON (Josh, 2026-09-28: "some
 # reasonable logging always on (even for testers)"). The log is capped

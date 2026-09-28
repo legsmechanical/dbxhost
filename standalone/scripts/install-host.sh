@@ -229,6 +229,10 @@ say ""; say "--- generating help content from the manual"
 if ! python3 "$REPO_ROOT/davebox/scripts/gen_help.py" "$REPO_ROOT/build/help"; then
     echo "WARNING: help generation failed — the Help page will ship stale or empty." >&2
 fi
+# ...and the full HTML manual, which the Help page shows when it is there.
+if ! bash "$REPO_ROOT/davebox/scripts/build_manual_html.sh" "$REPO_ROOT/build/help/manual.html"; then
+    echo "WARNING: HTML manual build failed — the Help page falls back to the chapters." >&2
+fi
 
 # --- deploy ----------------------------------------------------------------
 # Atomic per entry: land beside the target then mv -f. A plain scp over a mapped

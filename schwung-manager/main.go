@@ -1363,6 +1363,7 @@ func main() {
 
 	// Help.
 	mux.HandleFunc("GET /help", app.handleHelp)
+	mux.HandleFunc("GET /help/"+helpManualName, app.handleHelpManual)
 
 	// Remote UI.
 	mux.HandleFunc("GET /remote-ui", app.handleRemoteUI)

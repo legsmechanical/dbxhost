@@ -55,9 +55,15 @@ jobs:
       - name: Build the davebox module
         run: |
           cd davebox && npm ci --no-audit --no-fund && bash scripts/build_sound.sh
+      - name: Build the HTML manual
+        run: |
+          bash davebox/scripts/build_manual_html.sh "$PWD/dAVEBOx-SA-manual.html"
+          ls -la dAVEBOx-SA-manual.html
       - name: Assemble the catalog tarball
         run: |
-          ./standalone/scripts/build-sa-release.sh .
+          # The manual rides inside as the manager's Help page, too.
+          MANUAL_HTML="$PWD/dAVEBOx-SA-manual.html" ./standalone/scripts/build-sa-release.sh .
+          tar -tzf davebox-sa-module.tar.gz | grep -x 'davebox-sa/payload/help/manual.html'
           tar -tzf davebox-sa-module.tar.gz | grep -c . 
           tar -tzf davebox-sa-module.tar.gz | grep -x 'davebox-sa/payload/bin/heal'
           tar -tzf davebox-sa-module.tar.gz | grep -x 'davebox-sa/payload/scripts/bootstrap.sh'
@@ -67,10 +73,6 @@ jobs:
           ./standalone/scripts/build-uninstall-release.sh .
           tar -tzf davebox-uninstall-module.tar.gz | grep -x 'davebox-uninstall/bin/heal.new'
           tar -tzf davebox-uninstall-module.tar.gz | grep -x 'davebox-uninstall/uninstall.sh'
-      - name: Build the HTML manual
-        run: |
-          bash davebox/scripts/build_manual_html.sh "$PWD/dAVEBOx-SA-manual.html"
-          ls -la dAVEBOx-SA-manual.html
       - name: Attach to the release
         uses: softprops/action-gh-release@v1
         with:

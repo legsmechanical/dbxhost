@@ -1,6 +1,12 @@
 package main
 
 import (
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -157,5 +163,58 @@ func TestStripLeadingH1(t *testing.T) {
 	src2 := "see #11 below\n"
 	if got := stripLeadingH1(src2); got != src2 {
 		t.Errorf("hash in prose treated as a title: %q", got)
+	}
+}
+
+// ⭐ The Help page shows the full HTML manual when the payload carries it
+// (Josh, 2026-09-28), and serves the manual itself at /help/manual.html.
+// Without the file: the chapter list, and the manual URL is a 404.
+func TestHelpShowsTheHTMLManual(t *testing.T) {
+	base := t.TempDir()
+	help := filepath.Join(base, "help")
+	if err := os.MkdirAll(help, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(help, "10-intro.md"), []byte("# Intro\n\nhello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := loadTemplates()
+	if err != nil {
+		t.Fatalf("loadTemplates: %v", err)
+	}
+	app := &App{tmpl: tmpl, basePath: base, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	get := func(h http.HandlerFunc, url string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		h(rec, httptest.NewRequest("GET", url, nil))
+		return rec
+	}
+
+	// No manual yet: the chapter list, no frame, and nothing at the manual URL.
+	body := get(app.handleHelp, "/help").Body.String()
+	if strings.Contains(body, `class="help-manual"`) || !strings.Contains(body, "?doc=10-intro") {
+		t.Errorf("without manual.html: want the chapter list and no frame\n%s", body)
+	}
+	if rec := get(app.handleHelpManual, "/help/manual.html"); rec.Code != http.StatusNotFound {
+		t.Errorf("without manual.html: /help/manual.html = %d, want 404", rec.Code)
+	}
+
+	const doc = "<!DOCTYPE html><title>dAVEBOx SA manual</title><h1>The whole manual</h1>"
+	if err := os.WriteFile(filepath.Join(help, "manual.html"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body = get(app.handleHelp, "/help").Body.String()
+	if !strings.Contains(body, `<iframe class="help-manual" src="/help/manual.html"`) {
+		t.Errorf("with manual.html: /help does not frame the manual\n%s", body)
+	}
+	if strings.Contains(body, "?doc=10-intro") {
+		t.Errorf("with manual.html: the chapter list is still shown")
+	}
+	rec := get(app.handleHelpManual, "/help/manual.html")
+	if rec.Code != 200 || rec.Body.String() != doc || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
+		t.Errorf("/help/manual.html = %d %q (%s), want the file as HTML", rec.Code, rec.Body.String(), rec.Header().Get("Content-Type"))
+	}
+	// A chapter link still opens its chapter.
+	if b := get(app.handleHelp, "/help?doc=10-intro").Body.String(); !strings.Contains(b, "<p>hello</p>") {
+		t.Errorf("?doc= no longer renders its chapter\n%s", b)
 	}
 }

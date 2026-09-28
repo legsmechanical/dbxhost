@@ -1832,6 +1832,25 @@ code {
 }
 
 /* ---- Help ---- */
+/* The HTML manual fills everything under the site ribbon: the page gives up
+   its width cap, padding and footer so the manual scrolls as the page does. */
+main:has(> .help-manual) {
+    max-width: none;
+    padding: 0;
+}
+
+body:has(.help-manual) footer {
+    display: none;
+}
+
+.help-manual {
+    display: block;
+    width: 100%;
+    height: calc(100vh - 35px);
+    height: calc(100dvh - 35px);
+    border: 0;
+}
+
 .help-nav {
     display: flex;
     gap: 0.75rem;
