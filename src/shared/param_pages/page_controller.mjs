@@ -5316,7 +5316,15 @@ export function createController(io = {}) {
          * pre-registration groups and the widget never appears. Same shape as
          * the child-level alias bug above: a cache key that omits something the
          * result depends on. */
-        const cacheKey = `${s.fingerprint}#${s.pageIndex}#${childAt}#${widgetsGeneration()}`;
+        /* AND THE PAGE'S KEYS. A visible_if gate re-plans the page IN PLACE
+         * (replanNow): same fingerprint, same index. When the gate moves with
+         * the focused child, the focus reaches a draw a tick before the gate
+         * read does, so the cache filled with the OLD key list under the NEW
+         * child and the re-plan was handed those groups -- a synth pad drawn
+         * with the sample pad's waveform over the wrong cells, until another
+         * pad busted it (tests/host/test_viz_cache_follows_gated_keys.sh).
+         * resolveViz is a function of p.keys, so the key names them. */
+        const cacheKey = `${s.fingerprint}#${s.pageIndex}#${childAt}#${widgetsGeneration()}#${(p.keys || []).join()}`;
         if (vizCache && vizCache.key === cacheKey) return vizCache.groups;
         const { groups } = resolveViz({ keys: p.keys, metaIndex: s.metaIndex, overrides: vizOverrides });
         vizCache = { key: cacheKey, groups };
