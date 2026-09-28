@@ -84,6 +84,17 @@ setsid --wait bash -c '
   DBX_DIR=/data/UserData/dbx-host
   HEAL=/data/UserData/schwung/modules/tools/davebox-sa/bin/heal   # the blessed helper (2026-09-05: inside the launcher module dir; no apostrophes in this body)
   LOG=$DBX_DIR/launch.log
+  # ON A FRESH INSTALL THIS DIRECTORY DOES NOT EXIST YET: the first-launch
+  # bootstrap creates it further down. Without it the redirect below fails, and
+  # this launch -- the launcher AND Move, which inherits this output -- logs
+  # nowhere. That is not only a lost log: move-loaded-set-reader reads Move
+  # lines out of launch.log to learn which set Move opened, so the first
+  # project load of every fresh install timed out back to the picker (the
+  # second launch, with the directory in place, worked).
+  mkdir -p "$DBX_DIR"
+  # Capped: Move prints a memory line every minute into this log for the whole
+  # session, so past 1 MB it becomes launch.log.1 (one previous kept).
+  [ "$(wc -c < "$LOG" 2>/dev/null || echo 0)" -gt 1048576 ] && mv -f "$LOG" "$LOG.1"
   exec >>"$LOG" 2>&1
   echo "=== davebox host launch $(date) ==="
 

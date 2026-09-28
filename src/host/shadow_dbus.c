@@ -32,6 +32,7 @@
 
 #include "shadow_dbus.h"
 #include "host/shim_thread.h"   /* shim threads must never receive the host's SIGTERM */
+#include "host/schwung_paths.h"
 
 /* ============================================================================
  * Internal state
@@ -630,11 +631,22 @@ static DBusHandlerResult shadow_dbus_filter(DBusConnection *conn, DBusMessage *m
                 }
             }
 
-            char logbuf[512];
-            snprintf(logbuf, sizeof(logbuf), "D-Bus signal: %s.%s path=%s sender=%s%s",
-                     iface ? iface : "?", member ? member : "?",
-                     path ? path : "?", sender ? sender : "?", arg_preview);
-            host.log(logbuf);
+            /* Every signal Move emits, for DISCOVERY only: opt in with
+             * <install>/dbus_log_on. On by default it was most of the log --
+             * 32 MB on a dev device -- and useless to anyone but a developer
+             * looking for a new signal. Checked every 256 signals. */
+            static int dbus_discovery = -1, dbus_discovery_n = 0;
+            if (dbus_discovery < 0 || ++dbus_discovery_n >= 256) {
+                dbus_discovery_n = 0;
+                dbus_discovery = access(SCHWUNG_INSTALL_DIR "/dbus_log_on", F_OK) == 0;
+            }
+            if (dbus_discovery) {
+                char logbuf[512];
+                snprintf(logbuf, sizeof(logbuf), "D-Bus signal: %s.%s path=%s sender=%s%s",
+                         iface ? iface : "?", member ? member : "?",
+                         path ? path : "?", sender ? sender : "?", arg_preview);
+                host.log(logbuf);
+            }
 
             /* Track serial numbers from Move's messages */
             if (sender && strstr(sender, ":1.")) {
