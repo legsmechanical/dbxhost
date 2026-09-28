@@ -1,8 +1,8 @@
 {
     "id": "davebox-uninstall",
-    "name": "Uninstall dAVEBOx",
+    "name": "Uninstall dAVEBOx SA",
     "version": "0.1.0",
-    "description": "Removes dAVEBOx from this Move. Your dAVEBOx projects and settings are kept in /data/UserData/dbx-host, so reinstalling picks up where you left off.",
+    "description": "Removes dAVEBOx SA from this Move. Your dAVEBOx projects and settings are kept in /data/UserData/dbx-host, so reinstalling picks up where you left off.",
     "author": "legsmechanical",
     "api_version": 1,
     "component_type": "tool",

@@ -84,20 +84,20 @@ const KEPT = ['Projects & settings', 'kept in /data/', 'UserData/dbx-host'];
 function screenRows() {
     switch (state) {
         case 'live':
-            return ['DAVEBOX IS RUNNING', ['Quit dAVEBOx first,', 'then open this again.', '', 'Back: exit']];
+            return ['DAVEBOX SA IS RUNNING', ['Quit dAVEBOx SA,', 'then open this again.', '', 'Back: exit']];
         case 'absent':
-            return ['NOTHING TO UNINSTALL', ['dAVEBOx is not here.', ...KEPT, 'Click: remove tool']];
+            return ['NOTHING TO UNINSTALL', ['Not installed here.', ...KEPT, 'Click: remove tool']];
         case 'installed':
-            return ['UNINSTALL DAVEBOX?', [...KEPT, 'Click: uninstall', 'Back: cancel']];
+            return ['UNINSTALL DAVEBOX SA?', [...KEPT, 'Click: uninstall', 'Back: cancel']];
         case 'confirm':
-            return ['ARE YOU SURE?', ['This removes dAVEBOx', 'Projects & settings', 'are kept.', 'Click again: uninstall', 'Back: cancel']];
+            return ['ARE YOU SURE?', ['Removes dAVEBOx SA.', 'Projects & settings', 'are kept.', 'Click again: uninstall', 'Back: cancel']];
         case 'running': {
             const dots = '.'.repeat(1 + (Math.floor((now() - startedAt) / 400) % 3));
-            return ['UNINSTALLING', ['Removing dAVEBOx' + dots, '', 'Keep the Move on.']];
+            return ['UNINSTALLING', ['Removing dAVEBOx SA' + dots, '', 'Keep the Move on.']];
         }
         case 'done':
-            if (rc === 0) return ['DAVEBOX REMOVED', [...KEPT, '', 'Back: exit']];
-            if (rc === 2) return ['NOT UNINSTALLED', ['dAVEBOx is running.', 'Quit it, then retry.', '', 'Back: exit']];
+            if (rc === 0) return ['DAVEBOX SA REMOVED', [...KEPT, '', 'Back: exit']];
+            if (rc === 2) return ['NOT UNINSTALLED', ['dAVEBOx SA is open.', 'Quit it, then retry.', '', 'Back: exit']];
             if (rc === 3) return ['NOT UNINSTALLED', ['Restart the Move,', 'then run this again.', 'Nothing was removed.', 'Back: exit']];
             if (rc === 4) return ['REMOVED, WITH ISSUES', ['Details in /data/', 'UserData/', 'dbx-uninstall.log', 'Back: exit']];
             return ['NO ANSWER', ['Check /data/UserData/', 'dbx-uninstall.log', '', 'Back: exit']];

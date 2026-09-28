@@ -183,7 +183,7 @@ It needs Schwung 1.3.0 or newer.
    **dAVEBOx SA**. The first launch finishes installing by itself.
 
 To remove it, install **davebox-uninstall-module.tar.gz** from the same release the
-same way, quit dAVEBOx, and choose **Uninstall dAVEBOx** in the tool menu. Your
+same way, quit dAVEBOx, and choose **Uninstall dAVEBOx SA** in the tool menu. Your
 projects and settings stay in `/data/UserData/dbx-host`, so a later install picks
 them up.
 
