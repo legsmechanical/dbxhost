@@ -81,9 +81,13 @@ awk '
 #    top is not enough: the counter downstream runs on every rendered block, so
 #    a keep-alive slot with silent output would climb back to the threshold and
 #    park on the very next second.
+#    The guard must be the branch DIRECTLY ahead of the silence count: the
+#    keep-alive is also tested once up at the idle gate, so "any keep-alive
+#    test earlier in the file" passes even with this guard deleted (a mutation
+#    that removed it survived the upstream form of this check).
 awk '
-  /if \(synth_keep_alive\) \{/ {ka=1}
-  ka && /\} else if \(is_silent\) \{/ {found=1; exit}
+  /if \(synth_keep_alive\) \{/ {ka=NR}
+  /\} else if \(is_silent\) \{/ {found = (ka && NR - ka <= 6); exit}
   END {exit found ? 0 : 1}
 ' "$SHIM" || fail "a keep-alive slot can still be parked by the silence counter"
 
