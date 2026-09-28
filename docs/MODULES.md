@@ -1618,6 +1618,23 @@ These map to knobs 1-8 in the Shadow UI for quick access.
 }
 ```
 
+#### An envelope that switches shape — `role: "mode"`
+
+Some envelopes run the same knobs as two shapes — DR32's pads switch between **A-H-D** (a timed hold
+at the peak, then decay to silence) and **A-S-R** (full level while the pad is held, then the Decay
+knob is the release, and Hold does nothing). Put the switch in the envelope group as `role: "mode"`
+with `span: false`, so it keeps its own cell and only lends the picture its value:
+
+```json
+{ "key": "env_mode", "type": "enum", "options": ["A-H-D", "A-S-R"],
+  "viz": { "group": "amp", "role": "mode", "span": false } }
+```
+
+An option naming A-H-D (or `AHD`, `One Shot`, `Trigger`) draws attack, hold and decay; one naming
+A-S-R (or `ASR`, `Gate`, `Sustain`) draws attack, a full-level sustain, and your `decay` (or
+`release`) as the fall. Any other option draws the declared roles unchanged, and so does an older host.
+Same as stock 1.5 (upstream #545).
+
 #### A cell your module draws itself — `viz.kind: "custom:<name>"`
 
 A knob cell can be drawn by the module instead of by a built-in widget: a
