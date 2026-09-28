@@ -135,6 +135,23 @@ if (shapeFound) {
     }
 }
 
+/* THE GESTURE: turn knob 4 (Envelope). The earlier cases change the value
+ * underneath the editor; a user turns the knob, and the cell text and the
+ * picture may be fed by different paths. */
+if (shapeFound) {
+    const K4 = 71 + 3;
+    const turn = (d, n) => { for (let i = 0; i < n; i++) { cc(K4, d > 0 ? 1 : 127); ticks(2); } };
+    const band = () => { render.drawUI(); const r = []; for (let y = 10; y < 34; y++) { let s = ''; for (let x = 0; x < 96; x++) s += FB[y * 128 + x] ? '#' : '.'; r.push(s); } return r.join('\n'); };
+    set('env_mode', 'A-H-D'); set('hold', 5); ticks(40);
+    const before = band();
+    turn(1, 12); ticks(40);
+    const written = ASSIGN['synth:pad1_env_mode'];
+    const after = band();
+    if (process.env.ENV_DEBUG) console.log(`--- turned, written=${written}\n${after}`);
+    step('turning knob 4 writes A-S-R', () => assert(written === 'A-S-R' || written === '1', 'wrote ' + written));
+    step('...and the picture changes with it', () => assert(before !== after, 'the picture did not change after the turn'));
+}
+
 if (failed) { console.log('FAIL: test_envelope_mode_gesture'); process.exit(1); }
 console.log('PASS: test_envelope_mode_gesture');
 }

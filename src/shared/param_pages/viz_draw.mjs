@@ -489,12 +489,13 @@ export function envelopeModeOf(text) {
 
 export function drawEnvelope(ctx, rect, roles, values, metaIndex) {
     const envMode = roles.mode ? envelopeModeOf(optionText(metaIndex, roles.mode, values)) : null;
-    /* A-S-R: hold stage gone, a sustain at full level, and whatever falls
-     * after it (declared as decay or release) is the release. */
+    /* A-S-R: hold stage gone; the sustain is the module's own sustain LEVEL
+     * when it declares one, otherwise full (a gate holds at the peak); and
+     * whatever falls after it (declared as decay or release) is the release. */
     let fixed = null;
     if (envMode === "asr") {
-        roles = { attack: roles.attack, sustain: "__full", release: roles.release || roles.decay };
-        fixed = { sustain: 1 };
+        roles = { attack: roles.attack, sustain: roles.sustain || "__full", release: roles.release || roles.decay };
+        if (!roles.sustain || roles.sustain === "__full") fixed = { sustain: 1 };
     } else if (envMode === "ahd") {
         roles = { attack: roles.attack, hold: roles.hold, decay: roles.decay || roles.release };
     }

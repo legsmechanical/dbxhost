@@ -70,6 +70,32 @@ ok(pic(shot(false, 1, 40)) === pic(shot(false, 0, 40)),
 ok(pic(shot(false, 0, 5)) !== pic(shot(false, 0, 40)),
    "control: with no mode role Hold still draws, as it did before");
 
+/* A-S-R WITH A SUSTAIN LEVEL. A module that gives A-S-R its own knobs
+ * (attack, sustain level, release) draws the plateau AT that level; with no
+ * sustain knob it stays at full, as a gate holds. */
+function asrPage() {
+  const cp = [
+    { key: "attack", name: "Attack", type: "float", min: 0, max: 20, viz: { group: "amp", role: "attack" } },
+    { key: "sustain", name: "Sustain", type: "float", min: 0, max: 1, viz: { group: "amp", role: "sustain" } },
+    { key: "release", name: "Release", type: "float", min: 0, max: 60, viz: { group: "amp", role: "release" } },
+    { key: "env_mode", name: "Envelope", type: "enum", options: ["A-H-D", "A-S-R"], viz: { group: "amp", role: "mode", span: false } },
+  ];
+  const keys = cp.map((p) => p.key);
+  const metaIndex = buildMetaIndex({ chainParams: cp });
+  return { page: { title: "Shape", kind: "PAGE_KNOBS", keys }, metaIndex, viz: (resolveViz({ keys, metaIndex }) || {}).groups || [] };
+}
+function asrShot(sus) {
+  const fb = createFramebuffer();
+  renderPageMovy(drawContext(fb), { ...asrPage(), values: { attack: 2, sustain: sus, release: 20, env_mode: 1 },
+                                    rect: { x: 0, y: 0, w: 128, h: 64 } });
+  return pic(fb);
+}
+ok(asrShot(0.3) !== asrShot(0.9), "A-S-R with a sustain knob: the plateau follows the sustain level");
+/* The plateau row: the highest lit row inside the envelope span, scanned
+ * where the plateau sits (between the attack and the release). */
+const plateauRow = (p) => p.split("\n").findIndex((r) => r.slice(40, 60).includes("#"));
+ok(plateauRow(asrShot(0.3)) > plateauRow(asrShot(0.9)), "...lower sustain draws a lower plateau");
+
 if (process.env.SHOW) for (const [n, f] of [["A-H-D hold 40", shot(true, 0, 40)], ["A-S-R", shot(true, 1, 40)]])
   console.log("=== " + n + "\n" + rows(f, 8, 26, 100).join("\n"));
 if (fails) { console.log(fails + " failure(s)"); process.exit(1); }
