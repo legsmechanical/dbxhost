@@ -224,7 +224,11 @@ in a single-process test. [[schwung-atomic-write-inode-is-the-only-pin]]
   (`release.yml` attaches `dAVEBOx-SA-manual.html` beside the module tarball), and CI builds it on
   every push. A reference copy is also committed at `docs/manual/dAVEBOx-SA-manual.html`
   (Josh, 2026-09-28, "so i can reference them as i go"); it is a SNAPSHOT — refresh it with
-  `bash scripts/build_manual_html.sh docs/manual/dAVEBOx-SA-manual.html` when the draft changes. Each screen names the manual heading it
+  `bash scripts/build_manual_html.sh docs/manual/dAVEBOx-SA-manual.html` when the draft changes.
+  ⭑ **The public, shareable copy is GitHub Pages: https://legsmechanical.github.io/dbxhost/**
+  (`.github/workflows/manual-site.yml`). It republishes on every `v*` release tag, and on demand
+  with `gh workflow run manual-site.yml` (publishes current main). The `github-pages` environment
+  allows `main` and `v*` tags to deploy. Each screen names the manual heading it
   illustrates; the renderer exits non-zero on a heading that no longer exists, so a renamed section
   shows up there — fix the screen's `section`, not the check.
 - ⭑ **The browser Help page IS the draft.** `scripts/gen_help.py` splits it (plus `QUICKSTART.md`)

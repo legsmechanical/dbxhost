@@ -1,0 +1,51 @@
+name: Manual site
+
+# The dAVEBOx SA manual as a public web page (GitHub Pages), so it can be shared
+# with a link: https://legsmechanical.github.io/dbxhost/
+#
+# Published on every release tag, so the page matches the release users install.
+# "Run workflow" (workflow_dispatch) publishes the current main on demand.
+# The page is the same self-contained file release.yml attaches to each release.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: manual-site
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm, cache-dependency-path: davebox/package-lock.json }
+      - name: Build the HTML manual
+        run: |
+          cd davebox && npm ci --no-audit --no-fund && cd ..
+          mkdir -p _site
+          bash davebox/scripts/build_manual_html.sh "$PWD/_site/index.html"
+          touch _site/.nojekyll
+          ls -la _site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: _site }
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
