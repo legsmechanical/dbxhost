@@ -153,12 +153,52 @@ await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const tickmod = await import('../../ui/ui_tick.mjs');
-const render = await import('../../ui/ui_render.mjs');
 const { MoveNoteSession } = await import('../../ui/ui_constants.mjs');
 const { MoveShift } = await import('/data/UserData/schwung/shared/constants.mjs');
 
 function ticks(n) { for (let i = 0; i < n; i++) { S.tickCount++; S.clockMs += 11; tickmod._tickImpl(); } }
 const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
+
+function openFx1Editor() {
+    cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+    ticks(6);
+    for (let guard = 0; ; guard++) {
+        const st = snd.soundPickStateForTest();
+        if (st.comps[st.row] === 'fx1') break;
+        if (guard > 30) throw new Error('rig: never reached the FX 1 row — ' + JSON.stringify(st.labels));
+        cc(14, 1); ticks(1);
+    }
+    cc(3, 127); cc(3, 0);
+    ticks(8);
+    if (snd.soundCompForTest() !== 'fx1') throw new Error('rig: editor is on ' + snd.soundCompForTest());
+    if (!snd.soundPPForTest().on) throw new Error('rig: the param-pages editor did not take the screen');
+}
+
+step('setup: a Schwung track, FX 1 = a module with a Bank and a Preset browser', () => {
+    globalThis.init();
+    S.awaitingProjectSelect = false; S.ledInitComplete = true; S.sessionView = false;
+    S.activeTrack = 1; S.trackRoute[1] = 0; S.trackChannel[1] = 2;
+    ticks(8);
+    openFx1Editor();
+    ticks(4);
+});
+/* The REAL planned pages, collected by jogging the real editor. */
+const pages = {};
+step('the editor plans BOTH browsers as preset pages, each with its own keys', () => {
+    for (let g = 0; g < 16; g++) { cc(14, 127); ticks(3); }
+    for (let g = 0; g < 20; g++) {
+        const pg = snd.soundPPForTest().page;
+        if (pg && pg.kind === 'preset' && pg.listParam) pages[pg.listParam] = pg;
+        cc(14, 1); ticks(3);
+    }
+    if (!pages.bank_list || !pages.patch) throw new Error('planned browsers: ' + Object.keys(pages));
+});
+/* Ask as the controller does when a browser is ENTERED; let the walk finish. */
+function namesFor(pg) {
+    let n = snd.soundPresetNamesForTest(pg, { entered: true, index: 0, count: 0 });
+    for (let i = 0; i < 80 && !n; i++) { ticks(1); n = snd.soundPresetNamesForTest(pg, { entered: true, index: 0, count: 0 }); }
+    return n;
+}
 step('the Bank browser gets the bank list', () => {
     const n = namesFor(pages.bank_list);
     if (!Array.isArray(n) || JSON.stringify(n) !== JSON.stringify(BANKS)) throw new Error('bank page names: ' + JSON.stringify(n));
