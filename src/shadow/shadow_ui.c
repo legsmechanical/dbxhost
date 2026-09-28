@@ -35,6 +35,8 @@
 #include "host/js_host_common.h"
 #include "host/shadow_midi_inject_writer.h"
 #include "host/ui_midi_ring.h"
+#include "host/ui_midi_out_ring.h"
+#include "host/ui_midi_dsp_ring.h"
 #include "../host/unified_log.h"
 #include "host/schwung_trace.h"
 #include "host/surface_trace.h"   /* Phase 2: JS-side OTLP spans (js.tick, param.get) */
@@ -1452,8 +1454,59 @@ static JSValue js_shadow_midi_send(int cable, JSContext *ctx, JSValueConst this_
     JS_ToInt32(ctx, &len, len_val);
     JS_FreeValue(ctx, len_val);
 
-    /* Process 4 bytes at a time (USB-MIDI packet format) */
-    int dropped = 0;
+    /* WHOLE PACKETS ONLY (upstream 839e0f5c). The ring's indices advance by
+     * `len`, and every reader walks it four bytes at a time: a 3- or 7-byte
+     * push would shift both indices off the packet grid for good, and every
+     * later packet would decode shifted. Refused, never padded. (Every sender
+     * in this tree already sends whole packets.) */
+    if (len <= 0 || (len & 3) != 0) return JS_FALSE;
+
+    /* A message too large to EVER fit is not a transient refusal: "false means
+     * retry" would livelock on it. Say so distinctly (upstream 6eea5aee). */
+    if (len > (int)UI_MIDI_OUT_CAPACITY) {
+        static time_t last_oversize = 0;
+        time_t now_os = time(NULL);
+        if (now_os != last_oversize) {
+            last_oversize = now_os;
+            unified_log("shadow_ui", LOG_LEVEL_DEBUG,
+                        "shadow MIDI out: message of %d bytes exceeds the %d-byte "
+                        "ring capacity and can never be sent -- refusing rather "
+                        "than truncating", len, (int)UI_MIDI_OUT_CAPACITY);
+        }
+        return JS_FALSE;
+    }
+
+    /* ALL OR NOTHING (upstream bb0b2a6e). The old loop wrote packet by packet
+     * until the buffer filled and counted the rest dropped — a prefix landing
+     * and a tail vanishing, which for a SysEx is a CORRUPT message, not a late
+     * one. Refusing the whole message returns false, which callers already
+     * treat as "not sent" (input_filter declines to cache the LED).
+     *
+     * Cable 0 (the Move's LEDs, palette SysEx) may not take the last
+     * SHADOW_MIDI_OUT_EXT_HEADROOM bytes, so an LED flood never crowds out
+     * external MIDI on cable 2 — this fork's rule, now measured against the
+     * ring's FREE space rather than a flat offset. */
+    {
+        int room = ui_midi_out_free(shadow_midi_out);
+        if (!shadow_midi_out_admits(room, cable, len)) {
+            shadow_midi_out_drops += len / 4;
+            static time_t last_partial_report = 0;
+            time_t now = time(NULL);
+            if (now != last_partial_report) {
+                last_partial_report = now;
+                unified_log("shadow_ui", LOG_LEVEL_DEBUG,
+                            "shadow MIDI out: refusing a %d-byte cable-%d message "
+                            "with %d bytes free (%ld total dropped) -- a partial "
+                            "write would truncate it on the wire",
+                            len, cable, room, shadow_midi_out_drops);
+            }
+            return JS_FALSE;
+        }
+    }
+
+    /* ASSEMBLE LOCALLY, THEN PUBLISH ONCE: write_idx moves exactly once per
+     * message, so the shim sees the whole run or none of it. */
+    uint8_t staged[SHADOW_MIDI_OUT_BUFFER_SIZE];
     for (int i = 0; i < len; i += 4) {
         uint8_t packet[4] = {0, 0, 0, 0};
 
@@ -1467,40 +1520,23 @@ static JSValue js_shadow_midi_send(int cable, JSContext *ctx, JSValueConst this_
 
         /* Override cable number in CIN byte */
         packet[0] = (packet[0] & 0x0F) | (cable << 4);
-
-        /* Find space in buffer and write. Cable 0 (LEDs) stops short of the
-         * end, so external MIDI always has room (SHADOW_MIDI_OUT_EXT_HEADROOM). */
-        int write_offset = shadow_midi_out->write_idx;
-        if (shadow_midi_out_admits((uint16_t)write_offset, cable)) {
-            memcpy(&shadow_midi_out->buffer[write_offset], packet, 4);
-            shadow_midi_out->write_idx = (uint16_t)(write_offset + 4);
-        } else {
-            dropped++;
-        }
+        memcpy(&staged[i], packet, 4);
     }
 
-    /* Signal shim that data is ready */
-    shadow_midi_out->ready++;
-
-    /* A write that discards and reports success is how an LED goes permanently
-     * wrong: input_filter's setLED records the colour it believes the hardware
-     * now shows and suppresses the next identical repaint, so a packet lost
-     * here is never retried. Report the failure so the caller can decline to
-     * cache it, and count it so "sometimes drops LEDs" is a number rather than
-     * a feeling. Logging here is safe — shadow_ui is a separate SCHED_OTHER
-     * process, not the SPI callback — but it is rate-limited so a flood cannot
-     * turn a dropped LED into a dropped audio block. */
-    if (dropped) {
-        shadow_midi_out_drops += dropped;
+    /* Cannot fail: the room check above reserved the space, and this process
+     * is the only producer. Checked anyway — a silent success on a discarded
+     * write is the defect class this path exists to end. */
+    if (!ui_midi_out_push(shadow_midi_out, staged, (uint16_t)len)) {
+        shadow_midi_out_drops += len / 4;
         static time_t last_report = 0;
         time_t now = time(NULL);
         if (now != last_report) {
             last_report = now;
             unified_log("shadow_ui", LOG_LEVEL_DEBUG,
-                        "shadow MIDI out: buffer full, dropped %d packet(s) "
-                        "(%ld total) - more than %d bytes queued in one flush",
-                        dropped, shadow_midi_out_drops,
-                        SHADOW_MIDI_OUT_BUFFER_SIZE);
+                        "shadow MIDI out: push of %d bytes refused after the "
+                        "room check passed (%ld total dropped) -- two producers, "
+                        "or the ring indices are corrupt",
+                        len, shadow_midi_out_drops);
         }
         return JS_FALSE;
     }
@@ -1568,21 +1604,10 @@ static JSValue js_shadow_send_midi_to_dsp(JSContext *ctx, JSValueConst this_val,
     uint8_t slot_tag = 0;
     if (slot >= 0 && slot < SHADOW_CHAIN_INSTANCES)
         slot_tag = (uint8_t)(slot + 1);
-    int write_offset = shadow_midi_dsp->write_idx;
-    int dropped = 0;
-    if (write_offset + 4 <= SHADOW_MIDI_DSP_BUFFER_SIZE) {
-        shadow_midi_dsp->buffer[write_offset] = msg[0];
-        shadow_midi_dsp->buffer[write_offset + 1] = msg[1];
-        shadow_midi_dsp->buffer[write_offset + 2] = msg[2];
-        shadow_midi_dsp->buffer[write_offset + 3] = slot_tag;
-        shadow_midi_dsp->write_idx = (uint16_t)(write_offset + 4);
-    } else {
-        dropped = 1;
-    }
-
-    /* Signal shim that data is ready (barrier ensures buffer writes are visible first) */
-    __sync_synchronize();
-    shadow_midi_dsp->ready++;
+    /* One frame, pushed whole through the ring (ui_midi_dsp_ring.h): never a
+     * write to read_idx, never an in-place write the shim could see half-done. */
+    uint8_t frame[4] = { msg[0], msg[1], msg[2], slot_tag };
+    int dropped = ui_midi_dsp_push(shadow_midi_dsp, frame, 4) ? 0 : 1;
 
     /* Same "silent success" trap as js_shadow_midi_send: a caller that treats
      * this return as fire-and-forget will retry on JS_FALSE (or at least know
@@ -1598,9 +1623,9 @@ static JSValue js_shadow_send_midi_to_dsp(JSContext *ctx, JSValueConst this_val,
             last_report = now;
             unified_log("shadow_ui", LOG_LEVEL_DEBUG,
                         "shadow MIDI to DSP: buffer full, dropped %d packet(s) "
-                        "(%ld total) - more than %d bytes queued in one flush",
+                        "(%ld total) - more than %d bytes queued between drains",
                         dropped, shadow_midi_dsp_drops,
-                        SHADOW_MIDI_DSP_BUFFER_SIZE);
+                        UI_MIDI_DSP_CAPACITY);
         }
         return JS_FALSE;
     }

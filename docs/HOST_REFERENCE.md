@@ -620,11 +620,15 @@ the same defect class as the tri-state read rule above. It now returns false and
 the drop is counted and logged (rate-limited, from `shadow_ui`, which is
 SCHED_OTHER and may log). Pinned by `tests/host/test_shadow_midi_out_capacity.c`.
 
-The sibling `shadow_midi_dsp_t` ring (`js_shadow_send_midi_to_dsp`, MIDI to chain
-DSP slots) carried the identical `uint8_t write_idx` defect and got the identical
-fix — `uint16_t`, a `_Static_assert`, a `shadow_midi_dsp_drops` counter, and
-`JS_FALSE` on a dropped packet — found 2026-09-15 via a held note on load;
-pinned by `tests/host/test_midi_dsp_ring_width.sh`.
+The sibling `shadow_midi_dsp_t` segment (`js_shadow_send_midi_to_dsp`, MIDI to chain
+DSP slots) carried the identical `uint8_t write_idx` defect — found 2026-09-15 via a
+held note on load. It is now a single-producer single-consumer ring like the MIDI-out
+one (`ui_midi_dsp_ring.h`): the old drain reset `write_idx` and cleared the buffer
+while `shadow_ui` could be appending, erasing a note the module had been told was
+delivered. A full ring refuses, counts `shadow_midi_dsp_drops` and returns `JS_FALSE`;
+a count no producer can leave is released unread and shows as `dsp_discarded` on the
+shim's `UI-MIDI out:` timing line. Pinned by `tests/host/test_ui_midi_dsp_ring.c`,
+`test_ui_midi_dsp_ring_threads.c` and `test_ui_midi_dsp_wiring.sh`.
 
 Reference: `src/modules/controller/ui.js`.
 

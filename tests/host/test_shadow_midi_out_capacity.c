@@ -1,133 +1,121 @@
 /*
- * Can shadow_midi_out_t.write_idx address its own buffer?
+ * The shadow_ui -> shim MIDI-out ring: capacity, headroom, all-or-nothing.
  *
- * It could not. The buffer is 512 bytes and write_idx was a uint8_t, so:
- *
- *   - only the first 63 packets were reachable; the back half of the buffer
- *     was never written and never read;
- *   - `write_idx = write_offset + 4` wrapped 252 -> 0, silently rewinding the
- *     buffer mid-flush so later packets overwrote earlier ones;
- *   - the `write_offset + 4 <= SHADOW_MIDI_OUT_BUFFER_SIZE` bounds check in
- *     js_shadow_midi_send could never fire, because a uint8_t cannot reach
- *     512. It read as a working overflow check and was dead code.
- *
- * Symptom on hardware: an overtake module playing heavily loses LED updates,
- * permanently, because input_filter's setLED caches the colour it believes it
- * sent and suppresses the next identical repaint.
- *
- * This is the "~64 packets, >60/frame overflows" limit CLAUDE.md recorded as a
- * property of the buffer. It was a property of the FIELD.
- *
- * The test drives the real write loop against the real struct, so it fails if
- * the field is ever narrowed back — which is the only way this returns.
+ * History: write_idx was once a uint8_t, so only the first 63 packets of the
+ * 512-byte buffer were reachable and a full buffer read as a successful write.
+ * Since upstream 988ed244 the segment is a single-producer single-consumer ring
+ * (ui_midi_out_ring.h): free-running indices, capacity one packet short of the
+ * buffer so full != empty. This drives the SAME admission rule the writer uses
+ * (shadow_midi_out_admits, measured in FREE bytes) and the ring's own push, so it
+ * fails if the headroom, the capacity or the all-or-nothing rule regresses.
  */
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "shadow_constants.h"
+#include "ui_midi_out_ring.h"
 
 static int failures = 0;
 
 static void check(int cond, const char *what) {
-    if (cond) {
-        printf("  ok   %s\n", what);
-    } else {
-        printf("  FAIL %s\n", what);
-        failures++;
-    }
+    if (cond) printf("  ok   %s\n", what);
+    else    { printf("  FAIL %s\n", what); failures++; }
 }
 
-/* The write step of js_shadow_midi_send, through the SAME admission rule it
- * calls (shadow_midi_out_admits) — the cable is the CIN byte's high nibble.
- * Returns 1 if queued. */
-static int push_packet(shadow_midi_out_t *m, const uint8_t pkt[4]) {
-    int write_offset = m->write_idx;
-    if (shadow_midi_out_admits((uint16_t)write_offset, (pkt[0] >> 4) & 0x0F)) {
-        memcpy(&m->buffer[write_offset], pkt, 4);
-        m->write_idx = (uint16_t)(write_offset + 4);
-        return 1;
-    }
-    return 0;
+/* The writer's decision (shadow_ui.c js_shadow_midi_send): whole message, the
+ * cable from the first packet's CIN byte, cable 0 kept off the headroom. */
+static int send_msg(shadow_midi_out_t *m, const uint8_t *msg, int len) {
+    int cable = (msg[0] >> 4) & 0x0F;
+    if (!shadow_midi_out_admits(ui_midi_out_free(m), cable, len)) return 0;
+    return ui_midi_out_push(m, msg, (uint16_t)len);
+}
+/* The shim's side: take everything queued. */
+static int drain_all(shadow_midi_out_t *m, uint8_t *out) {
+    uint16_t n = ui_midi_out_used(m);
+    ui_midi_out_copy(m, out, n);
+    ui_midi_out_commit(m, n);
+    return n;
 }
 
 int main(void) {
     static shadow_midi_out_t m;
-    const int CAPACITY = SHADOW_MIDI_OUT_BUFFER_SIZE / 4;
+    const int CAP = UI_MIDI_OUT_CAPACITY / 4;          /* 127: one packet short */
 
-    /* 1. THE WHOLE BUFFER IS REACHABLE (by external MIDI, cable 2 — cable 0
-     * stops short of the end on purpose, see section 6). */
-    printf("every packet the buffer has room for is accepted\n");
+    printf("the ring takes all it has room for, and refuses past it\n");
     memset(&m, 0, sizeof(m));
     int queued = 0;
-    for (int i = 0; i < CAPACITY; i++) {
-        uint8_t pkt[4] = { 0x29, 0x90, (uint8_t)i, 100 };
-        queued += push_packet(&m, pkt);
+    for (int i = 0; i < CAP + 1; i++) {
+        uint8_t pkt[4] = { 0x29, 0x90, (uint8_t)i, 100 };      /* cable 2 */
+        queued += send_msg(&m, pkt, 4);
     }
-    check(queued == CAPACITY, "all 128 packets queued, not 63");
-    check(m.write_idx == SHADOW_MIDI_OUT_BUFFER_SIZE,
-          "write_idx reaches the end of the buffer");
+    check(queued == CAP, "127 packets queued (the capacity), the 128th refused");
+    check(ui_midi_out_used(&m) == UI_MIDI_OUT_CAPACITY, "the ring reports itself full");
 
-    /* 2. NOTHING REWOUND. The wrap overwrote packet 0 with packet 64; the
-     * note number in each slot is what proves it did not happen here. */
-    printf("no packet was overwritten by a later one\n");
-    int intact = 1;
-    for (int i = 0; i < CAPACITY; i++)
-        if (m.buffer[i * 4 + 2] != (uint8_t)i) { intact = 0; break; }
-    check(intact, "every slot still holds the packet written to it");
+    printf("the shim reads back exactly what was written, in order\n");
+    uint8_t out[SHADOW_MIDI_OUT_BUFFER_SIZE];
+    int n = drain_all(&m, out);
+    int intact = (n == UI_MIDI_OUT_CAPACITY);
+    for (int i = 0; intact && i < CAP; i++) if (out[i * 4 + 2] != (uint8_t)i) intact = 0;
+    check(intact, "every packet comes out, in the order it went in");
+    check(ui_midi_out_used(&m) == 0, "and the ring is empty after the commit");
 
-    /* 3. THE GUARD ACTUALLY FIRES. It could not before: a uint8_t
-     * write_offset cannot reach 512, so the bounds check was unreachable and
-     * a full buffer was indistinguishable from a successful write. */
-    printf("a full buffer refuses, and says so\n");
-    uint8_t extra[4] = { 0x29, 0x90, 127, 100 };
-    check(push_packet(&m, extra) == 0, "the packet past the end is refused");
-    check(m.write_idx == SHADOW_MIDI_OUT_BUFFER_SIZE,
-          "and a refused write does not advance the cursor");
+    printf("across the wrap, order holds\n");
+    int wrapped_ok = 1;
+    for (int round = 0; round < 40 && wrapped_ok; round++) {
+        uint8_t msg[12];
+        for (int k = 0; k < 3; k++) { msg[4*k] = 0x29; msg[4*k+1] = 0x90; msg[4*k+2] = (uint8_t)(round*3+k); msg[4*k+3] = 1; }
+        if (!send_msg(&m, msg, 12)) { wrapped_ok = 0; break; }
+        n = drain_all(&m, out);
+        if (n != 12) wrapped_ok = 0;
+        for (int k = 0; k < 3 && wrapped_ok; k++) if (out[4*k+2] != (uint8_t)(round*3+k)) wrapped_ok = 0;
+    }
+    check(wrapped_ok, "40 rounds of a 3-packet message through the wrap, in order");
 
-    /* 4. THE SHIM READS WHAT WAS WRITTEN. shadow_inject_ui_midi_out does
-     * `int snapshot_len = midi_out_shm->write_idx`, so a field that cannot
-     * express the length silently truncates the drain as well as the fill. */
-    printf("the length the shim reads covers everything written\n");
-    int snapshot_len = m.write_idx;
-    check(snapshot_len == SHADOW_MIDI_OUT_BUFFER_SIZE,
-          "the drain sees all 512 bytes, not the low 8 bits of the count");
+    printf("a message is admitted WHOLE or not at all\n");
+    memset(&m, 0, sizeof(m));
+    for (int i = 0; i < CAP - 2; i++) { uint8_t p[4] = { 0x29, 0x90, 1, 1 }; send_msg(&m, p, 4); }
+    uint8_t sysex[12] = { 0x24, 0xF0, 0x00, 0x21, 0x24, 0x1D, 0x01, 0x01, 0x27, 0x05, 0x06, 0xF7 };
+    uint16_t before = m.write_idx;
+    check(send_msg(&m, sysex, 12) == 0, "a 3-packet SysEx with 2 packets free is refused");
+    check(m.write_idx == before, "and nothing of it landed (no truncated prefix)");
 
-    /* 5. THE STRUCT DID NOT GROW. Both processes map by sizeof and are built
-     * together, but a size change is still an ABI change and this one was
-     * meant to be free — it takes a reserved byte. */
-    printf("widening the field cost no memory\n");
-    check(sizeof(shadow_midi_out_t) == 4 + SHADOW_MIDI_OUT_BUFFER_SIZE,
-          "sizeof is unchanged at header + buffer");
-
-    /* 6. AN LED FLOOD CANNOT CROWD OUT EXTERNAL MIDI. A full repaint plus
-     * palette SysEx can exceed the buffer in one flush; the writer refused the
-     * NEWEST packet, which could be an external sustain-pedal release or a
-     * pitch bend returning to centre — lost for good, while a refused LED is
-     * resent by the next repaint. */
     printf("LED traffic leaves room for external MIDI\n");
     memset(&m, 0, sizeof(m));
     int leds = 0;
-    for (int i = 0; i < CAPACITY; i++) {
-        uint8_t led[4] = { 0x09, 0x90, (uint8_t)i, 5 };     /* cable 0: a pad LED */
-        leds += push_packet(&m, led);
+    for (int i = 0; i < CAP; i++) {
+        uint8_t led[4] = { 0x09, 0x90, (uint8_t)i, 5 };        /* cable 0: a pad LED */
+        leds += send_msg(&m, led, 4);
     }
-    check(leds == CAPACITY - SHADOW_MIDI_OUT_EXT_HEADROOM / 4,
-          "cable 0 fills only up to the headroom (112 of 128)");
+    check(leds == CAP - SHADOW_MIDI_OUT_EXT_HEADROOM / 4,
+          "cable 0 fills only up to the headroom (111 of 127)");
     int ext = 0;
     for (int i = 0; i < SHADOW_MIDI_OUT_EXT_HEADROOM / 4; i++) {
-        uint8_t cc[4] = { 0x2B, 0xB0, 64, 0 };               /* cable 2: sustain off */
-        ext += push_packet(&m, cc);
+        uint8_t cc[4] = { 0x2B, 0xB0, 64, 0 };                 /* cable 2: sustain off */
+        ext += send_msg(&m, cc, 4);
     }
-    check(ext == SHADOW_MIDI_OUT_EXT_HEADROOM / 4,
-          "after an LED flood, 16 external packets still fit");
+    check(ext == SHADOW_MIDI_OUT_EXT_HEADROOM / 4, "after an LED flood, 16 external packets still fit");
     uint8_t one_more[4] = { 0x2B, 0xB0, 64, 0 };
-    check(push_packet(&m, one_more) == 0, "and the buffer still refuses past its end");
+    check(send_msg(&m, one_more, 4) == 0, "and the ring still refuses past its capacity");
 
-    if (failures) {
-        printf("FAILURES: %d\n", failures);
-        return 1;
-    }
-    printf("PASS: shadow MIDI out buffer is fully addressable\n");
+    printf("the headroom is charged against the WHOLE message, not its first packet\n");
+    memset(&m, 0, sizeof(m));
+    /* Leave 18 packets free: the headroom (16) plus 2. The ring itself has room
+     * for a 3-packet message, so only the admission rule can refuse it. */
+    for (int i = 0; i < CAP - (SHADOW_MIDI_OUT_EXT_HEADROOM / 4 + 2); i++)
+        { uint8_t p[4] = { 0x29, 0x90, 1, 1 }; send_msg(&m, p, 4); }
+    uint8_t led_sysex[12] = { 0x04, 0xF0, 0x00, 0x21, 0x04, 0x1D, 0x01, 0x01, 0x07, 0x05, 0x06, 0xF7 };
+    check(ui_midi_out_free(&m) >= 12, "(precondition: the ring alone would take it)");
+    check(send_msg(&m, led_sysex, 12) == 0,
+          "a 3-packet cable-0 SysEx with 2 packets above the headroom is refused");
+    uint8_t led2[8] = { 0x09, 0x90, 1, 5, 0x09, 0x90, 2, 5 };
+    check(send_msg(&m, led2, 8) == 1, "while a 2-packet cable-0 message still fits");
+
+    printf("the struct did not grow\n");
+    check(sizeof(shadow_midi_out_t) == 4 + SHADOW_MIDI_OUT_BUFFER_SIZE,
+          "sizeof is unchanged at two indices + buffer");
+
+    if (failures) { printf("FAILURES: %d\n", failures); return 1; }
+    printf("PASS: shadow MIDI out ring capacity, headroom and all-or-nothing\n");
     return 0;
 }
