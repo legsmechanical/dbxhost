@@ -29,4 +29,17 @@ for site in "src/modules/chain/dsp/chain_host.c:requires_continuous_processing" 
     echo "  ok   $f reads $k as a flag"
   fi
 done
-[ $fail = 0 ] && echo "PASS: capability flag parse sites" || { echo "FAIL: capability flag parse sites"; exit 1; }
+# The shim honours it on EVERY FX path. There are three (deferred, the Link
+# Audio rebuild, the inline fallback); the keep-alive used to live in one, and a
+# Link Audio session runs another, so the flag was dead there even when parsed.
+sh=src/schwung_shim.c
+parks="$(grep -c 'shadow_slot_fx_idle\[s\] = 1' "$sh" || true)"
+calls="$(grep -c '^ *shadow_slot_fx_track_idle(s, fx_buf);' "$sh" || true)"
+if [ "$parks" != 1 ]; then echo "  FAIL $sh parks a slot's FX in $parks places (want 1: shadow_slot_fx_track_idle)"; fail=1
+else echo "  ok   one place parks a slot's FX"; fi
+if ! awk '/^static inline void shadow_slot_fx_track_idle/,/^}/' "$sh" | grep -q 'shadow_chain_fx_requires_continuous('; then
+  echo "  FAIL shadow_slot_fx_track_idle does not consult the continuous-processing flag"; fail=1
+else echo "  ok   that place honours requires_continuous_processing"; fi
+if [ "$calls" -lt 3 ]; then echo "  FAIL only $calls FX path(s) call shadow_slot_fx_track_idle (want 3)"; fail=1
+else echo "  ok   all $calls FX paths go through it"; fi
+[ $fail = 0 ] && echo "PASS: capability flag parse sites + the shim keep-alive" || { echo "FAIL: capability flags"; exit 1; }
