@@ -49,6 +49,11 @@ CHAIN_INTERNAL int json_get_int_in_section(const char *json, const char *section
     (void)json; (void)section_key; (void)key; (void)out;
     return -1;
 }
+CHAIN_INTERNAL int json_get_flag_in_section(const char *json, const char *section_key,
+                                            const char *key) {
+    (void)json; (void)section_key; (void)key;
+    return 0;
+}
 CHAIN_INTERNAL void chain_mod_clear_target_entries(chain_instance_t *inst,
                                                    const char *target, int restore_base) {
     (void)inst; (void)target; (void)restore_base;
