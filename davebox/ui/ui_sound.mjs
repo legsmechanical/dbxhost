@@ -12075,6 +12075,21 @@ function ppRefreshPresets() {
  * slot+component — so the row opens davebox's preset hub instead of naming a
  * preset, and the destructive rows live inside that hub where they already have
  * a target. Adding the record is its own piece of work. */
+/* Is this preset PAGE the browser davebox's baked list belongs to? Same list,
+ * count and name keys — the triple the walk reads (findPresetSpec). */
+function presetPageMatchesSpec(page) {
+    const sp = S.presetSpec;
+    if (!sp || !page) return false;
+    return page.listParam === sp.listKey && page.countParam === sp.countKey &&
+           (page.nameParam || 'preset_name') === sp.nameKey;
+}
+/* What the editor's real io answers for a planned preset page. */
+export function soundPresetNamesForTest(page, o) { return ppIo().presetNames(page, o || {}); }
+export function soundPresetPageMatchesSpecForTest(page, spec) {
+    const saved = S.presetSpec; S.presetSpec = spec;
+    try { return presetPageMatchesSpec(page); } finally { S.presetSpec = saved; }
+}
+
 function ppIo() {
     return {
         /* Automation hears every knob edit and touch in the chain editor —
@@ -12172,6 +12187,14 @@ function ppIo() {
          * which is the same gesture that opens davebox's own preset screen. */
         presetNames: (page, o) => {
             if (!S.presetSpec) return null;
+            /* ⚠⚠ ONLY FOR THE PAGE THE LIST WAS WALKED FROM. davebox knows ONE
+             * baked list (findPresetSpec: the first level declaring list and
+             * count), and a module may declare several browsers — JE-8086 has
+             * Bank (bank_list) and Preset (patch) per mode — so answering every
+             * preset page drew the Bank list on the Preset page too (Josh,
+             * 2026-09-27: "both pages show the same files"). Any other page gets
+             * null and draws its own current name, as stock's does. */
+            if (!presetPageMatchesSpec(page)) return null;
             if (bakedNamesReady()) return S.bakedNames;
             /* Entered and we have nothing: resolve caches, and arm the walk
              * only if both are cold. Cheap and idempotent when warm.
