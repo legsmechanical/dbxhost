@@ -359,10 +359,9 @@ static int v2_load_audio_fx_slot(chain_instance_t *inst, int slot, const char *f
                 if (mj_buf) {
                     size_t nr = fread(mj_buf, 1, mj_size, mj);
                     mj_buf[nr] = '\0';
-                    int cap = 0;
-                    if (json_get_int_in_section(mj_buf, "capabilities",
-                                                "requires_continuous_processing", &cap) == 0
-                        && cap) {
+                    /* `true` or a number: modules write `true` (MODULES.md). */
+                    if (json_get_flag_in_section(mj_buf, "capabilities",
+                                                 "requires_continuous_processing")) {
                         inst->fx_requires_continuous[slot] = 1;
                     }
                     free(mj_buf);
