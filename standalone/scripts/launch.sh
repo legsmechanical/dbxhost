@@ -660,6 +660,10 @@ setsid --wait bash -c '
         pids=$(pidof $name 2>/dev/null || true)
         [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
       done
+      # Leftovers a module FORKED inside Move (JE-8086 emulator stages) keep
+      # the dead Move name and hold locks stock then trips on; they are found
+      # by SESSION, not name -- see reap-session.sh.
+      sh "$DBX_DIR/scripts/reap-session.sh" "$$" 9>&- || true
       rm -f "$DBX_DIR/shadow_ui.pid" "$DBX_DIR/link_sub.pid"
       rm -f /dev/shm/dbxhost-*
       start_manager
@@ -765,6 +769,10 @@ setsid --wait bash -c '
     pids=$(pidof $name 2>/dev/null || true)
     [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
   done
+  # Leftovers a module FORKED inside Move (JE-8086 emulator stages) keep
+  # the dead Move name and hold locks stock then trips on; they are found
+  # by SESSION, not name -- see reap-session.sh.
+  sh "$DBX_DIR/scripts/reap-session.sh" "$$" 9>&- || true
   # Reap ORPHANED crash handlers. XCrashpadHandler outlives the Move that
   # started it -- it is reparented to init and sits there forever, one per
   # swept Move, and it is not in the name list above because killing a LIVE

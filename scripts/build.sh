@@ -744,6 +744,9 @@ if [ -d ./standalone ]; then
     # MoveOriginal's own "About to load ..." boot line into
     # move_loaded_set.txt (see that script for the file contract).
     cp ./standalone/scripts/move-loaded-set-reader.sh ./build/scripts/
+    # reap-session.sh: run by launch.sh after Move exits, to stop what a module
+    # forked inside it (found by session, not name -- see the script).
+    cp ./standalone/scripts/reap-session.sh ./build/scripts/
     # select-list.sh / select-hook.sh: the boot set-select gate's name source
     # and post-selection wiring hook, run by the shadow UI (see the gate block
     # in src/shadow/shadow_ui.js for the file contract).
@@ -768,7 +771,7 @@ if [ -d ./standalone ]; then
     chmod +x ./build/scripts/quiesce-stock.sh ./build/scripts/exit-to-stock.sh \
              ./build/scripts/set-swap.sh ./build/scripts/project-cmd.sh \
              ./build/scripts/select-list.sh ./build/scripts/select-hook.sh \
-             ./build/scripts/move-loaded-set-reader.sh
+             ./build/scripts/move-loaded-set-reader.sh ./build/scripts/reap-session.sh
     # The template project every standalone workspace seeds from (correctly
     # wired at birth — see the generator's header). Generated, not checked in,
     # so the pristine fixture stays the single source.
