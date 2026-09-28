@@ -1444,6 +1444,7 @@ export function applyBankPick(rest) {
  *   <slot>:<comp>:<key>    -> the module editor for <comp>, on the page holding <key>
  *   <slot>:slot:… / move_fx -> SOUND + CONFIG (the track's levels and its Move bus)
  *   cc:N / at / pb         -> MACROS (where MIDI targets are mapped)
+ *   mac:<t>:<knob>         -> MACROS (a SnapMorph knob's position)
  * RULED: Back from the destination returns to the AUTOMATION menu, cursor on
  * the lane — once; after that the destination's Back is its own again. */
 function autoLaneJump() {
@@ -1485,7 +1486,7 @@ function autoLaneJump() {
     }
     const home = laneHome(tgt, t);
     if (!home) { showActionPopup('NO EDITOR'); return; }
-    if (home.kind === 'level') { soundCard(false); return; }
+    if (home.kind === 'level' || home.kind === 'macros') { soundCard(home.kind === 'macros'); return; }
     if (soundJumpToParam(t, home.comp, home.key, j.sel)) autoLanePinJump(tgt, 'sound', -1);
     else showActionPopup('NOT LOADED');
 }
