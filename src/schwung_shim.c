@@ -1890,6 +1890,22 @@ static void shadow_render_slot_task(void *vctx, int s, int lane) {
         shadow_slot_silence_frames[s] = 0;
     }
 
+    /* Sound generators that cannot be woken by anything the shim can see opt
+     * out of the idle gate entirely (upstream #515) -- chiefly the ones that
+     * consume line input, whose output follows a jack nobody here inspects and
+     * which receive no MIDI. Parked, the probe interval below chops up to
+     * ~0.5 s off the front of every phrase and anything quieter than
+     * DSP_SILENCE_LEVEL never returns: heard as a noise gate no module setting
+     * can switch off. Cleared here, before the gate, so a slot ALREADY parked
+     * by the module before this one wakes on the frame this one loads.
+     * Null-checked: this host can run against a chain dsp.so without it. */
+    int synth_keep_alive = (shadow_chain_synth_requires_continuous &&
+                            shadow_chain_synth_requires_continuous(shadow_chain_slots[s].instance));
+    if (synth_keep_alive) {
+        shadow_slot_idle[s] = 0;
+        shadow_slot_silence_frames[s] = 0;
+    }
+
     /* Idle gate: skip render_block if synth output has been silent.
      * Buffer is already zeroed; FX still runs for tail decay.
      * Probe every ~0.5s to detect self-generating audio (LFOs, arps).
@@ -2004,7 +2020,12 @@ static void shadow_render_slot_task(void *vctx, int s, int lane) {
         }
     }
 
-    if (is_silent) {
+    if (synth_keep_alive) {
+        /* Opted out above; hold the counter at zero so the slot cannot drift
+         * back into idle between renders. */
+        shadow_slot_silence_frames[s] = 0;
+        shadow_slot_idle[s] = 0;
+    } else if (is_silent) {
         shadow_slot_silence_frames[s]++;
         if (shadow_slot_silence_frames[s] >= DSP_IDLE_THRESHOLD) {
             shadow_slot_idle[s] = 1;
@@ -2156,8 +2177,9 @@ static void shadow_inprocess_render_to_buffer(void) {
     /* Overtake DSP generator: mix its output into the deferred buffer */
     if (overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->render_block) {
         /* Restore raw hardware audio_in so overtake plugins can read line-in.
-         * The resample bridge may have overwritten the shadow_mailbox AUDIO_IN
-         * region; re-copy from hardware to give plugins the actual input. */
+         * The resample bridge no longer writes the region before this (it runs
+         * LAST in shim_post_transfer), so this cannot undo it; the copy stays
+         * so a plugin always reads the jack. */
         if (hardware_mmap_addr) {
             int16_t *hw_ain = (int16_t *)(hardware_mmap_addr + AUDIO_IN_OFFSET);
             int16_t *sh_ain = (int16_t *)(global_mmap_addr + AUDIO_IN_OFFSET);
@@ -7667,8 +7689,8 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                              shadow_control ? &shadow_control->overtake_mode : NULL,
                              shadow_control ? &shadow_control->shift_held : NULL);
 
-    /* Bridge Schwung's total mix into native resampling path when selected. */
-    native_resample_bridge_apply();
+    /* The resample bridge is NOT here any more -- it is the LAST writer of
+     * AUDIO_IN, after the slot render below. See the call site. */
 
     /* Capture audio for sampler post-ioctl (Move Input source only - fresh hardware input) */
     if (sampler_source == SAMPLER_SOURCE_MOVE_INPUT) {
@@ -9574,6 +9596,26 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
         }
     }
     TIME_SECTION_END(spi_post_render_sum, spi_post_render_max);
+
+    /*
+     * THE RESAMPLE BRIDGE WRITES AUDIO_IN LAST -- after every reader in the
+     * frame, never before one (upstream #547).
+     *
+     * It overwrites the shadow mailbox's AUDIO_IN with the total mix so Move's
+     * own Resample records what is playing. It used to run up by the JACK
+     * post, BEFORE the slot render above, and two readers in the render lost:
+     *   - a Line In slot reads AUDIO_IN there, so with Resample on Mix it read
+     *     the previous mix, its own output included -- a closed digital loop
+     *     that rang whenever its gain reached 1;
+     *   - the overtake generator (a dAVEBOx session) restores the hardware
+     *     AUDIO_IN before its render, every frame, which overwrote the bridge:
+     *     Resample on Mix recorded the JACK, not the mix, in every session.
+     * Move reads the mailbox only after this callback returns (post_fn runs
+     * inside the hooked ioctl), so writing it here loses Move nothing, and
+     * every reader in the render got the jack. Pinned by
+     * tests/host/test_resample_bridge_after_render.sh.
+     */
+    native_resample_bridge_apply();
 
     /* === POST-IOCTL: CHECK FOR RESTART REQUEST === */
     /* Shadow UI can request a Move restart (e.g. after core update) */

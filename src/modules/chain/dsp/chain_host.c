@@ -168,6 +168,7 @@ void v2_unload_synth(chain_instance_t *inst) {
     inst->mod_param_refresh_ms_synth = 0;
     inst->synth_default_forward_channel = -1;
     inst->synth_bypassed = 0;
+    inst->synth_requires_continuous = 0;
 
     /* The DECLARED voice list belongs to the module that is leaving, so it goes
      * with it: an id left over would name a voice in a list that no longer
@@ -597,6 +598,7 @@ int v2_load_synth(chain_instance_t *inst, const char *module_name) {
     /* Parse default_forward_channel from capabilities in module.json */
     inst->synth_default_forward_channel = -1;  /* Default: no forwarding preference */
     inst->synth_consumes_line_input = 0;       /* Default: not a line-input consumer */
+    inst->synth_requires_continuous = 0;       /* Default: shim may park it on silence */
     {
         char json_path[MAX_PATH_LEN];
         snprintf(json_path, sizeof(json_path), "%s/module.json", synth_path);
@@ -637,10 +639,21 @@ int v2_load_synth(chain_instance_t *inst, const char *module_name) {
                             }
                             if (strcmp(ctype, "audio_fx") != 0 && strcmp(ctype, "midi_fx") != 0) {
                                 inst->synth_consumes_line_input = 1;
+                                /* And therefore keep-alive: nothing the shim
+                                 * can see would ever wake it. */
+                                inst->synth_requires_continuous = 1;
                                 v2_chain_log(inst, "Synth consumes line input (feedback risk on boot)");
                             }
                         }
                     }
+                    /* Declared opt-out from the shim's silence-skip, the same
+                     * capability the FX loader reads (upstream #515);
+                     * chain_internal.h has the why. */
+                    if (json_get_flag_in_section(json, "capabilities",
+                                                 "requires_continuous_processing"))
+                        inst->synth_requires_continuous = 1;
+                    if (inst->synth_requires_continuous)
+                        v2_chain_log(inst, "Synth keep-alive: exempt from silence-skip");
                     free(json);
                 }
             }
@@ -2884,6 +2897,16 @@ int chain_fx_requires_continuous(void *instance) {
         if (inst->fx_requires_continuous[i]) return 1;
     }
     return 0;
+}
+
+/* Exported: 1 if the SOUND GENERATOR here must keep rendering through silence
+ * (see synth_requires_continuous in chain_internal.h). Separate from the FX
+ * answer: an FX needing continuous time does not imply the synth ahead of it
+ * does, and one flag for both would park neither. */
+__attribute__((visibility("default")))
+int chain_synth_requires_continuous(void *instance) {
+    chain_instance_t *inst = (chain_instance_t *)instance;
+    return inst ? (inst->synth_requires_continuous ? 1 : 0) : 0;
 }
 
 /* Exported: called by the shim immediately after its silent-slot "mod:tick".
