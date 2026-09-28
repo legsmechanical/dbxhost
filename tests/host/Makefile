@@ -57,6 +57,7 @@ TARGETS = $(BUILD_DIR)/test_project_path \
           $(BUILD_DIR)/test_split_voices_parse \
           $(BUILD_DIR)/test_midi_coalesce \
           $(BUILD_DIR)/test_ui_midi_policy \
+          $(BUILD_DIR)/test_ui_midi_ring_order \
           $(BUILD_DIR)/test_midi_inject_writer \
           $(BUILD_DIR)/test_sa_master_volume \
           $(BUILD_DIR)/test_spawn_command \
