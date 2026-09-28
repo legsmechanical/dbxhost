@@ -10,7 +10,9 @@
  * That is why the negative controls below outnumber the positive ones.
  */
 #include <stdio.h>
+#include <string.h>
 #include "shadow_ui_midi_policy.h"
+#include "ui_midi_ring.h"
 
 static int fails = 0;
 
@@ -64,17 +66,53 @@ int main(void) {
     check("status says CC, CIN says note-on: holds",
           shadow_ui_midi_event_yields(0x09, 0xB0, 79) == 0);
 
-    printf("the reserve itself:\n");
+    printf("the reserve itself (ring cursor):\n");
 
-    /* 8 packets of the 64-packet ring, expressed in bytes. */
-    check("64-packet ring reserves 8 packets",
-          shadow_ui_midi_yield_limit(256) == 256 - 8 * 4);
-    check("a knob may still use most of the ring",
-          shadow_ui_midi_yield_limit(256) == 224);
-    /* A ring smaller than the reserve must clamp to zero, not go negative and
-     * turn the scan bound into a huge positive int. */
-    check("undersized ring clamps to 0", shadow_ui_midi_yield_limit(16) == 0);
-    check("zero-length ring clamps to 0", shadow_ui_midi_yield_limit(0) == 0);
+    /* The producer's exact rule (schwung_shim.c shadow_ui_midi_publish): a
+     * yielding event is refused when the reserve would be eaten; otherwise it
+     * goes to the ring at the cursor. */
+    {
+        static uint8_t ring[256];                    /* 64 packets, as the shim */
+        int wr = 0, rd = 0;
+        #define KNOB(v)  (!(shadow_ui_midi_reserve_blocks(ring, 256, wr)) && \
+                          ui_midi_ring_put(ring, 256, &wr, 0x0B, 0xB0, 71, (v)))
+        #define NOTEOFF(v) ui_midi_ring_put(ring, 256, &wr, 0x08, 0x80, 60, (v))
+        memset(ring, 0, sizeof ring);
+        int placed = 0;
+        for (int k = 0; k < 55; k++) placed += NOTEOFF(k);  /* 55 used, 9 free */
+        check("setup: 55 packets placed", placed == 55);
+        check("9 free: a knob detent is placed", KNOB(1));       /* now 8 free */
+        check("8 free: a knob detent YIELDS", !KNOB(2));
+        check("8 free: a note-off at the same cursor is placed", NOTEOFF(99));
+        int more = 0;
+        for (int k = 0; k < 7; k++) more += NOTEOFF(k);
+        check("a release fills the reserve to the last slot", more == 7);
+        check("full: even a release is refused (dropped, never overwrites)", !NOTEOFF(0));
+
+        /* Across the wrap: drain 40, then the same arithmetic from a cursor
+         * that has gone round the end of the array. */
+        for (int k = 0; k < 40; k++) {
+            int at = ui_midi_ring_next(ring, 256, &rd);
+            if (at < 0) break;
+            ui_midi_ring_advance(&rd, 256);
+            __atomic_store_n(&ring[at], 0, __ATOMIC_RELEASE);
+        }
+        placed = 0;
+        for (int k = 0; k < 31; k++) placed += NOTEOFF(k);   /* 40 free -> 9 free, cursor wrapped */
+        check("wrap setup: cursor went round the end", placed == 31 && wr < 64 * 4 / 2);
+        check("wrapped, 9 free: a knob detent is placed", KNOB(3));
+        check("wrapped, 8 free: a knob detent YIELDS", !KNOB(4));
+        check("wrapped, 8 free: a note-off is placed", NOTEOFF(5));
+        #undef KNOB
+        #undef NOTEOFF
+    }
+    /* A ring no bigger than the reserve holds everything back from a knob. */
+    {
+        static uint8_t tiny[32];
+        memset(tiny, 0, sizeof tiny);
+        check("undersized ring: a knob always yields", shadow_ui_midi_reserve_blocks(tiny, 32, 0));
+        check("zero-length ring: a knob always yields", shadow_ui_midi_reserve_blocks(tiny, 0, 0));
+    }
 
     printf(fails ? "FAILED\n" : "PASSED\n");
     return fails;

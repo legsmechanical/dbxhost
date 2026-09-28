@@ -42,6 +42,7 @@
 #include "host/audio_fx_api_v2.h"
 #include "host/shadow_constants.h"
 #include "host/shadow_ui_midi_policy.h"
+#include "host/ui_midi_ring.h"
 #include "host/timespec_delta.h"
 #include "host/shadow_midi_inject_writer.h"
 #include "host/shadow_param_lane.h"
@@ -3372,18 +3373,16 @@ static inline void shadow_ui_midi_publish(uint8_t head, uint8_t status,
      * events whose loss STICKS. See shadow_ui_midi_policy.h for why the two are
      * not interchangeable. */
     const int yields = shadow_ui_midi_event_yields(head, status, d1);
-    const int limit  = yields ? shadow_ui_midi_yield_limit(MIDI_BUFFER_SIZE)
-                              : MIDI_BUFFER_SIZE;
 
-    for (int slot = 0; slot < limit; slot += 4) {
-        if (__atomic_load_n(&shadow_ui_midi_shm[slot], __ATOMIC_ACQUIRE) == 0) {
-            shadow_ui_midi_shm[slot + 1] = status;
-            shadow_ui_midi_shm[slot + 2] = d1;
-            shadow_ui_midi_shm[slot + 3] = d2;
-            __atomic_store_n(&shadow_ui_midi_shm[slot], head, __ATOMIC_RELEASE);
-            shadow_control->midi_ready++;
-            return;
-        }
+    /* IN ARRIVAL ORDER (upstream 1dfd31f5): a ring cursor, not the lowest free
+     * slot, which reordered every burst that straddled a drain — a release
+     * could reach JS before its press. See src/host/ui_midi_ring.h. */
+    static int ui_midi_wr = 0;
+    if (!(yields && shadow_ui_midi_reserve_blocks(shadow_ui_midi_shm, MIDI_BUFFER_SIZE, ui_midi_wr)) &&
+        ui_midi_ring_put(shadow_ui_midi_shm, MIDI_BUFFER_SIZE, &ui_midi_wr,
+                         head, status, d1, d2)) {
+        shadow_control->midi_ready++;
+        return;
     }
 
     /* Dropped. Count it by consequence, so the log distinguishes "the surface
