@@ -126,6 +126,18 @@ export function canvasEditOpen({ key, fullKey, meta, comp, slot = 0, io }) {
         dead: false,
         wantsClose: false,
         ctx: null,
+        /* ⭐ FULLSCREEN LIVE VALUES (upstream #530, stock 1.5): up to four
+         * `extra_keys`, re-read every `fullscreen_live_ms` (at least 50) and
+         * handed to the overlay's onValues as { values, nowMs }. Stock 1.5
+         * tells canvas authors to take meters and playheads from here instead
+         * of reading on the draw path, so a canvas written for it froze here
+         * until this existed. Omitting fullscreen_live_ms reads nothing. */
+        live: {
+            keys: (meta && Array.isArray(meta.extra_keys)) ? meta.extra_keys.slice(0, 4).map(String) : [],
+            intervalMs: (meta && Number(meta.fullscreen_live_ms) > 0)
+                ? Math.max(50, Number(meta.fullscreen_live_ms)) : 0,
+            lastMs: 0, cursor: 0, values: {},
+        },
     };
     C.ctx = makeCtx(C);
     return true;
@@ -156,9 +168,44 @@ export function canvasEditAnimates() {
     return !!(C && C.overlay && typeof C.overlay.tick === 'function' && !C.dead);
 }
 
+/* One tick of the canvas: the live feed first, then the overlay's own tick.
+ * Returns true when onValues delivered this tick — the caller redraws then,
+ * because a canvas fed by values need not have a tick hook of its own. */
 export function canvasEditTick() {
-    if (!C) return;
+    if (!C) return false;
+    const delivered = tickLiveValues();
     invoke('tick', {});
+    return delivered;
+}
+
+/*
+ * ONE READ PER TICK, never the whole set at once — the same rule as stock's
+ * tickCanvasLiveValues. A read is ~2.8 ms; four in one tick is a ~11 ms stall
+ * landing on the frame every interval, a visible hitch on exactly the animated
+ * views this exists for. The cycle starts when the interval is due, takes one
+ * key per tick, and delivers once every key has answered. Nothing is read for
+ * an overlay that cannot receive it: none loaded, dead after a throw, or no
+ * onValues hook. A read that did not complete delivers null, as stock's does.
+ */
+function tickLiveValues() {
+    const L = C && C.live;
+    if (!L || !L.intervalMs || !L.keys.length) return false;
+    if (!C.overlay || C.dead || typeof C.overlay.onValues !== 'function') return false;
+    const now = (C.io && typeof C.io.nowMs === 'function') ? C.io.nowMs() : Date.now();
+    if (L.cursor === 0) {
+        if (L.lastMs && now - L.lastMs < L.intervalMs) return false;
+        L.lastMs = now;
+        L.values = {};
+    }
+    const key = L.keys[L.cursor];
+    let v = null;
+    try { v = C.io.getParam(key); } catch (e) { v = null; }
+    L.values[key] = (v === undefined) ? null : v;
+    L.cursor++;
+    if (L.cursor < L.keys.length) return false;
+    L.cursor = 0;
+    invoke('onValues', { values: L.values, nowMs: now });
+    return true;
 }
 
 /** Did the module ask to be dismissed? Consumed by the asking. */

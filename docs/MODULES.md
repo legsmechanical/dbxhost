@@ -1479,12 +1479,15 @@ Use `type: "canvas"` to open a module-defined fullscreen canvas UI from the hier
 - `canvas_overlay` (optional): Named overlay object selector (aliases: `canvas_target`, `overlay`).
 - `show_footer` (optional): Show/hide footer in canvas view (default `true`; alias `showfooter`).
 - `show_value` (optional): Show/hide parameter value in hierarchy and canvas footer (default `true`; alias `showvalue`).
+- `extra_keys` (optional): Up to four additional parameter values used by an authored canvas page or bounded fullscreen live feed.
+- `fullscreen_live_ms` (optional): In fullscreen mode, refresh declared `extra_keys` at this interval and call `onValues(ctx, { values, nowMs })`. Clamped to at least 50 ms; omit it for no fullscreen reads. Keys are read one per tick and delivered together; a read that did not complete is `null`. Same contract as stock 1.5 (upstream #530); dAVEBOx's module canvas honours it.
 
 Behavior notes:
 
 - Clicking the parameter enters a dedicated fullscreen canvas view.
 - Set `show_value: false` for button-style canvas entries that should not show a value.
-- The loaded script should expose `globalThis.canvas_overlay` (or `globalThis.canvas_overlays`) with hooks such as `onOpen`, `onMidi`, `tick`, `draw`, `onClose`, `onExit`.
+- The loaded script should expose `globalThis.canvas_overlay` (or `globalThis.canvas_overlays`) with hooks such as `onOpen`, `onMidi`, `onValues`, `tick`, `draw`, `onClose`, `onExit`.
+- Take meter / playhead values from the bounded `onValues` payload rather than reading on the draw path.
 
 **A canvas as a page (`as_page: true`).** Instead of a cell you click into, the canvas becomes a
 page in the level's jog rotation carrying that level's own knobs; add `preset_browser: true` and it
