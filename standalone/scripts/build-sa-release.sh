@@ -57,6 +57,7 @@ cp "$HERE/boot-target/entry.sh" "$M/boot-entry.sh"; chmod +x "$M/boot-entry.sh"
 # tests/ is the developer suite; it never runs on a user's device (and MUST not —
 # its fixtures resolve real paths). Dropped from the catalog tarball (Josh, 2026-09-05).
 rsync -a --exclude='/modules' --exclude='/presets' --exclude='/patches' --exclude='/.deploy-stage' --exclude='/tests' \
+    --exclude='*.o' --exclude='/.build-*' \
       "$BUILD_DIR/" "$P/"
 cp -R "$BUILD_DIR/modules/chain" "$P/modules/chain"
 cp -R "$DAVEBOX_DIST" "$P/modules/tools/davebox-sound"

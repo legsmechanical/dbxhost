@@ -170,7 +170,8 @@ from the files on its [release page](https://github.com/legsmechanical/dbxhost/r
 It needs Schwung 1.3.0 or newer.
 
 1. Download **davebox-sa-module.tar.gz** from the release.
-2. Open Schwung Manager in a browser (**move.local**), go to **Modules**, open
+2. Open Schwung Manager in a browser at **move.local:7700** (plain move.local is
+   Ableton's own Move Manager), go to **Modules**, open
    **Install Custom Module**, choose the file under **From Tarball**, and click
    **Install from File**.
 3. On the Move, open Schwung's tool menu — **Shift + Step 13** — and choose
