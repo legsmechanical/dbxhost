@@ -28,12 +28,12 @@ fails=0
 fail() { echo "FAIL: $*" >&2; fails=$((fails + 1)); }
 
 # The capacity check must exist...
-fit_line=$(grep -n "UI_MIDI_CARRY_BYTES - ui_midi_carry.len" "$SRC" | head -1 | cut -d: -f1)
+fit_line=$(grep -n "UI_MIDI_CARRY_BYTES - ui_midi_carry.len" "$SRC" | sed -n 1p | cut -d: -f1)
 [ -n "$fit_line" ] || fail "no whole-snapshot capacity check -- a snapshot larger than the carry's free space is truncated mid-message"
 
 # ...and it must come BEFORE the bytes are released, or the deferral discards
 # the very packets it was trying to protect.
-commit_line=$(grep -n "ui_midi_out_commit(" "$SRC" | head -1 | cut -d: -f1)
+commit_line=$(grep -n "ui_midi_out_commit(" "$SRC" | sed -n 1p | cut -d: -f1)
 [ -n "$commit_line" ] || fail "the consumer no longer commits read_idx; this pin needs rewriting against whatever replaced it"
 
 if [ -n "$fit_line" ] && [ -n "$commit_line" ] && [ "$fit_line" -gt "$commit_line" ]; then

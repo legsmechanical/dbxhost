@@ -27,8 +27,8 @@ fail() { echo "FAIL: $*" >&2; fails=$((fails + 1)); }
 
 # The room check must exist, and must come BEFORE the marshalling loop -- a
 # check after it is the bug with a comment on top.
-room_line=$(grep -n "ui_midi_out_free(shadow_midi_out)" "$SRC" | head -1 | cut -d: -f1)
-loop_line=$(grep -n "ASSEMBLE LOCALLY, THEN PUBLISH ONCE" "$SRC" | head -1 | cut -d: -f1)
+room_line=$(grep -n "ui_midi_out_free(shadow_midi_out)" "$SRC" | sed -n 1p | cut -d: -f1)
+loop_line=$(grep -n "ASSEMBLE LOCALLY, THEN PUBLISH ONCE" "$SRC" | sed -n 1p | cut -d: -f1)
 
 [ -n "$room_line" ] || fail "no remaining-room check -- a message larger than the free space is written as a prefix and truncated on the wire"
 [ -n "$loop_line" ] || fail "the packet marshalling loop moved; this pin needs rewriting against whatever replaced it"

@@ -98,6 +98,19 @@ int main(void) {
     uint8_t one_more[4] = { 0x2B, 0xB0, 64, 0 };
     check(send_msg(&m, one_more, 4) == 0, "and the ring still refuses past its capacity");
 
+    printf("the headroom is charged against the WHOLE message, not its first packet\n");
+    memset(&m, 0, sizeof(m));
+    /* Leave 18 packets free: the headroom (16) plus 2. The ring itself has room
+     * for a 3-packet message, so only the admission rule can refuse it. */
+    for (int i = 0; i < CAP - (SHADOW_MIDI_OUT_EXT_HEADROOM / 4 + 2); i++)
+        { uint8_t p[4] = { 0x29, 0x90, 1, 1 }; send_msg(&m, p, 4); }
+    uint8_t led_sysex[12] = { 0x04, 0xF0, 0x00, 0x21, 0x04, 0x1D, 0x01, 0x01, 0x07, 0x05, 0x06, 0xF7 };
+    check(ui_midi_out_free(&m) >= 12, "(precondition: the ring alone would take it)");
+    check(send_msg(&m, led_sysex, 12) == 0,
+          "a 3-packet cable-0 SysEx with 2 packets above the headroom is refused");
+    uint8_t led2[8] = { 0x09, 0x90, 1, 5, 0x09, 0x90, 2, 5 };
+    check(send_msg(&m, led2, 8) == 1, "while a 2-packet cable-0 message still fits");
+
     printf("the struct did not grow\n");
     check(sizeof(shadow_midi_out_t) == 4 + SHADOW_MIDI_OUT_BUFFER_SIZE,
           "sizeof is unchanged at two indices + buffer");

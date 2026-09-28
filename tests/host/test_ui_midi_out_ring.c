@@ -68,8 +68,9 @@ int main(void) {
     check(ui_midi_out_free(&ring) == UI_MIDI_OUT_CAPACITY,
           "a zeroed ring is entirely free");
 
+    /* Bounded: a push that never refuses must FAIL here, not spin forever. */
     int pushed = 0;
-    while (push_one(pushed)) pushed++;
+    while (pushed <= UI_MIDI_OUT_CAPACITY / 4 && push_one(pushed)) pushed++;
     check(pushed == UI_MIDI_OUT_CAPACITY / 4,
           "the ring accepts exactly capacity/4 packets");
     check(ui_midi_out_used(&ring) == UI_MIDI_OUT_CAPACITY,
