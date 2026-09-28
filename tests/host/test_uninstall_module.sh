@@ -132,7 +132,7 @@ want="$(printf '%s\n' active_set.txt config bank-view-map.txt daves-seen.txt dav
 grep -q "recover HEAL_BIN=$F/stock/modules/tools/davebox-uninstall/bin/heal" "$F/setswap.log" && ok "set-swap recover ran with OUR blessed helper" || bad "setswap: $(cat "$F/setswap.log" 2>/dev/null)"
 grep -qx -- "--uninstall-root" "$F/heal.log" && [ ! -e "$F/root/davebox-shim.so" ] && [ ! -e "$F/root/davebox-restore.service" ] && ok "root-owned shim and unit removed via the helper" || bad "root: $(cat "$F/heal.log")"
 [ "$(cat "$F/boot/default")" = schwung ] && [ ! -e "$F/boot/davebox" ] && [ -f "$F/boot/schwung/boot.json" ] && ok "boot default handed back to schwung, our row gone, stock's kept" || bad "boot: $(cat "$F/boot/default"); $(ls "$F/boot")"
-[ ! -e "$F/stock/cache/davebox-presetnames" ] && [ -f "$F/stock/cache/stock-own/x" ] && ok "our preset cache gone, stock's cache kept" || bad "cache"
+[ -e "$F/stock/cache/davebox-presetnames" ] && [ -f "$F/stock/cache/stock-own/x" ] && ok "stock's cache/davebox-presetnames (dAVEBOx LEGACY's) and stock's own cache kept" || bad "cache: removed something that is not ours"
 [ ! -e "$F/stock/open_tool_cmd.json" ] && ok "a pending dAVEBOx open_tool_cmd.json removed" || bad "open_tool_cmd left"
 [ ! -e "$F/shm/dbxhost-display" ] && [ -e "$F/shm/schwung-display" ] && ok "our /dev/shm rings gone, stock's kept" || bad "shm: $(ls -A "$F/shm")"
 [ ! -e "$F/stock/modules/tools/davebox-sa" ] && ok "the dAVEBOx Tools module removed" || bad "davebox-sa left"
@@ -140,6 +140,11 @@ grep -qx -- "--uninstall-root" "$F/heal.log" && [ ! -e "$F/root/davebox-shim.so"
 [ -f "$F/stock/modules/tools/other-tool/module.json" ] && [ -f "$F/stock/presets/p/a.json" ] && [ -d "$F/stock/modules/audio_fx/x" ] \
     && ok "stock's tools, presets and modules untouched (our links removed, not followed)" || bad "stock content touched"
 grep -q "projects are in $F/dbx/projects" "$T/out" && ok "tells the user where the projects are" || bad "no kept-path line"
+
+echo "a pending open_tool_cmd.json for dAVEBOx LEGACY (tool_id davebox) is not ours:"
+mk blessable; printf '{"tool_id": "davebox"}\n' > "$F/stock/open_tool_cmd.json"
+run "$SH" --run
+[ -f "$F/stock/open_tool_cmd.json" ] && ok "Legacy's pending command left alone" || bad "removed Legacy's open_tool_cmd.json"
 
 echo "a non-dAVEBOx open_tool_cmd.json and a non-davebox default are left alone:"
 mk blessable; printf '{"tool_id": "song-mode"}\n' > "$F/stock/open_tool_cmd.json"; printf 'schwung\n' > "$F/boot/default"

@@ -7266,7 +7266,10 @@ function menuStep(delta) {
  *
  * Each distinct fingerprint gets its own file, so alternating between two banks
  * reads both from disk rather than re-scanning on every switch. */
-const BAKED_CACHE_DIR = '/data/UserData/schwung/cache/davebox-presetnames';
+/* In OUR install, not stock's cache/: dAVEBOx Legacy writes the same name
+ * under /data/UserData/schwung/cache, so sharing it meant each product read the
+ * other's cached names, and our uninstaller wiped Legacy's cache. */
+const BAKED_CACHE_DIR = '/data/UserData/dbx-host/cache/davebox-presetnames';
 const BAKED_CACHE_V = 2;
 
 /* Sampling MOVES the module's preset index — the caller restores it. Kept out
