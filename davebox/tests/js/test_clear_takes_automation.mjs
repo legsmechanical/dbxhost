@@ -404,20 +404,22 @@ step('⭐ the CLIP reset checkpoints BEFORE its own writes, and leaves an undo u
     assert(S.undoAvailable === true, 'the CLIP reset left nothing to undo');
 });
 
-step('⭐ and the two params NO snapshot reaches ride along as a JS patch', () => {
-    /* InQ is per-TRACK and Seq Follow is JS-only (no DSP key at all), so neither is
-     * in the clip the checkpoint copies. They are restored by a patch that runs
-     * alongside the DSP restore — not instead of it, or the clip half would be lost. */
+step('⭐ and the param NO snapshot reaches rides along as a JS patch', () => {
+    /* InQ is per-TRACK, so it is not in the clip the checkpoint copies. It is
+     * restored by a patch that runs alongside the DSP restore — not instead of it,
+     * or the clip half would be lost. Seq Follow is a device-wide switch now
+     * (ui_prefs), so the reset leaves it alone and the patch has nothing to hold. */
     reset(0);
     S.drumInpQuant[T] = 5;
-    S.clipSeqFollow[T][0] = false;
+    S.seqFollowOn = false;
     withDelete(jogClick);
-    assert(S.undoJsPatch !== null, 'no JS patch was armed for InQ / Seq Follow');
+    assert(S.undoJsPatch !== null, 'no JS patch was armed for InQ');
     assert(S.drumInpQuant[T] === BANKS[0].knobs[4].def, 'setup: InQ did not reset');
+    assert(S.seqFollowOn === false, 'the CLIP reset changed the device-wide Seq Follow switch');
 
     S.undoJsPatch.undo();
     assert(S.drumInpQuant[T] === 5, 'the patch did not restore InQ');
-    assert(S.clipSeqFollow[T][0] === false, 'the patch did not restore Seq Follow');
+    S.seqFollowOn = null;
 });
 
 step('⭐ ARP IN: its reset is a JS unit, so Undo restores it and NOT a clip edit', () => {

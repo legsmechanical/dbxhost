@@ -52,6 +52,7 @@ import { sessionHasAnyContent } from './ui_scene.mjs';
  * cycled bindings only inside function bodies, never at module-init time.
  * Keep it that way: no top-level use of anything from this import. */
 import { disarmRecord } from './ui_record.mjs';
+import { followActive, seqFollowOn, setSeqFollowOn } from './ui_prefs.mjs';
 import { dspGet, dspGetInt, dspGetStr, prefetchTrackDigests, releaseTrackDigests } from './ui_dsp_get.mjs';
 
 /* Popup counterpart of the host's warnIfLinkDisabled (src/shadow/shadow_ui.js)
@@ -132,7 +133,7 @@ export function refreshDrumLaneBankParams(t, lane) {
         const _parv = parseInt(_par, 10);
         S.drumLanePlaybackAudioReverse[t][lane] = (isFinite(_parv) && _parv === 1) ? 1 : 0;
     }
-    S.bankParams[t][0][7] = S.clipSeqFollow[t][S.trackActiveClip[t]] ? 1 : 0;
+    S.bankParams[t][0][7] = seqFollowOn() ? 1 : 0;
     /* Repeat Groove state for this lane */
     syncDrumRepeatState(t, lane);
     S.screenDirty = true;
@@ -210,7 +211,7 @@ export function refreshPerClipBankParams(t) {
         const _parv = parseInt(_par, 10);
         S.clipPlaybackAudioReverse[t][ac] = (isFinite(_parv) && _parv === 1) ? 1 : 0;
     }
-    S.bankParams[t][0][7] = S.clipSeqFollow[t][ac] ? 1 : 0;
+    S.bankParams[t][0][7] = seqFollowOn() ? 1 : 0;
     S.screenDirty = true;
 }
 
@@ -645,6 +646,10 @@ export function pollDSP() {
      * save the 09-02 ruling leaves open: the transport is no longer running. The
      * DSP still serializes only if something changed. */
     if (_wasPlaying && !S.playing) S.saveNowOnce = true;
+    /* A real stop ends an arrow's pause of Seq Follow. Every stop path (Play,
+     * Delete+Play, an external clock, import's own stop) shows up here and only
+     * here; a restart (Shift+Play, Loop+Play) never stops, so it keeps the pause. */
+    if (_wasPlaying && !S.playing) S.followPaused = false;
     for (let t = 0; t < NUM_TRACKS; t++) {
         const newStep = parseInt(v[1 + t], 10) | 0;
         S.trackCurrentStep[t] = newStep;
@@ -681,7 +686,10 @@ export function pollDSP() {
         S.trackWillRelaunch[t]    = _newWR;
         S.trackPendingPageStop[t] = (v[42 + t] === '1');
     }
-    S.flashEighth    = (v[50] === '1');
+    const _fe = (v[50] === '1');
+    /* The overview's paused Seq Follow glyph blinks on this flash. */
+    if (_fe !== S.flashEighth && S.followPaused) S.screenDirty = true;
+    S.flashEighth    = _fe;
     S.flashSixteenth = (v[51] === '1');
     if (v.length >= 54) S.masterPos      = (parseInt(v[53], 10) | 0) >>> 0;
     if (v.length >= 55) S.dspLooperState  = parseInt(v[54], 10) | 0;
@@ -775,7 +783,7 @@ export function pollDSP() {
             }
         }
         /* Drum SeqFollow: auto-page to follow playhead */
-        if (S.playing && S.trackClipPlaying[S.activeTrack] && S.clipSeqFollow[S.activeTrack][effectiveClip(S.activeTrack)]) {
+        if (S.playing && S.trackClipPlaying[S.activeTrack] && followActive()) {
             const _dcs = S.drumCurrentStep[S.activeTrack];
             if (_dcs >= 0) {
                 const _newPage = Math.floor(_dcs / 16);
@@ -830,8 +838,7 @@ export function pollDSP() {
     /* SeqFollow: auto-page S.activeTrack to follow playhead */
     if (S.playing) {
         const _sft = S.activeTrack;
-        const _sfac = effectiveClip(_sft);
-        if (S.clipSeqFollow[_sft][_sfac] && S.trackClipPlaying[_sft]) {
+        if (followActive() && S.trackClipPlaying[_sft]) {
             var newPage;
             var _cs = S.trackCurrentStep[_sft];
             if (_cs >= 0) newPage = Math.floor(_cs / 16);
@@ -1108,7 +1115,7 @@ export function readBankParams(t, bankIdx) {
             continue;
         }
         if (pm.scope === 'seqfollow') {
-            S.bankParams[t][bankIdx][k] = S.clipSeqFollow[t][S.trackActiveClip[t]] ? 1 : 0;
+            S.bankParams[t][bankIdx][k] = seqFollowOn() ? 1 : 0;
             continue;
         }
         if (pm.scope === 'clip') {
@@ -1313,7 +1320,8 @@ export function applyBankParam(t, bankIdx, knobIdx, val) {
     const pm = BANKS[bankIdx].knobs[knobIdx];
     if (!pm || pm.scope === 'stub') return;
     if (pm.scope === 'seqfollow') {
-        S.clipSeqFollow[t][S.trackActiveClip[t]] = val !== 0;
+        setSeqFollowOn(val !== 0);
+        S.followPaused = false;
         return;
     }
     if (!pm.dspKey) return;

@@ -15,6 +15,12 @@ the section into a versioned heading at release time.
   **Record** capture the screen, the device or both, and the view shows
   whichever you pick. Dim pad colours are brightened on the page so they read
   the way they do on the hardware.
+### Changed
+- **Seq Follow is one switch for the whole device.** Hold Left or Right and
+  press Play to turn it on or off; the transport isn't touched, and your choice
+  is remembered. The track overview shows a small mark while Follow is on.
+  Paging with the arrows while playing now pauses Follow only until you stop,
+  instead of turning it off for that clip.
 
 ## [0.0.5] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Changed

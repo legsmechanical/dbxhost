@@ -7,7 +7,7 @@
  */
 
 import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished } from './ui_state.mjs';
-import { bankViewMapOn } from './ui_prefs.mjs';
+import { bankViewMapOn, seqFollowOn } from './ui_prefs.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H, drawDaveLoading } from './ui_daves.mjs';
 import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
@@ -702,8 +702,24 @@ function drawRow2Labels() {
      * word that sat here is gone (Josh, 2026-09-23). */
     if (!S.sessionView) {
         const _vel = 'Vel:' + fmtVelOverride(S.trackVelOverride[S.activeTrack]);
-        ovwPrint(128 - 4 - ovwWidth(_vel), 17, _vel, 1);
+        const _vx = 128 - 4 - ovwWidth(_vel);
+        ovwPrint(_vx, 17, _vel, 1);
+        drawFollowGlyph(_vx - 5 - FOLLOW_GLYPH_W, 18);
     }
+}
+
+/* ⭐ SEQ FOLLOW on the overview (Josh, 2026-09-29): a play-to-bar glyph left
+ * of Vel, on both the melodic and the drum overview. Steady = the page follows
+ * the playhead; blinking = an arrow press paused it until the transport stops;
+ * absent = the switch is off. The switch is Left/Right held + Play. */
+export const FOLLOW_GLYPH_W = 5;
+const FOLLOW_GLYPH = [0b10001, 0b11001, 0b11101, 0b11001, 0b10001];
+export function drawFollowGlyph(x, y) {
+    if (!seqFollowOn()) return;
+    if (S.followPaused && !S.flashEighth) return;
+    for (let r = 0; r < FOLLOW_GLYPH.length; r++)
+        for (let c = 0; c < FOLLOW_GLYPH_W; c++)
+            if (FOLLOW_GLYPH[r] & (1 << (FOLLOW_GLYPH_W - 1 - c))) set_pixel(x + c, y + r, 1);
 }
 
 const PERF_MOD_NAMES = [
@@ -2193,7 +2209,7 @@ function drawUIBody() {
             const lane = S.activeDrumLane[t];
             const len  = S.drumLaneLength[t];
             const tpsIdx = Math.max(0, TPS_VALUES.indexOf(S.drumLaneTPS[t]));
-            const sqfl   = S.clipSeqFollow[t][ac] ? 1 : 0;
+            const sqfl   = seqFollowOn() ? 1 : 0;
             const eucN = Math.min(S.drumLaneEuclidN[t][lane] | 0, len);
             const _dlRev = S.drumLanePlaybackAudioReverse[t][lane] | 0;
             const _dlDir = S.drumLanePlaybackDir[t][lane] | 0;

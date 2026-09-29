@@ -776,8 +776,17 @@ What Capture does depends on the transport:
 A clip plays its **loop** — a run of up to **256 steps**, shown as **pages** of 16.
 The loop *is* the clip's length, and it normally starts on step 1.
 
-- **Left / Right** moves between the pages inside the loop (and turns Seq Follow
-  off).
+- **Left / Right** moves between the pages inside the loop. While the transport
+  runs, this also **pauses Seq Follow**, so the page stays where you went; it
+  follows again the next time the transport stops. (Restarting with Shift + Play
+  or Loop + Play isn't a stop, so the pause stays.)
+- **Seq Follow** keeps the step display on the page that's playing. It is one
+  switch for the whole device and is remembered between sessions: **hold Left or
+  Right and press Play** to turn it on or off. That press does nothing else; the
+  transport isn't started or stopped. It works in the sound editors too, but not
+  in Session view. On the track overview, a small **▶|** mark left of `Vel:`
+  shows Follow is on. It blinks while an arrow has paused it, and it's gone when
+  Follow is off.
 - **Loop + jog** grows or shrinks the loop by a step.
 - **Shift + Step 15** doubles the loop and copies what's in it into the new half.
 
@@ -920,7 +929,7 @@ A melodic clip's grid, direction, and note transforms.
 | 5 | `INQNT` | **Input Quantize** — snap recorded notes to the grid (Off, 1/64 … 1/4t). One value per track, shared with ALL LANES. | No | Off |
 | 6 | `CROP` | **Crop** — touch the knob and click the jog: the loop becomes the whole clip — it moves to step 1 and everything outside it is removed (automation too). One Undo. Turning it does nothing. | Yes | — |
 | 7 | `DIR` | **Direction** — Forward, Backward, or ping-pong. *Alt* (`REVRS`): **Reverse Style**. | No | Fwd |
-| 8 | `SEQFL` | **Follow** — scroll the step display to keep up with the playhead. | No | On |
+| 8 | `SEQFL` | **Follow** — the device-wide Seq Follow switch (also Left/Right + Play). | No | On |
 
 **Direction** is Forward, Backward, or one of two ping-pong modes (they differ
 only in which end they start from). **Reverse Style** (the alt of `Dir`) sets what
@@ -949,7 +958,7 @@ The **selected lane's** grid — the drum counterpart to the CLIP bank.
 | 5 | `EUCLD` | **Euclid** — spread N hits evenly across the lane. Hand-placed hits stay. | Yes | 0 |
 | 6 | `CROP` | **Crop** (this lane) — touch the knob and click the jog. | Yes | — |
 | 7 | `DIR` | **Direction.** *Alt* (`REVRS`): **Reverse Style.** | No | Fwd |
-| 8 | `SEQFL` | **Follow.** | No | On |
+| 8 | `SEQFL` | **Follow** (device-wide). | No | On |
 
 Lane length is **Loop + jog**; the lane's MIDI note is on the
 [NOTE FX bank](#91-note-fx). Zoom, Stretch, Shift and Legato need the lane's loop

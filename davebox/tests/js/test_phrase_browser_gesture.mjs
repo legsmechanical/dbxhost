@@ -257,10 +257,10 @@ async function main() {
 
     step('K5-K8 and the step buttons do nothing under the browser', () => {
         const n = writes.length, idx = pb().idx;
-        const bp = JSON.stringify(S.bankParams[1][0]), dq = S.drumInpQuant[1], sf = JSON.stringify(S.clipSeqFollow[1]);
+        const bp = JSON.stringify(S.bankParams[1][0]), dq = S.drumInpQuant[1], sf = S.seqFollowOn;
         for (const k of [4, 5, 6, 7]) { touch(k, true); turn(k, 20); touch(k, false); ticks(1); }   /* a real turn is touched */
         assert(JSON.stringify(S.bankParams[1][0]) === bp && S.drumInpQuant[1] === dq &&
-               JSON.stringify(S.clipSeqFollow[1]) === sf, 'a K5-K8 turn reached the CLIP bank underneath');
+               S.seqFollowOn === sf, 'a K5-K8 turn reached the CLIP bank underneath');
         midi(0x90, 16, 127); midi(0x80, 16, 0); ticks(2);
         /* The tick's pad-map re-check writes t1_padmap whenever the (stubbed)
          * engine's answer disagrees — a sync, not an edit. */

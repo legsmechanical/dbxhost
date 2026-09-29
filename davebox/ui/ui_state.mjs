@@ -95,7 +95,7 @@ export function noteUndoUnit() {
 /* ── A JS-ONLY UNDO UNIT ────────────────────────────────────────────────────
  *
  * For state no DSP snapshot can reach: per-TRACK params (ARP IN), the audio
- * engine (the SOUND + CONFIG levels), and pure-JS stores (MACROS, Seq Follow).
+ * engine (the SOUND + CONFIG levels), and pure-JS stores (MACROS).
  *
  * ⚠⚠ WHY THIS HAD TO EXIST BEFORE ANY OF THOSE COULD BE UNDOABLE. `undoAvailable`
  * is one untyped boolean and the handler UNCONDITIONALLY sends `undo_restore`. So
@@ -211,6 +211,8 @@ export const S = {
     _altBlinkPhase: -1,    /* tick-driven phase (0/1) for the alt-mode arrow flash */
     shiftTrackLEDActive: false,
     loopHeld: false,
+    leftHeld: false,     /* MoveLeft held — with Play, toggles Seq Follow */
+    rightHeld: false,    /* MoveRight held — with Play, toggles Seq Follow */
     perfSync: true,
     perfStack: [],
     perfStickyLengths: new Set(),
@@ -274,7 +276,6 @@ export const S = {
     /* Single-OK info modal shown when Tap Tempo is invoked while Clock Slave is
      * on (tempo is Move's; there's nothing to tap). Dismissed by jog click or Back. */
     bpmMoveInfo: false,
-    clipSeqFollow: Array.from({length: 8}, () => new Array(16).fill(true)),
     trackCurrentStep: new Array(8).fill(-1),
     trackCurrentPage: new Array(8).fill(0),
     activeDrumLane: new Array(8).fill(0),
@@ -433,6 +434,8 @@ export const S = {
     flashSixteenth: false,
     masterPos: 0,
     bankViewMapOn: null, /* Bank Map on Lock (global menu, ui_prefs): the bank column while the jog walks from the bank view. null = not yet read; absent file = on. */
+    seqFollowOn: null,   /* Seq Follow (ui_prefs): one device-wide switch. null = not yet read; absent file = on. */
+    followPaused: false, /* an arrow press while playing paused Seq Follow; the next real transport stop clears it */
     daveWindowOn: null,  /* the Daves switch (global menu): true = a collected Dave scrolls through the session banner while playing; false = static wordmark. null = not yet read from the device-global pref file; DEFAULT OFF (Josh, 2026-09-05 — ON for one build, then back off). */
     bannerDave: -1,      /* frame index of the Dave scrolling in the session banner while playing; -1 = none (stopped, or nothing collected). Picked on the play edge by bannerDaveSync. */
     dspLooperState: 0,

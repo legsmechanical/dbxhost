@@ -577,8 +577,8 @@ export function doClearSession() {
     for (let _t = 0; _t < NUM_TRACKS; _t++) S.trackActiveBank[_t] = 0;
     S.undoSeqArpSnapshot = null;
     S.redoSeqArpSnapshot = null;
+    S.followPaused = false;
     for (let _t = 0; _t < NUM_TRACKS; _t++) {
-        for (let _c = 0; _c < NUM_CLIPS; _c++) S.clipSeqFollow[_t][_c] = true;
         S.trackChannel[_t] = 1; S.trackRoute[_t] = 0; S.trackPadMode[_t] = 0;
         S.trackMidiTo[_t] = 0;   /* plays its own instrument */
         S.trackVelOverride[_t] = 0; S.trackLooper[_t] = 1;

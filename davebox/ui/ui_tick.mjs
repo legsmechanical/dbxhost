@@ -637,6 +637,7 @@ export function _tickImpl() {
         /* Clear any held-modifier state that may have got stuck on suspend
          * (key-up events fire after overtake exits, so onMidiMessage never sees them). */
         S.shiftHeld = false; S.deleteHeld = false; S.muteHeld = false;
+        S.leftHeld  = false; S.rightHeld  = false;
         S.copyHeld  = false; S.loopHeld  = false; S.loopJogActive = false;
         S.captureHeld = false; S.shiftTrackLEDActive = false;
         S.heldStep  = -1;    S.heldStepBtn = -1; S.heldStepNotes = []; S.stepReveal = false;

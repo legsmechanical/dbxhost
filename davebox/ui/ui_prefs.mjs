@@ -30,3 +30,34 @@ export function setBankViewMapOn(v) {
     try { wrote = !!host_write_file(BANK_VIEW_MAP_PATH, S.bankViewMapOn ? '1\n' : '0\n'); } catch (e) { wrote = false; }
     if (!wrote) console.log('[prefs] could not persist Bank Map on Lock to ' + BANK_VIEW_MAP_PATH);
 }
+
+/* Seq Follow (Josh, 2026-09-29): ONE switch for the whole device, toggled by
+ * holding Left or Right and pressing Play. On = the step page tracks the
+ * playhead while the active clip plays. Absent file = On (the old default). */
+export const SEQ_FOLLOW_PATH = '/data/UserData/dbx-host/seq-follow.txt';
+
+export function seqFollowOn() {
+    if (S.seqFollowOn === null) {
+        let on = true;
+        try {
+            on = !(host_file_exists(SEQ_FOLLOW_PATH) &&
+                   String(host_read_file(SEQ_FOLLOW_PATH) || '').trim() === '0');
+        } catch (e) { on = true; }
+        S.seqFollowOn = on;
+    }
+    return S.seqFollowOn;
+}
+
+export function setSeqFollowOn(v) {
+    S.seqFollowOn = !!v;
+    let wrote = false;
+    try { wrote = !!host_write_file(SEQ_FOLLOW_PATH, S.seqFollowOn ? '1\n' : '0\n'); } catch (e) { wrote = false; }
+    if (!wrote) console.log('[prefs] could not persist Seq Follow to ' + SEQ_FOLLOW_PATH);
+}
+
+/* Whether the page follows the playhead right now: the switch, unless an arrow
+ * press paused it during this run of the transport (S.followPaused, cleared by
+ * the next real stop — a restart is not a stop). */
+export function followActive() {
+    return seqFollowOn() && !S.followPaused;
+}

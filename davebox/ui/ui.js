@@ -49,7 +49,7 @@ import {
     projectPickerTextEntryMidi,
     projectPadPickerTap, projectPadPickerRotate, projectPadPickerClick
 } from './ui_dialogs.mjs';
-import { MoveShift } from '/data/UserData/schwung/shared/constants.mjs';
+import { MoveShift, MoveLeft, MoveRight } from '/data/UserData/schwung/shared/constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, trackColor, forceRedraw, installFlagsWrap, buildLedInitQueue } from './ui_leds.mjs';
 import { initPrimarySurface } from './ui_corun.mjs';
@@ -528,6 +528,13 @@ function _onMidiInternalImpl(data) {
     const d2     = (data[2] ?? 0) | 0;
     /* Co-run: Shift is Move's, so take dAVEBOx's from the hardware first. */
     syncCoRunShift();
+
+    /* Left/Right HELD (with Play, toggles Seq Follow): both edges recorded here,
+     * above every modal gate, so a release inside sound mode or the phrase
+     * browser can never leave the flag stuck and turn the next Play into a
+     * follow toggle. Nothing is consumed; the arrows go on to their owners. */
+    if (status === 0xB0 && d1 === MoveLeft)  S.leftHeld  = d2 === 127;
+    if (status === 0xB0 && d1 === MoveRight) S.rightHeld = d2 === 127;
 
     /* PROJECT DID NOT OPEN is fully modal: nothing else may act while dAVEBOx
      * holds something Move does not. */
