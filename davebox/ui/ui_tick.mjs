@@ -9,6 +9,7 @@
  */
 
 import { pbTick } from './ui_phrase_browser.mjs';
+import { miOpen, miTick, miAnimating } from './ui_midi_import.mjs';
 import { chordLayoutOn } from './ui_chord_pads.mjs';
 import { triggerFlashing } from './ui_trigger.mjs';
 import {
@@ -2118,6 +2119,17 @@ export function _tickImpl() {
 
         /* The phrase library: its preview, its exits, and the refresh after a load. */
         pbTick();
+
+        /* Import MIDI (K8 of the CLIP / DRUM LANE card): opened HERE, because
+         * opening lists a folder; then its read, preview clock and write. It
+         * closes itself when the track changes or session view takes over. */
+        if (S.pendingMidiImportOpen >= 0) {
+            const _mt = S.pendingMidiImportOpen;
+            S.pendingMidiImportOpen = -1;
+            if (_mt === S.activeTrack && !S.sessionView) { miOpen(_mt); S.screenDirty = true; }
+        }
+        if (miTick(!S.sessionView, S.activeTrack) === 'close') S.screenDirty = true;
+        if (miAnimating()) S.screenDirty = true;
 
         /* ALL LANES blink: mark dirty when "ALL" blink toggles (bank header + loop-held overlay) */
         if (S.activeBank === 7 && S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {

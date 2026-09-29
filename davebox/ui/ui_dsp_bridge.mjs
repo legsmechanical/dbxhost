@@ -52,7 +52,7 @@ import { sessionHasAnyContent } from './ui_scene.mjs';
  * cycled bindings only inside function bodies, never at module-init time.
  * Keep it that way: no top-level use of anything from this import. */
 import { disarmRecord } from './ui_record.mjs';
-import { followActive, seqFollowOn, setSeqFollowOn } from './ui_prefs.mjs';
+import { followActive } from './ui_prefs.mjs';
 import { dspGet, dspGetInt, dspGetStr, prefetchTrackDigests, releaseTrackDigests } from './ui_dsp_get.mjs';
 
 /* Popup counterpart of the host's warnIfLinkDisabled (src/shadow/shadow_ui.js)
@@ -118,8 +118,8 @@ export function refreshDrumLaneBankParams(t, lane) {
             if (v.length >= 11) S.drumLaneLenMode[t][lane] = parseInt(v[10], 10) | 0;
         }
     }
-    /* DRUM LANE bank (0): Res (K1=idx0), Eucl (K5=idx4), Dir (K7=idx6),
-     * SqFl (K8=idx7) per-lane meta. */
+    /* DRUM LANE bank (0): Res (K1=idx0), Eucl (K5=idx4), Dir (K7=idx6)
+     * per-lane meta. */
     const tpsIdx = TPS_VALUES.indexOf(S.drumLaneTPS[t]);
     S.bankParams[t][0][0] = tpsIdx >= 0 ? tpsIdx : 1;
     S.bankParams[t][0][4] = S.drumLaneEuclidN[t][lane] | 0;
@@ -133,7 +133,6 @@ export function refreshDrumLaneBankParams(t, lane) {
         const _parv = parseInt(_par, 10);
         S.drumLanePlaybackAudioReverse[t][lane] = (isFinite(_parv) && _parv === 1) ? 1 : 0;
     }
-    S.bankParams[t][0][7] = seqFollowOn() ? 1 : 0;
     /* Repeat Groove state for this lane */
     syncDrumRepeatState(t, lane);
     S.screenDirty = true;
@@ -197,7 +196,7 @@ export function refreshPerClipBankParams(t) {
         const _ll = parseInt(v[42], 10) | 0;
         S.seqArpStepLoopLen[t][ac] = (_ll >= 1 && _ll <= 8) ? _ll : 8;
     }
-    /* CLIP bank (0): Res (K1=idx0), Dir (K7=idx6), SqFl (K8=idx7) — all per-clip. */
+    /* CLIP bank (0): Res (K1=idx0), Dir (K7=idx6) — both per-clip. */
     const tps    = S.clipTPS[t][ac] || 24;
     const tpsIdx = TPS_VALUES.indexOf(tps);
     S.bankParams[t][0][0] = tpsIdx >= 0 ? tpsIdx : 1;
@@ -211,7 +210,6 @@ export function refreshPerClipBankParams(t) {
         const _parv = parseInt(_par, 10);
         S.clipPlaybackAudioReverse[t][ac] = (isFinite(_parv) && _parv === 1) ? 1 : 0;
     }
-    S.bankParams[t][0][7] = seqFollowOn() ? 1 : 0;
     S.screenDirty = true;
 }
 
@@ -1114,10 +1112,6 @@ export function readBankParams(t, bankIdx) {
             S.bankParams[t][bankIdx][k] = pm ? pm.def : 0;
             continue;
         }
-        if (pm.scope === 'seqfollow') {
-            S.bankParams[t][bankIdx][k] = seqFollowOn() ? 1 : 0;
-            continue;
-        }
         if (pm.scope === 'clip') {
             const ac = S.trackActiveClip[t];
             if (pm.dspKey === 'clip_resolution') {
@@ -1137,8 +1131,9 @@ export function readBankParams(t, bankIdx) {
         if (pm.scope === 'action') {
             /* beat_stretch and clock_shift display per-touch labels (0 at rest)
              * rather than absolute position; crop is a trigger with no value
-             * to read back (skipping it saves a round trip). */
-            if (pm.dspKey === 'beat_stretch' || pm.dspKey === 'clock_shift' || pm.dspKey === 'crop') { S.bankParams[t][bankIdx][k] = 0; continue; }
+             * to read back (skipping it saves a round trip), nor has Import. */
+            if (pm.dspKey === 'beat_stretch' || pm.dspKey === 'clock_shift' || pm.dspKey === 'crop' ||
+                    pm.dspKey === 'midi_import') { S.bankParams[t][bankIdx][k] = 0; continue; }
             const stateKey = 't' + t + '_' + pm.dspKey + pm.actionSuffix;
             const raw = dspGet(stateKey);
             S.bankParams[t][bankIdx][k] = parseActionRaw(raw, pm.def);
@@ -1319,11 +1314,6 @@ export function applyTrackConfig(t, key, val) {
 export function applyBankParam(t, bankIdx, knobIdx, val) {
     const pm = BANKS[bankIdx].knobs[knobIdx];
     if (!pm || pm.scope === 'stub') return;
-    if (pm.scope === 'seqfollow') {
-        setSeqFollowOn(val !== 0);
-        S.followPaused = false;
-        return;
-    }
     if (!pm.dspKey) return;
 
     if (pm.scope === 'global') {

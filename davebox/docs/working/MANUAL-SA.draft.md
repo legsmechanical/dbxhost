@@ -929,7 +929,7 @@ A melodic clip's grid, direction, and note transforms.
 | 5 | `INQNT` | **Input Quantize** — snap recorded notes to the grid (Off, 1/64 … 1/4t). One value per track, shared with ALL LANES. | No | Off |
 | 6 | `CROP` | **Crop** — touch the knob and click the jog: the loop becomes the whole clip — it moves to step 1 and everything outside it is removed (automation too). One Undo. Turning it does nothing. | Yes | — |
 | 7 | `DIR` | **Direction** — Forward, Backward, or ping-pong. *Alt* (`REVRS`): **Reverse Style**. | No | Fwd |
-| 8 | `SEQFL` | **Follow** — the device-wide Seq Follow switch (also Left/Right + Play). | No | On |
+| 8 | `IMPRT` | **Import MIDI** — touch the knob and click the jog to fill a clip from a MIDI file — see [Import a MIDI file](#164-import-a-midi-file). Turning it does nothing. | Yes | — |
 
 **Direction** is Forward, Backward, or one of two ping-pong modes (they differ
 only in which end they start from). **Reverse Style** (the alt of `Dir`) sets what
@@ -958,7 +958,7 @@ The **selected lane's** grid — the drum counterpart to the CLIP bank.
 | 5 | `EUCLD` | **Euclid** — spread N hits evenly across the lane. Hand-placed hits stay. | Yes | 0 |
 | 6 | `CROP` | **Crop** (this lane) — touch the knob and click the jog. | Yes | — |
 | 7 | `DIR` | **Direction.** *Alt* (`REVRS`): **Reverse Style.** | No | Fwd |
-| 8 | `SEQFL` | **Follow** (device-wide). | No | On |
+| 8 | `IMPRT` | **Import MIDI** — touch the knob and click the jog. | Yes | — |
 
 Lane length is **Loop + jog**; the lane's MIDI note is on the
 [NOTE FX bank](#91-note-fx). Zoom, Stretch, Shift and Legato need the lane's loop
@@ -1588,7 +1588,6 @@ the rows it has:
 | **Buses** | Voice groups, on instruments that can split their voices — see [Presets, LFOs and buses](#145-presets-lfos-and-buses) |
 | **LFOs** | Two LFOs for the track |
 | **Presets** | Save and load the whole chain |
-| **Import MIDI** | Bring a MIDI file into a clip — see [Import a MIDI file](#164-import-a-midi-file) |
 | **Mode, Layout, Transpose, VelIn, Looper, AftTch, Parallel** | The track's own settings — see [Track settings](#174-track-settings) |
 
 On the Instmt/Dest and effect rows, a hint band at the foot of the menu says what
@@ -1967,8 +1966,8 @@ lane, so they exist only while a note is sounding.
 
 ## 16.4 Import a MIDI file
 
-**TRACK CONFIG → Import MIDI** (any track except a Conductor, whatever it plays
-through) fills a clip from a standard MIDI file (`.mid`, `.midi`, `.smf`, `.kar`,
+**Touch knob 8 on the CLIP or DRUM LANE bank and click the jog** (any track
+except a Conductor, whatever it plays through). Import MIDI fills a clip from a standard MIDI file (`.mid`, `.midi`, `.smf`, `.kar`,
 `.rmi`). Put the file anywhere in your user data folder — the **Files** page of the
 Schwung web manager (`move.local:7700`) uploads there. The notes are copied into
 the clip; the file isn't needed afterwards.
@@ -1976,7 +1975,7 @@ the clip; the file isn't needed afterwards.
 Opening the screen **stops playback**, and it stays stopped when you leave.
 
 1. **Pick the file.** The browser shows folders and MIDI files only. Back goes up
-   a folder.
+   a folder, and Back at the top returns to the bank.
 2. **Pick a part** (files with more than one). Each shows its note count and a
    miniature of its notes. **Shift + jog click** plays it through the track's own
    sound; again to stop.

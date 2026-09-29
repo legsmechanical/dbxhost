@@ -23,7 +23,7 @@ import {
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_PHRASE, LGTO_KNOB,
-    CROP_KNOB, ALL_LANES_CROP_KNOB, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
+    CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
@@ -74,6 +74,7 @@ import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
 import { bankCardVisible, sessMixerVisible, soundModeCovered } from './ui_render.mjs';
 import { closeDaveBox } from './ui_daves.mjs';
 import { pbOpen, pbClose, pbActive } from './ui_phrase_browser.mjs';
+import { miActive, miClose, miOffered } from './ui_midi_import.mjs';
 import { devSnapOpen, devSnapLeave, devSnapUndo, devSnapRedo } from './ui_devsnap.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
     refreshPerClipBankParams, resyncDrumTrack,
@@ -301,6 +302,19 @@ function _onCC_jog(d1, d2) {
             forceRedraw();
             return;
         }
+    }
+
+    /* IMPORT MIDI is a trigger too (Josh, 2026-09-29): touch K8 on the CLIP or
+     * DRUM LANE bank and click. The tick opens it — opening lists a folder —
+     * and it draws over the card, which is what Back at its top folder shows. */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
+            S.activeBank === 0 && S.knobTouched === IMPORT_KNOB) {
+        if (miOffered(S.activeTrack)) {
+            S.pendingMidiImportOpen = S.activeTrack;
+            triggerFire('import');
+        }
+        forceRedraw();
+        return;
     }
 
     /* State version mismatch dialog: Yes = wipe + clean start; No = exit module. */
@@ -2228,6 +2242,7 @@ function returnToOverview() {
      * back to the menu it came from; this goes home. */
     if (S.daveBox)             closeDaveBox();
     if (pbActive())            pbClose();
+    if (miActive())            miClose();
     if (S.projectPadPicker)    closeProjectPadPicker();   /* startup case handled by noOverviewYet */
 
     /* 2. The global menu and every confirm nested in it, all at once. */
@@ -4581,17 +4596,7 @@ function _onCC_knobs(d1, d2) {
                 return;
             }
             if (knobIdx === 7) {
-                /* K8 = SqFl: sens=16 — matches melodic. The device-wide switch. */
-                if (knobStep(knobIdx, d2, KNOB_DELIB) !== 0) {
-                    const _cur = seqFollowOn() ? 1 : 0;
-                    const _nv  = Math.max(0, Math.min(1, _cur + dir));
-                    if (_nv !== _cur) {
-                        setSeqFollowOn(_nv !== 0);
-                        S.followPaused = false;
-                        S.bankParams[t][0][7]  = _nv;
-                        S.screenDirty = true;
-                    }
-                }
+                /* K8 = Import MIDI: a trigger — touch + click opens it; a turn does nothing. */
                 return;
             }
         }
@@ -4863,8 +4868,8 @@ function _onCC_knobs(d1, d2) {
                     /* The loop window is [ls, ls + len): Stretch and Shift act on
                      * it, and S.clipSteps is indexed by ABSOLUTE step. */
                     const ls  = S.clipLoopStart[t][ac] | 0;
-                    /* Lgto and Crop: triggers — touch + click fires them; a turn does nothing. */
-                    if (pm.dspKey === 'lgto_apply' || pm.dspKey === 'crop') return;
+                    /* Lgto, Crop and Import: triggers — touch + click fires them; a turn does nothing. */
+                    if (pm.dspKey === 'lgto_apply' || pm.dspKey === 'crop' || pm.dspKey === 'midi_import') return;
                     /* Clock Shift, Nudge and Stretch (every clip transform) need
                      * the loop at step 1 — the DSP refuses too. */
                     if (ls > 0 && (pm.dspKey === 'clock_shift' || pm.lock)) {

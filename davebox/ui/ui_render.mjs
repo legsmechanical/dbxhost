@@ -17,8 +17,9 @@ import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
 import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
-import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, BANKNAV_HOLD_MS } from './ui_constants.mjs';
+import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, BANKNAV_HOLD_MS } from './ui_constants.mjs';
 import { pbActive, pbRender } from './ui_phrase_browser.mjs';
+import { miActive, miRender } from './ui_midi_import.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
@@ -29,7 +30,7 @@ import {
     col4, col5,
     fmtSign, fmtStretch, fmtLen, fmtRes, fmtPct, fmtBool, fmtGateMod,
     fmtArpRate, fmtVelOverride, fmtPlayDir, fmtRevStyle,
-    fmtDly, fmtArpStyle, fmtArpSteps, fmtDiq, fmtPlain, fmtLgto, fmtCrop, fmtPitchRnd
+    fmtDly, fmtArpStyle, fmtArpSteps, fmtDiq, fmtPlain, fmtLgto, fmtCrop, fmtImport, fmtPitchRnd
 } from './ui_constants.mjs';
 import { drawAutoMarkAt,
     drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitBankHeader, kitBankGlyphWidth,
@@ -604,6 +605,7 @@ export function bankPageHints(bank) {
     if (!S.sessionView && ((bank === 0 && S.knobTouched === CROP_KNOB) ||
             (bank === 7 && S.knobTouched === ALL_LANES_CROP_KNOB &&
              S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM))) return [['CLK', 'CROP']];
+    if (bank === 0 && S.knobTouched === IMPORT_KNOB && !S.sessionView) return [['CLK', 'IMPORT']];
     /* ⭑ While a step is HELD the jog means something else (spec §2): on any
      * other bank a right turn REVEALS the step's page — so the pair says so,
      * in the same slot, and JOG BANK (which the hold suspends) is not shown.
@@ -808,6 +810,9 @@ function _discreteOpts(knob) {
 /* The phrase library (ui_phrase_browser), opened from the PHRASE bank's card. */
 function drawPhraseBrowser() { pbRender(S.knobTouched, S.shiftHeld); }
 
+/* Import MIDI (ui_midi_import), opened from K8 of the CLIP / DRUM LANE card. */
+function drawMidiImport() { miRender(S.knobTouched, S.shiftHeld); }
+
 /* The PHRASE bank's card: the bank header, PHRASE LIBRARY centred inside the
  * door's corner brackets (the mark the CONFIG and SESSION FX cards wear for
  * "click to enter"), and no cells — the bank has no knobs. The box is the
@@ -853,6 +858,11 @@ function kitCellForKnob(knob, val) {
     if (knob.fmt === fmtLgto) {
         base.kind = 'action'; base.oneWay = true; base.opens = true;
         base.btnPhase = triggerPhase('lgto', S.knobTouched === LGTO_KNOB);
+        return base;
+    }
+    if (knob.fmt === fmtImport) {
+        base.kind = 'action'; base.oneWay = true; base.opens = true;
+        base.btnPhase = triggerPhase('import', S.knobTouched === IMPORT_KNOB);
         return base;
     }
     if (knob.fmt === fmtCrop) {
@@ -1481,7 +1491,7 @@ export function bankCardVisible() {
 }
 
 export function soundModeCovered() {
-    return !!(devSnapOpen() || S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox || pbActive() ||
+    return !!(devSnapOpen() || S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox || pbActive() || miActive() ||
         S.projectPadPicker || S.pendingSceneBakePicker ||
         S.mergePlacing || S.mergeNoticePending || S.pendingMergePlacement ||
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
@@ -1787,6 +1797,7 @@ function drawUIBody() {
     if (S.sessionOverlayHeld) { drawSessionOverview(); return; }
     if (S.daveBox) { drawDaveBox(); return; }
     if (pbActive()) { drawPhraseBrowser(); return; }
+    if (miActive()) { drawMidiImport(); return; }
     if (S.snapshotPicker) { drawSnapshotPicker(); return; }
     /* ⭑ The exit confirm outranks the picker (2026-09-16). Hold-Back already
      * raised it from here — checkBackHold() has no picker guard — but the
@@ -2209,7 +2220,6 @@ function drawUIBody() {
             const lane = S.activeDrumLane[t];
             const len  = S.drumLaneLength[t];
             const tpsIdx = Math.max(0, TPS_VALUES.indexOf(S.drumLaneTPS[t]));
-            const sqfl   = seqFollowOn() ? 1 : 0;
             const eucN = Math.min(S.drumLaneEuclidN[t][lane] | 0, len);
             const _dlRev = S.drumLanePlaybackAudioReverse[t][lane] | 0;
             const _dlDir = S.drumLanePlaybackDir[t][lane] | 0;
@@ -2232,7 +2242,8 @@ function drawUIBody() {
                                  fmtRevStyle(1), fmtRevStyle(0))
                     : { kind: 'dirsq', label: 'Dir', name: 'Playback Dir',
                         text: fmtPlayDir(_dlDir), options: KIT_DIR_NAMES, sel: _dlDir },
-                toggleCell('SeqFl', 'Seq Follow', sqfl, fmtBool(1), fmtBool(0)),
+                { kind: 'action', oneWay: true, label: 'Imprt', name: 'Import MIDI', text: '->', opens: true,
+                  btnPhase: triggerPhase('import', S.knobTouched === IMPORT_KNOB) },
             ];
             /* Named by bankDisplayName, not spelled here — this literal and
              * the one below are how the picker and the header drifted apart. */

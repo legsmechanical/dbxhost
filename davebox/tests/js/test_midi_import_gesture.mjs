@@ -1,7 +1,7 @@
 /* tests/js/test_midi_import_gesture.mjs — Import MIDI, through the real gestures.
  *
- * Shift+Note opens the sound menu; the jog walks to "Import MIDI"; a click
- * opens it. From there: the file browser (MIDI files and folders only, the
+ * Touch K8 on the CLIP (or DRUM LANE) card and click the jog: the tick opens
+ * it over the card (Josh, 2026-09-29 — it left the track menu). From there: the file browser (MIDI files and folders only, the
  * install's own folders hidden), a part, the options page on K1-K4, the
  * preview, the confirm when one is due, and the ONE engine write. Asserted on
  * what the engine receives, from which callback, and on what is drawn.
@@ -112,7 +112,7 @@ async function main() {
     const MI = await import('../../ui/ui_midi_import.mjs');
     const tickmod = await import('../../ui/ui_tick.mjs');
     const render = await import('../../ui/ui_render.mjs');
-    const { MoveNoteSession, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
+    const { MoveNoteSession, PAD_MODE_CONDUCT, BANKS: BANKS_ } = await import('../../ui/ui_constants.mjs');
     const { MoveShift } = await import('/data/UserData/schwung/shared/constants.mjs');
 
     function ticks(n) {
@@ -130,33 +130,23 @@ async function main() {
         for (let y = y0; y < y1; y++) for (let x = 0; x < 128; x++) n += FB[y * 128 + x]; return n; };
     const mi = () => MI.miStateForTest();
 
-    function openMenuOn(track) {
-        /* Setup, not the gesture under test: leave any menu still open on the
-         * previous track before choosing the next one. */
-        snd.soundExit(); ticks(2);
-        S.activeTrack = track;
-        cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
-        ticks(6);
-        /* A track remembered on the sound BANK lands on its door (the prompt);
-         * the click there opens the menu, as on the device. */
-        if (process.env.MI_DEBUG) console.log('   [menu] view after open', snd.soundPickStateForTest().view, 'bank', S.activeBank);
-        if (snd.soundPickStateForTest().view === 18) click();
-        if (process.env.MI_DEBUG) console.log('   [menu] view after click', snd.soundPickStateForTest().view);
-    }
-    function jogToImport() {
-        for (let g = 0; g < 40; g++) {
-            const st = snd.soundPickStateForTest();
-            if (st.kinds[st.row] === 'midiimport') return;
-            cc(14, 1); ticks(1);
-        }
-        throw new Error('no Import MIDI row: ' + JSON.stringify(snd.soundPickStateForTest().kinds));
+    /* THE DOOR: the CLIP / DRUM LANE card, K8 touched, the jog clicked. */
+    function tryOpenImport(track) {
+        /* Setup: an import a previous step left open is closed first (the
+         * sound menu's exit used to do this when the door lived there). */
+        MI.miClose(); snd.soundExit(); ticks(2);
+        S.activeTrack = track; S.activeBank = 0; S.trackActiveBank[track] = 0;
+        ticks(2);
+        globalThis.onMidiMessageInternal(new Uint8Array([0x90, 7, 127]));   /* touch K8 */
+        cc(3, 127); cc(3, 0);
+        globalThis.onMidiMessageInternal(new Uint8Array([0x90, 7, 0]));
+        ticks(2);
     }
     function openImport(track) {
-        openMenuOn(track);
-        jogToImport();
-        click(); ticks(2);
-        assert(mi() && snd.soundPickStateForTest().view === 40, 'the click did not open Import MIDI');
+        tryOpenImport(track);
+        assert(mi() && !snd.soundOpen(), 'touch K8 + click did not open Import MIDI over the card');
     }
+    const closedToCard = () => !mi() && !snd.soundOpen() && S.activeBank === 0;
     function pickFile(name) {
         const b = mi().browser;
         const i = b.items.findIndex(it => it.label === name);
@@ -173,7 +163,7 @@ async function main() {
         ticks(8);
     });
 
-    step('the sound menu offers Import MIDI, and the click opens it — stopping playback first', () => {
+    step('⭐⭐ THE DOOR: touch K8 on the CLIP card + click opens Import MIDI — stopping playback first', () => {
         S.playing = true;
         const before = writes.length;
         openImport(1);
@@ -236,9 +226,9 @@ async function main() {
         assert(JSON.stringify(held[0]) === '["CLK","HEAR"]', 'Shift-held footer ' + JSON.stringify(held));
         /* and the renderer is handed Shift from the key itself */
         cc(MoveShift, 127);
-        const src = snd.soundPickStateForTest().shift;
+        const src = S.shiftHeld;
         cc(MoveShift, 0);
-        assert(src === true, 'sound mode did not see Shift go down');
+        assert(src === true, 'Shift did not reach the screen through the import\'s gate');
     });
 
     step('a Grid / To option list covers the roll — the roll is not drawn under it', () => {
@@ -264,7 +254,7 @@ async function main() {
         turn(4, 20); turn(5, 20); turn(6, -20); turn(7, -20);
         ticks(12);                                     /* a level write is flushed on a later tick */
         assert(JSON.stringify([mi().startBar, mi().bars, mi().grid, mi().toIdx]) === snap, 'K5-K8 changed an option');
-        assert(snd.soundPickStateForTest().view === 40, 'the screen changed');
+        assert(mi() && mi().stage === 'opts', 'the screen changed');
         /* The pad map and the parallel-mode sweep (one slot a pass) run on their own. */
         const extra = writes.slice(before).filter(w => !background.has(w[1]) && !/_padmap$|:slot:parallel$/.test(w[1]));
         assert(!extra.length, 'turning K5-K8 wrote to the engine: ' + JSON.stringify(extra.slice(0, 3)));
@@ -296,7 +286,7 @@ async function main() {
         assert(head === '0 1 128', 'header ' + head + ' (want: no replace, 1/16, 8 bars = 128 steps)');
         assert(body.split(';').length === 32, 'notes sent: ' + body.split(';').length);
         assert(/^a 0 60 100 96$/.test(body.split(';')[0]), 'first note ' + body.split(';')[0]);
-        assert(!mi() && snd.soundPickStateForTest().view === 0, 'the screen did not close back to the menu');
+        assert(closedToCard(), 'the screen did not close back to the card');
         assert(S.undoAvailable && !S.undoJs, 'Undo does not reach the import (a stale JS unit would take the press)');
         /* the clip's automation goes too, AFTER the import (whose undo snapshot holds it) */
         const all = writes.slice(before);
@@ -365,8 +355,8 @@ async function main() {
         back();                                         /* tracks → files */
         assert(mi().stage === 'files', 'stage ' + mi().stage);
         assert(writes.slice(before).some(w => w[1] === 't1_audition' && /alloff/.test(w[2])), 'Back left the preview sounding');
-        back();                                         /* files → menu */
-        assert(!mi() && snd.soundPickStateForTest().view === 0, 'Back from the files did not close');
+        back();                                         /* files → the card */
+        assert(closedToCard(), 'Back from the files did not close to the card');
     });
 
     step('notes BEFORE the start bar count as cut, and ask first', () => {
@@ -403,17 +393,52 @@ async function main() {
         assert(!mi(), 'the screen stayed open');
     });
 
-    step('a track with NO instrument still offers Import MIDI (every melodic track does)', () => {
+    step('a track with NO instrument still opens Import MIDI (every melodic track does)', () => {
         S.trackPadMode[4] = 0; S.trackRoute[4] = 3;          /* ROUTE_NONE */
-        openMenuOn(4);
-        const k = snd.soundPickStateForTest().kinds;
-        assert(k.join(',') === 'trackto,div,midiimport', 'rows: ' + k.join(','));
+        openImport(4);
+        back();
+        assert(closedToCard(), 'did not close');
     });
 
-    step('a Conductor track has no Import MIDI row', () => {
+    step('a Conductor track: touch K8 + click opens nothing', () => {
         S.trackPadMode[2] = PAD_MODE_CONDUCT; S.trackRoute[2] = 1;
-        openMenuOn(2);
-        assert(!snd.soundPickStateForTest().kinds.includes('midiimport'), 'Conductor offers Import MIDI');
+        tryOpenImport(2);
+        assert(!mi(), 'a Conductor opened Import MIDI');
+    });
+
+    step('K8 on the CLIP card: K8 is the Import action, touching says CLK IMPORT, a turn does nothing', () => {
+        MI.miClose(); snd.soundExit(); ticks(2);
+        S.trackPadMode[1] = 0; S.trackRoute[1] = 1;
+        S.activeTrack = 1; S.activeBank = 0; S.trackActiveBank[1] = 0; ticks(2);
+        const C = BANKS_[0].knobs[7];
+        assert(C.abbrev === 'Imprt' && C.full === 'Import MIDI' && C.scope === 'action', 'K8 is ' + C.abbrev);
+        globalThis.onMidiMessageInternal(new Uint8Array([0x90, 7, 127]));
+        ticks(1);
+        assert(JSON.stringify(render.bankPageHints(0)) === '[["CLK","IMPORT"]]', 'hints ' + JSON.stringify(render.bankPageHints(0)));
+        const before = writes.length;
+        turn(7, 20); turn(7, -20); ticks(4);
+        const extra = writes.slice(before).filter(w => !/_padmap$|:slot:parallel$/.test(w[1]));
+        assert(!extra.length && !mi(), 'a K8 turn did something: ' + JSON.stringify(extra.slice(0, 3)));
+        globalThis.onMidiMessageInternal(new Uint8Array([0x90, 7, 0]));
+        ticks(1);
+    });
+
+    step('the track menu no longer carries an Import MIDI row', () => {
+        S.trackPadMode[1] = 0; S.trackRoute[1] = 1;
+        snd.soundExit(); ticks(2); S.activeTrack = 1;
+        cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+        ticks(6);
+        if (snd.soundPickStateForTest().view === 18) click();
+        const k = snd.soundPickStateForTest().kinds;
+        assert(k.length > 0 && !k.includes('midiimport'), 'rows: ' + k.join(','));
+        snd.soundExit(); ticks(2);
+    });
+
+    step('Note/Session closes it (the escape law)', () => {
+        openImport(1);
+        cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); ticks(2);
+        assert(!mi(), 'still open after Note/Session');
+        S.sessionView = false; ticks(2);
     });
 
     if (failed) { console.error('test_midi_import_gesture: FAIL'); process.exit(1); }

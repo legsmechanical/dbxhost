@@ -435,6 +435,7 @@ export const S = {
     masterPos: 0,
     bankViewMapOn: null, /* Bank Map on Lock (global menu, ui_prefs): the bank column while the jog walks from the bank view. null = not yet read; absent file = on. */
     seqFollowOn: null,   /* Seq Follow (ui_prefs): one device-wide switch. null = not yet read; absent file = on. */
+    pendingMidiImportOpen: -1, /* K8 Import clicked on this track; the tick opens it (a folder listing) */
     followPaused: false, /* an arrow press while playing paused Seq Follow; the next real transport stop clears it */
     daveWindowOn: null,  /* the Daves switch (global menu): true = a collected Dave scrolls through the session banner while playing; false = static wordmark. null = not yet read from the device-global pref file; DEFAULT OFF (Josh, 2026-09-05 — ON for one build, then back off). */
     bannerDave: -1,      /* frame index of the Dave scrolling in the session banner while playing; -1 = none (stopped, or nothing collected). Picked on the play edge by bannerDaveSync. */

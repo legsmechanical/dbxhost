@@ -21,6 +21,9 @@ the section into a versioned heading at release time.
   is remembered. The track overview shows a small mark while Follow is on.
   Paging with the arrows while playing now pauses Follow only until you stop,
   instead of turning it off for that clip.
+- **Import MIDI moved to knob 8 of the CLIP and DRUM LANE banks.** Touch the
+  knob and click the jog, as for Crop and Legato; Back at the top folder
+  returns to the bank. It is no longer in the track menu.
 
 ## [0.0.5] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Changed

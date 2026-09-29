@@ -1,7 +1,9 @@
-/* ui_midi_import.mjs — Import MIDI, the sound menu's door to a MIDI file.
+/* ui_midi_import.mjs — Import MIDI, a MIDI file into a clip.
  *
- * Four stages on one screen (VIEW_MIDI_IMPORT in ui_sound.mjs, which only
- * delegates here):
+ * Opened from K8 of the CLIP / DRUM LANE card (touch + click; the tick calls
+ * miOpen) and hosted like the phrase browser: ui.js routes its input, the
+ * tick runs miTick, the renderer draws it over everything. Four stages on one
+ * screen:
  *
  *   files    a browser over the user data folder: folders and MIDI files only
  *   tracks   the file's parts, with a miniature of the selected one
@@ -93,7 +95,7 @@ function fmtSize(n) {
 
 /* ---- opening and closing ---- */
 
-/* Tick context (runAction). Stops the transport first — before any other
+/* Tick context (opening lists a folder). Stops the transport first — before any other
  * write — and says so, so a stop the user did not ask for is never a mystery. */
 export function miOpen(track) {
     MI = {
@@ -248,7 +250,7 @@ export function miOnJog(delta) {
     }
 }
 
-/* Returns 'close' when the screen should give way to the sound menu. */
+/* Returns 'close' when the screen has closed. */
 export function miOnClick(shift) {
     if (!MI) return 'close';
     if (shift && (MI.stage === 'tracks' || MI.stage === 'opts')) {

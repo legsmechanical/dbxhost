@@ -83,11 +83,9 @@ step('a MIDI-routed track\'s menu is its destination + its own CONFIG rows, noth
     B.applyInstrChoice(1, C.INSTR_MIDI_CH + 4);
     if (S.trackRoute[1] !== 2) throw new Error('route=' + S.trackRoute[1]);
     S.activeTrack = 1;
-    /* Import MIDI is the one door a MIDI track's menu carries — it fills a
-     * clip, which a MIDI track has — so it is set aside before the shape check. */
-    const all = menuFor(1);
-    if (all.filter(x => x === 'midiimport').length !== 1) throw new Error('no Import MIDI door: ' + all.join(','));
-    const k = all.filter(x => x !== 'midiimport');
+    /* Import MIDI left the track menu for K8 of the CLIP / DRUM LANE card (Josh, 2026-09-29), so no door is left here at all. */
+    const k = menuFor(1);
+    if (k.includes('midiimport')) throw new Error('Import MIDI is back in the menu: ' + k.join(','));
     /* No chain, no bus — so: the destination, a rule, then the config rows. */
     if (k[0] !== 'trackto' || k[1] !== 'div') throw new Error('rows: ' + k.join(','));
     /* The config rows come in their ruled groups (Josh, 2026-09-24), so rules
@@ -100,8 +98,8 @@ step('a NONE track stays collapsed to the row that picks an instrument', () => {
     B.applyInstrChoice(2, C.INSTR_NONE);
     S.activeTrack = 2;
     const k = menuFor(2);
-    /* NONE: the instrument row and Import MIDI (Josh, 2026-09-23: every melodic track imports). */
-    if (k.join(',') !== 'trackto,div,midiimport') throw new Error('rows: ' + k.join(','));
+    /* NONE: the instrument row alone — Import MIDI left the track menu for K8 of the CLIP / DRUM LANE card (Josh, 2026-09-29). */
+    if (k.join(',') !== 'trackto') throw new Error('rows: ' + k.join(','));
 });
 step('the MIDI track\'s config rows: mode, layout, transpose, velin, LOOPER, afttch (Josh, 09-05: the looper is a MIDI looper)', () => {
     S.activeTrack = 1;

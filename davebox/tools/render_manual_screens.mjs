@@ -500,6 +500,10 @@ function alignBlink() {
 }
 function screen(slug, section, title, caption, setup, opts = {}) {
     restore();
+    /* Import MIDI keeps its own module state (it is modal over the card), so
+     * the baseline restore cannot reach it: close it, or it swallows the next
+     * screen's gestures. */
+    MI.miClose();
     try {
         setup();
         if (opts.align !== false) alignBlink();
@@ -1014,7 +1018,7 @@ screen('track-config-levels', '14.2 The menu', 'TRACK CONFIG — levels and pres
     'Further down the same menu, below a line: the track\'s levels — Volume, Pan, Send A and Send B.',
     () => { selectTrack(4); openTrackConfig(); for (let g = 0; g < 7; g++) { jog(1); ticks(1); } });
 screen('track-config-foot', '17.4 Track settings', 'TRACK CONFIG — the track\'s own settings',
-    'The foot of the menu: the track\'s own settings end with Looper, then Import MIDI and Parallel, each group behind a line.',
+    'The foot of the menu: the track\'s own settings end with Looper, then Parallel, each group behind a line.',
     () => { selectTrack(4); openTrackConfig(); for (let g = 0; g < 40; g++) { jog(1); ticks(1); }});
 screen('track-config-move', '14.2 The menu', 'TRACK CONFIG — a Move track',
     'On a track playing a Move instrument the chain row names it (Move 1); the rest of the menu is the Move bus\'s effects and levels.',
@@ -1073,12 +1077,14 @@ screen('fx-buses', '14.8 Master FX and the sends', 'MASTER and SEND FX',
     () => { toSession(); press(MoveShift); tap(MoveNoteSession); release(MoveShift); ticks(6);
             if (!SND.soundOpen()) throw new Error('no bus list'); });
 
-/* 15.4 — Import MIDI, from the track's Sound menu */
+/* 15.4 — Import MIDI: touch K8 on the CLIP / DRUM LANE card and click */
 const openImport = (t) => {
-    selectTrack(t); openTrackConfig(); soundRowTo('midiimport'); click(); ticks(4);
+    selectTrack(t); toBank(0, false);
+    knobTouch(7); ticks(1); click(); knobRelease(7); ticks(4);
+    if (!MI.miStateForTest()) throw new Error('touch K8 + click did not open Import MIDI');
 };
 screen('import-files', '16.4 Import a MIDI file', 'Import MIDI — pick the file',
-    'Sound menu → Import MIDI: a browser showing folders and MIDI files only.',
+    'Touch knob 8 on the CLIP card and click: a browser showing folders and MIDI files only.',
     () => { stopTransport(); openImport(3); });
 screen('import-parts', '16.4 Import a MIDI file', 'Import MIDI — pick a part',
     'A file with several parts: each with its note count and a miniature of its notes.',

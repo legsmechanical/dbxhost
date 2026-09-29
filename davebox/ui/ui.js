@@ -45,6 +45,7 @@ import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { daveBoxRotate } from './ui_daves.mjs';
 import { pbActive, pbOnKnob, pbOnJog, pbOnClick, pbOnBack, pbPadTap, pbPadRelease, pbClose, pbJogTouch } from './ui_phrase_browser.mjs';
+import { miActive, miOnKnob, miOnJog, miOnClick, miOnBack, miClose } from './ui_midi_import.mjs';
 import {
     projectPickerTextEntryMidi,
     projectPadPickerTap, projectPadPickerRotate, projectPadPickerClick
@@ -677,6 +678,34 @@ function _onMidiInternalImpl(data) {
             else if (d1 === MoveShift || d1 === MovePlay) { /* falls through */ }
             /* Shift+volume is the active track's volume, everywhere (a plain turn
              * is Move's main output, dropped just below). */
+            else if (d1 === 79) { /* falls through */ }
+            else return;
+        } else return;
+    }
+
+    /* IMPORT MIDI (ui_midi_import), opened from K8 of the CLIP / DRUM LANE card:
+     * modal like the phrase browser. All eight knobs are its (K5-K8 do nothing
+     * yet), plus the jog, the click and Back; Shift+jog still switches track,
+     * which closes it (miTick). Knob TOUCHES, Shift, Play and Shift+volume fall
+     * through; Note/Session closes it and falls through (the escape law).
+     * Everything else — pads, steps, the arrows — is swallowed so nothing edits
+     * the track underneath. Back at the top folder closes it, and the card it
+     * was opened from is simply what is underneath. */
+    if (miActive()) {
+        const hi = status & 0xF0;
+        if (hi === 0x90 || hi === 0x80) {
+            if (d1 >= 0 && d1 <= 7) { /* knob touch: falls through */ }
+            else return;
+        } else if (status === 0xB0) {
+            if (d1 >= 71 && d1 <= 78) { const _kd = decodeDelta(d2); if (_kd) miOnKnob(d1 - 71, _kd); S.screenDirty = true; return; }
+            else if (d1 === MoveMainKnob) {
+                if (S.shiftHeld) { /* Shift+jog: track switch, falls through */ }
+                else { const _jd = decodeDelta(d2); if (_jd) miOnJog(_jd); S.screenDirty = true; return; }
+            }
+            else if (d1 === MoveMainButton) { if (d2 === 127) miOnClick(S.shiftHeld); S.screenDirty = true; return; }
+            else if (d1 === MoveBack) { if (d2 === 127) miOnBack(); S.screenDirty = true; return; }
+            else if (d1 === MoveNoteSession) { miClose(); /* falls through */ }
+            else if (d1 === MoveShift || d1 === MovePlay) { /* falls through */ }
             else if (d1 === 79) { /* falls through */ }
             else return;
         } else return;

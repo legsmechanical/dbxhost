@@ -103,6 +103,10 @@ export const LGTO_KNOB = 3;
  * loop window becomes the whole clip (moved to step 1, the rest removed). */
 export function fmtCrop() { return '->'; }
 export const CROP_KNOB = 5;             /* CLIP / DRUM LANE bank (K6) */
+/* CLIP K8 / DRUM LANE K8 "Imprt" — a trigger that opens Import MIDI (Josh,
+ * 2026-09-29: it took Seq Follow's knob, which moved to Left/Right + Play). */
+export function fmtImport() { return '->'; }
+export const IMPORT_KNOB = 7;
 export const ALL_LANES_CROP_KNOB = 4;   /* ALL LANES bank (K5) */
 /* The notice when Shift / Nudge / Stretch x2 are refused because the loop
  * does not start at step 1 (LOOP STARTS AFTER STEP 1 / CROP FIRST). */
@@ -453,7 +457,7 @@ export const BANKS = [
     /* 0 — CLIP (pad 92) — K1=Res, K2=Stch (Beat Stretch), K3=Shft (Clock
      * Shift, Shift+turn=Nudge), K4=Lgto (trigger: touch + jog click),
      * K5=InQ (custom handling, mirrors drum ALL LANES K6), K6=Crop (trigger:
-     * touch + jog click), K7=Dir, K8=SqFl. */
+     * touch + jog click), K7=Dir, K8=Imprt (Import MIDI: touch + jog click). */
     { name: 'CLIP', knobs: [
         p('Res',  'Resolution',      'clip_resolution', 'clip',   0, 5,   1,   fmtRes, 8),
         p('Strch', 'Beat Stretch',    'beat_stretch',    'action', 0, 0,   0,   fmtStretch, 16, '_factor', true),
@@ -462,7 +466,7 @@ export const BANKS = [
         p('InQnt',  'Input Quantize', 'diq',              'track', 0, 8, 0,  fmtDiq, 5),
         p('Crop', 'Crop to Loop',   'crop',             'action', 0, 0,   0,   fmtCrop,    16, '_factor', true),
         p('Dir',  'Playback Dir',   'clip_playback_dir', 'clip',  0, 3,   0,   fmtPlayDir, 8),
-        p('SeqFl', 'Seq Follow',      null,              'seqfollow', 0, 1, 1,  fmtBool, 16),
+        p('Imprt', 'Import MIDI',    'midi_import',      'action', 0, 0,   0,   fmtImport,  16, '_factor', true),
     ]},
     /* 1 — NOTE FX (pad 93). Layout (melodic, K-cells 1..8):
      * K1=Oct, K2=Ofs, K3=Vel, K4=Qnt, K5=Len, K6=>Gate, K7=blocked, K8=Rnd.
