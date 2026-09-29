@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.5] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Changed
 - **dAVEBOx no longer adds a service to Move's system.** Earlier builds
   installed one that tidied up at power-on after a session was cut off. A
