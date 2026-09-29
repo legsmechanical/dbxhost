@@ -78,7 +78,11 @@ mk blesses; touch "$T/f/FAIL_UNIT"
 rc=$(run)
 [ "$rc" = 0 ] && ok "bootstrap still succeeds — the launch is not refused" || bad "rc=$rc: $(cat "$T/out")"
 grep -q "WARNING: could not install the boot-recovery unit" "$T/out" && ok "...and says so" || bad "no warning: $(cat "$T/out")"
-grep -q "No space left on device" "$T/out" && ok "...with the helper's own reason in the log" || bad "reason lost: $(cat "$T/out")"
+# ...said on STDOUT: in a real launch the helper's stderr never reaches the log.
+mk blesses; touch "$T/f/FAIL_UNIT"
+MOD_DIR="$T/f/mod" DBX_DIR="$T/f/dbx" STOCK_DIR="$T/f/stock" STOCK_HEAL="$T/f/stock/bin/schwung-heal" \
+    sh "$T/f/mod/payload/scripts/bootstrap.sh" > "$T/stdout" 2>/dev/null
+grep -q "No space left on device" "$T/stdout" && ok "...with the helper's own reason in the log, even with stderr lost" || bad "reason lost: $(cat "$T/stdout")"
 grep -q "system partition:" "$T/out" && ok "...and the partition's free space" || bad "no df line"
 grep -q '"version":"v-test"' "$T/f/dbx/sa-build.json" && ok "the install is STAMPED despite the unit" || bad "no stamp: $(cat "$T/f/dbx/sa-build.json" 2>&1)"
 echo "an install left UNSTAMPED by an unfinished bootstrap is laid again, not kept:"

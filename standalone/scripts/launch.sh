@@ -513,7 +513,10 @@ setsid --wait bash -c '
   # both paths. Refusing to launch on failure is deliberate: without a valid
   # preload MoveOriginal comes up silently WITHOUT Schwung, which is a far more
   # confusing failure than not launching at all.
-  if ! $HEAL; then
+  # Its output captured and echoed: stderr of the helper does not reach this log
+  # in a real launch (see bootstrap.sh, step 3).
+  if ! _heal_out="$($HEAL 2>&1)"; then
+    [ -n "$_heal_out" ] && echo "$_heal_out"
     echo "system partition: $(df -h / 2>/dev/null | tail -n 1)"
     refuse "davebox-heal failed"     # refuse() undoes the swap
   fi

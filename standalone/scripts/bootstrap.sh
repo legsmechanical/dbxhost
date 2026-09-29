@@ -99,7 +99,12 @@ fi
 # every dAVEBOx launch runs the same recover as its backstop (launch.sh), and a
 # reboot clears the mounts by itself — so without it the device is still safe.
 # Say why, with what the log needs to tell a full system partition apart.
-if ! "$HEAL" --install-restore-unit; then
+# ⚠ The helper's reason is CAPTURED and said on stdout: in a real launch its
+# stderr never reaches launch.log (device, 2026-09-29 — the same helper line
+# lands in a file when run by hand; the cause is not found yet), which is how a
+# tester's log said "could not install" and nothing else.
+if ! _unit_out="$("$HEAL" --install-restore-unit 2>&1)"; then
+    [ -n "$_unit_out" ] && printf '%s\n' "$_unit_out" | sed 's/^/bootstrap:   /'
     say "WARNING: could not install the boot-recovery unit — continuing without it"
     say "  system partition: $(df -h / 2>/dev/null | tail -n 1)"
     say "  os: $(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | tr -d '\"')"
