@@ -52,7 +52,7 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
     setDrumLanePage } from './ui_drummodel.mjs';
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
-import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
+import { exitMoveNativeCoRun, enterMoveNativeCoRun, exitMoveSettingsCoRun } from './ui_corun.mjs';
 import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen,
          autoBankJumpTarget, autoBankRestoreMenu, autoCyclePageStep,
          autoLanePinJump, autoLanePinClear, laneHome } from './ui_automation_bank.mjs';
@@ -1753,6 +1753,12 @@ function _onCC_buttons(d1, d2) {
          * on track view, since it is a step-grid affordance, not a return. */
         if (S.moveCoRunTrack >= 0) {
             if (d2 === 127) exitMoveNativeCoRun();
+            return;
+        }
+        /* Move's own Settings (ui_corun.mjs): Note/Session leaves them for the
+         * overview — its law everywhere else. */
+        if (S.moveSettingsOpen) {
+            if (d2 === 127) exitMoveSettingsCoRun('overview');
             return;
         }
         if (d2 === 127) {

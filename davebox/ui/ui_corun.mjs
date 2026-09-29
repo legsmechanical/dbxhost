@@ -8,7 +8,7 @@
  * S stays shared via ui_state.mjs.
  */
 
-import { S } from './ui_state.mjs';
+import { S, nowMs } from './ui_state.mjs';
 import { slotIndex } from './ui_engine.mjs';
 import { invalidateLEDCache, reapplyPalette, forceRedraw } from './ui_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -175,7 +175,8 @@ export function initPrimarySurface() {
  * return path, with the module-side cleanup the exit helpers used to carry. */
 function onServiceReturn(id, _result) {
     if (id === "move_native") {
-        cleanupAfterMoveNativeCoRun();
+        if (S.moveSettingsOpen) cleanupAfterMoveSettings();
+        else cleanupAfterMoveNativeCoRun();
     }
     /* Overlay services (fx_picker) need no module-side cleanup. */
     S.screenDirty = true;
@@ -353,3 +354,135 @@ function cleanupAfterMoveNativeCoRun() {
     }
 }
 
+
+/* ==== MOVE'S OWN SETTINGS ================================================ *
+ * Josh, 2026-09-28: "Need a co-run path into move's settings menu that can be
+ * accessed from the global menu. need to have those settings be separate from
+ * the main move install. shift+step 2 opens that settings menu in move native.
+ * only needs back, jog turn and jog click for navigation."
+ *
+ * Project Settings' Move Settings... row opens it: the same move_native
+ * service a track's co-run uses, ceding only the OLED, the jog and Back —
+ * everything else (pads, steps, transport, knobs, Mute, Shift) stays ours, so
+ * the session plays on underneath. Move is then sent its own Shift+Step 2.
+ * The settings it changes are the SESSION's (set-swap.sh binds the session's
+ * settings folder over Move's), never the user's own.
+ *
+ * Ways out: Shift+Step 2 again (Move's own close, then back to Project
+ * Settings), Note/Session (to the overview), and Back at the top of Move's
+ * menu — Move leaves by itself, and the host tells us: shadow_dbus.c marks
+ * move_ui_mode SETTINGS (4) while Move announces a Settings row and drops it
+ * on any other screen (src/host/move_settings_text.h).
+ *
+ * ⚠ moveCoRunTrack stays -1 the whole time: the track co-run's pad and Copy
+ * injections key on it, and none of them may fire here. */
+const MOVE_UI_MODE_SETTINGS = 4;   /* shadow_constants.h move_ui_mode */
+export const DAVEBOX_MOVE_SETTINGS_KEEP_MASK =
+    DAVEBOX_CORUN_KEEP_MASK | CORUN_GRP_KNOBS | CORUN_GRP_TOUCH | CORUN_GRP_MUTE;
+const DAVEBOX_MOVE_SETTINGS_LED_KEEP_MASK = DAVEBOX_MOVE_SETTINGS_KEEP_MASK | CORUN_GRP_TRACK;
+
+/* Move's Shift+Step 2 as the hardware sends it: ONE Shift down/up pair around
+ * one Step 2 press (two taps double-tap-latch Move's Shift — see
+ * ui_input_pads). The gaps are the shim's select gate's, measured on hardware
+ * for its Shift+Step 1 (schwung_shim.c): 250 ms Shift -> Step, 120 ms press,
+ * 100 ms -> Shift up. Milliseconds, not ticks: the tick rate is not a constant. */
+const MOVE_STEP2 = 17;   /* step buttons are notes 16..31 */
+function moveShiftStep2() {
+    return [
+        { pkt: [0x0B, 0xB0, 49, 127], gapMs: 250 },
+        { pkt: [0x09, 0x90, MOVE_STEP2, 127], gapMs: 120 },
+        { pkt: [0x08, 0x80, MOVE_STEP2, 0], gapMs: 100 },
+        { pkt: [0x0B, 0xB0, 49, 0], gapMs: 0 },
+    ];
+}
+/* How long after the open the first Settings row must have been announced
+ * before the open is tried once more (Move may have been mid-transition). */
+const MOVE_SETTINGS_RETRY_MS = 2000;
+/* Settle before the first inject, as the track co-run's entry inject waits
+ * for the service's split to go live in the shim. */
+const MOVE_SETTINGS_SETTLE_MS = 150;
+
+export function moveSettingsUiMode() {
+    return shadow_get_move_ui_mode() | 0;
+}
+
+export function enterMoveSettingsCoRun() {
+    if (S.awaitingProjectSelect || S.moveSettingsOpen) return;
+    if (S.shiftHeld) return;               /* mid-gesture: Move would see a second Shift */
+    if (S.moveCoRunTrack >= 0) exitMoveNativeCoRun();
+    S.moveSettingsOpen = true;
+    S.moveSettingsClosing = false;
+    S.moveSettingsSeen = false;
+    S.moveSettingsReturn = 'menu';
+    S.moveSettingsTries = 1;
+    host_open_service("move_native", {
+        track: 0,
+        keep_mask: DAVEBOX_MOVE_SETTINGS_KEEP_MASK,
+        led_keep_mask: DAVEBOX_MOVE_SETTINGS_LED_KEEP_MASK,
+    });
+    const now = nowMs();
+    S.moveSettingsQueue = moveShiftStep2();
+    S.moveSettingsNextAt = now + MOVE_SETTINGS_SETTLE_MS;
+    S.moveSettingsRetryAt = now + MOVE_SETTINGS_SETTLE_MS + MOVE_SETTINGS_RETRY_MS;
+    S.globalMenuOpen = false;
+    S.lastSentMenuEditValue = null;
+    S.screenDirty = true;
+}
+
+/* `dest`: 'menu' (back to Project Settings) or 'overview'. Move's menu is
+ * closed with its own Shift+Step 2 ONLY when the host says it is still up — a
+ * blind toggle would OPEN it again underneath a session that has left. */
+export function exitMoveSettingsCoRun(dest) {
+    /* Once: the service stays open until the host reports it closed, a frame
+     * or more later, and every tick in between would otherwise ask again. */
+    if (!S.moveSettingsOpen || S.moveSettingsClosing) return;
+    S.moveSettingsClosing = true;
+    S.moveSettingsReturn = (dest === 'overview') ? 'overview' : 'menu';
+    if (moveSettingsUiMode() === MOVE_UI_MODE_SETTINGS) {
+        S.moveSettingsQueue = moveShiftStep2();
+        S.moveSettingsNextAt = nowMs();
+    } else {
+        S.moveSettingsQueue = null;
+    }
+    host_close_service(null);
+}
+
+/* From tick(): drain the injection, and follow Move out of its menu. */
+export function moveSettingsTick() {
+    const now = nowMs();
+    const q = S.moveSettingsQueue;
+    if (q && q.length > 0 && now >= S.moveSettingsNextAt) {
+        const step = q.shift();
+        move_midi_inject_to_move(step.pkt);
+        S.moveSettingsNextAt = now + step.gapMs;
+        if (q.length === 0) S.moveSettingsQueue = null;
+    }
+    if (!S.moveSettingsOpen || S.moveSettingsClosing) return;
+    const mode = moveSettingsUiMode();
+    if (mode === MOVE_UI_MODE_SETTINGS) {
+        S.moveSettingsSeen = true;
+    } else if (S.moveSettingsSeen) {
+        /* Back at the top level: Move has left by itself. */
+        exitMoveSettingsCoRun('menu');
+    } else if (!S.moveSettingsQueue && now >= S.moveSettingsRetryAt && S.moveSettingsTries < 2) {
+        S.moveSettingsTries++;
+        S.moveSettingsQueue = moveShiftStep2();
+        S.moveSettingsNextAt = now;
+        S.moveSettingsRetryAt = now + MOVE_SETTINGS_RETRY_MS;
+    }
+}
+
+function cleanupAfterMoveSettings() {
+    const dest = S.moveSettingsReturn;
+    S.moveSettingsOpen = false;
+    S.moveSettingsClosing = false;
+    S.moveSettingsSeen = false;
+    S.moveSettingsReturn = null;
+    /* Move repainted the jog/Back LEDs while it had them. */
+    reapplyPalette();
+    invalidateLEDCache();
+    S._forceKnobReemit = true;
+    forceRedraw();
+    /* The tick reopens Project Settings on the row (it owns the menu import). */
+    if (dest !== 'overview') S.pendingMenuAt = 'Move Settings...';
+}

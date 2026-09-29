@@ -67,7 +67,8 @@ import { soundHasPendingAction, soundActive, soundOpen, soundResting, soundEnter
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
     soundEnteredInSession, soundConsumeLedDirty,
     soundConsumeCoRunRequest, soundShowMenu, soundSetBank, midiVal, midiSendValue } from './ui_sound.mjs';
-import { enterMoveNativeCoRun } from './ui_corun.mjs';
+import { enterMoveNativeCoRun, moveSettingsTick } from './ui_corun.mjs';
+import { openGlobalMenuAt } from './ui_menu.mjs';
 import { heldIndicatorChanged } from './ui_chord.mjs';
 
 const BANK_DISPLAY_MS = 1000;
@@ -974,6 +975,16 @@ export function _tickImpl() {
                 S.screenDirty = true;
             }
         }
+    }
+
+    /* Move's own Settings in co-run (ui_corun.mjs): its injected Shift+Step 2,
+     * and following Move out when Back leaves them at the top level. Then,
+     * once the service has returned, back into Project Settings on the row. */
+    moveSettingsTick();
+    if (S.pendingMenuAt && !S.moveSettingsOpen) {
+        const _label = S.pendingMenuAt;
+        S.pendingMenuAt = null;
+        openGlobalMenuAt(_label);
     }
 
     /* Deferred Move co-run entry inject — see enterMoveNativeCoRun(). Fire the

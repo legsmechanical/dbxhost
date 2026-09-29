@@ -33,6 +33,7 @@
 #include "shadow_dbus.h"
 #include "host/shim_thread.h"   /* shim threads must never receive the host's SIGTERM */
 #include "host/schwung_paths.h"
+#include "host/move_settings_text.h"  /* which announcements are rows of Move's Settings menu */
 
 /* ============================================================================
  * Internal state
@@ -257,6 +258,16 @@ static void shadow_dbus_handle_text(const char *text)
 
     /* Track native Move sampler source from stock announcements. */
     host.native_sampler_update(text);
+
+    /* Move's own Settings menu (move_settings_text.h): SETTINGS while its rows
+     * are announced, dropped on any other screen — which is how a session that
+     * opened it (dAVEBOx's Move Settings... row) learns that Back at the top
+     * level took Move out of it. Before the lines below, so an overview or
+     * session announcement still sets its own mode. */
+    if (ctrl) {
+        if (move_settings_text_is_row(text)) ctrl->move_ui_mode = 4; /* SETTINGS */
+        else if (ctrl->move_ui_mode == 4 && strncmp(text, "Page ", 5) != 0) ctrl->move_ui_mode = 0;
+    }
 
     /* Set page: detect Set Overview screen for Shift+Vol+Left/Right interception */
     if (strcasecmp(text, "Set Overview") == 0 || strcasecmp(text, "Sets") == 0) {

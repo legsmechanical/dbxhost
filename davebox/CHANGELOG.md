@@ -7,6 +7,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **Move's own settings, from Project Settings.** A new **Move Settings...** row
+  shows Move's settings menu (Link, MIDI sync, inputs and more) with the jog and
+  Back, while dAVEBOx keeps playing. What you change there is dAVEBOx's own copy:
+  Move on its own keeps your settings. Shift + Step 2 or Back at the top brings
+  you back to Project Settings.
+
+### Changed
+- **Dave 33 is NO, DAVID.**
 
 ## [0.0.2] — 2026-09-28 (test build, not in the Schwung catalog)
 ### Fixed
