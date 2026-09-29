@@ -178,3 +178,21 @@ has.
   snaps the page to the playhead on the next poll anyway. While stopped, the page the user stepped to is
   where they are looking. Restoring "the page before the press" would need a saved page and a check that
   nothing else moved it, which is a comparison that fails open. Awaiting Josh.
+
+## Phase 3 decisions (Josh, 2026-09-29)
+
+- **Entry:** knob 8 on the CLIP / DRUM LANE card is the ONLY way in. The PHRASE bank goes away.
+- **No shipped MIDI.** Users supply their own files and browse to a folder. After a folder is chosen,
+  the browser **re-opens in that folder**, and the jog **steps through the MIDI files in it**
+  (previewing each one) until the user changes folders.
+- **Multi-part files act like a folder:** click into one to list its parts, and each part previews as
+  you scroll, exactly as a single-part file does.
+- **Knobs, in order:** K1 Start · K2 Bars · K3 Grid · K4 To · K5 Stretch · K6 Octave · K7 Semi
+  (semitone transpose) · K8 Scale (on/off).
+- **Scale:** Off plays the pitches as written. On folds each note into the project's scale. **Octave
+  and Semi apply BEFORE the fold**, so they set which of the file's notes lands on the scale's root.
+  (Detecting a file's own key/scale automatically is for a later version.)
+- **Drums:** whole-kit mapping (Phrase Map GM/Move) plus hold-a-sound/tap-a-lane. There is no
+  single-lane load.
+- **Deleted with it:** the phrase pack reader, categories and styles, the PHRASE bank, and the pack
+  prewarm.
