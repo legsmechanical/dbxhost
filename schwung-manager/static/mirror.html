@@ -59,11 +59,13 @@
   body.fs { padding: 0; justify-content: center; }
   body.fs > :not(#hero) { display: none !important; }
   body.fs #hero { border: none; max-width: none; width: min(100vw, 200dvh); cursor: zoom-out; }
+  /* the view follows the capture choice: what you see is what is saved */
+  body.view-screen #device, body.view-device #hero { display: none; }
 </style>
 </head><body>
 <div id="bar">
   <span id="status">connecting…</span>
-  <select id="what" title="What Save PNG and Record capture">
+  <select id="what" title="What is shown, and what Save PNG and Record capture">
     <option value="both">Screen + device</option>
     <option value="screen">Screen</option>
     <option value="device">Device</option>
@@ -109,15 +111,25 @@ const COLOR_TABLE = [
   [0xFFFFFF,124],[0x595959,124],[0xCCCCCC,125],[0x404040,125],[0x141414,126],
   [0x0000FF,126],[0x00FF00,127],[0xFF0000,127],
 ];
+/* An LED's drive level is LIGHT, but a screen value is gamma-encoded: painted
+ * as-is, a dim LED (DarkGrey 0x141414, a dim track colour like 0x210806) reads
+ * as near-black though the pad is plainly lit on the device. Encode each
+ * channel from linear light to sRGB: full colours stay full, the dims come up
+ * to where the eye sees them on the hardware. */
+const LED_LIFT = new Uint8Array(256).map((_, c) => {
+  const l = c / 255;
+  return Math.round(255 * (l <= 0.0031308 ? 12.92 * l : 1.055 * Math.pow(l, 1 / 2.4) - 0.055));
+});
+const lift = rgb => rgb && [LED_LIFT[rgb[0]], LED_LIFT[rgb[1]], LED_LIFT[rgb[2]]];
 const palette = v => {
   if (v <= 0 || v > 127) return null;
   const h = COLOR_TABLE[v][0];
-  return [(h >> 16) & 255, (h >> 8) & 255, h & 255];
+  return lift([(h >> 16) & 255, (h >> 8) & 255, h & 255]);
 };
 const white = v => {
   if (v <= 0 || v > 127) return null;
   const b = Math.round(COLOR_TABLE[v][1] / 127 * 255);
-  return [b, b, b];
+  return lift([b, b, b]);
 };
 
 /* ---------------- surface_live_shm_t ---------------- */
@@ -253,7 +265,7 @@ const encPos = i => surfView ? surfView.getInt16(OFF.enc + i * 2, true) : 0;
 function rgbOf(ch, idx) {
   if (!surf) return null;
   const o = OFF.rgb + (ch * 128 + idx) * 4;
-  return surf[o + 3] ? [surf[o], surf[o + 1], surf[o + 2]] : null;
+  return surf[o + 3] ? lift([surf[o], surf[o + 1], surf[o + 2]]) : null;
 }
 
 /* Animation lives in the status channel: 1-5 transition (drawn solid),
@@ -525,7 +537,15 @@ document.getElementById('logbtn').addEventListener('click', e => {
 /* ---------------- capture ---------------- */
 const what = document.getElementById('what');
 try { const w = localStorage.getItem('mirror.what'); if (w) what.value = w; } catch (_) {}
-what.addEventListener('change', () => { try { localStorage.setItem('mirror.what', what.value); } catch (_) {} });
+const showWhat = () => {
+  document.body.classList.toggle('view-screen', what.value === 'screen');
+  document.body.classList.toggle('view-device', what.value === 'device');
+};
+showWhat();
+what.addEventListener('change', () => {
+  showWhat();
+  try { localStorage.setItem('mirror.what', what.value); } catch (_) {}
+});
 
 const out = document.createElement('canvas');
 const octx = out.getContext('2d');
