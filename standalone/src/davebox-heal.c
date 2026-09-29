@@ -35,7 +35,10 @@
  * systemctl path are compile-time constants.
  *
  * --mount-sets / --umount-sets bind-mount this install's project library over
- * Move's one and only set library, and undo it. Move's library path is not
+ * Move's one and only set library, and undo it. --mount-settings /
+ * --umount-settings do the same for Move's settings folder (2026-09-28: Josh,
+ * "need to have those settings be separate from the main move install"): a
+ * session's Move reads and writes this install's own copy. Move's library path is not
  * configurable, so a standalone session has to make Sets/ show a different
  * population; a bind mount does that atomically, with the user's real sets
  * untouched underneath and NOTHING moved on disk. mount(2) is a privileged
@@ -143,6 +146,16 @@ static const char RESTORE_UNIT_TEXT[] =
 #define SA_LIBRARY   DBX_DIR "/sets/library"
 #ifndef SETS_DIR     /* overridable for the test build only */
 #define SETS_DIR     "/data/UserData/UserLibrary/Sets"
+#endif
+
+/* The SECOND and last bind mount it may make: this install's settings folder
+ * over Move's. The whole DIRECTORY, not Settings.json: every writer of that
+ * file in this tree replaces it by rename, and rename(2) onto a file mount
+ * point fails with EBUSY. Same rules as the Sets pair — both hardcoded,
+ * SETTINGS_DIR belongs to the firmware and is not derived from DBX_DIR. */
+#define SA_SETTINGS  DBX_DIR "/settings"
+#ifndef SETTINGS_DIR /* overridable for the test build only */
+#define SETTINGS_DIR "/data/UserData/settings"
 #endif
 
 /* uid/gid of the account Move runs as. Hardcoded rather than resolved through
@@ -316,7 +329,7 @@ static int install_restore_unit(void) {
 
 #endif
 
-/* Is SETS_DIR currently a mount point? Compares its st_dev with its parent's:
+/* Is `target` (SETS_DIR, SETTINGS_DIR) currently our bind mount? Compares its st_dev with its parent's:
  * a bind mount from the SAME filesystem keeps st_dev equal, so that test alone
  * is not enough — we also compare st_ino against the source, which is what a
  * bind mount makes identical. Either signal means "already ours".
@@ -325,10 +338,10 @@ static int install_restore_unit(void) {
  * mounting twice merely stacks (harmless, and the umount below unstacks), while
  * umounting something that is not ours would expose... nothing, because the
  * only thing we ever mount is our own library. */
-static int sets_is_bound(void) {
+static int dir_is_bound(const char *source, const char *target) {
     struct stat st_target, st_source;
-    if (stat(SETS_DIR, &st_target) < 0) return 0;
-    if (stat(SA_LIBRARY, &st_source) < 0) return 0;
+    if (stat(target, &st_target) < 0) return 0;
+    if (stat(source, &st_source) < 0) return 0;
     return (st_target.st_dev == st_source.st_dev &&
             st_target.st_ino == st_source.st_ino) ? 1 : 0;
 }
@@ -336,30 +349,32 @@ static int sets_is_bound(void) {
 #ifndef HEAL_UNINSTALL_ONLY  /* mounting is install-only */
 /* Bind the standalone library over Move's set library. Idempotent: a second
  * call is a no-op rather than a second stacked mount. */
-static int sets_mount(void) {
+static int bind_dir(const char *source, const char *target, const char *what) {
     struct stat st;
-    if (stat(SA_LIBRARY, &st) < 0 || !S_ISDIR(st.st_mode)) {
+    if (stat(source, &st) < 0 || !S_ISDIR(st.st_mode)) {
         fprintf(stderr, "davebox-heal: %s missing or not a directory — refusing to mount\n",
-                SA_LIBRARY);
+                source);
         return -1;
     }
-    if (stat(SETS_DIR, &st) < 0 || !S_ISDIR(st.st_mode)) {
+    if (stat(target, &st) < 0 || !S_ISDIR(st.st_mode)) {
         fprintf(stderr, "davebox-heal: %s missing or not a directory — refusing to mount\n",
-                SETS_DIR);
+                target);
         return -1;
     }
-    if (sets_is_bound()) {
-        fprintf(stderr, "davebox-heal: sets already bound — nothing to do\n");
+    if (dir_is_bound(source, target)) {
+        fprintf(stderr, "davebox-heal: %s already bound — nothing to do\n", what);
         return 0;
     }
-    if (mount(SA_LIBRARY, SETS_DIR, NULL, MS_BIND, NULL) < 0) {
+    if (mount(source, target, NULL, MS_BIND, NULL) < 0) {
         fprintf(stderr, "davebox-heal: bind %s -> %s: %s\n",
-                SA_LIBRARY, SETS_DIR, strerror(errno));
+                source, target, strerror(errno));
         return -1;
     }
-    fprintf(stderr, "davebox-heal: bound %s -> %s\n", SA_LIBRARY, SETS_DIR);
+    fprintf(stderr, "davebox-heal: bound %s -> %s\n", source, target);
     return 0;
 }
+static int sets_mount(void) { return bind_dir(SA_LIBRARY, SETS_DIR, "sets"); }
+static int settings_mount(void) { return bind_dir(SA_SETTINGS, SETTINGS_DIR, "settings"); }
 
 #endif
 
@@ -370,32 +385,34 @@ static int sets_mount(void) {
  * MNT_DETACH as a fallback for the busy case — a process with a cwd inside the
  * library would otherwise pin the mount forever, and a lazy unmount detaches
  * the tree immediately so the user's real sets are visible again. */
-static int sets_umount(void) {
-    if (!sets_is_bound()) {
-        fprintf(stderr, "davebox-heal: sets not bound — nothing to undo\n");
+static int unbind_dir(const char *source, const char *target, const char *what) {
+    if (!dir_is_bound(source, target)) {
+        fprintf(stderr, "davebox-heal: %s not bound — nothing to undo\n", what);
         return 0;
     }
-    if (umount(SETS_DIR) == 0) {
-        fprintf(stderr, "davebox-heal: unbound %s\n", SETS_DIR);
+    if (umount(target) == 0) {
+        fprintf(stderr, "davebox-heal: unbound %s\n", target);
         return 0;
     }
-    if (errno == EBUSY && umount2(SETS_DIR, MNT_DETACH) == 0) {
-        fprintf(stderr, "davebox-heal: unbound %s (lazy — was busy)\n", SETS_DIR);
+    if (errno == EBUSY && umount2(target, MNT_DETACH) == 0) {
+        fprintf(stderr, "davebox-heal: unbound %s (lazy — was busy)\n", target);
         return 0;
     }
-    fprintf(stderr, "davebox-heal: umount %s: %s\n", SETS_DIR, strerror(errno));
+    fprintf(stderr, "davebox-heal: umount %s: %s\n", target, strerror(errno));
     return -1;
 }
+static int sets_umount(void) { return unbind_dir(SA_LIBRARY, SETS_DIR, "sets"); }
+static int settings_umount(void) { return unbind_dir(SA_SETTINGS, SETTINGS_DIR, "settings"); }
 
 /* Undo every root-owned thing an install made (2026-09-27, the uninstaller):
- * the Sets bind mount, the boot-recovery unit (disable, remove, reload) and the
+ * the Sets and settings bind mounts, the boot-recovery unit (disable, remove, reload) and the
  * mirrored shim in /usr/lib. All three paths are the compile-time constants
  * above; nothing is taken from input. Idempotent — "already gone" is success,
  * so a half-finished uninstall can simply be run again.
  *
- * ORDER: the mount first, and a failure there stops everything. The unit is
- * what brings the user's own Sets back after a crash, so it must not be removed
- * while our library might still be bound over theirs. */
+ * ORDER: the mounts first, and a failure there stops everything. The unit is
+ * what brings the user's own Sets and settings back after a crash, so it must
+ * not be removed while ours might still be bound over theirs. */
 static int unlink_if_present(const char *path) {
     if (unlink(path) == 0) {
         fprintf(stderr, "davebox-heal: removed %s\n", path);
@@ -409,6 +426,10 @@ static int unlink_if_present(const char *path) {
 static int uninstall_root(void) {
     if (sets_umount() != 0) {
         fprintf(stderr, "davebox-heal: Sets still bound — removing nothing else\n");
+        return -1;
+    }
+    if (settings_umount() != 0) {
+        fprintf(stderr, "davebox-heal: settings still bound — removing nothing else\n");
         return -1;
     }
     int rc = 0;
@@ -495,14 +516,16 @@ int main(int argc, char **argv) {
 #ifdef HEAL_UNINSTALL_ONLY
     /* The UNINSTALLER's copy (2026-09-27). It lives in a different module dir
      * (HEAL_DIR is compiled in), and all it may ever do is take things AWAY:
-     * unbind the Sets mount and remove what an install put in /usr/lib and
+     * unbind the Sets and settings mounts and remove what an install put in /usr/lib and
      * /etc/systemd. No mount, no launcher control, no self-update, no mirror —
      * so blessing it grants nothing an install did not already have. */
     if (argc == 2 && strcmp(argv[1], "--umount-sets") == 0)
         return sets_umount() == 0 ? 0 : 2;
+    if (argc == 2 && strcmp(argv[1], "--umount-settings") == 0)
+        return settings_umount() == 0 ? 0 : 2;
     if (argc == 2 && strcmp(argv[1], "--uninstall-root") == 0)
         return uninstall_root() == 0 ? 0 : 2;
-    fprintf(stderr, "davebox-heal (uninstall): expected --umount-sets or --uninstall-root\n");
+    fprintf(stderr, "davebox-heal (uninstall): expected --umount-sets, --umount-settings or --uninstall-root\n");
     return 1;
 #else
     if (argc == 2) {
@@ -514,13 +537,18 @@ int main(int argc, char **argv) {
             return sets_mount() == 0 ? 0 : 2;
         if (strcmp(argv[1], "--umount-sets") == 0)
             return sets_umount() == 0 ? 0 : 2;
+        if (strcmp(argv[1], "--mount-settings") == 0)
+            return settings_mount() == 0 ? 0 : 2;
+        if (strcmp(argv[1], "--umount-settings") == 0)
+            return settings_umount() == 0 ? 0 : 2;
         if (strcmp(argv[1], "--install-restore-unit") == 0)
             return install_restore_unit() == 0 ? 0 : 2;
         if (strcmp(argv[1], "--uninstall-root") == 0)
             return uninstall_root() == 0 ? 0 : 2;
         fprintf(stderr, "davebox-heal: unknown argument %s (expected "
                         "--pause-launcher, --resume-launcher, --mount-sets, "
-                        "--umount-sets, --install-restore-unit or --uninstall-root)\n", argv[1]);
+                        "--umount-sets, --mount-settings, --umount-settings, "
+                        "--install-restore-unit or --uninstall-root)\n", argv[1]);
         return 1;
     }
 

@@ -51,6 +51,7 @@ set -u
 DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
 STOCK_DIR="${STOCK_DIR:-/data/UserData/schwung}"
 SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
+MOVE_SETTINGS_DIR="${MOVE_SETTINGS_DIR:-/data/UserData/settings}"
 BOOT_ROOT="${BOOT_ROOT:-/data/UserData/boot-targets}"
 SHM_DIR="${SHM_DIR:-/dev/shm}"
 SESSION_LOCK="${SESSION_LOCK:-$SHM_DIR/.dbxhost-session.lock}"
@@ -69,7 +70,7 @@ OPEN_TOOL_CMD="$STOCK_DIR/open_tool_cmd.json"
 
 # Top-level names under $DBX_DIR that are the user's, never removed. sets/ is
 # special-cased: only the KEEP_IN_SETS names survive inside it.
-KEEP="projects projects.json davebox-exports daves-seen.txt daves-window.txt bank-view-map.txt phrase-map.txt parallel-modules.txt active_set.txt sa_master_volume shadow_config.json config quarantine"
+KEEP="projects projects.json davebox-exports daves-seen.txt daves-window.txt bank-view-map.txt phrase-map.txt parallel-modules.txt active_set.txt sa_master_volume shadow_config.json config quarantine settings"
 KEEP_IN_SETS="sa_song_index quarantine"
 
 DRY=1
@@ -89,6 +90,7 @@ session_live() {
 }
 
 sets_bound() { [ -d "$LIBRARY" ] && [ "$SETS_DIR" -ef "$LIBRARY" ]; }
+settings_bound() { [ -d "$DBX_DIR/settings" ] && [ "$MOVE_SETTINGS_DIR" -ef "$DBX_DIR/settings" ]; }
 
 # Directory listings are iterated one NAME per line with globbing off, so a
 # name with a space or a `*` in it is one entry, never several or an expansion.
@@ -152,7 +154,21 @@ step_sets() {
     if [ -f "$DBX_DIR/scripts/set-swap.sh" ] && [ "$DRY" = 0 ]; then
         # recover = unbind if bound AND put the user's own currentSongIndex back.
         HEAL_BIN="${_h:-/nonexistent}" DBX_DIR="$DBX_DIR" SETS_DIR="$SETS_DIR" \
+            MOVE_SETTINGS_DIR="$MOVE_SETTINGS_DIR" \
             sh "$DBX_DIR/scripts/set-swap.sh" recover 2>&1 | sed 's/^/  /'
+    fi
+    # Move's settings folder, which a session covers with its own copy the same
+    # way (the copy itself is kept, like every other setting).
+    if settings_bound; then
+        if [ "$DRY" = 1 ]; then say "  would: unbind dAVEBOx's settings from Move's settings folder"
+        else
+            [ -n "$_h" ] && "$_h" --umount-settings >/dev/null 2>&1
+            if settings_bound; then
+                say "  REFUSING: Move's settings folder still shows dAVEBOx's copy and it cannot be unbound."
+                say "  Restart the Move (a reboot always clears it) and run this again."
+                return 1
+            fi
+        fi
     fi
     if sets_bound; then
         if [ "$DRY" = 1 ]; then say "  would: unbind dAVEBOx's library from Sets/"; return 0; fi
