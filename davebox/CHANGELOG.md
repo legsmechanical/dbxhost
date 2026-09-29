@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.7] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Fixed
 - **Updating actually updates.** Installing a newer test build over an
   earlier one kept running the earlier one: only the Tools entry changed. The
