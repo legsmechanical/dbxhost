@@ -119,3 +119,8 @@ between the two.
 ## License
 
 MIT, as inherited from Schwung — see [LICENSE](LICENSE).
+
+One shipped binary is licensed more strictly than the source: the shim links
+eSpeak NG for the screen reader, so `schwung-shim.so` is conveyed under
+GPL-3.0-or-later, and `link-subscriber` (Ableton Link) is GPL-2.0-or-later.
+See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

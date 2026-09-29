@@ -244,6 +244,12 @@ mkdir -p ./build/shadow/
 mkdir -p ./build/bin/
 mkdir -p ./build/lib/
 mkdir -p ./build/licenses/
+# Licence texts ship UNCONDITIONALLY. schwung-shim.so links libespeak-ng
+# (GPL-3.0-or-later) and link-subscriber compiles in Ableton Link
+# (GPL-2.0-or-later), so a tarball without these is non-compliant while
+# looking identical to a good one -- never `|| true` here.
+cp LICENSE THIRD_PARTY_LICENSES.md ./build/
+cp licenses/GPL-2.0.txt licenses/GPL-3.0.txt ./build/licenses/
 mkdir -p ./build/modules/chain/
 
 # Generate bitmap font for host display (single source of truth: scripts/generate_font.py)

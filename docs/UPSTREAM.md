@@ -156,10 +156,14 @@ What a module written for Schwung 1.5 can declare or call, and what it gets here
 - **Version gating: none, by design.** dAVEBOx lists and loads any installed module whatever its
   `min_host_version` — the only gate is stock's manager, against stock's own version. This fork's
   `src/host/version.txt` still reads **1.1.1** and feeds the splash's "Schwung base" caption.
-- **`host_api_v1_t` tail — a named divergence.** Upstream ends in `reserved[8]` at +120 (sizeof
-  184); this fork puts `midi_send_internal_slot` at +120 and `clock_output_enabled` at +128 with no
-  reserved tail (sizeof 136). A 1.5-header module never calls reserved, so it is safe; a module
-  that copies its own 184-byte `sizeof` over-reads 48 readable bytes it never calls.
+- **`host_api_v1_t` tail — same geometry as upstream.** Upstream ends in `reserved[8]` at +120
+  (sizeof 184). This fork keeps sizeof 184 and a NULL run at +120..+167 (`reserved[6]`), with
+  `midi_send_internal_slot` at +168 and `clock_output_enabled` at +176 — upstream's reserved[6]/[7].
+  It used to put them at +120/+128 (sizeof 136), which is unsafe in two directions: a module with a
+  drifted header (breakbeat's `get_project_bpm` resolves to +120) would find a live pointer and call
+  it, and moving the fields past +184 instead would make a dAVEBOx binary over-read under stock.
+  Enforced by `_Static_assert`s in the header and `tests/host/test_host_api_null_run.c`. New host
+  capabilities go in as dlsym'd exports, never as fields.
 - **Borrowed stock modules:** in this window only `sound_generators/linein/module.json` changed
   (it now declares `requires_continuous_processing`), which this fork ignores for generators until
   #515 is ported.
@@ -187,7 +191,7 @@ What a module written for Schwung 1.5 can declare or call, and what it gets here
 | `f84c477f` #497 | `host.channels.stable` catalog field + mirror test | **Skipped** — catalog + test only, no `src/` change. |
 | `844cc7d8` #390, `2adb05e3` #505, `c50908ff` #506 | `schwung-manager`: beta/stable channels, stale-catalog downgrade guard, Check-for-Update cache/lock | **Skipped** — `schwung-manager` Go/template code only, a store surface this fork does not carry (verified `--stat`: `schwung-manager/*.go`, `templates/*.html` only). |
 | `fbe33154` #502 | `schwung-manager`: single builder (`build-manager.sh`) + CI pin; `install.sh`'s `go`-guard silent-skip fixed | **Skipped, applicable-to-upstream-only** — `install.sh`/`build.sh` here are `dbxhost`'s own scripts (`standalone/scripts/install-sa.sh` etc.), not upstream's; the bug fixed (silent stale-manager ship) is specific to upstream's manager-build indirection. No `src/` change. |
-| `035b96f2` #507 | Licensing: LICENSE/THIRD_PARTY_LICENSES consistency, GPL text shipped; `JackShadowDriver.cpp` header corrected | **Skipped** — docs/licensing only; the one `src/` file touched is a **comment-only** header-block correction (verified in the diff: code starts unchanged at line 33). This fork's own licensing statement is separate and unaffected. |
+| `035b96f2` #507 | Licensing: LICENSE/THIRD_PARTY_LICENSES consistency, GPL text shipped; `JackShadowDriver.cpp` header corrected | **Skipped** — docs/licensing only; the one `src/` file touched is a **comment-only** header-block correction (verified in the diff: code starts unchanged at line 33). ~~This fork's own licensing statement is separate and unaffected.~~ **Corrected:** it was affected — this fork's shim links `-lespeak-ng` too, so its binary is GPL-3.0-or-later as conveyed. Ported: consolidated `THIRD_PARTY_LICENSES.md`, `licenses/GPL-{2,3}.0.txt` shipped in the payload, `JackShadowDriver.cpp` header; pinned by `tests/host/test_license_consistency.sh`. |
 | `2ecdb741` #508 | Release: version-agreement test, `release.json` bump | **Skipped** — release tooling for upstream's own release process. |
 | `35260e0b` #510 | Docs: `BOOT_TARGETS.md` design note | **Skipped** — docs only. |
 | `1491fe1d` #400 | `shadow_ui.js`: clear the loaded-preset record (`currentUserPresets`) when a chain position changes hands, so an incoming module's My Presets page didn't read the outgoing module's name | **Already here, independently.** dAVEBOx never uses the host's `enterComponentSelect`/`currentUserPresets` path (it picks through `applyModulePick`, `davebox/ui/ui_sound.mjs:7596`) — it has its own `presetRecord()`/`setPresetRecord()` (`ui_sound.mjs:2178`), keyed by `slot:comp` and immune to this bug **by construction**: the accessor checks `r.mod !== S.moduleId` and drops the stale record lazily on every read, rather than needing an eager clear on the swap gesture. No port needed. |
