@@ -8,6 +8,19 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 
+## [0.0.2] — 2026-09-28 (test build, not in the Schwung catalog)
+### Fixed
+- **A SnapMorph lane jumps to MACROS.** On the AUTOMATION bank, Shift + click
+  on a SnapMorph lane said NO EDITOR, and holding one of its steps did nothing.
+  Both now take you to the track's MACROS bank with that knob marked, like a
+  MIDI lane.
+- **The browser's Help page shows the manual.** It showed "Documentation is
+  coming"; it now shows the full manual, screens and all.
+### Changed
+- **A bigger, brighter header on the browser pages.** The bar across the top of
+  the editor, Files, Help, Config and System is taller, and its links are
+  larger and easier to read.
+
 ## [0.0.1] — 2026-09-28 (test build, not in the Schwung catalog)
 ### Added (pending)
 - **Crop.** Touch knob 6 on the CLIP or DRUM LANE bank (knob 5 on ALL LANES) and

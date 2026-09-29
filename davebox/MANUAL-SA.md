@@ -1178,7 +1178,7 @@ screen show **that row's lane**, not the clip's notes:
 - **The playhead** shows where that lane is in its own cycle.
 - **Hold a step with a value set** to jump to where that parameter is edited — its
   bank, its module's page (on a per-pad parameter, that pad), MIX for a
-  level, MACROS for a MIDI target. Turn its knob to change the value on that step;
+  level, MACROS for a MIDI target or a SnapMorph knob. Turn its knob to change the value on that step;
   let go to come back, on the same row and page. On a bank the header shows
   **<AUTO S7** (step 7). The parameter's cell is highlighted, and while the step
   is held it shows the value the lane plays there — shown only, the parameter
