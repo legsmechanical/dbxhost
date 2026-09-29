@@ -635,6 +635,45 @@ Reference: `src/modules/controller/ui.js`.
 **External device handshakes** (e.g. M8 Launchpad Pro): be proactive — send your init in `init()` immediately; device may have sent its request during the ~500 ms delay. Optionally retry in `tick()` until any valid response confirms connection.
 
 
+## The web mirror: `/mirror` (screen + device)
+
+`move.local:7700/mirror` (the manager's "Mirror" nav link) shows the OLED large
+and, under it, the whole control surface: every LED as the hardware was last
+told to light it and every control as it is held. **Save PNG** / **Record**
+capture screen, device or both. Opening the page (or `/stream-auto`) turns
+Mirror Display on for the session — this fork's `mirrorOn` wrapper in
+`schwung-manager/main.go`; upstream sets it only from the settings page.
+
+- **Two tap points, each the only place its half is true.** LEDs are read from
+  the FINAL MIDI_OUT as the last statement of `shim_pre_transfer` — Move's
+  writes, the LED queue and dAVEBOx's merged, i.e. what the XMOS receives.
+  `move_note_led_state[]` is NOT that: it holds Move's writes only and stops
+  during overtake. Presses are read from the RAW hardware MIDI_IN at the top of
+  `shim_post_transfer`, before any blocking site, so a press withheld from Move
+  still shows. `src/host/surface_live_shm.h`; always tracked (a few byte
+  compares a frame, no store unless something changed). Placement and RT safety
+  are pinned by `tests/host/test_surface_live_call_sites.sh`.
+- ⚠ **An INJECTED press does not show as held.** `schwung-testd`'s
+  `press_pad` enters after the raw MIDI_IN tap, so on-device tests see its
+  effect (the LEDs dAVEBOx repaints), never the press itself.
+- **The byte after `3B` in Move's RGB LED SysEx is a CHANNEL**, not a
+  subcommand: `00` addresses a NOTE (pads, steps), `10` a CC (tracks, knob
+  rings, transport). Latest write wins between a palette write and an RGB write
+  to the same LED. Palette, layout and this reading follow Cycling '74's MIT
+  `move_midi_emulator.html` — see `THIRD_PARTY_LICENSES.md`.
+- **One connection per page**: `/stream-auto?v=2` carries frames, `surface`,
+  `e16` (always inactive here — no E16 surface) and an `hb` heartbeat every
+  2 s; the page rebuilds its connection after 6 s of silence. A bare
+  `/stream-auto` is unchanged. Output goes through a per-client queue of whole
+  events; a new stream evicts the oldest of 16. The page decodes the struct by
+  byte offset — `test_mirror_page_layout.sh` pins that against the compiler,
+  and `test_mirror_real_path.sh` drives a gesture through decoder, server and
+  page offsets end to end.
+- The manager lifts its 60 s `WriteTimeout` for `/stream-auto` only; without
+  that the feed was cut once a minute.
+- Animation (status channel 6-10 pulse, 11-15 blink) is drawn at an assumed
+  120 BPM: no tempo reaches the page.
+
 ## Module Install / Update
 
 **schwung-manager (web UI at `http://move.local:7700`) is the single

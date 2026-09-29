@@ -53,6 +53,7 @@ DEPFLAGS = -MMD -MP -MF $@.d
 BUILD_DIR = ../../build/tests/host
 
 TARGETS = $(BUILD_DIR)/test_project_path \
+          $(BUILD_DIR)/test_surface_live \
           $(BUILD_DIR)/test_timespec_delta \
           $(BUILD_DIR)/test_host_api_null_run \
           $(BUILD_DIR)/test_split_voices_parse \

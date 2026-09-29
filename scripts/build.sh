@@ -651,7 +651,8 @@ fi
 
 # Build display server (live display SSE streaming to browser)
 if needs_rebuild build/display-server \
-    src/host/display_server.c src/host/unified_log.c src/host/unified_log.h; then
+    src/host/display_server.c src/host/unified_log.c src/host/unified_log.h \
+    src/host/surface_live_shm.h src/host/e16_mirror_shm.h src/host/norns_display_shm.h; then
     echo "Building display server..."
     "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 \
         src/host/display_server.c \

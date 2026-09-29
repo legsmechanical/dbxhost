@@ -227,6 +227,7 @@ For details on chain modules, capabilities, and `ui_hierarchy`, see
 | `/schwung-ui-midi` | MIDI to shadow UI |
 | `/schwung-display` | Shadow display buffer |
 | `/schwung-display-live` | Live display mirror for the web viewer |
+| `/schwung-surface-live` | Every LED as last lit and every control as held, for `/mirror` (`surface_live_shm.h`) |
 | `/schwung-movein` | Move's audio for shadow processing |
 | `/schwung-ui` | Slot state (names, channels, active flags) |
 | `/schwung-param` | Parameter read/write requests |

@@ -116,10 +116,11 @@ changes to "Ported" with the commit.
 | `37a0ac7f` #533 | Gated pages: a module's own mode chooses the page set | **Already here** (ported 2026-09-21 with its correction `07857f6e`, see "Corrections to our own PRs"). |
 | `9c4ada04` #538 | Module picker "Sort by Type" by catalog category | **Not taken — future feature** for dAVEBOx's own pickers; upstream's lands in the host picker dAVEBOx never opens. |
 | `e7376af6` #516, `e52c1c20` #517 | Remote UI: a component's panel was folded; `viz.extra_keys` reach the browser and stay live | **Not taken yet — web surface.** A #516 port must also add fx3/fx4: `schwung-manager/static/remote-ui.js` `COMPONENT_KEYS` lacks them though the Go side has them. |
-| `948e0ec6` #512, `de5268dc` #537, `57494b27` #546, `407c2250` | Manager: module web-UI link, beta channel flag, Platforms tab removed, mirror-stream write deadline | **N/A** — store/manager surfaces this fork does not carry. |
+| `948e0ec6` #512, `de5268dc` #537, `57494b27` #546 | Manager: module web-UI link, beta channel flag, Platforms tab removed | **N/A** — store/manager surfaces this fork does not carry. |
+| `407c2250` | Manager: lift the 60 s write deadline for the mirror stream | **Ported with #560** (see "Web mirror" below). Was N/A; the mirror page is a surface this fork now carries, and the deadline cut its feed once a minute. |
 | `0ae48972` #509, `0a2a0376` #518, `94d4642d` #523, `6977c4c6` #528, `d7974867` #526, `8d0ac976` #525, `e2c09798` #524 | Automation lanes (record a knob against Move's clip), then removed from main | **N/A.** Net effect is NOT zero upstream (clip-state diagnostics and some `param_pages` refactors stay), but none of the leftovers is here and dAVEBOx has its own automation. Merge hazard only: upstream `param_pages` patches now carry context lines this tree lacks. |
 | `43e3c3b7` #527 | `param-slow` elapsed time in signed ns (a false 71-minute accusation) | **Already here, independently** (`timespec_delta_us`, `src/host/timespec_delta.h`). |
-| `d7968fec` | Display server: free a closed page's stream slot; 3 s keepalive to stream clients | **Optional.** The E16 half is N/A; the ping loop would free a closed mirror page's slot on a static screen. |
+| `d7968fec` | Display server: free a closed page's stream slot; 3 s keepalive to stream clients | **Superseded by the #560 port** — `display_server.c` was taken whole at #560, whose per-client queue, `hb` heartbeat, stall drop and evict-oldest replace this ping loop. Was: Optional. |
 | `cebf6b94` | Forward the E16's two-byte CIN 6; hand JS only real SysEx bytes | **N/A** — the filter here already forwards it; dAVEBOx parses no inbound SysEx. |
 | `0baa6958` | Revert two E16 display-latency changes | **N/A** — never had them. |
 | `66e5a854` #548 | Release 1.5.0: version bump, release notes | **Skipped** — upstream release tooling. This fork's `src/host/version.txt` still reads 1.1.1 (see Module compatibility). |
@@ -468,6 +469,17 @@ upstream's spelling, `fx:move` = `"<from>><to>"`, 1-based.
   vertical. Automation, macro legs and the loaded-preset record follow a move
   (`chainFxMove` / `busFxMove`). `davebox/tests/js/test_fx_move_rows.mjs` performs the gesture.
 - **NOT taken:** upstream's Shift+jog reorder gesture and its MIDI-FX section moves.
+
+## Web mirror (#560) — ported ahead of the watermark (2026-09-29)
+
+**Surface:** a browser page, `move.local:7700/mirror`, from the manager's "Mirror" nav link —
+not an OLED screen. Opening it turns Mirror Display on for the session (this fork's `mirrorOn`
+wrapper in `schwung-manager/main.go`, which upstream does not have). No dAVEBOx menu row.
+
+| upstream | what | here |
+|---|---|---|
+| `da7f4bf1` #560 | `/mirror` draws the whole device under the screen (every LED, held controls); one `/stream-auto?v=2` stream carries frames, `surface`, `e16`, `hb`; per-client queue, evict-oldest, self-reconnecting page | **Ported.** `mirror.html` byte-identical to upstream's (its E16 code is inert here). `display_server.c` taken whole with `e16_mirror_shm.h`, so it stays upstream's file; nothing here creates the E16 segment. The three SHM names (`surface-live`, `e16-live`, `display-live`) are composed from `SCHWUNG_SHM_PREFIX`. Shim: `surface_live_scan_out` is the last statement of `shim_pre_transfer`, `surface_live_scan_in` the first of `shim_post_transfer` (this fork has no `xmos_log_slots` PREEND anchor). `test_display_server_streams.sh` fails on a missing python3 rather than skipping. Added here: `test_mirror_real_path.sh` (decoder → SHM → real server → page offsets, end to end), `test_surface_live_call_sites.sh` (hook placement + RT hazards), `mirror_test.go`. |
+| `08f8b387` #565 | The device's sound on the stream (`audio_live_shm.h`, `event: pcm`), recorded with the video | **Deferred** (Josh, 2026-09-29: phase 1 now, sound later). Lands on the fast-path mailbox branch and the full-mix `unity_view` in `schwung_shim.c`; check which master volume scales the SA fast path before un-scaling. Its `scripts/install.sh` hunk is N/A (installer removed here). |
 
 ## Keep-list — paths this fork owns
 

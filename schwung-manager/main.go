@@ -1387,17 +1387,11 @@ func main() {
 	// Module web UI assets (custom web_ui.html and related files).
 	mux.HandleFunc("GET /api/remote-ui/module-assets/{id}/{filepath...}", app.handleModuleWebUIAsset)
 
-	// Display server proxy (/mirror and /stream-auto).
+	// Display server proxy (/stream-auto).
 	displayProxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = "http"
 			req.URL.Host = *displayBackend
-			if strings.HasPrefix(req.URL.Path, "/mirror") {
-				req.URL.Path = strings.TrimPrefix(req.URL.Path, "/mirror")
-				if req.URL.Path == "" {
-					req.URL.Path = "/"
-				}
-			}
 		},
 		FlushInterval: -1,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
@@ -1419,9 +1413,19 @@ func main() {
 			h.ServeHTTP(w, r)
 		})
 	}
-	mux.Handle("GET /mirror", mirrorOn(displayProxy))
-	mux.Handle("GET /mirror/", mirrorOn(displayProxy))
-	mux.Handle("GET /stream-auto", mirrorOn(displayProxy))
+	// /mirror is the manager's own page (static/mirror.html): the screen plus
+	// the control surface, over ONE display-server stream. display-server's
+	// built-in page still answers on :7681 for anything that goes there.
+	mux.Handle("GET /mirror", mirrorOn(http.HandlerFunc(app.handleMirror)))
+	mux.Handle("GET /mirror/", mirrorOn(http.HandlerFunc(app.handleMirror)))
+	// THE STREAM IS ENDLESS, so the server WriteTimeout (60 s) must not apply
+	// to it: Go enforces it on every response, and it cut the mirror feed once
+	// a minute. The deadline is lifted for this route only.
+	streamProxy := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+		displayProxy.ServeHTTP(w, r)
+	})
+	mux.Handle("GET /stream-auto", mirrorOn(streamProxy))
 
 	// Apply middleware.  WebSocket paths bypass CSRF (upgrades don't carry tokens).
 	// SecurityHeaders runs outermost so headers are set even on responses
