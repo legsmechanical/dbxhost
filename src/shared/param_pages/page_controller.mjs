@@ -754,6 +754,34 @@ export function createController(io = {}) {
          * because an encoder sweep is a burst of writes and each one used to
          * buy a whole planPages — measured at 112 passes in one tick. */
         replanOwed: false,
+        /*
+         * The exact bytes the plan on screen was built from, and the mode it
+         * was built for. Compared against a fresh read to answer "did the
+         * DECLARATION move?" without parsing or planning anything.
+         *
+         * `load` runs on a divider (reloadIfChanged, ~every 8 ticks) so that a
+         * module swap or a preset that republishes its contract is noticed
+         * while the grid stands on a page. Until now it answered that question
+         * by doing the whole job — parse both contract strings, walk the
+         * hierarchy, plan every page, resolve each page's viz, hash the result
+         * — and then discarding all of it when the fingerprint came back equal,
+         * which in a steady state is EVERY time. The fingerprint is taken over
+         * `[hierarchy, chainParams, mode]` and nothing else (page_plan.mjs), so
+         * the raw bytes of those same three inputs answer identically, and the
+         * work above them is dead. Measured on minijv (433 params, 57 levels,
+         * the largest in the fleet) that discarded work is ~2.8 ms every 8
+         * ticks in node — a third of the tick, and far worse on the device's
+         * QuickJS/A72.
+         *
+         * NOT a cache of visibility: a `visible_if` is driven by a VALUE, which
+         * moves without the declaration moving, and the fingerprint has never
+         * been able to see that either — `conditionKeys` above is what watches
+         * for it, and replanIfCondition/flushReplan re-plan on their own path.
+         * This skips only what the fingerprint was already discarding.
+         */
+        rawHierarchy: null,
+        rawChain: null,
+        plannedMode: undefined,
         /* Instance copy / clear gesture (hold Copy or Delete, then pick an
          * instance) -- see onEditCc. `editUndo` is the one-level undo. */
         editGesture: null,
@@ -898,6 +926,17 @@ export function createController(io = {}) {
      * A key declared by two levels that resolve it DIFFERENTLY has no single
      * answer; null, and the lane skips it rather than pick one. The evaluator
      * still reads it on demand, which is what it did before the lane existed.
+     *
+     * ⚠ A GATE IS PER-INSTANCE ONLY WHEN SOMETHING SAYS SO: the level lists
+     * the key (the evaluator's own rule, shadow_ui.js hierChildKeyFor), or the
+     * module declares the concrete key (`pad0_type` in its chain_params). A
+     * child level may gate on a MODULE-WIDE key too: DR32's
+     * `ui_engine` says which engine the focused pad runs, sits on no level and
+     * is served bare. Expanded, it was read as `synth:pad1_ui_engine`, which
+     * nothing serves; "" was cached, the evaluator trusted it, and every
+     * engine page vanished on the first pad switch and never came back. With
+     * several gated levels at different child indexes it was also "ambiguous"
+     * and skipped, so a real change never re-planned either.
      */
     const gateLevelsOf = (key) => {
         const out = [];
@@ -917,8 +956,15 @@ export function createController(io = {}) {
     const gateWireKey = (key) => {
         const levels = (s.hierarchy && s.hierarchy.levels) || {};
         let wire = null;
+        const lists = (lvl) => {
+            const listed = (k) => (typeof k === "string" ? k : (k && k.key)) === key;
+            return (lvl.knobs || []).some(listed) || (lvl.params || []).some(listed);
+        };
+        const declared = (k) => !!(s.metaIndex && s.metaIndex.keys.indexOf(k) >= 0);
         for (const name of gateLevelsOf(key)) {
-            const w = resolveChildKey(levels[name], childIndexFor(name), key) || key;
+            const lvl = levels[name];
+            const concrete = resolveChildKey(lvl, childIndexFor(name), key);
+            const w = (concrete && (lists(lvl) || declared(concrete))) ? concrete : key;
             if (wire !== null && wire !== w) return null;
             wire = w;
         }
@@ -1084,6 +1130,12 @@ export function createController(io = {}) {
             s.fingerprint = null;
             s.hierarchy = null;
             s.chainParams = null;
+            /* With the contract itself dropped, the bytes it was read from name
+             * nothing — leaving them would let the NEXT read short-circuit
+             * against a plan that no longer exists. */
+            s.rawHierarchy = null;
+            s.rawChain = null;
+            s.plannedMode = undefined;
             s.metaIndex = null;
             s.conditionKeys = new Set();
             /* flushDueWritesUnconditionally() above may have marked a plan owed
@@ -1103,7 +1155,20 @@ export function createController(io = {}) {
         s.contractRetries = 0;
         s.contractGaveUp = false;
 
-        const hierarchy = parse(rawHierarchy);
+        /*
+         * SAME BYTES AS THE PLAN ON SCREEN? Then `parse` would return an object
+         * equal to the one already in hand, and re-deriving everything from it
+         * is waste. Reusing the object rather than re-parsing also restores
+         * `fingerprintOf`'s identity memo, which is defeated by a fresh parse
+         * on every reload and so re-hashed the whole contract each time.
+         *
+         * `sameComponent` is part of it because the bytes alone do not identify
+         * a module: two slots can hold the same one, and the plan must still be
+         * rebuilt against the new prefix.
+         */
+        const declSame = sameComponent && s.rawHierarchy !== null
+                      && rawHierarchy === s.rawHierarchy && !!s.hierarchy;
+        const hierarchy = declSame ? s.hierarchy : parse(rawHierarchy);
         /*
          * Seed the active mode FROM THE MODULE.
          *
@@ -1158,10 +1223,42 @@ export function createController(io = {}) {
          */
         const rawChain = getParam(`${s.prefix}:chain_params`);
         const chainFailed = (rawChain === null || rawChain === undefined);
+        const chainSame = declSame && !chainFailed
+                       && rawChain === s.rawChain && s.chainParams !== null;
         const chainParams = chainFailed
             ? (sameComponent ? s.chainParams : null)
-            : parse(rawChain);
+            : (chainSame ? s.chainParams : parse(rawChain));
         if (chainFailed && sameComponent) armContractSettle();
+
+        /*
+         * NOTHING THE PLAN IS MADE OF MOVED — so the plan on screen IS the
+         * plan, and the rest of this function would compute it again only to
+         * throw it away at the fingerprint compare below.
+         *
+         * The three tests are exactly the three inputs the fingerprint is taken
+         * over, which is what makes this equivalent rather than approximate:
+         * same hierarchy bytes, same chain_params bytes, same mode => same
+         * `planned.fingerprint` => `return false` with nothing adopted. A
+         * chain_params read that FAILED is deliberately not a match: the
+         * retained metadata is what we keep, but the settle armed above wants
+         * another look, and short-circuiting here would latch the failure.
+         *
+         * Everything this skips is pure: planPages has no side effect the
+         * caller keeps when the fingerprint matches, and the metaIndex, the
+         * child aliases and the warm are all below the compare already.
+         */
+        if (declSame && chainSame && s.fingerprint !== null && activeMode === s.plannedMode) {
+            return false;
+        }
+
+        /* What the plan below is built from, recorded BEFORE the fingerprint
+         * compare can return: a reload that re-parsed to the same fingerprint
+         * still read these exact bytes, and the next one must compare against
+         * them or it re-parses forever. */
+        s.rawHierarchy = rawHierarchy;
+        if (!chainFailed) s.rawChain = rawChain;
+        s.plannedMode = activeMode;
+
         const planned = planPages({ hierarchy, chainParams, mode: activeMode, visible,
                                     trailingMenus: trailingMenus(), paginate: s.paginate });
         /* Retained so a visibility re-plan costs no extra device reads. */
@@ -1838,7 +1935,13 @@ export function createController(io = {}) {
          * the loop above never sees them. The gate lane caches them under the
          * generic key the evaluator asks for; left in place, the pad we just
          * left would go on deciding what the new pad's pages are. Marked due
-         * so the new instance's answer is read rather than waited for. */
+         * so the new instance's answer is read rather than waited for.
+         * Deliberately wider than gateWireKey's per-instance test: a
+         * module-wide gate on this level (DR32's `ui_engine`) can move with
+         * the focus too, so it is dropped and marked due with the rest. Only
+         * reached when a GATED level's own index moves (an instance pick);
+         * a module-driven focus change is marked due by
+         * syncChildIndexFromModule regardless. */
         const lvlDef = s.hierarchy && s.hierarchy.levels && s.hierarchy.levels[levelName];
         if (lvlDef && s.conditionKeys) {
             for (const k of s.conditionKeys) {
@@ -2400,7 +2503,15 @@ export function createController(io = {}) {
                 if (s.gateAt >= due.length) { s.gatesDue = false; s.gateAt = 0; }
                 const gv = getParam(gateWireKey(k));
                 const before = s.values[k];
-                if (gv !== null && gv !== undefined) s.values[k] = gv;
+                /* "" is a MISS for anything but an opaque key -- the chain
+                 * host's answer for a key nobody serves (acceptValue's rule).
+                 * Storing it is how a wrongly resolved gate used to become a
+                 * cached verdict the evaluator then trusted for good; a miss
+                 * leaves the evaluator to read the key itself. */
+                const meta = s.metaIndex ? s.metaIndex.getOrGuess(k) : null;
+                const miss = gv === "" && !(meta && meta.kind === KIND_OPAQUE);
+                if (miss) delete s.values[k];
+                else if (gv !== null && gv !== undefined) s.values[k] = gv;
                 if (s.values[k] !== before) replanIfCondition(k);
                 return null;
             }
@@ -3815,6 +3926,10 @@ export function createController(io = {}) {
         if (!planned.pages.length) return;   /* never plan from nothing */
         s.pages = planned.pages;
         s.fingerprint = planned.fingerprint;
+        /* The plan on screen is now this mode's, so the next reload compares
+         * against it. Without this the mode the reload reads back differs from
+         * the one recorded and it re-plans once for nothing. */
+        s.plannedMode = s.lastLoadOpts && s.lastLoadOpts.mode;
         s.conditionKeys = planned.conditionKeys || new Set();
         s.values = Object.create(null);
         s.knobStates = Object.create(null);
@@ -5201,7 +5316,15 @@ export function createController(io = {}) {
          * pre-registration groups and the widget never appears. Same shape as
          * the child-level alias bug above: a cache key that omits something the
          * result depends on. */
-        const cacheKey = `${s.fingerprint}#${s.pageIndex}#${childAt}#${widgetsGeneration()}`;
+        /* AND THE PAGE'S KEYS. A visible_if gate re-plans the page IN PLACE
+         * (replanNow): same fingerprint, same index. When the gate moves with
+         * the focused child, the focus reaches a draw a tick before the gate
+         * read does, so the cache filled with the OLD key list under the NEW
+         * child and the re-plan was handed those groups -- a synth pad drawn
+         * with the sample pad's waveform over the wrong cells, until another
+         * pad busted it (tests/host/test_viz_cache_follows_gated_keys.sh).
+         * resolveViz is a function of p.keys, so the key names them. */
+        const cacheKey = `${s.fingerprint}#${s.pageIndex}#${childAt}#${widgetsGeneration()}#${(p.keys || []).join()}`;
         if (vizCache && vizCache.key === cacheKey) return vizCache.groups;
         const { groups } = resolveViz({ keys: p.keys, metaIndex: s.metaIndex, overrides: vizOverrides });
         vizCache = { key: cacheKey, groups };

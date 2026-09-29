@@ -153,7 +153,9 @@ The first launch installs everything else (2026-09-05, the zero-SSH install):
    → `bin/heal` root 04755). No bless → it stops there and names the manual step.
 3. `scripts/layout-install.sh` lays `payload/` into `$DBX_DIR` (merge-not-replace,
    workspace separation, the modules/ mirror — the same script `install-host.sh` runs).
-4. `heal --install-restore-unit` installs the boot-recovery unit; `sa-build.json` is stamped.
+4. `sa-build.json` is stamped. (Builds up to 0.0.4 also installed a boot-recovery
+   systemd unit; the helper now removes it on the first launch — a reboot clears the
+   bind mounts by itself, and every launch runs `set-swap.sh recover` first.)
 
 The helper lives at `modules/tools/davebox-sa/bin/heal` — ableton owns that dir,
 so a stock or catalog reinstall of the module can un-setuid it; the launcher treats

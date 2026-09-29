@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -136,11 +137,18 @@ type wsMessage struct {
 
 // --- Outbound message types (server -> browser) ---
 
+// wsHierarchy / wsChainParams carry one component's metadata. Empty: nothing is
+// loaded at that position (the host said so). Failed: the read never got an
+// answer (busy channel, timeouts) — Data is a placeholder, and the client
+// should ask again rather than show it as "no parameters".
 type wsHierarchy struct {
 	Type      string          `json:"type"`
 	Slot      uint8           `json:"slot"`
 	Component string          `json:"component"`
 	Data      json.RawMessage `json:"data"`
+	Module    string          `json:"module,omitempty"` // the module loaded there, when known
+	Empty     bool            `json:"empty,omitempty"`
+	Failed    bool            `json:"failed,omitempty"`
 }
 
 type wsChainParams struct {
@@ -148,6 +156,8 @@ type wsChainParams struct {
 	Slot      uint8           `json:"slot"`
 	Component string          `json:"component"`
 	Data      json.RawMessage `json:"data"`
+	Empty     bool            `json:"empty,omitempty"`
+	Failed    bool            `json:"failed,omitempty"`
 }
 
 type wsSlotInfo struct {
@@ -531,7 +541,7 @@ func (ru *RemoteUI) handleSubscribe(ctx context.Context, c *ruClient, msg wsMess
 		if url := ru.findModuleWebUI(synthID); url != "" {
 			ru.sendCustomUI(ctx, c, slot, "synth", url)
 		}
-		ru.sendHierarchy(ctx, c, slot, "synth")
+		ru.sendHierarchy(ctx, c, slot, "synth", "")
 		ru.sendChainParams(ctx, c, slot, "synth")
 	}
 
@@ -549,7 +559,7 @@ func (ru *RemoteUI) handleSubscribe(ctx context.Context, c *ruClient, msg wsMess
 			continue
 		}
 		if comp != "synth" {
-			ru.sendHierarchy(ctx, c, slot, comp)
+			ru.sendHierarchy(ctx, c, slot, comp, "")
 			ru.sendChainParams(ctx, c, slot, comp)
 		}
 		// Fetch initial param values (one-time on subscribe).
@@ -607,17 +617,33 @@ func (ru *RemoteUI) sendInitialParamValues(ctx context.Context, c *ruClient, slo
 	// "1/0 Preset 0" until all individual params arrive.
 	ru.sendHierarchyParams(ctx, c, slot, comp)
 
-	// Fast path: "all" returns every param in one round-trip.
-	if ru.sendAllParamsAtOnce(ctx, c, slot, comp) {
-		return
+	// Fast path: the module's "state" snapshot, every value in one
+	// round-trip. It is not always every DECLARED param, though — dr32's
+	// carries 2 of its 30 — so the declared params it left out are read
+	// one by one below; a snapshot that covers them all costs nothing more.
+	have := map[string]bool{}
+	if state, ok := ru.fetchAllParams(slot, comp); ok {
+		ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: slot, Params: state})
+		for k := range state {
+			have[k] = true
+		}
 	}
 
 	raw, err := ru.shm.GetParam(slot, comp+":chain_params")
 	if err != nil || raw == "" {
 		return
 	}
+	var all []chainParam
+	if json.Unmarshal([]byte(raw), &all) != nil {
+		return
+	}
 	var params []chainParam
-	if json.Unmarshal([]byte(raw), &params) != nil {
+	for _, p := range all {
+		if p.Key != "" && !have[comp+":"+p.Key] {
+			params = append(params, p)
+		}
+	}
+	if len(params) == 0 {
 		return
 	}
 
@@ -700,19 +726,6 @@ func (ru *RemoteUI) fetchAllParams(slot uint8, comp string) (map[string]string, 
 		return nil, false
 	}
 	return params, true
-}
-
-// sendAllParamsAtOnce sends a component's full param set to one client in a
-// single param_update. Returns true on success. Modules with many params
-// (e.g. Surge ~280) go from ~10s of fetches to one shm round-trip.
-func (ru *RemoteUI) sendAllParamsAtOnce(ctx context.Context, c *ruClient, slot uint8, comp string) bool {
-	params, ok := ru.fetchAllParams(slot, comp)
-	if !ok {
-		return false
-	}
-	ru.writeJSON(ctx, c, wsParamUpdate{Type: "param_update", Slot: slot, Params: params})
-	ru.logger.Info("initial params: sent via 'state'", "slot", slot, "comp", comp, "count", len(params))
-	return true
 }
 
 // broadcastInitialParamValues sends a component's full param set to every
@@ -875,9 +888,27 @@ func (ru *RemoteUI) handleGetHierarchy(ctx context.Context, c *ruClient, msg wsM
 	// editor builds. hierarchy + chain_params + current values, one shot.
 	if msg.Component != "" {
 		comp := msg.Component
-		ru.sendHierarchy(ctx, c, slot, comp)
+		// Nothing loaded at a chain position: say so at once. One host-owned
+		// read, instead of a hierarchy, a param list and values that all come
+		// back empty — measured on the device, each empty position held the
+		// queue up by 0.4–2 s, and the instrument waited behind them.
+		module := ""
+		if isChainComponent(comp) {
+			mod, ok := ru.readParam(slot, comp+"_module", 2)
+			if ok && mod == "" {
+				ru.writeJSON(ctx, c, wsHierarchy{Type: "hierarchy", Slot: slot, Component: comp, Data: json.RawMessage(`{}`), Empty: true})
+				ru.writeJSON(ctx, c, wsChainParams{Type: "chain_params", Slot: slot, Component: comp, Data: json.RawMessage(`[]`), Empty: true})
+				return
+			}
+			module = mod
+		}
+		ru.sendHierarchy(ctx, c, slot, comp, module)
 		ru.sendChainParams(ctx, c, slot, comp)
-		ru.sendInitialParamValues(ctx, c, slot, comp)
+		// Values in the BACKGROUND: the metadata of every position the client
+		// asked for arrives first, and the values fill in behind it. Served in
+		// line, one module with many values held the next position's card
+		// back (dr32's 28 one-by-one reads kept FX 1 waiting ~4 s).
+		go ru.sendInitialParamValues(ctx, c, slot, comp)
 		return
 	}
 	ru.sendSlotInfo(ctx, c, slot)
@@ -892,7 +923,7 @@ func (ru *RemoteUI) handleGetHierarchy(ctx context.Context, c *ruClient, msg wsM
 				ru.sendCustomUI(ctx, c, slot, comp, url)
 			}
 		}
-		ru.sendHierarchy(ctx, c, slot, comp)
+		ru.sendHierarchy(ctx, c, slot, comp, "")
 		ru.sendChainParams(ctx, c, slot, comp)
 	}
 }
@@ -993,7 +1024,7 @@ func (ru *RemoteUI) handleSubscribeMasterFx(ctx context.Context, c *ruClient) {
 			continue
 		}
 		compName := "master_fx:" + fxSlot
-		ru.sendHierarchy(ctx, c, 0, compName)
+		ru.sendHierarchy(ctx, c, 0, compName, "")
 		ru.sendChainParams(ctx, c, 0, compName)
 		ru.sendInitialParamValues(ctx, c, 0, compName)
 	}
@@ -1576,41 +1607,50 @@ func (ru *RemoteUI) sendMasterFxInfo(ctx context.Context, c *ruClient) {
 	ru.writeJSON(ctx, c, info)
 }
 
-func (ru *RemoteUI) sendHierarchy(ctx context.Context, c *ruClient, slot uint8, component string) {
-	raw := ru.getParamWithRetry(slot, component+":ui_hierarchy", 3)
-	if raw == "" {
-		raw = "{}"
-	}
-	var js json.RawMessage
-	if json.Unmarshal([]byte(raw), &js) != nil {
-		js = json.RawMessage(`{}`)
-	} else {
+func (ru *RemoteUI) sendHierarchy(ctx context.Context, c *ruClient, slot uint8, component, module string) {
+	raw, ok := ru.readParam(slot, component+":ui_hierarchy", 3)
+	js := json.RawMessage(`{}`)
+	var probe json.RawMessage
+	if raw != "" && json.Unmarshal([]byte(raw), &probe) == nil {
 		js = json.RawMessage(raw)
 	}
-	ru.writeJSON(ctx, c, wsHierarchy{Type: "hierarchy", Slot: slot, Component: component, Data: js})
+	ru.writeJSON(ctx, c, wsHierarchy{Type: "hierarchy", Slot: slot, Component: component, Data: js, Module: module, Failed: !ok})
 }
 
 func (ru *RemoteUI) sendChainParams(ctx context.Context, c *ruClient, slot uint8, component string) {
-	raw := ru.getParamWithRetry(slot, component+":chain_params", 3)
-	if raw == "" {
-		raw = "[]"
-	}
-	var js json.RawMessage
-	if json.Unmarshal([]byte(raw), &js) != nil {
-		js = json.RawMessage(`[]`)
-	} else {
+	raw, ok := ru.readParam(slot, component+":chain_params", 3)
+	js := json.RawMessage(`[]`)
+	var probe json.RawMessage
+	if raw != "" && json.Unmarshal([]byte(raw), &probe) == nil {
 		js = json.RawMessage(raw)
 	}
-	ru.writeJSON(ctx, c, wsChainParams{Type: "chain_params", Slot: slot, Component: component, Data: js})
+	ru.writeJSON(ctx, c, wsChainParams{Type: "chain_params", Slot: slot, Component: component, Data: js, Failed: !ok})
 }
 
-// getParamWithRetry retries GetParam up to maxRetries times with a short delay.
-// Handles large responses (chain_params, ui_hierarchy) that may timeout on first attempt.
-func (ru *RemoteUI) getParamWithRetry(slot uint8, key string, maxRetries int) string {
+// isChainComponent: a position of a slot's own chain, which the host answers
+// "<comp>_module" for (a Move bus's move_fx:… blocks are addressed otherwise).
+func isChainComponent(comp string) bool {
+	for _, p := range componentPrefixes {
+		if comp == p {
+			return true
+		}
+	}
+	return false
+}
+
+// readParam reads a key, retrying ONLY when the channel failed (busy, or no
+// response in time) — never when the host answered. An empty value, or the
+// host's "no such key", IS the answer; retrying it repeated the answer at
+// ~0.3 s a time. ok=false: every attempt failed, so the value is unknown —
+// not empty.
+func (ru *RemoteUI) readParam(slot uint8, key string, maxRetries int) (string, bool) {
 	for i := 0; i < maxRetries; i++ {
 		raw, err := ru.shm.GetParam(slot, key)
-		if err == nil && raw != "" {
-			return raw
+		if err == nil {
+			return raw, true
+		}
+		if errors.Is(err, errParamRefused) {
+			return "", true
 		}
 		if i < maxRetries-1 {
 			ru.logger.Debug("getParam retry", "slot", slot, "key", key, "attempt", i+1, "err", err)
@@ -1618,7 +1658,13 @@ func (ru *RemoteUI) getParamWithRetry(slot uint8, key string, maxRetries int) st
 		}
 	}
 	ru.logger.Debug("getParam failed after retries", "slot", slot, "key", key)
-	return ""
+	return "", false
+}
+
+// getParamWithRetry is readParam for callers that only want the value.
+func (ru *RemoteUI) getParamWithRetry(slot uint8, key string, maxRetries int) string {
+	raw, _ := ru.readParam(slot, key, maxRetries)
+	return raw
 }
 
 // moduleCategoryDirs lists the subdirectories under modules/ to search.
@@ -1753,6 +1799,15 @@ func (ru *RemoteUI) notifyLoop(ctx context.Context) {
 			for _, c := range changes {
 				if wire, ok := mixerShmToWire(c.Slot, c.Key); ok {
 					mixerChanges[wire] = c.Value
+					// an instrument change carries its display name too, as
+					// the subscribe seed does
+					if strings.HasSuffix(wire, ":synth_module") {
+						name := ""
+						if c.Value != "" {
+							name = ru.moduleDisplayName(c.Value)
+						}
+						mixerChanges[strings.TrimSuffix(wire, "synth_module")+"synth_name"] = name
+					}
 				}
 				if c.Slot == 0 && c.Key == overtakeParamPrefix+"rui_poll" {
 					// F4 push: the shim probes the overtake tool's rui_poll
@@ -2059,7 +2114,7 @@ func (ru *RemoteUI) broadcastSlotInfo(ctx context.Context, slot uint8) {
 // broadcastHierarchy sends hierarchy for a component to all subscribers of a slot.
 func (ru *RemoteUI) broadcastHierarchy(ctx context.Context, slot uint8, component string) {
 	for _, c := range ru.subscribedClients(slot) {
-		ru.sendHierarchy(ctx, c, slot, component)
+		ru.sendHierarchy(ctx, c, slot, component, "")
 	}
 }
 
@@ -2126,7 +2181,7 @@ func (ru *RemoteUI) broadcastMasterFxInfo(ctx context.Context) {
 
 func (ru *RemoteUI) broadcastMasterFxHierarchy(ctx context.Context, compName string) {
 	for _, c := range ru.masterFxSubscribedClients() {
-		ru.sendHierarchy(ctx, c, 0, compName)
+		ru.sendHierarchy(ctx, c, 0, compName, "")
 	}
 }
 

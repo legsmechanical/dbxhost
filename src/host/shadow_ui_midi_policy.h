@@ -22,7 +22,7 @@
  * every cable-0 event is forwarded (schwung_shim.c, "All other messages"), so a
  * fast spin is precisely what pushes a release off the end.
  *
- * ⭑ So the last few slots are RESERVED for events whose loss sticks. A knob CC
+ * ⭑ So the last few FREE slots are RESERVED for events whose loss sticks. A knob CC
  * arriving when the ring is nearly full yields its place and is dropped instead.
  * This does not make the ring bigger or the consumer faster — it only decides
  * WHICH event is lost when something must be, and picks the recoverable one.
@@ -63,11 +63,17 @@ static inline int shadow_ui_midi_event_yields(uint8_t head, uint8_t status, uint
     return d1 >= 71 && d1 <= 79;                /* the nine relative encoders */
 }
 
-/* First byte offset a yielding event may NOT write to, given the ring size.
- * Callers scan slots [0, limit) for yielding events and [0, ring) otherwise. */
-static inline int shadow_ui_midi_yield_limit(int ring_bytes) {
-    int limit = ring_bytes - SHADOW_UI_MIDI_RESERVE_PACKETS * 4;
-    return limit < 0 ? 0 : limit;
+/* Would a YIELDING event written at the producer cursor `wr` eat into the
+ * reserve? The ring is walked with two cursors (ui_midi_ring.h), so the free
+ * space is CONTIGUOUS from `wr`: "at least RESERVE slots stay free after this
+ * write" is exactly "the slot RESERVE packets ahead of `wr` is empty" — one
+ * acquire load on the SPI callback, no scan. (It replaced an index limit that
+ * held back the LAST slots of the array, which stopped meaning anything once
+ * the producer stopped filling the lowest free slot first.) */
+static inline int shadow_ui_midi_reserve_blocks(const uint8_t *ring, int ring_bytes, int wr) {
+    if (ring_bytes <= SHADOW_UI_MIDI_RESERVE_PACKETS * 4) return 1;
+    int probe = (wr + SHADOW_UI_MIDI_RESERVE_PACKETS * 4) % ring_bytes;
+    return __atomic_load_n(&ring[probe], __ATOMIC_ACQUIRE) != 0;
 }
 
 #endif /* SHADOW_UI_MIDI_POLICY_H */

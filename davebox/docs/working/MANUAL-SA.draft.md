@@ -14,7 +14,8 @@ effect chain, or an external synth on the USB-A port.
 dAVEBOx runs inside [Schwung](https://github.com/charlesvestal/schwung) and takes
 over Move's pads, knobs and screen while it's open. It uses Move's vocabulary —
 tracks and clips — and a **Like Move** note flags where something works as it does
-on Move.
+on Move. [Coming from Move](#coming-from-move) sums up what carries over and what's
+different.
 
 > 🚀 **New here?** Start with the [**Quick Start**](QUICKSTART.md): about fifteen
 > minutes from a new project to a looping pattern with effects and scenes. This
@@ -125,9 +126,67 @@ sequences them:
 | **Drum** | The pads become 32 drum lanes, each its own step sequence — see [Drum Clips](#7-drum-clips) |
 | **Conductor** | Plays no notes of its own; it transposes the other tracks live — see [The Conductor](#12-the-conductor) |
 
+## Coming from Move
+
+dAVEBOx borrows Move's ideas and most of its gestures, so much of what your hands
+already know works here.
+
+**Works as on Move:**
+
+- **Tracks, clips and the Note/Session button.** dAVEBOx calls the two views
+  **Track View** and **Session View**.
+- **Playing and placing notes:** the pads play in key and scale; press a pad then a
+  step (or hold a step, then press pads) to place notes. **Left / Right** move
+  between pages.
+- **Capture:** play first, then press Capture to keep it.
+- **Loop:** hold it to see the clip's pages on the step buttons; **Loop + jog**
+  changes the length.
+- **Automation:** turn a knob while recording. **Mute + touch** a knob switches its
+  automation off, **Delete + touch** clears it, and holding a step while you turn a
+  knob sets a value for that step. Holding Mute lights automated knobs red.
+- **Copy, Delete and Undo** work on steps and clips the same way.
+- **Shift + Step shortcuts** mostly sit where Move puts them: 1 your projects, 2
+  settings, 5 tempo, 6 metronome, 7 swing, 9 key & scale, 10 fixed velocity,
+  11 arpeggiator, 15 double the loop, 16 quantize.
+
+**Where dAVEBOx differs:**
+
+| On Move | In dAVEBOx |
+|---|---|
+| 4 tracks, chosen with the track buttons | **8 tracks**: tracks 1–4 play Move's instruments, 5–8 Schwung instruments. Choose one with **Shift + jog**, or **Shift + a bottom-row pad** in Track View — see [Selecting a track](#35-selecting-a-track) |
+| The buttons left of the pads select tracks | They launch the track's clips in Track View, and scenes in Session View |
+| Session Mode: a row per track, a column per scene, 8 clips per track | Session View: a **column** per track, a **row** per scene, **16 clips** per track, 4 rows at a time (**+ / −** scroll) — see [Arranging](#11-arranging) |
+| Slide a finger down a column to play a scene | Press a **side button** or a **step button** — see [Scenes](#112-scenes) |
+| The knobs play the selected device; the jog picks the device | The knobs play a **bank** — clip settings, sequencer effects, sound, macros, automation — and the jog walks the banks — see [Parameter banks](#36-parameter-banks) |
+| Hold a step: the jog sets length, Volume sets velocity | Hold a step: the knobs set pitch, length, velocity, nudge and more — see [Editing notes](#63-editing-notes) |
+| Browse a track's presets with the jog | On a Move track, open Move's own editor from the track's menu and browse there — see [Choosing a track's sound](#38-choosing-a-tracks-sound) |
+| Mute + a track button mutes; add Shift to solo | **Mute** / **Shift + Mute** in Track View; in Session View, **Mute + touch** a track's knob — see [Mute & solo](#113-mute--solo) |
+| Hold a track button and turn Volume | **Shift + Volume** sets the active track's volume; in Session View the knobs are a mixer |
+| Shift + Step 8 turns on 16 Pitches for a drum track | **Shift + Step 8** switches the right-hand pads between velocity zones and Note Repeat — see [Drum Clips](#7-drum-clips) |
+| Sets, in the Set Overview | **Projects**, in the project picker (**Shift + Step 1**). Your Move sets are left alone — see [Projects](#175-projects) |
+
 ---
 
 # 2. Getting Started
+
+## Install and remove
+
+dAVEBOx SA is not in the Schwung module catalog yet: you install it by hand,
+from the files on its [release page](https://github.com/legsmechanical/dbxhost/releases).
+It needs Schwung 1.3.0 or newer.
+
+1. Download **davebox-sa-module.tar.gz** from the release.
+2. Open Schwung Manager in a browser at **move.local:7700** (plain move.local is
+   Ableton's own Move Manager), go to **Modules**, open
+   **Install Custom Module**, choose the file under **From Tarball**, and click
+   **Install from File**.
+3. On the Move, open Schwung's tool menu — **Shift + Step 13** — and choose
+   **dAVEBOx SA**. The first launch finishes installing by itself.
+
+To remove it, install **davebox-uninstall-module.tar.gz** from the same release the
+same way, quit dAVEBOx, and choose **Uninstall dAVEBOx SA** in the tool menu. Your
+projects and settings stay in `/data/UserData/dbx-host`, so a later install picks
+them up.
 
 ## Nothing to set up
 
@@ -145,7 +204,7 @@ Settings; dAVEBOx warns you if it's off.
 ## Open dAVEBOx
 
 Open Schwung's tool menu — **Shift + Step 13** (the star) — and choose
-**dAVEBOx**. The lights go out for a few seconds while Move restarts under the
+**dAVEBOx SA**. The lights go out for a few seconds while Move restarts under the
 dAVEBOx host, then you land on the **project picker**: one pad per project.
 
 - **Click the jog wheel** to load the project you had open last — its pad pulses
@@ -276,6 +335,8 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   on the left lists the track's banks with the current one highlighted in the
   middle; it goes as soon as you let go. On a melodic track the column shows the
   groups: each group's name sits to the left of a line beside its banks.
+  In the bank view the column can be turned off: **Bank Map on Lock** in the
+  global menu.
 - **Click the jog** to open the **bank view** — that bank's page, held on screen;
   keep turning to walk from there. In the bank view a click switches to the bank's
   **alternate** parameters (a down-arrow in the header marks a bank that has them,
@@ -323,7 +384,7 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 ## 3.7 Menus & Project Settings
 
 **Shift + Step 2** opens **Project Settings** — the settings saved with the project
-(except **Host Settings...** and the Daves rows, which apply to every project).
+(except **Host Settings...** and **Move Settings...**, which apply to every project).
 The full list is in [Settings & Projects](#17-settings--projects); many settings have
 a **Shift + Step** shortcut (see the [Quick Reference](#19-quick-reference)).
 
@@ -378,7 +439,7 @@ STORAGE** and tries again.
   official install, **your own Move sets included**.
 - **Suspend** keeps dAVEBOx running in the background. To come back, hold
   **Shift** and hold **Step 13** for half a second (or press Shift + Step 13 twice
-  quickly), or pick **dAVEBOx** in the Tools menu — everything is as you left it.
+  quickly), or pick **dAVEBOx SA** in the Tools menu — everything is as you left it.
 - If dAVEBOx is your boot default, hold **Back** at power-on and pick **Schwung**
   to go back.
 
@@ -772,7 +833,8 @@ show the selected lane.
 **Velocity zones** (the right 4×4) set the velocity of the hits you place next —
 16 zones from 8 (bottom-left) to 127 (top-right). A zone pad also plays the
 selected lane at that velocity; with a step held it sets that hit's velocity, or
-places the hit if the step was empty.
+places the hit if the step was empty. While you hold a step with a hit, the zone
+nearest its velocity lights white.
 
 **A lane's sound** is set by its MIDI note, on the [NOTE FX bank](#91-note-fx):
 knob 1 moves it by an octave, knob 2 by a semitone. The screen shows the note,
@@ -1124,7 +1186,7 @@ screen show **that row's lane**, not the clip's notes:
 - **The playhead** shows where that lane is in its own cycle.
 - **Hold a step with a value set** to jump to where that parameter is edited — its
   bank, its module's page (on a per-pad parameter, that pad), MIX for a
-  level, MACROS for a MIDI target. Turn its knob to change the value on that step;
+  level, MACROS for a MIDI target or a SnapMorph knob. Turn its knob to change the value on that step;
   let go to come back, on the same row and page. On a bank the header shows
   **<AUTO S7** (step 7). The parameter's cell is highlighted, and while the step
   is held it shows the value the lane plays there — shown only, the parameter
@@ -1555,7 +1617,7 @@ the click and the Shift chord do.
 - **List: All** (the top row) filters the generators to a list of your own. Click
   it to choose a list or make one (**New List…**, **Rename**, **Delete**,
   **Clear**); **Shift + click** a generator to add it to a list or take it out.
-  Members are marked `·`.
+  Your **Favorites** wear a `★`, in every list and in the effect browser.
 - If a change would leave macros or automation lanes with nothing to drive, dAVEBOx
   says how many and asks first (**CHANGE TO …?**).
 
@@ -1563,9 +1625,12 @@ the click and the Shift chord do.
 hold **Shift + Note/Session** — to open Move's own editor for that instrument (Track
 View only), and work with it as you would on Move.
 
-- Move takes the screen, jog, knobs, **Back** and **Mute**; the pads, step buttons
-  and transport stay with dAVEBOx.
-- Press **Note/Session** to come back.
+- Move takes the screen, jog, knobs, **Back**, **Mute** and **Shift** (so
+  **Shift + jog** works in Move's editor); the pads, step buttons and transport stay
+  with dAVEBOx, and dAVEBOx's own Shift gestures still work.
+- Press **Note/Session** to come back, or **Back** once you're at the top of Move's
+  editor (the instrument's main screen), or **Shift + a bottom-row pad** to leave
+  and go straight to that track.
 
 A plain click does nothing on a MIDI channel or a followed track. On a track set to
 **None**, it opens the picker.
@@ -1886,6 +1951,10 @@ lane, so they exist only while a note is sounding.
   Schwung track exports as a placeholder.
 - **Automation inside a Schwung module**, and dAVEBOx's own bank parameters —
   neither exists in Live.
+- **The part of a lane that runs past its clip.** A lane can be longer than its
+  clip in dAVEBOx — a 4-bar filter sweep over a 1-bar loop — but in Live a clip's
+  automation loops with the clip, so the export keeps only the stretch inside the
+  clip and repeats it.
 
 ## 16.4 Import a MIDI file
 
@@ -2035,6 +2104,7 @@ see [Track settings](#174-track-settings) below.
 | Scale Aware | Whether scale-aware params move by scale degree (On) or semitone (Off) | On, Off | On |
 | Launch | When a launched clip or scene actually starts — at once (Now) or on the next boundary. At 1-bar it starts from its beginning; otherwise in step with the song ([§11.1](#111-launching-clips)) | Now, 1/16, 1/8, 1/4, 1/2, 1-bar | Now |
 | Beat Marks | Dim markers on the step buttons at 1, 5, 9, 13 | On, Off | On |
+| Bank Map on Lock | Whether the bank column comes up while the jog walks the banks from the bank view (or the session mixer card) — see [§3.6](#36-parameter-banks). The overview always shows it | On, Off | On |
 | Phrase Map | Where a drum phrase's sounds go at first — see [§16.5](#165-phrases) | Off, GM, Move | Off |
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Projects... | The project picker — see [Projects](#175-projects) | action | — |
@@ -2044,15 +2114,16 @@ see [Track settings](#174-track-settings) below.
 | Suspend session | Park dAVEBOx and go back to Move (asks first) — see [§3.9](#39-saving-suspending--exiting) | action | — |
 | Quit | Save and hand the device back to official Schwung (asks first) | action | — |
 | Host Settings... | dAVEBOx's copy of Schwung's settings (display, audio and more), over the top of dAVEBOx — see [§17.6](#176-davebox-and-official-schwung) | action | — |
-| Daves | While playing, a collected Dave scrolls behind the Session View banner | On, Off | Off |
-| Open Your Dave Box | Every Dave you've been dealt — one each time a project loads | action | — |
+| Move Settings... | Move's own settings menu (Link, MIDI sync, inputs and more), dAVEBOx's copy — see below | action | — |
 
 - The menu groups these with a line between each group, in this order.
 - A new project starts in a random key and scale.
-- **Host Settings...** and the **Daves** rows apply to every project, not just this
-  one.
-- A **Dave** is a small portrait dAVEBOx deals you each time a project loads — just
-  for fun. **Open Your Dave Box** shows your collection.
+- **Host Settings...** and **Move Settings...** apply to every project, not just this one.
+- **Move Settings...** shows Move's own settings menu on the screen: turn the jog to
+  choose, click to open or change, **Back** to step out. The pads, steps, knobs and
+  transport stay dAVEBOx's, so the music plays on. **Shift + Step 2** or
+  **Back** at the top of Move's menu brings you back here; **Note/Session** goes
+  to the overview.
 - **Tap Tempo** is **Shift + Step 5**: tap any pad in time, turn the jog to adjust,
   click to set.
 
@@ -2136,8 +2207,7 @@ project, 32 slots:
   Load, closing the picker (so do Back and Note/Session). If your last project no
   longer exists, the screen says **Select project** until you tap a pad.
 - **Tap a project** to select it; turn the jog to choose a row, click to select.
-  While a project loads, the lights go dark and a newly dealt Dave fills the screen
-  — including the project Move already has loaded when dAVEBOx starts. Load stops playback first.
+  While a project loads, the lights go dark. Load stops playback first.
   - **Rename** opens the on-screen keyboard and takes effect at once, even on the
     open project. Two projects can't share a name (**NAME TAKEN**).
   - **Color** lists the palette: the jog moves through it and the pad previews
@@ -2188,8 +2258,9 @@ keeps its own settings.
 | **Samples and files** | **Shared.** The Files page shows the same folders from either. |
 | **Move sets and dAVEBOx projects** | **Separate.** See [Projects](#175-projects). |
 | **Schwung's settings** | **Separate.** **Host Settings...** here and Global Settings in official Schwung are two copies; a change in one doesn't reach the other. |
+| **Move's settings** | **Separate.** **Move Settings...** here changes dAVEBOx's copy; Move on its own keeps yours. The first dAVEBOx session starts from a copy of your Move settings. |
 | **The web manager** (`move.local:7700`) | **dAVEBOx's own** during a session. Its Help is this manual and its Config is dAVEBOx's settings. Install modules from official Schwung's. |
-| **Parallel, Daves, exports and logs** | **dAVEBOx's own.** |
+| **Parallel, exports and logs** | **dAVEBOx's own.** |
 
 Shared presets and lists are stored in official Schwung's folders, so removing or
 resetting official Schwung removes them too.

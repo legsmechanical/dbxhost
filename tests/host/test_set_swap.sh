@@ -41,8 +41,8 @@ P2=44444444-aaaa-4bbb-8ccc-000000000004   # standalone project made mid-session
 mk_env() {
     T="$(mktemp -d)"
     export SETS_DIR="$T/Sets" DBX_DIR="$T/dbx" SWAP_ROOT="$T/dbx/sets"
-    export SETTINGS_JSON="$T/Settings.json" HEAL_BIN="$T/heal-stub"
-    mkdir -p "$SETS_DIR" "$SWAP_ROOT/library"
+    export MOVE_SETTINGS_DIR="$T/settings" SETTINGS_JSON="$T/settings/Settings.json" HEAL_BIN="$T/heal-stub"
+    mkdir -p "$SETS_DIR" "$SWAP_ROOT/library" "$MOVE_SETTINGS_DIR"
     mkdir -p "$SETS_DIR/$U1" "$SETS_DIR/$U2"
     echo native1 > "$SETS_DIR/$U1/Song.abl"; echo native2 > "$SETS_DIR/$U2/Song.abl"
     mkdir -p "$SWAP_ROOT/library/$P1"; echo proj1 > "$SWAP_ROOT/library/$P1/Song.abl"
@@ -59,6 +59,13 @@ case "\$1" in
   --umount-sets)
       [ -L "$SETS_DIR" ] || exit 0
       rm "$SETS_DIR" && mv "$T/Sets.native" "$SETS_DIR" ;;
+  --mount-settings)
+      [ -n "\${STUB_NO_SETTINGS:-}" ] && { echo "stub: unknown argument \$1" >&2; exit 1; }
+      [ -L "$T/settings" ] && exit 0
+      mv "$T/settings" "$T/settings.native" && ln -s "$T/dbx/settings" "$T/settings" ;;
+  --umount-settings)
+      [ -L "$T/settings" ] || exit 0
+      rm "$T/settings" && mv "$T/settings.native" "$T/settings" ;;
   *) echo "stub: unexpected arg \$1" >&2; exit 1 ;;
 esac
 STUB
@@ -210,14 +217,30 @@ rm -rf "$T"
 # ---- 5. Reboot mid-session: mount gone, marker stale -------------------------
 # ⭑ The case the mount model makes trivial. A reboot clears mounts, so the user
 # is ALREADY looking at their own sets; recover must notice and simply tidy the
-# marker + index rather than "restoring" anything.
+# marker rather than "restoring" anything. With no boot unit, recover runs at the
+# NEXT dAVEBOx launch — maybe days later, after the user has used Move — so it
+# must not write the remembered index over whatever Move has chosen since.
 mk_env
 run enter
-sh "$HEAL_BIN" --umount-sets            # the reboot, as the kernel does it
+sh "$HEAL_BIN" --umount-sets            # the reboot, as the kernel does it:
+sh "$HEAL_BIN" --umount-settings        # every mount goes
+check "rebooted: Move sees the user's own index" grep -q '"currentSongIndex": 1' "$SETTINGS_JSON"
+printf '{"currentSongIndex": 0, "other": true}\n' > "$SETTINGS_JSON"   # ...then opens another set in Move
 run recover
 check "recover(rebooted): user's sets"      test -f "$SETS_DIR/$U1/Song.abl"
 check "recover(rebooted): phase none"       test "$(phase)" = "none (not bound)"
-check "recover(rebooted): native index"     grep -q '"currentSongIndex": 1' "$SETTINGS_JSON"
+check "recover(rebooted): the set Move chose since is kept" grep -q '"currentSongIndex": 0' "$SETTINGS_JSON"
+rm -rf "$T"
+
+# ---- 5c. Reboot mid-session with SHARED settings (an old helper) --------------
+# The session's index went into Move's own file, so recover must put the user's
+# back — the one case the index is ours to restore.
+mk_env
+STUB_NO_SETTINGS=1 sh "$SWAP" enter >/dev/null 2>&1
+check "shared: the session's index is in Move's file" grep -q '"currentSongIndex": 0' "$SETTINGS_JSON"
+sh "$HEAL_BIN" --umount-sets
+run recover
+check "recover(rebooted, shared): the user's index is back" grep -q '"currentSongIndex": 1' "$SETTINGS_JSON"
 rm -rf "$T"
 
 # ---- 5b. The marker LIES: says none, but our library is still bound ----------
@@ -318,5 +341,92 @@ run enter
 check "8 an active_set.txt naming no slot falls back to the saved position" \
     grep -q '"currentSongIndex": 1' "$SETTINGS_JSON"
 rm -rf "$T"
+
+# ---- 9. MOVE'S SETTINGS ARE THE SESSION'S OWN (Josh, 2026-09-28) ------------
+# "need to have those settings be separate from the main move install": what a
+# session changes lands in its own copy, the user's folder is never written,
+# and the copy persists from one session to the next.
+mk_env
+printf '{\n  "currentSongIndex": 1,\n  "midiClockMode": "output",\n  "isAutoloadEnabled": false,\n  "isOnboardingDone": false\n}\n' > "$SETTINGS_JSON"
+echo 3 > "$MOVE_SETTINGS_DIR/attemptedDemoSongInstallationVersion"
+echo login-v1 > "$MOVE_SETTINGS_DIR/web-webServiceAuthentication.db"
+cp -p "$SETTINGS_JSON" "$T/user-settings.before"
+run enter
+check "9 enter: Move's settings folder shows the session's copy" test "$(cd "$MOVE_SETTINGS_DIR" && pwd -P)" = "$(cd "$T/dbx/settings" && pwd -P)"
+check "9 seeded from the user's settings (their MIDI clock)" grep -q '"midiClockMode": "output"' "$SETTINGS_JSON"
+check "9 autoload forced ON in the session copy" grep -q '"isAutoloadEnabled": true' "$SETTINGS_JSON"
+check "9 onboarding forced done, no update pop-up" sh -c 'grep -q "\"isOnboardingDone\": true" "$1" && grep -q "\"shouldShowUpdateNotification\": false" "$1"' _ "$SETTINGS_JSON"
+check "9 the session index went into the SESSION copy" grep -q '"currentSongIndex": 0' "$SETTINGS_JSON"
+check "9 the demo-song marker and web login came along" sh -c 'test "$(cat "$1/attemptedDemoSongInstallationVersion")" = 3 && test "$(cat "$1/web-webServiceAuthentication.db")" = login-v1' _ "$T/dbx/settings"
+# The session's Move changes a setting (in place, as Move does).
+sed -i.bak 's/"midiClockMode": "output"/"midiClockMode": "off"/' "$SETTINGS_JSON"; rm -f "$SETTINGS_JSON.bak"
+check "9 control: the change is visible in the session" grep -q '"midiClockMode": "off"' "$SETTINGS_JSON"
+check "9 the user's own file is untouched mid-session" cmp -s "$T/settings.native/Settings.json" "$T/user-settings.before"
+run exit
+check "9 exit: Move's settings folder is the user's again" test ! -L "$MOVE_SETTINGS_DIR"
+check "9 exit: the user's settings are byte-identical" cmp -s "$SETTINGS_JSON" "$T/user-settings.before"
+check "9 exit: the session's change is kept in its copy" grep -q '"midiClockMode": "off"' "$T/dbx/settings/Settings.json"
+# The next session: the copy persists; only new files and the login are refreshed.
+echo login-v2 > "$MOVE_SETTINGS_DIR/web-webServiceAuthentication.db"
+sed -i.bak 's/"midiClockMode": "output"/"midiClockMode": "input"/' "$SETTINGS_JSON"; rm -f "$SETTINGS_JSON.bak"
+run enter
+check "9 re-enter: the session keeps ITS setting, not the user's new one" grep -q '"midiClockMode": "off"' "$SETTINGS_JSON"
+check "9 re-enter: the web login is refreshed from the user's" test "$(cat "$T/dbx/settings/web-webServiceAuthentication.db")" = login-v2
+run exit
+check "9 re-exit: the user's change stands" grep -q '"midiClockMode": "input"' "$SETTINGS_JSON"
+rm -rf "$T"
+
+# 9b. A reboot mid-session clears both mounts; recover sees nothing to undo on
+# settings, and a marker that lies about settings is still converged.
+mk_env
+run enter
+rm "$T/settings" && mv "$T/settings.native" "$T/settings"      # the reboot took settings
+rm "$SETS_DIR" && mv "$T/Sets.native" "$SETS_DIR"               # ...and Sets
+run recover
+check "9b recover after a reboot: the user's settings folder is a real folder" test ! -L "$MOVE_SETTINGS_DIR"
+check "9b ...and still says index 1" grep -q '"currentSongIndex": 1' "$SETTINGS_JSON"
+rm -rf "$T"
+mk_env
+run enter
+printf 'none\n0\n' > "$SWAP_ROOT/swap_state"; rm "$SETS_DIR" && mv "$T/Sets.native" "$SETS_DIR"   # marker says none, Sets gone, settings STILL bound
+run recover
+check "9b a marker saying none with settings still bound is recovered" test ! -L "$MOVE_SETTINGS_DIR"
+rm -rf "$T"
+
+# 9c. An OLD helper (first launch after an update) does not know the verb: the
+# session still starts, sharing Move's settings as before, and says so.
+mk_env
+out="$(STUB_NO_SETTINGS=1 sh "$SWAP" enter 2>&1)"; rc=$?
+check "9c old helper: enter still succeeds" test "$rc" = 0
+check "9c ...Sets bound as usual" sets_shows "$P1"
+check "9c ...settings NOT separated" test ! -L "$MOVE_SETTINGS_DIR"
+check "9c ...and it says so" sh -c 'printf "%s" "$1" | grep -q "settings not separated this session"' _ "$out"
+run exit
+check "9c exit is clean" test "$(phase)" = "none (not bound)"
+check "9c ...and puts Move's index back" grep -q '"currentSongIndex": 1' "$SETTINGS_JSON"
+rm -rf "$T"
+
+# 9d. FULL VELOCITY. A new project turns it off (project-cmd.sh), but the first
+# project is born before the session's settings copy exists — so the copy is
+# born with it off, and the USER's own settings are never touched for it.
+mk_env
+printf '{"currentSongIndex": 1, "isFullVelocityOn": true}\n' > "$SETTINGS_JSON"
+run enter
+check "9d first enter: the session's copy has Full Velocity off" grep -q '"isFullVelocityOn": false' "$SETTINGS_JSON"
+run exit
+check "9d ...the user's own settings keep it on" grep -q '"isFullVelocityOn": true' "$SETTINGS_JSON"
+python3 - "$T/dbx/settings/Settings.json" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d["isFullVelocityOn"] = True; json.dump(d, open(p, "w"))
+PY
+run enter
+check "9d a later enter keeps the session's own choice (turned on in a session)" grep -q '"isFullVelocityOn": true' "$SETTINGS_JSON"
+run exit
+rm -rf "$T"
+# ...and the launcher's first-project seed, which runs BEFORE enter binds the
+# settings, is pointed at the session's copy rather than Move's default path.
+grep -B1 'project-cmd.sh" new-at 0 "Project 1"' standalone/scripts/launch.sh | head -n 1 \
+    | grep -qF 'SETTINGS_JSON="$DBX_DIR/settings/Settings.json"'
+check "9d launch.sh seeds the first project against the session's settings" test $? = 0
 
 [ "$fails" = 0 ] && echo "PASS: set-swap" || { echo "FAIL: set-swap" >&2; exit 1; }

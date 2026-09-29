@@ -24,14 +24,15 @@ build() {  # $1 = output, rest = extra flags
         -DHEAL_TESTING -DDBX_DIR="\"$T/dbx\"" -DHEAL_DIR="\"$T/heal\"" \
         -DSYSTEMCTL="\"$T/systemctl\"" -DRESTORE_UNIT_PATH="\"$T/etc/davebox-restore.service\"" \
         -DRESTORE_WANTS_PATH="\"$T/etc/wants/davebox-restore.service\"" \
-        -DDST_SHIM="\"$T/usr/davebox-shim.so\"" -DSETS_DIR="\"$T/Sets\"" \
+        -DDST_SHIM="\"$T/usr/davebox-shim.so\"" -DSETS_DIR="\"$T/Sets\"" -DSETTINGS_DIR="\"$T/settings\"" \
         "$@" -o "$out" standalone/src/davebox-heal.c
 }
 build "$T/heal-full" || { echo "FAIL: build (full)"; exit 1; }
 build "$T/heal-un" -DHEAL_UNINSTALL_ONLY || { echo "FAIL: build (uninstall-only)"; exit 1; }
 installed() {  # a device with everything an install leaves in root-owned places
-    rm -rf "$T/etc" "$T/usr" "$T/Sets" "$T/dbx"; : > "$T/systemctl.log"
-    mkdir -p "$T/etc/wants" "$T/usr" "$T/dbx/sets/library" "$T/Sets"
+    rm -rf "$T/etc" "$T/usr" "$T/Sets" "$T/settings" "$T/dbx"; : > "$T/systemctl.log"
+    mkdir -p "$T/etc/wants" "$T/usr" "$T/dbx/sets/library" "$T/Sets" "$T/dbx/settings" "$T/settings"
+    echo '{"theirs":1}' > "$T/settings/Settings.json"
     echo unit > "$T/etc/davebox-restore.service"
     ln -s ../davebox-restore.service "$T/etc/wants/davebox-restore.service"
     echo shim > "$T/usr/davebox-shim.so"
@@ -69,10 +70,33 @@ for bin in heal-full heal-un; do
     grep -q "removing nothing else" "$T/err" && ok "says why" || bad "no reason: $(cat "$T/err")"
     [ -e "$T/etc/davebox-restore.service" ] && [ -e "$T/usr/davebox-shim.so" ] && [ ! -s "$T/systemctl.log" ] \
         && ok "the restore unit and shim are KEPT while our library may be over the user's" || bad "removed things with Sets bound"
+
+    echo "$bin, settings still bound and cannot be unbound:"
+    installed; rm -rf "$T/settings"; ln -s "$T/dbx/settings" "$T/settings"
+    "$T/$bin" --uninstall-root 2>"$T/err"; rc=$?
+    [ "$rc" = 2 ] && grep -q "settings still bound — removing nothing else" "$T/err" && ok "fails, and says why" || bad "rc=$rc: $(cat "$T/err")"
+    [ -e "$T/etc/davebox-restore.service" ] && [ -e "$T/usr/davebox-shim.so" ] && [ ! -s "$T/systemctl.log" ] \
+        && ok "the restore unit and shim are KEPT while our settings may be over the user's" || bad "removed things with settings bound"
+
+    echo "$bin --umount-settings with nothing bound:"
+    installed
+    "$T/$bin" --umount-settings 2>"$T/err"; rc=$?
+    [ "$rc" = 0 ] && grep -q "settings not bound — nothing to undo" "$T/err" && ok "success, nothing to undo" || bad "rc=$rc: $(cat "$T/err")"
+    [ "$(cat "$T/settings/Settings.json")" = '{"theirs":1}' ] && ok "the user's settings are untouched" || bad "settings touched"
 done
 
+echo "heal-full --mount-settings:"
+installed; rm -rf "$T/dbx/settings"
+"$T/heal-full" --mount-settings 2>"$T/err"; rc=$?
+[ "$rc" = 2 ] && grep -q "dbx/settings missing or not a directory — refusing to mount" "$T/err" \
+    && ok "refuses when the session's settings folder is missing" || bad "rc=$rc: $(cat "$T/err")"
+installed; rm -rf "$T/settings"; ln -s "$T/dbx/settings" "$T/settings"
+"$T/heal-full" --mount-settings 2>"$T/err"; rc=$?
+[ "$rc" = 0 ] && grep -q "settings already bound — nothing to do" "$T/err" \
+    && ok "already bound: success, no second mount" || bad "rc=$rc: $(cat "$T/err")"
+
 echo "the uninstall-only build refuses every install verb:"
-for v in --mount-sets --pause-launcher --resume-launcher --install-restore-unit ""; do
+for v in --mount-sets --mount-settings --pause-launcher --resume-launcher ""; do
     installed; : > "$T/systemctl.log"
     if [ -n "$v" ]; then "$T/heal-un" "$v" 2>/dev/null; else "$T/heal-un" 2>/dev/null; fi; rc=$?
     [ "$rc" = 1 ] && [ ! -s "$T/systemctl.log" ] && [ -e "$T/usr/davebox-shim.so" ] \
@@ -81,7 +105,7 @@ done
 installed; rm -rf "$T/heal"; mkdir -p "$T/heal"; echo new > "$T/heal/heal.new"
 "$T/heal-un" --uninstall-root 2>/dev/null
 [ -f "$T/heal/heal.new" ] && [ ! -e "$T/heal/heal" ] && ok "no self-update in the uninstall build" || bad "it self-updated"
-nm "$T/heal-un" | grep -q -E " (copy_atomic|sets_mount|install_restore_unit)$" \
+nm "$T/heal-un" | grep -q -E " (copy_atomic|sets_mount|settings_mount)$" \
     && bad "install-only code is compiled into the uninstall build" || ok "install-only code is not compiled in"
 nm "$T/heal-full" | grep -q " sets_mount$" && ok "(positive control: the full build has sets_mount)" || bad "nm control failed"
 

@@ -21,20 +21,21 @@
 # the launcher rebuilds the set library from projects/ and seeds "Project 1"
 # only when there are none; the first-launch install lays only its own files:
 #   projects/ projects.json davebox-exports/       the user's work
-#   daves-seen.txt daves-window.txt phrase-map.txt parallel-modules.txt
+#   daves-seen.txt daves-window.txt bank-view-map.txt phrase-map.txt parallel-modules.txt
 #   active_set.txt sets/sa_song_index              last project open
 #   sa_master_volume shadow_config.json config/    settings
+#   quarantine/ sets/quarantine/                   work set aside, never deleted:
+#                 saves parked with no project, and orphan project folders
 # Everything else under $DBX_DIR goes, and so does everything an install put
-# anywhere else: the root-owned shim and boot-recovery unit (through our own
+# anywhere else: the root-owned shim and any old boot-recovery unit (through our own
 # blessed helper), the boot-selector row (handing `default` back to schwung if
-# it named us), stock's preset-name cache, the dAVEBOx Tools module and, LAST,
+# it named us), the dAVEBOx Tools module and, LAST,
 # this module.
 #
 # ORDER is the safety argument:
 #   1. a live session refuses everything;
 #   2. the Sets bind mount is undone and VERIFIED undone before anything is
-#      deleted — while it is bound, Move's Sets/ shows OUR library, and the
-#      restore unit is what would put the user's own sets back after a crash;
+#      deleted — while it is bound, Move's Sets/ shows OUR library;
 #   3. root-owned files, then the unprivileged ones;
 #   4. this module last (ui.js is already in memory; the shell holds this
 #      file open, and the whole body is functions with `main` on the last line,
@@ -49,6 +50,7 @@ set -u
 DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
 STOCK_DIR="${STOCK_DIR:-/data/UserData/schwung}"
 SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
+MOVE_SETTINGS_DIR="${MOVE_SETTINGS_DIR:-/data/UserData/settings}"
 BOOT_ROOT="${BOOT_ROOT:-/data/UserData/boot-targets}"
 SHM_DIR="${SHM_DIR:-/dev/shm}"
 SESSION_LOCK="${SESSION_LOCK:-$SHM_DIR/.dbxhost-session.lock}"
@@ -63,13 +65,12 @@ SA_MOD_DIR="$STOCK_DIR/modules/tools/davebox-sa"
 HEAL="$MOD_DIR/bin/heal"
 SA_HEAL="$SA_MOD_DIR/bin/heal"
 LIBRARY="$DBX_DIR/sets/library"
-PRESET_CACHE="$STOCK_DIR/cache/davebox-presetnames"
 OPEN_TOOL_CMD="$STOCK_DIR/open_tool_cmd.json"
 
 # Top-level names under $DBX_DIR that are the user's, never removed. sets/ is
-# special-cased: only sets/sa_song_index survives inside it.
-KEEP="projects projects.json davebox-exports daves-seen.txt daves-window.txt phrase-map.txt parallel-modules.txt active_set.txt sa_master_volume shadow_config.json config"
-KEEP_IN_SETS="sa_song_index"
+# special-cased: only the KEEP_IN_SETS names survive inside it.
+KEEP="projects projects.json davebox-exports daves-seen.txt daves-window.txt bank-view-map.txt phrase-map.txt parallel-modules.txt active_set.txt sa_master_volume shadow_config.json config quarantine settings"
+KEEP_IN_SETS="sa_song_index quarantine"
 
 DRY=1
 PROBLEMS=0
@@ -88,6 +89,7 @@ session_live() {
 }
 
 sets_bound() { [ -d "$LIBRARY" ] && [ "$SETS_DIR" -ef "$LIBRARY" ]; }
+settings_bound() { [ -d "$DBX_DIR/settings" ] && [ "$MOVE_SETTINGS_DIR" -ef "$DBX_DIR/settings" ]; }
 
 # Directory listings are iterated one NAME per line with globbing off, so a
 # name with a space or a `*` in it is one entry, never several or an expansion.
@@ -103,9 +105,13 @@ is_kept() {
     case " $KEEP " in *" $1 "*) return 0 ;; esac
     return 1
 }
+is_kept_in_sets() {
+    case " $KEEP_IN_SETS " in *" $1 "*) return 0 ;; esac
+    return 1
+}
 
 anything_installed() {
-    [ -d "$SA_MOD_DIR" ] || [ -d "$BOOT_ROOT/davebox" ] || [ -d "$PRESET_CACHE" ] ||
+    [ -d "$SA_MOD_DIR" ] || [ -d "$BOOT_ROOT/davebox" ] ||
         [ -e "$SHIM_PATH" ] || [ -e "$UNIT_PATH" ] && return 0
     [ -d "$DBX_DIR" ] || return 1
     _found=1
@@ -114,7 +120,7 @@ anything_installed() {
         is_kept "$_e" && continue
         if [ "$_e" = sets ]; then
             for _s in $(ls -A "$DBX_DIR/sets" 2>/dev/null); do
-                [ "$_s" = "$KEEP_IN_SETS" ] || _found=0
+                is_kept_in_sets "$_s" || _found=0
             done
             continue
         fi
@@ -147,7 +153,21 @@ step_sets() {
     if [ -f "$DBX_DIR/scripts/set-swap.sh" ] && [ "$DRY" = 0 ]; then
         # recover = unbind if bound AND put the user's own currentSongIndex back.
         HEAL_BIN="${_h:-/nonexistent}" DBX_DIR="$DBX_DIR" SETS_DIR="$SETS_DIR" \
+            MOVE_SETTINGS_DIR="$MOVE_SETTINGS_DIR" \
             sh "$DBX_DIR/scripts/set-swap.sh" recover 2>&1 | sed 's/^/  /'
+    fi
+    # Move's settings folder, which a session covers with its own copy the same
+    # way (the copy itself is kept, like every other setting).
+    if settings_bound; then
+        if [ "$DRY" = 1 ]; then say "  would: unbind dAVEBOx's settings from Move's settings folder"
+        else
+            [ -n "$_h" ] && "$_h" --umount-settings >/dev/null 2>&1
+            if settings_bound; then
+                say "  REFUSING: Move's settings folder still shows dAVEBOx's copy and it cannot be unbound."
+                say "  Restart the Move (a reboot always clears it) and run this again."
+                return 1
+            fi
+        fi
     fi
     if sets_bound; then
         if [ "$DRY" = 1 ]; then say "  would: unbind dAVEBOx's library from Sets/"; return 0; fi
@@ -194,8 +214,11 @@ step_boot_target() {
 
 step_stock_leftovers() {
     say "Stock Schwung leftovers:"
-    [ -d "$PRESET_CACHE" ] && act "remove $PRESET_CACHE" rm -rf "$PRESET_CACHE"
-    if grep -q 'davebox' "$OPEN_TOOL_CMD" 2>/dev/null; then
+    # stock cache/davebox-presetnames is dAVEBOx LEGACY's: ours lives in $DBX_DIR/cache
+    # and goes with the rest of the install. Never touch the stock one.
+    # Only OUR tool ids: dAVEBOx Legacy is tool_id "davebox", and a pending
+    # command for it is not ours to delete.
+    if grep -Eq '"(davebox-sound|davebox-sa)"' "$OPEN_TOOL_CMD" 2>/dev/null; then
         act "remove a pending dAVEBOx open_tool_cmd.json" rm -f "$OPEN_TOOL_CMD"
     fi
     for _f in "$SHM_DIR"/dbxhost-* "$SESSION_LOCK"; do
@@ -212,7 +235,7 @@ step_dbx_dir() {
         if is_kept "$_e"; then say "  keep:  $_e"; continue; fi
         if [ "$_e" = sets ] && [ -d "$DBX_DIR/sets" ] && [ ! -L "$DBX_DIR/sets" ]; then
             for _s in $(ls -A "$DBX_DIR/sets"); do
-                if [ "$_s" = "$KEEP_IN_SETS" ]; then say "  keep:  sets/$_s"; continue; fi
+                if is_kept_in_sets "$_s"; then say "  keep:  sets/$_s"; continue; fi
                 act "remove sets/$_s" rm -rf "$DBX_DIR/sets/$_s"
             done
             continue

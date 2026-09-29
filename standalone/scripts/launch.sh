@@ -84,6 +84,17 @@ setsid --wait bash -c '
   DBX_DIR=/data/UserData/dbx-host
   HEAL=/data/UserData/schwung/modules/tools/davebox-sa/bin/heal   # the blessed helper (2026-09-05: inside the launcher module dir; no apostrophes in this body)
   LOG=$DBX_DIR/launch.log
+  # ON A FRESH INSTALL THIS DIRECTORY DOES NOT EXIST YET: the first-launch
+  # bootstrap creates it further down. Without it the redirect below fails, and
+  # this launch -- the launcher AND Move, which inherits this output -- logs
+  # nowhere. That is not only a lost log: move-loaded-set-reader reads Move
+  # lines out of launch.log to learn which set Move opened, so the first
+  # project load of every fresh install timed out back to the picker (the
+  # second launch, with the directory in place, worked).
+  mkdir -p "$DBX_DIR"
+  # Capped: Move prints a memory line every minute into this log for the whole
+  # session, so past 1 MB it becomes launch.log.1 (one previous kept).
+  [ "$(wc -c < "$LOG" 2>/dev/null || echo 0)" -gt 1048576 ] && mv -f "$LOG" "$LOG.1"
   exec >>"$LOG" 2>&1
   echo "=== davebox host launch $(date) ==="
 
@@ -195,7 +206,7 @@ setsid --wait bash -c '
 
   # ZERO-SSH INSTALL (2026-09-05). If the helper is not blessed or the install
   # dir is not there, the launcher module payload installs it: bless first via
-  # stock heal (schwung#419), then the payload, then the restore unit. Runs
+  # stock heal (schwung#419), then the payload. Runs
   # BEFORE anything touches the stock stack, so a refusal leaves stock exactly
   # as it was. Cheap stats on every other launch. A stock/catalog reinstall of
   # the module can un-setuid the helper, so this is not a first-run check.
@@ -441,9 +452,9 @@ setsid --wait bash -c '
   rm -f /dev/shm/schwung-* /dev/shm/dbxhost-*
 
   # Design-B project workspace: this session sees ITS OWN set library, never
-  # the users native sets. Recover first (a hard reboot mid-session leaves the
-  # swap in a non-none phase; the blessed boot unit normally heals it, this is
-  # the backstop), then swap in. A failed swap refuses the launch — starting a
+  # the users native sets. Recover first (a hard reboot mid-session clears the
+  # mounts but leaves the swap marker in a non-none phase; this is the ONE
+  # recovery — there is no boot unit any more), then swap in. A failed swap refuses the launch — starting a
   # session over a half-swapped library would mix the two worlds.
   if [ -x "$DBX_DIR/scripts/set-swap.sh" ]; then
     sh "$DBX_DIR/scripts/set-swap.sh" recover || refuse "set-swap recover failed"
@@ -467,7 +478,12 @@ setsid --wait bash -c '
       # so the seed has the one project shape (a fixed song folder and a name
       # tag) with nothing hand-rolled here to drift from it. Pad 0; new-at
       # also gives it its slot (library-sync) before Move enumerates.
-      sh "$DBX_DIR/scripts/project-cmd.sh" new-at 0 "Project 1" || \
+      # SETTINGS_JSON: this runs BEFORE enter binds the session settings, so
+      # the default path is still the users own Move settings -- a new project
+      # clears Full Velocity, and that must land in the session copy (absent on
+      # a first launch; set-swap seeds it with Full Velocity off).
+      SETTINGS_JSON="$DBX_DIR/settings/Settings.json" \
+        sh "$DBX_DIR/scripts/project-cmd.sh" new-at 0 "Project 1" || \
         echo "WARNING: could not seed the first project — continuing"
       echo "seeded first project on pad 0 from template"
     fi
@@ -502,7 +518,11 @@ setsid --wait bash -c '
   # both paths. Refusing to launch on failure is deliberate: without a valid
   # preload MoveOriginal comes up silently WITHOUT Schwung, which is a far more
   # confusing failure than not launching at all.
-  if ! $HEAL; then
+  # Its output captured and echoed: stderr of the helper does not reach this log
+  # in a real launch (see bootstrap.sh, step 3).
+  if ! _heal_out="$($HEAL 2>&1)"; then
+    [ -n "$_heal_out" ] && echo "$_heal_out"
+    echo "system partition: $(df -h / 2>/dev/null | tail -n 1)"
     refuse "davebox-heal failed"     # refuse() undoes the swap
   fi
 
@@ -553,8 +573,12 @@ setsid --wait bash -c '
       tail -c 102400 "$mgr_log" > "$mgr_log.tmp" 2>/dev/null && mv "$mgr_log.tmp" "$mgr_log"
     fi
     if [ -x "$DBX_DIR/schwung-manager" ]; then
+      # The file browser opens with a link to the exports folder; made here so
+      # the link is there before the first export.
+      mkdir -p "$DBX_DIR/davebox-exports" 2>/dev/null || true
       "$DBX_DIR/schwung-manager" -port 7700 -roots /data/UserData/ \
-        -base "$DBX_DIR" >>"$mgr_log" 2>&1 &
+        -base "$DBX_DIR" -file-shortcuts "dAVEBOx exports=$DBX_DIR/davebox-exports" \
+        >>"$mgr_log" 2>&1 &
       echo "started schwung-manager ($!)"
     fi
     # OLED mirror source (SSE on :7681, proxied by the manager at /mirror).
@@ -656,6 +680,10 @@ setsid --wait bash -c '
         pids=$(pidof $name 2>/dev/null || true)
         [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
       done
+      # Leftovers a module FORKED inside Move (JE-8086 emulator stages) keep
+      # the dead Move name and hold locks stock then trips on; they are found
+      # by SESSION, not name -- see reap-session.sh.
+      sh "$DBX_DIR/scripts/reap-session.sh" "$$" 9>&- || true
       rm -f "$DBX_DIR/shadow_ui.pid" "$DBX_DIR/link_sub.pid"
       rm -f /dev/shm/dbxhost-*
       start_manager
@@ -761,6 +789,10 @@ setsid --wait bash -c '
     pids=$(pidof $name 2>/dev/null || true)
     [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
   done
+  # Leftovers a module FORKED inside Move (JE-8086 emulator stages) keep
+  # the dead Move name and hold locks stock then trips on; they are found
+  # by SESSION, not name -- see reap-session.sh.
+  sh "$DBX_DIR/scripts/reap-session.sh" "$$" 9>&- || true
   # Reap ORPHANED crash handlers. XCrashpadHandler outlives the Move that
   # started it -- it is reparented to init and sits there forever, one per
   # swept Move, and it is not in the name list above because killing a LIVE
@@ -781,7 +813,7 @@ setsid --wait bash -c '
   # returns — stock must boot seeing exactly what it saw before the session.
   if [ -x "$DBX_DIR/scripts/set-swap.sh" ]; then
     sh "$DBX_DIR/scripts/set-swap.sh" exit || \
-      echo "WARNING: set-swap exit failed — boot recovery will heal it"
+      echo "WARNING: set-swap exit failed — a reboot or the next launch will heal it"
   fi
 
   # Resuming the unit is what brings stock Move back, so this is the restore

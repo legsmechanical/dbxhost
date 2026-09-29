@@ -32,12 +32,17 @@ jobs:
         with: { node-version: '22', cache: npm, cache-dependency-path: davebox/package-lock.json }
       - name: Version from tag
         run: |
+          # The tag is dAVEBOx's release version. It is NOT the host's:
+          # src/host/version.txt is the Schwung BASE version the host tracks,
+          # and modules' min_host_version is checked against it (store_utils,
+          # schwung-manager) -- a 0.0.1 there refuses every module that asks
+          # for 1.5.0. So the tag is checked, never written into it.
           VERSION="${GITHUB_REF_NAME#v}"
-          echo "$VERSION" > src/host/version.txt
           MJ="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' standalone/module/module.json | head -1)"
           RJ="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' release.json | head -1)"
-          echo "tag $VERSION · module.json $MJ · release.json $RJ"
+          echo "tag $VERSION · module.json $MJ · release.json $RJ · host base $(cat src/host/version.txt)"
           [ "$MJ" = "$RJ" ] || { echo "module.json and release.json disagree"; exit 1; }
+          [ "$RJ" = "$VERSION" ] || { echo "the tag does not match release.json"; exit 1; }
       - name: Build schwung-manager (Go, for the dbx-host tree)
         run: |
           mkdir -p build
@@ -50,9 +55,15 @@ jobs:
       - name: Build the davebox module
         run: |
           cd davebox && npm ci --no-audit --no-fund && bash scripts/build_sound.sh
+      - name: Build the HTML manual
+        run: |
+          bash davebox/scripts/build_manual_html.sh "$PWD/dAVEBOx-SA-manual.html"
+          ls -la dAVEBOx-SA-manual.html
       - name: Assemble the catalog tarball
         run: |
-          ./standalone/scripts/build-sa-release.sh .
+          # The manual rides inside as the manager's Help page, too.
+          MANUAL_HTML="$PWD/dAVEBOx-SA-manual.html" ./standalone/scripts/build-sa-release.sh .
+          tar -tzf davebox-sa-module.tar.gz | grep -x 'davebox-sa/payload/help/manual.html'
           tar -tzf davebox-sa-module.tar.gz | grep -c . 
           tar -tzf davebox-sa-module.tar.gz | grep -x 'davebox-sa/payload/bin/heal'
           tar -tzf davebox-sa-module.tar.gz | grep -x 'davebox-sa/payload/scripts/bootstrap.sh'
@@ -62,13 +73,12 @@ jobs:
           ./standalone/scripts/build-uninstall-release.sh .
           tar -tzf davebox-uninstall-module.tar.gz | grep -x 'davebox-uninstall/bin/heal.new'
           tar -tzf davebox-uninstall-module.tar.gz | grep -x 'davebox-uninstall/uninstall.sh'
-      - name: Build the HTML manual
-        run: |
-          bash davebox/scripts/build_manual_html.sh "$PWD/dAVEBOx-SA-manual.html"
-          ls -la dAVEBOx-SA-manual.html
       - name: Attach to the release
         uses: softprops/action-gh-release@v1
         with:
+          # 0.0.x is a TEST build (Josh, 2026-09-28): a GitHub pre-release,
+          # never the repo's "latest", and not in the Schwung catalog.
+          prerelease: ${{ startsWith(github.ref_name, 'v0.0.') || contains(github.ref_name, '-') }}
           files: |
             davebox-sa-module.tar.gz
             davebox-uninstall-module.tar.gz

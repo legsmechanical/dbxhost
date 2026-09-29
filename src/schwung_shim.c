@@ -41,7 +41,9 @@
 #include "host/plugin_api_v1.h"
 #include "host/audio_fx_api_v2.h"
 #include "host/shadow_constants.h"
+#include "host/surface_live_shm.h"
 #include "host/shadow_ui_midi_policy.h"
+#include "host/ui_midi_ring.h"
 #include "host/timespec_delta.h"
 #include "host/shadow_midi_inject_writer.h"
 #include "host/shadow_param_lane.h"
@@ -60,6 +62,7 @@
 #include "host/shadow_set_pages.h"
 #include "host/shim_worker.h"
 #include "host/shadow_dbus.h"
+#include "host/corun_back_top.h"
 #include "host/shadow_chain_mgmt.h"
 #include "host/shadow_link_audio.h"
 #include "host/shadow_process.h"
@@ -699,6 +702,60 @@ static int shadow_slot_idle[SHADOW_CHAIN_INSTANCES];
  * Once FX output is also silent, skip FX entirely. */
 static int shadow_slot_fx_silence_frames[SHADOW_CHAIN_INSTANCES];
 static int shadow_slot_fx_idle[SHADOW_CHAIN_INSTANCES];
+
+/* After a slot's FX chain ran: update its phase-2 idle state from the output.
+ * THE ONE PLACE this is decided — there are three FX paths (deferred, the Link
+ * Audio rebuild, the inline fallback), and the keep-alive below used to live
+ * in only one of them. A dAVEBOx session with Link Audio routing runs the
+ * rebuild path, so an FX declaring requires_continuous_processing was parked on
+ * silence there all the same and its internal time froze.
+ * Stateful FX (loopers, modulated delays) opt out via that capability; a 6 s
+ * looper's write position otherwise stops during silence and the loop "only
+ * returns when there's signal". SPI thread: a function-pointer call and one
+ * pass over the block, no I/O, no locks. */
+static inline void shadow_slot_fx_track_idle(int s, const int16_t *fx_buf);
+
+/* Is this slot's FX chain PARKED (skipped) for this block? Every skip site
+ * asks here. A slot that parked BEFORE a continuous-processing FX was loaded
+ * into it would otherwise stay parked until audio arrived — the keep-alive in
+ * shadow_slot_fx_track_idle only runs when the chain runs (measured on device
+ * 2026-09-27: rrverb10 loaded into a silent, parked slot read 0 us of FX). */
+static inline int shadow_slot_fx_parked(int s)
+{
+    if (!(shadow_slot_fx_idle[s] && shadow_slot_idle[s])) return 0;
+    if (shadow_chain_fx_requires_continuous &&
+        shadow_chain_fx_requires_continuous(shadow_chain_slots[s].instance)) {
+        shadow_slot_fx_idle[s] = 0;
+        shadow_slot_fx_silence_frames[s] = 0;
+        return 0;
+    }
+    return 1;
+}
+
+static inline void shadow_slot_fx_track_idle(int s, const int16_t *fx_buf)
+{
+    if (shadow_chain_fx_requires_continuous &&
+        shadow_chain_fx_requires_continuous(shadow_chain_slots[s].instance)) {
+        shadow_slot_fx_silence_frames[s] = 0;
+        shadow_slot_fx_idle[s] = 0;
+        return;
+    }
+    int fx_silent = 1;
+    for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
+        if (fx_buf[i] > DSP_SILENCE_LEVEL || fx_buf[i] < -DSP_SILENCE_LEVEL) {
+            fx_silent = 0;
+            break;
+        }
+    }
+    if (fx_silent) {
+        shadow_slot_fx_silence_frames[s]++;
+        if (shadow_slot_fx_silence_frames[s] >= DSP_IDLE_THRESHOLD)
+            shadow_slot_fx_idle[s] = 1;
+    } else {
+        shadow_slot_fx_silence_frames[s] = 0;
+        shadow_slot_fx_idle[s] = 0;
+    }
+}
 
 /* Move FX bus idle detection. The buses run UNCONDITIONALLY now (Move>Slot is
  * retired) and they run PRE-ioctl, in the tighter window — so a loaded but
@@ -1836,6 +1893,22 @@ static void shadow_render_slot_task(void *vctx, int s, int lane) {
         shadow_slot_silence_frames[s] = 0;
     }
 
+    /* Sound generators that cannot be woken by anything the shim can see opt
+     * out of the idle gate entirely (upstream #515) -- chiefly the ones that
+     * consume line input, whose output follows a jack nobody here inspects and
+     * which receive no MIDI. Parked, the probe interval below chops up to
+     * ~0.5 s off the front of every phrase and anything quieter than
+     * DSP_SILENCE_LEVEL never returns: heard as a noise gate no module setting
+     * can switch off. Cleared here, before the gate, so a slot ALREADY parked
+     * by the module before this one wakes on the frame this one loads.
+     * Null-checked: this host can run against a chain dsp.so without it. */
+    int synth_keep_alive = (shadow_chain_synth_requires_continuous &&
+                            shadow_chain_synth_requires_continuous(shadow_chain_slots[s].instance));
+    if (synth_keep_alive) {
+        shadow_slot_idle[s] = 0;
+        shadow_slot_silence_frames[s] = 0;
+    }
+
     /* Idle gate: skip render_block if synth output has been silent.
      * Buffer is already zeroed; FX still runs for tail decay.
      * Probe every ~0.5s to detect self-generating audio (LFOs, arps).
@@ -1950,7 +2023,12 @@ static void shadow_render_slot_task(void *vctx, int s, int lane) {
         }
     }
 
-    if (is_silent) {
+    if (synth_keep_alive) {
+        /* Opted out above; hold the counter at zero so the slot cannot drift
+         * back into idle between renders. */
+        shadow_slot_silence_frames[s] = 0;
+        shadow_slot_idle[s] = 0;
+    } else if (is_silent) {
         shadow_slot_silence_frames[s]++;
         if (shadow_slot_silence_frames[s] >= DSP_IDLE_THRESHOLD) {
             shadow_slot_idle[s] = 1;
@@ -1980,7 +2058,7 @@ slot_run_deferred_fx:
                sizeof(shadow_slot_fx_deferred[s]));
         shadow_slot_fx_deferred_valid[s] = 1;
     } else if (same_frame_fx && shadow_chain_process_fx) {
-        if (shadow_slot_fx_idle[s] && shadow_slot_idle[s]) {
+        if (shadow_slot_fx_parked(s)) {
             /* Both idle — FX output is silence */
             shadow_slot_fx_deferred_valid[s] = 1;
         } else {
@@ -1998,31 +2076,8 @@ slot_run_deferred_fx:
             memcpy(shadow_slot_fx_deferred[s], fx_buf, sizeof(fx_buf));
             shadow_slot_fx_deferred_valid[s] = 1;
 
-            /* Track FX output silence for phase 2 idle.
-             * Stateful FX (loopers, modulated delays) opt out via
-             * capabilities.requires_continuous_processing — without
-             * this, a 6 s looper's write_pos stops advancing during
-             * silence and the loop "only returns when there's signal". */
-            int fx_silent = 1;
-            for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                if (fx_buf[i] > DSP_SILENCE_LEVEL || fx_buf[i] < -DSP_SILENCE_LEVEL) {
-                    fx_silent = 0;
-                    break;
-                }
-            }
-            int fx_keep_alive = (shadow_chain_fx_requires_continuous &&
-                                 shadow_chain_fx_requires_continuous(shadow_chain_slots[s].instance));
-            if (fx_keep_alive) {
-                shadow_slot_fx_silence_frames[s] = 0;
-                shadow_slot_fx_idle[s] = 0;
-            } else if (fx_silent) {
-                shadow_slot_fx_silence_frames[s]++;
-                if (shadow_slot_fx_silence_frames[s] >= DSP_IDLE_THRESHOLD)
-                    shadow_slot_fx_idle[s] = 1;
-            } else {
-                shadow_slot_fx_silence_frames[s] = 0;
-                shadow_slot_fx_idle[s] = 0;
-            }
+            /* Phase 2 idle (and the continuous-processing keep-alive). */
+            shadow_slot_fx_track_idle(s, fx_buf);
         }
     }
 
@@ -2125,8 +2180,9 @@ static void shadow_inprocess_render_to_buffer(void) {
     /* Overtake DSP generator: mix its output into the deferred buffer */
     if (overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->render_block) {
         /* Restore raw hardware audio_in so overtake plugins can read line-in.
-         * The resample bridge may have overwritten the shadow_mailbox AUDIO_IN
-         * region; re-copy from hardware to give plugins the actual input. */
+         * The resample bridge no longer writes the region before this (it runs
+         * LAST in shim_post_transfer), so this cannot undo it; the copy stays
+         * so a plugin always reads the jack. */
         if (hardware_mmap_addr) {
             int16_t *hw_ain = (int16_t *)(hardware_mmap_addr + AUDIO_IN_OFFSET);
             int16_t *sh_ain = (int16_t *)(global_mmap_addr + AUDIO_IN_OFFSET);
@@ -2656,7 +2712,7 @@ static void shadow_inprocess_mix_from_buffer(void) {
                  * The Link Audio term that used to qualify this is gone with
                  * Move>Slot — a Move track is always peeled to its own bus
                  * (handled above), so it never gives the synth chain work. */
-                if (shadow_slot_fx_idle[s] && shadow_slot_idle[s]) continue;
+                if (shadow_slot_fx_parked(s)) continue;
 
                 /* Latency comp: delay the local synth output to match the
                  * Link Audio path before combining. The nudge in
@@ -2810,23 +2866,8 @@ static void shadow_inprocess_mix_from_buffer(void) {
                     }
                 }
 
-                /* Track FX output silence for phase 2 idle */
-                int fx_silent = 1;
-                for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                    if (fx_buf[i] > DSP_SILENCE_LEVEL || fx_buf[i] < -DSP_SILENCE_LEVEL) {
-                        fx_silent = 0;
-                        break;
-                    }
-                }
-                if (fx_silent) {
-                    shadow_slot_fx_silence_frames[s]++;
-                    if (shadow_slot_fx_silence_frames[s] >= DSP_IDLE_THRESHOLD) {
-                        shadow_slot_fx_idle[s] = 1;
-                    }
-                } else {
-                    shadow_slot_fx_silence_frames[s] = 0;
-                    shadow_slot_fx_idle[s] = 0;
-                }
+                /* Phase 2 idle (and the continuous-processing keep-alive). */
+                shadow_slot_fx_track_idle(s, fx_buf);
 
                 /* Capture for Link Audio publisher */
                 if (s < LINK_AUDIO_SHADOW_CHANNELS) {
@@ -2881,7 +2922,7 @@ skip_la_rebuild:
 
             /* Use deferred FX output if available (FX ran in post-ioctl) */
             if (shadow_slot_fx_deferred_valid[s]) {
-                if (shadow_slot_fx_idle[s] && shadow_slot_idle[s]) continue;
+                if (shadow_slot_fx_parked(s)) continue;
 
                 int16_t *fx_buf = shadow_slot_fx_deferred[s];
 
@@ -2913,7 +2954,7 @@ skip_la_rebuild:
                 accumulate_bus_sends(s, send_accum);
             } else if (shadow_slot_deferred_valid[s]) {
                 /* Fallback: FX not deferred — run inline (legacy path) */
-                if (shadow_slot_fx_idle[s] && shadow_slot_idle[s]) continue;
+                if (shadow_slot_fx_parked(s)) continue;
 
                 int16_t fx_buf[FRAMES_PER_BLOCK * 2];
                 memcpy(fx_buf, shadow_slot_deferred[s], sizeof(fx_buf));
@@ -2945,21 +2986,8 @@ skip_la_rebuild:
                     ps->write_pos = wp;
                 }
 
-                int fx_silent = 1;
-                for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                    if (fx_buf[i] > DSP_SILENCE_LEVEL || fx_buf[i] < -DSP_SILENCE_LEVEL) {
-                        fx_silent = 0;
-                        break;
-                    }
-                }
-                if (fx_silent) {
-                    shadow_slot_fx_silence_frames[s]++;
-                    if (shadow_slot_fx_silence_frames[s] >= DSP_IDLE_THRESHOLD)
-                        shadow_slot_fx_idle[s] = 1;
-                } else {
-                    shadow_slot_fx_silence_frames[s] = 0;
-                    shadow_slot_fx_idle[s] = 0;
-                }
+                /* Phase 2 idle (and the continuous-processing keep-alive). */
+                shadow_slot_fx_track_idle(s, fx_buf);
 
                 float fpn_l = shadow_pan_gain_l(shadow_chain_slots[s].pan);
                 float fpn_r = shadow_pan_gain_r(shadow_chain_slots[s].pan);
@@ -3309,10 +3337,15 @@ static uint8_t *shadow_midi_shm = NULL;
 static uint8_t *shadow_ui_midi_shm = NULL;
 static uint8_t *shadow_display_shm = NULL;
 static uint8_t *display_live_shm = NULL;
+/* The control surface for the web mirror's device view: every LED as the
+ * hardware was last told to light it, every control as it is held. Always
+ * tracked (a few byte compares a frame) so the picture is right the moment a
+ * viewer arrives -- an LED is written once and then left alone. */
+static surface_live_shm_t *surface_live_shm = NULL;
+static surface_live_writer_t surface_live_writer;
 static shadow_midi_out_t *shadow_midi_out_shm = NULL;  /* MIDI output from shadow UI */
 static uint8_t last_shadow_midi_out_ready = 0;
 static shadow_midi_dsp_t *shadow_midi_dsp_shm = NULL;  /* MIDI to DSP from shadow UI */
-static uint8_t last_shadow_midi_dsp_ready = 0;
 static shadow_midi_inject_t *shadow_midi_inject_shm = NULL;  /* MIDI inject into Move's MIDI_IN */
 /* The TEST BUS's own surface-input ring (schwung-testd → here, dev-only).
  *
@@ -3369,18 +3402,16 @@ static inline void shadow_ui_midi_publish(uint8_t head, uint8_t status,
      * events whose loss STICKS. See shadow_ui_midi_policy.h for why the two are
      * not interchangeable. */
     const int yields = shadow_ui_midi_event_yields(head, status, d1);
-    const int limit  = yields ? shadow_ui_midi_yield_limit(MIDI_BUFFER_SIZE)
-                              : MIDI_BUFFER_SIZE;
 
-    for (int slot = 0; slot < limit; slot += 4) {
-        if (__atomic_load_n(&shadow_ui_midi_shm[slot], __ATOMIC_ACQUIRE) == 0) {
-            shadow_ui_midi_shm[slot + 1] = status;
-            shadow_ui_midi_shm[slot + 2] = d1;
-            shadow_ui_midi_shm[slot + 3] = d2;
-            __atomic_store_n(&shadow_ui_midi_shm[slot], head, __ATOMIC_RELEASE);
-            shadow_control->midi_ready++;
-            return;
-        }
+    /* IN ARRIVAL ORDER (upstream 1dfd31f5): a ring cursor, not the lowest free
+     * slot, which reordered every burst that straddled a drain — a release
+     * could reach JS before its press. See src/host/ui_midi_ring.h. */
+    static int ui_midi_wr = 0;
+    if (!(yields && shadow_ui_midi_reserve_blocks(shadow_ui_midi_shm, MIDI_BUFFER_SIZE, ui_midi_wr)) &&
+        ui_midi_ring_put(shadow_ui_midi_shm, MIDI_BUFFER_SIZE, &ui_midi_wr,
+                         head, status, d1, d2)) {
+        shadow_control->midi_ready++;
+        return;
     }
 
     /* Dropped. Count it by consequence, so the log distinguishes "the surface
@@ -3630,6 +3661,10 @@ static void init_shadow_shm(void)
     /* Create/open live display shared memory (for remote display server) */
     display_live_shm = (uint8_t *)shadow_shm_map(SHM_DISPLAY_LIVE,
                                                  DISPLAY_BUFFER_SIZE, 1, 1);
+
+    surface_live_shm = (surface_live_shm_t *)shadow_shm_map(SURFACE_LIVE_SHM_NAME,
+                                                           sizeof(surface_live_shm_t), 1, 1);
+    if (surface_live_shm) surface_live_init(surface_live_shm, &surface_live_writer);
 
     /* Create/open control shared memory - DON'T zero it, shadow_poc owns the state */
     shadow_control = (shadow_control_t *)shadow_shm_map(SHM_SHADOW_CONTROL,
@@ -7033,6 +7068,13 @@ pre_done:
         memset(shadow + AUDIO_OUT_OFFSET, 0,
                DISPLAY_OFFSET - AUDIO_OUT_OFFSET);
     }
+
+    /* The web mirror's device view reads LEDs LAST: after every MIDI_OUT
+     * writer above, this is what the XMOS receives, Move's writes and
+     * Schwung's merged. */
+    if (surface_live_shm)
+        surface_live_scan_out(surface_live_shm, &surface_live_writer,
+                              shadow + MIDI_OUT_OFFSET, HW_MIDI_OUT_SIZE);
 }
 
 /* === Cable-2 (external USB) MIDI channel remap ===
@@ -7585,6 +7627,34 @@ static inline void midi_in_swallow(uint8_t *shadow_midi_in, uint8_t *hw_midi_in,
  * knobs, the master knob, the track buttons), and Mute, on which Move-native
  * Mute+Pad depends. A claim on one of these is ignored here whatever shadow_ui
  * wrote, so the shim stays correct even against a UI that forgot the list. */
+/* End the co-run as the framework's own Back exit does: the host reconciles
+ * the cleared fields from SHM and reports the service closed to the tool.
+ * ⚠ Called from the SPI path, so the log line is the WORKER's to write (file
+ * I/O never runs here — advisor review, 2026-09-29). */
+static const char *volatile corun_exit_why;
+static void corun_exit_log_worker(void) {
+    const char *why = corun_exit_why;
+    if (why) shadow_log(why);
+}
+static void corun_framework_exit(const char *why) {
+    shadow_control->corun.target = CORUN_TARGET_NONE;
+    shadow_control->corun.id = -1;
+    shadow_control->corun.flags = 0;
+    shadow_control->corun.keep_mask = 0;
+    shadow_control->corun.led_keep_mask = 0;
+    shadow_control->shadow_display_owner = DISPLAY_OWNER_SCHWUNG_UI;
+    corun_exit_why = why;
+    shim_worker_post(SHIM_EVT_CORUN_EXIT_LOG);
+}
+/* The live co-run's identity for corun_back_top: target and id. */
+static uint32_t corun_session_token(void) {
+    return ((uint32_t)(uint8_t)shadow_control->corun.target << 8) |
+           (uint32_t)(uint8_t)shadow_control->corun.id;
+}
+
+/* Back at the top of Move's editor (CORUN_KEEP_BACK_TOP_EXIT, corun_back_top.h). */
+static corun_back_top_t corun_back_top;
+
 static int claim_denied_cc(uint8_t cc) {
     if (cc == CC_SHIFT || cc == CC_MENU || cc == CC_BACK) return 1;
     if (cc == CC_JOG_WHEEL || cc == CC_JOG_CLICK) return 1;
@@ -7605,6 +7675,12 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
 
     /* Root span for the post-ioctl half of the SPI frame. */
     TRACE_SCOPE("spi.post");
+
+    /* The device view's presses, from the RAW mailbox: before any blocking
+     * site swallows an event, so a press Schwung withholds from Move shows. */
+    if (surface_live_shm && hw)
+        surface_live_scan_in(surface_live_shm, &surface_live_writer,
+                             hw + MIDI_IN_OFFSET, SHADOW_MIDI_IN_BYTES);
 
     /* Timing: reuse statics from pre-transfer (same translation unit) */
     /* spi_post_start is at file scope */
@@ -7664,8 +7740,8 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                              shadow_control ? &shadow_control->overtake_mode : NULL,
                              shadow_control ? &shadow_control->shift_held : NULL);
 
-    /* Bridge Schwung's total mix into native resampling path when selected. */
-    native_resample_bridge_apply();
+    /* The resample bridge is NOT here any more -- it is the LAST writer of
+     * AUDIO_IN, after the slot render below. See the call site. */
 
     /* Capture audio for sampler post-ioctl (Move Input source only - fresh hardware input) */
     if (sampler_source == SAMPLER_SOURCE_MOVE_INPUT) {
@@ -9062,6 +9138,14 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
         uint8_t *src = hardware_mmap_addr + MIDI_IN_OFFSET;  /* Scan unfiltered hardware buffer */
         int overtake_mode = shadow_control->overtake_mode;
 
+        /* A Back sent to Move that Move answered with silence was pressed at
+         * the top of its editor: leave, as Back-as-exit does. */
+        if (corun_back_top_poll(&corun_back_top, now_mono_ms(), shadow_dbus_text_count(),
+                                corun_active(shadow_control) &&
+                                corun_target(shadow_control) == CORUN_TARGET_MOVE_NATIVE,
+                                corun_session_token()))
+            corun_framework_exit("Back at the top of Move's editor: exiting co-run");
+
         for (int j = 0; j < SHADOW_MIDI_IN_BYTES; j += 8) {
             uint8_t cin = src[j] & 0x0F;
             uint8_t cable = (src[j] >> 4) & 0x0F;
@@ -9129,15 +9213,15 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                 if (overtake_mode == 2 && cable == 0x00 && corun_active(shadow_control)) {
                     corun_owner_t owner = corun_event_owner(shadow_control, type, d1);
                     if (owner == CORUN_OWNER_NONE && type == 0xB0 && d1 == CC_BACK && d2 > 0) {
-                        shadow_control->corun.target = CORUN_TARGET_NONE;
-                        shadow_control->corun.id = -1;
-                        shadow_control->corun.flags = 0;
-                        shadow_control->corun.keep_mask = 0;
-                        shadow_control->corun.led_keep_mask = 0;
-                        shadow_control->shadow_display_owner = DISPLAY_OWNER_SCHWUNG_UI;
-                        shadow_log("Back: exiting co-run");
+                        corun_framework_exit("Back: exiting co-run");
                         continue;
                     }
+                    /* A Back that goes to Move firmware: see whether Move answers. */
+                    if (owner == CORUN_OWNER_PEER && type == 0xB0 && d1 == CC_BACK && d2 > 0 &&
+                        corun_target(shadow_control) == CORUN_TARGET_MOVE_NATIVE &&
+                        (shadow_control->corun.keep_mask & CORUN_KEEP_BACK_TOP_EXIT))
+                        corun_back_top_press(&corun_back_top, now_mono_ms(), shadow_dbus_text_count(),
+                                             corun_session_token());
                     /* Move-native only: cede-to-peer events go to Move via the
                      * pre-ioctl filter, so suppress the duplicate to shadow_ui
                      * here. For chain-edit the peer is shadow_ui itself — let
@@ -9572,6 +9656,26 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
     }
     TIME_SECTION_END(spi_post_render_sum, spi_post_render_max);
 
+    /*
+     * THE RESAMPLE BRIDGE WRITES AUDIO_IN LAST -- after every reader in the
+     * frame, never before one (upstream #547).
+     *
+     * It overwrites the shadow mailbox's AUDIO_IN with the total mix so Move's
+     * own Resample records what is playing. It used to run up by the JACK
+     * post, BEFORE the slot render above, and two readers in the render lost:
+     *   - a Line In slot reads AUDIO_IN there, so with Resample on Mix it read
+     *     the previous mix, its own output included -- a closed digital loop
+     *     that rang whenever its gain reached 1;
+     *   - the overtake generator (a dAVEBOx session) restores the hardware
+     *     AUDIO_IN before its render, every frame, which overwrote the bridge:
+     *     Resample on Mix recorded the JACK, not the mix, in every session.
+     * Move reads the mailbox only after this callback returns (post_fn runs
+     * inside the hooked ioctl), so writing it here loses Move nothing, and
+     * every reader in the render got the jack. Pinned by
+     * tests/host/test_resample_bridge_after_render.sh.
+     */
+    native_resample_bridge_apply();
+
     /* === POST-IOCTL: CHECK FOR RESTART REQUEST === */
     /* Shadow UI can request a Move restart (e.g. after core update) */
     if (shadow_control && shadow_control->restart_move) {
@@ -9904,6 +10008,18 @@ static void *spi_timing_logger_thread(void *arg)
             unified_log("spi_timing", LOG_LEVEL_DEBUG,
                 "UI-MIDI ring drops: sticky=%u yield=%u",
                 ui_midi_drop_sticky, ui_midi_drop_yield);
+            /* The OUTBOUND side (shadow_ui -> MIDI_OUT, the carry). `placed` is
+             * the positive control: a window of zeros means nothing unless
+             * something was placed. `drops` = refused by a full carry,
+             * `repeated` = our packets still in the mailbox a frame later
+             * (cleared, not sent twice), `foreign` = Move's own cable-2 packets
+             * seen while a message of ours was going out. Cumulative. */
+            unified_log("spi_timing", LOG_LEVEL_DEBUG,
+                "UI-MIDI out: placed=%u drops=%u repeated=%u foreign=%u retries=%u unretryable=%u dsp_discarded=%u",
+                shim_ui_midi_out_placed, shim_ui_midi_out_drops,
+                shim_ui_midi_out_repeated, shim_ui_midi_out_foreign,
+                shim_ui_midi_out_retries, shim_ui_midi_out_unretryable,
+                shim_ui_midi_dsp_discarded);
             /* The param LANE. `drained` is cumulative since launch (the delta
              * between two lines 5 s apart is the rate); `max` is the most
              * records ever applied in ONE frame, and `bytes_max` the deepest
@@ -10196,6 +10312,7 @@ static void shim_spi_init(void)
             .skipback_save          = skipback_worker_spawn_save,
             .skipback_resize        = shim_hook_skipback_resize,
             .preview_play_pending   = shim_hook_preview_play,
+            .corun_exit_log         = corun_exit_log_worker,
         };
         shim_worker_set_hooks(&hooks);
     }

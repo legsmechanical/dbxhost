@@ -301,7 +301,7 @@ check "boot.json's exec points at the module's INSTALLED boot-entry.sh, not the 
 check "module.json declares the same row for the manager to register (after id/name)" \
       python3 -c "
 import json,sys; t=open('standalone/module/module.json').read(); m=json.loads(t)
-b=m['boot_target']; assert b=={'id':'davebox','name':'dAVEBOx','exec':'boot-entry.sh'}, b
+b=m['boot_target']; assert b=={'id':'davebox','name':'dAVEBOx SA','exec':'boot-entry.sh'}, b
 assert t.index('\"boot_target\"') > t.index('\"id\"') and t.index('\"boot_target\"') > t.index('\"name\"')"
 check "boot.json declares a name for the picker row" \
       grep -qE '"name"[[:space:]]*:[[:space:]]*"' "$BOOTJSON"

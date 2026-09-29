@@ -22,7 +22,8 @@ mk() {  # a fresh device. $1 = heal: blessable | none | stuck (cannot unbind)
     mkdir -p "$F/stock/bin" "$F/stock/modules/tools/other-tool" "$F/stock/modules/audio_fx/x" \
              "$F/stock/presets/p" "$F/stock/cache/davebox-presetnames" "$F/stock/cache/stock-own" \
              "$F/stock/modules/tools/davebox-sa/bin" "$F/stock/modules/tools/davebox-uninstall/bin" \
-             "$F/UserLibrary/Sets" "$F/boot/davebox" "$F/boot/schwung" "$F/shm" "$F/proc" "$F/root"
+             "$F/UserLibrary/Sets" "$F/boot/davebox" "$F/boot/schwung" "$F/shm" "$F/proc" "$F/root" "$F/settings"
+    echo '{"theirs": true}' > "$F/settings/Settings.json"
     echo keep > "$F/stock/modules/tools/other-tool/module.json"
     echo keep > "$F/stock/presets/p/a.json"
     echo keep > "$F/stock/cache/stock-own/x"
@@ -40,9 +41,12 @@ mk() {  # a fresh device. $1 = heal: blessable | none | stuck (cannot unbind)
              "$D/sets/template/t" "$D/scripts" "$D/modules/chain" "$D/shadow" "$D/__pycache__"
     echo "song" > "$D/projects/p1/Move-Set-p1/Song.abl"
     echo '[]' > "$D/projects.json"; echo bundle > "$D/davebox-exports/a.ablbundle"
-    for f in daves-seen.txt daves-window.txt phrase-map.txt parallel-modules.txt active_set.txt \
+    for f in daves-seen.txt daves-window.txt bank-view-map.txt phrase-map.txt parallel-modules.txt active_set.txt \
              sa_master_volume shadow_config.json; do echo "mine $f" > "$D/$f"; done
+    mkdir -p "$D/settings"; echo '{"session": true}' > "$D/settings/Settings.json"
     echo tts > "$D/config/tts.json"; echo 1 > "$D/sets/sa_song_index"; echo none > "$D/sets/swap_state"
+    mkdir -p "$D/quarantine" "$D/sets/quarantine/20260921/orphan"
+    echo parked > "$D/quarantine/seq8sa-1-2.json"; echo orphan > "$D/sets/quarantine/20260921/orphan/Song.abl"
     ln -s "$D/projects/p1" "$D/sets/library/slot1"
     echo host > "$D/schwung"; echo log > "$D/debug.log"; echo x > "$D/with space.txt"
     echo x > "$D/.build-cache-key"; echo x > "$D/shadow/shadow_ui"
@@ -60,6 +64,9 @@ case "\$1" in
   --umount-sets) [ -L "$F/UserLibrary/Sets" ] || exit 0
                  [ -f "$F/stuck" ] && exit 2
                  rm "$F/UserLibrary/Sets"; mkdir "$F/UserLibrary/Sets"; echo "their set" > "$F/UserLibrary/Sets/theirs.txt" ;;
+  --umount-settings) [ -L "$F/settings" ] || exit 0
+                 [ -f "$F/stuck" ] && exit 2
+                 rm "$F/settings"; mv "$F/settings.native" "$F/settings" ;;
   --uninstall-root) rm -f "$F/root/davebox-shim.so" "$F/root/davebox-restore.service" ;;
 esac
 H
@@ -79,7 +86,7 @@ S
 run() {  # $1 = shell, rest = args. Sets RC; output in $T/out
     _sh="$1"; shift
     DBX_DIR="$F/dbx" STOCK_DIR="$F/stock" SETS_DIR="$F/UserLibrary/Sets" BOOT_ROOT="$F/boot" \
-    SHM_DIR="$F/shm" PROC_DIR="$F/proc" SHIM_PATH="$F/root/davebox-shim.so" \
+    MOVE_SETTINGS_DIR="$F/settings" SHM_DIR="$F/shm" PROC_DIR="$F/proc" SHIM_PATH="$F/root/davebox-shim.so" \
     UNIT_PATH="$F/root/davebox-restore.service" DONE_FILE="$F/done" \
         "$_sh" "$F/stock/modules/tools/davebox-uninstall/uninstall.sh" "$@" > "$T/out" 2>&1
     RC=$?
@@ -87,6 +94,7 @@ run() {  # $1 = shell, rest = args. Sets RC; output in $T/out
 snapshot() { (cd "$F" && find . \( -type f -o -type l -o -type d \) -print | LC_ALL=C sort; \
               find . -type f -exec cksum {} + | LC_ALL=C sort) > "$1"; }
 bound() { rm -rf "$F/UserLibrary/Sets"; ln -s "$F/dbx/sets/library" "$F/UserLibrary/Sets"; }
+settings_bound() { mv "$F/settings" "$F/settings.native"; ln -s "$F/dbx/settings" "$F/settings"; }
 
 for SH in $SHELLS; do
 echo "=== under $SH ==="
@@ -106,29 +114,33 @@ snapshot "$T/after"
 grep -q "would: remove debug.log" "$T/out" && grep -q "keep:  projects$" "$T/out" && ok "says what it would remove and keep" || bad "$(head -30 "$T/out")"
 grep -q "nothing was changed" "$T/out" && ! grep -q "is uninstalled" "$T/out" && ok "does not claim to have uninstalled" || bad "dry summary wrong"
 
-echo "--run on a full install (Sets bound, helper blessable):"
-mk blessable; bound
+echo "--run on a full install (Sets and settings bound, helper blessable):"
+mk blessable; bound; settings_bound
 for f in projects/p1/Move-Set-p1/Song.abl projects.json davebox-exports/a.ablbundle daves-seen.txt \
-         daves-window.txt phrase-map.txt parallel-modules.txt active_set.txt sa_master_volume \
-         shadow_config.json config/tts.json sets/sa_song_index; do cksum "$F/dbx/$f"; done > "$T/kept.before"
+         daves-window.txt bank-view-map.txt phrase-map.txt parallel-modules.txt active_set.txt sa_master_volume \
+         shadow_config.json config/tts.json sets/sa_song_index quarantine/seq8sa-1-2.json \
+         sets/quarantine/20260921/orphan/Song.abl settings/Settings.json; do cksum "$F/dbx/$f"; done > "$T/kept.before"
 run "$SH" --run
 [ "$RC" = 0 ] && ok "exit 0" || { bad "rc=$RC"; sed 's/^/      /' "$T/out"; }
 [ "$(cat "$F/done" 2>/dev/null)" = 0 ] && ok "done file says 0" || bad "done=$(cat "$F/done" 2>/dev/null)"
 for f in projects/p1/Move-Set-p1/Song.abl projects.json davebox-exports/a.ablbundle daves-seen.txt \
-         daves-window.txt phrase-map.txt parallel-modules.txt active_set.txt sa_master_volume \
-         shadow_config.json config/tts.json sets/sa_song_index; do cksum "$F/dbx/$f" 2>&1; done > "$T/kept.after"
+         daves-window.txt bank-view-map.txt phrase-map.txt parallel-modules.txt active_set.txt sa_master_volume \
+         shadow_config.json config/tts.json sets/sa_song_index quarantine/seq8sa-1-2.json \
+         sets/quarantine/20260921/orphan/Song.abl settings/Settings.json; do cksum "$F/dbx/$f" 2>&1; done > "$T/kept.after"
 cmp -s "$T/kept.before" "$T/kept.after" && ok "every kept file is byte-identical, in place" || bad "kept files changed: $(diff "$T/kept.before" "$T/kept.after")"
 left="$(cd "$F/dbx" && ls -A | LC_ALL=C sort | tr '\n' ' ')"
-want="$(printf '%s\n' active_set.txt config daves-seen.txt daves-window.txt davebox-exports parallel-modules.txt \
-        phrase-map.txt projects projects.json sa_master_volume sets shadow_config.json | LC_ALL=C sort | tr '\n' ' ')"
+want="$(printf '%s\n' active_set.txt config bank-view-map.txt daves-seen.txt daves-window.txt davebox-exports parallel-modules.txt \
+        phrase-map.txt projects projects.json quarantine sa_master_volume sets settings shadow_config.json | LC_ALL=C sort | tr '\n' ' ')"
 [ "$left" = "$want" ] \
     && ok "dbx-host holds exactly the keep-list" || bad "left: $left"
-[ "$(ls -A "$F/dbx/sets")" = sa_song_index ] && ok "sets/ holds only sa_song_index" || bad "sets: $(ls -A "$F/dbx/sets")"
+[ "$(ls -A "$F/dbx/sets" | LC_ALL=C sort | tr '\n' ' ')" = "quarantine sa_song_index " ] && ok "sets/ holds only sa_song_index and quarantine/" || bad "sets: $(ls -A "$F/dbx/sets")"
 [ ! -L "$F/UserLibrary/Sets" ] && [ "$(cat "$F/UserLibrary/Sets/theirs.txt")" = "their set" ] && ok "Sets/ unbound, the user's own sets there" || bad "Sets"
+[ ! -L "$F/settings" ] && [ "$(cat "$F/settings/Settings.json")" = '{"theirs": true}' ] \
+    && ok "Move's settings unbound, the user's own settings there" || bad "settings: $(ls -la "$F" | grep settings)"
 grep -q "recover HEAL_BIN=$F/stock/modules/tools/davebox-uninstall/bin/heal" "$F/setswap.log" && ok "set-swap recover ran with OUR blessed helper" || bad "setswap: $(cat "$F/setswap.log" 2>/dev/null)"
 grep -qx -- "--uninstall-root" "$F/heal.log" && [ ! -e "$F/root/davebox-shim.so" ] && [ ! -e "$F/root/davebox-restore.service" ] && ok "root-owned shim and unit removed via the helper" || bad "root: $(cat "$F/heal.log")"
 [ "$(cat "$F/boot/default")" = schwung ] && [ ! -e "$F/boot/davebox" ] && [ -f "$F/boot/schwung/boot.json" ] && ok "boot default handed back to schwung, our row gone, stock's kept" || bad "boot: $(cat "$F/boot/default"); $(ls "$F/boot")"
-[ ! -e "$F/stock/cache/davebox-presetnames" ] && [ -f "$F/stock/cache/stock-own/x" ] && ok "our preset cache gone, stock's cache kept" || bad "cache"
+[ -e "$F/stock/cache/davebox-presetnames" ] && [ -f "$F/stock/cache/stock-own/x" ] && ok "stock's cache/davebox-presetnames (dAVEBOx LEGACY's) and stock's own cache kept" || bad "cache: removed something that is not ours"
 [ ! -e "$F/stock/open_tool_cmd.json" ] && ok "a pending dAVEBOx open_tool_cmd.json removed" || bad "open_tool_cmd left"
 [ ! -e "$F/shm/dbxhost-display" ] && [ -e "$F/shm/schwung-display" ] && ok "our /dev/shm rings gone, stock's kept" || bad "shm: $(ls -A "$F/shm")"
 [ ! -e "$F/stock/modules/tools/davebox-sa" ] && ok "the dAVEBOx Tools module removed" || bad "davebox-sa left"
@@ -136,6 +148,11 @@ grep -qx -- "--uninstall-root" "$F/heal.log" && [ ! -e "$F/root/davebox-shim.so"
 [ -f "$F/stock/modules/tools/other-tool/module.json" ] && [ -f "$F/stock/presets/p/a.json" ] && [ -d "$F/stock/modules/audio_fx/x" ] \
     && ok "stock's tools, presets and modules untouched (our links removed, not followed)" || bad "stock content touched"
 grep -q "projects are in $F/dbx/projects" "$T/out" && ok "tells the user where the projects are" || bad "no kept-path line"
+
+echo "a pending open_tool_cmd.json for dAVEBOx LEGACY (tool_id davebox) is not ours:"
+mk blessable; printf '{"tool_id": "davebox"}\n' > "$F/stock/open_tool_cmd.json"
+run "$SH" --run
+[ -f "$F/stock/open_tool_cmd.json" ] && ok "Legacy's pending command left alone" || bad "removed Legacy's open_tool_cmd.json"
 
 echo "a non-dAVEBOx open_tool_cmd.json and a non-davebox default are left alone:"
 mk blessable; printf '{"tool_id": "song-mode"}\n' > "$F/stock/open_tool_cmd.json"; printf 'schwung\n' > "$F/boot/default"
@@ -155,6 +172,13 @@ run "$SH" --run
 [ "$RC" = 3 ] && [ "$(cat "$F/done")" = 3 ] && grep -q "REFUSING: Sets/ still shows" "$T/out" && ok "rc 3, says why" || bad "rc=$RC: $(cat "$T/out")"
 [ -f "$F/dbx/schwung" ] && [ -f "$F/root/davebox-shim.so" ] && [ -d "$F/stock/modules/tools/davebox-sa" ] && [ -d "$F/boot/davebox" ] \
     && ok "install, root files, module and boot row all still there" || bad "deleted something while bound"
+
+echo "Move's settings still bound and cannot be unbound — refuses before deleting anything:"
+mk stuck; settings_bound
+run "$SH" --run
+[ "$RC" = 3 ] && grep -q "REFUSING: Move's settings folder still shows dAVEBOx's copy" "$T/out" && ok "rc 3, says why" || bad "rc=$RC: $(cat "$T/out")"
+[ -f "$F/dbx/schwung" ] && [ -f "$F/root/davebox-shim.so" ] && [ -d "$F/stock/modules/tools/davebox-sa" ] \
+    && ok "install, root files and module all still there" || bad "deleted something while settings bound"
 
 echo "no helper can be blessed (a stock that predates it):"
 mk none

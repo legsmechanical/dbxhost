@@ -53,15 +53,23 @@ DEPFLAGS = -MMD -MP -MF $@.d
 BUILD_DIR = ../../build/tests/host
 
 TARGETS = $(BUILD_DIR)/test_project_path \
+          $(BUILD_DIR)/test_surface_live \
           $(BUILD_DIR)/test_timespec_delta \
+          $(BUILD_DIR)/test_host_api_null_run \
           $(BUILD_DIR)/test_split_voices_parse \
           $(BUILD_DIR)/test_midi_coalesce \
           $(BUILD_DIR)/test_ui_midi_policy \
+          $(BUILD_DIR)/test_ui_midi_ring_order \
           $(BUILD_DIR)/test_midi_inject_writer \
           $(BUILD_DIR)/test_sa_master_volume \
           $(BUILD_DIR)/test_spawn_command \
           $(BUILD_DIR)/test_stipple \
           $(BUILD_DIR)/test_shadow_midi_out_capacity \
+          $(BUILD_DIR)/test_ui_midi_out_ring \
+          $(BUILD_DIR)/test_ui_midi_out_carry \
+          $(BUILD_DIR)/test_ui_midi_out_ring_threads \
+          $(BUILD_DIR)/test_ui_midi_dsp_ring \
+          $(BUILD_DIR)/test_ui_midi_dsp_ring_threads \
           $(BUILD_DIR)/test_midi_in_compact \
           $(BUILD_DIR)/test_master_fx_saved_state \
           $(BUILD_DIR)/test_json_compact \
@@ -81,6 +89,8 @@ TARGETS = $(BUILD_DIR)/test_project_path \
           $(BUILD_DIR)/test_chain_idle_tick \
           $(BUILD_DIR)/test_chain_clock_state \
           $(BUILD_DIR)/test_move_clock_setting \
+          $(BUILD_DIR)/test_move_settings_text \
+          $(BUILD_DIR)/test_corun_back_top \
           $(BUILD_DIR)/test_render_pool
 
 .PHONY: all test clean
@@ -178,6 +188,12 @@ $(BUILD_DIR)/test_shadow_param_queue: test_shadow_param_queue.c ../../src/host/s
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_move_clock_setting: test_move_clock_setting.c ../../src/host/move_clock_setting.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_move_settings_text: test_move_settings_text.c ../../src/host/move_settings_text.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_corun_back_top: test_corun_back_top.c ../../src/host/corun_back_top.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_render_pool: test_render_pool.c ../../src/host/render_pool.h ../../src/host/shim_thread.h | $(BUILD_DIR)

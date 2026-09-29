@@ -389,6 +389,21 @@ export const S = {
     trackMidiTo: Array.from({ length: NUM_TRACKS }, () => 0),
     trackRoute: new Array(8).fill(0),
     moveCoRunTrack: -1,                       /* -1 = off; 0-3 = Move firmware is co-running on this track (dAVEBOx skips OLED; shim filters nav CCs + touch 0-9 from tool, lets them reach Move) */
+    /* Move's own Settings menu, opened in co-run from Project Settings'
+     * Move Settings... row (ui_corun.mjs enterMoveSettingsCoRun). A different
+     * co-run from the track's: moveCoRunTrack stays -1 throughout. */
+    moveSettingsOpen: false,
+    moveSettingsSeen: false,                  /* Move has announced a Settings row since it opened */
+    moveSettingsReturn: null,                 /* where closing lands: 'menu' (Project Settings) or 'overview' */
+    moveSettingsQueue: null,                  /* [{pkt, gapMs}] still to inject to Move (its Shift+Step 2) */
+    moveSettingsNextAt: 0,                    /* nowMs() at which the next queued packet goes */
+    moveSettingsRetryAt: 0,                   /* nowMs() by which a Settings row should have been announced */
+    moveSettingsTries: 0,
+    moveSettingsClosing: false,               /* the close was asked for; the host's service return is still to come */
+    moveSettingsPopped: false,                /* the service was popped; its return is still to come */
+    moveSettingsCloseTries: 0,                /* Move's own close, sent while its menu was still up */
+    moveSettingsCloseAt: 0,                   /* nowMs() at which the close takes its next step */
+    pendingMenuAt: null,                      /* a Project Settings row label: the tick opens the menu on it */
     moveCoRunDrumHeld: new Set(),             /* d1 notes of drum lane pads currently held in co-run — per-pad Set so a 2nd simultaneous hold doesn't clobber the 1st's tracking (js-input-1). Plain pad note-off (no Shift injection) sent per held pad on physical release / co-run exit */
     trackPadMode: new Array(8).fill(0),
     trackVelOverride: new Array(8).fill(0),
@@ -417,6 +432,7 @@ export const S = {
     flashEighth: false,
     flashSixteenth: false,
     masterPos: 0,
+    bankViewMapOn: null, /* Bank Map on Lock (global menu, ui_prefs): the bank column while the jog walks from the bank view. null = not yet read; absent file = on. */
     daveWindowOn: null,  /* the Daves switch (global menu): true = a collected Dave scrolls through the session banner while playing; false = static wordmark. null = not yet read from the device-global pref file; DEFAULT OFF (Josh, 2026-09-05 — ON for one build, then back off). */
     bannerDave: -1,      /* frame index of the Dave scrolling in the session banner while playing; -1 = none (stopped, or nothing collected). Picked on the play edge by bannerDaveSync. */
     dspLooperState: 0,

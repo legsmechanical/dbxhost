@@ -3,6 +3,9 @@
 {{define "title"}}Help - dAVEBOx{{end}}
 
 {{define "content"}}
+{{if .Manual}}
+<iframe class="help-manual" src="{{.Manual}}" title="dAVEBOx manual"></iframe>
+{{else}}
 <div class="page-header">
     <h1>{{if .DocTitle}}{{.DocTitle}}{{else}}Help{{end}}</h1>
 </div>
@@ -20,5 +23,6 @@
 </ul>
 {{else}}
 <p>Documentation is coming. This page will hold the dAVEBOx manual.</p>
+{{end}}
 {{end}}
 {{end}}

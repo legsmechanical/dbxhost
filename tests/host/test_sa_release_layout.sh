@@ -16,8 +16,9 @@ printf x > "$B/modules/chain/dsp.so"; printf x > "$B/modules/audio_fx/verb/x"; p
 mkdir -p "$B/tests/host"; printf x > "$B/tests/host/t.sh"; for i in 0 1 2; do printf x > "$B/splash-$i.hex"; done
 D="$T/dist"; mkdir -p "$D"; printf '{"id":"davebox-sound","version":"9.9"}' > "$D/module.json"; printf x > "$D/dsp.so"; printf x > "$D/ui.js"
 printf 'HEAL' > "$T/heal"
+printf '<!DOCTYPE html><title>manual</title>' > "$T/manual.html"
 echo "build-sa-release.sh:"
-BUILD_DIR="$B" HEAL_BIN="$T/heal" DAVEBOX_DIST="$D" SA_VERSION=1.2.3 bash standalone/scripts/build-sa-release.sh "$T/out" > "$T/log" 2>&1 || { bad "exit $?: $(cat "$T/log")"; }
+BUILD_DIR="$B" HEAL_BIN="$T/heal" DAVEBOX_DIST="$D" MANUAL_HTML="$T/manual.html" SA_VERSION=1.2.3 bash standalone/scripts/build-sa-release.sh "$T/out" > "$T/log" 2>&1 || { bad "exit $?: $(cat "$T/log")"; }
 tb="$T/out/davebox-sa-module.tar.gz"
 [ -f "$tb" ] && ok "tarball built" || bad "no tarball"
 L="$(tar -tzf "$tb")"
@@ -41,6 +42,16 @@ printf '%s\n' "$L" | grep -q "payload/presets/" && bad "presets shipped (shared 
 printf '%s\n' "$L" | grep -q "payload/patches/" && bad "patches shipped" || ok "no patches in the payload"
 printf '%s\n' "$L" | grep -q "payload/modules/audio_fx" && bad "a stock module category shipped" || ok "no stock module categories"
 printf '%s\n' "$L" | grep -q "payload/tests/" && bad "the developer test suite shipped (Josh, 2026-09-05: drop tests)" || ok "no tests/ in the payload"
+has "davebox-sa/payload/help/manual.html" && tar -xzf "$tb" -C "$T" davebox-sa/payload/help/manual.html \
+    && cmp -s "$T/davebox-sa/payload/help/manual.html" "$T/manual.html" \
+    && ok "the HTML manual ships as help/manual.html (the Help page)" || bad "no help/manual.html in the payload"
+BUILD_DIR="$B" HEAL_BIN="$T/heal" DAVEBOX_DIST="$D" MANUAL_HTML="$T/no-such.html" SA_VERSION=1.2.3 bash \
+    standalone/scripts/build-sa-release.sh "$T/out2" > "$T/log2" 2>&1
+[ $? -ne 0 ] && grep -q "is the Help page" "$T/log2" && ok "...and a release WITHOUT the manual refuses to build" \
+    || bad "built without the manual: $(cat "$T/log2")"
+for f in LICENSE THIRD_PARTY_LICENSES.md licenses/GPL-2.0.txt licenses/GPL-3.0.txt; do
+    has "davebox-sa/payload/$f" && ok "payload/$f ships (the shim is GPL-3.0-or-later as conveyed)" || bad "payload/$f missing — a GPL binary shipped without its licence"
+done
 has "davebox-sa/payload/splash-2.hex" && ok "the splash pool (the daves) still ships (Josh: keep the daves)" || bad "a splash hex is missing"
 echo "release.json:"
 rv="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' release.json | head -1)"; mv="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' standalone/module/module.json | head -1)"

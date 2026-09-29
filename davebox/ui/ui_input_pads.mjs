@@ -25,7 +25,8 @@ import { computePadNoteMap, syncDrumLaneSteps, setActiveDrumLane,
     setDrumPerformMode } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, forceRedraw, sendPerfMods,
     PERF_MOD_PAD_MAP } from './ui_leds.mjs';
-import { openGlobalMenu } from './ui_menu.mjs';
+import { openGlobalMenuAt } from './ui_menu.mjs';
+import { exitMoveSettingsCoRun, exitMoveNativeCoRun } from './ui_corun.mjs';
 import { openProjectPadPicker, projectPadPickerTap } from './ui_dialogs.mjs';
 import { applyBankParam, applyTrackConfig, readBankParams,
     refreshPerClipBankParams, refreshDrumLaneBankParams, refreshSeqNotesIfCurrent,
@@ -638,7 +639,16 @@ function _onPadPressTrackView(status, d1, d2) {
              * so falling through would reach the note path with a map that says
              * nothing is there. Swallowing here says so once, out loud. */
         } else if (S.shiftHeld && padIdx < NUM_TRACKS) {
-            /* Shift + bottom-row pad: select active track */
+            /* Shift + bottom-row pad: select active track.
+             * ⭑ In co-run it LEAVES co-run first (Josh, 2026-09-28): switching
+             * only ours used to split the two — "it shifts tracks on the ui but
+             * leaves the move track on the oled and jog". Lands on the new
+             * track's view, never back in the old track's sound screen (the
+             * 'track' origin), and the row's Shift flash stays honest. */
+            if (S.moveCoRunTrack >= 0) {
+                S.moveCoRunOrigin = 'track';
+                exitMoveNativeCoRun();
+            }
             extNoteOffAll();
             handoffRecordingToTrack(padIdx);
             _switchActiveTrack(padIdx);
@@ -1048,15 +1058,7 @@ export function _onPadPress(status, d1, d2) {
 }
 
 function _jumpToMenuLabel(label) {
-    openGlobalMenu();
-    if (!S.globalMenuItems || !S.globalMenuState) return;
-    for (let i = 0; i < S.globalMenuItems.length; i++) {
-        const it = S.globalMenuItems[i];
-        if (it && it.label === label) {
-            S.globalMenuState.selectedIndex = i;
-            return;
-        }
-    }
+    openGlobalMenuAt(label);
 }
 
 /* Companion to the shift probe in ui_input_cc.mjs: does a STEP press reach the
@@ -1310,6 +1312,14 @@ export function _onStepButtons(d1, d2) {
     if (S.tapTempoOpen) return;
     if (d2 > 0 && S.shiftTrackLEDActive) { S.shiftTrackLEDActive = false; S.screenDirty = true; }
     const idx = d1 - 16;
+    /* MOVE'S SETTINGS are on the screen (ui_corun.mjs): Shift+Step 2 closes
+     * them — the same combo Move opens them with — and lands back in Project
+     * Settings. Every other Shift+step would open a dAVEBOx screen hidden under
+     * Move's, so it waits; plain steps keep sequencing, as in any co-run. */
+    if (S.moveSettingsOpen && S.shiftHeld) {
+        if (d2 > 0 && idx === 1) { exitMoveSettingsCoRun('menu'); forceRedraw(); }
+        return;
+    }
     /* THE SNAPSHOT LAYER, either view: the 16 steps are the 16 snapshots.
      * Delete+step clears, Shift+step saves, a bare press RECALLS — and it
      * recalls on the press rather than deferring to the release, which is the

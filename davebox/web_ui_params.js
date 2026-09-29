@@ -667,6 +667,43 @@
       return sec;
     }
 
+    /* The level the editor opens on, as the device's editor picks it
+     * (page_plan.mjs): the active mode's level when the module has modes,
+     * else "root", else the first level declared. null = no levels. */
+    function rootLevelName() {
+      var h = st.hierarchy, levels = h && h.levels;
+      if (!levels || typeof levels !== "object") return null;
+      var names = Object.keys(levels);
+      if (!names.length) return null;
+      if (Array.isArray(h.modes) && h.modes.length) {
+        var cur = String(getVal(h.mode_param || "mode") || "").toLowerCase();
+        var active = h.modes[0];
+        for (var i = 0; i < h.modes.length; i++) {
+          if (String(h.modes[i]).toLowerCase() === cur) { active = h.modes[i]; break; }
+        }
+        if (levels[active]) return active;
+      }
+      if (levels[resolveChain("root")]) return "root";
+      return names[0];
+    }
+
+    /** Every declared param (chain_params) as rows; false if there are none. */
+    function renderChainParamsInto(into) {
+      var list = null;
+      for (var i = 0; i < (st.meta || []).length; i++) {
+        var p = st.meta[i];
+        var item = p && p.key ? renderParamItem(p.key) : null;
+        if (!item) continue;
+        if (!list) {
+          list = document.createElement("div");
+          list.className = "cpk-list";
+          into.appendChild(list);
+        }
+        list.appendChild(item);
+      }
+      return !!list;
+    }
+
     /* ---- full render ---- */
     function render() {
       if (st.destroyed) return;
@@ -678,15 +715,22 @@
         h.textContent = st.title;
         st.el.appendChild(h);
       }
-      if (!st.hierarchy || !st.hierarchy.levels || !st.hierarchy.levels[resolveChain("root")]) {
-        var none = document.createElement("div");
-        none.className = "cpk-empty";
-        none.textContent = "no parameters";
-        st.el.appendChild(none);
+      var root = rootLevelName();
+      if (!root) {
+        /* No levels at all: list the module's declared params instead, as the
+         * device's editor pages through them (page_plan.mjs). Most synths
+         * declare their hierarchy only in module.json, which the synth slot
+         * does not serve, so this is what they show on the device too. */
+        if (!renderChainParamsInto(st.el)) {
+          var none = document.createElement("div");
+          none.className = "cpk-empty";
+          none.textContent = "no parameters";
+          st.el.appendChild(none);
+        }
         return;
       }
       pruneOpenState(st.open, st.hierarchy);
-      if (!renderLevelInto(st.el, "root", 0, {})) {
+      if (!renderLevelInto(st.el, root, 0, {})) {
         var e = document.createElement("div");
         e.className = "cpk-empty";
         e.textContent = "no parameters here";
@@ -713,6 +757,10 @@
         if (String(st.values[bare]) !== String(values[k])) changed.push(bare);
         st.values[bare] = values[k];
       }
+      /* A module with modes opens on its active mode's level: a new mode
+       * value re-roots the editor. */
+      var h = st.hierarchy;
+      if (h && Array.isArray(h.modes) && h.modes.length && changed.indexOf(h.mode_param || "mode") >= 0) structural = true;
       if (structural) { render(); return; }
       var repaintPresets = false;
       for (var i = 0; i < changed.length; i++) {

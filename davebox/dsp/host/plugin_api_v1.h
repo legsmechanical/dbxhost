@@ -9,6 +9,7 @@
 #define MOVE_PLUGIN_API_V1_H
 
 #include <stdint.h>
+#include <stddef.h>   /* offsetof, for the host_api_v1_t static asserts */
 
 #define MOVE_PLUGIN_API_VERSION 1
 
@@ -117,6 +118,31 @@ typedef struct host_api_v1 {
      * Appended in 2026-07; may be NULL on older hosts, always guard. */
     double (*get_beat_position)(void);
 
+    /* NULL RUN at +120..+167 -- load-bearing, do not put a field here.
+     *
+     * Upstream Schwung ends this struct in `void *reserved[8]` starting at
+     * exactly +120 (sizeof 184), because a module's copy of this header can
+     * declare a field the host does not have and then call it behind its own
+     * `if (host->fn)` guard. breakbeat does exactly that: its header appends
+     * `float (*get_project_bpm)(void)` after get_beat_position, which resolves
+     * to +120. With a live pointer at +120 the guard passes and the call lands
+     * on whatever is there -- upstream saw a SIGSEGV on the SPI callback and a
+     * boot loop; here it would have called midi_send_internal_slot with a
+     * garbage slot and message pointer.
+     *
+     * So this fork keeps upstream's geometry: sizeof stays 184 and its two
+     * extra callbacks sit in the LAST two slots of upstream's reserved run.
+     * That is also what keeps a dAVEBOx binary safe under STOCK Schwung: there
+     * +168/+176 are upstream's zeroed reserved[6]/[7], so the module's
+     * `if (host->fn)` guard reads NULL instead of reading past the end of a
+     * 184-byte struct. Every instance is zeroed by construction (BSS statics,
+     * mm_init's memset, chain_host's memcpy of sizeof()).
+     *
+     * A NEW host capability goes in as a dlsym'd export, not a field here:
+     * taking from the front of this run re-creates the +120 hazard, and
+     * growing the struct past 184 makes dAVEBOx over-read on stock. */
+    void *reserved[6];
+
     /* Send an internal MIDI message directly to one chain slot (0-based),
      * bypassing receive-channel matching. Same 4-byte message form as
      * midi_send_internal ([type-nibble, status, d1, d2]); system realtime
@@ -135,6 +161,15 @@ typedef struct host_api_v1 {
     int (*clock_output_enabled)(void);
 
 } host_api_v1_t;
+
+/* The geometry above is the contract; these are its enforcement (a memset
+ * probe cannot be -- a real field at +120 reads NULL in a zeroed struct). */
+_Static_assert(offsetof(host_api_v1_t, reserved) == 120,
+               "host_api_v1_t NULL run must start at +120 (breakbeat reads +120)");
+_Static_assert(offsetof(host_api_v1_t, midi_send_internal_slot) == 168,
+               "fork fields must sit in upstream's reserved[6]/[7]");
+_Static_assert(sizeof(host_api_v1_t) == 184,
+               "host_api_v1_t must stay 184 bytes, the same as upstream");
 
 /*
  * Plugin API - implemented by plugin, returned to host

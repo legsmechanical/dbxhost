@@ -62,5 +62,5 @@ fi
 # catalog install brings its own payload, launcher and all, from one tarball.
 ssh "${HOST%%:*}" "if [ -d '$STOCK_TOOLS/$MODULE_ID/payload' ]; then rm -rf '$STOCK_TOOLS/$MODULE_ID/payload' && echo 'Removed the stale catalog payload (a developer install carries none).'; fi"
 
-echo "Installed. It appears in stock Schwung's Tools menu as 'dAVEBOx'."
+echo "Installed. It appears in stock Schwung's Tools menu as 'dAVEBOx SA'."
 echo "A host restart is required before a newly added module is discovered."

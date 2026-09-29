@@ -26,7 +26,12 @@ function step(label, fn) {
 import { readFileSync } from 'fs';
 
 let opened = null;
-globalThis.host_register_primary = () => true;
+let onReturn = null;
+globalThis.host_register_primary = (o) => { onReturn = o.onServiceReturn; return true; };
+/* The shim's PHYSICAL Shift (shadow_control->shift_held, read from the
+ * hardware buffer before routing) — what dAVEBOx follows in co-run. */
+let physShift = 0;
+globalThis.shadow_get_shift_held = () => physShift;
 globalThis.host_open_service = (id, opts) => { opened = { id, opts }; return true; };
 globalThis.host_close_service = () => true;
 globalThis.move_midi_inject_to_move = () => {};
@@ -88,7 +93,9 @@ step('move-native declares the ruled split', () => {
      * the instrument-editing controls, keep everything else "fully as it is
      * outside of co-run in track view". TRACK moved KEEP-side with that — they
      * are the clip buttons, and selecting clips is what they do everywhere
-     * else. Shift stayed ours (no recalled use for it in Move's editor). */
+     * else. Shift stayed ours then (no recalled use for it in Move's editor);
+     * CEDED 2026-09-28 — Move needs it for Shift+jog, and dAVEBOx follows the
+     * physical Shift instead (the steps below). */
     /* ⭑⭑ COPY and DELETE are KEPT because a pad-based gesture must live on the
      * same side as the PADS: Move's copy is hold-Copy, tap-source, tap-dest, so
      * ceding the button while keeping the pads hands Move a modifier it never
@@ -96,14 +103,19 @@ step('move-native declares the ruled split', () => {
      * copy not copying; Delete was his own correction.
      * ⚠ MUTE is still ceded and has the same defect — left as ruled, not
      * reversed unasked. If it ever moves, it moves for this reason. */
-    const mustKeep = ['PADS', 'STEPS', 'MENU', 'SHIFT', 'TRACK',
+    const mustKeep = ['PADS', 'STEPS', 'MENU', 'TRACK',
                       'PLAY', 'REC', 'SAMPLE', 'LOOP', 'DELETE'];
-    const mustCede = ['JOG', 'KNOBS', 'MASTER', 'BACK', 'TOUCH', 'MUTE'];
+    const mustCede = ['JOG', 'KNOBS', 'MASTER', 'BACK', 'TOUCH', 'MUTE', 'SHIFT'];
     for (const g of mustKeep) if (!(m & GRP[g])) throw new Error('does not keep ' + g);
     for (const g of mustCede) if (m & GRP[g]) throw new Error('keeps ' + g + ' (must cede)');
     if (m & GRP.DEAD_TRANSPORT)
         throw new Error('the RETIRED transport bit is back in the mask');
     if (!(m & GRP.KEEP_BACK)) throw new Error('lost the framework Back-exit opt-out');
+    /* Back at the top of Move's editor ends the co-run (2026-09-28): the host's
+     * flag, pinned to its header value. */
+    const hdr = readFileSync('../src/host/shadow_constants.h', 'utf8').match(/CORUN_KEEP_BACK_TOP_EXIT\s+\(1u << (\d+)\)/);
+    if (!hdr) throw new Error('CORUN_KEEP_BACK_TOP_EXIT not in shadow_constants.h');
+    if (!(m & (1 << parseInt(hdr[1], 10)))) throw new Error('the track co-run does not ask for Back-at-top exit');
 });
 
 step('the LED mask matches the keep mask — no lights/input split any more', () => {
@@ -111,8 +123,9 @@ step('the LED mask matches the keep mask — no lights/input split any more', ()
      * indicator while their PRESSES ceded to Move. Both halves are ours now, so
      * a divergence here would mean a surface we light but cannot operate. */
     const m = opened.opts.led_keep_mask;
-    if (m !== (opened.opts.keep_mask | GRP.TRACK))
-        throw new Error('led mask drifted: ' + m + ' vs ' + (opened.opts.keep_mask | GRP.TRACK));
+    const inputGroups = opened.opts.keep_mask & ~(1 << 26);   /* the Back-at-top FLAG is not a group */
+    if (m !== (inputGroups | GRP.TRACK))
+        throw new Error('led mask drifted: ' + m + ' vs ' + (inputGroups | GRP.TRACK));
     if (!(opened.opts.keep_mask & GRP.TRACK))
         throw new Error('TRACK is lit but its presses cede — lights without input');
 });
@@ -129,22 +142,22 @@ const ledsMod2 = await import('../../ui/ui_leds.mjs');
 const constsMod2 = await import('../../ui/ui_constants.mjs');
 const ifMod2 = await import('/data/UserData/schwung/shared/input_filter.mjs');
 
-step('⭑ a sounding pad wears the TRACK colour in co-run, not white', () => {
-    const { updateTrackLEDs, invalidateLEDCache, trackColor } = ledsMod2;
-    const { TRACK_PAD_BASE, PAD_MODE_MELODIC_SCALE } = constsMod2;
+step('⭑ co-run pads wear the SAME colours as outside co-run (no inversion, 2026-09-28)', () => {
+    /* Josh, 2026-09-28: "now that move tracks in corun behave substantially
+     * similar to regular davebox tracks i don't think we need that 'you're now
+     * somewhere else' signifier that the inverted pads provided." */
+    const { updateTrackLEDs, invalidateLEDCache } = ledsMod2;
+    const { TRACK_PAD_BASE, PAD_MODE_MELODIC_SCALE, PAD_MODE_DRUM } = constsMod2;
 
     S.sessionView = false;
     S.activeTrack = 2;
-    S.trackPadMode[2] = PAD_MODE_MELODIC_SCALE;
     S.activeBank = 0;                       /* not AUTO — that greys everything */
     S.ledInitComplete = true;
-    /* init() builds this on-device only, and the melodic pad path reads it for
-     * the track-arp latch check. */
     if (!S.bankParams)
         S.bankParams = Array.from({ length: 8 }, () =>
             Array.from({ length: 12 }, () => new Array(8).fill(0)));
 
-    const colorsOfSounding = () => {
+    const grid = () => {
         const seen = {};
         ifMod2.clearAllLEDs();
         globalThis.move_midi_internal_send = (b) => {
@@ -156,25 +169,26 @@ step('⭑ a sounding pad wears the TRACK colour in co-run, not white', () => {
         globalThis.move_midi_internal_send = () => {};
         return seen;
     };
-
-    /* Sound ONE pad, so exactly one LED can carry the lit colour. */
-    const pitch = S.padNoteMap[0] + S.trackOctave[2] * 12;
-    if (!(pitch >= 0 && pitch <= 127)) throw new Error('pad 0 has no usable pitch');
-    S.liveActiveNotes = new Set([pitch]);
-
-    S.moveCoRunTrack = -1;
-    const outside = colorsOfSounding()[TRACK_PAD_BASE];
-    S.moveCoRunTrack = 2;
-    const inside = colorsOfSounding()[TRACK_PAD_BASE];
-    S.moveCoRunTrack = -1;
-    S.liveActiveNotes = new Set();
-
-    const tc = trackColor(2);
-    if (inside !== tc)
-        throw new Error('lit pad in co-run is ' + inside + ', expected track colour ' + tc +
-                        (inside === outside ? ' (it is still painting the non-co-run white)' : ''));
-    if (outside === inside)
-        throw new Error('control failed: co-run and normal look identical, so this proves nothing');
+    for (const mode of [PAD_MODE_MELODIC_SCALE, PAD_MODE_DRUM]) {
+        S.trackPadMode[2] = mode;
+        const pitch = S.padNoteMap[0] + S.trackOctave[2] * 12;
+        S.liveActiveNotes = new Set(pitch >= 0 && pitch <= 127 ? [pitch] : []);
+        S.moveCoRunTrack = -1;
+        const outside = grid();
+        S.moveCoRunTrack = 2;
+        const inside = grid();
+        S.moveCoRunTrack = -1;
+        S.liveActiveNotes = new Set();
+        const name = mode === PAD_MODE_DRUM ? 'drum' : 'melodic';
+        /* CONTROL: the capture sees a real grid — several colours, all 32 pads. */
+        if (Object.keys(outside).length !== 32 || new Set(Object.values(outside)).size < 2)
+            throw new Error(name + ': control failed — the capture saw ' + Object.keys(outside).length +
+                            ' pads in ' + new Set(Object.values(outside)).size + ' colour(s)');
+        const diff = Object.keys(outside).filter((k) => outside[k] !== inside[k]);
+        if (diff.length)
+            throw new Error(name + ': ' + diff.length + ' pad(s) change colour in co-run, e.g. note ' + diff[0] +
+                            ': ' + outside[diff[0]] + ' -> ' + inside[diff[0]]);
+    }
 });
 
 /* ── Copy is FORWARDED to Move in co-run ───────────────────────────────────
@@ -367,6 +381,56 @@ step('⚠ Shift+Note/Session opens neither sound mode nor the session buses', ()
                         'apart, so a hold would fire as a tap');
     if (/soundExit\(\)/.test(body))
         throw new Error('the closer is back: the gesture is a destination, not a toggle');
+});
+
+/* ── SHIFT IN CO-RUN (Josh, 2026-09-28) ─────────────────────────────────────
+ * Shift is ceded to Move (it needs Shift+jog), so CC 49 never reaches us in
+ * co-run. dAVEBOx follows the PHYSICAL Shift for its own gestures — driven
+ * here with NO CC 49 at all, only the host's hardware read. And Shift+pad no
+ * longer switches tracks in co-run: it moved ours while Move's OLED and jog
+ * stayed on the old track ("a dormant trap"). */
+const constsS = await import('../../ui/ui_constants.mjs');
+const ticks = (n) => { for (let i = 0; i < n; i++) { S.tickCount++; globalThis.tick(); } };
+const pad = (d1) => { globalThis.onMidiMessageInternal(new Uint8Array([0x90, d1, 100]));
+                      globalThis.onMidiMessageInternal(new Uint8Array([0x80, d1, 0])); };
+
+step('⭑ co-run: dAVEBOx follows the PHYSICAL Shift (no CC 49 arrives)', () => {
+    S.sessionView = false; S.globalMenuOpen = false; S.awaitingProjectSelect = false;
+    S.moveCoRunTrack = 2; S.shiftHeld = false; physShift = 1;
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 17, 127]));   /* Step 2 */
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, 17, 0]));
+    const opened = S.globalMenuOpen;
+    physShift = 0; ticks(1);
+    if (!opened) throw new Error('Shift+Step 2 did not open Project Settings in co-run — ' +
+                                 'dAVEBOx did not see the hardware Shift');
+    if (S.shiftHeld) throw new Error('Shift stayed held after the hardware released it');
+    S.globalMenuOpen = false; S.moveCoRunTrack = -1;
+});
+
+step('⭐ co-run: Shift + a bottom-row pad LEAVES co-run and switches to that track', () => {
+    corun.initPrimarySurface();
+    S.sessionView = false; S.globalMenuOpen = false;
+    S.activeTrack = 2; S.trackRoute[2] = 1; S.trackChannel[2] = 1;
+    corun.enterMoveNativeCoRun(2, 'sound');            /* came in from the Move sound screen */
+    let closed = 0; const prevClose = globalThis.host_close_service;
+    globalThis.host_close_service = () => { closed++; return true; };
+    physShift = 1;
+    pad(constsS.TRACK_PAD_BASE + 5);
+    globalThis.host_close_service = prevClose;
+    if (closed !== 1) throw new Error('co-run was not closed (' + closed + ')');
+    if (S.activeTrack !== 5) throw new Error('did not switch: track ' + (S.activeTrack + 1));
+    const sentToMove = []; const prevInj = globalThis.move_midi_inject_to_move;
+    globalThis.move_midi_inject_to_move = (b) => { sentToMove.push(Array.from(b).join()); };
+    onReturn('move_native', null);                     /* the host reports the close */
+    globalThis.move_midi_inject_to_move = prevInj;
+    if (!sentToMove.includes('11,176,49,0'))
+        throw new Error('Move was never told Shift came up (it was ceded to Move, and the release came to us): ' +
+                        JSON.stringify(sentToMove));
+    if (S.moveCoRunTrack !== -1) throw new Error('still in co-run');
+    if (S.pendingSoundEnterTrack === 2) throw new Error('sent back into the OLD track\'s sound screen');
+    if (!S.shiftHeld) throw new Error('a Shift still held after co-run ends was forgotten');
+    physShift = 0; ticks(1);
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 49, 0]));
 });
 
 process.exit(failed);

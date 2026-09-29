@@ -32,6 +32,8 @@
 
 #include "shadow_dbus.h"
 #include "host/shim_thread.h"   /* shim threads must never receive the host's SIGTERM */
+#include "host/schwung_paths.h"
+#include "host/move_settings_text.h"  /* which announcements are rows of Move's Settings menu */
 
 /* ============================================================================
  * Internal state
@@ -39,6 +41,7 @@
 
 static dbus_host_t host;
 static volatile int dbus_initialized = 0;  /* Guard: hooks are called before dbus_init() */
+static uint32_t dbus_text_count = 0;        /* every announcement, see shadow_dbus_text_count() */
 
 /* ============================================================================
  * Extern globals (defined here, declared extern in header)
@@ -184,9 +187,15 @@ void shadow_inject_pending_announcements(void)
  * Handle screen reader text signal
  * ============================================================================ */
 
+uint32_t shadow_dbus_text_count(void)
+{
+    return __atomic_load_n(&dbus_text_count, __ATOMIC_ACQUIRE);
+}
+
 static void shadow_dbus_handle_text(const char *text)
 {
     if (!text || !text[0]) return;
+    __atomic_add_fetch(&dbus_text_count, 1, __ATOMIC_RELEASE);
 
     /* Debug: log all D-Bus text messages */
     {
@@ -256,6 +265,16 @@ static void shadow_dbus_handle_text(const char *text)
 
     /* Track native Move sampler source from stock announcements. */
     host.native_sampler_update(text);
+
+    /* Move's own Settings menu (move_settings_text.h): SETTINGS while its rows
+     * are announced, dropped on any other screen — which is how a session that
+     * opened it (dAVEBOx's Move Settings... row) learns that Back at the top
+     * level took Move out of it. Before the lines below, so an overview or
+     * session announcement still sets its own mode. */
+    if (ctrl) {
+        if (move_settings_text_is_row(text)) ctrl->move_ui_mode = 4; /* SETTINGS */
+        else if (ctrl->move_ui_mode == 4 && strncmp(text, "Page ", 5) != 0) ctrl->move_ui_mode = 0;
+    }
 
     /* Set page: detect Set Overview screen for Shift+Vol+Left/Right interception */
     if (strcasecmp(text, "Set Overview") == 0 || strcasecmp(text, "Sets") == 0) {
@@ -630,11 +649,22 @@ static DBusHandlerResult shadow_dbus_filter(DBusConnection *conn, DBusMessage *m
                 }
             }
 
-            char logbuf[512];
-            snprintf(logbuf, sizeof(logbuf), "D-Bus signal: %s.%s path=%s sender=%s%s",
-                     iface ? iface : "?", member ? member : "?",
-                     path ? path : "?", sender ? sender : "?", arg_preview);
-            host.log(logbuf);
+            /* Every signal Move emits, for DISCOVERY only: opt in with
+             * <install>/dbus_log_on. On by default it was most of the log --
+             * 32 MB on a dev device -- and useless to anyone but a developer
+             * looking for a new signal. Checked every 256 signals. */
+            static int dbus_discovery = -1, dbus_discovery_n = 0;
+            if (dbus_discovery < 0 || ++dbus_discovery_n >= 256) {
+                dbus_discovery_n = 0;
+                dbus_discovery = access(SCHWUNG_INSTALL_DIR "/dbus_log_on", F_OK) == 0;
+            }
+            if (dbus_discovery) {
+                char logbuf[512];
+                snprintf(logbuf, sizeof(logbuf), "D-Bus signal: %s.%s path=%s sender=%s%s",
+                         iface ? iface : "?", member ? member : "?",
+                         path ? path : "?", sender ? sender : "?", arg_preview);
+                host.log(logbuf);
+            }
 
             /* Track serial numbers from Move's messages */
             if (sender && strstr(sender, ":1.")) {

@@ -52,7 +52,7 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
     setDrumLanePage } from './ui_drummodel.mjs';
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
-import { exitMoveNativeCoRun, enterMoveNativeCoRun } from './ui_corun.mjs';
+import { exitMoveNativeCoRun, enterMoveNativeCoRun, exitMoveSettingsCoRun } from './ui_corun.mjs';
 import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen,
          autoBankJumpTarget, autoBankRestoreMenu, autoCyclePageStep,
          autoLanePinJump, autoLanePinClear, laneHome } from './ui_automation_bank.mjs';
@@ -1458,6 +1458,7 @@ export function applyBankPick(rest) {
  *   <slot>:<comp>:<key>    -> the module editor for <comp>, on the page holding <key>
  *   <slot>:slot:… / move_fx -> SOUND + CONFIG (the track's levels and its Move bus)
  *   cc:N / at / pb         -> MACROS (where MIDI targets are mapped)
+ *   mac:<t>:<knob>         -> MACROS (a SnapMorph knob's position)
  * RULED: Back from the destination returns to the AUTOMATION menu, cursor on
  * the lane — once; after that the destination's Back is its own again. */
 function autoLaneJump() {
@@ -1499,7 +1500,7 @@ function autoLaneJump() {
     }
     const home = laneHome(tgt, t);
     if (!home) { showActionPopup('NO EDITOR'); return; }
-    if (home.kind === 'level') { soundCard(false); return; }
+    if (home.kind === 'level' || home.kind === 'macros') { soundCard(home.kind === 'macros'); return; }
     if (soundJumpToParam(t, home.comp, home.key, j.sel)) autoLanePinJump(tgt, 'sound', -1);
     else showActionPopup('NOT LOADED');
 }
@@ -1536,6 +1537,18 @@ function autoLaneJump() {
  * before any press could arrive. A probe that answers at the wrong moment reads
  * exactly like a probe that answered. Only a PRESS can set held true. */
 let _shiftPressSeen = false;
+
+/* Co-run cedes Shift to Move (ui_corun.mjs), so CC 49 no longer reaches us
+ * there. Follow the PHYSICAL Shift instead — the shim reads it from the
+ * hardware buffer before routing and publishes it in shared memory, so this is
+ * a memory read, not a round trip. Called before every incoming message and on
+ * every tick while a track co-run is up, so a Shift+step press sees Shift held.
+ * Outside co-run it does nothing: CC 49 is ours there and drives the edge. */
+export function syncCoRunShift() {
+    if (S.moveCoRunTrack < 0) return;
+    const phys = !!shadow_get_shift_held();
+    if (phys !== !!S.shiftHeld) applyShiftEdge(phys);
+}
 
 export function applyShiftEdge(held) {
     if (held && !_shiftPressSeen) {
@@ -1766,6 +1779,12 @@ function _onCC_buttons(d1, d2) {
          * on track view, since it is a step-grid affordance, not a return. */
         if (S.moveCoRunTrack >= 0) {
             if (d2 === 127) exitMoveNativeCoRun();
+            return;
+        }
+        /* Move's own Settings (ui_corun.mjs): Note/Session leaves them for the
+         * overview — its law everywhere else. */
+        if (S.moveSettingsOpen) {
+            if (d2 === 127) exitMoveSettingsCoRun('overview');
             return;
         }
         if (d2 === 127) {

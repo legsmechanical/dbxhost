@@ -13,17 +13,17 @@
   #app{display:flex;flex-direction:column;height:100%}
   /* ---------- header ---------- */
   /* site ribbon — identity + cross-page nav, mirrored from the manager's header */
-  #site{display:flex;align-items:center;gap:10px;height:26px;padding:0 12px;flex:0 0 auto;
+  #site{display:flex;align-items:center;gap:12px;height:34px;padding:0 14px;flex:0 0 auto;
         background:#0b0d11;border-bottom:1px solid #1b212b}
-  #site .sitebrand{font-weight:700;letter-spacing:.5px;font-size:12px;color:var(--ink);
+  #site .sitebrand{font-weight:700;letter-spacing:.5px;font-size:15px;color:var(--ink);
         text-decoration:none}
   #site .sitebrand .dot{color:var(--accent)}
   #site .sitelinks{margin-left:auto;display:flex;gap:2px}
-  #site .sitelinks a{color:var(--faint);font-size:11px;text-decoration:none;padding:3px 7px;
+  #site .sitelinks a{color:#a9afbb;font-size:13px;text-decoration:none;padding:4px 9px;
         border-radius:4px}
   #site .sitelinks a:hover{color:var(--ink);background:#21262f}
   #site .sitelinks.inert a{opacity:.45;cursor:default}
-  #site .sitelinks.inert a:hover{color:var(--faint);background:transparent}
+  #site .sitelinks.inert a:hover{color:#a9afbb;background:transparent}
   /* ⚠ every child is flex-shrink:0. Without it the toolbar SQUEEZES its items
    * when crowded, and the first casualty is the BPM number-input — it was
    * visibly clipping its own value. Only .spacer flexes. */
@@ -453,7 +453,8 @@ body[data-view="mix"] .seqonly,body[data-view="sound"] .seqonly{display:none}
        the browser editor, Mirror, Files, Help, Config and System read as one app
        rather than a tool that links out to a different site. Slim on purpose —
        it is navigation, not a toolbar. ⚠ Keep it in step with base.html and with
-       `.site-*` in the manager's style.css; they are two copies of one design
+       `#site` in the manager's style.css (tests/host/test_site_ribbon_sync.sh
+       holds the links and values); they are two copies of one design
        because the editor must also render in the OFFLINE PREVIEW, where nothing
        from /static is served. -->
   <div id="site">

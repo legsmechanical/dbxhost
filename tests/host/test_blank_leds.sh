@@ -45,57 +45,64 @@ assert len(ccs) > 20, "button CC coverage looks too thin: %d" % len(ccs)
 sys.exit(0)
 PY
 
-# --- 2. frames fit the ring's uint8 write_idx ------------------------------
-# ⭑ The constraint that makes this non-obvious: the consumer snapshots a
-# The ring's write_idx is uint16 since the v1.0.0 widening (layout pinned by
-# test_blank_leds_layout.sh), so a frame may use the whole 512-byte buffer —
-# but never MORE than MAX_FRAME, and never split mid-message. The old 252-byte
-# ceiling was the uint8 era and is gone with it.
-python3 - "$S" <<'PY' && ok "frames fit MAX_FRAME (<= buffer) and split on message boundaries" \
-                      || bad "a frame exceeds MAX_FRAME or splits mid-message"
+# --- 2. pushes fit the ring and never split a message ----------------------
+python3 - "$S" <<'PY' && ok "pushes fit each ring's capacity (ours 508, stock 4092) and split on message boundaries" \
+                      || bad "a push exceeds the ring's capacity or splits mid-message"
 import importlib.util, sys
 spec = importlib.util.spec_from_file_location("b", sys.argv[1])
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-cs = m.chunks(m.messages())
-assert m.MAX_FRAME <= m.BUF_SIZE, "MAX_FRAME exceeds the buffer"
-assert m.MAX_FRAME % 4 == 0, "MAX_FRAME is not a whole number of messages"
-assert sum(len(c) for c in cs) == len(m.messages()), "chunking lost bytes"
-for c in cs:
-    assert len(c) <= m.MAX_FRAME, len(c)
-    assert len(c) % 4 == 0, "a frame was split mid-message"
+for cap in (508, 4092, 60):
+    cs = m.chunks(m.messages(), cap)
+    assert sum(len(c) for c in cs) == len(m.messages()), "chunking lost bytes"
+    for c in cs:
+        assert len(c) <= cap, (cap, len(c))
+        assert len(c) % 4 == 0, "a push was split mid-message"
 sys.exit(0)
 PY
 
-# --- 2b. A RING WE DO NOT KNOW IS SKIPPED AT ONCE ---------------------------
-# ⚠⚠ Stock's 2026-09-26 update made its ring 4100 bytes with a different header.
-# Read as ours, write_idx came out ~56,000 and every call burned its full 2 s
-# wait — three per Tools launch, with stock's menu live the whole time (Josh:
-# "the tool menu on stock lingers for a good while"). Pinned: an unknown ring
-# answers 5 within a fraction of a second; our own layout is still written.
+# --- 2b. STOCK'S RING IS WRITTEN; A RING WE DO NOT KNOW IS SKIPPED AT ONCE ---
+# ⚠⚠ Stock's 2026-09-26 update (1.5.0) made its ring 4100 bytes: the SPSC ring
+# of upstream 988ed244 with a 4096-byte buffer. The old writer read it as the
+# 516-byte layout and refused it — fast (the 09-27 fix, after each call had
+# burned a 2 s wait: "the tool menu on stock lingers for a good while"), but
+# from then on NOTHING was blanked. The header captured on the device,
+# d8 dd d8 dd, is write_idx == read_idx == 56792: an empty ring.
 T=$(mktemp -d)
-python3 - "$S" "$T" <<'PY' && ok "an unknown ring (wrong size, or a write_idx past the buffer) exits 5 at once; our layout is still written" \
-                           || bad "an unknown ring is not skipped at once, or our own layout stopped working"
-import subprocess, sys, time, os
+python3 - "$S" "$T" <<'PY' && ok "stock's 4100-byte ring and ours are written; read_idx is never touched; an unknown ring exits 5 at once; a full one says so" \
+                           || bad "the blank does not speak the ring, or an unknown ring is not skipped at once"
+import importlib.util, subprocess, sys, time, os, struct
 s, t = sys.argv[1], sys.argv[2]
-def run(path, content):
+spec = importlib.util.spec_from_file_location("b", s)
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+P = m.messages()
+def run(name, content):
+    path = os.path.join(t, name)
     with open(path, "wb") as f: f.write(content)
     t0 = time.monotonic()
     rc = subprocess.run([sys.executable, s, "--shm", path, "--rounds", "1", "--gap", "0"]).returncode
-    return rc, time.monotonic() - t0
-# stock's 09-26 shape: 4100 bytes, the header seen on the device
-rc, dt = run(os.path.join(t, "stock"), bytes([216, 221, 216, 221]) + bytes(4096))
-assert rc == 5 and dt < 1.0, ("stock 4100", rc, dt)
-# right size, nonsense write_idx
-rc, dt = run(os.path.join(t, "garbled"), bytes([216, 221, 0, 0]) + bytes(512))
+    return rc, time.monotonic() - t0, open(path, "rb").read()
+# stock 1.5.0, as captured
+rc, dt, d = run("stock", bytes([216, 221, 216, 221]) + bytes(4096))
+w, r = struct.unpack_from("<HH", d)
+pos = 56792 & 4095
+assert rc == 0, ("stock", rc)
+assert d[4 + pos:4 + pos + len(P)] == P, ("stock: payload not at write_idx", pos)
+assert w == 56792 + len(P) and r == 56792, ("stock: indices", w, r)
+# ours, empty
+rc, dt, d = run("ours", bytes(516))
+w, r = struct.unpack_from("<HH", d)
+assert rc == 0 and d[4:4 + len(P)] == P and w == len(P) and r == 0, ("ours", rc, w, r)
+# unknown sizes: not a power-of-2 buffer, or too small
+for name, size in (("odd", 4101), ("tiny", 20)):
+    rc, dt, d = run(name, bytes(size))
+    assert rc == 5 and dt < 1.0, (name, rc, dt)
+# right size, indices that cannot be a ring (more used than it holds)
+rc, dt, d = run("garbled", struct.pack("<HH", 56792, 0) + bytes(512))
 assert rc == 5 and dt < 1.0, ("garbled", rc, dt)
-# CONTROL: our own layout, empty — the whole payload fits one frame, so it is
-# written and the helper reports success
-p = os.path.join(t, "ours")
-rc, dt = run(p, bytes(516))
-data = open(p, "rb").read()
-assert rc == 0, ("ours", rc)
-assert data[4:8] == bytes((0x09, 0x90, 68, 0)), ("ours: nothing written", data[:12])
-assert (data[0] | data[1] << 8) > 0 and data[2] == 1, ("ours: header not advanced", data[:4])
+assert d[4:] == bytes(512), "garbled: something was written anyway"
+# full, and no shim draining it: gives up after its deadline and says so
+rc, dt, d = run("full", struct.pack("<HH", 508, 0) + bytes(512))
+assert rc == 3 and struct.unpack_from("<HH", d) == (508, 0), ("full", rc)
 sys.exit(0)
 PY
 rm -rf "$T"

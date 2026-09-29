@@ -519,8 +519,9 @@ function syncPaView(t, c, target) {
  *     track's remembered bank stays AUTOMATION (corrected on the way back if
  *     anything recorded the jump);
  *   - the step row keeps the lane's cycle (S.autoCycle is held from the stash);
- *   - v1 covers davebox's own parameters (seq: targets, alt page included);
- *     any other target pops NO EDITOR and the hold stays an automation hold. */
+ *   - where it goes is laneHome's answer (seq: targets with the alt page,
+ *     modules, levels, MACROS); a target it places nowhere pops NO EDITOR
+ *     and the hold stays an automation hold. */
 /* ⭐ THE LANE PIN (Josh, 2026-09-25: after a Shift + click jump the steps
  * keep showing the lane until Back — "this should work on any automated
  * param"). The jump leaves the AUTOMATION bank (a davebox bank, SOUND+CFG,
@@ -595,7 +596,8 @@ let holdJump = null;
 /* ⭐ WHERE A LANE IS EDITED — one answer for both jumps (Shift + click and
  * the hold). { kind, comp, key } or null (not this track's, or nowhere):
  *   seq     a davebox bank knob (SEQ_AUTO_TARGETS)
- *   midi    a MIDI target: MACROS
+ *   macros  MACROS: a MIDI target, or a SnapMorph knob (`mac:<track>:<knob>`,
+ *           this track's only)
  *   level   the track's levels (`<slot>:slot:*`) or its Move bus's
  *           (`0:move_fx:N:*`): SOUND+CFG
  *   module  a chain component's parameter: its editor
@@ -604,7 +606,8 @@ let holdJump = null;
  * slot), so it belongs to the track by its BUS, not its slot. */
 export function laneHome(tgt, t) {
     tgt = String(tgt);
-    if (midiTargetIsMidi(tgt)) return { kind: 'midi' };
+    if (midiTargetIsMidi(tgt)) return { kind: 'macros' };
+    if (tgt.indexOf('mac:') === 0) return parseInt(tgt.split(':')[1], 10) === t ? { kind: 'macros' } : null;
     if (tgt.indexOf('seq:') === 0) return SEQ_AUTO_TARGETS[tgt.split(':')[2]] ? { kind: 'seq' } : null;
     const i = tgt.indexOf(':');
     if (i < 0) return null;
@@ -635,7 +638,7 @@ export function autoHoldJumpBegin(absStep) {
     const tgt = String(cy.target);
     const sat = tgt.indexOf('seq:') === 0 ? SEQ_AUTO_TARGETS[tgt.split(':')[2]] : null;
     const home = sat ? null : laneHome(tgt, cy.t);
-    const sb = !home ? -1 : home.kind === 'midi' ? BANK_MACROS : home.kind === 'level' ? BANK_SOUND : -1;
+    const sb = !home ? -1 : home.kind === 'macros' ? BANK_MACROS : home.kind === 'level' ? BANK_SOUND : -1;
     const mp = (home && (home.kind === 'module' || home.kind === 'busfx')) ? home : null;
     if (!sat && sb < 0 && !mp) { showActionPopup('NO EDITOR'); return false; }
     const a = st();

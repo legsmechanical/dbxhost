@@ -7,6 +7,77 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **See your whole Move in a browser.** Open `move.local:7700/mirror` (the
+  Mirror link in the manager) to see the screen large, with the whole device
+  drawn underneath it: every pad and button lit as it is on the Move, the
+  buttons and pads you are holding, and knob turns. **Save PNG** and
+  **Record** capture the screen, the device or both, and the view shows
+  whichever you pick. Dim pad colours are brightened on the page so they read
+  the way they do on the hardware.
+
+## [0.0.5] — 2026-09-29 (test build, not in the Schwung catalog)
+### Changed
+- **dAVEBOx no longer adds a service to Move's system.** Earlier builds
+  installed one that tidied up at power-on after a session was cut off. A
+  restart already gives you back your own sets and settings, and dAVEBOx
+  finishes the tidy-up the next time it opens, so the service is gone: the
+  next launch removes it from Moves that have it.
+
+### Fixed
+- **The first launch no longer changes your Move settings.** Creating the
+  first dAVEBOx project turned off Full Velocity in Move's own settings; it now
+  turns it off only in dAVEBOx's copy.
+
+## [0.0.4] — 2026-09-29 (test build, not in the Schwung catalog)
+### Fixed
+- **The first launch no longer refuses on some Moves.** If the boot-recovery
+  step can't be installed, dAVEBOx now launches anyway and writes the reason
+  to `launch.log`, where it used to refuse every launch.
+- **An interrupted install finishes.** If a first launch stopped partway, the
+  next launch completes it instead of starting a half-installed session.
+- **When a launch is refused, `launch.log` says why.**
+- **Leaving Move Settings closes Move's settings menu first.** Move's screen
+  could stay on its settings menu under dAVEBOx's, and the two fought over the
+  display.
+- **Shift no longer sticks in Move.** Leaving Move's editor with Shift still
+  held (Shift + a bottom-row pad) could leave Shift held down in Move.
+
+## [0.0.3] — 2026-09-29 (test build, not in the Schwung catalog)
+### Added
+- **Move's own settings, from Project Settings.** A new **Move Settings...** row
+  shows Move's settings menu (Link, MIDI sync, inputs and more) with the jog and
+  Back, while dAVEBOx keeps playing. What you change there is dAVEBOx's own copy:
+  Move on its own keeps your settings. Shift + Step 2 or Back at the top brings
+  you back to Project Settings.
+
+### Changed
+- **Shift reaches Move's editor.** While you edit a Move instrument in Move's own
+  editor, Shift + jog works there as it does on Move. dAVEBOx's own Shift
+  gestures (Shift + a step, redo) still work.
+- **Back at the top of Move's editor brings you back.** In Move's own
+  instrument editor, Back steps out a level as before; at the instrument's main
+  screen, where Back used to do nothing, it now returns to dAVEBOx.
+- **The pads keep their usual colours in Move's editor.** They used to switch
+  to an inverted scheme while Move's editor was open.
+- **Shift + a bottom-row pad leaves Move's editor for that track.** It used to
+  switch dAVEBOx's track while Move's screen stayed on the old one.
+- **Dave 33 is NO, DAVID.**
+
+## [0.0.2] — 2026-09-28 (test build, not in the Schwung catalog)
+### Fixed
+- **A SnapMorph lane jumps to MACROS.** On the AUTOMATION bank, Shift + click
+  on a SnapMorph lane said NO EDITOR, and holding one of its steps did nothing.
+  Both now take you to the track's MACROS bank with that knob marked, like a
+  MIDI lane.
+- **The browser's Help page shows the manual.** It showed "Documentation is
+  coming"; it now shows the full manual, screens and all.
+### Changed
+- **A bigger, brighter header on the browser pages.** The bar across the top of
+  the editor, Files, Help, Config and System is taller, and its links are
+  larger and easier to read.
+
+## [0.0.1] — 2026-09-28 (test build, not in the Schwung catalog)
 ### Added (pending)
 - **Crop.** Touch knob 6 on the CLIP or DRUM LANE bank (knob 5 on ALL LANES) and
   click the jog: the loop becomes the whole clip — it moves to step 1 and

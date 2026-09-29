@@ -9,7 +9,7 @@ import {
 } from './ui_constants.mjs';
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
-import { arpVelLevel } from './ui_pure.mjs';
+import { arpVelLevel, drumVelocityToZone } from './ui_pure.mjs';
 import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell } from './ui_knob_leds.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { devSnapOpen, devSnapLedFor } from './ui_devsnap.mjs';
@@ -775,22 +775,26 @@ export function updateTrackLEDs() {
     }
 
     if (!S.sessionView) {
-        const _inCoRunPad = S.moveCoRunTrack >= 0;
+        /* ⭑ No co-run inversion any more (Josh, 2026-09-28: "now that move
+         * tracks in corun behave substantially similar to regular davebox
+         * tracks i don't think we need that 'you're now somewhere else'
+         * signifier that the inverted pads provided"). Co-run pads wear the
+         * same colours as anywhere else. */
         const isDrum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
         if (isDrum) {
             /* Left 4 cols (col 0-3): lane selectors; Right 4 cols (col 4-7): velocity zones */
             const t        = S.activeTrack;
             const selLane  = S.activeDrumLane[t];
-            const velZone  = S.drumLastVelZone[t];
-            const tc       = _inCoRunPad ? White     : trackColor(t);
-            const td       = _inCoRunPad ? LightGrey : trackDimColor(t);
-            /* True track colors for the co-run lane inversion: in co-run the
-             * SELECTED lane takes the track color (bright = has data, dim =
-             * empty) while every other lane goes white — the inverse of the
-             * regular scheme (selected lane White, data lanes track-colored).
-             * tc/td stay White/LightGrey so the right-col gate mask is unchanged. */
-            const tcReal   = trackColor(t);
-            const tdReal   = trackDimColor(t);
+            /* A HELD step with a hit shows ITS velocity on the velocity pads
+             * — the nearest pad (Josh, 2026-09-27: "should show the step's
+             * approximate velocity on the velocity pads"). Only once its real
+             * velocity is read (the press holds a placeholder until the hold
+             * threshold); an automation hold is not a note edit. */
+            const heldVel  = S.heldStep >= 0 && !S.heldStepAuto && S.heldStepNotes.length > 0
+                             && !S.drumHeldReadPending;
+            const velZone  = heldVel ? drumVelocityToZone(S.stepEditVel) : S.drumLastVelZone[t];
+            const tc       = trackColor(t);
+            const td       = trackDimColor(t);
             const flashDur = 2 * POLL_INTERVAL;
             for (let i = 0; i < 32; i++) {
                 const col = i % 8;
@@ -811,26 +815,14 @@ export function updateTrackLEDs() {
                     if (sounding) {
                         color = White;
                     } else if (flashing) {
-                        /* ⭑ The just-hit pad flashes in the REAL track colour in
-                         * co-run (Josh, 2026-08-24 — the melodic side got this
-                         * first and drum tracks still showed white). `tc` is
-                         * White here during co-run, which is what made the last
-                         * touched pad say nothing about which track it was. */
-                        color = isMuted ? DarkGrey : (_inCoRunPad ? tcReal : tc);
+                        color = isMuted ? DarkGrey : tc;
                     } else if (isMuted) {
                         color = LED_OFF;
                     } else if (isActive) {
-                        /* Selected lane: co-run shows it in track color (the
-                         * inversion); regular shows White. */
-                        color = _inCoRunPad ? (hasHits ? tcReal : tdReal)
-                                            : (hasHits ? White  : DarkGrey);
+                        color = hasHits ? White : DarkGrey;
                     } else if (hasHits) {
-                        /* Non-selected lane with data: bright white in co-run;
-                         * track color (dimmed while playing) in regular. */
-                        color = _inCoRunPad ? White : (S.playing ? td : tc);
+                        color = S.playing ? td : tc;
                     } else {
-                        /* Non-selected empty lane: dim white (LightGrey) in
-                         * co-run via td; dim track color in regular. */
                         color = td;
                     }
                     /* Copy source blink */
@@ -887,8 +879,8 @@ export function updateTrackLEDs() {
                 cachedSetLED(TRACK_PAD_BASE + i, color);
             }
         } else {
-        const rootColor    = _inCoRunPad ? DarkGrey : trackColor(S.activeTrack);
-        const nonRootColor = _inCoRunPad ? trackDimColor(S.activeTrack) : DarkGrey;
+        const rootColor    = trackColor(S.activeTrack);
+        const nonRootColor = DarkGrey;
         const _tarpActive = (S.bankParams[S.activeTrack][5][7] | 0) !== 0 &&
                             (S.bankParams[S.activeTrack][5][0] | 0) !== 0;
         const _tarpHeld = _tarpActive ? S.tarpHeldNotes[S.activeTrack] : null;
@@ -936,19 +928,11 @@ export function updateTrackLEDs() {
             const inScale  = S.padScaleSet.has(semitone);
             const chromatic = S.padLayoutChromatic[S.activeTrack];
             const piano = pianoLayoutOn(S.activeTrack);
-            /* ⭑ The lit pad stays TRACK-COLOURED in co-run (Josh, 2026-08-24:
-             * keep the distinct scheme, but "the last pressed pad" must still
-             * read as this track). The rest of the inversion below is untouched
-             * — roots grey, others track-dim — so the surface still says you are
-             * in Move's editor. Matches the drum flavour, where the selected
-             * lane already takes the real track colour. */
-            color = (sounding || inHeld || inLatch)
-                    ? (_inCoRunPad ? trackColor(S.activeTrack) : White)
+            color = (sounding || inHeld || inLatch) ? White
                   : piano ? (S.padNoteMap[i] % 12 === _effKey ? rootColor
                              /* The Piano keeps every key lit so the keyboard
                               * reads: in-scale brighter than out. */
-                             : inScale ? (_inCoRunPad ? nonRootColor : LightGrey)
-                             : (_inCoRunPad ? LED_OFF : DarkGrey))
+                             : inScale ? LightGrey : DarkGrey)
                   : (chromatic && !inScale) ? LED_OFF
                   : (S.padNoteMap[i] % 12 === _effKey ? rootColor : nonRootColor);
             cachedSetLED(TRACK_PAD_BASE + i, color);

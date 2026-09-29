@@ -66,7 +66,8 @@ $SSH "set -eu
     pids=\$(pidof schwung-manager 2>/dev/null || true)
     [ -n \"\$pids\" ] && kill -9 \$pids 2>/dev/null || true
     '$DBX_DIR/schwung-manager' -port 7700 -roots /data/UserData/ \
-        -base '$DBX_DIR' >>'$DBX_DIR/manager.log' 2>&1 &
+        -base '$DBX_DIR' -file-shortcuts \"dAVEBOx exports=$DBX_DIR/davebox-exports\" \
+        >>'$DBX_DIR/manager.log' 2>&1 &
     sleep 0.5
     echo '--- manager.log tail:'
     tail -5 '$DBX_DIR/manager.log'

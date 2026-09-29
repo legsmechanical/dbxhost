@@ -890,7 +890,7 @@ screen('xpose-confirm', '17.2 Key & Scale', 'Transpose clips?',
     () => { openSettings(); menuTo('Key'); click(); ticks(2); jog(3); ticks(2); click(); ticks(2);
             if (!S.confirmXpose) throw new Error('no transpose confirm'); });
 screen('menu-foot', '17.1 Project settings', 'Project Settings — the foot of the list',
-    'Near the foot of the list: Suspend session, Quit and Host Settings (Projects, Save and Load state, Clear Sess and Export sit just above; the Daves rows below).',
+    'Near the foot of the list: Suspend session, Quit and Host Settings (Projects, Save and Load state, Clear Sess and Export sit just above).',
     () => { openSettings(); menuTo('Quit'); });
 screen('tap-tempo', '17.1 Project settings', 'Tap Tempo',
     'Shift + Step 5: tap any pad in time and the tempo follows; the jog fine-tunes it.',
@@ -964,7 +964,7 @@ screen('projects-copy', '17.5 Projects', 'Project picker — copy',
     () => { openProjects(); press(MoveCopy); noteOn(PAD(2), 100); noteOff(PAD(2)); ticks(2);
             if (S.projectPadPicker.copySrcIdx !== 2) throw new Error('copy not armed'); });
 screen('projects-loading', 'Open dAVEBOx', 'Loading a project',
-    'Load chosen: a newly dealt Dave fills the screen while the project opens.',
+    'Load chosen: the project opens.',
     () => { openProjects(); noteOn(PAD(1), 100); noteOff(PAD(1)); ticks(2); click();
             if (!S.switchLoading) throw new Error('no loading screen'); }, { align: false });
 

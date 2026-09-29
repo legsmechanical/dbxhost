@@ -1075,6 +1075,12 @@ export function soundOpenCanvasForTest(meta, io) {
     if (!canvasEditOpen({ key: meta.key, fullKey: meta.key, meta, comp: 'synth', slot: 0, io })) return false;
     S.view = VIEW_CANVAS; S.dirty = true; return true;
 }
+/* The canvas screen through its REAL io (the live feed's reads and clock), on
+ * the current slot/component — the door a hierarchy dive uses. */
+export function soundOpenCanvasScreenForTest(fullKey, meta) {
+    if (!openCanvasScreen(fullKey, meta, null)) return false;
+    S.view = VIEW_CANVAS; S.dirty = true; return true;
+}
 export function soundQueueActionForTest(a) { S.pendingAction = a; }
 /* Audition test hooks: arm a preview baseline as the preset list would, and read it back. */
 export function soundArmAuditionForTest(origBlob, previewIdx) { S.origState = origBlob; S.previewIdx = previewIdx | 0; S.previewAt = 0; }
@@ -4557,7 +4563,7 @@ function openInstrPicker() {
     openEnumPicker(INSTR_ROW_LABEL,
                    rows.map(r => r.divider ? { divider: true }
                        : r.taken != null ? { note: r.label + ' - T' + (r.taken + 1), hdr: false }
-                       : (r.gen && mlIsMember(r.gen) ? '\u00b7' : '')
+                       : (r.gen && mlIsFavorite(r.gen) ? FAV_MARK : '')
                          + loadedMark(!!(r.gen && curGen && r.gen.id === curGen), r.label)),
                    cur < 0 ? 0 : cur, (i) => commitInstrPick(rows[i]));
     /* The picker keeps the ROWS, not just their labels: the shift-click toggle
@@ -7260,7 +7266,10 @@ function menuStep(delta) {
  *
  * Each distinct fingerprint gets its own file, so alternating between two banks
  * reads both from disk rather than re-scanning on every switch. */
-const BAKED_CACHE_DIR = '/data/UserData/schwung/cache/davebox-presetnames';
+/* In OUR install, not stock's cache/: dAVEBOx Legacy writes the same name
+ * under /data/UserData/schwung/cache, so sharing it meant each product read the
+ * other's cached names, and our uninstaller wiped Legacy's cache. */
+const BAKED_CACHE_DIR = '/data/UserData/dbx-host/cache/davebox-presetnames';
 const BAKED_CACHE_V = 2;
 
 /* Sampling MOVES the module's preset index — the caller restores it. Kept out
@@ -7765,12 +7774,15 @@ function mlEligible(rows) {
     return ModuleLists.listsWithAnyOf(mlState, mlRealIds(rows));
 }
 
-function mlIsMember(mod) {
+/* A favorite wears a star (Josh, 2026-09-27: "Add a star next to modules in
+ * the favorites list"), under every filter — the star says FAVORITE, not "in
+ * the list you are looking at". It replaced a middle dot that marked the list
+ * in play and never drew: the host font has no such glyph. */
+const FAV_MARK = '\u2605 ';
+function mlIsFavorite(mod) {
     if (!mod || !mod.id || browseControlRow(mod)) return false;
     mlEnsure();
-    const id = moduleIdOf(mod.path || mod.id);
-    const name = mlFilter || ModuleLists.FAVORITES;
-    return ModuleLists.isMember(mlState, name, id);
+    return ModuleLists.isMember(mlState, ModuleLists.FAVORITES, moduleIdOf(mod.path || mod.id));
 }
 
 /* `idx` retargets the block first. Shift+click arrives from the block PICKER,
@@ -10647,9 +10659,11 @@ export function soundTick() {
      * browser, a menu) redraws on input like every other screen, so it costs
      * nothing to leave open. */
     if (S.view === VIEW_CANVAS && canvasEditActive()) {
-        canvasEditTick();
+        /* onValues is an event and may close(); a delivery redraws even a
+         * canvas with no tick hook of its own. */
+        const _fresh = canvasEditTick();
         if (canvasEditTakeClose()) closeCanvasScreen();
-        else if (canvasEditAnimates()) S.dirty = true;
+        else if (_fresh || canvasEditAnimates()) S.dirty = true;
     }
 
     /* ⭑ THE BROWSER'S AUDITION, and its close.
@@ -11315,12 +11329,12 @@ function renderBrowse() {
     /* ⚠ The prompt (why the browser opened) rides the header band, which the
      * crumb bar now owns — so an EMPTY-block browse says so in the crumb rather
      * than over the backdrop. */
-    /* A member of the list in play is marked with a leading dot. Not a
-     * checkbox: these rows are modules you LOAD, and a checkbox would say the
-     * click toggles them when the click loads them. */
+    /* A favorite is marked with a leading star. Not a checkbox: these rows are
+     * modules you LOAD, and a checkbox would say the click toggles them when
+     * the click loads them. */
     renderInChain(S.browseList.map(m => m.id === MOVE_ROW_ID
                       ? { label: String(m.name), indent: BROWSE_MOVE_INDENT, labelFont: 'small' }
-                      : (mlIsMember(m) ? '\u00b7' : '') + loadedMark(m.loaded, String(m.name))),
+                      : (mlIsFavorite(m) ? FAV_MARK : '') + loadedMark(m.loaded, String(m.name))),
                   S.browseIdx);
 }
 
@@ -12064,6 +12078,21 @@ function ppRefreshPresets() {
  * slot+component — so the row opens davebox's preset hub instead of naming a
  * preset, and the destructive rows live inside that hub where they already have
  * a target. Adding the record is its own piece of work. */
+/* Is this preset PAGE the browser davebox's baked list belongs to? Same list,
+ * count and name keys — the triple the walk reads (findPresetSpec). */
+function presetPageMatchesSpec(page) {
+    const sp = S.presetSpec;
+    if (!sp || !page) return false;
+    return page.listParam === sp.listKey && page.countParam === sp.countKey &&
+           (page.nameParam || 'preset_name') === sp.nameKey;
+}
+/* What the editor's real io answers for a planned preset page. */
+export function soundPresetNamesForTest(page, o) { return ppIo().presetNames(page, o || {}); }
+export function soundPresetPageMatchesSpecForTest(page, spec) {
+    const saved = S.presetSpec; S.presetSpec = spec;
+    try { return presetPageMatchesSpec(page); } finally { S.presetSpec = saved; }
+}
+
 function ppIo() {
     return {
         /* Automation hears every knob edit and touch in the chain editor —
@@ -12161,6 +12190,14 @@ function ppIo() {
          * which is the same gesture that opens davebox's own preset screen. */
         presetNames: (page, o) => {
             if (!S.presetSpec) return null;
+            /* ⚠⚠ ONLY FOR THE PAGE THE LIST WAS WALKED FROM. davebox knows ONE
+             * baked list (findPresetSpec: the first level declaring list and
+             * count), and a module may declare several browsers — JE-8086 has
+             * Bank (bank_list) and Preset (patch) per mode — so answering every
+             * preset page drew the Bank list on the Preset page too (Josh,
+             * 2026-09-27: "both pages show the same files"). Any other page gets
+             * null and draws its own current name, as stock's does. */
+            if (!presetPageMatchesSpec(page)) return null;
             if (bakedNamesReady()) return S.bakedNames;
             /* Entered and we have nothing: resolve caches, and arm the walk
              * only if both are cold. Cheap and idempotent when warm.
@@ -12697,6 +12734,8 @@ function openCanvasScreen(fullKey, meta, divedFrom) {
             },
             getParam: (k) => settledValue(k, S.comp),
             setParam: (k, v) => queueWrite(ppBare(k) || k, v),
+            /* the live feed's clock: the UI's own, so tests can drive it */
+            nowMs: () => nowMs(),
             getValue: () => settledValue(bare, S.comp),
             setValue: (v) => queueWrite(bare, v),
             /* Shift as STATE, matching stock's ctx.shiftHeld -- a module drawing

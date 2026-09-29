@@ -30,26 +30,23 @@
 
     {{if needsRepair}}{{template "repair_banner" .}}{{end}}
 
-    <header>
-        <div class="header-inner">
-            <a href="/" class="site-name">dAVEBOx</a>
-            <button class="nav-toggle" aria-label="Toggle navigation" aria-expanded="false" onclick="this.setAttribute('aria-expanded',this.getAttribute('aria-expanded')==='false'?'true':'false');this.closest('.header-inner').querySelector('nav').classList.toggle('nav-open')">&#9776;</button>
-            <nav aria-label="Main navigation">
-                <ul>
-                    {{/* No "dAVEBOx" nav item: the site name to the left IS the
-                         link home, and listing it twice made the header read as
-                         two different things. Matches the editor's own ribbon
-                         (davebox/web_ui.html #site). */}}
-                    <li><a href="/"{{if eq .Active "davebox"}} class="active" aria-current="page"{{end}}>Editor</a></li>
-                    <li><a href="/mirror" target="_blank" rel="noopener">Mirror</a></li>
-                    <li><a href="/files"{{if eq .Active "files"}} class="active" aria-current="page"{{end}}>Files</a></li>
-                    <li><a href="/help"{{if eq .Active "help"}} class="active" aria-current="page"{{end}}>Help</a></li>
-                    <li><a href="/config"{{if eq .Active "config"}} class="active" aria-current="page"{{end}}>Config</a></li>
-                    <li><a href="/system"{{if eq .Active "system"}} class="active" aria-current="page"{{end}}>System</a></li>
-                </ul>
-            </nav>
-        </div>
-    </header>
+    {{/* THE SITE RIBBON — the editor's own (davebox/web_ui.html #site), item
+         for item and pixel for pixel (Josh, 2026-09-27: "headers need to be
+         consistent across modes and match what's at root"). The brand is the
+         link home. Only the targets differ: the editor opens these in a new tab
+         so the live session stays put, while here a page replaces a page.
+         ⚠ Keep in step with web_ui.html; tests/host/test_site_ribbon_sync.sh
+         holds the two to the same links. */}}
+    <div id="site">
+        <a class="sitebrand" href="/" title="dAVEBOx">dAVEBO<span class="dot">x</span></a>
+        <span class="sitelinks">
+            <a href="/mirror" target="_blank" rel="noopener" title="Live view of the Move's screen">Mirror</a>
+            <a href="/files" title="Browse files on the device"{{if eq .Active "files"}} aria-current="page"{{end}}>Files</a>
+            <a href="/help" title="Manual &amp; help"{{if eq .Active "help"}} aria-current="page"{{end}}>Help</a>
+            <a href="/config" title="Host configuration"{{if eq .Active "config"}} aria-current="page"{{end}}>Config</a>
+            <a href="/system" title="System status and logs"{{if eq .Active "system"}} aria-current="page"{{end}}>System</a>
+        </span>
+    </div>
 
     <main id="main-content">
         {{if .Flash}}

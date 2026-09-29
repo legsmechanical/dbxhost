@@ -78,6 +78,7 @@ extern volatile int shim_jack_persist;
 #define SHIM_EVT_SKIPBACK_RESIZE    7  /* realloc the skipback ring */
 #define SHIM_EVT_PREVIEW_PLAY       8  /* read preview cmd path, open + mmap */
 #define SHIM_EVT_SELECT_EXIT_STOCK  9  /* Shift+Back in the set-select gate: leave the standalone session */
+#define SHIM_EVT_CORUN_EXIT_LOG    10  /* log the framework co-run exit the RT path just made */
 
 void shim_worker_post(uint8_t evt);
 
@@ -91,6 +92,7 @@ typedef struct {
     void (*skipback_save)(void);
     void (*skipback_resize)(void);
     void (*preview_play_pending)(void);
+    void (*corun_exit_log)(void);
 } shim_worker_hooks_t;
 
 void shim_worker_set_hooks(const shim_worker_hooks_t *hooks);

@@ -183,9 +183,7 @@ int v2_load_midi_fx_slot(chain_instance_t *inst, int slot, const char *fx_name) 
             if (mj_buf) {
                 size_t nr = fread(mj_buf, 1, mj_size, mj);
                 mj_buf[nr] = '\0';
-                int cap = 0;
-                if (json_get_int_in_section(mj_buf, "capabilities", "pre_capable", &cap) == 0
-                    && cap) {
+                if (json_get_flag_in_section(mj_buf, "capabilities", "pre_capable")) {
                     inst->midi_fx_pre_capable[slot] = 1;
                 }
                 free(mj_buf);

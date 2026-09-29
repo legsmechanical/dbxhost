@@ -75,12 +75,12 @@ has() { grep -q -- "$2" <<<"$(grep "^$1:" "$T/out")"; }
 
 echo "a normal uninstall, by gesture:"
 mk installed; drive uninstall > "$T/out" 2>&1
-has open "UNINSTALL DAVEBOX?" && has open "Projects & settings" && has open "dbx-host" && ok "opens on the question, saying projects are kept in dbx-host" || { bad "open"; cat "$T/out"; }
+has open "UNINSTALL DAVEBOX SA?" && has open "Projects & settings" && has open "dbx-host" && ok "opens on the question, saying projects are kept in dbx-host" || { bad "open"; cat "$T/out"; }
 has click1 "ARE YOU SURE?" && ok "first click asks again" || bad "click1: $(grep '^click1' "$T/out")"
-has back "UNINSTALL DAVEBOX?" && ok "Back from the second question returns to the first" || bad "back"
+has back "UNINSTALL DAVEBOX SA?" && ok "Back from the second question returns to the first" || bad "back"
 has click2 "UNINSTALLING" && ok "second click starts it" || bad "click2: $(grep '^click2' "$T/out")"
 grep -q "exited-while-running=false" "$T/out" && ok "Back cannot leave while it runs" || bad "left mid-run"
-has finished "DAVEBOX REMOVED" && has finished "dbx-host" && ok "finishes on DAVEBOX REMOVED, projects kept" || bad "finished: $(grep '^finished' "$T/out")"
+has finished "DAVEBOX SA REMOVED" && has finished "dbx-host" && ok "finishes on DAVEBOX SA REMOVED, projects kept" || bad "finished: $(grep '^finished' "$T/out")"
 grep -q "^exited=true" "$T/out" && ok "Back then exits" || bad "no exit"
 grep -q "^RUNCMD=sh .*uninstall.sh --run > .* 2>&1 &$" "$T/out" && ok "the run is started in the background, through the allowed 'sh ' prefix" || bad "$(grep RUNCMD "$T/out")"
 [ -f "$T/f/dbx/projects/p1/Song.abl" ] && [ ! -e "$T/f/dbx/schwung" ] && [ ! -e "$T/f/stock/modules/tools/davebox-sa" ] \
@@ -89,7 +89,7 @@ grep -q "is uninstalled" "$T/f/log" && ok "the log says so" || bad "log: $(cat "
 
 echo "a live session:"
 mk live; drive clicks > "$T/out" 2>&1
-has open "DAVEBOX IS RUNNING" && has open "Quit dAVEBOx first" && ok "says to quit dAVEBOx first" || { bad "open"; cat "$T/out"; }
+has open "DAVEBOX SA IS RUNNING" && has open "Quit dAVEBOx SA," && ok "says to quit dAVEBOx first" || { bad "open"; cat "$T/out"; }
 grep -q "^RUNCMD=none" "$T/out" && ok "clicks start nothing" || bad "$(grep RUNCMD "$T/out")"
 grep -q "^exited=true" "$T/out" && [ -f "$T/f/dbx/schwung" ] && ok "Back exits, nothing removed" || bad "state"
 

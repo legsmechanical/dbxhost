@@ -79,7 +79,7 @@ for keys anywhere in `module.json`).
 | `raw_midi` | Skip host MIDI transforms (velocity curve, aftertouch filter); module may also bypass internal MIDI filters when set |
 | `raw_ui` | Module owns UI input handling; host won't intercept Back to return to menu (use `host_return_to_menu()` to exit) |
 | `chainable` | Marks a module as usable inside Signal Chain patches (metadata) |
-| `requires_continuous_processing` | Audio FX that owns non-trivial internal time (rolling loopers, granular, modulated delays/reverb). Keeps the slot's DSP rendering through silence instead of idle-parking it after the silence threshold, so the plugin's internal clock doesn't freeze and resume at a wrong offset. Read by `chain_host.c`; null-checked so older chain DSPs still load. |
+| `requires_continuous_processing` | Audio FX that owns non-trivial internal time (rolling loopers, granular, modulated delays/reverb). Keeps the slot's DSP rendering through silence instead of idle-parking it after the silence threshold, so the plugin's internal clock doesn't freeze and resume at a wrong offset. Read by `chain_host.c` as a flag — `true` or a non-zero number; null-checked so older chain DSPs still load. |
 | `skip_led_clear` | Host skips clearing LEDs on module load/unload — preserves Move's native pad colors (useful for modules that overlay highlights on existing clip colors) |
 | `default_forward_channel` | Default Forward Channel for shadow slots loading this module. `-2` = passthrough (preserve original MIDI channel, required for MPE), `1`–`16` = remap to a specific channel. |
 | `button_passthrough` | Array of CC numbers the module wants Move to keep handling (e.g. `[85]` to let Play reach Move while the module is active). |
@@ -1251,8 +1251,12 @@ Supported condition fields:
 
 Visibility is evaluated dynamically; hidden entries are removed from list navigation and knob mappings for that level.
 A condition's `param` does not need a knob of its own. A condition declared on a child level is read
-for the instance the grid is showing: `{ "param": "type" }` on a `child_prefix: "pad"` level reads
-`pad3_type` while pad 3 is shown.
+for the instance the grid is showing when the gate is per-instance. **List the key on the level** to
+make it so — that is the rule the condition itself is evaluated by: `{ "param": "type" }` on a
+`child_prefix: "pad"` level that lists `type` reads `pad3_type` while pad 3 is shown. (The gate lane
+also treats a key as per-instance when the module declares the concrete key, `pad3_type`, but the
+evaluator does not, so do not rely on that alone.) A key the level does not list is module-wide and
+read bare (DR32's `ui_engine`, which describes the focused pad and is served under that one name).
 
 ### Child Selectors (for repeated elements)
 
@@ -1479,12 +1483,15 @@ Use `type: "canvas"` to open a module-defined fullscreen canvas UI from the hier
 - `canvas_overlay` (optional): Named overlay object selector (aliases: `canvas_target`, `overlay`).
 - `show_footer` (optional): Show/hide footer in canvas view (default `true`; alias `showfooter`).
 - `show_value` (optional): Show/hide parameter value in hierarchy and canvas footer (default `true`; alias `showvalue`).
+- `extra_keys` (optional): Up to four additional parameter values used by an authored canvas page or bounded fullscreen live feed.
+- `fullscreen_live_ms` (optional): In fullscreen mode, refresh declared `extra_keys` at this interval and call `onValues(ctx, { values, nowMs })`. Clamped to at least 50 ms; omit it for no fullscreen reads. Keys are read one per tick and delivered together; a read that did not complete is `null`. Same contract as stock 1.5 (upstream #530); dAVEBOx's module canvas honours it.
 
 Behavior notes:
 
 - Clicking the parameter enters a dedicated fullscreen canvas view.
 - Set `show_value: false` for button-style canvas entries that should not show a value.
-- The loaded script should expose `globalThis.canvas_overlay` (or `globalThis.canvas_overlays`) with hooks such as `onOpen`, `onMidi`, `tick`, `draw`, `onClose`, `onExit`.
+- The loaded script should expose `globalThis.canvas_overlay` (or `globalThis.canvas_overlays`) with hooks such as `onOpen`, `onMidi`, `onValues`, `tick`, `draw`, `onClose`, `onExit`.
+- Take meter / playhead values from the bounded `onValues` payload rather than reading on the draw path.
 
 **A canvas as a page (`as_page: true`).** Instead of a cell you click into, the canvas becomes a
 page in the level's jog rotation carrying that level's own knobs; add `preset_browser: true` and it
@@ -1610,6 +1617,23 @@ These map to knobs 1-8 in the Shadow UI for quick access.
   }
 }
 ```
+
+#### An envelope that switches shape — `role: "mode"`
+
+Some envelopes run the same knobs as two shapes — DR32's pads switch between **A-H-D** (a timed hold
+at the peak, then decay to silence) and **A-S-R** (full level while the pad is held, then the Decay
+knob is the release, and Hold does nothing). Put the switch in the envelope group as `role: "mode"`
+with `span: false`, so it keeps its own cell and only lends the picture its value:
+
+```json
+{ "key": "env_mode", "type": "enum", "options": ["A-H-D", "A-S-R"],
+  "viz": { "group": "amp", "role": "mode", "span": false } }
+```
+
+An option naming A-H-D (or `AHD`, `One Shot`, `Trigger`) draws attack, hold and decay; one naming
+A-S-R (or `ASR`, `Gate`, `Sustain`) draws attack, a full-level sustain, and your `decay` (or
+`release`) as the fall. Any other option draws the declared roles unchanged, and so does an older host.
+Same as stock 1.5 (upstream #545).
 
 #### A cell your module draws itself — `viz.kind: "custom:<name>"`
 
@@ -2219,8 +2243,8 @@ typedef struct host_api_v1 {
      * midi_send_internal; system realtime broadcasts identically (transport
      * has no slot). Forward-channel remap and transpose still apply on
      * delivery. NULL if the host doesn't support slot-addressed dispatch.
-     * (Declared after get_beat_position in plugin_api_v1.h — struct order
-     * is append-only.) */
+     * (Declared at +168 in plugin_api_v1.h, after a NULL run at +120 that
+     * keeps upstream's geometry — see that header before adding a field.) */
     int (*midi_send_internal_slot)(int slot, const uint8_t *msg, int len);
 
     /* Clock status for sync-aware plugins */

@@ -12,7 +12,7 @@ dAVEBOx is designed to be immediate, creative, and performative. Each track can 
 
 dAVEBOx was built by AI goblins and meticulously designed by a human who is not Dave.
 
-**[Read the full user manual](MANUAL.md)**<br>
+**[Read the full user manual](https://legsmechanical.github.io/dbxhost/)**<br>
 **[Video Overview](https://www.youtube.com/watch?v=bKRPJhNgEO8)**
 
 ---

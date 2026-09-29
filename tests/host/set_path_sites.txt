@@ -28,14 +28,5 @@ R src/shadow/shadow_ui.js|const subEntries = os.readdir(SETS_DIR + "/" + uuid) |
 - src/shared/session_state.mjs|return p.indexOf(SET_LIBRARY_DIR + "/") === 0;
 - standalone/src/davebox-heal.c|#define SETS_DIR     "/data/UserData/UserLibrary/Sets"
 - standalone/src/davebox-heal.c|#ifndef SETS_DIR     /* overridable for the test build only */
-- standalone/src/davebox-heal.c|SA_LIBRARY, SETS_DIR, strerror(errno));
-- standalone/src/davebox-heal.c|SETS_DIR);
-- standalone/src/davebox-heal.c|fprintf(stderr, "davebox-heal: bound %s -> %s\n", SA_LIBRARY, SETS_DIR);
-- standalone/src/davebox-heal.c|fprintf(stderr, "davebox-heal: umount %s: %s\n", SETS_DIR, strerror(errno));
-- standalone/src/davebox-heal.c|fprintf(stderr, "davebox-heal: unbound %s (lazy — was busy)\n", SETS_DIR);
-- standalone/src/davebox-heal.c|fprintf(stderr, "davebox-heal: unbound %s\n", SETS_DIR);
-- standalone/src/davebox-heal.c|if (errno == EBUSY && umount2(SETS_DIR, MNT_DETACH) == 0) {
-- standalone/src/davebox-heal.c|if (mount(SA_LIBRARY, SETS_DIR, NULL, MS_BIND, NULL) < 0) {
-- standalone/src/davebox-heal.c|if (stat(SETS_DIR, &st) < 0 || !S_ISDIR(st.st_mode)) {
-- standalone/src/davebox-heal.c|if (stat(SETS_DIR, &st_target) < 0) return 0;
-- standalone/src/davebox-heal.c|if (umount(SETS_DIR) == 0) {
+- standalone/src/davebox-heal.c|static int sets_mount(void) { return bind_dir(SA_LIBRARY, SETS_DIR, "sets"); }
+- standalone/src/davebox-heal.c|static int sets_umount(void) { return unbind_dir(SA_LIBRARY, SETS_DIR, "sets"); }

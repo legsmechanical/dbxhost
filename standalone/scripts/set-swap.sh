@@ -21,8 +21,16 @@
 # unconditionally** — so the crash outcome is "the user's real sets are back",
 # which is the outcome you would have chosen anyway.
 #
+# ⭑ SETTINGS TOO (2026-09-28, Josh: "need to have those settings be separate
+# from the main move install"): Move's settings folder gets the same treatment —
+# $SA_SETTINGS bound over $MOVE_SETTINGS_DIR — so whatever the session's Move
+# changes (from dAVEBOx's Move Settings... row) lands in the session's copy and
+# the user's own settings sit untouched underneath. The whole folder, never
+# Settings.json alone: every writer of that file here (and in project-cmd.sh,
+# launch.sh) replaces it by rename, which fails on a FILE mount point.
+#
 # Verbs:
-#   enter    bind $LIBRARY over Sets/   (session starts)
+#   enter    bind $LIBRARY over Sets/, $SA_SETTINGS over settings/ (session starts)
 #   exit     unbind                     (session ends)
 #   recover  drive any state back to "not mounted"  (crash cleanup)
 #   status   print the current phase
@@ -40,8 +48,8 @@
 # all any more: they live on the set dirs, and no set dir is touched.
 #
 # Recovery must work with no session running and no Move running — it is called
-# from launch.sh (backstop) and from the blessed davebox-restore oneshot at boot
-# (Before=move-launcher.service).
+# from launch.sh before every session. (A boot-time oneshot also ran it until
+# 0.0.4; a reboot clears the mounts by itself, so nothing needs it at boot.)
 #
 # Testability: every path and the mount helper itself can be overridden by
 # environment, so the whole state machine runs against fixtures in a tmpdir with
@@ -54,7 +62,12 @@ DBX_DIR="${DBX_DIR:-/data/UserData/dbx-host}"
 SETS_DIR="${SETS_DIR:-/data/UserData/UserLibrary/Sets}"
 # No __pycache__ beside the scripts (the install tree is a manifest-checked payload).
 export PYTHONDONTWRITEBYTECODE=1
-SETTINGS_JSON="${SETTINGS_JSON:-/data/UserData/settings/Settings.json}"
+# Move's settings folder (the firmware's path) and this install's copy of it.
+# SETTINGS_JSON is the path every reader uses: while a session is live it shows
+# the session's copy, because the folder above it is bound.
+MOVE_SETTINGS_DIR="${MOVE_SETTINGS_DIR:-/data/UserData/settings}"
+SETTINGS_JSON="${SETTINGS_JSON:-$MOVE_SETTINGS_DIR/Settings.json}"
+SA_SETTINGS="${SA_SETTINGS:-$DBX_DIR/settings}"
 
 SWAP_ROOT="${SWAP_ROOT:-$DBX_DIR/sets}"
 LIBRARY="$SWAP_ROOT/library"
@@ -92,9 +105,16 @@ read_native_index() {
     sed -n '2p' "$STATE_FILE" 2>/dev/null | grep -E '^-?[0-9]+$' || echo "0"
 }
 
-write_state() { # phase native_index
+# Line 3: whether the session's Move settings were its OWN copy ("own") or
+# Move's shared file ("shared"). Empty on a marker from an older build.
+read_settings_mode() {
+    [ -f "$STATE_FILE" ] || return 0
+    sed -n '3p' "$STATE_FILE" 2>/dev/null
+}
+
+write_state() { # phase native_index [own|shared]
     mkdir -p "$SWAP_ROOT"
-    printf '%s\n%s\n' "$1" "$2" > "$STATE_FILE.tmp"
+    printf '%s\n%s\n%s\n' "$1" "$2" "${3:-}" > "$STATE_FILE.tmp"
     mv -f "$STATE_FILE.tmp" "$STATE_FILE"
 }
 
@@ -105,8 +125,8 @@ write_state() { # phase native_index
 # compares. ⚠ Deliberately NOT `mountpoint` or /proc/mounts parsing: this asks
 # the question we actually care about ("is OUR library there"), and it answers
 # correctly even for a stacked or lazily-detached mount.
-sets_are_ours() {
-    python3 - "$SETS_DIR" "$LIBRARY" <<'PYEOF' 2>/dev/null || return 1
+same_dir() { # a b — true when both paths are the same directory (a bind mount)
+    python3 - "$1" "$2" <<'PYEOF' 2>/dev/null || return 1
 import os, sys
 try:
     a, b = os.stat(sys.argv[1]), os.stat(sys.argv[2])
@@ -115,9 +135,91 @@ except OSError:
 sys.exit(0 if (a.st_dev, a.st_ino) == (b.st_dev, b.st_ino) else 1)
 PYEOF
 }
+sets_are_ours()     { same_dir "$SETS_DIR" "$LIBRARY"; }
+settings_are_ours() { same_dir "$MOVE_SETTINGS_DIR" "$SA_SETTINGS"; }
 
 heal_mount()  { "$HEAL_BIN" --mount-sets; }
 heal_umount() { "$HEAL_BIN" --umount-sets; }
+
+# ---- the session's own Move settings ------------------------------------------
+#
+# Seeded from the user's folder the first time (so a first session feels the
+# same: Link, clock, gains, volume), then the session's copy persists on its
+# own. On EVERY enter:
+#   - any file the user's folder has and ours lacks is copied (Move's demo-song
+#     marker, or whatever a firmware update adds) — never overwriting ours;
+#   - Move Manager's web login database is refreshed from the user's, so a
+#     pairing made outside a session still works inside one;
+#   - the fields the session depends on are forced: autoload ON (the whole
+#     project machinery boots Move into currentSongIndex), onboarding done and
+#     no update pop-up (neither may cover a session's screen).
+# And once, when the copy is first made: Full Velocity OFF. A new project clears
+# it (project-cmd.sh clear_full_velocity — Josh: "always off by default when new
+# sets are created"), but the FIRST project is born before this copy exists, so
+# that clear finds nothing to write; this is where the first project gets it.
+# currentSongIndex itself is written afterwards by the caller, as before.
+seed_settings() {
+    mkdir -p "$SA_SETTINGS"
+    _first=0; [ -e "$SA_SETTINGS/Settings.json" ] || _first=1
+    if [ -d "$MOVE_SETTINGS_DIR" ] && ! settings_are_ours; then
+        for _f in "$MOVE_SETTINGS_DIR"/* "$MOVE_SETTINGS_DIR"/.[!.]*; do
+            [ -f "$_f" ] || continue
+            _n="$(basename "$_f")"
+            case "$_n" in *.setswap.tmp|*.dbxtmp) continue ;; esac
+            if [ "$_n" = "web-webServiceAuthentication.db" ] || [ ! -e "$SA_SETTINGS/$_n" ]; then
+                cp -p "$_f" "$SA_SETTINGS/$_n.seed.tmp" && mv -f "$SA_SETTINGS/$_n.seed.tmp" "$SA_SETTINGS/$_n"
+            fi
+        done
+    fi
+    python3 - "$SA_SETTINGS/Settings.json" "$_first" <<'SEED_PY'
+import json, os, sys
+path, first = sys.argv[1], sys.argv[2] == "1"
+try:
+    with open(path) as f:
+        d = json.load(f)
+    if not isinstance(d, dict):
+        d = {}
+except (OSError, ValueError):
+    d = {}
+d.setdefault("currentSongIndex", 0)
+d["isAutoloadEnabled"] = True
+d["isOnboardingDone"] = True
+d["shouldShowUpdateNotification"] = False
+if first:
+    d["isFullVelocityOn"] = False
+tmp = path + ".seed.tmp"
+with open(tmp, "w") as f:
+    f.write(json.dumps(d, indent=2) + "\n")
+    f.flush()
+    os.fsync(f.fileno())
+os.rename(tmp, path)
+SEED_PY
+}
+
+# Bind the session's settings over Move's. ⚠ NOT fatal: the helper updates
+# itself only AFTER this runs (launch.sh mirrors after the swap), so the first
+# launch after an update still has the previous helper, which does not know
+# the verb. Refusing would strand the device (no session, so no self-update
+# either); instead that one session keeps sharing the user's settings, as every
+# session did before, and says so.
+enter_settings() {
+    if settings_are_ours; then return 0; fi
+    seed_settings || { log "WARNING: could not prepare the session's settings — sharing Move's this session"; return 0; }
+    if "$HEAL_BIN" --mount-settings && settings_are_ours; then
+        log "settings: the session's own copy is bound over Move's"
+    else
+        log "WARNING: settings not separated this session (helper could not bind them)"
+    fi
+}
+
+exit_settings() {
+    settings_are_ours || return 0
+    "$HEAL_BIN" --umount-settings || die "settings unbind failed"
+    if settings_are_ours; then
+        die "settings unbind reported success but the session's copy is still bound"
+    fi
+    log "settings: Move's own settings are back"
+}
 
 # ---- currentSongIndex --------------------------------------------------------
 # (same in-place edit the host's C side performs; no-op when the file is absent)
@@ -270,6 +372,9 @@ do_enter() {
     [ -n "$_idx" ] || _idx=0
     write_state "entering" "$_idx"
 
+    # Settings first: the index written below must land in the SESSION's copy.
+    enter_settings
+
     heal_mount || die "bind mount failed"
     sets_are_ours || die "bind reported success but Sets/ is not our library"
 
@@ -316,13 +421,17 @@ NSLOT_PY
     fi
     write_song_index "$_sa_idx"
 
-    write_state "sa-live" "$_idx"
+    # Record where that index went: into the session's own settings, or (helper
+    # too old to bind them) into Move's — which only exit may then put back.
+    if settings_are_ours; then _mode=own; else _mode=shared; fi
+    write_state "sa-live" "$_idx" "$_mode"
     log "entered: library bound over Sets/ (native index $_idx, session index $_sa_idx)"
 }
 
 do_exit() {
     _phase="$(read_phase)"
     _idx="$(read_native_index)"
+    _mode="$(read_settings_mode)"
 
     # Save the session's position for next time — but only while OUR library is
     # the one on screen, or we would record a position in the user's library.
@@ -337,11 +446,12 @@ do_exit() {
         log "session position recorded: index $_sess"
     fi
 
-    write_state "exiting" "$_idx"
+    write_state "exiting" "$_idx" "$_mode"
     heal_umount || die "unbind failed"
     if sets_are_ours; then
         die "unbind reported success but Sets/ is still our library"
     fi
+    exit_settings
 
     # ⚠ LEGACY DRAIN — one-time, for a device whose last session entered under
     # the RENAME scheme. Its native sets are sitting in the old stash and would
@@ -363,14 +473,24 @@ do_exit() {
         [ "$_back" = 0 ] || log "legacy drain: restored $_back native set(s) from the old stash"
     fi
 
-    write_song_index "$_idx"
+    # ⚠ Put the user's index back ONLY if the session wrote it into Move's own
+    # file. With the session's own settings, Move's file was never touched —
+    # and after a power loss this runs at the NEXT launch, maybe days later, so
+    # writing the remembered index would undo whatever set the user has opened
+    # in Move since. (A marker from an older build has no mode: put it back, as
+    # that build would have.)
+    if [ "$_mode" = own ]; then
+        log "Move's settings were never the session's — its index is left as it is"
+    else
+        write_song_index "$_idx"
+    fi
     write_state "none" "0"
     log "exited: Sets/ is the user's library again (index $_idx, was phase '$_phase')"
 }
 
 do_recover() {
     _phase="$(read_phase)"
-    if [ "$_phase" = "none" ] && ! sets_are_ours && [ ! -d "$NATIVE_STASH" ]; then
+    if [ "$_phase" = "none" ] && ! sets_are_ours && ! settings_are_ours && [ ! -d "$NATIVE_STASH" ]; then
         log "phase none, nothing bound — nothing to recover"
         return 0
     fi

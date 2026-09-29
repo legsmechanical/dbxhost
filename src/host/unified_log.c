@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <sys/stat.h>
 
 static FILE *log_file = NULL;
 static int log_crash_fd = -1;  /* Async-signal-safe FD for crash logging */
@@ -14,6 +15,44 @@ static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int log_enabled_cache = 0;
 static int check_counter = 0;
 #define CHECK_INTERVAL 100  /* Check flag file every N calls */
+
+/*
+ * THE LOG IS CAPPED (Josh, 2026-09-28: "some reasonable logging always on
+ * (even for testers). just need to make sure it doesn't balloon to a massive
+ * size"). Past UNIFIED_LOG_MAX_BYTES the file is renamed to debug.log.1 (one
+ * previous file kept, the older one replaced) and a fresh debug.log started,
+ * so the two together stay near twice the cap.
+ *
+ * SEVERAL PROCESSES append to this one path -- the shim, shadow_ui, the
+ * unified-log helper the scripts call. So every ROTATE_CHECK_LINES lines a
+ * writer compares its open file with the path: if the path now names a
+ * different file (another writer rotated it) it reopens; if it is still ours
+ * and past the cap, it rotates. Two writers rotating at once can cost the
+ * older history file; the cap still holds, and this is a debug log.
+ */
+#ifndef UNIFIED_LOG_MAX_BYTES
+#define UNIFIED_LOG_MAX_BYTES (4L * 1024 * 1024)
+#endif
+#define ROTATE_CHECK_LINES 256
+static int rotate_counter = 0;
+
+/* With the lock held. */
+static void rotate_if_needed_locked(void) {
+    if (++rotate_counter < ROTATE_CHECK_LINES) return;
+    rotate_counter = 0;
+    if (!log_file) return;
+    struct stat ours, at_path;
+    if (fstat(fileno(log_file), &ours) != 0) return;
+    int path_ok = stat(UNIFIED_LOG_PATH, &at_path) == 0;
+    int same = path_ok && ours.st_ino == at_path.st_ino && ours.st_dev == at_path.st_dev;
+    if (same && ours.st_size < UNIFIED_LOG_MAX_BYTES) return;
+    if (same) rename(UNIFIED_LOG_PATH, UNIFIED_LOG_PATH ".1");
+    FILE *f = fopen(UNIFIED_LOG_PATH, "a");
+    if (!f) return;
+    fclose(log_file);
+    log_file = f;
+    log_crash_fd = fileno(log_file);
+}
 
 void unified_log_init(void) {
     pthread_mutex_lock(&log_mutex);
@@ -102,6 +141,7 @@ static void unified_log_emit_locked(const char *source, int level,
         vfprintf(log_file, fmt, args);
         fprintf(log_file, "\n");
         fflush(log_file);
+        rotate_if_needed_locked();
     }
 }
 

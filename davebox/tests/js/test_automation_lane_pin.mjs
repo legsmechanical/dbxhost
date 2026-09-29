@@ -133,7 +133,8 @@ const ticks = (n) => { for (let i = 0; i < n; i++) { S.tickCount++; globalThis.t
 const shiftClick = () => { cc(49, 127); shiftHeld = 1; click(); cc(49, 0); shiftHeld = 0; };
 
 const seq = Object.values(SEQ_AUTO_TARGETS)[0];
-const TARGETS = { seq: 'seq:' + T + ':' + seq.key, chain: T + ':synth:cutoff', level: T + ':slot:volume', midi: 'cc:74' };
+const TARGETS = { seq: 'seq:' + T + ':' + seq.key, chain: T + ':synth:cutoff', level: T + ':slot:volume', midi: 'cc:74',
+                  morph: 'mac:' + T + ':2' };
 S.trackActiveClip[T] = 0; S.trackQueuedClip[T] = -1;
 LIST = Object.values(TARGETS).map(tg => T + ' 0 1 2 ' + tg + ' 0').join('\n') + '\n';
 /* Every lane: a point on step 4, and every step plays the top value — so the
@@ -207,6 +208,7 @@ const KINDS = [
     ['chain', 'the module EDITOR'],
     ['level', 'SOUND + CONFIG'],
     ['midi', 'MACROS'],
+    ['morph', 'MACROS (a SnapMorph knob)'],
 ];
 for (const [kind, where] of KINDS) {
     step('⭐ ' + kind + ' lane -> ' + where + ': the steps KEEP the lane; Back keeps it on the menu; the next Back clears it', () => {
@@ -333,6 +335,25 @@ step('⭐ HOLD a MIDI point -> MACROS while held; release -> the same row', () =
     note(STEP(3), 0); ticks(2);
     assert(S.activeBank === BANK_AUTOMATION && !snd.soundOpen() && S.autoBank.sel === idx, 'release did not come back to the row');
     back(); ticks(1);
+});
+
+/* Josh, 2026-09-28: a SnapMorph lane said NO EDITOR to Shift + click and did
+ * nothing on a hold — "it should take me to the macro screen for the track". */
+step('⭐ HOLD a SnapMorph point -> MACROS while held; release -> the same row', () => {
+    const idx = openMenuOn(TARGETS.morph); ticks(2);
+    S.actionPopupLines = [];
+    note(STEP(3), 127); ticks(4);
+    assert(!(S.actionPopupLines || []).some(l => /NO EDITOR/.test(l)), 'NO EDITOR: ' + JSON.stringify(S.actionPopupLines));
+    assert(snd.soundOpen() && S.activeBank === BANK_MACROS, 'not on MACROS while held: bank ' + S.activeBank);
+    assert(S.trackActiveBank[T] === BANK_AUTOMATION, 'the hold RECORDED bank ' + S.trackActiveBank[T]);
+    note(STEP(3), 0); ticks(2);
+    assert(S.activeBank === BANK_AUTOMATION && !snd.soundOpen() && S.autoBank.sel === idx, 'release did not come back to the row');
+    back(); ticks(1);
+});
+
+step('a SnapMorph lane of ANOTHER track has no home here', () => {
+    assert(bank.laneHome('mac:' + T + ':2', T) && bank.laneHome('mac:' + T + ':2', T).kind === 'macros', 'own track: not MACROS');
+    assert(bank.laneHome('mac:' + (T + 1) + ':2', T) === null, 'another track\'s knob placed on this one');
 });
 
 step('⭐ a MOVE-routed track (its lanes on slot 0, by BUS): Volume and an insert reach their screens by both gestures', () => {

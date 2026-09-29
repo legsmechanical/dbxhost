@@ -25,10 +25,11 @@ import { S } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
 import { pbMapMode, setPbMapMode, PB_MAP_MODES } from './ui_phrase_browser.mjs';
+import { bankViewMapOn, setBankViewMapOn } from './ui_prefs.mjs';
 import { saveState, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { forceRedraw } from './ui_leds.mjs';
-import { exitMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK } from './ui_corun.mjs';
+import { exitMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK, enterMoveSettingsCoRun } from './ui_corun.mjs';
 import { requestExport } from './ui_export.mjs';
 import { xposePreviewSet } from './ui_xpose.mjs';
 
@@ -185,6 +186,13 @@ function buildGlobalMenuItems() {
             set: function(v) { S.beatMarkersEnabled = v; forceRedraw(); },
             onLabel: 'On', offLabel: 'Off'
         }),
+        /* Bank Map on Lock (Josh, 2026-09-27): the bank column while the jog
+         * walks from the bank view. Device-global (ui_prefs). */
+        createToggle('Bank Map on Lock', {
+            get: function() { return bankViewMapOn(); },
+            set: function(v) { setBankViewMapOn(v); forceRedraw(); },
+            onLabel: 'On', offLabel: 'Off'
+        }),
         /* The phrase library's drum placement (Josh, 2026-09-24): where a drum
          * phrase's sounds go — Off (the lane opened on, empty lanes), GM (the
          * lanes playing their General MIDI notes) or Move (Move's kit layout).
@@ -269,6 +277,11 @@ function buildGlobalMenuItems() {
             host_open_service('global_settings', { keep_mask: DAVEBOX_PICKER_KEEP_MASK });
             S.globalMenuOpen = false;
         }),
+        /* Move's own Settings menu, in co-run (Josh, 2026-09-28) — the
+         * session's copy of Move's settings, never the user's own. */
+        createAction('Move Settings...', function() {
+            enterMoveSettingsCoRun();
+        }),
         createDivider(),
         /* The Daves switch (Josh, 2026-09-05): On = a collected Dave scrolls
          * through the session banner while playing; Off = the static wordmark.
@@ -282,6 +295,16 @@ function buildGlobalMenuItems() {
             openDaveBox();     /* closes the menu itself when it opens */
         }),
     ].filter(Boolean);   /* drops the host-gated entries when absent */
+}
+
+/* Open Project Settings with the cursor on the row labelled `label`. */
+export function openGlobalMenuAt(label) {
+    openGlobalMenu();
+    if (!S.globalMenuOpen || !S.globalMenuItems || !S.globalMenuState) return;
+    for (let i = 0; i < S.globalMenuItems.length; i++) {
+        const it = S.globalMenuItems[i];
+        if (it && it.label === label) { S.globalMenuState.selectedIndex = i; return; }
+    }
 }
 
 export function openGlobalMenu() {

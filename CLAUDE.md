@@ -294,7 +294,9 @@ usage and the pruning rules: [`RATIONALE.md`](RATIONALE.md).
 
 1. `./scripts/build.sh` succeeds
 2. `./standalone/scripts/install-sa.sh`, verify on hardware
-3. Bump `src/host/version.txt` and `release.json` (version + download URL)
+3. Bump `release.json` (version + download URL) and `standalone/module/module.json` to the same
+   version. ⚠ NOT `src/host/version.txt`: that is the Schwung BASE version the host tracks, and
+   modules' `min_host_version` is checked against it (`tests/host/test_release_keeps_host_version.sh`)
 4. Update `CLAUDE.md`, `docs/API.md`, `docs/MODULES.md`, `src/shared/help_content.json` and the
    manual for new/changed behaviour
 5. Update `help.json` in modified tool modules

@@ -7,6 +7,7 @@
  */
 
 import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished } from './ui_state.mjs';
+import { bankViewMapOn } from './ui_prefs.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H, drawDaveLoading } from './ui_daves.mjs';
 import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
@@ -1523,6 +1524,10 @@ export function bankNavItems() {
 function drawBankNav() {
     if (!S.bankNavKind) return;
     if (!S.jogTouched && S.clockMs - S.bankNavTurnMs >= BANKNAV_HOLD_MS) return;
+    /* A latched card (the bank view, the session mixer card) walks without it
+     * when Bank Map on Lock is off. */
+    const latched = S.bankNavKind === 'track' ? S.bankCardLatched : S.sessMixerLatched;
+    if (latched && !bankViewMapOn()) return;
     const nav = bankNavItems();
     drawKitBankNavColumn(nav.items, nav.cur);
 }

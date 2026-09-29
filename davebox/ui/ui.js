@@ -82,7 +82,7 @@ import { recordNoteOn, recordNoteOff,
 import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './ui_input_pads.mjs';
 import { applyBankPick, heldStepJog } from './ui_input_cc.mjs';
 import { standDownBankDisplay } from './ui_state.mjs';
-import { _onCCMsg } from './ui_input_cc.mjs';
+import { _onCCMsg, syncCoRunShift } from './ui_input_cc.mjs';
 import { soundActive, soundOpen, soundResting, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw,
          installGateMemoInvalidation, soundSeqApply } from './ui_sound.mjs';
 import { soundModeCovered } from './ui_render.mjs';
@@ -526,6 +526,8 @@ function _onMidiInternalImpl(data) {
     const status = data[0] | 0;
     const d1     = (data[1] ?? 0) | 0;
     const d2     = (data[2] ?? 0) | 0;
+    /* Co-run: Shift is Move's, so take dAVEBOx's from the hardware first. */
+    syncCoRunShift();
 
     /* PROJECT DID NOT OPEN is fully modal: nothing else may act while dAVEBOx
      * holds something Move does not. */

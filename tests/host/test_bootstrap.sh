@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # tests/host/test_bootstrap.sh — the zero-SSH first install (2026-09-05): BLESS
-# FIRST via stock's heal, then the payload, then the restore unit, then the
-# stamp — and a stock host that cannot bless leaves the device untouched.
+# FIRST via stock's heal, then the payload and its stamp — and a stock host that
+# cannot bless leaves the device untouched. No boot unit: it was retired after a
+# tester's 0.0.3 refused every launch installing one (2026-09-29).
 # Stock heal and our heal are stubs: the stock stub "blesses" by chmod u+s on the
 # staged file (a non-root owner may set the bit on its own file, which is what
 # `test -u` reads); ours logs its verb.
@@ -19,6 +20,7 @@ mk() {  # a fresh fixture: stock tree with (or without) a blessing heal, module 
     cat > "$T/f/mod/payload/bin/heal" <<'H'
 #!/bin/sh
 echo "$*" >> "$(dirname "$0")/heal.log"
+exit 0
 H
     chmod 755 "$T/f/mod/payload/bin/heal"
     if [ "$1" = blesses ]; then
@@ -44,7 +46,8 @@ rc=$(run)
 [ -u "$T/f/mod/bin/heal" ] && ok "the helper is blessed (setuid), staged from the payload" || bad "not blessed"
 [ ! -f "$T/f/mod/bin/heal.new" ] && ok "the stage is consumed" || bad "heal.new left behind"
 [ -x "$T/f/dbx/schwung" ] && ok "the payload is laid into DBX_DIR" || bad "no install"
-grep -qx -- "--install-restore-unit" "$T/f/mod/bin/heal.log" 2>/dev/null && ok "heal --install-restore-unit ran" || bad "restore unit not installed: $(cat "$T/f/mod/bin/heal.log" 2>/dev/null)"
+grep -q -- "restore-unit" "$T/f/mod/bin/heal.log" 2>/dev/null && bad "bootstrap asked the helper for a boot unit: $(cat "$T/f/mod/bin/heal.log")" || ok "no boot unit is installed"
+grep -q "^bootstrap: done (v-test)$" "$T/out" && grep -q '"version":"v-test"' "$T/f/dbx/sa-build.json" && ok "...and the install finishes, stamped" || bad "not finished: $(cat "$T/out")"
 grep -q '"version":"v-test"' "$T/f/dbx/sa-build.json" && ok "sa-build.json stamped with the payload version" || bad "no stamp"
 echo "  order:"; grep -n "blessed\|installing payload\|done" "$T/out" | cut -c1-80
 b=$(grep -n "blessed:" "$T/out" | cut -d: -f1); p=$(grep -n "installing payload" "$T/out" | cut -d: -f1)
@@ -70,6 +73,12 @@ echo "the LAUNCHER re-blesses an existing install in place, and calls bootstrap 
 L=standalone/scripts/launch.sh
 grep -q 're-blessing in place (no payload)' "$L" && ok "launch.sh re-blesses without the payload" || bad "no in-place re-bless"
 awk '/no install at \$DBX_DIR -- bootstrap/{f=1} f&&/bootstrap.sh/{print; exit}' "$L" | grep -q 'bootstrap.sh' && ok "bootstrap.sh is reached only on the no-install branch" || bad "bootstrap reachable with an install present"
+echo "an install left UNSTAMPED by an unfinished bootstrap is laid again, not kept:"
+mk blesses; rc=$(run); rm -f "$T/f/dbx/sa-build.json"; printf 'half\n' > "$T/f/dbx/schwung"
+rc=$(run)
+[ "$rc" = 0 ] && [ "$(cat "$T/f/dbx/schwung")" = "host" ] && grep -q '"version":"v-test"' "$T/f/dbx/sa-build.json" \
+    && ok "no stamp → the payload is laid and stamped" || bad "kept the unfinished install: $(cat "$T/out")"
+grep -q "never finished (no stamp)" "$T/out" && ok "...and says why" || bad "no reason: $(cat "$T/out")"
 echo "a stock heal that cannot bless (pre-#419):"
 mk cannot
 rc=$(run)

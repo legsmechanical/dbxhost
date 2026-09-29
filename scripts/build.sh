@@ -244,6 +244,12 @@ mkdir -p ./build/shadow/
 mkdir -p ./build/bin/
 mkdir -p ./build/lib/
 mkdir -p ./build/licenses/
+# Licence texts ship UNCONDITIONALLY. schwung-shim.so links libespeak-ng
+# (GPL-3.0-or-later) and link-subscriber compiles in Ableton Link
+# (GPL-2.0-or-later), so a tarball without these is non-compliant while
+# looking identical to a good one -- never `|| true` here.
+cp LICENSE THIRD_PARTY_LICENSES.md ./build/
+cp licenses/GPL-2.0.txt licenses/GPL-3.0.txt ./build/licenses/
 mkdir -p ./build/modules/chain/
 
 # Generate bitmap font for host display (single source of truth: scripts/generate_font.py)
@@ -645,7 +651,8 @@ fi
 
 # Build display server (live display SSE streaming to browser)
 if needs_rebuild build/display-server \
-    src/host/display_server.c src/host/unified_log.c src/host/unified_log.h; then
+    src/host/display_server.c src/host/unified_log.c src/host/unified_log.h \
+    src/host/surface_live_shm.h src/host/e16_mirror_shm.h src/host/norns_display_shm.h; then
     echo "Building display server..."
     "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O3 \
         src/host/display_server.c \
@@ -717,8 +724,7 @@ if [ -d ./standalone ]; then
     cp ./standalone/scripts/pick-signal-thread.py ./build/scripts/
     chmod +x ./build/scripts/blank-leds.py
     # set-swap.sh: the Design-B project-library swap engine — a runtime
-    # dependency of launch.sh (session entry/exit) and of the blessed
-    # davebox-restore boot recovery.
+    # dependency of launch.sh (session entry/exit and recovery).
     cp ./standalone/scripts/set-swap.sh ./build/scripts/
     # project-cmd.sh: in-session project management (list/new/switch), driven
     # by the hosted module via host_system_cmd.
@@ -744,6 +750,9 @@ if [ -d ./standalone ]; then
     # MoveOriginal's own "About to load ..." boot line into
     # move_loaded_set.txt (see that script for the file contract).
     cp ./standalone/scripts/move-loaded-set-reader.sh ./build/scripts/
+    # reap-session.sh: run by launch.sh after Move exits, to stop what a module
+    # forked inside it (found by session, not name -- see the script).
+    cp ./standalone/scripts/reap-session.sh ./build/scripts/
     # select-list.sh / select-hook.sh: the boot set-select gate's name source
     # and post-selection wiring hook, run by the shadow UI (see the gate block
     # in src/shadow/shadow_ui.js for the file contract).
@@ -768,7 +777,7 @@ if [ -d ./standalone ]; then
     chmod +x ./build/scripts/quiesce-stock.sh ./build/scripts/exit-to-stock.sh \
              ./build/scripts/set-swap.sh ./build/scripts/project-cmd.sh \
              ./build/scripts/select-list.sh ./build/scripts/select-hook.sh \
-             ./build/scripts/move-loaded-set-reader.sh
+             ./build/scripts/move-loaded-set-reader.sh ./build/scripts/reap-session.sh
     # The template project every standalone workspace seeds from (correctly
     # wired at birth — see the generator's header). Generated, not checked in,
     # so the pristine fixture stays the single source.
