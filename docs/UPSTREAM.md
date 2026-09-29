@@ -156,10 +156,14 @@ What a module written for Schwung 1.5 can declare or call, and what it gets here
 - **Version gating: none, by design.** dAVEBOx lists and loads any installed module whatever its
   `min_host_version` — the only gate is stock's manager, against stock's own version. This fork's
   `src/host/version.txt` still reads **1.1.1** and feeds the splash's "Schwung base" caption.
-- **`host_api_v1_t` tail — a named divergence.** Upstream ends in `reserved[8]` at +120 (sizeof
-  184); this fork puts `midi_send_internal_slot` at +120 and `clock_output_enabled` at +128 with no
-  reserved tail (sizeof 136). A 1.5-header module never calls reserved, so it is safe; a module
-  that copies its own 184-byte `sizeof` over-reads 48 readable bytes it never calls.
+- **`host_api_v1_t` tail — same geometry as upstream.** Upstream ends in `reserved[8]` at +120
+  (sizeof 184). This fork keeps sizeof 184 and a NULL run at +120..+167 (`reserved[6]`), with
+  `midi_send_internal_slot` at +168 and `clock_output_enabled` at +176 — upstream's reserved[6]/[7].
+  It used to put them at +120/+128 (sizeof 136), which is unsafe in two directions: a module with a
+  drifted header (breakbeat's `get_project_bpm` resolves to +120) would find a live pointer and call
+  it, and moving the fields past +184 instead would make a dAVEBOx binary over-read under stock.
+  Enforced by `_Static_assert`s in the header and `tests/host/test_host_api_null_run.c`. New host
+  capabilities go in as dlsym'd exports, never as fields.
 - **Borrowed stock modules:** in this window only `sound_generators/linein/module.json` changed
   (it now declares `requires_continuous_processing`), which this fork ignores for generators until
   #515 is ported.
