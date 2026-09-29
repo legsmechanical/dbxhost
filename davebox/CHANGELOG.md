@@ -7,6 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **See your whole Move in a browser.** Open `move.local:7700/mirror` (the
+  Mirror link in the manager) to see the screen large, with the whole device
+  drawn underneath it: every pad and button lit as it is on the Move, the
+  buttons and pads you are holding, and knob turns. **Save PNG** and
+  **Record** capture the screen, the device or both, and the view shows
+  whichever you pick. Dim pad colours are brightened on the page so they read
+  the way they do on the hardware.
 
 ## [0.0.5] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Changed
