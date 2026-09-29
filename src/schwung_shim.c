@@ -7610,7 +7610,14 @@ static inline void midi_in_swallow(uint8_t *shadow_midi_in, uint8_t *hw_midi_in,
  * Mute+Pad depends. A claim on one of these is ignored here whatever shadow_ui
  * wrote, so the shim stays correct even against a UI that forgot the list. */
 /* End the co-run as the framework's own Back exit does: the host reconciles
- * the cleared fields from SHM and reports the service closed to the tool. */
+ * the cleared fields from SHM and reports the service closed to the tool.
+ * ⚠ Called from the SPI path, so the log line is the WORKER's to write (file
+ * I/O never runs here — advisor review, 2026-09-29). */
+static const char *volatile corun_exit_why;
+static void corun_exit_log_worker(void) {
+    const char *why = corun_exit_why;
+    if (why) shadow_log(why);
+}
 static void corun_framework_exit(const char *why) {
     shadow_control->corun.target = CORUN_TARGET_NONE;
     shadow_control->corun.id = -1;
@@ -7618,7 +7625,13 @@ static void corun_framework_exit(const char *why) {
     shadow_control->corun.keep_mask = 0;
     shadow_control->corun.led_keep_mask = 0;
     shadow_control->shadow_display_owner = DISPLAY_OWNER_SCHWUNG_UI;
-    shadow_log(why);
+    corun_exit_why = why;
+    shim_worker_post(SHIM_EVT_CORUN_EXIT_LOG);
+}
+/* The live co-run's identity for corun_back_top: target and id. */
+static uint32_t corun_session_token(void) {
+    return ((uint32_t)(uint8_t)shadow_control->corun.target << 8) |
+           (uint32_t)(uint8_t)shadow_control->corun.id;
 }
 
 /* Back at the top of Move's editor (CORUN_KEEP_BACK_TOP_EXIT, corun_back_top.h). */
@@ -9105,7 +9118,8 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
          * the top of its editor: leave, as Back-as-exit does. */
         if (corun_back_top_poll(&corun_back_top, now_mono_ms(), shadow_dbus_text_count(),
                                 corun_active(shadow_control) &&
-                                corun_target(shadow_control) == CORUN_TARGET_MOVE_NATIVE))
+                                corun_target(shadow_control) == CORUN_TARGET_MOVE_NATIVE,
+                                corun_session_token()))
             corun_framework_exit("Back at the top of Move's editor: exiting co-run");
 
         for (int j = 0; j < SHADOW_MIDI_IN_BYTES; j += 8) {
@@ -9182,7 +9196,8 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                     if (owner == CORUN_OWNER_PEER && type == 0xB0 && d1 == CC_BACK && d2 > 0 &&
                         corun_target(shadow_control) == CORUN_TARGET_MOVE_NATIVE &&
                         (shadow_control->corun.keep_mask & CORUN_KEEP_BACK_TOP_EXIT))
-                        corun_back_top_press(&corun_back_top, now_mono_ms(), shadow_dbus_text_count());
+                        corun_back_top_press(&corun_back_top, now_mono_ms(), shadow_dbus_text_count(),
+                                             corun_session_token());
                     /* Move-native only: cede-to-peer events go to Move via the
                      * pre-ioctl filter, so suppress the duplicate to shadow_ui
                      * here. For chain-edit the peer is shadow_ui itself — let
@@ -10273,6 +10288,7 @@ static void shim_spi_init(void)
             .skipback_save          = skipback_worker_spawn_save,
             .skipback_resize        = shim_hook_skipback_resize,
             .preview_play_pending   = shim_hook_preview_play,
+            .corun_exit_log         = corun_exit_log_worker,
         };
         shim_worker_set_hooks(&hooks);
     }

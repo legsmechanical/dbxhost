@@ -419,7 +419,13 @@ step('⭐ co-run: Shift + a bottom-row pad LEAVES co-run and switches to that tr
     globalThis.host_close_service = prevClose;
     if (closed !== 1) throw new Error('co-run was not closed (' + closed + ')');
     if (S.activeTrack !== 5) throw new Error('did not switch: track ' + (S.activeTrack + 1));
+    const sentToMove = []; const prevInj = globalThis.move_midi_inject_to_move;
+    globalThis.move_midi_inject_to_move = (b) => { sentToMove.push(Array.from(b).join()); };
     onReturn('move_native', null);                     /* the host reports the close */
+    globalThis.move_midi_inject_to_move = prevInj;
+    if (!sentToMove.includes('11,176,49,0'))
+        throw new Error('Move was never told Shift came up (it was ceded to Move, and the release came to us): ' +
+                        JSON.stringify(sentToMove));
     if (S.moveCoRunTrack !== -1) throw new Error('still in co-run');
     if (S.pendingSoundEnterTrack === 2) throw new Error('sent back into the OLD track\'s sound screen');
     if (!S.shiftHeld) throw new Error('a Shift still held after co-run ends was forgotten');

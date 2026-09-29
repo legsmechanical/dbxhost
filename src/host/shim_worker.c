@@ -191,6 +191,9 @@ static void drain_events(void) {
         case SHIM_EVT_PREVIEW_PLAY:
             if (worker_hooks.preview_play_pending) worker_hooks.preview_play_pending();
             break;
+        case SHIM_EVT_CORUN_EXIT_LOG:
+            if (worker_hooks.corun_exit_log) worker_hooks.corun_exit_log();
+            break;
         case SHIM_EVT_SELECT_EXIT_STOCK:
             /* Shift+Back in the set-select gate: leave the standalone session
              * entirely. exit-to-stock.sh SIGTERMs the stack; the launcher's

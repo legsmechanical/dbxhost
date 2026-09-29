@@ -30,21 +30,28 @@
 typedef struct {
     uint64_t armed_ms;   /* 0 = no Back waiting for Move's answer */
     uint32_t seq;        /* the announcement count when it was pressed */
+    uint32_t session;    /* which co-run it was pressed in (caller's token) */
 } corun_back_top_t;
 
-/* A Back went to Move. */
-static inline void corun_back_top_press(corun_back_top_t *p, uint64_t now_ms, uint32_t seq) {
+/* A Back went to Move, in co-run `session` (the caller's identity for the
+ * live co-run: target and id). */
+static inline void corun_back_top_press(corun_back_top_t *p, uint64_t now_ms, uint32_t seq,
+                                        uint32_t session) {
     p->armed_ms = now_ms ? now_ms : 1;
     p->seq = seq;
+    p->session = session;
 }
 
 /* Once per frame. Returns 1 exactly once, when the co-run should end: Move
  * has said nothing since the Back for CORUN_BACK_TOP_MS. Any announcement in
  * that window means Back climbed a level, and disarms. `active` is 0 when the
- * co-run already ended some other way, which also disarms. */
-static inline int corun_back_top_poll(corun_back_top_t *p, uint64_t now_ms, uint32_t seq, int active) {
+ * co-run already ended some other way, and a different `session` means a NEW
+ * co-run began — both disarm, so a Back pressed in one co-run can never end
+ * the next (advisor review, 2026-09-29). */
+static inline int corun_back_top_poll(corun_back_top_t *p, uint64_t now_ms, uint32_t seq, int active,
+                                      uint32_t session) {
     if (!p->armed_ms) return 0;
-    if (!active || seq != p->seq) { p->armed_ms = 0; return 0; }
+    if (!active || seq != p->seq || session != p->session) { p->armed_ms = 0; return 0; }
     if (now_ms - p->armed_ms < CORUN_BACK_TOP_MS) return 0;
     p->armed_ms = 0;
     return 1;

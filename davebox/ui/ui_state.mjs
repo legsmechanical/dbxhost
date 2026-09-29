@@ -400,6 +400,9 @@ export const S = {
     moveSettingsRetryAt: 0,                   /* nowMs() by which a Settings row should have been announced */
     moveSettingsTries: 0,
     moveSettingsClosing: false,               /* the close was asked for; the host's service return is still to come */
+    moveSettingsPopped: false,                /* the service was popped; its return is still to come */
+    moveSettingsCloseTries: 0,                /* Move's own close, sent while its menu was still up */
+    moveSettingsCloseAt: 0,                   /* nowMs() at which the close takes its next step */
     pendingMenuAt: null,                      /* a Project Settings row label: the tick opens the menu on it */
     moveCoRunDrumHeld: new Set(),             /* d1 notes of drum lane pads currently held in co-run — per-pad Set so a 2nd simultaneous hold doesn't clobber the 1st's tracking (js-input-1). Plain pad note-off (no Shift injection) sent per held pad on physical release / co-run exit */
     trackPadMode: new Array(8).fill(0),

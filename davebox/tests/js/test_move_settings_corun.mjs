@@ -78,7 +78,9 @@ const jog = (d) => cc(14, d > 0 ? 1 : 127);
 const shiftStep2 = () => { cc(49, 127); shiftHeld = 1; note(17, 127); note(17, 0); cc(49, 0); shiftHeld = 0; };
 const noteSession = () => { cc(50, 127); cc(50, 0); };
 const selected = () => S.globalMenuItems && S.globalMenuState ? (S.globalMenuItems[S.globalMenuState.selectedIndex] || {}).label : null;
-const ms = (n) => ticks(Math.ceil(n / 10.6) + 1);
+/* Advance the clock by n ms. By the CLOCK, not a tick count: the real tick
+ * also advances S.tickCount, so a counted tick is not a fixed duration. */
+const ms = (n) => { const end = nowMs() + n; for (let g = 0; g < 10000 && nowMs() < end; g++) ticks(1); };
 
 /* Menu -> the row -> click: the gesture Josh does. */
 function openMoveSettings() {
@@ -109,17 +111,26 @@ step('the mask cedes only the jog and Back; the session keeps everything else', 
     assert(opened[0].opts.led_keep_mask === (m | GRP.TRACK), 'LED mask drifted');
 });
 
-step('⭐ Move is sent its own Shift+Step 2: ONE Shift pair, with the hardware gaps', () => {
+const SEQ = 5;                               /* Shift release, Shift down, Step 2 down/up, Shift release */
+const isSeq = (pk) => pk.length === SEQ && pk[0].join() === '11,176,49,0' && pk[1].join() === '11,176,49,127' &&
+    pk[2][1] === 0x90 && pk[2][2] === 17 && pk[3][1] === 0x80 && pk[3][2] === 17 && pk[4].join() === '11,176,49,0';
+/* Every Shift press Move gets is released, and every Step 2 press too. */
+function balanced(list) {
+    let shift = 0, step = 0;
+    for (const { pkt } of list) {
+        if (pkt[1] === 0xB0 && pkt[2] === 49) shift = pkt[3] > 0 ? 1 : 0;
+        if (pkt[2] === 17) step = pkt[1] === 0x90 ? 1 : 0;
+    }
+    return shift === 0 && step === 0;
+}
+
+step('⭐ Move is sent its own Shift+Step 2: opened by a Shift release, ONE Shift pair, the hardware gaps', () => {
     ms(1000);
     const p = injected.map(x => x.pkt);
-    assert(p.length === 4, 'injected ' + JSON.stringify(p));
-    assert(p[0].join() === '11,176,49,127', 'Shift down first: ' + p[0]);
-    assert(p[1][0] === 0x09 && p[1][1] === 0x90 && p[1][2] === 17 && p[1][3] > 0, 'Step 2 down: ' + p[1]);
-    assert(p[2][0] === 0x08 && p[2][1] === 0x80 && p[2][2] === 17, 'Step 2 up: ' + p[2]);
-    assert(p[3].join() === '11,176,49,0', 'Shift up last: ' + p[3]);
+    assert(isSeq(p), 'injected ' + JSON.stringify(p));
     const t = injected.map(x => x.at);
-    assert(t[1] - t[0] >= 250 && t[2] - t[1] >= 120 && t[3] - t[2] >= 100,
-           'gaps too short: ' + [t[1] - t[0], t[2] - t[1], t[3] - t[2]].join(', ') + ' ms');
+    assert(t[2] - t[1] >= 250 && t[3] - t[2] >= 120 && t[4] - t[3] >= 100,
+           'gaps too short: ' + [t[2] - t[1], t[3] - t[2], t[4] - t[3]].join(', ') + ' ms');
 });
 
 step('while it is up, a pad press injects nothing to Move (the session plays on)', () => {
@@ -130,9 +141,9 @@ step('while it is up, a pad press injects nothing to Move (the session plays on)
     assert(injected.length === 0, 'a pad press reached Move: ' + JSON.stringify(injected));
 });
 
-step('⭐ Back at the top of Move\'s menu: Move leaves, and so do we — back to Project Settings on the row', () => {
+step('⭐ Back at the top of Move\'s menu: Move leaves, and so do we — no close sent, back on the row', () => {
     closes = 0; injected = [];
-    uiMode = 0; ticks(2);                                  /* Move announced "Set 29" */
+    uiMode = 0; ms(400);                                   /* Move announced "Set 29" */
     assert(closes === 1, 'service not closed: ' + closes);
     assert(injected.length === 0, 'a close was sent to a menu Move already left (it would REOPEN it): ' + JSON.stringify(injected));
     serviceReturned();
@@ -140,42 +151,55 @@ step('⭐ Back at the top of Move\'s menu: Move leaves, and so do we — back to
     assert(S.globalMenuOpen && selected() === 'Move Settings...', 'not back on the row: menu=' + S.globalMenuOpen + ' row=' + selected());
 });
 
-step('⭐ Shift+Step 2 closes it: Move\'s own close is sent, then back to Project Settings', () => {
+step('⭐ Shift+Step 2 closes Move\'s menu FIRST, and gives the screen back only once it is gone', () => {
     S.globalMenuOpen = false;
     openMoveSettings(); ms(1000); uiMode = 4; ticks(2);
     closes = 0; injected = [];
-    shiftStep2(); ticks(1);
-    assert(closes === 1, 'service not closed: ' + closes);
-    assert(!S.globalMenuOpen, 'Project Settings opened on top of Move instead of closing it');
-    ms(1000);
-    const p = injected.map(x => x.pkt.join());
-    assert(p.length === 4 && p[0] === '11,176,49,127' && p[3] === '11,176,49,0', 'Move\'s close not sent: ' + JSON.stringify(p));
-    uiMode = 0;
+    shiftStep2(); ms(750);                                 /* settle + the close going out, inside the check window */
+    assert(isSeq(injected.map(x => x.pkt)), 'Move\'s close not sent: ' + JSON.stringify(injected.map(x => x.pkt)));
+    assert(closes === 0, 'the screen went back while Move\'s menu was still up');
+    uiMode = 0; ms(500);                                   /* Move left its menu */
+    assert(closes === 1, 'service not closed after Move left: ' + closes);
     serviceReturned();
     assert(S.globalMenuOpen && selected() === 'Move Settings...', 'not back on the row');
 });
 
-step('Note/Session leaves for the overview', () => {
+step('⭐ a close that REOPENED the menu (it had just closed) is caught and sent again, then given up', () => {
     S.globalMenuOpen = false;
     openMoveSettings(); ms(1000); uiMode = 4; ticks(2);
-    closes = 0;
-    noteSession(); ticks(1);
-    assert(closes === 1, 'service not closed');
+    closes = 0; injected = [];
+    noteSession();
+    ms(900);                                               /* first close out; Move still (or again) in its menu */
+    assert(injected.length === SEQ, 'first close: ' + injected.length);
+    ms(1200);
+    assert(injected.length === 2 * SEQ, 'no second close while the menu stayed up: ' + injected.length);
+    ms(2000);
+    assert(injected.length === 2 * SEQ && closes === 1, 'did not give up after two: sent ' + injected.length + ', closes ' + closes);
+    assert(balanced(injected), 'Move was left with Shift or Step 2 down');
+    uiMode = 0; serviceReturned();
+    assert(!S.moveSettingsOpen && !S.globalMenuOpen, 'Note/Session should land on the overview');
+});
+
+step('⭐ leaving while the OPEN is still going out never cuts it off half sent', () => {
     uiMode = 0;
+    openMoveSettings(); ms(200);                           /* mid-sequence */
+    closes = 0;
+    noteSession(); ms(1500);
+    assert(balanced(injected), 'Move was left holding Shift or Step 2: ' + JSON.stringify(injected.map(x => x.pkt)));
+    assert(isSeq(injected.slice(0, SEQ).map(x => x.pkt)), 'the open sequence was cut short');
+    assert(closes === 1, 'service not closed');
     serviceReturned();
-    assert(!S.moveSettingsOpen && !S.globalMenuOpen, 'menu=' + S.globalMenuOpen);
 });
 
 step('Move never announces the menu: the open is tried ONCE more, then left alone', () => {
     uiMode = 0;
     openMoveSettings(); ms(1000);
-    const first = injected.length;
-    assert(first === 4, 'first open: ' + first);
+    assert(injected.length === SEQ, 'first open: ' + injected.length);
     ms(2500);
-    assert(injected.length === 8, 'no retry after 2 s: ' + injected.length);
+    assert(injected.length === 2 * SEQ, 'no retry after 2 s: ' + injected.length);
     ms(5000);
-    assert(injected.length === 8, 'retried more than once: ' + injected.length);
-    noteSession(); ticks(1); serviceReturned();
+    assert(injected.length === 2 * SEQ, 'retried more than once: ' + injected.length);
+    noteSession(); ms(1500); serviceReturned();
 });
 
 step('control: the entry needs a chosen project', () => {

@@ -332,6 +332,12 @@ function cleanupAfterMoveNativeCoRun() {
      * hardware, so ask the hardware — a Shift still held as co-run ends
      * (Shift+pad leaves co-run) stays held, and the next Shift+pad hops on. */
     S.shiftHeld = !!shadow_get_shift_held(); S.shiftTrackLEDActive = S.shiftHeld;
+    /* ...and Move never saw that release: Shift is ceded to Move only DURING the
+     * co-run, so a Shift still held as it ends (the Shift+pad hop) comes up at
+     * dAVEBOx. Tell Move, or its Shift stays down under the next thing it is
+     * asked to do (advisor review, 2026-09-29). A release on a Shift that is
+     * already up does nothing. */
+    move_midi_inject_to_move([0x0B, 0xB0, 49, 0]);
     S.deleteHeld = false; S.muteHeld = false;
     S.copyHeld  = false; S.loopHeld  = false; S.loopJogActive = false;
     S.captureHeld = false;
@@ -405,10 +411,14 @@ const DAVEBOX_MOVE_SETTINGS_LED_KEEP_MASK = DAVEBOX_MOVE_SETTINGS_KEEP_MASK | CO
  * one Step 2 press (two taps double-tap-latch Move's Shift — see
  * ui_input_pads). The gaps are the shim's select gate's, measured on hardware
  * for its Shift+Step 1 (schwung_shim.c): 250 ms Shift -> Step, 120 ms press,
- * 100 ms -> Shift up. Milliseconds, not ticks: the tick rate is not a constant. */
+ * 100 ms -> Shift up. Milliseconds, not ticks: the tick rate is not a constant.
+ * ⭑ Opened by a Shift RELEASE, as the track co-run's entry presses are: Move
+ * may still believe Shift is down (a Shift+pad hop leaves the co-run with
+ * Shift held), and a press on a held Shift is the latch. */
 const MOVE_STEP2 = 17;   /* step buttons are notes 16..31 */
 function moveShiftStep2() {
     return [
+        { pkt: [0x0B, 0xB0, 49, 0], gapMs: 30 },
         { pkt: [0x0B, 0xB0, 49, 127], gapMs: 250 },
         { pkt: [0x09, 0x90, MOVE_STEP2, 127], gapMs: 120 },
         { pkt: [0x08, 0x80, MOVE_STEP2, 0], gapMs: 100 },
@@ -421,6 +431,20 @@ const MOVE_SETTINGS_RETRY_MS = 2000;
 /* Settle before the first inject, as the track co-run's entry inject waits
  * for the service's split to go live in the shim. */
 const MOVE_SETTINGS_SETTLE_MS = 150;
+/* ⚠ LEAVING (advisor review, 2026-09-29: the screen could end up with Move
+ * sitting in its Settings menu UNDER dAVEBOx, and show up on the next track
+ * co-run). The close is done before the screen is handed back, in the tick:
+ *   1. settle: an injection already going out finishes (never cut off half
+ *      sent — Move would keep Shift or Step 2 down), and the host's 100 ms
+ *      announcement poll catches up, so a Back that just left the menu is
+ *      seen before we decide whether to close it;
+ *   2. if Move's menu is up, send its Shift+Step 2 and wait to see it go;
+ *      still up (or up AGAIN — a toggle sent to a menu that had just closed
+ *      reopens it) → once more;
+ *   3. then, and only then, pop the service. */
+const MOVE_SETTINGS_CLOSE_SETTLE_MS = 150;
+const MOVE_SETTINGS_CLOSE_CHECK_MS  = 400;    /* after the close sequence has gone out */
+const MOVE_SETTINGS_SEQ_MS          = 500;    /* the sequence's own length, rounded up */
 
 export function moveSettingsUiMode() {
     return shadow_get_move_ui_mode() | 0;
@@ -432,6 +456,7 @@ export function enterMoveSettingsCoRun() {
     if (S.moveCoRunTrack >= 0) exitMoveNativeCoRun();
     S.moveSettingsOpen = true;
     S.moveSettingsClosing = false;
+    S.moveSettingsPopped = false;
     S.moveSettingsSeen = false;
     S.moveSettingsReturn = 'menu';
     S.moveSettingsTries = 1;
@@ -449,25 +474,18 @@ export function enterMoveSettingsCoRun() {
     S.screenDirty = true;
 }
 
-/* `dest`: 'menu' (back to Project Settings) or 'overview'. Move's menu is
- * closed with its own Shift+Step 2 ONLY when the host says it is still up — a
- * blind toggle would OPEN it again underneath a session that has left. */
+/* `dest`: 'menu' (back to Project Settings) or 'overview'. Starts the close;
+ * moveSettingsTick finishes it (see MOVE_SETTINGS_CLOSE_SETTLE_MS). */
 export function exitMoveSettingsCoRun(dest) {
-    /* Once: the service stays open until the host reports it closed, a frame
-     * or more later, and every tick in between would otherwise ask again. */
+    /* Once: every tick until the service returns would otherwise ask again. */
     if (!S.moveSettingsOpen || S.moveSettingsClosing) return;
     S.moveSettingsClosing = true;
     S.moveSettingsReturn = (dest === 'overview') ? 'overview' : 'menu';
-    if (moveSettingsUiMode() === MOVE_UI_MODE_SETTINGS) {
-        S.moveSettingsQueue = moveShiftStep2();
-        S.moveSettingsNextAt = nowMs();
-    } else {
-        S.moveSettingsQueue = null;
-    }
-    host_close_service(null);
+    S.moveSettingsCloseTries = 0;
+    S.moveSettingsCloseAt = nowMs() + MOVE_SETTINGS_CLOSE_SETTLE_MS;
 }
 
-/* From tick(): drain the injection, and follow Move out of its menu. */
+/* From tick(): drain the injection, follow Move out of its menu, and close. */
 export function moveSettingsTick() {
     const now = nowMs();
     const q = S.moveSettingsQueue;
@@ -477,8 +495,21 @@ export function moveSettingsTick() {
         S.moveSettingsNextAt = now + step.gapMs;
         if (q.length === 0) S.moveSettingsQueue = null;
     }
-    if (!S.moveSettingsOpen || S.moveSettingsClosing) return;
+    if (!S.moveSettingsOpen || S.moveSettingsPopped) return;
     const mode = moveSettingsUiMode();
+    if (S.moveSettingsClosing) {
+        if (S.moveSettingsQueue || now < S.moveSettingsCloseAt) return;
+        if (mode === MOVE_UI_MODE_SETTINGS && S.moveSettingsCloseTries < 2) {
+            S.moveSettingsCloseTries++;
+            S.moveSettingsQueue = moveShiftStep2();
+            S.moveSettingsNextAt = now;
+            S.moveSettingsCloseAt = now + MOVE_SETTINGS_SEQ_MS + MOVE_SETTINGS_CLOSE_CHECK_MS;
+            return;
+        }
+        S.moveSettingsPopped = true;
+        host_close_service(null);
+        return;
+    }
     if (mode === MOVE_UI_MODE_SETTINGS) {
         S.moveSettingsSeen = true;
     } else if (S.moveSettingsSeen) {
@@ -496,6 +527,7 @@ function cleanupAfterMoveSettings() {
     const dest = S.moveSettingsReturn;
     S.moveSettingsOpen = false;
     S.moveSettingsClosing = false;
+    S.moveSettingsPopped = false;
     S.moveSettingsSeen = false;
     S.moveSettingsReturn = null;
     /* Move repainted the jog/Back LEDs while it had them. */
