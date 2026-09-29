@@ -8,6 +8,20 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 
+## [0.0.4] — 2026-09-29 (test build, not in the Schwung catalog)
+### Fixed
+- **The first launch no longer refuses on some Moves.** If the boot-recovery
+  step can't be installed, dAVEBOx now launches anyway and writes the reason
+  to `launch.log`, where it used to refuse every launch.
+- **An interrupted install finishes.** If a first launch stopped partway, the
+  next launch completes it instead of starting a half-installed session.
+- **When a launch is refused, `launch.log` says why.**
+- **Leaving Move Settings closes Move's settings menu first.** Move's screen
+  could stay on its settings menu under dAVEBOx's, and the two fought over the
+  display.
+- **Shift no longer sticks in Move.** Leaving Move's editor with Shift still
+  held (Shift + a bottom-row pad) could leave Shift held down in Move.
+
 ## [0.0.3] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Added
 - **Move's own settings, from Project Settings.** A new **Move Settings...** row
