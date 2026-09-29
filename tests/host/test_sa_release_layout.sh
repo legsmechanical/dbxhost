@@ -49,6 +49,9 @@ BUILD_DIR="$B" HEAL_BIN="$T/heal" DAVEBOX_DIST="$D" MANUAL_HTML="$T/no-such.html
     standalone/scripts/build-sa-release.sh "$T/out2" > "$T/log2" 2>&1
 [ $? -ne 0 ] && grep -q "is the Help page" "$T/log2" && ok "...and a release WITHOUT the manual refuses to build" \
     || bad "built without the manual: $(cat "$T/log2")"
+for f in LICENSE THIRD_PARTY_LICENSES.md licenses/GPL-2.0.txt licenses/GPL-3.0.txt; do
+    has "davebox-sa/payload/$f" && ok "payload/$f ships (the shim is GPL-3.0-or-later as conveyed)" || bad "payload/$f missing — a GPL binary shipped without its licence"
+done
 has "davebox-sa/payload/splash-2.hex" && ok "the splash pool (the daves) still ships (Josh: keep the daves)" || bad "a splash hex is missing"
 echo "release.json:"
 rv="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' release.json | head -1)"; mv="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' standalone/module/module.json | head -1)"

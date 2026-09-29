@@ -69,6 +69,14 @@ cp -R "$BUILD_DIR/modules/chain" "$P/modules/chain"
 cp -R "$DAVEBOX_DIST" "$P/modules/tools/davebox-sound"
 cp "$HEAL_BIN" "$P/bin/heal"; chmod 755 "$P/bin/heal"
 mkdir -p "$P/help"; cp "$MANUAL_HTML" "$P/help/manual.html"
+# Licences come from the REPO, not the build dir, so no stale or partial build
+# can drop them: schwung-shim.so links libespeak-ng (GPL-3.0-or-later) and
+# link-subscriber is GPL-2.0-or-later, so a tarball without these texts is
+# non-compliant while looking identical to a good one. set -e makes a missing
+# file fatal. See THIRD_PARTY_LICENSES.md.
+mkdir -p "$P/licenses"
+cp "$REPO_ROOT/LICENSE" "$REPO_ROOT/THIRD_PARTY_LICENSES.md" "$P/"
+cp "$REPO_ROOT/licenses/GPL-2.0.txt" "$REPO_ROOT/licenses/GPL-3.0.txt" "$P/licenses/"
 printf '%s\n' "$SA_VERSION" > "$P/sa-version.txt"
 # A TEST build (0.0.x) ships with the debug log ON (Josh, 2026-09-28: "some
 # reasonable logging always on (even for testers)"). The log is capped
