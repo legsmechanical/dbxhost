@@ -217,14 +217,30 @@ rm -rf "$T"
 # ---- 5. Reboot mid-session: mount gone, marker stale -------------------------
 # ⭑ The case the mount model makes trivial. A reboot clears mounts, so the user
 # is ALREADY looking at their own sets; recover must notice and simply tidy the
-# marker + index rather than "restoring" anything.
+# marker rather than "restoring" anything. With no boot unit, recover runs at the
+# NEXT dAVEBOx launch — maybe days later, after the user has used Move — so it
+# must not write the remembered index over whatever Move has chosen since.
 mk_env
 run enter
-sh "$HEAL_BIN" --umount-sets            # the reboot, as the kernel does it
+sh "$HEAL_BIN" --umount-sets            # the reboot, as the kernel does it:
+sh "$HEAL_BIN" --umount-settings        # every mount goes
+check "rebooted: Move sees the user's own index" grep -q '"currentSongIndex": 1' "$SETTINGS_JSON"
+printf '{"currentSongIndex": 0, "other": true}\n' > "$SETTINGS_JSON"   # ...then opens another set in Move
 run recover
 check "recover(rebooted): user's sets"      test -f "$SETS_DIR/$U1/Song.abl"
 check "recover(rebooted): phase none"       test "$(phase)" = "none (not bound)"
-check "recover(rebooted): native index"     grep -q '"currentSongIndex": 1' "$SETTINGS_JSON"
+check "recover(rebooted): the set Move chose since is kept" grep -q '"currentSongIndex": 0' "$SETTINGS_JSON"
+rm -rf "$T"
+
+# ---- 5c. Reboot mid-session with SHARED settings (an old helper) --------------
+# The session's index went into Move's own file, so recover must put the user's
+# back — the one case the index is ours to restore.
+mk_env
+STUB_NO_SETTINGS=1 sh "$SWAP" enter >/dev/null 2>&1
+check "shared: the session's index is in Move's file" grep -q '"currentSongIndex": 0' "$SETTINGS_JSON"
+sh "$HEAL_BIN" --umount-sets
+run recover
+check "recover(rebooted, shared): the user's index is back" grep -q '"currentSongIndex": 1' "$SETTINGS_JSON"
 rm -rf "$T"
 
 # ---- 5b. The marker LIES: says none, but our library is still bound ----------
@@ -387,6 +403,7 @@ check "9c ...settings NOT separated" test ! -L "$MOVE_SETTINGS_DIR"
 check "9c ...and it says so" sh -c 'printf "%s" "$1" | grep -q "settings not separated this session"' _ "$out"
 run exit
 check "9c exit is clean" test "$(phase)" = "none (not bound)"
+check "9c ...and puts Move's index back" grep -q '"currentSongIndex": 1' "$SETTINGS_JSON"
 rm -rf "$T"
 
 [ "$fails" = 0 ] && echo "PASS: set-swap" || { echo "FAIL: set-swap" >&2; exit 1; }

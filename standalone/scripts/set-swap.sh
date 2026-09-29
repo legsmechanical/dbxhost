@@ -48,8 +48,8 @@
 # all any more: they live on the set dirs, and no set dir is touched.
 #
 # Recovery must work with no session running and no Move running — it is called
-# from launch.sh (backstop) and from the blessed davebox-restore oneshot at boot
-# (Before=move-launcher.service).
+# from launch.sh before every session. (A boot-time oneshot also ran it until
+# 0.0.4; a reboot clears the mounts by itself, so nothing needs it at boot.)
 #
 # Testability: every path and the mount helper itself can be overridden by
 # environment, so the whole state machine runs against fixtures in a tmpdir with
@@ -105,9 +105,16 @@ read_native_index() {
     sed -n '2p' "$STATE_FILE" 2>/dev/null | grep -E '^-?[0-9]+$' || echo "0"
 }
 
-write_state() { # phase native_index
+# Line 3: whether the session's Move settings were its OWN copy ("own") or
+# Move's shared file ("shared"). Empty on a marker from an older build.
+read_settings_mode() {
+    [ -f "$STATE_FILE" ] || return 0
+    sed -n '3p' "$STATE_FILE" 2>/dev/null
+}
+
+write_state() { # phase native_index [own|shared]
     mkdir -p "$SWAP_ROOT"
-    printf '%s\n%s\n' "$1" "$2" > "$STATE_FILE.tmp"
+    printf '%s\n%s\n%s\n' "$1" "$2" "${3:-}" > "$STATE_FILE.tmp"
     mv -f "$STATE_FILE.tmp" "$STATE_FILE"
 }
 
@@ -407,13 +414,17 @@ NSLOT_PY
     fi
     write_song_index "$_sa_idx"
 
-    write_state "sa-live" "$_idx"
+    # Record where that index went: into the session's own settings, or (helper
+    # too old to bind them) into Move's — which only exit may then put back.
+    if settings_are_ours; then _mode=own; else _mode=shared; fi
+    write_state "sa-live" "$_idx" "$_mode"
     log "entered: library bound over Sets/ (native index $_idx, session index $_sa_idx)"
 }
 
 do_exit() {
     _phase="$(read_phase)"
     _idx="$(read_native_index)"
+    _mode="$(read_settings_mode)"
 
     # Save the session's position for next time — but only while OUR library is
     # the one on screen, or we would record a position in the user's library.
@@ -428,7 +439,7 @@ do_exit() {
         log "session position recorded: index $_sess"
     fi
 
-    write_state "exiting" "$_idx"
+    write_state "exiting" "$_idx" "$_mode"
     heal_umount || die "unbind failed"
     if sets_are_ours; then
         die "unbind reported success but Sets/ is still our library"
@@ -455,7 +466,17 @@ do_exit() {
         [ "$_back" = 0 ] || log "legacy drain: restored $_back native set(s) from the old stash"
     fi
 
-    write_song_index "$_idx"
+    # ⚠ Put the user's index back ONLY if the session wrote it into Move's own
+    # file. With the session's own settings, Move's file was never touched —
+    # and after a power loss this runs at the NEXT launch, maybe days later, so
+    # writing the remembered index would undo whatever set the user has opened
+    # in Move since. (A marker from an older build has no mode: put it back, as
+    # that build would have.)
+    if [ "$_mode" = own ]; then
+        log "Move's settings were never the session's — its index is left as it is"
+    else
+        write_song_index "$_idx"
+    fi
     write_state "none" "0"
     log "exited: Sets/ is the user's library again (index $_idx, was phase '$_phase')"
 }

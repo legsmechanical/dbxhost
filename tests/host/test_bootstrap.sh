@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # tests/host/test_bootstrap.sh — the zero-SSH first install (2026-09-05): BLESS
-# FIRST via stock's heal, then the payload, then the restore unit, then the
-# stamp — and a stock host that cannot bless leaves the device untouched.
+# FIRST via stock's heal, then the payload and its stamp — and a stock host that
+# cannot bless leaves the device untouched. No boot unit: it was retired after a
+# tester's 0.0.3 refused every launch installing one (2026-09-29).
 # Stock heal and our heal are stubs: the stock stub "blesses" by chmod u+s on the
 # staged file (a non-root owner may set the bit on its own file, which is what
 # `test -u` reads); ours logs its verb.
@@ -19,8 +20,6 @@ mk() {  # a fresh fixture: stock tree with (or without) a blessing heal, module 
     cat > "$T/f/mod/payload/bin/heal" <<'H'
 #!/bin/sh
 echo "$*" >> "$(dirname "$0")/heal.log"
-# FAIL_UNIT: the restore unit cannot be written (a full system partition)
-[ "$1" = --install-restore-unit ] && [ -f "$(dirname "$0")/../../FAIL_UNIT" ] && { echo "davebox-heal: write x: No space left on device" >&2; exit 2; }
 exit 0
 H
     chmod 755 "$T/f/mod/payload/bin/heal"
@@ -47,7 +46,8 @@ rc=$(run)
 [ -u "$T/f/mod/bin/heal" ] && ok "the helper is blessed (setuid), staged from the payload" || bad "not blessed"
 [ ! -f "$T/f/mod/bin/heal.new" ] && ok "the stage is consumed" || bad "heal.new left behind"
 [ -x "$T/f/dbx/schwung" ] && ok "the payload is laid into DBX_DIR" || bad "no install"
-grep -qx -- "--install-restore-unit" "$T/f/mod/bin/heal.log" 2>/dev/null && ok "heal --install-restore-unit ran" || bad "restore unit not installed: $(cat "$T/f/mod/bin/heal.log" 2>/dev/null)"
+grep -q -- "restore-unit" "$T/f/mod/bin/heal.log" 2>/dev/null && bad "bootstrap asked the helper for a boot unit: $(cat "$T/f/mod/bin/heal.log")" || ok "no boot unit is installed"
+grep -q "^bootstrap: done (v-test)$" "$T/out" && grep -q '"version":"v-test"' "$T/f/dbx/sa-build.json" && ok "...and the install finishes, stamped" || bad "not finished: $(cat "$T/out")"
 grep -q '"version":"v-test"' "$T/f/dbx/sa-build.json" && ok "sa-build.json stamped with the payload version" || bad "no stamp"
 echo "  order:"; grep -n "blessed\|installing payload\|done" "$T/out" | cut -c1-80
 b=$(grep -n "blessed:" "$T/out" | cut -d: -f1); p=$(grep -n "installing payload" "$T/out" | cut -d: -f1)
@@ -73,18 +73,6 @@ echo "the LAUNCHER re-blesses an existing install in place, and calls bootstrap 
 L=standalone/scripts/launch.sh
 grep -q 're-blessing in place (no payload)' "$L" && ok "launch.sh re-blesses without the payload" || bad "no in-place re-bless"
 awk '/no install at \$DBX_DIR -- bootstrap/{f=1} f&&/bootstrap.sh/{print; exit}' "$L" | grep -q 'bootstrap.sh' && ok "bootstrap.sh is reached only on the no-install branch" || bad "bootstrap reachable with an install present"
-echo "the restore unit cannot be installed (a tester's full system partition, 2026-09-29):"
-mk blesses; touch "$T/f/FAIL_UNIT"
-rc=$(run)
-[ "$rc" = 0 ] && ok "bootstrap still succeeds — the launch is not refused" || bad "rc=$rc: $(cat "$T/out")"
-grep -q "WARNING: could not install the boot-recovery unit" "$T/out" && ok "...and says so" || bad "no warning: $(cat "$T/out")"
-# ...said on STDOUT: in a real launch the helper's stderr never reaches the log.
-mk blesses; touch "$T/f/FAIL_UNIT"
-MOD_DIR="$T/f/mod" DBX_DIR="$T/f/dbx" STOCK_DIR="$T/f/stock" STOCK_HEAL="$T/f/stock/bin/schwung-heal" \
-    sh "$T/f/mod/payload/scripts/bootstrap.sh" > "$T/stdout" 2>/dev/null
-grep -q "No space left on device" "$T/stdout" && ok "...with the helper's own reason in the log, even with stderr lost" || bad "reason lost: $(cat "$T/stdout")"
-grep -q "system partition:" "$T/out" && ok "...and the partition's free space" || bad "no df line"
-grep -q '"version":"v-test"' "$T/f/dbx/sa-build.json" && ok "the install is STAMPED despite the unit" || bad "no stamp: $(cat "$T/f/dbx/sa-build.json" 2>&1)"
 echo "an install left UNSTAMPED by an unfinished bootstrap is laid again, not kept:"
 mk blesses; rc=$(run); rm -f "$T/f/dbx/sa-build.json"; printf 'half\n' > "$T/f/dbx/schwung"
 rc=$(run)

@@ -10,10 +10,10 @@
 #                stock host predates that, nothing else is touched: a half-made
 #                install that cannot be blessed is worse than none. The log
 #                names the one manual command.
-#   2. payload — layout-install.sh lays the payload into $DBX_DIR.
-#   3. unit    — heal --install-restore-unit (needs the payload: the unit's
-#                ConditionPathExists points at scripts/set-swap.sh).
-#   4. stamp   — sa-build.json.
+#   2. payload — layout-install.sh lays the payload into $DBX_DIR, then stamps
+#                sa-build.json.
+# (No boot unit any more: the recovery a reboot needs is the launch's own
+# `set-swap.sh recover`, and the helper removes the unit older builds installed.)
 # Idempotent: every step checks before acting, so the launcher may call this
 # on every launch where the cheap checks say something is missing.
 #
@@ -69,7 +69,7 @@ newer() {  # $1 newer than $2, both x.y.z
     [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$1" ] && [ "$1" != "$2" ]
 }
 # ⚠ An install with NO stamp was laid by a bootstrap that did not finish (a
-# tester's 0.0.3, 2026-09-29: the restore unit failed after the layout, and
+# tester's 0.0.3, 2026-09-29: a later step failed after the layout, and
 # every later launch "kept" the unstamped tree as if it were a dev build — it
 # would have kept it over a newer release too). Dev deploys always stamp, so a
 # missing stamp means unfinished: lay it again.
@@ -93,21 +93,5 @@ else
     say "install present ($have)"
 fi
 
-# ---- 3. boot-recovery unit -------------------------------------------------------
-# NOT fatal (a tester's Move, 2026-09-29, refused every launch here with no
-# reason given). The unit runs `set-swap.sh recover` at boot after a crash;
-# every dAVEBOx launch runs the same recover as its backstop (launch.sh), and a
-# reboot clears the mounts by itself — so without it the device is still safe.
-# Say why, with what the log needs to tell a full system partition apart.
-# ⚠ The helper's reason is CAPTURED and said on stdout: in a real launch its
-# stderr never reaches launch.log (device, 2026-09-29 — the same helper line
-# lands in a file when run by hand; the cause is not found yet), which is how a
-# tester's log said "could not install" and nothing else.
-if ! _unit_out="$("$HEAL" --install-restore-unit 2>&1)"; then
-    [ -n "$_unit_out" ] && printf '%s\n' "$_unit_out" | sed 's/^/bootstrap:   /'
-    say "WARNING: could not install the boot-recovery unit — continuing without it"
-    say "  system partition: $(df -h / 2>/dev/null | tail -n 1)"
-    say "  os: $(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | tr -d '\"')"
-fi
 say "done ($want)"
 exit 0

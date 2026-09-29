@@ -206,7 +206,7 @@ setsid --wait bash -c '
 
   # ZERO-SSH INSTALL (2026-09-05). If the helper is not blessed or the install
   # dir is not there, the launcher module payload installs it: bless first via
-  # stock heal (schwung#419), then the payload, then the restore unit. Runs
+  # stock heal (schwung#419), then the payload. Runs
   # BEFORE anything touches the stock stack, so a refusal leaves stock exactly
   # as it was. Cheap stats on every other launch. A stock/catalog reinstall of
   # the module can un-setuid the helper, so this is not a first-run check.
@@ -452,9 +452,9 @@ setsid --wait bash -c '
   rm -f /dev/shm/schwung-* /dev/shm/dbxhost-*
 
   # Design-B project workspace: this session sees ITS OWN set library, never
-  # the users native sets. Recover first (a hard reboot mid-session leaves the
-  # swap in a non-none phase; the blessed boot unit normally heals it, this is
-  # the backstop), then swap in. A failed swap refuses the launch — starting a
+  # the users native sets. Recover first (a hard reboot mid-session clears the
+  # mounts but leaves the swap marker in a non-none phase; this is the ONE
+  # recovery — there is no boot unit any more), then swap in. A failed swap refuses the launch — starting a
   # session over a half-swapped library would mix the two worlds.
   if [ -x "$DBX_DIR/scripts/set-swap.sh" ]; then
     sh "$DBX_DIR/scripts/set-swap.sh" recover || refuse "set-swap recover failed"
@@ -808,7 +808,7 @@ setsid --wait bash -c '
   # returns — stock must boot seeing exactly what it saw before the session.
   if [ -x "$DBX_DIR/scripts/set-swap.sh" ]; then
     sh "$DBX_DIR/scripts/set-swap.sh" exit || \
-      echo "WARNING: set-swap exit failed — boot recovery will heal it"
+      echo "WARNING: set-swap exit failed — a reboot or the next launch will heal it"
   fi
 
   # Resuming the unit is what brings stock Move back, so this is the restore

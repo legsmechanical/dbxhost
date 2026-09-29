@@ -57,8 +57,8 @@ yet — so the tarball comes from this repo's
 2. In Schwung Manager (`http://move.local:7700`): **Modules → Install Custom
    Module → From Tarball → Install from File**, and pick the tarball.
 3. On the Move: **Shift + Step 13 (Tools) → dAVEBOx SA**. The first launch lays
-   the dAVEBOx host beside stock, asks stock Schwung's own helper to bless
-   dAVEBOx's, and installs the boot-recovery service — about a minute, once.
+   the dAVEBOx host beside stock and asks stock Schwung's own helper to bless
+   dAVEBOx's — about a minute, once.
    Every later launch is a launch.
 
 To remove it, install `davebox-uninstall-module.tar.gz` from the same release

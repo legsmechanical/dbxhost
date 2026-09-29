@@ -27,7 +27,7 @@
 #   quarantine/ sets/quarantine/                   work set aside, never deleted:
 #                 saves parked with no project, and orphan project folders
 # Everything else under $DBX_DIR goes, and so does everything an install put
-# anywhere else: the root-owned shim and boot-recovery unit (through our own
+# anywhere else: the root-owned shim and any old boot-recovery unit (through our own
 # blessed helper), the boot-selector row (handing `default` back to schwung if
 # it named us), the dAVEBOx Tools module and, LAST,
 # this module.
@@ -35,8 +35,7 @@
 # ORDER is the safety argument:
 #   1. a live session refuses everything;
 #   2. the Sets bind mount is undone and VERIFIED undone before anything is
-#      deleted — while it is bound, Move's Sets/ shows OUR library, and the
-#      restore unit is what would put the user's own sets back after a crash;
+#      deleted — while it is bound, Move's Sets/ shows OUR library;
 #   3. root-owned files, then the unprivileged ones;
 #   4. this module last (ui.js is already in memory; the shell holds this
 #      file open, and the whole body is functions with `main` on the last line,

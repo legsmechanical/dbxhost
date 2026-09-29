@@ -28,10 +28,11 @@
  * crash mid-write cannot leave a half-written library.
  *
  * Actions: with no argument it mirrors the shim (and installs a staged update
- * of itself). --pause-launcher / --resume-launcher stop and start
- * move-launcher.service, which is systemd-supervised and would otherwise
- * revive the stock stack a few seconds after the launcher kills it, leaving
- * two hosts fighting over the SPI device. Both the unit name and the
+ * of itself, and removes the boot-recovery unit earlier builds installed).
+ * --pause-launcher / --resume-launcher stop and start move-launcher.service,
+ * which is systemd-supervised and would otherwise revive the stock stack a few
+ * seconds after the launcher kills it, leaving two hosts fighting over the SPI
+ * device. Both the unit name and the
  * systemctl path are compile-time constants.
  *
  * --mount-sets / --umount-sets bind-mount this install's project library over
@@ -107,36 +108,23 @@
 #endif
 #define MOVE_UNIT    "move-launcher.service"
 
-/* The ONE unit this helper may INSTALL (2026-09-05, `--install-restore-unit`):
- * boot recovery for the project-library swap. It used to be written by bless.sh
- * as root over SSH — the last root step a zero-SSH install had left. The text is
- * a compile-time constant; the path is overridable only for the test build. */
+/* The boot-recovery unit this helper USED to install (2026-09-05 .. 0.0.4):
+ * a oneshot that ran `set-swap.sh recover` at boot. RETIRED — it is only ever
+ * removed now, by every launch (see retire_restore_unit) and by the uninstall.
+ * Why it went: a reboot clears the bind mounts by itself, so after a power loss
+ * the user's own Sets and settings are back without it, and every launch runs
+ * the same recover as its first step. Installing it was the one root write
+ * official Schwung never makes, and it refused a tester's first launch. The
+ * paths are overridable only for the test build. */
 #ifndef RESTORE_UNIT_PATH
 #define RESTORE_UNIT_PATH "/etc/systemd/system/davebox-restore.service"
 #endif
 #define RESTORE_UNIT_NAME "davebox-restore.service"
-/* The link `systemctl enable` makes (WantedBy=multi-user.target). Removed by
- * --uninstall-root directly as well as through `disable`, so a unit file that
- * is already gone cannot leave a dangling link behind. */
+/* The link `systemctl enable` made (WantedBy=multi-user.target), removed by
+ * hand as well as through `disable`, so a unit file that is already gone
+ * cannot leave a dangling link behind. */
 #ifndef RESTORE_WANTS_PATH
 #define RESTORE_WANTS_PATH "/etc/systemd/system/multi-user.target.wants/davebox-restore.service"
-#endif
-#ifndef HEAL_UNINSTALL_ONLY  /* only the install writes the unit */
-static const char RESTORE_UNIT_TEXT[] =
-    "[Unit]\n"
-    "Description=davebox: restore native set library after an interrupted session\n"
-    "Before=move-launcher.service\n"
-    "ConditionPathExists=" DBX_DIR "/scripts/set-swap.sh\n"
-    "\n"
-    "[Service]\n"
-    "Type=oneshot\n"
-    "User=ableton\n"
-    "ExecStart=/bin/sh " DBX_DIR "/scripts/set-swap.sh recover\n"
-    "RemainAfterExit=no\n"
-    "\n"
-    "[Install]\n"
-    "WantedBy=multi-user.target\n";
-
 #endif
 
 /* The ONLY bind mount this helper may make: this install's project library,
@@ -278,7 +266,7 @@ static int copy_atomic(const char *src, const char *dst, mode_t perms,
  * constants, so this cannot be aimed at another service. */
 /* Run systemctl with a verb and an optional unit, both compile-time or
  * closed-set constants, and wait. Shared by the launcher pause/resume and the
- * restore-unit install. */
+ * retirement of the old boot-recovery unit. */
 static int systemctl_run(const char *verb, const char *unit) {
     pid_t pid = fork();
     if (pid < 0) {
@@ -306,53 +294,6 @@ static int systemctl_run(const char *verb, const char *unit) {
 }
 #ifndef HEAL_UNINSTALL_ONLY  /* install-only verbs */
 static int launcher_unit(const char *verb) { return systemctl_run(verb, MOVE_UNIT); }
-
-/* Install the boot-recovery unit (see RESTORE_UNIT_TEXT): write it atomically
- * when its content differs, then daemon-reload + enable. Idempotent — every
- * launch may call this; a device that already has it does one compare and two
- * cheap systemctl calls. Runs as ableton in the unit; root only writes it. */
-static int install_restore_unit(void) {
-    int need = 1;
-    {
-        FILE *f = fopen(RESTORE_UNIT_PATH, "r");
-        if (f) {
-            char cur[sizeof(RESTORE_UNIT_TEXT) + 64];
-            size_t n = fread(cur, 1, sizeof(cur) - 1, f);
-            fclose(f);
-            cur[n] = 0;
-            if (n == sizeof(RESTORE_UNIT_TEXT) - 1 && memcmp(cur, RESTORE_UNIT_TEXT, n) == 0) need = 0;
-        }
-    }
-    if (need) {
-        char tmp[512];
-        int n = snprintf(tmp, sizeof(tmp), "%s.heal-tmp", RESTORE_UNIT_PATH);
-        if (n < 0 || (size_t)n >= sizeof(tmp)) return -1;
-        int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        if (fd < 0) { fprintf(stderr, "davebox-heal: open %s: %s\n", tmp, strerror(errno)); return -1; }
-        size_t off = 0, len = sizeof(RESTORE_UNIT_TEXT) - 1;
-        while (off < len) {
-            ssize_t w = write(fd, RESTORE_UNIT_TEXT + off, len - off);
-            if (w < 0) {
-                if (errno == EINTR) continue;
-                /* Said out loud: this was the one silent failure, and a full
-                 * system partition lands exactly here. */
-                fprintf(stderr, "davebox-heal: write %s: %s\n", tmp, strerror(errno));
-                close(fd); unlink(tmp); return -1;
-            }
-            off += (size_t)w;
-        }
-        if (fsync(fd) < 0) { /* rename is the durability point */ }
-        if (close(fd) < 0 || rename(tmp, RESTORE_UNIT_PATH) < 0) {
-            fprintf(stderr, "davebox-heal: install %s: %s\n", RESTORE_UNIT_PATH, strerror(errno));
-            unlink(tmp);
-            return -1;
-        }
-        fprintf(stderr, "davebox-heal: wrote %s\n", RESTORE_UNIT_PATH);
-    }
-    if (systemctl_run("daemon-reload", NULL) != 0) return -1;
-    if (systemctl_run("enable", RESTORE_UNIT_NAME) != 0) return -1;
-    return 0;
-}
 
 #endif
 
@@ -432,14 +373,13 @@ static int sets_umount(void) { return unbind_dir(SA_LIBRARY, SETS_DIR, "sets"); 
 static int settings_umount(void) { return unbind_dir(SA_SETTINGS, SETTINGS_DIR, "settings"); }
 
 /* Undo every root-owned thing an install made (2026-09-27, the uninstaller):
- * the Sets and settings bind mounts, the boot-recovery unit (disable, remove, reload) and the
- * mirrored shim in /usr/lib. All three paths are the compile-time constants
+ * the Sets and settings bind mounts, the retired boot-recovery unit if an
+ * earlier build left one, and the mirrored shim in /usr/lib. All three paths are the compile-time constants
  * above; nothing is taken from input. Idempotent — "already gone" is success,
  * so a half-finished uninstall can simply be run again.
  *
- * ORDER: the mounts first, and a failure there stops everything. The unit is
- * what brings the user's own Sets and settings back after a crash, so it must
- * not be removed while ours might still be bound over theirs. */
+ * ORDER: the mounts first, and a failure there stops everything — nothing is
+ * removed while ours might still be bound over the user's Sets or settings. */
 static int unlink_if_present(const char *path) {
     if (unlink(path) == 0) {
         fprintf(stderr, "davebox-heal: removed %s\n", path);
@@ -450,15 +390,10 @@ static int unlink_if_present(const char *path) {
     return -1;
 }
 
-static int uninstall_root(void) {
-    if (sets_umount() != 0) {
-        fprintf(stderr, "davebox-heal: Sets still bound — removing nothing else\n");
-        return -1;
-    }
-    if (settings_umount() != 0) {
-        fprintf(stderr, "davebox-heal: settings still bound — removing nothing else\n");
-        return -1;
-    }
+/* Remove the retired boot-recovery unit, if an earlier build installed it:
+ * disable, unlink the unit and its wants link, reload. Nothing present is
+ * success and costs one stat per call, so every launch can run it. */
+static int retire_restore_unit(void) {
     int rc = 0;
     struct stat st;
     if (stat(RESTORE_UNIT_PATH, &st) == 0) {
@@ -470,6 +405,19 @@ static int uninstall_root(void) {
     } else if (unlink_if_present(RESTORE_WANTS_PATH) != 0) {
         rc = -1;
     }
+    return rc;
+}
+
+static int uninstall_root(void) {
+    if (sets_umount() != 0) {
+        fprintf(stderr, "davebox-heal: Sets still bound — removing nothing else\n");
+        return -1;
+    }
+    if (settings_umount() != 0) {
+        fprintf(stderr, "davebox-heal: settings still bound — removing nothing else\n");
+        return -1;
+    }
+    int rc = retire_restore_unit();
     if (unlink_if_present(DST_SHIM) != 0) rc = -1;
     if (rc == 0) fprintf(stderr, "davebox-heal: root-owned files removed\n");
     return rc;
@@ -568,14 +516,12 @@ int main(int argc, char **argv) {
             return settings_mount() == 0 ? 0 : 2;
         if (strcmp(argv[1], "--umount-settings") == 0)
             return settings_umount() == 0 ? 0 : 2;
-        if (strcmp(argv[1], "--install-restore-unit") == 0)
-            return install_restore_unit() == 0 ? 0 : 2;
         if (strcmp(argv[1], "--uninstall-root") == 0)
             return uninstall_root() == 0 ? 0 : 2;
         fprintf(stderr, "davebox-heal: unknown argument %s (expected "
                         "--pause-launcher, --resume-launcher, --mount-sets, "
-                        "--umount-sets, --mount-settings, --umount-settings, "
-                        "--install-restore-unit or --uninstall-root)\n", argv[1]);
+                        "--umount-sets, --mount-settings, --umount-settings "
+                        "or --uninstall-root)\n", argv[1]);
         return 1;
     }
 
@@ -626,6 +572,13 @@ int main(int argc, char **argv) {
                 DST_SHIM);
         rc = 2;
     }
+
+    /* An earlier build's boot-recovery unit goes on the first launch of this
+     * one. Best effort: a failure is said and never refuses the launch — a
+     * left-over unit only runs the same recover every launch already runs. */
+    if (retire_restore_unit() != 0)
+        fprintf(stderr, "davebox-heal: WARNING: could not remove the old %s\n",
+                RESTORE_UNIT_NAME);
 
     return rc;
 #endif

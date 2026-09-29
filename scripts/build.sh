@@ -723,8 +723,7 @@ if [ -d ./standalone ]; then
     cp ./standalone/scripts/pick-signal-thread.py ./build/scripts/
     chmod +x ./build/scripts/blank-leds.py
     # set-swap.sh: the Design-B project-library swap engine — a runtime
-    # dependency of launch.sh (session entry/exit) and of the blessed
-    # davebox-restore boot recovery.
+    # dependency of launch.sh (session entry/exit and recovery).
     cp ./standalone/scripts/set-swap.sh ./build/scripts/
     # project-cmd.sh: in-session project management (list/new/switch), driven
     # by the hosted module via host_system_cmd.

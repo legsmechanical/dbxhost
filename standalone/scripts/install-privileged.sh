@@ -61,10 +61,3 @@ ls -la "$HEAL_DST"
 echo "priming:"
 "$HEAL_DST" || true
 ls -la "/usr/lib/$DBX_SHIM_SONAME" 2>/dev/null || true
-
-# --- boot recovery for the project-library swap ------------------------------
-# The unit is written by heal itself now (`--install-restore-unit`, 2026-09-05),
-# so the launcher can install it without root once the helper is blessed; here
-# it runs as root, which is also fine. See davebox-heal.c RESTORE_UNIT_TEXT.
-"$HEAL_DST" --install-restore-unit
-echo "installed davebox-restore.service (boot recovery for the library swap)"

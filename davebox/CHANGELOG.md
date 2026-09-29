@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Changed
+- **dAVEBOx no longer adds a service to Move's system.** Earlier builds
+  installed one that tidied up at power-on after a session was cut off. A
+  restart already gives you back your own sets and settings, and dAVEBOx
+  finishes the tidy-up the next time it opens, so the service is gone: the
+  next launch removes it from Moves that have it.
 
 ## [0.0.4] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Fixed

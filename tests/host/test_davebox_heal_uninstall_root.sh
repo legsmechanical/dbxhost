@@ -96,7 +96,7 @@ installed; rm -rf "$T/settings"; ln -s "$T/dbx/settings" "$T/settings"
     && ok "already bound: success, no second mount" || bad "rc=$rc: $(cat "$T/err")"
 
 echo "the uninstall-only build refuses every install verb:"
-for v in --mount-sets --mount-settings --pause-launcher --resume-launcher --install-restore-unit ""; do
+for v in --mount-sets --mount-settings --pause-launcher --resume-launcher ""; do
     installed; : > "$T/systemctl.log"
     if [ -n "$v" ]; then "$T/heal-un" "$v" 2>/dev/null; else "$T/heal-un" 2>/dev/null; fi; rc=$?
     [ "$rc" = 1 ] && [ ! -s "$T/systemctl.log" ] && [ -e "$T/usr/davebox-shim.so" ] \
@@ -105,7 +105,7 @@ done
 installed; rm -rf "$T/heal"; mkdir -p "$T/heal"; echo new > "$T/heal/heal.new"
 "$T/heal-un" --uninstall-root 2>/dev/null
 [ -f "$T/heal/heal.new" ] && [ ! -e "$T/heal/heal" ] && ok "no self-update in the uninstall build" || bad "it self-updated"
-nm "$T/heal-un" | grep -q -E " (copy_atomic|sets_mount|settings_mount|install_restore_unit)$" \
+nm "$T/heal-un" | grep -q -E " (copy_atomic|sets_mount|settings_mount)$" \
     && bad "install-only code is compiled into the uninstall build" || ok "install-only code is not compiled in"
 nm "$T/heal-full" | grep -q " sets_mount$" && ok "(positive control: the full build has sets_mount)" || bad "nm control failed"
 
