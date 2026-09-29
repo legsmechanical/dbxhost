@@ -145,3 +145,36 @@ has.
   --davebox-only`, then use the pytest-schwung harness (`snapshot_display`, `tap`) to confirm the
   overview glyph, the K8 cell, and that the import screen opens. Then a device-pass checklist page for
   Josh.
+
+## Review notes (Fable, 2026-09-29): corrections to Phases 1–2
+
+- **Stop edge.** Clear `followPaused` at the one transport-stop edge in `ui_dsp_bridge.mjs`, where the
+  `_wasPlaying` → `!S.playing` check already triggers `saveNowOnce`. Every stop path passes through that
+  point: Play, Delete+Play, an external clock, and import's own stop. Shift+Play and Loop+Play restart
+  without a stop edge, so it has to be decided whether a restart clears the pause.
+- **Held arrows.** The real risk is a swallowed *release*, not the handler. Sound mode's editors and the
+  phrase browser swallow arrow CCs in `ui.js` before `_onCCMsg`, which would leave the flag stuck so the
+  next Play toggles follow. Fix: track both edges above those gates, or let arrow releases fall through
+  as Shift and Play already do. Also clear the flags on suspend, beside `deleteHeld`/`loopHeld` in
+  `ui_tick.mjs`.
+- **Play combo.** It must be the first branch in the Play handler, before `stepRecExit()` and the
+  Delete/Mute/Loop/Shift chain, and it returns without sending anything to the transport. Gate it off in
+  session view.
+- **Preference storage.** Store the setting in `ui_prefs.mjs`, the same way `bankViewMapOn` is stored
+  (`seq-follow.txt`, absent means on).
+- **Sites the plan missed.**
+  - the melodic Delete+click reset, including its JS undo and redo patches (keep InQ, drop Seq Follow)
+  - the generic knob path, which must `return` for the new action key as it does for Crop and Legato
+  - tests `test_clear_takes_automation.mjs` and `test_phrase_browser_gesture.mjs`
+  - `test_instr_none.mjs`, which pins the source text of the NONE-route rows
+  - the manual line that says the arrows turn Seq Follow off
+- **Glyph placement.** The AUTOMATION card also calls `drawPositionBarGeom`, so draw the glyph in the
+  melodic and drum position-bar callers, not inside the geom.
+- **Hosting the import screen.** Host it the way the phrase browser is hosted, *outside* sound mode:
+  an `miActive()` block in `ui.js`, plus `miTick`/`miRender` in the tick and the overlay slot. Back at
+  the file root then just closes it, and the card is underneath. Routing it through sound mode would
+  need view-stack work and would inherit the editor rule for track switching.
+- **Open item (Fable's recommendation: do not restore the page).** While playing, re-enabling follow
+  snaps the page to the playhead on the next poll anyway. While stopped, the page the user stepped to is
+  where they are looking. Restoring "the page before the press" would need a saved page and a check that
+  nothing else moved it, which is a comparison that fails open. Awaiting Josh.
