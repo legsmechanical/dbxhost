@@ -13,7 +13,12 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 [ "$(uname -s)" = Linux ] || { echo "SKIP: $(basename "$0") (Linux-only: mount(2) in the source)"; exit 0; }
-[ "$(id -u)" = 0 ] || { echo "SKIP: $(basename "$0") (needs root: the mirror fchowns to uid 1000)"; exit 0; }
+if [ "$(id -u)" != 0 ]; then
+    # CI runners are unprivileged with passwordless sudo; a skip there is a
+    # test that never runs where it matters.
+    sudo -n true 2>/dev/null && exec sudo -n bash "$0" "$@"
+    echo "SKIP: $(basename "$0") (needs root: the mirror fchowns to uid 1000)"; exit 0
+fi
 fail=0; ok(){ echo "  ok   — $1"; }; bad(){ echo "  FAIL — $1"; fail=1; }
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/dbx" "$T/heal" "$T/usr"
