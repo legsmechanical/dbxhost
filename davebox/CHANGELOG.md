@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.3] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Added
 - **Move's own settings, from Project Settings.** A new **Move Settings...** row
   shows Move's settings menu (Link, MIDI sync, inputs and more) with the jog and

@@ -376,7 +376,7 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 ## 3.7 Menus & Project Settings
 
 **Shift + Step 2** opens **Project Settings** — the settings saved with the project
-(except **Host Settings...**, which applies to every project).
+(except **Host Settings...** and **Move Settings...**, which apply to every project).
 The full list is in [Settings & Projects](#17-settings--projects); many settings have
 a **Shift + Step** shortcut (see the [Quick Reference](#19-quick-reference)).
 
@@ -1617,9 +1617,12 @@ the click and the Shift chord do.
 hold **Shift + Note/Session** — to open Move's own editor for that instrument (Track
 View only), and work with it as you would on Move.
 
-- Move takes the screen, jog, knobs, **Back** and **Mute**; the pads, step buttons
-  and transport stay with dAVEBOx.
-- Press **Note/Session** to come back.
+- Move takes the screen, jog, knobs, **Back**, **Mute** and **Shift** (so
+  **Shift + jog** works in Move's editor); the pads, step buttons and transport stay
+  with dAVEBOx, and dAVEBOx's own Shift gestures still work.
+- Press **Note/Session** to come back, or **Back** once you're at the top of Move's
+  editor (the instrument's main screen), or **Shift + a bottom-row pad** to leave
+  and go straight to that track.
 
 A plain click does nothing on a MIDI channel or a followed track. On a track set to
 **None**, it opens the picker.
@@ -2026,10 +2029,16 @@ see [Track settings](#174-track-settings) below.
 | Suspend session | Park dAVEBOx and go back to Move (asks first) — see [§3.9](#39-saving-suspending--exiting) | action | — |
 | Quit | Save and hand the device back to official Schwung (asks first) | action | — |
 | Host Settings... | dAVEBOx's copy of Schwung's settings (display, audio and more), over the top of dAVEBOx — see [§17.6](#176-davebox-and-official-schwung) | action | — |
+| Move Settings... | Move's own settings menu (Link, MIDI sync, inputs and more), dAVEBOx's copy — see below | action | — |
 
 - The menu groups these with a line between each group, in this order.
 - A new project starts in a random key and scale.
-- **Host Settings...** applies to every project, not just this one.
+- **Host Settings...** and **Move Settings...** apply to every project, not just this one.
+- **Move Settings...** shows Move's own settings menu on the screen: turn the jog to
+  choose, click to open or change, **Back** to step out. The pads, steps, knobs and
+  transport stay dAVEBOx's, so the music plays on. **Shift + Step 2** or
+  **Back** at the top of Move's menu brings you back here; **Note/Session** goes
+  to the overview.
 - **Tap Tempo** is **Shift + Step 5**: tap any pad in time, turn the jog to adjust,
   click to set.
 
@@ -2164,6 +2173,7 @@ keeps its own settings.
 | **Samples and files** | **Shared.** The Files page shows the same folders from either. |
 | **Move sets and dAVEBOx projects** | **Separate.** See [Projects](#175-projects). |
 | **Schwung's settings** | **Separate.** **Host Settings...** here and Global Settings in official Schwung are two copies; a change in one doesn't reach the other. |
+| **Move's settings** | **Separate.** **Move Settings...** here changes dAVEBOx's copy; Move on its own keeps yours. The first dAVEBOx session starts from a copy of your Move settings. |
 | **The web manager** (`move.local:7700`) | **dAVEBOx's own** during a session. Its Help is this manual and its Config is dAVEBOx's settings. Install modules from official Schwung's. |
 | **Parallel, exports and logs** | **dAVEBOx's own.** |
 
