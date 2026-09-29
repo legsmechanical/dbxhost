@@ -27,6 +27,10 @@ import { readFileSync } from 'fs';
 
 let opened = null;
 globalThis.host_register_primary = () => true;
+/* The shim's PHYSICAL Shift (shadow_control->shift_held, read from the
+ * hardware buffer before routing) — what dAVEBOx follows in co-run. */
+let physShift = 0;
+globalThis.shadow_get_shift_held = () => physShift;
 globalThis.host_open_service = (id, opts) => { opened = { id, opts }; return true; };
 globalThis.host_close_service = () => true;
 globalThis.move_midi_inject_to_move = () => {};
@@ -88,7 +92,9 @@ step('move-native declares the ruled split', () => {
      * the instrument-editing controls, keep everything else "fully as it is
      * outside of co-run in track view". TRACK moved KEEP-side with that — they
      * are the clip buttons, and selecting clips is what they do everywhere
-     * else. Shift stayed ours (no recalled use for it in Move's editor). */
+     * else. Shift stayed ours then (no recalled use for it in Move's editor);
+     * CEDED 2026-09-28 — Move needs it for Shift+jog, and dAVEBOx follows the
+     * physical Shift instead (the steps below). */
     /* ⭑⭑ COPY and DELETE are KEPT because a pad-based gesture must live on the
      * same side as the PADS: Move's copy is hold-Copy, tap-source, tap-dest, so
      * ceding the button while keeping the pads hands Move a modifier it never
@@ -96,9 +102,9 @@ step('move-native declares the ruled split', () => {
      * copy not copying; Delete was his own correction.
      * ⚠ MUTE is still ceded and has the same defect — left as ruled, not
      * reversed unasked. If it ever moves, it moves for this reason. */
-    const mustKeep = ['PADS', 'STEPS', 'MENU', 'SHIFT', 'TRACK',
+    const mustKeep = ['PADS', 'STEPS', 'MENU', 'TRACK',
                       'PLAY', 'REC', 'SAMPLE', 'LOOP', 'DELETE'];
-    const mustCede = ['JOG', 'KNOBS', 'MASTER', 'BACK', 'TOUCH', 'MUTE'];
+    const mustCede = ['JOG', 'KNOBS', 'MASTER', 'BACK', 'TOUCH', 'MUTE', 'SHIFT'];
     for (const g of mustKeep) if (!(m & GRP[g])) throw new Error('does not keep ' + g);
     for (const g of mustCede) if (m & GRP[g]) throw new Error('keeps ' + g + ' (must cede)');
     if (m & GRP.DEAD_TRANSPORT)
@@ -367,6 +373,48 @@ step('⚠ Shift+Note/Session opens neither sound mode nor the session buses', ()
                         'apart, so a hold would fire as a tap');
     if (/soundExit\(\)/.test(body))
         throw new Error('the closer is back: the gesture is a destination, not a toggle');
+});
+
+/* ── SHIFT IN CO-RUN (Josh, 2026-09-28) ─────────────────────────────────────
+ * Shift is ceded to Move (it needs Shift+jog), so CC 49 never reaches us in
+ * co-run. dAVEBOx follows the PHYSICAL Shift for its own gestures — driven
+ * here with NO CC 49 at all, only the host's hardware read. And Shift+pad no
+ * longer switches tracks in co-run: it moved ours while Move's OLED and jog
+ * stayed on the old track ("a dormant trap"). */
+const constsS = await import('../../ui/ui_constants.mjs');
+const ticks = (n) => { for (let i = 0; i < n; i++) { S.tickCount++; globalThis.tick(); } };
+const pad = (d1) => { globalThis.onMidiMessageInternal(new Uint8Array([0x90, d1, 100]));
+                      globalThis.onMidiMessageInternal(new Uint8Array([0x80, d1, 0])); };
+
+step('⭑ co-run: dAVEBOx follows the PHYSICAL Shift (no CC 49 arrives)', () => {
+    S.sessionView = false; S.globalMenuOpen = false; S.awaitingProjectSelect = false;
+    S.moveCoRunTrack = 2; S.shiftHeld = false; physShift = 1;
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 17, 127]));   /* Step 2 */
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, 17, 0]));
+    const opened = S.globalMenuOpen;
+    physShift = 0; ticks(1);
+    if (!opened) throw new Error('Shift+Step 2 did not open Project Settings in co-run — ' +
+                                 'dAVEBOx did not see the hardware Shift');
+    if (S.shiftHeld) throw new Error('Shift stayed held after the hardware released it');
+    S.globalMenuOpen = false; S.moveCoRunTrack = -1;
+});
+
+step('⚠ co-run: Shift + a bottom-row pad does NOT switch tracks', () => {
+    S.sessionView = false; S.globalMenuOpen = false;
+    S.activeTrack = 2; S.moveCoRunTrack = 2; physShift = 1;
+    pad(constsS.TRACK_PAD_BASE + 5);
+    const inCoRun = S.activeTrack;
+    physShift = 0; ticks(1);
+    S.moveCoRunTrack = -1;
+    /* CONTROL: the same gesture outside co-run does switch. */
+    S.shiftHeld = false;
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 49, 127]));
+    pad(constsS.TRACK_PAD_BASE + 5);
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 49, 0]));
+    const outside = S.activeTrack;
+    if (inCoRun !== 2) throw new Error('Shift+pad switched to track ' + (inCoRun + 1) + ' in co-run');
+    if (outside !== 5) throw new Error('control failed: outside co-run the gesture went to ' + outside +
+                                       ', so the co-run negative proves nothing');
 });
 
 process.exit(failed);

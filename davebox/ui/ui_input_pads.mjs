@@ -638,6 +638,12 @@ function _onPadPressTrackView(status, d1, d2) {
              * suppressed while Shift is held (computePadNoteMap pushes all-0xFF),
              * so falling through would reach the note path with a map that says
              * nothing is there. Swallowing here says so once, out loud. */
+        } else if (S.shiftHeld && padIdx < NUM_TRACKS && S.moveCoRunTrack >= 0) {
+            /* ⚠ NOT in co-run (Josh, 2026-09-28: "we also need to disable
+             * shift+pad track switching in move co-run. that's been a dormant
+             * trap. it shifts tracks on the ui but leaves the move track on the
+             * oled and jog"). Move's editor stays on its track, so switching
+             * ours here splits the two. Swallowed: Shift silences the pads. */
         } else if (S.shiftHeld && padIdx < NUM_TRACKS) {
             /* Shift + bottom-row pad: select active track */
             extNoteOffAll();

@@ -58,7 +58,7 @@ import { pollDSP,
     pendingDrumNoteOffs, _drumRecNoteOns, _drumRecNoteOffs } from './ui_dsp_bridge.mjs';
 import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes, stepRecExit } from './ui_record.mjs';
 import { xposeCancelPreview } from './ui_xpose.mjs';
-import { checkBackHold, checkShiftNoteHold, backTapWouldAct, applyShiftEdge, raiseExitConfirm } from './ui_input_cc.mjs';
+import { checkBackHold, checkShiftNoteHold, backTapWouldAct, applyShiftEdge, raiseExitConfirm, syncCoRunShift } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
@@ -407,6 +407,8 @@ export function _tickImpl() {
      * Routed through applyShiftEdge() rather than clearing the flag here, so
      * the heal drops the volume claim, flushes the pending level and re-pushes
      * the pad map exactly as a real release would. */
+    /* In co-run, Shift is followed from the hardware in BOTH directions. */
+    syncCoRunShift();
     if (S.shiftHeld && !shadow_get_shift_held()) {
         console.log('stuck Shift healed — release was dropped by the input ring');
         applyShiftEdge(false);

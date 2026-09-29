@@ -1524,6 +1524,18 @@ function autoLaneJump() {
  * exactly like a probe that answered. Only a PRESS can set held true. */
 let _shiftPressSeen = false;
 
+/* Co-run cedes Shift to Move (ui_corun.mjs), so CC 49 no longer reaches us
+ * there. Follow the PHYSICAL Shift instead — the shim reads it from the
+ * hardware buffer before routing and publishes it in shared memory, so this is
+ * a memory read, not a round trip. Called before every incoming message and on
+ * every tick while a track co-run is up, so a Shift+step press sees Shift held.
+ * Outside co-run it does nothing: CC 49 is ours there and drives the edge. */
+export function syncCoRunShift() {
+    if (S.moveCoRunTrack < 0) return;
+    const phys = !!shadow_get_shift_held();
+    if (phys !== !!S.shiftHeld) applyShiftEdge(phys);
+}
+
 export function applyShiftEdge(held) {
     if (held && !_shiftPressSeen) {
         _shiftPressSeen = true;

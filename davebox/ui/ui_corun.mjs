@@ -73,10 +73,12 @@ const CORUN_GRP_TRANSPORT      = CORUN_GRP_PLAY | CORUN_GRP_REC | CORUN_GRP_SAMP
  * ✅ RULED by Josh, 2026-08-25: UNDO and CAPTURE stay with dAVEBOx — they are
  * NOT forwarded, and this is a decision, not an omission. Do not "finish the
  * set" by adding them.
- *   · Undo, because dAVEBOx KEEPS CORUN_GRP_SHIFT in co-run, so Move firmware
- *     never sees Shift held: a forwarded Shift+Undo would reach Move as a
- *     PLAIN undo and redo would be unreachable. Injecting a synthetic Shift is
- *     the scheme that double-tap-latched Move's own Shift (see _onPadPress).
+ *   · Undo, because dAVEBOx's undo is the project's (redo included, on
+ *     Shift+Undo). ⚠ The ORIGINAL reason — "dAVEBOx keeps Shift, so Move never
+ *     sees it and a forwarded Shift+Undo would lose redo" — lapsed 2026-09-28,
+ *     when Shift was ceded to Move; the ruling stands on the first reason.
+ *     Injecting a synthetic Shift is the scheme that double-tap-latched Move's
+ *     own Shift (see _onPadPress).
  *   · Capture, because its modifier gestures — Capture+scene row, and
  *     Capture+pad drum-lane select — would have to be given up in co-run, and
  *     the drum case IS the co-run case.
@@ -87,8 +89,16 @@ const CORUN_GRP_TRANSPORT      = CORUN_GRP_PLAY | CORUN_GRP_REC | CORUN_GRP_SAMP
  *
  * Modifier releases for CEDED keys still never reach us; the defensive clear in
  * cleanupAfterMoveNativeCoRun covers them. */
+/* ⭑ SHIFT IS CEDED since 2026-09-28 (Josh: "we need to cede the shift button
+ * in regular co-run b/c it's used for some instrument setting navigation" ·
+ * "move only needs shift for shift+jog turn"). Move sees the real Shift, so
+ * Shift+jog navigates its editor. dAVEBOx's own Shift gestures keep working
+ * because it follows the PHYSICAL Shift instead (syncCoRunShift, ui_input_cc):
+ * the shim reads CC 49 from the hardware buffer before any routing. Shift+pad
+ * track switching is off in co-run — it moved dAVEBOx's track while Move's
+ * screen and jog stayed on the old one (_onPadPressTrackView). */
 const DAVEBOX_CORUN_KEEP_DEFAULT = CORUN_GRP_PADS | CORUN_GRP_STEPS | CORUN_GRP_TRANSPORT |
-                                   CORUN_GRP_MENU | CORUN_GRP_SHIFT | CORUN_GRP_TRACK |
+                                   CORUN_GRP_MENU | CORUN_GRP_TRACK |
                                    CORUN_GRP_DELETE;
 /* Opt out of framework Back-as-exit. dAVEBOx uses Menu as the canonical exit
  * (existing muscle memory) and lets Back cede to the peer for sub-view nav
@@ -378,7 +388,7 @@ function cleanupAfterMoveNativeCoRun() {
  * injections key on it, and none of them may fire here. */
 const MOVE_UI_MODE_SETTINGS = 4;   /* shadow_constants.h move_ui_mode */
 export const DAVEBOX_MOVE_SETTINGS_KEEP_MASK =
-    DAVEBOX_CORUN_KEEP_MASK | CORUN_GRP_KNOBS | CORUN_GRP_TOUCH | CORUN_GRP_MUTE;
+    DAVEBOX_CORUN_KEEP_MASK | CORUN_GRP_KNOBS | CORUN_GRP_TOUCH | CORUN_GRP_MUTE | CORUN_GRP_SHIFT;
 const DAVEBOX_MOVE_SETTINGS_LED_KEEP_MASK = DAVEBOX_MOVE_SETTINGS_KEEP_MASK | CORUN_GRP_TRACK;
 
 /* Move's Shift+Step 2 as the hardware sends it: ONE Shift down/up pair around
