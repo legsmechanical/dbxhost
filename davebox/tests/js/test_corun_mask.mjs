@@ -142,22 +142,22 @@ const ledsMod2 = await import('../../ui/ui_leds.mjs');
 const constsMod2 = await import('../../ui/ui_constants.mjs');
 const ifMod2 = await import('/data/UserData/schwung/shared/input_filter.mjs');
 
-step('⭑ a sounding pad wears the TRACK colour in co-run, not white', () => {
-    const { updateTrackLEDs, invalidateLEDCache, trackColor } = ledsMod2;
-    const { TRACK_PAD_BASE, PAD_MODE_MELODIC_SCALE } = constsMod2;
+step('⭑ co-run pads wear the SAME colours as outside co-run (no inversion, 2026-09-28)', () => {
+    /* Josh, 2026-09-28: "now that move tracks in corun behave substantially
+     * similar to regular davebox tracks i don't think we need that 'you're now
+     * somewhere else' signifier that the inverted pads provided." */
+    const { updateTrackLEDs, invalidateLEDCache } = ledsMod2;
+    const { TRACK_PAD_BASE, PAD_MODE_MELODIC_SCALE, PAD_MODE_DRUM } = constsMod2;
 
     S.sessionView = false;
     S.activeTrack = 2;
-    S.trackPadMode[2] = PAD_MODE_MELODIC_SCALE;
     S.activeBank = 0;                       /* not AUTO — that greys everything */
     S.ledInitComplete = true;
-    /* init() builds this on-device only, and the melodic pad path reads it for
-     * the track-arp latch check. */
     if (!S.bankParams)
         S.bankParams = Array.from({ length: 8 }, () =>
             Array.from({ length: 12 }, () => new Array(8).fill(0)));
 
-    const colorsOfSounding = () => {
+    const grid = () => {
         const seen = {};
         ifMod2.clearAllLEDs();
         globalThis.move_midi_internal_send = (b) => {
@@ -169,25 +169,26 @@ step('⭑ a sounding pad wears the TRACK colour in co-run, not white', () => {
         globalThis.move_midi_internal_send = () => {};
         return seen;
     };
-
-    /* Sound ONE pad, so exactly one LED can carry the lit colour. */
-    const pitch = S.padNoteMap[0] + S.trackOctave[2] * 12;
-    if (!(pitch >= 0 && pitch <= 127)) throw new Error('pad 0 has no usable pitch');
-    S.liveActiveNotes = new Set([pitch]);
-
-    S.moveCoRunTrack = -1;
-    const outside = colorsOfSounding()[TRACK_PAD_BASE];
-    S.moveCoRunTrack = 2;
-    const inside = colorsOfSounding()[TRACK_PAD_BASE];
-    S.moveCoRunTrack = -1;
-    S.liveActiveNotes = new Set();
-
-    const tc = trackColor(2);
-    if (inside !== tc)
-        throw new Error('lit pad in co-run is ' + inside + ', expected track colour ' + tc +
-                        (inside === outside ? ' (it is still painting the non-co-run white)' : ''));
-    if (outside === inside)
-        throw new Error('control failed: co-run and normal look identical, so this proves nothing');
+    for (const mode of [PAD_MODE_MELODIC_SCALE, PAD_MODE_DRUM]) {
+        S.trackPadMode[2] = mode;
+        const pitch = S.padNoteMap[0] + S.trackOctave[2] * 12;
+        S.liveActiveNotes = new Set(pitch >= 0 && pitch <= 127 ? [pitch] : []);
+        S.moveCoRunTrack = -1;
+        const outside = grid();
+        S.moveCoRunTrack = 2;
+        const inside = grid();
+        S.moveCoRunTrack = -1;
+        S.liveActiveNotes = new Set();
+        const name = mode === PAD_MODE_DRUM ? 'drum' : 'melodic';
+        /* CONTROL: the capture sees a real grid — several colours, all 32 pads. */
+        if (Object.keys(outside).length !== 32 || new Set(Object.values(outside)).size < 2)
+            throw new Error(name + ': control failed — the capture saw ' + Object.keys(outside).length +
+                            ' pads in ' + new Set(Object.values(outside)).size + ' colour(s)');
+        const diff = Object.keys(outside).filter((k) => outside[k] !== inside[k]);
+        if (diff.length)
+            throw new Error(name + ': ' + diff.length + ' pad(s) change colour in co-run, e.g. note ' + diff[0] +
+                            ': ' + outside[diff[0]] + ' -> ' + inside[diff[0]]);
+    }
 });
 
 /* ── Copy is FORWARDED to Move in co-run ───────────────────────────────────
