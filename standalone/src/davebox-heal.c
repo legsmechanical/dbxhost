@@ -169,9 +169,25 @@ static const char RESTORE_UNIT_TEXT[] =
 /* owner_uid/owner_gid < 0 means "leave as root" (used for our own binary). */
 static int copy_atomic(const char *src, const char *dst, mode_t perms,
                        int owner_uid, int owner_gid) {
-    int sfd = open(src, O_RDONLY);
+    /* ⚠ Both ends of this copy sit in directories ableton can write, and this
+     * runs as root. So neither path may be FOLLOWED:
+     *   - src: a symlink heal.new -> /etc/shadow would have root copy a file
+     *     ableton cannot read into one it can (the result is 04755);
+     *   - tmp: a symlink planted at <dst>.heal-tmp would have root truncate,
+     *     write and fchmod 04755 whatever it points at.
+     * O_NOFOLLOW + S_ISREG on the source; unlink, then O_CREAT|O_EXCL on the
+     * tmp (O_EXCL never follows a symlink, and a re-plant after the unlink
+     * makes the open fail rather than redirect it). Hardlinks cannot reach a
+     * root file from here: /data is its own filesystem. */
+    int sfd = open(src, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
     if (sfd < 0) {
         fprintf(stderr, "davebox-heal: open %s: %s\n", src, strerror(errno));
+        return -1;
+    }
+    struct stat sst;
+    if (fstat(sfd, &sst) < 0 || !S_ISREG(sst.st_mode)) {
+        fprintf(stderr, "davebox-heal: %s is not a regular file\n", src);
+        close(sfd);
         return -1;
     }
 
@@ -183,7 +199,12 @@ static int copy_atomic(const char *src, const char *dst, mode_t perms,
         return -1;
     }
 
-    int dfd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (unlink(tmp) < 0 && errno != ENOENT) {
+        fprintf(stderr, "davebox-heal: unlink %s: %s\n", tmp, strerror(errno));
+        close(sfd);
+        return -1;
+    }
+    int dfd = open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
     if (dfd < 0) {
         fprintf(stderr, "davebox-heal: open %s: %s\n", tmp, strerror(errno));
         close(sfd);
