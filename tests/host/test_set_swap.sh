@@ -406,4 +406,27 @@ check "9c exit is clean" test "$(phase)" = "none (not bound)"
 check "9c ...and puts Move's index back" grep -q '"currentSongIndex": 1' "$SETTINGS_JSON"
 rm -rf "$T"
 
+# 9d. FULL VELOCITY. A new project turns it off (project-cmd.sh), but the first
+# project is born before the session's settings copy exists — so the copy is
+# born with it off, and the USER's own settings are never touched for it.
+mk_env
+printf '{"currentSongIndex": 1, "isFullVelocityOn": true}\n' > "$SETTINGS_JSON"
+run enter
+check "9d first enter: the session's copy has Full Velocity off" grep -q '"isFullVelocityOn": false' "$SETTINGS_JSON"
+run exit
+check "9d ...the user's own settings keep it on" grep -q '"isFullVelocityOn": true' "$SETTINGS_JSON"
+python3 - "$T/dbx/settings/Settings.json" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d["isFullVelocityOn"] = True; json.dump(d, open(p, "w"))
+PY
+run enter
+check "9d a later enter keeps the session's own choice (turned on in a session)" grep -q '"isFullVelocityOn": true' "$SETTINGS_JSON"
+run exit
+rm -rf "$T"
+# ...and the launcher's first-project seed, which runs BEFORE enter binds the
+# settings, is pointed at the session's copy rather than Move's default path.
+grep -B1 'project-cmd.sh" new-at 0 "Project 1"' standalone/scripts/launch.sh | head -n 1 \
+    | grep -qF 'SETTINGS_JSON="$DBX_DIR/settings/Settings.json"'
+check "9d launch.sh seeds the first project against the session's settings" test $? = 0
+
 [ "$fails" = 0 ] && echo "PASS: set-swap" || { echo "FAIL: set-swap" >&2; exit 1; }

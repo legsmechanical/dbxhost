@@ -478,7 +478,12 @@ setsid --wait bash -c '
       # so the seed has the one project shape (a fixed song folder and a name
       # tag) with nothing hand-rolled here to drift from it. Pad 0; new-at
       # also gives it its slot (library-sync) before Move enumerates.
-      sh "$DBX_DIR/scripts/project-cmd.sh" new-at 0 "Project 1" || \
+      # SETTINGS_JSON: this runs BEFORE enter binds the session settings, so
+      # the default path is still the users own Move settings -- a new project
+      # clears Full Velocity, and that must land in the session copy (absent on
+      # a first launch; set-swap seeds it with Full Velocity off).
+      SETTINGS_JSON="$DBX_DIR/settings/Settings.json" \
+        sh "$DBX_DIR/scripts/project-cmd.sh" new-at 0 "Project 1" || \
         echo "WARNING: could not seed the first project — continuing"
       echo "seeded first project on pad 0 from template"
     fi

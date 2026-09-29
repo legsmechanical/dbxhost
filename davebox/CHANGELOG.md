@@ -14,6 +14,11 @@ the section into a versioned heading at release time.
   finishes the tidy-up the next time it opens, so the service is gone: the
   next launch removes it from Moves that have it.
 
+### Fixed
+- **The first launch no longer changes your Move settings.** Creating the
+  first dAVEBOx project turned off Full Velocity in Move's own settings; it now
+  turns it off only in dAVEBOx's copy.
+
 ## [0.0.4] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Fixed
 - **The first launch no longer refuses on some Moves.** If the boot-recovery

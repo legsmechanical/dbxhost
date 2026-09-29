@@ -153,9 +153,14 @@ heal_umount() { "$HEAL_BIN" --umount-sets; }
 #   - the fields the session depends on are forced: autoload ON (the whole
 #     project machinery boots Move into currentSongIndex), onboarding done and
 #     no update pop-up (neither may cover a session's screen).
+# And once, when the copy is first made: Full Velocity OFF. A new project clears
+# it (project-cmd.sh clear_full_velocity — Josh: "always off by default when new
+# sets are created"), but the FIRST project is born before this copy exists, so
+# that clear finds nothing to write; this is where the first project gets it.
 # currentSongIndex itself is written afterwards by the caller, as before.
 seed_settings() {
     mkdir -p "$SA_SETTINGS"
+    _first=0; [ -e "$SA_SETTINGS/Settings.json" ] || _first=1
     if [ -d "$MOVE_SETTINGS_DIR" ] && ! settings_are_ours; then
         for _f in "$MOVE_SETTINGS_DIR"/* "$MOVE_SETTINGS_DIR"/.[!.]*; do
             [ -f "$_f" ] || continue
@@ -166,9 +171,9 @@ seed_settings() {
             fi
         done
     fi
-    python3 - "$SA_SETTINGS/Settings.json" <<'SEED_PY'
+    python3 - "$SA_SETTINGS/Settings.json" "$_first" <<'SEED_PY'
 import json, os, sys
-path = sys.argv[1]
+path, first = sys.argv[1], sys.argv[2] == "1"
 try:
     with open(path) as f:
         d = json.load(f)
@@ -180,6 +185,8 @@ d.setdefault("currentSongIndex", 0)
 d["isAutoloadEnabled"] = True
 d["isOnboardingDone"] = True
 d["shouldShowUpdateNotification"] = False
+if first:
+    d["isFullVelocityOn"] = False
 tmp = path + ".seed.tmp"
 with open(tmp, "w") as f:
     f.write(json.dumps(d, indent=2) + "\n")
