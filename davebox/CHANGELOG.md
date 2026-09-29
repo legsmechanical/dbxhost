@@ -15,6 +15,11 @@ the section into a versioned heading at release time.
   you back to Project Settings.
 
 ### Changed
+- **Shift reaches Move's editor.** While you edit a Move instrument in Move's own
+  editor, Shift + jog works there as it does on Move. dAVEBOx's own Shift
+  gestures (Shift + a step, redo) still work.
+- **Shift + a bottom-row pad leaves Move's editor for that track.** It used to
+  switch dAVEBOx's track while Move's screen stayed on the old one.
 - **Dave 33 is NO, DAVID.**
 
 ## [0.0.2] — 2026-09-28 (test build, not in the Schwung catalog)

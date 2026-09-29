@@ -1623,9 +1623,11 @@ the click and the Shift chord do.
 hold **Shift + Note/Session** — to open Move's own editor for that instrument (Track
 View only), and work with it as you would on Move.
 
-- Move takes the screen, jog, knobs, **Back** and **Mute**; the pads, step buttons
-  and transport stay with dAVEBOx.
-- Press **Note/Session** to come back.
+- Move takes the screen, jog, knobs, **Back**, **Mute** and **Shift** (so
+  **Shift + jog** works in Move's editor); the pads, step buttons and transport stay
+  with dAVEBOx, and dAVEBOx's own Shift gestures still work.
+- Press **Note/Session** to come back, or **Shift + a bottom-row pad** to leave
+  and go straight to that track.
 
 A plain click does nothing on a MIDI channel or a followed track. On a track set to
 **None**, it opens the picker.
