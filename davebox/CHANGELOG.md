@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.6] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Added
 - **See your whole Move in a browser.** Open `move.local:7700/mirror` (the
   Mirror link in the manager) to see the screen large, with the whole device
