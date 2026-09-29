@@ -56,8 +56,19 @@ ls "$DBX" | grep -q "^presets.unshared-" && ok "...and the real copy was moved a
 [ -d "$DBX/modules/tools/davebox-sound" ] && [ ! -L "$DBX/modules/tools/davebox-sound" ] && ok "...the owned tool is real" || bad "davebox-sound not real"
 [ -f "$DBX/modules/tools/davebox-sound/module.json" ] && ok "...and got its payload" || bad "owned payload not copied"
 [ -d "$DBX/modules/chain" ] && [ ! -L "$DBX/modules/chain" ] && ok "chain is ours (whole)" || bad "chain not real"
+# Link Audio: with no features.json the host leaves it OFF and every Move
+# track's bus (volume, pan, sends, FX) acts on silence — 2026-09-29, every
+# release install shipped that way. The file is written; the shim reads that
+# path and that key.
+F="$DBX/config/features.json"
+grep -q '"link_audio_enabled": true' "$F" 2>/dev/null && ok "config/features.json turns Link Audio ON" || bad "no Link Audio flag: $(cat "$F" 2>&1)"
+python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$F" 2>/dev/null && ok "...and is valid JSON" || bad "features.json is not JSON"
+grep -qF 'SCHWUNG_INSTALL_DIR "/config/features.json"' src/schwung_shim.c && grep -qF '"\"link_audio_enabled\""' src/schwung_shim.c \
+    && ok "...at the path and key the shim reads" || bad "the shim no longer reads config/features.json link_audio_enabled"
 echo "idempotent:"
+printf '{ "link_audio_enabled": false, "mine": 1 }\n' > "$F"      # the user's own file
 sh "$SRC/scripts/layout-install.sh" "$SRC" "$DBX" "$STOCK" > "$T/out2" 2>&1 && ok "second run exits 0" || bad "second run failed"
+grep -q '"mine": 1' "$F" && ok "an existing features.json is left alone" || bad "features.json overwritten: $(cat "$F")"
 [ "$(ls "$DBX" | grep -c "^presets.unshared-")" = 1 ] && ok "nothing moved aside twice" || bad "moved aside again"
 [ $fail = 0 ] && echo "PASS: $(basename "$0")" || { echo "FAIL: $(basename "$0")"; cat "$T/out"; }
 exit $fail

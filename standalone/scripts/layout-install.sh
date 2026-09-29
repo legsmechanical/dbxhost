@@ -143,4 +143,20 @@ for own in $DBX_OWNED_MODULE_DIRS; do
     cp -R "$SRC/modules/$own/." "modules/$own/"
     echo "      deployed: modules/$own (from the payload)"
 done
+# ---- 5. feature flags: Link Audio ON ----------------------------------------
+# The host reads $DBX_DIR/config/features.json, and with no file Link Audio is
+# OFF: the subscriber that brings each Move track's audio in never starts, so a
+# Move track's bus (volume, pan, Send A/B, its FX) acts on silence while the
+# track still plays (Josh, 2026-09-29: "Move mixer bus isn't working"). Stock's
+# installer writes this file for stock; nothing wrote ours, so every release
+# install shipped without it. Created only when MISSING — an existing file is
+# the user's and is left alone.
+if [ ! -e "$DBX_DIR/config/features.json" ]; then
+    mkdir -p "$DBX_DIR/config"
+    printf '{\n  "shadow_ui_enabled": true,\n  "link_audio_enabled": true\n}\n' \
+        > "$DBX_DIR/config/features.json.tmp" &&
+        mv -f "$DBX_DIR/config/features.json.tmp" "$DBX_DIR/config/features.json"
+    echo "      feature flags: Link Audio on (config/features.json written)"
+fi
+
 echo "layout: done"

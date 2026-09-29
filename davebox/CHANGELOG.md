@@ -16,6 +16,12 @@ the section into a versioned heading at release time.
   whichever you pick. Dim pad colours are brightened on the page so they read
   the way they do on the hardware.
 
+### Fixed
+- **Move tracks' Volume, Pan and Sends work.** On a Move track, Volume, Pan and Send A/B did
+  nothing: the track still played, but its sound never reached dAVEBOx's mixer
+  because an installed dAVEBOx left Link Audio switched off. Installing or
+  updating now switches it on.
+
 ## [0.0.5] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Changed
 - **dAVEBOx no longer adds a service to Move's system.** Earlier builds
