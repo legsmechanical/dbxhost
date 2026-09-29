@@ -113,14 +113,19 @@ const COLOR_TABLE = [
 ];
 /* An LED's drive level is LIGHT, but a screen value is gamma-encoded: painted
  * as-is, a dim LED (DarkGrey 0x141414, a dim track colour like 0x210806) reads
- * as near-black though the pad is plainly lit on the device. Encode each
- * channel from linear light to sRGB: full colours stay full, the dims come up
- * to where the eye sees them on the hardware. */
-const LED_LIFT = new Uint8Array(256).map((_, c) => {
-  const l = c / 255;
-  return Math.round(255 * (l <= 0.0031308 ? 12.92 * l : 1.055 * Math.pow(l, 1 / 2.4) - 0.055));
-});
-const lift = rgb => rgb && [LED_LIFT[rgb[0]], LED_LIFT[rgb[1]], LED_LIFT[rgb[2]]];
+ * as near-black though the pad is plainly lit on the device. So each colour's
+ * BRIGHTNESS (its largest channel) is lifted along a curve that leaves full at
+ * full, and the channels are scaled together -- the hue is kept, where lifting
+ * each channel alone washes a dim red toward brown. LED_GAMMA sets how far the
+ * dims come up: 1 = as sent, 2.4 ~ sRGB, higher = brighter dims. */
+const LED_GAMMA = 3.5;
+const lift = rgb => {
+  if (!rgb) return rgb;
+  const m = Math.max(rgb[0], rgb[1], rgb[2]);
+  if (!m) return rgb;
+  const k = 255 * Math.pow(m / 255, 1 / LED_GAMMA) / m;
+  return rgb.map(c => Math.min(255, Math.round(c * k)));
+};
 const palette = v => {
   if (v <= 0 || v > 127) return null;
   const h = COLOR_TABLE[v][0];
