@@ -514,6 +514,7 @@ setsid --wait bash -c '
   # preload MoveOriginal comes up silently WITHOUT Schwung, which is a far more
   # confusing failure than not launching at all.
   if ! $HEAL; then
+    echo "system partition: $(df -h / 2>/dev/null | tail -n 1)"
     refuse "davebox-heal failed"     # refuse() undoes the swap
   fi
 

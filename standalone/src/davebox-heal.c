@@ -332,7 +332,13 @@ static int install_restore_unit(void) {
         size_t off = 0, len = sizeof(RESTORE_UNIT_TEXT) - 1;
         while (off < len) {
             ssize_t w = write(fd, RESTORE_UNIT_TEXT + off, len - off);
-            if (w < 0) { if (errno == EINTR) continue; close(fd); unlink(tmp); return -1; }
+            if (w < 0) {
+                if (errno == EINTR) continue;
+                /* Said out loud: this was the one silent failure, and a full
+                 * system partition lands exactly here. */
+                fprintf(stderr, "davebox-heal: write %s: %s\n", tmp, strerror(errno));
+                close(fd); unlink(tmp); return -1;
+            }
             off += (size_t)w;
         }
         if (fsync(fd) < 0) { /* rename is the durability point */ }

@@ -19,6 +19,9 @@ mk() {  # a fresh fixture: stock tree with (or without) a blessing heal, module 
     cat > "$T/f/mod/payload/bin/heal" <<'H'
 #!/bin/sh
 echo "$*" >> "$(dirname "$0")/heal.log"
+# FAIL_UNIT: the restore unit cannot be written (a full system partition)
+[ "$1" = --install-restore-unit ] && [ -f "$(dirname "$0")/../../FAIL_UNIT" ] && { echo "davebox-heal: write x: No space left on device" >&2; exit 2; }
+exit 0
 H
     chmod 755 "$T/f/mod/payload/bin/heal"
     if [ "$1" = blesses ]; then
@@ -70,6 +73,20 @@ echo "the LAUNCHER re-blesses an existing install in place, and calls bootstrap 
 L=standalone/scripts/launch.sh
 grep -q 're-blessing in place (no payload)' "$L" && ok "launch.sh re-blesses without the payload" || bad "no in-place re-bless"
 awk '/no install at \$DBX_DIR -- bootstrap/{f=1} f&&/bootstrap.sh/{print; exit}' "$L" | grep -q 'bootstrap.sh' && ok "bootstrap.sh is reached only on the no-install branch" || bad "bootstrap reachable with an install present"
+echo "the restore unit cannot be installed (a tester's full system partition, 2026-09-29):"
+mk blesses; touch "$T/f/FAIL_UNIT"
+rc=$(run)
+[ "$rc" = 0 ] && ok "bootstrap still succeeds — the launch is not refused" || bad "rc=$rc: $(cat "$T/out")"
+grep -q "WARNING: could not install the boot-recovery unit" "$T/out" && ok "...and says so" || bad "no warning: $(cat "$T/out")"
+grep -q "No space left on device" "$T/out" && ok "...with the helper's own reason in the log" || bad "reason lost: $(cat "$T/out")"
+grep -q "system partition:" "$T/out" && ok "...and the partition's free space" || bad "no df line"
+grep -q '"version":"v-test"' "$T/f/dbx/sa-build.json" && ok "the install is STAMPED despite the unit" || bad "no stamp: $(cat "$T/f/dbx/sa-build.json" 2>&1)"
+echo "an install left UNSTAMPED by an unfinished bootstrap is laid again, not kept:"
+mk blesses; rc=$(run); rm -f "$T/f/dbx/sa-build.json"; printf 'half\n' > "$T/f/dbx/schwung"
+rc=$(run)
+[ "$rc" = 0 ] && [ "$(cat "$T/f/dbx/schwung")" = "host" ] && grep -q '"version":"v-test"' "$T/f/dbx/sa-build.json" \
+    && ok "no stamp → the payload is laid and stamped" || bad "kept the unfinished install: $(cat "$T/out")"
+grep -q "never finished (no stamp)" "$T/out" && ok "...and says why" || bad "no reason: $(cat "$T/out")"
 echo "a stock heal that cannot bless (pre-#419):"
 mk cannot
 rc=$(run)
