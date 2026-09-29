@@ -1,0 +1,147 @@
+# Follow on Left/Right+Play, and MIDI import as a clip button with phrase-browser feel
+
+## Context
+
+Seq Follow sits on knob 8 of the CLIP card and the drum-lane card. It is a separate on/off per clip, and
+it is never saved. Josh wants:
+- Follow becomes **one global switch**, toggled by **holding Left or Right and pressing Play**.
+- The track overview shows whether follow is on.
+- **Import MIDI** moves out of the track menu and into the freed knob-8 slot, as a touch-and-click
+  action like Crop and Legato.
+- Import and the phrase browser become one unified MIDI browser: phrases are ordinary MIDI files with
+  no categories. It has the phrase browser's feel (live preview while scrolling, stretch, whole-kit
+  drum mapping) and keeps everything import does today.
+
+User-facing surfaces (the "which screen, what do you press" rule):
+- Follow toggle: in Track view (any clip or drum view), hold ◀ or ▶ and press Play.
+- Follow indicator: the track overview (idle track view).
+- Import: CLIP card or DRUM LANE card, touch K8, then click the jog. This opens the existing import
+  screen, `VIEW_MIDI_IMPORT`.
+
+## Where the work happens
+
+- **Nothing is written in the main checkout**, because other work is in progress there. After this plan
+  is approved, the first step is:
+  `git worktree add .worktrees/follow-import -b follow-import device-sync`
+- The planning doc goes in that worktree at `docs/…`. No private work-board ids go in it, because the
+  repo is public.
+- **Base: `device-sync`.** It is the easiest base, because the phrase browser's engine support exists
+  only there:
+  - `tN_audclip` (in-time preview that swaps on the beat)
+  - `tN_lanes_import` (a multi-lane drum load as one undo step)
+  - `ui_phrases.mjs` (stretch and drum mapping)
+
+  `device-sync` is `main` (as of 09-27) plus the phrase library and the SOUND+CFG/MACROS-as-banks
+  change. `main` is about 109 commits ahead of it, so step 0 is to merge `main` into the branch.
+  - **Trade-off:** this work can only reach `main` together with the phrase library. The follow part
+    (Phase 1) has no such dependency and could be cherry-picked to `main` on its own if wanted.
+- Per the standing rules: Fable reviews this plan before implementation, and the branch is merged only
+  after Josh verifies it on the device.
+
+## Phase 1: Global follow, Left/Right+Play, overview indicator
+
+**State.** Replace `S.clipSeqFollow[t][c]` (`davebox/ui/ui_state.mjs:277`) with:
+- `S.seqFollow`: global, default on, saved as a device-wide preference. It is saved the same way
+  `phrase-map.txt` is on `device-sync`.
+- `S.followPaused`: temporary, never saved.
+- **Effective follow** = `S.seqFollow && !S.followPaused`. The two poll-loop sites that move the page
+  read this value (`ui_dsp_bridge.mjs` ~776 for drum, ~830 for melodic).
+- Remove the `seqfollow` scope and its mirror into `bankParams[t][0][7]`. Those are in
+  `ui_dsp_bridge.mjs` at 135, 213, 1110 and 1315. Also remove the resets in
+  `ui_persistence.mjs:581` and `ui_input_cc.mjs:719/764-779/834`.
+
+**Arrows** (`ui_input_cc.mjs:3169-3209`):
+- Track whether each arrow is held (`S.leftHeld`/`S.rightHeld`), which needs a new release handler
+  (`d2===0`).
+- Pressing an arrow still changes page immediately.
+- If the transport is running, an arrow press sets `S.followPaused = true` instead of switching the
+  per-clip flag off.
+- `followPaused` clears when the transport stops. This hooks into the transport-state poll.
+
+**Play** (`ui_input_cc.mjs:2811-2872`):
+- A new first branch: if either arrow is held, toggle `S.seqFollow`, clear `followPaused`, show a
+  "FOLLOW ON/OFF" popup, and **do not** start or stop the transport.
+- **Settled:** pages change on **press**, not release.
+- ⚠ **Still open:** whether the combo undoes the page step the arrow already made. Suggestion: record
+  the page before the press, and restore it when the combo fires. Ask Josh before building this part.
+
+**Overview indicator** (`ui_render.mjs`: melodic 2509-2536, drum 2481-2508, page bar
+`drawPositionBarGeom` 1352-1392):
+- A small follow glyph at the right end of the page bar.
+  - Solid: follow on.
+  - Outline or blinking: paused by an arrow.
+  - Absent: off.
+- The page bar is on both melodic and drum overviews, and it is the thing follow drives.
+
+## Phase 2: Import MIDI moves to knob 8
+
+- `BANKS[0].knobs[7]` (`ui_constants.mjs:465`) becomes an action entry: `'Imprt' / 'Import MIDI'`,
+  `'->'`, `opens: true`. Add an `IMPORT_KNOB = 7` beside `CROP_KNOB`/`LGTO_KNOB` (:101-105).
+- Drum-lane cell (`ui_render.mjs:2190`): replace it with an action cell built like Crop's (2180-2184),
+  using `triggerPhase('import', …)`.
+- Remove the drum knob-8 follow handler (`ui_input_cc.mjs:4566-4577`).
+- Add a touch-K8-and-click-jog branch beside the Crop/Legato branches (`ui_input_cc.mjs:273-300`). It:
+  - checks `miOffered(track)`
+  - calls `miOpen(track)`
+  - enters the import view directly. On `device-sync`, check how `VIEW_MIDI_IMPORT` is reached now
+    that SOUND+CFG is a bank.
+  - makes Back from the file root return to the clip or drum card, not a menu.
+- Add a "CLK IMPORT" hint (`ui_render.mjs:602-605`).
+- ALL LANES keeps Repeat Sync on its knob 8.
+- Remove the `midiimport` rows from the track menu. These are the four `ui_sound.mjs` sites around
+  3278, 3305, 3316 and 3366. A track with no instrument then shows only its instrument row.
+
+## Phase 3: One unified MIDI browser that replaces the phrase browser (discuss first)
+
+**Direction (Josh, 2026-09-29):** Import MIDI and the phrase browser become **one feature**. Phrases
+are loaded like any other MIDI file: no categories, no styles. The phrase browser's *feel* carries
+over (live preview while scrolling, stretch, whole-kit drum mapping), and so do all of import's
+functions. Nothing is built until we have agreed what the screen looks like and which functions it
+has.
+
+**Discussion agenda:**
+1. **Entry points.** Only the K8 button on the CLIP and DRUM LANE cards? Or does the PHRASE bank (first
+   in SEQ on this branch) remain as a second door, or go away?
+2. **Where the built-in phrases live.** A shipped folder of `.mid` files the browser opens on by
+   default (styles become subfolders), and the user's own files beside them?
+3. **Key following.** Melodic phrases are stored as scale degrees today, so they follow the project
+   key. A MIDI file has fixed pitches. Options: accept fixed pitches; add a Transpose/Key knob; or
+   fold notes into the project scale.
+4. **Screen shape.** The file list and a live part/phrase view on one screen, like the phrase browser:
+   jog to scroll with instant preview, knobs for options, click to load. What happens to import's
+   separate stages (parts, options, confirm)?
+5. **Knob set.** A merged set from Start bar, Bars, Grid and To (import), and Time/stretch, Octave and
+   Voice (phrase). Which eight, and in what order?
+6. **Drums.** Whole-kit mapping using the Phrase Map (GM/Move) setting, plus hold-a-sound/tap-a-lane
+   reassign. Does single-lane loading still exist?
+7. **Preview.** In time while playing (`tN_audclip`), free-running while stopped (`tN_audition`); no
+   more stopping the transport on open. Cost of previewing each file while scrolling (read + parse up
+   to 256 KB); measure it on the Move.
+8. **What is deleted.** The phrase pack reader, the category/style model, the PHRASE bank, and the
+   pack prewarm, once the unified browser covers them.
+
+**Reusable machinery, already on this branch:**
+- `ui_phrases.mjs`: `timing`, `scaleNote`, `drumVoices`, `defaultAssign`, `drumLaneNotes`
+- `ui_phrase_browser.mjs`: the preview loop (`stageKey`, `previewTick`, `freeTick`) and `pbPadTap`
+- the SMF parser `ui_midifile.mjs`
+- DSP keys `audclip`, `audition`, `lanes_import` and `import`; no DSP changes expected
+
+## Tests and verification
+
+- **Gesture tests, not just checks that the code is wired:**
+  - A new test that holds ◀ and presses Play, and asserts: follow toggles, the transport does not
+    start, the popup shows, and the overview glyph is drawn.
+  - One that presses ▶ while playing and asserts follow is paused; then stops the transport and
+    asserts it is restored.
+- Update `davebox/tests/js/test_midi_import_gesture.mjs`:
+  - Open import by touching K8 and clicking the jog, from both the CLIP and DRUM LANE cards.
+  - The track-menu row is gone, so update the row checks in `test_midi_track_config.mjs`,
+    `test_config_rows_inline.mjs` and `test_track_switch_follows_editor*.mjs`.
+- Phase 3 adds tests for scrolling the preview (one send per change), stretch, drum mapping, and a
+  whole-kit load as one undo step.
+- Run `davebox/tests/run.sh` in the worktree **and** in a checkout before merging, and name any
+  skips.
+- On the device, only after Josh gives the go-ahead to deploy: `standalone/scripts/install-sa.sh
+  --davebox-only`, then use the pytest-schwung harness (`snapshot_display`, `tap`) to confirm the
+  overview glyph, the K8 cell, and that the import screen opens. Then a device-pass checklist page for
+  Josh.
