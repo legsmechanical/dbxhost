@@ -21,6 +21,8 @@ the section into a versioned heading at release time.
 - **Back at the top of Move's editor brings you back.** In Move's own
   instrument editor, Back steps out a level as before; at the instrument's main
   screen, where Back used to do nothing, it now returns to dAVEBOx.
+- **The pads keep their usual colours in Move's editor.** They used to switch
+  to an inverted scheme while Move's editor was open.
 - **Shift + a bottom-row pad leaves Move's editor for that track.** It used to
   switch dAVEBOx's track while Move's screen stayed on the old one.
 - **Dave 33 is NO, DAVID.**
