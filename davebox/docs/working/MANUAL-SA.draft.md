@@ -1626,7 +1626,8 @@ View only), and work with it as you would on Move.
 - Move takes the screen, jog, knobs, **Back**, **Mute** and **Shift** (so
   **Shift + jog** works in Move's editor); the pads, step buttons and transport stay
   with dAVEBOx, and dAVEBOx's own Shift gestures still work.
-- Press **Note/Session** to come back, or **Shift + a bottom-row pad** to leave
+- Press **Note/Session** to come back, or **Back** once you're at the top of Move's
+  editor (the instrument's main screen), or **Shift + a bottom-row pad** to leave
   and go straight to that track.
 
 A plain click does nothing on a MIDI channel or a followed track. On a track set to

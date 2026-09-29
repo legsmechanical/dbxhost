@@ -18,6 +18,9 @@ the section into a versioned heading at release time.
 - **Shift reaches Move's editor.** While you edit a Move instrument in Move's own
   editor, Shift + jog works there as it does on Move. dAVEBOx's own Shift
   gestures (Shift + a step, redo) still work.
+- **Back at the top of Move's editor brings you back.** In Move's own
+  instrument editor, Back steps out a level as before; at the instrument's main
+  screen, where Back used to do nothing, it now returns to dAVEBOx.
 - **Shift + a bottom-row pad leaves Move's editor for that track.** It used to
   switch dAVEBOx's track while Move's screen stayed on the old one.
 - **Dave 33 is NO, DAVID.**
