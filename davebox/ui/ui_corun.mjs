@@ -104,6 +104,12 @@ const DAVEBOX_CORUN_KEEP_DEFAULT = CORUN_GRP_PADS | CORUN_GRP_STEPS | CORUN_GRP_
  * (existing muscle memory) and lets Back cede to the peer for sub-view nav
  * (chain editor pop-up, Move firmware preset/synth navigation). */
 const CORUN_KEEP_BACK_BIT      = 1 << 15;
+/* Back at the TOP of Move's editor ends the track co-run (Josh, 2026-09-28):
+ * the host reads a Back that Move answers with silence as the top
+ * (src/host/corun_back_top.h). A flag, not a group — shadow_constants.h
+ * CORUN_KEEP_BACK_TOP_EXIT. The track co-run only: Move Settings follows its
+ * own announcements out. */
+const CORUN_KEEP_BACK_TOP_EXIT = 1 << 26;
 const DAVEBOX_CORUN_KEEP_MASK  = DAVEBOX_CORUN_KEEP_DEFAULT | CORUN_KEEP_BACK_BIT;
 /* Control-group bits matching Schwung's shadow_constants.h (OLED=0, PADS=1,
  * STEPS=2, TRANSPORT=3, JOG=4, TRACK=5, KNOBS=6, MASTER=7, SHIFT=8, BACK=9,
@@ -271,7 +277,7 @@ export function enterMoveNativeCoRun(t, origin) {
      * derivation on close. */
     host_open_service("move_native", {
         track: t,
-        keep_mask: DAVEBOX_CORUN_KEEP_MASK,
+        keep_mask: DAVEBOX_CORUN_KEEP_MASK | CORUN_KEEP_BACK_TOP_EXIT,
         led_keep_mask: DAVEBOX_CORUN_LED_KEEP_MASK,
     });
     /* Defer the track-button "press" that lands Move on the device-edit page and

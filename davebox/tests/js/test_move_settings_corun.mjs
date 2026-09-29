@@ -105,6 +105,7 @@ step('the mask cedes only the jog and Back; the session keeps everything else', 
                      'PLAY', 'REC', 'SAMPLE', 'LOOP', 'DELETE', 'KEEP_BACK'])
         assert(m & GRP[g], 'does not keep ' + g);
     for (const g of ['JOG', 'BACK']) assert(!(m & GRP[g]), 'keeps ' + g + ' — Move cannot navigate');
+    assert(!(m & (1 << 26)), 'Move Settings asks for Back-at-top exit — it follows Move out by its own announcements');
     assert(opened[0].opts.led_keep_mask === (m | GRP.TRACK), 'LED mask drifted');
 });
 

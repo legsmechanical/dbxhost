@@ -41,6 +41,7 @@
 
 static dbus_host_t host;
 static volatile int dbus_initialized = 0;  /* Guard: hooks are called before dbus_init() */
+static uint32_t dbus_text_count = 0;        /* every announcement, see shadow_dbus_text_count() */
 
 /* ============================================================================
  * Extern globals (defined here, declared extern in header)
@@ -186,9 +187,15 @@ void shadow_inject_pending_announcements(void)
  * Handle screen reader text signal
  * ============================================================================ */
 
+uint32_t shadow_dbus_text_count(void)
+{
+    return __atomic_load_n(&dbus_text_count, __ATOMIC_ACQUIRE);
+}
+
 static void shadow_dbus_handle_text(const char *text)
 {
     if (!text || !text[0]) return;
+    __atomic_add_fetch(&dbus_text_count, 1, __ATOMIC_RELEASE);
 
     /* Debug: log all D-Bus text messages */
     {

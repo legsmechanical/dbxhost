@@ -88,6 +88,7 @@ TARGETS = $(BUILD_DIR)/test_project_path \
           $(BUILD_DIR)/test_chain_clock_state \
           $(BUILD_DIR)/test_move_clock_setting \
           $(BUILD_DIR)/test_move_settings_text \
+          $(BUILD_DIR)/test_corun_back_top \
           $(BUILD_DIR)/test_render_pool
 
 .PHONY: all test clean
@@ -188,6 +189,9 @@ $(BUILD_DIR)/test_move_clock_setting: test_move_clock_setting.c ../../src/host/m
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_move_settings_text: test_move_settings_text.c ../../src/host/move_settings_text.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_corun_back_top: test_corun_back_top.c ../../src/host/corun_back_top.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_render_pool: test_render_pool.c ../../src/host/render_pool.h ../../src/host/shim_thread.h | $(BUILD_DIR)

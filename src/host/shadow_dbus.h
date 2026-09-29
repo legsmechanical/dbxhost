@@ -70,6 +70,11 @@ void dbus_init(const dbus_host_t *host);
 void shadow_dbus_start(void);
 void shadow_dbus_stop(void);
 
+/* How many screen-reader announcements Move has made so far. Only its CHANGE
+ * means anything: corun_back_top.h reads "no change since a Back" as Back
+ * pressed at the top of Move's editor. Safe from any thread. */
+uint32_t shadow_dbus_text_count(void);
+
 /* Queue a screen reader announcement to be injected via send() hook */
 void send_screenreader_announcement(const char *text);
 

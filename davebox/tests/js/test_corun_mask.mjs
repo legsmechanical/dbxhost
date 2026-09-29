@@ -111,6 +111,11 @@ step('move-native declares the ruled split', () => {
     if (m & GRP.DEAD_TRANSPORT)
         throw new Error('the RETIRED transport bit is back in the mask');
     if (!(m & GRP.KEEP_BACK)) throw new Error('lost the framework Back-exit opt-out');
+    /* Back at the top of Move's editor ends the co-run (2026-09-28): the host's
+     * flag, pinned to its header value. */
+    const hdr = readFileSync('../src/host/shadow_constants.h', 'utf8').match(/CORUN_KEEP_BACK_TOP_EXIT\s+\(1u << (\d+)\)/);
+    if (!hdr) throw new Error('CORUN_KEEP_BACK_TOP_EXIT not in shadow_constants.h');
+    if (!(m & (1 << parseInt(hdr[1], 10)))) throw new Error('the track co-run does not ask for Back-at-top exit');
 });
 
 step('the LED mask matches the keep mask — no lights/input split any more', () => {
@@ -118,8 +123,9 @@ step('the LED mask matches the keep mask — no lights/input split any more', ()
      * indicator while their PRESSES ceded to Move. Both halves are ours now, so
      * a divergence here would mean a surface we light but cannot operate. */
     const m = opened.opts.led_keep_mask;
-    if (m !== (opened.opts.keep_mask | GRP.TRACK))
-        throw new Error('led mask drifted: ' + m + ' vs ' + (opened.opts.keep_mask | GRP.TRACK));
+    const inputGroups = opened.opts.keep_mask & ~(1 << 26);   /* the Back-at-top FLAG is not a group */
+    if (m !== (inputGroups | GRP.TRACK))
+        throw new Error('led mask drifted: ' + m + ' vs ' + (inputGroups | GRP.TRACK));
     if (!(opened.opts.keep_mask & GRP.TRACK))
         throw new Error('TRACK is lit but its presses cede — lights without input');
 });

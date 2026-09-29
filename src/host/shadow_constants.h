@@ -472,6 +472,13 @@ typedef struct shadow_control_t {
  * tools use CORUN_F_OWN_BACK instead. Kept for byte-identical legacy behavior. */
 #define CORUN_KEEP_BACK (1u << 15)
 
+/* Opt-in flag (bit 26, lives in keep_mask like CORUN_KEEP_BACK): in a
+ * Move-native co-run, Back pressed at the TOP of Move's own editor ends the
+ * co-run. Move answers every Back that climbs a level with a screen
+ * announcement and a Back at the top with silence, so a silent Back is the
+ * top (corun_back_top.h). No routing group ever returns this bit. */
+#define CORUN_KEEP_BACK_TOP_EXIT (1u << 26)
+
 /* Map a raw cable-0 MIDI event to its control-surface group, or 0 if it isn't a
  * routable surface control (sensor CCs like the mic/speaker plug-detect 114/115
  * — those can't be ceded and always stay with the tool). type is the status
