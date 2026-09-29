@@ -26,7 +26,7 @@ import { computePadNoteMap, syncDrumLaneSteps, setActiveDrumLane,
 import { effectiveClip, invalidateLEDCache, forceRedraw, sendPerfMods,
     PERF_MOD_PAD_MAP } from './ui_leds.mjs';
 import { openGlobalMenuAt } from './ui_menu.mjs';
-import { exitMoveSettingsCoRun } from './ui_corun.mjs';
+import { exitMoveSettingsCoRun, exitMoveNativeCoRun } from './ui_corun.mjs';
 import { openProjectPadPicker, projectPadPickerTap } from './ui_dialogs.mjs';
 import { applyBankParam, applyTrackConfig, readBankParams,
     refreshPerClipBankParams, refreshDrumLaneBankParams, refreshSeqNotesIfCurrent,
@@ -638,14 +638,17 @@ function _onPadPressTrackView(status, d1, d2) {
              * suppressed while Shift is held (computePadNoteMap pushes all-0xFF),
              * so falling through would reach the note path with a map that says
              * nothing is there. Swallowing here says so once, out loud. */
-        } else if (S.shiftHeld && padIdx < NUM_TRACKS && S.moveCoRunTrack >= 0) {
-            /* ⚠ NOT in co-run (Josh, 2026-09-28: "we also need to disable
-             * shift+pad track switching in move co-run. that's been a dormant
-             * trap. it shifts tracks on the ui but leaves the move track on the
-             * oled and jog"). Move's editor stays on its track, so switching
-             * ours here splits the two. Swallowed: Shift silences the pads. */
         } else if (S.shiftHeld && padIdx < NUM_TRACKS) {
-            /* Shift + bottom-row pad: select active track */
+            /* Shift + bottom-row pad: select active track.
+             * ⭑ In co-run it LEAVES co-run first (Josh, 2026-09-28): switching
+             * only ours used to split the two — "it shifts tracks on the ui but
+             * leaves the move track on the oled and jog". Lands on the new
+             * track's view, never back in the old track's sound screen (the
+             * 'track' origin), and the row's Shift flash stays honest. */
+            if (S.moveCoRunTrack >= 0) {
+                S.moveCoRunOrigin = 'track';
+                exitMoveNativeCoRun();
+            }
             extNoteOffAll();
             handoffRecordingToTrack(padIdx);
             _switchActiveTrack(padIdx);

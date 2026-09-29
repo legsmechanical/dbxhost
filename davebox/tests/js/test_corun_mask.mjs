@@ -26,7 +26,8 @@ function step(label, fn) {
 import { readFileSync } from 'fs';
 
 let opened = null;
-globalThis.host_register_primary = () => true;
+let onReturn = null;
+globalThis.host_register_primary = (o) => { onReturn = o.onServiceReturn; return true; };
 /* The shim's PHYSICAL Shift (shadow_control->shift_held, read from the
  * hardware buffer before routing) — what dAVEBOx follows in co-run. */
 let physShift = 0;
@@ -399,22 +400,24 @@ step('⭑ co-run: dAVEBOx follows the PHYSICAL Shift (no CC 49 arrives)', () => 
     S.globalMenuOpen = false; S.moveCoRunTrack = -1;
 });
 
-step('⚠ co-run: Shift + a bottom-row pad does NOT switch tracks', () => {
+step('⭐ co-run: Shift + a bottom-row pad LEAVES co-run and switches to that track', () => {
+    corun.initPrimarySurface();
     S.sessionView = false; S.globalMenuOpen = false;
-    S.activeTrack = 2; S.moveCoRunTrack = 2; physShift = 1;
+    S.activeTrack = 2; S.trackRoute[2] = 1; S.trackChannel[2] = 1;
+    corun.enterMoveNativeCoRun(2, 'sound');            /* came in from the Move sound screen */
+    let closed = 0; const prevClose = globalThis.host_close_service;
+    globalThis.host_close_service = () => { closed++; return true; };
+    physShift = 1;
     pad(constsS.TRACK_PAD_BASE + 5);
-    const inCoRun = S.activeTrack;
+    globalThis.host_close_service = prevClose;
+    if (closed !== 1) throw new Error('co-run was not closed (' + closed + ')');
+    if (S.activeTrack !== 5) throw new Error('did not switch: track ' + (S.activeTrack + 1));
+    onReturn('move_native', null);                     /* the host reports the close */
+    if (S.moveCoRunTrack !== -1) throw new Error('still in co-run');
+    if (S.pendingSoundEnterTrack === 2) throw new Error('sent back into the OLD track\'s sound screen');
+    if (!S.shiftHeld) throw new Error('a Shift still held after co-run ends was forgotten');
     physShift = 0; ticks(1);
-    S.moveCoRunTrack = -1;
-    /* CONTROL: the same gesture outside co-run does switch. */
-    S.shiftHeld = false;
-    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 49, 127]));
-    pad(constsS.TRACK_PAD_BASE + 5);
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 49, 0]));
-    const outside = S.activeTrack;
-    if (inCoRun !== 2) throw new Error('Shift+pad switched to track ' + (inCoRun + 1) + ' in co-run');
-    if (outside !== 5) throw new Error('control failed: outside co-run the gesture went to ' + outside +
-                                       ', so the co-run negative proves nothing');
 });
 
 process.exit(failed);

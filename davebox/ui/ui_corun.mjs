@@ -322,9 +322,13 @@ function cleanupAfterMoveNativeCoRun() {
     /* Modifier-key release CCs the user pressed inside Move firmware never
      * reach us during co-run — clear defensively so a stuck Shift/Mute/etc.
      * can't silence pad dispatch on return. Mirrors resume-from-suspend. */
-    S.shiftHeld = false; S.deleteHeld = false; S.muteHeld = false;
+    /* Shift is the exception: it is ceded in co-run and followed from the
+     * hardware, so ask the hardware — a Shift still held as co-run ends
+     * (Shift+pad leaves co-run) stays held, and the next Shift+pad hops on. */
+    S.shiftHeld = !!shadow_get_shift_held(); S.shiftTrackLEDActive = S.shiftHeld;
+    S.deleteHeld = false; S.muteHeld = false;
     S.copyHeld  = false; S.loopHeld  = false; S.loopJogActive = false;
-    S.captureHeld = false; S.shiftTrackLEDActive = false;
+    S.captureHeld = false;
     /* Move firmware may have rewritten palette scratch entries (knob rings,
      * Shift/Back, etc.) while we were ceded. Reapply our palette before
      * invalidating the LED cache so forceRedraw below repaints with the
