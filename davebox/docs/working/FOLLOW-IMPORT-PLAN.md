@@ -256,3 +256,33 @@ warnings, Grid, Start, Bars, drum destination-pad planning, the one-write-then-v
   cap); fold ties go UP (as `xpose_snap`); Oct ±3, Semi ±11.
 - Build order: pure helpers → page + current-clip load → jog list/folders/prefs → preview →
   pitch/stretch → drums → delete the phrase library → device pass.
+
+## Device pass 1 feedback (Josh, 2026-09-30) — the next round
+
+⭐ **The browser must feel like the rest of dAVEBOx** — navigation, UI, browse and selection
+paradigms familiar in the context of the platform, not a separate system bolted on. The redesign
+is built from dAVEBOx's existing conventions (survey pending) and mocked up for approval first.
+
+Behaviour:
+- A file or part needs a **click** to become the main screen (landing only previews).
+- **Nothing is committed to a clip without a confirmation.** Back out of the main screen with a
+  file selected asks: commit the MIDI to the clip, or cancel.
+- Reopening lands on the **main screen** (the last selected file), not the list.
+- Folder memory is **per track**, not global.
+- Exit always returns to the screen the browser was entered from (CLIP / DRUM LANE card).
+- Global gestures stay available inside the browser (e.g. hold Shift to set the loop).
+- Switching files resets **Start → 1, Grid → 1/16, Stretch → x1**; Bars starts at the file's length.
+- **Bars never exceeds the file's length** (from Start), and Bars and Grid stay linked by the
+  clip's step limit (as the old import did).
+- Param editing works like the regular track banks: touch highlights the param; a picker appears
+  only on TURN (and Grid may not need one).
+- A file's BPM shows on the last (unused) cell.
+- Knob rings are dark on knobs with no param.
+
+Bugs:
+- The playhead is not shown while the transport runs (in-time preview).
+- The list's counts flicker in large folders and show file sizes instead of bars: the background
+  count-filler shares the 8-file parse cache, so in an 82-file folder it evicts and re-reads
+  forever. Counts need their own store.
+- `READING...` is drawn over the list's last row.
+- Back sometimes returns to the list, sometimes to the clip bank.
