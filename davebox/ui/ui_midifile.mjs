@@ -315,3 +315,59 @@ export function planImport(part, opts) {
     }
     return res;
 }
+
+/* ---- writing: a clip as a Standard MIDI File (Export Clip to MIDI) ----
+ *
+ * PURE, as the reader: notes in, bytes out. Format 0, one track, 96 ticks per
+ * quarter — dAVEBOx's own ticks, so nothing is rounded. The track carries its
+ * name, the tempo and the time signature, then the notes on one channel
+ * (`channel` 0-15; a drum clip writes channel 10, index 9, which this file's
+ * reader and every DAW take as drums). The end-of-track sits at `lengthTicks`,
+ * so a clip whose last bar is silent keeps its length.
+ *
+ * notes: [{ tick, pitch, vel, gate }] in dAVEBOx ticks, any order. A note-off
+ * sorts before a note-on on the same tick, so a note struck again the moment
+ * it ends is two notes, not one swallowed. */
+export function smfWrite(opts) {
+    const o = opts || {};
+    const ch = Math.max(0, Math.min(15, o.channel | 0));
+    const bpm = o.bpm > 0 ? o.bpm : 120;
+    const ts = o.timeSig || { num: 4, den: 4 };
+    const denPow = Math.max(0, Math.round(Math.log2(ts.den || 4)));
+    const ev = [];
+    for (const n of (o.notes || [])) {
+        const t = Math.max(0, Math.round(n.tick));
+        const p = Math.max(0, Math.min(127, n.pitch | 0));
+        const v = Math.max(1, Math.min(127, n.vel | 0));
+        const g = Math.max(1, Math.round(n.gate));
+        ev.push({ t, k: 1, b: [0x90 | ch, p, v] });
+        ev.push({ t: t + g, k: 0, b: [0x80 | ch, p, 0] });
+    }
+    ev.sort((a, b) => a.t - b.t || a.k - b.k);
+    let end = 0;
+    for (const e of ev) if (e.t > end) end = e.t;
+    if (o.lengthTicks > end) end = Math.round(o.lengthTicks);
+
+    const body = [];
+    const vlq = (n) => {
+        const out = [n & 0x7f];
+        while ((n >>>= 7)) out.unshift((n & 0x7f) | 0x80);
+        body.push(...out);
+    };
+    const name = String(o.name || '').replace(/[^\x20-\x7e]/g, '?').slice(0, 64);
+    if (name) { vlq(0); body.push(0xff, 0x03); vlq(name.length); for (const c of name) body.push(c.charCodeAt(0)); }
+    const us = Math.max(1, Math.min(0xffffff, Math.round(60000000 / bpm)));
+    vlq(0); body.push(0xff, 0x51, 3, (us >> 16) & 255, (us >> 8) & 255, us & 255);
+    vlq(0); body.push(0xff, 0x58, 4, Math.max(1, ts.num | 0) & 255, denPow & 255, 24, 8);
+    let at = 0;
+    for (const e of ev) { vlq(e.t - at); body.push(...e.b); at = e.t; }
+    vlq(end - at); body.push(0xff, 0x2f, 0);
+
+    const out = new Uint8Array(14 + 8 + body.length);
+    const hdr = [0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 0, 0, 1, (SMF_PPQN >> 8) & 255, SMF_PPQN & 255];
+    out.set(hdr, 0);
+    const L = body.length;
+    out.set([0x4d, 0x54, 0x72, 0x6b, (L >>> 24) & 255, (L >>> 16) & 255, (L >>> 8) & 255, L & 255], 14);
+    out.set(body, 22);
+    return out;
+}
