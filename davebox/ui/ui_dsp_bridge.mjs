@@ -40,7 +40,7 @@ import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 import { S } from './ui_state.mjs';
 import { slotIndex, syncLinkAudioRoutingFromRoutes,
          invalidateLinkAudioRoutingCache, linkAudioRoutingJustEnabled } from './ui_engine.mjs';
-import { clipHasContent, _clipIsEmpty } from './ui_pure.mjs';
+import { clipHasContent, _clipIsEmpty, bankCycleForMode } from './ui_pure.mjs';
 import { showActionPopup, showActionPopupFor, writeSidecar, uuidToStatePath, uuidToUiStatePath,
          uuidToNewProjectPath } from './ui_persistence.mjs';
 import { computePadNoteMap, setActiveDrumLane, syncDrumClipContent,
@@ -52,6 +52,7 @@ import { sessionHasAnyContent } from './ui_scene.mjs';
  * cycled bindings only inside function bodies, never at module-init time.
  * Keep it that way: no top-level use of anything from this import. */
 import { disarmRecord } from './ui_record.mjs';
+import { followActive } from './ui_prefs.mjs';
 import { dspGet, dspGetInt, dspGetStr, prefetchTrackDigests, releaseTrackDigests } from './ui_dsp_get.mjs';
 
 /* Popup counterpart of the host's warnIfLinkDisabled (src/shadow/shadow_ui.js)
@@ -117,8 +118,8 @@ export function refreshDrumLaneBankParams(t, lane) {
             if (v.length >= 11) S.drumLaneLenMode[t][lane] = parseInt(v[10], 10) | 0;
         }
     }
-    /* DRUM LANE bank (0): Res (K1=idx0), Eucl (K5=idx4), Dir (K7=idx6),
-     * SqFl (K8=idx7) per-lane meta. */
+    /* DRUM LANE bank (0): Res (K1=idx0), Eucl (K5=idx4), Dir (K7=idx6)
+     * per-lane meta. */
     const tpsIdx = TPS_VALUES.indexOf(S.drumLaneTPS[t]);
     S.bankParams[t][0][0] = tpsIdx >= 0 ? tpsIdx : 1;
     S.bankParams[t][0][4] = S.drumLaneEuclidN[t][lane] | 0;
@@ -132,7 +133,6 @@ export function refreshDrumLaneBankParams(t, lane) {
         const _parv = parseInt(_par, 10);
         S.drumLanePlaybackAudioReverse[t][lane] = (isFinite(_parv) && _parv === 1) ? 1 : 0;
     }
-    S.bankParams[t][0][7] = S.clipSeqFollow[t][S.trackActiveClip[t]] ? 1 : 0;
     /* Repeat Groove state for this lane */
     syncDrumRepeatState(t, lane);
     S.screenDirty = true;
@@ -196,7 +196,7 @@ export function refreshPerClipBankParams(t) {
         const _ll = parseInt(v[42], 10) | 0;
         S.seqArpStepLoopLen[t][ac] = (_ll >= 1 && _ll <= 8) ? _ll : 8;
     }
-    /* CLIP bank (0): Res (K1=idx0), Dir (K7=idx6), SqFl (K8=idx7) — all per-clip. */
+    /* CLIP bank (0): Res (K1=idx0), Dir (K7=idx6) — both per-clip. */
     const tps    = S.clipTPS[t][ac] || 24;
     const tpsIdx = TPS_VALUES.indexOf(tps);
     S.bankParams[t][0][0] = tpsIdx >= 0 ? tpsIdx : 1;
@@ -210,7 +210,6 @@ export function refreshPerClipBankParams(t) {
         const _parv = parseInt(_par, 10);
         S.clipPlaybackAudioReverse[t][ac] = (isFinite(_parv) && _parv === 1) ? 1 : 0;
     }
-    S.bankParams[t][0][7] = S.clipSeqFollow[t][ac] ? 1 : 0;
     S.screenDirty = true;
 }
 
@@ -645,6 +644,10 @@ export function pollDSP() {
      * save the 09-02 ruling leaves open: the transport is no longer running. The
      * DSP still serializes only if something changed. */
     if (_wasPlaying && !S.playing) S.saveNowOnce = true;
+    /* A real stop ends an arrow's pause of Seq Follow. Every stop path (Play,
+     * Delete+Play, an external clock, import's own stop) shows up here and only
+     * here; a restart (Shift+Play, Loop+Play) never stops, so it keeps the pause. */
+    if (_wasPlaying && !S.playing) S.followPaused = false;
     for (let t = 0; t < NUM_TRACKS; t++) {
         const newStep = parseInt(v[1 + t], 10) | 0;
         S.trackCurrentStep[t] = newStep;
@@ -681,7 +684,10 @@ export function pollDSP() {
         S.trackWillRelaunch[t]    = _newWR;
         S.trackPendingPageStop[t] = (v[42 + t] === '1');
     }
-    S.flashEighth    = (v[50] === '1');
+    const _fe = (v[50] === '1');
+    /* The overview's paused Seq Follow glyph blinks on this flash. */
+    if (_fe !== S.flashEighth && S.followPaused) S.screenDirty = true;
+    S.flashEighth    = _fe;
     S.flashSixteenth = (v[51] === '1');
     if (v.length >= 54) S.masterPos      = (parseInt(v[53], 10) | 0) >>> 0;
     if (v.length >= 55) S.dspLooperState  = parseInt(v[54], 10) | 0;
@@ -775,7 +781,7 @@ export function pollDSP() {
             }
         }
         /* Drum SeqFollow: auto-page to follow playhead */
-        if (S.playing && S.trackClipPlaying[S.activeTrack] && S.clipSeqFollow[S.activeTrack][effectiveClip(S.activeTrack)]) {
+        if (S.playing && S.trackClipPlaying[S.activeTrack] && followActive()) {
             const _dcs = S.drumCurrentStep[S.activeTrack];
             if (_dcs >= 0) {
                 const _newPage = Math.floor(_dcs / 16);
@@ -830,8 +836,7 @@ export function pollDSP() {
     /* SeqFollow: auto-page S.activeTrack to follow playhead */
     if (S.playing) {
         const _sft = S.activeTrack;
-        const _sfac = effectiveClip(_sft);
-        if (S.clipSeqFollow[_sft][_sfac] && S.trackClipPlaying[_sft]) {
+        if (followActive() && S.trackClipPlaying[_sft]) {
             var newPage;
             var _cs = S.trackCurrentStep[_sft];
             if (_cs >= 0) newPage = Math.floor(_cs / 16);
@@ -1107,10 +1112,6 @@ export function readBankParams(t, bankIdx) {
             S.bankParams[t][bankIdx][k] = pm ? pm.def : 0;
             continue;
         }
-        if (pm.scope === 'seqfollow') {
-            S.bankParams[t][bankIdx][k] = S.clipSeqFollow[t][S.trackActiveClip[t]] ? 1 : 0;
-            continue;
-        }
         if (pm.scope === 'clip') {
             const ac = S.trackActiveClip[t];
             if (pm.dspKey === 'clip_resolution') {
@@ -1130,8 +1131,9 @@ export function readBankParams(t, bankIdx) {
         if (pm.scope === 'action') {
             /* beat_stretch and clock_shift display per-touch labels (0 at rest)
              * rather than absolute position; crop is a trigger with no value
-             * to read back (skipping it saves a round trip). */
-            if (pm.dspKey === 'beat_stretch' || pm.dspKey === 'clock_shift' || pm.dspKey === 'crop') { S.bankParams[t][bankIdx][k] = 0; continue; }
+             * to read back (skipping it saves a round trip), nor has Import. */
+            if (pm.dspKey === 'beat_stretch' || pm.dspKey === 'clock_shift' || pm.dspKey === 'crop' ||
+                    pm.dspKey === 'midi_import') { S.bankParams[t][bankIdx][k] = 0; continue; }
             const stateKey = 't' + t + '_' + pm.dspKey + pm.actionSuffix;
             const raw = dspGet(stateKey);
             S.bankParams[t][bankIdx][k] = parseActionRaw(raw, pm.def);
@@ -1312,10 +1314,6 @@ export function applyTrackConfig(t, key, val) {
 export function applyBankParam(t, bankIdx, knobIdx, val) {
     const pm = BANKS[bankIdx].knobs[knobIdx];
     if (!pm || pm.scope === 'stub') return;
-    if (pm.scope === 'seqfollow') {
-        S.clipSeqFollow[t][S.trackActiveClip[t]] = val !== 0;
-        return;
-    }
     if (!pm.dspKey) return;
 
     if (pm.scope === 'global') {
@@ -1604,7 +1602,8 @@ export function restoreUiSidecar(applyDefaultsNow) {
                 S.trackActiveBank[_t] = (typeof _b !== 'number') ? 0
                     : (_b === 6) ? BANK_AUTOMATION
                     : ((_b >= 0 && _b <= 7) || isSoundBank(_b) || _b === BANK_AUTOMATION
-                       || _b === BANK_CHORD) ? (_b | 0) : 0;
+                       || _b === BANK_CHORD) ? (_b | 0)
+                    : 0;
             }
             /* Sync live mirror to the restored active track. Subsequent
              * post-restore validity checks (e.g. hide bank 7 on melodic) still

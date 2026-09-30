@@ -58,3 +58,71 @@ export function setJogTouchCardOn(v) {
     try { wrote = !!host_write_file(JOG_TOUCH_CARD_PATH, S.jogTouchCardOn ? '1\n' : '0\n'); } catch (e) { wrote = false; }
     if (!wrote) console.log('[prefs] could not persist Jog Touch Card to ' + JOG_TOUCH_CARD_PATH);
 }
+
+/* Seq Follow (Josh, 2026-09-29): ONE switch for the whole device, toggled by
+ * holding Left or Right and pressing Play. On = the step page tracks the
+ * playhead while the active clip plays. Absent file = On (the old default). */
+export const SEQ_FOLLOW_PATH = '/data/UserData/dbx-host/seq-follow.txt';
+
+export function seqFollowOn() {
+    if (S.seqFollowOn === null) {
+        let on = true;
+        try {
+            on = !(host_file_exists(SEQ_FOLLOW_PATH) &&
+                   String(host_read_file(SEQ_FOLLOW_PATH) || '').trim() === '0');
+        } catch (e) { on = true; }
+        S.seqFollowOn = on;
+    }
+    return S.seqFollowOn;
+}
+
+export function setSeqFollowOn(v) {
+    S.seqFollowOn = !!v;
+    let wrote = false;
+    try { wrote = !!host_write_file(SEQ_FOLLOW_PATH, S.seqFollowOn ? '1\n' : '0\n'); } catch (e) { wrote = false; }
+    if (!wrote) console.log('[prefs] could not persist Seq Follow to ' + SEQ_FOLLOW_PATH);
+}
+
+/* Whether the page follows the playhead right now: the switch, unless an arrow
+ * press paused it during this run of the transport (S.followPaused, cleared by
+ * the next real stop — a restart is not a stop). */
+export function followActive() {
+    return seqFollowOn() && !S.followPaused;
+}
+
+/* The MIDI browser (ui_midi_import, Josh 2026-09-29): it plays or not as it was
+ * left, and places a drum file's sounds by the Map it was last set to. One
+ * small file each. (Where each track was is kept in memory only.) */
+export const MIDI_MUTE_PATH  = '/data/UserData/dbx-host/midi-mute.txt';    /* absent = heard */
+export const MIDI_MAP_PATH   = '/data/UserData/dbx-host/midi-map.txt';     /* off | gm | move; absent = gm */
+
+function readPref(path) {
+    try { return host_file_exists(path) ? String(host_read_file(path) || '') : ''; } catch (e) { return ''; }
+}
+function writePref(path, text, what) {
+    let wrote = false;
+    try { wrote = !!host_write_file(path, text); } catch (e) { wrote = false; }
+    if (!wrote) console.log('[prefs] could not persist ' + what + ' to ' + path);
+}
+
+export function midiMuted() {
+    if (S.midiMuted === null) S.midiMuted = readPref(MIDI_MUTE_PATH).trim() === '1';
+    return S.midiMuted;
+}
+export function setMidiMuted(v) {
+    S.midiMuted = !!v;
+    writePref(MIDI_MUTE_PATH, S.midiMuted ? '1\n' : '0\n', 'the MIDI preview mute');
+}
+
+const MIDI_MAPS = ['off', 'gm', 'move'];
+export function midiMap() {
+    if (S.midiMap === null) {
+        const v = readPref(MIDI_MAP_PATH).trim();
+        S.midiMap = MIDI_MAPS.includes(v) ? v : 'gm';
+    }
+    return S.midiMap;
+}
+export function setMidiMap(v) {
+    S.midiMap = MIDI_MAPS.includes(v) ? v : 'gm';
+    writePref(MIDI_MAP_PATH, S.midiMap + '\n', 'the MIDI drum map');
+}

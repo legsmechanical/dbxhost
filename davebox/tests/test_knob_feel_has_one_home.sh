@@ -74,7 +74,7 @@ ok "no unknown file implements its own knob accumulation"
 # sign. A branch routed through a helper that only reads the sign is no better
 # off than the hand-rolled version it replaced.
 for fn in knobPick knobStep ccKnobDelta; do
-    if grep -q "^function $fn(" "$UI/ui_input_cc.mjs"; then ok "$fn() exists"
+    if grep -Eq "^(export )?function $fn\(" "$UI/ui_input_cc.mjs"; then ok "$fn() exists"
     else bad "$fn() is gone — every call site's feel just changed silently"; fi
 done
 
