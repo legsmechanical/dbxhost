@@ -372,10 +372,10 @@ function cleanupAfterMoveNativeCoRun() {
      * track reached co-run through that very row. The guard was already right;
      * only the reasoning had rotted. Do not lean on "the route cannot change
      * here" anywhere else. */
-    /* ...unless Note/Session left it: that goes to Session View instead (the
-     * tick does it — pendingSessionAfterCoRun). */
-    if (_origin === 'sound' && _originTrack >= 0 && S.trackRoute[_originTrack] === 1 &&
-            !S.pendingSessionAfterCoRun) {
+    /* A Note/Session exit needs no carve-out here: the tick lands on Session
+     * View first (pendingSessionAfterCoRun), and a sound entry never opens
+     * there (test_move_settings_corun checks every tick). */
+    if (_origin === 'sound' && _originTrack >= 0 && S.trackRoute[_originTrack] === 1) {
         S.pendingSoundEnterTrack = _originTrack;
         /* Back to the MENU, where the SYNTH row you came from is — the card
          * only exists on SOUND+CFG, and the bank never moved (2026-09-24). */
