@@ -297,9 +297,9 @@ static void drum_pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
 
     /* Delay retrig (drum): drop in-flight echoes from prior hit, mirroring the
      * melodic path in pfx_note_on. */
-    /* Swing-deferred events stay and the offs go out now — see the melodic
-     * drain in pfx_note_on for why (a swung note-off was re-queued into the
-     * ring this then zeroed). */
+    /* Swing-parked events stay, and the ring is compacted before the offs are
+     * sent — see the melodic drain in pfx_note_on (a swung note-off was
+     * re-queued into the ring this then zeroed). */
     if (px->delay_retrig && px->event_count > 0) {
         uint8_t offs[DRUM_PFX_MAX_EVENTS][2];
         int qi, k = 0, no = 0;
@@ -314,12 +314,7 @@ static void drum_pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
             }
         }
         px->event_count = k;
-        {
-            int was = g_inst ? g_inst->in_queue_drain : 0;
-            if (g_inst) g_inst->in_queue_drain = 1;
-            for (qi = 0; qi < no; qi++) drum_pfx_send(px, offs[qi][0], offs[qi][1], 0);
-            if (g_inst) g_inst->in_queue_drain = was;
-        }
+        for (qi = 0; qi < no; qi++) drum_pfx_send(px, offs[qi][0], offs[qi][1], 0);
     }
 
     memset(an, 0, sizeof(pfx_active_t));

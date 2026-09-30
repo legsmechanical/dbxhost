@@ -2840,13 +2840,14 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
      * note's immediate emission below so we don't silence what we're about
      * to play. */
     /* ⚠⚠ SWING SHARES THIS QUEUE. Swing parks off-beat note-ons and note-offs
-     * here too (PFX_EV_BYPASS_SWING); they are not echoes, so they STAY. And
-     * the offs sent here go out NOW (in_queue_drain skips the swing branch):
-     * sent through swing they were re-queued into the very ring the old code
-     * then zeroed, so a note-off vanished on every note-on of a swung track —
-     * delay_retrig is on by default (Josh, 2026-09-30: notes stuck on mngk,
-     * 22% swing). Offs are collected first, the ring compacted, then sent, so
-     * nothing is inserted into the ring while it is being walked. */
+     * here too (PFX_EV_BYPASS_SWING); they are not echoes, so they STAY. The
+     * old drain zeroed the whole ring AFTER sending its offs through pfx_send,
+     * where swing re-queued them into that very ring — so on a swung track
+     * every note-on deleted the parked note-offs (stuck notes) and the parked
+     * note-ons of other notes (most of a pattern went silent), and
+     * delay_retrig is on by default (Josh, 2026-09-30: mngk, 22% swing). The
+     * offs are collected first and the ring compacted BEFORE they are sent,
+     * so a re-queued off lands in the kept ring, on the swing grid. */
     if (fx->delay_retrig && fx->event_count > 0) {
         uint8_t offs[MAX_PFX_EVENTS][2];
         int qi, k = 0, no = 0;
@@ -2861,12 +2862,7 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
             }
         }
         fx->event_count = k;
-        {
-            int was = g_inst ? g_inst->in_queue_drain : 0;
-            if (g_inst) g_inst->in_queue_drain = 1;
-            for (qi = 0; qi < no; qi++) pfx_send(fx, offs[qi][0], offs[qi][1], 0);
-            if (g_inst) g_inst->in_queue_drain = was;
-        }
+        for (qi = 0; qi < no; qi++) pfx_send(fx, offs[qi][0], offs[qi][1], 0);
     }
 
     /* Store active-note record. */

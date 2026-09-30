@@ -6,8 +6,8 @@
  * the MIDI delay's retrigger drain (delay_retrig, ON by default) ran on every
  * note-on with anything queued, sent a note-off per queued event through
  * pfx_send — where swing re-queued it — and then zeroed the queue, deleting
- * those note-offs and the parked note-ons of other notes. The drain now leaves
- * swing-parked events in place and sends its offs straight out.
+ * those note-offs and the parked note-ons of other notes. The drain now keeps
+ * swing-parked events and compacts the ring before sending its offs.
  *
  * Replays the captured MIDI per (slot, note): after the transport stops the
  * clip at the bar and the tails run out, nothing may still be sounding. */
@@ -49,6 +49,7 @@ static int ons_on_slot(int slot) {
 
 int main(void) {
     int checks = 0;
+    int ons_unswung = -1, drum_ons_unswung = -1;
     /* Melodic: notes on every step with a mix of gates, nudged early so the
      * retrigger drain meets swing-parked events — the shape that leaked. */
     for (int sw = 0; sw <= 50; sw += 25) {
@@ -70,6 +71,13 @@ int main(void) {
         HX_ASSERT(ons_on_slot(slot) > 4, "control: the melodic clip did not play");
         if (stuck_on_slot(slot)) {
             fprintf(stderr, "FAIL: melodic, swing %d: %d note(s) never got a note-off\n", sw, stuck_on_slot(slot));
+            return 1;
+        }
+        /* ...and swing only MOVES notes, it never loses one: the drain used to
+         * delete other notes' parked note-ons (measured: 8 of 24 played). */
+        if (sw == 0) ons_unswung = ons_on_slot(slot);
+        else if (ons_on_slot(slot) != ons_unswung) {
+            fprintf(stderr, "FAIL: melodic, swing %d played %d notes, %d without swing\n", sw, ons_on_slot(slot), ons_unswung);
             return 1;
         }
         checks += 2;
@@ -98,6 +106,11 @@ int main(void) {
         int slot = (int)in->tracks[0].pfx.slot;
         HX_ASSERT(in->tracks[0].pad_mode == PAD_MODE_DRUM, "control: track 1 is not a drum track");
         HX_ASSERT(ons_on_slot(slot) > 10, "control: the drum clip did not play");
+        if (sw == 0) drum_ons_unswung = ons_on_slot(slot);
+        else if (ons_on_slot(slot) != drum_ons_unswung) {
+            fprintf(stderr, "FAIL: drum, swing %d played %d hits, %d without swing\n", sw, ons_on_slot(slot), drum_ons_unswung);
+            return 1;
+        }
         if (offs_on_slot(slot) < ons_on_slot(slot)) {
             fprintf(stderr, "FAIL: drum, swing %d: %d note-ons but only %d note-offs\n",
                     sw, ons_on_slot(slot), offs_on_slot(slot));
