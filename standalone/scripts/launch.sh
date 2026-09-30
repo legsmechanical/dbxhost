@@ -828,10 +828,7 @@ setsid --wait bash -c '
     while kill -0 "$_mlsr_pid" 2>/dev/null && [ "$_w" -lt 20 ]; do sleep 0.1; _w=$((_w + 1)); done
     if kill -0 "$_mlsr_pid" 2>/dev/null; then
       echo "set reader $_mlsr_pid ignored TERM -- killing it and its pipeline"
-      for _c in $(pgrep -P "$_mlsr_pid" 2>/dev/null || true); do
-        pkill -9 -P "$_c" 2>/dev/null || true
-        kill -9 "$_c" 2>/dev/null || true
-      done
+      for _c in $(pgrep -P "$_mlsr_pid" 2>/dev/null || true); do kill -9 "$_c" 2>/dev/null || true; done
       kill -9 "$_mlsr_pid" 2>/dev/null || true
     fi
     wait "$_mlsr_pid" 2>/dev/null || true
