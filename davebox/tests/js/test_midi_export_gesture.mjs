@@ -170,11 +170,23 @@ step('a write that cannot open says EXPORT FAILED and leaves no temp file', () =
     assert(popup() === 'EXPORT FAILED' && !Object.keys(W).length, popup() + ' ' + J(Object.keys(W)));
 });
 
+step('a write whose rename fails says EXPORT FAILED and removes the temp file it wrote', () => {
+    clear();
+    HDR['t2_c0_export_cond'] = '384 1 384'; RENDER = '0:60:100:24;';
+    globalThis.__stubOsRenameFail = true;
+    exportRow(2);
+    globalThis.__stubOsRenameFail = false;
+    assert(popup() === 'EXPORT FAILED' && !Object.keys(W).length, popup() + ' ' + J(Object.keys(W)));
+});
+
 step('refused while the transport plays — nothing rendered, nothing written', () => {
     clear();
     HDR['t2_c0_export_cond'] = '384 1 384'; RENDER = '0:60:100:24;';
     GS.playing = true;
-    exportRow(2);
+    assert(gotoRow(2, 'midi_export'), 'row');
+    click();
+    assert(GS.pendingMidiExport === null, 'the click armed an export while playing: ' + J(GS.pendingMidiExport));
+    drain();
     GS.playing = false;
     assert(!ASKED.length && !files().length, 'asked ' + J(ASKED));
     assert(/STOP TRANSPORT/.test(popup()), 'popup ' + popup());

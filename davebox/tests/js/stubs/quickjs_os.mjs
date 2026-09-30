@@ -64,6 +64,7 @@ export function rename(from, to) {
     const w = globalThis.__stubStdWritten;
     const f = String(from), t = String(to);
     if (!w || !Object.prototype.hasOwnProperty.call(w, f)) return -2;
+    if (globalThis.__stubOsRenameFail) return -28;   /* ENOSPC: a test's injected failure */
     w[t] = w[f]; delete w[f];
     return 0;
 }
