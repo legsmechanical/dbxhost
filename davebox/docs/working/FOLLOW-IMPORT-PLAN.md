@@ -247,8 +247,9 @@ warnings, Grid, Start, Bars, drum destination-pad planning, the one-write-then-v
 
 - The global Phrase Map setting goes (Josh). K5 Map on the drum page is remembered device-wide
   (`midi-map.txt`, absent = GM).
-- A drum load REPLACES the whole clip: `tN_lanes_import` names all 32 lanes, the unplaced ones with
-  empty bodies (the engine wipes each named lane). No DSP change.
+- A drum load replaces ONLY the lanes a sound is assigned to (Josh: "drum clips should only replace
+  the lanes that hits are assigned to"); the other lanes keep their notes. `REPLACES` shows when an
+  assigned lane already has notes. A melodic load replaces the clip.
 - The top-level list shows MIDI files as well as folders (the web manager uploads there).
 - Click with the jog list up LOADS a playable row (the approved footer says CLK LOAD).
 - Parse on rest (~120 ms), cache recent parses; at most 8 drum sounds (the engine's in-time preview

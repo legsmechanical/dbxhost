@@ -3,7 +3,7 @@
  * Pure: no host. */
 import {
     foldToScale, mapPitch, planNotes, maxBarsAt, gridFor, drumVoices, defaultAssign,
-    drumLaneNotes, allLanes, melodicImportVal, melodicAudclipVal, lanesAudclipVal, lanesImportVal,
+    drumLaneNotes, melodicImportVal, melodicAudclipVal, lanesAudclipVal, lanesImportVal,
     STRETCH_STEPS, MN_MAX_SOUNDS, voiceName,
 } from '../../ui/ui_midi_notes.mjs';
 
@@ -105,13 +105,10 @@ step('payloads: melodic import and in-time preview', () => {
     eq(melodicImportVal(1, 16, notes, true), '1 1 16|a 0 60 100 24', 'import');
     eq(melodicAudclipVal(1, 16, notes), '1 16 -1|a 0 60 100 24', 'audclip');
 });
-step('payloads: a drum load names ALL 32 lanes, the unplaced ones empty, so it replaces the clip', () => {
-    const m = new Map([[2, [{ t: 0, v: 100, g: 12 }]]]);
-    const v = lanesImportVal(1, 16, allLanes(m), true);
-    assert(v.startsWith('1 1 16|L0;L1;L2;a 0 100 12;L3;'), v.slice(0, 40));
-    assert(v.endsWith(';L31'), v.slice(-10));
-    eq((v.match(/L\d+/g) || []).length, 32, 'lanes named');
-    eq(lanesAudclipVal(1, 16, m), '1 16 -2|L2;a 0 100 12', 'the preview stages only placed lanes');
+step('payloads: a drum load names only the lanes a sound goes to (the others keep their notes)', () => {
+    const m = new Map([[5, [{ t: 24, v: 90, g: 12 }]], [2, [{ t: 0, v: 100, g: 12 }]]]);
+    eq(lanesImportVal(1, 16, m, true), '1 1 16|L2;a 0 100 12;L5;a 24 90 12', 'import');
+    eq(lanesAudclipVal(1, 16, m), '1 16 -2|L2;a 0 100 12;L5;a 24 90 12', 'preview');
 });
 step('sound names: GM, else the note number', () => {
     eq([voiceName(36), voiceName(42), voiceName(100)], ['KICK', 'HAT', 'N100'], 'names');

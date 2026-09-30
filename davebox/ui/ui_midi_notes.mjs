@@ -12,7 +12,9 @@
  *              xpose_snap in dsp/seq8_tonality.c does for Transpose)
  *   drums      the part's sounds (most-hit first), where each lands (the Map:
  *              GM, Move's kit layout, or none), and each lane's hits
- *   payloads   the engine's tN_cC_import / tN_lanes_import / tN_audclip values
+ *   payloads   the engine's tN_cC_import / tN_lanes_import / tN_audclip values —
+ *              a melodic load replaces the clip; a drum load replaces only the
+ *              lanes a sound goes to (Josh, 2026-09-29), the others keep theirs
  *
  * Ticks are 96 per quarter note — the clip's own tick and the parser's.
  * (Moved here from the phrase library's model, ui_phrases.mjs, when the two
@@ -150,8 +152,9 @@ function mappedNotes(voices, mode) {
 
 /* Each sound's lane (or -1): the lane already playing its mapped note; else
  * the lane playing the sound's own note; else the first sound takes the lane
- * the browser was opened on and the rest the next free lanes after it. The
- * load replaces the whole clip, so every lane is free. At most MN_MAX_SOUNDS. */
+ * the browser was opened on and the rest the next free lanes after it. A lane
+ * a sound lands on is replaced by the load; the rest keep their notes. At
+ * most MN_MAX_SOUNDS. */
 export function defaultAssign(voices, lanePitches, mode, openLane) {
     const pitches = lanePitches || [];
     const taken = new Set(), out = [];
@@ -188,14 +191,6 @@ export function drumLaneNotes(notes, voices, assign) {
     return out;
 }
 
-/* Every lane named — the unplaced ones with no hits — so a load REPLACES the
- * whole clip (the engine wipes each named lane when replacing). */
-export function allLanes(laneNotes) {
-    const out = new Map();
-    for (let l = 0; l < MN_LANES; l++) out.set(l, laneNotes.get(l) || []);
-    return out;
-}
-
 /* ---- engine payloads ---- */
 
 const mNotes = (notes) => notes.map(n => 'a ' + n.t + ' ' + n.p + ' ' + n.v + ' ' + n.g).join(';');
@@ -216,7 +211,8 @@ function lanesBody(laneNotes) {
 export function lanesAudclipVal(res, len, laneNotes) {
     return res + ' ' + len + ' -2|' + lanesBody(laneNotes);
 }
-/* tN_lanes_import "<flags> <res> <len>|L0;…;L31" — one undo unit. */
+/* tN_lanes_import "<flags> <res> <len>|L3;…;L7;…" — one undo unit; only the
+ * lanes named change (flags bit0 wipes each first). */
 export function lanesImportVal(res, len, laneNotes, replacing) {
     return (replacing ? 1 : 0) + ' ' + res + ' ' + len + '|' + lanesBody(laneNotes);
 }
