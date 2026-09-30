@@ -129,7 +129,9 @@ setsid --wait bash -c '
   # obvious from reading it, and "the splash takes a while" is not a question
   # anyone can answer without them -- the only timestamps this log carried came
   # from quiesce and the reaper, which write their own.
-  ts() { echo "$(date +%H:%M:%S.%2N) phase: $*"; }
+  # BusyBox date (stock AbletonOS) has no %N and prints it literally, as
+  # "19:01:56.%2N": there the stamp falls back to whole seconds.
+  ts() { _t="$(date +%H:%M:%S.%N | cut -c1-11)"; case "$_t" in *N*) _t="${_t%.*}" ;; esac; echo "$_t phase: $*"; }
   ts "launcher entered (entry=$DBX_ENTRY)"
   # The mask this session runs under (TERM is bit 14, 0x4000): proof the
   # clearing at the top of this file ran, or was not needed.
