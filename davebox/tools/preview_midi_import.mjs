@@ -76,9 +76,11 @@ D.push({ t: 0, g: 24, p: 20, v: 90 }, { t: 768, g: 24, p: 20, v: 90 });   /* a p
 const BEAT = Uint8Array.from([...chunk('MThd', [0, 0, 0, 1, 0, 96]), ...trackOf(D, 'Groove', 9)]);
 
 const FILES = { '/data/UserData/Bach Invention 8.mid': SONG, '/data/UserData/Groove 3.mid': BEAT };
-const DIRS = new Set(['/data/UserData/Downloads', '/data/UserData/UserLibrary']);
-globalThis.__auditReaddir = (p) => p === '/data/UserData'
-  ? ['Downloads', 'UserLibrary', 'schwung', 'dbx-host', 'Bach Invention 8.mid', 'Groove 3.mid', 'readme.txt'] : [];
+const DIRS = new Set(['/data/UserData/Downloads', '/data/UserData/UserLibrary', '/data/UserData/ABSTR']);
+const MANY = Array.from({ length: 82 }, (_, i) => 'ABSTRG' + String(i).padStart(2, '0') + '.mid');
+for (const n of MANY) FILES['/data/UserData/ABSTR/' + n] = BEAT;
+globalThis.__auditReaddir = (p) => p === '/data/UserData/ABSTR' ? MANY : p === '/data/UserData'
+  ? ['ABSTR', 'Downloads', 'UserLibrary', 'schwung', 'dbx-host', 'Bach Invention 8.mid', 'Groove 3.mid', 'readme.txt'] : [];
 globalThis.__auditStat = (p) => DIRS.has(p) || p.endsWith('/schwung') || p.endsWith('/dbx-host') ? { mode: 0o040000, size: 0 }
   : FILES[p] ? { mode: 0o100000, size: FILES[p].length } : p.endsWith('.txt') ? { mode: 0o100000, size: 90 } : null;
 globalThis.__auditOpen = (p) => { const b = FILES[p]; if (!b) return null; let pos = 0;
@@ -120,6 +122,12 @@ MI.miOnJog(-1); jogTo('Groove 3'); MI.miOnClick(false); tick(2);   /* the first-
 draw('11-drum-page');
 MI.miPadTap(5); tick(1); draw('12-drum-holding-sound');
 MI.miPadRelease(5);
+MI.miClose();
+/* a folder of 82 files: the list's counts */
+S.activeTrack = 2; S.trackPadMode[2] = 0; S.midiPlace = { dir: '/data/UserData/ABSTR', file: '' };
+MI.miOpen(2); tick(2);
+for (let i = 0; i < 44; i++) MI.miOnJog(1);
+tick(3); draw('13-many-a'); tick(1); draw('13-many-b'); tick(200); draw('13-many-c');
 MI.miClose();
 function writePng(fbuf,outPath){
   const iw=W*SCALE+2*PAD, ih=H*SCALE+2*PAD; const img=Buffer.alloc(iw*ih*4);
