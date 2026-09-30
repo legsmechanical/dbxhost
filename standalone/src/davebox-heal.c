@@ -10,11 +10,15 @@
  * shim. /usr/lib is not writable by `ableton`, which is what module installs,
  * schwung-manager and the standalone launcher all run as. Hence: root, once.
  *
- * Threat model. The mirrored .so is installed setuid **ableton**, not root, and
- * is preloaded into a process already running as ableton — so it confers no
- * privilege whatsoever. The setuid bit exists purely to satisfy glibc's check.
- * A setuid bit on a shared library grants nothing on its own; a .so is not
- * executed as a program. The only privileged act here is WRITING into /usr/lib,
+ * Threat model. The mirrored .so is installed root:root 04755, exactly as stock's
+ * own shim is. The setuid bit exists purely to satisfy glibc's check, and a
+ * setuid bit on a shared library grants nothing on its own; a .so is not
+ * executed as a program. ⚠ But OWNERSHIP matters: glibc's check reads the bit,
+ * never the owner, so any setuid-bit library in /usr/lib can be preloaded into
+ * ANY setuid-root program (su, passwd). Owned by ableton, the file was writable
+ * by ableton — and an owner may set the setuid bit on their own file — so
+ * ableton could have put code of its choosing into a root process. Root-owned,
+ * only this helper writes it. The only privileged act here is WRITING into /usr/lib,
  * and both the source and destination paths are hardcoded below, so this binary
  * can only ever do exactly what is written here. Its arguments are a CLOSED SET
  * of flags that select a hardcoded action — no caller-supplied string is ever
@@ -146,15 +150,8 @@
 #define SETTINGS_DIR "/data/UserData/settings"
 #endif
 
-/* uid/gid of the account Move runs as. Hardcoded rather than resolved through
- * getpwnam(): a setuid binary should not pull in NSS, which can load arbitrary
- * modules from configuration this binary does not control. Verified on device:
- * uid=1000(ableton) gid=100(users). */
-#define ABLETON_UID 1000
-#define USERS_GID   100
-
 #ifndef HEAL_UNINSTALL_ONLY  /* copying is install-only */
-/* owner_uid/owner_gid < 0 means "leave as root" (used for our own binary). */
+/* owner_uid/owner_gid < 0 means "leave as created" (used for our own binary). */
 static int copy_atomic(const char *src, const char *dst, mode_t perms,
                        int owner_uid, int owner_gid) {
     /* ⚠ Both ends of this copy sit in directories ableton can write, and this
@@ -469,6 +466,15 @@ static int dst_setuid_ok(const char *path) {
     return (st.st_mode & S_ISUID) ? 1 : 0;
 }
 
+/* 1 if the destination is owned root:root. An install from a build that
+ * mirrored the shim as ableton has the right bytes and the right bit, so only
+ * this check moves it to root on the first launch of this build. */
+static int dst_root_owned(const char *path) {
+    struct stat st;
+    if (stat(path, &st) < 0) return 0;
+    return (st.st_uid == 0 && st.st_gid == 0) ? 1 : 0;
+}
+
 #endif
 
 int main(int argc, char **argv) {
@@ -550,13 +556,14 @@ int main(int argc, char **argv) {
         }
     }
 
-    /* Mirror the shim: setuid ableton, 04755. Re-copy when the bytes differ OR
-     * when the destination has lost its setuid bit — the latter is a broken
-     * install even though the content matches, and repairing it is the entire
-     * job of this binary. Reporting it and leaving it broken would not be
-     * healing anything. */
-    if (needs_copy(SRC_SHIM, DST_SHIM) || !dst_setuid_ok(DST_SHIM)) {
-        if (copy_atomic(SRC_SHIM, DST_SHIM, 04755, ABLETON_UID, USERS_GID) == 0) {
+    /* Mirror the shim: root:root, 04755, as stock's is. Re-copy when the bytes
+     * differ, when the destination has lost its setuid bit, or when it is not
+     * root-owned — the latter two are broken installs even though the content
+     * matches, and repairing them is the entire job of this binary. Reporting
+     * it and leaving it broken would not be healing anything. */
+    if (needs_copy(SRC_SHIM, DST_SHIM) || !dst_setuid_ok(DST_SHIM) ||
+        !dst_root_owned(DST_SHIM)) {
+        if (copy_atomic(SRC_SHIM, DST_SHIM, 04755, 0, 0) == 0) {
             fprintf(stderr, "davebox-heal: shim mirrored\n");
         } else {
             rc = 2;

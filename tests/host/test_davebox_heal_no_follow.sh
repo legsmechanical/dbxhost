@@ -8,8 +8,9 @@
 #   - a link at the SOURCE made root copy a file ableton cannot read into a
 #     04755 one it can.
 # Built natively with -DHEAL_TESTING and every path redirected into a temp dir.
-# Linux only (mount(2) in the source). Must run as root for the fchown to
-# ableton's uid, as the helper does on the device.
+# Linux only (mount(2) in the source). Must run as root, as the helper does on
+# the device: it mirrors the shim root:root, and a root process is what may
+# chown a file away from its creator.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 [ "$(uname -s)" = Linux ] || { echo "SKIP: $(basename "$0") (Linux-only: mount(2) in the source)"; exit 0; }
@@ -17,7 +18,7 @@ if [ "$(id -u)" != 0 ]; then
     # CI runners are unprivileged with passwordless sudo; a skip there is a
     # test that never runs where it matters.
     sudo -n true 2>/dev/null && exec sudo -n bash "$0" "$@"
-    echo "SKIP: $(basename "$0") (needs root: the mirror fchowns to uid 1000)"; exit 0
+    echo "SKIP: $(basename "$0") (needs root: the mirror fchowns to root:root)"; exit 0
 fi
 fail=0; ok(){ echo "  ok   — $1"; }; bad(){ echo "  FAIL — $1"; fail=1; }
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
@@ -40,6 +41,13 @@ ln -s "$T/victim" "$DST.heal-tmp"
 [ "$(stat -c %a "$T/victim")" = 600 ] && ok "the link's target keeps its mode" || bad "victim mode now $(stat -c %a "$T/victim")"
 [ "$rc" = 0 ] && cmp -s "$DST" "$T/dbx/schwung-shim.so" && ok "the shim is still mirrored (the planted link is removed, not obeyed)" || bad "rc=$rc, mirror missing: $(cat "$T/err1")"
 [ "$(stat -c %a "$DST")" = 4755 ] && ok "mirrored shim is 04755" || bad "mode $(stat -c %a "$DST")"
+[ "$(stat -c %u:%g "$DST")" = 0:0 ] && ok "mirrored shim is root:root, as stock's is" || bad "owner $(stat -c %u:%g "$DST")"
+
+echo "an earlier build's ableton-owned copy, same bytes, still setuid:"
+chown 1000:100 "$DST" && chmod 4755 "$DST"
+"$T/heal-bin" 2>"$T/err2"; rc=$?
+[ "$rc" = 0 ] && [ "$(stat -c %u:%g "$DST")" = 0:0 ] && [ "$(stat -c %a "$DST")" = 4755 ] \
+    && ok "re-mirrored to root:root 04755" || bad "rc=$rc owner $(stat -c %u:%g "$DST") mode $(stat -c %a "$DST"): $(cat "$T/err2")"
 
 echo "source is a symlink:"
 rm -f "$DST" "$T/dbx/schwung-shim.so"
