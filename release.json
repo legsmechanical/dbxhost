@@ -1,6 +1,6 @@
 {
-  "version": "0.0.7",
+  "version": "0.0.8",
   "name": "dAVEBOx SA",
   "description": "An 8-track sequencer for Ableton Move, running Move under its own Schwung build. TEST BUILD, not in the catalog: install the release tarball through Schwung Manager (Modules → install from file), then Tools → dAVEBOx: the first launch installs everything else itself (needs a stock Schwung that carries schwung#419; older hosts get one root command). Stock Schwung is untouched and returns on exit or reboot.",
-  "download_url": "https://github.com/legsmechanical/dbxhost/releases/download/v0.0.7/davebox-sa-module.tar.gz"
+  "download_url": "https://github.com/legsmechanical/dbxhost/releases/download/v0.0.8/davebox-sa-module.tar.gz"
 }

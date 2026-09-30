@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.8] — 2026-09-30 (test build, not in the Schwung catalog)
 ### Changed
 - **Seq Follow is one switch for the whole device.** Hold Left or Right and
   press Play to turn it on or off; the transport isn't touched, and your choice
@@ -58,6 +60,15 @@ the section into a versioned heading at release time.
 - **Stopping the transport silences a stuck note on a Schwung instrument.**
   A note an instrument kept holding survived Stop; Stop now also sends
   All Notes Off to every Schwung instrument a track plays.
+- **dAVEBOx launches on a Move running Ableton's standard system.** On
+  those Moves every launch from Tools was refused, and Move came straight
+  back. (Thanks to Charles Vestal.)
+- **A refused launch no longer changes Move's set.** Each time a launch was
+  refused, Move reopened the set in its first slot instead of the one you
+  had open.
+- **dAVEBOx's system library is owned by root, as Schwung's own is.** It had
+  been left writable by the account Move and its modules run as.
+
 
 ## [0.0.7] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Fixed
