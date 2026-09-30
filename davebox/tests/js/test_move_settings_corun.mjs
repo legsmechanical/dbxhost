@@ -221,7 +221,13 @@ step('⭐ Note/Session from Move\'s instrument co-run lands on SESSION VIEW (not
     corun.enterMoveNativeCoRun(2, 'sound'); ticks(2);
     assert(S.moveCoRunTrack === 2, 'rig: not in co-run');
     noteSession(); ticks(1);
-    serviceReturned(); ticks(3);
+    /* Tick by tick: a sound entry that the view reconcile closes a tick later
+     * still claims the volume knob and flashes the menu, so it must never open. */
+    onReturn('move_native', null);
+    for (let i = 0; i < 6; i++) {
+        ticks(1);
+        assert(!await_snd.soundOpen(), 'the sound menu opened on tick ' + (i + 1) + ' after the co-run ended');
+    }
     assert(S.moveCoRunTrack < 0, 'co-run did not end');
     assert(S.sessionView, 'Note/Session left co-run for TRACK view');
     assert(S.pendingSoundEnterTrack < 0, 'the sound menu is still queued to re-open under Session View');
