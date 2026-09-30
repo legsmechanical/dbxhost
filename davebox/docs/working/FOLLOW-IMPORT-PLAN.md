@@ -315,8 +315,15 @@ fast-forward `device-sync` to `follow-import`.
 - names in the regular (larger, mixed-case host) font, bar counts / indicators in the movy font;
 - long names scroll so the whole name can be read (a marquee on the selected row; the shared
   host has `src/shared/text_scroll.mjs` `createTextScroller`, used by `menu_layout.mjs`).
-⚠ OPEN: Josh's last words were "keep the frame like you have now with the smaller font" — confirm
-whether names stay in the small font or move to the regular font inside the frame.
+✅ CONFIRMED SPEC (Josh, 2026-09-30):
+- The list stays INSIDE the current boxed frame (same frame, same header and footer).
+- File, folder and part NAMES: the regular host font — the larger one, mixed case (names keep
+  their own capitalisation, not forced to caps).
+- Bar counts and the other indicators (`4Br`, `DRM`, `3 PT`, the `>` / `/` marks' values, `..`):
+  the small movy font.
+- A name too long for its row SCROLLS (marquee on the highlighted row) so the full name can be
+  read; the others truncate.
+- Row height grows to fit the larger font, so fewer rows show at once; the cursor stays centred.
 
 **Tools:** `davebox/tools/preview_midi_import.mjs` renders the real screens (incl. an 82-file
 folder); `tools/mockup_midi_browser2.mjs` the approved round-2 mockups. Gesture test:
