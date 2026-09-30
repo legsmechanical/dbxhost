@@ -57,6 +57,26 @@ int main(void) {
     HX_ASSERT(cc123_to_move() == 0, "CC 123 reached the Move route — it corrupts Move's voice allocator");
     checks++;
     hx_destroy(h);
+
+    /* ...and a LOOPING looper does not swallow it: pfx_send drops everything
+     * on a looped track, so the CC goes straight to the output. */
+    h = hx_create(NULL);
+    in = (seq8_instance_t *)h->inst;
+    hx_set_param(h, "transport", "play_focus:5:0");
+    hx_render(h, 4);
+    in->looper_state = LOOPER_STATE_LOOPING;
+    for (int t = 0; t < 8; t++) in->tracks[t].pfx.looper_on = 1;
+    hx_clear_capture(h);
+    send_panic(in);
+    for (int t = 4; t < 8; t++) {
+        int slot = (int)in->tracks[t].pfx.slot;
+        if (cc123_to_slot(slot) != 16) {
+            fprintf(stderr, "FAIL: with the looper looping, track %d's slot got CC 123 on %d of 16 channels\n", t + 1, cc123_to_slot(slot));
+            return 1;
+        }
+        checks++;
+    }
+    hx_destroy(h);
     printf("PASS: test_panic_all_notes_off_chain (%d checks)\n", checks);
     return 0;
 }
