@@ -49,23 +49,24 @@ function drums(bars) {
 }
 
 /* ---- the proposed page ---- */
+const STR = (t) => ({ kind: 'enumsq', label: 'Strch', name: 'Stretch', text: t || 'x1', options: ['/8','/4','/2','x1','x2','x4','x8'], sel: 3 });
 const cellsMelodic = (o = {}) => [
-    { kind: 'valsq', label: 'Start', name: 'Start Bar', text: '1', norm: 0 },
+    { kind: 'valsq', label: 'Start', name: 'Start Bar', text: o.start || '1', norm: 0 },
     { kind: 'valsq', label: 'Bars', name: 'Length', text: o.bars || '4', norm: 0.1 },
     { kind: 'enumsq', label: 'Grid', name: 'Grid', text: '1/16', options: ['1/32','1/16','1/8','1/4','1/2','1'], sel: 1 },
-    { kind: 'enumsq', label: 'To', name: o.replace ? 'Replace CLIP A' : 'Destination', text: 'CLIP A', options: ['CLIP A','CLIP C','CLIP D'], sel: 0 },
-    { kind: 'enumsq', label: 'Strch', name: 'Stretch', text: o.stretch || 'x1', strip: o.stretch || 'x1', options: ['/8','/4','/2','x1','x2','x4','x8'], sel: 3 },
+    STR(o.stretch),
     { kind: 'valsq', label: 'Oct', name: 'Octave', text: o.oct || '+0', strip: (o.oct || '+0'), norm: 0.5 },
     { kind: 'valsq', label: 'Semi', name: 'Semitones', text: o.semi || '+0', strip: (o.semi || '+0'), norm: 0.5 },
     { kind: 'pill', label: 'Scale', name: 'Fit to Scale', text: o.scale === false ? 'OFF' : 'ON', strip: o.scale === false ? 'OFF' : 'ON', norm: o.scale === false ? 0 : 1 },
+    { kind: 'blank', label: '' },
 ];
 const cellsDrum = () => [
     { kind: 'valsq', label: 'Start', name: 'Start Bar', text: '1', norm: 0 },
     { kind: 'valsq', label: 'Bars', name: 'Length', text: '2', norm: 0.05 },
     { kind: 'enumsq', label: 'Grid', name: 'Grid', text: '1/16', options: ['1/32','1/16','1/8','1/4','1/2','1'], sel: 1 },
-    { kind: 'enumsq', label: 'To', name: 'Destination', text: 'CLIP A', options: ['CLIP A','CLIP B'], sel: 0 },
-    { kind: 'enumsq', label: 'Strch', name: 'Stretch', text: 'x1', strip: 'x1', options: ['/8','/4','/2','x1','x2','x4','x8'], sel: 3 },
+    STR(),
     { kind: 'enumsq', label: 'Map', name: 'Drum Map', text: 'GM', strip: 'GM', options: ['Off','GM','Move'], sel: 1 },
+    { kind: 'blank', label: '' },
     { kind: 'blank', label: '' },
     { kind: 'blank', label: '' },
 ];
@@ -75,7 +76,7 @@ const cellsDrum = () => [
  * where the notes fall; and K5-K8 as small two-line cells (label over value),
  * one column per knob, over the knob it belongs to. Touching one inverts its
  * cell and names it in the header, with the value, as a touched cell does. */
-function page({ header, right, sub, roll, cells, touched = -1, footer, playhead }) {
+function page({ header, right, sub, roll, cells, touched = -1, footer, playhead, blinkOff }) {
     globalThis.clear_screen();
     K.kitUseLayout('bank');
     const top = cells.slice(0, 4).concat([{ kind: 'blank', label: '' }, { kind: 'blank', label: '' },
@@ -90,7 +91,7 @@ function page({ header, right, sub, roll, cells, touched = -1, footer, playhead 
             /* the window that will land (Start .. Start+Bars), bracketed as today;
              * notes outside it dotted */
             const win = roll.win || { from: 0, to: roll.ticks };
-            for (const n of roll.notes) {
+            for (const n of (blinkOff ? [] : roll.notes)) {
                 const x0 = px(n.t), w = Math.max(2, px(n.t + n.g) - x0 - 1);
                 const inside = n.t >= win.from && n.t < win.to;
                 for (let x = x0; x < x0 + w; x++) for (let y = 35; y < 37; y++)
@@ -133,7 +134,7 @@ page({ header: '(2) ACID LINE 2', right: '3/12', roll: melodic(7, 4), playhead: 
 shoot('01a-shift-held');
 
 /* 1b — muted: nothing plays as you scroll; the header says so, the hint offers it back */
-page({ header: '(2) ACID LINE 2', right: '3/12 MUTE', roll: melodic(7, 4),
+page({ header: '(2) ACID LINE 2', right: '3/12', roll: melodic(7, 4), blinkOff: true,
        cells: cellsMelodic(), footer: [['JOG', 'FILE'], ['CLK', 'LOAD'], ['SHFT', 'HEAR']] });
 shoot('01b-muted');
 
@@ -169,24 +170,24 @@ shoot('04a-inside-list');
 /* 4b — Bars touched: the brackets mark what will land; the rest is dotted */
 {
     const r = melodic(7, 4); r.win = { from: 384, to: 384 * 3 };
-    const c = cellsMelodic({ bars: '2' }); c[0] = { ...c[0], text: '2', norm: 0.33 };
+    const c = cellsMelodic({ bars: '2', start: '2' });
     page({ header: '(2) ACID LINE 2', right: '2 CUT', roll: r, cells: c, touched: 1, footer: FOOT });
     shoot('04b-window');
 }
 
 /* 5 — Semi touched: the value large, the name in the header (the bank page's own touch) */
 page({ header: '(2) ACID LINE 2', right: '3/12', roll: melodic(7, 4),
-       cells: cellsMelodic({ semi: '-3' }), touched: 6, footer: FOOT });
+       cells: cellsMelodic({ semi: '-3' }), touched: 5, footer: FOOT });
 shoot('05-touch-semi');
 
 /* 6 — Scale OFF: the notes as written (Oct and Semi still apply) */
 page({ header: '(2) ACID LINE 2', right: '3/12', roll: melodic(7, 4),
-       cells: cellsMelodic({ scale: false }), touched: 7, footer: FOOT });
+       cells: cellsMelodic({ scale: false }), touched: 6, footer: FOOT });
 shoot('06-scale-off');
 
 /* 7 — a drum track: K6 is the drum map; K7-K8 have nothing to do */
 page({ header: '(1) AMEN 1', right: '2/9', roll: drums(2), playhead: 300,
-       cells: cellsDrum(), footer: [['RTPAD', 'SOUND'], ['CLK', 'LOAD']] });
+       cells: cellsDrum(), footer: [['RTPAD', 'SOUND'], ['SHFT', 'MUTE']] });
 shoot('07-drum-page');
 
 /* 8 — a drum track, holding a sound on the right-hand pads: where each sound goes */
@@ -207,9 +208,8 @@ page({ header: '(1) AMEN 1', right: '2/9', roll: drums(2),
 }
 shoot('08-drum-sounds');
 
-/* 9 — Replace: asked once, with the way back named */
-globalThis.clear_screen();
-K.drawKitPrompt('REPLACE CLIP A?', ['ACID LINE 2 - 4 BARS', 'UNDO BRINGS IT BACK'], [['CLK', 'YES'], ['BACK', 'NO']]);
+/* 9 — the current clip has notes: the header warns before the click (no confirm; Undo brings them back) */
+page({ header: '(2) ACID LINE 2', right: 'REPLACES', roll: melodic(7, 4), cells: cellsMelodic(), footer: FOOT });
 shoot('09-replace');
 
 /* 10 — first time (no folder chosen yet): the user data folder, folders to walk into */
