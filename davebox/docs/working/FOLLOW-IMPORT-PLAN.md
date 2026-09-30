@@ -325,6 +325,13 @@ fast-forward `device-sync` to `follow-import`.
   read; the others truncate.
 - Row height grows to fit the larger font, so fewer rows show at once; the cursor stays centred.
 
+✅ BUILT (2026-09-30, after Josh approved a preview): `drawList()` in `ui_midi_import.mjs` —
+five 9px rows, cursor on the middle one, readouts centred against the name; the marquee steps
+whole characters (1 s rest, 80 ms a step, 1.5 s hold), `>`/`/` stay on. Gesture test step "the
+list: …" pins it, including a long FOLDER name. Awaiting device check together with the
+knob-ring fix. Note: the tick's own redraw line is belt-and-braces — the DSP poll already
+redraws every 4 ticks, so a mutation removing it survives, legitimately.
+
 **Tools:** `davebox/tools/preview_midi_import.mjs` renders the real screens (incl. an 82-file
 folder); `tools/mockup_midi_browser2.mjs` the approved round-2 mockups. Gesture test:
 `davebox/tests/js/test_midi_import_gesture.mjs` (35 steps). Device checklists (db-backed):
