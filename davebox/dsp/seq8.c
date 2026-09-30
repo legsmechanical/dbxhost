@@ -2839,17 +2839,34 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
      * still-pending note-off events are harmless. Drain runs BEFORE the new
      * note's immediate emission below so we don't silence what we're about
      * to play. */
+    /* ⚠⚠ SWING SHARES THIS QUEUE. Swing parks off-beat note-ons and note-offs
+     * here too (PFX_EV_BYPASS_SWING); they are not echoes, so they STAY. And
+     * the offs sent here go out NOW (in_queue_drain skips the swing branch):
+     * sent through swing they were re-queued into the very ring the old code
+     * then zeroed, so a note-off vanished on every note-on of a swung track —
+     * delay_retrig is on by default (Josh, 2026-09-30: notes stuck on mngk,
+     * 22% swing). Offs are collected first, the ring compacted, then sent, so
+     * nothing is inserted into the ring while it is being walked. */
     if (fx->delay_retrig && fx->event_count > 0) {
-        int qi;
+        uint8_t offs[MAX_PFX_EVENTS][2];
+        int qi, k = 0, no = 0;
         for (qi = 0; qi < fx->event_count; qi++) {
             pfx_event_t *ev = &fx->events[qi];
             uint8_t st = ev->msg[0] & 0xF0;
+            if (ev->flags & PFX_EV_BYPASS_SWING) { fx->events[k++] = *ev; continue; }
             if (st == 0x90 || st == 0x80) {
-                uint8_t off = (uint8_t)(0x80 | (ev->msg[0] & 0x0F));
-                pfx_send(fx, off, ev->msg[1], 0);
+                offs[no][0] = (uint8_t)(0x80 | (ev->msg[0] & 0x0F));
+                offs[no][1] = ev->msg[1];
+                no++;
             }
         }
-        fx->event_count = 0;
+        fx->event_count = k;
+        {
+            int was = g_inst ? g_inst->in_queue_drain : 0;
+            if (g_inst) g_inst->in_queue_drain = 1;
+            for (qi = 0; qi < no; qi++) pfx_send(fx, offs[qi][0], offs[qi][1], 0);
+            if (g_inst) g_inst->in_queue_drain = was;
+        }
     }
 
     /* Store active-note record. */

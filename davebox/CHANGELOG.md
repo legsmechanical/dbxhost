@@ -26,6 +26,10 @@ the section into a versioned heading at release time.
   back to its own last file. The transport keeps running. It replaces the
   phrase library.
 ### Fixed
+- **Notes no longer stick on tracks with swing.** With swing on, a note could
+  be left sounding after its clip stopped (or while playing), and drum hits
+  could lose their note-offs; the MIDI delay's retrigger was deleting the
+  note-offs swing was holding back.
 - **Stopping the transport silences a stuck note on a Schwung instrument.**
   A note an instrument kept holding survived Stop; Stop now also sends
   All Notes Off to every Schwung instrument a track plays.
