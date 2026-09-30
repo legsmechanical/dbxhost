@@ -3554,7 +3554,12 @@ export function drawKitList(rows, sel, opts) {
             if (row.hdr === false) mvPrint(nx, y + 1, t, 1); else hdrPrint(nx, y, t, 1);
             continue;
         }
-        if (on) fill_rect(boxX, y - 1, fillW, rowH, 1);
+        /* The small font prints at y+1 and is 5 rows tall, so the usual band
+         * (y-1 .. y+rowH-2) left two pixels above it and none below (Josh,
+         * 2026-09-29: "the browser cursor is off center vertically"). A
+         * small-font row's band starts a pixel lower — still contiguous with
+         * its neighbours, now one pixel clear on each side. */
+        if (on) fill_rect(boxX, row.labelFont === 'small' ? y : y - 1, fillW, rowH, 1);
         const ink = on ? 0 : 1;
         /* ---- UPPERCASE before measuring or printing ----
          *

@@ -243,6 +243,7 @@ export function smfParse(bytes) {
     return {
         format, parts, warnings,
         bpm: Math.round(bpm * 100) / 100,
+        hasTempo: !!out.tempoUs,     /* false: the file names no tempo, and `bpm` is the 120 default */
         timeSig: out.timeSig || { num: 4, den: 4 },
         ignored: out.ignored,
     };

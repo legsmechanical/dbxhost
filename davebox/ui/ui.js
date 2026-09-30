@@ -9,7 +9,8 @@ import {
     MoveUp,
     MoveDown,
     MoveDelete,
-    MoveBack
+    MoveBack,
+    MovePlay
 } from '/data/UserData/schwung/shared/constants.mjs';
 
 import {
@@ -43,11 +44,12 @@ import { snapMorphApply } from './ui_snapmorph.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { daveBoxRotate } from './ui_daves.mjs';
+import { miActive, miOnKnob, miOnJog, miOnClick, miOnBack, miClose, miJogTouch, miPadTap, miPadRelease } from './ui_midi_import.mjs';
 import {
     projectPickerTextEntryMidi,
     projectPadPickerTap, projectPadPickerRotate, projectPadPickerClick
 } from './ui_dialogs.mjs';
-import { MoveShift } from '/data/UserData/schwung/shared/constants.mjs';
+import { MoveShift, MoveLeft, MoveRight } from '/data/UserData/schwung/shared/constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, trackColor, forceRedraw, installFlagsWrap, buildLedInitQueue } from './ui_leds.mjs';
 import { initPrimarySurface } from './ui_corun.mjs';
@@ -527,6 +529,13 @@ function _onMidiInternalImpl(data) {
     /* Co-run: Shift is Move's, so take dAVEBOx's from the hardware first. */
     syncCoRunShift();
 
+    /* Left/Right HELD (with Play, toggles Seq Follow): both edges recorded here,
+     * above every modal gate, so a release inside sound mode or the MIDI
+     * browser can never leave the flag stuck and turn the next Play into a
+     * follow toggle. Nothing is consumed; the arrows go on to their owners. */
+    if (status === 0xB0 && d1 === MoveLeft)  S.leftHeld  = d2 === 127;
+    if (status === 0xB0 && d1 === MoveRight) S.rightHeld = d2 === 127;
+
     /* PROJECT DID NOT OPEN is fully modal: nothing else may act while dAVEBOx
      * holds something Move does not. */
     if (S.projectOpenFailed && projectOpenFailedMidi(data)) return;
@@ -637,6 +646,62 @@ function _onMidiInternalImpl(data) {
             else if (d1 === MoveShift)  { S.shiftHeld  = d2 === 127; return; }
             else if (d1 === MoveDelete) { S.deleteHeld = d2 === 127; return; }
             else return;
+        }
+    }
+
+    /* THE MIDI BROWSER (ui_midi_import), opened from K8 of the CLIP / DRUM LANE
+     * card: a modal. All eight knobs are its, plus the jog (and its touch, which
+     * holds the list up), the click and Back; Shift+jog still switches track,
+     * which closes it (miTick). Knob TOUCHES are taken here — the screen names
+     * the touched setting — and consumed, so a Delete or Mute held with one
+     * cannot act on the bank underneath. A drum track's pads place its sounds
+     * (the engine still sounds them). Shift, Play and Shift+volume fall through;
+     * Note/Session closes it and falls through (the escape law). Everything
+     * else — steps, the arrows — is swallowed so nothing edits the track
+     * underneath. Closing leaves the card it was opened from. */
+    if (miActive()) {
+        const hi = status & 0xF0;
+        if (hi === 0x90 || hi === 0x80) {
+            const on = hi === 0x90 && d2 === 127;
+            if (d1 >= 0 && d1 <= 7) {
+                /* a touch NAMES the knob; its list waits for a turn (knobTurnedTick) */
+                if (on) { S.knobTouched = d1; S.knobTurnedTick[d1] = -1; }
+                else if (S.knobTouched === d1) S.knobTouched = -1;
+                S.screenDirty = true;
+                return;
+            }
+            if (d1 === MoveMainTouch) { miJogTouch(on); return; }
+            /* the step buttons are blocked (lit dim white): a step edit would
+             * land on the preview, which is not the clip */
+            if (d1 >= 16 && d1 <= 31) return;
+            /* a drum track's pads place the file's sounds (the engine still
+             * sounds the lanes); a melodic track's play as ever */
+            if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32 && S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
+                if (hi === 0x90 && d2 > 0) miPadTap(d1 - TRACK_PAD_BASE);
+                else miPadRelease(d1 - TRACK_PAD_BASE);
+                return;
+            }
+            /* anything else falls through */
+        } else if (status === 0xB0) {
+            if (d1 >= 71 && d1 <= 78) { S.knobTurnedTick[d1 - 71] = nowMs(); miOnKnob(d1 - 71, d2); S.screenDirty = true; return; }
+            else if (d1 === MoveMainKnob) {
+                if (S.shiftHeld) { /* Shift+jog: track switch, falls through */ }
+                else { const _jd = decodeDelta(d2); if (_jd) miOnJog(_jd); S.screenDirty = true; return; }
+            }
+            else if (d1 === MoveMainButton) { if (d2 === 127) miOnClick(S.shiftHeld); S.screenDirty = true; return; }
+            else if (d1 === MoveBack) {
+                /* the PRESS is the global hold-to-suspend clock; a tap is the
+                 * RELEASE (as sound mode's Back) */
+                if (d2 >= 64) { S.backPressTick = nowMs(); S.backHoldFired = false; return; }
+                const _held = S.backHoldFired;
+                S.backPressTick = -1; S.backHoldFired = false;
+                if (!_held) miOnBack();
+                S.screenDirty = true;
+                return;
+            }
+            else if (d1 === MoveNoteSession) { miClose(); /* falls through */ }
+            /* everything else — transport, Loop, Undo, Shift, the volume —
+             * keeps doing what it does (the browser claims only what it uses) */
         }
     }
 

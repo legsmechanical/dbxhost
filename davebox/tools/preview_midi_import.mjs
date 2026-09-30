@@ -18,6 +18,7 @@ globalThis.set_pixel = (x,y,v)=>{x|=0;y|=0;if(x>=0&&x<W&&y>=0&&y<H)fb[y*W+x]=v?1
 globalThis.fill_rect = (x,y,w,h,v)=>{for(let j=0;j<h;j++)for(let i=0;i<w;i++)globalThis.set_pixel(x+i,y+j,v);};
 globalThis.draw_rect = (x,y,w,h,v)=>{globalThis.fill_rect(x,y,w,1,v);globalThis.fill_rect(x,y+h-1,w,1,v);globalThis.fill_rect(x,y,1,h,v);globalThis.fill_rect(x+w-1,y,1,h,v);};
 globalThis.clear_screen = ()=>{fb.fill(0);};
+globalThis.stipple_rect = (x,y,w,h)=>{for(let j=0;j<h;j++)for(let i=0;i<w;i++)if(((x+i)+(y+j))&1)globalThis.set_pixel(x+i,y+j,0);};
 
 /* the device 5x7 host font, exactly as audit_screens models it */
 const HFONT = JSON.parse(readFileSync(new URL('./host_font_5x7.json', import.meta.url)));
@@ -76,9 +77,11 @@ D.push({ t: 0, g: 24, p: 20, v: 90 }, { t: 768, g: 24, p: 20, v: 90 });   /* a p
 const BEAT = Uint8Array.from([...chunk('MThd', [0, 0, 0, 1, 0, 96]), ...trackOf(D, 'Groove', 9)]);
 
 const FILES = { '/data/UserData/Bach Invention 8.mid': SONG, '/data/UserData/Groove 3.mid': BEAT };
-const DIRS = new Set(['/data/UserData/Downloads', '/data/UserData/UserLibrary']);
-globalThis.__auditReaddir = (p) => p === '/data/UserData'
-  ? ['Downloads', 'UserLibrary', 'schwung', 'dbx-host', 'Bach Invention 8.mid', 'Groove 3.mid', 'readme.txt'] : [];
+const DIRS = new Set(['/data/UserData/Downloads', '/data/UserData/UserLibrary', '/data/UserData/ABSTR']);
+const MANY = Array.from({ length: 82 }, (_, i) => 'ABSTRG' + String(i).padStart(2, '0') + '.mid');
+for (const n of MANY) FILES['/data/UserData/ABSTR/' + n] = BEAT;
+globalThis.__auditReaddir = (p) => p === '/data/UserData/ABSTR' ? MANY : p === '/data/UserData'
+  ? ['ABSTR', 'Downloads', 'UserLibrary', 'schwung', 'dbx-host', 'Bach Invention 8.mid', 'Groove 3.mid', 'readme.txt'] : [];
 globalThis.__auditStat = (p) => DIRS.has(p) || p.endsWith('/schwung') || p.endsWith('/dbx-host') ? { mode: 0o040000, size: 0 }
   : FILES[p] ? { mode: 0o100000, size: FILES[p].length } : p.endsWith('.txt') ? { mode: 0o100000, size: 90 } : null;
 globalThis.__auditOpen = (p) => { const b = FILES[p]; if (!b) return null; let pos = 0;
@@ -86,34 +89,49 @@ globalThis.__auditOpen = (p) => { const b = FILES[p]; if (!b) return null; let p
 
 const shots = [];
 const shoot = (slug) => shots.push({ slug, fb: fb.slice() });
-const draw = (slug, touched, shift) => { globalThis.clear_screen(); MI.miRender(touched ?? -1, !!shift); shoot(slug); };
-const tick = (n) => { for (let i = 0; i < (n || 1); i++) MI.miTick(true, MI.miStateForTest().track); };
-const pick = (label) => { const b = MI.miStateForTest().browser; b.selectedIndex = b.items.findIndex(i => i.label === label); MI.miOnClick(false); tick(3); };
-const knob = (k, steps) => MI.miOnKnob(k, steps * (k < 2 ? 6 : 12));
+const draw = (slug, touched, shift, ov) => { globalThis.clear_screen(); MI.miRender(touched ?? -1, !!shift, ov ?? -1); shoot(slug); };
+S.clockFollowTicks = true;
+const tick = (n) => { for (let i = 0; i < (n || 1); i++) { S.tickCount++; MI.miTick(); } };
+const st = () => MI.miStateForTest();
+const jogTo = (label) => { const i = st().items.findIndex(x => x.label === label); while (st().idx < i) MI.miOnJog(1); while (st().idx > i) MI.miOnJog(-1); tick(30); };
+const turn = (k, detents) => { for (let i = 0; i < Math.abs(detents); i++) MI.miOnKnob(k, detents > 0 ? 1 : 127); };
 
-S.trackPadMode[2] = 0; S.trackActiveClip[2] = 0; S.clipNonEmpty[2][0] = false;
-MI.miOpen(2);
-draw('1-files');
-pick('Bach Invention 8.mid');
-draw('2-tracks');
-MI.miOnClick(false);                         /* Right Hand → options */
-draw('3-options-fits');
-knob(0, 2); knob(1, -4);                     /* start bar 3, 8 bars */
-draw('4-options-cut');
-draw('5-options-touch-start', 0);
-draw('5b-options-shift-held', -1, true);
-S.clipNonEmpty[2][0] = true; MI.miOnBack(); MI.miOnClick(false); knob(0, 2); knob(1, -4);
-while (MI.miStateForTest().choices[MI.miStateForTest().toIdx] !== 0) knob(3, -1);
-draw('6-options-replace');
-draw('7-options-touch-to', 3);
-MI.miOnClick(false);
-draw('8-confirm');
+/* a track's first open: the list, in the user data folder */
+S.trackPadMode[2] = 0; S.trackActiveClip[2] = 0; S.clipNonEmpty[2][0] = true; S.activeTrack = 2;
+MI.miOpen(2); tick(2);
+draw('1-first-open');
+jogTo('Bach Invention 8'); MI.miOnClick(false); tick(2);   /* a multi-part file: in, like a folder */
+tick(30); draw('2-inside-list');
+MI.miOnClick(false); tick(2);                             /* PICK the part: the card */
+draw('3-card');
+draw('4-touch-stretch', 3);
+turn(3, 12); draw('5-turn-stretch', 3, false, 3);
+turn(2, 12); draw('6-turn-grid', 2, false, 2);
+turn(0, 2); turn(1, -6); tick(2); draw('7-window');
+MI.miOnClick(false); tick(1); draw('8-confirm-load');
+MI.miOnBack(); tick(1);
+MI.miOnJog(1); tick(2); draw('9-list-from-card');
+MI.miOnBack(); tick(1);
+MI.miOnBack(); tick(1); draw('10-confirm-leave');
+MI.miOnBack(); tick(1);                                   /* No: leave without loading */
+
+S.trackPadMode[1] = 1; S.trackActiveClip[1] = 0; S.drumClipNonEmpty[1][0] = false; S.activeTrack = 1;
+S.drumLaneNote[1] = Array.from({ length: 32 }, (_, l) => 36 + l);
+S.drumLaneHasNotes[1] = new Array(32).fill(false);
+MI.miOpen(1); tick(2);
+jogTo('Groove 3'); MI.miOnClick(false); tick(2);
+draw('11-drum-card');
+MI.miPadTap(5); tick(1); draw('12-drum-holding-sound');
+MI.miPadRelease(5);
+MI.miOnClick(false); tick(1); draw('13-drum-confirm');
 MI.miClose();
 
-S.trackPadMode[1] = 1; S.trackActiveClip[1] = 0; S.drumClipNonEmpty[1][0] = false;
-S.drumLaneNote[1] = Array.from({ length: 32 }, (_, l) => 36 + l);
-MI.miOpen(1); pick('Groove 3.mid');
-draw('9-drums-no-pad');
+/* a folder of 82 files: the list's counts fill in and stay */
+S.activeTrack = 2;
+MI.miResetForTest(); MI.miOpen(2); tick(2);
+jogTo('ABSTR'); MI.miOnClick(false); tick(2);
+for (let i = 0; i < 44; i++) MI.miOnJog(1);
+tick(200); draw('14-many');
 MI.miClose();
 function writePng(fbuf,outPath){
   const iw=W*SCALE+2*PAD, ih=H*SCALE+2*PAD; const img=Buffer.alloc(iw*ih*4);

@@ -8,6 +8,7 @@
  * see docs/superpowers/plans/2026-07-10-refactor-phase6b-map.md).
  */
 
+import { miOpen, miTick, miAnimating } from './ui_midi_import.mjs';
 import { chordLayoutOn } from './ui_chord_pads.mjs';
 import { triggerFlashing } from './ui_trigger.mjs';
 import {
@@ -636,6 +637,7 @@ export function _tickImpl() {
         /* Clear any held-modifier state that may have got stuck on suspend
          * (key-up events fire after overtake exits, so onMidiMessage never sees them). */
         S.shiftHeld = false; S.deleteHeld = false; S.muteHeld = false;
+        S.leftHeld  = false; S.rightHeld  = false;
         S.copyHeld  = false; S.loopHeld  = false; S.loopJogActive = false;
         S.captureHeld = false; S.shiftTrackLEDActive = false;
         S.heldStep  = -1;    S.heldStepBtn = -1; S.heldStepNotes = []; S.stepReveal = false;
@@ -2113,6 +2115,17 @@ export function _tickImpl() {
         /* Dave Box scan: the album's vertical pan is tick-driven, like the
          * blink below — the draw path only paints what the tick advanced. */
         if (S.daveBox) daveBoxTick();
+
+        /* Import MIDI (K8 of the CLIP / DRUM LANE card): opened HERE, because
+         * opening lists a folder; then its read, preview clock and write. It
+         * closes itself when the track changes or session view takes over. */
+        if (S.pendingMidiImportOpen >= 0) {
+            const _mt = S.pendingMidiImportOpen;
+            S.pendingMidiImportOpen = -1;
+            if (_mt === S.activeTrack && !S.sessionView) { miOpen(_mt); S.screenDirty = true; }
+        }
+        miTick();
+        if (miAnimating()) S.screenDirty = true;
 
         /* ALL LANES blink: mark dirty when "ALL" blink toggles (bank header + loop-held overlay) */
         if (S.activeBank === 7 && S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {

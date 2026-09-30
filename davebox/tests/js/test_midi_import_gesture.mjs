@@ -1,10 +1,16 @@
-/* tests/js/test_midi_import_gesture.mjs — Import MIDI, through the real gestures.
+/* tests/js/test_midi_import_gesture.mjs — the MIDI browser, through the real
+ * gestures (Import MIDI and the phrase browser as one screen, 2026-09-29;
+ * dAVEBOx's feel, round 2, 2026-09-30).
  *
- * Shift+Note opens the sound menu; the jog walks to "Import MIDI"; a click
- * opens it. From there: the file browser (MIDI files and folders only, the
- * install's own folders hidden), a part, the options page on K1-K4, the
- * preview, the confirm when one is due, and the ONE engine write. Asserted on
- * what the engine receives, from which callback, and on what is drawn.
+ * Touch K8 on the CLIP (or DRUM LANE) card and click the jog: the tick opens
+ * it over the card. Three layers, one Back each: the LIST (folders and MIDI
+ * files, the install hidden; a multi-part file entered like a folder; each
+ * file HEARD as the jog rests on it; a click PICKS), the CARD (the picked
+ * file; knobs that name on touch and raise a list only on a turn; click =
+ * Load), and dAVEBOx's Yes/No CONFIRM (nothing reaches a clip without a Yes;
+ * Back = No). Per-track memory, the step buttons blocked, the transport and
+ * the rest passing through, and a drum track's sound placement. Asserted on what
+ * the engine receives, from which callback, and on what is drawn.
  * → [[wired-is-not-reachable]]: a green pin says "wired", only the gesture
  * says "reachable".
  */
@@ -22,9 +28,11 @@ for (const fn of ['host_system_cmd', 'host_ensure_dir', 'host_remove_dir', 'shad
     'host_ext_midi_remap_clear', 'host_ext_midi_remap_set', 'host_ext_midi_remap_enable', 'host_send_midi',
     'move_midi_inject_to_move'])
     globalThis[fn] = () => 0;
-globalThis.host_read_file = () => '';
-globalThis.host_file_exists = () => false;
-globalThis.host_write_file = () => true;
+/* The device-wide prefs (ui_prefs): kept, so a reopen reads what a close wrote. */
+const PREFS = {};
+globalThis.host_read_file = (p) => PREFS[p] ?? '';
+globalThis.host_file_exists = (p) => p in PREFS;
+globalThis.host_write_file = (p, body) => { PREFS[p] = String(body); return true; };
 globalThis.shadow_get_param = () => '';
 globalThis.shadow_get_ui_flags = () => 0;
 globalThis.host_register_primary = () => true;
@@ -71,9 +79,19 @@ globalThis.__stubStat = {
     '/data/UserData/notes.txt': { mode: REG, size: 10 },
 };
 const CUTSHORT = SONG.slice(0, SONG.length - 20);
-globalThis.__stubStdBinFiles = { '/data/UserData/song.mid': SONG, '/data/UserData/beat.mid': DRUMS,
-                                 '/data/UserData/cut.mid': CUTSHORT };
+/* Every file read is counted: the browser reads a file when the jog RESTS on it. */
+const READS = [];
+const BIN = { '/data/UserData/song.mid': SONG, '/data/UserData/beat.mid': DRUMS,
+              '/data/UserData/cut.mid': CUTSHORT };
+globalThis.__stubStdBinFiles = new Proxy(BIN, { get(o, k) { if (typeof k === 'string' && k in o) READS.push(k); return o[k]; } });
 globalThis.__stubStat['/data/UserData/cut.mid'] = { mode: REG, size: CUTSHORT.length };
+/* a name far too long for a row: the list scrolls it on the cursor row */
+const LONG = 'Voicings - Neo Soul Chords in Eb Minor.mid';
+/* a long FOLDER name: nothing previews there, so only the scroll redraws */
+const LONGDIR = 'Phrases from the Neo Soul Chord Pack';
+globalThis.__stubStat['/data/UserData/' + LONGDIR] = { mode: DIR, size: 0 };
+BIN['/data/UserData/' + LONG] = SONG;
+globalThis.__stubStat['/data/UserData/' + LONG] = { mode: REG, size: SONG.length };
 
 /* The engine: records every write and answers the clip reads the import's
  * settle step makes, once the import key has arrived. */
@@ -84,6 +102,8 @@ globalThis.host_module_set_param = (k, v) => {
     writes.push([ctxTag, String(k), String(v)]);
     const m = /^t(\d)_c(\d+)_import$/.exec(String(k));
     if (m) landed.add(m[1] + ':' + m[2]);
+    const d = /^t(\d)_lanes_import$/.exec(String(k));
+    if (d) landed.add(d[1] + ':0');
 };
 globalThis.host_module_set_params = () => true;
 /* Slot and bus writes (levels, sends) go this way — recorded too, so a knob
@@ -104,17 +124,21 @@ async function main() {
     const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
     stubParamPagesDevice();
     const osStub = await import('os');
-    osStub.__setReaddir({ '/data/UserData': ['UserLibrary', 'schwung', 'dbx-host', 'song.mid', 'beat.mid', 'cut.mid', 'notes.txt', '.hidden'],
+    osStub.__setReaddir({ '/data/UserData': ['UserLibrary', 'schwung', 'dbx-host', 'song.mid', 'beat.mid', 'cut.mid', LONG, LONGDIR, 'notes.txt', '.hidden'],
+                          ['/data/UserData/' + LONGDIR]: [],
                           '/data/UserData/UserLibrary': [] });
     await import('../../ui/ui.js');
     const { S } = await import('../../ui/ui_state.mjs');
     const snd = await import('../../ui/ui_sound.mjs');
     const MI = await import('../../ui/ui_midi_import.mjs');
+    const prefs = await import('../../ui/ui_prefs.mjs');
+    const KL = await import('../../ui/ui_knob_leds.mjs');
     const tickmod = await import('../../ui/ui_tick.mjs');
     const render = await import('../../ui/ui_render.mjs');
-    const { MoveNoteSession, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
-    const { MoveShift } = await import('/data/UserData/schwung/shared/constants.mjs');
+    const { MoveNoteSession, PAD_MODE_CONDUCT, PAD_MODE_DRUM, TRACK_PAD_BASE, BANKS: BANKS_ } = await import('../../ui/ui_constants.mjs');
+    const { MoveShift, MovePlay } = await import('/data/UserData/schwung/shared/constants.mjs');
 
+    S.clockFollowTicks = true;              /* nowMs() follows the ticks: the rest and linger timers are exact */
     function ticks(n) {
         for (let i = 0; i < n; i++) {
             S.tickCount++; S.clockMs += 11;
@@ -122,301 +146,449 @@ async function main() {
         }
     }
     const cc = (d1, d2) => { const p = ctxTag; ctxTag = 'cc(' + d1 + ',' + d2 + ')'; globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2])); ctxTag = p; };
+    const note = (st, d1, d2) => { const p = ctxTag; ctxTag = 'note(' + d1 + ')'; globalThis.onMidiMessageInternal(new Uint8Array([st, d1, d2])); ctxTag = p; };
     const click = () => { cc(3, 127); cc(3, 0); ticks(2); };
     const shiftClick = () => { cc(MoveShift, 127); cc(3, 127); cc(3, 0); cc(MoveShift, 0); ticks(2); };
     const back = () => { cc(51, 127); cc(51, 0); ticks(2); };
     const turn = (k, detents) => { for (let i = 0; i < Math.abs(detents); i++) cc(71 + k, detents > 0 ? 1 : 127); ticks(1); };
+    const touch = (k, on) => note(on ? 0x90 : 0x80, k, on ? 127 : 0);
+    const jog = (d) => cc(14, d > 0 ? 1 : 127);
+    const letGo = () => { note(0x80, 9, 0); ticks(60); };          /* past the list's half second */
     const ink = (y0, y1) => { globalThis.clear_screen(); render.drawUI(); let n = 0;
         for (let y = y0; y < y1; y++) for (let x = 0; x < 128; x++) n += FB[y * 128 + x]; return n; };
     const mi = () => MI.miStateForTest();
+    const labels = () => mi().items.map(it => it.label);
+    const jogTo = (label) => {
+        const i = labels().indexOf(label);
+        assert(i >= 0, label + ' not listed: ' + JSON.stringify(labels()));
+        for (let g = 0; g < 20 && mi().idx !== i; g++) jog(mi().idx < i ? 1 : -1);
+        ticks(20);                                                  /* past the parse rest */
+    };
+    const auditions = (from) => writes.slice(from).filter(w => /_audition$/.test(w[1]));
 
-    function openMenuOn(track) {
-        /* Setup, not the gesture under test: leave any menu still open on the
-         * previous track before choosing the next one. */
-        snd.soundExit(); ticks(2);
-        S.activeTrack = track;
-        cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
-        ticks(6);
-        /* A track remembered on the sound BANK lands on its door (the prompt);
-         * the click there opens the menu, as on the device. */
-        if (process.env.MI_DEBUG) console.log('   [menu] view after open', snd.soundPickStateForTest().view, 'bank', S.activeBank);
-        if (snd.soundPickStateForTest().view === 18) click();
-        if (process.env.MI_DEBUG) console.log('   [menu] view after click', snd.soundPickStateForTest().view);
-    }
-    function jogToImport() {
-        for (let g = 0; g < 40; g++) {
-            const st = snd.soundPickStateForTest();
-            if (st.kinds[st.row] === 'midiimport') return;
-            cc(14, 1); ticks(1);
-        }
-        throw new Error('no Import MIDI row: ' + JSON.stringify(snd.soundPickStateForTest().kinds));
+    /* THE DOOR: the CLIP / DRUM LANE card, K8 touched, the jog clicked. */
+    function tryOpenImport(track) {
+        /* Setup: a browser a previous step left open is closed first. */
+        MI.miClose(); snd.soundExit(); ticks(2);
+        S.activeTrack = track; S.activeBank = 0; S.trackActiveBank[track] = 0;
+        ticks(2);
+        touch(7, true);
+        cc(3, 127); cc(3, 0);
+        touch(7, false);
+        ticks(2);
     }
     function openImport(track) {
-        openMenuOn(track);
-        jogToImport();
-        click(); ticks(2);
-        assert(mi() && snd.soundPickStateForTest().view === 40, 'the click did not open Import MIDI');
+        tryOpenImport(track);
+        assert(mi() && !snd.soundOpen(), 'touch K8 + click did not open the MIDI browser over the card');
     }
-    function pickFile(name) {
-        const b = mi().browser;
-        const i = b.items.findIndex(it => it.label === name);
-        assert(i >= 0, name + ' not listed: ' + JSON.stringify(b.items.map(x => x.label)));
-        while (mi().browser.selectedIndex < i) cc(14, 1);
-        while (mi().browser.selectedIndex > i) cc(14, 127);
-        click(); ticks(3);
-    }
+    const closedToCard = () => !mi() && !snd.soundOpen() && S.activeBank === 0;
+    const forget = () => { MI.miResetForTest(); };
+    const layer = () => mi() && mi().layer;
+    const imports = (from) => writes.slice(from).filter(w => /_import$/.test(w[1]));
+    /* from the list: land on a file and pick it (a click) — the card */
+    const pickFile = (label) => { jogTo(label); click(); assert(layer() === 'card', 'no card after picking ' + label + ': ' + layer()); };
+    const answer = (yes) => { if (yes) jog(1); else jog(-1); click(); ticks(2); };
 
-    step('setup: track 2 melodic, routed to Move', () => {
+    step('setup: track 2 melodic, routed to Move, C major', () => {
         globalThis.init();
         S.awaitingProjectSelect = false; S.ledInitComplete = true; S.sessionView = false;
         S.trackRoute[1] = 1; S.trackPadMode[1] = 0; S.trackChannel[1] = 2;
+        S.padKey = 0; S.padScale = 0;
         ticks(8);
     });
 
-    step('the sound menu offers Import MIDI, and the click opens it — stopping playback first', () => {
+    step('⭐⭐ THE DOOR: touch K8 + click opens it on the LIST (a track\'s first open) — the transport is NOT stopped', () => {
         S.playing = true;
         const before = writes.length;
         openImport(1);
-        const stop = writes.slice(before).find(w => w[1] === 'transport');
-        assert(stop && stop[2] === 'stop', 'no transport stop was sent');
-        assert(/^tick#/.test(stop[0]), 'the stop was not sent from a tick: ' + stop[0]);
-        assert(JSON.stringify(S.actionPopupLines) === '["STOPPED","FOR IMPORT"]',
-               'the stop was not announced: ' + JSON.stringify(S.actionPopupLines));
+        ticks(4);
+        assert(layer() === 'list', 'layer ' + layer());
+        assert(!writes.slice(before).some(w => w[1] === 'transport'), 'a transport write');
         S.playing = false;
     });
 
-    step('the browser lists folders and MIDI files only, with the install hidden', () => {
-        const labels = mi().browser.items.map(it => it.label);
-        assert(labels.includes('[UserLibrary]') && labels.includes('song.mid') && labels.includes('beat.mid'),
-               'missing entries: ' + JSON.stringify(labels));
-        for (const h of ['[schwung]', '[dbx-host]', 'notes.txt', '.hidden'])
-            assert(!labels.includes(h), h + ' is listed');
-        assert(ink(12, 55) > 0, 'the file list drew nothing');
+    step('the list: the user data folder — folders and MIDI files, the install hidden', () => {
+        const l = labels();
+        assert(l.includes('UserLibrary') && l.includes('song') && l.includes('beat'), 'missing: ' + JSON.stringify(l));
+        for (const h of ['schwung', 'dbx-host', 'notes', '.hidden']) assert(!l.includes(h), h + ' is listed');
+        assert(JSON.stringify(MI.miHintsForTest(false).footer[0]) === '["CLK","PICK"]' ||
+               JSON.stringify(MI.miHintsForTest(false).footer[0]) === '["CLK","OPEN"]', 'footer ' + JSON.stringify(MI.miHintsForTest(false).footer));
+        assert(ink(12, 55) > 0, 'the list drew nothing');
     });
 
-    step('picking a two-part file lists its parts, with a miniature of the selected one', () => {
-        pickFile('song.mid');
-        assert(mi().stage === 'tracks', 'stage is ' + mi().stage);
-        assert(mi().result.parts.map(p => p.name).join(',') === 'Lead,Bass', 'parts: ' + mi().result.parts.map(p => p.name));
-        assert(ink(42, 53) > 0, 'no note roll in the band under the list');
-    });
-
-    step('Shift+click previews through tN_audition — never live_notes — and again stops it', () => {
-        const before = writes.length;
-        shiftClick(); S.clockMs += 700; ticks(4);
-        const aud = writes.slice(before).filter(w => w[1] === 't1_audition');
-        assert(aud.some(w => /\bon \d+ \d+/.test(w[2])), 'no audition note-on: ' + JSON.stringify(writes.slice(before)));
-        assert(!writes.slice(before).some(w => w[1] === 't1_live_notes'), 'the preview went through live_notes');
-        const mid = writes.length;
-        shiftClick(); ticks(2);
-        assert(writes.slice(mid).some(w => w[1] === 't1_audition' && /alloff/.test(w[2])), 'stopping sent no alloff');
-    });
-
-    step('the options page: K1-K4 on Start / Bars / Grid / To; the destination is the empty current clip', () => {
+    step('a multi-part file: click goes IN like a folder; its parts are the list', () => {
+        jogTo('song');
         click();
-        assert(mi().stage === 'opts', 'stage is ' + mi().stage);
-        assert(mi().choices[mi().toIdx] === S.trackActiveClip[1], 'default destination is not the current clip');
-        assert(mi().bars === 8 && mi().startBar === 1 && mi().grid === 1, 'defaults: ' + [mi().bars, mi().startBar, mi().grid]);
-        assert(ink(34, 53) > 0, 'no roll on the options page');
-        turn(0, 6);
-        assert(mi().startBar === 2, 'K1 did not step the start bar after 6 detents: ' + mi().startBar);
-        turn(0, -6);
-        turn(2, 11);
-        assert(mi().grid === 1, 'K3 moved before 12 detents');
-        turn(2, 1);
-        assert(mi().grid === 2, 'K3 did not step the grid at 12 detents');
-        turn(2, -12);
+        assert(layer() === 'list' && mi().file && mi().file.path === '/data/UserData/song.mid', 'not inside the file');
+        assert(JSON.stringify(labels()) === '["..","Lead","Bass"]', 'parts ' + JSON.stringify(labels()));
     });
 
-    step('the footer says SHFT HEAR, and CLK HEAR while Shift is down', () => {
-        const rest = MI.miHintsForTest(false).footer;
-        assert(JSON.stringify(rest[0]) === '["SHFT","HEAR"]' && JSON.stringify(rest[1]) === '["CLK","IMPORT"]',
-               'resting footer ' + JSON.stringify(rest));
-        const held = MI.miHintsForTest(true).footer;
-        assert(JSON.stringify(held[0]) === '["CLK","HEAR"]', 'Shift-held footer ' + JSON.stringify(held));
-        /* and the renderer is handed Shift from the key itself */
-        cc(MoveShift, 127);
-        const src = snd.soundPickStateForTest().shift;
-        cc(MoveShift, 0);
-        assert(src === true, 'sound mode did not see Shift go down');
+    step('⭐ landing on a part PLAYS it: a note-on from a tick, through tN_audition', () => {
+        const b = writes.length;
+        for (let i = 0; i < 40 && !auditions(b).some(w => /\bon /.test(w[2])); i++) ticks(1);
+        const a = auditions(b).find(w => /\bon /.test(w[2]));
+        assert(a && /^tick#/.test(a[0]), 'no audition note-on from a tick');
+        assert(!writes.slice(b).some(w => /live_notes/.test(w[1])), 'a live_notes write');
     });
 
-    step('a Grid / To option list covers the roll — the roll is not drawn under it', () => {
-        const rollInk = () => ink(34, 52);
-        const edge = () => { globalThis.clear_screen(); render.drawUI(); let n = 0;
-            for (let y = 34; y < 52; y++) for (let x = 0; x < 24; x++) n += FB[y * 128 + x]; return n; };
-        assert(edge() > 0, 'precondition: the roll draws at the left edge');
-        globalThis.onMidiMessageInternal(new Uint8Array([0x90, 2, 127]));   /* touch K3 (Grid) */
-        ticks(1);
-        const covered = edge();
-        globalThis.onMidiMessageInternal(new Uint8Array([0x80, 2, 0]));
-        ticks(1);
-        assert(covered === 0, 'the roll still shows beside the Grid list: ' + covered + ' px');
-        assert(rollInk() > 0, 'the roll did not come back after the touch');
+    step('the next part: the last one released, the new one playing — and still the LIST (no timer)', () => {
+        const b = writes.length;
+        jog(1); ticks(80);
+        assert(mi().cur && mi().cur.name === 'Bass', 'cur ' + (mi().cur && mi().cur.name));
+        const a = auditions(b).map(w => w[2]).join(' | ');
+        assert(/alloff/.test(a) && /on 36 /.test(a), 'auditions: ' + a);
+        assert(layer() === 'list', 'the list went away on its own');
+        jog(-1); ticks(4);
     });
 
-    step('K5-K8 are claimed: turning them changes nothing and writes nothing', () => {
-        /* The control: what the tick writes on its own over the same span. */
-        const q0 = writes.length; ticks(16);
-        const background = new Set(writes.slice(q0).map(w => w[1]));
-        const before = writes.length;
-        const snap = JSON.stringify([mi().startBar, mi().bars, mi().grid, mi().toIdx]);
-        turn(4, 20); turn(5, 20); turn(6, -20); turn(7, -20);
-        ticks(12);                                     /* a level write is flushed on a later tick */
-        assert(JSON.stringify([mi().startBar, mi().bars, mi().grid, mi().toIdx]) === snap, 'K5-K8 changed an option');
-        assert(snd.soundPickStateForTest().view === 40, 'the screen changed');
-        /* The pad map and the parallel-mode sweep (one slot a pass) run on their own. */
-        const extra = writes.slice(before).filter(w => !background.has(w[1]) && !/_padmap$|:slot:parallel$/.test(w[1]));
-        assert(!extra.length, 'turning K5-K8 wrote to the engine: ' + JSON.stringify(extra.slice(0, 3)));
-    });
-
-    step('fewer bars than the part → notes CUT, and the click asks first; Back declines', () => {
-        turn(1, -36);                                  /* 8 → 2 bars */
-        assert(mi().bars === 2 && mi().plan.cut > 0, 'no cut: ' + mi().bars + ' ' + mi().plan.cut);
-        const w = MI.miHintsForTest(false);
-        assert(w.warning === mi().plan.cut + ' CUT', 'header warning ' + w.warning);
-        assert(!w.footer.some(h => h[0] === '!'), 'a warning is back in the footer: ' + JSON.stringify(w.footer));
+    step('⭐ a click PICKS the part: the card, with the lane and the card\'s footer', () => {
         click();
-        assert(mi().stage === 'confirm', 'no confirm with notes cut');
-        back();
-        assert(mi().stage === 'opts', 'Back did not return to the options');
-        turn(1, 36);
+        assert(layer() === 'card' && mi().sel && mi().sel.name === 'Lead', 'layer ' + layer());
+        assert(ink(33, 39) > 20, 'no lane drawn');
+        assert(JSON.stringify(MI.miHintsForTest(false).footer) === '[["CLK","LOAD"],["JOG","FILE"],["SHFT","MUTE"]]',
+               'footer ' + JSON.stringify(MI.miHintsForTest(false).footer));
     });
 
-    step('nothing cut, empty clip → the click imports at once: ONE write, from a tick', () => {
-        S.undoAvailable = false; S.undoJs = { kind: 'stale' };
-        const before = writes.length;
-        click(); ticks(8);
-        const imp = writes.slice(before).filter(w => /_import$/.test(w[1]));
-        assert(imp.length === 1, 'import writes: ' + imp.length);
-        const [ctx, key, val] = imp[0];
-        assert(/^tick#/.test(ctx), 'written from ' + ctx);
-        assert(key === 't1_c' + S.trackActiveClip[1] + '_import', 'key ' + key);
-        const [head, body] = val.split('|');
-        assert(head === '0 1 128', 'header ' + head + ' (want: no replace, 1/16, 8 bars = 128 steps)');
-        assert(body.split(';').length === 32, 'notes sent: ' + body.split(';').length);
-        assert(/^a 0 60 100 96$/.test(body.split(';')[0]), 'first note ' + body.split(';')[0]);
-        assert(!mi() && snd.soundPickStateForTest().view === 0, 'the screen did not close back to the menu');
-        assert(S.undoAvailable && !S.undoJs, 'Undo does not reach the import (a stale JS unit would take the press)');
-        /* the clip's automation goes too, AFTER the import (whose undo snapshot holds it) */
-        const all = writes.slice(before);
-        const iImp = all.findIndex(w => /_import$/.test(w[1]));
-        const iClr = all.findIndex(w => w[1] === 't1_pa_clear' && w[2] === String(S.trackActiveClip[1]));
-        assert(iClr > iImp, 'no automation clear after the import: ' + iImp + ' / ' + iClr);
+    step('a new file starts at Start 1, Grid 1/16, Stretch x1, Bars = its length', () => {
+        assert(mi().startBar === 1 && mi().grid === 1 && mi().stretch === 3 && mi().bars === 8,
+               'start ' + mi().startBar + ' grid ' + mi().grid + ' stretch ' + mi().stretch + ' bars ' + mi().bars);
     });
 
-    step('a current clip with notes is offered as a REPLACE, behind a confirm', () => {
-        const cur = S.trackActiveClip[1];
-        S.clipNonEmpty[1][cur] = true;
-        openImport(1);
-        pickFile('song.mid');
-        click();                                        /* Lead → options */
-        assert(mi().choices[mi().toIdx] !== cur, 'a non-empty current clip was the default');
-        while (mi().choices[mi().toIdx] !== cur) turn(3, mi().toIdx > mi().choices.indexOf(cur) ? -12 : 12);
-        click();
-        assert(mi().stage === 'confirm', 'replacing did not ask');
-        globalThis.clear_screen(); render.drawUI();
-        const before = writes.length;
-        click(); ticks(8);
-        const imp = writes.slice(before).find(w => /_import$/.test(w[1]));
-        assert(imp && imp[2].startsWith('1 '), 'the replace flag is not set: ' + (imp && imp[2].slice(0, 12)));
+    step('⭐ a knob TOUCH names it; its list comes up only on a TURN', () => {
+        touch(3, true); ticks(1);
+        assert(S.knobTouched === 3 && S.knobTurnedTick[3] === -1, 'touch: ' + S.knobTouched + ' / ' + S.knobTurnedTick[3]);
+        const bare = ink(9, 57);
+        turn(3, 12);
+        assert(S.knobTurnedTick[3] >= 0, 'the turn was not seen');
+        const listed = ink(9, 57);
+        assert(bare !== listed, 'the turn did not raise the list');
+        turn(3, -12);
+        touch(3, false); ticks(1);
+        assert(S.knobTouched === -1, 'touch not released');
     });
 
-    step('a drum track: pitches with no pad are counted, the write goes to the drum track', () => {
-        S.trackRoute[0] = 1; S.trackPadMode[0] = 1;
-        openImport(0);
-        pickFile('beat.mid');
-        assert(mi().stage === 'opts', 'a one-part file should go straight to the options: ' + mi().stage);
-        assert(mi().plan.noPad === 1, 'no-pad count ' + mi().plan.noPad);
-        back();
+    step('K1 Start / K2 Bars: the window, and what will not land said in the header', () => {
+        turn(1, -40);                                                 /* fewer bars */
+        assert(mi().bars < 8 && /CUT$/.test(MI.miHintsForTest(false).warning), 'bars ' + mi().bars + ' warning ' + MI.miHintsForTest(false).warning);
+        turn(1, 200);
+        assert(mi().bars === 8, 'Bars went past the file: ' + mi().bars);
+        turn(0, 20);                                                  /* start later: Bars follows the file's end */
+        assert(mi().startBar > 1 && mi().bars === 8 - mi().startBar + 1, 'start ' + mi().startBar + ' bars ' + mi().bars);
+        turn(0, -200); turn(1, 200);
     });
 
-    step('a drum import plans against the DESTINATION clip\'s pads, and previews through them', () => {
-        const cur = S.trackActiveClip[0];
-        S.drumClipNonEmpty[0][cur] = true;                     /* so the default is another clip */
-        const dest = (cur + 1) % 16;
-        laneNotesFor['0:' + dest] = [20, ...Array.from({ length: 31 }, (_, l) => 37 + l)].join(' ');
-        openImport(0);
-        pickFile('beat.mid');
-        ticks(2);
-        assert(mi().choices[mi().toIdx] === dest, 'destination ' + mi().choices[mi().toIdx]);
-        assert(mi().plan.noPad === 1 && mi().plan.notes.every(n => n.p === 20),
-               'planned against the wrong pads: noPad ' + mi().plan.noPad + ' ' + JSON.stringify(mi().plan.notes.map(n => n.p)));
-        const b0 = writes.length;
-        /* the pad-20 hit sits a 1/16 in: run the clock until it sounds */
+    step('⭐ Bars and Grid stay linked by the clip\'s steps: 1/32 at x2 holds 4 bars', () => {
+        turn(2, -12);                                                 /* 1/32 */
+        turn(3, 12);                                                  /* x2 */
+        assert(mi().grid === 0 && mi().stretch === 4, 'grid ' + mi().grid + ' stretch ' + mi().stretch);
+        assert(mi().bars === 4, 'bars ' + mi().bars);
+        turn(3, -12); turn(2, 12); turn(1, 200);
+        assert(mi().bars === 8 && mi().grid === 1, 'back: bars ' + mi().bars + ' grid ' + mi().grid);
+    });
+
+    step('K5 Oct / K6 Semi / K7 Scale: Semi +1 on C is C#, which Scale folds up to D; Scale off keeps C#', () => {
+        const first = () => mi().plan.notes[0].p;
+        assert(first() === 60, 'setup ' + first());
+        turn(5, 1);
+        assert(mi().semi === 1 && first() === 62, 'semi ' + mi().semi + ' → ' + first());
+        turn(6, -20);
+        assert(!mi().scaleOn && first() === 61, 'scale off → ' + first());
+        turn(4, -10);
+        assert(mi().oct === -1 && first() === 49, 'oct -1 → ' + first());
+        turn(4, 10); turn(5, -1); turn(6, 20);
+        assert(first() === 60 && mi().scaleOn, 'back ' + first());
+    });
+
+    step('K8 is the file\'s BPM: shown, and a turn does nothing', () => {
+        const snap = JSON.stringify([mi().startBar, mi().bars, mi().grid, mi().stretch, mi().oct, mi().semi, mi().scaleOn]);
+        turn(7, 30); ticks(2);
+        assert(JSON.stringify([mi().startBar, mi().bars, mi().grid, mi().stretch, mi().oct, mi().semi, mi().scaleOn]) === snap, 'K8 changed a setting');
+        assert(mi().cur.bpm === 120, 'bpm ' + mi().cur.bpm);
+        const ring = MI.miRingCells();
+        assert(ring[7].kind === 'blank', 'K8\'s ring is not dark');
+        /* every knob that does something lights its ring — asked of the ring code itself */
+        const lit = ring.map(c => KL.knobRingColor(0, KL.ringNormOfCell(c)) !== 0);
+        assert(JSON.stringify(lit) === '[true,true,true,true,true,true,true,false]', 'rings lit: ' + JSON.stringify(lit));
+    });
+
+    step('⭐ Shift+click mutes: nothing plays, the footer offers HEAR, and it is remembered', () => {
         shiftClick();
-        const onOf = () => writes.slice(b0).find(w => w[1] === 't0_audition' && /\bon /.test(w[2]));
-        for (let i = 0; i < 40 && !onOf(); i++) ticks(1);
-        const aud = onOf();
-        assert(aud && aud[2].startsWith('clip ' + dest + ' '), 'the preview did not go through the destination: ' + (aud && aud[2]));
+        assert(!mi().hear && PREFS[prefs.MIDI_MUTE_PATH] === '1\n', 'mute');
+        const b = writes.length; ticks(40);
+        assert(!auditions(b).some(w => /\bon /.test(w[2])), 'a note played while muted');
+        assert(MI.miHintsForTest(false).footer[2][1] === 'HEAR', 'footer');
         shiftClick();
-        S.drumClipNonEmpty[0][cur] = false;
-        const before = writes.length;
-        click(); ticks(8);
-        const imp = writes.slice(before).find(w => /^t0_c\d+_import$/.test(w[1]));
-        assert(imp, 'no drum import write');
+        assert(mi().hear && PREFS[prefs.MIDI_MUTE_PATH] === '0\n', 'unmute');
     });
 
-    step('Back walks out a stage at a time, and closing releases the preview', () => {
-        openImport(1);
-        pickFile('song.mid');
-        shiftClick(); S.clockMs += 300; ticks(3);
-        const before = writes.length;
-        back();                                         /* tracks → files */
-        assert(mi().stage === 'files', 'stage ' + mi().stage);
-        assert(writes.slice(before).some(w => w[1] === 't1_audition' && /alloff/.test(w[2])), 'Back left the preview sounding');
-        back();                                         /* files → menu */
-        assert(!mi() && snd.soundPickStateForTest().view === 0, 'Back from the files did not close');
+    step('⭐ the step buttons are blocked while it is open', () => {
+        const c = S.trackActiveClip[1], before = JSON.stringify(S.clipSteps[1][c].slice(0, 16)), b = writes.length;
+        note(0x90, 16, 100);
+        assert(S.heldStep === -1, 'the step press reached the step editor: heldStep ' + S.heldStep);
+        note(0x80, 16, 0); ticks(4);
+        assert(JSON.stringify(S.clipSteps[1][c].slice(0, 16)) === before, 'a step changed');
+        assert(!writes.slice(b).some(w => /_toggle|_set_notes|_step/.test(w[1])), 'a step write: ' + JSON.stringify(writes.slice(b).filter(w => /step/.test(w[1]))));
+        assert(layer() === 'card', 'the press changed the screen');
     });
 
-    step('notes BEFORE the start bar count as cut, and ask first', () => {
-        openImport(1);
-        pickFile('song.mid');
-        click();                                        /* Lead → options */
-        turn(0, 6);                                     /* start at bar 2 */
-        assert(mi().plan.before === 4 && mi().plan.cut === 0, 'before/cut ' + mi().plan.before + '/' + mi().plan.cut);
+    step('⭐⭐ THE LOAD asks first: click → LOAD INTO CLIP, No selected; Back = No writes nothing', () => {
+        const b = writes.length;
         click();
-        assert(mi().stage === 'confirm', 'losing the first bar did not ask');
-        back(); back(); back();
+        assert(layer() === 'confirm' && mi().confirm.kind === 'load' && !mi().confirm.yes, 'no confirm');
+        back();
+        assert(layer() === 'card' && !imports(b).length, 'Back wrote or left: ' + layer());
+        click(); answer(false);
+        assert(layer() === 'card' && !imports(b).length, 'No wrote or left');
+    });
+
+    step('⭐⭐ ... and Yes loads: ONE import into the CURRENT clip, from a tick; the automation clear behind it; closed', () => {
+        const c = S.trackActiveClip[1];
+        S.clipNonEmpty[1][c] = false;
+        const b = writes.length;
+        click(); answer(true); ticks(8);
+        assert(!mi(), 'the screen stayed open');
+        const imp = imports(b);
+        assert(imp.length === 1 && /^tick#/.test(imp[0][0]) && imp[0][1] === 't1_c' + c + '_import', 'imports ' + JSON.stringify(imp.map(w => w[1])));
+        const [head, notes] = imp[0][2].split('|');
+        assert(head === '0 1 128', 'header ' + head + ' (no replace, 1/16, 8 bars)');
+        assert(notes.split(';').length === 32 && /^a 0 60 100 96$/.test(notes.split(';')[0]), 'notes ' + notes.slice(0, 40));
+        const ki = writes.findIndex((w, i) => i >= b && /_import$/.test(w[1]));
+        assert(writes.slice(ki).some(w => w[1] === 't1_pa_clear'), 'no automation clear behind the load');
+        assert(S.undoAvailable && !S.undoJs, 'Undo does not reach the load');
+        assert(closedToCard(), 'not back on the card');
+        ticks(60);
+        assert(!/FAILED/.test(JSON.stringify(S.actionPopupLines)), 'it said it failed');
+    });
+
+    step('⭐ switching files puts Start, Grid and Stretch back (1, 1/16, x1) and Bars to the file\'s length', () => {
+        openImport(1);
+        turn(0, 20); turn(2, 12); turn(3, 12);
+        assert(mi().startBar > 1 && mi().grid === 2 && mi().stretch === 4, 'setup: start ' + mi().startBar + ' grid ' + mi().grid + ' stretch ' + mi().stretch);
+        jog(1); jog(1); ticks(4);                                   /* the list, on to Bass */
+        click();
+        assert(layer() === 'card' && mi().cur.name === 'Bass', 'picked ' + (mi().cur && mi().cur.name));
+        assert(mi().startBar === 1 && mi().grid === 1 && mi().stretch === 3 && mi().bars === 8,
+               'start ' + mi().startBar + ' grid ' + mi().grid + ' stretch ' + mi().stretch + ' bars ' + mi().bars);
+        jog(1); jog(-1); ticks(4); click();                         /* back to Lead, for what follows */
+        assert(mi().cur.name === 'Lead', 'back on ' + mi().cur.name);
+        back(); back();                                             /* LEAVE IMPORT → No */
+        assert(!mi(), 'still open');
+    });
+
+    step('⭐ per track: it reopens on the file this track picked, on the CARD', () => {
+        openImport(1);
+        assert(layer() === 'card' && mi().sel && mi().sel.path === '/data/UserData/song.mid' && mi().sel.name === 'Lead',
+               'reopened on ' + layer() + ' ' + JSON.stringify(mi().sel && mi().sel.name));
+    });
+
+    step('the jog raises the list; Back closes it and puts back the file you had', () => {
+        jog(1);
+        assert(layer() === 'list', 'layer ' + layer());
+        jog(1); ticks(20);
+        back();
+        assert(layer() === 'card' && mi().cur && mi().cur.name === 'Lead', 'back on ' + (mi().cur && mi().cur.name));
+    });
+
+    step('⭐ Back on the card with a file picked asks LEAVE IMPORT; No leaves without loading', () => {
+        const b = writes.length;
+        back();
+        assert(layer() === 'confirm' && mi().confirm.kind === 'leave', 'layer ' + layer());
+        back();
+        assert(closedToCard() && !imports(b).length, 'did not leave cleanly');
+    });
+
+    step('LEAVE IMPORT, Yes: loads, then leaves', () => {
+        openImport(1);
+        S.clipNonEmpty[1][S.trackActiveClip[1]] = true;
+        assert(MI.miHintsForTest(false).warning === 'REPLACES', 'warning ' + MI.miHintsForTest(false).warning);
+        const b = writes.length;
+        back(); answer(true); ticks(4);
+        const imp = imports(b);
+        assert(imp.length === 1 && imp[0][2].startsWith('1 '), 'imports ' + JSON.stringify(imp.map(w => w[2].slice(0, 8))));
+        assert(closedToCard(), 'not back on the card');
+    });
+
+    step('another track has its own memory: it opens on the list', () => {
+        S.trackPadMode[3] = 0; S.trackRoute[3] = 1;
+        openImport(3);
+        assert(layer() === 'list', 'layer ' + layer());
+        MI.miClose();
+    });
+
+    step('⭐ parsing waits for the jog to REST: scrolling past a file reads none of it; resting reads it once', () => {
+        forget();
+        const was = globalThis.__stubStat['/data/UserData/song.mid'].size;
+        globalThis.__stubStat['/data/UserData/song.mid'].size = 100 * 1024;   /* too big for the background fill */
+        openImport(1);
+        const at = labels().indexOf('song');
+        while (mi().idx < at) { jog(1); ticks(1); }
+        READS.length = 0;
+        for (let i = 0; i < 10; i++) { jog(i % 2 ? 1 : -1); ticks(1); }
+        const song = () => READS.filter(p => p === '/data/UserData/song.mid').length;
+        assert(mi().items[mi().idx].label === 'song', 'ended on ' + mi().items[mi().idx].label);
+        assert(song() === 0, 'read while scrolling: ' + song());
+        ticks(20);
+        assert(song() === 1, 'reads after resting: ' + song());
+        globalThis.__stubStat['/data/UserData/song.mid'].size = was;
+        MI.miClose(); forget();
+    });
+
+    step('`..` goes up out of a multi-part file onto its row; Back on the list (nothing picked) leaves', () => {
+        openImport(1);
+        jogTo('song'); click(); ticks(2);
+        jogTo('..'); click();
+        assert(layer() === 'list' && !mi().file && mi().items[mi().idx].label === 'song', 'not back on the file row');
+        back();
+        assert(closedToCard(), 'Back did not close onto the card');
     });
 
     step('a file that reads short says so', () => {
-        openImport(1);
-        pickFile('cut.mid');
-        assert(JSON.stringify(S.actionPopupLines) === '["FILE CUT SHORT","CUT"]', 'popup ' + JSON.stringify(S.actionPopupLines));
-        back(); back(); back();
+        forget(); openImport(1);
+        jogTo('cut');
+        assert(/FILE CUT SHORT/.test(JSON.stringify(S.actionPopupLines)), 'popup ' + JSON.stringify(S.actionPopupLines));
+        MI.miClose(); forget();
     });
 
-    step('an import the engine never confirms: ONE write, never re-sent, and it says it failed', () => {
+    step('a load the engine never confirms: ONE write, never re-sent, and it says LOAD FAILED', () => {
         neverLands = true;
         openImport(1);
-        pickFile('song.mid');
-        click();
-        const cur = S.trackActiveClip[1];
-        while (mi().choices[mi().toIdx] === cur && mi().toIdx < mi().choices.length - 1) turn(3, 12);
-        const before = writes.length;
-        click(); ticks(60);
-        const imp = writes.slice(before).filter(w => /_import$/.test(w[1]));
+        jogTo('song'); click(); ticks(2); click();
+        S.clipNonEmpty[1][S.trackActiveClip[1]] = false;
+        const b = writes.length;
+        click(); answer(true); ticks(60);
         neverLands = false;
-        assert(imp.length === 1, 'import writes: ' + imp.length);
-        assert(JSON.stringify(S.actionPopupLines).indexOf('IMPORT FAILED') >= 0, 'popup ' + JSON.stringify(S.actionPopupLines));
-        assert(!mi(), 'the screen stayed open');
+        assert(imports(b).length === 1, 'import writes: ' + imports(b).length);
+        assert(/LOAD FAILED/.test(JSON.stringify(S.actionPopupLines)), 'popup ' + JSON.stringify(S.actionPopupLines));
+        forget();
     });
 
-    step('a track with NO instrument still offers Import MIDI (every melodic track does)', () => {
-        S.trackPadMode[4] = 0; S.trackRoute[4] = 3;          /* ROUTE_NONE */
-        openMenuOn(4);
-        const k = snd.soundPickStateForTest().kinds;
-        assert(k.join(',') === 'trackto,div,midiimport', 'rows: ' + k.join(','));
+    step('Play and the rest pass through: Play reaches the transport, and nothing stops it', () => {
+        openImport(1);
+        const b = writes.length;
+        cc(MovePlay, 127); cc(MovePlay, 0); ticks(4);
+        const tr = writes.slice(b).filter(w => w[1] === 'transport');
+        assert(tr.length === 1 && tr[0][2] !== 'stop', 'transport writes: ' + JSON.stringify(tr));
+        assert(mi(), 'Play closed it');
+        MI.miClose(); forget();
     });
 
-    step('a Conductor track has no Import MIDI row', () => {
+    step('⭐ a DRUM track: the sounds land by the Map (GM), each on a lane', () => {
+        S.trackPadMode[0] = PAD_MODE_DRUM; S.trackRoute[0] = 1;
+        S.drumLaneNote[0] = Array.from({ length: 32 }, (_, l) => 36 + l);
+        S.drumLaneHasNotes[0] = new Array(32).fill(false);
+        S.activeDrumLane[0] = 0;
+        openImport(0);
+        pickFile('beat');
+        assert(mi().drum, 'not a drum card');
+        assert(JSON.stringify(mi().voices.map(v => v.pitch)) === '[20,36]', 'sounds ' + JSON.stringify(mi().voices));
+        assert(mi().assign[1] === 0, 'the kick (36) is not on the lane playing 36: ' + JSON.stringify(mi().assign));
+        assert(JSON.stringify(MI.miHintsForTest(false).footer) === '[["RTPAD","SOUND"],["SHFT","MUTE"]]', 'footer');
+    });
+
+    step('hold a sound pad (right-hand) and tap a lane pad: the sound moves there', () => {
+        note(0x90, TRACK_PAD_BASE + 4, 100);
+        assert(mi().held === 0, 'held ' + mi().held);
+        note(0x90, TRACK_PAD_BASE + 2, 100); note(0x80, TRACK_PAD_BASE + 2, 0);
+        assert(mi().assign[0] === 2, 'assign ' + JSON.stringify(mi().assign));
+        note(0x80, TRACK_PAD_BASE + 4, 0);
+        assert(mi().held === -1, 'still held');
+    });
+
+    step('⭐ the drum load: confirmed, then ONE tN_lanes_import naming only the lanes a sound goes to; no automation clear', () => {
+        S.drumLaneHasNotes[0][2] = true;
+        assert(MI.miHintsForTest(false).warning === 'REPLACES', 'warning ' + MI.miHintsForTest(false).warning);
+        S.drumClipNonEmpty[0][S.trackActiveClip[0]] = true;
+        const b = writes.length;
+        click();
+        assert(layer() === 'confirm', 'no confirm');
+        answer(true); ticks(4);
+        const imp = imports(b);
+        assert(imp.length === 1 && imp[0][1] === 't0_lanes_import', 'writes ' + JSON.stringify(imp.map(w => w[1])));
+        const named = (imp[0][2].split('|')[1].match(/L\d+/g) || []).join(',');
+        assert(named === 'L0,L2', 'lanes named: ' + named);
+        assert(imp[0][2].startsWith('1 '), 'replace flag');
+        assert(!writes.slice(b).some(w => w[1] === 't0_pa_clear'), 'a drum load cleared the clip automation');
+        S.trackPadMode[0] = 0; S.drumLaneHasNotes[0][2] = false; forget();
+    });
+
+    step('a track with NO instrument opens it too; a Conductor does not', () => {
+        S.trackPadMode[4] = 0; S.trackRoute[4] = 3;
+        openImport(4); MI.miClose();
         S.trackPadMode[2] = PAD_MODE_CONDUCT; S.trackRoute[2] = 1;
-        openMenuOn(2);
-        assert(!snd.soundPickStateForTest().kinds.includes('midiimport'), 'Conductor offers Import MIDI');
+        tryOpenImport(2);
+        assert(!mi(), 'a Conductor opened it');
+    });
+
+    step('K8 on the CLIP card: the Import action, CLK IMPORT while touched, a turn does nothing', () => {
+        MI.miClose(); snd.soundExit(); ticks(2);
+        S.trackPadMode[1] = 0; S.trackRoute[1] = 1;
+        S.activeTrack = 1; S.activeBank = 0; S.trackActiveBank[1] = 0; ticks(2);
+        const K8 = BANKS_[0].knobs[7];
+        assert(K8.abbrev === 'Imprt' && K8.full === 'Import MIDI' && K8.scope === 'action', 'K8 is ' + K8.abbrev);
+        touch(7, true); ticks(1);
+        assert(JSON.stringify(render.bankPageHints(0)) === '[["CLK","IMPORT"]]', 'hints ' + JSON.stringify(render.bankPageHints(0)));
+        const before = writes.length;
+        turn(7, 20); turn(7, -20); ticks(4);
+        const extra = writes.slice(before).filter(w => !/_padmap$|:slot:parallel$/.test(w[1]));
+        assert(!extra.length && !mi(), 'a K8 turn did something: ' + JSON.stringify(extra.slice(0, 3)));
+        touch(7, false); ticks(1);
+    });
+
+    step('the track menu has no Import MIDI row', () => {
+        snd.soundExit(); ticks(2); S.activeTrack = 1;
+        cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+        ticks(6);
+        if (snd.soundPickStateForTest().view === 18) click();
+        const k = snd.soundPickStateForTest().kinds;
+        assert(k.length > 0 && !k.includes('midiimport'), 'rows: ' + k.join(','));
+        snd.soundExit(); ticks(2);
+    });
+
+    step('the list: names in the host font as named, the cursor row scrolls a long one, the rest are cut short', () => {
+        forget(); openImport(1); ticks(60);
+        const printed = () => { const out = []; const p0 = globalThis.print;
+            globalThis.print = (x, y, str) => { out.push({ y, s: String(str).replace(/>$/, ''), tail: /[>]$/.test(String(str)) }); p0(x, y, str); };
+            try { globalThis.clear_screen(); render.drawUI(); } finally { globalThis.print = p0; }
+            return out; };
+        const full = LONG.replace(/\.mid$/, '');
+        const rowOf = (out) => out.find(o => full.includes(o.s) && o.s.length > 4);
+        jogTo('song'); ticks(2);
+        let r = rowOf(printed());
+        assert(r && r.tail, 'a multi-part file keeps its > even cut short: ' + JSON.stringify(r));
+        assert(r && full.startsWith(r.s) && r.s.length < full.length, 'off the cursor, the long name is cut short from its start: ' + JSON.stringify(r));
+        jogTo(full); ticks(2);
+        r = rowOf(printed());
+        assert(r && full.startsWith(r.s) && r.s.length < full.length, 'on landing it rests at its start, mixed case: ' + JSON.stringify(r));
+        ticks(150);                                               /* 1.65 s: past the rest */
+        /* the device's own redraws moved it — no render of ours in between */
+        assert(MI.miMarqueeForTest().off > 0, 'the ticks never redrew the scrolling name: ' + JSON.stringify(MI.miMarqueeForTest()));
+        r = rowOf(printed());
+        const off = MI.miMarqueeForTest().off;
+        assert(off > 0 && r && r.s === full.slice(off, off + r.s.length), 'the cursor row scrolled by ' + off + ': ' + JSON.stringify(r));
+        const over = MI.miMarqueeForTest().over;
+        ticks(Math.ceil((over * 80 + 200) / 11));
+        r = rowOf(printed());
+        assert(r && full.endsWith(r.s), 'it scrolls until the END of the name shows: ' + JSON.stringify(r));
+        jog(-1); ticks(2); jog(1); ticks(2);
+        r = rowOf(printed());
+        assert(r && full.startsWith(r.s), 'leaving and coming back starts it over: ' + JSON.stringify(r));
+        jogTo(LONGDIR); ticks(2);
+        ticks(150);                                               /* nothing previews in a folder: only the scroll redraws */
+        assert(MI.miMarqueeForTest().off > 0, 'a long folder name, with no preview running, never scrolled: ' + JSON.stringify(MI.miMarqueeForTest()));
+        const d = printed().find(o => o.s.endsWith('/'));
+        assert(d && LONGDIR.includes(d.s.slice(0, -1)) && !LONGDIR.startsWith(d.s.slice(0, -1)), 'the folder row shows the scrolled name with its /: ' + JSON.stringify(d));
+        back(); ticks(2);
+    });
+
+    step('Note/Session closes it (the escape law)', () => {
+        openImport(1);
+        cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); ticks(2);
+        assert(!mi(), 'still open after Note/Session');
+        S.sessionView = false; ticks(2);
     });
 
     if (failed) { console.error('test_midi_import_gesture: FAIL'); process.exit(1); }
     console.log('test_midi_import_gesture: PASS');
+    process.exit(0);
 }
-main().catch(e => { console.error(e); process.exit(1); });
+main().catch((e) => { bad('main', e); process.exit(1); });
