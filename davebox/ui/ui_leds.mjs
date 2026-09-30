@@ -1,4 +1,5 @@
 import { pbPadColors } from './ui_phrase_browser.mjs';
+import { miPadColors } from './ui_midi_import.mjs';
 import { S } from './ui_state.mjs';
 import {
     NUM_STEPS, NUM_TRACKS, LED_OFF, LEDS_PER_FRAME,
@@ -710,7 +711,7 @@ export function updateTrackLEDs() {
      * Voice is held) it paints them all here; owning some (a drum track's
      * right-hand sound pads) it overrides just those in the drum painter
      * below, and the lane pads look as they always do (Josh, 2026-09-23). */
-    const _pbOv = pbPadColors();
+    const _pbOv = pbPadColors() || miPadColors();   /* the MIDI browser's are a drum track's sounds */
     if (_pbOv && _pbOv.every(c => c != null)) {
         for (let i = 0; i < 32; i++) cachedSetLED(TRACK_PAD_BASE + i, _pbOv[i]);
         return;

@@ -45,7 +45,7 @@ import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { daveBoxRotate } from './ui_daves.mjs';
 import { pbActive, pbOnKnob, pbOnJog, pbOnClick, pbOnBack, pbPadTap, pbPadRelease, pbClose, pbJogTouch } from './ui_phrase_browser.mjs';
-import { miActive, miOnKnob, miOnJog, miOnClick, miOnBack, miClose } from './ui_midi_import.mjs';
+import { miActive, miOnKnob, miOnJog, miOnClick, miOnBack, miClose, miJogTouch, miPadTap, miPadRelease } from './ui_midi_import.mjs';
 import {
     projectPickerTextEntryMidi,
     projectPadPickerTap, projectPadPickerRotate, projectPadPickerClick
@@ -683,19 +683,32 @@ function _onMidiInternalImpl(data) {
         } else return;
     }
 
-    /* IMPORT MIDI (ui_midi_import), opened from K8 of the CLIP / DRUM LANE card:
-     * modal like the phrase browser. All eight knobs are its (K5-K8 do nothing
-     * yet), plus the jog, the click and Back; Shift+jog still switches track,
-     * which closes it (miTick). Knob TOUCHES, Shift, Play and Shift+volume fall
-     * through; Note/Session closes it and falls through (the escape law).
-     * Everything else — pads, steps, the arrows — is swallowed so nothing edits
-     * the track underneath. Back at the top folder closes it, and the card it
-     * was opened from is simply what is underneath. */
+    /* THE MIDI BROWSER (ui_midi_import), opened from K8 of the CLIP / DRUM LANE
+     * card: a modal. All eight knobs are its, plus the jog (and its touch, which
+     * holds the list up), the click and Back; Shift+jog still switches track,
+     * which closes it (miTick). Knob TOUCHES are taken here — the screen names
+     * the touched setting — and consumed, so a Delete or Mute held with one
+     * cannot act on the bank underneath. A drum track's pads place its sounds
+     * (the engine still sounds them). Shift, Play and Shift+volume fall through;
+     * Note/Session closes it and falls through (the escape law). Everything
+     * else — steps, the arrows — is swallowed so nothing edits the track
+     * underneath. Closing leaves the card it was opened from. */
     if (miActive()) {
         const hi = status & 0xF0;
         if (hi === 0x90 || hi === 0x80) {
-            if (d1 >= 0 && d1 <= 7) { /* knob touch: falls through */ }
-            else return;
+            const on = hi === 0x90 && d2 === 127;
+            if (d1 >= 0 && d1 <= 7) {
+                if (on) S.knobTouched = d1;
+                else if (S.knobTouched === d1) S.knobTouched = -1;
+                S.screenDirty = true;
+                return;
+            }
+            if (d1 === MoveMainTouch) { miJogTouch(on); return; }
+            if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32) {
+                if (hi === 0x90 && d2 > 0) miPadTap(d1 - TRACK_PAD_BASE);
+                else miPadRelease(d1 - TRACK_PAD_BASE);
+            }
+            return;
         } else if (status === 0xB0) {
             if (d1 >= 71 && d1 <= 78) { const _kd = decodeDelta(d2); if (_kd) miOnKnob(d1 - 71, _kd); S.screenDirty = true; return; }
             else if (d1 === MoveMainKnob) {

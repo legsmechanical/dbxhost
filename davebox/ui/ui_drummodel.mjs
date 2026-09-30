@@ -12,6 +12,7 @@ import { SCALE_INTERVALS } from './ui_pure.mjs';
 import { dspGet } from './ui_dsp_get.mjs';
 import { chordLayoutOn, fillChordPadMap, padToken } from './ui_chord_pads.mjs';
 import { pbActive } from './ui_phrase_browser.mjs';
+import { miActive } from './ui_midi_import.mjs';
 
 /* PHASE-1: helper for the pad-dispatch mute condition. Modal sources:
  * - sessionView                 — pads launch clips
@@ -210,7 +211,7 @@ export function computePadNoteMap() {
          * (its sounds) — the engine gives them no velocity zone, Note Repeat
          * or hit, and the lane pads keep playing (Josh, 2026-09-23: they
          * "don't actually trigger" under a full mute). */
-        payload += ' ' + ((isDrum && pbActive()) ? 1 : 0);
+        payload += ' ' + ((isDrum && (pbActive() || miActive())) ? 1 : 0);
         host_module_set_param('t' + t + '_padmap', payload);
         S.lastPushedMuted = padDispatchMuted;
         S.lastPadmapSig = padmapSig(payload);

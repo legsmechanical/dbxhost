@@ -150,23 +150,29 @@ function mappedNotes(voices, mode) {
     });
 }
 
-/* Each sound's lane (or -1): the lane already playing its mapped note; else
- * the lane playing the sound's own note; else the first sound takes the lane
- * the browser was opened on and the rest the next free lanes after it. A lane
- * a sound lands on is replaced by the load; the rest keep their notes. At
- * most MN_MAX_SOUNDS. */
+/* Each sound's lane (or -1). First every sound the Map places goes to the
+ * lane already playing its mapped note — so a sound the Map does not know
+ * cannot take the kick's lane before the kick does. Then the rest: the lane
+ * playing the sound's own note, else the lane the browser was opened on, else
+ * the next free lane after it. A lane a sound lands on is replaced by the
+ * load; the rest keep their notes. At most MN_MAX_SOUNDS. */
 export function defaultAssign(voices, lanePitches, mode, openLane) {
     const pitches = lanePitches || [];
-    const taken = new Set(), out = [];
-    const want = mappedNotes(voices, mode);
-    for (let i = 0; i < voices.length && i < MN_MAX_SOUNDS; i++) {
-        const free = (l) => !taken.has(l);
-        let lane = want[i] != null ? pitches.findIndex((pp, l) => pp === want[i] && free(l)) : -1;
-        if (lane < 0) lane = pitches.findIndex((pp, l) => pp === voices[i].pitch && free(l));
+    const n = Math.min(voices.length, MN_MAX_SOUNDS);
+    const taken = new Set(), out = new Array(n).fill(-1);
+    const want = mappedNotes(voices.slice(0, n), mode);
+    const free = (l) => !taken.has(l);
+    for (let i = 0; i < n; i++) {
+        if (want[i] == null) continue;
+        const lane = pitches.findIndex((pp, l) => pp === want[i] && free(l));
+        if (lane >= 0) { out[i] = lane; taken.add(lane); }
+    }
+    for (let i = 0; i < n; i++) {
+        if (out[i] >= 0) continue;
+        let lane = pitches.findIndex((pp, l) => pp === voices[i].pitch && free(l));
         if (lane < 0 && free(openLane)) lane = openLane;
         for (let k = 1; lane < 0 && k < MN_LANES; k++) if (free((openLane + k) % MN_LANES)) lane = (openLane + k) % MN_LANES;
-        if (lane >= 0) taken.add(lane);
-        out.push(lane);
+        if (lane >= 0) { out[i] = lane; taken.add(lane); }
     }
     return out;
 }

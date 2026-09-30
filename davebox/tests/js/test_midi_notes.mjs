@@ -86,6 +86,10 @@ step('Map Move: toms fold, percussion lands on 50 / 48 / 51', () => {
     const v = [{ pitch: 41 }, { pitch: 60 }];
     eq(defaultAssign(v, LANES, 'move', 0), [7, 14], 'lo tom → 43 (lane 7), bongo → 50 (lane 14)');
 });
+step('Map GM: a sound the Map does not place cannot take a mapped sound\'s lane', () => {
+    const v = [{ pitch: 20 }, { pitch: 36 }];
+    eq(defaultAssign(v, LANES, 'gm', 0), [1, 0], 'the kick keeps lane 0; note 20 takes the next free lane');
+});
 step('Map Off: the first sound on the lane opened on, the rest after it; at most 8 sounds', () => {
     const v = Array.from({ length: 10 }, (_, i) => ({ pitch: 100 + i }));
     const a = defaultAssign(v, LANES, 'off', 5);

@@ -2128,7 +2128,7 @@ export function _tickImpl() {
             S.pendingMidiImportOpen = -1;
             if (_mt === S.activeTrack && !S.sessionView) { miOpen(_mt); S.screenDirty = true; }
         }
-        if (miTick(!S.sessionView, S.activeTrack) === 'close') S.screenDirty = true;
+        miTick();
         if (miAnimating()) S.screenDirty = true;
 
         /* ALL LANES blink: mark dirty when "ALL" blink toggles (bank header + loop-held overlay) */

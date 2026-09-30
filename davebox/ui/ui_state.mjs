@@ -434,6 +434,9 @@ export const S = {
     flashSixteenth: false,
     masterPos: 0,
     bankViewMapOn: null, /* Bank Map on Lock (global menu, ui_prefs): the bank column while the jog walks from the bank view. null = not yet read; absent file = on. */
+    midiPlace: null,     /* MIDI browser (ui_prefs): { dir, file } it reopens at. null = not yet read */
+    midiMuted: null,     /* MIDI browser preview muted (ui_prefs). null = not yet read */
+    midiMap: null,       /* MIDI browser drum Map: off | gm | move (ui_prefs). null = not yet read */
     seqFollowOn: null,   /* Seq Follow (ui_prefs): one device-wide switch. null = not yet read; absent file = on. */
     pendingMidiImportOpen: -1, /* K8 Import clicked on this track; the tick opens it (a folder listing) */
     followPaused: false, /* an arrow press while playing paused Seq Follow; the next real transport stop clears it */

@@ -87,33 +87,39 @@ globalThis.__auditOpen = (p) => { const b = FILES[p]; if (!b) return null; let p
 const shots = [];
 const shoot = (slug) => shots.push({ slug, fb: fb.slice() });
 const draw = (slug, touched, shift) => { globalThis.clear_screen(); MI.miRender(touched ?? -1, !!shift); shoot(slug); };
-const tick = (n) => { for (let i = 0; i < (n || 1); i++) MI.miTick(true, MI.miStateForTest().track); };
-const pick = (label) => { const b = MI.miStateForTest().browser; b.selectedIndex = b.items.findIndex(i => i.label === label); MI.miOnClick(false); tick(3); };
-const knob = (k, steps) => MI.miOnKnob(k, steps * (k < 2 ? 6 : 12));
+S.clockFollowTicks = true;
+const tick = (n) => { for (let i = 0; i < (n || 1); i++) { S.tickCount++; MI.miTick(); } };
+const st = () => MI.miStateForTest();
+const jogTo = (label) => { const i = st().items.findIndex(x => x.label === label); while (st().idx < i) MI.miOnJog(1); while (st().idx > i) MI.miOnJog(-1); tick(20); };
+const knob = (k, steps) => MI.miOnKnob(k, steps * [6, 6, 12, 12, 12, 6, 12][k]);
+const letGo = () => { MI.miJogTouch(false); tick(60); };
 
-S.trackPadMode[2] = 0; S.trackActiveClip[2] = 0; S.clipNonEmpty[2][0] = false;
-MI.miOpen(2);
-draw('1-files');
-pick('Bach Invention 8.mid');
-draw('2-tracks');
-MI.miOnClick(false);                         /* Right Hand → options */
-draw('3-options-fits');
-knob(0, 2); knob(1, -4);                     /* start bar 3, 8 bars */
-draw('4-options-cut');
-draw('5-options-touch-start', 0);
-draw('5b-options-shift-held', -1, true);
-S.clipNonEmpty[2][0] = true; MI.miOnBack(); MI.miOnClick(false); knob(0, 2); knob(1, -4);
-while (MI.miStateForTest().choices[MI.miStateForTest().toIdx] !== 0) knob(3, -1);
-draw('6-options-replace');
-draw('7-options-touch-to', 3);
-MI.miOnClick(false);
-draw('8-confirm');
+/* first open: nothing remembered — the user data folder */
+S.trackPadMode[2] = 0; S.trackActiveClip[2] = 0; S.clipNonEmpty[2][0] = false; S.activeTrack = 2;
+MI.miOpen(2); tick(2);
+draw('1-first-open');
+jogTo('Bach Invention 8'); draw('2-root-on-multipart');
+MI.miOnClick(false); tick(2);               /* a multi-part file: in, like a folder */
+draw('3-inside-list');
+letGo(); draw('4-part-page');
+draw('5-touch-bars', 1);
+knob(0, 2); knob(1, -6); draw('6-window-cut');
+draw('7-touch-semi', 5);
+knob(6, -1); draw('8-scale-off-touched', 6);
+MI.miOnClick(true); tick(1); draw('9-muted');
+MI.miOnClick(true); tick(1);
+S.clipNonEmpty[2][0] = true; knob(0, -2); knob(1, 6); tick(2); draw('10-replaces');
+draw('10b-shift-held', -1, true);
 MI.miClose();
 
-S.trackPadMode[1] = 1; S.trackActiveClip[1] = 0; S.drumClipNonEmpty[1][0] = false;
+S.trackPadMode[1] = 1; S.trackActiveClip[1] = 0; S.drumClipNonEmpty[1][0] = false; S.activeTrack = 1;
 S.drumLaneNote[1] = Array.from({ length: 32 }, (_, l) => 36 + l);
-MI.miOpen(1); pick('Groove 3.mid');
-draw('9-drums-no-pad');
+S.drumLaneHasNotes[1] = new Array(32).fill(false);
+MI.miOpen(1); tick(2);
+MI.miOnJog(-1); jogTo('Groove 3'); MI.miOnClick(false); tick(2);   /* the first-open list: click opens */
+draw('11-drum-page');
+MI.miPadTap(5); tick(1); draw('12-drum-holding-sound');
+MI.miPadRelease(5);
 MI.miClose();
 function writePng(fbuf,outPath){
   const iw=W*SCALE+2*PAD, ih=H*SCALE+2*PAD; const img=Buffer.alloc(iw*ih*4);
