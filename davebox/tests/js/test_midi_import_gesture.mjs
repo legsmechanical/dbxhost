@@ -87,6 +87,9 @@ globalThis.__stubStdBinFiles = new Proxy(BIN, { get(o, k) { if (typeof k === 'st
 globalThis.__stubStat['/data/UserData/cut.mid'] = { mode: REG, size: CUTSHORT.length };
 /* a name far too long for a row: the list scrolls it on the cursor row */
 const LONG = 'Voicings - Neo Soul Chords in Eb Minor.mid';
+/* a long FOLDER name: nothing previews there, so only the scroll redraws */
+const LONGDIR = 'Phrases from the Neo Soul Chord Pack';
+globalThis.__stubStat['/data/UserData/' + LONGDIR] = { mode: DIR, size: 0 };
 BIN['/data/UserData/' + LONG] = SONG;
 globalThis.__stubStat['/data/UserData/' + LONG] = { mode: REG, size: SONG.length };
 
@@ -121,7 +124,8 @@ async function main() {
     const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
     stubParamPagesDevice();
     const osStub = await import('os');
-    osStub.__setReaddir({ '/data/UserData': ['UserLibrary', 'schwung', 'dbx-host', 'song.mid', 'beat.mid', 'cut.mid', LONG, 'notes.txt', '.hidden'],
+    osStub.__setReaddir({ '/data/UserData': ['UserLibrary', 'schwung', 'dbx-host', 'song.mid', 'beat.mid', 'cut.mid', LONG, LONGDIR, 'notes.txt', '.hidden'],
+                          ['/data/UserData/' + LONGDIR]: [],
                           '/data/UserData/UserLibrary': [] });
     await import('../../ui/ui.js');
     const { S } = await import('../../ui/ui_state.mjs');
@@ -568,6 +572,11 @@ async function main() {
         jog(-1); ticks(2); jog(1); ticks(2);
         r = rowOf(printed());
         assert(r && full.startsWith(r.s), 'leaving and coming back starts it over: ' + JSON.stringify(r));
+        jogTo(LONGDIR); ticks(2);
+        ticks(150);
+        assert(MI.miMarqueeForTest().off > 0, 'a long folder name, with no preview running, never scrolled: ' + JSON.stringify(MI.miMarqueeForTest()));
+        const d = printed().find(o => o.s.endsWith('/'));
+        assert(d && LONGDIR.includes(d.s.slice(0, -1)) && !LONGDIR.startsWith(d.s.slice(0, -1)), 'the folder row shows the scrolled name with its /: ' + JSON.stringify(d));
         back(); ticks(2);
     });
 
