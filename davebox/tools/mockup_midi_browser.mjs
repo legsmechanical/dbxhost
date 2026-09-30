@@ -1,0 +1,200 @@
+// tools/mockup_midi_browser.mjs — PROPOSED screens for the one MIDI browser
+// (Import MIDI and the phrase browser as one feature), drawn with the real kit
+// primitives so what you see is what the build would draw. A proposal for
+// review, not the implementation: every value here is hand-written.
+//
+//   node --import ./tools/audit_loader.mjs tools/mockup_midi_browser.mjs [outdir]
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import zlib from 'node:zlib';
+
+const W = 128, H = 64, SCALE = 4, PAD = 8;
+const ON = [235,238,245], BG = [14,16,22], MAT = [30,33,42];
+let fb = new Uint8Array(W*H);
+globalThis.set_pixel = (x,y,v)=>{x|=0;y|=0;if(x>=0&&x<W&&y>=0&&y<H)fb[y*W+x]=v?1:0;};
+globalThis.fill_rect = (x,y,w,h,v)=>{for(let j=0;j<h;j++)for(let i=0;i<w;i++)globalThis.set_pixel(x+i,y+j,v);};
+globalThis.draw_rect = (x,y,w,h,v)=>{globalThis.fill_rect(x,y,w,1,v);globalThis.fill_rect(x,y+h-1,w,1,v);globalThis.fill_rect(x,y,1,h,v);globalThis.fill_rect(x+w-1,y,1,h,v);};
+globalThis.clear_screen = ()=>{fb.fill(0);};
+const HFONT = JSON.parse(readFileSync(new URL('./host_font_5x7.json', import.meta.url)));
+const CS = 1, CELL = 5;
+const ink = (rows)=>{let mn=5,mx=-1;for(const b of rows)for(let x=0;x<5;x++)if(b&(1<<(4-x))){if(x<mn)mn=x;if(x>mx)mx=x;}return mx<0?null:{mn,mx};};
+function hostChar(ch,x,y,col){const rows=HFONT[ch]??HFONT[ch.toUpperCase?.()]??null;if(!rows)return CELL+CS;const b=ink(rows);if(!b)return CELL+CS;
+  for(let r=0;r<7;r++)for(let c=b.mn;c<=b.mx;c++)if(rows[r]&(1<<(4-c)))globalThis.set_pixel(x+(c-b.mn),y+r,col);return (b.mx-b.mn+1)+CS;}
+globalThis.print=(x,y,s,col)=>{let cx=x|0;for(const ch of String(s))cx+=hostChar(ch,cx,y|0,col?1:0);};
+globalThis.text_width=(s)=>{let w=0;for(const ch of String(s)){const rows=HFONT[ch]??null;const b=rows&&ink(rows);w+=(b?(b.mx-b.mn+1):CELL)+CS;}return w;};
+for (const fn of ['host_write_file','host_read_file','host_file_exists','host_ensure_dir','host_state_subdir',
+  'host_remove_dir','host_system_cmd','host_module_set_param','host_module_get_param','shadow_get_param','shadow_set_param',
+  'host_send_midi','move_midi_inject_to_move','set_led','move_midi_internal_send','flush_display'])
+  globalThis[fn] = () => 0;
+
+const K = await import('../ui/ui_movy.mjs');
+const shots = [];
+const shoot = (slug) => shots.push({ slug, fb: fb.slice() });
+
+/* ---- hand-made parts ---- */
+function melodic(seed, bars) {
+    const n = []; let s = seed;
+    const r = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    for (let t = 0; t < bars * 384; t += 48) if (r() > 0.3) n.push({ t, g: 36 + Math.floor(r() * 3) * 24, row: Math.floor(r() * 9) });
+    return { notes: n, rows: 9, ticks: bars * 384 };
+}
+function drums(bars) {
+    const n = [];
+    for (let t = 0; t < bars * 384; t += 48) {
+        if (t % 192 === 0) n.push({ t, g: 24, row: 0 });            /* kick */
+        if (t % 384 === 192) n.push({ t, g: 24, row: 1 });          /* snare */
+        n.push({ t, g: 12, row: 2 });                               /* hat */
+        if (t % 384 === 336) n.push({ t, g: 24, row: 3 });          /* open hat */
+    }
+    return { notes: n, rows: 4, ticks: bars * 384 };
+}
+
+/* ---- the proposed page ---- */
+const cellsMelodic = (o = {}) => [
+    { kind: 'valsq', label: 'Start', name: 'Start Bar', text: '1', norm: 0 },
+    { kind: 'valsq', label: 'Bars', name: 'Length', text: o.bars || '4', norm: 0.1 },
+    { kind: 'enumsq', label: 'Grid', name: 'Grid', text: '1/16', options: ['1/32','1/16','1/8','1/4','1/2','1'], sel: 1 },
+    { kind: 'enumsq', label: 'To', name: o.replace ? 'Replace CLIP A' : 'Destination', text: 'CLIP A', options: ['CLIP A','CLIP C','CLIP D'], sel: 0 },
+    { kind: 'enumsq', label: 'Strch', name: 'Stretch', text: o.stretch || 'x1', strip: o.stretch || 'X1', options: ['/8','/4','/2','x1','x2','x4','x8'], sel: 3 },
+    { kind: 'valsq', label: 'Oct', name: 'Octave', text: o.oct || '+0', strip: 'OCT' + (o.oct || '+0'), norm: 0.5 },
+    { kind: 'valsq', label: 'Semi', name: 'Semitones', text: o.semi || '+0', strip: 'ST' + (o.semi || '+0'), norm: 0.5 },
+    { kind: 'pill', label: 'Scale', name: 'Fit to Scale', text: o.scale === false ? 'OFF' : 'ON', strip: o.scale === false ? 'AS IS' : 'SCALE', norm: o.scale === false ? 0 : 1 },
+];
+const cellsDrum = () => [
+    { kind: 'valsq', label: 'Start', name: 'Start Bar', text: '1', norm: 0 },
+    { kind: 'valsq', label: 'Bars', name: 'Length', text: '2', norm: 0.05 },
+    { kind: 'enumsq', label: 'Grid', name: 'Grid', text: '1/16', options: ['1/32','1/16','1/8','1/4','1/2','1'], sel: 1 },
+    { kind: 'enumsq', label: 'To', name: 'Destination', text: 'CLIP A', options: ['CLIP A','CLIP B'], sel: 0 },
+    { kind: 'enumsq', label: 'Strch', name: 'Stretch', text: 'x1', strip: 'X1', options: ['/8','/4','/2','x1','x2','x4','x8'], sel: 3 },
+    { kind: 'enumsq', label: 'Map', name: 'Drum Map', text: 'GM', strip: 'MAP GM', options: ['Off','GM','Move'], sel: 1 },
+    { kind: 'blank', label: '' },
+    { kind: 'blank', label: '' },
+];
+
+/* THE LAYOUT: K1-K4 as the bank page's own top row; below it the file's name,
+ * its roll, and a small-font strip under K5-K8 — one column per knob, over
+ * the knob it belongs to. Touching K5-K8 inverts its column and names it in
+ * the header, with the value, as a touched cell does. */
+function page({ header, right, title, sub, roll, cells, touched = -1, footer, playhead }) {
+    globalThis.clear_screen();
+    K.kitUseLayout('bank');
+    const top = cells.slice(0, 4).concat([{ kind: 'blank', label: '' }, { kind: 'blank', label: '' },
+                                          { kind: 'blank', label: '' }, { kind: 'blank', label: '' }]);
+    const lower = touched >= 4 ? cells[touched] : null;
+    const topTouched = touched >= 0 && touched < 4 ? touched : -1;
+    if (!K.enumOverlayWouldDraw(top, topTouched)) {
+        K.hdrPrint(Math.max(0, Math.floor((128 - K.hdrWidth(title)) / 2)), 32, title, 1);
+        if (sub) K.mvPrint(Math.floor((128 - K.mvWidth(sub)) / 2), 41, sub, 1);
+        else if (roll) K.drawKitNoteRoll(4, 40, 120, 5, roll.notes, roll.ticks,
+                                         { rows: roll.rows, playhead });
+        for (let k = 4; k < 8; k++) {
+            const c = cells[k]; if (!c || c.kind === 'blank') continue;
+            const txt = c.strip, x0 = (k - 4) * 32, on = k === touched;
+            const tw = K.mvWidth(txt), tx = x0 + Math.floor((32 - tw) / 2);
+            if (on) fill_rect(x0 + 1, 49, 30, 7, 1);
+            K.mvPrint(tx, 50, txt, on ? 0 : 1);
+        }
+    }
+    K.drawKitBankPage(top, { headerText: lower ? lower.name.toUpperCase() : header,
+                             headerRight: lower ? lower.text : right, touchedIdx: topTouched, footer });
+}
+function picker(rows, sel) {
+    const X = 2, Y = 9, Wd = 124, h = K.MV_FOOTER_Y - 1 - Y;
+    fill_rect(X, Y, Wd, h, 0); draw_rect(X, Y, Wd, h, 1);
+    K.drawKitList(rows.map(r => ({ labelFont: 'small', ...r })), sel, { x: X + 1, w: Wd - 2, topY: Y + 3, h: h - 3, rowH: 7 });
+}
+const FOOT = [['JOG', 'FILE'], ['CLK', 'LOAD'], ['BACK', '']];
+
+/* 1 — the page: a single-part file in the remembered folder, heard as you land on it */
+page({ header: '(2) BASS LINES', right: '3/12', title: 'ACID LINE 2', roll: melodic(7, 4), playhead: 520,
+       cells: cellsMelodic(), footer: FOOT });
+shoot('01-page-file');
+
+/* 2 — turning the jog: the folder's list floats up (small font, six at a time) */
+page({ header: '(2) BASS LINES', right: '3/12', title: 'ACID LINE 2', roll: melodic(7, 4),
+       cells: cellsMelodic(), footer: [['JOG', 'FILE'], ['CLK', 'LOAD'], ['BACK', '']] });
+picker([
+    { label: '..' },
+    { label: 'ACID LINE 1', value: '4Br' },
+    { label: 'ACID LINE 2', value: '4Br' },
+    { label: 'DUB SUB', value: '8Br' },
+    { label: 'FUNK SONG', value: '3 PT >' },
+    { label: 'OCTAVES', value: '2Br' },
+], 2);
+shoot('02-jog-list');
+
+/* 3 — a multi-part file: it previews its first part; the click opens it like a folder */
+page({ header: '(2) BASS LINES', right: '5/12', title: 'FUNK SONG', sub: '3 PARTS - CLICK TO OPEN', roll: melodic(11, 8),
+       cells: cellsMelodic({ bars: '8' }), footer: [['JOG', 'FILE'], ['CLK', 'OPEN'], ['BACK', '']] });
+shoot('03-multipart-file');
+
+/* 4 — inside it: the parts are the list, each heard as you land on it */
+page({ header: '(2) FUNK SONG', right: '2/3', title: 'BASS', roll: melodic(3, 8),
+       cells: cellsMelodic({ bars: '8' }), footer: [['JOG', 'PART'], ['CLK', 'LOAD'], ['BACK', '']] });
+picker([
+    { label: '..' },
+    { label: 'LEAD', value: '8Br' },
+    { label: 'BASS', value: '8Br' },
+    { label: 'DRUMS', value: 'DRM 8Br' },
+], 2);
+shoot('04-inside-multipart');
+
+/* 5 — Semi touched: the value large, the name in the header (the bank page's own touch) */
+page({ header: '(2) BASS LINES', right: '3/12', title: 'ACID LINE 2', roll: melodic(7, 4),
+       cells: cellsMelodic({ semi: '-3' }), touched: 6, footer: FOOT });
+shoot('05-touch-semi');
+
+/* 6 — Scale OFF: the notes as written (Oct and Semi still apply) */
+page({ header: '(2) BASS LINES', right: '3/12', title: 'ACID LINE 2', roll: melodic(7, 4),
+       cells: cellsMelodic({ scale: false }), touched: 7, footer: FOOT });
+shoot('06-scale-off');
+
+/* 7 — a drum track: K6 is the drum map; K7-K8 have nothing to do */
+page({ header: '(1) BREAKS', right: '2/9', title: 'AMEN 1', roll: drums(2), playhead: 300,
+       cells: cellsDrum(), footer: [['RTPAD', 'SOUND'], ['CLK', 'LOAD']] });
+shoot('07-drum-page');
+
+/* 8 — a drum track, holding a sound on the right-hand pads: where each sound goes */
+page({ header: '(1) BREAKS', right: '2/9', title: 'AMEN 1', roll: drums(2),
+       cells: cellsDrum(), footer: [['TAP', 'LANE'], ['CLK', 'LOAD']] });
+{
+    const X = 2, Y = 9, Wd = 124, h = K.MV_FOOTER_Y - 1 - Y;
+    fill_rect(X, Y, Wd, h, 0); draw_rect(X, Y, Wd, h, 1);
+    const rows = [['KICK', 'PAD 1'], ['SNARE', 'PAD 2'], ['CL HAT', 'PAD 3'], ['OP HAT', '--']];
+    const d = drums(2);
+    rows.forEach(([nm, dest], i) => {
+        const y = Y + 3 + i * 7, on = i === 1, c = on ? 0 : 1;
+        if (on) fill_rect(X + 2, y - 1, Wd - 4, 7, 1);
+        K.mvPrint(X + 5, y, nm, c); K.mvPrint(X + 38, y, dest, c);
+        const rx = X + 66, rw = Wd - 70;
+        for (const n of d.notes) if (n.row === i) fill_rect(rx + Math.floor(n.t * rw / d.ticks), y + 1, 1, 3, c);
+    });
+}
+shoot('08-drum-sounds');
+
+/* 9 — Replace: asked once, with the way back named */
+globalThis.clear_screen();
+K.drawKitPrompt('REPLACE CLIP A?', ['ACID LINE 2 - 4 BARS', 'UNDO BRINGS IT BACK'], [['CLK', 'YES'], ['BACK', 'NO']]);
+shoot('09-replace');
+
+/* 10 — first time (no folder chosen yet): the user data folder, folders to walk into */
+globalThis.clear_screen();
+K.drawKitHeader('IMPORT MIDI', false);
+K.drawKitList([{ label: 'Downloads/' }, { label: 'MIDI/' }, { label: 'UserLibrary/' }], 1, {});
+K.drawKitHintRow(K.MV_FOOTER_Y, [['JOG', 'FOLDER'], ['CLK', 'OPEN'], ['BACK', '']]);
+shoot('10-first-open');
+
+function writePng(fbuf,outPath){
+  const iw=W*SCALE+2*PAD, ih=H*SCALE+2*PAD; const img=Buffer.alloc(iw*ih*4);
+  for(let i=0;i<iw*ih;i++){img[i*4]=MAT[0];img[i*4+1]=MAT[1];img[i*4+2]=MAT[2];img[i*4+3]=255;}
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){const c=fbuf[y*W+x]?ON:BG;
+    for(let sy=0;sy<SCALE;sy++)for(let sx=0;sx<SCALE;sx++){const p=((PAD+y*SCALE+sy)*iw+PAD+x*SCALE+sx)*4;img[p]=c[0];img[p+1]=c[1];img[p+2]=c[2];img[p+3]=255;}}
+  const crc32=(b)=>{let c=~0;for(let i=0;i<b.length;i++){c^=b[i];for(let k=0;k<8;k++)c=(c>>>1)^(0xEDB88320&-(c&1));}return ~c>>>0;};
+  const chunk=(t,d)=>{const ty=Buffer.from(t,'ascii');const len=Buffer.alloc(4);len.writeUInt32BE(d.length);const body=Buffer.concat([ty,d]);const crc=Buffer.alloc(4);crc.writeUInt32BE(crc32(body));return Buffer.concat([len,body,crc]);};
+  const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(iw,0);ihdr.writeUInt32BE(ih,4);ihdr[8]=8;ihdr[9]=6;
+  const raw=Buffer.alloc(ih*(1+iw*4));
+  for(let y=0;y<ih;y++){raw[y*(1+iw*4)]=0;img.copy(raw,y*(1+iw*4)+1,y*iw*4,(y+1)*iw*4);}
+  writeFileSync(outPath,Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',zlib.deflateSync(raw)),chunk('IEND',Buffer.alloc(0))]));
+}
+const outDir = process.argv[2] || 'mockups-midi-browser';
+mkdirSync(outDir, { recursive: true });
+for (const s of shots) { writePng(s.fb, outDir + '/' + s.slug + '.png'); console.log(s.slug); }
