@@ -61,6 +61,7 @@ stubParamPagesDevice();
 await import('../../ui/ui.js');
 const { S, nowMs } = await import('../../ui/ui_state.mjs');
 const corun = await import('../../ui/ui_corun.mjs');
+const await_snd = await import('../../ui/ui_sound.mjs');
 corun.initPrimarySurface();
 globalThis.move_midi_inject_to_move = (b) => { injected.push({ at: nowMs(), pkt: Array.from(b) }); };
 
@@ -223,6 +224,8 @@ step('⭐ Note/Session from Move\'s instrument co-run lands on SESSION VIEW (not
     assert(S.moveCoRunTrack < 0, 'co-run did not end');
     assert(S.sessionView, 'Note/Session left co-run for TRACK view');
     assert(S.pendingSoundEnterTrack < 0, 'the sound menu is still queued to re-open under Session View');
+    const snd = await_snd;
+    assert(!snd.soundOpen(), 'the sound menu re-opened over Session View');
 });
 step('control: leaving the instrument co-run any other way still returns to the sound menu', () => {
     S.sessionView = false; S.trackRoute[2] = 1;
