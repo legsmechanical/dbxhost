@@ -272,10 +272,13 @@ int main(void) {
         toggle(h, 2);
         hx_set_param(h, "transport", "play");
         HX_ASSERT(I(h)->playing, "setup: playing");
-        hx_render(h, 40);
+        hx_render(h, 400);
+        uint32_t el = (uint32_t)I(h)->global_tick * (uint32_t)TICKS_PER_STEP + I(h)->master_tick_in_step;
+        HX_ASSERT(el / TPS % 64 != tr->current_step, "setup: the 16-step playhead is not where a 64-step one would be");
         hx_set_param(h, "t1_c0_page_copy", "0 3 0");
         HX_ASSERT(cl->length == 64, "playing: grown");
-        HX_ASSERT(tr->current_step < 64, "playing: the playhead is inside the window");
+        HX_ASSERT(tr->current_step == el / TPS % 64,
+                  "playing: the playhead is re-anchored to the master clock, as a length change does");
         hx_render(h, 40);
         HX_ASSERT(tr->current_step < 64, "playing: and stays there");
         printf("  ok   — a paste while playing keeps the playhead in the window\n");
