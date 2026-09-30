@@ -187,6 +187,14 @@ step('⭐ a held Back is inert under the BOOT MODALS', () => {
     if (!S.confirmStateWipe) throw new Error('the hold dismissed the state-wipe confirm');
     if (exitCalls !== before) throw new Error('the hold EXITED THE MODULE');
     S.confirmStateWipe = false;
+
+    rest();
+    S.projectPadPicker = { menu: null, colorPick: null, confirmNew: null };
+    S.awaitingProjectSelect = true;
+    holdBack();
+    if (!S.projectPadPicker)
+        throw new Error('the hold closed the STARTUP picker — nothing is loaded behind it');
+    S.awaitingProjectSelect = false; S.projectPadPicker = null;
 });
 
 step('⭐ the escape is ONE press, not a Back — it does not peel one level', () => {
