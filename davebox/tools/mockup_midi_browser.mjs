@@ -124,22 +124,22 @@ function picker(rows, sel) {
 const FOOT = [['JOG', 'FILE'], ['CLK', 'LOAD'], ['SHFT', 'MUTE']];
 
 /* 1 — the page: a single-part file in the remembered folder, heard as you land on it */
-page({ header: '(2) ACID LINE 2', right: '3/12', roll: melodic(7, 4), playhead: 520,
+page({ header: 'ACID LINE 2', right: '3/12', roll: melodic(7, 4), playhead: 520,
        cells: cellsMelodic(), footer: FOOT });
 shoot('01-page-file');
 
 /* 1a — Shift held: the click now mutes (the hint says what the click does) */
-page({ header: '(2) ACID LINE 2', right: '3/12', roll: melodic(7, 4), playhead: 520,
+page({ header: 'ACID LINE 2', right: '3/12', roll: melodic(7, 4), playhead: 520,
        cells: cellsMelodic(), footer: [['CLK', 'MUTE']] });
 shoot('01a-shift-held');
 
 /* 1b — muted: nothing plays as you scroll; the header says so, the hint offers it back */
-page({ header: '(2) ACID LINE 2', right: '3/12', roll: melodic(7, 4), blinkOff: true,
+page({ header: 'ACID LINE 2', right: '3/12', roll: melodic(7, 4), blinkOff: true,
        cells: cellsMelodic(), footer: [['JOG', 'FILE'], ['CLK', 'LOAD'], ['SHFT', 'HEAR']] });
 shoot('01b-muted');
 
 /* 2 — turning the jog: the folder's list floats up (small font, six at a time) */
-page({ header: '(2) BASS LINES/', right: '3/12', roll: melodic(7, 4),
+page({ header: 'BASS LINES/', right: '3/12', roll: melodic(7, 4),
        cells: cellsMelodic(), footer: FOOT });
 picker([
     { label: '..' },
@@ -152,12 +152,12 @@ picker([
 shoot('02-jog-list');
 
 /* 4 — inside it: the SAME page, a part where a file would be, heard as you land on it */
-page({ header: '(2) BASS', right: '2/3', roll: melodic(3, 8), playhead: 900,
+page({ header: 'BASS', right: '2/3', roll: melodic(3, 8), playhead: 900,
        cells: cellsMelodic({ bars: '8' }), footer: FOOT });
 shoot('04-inside-multipart');
 
 /* 4a — the jog inside it: the SAME list, the parts where the files would be */
-page({ header: '(2) FUNK SONG >', right: '2/3', roll: melodic(3, 8),
+page({ header: 'FUNK SONG >', right: '2/3', roll: melodic(3, 8),
        cells: cellsMelodic({ bars: '8' }), footer: FOOT });
 picker([
     { label: '..' },
@@ -171,27 +171,27 @@ shoot('04a-inside-list');
 {
     const r = melodic(7, 4); r.win = { from: 384, to: 384 * 3 };
     const c = cellsMelodic({ bars: '2', start: '2' });
-    page({ header: '(2) ACID LINE 2', right: '2 CUT', roll: r, cells: c, touched: 1, footer: FOOT });
+    page({ header: 'ACID LINE 2', right: '2 CUT', roll: r, cells: c, touched: 1, footer: FOOT });
     shoot('04b-window');
 }
 
 /* 5 — Semi touched: the value large, the name in the header (the bank page's own touch) */
-page({ header: '(2) ACID LINE 2', right: '3/12', roll: melodic(7, 4),
+page({ header: 'ACID LINE 2', right: '3/12', roll: melodic(7, 4),
        cells: cellsMelodic({ semi: '-3' }), touched: 5, footer: FOOT });
 shoot('05-touch-semi');
 
 /* 6 — Scale OFF: the notes as written (Oct and Semi still apply) */
-page({ header: '(2) ACID LINE 2', right: '3/12', roll: melodic(7, 4),
+page({ header: 'ACID LINE 2', right: '3/12', roll: melodic(7, 4),
        cells: cellsMelodic({ scale: false }), touched: 6, footer: FOOT });
 shoot('06-scale-off');
 
 /* 7 — a drum track: K6 is the drum map; K7-K8 have nothing to do */
-page({ header: '(1) AMEN 1', right: '2/9', roll: drums(2), playhead: 300,
+page({ header: 'AMEN 1', right: '2/9', roll: drums(2), playhead: 300,
        cells: cellsDrum(), footer: [['RTPAD', 'SOUND'], ['SHFT', 'MUTE']] });
 shoot('07-drum-page');
 
 /* 8 — a drum track, holding a sound on the right-hand pads: where each sound goes */
-page({ header: '(1) AMEN 1', right: '2/9', roll: drums(2),
+page({ header: 'AMEN 1', right: '2/9', roll: drums(2),
        cells: cellsDrum(), footer: [['TAP', 'LANE'], ['CLK', 'LOAD']] });
 {
     const X = 2, Y = 9, Wd = 124, h = K.MV_FOOTER_Y - 1 - Y;
@@ -209,7 +209,7 @@ page({ header: '(1) AMEN 1', right: '2/9', roll: drums(2),
 shoot('08-drum-sounds');
 
 /* 9 — the current clip has notes: the header warns before the click (no confirm; Undo brings them back) */
-page({ header: '(2) ACID LINE 2', right: 'REPLACES', roll: melodic(7, 4), cells: cellsMelodic(), footer: FOOT });
+page({ header: 'ACID LINE 2', right: 'REPLACES', roll: melodic(7, 4), cells: cellsMelodic(), footer: FOOT });
 shoot('09-replace');
 
 /* 10 — first time (no folder chosen yet): the user data folder, folders to walk into */
