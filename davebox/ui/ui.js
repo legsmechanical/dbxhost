@@ -44,7 +44,6 @@ import { snapMorphApply } from './ui_snapmorph.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { daveBoxRotate } from './ui_daves.mjs';
-import { pbActive, pbOnKnob, pbOnJog, pbOnClick, pbOnBack, pbPadTap, pbPadRelease, pbClose, pbJogTouch } from './ui_phrase_browser.mjs';
 import { miActive, miOnKnob, miOnJog, miOnClick, miOnBack, miClose, miJogTouch, miPadTap, miPadRelease } from './ui_midi_import.mjs';
 import {
     projectPickerTextEntryMidi,
@@ -531,7 +530,7 @@ function _onMidiInternalImpl(data) {
     syncCoRunShift();
 
     /* Left/Right HELD (with Play, toggles Seq Follow): both edges recorded here,
-     * above every modal gate, so a release inside sound mode or the phrase
+     * above every modal gate, so a release inside sound mode or the MIDI
      * browser can never leave the flag stuck and turn the next Play into a
      * follow toggle. Nothing is consumed; the arrows go on to their owners. */
     if (status === 0xB0 && d1 === MoveLeft)  S.leftHeld  = d2 === 127;
@@ -648,39 +647,6 @@ function _onMidiInternalImpl(data) {
             else if (d1 === MoveDelete) { S.deleteHeld = d2 === 127; return; }
             else return;
         }
-    }
-
-    /* PHRASES (ui_phrase_browser): modal like the album. Its own knobs (K1-K4;
-     * K5-K8 do nothing), jog, click and Back; pads assign the selected
-     * instrument — and still SOUND, so a tap is also an audition (the engine
-     * plays them from the pad map, which this does not touch). Knob TOUCHES,
-     * Shift and Play fall through so their state stays true; Note/Session
-     * closes it and falls through (the escape law). Everything else is
-     * swallowed so nothing edits the track underneath. */
-    if (pbActive()) {
-        const hi = status & 0xF0;
-        if (hi === 0x90 || hi === 0x80) {
-            if (d1 >= 0 && d1 <= 7) { /* knob touch: falls through */ }
-            else if (d1 === MoveMainTouch) { pbJogTouch(hi === 0x90 && d2 > 0); return; }
-            else {
-                if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32) {
-                    if (hi === 0x90 && d2 > 0) pbPadTap(d1 - TRACK_PAD_BASE);
-                    else pbPadRelease(d1 - TRACK_PAD_BASE);
-                }
-                return;
-            }
-        } else if (status === 0xB0) {
-            if (d1 >= 71 && d1 <= 78) { const _kd = decodeDelta(d2); if (_kd) pbOnKnob(d1 - 71, _kd); return; }
-            else if (d1 === MoveMainKnob) { const _jd = decodeDelta(d2); if (_jd) pbOnJog(_jd); return; }
-            else if (d1 === MoveMainButton) { if (d2 === 127) pbOnClick(S.shiftHeld); return; }
-            else if (d1 === MoveBack) { if (d2 === 127) pbOnBack(); return; }
-            else if (d1 === MoveNoteSession) { pbClose(); /* falls through */ }
-            else if (d1 === MoveShift || d1 === MovePlay) { /* falls through */ }
-            /* Shift+volume is the active track's volume, everywhere (a plain turn
-             * is Move's main output, dropped just below). */
-            else if (d1 === 79) { /* falls through */ }
-            else return;
-        } else return;
     }
 
     /* THE MIDI BROWSER (ui_midi_import), opened from K8 of the CLIP / DRUM LANE

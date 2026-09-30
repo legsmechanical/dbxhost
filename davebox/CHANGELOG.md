@@ -21,9 +21,15 @@ the section into a versioned heading at release time.
   is remembered. The track overview shows a small mark while Follow is on.
   Paging with the arrows while playing now pauses Follow only until you stop,
   instead of turning it off for that clip.
-- **Import MIDI moved to knob 8 of the CLIP and DRUM LANE banks.** Touch the
-  knob and click the jog, as for Crop and Legato; Back at the top folder
-  returns to the bank. It is no longer in the track menu.
+- **Import MIDI is a MIDI browser, on knob 8 of the CLIP and DRUM LANE
+  banks.** Touch the knob and click the jog, as for Crop and Legato (it is no
+  longer in the track menu). Every file plays as you land on it — in time with
+  the song while the track plays — and a file with several parts opens like a
+  folder. Stretch, Octave, Semitone and a Scale fold are on the knobs, and on a
+  drum track the file's sounds land on your lanes by GM or Move's layout, or on
+  the lanes you tap. It loads into the clip you are on with one click and one
+  Undo (on a drum track, only the lanes a sound goes to), and reopens where you
+  left it. The transport keeps running. It replaces the phrase library.
 
 ## [0.0.5] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Changed
@@ -118,18 +124,6 @@ the section into a versioned heading at release time.
 - **Step recording shows the tie.** Holding pads and pressing **>** lights the
   steps the note is held over in the tail colour; the note's own step looks like
   any other note.
-- **Phrases.** Its own bank, PHRASE, first in SEQ (left of STEP): click the jog
-  on its card for a library of one- and two-bar starter phrases: pick the instrument, jump to a
-  style, set a time scale (/8 to x8) and an octave; the jog opens the list of
-  every phrase of that instrument. Each one is heard
-  as you choose it — in time with the song, and in your key — and one click
-  loads it (one Undo). Drum phrases with several instruments go on the pads you
-  tap, on a drum track or as notes on a melodic one. About 1,100 phrases ship —
-  whole-kit beats, single drums and melodic parts, chosen to be representative
-  of 18 styles, their genres and BASIC —
-  each with its style's groove and a name that says what it plays. The
-  Phrase Map setting chooses where a drum phrase's sounds go at first: Off,
-  General MIDI or Move's kit layout.
 - **A copied clip takes its automation — the parts that fit.** Copying or
   cutting a clip (drum or melodic) to another track brings along automation
   of levels and dAVEBOx's own knobs, and of instrument or effect parameters
@@ -383,10 +377,6 @@ the section into a versioned heading at release time.
   already written stays until cleared (Delete + turn that knob).
 
 ### Changed (pending)
-- **Phrases has its own bank.** The phrase library opens from the new PHRASE
-  bank, first in SEQ on melodic and drum tracks (PHRASE, STEP, CLIP): click the
-  jog on its card, and Back returns to it. Knob 6 on CLIP and DRUM LANE is empty
-  again.
 - **Every project load unwraps a Dave, on its own.** Opening the project Move
   already has loaded when dAVEBOx starts now deals one too, and it stays up at
   least two seconds; the "PROJECT … LOADING" band over the Dave is gone.

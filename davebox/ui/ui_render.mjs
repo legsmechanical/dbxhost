@@ -18,12 +18,11 @@ import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRoot
 import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
 import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, BANKNAV_HOLD_MS } from './ui_constants.mjs';
-import { pbActive, pbRender } from './ui_phrase_browser.mjs';
 import { miActive, miRender } from './ui_midi_import.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
-    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG, BANK_PHRASE,
+    BANKS, BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG,
     INSTR_SCHWUNG, INSTR_MOVE_MAX, INSTR_MIDI_CH, INSTR_TRACK, INSTR_NONE, INSTR_CONDUCT,
     NOTE_KEYS, NUM_CLIPS, NUM_STEPS, NUM_TRACKS, PAD_MODE_CONDUCT, PAD_MODE_DRUM,
     SCALE_DISPLAY, SCENE_LETTERS, TPS_VALUES, STEP_ITER_LIST,
@@ -807,28 +806,8 @@ function _discreteOpts(knob) {
     return opts;
 }
 
-/* The phrase library (ui_phrase_browser), opened from the PHRASE bank's card. */
-function drawPhraseBrowser() { pbRender(S.knobTouched, S.shiftHeld); }
-
 /* Import MIDI (ui_midi_import), opened from K8 of the CLIP / DRUM LANE card. */
 function drawMidiImport() { miRender(S.knobTouched, S.shiftHeld); }
-
-/* The PHRASE bank's card: the bank header, PHRASE LIBRARY centred inside the
- * door's corner brackets (the mark the CONFIG and SESSION FX cards wear for
- * "click to enter"), and no cells — the bank has no knobs. The box is the
- * CONFIG card's list box, so the three doors line up. */
-export const PHRASE_CARD_TEXT = 'PHRASE LIBRARY';
-function drawPhraseBankCard() {
-    clear_screen();
-    kitUseLayout('bank');
-    drawBankHeading(bankHeaderName(S.activeTrack, BANK_PHRASE), false);
-    const top = 10, h = MV_FOOTER_Y - 11;
-    drawBrackets(0, top, 128, h);
-    mvPrint(Math.round((128 - mvWidth(PHRASE_CARD_TEXT)) / 2), top + Math.floor((h - 5) / 2), PHRASE_CARD_TEXT, 1);
-    const held = stepHoldEstablished();
-    const jog = held ? (stepRevealAvailable() ? [['JOG', 'STEP']] : []) : [['JOG', 'BANK']];
-    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'OPEN']].concat(jog, [['BACK', 'OUT']]));
-}
 
 /* A numeric cell that would otherwise open the option list: while touched it
  * turns into an arc (ui_movy drawCellWidget) and never opens the list. The arc
@@ -1491,7 +1470,7 @@ export function bankCardVisible() {
 }
 
 export function soundModeCovered() {
-    return !!(devSnapOpen() || S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox || pbActive() || miActive() ||
+    return !!(devSnapOpen() || S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox || miActive() ||
         S.projectPadPicker || S.pendingSceneBakePicker ||
         S.mergePlacing || S.mergeNoticePending || S.pendingMergePlacement ||
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
@@ -1796,7 +1775,6 @@ function drawUIBody() {
     S._altPrevTrack = S.activeTrack;
     if (S.sessionOverlayHeld) { drawSessionOverview(); return; }
     if (S.daveBox) { drawDaveBox(); return; }
-    if (pbActive()) { drawPhraseBrowser(); return; }
     if (miActive()) { drawMidiImport(); return; }
     if (S.snapshotPicker) { drawSnapshotPicker(); return; }
     /* ⭑ The exit confirm outranks the picker (2026-09-16). Hold-Back already
@@ -2196,13 +2174,6 @@ function drawUIBody() {
             drawAutomationBankBody();
             if (cy && cy.pages > 1)
                 drawPositionBarGeom({ lsBase: cy.off, len: cy.len, viewPage: cy.page, playStep: autoLanePlayStep(cy) });
-            return;
-        }
-        /* PHRASE: the door to the phrase library — no knobs, just the words
-         * inside the corner brackets (the CONFIG / SESSION FX door mark); a
-         * click opens the browser (ui_input_cc). */
-        if (bank === BANK_PHRASE) {
-            drawPhraseBankCard();
             return;
         }
         if (bank === BANK_STEP) {

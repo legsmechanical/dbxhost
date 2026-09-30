@@ -599,13 +599,6 @@ export const BANKS = [
      * on every walk. All stubs: sound mode owns the screen, and the bank has no
      * knobs. */
     { name: 'CONFIG', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
-    /* 17 — PHRASE (BANK_PHRASE) — the door to the phrase library (Josh:
-     * "phrase should be a bank ... in seq. but phrase step clip. ( the order
-     * of banks is meant to roughly reflect the data hierarchy, and phrase
-     * writes all steps - and clip operates on existing steps)"). First in SEQ
-     * on the melodic and drum walks. No knobs: the latched card is the door
-     * (corner brackets), and a click opens the browser (ui_phrase_browser). */
-    { name: 'PHRASE', knobs: [_X,_X,_X,_X,_X,_X,_X,_X] },
 ];
 
 /* Conductor bank indices. Bank 0 (CLIP) is reused as the "Conduct" bank. */
@@ -631,9 +624,6 @@ export const BANK_CHORD = 15;
 /* The CONFIG bank (see BANKS[16]): first on every walk; its card is the TRACK
  * CONFIG menu at rest, the third bank whose screen is sound mode's. */
 export const BANK_CONFIG = 16;
-/* The PHRASE bank (see BANKS[17]): first in SEQ on the melodic and drum walks
- * (PHRASE, STEP, CLIP); a Conductor, which the browser refuses, has none. */
-export const BANK_PHRASE = 17;
 export function isSoundBank(b) { return b === BANK_SOUND || b === BANK_MACROS || b === BANK_CONFIG; }
 
 /* The track's DEFAULT bank — CLIP on a melodic track, DRUM LANE on a drum one,

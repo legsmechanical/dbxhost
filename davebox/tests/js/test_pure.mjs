@@ -15,7 +15,7 @@ import { drumPadToLane, drumPadToVelZone, drumVelZoneToVelocity,
          _clipIsEmpty, clipHasContent,
          bankCyclePos, scaleNudgeNote } from '../../ui/ui_pure.mjs';
 import { PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-         BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_PHRASE } from '../../ui/ui_constants.mjs';
+         BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION } from '../../ui/ui_constants.mjs';
 
 let failed = 0;
 function eq(got, want, label) {
@@ -109,42 +109,38 @@ eq(_clipIsEmpty(1, 2), false, '_clipIsEmpty drum non-empty');
 S.activeTrack = 0;
 S.trackPadMode[0] = 0;
 S.activeBank = 3;
-eqObj(bankCyclePos(), { idx: 9, count: 12 }, 'bankCyclePos melodic mid');   /* DELAY, third in FX */
+eqObj(bankCyclePos(), { idx: 8, count: 11 }, 'bankCyclePos melodic mid');   /* DELAY, third in FX */
 S.activeBank = 9;                          /* not on the walk -> 0 */
-eqObj(bankCyclePos(), { idx: 0, count: 12 }, 'bankCyclePos melodic not-in-cycle');
+eqObj(bankCyclePos(), { idx: 0, count: 11 }, 'bankCyclePos melodic not-in-cycle');
 S.activeBank = -2;                         /* not on the walk -> 0 */
-eqObj(bankCyclePos(), { idx: 0, count: 12 }, 'bankCyclePos melodic clamp-low');
-/* Melodic walk since 2026-09-26: CONFIG | LIVE ARP | MACROS AUTOMATION | PHRASE STEP CLIP | NOTE FX HARMONY DELAY SEQ ARP | SOUND */
-S.activeBank = BANK_STEP;                  /* SEQ: PHRASE, STEP, CLIP */
-eqObj(bankCyclePos(), { idx: 5, count: 12 }, 'bankCyclePos melodic STEP bank');
+eqObj(bankCyclePos(), { idx: 0, count: 11 }, 'bankCyclePos melodic clamp-low');
+/* Melodic walk since 2026-09-26: CONFIG | LIVE ARP | MACROS AUTOMATION | STEP CLIP | NOTE FX HARMONY DELAY SEQ ARP | SOUND */
+S.activeBank = BANK_STEP;                  /* SEQ: STEP, CLIP */
+eqObj(bankCyclePos(), { idx: 4, count: 11 }, 'bankCyclePos melodic STEP bank');
 S.activeBank = BANK_SOUND;                 /* sound mode's identity -> last segment */
-eqObj(bankCyclePos(), { idx: 11, count: 12 }, 'bankCyclePos melodic sound bank');
+eqObj(bankCyclePos(), { idx: 10, count: 11 }, 'bankCyclePos melodic sound bank');
 S.activeBank = BANK_MACROS;                /* CTRL: MACROS, AUTOMATION, after LIVE ARP */
-eqObj(bankCyclePos(), { idx: 2, count: 12 }, 'bankCyclePos melodic MACROS bank');
+eqObj(bankCyclePos(), { idx: 2, count: 11 }, 'bankCyclePos melodic MACROS bank');
 S.activeBank = BANK_AUTOMATION;            /* the old bank 6 is off the walk */
-eqObj(bankCyclePos(), { idx: 3, count: 12 }, 'bankCyclePos melodic AUTOMATION bank');
-S.activeBank = BANK_PHRASE;                /* SEQ opens on PHRASE (it writes every step) */
-eqObj(bankCyclePos(), { idx: 4, count: 12 }, 'bankCyclePos melodic PHRASE bank');
+eqObj(bankCyclePos(), { idx: 3, count: 11 }, 'bankCyclePos melodic AUTOMATION bank');
 S.activeBank = 6;
-eqObj(bankCyclePos(), { idx: 0, count: 12 }, 'bankCyclePos melodic old bank 6 is not on the walk');
-/* Drum walk since 2026-09-26: CONFIG | RPT GROOVE | MACROS AUTOMATION | PHRASE STEP ALL LANES DRUM LANE | NOTE FX DELAY | SOUND */
+eqObj(bankCyclePos(), { idx: 0, count: 11 }, 'bankCyclePos melodic old bank 6 is not on the walk');
+/* Drum walk since 2026-09-26: CONFIG | RPT GROOVE | MACROS AUTOMATION | STEP ALL LANES DRUM LANE | NOTE FX DELAY | SOUND */
 S.trackPadMode[0] = PAD_MODE_DRUM;
 S.activeBank = 7;
-eqObj(bankCyclePos(), { idx: 6, count: 11 }, 'bankCyclePos drum bank7');
+eqObj(bankCyclePos(), { idx: 5, count: 10 }, 'bankCyclePos drum bank7');
 S.activeBank = 6;                          /* off the walk since 2026-09-03 */
-eqObj(bankCyclePos(), { idx: 0, count: 11 }, 'bankCyclePos drum bank6 (retired)');
+eqObj(bankCyclePos(), { idx: 0, count: 10 }, 'bankCyclePos drum bank6 (retired)');
 S.activeBank = 2;                          /* indexOf(2) = -1 -> idx 0 */
-eqObj(bankCyclePos(), { idx: 0, count: 11 }, 'bankCyclePos drum not-in-cycle');
+eqObj(bankCyclePos(), { idx: 0, count: 10 }, 'bankCyclePos drum not-in-cycle');
 S.activeBank = BANK_SOUND;
-eqObj(bankCyclePos(), { idx: 10, count: 11 }, 'bankCyclePos drum sound bank');
+eqObj(bankCyclePos(), { idx: 9, count: 10 }, 'bankCyclePos drum sound bank');
 S.activeBank = BANK_STEP;
-eqObj(bankCyclePos(), { idx: 5, count: 11 }, 'bankCyclePos drum STEP bank');
+eqObj(bankCyclePos(), { idx: 4, count: 10 }, 'bankCyclePos drum STEP bank');
 S.activeBank = BANK_MACROS;
-eqObj(bankCyclePos(), { idx: 2, count: 11 }, 'bankCyclePos drum MACROS bank');
+eqObj(bankCyclePos(), { idx: 2, count: 10 }, 'bankCyclePos drum MACROS bank');
 S.activeBank = BANK_AUTOMATION;
-eqObj(bankCyclePos(), { idx: 3, count: 11 }, 'bankCyclePos drum AUTOMATION bank');
-S.activeBank = BANK_PHRASE;
-eqObj(bankCyclePos(), { idx: 4, count: 11 }, 'bankCyclePos drum PHRASE bank');
+eqObj(bankCyclePos(), { idx: 3, count: 10 }, 'bankCyclePos drum AUTOMATION bank');
 
 /* -- bankCyclePos() conductor branch --
  * Conductor walk since 2026-09-26: CONFIG, CLIP, STEP, NOTE FX, then RSPD (ON/OFF,
@@ -164,8 +160,6 @@ S.activeBank = BANK_WHEN;
 eqObj(bankCyclePos(), { idx: 6, count: 7 }, 'bankCyclePos conduct When');
 S.activeBank = 3;                          /* not on the walk -> idx 0 */
 eqObj(bankCyclePos(), { idx: 0, count: 7 }, 'bankCyclePos conduct not-in-cycle');
-S.activeBank = BANK_PHRASE;                /* a Conductor has no PHRASE bank */
-eqObj(bankCyclePos(), { idx: 0, count: 7 }, 'bankCyclePos conduct PHRASE is not on the walk');
 
 /* -- scaleNudgeNote(note,dir,key,scale) (ui.js:651-661) --
  * scaleAware OFF: clamp(note+dir,0,127), exactly 1 semitone per dir. */

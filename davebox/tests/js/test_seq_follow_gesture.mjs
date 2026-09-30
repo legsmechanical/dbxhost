@@ -124,7 +124,7 @@ step('the arrow released, Play is Play again (no stuck held flag)', () => {
 
 step('⭐ a release SWALLOWED by a modal screen still lands (no stuck arrow)', () => {
     /* The project picker swallows every other button, arrows included — as the
-     * phrase browser and sound mode's editors do. The held flag is taken above
+     * MIDI browser and sound mode's editors do. The held flag is taken above
      * those gates, so a release inside one still clears it. */
     cc(RIGHT, 127);
     S.projectPadPicker = { renameActive: false };

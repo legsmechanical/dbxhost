@@ -14,7 +14,7 @@
 import { S } from './ui_state.mjs';
 import { PAD_MODE_DRUM, PAD_MODE_CONDUCT, NUM_STEPS, BANKS,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION,
-    BANK_CHORD, BANK_CONFIG, BANK_PHRASE, isSoundBank } from './ui_constants.mjs';
+    BANK_CHORD, BANK_CONFIG, isSoundBank } from './ui_constants.mjs';
 
 /* Live pad note input — isomorphic 4ths diatonic layout.
  * EXPORTED for ui.js's computePadNoteMap (impure, moves in Phase 5) — do not
@@ -102,9 +102,7 @@ export function soundBankOnWalk(padMode, bank, t) {
  * drum FX apply to the selected DRUM LANE ("need to have this indented under
  * drum lane since they apply per-lane").
  * Bank 0 stays each track's start and Back bank (BANK_DEFAULT); only the walk
- * moved. SEQ runs down the data hierarchy: PHRASE (writes every step), STEP,
- * then the clip that operates on the steps that exist (Josh). A Conductor has
- * no PHRASE — the phrase library refuses it. */
+ * moved. */
 export function bankCategoriesForMode(padMode, t) {
     if (padMode === PAD_MODE_CONDUCT) return [
         { label: null,   banks: [BANK_CONFIG] },
@@ -117,7 +115,7 @@ export function bankCategoriesForMode(padMode, t) {
         { label: null,   banks: [BANK_CONFIG] },
         { label: 'IN',   banks: [5] },
         { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
-        { label: 'SEQ',  banks: [BANK_PHRASE, BANK_STEP, 7, 0] },
+        { label: 'SEQ',  banks: [BANK_STEP, 7, 0] },
         { label: 'FX',   banks: [1, 3], depth: 1 },
         { label: null,   banks: [BANK_SOUND] },
     ];
@@ -127,7 +125,7 @@ export function bankCategoriesForMode(padMode, t) {
         { label: null,   banks: [BANK_CONFIG] },
         { label: 'IN',   banks: (chord ? [BANK_CHORD] : []).concat([5]) },
         { label: 'CTRL', banks: [BANK_MACROS, BANK_AUTOMATION] },
-        { label: 'SEQ',  banks: [BANK_PHRASE, BANK_STEP, 0] },
+        { label: 'SEQ',  banks: [BANK_STEP, 0] },
         { label: 'FX',   banks: [1, 2, 3, 4] },
         { label: null,   banks: [BANK_SOUND] },
     ];

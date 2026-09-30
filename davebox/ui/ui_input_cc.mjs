@@ -22,7 +22,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS,
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_PHRASE, LGTO_KNOB,
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, LGTO_KNOB,
     CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
@@ -73,7 +73,6 @@ import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
  * the screen can disagree. */
 import { bankCardVisible, sessMixerVisible, soundModeCovered } from './ui_render.mjs';
 import { closeDaveBox } from './ui_daves.mjs';
-import { pbOpen, pbClose, pbActive } from './ui_phrase_browser.mjs';
 import { miActive, miClose, miOffered } from './ui_midi_import.mjs';
 import { devSnapOpen, devSnapLeave, devSnapUndo, devSnapRedo } from './ui_devsnap.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
@@ -646,19 +645,6 @@ function modalDialogUp() {
     if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && S.moveCoRunTrack < 0 &&
             S.activeBank === BANK_AUTOMATION && S.bankCardLatched) {
         if (S.deleteHeld) autoBankClearClip(); else autoBankClick();
-        S.screenDirty = true;
-        forceRedraw();
-        return;
-    }
-    /* THE PHRASE BANK (latched): the click opens the phrase library for the
-     * active track (pbOpen says why when it refuses). Back from the browser is
-     * the browser's own (ui.js), so it lands back on this card, still latched.
-     * Unlatched (the overview), the generic click below latches the card first
-     * — THE ONE LAW. Same place in the order as the AUTOMATION card, for the
-     * same reason: every confirm and the global menu above win. */
-    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld && S.moveCoRunTrack < 0 &&
-            S.activeBank === BANK_PHRASE && S.bankCardLatched) {
-        pbOpen(S.activeTrack);
         S.screenDirty = true;
         forceRedraw();
         return;
@@ -2241,7 +2227,6 @@ function returnToOverview() {
     /* ⚠ closeDaveBox WITHOUT the openGlobalMenu Back pairs it with — Back peels
      * back to the menu it came from; this goes home. */
     if (S.daveBox)             closeDaveBox();
-    if (pbActive())            pbClose();
     if (miActive())            miClose();
     if (S.projectPadPicker)    closeProjectPadPicker();   /* startup case handled by noOverviewYet */
 

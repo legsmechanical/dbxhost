@@ -1003,13 +1003,14 @@ function soundRowTo(kind) {
         { jog(SND.soundPickStateForTest().row < target ? 1 : -1); ticks(1); }
     if (SND.soundPickStateForTest().row !== target) throw new Error('jog never reached ' + kind);
 }
-/* Jog a file browser (Import MIDI) onto the row with this label. */
+/* Jog the MIDI browser onto the row with this label (then rest, so it is read). */
 function jogToLabel(label) {
-    const b = MI.miStateForTest().browser;
-    const want = b.items.findIndex((i) => i.label === label);
-    if (want < 0) throw new Error('no browser row ' + label + ' in ' + b.items.map((i) => i.label).join(','));
-    for (let g = 0; g < 40 && b.selectedIndex !== want; g++) { jog(b.selectedIndex < want ? 1 : -1); ticks(1); }
-    if (b.selectedIndex !== want) throw new Error('jog never reached ' + label);
+    const st = () => MI.miStateForTest();
+    const want = st().items.findIndex((i) => i.label === label);
+    if (want < 0) throw new Error('no browser row ' + label + ' in ' + st().items.map((i) => i.label).join(','));
+    for (let g = 0; g < 40 && st().idx !== want; g++) { jog(st().idx < want ? 1 : -1); ticks(1); }
+    if (st().idx !== want) throw new Error('jog never reached ' + label);
+    ticks(20);
 }
 screen('track-config', '14.2 The menu', 'TRACK CONFIG — a Schwung track',
     'The track\'s chain first: instrument, MIDI FX, effects.',
@@ -1077,24 +1078,32 @@ screen('fx-buses', '14.8 Master FX and the sends', 'MASTER and SEND FX',
     () => { toSession(); press(MoveShift); tap(MoveNoteSession); release(MoveShift); ticks(6);
             if (!SND.soundOpen()) throw new Error('no bus list'); });
 
-/* 15.4 — Import MIDI: touch K8 on the CLIP / DRUM LANE card and click */
+/* 15.4 — Import MIDI: touch K8 on the CLIP / DRUM LANE card and click. Each
+ * screen starts from nothing remembered (the first open). */
 const openImport = (t) => {
+    S.midiPlace = { dir: '', file: '' }; S.midiMuted = false; S.midiMap = 'gm';
     selectTrack(t); toBank(0, false);
     knobTouch(7); ticks(1); click(); knobRelease(7); ticks(4);
     if (!MI.miStateForTest()) throw new Error('touch K8 + click did not open Import MIDI');
 };
-screen('import-files', '16.4 Import a MIDI file', 'Import MIDI — pick the file',
-    'Touch knob 8 on the CLIP card and click: a browser showing folders and MIDI files only.',
+/* The page for one part of the Bach file: the list has dropped away. */
+const importPage = (t) => {
+    openImport(t); jogToLabel('Bach Invention 8'); click(); ticks(4);
+    noteOff(9); ticks(60);
+    if (!MI.miStateForTest().cur || MI.miStateForTest().list.up) throw new Error('no MIDI browser page');
+};
+screen('import-files', '16.4 Import a MIDI file', 'Import MIDI — the first time',
+    'Touch knob 8 on the CLIP card and click: the first time, your user data folder — its folders and MIDI files.',
     () => { stopTransport(); openImport(3); });
-screen('import-parts', '16.4 Import a MIDI file', 'Import MIDI — pick a part',
-    'A file with several parts: each with its note count and a miniature of its notes.',
-    () => { stopTransport(); openImport(3); jogToLabel('Bach Invention 8.mid'); click(); ticks(4); });
+screen('import-parts', '16.4 Import a MIDI file', 'Import MIDI — a file with several parts',
+    'A file with several parts opens like a folder: its parts are laid out like files, and each plays as you land on it.',
+    () => { stopTransport(); openImport(3); jogToLabel('Bach Invention 8'); click(); ticks(4); });
 screen('import-options', '16.4 Import a MIDI file', 'Import MIDI — the knobs',
-    'The brackets mark what will land in the clip.',
-    () => { stopTransport(); openImport(3); jogToLabel('Bach Invention 8.mid'); click(); ticks(4); click(); ticks(4); });
+    'The page: Start, Bars, Grid and Stretch on top, the notes on one line (the brackets mark what will land), Oct, Semi and Scale underneath.',
+    () => { stopTransport(); importPage(3); });
 screen('import-options-cut', '16.4 Import a MIDI file', 'Import MIDI — notes that will be cut',
-    'Moving the start and length: the footer warns when notes would be cut.',
-    () => { stopTransport(); openImport(3); jogToLabel('Bach Invention 8.mid'); click(); ticks(4); click(); ticks(4);
+    'Moving the start and length: the top right says how many notes won\'t land.',
+    () => { stopTransport(); importPage(3);
             knobTouch(0); knobTurn(0, 12); knobRelease(0); knobTouch(1); knobTurn(1, -24); knobRelease(1); ticks(2); });
 
 screen('snapmorph-slots', '14.7 Sound snapshots & SnapMorph', 'SnapMorph — choosing snapshots',
@@ -1179,14 +1188,10 @@ screen('state-mismatch', '17.5 Projects', 'A set from another version',
 
 /* 15.4 — importing over a clip that has notes */
 screen('import-replace', '16.4 Import a MIDI file', 'Import MIDI — replacing a clip',
-    'Importing into a clip that already holds notes asks first.',
-    () => { stopTransport(); openImport(0); jogToLabel('Bach Invention 8.mid'); click(); ticks(4); click(); ticks(4);
-            /* K4 To: back to the clip we are on, which holds notes */
-            knobTouch(3);
-            for (let g = 0; g < 30 && MI.miStateForTest().choices[MI.miStateForTest().toIdx] !== 0; g++) { knobTurn(3, -1); ticks(1); }
-            knobRelease(3);
-            if (MI.miStateForTest().choices[MI.miStateForTest().toIdx] !== 0) throw new Error('To never reached clip A');
-            click(); ticks(4); });
+    'The clip you are on already holds notes: REPLACES, top right. The click loads; Undo brings them back.',
+    () => { stopTransport(); importPage(0);
+            if (MI.miStateForTest() && !/REPLACES/.test(JSON.stringify(MI.miHintsForTest(false))))
+                throw new Error('the clip is not one with notes'); });
 
 /* ── output ──────────────────────────────────────────────────────────────── */
 /* Every `section` must be a heading of the manual draft, and the output is put

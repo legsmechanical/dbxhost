@@ -310,8 +310,8 @@ picks which bank. Each track has its own walk, in this order:
 
 | Track | Banks, in jog order |
 |---|---|
-| **Melodic** | CONFIG · **IN:** (CHORD, in the Chord layout) → LIVE ARP · **CTRL:** MACROS → AUTOMATION · **SEQ:** PHRASE → STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · MIX |
-| **Drum** | CONFIG · **IN:** RPT GROOVE · **CTRL:** MACROS → AUTOMATION · **SEQ:** PHRASE → STEP → ALL LANES → DRUM LANE · **FX** (the selected lane's): NOTE FX → DELAY · MIX |
+| **Melodic** | CONFIG · **IN:** (CHORD, in the Chord layout) → LIVE ARP · **CTRL:** MACROS → AUTOMATION · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · MIX |
+| **Drum** | CONFIG · **IN:** RPT GROOVE · **CTRL:** MACROS → AUTOMATION · **SEQ:** STEP → ALL LANES → DRUM LANE · **FX** (the selected lane's): NOTE FX → DELAY · MIX |
 | **Conductor** | CONFIG → CLIP → STEP → NOTE FX · **RSPD:** ON/OFF → OCTAVE → TIMING |
 
 A melodic track starts on **CLIP** and a drum track on **DRUM LANE**, both in
@@ -319,14 +319,12 @@ the middle of the walk: turn left for what plays into the track, right for its
 effects (in the order the notes pass through them) and, last, MIX. The first
 bank on every walk is **CONFIG**, the track's TRACK CONFIG menu.
 The banks are grouped: **IN** (what you play in), **CTRL** (what moves the
-parameters), **SEQ** (the sequence — from what writes every step, the
-[PHRASE](#165-phrases) library, down to the clip that works on the steps there
-are) and **FX** (the note effects — on a drum track, the selected lane's, so
-the map shows them under DRUM LANE). A Conductor
+parameters), **SEQ** (the sequence) and **FX** (the note effects — on a drum
+track, the selected lane's, so the map shows them under DRUM LANE). A Conductor
 starts on **CLIP**; its **RSPD** group is how the other tracks respond.
 
 The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--grid),
-[Sequencer Effects](#9-sequencer-effects), [STEP](#63-editing-notes), [PHRASE](#165-phrases),
+[Sequencer Effects](#9-sequencer-effects), [STEP](#63-editing-notes),
 [CONFIG, MIX and MACROS](#14-sound--track-config), and
 [AUTOMATION](#10-automation).
 
@@ -1967,122 +1965,68 @@ lane, so they exist only while a note is sounding.
 ## 16.4 Import a MIDI file
 
 **Touch knob 8 on the CLIP or DRUM LANE bank and click the jog** (any track
-except a Conductor, whatever it plays through). Import MIDI fills a clip from a standard MIDI file (`.mid`, `.midi`, `.smf`, `.kar`,
-`.rmi`). Put the file anywhere in your user data folder — the **Files** page of the
-Schwung web manager (`move.local:7700`) uploads there. The notes are copied into
-the clip; the file isn't needed afterwards.
+except a Conductor, whatever it plays through). The MIDI browser fills the clip
+you are on from a standard MIDI file (`.mid`, `.midi`, `.smf`, `.kar`, `.rmi`).
+Keep your MIDI files anywhere in your user data folder — the **Files** page of
+the Schwung web manager (`move.local:7700`) uploads there. The notes are copied
+into the clip; the file isn't needed afterwards. No MIDI files come with dAVEBOx.
 
-Opening the screen **stops playback**, and it stays stopped when you leave.
+**The first time**, the browser shows your user data folder: its folders and
+MIDI files. Click a folder to go into it, or a file to open it. After that the
+browser **opens where you left it** — the same folder, on the same file.
 
-1. **Pick the file.** The browser shows folders and MIDI files only. Back goes up
-   a folder, and Back at the top returns to the bank.
-2. **Pick a part** (files with more than one). Each shows its note count and a
-   miniature of its notes. **Shift + jog click** plays it through the track's own
-   sound; again to stop.
-3. **Set it up on the knobs:**
-   - **Knob 1, Start** — the bar of the file to start from (the jog moves it too).
-   - **Knob 2, Bars** — how many bars land in the clip.
-   - **Knob 3, Grid** — the clip's step grid, 1/32 to a whole note. A finer grid holds
-     fewer bars: 1/16 holds 16 bars of 4/4, 1/8 holds 32. It starts on the finest
-     grid (not below 1/16) that holds the whole part.
-   - **Knob 4, To** — the destination: the track's current clip, or any empty clip.
+**Turn the jog** to step through the folder: the list comes up while you turn
+and goes away half a second after you stop. At the top, `..` goes up a folder;
+a folder (`NAME/`) goes in. Each file shows its length in bars, and `DRM` if it
+is all drums. **Every file plays as you land on it**, in place of what the track
+plays: in time with the song while the track is playing, otherwise on its own.
+**Shift + jog click** mutes and unmutes that (the notes on the screen blink while
+it is muted).
 
-   The picture underneath is the whole part; the brackets are what will land, and
-   notes outside them are dotted. Shift + jog click previews from the start bar,
-   looping the bracketed bars. The top right warns about anything that won't land:
-   - **CUT** — notes outside the brackets
-   - **OVER** — past the clip's note limit
-   - **NO PAD** (drum track) — notes no pad plays; left out
-   - **REPLACES** — the destination already has notes
-4. **Jog click imports.** It asks first when notes will be cut or go over the
-   limit, or when the destination already has notes (**Replace clip A?**). One
-   **Undo** takes the whole import back.
+**A file with several parts** (a song with a lead, a bass line and drums) shows
+`NAME>` and its part count. Click it to go in: its parts are laid out like files,
+and each plays as you land on it. `..` or **Back** comes back out.
+
+**The knobs:**
+
+- **Knob 1, Start** — the bar of the file to start from.
+- **Knob 2, Bars** — how many bars land in the clip.
+- **Knob 3, Grid** — the clip's step grid, 1/32 to a whole note. A finer grid
+  holds fewer bars: 1/16 holds 16 bars of 4/4. It starts on the finest grid (not
+  below 1/16) that holds the whole part.
+- **Knob 4, Stretch** — play it at /8, /4, /2, x1, x2, x4 or x8 of its length.
+  The grid moves with it.
+- **Knob 5, Oct** and **knob 6, Semi** — move it up or down (three octaves, or
+  eleven semitones).
+- **Knob 7, Scale** — **On** folds every note into your project's key and scale
+  (a note between two scale notes goes up); **Off** plays it as written. Oct and
+  Semi move the notes first, so they set where the fold lands.
+
+On a drum track, **knob 5 is Map** instead: where the file's drum sounds go —
+**GM** (the lanes playing their General MIDI notes), **Move** (Move's own kit
+layout) or **Off** (from the lane you are on). The right-hand pads are the
+file's sounds, each in its colour: **hold one** to hear it alone and see where
+every sound goes, and **tap a lane pad** to put it there (again to take it off).
+Up to eight sounds are placed.
+
+The line under the knobs is the file's notes: the brackets are what will land,
+and notes outside them are dotted. The top right says what won't land —
+**CUT** (outside the brackets), **OVER** (past the clip's note limit), **OFF**
+(drum sounds with no lane) — or **REPLACES** when the clip already has notes.
+
+**Jog click loads.** It goes into the clip you are on and replaces it — on a
+drum track, only the lanes a sound goes to; the other lanes keep their notes.
+There is no question first: one **Undo** takes the whole load back.
 
 - Only notes come in — no controllers, pitch bend or program changes.
-- The destination clip's own automation is cleared, so it plays exactly the file's
+- A melodic clip's automation is cleared with it, so it plays exactly the file's
   notes (Undo brings it back with the rest).
 - The file's tempo isn't applied: the notes play at your project's tempo, and bars
   follow the file's time signature.
-- A melodic clip holds up to 512 notes; a drum clip, 512 per pad.
-- On a drum track each note lands on the pad that plays its pitch in that clip.
+- A melodic clip holds up to 512 notes; a drum lane, 512.
+- The transport keeps running while you browse.
 
-## 16.5 Phrases
-
-A library of short starter phrases (one to four bars) to drop into a clip or a
-drum lane. It has its own bank, **PHRASE**, first in SEQ on melodic and drum
-tracks (just left of STEP): its card says PHRASE LIBRARY in corner brackets —
-**click the jog** there to open the library (from the overview, the first click
-holds the card and the second opens it). The bank has no knobs. **Back** from
-the library returns to the card. A Conductor has no PHRASE bank.
-
-- **K1 Type** — the instrument: bass, chords, leads, pads… or BEATS (whole kits
-  of up to eight sounds), kick, snare, hats, cymbals, toms, percussion. A drum
-  track offers the drum types; a melodic track
-  offers everything (a drum phrase then plays notes — see below).
-- **K2 Style** — jump to a genre's phrases, or BASIC (general-purpose phrases
-  with no genre). It shows the style of the phrase you're on.
-- **K3 Time** — play the phrase at /8, /4, /2, x1, x2, x4 or x8 of its length.
-- **K4 Octave** (melodic tracks) — move the phrase up or down to three octaves;
-  you hear it and it loads that way.
-- **Jog** — opens the list of every phrase of the type — BASIC first, then each style — over
-  the page; turn to move through it. It closes half a second after you let go
-  of the jog (or on a click or Back).
-- **Jog click** — load the phrase. It asks first if it would replace notes
-  (**Replace clip A?**); one **Undo** takes it back.
-- **Shift + jog click** — stop or start the preview. **Back** — leave with
-  nothing changed.
-
-**You hear each phrase as you choose it**, in place of what the track plays: in
-time with the song when the transport runs and the track is playing its clip,
-otherwise on its own. Melodic phrases land in your project's key and scale.
-
-**Drum phrases with several sounds** (a closed and an open hat, a snare and a
-clap…) let you choose where each sound goes:
-
-- **On a drum track** the right-hand pads are the phrase's sounds, each in its
-  own colour (footer: RTPAD SOUND). **Hold one** — you hear it alone and a panel
-  lists every sound with its pad — and **tap lane pads on the left** to put it
-  there (LFTPD SET); tap a lane again to take it off. Let go when done. The lane
-  pads always play, so you can tap around to find the right one first.
-- **On a melodic track** hold **K5 Voice**: the panel shows each sound and its
-  note; turn to a sound and tap a pad for its note (again: off).
-
-Nothing moves on to the next sound by itself, and every change is heard at once.
-Where the sounds go at first is the **Phrase Map** setting (dAVEBOx menu): **Off**
-puts a sound only on the lane you opened on or on an empty lane — never on a lane
-that has notes — so nothing of yours is replaced unless you put a sound there;
-**GM** puts each sound on the lane playing its General MIDI note (kick on 36, snare
-on 38…); **Move** follows the layout of Move's own drum kits. Beats follow GM when
-it is Off. Each lane that has a sound lights in that sound's colour, matching its
-pad on the right (a lane with several cycles through them); the other lanes look
-as usual.
-
-Loading a melodic phrase replaces the clip and clears its automation, like
-[Import MIDI](#164-import-a-midi-file); a drum phrase changes only the lanes it
-uses. The screen remembers where you were on each track.
-
-dAVEBOx comes with a built-in library of about 1,100 phrases, chosen to be representative of
-each style and its genres — a style with a wide range gets more, a narrow one fewer: whole-kit
-beats, single drums (kick, snare, hats, cymbals, toms, percussion — many played by real drummers)
-and melodic parts (bass, chords, arps, leads, pads, synth FX, sequences, keys, guitar),
-across BASIC plus these styles: AMBIENT, BREAKS, COUNTRY, DARKSYN, DISCO, DNB, HIPHOP,
-HOUSE, INDIE, JAZZ, NEW WAVE, POP, REGGAE, RNB, ROCK, TECHNO, TRANCE and WORLD. Each style
-has phrases of its own and of its genres — HOUSE takes in acid and garage, BREAKS electro
-and hardcore, ROCK blues, punk and metal, RNB soul and funk, NEW WAVE goth, darkwave and
-synthwave, DARKSYN EBM and industrial, WORLD Latin and afrobeat, REGGAE dub, and so on. Phrases play with their style's groove: its swing, the pushes and
-drags of each part, ghost notes, and in trap the fast hat rolls.
-
-A phrase's name starts with its genre (GOTH, HOUSE — none for BASIC), then says what it
-plays: the pattern (4FLR, BKBT, 8THS OPEN, TLINE), the chords as scale degrees (1-6-3-7), or
-the line's shape (OCTAVE 8THS, UP 16THS); FILL when it ends in a fill, ROLL for a hat roll,
-SW or SHUF when it swings, LV when a drummer played it. Longer words are shortened to fit.
-
-Your own phrase files go in `davebox-phrases/`
-in your user data folder (one `<type>.json` per instrument type); they are listed after
-the built-in ones — or instead of them, for a file marked `"replace": true`.
-Credits for the phrases adapted from open datasets are in the module's `phrases/CREDITS.md`.
-
-## 16.6 Recording audio
+## 16.5 Recording audio
 
 dAVEBOx records MIDI, not sound. To record the Move's audio output to a WAV file,
 use the **Quantized Sampler** built into Schwung: hold **Shift**, touch the **Volume** knob and
@@ -2113,7 +2057,6 @@ see [Track settings](#174-track-settings) below.
 | Launch | When a launched clip or scene actually starts — at once (Now) or on the next boundary. At 1-bar it starts from its beginning; otherwise in step with the song ([§11.1](#111-launching-clips)) | Now, 1/16, 1/8, 1/4, 1/2, 1-bar | Now |
 | Beat Marks | Dim markers on the step buttons at 1, 5, 9, 13 | On, Off | On |
 | Bank Map on Lock | Whether the bank column comes up while the jog walks the banks from the bank view (or the session mixer card) — see [§3.6](#36-parameter-banks). The overview always shows it | On, Off | On |
-| Phrase Map | Where a drum phrase's sounds go at first — see [§16.5](#165-phrases) | Off, GM, Move | Off |
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Projects... | The project picker — see [Projects](#175-projects) | action | — |
 | Save state / Load state | Save or restore a named snapshot — see [§17.3](#173-snapshots) | action | — |

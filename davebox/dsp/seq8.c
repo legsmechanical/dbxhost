@@ -932,7 +932,8 @@ typedef struct {
 #define LRS_SET(tr, s)  ((tr)->live_recorded_steps[(s)>>3] |=  (uint8_t)(1u<<((s)&7)))
 #define LRS_TEST(tr, s) ((tr)->live_recorded_steps[(s)>>3] &   (1u<<((s)&7)))
 
-/* The phrase-library preview: a phrase swapped into one clip, or into one or
+/* The MIDI browser's in-time preview (it began as the phrase library's): a
+ * part swapped into one clip, or into one or
  * several drum lanes, in place of what they hold, on the next beat, and the
  * originals put back when the preview ends. `held` are the lanes the phrase is
  * in now, each with its original in `backup`; `staged` the phrase waiting for
@@ -1451,8 +1452,8 @@ typedef struct {
      * double-hit Move's injected pad). Distinct from the real pad-drop bug:
      * a 0xFF here is deliberate, so the DROP diagnostic skips it. */
     uint8_t  corun_left_silent;
-    /* The phrase library's browser owns a drum track's right-hand pads (they
-     * are its sounds): no velocity zone, Note Repeat or preview hit from them,
+    /* The MIDI browser owns a drum track's right-hand pads (they are a
+     * file's sounds): no velocity zone, Note Repeat or preview hit from them,
      * while the lane pads play as always. 36th padmap token. */
     uint8_t  drum_right_inert;
 

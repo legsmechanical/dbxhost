@@ -24,7 +24,6 @@ import { SCALE_NAMES } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
-import { pbMapMode, setPbMapMode, PB_MAP_MODES } from './ui_phrase_browser.mjs';
 import { bankViewMapOn, setBankViewMapOn } from './ui_prefs.mjs';
 import { saveState, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
@@ -192,16 +191,6 @@ function buildGlobalMenuItems() {
             get: function() { return bankViewMapOn(); },
             set: function(v) { setBankViewMapOn(v); forceRedraw(); },
             onLabel: 'On', offLabel: 'Off'
-        }),
-        /* The phrase library's drum placement (Josh, 2026-09-24): where a drum
-         * phrase's sounds go — Off (the lane opened on, empty lanes), GM (the
-         * lanes playing their General MIDI notes) or Move (Move's kit layout).
-         * In the launch group, beside Beat Marks (device-sync only). */
-        createEnum('Phrase Map', {
-            get: function() { return pbMapMode(); },
-            set: function(v) { setPbMapMode(v); },
-            options: PB_MAP_MODES,
-            format: function(v) { return ({ off: 'Off', gm: 'GM', move: 'Move' })[v] || 'Off'; }
         }),
         createDivider(),
         createEnum('MIDI In', {
