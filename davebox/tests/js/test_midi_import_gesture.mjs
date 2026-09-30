@@ -321,6 +321,9 @@ async function main() {
         assert(/\/data\/UserData\n\/data\/UserData\/song\.mid\n/.test(PREFS[prefs.MIDI_PLACE_PATH] || ''), 'place ' + JSON.stringify(PREFS[prefs.MIDI_PLACE_PATH]));
         openImport(1);
         assert(!mi().root && mi().items[mi().idx].label === 'song', 'reopened on ' + JSON.stringify(mi().items[mi().idx]));
+        /* a multi-part file has nothing to hear: its list does not drop away */
+        letGo();
+        assert(mi().list.up, 'the list dropped on a row with nothing to hear');
     });
 
     step('⭐ the current clip has notes: REPLACES in the header, and the click loads with no confirm', () => {
