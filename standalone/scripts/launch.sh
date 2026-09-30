@@ -126,8 +126,19 @@ setsid --wait bash -c '
   # forget, and a new call site inherits it. Every pause/resume goes through
   # here; test_boot_target_second_door.sh fails the build if a call goes
   # straight to the helper again (a bare HEAL pause/resume).
+  # ⚠ STOCK ABLETONOS HAS NO SYSTEMD. There /etc/init.d/move starts MoveLauncher
+  # ONCE with start-stop-daemon and nothing restarts it, so there is no
+  # watchdog to stand down: once the sweep kills the stock stack it stays down,
+  # and the caller (the stock launch-standalone.sh) restarts Move itself when
+  # we exit. Asking the helper anyway ran systemctl, got "not found", and the
+  # launcher refused to start -- on every stock Move (measured on AbletonOS
+  # v3.18, firmware 2.1.0). Same path as the SYSTEMCTL constant in the helper.
   unit() {
     if at_boot; then echo "boot entry: skipping move-launcher $1 (the unit is us)"; return 0; fi
+    if [ ! -x /usr/bin/systemctl ]; then
+      echo "no systemd (stock AbletonOS): nothing supervises MoveLauncher -- skipping move-launcher $1"
+      return 0
+    fi
     $HEAL "$@"
   }
 

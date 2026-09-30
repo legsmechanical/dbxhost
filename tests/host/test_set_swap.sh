@@ -205,6 +205,29 @@ check "exit twice: still unbound"           test "$(phase)" = "none (not bound)"
 check "exit twice: user's sets intact"      test -f "$SETS_DIR/$U1/Song.abl"
 rm -rf "$T"
 
+# ---- 3b. EXIT BEFORE ANY ENTER — a refused launch -------------------------------
+# refuse() calls `exit` unconditionally. With no marker it used to read index
+# "0", find no settings mode, and write currentSongIndex = 0 into MOVE'S OWN
+# Settings.json: stock Move then reopened the set in slot 0 (hardware,
+# 2026-09-30, a launch refused on stock AbletonOS).
+mk_env
+cp "$SETTINGS_JSON" "$T/settings.before"
+run exit
+check "3b exit before enter: Move's Settings.json untouched" cmp -s "$SETTINGS_JSON" "$T/settings.before"
+check "3b exit before enter: user's sets intact"            test -f "$SETS_DIR/$U1/Song.abl"
+rm -rf "$T"
+
+# ---- 3c. A LATER exit (refusal) after a finished session ----------------------
+# A completed session leaves the marker at "none 0" with no mode. The user then
+# opens another set in stock Move; a later refused launch must not undo that.
+mk_env
+run enter
+run exit
+sed -i.bak 's/"currentSongIndex": [0-9]*/"currentSongIndex": 5/' "$SETTINGS_JSON"
+run exit
+check "3c later exit: the set the user opened since is kept" grep -q '"currentSongIndex": 5' "$SETTINGS_JSON"
+rm -rf "$T"
+
 # ---- 4. Crash mid-session, then recover --------------------------------------
 # The marker says sa-live and the mount is still up: what a kill -9 leaves.
 mk_env
@@ -428,5 +451,11 @@ rm -rf "$T"
 grep -B1 'project-cmd.sh" new-at 0 "Project 1"' standalone/scripts/launch.sh | head -n 1 \
     | grep -qF 'SETTINGS_JSON="$DBX_DIR/settings/Settings.json"'
 check "9d launch.sh seeds the first project against the session's settings" test $? = 0
+
+# No systemd (stock AbletonOS): nothing supervises MoveLauncher, so unit() must
+# not ask the helper -- which runs systemctl and fails, refusing every launch.
+awk '/^  unit\(\) \{/,/^  \}/' standalone/scripts/launch.sh | grep -q 'if \[ ! -x /usr/bin/systemctl \]; then' \
+    && awk '/^  unit\(\) \{/,/^  \}/' standalone/scripts/launch.sh | grep -A3 '! -x /usr/bin/systemctl' | grep -q 'return 0'
+check "9e launch.sh unit() skips pause/resume where there is no systemd" test $? = 0
 
 [ "$fails" = 0 ] && echo "PASS: set-swap" || { echo "FAIL: set-swap" >&2; exit 1; }
