@@ -40,6 +40,7 @@ mk() {  # a fresh device. $1 = heal: blessable | none | stuck (cannot unbind)
     mkdir -p "$D/projects/p1/Move-Set-p1" "$D/davebox-exports" "$D/config" "$D/sets/library" \
              "$D/sets/template/t" "$D/scripts" "$D/modules/chain" "$D/shadow" "$D/__pycache__"
     echo "song" > "$D/projects/p1/Move-Set-p1/Song.abl"
+    mkdir -p "$D/templates/default"; echo '{"tracks": []}' > "$D/templates/default/Song.abl"
     echo '[]' > "$D/projects.json"; echo bundle > "$D/davebox-exports/a.ablbundle"
     for f in daves-seen.txt daves-window.txt bank-view-map.txt jog-touch-card.txt seq-follow.txt midi-mute.txt midi-map.txt parallel-modules.txt active_set.txt \
              sa_master_volume shadow_config.json; do echo "mine $f" > "$D/$f"; done
@@ -116,21 +117,21 @@ grep -q "nothing was changed" "$T/out" && ! grep -q "is uninstalled" "$T/out" &&
 
 echo "--run on a full install (Sets and settings bound, helper blessable):"
 mk blessable; bound; settings_bound
-for f in projects/p1/Move-Set-p1/Song.abl projects.json davebox-exports/a.ablbundle daves-seen.txt \
+for f in projects/p1/Move-Set-p1/Song.abl templates/default/Song.abl projects.json davebox-exports/a.ablbundle daves-seen.txt \
          daves-window.txt bank-view-map.txt jog-touch-card.txt seq-follow.txt midi-mute.txt midi-map.txt parallel-modules.txt active_set.txt sa_master_volume \
          shadow_config.json config/tts.json sets/sa_song_index quarantine/seq8sa-1-2.json \
          sets/quarantine/20260921/orphan/Song.abl settings/Settings.json; do cksum "$F/dbx/$f"; done > "$T/kept.before"
 run "$SH" --run
 [ "$RC" = 0 ] && ok "exit 0" || { bad "rc=$RC"; sed 's/^/      /' "$T/out"; }
 [ "$(cat "$F/done" 2>/dev/null)" = 0 ] && ok "done file says 0" || bad "done=$(cat "$F/done" 2>/dev/null)"
-for f in projects/p1/Move-Set-p1/Song.abl projects.json davebox-exports/a.ablbundle daves-seen.txt \
+for f in projects/p1/Move-Set-p1/Song.abl templates/default/Song.abl projects.json davebox-exports/a.ablbundle daves-seen.txt \
          daves-window.txt bank-view-map.txt jog-touch-card.txt seq-follow.txt midi-mute.txt midi-map.txt parallel-modules.txt active_set.txt sa_master_volume \
          shadow_config.json config/tts.json sets/sa_song_index quarantine/seq8sa-1-2.json \
          sets/quarantine/20260921/orphan/Song.abl settings/Settings.json; do cksum "$F/dbx/$f" 2>&1; done > "$T/kept.after"
 cmp -s "$T/kept.before" "$T/kept.after" && ok "every kept file is byte-identical, in place" || bad "kept files changed: $(diff "$T/kept.before" "$T/kept.after")"
 left="$(cd "$F/dbx" && ls -A | LC_ALL=C sort | tr '\n' ' ')"
 want="$(printf '%s\n' active_set.txt config bank-view-map.txt daves-seen.txt daves-window.txt davebox-exports jog-touch-card.txt parallel-modules.txt \
-        seq-follow.txt midi-mute.txt midi-map.txt projects projects.json quarantine sa_master_volume sets settings shadow_config.json | LC_ALL=C sort | tr '\n' ' ')"
+        seq-follow.txt midi-mute.txt midi-map.txt projects projects.json quarantine sa_master_volume sets settings shadow_config.json templates | LC_ALL=C sort | tr '\n' ' ')"
 [ "$left" = "$want" ] \
     && ok "dbx-host holds exactly the keep-list" || bad "left: $left"
 [ "$(ls -A "$F/dbx/sets" | LC_ALL=C sort | tr '\n' ' ')" = "quarantine sa_song_index " ] && ok "sets/ holds only sa_song_index and quarantine/" || bad "sets: $(ls -A "$F/dbx/sets")"

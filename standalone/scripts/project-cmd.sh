@@ -89,6 +89,11 @@ export DBX_PY_DIR
 export PYTHONDONTWRITEBYTECODE=1
 OUT_JSON="$DBX_DIR/projects.json"
 TEMPLATE_DIR="$DBX_DIR/sets/template"
+# Project templates the user saved (Set as Template): a copy of a project's
+# setup, used to start new ones — project_template.py. Not the build-time
+# TEMPLATE_DIR above, which is the blank song every New starts from without one.
+TEMPLATES_DIR="${TEMPLATES_DIR:-$DBX_DIR/templates}"
+export TEMPLATES_DIR
 
 die() { printf 'project-cmd: ERROR: %s\n' "$*" >&2; exit 1; }
 
@@ -495,7 +500,10 @@ if os.path.isdir(projects_dir):
 projects.sort(key=lambda x: (x["index"] is None, x["index"] if x["index"] is not None else 0, x["name"]))
 tmp = out + ".tmp"
 with open(tmp, "w") as f:
-    json.dump({"current": cur, "projects": projects}, f)
+    # The saved templates, for the picker's New (project_template.py).
+    import project_template as pt
+    json.dump({"current": cur, "projects": projects,
+               "templates": pt.list_templates(os.environ["TEMPLATES_DIR"])}, f)
 os.replace(tmp, out)
 print("project-cmd: %d project(s) listed" % len(projects))
 PYEOF
@@ -891,12 +899,30 @@ do_new_at() { # index [name]
     _uuid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())')"
     _name="${2:-Project $(($1 + 1))}"
     _song="$PROJECTS_DIR/$_uuid/$(song_folder_for "$_uuid")"
+    # FROM A TEMPLATE (the caller sets DBX_TEMPLATE, the module's state-file
+    # prefix DBX_STATE_PREFIX, and optionally DBX_HAVE_MODULES / DBX_MISSING_OUT):
+    # the template's song, and none of New's own dice — the template decides the
+    # instruments and the key. A template that cannot be read is no template:
+    # the project is born blank, never not at all.
+    _tsong=""
+    if [ -n "${DBX_TEMPLATE:-}" ] && [ -n "${DBX_STATE_PREFIX:-}" ]; then
+        _tsong="$(python3 "$DBX_PY_DIR/project_template.py" song "$TEMPLATES_DIR" "$DBX_TEMPLATE" 2>/dev/null || true)"
+        [ -n "$_tsong" ] || printf 'project-cmd: template "%s" unusable — a blank project instead\n' "$DBX_TEMPLATE" >&2
+    fi
     mkdir -p "$_song"
-    cp "$_src" "$_song/Song.abl"
-    # Random stock instruments, like Move native does on a new set.
-    # After the copy (there is a file), before normalize (which re-reads it).
-    randomize_instruments "$_song/Song.abl"
-    seed_random_key "$PROJECTS_DIR/$_uuid"
+    if [ -n "$_tsong" ]; then
+        cp "$_tsong" "$_song/Song.abl"
+        python3 "$DBX_PY_DIR/project_template.py" apply "$TEMPLATES_DIR" "$DBX_TEMPLATE" \
+            "$PROJECTS_DIR/$_uuid" "$DBX_STATE_PREFIX" "${DBX_HAVE_MODULES:-}" \
+            "${DBX_MISSING_OUT:-/dev/null}" \
+            || printf 'project-cmd: template state not applied — the project starts blank there\n' >&2
+    else
+        cp "$_src" "$_song/Song.abl"
+        # Random stock instruments, like Move native does on a new set.
+        # After the copy (there is a file), before normalize (which re-reads it).
+        randomize_instruments "$_song/Song.abl"
+        seed_random_key "$PROJECTS_DIR/$_uuid"
+    fi
     set_project_name "$PROJECTS_DIR/$_uuid" "$_name"
     clear_full_velocity
     python3 -c "import os,sys
@@ -1479,6 +1505,35 @@ _require_own_tree() { # verb
     _not_native "$1" "$LIBRARY_DIR"
 }
 
+# ---- project templates (Set as Template / Clear Template) ------------------
+# The module saves the open project first (its state, sidecar and chains), then
+# writes the template sidecar and calls this. Move's song is flushed here.
+do_template_set() { # id entry-or-project-id ui.json prefix
+    [ -n "${1:-}" ] || die "template-set needs an id"
+    [ -n "${3:-}" ] && [ -n "${4:-}" ] || die "template-set needs the module's sidecar and state prefix"
+    _tp="$(resolve_open_project "${2:-}")"
+    [ -n "$_tp" ] && [ -d "$PROJECTS_DIR/$_tp" ] || die "template-set: no project for '${2:-}'"
+    save_song
+    _tname="$(python3 - "$PROJECTS_DIR/$_tp" <<'PYEOF' 2>/dev/null || true
+import os, sys
+sys.path.insert(0, os.environ["DBX_PY_DIR"])
+import project_name as pn
+print(pn.name_of(sys.argv[1]) or "")
+PYEOF
+)"
+    python3 "$DBX_PY_DIR/project_template.py" set "$TEMPLATES_DIR" "$1" \
+        "$PROJECTS_DIR/$_tp" "$3" "$4" "$_tname" || die "template-set failed"
+    do_list >/dev/null
+    printf 'project-cmd: template "%s" taken from %s\n' "$1" "$_tp"
+}
+
+do_template_clear() { # id
+    [ -n "${1:-}" ] || die "template-clear needs an id"
+    python3 "$DBX_PY_DIR/project_template.py" clear "$TEMPLATES_DIR" "$1" || die "template-clear failed"
+    do_list >/dev/null
+    printf 'project-cmd: template "%s" cleared\n' "$1"
+}
+
 case "${1:-}" in
     list)   do_list ;;
     new) _require_own_tree new; shift; do_new "${1:-}" ;;
@@ -1495,5 +1550,7 @@ case "${1:-}" in
     rename) _require_own_tree rename; shift; do_rename "${1:-}" "${2:-}" ;;
     repair-indices) _require_own_tree repair-indices; do_repair_indices ;;
     fix-order) _require_own_tree fix-order; shift; do_fix_order "${1:-}" ;;
-    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>|library-sync|repair-indices|fix-order [uuid]" ;;
+    template-set) _require_own_tree template-set; shift; do_template_set "${1:-}" "${2:-}" "${3:-}" "${4:-}" ;;
+    template-clear) _require_own_tree template-clear; shift; do_template_clear "${1:-}" ;;
+    *) die "usage: project-cmd.sh list|new <name>|new-at <index> [name]|copy <src> <dst>|delete <index>|switch <index>|color <index> <n>|rename <index> <name>|library-sync|repair-indices|fix-order [uuid]|template-set <id> <entry-or-project> <ui.json> <prefix>|template-clear <id>" ;;
 esac
