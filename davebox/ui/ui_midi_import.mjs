@@ -51,7 +51,7 @@ import { showActionPopup } from './ui_persistence.mjs';
 import { automationClearClipQueued } from './ui_automation.mjs';
 import { midiPlace, setMidiPlace, midiMuted, setMidiMuted, midiMap, setMidiMap } from './ui_prefs.mjs';
 import {
-    drawKitHeader, drawKitList, drawKitHintRow, drawKitBankPage, kitUseLayout, enumOverlayWouldDraw,
+    drawKitList, drawKitBankPage, kitUseLayout, enumOverlayWouldDraw,
     mvPrint, mvWidth, MV_FOOTER_Y,
 } from './ui_movy.mjs';
 import { buildFilepathBrowserState, refreshFilepathBrowser } from '/data/UserData/schwung/shared/filepath_browser.mjs';
@@ -773,10 +773,13 @@ export function miRender(touchedIdx, shift) {
     if (!MI) return;
     clear_screen();
     if (MI.root) {
-        drawKitHeader('IMPORT MIDI', false);
-        const rows = listRows();
-        drawKitList(rows, MI.idx, { emptyMsg: 'NO MIDI FILES' });
-        drawKitHintRow(MV_FOOTER_Y, [['JOG', 'FOLDER'], ['CLK', 'OPEN']]);
+        /* the first open looks like the jog list (Josh, 2026-09-29): the same
+         * header, boxed small-font list and footer place */
+        kitUseLayout('bank');
+        drawKitBankPage(new Array(8).fill({ kind: 'blank', label: '' }), { headerText: listTitle(),
+                        headerRight: MI.items.length ? position() : '', touchedIdx: -1,
+                        footer: [['JOG', 'FOLDER'], ['CLK', 'OPEN']] });
+        drawList();
         return;
     }
     if (!MI.cur) {
