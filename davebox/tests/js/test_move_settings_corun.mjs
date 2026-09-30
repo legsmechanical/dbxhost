@@ -217,6 +217,7 @@ step('⭐ Note/Session from Move Settings lands on SESSION VIEW', () => {
 });
 step('⭐ Note/Session from Move\'s instrument co-run lands on SESSION VIEW (not back in the sound menu)', () => {
     S.sessionView = false; S.trackRoute[2] = 1;
+    S.activeTrack = 2;       /* the sound re-entry only opens for the ACTIVE track */
     corun.enterMoveNativeCoRun(2, 'sound'); ticks(2);
     assert(S.moveCoRunTrack === 2, 'rig: not in co-run');
     noteSession(); ticks(1);
@@ -228,13 +229,15 @@ step('⭐ Note/Session from Move\'s instrument co-run lands on SESSION VIEW (not
     assert(!snd.soundOpen(), 'the sound menu re-opened over Session View');
 });
 step('control: leaving the instrument co-run any other way still returns to the sound menu', () => {
-    S.sessionView = false; S.trackRoute[2] = 1;
+    S.sessionView = false; S.trackRoute[2] = 1; S.activeTrack = 2;
     corun.enterMoveNativeCoRun(2, 'sound'); ticks(2);
     corun.exitMoveNativeCoRun();
     onReturn('move_native', null);
     assert(!S.sessionView, 'a non-Note/Session exit switched to session view');
     assert(S.pendingSoundEnterTrack === 2, 'the return to the sound menu was lost: ' + S.pendingSoundEnterTrack);
     ticks(3);
+    assert(await_snd.soundOpen(), 'control: the sound menu did not re-open (the rig cannot see a re-entry)');
+    await_snd.soundExit(); S.activeTrack = 0;
 });
 
 step('control: the entry needs a chosen project', () => {
