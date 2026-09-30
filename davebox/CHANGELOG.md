@@ -44,6 +44,13 @@ the section into a versioned heading at release time.
 - **Back works in the snapshot picker.** It had been ignored there.
 - **A new project's track 1 is a drum track again.** It could open with its
   pads in the chromatic layout instead of drum mode.
+- **Swing no longer drops or sticks notes.** With swing on, some notes of a
+  pattern could go missing, a note could keep sounding after its clip
+  stopped, and drum hits could lose their note-offs: the MIDI delay's
+  retrigger (on by default) was deleting what swing was holding back.
+- **Stopping the transport silences a stuck note on a Schwung instrument.**
+  A note an instrument kept holding survived Stop; Stop now also sends
+  All Notes Off to every Schwung instrument a track plays.
 
 ## [0.0.7] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Fixed

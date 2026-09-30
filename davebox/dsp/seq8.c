@@ -2047,6 +2047,22 @@ static inline void looper_mark_active(seq8_instance_t *inst, uint8_t track,
 static int perf_apply(seq8_instance_t *inst, uint8_t tr_idx,
                       uint8_t status, uint8_t *d1, uint8_t *d2);
 
+/* The fire time of the LAST swing-parked note-on for this channel + pitch in
+ * events[0..n), or 0 if there is none (fire times are sample counts, never 0
+ * for a parked event). The retrigger drains use it so a note-off they send
+ * cannot overtake its own parked note-on: sent while swing is not deferring (an
+ * on-beat, a live tap) it would go out at once and the note-on after it,
+ * leaving the note with no off (review of the swing drain fix, 2026-09-30). */
+static uint64_t pfx_parked_on_at(const pfx_event_t *ev, int n, uint8_t ch, uint8_t note) {
+    uint64_t at = 0;
+    int i;
+    for (i = 0; i < n; i++)
+        if ((ev[i].flags & PFX_EV_BYPASS_SWING) && ev[i].msg[0] == (uint8_t)(0x90 | ch) &&
+                ev[i].msg[1] == note && ev[i].msg[2] > 0 && ev[i].fire_at > at)
+            at = ev[i].fire_at;
+    return at;
+}
+
 static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
     /* SEQ ARP is the last chain stage. Any note-on/off coming out of the
      * upstream stages (NOTE FX → HARMZ → MIDI DLY immediate emit and queued
@@ -2314,10 +2330,20 @@ static void send_panic(seq8_instance_t *inst) {
     for (s = 0; s < SEQ8_CHAIN_SLOTS; s++) {
         play_fx_t *fx = slot_pfx[s];
         if (!fx) continue;
-        if (fx != route_pfx[ROUTE_SCHWUNG] && !slot_hot[s]) continue;
+        if (fx == route_pfx[ROUTE_SCHWUNG] || slot_hot[s])
+            for (ch = 0; ch < 16; ch++)
+                for (n = 0; n < 128; n++)
+                    pfx_send(fx, (uint8_t)(0x80 | ch), (uint8_t)n, 0);
+        /* ...and All Notes Off to EVERY routed slot, swept or not (Josh,
+         * 2026-09-30: a dspreset voice "Kept sounding after transport stop"
+         * though the note-off sweep above reached its slot). Per-note offs
+         * cannot free a voice the module holds for its own reasons; CC 123
+         * releases every voice it has, and at 16 messages it costs nothing.
+         * Never on ROUTE_MOVE — see the note at the end. Straight to the
+         * output (pfx_emit): pfx_send's looper branch swallows everything on a
+         * track while the looper LOOPS, and a CC has no pairing to keep. */
         for (ch = 0; ch < 16; ch++)
-            for (n = 0; n < 128; n++)
-                pfx_send(fx, (uint8_t)(0x80 | ch), (uint8_t)n, 0);
+            pfx_emit(fx, (uint8_t)(0xB0 | ch), 123, 0);
     }
     if (route_pfx[ROUTE_EXTERNAL]) {
         /* 128 note-offs/channel would overflow the shim's 64-packet send ring;
@@ -2831,17 +2857,37 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
      * still-pending note-off events are harmless. Drain runs BEFORE the new
      * note's immediate emission below so we don't silence what we're about
      * to play. */
+    /* ⚠⚠ SWING SHARES THIS QUEUE. Swing parks off-beat note-ons and note-offs
+     * here too (PFX_EV_BYPASS_SWING); they are not echoes, so they STAY. The
+     * old drain zeroed the whole ring AFTER sending its offs through pfx_send,
+     * where swing re-queued them into that very ring — so on a swung track
+     * every note-on deleted the parked note-offs (stuck notes) and the parked
+     * note-ons of other notes (most of a pattern went silent), and
+     * delay_retrig is on by default (Josh, 2026-09-30: mngk, 22% swing). The
+     * offs are collected first and the ring compacted BEFORE they are sent,
+     * so a re-queued off lands in the kept ring, on the swing grid. */
     if (fx->delay_retrig && fx->event_count > 0) {
-        int qi;
+        uint8_t offs[MAX_PFX_EVENTS][2];
+        int qi, k = 0, no = 0;
         for (qi = 0; qi < fx->event_count; qi++) {
             pfx_event_t *ev = &fx->events[qi];
             uint8_t st = ev->msg[0] & 0xF0;
+            if (ev->flags & PFX_EV_BYPASS_SWING) { fx->events[k++] = *ev; continue; }
             if (st == 0x90 || st == 0x80) {
-                uint8_t off = (uint8_t)(0x80 | (ev->msg[0] & 0x0F));
-                pfx_send(fx, off, ev->msg[1], 0);
+                offs[no][0] = (uint8_t)(0x80 | (ev->msg[0] & 0x0F));
+                offs[no][1] = ev->msg[1];
+                no++;
             }
         }
-        fx->event_count = 0;
+        fx->event_count = k;
+        for (qi = 0; qi < no; qi++) {
+            /* Behind its own parked note-on, if one is kept; bypass-flagged
+             * like it, and pfx_q_insert puts it AFTER equal times. The ring
+             * cannot be full here: k + no is at most the old count. */
+            uint64_t at = pfx_parked_on_at(fx->events, k, (uint8_t)(offs[qi][0] & 0x0F), offs[qi][1]);
+            if (at) pfx_q_insert(fx, at, offs[qi][0], offs[qi][1], 0, PFX_EV_BYPASS_SWING);
+            else    pfx_send(fx, offs[qi][0], offs[qi][1], 0);
+        }
     }
 
     /* Store active-note record. */
