@@ -294,3 +294,32 @@ Bugs:
 - Per-track memory: in memory only, a convenience for this session (a drums folder on a drum track, a
   melodic one on a piano track). Not saved with the project or the device. midi-place.txt goes.
 - Step buttons blocked inside the browser, lit dim white to say so.
+
+## HANDOFF — state at 2026-09-30 (before a session compaction)
+
+**Branch / worktree:** `follow-import` in `.worktrees/follow-import` (off `device-sync`, `main` merged
+in; `main` had not moved at the last check). The main checkout is NOT touched (other work there).
+
+**Done and device-verified:** Phase 1 (global Seq Follow, Left/Right+Play, overview glyph) and
+Phase 2 (Import MIDI on K8) — `device-sync` was fast-forwarded to include them. The MIDI browser
+(Phase 3, round 2: card / list / confirm layers, dAVEBOx's knobs and dialogs, per-track memory,
+blocked steps, Res knob, BPM on K8) — Josh: "all good" on the device, except the knob rings.
+
+**Committed, NOT yet deployed/verified:** the knob-ring fix (K1/K2/K5/K6 were dark: plain value
+cells need `ringNorm`). Deploy: `./standalone/scripts/install-sa.sh --force` from the worktree
+(Josh runs it; the permission check blocks the agent). After Josh confirms the rings,
+fast-forward `device-sync` to `follow-import`.
+
+**Next request (in progress, nothing written yet):** the browser LIST layer's look —
+- keep the boxed frame (NOT full screen — Josh withdrew that);
+- names in the regular (larger, mixed-case host) font, bar counts / indicators in the movy font;
+- long names scroll so the whole name can be read (a marquee on the selected row; the shared
+  host has `src/shared/text_scroll.mjs` `createTextScroller`, used by `menu_layout.mjs`).
+⚠ OPEN: Josh's last words were "keep the frame like you have now with the smaller font" — confirm
+whether names stay in the small font or move to the regular font inside the frame.
+
+**Tools:** `davebox/tools/preview_midi_import.mjs` renders the real screens (incl. an 82-file
+folder); `tools/mockup_midi_browser2.mjs` the approved round-2 mockups. Gesture test:
+`davebox/tests/js/test_midi_import_gesture.mjs` (35 steps). Device checklists (db-backed):
+pass 1 https://claude.ai/artifact/WrsQ9ULrhNPKo8MoZiKw1o, pass 2
+https://claude.ai/artifact/XweaKXeVMakrC6JbeNaU9C (unused — Josh said "all good").
