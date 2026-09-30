@@ -242,3 +242,16 @@ Melodic `tN_cC_import`; drum whole-kit `tN_lanes_import`. Clip automation cleare
 
 **Kept from import:** SMF parsing (formats 0/1/2, RMI, SMPTE), size/part/note limits and their
 warnings, Grid, Start, Bars, drum destination-pad planning, the one-write-then-verify commit.
+
+### Build decisions after the design review (2026-09-29)
+
+- The global Phrase Map setting goes (Josh). K5 Map on the drum page is remembered device-wide
+  (`midi-map.txt`, absent = GM).
+- A drum load REPLACES the whole clip: `tN_lanes_import` names all 32 lanes, the unplaced ones with
+  empty bodies (the engine wipes each named lane). No DSP change.
+- The top-level list shows MIDI files as well as folders (the web manager uploads there).
+- Click with the jog list up LOADS a playable row (the approved footer says CLK LOAD).
+- Parse on rest (~120 ms), cache recent parses; at most 8 drum sounds (the engine's in-time preview
+  cap); fold ties go UP (as `xpose_snap`); Oct ±3, Semi ±11.
+- Build order: pure helpers → page + current-clip load → jog list/folders/prefs → preview →
+  pitch/stretch → drums → delete the phrase library → device pass.
