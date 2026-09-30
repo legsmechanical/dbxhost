@@ -1989,8 +1989,10 @@ its list.
 
 - **Knob 1, Start** — the bar of the file to start from.
 - **Knob 2, Bars** — how many bars land in the clip. Never more than the file
-  has from Start, nor than the clip holds at this Grid: 1/16 holds 16 bars of 4/4.
-- **Knob 3, Grid** — the clip's step grid, 1/32 to a whole note.
+  has from Start, nor than the clip holds at this resolution: 1/16 holds 16 bars
+  of 4/4.
+- **Knob 3, Res** — the clip's resolution (its step size), 1/32 to a whole bar,
+  as on the CLIP bank. It doesn't move the notes: each keeps its timing.
 - **Knob 4, Stretch** — play it at /8, /4, /2, x1, x2, x4 or x8 of its length.
 - **Knob 5, Oct** and **knob 6, Semi** — move it up or down (three octaves, or
   eleven semitones).
@@ -1999,7 +2001,7 @@ its list.
   Semi move the notes first, so they set where the fold lands.
 - **Knob 8** shows the file's tempo (BPM), if it has one.
 
-Each new file starts at Start 1, Grid 1/16, Stretch x1 and its own length.
+Each new file starts at Start 1, Res 1/16, Stretch x1 and its own length.
 
 On a drum track, **knob 5 is Map** instead: where the file's drum sounds go —
 **GM** (the lanes playing their General MIDI notes), **Move** (Move's own kit

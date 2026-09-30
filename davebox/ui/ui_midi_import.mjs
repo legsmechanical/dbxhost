@@ -8,12 +8,12 @@
  * tick and drawUI. Three layers, one Back each, as the AUTOMATION bank's:
  *
  *   card      the file you PICKED, playing: its name, n/N (or what will not
- *             land, or REPLACES); K1 Start · K2 Bars · K3 Grid · K4 Stretch as
+ *             land, or REPLACES); K1 Start · K2 Bars · K3 Res · K4 Stretch as
  *             the bank page's top row; one lane of its notes with the window
  *             bracketed and the playhead; K5 Oct · K6 Semi · K7 Scale (a drum
  *             track: K5 Map) and K8 the file's BPM as small cells. The knobs
  *             behave as on every bank: a touch NAMES the knob, a list comes up
- *             only on a TURN (Stretch, Map); Grid is the DRUM LANE card's
+ *             only on a TURN (Stretch, Map); Res is the CLIP card's
  *             Resolution cell (a fraction that turns into an arc). Click =
  *             Load; jog = the list; Back = leave (asking first if a file is
  *             picked).
@@ -37,9 +37,9 @@
  * rest keep their notes (Josh, 2026-09-29).
  * ⭑ Each track reopens on its own last file (or folder), in memory only — a
  * drums folder on a drum track, a melodic one on a piano track (Josh,
- * 2026-09-30: "don't overthink it"). A new file starts at Start 1, Grid 1/16,
+ * 2026-09-30: "don't overthink it"). A new file starts at Start 1, Res 1/16,
  * Stretch x1, Bars = its length; Bars never passes the file's end or what the
- * clip holds at that Grid.
+ * clip holds at that resolution.
  * ⭑ The transport is never stopped. Step buttons are blocked (dim white).
  *
  * Decisions are ui_midi_notes.mjs (pure) and ui_midifile.mjs (the parser);
@@ -311,7 +311,7 @@ function closeList() {
 
 const stretchF = () => STRETCH_STEPS[MI.stretch].f;
 
-/* A new file: Start 1, Grid 1/16, Stretch x1, Bars its length (Josh, 2026-09-30). */
+/* A new file: Start 1, Res 1/16, Stretch x1, Bars its length (Josh, 2026-09-30). */
 function setCur(res, partIdx, name, path) {
     const part = res.parts[partIdx];
     const ts = res.timeSig;
@@ -333,7 +333,7 @@ function reassign() {
     MI.assign = defaultAssign(MI.voices, GS.drumLaneNote[MI.track], MI.map, GS.activeDrumLane[MI.track] | 0);
 }
 /* Bars never passes the file's end (from Start), nor what the clip holds at
- * this Grid and Stretch — the two stay linked, as the old import had them. */
+ * this resolution and Stretch — the two stay linked, as the old import had them. */
 function maxBars() {
     const c = MI.cur;
     return Math.max(1, Math.min(maxBarsAt(TPS_VALUES[MI.grid], c.ts, stretchF()),
@@ -768,9 +768,10 @@ function topCells() {
           norm: total > 1 ? (MI.startBar - 1) / (total - 1) : 0 },
         { kind: 'valsq', label: 'Bars', name: 'Length', text: String(MI.bars),
           norm: maxB > 1 ? (MI.bars - 1) / (maxB - 1) : 0 },
-        /* Grid: the DRUM LANE card's Resolution cell (Josh, 2026-09-30) — a
-         * fraction at rest, an arc on the knob while it is touched; no list. */
-        { kind: 'frac', label: 'Grid', name: 'Grid', text: GRID_LABELS[MI.grid], options: GRID_LABELS, sel: MI.grid,
+        /* Res: the clip's Resolution, as the CLIP / DRUM LANE card's Res cell
+         * (Josh, 2026-09-30) — a fraction at rest, an arc on the knob while it
+         * is turned; no list. It sets the step size, never quantizes. */
+        { kind: 'frac', label: 'Res', name: 'Resolution', text: GRID_LABELS[MI.grid], options: GRID_LABELS, sel: MI.grid,
           touchArc: { norm: MI.grid / (GRID_LABELS.length - 1), bip: false } },
         { kind: 'enumsq', label: 'Strch', name: 'Stretch', text: STRETCH_STEPS[MI.stretch].label,
           options: STRETCH_STEPS.map(s => s.label), sel: MI.stretch },
