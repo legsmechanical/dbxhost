@@ -146,7 +146,7 @@ picker([
     { label: 'ACID LINE 1', value: '4Br' },
     { label: 'ACID LINE 2', value: '4Br' },
     { label: 'DUB SUB', value: '8Br' },
-    { label: 'FUNK SONG', value: '3 PT >' },
+    { label: 'FUNK SONG>', value: '3 PT' },
     { label: 'OCTAVES', value: '2Br' },
 ], 2);
 shoot('02-jog-list');
