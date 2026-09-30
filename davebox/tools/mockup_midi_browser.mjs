@@ -83,12 +83,25 @@ function page({ header, right, sub, roll, cells, touched = -1, footer, playhead 
     const lower = touched >= 4 ? cells[touched] : null;
     const topTouched = touched >= 0 && touched < 4 ? touched : -1;
     if (!K.enumOverlayWouldDraw(top, topTouched)) {
-        if (sub) K.mvPrint(Math.floor((128 - K.mvWidth(sub)) / 2), 33, sub, 1);
+        if (sub) K.mvPrint(Math.floor((128 - K.mvWidth(sub)) / 2), 34, sub, 1);
         else if (roll) {
             /* one lane: each note a 2px-tall mark where it falls, its length as its width */
             const px = (t) => 4 + Math.floor(t * 120 / roll.ticks);
-            for (const n of roll.notes) fill_rect(px(n.t), 34, Math.max(2, px(n.t + n.g) - px(n.t) - 1), 2, 1);
-            if (playhead != null) fill_rect(px(playhead), 32, 1, 6, 1);
+            /* the window that will land (Start .. Start+Bars), bracketed as today;
+             * notes outside it dotted */
+            const win = roll.win || { from: 0, to: roll.ticks };
+            for (const n of roll.notes) {
+                const x0 = px(n.t), w = Math.max(2, px(n.t + n.g) - x0 - 1);
+                const inside = n.t >= win.from && n.t < win.to;
+                for (let x = x0; x < x0 + w; x++) for (let y = 35; y < 37; y++)
+                    if (inside || ((x + y) & 1) === 0) set_pixel(x, y, 1);
+            }
+            for (const [cx, dir] of [[px(win.from), 1], [Math.min(123, px(win.to)), -1]]) {
+                fill_rect(cx, 33, 1, 7, 1);
+                fill_rect(dir > 0 ? cx : cx - 2, 33, 3, 1, 1);
+                fill_rect(dir > 0 ? cx : cx - 2, 39, 3, 1, 1);
+            }
+            if (playhead != null) fill_rect(px(playhead), 34, 1, 5, 1);
         }
         for (let k = 4; k < 8; k++) {
             const c = cells[k]; if (!c || c.kind === 'blank') continue;
@@ -122,13 +135,13 @@ picker([
     { label: 'ACID LINE 1', value: '4Br' },
     { label: 'ACID LINE 2', value: '4Br' },
     { label: 'DUB SUB', value: '8Br' },
-    { label: 'FUNK SONG', value: '3 PT >' },
+    { label: 'FUNK SONG/', value: '3 PT' },
     { label: 'OCTAVES', value: '2Br' },
 ], 2);
 shoot('02-jog-list');
 
-/* 3 — a multi-part file: it previews its first part; the click opens it like a folder */
-page({ header: '(2) FUNK SONG', right: '5/12', sub: '3 PARTS - CLICK TO OPEN', roll: melodic(11, 8),
+/* 3 — landing on a multi-part file: it IS a folder — nothing plays, click goes in */
+page({ header: '(2) FUNK SONG/', right: '5/12', sub: '3 PARTS - CLICK TO OPEN',
        cells: cellsMelodic({ bars: '8' }), footer: [['JOG', 'FILE'], ['CLK', 'OPEN'], ['BACK', '']] });
 shoot('03-multipart-file');
 
@@ -142,6 +155,14 @@ picker([
     { label: 'DRUMS', value: 'DRM 8Br' },
 ], 2);
 shoot('04-inside-multipart');
+
+/* 4b — Bars touched: the brackets mark what will land; the rest is dotted */
+{
+    const r = melodic(7, 4); r.win = { from: 384, to: 384 * 3 };
+    const c = cellsMelodic({ bars: '2' }); c[0] = { ...c[0], text: '2', norm: 0.33 };
+    page({ header: '(2) ACID LINE 2', right: '2 CUT', roll: r, cells: c, touched: 1, footer: FOOT });
+    shoot('04b-window');
+}
 
 /* 5 — Semi touched: the value large, the name in the header (the bank page's own touch) */
 page({ header: '(2) ACID LINE 2', right: '3/12', roll: melodic(7, 4),
