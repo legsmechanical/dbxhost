@@ -587,6 +587,36 @@ async function main() {
         S.sessionView = false; ticks(2);
     });
 
+    /* ⭐⭐ A K8 touch+click is a TRIGGER, never the click that locks the card
+     * (Josh, 2026-09-30: "leaving midi import puts me back on locked card view
+     * instead of the overview" — with Jog Touch Card on, a finger on the jog to
+     * click reveals the card). Whatever the order of the touches and when they
+     * let go, leaving the browser must land on the OVERVIEW: no latch, no card. */
+    for (const jogFirst of [false, true]) for (const lateRelease of [false, true]) for (const browse of [false, true]) {
+        const name = (jogFirst ? 'jog then K8' : 'K8 then jog') + (lateRelease ? ', let go after it opens' : ', let go at once') +
+                     (browse ? ', browsed with the jog' : '');
+        step('⭐⭐ leaving the browser opened by K8 touch+click lands on the OVERVIEW (' + name + ')', () => {
+            MI.miClose(); snd.soundExit(); ticks(2);
+            S.jogTouchCardOn = true;
+            S.activeTrack = 1; S.activeBank = 0; S.trackActiveBank[1] = 0; S.bankCardLatched = false;
+            ticks(2);
+            if (jogFirst) { note(0x90, 9, 127); ticks(3); touch(7, true); }
+            else          { touch(7, true); ticks(3); note(0x90, 9, 127); }
+            ticks(2);
+            cc(3, 127); cc(3, 0);
+            if (lateRelease) ticks(6);
+            touch(7, false); note(0x80, 9, 0);
+            ticks(4);
+            assert(mi(), 'rig: the browser did not open');
+            if (browse) { note(0x90, 9, 127); jog(1); ticks(2); jog(-1); ticks(2); note(0x80, 9, 0); ticks(2); }
+            for (let g = 0; g < 6 && mi(); g++) back();
+            ticks(4);
+            assert(!mi(), 'rig: Back did not close the browser');
+            assert(!S.bankCardLatched, 'leaving the browser left the card LOCKED');
+            assert(!render.bankCardShown(), 'leaving the browser shows the card (knobTouched=' + S.knobTouched + ' jogTouched=' + S.jogTouched + ')');
+        });
+    }
+
     if (failed) { console.error('test_midi_import_gesture: FAIL'); process.exit(1); }
     console.log('test_midi_import_gesture: PASS');
     process.exit(0);

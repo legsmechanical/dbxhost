@@ -535,6 +535,15 @@ function _onMidiInternalImpl(data) {
      * follow toggle. Nothing is consumed; the arrows go on to their owners. */
     if (status === 0xB0 && d1 === MoveLeft)  S.leftHeld  = d2 === 127;
     if (status === 0xB0 && d1 === MoveRight) S.rightHeld = d2 === 127;
+    /* The JOG TOUCH release, the same way: a screen that takes the jog (the
+     * MIDI browser, the project picker) swallowed it, the flag stayed set,
+     * and once Jog Touch Card could draw from it the card stayed up after
+     * the screen closed — reading as a locked card view (Josh, 2026-09-30).
+     * Not consumed: the owner still gets the message. The normal release
+     * below is guarded on the flag, so it cannot run twice. */
+    if (d1 === MoveMainTouch && S.jogTouched &&
+            ((status & 0xF0) === 0x80 || ((status & 0xF0) === 0x90 && d2 < 64)))
+        _jogTouchRelease();
 
     /* PROJECT DID NOT OPEN is fully modal: nothing else may act while dAVEBOx
      * holds something Move does not. */

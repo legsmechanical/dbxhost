@@ -46,6 +46,9 @@ the section into a versioned heading at release time.
   bank list over it. **Jog Touch Card** in the global menu turns it off.
 ### Fixed
 - **Back works in the snapshot picker.** It had been ignored there.
+- **Leaving the MIDI browser returns to the overview.** With Jog Touch Card on,
+  opening the browser with a finger still on the jog left the bank card up
+  after you left it, as if locked.
 - **A new project's track 1 is a drum track again.** It could open with its
   pads in the chromatic layout instead of drum mode.
 - **Swing no longer drops or sticks notes.** With swing on, some notes of a
