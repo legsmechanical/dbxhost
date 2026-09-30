@@ -7,6 +7,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Changed
+- **Seq Follow is one switch for the whole device.** Hold Left or Right and
+  press Play to turn it on or off; the transport isn't touched, and your choice
+  is remembered. The track overview shows a small mark while Follow is on.
+  Paging with the arrows while playing now pauses Follow only until you stop,
+  instead of turning it off for that clip.
+- **Import MIDI is a MIDI browser, on knob 8 of the CLIP and DRUM LANE
+  banks.** Touch the knob and click the jog, as for Crop and Legato (it is no
+  longer in the track menu). Every file plays as you land on it — in time with
+  the song while the track plays — and a file with several parts opens like a
+  folder; long names scroll so you can read them. Click picks a file; its card
+  has Start, Bars, Resolution, Stretch, Octave, Semitone and a Scale fold on
+  the knobs, and shows the file's tempo. On a drum
+  track the file's sounds land on your lanes by GM or Move's layout, or on the
+  lanes you tap. Loading always asks first, goes into the clip you are on (on a
+  drum track, only the lanes a sound goes to) and is one Undo. Each track comes
+  back to its own last file. The transport keeps running. It replaces the
+  phrase library.
 ### Fixed
 - **Stopping the transport silences a stuck note on a Schwung instrument.**
   A note an instrument kept holding survived Stop; Stop now also sends
@@ -27,25 +45,6 @@ the section into a versioned heading at release time.
   **Record** capture the screen, the device or both, and the view shows
   whichever you pick. Dim pad colours are brightened on the page so they read
   the way they do on the hardware.
-### Changed
-- **Seq Follow is one switch for the whole device.** Hold Left or Right and
-  press Play to turn it on or off; the transport isn't touched, and your choice
-  is remembered. The track overview shows a small mark while Follow is on.
-  Paging with the arrows while playing now pauses Follow only until you stop,
-  instead of turning it off for that clip.
-- **Import MIDI is a MIDI browser, on knob 8 of the CLIP and DRUM LANE
-  banks.** Touch the knob and click the jog, as for Crop and Legato (it is no
-  longer in the track menu). Every file plays as you land on it — in time with
-  the song while the track plays — and a file with several parts opens like a
-  folder; long names scroll so you can read them. Click picks a file; its card
-  has Start, Bars, Resolution, Stretch, Octave,
-  Semitone and a Scale fold on the knobs, and shows the file's tempo. On a drum
-  track the file's sounds land on your lanes by GM or Move's layout, or on the
-  lanes you tap. Loading always asks first, goes into the clip you are on (on a
-  drum track, only the lanes a sound goes to) and is one Undo. Each track comes
-  back to its own last file. The transport keeps running. It replaces the
-  phrase library.
-
 ### Fixed
 - **Move tracks' Volume, Pan and Sends work.** On a Move track, Volume, Pan and Send A/B did
   nothing: the track still played, but its sound never reached dAVEBOx's mixer
@@ -234,17 +233,6 @@ the section into a versioned heading at release time.
   external keyboard. A raised dot after a chord name means it's played
   without its third. Flat keys spell with flats, the key label included.
 ### Fixed (pending)
-- **Resolution Zoom keeps a late-starting loop in place.** Zooming a clip (or a
-  drum lane) whose loop didn't start at step 1 changed its length but not where
-  the loop starts, so it played a different stretch of the clip. The loop start
-  now moves with it (a loop start between two of the new steps moves back one,
-  and the loop grows to still cover the old one).
-- **Clock Shift, Nudge, Beat Stretch and Legato work on a clip whose loop doesn't
-  start at step 1.** They used to act on the first steps of the clip rather than
-  the ones it plays, so on such a clip Shift seemed to do nothing. They now move
-  the notes inside the loop (on drum lanes and ALL LANES too, each lane in its own
-  loop), and linked automation moves with them. Beat Stretch no longer erases
-  notes outside the loop.
 - **A project too big to save now says so, and the limit is four times larger.**
   A very full project could pass the save limit and silently stop saving as you
   went. The limit is now about 1 MB, and past it a notice reads PROJECT TOO BIG /
@@ -323,10 +311,6 @@ the section into a versioned heading at release time.
   to STEP or to a SOUND + CONFIG card you did not choose); switching tracks from
   the card shows the new track's own bank; and working in a Move instrument's
   editor no longer resets the bank.
-- **Exported automation repeats like it plays.** A drum parameter with its own
-  cycle, or a melodic one with its own Loop, used to export once and then hold
-  its last value for the rest of the clip in Live. It now repeats across the
-  whole clip, at its own length and rate.
 - **Arp octaves now join the notes the style orders.** Down, Up/Down, Down/Up,
   Converge and Diverge play across the whole octave range instead of repeating
   the phrase per octave, and negative octaves extend downward. Applies to the
@@ -340,12 +324,6 @@ the section into a versioned heading at release time.
 - **No list wraps from the end back to the start** — the Dave Box, snapshot and
   project pickers, the tempo list and Left/Right on a menu setting stop at
   their ends.
-- **Empty drum lanes keep their length after a reload.** A drum lane with no
-  notes used to come back as one bar, at the default step size, with its pad
-  note and play effects reset — so a 4-bar clip with hits only on the kick
-  reloaded with every other lane at 1 bar, and a snare added later on bar 3
-  never played. Every lane now keeps its length, loop, step size, pad note,
-  direction and effects, notes or not.
 - **A module page you can step into now works.** Some modules draw a page with
   its own choices on it (DR32's Resample page). Clicking it used to jump to the
   section list; now the click enters the page, the jog and click choose on it,
