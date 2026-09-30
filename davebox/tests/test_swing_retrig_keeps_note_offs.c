@@ -63,6 +63,7 @@ int main(void) {
             snprintf(k, sizeof k, "t3_c0_step_%d_gate", s);   snprintf(v, sizeof v, "%d", s % 3 ? 24 * (1 + s % 5) : 2); hx_set_param(h, k, v);
             snprintf(k, sizeof k, "t3_c0_step_%d_nudge", s);  hx_set_param(h, k, "-5");
         }
+        hx_set_param(h, "t3_c0_step_4_toggle", "67 100");   /* a chord: another note's parked on */
         hx_set_param(h, "transport", "play_focus:3:0");
         hx_render(h, 1500);
         hx_set_param(h, "t3_stop_at_end", "1");
@@ -98,6 +99,9 @@ int main(void) {
         for (int s = 0; s < 16; s++) {
             snprintf(k, sizeof k, "t0_l0_step_%d_toggle", s); hx_set_param(h, k, "100");
             snprintf(k, sizeof k, "t0_l0_step_%d_gate", s); snprintf(v, sizeof v, "%d", s % 3 ? 60 : 2); hx_set_param(h, k, v);
+            /* Ratchets put hits closer than the swing delay, so a hit's parked
+             * note-on is still queued when the next one retriggers. */
+            snprintf(k, sizeof k, "t0_l0_step_%d_ratch", s); hx_set_param(h, k, "4");
         }
         hx_set_param(h, "transport", "play_focus:0:0");
         hx_render(h, 1500);
