@@ -85,6 +85,10 @@ const BIN = { '/data/UserData/song.mid': SONG, '/data/UserData/beat.mid': DRUMS,
               '/data/UserData/cut.mid': CUTSHORT };
 globalThis.__stubStdBinFiles = new Proxy(BIN, { get(o, k) { if (typeof k === 'string' && k in o) READS.push(k); return o[k]; } });
 globalThis.__stubStat['/data/UserData/cut.mid'] = { mode: REG, size: CUTSHORT.length };
+/* a name far too long for a row: the list scrolls it on the cursor row */
+const LONG = 'Voicings - Neo Soul Chords in Eb Minor.mid';
+BIN['/data/UserData/' + LONG] = SONG;
+globalThis.__stubStat['/data/UserData/' + LONG] = { mode: REG, size: SONG.length };
 
 /* The engine: records every write and answers the clip reads the import's
  * settle step makes, once the import key has arrived. */
@@ -117,7 +121,7 @@ async function main() {
     const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
     stubParamPagesDevice();
     const osStub = await import('os');
-    osStub.__setReaddir({ '/data/UserData': ['UserLibrary', 'schwung', 'dbx-host', 'song.mid', 'beat.mid', 'cut.mid', 'notes.txt', '.hidden'],
+    osStub.__setReaddir({ '/data/UserData': ['UserLibrary', 'schwung', 'dbx-host', 'song.mid', 'beat.mid', 'cut.mid', LONG, 'notes.txt', '.hidden'],
                           '/data/UserData/UserLibrary': [] });
     await import('../../ui/ui.js');
     const { S } = await import('../../ui/ui_state.mjs');
@@ -534,6 +538,37 @@ async function main() {
         const k = snd.soundPickStateForTest().kinds;
         assert(k.length > 0 && !k.includes('midiimport'), 'rows: ' + k.join(','));
         snd.soundExit(); ticks(2);
+    });
+
+    step('the list: names in the host font as named, the cursor row scrolls a long one, the rest are cut short', () => {
+        forget(); openImport(1); ticks(60);
+        const printed = () => { const out = []; const p0 = globalThis.print;
+            globalThis.print = (x, y, str) => { out.push({ y, s: String(str).replace(/>$/, ''), tail: /[>]$/.test(String(str)) }); p0(x, y, str); };
+            try { globalThis.clear_screen(); render.drawUI(); } finally { globalThis.print = p0; }
+            return out; };
+        const full = LONG.replace(/\.mid$/, '');
+        const rowOf = (out) => out.find(o => full.includes(o.s) && o.s.length > 4);
+        jogTo('song'); ticks(2);
+        let r = rowOf(printed());
+        assert(r && r.tail, 'a multi-part file keeps its > even cut short: ' + JSON.stringify(r));
+        assert(r && full.startsWith(r.s) && r.s.length < full.length, 'off the cursor, the long name is cut short from its start: ' + JSON.stringify(r));
+        jogTo(full); ticks(2);
+        r = rowOf(printed());
+        assert(r && full.startsWith(r.s) && r.s.length < full.length, 'on landing it rests at its start, mixed case: ' + JSON.stringify(r));
+        ticks(150);                                               /* 1.65 s: past the rest */
+        /* the device's own redraws moved it — no render of ours in between */
+        assert(MI.miMarqueeForTest().off > 0, 'the ticks never redrew the scrolling name: ' + JSON.stringify(MI.miMarqueeForTest()));
+        r = rowOf(printed());
+        const off = MI.miMarqueeForTest().off;
+        assert(off > 0 && r && r.s === full.slice(off, off + r.s.length), 'the cursor row scrolled by ' + off + ': ' + JSON.stringify(r));
+        const over = MI.miMarqueeForTest().over;
+        ticks(Math.ceil((over * 80 + 200) / 11));
+        r = rowOf(printed());
+        assert(r && full.endsWith(r.s), 'it scrolls until the END of the name shows: ' + JSON.stringify(r));
+        jog(-1); ticks(2); jog(1); ticks(2);
+        r = rowOf(printed());
+        assert(r && full.startsWith(r.s), 'leaving and coming back starts it over: ' + JSON.stringify(r));
+        back(); ticks(2);
     });
 
     step('Note/Session closes it (the escape law)', () => {

@@ -61,7 +61,7 @@ import { midiMuted, setMidiMuted, midiMap, setMidiMap } from './ui_prefs.mjs';
 import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import {
-    drawKitList, drawKitBankPage, drawKitMarkHeader, kitUseLayout, enumOverlayWouldDraw,
+    drawKitBankPage, drawKitMarkHeader, kitUseLayout, enumOverlayWouldDraw,
     mvPrint, mvWidth, MV_FOOTER_Y,
 } from './ui_movy.mjs';
 import { buildFilepathBrowserState, refreshFilepathBrowser } from '/data/UserData/schwung/shared/filepath_browser.mjs';
@@ -91,6 +91,7 @@ const MEM = new Array(8).fill(null);
 
 export function miActive() { return !!MI; }
 export function miStateForTest() { return MI; }
+export function miMarqueeForTest() { return MQ; }
 export function miResetForTest() { MI = null; loadSync = null; CACHE.clear(); META.clear(); MEM.fill(null); }
 /* Offered on every track that plays notes: a Conductor emits none. */
 export function miOffered(track) { return GS.trackPadMode[track] !== PAD_MODE_CONDUCT; }
@@ -169,6 +170,7 @@ function freshState(track) {
  * on its file's card; otherwise on the list, in its folder or the user data
  * folder. */
 export function miOpen(track) {
+    MQ.key = null;
     if (!miOffered(track)) return false;
     if (GS.recordArmed || GS.stepRecActive) { showActionPopup('IMPORT MIDI', 'NOT WHILE RECORDING'); return false; }
     MI = freshState(track);
@@ -283,6 +285,7 @@ function pick() {
 }
 /* The list, raised from the card: what the card had is kept, to put back. */
 function openList() {
+    MQ.key = null;
     MI.saved = MI.sel ? { cur: MI.cur, startBar: MI.startBar, bars: MI.bars, grid: MI.grid, stretch: MI.stretch,
                           voices: MI.voices, extraSounds: MI.extraSounds, assign: MI.assign } : null;
     MI.layer = 'list';
@@ -716,6 +719,8 @@ export function miTick() {
     if (MI.cur && MI.keySig !== (GS.padKey | 0) + '/' + (GS.padScale | 0)) replan();
     previewTick();
     if (MI.pmode || !MI.hear || MI.held >= 0) GS.screenDirty = true;
+    /* the list's scrolling name: a redraw only when it moves a character */
+    if (MI.layer === 'list' && MQ.over > 0 && marqueeOffset(now) !== MQ.off) GS.screenDirty = true;
 }
 
 export function miAnimating() { return !!(MI && (MI.pmode || MI.pending || !MI.hear)); }
@@ -878,12 +883,64 @@ function drawSounds() {
         for (const n of MI.plan.notes) if (n.p === v.pitch) fill_rect(rx + Math.floor(n.t * rw / span), y + 1, 1, 3, c);
     });
 }
+/* The file list: names in the host font (mixed case, as the file is named),
+ * readouts in movy, five 9px rows with the cursor on the middle one (Josh,
+ * 2026-09-30). A name too long for its row SCROLLS on the cursor row — by
+ * whole characters, as the host's menus do (print cannot clip) — and is cut
+ * short on every other row. A part file's `>` and a folder's `/` stay on. */
+const LIST_ROW_H = 9, LIST_ROWS = 5;
+const MQ_WAIT_MS = 1000, MQ_STEP_MS = 80, MQ_HOLD_MS = 1500;
+const MQ = { key: null, t0: 0, over: 0, off: 0 };
+function marqueeOffset(now) {
+    if (MQ.over <= 0) return 0;
+    const u = (now - MQ.t0) % (MQ_WAIT_MS + MQ.over * MQ_STEP_MS + MQ_HOLD_MS);
+    return u < MQ_WAIT_MS ? 0 : Math.min(MQ.over, Math.floor((u - MQ_WAIT_MS) / MQ_STEP_MS));
+}
 function drawList() {
     const h = MV_FOOTER_Y - 1 - PICK_Y;
     fill_rect(PICK_X, PICK_Y, PICK_W, h, 0);
     draw_rect(PICK_X, PICK_Y, PICK_W, h, 1);
-    const rows = listRows().map(r => ({ labelFont: 'small', ...r }));
-    drawKitList(rows, MI.idx, { x: PICK_X + 1, w: PICK_W - 2, topY: PICK_Y + 3, h: h - 3, rowH: 7, emptyMsg: 'NO MIDI FILES' });
+    const rows = listRows(), n = rows.length;
+    const x = PICK_X + 1, w = PICK_W - 2, topY = PICK_Y + 1;
+    if (!n) {
+        MQ.over = 0;
+        mvPrint(x + ((w - mvWidth('NO MIDI FILES')) >> 1), topY + ((h - 5) >> 1), 'NO MIDI FILES', 1);
+        return;
+    }
+    const sel = Math.max(0, Math.min(n - 1, MI.idx));
+    const start = Math.max(0, Math.min(sel - (LIST_ROWS >> 1), n - LIST_ROWS));
+    const hasScroll = n > LIST_ROWS;
+    const right = x + w - (hasScroll ? 5 : 3), lx = x + 3, fillW = hasScroll ? w - 4 : w;
+    for (let i = 0; i < LIST_ROWS && start + i < n; i++) {
+        const idx = start + i, r = rows[idx], y = topY + i * LIST_ROW_H, on = idx === sel, ink = on ? 0 : 1;
+        if (on) fill_rect(x, y, fillW, LIST_ROW_H, 1);
+        const val = r.value != null ? String(r.value).toUpperCase() : '';
+        const vw = val ? mvWidth(val) : 0;
+        const avail = right - lx - (vw ? vw + 4 : 0);
+        let label = String(r.label), tail = '';
+        if (label.length > 1 && /[>/]$/.test(label)) { tail = label.slice(-1); label = label.slice(0, -1); }
+        const fits = (t) => text_width(t + tail) <= avail;
+        if (on) {
+            const key = MI.items[idx].path || MI.items[idx].label;
+            if (MQ.key !== key) { MQ.key = key; MQ.t0 = nowMs(); }
+            let over = 0;
+            while (over < label.length - 1 && !fits(label.slice(over))) over++;
+            MQ.over = over;
+            MQ.off = marqueeOffset(nowMs());
+            label = label.slice(MQ.off);
+        }
+        while (label.length > 1 && !fits(label)) label = label.slice(0, -1);
+        if (tail) label = label.replace(/ +$/, '');
+        print(lx, y + 1, label + tail, ink);
+        if (val) mvPrint(right - vw, y + 2, val, ink);
+    }
+    if (hasScroll) {
+        const trackH = LIST_ROWS * LIST_ROW_H;
+        const thumbH = Math.max(3, Math.round(trackH * LIST_ROWS / n));
+        const thumbY = topY + Math.round((trackH - thumbH) * start / Math.max(1, n - LIST_ROWS));
+        for (let ry = topY; ry < topY + trackH; ry += 2) set_pixel(x + w - 2, ry, 1);
+        fill_rect(x + w - 3, thumbY, 2, thumbH, 1);
+    }
 }
 /* dAVEBOx's Yes/No dialog (ui_dialogs: dlgHeader / dlgLines / drawYesNoRow). */
 function drawConfirm() {
