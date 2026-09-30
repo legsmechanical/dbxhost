@@ -29,6 +29,10 @@ the section into a versioned heading at release time.
   editor, a bank or a dialog, one press closes it and lands on Session View
   (it used to go back to the overview of the view you were in). On an
   overview it still switches views, and holding it still peeks.
+- **Note/Session leaves Move's own screens for Session View too.** From
+  Move's instrument editor or Move Settings it now lands on Session View, as
+  it does everywhere else; Back at the top of Move's menu still brings you
+  back where you came in from.
 - **Hold Back to go back to the overview.** One long press on Back closes
   everything you have open and returns to the overview of the view you're
   in. A tap still steps out one level.

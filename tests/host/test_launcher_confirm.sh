@@ -14,6 +14,12 @@ set -u
 cd "$(dirname "$0")/../.."
 command -v node >/dev/null 2>&1 || { echo "FAIL: node required"; exit 1; }
 
+# The launcher's ui.js is an ES module that stock loads as one; node 18 (the
+# Linux runner) decides by extension, so import a .mjs copy of the real file.
+T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+cp standalone/module/ui.js "$T/launcher_ui.mjs"
+export LAUNCHER_UI="$T/launcher_ui.mjs"
+
 node --import ./davebox/tools/audit_loader.mjs --input-type=module -e '
 import { readFileSync } from "fs";
 let fails = 0;
@@ -35,7 +41,7 @@ globalThis.text_width = (t) => String(t).length * 6;
 globalThis.host_system_cmd = (c) => { cmds.push(c); return 0; };
 globalThis.host_exit_module = () => { exits++; };
 
-await import("./standalone/module/ui.js");
+await import("file://" + process.env.LAUNCHER_UI);
 globalThis.init();
 const screen = printed.join(" | ");
 /Move will restart/.test(screen) && /to load dAVEBOx\./.test(screen) && /Proceed\?/.test(screen) && /Click:Yes/.test(screen)

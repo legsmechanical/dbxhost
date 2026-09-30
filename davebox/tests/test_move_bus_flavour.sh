@@ -188,9 +188,10 @@ grep -q "const keepPlace = !leftMoveBus && S.view === VIEW_EDIT;" ui/ui_sound.mj
     || bad "the retarget landing rule changed — picker vs editor asymmetry is back"
 
 echo "co-run return-to-origin (1d):"
-# 8. Menu is the co-run EXIT. Back cannot be: Move owns it for its own menus.
-grep -q "if (d2 === 127) exitMoveNativeCoRun();" ui/ui_input_cc.mjs \
-    && ok "Menu exits Move co-run" \
+# 8. Note/Session is a co-run EXIT (to Session View since 2026-09-30). Back
+#    exits only at the top of Move's menu: Move owns it for its own menus.
+grep -q "if (d2 === 127) { S.pendingSessionAfterCoRun = true; exitMoveNativeCoRun(); }" ui/ui_input_cc.mjs \
+    && ok "Note/Session exits Move co-run" \
     || bad "Menu no longer exits Move co-run — with Back owned by Move there is no way out"
 # 9. The origin is recorded at ENTRY. Nothing on the return path can infer it:
 #    sound mode is exited on the way in.

@@ -202,6 +202,38 @@ step('Move never announces the menu: the open is tried ONCE more, then left alon
     noteSession(); ms(1500); serviceReturned();
 });
 
+/* ⭑ NOTE/SESSION LANDS ON SESSION VIEW FROM CO-RUN (Josh, 2026-09-30: "now
+ * that back exits move instrument co-run at the top-level, note/session should
+ * switch to session view from co-run like everywhere else"). Leaving is
+ * asynchronous, so the view changes only once the host hands the screen back. */
+step('⭐ Note/Session from Move Settings lands on SESSION VIEW', () => {
+    S.sessionView = false; S.globalMenuOpen = false; uiMode = 0;
+    openMoveSettings(); ms(1000);
+    noteSession(); ms(1500);
+    serviceReturned();
+    assert(!S.moveSettingsOpen && !S.globalMenuOpen, 'still in settings or back on the menu');
+    assert(S.sessionView, 'Note/Session left Move Settings for TRACK view');
+});
+step('⭐ Note/Session from Move\'s instrument co-run lands on SESSION VIEW (not back in the sound menu)', () => {
+    S.sessionView = false; S.trackRoute[2] = 1;
+    corun.enterMoveNativeCoRun(2, 'sound'); ticks(2);
+    assert(S.moveCoRunTrack === 2, 'rig: not in co-run');
+    noteSession(); ticks(1);
+    serviceReturned(); ticks(3);
+    assert(S.moveCoRunTrack < 0, 'co-run did not end');
+    assert(S.sessionView, 'Note/Session left co-run for TRACK view');
+    assert(S.pendingSoundEnterTrack < 0, 'the sound menu is still queued to re-open under Session View');
+});
+step('control: leaving the instrument co-run any other way still returns to the sound menu', () => {
+    S.sessionView = false; S.trackRoute[2] = 1;
+    corun.enterMoveNativeCoRun(2, 'sound'); ticks(2);
+    corun.exitMoveNativeCoRun();
+    onReturn('move_native', null);
+    assert(!S.sessionView, 'a non-Note/Session exit switched to session view');
+    assert(S.pendingSoundEnterTrack === 2, 'the return to the sound menu was lost: ' + S.pendingSoundEnterTrack);
+    ticks(3);
+});
+
 step('control: the entry needs a chosen project', () => {
     S.awaitingProjectSelect = true; opened = [];
     corun.enterMoveSettingsCoRun();

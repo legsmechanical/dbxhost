@@ -411,7 +411,8 @@ Each track's sound is set in its own menu, **TRACK CONFIG**:
    one of Move's four instruments, a Schwung instrument, a MIDI channel, and more.
 3. **Click** Instmt/Dest to edit the instrument. On a Move track this opens Move's
    own editor for it — change the kit or preset there as you would on Move, then
-   press **Note/Session** to come back.
+   press **Back** at the top of Move's editor to come back (**Note/Session** goes
+   to Session View).
 4. **Click** an empty **FX** row to add an audio effect after the instrument.
 
 Everything else in the menu is in [Sound & Track Config](#14-sound--track-config).
@@ -1640,9 +1641,9 @@ View only), and work with it as you would on Move.
 - Move takes the screen, jog, knobs, **Back**, **Mute** and **Shift** (so
   **Shift + jog** works in Move's editor); the pads, step buttons and transport stay
   with dAVEBOx, and dAVEBOx's own Shift gestures still work.
-- Press **Note/Session** to come back, or **Back** once you're at the top of Move's
-  editor (the instrument's main screen), or **Shift + a bottom-row pad** to leave
-  and go straight to that track.
+- Press **Back** once you're at the top of Move's editor (the instrument's main
+  screen) to come back, **Note/Session** to leave for Session View, or
+  **Shift + a bottom-row pad** to leave and go straight to that track.
 
 A plain click does nothing on a MIDI channel or a followed track. On a track set to
 **None**, it opens the picker.
@@ -2092,7 +2093,7 @@ see [Track settings](#174-track-settings) below.
   choose, click to open or change, **Back** to step out. The pads, steps, knobs and
   transport stay dAVEBOx's, so the music plays on. **Shift + Step 2** or
   **Back** at the top of Move's menu brings you back here; **Note/Session** goes
-  to the overview.
+  to Session View.
 - **Tap Tempo** is **Shift + Step 5**: tap any pad in time, turn the jog to adjust,
   click to set.
 

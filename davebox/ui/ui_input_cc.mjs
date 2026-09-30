@@ -1769,14 +1769,21 @@ function _onCC_buttons(d1, d2) {
          *
          * Step 3 keeps working as the second exit (ui_input_pads.mjs) — it lands
          * on track view, since it is a step-grid affordance, not a return. */
+        /* ⭑ And it lands on SESSION VIEW, like everywhere else (Josh,
+         * 2026-09-30: "now that back exits move instrument co-run at the
+         * top-level, note/session should switch to session view from co-run
+         * like everywhere else"). Leaving co-run is asynchronous (the host
+         * returns the screen later), so the press only asks: the cleanup skips
+         * its return-to-origin, and the tick lands on Session View once the
+         * co-run is over (pendingSessionAfterCoRun). Back at the top of Move's
+         * menu keeps returning you where you came in from. */
         if (S.moveCoRunTrack >= 0) {
-            if (d2 === 127) exitMoveNativeCoRun();
+            if (d2 === 127) { S.pendingSessionAfterCoRun = true; exitMoveNativeCoRun(); }
             return;
         }
-        /* Move's own Settings (ui_corun.mjs): Note/Session leaves them for the
-         * overview — its law everywhere else. */
+        /* Move's own Settings (ui_corun.mjs): the same. */
         if (S.moveSettingsOpen) {
-            if (d2 === 127) exitMoveSettingsCoRun('overview');
+            if (d2 === 127) { S.pendingSessionAfterCoRun = true; exitMoveSettingsCoRun('overview'); }
             return;
         }
         if (d2 === 127) {
@@ -1807,13 +1814,7 @@ function _onCC_buttons(d1, d2) {
              * (checkBackHold), in whichever view you were in. */
             if (noOverviewYet()) return;
             if (!atOverview()) {
-                returnToOverview();
-                if (!S.sessionView) {
-                    S.sessionView = true;
-                    _switchViewCleanup();
-                    invalidateLEDCache();
-                }
-                S.screenDirty = true;
+                goToSessionOverview();
                 /* Swallow the release: it would otherwise reach the tap/hold
                  * logic below and flip the view straight back out of the
                  * session view we just landed on. */
@@ -2182,6 +2183,19 @@ export function atOverview() {
     if (S.sessionView) return !S.perfViewLocked;
     return !(S.stepIntervalMode || S.altMode ||
              (S.activeBank === 7 && S.allLanesConfirmed));
+}
+
+/* Note/Session's destination from anywhere off the overview: every layer torn
+ * down, then the SESSION overview. Also run by the tick once a co-run that
+ * Note/Session left has handed the screen back (pendingSessionAfterCoRun). */
+export function goToSessionOverview() {
+    returnToOverview();
+    if (!S.sessionView) {
+        S.sessionView = true;
+        _switchViewCleanup();
+        invalidateLEDCache();
+    }
+    S.screenDirty = true;
 }
 
 /* Tear every layer down in ONE pass and land on the current view's overview.

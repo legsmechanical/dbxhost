@@ -59,7 +59,7 @@ import { pollDSP,
     pendingDrumNoteOffs, _drumRecNoteOns, _drumRecNoteOffs } from './ui_dsp_bridge.mjs';
 import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes, stepRecExit } from './ui_record.mjs';
 import { xposeCancelPreview } from './ui_xpose.mjs';
-import { checkBackHold, checkShiftNoteHold, backTapWouldAct, applyShiftEdge, raiseExitConfirm, syncCoRunShift } from './ui_input_cc.mjs';
+import { checkBackHold, checkShiftNoteHold, backTapWouldAct, applyShiftEdge, raiseExitConfirm, syncCoRunShift, goToSessionOverview } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
@@ -454,6 +454,12 @@ export function _tickImpl() {
     loadDaveTick();
     checkBackHold();   /* self-managed Back: fire suspend once a held Back crosses the long-press threshold */
     checkShiftNoteHold();  /* Shift+Note/Session: the HOLD fires at the threshold, not on release */
+    /* Note/Session left a co-run: once the host has handed the screen back,
+     * land on Session View, its destination everywhere else. */
+    if (S.pendingSessionAfterCoRun && S.moveCoRunTrack < 0 && !S.moveSettingsOpen) {
+        S.pendingSessionAfterCoRun = false;
+        goToSessionOverview();
+    }
 
     /* Ableton .ablbundle export runs here (tick context) so get_param('bpm')
      * resolves — it returns null on the on_midi path where the menu action
