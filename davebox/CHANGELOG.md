@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Changed
+- **Back steps up through the MIDI browser.** In the file list, Back goes up a
+  folder at a time (and out of a multi-part file); at the top it leaves the
+  browser. Hold Back still leaves from anywhere.
 
 ## [0.0.9] — 2026-09-30 (test build, not in the Schwung catalog)
 ### Fixed
