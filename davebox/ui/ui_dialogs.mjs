@@ -1,3 +1,4 @@
+import { createProject, hasTemplate } from './ui_template.mjs';
 import { S, conductorTrackIdx } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -121,6 +122,18 @@ function drawClearSessionConfirm() {
     dlgHeader('CLEAR SESSION');
     dlgLines(['This will clear the entire', 'project and cannot be undone.']);
     drawYesNoRow(S.confirmClearSel);
+}
+
+function drawTemplateConfirm() {
+    clear_screen();
+    if (S.confirmTemplate.kind === 'clear') {
+        dlgHeader('CLEAR TEMPLATE');
+        dlgLines(['New projects will start', 'empty again.']);
+    } else {
+        dlgHeader('REPLACE TEMPLATE');
+        dlgLines(['This project becomes the', 'template; the saved one', 'is overwritten.']);
+    }
+    drawYesNoRow(S.confirmTemplate.sel);
 }
 
 function drawSaveStateConfirm() {
@@ -262,6 +275,7 @@ export function drawGlobalMenu() {
     if (S.tapTempoOpen)        { drawTapTempoScreen();       return; }
     if (S.exportDoneDialog)    { drawExportDoneDialog();     return; }
     if (S.confirmClearSession) { drawClearSessionConfirm();  return; }
+    if (S.confirmTemplate)     { drawTemplateConfirm();      return; }
     if (S.confirmSaveState)    { drawSaveStateConfirm();     return; }
     if (S.confirmConvertToDrum){ drawConvertToDrumConfirm(); return; }
     if (S.confirmConvertToConduct){ drawConvertToConductConfirm(); return; }
@@ -1584,12 +1598,15 @@ function _projectPadPickerClick_impl() {
     if (p.restarting) return;      /* delete-of-current: teardown in flight */
     if (p.confirmNew) {
         const c = p.confirmNew;
-        if (c.sel === 0) {          /* Yes — create, then open its menu */
-            host_system_cmd('sh ' + PROJECT_CMD + ' new-at ' + c.k);
+        /* With a saved template the question is Empty / Template (Josh,
+         * 2026-09-30), both of which create; without one it is today's Yes/No. */
+        if (c.choose || c.sel === 0) {   /* create, then open its menu (or load it: Shift+tap) */
+            createProject(c.k, !!c.choose && c.sel === 1);
             const d = _pppRunList();
             if (d) _pppApplyList(p, d);
             if (!p.byIndex[c.k]) { p.confirmNew = null; showActionPopup('CREATE', 'FAILED'); return; }
             invalidateLEDCache();
+            if (c.load) { p.confirmNew = null; _pppLoad(p, c.k); return; }
             _pppOpenMenu(p, c.k);
         } else {
             p.confirmNew = null;
@@ -1816,8 +1833,16 @@ function _projectPadPickerTap_impl(k) {
      * made would be a silent no-op. */
     if (S.shiftHeld) {
         _pppCloseOverlays(p);
+        /* With a saved template, Shift+tap asks Empty / Template too — then
+         * creates and loads, as it always has (Josh, 2026-09-30: "creating a
+         * project would ask"). */
+        if (!proj && hasTemplate()) {
+            p.confirmNew = { k: k, sel: 1, choose: true, load: true };
+            S.screenDirty = true;
+            return;
+        }
         if (!proj) {
-            host_system_cmd('sh ' + PROJECT_CMD + ' new-at ' + k);
+            createProject(k, false);
             const d = _pppRunList();
             if (d) _pppApplyList(p, d);
             if (!p.byIndex[k]) { showActionPopup('CREATE', 'FAILED'); return; }
@@ -1833,7 +1858,8 @@ function _projectPadPickerTap_impl(k) {
      * open simply re-targets. */
     if (!proj) {
         _pppCloseOverlays(p);
-        p.confirmNew = { k: k, sel: 0 };
+        /* sel: Yes/No opens on Yes (0); Empty/Template opens on Template (1). */
+        p.confirmNew = hasTemplate() ? { k: k, sel: 1, choose: true } : { k: k, sel: 0 };
         S.screenDirty = true;
         return;
     }
@@ -1911,6 +1937,11 @@ function _drawProjectPadPicker_impl() {
          * uses. It used to be gated on the WHOLE sentence fitting one line —
          * which it never does — so the card showed a header over No/Yes and
          * never said what Yes does (Josh, at the device, 2026-09-21). */
+        if (p.confirmNew.choose) {
+            dlgLines(['Start it empty, or from', 'your saved template?']);
+            drawDialogYesNoRow(p.confirmNew.sel === 1, ['Empty', 'Template']);
+            return;
+        }
         dlgLines(['Create a new project', 'on this pad?']);
         drawYesNoRow(p.confirmNew.sel);
         return;

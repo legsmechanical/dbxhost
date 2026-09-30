@@ -67,6 +67,7 @@ import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVo
     soundViewForTest, soundEnterBuses, soundEnterMasterFx, macroClearConfirmAnswer,
     macroClearConfirmReset, macroClearConfirmOpen } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
+import { templateConfirmClick } from './ui_template.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
 /* ⚠ one-way: ui_render never imports this module (checked 2026-08-31) —
  * the visibility predicate must be the render's own or the click gate and
@@ -517,6 +518,7 @@ function modalDialogUp() {
             S.screenDirty = true;
             return;
         }
+        if (S.confirmTemplate) { templateConfirmClick(); return; }
         if (S.confirmSaveState) {
             const yes = S.confirmSaveSel === 0;
             S.confirmSaveState = false;
@@ -1109,6 +1111,9 @@ function modalDialogUp() {
             } else if (S.confirmClearSession) {
                 const delta = decodeDelta(d2);
                 if (delta !== 0) { S.confirmClearSel = S.confirmClearSel === 0 ? 1 : 0; S.screenDirty = true; }
+            } else if (S.confirmTemplate) {
+                const delta = decodeDelta(d2);
+                if (delta !== 0) { S.confirmTemplate.sel = S.confirmTemplate.sel === 0 ? 1 : 0; S.screenDirty = true; }
             } else if (S.confirmSaveState) {
                 const delta = decodeDelta(d2);
                 if (delta !== 0) { S.confirmSaveSel = S.confirmSaveSel === 0 ? 1 : 0; S.screenDirty = true; }
@@ -2260,7 +2265,7 @@ function returnToOverview() {
      * menu open would leave one live and invisible behind the overview. */
     if (S.confirmConvertToDrum || S.confirmConvertToConduct) closeConvertConfirm();
     if (S.globalMenuOpen) {
-        S.confirmClearSession = false; S.confirmSaveState = false;
+        S.confirmClearSession = false; S.confirmSaveState = false; S.confirmTemplate = null;
         S.menuInfoLines = []; S.exportDoneDialog = false;
         S.confirmExportCondPhase = false; S.confirmExport = false;
         S.globalMenuOpen = false; S.lastSentMenuEditValue = null;
@@ -2422,6 +2427,7 @@ function _backTap() {
      *    menu, otherwise the menu itself closes. */
     if (S.globalMenuOpen) {
         if (S.confirmClearSession)        { S.confirmClearSession = false; }
+        else if (S.confirmTemplate)       { S.confirmTemplate = null; }
         else if (S.confirmSaveState)      { S.confirmSaveState = false; }
         else if (S.confirmConvertToDrum)  { closeConvertConfirm(); }
         else if (S.confirmConvertToConduct){ closeConvertConfirm(); }
@@ -4365,7 +4371,7 @@ function _onCC_knobs(d1, d2) {
             }
             return;
         }
-        if (S.globalMenuOpen || S.tapTempoOpen || S.confirmBake || S.confirmClearSession || S.confirmConvertToDrum || S.confirmModuleChange || S.confirmConvertToConduct || S.menuInfoLines.length > 0 || S.confirmExport || S.exportDoneDialog || S.recordBlockedDialog || S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.bpmMoveInfo) return;
+        if (S.globalMenuOpen || S.tapTempoOpen || S.confirmBake || S.confirmClearSession || S.confirmTemplate || S.confirmConvertToDrum || S.confirmModuleChange || S.confirmConvertToConduct || S.menuInfoLines.length > 0 || S.confirmExport || S.exportDoneDialog || S.recordBlockedDialog || S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.bpmMoveInfo) return;
         const knobIdx = d1 - 71;
         S.knobTouched          = knobIdx;
         S.knobTurnedTick[knobIdx] = nowMs();

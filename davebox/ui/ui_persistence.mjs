@@ -14,7 +14,7 @@ import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
  * paths are keyed by set UUID alone and carry no module id. Undefined (the
  * normal build) falls back to 'seq8' — `typeof` on an undeclared identifier is
  * safe, so no define is needed for the stable build. */
-const STATE_PREFIX = (typeof SEQ8_STATE_PREFIX === 'string') ? SEQ8_STATE_PREFIX : 'seq8';
+export const STATE_PREFIX = (typeof SEQ8_STATE_PREFIX === 'string') ? SEQ8_STATE_PREFIX : 'seq8';
 
 /* ⭑⭑ Per-project state lives INSIDE the project's set dir (Phase B of the
  * state-co-location plan, 2026-08-12): Sets/<uuid>/<state dir>/<prefix>-*.json,
@@ -385,7 +385,12 @@ export function writeSidecar() {
      * why two sessions' work went missing before anyone noticed (2026-09-16). */
     if (!S.currentSetUuid) { noteIdentitylessSave(); return; }
     ensureStateDir(S.currentSetUuid);
-    host_write_file(uuidToUiStatePath(S.currentSetUuid), JSON.stringify({
+    host_write_file(uuidToUiStatePath(S.currentSetUuid), JSON.stringify(sidecarObject()));
+}
+
+/* The UI sidecar, as an object: everything writeSidecar writes, read off S. */
+export function sidecarObject() {
+    return {
         v: 9, at: S.activeTrack, ac: S.trackActiveClip.slice(), sv: S.sessionView ? 1 : 0,
         dl: S.activeDrumLane.slice(),
         pm: S.perfModsToggled, lm: S.perfLatchMode ? 1 : 0,
@@ -421,7 +426,46 @@ export function writeSidecar() {
          * Serialized as held; entries only ever enter through setPresetRecord,
          * so there is nothing to filter here. */
         upr: S.presetRec
-        }));
+    };
+}
+
+/* ---- the saved project TEMPLATE's sidecar ----------------------------------
+ *
+ * Josh, 2026-09-30: a template carries "only things in the project menu and
+ * track config menu", with sequences gone and banks at default; kept on his
+ * calls the same day: the MACROS, a MIDI track's Program/Bank, the drum kit
+ * map (those two live in the DSP state; project_template.py keeps them there).
+ *
+ * The WHOLE sidecar is written, never a partial one: a field restoreUiSidecar
+ * does not find is left as it was in S — the previous project's — and a
+ * project with no sidecar at all takes the fresh-project branch, which makes
+ * track 1 a drum track over the template's own choice. So every field is
+ * either KEPT from this project or set to a fresh project's value.
+ * tests/js/test_template_sidecar.mjs pins that every field is one or the
+ * other, and the defaults against a fresh S. */
+export const TEMPLATE_SIDECAR_KEPT = ['v', 'am', 'pchr', 'pchd', 'ppno', 'mac', 'mcv', 'cpg', 'upr', 'bm'];
+export function sidecarDefaults() {
+    const z8 = () => new Array(NUM_TRACKS).fill(0);
+    return {
+        at: 0, ac: z8(), sv: 0, dl: z8(),
+        pm: 0, lm: 1, rs: -1,
+        us: new Array(8).fill(0),          /* user perf slots 8-15 empty (ui_state perfSnapshots) */
+        dva: new Array(NUM_TRACKS).fill(false),
+        dleu: Array.from({ length: NUM_TRACKS }, () => new Array(DRUM_LANES).fill(0)),
+        to: new Array(NUM_TRACKS).fill(DEFAULT_TRACK_OCTAVE),
+        tab: z8(),
+        chd: new Array(NUM_TRACKS).fill(null),
+    };
+}
+export function templateSidecar() {
+    const cur = sidecarObject();
+    const out = sidecarDefaults();
+    for (const k of TEMPLATE_SIDECAR_KEPT) out[k] = cur[k];
+    /* Clip A's Program / Bank on every clip — the patch the track's synth plays. */
+    out.cpg = cur.cpg.map(function(clips) {
+        return clips.map(function() { return clips[0].slice(); });
+    });
+    return out;
 }
 
 export function saveState() {

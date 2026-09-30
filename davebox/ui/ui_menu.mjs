@@ -30,6 +30,7 @@ import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { forceRedraw } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK, enterMoveSettingsCoRun } from './ui_corun.mjs';
 import { requestExport } from './ui_export.mjs';
+import { requestSetTemplate, requestClearTemplate, hasTemplate } from './ui_template.mjs';
 import { xposePreviewSet } from './ui_xpose.mjs';
 
 /* ------------------------------------------------------------------ */
@@ -218,6 +219,15 @@ function buildGlobalMenuItems() {
         createAction('Projects...', function() {
             openProjectPadPicker();
         }),
+        /* The saved project TEMPLATE (Josh, 2026-09-30: "put set as template in
+         * the project menu alongside a clear template"). Set takes the project
+         * you are in; Clear shows only while there is one (ui_template.mjs). */
+        createAction('Set as Template', function() {
+            requestSetTemplate();
+        }),
+        hasTemplate() ? createAction('Clear Template', function() {
+            requestClearTemplate();
+        }) : null,
         createDivider(),
         createAction('Save state', function() {
             S.confirmSaveCount = loadSnapshotManifest(S.currentSetUuid).length;

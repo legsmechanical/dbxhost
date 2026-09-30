@@ -7,6 +7,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **Project templates.** Project Settings → **Set as Template** saves the
+  project you're in — its settings, instruments, effects and track settings,
+  without any clips — as the starting point for new projects. Creating a
+  project then asks **Empty** or **Template**. **Clear Template** goes back to
+  empty. A module the template uses that your Move doesn't have leaves its slot
+  empty, and the screen says which.
 
 ## [0.0.9] — 2026-09-30 (test build, not in the Schwung catalog)
 ### Fixed

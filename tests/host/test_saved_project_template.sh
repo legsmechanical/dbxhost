@@ -213,7 +213,7 @@ dsp = open("davebox/dsp/seq8_state.c").read()
 m = re.search(r'fprintf\(fp, "\{\\"v\\":(\d+),', dsp)
 assert m and int(m.group(1)) == pt.STATE_V, (m and m.group(1), pt.STATE_V)
 js = open("davebox/ui/ui_persistence.mjs").read()
-m = re.search(r"JSON\.stringify\(\{\s*v: (\d+), at:", js)
+m = re.search(r"return \{\s*v: (\d+), at:", js)
 assert m and int(m.group(1)) == pt.SIDECAR_V, (m and m.group(1), pt.SIDECAR_V)
 PY
 

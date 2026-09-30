@@ -51,6 +51,7 @@ import { effectiveClip, updateStepLEDs, updateSessionLEDs, updateTrackLEDs, pain
     buildLedInitQueue, drainLedInit, shiftClaimedByGesture } from './ui_leds.mjs';
 import { schSlotForTrack, schSlotsForTrack, schSlotMasksAllTracks } from './ui_corun.mjs';
 import { pollPendingExport } from './ui_export.mjs';
+import { runTemplateSet } from './ui_template.mjs';
 import { drawUI, drawLoadingScreen, sessMixerVisible, refreshInstrAbbrev } from './ui_render.mjs';
 import { pollDSP,
     refreshPerClipBankParams, refreshDrumLaneBankParams, refreshSeqNotesIfCurrent,
@@ -2414,6 +2415,11 @@ export function _tickImpl() {
         const _sc = S.pendingSnapshotCopy;
         S.pendingSnapshotCopy = null;
         commitSnapshot(S.currentSetUuid, _sc.id, _sc.label);
+    } else if (S.pendingTemplateSet) {
+        /* Set as Template: the same slot as the snapshot copy — the tick
+         * after the 'save' above put the DSP state on disk (ui_template.mjs). */
+        S.pendingTemplateSet = false;
+        runTemplateSet();
     }
 
     /* (The orphan-prune branch that lived here is GONE — Phase C of the
