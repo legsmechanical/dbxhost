@@ -176,6 +176,23 @@ check "a template state of another version is not written (the DSP would ask to 
     test -z "$(find "$PROJECTS_DIR/$NV" -name 'seq8sa-state.json')"
 check "…while the chains still come along" test -n "$(find "$PROJECTS_DIR/$NV" -path '*host/slot_0.json')"
 
+# ---- a swap in flight is never listed ---------------------------------------
+mkdir -p "$DBX_DIR/templates/.default.tmp"
+cp "$TD/Song.abl" "$TD/meta.json" "$DBX_DIR/templates/.default.tmp/"
+sh "$CMD" list >/dev/null
+check "a half-written template (.<id>.tmp) is not listed" \
+    python3 -c "import json,sys; assert [t['id'] for t in json.load(open(sys.argv[1]))['templates']] == ['default']" "$DBX_DIR/projects.json"
+rm -rf "$DBX_DIR/templates/.default.tmp"
+
+# ---- taken from a project saved in another format: no state half ------------
+U2=22222222-aaaa-4bbb-8ccc-000000000002
+mkdir -p "$PROJECTS_DIR/$U2/Move-Set-22222222" "$PROJECTS_DIR/$U2/dAVEBOx"
+cp "$DBX_DIR/sets/template/Project 1/Song.abl" "$PROJECTS_DIR/$U2/Move-Set-22222222/Song.abl"
+echo '{"v":35,"bpm":80,"t1c0_n":"0:60:100:24;"}' > "$PROJECTS_DIR/$U2/dAVEBOx/seq8sa-state.json"
+sh "$CMD" template-set default "$U2" "$UI" seq8sa >/dev/null
+check "a source state of another version gives a template with no state (never a stale one)" test ! -e "$TD/state.json"
+sh "$CMD" list >/dev/null; newest "$T/seen" >/dev/null
+
 # ---- clear it: New is blank again -------------------------------------------
 sh "$CMD" template-clear default >/dev/null
 check "template-clear removes it" test ! -e "$TD"
