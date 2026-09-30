@@ -25,6 +25,7 @@ L="$(tar -tzf "$tb")"
 has(){ printf '%s\n' "$L" | grep -qx "$1"; }
 has "davebox-sa/module.json" && ok "one top-level dir named after the module id, with module.json" || bad "module.json not at davebox-sa/"
 has "davebox-sa/standalone" && ok "the standalone executable (launch.sh)" || bad "no standalone"
+has "davebox-sa/ui.js" && ok "the launch confirm (ui.js)" || bad "no ui.js — the Tools entry would fail to load"
 has "davebox-sa/boot-entry.sh" && ok "boot-entry.sh ships in the module dir (module.json's boot_target exec)" || bad "no boot-entry.sh"
 tar -xzf "$tb" -C "$T" davebox-sa/boot-entry.sh davebox-sa/module.json 2>/dev/null
 [ -x "$T/davebox-sa/boot-entry.sh" ] && cmp -s "$T/davebox-sa/boot-entry.sh" standalone/boot-target/entry.sh \

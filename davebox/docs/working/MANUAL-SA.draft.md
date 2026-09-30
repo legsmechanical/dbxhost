@@ -31,7 +31,7 @@ sequencer.
 
 | | how |
 |---|---|
-| **From Schwung** | open **dAVEBOx** in official Schwung's **Tools** menu |
+| **From Schwung** | open **dAVEBOx** in official Schwung's **Tools** menu; it asks *"Move will restart to load dAVEBOx. Proceed?"* — click the jog to go, **Back** to stay |
 | **At power-on** | while the screen reads *"Loading Schwung — press Back to change"*, hold **Back**, turn the jog to **dAVEBOx** and click |
 
 The boot route needs official Schwung 1.3.0 or newer. On older versions, use the

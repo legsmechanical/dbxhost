@@ -5,10 +5,13 @@ Lets davebox ship host changes **without waiting on upstream Schwung**, and
 
 ## The idea
 
-A **small launcher module**, `dAVEBOx SA`, declares `"standalone": true` and ships
-one executable. Selecting it from stock Schwung's Tools menu runs the host's
-existing `launch-standalone.sh`, which kills the whole stack, frees the SPI
-device, and runs our binary.
+A **small launcher module**, `dAVEBOx SA`, ships one executable and a `ui.js`.
+Selecting it from stock Schwung's Tools menu first asks *"Move will restart to
+load dAVEBOx. Proceed?"* (an interactive tool; it declares no `standalone`, whose
+precedence over `tool_config` differs between stock versions). On Yes it runs the
+host's existing `launch-standalone.sh` on the executable, exactly as stock runs a
+`"standalone": true` module: that kills the whole stack, frees the SPI device,
+and runs our binary.
 
 ⚠ **The launcher is a separate module, not a flag on davebox itself**, and it has
 to be. The shadow UI dispatches a tool by the FIRST matching branch, and davebox

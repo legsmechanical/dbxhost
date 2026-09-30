@@ -6,7 +6,9 @@
 # deliverable so the first launch can install it with no SSH:
 #
 #   davebox-sa/
-#     module.json                 the launcher (standalone: true)
+#     module.json                 the launcher (an interactive tool)
+#     ui.js                       = standalone/module/ui.js — asks before the
+#                                 restart, then runs launch-standalone.sh
 #     standalone                  = standalone/scripts/launch.sh
 #     boot-entry.sh               = standalone/boot-target/entry.sh — the boot
 #                                 selector's exec. module.json's boot_target block
@@ -57,6 +59,7 @@ stage="$(mktemp -d)"; trap 'rm -rf "$stage"' EXIT
 M="$stage/$ID"; P="$M/payload"
 mkdir -p "$P/bin" "$P/modules/tools"
 cp "$HERE/module/module.json" "$M/module.json"
+cp "$HERE/module/ui.js" "$M/ui.js"
 cp "$HERE/scripts/launch.sh" "$M/standalone"; chmod +x "$M/standalone"
 cp "$HERE/boot-target/entry.sh" "$M/boot-entry.sh"; chmod +x "$M/boot-entry.sh"
 # the host tree, minus what is shared or linked on the device

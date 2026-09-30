@@ -16,6 +16,9 @@ the section into a versioned heading at release time.
   everything you have open and returns to the overview of the view you're
   in. A tap still steps out one level.
 ### Added
+- **The Tools menu asks before launching.** Picking dAVEBOx SA now asks
+  *"Move will restart to load dAVEBOx. Proceed?"* — click the jog to go, Back
+  to stay in Schwung.
 - **Touch the jog to see the current bank.** Resting a finger on the jog
   shows the page of the bank you're on (the mixer page in Session View), as
   dAVEBOx Legacy did; letting go returns to the overview. Turning shows the

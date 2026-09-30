@@ -21,8 +21,9 @@
 #
 # ⚠ Every boot-only difference is marked `# ENTRY:` — grep for it.
 #
-# Invoked by the Schwung Tools menu as a standalone module binary. A module
-# declaring "standalone": true is run through the host's launch-standalone.sh.
+# Invoked from the Schwung Tools menu through the host's launch-standalone.sh:
+# the launcher's ui.js asks first, then runs that script the way stock runs a
+# "standalone": true module (2026-09-30).
 #
 # ⚠⚠ DO NOT WRITE ASSUMPTIONS ABOUT THAT SCRIPT INTO THIS ONE. Its behaviour has
 # flipped twice under us, both times silently, and it lives in the stock tree
