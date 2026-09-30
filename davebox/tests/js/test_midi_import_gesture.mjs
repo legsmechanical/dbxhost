@@ -311,7 +311,9 @@ async function main() {
 
     step('⭐ the step buttons are blocked while it is open', () => {
         const c = S.trackActiveClip[1], before = JSON.stringify(S.clipSteps[1][c].slice(0, 16)), b = writes.length;
-        note(0x90, 16, 100); note(0x80, 16, 0); ticks(4);
+        note(0x90, 16, 100);
+        assert(S.heldStep === -1, 'the step press reached the step editor: heldStep ' + S.heldStep);
+        note(0x80, 16, 0); ticks(4);
         assert(JSON.stringify(S.clipSteps[1][c].slice(0, 16)) === before, 'a step changed');
         assert(!writes.slice(b).some(w => /_toggle|_set_notes|_step/.test(w[1])), 'a step write: ' + JSON.stringify(writes.slice(b).filter(w => /step/.test(w[1]))));
         assert(layer() === 'card', 'the press changed the screen');
@@ -344,6 +346,21 @@ async function main() {
         assert(closedToCard(), 'not back on the card');
         ticks(60);
         assert(!/FAILED/.test(JSON.stringify(S.actionPopupLines)), 'it said it failed');
+    });
+
+    step('⭐ switching files puts Start, Grid and Stretch back (1, 1/16, x1) and Bars to the file\'s length', () => {
+        openImport(1);
+        turn(0, 20); turn(2, 12); turn(3, 12);
+        assert(mi().startBar > 1 && mi().grid === 2 && mi().stretch === 4, 'setup: start ' + mi().startBar + ' grid ' + mi().grid + ' stretch ' + mi().stretch);
+        jog(1); jog(1); ticks(4);                                   /* the list, on to Bass */
+        click();
+        assert(layer() === 'card' && mi().cur.name === 'Bass', 'picked ' + (mi().cur && mi().cur.name));
+        assert(mi().startBar === 1 && mi().grid === 1 && mi().stretch === 3 && mi().bars === 8,
+               'start ' + mi().startBar + ' grid ' + mi().grid + ' stretch ' + mi().stretch + ' bars ' + mi().bars);
+        jog(1); jog(-1); ticks(4); click();                         /* back to Lead, for what follows */
+        assert(mi().cur.name === 'Lead', 'back on ' + mi().cur.name);
+        back(); back();                                             /* LEAVE IMPORT → No */
+        assert(!mi(), 'still open');
     });
 
     step('⭐ per track: it reopens on the file this track picked, on the CARD', () => {
