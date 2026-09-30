@@ -54,27 +54,28 @@ const cellsMelodic = (o = {}) => [
     { kind: 'valsq', label: 'Bars', name: 'Length', text: o.bars || '4', norm: 0.1 },
     { kind: 'enumsq', label: 'Grid', name: 'Grid', text: '1/16', options: ['1/32','1/16','1/8','1/4','1/2','1'], sel: 1 },
     { kind: 'enumsq', label: 'To', name: o.replace ? 'Replace CLIP A' : 'Destination', text: 'CLIP A', options: ['CLIP A','CLIP C','CLIP D'], sel: 0 },
-    { kind: 'enumsq', label: 'Strch', name: 'Stretch', text: o.stretch || 'x1', strip: o.stretch || 'X1', options: ['/8','/4','/2','x1','x2','x4','x8'], sel: 3 },
-    { kind: 'valsq', label: 'Oct', name: 'Octave', text: o.oct || '+0', strip: 'OCT' + (o.oct || '+0'), norm: 0.5 },
-    { kind: 'valsq', label: 'Semi', name: 'Semitones', text: o.semi || '+0', strip: 'ST' + (o.semi || '+0'), norm: 0.5 },
-    { kind: 'pill', label: 'Scale', name: 'Fit to Scale', text: o.scale === false ? 'OFF' : 'ON', strip: o.scale === false ? 'AS IS' : 'SCALE', norm: o.scale === false ? 0 : 1 },
+    { kind: 'enumsq', label: 'Strch', name: 'Stretch', text: o.stretch || 'x1', strip: o.stretch || 'x1', options: ['/8','/4','/2','x1','x2','x4','x8'], sel: 3 },
+    { kind: 'valsq', label: 'Oct', name: 'Octave', text: o.oct || '+0', strip: (o.oct || '+0'), norm: 0.5 },
+    { kind: 'valsq', label: 'Semi', name: 'Semitones', text: o.semi || '+0', strip: (o.semi || '+0'), norm: 0.5 },
+    { kind: 'pill', label: 'Scale', name: 'Fit to Scale', text: o.scale === false ? 'OFF' : 'ON', strip: o.scale === false ? 'OFF' : 'ON', norm: o.scale === false ? 0 : 1 },
 ];
 const cellsDrum = () => [
     { kind: 'valsq', label: 'Start', name: 'Start Bar', text: '1', norm: 0 },
     { kind: 'valsq', label: 'Bars', name: 'Length', text: '2', norm: 0.05 },
     { kind: 'enumsq', label: 'Grid', name: 'Grid', text: '1/16', options: ['1/32','1/16','1/8','1/4','1/2','1'], sel: 1 },
     { kind: 'enumsq', label: 'To', name: 'Destination', text: 'CLIP A', options: ['CLIP A','CLIP B'], sel: 0 },
-    { kind: 'enumsq', label: 'Strch', name: 'Stretch', text: 'x1', strip: 'X1', options: ['/8','/4','/2','x1','x2','x4','x8'], sel: 3 },
-    { kind: 'enumsq', label: 'Map', name: 'Drum Map', text: 'GM', strip: 'MAP GM', options: ['Off','GM','Move'], sel: 1 },
+    { kind: 'enumsq', label: 'Strch', name: 'Stretch', text: 'x1', strip: 'x1', options: ['/8','/4','/2','x1','x2','x4','x8'], sel: 3 },
+    { kind: 'enumsq', label: 'Map', name: 'Drum Map', text: 'GM', strip: 'GM', options: ['Off','GM','Move'], sel: 1 },
     { kind: 'blank', label: '' },
     { kind: 'blank', label: '' },
 ];
 
-/* THE LAYOUT: K1-K4 as the bank page's own top row; below it the file's name,
- * its roll, and a small-font strip under K5-K8 — one column per knob, over
- * the knob it belongs to. Touching K5-K8 inverts its column and names it in
- * the header, with the value, as a touched cell does. */
-function page({ header, right, title, sub, roll, cells, touched = -1, footer, playhead }) {
+/* THE LAYOUT (rev 2, Josh 2026-09-29): the FILE's name in the header, the
+ * index on the right; K1-K4 as the bank page's own top row; one LANE showing
+ * where the notes fall; and K5-K8 as small two-line cells (label over value),
+ * one column per knob, over the knob it belongs to. Touching one inverts its
+ * cell and names it in the header, with the value, as a touched cell does. */
+function page({ header, right, sub, roll, cells, touched = -1, footer, playhead }) {
     globalThis.clear_screen();
     K.kitUseLayout('bank');
     const top = cells.slice(0, 4).concat([{ kind: 'blank', label: '' }, { kind: 'blank', label: '' },
@@ -82,16 +83,20 @@ function page({ header, right, title, sub, roll, cells, touched = -1, footer, pl
     const lower = touched >= 4 ? cells[touched] : null;
     const topTouched = touched >= 0 && touched < 4 ? touched : -1;
     if (!K.enumOverlayWouldDraw(top, topTouched)) {
-        K.hdrPrint(Math.max(0, Math.floor((128 - K.hdrWidth(title)) / 2)), 32, title, 1);
-        if (sub) K.mvPrint(Math.floor((128 - K.mvWidth(sub)) / 2), 41, sub, 1);
-        else if (roll) K.drawKitNoteRoll(4, 40, 120, 5, roll.notes, roll.ticks,
-                                         { rows: roll.rows, playhead });
+        if (sub) K.mvPrint(Math.floor((128 - K.mvWidth(sub)) / 2), 33, sub, 1);
+        else if (roll) {
+            /* one lane: each note a 2px-tall mark where it falls, its length as its width */
+            const px = (t) => 4 + Math.floor(t * 120 / roll.ticks);
+            for (const n of roll.notes) fill_rect(px(n.t), 34, Math.max(2, px(n.t + n.g) - px(n.t) - 1), 2, 1);
+            if (playhead != null) fill_rect(px(playhead), 32, 1, 6, 1);
+        }
         for (let k = 4; k < 8; k++) {
             const c = cells[k]; if (!c || c.kind === 'blank') continue;
-            const txt = c.strip, x0 = (k - 4) * 32, on = k === touched;
-            const tw = K.mvWidth(txt), tx = x0 + Math.floor((32 - tw) / 2);
-            if (on) fill_rect(x0 + 1, 49, 30, 7, 1);
-            K.mvPrint(tx, 50, txt, on ? 0 : 1);
+            const x0 = (k - 4) * 32, on = k === touched;
+            if (on) fill_rect(x0 + 1, 41, 30, 15, 1);
+            const lab = c.label.toUpperCase(), val = c.strip;
+            K.mvPrint(x0 + Math.floor((32 - K.mvWidth(lab)) / 2), 43, lab, on ? 0 : 1);
+            K.mvPrint(x0 + Math.floor((32 - K.mvWidth(val)) / 2), 50, val, on ? 0 : 1);
         }
     }
     K.drawKitBankPage(top, { headerText: lower ? lower.name.toUpperCase() : header,
@@ -105,12 +110,12 @@ function picker(rows, sel) {
 const FOOT = [['JOG', 'FILE'], ['CLK', 'LOAD'], ['BACK', '']];
 
 /* 1 — the page: a single-part file in the remembered folder, heard as you land on it */
-page({ header: '(2) BASS LINES', right: '3/12', title: 'ACID LINE 2', roll: melodic(7, 4), playhead: 520,
+page({ header: '(2) ACID LINE 2', right: '3/12', roll: melodic(7, 4), playhead: 520,
        cells: cellsMelodic(), footer: FOOT });
 shoot('01-page-file');
 
 /* 2 — turning the jog: the folder's list floats up (small font, six at a time) */
-page({ header: '(2) BASS LINES', right: '3/12', title: 'ACID LINE 2', roll: melodic(7, 4),
+page({ header: '(2) ACID LINE 2', right: '3/12', roll: melodic(7, 4),
        cells: cellsMelodic(), footer: [['JOG', 'FILE'], ['CLK', 'LOAD'], ['BACK', '']] });
 picker([
     { label: '..' },
@@ -123,12 +128,12 @@ picker([
 shoot('02-jog-list');
 
 /* 3 — a multi-part file: it previews its first part; the click opens it like a folder */
-page({ header: '(2) BASS LINES', right: '5/12', title: 'FUNK SONG', sub: '3 PARTS - CLICK TO OPEN', roll: melodic(11, 8),
+page({ header: '(2) FUNK SONG', right: '5/12', sub: '3 PARTS - CLICK TO OPEN', roll: melodic(11, 8),
        cells: cellsMelodic({ bars: '8' }), footer: [['JOG', 'FILE'], ['CLK', 'OPEN'], ['BACK', '']] });
 shoot('03-multipart-file');
 
 /* 4 — inside it: the parts are the list, each heard as you land on it */
-page({ header: '(2) FUNK SONG', right: '2/3', title: 'BASS', roll: melodic(3, 8),
+page({ header: '(2) FUNK SONG > BASS', right: '2/3', roll: melodic(3, 8),
        cells: cellsMelodic({ bars: '8' }), footer: [['JOG', 'PART'], ['CLK', 'LOAD'], ['BACK', '']] });
 picker([
     { label: '..' },
@@ -139,22 +144,22 @@ picker([
 shoot('04-inside-multipart');
 
 /* 5 — Semi touched: the value large, the name in the header (the bank page's own touch) */
-page({ header: '(2) BASS LINES', right: '3/12', title: 'ACID LINE 2', roll: melodic(7, 4),
+page({ header: '(2) ACID LINE 2', right: '3/12', roll: melodic(7, 4),
        cells: cellsMelodic({ semi: '-3' }), touched: 6, footer: FOOT });
 shoot('05-touch-semi');
 
 /* 6 — Scale OFF: the notes as written (Oct and Semi still apply) */
-page({ header: '(2) BASS LINES', right: '3/12', title: 'ACID LINE 2', roll: melodic(7, 4),
+page({ header: '(2) ACID LINE 2', right: '3/12', roll: melodic(7, 4),
        cells: cellsMelodic({ scale: false }), touched: 7, footer: FOOT });
 shoot('06-scale-off');
 
 /* 7 — a drum track: K6 is the drum map; K7-K8 have nothing to do */
-page({ header: '(1) BREAKS', right: '2/9', title: 'AMEN 1', roll: drums(2), playhead: 300,
+page({ header: '(1) AMEN 1', right: '2/9', roll: drums(2), playhead: 300,
        cells: cellsDrum(), footer: [['RTPAD', 'SOUND'], ['CLK', 'LOAD']] });
 shoot('07-drum-page');
 
 /* 8 — a drum track, holding a sound on the right-hand pads: where each sound goes */
-page({ header: '(1) BREAKS', right: '2/9', title: 'AMEN 1', roll: drums(2),
+page({ header: '(1) AMEN 1', right: '2/9', roll: drums(2),
        cells: cellsDrum(), footer: [['TAP', 'LANE'], ['CLK', 'LOAD']] });
 {
     const X = 2, Y = 9, Wd = 124, h = K.MV_FOOTER_Y - 1 - Y;
