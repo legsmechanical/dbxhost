@@ -76,6 +76,32 @@ case "${1:-}" in
     *)      echo "unknown argument: $1 (expected --boot or nothing)"; exit 2 ;;
 esac
 
+# ⚠ AN INHERITED SIGNAL MASK THAT BLOCKS TERM. MoveLauncher runs with TERM (and
+# INT, USR1) blocked -- so does the MoveOriginal it starts -- and a blocked mask
+# survives fork AND exec, so at the BOOT door every process below inherited it.
+# A `kill` then queued a TERM nothing would ever act on: on a stock Move
+# (AbletonOS v4.1, 2026-09-30) quitting a boot-door session hung for good on
+# "dAVEBOx exiting", the launcher waiting on a set reader holding a pending,
+# blocked TERM. The Tools door never inherits it (stock Schwung starts us), so
+# clear it here and every door runs under the mask that door always had.
+# bash cannot change its own mask; python3 can, and os.execv keeps this pid,
+# which MoveLauncher supervises at boot. python3 IGNORES SIGPIPE and SIGXFSZ,
+# and an ignored disposition survives exec too, so both go back to default.
+# DBX_SIGMASK_CLEARED stops a second pass and is unset at once, so it never
+# rides the boot exit into the next stock session (see DBX_ENTRY above).
+if [ -z "${DBX_SIGMASK_CLEARED:-}" ] && command -v python3 >/dev/null 2>&1; then
+    _blk="$(sed -n 's/^SigBlk:[[:space:]]*//p' /proc/$$/status 2>/dev/null)"
+    if [ -n "$_blk" ] && [ $(( 0x$_blk & (1 << 14) )) -ne 0 ]; then
+        DBX_SIGMASK_CLEARED=1 exec python3 -c '
+import os, signal, sys
+signal.pthread_sigmask(signal.SIG_SETMASK, [])
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+signal.signal(signal.SIGXFSZ, signal.SIG_DFL)
+os.execv("/bin/bash", ["bash"] + sys.argv[1:])' "$0" "$@"
+    fi
+fi
+unset DBX_SIGMASK_CLEARED
+
 setsid --wait bash -c '
   # ⚠ Which door, passed as a POSITIONAL ARGUMENT (see the note at the top).
   # NOT exported: an exported copy is inherited by MoveOriginal and everything
@@ -105,6 +131,9 @@ setsid --wait bash -c '
   # from quiesce and the reaper, which write their own.
   ts() { echo "$(date +%H:%M:%S.%2N) phase: $*"; }
   ts "launcher entered (entry=$DBX_ENTRY)"
+  # The mask this session runs under (TERM is bit 14, 0x4000): proof the
+  # clearing at the top of this file ran, or was not needed.
+  echo "signal mask: $(sed -n "s/^SigBlk:[[:space:]]*//p" /proc/$$/status 2>/dev/null)"
 
   # (The move_loaded_set.txt reader starts just before the Move loop below,
   # not here -- see the note there for why the position matters.)
@@ -790,8 +819,21 @@ setsid --wait bash -c '
   # S1: the reader was started once, outside this loop -- stop it with the
   # session, not with an individual Move process. Its TERM handler tears down
   # its own tail pipeline; wait so it is gone before the boot door execs on.
+  # ⚠ BOUNDED. A reader that never acts on TERM (a blocked mask, see the top of
+  # this file) made the unbounded wait here hang the quit forever. Two seconds,
+  # then KILL -- the reader and its pipeline, whose own cleanup trap never ran.
   if [ -n "$_mlsr_pid" ]; then
     kill "$_mlsr_pid" 2>/dev/null || true
+    _w=0
+    while kill -0 "$_mlsr_pid" 2>/dev/null && [ "$_w" -lt 20 ]; do sleep 0.1; _w=$((_w + 1)); done
+    if kill -0 "$_mlsr_pid" 2>/dev/null; then
+      echo "set reader $_mlsr_pid ignored TERM -- killing it and its pipeline"
+      for _c in $(pgrep -P "$_mlsr_pid" 2>/dev/null || true); do
+        pkill -9 -P "$_c" 2>/dev/null || true
+        kill -9 "$_c" 2>/dev/null || true
+      done
+      kill -9 "$_mlsr_pid" 2>/dev/null || true
+    fi
     wait "$_mlsr_pid" 2>/dev/null || true
   fi
   rm -f "$DBX_DIR/move_loaded_set.txt"
