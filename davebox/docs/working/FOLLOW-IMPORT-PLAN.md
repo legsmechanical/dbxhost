@@ -259,7 +259,8 @@ warnings, Grid, Start, Bars, drum destination-pad planning, the one-write-then-v
 
 ## Device pass 1 feedback (Josh, 2026-09-30) — the next round
 
-⭐ **The browser must feel like the rest of dAVEBOx** — navigation, UI, browse and selection
+⭐ **It LOOKS right; it does not FEEL right** (Josh): keep the visuals, rebuild the
+interaction. **The browser must feel like the rest of dAVEBOx** — navigation, UI, browse and selection
 paradigms familiar in the context of the platform, not a separate system bolted on. The redesign
 is built from dAVEBOx's existing conventions (survey pending) and mocked up for approval first.
 
