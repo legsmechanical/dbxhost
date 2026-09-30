@@ -123,6 +123,33 @@ int main(void) {
         checks += 3;
         hx_destroy(h);
     }
+    /* The drain's own job, which the swing fix must not break: with the MIDI
+     * delay on, a new note-on DROPS the previous note's queued echoes. */
+    {
+        int ons_retrig[2];
+        for (int rt = 0; rt < 2; rt++) {
+            hx_t *h = hx_create(NULL);
+            seq8_instance_t *in = (seq8_instance_t *)h->inst;
+            char k[48];
+            hx_set_param(h, "t3_route", "schwung");
+            hx_set_param(h, "t3_delay_level", "100");
+            hx_set_param(h, "t3_delay_repeats", "8");
+            hx_set_param(h, "t3_delay_retrig", rt ? "1" : "0");
+            for (int s = 0; s < 16; s += 2) {
+                snprintf(k, sizeof k, "t3_c0_step_%d_toggle", s); hx_set_param(h, k, "60 100");
+            }
+            hx_set_param(h, "transport", "play_focus:3:0");
+            hx_render(h, 1500);
+            ons_retrig[rt] = ons_on_slot((int)in->tracks[3].pfx.slot);
+            hx_destroy(h);
+        }
+        if (!(ons_retrig[1] < ons_retrig[0])) {
+            fprintf(stderr, "FAIL: delay retrig kept the echoes (%d note-ons with it, %d without)\n",
+                    ons_retrig[1], ons_retrig[0]);
+            return 1;
+        }
+        checks++;
+    }
     printf("PASS: test_swing_retrig_keeps_note_offs (%d checks)\n", checks);
     return 0;
 }
