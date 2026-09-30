@@ -7,6 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.7] — 2026-09-29 (test build, not in the Schwung catalog)
+### Fixed
+- **Updating actually updates.** Installing a newer test build over an
+  earlier one kept running the earlier one: only the Tools entry changed. The
+  first launch after an update now installs the new version.
+
+## [0.0.6] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Added
 - **See your whole Move in a browser.** Open `move.local:7700/mirror` (the
   Mirror link in the manager) to see the screen large, with the whole device
@@ -30,6 +38,12 @@ the section into a versioned heading at release time.
   the lanes you tap. It loads into the clip you are on with one click and one
   Undo (on a drum track, only the lanes a sound goes to), and reopens where you
   left it. The transport keeps running. It replaces the phrase library.
+
+### Fixed
+- **Move tracks' Volume, Pan and Sends work.** On a Move track, Volume, Pan and Send A/B did
+  nothing: the track still played, but its sound never reached dAVEBOx's mixer
+  because an installed dAVEBOx left Link Audio switched off. Installing or
+  updating now switches it on.
 
 ## [0.0.5] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Changed

@@ -69,10 +69,16 @@ rc=$(run)
 printf '{"version":"0.1.0","host":1,"davebox":1,"installed":"x","by":"bootstrap"}\n' > "$T/f/dbx/sa-build.json"
 rc=$(run)
 [ "$rc" = 0 ] && [ "$(cat "$T/f/dbx/schwung")" = "host" ] && grep -q '"version":"0.2.0"' "$T/f/dbx/sa-build.json" && ok "0.1.0 upgraded to the 0.2.0 payload" || bad "not upgraded: $(cat "$T/out")"
-echo "the LAUNCHER re-blesses an existing install in place, and calls bootstrap only with no install:"
+echo "the LAUNCHER re-blesses an existing install in place, then hands it to bootstrap for the guarded upgrade:"
 L=standalone/scripts/launch.sh
 grep -q 're-blessing in place (no payload)' "$L" && ok "launch.sh re-blesses without the payload" || bad "no in-place re-bless"
-awk '/no install at \$DBX_DIR -- bootstrap/{f=1} f&&/bootstrap.sh/{print; exit}' "$L" | grep -q 'bootstrap.sh' && ok "bootstrap.sh is reached only on the no-install branch" || bad "bootstrap reachable with an install present"
+awk '/no install at \$DBX_DIR -- bootstrap/{f=1} f&&/bootstrap.sh/{print; exit}' "$L" | grep -q 'bootstrap.sh' && ok "bootstrap.sh runs on the no-install branch" || bad "no bootstrap with no install"
+# ⚠ 2026-09-29: with an install present the launcher only re-blessed, so a newer
+# release tarball never reached the device — every update kept the FIRST release.
+# The existing-install branch must reach bootstrap.sh too, AFTER the re-bless
+# (bootstrap's own rule, pinned above, keeps dev builds and newer releases).
+awk '/-x "\$DBX_DIR\/schwung" \] && \[ -f "\$DBX_DIR\/sa-build.json" \]; then/{f=1} f&&/re-blessed:/{r=1} f&&r&&/payload\/scripts\/bootstrap.sh" \|\|/{print; exit} f&&/^  else$/{exit}' "$L" \
+    | grep -q 'bootstrap.sh' && ok "an existing install reaches bootstrap.sh after the re-bless (release upgrades are laid)" || bad "an existing install never reaches bootstrap: release upgrades are dropped"
 echo "an install left UNSTAMPED by an unfinished bootstrap is laid again, not kept:"
 mk blesses; rc=$(run); rm -f "$T/f/dbx/sa-build.json"; printf 'half\n' > "$T/f/dbx/schwung"
 rc=$(run)

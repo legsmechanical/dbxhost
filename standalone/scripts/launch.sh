@@ -215,8 +215,8 @@ setsid --wait bash -c '
   # its blessed helper (a stock reinstall resets the bit) is RE-BLESSED here,
   # in place, from the helper it already has -- the payload is NOT consulted:
   # the module dir may carry an old catalog payload, and handing it to
-  # bootstrap.sh laid 0.1.0 over a developer build. bootstrap.sh is for the
-  # case where there is NO install at all.
+  # bootstrap.sh laid 0.1.0 over a developer build. With an install present,
+  # bootstrap.sh runs only AFTER the re-bless, for its guarded upgrade rule.
   if [ -x "$DBX_DIR/schwung" ] && [ -f "$DBX_DIR/sa-build.json" ]; then
     if [ ! -u "$HEAL" ]; then
       ts "helper not blessed, install present -- re-blessing in place (no payload)"
@@ -228,6 +228,16 @@ setsid --wait bash -c '
       [ -x /data/UserData/schwung/bin/schwung-heal ] && /data/UserData/schwung/bin/schwung-heal >/dev/null 2>&1 || true
       [ -u "$HEAL" ] || refuse "this stock Schwung cannot bless the helper (predates schwung#419); as root: sh $DBX_DIR/bless.sh"
       ts "re-blessed: $(ls -la "$HEAL")"
+    fi
+    # A RELEASE UPGRADE is laid here (2026-09-29). Installing a newer release
+    # tarball over an existing install only replaced the module dir: this
+    # branch re-blessed and went on, so every update kept running the FIRST
+    # release it was installed from. bootstrap.sh owns the decision and is safe
+    # to hand an existing install: it lays the payload only when BOTH stamps
+    # are releases and the payload is NEWER -- a dev stamp is never replaced
+    # and a release never downgraded (the 2026-09-06 incident above).
+    if [ -f "$MOD/payload/scripts/bootstrap.sh" ]; then
+      sh "$MOD/payload/scripts/bootstrap.sh" || refuse "bootstrap refused -- see the lines above"
     fi
   else
     ts "no install at $DBX_DIR -- bootstrap (helper blessed: $([ -u "$HEAL" ] && echo yes || echo no))"
