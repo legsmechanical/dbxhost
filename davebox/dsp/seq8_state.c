@@ -909,6 +909,22 @@ static void seq8_save_state(seq8_instance_t *inst) {
     if (!ok || rename(tmp_path, dest) != 0) remove(tmp_path);
 }
 
+/* A load that finds NO project data — no file, an empty one, a Clear Session
+ * sentinel (v=0) or a file of another version, deleted — opens a brand-new
+ * project, and a brand-new project starts with track 1 in DRUM mode, as a new
+ * instance does (create_instance). `state_load` has just reset every track to
+ * melodic so the previous project's drum tracks cannot leak; without this the
+ * drum default came back only if the UI later pushed `t0_pad_mode`, which it
+ * does only when it finds no UI sidecar — and the UI reads pad modes BACK from
+ * here. `state_load` also cleared every allocated drum clip, so the lanes this
+ * brings up are empty. */
+static void seq8_fresh_project_defaults(seq8_instance_t *inst) {
+    /* Unconditional: the only caller is `state_load`, which has just set every
+     * track melodic. */
+    inst->tracks[0].pad_mode = PAD_MODE_DRUM;
+    drum_clips_alloc(inst, &inst->tracks[0]);
+}
+
 static void seq8_load_state(seq8_instance_t *inst) {
     /* A preview never outlives the project it was previewing in: the clips it
      * would restore are about to be replaced. */
@@ -924,16 +940,16 @@ static void seq8_load_state(seq8_instance_t *inst) {
     /* "Too big to save" described the project being replaced, not this one. */
     inst->save_refused = 0;
     FILE *fp = fopen(inst->state_path, "r");
-    if (!fp) return;
+    if (!fp) { seq8_fresh_project_defaults(inst); return; }
     fseek(fp, 0, SEEK_END);
     long fsz = ftell(fp);
     fseek(fp, 0, SEEK_SET);
-    if (fsz <= 0) { fclose(fp); remove(inst->state_path); return; }
+    if (fsz <= 0) { fclose(fp); remove(inst->state_path); seq8_fresh_project_defaults(inst); return; }
     char *buf = (char *)malloc((size_t)fsz + 1);
     if (!buf) { fclose(fp); return; }
     size_t n = fread(buf, 1, (size_t)fsz, fp);
     fclose(fp);
-    if (!n) { seq8_load_buf_free(buf); remove(inst->state_path); return; }
+    if (!n) { seq8_load_buf_free(buf); remove(inst->state_path); seq8_fresh_project_defaults(inst); return; }
     buf[n] = '\0';
     /* One pass, so the ~15k getter lookups below stop rescanning the file. */
     jidx_build(buf);
@@ -960,6 +976,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
             inst->state_version_mismatch = 0;
             remove(inst->state_path);
             seq8_ilog(inst, "SEQ8 state: wrong version, deleted");
+            seq8_fresh_project_defaults(inst);
             return;
         }
     }
