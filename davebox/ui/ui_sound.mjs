@@ -77,6 +77,7 @@ import { writeSidecar } from './ui_persistence.mjs';
 import { MORPH_KIND, MORPH_LABEL, morphSnapshotSlots, morphPrepare, morphReady, morphApply,
          morphLegValid, morphInvalidate, morphInvalidateBuses } from './ui_snapmorph.mjs';
 import { requestTrackModeChange, showMenuInfo } from './ui_dialogs.mjs';
+import { requestClipMidiExport } from './ui_midi_export.mjs';
 import {
     openTextEntry, isTextEntryActive, handleTextEntryMidi, drawTextEntry, tickTextEntry,
     closeTextEntry,
@@ -581,6 +582,15 @@ function configRows(t) {
                 get: () => moduleParallelDefault(mod),
                 set: (v) => { setModuleParallelDefault(mod, v ? 1 : 0); } });
         }
+    }
+    /* Export to MIDI (Josh, 2026-09-30: a TRACK CONFIG row): the clip on
+     * screen, as it plays, to a .mid file (ui_midi_export.mjs). A one-shot
+     * `action` row — the click runs it, the jog never edits it. Not on a
+     * Conductor: it holds transpositions, not notes. */
+    if (GS.trackPadMode[t] !== PMC) {
+        rows.push({ key: 'midi_export', label: 'Export to MIDI',
+            action: () => requestClipMidiExport(t),
+            get: () => 0, fmt: () => '...' });
     }
     return rows;
 }
@@ -3190,7 +3200,7 @@ const TRACK_MENU_GROUPS = [
     ['Mode', 'Layout'],
     ['Transpose', 'VelIn', 'AftTch'],
     ['Looper'],
-    ['Import MIDI'],
+    ['Export to MIDI'],
     ['Parallel'],
 ];
 const TRACK_MENU_DROPPED = { muted: true, soloed: true };
@@ -9800,7 +9810,12 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * grammar a bus level row has, and what these rows had on the
              * settings screen they came from. */
             const spec = S.pickRows[S.pickRow].spec;
-            if (cfgRowLive()) {
+            if (spec.action) {
+                /* A one-shot row (Export to MIDI): the click runs it and the
+                 * row never takes the jog. It only ARMS — get_param answers
+                 * null in here; the tick does the work. */
+                spec.action();
+            } else if (cfgRowLive()) {
                 const preview = S.cfgRowPreview;
                 S.cfgRowEditing = false;
                 S.cfgRowPreview = null;

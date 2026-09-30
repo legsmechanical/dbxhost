@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **Export a clip as a MIDI file.** A new **Export to MIDI** row on the
+  track's TRACK CONFIG menu saves the clip you are on, as it plays, to a
+  "dAVEBOx MIDI" folder in your user data — download it from Schwung Manager's
+  Files page, or bring it back with Import MIDI. Stop the transport first.
 
 ## [0.0.9] — 2026-09-30 (test build, not in the Schwung catalog)
 ### Fixed

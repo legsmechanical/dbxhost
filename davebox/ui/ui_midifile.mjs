@@ -371,3 +371,33 @@ export function smfWrite(opts) {
     out.set(body, 22);
     return out;
 }
+
+/* A render made fit for a file: what plays as live MIDI can hold the same
+ * pitch twice at once (a long gate re-struck, delay echoes, the arp), which a
+ * file cannot say — its note-offs would end the wrong one. Same rule as the
+ * Ableton export's legalizeNotes, in ticks: one note per pitch per onset, and
+ * a note ends where the next of its pitch begins. Nothing runs past `span`
+ * (the clip's end): a longer tail would move the end of the file, and a
+ * re-import would grow a bar. */
+export function smfLegalize(notes, span) {
+    const end = span > 0 ? span : Infinity;
+    const by = new Map();
+    for (const n of notes || []) {
+        if (!(n.tick >= 0) || n.tick >= end) continue;
+        const l = by.get(n.pitch) || [];
+        l.push(n); by.set(n.pitch, l);
+    }
+    const out = [];
+    for (const l of by.values()) {
+        l.sort((a, b) => a.tick - b.tick);
+        for (let i = 0; i < l.length; i++) {
+            if (i > 0 && l[i - 1].tick === l[i].tick) continue;
+            let j = i + 1;
+            while (j < l.length && l[j].tick === l[i].tick) j++;
+            const next = j < l.length ? l[j].tick : end;
+            const gate = Math.min(Math.max(1, l[i].gate | 0), next - l[i].tick, end - l[i].tick);
+            if (gate >= 1) out.push({ tick: l[i].tick, pitch: l[i].pitch, vel: l[i].vel, gate });
+        }
+    }
+    return out.sort((a, b) => a.tick - b.tick || a.pitch - b.pitch);
+}

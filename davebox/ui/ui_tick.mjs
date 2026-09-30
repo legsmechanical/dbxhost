@@ -51,6 +51,7 @@ import { effectiveClip, updateStepLEDs, updateSessionLEDs, updateTrackLEDs, pain
     buildLedInitQueue, drainLedInit, shiftClaimedByGesture } from './ui_leds.mjs';
 import { schSlotForTrack, schSlotsForTrack, schSlotMasksAllTracks } from './ui_corun.mjs';
 import { pollPendingExport } from './ui_export.mjs';
+import { pollPendingMidiExport } from './ui_midi_export.mjs';
 import { drawUI, drawLoadingScreen, sessMixerVisible, refreshInstrAbbrev } from './ui_render.mjs';
 import { pollDSP,
     refreshPerClipBankParams, refreshDrumLaneBankParams, refreshSeqNotesIfCurrent,
@@ -466,6 +467,8 @@ export function _tickImpl() {
      * fires. host_system_cmd blocks for the python packager; transport is
      * stopped (guarded in exportSession) so the brief tick stall is benign. */
     pollPendingExport();
+    /* Export to MIDI (a TRACK CONFIG row): the same tick-context render. */
+    pollPendingMidiExport();
 
     /* Deferred padmap recompute for leaving-DRUM (see applyTrackConfig
      * else branch). Fire ONLY when the pendingDefaultSetParams queue is

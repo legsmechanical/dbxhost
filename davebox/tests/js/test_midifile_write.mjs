@@ -4,7 +4,7 @@
  * Read back two ways: through this repo's own reader (smfParse — the MIDI
  * browser re-imports these files), and byte by byte where the reader does not
  * look (the end-of-track that holds a silent last bar, the tempo bytes). */
-import { smfWrite, smfParse, SMF_PPQN } from '../../ui/ui_midifile.mjs';
+import { smfWrite, smfParse, smfLegalize, SMF_PPQN } from '../../ui/ui_midifile.mjs';
 
 let failed = 0;
 function step(l, fn) {
@@ -91,6 +91,22 @@ step('a long clip: delta times past one byte, and many notes', () => {
     const notes = Array.from({ length: 600 }, (_, i) => ({ tick: i * 97, pitch: 36 + (i % 40), vel: 1 + (i % 127), gate: 50 }));
     const r = smfParse(smfWrite({ notes, lengthTicks: 600 * 97 }));
     assert(r.parts[0].notes.length === 600 && r.parts[0].notes[599].t === 599 * 97, 'n ' + r.parts[0].notes.length);
+});
+
+step('smfLegalize: one note per pitch per onset, the first kept', () => {
+    const r = smfLegalize([{ tick: 0, pitch: 60, vel: 100, gate: 24 }, { tick: 0, pitch: 60, vel: 50, gate: 48 }], 384);
+    assert(J(r) === J([{ tick: 0, pitch: 60, vel: 100, gate: 24 }]), J(r));
+});
+step('smfLegalize: a held note ends where the next of its pitch begins; other pitches untouched', () => {
+    const r = smfLegalize([{ tick: 0, pitch: 60, vel: 100, gate: 200 }, { tick: 96, pitch: 60, vel: 90, gate: 24 },
+                           { tick: 0, pitch: 64, vel: 80, gate: 200 }], 384);
+    assert(J(r) === J([{ tick: 0, pitch: 60, vel: 100, gate: 96 }, { tick: 0, pitch: 64, vel: 80, gate: 200 },
+                       { tick: 96, pitch: 60, vel: 90, gate: 24 }]), J(r));
+    assert(smfParse(smfWrite({ notes: r })).parts[0].notes.length === 3, 'three notes read back');
+});
+step('smfLegalize: nothing runs past the clip end, and a note at or past it is dropped', () => {
+    const r = smfLegalize([{ tick: 300, pitch: 60, vel: 100, gate: 200 }, { tick: 384, pitch: 62, vel: 100, gate: 10 }], 384);
+    assert(J(r) === J([{ tick: 300, pitch: 60, vel: 100, gate: 84 }]), J(r));
 });
 
 if (failed) { console.log('FAIL: test_midifile_write'); process.exit(1); }

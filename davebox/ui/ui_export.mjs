@@ -42,7 +42,7 @@ const EXPORT_MODULE_DIR = DAVEBOX_HOST_DIR + '/modules/tools/' + MODULE_ID;
 const EXPORT_OUT_DIR    = DAVEBOX_HOST_DIR + '/davebox-exports';
 /* Scratch workspace nested under the exports dir; created per export and
  * removed afterward. */
-const EXPORT_STAGING    = EXPORT_OUT_DIR + '/staging';
+export const EXPORT_STAGING    = EXPORT_OUT_DIR + '/staging';
 const EXPORT_SCENES     = NUM_CLIPS;   /* dAVEBOx clip N -> scene N */
 /* DSP writes per-clip rendered notes here; JS reads them (must match
  * EXPORT_RENDER_PATH in dsp/seq8.c). Inside staging → cleaned with it.
@@ -324,7 +324,7 @@ function resolveTrack(t, ctx) {
 
 /* Stop-transport notice — held for 2x the normal popup duration so it's easy to
  * read (it's the one popup users hit by accident mid-jam). */
-function showStopTransportNotice() {
+export function showStopTransportNotice() {
     showActionPopup('STOP TRANSPORT', 'FOR EXPORT');
     S.actionPopupEndTick = nowMs() + ACTION_POPUP_MS * 2;
 }
@@ -667,13 +667,13 @@ function legalizeNotes(notes) {
  * total = content extent (region.end), cycle = default loop brace (region.loop.end)
  * — Phase 4b bakes several cycles (random/delay) and parks the brace on cycle 1
  * so the extra content is revealed by dragging the brace open in Live. */
-function buildClip(t, c, isDrum, ctx) {
-    /* Apply-Conductor variant: for melodic responder tracks (not drum, not the
-     * Conductor track itself) when the user opted in. DSP folds per-scene only
-     * where the conductor clip has notes + the responder is on; otherwise it
-     * renders written pitch — so calling _export_cond for every responder clip
-     * is safe. */
-    const useCond = S.exportApplyConductor && !isDrum && t !== conductorTrackIdx();
+/* ONE clip's render, as it plays: the DSP bake (tN_cC_export / _export_cond /
+ * _export_drum) and the note file it writes. Tick context only (get_param).
+ * Returns { span, cycle, count, notes: [{ tick, pitch, vel, gate }] } in
+ * dAVEBOx ticks (96 per quarter), or null: no answer, an empty clip (count 0),
+ * a render error (count -1) or no file. Shared by the Ableton export and
+ * Export to MIDI (ui_midi_export.mjs), so there is one reader of the render. */
+export function renderClipNotes(t, c, isDrum, useCond) {
     const key = 't' + t + '_c' + c +
         (isDrum ? '_export_drum' : (useCond ? '_export_cond' : '_export'));
     const hdr = host_module_get_param(key);
@@ -683,10 +683,10 @@ function buildClip(t, c, isDrum, ctx) {
     const count = parseInt(parts[1], 10);
     let   cycle = parseInt(parts[2], 10);
     if (!isFinite(cycle) || cycle <= 0) cycle = span;   /* fallback: brace = whole clip */
-    if (!isFinite(count) || count <= 0) return null;    /* 0 = empty, -1 = render error */
+    if (!isFinite(count) || count <= 0) return { span, cycle, count: isFinite(count) ? count : -1, notes: [] };
 
     const body = host_read_file(EXPORT_RENDER_PATH);
-    if (!body) return null;
+    if (!body) return { span, cycle, count: -1, notes: [] };
 
     const notes = [];
     const toks = body.split(';');
@@ -697,14 +697,25 @@ function buildClip(t, c, isDrum, ctx) {
         const tick = parseInt(f[0], 10), pitch = parseInt(f[1], 10),
               vel  = parseInt(f[2], 10), gate  = parseInt(f[3], 10);
         if (!isFinite(tick) || !isFinite(pitch)) continue;
-        notes.push({
-            noteNumber: pitch,
-            startTime: tick / 96,
-            duration: Math.max(1, isFinite(gate) ? gate : 1) / 96,
-            velocity: isFinite(vel) ? vel : 100,
-            offVelocity: 0
-        });
+        notes.push({ tick, pitch, vel: isFinite(vel) ? vel : 100, gate: Math.max(1, isFinite(gate) ? gate : 1) });
     }
+    return { span, cycle, count, notes };
+}
+
+function buildClip(t, c, isDrum, ctx) {
+    /* Apply-Conductor variant: for melodic responder tracks (not drum, not the
+     * Conductor track itself) when the user opted in. DSP folds per-scene only
+     * where the conductor clip has notes + the responder is on; otherwise it
+     * renders written pitch — so calling _export_cond for every responder clip
+     * is safe. */
+    const useCond = S.exportApplyConductor && !isDrum && t !== conductorTrackIdx();
+    const r = renderClipNotes(t, c, isDrum, useCond);
+    if (!r || r.count <= 0) return null;                /* 0 = empty, -1 = render error */
+    const span = r.span, cycle = r.cycle, count = r.count;
+    const notes = r.notes.map(function(n) {
+        return { noteNumber: n.pitch, startTime: n.tick / 96, duration: n.gate / 96,
+                 velocity: n.vel, offVelocity: 0 };
+    });
     if (notes.length < count)
         showActionPopup('EXPORT WARN', 'CLIP TRUNCATED');   /* should not happen via file */
 
@@ -935,7 +946,7 @@ function dateStamp() {
 }
 
 /* Filesystem-safe set name; spaces collapsed, exotic chars dropped. */
-function sanitizeName(name) {
+export function sanitizeName(name) {
     const s = (name || '').replace(/[^A-Za-z0-9 _-]/g, '').replace(/\s+/g, ' ').trim();
     return s || 'davebox';
 }
