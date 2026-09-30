@@ -918,9 +918,8 @@ static void seq8_save_state(seq8_instance_t *inst) {
  * here. `state_load` also cleared every allocated drum clip, so the lanes this
  * brings up are empty. */
 static void seq8_fresh_project_defaults(seq8_instance_t *inst) {
-    int t;
-    for (t = 0; t < NUM_TRACKS; t++)
-        if (inst->tracks[t].pad_mode == PAD_MODE_DRUM) return;
+    /* Unconditional: the only caller is `state_load`, which has just set every
+     * track melodic. */
     inst->tracks[0].pad_mode = PAD_MODE_DRUM;
     drum_clips_alloc(inst, &inst->tracks[0]);
 }
