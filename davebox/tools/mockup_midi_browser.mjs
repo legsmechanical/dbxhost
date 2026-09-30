@@ -145,15 +145,10 @@ picker([
     { label: 'ACID LINE 1', value: '4Br' },
     { label: 'ACID LINE 2', value: '4Br' },
     { label: 'DUB SUB', value: '8Br' },
-    { label: 'FUNK SONG/', value: '3 PT' },
+    { label: 'FUNK SONG', value: '3 PT >' },
     { label: 'OCTAVES', value: '2Br' },
 ], 2);
 shoot('02-jog-list');
-
-/* 3 — landing on a multi-part file: it IS a folder — nothing plays, click goes in */
-page({ header: '(2) FUNK SONG/', right: '5/12', sub: '3 PARTS - CLICK TO OPEN',
-       cells: cellsMelodic({ bars: '8' }), footer: [['JOG', 'FILE'], ['CLK', 'OPEN'], ['SHFT', 'MUTE']] });
-shoot('03-multipart-file');
 
 /* 4 — inside it: the SAME page, a part where a file would be, heard as you land on it */
 page({ header: '(2) BASS', right: '2/3', roll: melodic(3, 8), playhead: 900,
@@ -161,7 +156,7 @@ page({ header: '(2) BASS', right: '2/3', roll: melodic(3, 8), playhead: 900,
 shoot('04-inside-multipart');
 
 /* 4a — the jog inside it: the SAME list, the parts where the files would be */
-page({ header: '(2) FUNK SONG/', right: '2/3', roll: melodic(3, 8),
+page({ header: '(2) FUNK SONG >', right: '2/3', roll: melodic(3, 8),
        cells: cellsMelodic({ bars: '8' }), footer: FOOT });
 picker([
     { label: '..' },
