@@ -2028,14 +2028,12 @@ export function _tickImpl() {
              * the button is disabled + dark; force OFF to override Move firmware.
              * Global Menu / Tap Tempo keep the blink (no competing LED layer). */
             if (S.moveCoRunTrack >= 0) {
-                /* Move co-run: Menu is the way OUT (P8a 1d), so it has to LOOK like
-                 * one — it was held dark back when it did nothing. Blink, the same
-                 * vocabulary Tap Tempo uses for "this button leaves". Forced every
-                 * POLL_INTERVAL to override Move firmware's pass-through writes,
-                 * which is why it is a force rather than a plain set. */
-                setButtonLED(MoveNoteSession,
-                             (Math.floor(S.clockMs / 220) % 2) ? White : LED_OFF,
-                             (S.tickCount % POLL_INTERVAL) === 0);
+                /* Move co-run: steady, like everywhere else (Josh, 2026-09-30:
+                 * "note/session shouldnt' flash in move instrument co-run. it did
+                 * that before b/c that was the only way to exit. now that we have
+                 * the standard back gesture, we don't need it."). Still FORCED
+                 * every POLL_INTERVAL: Move firmware writes this LED through. */
+                setButtonLED(MoveNoteSession, 16, (S.tickCount % POLL_INTERVAL) === 0);
             } else if (S.globalMenuOpen) {
                 /* Menu open: steady-lit (no blink) — Back exits the menu now, so the
                  * button doesn't need to flash to advertise itself as the exit. */

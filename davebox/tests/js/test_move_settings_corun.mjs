@@ -44,7 +44,8 @@ globalThis.clear_screen = () => {}; globalThis.print = () => {}; globalThis.fill
 globalThis.draw_rect = () => {}; globalThis.stipple_rect = () => {}; globalThis.draw_line = () => {};
 globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
 globalThis.set_pixel = () => {}; globalThis.pixel_print = () => {}; globalThis.flush_display = () => {};
-globalThis.move_midi_internal_send = () => true; globalThis.move_midi_external_send = () => {};
+const ledWrites = [];      /* [cc, colour] of every button LED write */
+globalThis.move_midi_internal_send = (b) => { if (b && (b[1] & 0xF0) === 0xB0) ledWrites.push([b[2], b[3]]); return true; }; globalThis.move_midi_external_send = () => {};
 globalThis.set_led = () => {};
 globalThis.host_ext_midi_remap_clear = () => {}; globalThis.host_ext_midi_remap_set = () => {};
 globalThis.host_ext_midi_remap_enable = () => {};
@@ -243,6 +244,21 @@ step('control: leaving the instrument co-run any other way still returns to the 
     assert(S.pendingSoundEnterTrack === 2, 'the return to the sound menu was lost: ' + S.pendingSoundEnterTrack);
     ticks(3);
     assert(await_snd.soundOpen(), 'control: the sound menu did not re-open (the rig cannot see a re-entry)');
+    await_snd.soundExit(); S.activeTrack = 0;
+});
+
+/* Josh, 2026-09-30: "note/session shouldnt' flash in move instrument co-run
+ * ... now that we have the standard back gesture, we don't need it." */
+step('⭐ Note/Session does NOT flash in Move\'s instrument co-run — one steady colour', () => {
+    S.sessionView = false; S.trackRoute[2] = 1; S.activeTrack = 2;
+    corun.enterMoveNativeCoRun(2, 'sound'); ticks(2);
+    assert(S.moveCoRunTrack === 2, 'rig: not in co-run');
+    ledWrites.length = 0;
+    ms(1500);                                   /* several 220 ms blink phases */
+    const ns = ledWrites.filter(w => w[0] === 50).map(w => w[1]);
+    assert(ns.length > 0, 'control: no Note/Session LED write seen in co-run');
+    assert(new Set(ns).size === 1 && ns[0] !== 0, 'Note/Session LED changed in co-run: ' + JSON.stringify([...new Set(ns)]));
+    corun.exitMoveNativeCoRun(); onReturn('move_native', null); ticks(3);
     await_snd.soundExit(); S.activeTrack = 0;
 });
 
