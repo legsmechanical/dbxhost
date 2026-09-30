@@ -8,6 +8,13 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 
+## [0.0.9] — 2026-09-30 (test build, not in the Schwung catalog)
+### Fixed
+- **Quitting works when dAVEBOx was started at power-on.** On a Move
+  running Ableton's standard system, picking dAVEBOx on the boot screen and
+  then quitting froze on "dAVEBOx exiting". It now returns to Schwung.
+  Launching from the Tools menu was not affected.
+
 ## [0.0.8] — 2026-09-30 (test build, not in the Schwung catalog)
 ### Changed
 - **Seq Follow is one switch for the whole device.** Hold Left or Right and
