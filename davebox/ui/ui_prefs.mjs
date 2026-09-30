@@ -62,10 +62,9 @@ export function followActive() {
     return seqFollowOn() && !S.followPaused;
 }
 
-/* The MIDI browser (ui_midi_import, Josh 2026-09-29): it reopens where it was —
- * the folder and the file — plays or not as it was left, and places a drum
- * file's sounds by the Map it was last set to. One small file each. */
-export const MIDI_PLACE_PATH = '/data/UserData/dbx-host/midi-place.txt';   /* "<folder>\n<file>\n" */
+/* The MIDI browser (ui_midi_import, Josh 2026-09-29): it plays or not as it was
+ * left, and places a drum file's sounds by the Map it was last set to. One
+ * small file each. (Where each track was is kept in memory only.) */
 export const MIDI_MUTE_PATH  = '/data/UserData/dbx-host/midi-mute.txt';    /* absent = heard */
 export const MIDI_MAP_PATH   = '/data/UserData/dbx-host/midi-map.txt';     /* off | gm | move; absent = gm */
 
@@ -76,21 +75,6 @@ function writePref(path, text, what) {
     let wrote = false;
     try { wrote = !!host_write_file(path, text); } catch (e) { wrote = false; }
     if (!wrote) console.log('[prefs] could not persist ' + what + ' to ' + path);
-}
-
-export function midiPlace() {
-    if (S.midiPlace === null) {
-        const lines = readPref(MIDI_PLACE_PATH).split('\n');
-        S.midiPlace = { dir: (lines[0] || '').trim(), file: (lines[1] || '').trim() };
-    }
-    return S.midiPlace;
-}
-export function setMidiPlace(dir, file) {
-    const d = String(dir || ''), f = String(file || '');
-    const cur = midiPlace();
-    if (cur.dir === d && cur.file === f) return;
-    S.midiPlace = { dir: d, file: f };
-    writePref(MIDI_PLACE_PATH, d + '\n' + f + '\n', 'the MIDI browser folder');
 }
 
 export function midiMuted() {

@@ -1971,36 +1971,35 @@ Keep your MIDI files anywhere in your user data folder — the **Files** page of
 the Schwung web manager (`move.local:7700`) uploads there. The notes are copied
 into the clip; the file isn't needed afterwards. No MIDI files come with dAVEBOx.
 
-**The first time**, the browser shows your user data folder: its folders and
-MIDI files. Click a folder to go into it, or a file to open it. After that the
-browser **opens where you left it** — the same folder, on the same file.
+It has three layers, and **Back** steps out of one at a time:
 
-**Turn the jog** to step through the folder: the list comes up while you turn
-and goes away half a second after you stop. At the top, `..` goes up a folder;
-a folder (`NAME/`) goes in. Each file shows its length in bars, and `DRM` if it
-is all drums. **Every file plays as you land on it**, in place of what the track
-plays: in time with the song while the track is playing, otherwise on its own.
-**Shift + jog click** mutes and unmutes that (the notes on the screen blink while
-it is muted).
+**The list.** On a track's first visit the browser opens on your user data
+folder. **Turn the jog** to move through it; **every file plays as you land on
+it**, in place of what the track plays: in time with the song while the track
+is playing, otherwise on its own. Each file shows its length in bars (and `DRM`
+if it is all drums). **Click** a folder (`NAME/`) to go in; `..` at the top goes
+up. A file with several parts (a song with a lead, a bass line and drums) shows
+`NAME>` and its part count: click it to go in, and its parts are laid out like
+files. **Click a file (or part) to pick it** — the card comes up. **Back** closes
+the list and puts back the file you had.
 
-**A file with several parts** (a song with a lead, a bass line and drums) shows
-`NAME>` and its part count. Click it to go in: its parts are laid out like files,
-and each plays as you land on it. `..` or **Back** comes back out.
-
-**The knobs:**
+**The card** is the file you picked, still playing. Its knobs work like a bank's:
+touching one names it, and turning Stretch (or, on a drum track, Map) brings up
+its list.
 
 - **Knob 1, Start** — the bar of the file to start from.
-- **Knob 2, Bars** — how many bars land in the clip.
-- **Knob 3, Grid** — the clip's step grid, 1/32 to a whole note. A finer grid
-  holds fewer bars: 1/16 holds 16 bars of 4/4. It starts on the finest grid (not
-  below 1/16) that holds the whole part.
+- **Knob 2, Bars** — how many bars land in the clip. Never more than the file
+  has from Start, nor than the clip holds at this Grid: 1/16 holds 16 bars of 4/4.
+- **Knob 3, Grid** — the clip's step grid, 1/32 to a whole note.
 - **Knob 4, Stretch** — play it at /8, /4, /2, x1, x2, x4 or x8 of its length.
-  The grid moves with it.
 - **Knob 5, Oct** and **knob 6, Semi** — move it up or down (three octaves, or
   eleven semitones).
 - **Knob 7, Scale** — **On** folds every note into your project's key and scale
   (a note between two scale notes goes up); **Off** plays it as written. Oct and
   Semi move the notes first, so they set where the fold lands.
+- **Knob 8** shows the file's tempo (BPM), if it has one.
+
+Each new file starts at Start 1, Grid 1/16, Stretch x1 and its own length.
 
 On a drum track, **knob 5 is Map** instead: where the file's drum sounds go —
 **GM** (the lanes playing their General MIDI notes), **Move** (Move's own kit
@@ -2009,14 +2008,22 @@ file's sounds, each in its colour: **hold one** to hear it alone and see where
 every sound goes, and **tap a lane pad** to put it there (again to take it off).
 Up to eight sounds are placed.
 
-The line under the knobs is the file's notes: the brackets are what will land,
-and notes outside them are dotted. The top right says what won't land —
-**CUT** (outside the brackets), **OVER** (past the clip's note limit), **OFF**
-(drum sounds with no lane) — or **REPLACES** when the clip already has notes.
+The line under the top knobs is the file's notes: the brackets are what will
+land, notes outside them are dotted, and a playhead follows the preview. The top
+right says what won't land — **CUT** (outside the brackets), **OVER** (past the
+clip's note limit), **OFF** (drum sounds with no lane) — or **REPLACES** when the
+clip already has notes. **Shift + jog click** mutes and unmutes the preview (the
+notes on the line blink while it is muted). The jog brings the list back.
 
-**Jog click loads.** It goes into the clip you are on and replaces it — on a
+**Loading asks first.** Jog click on the card: **LOAD INTO CLIP A?** — turn the
+jog to Yes and click. It goes into the clip you are on and replaces it — on a
 drum track, only the lanes a sound goes to; the other lanes keep their notes.
-There is no question first: one **Undo** takes the whole load back.
+One **Undo** takes the whole load back. **Back** from the card with a file
+picked asks whether to load it first: Yes loads and leaves, No (or Back) leaves
+without loading. Either way you are back on the CLIP or DRUM LANE bank.
+
+Each track remembers its own last file while you work, so a drum track and a
+melodic track can each come back to their own folder.
 
 - Only notes come in — no controllers, pitch bend or program changes.
 - A melodic clip's automation is cleared with it, so it plays exactly the file's
@@ -2024,7 +2031,8 @@ There is no question first: one **Undo** takes the whole load back.
 - The file's tempo isn't applied: the notes play at your project's tempo, and bars
   follow the file's time signature.
 - A melodic clip holds up to 512 notes; a drum lane, 512.
-- The transport keeps running while you browse.
+- The transport keeps running while you browse; the step buttons are blocked
+  (lit dim).
 
 ## 16.5 Recording audio
 

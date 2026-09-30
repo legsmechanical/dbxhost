@@ -807,7 +807,7 @@ function _discreteOpts(knob) {
 }
 
 /* Import MIDI (ui_midi_import), opened from K8 of the CLIP / DRUM LANE card. */
-function drawMidiImport() { miRender(S.knobTouched, S.shiftHeld); }
+function drawMidiImport() { miRender(S.knobTouched, S.shiftHeld, enumOverlayIdx(S.knobTouched)); }
 
 /* A numeric cell that would otherwise open the option list: while touched it
  * turns into an arc (ui_movy drawCellWidget) and never opens the list. The arc

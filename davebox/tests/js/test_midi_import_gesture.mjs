@@ -1,12 +1,15 @@
 /* tests/js/test_midi_import_gesture.mjs — the MIDI browser, through the real
- * gestures (Import MIDI and the phrase browser as one screen, 2026-09-29).
+ * gestures (Import MIDI and the phrase browser as one screen, 2026-09-29;
+ * dAVEBOx's feel, round 2, 2026-09-30).
  *
  * Touch K8 on the CLIP (or DRUM LANE) card and click the jog: the tick opens
- * it over the card. From there: the first-open list (folders and MIDI files,
- * the install hidden), a multi-part file entered like a folder, each part
- * HEARD as the jog lands on it, the jog list dropping away, the eight knobs,
- * Shift+click mute, the load into the CURRENT clip (one write, no confirm),
- * the remembered folder, and a drum track's sound placement. Asserted on what
+ * it over the card. Three layers, one Back each: the LIST (folders and MIDI
+ * files, the install hidden; a multi-part file entered like a folder; each
+ * file HEARD as the jog rests on it; a click PICKS), the CARD (the picked
+ * file; knobs that name on touch and raise a list only on a turn; click =
+ * Load), and dAVEBOx's Yes/No CONFIRM (nothing reaches a clip without a Yes;
+ * Back = No). Per-track memory, the step buttons blocked, the transport and
+ * the rest passing through, and a drum track's sound placement. Asserted on what
  * the engine receives, from which callback, and on what is drawn.
  * → [[wired-is-not-reachable]]: a green pin says "wired", only the gesture
  * says "reachable".
@@ -170,7 +173,12 @@ async function main() {
         assert(mi() && !snd.soundOpen(), 'touch K8 + click did not open the MIDI browser over the card');
     }
     const closedToCard = () => !mi() && !snd.soundOpen() && S.activeBank === 0;
-    const forget = () => { delete PREFS[prefs.MIDI_PLACE_PATH]; S.midiPlace = null; };
+    const forget = () => { MI.miResetForTest(); };
+    const layer = () => mi() && mi().layer;
+    const imports = (from) => writes.slice(from).filter(w => /_import$/.test(w[1]));
+    /* from the list: land on a file and pick it (a click) — the card */
+    const pickFile = (label) => { jogTo(label); click(); assert(layer() === 'card', 'no card after picking ' + label + ': ' + layer()); };
+    const answer = (yes) => { if (yes) jog(1); else jog(-1); click(); ticks(2); };
 
     step('setup: track 2 melodic, routed to Move, C major', () => {
         globalThis.init();
@@ -180,174 +188,213 @@ async function main() {
         ticks(8);
     });
 
-    step('⭐⭐ THE DOOR: touch K8 + click opens it — and the transport is NOT stopped', () => {
+    step('⭐⭐ THE DOOR: touch K8 + click opens it on the LIST (a track\'s first open) — the transport is NOT stopped', () => {
         S.playing = true;
         const before = writes.length;
         openImport(1);
         ticks(4);
-        assert(!writes.slice(before).some(w => w[1] === 'transport'), 'a transport write: ' +
-               JSON.stringify(writes.slice(before).filter(w => w[1] === 'transport')));
+        assert(layer() === 'list', 'layer ' + layer());
+        assert(!writes.slice(before).some(w => w[1] === 'transport'), 'a transport write');
         S.playing = false;
     });
 
-    step('first open: the user data folder — folders and MIDI files, the install hidden', () => {
-        assert(mi().root, 'not the first-open list');
+    step('the list: the user data folder — folders and MIDI files, the install hidden', () => {
         const l = labels();
         assert(l.includes('UserLibrary') && l.includes('song') && l.includes('beat'), 'missing: ' + JSON.stringify(l));
         for (const h of ['schwung', 'dbx-host', 'notes', '.hidden']) assert(!l.includes(h), h + ' is listed');
-        assert(JSON.stringify(MI.miHintsForTest(false).footer) === '[["JOG","FOLDER"],["CLK","OPEN"]]', 'footer');
+        assert(JSON.stringify(MI.miHintsForTest(false).footer[0]) === '["CLK","PICK"]' ||
+               JSON.stringify(MI.miHintsForTest(false).footer[0]) === '["CLK","OPEN"]', 'footer ' + JSON.stringify(MI.miHintsForTest(false).footer));
         assert(ink(12, 55) > 0, 'the list drew nothing');
     });
 
-    step('a multi-part file reads as one (NAME> and its part count), and click goes IN like a folder', () => {
-        jogTo('song'); ticks(4);
-        clickNoop();
-        function clickNoop() {}
+    step('a multi-part file: click goes IN like a folder; its parts are the list', () => {
+        jogTo('song');
         click();
-        assert(!mi().root && mi().file && mi().file.path === '/data/UserData/song.mid', 'not inside the file');
+        assert(layer() === 'list' && mi().file && mi().file.path === '/data/UserData/song.mid', 'not inside the file');
         assert(JSON.stringify(labels()) === '["..","Lead","Bass"]', 'parts ' + JSON.stringify(labels()));
-        assert(mi().list.up, 'the list is not up');
     });
 
     step('⭐ landing on a part PLAYS it: a note-on from a tick, through tN_audition', () => {
         const b = writes.length;
         for (let i = 0; i < 40 && !auditions(b).some(w => /\bon /.test(w[2])); i++) ticks(1);
         const a = auditions(b).find(w => /\bon /.test(w[2]));
-        assert(a && /^tick#/.test(a[0]), 'no audition note-on from a tick: ' + JSON.stringify(auditions(b).slice(0, 3)));
+        assert(a && /^tick#/.test(a[0]), 'no audition note-on from a tick');
         assert(!writes.slice(b).some(w => /live_notes/.test(w[1])), 'a live_notes write');
     });
 
-    step('the next part: the last one is released and the new one plays', () => {
+    step('the next part: the last one released, the new one playing — and still the LIST (no timer)', () => {
         const b = writes.length;
-        jog(1); ticks(40);
+        jog(1); ticks(80);
         assert(mi().cur && mi().cur.name === 'Bass', 'cur ' + (mi().cur && mi().cur.name));
         const a = auditions(b).map(w => w[2]).join(' | ');
         assert(/alloff/.test(a) && /on 36 /.test(a), 'auditions: ' + a);
+        assert(layer() === 'list', 'the list went away on its own');
         jog(-1); ticks(4);
     });
 
-    step('the list drops half a second after the jog stops, and the page shows the lane', () => {
-        letGo();
-        assert(!mi().list.up, 'the list is still up');
+    step('⭐ a click PICKS the part: the card, with the lane and the card\'s footer', () => {
+        click();
+        assert(layer() === 'card' && mi().sel && mi().sel.name === 'Lead', 'layer ' + layer());
         assert(ink(33, 39) > 20, 'no lane drawn');
-        assert(JSON.stringify(MI.miHintsForTest(false).footer) === '[["JOG","FILE"],["CLK","LOAD"],["SHFT","MUTE"]]',
+        assert(JSON.stringify(MI.miHintsForTest(false).footer) === '[["CLK","LOAD"],["JOG","FILE"],["SHFT","MUTE"]]',
                'footer ' + JSON.stringify(MI.miHintsForTest(false).footer));
-        assert(JSON.stringify(MI.miHintsForTest(true).footer) === '[["CLK","MUTE"]]', 'Shift-held footer');
     });
 
-    step('K1 Start / K2 Bars: the window, and what will not land is said in the header', () => {
-        assert(mi().bars === 8 && mi().startBar === 1, 'defaults ' + mi().startBar + '/' + mi().bars);
-        turn(1, -6 * 4);                                            /* 8 → 4 bars */
-        assert(mi().bars === 4, 'bars ' + mi().bars);
-        assert(MI.miHintsForTest(false).warning === '16 CUT', 'warning ' + MI.miHintsForTest(false).warning);
-        turn(0, 6);                                                 /* start at bar 2 */
-        assert(mi().startBar === 2 && mi().plan.before === 4, 'start ' + mi().startBar + ' before ' + mi().plan.before);
-        turn(0, -6); turn(1, 6 * 4);
-        assert(MI.miHintsForTest(false).warning === null, 'warning ' + MI.miHintsForTest(false).warning);
+    step('a new file starts at Start 1, Grid 1/16, Stretch x1, Bars = its length', () => {
+        assert(mi().startBar === 1 && mi().grid === 1 && mi().stretch === 3 && mi().bars === 8,
+               'start ' + mi().startBar + ' grid ' + mi().grid + ' stretch ' + mi().stretch + ' bars ' + mi().bars);
     });
 
-    step('K4 Stretch x2: the grid moves with it and the clip doubles', () => {
-        const len1 = mi().plan.lengthSteps, g1 = mi().grid;
+    step('⭐ a knob TOUCH names it; its list comes up only on a TURN', () => {
+        touch(3, true); ticks(1);
+        assert(S.knobTouched === 3 && S.knobTurnedTick[3] === -1, 'touch: ' + S.knobTouched + ' / ' + S.knobTurnedTick[3]);
+        const bare = ink(9, 57);
         turn(3, 12);
-        assert(mi().stretch === 4, 'stretch ' + mi().stretch);
-        assert(mi().grid === g1 + 1, 'grid ' + g1 + ' → ' + mi().grid);
-        assert(mi().plan.span === 2 * 8 * 384 && mi().plan.lengthSteps === len1, 'span ' + mi().plan.span + ' steps ' + mi().plan.lengthSteps);
+        assert(S.knobTurnedTick[3] >= 0, 'the turn was not seen');
+        const listed = ink(9, 57);
+        assert(bare !== listed, 'the turn did not raise the list');
         turn(3, -12);
+        touch(3, false); ticks(1);
+        assert(S.knobTouched === -1, 'touch not released');
+    });
+
+    step('K1 Start / K2 Bars: the window, and what will not land said in the header', () => {
+        turn(1, -40);                                                 /* fewer bars */
+        assert(mi().bars < 8 && /CUT$/.test(MI.miHintsForTest(false).warning), 'bars ' + mi().bars + ' warning ' + MI.miHintsForTest(false).warning);
+        turn(1, 200);
+        assert(mi().bars === 8, 'Bars went past the file: ' + mi().bars);
+        turn(0, 20);                                                  /* start later: Bars follows the file's end */
+        assert(mi().startBar > 1 && mi().bars === 8 - mi().startBar + 1, 'start ' + mi().startBar + ' bars ' + mi().bars);
+        turn(0, -200); turn(1, 200);
+    });
+
+    step('⭐ Bars and Grid stay linked by the clip\'s steps: 1/32 at x2 holds 4 bars', () => {
+        turn(2, -12);                                                 /* 1/32 */
+        turn(3, 12);                                                  /* x2 */
+        assert(mi().grid === 0 && mi().stretch === 4, 'grid ' + mi().grid + ' stretch ' + mi().stretch);
+        assert(mi().bars === 4, 'bars ' + mi().bars);
+        turn(3, -12); turn(2, 12); turn(1, 200);
+        assert(mi().bars === 8 && mi().grid === 1, 'back: bars ' + mi().bars + ' grid ' + mi().grid);
     });
 
     step('K5 Oct / K6 Semi / K7 Scale: Semi +1 on C is C#, which Scale folds up to D; Scale off keeps C#', () => {
         const first = () => mi().plan.notes[0].p;
         assert(first() === 60, 'setup ' + first());
-        turn(5, 6);
+        turn(5, 1);
         assert(mi().semi === 1 && first() === 62, 'semi ' + mi().semi + ' → ' + first());
-        turn(6, -12);
+        turn(6, -20);
         assert(!mi().scaleOn && first() === 61, 'scale off → ' + first());
-        turn(4, -12);
+        turn(4, -10);
         assert(mi().oct === -1 && first() === 49, 'oct -1 → ' + first());
-        turn(4, 12); turn(5, -6); turn(6, 12);
+        turn(4, 10); turn(5, -1); turn(6, 20);
         assert(first() === 60 && mi().scaleOn, 'back ' + first());
     });
 
-    step('touching K6 names it in the header, with its value', () => {
-        touch(5, true); ticks(1);
-        assert(S.knobTouched === 5, 'touch not seen: ' + S.knobTouched);
-        touch(5, false); ticks(1);
-        assert(S.knobTouched === -1, 'touch not released');
-    });
-
-    step('K8 does nothing, and no knob reaches the track underneath', () => {
-        const q0 = writes.length; ticks(16);
-        const background = new Set(writes.slice(q0).map(w => w[1]));
-        const b = writes.length, snap = JSON.stringify([mi().startBar, mi().bars, mi().grid, mi().stretch, mi().oct, mi().semi, mi().scaleOn]);
-        turn(7, 20); turn(7, -20); ticks(12);
+    step('K8 is the file\'s BPM: shown, and a turn does nothing', () => {
+        const snap = JSON.stringify([mi().startBar, mi().bars, mi().grid, mi().stretch, mi().oct, mi().semi, mi().scaleOn]);
+        turn(7, 30); ticks(2);
         assert(JSON.stringify([mi().startBar, mi().bars, mi().grid, mi().stretch, mi().oct, mi().semi, mi().scaleOn]) === snap, 'K8 changed a setting');
-        const extra = writes.slice(b).filter(w => !background.has(w[1]) && !/_padmap$|:slot:parallel$|_audition$/.test(w[1]));
-        assert(!extra.length, 'K8 wrote: ' + JSON.stringify(extra.slice(0, 3)));
+        assert(mi().cur.bpm === 120, 'bpm ' + mi().cur.bpm);
+        const ring = MI.miRingCells();
+        assert(ring[7].kind === 'blank', 'K8\'s ring is not dark');
     });
 
     step('⭐ Shift+click mutes: nothing plays, the footer offers HEAR, and it is remembered', () => {
         shiftClick();
-        assert(!mi().hear && PREFS[prefs.MIDI_MUTE_PATH] === '1\n', 'mute ' + mi().hear + ' ' + PREFS[prefs.MIDI_MUTE_PATH]);
-        const b = writes.length;
-        jog(1); ticks(40); jog(-1); ticks(40);
+        assert(!mi().hear && PREFS[prefs.MIDI_MUTE_PATH] === '1\n', 'mute');
+        const b = writes.length; ticks(40);
         assert(!auditions(b).some(w => /\bon /.test(w[2])), 'a note played while muted');
-        assert(MI.miHintsForTest(false).footer[2][1] === 'HEAR', 'footer ' + JSON.stringify(MI.miHintsForTest(false).footer));
+        assert(MI.miHintsForTest(false).footer[2][1] === 'HEAR', 'footer');
         shiftClick();
         assert(mi().hear && PREFS[prefs.MIDI_MUTE_PATH] === '0\n', 'unmute');
-        letGo();
     });
 
-    step('⭐⭐ THE LOAD: click → ONE import into the CURRENT clip, from a tick; the automation clear behind it; closed at once', () => {
+    step('⭐ the step buttons are blocked while it is open', () => {
+        const c = S.trackActiveClip[1], before = JSON.stringify(S.clipSteps[1][c].slice(0, 16)), b = writes.length;
+        note(0x90, 16, 100); note(0x80, 16, 0); ticks(4);
+        assert(JSON.stringify(S.clipSteps[1][c].slice(0, 16)) === before, 'a step changed');
+        assert(!writes.slice(b).some(w => /_toggle|_set_notes|_step/.test(w[1])), 'a step write: ' + JSON.stringify(writes.slice(b).filter(w => /step/.test(w[1]))));
+        assert(layer() === 'card', 'the press changed the screen');
+    });
+
+    step('⭐⭐ THE LOAD asks first: click → LOAD INTO CLIP, No selected; Back = No writes nothing', () => {
+        const b = writes.length;
+        click();
+        assert(layer() === 'confirm' && mi().confirm.kind === 'load' && !mi().confirm.yes, 'no confirm');
+        back();
+        assert(layer() === 'card' && !imports(b).length, 'Back wrote or left: ' + layer());
+        click(); answer(false);
+        assert(layer() === 'card' && !imports(b).length, 'No wrote or left');
+    });
+
+    step('⭐⭐ ... and Yes loads: ONE import into the CURRENT clip, from a tick; the automation clear behind it; closed', () => {
         const c = S.trackActiveClip[1];
         S.clipNonEmpty[1][c] = false;
         const b = writes.length;
-        click(); ticks(8);
+        click(); answer(true); ticks(8);
         assert(!mi(), 'the screen stayed open');
-        const imp = writes.slice(b).filter(w => /_import$/.test(w[1]));
-        assert(imp.length === 1, 'import writes: ' + imp.length);
-        assert(/^tick#/.test(imp[0][0]) && imp[0][1] === 't1_c' + c + '_import', 'written ' + imp[0][0] + ' ' + imp[0][1]);
+        const imp = imports(b);
+        assert(imp.length === 1 && /^tick#/.test(imp[0][0]) && imp[0][1] === 't1_c' + c + '_import', 'imports ' + JSON.stringify(imp.map(w => w[1])));
         const [head, notes] = imp[0][2].split('|');
         assert(head === '0 1 128', 'header ' + head + ' (no replace, 1/16, 8 bars)');
         assert(notes.split(';').length === 32 && /^a 0 60 100 96$/.test(notes.split(';')[0]), 'notes ' + notes.slice(0, 40));
         const ki = writes.findIndex((w, i) => i >= b && /_import$/.test(w[1]));
         assert(writes.slice(ki).some(w => w[1] === 't1_pa_clear'), 'no automation clear behind the load');
         assert(S.undoAvailable && !S.undoJs, 'Undo does not reach the load');
-        assert(/LOADED/.test(JSON.stringify(S.actionPopupLines)), 'popup ' + JSON.stringify(S.actionPopupLines));
+        assert(closedToCard(), 'not back on the card');
         ticks(60);
         assert(!/FAILED/.test(JSON.stringify(S.actionPopupLines)), 'it said it failed');
     });
 
-    step('⭐ it reopens where it was: the folder and the file (remembered device-wide)', () => {
-        assert(/\/data\/UserData\n\/data\/UserData\/song\.mid\n/.test(PREFS[prefs.MIDI_PLACE_PATH] || ''), 'place ' + JSON.stringify(PREFS[prefs.MIDI_PLACE_PATH]));
+    step('⭐ per track: it reopens on the file this track picked, on the CARD', () => {
         openImport(1);
-        assert(!mi().root && mi().items[mi().idx].label === 'song', 'reopened on ' + JSON.stringify(mi().items[mi().idx]));
-        /* a multi-part file has nothing to hear: its list does not drop away */
-        letGo();
-        assert(mi().list.up, 'the list dropped on a row with nothing to hear');
+        assert(layer() === 'card' && mi().sel && mi().sel.path === '/data/UserData/song.mid' && mi().sel.name === 'Lead',
+               'reopened on ' + layer() + ' ' + JSON.stringify(mi().sel && mi().sel.name));
     });
 
-    step('⭐ the current clip has notes: REPLACES in the header, and the click loads with no confirm', () => {
-        click(); ticks(2);                                          /* into song */
-        letGo();
+    step('the jog raises the list; Back closes it and puts back the file you had', () => {
+        jog(1);
+        assert(layer() === 'list', 'layer ' + layer());
+        jog(1); ticks(20);
+        back();
+        assert(layer() === 'card' && mi().cur && mi().cur.name === 'Lead', 'back on ' + (mi().cur && mi().cur.name));
+    });
+
+    step('⭐ Back on the card with a file picked asks LEAVE IMPORT; No leaves without loading', () => {
+        const b = writes.length;
+        back();
+        assert(layer() === 'confirm' && mi().confirm.kind === 'leave', 'layer ' + layer());
+        back();
+        assert(closedToCard() && !imports(b).length, 'did not leave cleanly');
+    });
+
+    step('LEAVE IMPORT, Yes: loads, then leaves', () => {
+        openImport(1);
         S.clipNonEmpty[1][S.trackActiveClip[1]] = true;
         assert(MI.miHintsForTest(false).warning === 'REPLACES', 'warning ' + MI.miHintsForTest(false).warning);
         const b = writes.length;
-        click(); ticks(4);
-        const imp = writes.slice(b).filter(w => /_import$/.test(w[1]));
-        assert(imp.length === 1 && imp[0][2].startsWith('1 '), 'replace flag: ' + (imp[0] && imp[0][2].slice(0, 12)));
-        assert(!mi(), 'a confirm came up');
+        back(); answer(true); ticks(4);
+        const imp = imports(b);
+        assert(imp.length === 1 && imp[0][2].startsWith('1 '), 'imports ' + JSON.stringify(imp.map(w => w[2].slice(0, 8))));
+        assert(closedToCard(), 'not back on the card');
+    });
+
+    step('another track has its own memory: it opens on the list', () => {
+        S.trackPadMode[3] = 0; S.trackRoute[3] = 1;
+        openImport(3);
+        assert(layer() === 'list', 'layer ' + layer());
+        MI.miClose();
     });
 
     step('⭐ parsing waits for the jog to REST: scrolling past a file reads none of it; resting reads it once', () => {
-        MI.miClose(); MI.miResetForTest(); forget();
-        /* A file too big for the background fill (it would read small files anyway). */
+        forget();
         const was = globalThis.__stubStat['/data/UserData/song.mid'].size;
-        globalThis.__stubStat['/data/UserData/song.mid'].size = 100 * 1024;
+        globalThis.__stubStat['/data/UserData/song.mid'].size = 100 * 1024;   /* too big for the background fill */
         openImport(1);
         const at = labels().indexOf('song');
         while (mi().idx < at) { jog(1); ticks(1); }
         READS.length = 0;
-        for (let i = 0; i < 10; i++) { jog(i % 2 ? 1 : -1); ticks(1); }   /* back and forth across it, fast */
+        for (let i = 0; i < 10; i++) { jog(i % 2 ? 1 : -1); ticks(1); }
         const song = () => READS.filter(p => p === '/data/UserData/song.mid').length;
         assert(mi().items[mi().idx].label === 'song', 'ended on ' + mi().items[mi().idx].label);
         assert(song() === 0, 'read while scrolling: ' + song());
@@ -357,25 +404,17 @@ async function main() {
         MI.miClose(); forget();
     });
 
-    step('Back: out of a multi-part file onto its row; then Back closes onto the card', () => {
-        MI.miClose(); forget(); openImport(1);
+    step('`..` goes up out of a multi-part file onto its row; Back on the list (nothing picked) leaves', () => {
+        openImport(1);
         jogTo('song'); click(); ticks(2);
-        back();
-        assert(mi() && !mi().file && mi().items[mi().idx].label === 'song', 'not back on the file row');
+        jogTo('..'); click();
+        assert(layer() === 'list' && !mi().file && mi().items[mi().idx].label === 'song', 'not back on the file row');
         back();
         assert(closedToCard(), 'Back did not close onto the card');
     });
 
-    step('a folder that has gone: the first-open list, and it says so', () => {
-        PREFS[prefs.MIDI_PLACE_PATH] = '/data/UserData/Gone\n\n'; S.midiPlace = null;
-        openImport(1);
-        assert(mi().root, 'not the first-open list');
-        assert(/FOLDER GONE/.test(JSON.stringify(S.actionPopupLines)), 'popup ' + JSON.stringify(S.actionPopupLines));
-        MI.miClose(); forget();
-    });
-
     step('a file that reads short says so', () => {
-        openImport(1);
+        forget(); openImport(1);
         jogTo('cut');
         assert(/FILE CUT SHORT/.test(JSON.stringify(S.actionPopupLines)), 'popup ' + JSON.stringify(S.actionPopupLines));
         MI.miClose(); forget();
@@ -384,42 +423,41 @@ async function main() {
     step('a load the engine never confirms: ONE write, never re-sent, and it says LOAD FAILED', () => {
         neverLands = true;
         openImport(1);
-        jogTo('song'); click(); ticks(2); letGo();
+        jogTo('song'); click(); ticks(2); click();
         S.clipNonEmpty[1][S.trackActiveClip[1]] = false;
         const b = writes.length;
-        click(); ticks(60);
+        click(); answer(true); ticks(60);
         neverLands = false;
-        const imp = writes.slice(b).filter(w => /_import$/.test(w[1]));
-        assert(imp.length === 1, 'import writes: ' + imp.length);
+        assert(imports(b).length === 1, 'import writes: ' + imports(b).length);
         assert(/LOAD FAILED/.test(JSON.stringify(S.actionPopupLines)), 'popup ' + JSON.stringify(S.actionPopupLines));
         forget();
     });
 
-    step('Play under the browser is Play: it reaches the transport, and nothing stops it', () => {
+    step('Play and the rest pass through: Play reaches the transport, and nothing stops it', () => {
         openImport(1);
         const b = writes.length;
         cc(MovePlay, 127); cc(MovePlay, 0); ticks(4);
         const tr = writes.slice(b).filter(w => w[1] === 'transport');
         assert(tr.length === 1 && tr[0][2] !== 'stop', 'transport writes: ' + JSON.stringify(tr));
+        assert(mi(), 'Play closed it');
         MI.miClose(); forget();
     });
 
-    step('⭐ a DRUM track: the sounds land by the Map (GM), each on a lane; the load names only those lanes', () => {
+    step('⭐ a DRUM track: the sounds land by the Map (GM), each on a lane', () => {
         S.trackPadMode[0] = PAD_MODE_DRUM; S.trackRoute[0] = 1;
         S.drumLaneNote[0] = Array.from({ length: 32 }, (_, l) => 36 + l);
         S.drumLaneHasNotes[0] = new Array(32).fill(false);
         S.activeDrumLane[0] = 0;
         openImport(0);
-        jogTo('beat'); click(); ticks(2);                           /* the first-open list: click opens the file */
-        assert(mi().cur && mi().drum, 'no drum page');
+        pickFile('beat');
+        assert(mi().drum, 'not a drum card');
         assert(JSON.stringify(mi().voices.map(v => v.pitch)) === '[20,36]', 'sounds ' + JSON.stringify(mi().voices));
-        const lanes = mi().assign;
-        assert(lanes[1] === 0, 'the kick (36) is not on the lane playing 36: ' + JSON.stringify(lanes));
+        assert(mi().assign[1] === 0, 'the kick (36) is not on the lane playing 36: ' + JSON.stringify(mi().assign));
         assert(JSON.stringify(MI.miHintsForTest(false).footer) === '[["RTPAD","SOUND"],["SHFT","MUTE"]]', 'footer');
     });
 
     step('hold a sound pad (right-hand) and tap a lane pad: the sound moves there', () => {
-        note(0x90, TRACK_PAD_BASE + 4, 100);                        /* sound 0 (pitch 20) */
+        note(0x90, TRACK_PAD_BASE + 4, 100);
         assert(mi().held === 0, 'held ' + mi().held);
         note(0x90, TRACK_PAD_BASE + 2, 100); note(0x80, TRACK_PAD_BASE + 2, 0);
         assert(mi().assign[0] === 2, 'assign ' + JSON.stringify(mi().assign));
@@ -427,13 +465,15 @@ async function main() {
         assert(mi().held === -1, 'still held');
     });
 
-    step('⭐ the drum load: ONE tN_lanes_import naming only the lanes a sound goes to; no automation clear', () => {
+    step('⭐ the drum load: confirmed, then ONE tN_lanes_import naming only the lanes a sound goes to; no automation clear', () => {
         S.drumLaneHasNotes[0][2] = true;
         assert(MI.miHintsForTest(false).warning === 'REPLACES', 'warning ' + MI.miHintsForTest(false).warning);
         S.drumClipNonEmpty[0][S.trackActiveClip[0]] = true;
         const b = writes.length;
-        click(); ticks(4);
-        const imp = writes.slice(b).filter(w => /_import$/.test(w[1]));
+        click();
+        assert(layer() === 'confirm', 'no confirm');
+        answer(true); ticks(4);
+        const imp = imports(b);
         assert(imp.length === 1 && imp[0][1] === 't0_lanes_import', 'writes ' + JSON.stringify(imp.map(w => w[1])));
         const named = (imp[0][2].split('|')[1].match(/L\d+/g) || []).join(',');
         assert(named === 'L0,L2', 'lanes named: ' + named);

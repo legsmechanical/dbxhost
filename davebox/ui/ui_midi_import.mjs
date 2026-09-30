@@ -1,39 +1,46 @@
 /* ui_midi_import.mjs — the MIDI browser: a MIDI file into the current clip.
  *
- * Import MIDI and the phrase browser as ONE screen (Josh, 2026-09-29; the
- * approved mockups are tools/mockup_midi_browser.mjs). Opened from K8 of the
- * CLIP / DRUM LANE card (touch + click; the tick calls miOpen) and hosted as a
- * modal: ui.js routes its input, the tick runs miTick, drawUI draws it over
- * everything. Back closes it onto the card (or steps out of a multi-part file).
+ * Import MIDI and the phrase browser as ONE screen (Josh, 2026-09-29), and —
+ * after the first device pass — with dAVEBOx's own feel (2026-09-30: "it LOOKS
+ * great, but it doesn't FEEL like the rest of davebox"). The approved mockups
+ * are tools/mockup_midi_browser2.mjs. Opened from K8 of the CLIP / DRUM LANE
+ * card (touch + click; the tick calls miOpen); a modal hosted by ui.js, the
+ * tick and drawUI. Three layers, one Back each, as the AUTOMATION bank's:
  *
- *   the page   one playable item — a single-part file, or one part of a
- *              multi-part file. Header: its name, n/N (or what will not land,
- *              or REPLACES). K1 Start · K2 Bars · K3 Grid · K4 Stretch; one
- *              LANE of its notes with the window bracketed; K5 Oct · K6 Semi ·
- *              K7 Scale as small cells (a drum track: K5 Map). Footer JOG FILE ·
- *              CLK LOAD · SHFT MUTE.
- *   the list   turning the jog raises the folder's list (small font) and moves
- *              through it; it drops half a second after the jog stops — unless
- *              the row is a folder or a multi-part file, which have nothing to
- *              hear. `..` goes up; a folder goes in; a multi-part file (`NAME>`)
- *              goes in like a folder, its parts laid out like files.
- *   first open no folder remembered yet: the user data folder as a plain list.
- *              After that it reopens where it was (ui_prefs midiPlace).
+ *   card      the file you PICKED, playing: its name, n/N (or what will not
+ *             land, or REPLACES); K1 Start · K2 Bars · K3 Grid · K4 Stretch as
+ *             the bank page's top row; one lane of its notes with the window
+ *             bracketed and the playhead; K5 Oct · K6 Semi · K7 Scale (a drum
+ *             track: K5 Map) and K8 the file's BPM as small cells. The knobs
+ *             behave as on every bank: a touch NAMES the knob, a list comes up
+ *             only on a TURN (Stretch, Map); Grid is the DRUM LANE card's
+ *             Resolution cell (a fraction that turns into an arc). Click =
+ *             Load; jog = the list; Back = leave (asking first if a file is
+ *             picked).
+ *   list      the folder: `..` up (the only way up, as in dAVEBOx's file
+ *             browser), a folder (NAME/) or a multi-part file (NAME>, entered
+ *             like a folder) opened by a click, a file PICKED by a click (back
+ *             to the card). Landing on a file plays it, after a short rest.
+ *             Back closes the list and puts back the file you had; with none
+ *             (a track's first open) it leaves.
+ *   confirm   dAVEBOx's Yes/No dialog, No selected; the jog chooses, the click
+ *             commits, Back = No. LOAD INTO CLIP A (from a click on the card)
+ *             and LEAVE IMPORT (from Back with a file picked: Yes loads and
+ *             leaves, No leaves without loading). Nothing reaches a clip
+ *             without a Yes (Josh, 2026-09-30).
  *
- * ⭑ Every playable item is HEARD as you land on it: in time while the track
- * plays its clip (tN_audclip, swapped in on the beat), otherwise alone and
- * free-running (tN_audition). Shift+click mutes (remembered); the lane blinks
- * while muted. Nothing is written until the click.
- * ⭑ A load goes into the CURRENT clip, one undo unit, no confirm (the header
- * says REPLACES first; Undo brings it back). Melodic: the clip is replaced,
- * automation included. Drum: only the lanes a sound goes to are replaced —
- * the rest keep their notes (Josh, 2026-09-29).
- * ⭑ The transport is never stopped.
- *
- * ⭑ A file is parsed when the jog RESTS on it (PARSE_REST_MS), not on every
- * detent, and recent parses are cached — scrolling past ten files reads none.
- * Small files are parsed in the background, one a tick, to fill the list's
- * bar / part counts.
+ * ⭑ The preview replaces what the track plays: in time while the track plays
+ * its clip (tN_audclip, swapped in on the beat), alone and free-running
+ * otherwise (tN_audition). Shift+click mutes (remembered); the lane blinks.
+ * ⭑ A load goes into the CURRENT clip, one undo unit. Melodic: the clip is
+ * replaced, automation included. Drum: only the lanes a sound goes to — the
+ * rest keep their notes (Josh, 2026-09-29).
+ * ⭑ Each track reopens on its own last file (or folder), in memory only — a
+ * drums folder on a drum track, a melodic one on a piano track (Josh,
+ * 2026-09-30: "don't overthink it"). A new file starts at Start 1, Grid 1/16,
+ * Stretch x1, Bars = its length; Bars never passes the file's end or what the
+ * clip holds at that Grid.
+ * ⭑ The transport is never stopped. Step buttons are blocked (dim white).
  *
  * Decisions are ui_midi_notes.mjs (pure) and ui_midifile.mjs (the parser);
  * this file reads files, draws, and queues the engine writes on
@@ -43,44 +50,48 @@ import * as os from 'os';
 import * as std from 'std';
 import { S as GS, noteUndoUnit } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
-import { TPS_VALUES, SCENE_LETTERS, PAD_MODE_DRUM, PAD_MODE_CONDUCT, DRUM_LANES, LED_OFF } from './ui_constants.mjs';
+import { TPS_VALUES, SCENE_LETTERS, PAD_MODE_DRUM, PAD_MODE_CONDUCT, DRUM_LANES, LED_OFF, fmtRes } from './ui_constants.mjs';
 import { White, VividYellow, Cyan, NeonPink, BrightOrange, NeonGreen, ElectricViolet, BrightRed, Lime } from '/data/UserData/schwung/shared/constants.mjs';
+import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 import { syncClipsTargeted } from './ui_dsp_bridge.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { automationClearClipQueued } from './ui_automation.mjs';
-import { midiPlace, setMidiPlace, midiMuted, setMidiMuted, midiMap, setMidiMap } from './ui_prefs.mjs';
+import { midiMuted, setMidiMuted, midiMap, setMidiMap } from './ui_prefs.mjs';
+import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
+import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import {
-    drawKitList, drawKitBankPage, kitUseLayout, enumOverlayWouldDraw,
+    drawKitList, drawKitBankPage, drawKitMarkHeader, kitUseLayout, enumOverlayWouldDraw,
     mvPrint, mvWidth, MV_FOOTER_Y,
 } from './ui_movy.mjs';
 import { buildFilepathBrowserState, refreshFilepathBrowser } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { smfParse, SMF_MAX_BYTES, SMF_EXTENSIONS } from './ui_midifile.mjs';
 import {
     STRETCH_STEPS, STRETCH_DEFAULT, OCT_MIN, OCT_MAX, SEMI_MIN, SEMI_MAX, MN_MAX_SOUNDS, MAP_MODES,
-    mapPitch, planNotes, maxBarsAt, gridFor, partBarsOf, barTicks, drumVoices, defaultAssign, drumLaneNotes,
+    mapPitch, planNotes, maxBarsAt, partBarsOf, barTicks, drumVoices, defaultAssign, drumLaneNotes,
     melodicImportVal, melodicAudclipVal, lanesAudclipVal, lanesImportVal, voiceName,
 } from './ui_midi_notes.mjs';
 
 export const MI_ROOT = '/data/UserData';
 /* Install internals under the root, never a place a user keeps MIDI files. */
 const HIDDEN_TOP = new Set(['schwung', 'dbx-host', 'settings', 'boot-targets']);
-export const GRID_LABELS = ['1/32', '1/16', '1/8', '1/4', '1/2', '1'];
+export const GRID_LABELS = [0, 1, 2, 3, 4, 5].map(fmtRes);
+const GRID_DEFAULT = 1;          /* 1/16: every new file starts here (Josh, 2026-09-30) */
 
-const LIST_LINGER_MS = 500;      /* the list drops this long after the jog stops */
-const PARSE_REST_MS = 120;       /* the jog rests this long on a file before it is read */
+const PREVIEW_DELAY_MS = 160;    /* a file is read and heard once the jog rests — the preset list's delay */
 const CACHE_MAX = 8;             /* parsed files kept */
-const BG_PARSE_MAX = 64 * 1024;  /* larger files are read only when landed on */
-/* Detents per step, by knob: Start, Bars, Grid, Stretch, Oct/Map, Semi, Scale. */
-const KNOB_SENS = [6, 6, 12, 12, 12, 6, 12];
+const BG_PARSE_MAX = 64 * 1024;  /* larger files get their list counts only when landed on */
 
 let MI = null;
 let loadSync = null;             /* after a load: verify it landed (the screen has closed) */
 const CACHE = new Map();         /* path → { res } | { error } — insertion order is the LRU */
+const META = new Map();          /* path → { parts, bars, drum } | null — the list's counts; never evicted */
+/* Where each track was: { dir, path, part } — in memory only (Josh, 2026-09-30). */
+const MEM = new Array(8).fill(null);
 
 export function miActive() { return !!MI; }
 export function miStateForTest() { return MI; }
-export function miResetForTest() { MI = null; loadSync = null; CACHE.clear(); }
+export function miResetForTest() { MI = null; loadSync = null; CACHE.clear(); META.clear(); MEM.fill(null); }
 /* Offered on every track that plays notes: a Conductor emits none. */
 export function miOffered(track) { return GS.trackPadMode[track] !== PAD_MODE_CONDUCT; }
 
@@ -121,12 +132,16 @@ function readFile(path) {
     if (!res.error && (!res.parts || !res.parts.length)) return { error: 'NO NOTES' };
     return res;
 }
-/* A file's parse, cached. */
+function metaOfRes(r) {
+    return r && !r.error ? { parts: r.parts.length, bars: partBarsOf(r.parts[0], r.timeSig), drum: !!r.parts[0].drum } : null;
+}
+/* A file's parse, cached; its list counts are kept apart, for good. */
 function parsed(path) {
     if (CACHE.has(path)) { const e = CACHE.get(path); CACHE.delete(path); CACHE.set(path, e); return e; }
     const r = readFile(path);
     const e = r.error ? { error: r.error } : { res: r };
     CACHE.set(path, e);
+    META.set(path, metaOfRes(r));
     while (CACHE.size > CACHE_MAX) CACHE.delete(CACHE.keys().next().value);
     return e;
 }
@@ -137,28 +152,39 @@ const noExt = (n) => String(n).replace(/\.[^.]+$/, '');
 
 function isDrumTrack(t) { return GS.trackPadMode[t] === PAD_MODE_DRUM; }
 
-/* Tick context (opening lists a folder). */
-export function miOpen(track) {
-    if (!miOffered(track)) return false;
-    if (GS.recordArmed || GS.stepRecActive) { showActionPopup('IMPORT MIDI', 'NOT WHILE RECORDING'); return false; }
-    MI = {
-        track, drum: isDrumTrack(track), root: false,
+function freshState(track) {
+    return {
+        track, drum: isDrumTrack(track), layer: 'list', confirm: null,
         B: buildFilepathBrowserState({ root: MI_ROOT, filter: SMF_EXTENSIONS, name: 'Import MIDI' }, ''),
         sizes: {}, file: null, items: [], idx: 0,
-        list: { up: false, touched: false, letGo: 0 },
-        pending: null, cur: null, plan: null,
-        startBar: 1, bars: 1, grid: 1, stretch: STRETCH_DEFAULT, oct: 0, semi: 0, scaleOn: true,
-        map: midiMap(), knobAcc: [0, 0, 0, 0, 0, 0, 0],
+        pending: null, sel: null, cur: null, plan: null,
+        startBar: 1, bars: 1, grid: GRID_DEFAULT, stretch: STRETCH_DEFAULT, oct: 0, semi: 0, scaleOn: true,
+        map: midiMap(), saved: null,
         voices: [], extraSounds: 0, assign: [], held: -1, lanes: new Map(),
         hear: !midiMuted(), pmode: null, staged: null, free: null, keySig: '', mask: null,
     };
-    const place = midiPlace();
-    if (place.dir && place.dir.startsWith(MI_ROOT) && (place.dir === MI_ROOT || isDirPath(place.dir))) {
-        enterDir(place.dir, place.file);
-    } else {
-        if (place.dir) showActionPopup('FOLDER GONE', noExt(baseName(place.dir)).toUpperCase());
-        MI.root = true;
-        enterDir(MI_ROOT, '');
+}
+
+/* Tick context (opening lists a folder). A track that has been here reopens
+ * on its file's card; otherwise on the list, in its folder or the user data
+ * folder. */
+export function miOpen(track) {
+    if (!miOffered(track)) return false;
+    if (GS.recordArmed || GS.stepRecActive) { showActionPopup('IMPORT MIDI', 'NOT WHILE RECORDING'); return false; }
+    MI = freshState(track);
+    const mem = MEM[track];
+    const dir = mem && mem.dir && (mem.dir === MI_ROOT || isDirPath(mem.dir)) ? mem.dir : MI_ROOT;
+    enterDir(dir, mem ? mem.path : '');
+    if (mem && mem.path && MI.items[MI.idx] && MI.items[MI.idx].path === mem.path) {
+        const e = parsed(mem.path);
+        if (!e.error) {
+            if (e.res.parts.length > 1) {
+                enterFile(mem.path, e.res);
+                MI.idx = Math.max(1, Math.min(MI.items.length - 1, (mem.part | 0) + 1));
+                land();
+            } else landNow();
+            pick();
+        }
     }
     computePadNoteMap();          /* a drum track: the engine stops reading the right-hand pads */
     return true;
@@ -175,20 +201,12 @@ export function miClose() {
 }
 
 function remember() {
-    if (MI.root) return;
-    const it = MI.items[MI.idx];
-    const file = MI.file ? MI.file.path : (it && it.kind === 'file' ? it.path : '');
-    setMidiPlace(MI.B.currentDir, file);
+    const s = MI.sel;
+    MEM[MI.track] = s ? { dir: s.dir, path: s.path, part: s.part } : { dir: MI.B.currentDir, path: '', part: 0 };
 }
 
 /* ---- the list ---- */
 
-function metaOf(path) {
-    const e = CACHE.get(path);
-    if (!e || e.error) return null;
-    const r = e.res;
-    return { parts: r.parts.length, bars: partBarsOf(r.parts[0], r.timeSig), drum: !!r.parts[0].drum };
-}
 function buildItems() {
     if (MI.file) {
         const r = MI.file.res;
@@ -204,47 +222,45 @@ function buildItems() {
         : it.kind === 'dir' ? { kind: 'dir', label: String(it.label).replace(/^\[|\]$/g, ''), path: it.path }
         : { kind: 'file', label: noExt(it.label), path: it.path });
 }
+function firstRow() { return MI.items.length && MI.items[0].kind === 'up' ? Math.min(1, MI.items.length - 1) : 0; }
 function enterDir(dir, selectPath) {
     MI.file = null;
     MI.B.currentDir = dir;
     buildItems();
     const want = selectPath ? MI.items.findIndex(it => it.path === selectPath) : -1;
-    MI.idx = want >= 0 ? want : Math.min(MI.items.length - 1, MI.items.length && MI.items[0].kind === 'up' ? 1 : 0);
-    MI.idx = Math.max(0, MI.idx);
-    MI.list.up = true; MI.list.letGo = nowMs();
+    MI.idx = Math.max(0, want >= 0 ? want : firstRow());
     land();
 }
 function enterFile(path, res) {
     MI.file = { path, name: noExt(baseName(path)), res };
     buildItems();
     MI.idx = 1;
-    MI.list.up = true; MI.list.letGo = nowMs();
     land();
 }
 function goUp() {
-    if (MI.file) {
-        const from = MI.file.path;
-        enterDir(MI.B.currentDir, from);
-        return;
-    }
+    if (MI.file) { enterDir(MI.B.currentDir, MI.file.path); return; }
     const dir = MI.B.currentDir;
     if (dir === MI_ROOT) return;
     const parent = dir.replace(/\/[^/]*$/, '') || MI_ROOT;
     enterDir(parent.startsWith(MI_ROOT) ? parent : MI_ROOT, dir);
 }
 
-/* The row the jog is on: a playable item becomes the page. */
+/* The row the jog is on: a file waits for the jog to rest (the preview's
+ * delay), then plays; a part plays at once (its file is already read). */
 function land() {
     MI.cur = null; MI.plan = null; MI.pending = null; MI.held = -1; MI.mask = null;
     const it = MI.items[MI.idx];
     if (!it) return;
-    if (it.kind === 'part') { setCur(MI.file.res, it.part, MI.file.path + '#' + it.part, it.label); return; }
-    if (it.kind !== 'file') return;
-    if (CACHE.has(it.path)) { fromParse(it, true); return; }
-    MI.pending = { path: it.path, at: nowMs() };
+    if (it.kind === 'part') { setCur(MI.file.res, it.part, it.label, MI.file.path); return; }
+    if (it.kind === 'file') MI.pending = { at: nowMs() };
 }
-/* A landed file's parse: a single part is the page; a multi-part file waits
- * for a click. `announce` says what the file could not give. */
+function landNow() {
+    const it = MI.items[MI.idx];
+    MI.pending = null;
+    if (it && it.kind === 'file') fromParse(it, true);
+}
+/* A landed file's parse: a single part is heard; a multi-part file waits for
+ * a click. `announce` says what the file could not give. */
 function fromParse(it, announce) {
     const e = parsed(it.path);
     if (e.error) { if (announce) showActionPopup(e.error, it.label.toUpperCase()); return; }
@@ -254,21 +270,57 @@ function fromParse(it, announce) {
         const w = (e.res.warnings || []).find(k => WARN[k]);
         if (w) showActionPopup(WARN[w], it.label.toUpperCase());
     }
-    if (e.res.parts.length === 1) setCur(e.res, 0, it.path, it.label);
+    if (e.res.parts.length === 1) setCur(e.res, 0, it.label, it.path);
 }
-function playable() { return !!MI.cur; }
 
-/* ---- the page ---- */
+/* The item heard becomes the card's. */
+function pick() {
+    if (!MI.cur) return;
+    MI.sel = { ...MI.cur, dir: MI.B.currentDir };
+    MI.saved = null;
+    MI.layer = 'card';
+    GS.screenDirty = true;
+}
+/* The list, raised from the card: what the card had is kept, to put back. */
+function openList() {
+    MI.saved = MI.sel ? { cur: MI.cur, startBar: MI.startBar, bars: MI.bars, grid: MI.grid, stretch: MI.stretch,
+                          voices: MI.voices, extraSounds: MI.extraSounds, assign: MI.assign } : null;
+    MI.layer = 'list';
+    GS.screenDirty = true;
+}
+function closeList() {
+    const sv = MI.saved;
+    if (!sv) return false;
+    const s = MI.sel;
+    /* the list shows the picked file's row again next time — inside its
+     * multi-part file, on its part */
+    if (s) {
+        enterDir(s.dir, s.path);
+        const e = CACHE.get(s.path);
+        if (e && e.res && e.res.parts.length > 1) { enterFile(s.path, e.res); MI.idx = Math.min(MI.items.length - 1, (s.part | 0) + 1); }
+    }
+    Object.assign(MI, { cur: sv.cur, startBar: sv.startBar, bars: sv.bars, grid: sv.grid, stretch: sv.stretch,
+                        voices: sv.voices, extraSounds: sv.extraSounds, assign: sv.assign, pending: null, held: -1 });
+    MI.saved = null;
+    MI.layer = 'card';
+    replan();
+    return true;
+}
+
+/* ---- the card ---- */
 
 const stretchF = () => STRETCH_STEPS[MI.stretch].f;
 
-function setCur(res, partIdx, key, name) {
+/* A new file: Start 1, Grid 1/16, Stretch x1, Bars its length (Josh, 2026-09-30). */
+function setCur(res, partIdx, name, path) {
     const part = res.parts[partIdx];
     const ts = res.timeSig;
-    MI.cur = { key, name, part, ts };
+    MI.cur = { key: path + '#' + partIdx, name, path, part: partIdx, p: part, ts,
+               bpm: res.hasTempo ? res.bpm : null };
     MI.startBar = 1;
-    MI.grid = gridFor(part, ts, stretchF());
-    MI.bars = Math.min(maxBarsAt(TPS_VALUES[MI.grid], ts, stretchF()), partBarsOf(part, ts));
+    MI.grid = GRID_DEFAULT;
+    MI.stretch = STRETCH_DEFAULT;
+    MI.bars = partBarsOf(part, ts);
     if (MI.drum) {
         const all = drumVoices(part.notes);
         MI.voices = all.slice(0, MN_MAX_SOUNDS);
@@ -280,19 +332,25 @@ function setCur(res, partIdx, key, name) {
 function reassign() {
     MI.assign = defaultAssign(MI.voices, GS.drumLaneNote[MI.track], MI.map, GS.activeDrumLane[MI.track] | 0);
 }
+/* Bars never passes the file's end (from Start), nor what the clip holds at
+ * this Grid and Stretch — the two stay linked, as the old import had them. */
+function maxBars() {
+    const c = MI.cur;
+    return Math.max(1, Math.min(maxBarsAt(TPS_VALUES[MI.grid], c.ts, stretchF()),
+                                partBarsOf(c.p, c.ts) - MI.startBar + 1));
+}
 function replan() {
     const c = MI.cur;
     if (!c) { MI.plan = null; return; }
-    const f = stretchF();
-    MI.bars = Math.max(1, Math.min(maxBarsAt(TPS_VALUES[MI.grid], c.ts, f), MI.bars));
-    MI.startBar = Math.max(1, Math.min(partBarsOf(c.part, c.ts), MI.startBar));
+    MI.startBar = Math.max(1, Math.min(partBarsOf(c.p, c.ts), MI.startBar));
+    MI.bars = Math.max(1, Math.min(maxBars(), MI.bars));
     MI.keySig = (GS.padKey | 0) + '/' + (GS.padScale | 0);
-    const o = { startBar: MI.startBar, bars: MI.bars, tps: TPS_VALUES[MI.grid], timeSig: c.ts, f };
+    const o = { startBar: MI.startBar, bars: MI.bars, tps: TPS_VALUES[MI.grid], timeSig: c.ts, f: stretchF() };
     if (!MI.drum) {
         const po = { oct: MI.oct, semi: MI.semi, scaleOn: MI.scaleOn, key: GS.padKey | 0, scale: GS.padScale | 0 };
         o.pitch = (p) => mapPitch(p, po);
     }
-    MI.plan = planNotes(c.part, o);
+    MI.plan = planNotes(c.p, o);
     MI.lanes = MI.drum ? drumLaneNotes(MI.plan.notes, MI.voices, MI.assign) : new Map();
     MI.mask = null;
     GS.screenDirty = true;
@@ -342,7 +400,7 @@ function heardLanes() {
     return drumLaneNotes(MI.plan.notes, MI.voices, MI.assign.map((a, i) => i === MI.held ? a : -1));
 }
 function wantMode() {
-    if (!MI.hear || !MI.cur || !MI.plan || !MI.plan.notes.length) return null;
+    if (!MI.hear || !MI.cur || !MI.plan || !MI.plan.notes.length || MI.layer === 'confirm') return null;
     if (MI.drum && !heardLanes().size) return null;
     return (GS.playing && GS.trackClipPlaying[MI.track]) ? 'clip' : 'free';
 }
@@ -405,13 +463,23 @@ function freeTick() {
     pv.playhead = now;
     if (toks.length) queueAudition((MI.drum ? 'clip ' + destClip() + ' ' : '') + toks.join(' '));
 }
+/* Where the preview is, in clip ticks (or null): the free clock, or — in time
+ * — the track's own playhead, which the swapped-in clip drives. */
+function playheadTicks() {
+    if (MI.pmode === 'free' && MI.free && MI.free.playhead != null) return MI.free.playhead;
+    if (MI.pmode === 'clip') {
+        const step = MI.drum ? GS.drumCurrentStep[MI.track] : GS.trackCurrentStep[MI.track];
+        if (step >= 0) return step * TPS_VALUES[MI.grid];
+    }
+    return null;
+}
 
 /* ---- the load ---- */
 
 function commit() {
     const t = MI.track, c = destClip(), p = MI.plan;
-    if (!MI.cur || !p || !p.notes.length) return;
-    if (MI.drum && !MI.lanes.size) { showActionPopup('NO SOUND', 'ON A LANE'); return; }
+    if (!MI.cur || !p || !p.notes.length) return false;
+    if (MI.drum && !MI.lanes.size) { showActionPopup('NO SOUND', 'ON A LANE'); return false; }
     const repl = replacing();
     /* The free preview's notes end first; the engine ends an in-time preview
      * itself, before it takes its undo snapshot. */
@@ -443,7 +511,7 @@ function commit() {
     noteUndoUnit();
     loadSync = { key, t, c, drum: MI.drum, wait: 0 };
     showActionPopup('LOADED', MI.cur.name.toUpperCase(), where + ' · ' + count + ' NOTES');
-    miClose();
+    return true;
 }
 
 /* After a load: once the write has gone, look every few ticks for ~half a
@@ -460,35 +528,56 @@ function loadSyncTick() {
     if (ls.wait >= 45) { showActionPopup('LOAD FAILED', 'CLIP ' + SCENE_LETTERS[ls.c]); loadSync = null; }
 }
 
+/* ---- the confirm ---- */
+
+function askLoad() {
+    if (!MI.cur || !MI.plan || !MI.plan.notes.length) return;
+    MI.confirm = { kind: 'load', yes: false };
+    MI.layer = 'confirm';
+    GS.screenDirty = true;
+}
+function askLeave() {
+    MI.confirm = { kind: 'leave', yes: false };
+    MI.layer = 'confirm';
+    GS.screenDirty = true;
+}
+function answer(yes) {
+    const kind = MI.confirm.kind;
+    MI.confirm = null;
+    MI.layer = 'card';
+    if (yes) { if (commit()) miClose(); return; }
+    if (kind === 'leave') { miClose(); return; }     /* No = leave without loading */
+    GS.screenDirty = true;
+}
+
 /* ---- input ---- */
 
-/* Which setting a knob turns: the page's eight, by track kind. */
+/* Which setting a knob turns on the card, and how it feels: continuous for
+ * the bar counts and semitones, a pick rate for the lists, deliberate for the
+ * toggle — the same classes as every bank's knobs (ui_input_cc knobClass). K8
+ * is the file's BPM: shown, not set. */
 function knobKind(k) {
     const common = ['start', 'bars', 'grid', 'stretch'];
     if (k < 4) return common[k];
     if (MI.drum) return k === 4 ? 'map' : null;
     return ['oct', 'semi', 'scale'][k - 4] || null;
 }
+const CONT = new Set(['start', 'bars', 'semi']);
 
-export function miOnKnob(k, delta) {
-    if (!MI || MI.root || !MI.cur || !delta) return;
+/* d2 is the raw knob value (the frame's whole detent count). */
+export function miOnKnob(k, d2) {
+    if (!MI || MI.layer !== 'card' || !MI.cur) return;
     const kind = knobKind(k);
     if (!kind) return;
-    MI.knobAcc[k] += delta;
-    const sens = KNOB_SENS[k];
-    let steps = 0;
-    while (MI.knobAcc[k] >= sens) { MI.knobAcc[k] -= sens; steps++; }
-    while (MI.knobAcc[k] <= -sens) { MI.knobAcc[k] += sens; steps--; }
+    const dir = (d2 >= 1 && d2 <= 63) ? d2 : (d2 >= 65 && d2 <= 127) ? d2 - 128 : 0;
+    if (!dir) return;
+    const steps = CONT.has(kind) ? ccKnobDelta(d2, k, 1)
+                : knobPick(k, dir, kind === 'scale' ? KNOB_DELIB : KNOB_PICK);
     if (!steps) return;
-    const c = MI.cur;
     if (kind === 'start') MI.startBar += steps;
     else if (kind === 'bars') MI.bars += steps;
     else if (kind === 'grid') MI.grid = Math.max(0, Math.min(TPS_VALUES.length - 1, MI.grid + steps));
-    else if (kind === 'stretch') {
-        const was = MI.stretch;
-        MI.stretch = Math.max(0, Math.min(STRETCH_STEPS.length - 1, MI.stretch + steps));
-        if (MI.stretch !== was) MI.grid = gridFor(c.part, c.ts, stretchF());
-    }
+    else if (kind === 'stretch') MI.stretch = Math.max(0, Math.min(STRETCH_STEPS.length - 1, MI.stretch + steps));
     else if (kind === 'oct') MI.oct = Math.max(OCT_MIN, Math.min(OCT_MAX, MI.oct + steps));
     else if (kind === 'semi') MI.semi = Math.max(SEMI_MIN, Math.min(SEMI_MAX, MI.semi + steps));
     else if (kind === 'scale') MI.scaleOn = steps > 0;
@@ -499,19 +588,14 @@ export function miOnKnob(k, delta) {
     replan();
 }
 
-/* The jog's touch: the list stays while it is held. */
-export function miJogTouch(on) {
-    if (!MI) return;
-    MI.list.touched = !!on;
-    if (!on) MI.list.letGo = nowMs();
-}
+/* The jog's touch: nothing to do — the list is a layer, not a peek. */
+export function miJogTouch() {}
 
 export function miOnJog(delta) {
-    if (!MI || !delta || !MI.items.length) return;
-    if (!MI.root) {
-        MI.list.up = true;
-        if (!MI.list.touched) MI.list.letGo = nowMs();      /* no touch seen: time from the turn */
-    }
+    if (!MI || !delta) return;
+    if (MI.layer === 'confirm') { MI.confirm.yes = delta > 0; GS.screenDirty = true; return; }
+    if (MI.layer === 'card') { openList(); return; }
+    if (!MI.items.length) return;
     const was = MI.idx;
     MI.idx = Math.max(0, Math.min(MI.items.length - 1, MI.idx + (delta > 0 ? 1 : -1)));
     if (MI.idx !== was) land();
@@ -520,37 +604,40 @@ export function miOnJog(delta) {
 
 export function miOnClick(shift) {
     if (!MI) return;
+    if (MI.layer === 'confirm') { answer(MI.confirm.yes); return; }
     if (shift) {
-        if (MI.root) return;
         MI.hear = !MI.hear;
         setMidiMuted(!MI.hear);
         GS.screenDirty = true;
         return;
     }
+    if (MI.layer === 'card') { askLoad(); return; }
     const it = MI.items[MI.idx];
     if (!it) return;
     if (it.kind === 'up') { goUp(); return; }
-    if (it.kind === 'dir') { MI.root = false; enterDir(it.path, ''); return; }
-    if (it.kind === 'file') {
-        if (!MI.cur || MI.cur.key !== it.path) {
-            MI.pending = null;
-            const e = parsed(it.path);
-            if (e.error) { showActionPopup(e.error, it.label.toUpperCase()); return; }
-            if (e.res.parts.length > 1) { MI.root = false; enterFile(it.path, e.res); return; }
-            fromParse(it, true);
-            /* the first-open list: a click OPENS the file as the page */
-            if (MI.root) { MI.root = false; MI.list.up = false; GS.screenDirty = true; return; }
-        }
-        if (MI.root) { MI.root = false; MI.list.up = false; GS.screenDirty = true; return; }
-        commit();
-        return;
+    if (it.kind === 'dir') { enterDir(it.path, ''); return; }
+    if (it.kind === 'file' && (!MI.cur || MI.cur.path !== it.path)) {
+        MI.pending = null;
+        const e = parsed(it.path);
+        if (e.error) { showActionPopup(e.error, it.label.toUpperCase()); return; }
+        if (e.res.parts.length > 1) { enterFile(it.path, e.res); return; }
+        fromParse(it, true);
     }
-    if (it.kind === 'part') commit();
+    pick();
 }
 
+/* Back, on its RELEASE (the press is the global hold-to-suspend clock): one
+ * layer at a time. */
 export function miOnBack() {
     if (!MI) return;
-    if (MI.file) { goUp(); return; }
+    if (MI.layer === 'confirm') { answer(false); return; }
+    if (MI.layer === 'list') {
+        /* Back closes the list (as dAVEBOx's file browser: `..` is the way up) */
+        if (closeList()) { GS.screenDirty = true; return; }
+        miClose();                            /* nothing picked yet: leave */
+        return;
+    }
+    if (MI.sel) { askLeave(); return; }
     miClose();
 }
 
@@ -570,11 +657,12 @@ function laneOfPad(i) {
     const lane = (GS.drumLanePage[MI.track] | 0) * 16 + row * 4 + col;
     return lane < DRUM_LANES ? lane : -1;
 }
+function padsLive() { return !!(MI && MI.drum && MI.cur && MI.voices.length && MI.layer === 'card'); }
 /* A pad pressed (0-31, bottom-left first). Hold a sound pad and tap a lane to
  * put it there, or again to take it off. A lane tap alone just plays the lane
  * (the engine does that; this only decides placement). */
 export function miPadTap(i) {
-    if (!MI || !MI.drum || !MI.cur || !MI.voices.length) return;
+    if (!padsLive()) return;
     const snd = soundOfPad(i);
     if (snd >= 0) { MI.held = snd; GS.screenDirty = true; return; }
     const lane = laneOfPad(i);
@@ -590,7 +678,7 @@ export function miPadRelease(i) {
  * stay. A drum track: the right-hand pads (the sounds), and each lane with a
  * sound in its colour; the held sound's pad and lane pulse. */
 export function miPadColors() {
-    if (!MI || !MI.drum || !MI.cur || !MI.voices.length) return null;
+    if (!padsLive()) return null;
     const out = new Array(32).fill(null);
     const pulse = (nowMs() % 400) < 200;
     const colorOf = (v) => (v === MI.held && pulse) ? White : SOUND_COLORS[v % SOUND_COLORS.length];
@@ -614,26 +702,38 @@ export function miTick() {
         return;
     }
     const now = nowMs();
-    if (MI.pending && now - MI.pending.at >= PARSE_REST_MS) {
-        const it = MI.items[MI.idx];
-        MI.pending = null;
-        if (it && it.kind === 'file') fromParse(it, true);
+    if (MI.pending && now - MI.pending.at >= PREVIEW_DELAY_MS) {
+        landNow();
         GS.screenDirty = true;
-    } else if (!MI.pending && !MI.file) {
-        /* the list's bar and part counts: one small file a tick */
-        const it = MI.items.find(x => x.kind === 'file' && !CACHE.has(x.path) && (MI.sizes[x.path] | 0) <= BG_PARSE_MAX);
-        if (it) { parsed(it.path); if (MI.list.up || MI.root) GS.screenDirty = true; }
+    } else if (!MI.pending && !MI.file && MI.layer === 'list') {
+        /* the list's bar and part counts: one small file a tick, kept for good */
+        const it = MI.items.find(x => x.kind === 'file' && !META.has(x.path) && (MI.sizes[x.path] | 0) <= BG_PARSE_MAX);
+        if (it) {
+            META.set(it.path, CACHE.has(it.path) && CACHE.get(it.path).res ? metaOfRes(CACHE.get(it.path).res) : metaOfRes(readFile(it.path)));
+            GS.screenDirty = true;
+        }
     }
     if (MI.cur && MI.keySig !== (GS.padKey | 0) + '/' + (GS.padScale | 0)) replan();
-    if (MI.list.up && !MI.list.touched && playable() && now - MI.list.letGo >= LIST_LINGER_MS) {
-        MI.list.up = false;
-        GS.screenDirty = true;
-    }
     previewTick();
-    if (MI.pmode === 'free' || !MI.hear || MI.held >= 0) GS.screenDirty = true;
+    if (MI.pmode || !MI.hear || MI.held >= 0) GS.screenDirty = true;
 }
 
 export function miAnimating() { return !!(MI && (MI.pmode || MI.pending || !MI.hear)); }
+
+/* ---- the knob rings: the card's cells, dark where a knob does nothing ---- */
+
+const BLANK = { kind: 'blank', label: '' };
+export function miRingCells() {
+    if (!MI) return null;
+    if (MI.layer !== 'card' || !MI.cur) return new Array(8).fill(BLANK);
+    const top = topCells().slice(0, 4);
+    const low = MI.drum
+        ? [{ kind: 'enumsq', label: 'Map', options: MAP_MODES, sel: MAP_MODES.indexOf(MI.map) }, BLANK, BLANK]
+        : [{ kind: 'valsq', label: 'Oct', norm: (MI.oct - OCT_MIN) / (OCT_MAX - OCT_MIN) },
+           { kind: 'valsq', label: 'Semi', norm: (MI.semi - SEMI_MIN) / (SEMI_MAX - SEMI_MIN) },
+           { kind: 'pill', label: 'Scale', norm: MI.scaleOn ? 1 : 0 }];
+    return top.concat(low, [BLANK]);          /* K8 is the BPM: shown, not set */
+}
 
 /* ---- drawing ---- */
 
@@ -642,8 +742,8 @@ function listRows() {
         if (it.kind === 'up') return { label: '..' };
         if (it.kind === 'dir') return { label: it.label + '/' };
         if (it.kind === 'part') return { label: it.label, value: (it.drum ? 'DRM ' : '') + it.bars + 'Br' };
-        const m = metaOf(it.path);
-        if (!m) return { label: it.label, value: fmtSize(MI.sizes[it.path]) };
+        const m = META.get(it.path);
+        if (!m) return { label: it.label, value: META.has(it.path) ? '--' : fmtSize(MI.sizes[it.path]) };
         if (m.parts > 1) return { label: it.label + '>', value: m.parts + ' PT' };
         return { label: it.label, value: (m.drum ? 'DRM ' : '') + m.bars + 'Br' };
     });
@@ -661,27 +761,34 @@ function listTitle() {
 
 function topCells() {
     const c = MI.cur;
-    const total = partBarsOf(c.part, c.ts);
-    const maxB = maxBarsAt(TPS_VALUES[MI.grid], c.ts, stretchF());
+    const total = partBarsOf(c.p, c.ts);
+    const maxB = maxBars();
     return [
         { kind: 'valsq', label: 'Start', name: 'Start Bar', text: String(MI.startBar),
           norm: total > 1 ? (MI.startBar - 1) / (total - 1) : 0 },
         { kind: 'valsq', label: 'Bars', name: 'Length', text: String(MI.bars),
           norm: maxB > 1 ? (MI.bars - 1) / (maxB - 1) : 0 },
-        { kind: 'enumsq', label: 'Grid', name: 'Grid', text: GRID_LABELS[MI.grid], options: GRID_LABELS, sel: MI.grid },
+        /* Grid: the DRUM LANE card's Resolution cell (Josh, 2026-09-30) — a
+         * fraction at rest, an arc on the knob while it is touched; no list. */
+        { kind: 'frac', label: 'Grid', name: 'Grid', text: GRID_LABELS[MI.grid], options: GRID_LABELS, sel: MI.grid,
+          touchArc: { norm: MI.grid / (GRID_LABELS.length - 1), bip: false } },
         { kind: 'enumsq', label: 'Strch', name: 'Stretch', text: STRETCH_STEPS[MI.stretch].label,
           options: STRETCH_STEPS.map(s => s.label), sel: MI.stretch },
-        { kind: 'blank', label: '' }, { kind: 'blank', label: '' }, { kind: 'blank', label: '' }, { kind: 'blank', label: '' },
+        BLANK, BLANK, BLANK, BLANK,
     ];
 }
 const signed = (n) => (n >= 0 ? '+' : '') + n;
-/* K5-K7: small two-line cells (label over value) under their knobs. */
+/* K5-K8: small two-line cells (label over value) under their knobs. */
 function lowCells() {
-    if (MI.drum) return [{ label: 'MAP', name: 'Drum Map', value: MI.map === 'off' ? 'OFF' : MI.map.toUpperCase() }];
+    const bpm = { label: 'BPM', name: 'File Tempo', value: MI.cur && MI.cur.bpm ? String(Math.round(MI.cur.bpm)) : '--' };
+    if (MI.drum) return [{ label: 'MAP', name: 'Drum Map', value: MI.map === 'off' ? 'OFF' : MI.map.toUpperCase(),
+                           options: MAP_MODES.map(m => m === 'off' ? 'OFF' : m.toUpperCase()), sel: MAP_MODES.indexOf(MI.map) },
+                         null, null, bpm];
     return [
         { label: 'OCT', name: 'Octave', value: signed(MI.oct) },
         { label: 'SEMI', name: 'Semitones', value: signed(MI.semi) },
         { label: 'SCALE', name: 'Fit to Scale', value: MI.scaleOn ? 'ON' : 'OFF' },
+        bpm,
     ];
 }
 
@@ -693,10 +800,10 @@ function laneMask() {
     const c = MI.cur, p = MI.plan;
     const key = c.key + '|' + p.from + '|' + p.to;
     if (MI.mask && MI.mask.key === key) return MI.mask;
-    const span = Math.max(partBarsOf(c.part, c.ts) * barTicks(c.ts), p.to);
+    const span = Math.max(partBarsOf(c.p, c.ts) * barTicks(c.ts), p.to);
     const px = (t) => LANE_X + Math.floor(Math.max(0, Math.min(span, t)) * LANE_W / span);
     const inside = new Uint8Array(LANE_W), outside = new Uint8Array(LANE_W);
-    for (const n of c.part.notes) {
+    for (const n of c.p.notes) {
         const x0 = px(n.t), w = Math.max(2, px(n.t + n.g) - x0 - 1);
         const into = (n.t >= p.from && n.t < p.to) ? inside : outside;
         for (let x = x0; x < x0 + w && x < LANE_X + LANE_W; x++) into[x - LANE_X] = 1;
@@ -718,11 +825,12 @@ function drawLane() {
         fill_rect(dir > 0 ? cx : cx - 2, LANE_Y - 2, 3, 1, 1);
         fill_rect(dir > 0 ? cx : cx - 2, LANE_Y + 4, 3, 1, 1);
     }
-    if (MI.pmode === 'free' && MI.free && MI.free.playhead != null)
-        fill_rect(m.px(p.from + MI.free.playhead / stretchF()), LANE_Y - 1, 1, 5, 1);
+    const ph = playheadTicks();
+    if (ph != null) fill_rect(m.px(p.from + (ph % p.span) / stretchF()), LANE_Y - 1, 1, 5, 1);
 }
 function drawLowCells(touched) {
     lowCells().forEach((c, i) => {
+        if (!c) return;
         const x0 = i * 32, on = touched === 4 + i;
         if (on) fill_rect(x0 + 1, 41, 30, 15, 1);
         mvPrint(x0 + Math.floor((32 - mvWidth(c.label)) / 2), 43, c.label, on ? 0 : 1);
@@ -732,12 +840,17 @@ function drawLowCells(touched) {
 function footer(shift) {
     const verb = MI.hear ? 'MUTE' : 'HEAR';
     if (shift) return [['CLK', verb]];
+    if (MI.layer === 'list') {
+        const it = MI.items[MI.idx];
+        const open = it && (it.kind === 'up' || it.kind === 'dir' || (it.kind === 'file' && (META.get(it.path) || {}).parts > 1));
+        return [['CLK', open ? 'OPEN' : 'PICK'], ['JOG', 'FILE'], ['SHFT', verb]];
+    }
     if (MI.drum) return [['RTPAD', 'SOUND'], ['SHFT', verb]];
-    return [['JOG', 'FILE'], ['CLK', 'LOAD'], ['SHFT', verb]];
+    return [['CLK', 'LOAD'], ['JOG', 'FILE'], ['SHFT', verb]];
 }
 export function miHintsForTest(shift) {
     if (!MI) return null;
-    return { footer: MI.root ? [['JOG', 'FOLDER'], ['CLK', 'OPEN']] : footer(!!shift), warning: MI.cur ? warning() : null };
+    return { layer: MI.layer, footer: footer(!!shift), warning: MI.cur ? warning() : null };
 }
 
 /* The sounds panel: up while a sound pad is held. One row per sound: its
@@ -768,50 +881,67 @@ function drawList() {
     const rows = listRows().map(r => ({ labelFont: 'small', ...r }));
     drawKitList(rows, MI.idx, { x: PICK_X + 1, w: PICK_W - 2, topY: PICK_Y + 3, h: h - 3, rowH: 7, emptyMsg: 'NO MIDI FILES' });
 }
+/* dAVEBOx's Yes/No dialog (ui_dialogs: dlgHeader / dlgLines / drawYesNoRow). */
+function drawConfirm() {
+    const c = MI.cur, p = MI.plan;
+    let title, lines;
+    const name = c ? c.name.toUpperCase() : '';
+    if (MI.confirm.kind === 'leave') {
+        title = 'LEAVE IMPORT';
+        lines = ['LOAD ' + name, MI.drum ? 'INTO THE LANES FIRST?' : 'INTO CLIP ' + SCENE_LETTERS[destClip()] + ' FIRST?'];
+    } else if (MI.drum) {
+        const hit = [...MI.lanes.keys()].filter(l => GS.drumLaneHasNotes[MI.track][l]).map(l => l + 1);
+        title = 'LOAD INTO ' + MI.lanes.size + (MI.lanes.size === 1 ? ' LANE' : ' LANES');
+        lines = [name + ' - ' + p.bars + ' BARS',
+                 hit.length ? 'REPLACES LANE' + (hit.length > 1 ? 'S ' : ' ') + hit.join(', ') : 'THOSE LANES ARE EMPTY'];
+    } else {
+        const cl = destClip();
+        title = 'LOAD INTO CLIP ' + SCENE_LETTERS[cl];
+        lines = [name + ' - ' + p.bars + ' BARS', GS.clipNonEmpty[MI.track][cl] ? 'REPLACES ITS NOTES' : 'THE CLIP IS EMPTY'];
+    }
+    drawKitMarkHeader(title);
+    const pitch = 10, bot = 44;
+    const top = 7 + Math.floor((bot - 7 - (lines.length * pitch - (pitch - 5))) / 2);
+    lines.forEach((l, i) => { const s = fit4x5(l, 124); fontPrint4x5(Math.floor((128 - fontWidth4x5(s)) / 2), top + i * pitch, s, 1); });
+    drawDialogYesNoRow(!!MI.confirm.yes);
+}
 
-export function miRender(touchedIdx, shift) {
+/* `overlayIdx` is the knob TURNED while touched (enumOverlayIdx in
+ * ui_render): a touch names the knob, a turn raises its list. */
+export function miRender(touchedIdx, shift, overlayIdx) {
     if (!MI) return;
     clear_screen();
-    if (MI.root) {
-        /* the first open looks like the jog list (Josh, 2026-09-29): the same
-         * header, boxed small-font list and footer place */
-        kitUseLayout('bank');
-        drawKitBankPage(new Array(8).fill({ kind: 'blank', label: '' }), { headerText: listTitle(),
-                        headerRight: MI.items.length ? position() : '', touchedIdx: -1,
-                        footer: [['JOG', 'FOLDER'], ['CLK', 'OPEN']] });
-        drawList();
-        return;
-    }
-    if (!MI.cur) {
-        /* nothing to hear here (a folder, a multi-part file, one being read, an
-         * empty folder): the list is the screen */
-        kitUseLayout('bank');
-        drawKitBankPage(new Array(8).fill({ kind: 'blank', label: '' }), { headerText: listTitle(), headerRight: MI.items.length ? position() : '',
-                              touchedIdx: -1, footer: footer(shift) });
-        drawList();
-        if (MI.pending) mvPrint(PICK_X + 4, MV_FOOTER_Y - 9, 'READING...', 1);
-        return;
-    }
+    if (MI.layer === 'confirm') { drawConfirm(); return; }
     kitUseLayout('bank');
+    if (MI.layer === 'list' || !MI.cur) {
+        drawKitBankPage(new Array(8).fill(BLANK), { headerText: listTitle(),
+                        headerRight: MI.pending ? 'READING' : (MI.items.length ? position() : ''),
+                        touchedIdx: -1, footer: footer(shift) });
+        drawList();
+        return;
+    }
     const cells = topCells();
     const touched = touchedIdx >= 0 && touchedIdx < 8 ? touchedIdx : -1;
     const topTouched = touched >= 0 && touched < 4 ? touched : -1;
+    const ov = overlayIdx >= 0 && overlayIdx === topTouched ? overlayIdx : -1;
     const low = touched >= 4 ? lowCells()[touched - 4] : null;
-    const listUp = MI.list.up;
-    if (!listUp && !enumOverlayWouldDraw(cells, topTouched)) {
+    const lowOverlay = !!(low && low.options && overlayIdx === touched);
+    if (!enumOverlayWouldDraw(cells, ov) && !lowOverlay) {
         drawLane();
         drawLowCells(low ? touched : -1);
     }
     let headerText = MI.cur.name.toUpperCase(), headerRight = warning() || position();
-    if (listUp) { headerText = listTitle(); headerRight = position(); }
-    else if (low) { headerText = low.name.toUpperCase(); headerRight = low.value; }
+    if (low) { headerText = low.name.toUpperCase(); headerRight = low.value; }
     else if (MI.drum && MI.held >= 0 && MI.voices[MI.held]) {
         const a = MI.assign[MI.held];
         headerText = voiceName(MI.voices[MI.held].pitch) + ' > ' + (a >= 0 ? 'PAD ' + (a + 1) : '--');
         headerRight = '';
     }
-    drawKitBankPage(cells, { headerText, headerRight, touchedIdx: listUp ? -1 : topTouched,
-                             footer: MI.drum && MI.held >= 0 ? [['TAP', 'LANE'], ['AGAIN', 'OFF']] : footer(shift) });
-    if (listUp) drawList();
-    else if (MI.drum && MI.held >= 0) drawSounds();
+    /* the drum Map's list, on a turn: raised as a top cell's would be */
+    const pageCells = lowOverlay ? cells.slice(0, 4).concat([{ kind: 'enumsq', label: 'Map', name: low.name, text: low.value,
+                                                                options: low.options, sel: low.sel }, BLANK, BLANK, BLANK]) : cells;
+    drawKitBankPage(pageCells, { headerText, headerRight, touchedIdx: lowOverlay ? touched : topTouched,
+                                 overlayIdx: lowOverlay ? touched : ov,
+                                 footer: MI.drum && MI.held >= 0 ? [['TAP', 'LANE'], ['AGAIN', 'OFF']] : footer(shift) });
+    if (MI.drum && MI.held >= 0) drawSounds();
 }

@@ -33,11 +33,13 @@ the section into a versioned heading at release time.
   banks.** Touch the knob and click the jog, as for Crop and Legato (it is no
   longer in the track menu). Every file plays as you land on it — in time with
   the song while the track plays — and a file with several parts opens like a
-  folder. Stretch, Octave, Semitone and a Scale fold are on the knobs, and on a
-  drum track the file's sounds land on your lanes by GM or Move's layout, or on
-  the lanes you tap. It loads into the clip you are on with one click and one
-  Undo (on a drum track, only the lanes a sound goes to), and reopens where you
-  left it. The transport keeps running. It replaces the phrase library.
+  folder. Click picks a file; its card has Start, Bars, Grid, Stretch, Octave,
+  Semitone and a Scale fold on the knobs, and shows the file's tempo. On a drum
+  track the file's sounds land on your lanes by GM or Move's layout, or on the
+  lanes you tap. Loading always asks first, goes into the clip you are on (on a
+  drum track, only the lanes a sound goes to) and is one Undo. Each track comes
+  back to its own last file. The transport keeps running. It replaces the
+  phrase library.
 
 ### Fixed
 - **Move tracks' Volume, Pan and Sends work.** On a Move track, Volume, Pan and Send A/B did

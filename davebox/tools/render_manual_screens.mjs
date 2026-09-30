@@ -1081,25 +1081,25 @@ screen('fx-buses', '14.8 Master FX and the sends', 'MASTER and SEND FX',
 /* 15.4 — Import MIDI: touch K8 on the CLIP / DRUM LANE card and click. Each
  * screen starts from nothing remembered (the first open). */
 const openImport = (t) => {
-    S.midiPlace = { dir: '', file: '' }; S.midiMuted = false; S.midiMap = 'gm';
+    MI.miResetForTest(); S.midiMuted = false; S.midiMap = 'gm';
     selectTrack(t); toBank(0, false);
     knobTouch(7); ticks(1); click(); knobRelease(7); ticks(4);
     if (!MI.miStateForTest()) throw new Error('touch K8 + click did not open Import MIDI');
 };
-/* The page for one part of the Bach file: the list has dropped away. */
+/* The card for one part of the Bach file: in the multi-part file, pick its first part. */
 const importPage = (t) => {
-    openImport(t); jogToLabel('Bach Invention 8'); click(); ticks(4);
-    noteOff(9); ticks(60);
-    if (!MI.miStateForTest().cur || MI.miStateForTest().list.up) throw new Error('no MIDI browser page');
+    openImport(t); jogToLabel('Bach Invention 8'); click(); ticks(4);   /* into the file */
+    ticks(20); click(); ticks(4);                                         /* pick its first part */
+    if (!MI.miStateForTest() || MI.miStateForTest().layer !== 'card') throw new Error('no MIDI browser card');
 };
-screen('import-files', '16.4 Import a MIDI file', 'Import MIDI — the first time',
-    'Touch knob 8 on the CLIP card and click: the first time, your user data folder — its folders and MIDI files.',
+screen('import-files', '16.4 Import a MIDI file', 'Import MIDI — the list',
+    'Touch knob 8 on the CLIP card and click: on a track\'s first visit, your user data folder — its folders and MIDI files.',
     () => { stopTransport(); openImport(3); });
 screen('import-parts', '16.4 Import a MIDI file', 'Import MIDI — a file with several parts',
     'A file with several parts opens like a folder: its parts are laid out like files, and each plays as you land on it.',
     () => { stopTransport(); openImport(3); jogToLabel('Bach Invention 8'); click(); ticks(4); });
 screen('import-options', '16.4 Import a MIDI file', 'Import MIDI — the knobs',
-    'The page: Start, Bars, Grid and Stretch on top, the notes on one line (the brackets mark what will land), Oct, Semi and Scale underneath.',
+    'The card: Start, Bars, Grid and Stretch on top, the notes on one line (the brackets mark what will land), Oct, Semi, Scale and the file\'s BPM underneath.',
     () => { stopTransport(); importPage(3); });
 screen('import-options-cut', '16.4 Import a MIDI file', 'Import MIDI — notes that will be cut',
     'Moving the start and length: the top right says how many notes won\'t land.',
@@ -1188,10 +1188,15 @@ screen('state-mismatch', '17.5 Projects', 'A set from another version',
 
 /* 15.4 — importing over a clip that has notes */
 screen('import-replace', '16.4 Import a MIDI file', 'Import MIDI — replacing a clip',
-    'The clip you are on already holds notes: REPLACES, top right. The click loads; Undo brings them back.',
+    'The clip you are on already holds notes: REPLACES, top right. The click asks before it loads.',
     () => { stopTransport(); importPage(0);
             if (MI.miStateForTest() && !/REPLACES/.test(JSON.stringify(MI.miHintsForTest(false))))
                 throw new Error('the clip is not one with notes'); });
+
+screen('import-confirm', '16.4 Import a MIDI file', 'Import MIDI — loading asks first',
+    'Jog click on the card: dAVEBOx\'s Yes/No, No selected. Back is No.',
+    () => { stopTransport(); importPage(0); click(); ticks(2);
+            if (MI.miStateForTest().layer !== 'confirm') throw new Error('no confirm'); });
 
 /* ── output ──────────────────────────────────────────────────────────────── */
 /* Every `section` must be a heading of the manual draft, and the output is put

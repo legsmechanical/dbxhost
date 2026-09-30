@@ -2088,6 +2088,7 @@ function _cancelMergeCountIn() {
  * Hold-to-suspend works regardless and is not reflected here.) */
 export function backTapWouldAct() {
     if (S.confirmStateWipe) return false;
+    if (miActive()) return true;            /* the MIDI browser: one layer per Back */
     if (S.confirmExit) return true;         /* Back = No */
     if (S.confirmTypeChange) return true;   /* Back = No */
     if (S.confirmModuleChange) return true; /* Back = No */
@@ -2154,6 +2155,7 @@ export function atOverview() {
     if (soundActive() || S.moveCoRunTrack >= 0)                     return false;
     if (S.stepRecActive)                                            return false;
     if (S.globalMenuOpen || S.daveBox || S.projectPadPicker)        return false;
+    if (miActive())                                                 return false;
     if (S.snapshotPicker || S.globalEnumPick)                       return false;
     if (S.tapTempoOpen || S.tempoSelectActive)                      return false;
     if (S.mergeNoticePending || S.mergeCountingIn ||
@@ -3535,7 +3537,7 @@ function knobDivisor(k, now) {
 /* Fixed-divisor accumulator for the discrete classes. Takes the batch MAGNITUDE
  * like ccKnobDelta, so a fast spin pages through options at the speed of the
  * turn while a slow one still needs `need` detents per step. */
-function knobPick(k, dir, need) {
+export function knobPick(k, dir, need) {
     if (!dir) return 0;
     if ((dir > 0) !== (S.knobLastDir[k] > 0)) { S.knobAccum[k] = 0; S.knobLastDir[k] = dir > 0 ? 1 : -1; }
     S.knobAccum[k] += dir;
@@ -3899,7 +3901,7 @@ function bankStep(pm) {
     return range / SWEEP_UNITS;
 }
 
-function ccKnobDelta(d2, k, stepScale) {
+export function ccKnobDelta(d2, k, stepScale) {
     /* decodeDelta, NOT a sign test: the value carries the whole frame's detent
      * count and discarding it is the bug this replaced. */
     const dir = decodeDelta(d2);

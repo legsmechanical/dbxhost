@@ -287,3 +287,10 @@ Bugs:
   forever. Counts need their own store.
 - `READING...` is drawn over the list's last row.
 - Back sometimes returns to the list, sometimes to the clip bank.
+
+### Round 2 decisions (Josh, 2026-09-30, from the round-2 mockups)
+- Loop inside the browser: dropped ("you're right, ignore that").
+- Back on the leave dialog = No = leave without loading (dAVEBOx's rule).
+- Per-track memory: in memory only, a convenience for this session (a drums folder on a drum track, a
+  melodic one on a piano track). Not saved with the project or the device. midi-place.txt goes.
+- Step buttons blocked inside the browser, lit dim white to say so.

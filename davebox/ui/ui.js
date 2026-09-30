@@ -664,30 +664,45 @@ function _onMidiInternalImpl(data) {
         if (hi === 0x90 || hi === 0x80) {
             const on = hi === 0x90 && d2 === 127;
             if (d1 >= 0 && d1 <= 7) {
-                if (on) S.knobTouched = d1;
+                /* a touch NAMES the knob; its list waits for a turn (knobTurnedTick) */
+                if (on) { S.knobTouched = d1; S.knobTurnedTick[d1] = -1; }
                 else if (S.knobTouched === d1) S.knobTouched = -1;
                 S.screenDirty = true;
                 return;
             }
             if (d1 === MoveMainTouch) { miJogTouch(on); return; }
-            if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32) {
+            /* the step buttons are blocked (lit dim white): a step edit would
+             * land on the preview, which is not the clip */
+            if (d1 >= 16 && d1 <= 31) return;
+            /* a drum track's pads place the file's sounds (the engine still
+             * sounds the lanes); a melodic track's play as ever */
+            if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32 && S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
                 if (hi === 0x90 && d2 > 0) miPadTap(d1 - TRACK_PAD_BASE);
                 else miPadRelease(d1 - TRACK_PAD_BASE);
+                return;
             }
-            return;
+            /* anything else falls through */
         } else if (status === 0xB0) {
-            if (d1 >= 71 && d1 <= 78) { const _kd = decodeDelta(d2); if (_kd) miOnKnob(d1 - 71, _kd); S.screenDirty = true; return; }
+            if (d1 >= 71 && d1 <= 78) { S.knobTurnedTick[d1 - 71] = nowMs(); miOnKnob(d1 - 71, d2); S.screenDirty = true; return; }
             else if (d1 === MoveMainKnob) {
                 if (S.shiftHeld) { /* Shift+jog: track switch, falls through */ }
                 else { const _jd = decodeDelta(d2); if (_jd) miOnJog(_jd); S.screenDirty = true; return; }
             }
             else if (d1 === MoveMainButton) { if (d2 === 127) miOnClick(S.shiftHeld); S.screenDirty = true; return; }
-            else if (d1 === MoveBack) { if (d2 === 127) miOnBack(); S.screenDirty = true; return; }
+            else if (d1 === MoveBack) {
+                /* the PRESS is the global hold-to-suspend clock; a tap is the
+                 * RELEASE (as sound mode's Back) */
+                if (d2 >= 64) { S.backPressTick = nowMs(); S.backHoldFired = false; return; }
+                const _held = S.backHoldFired;
+                S.backPressTick = -1; S.backHoldFired = false;
+                if (!_held) miOnBack();
+                S.screenDirty = true;
+                return;
+            }
             else if (d1 === MoveNoteSession) { miClose(); /* falls through */ }
-            else if (d1 === MoveShift || d1 === MovePlay) { /* falls through */ }
-            else if (d1 === 79) { /* falls through */ }
-            else return;
-        } else return;
+            /* everything else — transport, Loop, Undo, Shift, the volume —
+             * keeps doing what it does (the browser claims only what it uses) */
+        }
     }
 
     /* Master volume knob (CC 79) + its capacitive touch (note 8): PLAIN turns
