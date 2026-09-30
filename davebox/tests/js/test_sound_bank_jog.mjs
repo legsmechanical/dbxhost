@@ -525,15 +525,13 @@ step('⭑ NOTE/SESSION is a LEAVE: the view toggle must not reset the track\'s b
      * step was originally written around. The 08-25 substance is untouched and
      * is still what this step exists to prove: neither press may RESET the
      * track's bank place. (That is why the escape leaves with {leaving:true}.) */
-    noteSession();                             /* escape -> track overview */
-    if (S.sessionView) throw new Error('the escape switched views instead of going home');
+    /* ⚠ 2026-09-30: the escape now lands on the SESSION overview (Josh:
+     * "note/session should ALWAYS send you to session view") — which is the
+     * 08-25 ask again. One press leaves sound mode for session view, and must
+     * not reset the bank place. */
+    noteSession();                             /* escape -> session overview */
+    if (!S.sessionView) throw new Error('the escape did not go to session view');
     if (snd.soundActive()) throw new Error('the escape did not leave sound mode');
-    if (S.trackActiveBank[2] !== BANK_SOUND)
-        throw new Error('the ESCAPE reset the bank to ' + S.trackActiveBank[2] +
-                        (S.trackActiveBank[2] === 0 ? " — Josh's report" : ''));
-
-    noteSession();                             /* now at rest -> session view */
-    if (!S.sessionView) throw new Error('control: did not switch to session view');
     if (S.trackActiveBank[2] !== BANK_SOUND)
         throw new Error('the view change RESET the bank to ' + S.trackActiveBank[2] +
                         (S.trackActiveBank[2] === 0 ? " — Josh's report" : ''));

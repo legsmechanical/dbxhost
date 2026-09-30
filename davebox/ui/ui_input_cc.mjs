@@ -102,7 +102,7 @@ const STRETCH_BLOCKED_MS = 1500;
  * peek now when you're trying to toggle." A deliberate toggle tap is well under
  * 250 ms; a peek is a hold you notice. Milliseconds on the one clock. */
 const NOTE_SESSION_HOLD_MS = 350;
-const BACK_HOLD_MS = 450;            /* a deliberate long-press on Back = suspend from anywhere (vs a short tap = back out one UI level) */
+const BACK_HOLD_MS = 450;            /* a deliberate long-press on Back = back out to the overview (vs a short tap = back out one UI level) */
 
 /* ⭑ ONE owner of "finish a Key/Scale pick". Their menu `set()` is a live
  * PREVIEW, never the commit — the commit is xposeCommit, and reaching it is
@@ -1790,21 +1790,27 @@ function _onCC_buttons(d1, d2) {
                 S.screenDirty = true;
                 return;
             }
-            /* ⭑⭑ THE LAW (Josh, 2026-09-02): Note/Session RETURNS YOU TO THE
-             * OVERVIEW; where there is no overview to return to yet, it does
-             * nothing. Its old grammar — tap switches view, hold peeks — is
-             * constrained to the overview screens, which is the only place
-             * "switch view" is the button's obvious meaning.
+            /* ⭑⭑ THE LAW (Josh, 2026-09-30, replacing 2026-09-02's "returns
+             * you to the overview"): "note/session should ALWAYS send you to
+             * session view." From any menu or screen one press tears everything
+             * down and lands on the SESSION overview; where there is no overview
+             * yet, it does nothing. Its old grammar — tap switches view, hold
+             * peeks — is kept at the overview screens.
              *
-             * ⚠ ONE PRESS, not a Back: from three menus deep this lands on the
-             * overview, while Back keeps its level-by-level law. The two are
-             * deliberately different verbs. */
+             * The plain back-out it used to be now lives on a HELD Back
+             * (checkBackHold), in whichever view you were in. */
             if (noOverviewYet()) return;
             if (!atOverview()) {
                 returnToOverview();
+                if (!S.sessionView) {
+                    S.sessionView = true;
+                    _switchViewCleanup();
+                    invalidateLEDCache();
+                }
+                S.screenDirty = true;
                 /* Swallow the release: it would otherwise reach the tap/hold
                  * logic below and flip the view straight back out of the
-                 * overview we just landed on. */
+                 * session view we just landed on. */
                 S._modalSwallowCC = MoveNoteSession;
                 return;
             }
@@ -2109,12 +2115,14 @@ export function backTapWouldAct() {
            (S.activeBank === 7 && S.allLanesConfirmed) || S.activeBank !== 0;
 }
 
-/* ⭑⭑ THE NOTE/SESSION LAW (Josh, 2026-09-02).
+/* ⭑⭑ THE NOTE/SESSION LAW (Josh, 2026-09-02; revised 2026-09-30: Note/Session
+ * now always lands on the SESSION overview, and the plain back-out moved to a
+ * HELD Back).
  *
  *   "Note/Session returns you to the OVERVIEW; where there is no overview to
  *    return to yet, it does nothing."
  *
- * These two functions are that law. `noOverviewYet()` names the boot-time
+ * These two functions are that law, and a held Back uses them too. `noOverviewYet()` names the boot-time
  * modals that have nothing behind them; `atOverview()` decides whether the
  * button means "go home" or keeps its old grammar (tap switches view, hold
  * peeks), which is now constrained to the overview screens.
@@ -2624,14 +2632,17 @@ export function checkShiftNoteHold() {
     }
 }
 
-/* ⭑ A HELD Back does NOTHING (Josh, 2026-09-19). It used to suspend from
- * anywhere; suspend now has exactly one door, the global menu's row.
+/* ⭑ A HELD Back BACKS YOU ALL THE WAY OUT to the overview of the view you are
+ * in (Josh, 2026-09-30: "Backing out like note/session used to do should be
+ * assigned to holding back."). One hold from three menus deep lands on the
+ * overview; a tap still peels one level. Where there is no overview yet (the
+ * boot modals) or you are already on it, the hold does nothing. Suspend is not
+ * here: it has exactly one door, the global menu's row (2026-09-19).
  *
- * ⚠⚠ THE HOLD IS STILL SWALLOWED, and that is the whole of what is left here.
- * Without it a long press would fall through to the release and TAP — so
- * holding Back would back you out a level, which is a different gesture
- * quietly acquiring a second meaning. Consuming it keeps tap and hold distinct
- * and leaves the gesture free for whatever claims it next.
+ * ⚠⚠ THE HOLD IS SWALLOWED. Without it a long press would fall through to the
+ * release and TAP as well — one level more than the overview asked for, and
+ * from the overview itself a tap that leaves something. Consuming it keeps tap
+ * and hold distinct.
  * ⚠ Measured, not assumed: it is `backPressTick = -1` that blocks the tap (the
  * release guard tests it first), so `backHoldFired` is belt-and-braces here — a
  * mutation removing that line alone SURVIVES. Removing the threshold test is
@@ -2652,6 +2663,10 @@ export function checkBackHold() {
     if ((S.clockMs - S.backPressTick) >= BACK_HOLD_MS) {
         S.backHoldFired = true;
         S.backPressTick = -1;
+        if (!noOverviewYet() && !atOverview()) {
+            returnToOverview();
+            S.screenDirty = true;
+        }
     }
 }
 

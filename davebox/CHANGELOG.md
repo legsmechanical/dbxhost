@@ -7,6 +7,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Changed
+- **Note/Session always takes you to Session View.** From a menu, the sound
+  editor, a bank or a dialog, one press closes it and lands on Session View
+  (it used to go back to the overview of the view you were in). On an
+  overview it still switches views, and holding it still peeks.
+- **Hold Back to go back to the overview.** One long press on Back closes
+  everything you have open and returns to the overview of the view you're
+  in. A tap still steps out one level.
+### Fixed
+- **Back works in the snapshot picker.** It had been ignored there.
 
 ## [0.0.7] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Fixed

@@ -269,8 +269,10 @@ header naming the bank or mixer page.
 - **On either view's overview**, tap **Note/Session** to switch between Track View
   and Session View; hold it to peek at the other view.
 - **Anywhere else** — a bank view, menu, the sound editor, a dialog, a picker —
-  **Note/Session** takes you back to the overview in one press, however deep you
-  are. **Back** steps out one level at a time.
+  **Note/Session** closes everything and takes you to Session View in one press,
+  however deep you are.
+- **Back** steps out one level at a time; **hold Back** to go straight back to the
+  overview of the view you're in.
 
 ## 3.4 Reading the screen
 
@@ -1548,7 +1550,8 @@ instead — Expression, Pan, Mod, Sustain, Program, Bank MSB and Bank LSB.
 | **Shift + Note/Session** (Track View) | Open it from anywhere — from deep inside it, back to its top in one press |
 | **Shift + hold Note/Session** (Track View) | Go straight to the track's instrument |
 | **Back** | Step out one level; from the top, back to the bank's card |
-| **Note/Session** | Return to the track overview; coming back brings the screen with it |
+| **Hold Back** | Return to the track overview; coming back brings the screen with it |
+| **Note/Session** | Close it and go to Session View |
 
 - Once open, the menu **stays up until you leave it**.
 - In Session View, Shift + Note/Session opens the Master & Send FX list instead
@@ -2304,8 +2307,8 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Delete + jog click | Reset bank |
 | Delete + Play | Deactivate clips (running) · panic (stopped) |
 | Undo / Shift + Undo | Undo / redo |
-| Back / Shift + Back | Step out / save and leave dAVEBOx (asks first) |
-| Note/Session (tap / hold) | On an overview: switch / peek view — anywhere else: return to the overview |
+| Back (tap / hold) / Shift + Back | Step out one level / back to the overview / save and leave dAVEBOx (asks first) |
+| Note/Session (tap / hold) | On an overview: switch / peek view — anywhere else: close it and go to Session View |
 | Shift + Note/Session (tap / hold) | This track's sound editor / straight to its instrument — in Session view, the Master/Send FX list / straight into Master FX |
 | Shift + Step 2 | Project Settings |
 
@@ -2332,7 +2335,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Click Instmt/Dest | Edit the instrument (on a Move track, Move's own editor) |
 | Click an empty FX row · Shift + click an FX row | Add an effect · swap or move it |
 | Mute + jog click on an FX row | Bypass that effect |
-| Back · Note/Session | Step out · back to the overview |
+| Back · hold Back · Note/Session | Step out · back to the overview · to Session View |
 
 ### Shift + Step shortcuts
 

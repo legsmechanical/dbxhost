@@ -1,12 +1,14 @@
-/* tests/js/test_note_session_overview.mjs — THE NOTE/SESSION LAW (Josh, 2026-09-02).
+/* tests/js/test_note_session_overview.mjs — THE NOTE/SESSION LAW (Josh,
+ * 2026-09-02, revised 2026-09-30).
  *
- *   "Note/Session returns you to the OVERVIEW; where there is no overview to
- *    return to yet, it does nothing."
+ *   "note/session should ALWAYS send you to session view.  Backing out like
+ *    note/session used to do should be assigned to holding back."
  *
- * Its old grammar — tap switches view, hold peeks — is now constrained to the
+ * Its old grammar — tap switches view, hold peeks — is constrained to the
  * overview screens. Pinned here:
- *   - ONE PRESS from each non-overview state lands at the overview, without
- *     changing which view you are in;
+ *   - ONE PRESS from each non-overview state lands at the SESSION overview;
+ *   - ONE HELD Back from each non-overview state lands at the overview of the
+ *     view you were in, and the hold never also taps;
  *   - the boot modals (incompatible-state confirm, startup project picker) are
  *     inert — and the confirm must NOT exit the module, which is what the press
  *     used to do and the single most safety-critical line of the change;
@@ -123,19 +125,68 @@ step('⭑ the TAP-vs-HOLD threshold is a deliberate hold, not a flick (Josh, 202
     if (ms < 300 || ms > 600) throw new Error('NOTE_SESSION_HOLD_MS=' + ms + ' — a toggle tap must not read as a peek (300..600)');
 });
 
-step('⭐ ONE PRESS returns to the overview from every non-overview state', () => {
+step('⭐ ONE PRESS lands on the SESSION overview from every non-overview state', () => {
+    for (const [name, arrange] of STATES) {
+        rest();
+        arrange();
+        if (cc_mod.atOverview())
+            throw new Error('rig: "' + name + '" did not leave the overview');
+        press();
+        if (!cc_mod.atOverview())
+            throw new Error('one press did not reach the overview from ' + name);
+        if (!S.sessionView)
+            throw new Error('one press left ' + name + ' for TRACK view — it must always go to session view');
+    }
+});
+
+/* Hold Back past the threshold through the real path: press, tick the clock
+ * past BACK_HOLD_MS with the tick's own checkBackHold, release. */
+const holdBack = () => {
+    cc(51, 127);
+    S.clockMs += 460;
+    cc_mod.checkBackHold();
+    cc(51, 0);
+};
+
+step('⭐ ONE HELD Back lands on the overview of the SAME view from every non-overview state', () => {
     for (const [name, arrange] of STATES) {
         rest();
         arrange();
         const viewBefore = S.sessionView;   /* AFTER the arrange — some states are session-view */
         if (cc_mod.atOverview())
             throw new Error('rig: "' + name + '" did not leave the overview');
-        press();
+        holdBack();
         if (!cc_mod.atOverview())
-            throw new Error('one press did not reach the overview from ' + name);
+            throw new Error('a held Back did not reach the overview from ' + name);
         if (S.sessionView !== viewBefore)
-            throw new Error('the escape SWITCHED VIEWS leaving ' + name);
+            throw new Error('a held Back SWITCHED VIEWS leaving ' + name);
     }
+});
+
+step('⭐ a held Back is ONE gesture: all levels at once, and never a tap as well', () => {
+    rest();
+    S.globalMenuOpen = true; S.confirmBake = true;
+    holdBack();
+    if (S.confirmBake || S.globalMenuOpen)
+        throw new Error('the hold peeled only one level — that is a tap');
+    /* At the overview a TAP would step a non-default bank back to 0; the hold
+     * must do nothing there, release included. */
+    rest();
+    S.activeBank = 3;
+    holdBack();
+    if (S.activeBank !== 3)
+        throw new Error('the held Back fell through to a TAP on release (bank reset to ' + S.activeBank + ')');
+    S.activeBank = 0;
+});
+
+step('⭐ a held Back is inert under the BOOT MODALS', () => {
+    rest();
+    S.confirmStateWipe = true;
+    const before = exitCalls;
+    holdBack();
+    if (!S.confirmStateWipe) throw new Error('the hold dismissed the state-wipe confirm');
+    if (exitCalls !== before) throw new Error('the hold EXITED THE MODULE');
+    S.confirmStateWipe = false;
 });
 
 step('⭐ the escape is ONE press, not a Back — it does not peel one level', () => {
@@ -146,6 +197,7 @@ step('⭐ the escape is ONE press, not a Back — it does not peel one level', (
     press();
     if (S.confirmBake)   throw new Error('the dialog survived');
     if (S.globalMenuOpen) throw new Error('only one level was peeled — that is Back, not the escape');
+    if (!S.sessionView)  throw new Error('the escape did not land in session view');
 });
 
 step('⭐ BOOT MODALS are inert — and the state-wipe confirm must NOT exit the module', () => {
@@ -198,9 +250,10 @@ step('⭐ the RELEASE is swallowed after an escape — it must not flip the view
     S.bankCardLatched = true;
     cc(NS, 127);
     if (!cc_mod.atOverview()) throw new Error('the press did not escape');
+    if (!S.sessionView) throw new Error('the press did not land in session view');
     if (S._modalSwallowCC !== NS) throw new Error('the release was not armed for swallow');
     cc(NS, 0);
-    if (S.sessionView) throw new Error('the release flipped the view out of the overview');
+    if (!S.sessionView) throw new Error('the release flipped the view back out of session view');
     if (S._modalSwallowCC === NS) throw new Error('the swallow was not cleared by the release');
 });
 

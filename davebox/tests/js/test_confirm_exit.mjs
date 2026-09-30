@@ -125,22 +125,18 @@ step('setup: a booted session in track view', () => {
     reset();
 });
 /* ⭐⭐ SUSPEND HAS ONE DOOR, AND HOLD-BACK IS NOT IT (Josh, 2026-09-19: "Take
- * suspend off hold back, leave global menu as the only option").
- *
- * ⚠ The hold must still be SWALLOWED. If the threshold stopped consuming the
- * press, the release would fall through to _backTap() and hold-Back would
- * silently become "back out one level" — the gesture acquiring a new meaning by
- * omission. So this asserts BOTH halves: nothing suspends, and nothing taps. */
-step('⭐ a held Back does NOTHING — no modal, no suspend, and it does not TAP either', () => {
+ * suspend off hold back, leave global menu as the only option"). Since
+ * 2026-09-30 a held Back BACKS OUT to the overview (test_note_session_overview
+ * pins that) — so here: it never suspends and never raises a modal. */
+step('⭐ a held Back never suspends and raises no modal — it backs out', () => {
     reset();
-    S.sessionView = false; S.bankCardLatched = true;   /* something a TAP would dismiss */
+    S.sessionView = false; S.bankCardLatched = true;
     holdBack();
-    if (S.confirmExit) throw new Error('the hold still raises a modal: ' + S.confirmExit);
+    if (S.confirmExit) throw new Error('the hold raised a modal: ' + S.confirmExit);
     if (armed()) throw new Error('the hold suspended');
-    if (!S.bankCardLatched) throw new Error('the hold fell through to a TAP (card dismissed)');
+    if (S.bankCardLatched) throw new Error('the hold did not back out of the latched card');
     ticks(2);
     if (S.confirmExit || armed()) throw new Error('the hold acted a tick later');
-    S.bankCardLatched = false;
 });
 step('the menu Suspend modal opens on No, and Back on it is No', () => {
     reset();

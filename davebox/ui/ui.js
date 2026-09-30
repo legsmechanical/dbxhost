@@ -656,12 +656,13 @@ function _onMidiInternalImpl(data) {
     if (((status & 0xF0) === 0x90 || (status & 0xF0) === 0x80) && d1 === 8) return;
 
     /* Snapshot picker is a mid-session modal: swallow all input except the jog
-     * (CC 3 click + CC 14 rotate, → _onCC_jog) and Note/Session (CC 50, closes
-     * it), so pads/steps/transport/knobs can't edit the underlying clip while
-     * the picker is on screen. */
+     * (CC 3 click + CC 14 rotate, → _onCC_jog), Note/Session (CC 50, closes
+     * it) and Back (a tap peels it in _backTap, a hold backs out), so
+     * pads/steps/transport/knobs can't edit the underlying clip while the
+     * picker is on screen. */
     if (S.snapshotPicker) {
         const _ccPick = (status & 0xF0) === 0xB0 &&
-            (d1 === 3 || d1 === MoveMainKnob || d1 === MoveNoteSession);
+            (d1 === 3 || d1 === MoveMainKnob || d1 === MoveNoteSession || d1 === MoveBack);
         if (!_ccPick) return;
     }
 
