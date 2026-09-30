@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **Copy whole pages.** Hold Loop and Copy, tap a page, then tap another to
+  paste it — keep holding Copy to paste it again, Shift + Copy cuts. Pasting
+  past the end of the clip makes the clip longer. Works on a drum lane, or all
+  lanes on the ALL LANES bank. Notes only; automation stays put.
 
 ## [0.0.9] — 2026-09-30 (test build, not in the Schwung catalog)
 ### Fixed

@@ -1934,6 +1934,11 @@ function _onCC_buttons(d1, d2) {
     /* Loop button (CC 58, Track View): hold + step buttons sets clip length */
     if (d1 === MoveLoop && !S.sessionView) {
         S.loopHeld = d2 === 127;
+        /* Releasing Loop ends a page copy; Copy + step is a step copy again. */
+        if (!S.loopHeld && S.copySrc && (S.copySrc.kind === 'page' || S.copySrc.kind === 'cut_page')) {
+            S.copySrc = null;
+            invalidateLEDCache();
+        }
         computePadNoteMap();
         /* Arp Steps overlay: Loop is repurposed as a modifier for the pad-column
          * loop-length gesture. Skip every other Loop side-effect (TARP unlatch,

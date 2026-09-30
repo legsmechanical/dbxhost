@@ -43,6 +43,7 @@ import { handoffRecordingToTrack, recordNoteOn, recordNoteOff,
     stepRecPadPress, stepRecPadRelease } from './ui_record.mjs';
 import { setTrackMute, setTrackSolo, clearClip, hardResetClip, copyClip, cutClip,
     copyDrumLane, cutDrumLane, copyDrumClip, cutDrumClip, copyStep, cutStep, clearStep,
+    copyPage, pageCopyOk,
     showModePopup, allLanesGate, doDoubleFill,
     _switchActiveTrack, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
 
@@ -1143,6 +1144,40 @@ function _fireLoopWindowSet(track, ctx, startStep, lenSteps) {
     }
 }
 
+/* PAGE COPY (hold Loop + Copy): the first page tapped is the source, every
+ * later one a paste — sticky, as every copy is, until Copy or Loop is
+ * released. Shift + Copy cuts: after the paste the source page is cleared and
+ * the pasted page becomes the new source (as cutting a step or a clip). The
+ * scope is the Loop gesture's — the clip, the active drum lane, or ALL LANES
+ * behind its confirm. A paste past the end grows the clip, and one before
+ * the loop start moves the start back (copyPage / clip_page_copy). */
+function _pageCopyPress(idx) {
+    const t   = S.activeTrack;
+    const ctx = _loopGestureCtxFor(t);
+    if (ctx === 2 && allLanesGate()) return;
+    S.loopTapUnlatchTrack = -1;          /* a Loop tap that copied is not an unlatch */
+    const where = ctx === 0 ? effectiveClip(t) : ctx === 1 ? S.activeDrumLane[t] : -1;
+    const src = S.copySrc;
+    if (!src) {
+        if (!pageCopyOk(t, ctx, where, idx)) return;    /* an unlit page holds nothing to copy */
+        S.copySrc = { kind: S.shiftHeld ? 'cut_page' : 'page', track: t, ctx: ctx, where: where, page: idx };
+        showActionPopup(S.shiftHeld ? 'CUT' : 'COPIED');
+        invalidateLEDCache();
+        forceRedraw();
+        return;
+    }
+    /* another kind of copy, or the scope moved under it: swallow */
+    if (src.kind !== 'page' && src.kind !== 'cut_page') return;
+    if (src.track !== t || src.ctx !== ctx || src.where !== where || idx === src.page) return;
+    const w0  = ctx === 0 ? S.clipLength[t][where] | 0 : S.drumLaneLength[t] | 0;
+    const len = copyPage(t, ctx, where, src.page, idx, src.kind === 'cut_page');
+    if (src.kind === 'cut_page') S.copySrc = { kind: 'page', track: t, ctx: ctx, where: where, page: idx };
+    if (len !== w0) showActionPopup('PASTED', len + ' steps');
+    else showActionPopup('PASTED');
+    invalidateLEDCache();
+    forceRedraw();
+}
+
 /* Snapshot the gesture context at press-time so a later release fires in the
  * same context the user started in (immune to track/lane/bank flips). */
 function _loopGestureCtxFor(track) {
@@ -1392,6 +1427,10 @@ export function _onStepButtons(d1, d2) {
     } else if (S.loopHeld) {
         if (S.recordArmed && !S.recordCountingIn) {
             /* Block length changes during active recording */
+        } else if (S.copyHeld && !S.stepIntervalMode && S.loopGestureStart < 0) {
+            /* Loop + Copy + step: PAGE copy. Never arms the length gesture,
+             * so neither this step's release nor Loop's fires a length. */
+            _pageCopyPress(idx);
         } else if (S.loopGestureStart < 0) {
             /* First press: arm the gesture. Defer the actual DSP write to
              * either a B-tap (range) or this step's release (length-only

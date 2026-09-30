@@ -252,6 +252,39 @@ static int sp_track_drum2(sp_ctx_t *cx) {
         return 1;
     }
 
+    if (!strcmp(sub, "all_lanes_page_copy")) {
+        /* tN_all_lanes_page_copy "src dst cut" — page copy on every lane of
+         * the active drum clip, each against its own loop window (a lane the
+         * source page misses is left alone). ONE undo unit; no lane able to
+         * paste -> no snapshot, nothing changes. Notes only. */
+        drum_clip_t *dc_al = tr->drum_clips[tr->active_clip];
+        int src, dst, cut, l_al, any = 0;
+        if (!dc_al || tr->recording) return 1;
+        if (!page_copy_args(val, &src, &dst, &cut)) return 1;
+        for (l_al = 0; l_al < DRUM_LANES; l_al++)
+            if (clip_page_copy_ok(&dc_al->lanes[l_al].clip, src, dst)) { any = 1; break; }
+        if (!any) return 1;
+        undo_begin_drum_clip(inst, tidx, (int)tr->active_clip);
+        for (l_al = 0; l_al < DRUM_LANES; l_al++) {
+            clip_t *dlc = &dc_al->lanes[l_al].clip;
+            if (!clip_page_copy_ok(dlc, src, dst)) continue;
+            const uint16_t ols = dlc->loop_start, olen = dlc->length;
+            clip_page_copy(dlc, src, dst, cut);
+            if (dlc->loop_start != ols || dlc->length != olen) {
+                uint16_t le = (uint16_t)(dlc->loop_start + dlc->length);
+                if (tr->drum_current_step[l_al] < dlc->loop_start
+                        || tr->drum_current_step[l_al] >= le)
+                    tr->drum_current_step[l_al] = dlc->loop_start;
+                if (inst->playing)
+                    drum_lane_anchor_playhead(inst, tr, l_al, dlc);
+            }
+            clip_migrate_to_notes(dlc);
+        }
+        rui_mark(inst, tidx, (int)tr->active_clip);
+        inst->state_dirty = 1;
+        return 1;
+    }
+
     if (!strcmp(sub, "all_lanes_crop")) {
         /* tN_all_lanes_crop — Crop on every lane of the active drum clip, each
          * in its own loop window (see the melodic tN_crop). ONE undo unit; no

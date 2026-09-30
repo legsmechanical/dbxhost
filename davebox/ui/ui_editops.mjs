@@ -429,6 +429,70 @@ export function cutStep(t, ac, srcAbs, dstAbs) {
     }
 }
 
+/* PAGE COPY (hold Loop + Copy, tap a page, tap another). `ctx` is the Loop
+ * gesture's: 0 = melodic clip `where`, 1 = drum lane `where` (the active
+ * lane), 2 = ALL LANES. One atomic DSP write per paste (clip_page_copy in
+ * seq8.c holds the rules); the mirror below applies the same rules to what JS
+ * knows and the reread settles the rest.
+ * pageCopyOk: can this page be a source? It must overlap the loop window — a
+ * lit page in the Loop view. */
+function _pageWindow(t, ctx, where) {
+    return ctx === 0
+        ? { ls: S.clipLoopStart[t][where] | 0, len: S.clipLength[t][where] | 0 }
+        : { ls: S.drumLaneLoopStart[t] | 0,    len: S.drumLaneLength[t] | 0 };
+}
+export function pageCopyOk(t, ctx, where, page) {
+    const w = _pageWindow(t, ctx, where);
+    return page * 16 < w.ls + w.len && page * 16 + 16 > w.ls;
+}
+/* Returns the window length after the paste (the popup names a grown clip). */
+export function copyPage(t, ctx, where, src, dst, cut) {
+    noteUndoUnit(); S.undoSeqArpSnapshot = null;
+    const val = src + ' ' + dst + ' ' + (cut ? 1 : 0);
+    const key = ctx === 0 ? 't' + t + '_c' + where + '_page_copy'
+              : ctx === 1 ? 't' + t + '_l' + where + '_page_copy'
+              :             't' + t + '_all_lanes_page_copy';
+    S.pendingDefaultSetParams.push({ key: key, val: val, _local: true });
+    /* ALL LANES: each lane pastes against its own window, which JS does not
+     * mirror — the whole drum clip is reread. */
+    if (ctx === 2) { S.pendingDrumResync = 2; S.pendingDrumResyncTrack = t; }
+    const w = _pageWindow(t, ctx, where);
+    if (!pageCopyOk(t, ctx, where, src)) return w.len;   /* ALL LANES: the active lane's window misses it */
+    const le = w.ls + w.len;
+    const steps = ctx === 0 ? S.clipSteps[t][where] : S.drumLaneSteps[t][S.activeDrumLane[t]];
+    const empty = ctx === 0 ? 0 : '0';
+    for (let i = 0; i < 16; i++) {
+        const s = src * 16 + i;
+        steps[dst * 16 + i] = (s >= w.ls && s < le) ? steps[s] : empty;
+    }
+    if (cut) for (let i = 0; i < 16; i++) {
+        const s = src * 16 + i;
+        if (s >= w.ls && s < le) steps[s] = empty;
+    }
+    const nls = Math.min(w.ls, dst * 16), nlen = Math.max(le, dst * 16 + 16) - nls;
+    if (ctx === 0) {
+        S.clipLoopStart[t][where] = nls;
+        S.clipLength[t][where]    = nlen;
+        if (nls !== w.ls || nlen !== w.len) S.clipLengthManuallySet[t][where] = true;
+        S.clipNonEmpty[t][where]  = clipHasContent(t, where);
+        S.pendingStepsReread      = 2;
+        S.pendingStepsRereadTrack = t;
+        S.pendingStepsRereadClip  = where;
+    } else {
+        const lane = S.activeDrumLane[t];
+        S.drumLaneLoopStart[t] = nls;
+        S.drumLaneLength[t]    = nlen;
+        if (nls !== w.ls || nlen !== w.len) S.drumLaneLengthManuallySet[t] = true;
+        S.drumLaneHasNotes[t][lane] = steps.some(c => c !== '0');
+        if (ctx === 1) {
+            S.pendingDrumLaneResync      = 2;
+            S.pendingDrumLaneResyncTrack = t;
+            S.pendingDrumLaneResyncLane  = lane;
+        }
+    }
+    return nlen;
+}
+
 /* Copy active clip's lane srcLane to dstLane (same track, preserves dst midi_note). */
 export function copyDrumLane(t, srcLane, dstLane) {
     if (srcLane === dstLane) return;
