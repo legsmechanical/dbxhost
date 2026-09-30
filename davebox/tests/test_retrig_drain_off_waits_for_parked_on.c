@@ -7,7 +7,10 @@
  * deferring (an on-beat step, a live pad tap), that off goes out at once, the
  * parked note-on fires after it, and the note has no off left. White-box: the
  * window needs a gate-off queued while its note-on is still parked, which the
- * sequencer reaches only by timing, so the state is built directly. */
+ * sequencer reaches only by timing, so the state is built directly.
+ * The drum case is a plain no-stuck check: a lane replays one pitch and its
+ * drain did not reach this order (the melodic fix, mirrored there, changed no
+ * emitted byte), so the drum drain was left as it was. */
 #include "harness.h"
 #include <stdio.h>
 

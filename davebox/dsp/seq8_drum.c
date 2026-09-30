@@ -314,11 +314,7 @@ static void drum_pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
             }
         }
         px->event_count = k;
-        for (qi = 0; qi < no; qi++) {
-            uint64_t at = pfx_parked_on_at(px->events, k, (uint8_t)(offs[qi][0] & 0x0F), offs[qi][1]);
-            if (at) drum_pfx_q_insert(px, at, offs[qi][0], offs[qi][1], 0, PFX_EV_BYPASS_SWING);
-            else    drum_pfx_send(px, offs[qi][0], offs[qi][1], 0);
-        }
+        for (qi = 0; qi < no; qi++) drum_pfx_send(px, offs[qi][0], offs[qi][1], 0);
     }
 
     memset(an, 0, sizeof(pfx_active_t));
