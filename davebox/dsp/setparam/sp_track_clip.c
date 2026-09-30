@@ -88,6 +88,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
          * Refused while the track records. */
         if (!strcmp(p, "_import")) {
             if (tr->recording) return 1;
+            aud_release_track(inst, tidx);          /* undo must hold the original, not a preview */
             const char *s = val ? val : "";
             int flags = my_atoi(s);
             while (*s && *s != ' ') s++;

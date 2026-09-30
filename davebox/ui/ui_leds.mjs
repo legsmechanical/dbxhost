@@ -1,3 +1,4 @@
+import { miPadColors, miActive, miRingCells } from './ui_midi_import.mjs';
 import { S } from './ui_state.mjs';
 import {
     NUM_STEPS, NUM_TRACKS, LED_OFF, LEDS_PER_FRAME,
@@ -213,6 +214,12 @@ export function updateStepLEDs() {
      * (session view paints the same through updateSceneMapLEDs). */
     if (devSnapOpen() && !S.sessionView) {
         for (let i = 0; i < 16; i++) setLED(16 + i, devSnapLedFor(i, { filled: Cyan, white: White, dim: DarkGrey, off: LED_OFF }));
+        return;
+    }
+    /* The MIDI browser blocks the step buttons (a step edit would land on the
+     * preview, not the clip): all dim white, to say so (Josh, 2026-09-30). */
+    if (miActive()) {
+        for (let i = 0; i < 16; i++) setLED(16 + i, DarkGrey);
         return;
     }
 
@@ -704,6 +711,16 @@ export function updateTrackLEDs() {
 
     if (paintProjectPickerLEDs()) return;
 
+    /* The MIDI browser (ui_midi_import miPadColors): on a drum track, a colour
+     * for the pads it owns — the right-hand sound pads, and each lane a sound
+     * goes to — null for the rest, which look as they always do (Josh,
+     * 2026-09-23). Owning EVERY pad it would paint them all here. */
+    const _miOv = miPadColors();
+    if (_miOv && _miOv.every(c => c != null)) {
+        for (let i = 0; i < 32; i++) cachedSetLED(TRACK_PAD_BASE + i, _miOv[i]);
+        return;
+    }
+
     if (S.tapTempoOpen) {
         for (let i = 0; i < 32; i++) {
             const note  = TRACK_PAD_BASE + i;
@@ -790,7 +807,11 @@ export function updateTrackLEDs() {
                 let color;
                 if (col < 4) {
                     const lane = S.drumLanePage[t] * 16 + row * 4 + col;
-                    const isActive = (lane === selLane);
+                    /* Under the MIDI browser no lane shows as selected: its sounds
+                     * are what the lanes mark there, and the lane it was opened on
+                     * would otherwise keep a white highlight once its sound moved
+                     * away (Josh, 2026-09-23). The selection itself is untouched. */
+                    const isActive = (lane === selLane) && !_miOv;
                     const hasHits  = S.drumLaneHasNotes[t][lane];
                     const laneNote = S.drumLaneNote[t][lane];
                     const sounding = S.liveActiveNotes.has(laneNote);
@@ -859,6 +880,7 @@ export function updateTrackLEDs() {
                     const zone = row * 4 + (col - 4);
                     color = (zone === velZone) ? White : DarkGrey;
                 }
+                if (_miOv && _miOv[i] != null) color = _miOv[i];
                 cachedSetLED(TRACK_PAD_BASE + i, color);
             }
         } else {
@@ -1012,6 +1034,12 @@ export function updateTrackLEDs() {
              * ⚠ Every track is lit, including one with the feature off: the ring
              * is an address here, not a value. */
             ledVal = trackColor(k);
+        } else if (miActive()) {
+            /* The MIDI browser: its card's cells, dark on a knob that does
+             * nothing there (Josh, 2026-09-30) — the kit-page rule below. */
+            if (k === 0) S._ringCells = miRingCells();
+            const cell = S._ringCells ? S._ringCells[k] : null;
+            ledVal = knobRingColor(k, ringNormOfCell(cell));
         } else if (ringCellsFor(S.activeBank)) {
             /* The kit-page banks (STEP, SOUND + CONFIG, MACROS): the ring
              * rides the SAME cell the page draws — same ramps as the param

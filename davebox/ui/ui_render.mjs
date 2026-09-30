@@ -7,7 +7,7 @@
  */
 
 import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished } from './ui_state.mjs';
-import { bankViewMapOn } from './ui_prefs.mjs';
+import { bankViewMapOn, seqFollowOn } from './ui_prefs.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H, drawDaveLoading } from './ui_daves.mjs';
 import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
@@ -17,7 +17,8 @@ import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
 import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
-import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, BANKNAV_HOLD_MS } from './ui_constants.mjs';
+import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, BANKNAV_HOLD_MS } from './ui_constants.mjs';
+import { miActive, miRender } from './ui_midi_import.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
 import {
@@ -28,7 +29,7 @@ import {
     col4, col5,
     fmtSign, fmtStretch, fmtLen, fmtRes, fmtPct, fmtBool, fmtGateMod,
     fmtArpRate, fmtVelOverride, fmtPlayDir, fmtRevStyle,
-    fmtDly, fmtArpStyle, fmtArpSteps, fmtDiq, fmtPlain, fmtLgto, fmtCrop, fmtPitchRnd
+    fmtDly, fmtArpStyle, fmtArpSteps, fmtDiq, fmtPlain, fmtLgto, fmtCrop, fmtImport, fmtPitchRnd
 } from './ui_constants.mjs';
 import { drawAutoMarkAt,
     drawKitHeader, drawKitTouchedHeader, drawKitPageBar, drawKitBankHeader, kitBankGlyphWidth,
@@ -39,7 +40,7 @@ import { drawAutoMarkAt,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
     drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y,
-    drawKitBigValue, drawKitPrompt, drawKitChip, kitChipWidth
+    drawKitBigValue, drawKitPrompt, drawKitChip, kitChipWidth, drawBrackets
 } from './ui_movy.mjs';
 import {
     drawGlobalMenu, drawStateWipeConfirm, drawExitConfirm, drawTypeChangeConfirm, drawModuleSwapConfirm, drawRecordBlockedDialog, drawBpmMoveInfo,
@@ -603,6 +604,7 @@ export function bankPageHints(bank) {
     if (!S.sessionView && ((bank === 0 && S.knobTouched === CROP_KNOB) ||
             (bank === 7 && S.knobTouched === ALL_LANES_CROP_KNOB &&
              S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM))) return [['CLK', 'CROP']];
+    if (bank === 0 && S.knobTouched === IMPORT_KNOB && !S.sessionView) return [['CLK', 'IMPORT']];
     /* ⭑ While a step is HELD the jog means something else (spec §2): on any
      * other bank a right turn REVEALS the step's page — so the pair says so,
      * in the same slot, and JOG BANK (which the hold suspends) is not shown.
@@ -701,8 +703,24 @@ function drawRow2Labels() {
      * word that sat here is gone (Josh, 2026-09-23). */
     if (!S.sessionView) {
         const _vel = 'Vel:' + fmtVelOverride(S.trackVelOverride[S.activeTrack]);
-        ovwPrint(128 - 4 - ovwWidth(_vel), 17, _vel, 1);
+        const _vx = 128 - 4 - ovwWidth(_vel);
+        ovwPrint(_vx, 17, _vel, 1);
+        drawFollowGlyph(_vx - 5 - FOLLOW_GLYPH_W, 18);
     }
+}
+
+/* ⭐ SEQ FOLLOW on the overview (Josh, 2026-09-29): a play-to-bar glyph left
+ * of Vel, on both the melodic and the drum overview. Steady = the page follows
+ * the playhead; blinking = an arrow press paused it until the transport stops;
+ * absent = the switch is off. The switch is Left/Right held + Play. */
+export const FOLLOW_GLYPH_W = 5;
+const FOLLOW_GLYPH = [0b10001, 0b11001, 0b11101, 0b11001, 0b10001];
+export function drawFollowGlyph(x, y) {
+    if (!seqFollowOn()) return;
+    if (S.followPaused && !S.flashEighth) return;
+    for (let r = 0; r < FOLLOW_GLYPH.length; r++)
+        for (let c = 0; c < FOLLOW_GLYPH_W; c++)
+            if (FOLLOW_GLYPH[r] & (1 << (FOLLOW_GLYPH_W - 1 - c))) set_pixel(x + c, y + r, 1);
 }
 
 const PERF_MOD_NAMES = [
@@ -788,6 +806,9 @@ function _discreteOpts(knob) {
     return opts;
 }
 
+/* Import MIDI (ui_midi_import), opened from K8 of the CLIP / DRUM LANE card. */
+function drawMidiImport() { miRender(S.knobTouched, S.shiftHeld, enumOverlayIdx(S.knobTouched)); }
+
 /* A numeric cell that would otherwise open the option list: while touched it
  * turns into an arc (ui_movy drawCellWidget) and never opens the list. The arc
  * reads the cell's position in its own range; `bip` centres it (a signed range
@@ -816,6 +837,11 @@ function kitCellForKnob(knob, val) {
     if (knob.fmt === fmtLgto) {
         base.kind = 'action'; base.oneWay = true; base.opens = true;
         base.btnPhase = triggerPhase('lgto', S.knobTouched === LGTO_KNOB);
+        return base;
+    }
+    if (knob.fmt === fmtImport) {
+        base.kind = 'action'; base.oneWay = true; base.opens = true;
+        base.btnPhase = triggerPhase('import', S.knobTouched === IMPORT_KNOB);
         return base;
     }
     if (knob.fmt === fmtCrop) {
@@ -1444,7 +1470,7 @@ export function bankCardVisible() {
 }
 
 export function soundModeCovered() {
-    return !!(devSnapOpen() || S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox ||
+    return !!(devSnapOpen() || S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox || miActive() ||
         S.projectPadPicker || S.pendingSceneBakePicker ||
         S.mergePlacing || S.mergeNoticePending || S.pendingMergePlacement ||
         S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
@@ -1749,6 +1775,7 @@ function drawUIBody() {
     S._altPrevTrack = S.activeTrack;
     if (S.sessionOverlayHeld) { drawSessionOverview(); return; }
     if (S.daveBox) { drawDaveBox(); return; }
+    if (miActive()) { drawMidiImport(); return; }
     if (S.snapshotPicker) { drawSnapshotPicker(); return; }
     /* ⭑ The exit confirm outranks the picker (2026-09-16). Hold-Back already
      * raised it from here — checkBackHold() has no picker guard — but the
@@ -2164,7 +2191,6 @@ function drawUIBody() {
             const lane = S.activeDrumLane[t];
             const len  = S.drumLaneLength[t];
             const tpsIdx = Math.max(0, TPS_VALUES.indexOf(S.drumLaneTPS[t]));
-            const sqfl   = S.clipSeqFollow[t][ac] ? 1 : 0;
             const eucN = Math.min(S.drumLaneEuclidN[t][lane] | 0, len);
             const _dlRev = S.drumLanePlaybackAudioReverse[t][lane] | 0;
             const _dlDir = S.drumLanePlaybackDir[t][lane] | 0;
@@ -2187,7 +2213,8 @@ function drawUIBody() {
                                  fmtRevStyle(1), fmtRevStyle(0))
                     : { kind: 'dirsq', label: 'Dir', name: 'Playback Dir',
                         text: fmtPlayDir(_dlDir), options: KIT_DIR_NAMES, sel: _dlDir },
-                toggleCell('SeqFl', 'Seq Follow', sqfl, fmtBool(1), fmtBool(0)),
+                { kind: 'action', oneWay: true, label: 'Imprt', name: 'Import MIDI', text: '->', opens: true,
+                  btnPhase: triggerPhase('import', S.knobTouched === IMPORT_KNOB) },
             ];
             /* Named by bankDisplayName, not spelled here — this literal and
              * the one below are how the picker and the header drifted apart. */

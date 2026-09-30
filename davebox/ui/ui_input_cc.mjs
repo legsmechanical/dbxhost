@@ -23,7 +23,7 @@ import {
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, LGTO_KNOB,
-    CROP_KNOB, ALL_LANES_CROP_KNOB, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
+    CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
@@ -73,6 +73,7 @@ import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
  * the screen can disagree. */
 import { bankCardVisible, sessMixerVisible, soundModeCovered } from './ui_render.mjs';
 import { closeDaveBox } from './ui_daves.mjs';
+import { miActive, miClose, miOffered } from './ui_midi_import.mjs';
 import { devSnapOpen, devSnapLeave, devSnapUndo, devSnapRedo } from './ui_devsnap.mjs';
 import { applyTrackConfig, readBankParams, applyBankParam,
     refreshPerClipBankParams, resyncDrumTrack,
@@ -88,6 +89,7 @@ import { setTrackMute, setTrackSolo, clearAllMuteSolo,
     _switchActiveTrack, allLanesGate,
     resetFxBanks, resetBankParams, resetMidiFxChain, resetTarp, resetRptGroove, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
 import { _resolveLoopGesture, chordApplyRevoice } from './ui_input_pads.mjs';
+import { seqFollowOn, setSeqFollowOn } from './ui_prefs.mjs';
 
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
  * Single tap while locked → unlock + stop loop. */
@@ -299,6 +301,19 @@ function _onCC_jog(d1, d2) {
             forceRedraw();
             return;
         }
+    }
+
+    /* IMPORT MIDI is a trigger too (Josh, 2026-09-29): touch K8 on the CLIP or
+     * DRUM LANE bank and click. The tick opens it — opening lists a folder —
+     * and it draws over the card, which is what Back at its top folder shows. */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
+            S.activeBank === 0 && S.knobTouched === IMPORT_KNOB) {
+        if (miOffered(S.activeTrack)) {
+            S.pendingMidiImportOpen = S.activeTrack;
+            triggerFire('import');
+        }
+        forceRedraw();
+        return;
     }
 
     /* State version mismatch dialog: Yes = wipe + clean start; No = exit module. */
@@ -716,8 +731,6 @@ function modalDialogUp() {
                     S.drumLanePlaybackDir[_bt][_bl] = 0;
                     S.drumLanePlaybackAudioReverse[_bt][_bl] = 0;
                     S.bankParams[_bt][0][6] = 0;
-                    S.clipSeqFollow[_bt][_bac] = true;
-                    S.bankParams[_bt][0][7] = 1;
                     S.pendingDefaultSetParams.push({ key: 't' + _bt + '_l' + _bl + '_playback_dir', val: '0' });
                     S.pendingDefaultSetParams.push({ key: 't' + _bt + '_l' + _bl + '_playback_audio_reverse', val: '0' });
                     automationClearBanksQueued(S.pendingDefaultSetParams, _bt, _bac, [0]);
@@ -746,9 +759,9 @@ function modalDialogUp() {
                  * bank"). Two halves, because the bank's state is split:
                  *  · Res / Dir / RvSt and the automation live IN THE CLIP, so ONE
                  *    checkpoint queued BEFORE the writes covers them for free;
-                 *  · InQ (`diq`, per-TRACK) and Seq Follow (JS-only, it has no DSP
-                 *    key at all) are outside any snapshot, so they ride along as a
-                 *    JS patch.
+                 *  · InQ (`diq`, per-TRACK) is outside any snapshot, so it rides
+                 *    along as a JS patch. (Seq Follow is a device-wide switch now,
+                 *    ui_prefs — a bank reset leaves it alone.)
                  * ⚠⚠ PUSHED, NOT UNSHIFTED, and the reasoning matters because the
                  * obvious advice is the other way round. What the checkpoint must
                  * precede is THIS gesture's writes — and it does, because they are
@@ -761,23 +774,18 @@ function modalDialogUp() {
                 const _c0 = S.trackActiveClip[_mt];
                 S.pendingDefaultSetParams.push({ key: 't' + _mt + '_c' + _c0 + '_undo_checkpoint', val: '1' });
                 const _inqWas = S.drumInpQuant[_mt];
-                const _sqfWas = S.clipSeqFollow[_mt][_c0];
                 noteUndoUnit();                       /* FIRST — it clears any patch */
                 markJsUndoPatch('clip',
                     function () {
                         S.drumInpQuant[_mt] = _inqWas;
                         S.bankParams[_mt][0][4] = _inqWas;
                         S.pendingDefaultSetParams.push({ key: 't' + _mt + '_diq', val: String(_inqWas) });
-                        S.clipSeqFollow[_mt][_c0] = _sqfWas;
-                        S.bankParams[_mt][0][7] = _sqfWas ? 1 : 0;
                     },
                     function () {
                         S.drumInpQuant[_mt] = BANKS[0].knobs[4].def;
                         S.bankParams[_mt][0][4] = BANKS[0].knobs[4].def;
                         S.pendingDefaultSetParams.push({ key: 't' + _mt + '_diq',
                                                         val: String(BANKS[0].knobs[4].def) });
-                        S.clipSeqFollow[_mt][_c0] = true;
-                        S.bankParams[_mt][0][7] = 1;
                     });
                 /* ⭐ RES AND INQ COMPLETE THE BANK (Josh, 2026-09-13: *"reset it
                  * with the rest"*). Resolution was held back as destructive; it
@@ -831,8 +839,6 @@ function modalDialogUp() {
                 S.clipPlaybackDir[_mt][_mac2] = 0;
                 S.clipPlaybackAudioReverse[_mt][_mac2] = 0;
                 S.bankParams[_mt][0][6] = 0;
-                S.clipSeqFollow[_mt][_mac2] = true;
-                S.bankParams[_mt][0][7] = 1;
                 S.pendingDefaultSetParams.push({ key: 't' + _mt + '_clip_playback_dir', val: '0' });
                 S.pendingDefaultSetParams.push({ key: 't' + _mt + '_clip_playback_audio_reverse', val: '0' });
                 automationClearBanksQueued(S.pendingDefaultSetParams, _mt, _mac2, [0]);
@@ -2082,6 +2088,7 @@ function _cancelMergeCountIn() {
  * Hold-to-suspend works regardless and is not reflected here.) */
 export function backTapWouldAct() {
     if (S.confirmStateWipe) return false;
+    if (miActive()) return true;            /* the MIDI browser: one layer per Back */
     if (S.confirmExit) return true;         /* Back = No */
     if (S.confirmTypeChange) return true;   /* Back = No */
     if (S.confirmModuleChange) return true; /* Back = No */
@@ -2148,6 +2155,7 @@ export function atOverview() {
     if (soundActive() || S.moveCoRunTrack >= 0)                     return false;
     if (S.stepRecActive)                                            return false;
     if (S.globalMenuOpen || S.daveBox || S.projectPadPicker)        return false;
+    if (miActive())                                                 return false;
     if (S.snapshotPicker || S.globalEnumPick)                       return false;
     if (S.tapTempoOpen || S.tempoSelectActive)                      return false;
     if (S.mergeNoticePending || S.mergeCountingIn ||
@@ -2221,6 +2229,7 @@ function returnToOverview() {
     /* ⚠ closeDaveBox WITHOUT the openGlobalMenu Back pairs it with — Back peels
      * back to the menu it came from; this goes home. */
     if (S.daveBox)             closeDaveBox();
+    if (miActive())            miClose();
     if (S.projectPadPicker)    closeProjectPadPicker();   /* startup case handled by noOverviewYet */
 
     /* 2. The global menu and every confirm nested in it, all at once. */
@@ -2724,7 +2733,7 @@ function _onCC_transport(d1, d2) {
          * short-circuit the snapshot recall above uses, and for the same reason: the
          * gesture never touched a clip, so sending `undo_restore` would revert an
          * unrelated older edit out of the DSP's one-deep slot. Kinds that need this:
-         * MACROS, ARP IN, the SOUND + CONFIG level VALUES, Seq Follow — none of them
+         * MACROS, ARP IN, the SOUND + CONFIG level VALUES — none of them
          * lives anywhere a clip snapshot can reach. See markJsUndo. */
         if (S.shiftHeld && S.redoJs) {
             const u = S.redoJs;
@@ -2810,6 +2819,18 @@ function _onCC_transport(d1, d2) {
 
     /* Play: toggle transport; Shift+Play = restart transport; Delete+Play = deactivate_all; Mute+Play = toggle metro */
     if (d1 === MovePlay && d2 === 127) {
+        /* Left or Right held + Play toggles Seq Follow (Josh, 2026-09-29) — and
+         * does nothing else: the transport is not touched, so step record stays
+         * open. FIRST, ahead of every other Play combo. Anywhere but session
+         * view, the sound editors included; the popup says what happened. The
+         * arrow's own page step (taken on press) stands. */
+        if ((S.leftHeld || S.rightHeld) && !S.sessionView) {
+            setSeqFollowOn(!seqFollowOn());
+            S.followPaused = false;
+            showActionPopup('FOLLOW', seqFollowOn() ? 'ON' : 'OFF');
+            S.screenDirty = true;
+            return;
+        }
         /* Play ends a step-record session (Josh's exit ruling) and then means
          * what it always means — no swallowed press. */
         stepRecExit();
@@ -3199,12 +3220,10 @@ function _onCC_transport(d1, d2) {
             else
                 S.trackCurrentPage[_t_lr] = Math.min(lastPage, S.trackCurrentPage[_t_lr] + 1);
         }
-        /* Manual navigation disables SeqFollow so the view stays where the user navigated */
-        const _sfAc = effectiveClip(S.activeTrack);
-        if (S.clipSeqFollow[S.activeTrack][_sfAc]) {
-            S.clipSeqFollow[S.activeTrack][_sfAc] = false;
-            S.bankParams[S.activeTrack][0][7] = 0;
-        }
+        /* Paging by hand while the transport runs PAUSES Seq Follow, so the view
+         * stays where the user went; the next real stop resumes it (the stop edge
+         * in ui_dsp_bridge). The switch itself (ui_prefs) is untouched. */
+        if (S.playing) S.followPaused = true;
         S.screenDirty = true;
     }
 
@@ -3518,7 +3537,7 @@ function knobDivisor(k, now) {
 /* Fixed-divisor accumulator for the discrete classes. Takes the batch MAGNITUDE
  * like ccKnobDelta, so a fast spin pages through options at the speed of the
  * turn while a slow one still needs `need` detents per step. */
-function knobPick(k, dir, need) {
+export function knobPick(k, dir, need) {
     if (!dir) return 0;
     if ((dir > 0) !== (S.knobLastDir[k] > 0)) { S.knobAccum[k] = 0; S.knobLastDir[k] = dir > 0 ? 1 : -1; }
     S.knobAccum[k] += dir;
@@ -3882,7 +3901,7 @@ function bankStep(pm) {
     return range / SWEEP_UNITS;
 }
 
-function ccKnobDelta(d2, k, stepScale) {
+export function ccKnobDelta(d2, k, stepScale) {
     /* decodeDelta, NOT a sign test: the value carries the whole frame's detent
      * count and discarding it is the bug this replaced. */
     const dir = decodeDelta(d2);
@@ -4564,16 +4583,7 @@ function _onCC_knobs(d1, d2) {
                 return;
             }
             if (knobIdx === 7) {
-                /* K8 = SqFl: sens=16 — matches melodic */
-                if (knobStep(knobIdx, d2, KNOB_DELIB) !== 0) {
-                    const _cur = S.clipSeqFollow[t][ac] ? 1 : 0;
-                    const _nv  = Math.max(0, Math.min(1, _cur + dir));
-                    if (_nv !== _cur) {
-                        S.clipSeqFollow[t][ac] = _nv !== 0;
-                        S.bankParams[t][0][7]  = _nv;
-                        S.screenDirty = true;
-                    }
-                }
+                /* K8 = Import MIDI: a trigger — touch + click opens it; a turn does nothing. */
                 return;
             }
         }
@@ -4845,8 +4855,8 @@ function _onCC_knobs(d1, d2) {
                     /* The loop window is [ls, ls + len): Stretch and Shift act on
                      * it, and S.clipSteps is indexed by ABSOLUTE step. */
                     const ls  = S.clipLoopStart[t][ac] | 0;
-                    /* Lgto and Crop: triggers — touch + click fires them; a turn does nothing. */
-                    if (pm.dspKey === 'lgto_apply' || pm.dspKey === 'crop') return;
+                    /* Lgto, Crop and Import: triggers — touch + click fires them; a turn does nothing. */
+                    if (pm.dspKey === 'lgto_apply' || pm.dspKey === 'crop' || pm.dspKey === 'midi_import') return;
                     /* Clock Shift, Nudge and Stretch (every clip transform) need
                      * the loop at step 1 — the DSP refuses too. */
                     if (ls > 0 && (pm.dspKey === 'clock_shift' || pm.lock)) {

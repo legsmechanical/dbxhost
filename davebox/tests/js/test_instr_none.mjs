@@ -139,8 +139,8 @@ step('coming back to Schwung finds the same channel (parked, not destroyed)', ()
 });
 step('source pins: the screens that collapse for NONE, and the DSP gate', () => {
     const snd = readFileSync('ui/ui_sound.mjs', 'utf8');
-    /* NONE: the instrument row and Import MIDI (Josh, 2026-09-23: every melodic track imports). */
-    if (!/trackRoute\[S\.track\] === ROUTE_NONE\) \{\s*rows\.push\(\{ kind: 'midiimport'[^\n]*\n\s*S\.pickRows = orderTrackMenu\(rows\);/.test(snd))
+    /* NONE: the instrument row alone — Import MIDI left the track menu for K8 of the CLIP / DRUM LANE card (Josh, 2026-09-29). */
+    if (!/trackRoute\[S\.track\] === ROUTE_NONE\) \{\s*S\.pickRows = orderTrackMenu\(rows\);/.test(snd))
         throw new Error('buildPickRows does not collapse for NONE');
     if (!/const noneTrack = .*ROUTE_NONE/.test(snd) || !/!midiTrack && !noneTrack/.test(snd))
         throw new Error('knobTargetList offers chain targets to a NONE track');

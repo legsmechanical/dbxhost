@@ -110,6 +110,7 @@ function kitCellForKnob(knob, val) {
         return base;
     }
     if (knob.fmt === C.fmtLgto) { base.kind = 'action'; base.oneWay = true; return base; }
+    if (knob.fmt === C.fmtImport) { base.kind = 'action'; base.oneWay = true; return base; }
     if (knob.fmt === C.fmtCrop) { base.kind = 'action'; base.oneWay = true; return base; }
     /* ⚠ MIRRORS ui_render's rule, which is `valsq` since 2026-08-29: only Lgto
      * and Crop (above) are real fire-actions. Strch and Shift hold signed values, so a
@@ -201,7 +202,7 @@ const CUSTOM_KIT = [
             { kind: 'valsq', label: 'Eucld', name: 'Euclid Fill', text: '0' },
             { kind: 'action', oneWay: true, label: 'Crop', name: 'Crop to Loop', text: '->' },
             { kind: 'dirsq', label: 'Dir', name: 'Playback Dir', text: 'Fwd', options: DIR, sel: 0 },
-            { kind: 'pill', label: 'SeqFl', name: 'Seq Follow', text: 'ON', norm: 1 },
+            { kind: 'action', oneWay: true, label: 'Imprt', name: 'Import MIDI', text: '->' },
         ],
     },
     {
