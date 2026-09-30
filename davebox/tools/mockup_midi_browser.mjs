@@ -120,7 +120,7 @@ function picker(rows, sel) {
     fill_rect(X, Y, Wd, h, 0); draw_rect(X, Y, Wd, h, 1);
     K.drawKitList(rows.map(r => ({ labelFont: 'small', ...r })), sel, { x: X + 1, w: Wd - 2, topY: Y + 3, h: h - 3, rowH: 7 });
 }
-const FOOT = [['SHFT', 'MUTE'], ['CLK', 'LOAD'], ['BACK', '']];
+const FOOT = [['JOG', 'FILE'], ['CLK', 'LOAD'], ['SHFT', 'MUTE']];
 
 /* 1 — the page: a single-part file in the remembered folder, heard as you land on it */
 page({ header: '(2) ACID LINE 2', right: '3/12', roll: melodic(7, 4), playhead: 520,
@@ -129,12 +129,12 @@ shoot('01-page-file');
 
 /* 1a — Shift held: the click now mutes (the hint says what the click does) */
 page({ header: '(2) ACID LINE 2', right: '3/12', roll: melodic(7, 4), playhead: 520,
-       cells: cellsMelodic(), footer: [['CLK', 'MUTE'], ['BACK', '']] });
+       cells: cellsMelodic(), footer: [['CLK', 'MUTE']] });
 shoot('01a-shift-held');
 
 /* 1b — muted: nothing plays as you scroll; the header says so, the hint offers it back */
 page({ header: '(2) ACID LINE 2', right: '3/12 MUTE', roll: melodic(7, 4),
-       cells: cellsMelodic(), footer: [['SHFT', 'HEAR'], ['CLK', 'LOAD'], ['BACK', '']] });
+       cells: cellsMelodic(), footer: [['JOG', 'FILE'], ['CLK', 'LOAD'], ['SHFT', 'HEAR']] });
 shoot('01b-muted');
 
 /* 2 — turning the jog: the folder's list floats up (small font, six at a time) */
@@ -152,7 +152,7 @@ shoot('02-jog-list');
 
 /* 3 — landing on a multi-part file: it IS a folder — nothing plays, click goes in */
 page({ header: '(2) FUNK SONG/', right: '5/12', sub: '3 PARTS - CLICK TO OPEN',
-       cells: cellsMelodic({ bars: '8' }), footer: [['SHFT', 'MUTE'], ['CLK', 'OPEN'], ['BACK', '']] });
+       cells: cellsMelodic({ bars: '8' }), footer: [['JOG', 'FILE'], ['CLK', 'OPEN'], ['SHFT', 'MUTE']] });
 shoot('03-multipart-file');
 
 /* 4 — inside it: the SAME page, a part where a file would be, heard as you land on it */
@@ -221,7 +221,7 @@ shoot('09-replace');
 globalThis.clear_screen();
 K.drawKitHeader('IMPORT MIDI', false);
 K.drawKitList([{ label: 'Downloads/' }, { label: 'MIDI/' }, { label: 'UserLibrary/' }], 1, {});
-K.drawKitHintRow(K.MV_FOOTER_Y, [['JOG', 'FOLDER'], ['CLK', 'OPEN'], ['BACK', '']]);
+K.drawKitHintRow(K.MV_FOOTER_Y, [['JOG', 'FOLDER'], ['CLK', 'OPEN']]);
 shoot('10-first-open');
 
 function writePng(fbuf,outPath){
