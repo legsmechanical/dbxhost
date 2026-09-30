@@ -223,6 +223,75 @@ step('the switch is read from its file at launch (0 = off, absent = on)', () => 
     assert(prefs.bankViewMapOn() === true, 'no file reads as off');
 });
 
+/* ⭐⭐ JOG TOUCH CARD (Josh, 2026-09-30: "Add global menu option for touch jog
+ * to show current bank card ... Showing the bank card should be the default.
+ * Turning should still show the bank navigation overlay, but it shows over the
+ * cards."). Judged on the FRAME: a touch must draw what the bank view draws. */
+const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+const jtItem = () => menuItems().find((it) => it && it.label === 'Jog Touch Card');
+const cardFrames = () => {
+    S.sessionView = false; S.activeBank = 1; S.trackActiveBank[2] = 1;
+    S.bankCardLatched = false; S.jogTouched = false; S.bankNavKind = null; settle();
+    const rest = frame();
+    S.bankCardLatched = true; const latched = frame(); S.bankCardLatched = false;
+    return { rest, latched };
+};
+step('the global menu has Jog Touch Card, right under Bank Map on Lock, On by default', () => {
+    const items = menuItems(), i = items.findIndex((it) => it && it.label === 'Jog Touch Card');
+    assert(i > 0, 'no Jog Touch Card item');
+    assert(items[i - 1].label === 'Bank Map on Lock', 'not under Bank Map on Lock: ' + items[i - 1].label);
+    S.jogTouchCardOn = null;
+    assert(prefs.jogTouchCardOn() === true, 'default is not On');
+});
+step('⭐⭐ ON: a bare jog touch draws the current bank card, and the release takes it away', () => {
+    const { rest, latched } = cardFrames();
+    assert(!same(rest, latched), 'control: the overview and the bank card draw the same frame');
+    touchJog(); tick();
+    assert(same(frame(), latched), 'the touch did not draw the bank card');
+    assert(!S.bankCardLatched, 'the touch LATCHED bank mode — it only shows the card');
+    releaseJog(); settle();
+    assert(same(frame(), rest), 'the card outlived the touch');
+});
+step('⭐ ON: a turn under the touch draws the bank column OVER the card', () => {
+    cardFrames();
+    touchJog(); tick(); jog(1); tick();
+    const f = frame();
+    assert(columnUp(f), 'no column over the touched card');
+    assert(S.activeBank !== 1, 'control: the turn did not walk');
+    releaseJog(); settle();
+    S.activeBank = 0; S.trackActiveBank[2] = 0;
+});
+step('⭐ ON: a touch in session view draws the mixer page', () => {
+    S.sessionView = true; S.sessKnobMode = 0; S.sessMixerLatched = false; settle();
+    const rest = frame();
+    S.sessMixerLatched = true; const latched = frame(); S.sessMixerLatched = false;
+    assert(!same(rest, latched), 'control: overview and mixer page draw the same frame');
+    touchJog(); tick();
+    assert(same(frame(), latched), 'the touch did not draw the session mixer page');
+    releaseJog(); settle();
+    S.sessionView = false;
+});
+step('⭐⭐ OFF: a bare touch shows nothing, and the switch persists', () => {
+    jtItem().set(false);
+    assert(written[prefs.JOG_TOUCH_CARD_PATH] === '0\n', 'Off not persisted: ' + JSON.stringify(written));
+    const { rest } = cardFrames();
+    touchJog(); tick();
+    assert(same(frame(), rest), 'the touch drew something with the switch Off');
+    releaseJog(); settle();
+    jtItem().set(true);
+    assert(written[prefs.JOG_TOUCH_CARD_PATH] === '1\n', 'On not persisted');
+    S.activeBank = 0; S.trackActiveBank[2] = 0;
+});
+step('the Jog Touch Card switch is read from its file at launch (0 = off, absent = on)', () => {
+    globalThis.host_file_exists = (p) => p === prefs.JOG_TOUCH_CARD_PATH;
+    globalThis.host_read_file = (p) => (p === prefs.JOG_TOUCH_CARD_PATH ? '0\n' : '');
+    S.jogTouchCardOn = null;
+    assert(prefs.jogTouchCardOn() === false, 'a 0 file reads as on');
+    globalThis.host_file_exists = () => false; globalThis.host_read_file = () => '';
+    S.jogTouchCardOn = null;
+    assert(prefs.jogTouchCardOn() === true, 'no file reads as off');
+});
+
 if (failed) { console.log('FAIL: bank nav overlay'); process.exit(1); }
 console.log('PASS: the bank column shows while the jog walks and goes on release');
 }

@@ -15,6 +15,11 @@ the section into a versioned heading at release time.
 - **Hold Back to go back to the overview.** One long press on Back closes
   everything you have open and returns to the overview of the view you're
   in. A tap still steps out one level.
+### Added
+- **Touch the jog to see the current bank.** Resting a finger on the jog
+  shows the page of the bank you're on (the mixer page in Session View), as
+  dAVEBOx Legacy did; letting go returns to the overview. Turning shows the
+  bank list over it. **Jog Touch Card** in the global menu turns it off.
 ### Fixed
 - **Back works in the snapshot picker.** It had been ignored there.
 

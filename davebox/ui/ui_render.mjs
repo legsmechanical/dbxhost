@@ -7,7 +7,7 @@
  */
 
 import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished } from './ui_state.mjs';
-import { bankViewMapOn } from './ui_prefs.mjs';
+import { bankViewMapOn, jogTouchCardOn } from './ui_prefs.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H, drawDaveLoading } from './ui_daves.mjs';
 import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
@@ -1424,6 +1424,23 @@ export function sessMixerVisible() {
  * the mode is exactly what made the click look broken on device), not a
  * timeout decay. bankSelectTick lives on only as plumbing other features
  * stamp; it no longer drives this screen. */
+/* ⭑ WHAT THE SCREEN SHOWS vs WHAT THE MODE IS. The jog-touch reveal (Josh,
+ * 2026-09-30, a global switch, default On) SHOWS the card while a finger rests
+ * on the jog, but it is not bank mode: bankCardVisible()/sessMixerVisible()
+ * stay the gates every INPUT reads (the click that latches, the gateway click,
+ * sound-mode entry, the mixer's level follow), so a click on a touch-revealed
+ * card still latches it, exactly as from the overview. Only the render reads
+ * these two. Shift stands the reveal down, as it does the card. */
+function jogTouchReveals() {
+    return !!S.jogTouched && !S.shiftHeld && jogTouchCardOn();
+}
+export function bankCardShown() {
+    return bankCardVisible() || (!S.sessionView && jogTouchReveals());
+}
+export function sessMixerShown() {
+    return sessMixerVisible() || (!!S.sessionView && jogTouchReveals());
+}
+
 export function bankCardVisible() {
     /* ...plus ONE peek (Josh: "knob touches are the ONLY other thing that
      * shows the card... it just peeks the active one until knob is
@@ -1873,7 +1890,7 @@ function drawUIBody() {
          * Deliberately ABOVE the popup branch: the page is the richer read-out
          * (eight tracks vs one), so while a knob is held it should win. Other
          * popups still show once the finger lifts and the window closes. */
-        if (sessMixerVisible()) {
+        if (sessMixerShown()) {
             drawSessionMixerPage();
             return;
         }
@@ -1940,11 +1957,9 @@ function drawUIBody() {
      * not expire — that is the whole point of it. Folded into the ONE
      * predicate every screen reads rather than added at each screen, so a
      * bank that forgot to check it cannot exist.
-     * ⚠ TOUCH-REVEAL IS RETIRED (Josh, 2026-08-31: "do away with touch jog to
-     * reveal davebox banks") — S.jogTouched deliberately absent here. The jog
-     * turn still opens the PICKER while touched, and a commit still arms the
-     * transient window; only the bare resting touch stopped revealing. */
-    const inTimeout = bankCardVisible();
+     * ⭑ TOUCH-REVEAL is back as a SWITCH (Josh, 2026-09-30, default On; it
+     * was retired 2026-08-31): bankCardShown() adds it to the render only. */
+    const inTimeout = bankCardShown();
 
     /* The action popup, COMPRESS LIMIT and NO NOTE used to take this whole
      * screen. They are notice cards now, drawn over it by drawUI. */
@@ -2096,7 +2111,7 @@ function drawUIBody() {
      * the Conduct bank. Gated on PAD_MODE_CONDUCT so it never affects melodic/drum. */
     if (S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT &&
             (bank === BANK_RESPONDER || bank === BANK_OCTAVE || bank === BANK_WHEN) &&
-            bankCardVisible()) {
+            bankCardShown()) {
         const _ch = bankHeaderName(S.activeTrack, bank);
         if (bank === BANK_RESPONDER) {
             const _cc = S.trackActiveClip[S.activeTrack] | 0;
@@ -2112,7 +2127,7 @@ function drawUIBody() {
         return;
     }
 
-    if (bank >= 0 && bankCardVisible()) {
+    if (bank >= 0 && bankCardShown()) {
         /* SOUND + CONFIG's card is the GATEWAY prompt. Reached here only while
          * sound mode is CLOSED — the knob-touch PEEK of a track remembered on
          * this bank at rest (the mode no longer holds the screen open there;

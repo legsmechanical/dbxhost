@@ -288,10 +288,16 @@ step('⭐⭐ S+C AS THE REMEMBERED BANK, at rest: overview, quiet jog touch, and
     if (sndMod.soundActive())
         throw new Error('the invariant re-opened sound mode AT REST — soundActive() true at idle');
     if (bankCardVisible()) throw new Error('card visible at rest');
+    /* A jog touch SHOWS the card (Jog Touch Card, default On) but is not bank
+     * mode, so the click below still latches; with the switch Off it shows
+     * nothing. */
+    S.jogTouchCardOn = false;
     S.jogTouched = true;
-    if (bankCardVisible() || sndMod.soundRender())
-        throw new Error('jog touch showed the card — retired driver');
-    S.jogTouched = false;
+    if (bankCardVisible() || renderMod.bankCardShown())
+        throw new Error('jog touch showed the card with the switch Off');
+    S.jogTouchCardOn = true;
+    if (!renderMod.bankCardShown()) throw new Error('jog touch (switch On) did not show the card');
+    if (bankCardVisible()) throw new Error('jog touch put the card in BANK MODE — it only shows');
     click(); globalThis.tick(); globalThis.tick();   /* latch; invariant opens the gateway */
     if (!S.bankCardLatched) throw new Error('click fell through — bank mode did not latch');
     if (!sndMod.soundActive())

@@ -49,7 +49,7 @@ import { nowMs } from './ui_clock.mjs';
  * safe because both sides only call the binding inside function bodies, never
  * at module-init time — the same contract the ui_record ↔ ui_dsp_bridge cycle
  * documents. bankCardVisible is the ONE owner of card visibility. */
-import { bankCardVisible, sessMixerVisible, bankHeaderRight } from './ui_render.mjs';
+import { bankCardShown, sessMixerShown, bankHeaderRight } from './ui_render.mjs';
 /* Destination read/write and the option list. ui_dsp_bridge does not import
  * this file, so there is no cycle; ui_constants is a leaf. */
 import { instrValueFor, applyInstrChoice } from './ui_dsp_bridge.mjs';
@@ -13177,7 +13177,7 @@ export function soundRender() {
      * Held gestures still keep it up; its own rows (inside a bus) never yield. */
     if (S.view === VIEW_BUSES && S.enterSession &&
             S.touchedIdx < 0 && !S.volTouched &&
-            !sessMixerVisible())
+            !sessMixerShown())      /* + the jog-touch reveal (a render gate) */
         return false;
     /* ⭑⭑ THE PROMPT YIELDS; THE MENU DOES NOT (Josh, 2026-08-28: "it's not a
      * bank"). The display law belongs to BANKS — show while the jog is touched
@@ -13202,7 +13202,7 @@ export function soundRender() {
             !S.instrEditing && !S.busLevelEditing &&
             S.touchedIdx < 0 && !S.volTouched &&
             !(S.volShownUntil >= 0 && GS.clockMs <= S.volShownUntil) &&
-            !bankCardVisible())
+            !bankCardShown())       /* + the jog-touch reveal (a render gate) */
         return false;
     if (S.view === VIEW_PROMPT) renderPrompt();
     else if (S.view === VIEW_CFGCARD) renderConfigCard();

@@ -330,6 +330,9 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 [CONFIG, MIX and MACROS](#14-sound--track-config), and
 [AUTOMATION](#10-automation).
 
+- **Touch the jog** to see the current bank's page while your finger rests on it;
+  let go and the overview is back. (In Session View it shows the mixer page.)
+  Turn it off with **Jog Touch Card** in the global menu.
 - **Turn the jog** on the track overview to step through the banks: the header
   names the bank and the knobs follow it. While your hand is on the jog, a column
   on the left lists the track's banks with the current one highlighted in the
@@ -2030,6 +2033,7 @@ see [Track settings](#174-track-settings) below.
 | Launch | When a launched clip or scene actually starts — at once (Now) or on the next boundary. At 1-bar it starts from its beginning; otherwise in step with the song ([§11.1](#111-launching-clips)) | Now, 1/16, 1/8, 1/4, 1/2, 1-bar | Now |
 | Beat Marks | Dim markers on the step buttons at 1, 5, 9, 13 | On, Off | On |
 | Bank Map on Lock | Whether the bank column comes up while the jog walks the banks from the bank view (or the session mixer card) — see [§3.6](#36-parameter-banks). The overview always shows it | On, Off | On |
+| Jog Touch Card | Whether touching the jog shows the current bank's page (the mixer page in Session View) until you let go — see [§3.6](#36-parameter-banks) | On, Off | On |
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Projects... | The project picker — see [Projects](#175-projects) | action | — |
 | Save state / Load state | Save or restore a named snapshot — see [§17.3](#173-snapshots) | action | — |

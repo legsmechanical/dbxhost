@@ -24,7 +24,7 @@ import { SCALE_NAMES } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
-import { bankViewMapOn, setBankViewMapOn } from './ui_prefs.mjs';
+import { bankViewMapOn, setBankViewMapOn, jogTouchCardOn, setJogTouchCardOn } from './ui_prefs.mjs';
 import { saveState, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { forceRedraw } from './ui_leds.mjs';
@@ -190,6 +190,13 @@ function buildGlobalMenuItems() {
         createToggle('Bank Map on Lock', {
             get: function() { return bankViewMapOn(); },
             set: function(v) { setBankViewMapOn(v); forceRedraw(); },
+            onLabel: 'On', offLabel: 'Off'
+        }),
+        /* Jog Touch Card (Josh, 2026-09-30): a bare jog touch shows the
+         * current bank card. Device-global (ui_prefs), default On. */
+        createToggle('Jog Touch Card', {
+            get: function() { return jogTouchCardOn(); },
+            set: function(v) { setJogTouchCardOn(v); forceRedraw(); },
             onLabel: 'On', offLabel: 'Off'
         }),
         createDivider(),
