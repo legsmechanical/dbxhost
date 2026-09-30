@@ -2277,10 +2277,18 @@ static void send_panic(seq8_instance_t *inst) {
     for (s = 0; s < SEQ8_CHAIN_SLOTS; s++) {
         play_fx_t *fx = slot_pfx[s];
         if (!fx) continue;
-        if (fx != route_pfx[ROUTE_SCHWUNG] && !slot_hot[s]) continue;
+        if (fx == route_pfx[ROUTE_SCHWUNG] || slot_hot[s])
+            for (ch = 0; ch < 16; ch++)
+                for (n = 0; n < 128; n++)
+                    pfx_send(fx, (uint8_t)(0x80 | ch), (uint8_t)n, 0);
+        /* ...and All Notes Off to EVERY routed slot, swept or not (Josh,
+         * 2026-09-30: a dspreset voice "Kept sounding after transport stop"
+         * though the note-off sweep above reached its slot). Per-note offs
+         * cannot free a voice the module holds for its own reasons; CC 123
+         * releases every voice it has, and at 16 messages it costs nothing.
+         * Never on ROUTE_MOVE — see the note at the end. */
         for (ch = 0; ch < 16; ch++)
-            for (n = 0; n < 128; n++)
-                pfx_send(fx, (uint8_t)(0x80 | ch), (uint8_t)n, 0);
+            pfx_send(fx, (uint8_t)(0xB0 | ch), 123, 0);
     }
     if (route_pfx[ROUTE_EXTERNAL]) {
         /* 128 note-offs/channel would overflow the shim's 64-packet send ring;

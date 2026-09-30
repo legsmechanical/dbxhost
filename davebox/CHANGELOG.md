@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed
+- **Stopping the transport silences a stuck note on a Schwung instrument.**
+  A note an instrument kept holding survived Stop; Stop now also sends
+  All Notes Off to every Schwung instrument a track plays.
 
 ## [0.0.7] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Fixed
