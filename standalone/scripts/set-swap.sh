@@ -430,6 +430,16 @@ NSLOT_PY
 
 do_exit() {
     _phase="$(read_phase)"
+    # ⚠ NOTHING TO UNDO IS A NO-OP -- the same test do_recover makes. refuse()
+    # calls `exit` unconditionally, trusting it to be one before `enter`, but
+    # with no marker (or a marker a finished session left at "none 0" with no
+    # mode) the tail below wrote currentSongIndex = 0 into MOVE'S OWN
+    # Settings.json: a refused launch sent stock Move back to whatever set sits
+    # in slot 0 (hardware, 2026-09-30, a launch refused on stock AbletonOS).
+    if [ "$_phase" = "none" ] && ! sets_are_ours && ! settings_are_ours && [ ! -d "$NATIVE_STASH" ]; then
+        log "exit: nothing entered, nothing bound -- nothing to undo"
+        return 0
+    fi
     _idx="$(read_native_index)"
     _mode="$(read_settings_mode)"
 
