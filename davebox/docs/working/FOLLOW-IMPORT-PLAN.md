@@ -196,3 +196,49 @@ has.
   single-lane load.
 - **Deleted with it:** the phrase pack reader, categories and styles, the PHRASE bank, and the pack
   prewarm.
+
+## Phase 3 FINAL DESIGN (approved by Josh 2026-09-29 from mockups rev 10)
+
+Mockups: `davebox/tools/mockup_midi_browser.mjs` (the real kit). Everything below supersedes the
+decisions list above where they differ.
+
+**Entry / exit.** K8 on the CLIP / DRUM LANE card (touch + click) is the only door. Back steps out
+of a multi-part file; otherwise Back closes. The PHRASE bank, the phrase pack reader, its
+categories/styles and prewarm are removed. No MIDI files ship.
+
+**Folders.** The first open ever shows the user data folder (folders only), as a big-font list.
+After a folder is chosen it is remembered (device-wide) and the browser opens straight into it.
+Folder changes happen in the jog list: `..` goes up, a folder (`NAME/`) goes in.
+
+**The page** (one per playable item: a single-part file, or a part inside a multi-part file):
+- Header: the item's name (no track number), `n/N` right-aligned. While the current clip has
+  notes, the right side reads `REPLACES`; other warnings (`N CUT`, `N OVER`) take that slot too.
+- K1 Start · K2 Bars · K3 Grid · K4 Stretch (/8 … x8) as the bank page's top row.
+- One LANE under them: every note of the part on one row, length as width; brackets mark the
+  Start..Start+Bars window, notes outside it dotted; a playhead while previewing.
+- K5 Oct · K6 Semi · K7 Scale as small two-line cells (label over value) under their knobs; K8 free.
+  Touching one inverts its cell and names it + its value in the header.
+- Drum track: K5 Map (Off / GM / Move), K6–K8 empty; right-hand pads = the file's sounds, hold one
+  for the sounds panel, tap a lane to move it (the phrase browser's placement, unchanged).
+- Footer: `JOG FILE · CLK LOAD · SHFT MUTE` (drum: `RTPAD SOUND · SHFT MUTE`). Shift held → `CLK MUTE`.
+  Muted → `SHFT HEAR` and the lane's notes blink. No BACK hint. Mute state is remembered.
+
+**The jog list** (small font, over the page): turning the jog raises it; it drops half a second
+after the jog stops, unless the highlighted row is a folder or multi-part file (nothing to hear),
+in which case it stays up. Rows: `..`, `FOLDER/`, `FILE` with `nBr`, multi-part `FILE>` with
+`n PT`. Its header names the folder (`BASS LINES/`), or the file (`FUNK SONG >`) inside one.
+
+**Multi-part files behave like folders:** click goes in; the parts are laid out and play exactly
+like files; `..` / Back comes out. A part that is all channel 10 reads `DRM`.
+
+**Preview:** as you land on a playable item. In time via `tN_audclip` while the transport plays,
+free-running via `tN_audition` while stopped. Opening NO LONGER stops the transport.
+
+**Loading:** always into the CURRENT clip, replacing it — no To knob, no confirm. One undo step.
+Melodic `tN_cC_import`; drum whole-kit `tN_lanes_import`. Clip automation cleared as today.
+
+**Pitch:** Oct and Semi transpose first; then Scale ON folds each note into the project scale
+(Scale OFF = as written). Drums: none of these.
+
+**Kept from import:** SMF parsing (formats 0/1/2, RMI, SMPTE), size/part/note limits and their
+warnings, Grid, Start, Bars, drum destination-pad planning, the one-write-then-verify commit.
