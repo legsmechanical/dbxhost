@@ -124,6 +124,7 @@ async function main() {
     const snd = await import('../../ui/ui_sound.mjs');
     const MI = await import('../../ui/ui_midi_import.mjs');
     const prefs = await import('../../ui/ui_prefs.mjs');
+    const KL = await import('../../ui/ui_knob_leds.mjs');
     const tickmod = await import('../../ui/ui_tick.mjs');
     const render = await import('../../ui/ui_render.mjs');
     const { MoveNoteSession, PAD_MODE_CONDUCT, PAD_MODE_DRUM, TRACK_PAD_BASE, BANKS: BANKS_ } = await import('../../ui/ui_constants.mjs');
@@ -297,6 +298,9 @@ async function main() {
         assert(mi().cur.bpm === 120, 'bpm ' + mi().cur.bpm);
         const ring = MI.miRingCells();
         assert(ring[7].kind === 'blank', 'K8\'s ring is not dark');
+        /* every knob that does something lights its ring — asked of the ring code itself */
+        const lit = ring.map(c => KL.knobRingColor(0, KL.ringNormOfCell(c)) !== 0);
+        assert(JSON.stringify(lit) === '[true,true,true,true,true,true,true,false]', 'rings lit: ' + JSON.stringify(lit));
     });
 
     step('⭐ Shift+click mutes: nothing plays, the footer offers HEAR, and it is remembered', () => {

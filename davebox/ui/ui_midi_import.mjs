@@ -732,7 +732,10 @@ export function miRingCells() {
         : [{ kind: 'valsq', label: 'Oct', norm: (MI.oct - OCT_MIN) / (OCT_MAX - OCT_MIN) },
            { kind: 'valsq', label: 'Semi', norm: (MI.semi - SEMI_MIN) / (SEMI_MAX - SEMI_MIN) },
            { kind: 'pill', label: 'Scale', norm: MI.scaleOn ? 1 : 0 }];
-    return top.concat(low, [BLANK]);          /* K8 is the BPM: shown, not set */
+    /* A number cell's ring needs its position said outright (`ringNorm`):
+     * ringNormOfCell reads no value from a plain value cell, and without it
+     * K1, K2, K5 and K6 went dark (Josh, device 2026-09-30). */
+    return top.concat(low, [BLANK]).map(c => (c.kind === 'valsq' && typeof c.norm === 'number') ? { ...c, ringNorm: c.norm } : c);
 }
 
 /* ---- drawing ---- */
