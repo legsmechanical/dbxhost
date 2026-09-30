@@ -38,7 +38,7 @@ globalThis.host_exit_module = () => { exits++; };
 await import("./standalone/module/ui.js");
 globalThis.init();
 const screen = printed.join(" | ");
-/Move will restart/.test(screen) && /to load dAVEBOx\./.test(screen) && /Proceed\?/.test(screen)
+/Move will restart/.test(screen) && /to load dAVEBOx\./.test(screen) && /Proceed\?/.test(screen) && /Click:Yes/.test(screen)
     ? ok("the screen asks: " + screen) : bad("the screen says: " + screen);
 
 const cc = (n, v) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, n, v]));

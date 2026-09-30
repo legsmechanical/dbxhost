@@ -37,11 +37,11 @@ function draw() {
     }
     const lines = ['Move will restart', 'to load dAVEBOx.', 'Proceed?'];
     if (typeof layout.drawConfirmOverlay === 'function') {
-        layout.drawConfirmOverlay('dAVEBOx', lines, 'Back:No  Jog:Yes');
+        layout.drawConfirmOverlay('dAVEBOx', lines, 'Back:No  Click:Yes');
     } else {
         print(2, 2, 'dAVEBOx', 1);
         for (let i = 0; i < lines.length; i++) print(2, 16 + i * 10, lines[i], 1);
-        print(2, 54, 'Back:No  Jog:Yes', 1);
+        print(2, 54, 'Back:No  Click:Yes', 1);
     }
 }
 

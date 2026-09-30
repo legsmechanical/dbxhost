@@ -9052,6 +9052,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
             if (d2 >= 64 && ppHasLayer()) {
                 handleParamPagesMidi([0xB0, d1, d2]);
                 ppAteBackPress = true;
+                /* ...and the HOLD still counts (Josh, device pass 2026-09-30:
+                 * hold Back "doesn't take you out from click-in menu pages and
+                 * it should"). The editor steps out a layer on the press; held
+                 * past the threshold, checkBackHold backs out to the overview,
+                 * whose soundExit clears ppAteBackPress. */
+                GS.backPressTick = nowMs();
+                GS.backHoldFired = false;
                 S.dirty = true;
                 return true;
             }
