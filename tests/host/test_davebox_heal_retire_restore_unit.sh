@@ -6,8 +6,9 @@
 #
 # Built NATIVELY with -DHEAL_TESTING (skips the setuid/root gate), every path
 # redirected into a temp dir, systemctl replaced by a stub that logs its argv.
-# The shim is set up already mirrored (setuid, no newer source), so the only
-# thing the no-argument run can do is the retirement under test.
+# The shim is set up already mirrored (setuid, owned as the helper expects, no
+# newer source), so the only thing the no-argument run can do is the retirement
+# under test. The expected owner is this user's: the run is unprivileged.
 # Linux only — the source uses mount(2)/umount2(2); macOS cannot compile it.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
@@ -24,7 +25,7 @@ gcc -O0 -std=c11 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -Wall -Wextra -Werror \
     -DHEAL_TESTING -DDBX_DIR="\"$T/dbx\"" -DHEAL_DIR="\"$T/heal\"" \
     -DSYSTEMCTL="\"$T/systemctl\"" -DRESTORE_UNIT_PATH="\"$T/etc/davebox-restore.service\"" \
     -DRESTORE_WANTS_PATH="\"$T/etc/wants/davebox-restore.service\"" \
-    -DDST_SHIM="\"$T/usr/davebox-shim.so\"" \
+    -DDST_SHIM="\"$T/usr/davebox-shim.so\"" -DSHIM_UID="$(id -u)" -DSHIM_GID="$(id -g)" \
     -o "$T/heal-bin" standalone/src/davebox-heal.c || { echo "FAIL: build"; exit 1; }
 U="$T/etc/davebox-restore.service"; W="$T/etc/wants/davebox-restore.service"
 device() {  # $1 = with-unit | no-unit

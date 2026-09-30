@@ -466,13 +466,22 @@ static int dst_setuid_ok(const char *path) {
     return (st.st_mode & S_ISUID) ? 1 : 0;
 }
 
-/* 1 if the destination is owned root:root. An install from a build that
- * mirrored the shim as ableton has the right bytes and the right bit, so only
+/* Owner of the mirrored shim: root:root, as stock's is. Overridable for the
+ * test build only, so an unprivileged run can stage an already-mirrored shim. */
+#ifndef SHIM_UID
+#define SHIM_UID 0
+#endif
+#ifndef SHIM_GID
+#define SHIM_GID 0
+#endif
+
+/* 1 if the destination has the mirrored shim's owner. An install from a build
+ * that mirrored it as ableton has the right bytes and the right bit, so only
  * this check moves it to root on the first launch of this build. */
-static int dst_root_owned(const char *path) {
+static int dst_owner_ok(const char *path) {
     struct stat st;
     if (stat(path, &st) < 0) return 0;
-    return (st.st_uid == 0 && st.st_gid == 0) ? 1 : 0;
+    return (st.st_uid == SHIM_UID && st.st_gid == SHIM_GID) ? 1 : 0;
 }
 
 #endif
@@ -562,8 +571,8 @@ int main(int argc, char **argv) {
      * matches, and repairing them is the entire job of this binary. Reporting
      * it and leaving it broken would not be healing anything. */
     if (needs_copy(SRC_SHIM, DST_SHIM) || !dst_setuid_ok(DST_SHIM) ||
-        !dst_root_owned(DST_SHIM)) {
-        if (copy_atomic(SRC_SHIM, DST_SHIM, 04755, 0, 0) == 0) {
+        !dst_owner_ok(DST_SHIM)) {
+        if (copy_atomic(SRC_SHIM, DST_SHIM, 04755, SHIM_UID, SHIM_GID) == 0) {
             fprintf(stderr, "davebox-heal: shim mirrored\n");
         } else {
             rc = 2;
