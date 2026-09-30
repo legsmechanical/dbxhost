@@ -573,7 +573,7 @@ async function main() {
         r = rowOf(printed());
         assert(r && full.startsWith(r.s), 'leaving and coming back starts it over: ' + JSON.stringify(r));
         jogTo(LONGDIR); ticks(2);
-        ticks(150);
+        ticks(150);                                               /* nothing previews in a folder: only the scroll redraws */
         assert(MI.miMarqueeForTest().off > 0, 'a long folder name, with no preview running, never scrolled: ' + JSON.stringify(MI.miMarqueeForTest()));
         const d = printed().find(o => o.s.endsWith('/'));
         assert(d && LONGDIR.includes(d.s.slice(0, -1)) && !LONGDIR.startsWith(d.s.slice(0, -1)), 'the folder row shows the scrolled name with its /: ' + JSON.stringify(d));
