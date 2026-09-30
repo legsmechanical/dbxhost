@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed
+- **A new project's track 1 is a drum track again.** It could open with its
+  pads in the chromatic layout instead of drum mode.
 
 ## [0.0.7] — 2026-09-29 (test build, not in the Schwung catalog)
 ### Fixed
