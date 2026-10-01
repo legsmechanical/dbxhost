@@ -81,6 +81,9 @@ function armTemplateSet() {
 /* ui_tick's save chain, the tick after the DSP 'save' went out. */
 export function runTemplateSet() {
     engineSaveState();                /* Schwung's chains, to disk */
+    /* ⚠ The hand-off files live in templates/, which does not exist until the
+     * first template is saved — and a write into a missing folder fails. */
+    host_ensure_dir(TEMPLATES_DIR);
     if (!host_write_file(INCOMING_UI, JSON.stringify(templateSidecar()))) {
         showActionPopup('TEMPLATE', 'FAILED');
         return;
@@ -98,6 +101,7 @@ function writeHaveModules() {
     const ids = [];
     for (const comp of ['synth', 'fx1', 'midi_fx1'])
         for (const m of engineListModules(comp)) if (m && m.id && ids.indexOf(m.id) < 0) ids.push(m.id);
+    host_ensure_dir(TEMPLATES_DIR);
     return ids.length > 0 && host_write_file(HAVE_MODULES, ids.join('\n') + '\n');
 }
 

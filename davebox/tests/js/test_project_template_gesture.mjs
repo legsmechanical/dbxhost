@@ -39,9 +39,18 @@ globalThis.host_read_file = (p) => {
     if (/\.last-missing\.json$/.test(p)) return missingAnswer;
     return FILES[p] !== undefined ? FILES[p] : '';
 };
-globalThis.host_write_file = (p, body) => { FILES[String(p)] = String(body); return true; };
+/* As on the device, a write into a folder that does not exist FAILS (the atomic
+ * write opens "<path>.tmp" there). Only templates/ is modelled: it is the one
+ * folder this feature brings into being — on a Move that has never saved a
+ * template it is not there, and "Set as Template" said FAILED. */
+const DIRS = new Set();
+const parentOf = (p) => String(p).replace(/\/[^\/]+$/, '');
+globalThis.host_write_file = (p, body) => {
+    if (/\/templates$/.test(parentOf(p)) && !DIRS.has(parentOf(p))) return false;
+    FILES[String(p)] = String(body); return true;
+};
 globalThis.host_file_exists = (p) => String(p) in FILES;
-globalThis.host_ensure_dir = () => true;
+globalThis.host_ensure_dir = (d) => { DIRS.add(String(d).replace(/\/$/, '')); return true; };
 globalThis.host_remove_dir = () => true;
 globalThis.host_module_set_param = (k, v) => { LOG.push('set ' + k + '=' + v); };
 globalThis.host_module_set_params = () => true;
