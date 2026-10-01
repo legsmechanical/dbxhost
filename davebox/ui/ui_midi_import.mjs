@@ -17,17 +17,17 @@
  *             Resolution cell (a fraction that turns into an arc). Click =
  *             Load; jog = the list; Back = leave (asking first if a file is
  *             picked).
- *   list      the folder: `..` up (the only way up, as in dAVEBOx's file
- *             browser), a folder (NAME/) or a multi-part file (NAME>, entered
- *             like a folder) opened by a click, a file PICKED by a click (back
- *             to the card). Landing on a file plays it, after a short rest.
- *             Back closes the list and puts back the file you had; with none
- *             (a track's first open) it leaves.
+ *   list      the folder: `..` up, a folder (NAME/) or a multi-part file
+ *             (NAME>, entered like a folder) opened by a click, a file PICKED
+ *             by a click (back to the card). Landing on a file plays it, after
+ *             a short rest. Back goes up a level, as `..` does; at the top it
+ *             leaves as the card's Back does — putting back the file you had
+ *             and asking LEAVE IMPORT, or with none picked just leaving.
  *   confirm   dAVEBOx's Yes/No dialog, No selected; the jog chooses, the click
  *             commits, Back = No. LOAD INTO CLIP A (from a click on the card)
- *             and LEAVE IMPORT (from Back with a file picked: Yes loads and
- *             leaves, No leaves without loading). Nothing reaches a clip
- *             without a Yes (Josh, 2026-09-30).
+ *             and LEAVE IMPORT (from Back with a file picked, on the card or
+ *             at the list's top: Yes loads and leaves, No leaves without
+ *             loading). Nothing reaches a clip without a Yes (Josh, 2026-09-30).
  *
  * ⭑ The preview replaces what the track plays: in time while the track plays
  * its clip (tN_audclip, swapped in on the beat), alone and free-running
@@ -635,8 +635,12 @@ export function miOnBack() {
     if (!MI) return;
     if (MI.layer === 'confirm') { answer(false); return; }
     if (MI.layer === 'list') {
-        /* Back closes the list (as dAVEBOx's file browser: `..` is the way up) */
-        if (closeList()) { GS.screenDirty = true; return; }
+        /* Back steps UP — out of a multi-part file, then a folder at a time —
+         * and at the top leaves, as Back on the card does (Josh, 2026-09-30:
+         * "back button should setback through the browser and leave midi
+         * import at root"). Hold Back leaves from anywhere (returnToOverview). */
+        if (MI.file || MI.B.currentDir !== MI_ROOT) { goUp(); GS.screenDirty = true; return; }
+        if (closeList()) { askLeave(); return; }   /* the picked file back, then LEAVE IMPORT */
         miClose();                            /* nothing picked yet: leave */
         return;
     }

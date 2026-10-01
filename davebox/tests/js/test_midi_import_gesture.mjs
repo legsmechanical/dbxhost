@@ -381,12 +381,24 @@ async function main() {
                'reopened on ' + layer() + ' ' + JSON.stringify(mi().sel && mi().sel.name));
     });
 
-    step('the jog raises the list; Back closes it and puts back the file you had', () => {
+    step('the jog raises the list; Back at the top puts back the file you had and asks LEAVE IMPORT', () => {
+        /* Josh, 2026-09-30: "back button should setback through the browser
+         * and leave midi import at root" — the top of the list leaves, as the
+         * card's Back does, rather than closing to the card. */
         jog(1);
         assert(layer() === 'list', 'layer ' + layer());
         jog(1); ticks(20);
-        back();
-        assert(layer() === 'card' && mi().cur && mi().cur.name === 'Lead', 'back on ' + (mi().cur && mi().cur.name));
+        const b = writes.length;
+        assert(mi().file, 'rig: the list opens inside Lead\'s multi-part file');
+        back();                                                     /* up, out of the file */
+        assert(layer() === 'list' && !mi().file, 'first Back: ' + layer());
+        back();                                                     /* the top: leave */
+        assert(layer() === 'confirm' && mi().confirm.kind === 'leave', 'layer ' + layer());
+        assert(mi().cur && mi().cur.name === 'Lead', 'the picked file is back: ' + (mi().cur && mi().cur.name));
+        back();                                                     /* No */
+        assert(closedToCard() && !imports(b).length, 'did not leave cleanly');
+        openImport(1);
+        assert(layer() === 'card' && mi().sel && mi().sel.name === 'Lead', 'reopened on ' + layer());
     });
 
     step('⭐ Back on the card with a file picked asks LEAVE IMPORT; No leaves without loading', () => {
@@ -440,6 +452,22 @@ async function main() {
         assert(layer() === 'list' && !mi().file && mi().items[mi().idx].label === 'song', 'not back on the file row');
         back();
         assert(closedToCard(), 'Back did not close onto the card');
+    });
+
+    step('⭐ Back steps UP: out of a multi-part file onto its row, out of a folder onto its row, then leaves', () => {
+        openImport(1);
+        jogTo('song'); click(); ticks(2);
+        assert(layer() === 'list' && mi().file, 'rig: inside the multi-part file');
+        back();
+        assert(layer() === 'list' && !mi().file && mi().items[mi().idx].label === 'song',
+               'Back out of the file: ' + layer() + ' ' + (mi().items[mi().idx] || {}).label);
+        jogTo(LONGDIR); click(); ticks(2);
+        assert(layer() === 'list' && mi().B.currentDir === '/data/UserData/' + LONGDIR, 'rig: inside the folder ' + mi().B.currentDir);
+        back();
+        assert(layer() === 'list' && mi().B.currentDir === '/data/UserData' && mi().items[mi().idx].label === LONGDIR,
+               'Back out of the folder: ' + mi().B.currentDir + ' ' + (mi().items[mi().idx] || {}).label);
+        back();
+        assert(closedToCard(), 'Back at the top did not leave');
     });
 
     step('a file that reads short says so', () => {

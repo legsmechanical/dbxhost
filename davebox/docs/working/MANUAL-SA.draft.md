@@ -1999,8 +1999,9 @@ if it is all drums). **Click** a folder (`NAME/`) to go in; `..` at the top goes
 up. A file with several parts (a song with a lead, a bass line and drums) shows
 `NAME>` and its part count: click it to go in, and its parts are laid out like
 files. A name too long for its row scrolls while the cursor is on it, so you
-can read all of it. **Click a file (or part) to pick it** — the card comes up. **Back** closes
-the list and puts back the file you had.
+can read all of it. **Click a file (or part) to pick it** — the card comes up. **Back** goes
+up a level, as `..` does; at the top it leaves the browser (asking first, as the card's
+Back does, if you had picked a file). **Hold Back** to leave from anywhere.
 
 **The card** is the file you picked, still playing. Its knobs work like a bank's:
 touching one names it, and turning Stretch (or, on a drum track, Map) brings up
