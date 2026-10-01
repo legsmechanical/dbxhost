@@ -123,6 +123,7 @@ step('the sidecar a template carries: this project\'s kept fields, fresh values 
     assert(t.at === 0 && t.ac[2] === 0 && t.to[0] === FRESH.to[0], 'view/octave not reset: ' + J([t.at, t.ac[2], t.to[0]]));
     assert(t.am[3] === 2 && t.pchr[1] === 1, 'track config lost: ' + J([t.am[3], t.pchr[1]]));
     assert(t.cpg[4].every(c => J(c) === J([12, 1, 3])), 'program not spread from clip A: ' + J(t.cpg[4]));
+    assert(t.sv === 1, 'a project from the template opens in Session View (as any new project), sv ' + t.sv);
     S.activeTrack = 0; S.trackActiveClip[2] = 0; S.trackAtMode[3] = 0; S.padLayoutChromatic[1] = false;
     S.clipProgram[4][0] = [-1, -1, -1]; S.clipProgram[4][6] = [-1, -1, -1];
 });
