@@ -30,7 +30,7 @@ import {
 import { closeChordPopup, chordEditSlot, chordSlotKnob, chordBankKnob, chordSlotReset } from './ui_chord_pads.mjs';
 import { triggerFire } from './ui_trigger.mjs';
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay,
-         markJsUndoPatch, stepRevealAvailable } from './ui_state.mjs';
+         markJsUndoPatch, stepRevealAvailable, loopViewActive, endLoopLatch } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
@@ -95,6 +95,14 @@ import { seqFollowOn, setSeqFollowOn } from './ui_prefs.mjs';
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
  * Single tap while locked → unlock + stop loop. */
 const LOOP_TAP_MS  = 425;
+
+/* A lone Loop tap on a drum track unlatches its repeats (snapshot at press in
+ * loopTapUnlatchTrack). When there is a repeat to unlatch, that is the tap's
+ * job — it does not also latch the loop view. */
+function _loopTapUnlatches() {
+    const t = S.loopTapUnlatchTrack;
+    return t >= 0 && (S.drumRepeatLatched[t] || S.drumRepeat2LatchedLanes[t].size > 0);
+}
 
 const STRETCH_BLOCKED_MS = 1500;
 
@@ -1272,7 +1280,7 @@ function modalDialogUp() {
                      * (bankSelectTick), so the mode change is never silent. */
                     armBankDisplay();
                     forceRedraw();
-                } else if (S.loopHeld) {
+                } else if (loopViewActive()) {
                     /* Track View + Loop held: adjust length ±1 step */
                     const _t  = S.activeTrack;
                     if (S.recordArmed && !S.recordCountingIn) {
@@ -1950,15 +1958,41 @@ function _onCC_buttons(d1, d2) {
         return;
     }
 
-    /* Loop button (CC 58, Track View): hold + step buttons sets clip length */
+    /* Loop button (CC 58, Track View): hold + step buttons sets clip length.
+     * A TAP latches that view instead (loopLatched) until the next Loop press,
+     * Back, or another screen; a hold stays momentary. A press while latched
+     * ends the latch on its release, whatever its length. */
     if (d1 === MoveLoop && !S.sessionView) {
         S.loopHeld = d2 === 127;
+        let _latchNow = false;
+        if (S.loopHeld) {
+            S.loopUsed = false;
+            S.loopLatchEnding = S.loopLatched;
+        } else if (S.loopLatchEnding) {
+            S.loopLatchEnding = false;
+            S.loopTapUnlatchTrack = -1;      /* the closing tap closes, nothing else */
+            endLoopLatch();
+            invalidateLEDCache();
+        } else if (!S.loopLatched && S.loopLatchEligible && !S.loopUsed &&
+                   (nowMs() - S.loopPressTick) < LOOP_TAP_MS &&
+                   !_loopTapUnlatches()) {
+            _latchNow = true;
+        }
+        S.loopLatchEligible = false;
         /* Releasing Loop ends a page copy; Copy + step is a step copy again. */
-        if (!S.loopHeld && S.copySrc && (S.copySrc.kind === 'page' || S.copySrc.kind === 'cut_page')) {
+        if (!loopViewActive() && !_latchNow &&
+                S.copySrc && (S.copySrc.kind === 'page' || S.copySrc.kind === 'cut_page')) {
             S.copySrc = null;
             invalidateLEDCache();
         }
         computePadNoteMap();
+        if (_latchNow) {
+            S.loopLatched = true;
+            S.loopTapUnlatchTrack = -1;
+            invalidateLEDCache();
+            forceRedraw();
+            return;
+        }
         /* Arp Steps overlay: Loop is repurposed as a modifier for the pad-column
          * loop-length gesture. Skip every other Loop side-effect (TARP unlatch,
          * drum repeat latch, loop-window gesture) while the overlay is active. */
@@ -1986,6 +2020,12 @@ function _onCC_buttons(d1, d2) {
                 S.liveActiveNotes.size === 0) {
                 S.loopTapUnlatchTrack = _lrt;
             }
+            /* May this press latch the loop view if it turns out a tap? Not
+             * with a pad held or a modifier down (those taps already mean
+             * something), and not when it closes a latch. The TARP buffer
+             * clear below revokes it too. */
+            S.loopLatchEligible = !S.loopLatchEnding && !S.deleteHeld && !S.shiftHeld &&
+                !_rpt1FreshHold && !_rpt2FreshHold && S.liveActiveNotes.size === 0;
             /* Delete+Loop: unconditionally stop active drum repeat latch */
             if (S.deleteHeld && S.trackPadMode[_lrt] === PAD_MODE_DRUM) {
                 if (S.drumPerformMode[_lrt] === 1 && S.drumRepeatLatched[_lrt]) {
@@ -2019,6 +2059,7 @@ function _onCC_buttons(d1, d2) {
                  * clear the latched buffer without changing tarp_latch. */
                 host_module_set_param('t' + _lrt + '_tarp_clear_latched', '1');
                 S.tarpHeldNotes[_lrt].clear();
+                S.loopLatchEligible = false;   /* this tap cleared the buffer */
             }
             if (S.drumPerformMode[_lrt] === 2) {
                 S.rpt2LoopPadUsed = false;
@@ -2143,7 +2184,7 @@ export function backTapWouldAct() {
         S.bpmMoveInfo || S.tapTempoOpen || S.globalMenuOpen) return true;
     if (S.sessionView) return S.perfViewLocked;
     /* Track view: alt-view exits, then non-default bank steps back to 0. */
-    return S.stepIntervalMode || S.altMode ||
+    return S.loopLatched || S.stepIntervalMode || S.altMode ||
            (S.activeBank === 7 && S.allLanesConfirmed) || S.activeBank !== 0;
 }
 
@@ -2205,7 +2246,7 @@ export function atOverview() {
     if (S.confirmConvertToDrum || S.confirmConvertToConduct)        return false;
     if (S.bankCardLatched || S.sessMixerLatched)                    return false;
     if (S.sessionView) return !S.perfViewLocked;
-    return !(S.stepIntervalMode || S.altMode ||
+    return !(S.loopLatched || S.stepIntervalMode || S.altMode ||
              (S.activeBank === 7 && S.allLanesConfirmed));
 }
 
@@ -2325,6 +2366,7 @@ function returnToOverview() {
     }
 
     /* 5. View residue. */
+    endLoopLatch();
     S.stepIntervalMode  = false;
     S.altMode           = false;
     S.allLanesConfirmed = false;
@@ -2476,6 +2518,8 @@ function _backTap() {
      *      non-default bank back to bank 0 (Clip / Drum Lane / Conduct). At
      *      bank 0 with no alt-view, Back is a no-op (does NOT jump to Session). */
     if (!S.sessionView) {
+        /* A latched Loop view draws over everything below, so it goes first. */
+        if (endLoopLatch())       { invalidateLEDCache(); forceRedraw(); return; }
         if (S.stepIntervalMode)   { S.stepIntervalMode = false; computePadNoteMap(); forceRedraw(); return; }
         if (S.altMode)            { S.altMode = false; forceRedraw(); return; }
         if (S.activeBank === 7 && S.allLanesConfirmed) { S.allLanesConfirmed = false; forceRedraw(); return; }
@@ -5082,6 +5126,7 @@ function _switchViewCleanup() {
     autoBankReset();
     autoLanePinClear();
     S.autoReturn = null;           /* a lane jump's Back crumb does not survive a view switch */
+    endLoopLatch();                /* a latched Loop view is Track View's; Session's Loop is Perf */
     stepRecExit();
     standDownBankDisplay(true);
     S.heldStepBtn        = -1;

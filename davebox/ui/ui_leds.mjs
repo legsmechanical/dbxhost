@@ -1,5 +1,5 @@
 import { miPadColors, miActive, miRingCells } from './ui_midi_import.mjs';
-import { S } from './ui_state.mjs';
+import { S, loopViewActive } from './ui_state.mjs';
 import {
     NUM_STEPS, NUM_TRACKS, LED_OFF, LEDS_PER_FRAME,
     TRACK_COLORS, TRACK_DIM_COLORS, TRACK_PAD_BASE, SCENE_BTN_FLASH_MS,
@@ -237,7 +237,7 @@ export function updateStepLEDs() {
      * Pages with notes within the window → pulse; empty in-window pages → solid track color;
      * out-of-window pages → off. Held start page during the range gesture lights bright
      * white as a "waiting for end tap" affordance. */
-    if (S.loopHeld && !S.loopJogActive &&
+    if (loopViewActive() && !S.sessionView && !S.loopJogActive &&
             !(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7 && !S.allLanesConfirmed)) {
         const t = S.activeTrack;
         const tCol = trackColor(t);
