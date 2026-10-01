@@ -7,6 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **Touch a send knob and click to open its effects.** On the MIX bank, and on
+  the session mixer's SEND A and SEND B pages, touch the send's knob and click
+  the jog to land in that send's effects — as Shift + click on the send in
+  TRACK CONFIG does. Back returns to where you were.
+### Fixed
+- **Back from a Move track's send effects** returned to the wrong menu; it now
+  comes back to that track's menu.
 
 ## [0.0.9] — 2026-09-30 (test build, not in the Schwung catalog)
 ### Fixed

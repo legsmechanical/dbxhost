@@ -1556,6 +1556,9 @@ the jog moves its cursor and a click uses the row. CONFIG has no knobs.
 The track's levels are on **MIX**, the last bank on the walk (**Volume, Pan,
 Send A, Send B** on knobs 1–4). On a MIDI track MIX holds that track's controllers
 instead — Expression, Pan, Mod, Sustain, Program, Bank MSB and Bank LSB.
+**Touch Send A or Send B and click the jog** to land in that send's effects (the
+knobs wear corner brackets to say so); **Back** returns to MIX. The session mixer
+does the same on its SEND A and SEND B pages: touch any track's knob and click.
 
 | Gesture | Result |
 |---|---|
@@ -1589,7 +1592,7 @@ the rows it has:
 | **Instmt/Dest** | What the track plays — see [Choosing an instrument](#143-choosing-an-instrument). **Click** to edit it, **Shift + click** to change it. |
 | **MIDI FX** | A Schwung MIDI-effect module in front of the instrument (separate from the [sequencer effects](#9-sequencer-effects)) |
 | **FX 1–4** | Four audio (insert) effects after it. Click an **empty** one to pick an effect. On a Move track these are the track's Move FX bus. |
-| **Volume, Pan, Send A, Send B** | The track's levels. **Shift + click** a send to land in that send's own effects; **Back** brings you home. |
+| **Volume, Pan, Send A, Send B** | The track's levels. **Shift + click** a send to land in that send's own effects (or touch its knob on MIX and click); **Back** brings you home. |
 | **Buses** | Voice groups, on instruments that can split their voices — see [Presets, LFOs and buses](#145-presets-lfos-and-buses) |
 | **LFOs** | Two LFOs for the track |
 | **Presets** | Save and load the whole chain |

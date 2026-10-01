@@ -65,13 +65,13 @@ import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
 import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, soundEnterBuses, soundEnterMasterFx, macroClearConfirmAnswer,
-    macroClearConfirmReset, macroClearConfirmOpen } from './ui_sound.mjs';
+    macroClearConfirmReset, macroClearConfirmOpen, soundMixSendClick, soundEnterSendFromSessionMixer } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
 /* ⚠ one-way: ui_render never imports this module (checked 2026-08-31) —
  * the visibility predicate must be the render's own or the click gate and
  * the screen can disagree. */
-import { bankCardVisible, sessMixerVisible, soundModeCovered } from './ui_render.mjs';
+import { bankCardVisible, sessMixerVisible, soundModeCovered, sessMixerCellOpens } from './ui_render.mjs';
 import { closeDaveBox } from './ui_daves.mjs';
 import { miActive, miClose, miOffered } from './ui_midi_import.mjs';
 import { devSnapOpen, devSnapLeave, devSnapUndo, devSnapRedo } from './ui_devsnap.mjs';
@@ -312,6 +312,16 @@ function _onCC_jog(d1, d2) {
             S.pendingMidiImportOpen = S.activeTrack;
             triggerFire('import');
         }
+        forceRedraw();
+        return;
+    }
+
+    /* MIX at REST (a touch peek, not latched): touch Send A / Send B and click
+     * = that send's effects (Josh, 2026-10-01). Latched, the click reaches
+     * sound mode's own handler, which asks the same soundMixSendClick. */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
+            S.activeBank === BANK_SOUND && S.knobTouched >= 0 && soundOpen() &&
+            soundMixSendClick(S.knobTouched)) {
         forceRedraw();
         return;
     }
@@ -863,6 +873,10 @@ function modalDialogUp() {
              * never a click on the other banks, which stays a no-op. */
             if (SESS_KNOB_MODES[S.sessKnobMode].widget === 'gateway')
                 soundEnterBuses();
+            /* SEND A / SEND B page: touch a track's send and click = that
+             * send's effects (Josh, 2026-10-01); Back returns to this page. */
+            else if (S.knobTouched >= 0 && sessMixerCellOpens(S.knobTouched))
+                soundEnterSendFromSessionMixer(SESS_KNOB_MODES[S.sessKnobMode].key, S.sessKnobMode);
         } else {
             S.sessMixerLatched = true;
             armBankDisplay();

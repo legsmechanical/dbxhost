@@ -2136,13 +2136,48 @@ function levelCells() {
                /* A fader's bar shows TRAVEL — see THE FADER LAW in ui_engine. */
                cell.norm = m.fader ? faderGainToTravel(v) : Math.max(0, Math.min(1, v / m.max)); }
         if (st) cell.auto = st.active ? 'auto' : 'auto-off';
+        if (mixSendBus(i)) cell.opens = true;        /* touch + click: the send's effects */
         cells.push(cell);
     }
     return cells;
 }
+/* MIX: TOUCH Send A or Send B and CLICK = that send's effects, the same place
+ * Shift + click on the send row of TRACK CONFIG goes (Josh, 2026-10-01: "touch
+ * click send a/b knob support in mix bank and session mixer to jump to
+ * respective send effects menu (just like shif+send in track configuration
+ * menu)"). The cells wear the corner brackets that say a click works there.
+ * Back returns to the MIX card (leaveBus, door 'mix'). */
+function mixSendBus(i) {
+    if (S.view !== VIEW_PROMPT || midiTrack()) return null;
+    const m = levelPageSpec(i);
+    if (!m || (m.key !== 'send_a' && m.key !== 'send_b')) return null;
+    return FX_BUSES.find(b => b.id === (m.key === 'send_a' ? 'sendA' : 'sendB')) || null;
+}
+export function soundMixSendClick(i) {
+    const bus = mixSendBus(i);
+    if (!bus) return false;
+    GS.bankCardLatched = true;          /* from a touch PEEK too: the card it comes back to stays up */
+    S.pendingAction = { t: 'bus', bus: bus, door: { kind: 'mix', slot: S.slot, bus: S.bus } };
+    S.dirty = true;
+    return true;
+}
+/* The session mixer's twin: from Session View, on its SEND A / SEND B page.
+ * Back returns to that page (door 'sessmix'). */
+export function soundEnterSendFromSessionMixer(key, mode) {
+    const bus = FX_BUSES.find(b => b.id === (key === 'send_a' ? 'sendA' : key === 'send_b' ? 'sendB' : ''));
+    if (!bus) return false;
+    soundEnterBuses();
+    S.pendingAction = { t: 'bus', bus: bus, door: { kind: 'sessmix', mode: mode } };
+    return true;
+}
+
 function levelCardHints() {
     /* MIX is no door (2026-09-26): the jog walks banks — or, with a step
-     * held, reveals its page (spec §2) — and Back leaves. */
+     * held, reveals its page (spec §2) — and Back leaves. A touched send
+     * knob takes the click to its effects. */
+    const _tk = S.touchedIdx >= 0 ? S.touchedIdx : GS.knobTouched;
+    const _sb = _tk >= 0 ? mixSendBus(_tk) : null;
+    if (_sb) return [['CLK', _sb.id === 'sendA' ? 'SEND A' : 'SEND B'], ['BACK', 'OUT']];
     const jog = GS.heldStep >= 0 ? ['JOG', 'STEP'] : ['JOG', 'BANK'];
     return [jog, ['BACK', 'OUT']];
 }
@@ -3106,8 +3141,30 @@ function leaveBus() {
     const door = S.busDoor;
     S.busDoor = null;
     S.bus = null;
+    /* MIX card / session mixer doors (Josh, 2026-10-01: touch a send knob and
+     * click, "just like shift+send in track configuration menu"): Back goes
+     * back to the card you clicked on. */
+    if (door && door.kind === 'mix') {
+        S.slot = door.slot;
+        S.bus = door.bus || null;
+        S.view = VIEW_PROMPT;
+        S.dirty = true;
+        return;
+    }
+    if (door && door.kind === 'sessmix') {
+        soundExit();
+        GS.sessMixerLatched = true;
+        GS.sessKnobMode = door.mode | 0;
+        GS.screenDirty = true;
+        forceRedraw();
+        return;
+    }
     if (door && door.kind === 'track') {
         S.slot = door.slot;
+        /* ⚠ AND the bus it was on: a Move track's sends are rows of its MOVE
+         * bus, and without this Back from that send landed on a chain slot's
+         * menu instead of the Move bus menu it came from. */
+        S.bus = door.bus || null;
         S.blockIdx = door.block | 0;
         S.view = VIEW_BLOCKS;
         refreshBlockNames();
@@ -9529,8 +9586,9 @@ export function soundOnCC(d1, d2, decodeDelta) {
             return true;
         }
         /* MIX has no door since 2026-09-26 (Josh: "take the click to enter the
-         * menu off of sound+config"): its click means nothing. */
-        if (S.view === VIEW_PROMPT) return true;
+         * menu off of sound+config"), except under a touched Send A / Send B
+         * knob: that send's effects (Josh, 2026-10-01). */
+        if (S.view === VIEW_PROMPT) { soundMixSendClick(S.touchedIdx); return true; }
         /* The CONFIG card: the click makes the list live, from its top. */
         if (S.view === VIEW_CFGCARD) { S.pickRow = 0; soundShowMenu(); return true; }
         if (S.view === VIEW_NOEDITOR) { soundShowMenu(); return true; }   /* the click means what Back means here */
@@ -9772,7 +9830,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
                 : null;
             if (S.shiftHeld && _sendBus) {
                 S.pendingAction = { t: 'bus', bus: _sendBus,
-                                    door: { kind: 'track', slot: S.slot,
+                                    door: { kind: 'track', slot: S.slot, bus: S.bus,
                                             block: S.blockIdx, row: S.pickRow } };
             } else if (_r.spec.toggle) {
                 /* A 0/1 value has nothing to scrub, so the click IS the edit.

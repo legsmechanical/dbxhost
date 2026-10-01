@@ -392,6 +392,30 @@ function drawSessionMixerPage() {
         renderSessionFxCard();
         return;
     }
+    const cells = sessMixerCells(mode);
+    if (mode.widget === 'vbar') { drawSessionFaderRow(cells, mode); return; }
+
+    /* Pan / sends: the kit grid of arcs, but WITHOUT drawKitPage's floating
+     * zoom box (Josh: "we can lose the big knob pop-ups for pan and sends").
+     * On a param bank that box is the read-out; here it is noise — it covers
+     * three of the eight tracks the page exists to compare, to magnify a number
+     * the header is already showing. So the header carries the value instead,
+     * exactly as the fader row does, and all eight arcs stay visible.
+     *
+     * The enum overlay goes with it: these cells have no options, so it would
+     * draw nothing anyway — calling neither is clearer than relying on that. */
+    const t = S.knobTouched;
+    const touched = (t >= 0 && cells[t] && cells[t].name) ? cells[t] : null;
+    if (touched) drawKitTouchedHeader(touched.name + '  ' + touched.text);
+    else drawBankHeading(mode.label, false);
+    drawKitCells(cells, t);
+    drawKitHintRow(MV_FOOTER_Y, touched && touched.opens ? [['CLK', mode.label], ['BACK', 'OUT']]
+                                                          : sessionMixerHints());
+}
+/* The session mixer's eight cells for one mode: what drawSessionMixerPage
+ * draws, and what the click asks (sessMixerCellOpens), so the gate and the
+ * screen cannot disagree. */
+function sessMixerCells(mode) {
     const cells = [];
     for (let t = 0; t < NUM_TRACKS; t++) {
         const label = 'Tr' + (t + 1);
@@ -422,6 +446,9 @@ function drawSessionMixerPage() {
             const st = automationStateFor(t, effectiveClip(t), _tgs[0].target);
             if (st) cell.auto = st.active ? 'auto' : 'auto-off';
         }
+        /* A send: touch + click opens that send's effects (Josh, 2026-10-01),
+         * so the cell wears the corner brackets that say so. */
+        if (mode.key === 'send_a' || mode.key === 'send_b') cell.opens = true;
         if (mode.widget === 'arcbip') {
             /* -1..+1 around centre, which is what the bipolar arc draws from. */
             cell.kind = 'arcbip';
@@ -437,23 +464,15 @@ function drawSessionMixerPage() {
         }
         cells.push(cell);
     }
-    if (mode.widget === 'vbar') { drawSessionFaderRow(cells, mode); return; }
-
-    /* Pan / sends: the kit grid of arcs, but WITHOUT drawKitPage's floating
-     * zoom box (Josh: "we can lose the big knob pop-ups for pan and sends").
-     * On a param bank that box is the read-out; here it is noise — it covers
-     * three of the eight tracks the page exists to compare, to magnify a number
-     * the header is already showing. So the header carries the value instead,
-     * exactly as the fader row does, and all eight arcs stay visible.
-     *
-     * The enum overlay goes with it: these cells have no options, so it would
-     * draw nothing anyway — calling neither is clearer than relying on that. */
-    const t = S.knobTouched;
-    const touched = (t >= 0 && cells[t] && cells[t].name) ? cells[t] : null;
-    if (touched) drawKitTouchedHeader(touched.name + '  ' + touched.text);
-    else drawBankHeading(mode.label, false);
-    drawKitCells(cells, t);
-    drawKitHintRow(MV_FOOTER_Y, sessionMixerHints());
+    return cells;
+}
+/* On the SEND A / SEND B page: does track t's cell take touch + click to the
+ * send's effects (Josh, 2026-10-01)? The cells that draw with brackets. */
+export function sessMixerCellOpens(t) {
+    const mode = SESS_KNOB_MODES[S.sessKnobMode];
+    if (!mode || (mode.key !== 'send_a' && mode.key !== 'send_b')) return false;
+    const c = sessMixerCells(mode)[t];
+    return !!(c && c.opens);
 }
 /* The session mixer pages wear the bank-card chassis (Josh, 2026-09-05: "aligned
  * with track bank UI organization and aesthetics"): the glyph header, the kit
