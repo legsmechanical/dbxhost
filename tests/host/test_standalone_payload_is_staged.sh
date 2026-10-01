@@ -46,6 +46,31 @@ if ! grep -q 'scripts/exit-to-stock.sh' src/shadow/shadow_ui.js; then
   fail=1
 fi
 
+# Every helper a STAGED script imports must be staged too: project-cmd.sh's
+# list once imported a new project_template.py the build did not copy, which
+# would have killed every project verb on the device while every test here,
+# run from the source tree, passed.
+missing="$(python3 - <<'PY'
+import os, re
+build = open("scripts/build.sh").read()
+staged = set(re.findall(r"cp \./standalone/scripts/(\S+) \./build/scripts/", build))
+helpers = {f[:-3] for f in os.listdir("standalone/scripts") if f.endswith(".py")}
+out = []
+for f in sorted(staged):
+    src = open(os.path.join("standalone/scripts", f), errors="replace").read()
+    for m in re.finditer(r"^\s*(?:import\s+([\w, ]+?)(?:\s+as\s+\w+)?|from\s+(\w+)\s+import)\b", src, re.M):
+        for name in re.split(r"\s*,\s*", (m.group(1) or m.group(2) or "").strip()):
+            name = name.split(" as ")[0].strip()
+            if name in helpers and name + ".py" not in staged:
+                out.append("%s imports %s.py, which the build does not stage" % (f, name))
+print("\n".join(sorted(set(out))))
+PY
+)"
+if [ -n "$missing" ]; then
+  echo "FAIL: $missing" >&2
+  fail=1
+fi
+
 if [ "$fail" != "0" ]; then
   exit 1
 fi

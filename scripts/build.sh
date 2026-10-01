@@ -746,6 +746,10 @@ if [ -d ./standalone ]; then
     # and its name tag. project-cmd.sh and select-list.sh import it; without it
     # every project verb dies on the import and the picker names nothing.
     cp ./standalone/scripts/project_name.py ./build/scripts/
+    # project_template.py: saved project templates (Set as Template, New from
+    # one). project-cmd.sh's list imports it, so without it EVERY list dies on
+    # the import and the picker is empty.
+    cp ./standalone/scripts/project_template.py ./build/scripts/
     # move-loaded-set-reader.sh: backgrounded by launch.sh to distill
     # MoveOriginal's own "About to load ..." boot line into
     # move_loaded_set.txt (see that script for the file contract).

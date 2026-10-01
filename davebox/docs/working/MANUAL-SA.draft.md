@@ -2215,6 +2215,8 @@ project, 32 slots:
   and opens it in the same press.
 - **Copy:** hold Copy, tap the project, then tap an empty pad. Releasing Copy
   cancels. The copy is a snapshot, colors and all, named "*Name* Copy".
+- **From your template:** once you have saved a template (below), creating a
+  project asks **Empty** or **Template** (Template selected); Shift + tap asks too.
 - **Delete:** hold Delete, tap the project, tap it again to confirm (it blinks red
   in between). Releasing cancels. You can delete the project you're in: the screen
   warns that dAVEBOx will restart, and it returns a few seconds later at the
@@ -2225,6 +2227,20 @@ project, 32 slots:
   dAVEBOx saves nothing until a project is open. **Retry** tries the same project
   again; **Back** returns to the picker. If the project list itself can't be read,
   the screen says so and offers **Retry** or **Quit**.
+
+**Project template.** **Project Settings → Set as Template** saves a copy of the
+project you're in as the starting point for new projects: its project settings,
+the instrument and effects on each track with their settings, the MACROS, and
+the track settings (type, layout, transpose, VelIn, aftertouch, looper, and
+where each track plays — a MIDI track's program, a drum track's pad notes). No
+clips, notes or automation come along, and every sequencer bank (NOTE FX,
+HARMONY, DELAY, SEQ ARP, LIVE ARP…) starts at its default. The template is its
+own copy: changing or deleting the project afterwards doesn't touch it. Setting a
+template when you already have one asks before replacing it. **Clear Template**
+(shown while you have one) makes New start empty again.
+
+If a template uses a module this Move doesn't have, the new project starts with
+that slot empty and the screen names what's missing (**MODULES MISSING**).
 
 > **Coming from an earlier dAVEBOx?** Work made when dAVEBOx used your Move sets
 > stays in those sets, visible from Move and official Schwung. dAVEBOx projects
