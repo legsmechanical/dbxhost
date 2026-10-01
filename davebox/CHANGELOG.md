@@ -12,6 +12,9 @@ the section into a versioned heading at release time.
   paste it — keep holding Copy to paste it again, Shift + Copy cuts. Pasting
   past the end of the clip makes the clip longer. Works on a drum lane, or all
   lanes on the ALL LANES bank. Notes only; automation stays put.
+- **Tap Loop to keep the loop view up** (Track View). Set the loop with the
+  step buttons and jog hands-free; tap Loop again or press Back to close it.
+  Holding Loop works as before.
 
 ## [0.0.9] — 2026-09-30 (test build, not in the Schwung catalog)
 ### Fixed

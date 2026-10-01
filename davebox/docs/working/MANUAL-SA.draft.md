@@ -807,6 +807,13 @@ is held:
 Notes outside the loop are kept and return when you widen it. For example, to make
 a 2-bar clip on the 1/16 grid, hold **Loop** and tap **Step 2**.
 
+**Tap** Loop instead of holding it and the loop view stays up (the Loop button lights
+white) so you can set the loop with your hands free. The pads keep playing. Tap Loop
+again, or press **Back**, to close it; switching to Session View or opening a menu
+closes it too. A tap that already does something else still does only that: on a
+drum track with a latched repeat it releases the repeat, and with the arpeggiator's
+latch holding notes it clears them.
+
 **Copying pages.** Hold **Loop** and **Copy**, tap a lit page (it blinks), then tap
 another page: it becomes an exact copy — every note, velocity, length and step
 setting; empty steps too. Keep holding Copy to paste onto more pages. **Shift +
@@ -2343,7 +2350,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Shift + top / bottom side button | Scroll the four visible clips up / down one (the same window for every track) |
 | Jog turn / click | Cycle banks / open the bank · alt-parameters |
 | Shift + jog / Shift + bottom pad | Switch tracks |
-| Loop (hold) / Loop + jog | Loop view / clip length |
+| Loop (hold, or tap to keep it up) / Loop + jog | Loop view / clip length |
 | Loop + step (or two steps) | Set the loop to those pages |
 | Loop + Copy + page → another page (Shift = cut) | Copy a whole page |
 | Steps pressed together / hold a step, then tap a later one | Toggle them all / stretch the note to reach it |
