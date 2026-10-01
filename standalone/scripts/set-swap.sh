@@ -152,7 +152,10 @@ heal_umount() { "$HEAL_BIN" --umount-sets; }
 #     pairing made outside a session still works inside one;
 #   - the fields the session depends on are forced: autoload ON (the whole
 #     project machinery boots Move into currentSongIndex), onboarding done and
-#     no update pop-up (neither may cover a session's screen).
+#     no update pop-up (neither may cover a session's screen), and Move's Link
+#     setting on Tempo — Link on, start/stop sync off (Josh, 2026-10-01: "dave
+#     box should always start with moves link setting set to tempo"). A change
+#     made inside a session lasts until the next session starts.
 # And once, when the copy is first made: Full Velocity OFF. A new project clears
 # it (project-cmd.sh clear_full_velocity — Josh: "always off by default when new
 # sets are created"), but the FIRST project is born before this copy exists, so
@@ -185,6 +188,8 @@ d.setdefault("currentSongIndex", 0)
 d["isAutoloadEnabled"] = True
 d["isOnboardingDone"] = True
 d["shouldShowUpdateNotification"] = False
+d["isLinkEnabled"] = True
+d["isLinkStartStopSyncEnabled"] = False
 if first:
     d["isFullVelocityOn"] = False
 tmp = path + ".seed.tmp"

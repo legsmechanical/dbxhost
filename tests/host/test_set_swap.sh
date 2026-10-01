@@ -370,7 +370,7 @@ rm -rf "$T"
 # session changes lands in its own copy, the user's folder is never written,
 # and the copy persists from one session to the next.
 mk_env
-printf '{\n  "currentSongIndex": 1,\n  "midiClockMode": "output",\n  "isAutoloadEnabled": false,\n  "isOnboardingDone": false\n}\n' > "$SETTINGS_JSON"
+printf '{\n  "currentSongIndex": 1,\n  "midiClockMode": "output",\n  "isAutoloadEnabled": false,\n  "isOnboardingDone": false,\n  "isLinkEnabled": false,\n  "isLinkStartStopSyncEnabled": false\n}\n' > "$SETTINGS_JSON"
 echo 3 > "$MOVE_SETTINGS_DIR/attemptedDemoSongInstallationVersion"
 echo login-v1 > "$MOVE_SETTINGS_DIR/web-webServiceAuthentication.db"
 cp -p "$SETTINGS_JSON" "$T/user-settings.before"
@@ -380,9 +380,12 @@ check "9 seeded from the user's settings (their MIDI clock)" grep -q '"midiClock
 check "9 autoload forced ON in the session copy" grep -q '"isAutoloadEnabled": true' "$SETTINGS_JSON"
 check "9 onboarding forced done, no update pop-up" sh -c 'grep -q "\"isOnboardingDone\": true" "$1" && grep -q "\"shouldShowUpdateNotification\": false" "$1"' _ "$SETTINGS_JSON"
 check "9 the session index went into the SESSION copy" grep -q '"currentSongIndex": 0' "$SETTINGS_JSON"
+check "9 Link on Tempo in the session (the user's is Off)" sh -c 'grep -q "\"isLinkEnabled\": true" "$1" && grep -q "\"isLinkStartStopSyncEnabled\": false" "$1"' _ "$SETTINGS_JSON"
 check "9 the demo-song marker and web login came along" sh -c 'test "$(cat "$1/attemptedDemoSongInstallationVersion")" = 3 && test "$(cat "$1/web-webServiceAuthentication.db")" = login-v1' _ "$T/dbx/settings"
 # The session's Move changes a setting (in place, as Move does).
 sed -i.bak 's/"midiClockMode": "output"/"midiClockMode": "off"/' "$SETTINGS_JSON"; rm -f "$SETTINGS_JSON.bak"
+# …and its Link to Start/Stop (Link on, start/stop sync on).
+sed -i.bak 's/"isLinkStartStopSyncEnabled": false/"isLinkStartStopSyncEnabled": true/' "$SETTINGS_JSON"; rm -f "$SETTINGS_JSON.bak"
 check "9 control: the change is visible in the session" grep -q '"midiClockMode": "off"' "$SETTINGS_JSON"
 check "9 the user's own file is untouched mid-session" cmp -s "$T/settings.native/Settings.json" "$T/user-settings.before"
 run exit
@@ -395,6 +398,7 @@ sed -i.bak 's/"midiClockMode": "output"/"midiClockMode": "input"/' "$SETTINGS_JS
 run enter
 check "9 re-enter: the session keeps ITS setting, not the user's new one" grep -q '"midiClockMode": "off"' "$SETTINGS_JSON"
 check "9 re-enter: the web login is refreshed from the user's" test "$(cat "$T/dbx/settings/web-webServiceAuthentication.db")" = login-v2
+check "9 re-enter: Link is back on Tempo (every session starts there)" sh -c 'grep -q "\"isLinkEnabled\": true" "$1" && grep -q "\"isLinkStartStopSyncEnabled\": false" "$1"' _ "$SETTINGS_JSON"
 run exit
 check "9 re-exit: the user's change stands" grep -q '"midiClockMode": "input"' "$SETTINGS_JSON"
 rm -rf "$T"
