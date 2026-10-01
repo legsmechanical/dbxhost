@@ -79,6 +79,16 @@ int main(void) {
         HX_ASSERT(fx->pitch_refcount[70] == 0 && offs_for(70) == 1, "the looper's count was not cleared at the stop");
         HX_ASSERT(fx->pitch_refcount[72] == 1 && offs_for(72) == 0, "the stop cut a live note begun after it");
         checks += 2;
+        /* the SAME pitch: the looper held 74 twice, a live 74 began after the stop */
+        fx->pitch_refcount[74] = 2;
+        in->looper_state = LOOPER_STATE_LOOPING; in->looper_capture_ticks = 48;
+        looper_stop(in);
+        fx->pitch_refcount[74] += 1;
+        hx_clear_capture(h);
+        looper_tick(in);
+        HX_ASSERT(fx->pitch_refcount[74] == 1 && offs_for(74) == 0,
+                  "the stop took the live note's share of its pitch too (cut it)");
+        checks++;
     }
 
     hx_destroy(h);
