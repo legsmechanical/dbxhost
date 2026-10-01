@@ -1,5 +1,6 @@
 /* tests/test_fresh_project_track1_drum.c — a project with no saved state opens
- * with track 1 in DRUM mode, whatever the project before it was.
+ * with track 1 in DRUM mode, whatever the project before it was — and with none
+ * of that project's notes or parameter automation.
  *
  * Reported by a tester on a fresh install ("the first is a drumpad i think, but
  * the pads are in chromatic layout") and seen intermittently by Josh. The
@@ -50,7 +51,17 @@ int main(void) {
     HX_ASSERT(in->tracks[0].pad_mode != PAD_MODE_DRUM, "rig: track 1 did not leave drum mode"); checks++;
     HX_ASSERT(in->tracks[2].pad_mode == PAD_MODE_DRUM, "rig: track 3 did not enter drum mode"); checks++;
 
+    /* ...and parameter automation recorded on track 1 (a knob's moves). */
+    hx_set_param(h, "t0_pa_set", "0 cc:74 0 100");
+    static char pal[4096];
+    hx_get_param(h, "pa_list", pal, (int)sizeof pal);
+    HX_ASSERT(strstr(pal, "cc:74") != NULL, "rig: the automation was not recorded"); checks++;
+
     hx_set_param(h, "state_load", FRESH_UUID);
+    pal[0] = 0;
+    hx_get_param(h, "pa_list", pal, (int)sizeof pal);
+    HX_ASSERT(strstr(pal, "cc:74") == NULL,
+              "the previous project's automation played on in the new one"); checks++;
     HX_ASSERT(in->tracks[0].pad_mode == PAD_MODE_DRUM,
               "a project with no saved state opened with track 1 NOT in drum mode"); checks++;
     HX_ASSERT(in->tracks[2].pad_mode == PAD_MODE_MELODIC_SCALE,

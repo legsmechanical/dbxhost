@@ -33,6 +33,7 @@ the section into a versioned heading at release time.
 - **Track Mode reads Melodic / Drums.** The TRACK CONFIG Mode row said "Keys" for a
   melodic track; it now says **Melodic**.
 ### Fixed
+- **A new project no longer starts with the last project's automation.**
 - **Back from a Move track's send effects** returned to the wrong menu; it now
   comes back to that track's menu.
 

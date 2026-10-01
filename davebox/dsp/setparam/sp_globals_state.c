@@ -294,6 +294,9 @@ static int sp_globals_state(sp_ctx_t *cx) {
         inst->clock_follow_on      = 0;
         inst->clock_send_on        = 0;
         inst->xpose_preview_active = 0;
+        /* Parameter automation too: only a file that PARSES replaces it (pa_parse
+         * resets first), so a brand-new project played the previous one's. */
+        pa_reset_all(inst);
         {
             /* Same derivation as create_instance: prefer the host's live tempo,
              * fall back to the compiled default. */
