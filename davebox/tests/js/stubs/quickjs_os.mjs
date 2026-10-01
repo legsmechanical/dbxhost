@@ -18,6 +18,8 @@ export function stat(p) {
     const m = globalThis.__stubStat;
     const k = String(p);
     if (m && Object.prototype.hasOwnProperty.call(m, k)) return [m[k], 0];
+    const w = globalThis.__stubStdWritten;       /* a file the std stub wrote */
+    if (w && Object.prototype.hasOwnProperty.call(w, k)) return [{ size: w[k].length, mode: 0o100644 }, 0];
     return [null, 2 /* ENOENT */];
 }
 export function open() { return -1; }
@@ -54,4 +56,22 @@ export function realpath(p) {
         return [_realpathMap[k], 0];
     }
     return ['', 2 /* ENOENT */];
+}
+
+/* rename / remove act on the std stub's written files (`__stubStdWritten`) and
+ * answer 0 or -errno, as QuickJS does. With nothing there: -ENOENT. */
+export function rename(from, to) {
+    const w = globalThis.__stubStdWritten;
+    const f = String(from), t = String(to);
+    if (!w || !Object.prototype.hasOwnProperty.call(w, f)) return -2;
+    if (globalThis.__stubOsRenameFail) return -28;   /* ENOSPC: a test's injected failure */
+    w[t] = w[f]; delete w[f];
+    return 0;
+}
+export function remove(p) {
+    const w = globalThis.__stubStdWritten;
+    const k = String(p);
+    if (!w || !Object.prototype.hasOwnProperty.call(w, k)) return -2;
+    delete w[k];
+    return 0;
 }

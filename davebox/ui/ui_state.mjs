@@ -799,6 +799,7 @@ export const S = {
      * instead of the bank's prompt. */
     pendingSoundEnterMenu: false,
     backHoldFired: false,
+    pendingMidiExport: null,       /* Export to MIDI (TRACK CONFIG row): { t, c, run } — armed by the click, run by the tick (ui_midi_export.mjs) */
     pendingExport: false,          /* Ableton .ablbundle export — set by menu action, drained in tick() (get_param-safe) */
     pendingExportRun: false,       /* phase 2 of export: armed after EXPORTING popup renders, does the blocking work */
     /* Snapshot picker (Save state / Load state). Self-contained modal like the

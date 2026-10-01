@@ -17,7 +17,26 @@ export function loadFile(path) {
 /* Binary reads: a test that needs one installs `globalThis.__stubStdBinFiles`,
  * a path -> Uint8Array map, and gets a FILE-like object back; anything else is
  * "cannot open", as before. */
-export function open(path) {
+export function open(path, mode) {
+    /* WRITES ('w…'): a test that wants them installs `globalThis.__stubStdWritten`,
+     * a path -> Uint8Array map the FILE fills on close. `__stubStdOpenFail`
+     * (a path predicate) makes an open fail; without the map a write-open
+     * fails, as before. */
+    if (/^w/.test(String(mode || ''))) {
+        const out = globalThis.__stubStdWritten;
+        const fail = globalThis.__stubStdOpenFail;
+        if (!out || (fail && fail(String(path)))) return null;
+        const chunks = [];
+        return {
+            write(buf, off, len) { chunks.push(new Uint8Array(buf, off, len).slice()); return len; },
+            close() {
+                const n = chunks.reduce((a, c) => a + c.length, 0), all = new Uint8Array(n);
+                let at = 0; for (const c of chunks) { all.set(c, at); at += c.length; }
+                out[String(path)] = all;
+                return 0;
+            },
+        };
+    }
     const files = globalThis.__stubStdBinFiles;
     if (!files || !Object.prototype.hasOwnProperty.call(files, path)) return null;
     const bytes = files[path];

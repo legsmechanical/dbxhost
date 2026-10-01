@@ -1604,7 +1604,7 @@ the rows it has:
 | **Buses** | Voice groups, on instruments that can split their voices — see [Presets, LFOs and buses](#145-presets-lfos-and-buses) |
 | **LFOs** | Two LFOs for the track |
 | **Presets** | Save and load the whole chain |
-| **Mode, Layout, Transpose, VelIn, Looper, AftTch, Parallel** | The track's own settings — see [Track settings](#174-track-settings) |
+| **Mode, Layout, Transpose, VelIn, Looper, AftTch, Export to MIDI, Parallel** | The track's own settings — see [Track settings](#174-track-settings) |
 
 On the Instmt/Dest and effect rows, a hint band at the foot of the menu says what
 the click and the Shift chord do.
@@ -2056,7 +2056,21 @@ melodic track can each come back to their own folder.
 - The transport keeps running while you browse; the step buttons are blocked
   (lit dim).
 
-## 16.5 Recording audio
+
+## 16.5 Export a clip as a MIDI file
+
+Open the track's **TRACK CONFIG** menu, turn to **Export to MIDI** and click. The
+clip you are on is saved as a standard MIDI file, **as it plays**: NOTE FX,
+harmony, the arp and the delay are baked in, a clip with random settings is saved
+as 8 cycles, and a track that follows the Conductor is saved transposed. A drum
+clip is one file, each lane on its own note (channel 10).
+
+The file goes to the **dAVEBOx MIDI** folder in your user data, named after the
+project, track and clip (`mngk 3B.mid`); a second export of the same clip adds ` 2`
+rather than overwriting. Download it from the **Files** page of the Schwung web
+manager, or bring it back with [Import MIDI](#164-import-a-midi-file). Stop the
+transport first — like the Ableton export, it won't run while playing.
+## 16.6 Recording audio
 
 dAVEBOx records MIDI, not sound. To record the Move's audio output to a WAV file,
 use the **Quantized Sampler** built into Schwung: hold **Shift**, touch the **Volume** knob and
@@ -2163,6 +2177,7 @@ are hidden, so the list is shorter on a MIDI track or a Conductor.
 | Transpose | −24…+24 st | Shifts everything the track plays |
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |
 | Looper | On, Off | Feeds [Performance Mode](#13-performance-mode) |
+| Export to MIDI | (click) | Saves the clip you are on, as it plays, as a MIDI file — see [Export a clip as a MIDI file](#165-export-a-clip-as-a-midi-file) |
 | AftTch | Off, Poly, Chan | Pad-pressure aftertouch (melodic; a Move track offers Off and Poly) |
 | Parallel | On, Off | Schwung tracks with an instrument: whether it may render on another core — set per instrument, device-wide |
 

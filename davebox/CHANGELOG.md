@@ -26,6 +26,11 @@ the section into a versioned heading at release time.
 - **Back steps up through the MIDI browser.** In the file list, Back goes up a
   folder at a time (and out of a multi-part file); at the top it leaves the
   browser. Hold Back still leaves from anywhere.
+### Added
+- **Export a clip as a MIDI file.** A new **Export to MIDI** row on the
+  track's TRACK CONFIG menu saves the clip you are on, as it plays, to a
+  "dAVEBOx MIDI" folder in your user data — download it from Schwung Manager's
+  Files page, or bring it back with Import MIDI. Stop the transport first.
 
 ## [0.0.9] — 2026-09-30 (test build, not in the Schwung catalog)
 ### Fixed
