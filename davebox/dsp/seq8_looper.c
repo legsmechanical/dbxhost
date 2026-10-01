@@ -16,6 +16,129 @@ static inline void looper_mark_active(seq8_instance_t *inst, uint8_t track,
     inst->perf_emitted_pitch[track][raw_pitch] = emitted_pitch;
 }
 
+static void pfx_note_off_imm(seq8_instance_t *inst, seq8_track_t *tr, uint8_t orig_note);
+static void drum_pfx_emit(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2);
+static void drum_pfx_note_off_imm(seq8_instance_t *inst, seq8_track_t *tr,
+                                  drum_pfx_t *px, uint8_t pitch);
+
+/* Every message the looper itself sends. It is the looper's OWN output, so it
+ * bypasses both gates in pfx_send: the looper hook (looper_emitting) and the
+ * SEQ ARP's input (arp_emitting). Without the second, a SEQ ARP track's replay
+ * was fed back into its arp, whose output the LOOPING hook then suppressed —
+ * the track replayed nothing at all (2026-10-01). */
+static void looper_out(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
+    uint8_t le = g_inst ? g_inst->looper_emitting : 0;
+    uint8_t ae = fx->arp_emitting;
+    if (g_inst) g_inst->looper_emitting = 1;
+    fx->arp_emitting = 1;
+    pfx_send(fx, status, d1, d2);
+    fx->arp_emitting = ae;
+    if (g_inst) g_inst->looper_emitting = le;
+}
+
+/* Drop every queued NOTE event, sending each queued note-off now — except one
+ * whose note-on was dropped with it (a note that never sounded must not take a
+ * count from another source). Other events stay. Direct to the output: the
+ * queue's own path (pfx_q_fire → pfx_send) is exactly what the LOOPING hook
+ * suppresses. Bounded: one pass over the queue, 128 bytes of stack. */
+static void looper_flush_pfx_q(play_fx_t *fx) {
+    uint8_t dropped_on[128];
+    memset(dropped_on, 0, sizeof dropped_on);
+    int k = 0;
+    for (int i = 0; i < fx->event_count; i++) {
+        uint8_t s = fx->events[i].msg[0], st = s & 0xF0, d1 = fx->events[i].msg[1] & 0x7F;
+        if (st == 0x90 && fx->events[i].msg[2] > 0) { if (dropped_on[d1] < 255) dropped_on[d1]++; continue; }
+        if (st == 0x80 || st == 0x90) {
+            if (dropped_on[d1]) dropped_on[d1]--;
+            else pfx_emit(fx, s, d1, 0);
+            continue;
+        }
+        fx->events[k++] = fx->events[i];
+    }
+    fx->event_count = k;
+}
+static void looper_flush_drum_q(drum_pfx_t *px) {
+    uint8_t dropped_on[128];
+    memset(dropped_on, 0, sizeof dropped_on);
+    int k = 0;
+    for (int i = 0; i < px->event_count; i++) {
+        uint8_t s = px->events[i].msg[0], st = s & 0xF0, d1 = px->events[i].msg[1] & 0x7F;
+        if (st == 0x90 && px->events[i].msg[2] > 0) { if (dropped_on[d1] < 255) dropped_on[d1]++; continue; }
+        if (st == 0x80 || st == 0x90) {
+            if (dropped_on[d1]) dropped_on[d1]--;
+            else drum_pfx_emit(px, s, d1, 0);
+            continue;
+        }
+        px->events[k++] = px->events[i];
+    }
+    px->event_count = k;
+}
+
+/* Release EVERYTHING sounding on the looped tracks, now: held notes (pads),
+ * the sequencer's pending notes, the arps, and every note-off sitting in a
+ * queue. At the CAPTURING→LOOPING switch the sequencer's note-offs used to be
+ * QUEUED for the end of each gate and then fire into the loop's suppression —
+ * the note stuck, and its pitch count blocked its own replay (2026-10-01). */
+static void looper_release_tracks(seq8_instance_t *inst) {
+    uint8_t le = inst->looper_emitting;
+    inst->looper_emitting = 1;
+    for (int t = 0; t < NUM_TRACKS; t++) {
+        seq8_track_t *tr = &inst->tracks[t];
+        if (!tr->pfx.looper_on || tr->pad_mode == PAD_MODE_CONDUCT) continue;
+        for (int p = 0; p < 128; p++)
+            if (tr->pfx.active_notes[p].active) pfx_note_off_imm(inst, tr, (uint8_t)p);
+        if (tr->pad_mode == PAD_MODE_DRUM)
+            for (int l = 0; l < DRUM_LANES; l++)
+                drum_pfx_note_off_imm(inst, tr, &tr->drum_lane_pfx[l], 0);
+        silence_track_notes_v2(inst, tr);
+        looper_flush_pfx_q(&tr->pfx);
+        if (tr->pad_mode == PAD_MODE_DRUM)
+            for (int l = 0; l < DRUM_LANES; l++)
+                looper_flush_drum_q(&tr->drum_lane_pfx[l]);
+    }
+    inst->looper_emitting = le;
+}
+
+/* Close every captured note-on that has no note-off in the capture: its off fell
+ * at or after the capture's end. Replayed on-only, it raised the track output's
+ * per-pitch count every cycle and nothing lowered it — after the first replay
+ * that pitch was dropped for good, in this loop and every later one (drums: "no
+ * repeating at all … just silence"; melodic: stuck notes; 2026-10-01). The off
+ * goes at cap-1, the loop's last tick: the buffer stays tick-sorted (every
+ * captured tick < cap) and it lands before the note's next replay. With the
+ * buffer full, the open note-on itself becomes a vel-0 on (= an off). */
+static void looper_close_open_notes(seq8_instance_t *inst) {
+    uint8_t open[NUM_TRACKS][128];
+    memset(open, 0, sizeof open);
+    uint16_t n = inst->looper_event_count;
+    for (uint16_t i = 0; i < n; i++) {
+        uint8_t tr = inst->looper_events[i].track, st = inst->looper_events[i].status & 0xF0;
+        uint8_t d1 = inst->looper_events[i].d1 & 0x7F;
+        if (tr >= NUM_TRACKS) continue;
+        if (st == 0x90 && inst->looper_events[i].d2 > 0) { if (open[tr][d1] < 255) open[tr][d1]++; }
+        else if ((st == 0x80 || st == 0x90) && open[tr][d1]) open[tr][d1]--;   /* an off with no open on (the note began before the capture) changes nothing */
+    }
+    uint16_t cap = inst->looper_capture_ticks;
+    /* Walk the note-ons from the END: the last on of a pitch is the open one. */
+    for (int i = (int)n - 1; i >= 0; i--) {
+        uint8_t tr = inst->looper_events[i].track, s = inst->looper_events[i].status;
+        uint8_t d1 = inst->looper_events[i].d1 & 0x7F;
+        if (tr >= NUM_TRACKS || (s & 0xF0) != 0x90 || inst->looper_events[i].d2 == 0) continue;
+        if (!open[tr][d1]) continue;
+        open[tr][d1]--;
+        if (inst->looper_event_count < LOOPER_MAX_EVENTS) {
+            int ei = (int)inst->looper_event_count++;
+            inst->looper_events[ei].tick   = (uint16_t)(cap > 0 ? cap - 1 : 0);
+            inst->looper_events[ei].status = (uint8_t)(0x80 | (s & 0x0F));
+            inst->looper_events[ei].d1     = d1;
+            inst->looper_events[ei].d2     = 0;
+            inst->looper_events[ei].track  = tr;
+        } else {
+            inst->looper_events[i].d2 = 0;
+        }
+    }
+}
+
 /* Send note-offs for every sounding looper note and drain pending queues.
  * Handles both tracked notes (perf_emitted_pitch) and phantom notes
  * (staccato queue, raw_pitch=0xFF sentinel = not in emitted table).
@@ -29,7 +152,7 @@ static void looper_silence_active(seq8_instance_t *inst) {
         for (p = 0; p < 128; p++) {
             uint8_t ep = inst->perf_emitted_pitch[t][p];
             if (ep != 0xFF) {
-                pfx_send(fx, (uint8_t)(0x80 | inst->tracks[t].channel), ep, 0);
+                looper_out(fx, (uint8_t)(0x80 | inst->tracks[t].channel), ep, 0);
                 inst->perf_emitted_pitch[t][p] = 0xFF;
             }
         }
@@ -40,7 +163,7 @@ static void looper_silence_active(seq8_instance_t *inst) {
             uint8_t tr = inst->perf_staccato_notes[si].track;
             uint8_t ep = inst->perf_staccato_notes[si].emitted_pitch;
             if (tr < NUM_TRACKS)
-                pfx_send(&inst->tracks[tr].pfx,
+                looper_out(&inst->tracks[tr].pfx,
                          (uint8_t)(0x80 | inst->tracks[tr].channel), ep, 0);
         }
     }
@@ -58,7 +181,7 @@ static void looper_silence_active(seq8_instance_t *inst) {
             uint8_t tr = inst->looper_events[ei].track;
             uint8_t d1 = inst->looper_events[ei].d1;
             if (tr < NUM_TRACKS)
-                pfx_send(&inst->tracks[tr].pfx,
+                looper_out(&inst->tracks[tr].pfx,
                          (uint8_t)(0x80 | inst->tracks[tr].channel), d1, 0);
         }
     }
@@ -81,10 +204,19 @@ static int perf_apply(seq8_instance_t *inst, uint8_t tr_idx,
     /* Note-off: always use xlate table so pitch matches what was emitted. */
     if (is_off) {
         if (tr_idx >= NUM_TRACKS || *d1 >= 128) return 0;
-        uint8_t ep = inst->perf_emitted_pitch[tr_idx][*d1];
+        uint8_t raw = *d1;
+        uint8_t ep = inst->perf_emitted_pitch[tr_idx][raw];
         if (ep == 0xFF) return 0;
         *d1 = ep;
-        if (mods & (PERF_MOD_STACCATO | PERF_MOD_LEGATO | PERF_MOD_RAMP_GATE)) return 0;
+        /* A gate mod sends this note's off itself — but only for a note-on it
+         * actually QUEUED one for (the queue holds 32; a mod switched on
+         * mid-note queued none). Drop the captured off only then, or the note
+         * never ends and its pitch stays counted (2026-10-01). */
+        if (mods & (PERF_MOD_STACCATO | PERF_MOD_LEGATO | PERF_MOD_RAMP_GATE)) {
+            for (int si = 0; si < (int)inst->perf_staccato_count; si++)
+                if (inst->perf_staccato_notes[si].track == tr_idx &&
+                    inst->perf_staccato_notes[si].raw_pitch == raw) return 0;
+        }
         return 1;
     }
 
@@ -239,7 +371,36 @@ static void looper_tick(seq8_instance_t *inst) {
     /* Drain deferred silence from looper_stop (render_block context → safe for ROUTE_MOVE). */
     if (inst->looper_pending_silence) {
         looper_silence_active(inst);
+        /* After a LOOPING pass every note counted on a looped track is the
+         * looper's (live notes were suppressed before the count), so end them
+         * all: a count left behind drops that pitch from every later loop. */
+        if (inst->looper_stop_was_looping) {
+            /* Remove exactly the count each pitch had AT the stop (looper_stop
+             * snapshots it): a live note begun since — a retrigger goes straight
+             * back to capturing — keeps its own count and keeps sounding. */
+            uint8_t le = inst->looper_emitting;
+            inst->looper_emitting = 1;
+            for (int t = 0; t < NUM_TRACKS; t++) {
+                play_fx_t *fx = &inst->tracks[t].pfx;
+                for (int p = 0; p < 128; p++) {
+                    uint8_t snap = inst->looper_stop_counts[t][p];
+                    if (!snap) continue;
+                    inst->looper_stop_counts[t][p] = 0;
+                    if (!fx->pitch_refcount[p]) continue;
+                    fx->pitch_refcount[p] = (fx->pitch_refcount[p] > snap)
+                                            ? (uint8_t)(fx->pitch_refcount[p] - snap + 1) : 1;
+                    pfx_emit(fx, (uint8_t)(0x80 | inst->tracks[t].channel), (uint8_t)p, 0);
+                }
+            }
+            inst->looper_emitting = le;
+            inst->looper_stop_was_looping = 0;
+        }
         inst->looper_pending_silence = 0;
+        /* looper_stop leaves these for the drain (its sweeps read them). */
+        if (inst->looper_state == LOOPER_STATE_IDLE || inst->looper_state == LOOPER_STATE_ARMED) {
+            inst->looper_event_count  = 0;
+            inst->perf_staccato_count = 0;
+        }
     }
     uint16_t cap = inst->looper_capture_ticks;
     if (cap == 0) return;
@@ -272,7 +433,7 @@ static void looper_tick(seq8_instance_t *inst) {
                     uint8_t _rp = inst->perf_staccato_notes[_si].raw_pitch;
                     if (_tr < NUM_TRACKS) {
                         inst->looper_emitting = 1;
-                        pfx_send(&inst->tracks[_tr].pfx,
+                        looper_out(&inst->tracks[_tr].pfx,
                                  (uint8_t)(0x80 | inst->tracks[_tr].channel), _ep, 0);
                         inst->looper_emitting = 0;
                     }
@@ -287,18 +448,11 @@ static void looper_tick(seq8_instance_t *inst) {
             inst->looper_state    = LOOPER_STATE_LOOPING;
             inst->looper_pos      = 0;
             inst->looper_play_idx = 0;
-            /* Silence any in-flight sequencer notes on looper_on tracks so the
-             * LOOPING suppression doesn't orphan their note-offs. Set looper_emitting
-             * to bypass our own suppression hook (state is now LOOPING). */
-            {
-                int _t;
-                inst->looper_emitting = 1;
-                for (_t = 0; _t < NUM_TRACKS; _t++) {
-                    if (inst->tracks[_t].pfx.looper_on)
-                        silence_track_notes_v2(inst, &inst->tracks[_t]);
-                }
-                inst->looper_emitting = 0;
-            }
+            /* Every captured note gets its note-off, and everything still
+             * sounding live is released NOW (not queued into the loop's
+             * suppression). */
+            looper_close_open_notes(inst);
+            looper_release_tracks(inst);
         }
         return;
     }
@@ -383,7 +537,7 @@ static void looper_tick(seq8_instance_t *inst) {
                     uint8_t _rp = inst->perf_staccato_notes[_si].raw_pitch;
                     if (_tr < NUM_TRACKS) {
                         inst->looper_emitting = 1;
-                        pfx_send(&inst->tracks[_tr].pfx,
+                        looper_out(&inst->tracks[_tr].pfx,
                                  (uint8_t)(0x80 | inst->tracks[_tr].channel), _ep, 0);
                         inst->looper_emitting = 0;
                     }
@@ -409,7 +563,7 @@ static void looper_tick(seq8_instance_t *inst) {
             inst->perf_current_event_idx = (uint16_t)ei;
             if (!perf_apply(inst, tr_idx, st, &d1, &d2)) continue;
             inst->looper_emitting = 1;
-            pfx_send(fx, st, d1, d2);
+            looper_out(fx, st, d1, d2);
             inst->looper_emitting = 0;
             uint8_t hi = st & 0xF0;
             if (hi == 0x90 && d2 > 0) {
@@ -425,7 +579,7 @@ static void looper_tick(seq8_instance_t *inst) {
                         uint16_t gap = cap / 8 < 2 ? 2 : cap / 8;
                         uint16_t gfire = (uint16_t)((inst->looper_pos + gap) % cap);
                         inst->looper_emitting = 1;
-                        pfx_send(fx, st, gpb, gv);
+                        looper_out(fx, st, gpb, gv);
                         inst->looper_emitting = 0;
                         int si = (int)inst->perf_staccato_count++;
                         inst->perf_staccato_notes[si].raw_pitch     = 0xFF;
@@ -474,15 +628,28 @@ static void looper_stop(seq8_instance_t *inst) {
      * idempotent (0xFF sentinel + harmless duplicate offs from the
      * looper_events sweep). */
     inst->looper_pending_silence = 1;
-    /* perf_emitted_pitch left intact; looper_silence_active clears it when it fires. */
+    if (inst->looper_state == LOOPER_STATE_LOOPING) {
+        /* While LOOPING every live emit on a looped track is suppressed before
+         * the count, so each count now is the looper's: the drain removes it. */
+        inst->looper_stop_was_looping = 1;
+        for (int t = 0; t < NUM_TRACKS; t++) {
+            const play_fx_t *fx = &inst->tracks[t].pfx;
+            int keep = fx->looper_on && inst->tracks[t].pad_mode != PAD_MODE_CONDUCT;
+            for (int p = 0; p < 128; p++)
+                inst->looper_stop_counts[t][p] = keep
+                    ? (uint8_t)(fx->pitch_refcount[p] > 255 ? 255 : fx->pitch_refcount[p]) : 0;
+        }
+    }
+    /* perf_emitted_pitch left intact; looper_silence_active clears it when it fires.
+     * ⚠ looper_event_count and perf_staccato_count are left for the drain too:
+     * zeroed here, its captured-note sweep and the phantom/gate-mod note-offs
+     * never ran, and those notes stuck (2026-10-01). */
     inst->looper_state              = LOOPER_STATE_IDLE;
     inst->looper_pos                = 0;
     inst->looper_play_idx           = 0;
-    inst->looper_event_count        = 0;
     inst->looper_capture_ticks      = 0;
     inst->looper_pending_rate_ticks = 0;
     inst->looper_cycle              = 0;
-    inst->perf_staccato_count       = 0;
     inst->perf_drift_offset         = 0;
     inst->perf_cycle_note_idx       = 0;
 }

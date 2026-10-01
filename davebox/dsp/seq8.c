@@ -1332,6 +1332,8 @@ typedef struct {
     uint32_t looper_cycle;
     uint8_t  looper_sync;               /* 1=wait for clock boundary (default), 0=start immediately */
     uint8_t  looper_pending_silence;    /* 1=call looper_silence_active at next render_block tick (ROUTE_MOVE safe) */
+    uint8_t  looper_stop_was_looping;   /* the pending stop ended a LOOPING pass: the drain clears the looper's note counts */
+    uint8_t  looper_stop_counts[NUM_TRACKS][128]; /* each looped track's per-pitch output count AT that stop: the looper's share, cleared by the drain */
     uint8_t  perf_emitted_pitch[NUM_TRACKS][128];
     struct {
         uint8_t  raw_pitch, emitted_pitch, track;
