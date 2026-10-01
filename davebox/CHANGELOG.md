@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed
+- **Performance Mode repeats.** Short repeats no longer leave stuck notes on
+  melodic tracks or go silent on drum tracks (a cut-off hit used to silence
+  that drum in every later repeat). SEQ ARP tracks repeat too.
 
 ## [0.0.10] — 2026-10-01 (test build, not in the Schwung catalog)
 ### Added
