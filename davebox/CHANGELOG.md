@@ -7,37 +7,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
-### Changed
-- **Track Mode reads Melodic / Drums.** The TRACK CONFIG Mode row said "Keys" for a
-  melodic track; it now says **Melodic**.
-### Added
-- **Touch a send knob and click to open its effects.** On the MIX bank, and on
-  the session mixer's SEND A and SEND B pages, touch the send's knob and click
-  the jog to land in that send's effects — as Shift + click on the send in
-  TRACK CONFIG does. Back returns to where you were.
-### Fixed
-- **Back from a Move track's send effects** returned to the wrong menu; it now
-  comes back to that track's menu.
 ### Added
 - **Copy whole pages.** Hold Loop and Copy, tap a page, then tap another to
   paste it — keep holding Copy to paste it again, Shift + Copy cuts. Pasting
   past the end of the clip makes the clip longer. Works on a drum lane, or all
   lanes on the ALL LANES bank. Notes only; automation stays put.
-- **Back steps up through the MIDI browser.** In the file list, Back goes up a
-  folder at a time (and out of a multi-part file); at the top it leaves the
-  browser. Hold Back still leaves from anywhere.
-### Added
 - **Export a clip as a MIDI file.** A new **Export to MIDI** row on the
   track's TRACK CONFIG menu saves the clip you are on, as it plays, to a
   "dAVEBOx MIDI" folder in your user data — download it from Schwung Manager's
   Files page, or bring it back with Import MIDI. Stop the transport first.
-### Added
 - **Project templates.** Project Settings → **Set as Template** saves the
   project you're in — its settings, instruments, effects and track settings,
   without any clips — as the starting point for new projects. Creating a
   project then asks **Empty** or **Template**. **Clear Template** goes back to
   empty. A module the template uses that your Move doesn't have leaves its slot
   empty, and the screen says which.
+- **Touch a send knob and click to open its effects.** On the MIX bank, and on
+  the session mixer's SEND A and SEND B pages, touch the send's knob and click
+  the jog to land in that send's effects — as Shift + click on the send in
+  TRACK CONFIG does. Back returns to where you were.
+### Changed
+- **Back steps up through the MIDI browser.** In the file list, Back goes up a
+  folder at a time (and out of a multi-part file); at the top it leaves the
+  browser. Hold Back still leaves from anywhere.
+- **Track Mode reads Melodic / Drums.** The TRACK CONFIG Mode row said "Keys" for a
+  melodic track; it now says **Melodic**.
+### Fixed
+- **Back from a Move track's send effects** returned to the wrong menu; it now
+  comes back to that track's menu.
 
 ## [0.0.9] — 2026-09-30 (test build, not in the Schwung catalog)
 ### Fixed
