@@ -50,6 +50,7 @@ const { _padDispatchMutedNow } = await import('../../ui/ui_drummodel.mjs');
 const { atOverview } = await import('../../ui/ui_input_cc.mjs');
 const { White } = await import('/data/UserData/schwung/shared/constants.mjs');
 const render = await import('../../ui/ui_render.mjs');
+const leds = await import('../../ui/ui_leds.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 0;
@@ -191,13 +192,20 @@ step('page copy works latched, and ends with the latch', () => {
     cc(COPY, 0);
 });
 
-step('the Loop button is solid white while latched', () => {
+step('the Loop button BLINKS while latched (as Session View\'s locked Perf Mode)', () => {
     melodic(64);
     loopTap();
-    buttonLights = {};
-    ticks(2);
-    assert(buttonLights[LOOP] === White, 'Loop LED ' + buttonLights[LOOP]);
+    const seen = new Set();
+    for (const pos of [0, 48, 96, 144]) {
+        S.masterPos = pos;
+        buttonLights = {}; leds.invalidateLEDCache();
+        ticks(1);
+        if (buttonLights[LOOP] !== undefined) seen.add(buttonLights[LOOP]);
+    }
+    assert(seen.has(White) && seen.has(0), 'Loop LED phases ' + JSON.stringify([...seen]));
     loopTap();
+    buttonLights = {}; leds.invalidateLEDCache(); ticks(1);
+    assert(buttonLights[LOOP] !== White, 'closed: no longer white, got ' + buttonLights[LOOP]);
 });
 
 if (failed) { console.log('FAIL: loop latch gesture'); process.exit(1); }

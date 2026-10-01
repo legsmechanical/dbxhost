@@ -1991,7 +1991,9 @@ export function _tickImpl() {
                 if (S.sessionView && S.perfViewLocked) {
                     loopColor = flashAtRate(48) ? White : LED_OFF;
                 } else if (S.loopLatched && !S.sessionView) {
-                    loopColor = White;      /* the latched Loop view: tap Loop to close */
+                    /* the latched Loop view blinks as Session View's locked
+                     * Perf Mode does: tap Loop to close (Josh, 2026-10-01) */
+                    loopColor = flashAtRate(48) ? White : LED_OFF;
                 } else if (_rptLatched) {
                     loopColor = flashAtRate(48) ? White : LED_OFF;
                 } else if (_tarpBlinkActive) {

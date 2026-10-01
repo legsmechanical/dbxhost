@@ -807,7 +807,7 @@ is held:
 Notes outside the loop are kept and return when you widen it. For example, to make
 a 2-bar clip on the 1/16 grid, hold **Loop** and tap **Step 2**.
 
-**Tap** Loop instead of holding it and the loop view stays up (the Loop button lights
+**Tap** Loop instead of holding it and the loop view stays up (the Loop button blinks
 white) so you can set the loop with your hands free. The pads keep playing. Tap Loop
 again, or press **Back**, to close it; switching to Session View or opening a menu
 closes it too. A tap that already does something else still does only that: on a
