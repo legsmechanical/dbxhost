@@ -7,14 +7,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.10] — 2026-10-01 (test build, not in the Schwung catalog)
 ### Added
 - **Copy whole pages.** Hold Loop and Copy, tap a page, then tap another to
   paste it — keep holding Copy to paste it again, Shift + Copy cuts. Pasting
   past the end of the clip makes the clip longer. Works on a drum lane, or all
   lanes on the ALL LANES bank. Notes only; automation stays put.
 - **Tap Loop to keep the loop view up** (Track View). Set the loop with the
-  step buttons and jog hands-free; tap Loop again or press Back to close it.
-  Holding Loop works as before.
+  step buttons and jog hands-free; the Loop button blinks while it is up. Tap
+  Loop again or press Back to close it. Holding Loop works as before.
 - **Export a clip as a MIDI file.** A new **Export to MIDI** row on the
   track's TRACK CONFIG menu saves the clip you are on, as it plays, to a
   "dAVEBOx MIDI" folder in your user data — download it from Schwung Manager's
@@ -33,6 +35,8 @@ the section into a versioned heading at release time.
 - **Back steps up through the MIDI browser.** In the file list, Back goes up a
   folder at a time (and out of a multi-part file); at the top it leaves the
   browser. Hold Back still leaves from anywhere.
+- **Ableton Link is set to Tempo whenever dAVEBOx starts**, so its tempo
+  follows (and leads) other Link apps without a trip to Move's settings.
 - **Track Mode reads Melodic / Drums.** The TRACK CONFIG Mode row said "Keys" for a
   melodic track; it now says **Melodic**.
 ### Fixed
