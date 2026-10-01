@@ -28,7 +28,6 @@ int main(void) {
     int checks = 0;
     hx_t *h = hx_create(NULL);
     seq8_instance_t *in = (seq8_instance_t *)h->inst;
-    hx_set_param(h, "state_load", "aaaaaaaa-2222-3333-4444-555555555555");
     hx_set_param(h, "t1_pad_mode", "0");
 
     /* ---- 1. gate mods */

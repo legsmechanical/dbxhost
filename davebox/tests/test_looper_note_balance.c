@@ -16,7 +16,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#define U "aaaaaaaa-2222-3333-4444-555555555555"
 static int seen;
 static int ons[128], offs[128];
 static void count(void) {
@@ -33,7 +32,6 @@ static void run(hx_t *h, int blocks) { for (int i = 0; i < blocks; i++) { hx_ren
 
 static hx_t *setup(int drum) {
     hx_t *h = hx_create(NULL);
-    hx_set_param(h, "state_load", U);
     char k[64];
     if (drum) {
         for (int s = 0; s < 16; s++) { snprintf(k, sizeof k, "t0_l%d_step_%d_toggle", s % 2, s); hx_set_param(h, k, "100"); }
@@ -47,8 +45,15 @@ static hx_t *setup(int drum) {
     run(h, 200);
     return h;
 }
+/* Arm DETERMINISTICALLY: sync off, armed one tick before a step, so the capture
+ * opens exactly on a step (its hit included) on every platform. With sync on,
+ * the window snaps to the master grid, and float timing differs by platform —
+ * a 1/32 window could open between two hits on Linux and capture nothing,
+ * which is correct looper behaviour but not what these cases are testing. */
 static int loop_until_looping(hx_t *h, const char *ticks) {
     seq8_instance_t *in = (seq8_instance_t *)h->inst;
+    hx_set_param(h, "looper_sync", "0");
+    for (int i = 0; i < 200 && (in->arp_master_tick % TICKS_PER_STEP) != TICKS_PER_STEP - 1; i++) run(h, 1);
     hx_set_param(h, "looper_arm", ticks);
     for (int i = 0; i < 400 && in->looper_state != LOOPER_STATE_LOOPING; i++) run(h, 1);
     return in->looper_state == LOOPER_STATE_LOOPING;
@@ -120,7 +125,6 @@ int main(void) {
     {
         hx_t *h = hx_create(NULL);
         seq8_instance_t *in = (seq8_instance_t *)h->inst;
-        hx_set_param(h, "state_load", U);
         hx_set_param(h, "t1_padmap", "60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91");
         hx_set_param(h, "transport", "play");
         run(h, 50);
@@ -147,7 +151,6 @@ int main(void) {
     /* ---- a SEQ ARP track replays (its replay used to feed back into the arp) */
     {
         hx_t *h = hx_create(NULL);
-        hx_set_param(h, "state_load", U);
         hx_set_param(h, "t0_pad_mode", "0");
         char k[64];
         for (int s = 0; s < 16; s++) { snprintf(k, sizeof k, "t0_c0_step_%d_toggle", s); hx_set_param(h, k, s % 2 ? "64 100" : "60 100"); }
@@ -168,7 +171,6 @@ int main(void) {
     /* ---- long gates (400%): every note-off falls far outside a 1/4 capture */
     {
         hx_t *h = hx_create(NULL);
-        hx_set_param(h, "state_load", U);
         hx_set_param(h, "t0_pad_mode", "0");
         char k[64];
         for (int s = 0; s < 16; s++) { snprintf(k, sizeof k, "t0_c0_step_%d_toggle", s); hx_set_param(h, k, s % 2 ? "64 100" : "60 100"); }
@@ -211,7 +213,6 @@ int main(void) {
     /* ---- the same pitch overlapping itself (400% gate, one pitch every step) */
     {
         hx_t *h = hx_create(NULL);
-        hx_set_param(h, "state_load", U);
         hx_set_param(h, "t0_pad_mode", "0");
         char k[64];
         for (int s = 0; s < 16; s++) { snprintf(k, sizeof k, "t0_c0_step_%d_toggle", s); hx_set_param(h, k, "60 100"); }
