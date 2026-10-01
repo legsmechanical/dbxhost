@@ -6,7 +6,7 @@
  * Extracted from ui.js (Phase 5 of the modularity refactor, module 5, final).
  */
 
-import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished } from './ui_state.mjs';
+import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished, loopViewActive } from './ui_state.mjs';
 import { bankViewMapOn, jogTouchCardOn, seqFollowOn } from './ui_prefs.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H, drawDaveLoading } from './ui_daves.mjs';
 import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
@@ -2025,7 +2025,7 @@ function drawUIBody() {
     /* Loop view: own priority state so screen is fully cleared first. Suppressed
      * on the unconfirmed drum ALL LANES bank so holding Loop surfaces the confirm
      * screen (below) instead of the clip-length view for a gated gesture. */
-    if (S.loopHeld && !(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7 && !S.allLanesConfirmed)) {
+    if (loopViewActive() && !(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7 && !S.allLanesConfirmed)) {
         /* The gestures are FOOTER pills, as on every other screen (Josh,
          * 2026-09-26: "agree with all recommendations" — the footer audit):
          * step buttons change the length by a page, the jog by a step. The

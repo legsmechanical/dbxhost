@@ -57,6 +57,26 @@ export function stepHoldEstablished() {
     return S.heldStep >= 0 && !(S.heldStepBtn >= 0 && S.stepBtnPressedTick[S.heldStepBtn] >= 0);
 }
 
+/* The loop-length view is up: Loop held, or latched by a tap (Track View). */
+export function loopViewActive() {
+    return S.loopHeld || S.loopLatched;
+}
+
+/* End a latched loop view. Returns whether one was latched; the caller redraws
+ * (and invalidates the LED cache — a page-copy source stops blinking). */
+export function endLoopLatch() {
+    if (!S.loopLatched) return false;
+    S.loopLatched = false;
+    if (!S.loopHeld) {
+        S.loopJogActive = false;
+        /* the view is gone, so a page copy ends with it (as on Loop release) */
+        if (S.copySrc && (S.copySrc.kind === 'page' || S.copySrc.kind === 'cut_page'))
+            S.copySrc = null;
+    }
+    S.screenDirty = true;
+    return true;
+}
+
 export function nowMs() {
     return S.clockFollowTicks ? Math.round(S.tickCount * TICK_MS_FOR_TESTS) : Date.now();
 }
@@ -211,6 +231,12 @@ export const S = {
     _altBlinkPhase: -1,    /* tick-driven phase (0/1) for the alt-mode arrow flash */
     shiftTrackLEDActive: false,
     loopHeld: false,
+    /* Track View: a Loop TAP latches the loop-length view (step buttons, jog,
+     * the Loop screen) until the next Loop press, Back, or a view change. Only
+     * those readers ask loopViewActive(); everything else that reads loopHeld
+     * still means the button is physically down. */
+    loopLatched: false,
+    loopUsed: false,     /* any press during this Loop hold — such a tap does not latch */
     leftHeld: false,     /* MoveLeft held — with Play, toggles Seq Follow */
     rightHeld: false,    /* MoveRight held — with Play, toggles Seq Follow */
     perfSync: true,

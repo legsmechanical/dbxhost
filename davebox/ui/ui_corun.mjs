@@ -8,7 +8,7 @@
  * S stays shared via ui_state.mjs.
  */
 
-import { S, nowMs } from './ui_state.mjs';
+import { S, nowMs, endLoopLatch } from './ui_state.mjs';
 import { slotIndex } from './ui_engine.mjs';
 import { invalidateLEDCache, reapplyPalette, forceRedraw } from './ui_leds.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
@@ -339,7 +339,7 @@ function cleanupAfterMoveNativeCoRun() {
      * already up does nothing. */
     move_midi_inject_to_move([0x0B, 0xB0, 49, 0]);
     S.deleteHeld = false; S.muteHeld = false;
-    S.copyHeld  = false; S.loopHeld  = false; S.loopJogActive = false;
+    S.copyHeld  = false; S.loopHeld  = false; S.loopJogActive = false; endLoopLatch();
     S.captureHeld = false;
     /* Move firmware may have rewritten palette scratch entries (knob rings,
      * Shift/Back, etc.) while we were ceded. Reapply our palette before

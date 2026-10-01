@@ -12,7 +12,7 @@ import {
     PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS,
     NO_NOTE_FLASH_MS
 } from './ui_constants.mjs';
-import { S } from './ui_state.mjs';
+import { S, loopViewActive } from './ui_state.mjs';
 import { autoHoldJumpBegin, autoHoldJumpEnd } from './ui_automation_bank.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { automationClearStep } from './ui_automation.mjs';
@@ -1424,7 +1424,7 @@ export function _onStepButtons(d1, d2) {
             S.pendingDefaultSetParams.push({ key: 'launch_scene', val: String(idx) });
         }
         /* S.deleteHeld (non-mute/shift) in Session View: swallow */
-    } else if (S.loopHeld) {
+    } else if (loopViewActive()) {
         if (S.recordArmed && !S.recordCountingIn) {
             /* Block length changes during active recording */
         } else if (S.copyHeld && !S.stepIntervalMode && S.loopGestureStart < 0) {

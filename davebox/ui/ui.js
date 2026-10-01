@@ -41,7 +41,7 @@ import { checkProjectOpened, projectOpenFailedMidi,
 import { automationParamTouch, automationClearKey, automationToggleActive,
          automationRegisterSeqApply, automationRegisterMacApply } from './ui_automation.mjs';
 import { snapMorphApply } from './ui_snapmorph.mjs';
-import { seqAutoTargetForKnob } from './ui_constants.mjs';
+import { seqAutoTargetForKnob, MoveLoop } from './ui_constants.mjs';
 import { sessStripTargets, SESS_KNOB_MODES } from './ui_engine.mjs';
 import { daveBoxRotate } from './ui_daves.mjs';
 import { miActive, miOnKnob, miOnJog, miOnClick, miOnBack, miClose, miJogTouch, miPadTap, miPadRelease } from './ui_midi_import.mjs';
@@ -569,6 +569,15 @@ function _onMidiInternalImpl(data) {
         return;
     }
     if (isNoiseMessage(data)) return;
+
+    /* A Loop press that is used for anything (a step, a pad, the jog, Play…)
+     * is a modifier, not a tap: on release it never latches the loop view.
+     * Touches (knobs 0-9 incl. the jog) are not presses. */
+    if (S.loopHeld && !S.sessionView) {
+        const _hi = status & 0xF0;
+        if ((_hi === 0x90 && d2 > 0 && d1 > 9) || (_hi === 0xB0 && d2 > 0 && d1 !== MoveLoop))
+            S.loopUsed = true;
+    }
 
     /* ---- SET MANAGER IS MODAL (Josh, 2026-08-23) ----------------------
      * "It should stand apart from the rest of davebox." While the project

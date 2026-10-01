@@ -8,7 +8,7 @@
  * see docs/superpowers/plans/2026-07-10-refactor-phase6b-map.md).
  */
 
-import { miOpen, miTick, miAnimating } from './ui_midi_import.mjs';
+import { miOpen, miTick, miAnimating, miActive } from './ui_midi_import.mjs';
 import { chordLayoutOn } from './ui_chord_pads.mjs';
 import { triggerFlashing } from './ui_trigger.mjs';
 import {
@@ -27,7 +27,7 @@ import {
     BANK_SOUND, BANK_MACROS, isSoundBank,
     POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS, BANK_CHORD, DEFAULT_TRACK_OCTAVE, BANKNAV_HOLD_MS } from './ui_constants.mjs';
 
-import { S, standDownBankDisplay, stepRevealAvailable } from './ui_state.mjs';
+import { S, standDownBankDisplay, stepRevealAvailable, loopViewActive, endLoopLatch } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { tickPrefetch, dget, applyNewProjectSeed } from './ui_dsp_bridge.mjs';
 import { daveBoxTick, bannerDaveSync, loadDaveTick } from './ui_daves.mjs';
@@ -644,7 +644,7 @@ export function _tickImpl() {
          * (key-up events fire after overtake exits, so onMidiMessage never sees them). */
         S.shiftHeld = false; S.deleteHeld = false; S.muteHeld = false;
         S.leftHeld  = false; S.rightHeld  = false;
-        S.copyHeld  = false; S.loopHeld  = false; S.loopJogActive = false;
+        S.copyHeld  = false; S.loopHeld  = false; S.loopJogActive = false; endLoopLatch();
         S.captureHeld = false; S.shiftTrackLEDActive = false;
         S.heldStep  = -1;    S.heldStepBtn = -1; S.heldStepNotes = []; S.stepReveal = false;
         S.stepWasEmpty = false; S.stepWasHeld = false;
@@ -1990,6 +1990,8 @@ export function _tickImpl() {
                 }
                 if (S.sessionView && S.perfViewLocked) {
                     loopColor = flashAtRate(48) ? White : LED_OFF;
+                } else if (S.loopLatched && !S.sessionView) {
+                    loopColor = White;      /* the latched Loop view: tap Loop to close */
                 } else if (_rptLatched) {
                     loopColor = flashAtRate(48) ? White : LED_OFF;
                 } else if (_tarpBlinkActive) {
@@ -2108,8 +2110,20 @@ export function _tickImpl() {
             S.lastSoloBlink = null;
         }
 
+        /* A latched Loop view is Track View's own screen: anything that takes
+         * the screen over (Session, a menu, sound mode, the Arp Steps overlay,
+         * a browser or picker) closes it rather than leave the step buttons
+         * editing the loop underneath. */
+        if (S.loopLatched && !S.loopHeld &&
+                (S.sessionView || S.stepIntervalMode || S.globalMenuOpen || soundActive() ||
+                 S.moveCoRunTrack >= 0 || S.projectPadPicker || S.stepRecActive ||
+                 S.daveBox || S.snapshotPicker || miActive())) {
+            endLoopLatch();
+            invalidateLEDCache();
+        }
+
         /* Loop jog OOB view: revert to pages view after ~500ms of inactivity */
-        if (S.loopJogActive && S.loopHeld && S.loopJogLastTick !== undefined) {
+        if (S.loopJogActive && loopViewActive() && S.loopJogLastTick !== undefined) {
             if ((S.clockMs - S.loopJogLastTick) > 750) {
                 S.loopJogActive = false;
                 S.screenDirty = true;
