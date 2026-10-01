@@ -807,6 +807,14 @@ is held:
 Notes outside the loop are kept and return when you widen it. For example, to make
 a 2-bar clip on the 1/16 grid, hold **Loop** and tap **Step 2**.
 
+**Copying pages.** Hold **Loop** and **Copy**, tap a lit page (it blinks), then tap
+another page: it becomes an exact copy — every note, velocity, length and step
+setting; empty steps too. Keep holding Copy to paste onto more pages. **Shift +
+Copy** cuts. A paste past the end of the clip makes the clip longer, and one before
+the loop's start moves the start back. Only what plays is copied: steps outside
+the loop count as empty. Automation stays where it is. On a drum track it copies
+the selected lane, or every lane on the ALL LANES bank. One Undo takes a paste back.
+
 The clip transforms — Stretch, Shift, Nudge, Legato and Zoom — need the loop to
 start on **step 1**; on a loop that starts later they do nothing and the screen says
 **LOOP STARTS AFTER STEP 1 / CROP FIRST**. **Crop** (CLIP knob 6: touch it and click the jog)
@@ -2340,6 +2348,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Shift + jog / Shift + bottom pad | Switch tracks |
 | Loop (hold) / Loop + jog | Loop view / clip length |
 | Loop + step (or two steps) | Set the loop to those pages |
+| Loop + Copy + page → another page (Shift = cut) | Copy a whole page |
 | Steps pressed together / hold a step, then tap a later one | Toggle them all / stretch the note to reach it |
 | Play / Shift + Play / Loop + Play | Start-stop / restart / restart at page |
 | Record / Shift + Record | Record / step record |

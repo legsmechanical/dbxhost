@@ -291,6 +291,10 @@ export function updateStepLEDs() {
                 setLED(16 + p, color);
             }
         }
+        /* Page copy source: blinks white, as a copied step's does. */
+        if (S.copyHeld && S.copySrc && (S.copySrc.kind === 'page' || S.copySrc.kind === 'cut_page')
+                && S.copySrc.track === t)
+            setLED(16 + S.copySrc.page, (Math.floor(S.clockMs / 220) % 2) ? White : LED_OFF);
         return;
     }
 

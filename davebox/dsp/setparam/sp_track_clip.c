@@ -597,6 +597,30 @@ static int sp_track_clip(sp_ctx_t *cx) {
             inst->state_dirty = 1;   /* persist the length edit (was missing) */
             return 1;
         }
+        /* tN_cC_page_copy "src dst cut" — page copy (clip_page_copy). A paste
+         * that cannot run changes nothing and takes no undo snapshot; one
+         * Undo restores the pages and the window. Refused while recording. */
+        if (!strcmp(p, "_page_copy")) {
+            int src, dst, cut;
+            if (tr->recording) return 1;
+            if (!page_copy_args(val, &src, &dst, &cut)) return 1;
+            if (!clip_page_copy_ok(cl, src, dst)) return 1;
+            undo_begin_single(inst, tidx, cidx);
+            const uint16_t ols = cl->loop_start, olen = cl->length;
+            clip_page_copy(cl, src, dst, cut);
+            if (cidx == (int)tr->active_clip
+                    && (cl->loop_start != ols || cl->length != olen)) {
+                uint16_t le = (uint16_t)(cl->loop_start + cl->length);
+                if (tr->current_step < cl->loop_start || tr->current_step >= le)
+                    tr->current_step = cl->loop_start;
+                if (inst->playing)
+                    melodic_anchor_playhead(inst, tr, cl);
+            }
+            clip_migrate_to_notes(cl);
+            rui_mark(inst, tidx, cidx);
+            inst->state_dirty = 1;
+            return 1;
+        }
         if (!strncmp(p, "_loop_set", 9) && p[9] == '\0') {
             /* tN_cC_loop_set "packed" — atomic loop window write.
              * packed = loop_start * 65536 + length (both 1..256, sum <= SEQ_STEPS).

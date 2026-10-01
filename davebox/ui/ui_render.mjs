@@ -2049,6 +2049,10 @@ function drawUIBody() {
          * 2026-09-26: "agree with all recommendations" — the footer audit):
          * step buttons change the length by a page, the jog by a step. The
          * length itself sits in the middle of the screen. */
+        /* Loop + Copy: the step buttons copy and paste whole pages. */
+        const _pageCopy = S.copyHeld && !S.stepIntervalMode;
+        const _pageSrc  = !!(S.copySrc && (S.copySrc.kind === 'page' || S.copySrc.kind === 'cut_page'));
+        const _pageCut  = _pageSrc ? S.copySrc.kind === 'cut_page' : S.shiftHeld;
         function _drawLoopSteps(steps) {
             const _l4  = 'Steps: ' + steps + '/256';
             const _l4x = Math.floor((128 - _l4.length * 6) / 2);
@@ -2057,24 +2061,31 @@ function drawUIBody() {
             fill_rect(_nvX - 1, 28, _nvW + 2, 14, 1);
             print(_l4x, 30, 'Steps: ', 1);
             print(_nvX, 30, steps + '/256', 0);
-            drawKitHintRow(MV_FOOTER_Y, [['STEP', 'PAGE'], ['JOG', 'STEP']]);
+            drawKitHintRow(MV_FOOTER_Y, _pageCopy
+                ? [['STEP', _pageSrc ? 'PASTE' : 'COPY']]
+                : [['STEP', 'PAGE'], ['JOG', 'STEP']]);
+        }
+        function _drawLoopTitle(title) {
+            if (_pageCopy) title = _pageCut ? 'Cut page' : 'Copy page';
+            print(Math.floor((128 - title.length * 6) / 2), 4, title, 1);
         }
         if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
             const t   = S.activeTrack;
             const len = S.drumLaneLength[t];
             if (S.activeBank === 7) {
                 const _allBlink = Math.floor(S.clockMs / 220) % 2 === 0;
-                const _l1 = 'Clip length-' + (_allBlink ? 'ALL' : '   ') + ' lanes';
-                print(Math.floor((128 - 21 * 6) / 2), 4, _l1, 1);
+                const _l1 = (_pageCopy ? (_pageCut ? 'Cut page' : 'Copy page') : 'Clip length')
+                    + '-' + (_allBlink ? 'ALL' : '   ') + ' lanes';
+                print(Math.floor((128 - _l1.length * 6) / 2), 4, _l1, 1);
             } else {
-                print(Math.floor((128 - 11 * 6) / 2), 4, 'Lane length', 1);
+                _drawLoopTitle('Lane length');
             }
             fill_rect(0, 15, 128, 1, 1);
             _drawLoopSteps(len);
         } else {
             const ac_l    = effectiveClip(S.activeTrack);
             const steps_l = S.clipLength[S.activeTrack][ac_l];
-            print(Math.floor((128 - 11 * 6) / 2), 4, 'Clip Length', 1);
+            _drawLoopTitle('Clip Length');
             fill_rect(0, 15, 128, 1, 1);
             _drawLoopSteps(steps_l);
         }

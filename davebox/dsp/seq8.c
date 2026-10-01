@@ -5217,6 +5217,97 @@ static void clip_crop_window(clip_t *cl) {
     }
 }
 
+/* PAGE COPY: hold Loop + Copy, tap a page, tap another (pages are the 16
+ * absolute 16-step pages the Loop view shows).
+ *
+ * The destination page becomes an exact copy of the source page AS IT PLAYS:
+ * a source step outside the loop window copies as an empty step, so notes
+ * left past the end of a clip that was shortened never ride along. An empty
+ * source step clears the destination step (a page copy is a replica, as a
+ * clip copy is). Cut then clears the source page's in-window steps.
+ *
+ * The window grows to take the destination page, at the back OR the front
+ * (RULED, Josh 2026-09-30: a paste before the loop start moves the loop
+ * start back). The steps between the old window and the new page are left as
+ * they are, as lengthening with Loop + step leaves them.
+ *
+ * Notes only: no automation (RULED, the same as Copy + step).
+ *
+ * clip_page_copy_ok: 1 = the paste would run (both pages exist, differ, and
+ * the source overlaps the window). Touches nothing, so a caller can refuse
+ * BEFORE taking an undo snapshot. clip_page_copy: step arrays and window
+ * only — callers rebuild notes[] and move the playhead. */
+static int clip_page_copy_ok(const clip_t *cl, int src, int dst) {
+    const int ls = (int)cl->loop_start, le = ls + (int)cl->length;
+    if (src < 0 || src >= SEQ_STEPS / 16 || dst < 0 || dst >= SEQ_STEPS / 16) return 0;
+    if (src == dst) return 0;
+    return src * 16 < le && src * 16 + 16 > ls;
+}
+
+/* The verbs' payload: "src dst cut" (pages 0..15, cut 0/1). 0 = malformed. */
+static int page_copy_args(const char *v, int *src, int *dst, int *cut) {
+    int k[3], i;
+    for (i = 0; i < 3; i++) {
+        while (*v == ' ') v++;
+        if (*v < '0' || *v > '9') return 0;
+        k[i] = 0;
+        while (*v >= '0' && *v <= '9') { if (k[i] < 1000) k[i] = k[i] * 10 + (*v - '0'); v++; }
+    }
+    *src = k[0]; *dst = k[1]; *cut = k[2] ? 1 : 0;
+    return 1;
+}
+
+static void clip_step_wipe(clip_t *cl, int s) {
+    cl->steps[s]           = 0;
+    memset(cl->step_notes[s], 0, 8);
+    cl->step_note_count[s] = 0;
+    cl->step_vel[s]        = SEQ_VEL;
+    cl->step_gate[s]       = GATE_TICKS;
+    memset(cl->note_tick_offset[s], 0, 8 * sizeof(int16_t));
+    cl->step_iter[s]       = 0;
+    cl->step_random[s]     = 0;
+    cl->step_ratchet[s]    = 0;
+}
+
+static void clip_page_copy(clip_t *cl, int src, int dst, int cut) {
+    const int ls = (int)cl->loop_start, le = ls + (int)cl->length;
+    int i, n;
+    for (i = 0; i < 16; i++) {
+        const int s = src * 16 + i, d = dst * 16 + i;
+        if (s < ls || s >= le) { clip_step_wipe(cl, d); continue; }
+        cl->steps[d]           = cl->steps[s];
+        memcpy(cl->step_notes[d], cl->step_notes[s], 8);
+        cl->step_note_count[d] = cl->step_note_count[s];
+        cl->step_vel[d]        = cl->step_vel[s];
+        cl->step_gate[d]       = cl->step_gate[s];
+        memcpy(cl->note_tick_offset[d], cl->note_tick_offset[s], 8 * sizeof(int16_t));
+        cl->step_iter[d]       = cl->step_iter[s];
+        cl->step_random[d]     = cl->step_random[s];
+        cl->step_ratchet[d]    = cl->step_ratchet[s];
+    }
+    if (cut)
+        for (i = 0; i < 16; i++) {
+            const int s = src * 16 + i;
+            if (s >= ls && s < le) clip_step_wipe(cl, s);
+        }
+    /* An early note pasted onto step 1 would sit before tick 0, which the
+     * note list wraps to the clip's END (as clip_crop_window). */
+    if (dst == 0)
+        for (n = 0; n < 8; n++)
+            if (cl->note_tick_offset[0][n] < 0) cl->note_tick_offset[0][n] = 0;
+    {
+        const int nls = dst * 16 < ls ? dst * 16 : ls;
+        const int nle = dst * 16 + 16 > le ? dst * 16 + 16 : le;
+        cl->loop_start = (uint16_t)nls;
+        cl->length     = (uint16_t)(nle - nls);
+    }
+    {
+        int s, any = 0;
+        for (s = 0; s < SEQ_STEPS; s++) if (cl->steps[s]) { any = 1; break; }
+        cl->active = (uint8_t)any;
+    }
+}
+
 static void seq8_clear_state(seq8_instance_t *inst) {
     int t, c;
     send_panic(inst);

@@ -372,6 +372,30 @@ static int sp_track_drum(sp_ctx_t *cx) {
             return 1;
         }
 
+        /* tN_lL_page_copy "src dst cut": page copy on this lane (see the
+         * melodic tN_cC_page_copy). No automation: notes only. */
+        if (!strcmp(p2, "_page_copy")) {
+            int src, dst, cut;
+            if (tr->recording) return 1;
+            if (!page_copy_args(val, &src, &dst, &cut)) return 1;
+            if (!clip_page_copy_ok(dlc, src, dst)) return 1;
+            undo_begin_drum_clip(inst, tidx, (int)tr->active_clip);
+            const uint16_t ols = dlc->loop_start, olen = dlc->length;
+            clip_page_copy(dlc, src, dst, cut);
+            if (dlc->loop_start != ols || dlc->length != olen) {
+                uint16_t le = (uint16_t)(dlc->loop_start + dlc->length);
+                if (tr->drum_current_step[lane_idx] < dlc->loop_start
+                        || tr->drum_current_step[lane_idx] >= le)
+                    tr->drum_current_step[lane_idx] = dlc->loop_start;
+                if (inst->playing)
+                    drum_lane_anchor_playhead(inst, tr, lane_idx, dlc);
+            }
+            clip_migrate_to_notes(dlc);
+            rui_mark(inst, tidx, (int)tr->active_clip);
+            inst->state_dirty = 1;
+            return 1;
+        }
+
         if (!strcmp(p2, "_clip_resolution_zoom")) {
             if (tr->recording) return 1;
             int idx = clamp_i(my_atoi(val), 0, 5);
