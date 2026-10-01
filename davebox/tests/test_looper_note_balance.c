@@ -102,8 +102,7 @@ int main(void) {
         int p = ons[60] > ons[64] ? 60 : 64;
         HX_ASSERT(ons[p] >= 10, "a 1/32 melodic loop never replayed its note");
         hx_set_param(h, "looper_stop", "1");
-        hx_set_param(h, "transport", "stop");
-        run(h, 200);
+        run(h, 2);                                    /* the drain; transport still running */
         HX_ASSERT(refcount_sum(h) == 0, "a melodic note was left sounding (stuck) after the looper stopped");
         checks += 2;
         hx_destroy(h);
@@ -152,7 +151,7 @@ int main(void) {
         HX_ASSERT(loop_until_looping(h, "96"), "rig: the arp loop never started");
         reset_counts(); run(h, 600);
         HX_ASSERT(ons[60] + ons[64] >= 4, "a SEQ ARP track replayed nothing while looping");
-        hx_set_param(h, "looper_stop", "1"); hx_set_param(h, "transport", "stop"); run(h, 200);
+        hx_set_param(h, "looper_stop", "1"); run(h, 2);
         HX_ASSERT(refcount_sum(h) == 0, "a SEQ ARP note stuck after the loop");
         checks += 2;
         hx_destroy(h);
@@ -173,7 +172,7 @@ int main(void) {
         HX_ASSERT(loop_until_looping(h, "96"), "rig: the long-gate loop never started");
         reset_counts(); run(h, 600);
         HX_ASSERT(ons[60] >= 3 && ons[64] >= 3, "long-gate notes did not re-articulate in the loop");
-        hx_set_param(h, "looper_stop", "1"); hx_set_param(h, "transport", "stop"); run(h, 200);
+        hx_set_param(h, "looper_stop", "1"); run(h, 2);
         HX_ASSERT(refcount_sum(h) == 0, "a long-gate note stuck after the loop");
         checks += 2;
         hx_destroy(h);
@@ -190,11 +189,32 @@ int main(void) {
         snprintf(k, sizeof k, "%u", (unsigned)PERF_MOD_PHANTOM); hx_set_param(h, "perf_mods", k);
         run(h, 300);
         hx_set_param(h, "looper_stop", "1"); hx_set_param(h, "perf_mods", "0");
-        hx_set_param(h, "transport", "stop"); run(h, 200);
+        run(h, 2);
         HX_ASSERT(refcount_sum(h) == 0, "a Legato/Phantom note stuck after the loop");
         for (int q = 0; q < 128; q++)
             HX_ASSERT(offs[q] >= ons[q], "a note-on with no note-off (Legato/Phantom)");
         checks += 2;
+        hx_destroy(h);
+    }
+
+    /* ---- the same pitch overlapping itself (400% gate, one pitch every step) */
+    {
+        hx_t *h = hx_create(NULL);
+        hx_set_param(h, "state_load", U);
+        hx_set_param(h, "t0_pad_mode", "0");
+        char k[64];
+        for (int s = 0; s < 16; s++) { snprintf(k, sizeof k, "t0_c0_step_%d_toggle", s); hx_set_param(h, k, "60 100"); }
+        hx_set_param(h, "t0_noteFX_gate", "400");
+        hx_set_param(h, "t0_launch_clip", "0");
+        hx_set_param(h, "transport", "play");
+        hx_clear_capture(h); seen = 0; reset_counts();
+        run(h, 200);
+        HX_ASSERT(loop_until_looping(h, "96"), "rig: the overlap loop never started");
+        run(h, 400);
+        hx_set_param(h, "looper_stop", "1"); run(h, 2);
+        HX_ASSERT(((seq8_instance_t *)h->inst)->tracks[0].pfx.pitch_refcount[60] == 0,
+                  "an overlapping same-pitch note stayed counted after the looper stopped");
+        checks++;
         hx_destroy(h);
     }
 
