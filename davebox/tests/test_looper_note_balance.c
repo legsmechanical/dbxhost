@@ -53,6 +53,14 @@ static int loop_until_looping(hx_t *h, const char *ticks) {
     for (int i = 0; i < 400 && in->looper_state != LOOPER_STATE_LOOPING; i++) run(h, 1);
     return in->looper_state == LOOPER_STATE_LOOPING;
 }
+/* While looping: no pitch counted more than once — a leak ACCUMULATES. (Checked
+ * before any stop: the stop drain clears the looper's counts, masking a leak.) */
+static int refcount_max(hx_t *h) {
+    seq8_instance_t *in = (seq8_instance_t *)h->inst;
+    int m = 0;
+    for (int p = 0; p < 128; p++) if (in->tracks[0].pfx.pitch_refcount[p] > m) m = in->tracks[0].pfx.pitch_refcount[p];
+    return m;
+}
 static int refcount_sum(hx_t *h) {
     seq8_instance_t *in = (seq8_instance_t *)h->inst;
     int s = 0;
@@ -172,6 +180,7 @@ int main(void) {
         HX_ASSERT(loop_until_looping(h, "96"), "rig: the long-gate loop never started");
         reset_counts(); run(h, 600);
         HX_ASSERT(ons[60] >= 3 && ons[64] >= 3, "long-gate notes did not re-articulate in the loop");
+        HX_ASSERT(refcount_max(h) <= 1, "long gates: a pitch's count accumulated while looping");
         hx_set_param(h, "looper_stop", "1"); run(h, 2);
         HX_ASSERT(refcount_sum(h) == 0, "a long-gate note stuck after the loop");
         checks += 2;
@@ -186,6 +195,8 @@ int main(void) {
         char k[32];
         snprintf(k, sizeof k, "%u", (unsigned)PERF_MOD_LEGATO);  hx_set_param(h, "perf_mods", k);
         run(h, 300);
+        HX_ASSERT(refcount_max(h) <= 1, "Legato switched on mid-loop: a pitch's count accumulated");
+        checks++;
         snprintf(k, sizeof k, "%u", (unsigned)PERF_MOD_PHANTOM); hx_set_param(h, "perf_mods", k);
         run(h, 300);
         hx_set_param(h, "looper_stop", "1"); hx_set_param(h, "perf_mods", "0");
@@ -211,6 +222,8 @@ int main(void) {
         run(h, 200);
         HX_ASSERT(loop_until_looping(h, "96"), "rig: the overlap loop never started");
         run(h, 400);
+        HX_ASSERT(refcount_max(h) <= 1, "an overlapping same-pitch note accumulated counts while looping");
+        checks++;
         hx_set_param(h, "looper_stop", "1"); run(h, 2);
         HX_ASSERT(((seq8_instance_t *)h->inst)->tracks[0].pfx.pitch_refcount[60] == 0,
                   "an overlapping same-pitch note stayed counted after the looper stopped");
