@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed
+- **Delete + click in the track menu does nothing.** It used to reset the
+  bank behind the menu.
 
 ## [0.0.10] — 2026-10-01 (test build, not in the Schwung catalog)
 ### Added
