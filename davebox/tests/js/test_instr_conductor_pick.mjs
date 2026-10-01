@@ -246,7 +246,7 @@ step('⭐⭐ the Mode row is GONE on a Conductor, and has two values elsewhere',
     const mode = snd.soundCfgRowForTest('mode');
     assert(mode, 'an ordinary track lost its Mode row');
     assert(mode.opts.length === 2, 'Mode still has ' + mode.opts.length + ' values');
-    assert(mode.opts.map(mode.fmt).join(',') === 'Keys,Drums',
+    assert(mode.opts.map(mode.fmt).join(',') === 'Melodic,Drums',
            'Mode reads ' + mode.opts.map(mode.fmt).join(','));
 });
 
@@ -283,7 +283,7 @@ step('⚠ CONTROL: an ordinary track still has its chain and mixer rows', () => 
            'a normal track lost LFOs/Presets: ' + k.join(','));
 });
 
-step('⭐ picking a GENERATOR on a Conductor converts it back to Keys', () => {
+step('⭐ picking a GENERATOR on a Conductor converts it back to Melodic', () => {
     assert(S.trackPadMode[0] === PAD_MODE_CONDUCT, 'setup: track 0 is not a Conductor');
     openPicker(0);
     pick('NuSaw');

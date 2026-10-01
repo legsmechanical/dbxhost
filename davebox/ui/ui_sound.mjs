@@ -494,7 +494,8 @@ function configRows(t) {
     /* Mode leads: it decides what the rest of this screen even means (Layout is
      * melodic-only, AftTch is hidden on drums, Transpose on Conduct).
      *
-     * ⭐⭐ TWO VALUES, KEYS AND DRUMS (Josh, 2026-09-19). Conductor was the third
+     * ⭐⭐ TWO VALUES, MELODIC AND DRUMS (Josh, 2026-09-19; "Keys" renamed Melodic
+     * 2026-10-01). Conductor was the third
      * and does not belong with them: "conductor isn't like the other types. it
      * completely changes how the track behaves ... keys/drum should stay as types
      * bc they only change the sequencer paradigm of the track, not where the
@@ -510,7 +511,7 @@ function configRows(t) {
     if (GS.trackPadMode[t] !== PMC) {
         rows.push({ key: 'mode', label: 'Mode', commitOnClick: true,
             opts: [0, 1],
-            fmt: (v) => (v ? 'Drums' : 'Keys'),
+            fmt: (v) => (v ? 'Drums' : 'Melodic'),   /* Josh, 2026-10-01: "key track mode should be melodic" */
             get: () => GS.trackPadMode[t] | 0,
             set: (v) => requestTrackModeChange(t, v | 0) });
     }

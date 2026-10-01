@@ -117,6 +117,11 @@ step('⭐ the config rows sit in their ruled groups at the foot (Josh, 2026-09-2
            'the rows landed above LFOs/Presets: ' + k.join(','));
 });
 
+step('Mode reads Melodic / Drums (Josh, 2026-10-01: "key track mode should be melodic")', () => {
+    const mode = snd.configRowsForTest(0).find(r => r.key === 'mode');
+    assert(mode && mode.fmt(0) === 'Melodic' && mode.fmt(1) === 'Drums', 'Mode reads ' + (mode && [mode.fmt(0), mode.fmt(1)]));
+});
+
 step('⭐ THE GESTURE: click takes the jog, jogging edits, click gives it back', () => {
     gotoRow(0, 'transpose');
     const spec = snd.soundCfgRowForTest('transpose');
