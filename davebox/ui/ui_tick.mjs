@@ -27,7 +27,7 @@ import {
     BANK_SOUND, BANK_MACROS, isSoundBank,
     POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS, BANK_CHORD, DEFAULT_TRACK_OCTAVE, BANKNAV_HOLD_MS } from './ui_constants.mjs';
 
-import { S, standDownBankDisplay, stepRevealAvailable, loopViewActive, endLoopLatch } from './ui_state.mjs';
+import { S, standDownBankDisplay, stepRevealAvailable, loopViewActive, endLoopLatch, forgetUndo } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { tickPrefetch, dget, applyNewProjectSeed } from './ui_dsp_bridge.mjs';
 import { daveBoxTick, bannerDaveSync, loadDaveTick } from './ui_daves.mjs';
@@ -824,6 +824,7 @@ export function _tickImpl() {
         S.heldStep = -1; S.heldStepBtn = -1; S.heldStepNotes = []; S.stepWasEmpty = false; S.stepWasHeld = false; S.stepReveal = false;
         S.seqActiveNotes.clear(); S.seqLastStep = -1; S.seqLastClip = -1;
         S.pendingDspSync = 5;
+        forgetUndo();                 /* the units were the last project's; the DSP drops its own in state_load */
         host_module_set_param('state_load', S.currentSetUuid || '');
         /* NOTE: awaitingProjectSelect is deliberately NOT cleared here. Sending
          * the load is not evidence the load happened — see the pendingDspSync

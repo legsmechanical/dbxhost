@@ -297,6 +297,15 @@ static int sp_globals_state(sp_ctx_t *cx) {
         /* Parameter automation too: only a file that PARSES replaces it (pa_parse
          * resets first), so a brand-new project played the previous one's. */
         pa_reset_all(inst);
+        /* ...and every undo/redo slot: they hold the PREVIOUS project's clips,
+         * so an Undo right after a switch wrote that project's notes into this
+         * one (2026-10-01). */
+        inst->undo_valid          = 0;
+        inst->redo_valid          = 0;
+        inst->drum_undo_valid     = 0;
+        inst->drum_redo_valid     = 0;
+        inst->drum_row_undo_valid = 0;
+        inst->drum_row_redo_valid = 0;
         {
             /* Same derivation as create_instance: prefer the host's live tempo,
              * fall back to the compiled default. */

@@ -77,6 +77,18 @@ export function endLoopLatch() {
     return true;
 }
 
+/* Drop every undo/redo unit — called when a project loads: each one describes
+ * the project open before it, and an Undo after the switch restored THAT
+ * project's clips into this one (2026-10-01). The DSP drops its slots in
+ * state_load. */
+export function forgetUndo() {
+    S.undoAvailable = false; S.redoAvailable = false;
+    S.undoSnapshot = null;   S.redoSnapshot = null;
+    S.undoSeqArpSnapshot = null; S.redoSeqArpSnapshot = null;
+    S.undoJs = null;         S.redoJs = null;
+    S.undoJsPatch = null;    S.redoJsPatch = null;
+}
+
 export function nowMs() {
     return S.clockFollowTicks ? Math.round(S.tickCount * TICK_MS_FOR_TESTS) : Date.now();
 }
