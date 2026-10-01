@@ -39,6 +39,8 @@ the section into a versioned heading at release time.
 - **A new project starts truly empty.** It no longer picks up the previous
   project's automation, macros, Program/Bank, performance slots, track
   transpose or module level, and it opens in Session View (Clear Session too).
+- **Undo no longer reaches into the project you just left.** Undo right after
+  opening another project could write the previous project's clip into it.
 - **Back from a Move track's send effects** returned to the wrong menu; it now
   comes back to that track's menu.
 
