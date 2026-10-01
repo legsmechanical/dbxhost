@@ -876,7 +876,7 @@ function modalDialogUp() {
             /* SEND A / SEND B page: touch a track's send and click = that
              * send's effects (Josh, 2026-10-01); Back returns to this page. */
             else if (S.knobTouched >= 0 && sessMixerCellOpens(S.knobTouched))
-                soundEnterSendFromSessionMixer(SESS_KNOB_MODES[S.sessKnobMode].key, S.sessKnobMode);
+                soundEnterSendFromSessionMixer(SESS_KNOB_MODES[S.sessKnobMode].key);
         } else {
             S.sessMixerLatched = true;
             armBankDisplay();

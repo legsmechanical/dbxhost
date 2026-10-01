@@ -2163,11 +2163,11 @@ export function soundMixSendClick(i) {
 }
 /* The session mixer's twin: from Session View, on its SEND A / SEND B page.
  * Back returns to that page (door 'sessmix'). */
-export function soundEnterSendFromSessionMixer(key, mode) {
+export function soundEnterSendFromSessionMixer(key) {
     const bus = FX_BUSES.find(b => b.id === (key === 'send_a' ? 'sendA' : key === 'send_b' ? 'sendB' : ''));
     if (!bus) return false;
     soundEnterBuses();
-    S.pendingAction = { t: 'bus', bus: bus, door: { kind: 'sessmix', mode: mode } };
+    S.pendingAction = { t: 'bus', bus: bus, door: { kind: 'sessmix' } };
     return true;
 }
 
@@ -3153,8 +3153,7 @@ function leaveBus() {
     }
     if (door && door.kind === 'sessmix') {
         soundExit();
-        GS.sessMixerLatched = true;
-        GS.sessKnobMode = door.mode | 0;
+        GS.sessMixerLatched = true;     /* the page it came from: sessKnobMode is untouched meanwhile */
         GS.screenDirty = true;
         forceRedraw();
         return;
