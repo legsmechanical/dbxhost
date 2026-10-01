@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Changed
+- **Track Mode reads Melodic / Drums.** The TRACK CONFIG Mode row said "Keys" for a
+  melodic track; it now says **Melodic**.
 
 ## [0.0.9] — 2026-09-30 (test build, not in the Schwung catalog)
 ### Fixed

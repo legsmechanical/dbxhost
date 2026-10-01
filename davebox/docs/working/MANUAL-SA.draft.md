@@ -461,11 +461,11 @@ A track's **type** sets how you enter notes into it and how it sequences them.
 
 | Type | Where you set it | How it works |
 |---|---|---|
-| Melodic | **Mode → Keys** | Scale-snapped notes on the pads and steps — [Melodic Clips](#6-melodic-clips) |
+| Melodic | **Mode → Melodic** | Scale-snapped notes on the pads and steps — [Melodic Clips](#6-melodic-clips) |
 | Drum | **Mode → Drums** | 32 drum lanes, each its own step sequence — [Drum Clips](#7-drum-clips) |
 | Conductor | **Instmt/Dest → Conductor** | Plays no notes of its own; transposes the other tracks — [The Conductor](#12-the-conductor) |
 
-- **Keys** and **Drums** are the **Mode** row at the foot of the track's TRACK
+- **Melodic** and **Drums** are the **Mode** row at the foot of the track's TRACK
   CONFIG menu. Scrolling previews the type; clicking commits it.
 - **Conductor** is chosen in the **Instmt/Dest** picker instead (**Shift + click**
   the row), just after the Move instruments. To turn a Conductor back into an
@@ -2146,7 +2146,7 @@ are hidden, so the list is shorter on a MIDI track or a Conductor.
 
 | Setting | Values | Notes |
 |---|---|---|
-| Mode | Keys, Drums | [Track type](#41-track-type). Scrolling previews; the click commits |
+| Mode | Melodic, Drums | [Track type](#41-track-type). Scrolling previews; the click commits |
 | Layout | Scale, Chrom, Piano, Chord | Melodic pad layout ([Chord](#the-chord-layout)); reads `-` on a drum track |
 | Transpose | −24…+24 st | Shifts everything the track plays |
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |
