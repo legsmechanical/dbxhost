@@ -457,9 +457,30 @@ export function sidecarDefaults() {
         chd: new Array(NUM_TRACKS).fill(null),
     };
 }
+/* A BRAND-NEW project's whole sidecar: what a pristine S writes, field by field
+ * (tests/js/test_project_template_gesture.mjs pins it against one) — except
+ * the view: a new project opens in Session View, as a cold boot does (Josh,
+ * 2026-10-01). restoreUiSidecar applies it when a project has no sidecar, so
+ * nothing of the project open before it survives into the new one. */
+export function freshSidecar() {
+    const out = sidecarDefaults();
+    out.v    = 9;
+    out.sv   = 1;
+    out.am   = new Array(NUM_TRACKS).fill(0);
+    out.pchr = new Array(NUM_TRACKS).fill(0);
+    out.pchd = new Array(NUM_TRACKS).fill(0);
+    out.ppno = new Array(NUM_TRACKS).fill(0);
+    out.mac  = new Array(NUM_TRACKS).fill(null);
+    out.mcv  = Array.from({ length: NUM_TRACKS }, () => ({}));
+    out.cpg  = Array.from({ length: NUM_TRACKS }, () => Array.from({ length: NUM_CLIPS }, () => [-1, -1, -1]));
+    out.upr  = {};
+    out.bm   = 1;
+    return out;
+}
 export function templateSidecar() {
     const cur = sidecarObject();
     const out = sidecarDefaults();
+    out.sv = 1;                       /* a new project opens in Session View (freshSidecar) */
     for (const k of TEMPLATE_SIDECAR_KEPT) out[k] = cur[k];
     /* Clip A's Program / Bank on every clip — the patch the track's synth plays. */
     out.cpg = cur.cpg.map(function(clips) {

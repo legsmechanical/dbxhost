@@ -5391,37 +5391,38 @@ function loadChainConfigFromDir(dir) {
     if (!dir) return;
     const path = dir + "/shadow_chain_config.json";
     try {
+        /* ⭑ EVERY slot setting is per-set, so EVERY one is written on every
+         * load: the saved value when the file has it, else the default. The
+         * shim's slot settings are global and NOT reset per set, so a field
+         * this skipped kept the PREVIOUS set's value — transpose leaked into a
+         * new project (whose seeded config has none) and Module Level
+         * (synth_volume) leaked across every switch, because nothing at
+         * runtime ever read it back (only the boot loader,
+         * shadow_set_pages.c). A missing or unreadable file is every slot at
+         * its defaults, never "leave everything as it was". */
+        let data = null;
         const raw = host_read_file(path);
-        if (!raw) return;
-        const data = JSON.parse(raw);
-        if (!data || !Array.isArray(data.slots)) return;
-        for (let i = 0; i < SHADOW_UI_SLOTS && i < data.slots.length; i++) {
-            const s = data.slots[i];
-            if (typeof s.volume === "number") setSlotParamWithTimeout(i, "slot:volume", String(s.volume), 500);
-            const slotPan = (typeof s.pan === "number") ? s.pan : 0.5;
-            setSlotParamWithTimeout(i, "slot:pan", String(slotPan), 500);
-            /* Always write receive_channel: use saved value if present, else
-             * default to slot index + 1. Chain configs written before
-             * 072d3fd3 (or saved by older host code) can lack the field —
-             * silently skipping leaves shim.channel stale from the prior set. */
-            const recvCh = (typeof s.channel === "number") ? s.channel : (i + 1);
-            setSlotParamWithTimeout(i, "slot:receive_channel", String(recvCh), 500);
-            if (typeof s.forward_channel === "number") setSlotParamWithTimeout(i, "slot:forward_channel", String(s.forward_channel), 500);
+        if (raw) { try { data = JSON.parse(raw); } catch (e) { data = null; } }
+        const saved = (data && Array.isArray(data.slots)) ? data.slots : [];
+        const num = (v, lo, hi, def) => (typeof v === "number" && isFinite(v) && v >= lo && v <= hi) ? v : def;
+        for (let i = 0; i < SHADOW_UI_SLOTS; i++) {
+            const s = (saved[i] && typeof saved[i] === "object") ? saved[i] : {};
+            setSlotParamWithTimeout(i, "slot:volume", String(num(s.volume, 0, 4, 1.0)), 500);
+            setSlotParamWithTimeout(i, "slot:pan", String(num(s.pan, 0, 1, 0.5)), 500);
+            setSlotParamWithTimeout(i, "slot:receive_channel", String(typeof s.channel === "number" ? s.channel : (i + 1)), 500);
+            setSlotParamWithTimeout(i, "slot:forward_channel", String(typeof s.forward_channel === "number" ? s.forward_channel : -1), 500);
+            /* Mute and solo only when the file says so (as before): the shim's
+             * mute also carries the boot feedback guard (slot:feedback_hold),
+             * which a forced unmute here would cut across. Saved and seeded
+             * configs always carry both. */
             if (typeof s.muted === "number") setSlotParamWithTimeout(i, "slot:muted", String(s.muted), 500);
             if (typeof s.soloed === "number") setSlotParamWithTimeout(i, "slot:soloed", String(s.soloed), 500);
-            /* Absent in configs written before transpose was persisted; leave
-             * the shim's own 0 default alone rather than forcing it. */
-            if (typeof s.transpose === "number") setSlotParamWithTimeout(i, "slot:transpose", String(s.transpose), 500);
-            /* Per-slot send levels: ALWAYS write — saved value if present, else
-             * default 0 (no send). The shim's slot sends are global and NOT reset
-             * per set, so skipping a missing field (configs written before sends
-             * existed) leaves them stale from the prior set, like receive_channel. */
-            const sa = (typeof s.send_a === "number") ? s.send_a : 0;
-            setSlotParamWithTimeout(i, "slot:send_a", String(sa), 500);
-            const sb = (typeof s.send_b === "number") ? s.send_b : 0;
-            setSlotParamWithTimeout(i, "slot:send_b", String(sb), 500);
+            setSlotParamWithTimeout(i, "slot:transpose", String(num(s.transpose, -12, 12, 0) | 0), 500);
+            setSlotParamWithTimeout(i, "slot:send_a", String(num(s.send_a, 0, 2, 0)), 500);
+            setSlotParamWithTimeout(i, "slot:send_b", String(num(s.send_b, 0, 2, 0)), 500);
+            setSlotParamWithTimeout(i, "slot:synth_volume", String(num(s.synth_volume, 0, 4, 1.0)), 500);
         }
-        debugLog("SET_CHANGED: loaded chain config from " + path);
+        debugLog("SET_CHANGED: loaded chain config from " + path + (data ? "" : " (none: defaults)"));
     } catch (e) {
         debugLog("loadChainConfigFromDir error: " + e);
     }

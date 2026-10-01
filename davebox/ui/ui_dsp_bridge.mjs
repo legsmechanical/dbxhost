@@ -42,7 +42,7 @@ import { slotIndex, syncLinkAudioRoutingFromRoutes,
          invalidateLinkAudioRoutingCache, linkAudioRoutingJustEnabled } from './ui_engine.mjs';
 import { clipHasContent, _clipIsEmpty, bankCycleForMode } from './ui_pure.mjs';
 import { showActionPopup, showActionPopupFor, writeSidecar, uuidToStatePath, uuidToUiStatePath,
-         uuidToNewProjectPath } from './ui_persistence.mjs';
+         uuidToNewProjectPath, freshSidecar } from './ui_persistence.mjs';
 import { computePadNoteMap, setActiveDrumLane, syncDrumClipContent,
     syncDrumLaneSteps, syncDrumLanesMeta, syncDrumRepeatState } from './ui_drummodel.mjs';
 import { effectiveClip, forceRedraw, invalidateLEDCache } from './ui_leds.mjs';
@@ -1518,6 +1518,14 @@ export function restoreUiSidecar(applyDefaultsNow) {
      * upstream documents on its own copy of this map, and what this map did
      * here for as long as it was session-lived. */
     S.presetRec = Object.create(null);
+    /* ⭑ NO SIDECAR = A BRAND-NEW PROJECT (or a cleared one, {"v":0}): restore a
+     * COMPLETE fresh sidecar through the same path a saved one takes. The
+     * branch below only assigns what it finds, so anything short of a whole
+     * sidecar left the previous project's macros, Program/Bank, perf slots,
+     * active track/clip/bank... in S, and the next save wrote them into the
+     * new project (2026-10-01). */
+    const fresh = !(us && us.v >= 1);
+    if (fresh) us = freshSidecar();
     if (us && us.v >= 1) {
         if (typeof us.at === 'number' && us.at >= 0 && us.at < NUM_TRACKS)
             S.activeTrack = us.at;
@@ -1548,8 +1556,7 @@ export function restoreUiSidecar(applyDefaultsNow) {
         if (us.v >= 2) {
             if (typeof us.pm === 'number') S.perfModsToggled = us.pm & 0xFFFFFF;
             S.perfLatchMode = us.lm === 1;
-            if (typeof us.rs === 'number' && us.rs >= 0 && us.rs < 16)
-                S.perfRecalledSlot = us.rs;
+            S.perfRecalledSlot = (typeof us.rs === 'number' && us.rs >= 0 && us.rs < 16) ? us.rs : -1;
             /* User perf presets restore INDEPENDENTLY of the recalled slot:
              * saving a preset never sets perfRecalledSlot (stays -1 unless
              * one was recalled), so nesting this under the us.rs guard
@@ -1750,7 +1757,8 @@ export function restoreUiSidecar(applyDefaultsNow) {
                 };
             }
         }
-    } else {
+    }
+    if (fresh) {
         S.scaleAware   = 1;
         S.metronomeVol = 100;
         S.trackPadMode[0] = PAD_MODE_DRUM;
