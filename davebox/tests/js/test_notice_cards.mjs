@@ -92,6 +92,11 @@ const ticks = (n) => { for (let i = 0; i < n; i++) { S.clockMs = (S.clockMs || 0
 
 step('⭐ THE GESTURE: Delete + jog click on the SOUND + CONFIG card shows its notice ON the card', () => {
     S.bankCardLatched = true;
+    /* ON the SOUND + CONFIG bank: its card is the entry (2026-09-24). Entering
+     * from bank 0 lands on the module LIST, where Delete + click does nothing
+     * (test_delete_click_menu.mjs). */
+    const _bank0 = S.activeBank, _tab0 = S.trackActiveBank[1];
+    S.activeBank = S.trackActiveBank[1] = 11;
     snd.soundEnter(1, 1);
     ticks(4);
     /* move a level off its default so the reset has something to do */
@@ -108,6 +113,7 @@ step('⭐ THE GESTURE: Delete + jog click on the SOUND + CONFIG card shows its n
     assert(inCard(f, 'RESET'), 'the card does not carry the notice: ' + JSON.stringify(f.prints.map((p) => p.t)));
     snd.soundExit(); clearPopup();
     S.bankCardLatched = false;
+    S.activeBank = _bank0; S.trackActiveBank[1] = _tab0;
 });
 
 step('a plain notice in TRACK view is a card over the screen, which still draws underneath', () => {

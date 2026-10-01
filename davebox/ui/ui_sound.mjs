@@ -9497,6 +9497,19 @@ export function soundOnCC(d1, d2, decodeDelta) {
          * macro IS its target, so those lanes belong to parameters that still
          * exist and are still reachable without the macro. */
         if (S.deleteHeld && macrosActive() && macroClearConfirmOpen()) return true;
+        /* ⚠ DELETE + CLICK IN THE MENU (or any list opened from it) DOES
+         * NOTHING — consumed here (Josh, 2026-10-01: *"if you delete+click
+         * anywhere in the track menu it falls down to the bank and resets it."*).
+         * The reset below is the BANK's, so it fires only on the bank's own card;
+         * in a list the click is "open this row", which Delete does not mean, and
+         * declining it let dAVEBOx's Delete+jog reset the bank underneath. The
+         * module EDITOR keeps its click (its knobs are the module's). Either
+         * Delete latch counts: a Delete pressed before sound mode took the
+         * surface is only in davebox's. */
+        if ((S.deleteHeld || GS.deleteHeld) && S.view !== VIEW_EDIT && !isCardView(S.view)) {
+            S.dirty = true;
+            return true;
+        }
         if (S.deleteHeld && levelsActive()) {
             const _t = S.track, _c = effectiveClip(_t);
             let _cleared = false;
