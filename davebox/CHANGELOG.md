@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed
+- **A new project no longer starts with the last project's automation.**
 
 ## [0.0.9] — 2026-09-30 (test build, not in the Schwung catalog)
 ### Fixed
