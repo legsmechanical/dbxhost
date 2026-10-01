@@ -27,7 +27,13 @@ const LOG = [];
 const FILES = {};
 let listing = { current: 0, projects: [{ uuid: 'a', name: 'A', index: 0, color: 2 }], templates: [] };
 let missingAnswer = '';
+/* As on the device (shadow_ui.c js_host_system_cmd): a command whose first
+ * word is not an allowed verb is REFUSED with -1. "From Template" led with its
+ * variables and was refused on the device while this stub ran it. */
+const ALLOWED = ['tar ', 'cp ', 'mv ', 'mkdir ', 'rm ', 'ls ', 'test ', 'chmod ', 'sh '];
 globalThis.host_system_cmd = (c) => {
+    c = String(c);
+    if (!ALLOWED.some(v => c.startsWith(v))) { LOG.push('REFUSED ' + c); return -1; }
     LOG.push('cmd ' + c);
     const m = /new-at (\d+)/.exec(c);
     if (m) listing.projects.push({ uuid: 'new' + m[1], name: 'NEW', index: Number(m[1]), color: 1 });
@@ -223,6 +229,8 @@ step('⭐ with a template → New asks Empty / Template, on Template; Template c
     dlg.projectPadPickerClick();
     const c = LOG.filter(l => /new-at 4/.test(l));
     assert(c.length === 1 && /DBX_TEMPLATE=default /.test(c[0]) && /DBX_HAVE_MODULES=|DBX_MISSING_OUT=/.test(c[0]), J(c));
+    assert(c[0].startsWith('cmd '), 'the host would refuse it: ' + c[0]);
+    assert(S.projectPadPicker.byIndex[4], 'the project was not created (CREATE FAILED): ' + J(LOG));
 });
 
 step('…and Empty creates an empty one', () => {

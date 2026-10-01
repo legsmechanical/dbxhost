@@ -112,10 +112,13 @@ export function createProject(k, fromTemplate) {
     if (!fromTemplate) return host_system_cmd('sh ' + PROJECT_CMD + ' new-at ' + k);
     const have = writeHaveModules();
     host_system_cmd("rm -f '" + MISSING_OUT + "'");
-    const rc = host_system_cmd('DBX_TEMPLATE=' + TEMPLATE_ID + ' DBX_STATE_PREFIX=' + STATE_PREFIX +
+    /* ⚠ host_system_cmd runs only a command whose FIRST WORD is an allowed
+     * verb (shadow_ui.c: sh, cp, rm, …) and refuses the rest — so the
+     * variables cannot lead; they go inside an `sh -c`. */
+    const rc = host_system_cmd('sh -c "DBX_TEMPLATE=' + TEMPLATE_ID + ' DBX_STATE_PREFIX=' + STATE_PREFIX +
                                (have ? " DBX_HAVE_MODULES='" + HAVE_MODULES + "'" : '') +
                                " DBX_MISSING_OUT='" + MISSING_OUT + "'" +
-                               ' sh ' + PROJECT_CMD + ' new-at ' + k);
+                               ' sh ' + PROJECT_CMD + ' new-at ' + k + '"');
     let missing = [];
     try {
         const j = JSON.parse(host_read_file(MISSING_OUT) || '');
