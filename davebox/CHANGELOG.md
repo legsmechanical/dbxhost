@@ -8,6 +8,9 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Fixed
+- **Switching projects no longer carries the drum lane page, drum repeat
+  mode, repeat latches or NOTE FX / MIDI DLY random modes** from the project
+  you left.
 - **Delete + click in the track menu does nothing.** It used to reset the
   bank behind the menu.
 - **Performance Mode repeats.** Short repeats no longer leave stuck notes on
