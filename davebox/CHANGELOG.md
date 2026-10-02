@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.11] — 2026-10-02 (test build, not in the Schwung catalog)
 ### Changed
 - **The Project menu brings you back.** Anything you open or do from it —
   Projects, Save/Load state, Clear Session, templates, Export, Host Settings,
