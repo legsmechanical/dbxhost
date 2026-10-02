@@ -772,8 +772,10 @@ export function openSaveSnapshot() {
         S.screenDirty = true;
         return;
     }
+    /* The Project menu stays open: the notice draws over it (Josh
+     * 2026-10-01: "anything i enter or do from the project menu should return
+     * me to the project menu when i leave/it's done"). */
     beginSnapshotSave(String(Date.now()));
-    S.globalMenuOpen = false;
     showActionPopup('STATE', 'SAVED');
 }
 
@@ -782,8 +784,7 @@ export function openSaveSnapshot() {
 export function openLoadSnapshot() {
     const snaps = loadSnapshotManifest(S.currentSetUuid);
     if (snaps.length === 0) {
-        S.globalMenuOpen = false;
-        showActionPopup('NO', 'SNAPSHOTS');
+        showActionPopup('NO', 'SNAPSHOTS');   /* over the Project menu, which stays */
         return;
     }
     const stale = [];
@@ -796,8 +797,13 @@ export function openLoadSnapshot() {
     S.screenDirty = true;
 }
 
-export function closeSnapshotPicker() {
+/* The picker is the Project menu's (Save state / Load state): leaving it — Back,
+ * or done — returns there, cursor on its row. `toMenu === false` for the one
+ * caller that is going somewhere else (Note/Session's go-home). */
+export function closeSnapshotPicker(toMenu) {
+    const p = S.snapshotPicker;
     S.snapshotPicker = null;
+    if (p && toMenu !== false) S.pendingMenuAt = p.mode === 'load' ? 'Load state' : 'Save state';
     S.screenDirty = true;
 }
 
@@ -1128,6 +1134,9 @@ function _closeProjectPadPicker_impl() {
     const _p = S.projectPadPicker;
     if (_p && _p.renameActive && isTextEntryActive()) closeTextEntry();
     S.projectPadPicker = null;
+    /* Opened from the Project menu: leaving it returns there — unless a project
+     * was LOADED (Josh, 2026-10-02: "The loaded project"); _pppLoad clears it. */
+    if (_p && _p.fromMenu) S.pendingMenuAt = 'Projects...';
     computePadNoteMap();            /* pads become NOTES again (DSP side) */
     S.ledInitComplete = false;      /* repaint the sequencer surface */
     invalidateLEDCache();
@@ -1383,6 +1392,7 @@ function _pppLoad(p, k) {
      * the pad you pressed, with the reason on screen. */
     const _why = _pppBroken(p, k);
     if (_why) { console.log('project load: refused pad ' + k + ' (song ' + _why + ')'); _pppRefuseUnreadable(_why); return; }
+    p.fromMenu = false;       /* a load is a destination: land in the project, not the menu */
     const _forceRelaunch = S.forceRelaunchNextLoad;
     if (k === p.current && !_forceRelaunch) {
         /* The already-current project. Under SELECT-BEFORE-LOAD this IS the

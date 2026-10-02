@@ -1003,7 +1003,10 @@ export function _tickImpl() {
      * and following Move out when Back leaves them at the top level. Then,
      * once the service has returned, back into Project Settings on the row. */
     moveSettingsTick();
-    if (S.pendingMenuAt && !S.moveSettingsOpen) {
+    /* Waits out a project (re)load — Clear Sess and a state load return to the
+     * Project menu once the project is back. */
+    if (S.pendingMenuAt && !S.moveSettingsOpen && !S.pendingSetLoad &&
+            S.pendingDspSync === 0 && !S.stateLoading) {
         const _label = S.pendingMenuAt;
         S.pendingMenuAt = null;
         openGlobalMenuAt(_label);

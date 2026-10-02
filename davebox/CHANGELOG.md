@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Changed
+- **The Project menu brings you back.** Anything you open or do from it —
+  Projects, Save/Load state, Clear Session, templates, Export, Host Settings,
+  the Dave Box, a No on Suspend/Quit — returns to the Project menu when you
+  leave or it is done. Loading a project still takes you to that project.
 ### Fixed
 - **Switching projects no longer carries the drum lane page, drum repeat
   mode, repeat latches or NOTE FX / MIDI DLY random modes** from the project

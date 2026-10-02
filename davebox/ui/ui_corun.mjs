@@ -194,6 +194,9 @@ function onServiceReturn(id, _result) {
         if (S.moveSettingsOpen) cleanupAfterMoveSettings();
         else cleanupAfterMoveNativeCoRun();
     }
+    /* Host Settings is opened only from the Project menu: closing it returns
+     * there. */
+    if (id === "global_settings") S.pendingMenuAt = 'Host Settings...';
     /* Overlay services (fx_picker) need no module-side cleanup. */
     S.screenDirty = true;
 }

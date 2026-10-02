@@ -969,8 +969,7 @@ function uniqueOutPath(base) {
  * (rendered inside the open global menu, like Clear Session). */
 function requestExport() {
     if (S.playing) {
-        S.globalMenuOpen = false;
-        showStopTransportNotice();
+        showStopTransportNotice();   /* over the Project menu, which stays */
         return;
     }
     S.confirmExport    = true;
@@ -984,8 +983,7 @@ function requestExport() {
 function confirmExportStart() {
     S.confirmExport = false;
     if (S.playing) {
-        S.globalMenuOpen = false;
-        showStopTransportNotice();
+        showStopTransportNotice();   /* over the Project menu, which stays */
         return;
     }
     if (conductorTrackIdx() >= 0) {
@@ -1018,8 +1016,7 @@ export function confirmExportCondClick() {
     }
     if (S.playing) {                          /* transport started while dialog open */
         S.confirmExportCondPhase = false;
-        S.globalMenuOpen         = false;
-        showStopTransportNotice();
+        showStopTransportNotice();   /* over the Project menu, which stays */
         return;
     }
     S.exportApplyConductor = (S.confirmExportCondSel === 0);
@@ -1130,6 +1127,7 @@ function pollPendingExport() {
         S.screenDirty       = true;
     } else {
         showActionPopup('EXPORT FAIL', String(errMsg).slice(0, 18));
+        S.pendingMenuAt = 'Export to Ableton';   /* back to the Project menu */
     }
 }
 

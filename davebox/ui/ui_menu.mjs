@@ -218,6 +218,7 @@ function buildGlobalMenuItems() {
          * the entry is always present. */
         createAction('Projects...', function() {
             openProjectPadPicker();
+            if (S.projectPadPicker) S.projectPadPicker.fromMenu = true;   /* Back returns here */
         }),
         /* The saved project TEMPLATE (Josh, 2026-09-30: "put set as template in
          * the project menu alongside a clear template"). Set takes the project
@@ -253,6 +254,7 @@ function buildGlobalMenuItems() {
              * ⚠ "same as hold-Back" no longer: holding Back does nothing now,
              * and this is the only way to suspend. */
             S.confirmExit = 'suspend'; S.confirmExitSel = 1;
+            S.confirmExitFromMenu = 'Suspend session';   /* No returns here */
             S.globalMenuOpen = false;
         }),
         createAction('Quit', function() {
@@ -272,6 +274,7 @@ function buildGlobalMenuItems() {
              * Either way we save first, and either way the exit happens a tick
              * later so the save actually lands. */
             S.confirmExit = 'quit'; S.confirmExitSel = 1;
+            S.confirmExitFromMenu = 'Quit';   /* No returns here */
             S.globalMenuOpen = false;
         }),
         createDivider(),
