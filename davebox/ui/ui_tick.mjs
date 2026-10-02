@@ -27,7 +27,7 @@ import {
     BANK_SOUND, BANK_MACROS, isSoundBank,
     POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS, BANK_CHORD, DEFAULT_TRACK_OCTAVE, BANKNAV_HOLD_MS } from './ui_constants.mjs';
 
-import { S, standDownBankDisplay, stepRevealAvailable, loopViewActive, endLoopLatch, forgetUndo } from './ui_state.mjs';
+import { S, standDownBankDisplay, stepRevealAvailable, loopViewActive, endLoopLatch, forgetUndo, forgetProjectJs } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { tickPrefetch, dget, applyNewProjectSeed } from './ui_dsp_bridge.mjs';
 import { daveBoxTick, bannerDaveSync, loadDaveTick } from './ui_daves.mjs';
@@ -825,6 +825,7 @@ export function _tickImpl() {
         S.seqActiveNotes.clear(); S.seqLastStep = -1; S.seqLastClip = -1;
         S.pendingDspSync = 5;
         forgetUndo();                 /* the units were the last project's; the DSP drops its own in state_load */
+        forgetProjectJs();            /* per-project UI state saved nowhere: a fresh project's, not the last one's */
         host_module_set_param('state_load', S.currentSetUuid || '');
         /* NOTE: awaitingProjectSelect is deliberately NOT cleared here. Sending
          * the load is not evidence the load happened — see the pendingDspSync
@@ -926,6 +927,12 @@ export function _tickImpl() {
                 S.conductorTrack = -1;
             }
             restoreUiSidecar(true);
+            /* Per-clip settings the DSP saves but nothing re-read on a load —
+             * NOTE FX / MIDI DLY random modes, SEQ ARP steps, playback
+             * direction: they showed the previous project's (2026-10-02).
+             * AFTER the sidecar: it decides each track's active clip and lane. */
+            for (let _t = 0; _t < NUM_TRACKS; _t++)
+                if (S.trackPadMode[_t] !== PAD_MODE_CONDUCT) refreshPerClipBankParams(_t);
             computePadNoteMap();
             /* ⭐ AFTER the load, not before it: a brand-new project's random
              * key/scale is applied here because the state load immediately

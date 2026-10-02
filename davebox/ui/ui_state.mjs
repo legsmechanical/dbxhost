@@ -89,6 +89,31 @@ export function forgetUndo() {
     S.undoJsPatch = null;    S.redoJsPatch = null;
 }
 
+/* Per-project UI state that is saved NOWHERE — not in the DSP state, not in the
+ * UI sidecar — back to a fresh project's, when a project loads. Each of these
+ * kept the PREVIOUS project's value (2026-10-02 audit): the drum lane page was
+ * even pushed into the new project's DSP by restoreUiSidecar; drum perform mode
+ * left the pads routed to the repeat handlers while the DSP (reset by its own
+ * state_load) played normally; a repeat latched while stopped stayed latched.
+ * Values the DSP holds are re-read after the load, not reset here. */
+export function forgetProjectJs() {
+    for (let t = 0; t < NUM_TRACKS; t++) {
+        S.drumLanePage[t]              = 0;
+        S.drumPerformMode[t]           = 0;
+        S.drumRepeatHeldPad[t]         = -1;
+        S.drumRepeatLatched[t]         = false;
+        S.drumRepeatHeldPadsStack[t].length = 0;
+        S.drumRepeat2HeldLanes[t].clear();
+        S.drumRepeat2LatchedLanes[t].clear();
+        S.lastTarpStyle[t]             = 1;
+        S.clipAdaptiveMode[t]          = new Array(16).fill(false);
+        S.clipLengthManuallySet[t]     = new Array(16).fill(false);
+        S.drumLaneLengthManuallySet[t] = false;
+        S.drumLastVelZone[t]           = 12;
+    }
+    S.followPaused = false;
+}
+
 export function nowMs() {
     return S.clockFollowTicks ? Math.round(S.tickCount * TICK_MS_FOR_TESTS) : Date.now();
 }
