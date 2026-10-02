@@ -674,6 +674,7 @@ export const S = {
      * the exit it guards ('suspend' | 'quit') or is null; the Yes/No row follows
      * the universal convention (0 = Yes, 1 = No) and opens on No. */
     confirmExit: null,
+    confirmExitFromMenu: null,   /* the Project menu row that raised the exit confirm: No returns there */
     /* The bank header's [instrument] abbreviation for the ACTIVE track — a cache
      * (ui_render.refreshInstrAbbrev), never a read on the draw path. */
     instrAbbrev: '--',

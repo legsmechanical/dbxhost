@@ -68,7 +68,7 @@ import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVo
     macroClearConfirmReset, macroClearConfirmOpen, soundMixSendClick, soundEnterSendFromSessionMixer } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { templateConfirmClick } from './ui_template.mjs';
-import { ensureGlobalMenuFresh, openGlobalMenu } from './ui_menu.mjs';
+import { ensureGlobalMenuFresh, openGlobalMenu, openGlobalMenuAt } from './ui_menu.mjs';
 /* ⚠ one-way: ui_render never imports this module (checked 2026-08-31) —
  * the visibility predicate must be the render's own or the click gate and
  * the screen can disagree. */
@@ -378,9 +378,13 @@ function _onCC_jog(d1, d2) {
     if (d1 === 3 && d2 === 127 && S.confirmExit) {
         const kind = S.confirmExit;
         S.confirmExit = null;
+        const _fromMenu = S.confirmExitFromMenu;
+        S.confirmExitFromMenu = null;
         if (S.confirmExitSel === 0) {
             if (kind === 'quit') exitSessionNow();
             else _suspendModule();
+        } else if (_fromMenu) {
+            S.pendingMenuAt = _fromMenu;    /* No: back to the Project menu */
         }
         S.screenDirty = true;
         forceRedraw();
@@ -524,14 +528,14 @@ function modalDialogUp() {
 }
 
     if (d1 === 3 && d2 === 127 && (S.globalMenuOpen || modalDialogUp())) {
-        if (S.exportDoneDialog) {            /* OK dismiss */
+        if (S.exportDoneDialog) {            /* OK dismiss — back to the Project menu */
             S.exportDoneDialog = false;
-            S.globalMenuOpen   = false;
             S.screenDirty = true;
             return;
         }
         if (S.confirmClearSession) {
-            if (S.confirmClearSel === 0) doClearSession();
+            /* Clearing reloads the project; the menu comes back once it has. */
+            if (S.confirmClearSel === 0) { doClearSession(); S.pendingMenuAt = 'Clear Sess'; }
             else { S.confirmClearSession = false; }
             S.screenDirty = true;
             return;
@@ -2276,7 +2280,7 @@ function returnToOverview() {
 
     /* 1. Transient dialogs, pickers and captures. No early returns: this is a
      *    one-press escape, so everything open closes at once. */
-    if (S.snapshotPicker) { S.snapshotPicker.confirm = null; closeSnapshotPicker(); }
+    if (S.snapshotPicker) { S.snapshotPicker.confirm = null; closeSnapshotPicker(false); }
     if (S.globalEnumPick) closeGlobalEnumPick(false);          /* abandon, never commit */
     if (S.tempoSelectActive) {
         /* Keep the auditioned tempo, exactly as Back and the jog-click do. */
@@ -2318,6 +2322,9 @@ function returnToOverview() {
     if (S.daveBox)             closeDaveBox();
     if (miActive())            miClose();
     if (S.projectPadPicker)    closeProjectPadPicker();   /* startup case handled by noOverviewYet */
+    /* Going HOME is a destination: nothing left open returns to the Project
+     * menu. Cleared after the closes above, which may have asked. */
+    S.pendingMenuAt = null; S.confirmExitFromMenu = null;
 
     /* 2. The global menu and every confirm nested in it, all at once. */
     /* ⚠ OUTSIDE the globalMenuOpen block: these confirms are raised from the
@@ -2386,7 +2393,12 @@ function _backTap() {
      * leave to their own jog-click flow; Back must not act underneath them. */
     if (S.confirmStateWipe) return;
     /* The exit confirm: Back is No — you stay exactly where you were. */
-    if (S.confirmExit) { S.confirmExit = null; S.screenDirty = true; return; }
+    if (S.confirmExit) {
+        S.confirmExit = null;
+        if (S.confirmExitFromMenu) S.pendingMenuAt = S.confirmExitFromMenu;   /* Back = No: to the menu */
+        S.confirmExitFromMenu = null;
+        S.screenDirty = true; return;
+    }
     if (S.confirmTypeChange) { const c = S.confirmTypeChange; S.confirmTypeChange = null; cancelTypeChange(c); S.screenDirty = true; return; }
     if (S.confirmModuleChange) { S.confirmModuleChange = null; cancelModuleChange(); S.screenDirty = true; return; }
     /* ⭐ The TRACK-TYPE conversion confirms answer Back as No WHEREVER they were
@@ -2414,7 +2426,7 @@ function _backTap() {
     if (S.daveBox) {
         /* Back leaves the album for the menu it was opened from. */
         closeDaveBox();
-        openGlobalMenu();
+        openGlobalMenuAt('Open Your Dave Box');
         return;
     }
     if (S.projectPadPicker) {
@@ -2493,7 +2505,7 @@ function _backTap() {
         else if (S.confirmConvertToDrum)  { closeConvertConfirm(); }
         else if (S.confirmConvertToConduct){ closeConvertConfirm(); }
         else if (S.menuInfoLines.length > 0){ S.menuInfoLines = []; }
-        else if (S.exportDoneDialog)      { S.exportDoneDialog = false; S.globalMenuOpen = false; }
+        else if (S.exportDoneDialog)      { S.exportDoneDialog = false; }   /* stays in the menu */
         else if (S.confirmExportCondPhase){ S.confirmExportCondPhase = false; }
         else if (S.confirmExport)         { S.confirmExport = false; }
         else { S.globalMenuOpen = false; S.lastSentMenuEditValue = null; }

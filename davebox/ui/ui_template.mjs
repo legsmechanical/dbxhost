@@ -64,6 +64,9 @@ export function templateConfirmClick() {
         const rc = host_system_cmd('sh ' + PROJECT_CMD + ' template-clear ' + TEMPLATE_ID);
         S.globalMenuOpen = false;
         showActionPopup(rc === 0 ? 'TEMPLATE' : 'CLEAR FAILED', rc === 0 ? 'CLEARED' : undefined);
+        /* Back to the Project menu, REBUILT: the Clear Template row is gone, so
+         * the cursor lands on Set as Template. */
+        S.pendingMenuAt = 'Set as Template';
     }
 }
 function armTemplateSet() {
@@ -86,11 +89,13 @@ export function runTemplateSet() {
     host_ensure_dir(TEMPLATES_DIR);
     if (!host_write_file(INCOMING_UI, JSON.stringify(templateSidecar()))) {
         showActionPopup('TEMPLATE', 'FAILED');
+        S.pendingMenuAt = 'Set as Template';
         return;
     }
     const rc = host_system_cmd('sh ' + PROJECT_CMD + ' template-set ' + TEMPLATE_ID + ' ' +
                                S.currentSetUuid + " '" + INCOMING_UI + "' " + STATE_PREFIX);
     showActionPopup('TEMPLATE', rc === 0 ? 'SET' : 'FAILED');
+    S.pendingMenuAt = 'Set as Template';   /* back to the menu, rebuilt (Clear Template now shows) */
 }
 
 /* ---- New ---- */
