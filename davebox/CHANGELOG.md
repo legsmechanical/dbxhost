@@ -10,6 +10,9 @@ the section into a versioned heading at release time.
 ### Fixed
 - **Delete + click in the track menu does nothing.** It used to reset the
   bank behind the menu.
+- **Performance Mode repeats.** Short repeats no longer leave stuck notes on
+  melodic tracks or go silent on drum tracks (a cut-off hit used to silence
+  that drum in every later repeat). SEQ ARP tracks repeat too.
 
 ## [0.0.10] — 2026-10-01 (test build, not in the Schwung catalog)
 ### Added
