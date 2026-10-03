@@ -119,6 +119,7 @@ step('tap DELAY: the bank moves, the overview stays, the map stays up', () => {
     tap(pad(3, 2));
     assert(S.activeBank === 3, 'activeBank ' + S.activeBank);
     assert(!S.bankCardLatched, 'a tap from the overview latched the card');
+    assert(S.bankSelectTick < 0 && !render.bankCardVisible(), 'a tap from the overview opened the bank page');
     assert(S.bankMapUp, 'the map went away on the tap');
     ticks(6);
     assert(led[pad(3, 2)] === K.White && led[pad(2, 1)] === K.VividYellow, 'the White pad did not follow');
