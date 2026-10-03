@@ -463,7 +463,12 @@ export function mvPrintScaled(x, y, text, color, scale) {
     }
 }
 
-/* ---- 5x3 micro font (schwung-movy glyphs5x3, MIT) — inside the squares ---- */
+/* ---- 5x3 micro font (schwung-movy glyphs5x3, MIT) — inside the squares ----
+ * Six letters redrawn for the bank pad map (Josh, 2026-10-02), each because
+ * it read as another character at this size: N (read as K) is an arch, A's
+ * crossbar sits a row lower, B is rounded (one pixel from 8), G is rounded and
+ * open (one pixel from 6), K has arms (read as H), and O is round — it was
+ * IDENTICAL to 0. M stays as Movy drew it (Josh: keep the original M). */
 const PF3_CHARS = " !\"'()+,-./:0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ%<>=?*";
 const PF3_G = [
   [4,0,0,0],
@@ -475,11 +480,11 @@ const PF3_G = [
   [4,0,3,5,7,4,6,4,7], [4,0,3,5,5,5,7,4,4], [4,0,3,5,7,1,7,4,7],
   [4,0,3,5,7,1,7,5,7], [4,0,3,5,7,4,4,4,4], [4,0,3,5,7,5,7,5,7],
   [4,0,3,5,7,5,7,4,7],
-  [4,0,3,5,2,7,5,5,5], [4,0,3,5,7,5,3,5,7], [4,0,3,5,7,1,1,1,7],
+  [4,0,3,5,2,5,7,5,5], [4,0,3,5,3,5,3,5,3], [4,0,3,5,7,1,1,1,7],
   [4,0,3,5,3,5,5,5,3], [4,0,3,5,7,1,3,1,7], [4,0,3,5,7,1,3,1,1],
-  [4,0,3,5,7,1,5,5,7], [4,0,3,5,5,5,7,5,5], [4,0,3,5,7,2,2,2,7],
-  [4,0,3,5,4,4,4,5,7], [4,0,3,5,5,5,3,5,5], [4,0,3,5,1,1,1,1,7],
-  [4,0,3,5,5,7,5,5,5], [4,0,3,5,5,3,5,5,5], [4,0,3,5,7,5,5,5,7],
+  [4,0,3,5,6,1,5,5,6], [4,0,3,5,5,5,7,5,5], [4,0,3,5,7,2,2,2,7],
+  [4,0,3,5,4,4,4,5,7], [4,0,3,5,5,3,1,3,5], [4,0,3,5,1,1,1,1,7],
+  [4,0,3,5,5,7,5,5,5], [4,0,3,5,3,5,5,5,5], [4,0,3,5,2,5,5,5,2],
   [4,0,3,5,7,5,7,1,1], [4,0,3,5,3,5,5,7,2], [4,0,3,5,7,5,3,5,5],
   [4,0,3,5,6,1,2,4,3], [4,0,3,5,7,2,2,2,2], [4,0,3,5,5,5,5,5,7],
   [4,0,3,5,5,5,5,5,2], [4,0,3,5,5,5,5,7,7], [4,0,3,5,5,5,2,5,5],
@@ -3065,6 +3070,52 @@ export function drawKitCrumbs(parts) {
  * category scope"). An item with no `cat` is a plain row, fully left, as
  * before. The highlight starts at the row's own indent, so it never covers a
  * label. */
+/* ---- THE BANK PAD MAP (Josh, 2026-10-02) ----
+ * Full screen, no header — like the bank column, it covers the page while the
+ * jog is HELD. Four 32px columns, one per category, each a picture of a
+ * column of the left 4x4 pads: the category in the micro face on top with a
+ * short rule, then four rows of boxed bank names. The current bank is filled;
+ * a bank this track does not have draws nothing, so its place stays empty
+ * exactly as its pad stays dark.
+ *
+ * `cols` = [{ label | null, cells: [name | null] x4 }] x4; `cur` = { c, r } | null.
+ * Names are the micro face, centred; a name wider than the box wraps at its
+ * last space onto two lines (LIVE/ARP, NOTE/FX, DRUM/LANE). Geometry is the
+ * approved preview's: rows 14px apart from y=7, boxes 13px tall. */
+export const MV_BANKMAP_COL_W = 32, MV_BANKMAP_TOP = 7, MV_BANKMAP_ROW = 14;
+export function bankMapCellRect(c, r) {
+    return { x: c * MV_BANKMAP_COL_W, y: MV_BANKMAP_TOP + r * MV_BANKMAP_ROW,
+             w: MV_BANKMAP_COL_W - 1, h: MV_BANKMAP_ROW - 1 };
+}
+export function drawKitBankMap(cols, cur) {
+    if (!cols) return;
+    fill_rect(0, 0, SCREEN_W, 64, 0);
+    cols.forEach((col, c) => {
+        if (!col) return;
+        const x0 = c * MV_BANKMAP_COL_W, inner = MV_BANKMAP_COL_W - 5;
+        if (col.label) {
+            const lw = pf3Width(col.label) - 1;
+            pf3Print(x0 + Math.round((MV_BANKMAP_COL_W - 1 - lw) / 2), 0, col.label, 1);
+            fill_rect(x0 + 2, 6, MV_BANKMAP_COL_W - 5, 1, 1);
+        }
+        col.cells.forEach((name, r) => {
+            if (!name) return;
+            const { x, y, w, h } = bankMapCellRect(c, r);
+            const on = !!(cur && cur.c === c && cur.r === r);
+            if (on) fill_rect(x, y, w, h, 1); else rectOutline(x, y, w, h, 1);
+            notchCorners(x, y, w, h);
+            const sp = name.lastIndexOf(' ');
+            const lines = (pf3Width(name) - 1 > inner && sp > 0)
+                ? [name.slice(0, sp), name.slice(sp + 1)] : [name];
+            let ty = y + Math.round((h - (lines.length * 6 - 1)) / 2);
+            for (const t of lines) {
+                pf3Print(x + Math.round((w - (pf3Width(t) - 1)) / 2), ty, t, on ? 0 : 1);
+                ty += 6;
+            }
+        });
+    });
+}
+
 export const MV_BANKNAV_ROW_H = 9, MV_BANKNAV_ROWS = 7;
 /* Names only, no bank glyphs (Josh, 2026-09-26: "do a build with no icons on
  * the overlay"). The items still carry their glyph; true draws it again. */

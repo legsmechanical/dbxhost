@@ -80,7 +80,8 @@ import { applyTrackConfig,
 import { recordNoteOn, recordNoteOff,
     extHeldNotes, extCountInCapture } from './ui_record.mjs';
 import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './ui_input_pads.mjs';
-import { applyBankPick, heldStepJog } from './ui_input_cc.mjs';
+import { applyBankPick, heldStepJog, bankMapArmable, bankMapBegin, bankMapEnd, bankMapPadTap,
+    bankMapTurned } from './ui_input_cc.mjs';
 import { standDownBankDisplay } from './ui_state.mjs';
 import { _onCCMsg, syncCoRunShift } from './ui_input_cc.mjs';
 import { soundActive, soundOpen, soundResting, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw,
@@ -544,6 +545,62 @@ function _onMidiInternalImpl(data) {
     if (d1 === MoveMainTouch && S.jogTouched &&
             ((status & 0xF0) === 0x80 || ((status & 0xF0) === 0x90 && d2 < 64)))
         _jogTouchRelease();
+
+    /* Pads physically down, both edges above every gate — the bank pad map
+     * lets go of each one when it paints. */
+    if (d1 >= 68 && d1 <= 99) {
+        const _k = status & 0xF0;
+        if (_k === 0x90 && d2 > 0) S.padPhysDown.add(d1);
+        else if (_k === 0x80 || _k === 0x90) S.padPhysDown.delete(d1);
+    }
+
+    /* THE BANK PAD MAP (Josh, 2026-10-02): hold the jog and the left 4x4 pads
+     * are the banks. Where the map can arm, the PRESS is held back and the
+     * click happens on RELEASE — replayed through this same dispatcher when it
+     * was let go before the map painted, so every click meaning keeps its own
+     * code. Both edges live here, above every modal gate: a release
+     * swallowed by a screen would strand the hold (the jog-touch lesson
+     * above). Elsewhere the press goes on to its owner exactly as before. */
+    if (status === 0xB0 && d1 === MoveMainButton) {
+        if (d2 === 127 && !S.jogClickReplay && S.jogPressMs < 0 && bankMapArmable()) {
+            bankMapBegin();
+            return;
+        }
+        if (d2 !== 127 && S.jogPressMs >= 0) {
+            /* A click is a press let go BEFORE the map painted. Once it is on
+             * screen, letting go just puts it away — you looked and chose
+             * nothing. */
+            const click = !S.bankMapUsed && !S.bankMapUp;
+            bankMapEnd();
+            if (click) {
+                S.jogClickReplay = true;
+                try { _onMidiInternalImpl([0xB0, MoveMainButton, 127]); }
+                finally { S.jogClickReplay = false; }
+            }
+        }
+    } else if (S.jogPressMs >= 0) {
+        if (status === 0xB0 && d1 === MoveMainKnob) {
+            bankMapTurned();                  /* the turn still walks, below */
+        } else if (status === 0xB0 && d2 === 127 && !(d1 >= 71 && d1 <= 79)) {
+            /* Another button while held (Shift, Delete, Back...): the gesture
+             * is something else now. The map goes, no click fires, and the
+             * button goes on to its owner. */
+            bankMapEnd();
+        } else if (!(d1 >= 68 && d1 <= 99) && d1 !== MoveMainTouch) {
+            S.bankMapUsed = true;
+        }
+    }
+    if (d1 >= 68 && d1 <= 99) {
+        const _k = status & 0xF0;
+        if (_k === 0x80 || (_k === 0x90 && d2 === 0)) {
+            if (S.bankMapSwallow.delete(d1)) return;
+        } else if (_k === 0xA0) {
+            if (S.jogPressMs >= 0 || S.bankMapSwallow.has(d1)) return;
+        } else if (_k === 0x90 && S.jogPressMs >= 0) {
+            bankMapPadTap(d1);
+            return;
+        }
+    }
 
     /* PROJECT DID NOT OPEN is fully modal: nothing else may act while dAVEBOx
      * holds something Move does not. */

@@ -7,6 +7,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **Hold the jog to jump to any bank.** The left 4×4 pads become a map of the
+  track's banks — one column per group, the same on every track type — and the
+  screen shows it. Tap a pad to land on that bank. In Session View the map holds
+  the mixer modes and opens the Master, Send A and Send B effects directly.
+
+### Changed
+- **A jog click now happens when you let go**, not when you press, wherever the
+  jog walks the banks (so a held jog can bring up the map instead).
+- **Clearer small letters.** N, A, B, G, K and O in the smallest screen font
+  were redrawn: N no longer reads as K, O no longer matches 0, B no longer
+  matches 8.
+
 ### Fixed
 - **Performance Mode repeats over MIDI DLY no longer go silent or stick.** An
   echo landing on its own note left that pitch counted as sounding, so the

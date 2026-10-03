@@ -3116,9 +3116,17 @@ export function soundEnterBuses() {
 /* Straight into MASTER FX from session view (Shift + hold Note/Session, Josh
  * 2026-09-24). It is the list's own door plus the Master row's own click, so
  * Back lands on the SESSION FX list exactly as if the row had been clicked. */
-export function soundEnterMasterFx() {
+export function soundEnterMasterFx() { soundEnterBusFx('master'); }
+
+/* Straight into one effect bus — the bank pad map's FX column in Session View
+ * (Josh, 2026-10-02: "3 pads for session effects"). The same door as Master
+ * above, so Back lands on the SESSION FX list whichever bus it was. */
+export function soundEnterBusFx(busId) {
+    const bus = FX_BUSES.find((b) => b.id === busId);
+    if (!bus) return false;
     soundEnterBuses();
-    S.pendingAction = { t: 'bus', bus: FX_BUSES[0], door: { kind: 'session' } };
+    S.pendingAction = { t: 'bus', bus: bus, door: { kind: 'session' } };
+    return true;
 }
 
 function enterBus(bus, door) {

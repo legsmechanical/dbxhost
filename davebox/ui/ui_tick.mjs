@@ -25,7 +25,8 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
-    POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS, BANK_CHORD, DEFAULT_TRACK_OCTAVE, BANKNAV_HOLD_MS } from './ui_constants.mjs';
+    POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS, BANK_CHORD, DEFAULT_TRACK_OCTAVE, BANKNAV_HOLD_MS,
+    JOG_MAP_HOLD_MS } from './ui_constants.mjs';
 
 import { S, standDownBankDisplay, stepRevealAvailable, loopViewActive, endLoopLatch, forgetUndo, forgetProjectJs } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -61,7 +62,8 @@ import { pollDSP,
     pendingDrumNoteOffs, _drumRecNoteOns, _drumRecNoteOffs } from './ui_dsp_bridge.mjs';
 import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes, stepRecExit } from './ui_record.mjs';
 import { xposeCancelPreview } from './ui_xpose.mjs';
-import { checkBackHold, checkShiftNoteHold, backTapWouldAct, applyShiftEdge, raiseExitConfirm, syncCoRunShift, goToSessionOverview } from './ui_input_cc.mjs';
+import { checkBackHold, checkShiftNoteHold, backTapWouldAct, applyShiftEdge, raiseExitConfirm, syncCoRunShift, goToSessionOverview,
+    bankMapArm, bankMapEnd } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
@@ -956,6 +958,9 @@ export function _tickImpl() {
             S.jogTouched = false;
             S.knobTouched = -1;
             S.knobPhysIdx = -1;
+            bankMapEnd();                 /* a lost jog release must not strand the map */
+            S.padPhysDown.clear();
+            S.bankMapSwallow.clear();
             standDownBankDisplay(true);   /* a project switch: no window survives it */
             invalidateLEDCache();
             forceRedraw();
@@ -1259,6 +1264,10 @@ export function _tickImpl() {
             S.bankNavKind = null;
             S.screenDirty = true;
         }
+        /* THE BANK PAD MAP paints once the jog has been held JOG_MAP_HOLD_MS —
+         * a plain click is shorter, so it never flashes the map. */
+        if (S.jogPressMs >= 0 && !S.bankMapUp && S.clockMs - S.jogPressMs >= JOG_MAP_HOLD_MS)
+            bankMapArm();
         /* Overlay expiry: clear timer here so drawUI() can gate on flag alone */
         if (S.stretchBlockedEndTick >= 0 && S.clockMs >= S.stretchBlockedEndTick) {
             S.stretchBlockedEndTick = -1;

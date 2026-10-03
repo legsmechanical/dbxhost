@@ -5,11 +5,11 @@ import {
     TRACK_COLORS, TRACK_DIM_COLORS, TRACK_PAD_BASE, SCENE_BTN_FLASH_MS,
     PAD_MODE_DRUM, BANKS,
     POLL_INTERVAL, TAP_TEMPO_FLASH_MS, PARAM_LED_BANKS, CONDUCT_LED_BANKS,
-    SEQ8_NAV_FLAGS, MoveNoteSession
+    SEQ8_NAV_FLAGS, MoveNoteSession, BANK_CONFIG, BANK_SOUND
 } from './ui_constants.mjs';
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
-import { arpVelLevel, drumVelocityToZone } from './ui_pure.mjs';
+import { arpVelLevel, drumVelocityToZone, bankPadMapForMode, SESS_PAD_MAP, bankMapPadForCell } from './ui_pure.mjs';
 import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell } from './ui_knob_leds.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { devSnapOpen, devSnapLedFor } from './ui_devsnap.mjs';
@@ -18,7 +18,7 @@ import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import {
     White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue,
     DeepRed, DeepGreen, DeepMagenta, Mustard, BrightPink,
-    DeepBrownYellow, BrightOrange, Tan,
+    DeepBrownYellow, BrightOrange, Tan, VividYellow, Violet,
     MoveBack, MoveCopy, MoveDelete
 } from '/data/UserData/schwung/shared/constants.mjs';
 import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
@@ -565,9 +565,37 @@ export function paintProjectPickerSurface() {
     }
 }
 
+/* THE BANK PAD MAP's pads (Josh, 2026-10-02): the left 4x4 coloured by
+ * category, the bank you are on White, a bank this track does not have dark,
+ * and the whole right 4x4 dark. One painter for all 32, so nothing underneath
+ * shows through. SEQ is yellow, not the previews' green: green is a track
+ * colour, and CONFIG / MIX wear the track's own colour. */
+const BANK_MAP_COL_COLORS = [Cyan, Violet, VividYellow, BrightOrange];
+const SESS_MAP_COLORS = [VividYellow, Cyan, Violet, Violet];   /* VOLUME, PAN, SEND A, SEND B */
+function paintBankMapPads() {
+    const col = new Array(32).fill(LED_OFF);
+    const at = (c, r) => bankMapPadForCell(c, r) - TRACK_PAD_BASE;
+    if (S.bankMapKind === 'session') {
+        for (let r = 0; r < 4; r++) {
+            col[at(0, r)] = r === S.sessKnobMode ? White : SESS_MAP_COLORS[r];
+            if (SESS_PAD_MAP.fx.buses[r]) col[at(1, r)] = BrightOrange;
+        }
+    } else {
+        const t = S.activeTrack;
+        bankPadMapForMode(S.trackPadMode[t], t).forEach((c, ci) => c.cells.forEach((cell, r) => {
+            if (!cell) return;
+            const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND;
+            col[at(ci, r)] = cell.bank === S.activeBank ? White
+                : own ? trackColor(t) : BANK_MAP_COL_COLORS[ci];
+        }));
+    }
+    for (let i = 0; i < 32; i++) cachedSetLED(TRACK_PAD_BASE + i, col[i]);
+}
+
 export function updateSessionLEDs() {
     if (!S.ledInitComplete) return;
     if (paintProjectPickerLEDs()) return;
+    if (S.bankMapUp) { paintBankMapPads(); return; }
     if (S.tapTempoOpen) {
         for (let i = 0; i < 32; i++) {
             const note  = TRACK_PAD_BASE + i;
@@ -724,6 +752,8 @@ export function updateTrackLEDs() {
         for (let i = 0; i < 32; i++) cachedSetLED(TRACK_PAD_BASE + i, _miOv[i]);
         return;
     }
+
+    if (S.bankMapUp) { paintBankMapPads(); return; }
 
     if (S.tapTempoOpen) {
         for (let i = 0; i < 32; i++) {

@@ -1061,6 +1061,26 @@ export const S = {
      * overlay disappears briefly and the banks scroll absent an overlay"), so a
      * recent turn holds the column up too — see BANKNAV_HOLD_MS. */
     bankNavTurnMs: 0,
+    /* THE BANK PAD MAP (Josh, 2026-10-02): hold the jog down and the left 4x4
+     * pads are the banks. `jogPressMs` = nowMs() of the jog press being held
+     * in a context where the map may arm, -1 otherwise — the press is DEFERRED
+     * there and a release before the map painted replays it as the click. `bankMapUp` = the map is painted (OLED + pads); `bankMapUsed` = a
+     * pad was tapped or the jog turned in this hold, so the release is not a
+     * click. `bankMapKind` 'track' | 'session' and `bankMapRest` (the pick's
+     * rest flag) are fixed at the press. */
+    jogPressMs: -1,
+    bankMapUp: false,
+    bankMapUsed: false,
+    bankMapKind: null,
+    bankMapRest: false,
+    jogClickReplay: false,
+    /* Pads physically down (notes 68-99), recorded above every modal gate,
+     * so the map can let go of each one when it paints. */
+    padPhysDown: new Set(),
+    /* Pads whose release (and pressure) the map has already accounted for —
+     * a tapped map pad, or one the map let go of. Swallowed even if the jog
+     * comes up first, so no note-off lands for a note that never sounded. */
+    bankMapSwallow: new Set(),
     /* Tick of the last picker turn, for the SETTLE fallback. The gesture
      * normally ends with the jog-touch release, but a turn can arrive with no
      * touch at all (the capacitive read can miss a quick flick, and the remote

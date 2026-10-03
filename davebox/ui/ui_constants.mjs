@@ -634,6 +634,10 @@ export const BANK_DEFAULT = 0;
  * jog touch sensor dropping out mid-turn, short enough that letting go after
  * the turn still reads as the column going at once. */
 export const BANKNAV_HOLD_MS = 100;   /* Josh, 2026-09-26: "do 100ms" */
+/* How long the jog must be held before the bank pad map PAINTS. A plain click
+ * is shorter, so it never flashes the map or spends LED traffic; a pad tap or
+ * a turn inside the window arms the map at once. */
+export const JOG_MAP_HOLD_MS = 120;
 
 /* JS tick rate on device (~94 Hz measured). Older constants were calibrated
  * against a mistaken 196 Hz assumption — derive new timings from this. */

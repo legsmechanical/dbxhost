@@ -131,6 +131,84 @@ export function bankCategoriesForMode(padMode, t) {
     ];
 }
 
+/* THE BANK PAD MAP (Josh, 2026-10-02): hold the jog and the LEFT 4x4 pads are
+ * the track's banks — a column per category, banks top to bottom, one pad per
+ * bank. "Rows corresponding to categories" became columns on the previews;
+ * the right 4x4 is dark and dead while the map is up.
+ *
+ * ⭑ Membership comes from the WALK (bankCycleForMode), so a bank the track
+ * does not have (CHORD outside the Chord layout) simply leaves its pad dark.
+ * Only the POSITION is a table — fixed, so nothing shifts when a bank comes or
+ * goes, and the same job sits on the same pad on every track type (DRUM LANE
+ * where CLIP is, RPT GROOVE where LIVE ARP is). The Shift + top-row bank jump
+ * was retired (2026-08-25) partly because its pad maps were kept in lockstep
+ * with the walks BY HAND; test_bank_pad_map_table pins this one to the walk.
+ * Positions are [column, row], row 0 = the TOP pad row. */
+const BANK_MAP_POS = {
+    melodic: { [BANK_CHORD]: [0, 0], 5: [0, 1], [BANK_CONFIG]: [0, 3],
+               [BANK_MACROS]: [1, 0], [BANK_AUTOMATION]: [1, 1], [BANK_SOUND]: [1, 3],
+               [BANK_STEP]: [2, 0], 0: [2, 1],
+               1: [3, 0], 2: [3, 1], 3: [3, 2], 4: [3, 3] },
+    drum:    { 5: [0, 1], [BANK_CONFIG]: [0, 3],
+               [BANK_MACROS]: [1, 0], [BANK_AUTOMATION]: [1, 1], [BANK_SOUND]: [1, 3],
+               [BANK_STEP]: [2, 0], 0: [2, 1], 7: [2, 2],
+               1: [3, 0], 3: [3, 2] },
+    conduct: { [BANK_CONFIG]: [0, 3],
+               [BANK_RESPONDER]: [1, 0], [BANK_OCTAVE]: [1, 1], [BANK_WHEN]: [1, 2],
+               0: [2, 0], [BANK_STEP]: [2, 1],
+               1: [3, 0] },
+};
+const BANK_MAP_LABELS = {
+    melodic: ['IN', 'CTRL', 'SEQ', 'FX'],
+    drum:    ['IN', 'CTRL', 'SEQ', 'FX'],
+    conduct: [null, 'RSPD', 'SEQ', 'FX'],
+};
+/* AUTOMATION has no space to wrap at and is wider than a cell. */
+const BANK_MAP_SHORT = { [BANK_AUTOMATION]: 'AUTO' };
+
+function bankMapFamily(padMode) {
+    return padMode === PAD_MODE_CONDUCT ? 'conduct' : padMode === PAD_MODE_DRUM ? 'drum' : 'melodic';
+}
+
+/* The map for one track: 4 columns of { label, cells: [{ bank, name } | null x4] }.
+ * A walk bank with no position is left off (the table test makes that a failure). */
+export function bankPadMapForMode(padMode, t) {
+    const fam = bankMapFamily(padMode), pos = BANK_MAP_POS[fam];
+    const cols = BANK_MAP_LABELS[fam].map((label) => ({ label, cells: [null, null, null, null] }));
+    for (const b of bankCycleForMode(padMode, t)) {
+        const p = pos[b];
+        if (!p || cols[p[0]].cells[p[1]]) continue;
+        cols[p[0]].cells[p[1]] = { bank: b, name: BANK_MAP_SHORT[b] || bankDisplayName(padMode, b) };
+    }
+    return cols;
+}
+
+/* The bank under a map pad, or null (dark pad, right half). */
+export function bankPadMapCellAt(padMode, t, col, row) {
+    if (col < 0 || col > 3 || row < 0 || row > 3) return null;
+    const c = bankPadMapForMode(padMode, t)[col].cells[row];
+    return c ? c.bank : null;
+}
+
+/* Session View's map: the mixer modes down column 0 (SESS_KNOB_MODES indices
+ * 0..3 — the gateway card, index 4, is not a pad), and the effect buses in
+ * column 1, each beside its level (Josh: "Send a and b [should be] aligned
+ * with their counterparts on the mixer row"). Bus ids are FX_BUSES ids. */
+export const SESS_PAD_MAP = {
+    mixer: { label: 'MIXER', modes: [0, 1, 2, 3] },
+    fx:    { label: 'FX', buses: ['master', null, 'sendA', 'sendB'],
+             names: ['MASTER', null, 'SEND A', 'SEND B'] },
+};
+
+/* Pad note for a map cell: pads run bottom-to-top 68-75 / 76-83 / 84-91 /
+ * 92-99, so the TOP row (row 0) is 92. */
+export function bankMapPadForCell(col, row) { return 92 - row * 8 + col; }
+export function bankMapCellForPad(note) {
+    const i = note - 68;
+    if (i < 0 || i > 31) return null;
+    return { col: i % 8, row: 3 - (i >> 3) };
+}
+
 /* Bank position in the jog-cycle order, for the header position strip. Melodic
  * banks cycle 0..6 linearly; drum banks cycle in BANK_CYCLE_DRUM order;
  * conductor banks cycle in CONDUCT_BANK_CYCLE order. Returns {idx, count} for

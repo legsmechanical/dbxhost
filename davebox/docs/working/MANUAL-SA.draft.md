@@ -344,8 +344,28 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   keep turning to walk from there. In the bank view a click switches to the bank's
   **alternate** parameters (a down-arrow in the header marks a bank that has them,
   and blinks while they show), or opens the Arp Steps editor.
+  The click happens when you **let go** of the jog, not when you press it.
 - **Back** closes the bank view without changing the bank, so the knobs keep
   working from the overview.
+- **Hold the jog down** to jump straight to any bank: the left 4×4 pads become a
+  map of the track's banks and the screen shows the same map. **Tap a pad** to
+  land on that bank; keep holding to tap another, and **let go** to play again.
+  The right 4×4 pads go dark and do nothing while the map is up. From the
+  overview the overview stays; from the bank view the bank view follows.
+
+  Each column is a group, and its banks run top to bottom. A bank the track
+  doesn't have leaves its pad dark, and nothing moves, so a bank is always on
+  the same pad:
+
+  | | IN | CTRL | SEQ | FX |
+  |---|---|---|---|---|
+  | **Melodic** | CHORD, LIVE ARP, —, CONFIG | MACROS, AUTO, —, MIX | STEP, CLIP | NOTE FX, HARMONY, DELAY, SEQ ARP |
+  | **Drum** | —, RPT GROOVE, —, CONFIG | MACROS, AUTO, —, MIX | STEP, DRUM LANE, ALL LANES | NOTE FX, —, DELAY |
+  | **Conductor** | —, —, —, CONFIG | ON/OFF, OCTAVE, TIMING (RSPD) | CLIP, STEP | NOTE FX |
+
+  The pads wear their group's color; the bank you're on is white, and CONFIG and
+  MIX wear the track's color. Let go before the map appears and it's an ordinary
+  click.
 - **Shift + jog** steps through the **tracks**, not the banks.
 - **Each track remembers its bank**, CONFIG, MIX and MACROS included — across
   track switches, suspend, and quit and relaunch.
@@ -383,6 +403,10 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 - A track that plays another track's instrument has no strip; its column shows a
   cross.
 - On a MIDI track, Volume is CC 7 and Pan is CC 10.
+- **Hold the jog** here too for the map: the **MIXER** column is Volume, Pan,
+  Send A and Send B; beside it, the **FX** column opens the **Master**, **Send A**
+  and **Send B** effects directly, each next to its level. The sends share a
+  color.
 
 ## 3.7 Menus & Project Settings
 
@@ -639,8 +663,8 @@ A step holds up to **eight notes**. Build a chord two ways:
 
 Holding a step points whatever knobs are on screen at that step:
 
-- On the **STEP** bank (the last clip bank on the jog, just before SOUND +
-  CONFIG) the knobs are the note's own settings, listed below. With no step held
+- On the **STEP** bank (the first of the SEQ banks on the jog, just before
+  CLIP) the knobs are the note's own settings, listed below. With no step held
   the bank reads *Hold step to edit*.
 - On a module editor, MACROS, or a sequencer-effect bank (NOTE FX, HARMONY, DELAY,
   SEQ ARP, and CLIP's Dir), the knobs write a **lock** at that step (see

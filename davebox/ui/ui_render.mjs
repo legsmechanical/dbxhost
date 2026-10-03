@@ -36,7 +36,7 @@ import { drawAutoMarkAt,
     kitUseLayout,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
     drawVFader, mvPrint, mvWidth, rectOutline, plotLine,
-    drawLevelCard, drawKitBackdropDim, drawKitBankNavColumn,
+    drawLevelCard, drawKitBackdropDim, drawKitBankNavColumn, drawKitBankMap,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
     drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y,
@@ -53,7 +53,8 @@ import {
 } from './ui_dialogs.mjs';
 import { isBooleanPair } from './ui_cells.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
-import { bankCyclePos, bankCycleForMode, bankCategoriesForMode, bankDisplayName } from './ui_pure.mjs';
+import { bankCyclePos, bankCycleForMode, bankCategoriesForMode, bankDisplayName,
+    bankPadMapForMode, SESS_PAD_MAP } from './ui_pure.mjs';
 import { syncDrumRepeatState } from './ui_drummodel.mjs';
 import {
     effectiveClip,
@@ -1562,8 +1563,40 @@ export function bankNavItems() {
         cur: Math.max(0, cyc.indexOf(S.activeBank)),
     };
 }
+/* THE BANK PAD MAP's screen (Josh, 2026-10-02): a picture of the left 4x4
+ * pads while the jog is held — { cols, cur } for drawKitBankMap. */
+export function bankMapItems() {
+    if (S.bankMapKind === 'session') {
+        const m = SESS_PAD_MAP;
+        return {
+            cols: [
+                { label: m.mixer.label, cells: m.mixer.modes.map((i) => SESS_KNOB_MODES[i].label) },
+                { label: m.fx.label, cells: m.fx.names.slice() },
+                null, null,
+            ],
+            cur: (S.sessKnobMode | 0) < 4 ? { c: 0, r: S.sessKnobMode | 0 } : null,
+        };
+    }
+    const t = S.activeTrack;
+    let cur = null;
+    const cols = bankPadMapForMode(S.trackPadMode[t], t).map((c, ci) => ({
+        label: c.label,
+        cells: c.cells.map((cell, r) => {
+            if (cell && cell.bank === S.activeBank) cur = { c: ci, r };
+            return cell ? cell.name : null;
+        }),
+    }));
+    return { cols, cur };
+}
+function drawBankMap() {
+    if (!S.bankMapUp) return false;
+    const m = bankMapItems();
+    drawKitBankMap(m.cols, m.cur);
+    return true;
+}
 function drawBankNav() {
     if (!S.bankNavKind) return;
+    if (S.bankMapUp) return;
     if (!S.jogTouched && S.clockMs - S.bankNavTurnMs >= BANKNAV_HOLD_MS) return;
     /* A latched card (the bank view, the session mixer card) walks without it
      * when Bank Map on Lock is off. */
@@ -1618,6 +1651,7 @@ export function drawUI() {
     drawTrackVolCard();
     drawBankPicker();
     drawBankNav();
+    drawBankMap();
     /* THE NOTICE CARD, above everything (Josh, 2026-09-05: "the confirmation
      * overlays pop up wherever you are when you save/recall, same for session
      * view"): a card notice is drawn here, last, whatever screen the body

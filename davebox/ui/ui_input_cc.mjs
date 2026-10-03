@@ -24,7 +24,7 @@ import {
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, LGTO_KNOB,
     CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
-    TICK_HZ, STEP_ITER_LIST,
+    TICK_HZ, STEP_ITER_LIST, JOG_MAP_HOLD_MS,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
 import { closeChordPopup, chordEditSlot, chordSlotKnob, chordBankKnob, chordSlotReset } from './ui_chord_pads.mjs';
@@ -36,7 +36,7 @@ import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
          PAGE_KNOB, pageFloatStep } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity,
-         bankCycleForMode } from './ui_pure.mjs';
+         bankCycleForMode, bankPadMapCellAt, bankMapCellForPad, SESS_PAD_MAP } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
          showActionPopupFor, showActionPopupGauge } from './ui_persistence.mjs';
 import {
@@ -65,7 +65,8 @@ import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
 import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, soundEnterBuses, soundEnterMasterFx, macroClearConfirmAnswer,
-    macroClearConfirmReset, macroClearConfirmOpen, soundMixSendClick, soundEnterSendFromSessionMixer } from './ui_sound.mjs';
+    macroClearConfirmReset, macroClearConfirmOpen, soundMixSendClick, soundEnterSendFromSessionMixer,
+    soundOnCard, soundEnterBusFx } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { templateConfirmClick } from './ui_template.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu, openGlobalMenuAt } from './ui_menu.mjs';
@@ -89,7 +90,7 @@ import { setTrackMute, setTrackSolo, clearAllMuteSolo,
     copyDrumClip, cutDrumClip, clearRow,
     _switchActiveTrack, allLanesGate,
     resetFxBanks, resetBankParams, resetMidiFxChain, resetTarp, resetRptGroove, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
-import { _resolveLoopGesture, chordApplyRevoice } from './ui_input_pads.mjs';
+import { _resolveLoopGesture, chordApplyRevoice, _onPadRelease } from './ui_input_pads.mjs';
 import { seqFollowOn, setSeqFollowOn } from './ui_prefs.mjs';
 
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
@@ -1369,11 +1370,7 @@ function modalDialogUp() {
                      * session overview; its mode indicator (the short name at
                      * the top right, ui_render) follows. */
                     S.bankNavKind = 'session'; S.bankNavTurnMs = nowMs();
-                    const _prev = S.sessKnobMode;
-                    S.sessKnobMode = Math.max(0, Math.min(SESS_KNOB_MODES.length - 1,
-                                                          S.sessKnobMode + (delta > 0 ? 1 : -1)));
-                    if (S.sessKnobMode !== _prev) _sessInvalidateAllLevels();
-                    forceRedraw();
+                    sessWalkTo(S.sessKnobMode + (delta > 0 ? 1 : -1), true);
                 }
             }
         }
@@ -1383,6 +1380,109 @@ function modalDialogUp() {
 }
 
 const bankCycleFor = (track) => bankCycleForMode(S.trackPadMode[track], track);
+
+/* The session mixer MODE moves to `mode` (clamped): the walk's one owner, for
+ * the turn under the session overview and the bank pad map's MIXER column.
+ * `rest`: under the overview — nothing opens; otherwise the mixer page's
+ * display window is armed, as a turn on the page does. */
+export function sessWalkTo(mode, rest) {
+    const prev = S.sessKnobMode;
+    S.sessKnobMode = Math.max(0, Math.min(SESS_KNOB_MODES.length - 1, mode | 0));
+    if (S.sessKnobMode !== prev) _sessInvalidateAllLevels();
+    if (!rest) armBankDisplay();
+    forceRedraw();
+}
+
+/* ---- THE BANK PAD MAP (Josh, 2026-10-02) ----
+ * Hold the jog down and the left 4x4 pads are the banks; tap one to land on
+ * it, let go to play again. A quick click still does what it always did — but
+ * where the map can arm, the click now acts on RELEASE (ui.js defers the
+ * press and replays it when nothing happened in between). Everywhere else —
+ * dialogs, menus, pickers, the module editor, Shift / Delete chords, a touched
+ * knob — the click stays on the press, untouched.
+ *
+ * Where the map may arm: wherever the jog walks the banks. */
+export function bankMapArmable() {
+    if (S.shiftHeld || S.deleteHeld || S.copyHeld || S.muteHeld || S.loopHeld) return false;
+    if (S.knobTouched >= 0 || S.heldStep >= 0 || S.bankPickerSel >= 0 || S.stepIntervalMode) return false;
+    if (S.moveCoRunTrack >= 0 || S.moveSettingsOpen || soundModeCovered()) return false;
+    if (S.awaitingProjectSelect || S.stateLoading) return false;
+    if (S.sessionView) return !soundOpen() && !S.perfViewLocked;
+    if (S.activeBank === BANK_AUTOMATION && S.bankCardLatched && autoBankMenuOpen()) return false;
+    return !soundActive() || soundOnCard();
+}
+
+/* The jog went down in an armable context: the click is held back. */
+export function bankMapBegin() {
+    S.jogPressMs = nowMs();
+    S.bankMapUp = false;
+    S.bankMapUsed = false;
+    S.bankMapKind = S.sessionView ? 'session' : 'track';
+    /* From an overview a pick moves the bank underneath (the rest walk); from
+     * a shown card the card follows, as a turn there does. */
+    S.bankMapRest = S.sessionView ? !sessMixerVisible() : !(bankCardVisible() || soundOnCard());
+}
+
+/* Paint the map: OLED + pads. Every pad still down is let go through the real
+ * release path first, so nothing sticks and the chord / drum books close. */
+export function bankMapArm() {
+    if (S.bankMapUp || S.jogPressMs < 0) return;
+    S.bankMapUp = true;
+    for (const n of Array.from(S.padPhysDown)) {
+        _onPadRelease(0x80, n, 0);
+        S.bankMapSwallow.add(n);
+    }
+    computePadNoteMap();
+    invalidateLEDCache();
+    forceRedraw();
+}
+
+/* The hold is over (released, or something ended it). Idempotent. */
+export function bankMapEnd() {
+    if (S.jogPressMs < 0 && !S.bankMapUp) return;
+    const wasUp = S.bankMapUp;
+    S.jogPressMs = -1;
+    S.bankMapUp = false;
+    S.bankMapUsed = false;
+    S.bankMapKind = null;
+    if (wasUp) {
+        computePadNoteMap();
+        invalidateLEDCache();
+    }
+    forceRedraw();
+}
+
+/* A pad pressed while the jog is held: a map tap. The right 4x4 and dark
+ * pads do nothing — but still count as "used", so the release is no click. */
+export function bankMapPadTap(note) {
+    S.bankMapUsed = true;
+    bankMapArm();
+    S.bankMapSwallow.add(note);
+    const cell = bankMapCellForPad(note);
+    if (!cell || cell.col > 3) return;
+    if (S.bankMapKind === 'session') {
+        if (cell.col === 0) {
+            const mode = SESS_PAD_MAP.mixer.modes[cell.row];
+            if (mode !== undefined) sessWalkTo(mode, S.bankMapRest);
+        } else if (cell.col === 1) {
+            const bus = SESS_PAD_MAP.fx.buses[cell.row];
+            if (bus) { soundEnterBusFx(bus); bankMapEnd(); }
+        }
+        return;
+    }
+    const t = S.activeTrack;
+    const b = bankPadMapCellAt(S.trackPadMode[t], t, cell.col, cell.row);
+    if (b === null) return;
+    S.bankPickerSel = bankCycleFor(t).indexOf(b);
+    applyBankPick(S.bankMapRest);
+}
+
+/* A turn while the jog is held walks as always, and counts as "used". */
+export function bankMapTurned() {
+    if (S.jogPressMs < 0) return;
+    S.bankMapUsed = true;
+    bankMapArm();
+}
 
 /* A bank knob's turn, heard by the automation owner as its seq: target — a
  * held step locks it, Record takes it, a plain turn is a plain turn — exactly
