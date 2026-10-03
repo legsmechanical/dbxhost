@@ -217,6 +217,7 @@ step('a knob turn during a quick hold: the release is not a click', () => {
     home();
     press();
     midi(0xB0, 71, 1);                       /* a turn (its touch arrives separately) */
+    assert(S.bankMapUsed, 'a knob turn did not count as doing something during the hold');
     release();
     assert(!S.bankCardLatched, 'a knob turn then release clicked');
     midi(0x90, 0, 127); midi(0x80, 0, 0);     /* the knob's touch and let-go */
@@ -230,6 +231,16 @@ step('a lost jog release: the next press ends the stale hold and is judged afres
     press(); release();                      /* a quick click */
     assert(!S.bankMapUp && S.jogPressMs < 0, 'the stale map survived');
     assert(S.bankCardLatched, 'the fresh click did not latch');
+});
+
+step('a lost jog release, and the next press is NOT armable: the stale map still ends', () => {
+    home();
+    press(); holdPast();                     /* the release never arrives */
+    S.knobTouched = 0;                       /* a hand on a knob: the next press may not arm */
+    press();
+    assert(!S.bankMapUp && S.jogPressMs < 0, 'the stale map survived a press it could not take');
+    S.knobTouched = -1;
+    release();
 });
 
 step('the view changing under the hold ends the map', () => {
