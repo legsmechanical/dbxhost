@@ -10,8 +10,9 @@ the section into a versioned heading at release time.
 ### Added
 - **Hold the jog to jump to any bank.** The left 4×4 pads become a map of the
   track's banks — one column per group, the same on every track type — and the
-  screen shows it. Tap a pad to land on that bank. In Session View the map holds
-  the mixer modes and opens the Master, Send A and Send B effects directly.
+  screen shows it. Tap a pad to land on that bank — CONFIG and AUTOMATION open
+  straight into their menus. In Session View the map holds the mixer modes and
+  opens the Master, Send A and Send B effects directly.
 
 ### Changed
 - **Bank Lock** in Project Settings: turn it off and a jog click on the

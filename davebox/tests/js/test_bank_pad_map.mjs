@@ -306,6 +306,48 @@ step('drum track: RPT GROOVE where LIVE ARP is, ALL LANES under DRUM LANE, MIX o
     S.trackPadMode[2] = 0;
 });
 
+const ab = await import('../../ui/ui_automation_bank.mjs');
+const tickS = (n) => { for (let i = 0; i < n; i++) { tick(); snd.soundTick(); } };
+const backBtn = () => { midi(0xB0, 51, 127); midi(0xB0, 51, 0); tickS(2); };
+
+step('⭐⭐ a CONFIG pick clicks INTO it: the TRACK CONFIG menu is up, the map is gone; Back gets home', () => {
+    home();
+    press(); holdPast();
+    tap(pad(0, 3));                                    /* CONFIG, bottom-left */
+    assert(!S.bankMapUp && S.jogPressMs < 0, 'the map stayed up over the editor');
+    release();
+    tickS(4);
+    assert(S.activeBank === C.BANK_CONFIG, 'bank ' + S.activeBank);
+    assert(snd.soundActive() && snd.soundViewForTest() === 0, 'not in the TRACK CONFIG menu: view ' + snd.soundViewForTest());
+    for (let i = 0; i < 3 && snd.soundActive(); i++) backBtn();
+    assert(!snd.soundActive() && !S.bankCardLatched, 'Back did not get home');
+});
+
+step('⭐⭐ an AUTOMATION pick clicks INTO it: its menu is open and on screen; Back gets home', () => {
+    home(); tickS(2);
+    press(); holdPast();
+    tap(pad(1, 1));                                    /* AUTOMATION */
+    assert(!S.bankMapUp, 'the map stayed up');
+    release();
+    assert(S.activeBank === C.BANK_AUTOMATION && ab.autoBankMenuOpen(), 'menu not open');
+    assert(render.bankCardVisible(), 'the menu is not on screen');
+    tickS(2);
+    assert(ab.autoBankMenuOpen(), 'drawing the card closed the menu');
+    backBtn(); backBtn();
+    assert(!ab.autoBankMenuOpen() && !render.bankCardVisible(), 'Back did not get home');
+});
+
+step('…and with Bank Lock off it opens unlocked', () => {
+    home(); S.bankLockOn = false; tickS(2);
+    press(); holdPast();
+    tap(pad(1, 1));
+    release(); tickS(2);
+    assert(ab.autoBankMenuOpen() && !S.bankCardLatched && render.bankCardVisible(), 'unlocked menu not shown');
+    backBtn();
+    assert(!render.bankCardVisible(), 'Back did not get home');
+    S.bankLockOn = true;
+});
+
 step('Conductor: CLIP and STEP in SEQ, the responders in column 2', () => {
     const m = pure.bankPadMapForMode(C.PAD_MODE_CONDUCT, 2);
     assert(m[2].cells[0].name === 'CLIP' && m[2].cells[1].bank === C.BANK_STEP, 'conductor SEQ');

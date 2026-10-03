@@ -22,7 +22,7 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS,
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
-    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, LGTO_KNOB,
+    BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG, LGTO_KNOB,
     CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST, JOG_MAP_HOLD_MS,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
@@ -1499,6 +1499,26 @@ export function bankMapPadTap(note) {
     if (b === null) return;
     S.bankPickerSel = bankCycleFor(t).indexOf(b);
     applyBankPick(S.bankMapRest);
+    /* ⭑ A bank you have to click INTO before anything edits — CONFIG (TRACK
+     * CONFIG) and AUTOMATION (its menu) — is clicked into by the pick itself
+     * (Josh, 2026-10-03: "have any bank that you have to click into to do any
+     * editing (track config/automation) actually get clicked into when we hit
+     * the jog click hold pad shortcut for it"). An editor is now on screen,
+     * so the map goes, as an FX pad's does in Session View. */
+    if (b === BANK_CONFIG) {
+        /* The same door Shift + Note/Session uses: a mode already open shows
+         * the menu now; an entry still queued opens on it. Back from the menu
+         * returns to where the pick came from (the card, or the overview). */
+        if (soundOpen() && !soundIsGlobal()) soundShowMenu();
+        else S.pendingSoundEnterMenu = true;
+        bankMapEnd();
+    } else if (b === BANK_AUTOMATION) {
+        /* Its menu draws on the card: with Bank Lock on the card is locked
+         * (the first click's job), with it off the open menu shows itself. */
+        if (bankLockOn() && !S.bankCardLatched) { S.bankCardLatched = true; armBankDisplay(); }
+        if (!autoBankMenuOpen()) autoBankClick();
+        bankMapEnd();
+    }
 }
 
 /* A turn while the jog is held walks as always, and counts as "used". */

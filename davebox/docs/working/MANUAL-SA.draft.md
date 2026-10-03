@@ -359,6 +359,9 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   land on that bank; keep holding to tap another, and **let go** to play again.
   The right 4×4 pads go dark and do nothing while the map is up. From the
   overview the overview stays; from the bank view the bank view follows.
+  **CONFIG** and **AUTOMATION**, the banks you click into before anything
+  edits, open straight into their menus (TRACK CONFIG, the AUTOMATION menu)
+  and the map goes; **Back** steps out.
 
   Each column is a group, and its banks run top to bottom. A bank the track
   doesn't have leaves its pad dark, and nothing moves, so a bank is always on
