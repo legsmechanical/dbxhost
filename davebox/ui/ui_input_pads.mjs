@@ -1559,11 +1559,10 @@ export function _onStepButtons(d1, d2) {
             const nextVel = curVel === 0 ? 100 : 0;
             applyTrackConfig(t, 'track_vel_override', nextVel);
         } else if (idx === 10 && !isDrum) {
-            /* Step 11: toggle TRACK ARP style on/off (melodic only) */
-            const curStyle = S.bankParams[t][5][0] | 0;
-            const nextStyle = curStyle !== 0 ? 0 : S.lastTarpStyle[t];
-            S.bankParams[t][5][0] = nextStyle;
-            applyBankParam(t, 5, 0, nextStyle);
+            /* Step 11 (melodic): a TAP toggles LIVE ARP on the RELEASE; a HOLD
+             * opens its settings (checkShiftStep11Hold, from the tick). The
+             * press only starts the clock — the hold decides. */
+            S.shiftStep11Tick = nowMs();
         } else if (idx === 14) {
             /* Step 15: double-and-fill: doubles the clip/drum-lane window. */
             doDoubleFill();
@@ -1794,6 +1793,14 @@ export function _onStepButtons(d1, d2) {
     }
 }
 
+/* LIVE ARP on/off with its last style — Shift + Step 11's tap. */
+export function toggleLiveArp(t) {
+    const curStyle = S.bankParams[t][5][0] | 0;
+    const nextStyle = curStyle !== 0 ? 0 : S.lastTarpStyle[t];
+    S.bankParams[t][5][0] = nextStyle;
+    applyBankParam(t, 5, 0, nextStyle);
+}
+
 export function _onPadRelease(status, d1, d2) {
     if (S.projectPadPicker && d1 >= 68 && d1 <= 99) return;
     if (S.mergeNoticePending) return;   /* Live Merge notice is modal (Rec/Back only) */
@@ -1885,6 +1892,14 @@ export function _onPadRelease(status, d1, d2) {
     /* Step button release: tap-toggle if within threshold, always exit step edit */
     if (d1 >= 16 && d1 <= 31) {
         const btn = d1 - 16;
+        /* Shift + Step 11 let go before the hold fired: the TAP — toggle LIVE
+         * ARP. Read off the recorded press, not S.shiftHeld (Shift may be up). */
+        if (btn === 10 && S.shiftStep11Tick >= 0) {
+            S.shiftStep11Tick = -1;
+            if (!S.sessionView && S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM) toggleLiveArp(S.activeTrack);
+            forceRedraw();
+            return;
+        }
         /* ⭐ NOTHING defers to the release any more. All three step-slot
          * surfaces — the snapshot layer, the mute states and the perf presets —
          * commit on the PRESS (see the grammar note above), so the

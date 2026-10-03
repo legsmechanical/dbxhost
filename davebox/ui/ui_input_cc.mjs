@@ -1578,6 +1578,7 @@ function walkBanks(delta, rest) {
  * entry (it opens resting; the card is not shown). */
 export function applyBankPick(rest) {
     const t = S.activeTrack;
+    S.arpPopReturn = null;        /* a bank chosen any other way ends the LIVE ARP pop-up's way home */
     const cyc = bankListFor(t);   /* bankPickerSel indexes the track's FULL list: doors included */
     const idx = S.bankPickerSel;
     S.bankPickerSel = -1;
@@ -2537,6 +2538,7 @@ function returnToOverview() {
     S.bankCardLatched   = false;
     S.sessMixerLatched  = false;
     autoBankReset();                /* an open AUTOMATION menu shows itself (Bank Lock off) */
+    S.arpPopReturn = null;
     standDownBankDisplay(true);
     S.jogTouched        = false;
 
@@ -2696,6 +2698,18 @@ function _backTap() {
         /* A LANE JUMP landed here (plan 6c2): the first Back returns to the
          * AUTOMATION menu, cursor on the lane. Spent by any track-view Back,
          * and honoured only while you are still on the bank it sent you to. */
+        /* The LIVE ARP pop-up (Shift + hold Step 11): Back returns exactly where
+         * you were — the bank, and whether its card was locked. */
+        if (S.arpPopReturn) {
+            const r = S.arpPopReturn;
+            S.arpPopReturn = null;
+            if (r.track === S.activeTrack && S.activeBank === 5) {
+                if (r.bank !== 5) { S.bankPickerSel = bankListFor(r.track).indexOf(r.bank); applyBankPick(!r.latched); }
+                S.bankCardLatched = r.latched;
+                if (!r.latched) standDownBankDisplay(true);
+                invalidateLEDCache(); forceRedraw(); return;
+            }
+        }
         if (S.autoReturn) {
             const r = S.autoReturn;
             S.autoReturn = null;
@@ -2867,6 +2881,34 @@ forceRedraw();
  *
  * The RELEASE then only has to notice the hold already fired — the tick is
  * cleared here, so a release with nothing pending does nothing. */
+/* Shift + HOLD Step 11 (Josh, 2026-10-03: "i want to have live arp settings
+ * pop-up when you shift+hold the 11th step button"; "Stays until Back"). Fires
+ * at the threshold from the tick, like Shift + hold Note/Session, and spends
+ * Shift the same way so the card it opens is not stood down by a key that is
+ * still physically held. Melodic Track View only. */
+export function checkShiftStep11Hold() {
+    if (S.shiftStep11Tick < 0) return;
+    if ((S.clockMs - S.shiftStep11Tick) < BACK_HOLD_MS) return;
+    S.shiftStep11Tick = -1;
+    if (S.sessionView || S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM ||
+            S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT ||
+            S.moveCoRunTrack >= 0 || soundModeCovered() || S.awaitingProjectSelect) return;
+    if (S.shiftHeld) applyShiftEdge(false);
+    openLiveArpPopup();
+}
+
+/* The LIVE ARP pop-up: its bank card, locked whatever Bank Lock says, with a
+ * crumb home so Back returns exactly where you were (bank and lock). */
+export function openLiveArpPopup() {
+    const t = S.activeTrack, prev = S.activeBank, latched = !!S.bankCardLatched;
+    if (prev !== 5) { S.bankPickerSel = bankListFor(t).indexOf(5); applyBankPick(false); }
+    S.arpPopReturn = { track: t, bank: prev, latched: latched };   /* after the commit, which drops crumbs */
+    S.bankCardLatched = true;
+    armBankDisplay();
+    invalidateLEDCache();
+    forceRedraw();
+}
+
 export function checkShiftNoteHold() {
     if (S.shiftNoteSessionTick < 0) return;
     /* Co-run owns this button while it is up (Menu is its way out), so abandon
@@ -5297,6 +5339,7 @@ function _switchViewCleanup() {
     autoBankReset();
     autoLanePinClear();
     S.autoReturn = null;           /* a lane jump's Back crumb does not survive a view switch */
+    S.arpPopReturn = null;         /* nor does the LIVE ARP pop-up's */
     endLoopLatch();                /* a latched Loop view is Track View's; Session's Loop is Perf */
     stepRecExit();
     standDownBankDisplay(true);

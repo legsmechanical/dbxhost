@@ -862,6 +862,12 @@ export const S = {
      * on RELEASE — tap opens the SOUND + CONFIG menu, hold goes to instrument
      * edit — so the press only records when it happened. -1 = none pending. */
     shiftNoteSessionTick: -1,
+    /* Shift + Step 11 (Josh, 2026-10-03): a TAP toggles LIVE ARP, a HOLD opens
+     * its settings. nowMs() of the press while it is undecided, -1 otherwise. */
+    shiftStep11Tick: -1,
+    /* The LIVE ARP pop-up's way home — { track, bank, latched } — spent by Back;
+     * any other bank change, track or view switch drops it. */
+    arpPopReturn: null,
     /* Set with pendingSoundEnterTrack when the ASK was for the menu rather than
      * the bank: tick opens sound mode route-aware, then lands on the menu
      * instead of the bank's prompt. */

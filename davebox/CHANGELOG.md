@@ -8,6 +8,9 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added
+- **Shift + hold Step 11 opens LIVE ARP's settings** (melodic tracks) and keeps
+  them up until Back, which returns you where you were. A tap still turns LIVE
+  ARP on and off.
 - **Hold the jog to jump to any bank.** The left 4×4 pads become a map of the
   track's banks — one column per group, the same on every track type — and the
   screen shows it. Tap a pad to land on that bank — CONFIG and AUTOMATION open

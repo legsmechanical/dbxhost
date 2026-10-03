@@ -671,7 +671,7 @@ export function _switchActiveTrack(newT) {
     /* Leaving a track leaves the AUTOMATION menu (Josh, 2026-09-25): coming
      * back shows the AUTOMATION card, one click from the list — never the
      * previous track's cursor, ops or lane still open on the steps. */
-    if ((newT | 0) !== S.activeTrack) { autoBankReset(); autoLanePinClear(); }
+    if ((newT | 0) !== S.activeTrack) { autoBankReset(); autoLanePinClear(); S.arpPopReturn = null; }
     S.activeTrack = newT | 0;
     S.instrAbbrevAt = 0;                  /* the header's [instrument] follows the track */
     S.activeBank = S.trackActiveBank[S.activeTrack] | 0;

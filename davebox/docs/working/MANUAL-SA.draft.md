@@ -1170,7 +1170,12 @@ The controls match [SEQ ARP](#94-seq-arp) (except Retrigger defaults to Off), pl
 - With pads held, tap **Loop** to latch; tap it again (pads held) to unlatch.
 - **Loop** with no pads held clears the latched notes but keeps Latch on.
 - Stop, **Delete + Play**, or switching to Session View unlatches.
-- **Shift + Step 11** toggles LIVE ARP on and off with the last style.
+- **Shift + Step 11** (tap) toggles LIVE ARP on and off with the last style.
+- **Shift + hold Step 11** (about half a second) opens LIVE ARP's settings: its
+  page stays up — the knobs edit it, a click opens Arp Steps — until **Back**,
+  which returns you exactly where you were. Turning the jog, picking a bank on
+  the map, or switching track or view also closes it. LIVE ARP is not on the jog
+  walk; it is on the bank map too (IN column, second pad).
 - LIVE ARP **can't be automated** — its settings belong to the track, not a clip.
   It is still available as a macro destination.
 
@@ -2487,7 +2492,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | 8 | Pad layout (Scale → Chrom → Piano → Chord) / cycle right-pad mode | Track |
 | 9 | Scale — jump to Scale in Project Settings | Both |
 | 10 | VelIn (Live ↔ 100) — icon lit while fixed | Track |
-| 11 | LIVE ARP on/off — icon lit while on | Track (melodic) |
+| 11 | Tap: LIVE ARP on/off — icon lit while on. Hold: LIVE ARP's settings, until Back | Track (melodic) |
 | 13 | Schwung's Tools menu; hold it to come back from Suspend | Both |
 | 15 | Double the loop and copy its contents into the new half | Track |
 | 16 | Set NOTE FX Quantize to 100 % | Track |
