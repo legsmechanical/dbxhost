@@ -678,7 +678,7 @@ export function _switchActiveTrack(newT) {
         if (r && r.track === S.activeTrack && S.activeBank === r.door) {
             S.trackActiveBank[r.track] = r.bank;
             S.bankCardLatched = r.latched;
-            S.stepIntervalMode = false; S.altMode = false;
+            S.stepIntervalMode = false; S.altMode = false; S.knobAlt = 0;
         }
         S.doorReturn = null;
     }

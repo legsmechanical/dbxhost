@@ -76,14 +76,18 @@ step('⭐ ...and Back dismisses it to the overview', () => {
     if (bankCardVisible()) throw new Error('card still visible after Back');
 });
 
-step('with the card VISIBLE, click keeps its per-bank meaning — alt-param toggle', () => {
-    rest(); S.activeBank = 1;                    /* NOTE FX has alt params */
+step('with the card VISIBLE, a plain click no longer flips NOTE FX; touch K8 + click flips K8 alone', () => {
+    rest(); S.activeBank = 1;                    /* NOTE FX: K8 Rand <-> Algo */
     click();                                     /* latch from overview */
-    const alt = S.altMode;
     click();                                     /* second click: card visible */
-    if (S.altMode === alt) throw new Error('second click did not toggle alt-params');
-    if (!S.bankCardLatched) throw new Error('the per-bank click broke the latch');
-    S.altMode = false;
+    if (S.altMode || S.knobAlt) throw new Error('a plain click flipped: altMode ' + S.altMode + ' knobAlt ' + S.knobAlt);
+    if (!S.bankCardLatched) throw new Error('the second click broke the latch');
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 7, 127]));
+    click();
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 7, 0]));
+    if (S.knobAlt !== 1 << 7 || S.altMode) throw new Error('touch K8 + click: knobAlt ' + S.knobAlt);
+    if (!S.bankCardLatched) throw new Error('the flip broke the latch');
+    S.knobAlt = 0;
 });
 
 step('with the card VISIBLE on SEQ ARP, click toggles the step-interval editor', () => {

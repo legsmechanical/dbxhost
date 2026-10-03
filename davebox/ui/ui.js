@@ -31,7 +31,7 @@ import {
     TRACK_PAD_BASE,
     BANKS, PAD_MODE_DRUM, MoveCapture, BANKNAV_HOLD_MS, JOG_CLICK_MAX_MS } from './ui_constants.mjs';
 
-import { S } from './ui_state.mjs';
+import { S, knobAltOn } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
@@ -876,7 +876,7 @@ function _onMidiInternalImpl(data) {
                      * (Josh, 2026-09-03: "show the actual destination param as
                      * automated for deleting, muting, the dot"). */
                     if (!S.sessionView) {
-                        const _tg = seqAutoTargetForKnob(S.activeTrack, S.activeBank, d1, S.altMode);
+                        const _tg = seqAutoTargetForKnob(S.activeTrack, S.activeBank, d1, knobAltOn(d1));
                         if (_tg) {
                             const _t = S.activeTrack, _c = effectiveClip(_t);
                             if (S.deleteHeld) {
@@ -937,7 +937,7 @@ function _onMidiInternalImpl(data) {
                                 automationParamTouch(d1, effectiveClip(d1), tg.slot, tg.fullKey, false);
                     }
                     if (!S.sessionView && S.activeBank >= 0) {
-                        const _tg = seqAutoTargetForKnob(S.activeTrack, S.activeBank, d1, S.altMode);
+                        const _tg = seqAutoTargetForKnob(S.activeTrack, S.activeBank, d1, knobAltOn(d1));
                         if (_tg) automationParamTouch(S.activeTrack, effectiveClip(S.activeTrack), 'seq', _tg.slice(4), false);
                     }
                     if (S.activeBank >= 0 && BANKS[S.activeBank].knobs[d1]) {

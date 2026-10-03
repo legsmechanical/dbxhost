@@ -23,14 +23,14 @@ import {
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG, LGTO_KNOB,
-    CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
+    CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, knobAltFor, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST, JOG_MAP_HOLD_MS,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
 import { closeChordPopup, chordEditSlot, chordSlotKnob, chordBankKnob, chordSlotReset } from './ui_chord_pads.mjs';
 import { triggerFire } from './ui_trigger.mjs';
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay,
-         markJsUndoPatch, stepRevealAvailable, loopViewActive, endLoopLatch } from './ui_state.mjs';
+         markJsUndoPatch, stepRevealAvailable, loopViewActive, endLoopLatch, knobAltOn } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
@@ -321,6 +321,22 @@ function _onCC_jog(d1, d2) {
             S.pendingMidiImportOpen = S.activeTrack;
             triggerFire('import');
         }
+        forceRedraw();
+        return;
+    }
+
+    /* ⭑ A SINGLE-KNOB ALT flips on touch + click (Josh, 2026-10-03: "switch
+     * those params through knob-touch+click"): Res↔Zoom, Shift↔Nudge,
+     * Dir↔Revrs, Rand↔Algo, Rate↔ClkFb (KNOB_ALTS). Only the touched knob
+     * changes; the cell names whichever is live and the footer says what a
+     * click switches to. After the triggers above (no index overlaps), and
+     * before the plain-click page alt below, which no longer covers these
+     * banks. */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
+            !S.copyHeld && !S.muteHeld && S.knobTouched >= 0 &&
+            knobAltFor(S.trackPadMode[S.activeTrack], S.activeBank, S.knobTouched)) {
+        S.knobAlt ^= 1 << S.knobTouched;
+        S.screenDirty = true;
         forceRedraw();
         return;
     }
@@ -2348,7 +2364,7 @@ export function backTapWouldAct() {
         S.bpmMoveInfo || S.tapTempoOpen || S.globalMenuOpen) return true;
     if (S.sessionView) return S.perfViewLocked;
     /* Track view: alt-view exits, then non-default bank steps back to 0. */
-    return S.loopLatched || S.stepIntervalMode || S.altMode || S.activeBank !== 0;
+    return S.loopLatched || S.stepIntervalMode || S.altMode || S.knobAlt !== 0 || S.activeBank !== 0;
 }
 
 /* ⭑⭑ THE NOTE/SESSION LAW (Josh, 2026-09-02; revised 2026-09-30: Note/Session
@@ -2409,7 +2425,7 @@ export function atOverview() {
     if (S.confirmConvertToDrum || S.confirmConvertToConduct)        return false;
     if (S.bankCardLatched || S.sessMixerLatched)                    return false;
     if (S.sessionView) return !S.perfViewLocked;
-    return !(S.loopLatched || S.stepIntervalMode || S.altMode);
+    return !(S.loopLatched || S.stepIntervalMode || S.altMode || S.knobAlt !== 0);
 }
 
 /* Note/Session's destination from anywhere off the overview: every layer torn
@@ -2534,6 +2550,7 @@ function returnToOverview() {
     endLoopLatch();
     S.stepIntervalMode  = false;
     S.altMode           = false;
+    S.knobAlt           = 0;
     S.bankCardLatched   = false;
     S.sessMixerLatched  = false;
     closeDoorScreen();              /* a door screen gives its borrowed bank back */
@@ -2695,7 +2712,11 @@ function _backTap() {
         /* A latched Loop view draws over everything below, so it goes first. */
         if (endLoopLatch())       { invalidateLEDCache(); forceRedraw(); return; }
         if (S.stepIntervalMode)   { S.stepIntervalMode = false; computePadNoteMap(); forceRedraw(); return; }
+        /* An alt shown — the RPT GROOVE page, or knobs flipped by touch +
+         * click — Back flips it back first (Josh, 2026-10-03: "it should flip
+         * back"). */
         if (S.altMode)            { S.altMode = false; forceRedraw(); return; }
+        if (S.knobAlt)            { S.knobAlt = 0; forceRedraw(); return; }
         /* A LANE JUMP landed here (plan 6c2): the first Back returns to the
          * AUTOMATION menu, cursor on the lane. Spent by any track-view Back,
          * and honoured only while you are still on the bank it sent you to. */
@@ -2919,7 +2940,7 @@ export function closeDoorScreen() {
     S.doorReturn = null;
     if (!r || r.track !== S.activeTrack || S.activeBank !== r.door) return false;
     autoBankReset();
-    S.stepIntervalMode = false; S.altMode = false;
+    S.stepIntervalMode = false; S.altMode = false; S.knobAlt = 0;
     S.bankPickerSel = bankListFor(r.track).indexOf(r.bank);
     applyBankPick(!r.latched);
     S.bankCardLatched = r.latched;
@@ -4663,7 +4684,7 @@ function _onCC_knobs(d1, d2) {
             if (S.stepReveal || S.activeBank === BANK_STEP) return;
             if (!S.sessionView) {
                 const _d = decodeDelta(d2);
-                if (_d) bankKnobLockTurn(S.activeTrack, S.activeBank, d1 - 71, S.altMode, _d);
+                if (_d) bankKnobLockTurn(S.activeTrack, S.activeBank, d1 - 71, knobAltOn(d1 - 71), _d);
             }
             return;
         }
@@ -4802,9 +4823,9 @@ function _onCC_knobs(d1, d2) {
                     const curIdx = Math.max(0, TPS_VALUES.indexOf(S.drumLaneTPS[t]));
                     const nv = Math.max(0, Math.min(5, curIdx + dir));
                     if (nv !== curIdx) {
-                        if (S.altMode && (S.drumLaneLoopStart[t] | 0) > 0) {
+                        if (knobAltOn(knobIdx) && (S.drumLaneLoopStart[t] | 0) > 0) {
                             refuseLoopNotAtOne();   /* Zoom: CROP FIRST, like every transform */
-                        } else if (S.altMode) {
+                        } else if (knobAltOn(knobIdx)) {
                             const newTps = TPS_VALUES[nv];
                             /* The loop window keeps its time (the engine's rule). */
                             const lsTicks = (S.drumLaneLoopStart[t] | 0) * S.drumLaneTPS[t];
@@ -4870,9 +4891,9 @@ function _onCC_knobs(d1, d2) {
             }
             if (knobIdx === 2) {
                 /* K3 = Shft (clock shift, sens=8). Alt = Nudge (sens=4, faster). */
-                if (knobStep(knobIdx, d2, (S.altMode ? 4 : 8)) !== 0) {
+                if (knobStep(knobIdx, d2, (knobAltOn(knobIdx) ? 4 : 8)) !== 0) {
                     if ((S.drumLaneLoopStart[t] | 0) > 0) { refuseLoopNotAtOne(); return; }
-                    if (S.altMode) {
+                    if (knobAltOn(knobIdx)) {
                         S.bankParams[t][0][knobIdx] += dir;
                         host_module_set_param('t' + t + '_l' + lane + '_nudge', String(dir));
                     } else {
@@ -4893,7 +4914,7 @@ function _onCC_knobs(d1, d2) {
                  * AltMode flips this to Step / Audio playback style (sens=4). */
                 const _k7Sens = KNOB_PICK;
                 if (knobStep(knobIdx, d2, _k7Sens) !== 0) {
-                    if (S.altMode) {
+                    if (knobAltOn(knobIdx)) {
                         const _cur = S.drumLanePlaybackAudioReverse[t][lane] | 0;
                         const _nv  = Math.max(0, Math.min(1, _cur + dir));
                         if (_nv !== _cur) {
@@ -4955,9 +4976,9 @@ function _onCC_knobs(d1, d2) {
             }
             if (knobIdx === 2) {
                 /* K3 = Shft: clock shift all lanes, sens=8. Alt = Nudge (sens=1). */
-                if (knobStep(knobIdx, d2, (S.altMode ? 1 : KNOB_PICK)) !== 0) {
+                if (knobStep(knobIdx, d2, (knobAltOn(knobIdx) ? 1 : KNOB_PICK)) !== 0) {
                     if (lanesOffGrid(t) > 0) { refuseLoopNotAtOne(); return; }
-                    if (S.altMode) {
+                    if (knobAltOn(knobIdx)) {
                         S.bankParams[t][7][2] += dir;
                         host_module_set_param('t' + t + '_all_lanes_nudge', String(dir));
                     } else {
@@ -4978,7 +4999,7 @@ function _onCC_knobs(d1, d2) {
                  * Alt = RvSt (audio reverse on all lanes), sens=4. */
                 const _k7Sens = KNOB_PICK;
                 if (knobStep(knobIdx, d2, _k7Sens) !== 0) {
-                    if (S.altMode) {
+                    if (knobAltOn(knobIdx)) {
                         const curRv = S.bankParams[t][7][6] < 0 ? -1 : S.bankParams[t][7][6];
                         const nvRv = Math.max(0, Math.min(1, curRv + dir));
                         if (nvRv !== curRv) {
@@ -5068,7 +5089,7 @@ function _onCC_knobs(d1, d2) {
             return;
         }
         /* Alt+K8 on NOTE FX (bank 1) or DELAY (bank 3), melodic: cycle random algorithm (Pure/Gaus/Walk) */
-        if (S.altMode && S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM &&
+        if (knobAltOn(knobIdx) && S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM &&
                 ((bank === 1 && knobIdx === 7) || (bank === 3 && knobIdx === 7))) {
             const dir = (d2 >= 1 && d2 <= 63) ? 1 : -1;
             if (dir !== S.knobLastDir[knobIdx]) { S.knobAccum[knobIdx] = 0; S.knobLastDir[knobIdx] = dir; }
@@ -5090,12 +5111,12 @@ function _onCC_knobs(d1, d2) {
             }
             return;
         }
-        /* Shift+K1 on DELAY bank (melodic): clock feedback. K7 now hosts
+        /* K1 on DELAY (melodic), flipped by touch + click: clock feedback. K7 now hosts
          * delay_retrig (replaces the prior standalone Clk knob); clock_fb
          * folds onto the unused Shift modifier on K1 with a label flip
          * "Rate"↔"ClkF" in the OLED render. Mirror stored in S.delayClockFb
          * since bankParams[t][3][6] now stores retrig. */
-        if (S.altMode && S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM &&
+        if (knobAltOn(knobIdx) && S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM &&
                 bank === 3 && knobIdx === 0) {
             const t   = S.activeTrack;
             const dir = (d2 >= 1 && d2 <= 63) ? 1 : -1;
@@ -5232,7 +5253,7 @@ function _onCC_knobs(d1, d2) {
                             }
                         }
                     } else if (pm.dspKey === 'clock_shift') {
-                        if (S.altMode) {
+                        if (knobAltOn(knobIdx)) {
                             /* alt = Nudge — fire DSP, mirror counter for display, schedule re-read */
                             host_module_set_param('t' + t + '_nudge', String(dir));
                             S.bankParams[t][bank][knobIdx] += dir;
@@ -5262,7 +5283,7 @@ function _onCC_knobs(d1, d2) {
                             S.bankParams[t][bank][knobIdx] = S.clockShiftTouchDelta;
                         }
                     }
-                } else if (S.altMode && pm && pm.dspKey === 'clip_playback_dir' &&
+                } else if (knobAltOn(knobIdx) && pm && pm.dspKey === 'clip_playback_dir' &&
                            S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM) {
                     /* AltMode CLIP K5: toggle Step / Audio playback style on
                      * the active melodic clip. Values 0..1, clamped. */
@@ -5289,7 +5310,7 @@ function _onCC_knobs(d1, d2) {
                      * min to max than smaller ranges." They did. */
                     let nv  = Math.max(pm.min, Math.min(pm.max, cur + _delta));
                     if (nv !== cur) {
-                        if (S.altMode && pm.dspKey === 'clip_resolution') {
+                        if (knobAltOn(knobIdx) && pm.dspKey === 'clip_resolution') {
                             const _t   = S.activeTrack;
                             const _ac  = effectiveClip(_t);
                             const _old_tps = S.clipTPS[_t][_ac];

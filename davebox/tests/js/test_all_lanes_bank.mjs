@@ -131,12 +131,20 @@ step('⭐ K5 (Crop) fires on touch + click, and a turn writes nothing', () => {
     assert(sets.includes('t0_all_lanes_crop=1'), 'touch + click did not crop: ' + JSON.stringify(sets.slice(0, 6)));
 });
 
-step('a plain jog click toggles the alt page, as on every alt-param bank', () => {
-    const was = S.altMode;
+step('a plain jog click flips nothing; touch K3 / K7 + click flips that knob alone', () => {
     click();
-    assert(S.altMode === !was, 'altMode did not toggle');
-    click();
-    assert(S.altMode === was, 'altMode did not toggle back');
+    assert(!S.altMode && S.knobAlt === 0, 'a plain click flipped: alt ' + S.altMode + ' knobAlt ' + S.knobAlt);
+    touchClick(2);
+    assert(S.knobAlt === 1 << 2, 'K3: knobAlt ' + S.knobAlt);
+    sets.length = 0; turn(2, 1);
+    assert(sets.some(x => /_all_lanes_nudge=/.test(x)) && !sets.some(x => /_all_lanes_clock_shift=/.test(x)),
+           'flipped K3 did not nudge: ' + JSON.stringify(sets.slice(0, 6)));
+    touchClick(6);
+    assert(S.knobAlt === ((1 << 2) | (1 << 6)), 'K7: knobAlt ' + S.knobAlt);
+    sets.length = 0; turn(6, 1);
+    assert(sets.some(x => /_all_lanes_playback_audio_reverse=/.test(x)), 'flipped K7 wrote ' + JSON.stringify(sets.slice(0, 6)));
+    touchClick(2); touchClick(6);
+    assert(S.knobAlt === 0, 'a second touch + click did not flip back: ' + S.knobAlt);
 });
 
 step('Back only unlatches — nothing re-arms, the knobs still write at once', () => {

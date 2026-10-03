@@ -6,7 +6,7 @@
  * Extracted from ui.js (Phase 5 of the modularity refactor, module 5, final).
  */
 
-import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished, loopViewActive } from './ui_state.mjs';
+import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished, loopViewActive, knobAltOn } from './ui_state.mjs';
 import { bankViewMapOn, bankOverviewMapOn, jogTouchCardOn, seqFollowOn } from './ui_prefs.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H, drawDaveLoading } from './ui_daves.mjs';
 import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
@@ -17,7 +17,7 @@ import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
 import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
-import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, BANKNAV_HOLD_MS } from './ui_constants.mjs';
+import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, BANKNAV_HOLD_MS, knobAltFor } from './ui_constants.mjs';
 import { miActive, miRender } from './ui_midi_import.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
@@ -591,10 +591,10 @@ function drawSessionFaderRow(cells, mode) {
  *   CLK  STEPS   plain jog click toggles the Arp-Steps interval overlay --
  *                MELODIC tracks only, banks 4 and 5, which is exactly how the
  *                handler is gated.
- *   CLK  ALT     otherwise, plain jog click toggles sticky alt-param mode --
- *                but ONLY on a bank that HAS alt params (bankHasAltParams).
- *                On a bank without them the click falls through and does
- *                nothing, so there is no hint to give.
+ *   CLK  ALT     otherwise, plain jog click toggles the PAGE alt -- only drum
+ *                RPT GROOVE (bankHasAltParams). The single-knob alts (Zoom,
+ *                Nudge, Revrs, Algo, ClkFb) flip on touch + click and say so
+ *                while their knob is touched: CLK ZOOM, CLK RES, ...
  *   BACK OUT     a Back TAP rises one level: it clears alt mode, then the
  *                latch/bank display, then leaves the card. OUT and not EXIT --
  *                see MV_FOOTER_CANON, where the two are deliberately different
@@ -625,6 +625,11 @@ export function bankPageHints(bank) {
             (bank === 7 && S.knobTouched === ALL_LANES_CROP_KNOB &&
              S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM))) return [['CLK', 'CROP']];
     if (bank === 0 && S.knobTouched === IMPORT_KNOB && !S.sessionView) return [['CLK', 'IMPORT']];
+    /* ...and a touched SINGLE-ALT knob says what a click switches it to. */
+    if (!S.sessionView && S.knobTouched >= 0) {
+        const a = knobAltFor(S.trackPadMode[S.activeTrack], bank, S.knobTouched);
+        if (a) return [['CLK', (knobAltOn(S.knobTouched) ? a[0] : a[1]).toUpperCase()]];
+    }
     /* ⭑ While a step is HELD the jog means something else (spec §2): on any
      * other bank a right turn REVEALS the step's page — so the pair says so,
      * in the same slot, and JOG BANK (which the hold suspends) is not shown.
@@ -754,10 +759,6 @@ const PERF_MOD_NAMES = [
  * said C3, so one pad had two names (Josh, 2026-09-26: C3 = 60, like Move). */
 function midiNoteName(n) { return noteLabel(n, false); }
 
-/* True when (track-type, bank) exposes alt params reachable via S.altMode.
- * Melodic: CLIP(0), DELAY(3), AUTO/CC(6 — CC-assign). Drum: DRUM LANE(0),
- * REPEAT GROOVE(5), AUTO(6), ALL LANES(7). Keep in sync with the
- * shiftHeld→altMode migration sites. */
 /* Bank header label. Identical to BANKS[bank].name except a Conductor track
  * relabels bank 0 (CLIP) to "CONDUCT" — the CLIP bank is reused as the Conduct
  * bank. Does NOT rename BANKS[0] globally (other track types keep "CLIP"). */
@@ -1850,10 +1851,11 @@ function drawUIBody() {
     /* Alt-param mode is transient: any bank change, track change, or entering
      * Session View drops back to primary params. Diff-guard catches every
      * S.activeBank / S.activeTrack reassignment regardless of source. */
-    if (S.altMode && (S.sessionView ||              /* session view can be entered via a button after altMode was set */
+    if ((S.altMode || S.knobAlt) && (S.sessionView ||   /* session view can be entered via a button after altMode was set */
             S.activeBank !== S._altPrevBank ||
             S.activeTrack !== S._altPrevTrack)) {
         S.altMode = false;
+        S.knobAlt = 0;                              /* the single-knob alts too (parity) */
     }
     S._altPrevBank  = S.activeBank;
     S._altPrevTrack = S.activeTrack;
@@ -2286,20 +2288,20 @@ function drawUIBody() {
             const _dlRev = S.drumLanePlaybackAudioReverse[t][lane] | 0;
             const _dlDir = S.drumLanePlaybackDir[t][lane] | 0;
             const cells = [
-                withTouchArc({ kind: 'frac', label: S.altMode ? 'Zoom' : 'Res',
-                  name: S.altMode ? 'Zoom' : 'Resolution', text: fmtRes(tpsIdx),
+                withTouchArc({ kind: 'frac', label: knobAltOn(0) ? 'Zoom' : 'Res',
+                  name: knobAltOn(0) ? 'Zoom' : 'Resolution', text: fmtRes(tpsIdx),
                   options: [0,1,2,3,4,5].map(fmtRes), sel: tpsIdx }),
                 { kind: 'valsq', label: 'Strch', name: 'Beat Stretch',
                   text: fmtStretch(S.bankParams[t][0][1]) },
-                { kind: 'valsq', label: S.altMode ? 'Nudge' : 'Shift',
-                  name: S.altMode ? 'Nudge' : 'Clock Shift',
+                { kind: 'valsq', label: knobAltOn(2) ? 'Nudge' : 'Shift',
+                  name: knobAltOn(2) ? 'Nudge' : 'Clock Shift',
                   text: fmtSign(S.bankParams[t][0][2]) },
                 { kind: 'action', oneWay: true, label: 'Lgto', name: 'Apply Legato', text: '->', opens: true,
                   btnPhase: triggerPhase('lgto', S.knobTouched === LGTO_KNOB) },
                 { kind: 'valsq', label: 'Eucld', name: 'Euclid Fill', text: String(eucN) },
                 { kind: 'action', oneWay: true, label: 'Crop', name: 'Crop to Loop', text: '->', opens: true,
                   btnPhase: triggerPhase('crop', S.knobTouched === CROP_KNOB) },
-                S.altMode
+                knobAltOn(6)
                     ? toggleCell('Revrs', 'Reverse Style', _dlRev,
                                  fmtRevStyle(1), fmtRevStyle(0))
                     : { kind: 'dirsq', label: 'Dir', name: 'Playback Dir',
@@ -2324,8 +2326,8 @@ function drawUIBody() {
                            options: [0,1,2,3,4,5].map(fmtRes), sel: rv }),
                 { kind: 'valsq', label: 'Strch', name: 'Beat Stretch',
                   text: fmtStretch(S.bankParams[t][7][1]) },
-                { kind: 'valsq', label: S.altMode ? 'Nudge' : 'Shift',
-                  name: S.altMode ? 'Nudge' : 'Clock Shift',
+                { kind: 'valsq', label: knobAltOn(2) ? 'Nudge' : 'Shift',
+                  name: knobAltOn(2) ? 'Nudge' : 'Clock Shift',
                   text: fmtSign(S.bankParams[t][7][2]) },
                 qv <= 0 ? { kind: 'valsq', label: 'Quant', name: 'Quantize', text: '--' }
                         : { kind: 'arc', label: 'Quant', name: 'Quantize',
@@ -2334,9 +2336,9 @@ function drawUIBody() {
                   btnPhase: triggerPhase('crop', S.knobTouched === ALL_LANES_CROP_KNOB) },
                 withTouchArc({ kind: 'frac', label: 'InQnt', name: 'Input Quantize',
                   text: _offDash(DIQ_LABELS[_inq]), options: DIQ_LABELS.map(_offDash), sel: _inq }),
-                dv < 0 ? { kind: 'valsq', label: S.altMode ? 'Revrs' : 'Dir',
-                           name: S.altMode ? 'Reverse Style' : 'Playback Dir', text: '--' }
-                       : (S.altMode
+                dv < 0 ? { kind: 'valsq', label: knobAltOn(6) ? 'Revrs' : 'Dir',
+                           name: knobAltOn(6) ? 'Reverse Style' : 'Playback Dir', text: '--' }
+                       : (knobAltOn(6)
                             ? toggleCell('Revrs', 'Reverse Style', dv,
                                          fmtRevStyle(1), fmtRevStyle(0))
                             : { kind: 'dirsq', label: 'Dir', name: 'Playback Dir',
@@ -2486,7 +2488,7 @@ function drawUIBody() {
                 cells.push({ kind: 'blank', label: '-' });  /* inert on Conductor */
                 continue;
             }
-            if (S.altMode && k === 7) {
+            if (knobAltOn(7) && k === 7) {
                 const _md = S.noteFXRandomMode[t] || 0;
                 cells.push({ kind: 'enumsq', label: 'Algo', name: 'Random Algo',
                              text: RND_ALG_NAMES_NFX[_md], options: RND_ALG_NAMES_NFX, sel: _md });
@@ -2542,11 +2544,11 @@ function drawUIBody() {
                 cells.push(toggleCell('CdLk', 'Conduct Lock', _lk, 'Lock', 'Off'));
                 continue;
             }
-            /* Shift+K1 on DELAY bank (melodic): flips to delay_clock_fb.
+            /* K1 on DELAY (melodic), flipped by touch + click: delay_clock_fb.
              * Drum: K6 already holds clock_fb directly via remap; no flip. */
-            const _delayShiftClkF = S.altMode && !_isDrum && bank === 3 && k === 0;
-            const _clipDirAlt    = S.altMode && !_isDrum && knobs[k].dspKey === 'clip_playback_dir';
-            const _rndAltAlgo    = S.altMode && !_isDrum && (bank === 1 || bank === 3) && k === 7;
+            const _delayShiftClkF = knobAltOn(0) && !_isDrum && bank === 3 && k === 0;
+            const _clipDirAlt    = knobAltOn(k) && !_isDrum && knobs[k].dspKey === 'clip_playback_dir';
+            const _rndAltAlgo    = knobAltOn(7) && !_isDrum && (bank === 1 || bank === 3) && k === 7;
             if (_rndAltAlgo) {
                 const _md = bank === 3 ? (S.midiDlyRandomMode[S.activeTrack] || 0)
                                        : (S.noteFXRandomMode[S.activeTrack] || 0);
@@ -2578,7 +2580,7 @@ function drawUIBody() {
                              seqAutoTargetForKnob(S.activeTrack, bank, k, false) === _focus.target;
             const cell = kitCellForKnob(knobs[k], _isFocus ? Number(_focus.wire) : vals[k]);
             if (_isFocus) _focusIdx = cells.length;
-            if (S.altMode) {
+            if (knobAltOn(k)) {
                 if      (knobs[k].dspKey === 'clock_shift')     { cell.label = 'Nudge'; cell.name = 'Nudge'; }
                 else if (knobs[k].dspKey === 'clip_resolution') { cell.label = 'Zoom'; cell.name = 'Zoom'; }
             }

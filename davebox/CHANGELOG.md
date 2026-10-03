@@ -18,6 +18,13 @@ the section into a versioned heading at release time.
   opens the Master, Send A and Send B effects directly.
 
 ### Changed
+- **Alt knobs switch one at a time: touch the knob and click the jog.** Res ↔
+  Zoom, Shift ↔ Nudge, Dir ↔ Reverse Style (CLIP, DRUM LANE, ALL LANES),
+  Rand ↔ Algo (NOTE FX, DELAY) and Rate ↔ Clock Feedback (DELAY). Only the
+  touched knob changes; while you touch it the bottom of the screen shows CLK
+  and the name it will switch to. Back, or touch + click again, switches it
+  back. A plain jog click no longer flips these banks. RPT GROOVE's Nudge page
+  and Arp Steps stay on the plain click.
 - **ALL LANES no longer asks you to confirm.** The drum ALL LANES bank opens
   like any other bank: its knobs, Loop, double-and-fill and quantize act on all
   32 lanes straight away, and a jog click toggles the alt knobs.

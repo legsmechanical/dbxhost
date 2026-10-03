@@ -493,7 +493,7 @@ export const BANKS = [
         _X, _X, _X, _X,
     ]},
     /* 3 — MIDI DLY (pad 95). K7 = Retrg (delay_retrig); Clock Feedback folded
-     * onto Shift+K1 with dynamic label flip "Rate"↔"ClkF". */
+     * onto K1 (touch + click flips it) with the label flip "Rate"↔"ClkFb". */
     { name: 'DELAY', knobs: [
         p('Rate', 'Delay Time',     'delay_time',         'track', 0,    16, 10, fmtDly,   6),
         p('Level',  'Delay Level',    'delay_level',        'track', 0,    127, 127, fmtPlain),
@@ -742,7 +742,7 @@ export const SEQ_AUTO_TARGETS = (() => {
     return out;
 })();
 /* The automation TARGET of a bank card's knob k on `track` — "seq:<t>:<key>"
- * — or null when that knob is not on the list. `altMode` names the Shift+K1
+ * — or null when that knob is not on the list. `altMode` = the knob shows its alt (knobAltOn); names the K1
  * Clock Feedback alternate on DELAY. The all-lane direction is bank 7 K7. */
 export function seqAutoTargetForKnob(track, bank, k, altMode) {
     const alt = (altMode && bank === 3 && k === 0) ? 'clkfb' : null;
@@ -816,6 +816,29 @@ export function seqAutoAutomatable(key) {
 export const PAD_MODE_DRUM = 1;
 export const PAD_MODE_MELODIC_SCALE = 0;
 export const PAD_MODE_CONDUCT = 2;
+
+/* ⭑ SINGLE-KNOB ALTS (Josh, 2026-10-03: "switch those params through
+ * knob-touch+click and have them display like other knob touch click
+ * params"). Touch one of these knobs and click the jog: that knob flips
+ * between its main and alt parameter (S.knobAlt, knobAltOn), the others stay.
+ * [main, alt] are the on-screen short names — the footer reads CLK + the one
+ * a click would switch to. Page alts (RPT GROOVE, Arp Steps) are NOT here:
+ * they stay on the plain click (S.altMode / S.stepIntervalMode). */
+export const KNOB_ALTS = {
+    drum: {
+        0: { 0: ['Res', 'Zoom'], 2: ['Shift', 'Nudge'], 6: ['Dir', 'Revrs'] },   /* DRUM LANE */
+        7: { 2: ['Shift', 'Nudge'], 6: ['Dir', 'Revrs'] },                       /* ALL LANES */
+    },
+    melodic: {
+        0: { 0: ['Res', 'Zoom'], 2: ['Shift', 'Nudge'], 6: ['Dir', 'Revrs'] },   /* CLIP */
+        1: { 7: ['Rand', 'Algo'] },                                              /* NOTE FX */
+        3: { 0: ['Rate', 'ClkFb'], 7: ['Rand', 'Algo'] },                        /* MIDI DLY */
+    },
+};
+export function knobAltFor(padMode, bank, k) {
+    const fam = KNOB_ALTS[padMode === PAD_MODE_DRUM ? 'drum' : 'melodic'][bank];
+    return (fam && fam[k]) || null;
+}
 
 /* Iter knob list: 36 entries, raw byte at each position. Index 0 = default (1/1).
  * Sorted by cycle_len then cycle_idx: 1/1, 1/2, 2/2, 1/3, 2/3, 3/3, ..., 8/8. */

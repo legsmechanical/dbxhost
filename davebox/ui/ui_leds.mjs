@@ -1,5 +1,5 @@
 import { miPadColors, miActive, miRingCells } from './ui_midi_import.mjs';
-import { S, loopViewActive } from './ui_state.mjs';
+import { S, loopViewActive, knobAltOn } from './ui_state.mjs';
 import {
     NUM_STEPS, NUM_TRACKS, LED_OFF, LEDS_PER_FRAME,
     TRACK_COLORS, TRACK_DIM_COLORS, TRACK_PAD_BASE, SCENE_BTN_FLASH_MS,
@@ -1102,7 +1102,7 @@ export function updateTrackLEDs() {
              * or Delete the ring says the STATE (red active / white muted /
              * unlit none), as on every other page; otherwise an ACTIVE one
              * blinks (2026-09-03). */
-            const _tg = seqAutoTargetForKnob(S.activeTrack, S.activeBank, k, S.altMode);
+            const _tg = seqAutoTargetForKnob(S.activeTrack, S.activeBank, k, knobAltOn(k));
             const _st = _tg ? automationStateFor(S.activeTrack, effectiveClip(S.activeTrack), _tg) : null;
             if (S.muteHeld || S.deleteHeld) ledVal = _st ? (_st.active ? Red : White) : LED_OFF;
             else if (_st && _st.active && (Math.floor(S.clockMs / 440) % 2)) ledVal = LED_OFF;
@@ -1303,13 +1303,14 @@ export function forceRedraw() {
     updateTrackLEDs();
 }
 
+/* PAGE alts only — the banks whose plain jog click flips the whole page:
+ * drum RPT GROOVE (5, Velocity/Nudge, S.altMode) and melodic SEQ ARP / ARP IN
+ * (4/5, Arp Steps, S.stepIntervalMode). The single-knob alts (CLIP, DRUM
+ * LANE, ALL LANES, NOTE FX, DELAY) flip one knob on touch + click instead
+ * (KNOB_ALTS, S.knobAlt) and have no bank-level indicator. */
 export function bankHasAltParams(t, bank) {
-    if (S.trackPadMode[t] === PAD_MODE_DRUM) return bank === 0 || bank === 5 || bank === 7;
-    /* Melodic CLIP(0), NOTE FX(1), DELAY(3), SEQ ARP(4), ARP IN(5), AUTO/CC(6).
-     * Banks 4/5 use stepIntervalMode (Arp Steps overlay) rather than altMode —
-     * the arrow still shows their toggle-availability, and altIndicatorActive()
-     * reflects which underlying flag is on. */
-    return bank === 0 || bank === 1 || bank === 3 || bank === 4 || bank === 5;
+    if (S.trackPadMode[t] === PAD_MODE_DRUM) return bank === 5;
+    return bank === 4 || bank === 5;
 }
 
 /* Returns true when the current bank's alt indicator should flash. For melodic

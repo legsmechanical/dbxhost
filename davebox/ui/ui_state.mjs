@@ -114,6 +114,9 @@ export function forgetProjectJs() {
     S.followPaused = false;
 }
 
+/* True when knob k on the active bank shows its alt (KNOB_ALTS). */
+export function knobAltOn(k) { return !!(S.knobAlt & (1 << k)); }
+
 export function nowMs() {
     return S.clockFollowTicks ? Math.round(S.tickCount * TICK_MS_FOR_TESTS) : Date.now();
 }
@@ -262,7 +265,8 @@ export const S = {
     ledInitIndex: 0,
     ledInitComplete: false,
     shiftHeld: false,
-    altMode: false,        /* sticky alt-param mode, toggled by jog-click; transient */
+    altMode: false,        /* sticky PAGE alt (RPT GROOVE Vel/Nudge), toggled by jog-click; transient */
+    knobAlt: 0,            /* single-knob alts on the active bank: bit k = knob k shows its alt (touch + click; KNOB_ALTS); transient */
     _altPrevBank: -1,      /* diff-guard mirror for clearing altMode on bank change */
     _altPrevTrack: -1,     /* diff-guard mirror for clearing altMode on track change */
     _altBlinkPhase: -1,    /* tick-driven phase (0/1) for the alt-mode arrow flash */
@@ -1181,7 +1185,7 @@ export const S = {
     /* padmapSig() of the last padmap pushed — the Chord layout's self-heal. */
     lastPadmapSig: -1,
     drumInpQuant: new Array(8).fill(0),   /* per-track drum input quantize index 0-8 */
-    delayClockFb: new Array(8).fill(0),   /* per-track delay clock feedback -100..100, accessed via Shift+K1 on DELAY bank (K7 now hosts delay_retrig) */
+    delayClockFb: new Array(8).fill(0),   /* per-track delay clock feedback -100..100, accessed via the flipped K1 on DELAY (touch + click) (K7 now hosts delay_retrig) */
     delayRetrig:  new Array(8).fill(0),   /* per-track delay retrig 0/1; K7 on DELAY bank */
     clipAdaptiveMode: Array.from({length: 8}, () => new Array(16).fill(false)),
     clipLengthManuallySet: Array.from({length: 8}, () => new Array(16).fill(false)),

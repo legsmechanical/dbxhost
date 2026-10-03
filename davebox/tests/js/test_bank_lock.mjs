@@ -85,8 +85,9 @@ step('the setting is in Project Settings, right under Jog Touch Card', () => {
     assert(i > 0 && items[i - 1].label === 'Jog Touch Card', 'not under Jog Touch Card');
 });
 
-step('⭐ Off, NOTE FX: the click flips the alt page without locking, and says so', () => {
-    S.bankLockOn = false; home(); toBank(1);
+step('⭐ Off, RPT GROOVE (a page alt): the click flips the page without locking, and says so', () => {
+    S.bankLockOn = false; home();
+    S.trackPadMode[2] = C.PAD_MODE_DRUM; toBank(5);
     S.actionPopupLines = [];
     click();
     assert(!S.bankCardLatched && S.altMode, 'latched ' + S.bankCardLatched + ' alt ' + S.altMode);
@@ -94,6 +95,20 @@ step('⭐ Off, NOTE FX: the click flips the alt page without locking, and says s
     assert(S.actionPopupLines.join(' ').indexOf('ALT') >= 0, 'no notice: ' + S.actionPopupLines);
     back();
     assert(!S.altMode, 'Back did not clear the alt page');
+    S.trackPadMode[2] = C.PAD_MODE_MELODIC_SCALE; toBank(1);
+});
+
+step('⭐ Off, NOTE FX: a plain click does nothing; touch K8 + click flips K8 without locking', () => {
+    home(); toBank(1);
+    S.actionPopupLines = [];
+    click();
+    assert(!S.bankCardLatched && !S.altMode && !S.knobAlt, 'latched ' + S.bankCardLatched + ' alt ' + S.altMode + ' knobAlt ' + S.knobAlt);
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 7, 127]));
+    click();
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 7, 0])); ticks(2);
+    assert(S.knobAlt === 1 << 7 && !S.bankCardLatched, 'knobAlt ' + S.knobAlt + ' latched ' + S.bankCardLatched);
+    back();
+    assert(S.knobAlt === 0, 'Back did not flip K8 back');
 });
 
 step('⭐ Off, SEQ ARP: the click opens Arp Steps, no lock', () => {

@@ -349,14 +349,18 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   the bank — or, in Session View, the mixer mode; hold the jog and tap a pad
   instead. The jog's other turns (Loop + jog, Shift + jog) work as usual.
 - **Click the jog** to open the **bank view** — that bank's page, held on screen;
-  keep turning to walk from there. In the bank view a click switches to the bank's
-  **alternate** parameters (a down-arrow in the header marks a bank that has them,
-  and blinks while they show), or opens the Arp Steps editor.
+  keep turning to walk from there. In the bank view a click opens the Arp Steps
+  editor (SEQ ARP, ARP IN) or flips RPT GROOVE to its Nudge page.
+- **Touch a knob and click the jog** to switch a knob marked *Alt* in the bank
+  tables to its alternate (Res → Zoom, Shift → Nudge, Dir → Reverse Style,
+  Rand → Algo, Rate → Clock Feedback). Only that knob changes. While you touch
+  it, the bottom of the screen shows **CLK** and the name it will switch to.
+  Touch + click again, or **Back**, switches it back; leaving the bank does too.
   The click happens when you **let go** of the jog, not when you press it.
   With **Bank Lock** off (Project Settings) the bank view never locks: the click
   on the overview does the bank's own click straight away — CONFIG opens TRACK
-  CONFIG, MACROS its assignment list, AUTOMATION its menu, a bank with alternate
-  parameters switches to them (a notice says which), SEQ ARP and LIVE ARP open
+  CONFIG, MACROS its assignment list, AUTOMATION its menu, RPT GROOVE flips its
+  page (a notice says which), SEQ ARP and LIVE ARP open
   Arp Steps — and **Back** returns to the overview. In Session View the click on
   the SESSION FX card opens the effects list; on the mixer modes it does nothing.
   **Delete + click** on AUTOMATION still clears the clip's automation.
@@ -1029,8 +1033,8 @@ at step 1 — **Crop** puts it there.
 ## 8.3 ALL LANES bank
 
 Applies one setting to **all 32 lanes** at once. It opens like any other bank:
-the knobs, Loop and the Shift + Step shortcuts act on every lane straight away,
-and a jog click toggles the alt knobs.
+the knobs, Loop and the Shift + Step shortcuts act on every lane straight away.
+Touch Shift or Dir and click the jog to switch that knob to its *Alt*.
 
 | Knob | On screen | What it does | Rewrites notes |
 |---|---|---|---|
@@ -1062,8 +1066,8 @@ beyond the stored clip:
   you play live, before it's sequenced: LIVE ARP on melodic tracks, and on drums
   [Note Repeat](#73-note-repeat), shaped by RPT GROOVE.
 
-Drum tracks have NOTE FX and DELAY only. With a bank card showing, a jog click
-toggles its *Alt* page (the arrow in the header flashes).
+Drum tracks have NOTE FX and DELAY only. A knob marked *Alt* switches to its
+alternate when you touch it and click the jog; Back switches it back.
 
 Everything runs one chain — the live modifier first, then the effects:
 
@@ -2434,7 +2438,8 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | + / − · Left / Right | Octave · page |
 | Side buttons | Launch the active track's clips (press the playing one to stop it) |
 | Shift + top / bottom side button | Scroll the four visible clips up / down one (the same window for every track) |
-| Jog turn / click | Cycle banks / open the bank · alt-parameters |
+| Jog turn / click | Cycle banks / open the bank · Arp Steps, RPT GROOVE's page |
+| Knob touch + jog click | Switch that knob to its *Alt* (Zoom, Nudge, Reverse Style, Algo, Clock Feedback) |
 | Shift + jog / Shift + bottom pad | Switch tracks |
 | Loop (hold, or tap to keep it up) / Loop + jog | Loop view / clip length |
 | Loop + step (or two steps) | Set the loop to those pages |

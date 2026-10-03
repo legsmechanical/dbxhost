@@ -153,11 +153,11 @@ step('⭐ loop not at 1: CLIP K3 (Clock Shift) sends nothing and says LOOP START
     assert(!sets.some(moved), 'sent ' + JSON.stringify(sets));
     assert(lines() === 'LOOP STARTS AFTER / STEP 1 / CROP FIRST', 'popup ' + lines());
 });
-step('⭐ loop not at 1: Shift + K3 (Nudge) sends nothing and says so', () => {
+step('⭐ loop not at 1: K3 flipped to Nudge sends nothing and says so', () => {
     clearPopup(); sets.length = 0;
-    S.altMode = true;
+    S.knobAlt = 1 << 2;                     /* K3 flipped to Nudge (touch + click) */
     touch(2); turn(2, -1); untouch(2);
-    S.altMode = false;
+    S.knobAlt = 0;
     assert(!sets.some(moved), 'sent ' + JSON.stringify(sets));
     assert(lines() === 'LOOP STARTS AFTER / STEP 1 / CROP FIRST', 'popup ' + lines());
 });
@@ -176,12 +176,12 @@ step('⭐ loop not at 1: touch K4 (Legato) + click sends nothing and says so', (
     assert(!sets.some((x) => /lgto_apply=/.test(x)), 'sent ' + JSON.stringify(sets));
     assert(lines() === 'LOOP STARTS AFTER / STEP 1 / CROP FIRST', 'popup ' + lines());
 });
-step('⭐ loop not at 1: Shift + K1 (Zoom) sends nothing and says so', () => {
+step('⭐ loop not at 1: K1 flipped to Zoom sends nothing and says so', () => {
     clearPopup(); sets.length = 0;
     S.bankParams[T][0][0] = 1;
-    S.altMode = true;
+    S.knobAlt = 1;                          /* K1 flipped to Zoom (touch + click) */
     touch(0); turn(0, -1); untouch(0);
-    S.altMode = false;
+    S.knobAlt = 0;
     assert(!sets.some((x) => /_clip_resolution/.test(x)), 'sent ' + JSON.stringify(sets));
     assert(lines() === 'LOOP STARTS AFTER / STEP 1 / CROP FIRST', 'popup ' + lines());
     assert(S.clipTPS[T][0] === 24 && S.clipLoopStart[T][0] === 16, 'the mirror changed');
@@ -230,7 +230,7 @@ step('⭐ DRUM LANE, loop not at 1: K3, K2 both ways, Legato and Zoom are refuse
     refusedBy('K2 right', () => { touch(1); turn(1, 1); untouch(1); }, /_beat_stretch=/);
     refusedBy('K2 left', () => { touch(1); turn(1, -1); untouch(1); }, /_beat_stretch=/);
     refusedBy('Legato', () => { touch(C.LGTO_KNOB); click(); untouch(C.LGTO_KNOB); }, /lgto_apply=/);
-    refusedBy('Zoom', () => { S.altMode = true; touch(0); turn(0, -1); untouch(0); S.altMode = false; },
+    refusedBy('Zoom', () => { S.knobAlt = 1; touch(0); turn(0, -1); untouch(0); S.knobAlt = 0; },
               /_clip_resolution/);
 });
 

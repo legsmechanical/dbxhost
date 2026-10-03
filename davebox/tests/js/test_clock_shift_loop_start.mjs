@@ -187,15 +187,15 @@ step('⭐ a drum lane: Stretch x2 is not sent when its doubled loop would pass s
     S.trackPadMode[T] = C.PAD_MODE_MELODIC_SCALE;
 });
 
-/* Shift + K1 on CLIP is Zoom (keep the timing, change the steps). Resolution
+/* K1 on CLIP flipped (touch + click) is Zoom (keep the timing, change the steps). Resolution
  * K1 is index 1 (1/16) here; a turn LEFT goes to index 0 (1/32). */
 const zoomDown = () => {
-    S.altMode = true;
+    S.knobAlt = 1;
     globalThis.onMidiMessageInternal(new Uint8Array([0x90, 0, 127]));
     const before = sets.length;
     for (let i = 0; i < 60 && !sets.slice(before).some((x) => /_clip_resolution_zoom=/.test(x)); i++) { cc(71, 127); ticks(1); }
     globalThis.onMidiMessageInternal(new Uint8Array([0x90, 0, 0])); ticks(1);
-    S.altMode = false;
+    S.knobAlt = 0;
 };
 step('⭐ Zoom on a loop that starts late is not sent, and says CROP FIRST', () => {
     S.clipLength[T][0] = 32; S.clipLoopStart[T][0] = 16; S.clipTPS[T][0] = 24;

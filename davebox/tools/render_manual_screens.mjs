@@ -573,8 +573,9 @@ screen('bank-overview-walk', '3.6 Parameter banks', 'Walking the banks from the 
     'Turning the jog on the track overview moves through the banks underneath it — the header names the bank (here DELAY) and nothing opens.',
     () => { toBank(3, false); });
 screen('bank-clip-alt', '8.1 CLIP bank', 'CLIP bank — alternate parameters',
-    'Clicking the jog on the CLIP bank swaps in the alternates: Zoom, Nudge and Reverse Style.',
-    () => { toBank(0); click(); ticks(2); if (!S.altMode) throw new Error('click did not enter alt'); });
+    'Touch a knob and click the jog to switch it to its alternate: here Res is Zoom, Shift is Nudge and Dir is Reverse Style.',
+    () => { toBank(0); for (const k of [0, 2, 6]) { knobTouch(k); click(); knobRelease(k); } ticks(2);
+            if (S.knobAlt !== (1 | 4 | 64)) throw new Error('touch + click did not flip: ' + S.knobAlt); });
 screen('bank-knob-touched', '3.6 Parameter banks', 'Touching a knob',
     'Touching knob 1 on NOTE FX: the header spells out the parameter it controls.',
     () => { toBank(1); knobTouch(0); ticks(2); });

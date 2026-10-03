@@ -658,11 +658,11 @@ export function autoHoldJumpBegin(absStep) {
          * long as the step is held. The bank stays AUTOMATION underneath (an
          * editor is not a bank), so release only has to close the editor. */
         if (!soundJumpToParam(cy.t, mp.comp, mp.key, a.sel)) { showActionPopup('NOT LOADED'); return false; }
-        holdJump = { track: cy.t, clip: cy.c, bank: BANK_AUTOMATION, sound: true, altWas: !!S.altMode, sel: a.sel,
+        holdJump = { track: cy.t, clip: cy.c, bank: BANK_AUTOMATION, sound: true, altWas: !!S.altMode, knobAltWas: S.knobAlt, sel: a.sel,
                      opsSel: a.ops ? a.ops.sel : -1, cycle: Object.assign({}, cy), step: absStep };
         return true;
     }
-    holdJump = { track: cy.t, clip: cy.c, bank: sat ? sat.bank : sb, sound: !sat, altWas: !!S.altMode, sel: a.sel,
+    holdJump = { track: cy.t, clip: cy.c, bank: sat ? sat.bank : sb, sound: !sat, altWas: !!S.altMode, knobAltWas: S.knobAlt, sel: a.sel,
                  opsSel: a.ops ? a.ops.sel : -1, cycle: Object.assign({}, cy), step: absStep };
     if (!sat) {
         /* A level (SOUND+CFG) or a MIDI target (MACROS): the sound bank for as
@@ -674,7 +674,9 @@ export function autoHoldJumpBegin(absStep) {
         return true;
     }
     S.activeBank = sat.bank;
-    S.altMode = !!sat.alt;
+    /* An alt target (DELAY's Clock Feedback) flips just its knob (KNOB_ALTS). */
+    S.altMode = false;
+    S.knobAlt = sat.alt ? (1 << sat.k) : 0;
     /* Render drops alt mode on ANY bank change (its diff guard, ui_render):
      * this change is deliberate, so it is the guard's new baseline — or Clock
      * Feedback's alt page would vanish on the first frame. */
@@ -700,6 +702,7 @@ export function autoHoldJumpEnd() {
     if (S.activeTrack === j.track && S.activeBank === j.bank) {
         S.activeBank = BANK_AUTOMATION;
         S.altMode = j.altWas;
+        S.knobAlt = j.knobAltWas | 0;
         S._altPrevBank = BANK_AUTOMATION; S._altPrevTrack = S.activeTrack;
         autoBankRestoreMenu(j.sel);
         const a = st();

@@ -499,6 +499,7 @@ export function saveState() {
      * all of them can be reached before a selection. */
     if (S.awaitingProjectSelect) return;
     S.altMode = false;   /* transient; never persisted across suspend/resume */
+    S.knobAlt = 0;
     /* Route the DSP save through the end-of-tick pendingSuspendSave drain so it
      * cannot be coalesced by other set_params fired in the same audio buffer
      * (Quit / Shift+Back / Save menu / co-run handoff all call this from

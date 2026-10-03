@@ -5933,7 +5933,7 @@ function macroLive(m) {
  * Its bank belongs to a pad mode: melodic for CLIP..SEQ ARP, both for LIVE
  * ARP, drum for ALL LANES — off-mode it reads UNASSIGNED, like a vanished
  * chain target. Two entries have no generic knob: DELAY's Clock Feedback is
- * the Shift+K1 alternate (S.delayClockFb), and the ALL LANES direction is a
+ * the K1 alternate (S.delayClockFb, touch + click), and the ALL LANES direction is a
  * custom knob (bankParams[t][7][6], -1 = unset). */
 function bankMacroOnMode(bank, padMode) {
     if (padMode === PMC) return false;
