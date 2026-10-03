@@ -58,6 +58,34 @@ export function setBankOverviewMapOn(v) {
     if (!wrote) console.log('[prefs] could not persist Bank Map Overview to ' + BANK_OVERVIEW_MAP_PATH);
 }
 
+/* Bank Lock (Josh, 2026-10-03: "project menu toggle bank card locking
+ * (enable disable click to lock bank cards)"). On = a jog click on the track
+ * or session overview locks the bank card, as since 2026-08-31. Off = cards
+ * never lock: the click on the overview does the bank's own click straight
+ * away (CONFIG opens TRACK CONFIG, MACROS its list, AUTOMATION its menu, an
+ * alt bank its alternate page, the arp banks Arp Steps; in Session View the
+ * FX door opens the list). Absent file = On. */
+export const BANK_LOCK_PATH = '/data/UserData/dbx-host/bank-lock.txt';
+
+export function bankLockOn() {
+    if (S.bankLockOn === null) {
+        let on = true;
+        try {
+            on = !(host_file_exists(BANK_LOCK_PATH) &&
+                   String(host_read_file(BANK_LOCK_PATH) || '').trim() === '0');
+        } catch (e) { on = true; }
+        S.bankLockOn = on;
+    }
+    return S.bankLockOn;
+}
+
+export function setBankLockOn(v) {
+    S.bankLockOn = !!v;
+    let wrote = false;
+    try { wrote = !!host_write_file(BANK_LOCK_PATH, S.bankLockOn ? '1\n' : '0\n'); } catch (e) { wrote = false; }
+    if (!wrote) console.log('[prefs] could not persist Bank Lock to ' + BANK_LOCK_PATH);
+}
+
 /* Touching the jog shows the current bank card (Josh, 2026-09-30: "Add global
  * menu option for touch jog to show current bank card.  Shows bank cards on jog
  * touch like davebox legacy did. Showing the bank card should be the default.").

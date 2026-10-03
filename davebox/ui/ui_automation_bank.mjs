@@ -27,6 +27,7 @@
  * (one chain_params read per component, ever). */
 
 import { S, noteUndoUnit, armBankDisplay } from './ui_state.mjs';
+import { bankLockOn } from './ui_prefs.mjs';
 import { BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS } from './ui_constants.mjs';
 import { soundOpen, soundExit, soundJumpToParam } from './ui_sound.mjs';
 import { readBankParams } from './ui_dsp_bridge.mjs';
@@ -55,6 +56,14 @@ export function autoBankReset() {
     if (S.autoBank) { S.autoBank.menu = false; S.autoBank.ops = null; S.autoBank.loopEdit = false; S.autoBank.rateEdit = false; S.autoBank.scaleEdit = false; S.autoBank.cycleTarget = null; }
 }
 export function autoBankMenuOpen() { return !!(S.autoBank && (S.autoBank.menu || S.autoBank.ops)); }
+/* The AUTOMATION menu is up and in use: on the locked card, or — with Bank
+ * Lock off, where nothing locks — opened straight from the overview. With
+ * Bank Lock on this is exactly the old latched-and-open test. An open menu is
+ * itself a reason the card shows (bankCardVisible). */
+export function autoMenuUp() {
+    return S.activeBank === BANK_AUTOMATION && !S.sessionView && autoBankMenuOpen()
+        && (S.bankCardLatched || !bankLockOn());
+}
 
 /* THE LANE JUMP (plan 6c2): Shift + click on a lane in the menu. The lane
  * under the cursor as { target, sel }, or null — only on the lane list itself
@@ -177,7 +186,9 @@ function opsFor(track, clip, r) {
 export function drawAutomationBankBody() {
     const t = S.activeTrack, c = effectiveClip(t);
     const a = st();
-    if (!S.bankCardLatched) autoBankReset();       /* the peek shows the plain card */
+    /* the peek shows the plain card — unless Bank Lock is off, where the
+     * menu is opened from the overview with nothing locked to hold it */
+    if (!S.bankCardLatched && bankLockOn()) autoBankReset();
     const rows = autoBankRows(t, c);
     const listRows = rows.map(r => ({ label: r.label, value: rowValue(r, t, c) }));
     if (a.menu) listRows.push({ label: 'Clear all', hdr: true });
@@ -628,7 +639,7 @@ export function laneHome(tgt, t) {
 export function autoHoldJumpActive() { return !!holdJump; }
 export function autoHoldJumpStep() { return holdJump ? holdJump.step : -1; }
 export function autoHoldJumpBegin(absStep) {
-    if (holdJump || lanePin || !autoBankIsActive() || !S.bankCardLatched) return false;
+    if (holdJump || lanePin || !autoBankIsActive() || !(S.bankCardLatched || autoMenuUp())) return false;
     const cy = S.autoCycle;
     /* ANY step of the cycle jumps, not only one holding a point (Josh,
      * 2026-09-25: "this should work on ANY step, not just ones with data, so
@@ -723,7 +734,7 @@ export function autoBankTick() {
         return;
     }
     if (lanePin && lanePinTick()) return;
-    if (!autoBankIsActive() || !S.bankCardLatched || S.moveCoRunTrack >= 0) {
+    if (!autoBankIsActive() || !(S.bankCardLatched || autoMenuUp()) || S.moveCoRunTrack >= 0) {
         if (viewSent) syncPaView(viewSent.t, 0, null);
         return;
     }

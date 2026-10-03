@@ -345,6 +345,13 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   **alternate** parameters (a down-arrow in the header marks a bank that has them,
   and blinks while they show), or opens the Arp Steps editor.
   The click happens when you **let go** of the jog, not when you press it.
+  With **Bank Lock** off (Project Settings) the bank view never locks: the click
+  on the overview does the bank's own click straight away — CONFIG opens TRACK
+  CONFIG, MACROS its assignment list, AUTOMATION its menu, a bank with alternate
+  parameters switches to them (a notice says which), SEQ ARP and LIVE ARP open
+  Arp Steps — and **Back** returns to the overview. In Session View the click on
+  the SESSION FX card opens the effects list; on the mixer modes it does nothing.
+  **Delete + click** on AUTOMATION still clears the clip's automation.
 - **Back** closes the bank view without changing the bank, so the knobs keep
   working from the overview.
 - **Hold the jog down** to jump straight to any bank: the left 4×4 pads become a
@@ -2134,6 +2141,7 @@ see [Track settings](#174-track-settings) below.
 | Bank Map Overview | Whether the bank column comes up while the jog walks the banks under the track overview (or the mixer modes under the session overview) — see [§3.6](#36-parameter-banks) | On, Off | On |
 | Bank Map on Lock | Whether the bank column comes up while the jog walks the banks from the bank view (or the session mixer card) — see [§3.6](#36-parameter-banks) | On, Off | On |
 | Jog Touch Card | Whether touching the jog shows the current bank's page (the mixer page in Session View) until you let go — see [§3.6](#36-parameter-banks) | On, Off | On |
+| Bank Lock | Whether a jog click on the overview locks the bank view (On), or does the bank's own click straight away (Off) — in Track and Session View — see [§3.6](#36-parameter-banks) | On, Off | On |
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Projects... | The project picker — see [Projects](#175-projects) | action | — |
 | Save state / Load state | Save or restore a named snapshot — see [§17.3](#173-snapshots) | action | — |

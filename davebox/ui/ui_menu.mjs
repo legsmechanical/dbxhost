@@ -21,11 +21,11 @@ import {
 
 import { SCALE_NAMES } from './ui_constants.mjs';
 
-import { S } from './ui_state.mjs';
+import { S, standDownBankDisplay } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
 import { bankViewMapOn, setBankViewMapOn, bankOverviewMapOn, setBankOverviewMapOn,
-    jogTouchCardOn, setJogTouchCardOn } from './ui_prefs.mjs';
+    jogTouchCardOn, setJogTouchCardOn, bankLockOn, setBankLockOn } from './ui_prefs.mjs';
 import { saveState, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { forceRedraw } from './ui_leds.mjs';
@@ -206,6 +206,21 @@ function buildGlobalMenuItems() {
         createToggle('Jog Touch Card', {
             get: function() { return jogTouchCardOn(); },
             set: function(v) { setJogTouchCardOn(v); forceRedraw(); },
+            onLabel: 'On', offLabel: 'Off'
+        }),
+        /* Bank Lock (Josh, 2026-10-03): a click on an overview locks the
+         * card (On) or does the bank's own click (Off). Turned Off while a
+         * card is locked, it unlocks at once. Device-global (ui_prefs). */
+        createToggle('Bank Lock', {
+            get: function() { return bankLockOn(); },
+            set: function(v) {
+                setBankLockOn(v);
+                if (!v) {
+                    S.bankCardLatched = false; S.sessMixerLatched = false;
+                    standDownBankDisplay(true);
+                }
+                forceRedraw();
+            },
             onLabel: 'On', offLabel: 'Off'
         }),
         createDivider(),

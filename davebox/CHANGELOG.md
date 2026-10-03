@@ -14,6 +14,11 @@ the section into a versioned heading at release time.
   the mixer modes and opens the Master, Send A and Send B effects directly.
 
 ### Changed
+- **Bank Lock** in Project Settings: turn it off and a jog click on the
+  overview skips the bank view and does the bank's own thing — opens TRACK
+  CONFIG, the macro list or the automation menu, switches to the alternate
+  parameters, opens Arp Steps — in Track and Session View alike. Back returns
+  to the overview.
 - **Bank Map Overview** in Project Settings turns off the bank list that comes
   up while you turn the jog on the track or session overview, the way Bank Map
   on Lock already does for the bank view.

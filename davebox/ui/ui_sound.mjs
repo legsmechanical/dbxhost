@@ -44,6 +44,7 @@ import * as ModBus from './ui_modbus.mjs';
  * Back long-press, which davebox owns module-wide. */
 import { armBankDisplay, standDownBankDisplay, bankDisplayStamp, restoreBankDisplay,
          noteUndoUnit, markJsUndo, markJsUndoPatch, S as GS } from './ui_state.mjs';
+import { bankLockOn } from './ui_prefs.mjs';
 import { nowMs } from './ui_clock.mjs';
 /* ⚠ Deliberate import cycle with ui_render (it imports soundRender from here);
  * safe because both sides only call the binding inside function bodies, never
@@ -1217,6 +1218,21 @@ export function soundMacrosForTest() {
  * Rest is MACROS-only and invisible by construction (soundRender declines the
  * page while the card is not visible). */
 export function soundOpen() { return S.active; }
+/* A click on a sound bank's CARD — the one seam, used by the card itself and
+ * (Bank Lock off) by the overview's click, which skips the lock and does the
+ * card's click straight away. True when a card view handled it.
+ *   MIX: no door, except under a touched Send A / Send B knob — that send's
+ *        effects (Josh, 2026-10-01; "take the click to enter the menu off of
+ *        sound+config", 2026-09-26)
+ *   CONFIG: the list goes live, from its top
+ *   MACROS: the assign list, floating over the page (the list is the store) */
+export function soundCardClick() {
+    if (S.view === VIEW_PROMPT) { soundMixSendClick(S.touchedIdx); return true; }
+    if (S.view === VIEW_CFGCARD) { S.pickRow = 0; soundShowMenu(); return true; }
+    if (S.view === VIEW_MACROS) { openKnobEditor(); S.dirty = true; return true; }
+    return false;
+}
+
 export function soundResting() {
     /* A follow in flight is never at rest, whatever S.view says mid-chain: a
      * fast Shift+scroll crossing a Move track passed through its PROMPT
@@ -2167,7 +2183,9 @@ function mixSendBus(i) {
 export function soundMixSendClick(i) {
     const bus = mixSendBus(i);
     if (!bus) return false;
-    GS.bankCardLatched = true;          /* from a touch PEEK too: the card it comes back to stays up */
+    /* from a touch PEEK too: the card it comes back to stays up — unless
+     * Bank Lock is off, where Back lands on the overview */
+    if (bankLockOn()) GS.bankCardLatched = true;
     S.pendingAction = { t: 'bus', bus: bus, door: { kind: 'mix', slot: S.slot, bus: S.bus } };
     S.dirty = true;
     return true;
@@ -2982,7 +3000,7 @@ export function soundGestureReturn() {
         soundExit();
         GS.activeBank = BANK_AUTOMATION;
         GS.trackActiveBank[g.track] = BANK_AUTOMATION;
-        GS.bankCardLatched = true;
+        if (bankLockOn()) GS.bankCardLatched = true;   /* Bank Lock off: the open menu shows itself */
         armBankDisplay();
         autoBankRestoreMenu(g.autoSel);
     } else if (g.wasActive) {
@@ -3172,7 +3190,7 @@ function leaveBus() {
     }
     if (door && door.kind === 'sessmix') {
         soundExit();
-        GS.sessMixerLatched = true;     /* the page it came from: sessKnobMode is untouched meanwhile */
+        GS.sessMixerLatched = bankLockOn();   /* the page it came from (Bank Lock off: the overview) */
         GS.screenDirty = true;
         forceRedraw();
         return;
@@ -9619,13 +9637,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
         /* MIX has no door since 2026-09-26 (Josh: "take the click to enter the
          * menu off of sound+config"), except under a touched Send A / Send B
          * knob: that send's effects (Josh, 2026-10-01). */
-        if (S.view === VIEW_PROMPT) { soundMixSendClick(S.touchedIdx); return true; }
-        /* The CONFIG card: the click makes the list live, from its top. */
-        if (S.view === VIEW_CFGCARD) { S.pickRow = 0; soundShowMenu(); return true; }
+        if (soundCardClick()) return true;
         if (S.view === VIEW_NOEDITOR) { soundShowMenu(); return true; }   /* the click means what Back means here */
-        /* MACROS: the click opens the assign list, which floats over the page
-         * (no engine reads — the list is the store). */
-        if (S.view === VIEW_MACROS) { openKnobEditor(); S.dirty = true; return true; }
         /* ⭑ SHIFT+CLICK OPENS THE FILE BROWSER for the sample this marker is a
          * position IN — the route this screen took away. Before it existed, a
          * click on a marker dived to the bank editor, which is where the
@@ -10422,6 +10435,9 @@ export function soundOnCC(d1, d2, decodeDelta) {
             S.pendingAction = { t: 'leavebus' };
         } else if (S.view === VIEW_BUSES) {
             soundExit();
+            /* The list holds the session latch only to be drawn; with Bank
+             * Lock off, Back from it lands on the overview. */
+            if (!bankLockOn()) GS.sessMixerLatched = false;
         } else {
             /* The prompt (and any stray top-level screen): Back is OUT — of
              * sound mode AND of bank mode (Josh, 2026-09-01: "pressing back

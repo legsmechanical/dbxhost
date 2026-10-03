@@ -36,7 +36,7 @@ import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
          PAGE_KNOB, pageFloatStep } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity,
-         bankCycleForMode, bankPadMapCellAt, bankMapCellForPad, SESS_PAD_MAP } from './ui_pure.mjs';
+         bankCycleForMode, bankPadMapCellAt, bankMapCellForPad, SESS_PAD_MAP, bankDisplayName } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
          showActionPopupFor, showActionPopupGauge } from './ui_persistence.mjs';
 import {
@@ -53,7 +53,7 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, enterMoveNativeCoRun, exitMoveSettingsCoRun } from './ui_corun.mjs';
-import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen,
+import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen, autoMenuUp,
          autoBankJumpTarget, autoBankRestoreMenu, autoCyclePageStep,
          autoLanePinJump, autoLanePinClear, laneHome } from './ui_automation_bank.mjs';
 import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAfterNotes,
@@ -66,7 +66,7 @@ import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVo
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, soundEnterBuses, soundEnterMasterFx, macroClearConfirmAnswer,
     macroClearConfirmReset, macroClearConfirmOpen, soundMixSendClick, soundEnterSendFromSessionMixer,
-    soundOnCard, soundEnterBusFx } from './ui_sound.mjs';
+    soundOnCard, soundEnterBusFx, soundResting, soundCardClick } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { templateConfirmClick } from './ui_template.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu, openGlobalMenuAt } from './ui_menu.mjs';
@@ -91,7 +91,7 @@ import { setTrackMute, setTrackSolo, clearAllMuteSolo,
     _switchActiveTrack, allLanesGate,
     resetFxBanks, resetBankParams, resetMidiFxChain, resetTarp, resetRptGroove, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
 import { _resolveLoopGesture, chordApplyRevoice, _onPadRelease } from './ui_input_pads.mjs';
-import { seqFollowOn, setSeqFollowOn } from './ui_prefs.mjs';
+import { seqFollowOn, setSeqFollowOn, bankLockOn } from './ui_prefs.mjs';
 
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
  * Single tap while locked → unlock + stop loop. */
@@ -199,7 +199,7 @@ function _onCC_jog(d1, d2) {
      * the plain AUTOMATION click below (which requires Shift up) and of the
      * retired Shift + click's picker-abandon further down. */
     if (d1 === 3 && d2 === 127 && !S.sessionView && S.shiftHeld && S.moveCoRunTrack < 0 &&
-            S.activeBank === BANK_AUTOMATION && S.bankCardLatched && autoBankJumpTarget()) {
+            autoMenuUp() && autoBankJumpTarget()) {
         autoLaneJump();
         S.screenDirty = true;
         forceRedraw();
@@ -668,7 +668,7 @@ function modalDialogUp() {
      * menu's Export to Ableton (or any confirm) with this card up ran the
      * card's op instead (Josh, 2026-09-25). */
     if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && S.moveCoRunTrack < 0 &&
-            S.activeBank === BANK_AUTOMATION && S.bankCardLatched) {
+            S.activeBank === BANK_AUTOMATION && (S.bankCardLatched || !bankLockOn())) {
         if (S.deleteHeld) autoBankClearClip(); else autoBankClick();
         S.screenDirty = true;
         forceRedraw();
@@ -882,7 +882,8 @@ function modalDialogUp() {
      * enters the picked bus. Back walks it back (see _backTap). */
     if (d1 === 3 && d2 === 127 && !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld &&
             S.sessionView && !soundActive()) {
-        if (sessMixerVisible()) {
+        /* Bank Lock off: the overview click is the shown page's click. */
+        if (sessMixerVisible() || !bankLockOn()) {
             /* ⭑ THE GATEWAY (Josh, 2026-09-01): the FX door is a click-to-
              * confirm BANK at the end of the walk — the SOUND + CONFIG idiom —
              * never a click on the other banks, which stays a no-op. */
@@ -914,9 +915,25 @@ function modalDialogUp() {
      * a hand resting on a knob must not latch bank mode
      * by brushing the jog. Flagged for the hardware pass if it feels wrong. */
     if (d1 === 3 && d2 === 127 && !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld &&
-            !S.sessionView && !soundActive() && S.bankPickerSel < 0 && !bankCardVisible()) {
+            !S.sessionView && !soundActive() && S.bankPickerSel < 0 && !bankCardVisible() && bankLockOn()) {
         S.bankCardLatched = true;
         armBankDisplay();
+        S.screenDirty = true;
+        forceRedraw();
+        return;
+    }
+    /* ⭑ BANK LOCK OFF (Josh, 2026-10-03: "Click does the bank's thing"): no
+     * card locks, so the overview click does the card's own click straight
+     * away. A SOUND bank (MIX, MACROS, CONFIG) rests open under the overview;
+     * its click is sound mode's card click — one seam, soundCardClick — and
+     * what it opens (TRACK CONFIG, the macro list, a send's effects) draws
+     * itself, Back walking home to the overview. Every other bank falls
+     * through to its own click below (Arp Steps, alt params, ALL LANES), and
+     * AUTOMATION's was handled above. */
+    if (d1 === 3 && d2 === 127 && !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld &&
+            !S.sessionView && !bankLockOn() && S.bankPickerSel < 0 && !bankCardVisible() &&
+            isSoundBank(S.activeBank) && soundOpen() && soundResting()) {
+        soundCardClick();
         S.screenDirty = true;
         forceRedraw();
         return;
@@ -954,11 +971,16 @@ function modalDialogUp() {
             !S.sessionView && bankHasAltParams(S.activeTrack, S.activeBank)) {
         if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7 && !S.allLanesConfirmed) {
             S.allLanesConfirmed = true;
+            /* From the overview (Bank Lock off) nothing on screen would say so. */
+            if (!bankCardVisible()) showActionPopup('ALL LANES', 'CONFIRMED');
             S.screenDirty = true;
             forceRedraw();
             return;
         }
         S.altMode = !S.altMode;
+        if (!bankCardVisible())
+            showActionPopup(bankDisplayName(S.trackPadMode[S.activeTrack], S.activeBank),
+                            S.altMode ? 'ALT' : 'MAIN');
         S.screenDirty = true;
         forceRedraw();
         return;
@@ -1335,7 +1357,7 @@ function modalDialogUp() {
                         forceRedraw();
                     }
                     }
-                } else if (S.activeBank === BANK_AUTOMATION && S.bankCardLatched && autoBankMenuOpen()) {
+                } else if (autoMenuUp()) {
                     /* The AUTOMATION menu owns the jog while it is open: the
                      * cursor, the ops, the loop value. The walk resumes when
                      * Back closes it. */
@@ -1410,7 +1432,7 @@ export function bankMapArmable() {
     if (S.projectOpenFailed || S.projectListFailed) return false;
     if (S.backPressTick >= 0) return false;         /* Back is down: a suspend may follow */
     if (S.sessionView) return !soundOpen() && !S.perfViewLocked;
-    if (S.activeBank === BANK_AUTOMATION && S.bankCardLatched && autoBankMenuOpen()) return false;
+    if (autoMenuUp()) return false;
     return !soundActive() || soundOnCard();
 }
 
@@ -2481,6 +2503,7 @@ function returnToOverview() {
     S.allLanesConfirmed = false;
     S.bankCardLatched   = false;
     S.sessMixerLatched  = false;
+    autoBankReset();                /* an open AUTOMATION menu shows itself (Bank Lock off) */
     standDownBankDisplay(true);
     S.jogTouched        = false;
 
@@ -2550,7 +2573,7 @@ function _backTap() {
     if (S.globalEnumPick) { closeGlobalEnumPick(false); forceRedraw(); return; }
     /* The AUTOMATION bank's layers (ops → menu → card) close one per press;
      * with none open, Back is davebox's own (out of bank mode). */
-    if (S.activeBank === BANK_AUTOMATION && S.bankCardLatched && !S.sessionView && autoBankBack()) {
+    if (autoMenuUp() && autoBankBack()) {
         S.screenDirty = true; forceRedraw(); return;
     }
     if (S.tempoSelectActive) {
@@ -2643,7 +2666,7 @@ function _backTap() {
         if (S.autoReturn) {
             const r = S.autoReturn;
             S.autoReturn = null;
-            if (r.track === S.activeTrack && r.bank === S.activeBank && S.bankCardLatched) {
+            if (r.track === S.activeTrack && r.bank === S.activeBank && (S.bankCardLatched || !bankLockOn())) {
                 S.activeBank = BANK_AUTOMATION;
                 S.trackActiveBank[r.track] = BANK_AUTOMATION;
                 autoBankRestoreMenu(r.sel);

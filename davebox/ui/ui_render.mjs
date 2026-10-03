@@ -61,7 +61,7 @@ import {
     bankHasAltParams, altIndicatorActive, autoLanePlayStep
 } from './ui_leds.mjs';
 import { soundRender, renderTrackGatewayCard, renderConfigCardPeek, renderMacrosPeek, renderSessionFxCard } from './ui_sound.mjs';
-import { drawAutomationBankBody, autoBankMenuOpen, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus } from './ui_automation_bank.mjs';
+import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus } from './ui_automation_bank.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
@@ -1500,10 +1500,13 @@ export function bankCardVisible() {
      * the list down the moment the modifier goes down hides the very thing you
      * are aiming at. Scoped to the open menu — the plain card still obeys the
      * Shift read-out rule. */
-    if (S.shiftHeld && S.knobTouched < 0
-            && !(S.activeBank === BANK_AUTOMATION && S.bankCardLatched && autoBankMenuOpen()))
+    if (S.shiftHeld && S.knobTouched < 0 && !autoMenuUp())
         return false;
-    return !!S.bankCardLatched || S.knobTouched >= 0;
+    /* ...and an open AUTOMATION menu is a screen in use: with Bank Lock off
+     * it is opened from the overview, with nothing locked to hold it up. So
+     * is the page a held step jumped to from that menu (it only begins from
+     * a locked card or an open menu, so with Bank Lock on this adds nothing). */
+    return !!S.bankCardLatched || S.knobTouched >= 0 || autoMenuUp() || autoHoldJumpActive();
 }
 
 export function soundModeCovered() {
