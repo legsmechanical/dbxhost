@@ -29,7 +29,7 @@ import {
     LED_OFF,
     NUM_TRACKS,
     TRACK_PAD_BASE,
-    BANKS, PAD_MODE_DRUM, MoveCapture, BANKNAV_HOLD_MS } from './ui_constants.mjs';
+    BANKS, PAD_MODE_DRUM, MoveCapture, BANKNAV_HOLD_MS, JOG_CLICK_MAX_MS } from './ui_constants.mjs';
 
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -569,10 +569,10 @@ function _onMidiInternalImpl(data) {
             if (bankMapArmable()) { bankMapBegin(); return; }
         }
         if (d2 !== 127 && S.jogPressMs >= 0) {
-            /* A click is a press let go BEFORE the map painted. Once it is on
-             * screen, letting go just puts it away — you looked and chose
-             * nothing. */
-            const click = !S.bankMapUsed && !S.bankMapUp;
+            /* A click is a press let go within JOG_CLICK_MAX_MS with nothing
+             * done in between — even if the map has painted. Held longer,
+             * letting go just puts the map away: you looked and chose nothing. */
+            const click = !S.bankMapUsed && nowMs() - S.jogPressMs < JOG_CLICK_MAX_MS;
             bankMapEnd();
             if (click) {
                 S.jogClickReplay = true;

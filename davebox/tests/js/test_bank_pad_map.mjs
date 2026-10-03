@@ -75,6 +75,8 @@ const pad = pure.bankMapPadForCell;
 S.clockFollowTicks = true; S.tickCount = 1000;
 const tick = () => { S.tickCount++; globalThis.tick(); };
 const holdPast = () => { S.tickCount += Math.ceil(C.JOG_MAP_HOLD_MS / 10.6) + 1; globalThis.tick(); };
+/* ...and past the click window: letting go after this is no click. */
+const holdLong = () => { S.tickCount += Math.ceil(C.JOG_CLICK_MAX_MS / 10.6) + 1; globalThis.tick(); };
 const ticks = (n) => { for (let i = 0; i < n; i++) tick(); };
 const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const ink = (f, x, y, w, h) => { let n = 0; for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) n += f[j * W + i]; return n; };
@@ -160,11 +162,20 @@ step('turning while held still walks, and the release is not a click', () => {
     assert(!S.bankCardLatched, 'the release after a turn clicked');
 });
 
-step('held until the map paints and let go with no tap: the map goes, NO click', () => {
+step('⭐ a slow click (map painted, let go inside JOG_CLICK_MAX_MS): still the click', () => {
     home();
+    assert(C.JOG_CLICK_MAX_MS > C.JOG_MAP_HOLD_MS, 'the click window must outlast the map delay');
     press(); holdPast();
+    assert(S.bankMapUp, 'setup: the map did not paint');
     release();
-    assert(!S.bankMapUp && !S.bankCardLatched, 'letting go of a painted map clicked');
+    assert(!S.bankMapUp && S.bankCardLatched, 'a slow click inside the window was lost');
+});
+
+step('held past the click window and let go with no tap: the map goes, NO click', () => {
+    home();
+    press(); holdLong();
+    release();
+    assert(!S.bankMapUp && !S.bankCardLatched, 'letting go after a long look clicked');
 });
 
 step('a pad held before the jog is let go when the map paints; its release is swallowed', () => {
@@ -172,7 +183,7 @@ step('a pad held before the jog is let go when the map paints; its release is sw
     S.lastPlayedNote = -1;
     midi(0x90, 68, 100);
     assert(S.liveActiveNotes.size === 1, 'the pad did not sound: ' + S.liveActiveNotes.size);
-    press(); holdPast();
+    press(); holdLong();
     assert(S.liveActiveNotes.size === 0, 'the held note is still on');
     midi(0x80, 68, 0);
     assert(S.bankMapSwallow.size === 0, 'the swallow set kept the pad');

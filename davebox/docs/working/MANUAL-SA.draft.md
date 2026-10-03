@@ -371,8 +371,9 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   | **Conductor** | —, —, —, CONFIG | ON/OFF, OCTAVE, TIMING (RSPD) | CLIP, STEP | NOTE FX |
 
   The pads wear their group's color; the bank you're on is white, and CONFIG and
-  MIX wear the track's color. Let go before the map appears and it's an ordinary
-  click.
+  MIX wear the track's color. Let go within half a second without tapping a pad
+  or turning the jog and it's an ordinary click, even if the map has appeared;
+  hold longer and letting go just puts the map away.
 - **Shift + jog** steps through the **tracks**, not the banks.
 - **Each track remembers its bank**, CONFIG, MIX and MACROS included — across
   track switches, suspend, and quit and relaunch.

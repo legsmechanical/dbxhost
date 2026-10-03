@@ -637,7 +637,12 @@ export const BANKNAV_HOLD_MS = 100;   /* Josh, 2026-09-26: "do 100ms" */
 /* How long the jog must be held before the bank pad map PAINTS. A plain click
  * is shorter, so it never flashes the map or spends LED traffic; a pad tap or
  * a turn inside the window arms the map at once. */
-export const JOG_MAP_HOLD_MS = 120;
+export const JOG_MAP_HOLD_MS = 250;
+/* A release within this of the press is a CLICK (unless a pad was tapped or
+ * the jog turned), map or no map — so a slow, deliberate click is never lost.
+ * Held longer, letting go just puts the map away (Josh, 2026-10-03: "on
+ * release but only if it's between like .5 [s] of the click"). */
+export const JOG_CLICK_MAX_MS = 500;
 
 /* JS tick rate on device (~94 Hz measured). Older constants were calibrated
  * against a mistaken 196 Hz assumption — derive new timings from this. */
