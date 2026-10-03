@@ -2048,6 +2048,7 @@ static inline void looper_mark_active(seq8_instance_t *inst, uint8_t track,
                                        uint8_t raw_pitch, uint8_t emitted_pitch);
 static int perf_apply(seq8_instance_t *inst, uint8_t tr_idx,
                       uint8_t status, uint8_t *d1, uint8_t *d2);
+static void perf_end_overlap(seq8_instance_t *inst, uint8_t tr, uint8_t raw, uint8_t status);
 
 /* The fire time of the LAST swing-parked note-on for this channel + pitch in
  * events[0..n), or 0 if there is none (fire times are sample counts, never 0
@@ -2101,6 +2102,7 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
              * LOOPING playback re-applies perf_apply on the clean events. */
             if (g_inst->perf_mods_active) {
                 uint8_t raw_d1 = d1;
+                if (st == 0x90 && d2 > 0) perf_end_overlap(g_inst, fx->track_idx, raw_d1, status);
                 g_inst->perf_current_event_idx = (uint16_t)ei;
                 if (!perf_apply(g_inst, fx->track_idx, status, &d1, &d2)) {
                     if (raw_d1 < 128)

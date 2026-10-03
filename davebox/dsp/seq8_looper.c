@@ -188,6 +188,24 @@ static void looper_silence_active(seq8_instance_t *inst) {
     inst->looper_emitting = 0;
 }
 
+/* A note-on is about to sound for a raw pitch the table says is STILL
+ * sounding (a MIDI DLY echo over its own note, a long gate): end that note
+ * first, with its queued gate off. The table holds one output pitch per raw
+ * pitch — with two notes the first note-off cleared it, the second was then
+ * untracked and dropped, and the output pitch stayed counted: every later
+ * replay of it was dropped as already sounding (2026-10-02). */
+static void perf_end_overlap(seq8_instance_t *inst, uint8_t tr, uint8_t raw, uint8_t status) {
+    if (tr >= NUM_TRACKS || raw >= 128) return;
+    uint8_t ep = inst->perf_emitted_pitch[tr][raw];
+    if (ep == 0xFF) return;
+    looper_out(&inst->tracks[tr].pfx, (uint8_t)(0x80 | (status & 0x0F)), ep, 0);
+    inst->perf_emitted_pitch[tr][raw] = 0xFF;
+    for (int si = 0; si < (int)inst->perf_staccato_count; )
+        if (inst->perf_staccato_notes[si].track == tr && inst->perf_staccato_notes[si].raw_pitch == raw)
+            inst->perf_staccato_notes[si] = inst->perf_staccato_notes[--inst->perf_staccato_count];
+        else si++;
+}
+
 /* Apply active Performance Mode modifiers to one looper event.
  * Transforms pitch/velocity in-place; returns 0 to suppress, 1 to emit.
  * inst->perf_current_event_idx must be set to the event index before each call.
@@ -560,6 +578,7 @@ static void looper_tick(seq8_instance_t *inst) {
             uint8_t raw_d1  = inst->looper_events[ei].d1;
             uint8_t d1      = raw_d1;
             uint8_t d2      = inst->looper_events[ei].d2;
+            if ((st & 0xF0) == 0x90 && d2 > 0) perf_end_overlap(inst, tr_idx, raw_d1, st);
             inst->perf_current_event_idx = (uint16_t)ei;
             if (!perf_apply(inst, tr_idx, st, &d1, &d2)) continue;
             inst->looper_emitting = 1;

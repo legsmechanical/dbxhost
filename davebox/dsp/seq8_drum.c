@@ -87,6 +87,7 @@ static void drum_pfx_send(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2
              * suppression mods still apply. Captured event stays raw. */
             if (g_inst->perf_mods_active && px->track_idx < NUM_TRACKS) {
                 uint8_t raw_d1 = d1;
+                if (st == 0x90 && d2 > 0) perf_end_overlap(g_inst, px->track_idx, raw_d1, status);
                 g_inst->perf_current_event_idx = (uint16_t)ei;
                 if (!perf_apply(g_inst, px->track_idx, status, &d1, &d2)) {
                     if (raw_d1 < 128)
