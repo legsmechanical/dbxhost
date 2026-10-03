@@ -14,6 +14,9 @@ the section into a versioned heading at release time.
   the mixer modes and opens the Master, Send A and Send B effects directly.
 
 ### Changed
+- **Bank Map Overview** in Project Settings turns off the bank list that comes
+  up while you turn the jog on the track or session overview, the way Bank Map
+  on Lock already does for the bank view.
 - **A jog click now happens when you let go**, not when you press, wherever the
   jog walks the banks (so a held jog can bring up the map instead).
 - **Clearer small letters.** N, A, B, G, K and O in the smallest screen font

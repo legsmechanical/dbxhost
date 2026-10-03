@@ -173,10 +173,10 @@ const _hwf = globalThis.host_write_file;
 globalThis.host_write_file = (p, b) => { written[p] = String(b); return _hwf(p, b); };
 const menuItems = () => { menu.openGlobalMenu(); const it = S.globalMenuItems; S.globalMenuOpen = false; return it; };
 const mapItem = () => menuItems().find((it) => it && it.label === 'Bank Map on Lock');
-step('the global menu has Bank Map on Lock, right under Beat Marks, On by default', () => {
+step('the global menu has Bank Map on Lock, right under Bank Map Overview, On by default', () => {
     const items = menuItems(), i = items.findIndex((it) => it && it.label === 'Bank Map on Lock');
     assert(i > 0, 'no Bank Map on Lock item');
-    assert(items[i - 1].label === 'Beat Marks', 'not under Beat Marks: ' + items[i - 1].label);
+    assert(items[i - 1].label === 'Bank Map Overview', 'not under Bank Map Overview: ' + items[i - 1].label);
     assert(prefs.bankViewMapOn() === true, 'default is not On');
 });
 const latchedWalk = () => {
@@ -212,6 +212,42 @@ step('⭐ Bank Map on Lock OFF: the latched session mixer card walks with no col
     S.sessMixerLatched = false; S.sessionView = false;
     mapItem().set(true);
     assert(written[prefs.BANK_VIEW_MAP_PATH] === '1\n', 'On not persisted');
+});
+/* BANK MAP ON OVERVIEW (Josh, 2026-10-03: "project menu toggle bank map
+ * overlay in track overview (same as in bank lock)") — the same switch for the
+ * overviews, track and session. */
+const ovItem = () => menuItems().find((it) => it && it.label === 'Bank Map Overview');
+step('the global menu has Bank Map Overview, right under Beat Marks, On by default', () => {
+    const items = menuItems(), i = items.findIndex((it) => it && it.label === 'Bank Map Overview');
+    assert(i > 0, 'no Bank Map Overview item');
+    assert(items[i - 1].label === 'Beat Marks', 'not under Beat Marks: ' + items[i - 1].label);
+    assert(prefs.bankOverviewMapOn() === true, 'default is not On');
+});
+step('⭐⭐ Bank Map Overview OFF: the overview walks with no column; the bank view keeps it', () => {
+    S.sessionView = false; S.bankCardLatched = false; S.activeBank = 0; S.trackActiveBank[2] = 0;
+    ovItem().set(false);
+    assert(written[prefs.BANK_OVERVIEW_MAP_PATH] === '0\n', 'not persisted');
+    touchJog(); tick(); jog(1); tick();
+    assert(S.activeBank !== 0, 'control: the walk did not move');
+    assert(!columnUp(frame()), 'the column is up on the overview with the switch off');
+    releaseJog(); settle();
+    latchedWalk();
+    assert(columnUp(frame()), 'the switch took the column off the bank view too');
+    releaseJog(); settle();
+    midi(0xB0, 51, 127); midi(0xB0, 51, 0); tick();
+});
+step('⭐ Bank Map Overview OFF: the session overview walks with no column', () => {
+    S.sessionView = true; S.sessKnobMode = 0; S.sessMixerLatched = false;
+    touchJog(); tick(); jog(1); tick();
+    assert(S.sessKnobMode === 1, 'control: mixer mode ' + S.sessKnobMode);
+    assert(!columnUp(frame()), 'column on the session overview with the switch off');
+    releaseJog(); settle();
+    S.sessionView = false;
+    ovItem().set(true);
+    assert(written[prefs.BANK_OVERVIEW_MAP_PATH] === '1\n', 'On not persisted');
+    touchJog(); tick(); jog(-1); tick();
+    assert(columnUp(frame()), 'control: switched back On, the overview column did not return');
+    releaseJog(); settle();
 });
 step('the switch is read from its file at launch (0 = off, absent = on)', () => {
     globalThis.host_file_exists = (p) => p === prefs.BANK_VIEW_MAP_PATH;

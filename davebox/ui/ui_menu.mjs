@@ -24,7 +24,8 @@ import { SCALE_NAMES } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
-import { bankViewMapOn, setBankViewMapOn, jogTouchCardOn, setJogTouchCardOn } from './ui_prefs.mjs';
+import { bankViewMapOn, setBankViewMapOn, bankOverviewMapOn, setBankOverviewMapOn,
+    jogTouchCardOn, setJogTouchCardOn } from './ui_prefs.mjs';
 import { saveState, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { forceRedraw } from './ui_leds.mjs';
@@ -184,6 +185,13 @@ function buildGlobalMenuItems() {
         createToggle('Beat Marks', {
             get: function() { return S.beatMarkersEnabled; },
             set: function(v) { S.beatMarkersEnabled = v; forceRedraw(); },
+            onLabel: 'On', offLabel: 'Off'
+        }),
+        /* Bank Map Overview (Josh, 2026-10-03): the bank column while the
+         * jog walks under the track or session overview. Device-global. */
+        createToggle('Bank Map Overview', {
+            get: function() { return bankOverviewMapOn(); },
+            set: function(v) { setBankOverviewMapOn(v); forceRedraw(); },
             onLabel: 'On', offLabel: 'Off'
         }),
         /* Bank Map on Lock (Josh, 2026-09-27): the bank column while the jog

@@ -498,6 +498,7 @@ export const S = {
     masterPos: 0,
     pendingSessionAfterCoRun: false, /* Note/Session left a co-run: land on Session View once it has ended (ui_tick) */
     jogTouchCardOn: null, /* Jog Touch Card (global menu, ui_prefs): a bare jog touch shows the current bank card. null = not yet read; absent file = on. */
+    bankOverviewMapOn: null, /* Bank Map Overview (global menu, ui_prefs): the bank column while the jog walks under an overview. null = not yet read; absent file = on. */
     bankViewMapOn: null, /* Bank Map on Lock (global menu, ui_prefs): the bank column while the jog walks from the bank view. null = not yet read; absent file = on. */
     midiMuted: null,     /* MIDI browser preview muted (ui_prefs). null = not yet read */
     midiMap: null,       /* MIDI browser drum Map: off | gm | move (ui_prefs). null = not yet read */

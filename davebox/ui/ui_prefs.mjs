@@ -31,6 +31,33 @@ export function setBankViewMapOn(v) {
     if (!wrote) console.log('[prefs] could not persist Bank Map on Lock to ' + BANK_VIEW_MAP_PATH);
 }
 
+/* The bank column on the OVERVIEWS (Josh, 2026-10-03: "project menu toggle
+ * bank map overlay in track overview (same as in bank lock)"). On = the column
+ * comes up while the jog walks the banks under the track overview or the
+ * session mixer modes under the session overview; Off = the overviews walk
+ * without it (the header still names the bank). Bank Map on Lock is the same
+ * switch for a locked card. Absent file = On. */
+export const BANK_OVERVIEW_MAP_PATH = '/data/UserData/dbx-host/bank-overview-map.txt';
+
+export function bankOverviewMapOn() {
+    if (S.bankOverviewMapOn === null) {
+        let on = true;
+        try {
+            on = !(host_file_exists(BANK_OVERVIEW_MAP_PATH) &&
+                   String(host_read_file(BANK_OVERVIEW_MAP_PATH) || '').trim() === '0');
+        } catch (e) { on = true; }
+        S.bankOverviewMapOn = on;
+    }
+    return S.bankOverviewMapOn;
+}
+
+export function setBankOverviewMapOn(v) {
+    S.bankOverviewMapOn = !!v;
+    let wrote = false;
+    try { wrote = !!host_write_file(BANK_OVERVIEW_MAP_PATH, S.bankOverviewMapOn ? '1\n' : '0\n'); } catch (e) { wrote = false; }
+    if (!wrote) console.log('[prefs] could not persist Bank Map Overview to ' + BANK_OVERVIEW_MAP_PATH);
+}
+
 /* Touching the jog shows the current bank card (Josh, 2026-09-30: "Add global
  * menu option for touch jog to show current bank card.  Shows bank cards on jog
  * touch like davebox legacy did. Showing the bank card should be the default.").
