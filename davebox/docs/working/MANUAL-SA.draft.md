@@ -345,6 +345,9 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   groups: each group's name sits to the left of a line beside its banks.
   The column can be turned off in Project Settings: **Bank Map Overview** for
   the overviews, **Bank Map on Lock** for the bank view.
+  With **Jog Turn Banks** off (Project Settings) turning the jog never changes
+  the bank — or, in Session View, the mixer mode; hold the jog and tap a pad
+  instead. The jog's other turns (Loop + jog, Shift + jog) work as usual.
 - **Click the jog** to open the **bank view** — that bank's page, held on screen;
   keep turning to walk from there. In the bank view a click switches to the bank's
   **alternate** parameters (a down-arrow in the header marks a bank that has them,
@@ -2156,6 +2159,7 @@ see [Track settings](#174-track-settings) below.
 | Bank Map on Lock | Whether the bank column comes up while the jog walks the banks from the bank view (or the session mixer card) — see [§3.6](#36-parameter-banks) | On, Off | On |
 | Jog Touch Card | Whether touching the jog shows the current bank's page (the mixer page in Session View) until you let go — see [§3.6](#36-parameter-banks) | On, Off | On |
 | Bank Lock | Whether a jog click on the overview locks the bank view (On), or does the bank's own click straight away (Off) — in Track and Session View — see [§3.6](#36-parameter-banks) | On, Off | On |
+| Jog Turn Banks | Whether turning the jog steps through the banks (and Session View's mixer modes). Off, only the jog-hold pad map switches banks — see [§3.6](#36-parameter-banks) | On, Off | On |
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Projects... | The project picker — see [Projects](#175-projects) | action | — |
 | Save state / Load state | Save or restore a named snapshot — see [§17.3](#173-snapshots) | action | — |

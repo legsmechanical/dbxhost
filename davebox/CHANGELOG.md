@@ -28,6 +28,9 @@ the section into a versioned heading at release time.
   walk. Drum tracks keep RPT GROOVE on the walk; the Conductor's starts on CLIP.
   They are screens, not banks: opening one never changes the bank you're on,
   and Back from its top level returns you exactly where you were.
+- **Jog Turn Banks** in Project Settings: turn it off and turning the jog no
+  longer changes the bank (or Session View's mixer mode); hold the jog and tap
+  a pad to switch. Loop + jog and Shift + jog work as usual.
 - **Bank Lock** in Project Settings: turn it off and a jog click on the
   overview skips the bank view and does the bank's own thing — opens TRACK
   CONFIG, the macro list or the automation menu, switches to the alternate

@@ -25,7 +25,8 @@ import { S, standDownBankDisplay } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
 import { bankViewMapOn, setBankViewMapOn, bankOverviewMapOn, setBankOverviewMapOn,
-    jogTouchCardOn, setJogTouchCardOn, bankLockOn, setBankLockOn } from './ui_prefs.mjs';
+    jogTouchCardOn, setJogTouchCardOn, bankLockOn, setBankLockOn,
+    jogTurnBanksOn, setJogTurnBanksOn } from './ui_prefs.mjs';
 import { saveState, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { forceRedraw } from './ui_leds.mjs';
@@ -221,6 +222,14 @@ function buildGlobalMenuItems() {
                 }
                 forceRedraw();
             },
+            onLabel: 'On', offLabel: 'Off'
+        }),
+        /* Jog Turn Banks (Josh, 2026-10-03): a plain jog turn walks the
+         * banks / mixer modes (On) or leaves them alone (Off; the jog-hold
+         * pad map still switches). Device-global (ui_prefs), default On. */
+        createToggle('Jog Turn Banks', {
+            get: function() { return jogTurnBanksOn(); },
+            set: function(v) { setJogTurnBanksOn(v); forceRedraw(); },
             onLabel: 'On', offLabel: 'Off'
         }),
         createDivider(),

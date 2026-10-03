@@ -86,6 +86,33 @@ export function setBankLockOn(v) {
     if (!wrote) console.log('[prefs] could not persist Bank Lock to ' + BANK_LOCK_PATH);
 }
 
+/* Jog Turn Banks (Josh, 2026-10-03: "add a toggle to project menu to disable
+ * jog turn to switch banks"). On = turning the jog walks the banks (Track
+ * View) and the mixer modes (Session View), as before. Off = a plain turn
+ * leaves the bank alone; holding the jog and tapping a pad still switches.
+ * The jog's other turns (Loop length, Shift + track, menus) are unaffected.
+ * Absent file = On. */
+export const JOG_TURN_BANKS_PATH = '/data/UserData/dbx-host/jog-turn-banks.txt';
+
+export function jogTurnBanksOn() {
+    if (S.jogTurnBanksOn === null) {
+        let on = true;
+        try {
+            on = !(host_file_exists(JOG_TURN_BANKS_PATH) &&
+                   String(host_read_file(JOG_TURN_BANKS_PATH) || '').trim() === '0');
+        } catch (e) { on = true; }
+        S.jogTurnBanksOn = on;
+    }
+    return S.jogTurnBanksOn;
+}
+
+export function setJogTurnBanksOn(v) {
+    S.jogTurnBanksOn = !!v;
+    let wrote = false;
+    try { wrote = !!host_write_file(JOG_TURN_BANKS_PATH, S.jogTurnBanksOn ? '1\n' : '0\n'); } catch (e) { wrote = false; }
+    if (!wrote) console.log('[prefs] could not persist Jog Turn Banks to ' + JOG_TURN_BANKS_PATH);
+}
+
 /* Touching the jog shows the current bank card (Josh, 2026-09-30: "Add global
  * menu option for touch jog to show current bank card.  Shows bank cards on jog
  * touch like davebox legacy did. Showing the bank card should be the default.").

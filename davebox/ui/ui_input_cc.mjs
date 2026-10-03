@@ -91,7 +91,7 @@ import { setTrackMute, setTrackSolo, clearAllMuteSolo,
     _switchActiveTrack,
     resetFxBanks, resetBankParams, resetMidiFxChain, resetTarp, resetRptGroove, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
 import { _resolveLoopGesture, chordApplyRevoice, _onPadRelease } from './ui_input_pads.mjs';
-import { seqFollowOn, setSeqFollowOn, bankLockOn } from './ui_prefs.mjs';
+import { seqFollowOn, setSeqFollowOn, bankLockOn, jogTurnBanksOn } from './ui_prefs.mjs';
 
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
  * Single tap while locked → unlock + stop loop. */
@@ -1260,6 +1260,8 @@ function modalDialogUp() {
                         S.seqLastClip = -1;
                         forceRedraw();
                     }
+                } else if (S.sessionView && sessMixerVisible() && !jogTurnBanksOn()) {
+                    /* Jog Turn Banks Off: the turn leaves the mixer mode alone. */
                 } else if (S.sessionView && sessMixerVisible()) {
                     /* ⚠ GATED ON THE MIXER PAGE BEING OPEN (Josh, 2026-09-01:
                      * "same should be true of session view banks") — from the
@@ -1357,6 +1359,10 @@ function modalDialogUp() {
                 } else if (doorScreenUp()) {
                     /* A DOOR SCREEN (LIVE ARP's page) is a screen, not a bank
                      * on the walk: the turn does not walk off it. Back leaves. */
+                } else if (!jogTurnBanksOn()) {
+                    /* Jog Turn Banks Off: every branch below is a bank walk
+                     * (the card, the track overview, the session overview), so
+                     * the turn stops here. The jog-hold pad map still switches. */
                 } else if (bankCardVisible()) {
                     /* ⭑⭑ THE TURN WALKS THE BANKS DIRECTLY (Josh, 2026-09-01:
                      * "no more overlay on jog turn. turn moves through banks
