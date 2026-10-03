@@ -3080,7 +3080,7 @@ export function drawKitCrumbs(parts) {
  *
  * `cols` = [{ label | null, cells: [name | null] x4 }] x4; `cur` = { c, r } | null.
  * Names are the micro face, centred; a name wider than the box wraps at its
- * last space onto two lines (LIVE/ARP, NOTE/FX, DRUM/LANE). Geometry is the
+ * last space onto two lines (LIVE/ARP, DRUM/LANE, RPT/GROOVE). Geometry is the
  * approved preview's: rows 14px apart from y=7, boxes 13px tall. */
 export const MV_BANKMAP_COL_W = 32, MV_BANKMAP_TOP = 7, MV_BANKMAP_ROW = 14;
 export function bankMapCellRect(c, r) {

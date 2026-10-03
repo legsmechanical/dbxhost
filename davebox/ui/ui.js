@@ -562,9 +562,11 @@ function _onMidiInternalImpl(data) {
      * swallowed by a screen would strand the hold (the jog-touch lesson
      * above). Elsewhere the press goes on to its owner exactly as before. */
     if (status === 0xB0 && d1 === MoveMainButton) {
-        if (d2 === 127 && !S.jogClickReplay && S.jogPressMs < 0 && bankMapArmable()) {
-            bankMapBegin();
-            return;
+        if (d2 === 127 && !S.jogClickReplay) {
+            /* A press while a hold is still recorded: its release was lost.
+             * End the stale hold first, then judge this press afresh. */
+            if (S.jogPressMs >= 0) bankMapEnd();
+            if (bankMapArmable()) { bankMapBegin(); return; }
         }
         if (d2 !== 127 && S.jogPressMs >= 0) {
             /* A click is a press let go BEFORE the map painted. Once it is on
@@ -586,8 +588,9 @@ function _onMidiInternalImpl(data) {
              * is something else now. The map goes, no click fires, and the
              * button goes on to its owner. */
             bankMapEnd();
-        } else if (!(d1 >= 68 && d1 <= 99) && d1 !== MoveMainTouch) {
-            S.bankMapUsed = true;
+        } else if (!((status & 0xF0) !== 0xB0 && d1 >= 68 && d1 <= 99) &&
+                   !((status & 0xF0) !== 0xB0 && d1 === MoveMainTouch)) {
+            S.bankMapUsed = true;            /* a knob turn / touch, a step: no click */
         }
     }
     if (d1 >= 68 && d1 <= 99) {
@@ -596,9 +599,11 @@ function _onMidiInternalImpl(data) {
             if (S.bankMapSwallow.delete(d1)) return;
         } else if (_k === 0xA0) {
             if (S.jogPressMs >= 0 || S.bankMapSwallow.has(d1)) return;
-        } else if (_k === 0x90 && S.jogPressMs >= 0) {
-            bankMapPadTap(d1);
-            return;
+        } else if (_k === 0x90) {
+            if (S.jogPressMs >= 0) { bankMapPadTap(d1); return; }
+            /* A fresh press outside a hold supersedes a pending swallow (its
+             * release was lost), or that press's own release would be eaten. */
+            S.bankMapSwallow.delete(d1);
         }
     }
 

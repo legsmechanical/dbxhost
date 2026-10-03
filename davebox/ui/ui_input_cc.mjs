@@ -1407,6 +1407,8 @@ export function bankMapArmable() {
     if (S.knobTouched >= 0 || S.heldStep >= 0 || S.bankPickerSel >= 0 || S.stepIntervalMode) return false;
     if (S.moveCoRunTrack >= 0 || S.moveSettingsOpen || soundModeCovered()) return false;
     if (S.awaitingProjectSelect || S.stateLoading) return false;
+    if (S.projectOpenFailed || S.projectListFailed) return false;
+    if (S.backPressTick >= 0) return false;         /* Back is down: a suspend may follow */
     if (S.sessionView) return !soundOpen() && !S.perfViewLocked;
     if (S.activeBank === BANK_AUTOMATION && S.bankCardLatched && autoBankMenuOpen()) return false;
     return !soundActive() || soundOnCard();
@@ -1420,7 +1422,7 @@ export function bankMapBegin() {
     S.bankMapKind = S.sessionView ? 'session' : 'track';
     /* From an overview a pick moves the bank underneath (the rest walk); from
      * a shown card the card follows, as a turn there does. */
-    S.bankMapRest = S.sessionView ? !sessMixerVisible() : !(bankCardVisible() || soundOnCard());
+    S.bankMapRest = S.sessionView ? !sessMixerVisible() : !bankCardVisible();   /* the turn's own test */
 }
 
 /* Paint the map: OLED + pads. Every pad still down is let go through the real
@@ -5229,6 +5231,7 @@ function _switchViewCleanup() {
      * to it, and the next click re-opens exactly where you were. */
     S.sessMixerLatched = false;
     S.bankCardLatched  = false;
+    bankMapEnd();                  /* a map belongs to the view it was opened in */
     /* ⚠ The MACROS-clear confirm draws over EVERYTHING (soundModeCovered), so a
      * view switch must drop it or it is painted on top of the view you land on
      * with nothing able to dismiss it. This is the THIRD of the parallel

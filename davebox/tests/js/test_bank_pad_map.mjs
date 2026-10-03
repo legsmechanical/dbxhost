@@ -180,6 +180,76 @@ step('a pad held before the jog is let go when the map paints; its release is sw
     assert(!S.bankCardLatched, 'the release clicked');
 });
 
+step('a map pad still down when the jog comes up: its release is swallowed, then it plays again', () => {
+    home();
+    press(); holdPast();
+    midi(0x90, pad(3, 2), 100);              /* tap DELAY, keep the finger down */
+    release();                               /* jog up first */
+    const n0 = S.liveActiveNotes.size;
+    midi(0x80, pad(3, 2), 0);                /* the finger lifts after the map is gone */
+    assert(!S.bankMapSwallow.has(pad(3, 2)), 'the swallow kept the pad');
+    assert(S.liveActiveNotes.size === n0, 'the late release reached the pads');
+    midi(0x90, pad(3, 2), 100);              /* and the next press is an ordinary note again */
+    assert(S.liveActiveNotes.size === n0 + 1, 'the pad did not play after the map');
+    midi(0x80, pad(3, 2), 0);
+    assert(S.liveActiveNotes.size === n0, 'the ordinary release was eaten');
+});
+
+step('a pad held before the jog and let go BEFORE the map paints releases normally', () => {
+    home();
+    midi(0x90, 68, 100);
+    press();
+    midi(0x80, 68, 0);
+    assert(S.liveActiveNotes.size === 0, 'the pre-map release was swallowed — stuck note');
+    release();
+});
+
+step('a stale swallow (release lost) does not eat the next ordinary press', () => {
+    home();
+    S.bankMapSwallow.add(69);
+    midi(0x90, 69, 100);
+    assert(S.liveActiveNotes.size === 1, 'the press did not sound');
+    midi(0x80, 69, 0);
+    assert(S.liveActiveNotes.size === 0, 'the release was eaten by a stale swallow — stuck note');
+});
+
+step('a knob turn during a quick hold: the release is not a click', () => {
+    home();
+    press();
+    midi(0xB0, 71, 1);                       /* a turn (its touch arrives separately) */
+    release();
+    assert(!S.bankCardLatched, 'a knob turn then release clicked');
+    midi(0x90, 0, 127); midi(0x80, 0, 0);     /* the knob's touch and let-go */
+    S.knobTouched = -1;
+});
+
+step('a lost jog release: the next press ends the stale hold and is judged afresh', () => {
+    home();
+    press(); holdPast();                     /* ...and the release never arrives */
+    assert(S.bankMapUp, 'setup');
+    press(); release();                      /* a quick click */
+    assert(!S.bankMapUp && S.jogPressMs < 0, 'the stale map survived');
+    assert(S.bankCardLatched, 'the fresh click did not latch');
+});
+
+step('the view changing under the hold ends the map', () => {
+    home();
+    press(); holdPast();
+    S.sessionView = true; tick();
+    assert(!S.bankMapUp && S.jogPressMs < 0, 'a track map stayed up in Session View');
+    S.sessionView = false; tick();
+    release();
+});
+
+step('with Back down the press is not held back (a suspend may follow)', () => {
+    home();
+    S.backPressTick = S.tickCount;
+    press();
+    assert(S.jogPressMs < 0, 'deferred with Back down');
+    release();
+    S.backPressTick = -1;
+});
+
 step('another button while held ends the map, no click (Shift)', () => {
     home();
     press(); holdPast();
@@ -240,6 +310,7 @@ step('Session: a MIXER pad walks the mode; MASTER opens its effects; the right h
     assert(snd.soundOpen(), 'MASTER did not open the effect buses');
     assert(!S.bankMapUp, 'the map stayed over the bus editor');
     release();
+    assert(snd.soundOpen() && S.jogPressMs < 0, 'the jog release after the FX tap acted');
 });
 
 if (failed) { console.error('test_bank_pad_map: FAIL'); process.exit(1); }

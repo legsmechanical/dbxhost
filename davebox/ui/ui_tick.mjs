@@ -654,6 +654,9 @@ export function _tickImpl() {
         S.captureHeld = false; S.shiftTrackLEDActive = false;
         S.heldStep  = -1;    S.heldStepBtn = -1; S.heldStepNotes = []; S.stepReveal = false;
         S.stepWasEmpty = false; S.stepWasHeld = false;
+        /* ...and the bank pad map: the jog's release (and any pad's) fired
+         * while parked, so a map up at suspend would mute the pads for good. */
+        bankMapEnd(); S.padPhysDown.clear(); S.bankMapSwallow.clear();
         /* Sysex suppression needs no re-assert here: the host reset its
          * applied-claims snapshot on suspend, so the first reconcile after
          * resume re-derives the full declared set. */
@@ -1266,7 +1269,9 @@ export function _tickImpl() {
         }
         /* THE BANK PAD MAP paints once the jog has been held JOG_MAP_HOLD_MS —
          * a plain click is shorter, so it never flashes the map. */
-        if (S.jogPressMs >= 0 && !S.bankMapUp && S.clockMs - S.jogPressMs >= JOG_MAP_HOLD_MS)
+        if (S.jogPressMs >= 0 && (S.bankMapKind === 'session') !== !!S.sessionView)
+            bankMapEnd();             /* the view changed under the hold */
+        else if (S.jogPressMs >= 0 && !S.bankMapUp && S.clockMs - S.jogPressMs >= JOG_MAP_HOLD_MS)
             bankMapArm();
         /* Overlay expiry: clear timer here so drawUI() can gate on flag alone */
         if (S.stretchBlockedEndTick >= 0 && S.clockMs >= S.stretchBlockedEndTick) {
