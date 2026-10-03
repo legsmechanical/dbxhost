@@ -40,10 +40,14 @@ globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true
 globalThis.host_state_subdir = () => 'dAVEBOx';
 const sets = [];
 globalThis.host_module_set_param = (k, v) => { sets.push(k + "=" + v); };
-globalThis.host_module_get_param = () => ''; globalThis.shadow_get_param = () => '';
+const _dec = (blob) => { const out = []; if (!blob) return out; let nl = blob.indexOf('\n'); const n = parseInt(blob.slice(0, nl), 10) || 0; let p = nl + 1; for (let i = 0; i < n; i++) { const e = blob.indexOf('\n', p); const len = parseInt(blob.slice(p, e), 10) || 0; p = e + 1; out.push(blob.slice(p, p + len)); p += len; } return out; };
+globalThis.host_module_set_params = (b) => { const it = _dec(b); for (let i = 0; i + 1 < it.length; i += 2) sets.push(it[i] + '=' + it[i + 1]); return true; };
+let LIST = '';
+const knobLed = {};                  /* knob ring CC (71-78) -> colour */
+globalThis.host_module_get_param = (k) => (k === 'pa_list' ? LIST : ''); globalThis.shadow_get_param = () => '';
 globalThis.shadow_set_param = (slot, k, v) => { slotSets.push(k); return 1; };
 globalThis.host_vol_block = () => {}; globalThis.host_edit_cc_block = () => {};
-globalThis.move_midi_internal_send = () => true; globalThis.move_midi_external_send = () => {};
+globalThis.move_midi_internal_send = (m) => { const a = Array.from(m); if (a.length >= 4 && (a[1] & 0xF0) === 0xB0 && a[2] >= 71 && a[2] <= 78) knobLed[a[2]] = a[3]; return true; }; globalThis.move_midi_external_send = () => {};
 globalThis.set_led = () => {}; globalThis.move_midi_inject_to_move = () => {};
 globalThis.host_ext_midi_remap_enable = () => {};
 
@@ -53,6 +57,9 @@ const { S } = await import('../../ui/ui_state.mjs');
 const C = await import('../../ui/ui_constants.mjs');
 const render = await import('../../ui/ui_render.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
+const await_auto = await import('../../ui/ui_automation.mjs');
+const leds = await import('../../ui/ui_leds.mjs');
+const K = await import('/data/UserData/schwung/shared/constants.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 2;
@@ -141,6 +148,36 @@ step('⭐ DELAY K1 flips to Clock Feedback: the turn writes it and automation ta
     touchClick(7);
     sets.length = 0; turn(7, 1);
     assert(wrote(/^t2_delay_pitch_random_mode=/), 'DELAY K8 Algo wrote ' + JSON.stringify(sets.slice(0, 6)));
+});
+
+step('⭐⭐ the PATH: a flipped DELAY K1 is Clock Feedback\'s automation — Delete lights its ring, Delete + touch clears it', () => {
+    const auto = await_auto;
+    const clip = leds.effectiveClip(2);
+    LIST = '2 ' + clip + ' 1 4 seq:2:delay_clock_fb\n';      /* a lane on Clock Feedback only */
+    auto.automationRefreshPresence();
+    assert(auto.automationStateFor(2, clip, 'seq:2:delay_clock_fb'), 'setup: no lane');
+    assert(S.knobAlt & 1, 'setup: K1 not flipped');
+    S._forceKnobReemit = true;
+    cc(119, 127); ticks(2);                              /* hold Delete: rings show automation state */
+    leds.updateTrackLEDs();                              /* the LED frame (the tick paints on its own cadence) */
+    assert(knobLed[71] === K.Red, 'flipped K1 ring under Delete: ' + knobLed[71]);
+    sets.length = 0; S.actionPopupLines = [];
+    touch(0);                                            /* Delete + touch the flipped K1 */
+    untouch(0);
+    cc(119, 0); ticks(2);
+    assert(auto.automationStateFor(2, clip, 'seq:2:delay_clock_fb') === null,
+           'Delete + touch did not clear Clock Feedback\'s lane');
+    assert(S.actionPopupLines.join(' ') === 'AUTOMATION CLEARED', 'notice: ' + S.actionPopupLines);
+    /* CONTROL: K1 back on Rate (no lane) — the ring is dark under Delete. */
+    LIST = '2 ' + clip + ' 1 4 seq:2:delay_clock_fb\n'; auto.automationRefreshPresence();
+    touchClick(0);
+    assert(!(S.knobAlt & 1), 'setup: K1 did not flip back');
+    S._forceKnobReemit = true;
+    cc(119, 127); ticks(2);
+    leds.updateTrackLEDs();
+    assert((knobLed[71] | 0) === 0, 'unflipped K1 (Rate, no lane) ring under Delete: ' + knobLed[71]);
+    cc(119, 0); ticks(2);
+    LIST = ''; auto.automationRefreshPresence();
 });
 
 step('NOTE FX K8 flips to Algo', () => {
