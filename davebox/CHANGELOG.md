@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed
+- **Performance Mode repeats over MIDI DLY no longer go silent or stick.** An
+  echo landing on its own note left that pitch counted as sounding, so the
+  repeat stopped playing it (with a pitch mod on, the moved note stuck).
 
 ## [0.0.11] — 2026-10-02 (test build, not in the Schwung catalog)
 ### Changed
