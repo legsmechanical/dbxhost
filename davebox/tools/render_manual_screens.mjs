@@ -473,6 +473,13 @@ BASE_ENGINE = { ...ENGINE };
 /* Walk the jog to a bank from the track overview (the real walk), then click
  * to open the bank view. */
 function toBank(b, open = true) {
+    /* A DOOR (CONFIG, AUTOMATION, LIVE ARP — off the jog walk since 2026-10-03)
+     * is reached the way a restored bank is: recorded, then the tick opens it. */
+    if (PURE.bankIsDoor(S.trackPadMode[S.activeTrack], b)) {
+        S.activeBank = b; S.trackActiveBank[S.activeTrack] = b; ticks(4);
+        if (open) { click(); ticks(2); }
+        return;
+    }
     const cyc = PURE.bankCycleForMode(S.trackPadMode[S.activeTrack], S.activeTrack);
     const dir = cyc.indexOf(b) < cyc.indexOf(S.activeBank) ? -1 : 1;
     for (let g = 0; g < 24 && S.activeBank !== b; g++) { jog(dir); ticks(1); }

@@ -312,14 +312,18 @@ picks which bank. Each track has its own walk, in this order:
 
 | Track | Banks, in jog order |
 |---|---|
-| **Melodic** | CONFIG · **IN:** (CHORD, in the Chord layout) → LIVE ARP · **CTRL:** MACROS → AUTOMATION · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · MIX |
-| **Drum** | CONFIG · **IN:** RPT GROOVE · **CTRL:** MACROS → AUTOMATION · **SEQ:** STEP → ALL LANES → DRUM LANE · **FX** (the selected lane's): NOTE FX → DELAY · MIX |
-| **Conductor** | CONFIG → CLIP → STEP → NOTE FX · **RSPD:** ON/OFF → OCTAVE → TIMING |
+| **Melodic** | **IN:** CHORD (in the Chord layout) · **CTRL:** MACROS · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · MIX |
+| **Drum** | **IN:** RPT GROOVE · **CTRL:** MACROS · **SEQ:** STEP → ALL LANES → DRUM LANE · **FX** (the selected lane's): NOTE FX → DELAY · MIX |
+| **Conductor** | CLIP → STEP → NOTE FX · **RSPD:** ON/OFF → OCTAVE → TIMING |
 
 A melodic track starts on **CLIP** and a drum track on **DRUM LANE**, both in
 the middle of the walk: turn left for what plays into the track, right for its
-effects (in the order the notes pass through them) and, last, MIX. The first
-bank on every walk is **CONFIG**, the track's TRACK CONFIG menu.
+effects (in the order the notes pass through them) and, last, MIX.
+**CONFIG** (the track's TRACK CONFIG menu), **AUTOMATION** and **LIVE ARP** are
+not on the walk: reach them from the bank map (hold the jog, below) or their
+shortcuts — **Shift + Note/Session** for TRACK CONFIG, **Shift + hold Step 11**
+for LIVE ARP. Turning the jog from one of them steps to the nearest bank on the
+walk.
 The banks are grouped: **IN** (what you play in), **CTRL** (what moves the
 parameters), **SEQ** (the sequence) and **FX** (the note effects — on a drum
 track, the selected lane's, so the map shows them under DRUM LANE). A Conductor
@@ -440,7 +444,7 @@ a **Shift + Step** shortcut (see the [Quick Reference](#19-quick-reference)).
 
 Each track's sound is set in its own menu, **TRACK CONFIG**:
 
-1. Turn the jog to the **CONFIG** bank — the first on the walk — and click; or
+1. Hold the jog and tap the **CONFIG** pad (bottom-left of the bank map), or
    press **Shift + Note/Session** from anywhere in Track View.
 2. **Shift + click** the top row, **Instmt/Dest**, to choose what the track plays:
    one of Move's four instruments, a Schwung instrument, a MIDI channel, and more.
@@ -1228,7 +1232,7 @@ lane and isn't automated. See [Parameter banks](#36-parameter-banks) and
 
 ## 10.2 The AUTOMATION bank
 
-**AUTOMATION** is the last bank on the jog: a **list of everything automated in the
+**AUTOMATION** is on the bank map (the AUTO pad), not on the jog walk: a **list of everything automated in the
 current clip** — parameters, levels, MIDI targets and the pads' aftertouch. Its knobs
 do nothing; the jog does everything.
 
@@ -1465,7 +1469,7 @@ last). The bottom-left pad is an octave down.
 
 ## 12.3 The Conductor's banks
 
-A Conductor's jog walks seven banks, starting on CONFIG (its TRACK CONFIG menu). ON/OFF, OCTAVE, TIMING and Cond Lock belong to the Conductor's current clip, so different Conductor clips
+A Conductor's jog walks six banks, starting on CLIP; its CONFIG (the TRACK CONFIG menu) is on the bank map. ON/OFF, OCTAVE, TIMING and Cond Lock belong to the Conductor's current clip, so different Conductor clips
 can steer different tracks:
 
 | Bank | Controls |
@@ -1599,7 +1603,7 @@ pads and step buttons stay with the sequencer, so you can keep playing.
 
 ## 14.1 Opening TRACK CONFIG
 
-Open it from the **CONFIG** bank, the first on every track's jog walk. Its card
+Open it from the **CONFIG** pad on the bank map (hold the jog), which opens the menu straight away. As a bank its card
 is the menu itself, at rest inside corner brackets; click and the menu is live —
 the jog moves its cursor and a click uses the row. CONFIG has no knobs.
 
@@ -1775,7 +1779,7 @@ has:
 
 ## 14.6 The MACROS bank
 
-**MACROS** opens the CTRL group on the jog, before AUTOMATION. Its eight knobs play
+**MACROS** is the CTRL bank on the jog; AUTOMATION sits beside it on the bank map. Its eight knobs play
 whatever you assign to them, and each cell shows its target's value the way the
 module editor does — a dial, a big number, a list square, a fader for a level. A
 knob with no target, or whose target was swapped away, shows `--` and reads

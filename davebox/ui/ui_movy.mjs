@@ -3121,7 +3121,7 @@ export const MV_BANKNAV_ROW_H = 9, MV_BANKNAV_ROWS = 7;
  * the overlay"). The items still carry their glyph; true draws it again. */
 export const MV_BANKNAV_ICONS = false;
 const bankNavGlyphW = (g) => (MV_BANKNAV_ICONS ? kitBankGlyphWidth(g) + 3 : 0);
-export function drawKitBankNavColumn(items, cur) {
+export function drawKitBankNavColumn(items, cur, noHilite) {
     if (!items || !items.length) return;
     const ROW = MV_BANKNAV_ROW_H, MID = (MV_BANKNAV_ROWS - 1) >> 1;
     /* One gutter per nesting depth: depth 0 starts at the left edge, depth 1
@@ -3144,7 +3144,7 @@ export function drawKitBankNavColumn(items, cur) {
     for (let r = 0; r < MV_BANKNAV_ROWS; r++) {
         const i = cur + (r - MID);
         if (i < 0 || i >= items.length) continue;
-        const it = items[i], y = r * ROW + 1, on = r === MID, fg = on ? 0 : 1;
+        const it = items[i], y = r * ROW + 1, on = r === MID && !noHilite, fg = on ? 0 : 1;
         const x0 = x0Of(it);
         if (on) { const hx = it.cat ? x0 - 2 : 0; fill_rect(hx, y - 1, PW - hx, ROW + 1, 1); }
         if (MV_BANKNAV_ICONS) drawKitBankGlyph(it.glyph, x0, y + 1, fg);

@@ -36,7 +36,7 @@ import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
          PAGE_KNOB, pageFloatStep } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity,
-         bankCycleForMode, bankPadMapCellAt, bankMapCellForPad, SESS_PAD_MAP, bankDisplayName } from './ui_pure.mjs';
+         bankCycleForMode, bankListForMode, bankPadMapCellAt, bankMapCellForPad, SESS_PAD_MAP, bankDisplayName } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
          showActionPopupFor, showActionPopupGauge } from './ui_persistence.mjs';
 import {
@@ -1401,7 +1401,8 @@ function modalDialogUp() {
 
 }
 
-const bankCycleFor = (track) => bankCycleForMode(S.trackPadMode[track], track);
+const bankCycleFor = (track) => bankCycleForMode(S.trackPadMode[track], track);   /* the jog's walk */
+const bankListFor  = (track) => bankListForMode(S.trackPadMode[track], track);    /* every bank the track has */
 
 /* The session mixer MODE moves to `mode` (clamped): the walk's one owner, for
  * the turn under the session overview and the bank pad map's MIXER column.
@@ -1497,7 +1498,7 @@ export function bankMapPadTap(note) {
     const t = S.activeTrack;
     const b = bankPadMapCellAt(S.trackPadMode[t], t, cell.col, cell.row);
     if (b === null) return;
-    S.bankPickerSel = bankCycleFor(t).indexOf(b);
+    S.bankPickerSel = bankListFor(t).indexOf(b);
     applyBankPick(S.bankMapRest);
     /* ⭑ A bank you have to click INTO before anything edits — CONFIG (TRACK
      * CONFIG) and AUTOMATION (its menu) — is clicked into by the pick itself
@@ -1542,15 +1543,27 @@ function seqAutoEdit(track, bank, k, altMode, nv, cur) {
  * the display window is armed) or under the overview (`rest` true: nothing
  * opens — the record moves, the header and knobs follow). */
 function walkBanks(delta, rest) {
-    const cyc = bankCycleFor(S.activeTrack);
+    const t = S.activeTrack;
+    const cyc = bankCycleFor(t), full = bankListFor(t);
     /* The bank is recorded the moment the walk lands on it (2026-09-24), SOUND+CFG
      * and MACROS included, so the live bank IS the position even while their
      * sound-mode entry is still queued for the next tick. */
     const cur = S.activeBank;
     const at = cyc.indexOf(cur);
-    const next = Math.max(0, Math.min(cyc.length - 1, (at < 0 ? 0 : at) + delta));
+    let next;
+    if (at >= 0) next = Math.max(0, Math.min(cyc.length - 1, at + delta));
+    else {
+        /* On a DOOR (reached by the map or a shortcut, off the walk): the first
+         * detent steps to the nearest walk bank that way in the track's full
+         * order; a bigger turn carries on from there. */
+        const s = delta < 0 ? -1 : 1;
+        let j = full.indexOf(cur) + s;
+        while (j >= 0 && j < full.length && cyc.indexOf(full[j]) < 0) j += s;
+        next = (j < 0 || j >= full.length) ? (s < 0 ? 0 : cyc.length - 1) : cyc.indexOf(full[j]);
+        next = Math.max(0, Math.min(cyc.length - 1, next + (delta - s)));
+    }
     if (next !== at) {
-        S.bankPickerSel = next;
+        S.bankPickerSel = full.indexOf(cyc[next]);
         applyBankPick(rest);
     } else if (!rest) {
         armBankDisplay();   /* a clamped turn still refreshes the window */
@@ -1565,7 +1578,7 @@ function walkBanks(delta, rest) {
  * entry (it opens resting; the card is not shown). */
 export function applyBankPick(rest) {
     const t = S.activeTrack;
-    const cyc = bankCycleFor(t);
+    const cyc = bankListFor(t);   /* bankPickerSel indexes the track's FULL list: doors included */
     const idx = S.bankPickerSel;
     S.bankPickerSel = -1;
     if (idx < 0 || idx >= cyc.length) return;

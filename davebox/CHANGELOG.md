@@ -15,6 +15,11 @@ the section into a versioned heading at release time.
   opens the Master, Send A and Send B effects directly.
 
 ### Changed
+- **CONFIG, AUTOMATION and LIVE ARP are off the jog walk** and the bank list.
+  They stay on the bank map (hold the jog) and their shortcuts; the walk now
+  runs MACROS (CHORD before it in the Chord layout) → STEP → CLIP → the effects
+  → MIX. Turning the jog from one of them steps to the nearest bank on the
+  walk. Drum tracks keep RPT GROOVE on the walk; the Conductor's starts on CLIP.
 - **Bank Lock** in Project Settings: turn it off and a jog click on the
   overview skips the bank view and does the bank's own thing — opens TRACK
   CONFIG, the macro list or the automation menu, switches to the alternate

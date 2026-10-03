@@ -74,7 +74,7 @@ import { readFileSync } from 'node:fs';
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
-const { BANK_SOUND, BANK_MACROS, BANK_AUTOMATION } = await import('../../ui/ui_constants.mjs');
+const { BANK_SOUND, BANK_MACROS, BANK_AUTOMATION, BANK_STEP } = await import('../../ui/ui_constants.mjs');
 const { bankCycleForMode, bankDisplayName } = await import('../../ui/ui_pure.mjs');
 const { PAD_MODE_DRUM, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
@@ -169,32 +169,29 @@ step('⭑ walking onto SOUND + CONFIG lands the DOOR; it is the last stop; walki
         throw new Error('did not land on the neighbour bank: ' + S.activeBank);
 });
 
-step('⭑ MACROS opens sound mode on its page from LIVE ARP; on to AUTOMATION leaves; back re-opens; back again leaves', () => {
+step('⭑ MACROS opens sound mode on its page from LIVE ARP (a door: the walk steps to its neighbour); on to STEP leaves; back re-opens', () => {
     reset();
     S.bankCardLatched = true;
-    S.activeBank = 5; S.trackActiveBank[2] = 5;       /* LIVE ARP, just before CTRL */
+    S.activeBank = 5; S.trackActiveBank[2] = 5;       /* LIVE ARP: off the walk, reached by the map */
     jog(1); globalThis.tick(); globalThis.tick();
     if (!snd.soundActive()) throw new Error('walking onto MACROS did not open sound mode');
     if (S.activeBank !== BANK_MACROS || S.trackActiveBank[2] !== BANK_MACROS)
         throw new Error('MACROS did not record itself: ' + S.activeBank + '/' + S.trackActiveBank[2]);
     jog(1); globalThis.tick();
-    if (S.activeBank !== BANK_AUTOMATION || snd.soundActive()) throw new Error('MACROS -> AUTOMATION should leave sound mode: ' + S.activeBank);
+    if (S.activeBank !== BANK_STEP || snd.soundActive()) throw new Error('MACROS -> STEP should leave sound mode: ' + S.activeBank);
     jog(-1); globalThis.tick(); globalThis.tick();
-    if (S.activeBank !== BANK_MACROS || !snd.soundActive()) throw new Error('AUTOMATION -> MACROS should re-open on the page: ' + S.activeBank);
-    jog(-1); globalThis.tick();
-    if (snd.soundActive()) throw new Error('MACROS -> LIVE ARP did not leave sound mode');
-    if (S.activeBank !== 5) throw new Error('did not land on LIVE ARP: ' + S.activeBank);
+    if (S.activeBank !== BANK_MACROS || !snd.soundActive()) throw new Error('STEP -> MACROS should re-open on the page: ' + S.activeBank);
 });
 
-step('⭑ two detents before the tick: the queued MACROS counts as the position (LIVE ARP → MACROS → AUTOMATION)', () => {
+step('⭑ two detents before the tick: the queued MACROS counts as the position (LIVE ARP → MACROS → STEP)', () => {
     reset();
     S.bankCardLatched = true;
     S.activeBank = 5; S.trackActiveBank[2] = 5;
     jog(1); jog(1);                                   /* no tick between */
     globalThis.tick(); globalThis.tick();
-    if (S.activeBank !== BANK_AUTOMATION)
+    if (S.activeBank !== BANK_STEP)
         throw new Error('the second detent re-selected MACROS instead of walking on: ' + S.activeBank);
-    if (snd.soundActive()) throw new Error('the queued MACROS entry opened sound mode over AUTOMATION');
+    if (snd.soundActive()) throw new Error('the queued MACROS entry opened sound mode over STEP');
 });
 
 step('⚠ SHIFT+jog steps the TRACK — the walk is the unshifted turn', () => {

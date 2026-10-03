@@ -37,7 +37,7 @@ import { automationTick, automationPollWarnings } from './ui_automation.mjs';
 import { morphTick } from './ui_snapmorph.mjs';
 import { reconcileParallelAll, parallelForgetPushed, parallelSweepTick } from './ui_parallel.mjs';
 import { autoBankTick } from './ui_automation_bank.mjs';
-import { clipHasContent, stepEntryVelocity, soundBankOnWalk } from './ui_pure.mjs';
+import { clipHasContent, stepEntryVelocity, soundBankOnTrack } from './ui_pure.mjs';
 import { saveState, showActionPopup, showActionPopupFor, showTrackVolCard, uuidToStatePath, hostIdentity, projectDisplayName,
     commitSnapshot, writeSidecar } from './ui_persistence.mjs';
 import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
@@ -1528,7 +1528,7 @@ export function _tickImpl() {
         if (!S.sessionView && !soundOpen() && isSoundBank(S.activeBank)
                 && S.pendingSoundEnterTrack < 0 && S.moveCoRunTrack < 0
                 && !S.awaitingProjectSelect
-                && soundBankOnWalk(S.trackPadMode[S.activeTrack], S.activeBank, S.activeTrack)) {
+                && soundBankOnTrack(S.trackPadMode[S.activeTrack], S.activeBank, S.activeTrack)) {
             S.pendingSoundEnterTrack = S.activeTrack;
             S.pendingSoundEnterSilent = true;
         } else if (soundOpen() && soundResting() && !isSoundBank(S.activeBank)

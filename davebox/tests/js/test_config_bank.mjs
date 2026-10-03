@@ -73,10 +73,11 @@ const bracketed = (f) => px(f, 0, TOP) && px(f, 3, TOP) && px(f, 127, TOP) && px
 const toBank = (b) => { S.activeBank = b; S.trackActiveBank[2] = b; ticks(4); };
 const VIEW_BLOCKS = 0, VIEW_PROMPT = 18;
 
-step('⭐ CONFIG is first on the melodic, drum and Conductor walks; MIX (bank 11) is last where there is one', () => {
+step('⭐ CONFIG is first in every track\'s banks but a DOOR — off the jog walk (2026-10-03); MIX (bank 11) is last where there is one', () => {
     for (const m of [C.PAD_MODE_MELODIC_SCALE, C.PAD_MODE_DRUM, C.PAD_MODE_CONDUCT]) {
-        const cyc = P.bankCycleForMode(m, 2);
-        assert(cyc[0] === C.BANK_CONFIG, 'mode ' + m + ': ' + cyc);
+        const list = P.bankListForMode(m, 2);
+        assert(list[0] === C.BANK_CONFIG, 'mode ' + m + ': ' + list);
+        assert(P.bankCycleForMode(m, 2).indexOf(C.BANK_CONFIG) < 0, 'CONFIG is on the walk, mode ' + m);
     }
     assert(P.bankCycleForMode(0, 2).slice(-1)[0] === C.BANK_SOUND && P.bankCycleForMode(1, 2).slice(-1)[0] === C.BANK_SOUND, 'MIX last');
     assert(P.bankCycleForMode(2, 2).indexOf(C.BANK_SOUND) < 0, 'a Conductor has no MIX');
@@ -84,10 +85,9 @@ step('⭐ CONFIG is first on the melodic, drum and Conductor walks; MIX (bank 11
     assert(C.BANK_DEFAULT === 0, 'bank 0 stays the start');
 });
 
-step('⭐⭐ THE GESTURE: walk left from CLIP to CONFIG, click — the card is the TRACK CONFIG list inside the corner brackets', () => {
+step('⭐⭐ THE CARD: CONFIG locked (a restored bank, say) is the TRACK CONFIG list inside the corner brackets', () => {
     S.activeBank = 0; S.trackActiveBank[2] = 0; S.bankCardLatched = true; ticks(2);
-    const cyc = P.bankCycleForMode(0, 2);
-    for (let i = 0; i < cyc.indexOf(0); i++) jog(-1);
+    toBank(C.BANK_CONFIG);
     assert(S.activeBank === C.BANK_CONFIG, 'did not reach CONFIG: ' + S.activeBank);
     ticks(4);
     const st = snd.soundConfigCardForTest();
@@ -132,12 +132,12 @@ step('⭐ MIX: its click opens nothing and it says no CLK MENU', () => {
     assert(S.activeBank === C.BANK_SOUND, 'the bank moved');
 });
 
-step('⭐ a Conductor: CONFIG opens its menu rows, first on its walk', () => {
+step('⭐ a Conductor: CONFIG opens its menu rows (a door: off the walk)', () => {
     snd.soundExit(); S.bankCardLatched = false;
     S.trackPadMode[2] = C.PAD_MODE_CONDUCT;
     toBank(0); S.bankCardLatched = true; ticks(2);
-    jog(-1);
-    assert(S.activeBank === C.BANK_CONFIG, 'one left of CLIP is not CONFIG: ' + S.activeBank);
+    toBank(C.BANK_CONFIG);
+    assert(S.activeBank === C.BANK_CONFIG, 'not on CONFIG: ' + S.activeBank);
     ticks(4);
     const st = snd.soundConfigCardForTest();
     assert(snd.soundOpen() && st.card, 'no CONFIG card on a Conductor: ' + JSON.stringify(st));

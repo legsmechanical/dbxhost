@@ -60,7 +60,7 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const { BANKS, BANK_AUTOMATION, BANK_MACROS, BANK_SOUND, PAD_MODE_DRUM, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
-const { bankCycleForMode } = await import('../../ui/ui_pure.mjs');
+const { bankCycleForMode, bankListForMode } = await import('../../ui/ui_pure.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const ab = await import('../../ui/ui_automation_bank.mjs');
 const render = await import('../../ui/ui_render.mjs');
@@ -80,9 +80,10 @@ const draw = () => { painted = 0; globalThis.clear_screen(); render.drawUI(); };
 const T = 0, C = 0;
 const menu = () => S.autoBank || {};
 
-step('AUTOMATION is bank 14, after MACROS on the melodic and drum walks (CTRL); the old bank 6 is off them; a Conductor has none', () => {
+step('AUTOMATION is bank 14, after MACROS in the melodic and drum banks (CTRL) — a door, off the jog walk (2026-10-03); the old bank 6 is gone; a Conductor has none', () => {
     assert(BANKS[BANK_AUTOMATION] && BANKS[BANK_AUTOMATION].name === 'AUTOMATION', 'BANKS[14]');
-    const mel = bankCycleForMode(0), drum = bankCycleForMode(PAD_MODE_DRUM), con = bankCycleForMode(PAD_MODE_CONDUCT);
+    const mel = bankListForMode(0), drum = bankListForMode(PAD_MODE_DRUM), con = bankListForMode(PAD_MODE_CONDUCT);
+    assert(bankCycleForMode(0).indexOf(BANK_AUTOMATION) < 0 && bankCycleForMode(PAD_MODE_DRUM).indexOf(BANK_AUTOMATION) < 0, 'AUTOMATION is still on a jog walk');
     assert(mel.indexOf(BANK_AUTOMATION) === mel.indexOf(BANK_MACROS) + 1 && mel.indexOf(BANK_MACROS) >= 0, 'melodic: CTRL is MACROS, AUTOMATION');
     assert(drum.indexOf(BANK_AUTOMATION) === drum.indexOf(BANK_MACROS) + 1 && drum.indexOf(6) < 0 && mel.indexOf(6) < 0, 'drum: CTRL is MACROS, AUTOMATION; bank 6 gone');
     assert(con.indexOf(BANK_AUTOMATION) < 0, 'conductor: none');

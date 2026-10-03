@@ -79,17 +79,51 @@ export function bankDisplayName(padMode, bank) {
  * ⚠ Pure: takes the pad MODE, not a track index, so ui_render and ui_input_cc
  * can both call it without either importing the other. */
 export function bankCycleForMode(padMode, t) {
-    /* Every track type walks its categories in order (below). */
+    /* THE WALK: the track's banks minus the DOORS (below). */
+    return bankListForMode(padMode, t).filter((b) => !bankIsDoor(padMode, b));
+}
+
+/* THE TRACK'S BANKS, in their full order — every bank this track has, the
+ * doors included. The bank pad map, a pick's commit and a sound bank's
+ * permission to open read this; only the jog's turn reads the walk. */
+export function bankListForMode(padMode, t) {
     const out = [];
     for (const g of bankCategoriesForMode(padMode, t)) for (const b of g.banks) out.push(b);
     return out;
 }
 
-/* A sound bank (MIX, MACROS, CONFIG) that is on this track's walk — so its
- * screen may open. A Conductor has CONFIG but neither MIX nor MACROS, and a
- * stale record of those must never open a screen it has no row for. */
-export function soundBankOnWalk(padMode, bank, t) {
-    return isSoundBank(bank) && bankCycleForMode(padMode, t).indexOf(bank) >= 0;
+/* DOORS (Josh, 2026-10-03: "let's also hide config and automation from the
+ * bank list. i think we may not need them with this new shortcut system.
+ * same with live arp."): banks you reach by a shortcut or the bank pad map,
+ * never by turning the jog. They stay on the map. RPT GROOVE (bank 5 on a
+ * drum track) is not LIVE ARP and stays on the drum walk. */
+const BANK_WALK_DOORS = {
+    melodic: [BANK_CONFIG, BANK_AUTOMATION, 5],
+    drum:    [BANK_CONFIG, BANK_AUTOMATION],
+    conduct: [BANK_CONFIG],
+};
+export function bankIsDoor(padMode, bank) {
+    return BANK_WALK_DOORS[bankMapFamily(padMode)].indexOf(bank) >= 0;
+}
+
+/* The walk's categories, for the bank column: the doors left out of each
+ * group, a group left empty dropped. Labels stay — a category that COULD
+ * hold several banks keeps its label with one (Josh, 2026-09-26). */
+export function bankWalkCategoriesForMode(padMode, t) {
+    const out = [];
+    for (const g of bankCategoriesForMode(padMode, t)) {
+        const banks = g.banks.filter((b) => !bankIsDoor(padMode, b));
+        if (banks.length) out.push(Object.assign({}, g, { banks }));
+    }
+    return out;
+}
+
+/* A sound bank (MIX, MACROS, CONFIG) this track HAS — so its screen may open.
+ * (The track's list, not the walk: CONFIG is a door but its screen opens.) A
+ * Conductor has CONFIG but neither MIX nor MACROS, and a stale record of
+ * those must never open a screen it has no row for. */
+export function soundBankOnTrack(padMode, bank, t) {
+    return isSoundBank(bank) && bankListForMode(padMode, t).indexOf(bank) >= 0;
 }
 
 /* Every walk, in CATEGORIES (Josh, 2026-09-26): what comes in, what controls
@@ -175,7 +209,7 @@ function bankMapFamily(padMode) {
 export function bankPadMapForMode(padMode, t) {
     const fam = bankMapFamily(padMode), pos = BANK_MAP_POS[fam];
     const cols = BANK_MAP_LABELS[fam].map((label) => ({ label, cells: [null, null, null, null] }));
-    for (const b of bankCycleForMode(padMode, t)) {
+    for (const b of bankListForMode(padMode, t)) {
         const p = pos[b];
         if (!p || cols[p[0]].cells[p[1]]) continue;
         cols[p[0]].cells[p[1]] = { bank: b, name: BANK_MAP_SHORT[b] || bankDisplayName(padMode, b) };

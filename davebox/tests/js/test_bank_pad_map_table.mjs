@@ -17,16 +17,19 @@ const P = await import('../../ui/ui_pure.mjs');
 const { SESS_KNOB_MODES } = await import('../../ui/ui_engine.mjs');
 
 function check(label, mode, chord) {
-    step(label + ': every walk bank has exactly one pad, and nothing else does', () => {
+    step(label + ': every bank the track has is on exactly one pad, and nothing else is', () => {
         S.padLayoutChord[2] = chord;
-        const walk = P.bankCycleForMode(mode, 2);
+        const walk = P.bankListForMode(mode, 2);   /* the full list: the walk's doors are on the map */
         const map = P.bankPadMapForMode(mode, 2);
         assert(map.length === 4 && map.every((c) => c.cells.length === 4), 'not 4x4');
         const placed = [];
         map.forEach((c) => c.cells.forEach((cell) => { if (cell) placed.push(cell.bank); }));
         assert(new Set(placed).size === placed.length, 'a bank on two pads: ' + placed);
         const a = walk.slice().sort().join(), b = placed.slice().sort().join();
-        assert(a === b, 'walk ' + a + ' vs map ' + b);
+        assert(a === b, 'list ' + a + ' vs map ' + b);
+        const cyc = P.bankCycleForMode(mode, 2);
+        assert(cyc.every((x) => walk.indexOf(x) >= 0) && walk.every((x) => cyc.indexOf(x) >= 0 || P.bankIsDoor(mode, x)),
+               'the walk is not the list minus the doors');
         assert(map[0].cells[3] && map[0].cells[3].bank === C.BANK_CONFIG, 'CONFIG is not bottom-left');
         for (const c of map) for (const cell of c.cells)
             if (cell) assert(P.bankPadMapCellAt(mode, 2, map.indexOf(c), c.cells.indexOf(cell)) === cell.bank, 'cell lookup');

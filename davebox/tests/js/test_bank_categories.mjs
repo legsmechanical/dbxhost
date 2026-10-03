@@ -71,24 +71,31 @@ const GUT = lineX + 4;
 const onBank = (b) => { S.activeBank = b; S.trackActiveBank[2] = b; S.bankNavKind = 'track'; S.jogTouched = true; };
 const inkLeftOfLine = (f, y0, y1) => { let n = 0; for (let y = y0; y < y1; y++) for (let x = 0; x < lineX - 1; x++) n += px(f, x, y); return n; };
 
-const MEL = [C.BANK_CONFIG, 5, C.BANK_MACROS, C.BANK_AUTOMATION, C.BANK_STEP, 0, 1, 2, 3, 4, C.BANK_SOUND];
-step('⭐ the melodic walk is IN, CTRL, SEQ, FX, MIX; a Chord-layout track adds CHORD at the head of IN', () => {
+/* The track's banks (the map, the commits) and the WALK (the jog's turn): the
+ * walk is the list minus the doors — CONFIG, AUTOMATION, LIVE ARP (Josh,
+ * 2026-10-03: "hide config and automation from the bank list ... same with
+ * live arp"). */
+const MEL_LIST = [C.BANK_CONFIG, 5, C.BANK_MACROS, C.BANK_AUTOMATION, C.BANK_STEP, 0, 1, 2, 3, 4, C.BANK_SOUND];
+const MEL = [C.BANK_MACROS, C.BANK_STEP, 0, 1, 2, 3, 4, C.BANK_SOUND];
+step('⭐ the melodic walk is CTRL, SEQ, FX, MIX (the doors are off it); a Chord-layout track adds CHORD at its head', () => {
     S.padLayoutChord = [false, false, false, false, false, false, false, false];
+    assert(JSON.stringify(P.bankListForMode(0, 2)) === JSON.stringify(MEL_LIST), 'list: ' + P.bankListForMode(0, 2));
     assert(JSON.stringify(P.bankCycleForMode(0, 2)) === JSON.stringify(MEL), 'plain: ' + P.bankCycleForMode(0, 2));
     S.padLayoutChord[2] = true;
-    assert(JSON.stringify(P.bankCycleForMode(0, 2)) === JSON.stringify([C.BANK_CONFIG, C.BANK_CHORD].concat(MEL.slice(1))), 'chord: ' + P.bankCycleForMode(0, 2));
+    assert(JSON.stringify(P.bankCycleForMode(0, 2)) === JSON.stringify([C.BANK_CHORD].concat(MEL)), 'chord: ' + P.bankCycleForMode(0, 2));
     S.padLayoutChord[2] = false;
     assert(C.BANK_DEFAULT === 0, 'CLIP stays the start and Back bank');
 });
-step('⭐⭐ THE GESTURE: from CLIP the jog walks left through SEQ, CTRL, IN and right through FX to MIX, the column following', () => {
+step('⭐⭐ THE GESTURE: from CLIP the jog walks left through SEQ to CTRL (stopping there) and right through FX to MIX, the column following', () => {
     S.activeBank = 0; S.trackActiveBank[2] = 0; S.bankSelectTick = -1;
     touchJog(); tick();
     const seen = [];
     for (let i = 0; i < 4; i++) { jog(-1); tick(); seen.push(S.activeBank); }
-    assert(JSON.stringify(seen) === JSON.stringify([C.BANK_STEP, C.BANK_AUTOMATION, C.BANK_MACROS, 5]), 'left: ' + seen);
+    assert(JSON.stringify(seen) === JSON.stringify([C.BANK_STEP, C.BANK_MACROS, C.BANK_MACROS, C.BANK_MACROS]), 'left: ' + seen);
     const nav = render.bankNavItems();
-    assert(nav.items[nav.cur].name === 'LIVE ARP' && nav.items[nav.cur].cat && nav.items[nav.cur].cat.label === 'IN', 'centred ' + JSON.stringify(nav.items[nav.cur]));
-    for (let i = 0; i < 4; i++) { jog(1); tick(); }
+    assert(nav.items[nav.cur].name === 'MACROS' && nav.items[nav.cur].cat && nav.items[nav.cur].cat.label === 'CTRL', 'centred ' + JSON.stringify(nav.items[nav.cur]));
+    assert(nav.items.every((x) => ['CONFIG', 'AUTOMATION', 'LIVE ARP'].indexOf(x.name) < 0), 'a door is in the column');
+    for (let i = 0; i < 2; i++) { jog(1); tick(); }
     assert(S.activeBank === 0, 'back on CLIP: ' + S.activeBank);
     const right = [];
     for (let i = 0; i < 5; i++) { jog(1); tick(); right.push(S.activeBank); }
@@ -106,15 +113,21 @@ step('⭐ a row in a category is indented past the gutter, its highlight too; th
     assert(!px(f, lineX, top - 1) && !px(f, lineX, bot), 'the line runs past its group');
     assert(inkLeftOfLine(f, top, bot) > 0, 'no SEQ label');
 });
-step('⭐ IN keeps its category with only LIVE ARP (it CAN hold two)', () => {
+step('⭐ CTRL keeps its category with only MACROS (it CAN hold two); IN keeps it with only CHORD', () => {
     S.padLayoutChord[2] = false;
-    onBank(5);
-    const nav = render.bankNavItems();
-    assert(nav.items[nav.cur].cat && nav.items[nav.cur].cat.label === 'IN', 'LIVE ARP has no category');
+    onBank(C.BANK_MACROS);
+    let nav = render.bankNavItems();
+    assert(nav.items[nav.cur].cat && nav.items[nav.cur].cat.label === 'CTRL', 'MACROS has no category');
     const f = frame();
-    assert(px(f, lineX, MID_Y + 3), 'no line beside LIVE ARP');
-    assert(inkLeftOfLine(f, MID_Y, MID_Y + ROW - 1) > 0, 'no IN label');
-    assert(!px(f, 1, MID_Y + 3), 'LIVE ARP is drawn as a plain row');
+    assert(px(f, lineX, MID_Y + 3), 'no line beside MACROS');
+    assert(inkLeftOfLine(f, MID_Y, MID_Y + ROW - 1) > 0, 'no CTRL label');
+    assert(!px(f, 1, MID_Y + 3), 'MACROS is drawn as a plain row');
+    assert(nav.items.every((x) => !x.cat || x.cat.label !== 'IN'), 'an empty IN group is in the column');
+    S.padLayoutChord[2] = true;
+    onBank(C.BANK_CHORD);
+    nav = render.bankNavItems();
+    assert(nav.items[nav.cur].name === 'CHORD' && nav.items[nav.cur].cat && nav.items[nav.cur].cat.label === 'IN', 'CHORD: ' + JSON.stringify(nav.items[nav.cur]));
+    S.padLayoutChord[2] = false;
 });
 step('⭐ the label is centred on the VISIBLE part of its group', () => {
     onBank(1);                                        /* NOTE FX in the middle: FX shows rows MID..MID+3 */
@@ -136,8 +149,8 @@ step('⭐ a category of one (MIX: SOUND + CONFIG) is a plain row, fully left', (
     const f = frame();
     assert(px(f, 1, MID_Y + 3), 'the plain row\'s highlight does not start at the left edge');
 });
-const DRUM = [C.BANK_CONFIG, 5, C.BANK_MACROS, C.BANK_AUTOMATION, C.BANK_STEP, 7, 0, 1, 3, C.BANK_SOUND];
-const COND = [C.BANK_CONFIG, 0, C.BANK_STEP, 1, C.BANK_RESPONDER, C.BANK_OCTAVE, C.BANK_WHEN];
+const DRUM = [5, C.BANK_MACROS, C.BANK_STEP, 7, 0, 1, 3, C.BANK_SOUND];   /* RPT GROOVE stays: it is not LIVE ARP */
+const COND = [0, C.BANK_STEP, 1, C.BANK_RESPONDER, C.BANK_OCTAVE, C.BANK_WHEN];
 step('⭐ the drum walk is IN, CTRL, SEQ, FX (under DRUM LANE), MIX; the Conductor walk is CLIP, STEP, NOTE FX, RSPD', () => {
     assert(JSON.stringify(P.bankCycleForMode(C.PAD_MODE_DRUM, 2)) === JSON.stringify(DRUM), 'drum: ' + P.bankCycleForMode(C.PAD_MODE_DRUM, 2));
     assert(JSON.stringify(P.bankCycleForMode(C.PAD_MODE_CONDUCT, 2)) === JSON.stringify(COND), 'conductor: ' + P.bankCycleForMode(C.PAD_MODE_CONDUCT, 2));
@@ -172,10 +185,10 @@ step('⭐ Conductor: no "C-" anywhere; CLIP, STEP, NOTE FX plain; ON/OFF, OCTAVE
     S.trackPadMode[2] = C.PAD_MODE_CONDUCT;
     onBank(0);
     const names = render.bankNavItems().items.map((x) => x.name);
-    assert(JSON.stringify(names) === JSON.stringify(['CONFIG', 'CLIP', 'STEP', 'NOTE FX', 'ON/OFF', 'OCTAVE', 'TIMING']), 'names: ' + names);
+    assert(JSON.stringify(names) === JSON.stringify(['CLIP', 'STEP', 'NOTE FX', 'ON/OFF', 'OCTAVE', 'TIMING']), 'names: ' + names);
     const items = render.bankNavItems().items;
-    assert(items.slice(0, 4).every((x) => x.cat === null), 'CONFIG/CLIP/STEP/NOTE FX have a category');
-    assert(items.slice(4).every((x) => x.cat && x.cat.label === 'RSPD'), 'the RSPD group');
+    assert(items.slice(0, 3).every((x) => x.cat === null), 'CLIP/STEP/NOTE FX have a category');
+    assert(items.slice(3).every((x) => x.cat && x.cat.label === 'RSPD'), 'the RSPD group');
     assert(px(frame(), 1, MID_Y + 3), 'CLIP is not a plain row');
     S.trackPadMode[2] = C.PAD_MODE_MELODIC_SCALE; S.bankNavKind = null; S.jogTouched = false;
 });

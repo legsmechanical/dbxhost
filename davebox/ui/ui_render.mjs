@@ -53,7 +53,7 @@ import {
 } from './ui_dialogs.mjs';
 import { isBooleanPair } from './ui_cells.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
-import { bankCyclePos, bankCycleForMode, bankCategoriesForMode, bankDisplayName,
+import { bankCyclePos, bankCycleForMode, bankListForMode, bankWalkCategoriesForMode, bankCategoriesForMode, bankDisplayName,
     bankPadMapForMode, SESS_PAD_MAP } from './ui_pure.mjs';
 import { syncDrumRepeatState } from './ui_drummodel.mjs';
 import {
@@ -1553,17 +1553,28 @@ export function bankNavItems() {
     }
     const mode = S.trackPadMode[S.activeTrack];
     const cyc = bankCycleForMode(mode, S.activeTrack);
-    /* Each bank's category, when it sits in one that is drawn as a group. */
+    /* Each bank's category, when it sits in one that is drawn as a group —
+     * the WALK's groups: the doors left out, an emptied group dropped. */
     const cat = {};
-    bankCategoriesForMode(mode, S.activeTrack).forEach((g, gi) => {
+    bankWalkCategoriesForMode(mode, S.activeTrack).forEach((g, gi) => {
         if (g.label) for (const b of g.banks) cat[b] = { id: gi, label: g.label, depth: g.depth | 0 };
     });
+    /* On a door (off the walk) nothing is highlighted; the list sits on the
+     * bank a right turn would land on. */
+    let cur = cyc.indexOf(S.activeBank), off = false;
+    if (cur < 0) {
+        off = true;
+        const full = bankListForMode(mode, S.activeTrack);
+        let j = full.indexOf(S.activeBank) + 1;
+        while (j < full.length && cyc.indexOf(full[j]) < 0) j++;
+        cur = j < full.length ? cyc.indexOf(full[j]) : cyc.length - 1;
+    }
     return {
         items: cyc.map((b) => {
             const n = bankDisplayName(mode, b);
             return { name: n, glyph: bankHeaderGlyph(b, mode), cat: cat[b] || null };
         }),
-        cur: Math.max(0, cyc.indexOf(S.activeBank)),
+        cur: Math.max(0, cur), off,
     };
 }
 /* THE BANK PAD MAP's screen (Josh, 2026-10-02): a picture of the left 4x4
@@ -1606,12 +1617,12 @@ function drawBankNav() {
     const latched = S.bankNavKind === 'track' ? S.bankCardLatched : S.sessMixerLatched;
     if (latched ? !bankViewMapOn() : !bankOverviewMapOn()) return;
     const nav = bankNavItems();
-    drawKitBankNavColumn(nav.items, nav.cur);
+    drawKitBankNavColumn(nav.items, nav.cur, nav.off);
 }
 
 function drawBankPicker() {
     if (S.bankPickerSel < 0) return;
-    const cyc = bankCycleForMode(S.trackPadMode[S.activeTrack]);
+    const cyc = bankListForMode(S.trackPadMode[S.activeTrack]);   /* bankPickerSel indexes the full list */
     /* BANKS[] names the real banks; SOUND + CONFIG is a stub entry there, so it
      * still carries its own name — every reader of that index does this. */
     /* Width is the overlay's own business now — it sizes to the longest label,

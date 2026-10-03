@@ -201,9 +201,10 @@ step('⚠ CONTROL: the MIX click opens nothing; the CONFIG click opens the menu,
     send(3, 127); send(3, 0);
     globalThis.tick(); snd.soundTick();
     if (snd.soundPickStateForTest().view !== 18) throw new Error('the MIX click opened view ' + snd.soundPickStateForTest().view);
-    reset(PAD_MODE_MELODIC_SCALE, 5);   /* LIVE ARP, just right of CONFIG */
-    left();                             /* onto CONFIG -> its card */
-    snd.soundTick();
+    /* CONFIG is a door since 2026-10-03 (off the walk): put the bank there, the
+     * card locked, and let the tick open it as it opens a restored bank. */
+    reset(PAD_MODE_MELODIC_SCALE, constsMod.BANK_CONFIG);
+    globalThis.tick(); snd.soundTick(); globalThis.tick(); snd.soundTick();
     send(3, 127); send(3, 0);           /* the CONFIG card's door */
     globalThis.tick(); snd.soundTick();
     if (snd.soundPickStateForTest().view !== 0) throw new Error('the CONFIG click did not open the menu: ' + snd.soundPickStateForTest().view);
@@ -231,10 +232,10 @@ step('⭑ the MENU top edge CLAMPS; Back exits to the CARD; the card walks out',
     if (snd.soundViewForTest() !== 24)
         throw new Error('Back did not land on the card (view ' + snd.soundViewForTest() + ')');
     right(); globalThis.tick();
-    if (snd.soundActive()) throw new Error('the card did not walk out on a right turn');
-    if (S.activeBank !== 5) throw new Error('did not land on LIVE ARP (the bank after CONFIG): ' + S.activeBank);
-    right();
-    if (S.activeBank !== 13) throw new Error('bank walk did not resume rightward onto MACROS: ' + S.activeBank);
+    if (S.activeBank !== 13) throw new Error('the CONFIG card did not walk out onto MACROS (its nearest walk bank): ' + S.activeBank);
+    right(); globalThis.tick();
+    if (snd.soundActive()) throw new Error('walking on from MACROS did not leave sound mode');
+    if (S.activeBank !== BANK_STEP) throw new Error('bank walk did not resume rightward onto STEP: ' + S.activeBank);
 });
 
 step('⭑ drum: right past DELAY (the last FX bank) enters too', () => {
