@@ -235,15 +235,9 @@ step('⭐ DRUM LANE, loop not at 1: K3, K2 both ways, Legato and Zoom are refuse
 });
 
 /* ---- ALL LANES --------------------------------------------------------- */
-step('ALL LANES: before OK, touching K5 and clicking only confirms', () => {
-    toBank(7); S.allLanesConfirmed = false;
+step('⭐ ALL LANES: the first touch K5 + click sends t4_all_lanes_crop=1 (no confirm)', () => {
+    toBank(7);
     ticks(1);
-    sets.length = 0;
-    touch(4); click(); untouch(4);
-    assert(!sets.some((x) => /_crop=/.test(x)), 'sent before OK: ' + JSON.stringify(sets));
-    assert(S.allLanesConfirmed === true, 'the click did not confirm');
-});
-step('⭐ ALL LANES: after OK, touch K5 + click sends t4_all_lanes_crop=1', () => {
     sets.length = 0;
     touch(4);
     const h = bankPageHints(7);

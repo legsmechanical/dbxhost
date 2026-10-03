@@ -44,7 +44,7 @@ import { handoffRecordingToTrack, recordNoteOn, recordNoteOff,
 import { setTrackMute, setTrackSolo, clearClip, hardResetClip, copyClip, cutClip,
     copyDrumLane, cutDrumLane, copyDrumClip, cutDrumClip, copyStep, cutStep, clearStep,
     copyPage, pageCopyOk,
-    showModePopup, allLanesGate, doDoubleFill,
+    showModePopup, doDoubleFill,
     _switchActiveTrack, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
 
 /* Performance Mode state. Session View + Loop held → pad grid shows Perf Mode.
@@ -1130,7 +1130,6 @@ function _fireLoopWindowSet(track, ctx, startStep, lenSteps) {
         else if (S.drumStepPage[track] > lastPage) S.drumStepPage[track] = lastPage;
         host_module_set_param('t' + track + '_l' + lane + '_loop_set', String(packed));
     } else {
-        if (allLanesGate()) return;
         /* ALL LANES: all 32 drum lanes of the active drum clip get the same window */
         S.drumLaneLength[track]    = lenSteps;
         S.drumLaneLoopStart[track] = startStep;
@@ -1148,13 +1147,12 @@ function _fireLoopWindowSet(track, ctx, startStep, lenSteps) {
  * later one a paste — sticky, as every copy is, until Copy or Loop is
  * released. Shift + Copy cuts: after the paste the source page is cleared and
  * the pasted page becomes the new source (as cutting a step or a clip). The
- * scope is the Loop gesture's — the clip, the active drum lane, or ALL LANES
- * behind its confirm. A paste past the end grows the clip, and one before
+ * scope is the Loop gesture's — the clip, the active drum lane, or ALL LANES.
+ * A paste past the end grows the clip, and one before
  * the loop start moves the start back (copyPage / clip_page_copy). */
 function _pageCopyPress(idx) {
     const t   = S.activeTrack;
     const ctx = _loopGestureCtxFor(t);
-    if (ctx === 2 && allLanesGate()) return;
     S.loopTapUnlatchTrack = -1;          /* a Loop tap that copied is not an unlatch */
     const where = ctx === 0 ? effectiveClip(t) : ctx === 1 ? S.activeDrumLane[t] : -1;
     const src = S.copySrc;
@@ -1571,7 +1569,6 @@ export function _onStepButtons(d1, d2) {
             if (isDrum) {
                 if (S.activeBank === 7) {
                     /* ALL LANES: quantize all drum lanes */
-                    if (allLanesGate()) return;
                     host_module_set_param('t' + t + '_drum_lanes_qnt', '100');
                     S.bankParams[t][7][3] = 100;
                     S.drumLaneQnt[t] = 100;

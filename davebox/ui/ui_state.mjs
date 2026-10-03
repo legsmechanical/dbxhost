@@ -432,7 +432,6 @@ export const S = {
     tarpHeldNotes: Array.from({length: 8}, () => new Set()),
     noteFXRandomMode: new Array(8).fill(2),
     midiDlyRandomMode: new Array(8).fill(2),
-    allLanesConfirmed: false,
     drumClipNonEmpty: Array.from({length: 8}, () => new Array(16).fill(false)),
     trackActiveClip: new Array(8).fill(0),
     lastDspActiveClip: new Array(8).fill(0),

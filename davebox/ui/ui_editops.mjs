@@ -706,7 +706,6 @@ export function _switchActiveTrack(newT) {
         S.pendingSoundEnterTrack = S.activeTrack;
         S.pendingSoundEnterSilent = true;
     }
-    if (S.activeBank === 7) S.allLanesConfirmed = false;
     /* Focused-clip-by-default: ONLY while transport is running — entering a track
      * launches its focused clip so it's live. While stopped we do NOT arm (passive
      * track-scrolling must not queue clips for the next transport start); the
@@ -724,29 +723,9 @@ export function _switchActiveTrack(newT) {
     }
 }
 
-/* ALL LANES safety gate. Every gesture that writes all 32 drum lanes at once
- * funnels through this: while the drum ALL LANES bank is unconfirmed it surfaces
- * the "Edits will affect all lanes" OK screen (jog-click confirms) and tells the
- * caller to abort. Returns false (proceed) on any other bank/track. */
-export function allLanesGate() {
-    if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7 && !S.allLanesConfirmed) {
-        /* ⭑ SURFACE the confirm: since THE ONE LAW the ALL-LANES screen only
-         * renders while bankCardVisible(), so a gate that just redrew showed
-         * the resting overview and the refused edit looked like a dead button
-         * (review finding). Opening bank mode is the gate ASKING its question
-         * out loud — the same screen the card branch always drew. */
-        S.bankCardLatched = true;
-        S.screenDirty = true;
-        forceRedraw();
-        return true;
-    }
-    return false;
-}
-
 export function doDoubleFill() {
     const _t = S.activeTrack;
     if (S.trackPadMode[_t] === PAD_MODE_DRUM && S.activeBank === 7) {
-        if (allLanesGate()) return;
         noteUndoUnit(); S.undoSeqArpSnapshot = null;
         host_module_set_param('t' + _t + '_all_lanes_double_fill', '1');
         S.pendingDrumResync = 2; S.pendingDrumResyncTrack = _t;

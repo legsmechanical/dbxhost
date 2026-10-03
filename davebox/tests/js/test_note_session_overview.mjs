@@ -90,7 +90,7 @@ function rest() {
     S.confirmBakeScene = false; S.confirmBakeDrumLoopOpen = false;
     S.confirmXpose = false; S.confirmBake = false;
     S.recordBlockedDialog = false; S.bpmMoveInfo = false;
-    S.stepIntervalMode = false; S.altMode = false; S.allLanesConfirmed = false;
+    S.stepIntervalMode = false; S.altMode = false;
     if (!cc_mod.atOverview()) throw new Error('rig: could not reach the overview');
 }
 

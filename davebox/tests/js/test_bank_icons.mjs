@@ -73,7 +73,7 @@ const rest = (h) => h.map((v, i) => ((i % 128) >= 10 ? v : 0)).join('');
 
 step('⭐ ALL LANES: the icon blinks, the name holds still', () => {
     S.trackPadMode[0] = DRUM; S.activeBank = 7; S.trackActiveBank[0] = 7;
-    S.allLanesConfirmed = true; S.bankSelectTick = S.tickCount; S.bankCardLatched = true;
+    S.bankSelectTick = S.tickCount; S.bankCardLatched = true;
     S.clockMs = 0;   const on = header();
     S.clockMs = 300; const off = header();
     assert(icon(on) > 0, 'no icon in the on phase');

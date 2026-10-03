@@ -1025,10 +1025,9 @@ at step 1 — **Crop** puts it there.
 
 ## 8.3 ALL LANES bank
 
-Applies one setting to **all 32 lanes** at once. The bank opens on **"Edits will
-affect all lanes. Proceed?"** — **click the jog (or press OK) to confirm** before
-the knobs, Loop or the Shift + Step shortcuts do anything. Back re-arms the
-question.
+Applies one setting to **all 32 lanes** at once. It opens like any other bank:
+the knobs, Loop and the Shift + Step shortcuts act on every lane straight away,
+and a jog click toggles the alt knobs.
 
 | Knob | On screen | What it does | Rewrites notes |
 |---|---|---|---|

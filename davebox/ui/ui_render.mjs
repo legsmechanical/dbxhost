@@ -2089,10 +2089,8 @@ function drawUIBody() {
         return;
     }
 
-    /* Loop view: own priority state so screen is fully cleared first. Suppressed
-     * on the unconfirmed drum ALL LANES bank so holding Loop surfaces the confirm
-     * screen (below) instead of the clip-length view for a gated gesture. */
-    if (loopViewActive() && !(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7 && !S.allLanesConfirmed)) {
+    /* Loop view: own priority state so screen is fully cleared first. */
+    if (loopViewActive()) {
         /* The gestures are FOOTER pills, as on every other screen (Josh,
          * 2026-09-26: "agree with all recommendations" — the footer audit):
          * step buttons change the length by a page, the jog by a step. The
@@ -2312,13 +2310,6 @@ function drawUIBody() {
             /* Named by bankDisplayName, not spelled here — this literal and
              * the one below are how the picker and the header drifted apart. */
             drawKitPage(bankHeaderName(S.activeTrack, 0), cells, false, bankPageHints(0));
-        } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 7 && !S.allLanesConfirmed) {
-            /* ALL LANES confirmation screen */
-            drawBankHeading('ALL LANES', false);   /* the icon blinks (headerGlyphNow) */
-            print(10, 18, 'Edits will affect', 1);
-            print(10, 28, 'all lanes. Proceed?', 1);
-            fill_rect(40, 44, 48, 16, 1);
-            print(52, 48, 'OK', 0);
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 7) {
             /* ALL LANES bank overview */
             const t = S.activeTrack;

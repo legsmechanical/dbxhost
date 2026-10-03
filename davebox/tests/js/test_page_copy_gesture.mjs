@@ -220,19 +220,16 @@ step('drum track: the active lane, grown on its own', () => {
     cc(COPY, 0); cc(LOOP, 0);
 });
 
-step('drum ALL LANES: behind the confirm, then one all-lanes write', () => {
+step('drum ALL LANES: one all-lanes write, no confirm first', () => {
     drum(16);
-    S.activeBank = 7; S.allLanesConfirmed = false;
+    S.activeBank = 7;
     cc(LOOP, 127); cc(COPY, 127);
-    tap(0);
-    assert(!S.copySrc && S.bankCardLatched, 'the confirm is asked first');
-    S.allLanesConfirmed = true;
     tap(0); tap(1);
     const w = writes();
     assert(w.length === 1 && w[0] === 't0_all_lanes_page_copy=0 1 0', 'queued ' + JSON.stringify(w));
     assert(S.pendingDrumResync === 2, 'the whole drum clip is reread');
     cc(COPY, 0); cc(LOOP, 0);
-    S.activeBank = 0; S.allLanesConfirmed = false; S.bankCardLatched = false;
+    S.activeBank = 0; S.bankCardLatched = false;
 });
 
 step('a quick Loop + Copy on a drum track does not unlatch the repeat', () => {

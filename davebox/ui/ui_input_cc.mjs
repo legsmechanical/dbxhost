@@ -88,7 +88,7 @@ import { sceneBakeHasConductor, commitSceneBake, anyMelodicClipHasContent,
 import { setTrackMute, setTrackSolo, clearAllMuteSolo,
     clearClip, hardResetClip, copyClip, cutClip, copyRow, cutRow,
     copyDrumClip, cutDrumClip, clearRow,
-    _switchActiveTrack, allLanesGate,
+    _switchActiveTrack,
     resetFxBanks, resetBankParams, resetMidiFxChain, resetTarp, resetRptGroove, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
 import { _resolveLoopGesture, chordApplyRevoice, _onPadRelease } from './ui_input_pads.mjs';
 import { seqFollowOn, setSeqFollowOn, bankLockOn } from './ui_prefs.mjs';
@@ -295,8 +295,7 @@ function _onCC_jog(d1, d2) {
     }
 
     /* CROP is a trigger too: touch its knob (K6 on the CLIP or DRUM LANE bank,
-     * K5 on ALL LANES) and click. On ALL LANES before its OK the click only
-     * confirms (below), exactly as for every other ALL LANES knob. */
+     * K5 on ALL LANES) and click. */
     if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld) {
         const _drum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
         if (S.activeBank === 0 && S.knobTouched === CROP_KNOB) {
@@ -305,7 +304,7 @@ function _onCC_jog(d1, d2) {
             forceRedraw();
             return;
         }
-        if (_drum && S.activeBank === 7 && S.allLanesConfirmed && S.knobTouched === ALL_LANES_CROP_KNOB) {
+        if (_drum && S.activeBank === 7 && S.knobTouched === ALL_LANES_CROP_KNOB) {
             applyCrop(true, true);
             triggerFire('crop');
             forceRedraw();
@@ -906,7 +905,7 @@ function modalDialogUp() {
      * lived on Shift+jog-click since 08-25 moves to the plain click, CONTEXT-
      * GATED: only when the resting track overview is what's on screen. Once a
      * bank card is visible the click keeps its per-bank meanings below
-     * (arp-interval toggle, alt-params, ALL LANES confirm). Back dismisses —
+     * (arp-interval toggle, alt-params). Back dismisses —
      * the existing latch teardown. bankCardVisible() is the render's own
      * predicate, so the gate and the screen cannot disagree. */
     /* ⚠ During a knob-touch PEEK the card is visible, so this gate declines
@@ -928,7 +927,7 @@ function modalDialogUp() {
      * its click is sound mode's card click — one seam, soundCardClick — and
      * what it opens (TRACK CONFIG, the macro list, a send's effects) draws
      * itself, Back walking home to the overview. Every other bank falls
-     * through to its own click below (Arp Steps, alt params, ALL LANES), and
+     * through to its own click below (Arp Steps, alt params), and
      * AUTOMATION's was handled above. */
     if (d1 === 3 && d2 === 127 && !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld &&
             !S.sessionView && !bankLockOn() && S.bankPickerSel < 0 && !bankCardVisible() &&
@@ -969,14 +968,6 @@ function modalDialogUp() {
      * (REPEAT GROOVE) correctly falls through here to toggle VEL/NUDGE. */
     if (d1 === 3 && d2 === 127 && !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld &&
             !S.sessionView && bankHasAltParams(S.activeTrack, S.activeBank)) {
-        if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7 && !S.allLanesConfirmed) {
-            S.allLanesConfirmed = true;
-            /* From the overview (Bank Lock off) nothing on screen would say so. */
-            if (!bankCardVisible()) showActionPopup('ALL LANES', 'CONFIRMED');
-            S.screenDirty = true;
-            forceRedraw();
-            return;
-        }
         S.altMode = !S.altMode;
         if (!bankCardVisible())
             showActionPopup(bankDisplayName(S.trackPadMode[S.activeTrack], S.activeBank),
@@ -1313,7 +1304,6 @@ function modalDialogUp() {
                     if (S.recordArmed && !S.recordCountingIn) {
                         /* Block length changes during active recording */
                     } else if (S.trackPadMode[_t] === PAD_MODE_DRUM && S.activeBank !== 6) {
-                        if (allLanesGate()) return;
                         /* Drum: adjust length. In ALL LANES bank, length applies to all 32
                          * lanes atomically; in per-lane DRUM bank, just the active lane.
                          * (AUTO bank falls through to the CC-lane-length branch below — each
@@ -1633,7 +1623,6 @@ export function applyBankPick(rest) {
     S.pendingSoundEnterMenu = false;
     S.activeBank = next;
     S.trackActiveBank[t] = next;
-    if (next === 7) S.allLanesConfirmed = false;
     readBankParams(t, next);
     if (!rest) armBankDisplay();
     writeSidecar();
@@ -1682,7 +1671,6 @@ function autoLaneJump() {
         autoBankReset();
         S.activeBank = st.bank;
         S.trackActiveBank[t] = st.bank;
-        if (st.bank === 7) S.allLanesConfirmed = false;
         readBankParams(t, st.bank);
         armBankDisplay();
         return;
@@ -2354,8 +2342,7 @@ export function backTapWouldAct() {
         S.bpmMoveInfo || S.tapTempoOpen || S.globalMenuOpen) return true;
     if (S.sessionView) return S.perfViewLocked;
     /* Track view: alt-view exits, then non-default bank steps back to 0. */
-    return S.loopLatched || S.stepIntervalMode || S.altMode ||
-           (S.activeBank === 7 && S.allLanesConfirmed) || S.activeBank !== 0;
+    return S.loopLatched || S.stepIntervalMode || S.altMode || S.activeBank !== 0;
 }
 
 /* ⭑⭑ THE NOTE/SESSION LAW (Josh, 2026-09-02; revised 2026-09-30: Note/Session
@@ -2416,8 +2403,7 @@ export function atOverview() {
     if (S.confirmConvertToDrum || S.confirmConvertToConduct)        return false;
     if (S.bankCardLatched || S.sessMixerLatched)                    return false;
     if (S.sessionView) return !S.perfViewLocked;
-    return !(S.loopLatched || S.stepIntervalMode || S.altMode ||
-             (S.activeBank === 7 && S.allLanesConfirmed));
+    return !(S.loopLatched || S.stepIntervalMode || S.altMode);
 }
 
 /* Note/Session's destination from anywhere off the overview: every layer torn
@@ -2542,7 +2528,6 @@ function returnToOverview() {
     endLoopLatch();
     S.stepIntervalMode  = false;
     S.altMode           = false;
-    S.allLanesConfirmed = false;
     S.bankCardLatched   = false;
     S.sessMixerLatched  = false;
     closeDoorScreen();              /* a door screen gives its borrowed bank back */
@@ -2705,7 +2690,6 @@ function _backTap() {
         if (endLoopLatch())       { invalidateLEDCache(); forceRedraw(); return; }
         if (S.stepIntervalMode)   { S.stepIntervalMode = false; computePadNoteMap(); forceRedraw(); return; }
         if (S.altMode)            { S.altMode = false; forceRedraw(); return; }
-        if (S.activeBank === 7 && S.allLanesConfirmed) { S.allLanesConfirmed = false; forceRedraw(); return; }
         /* A LANE JUMP landed here (plan 6c2): the first Back returns to the
          * AUTOMATION menu, cursor on the lane. Spent by any track-view Back,
          * and honoured only while you are still on the bank it sent you to. */
@@ -4929,10 +4913,6 @@ function _onCC_knobs(d1, d2) {
             }
         }
         /* ALL LANES bank (drum, bank 7): K1=Res K2=Stch K3=Shft K4=Qnt K5=Crop K6=InQ K7=Dir K8=SyncRpt */
-        if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 7 && !S.allLanesConfirmed) {
-            S.screenDirty = true;
-            return;
-        }
         if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 7) {
             const t   = S.activeTrack;
             /* ⚠⚠ DECLARED HERE, NOT BORROWED. The table call below passes

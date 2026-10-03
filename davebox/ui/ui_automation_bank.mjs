@@ -679,7 +679,6 @@ export function autoHoldJumpBegin(absStep) {
      * this change is deliberate, so it is the guard's new baseline — or Clock
      * Feedback's alt page would vanish on the first frame. */
     S._altPrevBank = sat.bank; S._altPrevTrack = S.activeTrack;
-    if (sat.bank === 7) S.allLanesConfirmed = false;
     readBankParams(cy.t, sat.bank);
     armBankDisplay();
     return true;

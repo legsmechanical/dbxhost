@@ -659,12 +659,9 @@ const DRUM_BANKS = [
 ];
 for (const [b, slug, section, title, caption] of DRUM_BANKS)
     screen(slug, section, title, caption, () => { selectTrack(1); toBank(b); });
-screen('bank-allanes-confirm', '8.3 ALL LANES bank', 'ALL LANES — confirm',
-    'ALL LANES opens on a confirm, because its knobs rewrite every lane; click the jog to proceed.',
-    () => { selectTrack(1); toBank(7); });
 screen('bank-allanes', '8.3 ALL LANES bank', 'ALL LANES bank',
-    'Confirmed: one setting for all 32 lanes — resolution, stretch, shift, quantize, crop, input quantize, direction and repeat sync.',
-    () => { selectTrack(1); toBank(7); click(); ticks(2); if (!S.allLanesConfirmed) throw new Error('not confirmed'); });
+    'One setting for all 32 lanes — resolution, stretch, shift, quantize, crop, input quantize, direction and repeat sync.',
+    () => { selectTrack(1); toBank(7); });
 screen('note-repeat-modes', '7.3 Note Repeat', 'Choosing the right-pad mode',
     'Shift + Step 8 on a drum track cycles the right pads between velocity zones and the two repeat modes; the card shows which is on.',
     () => {

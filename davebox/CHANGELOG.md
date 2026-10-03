@@ -18,6 +18,9 @@ the section into a versioned heading at release time.
   opens the Master, Send A and Send B effects directly.
 
 ### Changed
+- **ALL LANES no longer asks you to confirm.** The drum ALL LANES bank opens
+  like any other bank: its knobs, Loop, double-and-fill and quantize act on all
+  32 lanes straight away, and a jog click toggles the alt knobs.
 - **CONFIG, AUTOMATION and LIVE ARP are off the jog walk** and the bank list.
   They stay on the bank map (hold the jog) and their shortcuts; the walk now
   runs MACROS (CHORD before it in the Chord layout) → STEP → CLIP → the effects

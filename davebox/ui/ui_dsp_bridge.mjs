@@ -1620,7 +1620,6 @@ export function restoreUiSidecar(applyDefaultsNow) {
              * post-restore validity checks (e.g. hide bank 7 on melodic) still
              * apply because activeBank is a regular live variable from here on. */
             S.activeBank = S.trackActiveBank[S.activeTrack] | 0;
-            if (S.activeBank === 7) S.allLanesConfirmed = false;
             /* A restored BANK_SOUND needs its SCREEN re-opened (BANKS[11] is a
              * stub), but NOT from here: tick holds that as an invariant — in
              * track view, activeBank === BANK_SOUND means the screen is open —
