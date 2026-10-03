@@ -570,6 +570,7 @@ export function paintProjectPickerSurface() {
  * and the whole right 4x4 dark. One painter for all 32, so nothing underneath
  * shows through. SEQ is yellow, not the previews' green: green is a track
  * colour, and CONFIG / MIX wear the track's own colour. */
+const SHOW_ALL_ICONS_PATH = '/data/UserData/dbx-host/show-all-icons';
 const BANK_MAP_COL_COLORS = [Cyan, Violet, VividYellow, BrightOrange];
 const SESS_MAP_COLORS = [VividYellow, Cyan, Violet, Violet];   /* VOLUME, PAN, SEND A, SEND B */
 function paintBankMapPads() {
@@ -688,6 +689,12 @@ export function updateTrackLEDs() {
          * still advertising the general shortcuts over the snapshot layer,
          * which is half of what Josh reported. One predicate now. */
         const _compoundHeld = shiftClaimedByGesture();
+        /* DEV AID (Josh, 2026-10-03: "light and hold all the step button
+         * icons so i can see them"): while this file exists every icon is lit.
+         * Checked on the force cadence only — one stat per POLL_INTERVAL. */
+        if (force) {
+            try { S.showAllIcons = !!host_file_exists(SHOW_ALL_ICONS_PATH); } catch (e) { S.showAllIcons = false; }
+        }
         for (let i = 0; i < 16; i++) {
             let color;
             {
@@ -720,6 +727,7 @@ export function updateTrackLEDs() {
                 /* ALL LANES unconfirmed: gated double-fill/quantize shortcuts dark */
                 if (isDrum && S.activeBank === 7 && !S.allLanesConfirmed && (i === 14 || i === 15)) on = false;
                 color = on ? LightGrey : LED_OFF;
+                if (S.showAllIcons) color = White;
             }
             if (force) {
                 lastSentButtonLED[16 + i] = color;
