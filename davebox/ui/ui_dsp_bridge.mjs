@@ -40,7 +40,7 @@ import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 import { S } from './ui_state.mjs';
 import { slotIndex, syncLinkAudioRoutingFromRoutes,
          invalidateLinkAudioRoutingCache, linkAudioRoutingJustEnabled } from './ui_engine.mjs';
-import { clipHasContent, _clipIsEmpty, bankCycleForMode } from './ui_pure.mjs';
+import { clipHasContent, _clipIsEmpty, bankIsDoor } from './ui_pure.mjs';
 import { showActionPopup, showActionPopupFor, writeSidecar, uuidToStatePath, uuidToUiStatePath,
          uuidToNewProjectPath, freshSidecar } from './ui_persistence.mjs';
 import { computePadNoteMap, setActiveDrumLane, syncDrumClipContent,
@@ -1611,6 +1611,10 @@ export function restoreUiSidecar(applyDefaultsNow) {
                     : ((_b >= 0 && _b <= 7) || isSoundBank(_b) || _b === BANK_AUTOMATION
                        || _b === BANK_CHORD) ? (_b | 0)
                     : 0;
+                /* A DOOR (CONFIG, AUTOMATION, LIVE ARP) is a screen, never the
+                 * bank a track is on (Josh, 2026-10-03): an older save that
+                 * left one there comes back on the start bank. */
+                if (bankIsDoor(S.trackPadMode[_t], S.trackActiveBank[_t])) S.trackActiveBank[_t] = 0;
             }
             /* Sync live mirror to the restored active track. Subsequent
              * post-restore validity checks (e.g. hide bank 7 on melodic) still

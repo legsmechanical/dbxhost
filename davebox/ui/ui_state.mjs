@@ -865,9 +865,10 @@ export const S = {
     /* Shift + Step 11 (Josh, 2026-10-03): a TAP toggles LIVE ARP, a HOLD opens
      * its settings. nowMs() of the press while it is undecided, -1 otherwise. */
     shiftStep11Tick: -1,
-    /* The LIVE ARP pop-up's way home — { track, bank, latched } — spent by Back;
-     * any other bank change, track or view switch drops it. */
-    arpPopReturn: null,
+    /* A DOOR SCREEN's way home (LIVE ARP, AUTOMATION — screens that borrow
+     * their bank while up): { track, door, bank, latched }. Back restores it;
+     * a track or view switch restores it first; any other bank commit drops it. */
+    doorReturn: null,
     /* Set with pendingSoundEnterTrack when the ASK was for the menu rather than
      * the bank: tick opens sound mode route-aware, then lands on the menu
      * instead of the bank's prompt. */

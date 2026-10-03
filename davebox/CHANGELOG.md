@@ -23,6 +23,8 @@ the section into a versioned heading at release time.
   runs MACROS (CHORD before it in the Chord layout) → STEP → CLIP → the effects
   → MIX. Turning the jog from one of them steps to the nearest bank on the
   walk. Drum tracks keep RPT GROOVE on the walk; the Conductor's starts on CLIP.
+  They are screens, not banks: opening one never changes the bank you're on,
+  and Back from its top level returns you exactly where you were.
 - **Bank Lock** in Project Settings: turn it off and a jog click on the
   overview skips the bank view and does the bank's own thing — opens TRACK
   CONFIG, the macro list or the automation menu, switches to the alternate

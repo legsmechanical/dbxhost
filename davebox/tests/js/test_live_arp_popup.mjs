@@ -48,6 +48,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 const C = await import('../../ui/ui_constants.mjs');
 const render = await import('../../ui/ui_render.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
+const persist = await import('../../ui/ui_persistence.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 2;
@@ -63,7 +64,7 @@ const s11Down = () => midi(0x90, 26, 127), s11Up = () => midi(0x80, 26, 0);
 const back = () => { midi(0xB0, 51, 127); midi(0xB0, 51, 0); ticks(2); };
 const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const same = (a, b) => a.every((v, i) => v === b[i]);
-const home = () => { S.activeBank = 0; S.trackActiveBank[2] = 0; S.bankCardLatched = false; S.arpPopReturn = null;
+const home = () => { S.activeBank = 0; S.trackActiveBank[2] = 0; S.bankCardLatched = false; S.doorReturn = null;
     S.stepIntervalMode = false; S.altMode = false; S.shiftHeld = false; S.bankLockOn = true; S.trackPadMode[2] = C.PAD_MODE_MELODIC_SCALE; ticks(2); };
 const arpRef = () => { const b = S.activeBank, l = S.bankCardLatched; S.activeBank = 5; S.bankCardLatched = true;
     const f = frame(); S.activeBank = b; S.bankCardLatched = l; return f; };
@@ -97,7 +98,7 @@ step('⭐ Back returns exactly where you were (the overview)', () => {
     const over = (() => { const b = S.activeBank, l = S.bankCardLatched; S.activeBank = 0; S.bankCardLatched = false; const f = frame(); S.activeBank = b; S.bankCardLatched = l; return f; })();
     back();
     assert(S.activeBank === 0 && !S.bankCardLatched && !render.bankCardVisible(), 'bank ' + S.activeBank);
-    assert(S.arpPopReturn === null, 'the crumb survived');
+    assert(S.doorReturn === null, 'the crumb survived');
     assert(same(frame(), over), 'not the overview');
 });
 
@@ -124,23 +125,33 @@ step('a click on it opens Arp Steps; Back closes that first, then goes home', ()
     midi(0xB0, 3, 127); midi(0xB0, 3, 0); ticks(2);
     assert(S.stepIntervalMode, 'the click did not open Arp Steps');
     back();
-    assert(!S.stepIntervalMode && S.activeBank === 5 && S.arpPopReturn, 'first Back: ' + S.activeBank);
+    assert(!S.stepIntervalMode && S.activeBank === 5 && S.doorReturn, 'first Back: ' + S.activeBank);
     back();
     assert(S.activeBank === 0 && !S.bankCardLatched, 'second Back did not get home');
 });
 
-step('a jog turn walks off it (LIVE ARP is a door) and drops the way home', () => {
+step('a jog turn does not walk off it (a screen, not a bank); Back still goes home', () => {
     home();
     hold(); s11Up(); shiftUp(); ticks(2);
     midi(0x90, 9, 127); midi(0xB0, 14, 1); ticks(1); midi(0x80, 9, 0); ticks(2);
-    assert(S.activeBank === C.BANK_MACROS && S.arpPopReturn === null, 'bank ' + S.activeBank + ' crumb ' + JSON.stringify(S.arpPopReturn));
-    snd.soundExit(); home();
+    assert(S.activeBank === 5 && S.doorReturn, 'the turn walked off: bank ' + S.activeBank);
+    back();
+    assert(S.activeBank === 0 && !S.bankCardLatched, 'Back did not get home');
+});
+
+step('⭐ a project saved while it is up saves the bank you came from', () => {
+    home(); S.activeBank = 3; S.trackActiveBank[2] = 3; ticks(2);
+    hold(); s11Up(); shiftUp(); ticks(2);
+    assert(S.trackActiveBank[2] === 5, 'setup: the screen did not borrow its bank');
+    const tab = persist.sidecarObject().tab;
+    assert(tab[2] === 3, 'saved bank: ' + tab[2]);
+    back();
 });
 
 step('drum track: a hold does nothing', () => {
     home(); S.trackPadMode[2] = C.PAD_MODE_DRUM;
     hold(); s11Up(); shiftUp(); ticks(2);
-    assert(S.activeBank === 0 && !S.bankCardLatched && S.arpPopReturn === null, 'a drum hold opened something');
+    assert(S.activeBank === 0 && !S.bankCardLatched && S.doorReturn === null, 'a drum hold opened something');
     S.trackPadMode[2] = C.PAD_MODE_MELODIC_SCALE;
 });
 

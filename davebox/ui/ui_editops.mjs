@@ -671,7 +671,17 @@ export function _switchActiveTrack(newT) {
     /* Leaving a track leaves the AUTOMATION menu (Josh, 2026-09-25): coming
      * back shows the AUTOMATION card, one click from the list — never the
      * previous track's cursor, ops or lane still open on the steps. */
-    if ((newT | 0) !== S.activeTrack) { autoBankReset(); autoLanePinClear(); S.arpPopReturn = null; }
+    if ((newT | 0) !== S.activeTrack) {
+        autoBankReset(); autoLanePinClear();
+        /* A door screen gives the track it borrowed from its bank back. */
+        const r = S.doorReturn;
+        if (r && r.track === S.activeTrack && S.activeBank === r.door) {
+            S.trackActiveBank[r.track] = r.bank;
+            S.bankCardLatched = r.latched;
+            S.stepIntervalMode = false; S.altMode = false;
+        }
+        S.doorReturn = null;
+    }
     S.activeTrack = newT | 0;
     S.instrAbbrevAt = 0;                  /* the header's [instrument] follows the track */
     S.activeBank = S.trackActiveBank[S.activeTrack] | 0;

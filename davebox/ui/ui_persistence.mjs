@@ -399,7 +399,9 @@ export function sidecarObject() {
         dva: S.drumVelZoneArmed.slice(),
         dleu: S.drumLaneEuclidN.map(function(lane) { return lane.slice(); }),
         to: S.trackOctave.slice(),
-        tab: S.trackActiveBank.slice(),
+        /* A door screen's bank is borrowed: save the one it gives back. */
+        tab: S.trackActiveBank.map((b, i) =>
+            (S.doorReturn && S.doorReturn.track === i && b === S.doorReturn.door) ? S.doorReturn.bank : b),
         am: S.trackAtMode.slice(),
         pchr: S.padLayoutChromatic.map(function(b) { return b ? 1 : 0; }),
         /* The Chord layout (additive on v:9, like pchr): which tracks are on

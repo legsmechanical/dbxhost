@@ -36,7 +36,7 @@ import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
          PAGE_KNOB, pageFloatStep } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity,
-         bankCycleForMode, bankListForMode, bankPadMapCellAt, bankMapCellForPad, SESS_PAD_MAP, bankDisplayName } from './ui_pure.mjs';
+         bankCycleForMode, bankListForMode, bankIsDoor, bankPadMapCellAt, bankMapCellForPad, SESS_PAD_MAP, bankDisplayName } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
          showActionPopupFor, showActionPopupGauge } from './ui_persistence.mjs';
 import {
@@ -1364,6 +1364,9 @@ function modalDialogUp() {
                     autoBankJog(delta);
                     S.screenDirty = true;
                     forceRedraw();
+                } else if (doorScreenUp()) {
+                    /* A DOOR SCREEN (LIVE ARP's page) is a screen, not a bank
+                     * on the walk: the turn does not walk off it. Back leaves. */
                 } else if (bankCardVisible()) {
                     /* ⭑⭑ THE TURN WALKS THE BANKS DIRECTLY (Josh, 2026-09-01:
                      * "no more overlay on jog turn. turn moves through banks
@@ -1498,28 +1501,33 @@ export function bankMapPadTap(note) {
     const t = S.activeTrack;
     const b = bankPadMapCellAt(S.trackPadMode[t], t, cell.col, cell.row);
     if (b === null) return;
-    S.bankPickerSel = bankListFor(t).indexOf(b);
-    applyBankPick(S.bankMapRest);
-    /* ⭑ A bank you have to click INTO before anything edits — CONFIG (TRACK
-     * CONFIG) and AUTOMATION (its menu) — is clicked into by the pick itself
-     * (Josh, 2026-10-03: "have any bank that you have to click into to do any
-     * editing (track config/automation) actually get clicked into when we hit
-     * the jog click hold pad shortcut for it"). An editor is now on screen,
-     * so the map goes, as an FX pad's does in Session View. */
-    if (b === BANK_CONFIG) {
-        /* The same door Shift + Note/Session uses: a mode already open shows
-         * the menu now; an entry still queued opens on it. Back from the menu
-         * returns to where the pick came from (the card, or the overview). */
-        if (soundOpen() && !soundIsGlobal()) soundShowMenu();
-        else S.pendingSoundEnterMenu = true;
+    /* ⭑ DOORS are SCREENS, never the bank you are on (Josh, 2026-10-03) — and
+     * a pick clicks straight INTO them ("actually get clicked into"). The map
+     * goes: a screen now owns the OLED, as an FX pad's does in Session View. */
+    if (bankIsDoor(S.trackPadMode[t], b)) {
+        if (b === BANK_CONFIG) {
+            /* TRACK CONFIG: the door Shift + Note/Session uses — the menu, over
+             * whatever bank you are on; Back from its top returns there. */
+            closeDoorScreen();
+            if (soundOpen() && !soundIsGlobal()) soundShowMenu();
+            else { S.pendingSoundEnterTrack = t; S.pendingSoundEnterMenu = true; }
+        } else {
+            openDoorScreen(b);       /* LIVE ARP's page, AUTOMATION's menu */
+        }
         bankMapEnd();
-    } else if (b === BANK_AUTOMATION) {
-        /* Its menu draws on the card: with Bank Lock on the card is locked
-         * (the first click's job), with it off the open menu shows itself. */
-        if (bankLockOn() && !S.bankCardLatched) { S.bankCardLatched = true; armBankDisplay(); }
-        if (!autoBankMenuOpen()) autoBankClick();
-        bankMapEnd();
+        return;
     }
+    /* A bank picked from a door screen lands as if from where you came in. */
+    let rest = S.bankMapRest;
+    if (doorScreenUp()) {
+        const r = S.doorReturn;
+        S.doorReturn = null;
+        S.bankCardLatched = r.latched;
+        rest = !r.latched;
+        if (!r.latched) standDownBankDisplay(true);
+    }
+    S.bankPickerSel = bankListFor(t).indexOf(b);
+    applyBankPick(rest);
 }
 
 /* A turn while the jog is held walks as always, and counts as "used". */
@@ -1578,7 +1586,7 @@ function walkBanks(delta, rest) {
  * entry (it opens resting; the card is not shown). */
 export function applyBankPick(rest) {
     const t = S.activeTrack;
-    S.arpPopReturn = null;        /* a bank chosen any other way ends the LIVE ARP pop-up's way home */
+    S.doorReturn = null;          /* a bank chosen any other way ends a door screen's way home */
     const cyc = bankListFor(t);   /* bankPickerSel indexes the track's FULL list: doors included */
     const idx = S.bankPickerSel;
     S.bankPickerSel = -1;
@@ -2537,8 +2545,8 @@ function returnToOverview() {
     S.allLanesConfirmed = false;
     S.bankCardLatched   = false;
     S.sessMixerLatched  = false;
+    closeDoorScreen();              /* a door screen gives its borrowed bank back */
     autoBankReset();                /* an open AUTOMATION menu shows itself (Bank Lock off) */
-    S.arpPopReturn = null;
     standDownBankDisplay(true);
     S.jogTouched        = false;
 
@@ -2609,6 +2617,9 @@ function _backTap() {
     /* The AUTOMATION bank's layers (ops → menu → card) close one per press;
      * with none open, Back is davebox's own (out of bank mode). */
     if (autoMenuUp() && autoBankBack()) {
+        /* The AUTOMATION door screen: Back at its top level (the menu just
+         * closed) dismisses the whole screen. */
+        if (doorScreenUp() && !autoBankMenuOpen()) closeDoorScreen();
         S.screenDirty = true; forceRedraw(); return;
     }
     if (S.tempoSelectActive) {
@@ -2698,18 +2709,8 @@ function _backTap() {
         /* A LANE JUMP landed here (plan 6c2): the first Back returns to the
          * AUTOMATION menu, cursor on the lane. Spent by any track-view Back,
          * and honoured only while you are still on the bank it sent you to. */
-        /* The LIVE ARP pop-up (Shift + hold Step 11): Back returns exactly where
-         * you were — the bank, and whether its card was locked. */
-        if (S.arpPopReturn) {
-            const r = S.arpPopReturn;
-            S.arpPopReturn = null;
-            if (r.track === S.activeTrack && S.activeBank === 5) {
-                if (r.bank !== 5) { S.bankPickerSel = bankListFor(r.track).indexOf(r.bank); applyBankPick(!r.latched); }
-                S.bankCardLatched = r.latched;
-                if (!r.latched) standDownBankDisplay(true);
-                invalidateLEDCache(); forceRedraw(); return;
-            }
-        }
+        /* A DOOR SCREEN (LIVE ARP): Back dismisses it — exactly where you were. */
+        if (closeDoorScreen()) return;
         if (S.autoReturn) {
             const r = S.autoReturn;
             S.autoReturn = null;
@@ -2894,19 +2895,49 @@ export function checkShiftStep11Hold() {
             S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT ||
             S.moveCoRunTrack >= 0 || soundModeCovered() || S.awaitingProjectSelect) return;
     if (S.shiftHeld) applyShiftEdge(false);
-    openLiveArpPopup();
+    openDoorScreen(5);
 }
 
-/* The LIVE ARP pop-up: its bank card, locked whatever Bank Lock says, with a
- * crumb home so Back returns exactly where you were (bank and lock). */
-export function openLiveArpPopup() {
-    const t = S.activeTrack, prev = S.activeBank, latched = !!S.bankCardLatched;
-    if (prev !== 5) { S.bankPickerSel = bankListFor(t).indexOf(5); applyBankPick(false); }
-    S.arpPopReturn = { track: t, bank: prev, latched: latched };   /* after the commit, which drops crumbs */
+/* ⭑⭑ DOOR SCREENS (Josh, 2026-10-03: "i don't want anything we moved off the
+ * bank list to even show up as a bank: i.e., when I go to automation, track
+ * config, or live arp, they're just screens that take over the oled and
+ * dismiss on back (at top level if menu)"). LIVE ARP and AUTOMATION draw on
+ * their bank's card, so the screen borrows the bank while it is up — and gives
+ * it back: S.doorReturn remembers the bank you were on (and whether its card
+ * was locked), Back at the screen's top level restores it, and a track or view
+ * switch restores it before leaving, so a door is never the bank you are on.
+ * (TRACK CONFIG needs no borrowing: it opens the way Shift + Note/Session does,
+ * over whatever bank you are on.) */
+export function doorScreenUp() {
+    return !!(S.doorReturn && S.doorReturn.track === S.activeTrack && S.activeBank === S.doorReturn.door);
+}
+export function openDoorScreen(door) {
+    const t = S.activeTrack;
+    /* From one door to another, home stays where it was. */
+    const home = doorScreenUp() ? S.doorReturn : { bank: S.activeBank, latched: !!S.bankCardLatched };
+    if (S.activeBank !== door) { S.bankPickerSel = bankListFor(t).indexOf(door); applyBankPick(false); }
+    S.doorReturn = { track: t, door: door, bank: home.bank, latched: home.latched };   /* after the commit, which drops it */
     S.bankCardLatched = true;
     armBankDisplay();
+    if (door === BANK_AUTOMATION && !autoBankMenuOpen()) autoBankClick();
     invalidateLEDCache();
     forceRedraw();
+}
+/* Give the borrowed bank back. True when a door screen was up. */
+export function closeDoorScreen() {
+    const r = S.doorReturn;
+    S.doorReturn = null;
+    if (!r || r.track !== S.activeTrack || S.activeBank !== r.door) return false;
+    autoBankReset();
+    S.stepIntervalMode = false; S.altMode = false;
+    S.bankPickerSel = bankListFor(r.track).indexOf(r.bank);
+    applyBankPick(!r.latched);
+    S.bankCardLatched = r.latched;
+    if (!r.latched) standDownBankDisplay(true);
+    computePadNoteMap();
+    invalidateLEDCache();
+    forceRedraw();
+    return true;
 }
 
 export function checkShiftNoteHold() {
@@ -5327,6 +5358,7 @@ function _switchViewCleanup() {
      * transient window, same as Back, so each view always OPENS on its
      * overview. The remembered bank itself is untouched: the knobs stay keyed
      * to it, and the next click re-opens exactly where you were. */
+    closeDoorScreen();             /* a door screen gives its borrowed bank back before the view goes */
     S.sessMixerLatched = false;
     S.bankCardLatched  = false;
     bankMapEnd();                  /* a map belongs to the view it was opened in */
@@ -5339,7 +5371,6 @@ function _switchViewCleanup() {
     autoBankReset();
     autoLanePinClear();
     S.autoReturn = null;           /* a lane jump's Back crumb does not survive a view switch */
-    S.arpPopReturn = null;         /* nor does the LIVE ARP pop-up's */
     endLoopLatch();                /* a latched Loop view is Track View's; Session's Loop is Perf */
     stepRecExit();
     standDownBankDisplay(true);

@@ -322,8 +322,9 @@ effects (in the order the notes pass through them) and, last, MIX.
 **CONFIG** (the track's TRACK CONFIG menu), **AUTOMATION** and **LIVE ARP** are
 not on the walk: reach them from the bank map (hold the jog, below) or their
 shortcuts — **Shift + Note/Session** for TRACK CONFIG, **Shift + hold Step 11**
-for LIVE ARP. Turning the jog from one of them steps to the nearest bank on the
-walk.
+for LIVE ARP. They are **screens, not banks**: opening one never changes the
+bank you're on (the overview and a knob peek still show it), and **Back** from
+the screen's top level returns you exactly where you were.
 The banks are grouped: **IN** (what you play in), **CTRL** (what moves the
 parameters), **SEQ** (the sequence) and **FX** (the note effects — on a drum
 track, the selected lane's, so the map shows them under DRUM LANE). A Conductor
@@ -1173,9 +1174,10 @@ The controls match [SEQ ARP](#94-seq-arp) (except Retrigger defaults to Off), pl
 - **Shift + Step 11** (tap) toggles LIVE ARP on and off with the last style.
 - **Shift + hold Step 11** (about half a second) opens LIVE ARP's settings: its
   page stays up — the knobs edit it, a click opens Arp Steps — until **Back**,
-  which returns you exactly where you were. Turning the jog, picking a bank on
-  the map, or switching track or view also closes it. LIVE ARP is not on the jog
-  walk; it is on the bank map too (IN column, second pad).
+  which returns you exactly where you were. Turning the jog doesn't leave it;
+  picking another bank on the map, or switching track or view, does. LIVE ARP is
+  a screen, not a bank: it is on the bank map (IN column, second pad), never on
+  the jog walk, and the bank you were on stays yours.
 - LIVE ARP **can't be automated** — its settings belong to the track, not a clip.
   It is still available as a macro destination.
 

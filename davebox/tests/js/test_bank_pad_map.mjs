@@ -317,7 +317,7 @@ step('⭐⭐ a CONFIG pick clicks INTO it: the TRACK CONFIG menu is up, the map 
     assert(!S.bankMapUp && S.jogPressMs < 0, 'the map stayed up over the editor');
     release();
     tickS(4);
-    assert(S.activeBank === C.BANK_CONFIG, 'bank ' + S.activeBank);
+    assert(S.activeBank === 0, 'CONFIG became the bank (it is a screen): ' + S.activeBank);
     assert(snd.soundActive() && snd.soundViewForTest() === 0, 'not in the TRACK CONFIG menu: view ' + snd.soundViewForTest());
     for (let i = 0; i < 3 && snd.soundActive(); i++) backBtn();
     assert(!snd.soundActive() && !S.bankCardLatched, 'Back did not get home');
@@ -333,8 +333,9 @@ step('⭐⭐ an AUTOMATION pick clicks INTO it: its menu is open and on screen; 
     assert(render.bankCardVisible(), 'the menu is not on screen');
     tickS(2);
     assert(ab.autoBankMenuOpen(), 'drawing the card closed the menu');
-    backBtn(); backBtn();
-    assert(!ab.autoBankMenuOpen() && !render.bankCardVisible(), 'Back did not get home');
+    backBtn();
+    assert(!ab.autoBankMenuOpen() && !render.bankCardVisible(), 'Back at the menu top did not dismiss the screen');
+    assert(S.activeBank === 0 && S.trackActiveBank[2] === 0, 'AUTOMATION stayed the bank: ' + S.activeBank);
 });
 
 step('…and with Bank Lock off it opens unlocked', () => {
@@ -342,9 +343,9 @@ step('…and with Bank Lock off it opens unlocked', () => {
     press(); holdPast();
     tap(pad(1, 1));
     release(); tickS(2);
-    assert(ab.autoBankMenuOpen() && !S.bankCardLatched && render.bankCardVisible(), 'unlocked menu not shown');
+    assert(ab.autoBankMenuOpen() && render.bankCardVisible(), 'menu not shown with Bank Lock off');
     backBtn();
-    assert(!render.bankCardVisible(), 'Back did not get home');
+    assert(!render.bankCardVisible() && S.activeBank === 0, 'Back did not get home: ' + S.activeBank);
     S.bankLockOn = true;
 });
 
@@ -355,7 +356,9 @@ step('⭐⭐ a door is still picked from the map (LIVE ARP lands; a walk-indexed
     press(); holdPast();
     tap(pad(0, 1));
     release();
-    assert(S.activeBank === 5, 'LIVE ARP pick: ' + S.activeBank);
+    assert(S.activeBank === 5 && S.bankCardLatched && render.bankCardVisible(), 'LIVE ARP screen: ' + S.activeBank);
+    backBtn();
+    assert(S.activeBank === 0 && !S.bankCardLatched, 'Back did not give the bank back: ' + S.activeBank);
 });
 const onDoor = (b) => { home(); ab.autoBankReset(); S.activeBank = b; S.trackActiveBank[2] = b; tickS(2); };
 step('⭐ a turn from a door steps to the nearest walk bank that way', () => {
