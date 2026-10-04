@@ -66,6 +66,11 @@ the section into a versioned heading at release time.
   matches 8.
 
 ### Fixed
+- **Leaving a module's full-screen picker returns to the page you opened it
+  from.** DR32's engine picker (ENGN) dropped you on a preset page (My
+  Presets, or DR32's Kit page) once a preset or kit had been loaded, and on
+  other modules the return could land on the first page. The screen reader now
+  also names the page that is actually shown.
 - **Performance Mode repeats over MIDI DLY no longer go silent or stick.** An
   echo landing on its own note left that pitch counted as sounding, so the
   repeat stopped playing it (with a pitch mod on, the moved note stuck).
