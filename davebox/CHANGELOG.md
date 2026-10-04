@@ -58,7 +58,7 @@ the section into a versioned heading at release time.
 - **Shift + Note/Session no longer does anything** (tap or hold, either view):
   TRACK CONFIG, the instrument and the Session effects are pads on the bank map.
 - **New overview footers.** Track View: `CLK BANKS` `TCH EDIT` `SHFT TRK`, and
-  with Shift held `JOG TRACK` `PAD TRACK`; Session View: `CLK BANKS`. A bank
+  with Shift held `JOG TRACK` `PAD TRACK`; Session View: `CLK BANKS` `TCH MIX`. A bank
   page says `CLK BANKS` while no knob is touched. `JOG BANK`, `CLK EDIT` and
   the `≡ SESS` / `≡ TRK` pair are gone.
 - **Clearer small letters.** N, A, B, G, K and O in the smallest screen font

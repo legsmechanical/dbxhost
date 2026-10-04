@@ -581,7 +581,7 @@ step('⭐ the TRACK overview footer: CLK BANKS · TCH EDIT · SHFT TRK, all draw
     S.sessionView = true;
     const ses = render.overviewHints();
     S.sessionView = false;
-    assert(JSON.stringify(ses) === JSON.stringify([['CLK', 'BANKS']]), 'session overview: ' + JSON.stringify(ses));
+    assert(JSON.stringify(ses) === JSON.stringify([['CLK', 'BANKS'], ['TCH', 'MIX']]), 'session overview: ' + JSON.stringify(ses));
     for (const k of ['CLK', 'TCH', 'SHFT', 'JOG', 'PAD'])
         assert(kit.MV_FOOTER_CANON.keys.indexOf(k) >= 0, k + ' is not a canon key');
 });

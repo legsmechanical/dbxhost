@@ -1181,7 +1181,8 @@ function drawOverviewTracks(hints) {
  * and shift=track. when shift is held, show jog=track pad=track."
  *   Track View    CLK BANKS · TCH EDIT · SHFT TRK   (SHFT TRACK would not fit:
  *                 48 + 38 + 51 - 4 overflows 128; TRK is 41 — measured)
- *   Session View  CLK BANKS (not under the Perf lock, which keeps the map shut)
+ *   Session View  CLK BANKS · TCH MIX (no CLK BANKS under the Perf lock, which
+ *                 keeps the map shut; no SHFT pair — Josh)
  *   Shift held    JOG TRACK · PAD TRACK (Track View — Shift + pad is its track
  *                 pick); JOG TRACK in Session View, where a pad launches. */
 export function overviewHints() {
@@ -1192,7 +1193,8 @@ export function overviewHints() {
      * no CLK BANKS, which a held step keeps shut. */
     if (stepHoldEstablished() && !S.sessionView)
         return stepRevealAvailable() ? [['JOG', 'STEP']] : [];
-    if (S.sessionView) return S.perfViewLocked ? [] : [['CLK', 'BANKS']];
+    /* Josh, 2026-10-04: "session should get touch-mix no shift track hint". */
+    if (S.sessionView) return (S.perfViewLocked ? [] : [['CLK', 'BANKS']]).concat([['TCH', 'MIX']]);
     return [['CLK', 'BANKS'], ['TCH', 'EDIT'], ['SHFT', 'TRK']];
 }
 

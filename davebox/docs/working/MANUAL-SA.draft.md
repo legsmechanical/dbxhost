@@ -295,7 +295,8 @@ The Track View overview, top to bottom:
   [bank map](#36-parameter-banks)), `TCH EDIT` (touch a knob or the jog to see
   the bank's page and edit it) and `SHFT TRK` (Shift picks the track). Hold
   **Shift** and it reads `JOG TRACK` `PAD TRACK`: turn the jog, or tap a pad,
-  for the track. In Session View the footer is `CLK BANKS`. A bank page says
+  for the track. In Session View the footer is `CLK BANKS` `TCH MIX` (touch a knob or
+  the jog for the mixer page). A bank page says
   `CLK BANKS` too while no knob is touched.
 
 ## 3.5 Selecting a track
