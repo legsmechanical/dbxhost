@@ -64,7 +64,7 @@ import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam } from './ui_sound.mjs';
 import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
-    soundViewForTest, soundEnterMasterFx, macroClearConfirmAnswer,
+    soundViewForTest, macroClearConfirmAnswer,
     macroClearConfirmReset, macroClearConfirmOpen, soundKnobCardClick, soundEnterSendFromSessionMixer,
     soundOnCard, soundEnterBusFx, soundResting, soundCardClick, soundKnobTouched } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
@@ -1366,6 +1366,9 @@ export function bankMapBegin() {
 /* The jog let go: click (quick, nothing picked, no turn) toggles the latch;
  * anything else is a peek, which a latch outlives. */
 export function bankMapRelease() {
+    /* A MENU pad tapped during the hold opens now, on the release. */
+    const menu = S.bankMapDeferred;
+    if (menu) { S.bankMapDeferred = null; runBankMapMenu(menu); return; }
     const click = !S.bankMapUsed && nowMs() - S.jogPressMs < JOG_CLICK_MAX_MS;
     const was = S.bankMapWasLatched;
     S.jogPressMs = -1;
@@ -1392,6 +1395,7 @@ export function bankMapArm() {
 /* The map goes (a click on a latched map, a peek let go, Back, or something
  * ended it). Idempotent. */
 export function bankMapEnd() {
+    S.bankMapDeferred = null;
     if (S.jogPressMs < 0 && !S.bankMapUp && !S.bankMapLatched) return;
     const wasUp = S.bankMapUp;
     S.jogPressMs = -1;
@@ -1425,40 +1429,27 @@ export function bankMapPadTap(note) {
     if (S.bankMapKind === 'session') {
         if (cell.col === 0) {
             const mode = SESS_PAD_MAP.mixer.modes[cell.row];
-            if (mode !== undefined) { sessWalkTo(mode, pickRest); bankMapEndIfLatched(); }
+            if (mode !== undefined) { bankMapCancelMenu(); sessWalkTo(mode, pickRest); bankMapEndIfLatched(); }
         } else if (cell.col === 1) {
             const bus = SESS_PAD_MAP.fx.buses[cell.row];
-            if (bus) { soundEnterBusFx(bus); bankMapEnd(); }
+            if (bus) bankMapMenuTap({ kind: 'bus', bus, col: cell.col, row: cell.row });
         }
         return;
     }
     const t = S.activeTrack;
-    /* INST: the track's instrument, the Shift + hold Note/Session door. The
-     * map goes first, so the return crumb records where you were under it.
-     * (No door screen to close: the map never opens over one.) */
     if (bankPadMapActionAt(S.trackPadMode[t], cell.col, cell.row) === 'inst') {
-        bankMapEnd();
-        shiftNoteSessionAction(true);
+        bankMapMenuTap({ kind: 'inst', col: cell.col, row: cell.row });
         return;
     }
     const b = bankPadMapCellAt(S.trackPadMode[t], t, cell.col, cell.row);
     if (b === null) return;
     /* ⭑ DOORS are SCREENS, never the bank you are on (Josh, 2026-10-03) — and
-     * a pick clicks straight INTO them ("actually get clicked into"). The map
-     * goes: a screen now owns the OLED, as an FX pad's does in Session View. */
+     * a pick clicks straight INTO them ("actually get clicked into"). */
     if (bankIsDoor(S.trackPadMode[t], b)) {
-        if (b === BANK_CONFIG) {
-            /* TRACK CONFIG: the door Shift + Note/Session uses — the menu, over
-             * whatever bank you are on; Back from its top returns there. */
-            closeDoorScreen();
-            if (soundOpen() && !soundIsGlobal()) soundShowMenu();
-            else { S.pendingSoundEnterTrack = t; S.pendingSoundEnterMenu = true; }
-        } else {
-            openDoorScreen(b);       /* AUTOMATION's menu */
-        }
-        bankMapEnd();
+        bankMapMenuTap({ kind: 'door', bank: b, col: cell.col, row: cell.row });
         return;
     }
+    bankMapCancelMenu();
     /* A bank picked from a door screen lands as if from where you came in. */
     let rest = pickRest;
     if (doorScreenUp()) {
@@ -1474,6 +1465,46 @@ export function bankMapPadTap(note) {
 }
 function bankMapEndIfLatched() {
     if (S.bankMapLatched && S.jogPressMs < 0) bankMapEnd();
+}
+
+/* ⭑ MENU PADS — CONFIG, AUTOMATION, INST, and Session View's MASTER / SEND A /
+ * SEND B — open a SCREEN, which takes the OLED and ends the map. On a HELD map
+ * they wait for the jog's release (Josh, 2026-10-04: "when pad bank map is
+ * momentary, can we hold the menu entries ... until release of jog to allow
+ * ALL pads to be tapped through without exiting map"): the tap only marks the
+ * pad (White, the filled box), a later tap replaces it — a bank tap cancels
+ * it — and letting go opens it. On a clicked-open map they open at once. */
+function bankMapMenuTap(a) {
+    if (S.jogPressMs >= 0) {
+        S.bankMapDeferred = a;
+        invalidateLEDCache();
+        forceRedraw();
+        return;
+    }
+    runBankMapMenu(a);
+}
+function bankMapCancelMenu() {
+    if (!S.bankMapDeferred) return;
+    S.bankMapDeferred = null;
+    invalidateLEDCache();
+}
+/* The map goes first: a screen now owns the OLED, and the INST crumb records
+ * where you were under it. (No door screen to close for INST: the map never
+ * opens over one.) */
+function runBankMapMenu(a) {
+    const t = S.activeTrack;
+    bankMapEnd();
+    if (a.kind === 'bus') { soundEnterBusFx(a.bus); return; }
+    if (a.kind === 'inst') { openTrackInstrument(); return; }
+    if (a.bank === BANK_CONFIG) {
+        /* TRACK CONFIG: the menu, over whatever bank you are on; Back from its
+         * top returns there. */
+        closeDoorScreen();
+        if (soundOpen() && !soundIsGlobal()) soundShowMenu();
+        else { S.pendingSoundEnterTrack = t; S.pendingSoundEnterMenu = true; }
+    } else {
+        openDoorScreen(a.bank);      /* AUTOMATION's menu */
+    }
 }
 
 /* A turn while the jog is held walks as always, and counts as "used". */
@@ -1901,14 +1932,13 @@ function _onCC_buttons(d1, d2) {
              * exitMoveNativeCoRun() for the JS cleanup.
              * No Menu intercept needed here. */
             if (S.shiftHeld) {
-                /* ⭑ DEFERRED TO THE RELEASE. The gesture has two meanings now
-                 * and only its DURATION separates them, so the press records
-                 * when it happened and does nothing else.
-                 * ⚠ This MUST stay ahead of the escape below: Shift+Note/Session
-                 * is an OPENER that works from anywhere, so an escape running
-                 * first would break it from every off-overview state. */
-                S.shiftNoteSessionTick = nowMs();
-                S.screenDirty = true;
+                /* ⭑ RETIRED (Josh, 2026-10-04: "remove the shift note/session
+                 * shortcuts in both session and track view since all those are
+                 * now available through the pad map"): TRACK CONFIG, INST and
+                 * the Session FX are pads on the bank map. Shift + Note/Session
+                 * does nothing — swallowed with its release, so it cannot fall
+                 * through to the view switch either. */
+                S._modalSwallowCC = MoveNoteSession;
                 return;
             }
             /* ⭑⭑ THE LAW (Josh, 2026-09-30, replacing 2026-09-02's "returns
@@ -1938,25 +1968,6 @@ function _onCC_buttons(d1, d2) {
             invalidateLEDCache();
             S.screenDirty = true;
         } else if (d2 === 0) {
-            /* ⭑ Shift+Note/Session resolves HERE, on the release, because only
-             * the duration separates its two meanings. Read the flag recorded at
-             * the PRESS, not S.shiftHeld now: letting go of Shift a moment
-             * before the button would otherwise turn a deliberate hold into a
-             * plain view toggle.
-             *
-             * ⚠ ~450ms (BACK_HOLD_TICKS), not the ~200ms this button already
-             * uses for its momentary-view hold. That threshold is tuned for a
-             * view flick; at 200ms a slightly slow tap would land you in the
-             * instrument editor, and these two destinations are far enough apart
-             * that the hold should feel deliberate. */
-            if (S.shiftNoteSessionTick >= 0) {
-                /* Still pending, so the threshold was never crossed: a TAP.
-                 * checkShiftNoteHold clears the tick when it fires, which is
-                 * what makes the release after a hold a no-op. */
-                S.shiftNoteSessionTick = -1;
-                shiftNoteSessionAction(false);
-                return;
-            }
             if (S.noteSessionPressedTick >= 0 &&
                     (nowMs() - S.noteSessionPressedTick) < NOTE_SESSION_HOLD_MS) {
                 /* Tap release: make permanent (don't switch back) */
@@ -2674,60 +2685,14 @@ function _handleBack(d2) {
 
 /* Fire the HOLD-Back suspend once the press crosses BACK_HOLD_TICKS. Called every
  * tick. Clears backPressTick so the subsequent release doesn't also tap. */
-/* Shift+Note/Session's action, extracted so it can run from the RELEASE rather
- * than the press — which is what lets a TAP and a HOLD mean different things
- * (Josh, 2026-08-28):
- *   tap  -> the track's SOUND + CONFIG menu
- *   hold -> straight to instrument edit, which is what the tap did before
- *
- * ⭑⭑ AND THE GESTURE IS A DESTINATION NOW, NEVER A TOGGLE. It used to close
- * whatever was open and only open when nothing was — which needed a definition
- * of "open", and that definition is where it went wrong: the root screen had to
- * be carved out as an exception (08-26), and the respec would have needed a
- * second exception for the prompt. A destination has no such edge: the same
- * press means the same thing from any depth, and pressing it deep in a stack
- * collapses you back to the menu in ONE press instead of four Backs. Back is
- * the only thing that closes, and it means one thing everywhere.
- *
- * ⚠ The body below is the 08-26 gesture with its CLOSER removed and its
- * destination switched. What survives unchanged is the ROUTE test: "edit this
- * track's instrument" means the generator's canvas on a Schwung track, co-run
- * on a Move one, and an EXT track has neither and says so. */
-function shiftNoteSessionAction(wantInstrument) {
-if (S.sessionView) {
-    /* ⭑ SESSION VIEW: the same gesture, pointed at the session's own devices
-     * (Josh, 2026-09-02: "shift+menu in session view should jump to
-     * master/send effects menu"; 2026-09-24: the hold "takes you directly to
-     * master effects menu"). The MASTER / SEND list it opened is gone (Josh,
-     * 2026-10-04: "No more session effects menu since we can enter master,
-     * send a/b directly from pads"), so tap and hold both open MASTER FX —
-     * from inside a bus too, which collapses to Master's top in one press. */
-    soundEnterMasterFx();
-    forceRedraw();
-    return;
-}
+/* THE TRACK'S INSTRUMENT — the bank map's INST pad (Josh, 2026-10-04), which
+ * took over from Shift + hold Note/Session (retired the same day). The ROUTE
+ * test: "edit this track's instrument" means the generator's canvas on a
+ * Schwung track, co-run on a Move one, and a MIDI track has neither and says so.
+ */
+function openTrackInstrument() {
 const _gt = S.activeTrack;
-if (!wantInstrument) {
-    /* TAP — the menu, from wherever you are. Idempotent: already there and
-     * it simply stays there; deep in a stack and it collapses back to the
-     * menu in one press.
-     *
-     * ⚠⚠ ROUTE-AWARE ENTRY, and it must go through the SAME deferred door
-     * the bank uses. A Move-routed track's sound is its Move bus
-     * (soundEnterMove), not a chain slot — calling soundEnter directly here
-     * would open the wrong flavour, silently, for every Move track. Opening
-     * also READS the chain, which is why the bank defers it to the tick
-     * rather than doing it from the MIDI path. */
-    if (soundOpen()) { soundShowMenu(); }
-    else {
-        S.pendingSoundEnterTrack = _gt;
-        S.pendingSoundEnterMenu  = true;
-    }
-    forceRedraw();
-    return;
-}
-/* HOLD — the instrument itself.
- *
+/*
  * ⭑ STAMP WHERE WE ARE FIRST (Josh, 2026-08-29: "when exiting instrument
  * editor entered from shift hold shortcut, it should go back to where you
  * were, not necessarily the sound+config menu"). Back out of the editor then
@@ -2768,14 +2733,6 @@ if (S.trackRoute[_gt] === 1) {
 forceRedraw();
 }
 
-/* ⭑ The Shift+Note/Session HOLD fires the moment it crosses the threshold, not
- * on the release (Josh, 2026-08-28: "shift+hold needs to happen after hold
- * duration, not release"). Same shape as checkBackHold below, and for the same
- * reason: a hold you have to let go of before anything happens does not feel
- * like a hold, it feels like a slow tap.
- *
- * The RELEASE then only has to notice the hold already fired — the tick is
- * cleared here, so a release with nothing pending does nothing. */
 /* Shift + HOLD Step 11 (Josh, 2026-10-03: "i want to have live arp settings
  * pop-up when you shift+hold the 11th step button"; "Stays until Back"). Fires
  * at the threshold from the tick, like Shift + hold Note/Session, and spends
@@ -2844,32 +2801,6 @@ export function closeDoorScreen() {
     return true;
 }
 
-export function checkShiftNoteHold() {
-    if (S.shiftNoteSessionTick < 0) return;
-    /* Co-run owns this button while it is up (Menu is its way out), so abandon
-     * a pending hold rather than firing into it. */
-    if (S.moveCoRunTrack >= 0) { S.shiftNoteSessionTick = -1; return; }
-    if ((S.clockMs - S.shiftNoteSessionTick) >= BACK_HOLD_MS) {
-        S.shiftNoteSessionTick = -1;
-        /* ⭑⭑ SPEND Shift before opening anything. The key is still physically
-         * down — the gesture fires at the threshold, not on release — so the
-         * editor this is about to open would see Shift held and come up with
-         * its own Shift overlay already on screen (Josh, on device).
-         *
-         * `applyShiftEdge(false)` is the whole fix: every consumer runs its
-         * release side-effects exactly as if the key had come up — the volume
-         * claim ends, the padmap is restored, the LEDs settle — and the screens
-         * opened below re-read a key that now reads UP.
-         *
-         * ⚠ It stays false without a latch, and that is worth knowing rather
-         * than guarding: tick's stuck-Shift heal only ever asserts RELEASED
-         * ("we do NOT assert Shift from the other direction"), so nothing can
-         * bring it back until a real press. I did add a latch here first; a
-         * mutation removing it survived, because it could never fire. */
-        applyShiftEdge(false);
-        shiftNoteSessionAction(true);          /* the instrument */
-    }
-}
 
 /* ⭑ A HELD Back BACKS YOU ALL THE WAY OUT to the overview of the view you are
  * in (Josh, 2026-09-30: "Backing out like note/session used to do should be

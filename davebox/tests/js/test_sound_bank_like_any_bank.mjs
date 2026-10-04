@@ -78,13 +78,12 @@ const ticks = (n) => { for (let i = 0; i < n; i++) { S.tickCount++; globalThis.t
 const jog   = (d) => cc(14, d > 0 ? 1 : 127);
 const click = () => { cc(3, 127); cc(3, 0); };
 const back  = () => { cc(51, 127); cc(51, 0); };
-const shiftNote = (holdTicks) => {
-    cc(49, 127); cc(50, 127);
-    if (holdTicks) { S.tickCount += holdTicks; ticks(2); }
-    cc(50, 0); cc(49, 0);
-};
-const shiftNoteTap  = () => { shiftNote(0); ticks(4); };
-const shiftNoteHold = () => { shiftNote(46); ticks(4); };
+/* The menu and the instrument are bank map pads (Shift + Note/Session retired
+ * 2026-10-04): click the jog, tap CONFIG (note 68) or INST (note 70). */
+const mapPad = (note) => { click(); globalThis.onMidiMessageInternal(new Uint8Array([0x90, note, 100]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, note, 0])); };
+const configPad = () => { mapPad(68); ticks(4); };
+const instPad   = () => { mapPad(70); ticks(4); };
 const VIEW_BLOCKS = 0, VIEW_PROMPT = 18, VIEW_MACROS = 19;
 const NOTEFX = 1, SEQ_ARP = 4;
 const sidecarBank = (t) => { const j = JSON.parse(files.get(UIP) || '{}'); return Array.isArray(j.tab) ? j.tab[t] : undefined; };
@@ -138,18 +137,18 @@ step('(2) SUSPEND from a track resting on SOUND+CFG keeps SOUND+CFG', () => {
     S.pendingSuspendManaged = false; S.globalMenuOpen = false; S.confirmExit = null;
 });
 
-step('(3) Shift+Note/Session tap from a track RESTING on SOUND+CFG, then Back: still on SOUND+CFG', () => {
+step('(3) the CONFIG pad from a track RESTING on SOUND+CFG, then Back: still on SOUND+CFG', () => {
     put(0, BANK_SOUND, false);
-    shiftNoteTap();
-    assert(snd.soundActive() && snd.soundViewForTest() === VIEW_BLOCKS, 'rig: the tap did not open the menu: ' + JSON.stringify(state(0)));
+    configPad();
+    assert(snd.soundActive() && snd.soundViewForTest() === VIEW_BLOCKS, 'rig: the CONFIG pad did not open the menu: ' + JSON.stringify(state(0)));
     back(); ticks(4);
     assert(S.activeBank === BANK_SOUND && S.trackActiveBank[0] === BANK_SOUND,
            'Back moved the bank: ' + JSON.stringify(state(0)));
 });
 
-step('(4) Shift+Note/Session tap from a LATCHED NOTE FX card, then Back: the NOTE FX card, and never a SOUND+CFG card', () => {
+step('(4) the CONFIG pad from a LATCHED NOTE FX card, then Back: the NOTE FX card, and never a SOUND+CFG card', () => {
     put(0, NOTEFX, true);
-    shiftNoteTap();
+    configPad();
     assert(snd.soundActive(), 'rig: the menu did not open');
     assert(S.activeBank === NOTEFX, 'opening the MENU changed the live bank to ' + S.activeBank);
     assert(S.trackActiveBank[0] === NOTEFX, 'opening the MENU changed the recorded bank to ' + S.trackActiveBank[0]);
@@ -173,10 +172,10 @@ step('(5) a track switch from the latched SOUND+CFG CARD: the new track shows IT
     assert(S.activeBank === BANK_SOUND, 'back on track 1 it is not on SOUND+CFG: ' + JSON.stringify(state(0)));
 });
 
-step('(6) Shift+hold (instrument editor) from a latched NOTE FX card, then Back: the NOTE FX card, and it STAYS', () => {
+step('(6) the INST pad (instrument editor) from a latched NOTE FX card, then Back: the NOTE FX card, and it STAYS', () => {
     put(0, NOTEFX, true);
-    shiftNoteHold();
-    assert(snd.soundActive(), 'rig: the hold opened nothing');
+    instPad();
+    assert(snd.soundActive(), 'rig: INST opened nothing');
     assert(S.trackActiveBank[0] === NOTEFX && S.activeBank === NOTEFX, 'the editor changed the bank: ' + JSON.stringify(state(0)));
     for (let g = 0; g < 4 && snd.soundActive(); g++) { back(); ticks(3); }
     ticks(6);
@@ -184,10 +183,10 @@ step('(6) Shift+hold (instrument editor) from a latched NOTE FX card, then Back:
     assert(!snd.soundOpen(), 'sound mode reopened over NOTE FX: ' + JSON.stringify(state(0)));
 });
 
-step('(7) Shift+hold from a track resting on MACROS, then Back: MACROS, never the Sound menu', () => {
+step('(7) the INST pad from a track resting on MACROS, then Back: MACROS, never the Sound menu', () => {
     put(0, BANK_MACROS, false);
-    shiftNoteHold();
-    assert(snd.soundActive(), 'rig: the hold opened nothing');
+    instPad();
+    assert(snd.soundActive(), 'rig: INST opened nothing');
     for (let g = 0; g < 4 && snd.soundActive() && snd.soundViewForTest() !== VIEW_MACROS; g++) { back(); ticks(3); }
     assert(snd.soundViewForTest() !== VIEW_BLOCKS || !snd.soundActive(), 'Back landed on the Sound menu: ' + JSON.stringify(state(0)));
     assert(S.activeBank === BANK_MACROS && S.trackActiveBank[0] === BANK_MACROS, 'not on MACROS: ' + JSON.stringify(state(0)));

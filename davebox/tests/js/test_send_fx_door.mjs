@@ -155,15 +155,6 @@ step('⚠⚠ THE OLD REGRESSION: a SESSION-opened bus never Backs onto a TRACK p
     S.sessionView = false;
 });
 
-step('⭐ Shift + TAP Note/Session in session view lands IN Master FX — the list is gone (2026-10-04)', () => {
-    snd.soundExit(); ticks(2);
-    S.sessionView = true;
-    shift(true); cc(50, 127); ticks(2); cc(50, 0); shift(false); ticks(3);
-    const bus = snd.soundBusForTest();
-    if (view() === VIEW_BUSES) throw new Error('a tap opened the retired session FX list');
-    if (!bus || bus.id !== 'master') throw new Error('a tap opened ' + JSON.stringify(bus) + ', view ' + view());
-});
-
 step('⚠ a bus LEVEL edited just before the jump is SAVED, not dropped — and the old list never draws', () => {
     snd.soundExit(); ticks(2);
     S.sessionView = true;
@@ -176,7 +167,7 @@ step('⚠ a bus LEVEL edited just before the jump is SAVED, not dropped — and 
     globalThis.shadow_save_state_now = () => { saves++; return 1; };
     const views = [];
     try {
-        shift(true); cc(50, 127); ticks(2); cc(50, 0); shift(false);
+        snd.soundEnterBusFx('master');
         for (let i = 0; i < 4; i++) { ticks(1); views.push(view()); }
     } finally { globalThis.shadow_save_state_now = was; }
     if (!saves) throw new Error('the dirty level was never saved — the bus entry overwrote the save');
@@ -186,12 +177,13 @@ step('⚠ a bus LEVEL edited just before the jump is SAVED, not dropped — and 
     snd.soundExit(); ticks(2);
 });
 
-step('⭐⭐ Shift + HOLD Note/Session in session view lands IN Master FX (Josh, 2026-09-24)', () => {
+step('⭐⭐ the Session map\'s MASTER pad lands IN Master FX (Shift + Note/Session retired 2026-10-04)', () => {
     snd.soundExit(); ticks(2);
-    S.sessionView = true;
-    shift(true); cc(50, 127);
-    ticks(60);                                          /* past the 450 ms hold */
-    cc(50, 0); shift(false); ticks(4);
+    S.sessionView = true; ticks(2);
+    click();                                            /* the Session map */
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 93, 100]));   /* MASTER: col 1, top row */
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, 93, 0]));
+    ticks(4);
     const bus = snd.soundBusForTest();
     if (!bus) throw new Error('no bus opened, view ' + view());
     if (bus.id !== 'master') throw new Error('landed on ' + bus.id + ', wanted master');

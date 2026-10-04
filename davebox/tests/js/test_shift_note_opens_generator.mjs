@@ -1,18 +1,11 @@
+import { openTrackConfigViaMap } from './_map_config.mjs';
 
-import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's single-read stub *//* tests/js/test_shift_note_opens_generator.mjs — Shift+Note/Session opens the
- * active track's generator editor in one press, and still CLOSES what is open.
- *
- * Josh, 2026-08-26: "Track view: Shift+Note/Session should jump STRAIGHT to
- * either the generator's canvas UI (inside the SOUND + CONFIG bank, so Back
- * returns you to it) or Move co-run."
- *
- * ⚠⚠ THE CLOSER IS THE PART MOST AT RISK, which is why it is asserted first and
- * last. The opener was deliberately RETIRED on 2026-08-24 ("no gesture may open
- * a menu the module's own UI already reaches"), and retiring it is what made
- * this the one-press way out from any depth. Adding a destination must not cost
- * that exit — so the gesture is a toggle, and a change that only implemented
- * "open" would satisfy the request while removing the property the last ruling
- * was about.
+import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's single-read stub *//* tests/js/test_shift_note_opens_generator.mjs — the track's INSTRUMENT and
+ * its menu, one gesture away. Shift + Note/Session did this (tap: the menu,
+ * hold: the instrument) until 2026-10-04, when Josh retired it for the bank
+ * map's pads: "remove the shift note/session shortcuts in both session and
+ * track view since all those are now available through the pad map". The
+ * file keeps its name; what it pins moved to CONFIG and INST.
  *
  * The destination follows the track's ROUTE, because "edit this track's
  * instrument" means different things per route: a Schwung track's sound is its
@@ -103,36 +96,32 @@ function step(l, fn) {
     if (fn && fn.constructor && fn.constructor.name === 'AsyncFunction') throw new Error('async step');
     try { fn(); ok(l); } catch (e) { bad(l, e); }
 }
-/* The gesture as hardware sends it: Shift down, the button, Shift up.
- *
- * ⚠⚠ It RESOLVES ON THE RELEASE now (Josh, 2026-08-28), because tap and hold
- * mean different things and only the duration separates them:
- *   tap  -> the track's SOUND + CONFIG menu
- *   hold -> straight to instrument edit, which is what the tap used to do
- * `heldTicks` advances the clock between press and release, so a test can ask
- * for either. Anything at or past BACK_HOLD_TICKS (42, ~450ms) is a hold —
- * deliberately Back's threshold, not the ~200ms this button uses for its own
- * momentary-view hold, which is short enough that a slow tap would land in the
- * instrument editor by accident. */
-const HOLD_TICKS = 42;
 /* Sound mode's view enum — not exported; pinned here so a renumbering shows up
  * as a failure rather than as comparing the wrong constants. */
 const VIEW_BLOCKS = 0, VIEW_PROMPT = 18;
+/* ⚠⚠ SHIFT + NOTE/SESSION RETIRED 2026-10-04 (Josh: "remove the shift
+ * note/session shortcuts in both session and track view since all those are
+ * now available through the pad map"). Its two destinations are bank map pads:
+ *   CONFIG (bottom-left)    -> the track's TRACK CONFIG menu   (was the tap)
+ *   INST   (right of MIX)   -> the track's instrument           (was the hold)
+ * Driven as the hardware does it: click the jog (the map opens), tap the pad.
+ * The map opens from an overview or a card — never from inside a menu, where
+ * the click is the menu's — so these refuse rather than reach through one. */
+const INST_PAD = 70;                       /* col 2, row 3 */
+function instPad() {
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 3, 127]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 3, 0]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, INST_PAD, 100]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, INST_PAD, 0]));
+}
+const configPad = () => openTrackConfigViaMap();
 function shiftNote(heldTicks) {
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 127]));
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 127]));
-    /* ⚠⚠ The hold fires from the TICK, at the threshold — not from the release
-     * (Josh, 2026-08-28). So a held gesture must actually TICK while it is
-     * held: advancing the clock alone leaves checkShiftNoteHold unrun, and the
-     * release then reads as a tap. That is exactly what this helper did first,
-     * and it made the hold assertions fail against correct code. */
     if (heldTicks) { S.tickCount += heldTicks; ticks(2); }
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 0]));
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 0]));
 }
-/* The two meanings, named so the steps below read as the spec does. */
-const shiftNoteTap  = () => shiftNote(0);
-const shiftNoteHold = () => shiftNote(HOLD_TICKS + 2);
 
 step('setup: track view, track 1 on a Schwung chain', () => {
     globalThis.init();
@@ -145,100 +134,59 @@ step('setup: track view, track 1 on a Schwung chain', () => {
     if (sound.soundActive()) throw new Error('sound mode was already open before the gesture');
 });
 
-step('⭑ a TAP opens the track\'s SOUND + CONFIG menu', () => {
-    shiftNoteTap();
+step('⭐⭐ Shift + Note/Session does NOTHING now — tap or hold, Track View or Session View', () => {
+    for (const sv of [false, true]) {
+        S.sessionView = sv;
+        if (sound.soundOpen()) sound.soundExit();
+        ticks(4);
+        S.genReturn = null;
+        for (const held of [0, 44]) {
+            shiftNote(held);
+            ticks(4);
+            if (sound.soundActive())
+                throw new Error((sv ? 'Session' : 'Track') + ' View: Shift + Note/Session ' + (held ? 'hold' : 'tap') +
+                                ' opened sound mode (view ' + sound.soundPickStateForTest().view + ')');
+            if (S.sessionView !== sv) throw new Error('it switched the view');
+            if (S.genReturn) throw new Error('it stamped an instrument crumb');
+        }
+    }
+    S.sessionView = false; ticks(2);
+    /* ⚠ CONTROL: the plain button still switches the view, so "nothing
+     * happened" above is the retirement and not a dead button. */
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 127]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 0]));
+    if (!S.sessionView) throw new Error('control: a plain Note/Session tap did not switch to Session View');
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 127]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 0]));
+    ticks(2);
+});
+
+step('⭑ the CONFIG pad opens the track\'s menu, on the Instrument row', () => {
+    configPad();
     ticks(4);
-    if (!sound.soundActive()) throw new Error('the tap did not open sound mode');
-    if (sound.soundPickStateForTest().view !== VIEW_BLOCKS)
-        throw new Error('the tap landed on view ' + sound.soundPickStateForTest().view +
-                        ', not the menu — the bank\'s prompt is for arriving BY THE BANK');
-    /* ...and on the INSTRUMENT row (Josh, 2026-09-04): it used to land on the
-     * Generator item, and the Instrument row is that item now. */
+    if (!sound.soundActive()) throw new Error('the CONFIG pad did not open sound mode');
     const st = sound.soundPickStateForTest();
+    if (st.view !== VIEW_BLOCKS) throw new Error('the CONFIG pad landed on view ' + st.view + ', not the menu');
     if (st.kinds[st.row] !== 'trackto')
-        throw new Error('the tap landed on row ' + st.row + ' (' + st.kinds[st.row] + '), not Instrument');
+        throw new Error('the menu opened on row ' + st.row + ' (' + st.kinds[st.row] + '), not Instrument');
     /* ⭑ The FOOTER says what the two traceless gestures do here (Josh,
      * 2026-09-04: "click to edit" / "shift click to change"). */
     const h = JSON.stringify(sound.soundMenuHintsForTest());
     if (h !== JSON.stringify([['CLK', 'EDIT'], ['SHFT', 'CHANGE']]))
         throw new Error('Instrument row footer: ' + h);
+    sound.soundExit(); ticks(4);
 });
 
-step('⭑⭑ ...and tapping again does NOT close — the gesture is a DESTINATION', () => {
-    /* ⚠⚠ REVERSED 2026-08-28. It used to be a toggle: close what is open, else
-     * open. That needed a definition of "open", and the definition is where it
-     * went wrong — the root screen had to be carved out as an exception
-     * (08-26), and the bank respec would have needed a second exception for the
-     * prompt. Josh: forget the opener/closer spec; the gesture goes to the same
-     * place every time. Back is the only thing that closes, and it means one
-     * thing everywhere. */
-    shiftNoteTap();
-    ticks(4);
-    if (!sound.soundActive())
-        throw new Error('the second tap CLOSED — the gesture is a destination now, not a toggle');
-    if (sound.soundPickStateForTest().view !== VIEW_BLOCKS)
-        throw new Error('the second tap moved off the menu: view ' +
-                        sound.soundPickStateForTest().view);
-});
-
-step('⭑ a tap from DEEP in the stack collapses back to the menu', () => {
-    /* This is what replaces the closer, and it is why losing it costs nothing:
-     * one press from any depth puts you on the menu, and one Back from there is
-     * out. Two presses to leave from anywhere, without having to know where you
-     * were. */
-    sound.soundSetViewForTest(13);            /* the knob PARAM picker, 4 boxes deep */
-    shiftNoteTap();
-    ticks(4);
-    if (sound.soundPickStateForTest().view !== VIEW_BLOCKS)
-        throw new Error('a tap from depth did not collapse to the menu: view ' +
-                        sound.soundPickStateForTest().view);
-});
-
-step('⭑⭑ a HOLD goes straight to instrument edit', () => {
-    /* The old tap behaviour, now behind a deliberate hold. */
-    shiftNoteHold();
+step('⭑⭑ the INST pad goes straight to instrument edit', () => {
+    instPad();
     ticks(6);
+    if (!sound.soundActive()) throw new Error('the INST pad opened nothing');
     const v = sound.soundPickStateForTest().view;
     if (v === VIEW_BLOCKS)
-        throw new Error('the hold stopped at the menu — it should reach the instrument');
+        throw new Error('INST stopped at the menu — it should reach the instrument');
 });
 
-step('⭑⭑ the HOLD spends Shift, so what it opens does not also see it', () => {
-    /* ⚠⚠ Josh, on device: the hold fires at the THRESHOLD, with the key still
-     * physically down — so the editor it opened came up with its own Shift
-     * overlay already on screen. The gesture consumed the modifier; whatever it
-     * opens must not consume it a second time.
-     *
-     * ⚠ The screens opened here RE-READ the physical key on entry ("sync, never
-     * assume up"), which is why clearing the flag once is not enough and the
-     * latch has to survive until the real release. */
-    sound.soundExit(); ticks(4);
-    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 127]));
-    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 127]));
-    S.tickCount += HOLD_TICKS + 2; ticks(2);          /* the hold fires HERE */
-    if (S.shiftHeld)
-        throw new Error('Shift still reads as held after the hold fired — the screen it ' +
-                        'opened will come up with a Shift overlay');
-    /* ⚠⚠ AND SOUND MODE'S OWN COPY, which is the one that matters. It re-reads
-     * the physical key on entry, so the global being false is not enough — that
-     * re-read is exactly what would hand Shift to the screen the hold just
-     * opened. Asserting only the global let a mutation removing the mask
-     * survive. */
-    if (sound.soundPickStateForTest().shift)
-        throw new Error("sound mode re-read the physical key and resurrected Shift — the " +
-                        'screen the hold opened will see it held');
-    if (S.shiftHeld) throw new Error('Shift came back while the key was still down');
-    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveNoteSession, 0]));
-    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 0]));
-    /* ⚠ CONTROL: a fresh press is honoured again, or "Shift reads as up" would
-     * be satisfied by a build where Shift is simply broken, and every assertion
-     * above would still pass. */
-    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 127]));
-    if (!S.shiftHeld) throw new Error('Shift is dead — a fresh press is not honoured');
-    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, MoveShift, 0]));
-});
-
-step('⭑⭑ leaving the editor RETRACES the hold — back to where you were', () => {
+step('⭑⭑ leaving the editor RETRACES the INST pad — back to where you were', () => {
     /* Josh, 2026-08-29: "when exiting instrument editor entered from shift hold
      * shortcut, it should go back to where you were, not necessarily the
      * sound+config menu."
@@ -261,43 +209,31 @@ step('⭑⭑ leaving the editor RETRACES the hold — back to where you were', (
     S.activeBank = S.trackActiveBank[0] = BANK_SOUND;
     sound.soundEnter(0, 0); ticks(2);
     if (view() !== VIEW_PROMPT) throw new Error('setup: not on the prompt');
-    shiftNoteHold(); ticks(6);
-    if (view() === VIEW_PROMPT) throw new Error('setup: the hold did not leave the prompt');
+    instPad(); ticks(6);
+    if (view() === VIEW_PROMPT) throw new Error('setup: INST did not leave the prompt');
     back();
     if (view() !== VIEW_PROMPT)
         throw new Error('left the editor onto view ' + view() + ', not the PROMPT it was ' +
                         'entered from');
 
-    /* from the MENU */
-    sound.soundShowMenu(); ticks(2);
-    if (view() !== VIEW_BLOCKS) throw new Error('setup: not on the menu');
-    shiftNoteHold(); ticks(6);
+    /* from the OVERVIEW: Back leaves sound mode altogether. (The menu is no
+     * longer a place INST opens from — the map does not open over a menu.) */
+    sound.soundExit(); ticks(4);
+    S.activeBank = S.trackActiveBank[0] = 0;
+    ticks(2);
+    instPad(); ticks(6);
+    if (!sound.soundActive()) throw new Error('setup: INST did not open from the overview');
     back();
-    if (view() !== VIEW_BLOCKS)
-        throw new Error('left the editor onto view ' + view() + ', not the MENU it was ' +
-                        'entered from');
+    if (sound.soundActive())
+        throw new Error('left the editor onto view ' + view() + ', not the overview it was entered from');
 });
 
-step('⚠ CONTROL: the two lengths really do differ', () => {
-    /* Without this both assertions above could be passing on a build where the
-     * duration is ignored and everything lands in the same place. */
-    sound.soundExit(); ticks(4);
-    shiftNoteTap(); ticks(4);
-    const tapView = sound.soundPickStateForTest().view;
-    sound.soundExit(); ticks(4);
-    shiftNoteHold(); ticks(6);
-    const holdView = sound.soundPickStateForTest().view;
-    if (tapView === holdView)
-        throw new Error('tap and hold both landed on view ' + tapView +
-                        ' — the duration is being ignored');
-});
-
-step('⭑ a NONE track: the HOLD opens the INSTRUMENT PICKER over its menu (Josh, 2026-09-05)', () => {
+step('⭑ a NONE track: INST opens the INSTRUMENT PICKER over its menu (Josh, 2026-09-05)', () => {
     /* Nothing to edit and never the parked chain — so the hold lands on the one
      * choice the track is waiting for, instead of a popup that only named the gap. */
     sound.soundExit(); ticks(4);
     S.trackRoute[0] = 3;                 /* ROUTE_NONE */
-    shiftNoteHold(); ticks(6);
+    instPad(); ticks(6);
     const v = sound.soundPickStateForTest().view;
     if (v !== 17) throw new Error('the hold on a NONE track landed on view ' + v + ', not the enum picker (17)');
     const pk = sound.soundPickStateForTest().enumPick;
@@ -305,7 +241,7 @@ step('⭑ a NONE track: the HOLD opens the INSTRUMENT PICKER over its menu (Josh
     S.trackRoute[0] = 0; sound.soundExit(); ticks(4);
 });
 
-step('a MIDI-routed track opens nothing and says why — on the HOLD', () => {
+step('a MIDI-routed track: INST opens nothing and says why', () => {
     /* ⚠ The HOLD is what reaches an instrument, so the hold is what has to
      * refuse. A TAP opens SOUND + CONFIG for ANY route: a MIDI track has that
      * menu, and it is exactly where you would change its routing. */
@@ -314,34 +250,13 @@ step('a MIDI-routed track opens nothing and says why — on the HOLD', () => {
      * the hold refusing does not close it — nothing closes but Back now. */
     sound.soundExit(); ticks(4);
     S.actionPopupEndTick = -1;
-    shiftNoteHold();
+    instPad();
     ticks(4);
     if (sound.soundActive())
         throw new Error('opened sound mode for a track that has no sound');
     if (S.actionPopupEndTick < 0)
         throw new Error('silently did nothing — a one-press gesture must explain itself');
     S.trackRoute[0] = 0;
-});
-
-/* Session view has its own meaning for this gesture (the buses); the opener is
- * track-view only, and co-run refuses in session view anyway. */
-step('session view does not get the TRACK opener (it gets its own — see the step above)', () => {
-    /* ⚠ REWRITTEN 2026-09-02. This used to assert the gesture did NOTHING in
-     * session view. Josh ruled it a destination there too ("shift+menu in
-     * session view should jump to master/send effects menu"), so what must
-     * still hold is narrower: it must not open a TRACK's sound flavour. */
-    S.sessionView = true;
-    if (sound.soundActive()) sound.soundExit();
-   
-    ticks(2);
-    shiftNote();
-    ticks(4);
-    if (sound.soundActive() && !sound.soundIsGlobal())
-        throw new Error('the track-view opener fired in session view');
-    if (!sound.soundActive())
-        throw new Error('session view now HAS a counterpart and it did not fire');
-    sound.soundExit();
-    S.sessionView = false;
 });
 
 /* ── The gesture RETURNS you where you pressed (Josh, 2026-08-26) ──────────
@@ -376,69 +291,6 @@ function menuPress() {
  * code that still reads as live. Flagged for removal rather than deleted here,
  * because it is also consulted by the unshifted Note/Session path and that
  * deserves its own look. */
-
-step('⭐ SESSION VIEW: Shift+Menu opens MASTER FX (tap and hold) — VISIBLY; Back at its top closes out', () => {
-    /* Josh, 2026-09-02: "shift+menu in session view should jump to master/send
-     * effects menu"; 2026-10-04: "No more session effects menu since we can
-     * enter master, send a/b directly from pads ... just have it close out at
-     * the top level of each effect chain's menu". With the list gone, a tap
-     * opens MASTER FX as the hold always did.
-     *
-     * ⚠ Asserting soundActive() alone would miss a screen that opens
-     * INVISIBLY, so this asserts it DRAWS. */
-    S.genReturn = null;
-    globalThis.init();
-    S.awaitingProjectSelect = false;
-    S.ledInitComplete = true;
-    if (sound.soundActive()) sound.soundExit();
-    S.sessionView = true;
-    S.knobTouched = -1;
-    S.touchedIdx = -1; S.volTouched = false;
-    S.jogTouched = false; S.bankSelectTick = -1;
-    ticks(4);
-
-    shiftNoteTap();
-    ticks(3);
-    if (!sound.soundActive() || !sound.soundIsGlobal())
-        throw new Error('Shift+Menu did not open a session bus in session view');
-    let _bus = sound.soundBusForTest();
-    if (!_bus || _bus.id !== 'master')
-        throw new Error('the TAP did not open MASTER FX: ' + JSON.stringify(_bus));
-    /* VIEW_BLOCKS = 0 is the bus's own top; VIEW_BUSES = 9 was the list. */
-    if (sound.soundViewForTest() !== 0)
-        throw new Error('the tap landed on view ' + sound.soundViewForTest() + ', not the bus top');
-    if (sound.soundRender() !== true)
-        throw new Error('MASTER FX opened INVISIBLY — soundActive() is true but nothing draws');
-
-    /* Idempotent: pressed again with a LEVEL EDIT live it collapses to
-     * Master's top and ends the edit (left set, the next Back is a dead press). */
-    sound.soundBusLevelEditingForTest(true);
-    shiftNoteTap();
-    ticks(3);
-    _bus = sound.soundBusForTest();
-    if (!sound.soundActive() || !_bus || _bus.id !== 'master')
-        throw new Error('a second press toggled MASTER FX off instead of staying on it');
-    if (sound.soundBusLevelEditingForTest())
-        throw new Error('the re-press left a live level edit armed — the next Back is a dead press');
-
-    /* ⭐ Back at the bus's top: OUT to the Session overview — no list. */
-    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 51, 127]));
-    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 51, 0]));
-    ticks(3);
-    if (sound.soundActive())
-        throw new Error('Back from MASTER FX\'s top stayed in sound mode (view ' + sound.soundViewForTest() + ')');
-    if (!S.sessionView) throw new Error('Back left Session View');
-
-    /* The HOLD: MASTER FX too. */
-    shiftNoteHold();
-    ticks(3);
-    _bus = sound.soundBusForTest();
-    if (!_bus || _bus.id !== 'master')
-        throw new Error('the HOLD did not open MASTER FX in session view: ' + JSON.stringify(_bus));
-    sound.soundExit();
-    ticks(2);
-    S.sessionView = false;
-});
 
 step('⚠ control: with no gesture crumb, Menu is NOT a closer', () => {
     /* ⚠ Explicitly crumb-FREE. The HOLD stamps `genReturn` again as of
@@ -486,7 +338,7 @@ step('⚠ control: leaving by any other route SPENDS the crumb', () => {
     S.activeBank = 5;
     ticks(8);
     S.trackActiveBank[0] = 5;
-    shiftNoteHold();                        /* arms the crumb (the HOLD stamps it; a tap does not) */
+    instPad();                              /* arms the crumb */
     ticks(4);
     if (!S.genReturn) throw new Error('rig: the gesture armed no crumb');
     sound.soundExit();                      /* ...but we leave another way */
@@ -513,7 +365,7 @@ step('⚠ control: leaving by any other route SPENDS the crumb', () => {
  * it broke the MIDI-routed step below it.
  * ⚠ The observable is the SCREEN, not a popup — asserting a popup would now pass
  * against a gesture that opened nothing at all. */
-step('an EMPTY generator opens the INSTRUMENT picker (on the HOLD) — one picker, the generators in it', () => {
+step('an EMPTY generator: INST opens the INSTRUMENT picker — one picker, the generators in it', () => {
     /* 2026-09-04: the module browser is no longer a screen of its own for the
      * generator — the Instrument list carries every Schwung generator as a
      * group, so "choose a sound" lands there. */
@@ -528,7 +380,7 @@ step('an EMPTY generator opens the INSTRUMENT picker (on the HOLD) — one picke
         S.activeTrack = 0;
         S.trackRoute[0] = 0;                       /* Schwung chain */
         ticks(8);
-        shiftNoteHold();
+        instPad();
         ticks(6);
         if (sound.soundBrowseStateForTest().browsing)
             throw new Error('the gesture opened the old module browser, not the Instrument picker');
@@ -614,7 +466,7 @@ step('choosing a GENERATOR as the Instrument makes the track Schwung and loads i
     }
 });
 
-step('⭑ Back out of a HOLD-opened editor lands on the latched CARD you pressed from (2026-09-05)', () => {
+step('⭑ Back out of an INST-opened editor lands on the latched CARD you pressed from (2026-09-05)', () => {
     /* Josh: "after entering instrument editor from shift+hold note/session,
      * back should land you on the previous screen you were on". The crumb
      * carried the bank but not the LATCH, so a hold from a bank card came back
@@ -622,8 +474,8 @@ step('⭑ Back out of a HOLD-opened editor lands on the latched CARD you pressed
     S.sessionView = false; S.activeTrack = 0; S.trackRoute[0] = 0;
     if (sound.soundOpen()) sound.soundExit();
     S.activeBank = 3; S.bankCardLatched = true;
-    shiftNoteHold(); ticks(3);
-    if (!sound.soundOpen()) throw new Error('the hold did not open the editor');
+    instPad(); ticks(3);
+    if (!sound.soundOpen()) throw new Error('INST did not open the editor');
     /* ⚠ In this rig nothing stands the latch down while the editor is up, so
      * the restore below would be a no-op and this step could not fail (the
      * first cut survived its mutation). Stand it down here — whatever does so
@@ -648,13 +500,13 @@ step('⭑ Back out of a HOLD-opened editor lands on the latched CARD you pressed
  * which recorded the live bank whenever bank mode was latched, on the belief
  * that latched meant "the jog walked there". A shortcut into sound mode while a
  * bank card is latched made that false, and the track came back on SOUND+CFG. */
-step('⭐⭐ bank mode latched on bank 3, Shift+tap into the sound menu, then a SAVE: the track stays on bank 3', () => {
+step('⭐⭐ bank mode latched on bank 3, CONFIG pad into the sound menu, then a SAVE: the track stays on bank 3', () => {
     S.sessionView = false; S.activeTrack = 0; S.trackRoute[0] = 0;
     if (sound.soundOpen()) sound.soundExit();
     ticks(2);
     S.activeBank = 3; S.trackActiveBank[0] = 3; S.bankCardLatched = true;
-    shiftNoteTap(); ticks(3);
-    if (!sound.soundOpen()) throw new Error('rig: the tap did not open the sound menu');
+    configPad(); ticks(3);
+    if (!sound.soundOpen()) throw new Error('rig: the CONFIG pad did not open the sound menu');
     /* Since 2026-09-24: opening the menu never takes the bank at all. */
     if (S.activeBank !== 3) throw new Error('opening the menu changed the live bank to ' + S.activeBank);
     persist.writeSidecar();

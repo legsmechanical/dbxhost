@@ -1175,29 +1175,25 @@ function drawOverviewTracks(hints) {
     }
     drawKitHintRow(MV_FOOTER_Y, hints);
 }
-/* What the jog does at rest on each overview — the footer says only what is
- * true HERE (the canon): in both views a click opens the bank pad map (a hold
- * peeks it); the turn walks nothing since 2026-10-04. */
+/* What the controls do at rest on each overview — the footer says only what is
+ * true HERE (the canon). Josh, 2026-10-04: "get rid of the session/track
+ * footer hints (that's self explanatory). Add to track overview "Touch=Edit"
+ * and shift=track. when shift is held, show jog=track pad=track."
+ *   Track View    CLK BANKS · TCH EDIT · SHFT TRK   (SHFT TRACK would not fit:
+ *                 48 + 38 + 51 - 4 overflows 128; TRK is 41 — measured)
+ *   Session View  CLK BANKS (not under the Perf lock, which keeps the map shut)
+ *   Shift held    JOG TRACK · PAD TRACK (Track View — Shift + pad is its track
+ *                 pick); JOG TRACK in Session View, where a pad launches. */
 export function overviewHints() {
-    /* The MENU pair names the OTHER overview a Note/Session tap switches to
-     * (Josh, 2026-09-05: "MENU:[TRACK/GRID]"). */
-    /* TRK, not TRACK: ≡ TRACK would not fit beside the other two pairs (measured). */
-    /* The key is the ≡ printed on the button, not the word MENU (Josh).
-     * SHIFT HELD: the row names the Shift chords instead (Josh, 2026-09-05:
-     * "trk/sess change to config/fx when shift is held") — Shift+jog steps the
-     * track in every view, Shift+≡ opens the track's TRACK CONFIG menu in
-     * track view and MASTER FX in session view (the MASTER / SEND list is
-     * gone, 2026-10-04). No CLK pair: Shift+click is nothing here. */
     if (devSnapOpen()) return devSnapHints();   /* the snapshot layer (item 18), either view */
-    if (S.shiftHeld) return [['JOG', 'TRACK'], ['\u2261', S.sessionView ? 'MASTER' : 'CONFIG']];
-    /* A held step owns the jog here too (heldStepJog runs ahead of the bank
-     * walk): JOG STEP when there is a note to edit, no jog pair when there is
-     * not — and no CLK BANKS, which a held step keeps shut. */
+    if (S.shiftHeld) return S.sessionView ? [['JOG', 'TRACK']] : [['JOG', 'TRACK'], ['PAD', 'TRACK']];
+    /* A held step owns the jog here too (heldStepJog runs ahead of the map):
+     * JOG STEP when there is a note to edit, nothing when there is not — and
+     * no CLK BANKS, which a held step keeps shut. */
     if (stepHoldEstablished() && !S.sessionView)
-        return (stepRevealAvailable() ? [['JOG', 'STEP']] : []).concat([['\u2261', 'SESS']]);
-    /* The Perf lock keeps the Session map shut (bankMapArmable). */
-    const clk = S.sessionView && S.perfViewLocked ? [] : [['CLK', 'BANKS']];
-    return clk.concat([['\u2261', S.sessionView ? 'TRK' : 'SESS']]);
+        return stepRevealAvailable() ? [['JOG', 'STEP']] : [];
+    if (S.sessionView) return S.perfViewLocked ? [] : [['CLK', 'BANKS']];
+    return [['CLK', 'BANKS'], ['TCH', 'EDIT'], ['SHFT', 'TRK']];
 }
 
 function drawTrackRow(y) {
@@ -1570,7 +1566,8 @@ export function bankMapItems() {
                 { label: m.fx.label, cells: m.fx.names.slice() },
                 null, null,
             ],
-            cur: (S.sessKnobMode | 0) < 4 ? { c: 0, r: S.sessKnobMode | 0 } : null,
+            cur: S.bankMapDeferred ? { c: S.bankMapDeferred.col, r: S.bankMapDeferred.row }
+                : (S.sessKnobMode | 0) < 4 ? { c: 0, r: S.sessKnobMode | 0 } : null,
         };
     }
     const t = S.activeTrack;
@@ -1582,6 +1579,8 @@ export function bankMapItems() {
             return cell ? cell.name : null;
         }),
     }));
+    /* A menu pad waiting for the jog's release takes the filled box. */
+    if (S.bankMapDeferred) cur = { c: S.bankMapDeferred.col, r: S.bankMapDeferred.row };
     return { cols, cur };
 }
 function drawBankMap() {

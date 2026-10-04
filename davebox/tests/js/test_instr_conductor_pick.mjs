@@ -1,3 +1,4 @@
+import { openTrackConfigViaMap } from './_map_config.mjs';
 /* tests/js/test_instr_conductor_pick.mjs — CONDUCTOR IS CHOSEN IN THE PICKER.
  *
  * Josh, 2026-09-19: "conductor isn't like the other types. it completely changes
@@ -132,7 +133,7 @@ snd.soundSetGeneratorScanForTest(() => [{ id: 'nusaw', name: 'NuSaw' }, { id: 'o
 function openPicker(t) {
     snd.soundExit();
     S.activeTrack = t;
-    cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+    openTrackConfigViaMap();
     ticks(6);
     const st = snd.soundPickStateForTest();
     assert(st.kinds[st.row] === 'trackto',
@@ -304,6 +305,10 @@ step('⚠ CONTROL: while PLAYING nothing is converted and no route moves', () =>
     assert(!S.confirmConvertToConduct, 'asked to convert mid-playback');
     assert(!wrote(/^t1_route$/).length, 'a route moved mid-playback: ' + wrote(/^t1_/).join(','));
     S.playing = false;
+    /* The STOP PLAYBACK notice is up; a click dismisses it, as on the device
+     * (the menu map behind it cannot open through a notice). */
+    assert(S.menuInfoLines.length > 0, 'no notice said why nothing converted');
+    cc(3, 127); cc(3, 0); ticks(1);
     cc(51, 127); cc(51, 0); ticks(2);
 });
 
@@ -320,7 +325,7 @@ step('⭐ on a None track a PLAIN click opens the picker — nothing is chosen y
     ticks(2);
     snd.soundExit();
     S.activeTrack = 3;
-    cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+    openTrackConfigViaMap();
     ticks(6);
     const st = snd.soundPickStateForTest();
     assert(st.kinds[st.row] === 'trackto', 'the menu did not land on the Instmt/Dest row: ' + st.kinds[st.row]);

@@ -1,3 +1,4 @@
+import { openTrackConfigViaMap } from './_map_config.mjs';
 /* tests/js/test_custom_widgets.mjs — a module's OWN in-grid widget draws in
  * dAVEBOx's module editor (upstream #420 / #450 / #472, ported for dAVEBOx).
  *
@@ -191,7 +192,7 @@ function frame() { globalThis.clear_screen(); render.drawUI(); }
 
 /* Shift+Note -> the sound menu -> jog to the FX 1 row -> click. */
 function openFx1Editor() {
-    cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+    openTrackConfigViaMap();
     ticks(6);
     for (let guard = 0; ; guard++) {
         const st = snd.soundPickStateForTest();

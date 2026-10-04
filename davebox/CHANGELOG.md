@@ -19,7 +19,11 @@ the section into a versioned heading at release time.
   Session View the map holds the mixer modes and opens the Master, Send A and
   Send B effects directly.
 - **INST on the bank map** (beside MIX, melodic and drum tracks) opens the
-  track's instrument, just like Shift + hold Note/Session.
+  track's instrument.
+- **Tap through the whole map while holding the jog.** On a held map, CONFIG,
+  AUTOMATION, INST and the Session FX pads wait for you to let go of the jog
+  (the pad turns white) instead of closing the map; tapping a bank after one
+  cancels it.
 
 ### Changed
 - **Alt knobs switch one at a time: touch the knob and click the jog.** Res ↔
@@ -47,13 +51,16 @@ the section into a versioned heading at release time.
   longer locks it (the click is the bank map). Pages you open on purpose
   (Shift + hold Step 11's LIVE ARP, the editors, AUTOMATION, TRACK CONFIG)
   stay until Back. In Session View the mixer page shows the same way, and the
-  SESSION FX card is gone from the mixer modes — the Session map's FX pads (or
-  Shift + Note/Session) open the effects.
-- **The Session FX list is gone.** Shift + Note/Session in Session View (tap or
-  hold) opens Master FX, and Back from the top of Master, Send A or Send B
-  returns to the Session overview.
-- **The screens' footers name the bank map:** `CLK BANKS` on the overviews and
-  on a bank page while no knob is touched; `JOG BANK` and `CLK EDIT` are gone.
+  SESSION FX card is gone from the mixer modes — the Session map's FX pads
+  open the effects.
+- **The Session FX list is gone.** Back from the top of Master, Send A or Send
+  B returns to the Session overview.
+- **Shift + Note/Session no longer does anything** (tap or hold, either view):
+  TRACK CONFIG, the instrument and the Session effects are pads on the bank map.
+- **New overview footers.** Track View: `CLK BANKS` `TCH EDIT` `SHFT TRK`, and
+  with Shift held `JOG TRACK` `PAD TRACK`; Session View: `CLK BANKS`. A bank
+  page says `CLK BANKS` while no knob is touched. `JOG BANK`, `CLK EDIT` and
+  the `≡ SESS` / `≡ TRK` pair are gone.
 - **Clearer small letters.** N, A, B, G, K and O in the smallest screen font
   were redrawn: N no longer reads as K, O no longer matches 0, B no longer
   matches 8.

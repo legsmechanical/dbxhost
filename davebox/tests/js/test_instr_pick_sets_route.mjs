@@ -1,3 +1,4 @@
+import { openTrackConfigViaMap } from './_map_config.mjs';
 /* tests/js/test_instr_pick_sets_route.mjs — picking a Schwung generator on a
  * MOVE-routed track must move the track's ROUTE, not just load the module.
  *
@@ -131,7 +132,7 @@ snd.soundSetGeneratorScanForTest(() => [{ id: 'nusaw', name: 'NuSaw' }, { id: 'o
 /* The gesture, end to end: Shift+Note to the menu (it lands on the Instrument
  * row), Shift+click to open the picker, jog to `name`, click to commit. */
 function pickGenerator(name) {
-    cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+    openTrackConfigViaMap();
     ticks(6);
     const st = snd.soundPickStateForTest();
     if (st.kinds[st.row] !== 'trackto')

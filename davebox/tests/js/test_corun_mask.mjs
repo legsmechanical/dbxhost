@@ -365,22 +365,16 @@ step('⚠ Shift+Note/Session opens neither sound mode nor the session buses', ()
     const body = src.slice(i, nextHandler);
     if (/pendingBusMenu\s*=\s*true/.test(body))
         throw new Error('Shift+Note opens the session buses again');
-    /* ⚠⚠ REWRITTEN 2026-08-28. This used to require `soundExit()` in the
-     * handler — the CLOSER — and a `soundAtBlockRoot()` gate on it. Both are
-     * gone by Josh's respec: the gesture is a DESTINATION now, never a toggle.
-     * It always goes to the same place, so there is no "is something open"
-     * question to answer and no root exception to carve out. Keeping the old
-     * assertions would have pinned a rule the design no longer has.
-     *
-     * What the handler must NOT do is act on the PRESS: tap and hold mean
-     * different things and only the duration separates them, so the press
-     * records a tick and the release decides. A handler that opened anything
-     * from the press would make every hold a tap. */
-    if (!/shiftNoteSessionTick\s*=\s*nowMs\(\)/.test(body))
-        throw new Error('the press no longer records its time (ms off ui_clock) — tap and hold cannot be told ' +
-                        'apart, so a hold would fire as a tap');
-    if (/soundExit\(\)/.test(body))
-        throw new Error('the closer is back: the gesture is a destination, not a toggle');
+    /* ⚠⚠ RETIRED 2026-10-04 (Josh: "remove the shift note/session shortcuts
+     * in both session and track view since all those are now available through
+     * the pad map"). Shift + Note/Session opens NOTHING: no menu, no
+     * instrument, no session bus. The handler may not name any of them. */
+    for (const opener of ['shiftNoteSessionAction', 'openTrackInstrument', 'soundEnterMasterFx',
+                          'soundEnterBuses', 'soundShowMenu', 'pendingSoundEnterMenu'])
+        if (body.indexOf(opener) >= 0)
+            throw new Error('the Note/Session handler names ' + opener + ' — the Shift opener is back');
+    if (!/if \(S\.shiftHeld\) \{[\s\S]{0,800}?_modalSwallowCC = MoveNoteSession;\s*return;/.test(body))
+        throw new Error('Shift + Note/Session is no longer swallowed — it falls through to the view switch');
 });
 
 /* ── SHIFT IN CO-RUN (Josh, 2026-09-28) ─────────────────────────────────────

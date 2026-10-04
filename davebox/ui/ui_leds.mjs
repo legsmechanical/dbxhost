@@ -570,17 +570,20 @@ const SESS_MAP_COLORS = [VividYellow, Cyan, Violet, Violet];   /* VOLUME, PAN, S
 function paintBankMapPads() {
     const col = new Array(32).fill(LED_OFF);
     const at = (c, r) => bankMapPadForCell(c, r) - TRACK_PAD_BASE;
+    /* A menu pad waiting for the jog's release is the one White pad. */
+    const d = S.bankMapDeferred;
     if (S.bankMapKind === 'session') {
         for (let r = 0; r < 4; r++) {
-            col[at(0, r)] = r === S.sessKnobMode ? White : SESS_MAP_COLORS[r];
-            if (SESS_PAD_MAP.fx.buses[r]) col[at(1, r)] = BrightOrange;
+            col[at(0, r)] = !d && r === S.sessKnobMode ? White : SESS_MAP_COLORS[r];
+            if (SESS_PAD_MAP.fx.buses[r]) col[at(1, r)] = d && d.col === 1 && d.row === r ? White : BrightOrange;
         }
     } else {
         const t = S.activeTrack;
         bankPadMapForMode(S.trackPadMode[t], t).forEach((c, ci) => c.cells.forEach((cell, r) => {
             if (!cell) return;
             const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND || cell.action === 'inst';
-            col[at(ci, r)] = cell.bank !== null && cell.bank === S.activeBank ? White
+            const on = d ? (d.col === ci && d.row === r) : (cell.bank !== null && cell.bank === S.activeBank);
+            col[at(ci, r)] = on ? White
                 : own ? trackColor(t) : BANK_MAP_COL_COLORS[ci];
         }));
     }

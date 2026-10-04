@@ -1,4 +1,5 @@
 import './_bulk_get_stub.mjs';
+import { openTrackConfigViaMap } from './_map_config.mjs';
 /* tests/js/test_instr_exclusive.mjs — ONE dAVEBOx TRACK PER MOVE INSTRUMENT
  * (Josh, 2026-09-13: "we should never allow a track to address a move track
  * that's already addressed").
@@ -123,7 +124,7 @@ function ticks(n) { for (let i = 0; i < n; i++) { S.tickCount++; S.clockMs += 11
 const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 snd.soundSetGeneratorScanForTest(() => [{ id: 'nusaw', name: 'NuSaw' }]);
 function openPicker() {
-    cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+    openTrackConfigViaMap();
     ticks(6);
     cc(MoveShift, 127); cc(3, 127); cc(3, 0); cc(MoveShift, 0);
     ticks(4);

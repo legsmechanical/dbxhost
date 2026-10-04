@@ -861,7 +861,6 @@ export const S = {
     /* Shift+Note/Session: the tick of an unresolved press. The gesture resolves
      * on RELEASE — tap opens the SOUND + CONFIG menu, hold goes to instrument
      * edit — so the press only records when it happened. -1 = none pending. */
-    shiftNoteSessionTick: -1,
     /* Shift + Step 11 (Josh, 2026-10-03): a TAP toggles LIVE ARP, a HOLD opens
      * its settings. nowMs() of the press while it is undecided, -1 otherwise. */
     shiftStep11Tick: -1,
@@ -1081,6 +1080,7 @@ export const S = {
      * a tapped map pad, or one the map let go of. Swallowed even if the jog
      * comes up first, so no note-off lands for a note that never sounded. */
     bankMapSwallow: new Set(),
+    bankMapDeferred: null,   /* a MENU pad tapped on a held map, opened on the release */
     /* Tick of the last picker turn, for the SETTLE fallback. The gesture
      * normally ends with the jog-touch release, but a turn can arrive with no
      * touch at all (the capacitive read can miss a quick flick, and the remote

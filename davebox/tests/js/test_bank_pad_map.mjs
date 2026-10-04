@@ -327,8 +327,9 @@ step('⭐⭐ a CONFIG pick clicks INTO it: the TRACK CONFIG menu is up, the map 
     home();
     press(); holdPast();
     tap(pad(0, 3));                                    /* CONFIG, bottom-left */
-    assert(!S.bankMapUp && S.jogPressMs < 0, 'the map stayed up over the editor');
+    assert(S.bankMapUp && !snd.soundActive(), 'a HELD map opened CONFIG before the release');
     release();
+    assert(!S.bankMapUp && S.jogPressMs < 0, 'the map stayed up over the editor');
     tickS(4);
     assert(S.activeBank === 0, 'CONFIG became the bank (it is a screen): ' + S.activeBank);
     assert(snd.soundActive() && snd.soundViewForTest() === 0, 'not in the TRACK CONFIG menu: view ' + snd.soundViewForTest());
@@ -340,8 +341,9 @@ step('⭐⭐ an AUTOMATION pick clicks INTO it: its menu is open and on screen; 
     home(); tickS(2);
     press(); holdPast();
     tap(pad(1, 1));                                    /* AUTOMATION */
-    assert(!S.bankMapUp, 'the map stayed up');
+    assert(S.bankMapUp && !ab.autoBankMenuOpen(), 'a HELD map opened AUTOMATION before the release');
     release();
+    assert(!S.bankMapUp, 'the map stayed up');
     assert(S.activeBank === C.BANK_AUTOMATION && ab.autoBankMenuOpen(), 'menu not open');
     assert(render.bankCardVisible(), 'the menu is not on screen');
     tickS(2);
@@ -384,10 +386,10 @@ step('Session: a MIXER pad walks the mode; MASTER opens its effects; the right h
     tap(pad(6, 0));
     assert(S.bankMapUp, 'a right-half press did something');
     tap(pad(1, 0));
-    assert(snd.soundOpen(), 'MASTER did not open the effect buses');
-    assert(!S.bankMapUp, 'the map stayed over the bus editor');
+    assert(!snd.soundOpen() && S.bankMapUp, 'a HELD map opened MASTER before the release');
     release();
-    assert(snd.soundOpen() && S.jogPressMs < 0, 'the jog release after the FX tap acted');
+    assert(snd.soundOpen(), 'MASTER did not open the effect buses on the release');
+    assert(!S.bankMapUp && S.jogPressMs < 0, 'the map stayed over the bus editor');
 });
 
 step('⭐ Session, latched: a MIXER pad walks the mode AND the map goes; an FX pad opens its bus', () => {
@@ -440,14 +442,14 @@ step('⭐⭐ INST from a LATCHED map opens the track\'s instrument (the Shift + 
     snd.soundExit(); tickS(2);
 });
 
-step('INST from a HELD map: same door, and letting the jog go afterwards does nothing', () => {
+step('INST from a HELD map: it waits for the jog\'s release, then the same door', () => {
     home(); tickS(2);
     S.genReturn = null;
     press(); holdPast();
     tap(pad(2, 3));
-    assert(!S.bankMapUp && S.jogPressMs < 0, 'the held map stayed');
+    assert(S.bankMapUp && !S.genReturn, 'a HELD map opened INST before the release');
     release();
-    assert(!S.bankMapUp && !S.bankMapLatched, 'the release re-opened or latched the map');
+    assert(!S.bankMapUp && !S.bankMapLatched && S.jogPressMs < 0, 'the release left the map up or latched');
     tickS(4);
     assert(snd.soundActive() && S.genReturn && S.genReturn.track === 2, 'the instrument did not open from a held map');
     snd.soundExit(); tickS(2);
@@ -484,7 +486,7 @@ step('⭐ overview hints: CLK BANKS where the click opens the map, never JOG BAN
     S.shiftHeld = true;
     const sh = render.overviewHints();
     S.shiftHeld = false; S.sessionView = false;
-    assert(sh.some((p) => p[0] === '≡' && p[1] === 'MASTER'), 'Shift in Session View does not name MASTER: ' + JSON.stringify(sh));
+    assert(JSON.stringify(sh) === JSON.stringify([['JOG', 'TRACK']]), 'Shift in Session View: ' + JSON.stringify(sh));
 });
 
 step('⭐ bank page hints: CLK BANKS untouched, none with a knob touched (it keeps the map shut), none on a door bank', () => {
@@ -499,6 +501,74 @@ step('⭐ bank page hints: CLK BANKS untouched, none with a knob touched (it kee
     h = render.bankPageHints(C.BANK_AUTOMATION);
     assert(clkOf(h) !== 'BANKS', 'AUTOMATION (a door) offers the map: ' + JSON.stringify(h));
     home();
+});
+
+/* ⭑⭑ A HELD map holds the MENU pads until the jog is let go (Josh,
+ * 2026-10-04: "when pad bank map is momentary, can we hold the menu entries
+ * (automation, instrument, config, others?) until release of jog to allow ALL
+ * pads to be tapped through without exiting map?"). */
+step('⭐⭐ held: tap through CONFIG, AUTOMATION, INST and banks — the map stays; the menu pad waits, White and boxed', () => {
+    if (snd.soundOpen()) snd.soundExit();
+    home(); tickS(2);
+    S.genReturn = null;
+    press(); holdPast();
+    for (const [c, r] of [[0, 3], [1, 1], [2, 3]]) {          /* CONFIG, AUTOMATION, INST */
+        tap(pad(c, r));
+        assert(S.bankMapUp && S.jogPressMs >= 0, 'a menu pad ended the held map: ' + c + ',' + r);
+        assert(!snd.soundActive() && !ab.autoBankMenuOpen() && !S.genReturn, 'a menu opened mid-hold: ' + c + ',' + r);
+        ticks(6);
+        assert(led[pad(c, r)] === K.White, 'the waiting pad is not White: ' + c + ',' + r + ' = ' + led[pad(c, r)]);
+        assert(led[pad(2, 1)] !== K.White, 'CLIP (the bank you are on) stayed White beside the waiting pad');
+        assert(cellInk(frame(), c, r) > 0.6, 'the waiting pad is not the filled box on screen: ' + c + ',' + r);
+    }
+    tap(pad(3, 2));                                           /* DELAY: a bank — cancels the wait */
+    assert(S.activeBank === 3 && S.bankMapUp && !S.bankMapDeferred, 'a bank tap did not pick and cancel the waiting menu');
+    ticks(6);
+    assert(led[pad(3, 2)] === K.White && led[pad(2, 3)] !== K.White, 'the White pad did not move back to the bank');
+    release();
+    assert(!S.bankMapUp && !snd.soundActive() && !S.genReturn && !ab.autoBankMenuOpen(),
+           'the release opened a menu a bank tap had cancelled');
+    assert(S.activeBank === 3, 'the bank pick did not stand: ' + S.activeBank);
+});
+
+step('held: the LAST menu pad tapped is the one the release opens', () => {
+    home(); tickS(2);
+    press(); holdPast();
+    tap(pad(0, 3));                                           /* CONFIG... */
+    tap(pad(1, 1));                                           /* ...then AUTOMATION */
+    release();
+    assert(ab.autoBankMenuOpen() && S.activeBank === C.BANK_AUTOMATION, 'AUTOMATION did not open on the release');
+    assert(!snd.soundActive(), 'CONFIG opened as well');
+    backBtn(); tickS(2);
+});
+
+step('held: Shift (the map goes another way) DISCARDS a waiting menu pad', () => {
+    home(); tickS(2);
+    press(); holdPast();
+    tap(pad(0, 3));
+    midi(0xB0, 49, 127);                                      /* Shift ends the hold */
+    midi(0xB0, 49, 0);
+    release();
+    tickS(4);
+    assert(!S.bankMapUp && !S.bankMapDeferred && !snd.soundActive(), 'a discarded CONFIG opened anyway');
+});
+
+step('⭐ the TRACK overview footer: CLK BANKS · TCH EDIT · SHFT TRK, all drawn; Shift: JOG TRACK · PAD TRACK; no menu-key pair', () => {
+    if (snd.soundOpen()) snd.soundExit();
+    home(); S.sessionView = false; tickS(2);
+    const h = render.overviewHints();
+    assert(JSON.stringify(h) === JSON.stringify([['CLK', 'BANKS'], ['TCH', 'EDIT'], ['SHFT', 'TRK']]), 'track overview: ' + JSON.stringify(h));
+    assert(kit.drawKitHintRow(kit.MV_FOOTER_Y, h) === 3, 'the row does not fit all three pairs');
+    S.shiftHeld = true;
+    const sh = render.overviewHints();
+    S.shiftHeld = false;
+    assert(JSON.stringify(sh) === JSON.stringify([['JOG', 'TRACK'], ['PAD', 'TRACK']]), 'Shift: ' + JSON.stringify(sh));
+    S.sessionView = true;
+    const ses = render.overviewHints();
+    S.sessionView = false;
+    assert(JSON.stringify(ses) === JSON.stringify([['CLK', 'BANKS']]), 'session overview: ' + JSON.stringify(ses));
+    for (const k of ['CLK', 'TCH', 'SHFT', 'JOG', 'PAD'])
+        assert(kit.MV_FOOTER_CANON.keys.indexOf(k) >= 0, k + ' is not a canon key');
 });
 
 if (failed) { console.error('test_bank_pad_map: FAIL'); process.exit(1); }

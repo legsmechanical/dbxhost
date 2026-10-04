@@ -62,7 +62,7 @@ import { pollDSP,
     pendingDrumNoteOffs, _drumRecNoteOns, _drumRecNoteOffs } from './ui_dsp_bridge.mjs';
 import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes, stepRecExit } from './ui_record.mjs';
 import { xposeCancelPreview } from './ui_xpose.mjs';
-import { checkBackHold, checkShiftNoteHold, backTapWouldAct, applyShiftEdge, raiseExitConfirm, syncCoRunShift, goToSessionOverview,
+import { checkBackHold, backTapWouldAct, applyShiftEdge, raiseExitConfirm, syncCoRunShift, goToSessionOverview,
     bankMapEnd, checkShiftStep11Hold } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
@@ -457,7 +457,6 @@ export function _tickImpl() {
     if (S.clockMs >= S.instrAbbrevAt) refreshInstrAbbrev();
     loadDaveTick();
     checkBackHold();   /* self-managed Back: fire suspend once a held Back crosses the long-press threshold */
-    checkShiftNoteHold();  /* Shift+Note/Session: the HOLD fires at the threshold, not on release */
     checkShiftStep11Hold(); /* Shift+Step 11: likewise — LIVE ARP's settings */
     /* Note/Session left a co-run: once the host has handed the screen back,
      * land on Session View, its destination everywhere else. */

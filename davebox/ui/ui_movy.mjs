@@ -2416,7 +2416,9 @@ export const MV_RULE_Y = MV_FOOTER_Y - 1;
 export const MV_FOOTER_CANON = Object.freeze({
     /* KNB+CLK: the one two-control key — touch any knob and click (RPT
      * GROOVE's page flip); KNB alone would not say "+ click". */
-    keys: Object.freeze(['JOG', 'CLK', 'BACK', 'SHFT', 'MUTE', 'KNB', 'KNB+CLK']),
+    /* TCH: a touch (a knob or the jog) shows the page to edit; PAD: a pad
+     * (Shift + pad picks the track) — the track overview's footer, 2026-10-04. */
+    keys: Object.freeze(['JOG', 'CLK', 'BACK', 'SHFT', 'MUTE', 'KNB', 'KNB+CLK', 'TCH', 'PAD']),
     backActions: Object.freeze(['EXIT', 'OUT']),
 });
 

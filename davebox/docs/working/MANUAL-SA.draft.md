@@ -292,10 +292,11 @@ The Track View overview, top to bottom:
   viewing, outlined for the page playing, with a tick for the playhead. A small mark
   at either end means there are notes outside the loop.
 - **Footer:** what the controls do here — `CLK BANKS` (click for the
-  [bank map](#36-parameter-banks)), `≡ SESS` (Note/Session switches to Session
-  View; `≡ TRK` in Session View, the other way). A bank page says `CLK BANKS`
-  too while no knob is touched. Hold **Shift** and it names the Shift chords
-  instead.
+  [bank map](#36-parameter-banks)), `TCH EDIT` (touch a knob or the jog to see
+  the bank's page and edit it) and `SHFT TRK` (Shift picks the track). Hold
+  **Shift** and it reads `JOG TRACK` `PAD TRACK`: turn the jog, or tap a pad,
+  for the track. In Session View the footer is `CLK BANKS`. A bank page says
+  `CLK BANKS` too while no knob is touched.
 
 ## 3.5 Selecting a track
 
@@ -323,8 +324,7 @@ A melodic track starts on **CLIP** and a drum track on **DRUM LANE**: the banks
 before it are what plays into the track, the ones after it its effects (in the
 order the notes pass through them) and, last, MIX.
 **CONFIG** (the track's TRACK CONFIG menu) and **AUTOMATION** are reached from
-the bank map (below) or their shortcut —
-**Shift + Note/Session** for TRACK CONFIG. They are **screens, not banks**:
+the bank map (below). They are **screens, not banks**:
 opening one never changes the bank you're on (the overview and a knob peek
 still show it), and **Back** from the screen's top level returns you exactly
 where you were. **Shift + hold Step 11** jumps straight to LIVE ARP.
@@ -345,7 +345,10 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   is up.
 - **Hold the jog** to peek the map instead: it appears the moment you press;
   tap a pad — as many as you like, the map stays while you hold — and **let
-  go** to play again. Letting go within half a second without tapping or
+  go** to play again. **CONFIG**, **AUTOMATION** and **INST** (and Session
+  View's **MASTER**, **SEND A** and **SEND B**) open a screen, so on a held map
+  they wait: the pad turns white, and the screen opens when you let go. Tap a
+  bank after one and nothing opens. Letting go within half a second without tapping or
   turning counts as a click, so the map stays up. Holding the jog while the map
   is already up and tapping leaves it up.
 - **Turning the jog** does not change the bank.
@@ -447,8 +450,7 @@ a **Shift + Step** shortcut (see the [Quick Reference](#19-quick-reference)).
 
 Each track's sound is set in its own menu, **TRACK CONFIG**:
 
-1. Hold the jog and tap the **CONFIG** pad (bottom-left of the bank map), or
-   press **Shift + Note/Session** from anywhere in Track View.
+1. Click the jog and tap the **CONFIG** pad (bottom-left of the bank map).
 2. **Shift + click** the top row, **Instmt/Dest**, to choose what the track plays:
    one of Move's four instruments, a Schwung instrument, a MIDI channel, and more.
 3. **Click** Instmt/Dest to edit the instrument. On a Move track this opens Move's
@@ -1627,16 +1629,13 @@ does the same on its SEND A and SEND B pages: touch any track's knob and click.
 
 | Gesture | Result |
 |---|---|
-| **Click the jog** on CONFIG | Open TRACK CONFIG (from the overview, the first click opens the card) |
-| **Shift + Note/Session** (Track View) | Open it from anywhere — from deep inside it, back to its top in one press |
-| **Shift + hold Note/Session** (Track View) | Go straight to the track's instrument |
+| **CONFIG** pad on the bank map | Open TRACK CONFIG |
+| **INST** pad on the bank map | Go straight to the track's instrument |
 | **Back** | Step out one level; from the top, back to the bank's card |
 | **Hold Back** | Return to the track overview; coming back brings the screen with it |
 | **Note/Session** | Close it and go to Session View |
 
 - Once open, the menu **stays up until you leave it**.
-- In Session View, Shift + Note/Session opens **Master FX** instead (see
-  [Master FX and the sends](#148-master-fx-and-the-sends)).
 - Outside a module's own pages, knobs 1–4 stay the track's levels.
 
 Every list works as described in [Menus & Project Settings](#37-menus--project-settings).
@@ -1703,7 +1702,7 @@ the click and the Shift chord do.
   says how many and asks first (**CHANGE TO …?**).
 
 **To change a Move instrument's kit or preset,** click the Instmt/Dest row — or
-hold **Shift + Note/Session** — to open Move's own editor for that instrument (Track
+tap **INST** on the bank map — to open Move's own editor for that instrument (Track
 View only), and work with it as you would on Move.
 
 - Move takes the screen, jog, knobs, **Back**, **Mute** and **Shift** (so
@@ -1889,7 +1888,7 @@ and **SEND FX B** — each with four effect blocks, edited exactly like a track'
   share one reverb or delay. Each send's **Return** level sets how much comes back
   into the mix.
 
-To reach them, click or hold the jog in Session View and tap **MASTER**, **SEND A** or **SEND B** on the Session map — or press **Shift + Note/Session** for Master FX. **Back** from an effect bus's top level returns to the Session overview.
+To reach them, click or hold the jog in Session View and tap **MASTER**, **SEND A** or **SEND B** on the Session map. **Back** from an effect bus's top level returns to the Session overview.
 
 ---
 
@@ -2456,7 +2455,6 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Undo / Shift + Undo | Undo / redo |
 | Back (tap / hold) / Shift + Back | Step out one level / back to the overview / save and leave dAVEBOx (asks first) |
 | Note/Session (tap / hold) | On an overview: switch / peek view — anywhere else: close it and go to Session View |
-| Shift + Note/Session (tap / hold) | This track's sound editor / straight to its instrument — in Session view, Master FX (tap or hold) |
 | Shift + Step 2 | Project Settings |
 
 ### Drum track (additions)
@@ -2477,7 +2475,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 
 | Control | Action |
 |---|---|
-| Jog to CONFIG, then click · Shift + Note/Session | Open it |
+| The CONFIG pad on the bank map | Open it |
 | Shift + click Instmt/Dest | Choose what the track plays |
 | Click Instmt/Dest | Edit the instrument (on a Move track, Move's own editor) |
 | Click an empty FX row · Shift + click an FX row | Add an effect · swap or move it |
@@ -2526,7 +2524,6 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Loop (tap / hold) | Lock / hold Performance Mode |
 | Shift + Loop | Performance Mode Latch |
 | Loop + step / Loop + Shift + step / Loop + Delete + step | Recall / save / clear Performance preset (no Loop needed while it's locked) |
-| Shift + Note/Session (tap / hold) | Master FX |
 
 ### LED & screen states
 

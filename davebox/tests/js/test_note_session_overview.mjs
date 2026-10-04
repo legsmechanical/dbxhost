@@ -266,16 +266,18 @@ step('⭐ the RELEASE is swallowed after an escape — it must not flip the view
     if (S._modalSwallowCC === NS) throw new Error('the swallow was not cleared by the release');
 });
 
-step('⭐ Shift+Note/Session still opens from OFF-overview — the escape must not shadow it', () => {
+step('⭐ Shift+Note/Session from OFF-overview does nothing — no escape, no opener (retired 2026-10-04)', () => {
     rest();
     S.bankCardLatched = true;
     S.shiftHeld = true;
+    const sv = S.sessionView;
     cc(NS, 127);
-    if (S.shiftNoteSessionTick < 0)
-        throw new Error('the shift gesture was not armed — the escape ran first and shadowed it');
     if (cc_mod.atOverview())
-        throw new Error('the escape ran under Shift, destroying the state the gesture opens from');
-    S.shiftNoteSessionTick = -1; S.shiftHeld = false; cc(NS, 0);
+        throw new Error('the escape ran under Shift, tearing down the card for a gesture that does nothing');
+    cc(NS, 0);
+    if (S.sessionView !== sv) throw new Error('the release fell through to the view switch');
+    if (!S.bankCardLatched) throw new Error('the card went');
+    S.shiftHeld = false;
 });
 
 step('⭐ DRIFT PIN: every state Back knows about is a state the law knows about', () => {
