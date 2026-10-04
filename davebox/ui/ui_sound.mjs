@@ -12617,6 +12617,15 @@ installPpCtx({
          * rig hands the crumbs in).
          */
         const divedFrom = paramPagesPageLabel();
+        /* ⭐ THE PAGE TO COME BACK TO is the one you dove FROM (Josh,
+         * 2026-10-04: "leaving DR32's engine picker lands on a preset page
+         * instead of Pad"). Recorded here as ppSync's exit branch records it
+         * for an errand — the dive tears the grid down itself, so that branch
+         * never runs, and the return restored whatever an EARLIER errand left
+         * (My Presets after a preset load), or the first page with none. Read
+         * before the exit, for the same reason as the label above. */
+        const pgNow = currentParamPage();
+        ppRestorePage = (pgNow && pgNow.name) ? { slot: S.slot, comp: S.comp, name: pgNow.name } : null;
         clearParamPagesTouch();
         exitParamPages();
         ppOn = false; ppEditLatched.clear();

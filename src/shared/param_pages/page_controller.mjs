@@ -1382,7 +1382,13 @@ export function createController(io = {}) {
         s.restoreName = (typeof name === "string" && name) ? name : null;
         s.restoreKey = (!s.restoreName && typeof key === "string" && key) ? key : null;
         s.restoreEnter = !!enter;
+        /* A restore that MOVES the page says so. load() announced the page it
+         * landed on before the caller asked for this one, so a silent move left
+         * the screen reader naming one page while another was drawn (a module
+         * editor re-entered onto its remembered page). */
+        const before = s.pageIndex;
         applyPendingRestore();
+        if (s.pageIndex !== before) announcePageChange();
     }
 
     function applyPendingRestore() {
