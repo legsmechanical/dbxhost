@@ -173,6 +173,35 @@ step('⭐⭐ RPT GROOVE: touch ANY knob + click flips to Nudge; the footer says 
     S.trackPadMode[2] = C.PAD_MODE_MELODIC_SCALE;
 });
 
+/* MIX and MACROS are sound mode's cards: their footers name the bank map
+ * (CLK BANKS) while no knob is touched — the jog turn walks nothing since
+ * 2026-10-04 — and a touched knob's own click instead. */
+const pure = await import('../../ui/ui_pure.mjs');
+for (const [bank, name, want] of [[C.BANK_SOUND, 'MIX', null], [C.BANK_MACROS, 'MACROS', 'ASSIGN']]) {
+    step('⭐ ' + name + ' card: CLK BANKS untouched, never JOG BANK; a touched knob takes the CLK', () => {
+        home();
+        let pad = -1;
+        for (let c = 0; c < 4 && pad < 0; c++) for (let r = 0; r < 4; r++)
+            if (pure.bankPadMapCellAt(S.trackPadMode[2], 2, c, r) === bank) { pad = pure.bankMapPadForCell(c, r); break; }
+        click();
+        midi(0x90, pad, 100); midi(0x80, pad, 0); ticks(4);
+        assert(S.activeBank === bank && !S.bankMapUp, 'setup: not on ' + name + ' (' + S.activeBank + '), map up ' + S.bankMapUp);
+        S.bankCardLatched = true; ticks(4);
+        assert(render.bankCardVisible(), 'setup: ' + name + '\'s card is not up: open ' + snd.soundOpen() + ' pending ' + S.pendingSoundEnterTrack + ' route ' + S.trackRoute[2]);
+        let h = (frame(), kit.kitHintsForTest());
+        assert(h.some((p) => p[0] === 'CLK' && p[1] === 'BANKS') && !h.some((p) => p[0] === 'JOG'),
+               name + ' untouched: ' + JSON.stringify(h));
+        touch(5);
+        h = (frame(), kit.kitHintsForTest());
+        assert(!h.some((p) => p[0] === 'CLK' && p[1] === 'BANKS'), name + ' touched still offers the map: ' + JSON.stringify(h));
+        if (want) assert(h.some((p) => p[0] === 'CLK' && p[1] === want), name + ' touched: ' + JSON.stringify(h));
+        untouch(5);
+        back(); back(); ticks(2);
+        if (snd.soundActive()) snd.soundExit();
+        S.bankCardLatched = false; toBank(0);
+    });
+}
+
 if (failed) process.exit(1);
 console.log('test_knob_click_editors: all ok');
 }
