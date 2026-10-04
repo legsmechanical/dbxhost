@@ -167,6 +167,18 @@ step('latched: hold, tap, let go — the map stays latched', () => {
     assert(!S.bankMapUp, 'the click did not close it');
 });
 
+step('⭐ latched: Shift (a chord that needs the pads) puts the map away; Play does not', () => {
+    home();
+    press(); release();
+    assert(S.bankMapLatched, 'setup: latched');
+    midi(0xB0, 85, 127); midi(0xB0, 85, 0); ticks(2);          /* Play */
+    assert(S.bankMapLatched && S.bankMapUp, 'Play closed the map');
+    midi(0xB0, 85, 127); midi(0xB0, 85, 0); ticks(2);          /* stop again */
+    midi(0xB0, 49, 127);                                       /* Shift */
+    assert(!S.bankMapUp && !S.bankMapLatched, 'Shift did not put the latched map away');
+    midi(0xB0, 49, 0); ticks(2);
+});
+
 step('turning while held walks NO bank (retired 2026-10-04), and the release is not a click', () => {
     home();
     press();
