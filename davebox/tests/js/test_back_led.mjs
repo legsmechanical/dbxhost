@@ -140,6 +140,17 @@ step('⭐ TRACK CONFIG (sound mode, from the CONFIG pad): lit; Back out to the o
     assert(!snd.soundActive() && !lit(), 'after Back: sound ' + snd.soundActive() + ', LED lit ' + lit());
 });
 
+step('⭐ the instrument editor from the INST pad on the OVERVIEW (no bank page held): lit; Back retraces, dark', () => {
+    reset();
+    press(); release(); tap(pad(2, 3)); tickS(4);
+    S.tickCount += 400; tickS(4);                 /* past any bank-display window */
+    assert(snd.soundActive(), 'rig: the instrument editor did not open');
+    assert(!S.bankCardLatched && S.bankSelectTick < 0 && !S.jogTouched, 'rig: a bank page is held too — the case would not isolate sound mode');
+    assert(lit(), 'Back is dark in the instrument editor');
+    for (let i = 0; i < 4 && snd.soundActive(); i++) backTap();
+    assert(!snd.soundActive() && !lit(), 'after Back: sound ' + snd.soundActive() + ', LED lit ' + lit());
+});
+
 step('⭐ the AUTOMATION screen (from its pad): lit; Back dismisses it, dark', () => {
     reset();
     press(); release(); tap(pad(1, 1)); tickS(3);
