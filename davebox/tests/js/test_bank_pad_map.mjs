@@ -553,6 +553,21 @@ step('held: Shift (the map goes another way) DISCARDS a waiting menu pad', () =>
     assert(!S.bankMapUp && !S.bankMapDeferred && !snd.soundActive(), 'a discarded CONFIG opened anyway');
 });
 
+step('held Session map: MASTER waits; a MIXER pad after it cancels it — the release opens nothing', () => {
+    if (snd.soundOpen()) snd.soundExit();
+    home(); S.sessionView = true; S.sessKnobMode = 0; tickS(2);
+    press(); holdPast();
+    tap(pad(1, 0));                                           /* MASTER: waits */
+    assert(S.bankMapUp && !snd.soundOpen(), 'MASTER opened mid-hold');
+    ticks(6);
+    assert(led[pad(1, 0)] === K.White && led[pad(0, 0)] !== K.White, 'the waiting MASTER pad is not the White one');
+    tap(pad(0, 1));                                           /* PAN */
+    assert(S.sessKnobMode === 1 && !S.bankMapDeferred, 'PAN did not take, or MASTER still waits');
+    release(); tickS(3);
+    assert(!snd.soundOpen() && !S.bankMapUp, 'the release opened MASTER after a mixer pick cancelled it');
+    S.sessionView = false; tickS(2);
+});
+
 step('⭐ the TRACK overview footer: CLK BANKS · TCH EDIT · SHFT TRK, all drawn; Shift: JOG TRACK · PAD TRACK; no menu-key pair', () => {
     if (snd.soundOpen()) snd.soundExit();
     home(); S.sessionView = false; tickS(2);
