@@ -95,10 +95,11 @@ export function bankListForMode(padMode, t) {
 /* DOORS (Josh, 2026-10-03: "let's also hide config and automation from the
  * bank list. i think we may not need them with this new shortcut system.
  * same with live arp."): banks you reach by a shortcut or the bank pad map,
- * never by turning the jog. They stay on the map. RPT GROOVE (bank 5 on a
- * drum track) is not LIVE ARP and stays on the drum walk. */
+ * never by turning the jog. They stay on the map. LIVE ARP came back as an
+ * ordinary bank on 2026-10-04 (Josh: "put the live arp back as a bank that
+ * can stay on the knobs after the page closes like all the other banks"). */
 const BANK_WALK_DOORS = {
-    melodic: [BANK_CONFIG, BANK_AUTOMATION, 5],
+    melodic: [BANK_CONFIG, BANK_AUTOMATION],
     drum:    [BANK_CONFIG, BANK_AUTOMATION],
     conduct: [BANK_CONFIG],
 };

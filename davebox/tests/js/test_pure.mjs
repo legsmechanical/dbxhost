@@ -110,22 +110,22 @@ eq(_clipIsEmpty(1, 2), false, '_clipIsEmpty drum non-empty');
 S.activeTrack = 0;
 S.trackPadMode[0] = 0;
 S.activeBank = 3;
-eqObj(bankCyclePos(), { idx: 5, count: 8 }, 'bankCyclePos melodic mid');   /* DELAY, third in FX */
+eqObj(bankCyclePos(), { idx: 6, count: 9 }, 'bankCyclePos melodic mid');   /* DELAY, third in FX */
 S.activeBank = 9;                          /* not on the walk -> 0 */
-eqObj(bankCyclePos(), { idx: 0, count: 8 }, 'bankCyclePos melodic not-in-cycle');
+eqObj(bankCyclePos(), { idx: 0, count: 9 }, 'bankCyclePos melodic not-in-cycle');
 S.activeBank = -2;                         /* not on the walk -> 0 */
-eqObj(bankCyclePos(), { idx: 0, count: 8 }, 'bankCyclePos melodic clamp-low');
-/* Melodic walk since 2026-09-26: CONFIG | LIVE ARP | MACROS AUTOMATION | STEP CLIP | NOTE FX HARMONY DELAY SEQ ARP | SOUND */
+eqObj(bankCyclePos(), { idx: 0, count: 9 }, 'bankCyclePos melodic clamp-low');
+/* Melodic walk since 2026-10-04: LIVE ARP | MACROS | STEP CLIP | NOTE FX HARMONY DELAY SEQ ARP | SOUND (CONFIG, AUTOMATION are doors) */
 S.activeBank = BANK_STEP;                  /* SEQ: STEP, CLIP */
-eqObj(bankCyclePos(), { idx: 1, count: 8 }, 'bankCyclePos melodic STEP bank');
+eqObj(bankCyclePos(), { idx: 2, count: 9 }, 'bankCyclePos melodic STEP bank');
 S.activeBank = BANK_SOUND;                 /* sound mode's identity -> last segment */
-eqObj(bankCyclePos(), { idx: 7, count: 8 }, 'bankCyclePos melodic sound bank');
+eqObj(bankCyclePos(), { idx: 8, count: 9 }, 'bankCyclePos melodic sound bank');
 S.activeBank = BANK_MACROS;                /* CTRL: MACROS, AUTOMATION, after LIVE ARP */
-eqObj(bankCyclePos(), { idx: 0, count: 8 }, 'bankCyclePos melodic MACROS bank');
+eqObj(bankCyclePos(), { idx: 1, count: 9 }, 'bankCyclePos melodic MACROS bank');
 S.activeBank = BANK_AUTOMATION;            /* the old bank 6 is off the walk */
-eqObj(bankCyclePos(), { idx: 0, count: 8 }, 'bankCyclePos melodic AUTOMATION bank');
+eqObj(bankCyclePos(), { idx: 0, count: 9 }, 'bankCyclePos melodic AUTOMATION bank');
 S.activeBank = 6;
-eqObj(bankCyclePos(), { idx: 0, count: 8 }, 'bankCyclePos melodic old bank 6 is not on the walk');
+eqObj(bankCyclePos(), { idx: 0, count: 9 }, 'bankCyclePos melodic old bank 6 is not on the walk');
 /* Drum walk since 2026-09-26: CONFIG | RPT GROOVE | MACROS AUTOMATION | STEP ALL LANES DRUM LANE | NOTE FX DELAY | SOUND */
 S.trackPadMode[0] = PAD_MODE_DRUM;
 S.activeBank = 7;

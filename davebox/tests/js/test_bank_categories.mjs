@@ -72,12 +72,12 @@ const onBank = (b) => { S.activeBank = b; S.trackActiveBank[2] = b; S.bankNavKin
 const inkLeftOfLine = (f, y0, y1) => { let n = 0; for (let y = y0; y < y1; y++) for (let x = 0; x < lineX - 1; x++) n += px(f, x, y); return n; };
 
 /* The track's banks (the map, the commits) and the WALK (the jog's turn): the
- * walk is the list minus the doors — CONFIG, AUTOMATION, LIVE ARP (Josh,
- * 2026-10-03: "hide config and automation from the bank list ... same with
- * live arp"). */
+ * walk is the list minus the doors — CONFIG and AUTOMATION (Josh, 2026-10-03:
+ * "hide config and automation from the bank list"). LIVE ARP came back on
+ * the walk on 2026-10-04 ("put the live arp back as a bank"). */
 const MEL_LIST = [C.BANK_CONFIG, 5, C.BANK_MACROS, C.BANK_AUTOMATION, C.BANK_STEP, 0, 1, 2, 3, 4, C.BANK_SOUND];
-const MEL = [C.BANK_MACROS, C.BANK_STEP, 0, 1, 2, 3, 4, C.BANK_SOUND];
-step('⭐ the melodic walk is CTRL, SEQ, FX, MIX (the doors are off it); a Chord-layout track adds CHORD at its head', () => {
+const MEL = [5, C.BANK_MACROS, C.BANK_STEP, 0, 1, 2, 3, 4, C.BANK_SOUND];
+step('⭐ the melodic walk is IN, CTRL, SEQ, FX, MIX (the doors are off it); a Chord-layout track adds CHORD at the head of IN', () => {
     S.padLayoutChord = [false, false, false, false, false, false, false, false];
     assert(JSON.stringify(P.bankListForMode(0, 2)) === JSON.stringify(MEL_LIST), 'list: ' + P.bankListForMode(0, 2));
     assert(JSON.stringify(P.bankCycleForMode(0, 2)) === JSON.stringify(MEL), 'plain: ' + P.bankCycleForMode(0, 2));
@@ -86,16 +86,16 @@ step('⭐ the melodic walk is CTRL, SEQ, FX, MIX (the doors are off it); a Chord
     S.padLayoutChord[2] = false;
     assert(C.BANK_DEFAULT === 0, 'CLIP stays the start and Back bank');
 });
-step('⭐⭐ THE GESTURE: from CLIP the jog walks left through SEQ to CTRL (stopping there) and right through FX to MIX, the column following', () => {
+step('⭐⭐ THE GESTURE: from CLIP the jog walks left through SEQ and CTRL to IN (stopping there) and right through FX to MIX, the column following', () => {
     S.activeBank = 0; S.trackActiveBank[2] = 0; S.bankSelectTick = -1;
     touchJog(); tick();
     const seen = [];
     for (let i = 0; i < 4; i++) { jog(-1); tick(); seen.push(S.activeBank); }
-    assert(JSON.stringify(seen) === JSON.stringify([C.BANK_STEP, C.BANK_MACROS, C.BANK_MACROS, C.BANK_MACROS]), 'left: ' + seen);
+    assert(JSON.stringify(seen) === JSON.stringify([C.BANK_STEP, C.BANK_MACROS, 5, 5]), 'left: ' + seen);
     const nav = render.bankNavItems();
-    assert(nav.items[nav.cur].name === 'MACROS' && nav.items[nav.cur].cat && nav.items[nav.cur].cat.label === 'CTRL', 'centred ' + JSON.stringify(nav.items[nav.cur]));
-    assert(nav.items.every((x) => ['CONFIG', 'AUTOMATION', 'LIVE ARP'].indexOf(x.name) < 0), 'a door is in the column');
-    for (let i = 0; i < 2; i++) { jog(1); tick(); }
+    assert(nav.items[nav.cur].name === 'LIVE ARP' && nav.items[nav.cur].cat && nav.items[nav.cur].cat.label === 'IN', 'centred ' + JSON.stringify(nav.items[nav.cur]));
+    assert(nav.items.every((x) => ['CONFIG', 'AUTOMATION'].indexOf(x.name) < 0), 'a door is in the column');
+    for (let i = 0; i < 3; i++) { jog(1); tick(); }
     assert(S.activeBank === 0, 'back on CLIP: ' + S.activeBank);
     const right = [];
     for (let i = 0; i < 5; i++) { jog(1); tick(); right.push(S.activeBank); }
@@ -113,7 +113,7 @@ step('⭐ a row in a category is indented past the gutter, its highlight too; th
     assert(!px(f, lineX, top - 1) && !px(f, lineX, bot), 'the line runs past its group');
     assert(inkLeftOfLine(f, top, bot) > 0, 'no SEQ label');
 });
-step('⭐ CTRL keeps its category with only MACROS (it CAN hold two); IN keeps it with only CHORD', () => {
+step('⭐ CTRL keeps its category with only MACROS (it CAN hold two); IN holds LIVE ARP, and CHORD with it', () => {
     S.padLayoutChord[2] = false;
     onBank(C.BANK_MACROS);
     let nav = render.bankNavItems();
@@ -122,7 +122,7 @@ step('⭐ CTRL keeps its category with only MACROS (it CAN hold two); IN keeps i
     assert(px(f, lineX, MID_Y + 3), 'no line beside MACROS');
     assert(inkLeftOfLine(f, MID_Y, MID_Y + ROW - 1) > 0, 'no CTRL label');
     assert(!px(f, 1, MID_Y + 3), 'MACROS is drawn as a plain row');
-    assert(nav.items.every((x) => !x.cat || x.cat.label !== 'IN'), 'an empty IN group is in the column');
+    assert(nav.items.some((x) => x.name === 'LIVE ARP' && x.cat && x.cat.label === 'IN'), 'LIVE ARP is not under IN');
     S.padLayoutChord[2] = true;
     onBank(C.BANK_CHORD);
     nav = render.bankNavItems();

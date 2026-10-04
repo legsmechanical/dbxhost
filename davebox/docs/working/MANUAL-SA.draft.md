@@ -312,19 +312,19 @@ picks which bank. Each track has its own walk, in this order:
 
 | Track | Banks, in jog order |
 |---|---|
-| **Melodic** | **IN:** CHORD (in the Chord layout) · **CTRL:** MACROS · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · MIX |
+| **Melodic** | **IN:** CHORD (in the Chord layout) → LIVE ARP · **CTRL:** MACROS · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · MIX |
 | **Drum** | **IN:** RPT GROOVE · **CTRL:** MACROS · **SEQ:** STEP → ALL LANES → DRUM LANE · **FX** (the selected lane's): NOTE FX → DELAY · MIX |
 | **Conductor** | CLIP → STEP → NOTE FX · **RSPD:** ON/OFF → OCTAVE → TIMING |
 
 A melodic track starts on **CLIP** and a drum track on **DRUM LANE**, both in
 the middle of the walk: turn left for what plays into the track, right for its
 effects (in the order the notes pass through them) and, last, MIX.
-**CONFIG** (the track's TRACK CONFIG menu), **AUTOMATION** and **LIVE ARP** are
-not on the walk: reach them from the bank map (hold the jog, below) or their
-shortcuts — **Shift + Note/Session** for TRACK CONFIG, **Shift + hold Step 11**
-for LIVE ARP. They are **screens, not banks**: opening one never changes the
-bank you're on (the overview and a knob peek still show it), and **Back** from
-the screen's top level returns you exactly where you were.
+**CONFIG** (the track's TRACK CONFIG menu) and **AUTOMATION** are not on the
+walk: reach them from the bank map (hold the jog, below) or their shortcut —
+**Shift + Note/Session** for TRACK CONFIG. They are **screens, not banks**:
+opening one never changes the bank you're on (the overview and a knob peek
+still show it), and **Back** from the screen's top level returns you exactly
+where you were. **Shift + hold Step 11** jumps straight to LIVE ARP.
 The banks are grouped: **IN** (what you play in), **CTRL** (what moves the
 parameters), **SEQ** (the sequence) and **FX** (the note effects — on a drum
 track, the selected lane's, so the map shows them under DRUM LANE). A Conductor
@@ -1179,12 +1179,11 @@ The controls match [SEQ ARP](#94-seq-arp) (except Retrigger defaults to Off), pl
 - **Loop** with no pads held clears the latched notes but keeps Latch on.
 - Stop, **Delete + Play**, or switching to Session View unlatches.
 - **Shift + Step 11** (tap) toggles LIVE ARP on and off with the last style.
-- **Shift + hold Step 11** (about half a second) opens LIVE ARP's settings: its
-  page stays up — the knobs edit it, a click opens Arp Steps — until **Back**,
-  which returns you exactly where you were. Turning the jog doesn't leave it;
-  picking another bank on the map, or switching track or view, does. LIVE ARP is
-  a screen, not a bank: it is on the bank map (IN column, second pad), never on
-  the jog walk, and the bank you were on stays yours.
+- **Shift + hold Step 11** (about half a second) opens LIVE ARP's page and
+  holds it on screen — the knobs edit it, a click opens Arp Steps — until
+  **Back** closes it. LIVE ARP is an ordinary bank: the knobs stay on it after
+  the page closes, it is on the jog walk (IN, before MACROS) and on the bank
+  map (IN column, second pad).
 - LIVE ARP **can't be automated** — its settings belong to the track, not a clip.
   It is still available as a macro destination.
 
@@ -2503,7 +2502,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | 8 | Pad layout (Scale → Chrom → Piano → Chord) / cycle right-pad mode | Track |
 | 9 | Scale — jump to Scale in Project Settings | Both |
 | 10 | VelIn (Live ↔ 100) — icon lit while fixed | Track |
-| 11 | Tap: LIVE ARP on/off — icon lit while on. Hold: LIVE ARP's settings, until Back | Track (melodic) |
+| 11 | Tap: LIVE ARP on/off — icon lit while on. Hold: LIVE ARP's page, until Back (the knobs stay on LIVE ARP) | Track (melodic) |
 | 13 | Schwung's Tools menu; hold it to come back from Suspend | Both |
 | 15 | Double the loop and copy its contents into the new half | Track |
 | 16 | Set NOTE FX Quantize to 100 % | Track |

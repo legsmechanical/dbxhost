@@ -8,8 +8,8 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added
-- **Shift + hold Step 11 opens LIVE ARP's settings** (melodic tracks) and keeps
-  them up until Back, which returns you where you were. A tap still turns LIVE
+- **Shift + hold Step 11 opens LIVE ARP** (melodic tracks) and holds its page
+  up until Back; the knobs stay on LIVE ARP afterwards. A tap still turns LIVE
   ARP on and off.
 - **Hold the jog to jump to any bank.** The left 4×4 pads become a map of the
   track's banks — one column per group, the same on every track type — and the
@@ -28,11 +28,11 @@ the section into a versioned heading at release time.
   and Arp Steps stay on the plain click.
 - **ALL LANES no longer asks you to confirm.** The drum ALL LANES bank opens
   like any other bank: its knobs, Loop, double-and-fill and quantize act on all
-  32 lanes straight away, and a jog click toggles the alt knobs.
-- **CONFIG, AUTOMATION and LIVE ARP are off the jog walk** and the bank list.
-  They stay on the bank map (hold the jog) and their shortcuts; the walk now
-  runs MACROS (CHORD before it in the Chord layout) → STEP → CLIP → the effects
-  → MIX. Turning the jog from one of them steps to the nearest bank on the
+  32 lanes straight away.
+- **CONFIG and AUTOMATION are off the jog walk** and the bank list. They stay
+  on the bank map (hold the jog) and their shortcuts; the walk now runs LIVE
+  ARP (CHORD before it in the Chord layout) → MACROS → STEP → CLIP → the
+  effects → MIX. Turning the jog from one of them steps to the nearest bank on the
   walk. Drum tracks keep RPT GROOVE on the walk; the Conductor's starts on CLIP.
   They are screens, not banks: opening one never changes the bank you're on,
   and Back from its top level returns you exactly where you were.

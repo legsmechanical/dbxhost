@@ -1611,7 +1611,7 @@ export function restoreUiSidecar(applyDefaultsNow) {
                     : ((_b >= 0 && _b <= 7) || isSoundBank(_b) || _b === BANK_AUTOMATION
                        || _b === BANK_CHORD) ? (_b | 0)
                     : 0;
-                /* A DOOR (CONFIG, AUTOMATION, LIVE ARP) is a screen, never the
+                /* A DOOR (CONFIG, AUTOMATION) is a screen, never the
                  * bank a track is on (Josh, 2026-10-03): an older save that
                  * left one there comes back on the start bank. */
                 if (bankIsDoor(S.trackPadMode[_t], S.trackActiveBank[_t])) S.trackActiveBank[_t] = 0;

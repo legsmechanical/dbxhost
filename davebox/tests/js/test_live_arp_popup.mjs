@@ -3,6 +3,8 @@
  * button"; "Stays until Back". A TAP still toggles LIVE ARP (now on release).
  * Through the real input path; the pop-up is judged ON SCREEN (the frame is
  * the locked LIVE ARP card's) while Shift is still physically down.
+ * LIVE ARP is a bank (2026-10-04): the hold picks it, Back closes the page and
+ * the knobs stay on it.
  */
 let failed = 0;
 const ok = (l) => console.log(`  ok   — ${l}`);
@@ -94,57 +96,58 @@ step('⭐⭐ a HOLD opens LIVE ARP, locked and ON SCREEN while Shift is still do
     assert(render.bankCardVisible() && S.activeBank === 5, 'the pop-up did not stay up');
 });
 
-step('⭐ Back returns exactly where you were (the overview)', () => {
-    const over = (() => { const b = S.activeBank, l = S.bankCardLatched; S.activeBank = 0; S.bankCardLatched = false; const f = frame(); S.activeBank = b; S.bankCardLatched = l; return f; })();
+/* Since 2026-10-04 LIVE ARP is an ordinary bank again (Josh: "put the live arp
+ * back as a bank that can stay on the knobs after the page closes like all the
+ * other banks"): Back closes the page and the knobs stay on LIVE ARP. */
+step('⭐ Back closes the page; the knobs stay on LIVE ARP', () => {
+    const over = (() => { const l = S.bankCardLatched; S.bankCardLatched = false; const f = frame(); S.bankCardLatched = l; return f; })();
     back();
-    assert(S.activeBank === 0 && !S.bankCardLatched && !render.bankCardVisible(), 'bank ' + S.activeBank);
-    assert(S.doorReturn === null, 'the crumb survived');
-    assert(same(frame(), over), 'not the overview');
+    assert(S.activeBank === 5 && S.trackActiveBank[2] === 5, 'Back moved the knobs off LIVE ARP: ' + S.activeBank);
+    assert(!S.bankCardLatched && !render.bankCardVisible(), 'the page did not close');
+    assert(S.doorReturn === null, 'LIVE ARP was opened as a door screen');
+    assert(same(frame(), over), 'not the overview on LIVE ARP');
 });
 
-step('from a locked DELAY card, Back lands on that card again', () => {
+step('from a locked DELAY card the hold switches to LIVE ARP, and Back stays there', () => {
     home(); S.activeBank = 3; S.trackActiveBank[2] = 3; S.bankCardLatched = true; ticks(2);
     hold(); s11Up(); shiftUp(); ticks(2);
-    assert(S.activeBank === 5, 'pop-up did not open');
+    assert(S.activeBank === 5 && S.bankCardLatched, 'pop-up did not open');
     back();
-    assert(S.activeBank === 3 && S.bankCardLatched && render.bankCardVisible(), 'bank ' + S.activeBank + ' latched ' + S.bankCardLatched);
+    assert(S.activeBank === 5 && !S.bankCardLatched, 'bank ' + S.activeBank + ' latched ' + S.bankCardLatched);
 });
 
-step('with Bank Lock off the pop-up still stays up; Back is home, unlocked', () => {
+step('with Bank Lock off the pop-up still stays up; Back closes it on LIVE ARP', () => {
     home(); S.bankLockOn = false;
     hold(); s11Up(); shiftUp(); ticks(2);
     assert(S.activeBank === 5 && render.bankCardVisible(), 'not up with Bank Lock off');
     back();
-    assert(S.activeBank === 0 && !S.bankCardLatched, 'Back did not get home');
+    assert(S.activeBank === 5 && !S.bankCardLatched, 'Back: bank ' + S.activeBank);
     S.bankLockOn = true;
 });
 
-step('a click on it opens Arp Steps; Back closes that first, then goes home', () => {
+step('a click on it opens Arp Steps; Back closes that first, then the page', () => {
     home();
     hold(); s11Up(); shiftUp(); ticks(2);
     midi(0xB0, 3, 127); midi(0xB0, 3, 0); ticks(2);
     assert(S.stepIntervalMode, 'the click did not open Arp Steps');
     back();
-    assert(!S.stepIntervalMode && S.activeBank === 5 && S.doorReturn, 'first Back: ' + S.activeBank);
+    assert(!S.stepIntervalMode && S.activeBank === 5 && S.bankCardLatched, 'first Back: ' + S.activeBank);
     back();
-    assert(S.activeBank === 0 && !S.bankCardLatched, 'second Back did not get home');
+    assert(S.activeBank === 5 && !S.bankCardLatched, 'second Back did not close the page');
 });
 
-step('a jog turn does not walk off it (a screen, not a bank); Back still goes home', () => {
+step('a jog turn walks on from it, as from any bank', () => {
     home();
     hold(); s11Up(); shiftUp(); ticks(2);
     midi(0x90, 9, 127); midi(0xB0, 14, 1); ticks(1); midi(0x80, 9, 0); ticks(2);
-    assert(S.activeBank === 5 && S.doorReturn, 'the turn walked off: bank ' + S.activeBank);
-    back();
-    assert(S.activeBank === 0 && !S.bankCardLatched, 'Back did not get home');
+    assert(S.activeBank === C.BANK_MACROS, 'the turn did not walk on to MACROS: bank ' + S.activeBank);
 });
 
-step('⭐ a project saved while it is up saves the bank you came from', () => {
+step('⭐ a project saved while it is up saves LIVE ARP as the track\'s bank', () => {
     home(); S.activeBank = 3; S.trackActiveBank[2] = 3; ticks(2);
     hold(); s11Up(); shiftUp(); ticks(2);
-    assert(S.trackActiveBank[2] === 5, 'setup: the screen did not borrow its bank');
     const tab = persist.sidecarObject().tab;
-    assert(tab[2] === 3, 'saved bank: ' + tab[2]);
+    assert(tab[2] === 5, 'saved bank: ' + tab[2]);
     back();
 });
 

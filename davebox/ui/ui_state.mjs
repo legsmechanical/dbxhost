@@ -869,8 +869,8 @@ export const S = {
     /* Shift + Step 11 (Josh, 2026-10-03): a TAP toggles LIVE ARP, a HOLD opens
      * its settings. nowMs() of the press while it is undecided, -1 otherwise. */
     shiftStep11Tick: -1,
-    /* A DOOR SCREEN's way home (LIVE ARP, AUTOMATION — screens that borrow
-     * their bank while up): { track, door, bank, latched }. Back restores it;
+    /* A DOOR SCREEN's way home (AUTOMATION — a screen that borrows
+     * its bank while up): { track, door, bank, latched }. Back restores it;
      * a track or view switch restores it first; any other bank commit drops it. */
     doorReturn: null,
     /* Set with pendingSoundEnterTrack when the ASK was for the menu rather than

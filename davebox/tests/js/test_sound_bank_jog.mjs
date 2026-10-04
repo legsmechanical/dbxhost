@@ -232,7 +232,10 @@ step('⭑ the MENU top edge CLAMPS; Back exits to the CARD; the card walks out',
     if (snd.soundViewForTest() !== 24)
         throw new Error('Back did not land on the card (view ' + snd.soundViewForTest() + ')');
     right(); globalThis.tick();
-    if (S.activeBank !== 13) throw new Error('the CONFIG card did not walk out onto MACROS (its nearest walk bank): ' + S.activeBank);
+    if (S.activeBank !== 5) throw new Error('the CONFIG card did not walk out onto LIVE ARP (its nearest walk bank): ' + S.activeBank);
+    if (snd.soundActive()) throw new Error('walking out onto LIVE ARP did not leave sound mode');
+    right(); globalThis.tick();
+    if (S.activeBank !== 13) throw new Error('bank walk did not resume rightward onto MACROS: ' + S.activeBank);
     right(); globalThis.tick();
     if (snd.soundActive()) throw new Error('walking on from MACROS did not leave sound mode');
     if (S.activeBank !== BANK_STEP) throw new Error('bank walk did not resume rightward onto STEP: ' + S.activeBank);

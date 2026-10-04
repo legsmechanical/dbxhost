@@ -349,22 +349,26 @@ step('…and with Bank Lock off it opens unlocked', () => {
     S.bankLockOn = true;
 });
 
-/* DOORS (2026-10-03): CONFIG, AUTOMATION, LIVE ARP are off the jog walk but
- * on the map, and a turn from one steps to its nearest walk neighbour. */
-step('⭐⭐ a door is still picked from the map (LIVE ARP lands; a walk-indexed pick would do nothing)', () => {
+/* DOORS (2026-10-03): CONFIG and AUTOMATION are off the jog walk but on the
+ * map, and a turn from one steps to its nearest walk neighbour. LIVE ARP is a
+ * bank again (2026-10-04: "put the live arp back as a bank that can stay on
+ * the knobs after the page closes like all the other banks"). */
+step('⭐⭐ LIVE ARP is a bank again: the map pick puts the knobs on it, and they stay', () => {
     home(); S.padLayoutChord[2] = false;
     press(); holdPast();
     tap(pad(0, 1));
     release();
-    assert(S.activeBank === 5 && S.bankCardLatched && render.bankCardVisible(), 'LIVE ARP screen: ' + S.activeBank);
+    assert(S.activeBank === 5 && S.trackActiveBank[2] === 5, 'LIVE ARP not picked: ' + S.activeBank);
+    assert(!S.doorReturn, 'LIVE ARP was opened as a door screen');
     backBtn();
-    assert(S.activeBank === 0 && !S.bankCardLatched, 'Back did not give the bank back: ' + S.activeBank);
+    assert(S.activeBank === 5 && S.trackActiveBank[2] === 5, 'Back moved the knobs off LIVE ARP: ' + S.activeBank);
 });
 const onDoor = (b) => { home(); ab.autoBankReset(); S.activeBank = b; S.trackActiveBank[2] = b; tickS(2); };
 step('⭐ a turn from a door steps to the nearest walk bank that way', () => {
     S.padLayoutChord[2] = false;
+    /* LIVE ARP is on the walk now: the walk's head (CHORD before it on a Chord track). */
     onDoor(5); jog(1); assert(S.activeBank === C.BANK_MACROS, 'LIVE ARP right: ' + S.activeBank);
-    onDoor(5); jog(-1); assert(S.activeBank === C.BANK_MACROS, 'LIVE ARP left (nothing left of it): ' + S.activeBank);
+    onDoor(5); jog(-1); assert(S.activeBank === 5, 'LIVE ARP left (the walk\'s head) moved: ' + S.activeBank);
     S.padLayoutChord[2] = true;
     onDoor(5); jog(-1); assert(S.activeBank === C.BANK_CHORD, 'LIVE ARP left on a Chord track: ' + S.activeBank);
     S.padLayoutChord[2] = false;

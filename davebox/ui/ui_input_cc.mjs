@@ -1373,7 +1373,7 @@ function modalDialogUp() {
                     S.screenDirty = true;
                     forceRedraw();
                 } else if (doorScreenUp()) {
-                    /* A DOOR SCREEN (LIVE ARP's page) is a screen, not a bank
+                    /* A DOOR SCREEN (AUTOMATION's menu) is a screen, not a bank
                      * on the walk: the turn does not walk off it. Back leaves. */
                 } else if (!jogTurnBanksOn()) {
                     /* Jog Turn Banks Off: every branch below is a bank walk
@@ -1524,7 +1524,7 @@ export function bankMapPadTap(note) {
             if (soundOpen() && !soundIsGlobal()) soundShowMenu();
             else { S.pendingSoundEnterTrack = t; S.pendingSoundEnterMenu = true; }
         } else {
-            openDoorScreen(b);       /* LIVE ARP's page, AUTOMATION's menu */
+            openDoorScreen(b);       /* AUTOMATION's menu */
         }
         bankMapEnd();
         return;
@@ -2720,7 +2720,7 @@ function _backTap() {
         /* A LANE JUMP landed here (plan 6c2): the first Back returns to the
          * AUTOMATION menu, cursor on the lane. Spent by any track-view Back,
          * and honoured only while you are still on the bank it sent you to. */
-        /* A DOOR SCREEN (LIVE ARP): Back dismisses it — exactly where you were. */
+        /* A DOOR SCREEN (AUTOMATION): Back dismisses it — exactly where you were. */
         if (closeDoorScreen()) return;
         if (S.autoReturn) {
             const r = S.autoReturn;
@@ -2897,7 +2897,10 @@ forceRedraw();
  * pop-up when you shift+hold the 11th step button"; "Stays until Back"). Fires
  * at the threshold from the tick, like Shift + hold Note/Session, and spends
  * Shift the same way so the card it opens is not stood down by a key that is
- * still physically held. Melodic Track View only. */
+ * still physically held. Melodic Track View only.
+ * Since 2026-10-04 LIVE ARP is an ordinary bank again ("that can stay on the
+ * knobs after the page closes like all the other banks"): the hold PICKS it
+ * and locks its card; Back closes the card and the knobs stay on LIVE ARP. */
 export function checkShiftStep11Hold() {
     if (S.shiftStep11Tick < 0) return;
     if ((S.clockMs - S.shiftStep11Tick) < BACK_HOLD_MS) return;
@@ -2906,14 +2909,21 @@ export function checkShiftStep11Hold() {
             S.trackPadMode[S.activeTrack] === PAD_MODE_CONDUCT ||
             S.moveCoRunTrack >= 0 || soundModeCovered() || S.awaitingProjectSelect) return;
     if (S.shiftHeld) applyShiftEdge(false);
-    openDoorScreen(5);
+    closeDoorScreen();          /* an AUTOMATION screen up gives its bank back first */
+    const t = S.activeTrack;
+    if (S.activeBank !== 5) { S.bankPickerSel = bankListFor(t).indexOf(5); applyBankPick(false); }
+    S.bankCardLatched = true;
+    armBankDisplay();
+    invalidateLEDCache();
+    forceRedraw();
 }
 
 /* ⭑⭑ DOOR SCREENS (Josh, 2026-10-03: "i don't want anything we moved off the
  * bank list to even show up as a bank: i.e., when I go to automation, track
  * config, or live arp, they're just screens that take over the oled and
- * dismiss on back (at top level if menu)"). LIVE ARP and AUTOMATION draw on
- * their bank's card, so the screen borrows the bank while it is up — and gives
+ * dismiss on back (at top level if menu)"). LIVE ARP has since gone back to
+ * being a bank (2026-10-04), so the one borrowing door is AUTOMATION. It
+ * draws on its bank's card, so the screen borrows the bank while it is up — and gives
  * it back: S.doorReturn remembers the bank you were on (and whether its card
  * was locked), Back at the screen's top level restores it, and a track or view
  * switch restores it before leaving, so a door is never the bank you are on.
