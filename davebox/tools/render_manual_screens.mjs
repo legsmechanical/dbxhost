@@ -1013,10 +1013,12 @@ screen('loading-sequencer', 'Open dAVEBOx', 'Starting the sequencer',
     'The last stage of opening a project: the sequencer starting up.',
     () => { S.stateLoading = true; }, { align: false });
 
-/* 14.3 — the track's sound editor (Shift + Note/Session) */
+/* 14.3 — the track's sound editor: the CONFIG pad on the bank map (Shift +
+ * Note/Session, which opened it, retired 2026-10-04). A held tap: the menu
+ * opens on the jog's release. */
 const openTrackConfig = () => {
-    press(MoveShift); tap(MoveNoteSession); release(MoveShift); ticks(6);
-    if (!SND.soundOpen()) throw new Error('Shift + Note/Session did not open the sound editor');
+    mapTap(PURE.bankMapPadForCell(0, 3)); ticks(4);
+    if (!SND.soundOpen()) throw new Error('the CONFIG pad did not open TRACK CONFIG');
 };
 function soundRowTo(kind) {
     const st = SND.soundPickStateForTest();
@@ -1095,10 +1097,11 @@ screen('midi-track-card', '14.1 Opening TRACK CONFIG', 'MIX on a MIDI track',
     });
 
 /* 14.3 — the global effect buses, from Session View */
-screen('fx-buses', '14.8 Master FX and the sends', 'MASTER and SEND FX',
-    'Shift + Note/Session in Session View: the MASTER FX bus and the two sends, each with four effect blocks.',
-    () => { toSession(); press(MoveShift); tap(MoveNoteSession); release(MoveShift); ticks(6);
-            if (!SND.soundOpen()) throw new Error('no bus list'); });
+screen('fx-buses', '14.8 Master FX and the sends', 'MASTER FX',
+    'The MASTER pad on the Session map: Master FX and its four effect blocks. SEND A and SEND B open the same way.',
+    () => { toSession(); mapTap(PURE.bankMapPadForCell(1, 0)); ticks(6);
+            const b = SND.soundBusForTest();
+            if (!b || b.id !== 'master') throw new Error('the MASTER pad did not open Master FX'); });
 
 /* 15.4 — Import MIDI: touch K8 on the CLIP / DRUM LANE card and click. Each
  * screen starts from nothing remembered (the first open). */
