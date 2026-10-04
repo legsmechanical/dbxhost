@@ -63,6 +63,8 @@ const tick = () => { S.tickCount++; globalThis.tick(); snd.soundTick(); };
 const ticks = (n) => { for (let i = 0; i < n; i++) tick(); };
 const click = () => { cc(3, 127); cc(3, 0); ticks(2); };
 const back = () => { cc(51, 127); cc(51, 0); ticks(2); };
+const knobTouch = (k) => { globalThis.onMidiMessageInternal(new Uint8Array([0x90, k, 127])); ticks(1); };
+const knobRelease = (k) => { globalThis.onMidiMessageInternal(new Uint8Array([0x90, k, 0])); ticks(1); };
 const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const same = (a, b) => a.every((v, i) => v === b[i]);
 const toBank = (b) => { S.activeBank = b; S.trackActiveBank[2] = b; ticks(4); };
@@ -85,14 +87,13 @@ step('the setting is in Project Settings, right under Jog Touch Card', () => {
     assert(i > 0 && items[i - 1].label === 'Jog Touch Card', 'not under Jog Touch Card');
 });
 
-step('⭐ Off, RPT GROOVE (a page alt): the click flips the page without locking, and says so', () => {
+step('⭐ Off, RPT GROOVE (a page alt): a plain click does nothing; touch any knob + click flips the page without locking', () => {
     S.bankLockOn = false; home();
     S.trackPadMode[2] = C.PAD_MODE_DRUM; toBank(5);
-    S.actionPopupLines = [];
     click();
-    assert(!S.bankCardLatched && S.altMode, 'latched ' + S.bankCardLatched + ' alt ' + S.altMode);
-    assert(!render.bankCardVisible(), 'a card is showing');
-    assert(S.actionPopupLines.join(' ').indexOf('ALT') >= 0, 'no notice: ' + S.actionPopupLines);
+    assert(!S.bankCardLatched && !S.altMode, 'plain click: latched ' + S.bankCardLatched + ' alt ' + S.altMode);
+    knobTouch(3); click(); knobRelease(3);
+    assert(!S.bankCardLatched && S.altMode, 'touch + click: latched ' + S.bankCardLatched + ' alt ' + S.altMode);
     back();
     assert(!S.altMode, 'Back did not clear the alt page');
     S.trackPadMode[2] = C.PAD_MODE_MELODIC_SCALE; toBank(1);
@@ -111,9 +112,11 @@ step('⭐ Off, NOTE FX: a plain click does nothing; touch K8 + click flips K8 wi
     assert(S.knobAlt === 0, 'Back did not flip K8 back');
 });
 
-step('⭐ Off, SEQ ARP: the click opens Arp Steps, no lock', () => {
+step('⭐ Off, SEQ ARP: a plain click does nothing; touch K5 + click opens Arp Steps, no lock', () => {
     home(); toBank(4);
     click();
+    assert(!S.stepIntervalMode && !S.bankCardLatched, 'plain click: stepInterval ' + S.stepIntervalMode);
+    knobTouch(4); click(); knobRelease(4);
     assert(S.stepIntervalMode && !S.bankCardLatched, 'stepInterval ' + S.stepIntervalMode);
     back();
     assert(!S.stepIntervalMode, 'Back did not close Arp Steps');
@@ -141,11 +144,16 @@ step('⭐⭐ Off, CONFIG: the click opens TRACK CONFIG straight from the overvie
     assert(!snd.soundActive() && !S.bankCardLatched, 'Back did not get home: active ' + snd.soundActive());
 });
 
-step('⭐ Off, MACROS: the click opens the assign list; Back is home', () => {
+step('⭐ Off, MACROS: a plain click opens nothing; touch K3 + click opens K3\'s editor; Back is home', () => {
     home(); toBank(C.BANK_MACROS);
-    assert(snd.soundOpen() && snd.soundResting(), 'setup: MACROS is not resting');
+    snd.soundSetBank(C.BANK_MACROS); ticks(2);   /* toBank sets the bank raw; sound mode's own bank follows a pick */
+    assert(snd.soundOpen() && snd.soundResting() && snd.soundViewForTest() === VIEW_MACROS,
+           'setup: MACROS is not resting on its page: view ' + snd.soundViewForTest());
     click();
-    assert(snd.soundActive() && snd.soundViewForTest() !== VIEW_MACROS, 'no list: view ' + snd.soundViewForTest());
+    assert(snd.soundViewForTest() === VIEW_MACROS && !S.bankCardLatched, 'plain click: view ' + snd.soundViewForTest());
+    knobTouch(2); click(); knobRelease(2); ticks(2);
+    assert(snd.soundActive() && snd.soundViewForTest() === 12 && !S.bankCardLatched,
+           'K3 (empty) did not open its target picker: view ' + snd.soundViewForTest());
     for (let i = 0; i < 3 && snd.soundActive(); i++) back();
     assert(!snd.soundActive() && !S.bankCardLatched, 'Back did not get home');
 });

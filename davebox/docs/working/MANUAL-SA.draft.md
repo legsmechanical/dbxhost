@@ -349,20 +349,21 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   the bank — or, in Session View, the mixer mode; hold the jog and tap a pad
   instead. The jog's other turns (Loop + jog, Shift + jog) work as usual.
 - **Click the jog** to open the **bank view** — that bank's page, held on screen;
-  keep turning to walk from there. In the bank view a click opens the Arp Steps
-  editor (SEQ ARP, ARP IN) or flips RPT GROOVE to its Nudge page.
+  keep turning to walk from there.
 - **Touch a knob and click the jog** to switch a knob marked *Alt* in the bank
   tables to its alternate (Res → Zoom, Shift → Nudge, Dir → Reverse Style,
   Rand → Algo, Rate → Clock Feedback). Only that knob changes. Its cell has
   corner brackets, like the touch + click actions (Crop, Legato). While you touch
   it, the bottom of the screen shows **CLK** and the name it will switch to.
   Touch + click again, or **Back**, switches it back; leaving the bank does too.
+  Touch + click also opens a bank's editors: **Steps** (knob 5) on SEQ ARP and
+  LIVE ARP opens Arp Steps, any knob on RPT GROOVE switches between its
+  Velocity and Nudge pages, and a knob on MACROS opens that macro.
   The click happens when you **let go** of the jog, not when you press it.
   With **Bank Lock** off (Project Settings) the bank view never locks: the click
   on the overview does the bank's own click straight away — CONFIG opens TRACK
-  CONFIG, MACROS its assignment list, AUTOMATION its menu, RPT GROOVE flips its
-  page (a notice says which), SEQ ARP and LIVE ARP open
-  Arp Steps — and **Back** returns to the overview. In Session View the click on
+  CONFIG and AUTOMATION its menu — and **Back** returns to the overview. Touch
+  + click works from the overview too, without locking the bank view. In Session View the click on
   the SESSION FX card opens the effects list; on the mixer modes it does nothing.
   **Delete + click** on AUTOMATION still clears the clip's automation.
 - **Back** closes the bank view without changing the bank, so the knobs keep
@@ -1152,7 +1153,9 @@ An arpeggiator running after Delay, on both sequenced and live notes.
 | 6 | `RETRG` | Restart the arp on each new note | On |
 | 7 | `SYNC` | Wait for the next rate boundary | On |
 
-**Click the jog** for the per-step editor (on LIVE ARP too):
+**Touch knob 5 (`STEPS`) and click the jog** for the per-step editor (on LIVE
+ARP too); the knob's cell has corner brackets, and the bottom of the screen
+reads **CLK STEPS** while you touch it. A jog turn or **Back** closes the editor:
 
 - Knobs 1–8 set each step's pitch offset (±24 scale degrees); with **Shift** held
   they set each step's velocity (`Thru` passes the incoming velocity).
@@ -1180,7 +1183,7 @@ The controls match [SEQ ARP](#94-seq-arp) (except Retrigger defaults to Off), pl
 - Stop, **Delete + Play**, or switching to Session View unlatches.
 - **Shift + Step 11** (tap) toggles LIVE ARP on and off with the last style.
 - **Shift + hold Step 11** (about half a second) opens LIVE ARP's page and
-  holds it on screen — the knobs edit it, a click opens Arp Steps — until
+  holds it on screen — the knobs edit it, touch knob 5 + click opens Arp Steps — until
   **Back** closes it. LIVE ARP is an ordinary bank: the knobs stay on it after
   the page closes, it is on the jog walk (IN, before MACROS) and on the bank
   map (IN column, second pad).
@@ -1194,7 +1197,10 @@ The controls match [SEQ ARP](#94-seq-arp) (except Retrigger defaults to Off), pl
 **Repeat Groove** shapes the 8-step gate mask of a lane's
 [Note Repeat](#73-note-repeat); you hear it while a repeat mode is active.
 
-| Knobs | Screen page | After jog-click |
+Touch any knob and click the jog to switch pages; the bottom of the screen
+says **KNB+CLK NUDGE** or **KNB+CLK VELOCITY**, whichever is next.
+
+| Knobs | Screen page | After knob touch + jog click |
 |---|---|---|
 | 1–8 | **Velocity** per gate step — `Thru` (the pad's own velocity) or a value 1–127 | **Nudge** per gate step (±50 % of the step) |
 
@@ -1798,17 +1804,18 @@ module editor does — a dial, a big number, a list square, a fader for a level.
 knob with no target, or whose target was swapped away, shows `--` and reads
 UNASSIGNED when touched.
 
-**Click the jog** for the assignment list: `K1`..`K8`, each with its mapping
-(`Syn>cutoff`, `FX1>mix`, `Lvl>Volume`, `NFX>Gate Time`).
+**Touch a knob and click the jog** to edit that macro. Every macro's cell has
+corner brackets; while you touch one, the bottom of the screen reads **CLK
+ASSIGN** (nothing assigned yet) or **CLK EDIT**.
 
-- Click an unassigned knob, choose a module (or a **bank**, **Levels**, **MIDI**,
-  or **SnapMorph**), then a parameter, and you're back on the list.
+- On an unassigned knob, choose a module (or a **bank**, **Levels**, **MIDI**,
+  or **SnapMorph**), then a parameter, and you're back on the MACROS page.
 - **(None)** at the top clears the knob.
 - If the same module sits in two slots, the slot is shown beside its name.
 
 ### One knob, several parameters
 
-Once a knob has a target, clicking it **opens** it — a short list of everything the
+Once a knob has a target, touch + click **opens** it — a short list of everything the
 knob drives, each entry with its **Lo**, **Hi** and **Travel**:
 
 ```
@@ -1867,7 +1874,7 @@ they hold the active track's sound; in Session View, the whole device's.
 buses, the mixer levels and the macro positions — not mutes.
 
 **SnapMorph** turns one knob into a path between two or more of the track's
-snapshots. In the MACROS assignment list pick **SnapMorph** (the last entry), then
+snapshots. Touch an unassigned macro, click, and pick **SnapMorph** (the last entry), then
 click the snapshot slots in the order the knob should travel: `[1]` at the bottom
 of the turn, `[2]` next, and so on. The knob is live as soon as two are in.
 
@@ -2438,8 +2445,8 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | + / − · Left / Right | Octave · page |
 | Side buttons | Launch the active track's clips (press the playing one to stop it) |
 | Shift + top / bottom side button | Scroll the four visible clips up / down one (the same window for every track) |
-| Jog turn / click | Cycle banks / open the bank · Arp Steps, RPT GROOVE's page |
-| Knob touch + jog click | Switch that knob to its *Alt* (Zoom, Nudge, Reverse Style, Algo, Clock Feedback) |
+| Jog turn / click | Cycle banks / open the bank |
+| Knob touch + jog click | Switch that knob to its *Alt* (Zoom, Nudge, Reverse Style, Algo, Clock Feedback) · Arp Steps (knob 5) · RPT GROOVE's page (any knob) · a macro's editor |
 | Shift + jog / Shift + bottom pad | Switch tracks |
 | Loop (hold, or tap to keep it up) / Loop + jog | Loop view / clip length |
 | Loop + step (or two steps) | Set the loop to those pages |

@@ -90,12 +90,17 @@ step('with the card VISIBLE, a plain click no longer flips NOTE FX; touch K8 + c
     S.knobAlt = 0;
 });
 
-step('with the card VISIBLE on SEQ ARP, click toggles the step-interval editor', () => {
+step('with the card VISIBLE on SEQ ARP, a plain click opens nothing; touch K5 (Steps) + click opens the arp editor', () => {
     rest(); S.activeBank = 4;
     click();                                     /* latch */
     if (S.stepIntervalMode) throw new Error('latch click also toggled the arp editor');
     click();
-    if (!S.stepIntervalMode) throw new Error('second click did not open the arp editor');
+    if (S.stepIntervalMode) throw new Error('a plain second click opened the arp editor');
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 4, 127]));
+    click();
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 4, 0]));
+    if (!S.stepIntervalMode) throw new Error('touch K5 + click did not open the arp editor');
+    if (!S.bankCardLatched) throw new Error('the editor broke the latch');
     S.stepIntervalMode = false;
 });
 

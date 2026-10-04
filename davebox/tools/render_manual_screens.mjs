@@ -583,12 +583,12 @@ screen('bank-value-popup', '3.6 Parameter banks', 'Turning a list parameter',
     'Turning SEQ ARP\'s Style knob opens its list over the page; the highlight follows the knob (here moved from Off to Down).',
     () => { toBank(4); knobTouch(0); knobTurn(0, 20); ticks(2); });
 screen('bank-seqarp-steps', '9.4 SEQ ARP', 'SEQ ARP — per-step pitch editor',
-    'Clicking the jog on SEQ ARP opens the per-step editor: knobs 1–8 set each step\'s pitch offset.',
+    'Touch knob 5 (Steps) on SEQ ARP and click the jog: the per-step editor, where knobs 1–8 set each step\'s pitch offset.',
     () => {
         toBank(4);
         knobTurn(1, 0);
-        click(); ticks(2);
-        if (!S.stepIntervalMode) throw new Error('click did not open the steps editor');
+        knobTouch(4); click(); knobRelease(4); ticks(2);
+        if (!S.stepIntervalMode) throw new Error('touch K5 + click did not open the steps editor');
         knobTouch(2); knobTurn(2, 5); knobRelease(2);
         knobTouch(4); knobTurn(4, -3); knobRelease(4);
         ticks(2);
@@ -596,8 +596,8 @@ screen('bank-seqarp-steps', '9.4 SEQ ARP', 'SEQ ARP — per-step pitch editor',
 screen('bank-seqarp-steps-vel', '9.4 SEQ ARP', 'SEQ ARP — per-step velocity',
     'Holding Shift in the per-step editor shows each step\'s velocity instead (Thru passes the played velocity).',
     () => {
-        toBank(4); click(); ticks(2);
-        if (!S.stepIntervalMode) throw new Error('click did not open the steps editor');
+        toBank(4); knobTouch(4); click(); knobRelease(4); ticks(2);
+        if (!S.stepIntervalMode) throw new Error('touch K5 + click did not open the steps editor');
         press(MoveShift); ticks(2);
     });
 screen('bank-step-idle', '6.3 Editing notes', 'STEP bank — no step held',
@@ -1055,18 +1055,17 @@ screen('sound-card', '14.1 Opening TRACK CONFIG', 'The MIX card',
 screen('macros-card', '14.6 The MACROS bank', 'The MACROS bank',
     'Each knob shows its target; a knob driving several (MAC1) shows its own position.',
     () => { selectTrack(4); toBank(C.BANK_MACROS); ticks(8); });
-const openMacroList = () => {
-    selectTrack(4); toBank(C.BANK_MACROS); ticks(8); click(); ticks(4);
+/* A macro's editor: touch its knob on the MACROS card and click the jog. */
+const openMacro = (k) => {
+    selectTrack(4); toBank(C.BANK_MACROS); ticks(8);
+    knobTouch(k); click(); knobRelease(k); ticks(4);
 };
-screen('macros-list', '14.6 The MACROS bank', 'MACROS — the assignment list',
-    'Clicking the jog on MACROS lists K1–K8 with each knob\'s mapping written compactly; an unassigned knob reads --.',
-    () => { openMacroList(); });
 screen('macros-multi', 'One knob, several parameters', 'One knob, several targets',
-    'Everything one knob drives, each with its own range.',
-    () => { openMacroList(); for (let g = 0; g < 5; g++) { jog(1); ticks(1); } click(); ticks(4); });
+    'Touch a macro and click: everything that knob drives, each with its own range.',
+    () => { openMacro(5); });
 screen('macros-targets', '14.6 The MACROS bank', 'MACROS — choosing a target',
-    'Clicking an unassigned knob goes straight to choosing: a block, a bank, Levels, MIDI — or SnapMorph, last.',
-    () => { openMacroList(); for (let g = 0; g < 6; g++) { jog(1); ticks(1); } click(); ticks(4); for (let g = 0; g < 20; g++) { jog(1); ticks(1); } });
+    'Touch an unassigned macro and click: straight to choosing a block, a bank, Levels, MIDI — or SnapMorph, last.',
+    () => { openMacro(6); for (let g = 0; g < 20; g++) { jog(1); ticks(1); } });
 
 /* 14.3 — a MIDI track (route: a MIDI channel) */
 screen('midi-track-card', '14.1 Opening TRACK CONFIG', 'MIX on a MIDI track',
@@ -1113,7 +1112,7 @@ screen('import-options-cut', '16.4 Import a MIDI file', 'Import MIDI — notes t
 
 screen('snapmorph-slots', '14.7 Sound snapshots & SnapMorph', 'SnapMorph — choosing snapshots',
     'Click snapshots in the order the knob travels: [1] is the bottom of the turn.',
-    () => { openMacroList(); for (let g = 0; g < 6; g++) { jog(1); ticks(1); } click(); ticks(4);
+    () => { openMacro(6);
             for (let g = 0; g < 20; g++) { jog(1); ticks(1); } click(); ticks(4);
             jog(2); ticks(1); click(); ticks(2); jog(-2); ticks(1); click(); ticks(2); });
 

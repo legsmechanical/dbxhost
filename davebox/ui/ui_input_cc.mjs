@@ -23,7 +23,7 @@ import {
     TRACK_PAD_BASE, TPS_VALUES,
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG, LGTO_KNOB,
-    CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, knobAltFor, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
+    CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, knobAltFor, ARP_STEPS_KNOB, arpStepsBank, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
     TICK_HZ, STEP_ITER_LIST, JOG_MAP_HOLD_MS,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
@@ -65,7 +65,7 @@ import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
 import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, soundEnterBuses, soundEnterMasterFx, macroClearConfirmAnswer,
-    macroClearConfirmReset, macroClearConfirmOpen, soundMixSendClick, soundEnterSendFromSessionMixer,
+    macroClearConfirmReset, macroClearConfirmOpen, soundKnobCardClick, soundEnterSendFromSessionMixer,
     soundOnCard, soundEnterBusFx, soundResting, soundCardClick } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { templateConfirmClick } from './ui_template.mjs';
@@ -341,12 +341,42 @@ function _onCC_jog(d1, d2) {
         return;
     }
 
-    /* MIX at REST (a touch peek, not latched): touch Send A / Send B and click
-     * = that send's effects (Josh, 2026-10-01). Latched, the click reaches
-     * sound mode's own handler, which asks the same soundMixSendClick. */
+    /* ⭑ ARP STEPS opens from the Steps knob (Josh, 2026-10-04: "live arp > step
+     * editor = knob touch + click on steps param (k5)"; "seq arp should work
+     * like live arp"): touch K5 on SEQ ARP / LIVE ARP and click. With Bank Lock
+     * on it locks the card under it, so Back lands on the card (the MIX-send
+     * precedent); off, Back is the overview. Inside the editor K5 is step 5's
+     * offset, so this does not close it — Back and a jog turn do. */
     if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
-            S.activeBank === BANK_SOUND && S.knobTouched >= 0 && soundOpen() &&
-            soundMixSendClick(S.knobTouched)) {
+            !S.copyHeld && !S.muteHeld && !S.stepIntervalMode &&
+            S.knobTouched === ARP_STEPS_KNOB && arpStepsBank(S.trackPadMode[S.activeTrack], S.activeBank)) {
+        S.stepIntervalMode = true;
+        computePadNoteMap();               /* the pads stop playing while the editor is up */
+        if (bankLockOn()) S.bankCardLatched = true;
+        S.screenDirty = true;
+        forceRedraw();
+        return;
+    }
+
+    /* ⭑ RPT GROOVE flips Velocity / Nudge on ANY knob touched + click (Josh,
+     * 2026-10-04: "repeat groove velocity > nudge = touch any knob and click").
+     * The footer says so on both pages (bankPageHints: KNB+CLK). */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
+            !S.copyHeld && !S.muteHeld && S.knobTouched >= 0 &&
+            bankHasAltParams(S.activeTrack, S.activeBank)) {
+        S.altMode = !S.altMode;
+        S.screenDirty = true;
+        forceRedraw();
+        return;
+    }
+
+    /* MIX and MACROS at REST (a touch peek, not latched): touch Send A / Send B
+     * and click = that send's effects (Josh, 2026-10-01); touch a macro and
+     * click = that macro's editor (2026-10-04). Latched, the click reaches sound
+     * mode's own handler, which asks the same soundKnobCardClick. */
+    if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && !S.deleteHeld &&
+            (S.activeBank === BANK_SOUND || S.activeBank === BANK_MACROS) &&
+            S.knobTouched >= 0 && soundOpen() && soundKnobCardClick(S.knobTouched)) {
         forceRedraw();
         return;
     }
@@ -953,20 +983,10 @@ function modalDialogUp() {
         forceRedraw();
         return;
     }
-    /* Plain jog click on SEQ ARP (bank 4) or TARP (bank 5) in Track View toggles
-     * the Arp Steps interval-edit overlay: knobs K1-K8 become per-step scale-degree
-     * offsets (±24), pad grid is the persistent step-vel level editor. Auto-clears
-     * on next jog turn (handled in the main-knob delta branch below). */
-    if (d1 === 3 && d2 === 127 && !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld &&
-            !S.sessionView && S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM &&
-            (S.activeBank === 4 || S.activeBank === 5)) {
-        S.stepIntervalMode = !S.stepIntervalMode;
-        /* Repush padmap so pads stop dispatching notes while the overlay is on. */
-        computePadNoteMap();
-        S.screenDirty = true;
-        forceRedraw();
-        return;
-    }
+    /* (The plain click's Arp Steps toggle on SEQ ARP / LIVE ARP retired
+     * 2026-10-04: the editor opens from the Steps knob, touch + click, above.
+     * Inside it the knobs are per-step offsets and the pads the step-vel
+     * editor; a jog turn or Back closes it.) */
     /* Shift + jog click: RETIRED as a gesture (Josh, 2026-08-31 — its latch
      * job moved to the plain click above; ruled "nothing" until something
      * needs it). What survives is the abandon: Shift means the chord was not
@@ -978,20 +998,9 @@ function modalDialogUp() {
         return;
     }
 
-    /* Plain jog click on an alt-param bank: toggle sticky alt-param mode.
-     * Perform-mode switching now lives only on Shift+step-8 (see _onStepButtons).
-     * The Arp-Steps block above is gated melodic-only, so on drum tracks bank 5
-     * (REPEAT GROOVE) correctly falls through here to toggle VEL/NUDGE. */
-    if (d1 === 3 && d2 === 127 && !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld &&
-            !S.sessionView && bankHasAltParams(S.activeTrack, S.activeBank)) {
-        S.altMode = !S.altMode;
-        if (!bankCardVisible())
-            showActionPopup(bankDisplayName(S.trackPadMode[S.activeTrack], S.activeBank),
-                            S.altMode ? 'ALT' : 'MAIN');
-        S.screenDirty = true;
-        forceRedraw();
-        return;
-    }
+    /* (The plain click's page alt — RPT GROOVE Velocity/Nudge — retired
+     * 2026-10-04: any knob touched + click, above. A plain click no bank
+     * claims does nothing.) */
 
     if (d1 === MoveMainKnob) {
 

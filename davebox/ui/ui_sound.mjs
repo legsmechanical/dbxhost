@@ -1225,11 +1225,12 @@ export function soundOpen() { return S.active; }
  *        effects (Josh, 2026-10-01; "take the click to enter the menu off of
  *        sound+config", 2026-09-26)
  *   CONFIG: the list goes live, from its top
- *   MACROS: the assign list, floating over the page (the list is the store) */
+ *   MACROS: the touched macro's editor (soundMacroKnobClick); untouched, the
+ *           click is spent and does nothing (2026-10-04) */
 export function soundCardClick() {
     if (S.view === VIEW_PROMPT) { soundMixSendClick(S.touchedIdx); return true; }
     if (S.view === VIEW_CFGCARD) { S.pickRow = 0; soundShowMenu(); return true; }
-    if (S.view === VIEW_MACROS) { openKnobEditor(); S.dirty = true; return true; }
+    if (S.view === VIEW_MACROS) { soundMacroKnobClick(S.touchedIdx); S.dirty = true; return true; }
     return false;
 }
 
@@ -1258,7 +1259,7 @@ function followDestOf(plan) {
     if (th.t === 'view') return th.view | 0;
     if (th.t === 'slotcfg') return VIEW_SLOTCFG;
     if (th.t === 'lfo') return VIEW_LFO;
-    if (th.t === 'knobs') return VIEW_KNOBS;
+    if (th.t === 'knobs') return VIEW_MACROS;   /* the macro screens follow onto the card */
     return VIEW_BLOCKS;
 }
 export function soundActive() { return S.active && !soundResting(); }
@@ -2190,6 +2191,30 @@ export function soundMixSendClick(i) {
     S.dirty = true;
     return true;
 }
+/* ⭑ A MACRO'S EDITOR from its knob (Josh, 2026-10-04: "macro editor, each knob
+ * gets touch+jog to enter that knobs editor"): touch macro k on the MACROS card
+ * and click. The door rule is the K-list's (09-04): a macro with a choice made
+ * is ENTERED — its legs and ranges — an empty one goes straight to choosing.
+ * Back lands on the MACROS card (VIEW_TREE parents). From a touch PEEK the card
+ * it comes back to stays up — unless Bank Lock is off (the MIX-send rule). */
+export function soundMacroKnobClick(k) {
+    if (S.view !== VIEW_MACROS || k < 0 || k >= NUM_KNOBS || S.track < 0) return false;
+    if (bankLockOn()) GS.bankCardLatched = true;
+    openKnobEditor();
+    S.knobIdx = k;
+    if (macroLegs(macroMapping(k)).length) openKnobLegs();
+    else { S.knobLegIdx = -1; S.pendingAction = { t: 'knobtarget' }; }   /* probes components — tick only */
+    S.dirty = true;
+    return true;
+}
+/* A touched knob's click on a card sound mode owns: MIX's sends, MACROS'
+ * editors. False when that knob opens nothing here. */
+export function soundKnobCardClick(k) {
+    if (S.view === VIEW_PROMPT) return soundMixSendClick(k);
+    if (S.view === VIEW_MACROS) return soundMacroKnobClick(k);
+    return false;
+}
+
 /* The session mixer's twin: from Session View, on its SEND A / SEND B page.
  * Back returns to that page (door 'sessmix'). */
 export function soundEnterSendFromSessionMixer(key) {
@@ -4406,7 +4431,7 @@ function leaveMorphPicker() {
     if (macroMulti(mp) || macroLegs(mp).some(legRanged) || macroLegs(mp).some(l => l.kind === MORPH_KIND)) {
         S.knobLegRow = Math.min(S.knobLegRow, knobLegRows().length - 1);
         S.view = VIEW_KNOBLEGS;
-    } else S.view = VIEW_KNOBS;
+    } else S.view = VIEW_MACROS;
 }
 function commitKnobAssignment(target, param) {
     const i = S.knobIdx, t = S.track;
@@ -4437,14 +4462,14 @@ function commitKnobAssignment(target, param) {
      * tick re-seeds both. */
     S.macCells[i] = null; S.macVals[i] = null; S.macLegCells[i] = null; S.macLegVals[i] = null; S.knobAccum[i] = 0; S.macLastDir[i] = 0;
     writeSidecar();
-    /* The assignment list is the ONE route in (Josh, 2026-09-05: Shift+touch
-     * quick-assign retired), so a commit lands back on the list it came from:
-     * the LEG list when the knob has legs to show, the K-list otherwise. */
+    /* A commit lands back where it came from: the LEG list when the knob has
+     * legs to show, otherwise the MACROS card, whose cell now shows the result
+     * (the K-list it used to return to has no door since 2026-10-04). */
     S.knobLegIdx = -1;
     if (macroMulti(store[i]) || macroLegs(store[i]).some(legRanged)) {
         S.knobLegRow = Math.min(S.knobLegRow, knobLegRows().length - 1);
         S.view = VIEW_KNOBLEGS;
-    } else S.view = VIEW_KNOBS;
+    } else S.view = VIEW_MACROS;
 }
 
 /* ── where a screen SITS in the tree ───────────────────────────────────────
@@ -4507,11 +4532,11 @@ const VIEW_TREE = {
                             crumb: () => 'Inserts' },
     [VIEW_LFO]:         { parent: VIEW_SLOTCFG,    float: true,
                           crumb: () => 'LFO ' + (S.lfoNum + 1) },
-    [VIEW_KNOBLEGS]:    { parent: VIEW_KNOBS,      float: true,
+    [VIEW_KNOBLEGS]:    { parent: VIEW_MACROS,     float: true,
                           crumb: () => 'K' + (S.knobIdx + 1) },
     [VIEW_NOEDITOR]:    { parent: VIEW_BLOCKS,     float: false,
                           crumb: () => 'NO EDITOR' },
-    [VIEW_KNOB_TARGET]: { parent: VIEW_KNOBS,      float: true, backPure: true,
+    [VIEW_KNOB_TARGET]: { parent: VIEW_MACROS,     float: true, backPure: true,
                           crumb: () => 'K' + (S.knobIdx + 1) },
     [VIEW_KNOB_PARAM]:  { parent: VIEW_KNOB_TARGET, float: true, backPure: true,
                           /* ⚠ Falls back: the target is empty until one is
@@ -5394,6 +5419,12 @@ function chainRootView() {
     return null;
 }
 
+/* ⚠ RETIRED SCREEN (2026-10-04): the K-list (VIEW_KNOBS) has no door — each
+ * macro's editor opens from its own knob on the MACROS card, touch + click
+ * (soundMacroKnobClick), and its screens' Back lands on the card. Only
+ * openKnobEditor's one-tick transient still sets VIEW_KNOBS. This renderer,
+ * knobRowLabel and the VIEW_KNOBS jog/click/Back branches are left for a
+ * deliberate removal. */
 function renderKnobs() {
     /* Floats now: a submenu, and a plain list. The crumb says which track and
      * that you are in Knobs, so the header it used to draw is redundant. */
@@ -6837,13 +6868,21 @@ function macroCells(track, live) {
         }
         cells.push(cell);
     }
+    /* Every macro answers touch + click — its own editor (Josh, 2026-10-04:
+     * "macro editor, each knob gets touch+jog to enter that knobs editor"), so
+     * every cell wears the corner brackets, as the triggers do. */
+    for (const c of cells) if (c) c.opens = true;
     return cells;
 }
 function macroCardHints() {
-    /* The click opens the assign list; the jog walks banks — or, with a step
-     * held, reveals its page (spec §2). */
+    /* A touched macro's click opens ITS editor — EDIT when it has a choice
+     * made, ASSIGN when empty (soundMacroKnobClick's door rule). Untouched,
+     * the jog walks banks — or, with a step held, reveals its page (§2). */
+    const _tk = S.touchedIdx >= 0 ? S.touchedIdx : GS.knobTouched;
+    if (_tk >= 0 && _tk < NUM_KNOBS)
+        return [['CLK', macroLegs(macroMapping(_tk)).length ? 'EDIT' : 'ASSIGN'], ['BACK', 'OUT']];
     const jog = GS.heldStep >= 0 ? ['JOG', 'STEP'] : ['JOG', 'BANK'];
-    return [['CLK', 'ASSIGN'], jog, ['BACK', 'OUT']];
+    return [jog, ['BACK', 'OUT']];
 }
 function renderMacros() {
     clear_screen();
@@ -10373,7 +10412,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
             /* Leave the range edit first, then the leg list — the same
              * two-stage Back slot settings has. */
             if (S.knobLegEditing) S.knobLegEditing = false;
-            else S.view = VIEW_KNOBS;
+            else S.view = VIEW_MACROS;      /* the card: the K-list has no door now */
         } else if (S.view === VIEW_KNOBS) {
             /* The list floats over the MACROS page; Back returns to it. The
              * store was written at each commit (sidecar), nothing to flush. */

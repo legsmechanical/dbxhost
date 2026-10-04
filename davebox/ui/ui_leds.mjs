@@ -1303,14 +1303,12 @@ export function forceRedraw() {
     updateTrackLEDs();
 }
 
-/* PAGE alts only — the banks whose plain jog click flips the whole page:
- * drum RPT GROOVE (5, Velocity/Nudge, S.altMode) and melodic SEQ ARP / ARP IN
- * (4/5, Arp Steps, S.stepIntervalMode). The single-knob alts (CLIP, DRUM
- * LANE, ALL LANES, NOTE FX, DELAY) flip one knob on touch + click instead
- * (KNOB_ALTS, S.knobAlt) and have no bank-level indicator. */
+/* The one PAGE alt: drum RPT GROOVE (5), Velocity/Nudge (S.altMode) — touch
+ * ANY knob and click the jog (Josh, 2026-10-04). Arp Steps on SEQ ARP / LIVE
+ * ARP opens from their Steps knob (arpStepsBank, ARP_STEPS_KNOB); the
+ * single-knob alts flip one knob (KNOB_ALTS, S.knobAlt). */
 export function bankHasAltParams(t, bank) {
-    if (S.trackPadMode[t] === PAD_MODE_DRUM) return bank === 5;
-    return bank === 4 || bank === 5;
+    return S.trackPadMode[t] === PAD_MODE_DRUM && bank === 5;
 }
 
 /* Returns true when the current bank's alt indicator should flash. For melodic

@@ -57,6 +57,7 @@ const { S } = await import('../../ui/ui_state.mjs');
 const { BANKS, BANK_MACROS, BANK_SOUND } = await import('../../ui/ui_constants.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const render = await import('../../ui/ui_render.mjs');
+const kit = await import('../../ui/ui_movy.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
 S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 0;
@@ -98,12 +99,14 @@ step('⭑ a knob touch PEEKS the LIVE page (assignments shown), and the release 
     note(0, 0); ticks(1);
     assert(!render.bankCardVisible(), 'stood down');
 });
-step('⭑ the jog CLICK at rest LATCHES bank mode (as on any bank) — it does not open the assign list', () => {
+step('⭑ the jog CLICK at rest LATCHES bank mode (as on any bank); latched, a plain click opens nothing, touch K1 + click opens K1', () => {
     cc(3, 127); cc(3, 0); ticks(1);
     assert(S.bankCardLatched, 'latched');
     assert(snd.soundActive() && snd.soundViewForTest() === 19, 'now active on the MACROS page, view ' + snd.soundViewForTest());
     cc(3, 127); cc(3, 0); ticks(1);
-    assert(snd.soundViewForTest() === 11, 'the second click (latched) opens the assign list');
+    assert(snd.soundViewForTest() === 19, 'a second plain click (latched) opened something, view ' + snd.soundViewForTest());
+    note(0, 127); cc(3, 127); cc(3, 0); note(0, 0); ticks(2);
+    assert(snd.soundViewForTest() === 20, 'touch K1 (assigned) + click enters its legs, view ' + snd.soundViewForTest());
     cc(51, 127); cc(51, 0); ticks(1);
     assert(snd.soundViewForTest() === 19, 'Back to the page');
     cc(51, 127); cc(51, 0); ticks(1);
@@ -113,6 +116,22 @@ step('after Back the track STAYS on MACROS and the mode rests again (Back never 
     ticks(3);
     assert(snd.soundOpen() && snd.soundResting(), 'open, resting');
     assert(S.activeBank === BANK_MACROS, 'still MACROS: ' + S.activeBank);
+});
+step('⭐⭐ FROM REST, touch K1 + click opens K1\'s editor (Josh, 2026-10-04: "each knob gets touch+jog to enter that knobs editor"); the peek brackets every macro and says CLK EDIT', () => {
+    assert(snd.soundOpen() && snd.soundResting() && !S.bankCardLatched, 'setup: resting, unlatched');
+    note(0, 127); ticks(1);
+    fb.fill(0); render.drawUI();
+    const m = snd.soundMacrosForTest();
+    assert(m.drawn.length === 8 && m.drawn.every((c) => c && c.opens), 'every macro cell wears the brackets: ' + JSON.stringify(m.drawn.map((c) => c && c.opens)));
+    assert(JSON.stringify(kit.kitHintsForTest()) === JSON.stringify([['CLK', 'EDIT'], ['BACK', 'OUT']]),
+           'touched K1 footer: ' + JSON.stringify(kit.kitHintsForTest()));
+    cc(3, 127); cc(3, 0); note(0, 0); ticks(2);
+    assert(snd.soundViewForTest() === 20, 'K1 (assigned) entered its legs, view ' + snd.soundViewForTest());
+    assert(S.bankCardLatched, 'Bank Lock on: the card it comes back to stays up');
+    cc(51, 127); cc(51, 0); ticks(1);
+    assert(snd.soundViewForTest() === 19, 'Back lands on the MACROS card, view ' + snd.soundViewForTest());
+    cc(51, 127); cc(51, 0); ticks(3);
+    assert(!S.bankCardLatched && snd.soundResting(), 'Back from the card is the overview again');
 });
 step('a track switch onto a MACROS track re-opens the rest state silently', () => {
     S.trackActiveBank[1] = BANK_MACROS; S.trackMacros[1] = null;

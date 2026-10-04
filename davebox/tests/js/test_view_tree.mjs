@@ -53,7 +53,7 @@ for (const fn of ['host_write_file', 'host_read_file', 'host_file_exists', 'host
 /* Sound mode's view enum — not exported, pinned here so a renumbering shows up
  * as a failure rather than as silently comparing the wrong constants. */
 const VIEW_BLOCKS = 0, VIEW_EDIT = 1, VIEW_PRESET_SRC = 3, VIEW_SLOTCFG = 8,
-      VIEW_PROMPT = 18,
+      VIEW_PROMPT = 18, VIEW_MACROS = 19,
       VIEW_KNOBS = 11, VIEW_KNOB_TARGET = 12, VIEW_KNOB_PARAM = 13,
       VIEW_LFO = 14, VIEW_LFO_TARGET = 15, VIEW_LFO_PARAM = 16;
 
@@ -84,7 +84,7 @@ function back() {
 step('⭑⭑ Back steps up exactly one level, on every pure edge', () => {
     const EDGES = [
         ['KNOB_PARAM -> KNOB_TARGET', VIEW_KNOB_PARAM, VIEW_KNOB_TARGET],
-        ['KNOB_TARGET -> KNOBS',      VIEW_KNOB_TARGET, VIEW_KNOBS],
+        ['KNOB_TARGET -> MACROS',     VIEW_KNOB_TARGET, VIEW_MACROS],   /* the K-list has no door since 2026-10-04 */
         ['LFO_PARAM -> LFO_TARGET',   VIEW_LFO_PARAM,  VIEW_LFO_TARGET],
         ['LFO_TARGET -> LFO',         VIEW_LFO_TARGET, VIEW_LFO],
     ];
@@ -108,13 +108,13 @@ step('⚠ CONTROL: the probe can see a WRONG landing', () => {
 });
 
 step('⭑ a whole chain walks all the way out, one press per level', () => {
-    /* The edges compose: three Backs from the deepest screen must land on
-     * KNOBS, not skip a level and not stall on one. */
+    /* The edges compose: two Backs from the deepest screen must land on the
+     * MACROS card, not skip a level and not stall on one. */
     setView(VIEW_KNOB_PARAM);
     back();
     if (view() !== VIEW_KNOB_TARGET) throw new Error(`first Back -> ${view()}`);
     back();
-    if (view() !== VIEW_KNOBS) throw new Error(`second Back -> ${view()}`);
+    if (view() !== VIEW_MACROS) throw new Error(`second Back -> ${view()}`);
 });
 
 step('⭑⭑ the PATH names the ancestors, outermost first', () => {
@@ -129,12 +129,14 @@ step('⭑⭑ the PATH names the ancestors, outermost first', () => {
      * "screen you're on should be the last crumb across the board"). Before
      * that, Knobs and LFO 1 both read "T3 > SOUND" and nothing named where you
      * were, because the converted screens had dropped their headers. */
-    if (path.length !== 4)
-        throw new Error(`expected 4 crumbs for KNOB_PARAM, got ${path.length}: ${JSON.stringify(path)}`);
+    /* 3 since 2026-10-04: a macro's editor opens from its knob on the MACROS
+     * card, so the K-list ("Knobs") is no longer an ancestor. */
+    if (path.length !== 3)
+        throw new Error(`expected 3 crumbs for KNOB_PARAM, got ${path.length}: ${JSON.stringify(path)}`);
     /* ⚠ Updated 2026-09-02: the knob chain moved from Sound Control to the
      * MACROS bank (spec §2) — its root is the MACROS page. */
-    if (path[0] !== 'Macros' || path[1] !== 'Knobs' || path[2] !== 'K1')
-        throw new Error(`the path reads ${JSON.stringify(path)}, expected Macros > Knobs > K1 > <param>`);
+    if (path[0] !== 'Macros' || path[1] !== 'K1')
+        throw new Error(`the path reads ${JSON.stringify(path)}, expected Macros > K1 > <param>`);
 });
 
 step('⚠ every crumb is non-empty — an empty one silently drops the tail', () => {
@@ -173,9 +175,9 @@ step('⭑⭑ the STACK depth counts floating ancestors, stopping at a full scree
      * frame to a hosted module canvas. */
     setView(VIEW_KNOB_PARAM);
     const knobs = snd.soundStackDepth();
-    /* 3 since 2026-09-02: the chain's root is the MACROS page, a full screen
-     * (float: false) — Knobs > K1 > Param float over it. */
-    if (knobs !== 3) throw new Error(`knob param stack is ${knobs} boxes, expected 3`);
+    /* 2 since 2026-10-04: the chain's root is the MACROS page, a full screen
+     * (float: false) — K1 > Param float over it (the K-list is gone). */
+    if (knobs !== 2) throw new Error(`knob param stack is ${knobs} boxes, expected 2`);
     setView(VIEW_LFO_PARAM);
     const lfo = snd.soundStackDepth();
     if (lfo !== 4)

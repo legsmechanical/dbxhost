@@ -24,8 +24,14 @@ the section into a versioned heading at release time.
   touched knob changes; its cell wears the corner brackets, like Crop and
   Legato, and while you touch it the bottom of the screen shows CLK and the
   name it will switch to. Back, or touch + click again, switches it
-  back. A plain jog click no longer flips these banks. RPT GROOVE's Nudge page
-  and Arp Steps stay on the plain click.
+  back. A plain jog click no longer flips these banks.
+- **Editors open on knob touch + jog click, too.** Arp Steps: touch Steps (knob
+  5) on SEQ ARP or LIVE ARP and click — the knob has corner brackets and the
+  screen says CLK STEPS. RPT GROOVE: touch any knob and click to switch between
+  Velocity and Nudge (the footer says KNB+CLK NUDGE / VELOCITY). MACROS: touch a
+  macro and click to edit that macro (an empty one goes straight to choosing a
+  target); Back returns to the MACROS page. A plain jog click no longer opens
+  any of these.
 - **ALL LANES no longer asks you to confirm.** The drum ALL LANES bank opens
   like any other bank: its knobs, Loop, double-and-fill and quantize act on all
   32 lanes straight away.

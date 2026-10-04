@@ -230,19 +230,17 @@ step('⭐ DRUM LANE K1 / K3 / K7 flip to Zoom, Nudge, Reverse Style', () => {
     assert(wrote(new RegExp('^t2_l' + lane + '_playback_audio_reverse=')), 'K7 wrote ' + JSON.stringify(sets.slice(0, 6)));
 });
 
-step('⭐ RPT GROOVE keeps the PAGE alt on the plain click, with CLK ALT', () => {
+/* The page alts (RPT GROOVE, Arp Steps) moved to touch + click on 2026-10-04 —
+ * test_knob_click_editors. Here only: no knob alt leaks onto them, and an
+ * untouched CLIP card offers no CLK pair. */
+step('a plain click on RPT GROOVE flips nothing, page or knob', () => {
     latch(5);
-    assert(render.bankPageHints(5).some((h) => h[0] === 'CLK' && h[1] === 'ALT'), 'hints ' + hints(5));
     click();
-    assert(S.altMode && S.knobAlt === 0, 'altMode ' + S.altMode + ' knobAlt ' + S.knobAlt);
-    back();
-    assert(!S.altMode, 'Back did not clear the page');
+    assert(!S.altMode && S.knobAlt === 0, 'altMode ' + S.altMode + ' knobAlt ' + S.knobAlt);
     S.trackPadMode[2] = C.PAD_MODE_MELODIC_SCALE;
 });
 
-step('SEQ ARP keeps CLK STEP; CLIP no longer offers CLK ALT', () => {
-    latch(4);
-    assert(render.bankPageHints(4).some((h) => h[0] === 'CLK' && h[1] === 'STEP'), 'SEQ ARP hints ' + hints(4));
+step('CLIP untouched offers no CLK pair', () => {
     latch(0);
     assert(!render.bankPageHints(0).some((h) => h[0] === 'CLK'), 'CLIP untouched hints ' + hints(0));
 });

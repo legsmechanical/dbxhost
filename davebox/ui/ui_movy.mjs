@@ -2414,7 +2414,9 @@ export const MV_RULE_Y = MV_FOOTER_Y - 1;
  * Collapsing them would tell the user "back" does one thing when it does two,
  * and that difference is the one thing they cannot see before pressing it. */
 export const MV_FOOTER_CANON = Object.freeze({
-    keys: Object.freeze(['JOG', 'CLK', 'BACK', 'SHFT', 'MUTE', 'KNB']),
+    /* KNB+CLK: the one two-control key — touch any knob and click (RPT
+     * GROOVE's page flip); KNB alone would not say "+ click". */
+    keys: Object.freeze(['JOG', 'CLK', 'BACK', 'SHFT', 'MUTE', 'KNB', 'KNB+CLK']),
     backActions: Object.freeze(['EXIT', 'OUT']),
 });
 

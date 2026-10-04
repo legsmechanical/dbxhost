@@ -17,7 +17,7 @@ import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
 import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
-import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, BANKNAV_HOLD_MS, knobAltFor } from './ui_constants.mjs';
+import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, BANKNAV_HOLD_MS, knobAltFor, ARP_STEPS_KNOB, arpStepsBank } from './ui_constants.mjs';
 import { miActive, miRender } from './ui_midi_import.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
@@ -588,21 +588,22 @@ function drawSessionFaderRow(cells, mode) {
  *
  *   JOG  BANK    unshifted jog turn opens and scrolls the bank picker
  *                (_onCC_jog, MoveMainKnob branch). Always live.
- *   CLK  STEPS   plain jog click toggles the Arp-Steps interval overlay --
- *                MELODIC tracks only, banks 4 and 5, which is exactly how the
- *                handler is gated.
- *   CLK  ALT     otherwise, plain jog click toggles the PAGE alt -- only drum
- *                RPT GROOVE (bankHasAltParams). The single-knob alts (Zoom,
- *                Nudge, Revrs, Algo, ClkFb) flip on touch + click and say so
- *                while their knob is touched: CLK ZOOM, CLK RES, ...
+ *   CLK  STEPS   while the Steps knob (K5) is touched on SEQ ARP / LIVE ARP:
+ *                touch + click opens the Arp Steps editor (2026-10-04).
+ *   KNB+CLK NUDGE / VELOCITY   drum RPT GROOVE, on both pages: touch ANY
+ *                knob and click for the other page (bankHasAltParams). First,
+ *                so the fit rule drops JOG BANK rather than it.
+ *   CLK ZOOM ... the single-knob alts (Zoom, Nudge, Revrs, Algo, ClkFb) flip
+ *                on touch + click and say so while their knob is touched.
+ *                No plain jog click has a bank meaning here any more.
  *   BACK OUT     a Back TAP rises one level: it clears alt mode, then the
  *                latch/bank display, then leaves the card. OUT and not EXIT --
  *                see MV_FOOTER_CANON, where the two are deliberately different
  *                words for different destinations.
  *
- * ⚠ THE WORDS ARE CUT TO THE 86px FLOW BUDGET (see hintPairWidth). JOG BANK +
- * CLK ALT is 80 and both show; CLK STEP is 42 where "STEPS" is 47, and at 47
- * the pair before it is the one that disappears.
+ * ⚠ THE WORDS ARE CUT TO THE 86px FLOW BUDGET (see hintPairWidth). KNB+CLK
+ * NUDGE is 67 and KNB+CLK VELOCITY 78, so beside either JOG BANK (43) does not
+ * fit and is the pair dropped.
  *
  * ⭑ SHFT TRK WAS DROPPED 2026-08-30 (Josh): Shift+jog steps the active track in
  * EVERY view, so it is a property of the instrument rather than of this page,
@@ -625,6 +626,9 @@ export function bankPageHints(bank) {
             (bank === 7 && S.knobTouched === ALL_LANES_CROP_KNOB &&
              S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM))) return [['CLK', 'CROP']];
     if (bank === 0 && S.knobTouched === IMPORT_KNOB && !S.sessionView) return [['CLK', 'IMPORT']];
+    /* A touched Steps knob on SEQ ARP / LIVE ARP opens Arp Steps. */
+    if (!S.sessionView && S.knobTouched === ARP_STEPS_KNOB &&
+            arpStepsBank(S.trackPadMode[S.activeTrack], bank)) return [['CLK', 'STEPS']];
     /* ...and a touched SINGLE-ALT knob says what a click switches it to. */
     if (!S.sessionView && S.knobTouched >= 0) {
         const a = knobAltFor(S.trackPadMode[S.activeTrack], bank, S.knobTouched);
@@ -636,9 +640,9 @@ export function bankPageHints(bank) {
      * On the STEP bank itself the jog does nothing under a hold: no pair. */
     const held = stepHoldEstablished();
     const hints = held ? (stepRevealAvailable() ? [['JOG', 'STEP']] : []) : [['JOG', 'BANK']];
-    const drum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
-    if (!drum && (bank === 4 || bank === 5)) hints.push(['CLK', 'STEP']);
-    else if (bankHasAltParams(S.activeTrack, bank)) hints.push(['CLK', 'ALT']);
+    /* RPT GROOVE: any knob + click goes to the other page — said on BOTH
+     * pages, and FIRST, so the fit rule drops JOG BANK rather than this. */
+    if (bankHasAltParams(S.activeTrack, bank)) hints.unshift(['KNB+CLK', S.altMode ? 'VELOCITY' : 'NUDGE']);
     hints.push(['BACK', 'OUT']);
     return hints;
 }
@@ -651,6 +655,8 @@ function markKnobAlts(cells, bank) {
     const pm = S.trackPadMode[S.activeTrack];
     for (let k = 0; k < cells.length; k++)
         if (cells[k] && knobAltFor(pm, bank, k)) cells[k].opens = true;
+    /* ...and the Steps knob on SEQ ARP / LIVE ARP, the door to Arp Steps. */
+    if (arpStepsBank(pm, bank) && cells[ARP_STEPS_KNOB]) cells[ARP_STEPS_KNOB].opens = true;
     return cells;
 }
 
@@ -2431,7 +2437,9 @@ function drawUIBody() {
              * place that names things. */
             drawBankHeadingInverted(bankHeaderName(S.activeTrack, 5));
         }
-        const _colW = 16, _barW = 10, _top = 14, _bot = 54, _numY = 57;
+        /* Bars end at 45 and the numbers sit at 48 (the Arp Steps page's
+         * geometry), leaving the footer row free for the KNB+CLK hint. */
+        const _colW = 16, _barW = 10, _top = 14, _bot = 45, _numY = 48;
         if (S.altMode) {
             /* dotted center baseline for the bipolar nudge page */
             const _cy = Math.floor((_top + _bot) / 2);
@@ -2478,6 +2486,7 @@ function drawUIBody() {
                 mvPrint(_nx, _numY, _num, 1);
             }
         }
+        drawKitHintRow(MV_FOOTER_Y, bankPageHints(5));
         } else if (S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM && bank === 1) {
         /* Melodic NOTE FX: K1=Oct, K2=Ofs, K3=Vel, K4=Qnt, K5=Len, K6=>Gate,
          * K7=blocked, K8=Rnd — canvaskit grid (proportional labels, so

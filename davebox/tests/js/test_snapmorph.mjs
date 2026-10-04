@@ -148,9 +148,7 @@ step('setup: sound mode on a Schwung track, MACROS bank, an already-seeded empty
 
 /* ---- THE PICKER ------------------------------------------------------------ */
 step('the target picker offers SnapMorph on a chain track', () => {
-    click(); assert(snd.soundViewForTest() === VIEW_KNOBS, 'K-list');
-    for (let i = 0; i < K; i++) jog(1);
-    click(); ticks(1);
+    touch(K, true); click(); touch(K, false); ticks(1);       /* the macro's own touch + click */
     assert(snd.soundViewForTest() === VIEW_KNOB_TARGET, 'an empty knob opens the targets, view ' + snd.soundViewForTest());
     const names = snd.soundKnobTargetsForTest().map(t => t.name);
     assert(names.indexOf('SnapMorph') >= 0, 'SnapMorph offered, got ' + JSON.stringify(names));
@@ -208,9 +206,7 @@ step('Back leaves the slot list onto the LEG list; the morph leg has Lo/Hi and N
     const rows = snd.soundKnobLegRowsForTest();
     assert(rows[0].kind === 'leg' && rows[0].label === 'Morph' && rows[0].value === 'Snap>1+2', 'the leg row: ' + JSON.stringify(rows[0]));
     assert(rows[1].kind === 'lo' && rows[2].kind === 'hi' && rows[3].kind === 'add', 'Lo, Hi, then + Add target (no Travel), got ' + JSON.stringify(rows.map(r => r.kind)));
-    back(); assert(snd.soundViewForTest() === VIEW_KNOBS, 'then the K-list');
-    assert(snd.soundKnobRowLabelForTest(K) === 'Snap>1+2', 'K4 reads its snapshots, got ' + snd.soundKnobRowLabelForTest(K));
-    back(); assert(snd.soundViewForTest() === VIEW_MACROS, 'then the page');
+    back(); assert(snd.soundViewForTest() === VIEW_MACROS, 'then the MACROS card, view ' + snd.soundViewForTest());
 });
 
 /* ---- THE SEED --------------------------------------------------------------- */

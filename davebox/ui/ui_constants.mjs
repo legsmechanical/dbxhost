@@ -823,7 +823,8 @@ export const PAD_MODE_CONDUCT = 2;
  * between its main and alt parameter (S.knobAlt, knobAltOn), the others stay.
  * [main, alt] are the on-screen short names — the footer reads CLK + the one
  * a click would switch to. Page alts (RPT GROOVE, Arp Steps) are NOT here:
- * they stay on the plain click (S.altMode / S.stepIntervalMode). */
+ * they are touch + click too, but page-wide (S.altMode / S.stepIntervalMode;
+ * ARP_STEPS_KNOB below, and any knob on RPT GROOVE). */
 export const KNOB_ALTS = {
     drum: {
         0: { 0: ['Res', 'Zoom'], 2: ['Shift', 'Nudge'], 6: ['Dir', 'Revrs'] },   /* DRUM LANE */
@@ -835,6 +836,13 @@ export const KNOB_ALTS = {
         3: { 0: ['Rate', 'ClkFb'], 7: ['Rand', 'Algo'] },                        /* MIDI DLY */
     },
 };
+/* Arp Steps opens from the Steps knob (K5 on SEQ ARP and LIVE ARP) touched +
+ * a jog click (Josh, 2026-10-04: "live arp > step editor = knob touch + click
+ * on steps param (k5)"; "seq arp should work like live arp"). */
+export const ARP_STEPS_KNOB = 4;
+export function arpStepsBank(padMode, bank) {
+    return padMode !== PAD_MODE_DRUM && (bank === 4 || bank === 5);
+}
 export function knobAltFor(padMode, bank, k) {
     const fam = KNOB_ALTS[padMode === PAD_MODE_DRUM ? 'drum' : 'melodic'][bank];
     return (fam && fam[k]) || null;

@@ -125,11 +125,13 @@ step('with Bank Lock off the pop-up still stays up; Back closes it on LIVE ARP',
     S.bankLockOn = true;
 });
 
-step('a click on it opens Arp Steps; Back closes that first, then the page', () => {
+step('touch K5 (Steps) + click on it opens Arp Steps (a plain click does not); Back closes that first, then the page', () => {
     home();
     hold(); s11Up(); shiftUp(); ticks(2);
     midi(0xB0, 3, 127); midi(0xB0, 3, 0); ticks(2);
-    assert(S.stepIntervalMode, 'the click did not open Arp Steps');
+    assert(!S.stepIntervalMode, 'a plain click opened Arp Steps');
+    midi(0x90, 4, 127); midi(0xB0, 3, 127); midi(0xB0, 3, 0); midi(0x90, 4, 0); ticks(2);
+    assert(S.stepIntervalMode, 'touch K5 + click did not open Arp Steps');
     back();
     assert(!S.stepIntervalMode && S.activeBank === 5 && S.bankCardLatched, 'first Back: ' + S.activeBank);
     back();
