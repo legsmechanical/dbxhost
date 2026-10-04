@@ -98,13 +98,13 @@ for (let m = 0; m < SESS_KNOB_MODES.length; m++) {
     const name = SESS_KNOB_MODES[m].key;
     S.sessKnobMode = m;
     for (const [what, set] of [
-        /* ⭑ ONE LAW (2026-09-01): only the latch shows the page. Knob-touch
-         * states are tested WITH the latch on — touch drives highlights on
-         * the shown page, never the page itself. */
-        ['latched',           () => { S.knobTouched = -1; S.sessMixerLatched = true; S.bankSelectTick = -1; }],
-        ['latched + knob',    () => { S.knobTouched = 2;  S.sessMixerLatched = true; S.bankSelectTick = -1; }],
-        ['latched + window',  () => { S.knobTouched = -1; S.sessMixerLatched = true; S.bankSelectTick = 1;  }],
-        ['latched blank trk', () => { S.knobTouched = 5;  S.sessMixerLatched = true; S.bankSelectTick = -1; }],
+        /* ⭑ ONE LAW (2026-10-04): only a knob touch shows the page (no latch). The
+         * touched knob drives the highlight on the shown page; "latched" names
+         * below are the pre-2026-10-04 labels. */
+        ['latched',           () => { S.knobTouched = 0;  S.bankSelectTick = -1; }],
+        ['latched + knob',    () => { S.knobTouched = 2;  S.bankSelectTick = -1; }],
+        ['latched + window',  () => { S.knobTouched = 0;  S.bankSelectTick = 1;  }],
+        ['latched blank trk', () => { S.knobTouched = 5;  S.bankSelectTick = -1; }],
     ]) {
         set();
         try { draw(); ok(`${name}: renders on ${what}`); }
@@ -115,7 +115,7 @@ for (let m = 0; m < SESS_KNOB_MODES.length; m++) {
 /* 2. The fader row draws one strip per track that HAS a mixer position, and
  *    none for the two that do not. drawVFader outlines its channel, so counting
  *    outline calls counts strips. */
-S.sessKnobMode = 0; S.knobTouched = -1; S.sessMixerLatched = true; S.bankSelectTick = -1;
+S.sessKnobMode = 0; S.knobTouched = 0; S.bankSelectTick = -1;
 draw();
 /* A fader channel's top edge is the one fill of width 8 at y=TOP(14) — one per
  * strip, and nothing else on this screen has that signature. */
@@ -142,13 +142,13 @@ S.trackRoute[4] = 2; S.sessVolSlots[4] = 0;
 /* the shape showActionPopup produces: a card that defers to a held knob */
 S.actionPopupEndTick = 999; S.actionPopupLines = ['SOMETHING']; S.actionPopupGauge = -1;
 S.actionPopupCard = true; S.actionPopupDefers = true;
-S.sessKnobMode = 0; S.knobTouched = 3; S.sessMixerLatched = true; S.bankSelectTick = -1;
+S.sessKnobMode = 0; S.knobTouched = 3; S.bankSelectTick = -1;
 draw();
 if (!prints.includes('SOMETHING')) ok('a held knob shows the mixer page, not a queued popup');
 else bad('a held knob shows the mixer page, not a queued popup', 'popup drew over it');
 
 /* 5. …and the popup still gets its turn once nothing is touched. */
-S.knobTouched = -1; S.jogTouched = false; S.bankSelectTick = -1; S.sessMixerLatched = false;
+S.knobTouched = -1; S.jogTouched = false; S.bankSelectTick = -1;
 draw();
 if (prints.includes('SOMETHING')) ok('with nothing touched, ordinary popups still draw');
 else bad('with nothing touched, ordinary popups still draw', 'popup was swallowed');
@@ -157,7 +157,7 @@ else bad('with nothing touched, ordinary popups still draw', 'popup was swallowe
  *    This is the whole point of Josh's ask, and the two states are one tick
  *    apart, so a regression here would be easy to miss by eye. */
 S.actionPopupEndTick = -1;
-S.sessKnobMode = 0; S.knobTouched = 2; S.sessMixerLatched = true; S.bankSelectTick = -1;
+S.sessKnobMode = 0; S.knobTouched = 2; S.bankSelectTick = -1;
 S.tickCount = 1000;
 
 S.sessVolLastKnob = -1; S.sessVolLastTurn = -1;          /* touched, never turned */
@@ -229,7 +229,7 @@ else bad('send A draws no zoom-box pop-up', `${zoomish2.length} box-like fills`)
  *    (2026-09-04, the routed-track disabled-states check). Its column carries
  *    a drawn cross and NO fader; the fader count must not move. Control: the
  *    same track with no destination (plain MIDI out) draws its CC 7 fader. */
-S.knobTouched = -1; S.sessMixerLatched = true; S.bankSelectTick = -1; S.sessKnobMode = 0;
+S.knobTouched = 0; S.bankSelectTick = -1; S.sessKnobMode = 0;
 S.trackRoute[6] = 2; S.trackMidiTo[6] = 3; S.sessVolSlots[6] = 0; S.sessVolBus[6] = 0; S.sessVolLevel[6] = 0.5;
 draw();
 const fadersRouted = countFaders();

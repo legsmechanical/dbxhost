@@ -63,10 +63,6 @@ step('⭐ holding Loop (melodic): STEP PAGE and JOG STEP in the footer', () => {
     assert(swallowed === null, 'swallowed: ' + swallowed);
     S.loopHeld = false;
 });
-step('⭐ the SESSION FX card (the list at rest): CLK MENU in the footer', () => {
-    fb.fill(0); snd.renderSessionFxCard();
-    assert(has('CLK', 'MENU'), 'pills: ' + hints());
-});
 
 if (failed) { console.log('FAIL: footer hints'); process.exit(1); }
 console.log('PASS: gestures are named in the footer');

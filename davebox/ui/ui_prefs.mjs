@@ -5,121 +5,12 @@
  */
 import { S } from './ui_state.mjs';
 
-/* The bank column in the BANK VIEW (Josh, 2026-09-27: "Global toggle to
- * disable bank navigation overlay when bank cards are locked"). On = the
- * column comes up while the jog walks the banks from the bank view, as on the
- * overview; Off = the bank view walks without it. The overview keeps its
- * column either way. Absent file = On (the behaviour before the switch). */
-export const BANK_VIEW_MAP_PATH = '/data/UserData/dbx-host/bank-view-map.txt';
-
-export function bankViewMapOn() {
-    if (S.bankViewMapOn === null) {
-        let on = true;
-        try {
-            on = !(host_file_exists(BANK_VIEW_MAP_PATH) &&
-                   String(host_read_file(BANK_VIEW_MAP_PATH) || '').trim() === '0');
-        } catch (e) { on = true; }
-        S.bankViewMapOn = on;
-    }
-    return S.bankViewMapOn;
-}
-
-export function setBankViewMapOn(v) {
-    S.bankViewMapOn = !!v;
-    let wrote = false;
-    try { wrote = !!host_write_file(BANK_VIEW_MAP_PATH, S.bankViewMapOn ? '1\n' : '0\n'); } catch (e) { wrote = false; }
-    if (!wrote) console.log('[prefs] could not persist Bank Map on Lock to ' + BANK_VIEW_MAP_PATH);
-}
-
-/* The bank column on the OVERVIEWS (Josh, 2026-10-03: "project menu toggle
- * bank map overlay in track overview (same as in bank lock)"). On = the column
- * comes up while the jog walks the banks under the track overview or the
- * session mixer modes under the session overview; Off = the overviews walk
- * without it (the header still names the bank). Bank Map on Lock is the same
- * switch for a locked card. Absent file = On. */
-export const BANK_OVERVIEW_MAP_PATH = '/data/UserData/dbx-host/bank-overview-map.txt';
-
-export function bankOverviewMapOn() {
-    if (S.bankOverviewMapOn === null) {
-        let on = true;
-        try {
-            on = !(host_file_exists(BANK_OVERVIEW_MAP_PATH) &&
-                   String(host_read_file(BANK_OVERVIEW_MAP_PATH) || '').trim() === '0');
-        } catch (e) { on = true; }
-        S.bankOverviewMapOn = on;
-    }
-    return S.bankOverviewMapOn;
-}
-
-export function setBankOverviewMapOn(v) {
-    S.bankOverviewMapOn = !!v;
-    let wrote = false;
-    try { wrote = !!host_write_file(BANK_OVERVIEW_MAP_PATH, S.bankOverviewMapOn ? '1\n' : '0\n'); } catch (e) { wrote = false; }
-    if (!wrote) console.log('[prefs] could not persist Bank Map Overview to ' + BANK_OVERVIEW_MAP_PATH);
-}
-
-/* Bank Lock (Josh, 2026-10-03: "project menu toggle bank card locking
- * (enable disable click to lock bank cards)"). On = a jog click on the track
- * or session overview locks the bank card, as since 2026-08-31. Off = cards
- * never lock: the click on the overview does the bank's own click straight
- * away (CONFIG opens TRACK CONFIG, MACROS its list, AUTOMATION its menu, an
- * alt bank its alternate page, the arp banks Arp Steps; in Session View the
- * FX door opens the list). Absent file = On. */
-export const BANK_LOCK_PATH = '/data/UserData/dbx-host/bank-lock.txt';
-
-export function bankLockOn() {
-    if (S.bankLockOn === null) {
-        let on = true;
-        try {
-            on = !(host_file_exists(BANK_LOCK_PATH) &&
-                   String(host_read_file(BANK_LOCK_PATH) || '').trim() === '0');
-        } catch (e) { on = true; }
-        S.bankLockOn = on;
-    }
-    return S.bankLockOn;
-}
-
-export function setBankLockOn(v) {
-    S.bankLockOn = !!v;
-    let wrote = false;
-    try { wrote = !!host_write_file(BANK_LOCK_PATH, S.bankLockOn ? '1\n' : '0\n'); } catch (e) { wrote = false; }
-    if (!wrote) console.log('[prefs] could not persist Bank Lock to ' + BANK_LOCK_PATH);
-}
-
-/* Jog Turn Banks (Josh, 2026-10-03: "add a toggle to project menu to disable
- * jog turn to switch banks"). On = turning the jog walks the banks (Track
- * View) and the mixer modes (Session View), as before. Off = a plain turn
- * leaves the bank alone; holding the jog and tapping a pad still switches.
- * The jog's other turns (Loop length, Shift + track, menus) are unaffected.
- * Absent file = On. */
-export const JOG_TURN_BANKS_PATH = '/data/UserData/dbx-host/jog-turn-banks.txt';
-
-export function jogTurnBanksOn() {
-    if (S.jogTurnBanksOn === null) {
-        let on = true;
-        try {
-            on = !(host_file_exists(JOG_TURN_BANKS_PATH) &&
-                   String(host_read_file(JOG_TURN_BANKS_PATH) || '').trim() === '0');
-        } catch (e) { on = true; }
-        S.jogTurnBanksOn = on;
-    }
-    return S.jogTurnBanksOn;
-}
-
-export function setJogTurnBanksOn(v) {
-    S.jogTurnBanksOn = !!v;
-    let wrote = false;
-    try { wrote = !!host_write_file(JOG_TURN_BANKS_PATH, S.jogTurnBanksOn ? '1\n' : '0\n'); } catch (e) { wrote = false; }
-    if (!wrote) console.log('[prefs] could not persist Jog Turn Banks to ' + JOG_TURN_BANKS_PATH);
-}
-
 /* Touching the jog shows the current bank card (Josh, 2026-09-30: "Add global
  * menu option for touch jog to show current bank card.  Shows bank cards on jog
  * touch like davebox legacy did. Showing the bank card should be the default.").
  * On = while a finger rests on the jog the card of the bank you are on is shown
- * (the session mixer page in session view), and a turn draws the bank column
- * over it; Off = the bare touch shows nothing, as since 2026-08-31. Absent file
- * = On. */
+ * (the session mixer page in session view); Off = the bare touch shows
+ * nothing, as since 2026-08-31. Absent file = On. */
 export const JOG_TOUCH_CARD_PATH = '/data/UserData/dbx-host/jog-touch-card.txt';
 
 export function jogTouchCardOn() {

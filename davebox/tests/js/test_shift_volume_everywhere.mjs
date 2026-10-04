@@ -155,8 +155,8 @@ step('2. track overview with sound mode RESTING (track left on MACROS)', () => {
     if (!snd.soundResting()) throw new Error('the gesture woke sound mode');
 });
 
-step('3. the MACROS page (latched)', () => {
-    cc(3, 127); cc(3, 0); ticks(3);                /* jog click latches the bank → the page */
+step('3. the MACROS page (held up)', () => {
+    S.bankCardLatched = true; ticks(3);            /* the page held (no click locks one since 2026-10-04) */
     if (!snd.soundActive()) throw new Error('rig: MACROS page not active, view ' + snd.soundViewForTest());
     assertGesture('macros page', 'slot:volume', T);
 });
@@ -172,10 +172,10 @@ step('5. the MIX card and the TRACK CONFIG menu (the block list)', () => {
     snd.soundExit(); ticks(2);
     S.activeBank = 11; S.trackActiveBank[T] = 11; S.bankCardLatched = false;   /* ON MIX */
     snd.soundEnter(T, T); ticks(4);                /* lands on the MIX card (prompt, resting) */
-    cc(3, 127); cc(3, 0); ticks(3);                /* the click LATCHES the card */
+    S.bankCardLatched = true; ticks(3);            /* the card held up */
     if (!snd.soundActive() || snd.soundViewForTest() !== 18)
-        throw new Error('rig: MIX not latched, active=' + snd.soundActive() + ' view ' + snd.soundViewForTest());
-    assertGesture('MIX (latched)', 'slot:volume', T);
+        throw new Error('rig: MIX not held up, active=' + snd.soundActive() + ' view ' + snd.soundViewForTest());
+    assertGesture('MIX (held)', 'slot:volume', T);
     /* MIX is no door since 2026-09-26: the menu opens as Shift+Note's tap opens it. */
     snd.soundShowMenu(); ticks(3);
     if (!snd.soundActive() || snd.soundViewForTest() !== 0)

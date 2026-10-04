@@ -85,8 +85,12 @@ const turn = (k, d) => {
 };
 S.trackPadMode[0] = PAD_MODE_DRUM;
 ticks(2);
-for (let g = 0; g < 20 && S.activeBank !== 7; g++) { cc(14, 127); ticks(1); }   /* ALL LANES is FIRST on the drum walk */
-step('setup: the jog walk reaches ALL LANES', () => assert(S.activeBank === 7, 'on bank ' + S.activeBank));
+/* The bank map: hold the jog, tap ALL LANES (SEQ column, third pad), let go. */
+const _pure = await import('../../ui/ui_pure.mjs');
+const _alPad = _pure.bankMapPadForCell(2, 2);
+cc(3, 127); globalThis.onMidiMessageInternal(new Uint8Array([0x90, _alPad, 100]));
+globalThis.onMidiMessageInternal(new Uint8Array([0x80, _alPad, 0])); cc(3, 0); ticks(2);
+step('setup: the bank map picks ALL LANES', () => assert(S.activeBank === 7 && !S.bankMapUp, 'on bank ' + S.activeBank + ' map ' + S.bankMapUp));
 
 /* K1 Res · K2 Stch · K3 Shft · K4 Qnt · K6 InQ · K7 Dir · K8 SyncRpt are TURNED.
  * K5 is Crop since 2026-09-27 (it was VelIn): a trigger, fired by touch + click,
@@ -103,14 +107,16 @@ const touchClick = (k) => {
 };
 
 step('⭐ no confirm: the card shows the knobs, not a "Proceed?" question', () => {
-    click();                                            /* latch the card */
-    assert(S.bankCardLatched, 'setup: latched');
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 0, 127]));   /* a knob touch shows the page */
+    ticks(1);
     const f0 = frames;
     S.screenDirty = true; ticks(2);
     /* CONTROL: a frame was drawn, so an empty `printed` is a real answer. The
      * old question screen was drawn with print(), so it would show here. */
     assert(frames > f0, 'CONTROL: no frame was drawn');
     assert(!printed.some(t => /Proceed|affect/.test(t)), 'printed ' + JSON.stringify(printed));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, 0, 0]));
+    ticks(1);
 });
 
 step('⭐ on arrival, EVERY ALL LANES knob reaches the DSP — no OK first', () => {
@@ -131,9 +137,10 @@ step('⭐ K5 (Crop) fires on touch + click, and a turn writes nothing', () => {
     assert(sets.includes('t0_all_lanes_crop=1'), 'touch + click did not crop: ' + JSON.stringify(sets.slice(0, 6)));
 });
 
-step('a plain jog click flips nothing; touch K3 / K7 + click flips that knob alone', () => {
+step('a plain jog click flips nothing (it is the map); touch K3 / K7 + click flips that knob alone', () => {
     click();
     assert(!S.altMode && S.knobAlt === 0, 'a plain click flipped: alt ' + S.altMode + ' knobAlt ' + S.knobAlt);
+    click();                                            /* close the map it opened */
     touchClick(2);
     assert(S.knobAlt === 1 << 2, 'K3: knobAlt ' + S.knobAlt);
     sets.length = 0; turn(2, 1);
@@ -147,11 +154,10 @@ step('a plain jog click flips nothing; touch K3 / K7 + click flips that knob alo
     assert(S.knobAlt === 0, 'a second touch + click did not flip back: ' + S.knobAlt);
 });
 
-step('Back only unlatches — nothing re-arms, the knobs still write at once', () => {
+step('Back re-arms nothing — the knobs still write at once', () => {
     S.altMode = false;
-    assert(S.bankCardLatched, 'setup: latched');
     cc(51, 127); cc(51, 0); ticks(1);
-    assert(!S.bankCardLatched && S.activeBank === 7, 'Back: latched ' + S.bankCardLatched + ', bank ' + S.activeBank);
+    assert(S.activeBank === 7, 'Back moved the bank: ' + S.activeBank);
     sets.length = 0;
     turn(0, 1);
     assert(sets.some(x => /_all_lanes_clip_resolution=/.test(x)), 'K1 after Back wrote nothing');

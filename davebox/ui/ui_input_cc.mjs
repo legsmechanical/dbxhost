@@ -24,7 +24,7 @@ import {
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG, LGTO_KNOB,
     CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, knobAltFor, ARP_STEPS_KNOB, arpStepsBank, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
-    TICK_HZ, STEP_ITER_LIST, JOG_MAP_HOLD_MS,
+    TICK_HZ, STEP_ITER_LIST, JOG_CLICK_MAX_MS,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
 import { closeChordPopup, chordEditSlot, chordSlotKnob, chordBankKnob, chordSlotReset } from './ui_chord_pads.mjs';
@@ -66,7 +66,7 @@ import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVo
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, soundEnterBuses, soundEnterMasterFx, macroClearConfirmAnswer,
     macroClearConfirmReset, macroClearConfirmOpen, soundKnobCardClick, soundEnterSendFromSessionMixer,
-    soundOnCard, soundEnterBusFx, soundResting, soundCardClick } from './ui_sound.mjs';
+    soundOnCard, soundEnterBusFx, soundResting, soundCardClick, soundKnobTouched } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
 import { templateConfirmClick } from './ui_template.mjs';
 import { ensureGlobalMenuFresh, openGlobalMenu, openGlobalMenuAt } from './ui_menu.mjs';
@@ -91,7 +91,7 @@ import { setTrackMute, setTrackSolo, clearAllMuteSolo,
     _switchActiveTrack,
     resetFxBanks, resetBankParams, resetMidiFxChain, resetTarp, resetRptGroove, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
 import { _resolveLoopGesture, chordApplyRevoice, _onPadRelease } from './ui_input_pads.mjs';
-import { seqFollowOn, setSeqFollowOn, bankLockOn, jogTurnBanksOn } from './ui_prefs.mjs';
+import { seqFollowOn, setSeqFollowOn } from './ui_prefs.mjs';
 
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
  * Single tap while locked → unlock + stop loop. */
@@ -352,7 +352,6 @@ function _onCC_jog(d1, d2) {
             S.knobTouched === ARP_STEPS_KNOB && arpStepsBank(S.trackPadMode[S.activeTrack], S.activeBank)) {
         S.stepIntervalMode = true;
         computePadNoteMap();               /* the pads stop playing while the editor is up */
-        if (bankLockOn()) S.bankCardLatched = true;
         S.screenDirty = true;
         forceRedraw();
         return;
@@ -713,7 +712,7 @@ function modalDialogUp() {
      * menu's Export to Ableton (or any confirm) with this card up ran the
      * card's op instead (Josh, 2026-09-25). */
     if (d1 === 3 && d2 === 127 && !S.sessionView && !S.shiftHeld && S.moveCoRunTrack < 0 &&
-            S.activeBank === BANK_AUTOMATION && (S.bankCardLatched || !bankLockOn())) {
+            S.activeBank === BANK_AUTOMATION) {
         if (S.deleteHeld) autoBankClearClip(); else autoBankClick();
         S.screenDirty = true;
         forceRedraw();
@@ -921,68 +920,21 @@ function modalDialogUp() {
         }
         return;
     }
-    /* ⭑⭑ SESSION VIEW mirrors the track grammar (Josh, 2026-08-31, Front 2):
-     * plain jog click from the session overview latches the MIXER PAGE; on
-     * the shown page it opens the Master/Send FX overlay; on the overlay it
-     * enters the picked bus. Back walks it back (see _backTap). */
+    /* SESSION VIEW, SEND A / SEND B page: touch a track's send and click =
+     * that send's effects (Josh, 2026-10-01). The plain click is the Session
+     * map (2026-10-04); the mixer page shows while a knob is touched, and the
+     * effect buses open from the map's FX pads. */
     if (d1 === 3 && d2 === 127 && !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld &&
             S.sessionView && !soundActive()) {
-        /* Bank Lock off: the overview click is the shown page's click. */
-        if (sessMixerVisible() || !bankLockOn()) {
-            /* ⭑ THE GATEWAY (Josh, 2026-09-01): the FX door is a click-to-
-             * confirm BANK at the end of the walk — the SOUND + CONFIG idiom —
-             * never a click on the other banks, which stays a no-op. */
-            if (SESS_KNOB_MODES[S.sessKnobMode].widget === 'gateway')
-                soundEnterBuses();
-            /* SEND A / SEND B page: touch a track's send and click = that
-             * send's effects (Josh, 2026-10-01); Back returns to this page. */
-            else if (S.knobTouched >= 0 && sessMixerCellOpens(S.knobTouched))
-                soundEnterSendFromSessionMixer(SESS_KNOB_MODES[S.sessKnobMode].key);
-        } else {
-            S.sessMixerLatched = true;
-            armBankDisplay();
-        }
+        if (S.knobTouched >= 0 && sessMixerCellOpens(S.knobTouched))
+            soundEnterSendFromSessionMixer(SESS_KNOB_MODES[S.sessKnobMode].key);
         S.screenDirty = true;
         forceRedraw();
         return;
     }
-    /* ⭑⭑ PLAIN JOG CLICK FROM THE OVERVIEW OPENS THE PERSISTENT BANK DISPLAY
-     * (Josh, 2026-08-31 — the Front-2 bank-access revision). The latch that
-     * lived on Shift+jog-click since 08-25 moves to the plain click, CONTEXT-
-     * GATED: only when the resting track overview is what's on screen. Once a
-     * bank card is visible the click keeps its per-bank meanings below
-     * (arp-interval toggle, alt-params). Back dismisses —
-     * the existing latch teardown. bankCardVisible() is the render's own
-     * predicate, so the gate and the screen cannot disagree. */
-    /* ⚠ During a knob-touch PEEK the card is visible, so this gate declines
-     * and the click falls to the per-bank meanings below — and on a bank with
-     * none, the click is a deliberate NO-OP (pinned in test_bank_click_latch):
-     * a hand resting on a knob must not latch bank mode
-     * by brushing the jog. Flagged for the hardware pass if it feels wrong. */
-    if (d1 === 3 && d2 === 127 && !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld &&
-            !S.sessionView && !soundActive() && S.bankPickerSel < 0 && !bankCardVisible() && bankLockOn()) {
-        S.bankCardLatched = true;
-        armBankDisplay();
-        S.screenDirty = true;
-        forceRedraw();
-        return;
-    }
-    /* ⭑ BANK LOCK OFF (Josh, 2026-10-03: "Click does the bank's thing"): no
-     * card locks, so the overview click does the card's own click straight
-     * away. A SOUND bank (MIX, MACROS, CONFIG) rests open under the overview;
-     * its click is sound mode's card click — one seam, soundCardClick — and
-     * what it opens (TRACK CONFIG, the macro list, a send's effects) draws
-     * itself, Back walking home to the overview. Every other bank falls
-     * through to its own click below (Arp Steps, alt params), and
-     * AUTOMATION's was handled above. */
-    if (d1 === 3 && d2 === 127 && !S.shiftHeld && !S.deleteHeld && !S.copyHeld && !S.muteHeld &&
-            !S.sessionView && !bankLockOn() && S.bankPickerSel < 0 && !bankCardVisible() &&
-            isSoundBank(S.activeBank) && soundOpen() && soundResting()) {
-        soundCardClick();
-        S.screenDirty = true;
-        forceRedraw();
-        return;
-    }
+    /* (The plain click's bank-card latch and Bank Lock's overview click
+     * retired 2026-10-04: the plain click is the bank map — bankMapBegin —
+     * and a bank page shows only while a knob or the jog is touched.) */
     /* (The plain click's Arp Steps toggle on SEQ ARP / LIVE ARP retired
      * 2026-10-04: the editor opens from the Steps knob, touch + click, above.
      * Inside it the knobs are per-step offsets and the pads the step-vel
@@ -1285,46 +1237,10 @@ function modalDialogUp() {
                         S.seqLastClip = -1;
                         forceRedraw();
                     }
-                } else if (S.sessionView && sessMixerVisible() && !jogTurnBanksOn()) {
-                    /* Jog Turn Banks Off: the turn leaves the mixer mode alone. */
                 } else if (S.sessionView && sessMixerVisible()) {
-                    /* ⚠ GATED ON THE MIXER PAGE BEING OPEN (Josh, 2026-09-01:
-                     * "same should be true of session view banks") — from the
-                     * resting session overview the turn does NOTHING; click
-                     * first. Same visibility owner as the session click gate. */
-                    /* Clamp, never wrap (Josh, 2026-08-24) — hard stop at
-                     * VOLUME and at SEND B. Same law the settings enums and the
-                     * Instrument picker took on 08-23: a list of choices has two
-                     * ends, and rolling past one of them reads as the knob having
-                     * skipped rather than as having arrived. */
-                    /* The bank map on the mixer cards too (Josh, 2026-09-26: "need
-                     * the same overlay while viewing the mixer mode cards"). */
-                    S.bankNavKind = 'session'; S.bankNavTurnMs = nowMs();
-                    const _skPrev = S.sessKnobMode;
-                    S.sessKnobMode = Math.max(0, Math.min(SESS_KNOB_MODES.length - 1,
-                                                          S.sessKnobMode + (delta > 0 ? 1 : -1)));
-                    /* ⚠⚠ ONLY on a real change. The invalidator blanks all eight
-                     * cached levels to -1, and a track with no level draws NO
-                     * widget — so running it on a CLAMPED turn wiped the page
-                     * and let the poll paint it back in, once per detent: the
-                     * mixer flickered at both ends of the list (Josh, on device,
-                     * the day the clamp landed). The wrap never exposed this
-                     * because every turn used to change the mode, which is
-                     * exactly when discarding the cache is the right thing. */
-                    if (S.sessKnobMode !== _skPrev) _sessInvalidateAllLevels();
-                    /* ⚠ The turn-past-Send-B door to the FX list RETIRED
-                     * (Josh, 2026-08-31): the Master/Send FX overlay on the
-                     * jog CLICK is the door now, so the jog clamps at SEND B
-                     * like any list. Shift+Note/Session still opens the full
-                     * list screen. */
-                    /* No popup: turning the jog while touching it now reveals
-                     * the mixer page itself, which already names the mode in its
-                     * header and shows all 8 tracks in it. A popup here would
-                     * cover the thing the turn was meant to show. A turn without
-                     * the touch still opens the page for the timeout window
-                     * (bankSelectTick), so the mode change is never silent. */
-                    armBankDisplay();
-                    forceRedraw();
+                    /* (The turn walked the mixer modes; retired 2026-10-04 with
+                     * the bank walk — "retire jog to switch banks". The Session
+                     * map's mixer column picks the mode.) */
                 } else if (loopViewActive()) {
                     /* Track View + Loop held: adjust length ±1 step */
                     const _t  = S.activeTrack;
@@ -1384,40 +1300,11 @@ function modalDialogUp() {
                 } else if (doorScreenUp()) {
                     /* A DOOR SCREEN (AUTOMATION's menu) is a screen, not a bank
                      * on the walk: the turn does not walk off it. Back leaves. */
-                } else if (!jogTurnBanksOn()) {
-                    /* Jog Turn Banks Off: every branch below is a bank walk
-                     * (the card, the track overview, the session overview), so
-                     * the turn stops here. The jog-hold pad map still switches. */
-                } else if (bankCardVisible()) {
-                    /* ⭑⭑ THE TURN WALKS THE BANKS DIRECTLY (Josh, 2026-09-01:
-                     * "no more overlay on jog turn. turn moves through banks
-                     * directly") — the 08-25 picker overlay retires. Safe to
-                     * walk now because SOUND + CONFIG is a DOOR: landing on it
-                     * shows the prompt card, never the menu, so a walk across
-                     * the strip reads params and nothing else. Clamped at both
-                     * ends like every list. applyBankPick is the ONE commit
-                     * path — the deferred BANK_SOUND entry, the sound-mode exit
-                     * on walk-away, the param refresh and the sidecar all live
-                     * there. */
-                    S.bankNavKind = 'track'; S.bankNavTurnMs = nowMs();
-                    walkBanks(delta, false);
-                } else if (!S.sessionView && S.moveCoRunTrack < 0) {
-                    /* ⭑ THE WALK UNDER THE OVERVIEW (Josh, 2026-09-04): at rest
-                     * the same turn walks the RECORDED bank underneath — the
-                     * overview stays (THE ONE LAW: no card without bank mode or
-                     * a peek), its header names the new bank, the knobs follow
-                     * it, and a click latches bank mode ON it. A sound bank
-                     * opens RESTING (silent entry). No display window is armed:
-                     * nothing is shown that was not showing. */
-                    S.bankNavKind = 'track'; S.bankNavTurnMs = nowMs();
-                    walkBanks(delta, true);
-                } else if (S.sessionView && !S.perfViewLocked && S.moveCoRunTrack < 0) {
-                    /* ...and the session twin: the mixer MODE walks under the
-                     * session overview; its mode indicator (the short name at
-                     * the top right, ui_render) follows. */
-                    S.bankNavKind = 'session'; S.bankNavTurnMs = nowMs();
-                    sessWalkTo(S.sessKnobMode + (delta > 0 ? 1 : -1), true);
                 }
+                /* ⭑ THE JOG TURN NO LONGER SWITCHES BANKS (Josh, 2026-10-04:
+                 * "i want to retire jog to switch banks and the bank column
+                 * overlay") — on the card, under the overview, or the Session
+                 * mixer modes. The bank map (hold or click the jog) picks. */
             }
         }
         return;
@@ -1425,13 +1312,11 @@ function modalDialogUp() {
 
 }
 
-const bankCycleFor = (track) => bankCycleForMode(S.trackPadMode[track], track);   /* the jog's walk */
 const bankListFor  = (track) => bankListForMode(S.trackPadMode[track], track);    /* every bank the track has */
 
-/* The session mixer MODE moves to `mode` (clamped): the walk's one owner, for
- * the turn under the session overview and the bank pad map's MIXER column.
- * `rest`: under the overview — nothing opens; otherwise the mixer page's
- * display window is armed, as a turn on the page does. */
+/* The session mixer MODE moves to `mode` (clamped) — the Session map's MIXER
+ * column. `rest`: under the overview — nothing opens; otherwise the mixer
+ * page's display window is armed. */
 export function sessWalkTo(mode, rest) {
     const prev = S.sessKnobMode;
     S.sessKnobMode = Math.max(0, Math.min(SESS_KNOB_MODES.length - 1, mode | 0));
@@ -1440,42 +1325,60 @@ export function sessWalkTo(mode, rest) {
     forceRedraw();
 }
 
-/* ---- THE BANK PAD MAP (Josh, 2026-10-02) ----
- * Hold the jog down and the left 4x4 pads are the banks; tap one to land on
- * it, let go to play again. A quick click still does what it always did — but
- * where the map can arm, the click now acts on RELEASE (ui.js defers the
- * press and replays it when nothing happened in between). Everywhere else —
- * dialogs, menus, pickers, the module editor, Shift / Delete chords, a touched
- * knob — the click stays on the press, untouched.
+/* ---- THE BANK PAD MAP (Josh, 2026-10-02; click/hold 2026-10-04) ----
+ * Hold the jog and the left 4x4 pads are the banks — tap one to land on it,
+ * let go to play again; click it and the map stays up until another click or
+ * Back. Everywhere the map cannot arm — dialogs, menus, pickers, the module
+ * editor, a door screen, Shift / Delete chords, a touched knob — the click
+ * goes to its owner on the press, untouched.
  *
- * Where the map may arm: wherever the jog walks the banks. */
+ * Where the map may arm: the overviews and the bank pages. */
 export function bankMapArmable() {
     if (S.shiftHeld || S.deleteHeld || S.copyHeld || S.muteHeld || S.loopHeld) return false;
-    if (S.knobTouched >= 0 || S.heldStep >= 0 || S.bankPickerSel >= 0 || S.stepIntervalMode) return false;
+    if (S.knobTouched >= 0 || soundKnobTouched() || S.heldStep >= 0 || S.bankPickerSel >= 0 || S.stepIntervalMode) return false;
     if (S.moveCoRunTrack >= 0 || S.moveSettingsOpen || soundModeCovered()) return false;
     if (S.awaitingProjectSelect || S.stateLoading) return false;
     if (S.projectOpenFailed || S.projectListFailed) return false;
     if (S.backPressTick >= 0) return false;         /* Back is down: a suspend may follow */
     if (S.sessionView) return !soundOpen() && !S.perfViewLocked;
-    if (autoMenuUp()) return false;
+    /* A screen owns its click: a DOOR bank (CONFIG, AUTOMATION) is only ever
+     * its screen, menu open or not, and any door screen likewise. */
+    if (bankIsDoor(S.trackPadMode[S.activeTrack], S.activeBank) || autoMenuUp() || doorScreenUp()) return false;
     return !soundActive() || soundOnCard();
 }
 
-/* The jog went down in an armable context: the click is held back. */
+/* ⭑⭑ THE PLAIN CLICK IS THE MAP (Josh, 2026-10-04: "hold jog instantly peek the
+ * pad map and jog click instantly pop it up and another jog click close it").
+ * Where the map can arm, the jog PRESS paints it at once; the release rules
+ * (bankMapRelease): a click opens the latch, or closes it; a hold that picked
+ * or lingered puts a peek away and leaves a latch up. In an armable context
+ * the plain click has no other meaning — every click owner ahead of the old
+ * overview latch (pickers, confirms, menus, dialogs, AUTOMATION, the Delete
+ * chords, a touched knob) is excluded by bankMapArmable. */
 export function bankMapBegin() {
     S.jogPressMs = nowMs();
-    S.bankMapUp = false;
     S.bankMapUsed = false;
+    S.bankMapWasLatched = S.bankMapLatched;
     S.bankMapKind = S.sessionView ? 'session' : 'track';
-    /* From an overview a pick moves the bank underneath (the rest walk); from
-     * a shown card the card follows, as a turn there does. */
-    S.bankMapRest = S.sessionView ? !sessMixerVisible() : !bankCardVisible();   /* the turn's own test */
+    bankMapArm();
+}
+
+/* The jog let go: click (quick, nothing picked, no turn) toggles the latch;
+ * anything else is a peek, which a latch outlives. */
+export function bankMapRelease() {
+    const click = !S.bankMapUsed && nowMs() - S.jogPressMs < JOG_CLICK_MAX_MS;
+    const was = S.bankMapWasLatched;
+    S.jogPressMs = -1;
+    S.bankMapUsed = false;
+    if (click && !was && bankMapArmable()) { S.bankMapLatched = true; forceRedraw(); }
+    else if (!click && was) { forceRedraw(); }
+    else bankMapEnd();
 }
 
 /* Paint the map: OLED + pads. Every pad still down is let go through the real
  * release path first, so nothing sticks and the chord / drum books close. */
 export function bankMapArm() {
-    if (S.bankMapUp || S.jogPressMs < 0) return;
+    if (S.bankMapUp) return;
     S.bankMapUp = true;
     for (const n of Array.from(S.padPhysDown)) {
         _onPadRelease(0x80, n, 0);
@@ -1486,14 +1389,17 @@ export function bankMapArm() {
     forceRedraw();
 }
 
-/* The hold is over (released, or something ended it). Idempotent. */
+/* The map goes (a click on a latched map, a peek let go, Back, or something
+ * ended it). Idempotent. */
 export function bankMapEnd() {
-    if (S.jogPressMs < 0 && !S.bankMapUp) return;
+    if (S.jogPressMs < 0 && !S.bankMapUp && !S.bankMapLatched) return;
     const wasUp = S.bankMapUp;
     S.jogPressMs = -1;
     S.bankMapUp = false;
     S.bankMapUsed = false;
     S.bankMapKind = null;
+    S.bankMapLatched = false;
+    S.bankMapWasLatched = false;
     if (wasUp) {
         computePadNoteMap();
         invalidateLEDCache();
@@ -1501,18 +1407,21 @@ export function bankMapEnd() {
     forceRedraw();
 }
 
-/* A pad pressed while the jog is held: a map tap. The right 4x4 and dark
- * pads do nothing — but still count as "used", so the release is no click. */
+/* A pad pressed while the map is up (held or latched): a map tap. The right
+ * 4x4 and dark pads do nothing — but still count as "used", so a hold's
+ * release is no click. A latched map stays up after a pick. */
 export function bankMapPadTap(note) {
     S.bankMapUsed = true;
-    bankMapArm();
     S.bankMapSwallow.add(note);
+    /* From an overview a pick moves the bank underneath (the rest walk); from
+     * a shown card the card follows, as a turn there does. */
+    const pickRest = S.sessionView ? !sessMixerVisible() : !bankCardVisible();
     const cell = bankMapCellForPad(note);
     if (!cell || cell.col > 3) return;
     if (S.bankMapKind === 'session') {
         if (cell.col === 0) {
             const mode = SESS_PAD_MAP.mixer.modes[cell.row];
-            if (mode !== undefined) sessWalkTo(mode, S.bankMapRest);
+            if (mode !== undefined) sessWalkTo(mode, pickRest);
         } else if (cell.col === 1) {
             const bus = SESS_PAD_MAP.fx.buses[cell.row];
             if (bus) { soundEnterBusFx(bus); bankMapEnd(); }
@@ -1539,7 +1448,7 @@ export function bankMapPadTap(note) {
         return;
     }
     /* A bank picked from a door screen lands as if from where you came in. */
-    let rest = S.bankMapRest;
+    let rest = pickRest;
     if (doorScreenUp()) {
         const r = S.doorReturn;
         S.doorReturn = null;
@@ -1555,7 +1464,6 @@ export function bankMapPadTap(note) {
 export function bankMapTurned() {
     if (S.jogPressMs < 0) return;
     S.bankMapUsed = true;
-    bankMapArm();
 }
 
 /* A bank knob's turn, heard by the automation owner as its seq: target — a
@@ -1566,38 +1474,6 @@ function seqAutoEdit(track, bank, k, altMode, nv, cur) {
     const tg = seqAutoTargetForKnob(track, bank, k, altMode);
     if (!tg) return;
     automationParamEdit(track, effectiveClip(track), 'seq', tg.slice(4), String(nv), String(cur));
-}
-
-/* One detent of the bank walk, in bank mode (`rest` false: the card follows,
- * the display window is armed) or under the overview (`rest` true: nothing
- * opens — the record moves, the header and knobs follow). */
-function walkBanks(delta, rest) {
-    const t = S.activeTrack;
-    const cyc = bankCycleFor(t), full = bankListFor(t);
-    /* The bank is recorded the moment the walk lands on it (2026-09-24), SOUND+CFG
-     * and MACROS included, so the live bank IS the position even while their
-     * sound-mode entry is still queued for the next tick. */
-    const cur = S.activeBank;
-    const at = cyc.indexOf(cur);
-    let next;
-    if (at >= 0) next = Math.max(0, Math.min(cyc.length - 1, at + delta));
-    else {
-        /* On a DOOR (reached by the map or a shortcut, off the walk): the first
-         * detent steps to the nearest walk bank that way in the track's full
-         * order; a bigger turn carries on from there. */
-        const s = delta < 0 ? -1 : 1;
-        let j = full.indexOf(cur) + s;
-        while (j >= 0 && j < full.length && cyc.indexOf(full[j]) < 0) j += s;
-        next = (j < 0 || j >= full.length) ? (s < 0 ? 0 : cyc.length - 1) : cyc.indexOf(full[j]);
-        next = Math.max(0, Math.min(cyc.length - 1, next + (delta - s)));
-    }
-    if (next !== at) {
-        S.bankPickerSel = full.indexOf(cyc[next]);
-        applyBankPick(rest);
-    } else if (!rest) {
-        armBankDisplay();   /* a clamped turn still refreshes the window */
-        forceRedraw();
-    }
 }
 
 /* Commit the picker's selection: the same work an unshifted jog step does when
@@ -2363,7 +2239,7 @@ export function backTapWouldAct() {
     }
     if (S.daveBox) return true;
     if (S.stepRecActive) return true;
-    if (S.sessMixerLatched) return true;
+    if (S.bankMapLatched) return true;
     if (S.snapshotPicker || S.tempoSelectActive ||
         S.mergeNoticePending || S.mergeCountingIn ||
         S.pendingMergePlacement || S.mergeSoloPlacement >= 0 ||
@@ -2432,7 +2308,7 @@ export function atOverview() {
      * is not "at the overview" — Note/Session must close it rather than treat
      * the press as a view switch underneath it. */
     if (S.confirmConvertToDrum || S.confirmConvertToConduct)        return false;
-    if (S.bankCardLatched || S.sessMixerLatched)                    return false;
+    if (S.bankCardLatched || S.bankMapLatched)                      return false;
     if (S.sessionView) return !S.perfViewLocked;
     return !(S.loopLatched || S.stepIntervalMode || S.altMode || S.knobAlt !== 0);
 }
@@ -2561,7 +2437,7 @@ function returnToOverview() {
     S.altMode           = false;
     S.knobAlt           = 0;
     S.bankCardLatched   = false;
-    S.sessMixerLatched  = false;
+    bankMapEnd();                   /* a latched map is a layer too */
     closeDoorScreen();              /* a door screen gives its borrowed bank back */
     autoBankReset();                /* an open AUTOMATION menu shows itself (Bank Lock off) */
     standDownBankDisplay(true);
@@ -2602,12 +2478,8 @@ function _backTap() {
         stepRecExit();
         return;
     }
-    if (S.sessMixerLatched) {
-        S.sessMixerLatched = false;
-        standDownBankDisplay(true);
-        forceRedraw();
-        return;
-    }
+    /* A map a click put up: Back takes it down, the bank stays where picked. */
+    if (S.bankMapLatched) { bankMapEnd(); return; }
     if (S.daveBox) {
         /* Back leaves the album for the menu it was opened from. */
         closeDaveBox();
@@ -2734,7 +2606,7 @@ function _backTap() {
         if (S.autoReturn) {
             const r = S.autoReturn;
             S.autoReturn = null;
-            if (r.track === S.activeTrack && r.bank === S.activeBank && (S.bankCardLatched || !bankLockOn())) {
+            if (r.track === S.activeTrack && r.bank === S.activeBank) {
                 S.activeBank = BANK_AUTOMATION;
                 S.trackActiveBank[r.track] = BANK_AUTOMATION;
                 autoBankRestoreMenu(r.sel);
@@ -3044,6 +2916,7 @@ export function checkBackHold() {
  * request while it is up changes nothing. */
 export function raiseExitConfirm(kind) {
     if (S.confirmExit) return;
+    bankMapEnd();                       /* the confirm must not draw under a map */
     S.confirmExit = kind === 'quit' ? 'quit' : 'suspend';
     S.confirmExitSel = 1;               /* opens on No */
     S.globalMenuOpen = false;
@@ -4580,7 +4453,6 @@ function _sessionKnobParam(knobIdx, d2) {
     }
     const lvl = S.sessVolLevel[knobIdx];
     if (lvl < 0) return;
-    if (mode.widget === 'gateway') return;      /* the door has no knobs */
     const d = (d2 >= 1 && d2 <= 63) ? d2 : (d2 >= 65) ? d2 - 128 : 0;
     if (!d) return;
     /* The SAME law as the bank knobs, in each mode's OWN UNITS.
@@ -5385,7 +5257,6 @@ function _switchViewCleanup() {
      * overview. The remembered bank itself is untouched: the knobs stay keyed
      * to it, and the next click re-opens exactly where you were. */
     closeDoorScreen();             /* a door screen gives its borrowed bank back before the view goes */
-    S.sessMixerLatched = false;
     S.bankCardLatched  = false;
     bankMapEnd();                  /* a map belongs to the view it was opened in */
     /* ⚠ The MACROS-clear confirm draws over EVERYTHING (soundModeCovered), so a

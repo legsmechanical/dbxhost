@@ -344,14 +344,13 @@ step('Delete + jog click on the card CLEARS THE CLIP (pa_clear + at_clear, one c
     assert(sets.filter(x => x.startsWith('t0_c0_undo_checkpoint=')).length >= 1, 'a checkpoint');
     assert(ab.autoBankRows(T, C).length === 0, 'empty list: ' + JSON.stringify(ab.autoBankRows(T, C).map(r => r.label)));
 });
-step('while the menu is open the jog is the menu\'s (no walk); after Back the walk resumes and the menu state is dropped', () => {
+step('while the menu is open the jog is the menu\'s; after Back a turn still walks no bank (the walk retired 2026-10-04)', () => {
     click(); ticks(1); assert(menu().menu, 'menu open');
     cc(14, 127); ticks(1);                               /* jog left: the cursor, not the walk */
     assert(S.activeBank === BANK_AUTOMATION, 'the bank did not move under the open menu: ' + S.activeBank);
     back(); ticks(1); assert(!menu().menu, 'menu closed');
-    cc(14, 127); ticks(2);                               /* now the walk: left to MACROS */
-    assert(S.activeBank === BANK_MACROS, 'walked to MACROS: ' + S.activeBank);
-    assert(!ab.autoBankMenuOpen(), 'no menu state survives the walk');
+    cc(14, 127); ticks(2);
+    assert(S.activeBank === BANK_AUTOMATION, 'a turn walked the bank: ' + S.activeBank);
 });
 
 /* ---- the BANK CARD knows its knobs are automated (Josh, 2026-09-03) ------- */
@@ -402,7 +401,7 @@ step('⭑ on the NOTE FX card: Mute + touch mutes Gate Time\'s automation (Mute 
 /* ---- the SESSION STRIP is automatable (Josh, 2026-09-04) ------------------ */
 step('⭑ a session strip turn goes through the owner: playing → pa_live on <slot>:slot:volume; Delete + touch clears it', () => {
     snd.soundExit();
-    S.sessionView = true; S.sessMixerLatched = false; S.sessKnobMode = 0;
+    S.sessionView = true; S.sessKnobMode = 0;
     S.trackRoute[0] = 0; S.sessVolBus[0] = 0; S.sessVolSlots[0] = 1; S.sessVolLevel[0] = 1.0;
     S.knobLocked.fill(false);
     LIST = ''; auto.automationRefreshPresence(); auto.automationNoteWrite();

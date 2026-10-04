@@ -470,23 +470,34 @@ BASE = cloneVal(Object.fromEntries(SK.map((k) => [k, S[k]])));
 BASE_ENGINE = { ...ENGINE };
 
 /* ── gesture helpers built on the above ──────────────────────────────────── */
-/* Walk the jog to a bank from the track overview (the real walk), then click
- * to open the bank view. */
+/* Reach a bank with the bank map (the real gesture since 2026-10-04: the jog
+ * walk retired) — hold the jog, tap its pad, let go — and, with `open`, hold
+ * its page up for the shot (no click locks a page now; Shift + hold Step 11
+ * and the editors are what hold one on the device). A DOOR (CONFIG,
+ * AUTOMATION) is reached the way a restored bank is: recorded, then the tick
+ * opens it. */
+function mapPadFor(b) {
+    const pm = S.trackPadMode[S.activeTrack];
+    for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++)
+        if (PURE.bankPadMapCellAt(pm, S.activeTrack, c, r) === b) return PURE.bankMapPadForCell(c, r);
+    return -1;
+}
+function mapTap(pad) {
+    midi(0xB0, 3, 127); midi(0x90, pad, 100); midi(0x80, pad, 0); midi(0xB0, 3, 0); ticks(2);
+}
 function toBank(b, open = true) {
-    /* A DOOR (CONFIG, AUTOMATION, LIVE ARP — off the jog walk since 2026-10-03)
-     * is reached the way a restored bank is: recorded, then the tick opens it. */
     if (PURE.bankIsDoor(S.trackPadMode[S.activeTrack], b)) {
         S.activeBank = b; S.trackActiveBank[S.activeTrack] = b; ticks(4);
-        if (open) { click(); ticks(2); }
+        if (open) { S.bankCardLatched = true; ticks(2); }
         return;
     }
-    const cyc = PURE.bankCycleForMode(S.trackPadMode[S.activeTrack], S.activeTrack);
-    const dir = cyc.indexOf(b) < cyc.indexOf(S.activeBank) ? -1 : 1;
-    for (let g = 0; g < 24 && S.activeBank !== b; g++) { jog(dir); ticks(1); }
-    if (S.activeBank !== b) throw new Error('jog never reached bank ' + b + ' (at ' + S.activeBank + ')');
-    /* The bank map stands for a moment after the last detent — let it go, so the card is what shows. */
-    for (let g = 0; g < 200 && S.clockMs - (S.bankNavTurnMs || 0) < 300; g++) ticks(1);
-    if (open) { click(); ticks(2); }
+    if (S.activeBank !== b) {
+        const pad = mapPadFor(b);
+        if (pad < 0) throw new Error('bank ' + b + ' is not on the map');
+        mapTap(pad);
+    }
+    if (S.activeBank !== b) throw new Error('the map never reached bank ' + b + ' (at ' + S.activeBank + ')');
+    if (open) { S.bankCardLatched = true; ticks(2); }
 }
 function selectTrack(t) {
     /* Shift + bottom-row pad (1-8) — Track View's track select. */
@@ -569,9 +580,9 @@ const MEL_BANKS = [
 for (const [b, slug, section, title, caption] of MEL_BANKS)
     screen(slug, section, title, caption, () => { toBank(b); });
 
-screen('bank-overview-walk', '3.6 Parameter banks', 'Walking the banks from the overview',
-    'Turning the jog on the track overview moves through the banks underneath it — the header names the bank (here DELAY) and nothing opens.',
-    () => { toBank(3, false); });
+screen('bank-overview-walk', '3.6 Parameter banks', 'The bank pad map',
+    'Click (or hold) the jog: the left 4×4 pads become the track\'s banks, one column per group, and the screen draws the same map; the current bank is filled.',
+    () => { toBank(3, false); click(); ticks(2); if (!S.bankMapLatched) throw new Error('the click did not open the map'); });
 screen('bank-clip-alt', '8.1 CLIP bank', 'CLIP bank — alternate parameters',
     'Touch a knob and click the jog to switch it to its alternate: here Res is Zoom, Shift is Nudge and Dir is Reverse Style.',
     () => { toBank(0); for (const k of [0, 2, 6]) { knobTouch(k); click(); knobRelease(k); } ticks(2);
@@ -726,23 +737,30 @@ function stopTransport() {
     S.drumCurrentStep[1] = -1;
 }
 const toSession = () => { tap(MoveNoteSession); ticks(3); if (!S.sessionView) throw new Error('no session view'); };
+/* A mixer mode from the Session map's MIXER column (hold the jog, tap, let
+ * go), then the page as a jog touch shows it (Jog Touch Card, default On). */
+const toMixer = (mode) => {
+    if (S.sessKnobMode !== mode) mapTap(PURE.bankMapPadForCell(0, mode));
+    if (S.sessKnobMode !== mode) throw new Error('the Session map did not pick mode ' + mode + ' (at ' + S.sessKnobMode + ')');
+    noteOn(9, 127); ticks(2);
+};
 
 /* 12 — Session View: the mixer pages */
 screen('session-mixer-volume', '11.5 Volume', 'Session mixer — Volume',
     'A fader per track.',
-    () => { toSession(); click(); ticks(2); if (!S.sessMixerLatched) throw new Error('click did not open the mixer'); });
+    () => { toSession(); toMixer(0); if (!R.sessMixerShown()) throw new Error('the mixer page is not shown'); });
 screen('session-mixer-touched', '11.5 Volume', 'Session mixer — turning a fader',
     'Turning a knob on the mixer page: the header names the track and its level, and the value replaces its number.',
-    () => { toSession(); click(); ticks(2); knobTouch(2); knobTurn(2, -3); ticks(2); });
+    () => { toSession(); toMixer(0); noteOff(9); knobTouch(2); knobTurn(2, -3); ticks(2); });
 screen('session-mixer-pan', '3.6 Parameter banks', 'Session mixer — Pan',
-    'One jog step on: the Pan page, a bipolar dial per track.',
-    () => { toSession(); jog(1); ticks(2); click(); ticks(2); if (S.sessKnobMode !== 1) throw new Error('not on Pan: ' + S.sessKnobMode); });
+    'The Pan page (the Session map\'s second mixer pad): a bipolar dial per track.',
+    () => { toSession(); toMixer(1); if (S.sessKnobMode !== 1) throw new Error('not on Pan: ' + S.sessKnobMode); });
 screen('session-mixer-senda', '3.6 Parameter banks', 'Session mixer — Send A',
     'The Send A page: how much of each track feeds the first send bus.',
-    () => { toSession(); jog(2); ticks(2); click(); ticks(2); });
-screen('session-fx-door', '14.8 Master FX and the sends', 'Session mixer — Master & Send FX door',
-    'In Session View the jog past Send B reaches the SESSION FX card: the Master and Send FX list at rest; click to use it.',
-    () => { toSession(); jog(4); ticks(2); click(); ticks(2); });
+    () => { toSession(); toMixer(2); });
+screen('session-bank-map', '14.8 Master FX and the sends', 'The Session map',
+    'In Session View click (or hold) the jog: the mixer modes down the left, MASTER, SEND A and SEND B effects beside them — tap one to open it.',
+    () => { toSession(); click(); ticks(2); if (!S.bankMapLatched) throw new Error('the click did not open the Session map'); });
 
 /* 12.3 — mute & solo, seen on the track row */
 screen('session-muted', '11.3 Mute & solo', 'A muted track',

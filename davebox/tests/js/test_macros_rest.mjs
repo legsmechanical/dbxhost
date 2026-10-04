@@ -99,18 +99,12 @@ step('⭑ a knob touch PEEKS the LIVE page (assignments shown), and the release 
     note(0, 0); ticks(1);
     assert(!render.bankCardVisible(), 'stood down');
 });
-step('⭑ the jog CLICK at rest LATCHES bank mode (as on any bank); latched, a plain click opens nothing, touch K1 + click opens K1', () => {
+step('⭑ the jog CLICK at rest opens the bank MAP (2026-10-04), never the MACROS page; a second click closes it', () => {
     cc(3, 127); cc(3, 0); ticks(1);
-    assert(S.bankCardLatched, 'latched');
-    assert(snd.soundActive() && snd.soundViewForTest() === 19, 'now active on the MACROS page, view ' + snd.soundViewForTest());
+    assert(S.bankMapLatched && !S.bankCardLatched, 'map ' + S.bankMapLatched + ' card ' + S.bankCardLatched);
+    assert(snd.soundResting(), 'the click woke sound mode, view ' + snd.soundViewForTest());
     cc(3, 127); cc(3, 0); ticks(1);
-    assert(snd.soundViewForTest() === 19, 'a second plain click (latched) opened something, view ' + snd.soundViewForTest());
-    note(0, 127); cc(3, 127); cc(3, 0); note(0, 0); ticks(2);
-    assert(snd.soundViewForTest() === 20, 'touch K1 (assigned) + click enters its legs, view ' + snd.soundViewForTest());
-    cc(51, 127); cc(51, 0); ticks(1);
-    assert(snd.soundViewForTest() === 19, 'Back to the page');
-    cc(51, 127); cc(51, 0); ticks(1);
-    assert(!S.bankCardLatched, 'Back from the page leaves bank mode');
+    assert(!S.bankMapUp, 'the second click did not close the map');
 });
 step('after Back the track STAYS on MACROS and the mode rests again (Back never changes the bank)', () => {
     ticks(3);
@@ -127,11 +121,12 @@ step('⭐⭐ FROM REST, touch K1 + click opens K1\'s editor (Josh, 2026-10-04: "
            'touched K1 footer: ' + JSON.stringify(kit.kitHintsForTest()));
     cc(3, 127); cc(3, 0); note(0, 0); ticks(2);
     assert(snd.soundViewForTest() === 20, 'K1 (assigned) entered its legs, view ' + snd.soundViewForTest());
-    assert(S.bankCardLatched, 'Bank Lock on: the card it comes back to stays up');
-    cc(51, 127); cc(51, 0); ticks(1);
-    assert(snd.soundViewForTest() === 19, 'Back lands on the MACROS card, view ' + snd.soundViewForTest());
+    assert(!S.bankCardLatched, 'the editor locked the card');
+    assert(S.knobTouched < 0, 'the knob release (taken by the editor) left davebox\'s touch stuck');
     cc(51, 127); cc(51, 0); ticks(3);
-    assert(!S.bankCardLatched && snd.soundResting(), 'Back from the card is the overview again');
+    assert(snd.soundViewForTest() === 19, 'Back lands on the MACROS card, view ' + snd.soundViewForTest());
+    for (let i = 0; i < 2 && !snd.soundResting(); i++) { cc(51, 127); cc(51, 0); ticks(3); }
+    assert(!S.bankCardLatched && snd.soundResting() && !render.bankCardVisible(), 'Back did not reach the overview');
 });
 step('a track switch onto a MACROS track re-opens the rest state silently', () => {
     S.trackActiveBank[1] = BANK_MACROS; S.trackMacros[1] = null;

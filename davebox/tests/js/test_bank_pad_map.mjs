@@ -74,7 +74,8 @@ const tap = (note) => { midi(0x90, note, 100); midi(0x80, note, 0); };
 const pad = pure.bankMapPadForCell;
 S.clockFollowTicks = true; S.tickCount = 1000;
 const tick = () => { S.tickCount++; globalThis.tick(); };
-const holdPast = () => { S.tickCount += Math.ceil(C.JOG_MAP_HOLD_MS / 10.6) + 1; globalThis.tick(); };
+/* The map paints on the PRESS now (2026-10-04); a hold is just time passing. */
+const holdPast = () => { S.tickCount += 2; globalThis.tick(); };
 /* ...and past the click window: letting go after this is no click. */
 const holdLong = () => { S.tickCount += Math.ceil(C.JOG_CLICK_MAX_MS / 10.6) + 1; globalThis.tick(); };
 const ticks = (n) => { for (let i = 0; i < n; i++) tick(); };
@@ -82,21 +83,16 @@ const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const ink = (f, x, y, w, h) => { let n = 0; for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) n += f[j * W + i]; return n; };
 const cellInk = (f, c, r) => { const q = kit.bankMapCellRect(c, r); return ink(f, q.x, q.y, q.w, q.h) / (q.w * q.h); };
 const rightDark = () => { for (let r = 0; r < 4; r++) for (let c = 4; c < 8; c++) if ((led[pad(c, r)] | 0) !== 0) return false; return true; };
-const home = () => { S.activeBank = 0; S.trackActiveBank[S.activeTrack] = 0; S.bankCardLatched = false;
+const ccm = await import('../../ui/ui_input_cc.mjs');
+const home = () => { ccm.bankMapEnd(); S.activeBank = 0; S.trackActiveBank[S.activeTrack] = 0; S.bankCardLatched = false;
     S.bankSelectTick = -1; S.pendingSoundEnterTrack = -1; S.trackPadMode[S.activeTrack] = C.PAD_MODE_MELODIC_SCALE ?? 0; };
 
 home();
 
-step('hold the jog on the overview: nothing yet, the click is held back', () => {
+step('⭐ PRESS the jog on the overview: the map is ON SCREEN at once (Josh, 2026-10-04: "instantly")', () => {
     press();
-    assert(S.jogPressMs >= 0, 'the press was not deferred');
-    assert(!S.bankMapUp, 'the map painted at once — a click would flash it');
-    assert(!S.bankCardLatched, 'the click fired on the press');
-});
-
-step('held past JOG_MAP_HOLD_MS the map is ON SCREEN: labels, CLIP filled, empty cells empty', () => {
-    holdPast();
-    assert(S.bankMapUp, 'the map did not arm');
+    assert(S.jogPressMs >= 0 && S.bankMapUp, 'the press did not paint the map: up ' + S.bankMapUp);
+    assert(!S.bankCardLatched && !S.bankMapLatched, 'the press latched something');
     const f = frame();
     assert(ink(f, 0, 0, 31, 5) > 0, 'no IN label over column 1');
     assert(ink(f, 2, 6, 27, 1) >= 20, 'no rule under the label');
@@ -137,45 +133,55 @@ step('let go after a tap: no click, the map goes, the pads come back', () => {
     assert(!rightDark() || (led[pad(3, 2)] !== K.White), 'pad LEDs did not repaint');
 });
 
-step('⚠ CONTROL: a quick click (press, release) still latches the bank view', () => {
+step('⭐⭐ a quick CLICK latches the map (it stays up); a second click closes it', () => {
     home();
     press(); release();
-    assert(S.bankCardLatched, 'the replayed click did not latch');
-    assert(!S.bankMapUp, 'a click flashed the map');
+    assert(S.bankMapLatched && S.bankMapUp && S.jogPressMs < 0, 'latched ' + S.bankMapLatched + ' up ' + S.bankMapUp);
+    assert(!S.bankCardLatched, 'the click latched the bank card');
+    ticks(3);
+    assert(cellInk(frame(), 2, 1) > 0.6, 'the latched map is not on screen');
+    press(); release();
+    assert(!S.bankMapUp && !S.bankMapLatched, 'the second click did not close it');
+    assert(ink(frame(), 0, 0, 31, 5) === 0 || cellInk(frame(), 2, 1) < 0.6, 'the map is still drawn');
 });
 
-step('from the bank view a tap moves the CARD (it stays latched)', () => {
-    press(); holdPast();
-    tap(pad(3, 0));
-    assert(S.activeBank === 1 && S.bankCardLatched, 'bank ' + S.activeBank + ' latched ' + S.bankCardLatched);
-    release();
-    assert(S.bankCardLatched && S.activeBank === 1, 'the release clicked (alt toggle / unlatch)');
+step('⭐ latched: a tap picks and the map STAYS; Back closes it and the bank stays', () => {
+    home();
+    press(); release();
+    tap(pad(3, 2));
+    assert(S.activeBank === 3 && S.bankMapLatched && S.bankMapUp, 'bank ' + S.activeBank + ' latched ' + S.bankMapLatched);
+    ticks(6);
+    assert(led[pad(3, 2)] === K.White, 'the White pad did not follow the pick');
+    midi(0xB0, 51, 127); midi(0xB0, 51, 0); ticks(2);
+    assert(!S.bankMapUp && !S.bankMapLatched && S.activeBank === 3, 'Back: up ' + S.bankMapUp + ' bank ' + S.activeBank);
 });
 
-step('turning while held still walks, and the release is not a click', () => {
+step('latched: hold, tap, let go — the map stays latched', () => {
+    home();
+    press(); release();
+    press(); tap(pad(3, 0)); release();
+    assert(S.activeBank === 1 && S.bankMapLatched && S.bankMapUp, 'bank ' + S.activeBank + ' latched ' + S.bankMapLatched);
+    press(); holdLong(); release();
+    assert(S.bankMapLatched, 'a long look on a latched map closed it');
+    press(); release();
+    assert(!S.bankMapUp, 'the click did not close it');
+});
+
+step('turning while held walks NO bank (retired 2026-10-04), and the release is not a click', () => {
     home();
     press();
     jog(1);
-    assert(S.activeBank === 1, 'the turn did not walk: ' + S.activeBank);
-    assert(S.bankMapUp, 'a turn did not arm the map');
+    assert(S.activeBank === 0, 'the turn walked: ' + S.activeBank);
+    assert(S.bankMapUp, 'the map went on a turn');
     release();
-    assert(!S.bankCardLatched, 'the release after a turn clicked');
+    assert(!S.bankMapLatched && !S.bankMapUp, 'the release after a turn latched the map');
 });
 
-step('⭐ a slow click (map painted, let go inside JOG_CLICK_MAX_MS): still the click', () => {
-    home();
-    assert(C.JOG_CLICK_MAX_MS > C.JOG_MAP_HOLD_MS, 'the click window must outlast the map delay');
-    press(); holdPast();
-    assert(S.bankMapUp, 'setup: the map did not paint');
-    release();
-    assert(!S.bankMapUp && S.bankCardLatched, 'a slow click inside the window was lost');
-});
-
-step('held past the click window and let go with no tap: the map goes, NO click', () => {
+step('held past the click window and let go with no tap: a PEEK — the map goes, nothing latches', () => {
     home();
     press(); holdLong();
     release();
-    assert(!S.bankMapUp && !S.bankCardLatched, 'letting go after a long look clicked');
+    assert(!S.bankMapUp && !S.bankMapLatched && !S.bankCardLatched, 'letting go after a long look latched');
 });
 
 step('a pad held before the jog is let go when the map paints; its release is swallowed', () => {
@@ -183,12 +189,13 @@ step('a pad held before the jog is let go when the map paints; its release is sw
     S.lastPlayedNote = -1;
     midi(0x90, 68, 100);
     assert(S.liveActiveNotes.size === 1, 'the pad did not sound: ' + S.liveActiveNotes.size);
-    press(); holdLong();
-    assert(S.liveActiveNotes.size === 0, 'the held note is still on');
+    press();
+    assert(S.liveActiveNotes.size === 0, 'the held note is still on once the map painted (on the press)');
+    holdLong();
     midi(0x80, 68, 0);
     assert(S.bankMapSwallow.size === 0, 'the swallow set kept the pad');
     release();
-    assert(!S.bankCardLatched, 'the release clicked');
+    assert(!S.bankMapLatched, 'the long hold latched');
 });
 
 step('a map pad still down when the jog comes up: its release is swallowed, then it plays again', () => {
@@ -206,15 +213,6 @@ step('a map pad still down when the jog comes up: its release is swallowed, then
     assert(S.liveActiveNotes.size === n0, 'the ordinary release was eaten');
 });
 
-step('a pad held before the jog and let go BEFORE the map paints releases normally', () => {
-    home();
-    midi(0x90, 68, 100);
-    press();
-    midi(0x80, 68, 0);
-    assert(S.liveActiveNotes.size === 0, 'the pre-map release was swallowed — stuck note');
-    release();
-});
-
 step('a stale swallow (release lost) does not eat the next ordinary press', () => {
     home();
     S.bankMapSwallow.add(69);
@@ -230,7 +228,7 @@ step('a knob turn during a quick hold: the release is not a click', () => {
     midi(0xB0, 71, 1);                       /* a turn (its touch arrives separately) */
     assert(S.bankMapUsed, 'a knob turn did not count as doing something during the hold');
     release();
-    assert(!S.bankCardLatched, 'a knob turn then release clicked');
+    assert(!S.bankMapLatched, 'a knob turn then release latched the map');
     midi(0x90, 0, 127); midi(0x80, 0, 0);     /* the knob's touch and let-go */
     S.knobTouched = -1;
 });
@@ -239,9 +237,10 @@ step('a lost jog release: the next press ends the stale hold and is judged afres
     home();
     press(); holdPast();                     /* ...and the release never arrives */
     assert(S.bankMapUp, 'setup');
-    press(); release();                      /* a quick click */
-    assert(!S.bankMapUp && S.jogPressMs < 0, 'the stale map survived');
-    assert(S.bankCardLatched, 'the fresh click did not latch');
+    press(); release();                      /* a quick click, judged afresh */
+    assert(S.jogPressMs < 0 && S.bankMapLatched, 'the fresh click did not latch the map');
+    press(); release();
+    assert(!S.bankMapUp, 'setup: close');
 });
 
 step('a lost jog release, and the next press is NOT armable: the stale map still ends', () => {
@@ -279,7 +278,7 @@ step('another button while held ends the map, no click (Shift)', () => {
     assert(!S.bankMapUp && S.jogPressMs < 0, 'Shift did not end the map');
     midi(0xB0, 49, 0);
     release();
-    assert(!S.bankCardLatched, 'the release after Shift clicked');
+    assert(!S.bankMapLatched && !S.bankMapUp, 'the release after Shift latched the map');
 });
 
 step('gates: with Shift held the press is NOT held back', () => {
@@ -338,21 +337,6 @@ step('⭐⭐ an AUTOMATION pick clicks INTO it: its menu is open and on screen; 
     assert(S.activeBank === 0 && S.trackActiveBank[2] === 0, 'AUTOMATION stayed the bank: ' + S.activeBank);
 });
 
-step('…and with Bank Lock off it opens unlocked', () => {
-    home(); S.bankLockOn = false; tickS(2);
-    press(); holdPast();
-    tap(pad(1, 1));
-    release(); tickS(2);
-    assert(ab.autoBankMenuOpen() && render.bankCardVisible(), 'menu not shown with Bank Lock off');
-    backBtn();
-    assert(!render.bankCardVisible() && S.activeBank === 0, 'Back did not get home: ' + S.activeBank);
-    S.bankLockOn = true;
-});
-
-/* DOORS (2026-10-03): CONFIG and AUTOMATION are off the jog walk but on the
- * map, and a turn from one steps to its nearest walk neighbour. LIVE ARP is a
- * bank again (2026-10-04: "put the live arp back as a bank that can stay on
- * the knobs after the page closes like all the other banks"). */
 step('⭐⭐ LIVE ARP is a bank again: the map pick puts the knobs on it, and they stay', () => {
     home(); S.padLayoutChord[2] = false;
     press(); holdPast();
@@ -363,20 +347,6 @@ step('⭐⭐ LIVE ARP is a bank again: the map pick puts the knobs on it, and th
     backBtn();
     assert(S.activeBank === 5 && S.trackActiveBank[2] === 5, 'Back moved the knobs off LIVE ARP: ' + S.activeBank);
 });
-const onDoor = (b) => { home(); ab.autoBankReset(); S.activeBank = b; S.trackActiveBank[2] = b; tickS(2); };
-step('⭐ a turn from a door steps to the nearest walk bank that way', () => {
-    S.padLayoutChord[2] = false;
-    /* LIVE ARP is on the walk now: the walk's head (CHORD before it on a Chord track). */
-    onDoor(5); jog(1); assert(S.activeBank === C.BANK_MACROS, 'LIVE ARP right: ' + S.activeBank);
-    onDoor(5); jog(-1); assert(S.activeBank === 5, 'LIVE ARP left (the walk\'s head) moved: ' + S.activeBank);
-    S.padLayoutChord[2] = true;
-    onDoor(5); jog(-1); assert(S.activeBank === C.BANK_CHORD, 'LIVE ARP left on a Chord track: ' + S.activeBank);
-    S.padLayoutChord[2] = false;
-    onDoor(C.BANK_AUTOMATION); jog(-1); assert(S.activeBank === C.BANK_MACROS, 'AUTOMATION left: ' + S.activeBank);
-    onDoor(C.BANK_AUTOMATION); jog(1); assert(S.activeBank === C.BANK_STEP, 'AUTOMATION right: ' + S.activeBank);
-    snd.soundExit(); home();
-});
-
 step('Conductor: CLIP and STEP in SEQ, the responders in column 2', () => {
     const m = pure.bankPadMapForMode(C.PAD_MODE_CONDUCT, 2);
     assert(m[2].cells[0].name === 'CLIP' && m[2].cells[1].bank === C.BANK_STEP, 'conductor SEQ');

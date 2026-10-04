@@ -501,10 +501,6 @@ export const S = {
     masterPos: 0,
     pendingSessionAfterCoRun: false, /* Note/Session left a co-run: land on Session View once it has ended (ui_tick) */
     jogTouchCardOn: null, /* Jog Touch Card (global menu, ui_prefs): a bare jog touch shows the current bank card. null = not yet read; absent file = on. */
-    jogTurnBanksOn: null, /* Jog Turn Banks (global menu, ui_prefs): a plain jog turn walks the banks. null = not yet read; absent file = on. */
-    bankLockOn: null, /* Bank Lock (global menu, ui_prefs): a jog click on an overview locks the card. null = not yet read; absent file = on. */
-    bankOverviewMapOn: null, /* Bank Map Overview (global menu, ui_prefs): the bank column while the jog walks under an overview. null = not yet read; absent file = on. */
-    bankViewMapOn: null, /* Bank Map on Lock (global menu, ui_prefs): the bank column while the jog walks from the bank view. null = not yet read; absent file = on. */
     midiMuted: null,     /* MIDI browser preview muted (ui_prefs). null = not yet read */
     midiMap: null,       /* MIDI browser drum Map: off | gm | move (ui_prefs). null = not yet read */
     seqFollowOn: null,   /* Seq Follow (ui_prefs): one device-wide switch. null = not yet read; absent file = on. */
@@ -972,10 +968,6 @@ export const S = {
      * channel can be received by SEVERAL slots (layering, or a slot set to
      * "All"), and all of them move together. -1 = not yet resolved/read. */
     sessKnobMode: 0,
-    /* Front 2, session half (Josh, 2026-08-31/09-01): the mixer page latched
-     * by the plain jog click; Back dismisses. The FX door is the GATEWAY mode
-     * at the end of the walk (SESS_KNOB_MODES 'fx'), not extra state. */
-    sessMixerLatched: false,                        /* 0=Volume, 1=Pan, 2=Send A, 3=Send B */
     sessVolSlots: new Array(8).fill(-1),   /* bitmask of matching slots */
     /* A MOVE-routed track's level is not a slot's at all: it is the fader of the
      * Move FX bus its instrument returns on, the same value sound mode's VOLUME
@@ -1065,28 +1057,23 @@ export const S = {
      * pad-mode and neither contiguous nor ordered by index. -1 = closed.
      * Transient: the gesture ends with the Shift release that commits it. */
     bankPickerSel: -1,
-    /* THE BANK NAVIGATION OVERLAY (Josh, 2026-09-26): up while the jog walks the
-     * banks (a bank card, the track overview) or the session banks (the session
-     * overview), gone on the jog's touch release. 'track' | 'session' | null. */
-    bankNavKind: null,
-    /* nowMs() of the last detent that walked it. The jog's touch sensor drops
-     * out for a moment while the hand turns (Josh, on device 2026-09-26: "the
-     * overlay disappears briefly and the banks scroll absent an overlay"), so a
-     * recent turn holds the column up too — see BANKNAV_HOLD_MS. */
-    bankNavTurnMs: 0,
-    /* THE BANK PAD MAP (Josh, 2026-10-02): hold the jog down and the left 4x4
-     * pads are the banks. `jogPressMs` = nowMs() of the jog press being held
-     * in a context where the map may arm, -1 otherwise — the press is DEFERRED
-     * there and a release before the map painted replays it as the click. `bankMapUp` = the map is painted (OLED + pads); `bankMapUsed` = a
-     * pad was tapped or the jog turned in this hold, so the release is not a
-     * click. `bankMapKind` 'track' | 'session' and `bankMapRest` (the pick's
-     * rest flag) are fixed at the press. */
+    /* THE BANK PAD MAP (Josh, 2026-10-02: hold the jog, the left 4x4 pads pick
+     * the bank; 2026-10-04: "hold jog instantly peek the pad map and jog click
+     * instantly pop it up and another jog click close it"). `jogPressMs` =
+     * nowMs() of a jog press while the map is up from it, -1 otherwise; set
+     * only where the map can arm, so -1 means every click went straight to its
+     * owner. `bankMapUp` = the map is painted (OLED + pads) — while held OR
+     * latched; `bankMapLatched` = it stays up with the jog let go (a click
+     * opened it); `bankMapWasLatched` = the latch at the press, for the
+     * release's ruling. `bankMapUsed` = a pad was tapped or the jog turned
+     * during the hold, so the release is no click. `bankMapKind` 'track' |
+     * 'session', taken at the press. */
     jogPressMs: -1,
     bankMapUp: false,
     bankMapUsed: false,
     bankMapKind: null,
-    bankMapRest: false,
-    jogClickReplay: false,
+    bankMapLatched: false,
+    bankMapWasLatched: false,
     /* Pads physically down (notes 68-99), recorded above every modal gate,
      * so the map can let go of each one when it paints. */
     padPhysDown: new Set(),

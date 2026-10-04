@@ -44,7 +44,6 @@ import * as ModBus from './ui_modbus.mjs';
  * Back long-press, which davebox owns module-wide. */
 import { armBankDisplay, standDownBankDisplay, bankDisplayStamp, restoreBankDisplay,
          noteUndoUnit, markJsUndo, markJsUndoPatch, S as GS } from './ui_state.mjs';
-import { bankLockOn } from './ui_prefs.mjs';
 import { nowMs } from './ui_clock.mjs';
 /* ⚠ Deliberate import cycle with ui_render (it imports soundRender from here);
  * safe because both sides only call the binding inside function bodies, never
@@ -1234,6 +1233,10 @@ export function soundCardClick() {
     return false;
 }
 
+/* A knob is touched in sound mode's own book (it takes the touch while it
+ * steers) — the bank map must not take that touch + click. */
+export function soundKnobTouched() { return S.active && S.touchedIdx >= 0; }
+
 export function soundResting() {
     /* A follow in flight is never at rest, whatever S.view says mid-chain: a
      * fast Shift+scroll crossing a Move track passed through its PROMPT
@@ -2184,9 +2187,7 @@ function mixSendBus(i) {
 export function soundMixSendClick(i) {
     const bus = mixSendBus(i);
     if (!bus) return false;
-    /* from a touch PEEK too: the card it comes back to stays up — unless
-     * Bank Lock is off, where Back lands on the overview */
-    if (bankLockOn()) GS.bankCardLatched = true;
+    /* Back lands on the overview: nothing locks a bank page (2026-10-04). */
     S.pendingAction = { t: 'bus', bus: bus, door: { kind: 'mix', slot: S.slot, bus: S.bus } };
     S.dirty = true;
     return true;
@@ -2195,11 +2196,10 @@ export function soundMixSendClick(i) {
  * gets touch+jog to enter that knobs editor"): touch macro k on the MACROS card
  * and click. The door rule is the K-list's (09-04): a macro with a choice made
  * is ENTERED — its legs and ranges — an empty one goes straight to choosing.
- * Back lands on the MACROS card (VIEW_TREE parents). From a touch PEEK the card
- * it comes back to stays up — unless Bank Lock is off (the MIX-send rule). */
+ * Back lands on the MACROS card (VIEW_TREE parents) — shown while a knob or the
+ * jog is touched, as every bank page is since 2026-10-04. */
 export function soundMacroKnobClick(k) {
     if (S.view !== VIEW_MACROS || k < 0 || k >= NUM_KNOBS || S.track < 0) return false;
-    if (bankLockOn()) GS.bankCardLatched = true;
     openKnobEditor();
     S.knobIdx = k;
     if (macroLegs(macroMapping(k)).length) openKnobLegs();
@@ -3025,8 +3025,7 @@ export function soundGestureReturn() {
         soundExit();
         GS.activeBank = BANK_AUTOMATION;
         GS.trackActiveBank[g.track] = BANK_AUTOMATION;
-        if (bankLockOn()) GS.bankCardLatched = true;   /* Bank Lock off: the open menu shows itself */
-        armBankDisplay();
+        armBankDisplay();               /* the open menu shows itself (autoMenuUp) */
         autoBankRestoreMenu(g.autoSel);
     } else if (g.wasActive) {
         /* ⭑ The SCREEN you pressed from: the menu, or the card / MACROS page
@@ -3133,17 +3132,8 @@ export function soundEnterBuses() {
      * soundExit, so it is not carried further than the edit it belongs to. */
     S.busLevelEditing = false;
     if (S.busLevelDirty) { S.busLevelDirty = false; S.pendingAction = { t: 'slotsave' }; }
-    /* ⚠⚠ BANK MODE IS PART OF OPENING THIS LIST — the ONE place that knows it,
-     * because both doors need it and two owners would drift. Since the list's
-     * visibility became sessMixerVisible()'s (the one law, session flavour), a
-     * list opened without the latch STANDS DOWN on the very next render: open,
-     * invisible, and with sound mode active underneath defeating the session
-     * click gate's !soundActive().
-     * ⚠ The jog-click door hits this too, not just the Shift+Menu gesture —
-     * sessMixerVisible() is the latch OR the mixer's knob PEEK, so walking to
-     * the gateway under a peek and clicking opens the list unlatched, and
-     * releasing the knob hides it. */
-    GS.sessMixerLatched = true;
+    /* A screen opened on purpose: it stays until Back (no session latch to
+     * hold it up since 2026-10-04 — it never yields). */
     S.active = true;
     S.enterSession = true;      /* called from SESSION view */
     S.bus = null;
@@ -3214,8 +3204,7 @@ function leaveBus() {
         return;
     }
     if (door && door.kind === 'sessmix') {
-        soundExit();
-        GS.sessMixerLatched = bankLockOn();   /* the page it came from (Bank Lock off: the overview) */
+        soundExit();                    /* the overview: the mixer page shows on touch */
         GS.screenDirty = true;
         forceRedraw();
         return;
@@ -10473,10 +10462,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * the card's one exit, both flavours. */
             S.pendingAction = { t: 'leavebus' };
         } else if (S.view === VIEW_BUSES) {
-            soundExit();
-            /* The list holds the session latch only to be drawn; with Bank
-             * Lock off, Back from it lands on the overview. */
-            if (!bankLockOn()) GS.sessMixerLatched = false;
+            soundExit();                /* the Session overview */
         } else {
             /* The prompt (and any stray top-level screen): Back is OUT — of
              * sound mode AND of bank mode (Josh, 2026-09-01: "pressing back
@@ -11363,24 +11349,6 @@ function busMenuRows() {
     return { rows, sel: rowOf[S.busIdx] || 0 };
 }
 export function soundBusMenuRowsForTest() { return busMenuRows(); }
-
-/* ⭑ THE SESSION FX CARD = the list at rest (Josh, 2026-09-26: "can we make
- * session view "session effects" card the session effects menu like with did
- * with the the track config bank and track config menu?"): the list's own
- * header and rows, no cursor, the door's corner brackets round them — the
- * CONFIG card's shape. The click opens the list live (soundEnterBuses, via the
- * session click in ui_input_cc); Back from the list comes back here. Drawn by
- * ui_render's session mixer while sound mode is closed. */
-const SFX_LIST_TOP = 11;               /* the kit list's own default */
-export function renderSessionFxCard() {
-    clear_screen();
-    kitUseLayout('bank');
-    drawKitBankHeader('SESSION FX', 'audio', '');
-    fill_rect(0, MV_BAR_Y, 128, 1, 0);
-    drawKitList(busMenuRows().rows, -1, { h: MV_FOOTER_Y - SFX_LIST_TOP });
-    drawBrackets(0, SFX_LIST_TOP - 1, 128, MV_FOOTER_Y - SFX_LIST_TOP);
-    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'MENU'], ['BACK', 'OUT']]);
-}
 
 /* What to CALL the block being edited.
  *
@@ -13261,25 +13229,8 @@ export function soundRender() {
      * other bank. Held gestures keep it up: an in-progress row edit, the knob
      * card (S.touchedIdx), the volume gesture and its readout window. Track
      * flavour only — the session buses are not banks and never yield. */
-    /* ⭑⭑ THE ONE LAW, SESSION FLAVOUR (Josh, 2026-09-02: "the weird jog touch
-     * and click fall-through we fixed on track banks is still happening on
-     * session banks"). The session FX list is the bank one past SEND B, so it
-     * obeys the same law as the track card — and its one owner is
-     * sessMixerVisible() (the session latch, or the mixer's knob peek).
-     *
-     * ⚠ THIS BRANCH WAS MISSED BY THE 2026-09-01 AUDIT. Its track twin below
-     * was migrated onto bankCardVisible(); this one kept the RETIRED display
-     * drivers (GS.jogTouched, the transient bankSelectTick window), which is
-     * both halves of the bug he re-reported:
-     *   - the list hid at rest even with bank mode ON (the latch survives
-     *     soundEnterBuses), and touching the jog brought it back — the peek;
-     *   - sound mode stays ACTIVE behind a stand-down, so the session click
-     *     gate's `!soundActive()` was false and the click fell through.
-     * Held gestures still keep it up; its own rows (inside a bus) never yield. */
-    if (S.view === VIEW_BUSES && S.enterSession &&
-            S.touchedIdx < 0 && !S.volTouched &&
-            !sessMixerShown())      /* + the jog-touch reveal (a render gate) */
-        return false;
+    /* (The bus list no longer yields: it is a screen you opened — Shift +
+     * Note/Session or the Session map's FX pads — and stays until Back.) */
     /* ⭑⭑ THE PROMPT YIELDS; THE MENU DOES NOT (Josh, 2026-08-28: "it's not a
      * bank"). The display law belongs to BANKS — show while the jog is touched
      * or the window is open, otherwise stand down to the track overview — and

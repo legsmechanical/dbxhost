@@ -94,8 +94,7 @@ const sound = await import('../../ui/ui_sound.mjs');
 const { MoveNoteSession, BANK_SOUND, BANK_DEFAULT, INSTR_ROW_LABEL, BANK_STEP } = await import('../../ui/ui_constants.mjs');
 const persist = await import('../../ui/ui_persistence.mjs');
 const editops = await import('../../ui/ui_editops.mjs');
-const { bankCycleForMode } = await import('../../ui/ui_pure.mjs');
-const bankCycleFor = (t) => bankCycleForMode(S.trackPadMode[t], t);
+const pureMod = await import('../../ui/ui_pure.mjs');
 const { MoveShift } = await import('/data/UserData/schwung/shared/constants.mjs');
 const MoveBack = 51;   /* the Back button's CC */
 
@@ -333,7 +332,7 @@ step('session view does not get the TRACK opener (it gets its own — see the st
      * still hold is narrower: it must not open a TRACK's sound flavour. */
     S.sessionView = true;
     if (sound.soundActive()) sound.soundExit();
-    S.sessMixerLatched = false;
+   
     ticks(2);
     shiftNote();
     ticks(4);
@@ -341,7 +340,7 @@ step('session view does not get the TRACK opener (it gets its own — see the st
         throw new Error('the track-view opener fired in session view');
     if (!sound.soundActive())
         throw new Error('session view now HAS a counterpart and it did not fire');
-    sound.soundExit(); S.sessMixerLatched = false;
+    sound.soundExit();
     S.sessionView = false;
 });
 
@@ -397,7 +396,7 @@ step('⭐ SESSION VIEW: Shift+Menu jumps to the MASTER/SEND FX list — and it m
     S.ledInitComplete = true;
     if (sound.soundActive()) sound.soundExit();
     S.sessionView = true;
-    S.sessMixerLatched = false;          /* at rest, nothing latched */
+    /* at rest, nothing touched */
     S.knobTouched = -1;
     S.touchedIdx = -1; S.volTouched = false;
     S.jogTouched = false; S.bankSelectTick = -1;
@@ -409,9 +408,8 @@ step('⭐ SESSION VIEW: Shift+Menu jumps to the MASTER/SEND FX list — and it m
         throw new Error('Shift+Menu did nothing in session view');
     if (!sound.soundIsGlobal())
         throw new Error('it opened a TRACK flavour in session view, not the session buses');
-    if (!S.sessMixerLatched)
-        throw new Error('bank mode was not latched — the list will stand down on the next ' +
-                        'render and the gesture will look dead');
+    /* (No latch since 2026-10-04: the list is a screen and never yields.) */
+    ticks(3);
     if (sound.soundRender() !== true)
         throw new Error('the FX list opened INVISIBLY — soundActive() is true but nothing draws');
 
@@ -444,13 +442,13 @@ step('⭐ SESSION VIEW: Shift+Menu jumps to the MASTER/SEND FX list — and it m
 
     /* The HOLD goes one level deeper: straight into MASTER FX (Josh,
      * 2026-09-24 — it used to have no session meaning). */
-    sound.soundExit(); S.sessMixerLatched = false;
+    sound.soundExit();
     shiftNoteHold();
     ticks(3);
     const _bus = sound.soundBusForTest();
     if (!_bus || _bus.id !== 'master')
         throw new Error('the HOLD did not open MASTER FX in session view: ' + JSON.stringify(_bus));
-    sound.soundExit(); S.sessMixerLatched = false;
+    sound.soundExit();
     ticks(2);
     S.sessionView = false;
 });
@@ -685,22 +683,26 @@ step('⭐⭐ ...and a TRACK SWITCH from there leaves the track on bank 3 too', (
     editops._switchActiveTrack(0); ticks(3);
     if (S.activeTrack !== 0) throw new Error('rig: could not return to track 1');
 });
-step('⚠ CONTROL: the jog WALK onto SOUND+CFG still records it, latched or not', () => {
+step('⚠ CONTROL: a bank map pick of MIX still records it, held page or not', () => {
     S.activeBank = BANK_STEP; S.trackActiveBank[0] = BANK_STEP; S.bankCardLatched = true;
     if (sound.soundOpen()) sound.soundExit();
     ticks(2);
-    if (sound.soundOpen()) throw new Error('rig: sound mode is still open before the walk');
-    const cyc = bankCycleFor(0);
-    const iStep = cyc.indexOf(BANK_STEP), iSound = cyc.indexOf(BANK_SOUND);
-    if (iStep < 0 || iSound < 0) throw new Error('rig: the cycle lacks STEP or SOUND: ' + cyc);
-    for (let g = 0; g < 20 && S.activeBank !== BANK_SOUND; g++) {
-        globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 14, iSound > iStep ? 1 : 127]));
-        ticks(3);
-    }
-    if (S.activeBank !== BANK_SOUND) throw new Error('rig: the walk never reached SOUND+CFG (bank ' + S.activeBank + ')');
+    if (sound.soundOpen()) throw new Error('rig: sound mode is still open before the pick');
+    /* Hold the jog, tap MIX on the map, let go (the jog walk retired 2026-10-04). */
+    const P = pureMod;
+    let pad = -1;
+    for (let c = 0; c < 4 && pad < 0; c++) for (let r = 0; r < 4; r++)
+        if (P.bankPadMapCellAt(S.trackPadMode[0], 0, c, r) === BANK_SOUND) { pad = P.bankMapPadForCell(c, r); break; }
+    if (pad < 0) throw new Error('rig: MIX is not on the map');
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 3, 127]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, pad, 100]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, pad, 0]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 3, 0]));
+    ticks(3);
+    if (S.activeBank !== BANK_SOUND) throw new Error('rig: the pick never reached MIX (bank ' + S.activeBank + ')');
     persist.writeSidecar();
     if (S.trackActiveBank[0] !== BANK_SOUND)
-        throw new Error('the WALK did not record SOUND+CFG: ' + S.trackActiveBank[0]);
+        throw new Error('the PICK did not record MIX: ' + S.trackActiveBank[0]);
     if (sound.soundOpen()) sound.soundExit();
     S.bankCardLatched = false; S.activeBank = 0; S.trackActiveBank[0] = 0; ticks(2);
 });

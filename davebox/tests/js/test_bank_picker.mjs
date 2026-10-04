@@ -130,68 +130,58 @@ function reset() {
  * (open/commit-on-click/commit-on-release/timeout/abandon): there is no
  * picker to open, commit, or abandon any more. */
 
-step('⭑ the turn WALKS the banks directly — one detent, one bank, no overlay', () => {
+/* The jog TURN no longer walks the banks (Josh, 2026-10-04: "retire jog to
+ * switch banks and the bank column overlay"); the bank map picks — hold the
+ * jog, tap a pad, let go. The commit path a pick takes (applyBankPick: the
+ * sound-mode doors, the per-track record) is pinned here through the map. */
+const _pure = await import('../../ui/ui_pure.mjs');
+const mapPick = (b) => {
+    let pad = -1;
+    for (let c = 0; c < 4 && pad < 0; c++) for (let r = 0; r < 4; r++)
+        if (_pure.bankPadMapCellAt(S.trackPadMode[2], 2, c, r) === b) { pad = _pure.bankMapPadForCell(c, r); break; }
+    if (pad < 0) throw new Error('bank ' + b + ' is not on the map');
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 3, 127]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, pad, 100]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, pad, 0]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 3, 0]));
+};
+
+step('⭑ the turn walks NO bank — on a held page or at rest', () => {
     reset();
-    S.bankCardLatched = true;              /* the walk lives inside the bank view */
-    const cyc = bankCycleForMode(0), next = cyc[cyc.indexOf(0) + 1];
-    jog(1); globalThis.tick();
+    S.bankCardLatched = true;
+    jog(1); globalThis.tick(); jog(-1); globalThis.tick(); jog(-1); globalThis.tick();
     if (S.bankPickerSel >= 0) throw new Error('an overlay opened — the picker is retired');
-    if (S.activeBank !== next)
-        throw new Error('one detent landed on ' + S.activeBank + ', expected ' + next);
-    if (S.trackActiveBank[2] !== next)
-        throw new Error('the per-track record did not follow: ' + S.trackActiveBank[2]);
-    if (S.bankSelectTick < 0) throw new Error('the walked-to bank has no display window');
+    if (S.activeBank !== 0 || S.trackActiveBank[2] !== 0) throw new Error('the turn walked to ' + S.activeBank);
 });
 
-step('⭑ ...and clamps at the first bank', () => {
+step('⭑ a map pick lands the bank and records it', () => {
     reset();
-    S.bankCardLatched = true;
-    const first = bankCycleForMode(0)[0];
-    S.activeBank = first; S.trackActiveBank[2] = first;
-    jog(-1); globalThis.tick();
-    if (S.activeBank !== first) throw new Error('walked below the first bank: ' + S.activeBank);
+    mapPick(3); globalThis.tick();
+    if (S.activeBank !== 3 || S.trackActiveBank[2] !== 3) throw new Error('the pick landed on ' + S.activeBank + '/' + S.trackActiveBank[2]);
 });
 
-step('⭑ walking onto SOUND + CONFIG lands the DOOR; it is the last stop; walking off leaves', () => {
+step('⭑ picking MIX opens its sound-mode card; picking off it leaves sound mode', () => {
     reset();
     S.bankCardLatched = true;
-    const cyc = bankCycleForMode(0);
-    /* From CLIP up to SOUND + CONFIG, the end of the melodic walk (2026-09-26). */
-    for (let i = cyc.indexOf(0); i < cyc.indexOf(BANK_SOUND); i++) { jog(1); }
-    globalThis.tick(); globalThis.tick();          /* the entry defers to tick */
-    if (!snd.soundActive()) throw new Error('the walk did not open the door');
-    if (S.activeBank !== BANK_SOUND) throw new Error('not on SOUND + CONFIG: ' + S.activeBank);
-    jog(1); globalThis.tick();
-    if (!snd.soundActive() || S.activeBank !== BANK_SOUND) throw new Error('the last stop did not clamp: ' + S.activeBank);
-    jog(-1); globalThis.tick();
-    if (snd.soundActive()) throw new Error('walking off the door did not leave sound mode');
-    if (S.activeBank !== cyc[cyc.indexOf(BANK_SOUND) - 1])
-        throw new Error('did not land on the neighbour bank: ' + S.activeBank);
+    mapPick(BANK_SOUND); globalThis.tick(); globalThis.tick();   /* the entry defers to tick */
+    if (!snd.soundActive()) throw new Error('the pick did not open MIX');
+    if (S.activeBank !== BANK_SOUND) throw new Error('not on MIX: ' + S.activeBank);
+    mapPick(3); globalThis.tick();
+    if (snd.soundActive()) throw new Error('picking off MIX did not leave sound mode');
+    if (S.activeBank !== 3) throw new Error('did not land on DELAY: ' + S.activeBank);
 });
 
-step('⭑ MACROS opens sound mode on its page from LIVE ARP (a door: the walk steps to its neighbour); on to STEP leaves; back re-opens', () => {
+step('⭑ MACROS opens sound mode on its page; a pick of STEP leaves; MACROS again re-opens', () => {
     reset();
     S.bankCardLatched = true;
-    S.activeBank = 5; S.trackActiveBank[2] = 5;       /* LIVE ARP: off the walk, reached by the map */
-    jog(1); globalThis.tick(); globalThis.tick();
-    if (!snd.soundActive()) throw new Error('walking onto MACROS did not open sound mode');
+    mapPick(BANK_MACROS); globalThis.tick(); globalThis.tick();
+    if (!snd.soundActive()) throw new Error('picking MACROS did not open sound mode');
     if (S.activeBank !== BANK_MACROS || S.trackActiveBank[2] !== BANK_MACROS)
         throw new Error('MACROS did not record itself: ' + S.activeBank + '/' + S.trackActiveBank[2]);
-    jog(1); globalThis.tick();
+    mapPick(BANK_STEP); globalThis.tick();
     if (S.activeBank !== BANK_STEP || snd.soundActive()) throw new Error('MACROS -> STEP should leave sound mode: ' + S.activeBank);
-    jog(-1); globalThis.tick(); globalThis.tick();
+    mapPick(BANK_MACROS); globalThis.tick(); globalThis.tick();
     if (S.activeBank !== BANK_MACROS || !snd.soundActive()) throw new Error('STEP -> MACROS should re-open on the page: ' + S.activeBank);
-});
-
-step('⭑ two detents before the tick: the queued MACROS counts as the position (LIVE ARP → MACROS → STEP)', () => {
-    reset();
-    S.bankCardLatched = true;
-    S.activeBank = 5; S.trackActiveBank[2] = 5;
-    jog(1); jog(1);                                   /* no tick between */
-    globalThis.tick(); globalThis.tick();
-    if (S.activeBank !== BANK_STEP)
-        throw new Error('the second detent re-selected MACROS instead of walking on: ' + S.activeBank);
-    if (snd.soundActive()) throw new Error('the queued MACROS entry opened sound mode over STEP');
 });
 
 step('⚠ SHIFT+jog steps the TRACK — the walk is the unshifted turn', () => {
@@ -267,16 +257,14 @@ step('⚠ control: the same comparison FAILS without the prefix', () => {
                               'comparison above cannot detect a missing prefix');
 });
 
-step('⭑ plain jog CLICK from the overview latches the bank card; Back unlatches and dismisses', () => {
-    /* The latch moved from Shift+click to the plain click, context-gated on
-     * the resting overview (Josh, 2026-08-31 — Front 2). The rest of this
-     * step is unchanged: renderer honours the latch past the window's expiry,
-     * Back dismisses without moving the bank. Gesture-grammar detail lives in
-     * test_bank_click_latch.mjs. */
+step('⭑ a HELD bank page outlives the window; Back unlatches and dismisses', () => {
+    /* No click locks a page since 2026-10-04 (the click is the bank map); a
+     * page is held on purpose — Shift + hold Step 11 holds LIVE ARP's. The
+     * rest of this step is unchanged: the renderer honours the hold past the
+     * window's expiry, Back dismisses without moving the bank. */
     reset();
     S.tickCount += 500; globalThis.tick();            /* let the window lapse: overview up */
-    cc(3, 127); cc(3, 0); globalThis.tick();
-    if (!S.bankCardLatched) throw new Error('plain click from the overview did not latch');
+    S.bankCardLatched = true; globalThis.tick();      /* the page held */
     S.tickCount += 500; globalThis.tick();
     /* ⚠ The window itself is EXPECTED to expire — the latch is a separate
      * reason to hold the screen, not a freeze on the timer. Asserting the
@@ -295,19 +283,6 @@ step('⭑ plain jog CLICK from the overview latches the bank card; Back unlatche
     if (S.activeBank !== bankBefore)
         throw new Error('Back MOVED the bank to ' + S.activeBank + ' — it dismisses the ' +
                         'screen now, it does not change where you are');
-});
-
-step('⭑ a drum track WALKS its own cycle, not the melodic one', () => {
-    reset();
-    S.bankCardLatched = true;
-    S.trackPadMode[2] = 1;                            /* PAD_MODE_DRUM */
-    const cyc = bankCycleForMode(1);
-    /* One detent from wherever bank 0 sits in the DRUM order. */
-    const want = cyc[cyc.indexOf(0) + 1];
-    jog(1); globalThis.tick();
-    if (S.activeBank !== want)
-        throw new Error('landed on ' + S.activeBank + ', not the drum cycle step ' + want);
-    S.trackPadMode[2] = 0;
 });
 
 step('⚠ Shift + a TOP-row pad no longer jumps to a bank (retired)', () => {

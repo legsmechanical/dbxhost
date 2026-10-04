@@ -21,12 +21,10 @@ import {
 
 import { SCALE_NAMES } from './ui_constants.mjs';
 
-import { S, standDownBankDisplay } from './ui_state.mjs';
+import { S } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
-import { bankViewMapOn, setBankViewMapOn, bankOverviewMapOn, setBankOverviewMapOn,
-    jogTouchCardOn, setJogTouchCardOn, bankLockOn, setBankLockOn,
-    jogTurnBanksOn, setJogTurnBanksOn } from './ui_prefs.mjs';
+import { jogTouchCardOn, setJogTouchCardOn } from './ui_prefs.mjs';
 import { saveState, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { forceRedraw } from './ui_leds.mjs';
@@ -188,48 +186,11 @@ function buildGlobalMenuItems() {
             set: function(v) { S.beatMarkersEnabled = v; forceRedraw(); },
             onLabel: 'On', offLabel: 'Off'
         }),
-        /* Bank Map Overview (Josh, 2026-10-03): the bank column while the
-         * jog walks under the track or session overview. Device-global. */
-        createToggle('Bank Map Overview', {
-            get: function() { return bankOverviewMapOn(); },
-            set: function(v) { setBankOverviewMapOn(v); forceRedraw(); },
-            onLabel: 'On', offLabel: 'Off'
-        }),
-        /* Bank Map on Lock (Josh, 2026-09-27): the bank column while the jog
-         * walks from the bank view. Device-global (ui_prefs). */
-        createToggle('Bank Map on Lock', {
-            get: function() { return bankViewMapOn(); },
-            set: function(v) { setBankViewMapOn(v); forceRedraw(); },
-            onLabel: 'On', offLabel: 'Off'
-        }),
         /* Jog Touch Card (Josh, 2026-09-30): a bare jog touch shows the
          * current bank card. Device-global (ui_prefs), default On. */
         createToggle('Jog Touch Card', {
             get: function() { return jogTouchCardOn(); },
             set: function(v) { setJogTouchCardOn(v); forceRedraw(); },
-            onLabel: 'On', offLabel: 'Off'
-        }),
-        /* Bank Lock (Josh, 2026-10-03): a click on an overview locks the
-         * card (On) or does the bank's own click (Off). Turned Off while a
-         * card is locked, it unlocks at once. Device-global (ui_prefs). */
-        createToggle('Bank Lock', {
-            get: function() { return bankLockOn(); },
-            set: function(v) {
-                setBankLockOn(v);
-                if (!v) {
-                    S.bankCardLatched = false; S.sessMixerLatched = false;
-                    standDownBankDisplay(true);
-                }
-                forceRedraw();
-            },
-            onLabel: 'On', offLabel: 'Off'
-        }),
-        /* Jog Turn Banks (Josh, 2026-10-03): a plain jog turn walks the
-         * banks / mixer modes (On) or leaves them alone (Off; the jog-hold
-         * pad map still switches). Device-global (ui_prefs), default On. */
-        createToggle('Jog Turn Banks', {
-            get: function() { return jogTurnBanksOn(); },
-            set: function(v) { setJogTurnBanksOn(v); forceRedraw(); },
             onLabel: 'On', offLabel: 'Off'
         }),
         createDivider(),

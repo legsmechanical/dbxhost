@@ -95,6 +95,19 @@ const put = (t, bank, latched) => {
     S.activeTrack = t; S.activeBank = bank; S.trackActiveBank[t] = bank; S.bankCardLatched = !!latched;
     ticks(6);
 };
+/* A bank map pick — hold the jog, tap the bank's pad, let go (the jog walk
+ * retired 2026-10-04). */
+const _pure = await import('../../ui/ui_pure.mjs');
+const pickBank = (t, b) => {
+    let pad = -1;
+    for (let c = 0; c < 4 && pad < 0; c++) for (let r = 0; r < 4; r++)
+        if (_pure.bankPadMapCellAt(S.trackPadMode[t], t, c, r) === b) { pad = _pure.bankMapPadForCell(c, r); break; }
+    if (pad < 0) throw new Error('bank ' + b + ' is not on the map');
+    cc(3, 127);
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, pad, 100]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, pad, 0]));
+    cc(3, 0);
+};
 const menuAction = (label) => {
     menu.openGlobalMenu();
     const item = S.globalMenuItems.find((it) => it && it.label === label);
@@ -103,10 +116,10 @@ const menuAction = (label) => {
 };
 ticks(3);
 
-step('(1) the jog walk at rest onto SOUND+CFG records it AT ONCE and saves the sidecar in the same call', () => {
-    put(0, SEQ_ARP, false);                          /* the melodic stop before SOUND+CFG */
+step('(1) a map pick at rest of MIX records it AT ONCE and saves the sidecar in the same call', () => {
+    put(0, SEQ_ARP, false);
     files.delete(UIP);
-    jog(1);                                          /* no tick yet */
+    pickBank(0, BANK_SOUND);                         /* no tick yet */
     assert(S.trackActiveBank[0] === BANK_SOUND, 'not recorded at the turn: ' + JSON.stringify(state(0)));
     assert(sidecarBank(0) === BANK_SOUND, 'the sidecar was not written with SOUND+CFG: ' + sidecarBank(0));
     ticks(4);
@@ -189,13 +202,12 @@ step('(9) a non-jog bank writer (the Chord layout) moves a track resting on MACR
     chord.setChordLayout(0, false); S.chordPopupOpen = false; ticks(2);
 });
 
-step('(8) CONTROL: walking off SOUND+CFG with the jog still records the next bank (the walk is the one writer)', () => {
+step('(8) CONTROL: a map pick off MIX still records the next bank (the pick is the one writer)', () => {
     put(0, BANK_SOUND, true);
-    /* Melodic since 2026-09-26: … DELAY, SEQ ARP, SOUND+CFG — the walk's last stop. */
-    jog(-1); ticks(4);
-    assert(S.trackActiveBank[0] === SEQ_ARP && S.activeBank === SEQ_ARP, 'the walk to SEQ ARP: ' + JSON.stringify(state(0)));
-    jog(-1); ticks(4);
-    assert(S.trackActiveBank[0] === 3, 'the walk on to DELAY: ' + JSON.stringify(state(0)));
+    pickBank(0, SEQ_ARP); ticks(4);
+    assert(S.trackActiveBank[0] === SEQ_ARP && S.activeBank === SEQ_ARP, 'the pick of SEQ ARP: ' + JSON.stringify(state(0)));
+    pickBank(0, 3); ticks(4);
+    assert(S.trackActiveBank[0] === 3, 'the pick of DELAY: ' + JSON.stringify(state(0)));
     S.bankCardLatched = false;
 });
 

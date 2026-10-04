@@ -7,7 +7,7 @@
  */
 
 import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished, loopViewActive, knobAltOn } from './ui_state.mjs';
-import { bankViewMapOn, bankOverviewMapOn, jogTouchCardOn, seqFollowOn } from './ui_prefs.mjs';
+import { jogTouchCardOn, seqFollowOn } from './ui_prefs.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H, drawDaveLoading } from './ui_daves.mjs';
 import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
@@ -17,7 +17,7 @@ import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
 import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
-import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, BANKNAV_HOLD_MS, knobAltFor, ARP_STEPS_KNOB, arpStepsBank } from './ui_constants.mjs';
+import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, knobAltFor, ARP_STEPS_KNOB, arpStepsBank } from './ui_constants.mjs';
 import { miActive, miRender } from './ui_midi_import.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
@@ -36,7 +36,7 @@ import { drawAutoMarkAt,
     kitUseLayout,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
     drawVFader, mvPrint, mvWidth, rectOutline, plotLine,
-    drawLevelCard, drawKitBackdropDim, drawKitBankNavColumn, drawKitBankMap,
+    drawLevelCard, drawKitBackdropDim, drawKitBankMap,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
     drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y,
@@ -60,7 +60,7 @@ import {
     effectiveClip,
     bankHasAltParams, altIndicatorActive, autoLanePlayStep
 } from './ui_leds.mjs';
-import { soundRender, renderTrackGatewayCard, renderConfigCardPeek, renderMacrosPeek, renderSessionFxCard } from './ui_sound.mjs';
+import { soundRender, renderTrackGatewayCard, renderConfigCardPeek, renderMacrosPeek } from './ui_sound.mjs';
 import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus } from './ui_automation_bank.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
@@ -386,13 +386,6 @@ function drawStepEditKitPage(title, cells, noteBox, footer, noStepHeld) {
  * track sitting at zero, which draws an empty widget. */
 function drawSessionMixerPage() {
     const mode = SESS_KNOB_MODES[S.sessKnobMode];
-    /* The gateway is the Master & Send FX list AT REST, in the door's corner
-     * brackets (2026-09-26, like the CONFIG bank): the click opens it live,
-     * the knobs are inert. */
-    if (mode.widget === 'gateway') {
-        renderSessionFxCard();
-        return;
-    }
     const cells = sessMixerCells(mode);
     if (mode.widget === 'vbar') { drawSessionFaderRow(cells, mode); return; }
 
@@ -1468,14 +1461,11 @@ export function drawPositionBarGeom(o) {
  * `soundRender()` call, and the two MUST stay in step — a flag added there and
  * not here re-opens exactly this bug. `tests/test_sound_mode_overlay_gate.sh`
  * pins that correspondence by diffing the two flag sets. */
-/* ⭑ ONE OWNER for "the session mixer page is what session view shows":
- * the session latch, the transient window, or a touched knob. ⚠ TOUCH-REVEAL
- * ON THE JOG IS RETIRED HERE TOO (Josh's 'mirror track view' ruling) —
- * S.jogTouched deliberately absent; the KNOB touch stays, it is the mixer's
- * own edit surface. Render and the session click gate both read this. */
+/* ⭑ ONE OWNER for "the session mixer page is what session view shows": a
+ * touched knob (2026-10-04: nothing locks it — the plain click is the Session
+ * map). The jog-touch reveal is sessMixerShown's. */
 export function sessMixerVisible() {
-    /* Same one law as track view: bank mode, or the knob-touch peek. */
-    return !!(S.sessionView && (S.sessMixerLatched || S.knobTouched >= 0));
+    return !!(S.sessionView && S.knobTouched >= 0);
 }
 
 /* Is the BANK CARD what track view is showing right now (vs the resting
@@ -1560,41 +1550,6 @@ function drawTrackVolCard() {
  * control an enum param opens, over whatever screen is underneath. An OVERLAY
  * rather than a screen, like the volume card — the gesture is a hold, and what
  * it is browsing away from should stay visible behind it. */
-/* The bank navigation overlay while the jog walks (S.bankNavKind, armed by the
- * walk in ui_input_cc, cleared by the jog's touch release in ui.js). Drawn only
- * while the jog is touched, so it can never outlive the hand on it. (The
- * SOUND+CFG shortening went with the rename to MIX.) */
-export function bankNavItems() {
-    if (S.bankNavKind === 'session') {
-        return { items: SESS_KNOB_MODES.map((m) => ({ name: m.label, glyph: 'audio' })),
-                 cur: S.sessKnobMode | 0 };
-    }
-    const mode = S.trackPadMode[S.activeTrack];
-    const cyc = bankCycleForMode(mode, S.activeTrack);
-    /* Each bank's category, when it sits in one that is drawn as a group —
-     * the WALK's groups: the doors left out, an emptied group dropped. */
-    const cat = {};
-    bankWalkCategoriesForMode(mode, S.activeTrack).forEach((g, gi) => {
-        if (g.label) for (const b of g.banks) cat[b] = { id: gi, label: g.label, depth: g.depth | 0 };
-    });
-    /* On a door (off the walk) nothing is highlighted; the list sits on the
-     * bank a right turn would land on. */
-    let cur = cyc.indexOf(S.activeBank), off = false;
-    if (cur < 0) {
-        off = true;
-        const full = bankListForMode(mode, S.activeTrack);
-        let j = full.indexOf(S.activeBank) + 1;
-        while (j < full.length && cyc.indexOf(full[j]) < 0) j++;
-        cur = j < full.length ? cyc.indexOf(full[j]) : cyc.length - 1;
-    }
-    return {
-        items: cyc.map((b) => {
-            const n = bankDisplayName(mode, b);
-            return { name: n, glyph: bankHeaderGlyph(b, mode), cat: cat[b] || null };
-        }),
-        cur: Math.max(0, cur), off,
-    };
-}
 /* THE BANK PAD MAP's screen (Josh, 2026-10-02): a picture of the left 4x4
  * pads while the jog is held — { cols, cur } for drawKitBankMap. */
 export function bankMapItems() {
@@ -1626,18 +1581,6 @@ function drawBankMap() {
     drawKitBankMap(m.cols, m.cur);
     return true;
 }
-function drawBankNav() {
-    if (!S.bankNavKind) return;
-    if (S.bankMapUp) return;
-    if (!S.jogTouched && S.clockMs - S.bankNavTurnMs >= BANKNAV_HOLD_MS) return;
-    /* A latched card (the bank view, the session mixer card) walks without it
-     * when Bank Map on Lock is off; the overviews, when Bank Map Overview is. */
-    const latched = S.bankNavKind === 'track' ? S.bankCardLatched : S.sessMixerLatched;
-    if (latched ? !bankViewMapOn() : !bankOverviewMapOn()) return;
-    const nav = bankNavItems();
-    drawKitBankNavColumn(nav.items, nav.cur, nav.off);
-}
-
 function drawBankPicker() {
     if (S.bankPickerSel < 0) return;
     const cyc = bankListForMode(S.trackPadMode[S.activeTrack]);   /* bankPickerSel indexes the full list */
@@ -1682,7 +1625,6 @@ export function drawUI() {
     drawBankLatchBox();
     drawTrackVolCard();
     drawBankPicker();
-    drawBankNav();
     drawBankMap();
     /* THE NOTICE CARD, above everything (Josh, 2026-09-05: "the confirmation
      * overlays pop up wherever you are when you save/recall, same for session

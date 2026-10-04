@@ -71,7 +71,7 @@ const view = () => snd.soundViewForTest();
 const pills = () => J(movy.kitHintsForTest());
 const put = (t, bank, latched) => {
     if (snd.soundOpen()) snd.soundExit();
-    S.sessionView = false; S.sessMixerLatched = false;
+    S.sessionView = false;
     S.activeTrack = t; S.activeBank = bank; S.trackActiveBank[t] = bank; S.bankCardLatched = !!latched;
     ticks(6);
 };
@@ -171,7 +171,7 @@ step('control: the PAN page and a send with nothing to mix take no click', () =>
 
 step('⭐ a MOVE track: Shift+click its Send A row, then Back, lands on its MOVE bus menu (it lost the bus before)', () => {
     if (snd.soundOpen()) snd.soundExit();
-    S.sessionView = false; S.sessMixerLatched = false;
+    S.sessionView = false;
     S.trackChannel[3] = 1; S.trackRoute[3] = 1;       /* ROUTE_MOVE -> move_fx:1 */
     S.activeTrack = 3;
     snd.soundEnterMove(3); ticks(4);

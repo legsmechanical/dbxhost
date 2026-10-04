@@ -27,7 +27,6 @@
  * (one chain_params read per component, ever). */
 
 import { S, noteUndoUnit, armBankDisplay } from './ui_state.mjs';
-import { bankLockOn } from './ui_prefs.mjs';
 import { BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, PAD_MODE_DRUM, midiTargetIsMidi, SEQ_AUTO_TARGETS } from './ui_constants.mjs';
 import { soundOpen, soundExit, soundJumpToParam } from './ui_sound.mjs';
 import { readBankParams } from './ui_dsp_bridge.mjs';
@@ -56,13 +55,11 @@ export function autoBankReset() {
     if (S.autoBank) { S.autoBank.menu = false; S.autoBank.ops = null; S.autoBank.loopEdit = false; S.autoBank.rateEdit = false; S.autoBank.scaleEdit = false; S.autoBank.cycleTarget = null; }
 }
 export function autoBankMenuOpen() { return !!(S.autoBank && (S.autoBank.menu || S.autoBank.ops)); }
-/* The AUTOMATION menu is up and in use: on the locked card, or — with Bank
- * Lock off, where nothing locks — opened straight from the overview. With
- * Bank Lock on this is exactly the old latched-and-open test. An open menu is
- * itself a reason the card shows (bankCardVisible). */
+/* The AUTOMATION menu is up and in use (its door screen; nothing else opens
+ * it since Bank Lock went, 2026-10-04). An open menu is itself a reason the
+ * card shows (bankCardVisible). */
 export function autoMenuUp() {
-    return S.activeBank === BANK_AUTOMATION && !S.sessionView && autoBankMenuOpen()
-        && (S.bankCardLatched || !bankLockOn());
+    return S.activeBank === BANK_AUTOMATION && !S.sessionView && autoBankMenuOpen();
 }
 
 /* THE LANE JUMP (plan 6c2): Shift + click on a lane in the menu. The lane
@@ -186,9 +183,6 @@ function opsFor(track, clip, r) {
 export function drawAutomationBankBody() {
     const t = S.activeTrack, c = effectiveClip(t);
     const a = st();
-    /* the peek shows the plain card — unless Bank Lock is off, where the
-     * menu is opened from the overview with nothing locked to hold it */
-    if (!S.bankCardLatched && bankLockOn()) autoBankReset();
     const rows = autoBankRows(t, c);
     const listRows = rows.map(r => ({ label: r.label, value: rowValue(r, t, c) }));
     if (a.menu) listRows.push({ label: 'Clear all', hdr: true });

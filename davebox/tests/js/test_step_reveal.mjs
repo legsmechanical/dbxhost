@@ -56,6 +56,8 @@ globalThis.host_ext_midi_remap_enable = () => {};
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
+const pureForReveal = await import('../../ui/ui_pure.mjs');
+const iccForReveal = await import('../../ui/ui_input_cc.mjs');
 const { BANKS, BANK_STEP, BANK_SOUND } = await import('../../ui/ui_constants.mjs');
 FOOTER_Y = (await import('../../ui/ui_movy.mjs')).MV_FOOTER_Y - 1;
 const snd = await import('../../ui/ui_sound.mjs');
@@ -263,8 +265,10 @@ step('⚠ a jog turn inside the tap window PROMOTES the press: the release does 
     assert(!sets.some(x => x.includes('_step_5_clear')) && !S.pendingDefaultSetParams.some(p => p.key.includes('_step_5_clear')), 'step 5 survived');
 });
 step('⚠ from MIX (sound mode active): the reveal draws over it, and left returns to it with sound mode still active', () => {
-    fresh(4); S.bankCardLatched = true;            /* SEQ ARP: the melodic stop before MIX */
-    right();                                       /* walk onto MIX */
+    fresh(4); S.bankCardLatched = true;            /* SEQ ARP, the page held */
+    /* onto MIX by its commit (a map pick; the jog walk retired 2026-10-04) */
+    S.bankPickerSel = pureForReveal.bankListForMode(S.trackPadMode[S.activeTrack], S.activeTrack).indexOf(11);
+    iccForReveal.applyBankPick(false);
     globalThis.tick(); globalThis.tick();
     assert(snd.soundActive(), 'control: sound mode opened');
     const REF = 7000;

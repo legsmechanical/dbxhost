@@ -67,7 +67,7 @@ const back = () => { midi(0xB0, 51, 127); midi(0xB0, 51, 0); ticks(2); };
 const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const same = (a, b) => a.every((v, i) => v === b[i]);
 const home = () => { S.activeBank = 0; S.trackActiveBank[2] = 0; S.bankCardLatched = false; S.doorReturn = null;
-    S.stepIntervalMode = false; S.altMode = false; S.shiftHeld = false; S.bankLockOn = true; S.trackPadMode[2] = C.PAD_MODE_MELODIC_SCALE; ticks(2); };
+    S.stepIntervalMode = false; S.altMode = false; S.shiftHeld = false; S.trackPadMode[2] = C.PAD_MODE_MELODIC_SCALE; ticks(2); };
 const arpRef = () => { const b = S.activeBank, l = S.bankCardLatched; S.activeBank = 5; S.bankCardLatched = true;
     const f = frame(); S.activeBank = b; S.bankCardLatched = l; return f; };
 const hold = () => { shiftDown(); s11Down(); S.tickCount += HOLD; tick(); };
@@ -116,33 +116,26 @@ step('from a locked DELAY card the hold switches to LIVE ARP, and Back stays the
     assert(S.activeBank === 5 && !S.bankCardLatched, 'bank ' + S.activeBank + ' latched ' + S.bankCardLatched);
 });
 
-step('with Bank Lock off the pop-up still stays up; Back closes it on LIVE ARP', () => {
-    home(); S.bankLockOn = false;
-    hold(); s11Up(); shiftUp(); ticks(2);
-    assert(S.activeBank === 5 && render.bankCardVisible(), 'not up with Bank Lock off');
-    back();
-    assert(S.activeBank === 5 && !S.bankCardLatched, 'Back: bank ' + S.activeBank);
-    S.bankLockOn = true;
-});
-
 step('touch K5 (Steps) + click on it opens Arp Steps (a plain click does not); Back closes that first, then the page', () => {
     home();
     hold(); s11Up(); shiftUp(); ticks(2);
     midi(0xB0, 3, 127); midi(0xB0, 3, 0); ticks(2);
-    assert(!S.stepIntervalMode, 'a plain click opened Arp Steps');
+    assert(!S.stepIntervalMode && S.bankMapLatched, 'a plain click opened Arp Steps, or not the map');
+    /* Touch K5 + click with the map up: the map makes way, Arp Steps opens. */
     midi(0x90, 4, 127); midi(0xB0, 3, 127); midi(0xB0, 3, 0); midi(0x90, 4, 0); ticks(2);
-    assert(S.stepIntervalMode, 'touch K5 + click did not open Arp Steps');
+    assert(S.stepIntervalMode && !S.bankMapUp, 'touch K5 + click did not open Arp Steps over the map: ' + S.stepIntervalMode + ' map ' + S.bankMapUp);
     back();
     assert(!S.stepIntervalMode && S.activeBank === 5 && S.bankCardLatched, 'first Back: ' + S.activeBank);
     back();
     assert(S.activeBank === 5 && !S.bankCardLatched, 'second Back did not close the page');
 });
 
-step('a jog turn walks on from it, as from any bank', () => {
+step('a jog turn walks no bank from it (the walk retired 2026-10-04)', () => {
     home();
     hold(); s11Up(); shiftUp(); ticks(2);
     midi(0x90, 9, 127); midi(0xB0, 14, 1); ticks(1); midi(0x80, 9, 0); ticks(2);
-    assert(S.activeBank === C.BANK_MACROS, 'the turn did not walk on to MACROS: bank ' + S.activeBank);
+    assert(S.activeBank === 5, 'the turn walked off LIVE ARP: bank ' + S.activeBank);
+    back();
 });
 
 step('⭐ a project saved while it is up saves LIVE ARP as the track\'s bank', () => {

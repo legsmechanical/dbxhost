@@ -60,6 +60,7 @@ const snd = await import('../../ui/ui_sound.mjs');
 const await_auto = await import('../../ui/ui_automation.mjs');
 const leds = await import('../../ui/ui_leds.mjs');
 const kit = await import('../../ui/ui_movy.mjs');
+const pure = await import('../../ui/ui_pure.mjs');
 const K = await import('/data/UserData/schwung/shared/constants.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
@@ -80,7 +81,9 @@ const turn = (k, d) => { touch(k); for (let i = 0; i < 40; i++) { cc(71 + k, d >
 const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const same = (a, b) => a.every((v, i) => v === b[i]);
 const toBank = (b) => { S.activeBank = b; S.trackActiveBank[S.activeTrack] = b; ticks(4); };
-const latch = (b) => { S.bankCardLatched = false; S.knobAlt = 0; S.altMode = false; toBank(b); click(); };
+/* The page HELD up (no click locks one since 2026-10-04 — this stands in for
+ * a held page, e.g. Shift + hold Step 11's). */
+const latch = (b) => { if (S.bankMapUp) click(); S.bankCardLatched = false; S.knobAlt = 0; S.altMode = false; toBank(b); S.bankCardLatched = true; ticks(2); };
 const wrote = (re) => sets.some((x) => re.test(x));
 const hints = (b) => JSON.stringify(render.bankPageHints(b));
 
@@ -120,9 +123,11 @@ step('…the other knobs are untouched: K3 still turns Clock Shift, and its touc
     assert(wrote(/^t2_clock_shift=/) && !wrote(/^t2_nudge=[^0]/), 'K3 turn wrote ' + JSON.stringify(sets.slice(0, 6)));
 });
 
-step('a plain click with no knob touched flips nothing', () => {
+step('a plain click with no knob touched flips nothing (it opens the map; a second click closes it)', () => {
     click();
-    assert(S.knobAlt === 1 && !S.altMode, 'knobAlt ' + S.knobAlt + ' altMode ' + S.altMode);
+    assert(S.knobAlt === 1 && !S.altMode && S.bankMapLatched, 'knobAlt ' + S.knobAlt + ' altMode ' + S.altMode + ' map ' + S.bankMapLatched);
+    click();
+    assert(!S.bankMapUp, 'the second click did not close the map');
 });
 
 step('CLIP K3 and K7 flip too: Nudge and Reverse Style', () => {
@@ -204,10 +209,13 @@ step('NOTE FX K8 flips to Algo', () => {
     assert(wrote(/^t2_noteFX_random_mode=/), 'K8 turn wrote ' + JSON.stringify(sets.slice(0, 6)));
 });
 
-step('⭐ leaving the bank resets: a jog walk, and a track change', () => {
+step('⭐ leaving the bank resets: a bank map pick, and a track change', () => {
     assert(S.knobAlt !== 0, 'setup');
-    cc(14, 1); ticks(3); frame();   /* the reset is the render diff guard, run every tick on the device */
-    assert(S.activeBank !== 1 && S.knobAlt === 0, 'walk: bank ' + S.activeBank + ' knobAlt ' + S.knobAlt);
+    /* Hold the jog, tap DELAY (FX column, third pad), let go. */
+    const dly = pure.bankMapPadForCell(3, 2);
+    cc(3, 127); midi(0x90, dly, 100); midi(0x80, dly, 0); cc(3, 0);
+    ticks(3); frame();   /* the reset is the render diff guard, run every tick on the device */
+    assert(S.activeBank === 3 && S.knobAlt === 0, 'pick: bank ' + S.activeBank + ' knobAlt ' + S.knobAlt);
     latch(1); touchClick(7);
     assert(S.knobAlt === 1 << 7, 'setup 2');
     cc(49, 127); cc(14, 1); ticks(2); cc(49, 0); ticks(3); frame();

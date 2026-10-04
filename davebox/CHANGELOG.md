@@ -11,11 +11,13 @@ the section into a versioned heading at release time.
 - **Shift + hold Step 11 opens LIVE ARP** (melodic tracks) and holds its page
   up until Back; the knobs stay on LIVE ARP afterwards. A tap still turns LIVE
   ARP on and off.
-- **Hold the jog to jump to any bank.** The left 4×4 pads become a map of the
-  track's banks — one column per group, the same on every track type — and the
-  screen shows it. Tap a pad to land on that bank — CONFIG and AUTOMATION open
-  straight into their menus. In Session View the map holds the mixer modes and
-  opens the Master, Send A and Send B effects directly.
+- **The bank map: click or hold the jog to pick a bank.** The left 4×4 pads
+  become a map of the track's banks — one column per group, the same on every
+  track type — and the screen shows it, the moment you press. Click and the map
+  stays up (tap pads to switch; click again or Back to close it); hold, tap and
+  let go to just peek. CONFIG and AUTOMATION open straight into their menus. In
+  Session View the map holds the mixer modes and opens the Master, Send A and
+  Send B effects directly.
 
 ### Changed
 - **Alt knobs switch one at a time: touch the knob and click the jog.** Res ↔
@@ -35,27 +37,16 @@ the section into a versioned heading at release time.
 - **ALL LANES no longer asks you to confirm.** The drum ALL LANES bank opens
   like any other bank: its knobs, Loop, double-and-fill and quantize act on all
   32 lanes straight away.
-- **CONFIG and AUTOMATION are off the jog walk** and the bank list. They stay
-  on the bank map (hold the jog) and their shortcuts; the walk now runs LIVE
-  ARP (CHORD before it in the Chord layout) → MACROS → STEP → CLIP → the
-  effects → MIX. Turning the jog from one of them steps to the nearest bank on the
-  walk. Drum tracks keep RPT GROOVE on the walk; the Conductor's starts on CLIP.
-  They are screens, not banks: opening one never changes the bank you're on,
-  and Back from its top level returns you exactly where you were.
-- **Jog Turn Banks** in Project Settings: turn it off and turning the jog no
-  longer changes the bank (or Session View's mixer mode); hold the jog and tap
-  a pad to switch. Loop + jog and Shift + jog work as usual.
-- **Bank Lock** in Project Settings: turn it off and a jog click on the
-  overview skips the bank view and does the bank's own thing — opens TRACK
-  CONFIG, the macro list or the automation menu, switches to the alternate
-  parameters, opens Arp Steps — in Track and Session View alike. Back returns
-  to the overview.
-- **Bank Map Overview** in Project Settings turns off the bank list that comes
-  up while you turn the jog on the track or session overview, the way Bank Map
-  on Lock already does for the bank view.
-- **A jog click now happens when you let go**, not when you press, wherever the
-  jog walks the banks (so a held jog can bring up the map instead). Any release
-  within half a second is still a click.
+- **The jog turn no longer switches banks, and the bank column is gone.** Banks
+  (and Session View's mixer modes) are picked on the bank map. CONFIG and
+  AUTOMATION are screens, not banks: opening one never changes the bank you're
+  on, and Back from its top level returns you exactly where you were.
+- **A bank page shows while you touch a knob or the jog** — the jog click no
+  longer locks it (the click is the bank map). Pages you open on purpose
+  (Shift + hold Step 11's LIVE ARP, the editors, AUTOMATION, TRACK CONFIG)
+  stay until Back. In Session View the mixer page shows the same way, and the
+  SESSION FX card is gone from the mixer modes — the Session map's FX pads (or
+  Shift + Note/Session) open the effects.
 - **Clearer small letters.** N, A, B, G, K and O in the smallest screen font
   were redrawn: N no longer reads as K, O no longer matches 0, B no longer
   matches 8.

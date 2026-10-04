@@ -73,8 +73,10 @@ const touchClick = (k) => { touch(k); click(); untouch(k); };
 const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const same = (a, b) => a.every((v, i) => v === b[i]);
 const toBank = (b) => { S.activeBank = b; S.trackActiveBank[S.activeTrack] = b; ticks(4); };
-const home = () => { S.bankCardLatched = false; S.stepIntervalMode = false; S.altMode = false; S.knobAlt = 0; S.bankLockOn = true; };
-const latch = (b) => { home(); toBank(b); click(); };
+const home = () => { if (S.bankMapUp) { click(); } S.bankCardLatched = false; S.stepIntervalMode = false; S.altMode = false; S.knobAlt = 0; };
+/* A bank page HELD up — what Shift + hold Step 11 does for LIVE ARP (no click
+ * locks a page since 2026-10-04). */
+const latch = (b) => { home(); toBank(b); S.bankCardLatched = true; ticks(2); };
 const drawnHints = () => { frame(); return JSON.stringify(kit.kitHintsForTest()); };
 /* The footer as DRAWN: the pairs offered, cut by the row's own fit rule
  * (drawKitHintRow returns how many it drew; BACK is pinned last). */
@@ -101,7 +103,9 @@ for (const [bank, name] of [[5, 'LIVE ARP'], [4, 'SEQ ARP']]) {
         assert(!bracketed(f, 0) && !bracketed(f, 5), 'another knob is bracketed');
         assert(!kit.kitHintsForTest().some((h) => h[0] === 'CLK'), 'untouched footer offers CLK: ' + drawnHints());
         click();
-        assert(!S.stepIntervalMode, 'a plain click opened Arp Steps');
+        assert(!S.stepIntervalMode && S.bankMapLatched, 'a plain click opened Arp Steps, or not the map');
+        click();
+        assert(!S.bankMapUp, 'setup: the second click did not close the map');
         for (const k of [0, 3, 7]) {
             touchClick(k);
             assert(!S.stepIntervalMode, 'touch K' + (k + 1) + ' + click opened Arp Steps (only Steps, K5, does)');
@@ -130,17 +134,13 @@ for (const [bank, name] of [[5, 'LIVE ARP'], [4, 'SEQ ARP']]) {
     });
 }
 
-step('⭐ from REST: touch K5 + click opens Arp Steps and locks the card (Bank Lock on); off, it does not lock', () => {
+step('⭐ from REST: touch K5 + click opens Arp Steps; nothing locks, and Back is the overview', () => {
     home(); toBank(5);
     assert(!render.bankCardVisible(), 'setup: at rest');
     touchClick(C.ARP_STEPS_KNOB);
-    assert(S.stepIntervalMode && S.bankCardLatched, 'lock on: editor ' + S.stepIntervalMode + ' latched ' + S.bankCardLatched);
-    home(); S.bankLockOn = false; toBank(5);
-    touchClick(C.ARP_STEPS_KNOB);
-    assert(S.stepIntervalMode && !S.bankCardLatched, 'lock off: editor ' + S.stepIntervalMode + ' latched ' + S.bankCardLatched);
+    assert(S.stepIntervalMode && !S.bankCardLatched, 'editor ' + S.stepIntervalMode + ' latched ' + S.bankCardLatched);
     back();
     assert(!S.stepIntervalMode && !render.bankCardVisible(), 'Back from the editor is the overview');
-    S.bankLockOn = true;
 });
 
 step('⭐⭐ RPT GROOVE: the footer says KNB+CLK NUDGE on the Velocity page — drawn, with room under the numbers', () => {
@@ -153,7 +153,9 @@ step('⭐⭐ RPT GROOVE: the footer says KNB+CLK NUDGE on the Velocity page — 
     let nums = 0; for (let y = 48; y < 53; y++) for (let x = 0; x < 128; x++) nums += f[y * W + x];
     assert(nums > 0, 'the step numbers are not on their row (48) above the footer');
     click();
-    assert(!S.altMode, 'a plain click flipped the page');
+    assert(!S.altMode && S.bankMapLatched, 'a plain click flipped the page, or did not open the map');
+    click();
+    assert(!S.bankMapUp, 'setup: the second click did not close the map');
 });
 
 step('⭐⭐ RPT GROOVE: touch ANY knob + click flips to Nudge; the footer says KNB+CLK VELOCITY; and back', () => {

@@ -66,6 +66,7 @@ await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const nav = await import('/data/UserData/schwung/shared/menu_nav.mjs');
 const D = await import('../../ui/ui_dialogs.mjs');
+const ICC = await import('../../ui/ui_input_cc.mjs');
 const CC_LEFT = 62, CC_RIGHT = 63;
 
 const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
@@ -123,70 +124,38 @@ step('global menu (real dispatch): enum edit clamps both ways', () => {
     S.globalMenuState = null; S.globalMenuOpen = false;
 });
 
-step('session mixer banks (real dispatch): the mode list clamps both ways', () => {
-    /* Josh, 2026-08-24: "Session view mixer banks should not loop around when
-     * scrolling through them. Hard stop at beginning and end." Same law as the
-     * settings enums above — four modes (Volume / Pan / Send A / Send B) walked
-     * by the jog, and the wrap made the last one look like the first.
-     *
-     * ⭑ POSITIVE CONTROL first: an interior step must still move, or a clamp
-     * test passes just as well against a jog that does nothing at all. */
-    S.ledInitComplete = true;
-    S.globalMenuOpen = false;
-    S.sessionView = true;
-    S.shiftHeld = false;
-    S.sessMixerLatched = true;   /* the walk only runs on the OPEN page (2026-09-01) */
+/* The session mixer mode moves only by the Session map's MIXER column since
+ * 2026-10-04 (the jog walk retired) — sessWalkTo is its one owner, and the
+ * clamp and the flicker guard live there. */
+step('session mixer modes (sessWalkTo, the map pick): the mode list clamps both ways', () => {
+    S.ledInitComplete = true; S.globalMenuOpen = false; S.sessionView = true; S.shiftHeld = false;
     S.sessKnobMode = 1;
-    cc(14, 1);
-    if (S.sessKnobMode !== 2)
-        throw new Error('control failed: an interior step did not move (' + S.sessKnobMode + ')');
-
-    S.sessKnobMode = 4;                       /* the FX GATEWAY, the last stop now */
-    cc(14, 1);
-    if (S.sessKnobMode !== 4)
-        throw new Error('wrapped past the gateway to mode ' + S.sessKnobMode);
-
-    S.sessKnobMode = 0;                       /* VOLUME, the first */
-    cc(14, 127);                              /* -1 detent */
-    if (S.sessKnobMode !== 0)
-        throw new Error('wrapped below VOLUME to mode ' + S.sessKnobMode);
-    S.sessMixerLatched = false;
+    ICC.sessWalkTo(2, true);
+    if (S.sessKnobMode !== 2) throw new Error('control failed: an interior pick did not move (' + S.sessKnobMode + ')');
+    ICC.sessWalkTo(9, true);
+    if (S.sessKnobMode !== 3) throw new Error('past SEND B landed on ' + S.sessKnobMode);
+    ICC.sessWalkTo(-1, true);
+    if (S.sessKnobMode !== 0) throw new Error('below VOLUME landed on ' + S.sessKnobMode);
     S.sessionView = false;
 });
 
-step('⚠ a CLAMPED mixer turn must not discard the level cache (the flicker)', () => {
-    /* The clamp's own regression, found by Josh on device the day it landed:
-     * the branch invalidated all eight cached levels on EVERY turn, which was
-     * harmless while it wrapped (a turn always changed the mode, so the cache
-     * was genuinely stale) and destructive once it clamped — a track with no
-     * level draws no widget, so each blocked detent wiped the page and let the
-     * poll paint it back. The OLED flickered at both ends of the list.
-     *
-     * ⭑ POSITIVE CONTROL first: a REAL change must still invalidate, or this
-     * passes just as well against the invalidator deleted outright. */
-    S.ledInitComplete = true;
-    S.globalMenuOpen = false;
-    S.sessionView = true;
-    S.shiftHeld = false;
-    S.sessMixerLatched = true;   /* the walk only runs on the OPEN page (2026-09-01) */
-
+step('⚠ a CLAMPED mixer pick must not discard the level cache (the flicker)', () => {
+    S.ledInitComplete = true; S.globalMenuOpen = false; S.sessionView = true; S.shiftHeld = false;
     S.sessKnobMode = 1;
     S.sessVolLevel.fill(0.5);
-    cc(14, 1);                                /* 1 -> 2: a real step */
+    ICC.sessWalkTo(2, true);                  /* a real change */
     if (S.sessVolLevel[0] !== -1)
         throw new Error('control failed: a real mode change no longer re-reads the levels');
-
-    S.sessKnobMode = 4;                       /* the GATEWAY: the end of the walk now */
+    S.sessKnobMode = 3;
     S.sessVolLevel.fill(0.5);
-    cc(14, 1);
+    ICC.sessWalkTo(4, true);                  /* clamped at SEND B */
     if (S.sessVolLevel.some((v) => v === -1))
-        throw new Error('a clamped turn at the END wiped the level cache — the mixer flickers');
-
-    S.sessKnobMode = 0;                       /* VOLUME, clamped */
+        throw new Error('a clamped pick at the END wiped the level cache — the mixer flickers');
+    S.sessKnobMode = 0;
     S.sessVolLevel.fill(0.5);
-    cc(14, 127);
+    ICC.sessWalkTo(0, true);                  /* no change */
     if (S.sessVolLevel.some((v) => v === -1))
-        throw new Error('a clamped turn at the START wiped the level cache — the mixer flickers');
+        throw new Error('a no-change pick wiped the level cache — the mixer flickers');
     S.sessionView = false;
 });
 

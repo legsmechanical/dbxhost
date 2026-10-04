@@ -226,7 +226,7 @@ export function bankPadMapCellAt(padMode, t, col, row) {
 }
 
 /* Session View's map: the mixer modes down column 0 (SESS_KNOB_MODES indices
- * 0..3 — the gateway card, index 4, is not a pad), and the effect buses in
+ * 0..3), and the effect buses in
  * column 1, each beside its level (Josh: "Send a and b [should be] aligned
  * with their counterparts on the mixer row"). Bus ids are FX_BUSES ids. */
 export const SESS_PAD_MAP = {

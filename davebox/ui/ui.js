@@ -29,7 +29,7 @@ import {
     LED_OFF,
     NUM_TRACKS,
     TRACK_PAD_BASE,
-    BANKS, PAD_MODE_DRUM, MoveCapture, BANKNAV_HOLD_MS, JOG_CLICK_MAX_MS } from './ui_constants.mjs';
+    BANKS, PAD_MODE_DRUM, MoveCapture } from './ui_constants.mjs';
 
 import { S, knobAltOn } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -49,7 +49,7 @@ import {
     projectPickerTextEntryMidi,
     projectPadPickerTap, projectPadPickerRotate, projectPadPickerClick
 } from './ui_dialogs.mjs';
-import { MoveShift, MoveLeft, MoveRight } from '/data/UserData/schwung/shared/constants.mjs';
+import { MoveShift, MoveLeft, MoveRight, MoveMute } from '/data/UserData/schwung/shared/constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, trackColor, forceRedraw, installFlagsWrap, buildLedInitQueue } from './ui_leds.mjs';
 import { initPrimarySurface } from './ui_corun.mjs';
@@ -81,7 +81,7 @@ import { recordNoteOn, recordNoteOff,
     extHeldNotes, extCountInCapture } from './ui_record.mjs';
 import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './ui_input_pads.mjs';
 import { applyBankPick, heldStepJog, bankMapArmable, bankMapBegin, bankMapEnd, bankMapPadTap,
-    bankMapTurned } from './ui_input_cc.mjs';
+    bankMapTurned, bankMapRelease } from './ui_input_cc.mjs';
 import { standDownBankDisplay } from './ui_state.mjs';
 import { _onCCMsg, syncCoRunShift } from './ui_input_cc.mjs';
 import { soundActive, soundOpen, soundResting, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw,
@@ -492,10 +492,6 @@ globalThis.onMidiMessageInternal = function (data) { try { _onMidiInternalImpl(d
  * site remembering the rule. */
 function _jogTouchRelease() {
     S.jogTouched = false;
-    /* The bank navigation overlay goes the moment the hand leaves the jog —
-     * unless a detent just walked it: the touch sensor drops out mid-turn, and
-     * the tick retires it once BANKNAV_HOLD_MS passes with no touch. */
-    if (S.bankNavKind && nowMs() - S.bankNavTurnMs >= BANKNAV_HOLD_MS) { S.bankNavKind = null; S.screenDirty = true; }
     /* Letting go COMMITS an open pick, as the click does (Josh, 2026-08-25:
      * both feel natural and serve different purposes — the click chooses while
      * you stay in contact, the release is "I am done, take it").
@@ -554,32 +550,30 @@ function _onMidiInternalImpl(data) {
         else if (_k === 0x80 || _k === 0x90) S.padPhysDown.delete(d1);
     }
 
-    /* THE BANK PAD MAP (Josh, 2026-10-02): hold the jog and the left 4x4 pads
-     * are the banks. Where the map can arm, the PRESS is held back and the
-     * click happens on RELEASE — replayed through this same dispatcher when it
-     * was let go before the map painted, so every click meaning keeps its own
-     * code. Both edges live here, above every modal gate: a release
-     * swallowed by a screen would strand the hold (the jog-touch lesson
-     * above). Elsewhere the press goes on to its owner exactly as before. */
+    /* THE BANK PAD MAP (Josh, 2026-10-02; 2026-10-04: "hold jog instantly peek
+     * the pad map and jog click instantly pop it up and another jog click
+     * close it"). Where the map can arm, the PRESS paints it at once and is
+     * the map's alone; the RELEASE rules (bankMapRelease): a click toggles the
+     * latch, a hold is a peek. Both edges live here, above every modal gate:
+     * a release swallowed by a screen would strand the hold (the jog-touch
+     * lesson above). Elsewhere the press goes on to its owner as before. */
     if (status === 0xB0 && d1 === MoveMainButton) {
-        if (d2 === 127 && !S.jogClickReplay) {
+        if (d2 === 127) {
             /* A press while a hold is still recorded: its release was lost.
              * End the stale hold first, then judge this press afresh. */
             if (S.jogPressMs >= 0) bankMapEnd();
             if (bankMapArmable()) { bankMapBegin(); return; }
+            /* A click the map cannot take (a knob touched: touch + click) goes
+             * to its owner — and a latched map makes way for what it opens. */
+            if (S.bankMapLatched) bankMapEnd();
         }
-        if (d2 !== 127 && S.jogPressMs >= 0) {
-            /* A click is a press let go within JOG_CLICK_MAX_MS with nothing
-             * done in between — even if the map has painted. Held longer,
-             * letting go just puts the map away: you looked and chose nothing. */
-            const click = !S.bankMapUsed && nowMs() - S.jogPressMs < JOG_CLICK_MAX_MS;
-            bankMapEnd();
-            if (click) {
-                S.jogClickReplay = true;
-                try { _onMidiInternalImpl([0xB0, MoveMainButton, 127]); }
-                finally { S.jogClickReplay = false; }
-            }
-        }
+        if (d2 !== 127 && S.jogPressMs >= 0) { bankMapRelease(); return; }
+    } else if (S.bankMapLatched && S.jogPressMs < 0 && status === 0xB0 && d2 === 127 &&
+               [MoveShift, MoveDelete, MoveCopy, MoveMute, MoveLoop, MoveCapture].indexOf(d1) >= 0) {
+        /* A latched map gives the pads back for a chord (Shift + pad, Delete +
+         * pad, Loop + step...): the map goes and the button goes on. Play,
+         * Record and the arrows leave it up; Back closes it in _backTap. */
+        bankMapEnd();
     } else if (S.jogPressMs >= 0) {
         if (status === 0xB0 && d1 === MoveMainKnob) {
             bankMapTurned();                  /* the turn still walks, below */
@@ -598,9 +592,9 @@ function _onMidiInternalImpl(data) {
         if (_k === 0x80 || (_k === 0x90 && d2 === 0)) {
             if (S.bankMapSwallow.delete(d1)) return;
         } else if (_k === 0xA0) {
-            if (S.jogPressMs >= 0 || S.bankMapSwallow.has(d1)) return;
+            if (S.bankMapUp || S.bankMapSwallow.has(d1)) return;
         } else if (_k === 0x90) {
-            if (S.jogPressMs >= 0) { bankMapPadTap(d1); return; }
+            if (S.bankMapUp) { bankMapPadTap(d1); return; }
             /* A fresh press outside a hold supersedes a pending swallow (its
              * release was lost), or that press's own release would be eaten. */
             S.bankMapSwallow.delete(d1);
@@ -855,6 +849,15 @@ function _onMidiInternalImpl(data) {
      * is forwarded but NOT consumed: davebox's own touch bookkeeping below is
      * what arms the knob-touch PEEK of the page. */
     const _restKnob = !_soundSteers && soundOpen() && soundResting() && !soundModeCovered();
+    /* ⚠ A knob let go is let go, whoever takes the release: a touch begun AT
+     * REST (davebox's) and released after a touch + click opened a sound
+     * editor (sound mode's) was consumed above davebox's bookkeeping, leaving
+     * S.knobTouched stuck — the page stayed peeked and the jog click could not
+     * open the map. */
+    if (d1 <= 7 && ((status & 0xF0) === 0x80 || ((status & 0xF0) === 0x90 && d2 < 64)) &&
+            S.knobTouched === d1) {
+        S.knobTouched = -1; S.screenDirty = true;
+    }
     if (_soundSteers && soundOnMidiRaw(data)) return;
     if (_soundSteers && soundOnNote(status, d1, d2)) return;
     if (_restKnob && ((status & 0xF0) === 0x90 || (status & 0xF0) === 0x80) && d1 <= 7) soundOnNote(status, d1, d2);
@@ -900,7 +903,7 @@ function _onMidiInternalImpl(data) {
                      * the lane. ONE popup for the clear, however many targets. */
                     if (S.sessionView) {
                         const _mode = SESS_KNOB_MODES[S.sessKnobMode];
-                        if (_mode && _mode.widget !== 'gateway') {
+                        if (_mode) {
                             const _c = effectiveClip(d1);
                             let _cleared = false;
                             for (const tg of sessStripTargets(S, d1, _mode.key)) {
@@ -927,12 +930,12 @@ function _onMidiInternalImpl(data) {
                     /* SEQ ARP K5 / TRACK ARP K5 touch: switch pads to vel-slider editor immediately. */
                     if ((S.activeBank === 4 && d1 === 4) || (S.activeBank === 5 && d1 === 4)) forceRedraw();
                 }
-                if (d1 === MoveMainTouch && !S.globalMenuOpen && !S.shiftHeld) { S.jogTouched = true; if (nowMs() - S.bankNavTurnMs >= BANKNAV_HOLD_MS) S.bankNavKind = null; forceRedraw(); }
+                if (d1 === MoveMainTouch && !S.globalMenuOpen && !S.shiftHeld) { S.jogTouched = true; forceRedraw(); }
             } else if (d2 < 64) {
                 if (d1 <= 7) {
                     if (S.sessionView) {
                         const _mode = SESS_KNOB_MODES[S.sessKnobMode];
-                        if (_mode && _mode.widget !== 'gateway')
+                        if (_mode)
                             for (const tg of sessStripTargets(S, d1, _mode.key))
                                 automationParamTouch(d1, effectiveClip(d1), tg.slot, tg.fullKey, false);
                     }

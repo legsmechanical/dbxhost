@@ -49,6 +49,7 @@ await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const C = await import('../../ui/ui_constants.mjs');
 const P = await import('../../ui/ui_pure.mjs');
+const icc = await import('../../ui/ui_input_cc.mjs');
 const render = await import('../../ui/ui_render.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const kit = await import('../../ui/ui_movy.mjs');
@@ -142,8 +143,9 @@ step('⭐ a Conductor: CONFIG opens its menu rows (a door: off the walk)', () =>
     const st = snd.soundConfigCardForTest();
     assert(snd.soundOpen() && st.card, 'no CONFIG card on a Conductor: ' + JSON.stringify(st));
     assert(st.rows.indexOf('trackto') >= 0 && st.rows.indexOf('block') < 0, 'Conductor rows: ' + st.rows);
-    jog(1);
-    assert(S.activeBank === 0 && !snd.soundOpen(), 'walking off did not close: ' + S.activeBank);
+    /* Leave it by a bank map pick (the jog walk retired 2026-10-04): CLIP. */
+    S.bankPickerSel = P.bankListForMode(S.trackPadMode[2], 2).indexOf(0); icc.applyBankPick(false); ticks(4);
+    assert(S.activeBank === 0 && !snd.soundOpen(), 'leaving CONFIG did not close: ' + S.activeBank);
     toBank(C.BANK_SOUND);                              /* a stale MIX record on a Conductor */
     assert(!snd.soundOpen(), 'a Conductor opened MIX');
     S.trackPadMode[2] = C.PAD_MODE_MELODIC_SCALE; S.bankCardLatched = false; toBank(0);

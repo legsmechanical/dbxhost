@@ -1039,7 +1039,7 @@ export function updateTrackLEDs() {
              * no host state. Computed once per frame across the eight strips. */
             if (k === 0) {
                 const _m = SESS_KNOB_MODES[S.sessKnobMode];
-                S._sessRingAuto = (_m && _m.widget !== 'gateway') ? _m.key : null;
+                S._sessRingAuto = _m ? _m.key : null;
             }
             if (S._sessRingAuto && !_isMuted) {
                 const _tgs = sessStripTargets(S, k, S._sessRingAuto);

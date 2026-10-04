@@ -79,7 +79,7 @@ function rest() {
     cc_mod.__forTest_returnToOverview
         ? cc_mod.__forTest_returnToOverview()
         : null;
-    S.bankCardLatched = false; S.sessMixerLatched = false;
+    S.bankCardLatched = false; cc_mod.bankMapEnd();
     S.perfViewLocked = false; S.perfStack = [];
     S.globalMenuOpen = false; S.daveBox = false; S.projectPadPicker = null;
     S.snapshotPicker = null; S.globalEnumPick = null;
@@ -97,7 +97,8 @@ function rest() {
 /* Each entry: a name, an arrange fn, and (optionally) extra assertions. */
 const STATES = [
     ['a latched track bank view', () => { S.bankCardLatched = true; }],
-    ['the session mixer page',    () => { S.sessionView = true; S.sessMixerLatched = true; }],
+    ['the Session map, latched',  () => { S.sessionView = true; S.bankMapUp = true; S.bankMapLatched = true; S.bankMapKind = 'session'; }],
+    ['the bank map, latched',     () => { S.bankMapUp = true; S.bankMapLatched = true; S.bankMapKind = 'track'; }],
     ['perf lock (session view)',  () => { S.sessionView = true; S.perfViewLocked = true; }],
     ['the global menu',           () => { S.globalMenuOpen = true; }],
     ['the Dave Box album',        () => { S.daveBox = true; }],

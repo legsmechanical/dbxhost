@@ -86,113 +86,15 @@ step('⭐ the melodic walk is IN, CTRL, SEQ, FX, MIX (the doors are off it); a C
     S.padLayoutChord[2] = false;
     assert(C.BANK_DEFAULT === 0, 'CLIP stays the start and Back bank');
 });
-step('⭐⭐ THE GESTURE: from CLIP the jog walks left through SEQ and CTRL to IN (stopping there) and right through FX to MIX, the column following', () => {
-    S.activeBank = 0; S.trackActiveBank[2] = 0; S.bankSelectTick = -1;
-    touchJog(); tick();
-    const seen = [];
-    for (let i = 0; i < 4; i++) { jog(-1); tick(); seen.push(S.activeBank); }
-    assert(JSON.stringify(seen) === JSON.stringify([C.BANK_STEP, C.BANK_MACROS, 5, 5]), 'left: ' + seen);
-    const nav = render.bankNavItems();
-    assert(nav.items[nav.cur].name === 'LIVE ARP' && nav.items[nav.cur].cat && nav.items[nav.cur].cat.label === 'IN', 'centred ' + JSON.stringify(nav.items[nav.cur]));
-    assert(nav.items.every((x) => ['CONFIG', 'AUTOMATION'].indexOf(x.name) < 0), 'a door is in the column');
-    for (let i = 0; i < 3; i++) { jog(1); tick(); }
-    assert(S.activeBank === 0, 'back on CLIP: ' + S.activeBank);
-    const right = [];
-    for (let i = 0; i < 5; i++) { jog(1); tick(); right.push(S.activeBank); }
-    assert(JSON.stringify(right) === JSON.stringify([1, 2, 3, 4, C.BANK_SOUND]), 'right: ' + right);
-    releaseJog(); settle();
-    assert(!S.bankNavKind, 'the column outlived the release');
-});
-step('⭐ a row in a category is indented past the gutter, its highlight too; the category has a line and a label', () => {
-    onBank(0);                                        /* CLIP: SEQ is STEP, CLIP */
-    const f = frame();
-    assert(!px(f, 1, MID_Y + 3), 'the highlight covers the category gutter');
-    assert(px(f, GUT - 2, MID_Y + 3) && px(f, GUT - 1, MID_Y + 3), 'the highlight does not start at the row\'s indent');
-    const top = (MID - 1) * ROW + 2, bot = MID * ROW + ROW - 2;
-    for (let y = top; y < bot; y++) assert(px(f, lineX, y), 'no line at y ' + y);
-    assert(!px(f, lineX, top - 1) && !px(f, lineX, bot), 'the line runs past its group');
-    assert(inkLeftOfLine(f, top, bot) > 0, 'no SEQ label');
-});
-step('⭐ CTRL keeps its category with only MACROS (it CAN hold two); IN holds LIVE ARP, and CHORD with it', () => {
-    S.padLayoutChord[2] = false;
-    onBank(C.BANK_MACROS);
-    let nav = render.bankNavItems();
-    assert(nav.items[nav.cur].cat && nav.items[nav.cur].cat.label === 'CTRL', 'MACROS has no category');
-    const f = frame();
-    assert(px(f, lineX, MID_Y + 3), 'no line beside MACROS');
-    assert(inkLeftOfLine(f, MID_Y, MID_Y + ROW - 1) > 0, 'no CTRL label');
-    assert(!px(f, 1, MID_Y + 3), 'MACROS is drawn as a plain row');
-    assert(nav.items.some((x) => x.name === 'LIVE ARP' && x.cat && x.cat.label === 'IN'), 'LIVE ARP is not under IN');
-    S.padLayoutChord[2] = true;
-    onBank(C.BANK_CHORD);
-    nav = render.bankNavItems();
-    assert(nav.items[nav.cur].name === 'CHORD' && nav.items[nav.cur].cat && nav.items[nav.cur].cat.label === 'IN', 'CHORD: ' + JSON.stringify(nav.items[nav.cur]));
-    S.padLayoutChord[2] = false;
-});
-step('⭐ the label is centred on the VISIBLE part of its group', () => {
-    onBank(1);                                        /* NOTE FX in the middle: FX shows rows MID..MID+3 */
-    const f = frame();
-    const top = MID * ROW + 2, bot = (MID + 3) * ROW + ROW - 2;
-    let y0 = 99, y1 = -1;
-    for (let y = top; y < bot; y++) for (let x = 0; x < lineX - 1; x++) if (px(f, x, y)) { y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
-    assert(y1 >= 0, 'no FX label');
-    const c = (y0 + y1) / 2, want = (top + bot) / 2;
-    assert(Math.abs(c - want) <= 1, 'label centre ' + c + ', group centre ' + want);
-    let x0 = 99, x1 = -1;
-    for (let y = y0; y <= y1; y++) for (let x = 0; x < lineX; x++) if (px(f, x, y)) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); }
-    assert(Math.abs((x0 + x1) / 2 - lineX / 2) <= 1.5, 'label not centred left of the line: ' + x0 + '..' + x1 + ' line ' + lineX);
-});
-step('⭐ a category of one (MIX: SOUND + CONFIG) is a plain row, fully left', () => {
-    onBank(C.BANK_SOUND);
-    const nav = render.bankNavItems();
-    assert(nav.items[nav.cur].cat === null, 'SOUND + CONFIG has a category');
-    const f = frame();
-    assert(px(f, 1, MID_Y + 3), 'the plain row\'s highlight does not start at the left edge');
-});
+/* (The jog walk and the bank column it drew retired 2026-10-04 — Josh: "i want
+ * to retire jog to switch banks and the bank column overlay". The walk's ORDER
+ * stays: bankCyclePos reads it, and it is the order the banks are listed in.) */
 const DRUM = [5, C.BANK_MACROS, C.BANK_STEP, 7, 0, 1, 3, C.BANK_SOUND];   /* RPT GROOVE stays: it is not LIVE ARP */
 const COND = [0, C.BANK_STEP, 1, C.BANK_RESPONDER, C.BANK_OCTAVE, C.BANK_WHEN];
 step('⭐ the drum walk is IN, CTRL, SEQ, FX (under DRUM LANE), MIX; the Conductor walk is CLIP, STEP, NOTE FX, RSPD', () => {
     assert(JSON.stringify(P.bankCycleForMode(C.PAD_MODE_DRUM, 2)) === JSON.stringify(DRUM), 'drum: ' + P.bankCycleForMode(C.PAD_MODE_DRUM, 2));
     assert(JSON.stringify(P.bankCycleForMode(C.PAD_MODE_CONDUCT, 2)) === JSON.stringify(COND), 'conductor: ' + P.bankCycleForMode(C.PAD_MODE_CONDUCT, 2));
 });
-step('⭐ drum: IN keeps its category with only RPT GROOVE; FX nests under DRUM LANE with its own line; SOUND + CONFIG is plain', () => {
-    S.trackPadMode[2] = C.PAD_MODE_DRUM;
-    onBank(5);
-    let it = render.bankNavItems(); it = it.items[it.cur];
-    assert(it.cat && it.cat.label === 'IN' && !it.cat.depth, 'RPT GROOVE: ' + JSON.stringify(it));
-    let f = frame();
-    assert(px(f, lineX, MID_Y + 3) && inkLeftOfLine(f, MID_Y, MID_Y + ROW - 1) > 0, 'no IN line and label beside RPT GROOVE');
-    onBank(1);                                        /* NOTE FX in the middle, DRUM LANE above it */
-    it = render.bankNavItems(); it = it.items[it.cur];
-    assert(it.cat && it.cat.label === 'FX' && it.cat.depth === 1, 'NOTE FX: ' + JSON.stringify(it));
-    f = frame();
-    const lineX1 = GUT + kit.mvWidth('FX') + 3, GUT1 = lineX1 + 4;
-    assert(!px(f, GUT - 1, MID_Y + 3) && !px(f, GUT1 - 3, MID_Y + 3), 'the nested highlight covers the FX gutter');
-    assert(px(f, GUT1 - 2, MID_Y + 3), 'the nested highlight does not start at its indent');
-    const top = MID * ROW + 2, bot = (MID + 1) * ROW + ROW - 2;   /* NOTE FX, DELAY */
-    for (let y = top; y < bot; y++) assert(px(f, lineX1, y), 'no FX line at y ' + y);
-    for (let y = top; y < bot; y++) assert(!px(f, lineX, y), 'the SEQ line runs on beside FX at y ' + y);
-    let fxInk = 0;
-    for (let y = top; y < bot; y++) for (let x = GUT - 2; x < lineX1 - 1; x++) fxInk += px(f, x, y);
-    assert(fxInk > 0, 'no FX label under DRUM LANE');
-    assert(px(f, lineX, (MID - 1) * ROW + 3), 'the SEQ line is gone beside DRUM LANE');
-    onBank(C.BANK_SOUND);
-    it = render.bankNavItems(); it = it.items[it.cur];
-    assert(it.cat === null, 'SOUND + CONFIG has a category');
-    assert(px(frame(), 1, MID_Y + 3), 'SOUND + CONFIG is not a plain row');
-});
-step('⭐ Conductor: no "C-" anywhere; CLIP, STEP, NOTE FX plain; ON/OFF, OCTAVE, TIMING under RSPD', () => {
-    S.trackPadMode[2] = C.PAD_MODE_CONDUCT;
-    onBank(0);
-    const names = render.bankNavItems().items.map((x) => x.name);
-    assert(JSON.stringify(names) === JSON.stringify(['CLIP', 'STEP', 'NOTE FX', 'ON/OFF', 'OCTAVE', 'TIMING']), 'names: ' + names);
-    const items = render.bankNavItems().items;
-    assert(items.slice(0, 3).every((x) => x.cat === null), 'CLIP/STEP/NOTE FX have a category');
-    assert(items.slice(3).every((x) => x.cat && x.cat.label === 'RSPD'), 'the RSPD group');
-    assert(px(frame(), 1, MID_Y + 3), 'CLIP is not a plain row');
-    S.trackPadMode[2] = C.PAD_MODE_MELODIC_SCALE; S.bankNavKind = null; S.jogTouched = false;
-});
-
 if (failed) { console.log('FAIL: bank categories'); process.exit(1); }
 console.log('PASS: the melodic walk runs in categories and the column draws them');
 }
