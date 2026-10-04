@@ -23,7 +23,8 @@ function check(label, mode, chord) {
         const map = P.bankPadMapForMode(mode, 2);
         assert(map.length === 4 && map.every((c) => c.cells.length === 4), 'not 4x4');
         const placed = [];
-        map.forEach((c) => c.cells.forEach((cell) => { if (cell) placed.push(cell.bank); }));
+        /* ACTION pads (INST) are not banks — the action table pins them. */
+        map.forEach((c) => c.cells.forEach((cell) => { if (cell && !cell.action) placed.push(cell.bank); }));
         assert(new Set(placed).size === placed.length, 'a bank on two pads: ' + placed);
         const a = walk.slice().sort().join(), b = placed.slice().sort().join();
         assert(a === b, 'list ' + a + ' vs map ' + b);
@@ -33,6 +34,9 @@ function check(label, mode, chord) {
         assert(map[0].cells[3] && map[0].cells[3].bank === C.BANK_CONFIG, 'CONFIG is not bottom-left');
         for (const c of map) for (const cell of c.cells)
             if (cell) assert(P.bankPadMapCellAt(mode, 2, map.indexOf(c), c.cells.indexOf(cell)) === cell.bank, 'cell lookup');
+        for (const c of map) for (const cell of c.cells)
+            if (cell && cell.action) assert(cell.bank === null &&
+                P.bankPadMapActionAt(mode, map.indexOf(c), c.cells.indexOf(cell)) === cell.action, 'action lookup');
     });
 }
 check('melodic', C.PAD_MODE_MELODIC_SCALE, false);

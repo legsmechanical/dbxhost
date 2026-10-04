@@ -53,7 +53,7 @@ import {
 } from './ui_dialogs.mjs';
 import { isBooleanPair } from './ui_cells.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
-import { bankCyclePos, bankCycleForMode, bankListForMode, bankWalkCategoriesForMode, bankCategoriesForMode, bankDisplayName,
+import { bankCyclePos, bankCycleForMode, bankListForMode, bankIsDoor, bankWalkCategoriesForMode, bankCategoriesForMode, bankDisplayName,
     bankPadMapForMode, SESS_PAD_MAP } from './ui_pure.mjs';
 import { syncDrumRepeatState } from './ui_drummodel.mjs';
 import {
@@ -470,10 +470,11 @@ export function sessMixerCellOpens(t) {
 }
 /* The session mixer pages wear the bank-card chassis (Josh, 2026-09-05: "aligned
  * with track bank UI organization and aesthetics"): the glyph header, the kit
- * cells, and the footer canon — the jog walks the banks, Back leaves. A click on
- * these pages does nothing (only the gateway takes one), so no CLK pair. */
+ * cells, and the footer canon. They show only while a knob is touched, which
+ * keeps the bank map shut and the jog turn walks nothing — so Back is the one
+ * pair (a touched SEND cell adds its CLK, above). */
 function sessionMixerHints() {
-    return [['JOG', 'BANK'], ['BACK', 'OUT']];
+    return [['BACK', 'OUT']];
 }
 
 /* Levels get their OWN layout: eight tall faders in one row, not the 4x2 kit
@@ -579,13 +580,14 @@ function drawSessionFaderRow(cells, mode) {
  * ⭑⭑ EVERY PAIR NAMES A GESTURE THE INPUT CODE ACTUALLY IMPLEMENTS, and the
  * two conditional ones are conditional because the gesture is:
  *
- *   JOG  BANK    unshifted jog turn opens and scrolls the bank picker
- *                (_onCC_jog, MoveMainKnob branch). Always live.
+ *   CLK  BANKS   a plain jog click opens the bank pad map (bankMapBegin) —
+ *                not while a knob is touched (bankMapArmable), and never on a
+ *                door bank. The jog TURN walks nothing since 2026-10-04.
  *   CLK  STEPS   while the Steps knob (K5) is touched on SEQ ARP / LIVE ARP:
  *                touch + click opens the Arp Steps editor (2026-10-04).
  *   KNB+CLK NUDGE / VELOCITY   drum RPT GROOVE, on both pages: touch ANY
  *                knob and click for the other page (bankHasAltParams). First,
- *                so the fit rule drops JOG BANK rather than it.
+ *                so the fit rule drops CLK BANKS rather than it.
  *   CLK ZOOM ... the single-knob alts (Zoom, Nudge, Revrs, Algo, ClkFb) flip
  *                on touch + click and say so while their knob is touched.
  *                No plain jog click has a bank meaning here any more.
@@ -595,7 +597,7 @@ function drawSessionFaderRow(cells, mode) {
  *                words for different destinations.
  *
  * ⚠ THE WORDS ARE CUT TO THE 86px FLOW BUDGET (see hintPairWidth). KNB+CLK
- * NUDGE is 67 and KNB+CLK VELOCITY 78, so beside either JOG BANK (43) does not
+ * NUDGE is 67 and KNB+CLK VELOCITY 78, so beside either CLK BANKS does not
  * fit and is the pair dropped.
  *
  * ⭑ SHFT TRK WAS DROPPED 2026-08-30 (Josh): Shift+jog steps the active track in
@@ -605,13 +607,19 @@ function drawSessionFaderRow(cells, mode) {
  * rule.
  *
  * ⚠ NOT HINTED, deliberately, though they exist: Delete+jog (bank resets),
- * Shift+Delete+jog, Shift+jog-click (latch). They are destructive or
+ * Shift+Delete+jog, the held-jog map peek. They are destructive or
  * modal-adjacent chords, the row holds three pairs before BACK claims the
  * right edge, and a hint that has to be dropped by the fit rule is worse than
  * one never offered. Most-important-first is the ordering contract; these are
  * not the most important three.
  *
  * ⚠ The row is CHROME. Nothing here reads or changes input state. */
+/* CLK BANKS where a plain click would open the bank map: no knob touched (a
+ * touched knob owns the click) and not a door bank (its screen owns it). */
+function mapClickHints(bank) {
+    if (S.knobTouched >= 0 || S.sessionView || bankIsDoor(S.trackPadMode[S.activeTrack], bank)) return [];
+    return [['CLK', 'BANKS']];
+}
 export function bankPageHints(bank) {
     /* A touched TRIGGER knob says how to fire it, as stock's footer does. */
     if (bank === 0 && S.knobTouched === LGTO_KNOB && !S.sessionView) return [['CLK', 'LEGATO']];
@@ -629,12 +637,12 @@ export function bankPageHints(bank) {
     }
     /* ⭑ While a step is HELD the jog means something else (spec §2): on any
      * other bank a right turn REVEALS the step's page — so the pair says so,
-     * in the same slot, and JOG BANK (which the hold suspends) is not shown.
+     * in the same slot, and CLK BANKS (which the hold suspends) is not shown.
      * On the STEP bank itself the jog does nothing under a hold: no pair. */
     const held = stepHoldEstablished();
-    const hints = held ? (stepRevealAvailable() ? [['JOG', 'STEP']] : []) : [['JOG', 'BANK']];
+    const hints = held ? (stepRevealAvailable() ? [['JOG', 'STEP']] : []) : mapClickHints(bank);
     /* RPT GROOVE: any knob + click goes to the other page — said on BOTH
-     * pages, and FIRST, so the fit rule drops JOG BANK rather than this. */
+     * pages, and FIRST, so the fit rule drops CLK BANKS rather than this. */
     if (bankHasAltParams(S.activeTrack, bank)) hints.unshift(['KNB+CLK', S.altMode ? 'VELOCITY' : 'NUDGE']);
     hints.push(['BACK', 'OUT']);
     return hints;
@@ -1168,27 +1176,28 @@ function drawOverviewTracks(hints) {
     drawKitHintRow(MV_FOOTER_Y, hints);
 }
 /* What the jog does at rest on each overview — the footer says only what is
- * true HERE (the canon): in track view it walks the banks and a click opens the
- * card; in session view it walks the mixer mode and a click latches the mixer. */
+ * true HERE (the canon): in both views a click opens the bank pad map (a hold
+ * peeks it); the turn walks nothing since 2026-10-04. */
 export function overviewHints() {
-    /* CLK says EDIT, not BANK — the jog pair already names the bank (Josh); the
-     * MENU pair names the OTHER overview a Note/Session tap switches to (Josh,
-     * 2026-09-05: "MENU:[TRACK/GRID]"). */
+    /* The MENU pair names the OTHER overview a Note/Session tap switches to
+     * (Josh, 2026-09-05: "MENU:[TRACK/GRID]"). */
     /* TRK, not TRACK: ≡ TRACK would not fit beside the other two pairs (measured). */
     /* The key is the ≡ printed on the button, not the word MENU (Josh).
      * SHIFT HELD: the row names the Shift chords instead (Josh, 2026-09-05:
      * "trk/sess change to config/fx when shift is held") — Shift+jog steps the
-     * track in every view, Shift+≡ opens the track's SOUND + CONFIG menu in
-     * track view and the MASTER / SEND FX list in session view. No CLK pair:
-     * Shift+click is nothing here. */
+     * track in every view, Shift+≡ opens the track's TRACK CONFIG menu in
+     * track view and MASTER FX in session view (the MASTER / SEND list is
+     * gone, 2026-10-04). No CLK pair: Shift+click is nothing here. */
     if (devSnapOpen()) return devSnapHints();   /* the snapshot layer (item 18), either view */
-    if (S.shiftHeld) return [['JOG', 'TRACK'], ['\u2261', S.sessionView ? 'FX' : 'CONFIG']];
+    if (S.shiftHeld) return [['JOG', 'TRACK'], ['\u2261', S.sessionView ? 'MASTER' : 'CONFIG']];
     /* A held step owns the jog here too (heldStepJog runs ahead of the bank
      * walk): JOG STEP when there is a note to edit, no jog pair when there is
-     * not — JOG BANK would promise a walk the hold suspends. */
+     * not — and no CLK BANKS, which a held step keeps shut. */
     if (stepHoldEstablished() && !S.sessionView)
-        return (stepRevealAvailable() ? [['JOG', 'STEP']] : []).concat([['CLK', 'EDIT'], ['\u2261', 'SESS']]);
-    return [['JOG', 'BANK'], ['CLK', 'EDIT'], ['\u2261', S.sessionView ? 'TRK' : 'SESS']];
+        return (stepRevealAvailable() ? [['JOG', 'STEP']] : []).concat([['\u2261', 'SESS']]);
+    /* The Perf lock keeps the Session map shut (bankMapArmable). */
+    const clk = S.sessionView && S.perfViewLocked ? [] : [['CLK', 'BANKS']];
+    return clk.concat([['\u2261', S.sessionView ? 'TRK' : 'SESS']]);
 }
 
 function drawTrackRow(y) {
@@ -1569,7 +1578,7 @@ export function bankMapItems() {
     const cols = bankPadMapForMode(S.trackPadMode[t], t).map((c, ci) => ({
         label: c.label,
         cells: c.cells.map((cell, r) => {
-            if (cell && cell.bank === S.activeBank) cur = { c: ci, r };
+            if (cell && cell.bank !== null && cell.bank === S.activeBank) cur = { c: ci, r };
             return cell ? cell.name : null;
         }),
     }));

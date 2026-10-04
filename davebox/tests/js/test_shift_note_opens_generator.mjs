@@ -377,75 +377,62 @@ function menuPress() {
  * because it is also consulted by the unshifted Note/Session path and that
  * deserves its own look. */
 
-step('⭐ SESSION VIEW: Shift+Menu jumps to the MASTER/SEND FX list — and it must be VISIBLE', () => {
+step('⭐ SESSION VIEW: Shift+Menu opens MASTER FX (tap and hold) — VISIBLY; Back at its top closes out', () => {
     /* Josh, 2026-09-02: "shift+menu in session view should jump to master/send
-     * effects menu." The track flavour opens THIS TRACK's sound menu; the
-     * session's counterpart is its own device list. Before this the gesture
-     * returned outright in session view ("session view has its own
-     * counterpart" — there wasn't one).
+     * effects menu"; 2026-10-04: "No more session effects menu since we can
+     * enter master, send a/b directly from pads ... just have it close out at
+     * the top level of each effect chain's menu". With the list gone, a tap
+     * opens MASTER FX as the hold always did.
      *
-     * ⚠⚠ THE HALF THAT WOULD SHIP BROKEN: since the session FX list became
-     * owned by sessMixerVisible(), opening it WITHOUT latching bank mode makes
-     * it stand down on the very next render — the screen would not change, the
-     * gesture would look dead, and sound mode would sit active underneath
-     * defeating the click gate. Asserting soundActive() alone would MISS that
-     * entirely, so this asserts the list actually DRAWS. */
+     * ⚠ Asserting soundActive() alone would miss a screen that opens
+     * INVISIBLY, so this asserts it DRAWS. */
     S.genReturn = null;
     globalThis.init();
     S.awaitingProjectSelect = false;
     S.ledInitComplete = true;
     if (sound.soundActive()) sound.soundExit();
     S.sessionView = true;
-    /* at rest, nothing touched */
     S.knobTouched = -1;
     S.touchedIdx = -1; S.volTouched = false;
     S.jogTouched = false; S.bankSelectTick = -1;
     ticks(4);
 
     shiftNoteTap();
-    ticks(2);
-    if (!sound.soundActive())
-        throw new Error('Shift+Menu did nothing in session view');
-    if (!sound.soundIsGlobal())
-        throw new Error('it opened a TRACK flavour in session view, not the session buses');
-    /* (No latch since 2026-10-04: the list is a screen and never yields.) */
     ticks(3);
-    if (sound.soundRender() !== true)
-        throw new Error('the FX list opened INVISIBLY — soundActive() is true but nothing draws');
-
-    /* Idempotent, exactly like the track flavour: pressed again from inside a
-     * bus it collapses back to the list rather than toggling off.
-     * ⚠ ACTUALLY GO INTO A BUS — an earlier version of this step re-pressed
-     * from the LIST and only claimed otherwise in its comment, which is how it
-     * missed the stale-level-edit defect below. */
-    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 3, 127]));   /* click: enter MASTER FX */
-    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 3, 0]));
-    ticks(3);
-    /* VIEW_BUSES = 9 is the list; entering a bus lands on VIEW_BLOCKS = 0. */
+    if (!sound.soundActive() || !sound.soundIsGlobal())
+        throw new Error('Shift+Menu did not open a session bus in session view');
+    let _bus = sound.soundBusForTest();
+    if (!_bus || _bus.id !== 'master')
+        throw new Error('the TAP did not open MASTER FX: ' + JSON.stringify(_bus));
+    /* VIEW_BLOCKS = 0 is the bus's own top; VIEW_BUSES = 9 was the list. */
     if (sound.soundViewForTest() !== 0)
-        throw new Error('rig: the click did not enter a bus (view ' +
-                        sound.soundViewForTest() + ')');
-    /* ⚠ And with a LEVEL EDIT live: a collapse must end it, exactly as leaveBus
-     * does. Left set, sound mode's Back chain tests busLevelEditing BEFORE
-     * VIEW_BUSES and spends the next press clearing a stale flag — a dead Back. */
-    /* ⚠ Through sound mode's OWN accessor: busLevelEditing is on its private S,
-     * and setting it via ui_state writes a DIFFERENT object (two objects called
-     * S) — the assertion would then pin nothing at all. */
+        throw new Error('the tap landed on view ' + sound.soundViewForTest() + ', not the bus top');
+    if (sound.soundRender() !== true)
+        throw new Error('MASTER FX opened INVISIBLY — soundActive() is true but nothing draws');
+
+    /* Idempotent: pressed again with a LEVEL EDIT live it collapses to
+     * Master's top and ends the edit (left set, the next Back is a dead press). */
     sound.soundBusLevelEditingForTest(true);
     shiftNoteTap();
-    ticks(2);
-    if (!sound.soundActive() || !sound.soundIsGlobal())
-        throw new Error('a second press toggled the list off instead of collapsing to it');
+    ticks(3);
+    _bus = sound.soundBusForTest();
+    if (!sound.soundActive() || !_bus || _bus.id !== 'master')
+        throw new Error('a second press toggled MASTER FX off instead of staying on it');
     if (sound.soundBusLevelEditingForTest())
-        throw new Error('the collapse left a live level edit armed — the next Back is a dead press');
-    if (sound.soundRender() !== true) throw new Error('the list stopped drawing after a re-press');
+        throw new Error('the re-press left a live level edit armed — the next Back is a dead press');
 
-    /* The HOLD goes one level deeper: straight into MASTER FX (Josh,
-     * 2026-09-24 — it used to have no session meaning). */
-    sound.soundExit();
+    /* ⭐ Back at the bus's top: OUT to the Session overview — no list. */
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 51, 127]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 51, 0]));
+    ticks(3);
+    if (sound.soundActive())
+        throw new Error('Back from MASTER FX\'s top stayed in sound mode (view ' + sound.soundViewForTest() + ')');
+    if (!S.sessionView) throw new Error('Back left Session View');
+
+    /* The HOLD: MASTER FX too. */
     shiftNoteHold();
     ticks(3);
-    const _bus = sound.soundBusForTest();
+    _bus = sound.soundBusForTest();
     if (!_bus || _bus.id !== 'master')
         throw new Error('the HOLD did not open MASTER FX in session view: ' + JSON.stringify(_bus));
     sound.soundExit();

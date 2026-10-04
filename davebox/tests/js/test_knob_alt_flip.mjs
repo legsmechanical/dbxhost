@@ -248,9 +248,10 @@ step('a plain click on RPT GROOVE flips nothing, page or knob', () => {
     S.trackPadMode[2] = C.PAD_MODE_MELODIC_SCALE;
 });
 
-step('CLIP untouched offers no CLK pair', () => {
+step('CLIP untouched offers no knob CLK pair — only CLK BANKS (a plain click opens the map)', () => {
     latch(0);
-    assert(!render.bankPageHints(0).some((h) => h[0] === 'CLK'), 'CLIP untouched hints ' + hints(0));
+    const clk = render.bankPageHints(0).filter((h) => h[0] === 'CLK');
+    assert(clk.length === 1 && clk[0][1] === 'BANKS', 'CLIP untouched hints ' + hints(0));
 });
 
 if (failed) process.exit(1);

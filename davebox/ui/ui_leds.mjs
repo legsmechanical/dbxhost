@@ -564,7 +564,7 @@ export function paintProjectPickerSurface() {
  * category, the bank you are on White, a bank this track does not have dark,
  * and the whole right 4x4 dark. One painter for all 32, so nothing underneath
  * shows through. SEQ is yellow, not the previews' green: green is a track
- * colour, and CONFIG / MIX wear the track's own colour. */
+ * colour, and CONFIG / MIX / INST wear the track's own colour. */
 const BANK_MAP_COL_COLORS = [Cyan, Violet, VividYellow, BrightOrange];
 const SESS_MAP_COLORS = [VividYellow, Cyan, Violet, Violet];   /* VOLUME, PAN, SEND A, SEND B */
 function paintBankMapPads() {
@@ -579,8 +579,8 @@ function paintBankMapPads() {
         const t = S.activeTrack;
         bankPadMapForMode(S.trackPadMode[t], t).forEach((c, ci) => c.cells.forEach((cell, r) => {
             if (!cell) return;
-            const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND;
-            col[at(ci, r)] = cell.bank === S.activeBank ? White
+            const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND || cell.action === 'inst';
+            col[at(ci, r)] = cell.bank !== null && cell.bank === S.activeBank ? White
                 : own ? trackColor(t) : BANK_MAP_COL_COLORS[ci];
         }));
     }

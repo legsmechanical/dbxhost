@@ -101,7 +101,8 @@ for (const [bank, name] of [[5, 'LIVE ARP'], [4, 'SEQ ARP']]) {
         const f = frame();
         assert(bracketed(f, C.ARP_STEPS_KNOB), 'K5 is not bracketed');
         assert(!bracketed(f, 0) && !bracketed(f, 5), 'another knob is bracketed');
-        assert(!kit.kitHintsForTest().some((h) => h[0] === 'CLK'), 'untouched footer offers CLK: ' + drawnHints());
+        assert(!kit.kitHintsForTest().some((h) => h[0] === 'CLK' && h[1] !== 'BANKS'), 'untouched footer offers a knob CLK: ' + drawnHints());
+        assert(kit.kitHintsForTest().some((h) => h[0] === 'CLK' && h[1] === 'BANKS'), 'untouched footer does not offer the map: ' + drawnHints());
         click();
         assert(!S.stepIntervalMode && S.bankMapLatched, 'a plain click opened Arp Steps, or not the map');
         click();

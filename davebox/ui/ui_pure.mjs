@@ -198,6 +198,16 @@ const BANK_MAP_LABELS = {
     drum:    ['IN', 'CTRL', 'SEQ', 'FX'],
     conduct: [null, 'RSPD', 'SEQ', 'FX'],
 };
+/* ACTION pads: not banks — a tap goes somewhere (Josh, 2026-10-04: "add an
+ * "inst" pad to the right of the mix pad - also red. jumps directly to
+ * track's instrument (just like shift+hold note/session)"). A Conductor has
+ * no MIX and no instrument. */
+const BANK_MAP_ACTIONS = {
+    melodic: { inst: [2, 3] },
+    drum:    { inst: [2, 3] },
+    conduct: {},
+};
+const BANK_MAP_ACTION_NAMES = { inst: 'INST' };
 /* AUTOMATION has no space to wrap at and is wider than a cell. */
 const BANK_MAP_SHORT = { [BANK_AUTOMATION]: 'AUTO' };
 
@@ -205,7 +215,8 @@ function bankMapFamily(padMode) {
     return padMode === PAD_MODE_CONDUCT ? 'conduct' : padMode === PAD_MODE_DRUM ? 'drum' : 'melodic';
 }
 
-/* The map for one track: 4 columns of { label, cells: [{ bank, name } | null x4] }.
+/* The map for one track: 4 columns of { label, cells: [{ bank, name } | null x4] };
+ * an action pad is { bank: null, action, name }.
  * A walk bank with no position is left off (the table test makes that a failure). */
 export function bankPadMapForMode(padMode, t) {
     const fam = bankMapFamily(padMode), pos = BANK_MAP_POS[fam];
@@ -215,7 +226,19 @@ export function bankPadMapForMode(padMode, t) {
         if (!p || cols[p[0]].cells[p[1]]) continue;
         cols[p[0]].cells[p[1]] = { bank: b, name: BANK_MAP_SHORT[b] || bankDisplayName(padMode, b) };
     }
+    const acts = BANK_MAP_ACTIONS[fam];
+    for (const a in acts) {
+        const p = acts[a];
+        if (!cols[p[0]].cells[p[1]]) cols[p[0]].cells[p[1]] = { bank: null, action: a, name: BANK_MAP_ACTION_NAMES[a] };
+    }
     return cols;
+}
+
+/* The action under a map pad ('inst'), or null. */
+export function bankPadMapActionAt(padMode, col, row) {
+    const acts = BANK_MAP_ACTIONS[bankMapFamily(padMode)];
+    for (const a in acts) if (acts[a][0] === col && acts[a][1] === row) return a;
+    return null;
 }
 
 /* The bank under a map pad, or null (dark pad, right half). */

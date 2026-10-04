@@ -36,7 +36,7 @@ import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
          PAGE_KNOB, pageFloatStep } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity,
-         bankCycleForMode, bankListForMode, bankIsDoor, bankPadMapCellAt, bankMapCellForPad, SESS_PAD_MAP, bankDisplayName } from './ui_pure.mjs';
+         bankCycleForMode, bankListForMode, bankIsDoor, bankPadMapCellAt, bankPadMapActionAt, bankMapCellForPad, SESS_PAD_MAP, bankDisplayName } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
          showActionPopupFor, showActionPopupGauge } from './ui_persistence.mjs';
 import {
@@ -64,7 +64,7 @@ import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam } from './ui_sound.mjs';
 import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
-    soundViewForTest, soundEnterBuses, soundEnterMasterFx, macroClearConfirmAnswer,
+    soundViewForTest, soundEnterMasterFx, macroClearConfirmAnswer,
     macroClearConfirmReset, macroClearConfirmOpen, soundKnobCardClick, soundEnterSendFromSessionMixer,
     soundOnCard, soundEnterBusFx, soundResting, soundCardClick, soundKnobTouched } from './ui_sound.mjs';
 import { confirmExportStart, confirmExportCondClick } from './ui_export.mjs';
@@ -1409,7 +1409,11 @@ export function bankMapEnd() {
 
 /* A pad pressed while the map is up (held or latched): a map tap. The right
  * 4x4 and dark pads do nothing — but still count as "used", so a hold's
- * release is no click. A latched map stays up after a pick. */
+ * release is no click.
+ * ⭑ A LATCHED map goes with the pick (Josh, 2026-10-04: "when pad bank map is
+ * locked, have pad tap select bank and exit bank map. tap on momentary bank
+ * hold should continue to work as it does now") — a HELD map stays up until
+ * the jog is let go, even a hold begun over a latched one. */
 export function bankMapPadTap(note) {
     S.bankMapUsed = true;
     S.bankMapSwallow.add(note);
@@ -1421,7 +1425,7 @@ export function bankMapPadTap(note) {
     if (S.bankMapKind === 'session') {
         if (cell.col === 0) {
             const mode = SESS_PAD_MAP.mixer.modes[cell.row];
-            if (mode !== undefined) sessWalkTo(mode, pickRest);
+            if (mode !== undefined) { sessWalkTo(mode, pickRest); bankMapEndIfLatched(); }
         } else if (cell.col === 1) {
             const bus = SESS_PAD_MAP.fx.buses[cell.row];
             if (bus) { soundEnterBusFx(bus); bankMapEnd(); }
@@ -1429,6 +1433,14 @@ export function bankMapPadTap(note) {
         return;
     }
     const t = S.activeTrack;
+    /* INST: the track's instrument, the Shift + hold Note/Session door. The
+     * map goes first, so the return crumb records where you were under it.
+     * (No door screen to close: the map never opens over one.) */
+    if (bankPadMapActionAt(S.trackPadMode[t], cell.col, cell.row) === 'inst') {
+        bankMapEnd();
+        shiftNoteSessionAction(true);
+        return;
+    }
     const b = bankPadMapCellAt(S.trackPadMode[t], t, cell.col, cell.row);
     if (b === null) return;
     /* ⭑ DOORS are SCREENS, never the bank you are on (Josh, 2026-10-03) — and
@@ -1458,6 +1470,10 @@ export function bankMapPadTap(note) {
     }
     S.bankPickerSel = bankListFor(t).indexOf(b);
     applyBankPick(rest);
+    bankMapEndIfLatched();
+}
+function bankMapEndIfLatched() {
+    if (S.bankMapLatched && S.jogPressMs < 0) bankMapEnd();
 }
 
 /* A turn while the jog is held walks as always, and counts as "used". */
@@ -2681,26 +2697,12 @@ function shiftNoteSessionAction(wantInstrument) {
 if (S.sessionView) {
     /* ⭑ SESSION VIEW: the same gesture, pointed at the session's own devices
      * (Josh, 2026-09-02: "shift+menu in session view should jump to
-     * master/send effects menu"). The track flavour opens THIS TRACK's sound
-     * menu; session view's counterpart is the MASTER / SEND FX list, which is
-     * the session's device list. Idempotent the same way: already there and it
-     * stays, inside a bus and it collapses back to the list in one press —
-     * soundEnterBuses resets the view and clears S.bus, which IS that collapse.
-     *
-     * ⚠⚠ LATCH BANK MODE, or this opens INVISIBLY. Since the session FX list
-     * became owned by sessMixerVisible() (the one law, session flavour), a list
-     * opened without the latch stands down on the very next render — the screen
-     * would not change and the gesture would look dead, while sound mode sat
-     * active underneath defeating the click gate. The click path never hit this
-     * because it enters FROM the latched mixer page.
-     *
-     * ⭑ The HOLD goes one level deeper: straight into MASTER FX (Josh,
-     * 2026-09-24: "shift+hold note/session in session view takes you directly
-     * to master effects menu"). Back from there is the SESSION FX list. */
-    if (wantInstrument) { soundEnterMasterFx(); forceRedraw(); return; }
-    /* ⭑ The latch is soundEnterBuses' own job (it is the ONE door into this
-     * list, and the jog-click door needs it just as much) — not repeated here. */
-    soundEnterBuses();
+     * master/send effects menu"; 2026-09-24: the hold "takes you directly to
+     * master effects menu"). The MASTER / SEND list it opened is gone (Josh,
+     * 2026-10-04: "No more session effects menu since we can enter master,
+     * send a/b directly from pads"), so tap and hold both open MASTER FX —
+     * from inside a bus too, which collapses to Master's top in one press. */
+    soundEnterMasterFx();
     forceRedraw();
     return;
 }

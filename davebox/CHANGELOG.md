@@ -14,10 +14,12 @@ the section into a versioned heading at release time.
 - **The bank map: click or hold the jog to pick a bank.** The left 4×4 pads
   become a map of the track's banks — one column per group, the same on every
   track type — and the screen shows it, the moment you press. Click and the map
-  stays up (tap pads to switch; click again or Back to close it); hold, tap and
-  let go to just peek. CONFIG and AUTOMATION open straight into their menus. In
+  opens (tap a pad to pick a bank and close it; click again or Back to close it
+  without picking); hold, tap and let go to just peek. CONFIG and AUTOMATION open straight into their menus. In
   Session View the map holds the mixer modes and opens the Master, Send A and
   Send B effects directly.
+- **INST on the bank map** (beside MIX, melodic and drum tracks) opens the
+  track's instrument, just like Shift + hold Note/Session.
 
 ### Changed
 - **Alt knobs switch one at a time: touch the knob and click the jog.** Res ↔
@@ -47,6 +49,11 @@ the section into a versioned heading at release time.
   stay until Back. In Session View the mixer page shows the same way, and the
   SESSION FX card is gone from the mixer modes — the Session map's FX pads (or
   Shift + Note/Session) open the effects.
+- **The Session FX list is gone.** Shift + Note/Session in Session View (tap or
+  hold) opens Master FX, and Back from the top of Master, Send A or Send B
+  returns to the Session overview.
+- **The screens' footers name the bank map:** `CLK BANKS` on the overviews and
+  on a bank page while no knob is touched; `JOG BANK` and `CLK EDIT` are gone.
 - **Clearer small letters.** N, A, B, G, K and O in the smallest screen font
   were redrawn: N no longer reads as K, O no longer matches 0, B no longer
   matches 8.
