@@ -102,6 +102,10 @@ for (const [bank, name] of [[5, 'LIVE ARP'], [4, 'SEQ ARP']]) {
         assert(!kit.kitHintsForTest().some((h) => h[0] === 'CLK'), 'untouched footer offers CLK: ' + drawnHints());
         click();
         assert(!S.stepIntervalMode, 'a plain click opened Arp Steps');
+        for (const k of [0, 3, 7]) {
+            touchClick(k);
+            assert(!S.stepIntervalMode, 'touch K' + (k + 1) + ' + click opened Arp Steps (only Steps, K5, does)');
+        }
         touch(C.ARP_STEPS_KNOB);
         assert(drawnHints() === JSON.stringify([['CLK', 'STEPS']]), 'touched K5 footer: ' + drawnHints());
         untouch(C.ARP_STEPS_KNOB);
@@ -146,6 +150,8 @@ step('⭐⭐ RPT GROOVE: the footer says KNB+CLK NUDGE on the Velocity page — 
     const f = frame();
     let ink = 0; for (let y = kit.MV_FOOTER_Y - 2; y < kit.MV_FOOTER_Y; y++) for (let x = 0; x < 128; x++) ink += f[y * W + x];
     assert(ink === 0, 'the step numbers run into the footer: ' + ink + ' px');
+    let nums = 0; for (let y = 48; y < 53; y++) for (let x = 0; x < 128; x++) nums += f[y * W + x];
+    assert(nums > 0, 'the step numbers are not on their row (48) above the footer');
     click();
     assert(!S.altMode, 'a plain click flipped the page');
 });
