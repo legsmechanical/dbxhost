@@ -643,6 +643,17 @@ export function bankPageHints(bank) {
     return hints;
 }
 
+/* A knob with a single alt answers touch + click (KNOB_ALTS), so its cell
+ * wears the corner brackets, as the trigger cells do (Josh, 2026-10-04: "the
+ * alt knobs should have the corner indicators to indicate that they respond
+ * to touch click"). Main or alt, the brackets stay: either way a click flips. */
+function markKnobAlts(cells, bank) {
+    const pm = S.trackPadMode[S.activeTrack];
+    for (let k = 0; k < cells.length; k++)
+        if (cells[k] && knobAltFor(pm, bank, k)) cells[k].opens = true;
+    return cells;
+}
+
 function drawKitPage(name, cells, inverted, footer, focusIdx) {
     /* BANK's map: this is davebox's own track-view bank card, which has no page
      * strip and so starts its grid a row higher. Must be first — every kit draw
@@ -2311,7 +2322,7 @@ function drawUIBody() {
             ];
             /* Named by bankDisplayName, not spelled here — this literal and
              * the one below are how the picker and the header drifted apart. */
-            drawKitPage(bankHeaderName(S.activeTrack, 0), cells, false, bankPageHints(0));
+            drawKitPage(bankHeaderName(S.activeTrack, 0), markKnobAlts(cells, 0), false, bankPageHints(0));
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 7) {
             /* ALL LANES bank overview */
             const t = S.activeTrack;
@@ -2347,7 +2358,7 @@ function drawUIBody() {
                            fmtBool(1), fmtBool(0)),
             ];
             /* The ICON blinks now, not an "ALL" prefix (headerGlyphNow). */
-            drawKitPage('ALL LANES', cells, false,
+            drawKitPage('ALL LANES', markKnobAlts(cells, 7), false,
                         bankPageHints(7));
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 1) {
         /* Drum NOTE/NOTEFX bank: K1=Gate K2=Vel K3=Qnt */
@@ -2498,7 +2509,7 @@ function drawUIBody() {
             if (_fc.hi) _focusIdx = cells.length;
             cells.push(_fc.cell);
         }
-        drawKitPage(bankHeaderName(S.activeTrack, 1), cells, false, bankPageHints(1), _focusIdx);
+        drawKitPage(bankHeaderName(S.activeTrack, 1), markKnobAlts(cells, 1), false, bankPageHints(1), _focusIdx);
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 3) {
         /* Drum MIDI DLY: K1-K4 same as melodic, K5=Gate, K6=Clk, K7=Retrg, K8 empty.
          * Drum has no Pfb (no per-lane pitch) and no Rnd (no random pitch fb),
@@ -2589,7 +2600,7 @@ function drawUIBody() {
             markSeqAuto(cell, bank, k, false, _focus);
             cells.push(cell);
         }
-        drawKitPage(bankHeaderName(S.activeTrack, bank), cells, false, bankPageHints(bank), _focusIdx);
+        drawKitPage(bankHeaderName(S.activeTrack, bank), markKnobAlts(cells, bank), false, bankPageHints(bank), _focusIdx);
         }
 
     } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {

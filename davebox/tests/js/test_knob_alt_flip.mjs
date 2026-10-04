@@ -59,6 +59,7 @@ const render = await import('../../ui/ui_render.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const await_auto = await import('../../ui/ui_automation.mjs');
 const leds = await import('../../ui/ui_leds.mjs');
+const kit = await import('../../ui/ui_movy.mjs');
 const K = await import('/data/UserData/schwung/shared/constants.mjs');
 
 S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
@@ -96,6 +97,19 @@ step('⭐ CLIP K1: the touch says CLK ZOOM; touch + click flips K1 alone, the ca
     untouch(0);
     sets.length = 0; turn(0, 1);
     assert(wrote(/^t2_clip_resolution_zoom=/) && !wrote(/^t2_clip_resolution=/), 'K1 turn wrote ' + JSON.stringify(sets.slice(0, 6)));
+});
+
+/* The corner brackets ("opens" mark) of knob k's cell: all four corners inked. */
+const bracketed = (f, k) => {
+    const x = (k % 4) * kit.MV_CELL_W, y = k < 4 ? kit.MV_ROW0_Y : kit.MV_ROW1_Y;
+    const w = kit.MV_CELL_W, h = kit.MV_KH, at = (px, py) => f[py * W + px];
+    return !!(at(x, y) && at(x + w - 1, y) && at(x, y + h - 1) && at(x + w - 1, y + h - 1));
+};
+step('⭐ the alt knobs wear the corner brackets, as the triggers do — main or flipped', () => {
+    const marked = (f) => [0, 1, 2, 3, 4, 5, 6, 7].filter((k) => bracketed(f, k)).join(',');
+    /* K1 is flipped here (Zoom), K3 and K7 are not: brackets either way.
+     * K4 Lgto, K6 Crop, K8 Imprt are triggers; K2 Strch and K5 InQnt neither. */
+    assert(marked(frame()) === '0,2,3,5,6,7', 'CLIP bracketed knobs: ' + marked(frame()));
 });
 
 step('…the other knobs are untouched: K3 still turns Clock Shift, and its touch offers NUDGE', () => {

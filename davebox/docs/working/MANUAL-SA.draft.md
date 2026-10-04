@@ -353,7 +353,8 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   editor (SEQ ARP, ARP IN) or flips RPT GROOVE to its Nudge page.
 - **Touch a knob and click the jog** to switch a knob marked *Alt* in the bank
   tables to its alternate (Res → Zoom, Shift → Nudge, Dir → Reverse Style,
-  Rand → Algo, Rate → Clock Feedback). Only that knob changes. While you touch
+  Rand → Algo, Rate → Clock Feedback). Only that knob changes. Its cell has
+  corner brackets, like the touch + click actions (Crop, Legato). While you touch
   it, the bottom of the screen shows **CLK** and the name it will switch to.
   Touch + click again, or **Back**, switches it back; leaving the bank does too.
   The click happens when you **let go** of the jog, not when you press it.
