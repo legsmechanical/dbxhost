@@ -172,10 +172,13 @@ const bankCells = (bank, overrides = {}) =>
  * and survived HERE, so the regenerated manual still showed a hint the
  * instrument no longer gives. Keep them in step by hand until a parity test
  * exists (test_cellkind_parity.mjs is the pattern for one). */
-const F_JOG = ['JOG', 'BANK'], F_BACK = ['BACK', 'OUT'];
-const hintsAlt   = [F_JOG, ['CLK', 'ALT'],  F_BACK];
-const hintsSteps = [F_JOG, ['CLK', 'STEP'], F_BACK];
-const hintsPlain = [F_JOG, F_BACK];
+/* Untouched, every bank card says the same since 2026-10-04: a click opens
+ * the bank map (CLK BANKS); the jog turn walks nothing, and the alts and Arp
+ * Steps answer a knob TOUCH + click, said only while that knob is touched. */
+const F_MAP = ['CLK', 'BANKS'], F_BACK = ['BACK', 'OUT'];
+const hintsPlain = [F_MAP, F_BACK];
+const hintsAlt   = hintsPlain;
+const hintsSteps = hintsPlain;
 
 const BANK_SCREENS = [
     { file: 'bank-clip',      bank: 0, section: '9.1 CLIP bank',      over: { 0: 1, 6: 2 }, altArrowShow: true, footer: hintsAlt },
