@@ -299,7 +299,13 @@ step('⭐ DRIFT PIN: every state Back knows about is a state the law knows about
     const law  = flags(body('atOverview') + body('noOverviewYet'));
     /* Carve-outs, each with its reason — NOT a dumping ground. */
     const CARVE = new Map([
-        ['S.activeBank', 'a non-default bank at rest IS the track overview; Back only uses it for its LED'],
+        /* Back's LED reads these since 2026-10-04 ("Back button needs to light
+         * when it's functional"); none is a screen the escape law must leave. */
+        ['S.bankSelectTick', 'a bank PEEK (a turn/touch window), not a screen you are in — see atOverview\'s own note on peeks'],
+        ['S.jogTouched', 'the jog-touch PEEK of the bank page, likewise not a screen you are in'],
+        ['S.autoReturn', 'a return crumb from an AUTOMATION lane jump, not a screen'],
+        ['S.confirmMacroClear', 'raised only on the MACROS page, which atOverview already counts off-overview (sound mode / the latched card)'],
+        ['S.chordPopupOpen', 'the Chord layout\'s explainer; its Back closes it — Note/Session\'s handling of it is unchanged by the LED'],
     ]);
     if (back.size < 8) throw new Error('the pin read too few flags (' + back.size + ') — anchor is stale');
     const missing = [...back].filter(f => !law.has(f) && !CARVE.has(f));
