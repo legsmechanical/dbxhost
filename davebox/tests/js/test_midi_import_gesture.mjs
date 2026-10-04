@@ -1,3 +1,4 @@
+import { openTrackConfigViaMap } from './_map_config.mjs';
 /* tests/js/test_midi_import_gesture.mjs — the MIDI browser, through the real
  * gestures (Import MIDI and the phrase browser as one screen, 2026-09-29;
  * dAVEBOx's feel, round 2, 2026-09-30).
@@ -564,7 +565,7 @@ async function main() {
 
     step('the track menu has no Import MIDI row', () => {
         snd.soundExit(); ticks(2); S.activeTrack = 1;
-        cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+        openTrackConfigViaMap();
         ticks(6);
         if (snd.soundPickStateForTest().view === 18) click();
         const k = snd.soundPickStateForTest().kinds;

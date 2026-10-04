@@ -238,13 +238,13 @@ step('from the row\'s OPS overlay too: it comes back with the ops open', () => {
     back(); ticks(2);                                    /* close the ops */
 });
 
-step('Clock Feedback lives on DELAY\'s ALT page: the jump shows it, and release restores alt', () => {
+step('Clock Feedback lives on DELAY\'s K1 alt: the jump flips just K1, and release restores it', () => {
     jog(-5); ticks(2);                                   /* to the first row */
     assert(S.autoCycle.target === 'seq:0:delay_clock_fb', 'cursor on Clock Feedback');
     note(STEP(6), 127); ticks(3);
-    assert(S.activeBank === DELAY && S.altMode === true, 'DELAY, alt page');
+    assert(S.activeBank === DELAY && S.knobAlt === 1 && S.altMode === false, 'DELAY, K1 flipped: knobAlt ' + S.knobAlt);
     note(STEP(6), 0); ticks(3);
-    assert(S.activeBank === BANK_AUTOMATION && S.altMode === false, 'alt restored to off');
+    assert(S.activeBank === BANK_AUTOMATION && S.altMode === false && S.knobAlt === 0, 'alt restored to off');
 });
 
 step('a module lane whose module is not loaded: no jump, and the bank stays', () => {

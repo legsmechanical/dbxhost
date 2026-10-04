@@ -78,13 +78,12 @@ const ticks = (n) => { for (let i = 0; i < n; i++) { S.tickCount++; globalThis.t
 const jog   = (d) => cc(14, d > 0 ? 1 : 127);
 const click = () => { cc(3, 127); cc(3, 0); };
 const back  = () => { cc(51, 127); cc(51, 0); };
-const shiftNote = (holdTicks) => {
-    cc(49, 127); cc(50, 127);
-    if (holdTicks) { S.tickCount += holdTicks; ticks(2); }
-    cc(50, 0); cc(49, 0);
-};
-const shiftNoteTap  = () => { shiftNote(0); ticks(4); };
-const shiftNoteHold = () => { shiftNote(46); ticks(4); };
+/* The menu and the instrument are bank map pads (Shift + Note/Session retired
+ * 2026-10-04): click the jog, tap CONFIG (note 68) or INST (note 70). */
+const mapPad = (note) => { click(); globalThis.onMidiMessageInternal(new Uint8Array([0x90, note, 100]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, note, 0])); };
+const configPad = () => { mapPad(68); ticks(4); };
+const instPad   = () => { mapPad(70); ticks(4); };
 const VIEW_BLOCKS = 0, VIEW_PROMPT = 18, VIEW_MACROS = 19;
 const NOTEFX = 1, SEQ_ARP = 4;
 const sidecarBank = (t) => { const j = JSON.parse(files.get(UIP) || '{}'); return Array.isArray(j.tab) ? j.tab[t] : undefined; };
@@ -95,6 +94,19 @@ const put = (t, bank, latched) => {
     S.activeTrack = t; S.activeBank = bank; S.trackActiveBank[t] = bank; S.bankCardLatched = !!latched;
     ticks(6);
 };
+/* A bank map pick — hold the jog, tap the bank's pad, let go (the jog walk
+ * retired 2026-10-04). */
+const _pure = await import('../../ui/ui_pure.mjs');
+const pickBank = (t, b) => {
+    let pad = -1;
+    for (let c = 0; c < 4 && pad < 0; c++) for (let r = 0; r < 4; r++)
+        if (_pure.bankPadMapCellAt(S.trackPadMode[t], t, c, r) === b) { pad = _pure.bankMapPadForCell(c, r); break; }
+    if (pad < 0) throw new Error('bank ' + b + ' is not on the map');
+    cc(3, 127);
+    globalThis.onMidiMessageInternal(new Uint8Array([0x90, pad, 100]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, pad, 0]));
+    cc(3, 0);
+};
 const menuAction = (label) => {
     menu.openGlobalMenu();
     const item = S.globalMenuItems.find((it) => it && it.label === label);
@@ -103,10 +115,10 @@ const menuAction = (label) => {
 };
 ticks(3);
 
-step('(1) the jog walk at rest onto SOUND+CFG records it AT ONCE and saves the sidecar in the same call', () => {
-    put(0, SEQ_ARP, false);                          /* the melodic stop before SOUND+CFG */
+step('(1) a map pick at rest of MIX records it AT ONCE and saves the sidecar in the same call', () => {
+    put(0, SEQ_ARP, false);
     files.delete(UIP);
-    jog(1);                                          /* no tick yet */
+    pickBank(0, BANK_SOUND);                         /* no tick yet */
     assert(S.trackActiveBank[0] === BANK_SOUND, 'not recorded at the turn: ' + JSON.stringify(state(0)));
     assert(sidecarBank(0) === BANK_SOUND, 'the sidecar was not written with SOUND+CFG: ' + sidecarBank(0));
     ticks(4);
@@ -125,18 +137,18 @@ step('(2) SUSPEND from a track resting on SOUND+CFG keeps SOUND+CFG', () => {
     S.pendingSuspendManaged = false; S.globalMenuOpen = false; S.confirmExit = null;
 });
 
-step('(3) Shift+Note/Session tap from a track RESTING on SOUND+CFG, then Back: still on SOUND+CFG', () => {
+step('(3) the CONFIG pad from a track RESTING on SOUND+CFG, then Back: still on SOUND+CFG', () => {
     put(0, BANK_SOUND, false);
-    shiftNoteTap();
-    assert(snd.soundActive() && snd.soundViewForTest() === VIEW_BLOCKS, 'rig: the tap did not open the menu: ' + JSON.stringify(state(0)));
+    configPad();
+    assert(snd.soundActive() && snd.soundViewForTest() === VIEW_BLOCKS, 'rig: the CONFIG pad did not open the menu: ' + JSON.stringify(state(0)));
     back(); ticks(4);
     assert(S.activeBank === BANK_SOUND && S.trackActiveBank[0] === BANK_SOUND,
            'Back moved the bank: ' + JSON.stringify(state(0)));
 });
 
-step('(4) Shift+Note/Session tap from a LATCHED NOTE FX card, then Back: the NOTE FX card, and never a SOUND+CFG card', () => {
+step('(4) the CONFIG pad from a LATCHED NOTE FX card, then Back: the NOTE FX card, and never a SOUND+CFG card', () => {
     put(0, NOTEFX, true);
-    shiftNoteTap();
+    configPad();
     assert(snd.soundActive(), 'rig: the menu did not open');
     assert(S.activeBank === NOTEFX, 'opening the MENU changed the live bank to ' + S.activeBank);
     assert(S.trackActiveBank[0] === NOTEFX, 'opening the MENU changed the recorded bank to ' + S.trackActiveBank[0]);
@@ -160,10 +172,10 @@ step('(5) a track switch from the latched SOUND+CFG CARD: the new track shows IT
     assert(S.activeBank === BANK_SOUND, 'back on track 1 it is not on SOUND+CFG: ' + JSON.stringify(state(0)));
 });
 
-step('(6) Shift+hold (instrument editor) from a latched NOTE FX card, then Back: the NOTE FX card, and it STAYS', () => {
+step('(6) the INST pad (instrument editor) from a latched NOTE FX card, then Back: the NOTE FX card, and it STAYS', () => {
     put(0, NOTEFX, true);
-    shiftNoteHold();
-    assert(snd.soundActive(), 'rig: the hold opened nothing');
+    instPad();
+    assert(snd.soundActive(), 'rig: INST opened nothing');
     assert(S.trackActiveBank[0] === NOTEFX && S.activeBank === NOTEFX, 'the editor changed the bank: ' + JSON.stringify(state(0)));
     for (let g = 0; g < 4 && snd.soundActive(); g++) { back(); ticks(3); }
     ticks(6);
@@ -171,10 +183,10 @@ step('(6) Shift+hold (instrument editor) from a latched NOTE FX card, then Back:
     assert(!snd.soundOpen(), 'sound mode reopened over NOTE FX: ' + JSON.stringify(state(0)));
 });
 
-step('(7) Shift+hold from a track resting on MACROS, then Back: MACROS, never the Sound menu', () => {
+step('(7) the INST pad from a track resting on MACROS, then Back: MACROS, never the Sound menu', () => {
     put(0, BANK_MACROS, false);
-    shiftNoteHold();
-    assert(snd.soundActive(), 'rig: the hold opened nothing');
+    instPad();
+    assert(snd.soundActive(), 'rig: INST opened nothing');
     for (let g = 0; g < 4 && snd.soundActive() && snd.soundViewForTest() !== VIEW_MACROS; g++) { back(); ticks(3); }
     assert(snd.soundViewForTest() !== VIEW_BLOCKS || !snd.soundActive(), 'Back landed on the Sound menu: ' + JSON.stringify(state(0)));
     assert(S.activeBank === BANK_MACROS && S.trackActiveBank[0] === BANK_MACROS, 'not on MACROS: ' + JSON.stringify(state(0)));
@@ -189,13 +201,12 @@ step('(9) a non-jog bank writer (the Chord layout) moves a track resting on MACR
     chord.setChordLayout(0, false); S.chordPopupOpen = false; ticks(2);
 });
 
-step('(8) CONTROL: walking off SOUND+CFG with the jog still records the next bank (the walk is the one writer)', () => {
+step('(8) CONTROL: a map pick off MIX still records the next bank (the pick is the one writer)', () => {
     put(0, BANK_SOUND, true);
-    /* Melodic since 2026-09-26: … DELAY, SEQ ARP, SOUND+CFG — the walk's last stop. */
-    jog(-1); ticks(4);
-    assert(S.trackActiveBank[0] === SEQ_ARP && S.activeBank === SEQ_ARP, 'the walk to SEQ ARP: ' + JSON.stringify(state(0)));
-    jog(-1); ticks(4);
-    assert(S.trackActiveBank[0] === 3, 'the walk on to DELAY: ' + JSON.stringify(state(0)));
+    pickBank(0, SEQ_ARP); ticks(4);
+    assert(S.trackActiveBank[0] === SEQ_ARP && S.activeBank === SEQ_ARP, 'the pick of SEQ ARP: ' + JSON.stringify(state(0)));
+    pickBank(0, 3); ticks(4);
+    assert(S.trackActiveBank[0] === 3, 'the pick of DELAY: ' + JSON.stringify(state(0)));
     S.bankCardLatched = false;
 });
 

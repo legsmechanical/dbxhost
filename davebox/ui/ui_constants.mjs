@@ -493,7 +493,7 @@ export const BANKS = [
         _X, _X, _X, _X,
     ]},
     /* 3 — MIDI DLY (pad 95). K7 = Retrg (delay_retrig); Clock Feedback folded
-     * onto Shift+K1 with dynamic label flip "Rate"↔"ClkF". */
+     * onto K1 (touch + click flips it) with the label flip "Rate"↔"ClkFb". */
     { name: 'DELAY', knobs: [
         p('Rate', 'Delay Time',     'delay_time',         'track', 0,    16, 10, fmtDly,   6),
         p('Level',  'Delay Level',    'delay_level',        'track', 0,    127, 127, fmtPlain),
@@ -630,10 +630,12 @@ export function isSoundBank(b) { return b === BANK_SOUND || b === BANK_MACROS ||
  * CONDUCT on a Conductor. All three are index 0: the bank a track is on when a
  * session is first created, and where Back lands from any other bank. */
 export const BANK_DEFAULT = 0;
-/* How long the bank map outlives its last detent without a touch: bridges the
- * jog touch sensor dropping out mid-turn, short enough that letting go after
- * the turn still reads as the column going at once. */
-export const BANKNAV_HOLD_MS = 100;   /* Josh, 2026-09-26: "do 100ms" */
+/* The bank pad map paints on the jog PRESS (2026-10-04: "instantly"). A
+ * release within this of the press is a CLICK (unless a pad was tapped or the
+ * jog turned), and a click toggles the map's latch. Held longer, letting go
+ * just puts a peek away (Josh, 2026-10-03: "on release but only if it's
+ * between like .5 [s] of the click"). */
+export const JOG_CLICK_MAX_MS = 500;
 
 /* JS tick rate on device (~94 Hz measured). Older constants were calibrated
  * against a mistaken 196 Hz assumption — derive new timings from this. */
@@ -733,7 +735,7 @@ export const SEQ_AUTO_TARGETS = (() => {
     return out;
 })();
 /* The automation TARGET of a bank card's knob k on `track` — "seq:<t>:<key>"
- * — or null when that knob is not on the list. `altMode` names the Shift+K1
+ * — or null when that knob is not on the list. `altMode` = the knob shows its alt (knobAltOn); names the K1
  * Clock Feedback alternate on DELAY. The all-lane direction is bank 7 K7. */
 export function seqAutoTargetForKnob(track, bank, k, altMode) {
     const alt = (altMode && bank === 3 && k === 0) ? 'clkfb' : null;
@@ -807,6 +809,37 @@ export function seqAutoAutomatable(key) {
 export const PAD_MODE_DRUM = 1;
 export const PAD_MODE_MELODIC_SCALE = 0;
 export const PAD_MODE_CONDUCT = 2;
+
+/* ⭑ SINGLE-KNOB ALTS (Josh, 2026-10-03: "switch those params through
+ * knob-touch+click and have them display like other knob touch click
+ * params"). Touch one of these knobs and click the jog: that knob flips
+ * between its main and alt parameter (S.knobAlt, knobAltOn), the others stay.
+ * [main, alt] are the on-screen short names — the footer reads CLK + the one
+ * a click would switch to. Page alts (RPT GROOVE, Arp Steps) are NOT here:
+ * they are touch + click too, but page-wide (S.altMode / S.stepIntervalMode;
+ * ARP_STEPS_KNOB below, and any knob on RPT GROOVE). */
+export const KNOB_ALTS = {
+    drum: {
+        0: { 0: ['Res', 'Zoom'], 2: ['Shift', 'Nudge'], 6: ['Dir', 'Revrs'] },   /* DRUM LANE */
+        7: { 2: ['Shift', 'Nudge'], 6: ['Dir', 'Revrs'] },                       /* ALL LANES */
+    },
+    melodic: {
+        0: { 0: ['Res', 'Zoom'], 2: ['Shift', 'Nudge'], 6: ['Dir', 'Revrs'] },   /* CLIP */
+        1: { 7: ['Rand', 'Algo'] },                                              /* NOTE FX */
+        3: { 0: ['Rate', 'ClkFb'], 7: ['Rand', 'Algo'] },                        /* MIDI DLY */
+    },
+};
+/* Arp Steps opens from the Steps knob (K5 on SEQ ARP and LIVE ARP) touched +
+ * a jog click (Josh, 2026-10-04: "live arp > step editor = knob touch + click
+ * on steps param (k5)"; "seq arp should work like live arp"). */
+export const ARP_STEPS_KNOB = 4;
+export function arpStepsBank(padMode, bank) {
+    return padMode !== PAD_MODE_DRUM && (bank === 4 || bank === 5);
+}
+export function knobAltFor(padMode, bank, k) {
+    const fam = KNOB_ALTS[padMode === PAD_MODE_DRUM ? 'drum' : 'melodic'][bank];
+    return (fam && fam[k]) || null;
+}
 
 /* Iter knob list: 36 entries, raw byte at each position. Index 0 = default (1/1).
  * Sorted by cycle_len then cycle_idx: 1/1, 1/2, 2/2, 1/3, 2/3, 3/3, ..., 8/8. */

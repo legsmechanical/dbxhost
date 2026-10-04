@@ -24,7 +24,7 @@ import { SCALE_NAMES } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
-import { bankViewMapOn, setBankViewMapOn, jogTouchCardOn, setJogTouchCardOn } from './ui_prefs.mjs';
+import { jogTouchCardOn, setJogTouchCardOn } from './ui_prefs.mjs';
 import { saveState, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { forceRedraw } from './ui_leds.mjs';
@@ -184,13 +184,6 @@ function buildGlobalMenuItems() {
         createToggle('Beat Marks', {
             get: function() { return S.beatMarkersEnabled; },
             set: function(v) { S.beatMarkersEnabled = v; forceRedraw(); },
-            onLabel: 'On', offLabel: 'Off'
-        }),
-        /* Bank Map on Lock (Josh, 2026-09-27): the bank column while the jog
-         * walks from the bank view. Device-global (ui_prefs). */
-        createToggle('Bank Map on Lock', {
-            get: function() { return bankViewMapOn(); },
-            set: function(v) { setBankViewMapOn(v); forceRedraw(); },
             onLabel: 'On', offLabel: 'Off'
         }),
         /* Jog Touch Card (Josh, 2026-09-30): a bare jog touch shows the

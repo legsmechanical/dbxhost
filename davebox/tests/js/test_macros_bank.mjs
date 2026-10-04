@@ -322,13 +322,13 @@ step('⭑⭑ SHIFT = FINE: a tenth of the step on a continuous knob', () => {
 
 /* ---- the assign flow (jog-click), an INT and an ENUM ------------------------ */
 function assignVia(knob, targetName, paramLabel) {
-    /* click on the page → the K-list; jog to the knob; click → targets (tick);
-     * pick; click → params (tick); pick; click → commit. */
+    /* touch the macro + click on the page → its targets (an empty macro goes
+     * straight to choosing; tick); pick; click → params (tick); pick; click →
+     * commit. (Josh, 2026-10-04: "each knob gets touch+jog to enter that knobs
+     * editor" — the K-list it used to go through has no door now.) */
     assert(snd.soundViewForTest() === VIEW_MACROS, 'start on MACROS');
-    click(); assert(snd.soundViewForTest() === VIEW_KNOBS, 'K-list opened, view ' + snd.soundViewForTest());
-    for (let i = 0; i < knob; i++) jog(1);
+    touch(knob, true); click(); touch(knob, false); ticks(1);
     assert(M().cursor === knob, 'cursor on K' + (knob + 1));
-    click(); ticks(1);
     assert(snd.soundViewForTest() === 12, 'targets, view ' + snd.soundViewForTest());
     const targets = snd.soundKnobTargetsForTest();
     const ti = targets.findIndex(t => t.name === targetName);
@@ -343,10 +343,10 @@ function assignVia(knob, targetName, paramLabel) {
     for (let i = 0; i < pi; i++) jog(1);
     click(); ticks(1);
 }
-step('the jog-click assign flow: K4 → Synth → Voices; the commit lands on the K-list, persists `mac`, Back returns to the page', () => {
+step('the touch + click assign flow: K4 → Synth → Voices; the commit lands on the MACROS card and persists `mac`', () => {
     sidecars = [];
     assignVia(3, 'nusaw', 'Voices');
-    assert(snd.soundViewForTest() === VIEW_KNOBS, 'commit lands on the list, view ' + snd.soundViewForTest());
+    assert(snd.soundViewForTest() === VIEW_MACROS, 'commit lands on the card, view ' + snd.soundViewForTest());
     const st = leg0(GS.trackMacros[2][3]);
     assert(st && st.kind === 'chain' && st.comp === 'synth' && st.key === 'voices', 'K4 = synth:voices, got ' + JSON.stringify(GS.trackMacros[2][3]));
     const mac = lastMac();
@@ -355,8 +355,6 @@ step('the jog-click assign flow: K4 → Synth → Voices; the commit lands on th
      * patch carries the assignments). */
     ticks(1);
     assert(lastWrite('knob_4_set') === 'synth:voices', 'knob_4_set mirrored, got ' + lastWrite('knob_4_set'));
-    back();
-    assert(snd.soundViewForTest() === VIEW_MACROS, 'Back from the list returns to MACROS, view ' + snd.soundViewForTest());
     ticks(3);
     assert(M().drawn[3].kind === 'valsq', 'an 8-value int draws as the big number, got ' + M().drawn[3].kind);
 });
@@ -427,15 +425,14 @@ step('⭑ Shift + touch a macro knob does NOTHING (the quick-assign gesture is R
            'stays on the page, no picker — view ' + snd.soundViewForTest());
     assert(GS.trackMacros[2][5] === null, 'and nothing was assigned, got ' + JSON.stringify(GS.trackMacros[2][5]));
 });
-step('the LIST route is the one way in: K6 → Levels → Volume, and the commit lands on the K-LIST', () => {
+step('touch + click is the one way in: K6 → Levels → Volume, and the commit lands on the MACROS card', () => {
     assignVia(5, 'Levels', 'Volume');
-    assert(snd.soundViewForTest() === VIEW_KNOBS,
-           'a commit always returns to the list now, view ' + snd.soundViewForTest());
+    assert(snd.soundViewForTest() === VIEW_MACROS,
+           'a commit returns to the card, view ' + snd.soundViewForTest());
     const st = leg0(GS.trackMacros[2][5]);
     assert(st && st.kind === 'level' && st.key === 'volume', 'K6 = level volume, got ' + JSON.stringify(GS.trackMacros[2][5]));
     ticks(1);
     assert(lastWrite('knob_6_clear') === '1', 'a level macro has no chain form: mirrored as CLEAR');
-    back(); assert(snd.soundViewForTest() === VIEW_MACROS, 'Back returns to the page');
 });
 step('⭑ a PATCH LOAD merges the chain store back: chain slots win, an empty chain slot keeps a level macro', () => {
     /* The patch brought knob 1 → fx2:room_size and cleared knob 4; knob 6 (a
@@ -659,12 +656,11 @@ step('⭑ the MIDI track\'s SOUND + CONFIG card: Expr / Pan / Mod / Sustain (a s
 });
 
 /* ---- the walk, Back, the rest peek --------------------------------------- */
-step('the jog is DECLINED on MACROS (the walk owns it); the click opens the list; Back from the page leaves bank mode and KEEPS the bank', () => {
+step('the jog is DECLINED on MACROS (the walk owns it); a plain click opens nothing; Back from the page leaves bank mode and KEEPS the bank', () => {
     snd.soundExit(); GS.activeTrack = 2; GS.activeBank = BANK_STEP; GS.trackActiveBank[2] = BANK_STEP;
     snd.soundEnter(2, 2); ticks(3); snd.soundSetBank(BANK_MACROS); ticks(2);
     assert(jog(1) === false && jog(-1) === false, 'jog declined');
-    click(); assert(snd.soundViewForTest() === VIEW_KNOBS, 'click opened the list');
-    back(); assert(snd.soundViewForTest() === VIEW_MACROS, 'Back to the page');
+    click(); assert(snd.soundViewForTest() === VIEW_MACROS, 'a plain click opened something, view ' + snd.soundViewForTest());
     GS.bankCardLatched = true;
     back();
     assert(!GS.bankCardLatched, 'leaves bank mode');
@@ -1120,19 +1116,16 @@ const legRows = () => snd.soundKnobLegRowsForTest();
 const S_setLegRow = (n) => snd.soundSetLegRowForTest(n);
 const legRowLabels = () => legRows().map(r => r.label + '=' + r.value);
 
-step('⭑ THE DOOR RULE on the K-list: an EMPTY knob goes straight to choosing, an ASSIGNED one is ENTERED', () => {
+step('⭑ THE DOOR RULE on touch + click: an EMPTY knob goes straight to choosing, an ASSIGNED one is ENTERED; Back is the card', () => {
     enterTrack(2);
     snd.soundSetBank(BANK_MACROS); ticks(5);
     GS.trackMacros[2][4] = null;                       /* K5: empty */
     GS.trackMacros[2][0] = { v: 0.5, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 }] };
-    click();                                            /* page -> K-list */
-    assert(snd.soundViewForTest() === VIEW_KNOBS, 'K-list, view ' + snd.soundViewForTest());
-    for (let i = 0; i < 4; i++) jog(1);                 /* to K5, the empty one */
-    click(); ticks(1);
+    touch(4, true); click(); touch(4, false); ticks(1);  /* K5, the empty one */
     assert(snd.soundViewForTest() === 12, 'an EMPTY knob opens the target picker directly, view ' + snd.soundViewForTest());
     back(); ticks(1);
-    for (let i = 0; i < 4; i++) jog(-1);                /* back to K1, the assigned one */
-    click(); ticks(1);
+    assert(snd.soundViewForTest() === VIEW_MACROS, 'Back from the picker is the card, view ' + snd.soundViewForTest());
+    touch(0, true); click(); touch(0, false); ticks(1);  /* K1, the assigned one */
     assert(snd.soundViewForTest() === VIEW_KNOBLEGS, 'an ASSIGNED knob ENTERS its legs, view ' + snd.soundViewForTest());
 });
 step('⭑ the leg list shows each leg with its Lo and Hi, then `+ Add target`', () => {
@@ -1304,10 +1297,8 @@ step('⭑ the leg list RENDERS — three legs is 13 rows and the screen still dr
         { kind: 'midi', target: 'at', lo: 1, hi: 0 },
     ]};
     snd.soundSetViewForTest(VIEW_MACROS);
-    click();                                            /* K-list */
+    touch(0, true); click(); touch(0, false); ticks(1); /* the assigned knob ENTERS */
     snd.soundSetLegRowForTest(0);
-    for (let i = 0; i < 0; i++) jog(1);
-    click(); ticks(1);                                  /* the assigned knob ENTERS */
     assert(snd.soundViewForTest() === VIEW_KNOBLEGS, 'on the leg list, view ' + snd.soundViewForTest());
     assert(legRows().length === 13, 'three legs = 12 rows + add, got ' + legRows().length);
     px.length = 0; fills.length = 0;
@@ -1320,29 +1311,8 @@ step('⭑ the leg list RENDERS — three legs is 13 rows and the screen still dr
     assert(px.length + fills.length > 40, 'the LAST row draws too, got ' + (px.length + fills.length));
     GS.trackMacros[2][0] = null;
 });
-step('⭑ the K-list row says what a mapped knob DRIVES, and a plain one still names its target', () => {
-    GS.trackMacros[2][0] = { v: 0.5, legs: [{ kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0, hi: 1 }] };
-    GS.trackMacros[2][1] = { v: 0.5, legs: [
-        { kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.2, hi: 0.8 },
-        { kind: 'level', key: 'volume', lo: 0, hi: 1 },
-    ]};
-    ticks(3);
-    /* Through the real path: the K-list rebuilds knobAsn when it opens, which
-     * is where the row's fallback label comes from. */
-    snd.soundSetViewForTest(VIEW_MACROS);
-    click();
-    assert(snd.soundViewForTest() === VIEW_KNOBS, 'on the K-list, view ' + snd.soundViewForTest());
-    const src = readFileSync('ui/ui_sound.mjs', 'utf8');
-    assert(/function knobRowLabel/.test(src), 'knobRowLabel exists');
-    /* Read it through the function the screen uses, not by drawing pixels. */
-    assert(snd.soundKnobRowLabelForTest(0) === 'Syn>cutoff',
-           'a PLAIN knob still names its target, got ' + snd.soundKnobRowLabelForTest(0));
-    const mapped = snd.soundKnobRowLabelForTest(1);
-    assert(/\+1/.test(mapped) && /~$/.test(mapped),
-           'a MAPPED knob says the count and that a range is set, got ' + mapped);
-    GS.trackMacros[2][0] = null; GS.trackMacros[2][1] = null;
-});
-
+/* (The K-list row label step retired 2026-10-04 with the K-list's door: a
+ * macro's editor opens from its own knob, touch + click.) */
 step('⭐⭐ a FULL-TRAVEL knob still DRAWS — it keeps its parameter\'s name and value', () => {
     /* Josh, on the device, minutes after the build: "switching to full travel
      * makes the knob disappear on the oled (it still works fine and does
@@ -1369,9 +1339,8 @@ step('⭐ the TRAVEL row toggles by the real gesture, survives the sidecar, and 
     GS.trackMacros[2][0] = { v: null, legs: [
         { kind: 'chain', comp: 'synth', key: 'cutoff', lo: 0.2, hi: 0.8 }] };
     snd.soundSetViewForTest(VIEW_MACROS); ticks(3);
-    click(); ticks(1);                                /* K-list */
+    touch(0, true); click(); touch(0, false); ticks(2); /* the assigned knob ENTERS its legs */
     snd.soundSetLegRowForTest(0);
-    click(); ticks(2);                                /* the assigned knob ENTERS its legs */
     assert(snd.soundViewForTest() === 20, 'on the leg list, view ' + snd.soundViewForTest());
     const rowIdx = legRows().findIndex(r => r.kind === 'travel');
     assert(rowIdx === 3, 'Travel sits under Lo and Hi, at index 3 — got ' + rowIdx);

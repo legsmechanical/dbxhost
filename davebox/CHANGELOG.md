@@ -7,6 +7,64 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **Shift + hold Step 11 opens LIVE ARP** (melodic tracks) and holds its page
+  up until Back; the knobs stay on LIVE ARP afterwards. A tap still turns LIVE
+  ARP on and off.
+- **The bank map: click or hold the jog to pick a bank.** The left 4×4 pads
+  become a map of the track's banks — one column per group, the same on every
+  track type — and the screen shows it, the moment you press. Click and the map
+  opens (tap a pad to pick a bank and close it; click again or Back to close it
+  without picking); hold, tap and let go to just peek. CONFIG and AUTOMATION open straight into their menus. In
+  Session View the map holds the mixer modes and opens the Master, Send A and
+  Send B effects directly.
+- **INST on the bank map** (beside MIX, melodic and drum tracks) opens the
+  track's instrument.
+- **Tap through the whole map while holding the jog.** On a held map, CONFIG,
+  AUTOMATION, INST and the Session FX pads wait for you to let go of the jog
+  (the pad turns white) instead of closing the map; tapping a bank after one
+  cancels it.
+
+### Changed
+- **Alt knobs switch one at a time: touch the knob and click the jog.** Res ↔
+  Zoom, Shift ↔ Nudge, Dir ↔ Reverse Style (CLIP, DRUM LANE, ALL LANES),
+  Rand ↔ Algo (NOTE FX, DELAY) and Rate ↔ Clock Feedback (DELAY). Only the
+  touched knob changes; its cell wears the corner brackets, like Crop and
+  Legato, and while you touch it the bottom of the screen shows CLK and the
+  name it will switch to. Back, or touch + click again, switches it
+  back. A plain jog click no longer flips these banks.
+- **Editors open on knob touch + jog click, too.** Arp Steps: touch Steps (knob
+  5) on SEQ ARP or LIVE ARP and click — the knob has corner brackets and the
+  screen says CLK STEPS. RPT GROOVE: touch any knob and click to switch between
+  Velocity and Nudge (the footer says KNB+CLK NUDGE / VELOCITY). MACROS: touch a
+  macro and click to edit that macro (an empty one goes straight to choosing a
+  target); Back returns to the MACROS page. A plain jog click no longer opens
+  any of these.
+- **ALL LANES no longer asks you to confirm.** The drum ALL LANES bank opens
+  like any other bank: its knobs, Loop, double-and-fill and quantize act on all
+  32 lanes straight away.
+- **The jog turn no longer switches banks, and the bank column is gone.** Banks
+  (and Session View's mixer modes) are picked on the bank map. CONFIG and
+  AUTOMATION are screens, not banks: opening one never changes the bank you're
+  on, and Back from its top level returns you exactly where you were.
+- **A bank page shows while you touch a knob or the jog** — the jog click no
+  longer locks it (the click is the bank map). Pages you open on purpose
+  (Shift + hold Step 11's LIVE ARP, the editors, AUTOMATION, TRACK CONFIG)
+  stay until Back. In Session View the mixer page shows the same way, and the
+  SESSION FX card is gone from the mixer modes — the Session map's FX pads
+  open the effects.
+- **The Session FX list is gone.** Back from the top of Master, Send A or Send
+  B returns to the Session overview.
+- **Shift + Note/Session no longer does anything** (tap or hold, either view):
+  TRACK CONFIG, the instrument and the Session effects are pads on the bank map.
+- **New overview footers.** Track View: `CLK BANKS` `TCH EDIT` `SHFT TRK`, and
+  with Shift held `JOG TRACK` `PAD TRACK`; Session View: `CLK BANKS` `TCH MIX`. A bank
+  page says `CLK BANKS` while no knob is touched. `JOG BANK`, `CLK EDIT` and
+  the `≡ SESS` / `≡ TRK` pair are gone.
+- **Clearer small letters.** N, A, B, G, K and O in the smallest screen font
+  were redrawn: N no longer reads as K, O no longer matches 0, B no longer
+  matches 8.
+
 ### Fixed
 - **Performance Mode repeats over MIDI DLY no longer go silent or stick.** An
   echo landing on its own note left that pitch counted as sounding, so the

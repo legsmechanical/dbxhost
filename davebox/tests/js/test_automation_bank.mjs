@@ -60,7 +60,7 @@ async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
 const { BANKS, BANK_AUTOMATION, BANK_MACROS, BANK_SOUND, PAD_MODE_DRUM, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
-const { bankCycleForMode } = await import('../../ui/ui_pure.mjs');
+const { bankCycleForMode, bankListForMode } = await import('../../ui/ui_pure.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const ab = await import('../../ui/ui_automation_bank.mjs');
 const render = await import('../../ui/ui_render.mjs');
@@ -80,9 +80,10 @@ const draw = () => { painted = 0; globalThis.clear_screen(); render.drawUI(); };
 const T = 0, C = 0;
 const menu = () => S.autoBank || {};
 
-step('AUTOMATION is bank 14, after MACROS on the melodic and drum walks (CTRL); the old bank 6 is off them; a Conductor has none', () => {
+step('AUTOMATION is bank 14, after MACROS in the melodic and drum banks (CTRL) — a door, off the jog walk (2026-10-03); the old bank 6 is gone; a Conductor has none', () => {
     assert(BANKS[BANK_AUTOMATION] && BANKS[BANK_AUTOMATION].name === 'AUTOMATION', 'BANKS[14]');
-    const mel = bankCycleForMode(0), drum = bankCycleForMode(PAD_MODE_DRUM), con = bankCycleForMode(PAD_MODE_CONDUCT);
+    const mel = bankListForMode(0), drum = bankListForMode(PAD_MODE_DRUM), con = bankListForMode(PAD_MODE_CONDUCT);
+    assert(bankCycleForMode(0).indexOf(BANK_AUTOMATION) < 0 && bankCycleForMode(PAD_MODE_DRUM).indexOf(BANK_AUTOMATION) < 0, 'AUTOMATION is still on a jog walk');
     assert(mel.indexOf(BANK_AUTOMATION) === mel.indexOf(BANK_MACROS) + 1 && mel.indexOf(BANK_MACROS) >= 0, 'melodic: CTRL is MACROS, AUTOMATION');
     assert(drum.indexOf(BANK_AUTOMATION) === drum.indexOf(BANK_MACROS) + 1 && drum.indexOf(6) < 0 && mel.indexOf(6) < 0, 'drum: CTRL is MACROS, AUTOMATION; bank 6 gone');
     assert(con.indexOf(BANK_AUTOMATION) < 0, 'conductor: none');
@@ -343,14 +344,13 @@ step('Delete + jog click on the card CLEARS THE CLIP (pa_clear + at_clear, one c
     assert(sets.filter(x => x.startsWith('t0_c0_undo_checkpoint=')).length >= 1, 'a checkpoint');
     assert(ab.autoBankRows(T, C).length === 0, 'empty list: ' + JSON.stringify(ab.autoBankRows(T, C).map(r => r.label)));
 });
-step('while the menu is open the jog is the menu\'s (no walk); after Back the walk resumes and the menu state is dropped', () => {
+step('while the menu is open the jog is the menu\'s; after Back a turn still walks no bank (the walk retired 2026-10-04)', () => {
     click(); ticks(1); assert(menu().menu, 'menu open');
     cc(14, 127); ticks(1);                               /* jog left: the cursor, not the walk */
     assert(S.activeBank === BANK_AUTOMATION, 'the bank did not move under the open menu: ' + S.activeBank);
     back(); ticks(1); assert(!menu().menu, 'menu closed');
-    cc(14, 127); ticks(2);                               /* now the walk: left to MACROS */
-    assert(S.activeBank === BANK_MACROS, 'walked to MACROS: ' + S.activeBank);
-    assert(!ab.autoBankMenuOpen(), 'no menu state survives the walk');
+    cc(14, 127); ticks(2);
+    assert(S.activeBank === BANK_AUTOMATION, 'a turn walked the bank: ' + S.activeBank);
 });
 
 /* ---- the BANK CARD knows its knobs are automated (Josh, 2026-09-03) ------- */
@@ -401,7 +401,7 @@ step('⭑ on the NOTE FX card: Mute + touch mutes Gate Time\'s automation (Mute 
 /* ---- the SESSION STRIP is automatable (Josh, 2026-09-04) ------------------ */
 step('⭑ a session strip turn goes through the owner: playing → pa_live on <slot>:slot:volume; Delete + touch clears it', () => {
     snd.soundExit();
-    S.sessionView = true; S.sessMixerLatched = false; S.sessKnobMode = 0;
+    S.sessionView = true; S.sessKnobMode = 0;
     S.trackRoute[0] = 0; S.sessVolBus[0] = 0; S.sessVolSlots[0] = 1; S.sessVolLevel[0] = 1.0;
     S.knobLocked.fill(false);
     LIST = ''; auto.automationRefreshPresence(); auto.automationNoteWrite();

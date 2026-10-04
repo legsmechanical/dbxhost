@@ -470,16 +470,34 @@ BASE = cloneVal(Object.fromEntries(SK.map((k) => [k, S[k]])));
 BASE_ENGINE = { ...ENGINE };
 
 /* ── gesture helpers built on the above ──────────────────────────────────── */
-/* Walk the jog to a bank from the track overview (the real walk), then click
- * to open the bank view. */
+/* Reach a bank with the bank map (the real gesture since 2026-10-04: the jog
+ * walk retired) — hold the jog, tap its pad, let go — and, with `open`, hold
+ * its page up for the shot (no click locks a page now; Shift + hold Step 11
+ * and the editors are what hold one on the device). A DOOR (CONFIG,
+ * AUTOMATION) is reached the way a restored bank is: recorded, then the tick
+ * opens it. */
+function mapPadFor(b) {
+    const pm = S.trackPadMode[S.activeTrack];
+    for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++)
+        if (PURE.bankPadMapCellAt(pm, S.activeTrack, c, r) === b) return PURE.bankMapPadForCell(c, r);
+    return -1;
+}
+function mapTap(pad) {
+    midi(0xB0, 3, 127); midi(0x90, pad, 100); midi(0x80, pad, 0); midi(0xB0, 3, 0); ticks(2);
+}
 function toBank(b, open = true) {
-    const cyc = PURE.bankCycleForMode(S.trackPadMode[S.activeTrack], S.activeTrack);
-    const dir = cyc.indexOf(b) < cyc.indexOf(S.activeBank) ? -1 : 1;
-    for (let g = 0; g < 24 && S.activeBank !== b; g++) { jog(dir); ticks(1); }
-    if (S.activeBank !== b) throw new Error('jog never reached bank ' + b + ' (at ' + S.activeBank + ')');
-    /* The bank map stands for a moment after the last detent — let it go, so the card is what shows. */
-    for (let g = 0; g < 200 && S.clockMs - (S.bankNavTurnMs || 0) < 300; g++) ticks(1);
-    if (open) { click(); ticks(2); }
+    if (PURE.bankIsDoor(S.trackPadMode[S.activeTrack], b)) {
+        S.activeBank = b; S.trackActiveBank[S.activeTrack] = b; ticks(4);
+        if (open) { S.bankCardLatched = true; ticks(2); }
+        return;
+    }
+    if (S.activeBank !== b) {
+        const pad = mapPadFor(b);
+        if (pad < 0) throw new Error('bank ' + b + ' is not on the map');
+        mapTap(pad);
+    }
+    if (S.activeBank !== b) throw new Error('the map never reached bank ' + b + ' (at ' + S.activeBank + ')');
+    if (open) { S.bankCardLatched = true; ticks(2); }
 }
 function selectTrack(t) {
     /* Shift + bottom-row pad (1-8) — Track View's track select. */
@@ -562,12 +580,13 @@ const MEL_BANKS = [
 for (const [b, slug, section, title, caption] of MEL_BANKS)
     screen(slug, section, title, caption, () => { toBank(b); });
 
-screen('bank-overview-walk', '3.6 Parameter banks', 'Walking the banks from the overview',
-    'Turning the jog on the track overview moves through the banks underneath it — the header names the bank (here DELAY) and nothing opens.',
-    () => { toBank(3, false); });
+screen('bank-overview-walk', '3.6 Parameter banks', 'The bank pad map',
+    'Click (or hold) the jog: the left 4×4 pads become the track\'s banks, one column per group, and the screen draws the same map; the current bank is filled.',
+    () => { toBank(3, false); click(); ticks(2); if (!S.bankMapLatched) throw new Error('the click did not open the map'); });
 screen('bank-clip-alt', '8.1 CLIP bank', 'CLIP bank — alternate parameters',
-    'Clicking the jog on the CLIP bank swaps in the alternates: Zoom, Nudge and Reverse Style.',
-    () => { toBank(0); click(); ticks(2); if (!S.altMode) throw new Error('click did not enter alt'); });
+    'Touch a knob and click the jog to switch it to its alternate: here Res is Zoom, Shift is Nudge and Dir is Reverse Style.',
+    () => { toBank(0); for (const k of [0, 2, 6]) { knobTouch(k); click(); knobRelease(k); } ticks(2);
+            if (S.knobAlt !== (1 | 4 | 64)) throw new Error('touch + click did not flip: ' + S.knobAlt); });
 screen('bank-knob-touched', '3.6 Parameter banks', 'Touching a knob',
     'Touching knob 1 on NOTE FX: the header spells out the parameter it controls.',
     () => { toBank(1); knobTouch(0); ticks(2); });
@@ -575,12 +594,12 @@ screen('bank-value-popup', '3.6 Parameter banks', 'Turning a list parameter',
     'Turning SEQ ARP\'s Style knob opens its list over the page; the highlight follows the knob (here moved from Off to Down).',
     () => { toBank(4); knobTouch(0); knobTurn(0, 20); ticks(2); });
 screen('bank-seqarp-steps', '9.4 SEQ ARP', 'SEQ ARP — per-step pitch editor',
-    'Clicking the jog on SEQ ARP opens the per-step editor: knobs 1–8 set each step\'s pitch offset.',
+    'Touch knob 5 (Steps) on SEQ ARP and click the jog: the per-step editor, where knobs 1–8 set each step\'s pitch offset.',
     () => {
         toBank(4);
         knobTurn(1, 0);
-        click(); ticks(2);
-        if (!S.stepIntervalMode) throw new Error('click did not open the steps editor');
+        knobTouch(4); click(); knobRelease(4); ticks(2);
+        if (!S.stepIntervalMode) throw new Error('touch K5 + click did not open the steps editor');
         knobTouch(2); knobTurn(2, 5); knobRelease(2);
         knobTouch(4); knobTurn(4, -3); knobRelease(4);
         ticks(2);
@@ -588,8 +607,8 @@ screen('bank-seqarp-steps', '9.4 SEQ ARP', 'SEQ ARP — per-step pitch editor',
 screen('bank-seqarp-steps-vel', '9.4 SEQ ARP', 'SEQ ARP — per-step velocity',
     'Holding Shift in the per-step editor shows each step\'s velocity instead (Thru passes the played velocity).',
     () => {
-        toBank(4); click(); ticks(2);
-        if (!S.stepIntervalMode) throw new Error('click did not open the steps editor');
+        toBank(4); knobTouch(4); click(); knobRelease(4); ticks(2);
+        if (!S.stepIntervalMode) throw new Error('touch K5 + click did not open the steps editor');
         press(MoveShift); ticks(2);
     });
 screen('bank-step-idle', '6.3 Editing notes', 'STEP bank — no step held',
@@ -652,12 +671,9 @@ const DRUM_BANKS = [
 ];
 for (const [b, slug, section, title, caption] of DRUM_BANKS)
     screen(slug, section, title, caption, () => { selectTrack(1); toBank(b); });
-screen('bank-allanes-confirm', '8.3 ALL LANES bank', 'ALL LANES — confirm',
-    'ALL LANES opens on a confirm, because its knobs rewrite every lane; click the jog to proceed.',
-    () => { selectTrack(1); toBank(7); });
 screen('bank-allanes', '8.3 ALL LANES bank', 'ALL LANES bank',
-    'Confirmed: one setting for all 32 lanes — resolution, stretch, shift, quantize, crop, input quantize, direction and repeat sync.',
-    () => { selectTrack(1); toBank(7); click(); ticks(2); if (!S.allLanesConfirmed) throw new Error('not confirmed'); });
+    'One setting for all 32 lanes — resolution, stretch, shift, quantize, crop, input quantize, direction and repeat sync.',
+    () => { selectTrack(1); toBank(7); });
 screen('note-repeat-modes', '7.3 Note Repeat', 'Choosing the right-pad mode',
     'Shift + Step 8 on a drum track cycles the right pads between velocity zones and the two repeat modes; the card shows which is on.',
     () => {
@@ -721,23 +737,30 @@ function stopTransport() {
     S.drumCurrentStep[1] = -1;
 }
 const toSession = () => { tap(MoveNoteSession); ticks(3); if (!S.sessionView) throw new Error('no session view'); };
+/* A mixer mode from the Session map's MIXER column (hold the jog, tap, let
+ * go), then the page as a jog touch shows it (Jog Touch Card, default On). */
+const toMixer = (mode) => {
+    if (S.sessKnobMode !== mode) mapTap(PURE.bankMapPadForCell(0, mode));
+    if (S.sessKnobMode !== mode) throw new Error('the Session map did not pick mode ' + mode + ' (at ' + S.sessKnobMode + ')');
+    noteOn(9, 127); ticks(2);
+};
 
 /* 12 — Session View: the mixer pages */
 screen('session-mixer-volume', '11.5 Volume', 'Session mixer — Volume',
     'A fader per track.',
-    () => { toSession(); click(); ticks(2); if (!S.sessMixerLatched) throw new Error('click did not open the mixer'); });
+    () => { toSession(); toMixer(0); if (!R.sessMixerShown()) throw new Error('the mixer page is not shown'); });
 screen('session-mixer-touched', '11.5 Volume', 'Session mixer — turning a fader',
     'Turning a knob on the mixer page: the header names the track and its level, and the value replaces its number.',
-    () => { toSession(); click(); ticks(2); knobTouch(2); knobTurn(2, -3); ticks(2); });
+    () => { toSession(); toMixer(0); noteOff(9); knobTouch(2); knobTurn(2, -3); ticks(2); });
 screen('session-mixer-pan', '3.6 Parameter banks', 'Session mixer — Pan',
-    'One jog step on: the Pan page, a bipolar dial per track.',
-    () => { toSession(); jog(1); ticks(2); click(); ticks(2); if (S.sessKnobMode !== 1) throw new Error('not on Pan: ' + S.sessKnobMode); });
+    'The Pan page (the Session map\'s second mixer pad): a bipolar dial per track.',
+    () => { toSession(); toMixer(1); if (S.sessKnobMode !== 1) throw new Error('not on Pan: ' + S.sessKnobMode); });
 screen('session-mixer-senda', '3.6 Parameter banks', 'Session mixer — Send A',
     'The Send A page: how much of each track feeds the first send bus.',
-    () => { toSession(); jog(2); ticks(2); click(); ticks(2); });
-screen('session-fx-door', '14.8 Master FX and the sends', 'Session mixer — Master & Send FX door',
-    'In Session View the jog past Send B reaches the SESSION FX card: the Master and Send FX list at rest; click to use it.',
-    () => { toSession(); jog(4); ticks(2); click(); ticks(2); });
+    () => { toSession(); toMixer(2); });
+screen('session-bank-map', '14.8 Master FX and the sends', 'The Session map',
+    'In Session View click (or hold) the jog: the mixer modes down the left, MASTER, SEND A and SEND B effects beside them — tap one to open it.',
+    () => { toSession(); click(); ticks(2); if (!S.bankMapLatched) throw new Error('the click did not open the Session map'); });
 
 /* 12.3 — mute & solo, seen on the track row */
 screen('session-muted', '11.3 Mute & solo', 'A muted track',
@@ -1050,18 +1073,17 @@ screen('sound-card', '14.1 Opening TRACK CONFIG', 'The MIX card',
 screen('macros-card', '14.6 The MACROS bank', 'The MACROS bank',
     'Each knob shows its target; a knob driving several (MAC1) shows its own position.',
     () => { selectTrack(4); toBank(C.BANK_MACROS); ticks(8); });
-const openMacroList = () => {
-    selectTrack(4); toBank(C.BANK_MACROS); ticks(8); click(); ticks(4);
+/* A macro's editor: touch its knob on the MACROS card and click the jog. */
+const openMacro = (k) => {
+    selectTrack(4); toBank(C.BANK_MACROS); ticks(8);
+    knobTouch(k); click(); knobRelease(k); ticks(4);
 };
-screen('macros-list', '14.6 The MACROS bank', 'MACROS — the assignment list',
-    'Clicking the jog on MACROS lists K1–K8 with each knob\'s mapping written compactly; an unassigned knob reads --.',
-    () => { openMacroList(); });
 screen('macros-multi', 'One knob, several parameters', 'One knob, several targets',
-    'Everything one knob drives, each with its own range.',
-    () => { openMacroList(); for (let g = 0; g < 5; g++) { jog(1); ticks(1); } click(); ticks(4); });
+    'Touch a macro and click: everything that knob drives, each with its own range.',
+    () => { openMacro(5); });
 screen('macros-targets', '14.6 The MACROS bank', 'MACROS — choosing a target',
-    'Clicking an unassigned knob goes straight to choosing: a block, a bank, Levels, MIDI — or SnapMorph, last.',
-    () => { openMacroList(); for (let g = 0; g < 6; g++) { jog(1); ticks(1); } click(); ticks(4); for (let g = 0; g < 20; g++) { jog(1); ticks(1); } });
+    'Touch an unassigned macro and click: straight to choosing a block, a bank, Levels, MIDI — or SnapMorph, last.',
+    () => { openMacro(6); for (let g = 0; g < 20; g++) { jog(1); ticks(1); } });
 
 /* 14.3 — a MIDI track (route: a MIDI channel) */
 screen('midi-track-card', '14.1 Opening TRACK CONFIG', 'MIX on a MIDI track',
@@ -1108,7 +1130,7 @@ screen('import-options-cut', '16.4 Import a MIDI file', 'Import MIDI — notes t
 
 screen('snapmorph-slots', '14.7 Sound snapshots & SnapMorph', 'SnapMorph — choosing snapshots',
     'Click snapshots in the order the knob travels: [1] is the bottom of the turn.',
-    () => { openMacroList(); for (let g = 0; g < 6; g++) { jog(1); ticks(1); } click(); ticks(4);
+    () => { openMacro(6);
             for (let g = 0; g < 20; g++) { jog(1); ticks(1); } click(); ticks(4);
             jog(2); ticks(1); click(); ticks(2); jog(-2); ticks(1); click(); ticks(2); });
 

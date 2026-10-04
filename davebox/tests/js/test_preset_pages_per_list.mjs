@@ -1,3 +1,4 @@
+import { openTrackConfigViaMap } from './_map_config.mjs';
 /* tests/js/test_preset_pages_per_list.mjs — a module with TWO preset browsers
  * shows each one's OWN list in dAVEBOx's module editor (Josh, 2026-09-27, on
  * JE-8086: "both pages show the same files from the directory that lets you
@@ -160,7 +161,7 @@ function ticks(n) { for (let i = 0; i < n; i++) { S.tickCount++; S.clockMs += 11
 const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
 
 function openFx1Editor() {
-    cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+    openTrackConfigViaMap();
     ticks(6);
     for (let guard = 0; ; guard++) {
         const st = snd.soundPickStateForTest();

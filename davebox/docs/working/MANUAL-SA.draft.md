@@ -157,7 +157,7 @@ already know works here.
 | The buttons left of the pads select tracks | They launch the track's clips in Track View, and scenes in Session View |
 | Session Mode: a row per track, a column per scene, 8 clips per track | Session View: a **column** per track, a **row** per scene, **16 clips** per track, 4 rows at a time (**+ / −** scroll) — see [Arranging](#11-arranging) |
 | Slide a finger down a column to play a scene | Press a **side button** or a **step button** — see [Scenes](#112-scenes) |
-| The knobs play the selected device; the jog picks the device | The knobs play a **bank** — clip settings, sequencer effects, sound, macros, automation — and the jog walks the banks — see [Parameter banks](#36-parameter-banks) |
+| The knobs play the selected device; the jog picks the device | The knobs play a **bank** — clip settings, sequencer effects, sound, macros, automation — and the jog's bank map picks the bank — see [Parameter banks](#36-parameter-banks) |
 | Hold a step: the jog sets length, Volume sets velocity | Hold a step: the knobs set pitch, length, velocity, nudge and more — see [Editing notes](#63-editing-notes) |
 | Browse a track's presets with the jog | On a Move track, open Move's own editor from the track's menu and browse there — see [Choosing a track's sound](#38-choosing-a-tracks-sound) |
 | Mute + a track button mutes; add Shift to solo | **Mute** / **Shift + Mute** in Track View; in Session View, **Mute + touch** a track's knob — see [Mute & solo](#113-mute--solo) |
@@ -268,7 +268,7 @@ header naming the bank or mixer page.
 
 - **On either view's overview**, tap **Note/Session** to switch between Track View
   and Session View; hold it to peek at the other view.
-- **Anywhere else** — a bank view, menu, the sound editor, a dialog, a picker —
+- **Anywhere else** — a bank page, menu, the sound editor, a dialog, a picker —
   **Note/Session** closes everything and takes you to Session View in one press,
   however deep you are.
 - **Back** steps out one level at a time; **hold Back** to go straight back to the
@@ -291,9 +291,13 @@ The Track View overview, top to bottom:
 - **Page bar:** one segment per page of the clip's loop — solid for the page you're
   viewing, outlined for the page playing, with a tick for the playhead. A small mark
   at either end means there are notes outside the loop.
-- **Footer:** what the controls do here — `JOG BANK` (turn for banks), `CLK EDIT`
-  (click to open the bank), `≡ SESS` (Note/Session switches to Session View). Hold
-  **Shift** and it names the Shift chords instead.
+- **Footer:** what the controls do here — `CLK BANKS` (click for the
+  [bank map](#36-parameter-banks)), `TCH EDIT` (touch a knob or the jog to see
+  the bank's page and edit it) and `SHFT TRK` (Shift picks the track). Hold
+  **Shift** and it reads `JOG TRACK` `PAD TRACK`: turn the jog, or tap a pad,
+  for the track. In Session View the footer is `CLK BANKS` `TCH MIX` (touch a knob or
+  the jog for the mixer page). A bank page says
+  `CLK BANKS` too while no knob is touched.
 
 ## 3.5 Selecting a track
 
@@ -307,19 +311,24 @@ There are no dedicated track buttons. Change the active track with:
 
 ## 3.6 Parameter banks
 
-In Track View, the eight knobs control a **bank** of parameters, and the **jog**
-picks which bank. Each track has its own walk, in this order:
+In Track View, the eight knobs control a **bank** of parameters, and the **bank
+map** — click or hold the jog — picks which bank. Each track has its own banks,
+in this order:
 
-| Track | Banks, in jog order |
+| Track | Banks, in order |
 |---|---|
-| **Melodic** | CONFIG · **IN:** (CHORD, in the Chord layout) → LIVE ARP · **CTRL:** MACROS → AUTOMATION · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · MIX |
-| **Drum** | CONFIG · **IN:** RPT GROOVE · **CTRL:** MACROS → AUTOMATION · **SEQ:** STEP → ALL LANES → DRUM LANE · **FX** (the selected lane's): NOTE FX → DELAY · MIX |
-| **Conductor** | CONFIG → CLIP → STEP → NOTE FX · **RSPD:** ON/OFF → OCTAVE → TIMING |
+| **Melodic** | **IN:** CHORD (in the Chord layout) → LIVE ARP · **CTRL:** MACROS · **SEQ:** STEP → CLIP · **FX:** NOTE FX → HARMONY → DELAY → SEQ ARP · MIX |
+| **Drum** | **IN:** RPT GROOVE · **CTRL:** MACROS · **SEQ:** STEP → ALL LANES → DRUM LANE · **FX** (the selected lane's): NOTE FX → DELAY · MIX |
+| **Conductor** | CLIP → STEP → NOTE FX · **RSPD:** ON/OFF → OCTAVE → TIMING |
 
-A melodic track starts on **CLIP** and a drum track on **DRUM LANE**, both in
-the middle of the walk: turn left for what plays into the track, right for its
-effects (in the order the notes pass through them) and, last, MIX. The first
-bank on every walk is **CONFIG**, the track's TRACK CONFIG menu.
+A melodic track starts on **CLIP** and a drum track on **DRUM LANE**: the banks
+before it are what plays into the track, the ones after it its effects (in the
+order the notes pass through them) and, last, MIX.
+**CONFIG** (the track's TRACK CONFIG menu) and **AUTOMATION** are reached from
+the bank map (below). They are **screens, not banks**:
+opening one never changes the bank you're on (the overview and a knob peek
+still show it), and **Back** from the screen's top level returns you exactly
+where you were. **Shift + hold Step 11** jumps straight to LIVE ARP.
 The banks are grouped: **IN** (what you play in), **CTRL** (what moves the
 parameters), **SEQ** (the sequence) and **FX** (the note effects — on a drum
 track, the selected lane's, so the map shows them under DRUM LANE). A Conductor
@@ -330,23 +339,55 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 [CONFIG, MIX and MACROS](#14-sound--track-config), and
 [AUTOMATION](#10-automation).
 
+- **Click the jog** to open the **bank map**: the left 4×4 pads become a map of
+  the track's banks and the screen shows the same map. **Tap a pad** to land on
+  that bank, and the map goes. **Click again** (or press **Back**) to put it
+  away without picking. The right 4×4 pads go dark and do nothing while the map
+  is up.
+- **Hold the jog** to peek the map instead: it appears the moment you press;
+  tap a pad — as many as you like, the map stays while you hold — and **let
+  go** to play again. **CONFIG**, **AUTOMATION** and **INST** (and Session
+  View's **MASTER**, **SEND A** and **SEND B**) open a screen, so on a held map
+  they wait: the pad turns white, and the screen opens when you let go. Tap a
+  bank after one and nothing opens. Letting go within half a second without tapping or
+  turning counts as a click, so the map stays up. Holding the jog while the map
+  is already up and tapping leaves it up.
+- **Turning the jog** does not change the bank.
 - **Touch the jog** to see the current bank's page while your finger rests on it;
   let go and the overview is back. (In Session View it shows the mixer page.)
   Turn it off with **Jog Touch Card** in the global menu.
-- **Turn the jog** on the track overview to step through the banks: the header
-  names the bank and the knobs follow it. While your hand is on the jog, a column
-  on the left lists the track's banks with the current one highlighted in the
-  middle; it goes as soon as you let go. On a melodic track the column shows the
-  groups: each group's name sits to the left of a line beside its banks.
-  In the bank view the column can be turned off: **Bank Map on Lock** in the
-  global menu.
-- **Click the jog** to open the **bank view** — that bank's page, held on screen;
-  keep turning to walk from there. In the bank view a click switches to the bank's
-  **alternate** parameters (a down-arrow in the header marks a bank that has them,
-  and blinks while they show), or opens the Arp Steps editor.
-- **Back** closes the bank view without changing the bank, so the knobs keep
-  working from the overview.
-- **Shift + jog** steps through the **tracks**, not the banks.
+- **Touch a knob** to see the bank's page while you touch it — nothing holds a
+  bank page on screen by itself. (Pages you open on purpose — Shift + hold Step
+  11's LIVE ARP page, the editors, AUTOMATION, TRACK CONFIG — stay until Back.)
+- **Touch a knob and click the jog** to switch a knob marked *Alt* in the bank
+  tables to its alternate (Res → Zoom, Shift → Nudge, Dir → Reverse Style,
+  Rand → Algo, Rate → Clock Feedback). Only that knob changes. Its cell has
+  corner brackets, like the touch + click actions (Crop, Legato). While you touch
+  it, the bottom of the screen shows **CLK** and the name it will switch to.
+  Touch + click again, or **Back**, switches it back; leaving the bank does too.
+  Touch + click also opens a bank's editors: **Steps** (knob 5) on SEQ ARP and
+  LIVE ARP opens Arp Steps, any knob on RPT GROOVE switches between its
+  Velocity and Nudge pages, and a knob on MACROS opens that macro.
+  **Delete + click** on AUTOMATION still clears the clip's automation.
+
+  Each column of the map is a group, and its banks run top to bottom. A bank the
+  track doesn't have leaves its pad dark, and nothing moves, so a bank is always
+  on the same pad:
+
+  | | IN | CTRL | SEQ | FX |
+  |---|---|---|---|---|
+  | **Melodic** | CHORD, LIVE ARP, —, CONFIG | MACROS, AUTO, —, MIX | STEP, CLIP, —, INST | NOTE FX, HARMONY, DELAY, SEQ ARP |
+  | **Drum** | —, RPT GROOVE, —, CONFIG | MACROS, AUTO, —, MIX | STEP, DRUM LANE, ALL LANES, INST | NOTE FX, —, DELAY |
+  | **Conductor** | —, —, —, CONFIG | ON/OFF, OCTAVE, TIMING (RSPD) | CLIP, STEP | NOTE FX |
+
+  The pads wear their group's color; the bank you're on is white, and CONFIG,
+  MIX and INST wear the track's color. **CONFIG** and **AUTOMATION**, the banks
+  you click into before anything edits, open straight into their menus (TRACK
+  CONFIG, the AUTOMATION menu) and the map goes; **Back** steps out. **INST**
+  (beside MIX) is not a bank: it opens the track's instrument, as **Shift + hold
+  Note/Session** does, and Back returns you to where you were. A Conductor has
+  no INST.
+- **Shift + jog** steps through the **tracks**.
 - **Each track remembers its bank**, CONFIG, MIX and MACROS included — across
   track switches, suspend, and quit and relaunch.
 - **Turning a knob** that sets a number (an octave, an offset, a rate, a length,
@@ -373,11 +414,16 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   resetting a clip clears all of its automation. On a drum track, clearing a single
   **lane** leaves automation alone — a drum clip's automation covers the whole clip.
 
-**In Session View** the jog walks the mixer instead:
+**In Session View** the knobs are the mixer, and the jog's map is the **Session
+map**:
 
-- Volume, Pan, Send A, Send B, then the SESSION FX card for the Master and send
-  buses. The indicator at the top right follows; a click opens the page. The same
-  column on the left lists them while you turn.
+- **Click or hold the jog**: the **MIXER** column is Volume, Pan, Send A and
+  Send B; beside it, the **FX** column opens the **Master**, **Send A** and
+  **Send B** effects directly, each next to its level. The sends share a color.
+  As on a track, a tap on a clicked-open map picks and puts the map away. The
+  indicator at the top right names the mixer mode.
+- **Touch a knob** (or the jog) to see the mixer page. On the Send A or Send B
+  page, touch a track's send and click to open that send's effects.
 - Mixer knobs record automation like any other: turn one while recording and it
   records into that track's clip.
 - A track that plays another track's instrument has no strip; its column shows a
@@ -405,8 +451,7 @@ a **Shift + Step** shortcut (see the [Quick Reference](#19-quick-reference)).
 
 Each track's sound is set in its own menu, **TRACK CONFIG**:
 
-1. Turn the jog to the **CONFIG** bank — the first on the walk — and click; or
-   press **Shift + Note/Session** from anywhere in Track View.
+1. Click the jog and tap the **CONFIG** pad (bottom-left of the bank map).
 2. **Shift + click** the top row, **Instmt/Dest**, to choose what the track plays:
    one of Move's four instruments, a Schwung instrument, a MIDI channel, and more.
 3. **Click** Instmt/Dest to edit the instrument. On a Move track this opens Move's
@@ -639,8 +684,8 @@ A step holds up to **eight notes**. Build a chord two ways:
 
 Holding a step points whatever knobs are on screen at that step:
 
-- On the **STEP** bank (the last clip bank on the jog, just before SOUND +
-  CONFIG) the knobs are the note's own settings, listed below. With no step held
+- On the **STEP** bank (the first of the SEQ banks on the jog, just before
+  CLIP) the knobs are the note's own settings, listed below. With no step held
   the bank reads *Hold step to edit*.
 - On a module editor, MACROS, or a sequencer-effect bank (NOTE FX, HARMONY, DELAY,
   SEQ ARP, and CLIP's Dir), the knobs write a **lock** at that step (see
@@ -985,10 +1030,9 @@ at step 1 — **Crop** puts it there.
 
 ## 8.3 ALL LANES bank
 
-Applies one setting to **all 32 lanes** at once. The bank opens on **"Edits will
-affect all lanes. Proceed?"** — **click the jog (or press OK) to confirm** before
-the knobs, Loop or the Shift + Step shortcuts do anything. Back re-arms the
-question.
+Applies one setting to **all 32 lanes** at once. It opens like any other bank:
+the knobs, Loop and the Shift + Step shortcuts act on every lane straight away.
+Touch Shift or Dir and click the jog to switch that knob to its *Alt*.
 
 | Knob | On screen | What it does | Rewrites notes |
 |---|---|---|---|
@@ -1020,8 +1064,8 @@ beyond the stored clip:
   you play live, before it's sequenced: LIVE ARP on melodic tracks, and on drums
   [Note Repeat](#73-note-repeat), shaped by RPT GROOVE.
 
-Drum tracks have NOTE FX and DELAY only. With a bank card showing, a jog click
-toggles its *Alt* page (the arrow in the header flashes).
+Drum tracks have NOTE FX and DELAY only. A knob marked *Alt* switches to its
+alternate when you touch it and click the jog; Back switches it back.
 
 Everything runs one chain — the live modifier first, then the effects:
 
@@ -1105,7 +1149,9 @@ An arpeggiator running after Delay, on both sequenced and live notes.
 | 6 | `RETRG` | Restart the arp on each new note | On |
 | 7 | `SYNC` | Wait for the next rate boundary | On |
 
-**Click the jog** for the per-step editor (on LIVE ARP too):
+**Touch knob 5 (`STEPS`) and click the jog** for the per-step editor (on LIVE
+ARP too); the knob's cell has corner brackets, and the bottom of the screen
+reads **CLK STEPS** while you touch it. A jog turn or **Back** closes the editor:
 
 - Knobs 1–8 set each step's pitch offset (±24 scale degrees); with **Shift** held
   they set each step's velocity (`Thru` passes the incoming velocity).
@@ -1131,7 +1177,11 @@ The controls match [SEQ ARP](#94-seq-arp) (except Retrigger defaults to Off), pl
 - With pads held, tap **Loop** to latch; tap it again (pads held) to unlatch.
 - **Loop** with no pads held clears the latched notes but keeps Latch on.
 - Stop, **Delete + Play**, or switching to Session View unlatches.
-- **Shift + Step 11** toggles LIVE ARP on and off with the last style.
+- **Shift + Step 11** (tap) toggles LIVE ARP on and off with the last style.
+- **Shift + hold Step 11** (about half a second) opens LIVE ARP's page and
+  holds it on screen — the knobs edit it, touch knob 5 + click opens Arp Steps — until
+  **Back** closes it. LIVE ARP is an ordinary bank: the knobs stay on it after
+  the page closes, and it is on the bank map (IN column, second pad).
 - LIVE ARP **can't be automated** — its settings belong to the track, not a clip.
   It is still available as a macro destination.
 
@@ -1142,7 +1192,10 @@ The controls match [SEQ ARP](#94-seq-arp) (except Retrigger defaults to Off), pl
 **Repeat Groove** shapes the 8-step gate mask of a lane's
 [Note Repeat](#73-note-repeat); you hear it while a repeat mode is active.
 
-| Knobs | Screen page | After jog-click |
+Touch any knob and click the jog to switch pages; the bottom of the screen
+says **KNB+CLK NUDGE** or **KNB+CLK VELOCITY**, whichever is next.
+
+| Knobs | Screen page | After knob touch + jog click |
 |---|---|---|
 | 1–8 | **Velocity** per gate step — `Thru` (the pad's own velocity) or a value 1–127 | **Nudge** per gate step (±50 % of the step) |
 
@@ -1193,7 +1246,7 @@ lane and isn't automated. See [Parameter banks](#36-parameter-banks) and
 
 ## 10.2 The AUTOMATION bank
 
-**AUTOMATION** is the last bank on the jog: a **list of everything automated in the
+**AUTOMATION** is on the bank map (the AUTO pad): a **list of everything automated in the
 current clip** — parameters, levels, MIDI targets and the pads' aftertouch. Its knobs
 do nothing; the jog does everything.
 
@@ -1430,7 +1483,7 @@ last). The bottom-left pad is an octave down.
 
 ## 12.3 The Conductor's banks
 
-A Conductor's jog walks seven banks, starting on CONFIG (its TRACK CONFIG menu). ON/OFF, OCTAVE, TIMING and Cond Lock belong to the Conductor's current clip, so different Conductor clips
+A Conductor has six banks on its map, starting on CLIP; its CONFIG (the TRACK CONFIG menu) is on the bank map. ON/OFF, OCTAVE, TIMING and Cond Lock belong to the Conductor's current clip, so different Conductor clips
 can steer different tracks:
 
 | Bank | Controls |
@@ -1564,11 +1617,11 @@ pads and step buttons stay with the sequencer, so you can keep playing.
 
 ## 14.1 Opening TRACK CONFIG
 
-Open it from the **CONFIG** bank, the first on every track's jog walk. Its card
+Open it from the **CONFIG** pad on the bank map (hold the jog), which opens the menu straight away. As a bank its card
 is the menu itself, at rest inside corner brackets; click and the menu is live —
 the jog moves its cursor and a click uses the row. CONFIG has no knobs.
 
-The track's levels are on **MIX**, the last bank on the walk (**Volume, Pan,
+The track's levels are on **MIX**, the last bank (**Volume, Pan,
 Send A, Send B** on knobs 1–4). On a MIDI track MIX holds that track's controllers
 instead — Expression, Pan, Mod, Sustain, Program, Bank MSB and Bank LSB.
 **Touch Send A or Send B and click the jog** to land in that send's effects (the
@@ -1577,16 +1630,13 @@ does the same on its SEND A and SEND B pages: touch any track's knob and click.
 
 | Gesture | Result |
 |---|---|
-| **Click the jog** on CONFIG | Open TRACK CONFIG (from the overview, the first click opens the card) |
-| **Shift + Note/Session** (Track View) | Open it from anywhere — from deep inside it, back to its top in one press |
-| **Shift + hold Note/Session** (Track View) | Go straight to the track's instrument |
+| **CONFIG** pad on the bank map | Open TRACK CONFIG |
+| **INST** pad on the bank map | Go straight to the track's instrument |
 | **Back** | Step out one level; from the top, back to the bank's card |
 | **Hold Back** | Return to the track overview; coming back brings the screen with it |
 | **Note/Session** | Close it and go to Session View |
 
 - Once open, the menu **stays up until you leave it**.
-- In Session View, Shift + Note/Session opens the Master & Send FX list instead
-  (see [Master FX and the sends](#148-master-fx-and-the-sends)).
 - Outside a module's own pages, knobs 1–4 stay the track's levels.
 
 Every list works as described in [Menus & Project Settings](#37-menus--project-settings).
@@ -1653,7 +1703,7 @@ the click and the Shift chord do.
   says how many and asks first (**CHANGE TO …?**).
 
 **To change a Move instrument's kit or preset,** click the Instmt/Dest row — or
-hold **Shift + Note/Session** — to open Move's own editor for that instrument (Track
+tap **INST** on the bank map — to open Move's own editor for that instrument (Track
 View only), and work with it as you would on Move.
 
 - Move takes the screen, jog, knobs, **Back**, **Mute** and **Shift** (so
@@ -1740,23 +1790,24 @@ has:
 
 ## 14.6 The MACROS bank
 
-**MACROS** opens the CTRL group on the jog, before AUTOMATION. Its eight knobs play
+**MACROS** is the CTRL bank on the jog; AUTOMATION sits beside it on the bank map. Its eight knobs play
 whatever you assign to them, and each cell shows its target's value the way the
 module editor does — a dial, a big number, a list square, a fader for a level. A
 knob with no target, or whose target was swapped away, shows `--` and reads
 UNASSIGNED when touched.
 
-**Click the jog** for the assignment list: `K1`..`K8`, each with its mapping
-(`Syn>cutoff`, `FX1>mix`, `Lvl>Volume`, `NFX>Gate Time`).
+**Touch a knob and click the jog** to edit that macro. Every macro's cell has
+corner brackets; while you touch one, the bottom of the screen reads **CLK
+ASSIGN** (nothing assigned yet) or **CLK EDIT**.
 
-- Click an unassigned knob, choose a module (or a **bank**, **Levels**, **MIDI**,
-  or **SnapMorph**), then a parameter, and you're back on the list.
+- On an unassigned knob, choose a module (or a **bank**, **Levels**, **MIDI**,
+  or **SnapMorph**), then a parameter, and you're back on the MACROS page.
 - **(None)** at the top clears the knob.
 - If the same module sits in two slots, the slot is shown beside its name.
 
 ### One knob, several parameters
 
-Once a knob has a target, clicking it **opens** it — a short list of everything the
+Once a knob has a target, touch + click **opens** it — a short list of everything the
 knob drives, each entry with its **Lo**, **Hi** and **Travel**:
 
 ```
@@ -1815,7 +1866,7 @@ they hold the active track's sound; in Session View, the whole device's.
 buses, the mixer levels and the macro positions — not mutes.
 
 **SnapMorph** turns one knob into a path between two or more of the track's
-snapshots. In the MACROS assignment list pick **SnapMorph** (the last entry), then
+snapshots. Touch an unassigned macro, click, and pick **SnapMorph** (the last entry), then
 click the snapshot slots in the order the knob should travel: `[1]` at the bottom
 of the turn, `[2]` next, and so on. The knob is live as soon as two are in.
 
@@ -1838,8 +1889,7 @@ and **SEND FX B** — each with four effect blocks, edited exactly like a track'
   share one reverb or delay. Each send's **Return** level sets how much comes back
   into the mix.
 
-To reach them, turn the jog in Session View past Send B to the **SESSION FX** card — the Master and Send FX list at rest, in corner brackets —
-and click — or press **Shift + Note/Session** (hold it to go straight to Master FX).
+To reach them, click or hold the jog in Session View and tap **MASTER**, **SEND A** or **SEND B** on the Session map. **Back** from an effect bus's top level returns to the Session overview.
 
 ---
 
@@ -2107,7 +2157,6 @@ see [Track settings](#174-track-settings) below.
 | Scale Aware | Whether scale-aware params move by scale degree (On) or semitone (Off) | On, Off | On |
 | Launch | When a launched clip or scene actually starts — at once (Now) or on the next boundary. At 1-bar it starts from its beginning; otherwise in step with the song ([§11.1](#111-launching-clips)) | Now, 1/16, 1/8, 1/4, 1/2, 1-bar | Now |
 | Beat Marks | Dim markers on the step buttons at 1, 5, 9, 13 | On, Off | On |
-| Bank Map on Lock | Whether the bank column comes up while the jog walks the banks from the bank view (or the session mixer card) — see [§3.6](#36-parameter-banks). The overview always shows it | On, Off | On |
 | Jog Touch Card | Whether touching the jog shows the current bank's page (the mixer page in Session View) until you let go — see [§3.6](#36-parameter-banks) | On, Off | On |
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Projects... | The project picker — see [Projects](#175-projects) | action | — |
@@ -2383,7 +2432,8 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | + / − · Left / Right | Octave · page |
 | Side buttons | Launch the active track's clips (press the playing one to stop it) |
 | Shift + top / bottom side button | Scroll the four visible clips up / down one (the same window for every track) |
-| Jog turn / click | Cycle banks / open the bank · alt-parameters |
+| Jog click / hold | The bank map: click to open it (tap a pad to pick and close; click again or Back to close), hold to peek; INST opens the instrument |
+| Knob touch + jog click | Switch that knob to its *Alt* (Zoom, Nudge, Reverse Style, Algo, Clock Feedback) · Arp Steps (knob 5) · RPT GROOVE's page (any knob) · a macro's editor |
 | Shift + jog / Shift + bottom pad | Switch tracks |
 | Loop (hold, or tap to keep it up) / Loop + jog | Loop view / clip length |
 | Loop + step (or two steps) | Set the loop to those pages |
@@ -2406,7 +2456,6 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Undo / Shift + Undo | Undo / redo |
 | Back (tap / hold) / Shift + Back | Step out one level / back to the overview / save and leave dAVEBOx (asks first) |
 | Note/Session (tap / hold) | On an overview: switch / peek view — anywhere else: close it and go to Session View |
-| Shift + Note/Session (tap / hold) | This track's sound editor / straight to its instrument — in Session view, the Master/Send FX list / straight into Master FX |
 | Shift + Step 2 | Project Settings |
 
 ### Drum track (additions)
@@ -2427,7 +2476,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 
 | Control | Action |
 |---|---|
-| Jog to CONFIG, then click · Shift + Note/Session | Open it |
+| The CONFIG pad on the bank map | Open it |
 | Shift + click Instmt/Dest | Choose what the track plays |
 | Click Instmt/Dest | Edit the instrument (on a Move track, Move's own editor) |
 | Click an empty FX row · Shift + click an FX row | Add an effect · swap or move it |
@@ -2446,7 +2495,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | 8 | Pad layout (Scale → Chrom → Piano → Chord) / cycle right-pad mode | Track |
 | 9 | Scale — jump to Scale in Project Settings | Both |
 | 10 | VelIn (Live ↔ 100) — icon lit while fixed | Track |
-| 11 | LIVE ARP on/off — icon lit while on | Track (melodic) |
+| 11 | Tap: LIVE ARP on/off — icon lit while on. Hold: LIVE ARP's page, until Back (the knobs stay on LIVE ARP) | Track (melodic) |
 | 13 | Schwung's Tools menu; hold it to come back from Suspend | Both |
 | 15 | Double the loop and copy its contents into the new half | Track |
 | 16 | Set NOTE FX Quantize to 100 % | Track |
@@ -2462,8 +2511,8 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Shift + side button | Launch at the end of the page |
 | + / − | Scroll rows |
 | Knobs 1–8 | Each track's Volume / Pan / Send A / Send B |
-| Jog | Choose what the knobs set; past Send B, the SESSION FX card |
-| Jog click | Show the mixer; on SESSION FX, open Master & Send FX |
+| Jog click / hold | The Session map: what the knobs set (Volume, Pan, Send A, Send B) and the Master & Send FX |
+| Touch a knob or the jog | Show the mixer page |
 | Mute + touch knob / Shift + Mute + touch knob | Mute / solo that track |
 | Delete + Mute | Clear every mute and solo |
 | Mute + step / Mute + Shift + step / Mute + Delete + step | Recall / save / clear mute snapshot |
@@ -2476,7 +2525,6 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Loop (tap / hold) | Lock / hold Performance Mode |
 | Shift + Loop | Performance Mode Latch |
 | Loop + step / Loop + Shift + step / Loop + Delete + step | Recall / save / clear Performance preset (no Loop needed while it's locked) |
-| Shift + Note/Session (tap / hold) | Master & Send FX list / Master FX |
 
 ### LED & screen states
 

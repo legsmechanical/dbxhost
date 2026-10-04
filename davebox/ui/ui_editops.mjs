@@ -17,7 +17,7 @@ import { nowMs } from './ui_clock.mjs';
 import { soundActive, soundOpen, soundExit, soundIsGlobal, soundInEditor, soundFollowTrack, soundOnCard } from './ui_sound.mjs';
 import { isTextEntryActive } from '/data/UserData/schwung/shared/text_entry.mjs';
 import { stepRecExit } from './ui_record.mjs';
-import { clipHasContent, bankDisplayName, soundBankOnWalk } from './ui_pure.mjs';
+import { clipHasContent, bankDisplayName, soundBankOnTrack } from './ui_pure.mjs';
 import { showActionPopup } from './ui_persistence.mjs';
 import { effectiveClip, invalidateLEDCache, forceRedraw } from './ui_leds.mjs';
 import { refreshPerClipBankParams, resetPerClipBankParamsToDefault,
@@ -671,7 +671,17 @@ export function _switchActiveTrack(newT) {
     /* Leaving a track leaves the AUTOMATION menu (Josh, 2026-09-25): coming
      * back shows the AUTOMATION card, one click from the list — never the
      * previous track's cursor, ops or lane still open on the steps. */
-    if ((newT | 0) !== S.activeTrack) { autoBankReset(); autoLanePinClear(); }
+    if ((newT | 0) !== S.activeTrack) {
+        autoBankReset(); autoLanePinClear();
+        /* A door screen gives the track it borrowed from its bank back. */
+        const r = S.doorReturn;
+        if (r && r.track === S.activeTrack && S.activeBank === r.door) {
+            S.trackActiveBank[r.track] = r.bank;
+            S.bankCardLatched = r.latched;
+            S.stepIntervalMode = false; S.altMode = false; S.knobAlt = 0;
+        }
+        S.doorReturn = null;
+    }
     S.activeTrack = newT | 0;
     S.instrAbbrevAt = 0;                  /* the header's [instrument] follows the track */
     S.activeBank = S.trackActiveBank[S.activeTrack] | 0;
@@ -692,11 +702,10 @@ export function _switchActiveTrack(newT) {
     if (_follow) {
         /* The screen follows; the bank is the new track's own (2026-09-24). */
         soundFollowTrack(S.activeTrack);
-    } else if (soundBankOnWalk(S.trackPadMode[S.activeTrack], S.activeBank, S.activeTrack)) {
+    } else if (soundBankOnTrack(S.trackPadMode[S.activeTrack], S.activeBank, S.activeTrack)) {
         S.pendingSoundEnterTrack = S.activeTrack;
         S.pendingSoundEnterSilent = true;
     }
-    if (S.activeBank === 7) S.allLanesConfirmed = false;
     /* Focused-clip-by-default: ONLY while transport is running — entering a track
      * launches its focused clip so it's live. While stopped we do NOT arm (passive
      * track-scrolling must not queue clips for the next transport start); the
@@ -714,29 +723,9 @@ export function _switchActiveTrack(newT) {
     }
 }
 
-/* ALL LANES safety gate. Every gesture that writes all 32 drum lanes at once
- * funnels through this: while the drum ALL LANES bank is unconfirmed it surfaces
- * the "Edits will affect all lanes" OK screen (jog-click confirms) and tells the
- * caller to abort. Returns false (proceed) on any other bank/track. */
-export function allLanesGate() {
-    if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7 && !S.allLanesConfirmed) {
-        /* ⭑ SURFACE the confirm: since THE ONE LAW the ALL-LANES screen only
-         * renders while bankCardVisible(), so a gate that just redrew showed
-         * the resting overview and the refused edit looked like a dead button
-         * (review finding). Opening bank mode is the gate ASKING its question
-         * out loud — the same screen the card branch always drew. */
-        S.bankCardLatched = true;
-        S.screenDirty = true;
-        forceRedraw();
-        return true;
-    }
-    return false;
-}
-
 export function doDoubleFill() {
     const _t = S.activeTrack;
     if (S.trackPadMode[_t] === PAD_MODE_DRUM && S.activeBank === 7) {
-        if (allLanesGate()) return;
         noteUndoUnit(); S.undoSeqArpSnapshot = null;
         host_module_set_param('t' + _t + '_all_lanes_double_fill', '1');
         S.pendingDrumResync = 2; S.pendingDrumResyncTrack = _t;

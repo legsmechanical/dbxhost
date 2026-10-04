@@ -40,7 +40,7 @@ import { Red } from '/data/UserData/schwung/shared/constants.mjs';
 import { S } from './ui_state.mjs';
 import { slotIndex, syncLinkAudioRoutingFromRoutes,
          invalidateLinkAudioRoutingCache, linkAudioRoutingJustEnabled } from './ui_engine.mjs';
-import { clipHasContent, _clipIsEmpty, bankCycleForMode } from './ui_pure.mjs';
+import { clipHasContent, _clipIsEmpty, bankIsDoor } from './ui_pure.mjs';
 import { showActionPopup, showActionPopupFor, writeSidecar, uuidToStatePath, uuidToUiStatePath,
          uuidToNewProjectPath, freshSidecar } from './ui_persistence.mjs';
 import { computePadNoteMap, setActiveDrumLane, syncDrumClipContent,
@@ -177,7 +177,7 @@ export function refreshPerClipBankParams(t) {
     /* HARMZ bank (2): K0=oct K1=hrm1 K2=hrm2 K3=hrm3 (Unis retired in state v=33) */
     for (let k = 0; k < 4; k++) S.bankParams[t][2][k] = parseInt(v[5 + k], 10) | 0;
     /* MIDI DLY bank (3): K0=dly K1=lvl K2=rep K3=vfb K4=pfb K5=gfb K6=retrg K7=rnd
-     * (delay_clock_fb moved to Shift+K1 alt — read separately via tN_delay_clock_fb). */
+     * (delay_clock_fb moved to the K1 alt — read separately via tN_delay_clock_fb). */
     for (let k = 0; k < 8; k++) S.bankParams[t][3][k] = parseInt(v[9 + k], 10) | 0;
     /* SEQ ARP bank (4): K0=style K1=rate K2=oct K3=gate K4=steps K5=retrigger (length-aware) */
     if (v.length >= 23) {
@@ -1156,9 +1156,9 @@ export function readBankParams(t, bankIdx) {
         S.bankParams[t][1][2] = S.drumLaneQnt[t];
     /* DELAY bank (melodic): K7 is delay_retrig in the bank def now, so the
      * standard loop already reads it into bankParams[t][3][6]. delay_clock_fb
-     * is no longer in the bank def — it lives on Shift+K1 with its own mirror
+     * is no longer in the bank def — it lives on the K1 alt with its own mirror
      * S.delayClockFb[t]. Read it explicitly here so the OLED value cell shows
-     * the live value when Shift+K1 is touched. */
+     * the live value when the flipped K1 is touched. */
     if (bankIdx === 3 && S.trackPadMode[t] !== PAD_MODE_DRUM) {
         const _cf = dspGet('t' + t + '_delay_clock_fb');
         if (_cf !== null && _cf !== undefined)
@@ -1611,12 +1611,15 @@ export function restoreUiSidecar(applyDefaultsNow) {
                     : ((_b >= 0 && _b <= 7) || isSoundBank(_b) || _b === BANK_AUTOMATION
                        || _b === BANK_CHORD) ? (_b | 0)
                     : 0;
+                /* A DOOR (CONFIG, AUTOMATION) is a screen, never the
+                 * bank a track is on (Josh, 2026-10-03): an older save that
+                 * left one there comes back on the start bank. */
+                if (bankIsDoor(S.trackPadMode[_t], S.trackActiveBank[_t])) S.trackActiveBank[_t] = 0;
             }
             /* Sync live mirror to the restored active track. Subsequent
              * post-restore validity checks (e.g. hide bank 7 on melodic) still
              * apply because activeBank is a regular live variable from here on. */
             S.activeBank = S.trackActiveBank[S.activeTrack] | 0;
-            if (S.activeBank === 7) S.allLanesConfirmed = false;
             /* A restored BANK_SOUND needs its SCREEN re-opened (BANKS[11] is a
              * stub), but NOT from here: tick holds that as an invariant — in
              * track view, activeBank === BANK_SOUND means the screen is open —

@@ -1,15 +1,15 @@
 import { miPadColors, miActive, miRingCells } from './ui_midi_import.mjs';
-import { S, loopViewActive } from './ui_state.mjs';
+import { S, loopViewActive, knobAltOn } from './ui_state.mjs';
 import {
     NUM_STEPS, NUM_TRACKS, LED_OFF, LEDS_PER_FRAME,
     TRACK_COLORS, TRACK_DIM_COLORS, TRACK_PAD_BASE, SCENE_BTN_FLASH_MS,
     PAD_MODE_DRUM, BANKS,
     POLL_INTERVAL, TAP_TEMPO_FLASH_MS, PARAM_LED_BANKS, CONDUCT_LED_BANKS,
-    SEQ8_NAV_FLAGS, MoveNoteSession
+    SEQ8_NAV_FLAGS, MoveNoteSession, BANK_CONFIG, BANK_SOUND
 } from './ui_constants.mjs';
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
-import { arpVelLevel, drumVelocityToZone } from './ui_pure.mjs';
+import { arpVelLevel, drumVelocityToZone, bankPadMapForMode, SESS_PAD_MAP, bankMapPadForCell } from './ui_pure.mjs';
 import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell } from './ui_knob_leds.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { devSnapOpen, devSnapLedFor } from './ui_devsnap.mjs';
@@ -18,7 +18,7 @@ import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import {
     White, Red, Green, Blue, DarkBlue, LightGrey, DarkGrey, Cyan, PurpleBlue,
     DeepRed, DeepGreen, DeepMagenta, Mustard, BrightPink,
-    DeepBrownYellow, BrightOrange, Tan,
+    DeepBrownYellow, BrightOrange, Tan, VividYellow, Violet,
     MoveBack, MoveCopy, MoveDelete
 } from '/data/UserData/schwung/shared/constants.mjs';
 import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
@@ -237,8 +237,7 @@ export function updateStepLEDs() {
      * Pages with notes within the window → pulse; empty in-window pages → solid track color;
      * out-of-window pages → off. Held start page during the range gesture lights bright
      * white as a "waiting for end tap" affordance. */
-    if (loopViewActive() && !S.sessionView && !S.loopJogActive &&
-            !(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7 && !S.allLanesConfirmed)) {
+    if (loopViewActive() && !S.sessionView && !S.loopJogActive) {
         const t = S.activeTrack;
         const tCol = trackColor(t);
         const pulsOn = S.playing ? S.flashSixteenth : (Math.floor(S.clockMs / 220) % 2);
@@ -314,7 +313,6 @@ export function updateStepLEDs() {
             (S.activeBank === 7 && _kt === 1);
         if (!_knobShiftMode) {
             const isDrum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
-            const _allLanesLocked = isDrum && S.activeBank === 7 && !S.allLanesConfirmed;
             for (let i = 0; i < 16; i++) {
                 /* Step3 stays dark: Shift+Step3 was retired (2026-07-27). */
                 let on = i === 1 || (i >= 4 && i <= 6) || i === 8;
@@ -322,9 +320,6 @@ export function updateStepLEDs() {
                 if (i === 0) on = true;
                 if (i === 7 || i === 9 || (i === 10 && !isDrum) || i === 14
                     || (i === 15 && S.activeBank !== 6)) on = true;
-                /* ALL LANES unconfirmed: gated double-fill (15) / quantize (16)
-                 * shortcuts stay dark — don't advertise a blocked action. */
-                if (_allLanesLocked && (i === 14 || i === 15)) on = false;
                 setLED(16 + i, on ? LightGrey : LED_OFF);
             }
             return;
@@ -565,9 +560,40 @@ export function paintProjectPickerSurface() {
     }
 }
 
+/* THE BANK PAD MAP's pads (Josh, 2026-10-02): the left 4x4 coloured by
+ * category, the bank you are on White, a bank this track does not have dark,
+ * and the whole right 4x4 dark. One painter for all 32, so nothing underneath
+ * shows through. SEQ is yellow, not the previews' green: green is a track
+ * colour, and CONFIG / MIX / INST wear the track's own colour. */
+const BANK_MAP_COL_COLORS = [Cyan, Violet, VividYellow, BrightOrange];
+const SESS_MAP_COLORS = [VividYellow, Cyan, Violet, Violet];   /* VOLUME, PAN, SEND A, SEND B */
+function paintBankMapPads() {
+    const col = new Array(32).fill(LED_OFF);
+    const at = (c, r) => bankMapPadForCell(c, r) - TRACK_PAD_BASE;
+    /* A menu pad waiting for the jog's release is the one White pad. */
+    const d = S.bankMapDeferred;
+    if (S.bankMapKind === 'session') {
+        for (let r = 0; r < 4; r++) {
+            col[at(0, r)] = !d && r === S.sessKnobMode ? White : SESS_MAP_COLORS[r];
+            if (SESS_PAD_MAP.fx.buses[r]) col[at(1, r)] = d && d.col === 1 && d.row === r ? White : BrightOrange;
+        }
+    } else {
+        const t = S.activeTrack;
+        bankPadMapForMode(S.trackPadMode[t], t).forEach((c, ci) => c.cells.forEach((cell, r) => {
+            if (!cell) return;
+            const own = cell.bank === BANK_CONFIG || cell.bank === BANK_SOUND || cell.action === 'inst';
+            const on = d ? (d.col === ci && d.row === r) : (cell.bank !== null && cell.bank === S.activeBank);
+            col[at(ci, r)] = on ? White
+                : own ? trackColor(t) : BANK_MAP_COL_COLORS[ci];
+        }));
+    }
+    for (let i = 0; i < 32; i++) cachedSetLED(TRACK_PAD_BASE + i, col[i]);
+}
+
 export function updateSessionLEDs() {
     if (!S.ledInitComplete) return;
     if (paintProjectPickerLEDs()) return;
+    if (S.bankMapUp) { paintBankMapPads(); return; }
     if (S.tapTempoOpen) {
         for (let i = 0; i < 32; i++) {
             const note  = TRACK_PAD_BASE + i;
@@ -689,8 +715,6 @@ export function updateTrackLEDs() {
                             (S.bankParams[S.activeTrack][5][0] | 0) !== 0)   on = true;
                     }
                 }
-                /* ALL LANES unconfirmed: gated double-fill/quantize shortcuts dark */
-                if (isDrum && S.activeBank === 7 && !S.allLanesConfirmed && (i === 14 || i === 15)) on = false;
                 color = on ? LightGrey : LED_OFF;
             }
             if (force) {
@@ -724,6 +748,8 @@ export function updateTrackLEDs() {
         for (let i = 0; i < 32; i++) cachedSetLED(TRACK_PAD_BASE + i, _miOv[i]);
         return;
     }
+
+    if (S.bankMapUp) { paintBankMapPads(); return; }
 
     if (S.tapTempoOpen) {
         for (let i = 0; i < 32; i++) {
@@ -1016,7 +1042,7 @@ export function updateTrackLEDs() {
              * no host state. Computed once per frame across the eight strips. */
             if (k === 0) {
                 const _m = SESS_KNOB_MODES[S.sessKnobMode];
-                S._sessRingAuto = (_m && _m.widget !== 'gateway') ? _m.key : null;
+                S._sessRingAuto = _m ? _m.key : null;
             }
             if (S._sessRingAuto && !_isMuted) {
                 const _tgs = sessStripTargets(S, k, S._sessRingAuto);
@@ -1079,7 +1105,7 @@ export function updateTrackLEDs() {
              * or Delete the ring says the STATE (red active / white muted /
              * unlit none), as on every other page; otherwise an ACTIVE one
              * blinks (2026-09-03). */
-            const _tg = seqAutoTargetForKnob(S.activeTrack, S.activeBank, k, S.altMode);
+            const _tg = seqAutoTargetForKnob(S.activeTrack, S.activeBank, k, knobAltOn(k));
             const _st = _tg ? automationStateFor(S.activeTrack, effectiveClip(S.activeTrack), _tg) : null;
             if (S.muteHeld || S.deleteHeld) ledVal = _st ? (_st.active ? Red : White) : LED_OFF;
             else if (_st && _st.active && (Math.floor(S.clockMs / 440) % 2)) ledVal = LED_OFF;
@@ -1280,13 +1306,12 @@ export function forceRedraw() {
     updateTrackLEDs();
 }
 
+/* The one PAGE alt: drum RPT GROOVE (5), Velocity/Nudge (S.altMode) — touch
+ * ANY knob and click the jog (Josh, 2026-10-04). Arp Steps on SEQ ARP / LIVE
+ * ARP opens from their Steps knob (arpStepsBank, ARP_STEPS_KNOB); the
+ * single-knob alts flip one knob (KNOB_ALTS, S.knobAlt). */
 export function bankHasAltParams(t, bank) {
-    if (S.trackPadMode[t] === PAD_MODE_DRUM) return bank === 0 || bank === 5 || bank === 7;
-    /* Melodic CLIP(0), NOTE FX(1), DELAY(3), SEQ ARP(4), ARP IN(5), AUTO/CC(6).
-     * Banks 4/5 use stepIntervalMode (Arp Steps overlay) rather than altMode —
-     * the arrow still shows their toggle-availability, and altIndicatorActive()
-     * reflects which underlying flag is on. */
-    return bank === 0 || bank === 1 || bank === 3 || bank === 4 || bank === 5;
+    return S.trackPadMode[t] === PAD_MODE_DRUM && bank === 5;
 }
 
 /* Returns true when the current bank's alt indicator should flash. For melodic

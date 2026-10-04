@@ -1,0 +1,592 @@
+/* tests/js/test_bank_pad_map.mjs — THE BANK PAD MAP (Josh, 2026-10-02):
+ * hold the jog and the left 4x4 pads are the track's banks, a column per
+ * category; tap a pad to land on that bank; let go and the pads play again.
+ * A quick click still does what it did — it now acts on the RELEASE.
+ *
+ * Performs the gesture through the real input path (onMidiMessageInternal)
+ * and asserts what is ON SCREEN and ON THE PADS, not just state:
+ *   - hold → after JOG_MAP_HOLD_MS the map paints: category labels, the
+ *     current bank's box filled, an absent bank's box empty; pads in category
+ *     colours, the current one White, the right 4x4 dark
+ *   - tap → the bank changes (from the overview the overview stays)
+ *   - release after a tap / turn, or once the map has painted → no click;
+ *     a quick click (let go before the map paints) → the click
+ *   - a pad held before the jog goes down is let go, and its release swallowed
+ *   - drum, Session (mixer modes, an FX bus opens directly), gates
+ */
+let failed = 0;
+const ok = (l) => console.log(`  ok   — ${l}`);
+const bad = (l, e) => { console.error(`  FAIL — ${l}: ${e && e.stack ? e.stack : e}`); failed = 1; };
+function step(label, fn) { try { fn(); ok(label); } catch (e) { bad(label, e); } }
+const assert = (c, m) => { if (!c) throw new Error(m); };
+
+const W = 128, H = 64;
+const fb = new Uint8Array(W * H);
+globalThis.set_pixel = (x, y, v) => { x |= 0; y |= 0; if (x >= 0 && x < W && y >= 0 && y < H) fb[y * W + x] = v ? 1 : 0; };
+globalThis.fill_rect = (x, y, w, h, v) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) globalThis.set_pixel(x + i, y + j, v); };
+globalThis.draw_rect = (x, y, w, h, v) => { globalThis.fill_rect(x, y, w, 1, v); globalThis.fill_rect(x, y + h - 1, w, 1, v);
+    globalThis.fill_rect(x, y, 1, h, v); globalThis.fill_rect(x + w - 1, y, 1, h, v); };
+globalThis.stipple_rect = (x, y, w, h, v, phase) => {
+    for (let j = y; j < y + h; j++) for (let i = x + ((((x + j) & 1) === (phase & 1)) ? 0 : 1); i < x + w; i += 2) globalThis.set_pixel(i, j, v); };
+globalThis.clear_screen = () => fb.fill(0);
+globalThis.print = () => {};
+globalThis.text_width = (t) => Math.max(0, String(t).length * 6 - 1);
+
+globalThis.host_write_file = () => true;
+globalThis.host_system_cmd = () => 0; globalThis.host_read_file = () => '';
+globalThis.host_file_exists = () => false;
+globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;
+const sentParams = [];
+globalThis.host_module_set_param = (k, v) => { sentParams.push([String(k), String(v)]); };
+globalThis.host_module_get_param = () => ''; globalThis.shadow_get_param = () => '';
+globalThis.host_module_get_params = () => null;
+globalThis.shadow_set_param = () => 1; globalThis.host_vol_block = () => {};
+globalThis.host_edit_cc_block = () => {};
+/* Pad LEDs: last colour per note, across the whole run (two caches sit in the
+ * path, so an unchanged pad is not re-sent). */
+const led = {};
+globalThis.move_midi_internal_send = (pkt) => { if ((pkt[1] & 0xF0) === 0x90) led[pkt[2]] = pkt[3]; return true; };
+globalThis.move_midi_external_send = () => {};
+globalThis.set_led = () => {}; globalThis.move_midi_inject_to_move = () => {};
+globalThis.host_ext_midi_remap_clear = () => {}; globalThis.host_ext_midi_remap_set = () => {};
+globalThis.host_ext_midi_remap_enable = () => {};
+
+async function main() {
+await import('../../ui/ui.js');
+const { S } = await import('../../ui/ui_state.mjs');
+const C = await import('../../ui/ui_constants.mjs');
+const render = await import('../../ui/ui_render.mjs');
+const kit = await import('../../ui/ui_movy.mjs');
+const pure = await import('../../ui/ui_pure.mjs');
+const snd = await import('../../ui/ui_sound.mjs');
+const K = await import('/data/UserData/schwung/shared/constants.mjs');
+
+S.ledInitComplete = true; S.stateLoading = false; S.bootSplashMs = 0;
+S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = 2;
+S.dspInboundEnabled = true;   /* the engine takes pad input, so the mute is pushed */
+for (let i = 0; i < 8; i++) { S.trackRoute[i] = 0; S.trackChannel[i] = 1; }
+S.bankParams = Array.from({ length: 8 }, () => Array.from({ length: 16 }, () => new Array(8).fill(0)));
+const midi = (a, b, c) => globalThis.onMidiMessageInternal(new Uint8Array([a, b, c]));
+const press = () => midi(0xB0, 3, 127);
+const release = () => midi(0xB0, 3, 0);
+const jog = (d) => midi(0xB0, 14, d > 0 ? d : 128 + d);
+const tap = (note) => { midi(0x90, note, 100); midi(0x80, note, 0); };
+const pad = pure.bankMapPadForCell;
+S.clockFollowTicks = true; S.tickCount = 1000;
+const tick = () => { S.tickCount++; globalThis.tick(); };
+/* The map paints on the PRESS now (2026-10-04); a hold is just time passing. */
+const holdPast = () => { S.tickCount += 2; globalThis.tick(); };
+/* ...and past the click window: letting go after this is no click. */
+const holdLong = () => { S.tickCount += Math.ceil(C.JOG_CLICK_MAX_MS / 10.6) + 1; globalThis.tick(); };
+const ticks = (n) => { for (let i = 0; i < n; i++) tick(); };
+const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
+const ink = (f, x, y, w, h) => { let n = 0; for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) n += f[j * W + i]; return n; };
+const cellInk = (f, c, r) => { const q = kit.bankMapCellRect(c, r); return ink(f, q.x, q.y, q.w, q.h) / (q.w * q.h); };
+const rightDark = () => { for (let r = 0; r < 4; r++) for (let c = 4; c < 8; c++) if ((led[pad(c, r)] | 0) !== 0) return false; return true; };
+const ccm = await import('../../ui/ui_input_cc.mjs');
+const home = () => { ccm.bankMapEnd(); S.activeBank = 0; S.trackActiveBank[S.activeTrack] = 0; S.bankCardLatched = false;
+    S.bankSelectTick = -1; S.pendingSoundEnterTrack = -1; S.trackPadMode[S.activeTrack] = C.PAD_MODE_MELODIC_SCALE ?? 0; };
+
+home();
+
+step('⭐ PRESS the jog on the overview: the map is ON SCREEN at once (Josh, 2026-10-04: "instantly")', () => {
+    press();
+    assert(S.jogPressMs >= 0 && S.bankMapUp, 'the press did not paint the map: up ' + S.bankMapUp);
+    assert(!S.bankCardLatched && !S.bankMapLatched, 'the press latched something');
+    const f = frame();
+    assert(ink(f, 0, 0, 31, 5) > 0, 'no IN label over column 1');
+    assert(ink(f, 2, 6, 27, 1) >= 20, 'no rule under the label');
+    assert(cellInk(f, 2, 1) > 0.6, 'CLIP (SEQ column, row 2) is not the filled box: ' + cellInk(f, 2, 1));
+    assert(cellInk(f, 3, 2) < 0.5 && cellInk(f, 3, 2) > 0.05, 'DELAY is not an outlined box');
+    assert(cellInk(f, 2, 2) === 0, 'an absent bank drew something');
+    assert(cellInk(f, 0, 0) === 0, 'CHORD drew outside the Chord layout');
+});
+
+step('…and ON THE PADS: categories coloured, CLIP White, absent and right half dark', () => {
+    ticks(6);
+    assert(led[pad(2, 1)] === K.White, 'CLIP pad is ' + led[pad(2, 1)]);
+    assert(led[pad(3, 2)] === K.BrightOrange, 'DELAY pad is ' + led[pad(3, 2)]);
+    assert(led[pad(0, 1)] === K.Cyan, 'LIVE ARP pad is ' + led[pad(0, 1)]);
+    assert((led[pad(2, 2)] | 0) === 0, 'an absent bank pad is lit');
+    assert(rightDark(), 'the right 4x4 is lit');
+    const pm = sentParams.filter(([k]) => k === 't2_padmap').pop();
+    assert(pm && pm[1].split(' ')[32] === '1', 'the DSP pads were not muted while the map is up: ' + (pm && pm[1]));
+});
+
+step('tap DELAY: the bank moves, the overview stays, the map stays up', () => {
+    tap(pad(3, 2));
+    assert(S.activeBank === 3, 'activeBank ' + S.activeBank);
+    assert(!S.bankCardLatched, 'a tap from the overview latched the card');
+    assert(S.bankSelectTick < 0 && !render.bankCardVisible(), 'a tap from the overview opened the bank page');
+    assert(S.bankMapUp, 'the map went away on the tap');
+    ticks(6);
+    assert(led[pad(3, 2)] === K.White && led[pad(2, 1)] === K.VividYellow, 'the White pad did not follow');
+});
+
+step('let go after a tap: no click, the map goes, the pads come back', () => {
+    release();
+    assert(!S.bankMapUp && S.jogPressMs < 0, 'the map is still up');
+    assert(!S.bankCardLatched, 'the release fired a click after a tap');
+    const f = frame();
+    assert(cellInk(f, 3, 2) < 0.9 || ink(f, 0, 0, 31, 5) === 0, 'the map is still on screen');
+    ticks(6);
+    assert(!rightDark() || (led[pad(3, 2)] !== K.White), 'pad LEDs did not repaint');
+});
+
+step('⭐⭐ a quick CLICK latches the map (it stays up); a second click closes it', () => {
+    home();
+    press(); release();
+    assert(S.bankMapLatched && S.bankMapUp && S.jogPressMs < 0, 'latched ' + S.bankMapLatched + ' up ' + S.bankMapUp);
+    assert(!S.bankCardLatched, 'the click latched the bank card');
+    ticks(3);
+    assert(cellInk(frame(), 2, 1) > 0.6, 'the latched map is not on screen');
+    press(); release();
+    assert(!S.bankMapUp && !S.bankMapLatched, 'the second click did not close it');
+    assert(ink(frame(), 0, 0, 31, 5) === 0 || cellInk(frame(), 2, 1) < 0.6, 'the map is still drawn');
+});
+
+step('⭐⭐ latched: a tap picks AND the map goes (Josh, 2026-10-04: "have pad tap select bank and exit bank map")', () => {
+    home();
+    press(); release();
+    assert(S.bankMapLatched && S.bankMapUp, 'setup: latched');
+    tap(pad(3, 2));
+    assert(S.activeBank === 3, 'the tap did not pick DELAY: ' + S.activeBank);
+    assert(!S.bankMapUp && !S.bankMapLatched && S.jogPressMs < 0, 'the map stayed: up ' + S.bankMapUp + ' latched ' + S.bankMapLatched);
+    assert(!S.bankCardLatched && !render.bankCardVisible(), 'a pick from the overview opened the bank page');
+    assert(S.bankMapSwallow.size === 0, 'the tapped pad\'s release was not swallowed: ' + Array.from(S.bankMapSwallow));
+    ticks(3);
+    assert(ink(frame(), 0, 0, 31, 5) === 0 || cellInk(frame(), 2, 1) < 0.6, 'the map is still drawn');
+});
+
+step('a HOLD over a latched map is momentary: hold, tap, let go — the map stays latched', () => {
+    home();
+    press(); release();
+    press(); tap(pad(3, 0)); release();
+    assert(S.activeBank === 1 && S.bankMapLatched && S.bankMapUp, 'bank ' + S.activeBank + ' latched ' + S.bankMapLatched);
+    press(); holdLong(); release();
+    assert(S.bankMapLatched, 'a long look on a latched map closed it');
+    press(); release();
+    assert(!S.bankMapUp, 'the click did not close it');
+});
+
+step('⭐ latched: Shift (a chord that needs the pads) puts the map away; Play does not', () => {
+    home();
+    press(); release();
+    assert(S.bankMapLatched, 'setup: latched');
+    midi(0xB0, 85, 127); midi(0xB0, 85, 0); ticks(2);          /* Play */
+    assert(S.bankMapLatched && S.bankMapUp, 'Play closed the map');
+    midi(0xB0, 85, 127); midi(0xB0, 85, 0); ticks(2);          /* stop again */
+    midi(0xB0, 49, 127);                                       /* Shift */
+    assert(!S.bankMapUp && !S.bankMapLatched, 'Shift did not put the latched map away');
+    midi(0xB0, 49, 0); ticks(2);
+});
+
+step('turning while held walks NO bank (retired 2026-10-04), and the release is not a click', () => {
+    home();
+    press();
+    jog(1);
+    assert(S.activeBank === 0, 'the turn walked: ' + S.activeBank);
+    assert(S.bankMapUp, 'the map went on a turn');
+    release();
+    assert(!S.bankMapLatched && !S.bankMapUp, 'the release after a turn latched the map');
+});
+
+step('held past the click window and let go with no tap: a PEEK — the map goes, nothing latches', () => {
+    home();
+    press(); holdLong();
+    release();
+    assert(!S.bankMapUp && !S.bankMapLatched && !S.bankCardLatched, 'letting go after a long look latched');
+});
+
+step('a pad held before the jog is let go when the map paints; its release is swallowed', () => {
+    home();
+    S.lastPlayedNote = -1;
+    midi(0x90, 68, 100);
+    assert(S.liveActiveNotes.size === 1, 'the pad did not sound: ' + S.liveActiveNotes.size);
+    press();
+    assert(S.liveActiveNotes.size === 0, 'the held note is still on once the map painted (on the press)');
+    holdLong();
+    midi(0x80, 68, 0);
+    assert(S.bankMapSwallow.size === 0, 'the swallow set kept the pad');
+    release();
+    assert(!S.bankMapLatched, 'the long hold latched');
+});
+
+step('a map pad still down when the jog comes up: its release is swallowed, then it plays again', () => {
+    home();
+    press(); holdPast();
+    midi(0x90, pad(3, 2), 100);              /* tap DELAY, keep the finger down */
+    release();                               /* jog up first */
+    const n0 = S.liveActiveNotes.size;
+    midi(0x80, pad(3, 2), 0);                /* the finger lifts after the map is gone */
+    assert(!S.bankMapSwallow.has(pad(3, 2)), 'the swallow kept the pad');
+    assert(S.liveActiveNotes.size === n0, 'the late release reached the pads');
+    midi(0x90, pad(3, 2), 100);              /* and the next press is an ordinary note again */
+    assert(S.liveActiveNotes.size === n0 + 1, 'the pad did not play after the map');
+    midi(0x80, pad(3, 2), 0);
+    assert(S.liveActiveNotes.size === n0, 'the ordinary release was eaten');
+});
+
+step('a stale swallow (release lost) does not eat the next ordinary press', () => {
+    home();
+    S.bankMapSwallow.add(69);
+    midi(0x90, 69, 100);
+    assert(S.liveActiveNotes.size === 1, 'the press did not sound');
+    midi(0x80, 69, 0);
+    assert(S.liveActiveNotes.size === 0, 'the release was eaten by a stale swallow — stuck note');
+});
+
+step('a knob turn during a quick hold: the release is not a click', () => {
+    home();
+    press();
+    midi(0xB0, 71, 1);                       /* a turn (its touch arrives separately) */
+    assert(S.bankMapUsed, 'a knob turn did not count as doing something during the hold');
+    release();
+    assert(!S.bankMapLatched, 'a knob turn then release latched the map');
+    midi(0x90, 0, 127); midi(0x80, 0, 0);     /* the knob's touch and let-go */
+    S.knobTouched = -1;
+});
+
+step('a lost jog release: the next press ends the stale hold and is judged afresh', () => {
+    home();
+    press(); holdPast();                     /* ...and the release never arrives */
+    assert(S.bankMapUp, 'setup');
+    press(); release();                      /* a quick click, judged afresh */
+    assert(S.jogPressMs < 0 && S.bankMapLatched, 'the fresh click did not latch the map');
+    press(); release();
+    assert(!S.bankMapUp, 'setup: close');
+});
+
+step('a lost jog release, and the next press is NOT armable: the stale map still ends', () => {
+    home();
+    press(); holdPast();                     /* the release never arrives */
+    S.knobTouched = 0;                       /* a hand on a knob: the next press may not arm */
+    press();
+    assert(!S.bankMapUp && S.jogPressMs < 0, 'the stale map survived a press it could not take');
+    S.knobTouched = -1;
+    release();
+});
+
+step('the view changing under the hold ends the map', () => {
+    home();
+    press(); holdPast();
+    S.sessionView = true; tick();
+    assert(!S.bankMapUp && S.jogPressMs < 0, 'a track map stayed up in Session View');
+    S.sessionView = false; tick();
+    release();
+});
+
+step('with Back down the press is not held back (a suspend may follow)', () => {
+    home();
+    S.backPressTick = S.tickCount;
+    press();
+    assert(S.jogPressMs < 0, 'deferred with Back down');
+    release();
+    S.backPressTick = -1;
+});
+
+step('another button while held ends the map, no click (Shift)', () => {
+    home();
+    press(); holdPast();
+    midi(0xB0, 49, 127);
+    assert(!S.bankMapUp && S.jogPressMs < 0, 'Shift did not end the map');
+    midi(0xB0, 49, 0);
+    release();
+    assert(!S.bankMapLatched && !S.bankMapUp, 'the release after Shift latched the map');
+});
+
+step('gates: with Shift held the press is NOT held back', () => {
+    home();
+    S.shiftHeld = true;
+    press();
+    assert(S.jogPressMs < 0, 'Shift+click was deferred');
+    release();
+    S.shiftHeld = false;
+});
+
+step('drum track: RPT GROOVE where LIVE ARP is, ALL LANES under DRUM LANE, MIX opens sound', () => {
+    home();
+    S.trackPadMode[2] = C.PAD_MODE_DRUM;
+    const m = pure.bankPadMapForMode(C.PAD_MODE_DRUM, 2);
+    assert(m[0].cells[1].name === 'RPT GROOVE', m[0].cells[1] && m[0].cells[1].name);
+    assert(m[2].cells[1].name === 'DRUM LANE' && m[2].cells[2].name === 'ALL LANES', 'drum SEQ column');
+    assert(m[0].cells[0] === null && m[3].cells[1] === null, 'drum dark cells');
+    press(); holdPast();
+    tap(pad(1, 3));
+    assert(S.pendingSoundEnterTrack === 2 && S.activeBank === C.BANK_SOUND, 'MIX did not queue its screen');
+    release();
+    S.pendingSoundEnterTrack = -1;
+    S.trackPadMode[2] = 0;
+});
+
+const ab = await import('../../ui/ui_automation_bank.mjs');
+const tickS = (n) => { for (let i = 0; i < n; i++) { tick(); snd.soundTick(); } };
+const backBtn = () => { midi(0xB0, 51, 127); midi(0xB0, 51, 0); tickS(2); };
+
+step('⭐⭐ a CONFIG pick clicks INTO it: the TRACK CONFIG menu is up, the map is gone; Back gets home', () => {
+    home();
+    press(); holdPast();
+    tap(pad(0, 3));                                    /* CONFIG, bottom-left */
+    assert(S.bankMapUp && !snd.soundActive(), 'a HELD map opened CONFIG before the release');
+    release();
+    assert(!S.bankMapUp && S.jogPressMs < 0, 'the map stayed up over the editor');
+    tickS(4);
+    assert(S.activeBank === 0, 'CONFIG became the bank (it is a screen): ' + S.activeBank);
+    assert(snd.soundActive() && snd.soundViewForTest() === 0, 'not in the TRACK CONFIG menu: view ' + snd.soundViewForTest());
+    for (let i = 0; i < 3 && snd.soundActive(); i++) backBtn();
+    assert(!snd.soundActive() && !S.bankCardLatched, 'Back did not get home');
+});
+
+step('⭐⭐ an AUTOMATION pick clicks INTO it: its menu is open and on screen; Back gets home', () => {
+    home(); tickS(2);
+    press(); holdPast();
+    tap(pad(1, 1));                                    /* AUTOMATION */
+    assert(S.bankMapUp && !ab.autoBankMenuOpen(), 'a HELD map opened AUTOMATION before the release');
+    release();
+    assert(!S.bankMapUp, 'the map stayed up');
+    assert(S.activeBank === C.BANK_AUTOMATION && ab.autoBankMenuOpen(), 'menu not open');
+    assert(render.bankCardVisible(), 'the menu is not on screen');
+    tickS(2);
+    assert(ab.autoBankMenuOpen(), 'drawing the card closed the menu');
+    backBtn();
+    assert(!ab.autoBankMenuOpen() && !render.bankCardVisible(), 'Back at the menu top did not dismiss the screen');
+    assert(S.activeBank === 0 && S.trackActiveBank[2] === 0, 'AUTOMATION stayed the bank: ' + S.activeBank);
+});
+
+step('⭐⭐ LIVE ARP is a bank again: the map pick puts the knobs on it, and they stay', () => {
+    home(); S.padLayoutChord[2] = false;
+    press(); holdPast();
+    tap(pad(0, 1));
+    release();
+    assert(S.activeBank === 5 && S.trackActiveBank[2] === 5, 'LIVE ARP not picked: ' + S.activeBank);
+    assert(!S.doorReturn, 'LIVE ARP was opened as a door screen');
+    backBtn();
+    assert(S.activeBank === 5 && S.trackActiveBank[2] === 5, 'Back moved the knobs off LIVE ARP: ' + S.activeBank);
+});
+step('Conductor: CLIP and STEP in SEQ, the responders in column 2', () => {
+    const m = pure.bankPadMapForMode(C.PAD_MODE_CONDUCT, 2);
+    assert(m[2].cells[0].name === 'CLIP' && m[2].cells[1].bank === C.BANK_STEP, 'conductor SEQ');
+    assert(m[1].label === 'RSPD' && m[1].cells[0].name === 'ON/OFF', 'conductor RSPD');
+    assert(m[0].label === null && m[0].cells[3].bank === C.BANK_CONFIG, 'conductor CONFIG');
+});
+
+step('Session: a MIXER pad walks the mode; MASTER opens its effects; the right half is dead', () => {
+    home();
+    S.sessionView = true; S.sessKnobMode = 0;
+    press(); holdPast();
+    assert(S.bankMapUp && S.bankMapKind === 'session', 'session map did not arm');
+    ticks(6);
+    assert(led[pad(0, 0)] === K.White && led[pad(0, 1)] === K.Cyan && led[pad(1, 0)] === K.BrightOrange,
+           'session pad colours');
+    assert((led[pad(1, 1)] | 0) === 0 && rightDark(), 'session dark pads');
+    const f = frame();
+    assert(cellInk(f, 0, 0) > 0.6 && cellInk(f, 1, 1) === 0, 'session screen');
+    tap(pad(0, 1));
+    assert(S.sessKnobMode === 1, 'PAN did not take: ' + S.sessKnobMode);
+    tap(pad(6, 0));
+    assert(S.bankMapUp, 'a right-half press did something');
+    tap(pad(1, 0));
+    assert(!snd.soundOpen() && S.bankMapUp, 'a HELD map opened MASTER before the release');
+    release();
+    assert(snd.soundOpen(), 'MASTER did not open the effect buses on the release');
+    assert(!S.bankMapUp && S.jogPressMs < 0, 'the map stayed over the bus editor');
+});
+
+step('⭐ Session, latched: a MIXER pad walks the mode AND the map goes; an FX pad opens its bus', () => {
+    if (snd.soundOpen()) snd.soundExit();
+    home(); tickS(2);
+    S.sessionView = true; S.sessKnobMode = 0;
+    press(); release();
+    assert(S.bankMapLatched && S.bankMapKind === 'session', 'setup: session map latched');
+    tap(pad(0, 2));
+    assert(S.sessKnobMode === 2, 'SEND A did not take: ' + S.sessKnobMode);
+    assert(!S.bankMapUp && !S.bankMapLatched, 'the latched session map stayed after a pick');
+    press(); release();
+    tap(pad(1, 2));
+    assert(snd.soundOpen() && !S.bankMapUp && !S.bankMapLatched, 'SEND B pad: open ' + snd.soundOpen() + ' up ' + S.bankMapUp);
+    snd.soundExit(); tickS(2);
+    S.sessionView = false;
+});
+
+const leds = await import('../../ui/ui_leds.mjs');
+step('⭐ INST: right of MIX on melodic and drum, the track\'s colour, on screen; none on a Conductor', () => {
+    home();
+    for (const mode of [C.PAD_MODE_MELODIC_SCALE ?? 0, C.PAD_MODE_DRUM]) {
+        const m = pure.bankPadMapForMode(mode, 2);
+        assert(m[1].cells[3] && m[1].cells[3].bank === C.BANK_SOUND, 'MIX is not at col 1 row 3');
+        const c = m[2].cells[3];
+        assert(c && c.action === 'inst' && c.name === 'INST' && c.bank === null, 'no INST beside MIX: ' + JSON.stringify(c));
+        assert(pure.bankPadMapActionAt(mode, 2, 3) === 'inst' && pure.bankPadMapCellAt(mode, 2, 2, 3) === null, 'INST lookup');
+    }
+    assert(pure.bankPadMapActionAt(C.PAD_MODE_CONDUCT, 2, 3) === null &&
+           pure.bankPadMapForMode(C.PAD_MODE_CONDUCT, 2)[2].cells[3] === null, 'a Conductor has an INST pad');
+    press(); release(); ticks(6);
+    assert(led[pad(2, 3)] === leds.trackColor(2) && led[pad(1, 3)] === leds.trackColor(2),
+           'INST ' + led[pad(2, 3)] + ' / MIX ' + led[pad(1, 3)] + ' vs track ' + leds.trackColor(2));
+    const f = frame();
+    assert(cellInk(f, 2, 3) > 0.05 && cellInk(f, 2, 3) < 0.6, 'INST is not an outlined box: ' + cellInk(f, 2, 3));
+    press(); release();
+});
+
+step('⭐⭐ INST from a LATCHED map opens the track\'s instrument (the Shift + hold Note/Session door); the map goes', () => {
+    home(); tickS(2);
+    if (snd.soundActive()) snd.soundExit();
+    S.genReturn = null;
+    press(); release();
+    tap(pad(2, 3));
+    assert(!S.bankMapUp && !S.bankMapLatched, 'the map stayed over the instrument');
+    assert(S.genReturn && S.genReturn.track === 2 && !S.genReturn.wasActive, 'no return crumb: ' + JSON.stringify(S.genReturn));
+    tickS(4);
+    assert(snd.soundActive(), 'the instrument did not open');
+    assert(S.activeBank === 0, 'INST moved the bank: ' + S.activeBank);
+    snd.soundExit(); tickS(2);
+});
+
+step('INST from a HELD map: it waits for the jog\'s release, then the same door', () => {
+    home(); tickS(2);
+    S.genReturn = null;
+    press(); holdPast();
+    tap(pad(2, 3));
+    assert(S.bankMapUp && !S.genReturn, 'a HELD map opened INST before the release');
+    release();
+    assert(!S.bankMapUp && !S.bankMapLatched && S.jogPressMs < 0, 'the release left the map up or latched');
+    tickS(4);
+    assert(snd.soundActive() && S.genReturn && S.genReturn.track === 2, 'the instrument did not open from a held map');
+    snd.soundExit(); tickS(2);
+});
+
+/* ⭑ THE FOOTER TELLS THE TRUTH: CLK BANKS shows exactly where a plain click
+ * would open the map (bankMapArmable), and no footer says JOG BANK — the turn
+ * walks nothing since 2026-10-04 (Josh: "change the hints on the
+ * session/track overview screens to reflect new bank select behavior"). */
+const clkOf = (h) => (h.find((p) => p[0] === 'CLK') || [])[1] || null;
+const jogOf = (h) => (h.find((p) => p[0] === 'JOG') || [])[1] || null;
+step('⭐ overview hints: CLK BANKS where the click opens the map, never JOG BANK — Track, Session, Perf lock, Shift', () => {
+    if (snd.soundOpen()) snd.soundExit();
+    home(); tickS(2);
+    const cases = [
+        ['Track View', () => { S.sessionView = false; }],
+        ['Session View', () => { S.sessionView = true; }],
+        ['Session View, Perf locked', () => { S.sessionView = true; S.perfViewLocked = true; }],
+    ];
+    for (const [name, set] of cases) {
+        set();
+        const h = render.overviewHints();
+        assert(jogOf(h) !== 'BANK', name + ': JOG BANK is back: ' + JSON.stringify(h));
+        assert((clkOf(h) === 'BANKS') === ccm.bankMapArmable(),
+               name + ': hint ' + clkOf(h) + ' vs armable ' + ccm.bankMapArmable());
+        if (clkOf(h) === 'BANKS') {           /* ...and the click really does */
+            press(); release();
+            assert(S.bankMapLatched, name + ': CLK BANKS but the click did not open the map');
+            press(); release();
+        }
+        S.perfViewLocked = false;
+    }
+    assert(clkOf((S.sessionView = true, render.overviewHints())) === 'BANKS', 'control: Session View offers the map');
+    S.shiftHeld = true;
+    const sh = render.overviewHints();
+    S.shiftHeld = false; S.sessionView = false;
+    assert(JSON.stringify(sh) === JSON.stringify([['JOG', 'TRACK']]), 'Shift in Session View: ' + JSON.stringify(sh));
+});
+
+step('⭐ bank page hints: CLK BANKS untouched, none with a knob touched (it keeps the map shut), none on a door bank', () => {
+    home(); tickS(2);
+    S.activeBank = 3; S.trackActiveBank[2] = 3;
+    let h = render.bankPageHints(3);
+    assert(clkOf(h) === 'BANKS' && jogOf(h) === null && ccm.bankMapArmable(), 'untouched DELAY: ' + JSON.stringify(h));
+    S.knobTouched = 2;
+    h = render.bankPageHints(3);
+    assert(clkOf(h) !== 'BANKS' && !ccm.bankMapArmable(), 'touched DELAY: ' + JSON.stringify(h));
+    S.knobTouched = -1;
+    h = render.bankPageHints(C.BANK_AUTOMATION);
+    assert(clkOf(h) !== 'BANKS', 'AUTOMATION (a door) offers the map: ' + JSON.stringify(h));
+    home();
+});
+
+/* ⭑⭑ A HELD map holds the MENU pads until the jog is let go (Josh,
+ * 2026-10-04: "when pad bank map is momentary, can we hold the menu entries
+ * (automation, instrument, config, others?) until release of jog to allow ALL
+ * pads to be tapped through without exiting map?"). */
+step('⭐⭐ held: tap through CONFIG, AUTOMATION, INST and banks — the map stays; the menu pad waits, White and boxed', () => {
+    if (snd.soundOpen()) snd.soundExit();
+    home(); tickS(2);
+    S.genReturn = null;
+    press(); holdPast();
+    for (const [c, r] of [[0, 3], [1, 1], [2, 3]]) {          /* CONFIG, AUTOMATION, INST */
+        tap(pad(c, r));
+        assert(S.bankMapUp && S.jogPressMs >= 0, 'a menu pad ended the held map: ' + c + ',' + r);
+        assert(!snd.soundActive() && !ab.autoBankMenuOpen() && !S.genReturn, 'a menu opened mid-hold: ' + c + ',' + r);
+        ticks(6);
+        assert(led[pad(c, r)] === K.White, 'the waiting pad is not White: ' + c + ',' + r + ' = ' + led[pad(c, r)]);
+        assert(led[pad(2, 1)] !== K.White, 'CLIP (the bank you are on) stayed White beside the waiting pad');
+        assert(cellInk(frame(), c, r) > 0.6, 'the waiting pad is not the filled box on screen: ' + c + ',' + r);
+    }
+    tap(pad(3, 2));                                           /* DELAY: a bank — cancels the wait */
+    assert(S.activeBank === 3 && S.bankMapUp && !S.bankMapDeferred, 'a bank tap did not pick and cancel the waiting menu');
+    ticks(6);
+    assert(led[pad(3, 2)] === K.White && led[pad(2, 3)] !== K.White, 'the White pad did not move back to the bank');
+    release();
+    assert(!S.bankMapUp && !snd.soundActive() && !S.genReturn && !ab.autoBankMenuOpen(),
+           'the release opened a menu a bank tap had cancelled');
+    assert(S.activeBank === 3, 'the bank pick did not stand: ' + S.activeBank);
+});
+
+step('held: the LAST menu pad tapped is the one the release opens', () => {
+    home(); tickS(2);
+    press(); holdPast();
+    tap(pad(0, 3));                                           /* CONFIG... */
+    tap(pad(1, 1));                                           /* ...then AUTOMATION */
+    release();
+    assert(ab.autoBankMenuOpen() && S.activeBank === C.BANK_AUTOMATION, 'AUTOMATION did not open on the release');
+    assert(!snd.soundActive(), 'CONFIG opened as well');
+    backBtn(); tickS(2);
+});
+
+step('held: Shift (the map goes another way) DISCARDS a waiting menu pad', () => {
+    home(); tickS(2);
+    press(); holdPast();
+    tap(pad(0, 3));
+    midi(0xB0, 49, 127);                                      /* Shift ends the hold */
+    midi(0xB0, 49, 0);
+    release();
+    tickS(4);
+    assert(!S.bankMapUp && !S.bankMapDeferred && !snd.soundActive(), 'a discarded CONFIG opened anyway');
+});
+
+step('held Session map: MASTER waits; a MIXER pad after it cancels it — the release opens nothing', () => {
+    if (snd.soundOpen()) snd.soundExit();
+    home(); S.sessionView = true; S.sessKnobMode = 0; tickS(2);
+    press(); holdPast();
+    tap(pad(1, 0));                                           /* MASTER: waits */
+    assert(S.bankMapUp && !snd.soundOpen(), 'MASTER opened mid-hold');
+    ticks(6);
+    assert(led[pad(1, 0)] === K.White && led[pad(0, 0)] !== K.White, 'the waiting MASTER pad is not the White one');
+    tap(pad(0, 1));                                           /* PAN */
+    assert(S.sessKnobMode === 1 && !S.bankMapDeferred, 'PAN did not take, or MASTER still waits');
+    release(); tickS(3);
+    assert(!snd.soundOpen() && !S.bankMapUp, 'the release opened MASTER after a mixer pick cancelled it');
+    S.sessionView = false; tickS(2);
+});
+
+step('⭐ the TRACK overview footer: CLK BANKS · TCH EDIT · SHFT TRK, all drawn; Shift: JOG TRACK · PAD TRACK; no menu-key pair', () => {
+    if (snd.soundOpen()) snd.soundExit();
+    home(); S.sessionView = false; tickS(2);
+    const h = render.overviewHints();
+    assert(JSON.stringify(h) === JSON.stringify([['CLK', 'BANKS'], ['TCH', 'EDIT'], ['SHFT', 'TRK']]), 'track overview: ' + JSON.stringify(h));
+    assert(kit.drawKitHintRow(kit.MV_FOOTER_Y, h) === 3, 'the row does not fit all three pairs');
+    S.shiftHeld = true;
+    const sh = render.overviewHints();
+    S.shiftHeld = false;
+    assert(JSON.stringify(sh) === JSON.stringify([['JOG', 'TRACK'], ['PAD', 'TRACK']]), 'Shift: ' + JSON.stringify(sh));
+    S.sessionView = true;
+    const ses = render.overviewHints();
+    S.sessionView = false;
+    assert(JSON.stringify(ses) === JSON.stringify([['CLK', 'BANKS'], ['TCH', 'MIX']]), 'session overview: ' + JSON.stringify(ses));
+    for (const k of ['CLK', 'TCH', 'SHFT', 'JOG', 'PAD'])
+        assert(kit.MV_FOOTER_CANON.keys.indexOf(k) >= 0, k + ' is not a canon key');
+});
+
+if (failed) { console.error('test_bank_pad_map: FAIL'); process.exit(1); }
+console.log('test_bank_pad_map: all passed');
+}
+main().catch((e) => { console.error(e); process.exit(1); });

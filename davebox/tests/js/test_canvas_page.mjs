@@ -1,3 +1,4 @@
+import { openTrackConfigViaMap } from './_map_config.mjs';
 /* tests/js/test_canvas_page.mjs — a MODULE-OWNED PAGE draws in dAVEBOx's module
  * editor (upstream #420's third part: `type: "canvas"` + `as_page`, e.g.
  * MonkSynth's fullscreen Face page).
@@ -159,7 +160,7 @@ const cc = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1
 function frame() { globalThis.clear_screen(); render.drawUI(); return FB.slice(); }
 
 function openFx1Editor() {
-    cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+    openTrackConfigViaMap();
     ticks(6);
     for (let guard = 0; ; guard++) {
         const st = snd.soundPickStateForTest();

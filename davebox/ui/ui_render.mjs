@@ -6,8 +6,8 @@
  * Extracted from ui.js (Phase 5 of the modularity refactor, module 5, final).
  */
 
-import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished, loopViewActive } from './ui_state.mjs';
-import { bankViewMapOn, jogTouchCardOn, seqFollowOn } from './ui_prefs.mjs';
+import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished, loopViewActive, knobAltOn } from './ui_state.mjs';
+import { jogTouchCardOn, seqFollowOn } from './ui_prefs.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H, drawDaveLoading } from './ui_daves.mjs';
 import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
@@ -17,7 +17,7 @@ import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
 import { chordIndicator, chordEditSlot, chordSlotCells, chordBankCells } from './ui_chord_pads.mjs';
 import { triggerPhase } from './ui_trigger.mjs';
-import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, BANKNAV_HOLD_MS } from './ui_constants.mjs';
+import { LGTO_KNOB, CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, knobAltFor, ARP_STEPS_KNOB, arpStepsBank } from './ui_constants.mjs';
 import { miActive, miRender } from './ui_midi_import.mjs';
 import { moduleIdOf } from './ui_discover.mjs';
 import { schSlotForTrack } from './ui_corun.mjs';
@@ -36,7 +36,7 @@ import { drawAutoMarkAt,
     kitUseLayout,
     drawKitCells, drawKitEnumOverlay, drawKitValueOverlay, drawKitListOverlay,
     drawVFader, mvPrint, mvWidth, rectOutline, plotLine,
-    drawLevelCard, drawKitBackdropDim, drawKitBankNavColumn,
+    drawLevelCard, drawKitBackdropDim, drawKitBankMap,
     pf3Print, pf3Width, drawArcKnobAt, hdrPrint, hdrWidth, bigPrint, bigWidth, bigFit,
     MV_ROW0_Y, MV_KH, MV_BIG_H, MV_ZOOM_X, MV_ZOOM_Y, MV_ZOOM_W, MV_ZOOM_H,
     drawKitHintRow, enumOverlayWouldDraw, MV_FOOTER_Y, MV_BAR_Y,
@@ -53,14 +53,15 @@ import {
 } from './ui_dialogs.mjs';
 import { isBooleanPair } from './ui_cells.mjs';
 import { ensureGlobalMenuFresh } from './ui_menu.mjs';
-import { bankCyclePos, bankCycleForMode, bankCategoriesForMode, bankDisplayName } from './ui_pure.mjs';
+import { bankCyclePos, bankCycleForMode, bankListForMode, bankIsDoor, bankWalkCategoriesForMode, bankCategoriesForMode, bankDisplayName,
+    bankPadMapForMode, SESS_PAD_MAP } from './ui_pure.mjs';
 import { syncDrumRepeatState } from './ui_drummodel.mjs';
 import {
     effectiveClip,
     bankHasAltParams, altIndicatorActive, autoLanePlayStep
 } from './ui_leds.mjs';
-import { soundRender, renderTrackGatewayCard, renderConfigCardPeek, renderMacrosPeek, renderSessionFxCard } from './ui_sound.mjs';
-import { drawAutomationBankBody, autoBankMenuOpen, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus } from './ui_automation_bank.mjs';
+import { soundRender, renderTrackGatewayCard, renderConfigCardPeek, renderMacrosPeek } from './ui_sound.mjs';
+import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus } from './ui_automation_bank.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { seqAutoTargetForKnob } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
@@ -385,13 +386,6 @@ function drawStepEditKitPage(title, cells, noteBox, footer, noStepHeld) {
  * track sitting at zero, which draws an empty widget. */
 function drawSessionMixerPage() {
     const mode = SESS_KNOB_MODES[S.sessKnobMode];
-    /* The gateway is the Master & Send FX list AT REST, in the door's corner
-     * brackets (2026-09-26, like the CONFIG bank): the click opens it live,
-     * the knobs are inert. */
-    if (mode.widget === 'gateway') {
-        renderSessionFxCard();
-        return;
-    }
     const cells = sessMixerCells(mode);
     if (mode.widget === 'vbar') { drawSessionFaderRow(cells, mode); return; }
 
@@ -476,10 +470,11 @@ export function sessMixerCellOpens(t) {
 }
 /* The session mixer pages wear the bank-card chassis (Josh, 2026-09-05: "aligned
  * with track bank UI organization and aesthetics"): the glyph header, the kit
- * cells, and the footer canon — the jog walks the banks, Back leaves. A click on
- * these pages does nothing (only the gateway takes one), so no CLK pair. */
+ * cells, and the footer canon. They show only while a knob is touched, which
+ * keeps the bank map shut and the jog turn walks nothing — so Back is the one
+ * pair (a touched SEND cell adds its CLK, above). */
 function sessionMixerHints() {
-    return [['JOG', 'BANK'], ['BACK', 'OUT']];
+    return [['BACK', 'OUT']];
 }
 
 /* Levels get their OWN layout: eight tall faders in one row, not the 4x2 kit
@@ -585,23 +580,25 @@ function drawSessionFaderRow(cells, mode) {
  * ⭑⭑ EVERY PAIR NAMES A GESTURE THE INPUT CODE ACTUALLY IMPLEMENTS, and the
  * two conditional ones are conditional because the gesture is:
  *
- *   JOG  BANK    unshifted jog turn opens and scrolls the bank picker
- *                (_onCC_jog, MoveMainKnob branch). Always live.
- *   CLK  STEPS   plain jog click toggles the Arp-Steps interval overlay --
- *                MELODIC tracks only, banks 4 and 5, which is exactly how the
- *                handler is gated.
- *   CLK  ALT     otherwise, plain jog click toggles sticky alt-param mode --
- *                but ONLY on a bank that HAS alt params (bankHasAltParams).
- *                On a bank without them the click falls through and does
- *                nothing, so there is no hint to give.
+ *   CLK  BANKS   a plain jog click opens the bank pad map (bankMapBegin) —
+ *                not while a knob is touched (bankMapArmable), and never on a
+ *                door bank. The jog TURN walks nothing since 2026-10-04.
+ *   CLK  STEPS   while the Steps knob (K5) is touched on SEQ ARP / LIVE ARP:
+ *                touch + click opens the Arp Steps editor (2026-10-04).
+ *   KNB+CLK NUDGE / VELOCITY   drum RPT GROOVE, on both pages: touch ANY
+ *                knob and click for the other page (bankHasAltParams). First,
+ *                so the fit rule drops CLK BANKS rather than it.
+ *   CLK ZOOM ... the single-knob alts (Zoom, Nudge, Revrs, Algo, ClkFb) flip
+ *                on touch + click and say so while their knob is touched.
+ *                No plain jog click has a bank meaning here any more.
  *   BACK OUT     a Back TAP rises one level: it clears alt mode, then the
  *                latch/bank display, then leaves the card. OUT and not EXIT --
  *                see MV_FOOTER_CANON, where the two are deliberately different
  *                words for different destinations.
  *
- * ⚠ THE WORDS ARE CUT TO THE 86px FLOW BUDGET (see hintPairWidth). JOG BANK +
- * CLK ALT is 80 and both show; CLK STEP is 42 where "STEPS" is 47, and at 47
- * the pair before it is the one that disappears.
+ * ⚠ THE WORDS ARE CUT TO THE 86px FLOW BUDGET (see hintPairWidth). KNB+CLK
+ * NUDGE is 67 and KNB+CLK VELOCITY 78, so beside either CLK BANKS does not
+ * fit and is the pair dropped.
  *
  * ⭑ SHFT TRK WAS DROPPED 2026-08-30 (Josh): Shift+jog steps the active track in
  * EVERY view, so it is a property of the instrument rather than of this page,
@@ -610,13 +607,19 @@ function drawSessionFaderRow(cells, mode) {
  * rule.
  *
  * ⚠ NOT HINTED, deliberately, though they exist: Delete+jog (bank resets),
- * Shift+Delete+jog, Shift+jog-click (latch). They are destructive or
+ * Shift+Delete+jog, the held-jog map peek. They are destructive or
  * modal-adjacent chords, the row holds three pairs before BACK claims the
  * right edge, and a hint that has to be dropped by the fit rule is worse than
  * one never offered. Most-important-first is the ordering contract; these are
  * not the most important three.
  *
  * ⚠ The row is CHROME. Nothing here reads or changes input state. */
+/* CLK BANKS where a plain click would open the bank map: no knob touched (a
+ * touched knob owns the click) and not a door bank (its screen owns it). */
+function mapClickHints(bank) {
+    if (S.knobTouched >= 0 || S.sessionView || bankIsDoor(S.trackPadMode[S.activeTrack], bank)) return [];
+    return [['CLK', 'BANKS']];
+}
 export function bankPageHints(bank) {
     /* A touched TRIGGER knob says how to fire it, as stock's footer does. */
     if (bank === 0 && S.knobTouched === LGTO_KNOB && !S.sessionView) return [['CLK', 'LEGATO']];
@@ -624,17 +627,38 @@ export function bankPageHints(bank) {
             (bank === 7 && S.knobTouched === ALL_LANES_CROP_KNOB &&
              S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM))) return [['CLK', 'CROP']];
     if (bank === 0 && S.knobTouched === IMPORT_KNOB && !S.sessionView) return [['CLK', 'IMPORT']];
+    /* A touched Steps knob on SEQ ARP / LIVE ARP opens Arp Steps. */
+    if (!S.sessionView && S.knobTouched === ARP_STEPS_KNOB &&
+            arpStepsBank(S.trackPadMode[S.activeTrack], bank)) return [['CLK', 'STEPS']];
+    /* ...and a touched SINGLE-ALT knob says what a click switches it to. */
+    if (!S.sessionView && S.knobTouched >= 0) {
+        const a = knobAltFor(S.trackPadMode[S.activeTrack], bank, S.knobTouched);
+        if (a) return [['CLK', (knobAltOn(S.knobTouched) ? a[0] : a[1]).toUpperCase()]];
+    }
     /* ⭑ While a step is HELD the jog means something else (spec §2): on any
      * other bank a right turn REVEALS the step's page — so the pair says so,
-     * in the same slot, and JOG BANK (which the hold suspends) is not shown.
+     * in the same slot, and CLK BANKS (which the hold suspends) is not shown.
      * On the STEP bank itself the jog does nothing under a hold: no pair. */
     const held = stepHoldEstablished();
-    const hints = held ? (stepRevealAvailable() ? [['JOG', 'STEP']] : []) : [['JOG', 'BANK']];
-    const drum = S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM;
-    if (!drum && (bank === 4 || bank === 5)) hints.push(['CLK', 'STEP']);
-    else if (bankHasAltParams(S.activeTrack, bank)) hints.push(['CLK', 'ALT']);
+    const hints = held ? (stepRevealAvailable() ? [['JOG', 'STEP']] : []) : mapClickHints(bank);
+    /* RPT GROOVE: any knob + click goes to the other page — said on BOTH
+     * pages, and FIRST, so the fit rule drops CLK BANKS rather than this. */
+    if (bankHasAltParams(S.activeTrack, bank)) hints.unshift(['KNB+CLK', S.altMode ? 'VELOCITY' : 'NUDGE']);
     hints.push(['BACK', 'OUT']);
     return hints;
+}
+
+/* A knob with a single alt answers touch + click (KNOB_ALTS), so its cell
+ * wears the corner brackets, as the trigger cells do (Josh, 2026-10-04: "the
+ * alt knobs should have the corner indicators to indicate that they respond
+ * to touch click"). Main or alt, the brackets stay: either way a click flips. */
+function markKnobAlts(cells, bank) {
+    const pm = S.trackPadMode[S.activeTrack];
+    for (let k = 0; k < cells.length; k++)
+        if (cells[k] && knobAltFor(pm, bank, k)) cells[k].opens = true;
+    /* ...and the Steps knob on SEQ ARP / LIVE ARP, the door to Arp Steps. */
+    if (arpStepsBank(pm, bank) && cells[ARP_STEPS_KNOB]) cells[ARP_STEPS_KNOB].opens = true;
+    return cells;
 }
 
 function drawKitPage(name, cells, inverted, footer, focusIdx) {
@@ -753,10 +777,6 @@ const PERF_MOD_NAMES = [
  * said C3, so one pad had two names (Josh, 2026-09-26: C3 = 60, like Move). */
 function midiNoteName(n) { return noteLabel(n, false); }
 
-/* True when (track-type, bank) exposes alt params reachable via S.altMode.
- * Melodic: CLIP(0), DELAY(3), AUTO/CC(6 — CC-assign). Drum: DRUM LANE(0),
- * REPEAT GROOVE(5), AUTO(6), ALL LANES(7). Keep in sync with the
- * shiftHeld→altMode migration sites. */
 /* Bank header label. Identical to BANKS[bank].name except a Conductor track
  * relabels bank 0 (CLIP) to "CONDUCT" — the CLIP bank is reused as the Conduct
  * bank. Does NOT rename BANKS[0] globally (other track types keep "CLIP"). */
@@ -1155,28 +1175,27 @@ function drawOverviewTracks(hints) {
     }
     drawKitHintRow(MV_FOOTER_Y, hints);
 }
-/* What the jog does at rest on each overview — the footer says only what is
- * true HERE (the canon): in track view it walks the banks and a click opens the
- * card; in session view it walks the mixer mode and a click latches the mixer. */
+/* What the controls do at rest on each overview — the footer says only what is
+ * true HERE (the canon). Josh, 2026-10-04: "get rid of the session/track
+ * footer hints (that's self explanatory). Add to track overview "Touch=Edit"
+ * and shift=track. when shift is held, show jog=track pad=track."
+ *   Track View    CLK BANKS · TCH EDIT · SHFT TRK   (SHFT TRACK would not fit:
+ *                 48 + 38 + 51 - 4 overflows 128; TRK is 41 — measured)
+ *   Session View  CLK BANKS · TCH MIX (no CLK BANKS under the Perf lock, which
+ *                 keeps the map shut; no SHFT pair — Josh)
+ *   Shift held    JOG TRACK · PAD TRACK (Track View — Shift + pad is its track
+ *                 pick); JOG TRACK in Session View, where a pad launches. */
 export function overviewHints() {
-    /* CLK says EDIT, not BANK — the jog pair already names the bank (Josh); the
-     * MENU pair names the OTHER overview a Note/Session tap switches to (Josh,
-     * 2026-09-05: "MENU:[TRACK/GRID]"). */
-    /* TRK, not TRACK: ≡ TRACK would not fit beside the other two pairs (measured). */
-    /* The key is the ≡ printed on the button, not the word MENU (Josh).
-     * SHIFT HELD: the row names the Shift chords instead (Josh, 2026-09-05:
-     * "trk/sess change to config/fx when shift is held") — Shift+jog steps the
-     * track in every view, Shift+≡ opens the track's SOUND + CONFIG menu in
-     * track view and the MASTER / SEND FX list in session view. No CLK pair:
-     * Shift+click is nothing here. */
     if (devSnapOpen()) return devSnapHints();   /* the snapshot layer (item 18), either view */
-    if (S.shiftHeld) return [['JOG', 'TRACK'], ['\u2261', S.sessionView ? 'FX' : 'CONFIG']];
-    /* A held step owns the jog here too (heldStepJog runs ahead of the bank
-     * walk): JOG STEP when there is a note to edit, no jog pair when there is
-     * not — JOG BANK would promise a walk the hold suspends. */
+    if (S.shiftHeld) return S.sessionView ? [['JOG', 'TRACK']] : [['JOG', 'TRACK'], ['PAD', 'TRACK']];
+    /* A held step owns the jog here too (heldStepJog runs ahead of the map):
+     * JOG STEP when there is a note to edit, nothing when there is not — and
+     * no CLK BANKS, which a held step keeps shut. */
     if (stepHoldEstablished() && !S.sessionView)
-        return (stepRevealAvailable() ? [['JOG', 'STEP']] : []).concat([['CLK', 'EDIT'], ['\u2261', 'SESS']]);
-    return [['JOG', 'BANK'], ['CLK', 'EDIT'], ['\u2261', S.sessionView ? 'TRK' : 'SESS']];
+        return stepRevealAvailable() ? [['JOG', 'STEP']] : [];
+    /* Josh, 2026-10-04: "session should get touch-mix no shift track hint". */
+    if (S.sessionView) return (S.perfViewLocked ? [] : [['CLK', 'BANKS']]).concat([['TCH', 'MIX']]);
+    return [['CLK', 'BANKS'], ['TCH', 'EDIT'], ['SHFT', 'TRK']];
 }
 
 function drawTrackRow(y) {
@@ -1449,14 +1468,11 @@ export function drawPositionBarGeom(o) {
  * `soundRender()` call, and the two MUST stay in step — a flag added there and
  * not here re-opens exactly this bug. `tests/test_sound_mode_overlay_gate.sh`
  * pins that correspondence by diffing the two flag sets. */
-/* ⭑ ONE OWNER for "the session mixer page is what session view shows":
- * the session latch, the transient window, or a touched knob. ⚠ TOUCH-REVEAL
- * ON THE JOG IS RETIRED HERE TOO (Josh's 'mirror track view' ruling) —
- * S.jogTouched deliberately absent; the KNOB touch stays, it is the mixer's
- * own edit surface. Render and the session click gate both read this. */
+/* ⭑ ONE OWNER for "the session mixer page is what session view shows": a
+ * touched knob (2026-10-04: nothing locks it — the plain click is the Session
+ * map). The jog-touch reveal is sessMixerShown's. */
 export function sessMixerVisible() {
-    /* Same one law as track view: bank mode, or the knob-touch peek. */
-    return !!(S.sessionView && (S.sessMixerLatched || S.knobTouched >= 0));
+    return !!(S.sessionView && S.knobTouched >= 0);
 }
 
 /* Is the BANK CARD what track view is showing right now (vs the resting
@@ -1499,10 +1515,13 @@ export function bankCardVisible() {
      * the list down the moment the modifier goes down hides the very thing you
      * are aiming at. Scoped to the open menu — the plain card still obeys the
      * Shift read-out rule. */
-    if (S.shiftHeld && S.knobTouched < 0
-            && !(S.activeBank === BANK_AUTOMATION && S.bankCardLatched && autoBankMenuOpen()))
+    if (S.shiftHeld && S.knobTouched < 0 && !autoMenuUp())
         return false;
-    return !!S.bankCardLatched || S.knobTouched >= 0;
+    /* ...and an open AUTOMATION menu is a screen in use: with Bank Lock off
+     * it is opened from the overview, with nothing locked to hold it up. So
+     * is the page a held step jumped to from that menu (it only begins from
+     * a locked card or an open menu, so with Bank Lock on this adds nothing). */
+    return !!S.bankCardLatched || S.knobTouched >= 0 || autoMenuUp() || autoHoldJumpActive();
 }
 
 export function soundModeCovered() {
@@ -1538,44 +1557,43 @@ function drawTrackVolCard() {
  * control an enum param opens, over whatever screen is underneath. An OVERLAY
  * rather than a screen, like the volume card — the gesture is a hold, and what
  * it is browsing away from should stay visible behind it. */
-/* The bank navigation overlay while the jog walks (S.bankNavKind, armed by the
- * walk in ui_input_cc, cleared by the jog's touch release in ui.js). Drawn only
- * while the jog is touched, so it can never outlive the hand on it. (The
- * SOUND+CFG shortening went with the rename to MIX.) */
-export function bankNavItems() {
-    if (S.bankNavKind === 'session') {
-        return { items: SESS_KNOB_MODES.map((m) => ({ name: m.label, glyph: 'audio' })),
-                 cur: S.sessKnobMode | 0 };
+/* THE BANK PAD MAP's screen (Josh, 2026-10-02): a picture of the left 4x4
+ * pads while the jog is held — { cols, cur } for drawKitBankMap. */
+export function bankMapItems() {
+    if (S.bankMapKind === 'session') {
+        const m = SESS_PAD_MAP;
+        return {
+            cols: [
+                { label: m.mixer.label, cells: m.mixer.modes.map((i) => SESS_KNOB_MODES[i].label) },
+                { label: m.fx.label, cells: m.fx.names.slice() },
+                null, null,
+            ],
+            cur: S.bankMapDeferred ? { c: S.bankMapDeferred.col, r: S.bankMapDeferred.row }
+                : (S.sessKnobMode | 0) < 4 ? { c: 0, r: S.sessKnobMode | 0 } : null,
+        };
     }
-    const mode = S.trackPadMode[S.activeTrack];
-    const cyc = bankCycleForMode(mode, S.activeTrack);
-    /* Each bank's category, when it sits in one that is drawn as a group. */
-    const cat = {};
-    bankCategoriesForMode(mode, S.activeTrack).forEach((g, gi) => {
-        if (g.label) for (const b of g.banks) cat[b] = { id: gi, label: g.label, depth: g.depth | 0 };
-    });
-    return {
-        items: cyc.map((b) => {
-            const n = bankDisplayName(mode, b);
-            return { name: n, glyph: bankHeaderGlyph(b, mode), cat: cat[b] || null };
+    const t = S.activeTrack;
+    let cur = null;
+    const cols = bankPadMapForMode(S.trackPadMode[t], t).map((c, ci) => ({
+        label: c.label,
+        cells: c.cells.map((cell, r) => {
+            if (cell && cell.bank !== null && cell.bank === S.activeBank) cur = { c: ci, r };
+            return cell ? cell.name : null;
         }),
-        cur: Math.max(0, cyc.indexOf(S.activeBank)),
-    };
+    }));
+    /* A menu pad waiting for the jog's release takes the filled box. */
+    if (S.bankMapDeferred) cur = { c: S.bankMapDeferred.col, r: S.bankMapDeferred.row };
+    return { cols, cur };
 }
-function drawBankNav() {
-    if (!S.bankNavKind) return;
-    if (!S.jogTouched && S.clockMs - S.bankNavTurnMs >= BANKNAV_HOLD_MS) return;
-    /* A latched card (the bank view, the session mixer card) walks without it
-     * when Bank Map on Lock is off. */
-    const latched = S.bankNavKind === 'track' ? S.bankCardLatched : S.sessMixerLatched;
-    if (latched && !bankViewMapOn()) return;
-    const nav = bankNavItems();
-    drawKitBankNavColumn(nav.items, nav.cur);
+function drawBankMap() {
+    if (!S.bankMapUp) return false;
+    const m = bankMapItems();
+    drawKitBankMap(m.cols, m.cur);
+    return true;
 }
-
 function drawBankPicker() {
     if (S.bankPickerSel < 0) return;
-    const cyc = bankCycleForMode(S.trackPadMode[S.activeTrack]);
+    const cyc = bankListForMode(S.trackPadMode[S.activeTrack]);   /* bankPickerSel indexes the full list */
     /* BANKS[] names the real banks; SOUND + CONFIG is a stub entry there, so it
      * still carries its own name — every reader of that index does this. */
     /* Width is the overlay's own business now — it sizes to the longest label,
@@ -1617,7 +1635,7 @@ export function drawUI() {
     drawBankLatchBox();
     drawTrackVolCard();
     drawBankPicker();
-    drawBankNav();
+    drawBankMap();
     /* THE NOTICE CARD, above everything (Josh, 2026-09-05: "the confirmation
      * overlays pop up wherever you are when you save/recall, same for session
      * view"): a card notice is drawn here, last, whatever screen the body
@@ -1802,10 +1820,11 @@ function drawUIBody() {
     /* Alt-param mode is transient: any bank change, track change, or entering
      * Session View drops back to primary params. Diff-guard catches every
      * S.activeBank / S.activeTrack reassignment regardless of source. */
-    if (S.altMode && (S.sessionView ||              /* session view can be entered via a button after altMode was set */
+    if ((S.altMode || S.knobAlt) && (S.sessionView ||   /* session view can be entered via a button after altMode was set */
             S.activeBank !== S._altPrevBank ||
             S.activeTrack !== S._altPrevTrack)) {
         S.altMode = false;
+        S.knobAlt = 0;                              /* the single-knob alts too (parity) */
     }
     S._altPrevBank  = S.activeBank;
     S._altPrevTrack = S.activeTrack;
@@ -2041,10 +2060,8 @@ function drawUIBody() {
         return;
     }
 
-    /* Loop view: own priority state so screen is fully cleared first. Suppressed
-     * on the unconfirmed drum ALL LANES bank so holding Loop surfaces the confirm
-     * screen (below) instead of the clip-length view for a gated gesture. */
-    if (loopViewActive() && !(S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && S.activeBank === 7 && !S.allLanesConfirmed)) {
+    /* Loop view: own priority state so screen is fully cleared first. */
+    if (loopViewActive()) {
         /* The gestures are FOOTER pills, as on every other screen (Josh,
          * 2026-09-26: "agree with all recommendations" — the footer audit):
          * step buttons change the length by a page, the jog by a step. The
@@ -2240,20 +2257,20 @@ function drawUIBody() {
             const _dlRev = S.drumLanePlaybackAudioReverse[t][lane] | 0;
             const _dlDir = S.drumLanePlaybackDir[t][lane] | 0;
             const cells = [
-                withTouchArc({ kind: 'frac', label: S.altMode ? 'Zoom' : 'Res',
-                  name: S.altMode ? 'Zoom' : 'Resolution', text: fmtRes(tpsIdx),
+                withTouchArc({ kind: 'frac', label: knobAltOn(0) ? 'Zoom' : 'Res',
+                  name: knobAltOn(0) ? 'Zoom' : 'Resolution', text: fmtRes(tpsIdx),
                   options: [0,1,2,3,4,5].map(fmtRes), sel: tpsIdx }),
                 { kind: 'valsq', label: 'Strch', name: 'Beat Stretch',
                   text: fmtStretch(S.bankParams[t][0][1]) },
-                { kind: 'valsq', label: S.altMode ? 'Nudge' : 'Shift',
-                  name: S.altMode ? 'Nudge' : 'Clock Shift',
+                { kind: 'valsq', label: knobAltOn(2) ? 'Nudge' : 'Shift',
+                  name: knobAltOn(2) ? 'Nudge' : 'Clock Shift',
                   text: fmtSign(S.bankParams[t][0][2]) },
                 { kind: 'action', oneWay: true, label: 'Lgto', name: 'Apply Legato', text: '->', opens: true,
                   btnPhase: triggerPhase('lgto', S.knobTouched === LGTO_KNOB) },
                 { kind: 'valsq', label: 'Eucld', name: 'Euclid Fill', text: String(eucN) },
                 { kind: 'action', oneWay: true, label: 'Crop', name: 'Crop to Loop', text: '->', opens: true,
                   btnPhase: triggerPhase('crop', S.knobTouched === CROP_KNOB) },
-                S.altMode
+                knobAltOn(6)
                     ? toggleCell('Revrs', 'Reverse Style', _dlRev,
                                  fmtRevStyle(1), fmtRevStyle(0))
                     : { kind: 'dirsq', label: 'Dir', name: 'Playback Dir',
@@ -2263,14 +2280,7 @@ function drawUIBody() {
             ];
             /* Named by bankDisplayName, not spelled here — this literal and
              * the one below are how the picker and the header drifted apart. */
-            drawKitPage(bankHeaderName(S.activeTrack, 0), cells, false, bankPageHints(0));
-        } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 7 && !S.allLanesConfirmed) {
-            /* ALL LANES confirmation screen */
-            drawBankHeading('ALL LANES', false);   /* the icon blinks (headerGlyphNow) */
-            print(10, 18, 'Edits will affect', 1);
-            print(10, 28, 'all lanes. Proceed?', 1);
-            fill_rect(40, 44, 48, 16, 1);
-            print(52, 48, 'OK', 0);
+            drawKitPage(bankHeaderName(S.activeTrack, 0), markKnobAlts(cells, 0), false, bankPageHints(0));
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 7) {
             /* ALL LANES bank overview */
             const t = S.activeTrack;
@@ -2285,8 +2295,8 @@ function drawUIBody() {
                            options: [0,1,2,3,4,5].map(fmtRes), sel: rv }),
                 { kind: 'valsq', label: 'Strch', name: 'Beat Stretch',
                   text: fmtStretch(S.bankParams[t][7][1]) },
-                { kind: 'valsq', label: S.altMode ? 'Nudge' : 'Shift',
-                  name: S.altMode ? 'Nudge' : 'Clock Shift',
+                { kind: 'valsq', label: knobAltOn(2) ? 'Nudge' : 'Shift',
+                  name: knobAltOn(2) ? 'Nudge' : 'Clock Shift',
                   text: fmtSign(S.bankParams[t][7][2]) },
                 qv <= 0 ? { kind: 'valsq', label: 'Quant', name: 'Quantize', text: '--' }
                         : { kind: 'arc', label: 'Quant', name: 'Quantize',
@@ -2295,9 +2305,9 @@ function drawUIBody() {
                   btnPhase: triggerPhase('crop', S.knobTouched === ALL_LANES_CROP_KNOB) },
                 withTouchArc({ kind: 'frac', label: 'InQnt', name: 'Input Quantize',
                   text: _offDash(DIQ_LABELS[_inq]), options: DIQ_LABELS.map(_offDash), sel: _inq }),
-                dv < 0 ? { kind: 'valsq', label: S.altMode ? 'Revrs' : 'Dir',
-                           name: S.altMode ? 'Reverse Style' : 'Playback Dir', text: '--' }
-                       : (S.altMode
+                dv < 0 ? { kind: 'valsq', label: knobAltOn(6) ? 'Revrs' : 'Dir',
+                           name: knobAltOn(6) ? 'Reverse Style' : 'Playback Dir', text: '--' }
+                       : (knobAltOn(6)
                             ? toggleCell('Revrs', 'Reverse Style', dv,
                                          fmtRevStyle(1), fmtRevStyle(0))
                             : { kind: 'dirsq', label: 'Dir', name: 'Playback Dir',
@@ -2306,7 +2316,7 @@ function drawUIBody() {
                            fmtBool(1), fmtBool(0)),
             ];
             /* The ICON blinks now, not an "ALL" prefix (headerGlyphNow). */
-            drawKitPage('ALL LANES', cells, false,
+            drawKitPage('ALL LANES', markKnobAlts(cells, 7), false,
                         bankPageHints(7));
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 1) {
         /* Drum NOTE/NOTEFX bank: K1=Gate K2=Vel K3=Qnt */
@@ -2379,7 +2389,9 @@ function drawUIBody() {
              * place that names things. */
             drawBankHeadingInverted(bankHeaderName(S.activeTrack, 5));
         }
-        const _colW = 16, _barW = 10, _top = 14, _bot = 54, _numY = 57;
+        /* Bars end at 45 and the numbers sit at 48 (the Arp Steps page's
+         * geometry), leaving the footer row free for the KNB+CLK hint. */
+        const _colW = 16, _barW = 10, _top = 14, _bot = 45, _numY = 48;
         if (S.altMode) {
             /* dotted center baseline for the bipolar nudge page */
             const _cy = Math.floor((_top + _bot) / 2);
@@ -2426,6 +2438,7 @@ function drawUIBody() {
                 mvPrint(_nx, _numY, _num, 1);
             }
         }
+        drawKitHintRow(MV_FOOTER_Y, bankPageHints(5));
         } else if (S.trackPadMode[S.activeTrack] !== PAD_MODE_DRUM && bank === 1) {
         /* Melodic NOTE FX: K1=Oct, K2=Ofs, K3=Vel, K4=Qnt, K5=Len, K6=>Gate,
          * K7=blocked, K8=Rnd — canvaskit grid (proportional labels, so
@@ -2447,7 +2460,7 @@ function drawUIBody() {
                 cells.push({ kind: 'blank', label: '-' });  /* inert on Conductor */
                 continue;
             }
-            if (S.altMode && k === 7) {
+            if (knobAltOn(7) && k === 7) {
                 const _md = S.noteFXRandomMode[t] || 0;
                 cells.push({ kind: 'enumsq', label: 'Algo', name: 'Random Algo',
                              text: RND_ALG_NAMES_NFX[_md], options: RND_ALG_NAMES_NFX, sel: _md });
@@ -2457,7 +2470,7 @@ function drawUIBody() {
             if (_fc.hi) _focusIdx = cells.length;
             cells.push(_fc.cell);
         }
-        drawKitPage(bankHeaderName(S.activeTrack, 1), cells, false, bankPageHints(1), _focusIdx);
+        drawKitPage(bankHeaderName(S.activeTrack, 1), markKnobAlts(cells, 1), false, bankPageHints(1), _focusIdx);
         } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM && bank === 3) {
         /* Drum MIDI DLY: K1-K4 same as melodic, K5=Gate, K6=Clk, K7=Retrg, K8 empty.
          * Drum has no Pfb (no per-lane pitch) and no Rnd (no random pitch fb),
@@ -2503,11 +2516,11 @@ function drawUIBody() {
                 cells.push(toggleCell('CdLk', 'Conduct Lock', _lk, 'Lock', 'Off'));
                 continue;
             }
-            /* Shift+K1 on DELAY bank (melodic): flips to delay_clock_fb.
+            /* K1 on DELAY (melodic), flipped by touch + click: delay_clock_fb.
              * Drum: K6 already holds clock_fb directly via remap; no flip. */
-            const _delayShiftClkF = S.altMode && !_isDrum && bank === 3 && k === 0;
-            const _clipDirAlt    = S.altMode && !_isDrum && knobs[k].dspKey === 'clip_playback_dir';
-            const _rndAltAlgo    = S.altMode && !_isDrum && (bank === 1 || bank === 3) && k === 7;
+            const _delayShiftClkF = knobAltOn(0) && !_isDrum && bank === 3 && k === 0;
+            const _clipDirAlt    = knobAltOn(k) && !_isDrum && knobs[k].dspKey === 'clip_playback_dir';
+            const _rndAltAlgo    = knobAltOn(7) && !_isDrum && (bank === 1 || bank === 3) && k === 7;
             if (_rndAltAlgo) {
                 const _md = bank === 3 ? (S.midiDlyRandomMode[S.activeTrack] || 0)
                                        : (S.noteFXRandomMode[S.activeTrack] || 0);
@@ -2539,7 +2552,7 @@ function drawUIBody() {
                              seqAutoTargetForKnob(S.activeTrack, bank, k, false) === _focus.target;
             const cell = kitCellForKnob(knobs[k], _isFocus ? Number(_focus.wire) : vals[k]);
             if (_isFocus) _focusIdx = cells.length;
-            if (S.altMode) {
+            if (knobAltOn(k)) {
                 if      (knobs[k].dspKey === 'clock_shift')     { cell.label = 'Nudge'; cell.name = 'Nudge'; }
                 else if (knobs[k].dspKey === 'clip_resolution') { cell.label = 'Zoom'; cell.name = 'Zoom'; }
             }
@@ -2548,7 +2561,7 @@ function drawUIBody() {
             markSeqAuto(cell, bank, k, false, _focus);
             cells.push(cell);
         }
-        drawKitPage(bankHeaderName(S.activeTrack, bank), cells, false, bankPageHints(bank), _focusIdx);
+        drawKitPage(bankHeaderName(S.activeTrack, bank), markKnobAlts(cells, bank), false, bankPageHints(bank), _focusIdx);
         }
 
     } else if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {

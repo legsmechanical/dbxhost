@@ -116,13 +116,13 @@ draw('session-overview-playing');
 
 /* SESSION MIXER PAGES, latched (jog click from the overview): the fader row
  * and the pan arcs — bank-card chassis (glyph header, footer canon). */
-S.playing = false; S.sessMixerLatched = true;
+S.playing = false; S.knobTouched = 0;   /* the mixer page shows on a knob touch */
 for (let t = 0; t < 8; t++) { S.sessVolSlots[t] = 1 << t; S.sessVolBus[t] = 0; S.sessVolLevel[t] = [1.0, 0.8, 1.2, 0.5, 1.0, 0.0, 1.5, 0.9][t]; }
 S.trackRoute[6] = 2; S.trackMidiTo[6] = 3;      /* a routed track: the X box */
 S.sessKnobMode = 0; draw('session-mixer-volume');
 S.sessKnobMode = 1; for (let t = 0; t < 8; t++) S.sessVolLevel[t] = [0.5, 0.2, 0.8, 0.5, 0.65, 0.5, 0.5, 0.35][t];
 draw('session-mixer-pan');
-S.sessMixerLatched = false;
+S.knobTouched = -1;
 
 /* CHORD LAYOUT (Layout → Chord): the explainer, a held slot's numeral in the
  * indicator, the slot card mid-edit (and a stack with no in-key form), the

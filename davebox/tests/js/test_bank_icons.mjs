@@ -73,7 +73,7 @@ const rest = (h) => h.map((v, i) => ((i % 128) >= 10 ? v : 0)).join('');
 
 step('⭐ ALL LANES: the icon blinks, the name holds still', () => {
     S.trackPadMode[0] = DRUM; S.activeBank = 7; S.trackActiveBank[0] = 7;
-    S.allLanesConfirmed = true; S.bankSelectTick = S.tickCount; S.bankCardLatched = true;
+    S.bankSelectTick = S.tickCount; S.bankCardLatched = true;
     S.clockMs = 0;   const on = header();
     S.clockMs = 300; const off = header();
     assert(icon(on) > 0, 'no icon in the on phase');
@@ -81,18 +81,7 @@ step('⭐ ALL LANES: the icon blinks, the name holds still', () => {
     assert(rest(on) === rest(off), 'the NAME changed between phases (it must hold still)');
     assert(swallowed === null, 'swallowed: ' + swallowed);
 });
-step('the bank map never blinks: ALL LANES lists the grid in both phases', () => {
-    S.bankNavKind = 'track';
-    const items = () => render.bankNavItems().items;
-    S.clockMs = 0; const a = items().find((x) => x.name === 'ALL LANES');
-    S.clockMs = 300; const b = items().find((x) => x.name === 'ALL LANES');
-    assert(a && b && a.glyph === 'lanes' && b.glyph === 'lanes', JSON.stringify([a, b]));
-    assert(items().find((x) => x.name === 'DRUM LANE').glyph === 'drum', 'DRUM LANE in the map');
-    S.bankNavKind = null;
-    S.trackPadMode[0] = MEL; S.bankNavKind = 'track';
-    assert(render.bankNavItems().items.find((x) => x.name === 'CLIP').glyph === 'clip', 'CLIP in the melodic map');
-    S.bankNavKind = null; S.bankCardLatched = false;
-});
+/* (The bank column that listed these icons retired 2026-10-04.) */
 
 if (failed) { console.log('FAIL: bank icons'); process.exit(1); }
 console.log('PASS: CLIP, DRUM LANE and ALL LANES icons; ALL LANES blinks its icon');

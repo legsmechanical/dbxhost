@@ -79,17 +79,52 @@ export function bankDisplayName(padMode, bank) {
  * ⚠ Pure: takes the pad MODE, not a track index, so ui_render and ui_input_cc
  * can both call it without either importing the other. */
 export function bankCycleForMode(padMode, t) {
-    /* Every track type walks its categories in order (below). */
+    /* THE WALK: the track's banks minus the DOORS (below). */
+    return bankListForMode(padMode, t).filter((b) => !bankIsDoor(padMode, b));
+}
+
+/* THE TRACK'S BANKS, in their full order — every bank this track has, the
+ * doors included. The bank pad map, a pick's commit and a sound bank's
+ * permission to open read this; only the jog's turn reads the walk. */
+export function bankListForMode(padMode, t) {
     const out = [];
     for (const g of bankCategoriesForMode(padMode, t)) for (const b of g.banks) out.push(b);
     return out;
 }
 
-/* A sound bank (MIX, MACROS, CONFIG) that is on this track's walk — so its
- * screen may open. A Conductor has CONFIG but neither MIX nor MACROS, and a
- * stale record of those must never open a screen it has no row for. */
-export function soundBankOnWalk(padMode, bank, t) {
-    return isSoundBank(bank) && bankCycleForMode(padMode, t).indexOf(bank) >= 0;
+/* DOORS (Josh, 2026-10-03: "let's also hide config and automation from the
+ * bank list. i think we may not need them with this new shortcut system.
+ * same with live arp."): banks you reach by a shortcut or the bank pad map,
+ * never by turning the jog. They stay on the map. LIVE ARP came back as an
+ * ordinary bank on 2026-10-04 (Josh: "put the live arp back as a bank that
+ * can stay on the knobs after the page closes like all the other banks"). */
+const BANK_WALK_DOORS = {
+    melodic: [BANK_CONFIG, BANK_AUTOMATION],
+    drum:    [BANK_CONFIG, BANK_AUTOMATION],
+    conduct: [BANK_CONFIG],
+};
+export function bankIsDoor(padMode, bank) {
+    return BANK_WALK_DOORS[bankMapFamily(padMode)].indexOf(bank) >= 0;
+}
+
+/* The walk's categories, for the bank column: the doors left out of each
+ * group, a group left empty dropped. Labels stay — a category that COULD
+ * hold several banks keeps its label with one (Josh, 2026-09-26). */
+export function bankWalkCategoriesForMode(padMode, t) {
+    const out = [];
+    for (const g of bankCategoriesForMode(padMode, t)) {
+        const banks = g.banks.filter((b) => !bankIsDoor(padMode, b));
+        if (banks.length) out.push(Object.assign({}, g, { banks }));
+    }
+    return out;
+}
+
+/* A sound bank (MIX, MACROS, CONFIG) this track HAS — so its screen may open.
+ * (The track's list, not the walk: CONFIG is a door but its screen opens.) A
+ * Conductor has CONFIG but neither MIX nor MACROS, and a stale record of
+ * those must never open a screen it has no row for. */
+export function soundBankOnTrack(padMode, bank, t) {
+    return isSoundBank(bank) && bankListForMode(padMode, t).indexOf(bank) >= 0;
 }
 
 /* Every walk, in CATEGORIES (Josh, 2026-09-26): what comes in, what controls
@@ -129,6 +164,107 @@ export function bankCategoriesForMode(padMode, t) {
         { label: 'FX',   banks: [1, 2, 3, 4] },
         { label: null,   banks: [BANK_SOUND] },
     ];
+}
+
+/* THE BANK PAD MAP (Josh, 2026-10-02): hold the jog and the LEFT 4x4 pads are
+ * the track's banks — a column per category, banks top to bottom, one pad per
+ * bank. "Rows corresponding to categories" became columns on the previews;
+ * the right 4x4 is dark and dead while the map is up.
+ *
+ * ⭑ Membership comes from the WALK (bankCycleForMode), so a bank the track
+ * does not have (CHORD outside the Chord layout) simply leaves its pad dark.
+ * Only the POSITION is a table — fixed, so nothing shifts when a bank comes or
+ * goes, and the same job sits on the same pad on every track type (DRUM LANE
+ * where CLIP is, RPT GROOVE where LIVE ARP is). The Shift + top-row bank jump
+ * was retired (2026-08-25) partly because its pad maps were kept in lockstep
+ * with the walks BY HAND; test_bank_pad_map_table pins this one to the walk.
+ * Positions are [column, row], row 0 = the TOP pad row. */
+const BANK_MAP_POS = {
+    melodic: { [BANK_CHORD]: [0, 0], 5: [0, 1], [BANK_CONFIG]: [0, 3],
+               [BANK_MACROS]: [1, 0], [BANK_AUTOMATION]: [1, 1], [BANK_SOUND]: [1, 3],
+               [BANK_STEP]: [2, 0], 0: [2, 1],
+               1: [3, 0], 2: [3, 1], 3: [3, 2], 4: [3, 3] },
+    drum:    { 5: [0, 1], [BANK_CONFIG]: [0, 3],
+               [BANK_MACROS]: [1, 0], [BANK_AUTOMATION]: [1, 1], [BANK_SOUND]: [1, 3],
+               [BANK_STEP]: [2, 0], 0: [2, 1], 7: [2, 2],
+               1: [3, 0], 3: [3, 2] },
+    conduct: { [BANK_CONFIG]: [0, 3],
+               [BANK_RESPONDER]: [1, 0], [BANK_OCTAVE]: [1, 1], [BANK_WHEN]: [1, 2],
+               0: [2, 0], [BANK_STEP]: [2, 1],
+               1: [3, 0] },
+};
+const BANK_MAP_LABELS = {
+    melodic: ['IN', 'CTRL', 'SEQ', 'FX'],
+    drum:    ['IN', 'CTRL', 'SEQ', 'FX'],
+    conduct: [null, 'RSPD', 'SEQ', 'FX'],
+};
+/* ACTION pads: not banks — a tap goes somewhere (Josh, 2026-10-04: "add an
+ * "inst" pad to the right of the mix pad - also red. jumps directly to
+ * track's instrument (just like shift+hold note/session)"). A Conductor has
+ * no MIX and no instrument. */
+const BANK_MAP_ACTIONS = {
+    melodic: { inst: [2, 3] },
+    drum:    { inst: [2, 3] },
+    conduct: {},
+};
+const BANK_MAP_ACTION_NAMES = { inst: 'INST' };
+/* AUTOMATION has no space to wrap at and is wider than a cell. */
+const BANK_MAP_SHORT = { [BANK_AUTOMATION]: 'AUTO' };
+
+function bankMapFamily(padMode) {
+    return padMode === PAD_MODE_CONDUCT ? 'conduct' : padMode === PAD_MODE_DRUM ? 'drum' : 'melodic';
+}
+
+/* The map for one track: 4 columns of { label, cells: [{ bank, name } | null x4] };
+ * an action pad is { bank: null, action, name }.
+ * A walk bank with no position is left off (the table test makes that a failure). */
+export function bankPadMapForMode(padMode, t) {
+    const fam = bankMapFamily(padMode), pos = BANK_MAP_POS[fam];
+    const cols = BANK_MAP_LABELS[fam].map((label) => ({ label, cells: [null, null, null, null] }));
+    for (const b of bankListForMode(padMode, t)) {
+        const p = pos[b];
+        if (!p || cols[p[0]].cells[p[1]]) continue;
+        cols[p[0]].cells[p[1]] = { bank: b, name: BANK_MAP_SHORT[b] || bankDisplayName(padMode, b) };
+    }
+    const acts = BANK_MAP_ACTIONS[fam];
+    for (const a in acts) {
+        const p = acts[a];
+        if (!cols[p[0]].cells[p[1]]) cols[p[0]].cells[p[1]] = { bank: null, action: a, name: BANK_MAP_ACTION_NAMES[a] };
+    }
+    return cols;
+}
+
+/* The action under a map pad ('inst'), or null. */
+export function bankPadMapActionAt(padMode, col, row) {
+    const acts = BANK_MAP_ACTIONS[bankMapFamily(padMode)];
+    for (const a in acts) if (acts[a][0] === col && acts[a][1] === row) return a;
+    return null;
+}
+
+/* The bank under a map pad, or null (dark pad, right half). */
+export function bankPadMapCellAt(padMode, t, col, row) {
+    if (col < 0 || col > 3 || row < 0 || row > 3) return null;
+    const c = bankPadMapForMode(padMode, t)[col].cells[row];
+    return c ? c.bank : null;
+}
+
+/* Session View's map: the mixer modes down column 0 (SESS_KNOB_MODES indices
+ * 0..3), and the effect buses in
+ * column 1, each beside its level (Josh: "Send a and b [should be] aligned
+ * with their counterparts on the mixer row"). Bus ids are FX_BUSES ids. */
+export const SESS_PAD_MAP = {
+    mixer: { label: 'MIXER', modes: [0, 1, 2, 3] },
+    fx:    { label: 'FX', buses: ['master', null, 'sendA', 'sendB'],
+             names: ['MASTER', null, 'SEND A', 'SEND B'] },
+};
+
+/* Pad note for a map cell: pads run bottom-to-top 68-75 / 76-83 / 84-91 /
+ * 92-99, so the TOP row (row 0) is 92. */
+export function bankMapPadForCell(col, row) { return 92 - row * 8 + col; }
+export function bankMapCellForPad(note) {
+    const i = note - 68;
+    if (i < 0 || i > 31) return null;
+    return { col: i % 8, row: 3 - (i >> 3) };
 }
 
 /* Bank position in the jog-cycle order, for the header position strip. Melodic

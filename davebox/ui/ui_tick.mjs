@@ -25,7 +25,8 @@ import {
     LED_OFF, NUM_TRACKS, NUM_CLIPS, DRUM_LANES, NUM_STEPS, TPS_VALUES,
     PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, PAD_MODE_CONDUCT,
     BANK_SOUND, BANK_MACROS, isSoundBank,
-    POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS, BANK_CHORD, DEFAULT_TRACK_OCTAVE, BANKNAV_HOLD_MS } from './ui_constants.mjs';
+    POLL_INTERVAL, ROUTE_NONE, STEP_JOG_HINT_MS, BANK_CHORD, DEFAULT_TRACK_OCTAVE,
+    } from './ui_constants.mjs';
 
 import { S, standDownBankDisplay, stepRevealAvailable, loopViewActive, endLoopLatch, forgetUndo, forgetProjectJs } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -36,7 +37,7 @@ import { automationTick, automationPollWarnings } from './ui_automation.mjs';
 import { morphTick } from './ui_snapmorph.mjs';
 import { reconcileParallelAll, parallelForgetPushed, parallelSweepTick } from './ui_parallel.mjs';
 import { autoBankTick } from './ui_automation_bank.mjs';
-import { clipHasContent, stepEntryVelocity, soundBankOnWalk } from './ui_pure.mjs';
+import { clipHasContent, stepEntryVelocity, soundBankOnTrack } from './ui_pure.mjs';
 import { saveState, showActionPopup, showActionPopupFor, showTrackVolCard, uuidToStatePath, hostIdentity, projectDisplayName,
     commitSnapshot, writeSidecar } from './ui_persistence.mjs';
 import { showMenuInfo , projectPadPickerModifiers, openProjectPadPicker,
@@ -61,7 +62,8 @@ import { pollDSP,
     pendingDrumNoteOffs, _drumRecNoteOns, _drumRecNoteOffs } from './ui_dsp_bridge.mjs';
 import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes, stepRecExit } from './ui_record.mjs';
 import { xposeCancelPreview } from './ui_xpose.mjs';
-import { checkBackHold, checkShiftNoteHold, backTapWouldAct, applyShiftEdge, raiseExitConfirm, syncCoRunShift, goToSessionOverview } from './ui_input_cc.mjs';
+import { checkBackHold, backTapWouldAct, applyShiftEdge, raiseExitConfirm, syncCoRunShift, goToSessionOverview,
+    bankMapEnd, checkShiftStep11Hold } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
@@ -455,7 +457,7 @@ export function _tickImpl() {
     if (S.clockMs >= S.instrAbbrevAt) refreshInstrAbbrev();
     loadDaveTick();
     checkBackHold();   /* self-managed Back: fire suspend once a held Back crosses the long-press threshold */
-    checkShiftNoteHold();  /* Shift+Note/Session: the HOLD fires at the threshold, not on release */
+    checkShiftStep11Hold(); /* Shift+Step 11: likewise — LIVE ARP's settings */
     /* Note/Session left a co-run: once the host has handed the screen back,
      * land on Session View, its destination everywhere else. */
     if (S.pendingSessionAfterCoRun && S.moveCoRunTrack < 0 && !S.moveSettingsOpen) {
@@ -652,6 +654,9 @@ export function _tickImpl() {
         S.captureHeld = false; S.shiftTrackLEDActive = false;
         S.heldStep  = -1;    S.heldStepBtn = -1; S.heldStepNotes = []; S.stepReveal = false;
         S.stepWasEmpty = false; S.stepWasHeld = false;
+        /* ...and the bank pad map: the jog's release (and any pad's) fired
+         * while parked, so a map up at suspend would mute the pads for good. */
+        bankMapEnd(); S.padPhysDown.clear(); S.bankMapSwallow.clear();
         /* Sysex suppression needs no re-assert here: the host reset its
          * applied-claims snapshot on suspend, so the first reconcile after
          * resume re-derives the full declared set. */
@@ -956,6 +961,9 @@ export function _tickImpl() {
             S.jogTouched = false;
             S.knobTouched = -1;
             S.knobPhysIdx = -1;
+            bankMapEnd();                 /* a lost jog release must not strand the map */
+            S.padPhysDown.clear();
+            S.bankMapSwallow.clear();
             standDownBankDisplay(true);   /* a project switch: no window survives it */
             invalidateLEDCache();
             forceRedraw();
@@ -1253,12 +1261,9 @@ export function _tickImpl() {
             standDownBankDisplay();
             S.screenDirty = true;
         }
-        /* The bank map with no hand on the jog retires once its last detent is
-         * BANKNAV_HOLD_MS old (the release declined while a turn was fresh). */
-        if (S.bankNavKind && !S.jogTouched && S.clockMs - S.bankNavTurnMs >= BANKNAV_HOLD_MS) {
-            S.bankNavKind = null;
-            S.screenDirty = true;
-        }
+        /* THE BANK PAD MAP: the view changed under a held or latched map. */
+        if (S.bankMapUp && (S.bankMapKind === 'session') !== !!S.sessionView)
+            bankMapEnd();
         /* Overlay expiry: clear timer here so drawUI() can gate on flag alone */
         if (S.stretchBlockedEndTick >= 0 && S.clockMs >= S.stretchBlockedEndTick) {
             S.stretchBlockedEndTick = -1;
@@ -1354,10 +1359,7 @@ export function _tickImpl() {
          *
          * Writes are synchronous SHM round-trips, so they stay budgeted here in
          * tick rather than in the MIDI handler. */
-        if (S.sessionView && (S.tickCount % POLL_INTERVAL) === 0 &&
-                SESS_KNOB_MODES[S.sessKnobMode].widget !== 'gateway') {
-            /* The gateway has no per-track value — polling it would burn SHM
-             * round-trips filling the cache from a key nobody serves. */
+        if (S.sessionView && (S.tickCount % POLL_INTERVAL) === 0) {
             const _modeKey = SESS_KNOB_KEYS[S.sessKnobMode];
             const _modeDef = SESS_KNOB_DEFAULTS[S.sessKnobMode];
             schSlotMasksAllTracks(_sessMaskScratch);
@@ -1514,7 +1516,7 @@ export function _tickImpl() {
         if (!S.sessionView && !soundOpen() && isSoundBank(S.activeBank)
                 && S.pendingSoundEnterTrack < 0 && S.moveCoRunTrack < 0
                 && !S.awaitingProjectSelect
-                && soundBankOnWalk(S.trackPadMode[S.activeTrack], S.activeBank, S.activeTrack)) {
+                && soundBankOnTrack(S.trackPadMode[S.activeTrack], S.activeBank, S.activeTrack)) {
             S.pendingSoundEnterTrack = S.activeTrack;
             S.pendingSoundEnterSilent = true;
         } else if (soundOpen() && soundResting() && !isSoundBank(S.activeBank)

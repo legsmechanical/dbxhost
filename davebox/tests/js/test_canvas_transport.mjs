@@ -1,3 +1,4 @@
+import { openTrackConfigViaMap } from './_map_config.mjs';
 /* tests/js/test_canvas_transport.mjs — a full-screen module canvas leaves the
  * TRANSPORT alone.
  *
@@ -56,7 +57,7 @@ async function main() {
         globalThis.init();
         S.awaitingProjectSelect = false; S.ledInitComplete = true; S.sessionView = false;
         S.activeTrack = 4;
-        cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+        openTrackConfigViaMap();
         ticks(6);
         assert(snd.soundOpenCanvasForTest({ key: 'browser', type: 'canvas', canvas_script: 'x.js' }, io), 'canvas did not open');
         ticks(2);

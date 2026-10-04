@@ -142,7 +142,11 @@ globalThis.init();
 ticks(30);
 cc(MoveNoteSession, 127); cc(MoveNoteSession, 0);       /* Note view */
 ticks(8);
-cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+/* TRACK CONFIG: click the jog (the bank map), tap CONFIG (note 68) —
+ * Shift + Note/Session, which this used to press, retired 2026-10-04. */
+cc(3, 127); cc(3, 0);
+globalThis.onMidiMessageInternal(new Uint8Array([0x90, 68, 100]));
+globalThis.onMidiMessageInternal(new Uint8Array([0x80, 68, 0]));
 ticks(8);
 /* A fresh Schwung track's menu: Instrument, MIDI FX, FX 1 — dividers are not
  * stops. Two detents lands on FX 1; the registry answers whether it did. */

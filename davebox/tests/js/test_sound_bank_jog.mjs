@@ -91,6 +91,19 @@ const turn  = (d) => {
 };
 const right = () => turn(1);
 const left  = () => turn(-1);
+/* ⭑ The jog TURN no longer walks the banks (Josh, 2026-10-04: "retire jog to
+ * switch banks and the bank column overlay"): a bank is reached by the bank
+ * map — hold the jog, tap its pad, let go. The sound banks' entry and exit
+ * ride the same commit (applyBankPick) the walk used. */
+const pickBank = (b) => {
+    const pm = S.trackPadMode[S.activeTrack];
+    let pad = -1;
+    for (let c = 0; c < 4 && pad < 0; c++) for (let r = 0; r < 4; r++)
+        if (pureMod.bankPadMapCellAt(pm, S.activeTrack, c, r) === b) { pad = pureMod.bankMapPadForCell(c, r); break; }
+    if (pad < 0) throw new Error('bank ' + b + ' is not on the map');
+    send(3, 127); note(pad, 100); globalThis.onMidiMessageInternal(new Uint8Array([0x80, pad, 0])); send(3, 0);
+    globalThis.tick(); snd.soundTick();
+};
 
 function step(label, fn) {
     /* ⚠⚠ An ASYNC fn returns a promise this runner never awaits: the body would
@@ -150,16 +163,16 @@ function reset(mode, bank) {
     S.bankSelectTick = -1; S.jogTouched = false;
 }
 
-step('control: a right turn from CLIP moves to NOTE FX (the bank walk is live)', () => {
+step('control: a turn from CLIP walks no bank (retired 2026-10-04)', () => {
     reset(PAD_MODE_MELODIC_SCALE, 0);
     right();
-    if (S.activeBank !== 1) throw new Error('bank did not step: ' + S.activeBank);
+    if (S.activeBank !== 0) throw new Error('the turn walked: ' + S.activeBank);
     if (snd.soundActive()) throw new Error('entered sound mode from CLIP');
 });
 
-step('⭑ melodic: right past SEQ ARP (the last FX bank) enters SOUND + CONFIG', () => {
+step('⭑ melodic: a map pick of MIX enters it', () => {
     reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
-    right();
+    pickBank(BANK_SOUND);
     if (!snd.soundActive()) throw new Error('sound mode did not open');
     /* The screen IS a bank (Josh, 2026-08-23) and it RECORDS ITSELF like every
      * other one (Josh, 2026-08-25): activeBank takes the BANK_SOUND identity so
@@ -172,38 +185,25 @@ step('⭑ melodic: right past SEQ ARP (the last FX bank) enters SOUND + CONFIG',
         throw new Error('the bank did not record itself: ' + S.trackActiveBank[2]);
 });
 
-step('⭑⭑ ...and the next right turn WALKS THE BANKS — the prompt is a bank', () => {
-    /* ⚠⚠ REVERSED 2026-08-28, and it is the point of the respec. The bank used
-     * to BE the menu, so the jog walked the menu's rows and this asserted
-     * exactly that. Josh made the bank a DOOR — it shows "click to enter" and
-     * the CLICK opens the menu — so the jog must behave as it does on every
-     * other bank, or the one bank you could never leave by turning the jog
-     * would be the bank whose whole job is being a door.
-     *
-     * Sound mode is still fully ACTIVE here: it owns the knobs and the HUD on
-     * this screen. It simply DECLINES the turn (soundOnCC returns false), which
-     * hands the CC back to davebox's own bank walk. */
+step('⭑⭑ ...and a turn on MIX walks no bank; sound mode declines it', () => {
     snd.soundTick();
-    /* ⚠ LEFT, not right: SOUND + CONFIG is the LAST entry in the cycle, so a
-     * right turn correctly clamps and proves nothing. My first version of this
-     * step turned right and read the clamp as a swallowed jog. */
     left();
-    if (S.activeBank !== MEL_BEFORE_SOUND)
-        throw new Error('the jog did not walk off the bank — still on ' + S.activeBank);
+    if (S.activeBank !== BANK_SOUND) throw new Error('the turn walked off MIX: ' + S.activeBank);
 });
 
 step('⚠ CONTROL: the MIX click opens nothing; the CONFIG click opens the menu, and then the jog walks ROWS', () => {
     /* The other half. Without this the step above passes on a build where the
      * jog is declined because the menu is unreachable at all. */
     reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
-    right();                            /* onto MIX -> its card */
+    pickBank(BANK_SOUND);               /* onto MIX -> its card */
     snd.soundTick();
     send(3, 127); send(3, 0);
     globalThis.tick(); snd.soundTick();
     if (snd.soundPickStateForTest().view !== 18) throw new Error('the MIX click opened view ' + snd.soundPickStateForTest().view);
-    reset(PAD_MODE_MELODIC_SCALE, 5);   /* LIVE ARP, just right of CONFIG */
-    left();                             /* onto CONFIG -> its card */
-    snd.soundTick();
+    /* CONFIG is a door since 2026-10-03 (off the walk): put the bank there, the
+     * card locked, and let the tick open it as it opens a restored bank. */
+    reset(PAD_MODE_MELODIC_SCALE, constsMod.BANK_CONFIG);
+    globalThis.tick(); snd.soundTick(); globalThis.tick(); snd.soundTick();
     send(3, 127); send(3, 0);           /* the CONFIG card's door */
     globalThis.tick(); snd.soundTick();
     if (snd.soundPickStateForTest().view !== 0) throw new Error('the CONFIG click did not open the menu: ' + snd.soundPickStateForTest().view);
@@ -215,7 +215,7 @@ step('⚠ CONTROL: the MIX click opens nothing; the CONFIG click opens the menu,
         throw new Error('the identity was lost underneath: ' + S.activeBank);
 });
 
-step('⭑ the MENU top edge CLAMPS; Back exits to the CARD; the card walks out', () => {
+step('⭑ the MENU top edge CLAMPS; Back exits to the CARD; a map pick leaves', () => {
     /* Josh, 2026-09-01: "scrolling past the top should no longer jump to the
      * previous card. that menu is now exited by pressing back, which lands
      * you on the sound+config card." The card then hands the jog back to the
@@ -230,20 +230,26 @@ step('⭑ the MENU top edge CLAMPS; Back exits to the CARD; the card walks out',
      * on THAT card — 24, VIEW_CFGCARD. */
     if (snd.soundViewForTest() !== 24)
         throw new Error('Back did not land on the card (view ' + snd.soundViewForTest() + ')');
-    right(); globalThis.tick();
-    if (snd.soundActive()) throw new Error('the card did not walk out on a right turn');
-    if (S.activeBank !== 5) throw new Error('did not land on LIVE ARP (the bank after CONFIG): ' + S.activeBank);
-    right();
-    if (S.activeBank !== 13) throw new Error('bank walk did not resume rightward onto MACROS: ' + S.activeBank);
+    /* (CONFIG is a door: the map does not open over its screen. Leave it the
+     * way a real session does — from a bank — then pick on.) */
+    reset(PAD_MODE_MELODIC_SCALE, BANK_SOUND); S.pendingSoundEnterTrack = 2; globalThis.tick(); snd.soundTick();
+    pickBank(5); globalThis.tick();
+    if (S.activeBank !== 5) throw new Error('the pick did not land on LIVE ARP: ' + S.activeBank);
+    if (snd.soundActive()) throw new Error('picking LIVE ARP did not leave sound mode');
+    pickBank(constsMod.BANK_MACROS); globalThis.tick();
+    if (S.activeBank !== 13) throw new Error('the pick did not land on MACROS: ' + S.activeBank);
+    pickBank(BANK_STEP); globalThis.tick();
+    if (snd.soundActive()) throw new Error('picking on from MACROS did not leave sound mode');
+    if (S.activeBank !== BANK_STEP) throw new Error('the pick did not land on STEP: ' + S.activeBank);
 });
 
-step('⭑ drum: right past DELAY (the last FX bank) enters too', () => {
+step('⭑ drum: a map pick of MIX enters too; a pick of DELAY leaves', () => {
     reset(PAD_MODE_DRUM, 3);
-    right();
+    pickBank(BANK_SOUND);
     if (!snd.soundActive()) throw new Error('sound mode did not open on a drum track');
     snd.soundTick();
-    left(); globalThis.tick();                         /* the CARD walks out */
-    if (snd.soundActive()) throw new Error('the card did not walk out on a drum track');
+    pickBank(3); globalThis.tick();
+    if (snd.soundActive()) throw new Error('the pick did not leave on a drum track');
     if (S.activeBank !== 3) throw new Error('did not land on DELAY: ' + S.activeBank);
 });
 
@@ -254,7 +260,7 @@ step('⚠ conductor: the cycle ends at TIMING — no sound-mode bank', () => {
     if (S.activeBank !== BANK_WHEN) throw new Error('bank moved: ' + S.activeBank);
 });
 
-step('⚠ a deferred entry still SHOWS, and the jog leaves by walking the cycle', () => {
+step('⚠ a deferred entry still SHOWS, and a turn does not walk off it', () => {
     /* The deferred entry the walk queues AFTER recording the bank (2026-09-24):
      * the track is already on SOUND + CONFIG when it lands. */
     reset(PAD_MODE_MELODIC_SCALE, BANK_SOUND);
@@ -271,8 +277,8 @@ step('⚠ a deferred entry still SHOWS, and the jog leaves by walking the cycle'
      * straight to the bank walk, so leaving is the ordinary cycle step to
      * AUTOMATION. Returning to the ORIGIN is BACK's job, asserted below. */
     left();
-    if (S.activeBank !== MEL_BEFORE_SOUND)
-        throw new Error('the jog did not walk off the bank: ' + S.activeBank);
+    if (S.activeBank !== BANK_SOUND)
+        throw new Error('the turn walked off the bank: ' + S.activeBank);
 });
 
 step('⭑ and BACK from the prompt leaves BANK MODE and keeps the bank (2026-09-03: "Back never changes which bank you are on")', () => {
@@ -305,7 +311,7 @@ step('⭑⭑ the TOP LEVEL keeps THE ONE LAW: bank mode or knob peek, never othe
      * just looks like the old behaviour). */
     const jogTouch   = (on) => globalThis.onMidiMessageInternal(new Uint8Array([on ? 0x90 : 0x80, 9, on ? 127 : 0]));
     reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
-    right();                             /* enter SOUND + CONFIG, in bank mode */
+    pickBank(BANK_SOUND);                /* enter MIX, the page held */
     if (!snd.soundActive()) throw new Error('did not enter');
     snd.soundTick();
     if (!S.bankCardLatched) throw new Error('control: not in bank mode after the walk');
@@ -378,7 +384,7 @@ step('⭑⭑ the bank RECORDS ITSELF: sidecar write + Shift+jog track switch', (
      * read that stale value. Josh ruled it records itself, like all the others. */
     const { writeSidecar } = persistMod;
     reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
-    right();                             /* enter from STEP */
+    pickBank(BANK_SOUND);                /* enter from STEP */
     if (!snd.soundActive() || S.activeBank !== BANK_SOUND)
         throw new Error('control: not in sound mode with the identity on');
     let tab = null;
@@ -436,7 +442,7 @@ step('⭑ BACK lands on the bank you CAME FROM — same as the jog\'s left turn'
      * through the real CC — MoveBack is 51 — so this proves dispatch, not
      * spelling. */
     reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
-    right();                                   /* enter from SEQ ARP (the bank before it) */
+    pickBank(BANK_SOUND);                      /* enter from SEQ ARP */
     if (!snd.soundActive()) throw new Error('control: did not enter sound mode');
     send(51, 127); send(51, 0); globalThis.tick();
     /* ⚠ 2026-09-03: Back KEEPS the bank (unlatches; the mode rests). The
@@ -448,12 +454,12 @@ step('⭑ BACK lands on the bank you CAME FROM — same as the jog\'s left turn'
     /* ...and the jog agrees, which is now the point rather than the contrast.
      * The jog's exit lives on the CARD now (the menu clamps, 2026-09-01). */
     reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
-    right();
+    pickBank(BANK_SOUND);
     snd.soundTick();
-    left(); globalThis.tick();
-    if (snd.soundActive()) throw new Error('control: the card\'s left turn did not exit');
+    pickBank(MEL_BEFORE_SOUND); globalThis.tick();     /* the map: back to SEQ ARP */
+    if (snd.soundActive()) throw new Error('control: the pick off MIX did not exit');
     if (S.activeBank !== MEL_BEFORE_SOUND)
-        throw new Error('the jog exit landed on ' + S.activeBank + ', not the bank it came from');
+        throw new Error('the pick landed on ' + S.activeBank + ', not SEQ ARP');
     /* ⭑ AND IT MUST ARM THE DISPLAY WINDOW, like every other bank change on the
      * walk. Josh, on hardware 2026-08-26: "scrolling back from the top of the
      * sound+config bank goes right to the bank before it and does not
@@ -468,39 +474,6 @@ step('⭑ BACK lands on the bank you CAME FROM — same as the jog\'s left turn'
         throw new Error('the jog exit did not arm the bank display — it lands on the bank ' +
                         'silently, with no picker overlay naming where you arrived');
     S.activeBank = 0;
-});
-
-/* ⭑⭑ THE PICKER MUST COME BACK on the top-edge left turn — the behaviour
- * ui_input_cc's own jog handler documents ("the picker comes back only on the
- * left turn off its top row (soundOnCC)") and which that branch never delivered.
- *
- * Josh reported it twice, and the second report is why this step exists: the
- * first fix armed the bank DISPLAY window, which made the arrival non-silent but
- * still teleported him onto AUTOMATION with no list to keep scrolling. "goes
- * right to automation bank on key tracks without showing the picker overlay."
- *
- * ⚠ Driven RAW, not through turn(): that helper commits the pick (click) as part
- * of the gesture, so it would tear down the very overlay under test. The
- * assertion is the MID-GESTURE state — finger still on the wheel. */
-step('⭑ leaving by the card\'s walk arms the window — and NO overlay opens', () => {
-    /* The picker overlay is RETIRED (2026-09-01: the turn walks directly), so
-     * the old "reopen the picker on the way out" behaviour inverts: leaving
-     * must arm the display window (never a silent arrival — Josh, 2026-08-26)
-     * and must NOT leave any overlay state behind. */
-    reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);   /* a KEY track, walking onto MIX */
-    right();
-    snd.soundTick();
-    note(9, 127);
-    send(14, 127);
-    globalThis.tick();
-    if (snd.soundActive())
-        throw new Error('control: the card\'s left turn did not leave sound mode');
-    if (S.bankPickerSel >= 0)
-        throw new Error('a picker overlay opened on the way out — it is retired');
-    if (S.bankSelectTick < 0)
-        throw new Error('the display window is not armed — a silent arrival');
-    note(9, 0);
-    globalThis.tick();
 });
 
 step('⭑ NOTE/SESSION is a LEAVE: the view toggle must not reset the track\'s bank', () => {
@@ -525,7 +498,7 @@ step('⭑ NOTE/SESSION is a LEAVE: the view toggle must not reset the track\'s b
     const noteSession = () => { send(50, 127); globalThis.tick(); send(50, 0); globalThis.tick(); };
 
     reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
-    right();                                   /* into SOUND + CONFIG */
+    pickBank(BANK_SOUND);                      /* into MIX */
     if (!snd.soundActive()) throw new Error('control: did not enter sound mode');
 
     /* ⚠⚠ REWRITTEN by Josh's ESCAPE LAW (2026-09-02): from a non-overview state
@@ -557,11 +530,12 @@ step('⭑ NOTE/SESSION is a LEAVE: the view toggle must not reset the track\'s b
     if (snd.soundActive())
         throw new Error('the screen re-opened at rest — the one law says overview');
     if (S.activeBank !== BANK_SOUND) throw new Error('came back on bank ' + S.activeBank);
-    send(3, 127); send(3, 0);                  /* jog click: bank mode */
-    globalThis.tick(); globalThis.tick();      /* invariant queues, then resolves */
-    if (!S.bankCardLatched) throw new Error('the click did not latch bank mode');
-    if (!snd.soundActive())
-        throw new Error('bank mode did not re-open the recorded SOUND + CONFIG');
+    /* A knob touch peeks the recorded MIX page again (no click locks a page
+     * since 2026-10-04): the mode is open at rest and shows on the touch. */
+    if (!snd.soundOpen()) throw new Error('the recorded MIX is not open at rest');
+    S.knobTouched = 0;
+    if (!snd.soundRender()) throw new Error('a knob touch did not peek the recorded MIX page');
+    S.knobTouched = -1;
     snd.soundExit();
     S.bankCardLatched = false;
     S.activeBank = 0;
@@ -585,7 +559,7 @@ step('⭑⭑ THE FIX, end to end: a track left on SOUND + CONFIG comes back on i
      * re-opens the screen, because BANKS[11] is a stub that draws nothing. */
     const { writeSidecar } = persistMod;
     reset(PAD_MODE_MELODIC_SCALE, MEL_BEFORE_SOUND);
-    right();                                   /* enter SOUND + CONFIG from AUTOMATION */
+    pickBank(BANK_SOUND);                      /* enter MIX */
     if (!snd.soundActive()) throw new Error('control: did not enter sound mode');
 
     let body = null;
@@ -663,29 +637,15 @@ function sessReset() {
     S.sessionView = true;
     S.sessKnobMode = 0;
     S.knobTouched = -1; S.jogTouched = false; S.bankSelectTick = -1;
-    S.sessMixerLatched = true;   /* same ruling, session flavour */
     S.bankCardLatched = false;
     S.touchedIdx = -1;
 }
 
-step('control: the session mixer walk is live (VOLUME -> PAN)', () => {
+step('control: a turn on the session overview walks no mixer mode (retired 2026-10-04)', () => {
     sessReset();
     right();
-    if (S.sessKnobMode !== 1) throw new Error('mixer mode did not step: ' + S.sessKnobMode);
-    if (snd.soundActive()) throw new Error('opened the FX list from the middle of the mixer');
-});
-
-step('⭑ right past SEND B lands on the GATEWAY bank — and does NOT enter', () => {
-    /* The auto-entering turn door retired (2026-08-31); the FX door is now a
-     * click-to-confirm GATEWAY bank at the end of the walk (Josh, 2026-09-01)
-     * — the SOUND + CONFIG idiom. The turn only ARRIVES; the click enters. */
-    sessReset();
-    S.sessKnobMode = 3;                       /* SEND B */
-    right();
-    if (snd.soundActive()) throw new Error('arriving on the gateway entered the FX list');
-    if (S.sessKnobMode !== 4) throw new Error('did not land on the gateway: ' + S.sessKnobMode);
-    right();
-    if (S.sessKnobMode !== 4) throw new Error('walked past the gateway');
+    if (S.sessKnobMode !== 0) throw new Error('the turn walked the mixer mode: ' + S.sessKnobMode);
+    if (snd.soundActive()) throw new Error('opened the FX list from the mixer');
 });
 
 step('⭑ the list, once OPEN, still steps back out to the mixer at its top row', () => {
@@ -718,60 +678,24 @@ step('⚠ a left turn BELOW the top row moves the cursor, it does not exit', () 
     if (snd.soundActive()) throw new Error('the top row did not step back out');
 });
 
-step('⭑⭑ THE ONE LAW, SESSION FLAVOUR: the FX list obeys the LATCH, never the jog touch', () => {
-    /* ⚠⚠ REWRITTEN 2026-09-02. This step used to assert the PRE-one-law
-     * behaviour — "a jog touch brings it straight back" — which is exactly what
-     * Josh re-reported from the device: "the weird jog touch and click
-     * fall-through we fixed on track banks is still happening on session
-     * banks." The 09-01 audit migrated the TRACK branch onto bankCardVisible()
-     * and left this one reading the retired drivers; this test is why it was
-     * never noticed. Its owner is sessMixerVisible().
-     *
-     * Both halves of the bug live here: hiding the list at rest while bank mode
-     * is ON is the peek, and it also leaves sound mode ACTIVE behind a stood-down
-     * screen, which is what defeats the session click gate's `!soundActive()`
-     * and makes the click fall through. */
+step('⭑⭑ the session FX list is a SCREEN: it draws with nothing touched and never yields (2026-10-04)', () => {
+    /* It used to obey the session mixer latch (the one law, session flavour);
+     * no latch exists since 2026-10-04, and the list is opened on purpose —
+     * Shift + Note/Session or the Session map's FX pads — so it stays until
+     * Back, like any menu. */
     sessReset();
     S.sessKnobMode = 3;
-    S.sessMixerLatched = true;                    /* bank mode, session flavour */
     S.knobTouched = -1;
     snd.soundEnterBuses();
     if (!snd.soundActive()) throw new Error('control: list did not open');
-    if (!S.sessMixerLatched)
-        throw new Error('control: entering the buses dropped the latch, so this proves nothing');
-    /* Bank mode ON and NOTHING touched: it draws. No jog touch involved. */
     S.bankSelectTick = -1; S.jogTouched = false; S.touchedIdx = -1; S.volTouched = false;
-    if (snd.soundRender() !== true)
-        throw new Error('the FX list stood down while bank mode was ON — it is the bank you ' +
-                        'walked to, and hiding it is what makes the click fall through');
-    /* Bank mode OFF: it yields, so drawUI falls through to the session overview. */
-    S.sessMixerLatched = false;
-    if (snd.soundRender() !== false)
-        throw new Error('the FX list held the screen outside bank mode — it covers the ' +
-                        'session overview');
-    if (!snd.soundOpen()) throw new Error('yielding must not EXIT sound mode');
-    /* ⭑ The jog touch shows it only with the Jog Touch Card switch On (Josh,
-     * 2026-09-30, default On) — and never latches it; Off, it shows nothing. */
-    S.jogTouchCardOn = false;
-    S.jogTouched = true;
-    if (snd.soundRender() !== false)
-        throw new Error('JOG TOUCH revealed the session FX list with the switch Off');
-    S.jogTouchCardOn = true;
-    if (snd.soundRender() !== true)
-        throw new Error('JOG TOUCH (switch On) did not show the session FX list');
-    if (S.sessMixerLatched) throw new Error('the jog touch LATCHED the list — it only shows');
-    S.jogTouched = false;
-    S.bankSelectTick = S.tickCount;
-    if (snd.soundRender() !== false)
-        throw new Error('the transient window revealed the session FX list — retired driver');
-    S.bankSelectTick = -1;
-    /* ...and the mixer's own KNOB peek is a real driver, as in track view. */
-    S.knobTouched = 0;
-    if (snd.soundRender() !== true)
-        throw new Error('the knob peek did not show the list — it is the session owner\'s ' +
-                        'other half');
-    S.knobTouched = -1;
-    snd.soundExit(); S.jogTouched = false; S.sessionView = false;
+    if (snd.soundRender() !== true) throw new Error('the FX list stood down with nothing touched');
+    S.tickCount += 200; globalThis.tick();
+    if (snd.soundRender() !== true) throw new Error('the FX list yielded after a while');
+    S.jogTouchCardOn = false; S.jogTouched = true;
+    if (snd.soundRender() !== true) throw new Error('a jog touch (switch Off) hid the FX list');
+    S.jogTouchCardOn = true; S.jogTouched = false;
+    snd.soundExit(); S.sessionView = false;
 });
 
 step('⚠ a GLOBAL bus keeps its clamp: left at the top does not exit', () => {

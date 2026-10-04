@@ -1,3 +1,4 @@
+import { openTrackConfigViaMap } from './_map_config.mjs';
 /* tests/js/test_instr_lists.mjs — the module-LIST filter on the picker a user
  * actually chooses an instrument in.
  *
@@ -182,7 +183,7 @@ globalThis.host_write_file = (p, body) => {
 
 /* Open the Instrument picker the way a user does. */
 function openInstr() {
-    cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+    openTrackConfigViaMap();
     ticks(6);
     const st = snd.soundPickStateForTest();
     if (st.kinds[st.row] !== 'trackto')

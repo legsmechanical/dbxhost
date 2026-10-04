@@ -55,6 +55,12 @@ export function autoBankReset() {
     if (S.autoBank) { S.autoBank.menu = false; S.autoBank.ops = null; S.autoBank.loopEdit = false; S.autoBank.rateEdit = false; S.autoBank.scaleEdit = false; S.autoBank.cycleTarget = null; }
 }
 export function autoBankMenuOpen() { return !!(S.autoBank && (S.autoBank.menu || S.autoBank.ops)); }
+/* The AUTOMATION menu is up and in use (its door screen; nothing else opens
+ * it since Bank Lock went, 2026-10-04). An open menu is itself a reason the
+ * card shows (bankCardVisible). */
+export function autoMenuUp() {
+    return S.activeBank === BANK_AUTOMATION && !S.sessionView && autoBankMenuOpen();
+}
 
 /* THE LANE JUMP (plan 6c2): Shift + click on a lane in the menu. The lane
  * under the cursor as { target, sel }, or null — only on the lane list itself
@@ -177,7 +183,6 @@ function opsFor(track, clip, r) {
 export function drawAutomationBankBody() {
     const t = S.activeTrack, c = effectiveClip(t);
     const a = st();
-    if (!S.bankCardLatched) autoBankReset();       /* the peek shows the plain card */
     const rows = autoBankRows(t, c);
     const listRows = rows.map(r => ({ label: r.label, value: rowValue(r, t, c) }));
     if (a.menu) listRows.push({ label: 'Clear all', hdr: true });
@@ -628,7 +633,7 @@ export function laneHome(tgt, t) {
 export function autoHoldJumpActive() { return !!holdJump; }
 export function autoHoldJumpStep() { return holdJump ? holdJump.step : -1; }
 export function autoHoldJumpBegin(absStep) {
-    if (holdJump || lanePin || !autoBankIsActive() || !S.bankCardLatched) return false;
+    if (holdJump || lanePin || !autoBankIsActive() || !(S.bankCardLatched || autoMenuUp())) return false;
     const cy = S.autoCycle;
     /* ANY step of the cycle jumps, not only one holding a point (Josh,
      * 2026-09-25: "this should work on ANY step, not just ones with data, so
@@ -647,11 +652,11 @@ export function autoHoldJumpBegin(absStep) {
          * long as the step is held. The bank stays AUTOMATION underneath (an
          * editor is not a bank), so release only has to close the editor. */
         if (!soundJumpToParam(cy.t, mp.comp, mp.key, a.sel)) { showActionPopup('NOT LOADED'); return false; }
-        holdJump = { track: cy.t, clip: cy.c, bank: BANK_AUTOMATION, sound: true, altWas: !!S.altMode, sel: a.sel,
+        holdJump = { track: cy.t, clip: cy.c, bank: BANK_AUTOMATION, sound: true, altWas: !!S.altMode, knobAltWas: S.knobAlt, sel: a.sel,
                      opsSel: a.ops ? a.ops.sel : -1, cycle: Object.assign({}, cy), step: absStep };
         return true;
     }
-    holdJump = { track: cy.t, clip: cy.c, bank: sat ? sat.bank : sb, sound: !sat, altWas: !!S.altMode, sel: a.sel,
+    holdJump = { track: cy.t, clip: cy.c, bank: sat ? sat.bank : sb, sound: !sat, altWas: !!S.altMode, knobAltWas: S.knobAlt, sel: a.sel,
                  opsSel: a.ops ? a.ops.sel : -1, cycle: Object.assign({}, cy), step: absStep };
     if (!sat) {
         /* A level (SOUND+CFG) or a MIDI target (MACROS): the sound bank for as
@@ -663,12 +668,13 @@ export function autoHoldJumpBegin(absStep) {
         return true;
     }
     S.activeBank = sat.bank;
-    S.altMode = !!sat.alt;
+    /* An alt target (DELAY's Clock Feedback) flips just its knob (KNOB_ALTS). */
+    S.altMode = false;
+    S.knobAlt = sat.alt ? (1 << sat.k) : 0;
     /* Render drops alt mode on ANY bank change (its diff guard, ui_render):
      * this change is deliberate, so it is the guard's new baseline — or Clock
      * Feedback's alt page would vanish on the first frame. */
     S._altPrevBank = sat.bank; S._altPrevTrack = S.activeTrack;
-    if (sat.bank === 7) S.allLanesConfirmed = false;
     readBankParams(cy.t, sat.bank);
     armBankDisplay();
     return true;
@@ -690,6 +696,7 @@ export function autoHoldJumpEnd() {
     if (S.activeTrack === j.track && S.activeBank === j.bank) {
         S.activeBank = BANK_AUTOMATION;
         S.altMode = j.altWas;
+        S.knobAlt = j.knobAltWas | 0;
         S._altPrevBank = BANK_AUTOMATION; S._altPrevTrack = S.activeTrack;
         autoBankRestoreMenu(j.sel);
         const a = st();
@@ -723,7 +730,7 @@ export function autoBankTick() {
         return;
     }
     if (lanePin && lanePinTick()) return;
-    if (!autoBankIsActive() || !S.bankCardLatched || S.moveCoRunTrack >= 0) {
+    if (!autoBankIsActive() || !(S.bankCardLatched || autoMenuUp()) || S.moveCoRunTrack >= 0) {
         if (viewSent) syncPaView(viewSent.t, 0, null);
         return;
     }

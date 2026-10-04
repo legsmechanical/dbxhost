@@ -114,6 +114,9 @@ export function forgetProjectJs() {
     S.followPaused = false;
 }
 
+/* True when knob k on the active bank shows its alt (KNOB_ALTS). */
+export function knobAltOn(k) { return !!(S.knobAlt & (1 << k)); }
+
 export function nowMs() {
     return S.clockFollowTicks ? Math.round(S.tickCount * TICK_MS_FOR_TESTS) : Date.now();
 }
@@ -262,7 +265,8 @@ export const S = {
     ledInitIndex: 0,
     ledInitComplete: false,
     shiftHeld: false,
-    altMode: false,        /* sticky alt-param mode, toggled by jog-click; transient */
+    altMode: false,        /* sticky PAGE alt (RPT GROOVE Vel/Nudge), toggled by jog-click; transient */
+    knobAlt: 0,            /* single-knob alts on the active bank: bit k = knob k shows its alt (touch + click; KNOB_ALTS); transient */
     _altPrevBank: -1,      /* diff-guard mirror for clearing altMode on bank change */
     _altPrevTrack: -1,     /* diff-guard mirror for clearing altMode on track change */
     _altBlinkPhase: -1,    /* tick-driven phase (0/1) for the alt-mode arrow flash */
@@ -432,7 +436,6 @@ export const S = {
     tarpHeldNotes: Array.from({length: 8}, () => new Set()),
     noteFXRandomMode: new Array(8).fill(2),
     midiDlyRandomMode: new Array(8).fill(2),
-    allLanesConfirmed: false,
     drumClipNonEmpty: Array.from({length: 8}, () => new Array(16).fill(false)),
     trackActiveClip: new Array(8).fill(0),
     lastDspActiveClip: new Array(8).fill(0),
@@ -498,7 +501,6 @@ export const S = {
     masterPos: 0,
     pendingSessionAfterCoRun: false, /* Note/Session left a co-run: land on Session View once it has ended (ui_tick) */
     jogTouchCardOn: null, /* Jog Touch Card (global menu, ui_prefs): a bare jog touch shows the current bank card. null = not yet read; absent file = on. */
-    bankViewMapOn: null, /* Bank Map on Lock (global menu, ui_prefs): the bank column while the jog walks from the bank view. null = not yet read; absent file = on. */
     midiMuted: null,     /* MIDI browser preview muted (ui_prefs). null = not yet read */
     midiMap: null,       /* MIDI browser drum Map: off | gm | move (ui_prefs). null = not yet read */
     seqFollowOn: null,   /* Seq Follow (ui_prefs): one device-wide switch. null = not yet read; absent file = on. */
@@ -859,7 +861,13 @@ export const S = {
     /* Shift+Note/Session: the tick of an unresolved press. The gesture resolves
      * on RELEASE — tap opens the SOUND + CONFIG menu, hold goes to instrument
      * edit — so the press only records when it happened. -1 = none pending. */
-    shiftNoteSessionTick: -1,
+    /* Shift + Step 11 (Josh, 2026-10-03): a TAP toggles LIVE ARP, a HOLD opens
+     * its settings. nowMs() of the press while it is undecided, -1 otherwise. */
+    shiftStep11Tick: -1,
+    /* A DOOR SCREEN's way home (AUTOMATION — a screen that borrows
+     * its bank while up): { track, door, bank, latched }. Back restores it;
+     * a track or view switch restores it first; any other bank commit drops it. */
+    doorReturn: null,
     /* Set with pendingSoundEnterTrack when the ASK was for the menu rather than
      * the bank: tick opens sound mode route-aware, then lands on the menu
      * instead of the bank's prompt. */
@@ -959,10 +967,6 @@ export const S = {
      * channel can be received by SEVERAL slots (layering, or a slot set to
      * "All"), and all of them move together. -1 = not yet resolved/read. */
     sessKnobMode: 0,
-    /* Front 2, session half (Josh, 2026-08-31/09-01): the mixer page latched
-     * by the plain jog click; Back dismisses. The FX door is the GATEWAY mode
-     * at the end of the walk (SESS_KNOB_MODES 'fx'), not extra state. */
-    sessMixerLatched: false,                        /* 0=Volume, 1=Pan, 2=Send A, 3=Send B */
     sessVolSlots: new Array(8).fill(-1),   /* bitmask of matching slots */
     /* A MOVE-routed track's level is not a slot's at all: it is the fader of the
      * Move FX bus its instrument returns on, the same value sound mode's VOLUME
@@ -1052,15 +1056,31 @@ export const S = {
      * pad-mode and neither contiguous nor ordered by index. -1 = closed.
      * Transient: the gesture ends with the Shift release that commits it. */
     bankPickerSel: -1,
-    /* THE BANK NAVIGATION OVERLAY (Josh, 2026-09-26): up while the jog walks the
-     * banks (a bank card, the track overview) or the session banks (the session
-     * overview), gone on the jog's touch release. 'track' | 'session' | null. */
-    bankNavKind: null,
-    /* nowMs() of the last detent that walked it. The jog's touch sensor drops
-     * out for a moment while the hand turns (Josh, on device 2026-09-26: "the
-     * overlay disappears briefly and the banks scroll absent an overlay"), so a
-     * recent turn holds the column up too — see BANKNAV_HOLD_MS. */
-    bankNavTurnMs: 0,
+    /* THE BANK PAD MAP (Josh, 2026-10-02: hold the jog, the left 4x4 pads pick
+     * the bank; 2026-10-04: "hold jog instantly peek the pad map and jog click
+     * instantly pop it up and another jog click close it"). `jogPressMs` =
+     * nowMs() of a jog press while the map is up from it, -1 otherwise; set
+     * only where the map can arm, so -1 means every click went straight to its
+     * owner. `bankMapUp` = the map is painted (OLED + pads) — while held OR
+     * latched; `bankMapLatched` = it stays up with the jog let go (a click
+     * opened it); `bankMapWasLatched` = the latch at the press, for the
+     * release's ruling. `bankMapUsed` = a pad was tapped or the jog turned
+     * during the hold, so the release is no click. `bankMapKind` 'track' |
+     * 'session', taken at the press. */
+    jogPressMs: -1,
+    bankMapUp: false,
+    bankMapUsed: false,
+    bankMapKind: null,
+    bankMapLatched: false,
+    bankMapWasLatched: false,
+    /* Pads physically down (notes 68-99), recorded above every modal gate,
+     * so the map can let go of each one when it paints. */
+    padPhysDown: new Set(),
+    /* Pads whose release (and pressure) the map has already accounted for —
+     * a tapped map pad, or one the map let go of. Swallowed even if the jog
+     * comes up first, so no note-off lands for a note that never sounded. */
+    bankMapSwallow: new Set(),
+    bankMapDeferred: null,   /* a MENU pad tapped on a held map, opened on the release */
     /* Tick of the last picker turn, for the SETTLE fallback. The gesture
      * normally ends with the jog-touch release, but a turn can arrive with no
      * touch at all (the capacitive read can miss a quick flick, and the remote
@@ -1152,7 +1172,7 @@ export const S = {
     /* padmapSig() of the last padmap pushed — the Chord layout's self-heal. */
     lastPadmapSig: -1,
     drumInpQuant: new Array(8).fill(0),   /* per-track drum input quantize index 0-8 */
-    delayClockFb: new Array(8).fill(0),   /* per-track delay clock feedback -100..100, accessed via Shift+K1 on DELAY bank (K7 now hosts delay_retrig) */
+    delayClockFb: new Array(8).fill(0),   /* per-track delay clock feedback -100..100, accessed via the flipped K1 on DELAY (touch + click) (K7 now hosts delay_retrig) */
     delayRetrig:  new Array(8).fill(0),   /* per-track delay retrig 0/1; K7 on DELAY bank */
     clipAdaptiveMode: Array.from({length: 8}, () => new Array(16).fill(false)),
     clipLengthManuallySet: Array.from({length: 8}, () => new Array(16).fill(false)),

@@ -1069,6 +1069,10 @@ export function soundBusLevelEditingForTest(v) {
     if (v !== undefined) S.busLevelEditing = !!v;
     return S.busLevelEditing;
 }
+export function soundBusLevelDirtyForTest(v) {
+    if (v !== undefined) S.busLevelDirty = !!v;
+    return S.busLevelDirty;
+}
 /* WHICH bus screen is up, and which door it was opened by — the pair a Back
  * test has to distinguish (see leaveBus). null = not on a bus. */
 export function soundBusForTest() {
@@ -1217,6 +1221,26 @@ export function soundMacrosForTest() {
  * Rest is MACROS-only and invisible by construction (soundRender declines the
  * page while the card is not visible). */
 export function soundOpen() { return S.active; }
+/* A click on a sound bank's CARD — the one seam, used by the card itself and
+ * (Bank Lock off) by the overview's click, which skips the lock and does the
+ * card's click straight away. True when a card view handled it.
+ *   MIX: no door, except under a touched Send A / Send B knob — that send's
+ *        effects (Josh, 2026-10-01; "take the click to enter the menu off of
+ *        sound+config", 2026-09-26)
+ *   CONFIG: the list goes live, from its top
+ *   MACROS: the touched macro's editor (soundMacroKnobClick); untouched, the
+ *           click is spent and does nothing (2026-10-04) */
+export function soundCardClick() {
+    if (S.view === VIEW_PROMPT) { soundMixSendClick(S.touchedIdx); return true; }
+    if (S.view === VIEW_CFGCARD) { S.pickRow = 0; soundShowMenu(); return true; }
+    if (S.view === VIEW_MACROS) { soundMacroKnobClick(S.touchedIdx); S.dirty = true; return true; }
+    return false;
+}
+
+/* A knob is touched in sound mode's own book (it takes the touch while it
+ * steers) — the bank map must not take that touch + click. */
+export function soundKnobTouched() { return S.active && S.touchedIdx >= 0; }
+
 export function soundResting() {
     /* A follow in flight is never at rest, whatever S.view says mid-chain: a
      * fast Shift+scroll crossing a Move track passed through its PROMPT
@@ -1242,7 +1266,7 @@ function followDestOf(plan) {
     if (th.t === 'view') return th.view | 0;
     if (th.t === 'slotcfg') return VIEW_SLOTCFG;
     if (th.t === 'lfo') return VIEW_LFO;
-    if (th.t === 'knobs') return VIEW_KNOBS;
+    if (th.t === 'knobs') return VIEW_MACROS;   /* the macro screens follow onto the card */
     return VIEW_BLOCKS;
 }
 export function soundActive() { return S.active && !soundResting(); }
@@ -2167,30 +2191,59 @@ function mixSendBus(i) {
 export function soundMixSendClick(i) {
     const bus = mixSendBus(i);
     if (!bus) return false;
-    GS.bankCardLatched = true;          /* from a touch PEEK too: the card it comes back to stays up */
+    /* Back lands on the overview: nothing locks a bank page (2026-10-04). */
     S.pendingAction = { t: 'bus', bus: bus, door: { kind: 'mix', slot: S.slot, bus: S.bus } };
     S.dirty = true;
     return true;
 }
+/* ⭑ A MACRO'S EDITOR from its knob (Josh, 2026-10-04: "macro editor, each knob
+ * gets touch+jog to enter that knobs editor"): touch macro k on the MACROS card
+ * and click. The door rule is the K-list's (09-04): a macro with a choice made
+ * is ENTERED — its legs and ranges — an empty one goes straight to choosing.
+ * Back lands on the MACROS card (VIEW_TREE parents) — shown while a knob or the
+ * jog is touched, as every bank page is since 2026-10-04. */
+export function soundMacroKnobClick(k) {
+    if (S.view !== VIEW_MACROS || k < 0 || k >= NUM_KNOBS || S.track < 0) return false;
+    openKnobEditor();
+    S.knobIdx = k;
+    if (macroLegs(macroMapping(k)).length) openKnobLegs();
+    else { S.knobLegIdx = -1; S.pendingAction = { t: 'knobtarget' }; }   /* probes components — tick only */
+    S.dirty = true;
+    return true;
+}
+/* A touched knob's click on a card sound mode owns: MIX's sends, MACROS'
+ * editors. False when that knob opens nothing here. */
+export function soundKnobCardClick(k) {
+    if (S.view === VIEW_PROMPT) return soundMixSendClick(k);
+    if (S.view === VIEW_MACROS) return soundMacroKnobClick(k);
+    return false;
+}
+
 /* The session mixer's twin: from Session View, on its SEND A / SEND B page.
  * Back returns to that page (door 'sessmix'). */
 export function soundEnterSendFromSessionMixer(key) {
     const bus = FX_BUSES.find(b => b.id === (key === 'send_a' ? 'sendA' : key === 'send_b' ? 'sendB' : ''));
     if (!bus) return false;
     soundEnterBuses();
-    S.pendingAction = { t: 'bus', bus: bus, door: { kind: 'sessmix' } };
+    queueBusEntry({ t: 'bus', bus: bus, door: { kind: 'sessmix' } });
     return true;
 }
 
+/* A sound bank card's jog pair: JOG STEP under a held step, else CLK BANKS
+ * (the map) unless a knob is touched. */
+function cardJogHints(knobTouched) {
+    if (GS.heldStep >= 0) return [['JOG', 'STEP']];
+    return knobTouched ? [] : [['CLK', 'BANKS']];
+}
 function levelCardHints() {
-    /* MIX is no door (2026-09-26): the jog walks banks — or, with a step
-     * held, reveals its page (spec §2) — and Back leaves. A touched send
-     * knob takes the click to its effects. */
+    /* MIX is no door (2026-09-26): a click opens the bank map — or, with a
+     * step held, the jog reveals its page (spec §2) — and Back leaves. A
+     * touched send knob takes the click to its effects; any other touched
+     * knob keeps the map shut, so no CLK pair. */
     const _tk = S.touchedIdx >= 0 ? S.touchedIdx : GS.knobTouched;
     const _sb = _tk >= 0 ? mixSendBus(_tk) : null;
     if (_sb) return [['CLK', _sb.id === 'sendA' ? 'SEND A' : 'SEND B'], ['BACK', 'OUT']];
-    const jog = GS.heldStep >= 0 ? ['JOG', 'STEP'] : ['JOG', 'BANK'];
-    return [jog, ['BACK', 'OUT']];
+    return cardJogHints(_tk >= 0).concat([['BACK', 'OUT']]);
 }
 
 function volTarget() {
@@ -2982,8 +3035,7 @@ export function soundGestureReturn() {
         soundExit();
         GS.activeBank = BANK_AUTOMATION;
         GS.trackActiveBank[g.track] = BANK_AUTOMATION;
-        GS.bankCardLatched = true;
-        armBankDisplay();
+        armBankDisplay();               /* the open menu shows itself (autoMenuUp) */
         autoBankRestoreMenu(g.autoSel);
     } else if (g.wasActive) {
         /* ⭑ The SCREEN you pressed from: the menu, or the card / MACROS page
@@ -3078,6 +3130,8 @@ export function soundConsumeCoRunRequest() {
  * you land back on the view you actually navigated to. */
 export function soundEnteredInSession() { return S.enterSession; }
 
+/* The session bus context, staged on VIEW_BUSES for the queued entry into one
+ * bus (soundEnterBusFx); the list itself is retired (renderBuses). */
 export function soundEnterBuses() {
     /* Flush any pending level save for the track we came from (the knob
      * itself is Move's unless Shift is held — nothing to hand back). */
@@ -3090,17 +3144,8 @@ export function soundEnterBuses() {
      * soundExit, so it is not carried further than the edit it belongs to. */
     S.busLevelEditing = false;
     if (S.busLevelDirty) { S.busLevelDirty = false; S.pendingAction = { t: 'slotsave' }; }
-    /* ⚠⚠ BANK MODE IS PART OF OPENING THIS LIST — the ONE place that knows it,
-     * because both doors need it and two owners would drift. Since the list's
-     * visibility became sessMixerVisible()'s (the one law, session flavour), a
-     * list opened without the latch STANDS DOWN on the very next render: open,
-     * invisible, and with sound mode active underneath defeating the session
-     * click gate's !soundActive().
-     * ⚠ The jog-click door hits this too, not just the Shift+Menu gesture —
-     * sessMixerVisible() is the latch OR the mixer's knob PEEK, so walking to
-     * the gateway under a peek and clicking opens the list unlatched, and
-     * releasing the knob hides it. */
-    GS.sessMixerLatched = true;
+    /* A screen opened on purpose: it stays until Back (no session latch to
+     * hold it up since 2026-10-04 — it never yields). */
     S.active = true;
     S.enterSession = true;      /* called from SESSION view */
     S.bus = null;
@@ -3116,9 +3161,25 @@ export function soundEnterBuses() {
 /* Straight into MASTER FX from session view (Shift + hold Note/Session, Josh
  * 2026-09-24). It is the list's own door plus the Master row's own click, so
  * Back lands on the SESSION FX list exactly as if the row had been clicked. */
-export function soundEnterMasterFx() {
+export function soundEnterMasterFx() { soundEnterBusFx('master'); }
+
+/* Straight into one effect bus — the bank pad map's FX column in Session View
+ * (Josh, 2026-10-02: "3 pads for session effects"). The same door as Master
+ * above, so Back lands on the SESSION FX list whichever bus it was. */
+export function soundEnterBusFx(busId) {
+    const bus = FX_BUSES.find((b) => b.id === busId);
+    if (!bus) return false;
     soundEnterBuses();
-    S.pendingAction = { t: 'bus', bus: FX_BUSES[0], door: { kind: 'session' } };
+    queueBusEntry({ t: 'bus', bus: bus, door: { kind: 'session' } });
+    return true;
+}
+/* ⚠ Never OVER a level save soundEnterBuses queued: one action slot, and
+ * overwriting it dropped a bus level edited just before the jump. The save
+ * rides behind the entry (it is the whole state, not this slot's), so the
+ * staging view never gets a frame of its own. */
+function queueBusEntry(a) {
+    const prev = S.pendingAction;
+    S.pendingAction = prev && prev.t === 'slotsave' ? Object.assign({}, a, { then: prev }) : a;
 }
 
 function enterBus(bus, door) {
@@ -3132,11 +3193,10 @@ function enterBus(bus, door) {
     log('bus: ' + bus.id);
 }
 
-/* A bus has exactly ONE door now — the session FX list — so leaving always goes
- * back there. It briefly had two, and the leftover "which door?" bookkeeping is
- * what sent Back from a Master FX effect to a TRACK's sound page: entering from
- * the session list recorded slot 0 as "the track I came from", and 0 is a valid
- * slot. A single door needs no bookkeeping. */
+/* Back at a bus's top follows the DOOR its opener stated (S.busDoor) — never
+ * `S.slot`: inferring it once sent Back from a Master FX effect to a TRACK's
+ * sound page, because slot 0 is a valid slot. A session door (the map's FX
+ * pads, Shift + Note/Session, the session mixer's sends) closes out. */
 function leaveBus() {
     S.busLevelEditing = false;
     if (S.busLevelDirty) { S.busLevelDirty = false; S.pendingAction = { t: 'slotsave' }; }
@@ -3162,13 +3222,6 @@ function leaveBus() {
         S.dirty = true;
         return;
     }
-    if (door && door.kind === 'sessmix') {
-        soundExit();
-        GS.sessMixerLatched = true;     /* the page it came from: sessKnobMode is untouched meanwhile */
-        GS.screenDirty = true;
-        forceRedraw();
-        return;
-    }
     if (door && door.kind === 'track') {
         S.slot = door.slot;
         /* ⚠ AND the bus it was on: a Move track's sends are rows of its MOVE
@@ -3185,8 +3238,15 @@ function leaveBus() {
         S.dirty = true;
         return;
     }
-    S.view = VIEW_BUSES;
-    S.dirty = true;
+    /* ⭑ The Session effects LIST is gone (Josh, 2026-10-04: "No more session
+     * effects menu since we can enter master, send a/b directly from pads -
+     * we don't need back to go back to the session menu from there. just
+     * have it close out at the top level of each effect chain's menu"): Back
+     * at a bus's top closes out to the Session overview, whichever session
+     * door it came in by. */
+    soundExit();                        /* the overview: the mixer page shows on touch */
+    GS.screenDirty = true;
+    forceRedraw();
 }
 
 /* The picker's rows, dispatched by `kind` like every other list here.
@@ -4380,7 +4440,7 @@ function leaveMorphPicker() {
     if (macroMulti(mp) || macroLegs(mp).some(legRanged) || macroLegs(mp).some(l => l.kind === MORPH_KIND)) {
         S.knobLegRow = Math.min(S.knobLegRow, knobLegRows().length - 1);
         S.view = VIEW_KNOBLEGS;
-    } else S.view = VIEW_KNOBS;
+    } else S.view = VIEW_MACROS;
 }
 function commitKnobAssignment(target, param) {
     const i = S.knobIdx, t = S.track;
@@ -4411,14 +4471,14 @@ function commitKnobAssignment(target, param) {
      * tick re-seeds both. */
     S.macCells[i] = null; S.macVals[i] = null; S.macLegCells[i] = null; S.macLegVals[i] = null; S.knobAccum[i] = 0; S.macLastDir[i] = 0;
     writeSidecar();
-    /* The assignment list is the ONE route in (Josh, 2026-09-05: Shift+touch
-     * quick-assign retired), so a commit lands back on the list it came from:
-     * the LEG list when the knob has legs to show, the K-list otherwise. */
+    /* A commit lands back where it came from: the LEG list when the knob has
+     * legs to show, otherwise the MACROS card, whose cell now shows the result
+     * (the K-list it used to return to has no door since 2026-10-04). */
     S.knobLegIdx = -1;
     if (macroMulti(store[i]) || macroLegs(store[i]).some(legRanged)) {
         S.knobLegRow = Math.min(S.knobLegRow, knobLegRows().length - 1);
         S.view = VIEW_KNOBLEGS;
-    } else S.view = VIEW_KNOBS;
+    } else S.view = VIEW_MACROS;
 }
 
 /* ── where a screen SITS in the tree ───────────────────────────────────────
@@ -4481,11 +4541,11 @@ const VIEW_TREE = {
                             crumb: () => 'Inserts' },
     [VIEW_LFO]:         { parent: VIEW_SLOTCFG,    float: true,
                           crumb: () => 'LFO ' + (S.lfoNum + 1) },
-    [VIEW_KNOBLEGS]:    { parent: VIEW_KNOBS,      float: true,
+    [VIEW_KNOBLEGS]:    { parent: VIEW_MACROS,     float: true,
                           crumb: () => 'K' + (S.knobIdx + 1) },
     [VIEW_NOEDITOR]:    { parent: VIEW_BLOCKS,     float: false,
                           crumb: () => 'NO EDITOR' },
-    [VIEW_KNOB_TARGET]: { parent: VIEW_KNOBS,      float: true, backPure: true,
+    [VIEW_KNOB_TARGET]: { parent: VIEW_MACROS,     float: true, backPure: true,
                           crumb: () => 'K' + (S.knobIdx + 1) },
     [VIEW_KNOB_PARAM]:  { parent: VIEW_KNOB_TARGET, float: true, backPure: true,
                           /* ⚠ Falls back: the target is empty until one is
@@ -5368,6 +5428,12 @@ function chainRootView() {
     return null;
 }
 
+/* ⚠ RETIRED SCREEN (2026-10-04): the K-list (VIEW_KNOBS) has no door — each
+ * macro's editor opens from its own knob on the MACROS card, touch + click
+ * (soundMacroKnobClick), and its screens' Back lands on the card. Only
+ * openKnobEditor's one-tick transient still sets VIEW_KNOBS. This renderer,
+ * knobRowLabel and the VIEW_KNOBS jog/click/Back branches are left for a
+ * deliberate removal. */
 function renderKnobs() {
     /* Floats now: a submenu, and a plain list. The crumb says which track and
      * that you are in Knobs, so the header it used to draw is redundant. */
@@ -5907,7 +5973,7 @@ function macroLive(m) {
  * Its bank belongs to a pad mode: melodic for CLIP..SEQ ARP, both for LIVE
  * ARP, drum for ALL LANES — off-mode it reads UNASSIGNED, like a vanished
  * chain target. Two entries have no generic knob: DELAY's Clock Feedback is
- * the Shift+K1 alternate (S.delayClockFb), and the ALL LANES direction is a
+ * the K1 alternate (S.delayClockFb, touch + click), and the ALL LANES direction is a
  * custom knob (bankParams[t][7][6], -1 = unset). */
 function bankMacroOnMode(bank, padMode) {
     if (padMode === PMC) return false;
@@ -6811,13 +6877,21 @@ function macroCells(track, live) {
         }
         cells.push(cell);
     }
+    /* Every macro answers touch + click — its own editor (Josh, 2026-10-04:
+     * "macro editor, each knob gets touch+jog to enter that knobs editor"), so
+     * every cell wears the corner brackets, as the triggers do. */
+    for (const c of cells) if (c) c.opens = true;
     return cells;
 }
 function macroCardHints() {
-    /* The click opens the assign list; the jog walks banks — or, with a step
-     * held, reveals its page (spec §2). */
-    const jog = GS.heldStep >= 0 ? ['JOG', 'STEP'] : ['JOG', 'BANK'];
-    return [['CLK', 'ASSIGN'], jog, ['BACK', 'OUT']];
+    /* A touched macro's click opens ITS editor — EDIT when it has a choice
+     * made, ASSIGN when empty (soundMacroKnobClick's door rule). Untouched,
+     * a click opens the bank map — or, with a step held, the jog reveals its
+     * page (§2). */
+    const _tk = S.touchedIdx >= 0 ? S.touchedIdx : GS.knobTouched;
+    if (_tk >= 0 && _tk < NUM_KNOBS)
+        return [['CLK', macroLegs(macroMapping(_tk)).length ? 'EDIT' : 'ASSIGN'], ['BACK', 'OUT']];
+    return cardJogHints(_tk >= 0).concat([['BACK', 'OUT']]);
 }
 function renderMacros() {
     clear_screen();
@@ -9611,13 +9685,8 @@ export function soundOnCC(d1, d2, decodeDelta) {
         /* MIX has no door since 2026-09-26 (Josh: "take the click to enter the
          * menu off of sound+config"), except under a touched Send A / Send B
          * knob: that send's effects (Josh, 2026-10-01). */
-        if (S.view === VIEW_PROMPT) { soundMixSendClick(S.touchedIdx); return true; }
-        /* The CONFIG card: the click makes the list live, from its top. */
-        if (S.view === VIEW_CFGCARD) { S.pickRow = 0; soundShowMenu(); return true; }
+        if (soundCardClick()) return true;
         if (S.view === VIEW_NOEDITOR) { soundShowMenu(); return true; }   /* the click means what Back means here */
-        /* MACROS: the click opens the assign list, which floats over the page
-         * (no engine reads — the list is the store). */
-        if (S.view === VIEW_MACROS) { openKnobEditor(); S.dirty = true; return true; }
         /* ⭑ SHIFT+CLICK OPENS THE FILE BROWSER for the sample this marker is a
          * position IN — the route this screen took away. Before it existed, a
          * click on a marker dived to the bank editor, which is where the
@@ -10352,7 +10421,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
             /* Leave the range edit first, then the leg list — the same
              * two-stage Back slot settings has. */
             if (S.knobLegEditing) S.knobLegEditing = false;
-            else S.view = VIEW_KNOBS;
+            else S.view = VIEW_MACROS;      /* the card: the K-list has no door now */
         } else if (S.view === VIEW_KNOBS) {
             /* The list floats over the MACROS page; Back returns to it. The
              * store was written at each commit (sidecar), nothing to flush. */
@@ -10413,7 +10482,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
              * the card's one exit, both flavours. */
             S.pendingAction = { t: 'leavebus' };
         } else if (S.view === VIEW_BUSES) {
-            soundExit();
+            soundExit();                /* the Session overview */
         } else {
             /* The prompt (and any stray top-level screen): Back is OUT — of
              * sound mode AND of bank mode (Josh, 2026-09-01: "pressing back
@@ -11020,7 +11089,7 @@ export function renderTrackGatewayCard(track) {
     clear_screen();
     kitUseLayout('bank');
     drawKitBankHeader(BANKS[BANK_SOUND].name, 'audio', bankHeaderRight(false));
-    drawKitHintRow(MV_FOOTER_Y, [['JOG', GS.heldStep >= 0 ? 'STEP' : 'BANK'], ['BACK', 'OUT']]);
+    drawKitHintRow(MV_FOOTER_Y, cardJogHints(GS.knobTouched >= 0).concat([['BACK', 'OUT']]));
 }
 /* The CONFIG card in the same gap: the header, the brackets, the rows only if
  * sound mode last built them for this track. */
@@ -11030,7 +11099,7 @@ export function renderConfigCardPeek(track) {
     kitUseLayout('bank');
     drawKitBankHeader(TRACK_MENU_TITLE, null, bankHeaderRight(false));
     drawBrackets(0, CFG_LIST_TOP - 1, 128, MV_FOOTER_Y - CFG_LIST_TOP);
-    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'MENU'], ['JOG', 'BANK'], ['BACK', 'OUT']]);
+    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'MENU'], ['BACK', 'OUT']]);
 }
 /* The track's menu is TRACK CONFIG (2026-09-25). */
 const TRACK_MENU_TITLE = 'TRACK CONFIG';
@@ -11156,7 +11225,7 @@ function renderConfigCard() {
     lastMenuHeader = { name: TRACK_MENU_TITLE, glyph: null, right: bankHeaderRight(false) };
     drawKitList(S.pickRows.map(pickRowCell), -1, { h: MV_FOOTER_Y - CFG_LIST_TOP });
     drawBrackets(0, CFG_LIST_TOP - 1, 128, MV_FOOTER_Y - CFG_LIST_TOP);
-    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'MENU'], ['JOG', GS.heldStep >= 0 ? 'STEP' : 'BANK'], ['BACK', 'OUT']]);
+    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'MENU']].concat(GS.heldStep >= 0 ? [['JOG', 'STEP']] : [], [['BACK', 'OUT']]));
 }
 export function soundConfigCardForTest() {
     return { view: S.view, card: S.view === VIEW_CFGCARD, rows: S.pickRows.map((r) => r.kind) };
@@ -11265,6 +11334,10 @@ function menuRowHints(r) {
 }
 export function soundMenuHintsForTest() { return menuRowHints(S.pickRows[S.pickRow]); }
 
+/* ⚠ RETIRED 2026-10-04 with the Session FX list (Josh: "No more session
+ * effects menu"): no gesture rests on VIEW_BUSES now — soundEnterBuses
+ * stages it for the queued bus entry, which runs before a render. This,
+ * and the VIEW_BUSES jog / click / Back branches, are dead code kept for now. */
 function renderBuses() {
     /* A FULL SCREEN, exactly the SOUND + CONFIG menu's dress (Josh,
      * 2026-09-01: "master send fx interface should be a menu just like
@@ -11300,24 +11373,6 @@ function busMenuRows() {
     return { rows, sel: rowOf[S.busIdx] || 0 };
 }
 export function soundBusMenuRowsForTest() { return busMenuRows(); }
-
-/* ⭑ THE SESSION FX CARD = the list at rest (Josh, 2026-09-26: "can we make
- * session view "session effects" card the session effects menu like with did
- * with the the track config bank and track config menu?"): the list's own
- * header and rows, no cursor, the door's corner brackets round them — the
- * CONFIG card's shape. The click opens the list live (soundEnterBuses, via the
- * session click in ui_input_cc); Back from the list comes back here. Drawn by
- * ui_render's session mixer while sound mode is closed. */
-const SFX_LIST_TOP = 11;               /* the kit list's own default */
-export function renderSessionFxCard() {
-    clear_screen();
-    kitUseLayout('bank');
-    drawKitBankHeader('SESSION FX', 'audio', '');
-    fill_rect(0, MV_BAR_Y, 128, 1, 0);
-    drawKitList(busMenuRows().rows, -1, { h: MV_FOOTER_Y - SFX_LIST_TOP });
-    drawBrackets(0, SFX_LIST_TOP - 1, 128, MV_FOOTER_Y - SFX_LIST_TOP);
-    drawKitHintRow(MV_FOOTER_Y, [['CLK', 'MENU'], ['BACK', 'OUT']]);
-}
 
 /* What to CALL the block being edited.
  *
@@ -13198,25 +13253,8 @@ export function soundRender() {
      * other bank. Held gestures keep it up: an in-progress row edit, the knob
      * card (S.touchedIdx), the volume gesture and its readout window. Track
      * flavour only — the session buses are not banks and never yield. */
-    /* ⭑⭑ THE ONE LAW, SESSION FLAVOUR (Josh, 2026-09-02: "the weird jog touch
-     * and click fall-through we fixed on track banks is still happening on
-     * session banks"). The session FX list is the bank one past SEND B, so it
-     * obeys the same law as the track card — and its one owner is
-     * sessMixerVisible() (the session latch, or the mixer's knob peek).
-     *
-     * ⚠ THIS BRANCH WAS MISSED BY THE 2026-09-01 AUDIT. Its track twin below
-     * was migrated onto bankCardVisible(); this one kept the RETIRED display
-     * drivers (GS.jogTouched, the transient bankSelectTick window), which is
-     * both halves of the bug he re-reported:
-     *   - the list hid at rest even with bank mode ON (the latch survives
-     *     soundEnterBuses), and touching the jog brought it back — the peek;
-     *   - sound mode stays ACTIVE behind a stand-down, so the session click
-     *     gate's `!soundActive()` was false and the click fell through.
-     * Held gestures still keep it up; its own rows (inside a bus) never yield. */
-    if (S.view === VIEW_BUSES && S.enterSession &&
-            S.touchedIdx < 0 && !S.volTouched &&
-            !sessMixerShown())      /* + the jog-touch reveal (a render gate) */
-        return false;
+    /* (The bus list no longer yields: it is a screen you opened — Shift +
+     * Note/Session or the Session map's FX pads — and stays until Back.) */
     /* ⭑⭑ THE PROMPT YIELDS; THE MENU DOES NOT (Josh, 2026-08-28: "it's not a
      * bank"). The display law belongs to BANKS — show while the jog is touched
      * or the window is open, otherwise stand down to the track overview — and

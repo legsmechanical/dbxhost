@@ -1,4 +1,5 @@
 import './_bulk_get_stub.mjs';
+import { openTrackConfigViaMap } from './_map_config.mjs';
 /* tests/js/test_delete_click_menu.mjs — Delete + click in the TRACK MENU does
  * nothing (Josh, 2026-10-01: *"if you delete+click anywhere in the track menu it
  * falls down to the bank and resets it."*).
@@ -57,7 +58,7 @@ function openMenu(track, drum, bank) {
     leave();
     S.activeTrack = track; S.trackPadMode[track] = drum ? 1 : 0;
     S.activeBank = bank; S.trackActiveBank[track] = bank;
-    cc(SHIFT, 127); cc(NS, 127); cc(NS, 0); cc(SHIFT, 0); ticks(3);
+    openTrackConfigViaMap(); ticks(3);
     assert(snd.soundOpen(), 'rig: the track menu did not open');
 }
 function deleteClickEveryRow(label) {

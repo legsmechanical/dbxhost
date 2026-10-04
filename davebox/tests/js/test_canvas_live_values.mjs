@@ -1,3 +1,4 @@
+import { openTrackConfigViaMap } from './_map_config.mjs';
 /* tests/js/test_canvas_live_values.mjs — a fullscreen module canvas gets its
  * live values (upstream #530, stock 1.5): a canvas param declaring `extra_keys`
  * and `fullscreen_live_ms` has those keys re-read on the interval and handed to
@@ -80,7 +81,7 @@ async function main() {
         globalThis.init();
         S.awaitingProjectSelect = false; S.ledInitComplete = true; S.sessionView = false;
         S.activeTrack = 4;
-        cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+        openTrackConfigViaMap();
         ticks(6);
     });
 

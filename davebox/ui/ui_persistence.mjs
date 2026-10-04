@@ -399,7 +399,9 @@ export function sidecarObject() {
         dva: S.drumVelZoneArmed.slice(),
         dleu: S.drumLaneEuclidN.map(function(lane) { return lane.slice(); }),
         to: S.trackOctave.slice(),
-        tab: S.trackActiveBank.slice(),
+        /* A door screen's bank is borrowed: save the one it gives back. */
+        tab: S.trackActiveBank.map((b, i) =>
+            (S.doorReturn && S.doorReturn.track === i && b === S.doorReturn.door) ? S.doorReturn.bank : b),
         am: S.trackAtMode.slice(),
         pchr: S.padLayoutChromatic.map(function(b) { return b ? 1 : 0; }),
         /* The Chord layout (additive on v:9, like pchr): which tracks are on
@@ -497,6 +499,7 @@ export function saveState() {
      * all of them can be reached before a selection. */
     if (S.awaitingProjectSelect) return;
     S.altMode = false;   /* transient; never persisted across suspend/resume */
+    S.knobAlt = 0;
     /* Route the DSP save through the end-of-tick pendingSuspendSave drain so it
      * cannot be coalesced by other set_params fired in the same audio buffer
      * (Quit / Shift+Back / Save menu / co-run handoff all call this from

@@ -1,3 +1,4 @@
+import { openTrackConfigViaMap } from './_map_config.mjs';
 /* tests/js/test_fx_move_rows.mjs — Move Up / Move Down, reached the way a user
  * reaches them.
  *
@@ -127,7 +128,7 @@ function screen() {
 function onScreen(names) { return screen().filter(s => names.includes(s)); }
 
 function openMenu() {
-    cc(MoveShift, 127); cc(MoveNoteSession, 127); cc(MoveNoteSession, 0); cc(MoveShift, 0);
+    openTrackConfigViaMap();
     ticks(6);
     if (snd.soundPickStateForTest().view !== 0) throw new Error('the sound menu did not open');
 }

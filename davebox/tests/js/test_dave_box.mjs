@@ -291,7 +291,7 @@ step('⭐ banner draw: black 12px window, the slice inside it, NO wordmark while
     S.daveBox = null; S.sessionView = true; S.playing = true; S.bannerDave = 0; S.daveWindowOn = true;
     /* Clear the gates a prior step may have left: the empty-album popup, a
      * mixer peek, a farewell. */
-    S.actionPopupEndTick = -1; S.sessMixerLatched = false; S.knobTouched = -1; S.exitFarewell = 0;
+    S.actionPopupEndTick = -1; S.knobTouched = -1; S.exitFarewell = 0;
     S.masterPos = 96;                              /* a quarter through bar 1 -> row 13 */
     const yOff = daves.bannerDaveYOff(96);
     if (yOff !== 13) throw new Error('quarter bar should sit at row 13, got ' + yOff);

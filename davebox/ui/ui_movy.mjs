@@ -463,7 +463,12 @@ export function mvPrintScaled(x, y, text, color, scale) {
     }
 }
 
-/* ---- 5x3 micro font (schwung-movy glyphs5x3, MIT) — inside the squares ---- */
+/* ---- 5x3 micro font (schwung-movy glyphs5x3, MIT) — inside the squares ----
+ * Six letters redrawn for the bank pad map (Josh, 2026-10-02), each because
+ * it read as another character at this size: N (read as K) is an arch, A's
+ * crossbar sits a row lower, B is rounded (one pixel from 8), G is rounded and
+ * open (one pixel from 6), K has arms (read as H), and O is round — it was
+ * IDENTICAL to 0. M stays as Movy drew it (Josh: keep the original M). */
 const PF3_CHARS = " !\"'()+,-./:0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ%<>=?*";
 const PF3_G = [
   [4,0,0,0],
@@ -475,11 +480,11 @@ const PF3_G = [
   [4,0,3,5,7,4,6,4,7], [4,0,3,5,5,5,7,4,4], [4,0,3,5,7,1,7,4,7],
   [4,0,3,5,7,1,7,5,7], [4,0,3,5,7,4,4,4,4], [4,0,3,5,7,5,7,5,7],
   [4,0,3,5,7,5,7,4,7],
-  [4,0,3,5,2,7,5,5,5], [4,0,3,5,7,5,3,5,7], [4,0,3,5,7,1,1,1,7],
+  [4,0,3,5,2,5,7,5,5], [4,0,3,5,3,5,3,5,3], [4,0,3,5,7,1,1,1,7],
   [4,0,3,5,3,5,5,5,3], [4,0,3,5,7,1,3,1,7], [4,0,3,5,7,1,3,1,1],
-  [4,0,3,5,7,1,5,5,7], [4,0,3,5,5,5,7,5,5], [4,0,3,5,7,2,2,2,7],
-  [4,0,3,5,4,4,4,5,7], [4,0,3,5,5,5,3,5,5], [4,0,3,5,1,1,1,1,7],
-  [4,0,3,5,5,7,5,5,5], [4,0,3,5,5,3,5,5,5], [4,0,3,5,7,5,5,5,7],
+  [4,0,3,5,6,1,5,5,6], [4,0,3,5,5,5,7,5,5], [4,0,3,5,7,2,2,2,7],
+  [4,0,3,5,4,4,4,5,7], [4,0,3,5,5,3,1,3,5], [4,0,3,5,1,1,1,1,7],
+  [4,0,3,5,5,7,5,5,5], [4,0,3,5,3,5,5,5,5], [4,0,3,5,2,5,5,5,2],
   [4,0,3,5,7,5,7,1,1], [4,0,3,5,3,5,5,7,2], [4,0,3,5,7,5,3,5,5],
   [4,0,3,5,6,1,2,4,3], [4,0,3,5,7,2,2,2,2], [4,0,3,5,5,5,5,5,7],
   [4,0,3,5,5,5,5,5,2], [4,0,3,5,5,5,5,7,7], [4,0,3,5,5,5,2,5,5],
@@ -2409,7 +2414,11 @@ export const MV_RULE_Y = MV_FOOTER_Y - 1;
  * Collapsing them would tell the user "back" does one thing when it does two,
  * and that difference is the one thing they cannot see before pressing it. */
 export const MV_FOOTER_CANON = Object.freeze({
-    keys: Object.freeze(['JOG', 'CLK', 'BACK', 'SHFT', 'MUTE', 'KNB']),
+    /* KNB+CLK: the one two-control key — touch any knob and click (RPT
+     * GROOVE's page flip); KNB alone would not say "+ click". */
+    /* TCH: a touch (a knob or the jog) shows the page to edit; PAD: a pad
+     * (Shift + pad picks the track) — the track overview's footer, 2026-10-04. */
+    keys: Object.freeze(['JOG', 'CLK', 'BACK', 'SHFT', 'MUTE', 'KNB', 'KNB+CLK', 'TCH', 'PAD']),
     backActions: Object.freeze(['EXIT', 'OUT']),
 });
 
@@ -3065,51 +3074,52 @@ export function drawKitCrumbs(parts) {
  * category scope"). An item with no `cat` is a plain row, fully left, as
  * before. The highlight starts at the row's own indent, so it never covers a
  * label. */
-export const MV_BANKNAV_ROW_H = 9, MV_BANKNAV_ROWS = 7;
-/* Names only, no bank glyphs (Josh, 2026-09-26: "do a build with no icons on
- * the overlay"). The items still carry their glyph; true draws it again. */
-export const MV_BANKNAV_ICONS = false;
-const bankNavGlyphW = (g) => (MV_BANKNAV_ICONS ? kitBankGlyphWidth(g) + 3 : 0);
-export function drawKitBankNavColumn(items, cur) {
-    if (!items || !items.length) return;
-    const ROW = MV_BANKNAV_ROW_H, MID = (MV_BANKNAV_ROWS - 1) >> 1;
-    /* One gutter per nesting depth: depth 0 starts at the left edge, depth 1
-     * where a depth-0 group's rows start (under DRUM LANE's name). Each is as
-     * wide as its longest label. */
-    const lw = [0, 0];
-    for (const it of items) if (it.cat) { const d = it.cat.depth ? 1 : 0; lw[d] = Math.max(lw[d], mvWidth(it.cat.label)); }
-    const base = [0, 0], lineX = [0, 0], gut = [3, 3];
-    lineX[0] = 2 + lw[0] + 3; gut[0] = lineX[0] + 4;
-    base[1] = lw[0] ? gut[0] - 2 : 0;
-    lineX[1] = base[1] + 2 + lw[1] + 3; gut[1] = lineX[1] + 4;
-    const x0Of = (it) => (it.cat ? gut[it.cat.depth ? 1 : 0] : 3);
-    let w = 0;
-    for (const it of items) w = Math.max(w, x0Of(it) + bankNavGlyphW(it.glyph) + mvWidth(it.name));
-    const PW = Math.min(SCREEN_W - 16, w + 4);
-    drawKitBackdropDim(PW + 1, 0, SCREEN_W - PW - 1, 64);
-    fill_rect(0, 0, PW, 64, 0);
-    fill_rect(PW, 0, 1, 64, 1);
-    const vis = [];
-    for (let r = 0; r < MV_BANKNAV_ROWS; r++) {
-        const i = cur + (r - MID);
-        if (i < 0 || i >= items.length) continue;
-        const it = items[i], y = r * ROW + 1, on = r === MID, fg = on ? 0 : 1;
-        const x0 = x0Of(it);
-        if (on) { const hx = it.cat ? x0 - 2 : 0; fill_rect(hx, y - 1, PW - hx, ROW + 1, 1); }
-        if (MV_BANKNAV_ICONS) drawKitBankGlyph(it.glyph, x0, y + 1, fg);
-        mvPrint(x0 + bankNavGlyphW(it.glyph), y + 1, it.name, fg);
-        if (it.cat) {
-            const g = vis.length && vis[vis.length - 1].id === it.cat.id ? vis[vis.length - 1] : null;
-            if (g) g.b = r; else vis.push({ id: it.cat.id, label: it.cat.label, d: it.cat.depth ? 1 : 0, a: r, b: r });
-        }
-    }
-    for (const g of vis) {
-        const top = g.a * ROW + 2, bot = g.b * ROW + ROW - 2;
-        const tw = mvWidth(g.label), L = lineX[g.d], B = base[g.d];
-        mvPrint(B + 1 + Math.round((L - B - 1 - tw) / 2), Math.round((top + bot) / 2 - 2.5), g.label, 1);
-        fill_rect(L, top, 1, bot - top, 1);
-    }
+/* ---- THE BANK PAD MAP (Josh, 2026-10-02) ----
+ * Full screen, no header — like the bank column, it covers the page while the
+ * jog is HELD. Four 32px columns, one per category, each a picture of a
+ * column of the left 4x4 pads: the category in the micro face on top with a
+ * short rule, then four rows of boxed bank names. The current bank is filled;
+ * a bank this track does not have draws nothing, so its place stays empty
+ * exactly as its pad stays dark.
+ *
+ * `cols` = [{ label | null, cells: [name | null] x4 }] x4; `cur` = { c, r } | null.
+ * Names are the micro face, centred; a name wider than the box wraps at its
+ * last space onto two lines (LIVE/ARP, DRUM/LANE, RPT/GROOVE). Geometry is the
+ * approved preview's: rows 14px apart from y=7, boxes 13px tall. */
+export const MV_BANKMAP_COL_W = 32, MV_BANKMAP_TOP = 7, MV_BANKMAP_ROW = 14;
+export function bankMapCellRect(c, r) {
+    return { x: c * MV_BANKMAP_COL_W, y: MV_BANKMAP_TOP + r * MV_BANKMAP_ROW,
+             w: MV_BANKMAP_COL_W - 1, h: MV_BANKMAP_ROW - 1 };
 }
+export function drawKitBankMap(cols, cur) {
+    if (!cols) return;
+    fill_rect(0, 0, SCREEN_W, 64, 0);
+    cols.forEach((col, c) => {
+        if (!col) return;
+        const x0 = c * MV_BANKMAP_COL_W, inner = MV_BANKMAP_COL_W - 5;
+        if (col.label) {
+            const lw = pf3Width(col.label) - 1;
+            pf3Print(x0 + Math.round((MV_BANKMAP_COL_W - 1 - lw) / 2), 0, col.label, 1);
+            fill_rect(x0 + 2, 6, MV_BANKMAP_COL_W - 5, 1, 1);
+        }
+        col.cells.forEach((name, r) => {
+            if (!name) return;
+            const { x, y, w, h } = bankMapCellRect(c, r);
+            const on = !!(cur && cur.c === c && cur.r === r);
+            if (on) fill_rect(x, y, w, h, 1); else rectOutline(x, y, w, h, 1);
+            notchCorners(x, y, w, h);
+            const sp = name.lastIndexOf(' ');
+            const lines = (pf3Width(name) - 1 > inner && sp > 0)
+                ? [name.slice(0, sp), name.slice(sp + 1)] : [name];
+            let ty = y + Math.round((h - (lines.length * 6 - 1)) / 2);
+            for (const t of lines) {
+                pf3Print(x + Math.round((w - (pf3Width(t) - 1)) / 2), ty, t, on ? 0 : 1);
+                ty += 6;
+            }
+        });
+    });
+}
+
 
 export function drawKitListOverlay(options, sel, opts) {
     /* ⭑ The box AUTO-SIZES to its longest label (Josh, 2026-08-25). It starts at
