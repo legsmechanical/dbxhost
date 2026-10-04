@@ -1974,10 +1974,11 @@ export function _tickImpl() {
             }
             /* Sample = bake, always available: dim ambient (same as Capture idle). */
             setButtonLED(MoveSample, DarkGrey);
-            /* Back LED: lit where a TAP is functional (backs out of a dialog / menu /
-             * perf lock / Track-view alt-view or non-default bank); off at the home
-             * screens where a tap is a no-op. Hold-to-suspend works regardless. Dark
-             * during co-run — Back is ceded to the peer there and never reaches us. */
+            /* Back LED: lit where a TAP is functional — backTapWouldAct mirrors
+             * _backTap (a dialog / menu / sound mode's screens / a bank page on
+             * screen / an alt to flip back / the perf lock); off at the home
+             * screens where a tap is a no-op. Dark during co-run — Back is ceded
+             * to the peer there and never reaches us. */
             setButtonLED(MoveBack,
                 (S.moveCoRunTrack < 0 && backTapWouldAct())
                     ? White : LED_OFF);

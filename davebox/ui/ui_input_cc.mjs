@@ -2267,6 +2267,12 @@ export function backTapWouldAct() {
     if (S.daveBox) return true;
     if (S.stepRecActive) return true;
     if (S.bankMapLatched) return true;
+    /* Sound mode's own screens (TRACK CONFIG, the editors, MIX / MACROS up):
+     * Back always steps out a level there. At rest it is not up. */
+    if (soundActive()) return true;
+    if (S.globalEnumPick) return true;
+    if (autoMenuUp() || doorScreenUp()) return true;     /* AUTOMATION's layers / its screen */
+    if (S.confirmMacroClear || S.chordPopupOpen) return true;
     if (S.snapshotPicker || S.tempoSelectActive ||
         S.mergeNoticePending || S.mergeCountingIn ||
         S.pendingMergePlacement || S.mergeSoloPlacement >= 0 ||
@@ -2275,8 +2281,13 @@ export function backTapWouldAct() {
         S.confirmBake || S.recordBlockedDialog ||
         S.bpmMoveInfo || S.tapTempoOpen || S.globalMenuOpen) return true;
     if (S.sessionView) return S.perfViewLocked;
-    /* Track view: alt-view exits, then non-default bank steps back to 0. */
-    return S.loopLatched || S.stepIntervalMode || S.altMode || S.knobAlt !== 0 || S.activeBank !== 0;
+    /* Track view: the alt views flip back, then a bank page on screen is
+     * dismissed. ⚠ NOT `activeBank !== 0`: Back stopped stepping the bank
+     * back to CLIP on 2026-08-25 (it only dismisses), and that term kept the
+     * LED lit on every overview resting on another bank (Josh, 2026-10-04:
+     * "Back button needs to light when it's functional"). */
+    return S.loopLatched || S.stepIntervalMode || S.altMode || S.knobAlt !== 0 ||
+        !!S.autoReturn || S.bankCardLatched || S.bankSelectTick >= 0 || S.jogTouched;
 }
 
 /* ⭑⭑ THE NOTE/SESSION LAW (Josh, 2026-09-02; revised 2026-09-30: Note/Session

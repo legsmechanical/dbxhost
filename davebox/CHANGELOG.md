@@ -66,6 +66,10 @@ the section into a versioned heading at release time.
   matches 8.
 
 ### Fixed
+- **The Back button lights only when a tap does something.** It stayed lit on
+  an overview resting on any bank but the first (where Back does nothing), and
+  stayed dark in TRACK CONFIG, the sound editors, a bank page on screen and the
+  AUTOMATION screen, where it works.
 - **Leaving a module's full-screen picker returns to the page you opened it
   from.** DR32's engine picker (ENGN) dropped you on a preset page (My
   Presets, or DR32's Kit page) once a preset or kit had been loaded, and on

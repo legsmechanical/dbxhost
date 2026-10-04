@@ -2551,6 +2551,13 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 - In Session View each ring is its track's color — dark when muted, flashing when
   soloed.
 
+**Back**
+
+- Lit when a tap does something here: closes a menu, picker or dialog, puts away
+  the bank map or a bank page on screen, steps out of a screen, switches an alt
+  knob back, or unlocks Performance Mode. Dark on the overviews, where a tap does
+  nothing (holding Back still works).
+
 **Track numbers** (lower half of the overview)
 
 - The active track's number sits inside a box; a muted track's number blinks, and
