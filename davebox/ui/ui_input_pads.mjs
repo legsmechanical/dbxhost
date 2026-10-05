@@ -1488,11 +1488,8 @@ export function _onStepButtons(d1, d2) {
         /* Delete + step button (Track View): clear all notes from that step,
          * and every parameter's automation LOCK at that step (spec §6.3) —
          * automation is per clip, not per bank. */
-        {
-            const _t = S.activeTrack, _ac = effectiveClip(_t);
-            const _abs = (S.trackPadMode[_t] === PAD_MODE_DRUM ? S.drumStepPage[_t] : S.trackCurrentPage[_t]) * 16 + idx;
-            automationClearStep(_t, _ac, _abs);
-        }
+        /* ⚠ The automation lock clear goes AFTER the note clear that takes the
+         * undo snapshot — see automationClearStep. */
         if (S.trackPadMode[S.activeTrack] === PAD_MODE_DRUM) {
             /* Drum mode: clear step in active lane */
             const t       = S.activeTrack;
@@ -1500,6 +1497,7 @@ export function _onStepButtons(d1, d2) {
             const absStep = S.drumStepPage[t] * 16 + idx;
             noteUndoUnit(); S.undoSeqArpSnapshot = null;   /* the DSP snapshots it now (as clearStep, melodic) */
             host_module_set_param('t' + t + '_l' + lane + '_step_' + absStep + '_clear', '1');
+            automationClearStep(t, effectiveClip(t), absStep);   /* the clear above is already sent */
             S.drumLaneSteps[t][lane][absStep] = '0';
             S.drumLaneHasNotes[t][lane] = S.drumLaneSteps[t][lane].some(c => c !== '0');
             forceRedraw();
@@ -1507,6 +1505,7 @@ export function _onStepButtons(d1, d2) {
         const ac     = effectiveClip(S.activeTrack);
         const absIdx = S.trackCurrentPage[S.activeTrack] * 16 + idx;
         clearStep(S.activeTrack, ac, absIdx);
+        automationClearStep(S.activeTrack, ac, absIdx, S.pendingDefaultSetParams);   /* behind it */
         forceRedraw();
         }
     } else if (S.shiftHeld) {

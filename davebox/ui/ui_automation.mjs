@@ -1173,10 +1173,17 @@ export function automationClearPoints(track, clip, target) {
 }
 
 /* Delete + step: every parameter's points in that step. */
-export function automationClearStep(track, clip, step) {
+/* `queue`: the caller's ordered queue to go BEHIND (S.pendingDefaultSetParams).
+ * ⚠ The melodic step clear rides that one-per-tick queue and is what takes the
+ * undo snapshot; this file's own writes flush a tick EARLY, so without `queue`
+ * the lock clear landed first and Undo brought the note back without its locks
+ * (2026-10-04 review). Without `queue` it goes on this file's flush — right
+ * only when the caller's clear has already been SENT (the drum lane's is). */
+export function automationClearStep(track, clip, step, queue) {
     const tps = automationStepTicks(track, clip);
     const from = step * tps, to = from + tps - 1;
-    queueSet('t' + track + '_pa_clear_step', clip + ' ' + from + ' ' + to);
+    if (queue) queue.push({ key: 't' + track + '_pa_clear_step', val: clip + ' ' + from + ' ' + to, _local: true });
+    else queueSet('t' + track + '_pa_clear_step', clip + ' ' + from + ' ' + to);
     listGen++;
     expectStaged();
 }
@@ -1401,7 +1408,7 @@ function queuedClearOutstanding() {
     if (!q || !q.length) return false;
     for (let i = 0; i < q.length; i++) {
         const k = q[i] && q[i].key;
-        if (k && (k.endsWith('_pa_clear') || k.endsWith('_pa_clear_key'))) return true;
+        if (k && (k.endsWith('_pa_clear') || k.endsWith('_pa_clear_key') || k.endsWith('_pa_clear_step'))) return true;
     }
     return false;
 }
