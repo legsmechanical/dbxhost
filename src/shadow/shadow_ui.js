@@ -3392,17 +3392,20 @@ function ensureChainConfigFresh(slotIndex) {
 }
 
 /* Load chain config from current patch info */
-function loadChainConfigFromSlot(slotIndex) {
+/* `knownIds` (optional): the slot's module ids as readSlotModuleIds returned
+ * them, when the caller has just read them — a reload then costs no reads. */
+function loadChainConfigFromSlot(slotIndex, knownIds) {
     const cfg = chainConfigs[slotIndex] || createEmptyChainConfig();
 
     /* Read current patch configuration from DSP
      * Note: get_param uses underscores (synth_module), set_param uses colons (synth:module) */
-    const synthModule = getSlotParam(slotIndex, "synth_module");
-    const midiFxModule = getSlotParam(slotIndex, "midi_fx1_module");
-    const fx1Module = getSlotParam(slotIndex, "fx1_module");
-    const fx2Module = getSlotParam(slotIndex, "fx2_module");
-    const fx3Module = getSlotParam(slotIndex, "fx3_module");
-    const fx4Module = getSlotParam(slotIndex, "fx4_module");
+    const ids = knownIds || readSlotModuleIds(slotIndex);
+    const synthModule = ids.synth_module;
+    const midiFxModule = ids.midi_fx1_module;
+    const fx1Module = ids.fx1_module;
+    const fx2Module = ids.fx2_module;
+    const fx3Module = ids.fx3_module;
+    const fx4Module = ids.fx4_module;
 
     const oldFx1 = cfg.fx1 ? cfg.fx1.module : null;
     const oldFx2 = cfg.fx2 ? cfg.fx2.module : null;
@@ -3438,8 +3441,21 @@ const SLOT_MODULE_SIGNATURE_KEYS = ["synth_module", "midi_fx1_module", "fx1_modu
 function slotModuleSignatureOf(read) {
     return SLOT_MODULE_SIGNATURE_KEYS.map((k) => read(k) || "").join("|");
 }
+/* A slot's six module ids, { key: id }, in ONE bulk round trip; per key only
+ * when the bulk read fails. A project switch reads every slot's ids twice
+ * (signature, then the reload when it changed) — measured on the Move as ~100
+ * single round trips inside one ~1 s tick. A failed read is "" either way, as
+ * getSlotParamsBulk answers, which every caller already treats as empty. */
+function readSlotModuleIds(slotIndex) {
+    const bulk = getSlotParamsBulk(slotIndex, SLOT_MODULE_SIGNATURE_KEYS);
+    if (bulk) return bulk;
+    const out = {};
+    for (const k of SLOT_MODULE_SIGNATURE_KEYS) out[k] = getSlotParam(slotIndex, k) || "";
+    return out;
+}
 function getSlotModuleSignature(slotIndex) {
-    return slotModuleSignatureOf((k) => getSlotParam(slotIndex, k));
+    const ids = readSlotModuleIds(slotIndex);
+    return slotModuleSignatureOf((k) => ids[k]);
 }
 
 /* Refresh module signature for a slot and invalidate knob cache on changes.
@@ -3447,12 +3463,16 @@ function getSlotModuleSignature(slotIndex) {
  * six round-trips are not paid twice (the autosave reads it in its bulk). */
 function refreshSlotModuleSignature(slotIndex, knownSignature) {
     if (slotIndex < 0 || slotIndex >= SHADOW_UI_SLOTS) return false;
-    const signature = (typeof knownSignature === "string")
-        ? knownSignature : getSlotModuleSignature(slotIndex);
+    let ids = null;
+    let signature = knownSignature;
+    if (typeof signature !== "string") {
+        ids = readSlotModuleIds(slotIndex);
+        signature = slotModuleSignatureOf((k) => ids[k]);
+    }
     if (signature !== lastSlotModuleSignatures[slotIndex]) {
         lastSlotModuleSignatures[slotIndex] = signature;
         invalidateFeedbackModuleCache();
-        loadChainConfigFromSlot(slotIndex);
+        loadChainConfigFromSlot(slotIndex, ids);   /* reuses the ids just read */
         invalidateKnobContextCache();
         needsRedraw = true;
         return true;
