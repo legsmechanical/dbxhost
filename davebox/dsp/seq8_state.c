@@ -925,6 +925,12 @@ static void seq8_fresh_project_defaults(seq8_instance_t *inst) {
     drum_clips_alloc(inst, &inst->tracks[0]);
 }
 
+#ifdef SEQ8_TESTING
+/* Test hook: cap the bytes seq8_load_state may read (-1 = no cap), so a short
+ * read can be driven without a faulty disk. */
+static long seq8_test_read_cap = -1;
+#endif
+
 static void seq8_load_state(seq8_instance_t *inst) {
     /* A preview never outlives the project it was previewing in: the clips it
      * would restore are about to be replaced. */
@@ -945,11 +951,34 @@ static void seq8_load_state(seq8_instance_t *inst) {
     long fsz = ftell(fp);
     fseek(fp, 0, SEEK_SET);
     if (fsz <= 0) { fclose(fp); remove(inst->state_path); seq8_fresh_project_defaults(inst); return; }
+    /* ⚠ A file that EXISTS but cannot be read IN FULL is a load that did not
+     * happen — never a brand-new project. These used to return silently on a
+     * malloc failure, accept a short read as the whole file, and treat a
+     * zero-byte read of a non-empty file as empty AND DELETE IT. Each left the
+     * instance (already reset by state_load) blank or partial with saving
+     * armed, so the next edit saved that over the real file (2026-10-04
+     * review). Now: log, re-arm awaiting_select so every save path refuses,
+     * and leave the file alone. */
     char *buf = (char *)malloc((size_t)fsz + 1);
-    if (!buf) { fclose(fp); return; }
-    size_t n = fread(buf, 1, (size_t)fsz, fp);
+    if (!buf) {
+        fclose(fp);
+        seq8_ilog(inst, "LOAD FAILED: no memory for the state file; saving stays off");
+        inst->awaiting_select = 1;
+        return;
+    }
+    size_t want = (size_t)fsz;
+#ifdef SEQ8_TESTING
+    if (seq8_test_read_cap >= 0 && (size_t)seq8_test_read_cap < want) want = (size_t)seq8_test_read_cap;
+#endif
+    size_t n = want ? fread(buf, 1, want, fp) : 0;
     fclose(fp);
-    if (!n) { seq8_load_buf_free(buf); remove(inst->state_path); seq8_fresh_project_defaults(inst); return; }
+    if (n != (size_t)fsz) {
+        seq8_load_buf_free(buf);
+        seq8_ilog(inst, "LOAD FAILED: short read of the state file; saving stays off:");
+        seq8_ilog(inst, inst->state_path);
+        inst->awaiting_select = 1;
+        return;
+    }
     buf[n] = '\0';
     /* One pass, so the ~15k getter lookups below stop rescanning the file. */
     jidx_build(buf);
