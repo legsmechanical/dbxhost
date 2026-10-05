@@ -1,12 +1,15 @@
 /* tests/test_restart_releases_queued_offs.c — Restart and Restart-at-page send
- * the note-offs still waiting in a chain track's play-effects queue.
+ * the note-offs still waiting in a MIDI-to follower's play-effects queue.
  *
  * THE BUG THIS PINS (2026-10-04 module review): the restart, restart_at and
  * panic branches carried their own copy of the silencer, written before Stop's
- * was fixed: for a chain / external route they ZEROED the queue. A MIDI DLY
- * echo that has already sounded has its note-off waiting there, so it was
- * dropped and the synth held the echo. They now share Stop's silencer
- * (silence_track_from_set_param), which sends the queued offs.
+ * was fixed: they tested the track's OWN route and, for anything but Move,
+ * ZEROED the queue. A MIDI DLY echo that has already sounded has its note-off
+ * waiting there. On a chain synth the restart's panic sweep covers it anyway,
+ * but a `MIDI to Track N` follower whose target plays a MOVE instrument reads
+ * as external, lost its offs, and the sweep never touches Move (it corrupts
+ * Move's voices): the echo stuck. They now share Stop's silencer
+ * (silence_track_from_set_param), which goes by the EFFECTIVE route.
  *
  * Measured at the moment the note itself has ended (nothing left for the
  * per-note silencer) but an echo's note-off is still queued. */
@@ -20,10 +23,13 @@ static int queued_offs(const play_fx_t *fx) {
     }
     return n;
 }
+/* Offs that reached MOVE (the inject path): the panic sweep's offs go to
+ * Schwung slots and must not count. */
 static int emitted_offs(void) {
     int n = 0;
     for (int i = 0; i < hx_stub_event_count(); i++) {
         const hx_midi_event *e = hx_stub_event(i);
+        if (e->kind != HX_MIDI_INJECT) continue;
         int st = e->bytes[1] & 0xF0;
         if (st == 0x80 || (st == 0x90 && e->bytes[3] == 0)) n++;
     }
@@ -35,7 +41,11 @@ static void run(const char *verb) {
     HX_ASSERT(h, "create failed");
     seq8_instance_t *inst = (seq8_instance_t *)h->inst;
     seq8_track_t *tr = &inst->tracks[1];
-    hx_set_param(h, "t1_route", "schwung");
+    hx_set_param(h, "t1_route", "external");
+    hx_set_param(h, "t1_midi_to", "3");       /* plays track 3's instrument */
+    hx_set_param(h, "t2_route", "move");
+    HX_ASSERT(midi_dest_resolve(tr->pfx.route, tr->pfx.slot, tr->pfx.midi_to).route == ROUTE_MOVE,
+              "control: t1 follows a Move instrument");
     hx_set_param(h, "t1_delay_level", "100");
     hx_set_param(h, "t1_delay_repeats", "4");
     hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
