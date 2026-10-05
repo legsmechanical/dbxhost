@@ -50,7 +50,7 @@ function extractFn(name) {
 const sigKeysDecl = (src.match(/const SLOT_MODULE_SIGNATURE_KEYS = \[[^\]]*\];/) || [""])[0];
 ok(sigKeysDecl, "SLOT_MODULE_SIGNATURE_KEYS declaration not found");
 const code = [sigKeysDecl, ...["getSlotParam", "getSlotParamsBulk", "getSlotStateWithRetry",
-    "slotModuleSignatureOf", "getSlotModuleSignature", "refreshSlotModuleSignature",
+    "slotModuleSignatureOf", "readSlotModuleIds", "getSlotModuleSignature", "refreshSlotModuleSignature",
     "buildSlotPatchJson", "autosaveAllSlots"].map(extractFn)].join("\n");
 
 const VALUE_CAP = 128 * 1024;
@@ -117,9 +117,10 @@ function makeHost(mode) {
     return h;
 }
 
-function runRig(mode, forSnapshot) {
+function runRig(mode, forSnapshot, refreshOnly) {
     const host = makeHost(mode);
     const writes = [];
+    const reloadIds = [];
     const chainConfigs = Array.from({ length: 8 }, () => null);
     const scope = {
         SHADOW_UI_SLOTS: 5, BusModel, bulkEncodeItems, bulkDecode,
@@ -133,7 +134,8 @@ function runRig(mode, forSnapshot) {
         host_write_file: (p, c) => { writes.push([p, c]); return true; },
         /* loadChainConfigFromSlot: fills chainConfigs from the module ids, as the
          * real one does — without round-trips, so both modes share its cost. */
-        loadChainConfigFromSlot: (i) => {
+        loadChainConfigFromSlot: (i, ids) => {
+            reloadIds.push([i, ids ? JSON.stringify(ids) : null]);
             const k = host.world[i].keys, m = (id) => id ? { module: id, params: {} } : null;
             chainConfigs[i] = { synth: m(k.synth_module), midiFx: m(k.midi_fx1_module), fx1: m(k.fx1_module),
                                 fx2: m(k.fx2_module), fx3: m(k.fx3_module), fx4: m(k.fx4_module) };
@@ -145,11 +147,33 @@ function runRig(mode, forSnapshot) {
     const run = new Function(...Object.keys(scope), `let needsRedraw = false;
         ${code}
         const ret = [];
-        for (let s = 0; s < SHADOW_UI_SLOTS; s++) ret.push(autosaveAllSlots(s, ${forSnapshot}));
+        for (let s = 0; s < SHADOW_UI_SLOTS; s++)
+            ret.push(${refreshOnly ? "refreshSlotModuleSignature(s)" : "autosaveAllSlots(s, " + forSnapshot + ")"});
         return { ret, dirty: slotDirtyCache.slice(), saved: lastSavedSlotSignature.slice(),
                  sigs: lastSlotModuleSignatures.slice() };`);
     const r = run(...Object.values(scope));
-    return { ...r, writes, host };
+    return { ...r, writes, host, reloadIds };
+}
+
+/* A PROJECT SWITCH refreshes every slot's signature with nothing known — the
+ * path the autosave does not take. It read the six module ids one round trip
+ * at a time, then six more in the reload: ~100 singles in one ~1 s tick on the
+ * Move. Same answers in every mode; ONE bulk per slot when bulk works; and the
+ * reload is handed the ids the signature just read rather than re-reading. */
+{
+    const base = runRig("single", false, true);
+    for (const mode of ["bulk", "bulk-fails"]) {
+        const r = runRig(mode, false, true);
+        for (const f of ["ret", "sigs"])
+            ok(JSON.stringify(r[f]) === JSON.stringify(base[f]), `refresh/${mode}: ${f} differs: ${JSON.stringify(base[f])} vs ${JSON.stringify(r[f])}`);
+        ok(r.reloadIds.length === base.reloadIds.length && r.reloadIds.every(([, j]) => j !== null),
+           `refresh/${mode}: the reload was not handed the ids just read: ${JSON.stringify(r.reloadIds)}`);
+    }
+    ok(base.ret.some((x) => x === true), "control: no slot signature changed — the reload path was never exercised");
+    const b = runRig("bulk", false, true).host.perSlot;
+    for (const s of [0, 1, 2, 3])
+        ok(b[s] && b[s].bulk === 1 && b[s].single === 0, `refresh slot ${s}: ${JSON.stringify(b[s])}, expected 1 bulk + 0 single`);
+    ok(base.host.perSlot[0].single >= 6, `control: the single path should read >= 6 ids for slot 0, got ${base.host.perSlot[0].single}`);
 }
 
 for (const forSnapshot of [false, true]) {
