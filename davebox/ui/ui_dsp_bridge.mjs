@@ -1,22 +1,25 @@
 /* ui_dsp_bridge.mjs
  * Single JS-side owner of the DSP↔JS contract: polling DSP state into the S
  * mirrors (pollDSP), the read/apply/refresh param-bank family, the clip/mute
- * sync family, sidecar restore, and tick-batched live-note dispatch. This
- * module localizes the three contract rules every DSP touch must respect:
- *   1. host_module_get_param returns null outside tick/render context —
- *      pollDSP (called from tick) is the only legal reader; MIDI handlers
- *      read the S mirrors instead (e.g. S.bpmMirror).
- *   2. Only the LAST host_module_set_param per audio buffer survives —
- *      writes that can share a buffer must be deferred via the pending
- *      queues (pendingLiveNotes here, S.pendingDefaultSetParams in tick).
- *   3. Global (un-prefixed) param keys are NOT dropped by the host — the
- *      overtake_dsp: path forwards any key verbatim (P6 audit, 2026-08-09;
- *      the old "host drops global keys" doctrine here was a misdiagnosis).
- *      What is real is rule 2: the single-slot mailbox means a rare global
- *      key sharing a buffer with the frequent tN_ traffic is the one that
- *      loses the overwrite race. State that must land ATOMICALLY with the
- *      pad payload (active track, delete_held, ...) therefore rides inside
- *      tN_padmap by design, not as a workaround.
+ * sync family, sidecar restore, and tick-batched live-note dispatch. The
+ * contract rules (rewritten 2026-10-05, verified against the host — the
+ * versions that stood here described the host before the 09-05 param queue
+ * and the 09-14 lane; davebox/CLAUDE.md "Critical constraints" is the one
+ * statement of them):
+ *   1. host_module_get_param WORKS anywhere, but each call is a blocking
+ *      round trip costing a whole SPI frame (~2.9 ms), and it returns null on
+ *      a mailbox timeout. So pollDSP (from tick) does the reading and MIDI
+ *      handlers use the S mirrors (e.g. S.bpmMirror) — for speed and for a
+ *      value that cannot come back null, not because a read there fails.
+ *   2. Writes are ordered and fire-and-forget; the old "only the LAST
+ *      set_param per buffer survives" is gone. Two writes to the SAME key
+ *      before it drains still collapse to the last one, and the pending
+ *      queues (pendingLiveNotes here, S.pendingDefaultSetParams in tick)
+ *      remain the place to put ORDER between writes.
+ *   3. Global (un-prefixed) keys are NOT dropped by the host — the
+ *      overtake_dsp: path forwards any key verbatim (P6 audit, 2026-08-09).
+ *      State that must land ATOMICALLY with the pad payload (active track,
+ *      delete_held, ...) rides inside tN_padmap by design.
  * The queued targeted-sync/param-batching follow-up (full-sync freeze board
  * item) slots here once designed — syncClipsFromDsp is its surface.
  * Extracted from ui.js (Phase 6a of the modularity refactor, increment 1).

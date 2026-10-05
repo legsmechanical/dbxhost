@@ -70,9 +70,11 @@
  * also makes the release idempotent — a `send_panic` arriving afterwards
  * finds every refcount at zero and every slot cold, so nothing is sent twice.
  *
- * RT safety: `set_param` is not the audio thread — `state_load` goes on to
- * call `seq8_load_state`, which reads the state file, and file I/O from the
- * render path is banned. This helper is in any case allocation-free,
+ * RT safety: ⚠ `set_param` RUNS ON the SPI thread (schwung_shim.c,
+ * shim_pre_transfer), serialized with render — this comment once said
+ * otherwise (corrected 2026-10-05). `state_load` is routed off the lane so it
+ * keeps the mailbox's one-per-frame pacing, and it still does file I/O on
+ * that thread. This helper is in any case allocation-free,
  * I/O-free and log-free, the same contract `silence_track_from_set_param`
  * already meets from this identical context. */
 static void state_load_release_sounding(seq8_instance_t *inst) {

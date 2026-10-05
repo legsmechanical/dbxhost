@@ -150,8 +150,11 @@ See [[schwung-two-install-trees-same-filenames]].
 on `tN_pad_mode` / `tN_convert_to_drum` *if* they reach the DSP. Freed by `drum_clips_free(tr)` on
 state reload or `destroy_instance`. All 32 lanes always exist inside an allocated clip.
 
-⚠ **Critical platform constraint:** the host silently drops `tN_pad_mode` and `tN_convert_to_drum`
-— they never reach the DSP handler. **The `tN_lL_*` dispatch is the reliable allocation trigger**:
+⚠ **Allocation trigger.** This file used to say the host silently drops `tN_pad_mode` and
+`tN_convert_to_drum`. That claim is UNVERIFIED and probably stale — the `overtake_dsp:` path
+forwards any key verbatim (P6 audit, 2026-08-09) and `tN_pad_mode` does allocate when it arrives
+(`sp_track_config2.c`). Check with a `seq8_ilog` before relying on either. Whatever the answer,
+**the `tN_lL_*` dispatch is a reliable allocation trigger**:
 on the first lane write, if `pad_mode != DRUM`, set it and allocate. Safe because JS only sends
 `tN_lL_*` for drum-mode tracks.
 
@@ -257,4 +260,7 @@ binding limit, and reading its size as the budget is how this stayed invisible.
 The suspend path (`set_param("save")`) calls `seq8_save_state` synchronously — the host may kill JS
 before an async write completes.
 
-Handlers that never called `seq8_save_state` (bpm, key, scale, pfx bank knobs) only save on suspend.
+**A handler that changes saved state must set `state_dirty`**, or its edit reaches disk only on
+suspend, quit or a project switch. Not audited across every handler: bpm / key / scale do; the pfx
+bank knobs, clip length, clock shift, nudge and transpose did not until 2026-10-04
+(`tests/test_edits_mark_dirty.c`).
