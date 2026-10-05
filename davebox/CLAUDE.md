@@ -104,24 +104,35 @@ tests/run.sh    # compiles seq8.c on the host — no Docker, no Move
 
 ## Critical constraints — these bite hard
 
-- **Coalescing, ON-DEVICE JS PATH ONLY**: only the LAST `set_param` per audio buffer reaches the
-  DSP, and `shadow_send_midi_to_dsp` shares the same delivery channel and also coalesces. In
-  `onMidiMessage`, if both fire, the `set_param` is lost. Defer `set_param`s to `tick()` via a
-  pending variable (the `pendingRepeatLane` pattern). Multi-field operations need a single atomic
-  DSP command. *(The REMOTE path — browser → manager → shadow_param ring — does NOT coalesce:
-  serialized synchronous round-trips, 64 KB values. See `docs/reference/REMOTE_UI.md`.)*
-- **`get_param` from `onMidiMessage` silently returns null.** It only works from tick/render
-  callbacks. Sync JS state from the DSP in the tick/render path instead.
-- ⚠⚠ **Every `get_param` costs a FULL SPI FRAME (~2.9 ms).** Slow readback is round trips, never
-  DSP work — batch via a digest (`tN_digest`) rather than looping.
-  [[schwung-param-roundtrip-is-the-cost]]
-- **The host silently drops NEW module-defined global `set_param` keys.** Existing globals (`bpm`,
-  `key`, `transport`, `mute_all_clear`…) are grandfathered; a *new* global returns silently and the
-  DSP handler never fires. Per-track `tN_*` keys reliably reach the DSP. Workaround: piggyback the
-  global onto an existing per-track push (`tN_padmap` sets `active_track` and
-  `dsp_inbound_enabled`). Verify a new global arrives with a one-line `seq8_ilog` at the top of
-  `set_param` before building on it. ⚠ `host_module_set_param('debug_log', …)` is also unreliable —
-  same failure mode.
+⭑ **Rewritten 2026-10-05, verified against the host** (the module code review found the three rules
+that stood here stale: they described the host before the 09-05 param queue and the 09-14 lane).
+The transport itself is `../docs/HOST_REFERENCE.md` → "Parameter transport" — read that, not a
+summary of it.
+
+- **Writes are ordered and fire-and-forget.** `host_module_set_param` (→ `shadow_set_param(0,
+  "overtake_dsp:"+key)`) takes the lane, else the pending queue, else the mailbox, and order is
+  preserved across all three. The old "only the LAST set_param per audio buffer survives" is
+  gone. What still loses a write: **two writes to the SAME key** before it drains (last writer
+  wins, by design), and a value **≥ 256 bytes** missing the lane (`SPQ_VALUE_MAX`) — a Chord-layout
+  `tN_padmap` is ~300 B, so keep big payloads in mind. Multi-field operations still want one
+  atomic DSP command, because each key lands separately.
+- **`shadow_send_midi_to_dsp` is its own ring** (`ui_midi_dsp_push`), not the param channel: a
+  MIDI send and a `set_param` in one handler do not cost each other.
+- **`get_param` WORKS from `onMidiMessage`** — there is no context guard (`js_shadow_get_param`).
+  It is a blocking mailbox round trip: **every call costs a full SPI frame (~2.9 ms)**, and it
+  returns **null on a mailbox timeout** (e.g. right after a module load). So: never read in an
+  input handler for speed's sake (read the S mirrors, refreshed by `pollDSP` from tick), batch
+  readback via a digest (`tN_digest`) rather than looping, and treat null as "unknown", never as
+  a value. [[schwung-param-roundtrip-is-the-cost]]
+- **New global keys reach the DSP.** The `overtake_dsp:` path forwards any key verbatim (P6 audit,
+  2026-08-09); the old "host drops new global keys" was a misdiagnosis of the pre-queue mailbox
+  race. State that must land atomically with the pad payload (active track, `delete_held`) still
+  rides inside `tN_padmap` — by design, not as a workaround.
+- **The DSP's `set_param` / `get_param` run ON the SPI thread** (`schwung_shim.c`,
+  `shim_pre_transfer` → `shadow_inprocess_handle_param_request`), serialized with render. So a
+  handler and render never race each other — but every file I/O, allocation or `seq8_ilog`
+  reached from a handler is on the realtime thread. Keep handlers I/O-free except where the host
+  routes the key off the lane on purpose (`state_load` / `state_path` / `save`).
 - **No MIDI panic before `state_load`** — it floods the MIDI buffer and drops the load param.
 - **Shift+Back does not reload JS** — `init()` re-runs in the same runtime. A full restart is
   required for JS changes.
@@ -191,7 +202,7 @@ JS `init()` reads the UUID and compares it with the `state_uuid` `get_param`. A 
 `state_load=UUID` next tick → `pendingDspSync=5` → `syncClipsFromDsp()` → `restoreUiSidecar(true)`.
 The same path fires on resume when the set changed while suspended.
 
-UI sidecar (`seq8sa-ui-state.json`) v=8 — per-track active bank, per-track octave, Euclid memory,
+UI sidecar (`seq8sa-ui-state.json`) v=9 — per-track active bank, per-track octave, Euclid memory,
 drum vel-zone arm; written on suspend / Quit / Shift+Back, wiped on Clear Session. Deferred save:
 handlers set `inst->state_dirty = 1` and JS `pollDSP()` writes via `host_write_file` when dirty —
 ⭑ but **never while the transport plays** (except at the Record-off edge). While stopped it
