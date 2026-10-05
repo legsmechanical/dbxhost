@@ -66,6 +66,19 @@ the section into a versioned heading at release time.
   matches 8.
 
 ### Fixed
+- **Clearing a device snapshot really clears it.** A cleared slot could come
+  back lit on the next visit and recall the old snapshot.
+- **More edits are autosaved like every other edit.** Play-effects knobs, clip length, clock
+  shift, nudge and track transpose were only written to disk on suspend or a
+  project switch, so a power-off could lose them.
+- **Step conditions survive a save on an empty clip or drum lane.** Ratchets,
+  random and iteration set on steps with no notes were lost on reload.
+- **A failed save says so.** If the UI settings, a snapshot or Clear Session
+  cannot be written, the screen shows SAVE FAILED instead of carrying on as if
+  it worked.
+- **A damaged UI settings file no longer resets the project.** It used to be
+  treated as a brand-new project and could switch track 1 to drum mode. Now
+  only the UI settings reset, the damaged file is kept, and the screen says so.
 - **The Back button lights only when a tap does something.** It stayed lit on
   an overview resting on any bank but the first (where Back does nothing), and
   stayed dark in TRACK CONFIG, the sound editors, a bank page on screen and the
