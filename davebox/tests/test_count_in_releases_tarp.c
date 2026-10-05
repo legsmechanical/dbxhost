@@ -26,13 +26,17 @@ int main(void) {
         "76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91");
     hx_set_param(h, "t1_tarp_style", "1");      /* Up; turns the arp on */
     HX_ASSERT(tr->tarp_on, "control: TRACK ARP on");
-    /* Gate 200%: each arp note outlasts its step, so one is sounding as the
-     * count-in ends (at 100% its gate runs out exactly on the edge, which hid
-     * the bug in a first version of this test). */
+    /* Longest gate (capped at one step short of the next). */
     hx_set_param(h, "t1_tarp_gate", "200");
-    HX_ASSERT(tr->tarp.gate_pct == 200, "control: arp gate 200%");
 
     { const uint8_t on[3] = { 0x90, 68, 100 }; hx_send_midi(h, on, 3, MOVE_MIDI_SOURCE_INTERNAL); }
+    /* The arp is already playing (stopped transport) when the count-in starts,
+     * and it starts MID-STEP. Every arp rate divides a bar, so an arp that
+     * started with the count-in always ends its note exactly on the edge; one
+     * already running and off the bar grid is still sounding there. */
+    { int g = 0;
+      while ((!tr->tarp.sounding_active || (inst->arp_master_tick % 24) != 12) && g++ < 20000) hx_render(h, 1); }
+    HX_ASSERT(tr->tarp.sounding_active, "control: the arp is playing before the count-in");
     hx_set_param(h, "record_count_in", "1");
     HX_ASSERT(inst->count_in_ticks > 0, "control: count-in running");
 
