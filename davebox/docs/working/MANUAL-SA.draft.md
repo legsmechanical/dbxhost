@@ -731,6 +731,9 @@ Iter and Ratch read `--`, Prob reads 100 %:
 They stack in that order: iteration decides if the step plays, probability rolls
 per note, and a note that plays fires all its ratchets.
 
+The conditions belong to the step's notes: removing the step's last note (tap
+its pad while holding the step) clears them, as clearing the step does.
+
 ## 6.4 Recording
 
 Press **Record** to play notes into the active clip in real time.

@@ -26,6 +26,10 @@ the section into a versioned heading at release time.
   cancels it.
 
 ### Changed
+- **Removing a step's last note clears its conditions.** Taking the last note
+  off a held step with its pad now clears its ratchet, probability and
+  iteration, as clearing the step does. They used to stay hidden on the empty
+  step and come back with the next note.
 - **Alt knobs switch one at a time: touch the knob and click the jog.** Res ↔
   Zoom, Shift ↔ Nudge, Dir ↔ Reverse Style (CLIP, DRUM LANE, ALL LANES),
   Rand ↔ Algo (NOTE FX, DELAY) and Rate ↔ Clock Feedback (DELAY). Only the

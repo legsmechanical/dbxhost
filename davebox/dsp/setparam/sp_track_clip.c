@@ -249,8 +249,16 @@ static int sp_track_clip(sp_ctx_t *cx) {
                     cl->step_notes[sidx][cl->step_note_count[sidx] - 1] = 0;
                     cl->note_tick_offset[sidx][cl->step_note_count[sidx] - 1] = 0;
                     cl->step_note_count[sidx]--;
-                    if (cl->step_note_count[sidx] == 0)
+                    if (cl->step_note_count[sidx] == 0) {
                         cl->steps[sidx] = 0;
+                        /* The step is empty now: its conditions go with its
+                         * last note, as a step tap (`_clear`) takes them (Josh,
+                         * 2026-10-05). Kept, they sat invisible on a dark step
+                         * and came back on the next note added there. */
+                        cl->step_iter[sidx]    = 0;
+                        cl->step_random[sidx]  = 0;
+                        cl->step_ratchet[sidx] = 0;
+                    }
                 } else if (cl->step_note_count[sidx] < 8) {
                     int was_empty = (cl->step_note_count[sidx] == 0);
                     int ni2 = (int)cl->step_note_count[sidx];
