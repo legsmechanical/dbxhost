@@ -1,7 +1,10 @@
 {{define "bug_report_status"}}
 {{with .Job}}
 {{if not .Terminal}}
-<div hx-get="/bug-report/status/{{.ID}}" hx-trigger="every 2s" hx-swap="outerHTML">
+{{/* hx-target="this": the box sits inside the form, and htmx inherits the
+     form's hx-target — the first poll would replace #bug-status itself and
+     every later poll would aim at nothing, stuck on "Uploading". */}}
+<div hx-target="this" hx-get="/bug-report/status/{{.ID}}" hx-trigger="every 2s" hx-swap="outerHTML">
     <p>{{if eq .State "zipping"}}Collecting the files…{{else}}Uploading ({{formatBytes .Size}})…{{end}}</p>
 </div>
 {{else if eq .State "done"}}

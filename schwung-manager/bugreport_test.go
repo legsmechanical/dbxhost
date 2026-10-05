@@ -402,6 +402,11 @@ func TestSendFlowEndToEnd(t *testing.T) {
 	if rec.Code != 200 || m == nil {
 		t.Fatalf("send: %d %s", rec.Code, rec.Body.String())
 	}
+	// The polling box must target itself: it sits inside the form, and htmx
+	// would otherwise inherit the form's hx-target and stop updating.
+	if !regexp.MustCompile(`<div hx-target="this" hx-get="/bug-report/status/`).MatchString(rec.Body.String()) {
+		t.Errorf("the status poll must carry hx-target=\"this\": %s", rec.Body.String())
+	}
 	// A second report while the first runs is refused.
 	if rec2 := post(url.Values{"project": {uuidA}, "mode": {"send"}}); rec2.Code != 409 {
 		t.Errorf("a concurrent send must be refused, got %d", rec2.Code)
