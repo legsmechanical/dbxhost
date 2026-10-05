@@ -155,6 +155,39 @@ step('a saved project with no recalled perf slot clears the previous one', () =>
     assert(S.perfRecalledSlot === -1, 'recalled slot leaked: ' + S.perfRecalledSlot);
 });
 
+/* ⚠ DAMAGED, NOT NEW (2026-10-04 review). A sidecar that exists but does not
+ * parse fell into the brand-new branch, which also pushes new-project defaults
+ * at the DSP — t0_pad_mode=DRUM over a project whose track 1 may be melodic
+ * with notes. UI-only fields still reset (nothing leaks); the DSP is left
+ * alone; the damaged file is kept; the screen says so. */
+step('⭐ a DAMAGED sidecar resets UI fields but pushes NO new-project defaults at the DSP', () => {
+    for (const body of ['{"v":9,"at":5,', '']) {
+        dirty();
+        S.pendingDefaultSetParams.length = 0;
+        S.actionPopupLines = [];
+        FILES[uiPath()] = body;
+        delete FILES[uiPath() + '.damaged'];
+        B.restoreUiSidecar(true);
+        const pushed = S.pendingDefaultSetParams.map(p => p.key);
+        assert(pushed.indexOf('t0_pad_mode') < 0 && pushed.indexOf('scale_aware') < 0 && pushed.indexOf('metro_vol') < 0,
+               J(body) + ': pushed new-project defaults at the DSP: ' + J(pushed));
+        const bad = diffFromFresh().filter(l => !/^sv:/.test(l));
+        assert(bad.length === 0, J(body) + ': carried from the previous project: ' + bad.join(' | '));
+        assert((S.actionPopupLines || []).join(' ').indexOf('COULD NOT BE READ') >= 0,
+               J(body) + ': no notice on screen: ' + J(S.actionPopupLines));
+        if (body) assert(FILES[uiPath() + '.damaged'] === body, 'the damaged file was not kept');
+    }
+});
+
+step('control: a NEW project (no sidecar) still pushes the new-project defaults', () => {
+    dirty();
+    S.pendingDefaultSetParams.length = 0;
+    delete FILES[uiPath()];
+    B.restoreUiSidecar(true);
+    const pushed = S.pendingDefaultSetParams.map(p => p.key);
+    assert(pushed.indexOf('t0_pad_mode') >= 0, 'a new project did not push t0_pad_mode: ' + J(pushed));
+});
+
 if (failed) { console.log('FAIL: test_fresh_project_sidecar'); process.exit(1); }
 console.log('PASS: test_fresh_project_sidecar');
 }
