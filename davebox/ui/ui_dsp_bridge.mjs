@@ -25,11 +25,12 @@
  * Extracted from ui.js (Phase 6a of the modularity refactor, increment 1).
  */
 
-import { restoreChordSidecar, resetChordTransient, clearHeldChords } from './ui_chord_pads.mjs';
+import { restoreChordSidecar, resetChordTransient, clearHeldChords, chordLayoutOn } from './ui_chord_pads.mjs';
 import {
     setButtonLED
 } from '/data/UserData/schwung/shared/input_filter.mjs';
-import { automationRefreshPresence, automationInvalidateMeta, automationWantsDrain, bulkEncode, bulkDecode,
+import { automationRefreshPresence, automationInvalidateMeta, automationWantsDrain, automationWantsFlags,
+         AUTOMATION_FLAG_KEYS, bulkEncode, bulkDecode,
          automationNoteListChangedElsewhere } from './ui_automation.mjs';
 
 import {
@@ -56,7 +57,8 @@ import { sessionHasAnyContent } from './ui_scene.mjs';
  * Keep it that way: no top-level use of anything from this import. */
 import { disarmRecord } from './ui_record.mjs';
 import { followActive } from './ui_prefs.mjs';
-import { dspGet, dspGetInt, dspGetStr, prefetchTrackDigests, releaseTrackDigests } from './ui_dsp_get.mjs';
+import { dspGet, dspGetInt, dspGetStr, prefetchTrackDigests, releaseTrackDigests,
+         prefetchKeys, digestActive } from './ui_dsp_get.mjs';
 
 /* Popup counterpart of the host's warnIfLinkDisabled (src/shadow/shadow_ui.js)
  * for a dAVEBOx screen dAVEBOx never opens (the host's own Link/System page).
@@ -153,13 +155,39 @@ export function resyncDrumTrack(t) {
     refreshDrumLaneBankParams(t, S.activeDrumLane[t]);
 }
 
-export function refreshPerClipBankParams(t) {
+/* The keys refreshPerClipBankParams reads for track t — three per track. */
+function perClipBankKeys(t) {
+    if (S.trackPadMode[t] === PAD_MODE_DRUM) {
+        const l = 't' + t + '_l' + S.activeDrumLane[t];
+        return [l + '_pfx_snapshot', l + '_playback_dir', l + '_playback_audio_reverse'];
+    }
+    return ['t' + t + '_c' + S.trackActiveClip[t] + '_pfx_snapshot',
+            't' + t + '_clip_playback_dir', 't' + t + '_clip_playback_audio_reverse'];
+}
+
+/* Refresh the per-clip bank mirrors of every track in `tracks` on ONE round
+ * trip (three reads per track otherwise, ~2.9 ms each). Inside a standing
+ * prefetch it reads through that one instead. */
+export function refreshPerClipBankParamsFor(tracks) {
+    if (digestActive()) { for (const t of tracks) refreshPerClipBankParamsOne(t); return; }
+    const keys = [];
+    for (const t of tracks) keys.push(...perClipBankKeys(t));
+    prefetchKeys(keys);
+    try {
+        for (const t of tracks) refreshPerClipBankParamsOne(t);
+    } finally {
+        releaseTrackDigests();
+    }
+}
+export function refreshPerClipBankParams(t) { refreshPerClipBankParamsFor([t]); }
+
+function refreshPerClipBankParamsOne(t) {
     if (S.trackPadMode[t] === PAD_MODE_DRUM) {
         refreshDrumLaneBankParams(t, S.activeDrumLane[t]);
         return;
     }
     const ac   = S.trackActiveClip[t];
-    const snap = host_module_get_param('t' + t + '_c' + ac + '_pfx_snapshot');
+    const snap = dspGet('t' + t + '_c' + ac + '_pfx_snapshot');
     if (!snap) return;
     const v = snap.split(' ');
     if (v.length < 17) return;
@@ -204,12 +232,12 @@ export function refreshPerClipBankParams(t) {
     const tpsIdx = TPS_VALUES.indexOf(tps);
     S.bankParams[t][0][0] = tpsIdx >= 0 ? tpsIdx : 1;
     {
-        const _pd = host_module_get_param('t' + t + '_clip_playback_dir');
+        const _pd = dspGet('t' + t + '_clip_playback_dir');
         const _pdv = parseInt(_pd, 10);
         const _pdvi = (isFinite(_pdv) && _pdv >= 0 && _pdv <= 3) ? _pdv : 0;
         S.clipPlaybackDir[t][ac] = _pdvi;
         S.bankParams[t][0][6] = _pdvi;
-        const _par = host_module_get_param('t' + t + '_clip_playback_audio_reverse');
+        const _par = dspGet('t' + t + '_clip_playback_audio_reverse');
         const _parv = parseInt(_par, 10);
         S.clipPlaybackAudioReverse[t][ac] = (isFinite(_parv) && _parv === 1) ? 1 : 0;
     }
@@ -353,7 +381,7 @@ function fetchStateChunked() {
  * same key (both "" for an empty value). */
 const POLL_KEYS = ['bpm', 'rui_rev', 'clock_follow_on', 'clock_send_on', 'clock_follow_fallback',
                    'capture_pending', 'capture_info', 'state_snapshot', 'state_uuid',
-                   'save_refused'];
+                   'save_refused', 'state_dirty'];
 
 /* THE TICK'S ONE READ. Rebuilt every tick at the top of _tickImpl, before
  * anything reads: the keys the tick wants every tick (the metronome's beat
@@ -366,22 +394,32 @@ const POLL_KEYS = ['bpm', 'rui_rev', 'clock_follow_on', 'clock_send_on', 'clock_
 let _pre = new Map();
 export function tickPrefetch() {
     const keys = [];
-    if (S.metronomeOn > 0) keys.push('metro_beat_count');
+    /* The beat count only re-phases the record count-in blink (ui_tick); the
+     * click itself is the DSP's. Outside a count-in the snapshot keeps
+     * metroPrevBeat current, so an idle tick reads nothing for it. */
+    if (S.metronomeOn > 0 && S.recordCountingIn) keys.push('metro_beat_count');
     const lt = S.activeTrack;
-    keys.push('t' + lt + '_tarp_on', 't' + lt + '_tarp_latch');
     /* The automation drain rides this read while it is needed. */
-    if (automationWantsDrain()) keys.push('pa_pending', 'pa_store_full', 'pa_ring_dropped', 'pa_owner_conflict');
-    /* The pad-map reconcile (every 5th tick, ui_tick) rides it too. */
-    if ((S.tickCount % 5) === 0) keys.push('pad_dispatch_muted', 'pad_note_map_0');
+    const drain = automationWantsDrain();
+    if (drain) keys.push('pa_pending', 'pa_store_full', 'pa_ring_dropped', 'pa_owner_conflict');
     if ((S.tickCount % POLL_INTERVAL) === 0) {
         for (const k of POLL_KEYS) keys.push(k);
+        /* The automation warnings (ui_tick, this same poll) ride it too. */
+        if (!drain && automationWantsFlags()) for (const k of AUTOMATION_FLAG_KEYS) keys.push(k);
+        /* The engine-reload watcher (ui_tick, every 100th tick — a poll tick). */
+        if ((S.tickCount % 100) === 0) keys.push('instance_id');
+        /* The pad-map reconcile (ui_tick) runs on the poll's cadence so it
+         * rides this read rather than making a bulk read of its own. */
+        keys.push('pad_dispatch_muted', chordLayoutOn(lt) ? 'padmap_sig' : 'pad_note_map_0');
         if (S.activeBank === BANK_AUTOMATION) keys.push('t' + lt + '_c' + effectiveClip(lt) + '_at_has');
         /* A drum track's lane playhead is read every poll (pollDSP). */
         if (S.trackPadMode[lt] === PAD_MODE_DRUM) keys.push('t' + lt + '_l' + S.activeDrumLane[lt] + '_current_step');
         if (S.recordArmed && S.recordArmedTrack >= 0) keys.push('t' + S.recordArmedTrack + '_recording_pending_page');
     }
-    const vals = bulkDecode(host_module_get_params(bulkEncode(keys)));
+    /* Nothing wanted is the common tick: no read at all. */
     _pre = new Map();
+    if (!keys.length) return;
+    const vals = bulkDecode(host_module_get_params(bulkEncode(keys)));
     if (vals.length === keys.length) for (let i = 0; i < keys.length; i++) _pre.set(keys[i], vals[i]);
 }
 /* A read that answers from this tick's prefetch when it can. */
@@ -692,6 +730,7 @@ export function pollDSP() {
     if (_fe !== S.flashEighth && S.followPaused) S.screenDirty = true;
     S.flashEighth    = _fe;
     S.flashSixteenth = (v[51] === '1');
+    if (!S.recordCountingIn) S.metroPrevBeat = parseInt(v[52], 10) | 0;
     if (v.length >= 54) S.masterPos      = (parseInt(v[53], 10) | 0) >>> 0;
     if (v.length >= 55) S.dspLooperState  = parseInt(v[54], 10) | 0;
     const _prevMergeState = S.dspMergeState;
@@ -1061,7 +1100,12 @@ export function pollDSP() {
         const _backedOff = S.saveRefused && S.saveRefusedUuid === _dspUuid && !_forced &&
             S.lastInputTick <= S.saveRefusedInputTick && pget('save_refused') === '1';
         let _wrote = false;
-        if (_dspUuid && _dspUuid === S.currentSetUuid && !_backedOff) {
+        /* Clean is the common case while stopped and quiet: the poll's own
+         * read says so, and chunk 0 would only answer "" a round trip later.
+         * A forced save asks anyway — an edit made after this tick's prefetch
+         * must not be missed. */
+        const _clean = !_forced && pget('state_dirty') === '0';
+        if (_dspUuid && _dspUuid === S.currentSetUuid && !_backedOff && !_clean) {
             const _st = fetchStateChunked();
             if (_st && _st.length > 2) {
                 writeStateBlob(_dspUuid, uuidToStatePath(_dspUuid), _st);

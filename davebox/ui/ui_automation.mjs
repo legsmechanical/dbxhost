@@ -22,7 +22,7 @@ import { POLL_INTERVAL, SEQ_AUTO_TARGETS, seqAutoAutomatable, BANK_SHORT, PAD_MO
  * — correctly: two builders are two things to keep in step. */
 import { moveBusComp, engineLoadedModuleOrNull } from './ui_engine.mjs';
 /* The tick's prefetch (a cycle with ui_dsp_bridge, used only inside functions). */
-import { dget } from './ui_dsp_bridge.mjs';
+import { dget, tickWants } from './ui_dsp_bridge.mjs';
 /* The record notice (a cycle with ui_persistence, used only inside functions). */
 import { showActionPopupFor } from './ui_persistence.mjs';
 
@@ -861,13 +861,22 @@ export function automationTick() {
  * All clear on read, so each new occurrence is reported once. Returns popup
  * lines for the one a person must act on, or null — the caller owns the
  * popup, so this module stays free of the screen. */
+/* The flags are wanted on a poll when automationPollWarnings would read them:
+ * the tick's prefetch carries them then, so they cost no round trip of their
+ * own. None at all for a project that has no automation and no hand on a
+ * knob: the flags can only be raised by a write or a load, both visible here. */
+export function automationWantsFlags() {
+    return !!(anyAutomation || gestures.size || moduleWrites.length || presenceStale);
+}
+export const AUTOMATION_FLAG_KEYS = FLAG_KEYS;
+
 export function automationPollWarnings() {
-    /* The drain already carried the flags this poll window; otherwise one
-     * bulk GET for the three of them — not three round-trips. And none at all
-     * for a project that has no automation and no hand on a knob: the flags
-     * can only be raised by a write or a load, both of which are visible here. */
-    const active = anyAutomation || gestures.size || moduleWrites.length || presenceStale;
-    if (active && S.tickCount - lastDrainTick >= POLL_INTERVAL) {
+    /* The drain already carried the flags this poll window; otherwise this
+     * tick's prefetch did (they clear on read, so a prefetched answer must be
+     * taken whatever has changed since); otherwise one bulk GET. */
+    if (lastDrainTick !== S.tickCount && tickWants(FLAG_KEYS[0])) {
+        takeFlags(FLAG_KEYS.map(dget), 0);
+    } else if (automationWantsFlags() && S.tickCount - lastDrainTick >= POLL_INTERVAL) {
         const vals = bulkDecode(host_module_get_params(bulkEncode(FLAG_KEYS)));
         if (vals.length >= 3) takeFlags(vals, 0);
     }

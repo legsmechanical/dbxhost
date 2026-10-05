@@ -18,7 +18,8 @@
  * and the card again; (4) shrunk → written, PROJECT SAVED; (5) CONTROL:
  * awaiting a project selection → no attempt, no card; (6) host_write_file
  * failing → SAVE FAILED / CHECK STORAGE once, and the blob lands on a later
- * poll once the write succeeds. */
+ * poll once the write succeeds; (8) a clean project makes no chunk-0 read at
+ * all while it sits quiet. */
 import './_bulk_get_stub.mjs';
 
 let failed = 0;
@@ -72,6 +73,7 @@ globalThis.host_module_get_param = (k) => {
     if (k === 'state_uuid') return UUID;
     if (k === 'state_snapshot') { const a = new Array(64).fill('0'); return a.join(' '); }
     if (k === 'save_refused') return String(dsp.refused);
+    if (k === 'state_dirty') return dsp.dirty ? '1' : '0';
     if (k === 'state_snap_len') return String(dsp.snapLen);
     if (k === 'state_chunk_0') {
         dsp.chunk0Reads++;
@@ -215,6 +217,21 @@ step('(6b) a write that never recovers is dropped after the retry cap', () => {
     ticks(QUIET * 8);           /* > 5 retries at 1 s spacing */
     assert(S.pendingStateWrite === null, 'still retrying after the cap');
     writeOk = true;
+});
+
+step('⭐ (8) a CLEAN project, stopped and quiet, never asks for chunk 0 — the poll already said so', () => {
+    dsp.blob = BLOB; dsp.big = false; dsp.dirty = false; writeOk = true;
+    S.pendingStateWrite = null;
+    input(); ticks(1); ticks(QUIET);
+    const reads = dsp.chunk0Reads;
+    ticks(50 * 4);
+    assert(dsp.chunk0Reads === reads, 'chunk 0 was asked ' + (dsp.chunk0Reads - reads) + ' times while clean');
+    /* POSITIVE: the same quiet project made dirty IS fetched, without input. */
+    dsp.dirty = true;
+    written.length = 0;
+    ticks(8);
+    assert(dsp.chunk0Reads === reads + 1, 'a dirty project was not fetched (' + (dsp.chunk0Reads - reads) + ')');
+    assert(written.some(w => w.p === statePath && w.c === BLOB), 'the dirty project was not written');
 });
 
 step('CONTROL (5, run last — it leaves the select-before-load screen armed): awaiting a project selection → no attempt, no card', () => {
