@@ -5765,7 +5765,7 @@ static int drum_pad_event(seq8_instance_t *inst, seq8_track_t *tr,
     int lane = (int)tr->active_drum_lane;
     if (lane < 0 || lane >= DRUM_LANES) return 1;
     drum_clip_t *dc = tr->drum_clips[tr->active_clip];
-    if (!dc) return 1;   /* an empty slot (cleared, or a copy of an empty source) */
+    if (!dc) return 1;   /* an empty slot (a failed allocation) */
     uint8_t laneNote = dc->lanes[lane].midi_note;
     if (laneNote == 0xFF) return 1;
 
