@@ -35,6 +35,14 @@
         </div>
     </section>
 
+    {{if .BugReport}}
+    <section class="info-card">
+        <h2>Report a bug</h2>
+        <p>Send the logs and a project to the developer.</p>
+        <a class="btn btn-primary" href="/bug-report">Report a bug</a>
+    </section>
+    {{end}}
+
     <section class="info-card">
         <h2>Logs</h2>
         <p>View the Schwung debug log (last 200 lines).</p>

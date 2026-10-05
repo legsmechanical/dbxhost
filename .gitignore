@@ -35,3 +35,4 @@ __pycache__/
 
 # Claude Code runtime lock
 .claude/scheduled_tasks.lock
+standalone/bug-report.local.json

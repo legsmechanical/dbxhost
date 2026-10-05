@@ -58,6 +58,11 @@ done
 chmod +x "$DBX_DIR/schwung" "$DBX_DIR/shadow/shadow_ui" 2>/dev/null || true
 chmod +x "$DBX_DIR"/scripts/*.sh "$DBX_DIR/bless.sh" 2>/dev/null || true
 echo "      payload in place"
+# The bug-report page belongs to TEST builds only: a payload without the file
+# (a release) takes a test build's copy away, or the page would outlive it.
+if [ ! -f ./bug-report.json ] && [ -f "$DBX_DIR/bug-report.json" ]; then
+    rm -f "$DBX_DIR/bug-report.json"; echo "      retired: bug-report.json (not a test build)"
+fi
 # The privileged helper moved into the launcher module dir (2026-09-05, the
 # zero-SSH install); an install laid by the old layout still carries the old
 # setuid binary here, blessed once by bless.sh and now referenced by nothing.

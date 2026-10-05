@@ -1,0 +1,15 @@
+{{define "bug_report_plan"}}
+<table class="file-table">
+    <thead><tr><th>File</th><th>Size</th></tr></thead>
+    <tbody>
+    {{range .Plan.Entries}}<tr><td>{{.ZipPath}}{{if gt .Tail 0}} <span class="hint">(last part)</span>{{end}}</td><td>{{formatBytes .Size}}</td></tr>
+    {{end}}
+    </tbody>
+</table>
+<p class="hint">About {{formatBytes .Plan.TotalEst}} before compression, plus a note and a summary file.</p>
+{{if .Plan.Skipped}}
+<p class="hint">Not sent:</p>
+<ul class="hint">{{range .Plan.Skipped}}<li>{{.Path}} — {{.Reason}}{{if gt .Size 0}} ({{formatBytes .Size}}){{end}}</li>{{end}}</ul>
+{{end}}
+{{if .Plan.Missing}}<p class="hint">Not on this Move: {{range $i, $m := .Plan.Missing}}{{if $i}}, {{end}}{{$m}}{{end}}</p>{{end}}
+{{end}}

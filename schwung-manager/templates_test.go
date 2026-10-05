@@ -15,6 +15,7 @@ func TestLoadTemplates(t *testing.T) {
 		"files.html",
 		"config.html",
 		"system.html",
+		"bug_report.html",
 		"help.html",
 	}
 	for _, name := range required {

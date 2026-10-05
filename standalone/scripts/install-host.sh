@@ -238,6 +238,15 @@ fi
 # Atomic per entry: land beside the target then mv -f. A plain scp over a mapped
 # binary fails with ETXTBSY (or worse, truncates it), and shadow_ui/schwung are
 # exactly the files that may be mapped.
+# A dev deploy is always a test build: the web manager's "Report a bug" page is
+# on. The upload address lives in standalone/bug-report.local.json (untracked —
+# it must never reach the public repo); without it the page is download-only.
+if [ -f "$HERE/bug-report.local.json" ]; then
+    cp "$HERE/bug-report.local.json" "$REPO_ROOT/build/bug-report.json"
+else
+    printf '{"upload_url": ""}\n' > "$REPO_ROOT/build/bug-report.json"
+fi
+
 say ""; say "--- deploying payload (rsync, drop-tolerant)"
 STAGE="$DBX_DIR/.deploy-stage"
 $SSH "mkdir -p '$STAGE'"
