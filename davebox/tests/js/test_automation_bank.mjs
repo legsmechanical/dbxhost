@@ -181,7 +181,11 @@ step('jog click: the MENU (cursor); click a row: its OPS; Delete runs with a che
     const target = menu().ops.row.target;
     for (let i = 0; i < ops.length - 1; i++) cc(14, 1);
     ticks(1);
+    S.undoAvailable = false;
     click();                                             /* Delete */
+    /* ⚠ The checkpoint is reachable only if Undo KNOWS it is there (2026-10-04
+     * review: it was booked and Undo said NOTHING TO UNDO). */
+    assert(S.undoAvailable === true, 'Delete booked a checkpoint but Undo does not know of it');
     /* The stub IS the DSP: after the write crosses, its list no longer has the row. */
     LIST = LIST.split('\n').filter(l => l && l.indexOf(' ' + target + ' ') < 0).join('\n') + '\n';
     ticks(2);
@@ -218,7 +222,9 @@ step('⭐ CLEAR empties the lane with a checkpoint and KEEPS its row, reading EM
     for (let i = 0; i < k; i++) cc(14, 1);
     ticks(1);
     sets.length = 0;
+    S.undoAvailable = false;
     click();
+    assert(S.undoAvailable === true, 'Clear booked a checkpoint but Undo does not know of it');
     /* The DSP's list agrees as the write crosses: count 0 with the keep bit. */
     LIST = LIST.split('\n').map(l => l.indexOf(' 0:synth:cutoff ') >= 0 ? l.replace(/^(\d+ \d+ )(\d+) (\d+)/, (m, a, f) => a + (parseInt(f, 10) | 32) + ' 0') : l).join('\n');
     ticks(2);

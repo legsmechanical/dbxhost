@@ -275,6 +275,7 @@ function runOp(t, c, a) {
     if (r.kind === 'at') {
         if (o.op === 'delete') {
             S.pendingDefaultSetParams.push({ key: 't' + t + '_c' + c + '_undo_checkpoint', val: '1' });
+            noteUndoUnit();   /* the checkpoint is only reachable if Undo knows it is there */
             S.pendingDefaultSetParams.push({ key: 't' + t + '_c' + c + '_at_clear', val: '1' });
             S.clipAtHas[t][c] = false;
             showActionPopup('AFTERTOUCH', 'DELETED');
