@@ -26,6 +26,11 @@ int main(void) {
         "76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91");
     hx_set_param(h, "t1_tarp_style", "1");      /* Up; turns the arp on */
     HX_ASSERT(tr->tarp_on, "control: TRACK ARP on");
+    /* Gate 200%: each arp note outlasts its step, so one is sounding as the
+     * count-in ends (at 100% its gate runs out exactly on the edge, which hid
+     * the bug in a first version of this test). */
+    hx_set_param(h, "t1_tarp_gate", "200");
+    HX_ASSERT(tr->tarp.gate_pct == 200, "control: arp gate 200%");
 
     { const uint8_t on[3] = { 0x90, 68, 100 }; hx_send_midi(h, on, 3, MOVE_MIDI_SOURCE_INTERNAL); }
     hx_set_param(h, "record_count_in", "1");
@@ -39,6 +44,7 @@ int main(void) {
     }
     HX_ASSERT(inst->count_in_ticks == 0, "control: count-in ended");
     HX_ASSERT(was_sounding, "control: the arp was sounding as the count-in ended");
+    (void)0;
     int rc = tr->pfx.pitch_refcount[60];
     int sounding = (tr->tarp.sounding_active && tr->tarp.sounding_pitch == 60) ? 1 : 0;
     if (rc != sounding) fprintf(stderr, "pitch 60: counted %d, arp sounding %d\n", rc, sounding);
