@@ -77,6 +77,12 @@ the section into a versioned heading at release time.
   - Restart no longer drops delay-echo note-offs on a track sending MIDI to a
     Move instrument.
   - Retriggering a note releases its delay echoes that already sounded.
+- **Undo covers more edits.**
+  - Delete + step on a drum lane.
+  - Clearing or resetting a drum clip.
+  - Resetting a drum lane's effects.
+  - Every action in the AUTOMATION bank, including aftertouch Delete.
+  - Delete + step now brings back the step's automation locks with its notes.
 - **Clearing a device snapshot really clears it.** A cleared slot could come
   back lit on the next visit and recall the old snapshot.
 - **More edits are autosaved like every other edit.** Play-effects knobs, clip length, clock

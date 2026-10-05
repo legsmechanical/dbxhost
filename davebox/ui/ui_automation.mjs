@@ -15,7 +15,7 @@
  * 37 ms. So nothing here crosses per parameter: see THE TRANSPORT below.
  */
 
-import { S } from './ui_state.mjs';
+import { S, noteUndoUnit } from './ui_state.mjs';
 import { POLL_INTERVAL, SEQ_AUTO_TARGETS, seqAutoAutomatable, BANK_SHORT, PAD_MODE_DRUM, midiTargetIsMidi, midiTargetName, midiTargetTo14 } from './ui_constants.mjs';
 /* The move_fx: prefix has exactly one builder, and a source invariant pins
  * that (tests/test_move_fx_prefix_owner.sh). Build it here and the suite fails
@@ -980,11 +980,21 @@ function ensureRest(g, target, prevNorm) {
     queueSet('t' + g.track + '_pa_rest', g.clip + ' ' + target + ' ' + prevNorm);
 }
 
+/* THE one way this file books an undo unit: the DSP checkpoint AND the UI's
+ * "there is something to undo". Booking only the checkpoint left Undo saying
+ * NOTHING TO UNDO (or taking back an older JS-only unit) after the AUTOMATION
+ * bank's Delete / Clear / Mute / Smooth / Wrap / Mode / Link / Loop / Rate /
+ * Scale — only Clear Clip's caller raised it (2026-10-04 review). */
+function bookUndoCheckpoint(track, clip) {
+    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    noteUndoUnit();
+}
+
 /* Once per gesture: the undo unit, same shape as step record's session. */
 function ensureCheckpoint(g) {
     if (g.ckpt) return;
     g.ckpt = true;
-    queueSet('t' + g.track + '_c' + g.clip + '_undo_checkpoint', '1');
+    bookUndoCheckpoint(g.track, g.clip);
 }
 
 /* The store's target for a (slot, fullKey) pair: a MIDI target is RAW —
@@ -1008,7 +1018,7 @@ function midiNorm(target, wire) {
  * ⚠ Playing only: the DSP drops captured sweeps at every transport edge, so
  * there is nothing to commit when stopped. */
 export function automationCaptureCommit(track, clip) {
-    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    bookUndoCheckpoint(track, clip);
     queueSet('t' + track + '_pa_capture_commit', String(clip));
     presenceStale = true;
 }
@@ -1123,7 +1133,7 @@ export function automationToggleActive(track, clip, target) {
     const s = automationStateFor(track, clip, target);
     if (!s) return null;
     const on = !s.active;
-    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');   /* every edit is an undo unit */
+    bookUndoCheckpoint(track, clip);   /* every edit is an undo unit */
     queueSet('t' + track + '_pa_active', clip + ' ' + target + ' ' + (on ? 1 : 0));
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.flags = on ? (cur.flags | FLAG_ACTIVE) : (cur.flags & ~FLAG_ACTIVE);
@@ -1140,7 +1150,7 @@ export function automationToggleActive(track, clip, target) {
  * than either outcome. Same shape as automationSetLoop/automationSetRate. */
 export function automationClearKey(track, clip, target, checkpoint) {
     if (!automationStateFor(track, clip, target)) return false;
-    if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    if (checkpoint !== false) bookUndoCheckpoint(track, clip);
     queueSet('t' + track + '_pa_clear_key', clip + ' ' + target);
     stateByKey.delete(stateKey(track, clip, target));
     listGen++;
@@ -1153,7 +1163,7 @@ export function automationClearKey(track, clip, target, checkpoint) {
  * automation can be added to it. One undo. */
 export function automationClearPoints(track, clip, target) {
     if (!automationStateFor(track, clip, target)) return false;
-    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    bookUndoCheckpoint(track, clip);
     queueSet('t' + track + '_pa_clear_points', clip + ' ' + target);
     const s = stateByKey.get(stateKey(track, clip, target));
     if (s) { s.count = 0; s.flags |= FLAG_KEEP; }
@@ -1163,10 +1173,17 @@ export function automationClearPoints(track, clip, target) {
 }
 
 /* Delete + step: every parameter's points in that step. */
-export function automationClearStep(track, clip, step) {
+/* `queue`: the caller's ordered queue to go BEHIND (S.pendingDefaultSetParams).
+ * ⚠ The melodic step clear rides that one-per-tick queue and is what takes the
+ * undo snapshot; this file's own writes flush a tick EARLY, so without `queue`
+ * the lock clear landed first and Undo brought the note back without its locks
+ * (2026-10-04 review). Without `queue` it goes on this file's flush — right
+ * only when the caller's clear has already been SENT (the drum lane's is). */
+export function automationClearStep(track, clip, step, queue) {
     const tps = automationStepTicks(track, clip);
     const from = step * tps, to = from + tps - 1;
-    queueSet('t' + track + '_pa_clear_step', clip + ' ' + from + ' ' + to);
+    if (queue) queue.push({ key: 't' + track + '_pa_clear_step', val: clip + ' ' + from + ' ' + to, _local: true });
+    else queueSet('t' + track + '_pa_clear_step', clip + ' ' + from + ' ' + to);
     listGen++;
     expectStaged();
 }
@@ -1192,7 +1209,7 @@ export function automationToggleSmooth(track, clip, target) {
     const s = automationStateFor(track, clip, target);
     if (!s) return null;
     const on = !s.smooth;
-    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    bookUndoCheckpoint(track, clip);
     queueSet('t' + track + '_pa_smooth', clip + ' ' + target + ' ' + (on ? 1 : 0));
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.flags = on ? (cur.flags | FLAG_SMOOTH) : (cur.flags & ~FLAG_SMOOTH);
@@ -1207,7 +1224,7 @@ export function automationToggleWrap(track, clip, target) {
     const s = automationStateFor(track, clip, target);
     if (!s) return null;
     const reset = !s.wrapReset;
-    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    bookUndoCheckpoint(track, clip);
     queueSet('t' + track + '_pa_wrap', clip + ' ' + target + ' ' + (reset ? 1 : 0));
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.flags = reset ? (cur.flags | FLAG_WRAP_RESET) : (cur.flags & ~FLAG_WRAP_RESET);
@@ -1221,7 +1238,7 @@ export function automationToggleMode(track, clip, target) {
     const s = automationStateFor(track, clip, target);
     if (!s) return null;
     const punch = !s.punch;
-    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    bookUndoCheckpoint(track, clip);
     queueSet('t' + track + '_pa_mode', clip + ' ' + target + ' ' + (punch ? 1 : 0));
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.flags = punch ? (cur.flags | FLAG_PUNCH) : (cur.flags & ~FLAG_PUNCH);
@@ -1236,7 +1253,7 @@ export function automationToggleLink(track, clip, target) {
     const s = automationStateFor(track, clip, target);
     if (!s) return null;
     const linked = !s.linked;
-    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    bookUndoCheckpoint(track, clip);
     queueSet('t' + track + '_pa_link', clip + ' ' + target + ' ' + (linked ? 1 : 0));
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.flags = linked ? (cur.flags & ~FLAG_UNLINKED) : (cur.flags | FLAG_UNLINKED);
@@ -1250,7 +1267,7 @@ export function automationSetLoop(track, clip, target, loopTicks, checkpoint) {
     const s = automationStateFor(track, clip, target);
     if (!s) return false;
     const len = Math.max(0, loopTicks | 0);
-    if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    if (checkpoint !== false) bookUndoCheckpoint(track, clip);
     /* The start and step ride along unchanged (a drum lane's cycle keeps its
      * place and its grid when only its length is dialled). */
     queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' ' + len + ' ' + (s.lo | 0) + ' ' + (s.res | 0) + ' ' + (s.st | 0));
@@ -1264,7 +1281,7 @@ export function automationSetLoop(track, clip, target, loopTicks, checkpoint) {
 export function automationMatchPad(track, clip, target) {
     const s = automationStateFor(track, clip, target);
     if (!s || S.trackPadMode[track] !== PAD_MODE_DRUM) return false;
-    queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    bookUndoCheckpoint(track, clip);
     queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' 0 0 ' + (s.res | 0));
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) {
@@ -1287,7 +1304,7 @@ export function automationSetRate(track, clip, target, code, checkpoint) {
     const s = automationStateFor(track, clip, target);
     if (!s) return false;
     const c = Math.max(1, Math.min(9, code | 0));
-    if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    if (checkpoint !== false) bookUndoCheckpoint(track, clip);
     queueSet('t' + track + '_pa_loop', clip + ' ' + target + ' ' + (s.loop | 0) + ' ' + (s.lo | 0) + ' ' + c + ' ' + (s.st | 0));
     const cur = stateByKey.get(stateKey(track, clip, target));
     if (cur) cur.res = c;
@@ -1322,7 +1339,7 @@ export function automationSetScale(track, clip, target, pct, checkpoint) {
     const s = automationStateFor(track, clip, target);
     if (!s) return false;
     const v = Math.max(0, Math.min(200, pct | 0));
-    if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    if (checkpoint !== false) bookUndoCheckpoint(track, clip);
     const ctr = automationBipolarCenter(target);
     queueSet('t' + track + '_pa_scale', clip + ' ' + target + ' ' + v + (ctr === null ? '' : ' ' + ctr));
     const cur = stateByKey.get(stateKey(track, clip, target));
@@ -1334,7 +1351,7 @@ export function automationSetScale(track, clip, target, pct, checkpoint) {
 export function automationClearClip(track, clip, checkpoint) {
     const entries = automationEntriesFor(track, clip);
     if (!entries.length) return false;
-    if (checkpoint !== false) queueSet('t' + track + '_c' + clip + '_undo_checkpoint', '1');
+    if (checkpoint !== false) bookUndoCheckpoint(track, clip);
     queueSet('t' + track + '_pa_clear', String(clip));
     for (const e of entries) stateByKey.delete(stateKey(track, clip, e.target));
     listGen++;
@@ -1391,7 +1408,7 @@ function queuedClearOutstanding() {
     if (!q || !q.length) return false;
     for (let i = 0; i < q.length; i++) {
         const k = q[i] && q[i].key;
-        if (k && (k.endsWith('_pa_clear') || k.endsWith('_pa_clear_key'))) return true;
+        if (k && (k.endsWith('_pa_clear') || k.endsWith('_pa_clear_key') || k.endsWith('_pa_clear_step'))) return true;
     }
     return false;
 }

@@ -14,5 +14,9 @@ grep -q "automationToggleSmooth(" $S && f "the editor must NOT toggle Smooth any
 grep -q "automationToggleSmooth(t, c, r.target)" ui/ui_automation_bank.mjs || f "the AUTOMATION bank must own the Smooth/Stepped op"
 grep -q "setButtonLED(MoveKnob1 + k, st ? (st.active ? Red : White) : 0, true);" $S || f "Mute held paints the rings: unlit none / red active / white deactivated"
 grep -c "paramPagesRepaintKnobs();" $S | grep -q "^3$" || f "the rings are handed back on Mute release, on Delete release, AND when the paint condition ends (three sites)"
-grep -q "automationClearStep(_t, _ac, _abs);" ui/ui_input_pads.mjs || f "Delete+step must clear every parameter's lock at the step, on every bank"
+# Both branches, the melodic one BEHIND its note clear (2026-10-04); the order itself is
+# pinned by tests/js/test_delete_step_lock_order.mjs (the real gesture).
+grep -q "automationClearStep(S.activeTrack, ac, absIdx, S.pendingDefaultSetParams);" ui/ui_input_pads.mjs \
+  && grep -q "automationClearStep(t, effectiveClip(t), absStep);" ui/ui_input_pads.mjs \
+  || f "Delete+step must clear every parameter's lock at the step, on every bank (melodic and drum)"
 echo "PASS: P4 gestures are wired where the spec puts them"
