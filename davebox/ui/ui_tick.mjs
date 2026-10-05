@@ -64,7 +64,7 @@ import { pollDSP,
 import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes, stepRecExit } from './ui_record.mjs';
 import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, backTapWouldAct, applyShiftEdge, raiseExitConfirm, syncCoRunShift, goToSessionOverview,
-    bankMapEnd, checkShiftStep11Hold } from './ui_input_cc.mjs';
+    bankMapEnd, checkShiftStep11Hold, refuseNotesPastEnd } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
@@ -1111,8 +1111,10 @@ export function _tickImpl() {
         const _sat = S.pendingAllLanesStretchCheck;
         S.pendingAllLanesStretchCheck = -1;
         const _res = host_module_get_param('t' + _sat + '_all_lanes_stretch_result');
-        if (_res !== null && parseInt(_res, 10) === -1) {
-            showActionPopup('NO ROOM');
+        const _r = (_res !== null) ? parseInt(_res, 10) : 0;
+        if (_r === -1 || _r === -2) {
+            if (_r === -2) refuseNotesPastEnd();   /* a lane has hits past its end */
+            else showActionPopup('NO ROOM');
             S.bankParams[_sat][7][1] -= (S.knobLastDir[1] || 1);
         }
     }

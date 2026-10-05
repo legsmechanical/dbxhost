@@ -108,7 +108,7 @@ static int sp_track_misc(sp_ctx_t *cx) {
         if (cl->loop_start) return 1;
         int can = clip_stretch_check(cl, dir == 1 ? 1 : -1);
         if (can == 0) return 1;
-        if (can < 0) { tr->stretch_blocked = 1; return 1; }
+        if (can < 0) { tr->stretch_blocked = (can == -2) ? 2 : 1; return 1; }
         tr->stretch_blocked = 0;
         clip_stretch_window(cl, dir == 1 ? 1 : -1);
         /* Note link — only past the check: a blocked compress moved no notes,

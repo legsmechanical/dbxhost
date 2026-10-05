@@ -5070,7 +5070,16 @@ static int clip_stretch_check(const clip_t *cl, int dir) {
     const int len = (int)cl->length;
     const int ls  = (int)cl->loop_start;
     int i;
-    if (dir == 1) return (ls + len * 2 > SEQ_STEPS) ? 0 : 1;
+    if (dir == 1) {
+        if (ls + len * 2 > SEQ_STEPS) return 0;
+        /* ×2 grows the window over [ls+len, ls+2len). A step there holding a
+         * note is content past the loop end — hidden, not junk (a shortened
+         * lane keeps its hits) — and the doubling would overwrite it. Refuse
+         * (-2, CROP FIRST) rather than destroy it silently. */
+        for (i = ls + len; i < ls + len * 2; i++)
+            if (cl->steps[i] || cl->step_note_count[i]) return -2;
+        return 1;
+    }
     if (len < 2 || ls + len > SEQ_STEPS) return 0;
     uint8_t seen[SEQ_STEPS];
     memset(seen, 0, sizeof(seen));
