@@ -26,6 +26,11 @@ the section into a versioned heading at release time.
   cancels it.
 
 ### Changed
+- **An instrument's editor no longer keeps the screen busy while you look at
+  it.** With a sound's parameters on screen, the editor re-read them one at a
+  time, one per screen update, for as long as it stayed open — on a drum kit,
+  43% of the time was spent waiting on those reads. It now reads a whole page in
+  one go, about six times less often.
 - **Opening a project reads it from the engine once.** After a switch within
   a session the whole project could be read back two or three times, and each
   track's effect settings one value at a time. Loading a project is also

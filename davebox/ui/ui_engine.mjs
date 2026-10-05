@@ -452,6 +452,36 @@ export function engineGetChainParam(slot, key) {
     return shadow_get_param(slot, key);
 }
 
+/* Several FULL chain keys (`<comp>:<param>`) in one bulk round trip, for the
+ * param-pages grid's value rotation. Aligned with `keys`; an entry is null
+ * when the host could not resolve that key (the caller reads it singly).
+ * Returns null — read everything singly — when the bulk read failed, or when
+ * every key came back empty (a module with no get_param readback, or one still
+ * loading). Either backs off per slot+component for BULK_DEAD_RETRY laps, so a
+ * dead bulk read is not paid every lap and a loading one is tried again. */
+const bulkDeadChain = new Map();       /* slot+comp -> laps left before trying again */
+const BULK_DEAD_RETRY = 64;
+export function engineGetChainParams(slot, keys) {
+    if (!keys.length) return [];
+    const memo = slot + '\u0000' + String(keys[0]).split(':')[0];
+    const left = bulkDeadChain.get(memo);
+    if (left !== undefined) {
+        if (left > 0) { bulkDeadChain.set(memo, left - 1); return null; }
+        bulkDeadChain.delete(memo);          /* a load may have been in progress: ask again */
+    }
+    const out = [];
+    for (let i = 0; i < keys.length; i += BULK_MAX) {
+        const chunk = keys.slice(i, i + BULK_MAX);
+        let vals = null;
+        try { const r = shadow_get_params(slot, 'chain:', bulkEncode(chunk)); vals = r ? bulkDecode(String(r)) : null; }
+        catch (e) { vals = null; }
+        if (!vals || vals.length !== chunk.length) { bulkDeadChain.set(memo, BULK_DEAD_RETRY); return null; }
+        for (const v of vals) out.push(v);
+    }
+    if (out.every((v) => v === '' || v === null || v === undefined)) { bulkDeadChain.set(memo, BULK_DEAD_RETRY); return null; }
+    return out;
+}
+
 export function engineSetChainParam(slot, key, val) {
     return shadow_set_param(slot, key, String(val));
 }

@@ -3500,6 +3500,19 @@ function getSlotParamsBulk(slotIndex, keys) {
     for (let k = 0; k < keys.length; k++) out[keys[k]] = (vals[k] === null) ? "" : vals[k];
     return out;
 }
+/* The same bulk read, ALIGNED with `keys` and keeping null for a key the host
+ * could not resolve — the shape the param-pages controller's getParams takes
+ * (its value rotation reads a whole lap in one round trip). Null overall when
+ * the bulk read failed; the controller then reads singly. */
+function getSlotParamsAligned(slotIndex, keys) {
+    if (typeof shadow_get_params !== "function" || !keys.length || keys.length > 64) return null;
+    let raw = null;
+    try { raw = shadow_get_params(slotIndex, "chain:", bulkEncodeItems(keys)); }
+    catch (e) { raw = null; }
+    if (raw === null || raw === undefined) return null;
+    const vals = bulkDecode(String(raw));
+    return (vals && vals.length === keys.length) ? vals : null;
+}
 function getSlotParam(slot, key) {
     if (typeof shadow_get_param !== "function") return null;
     try {
@@ -17018,6 +17031,8 @@ function drawHelpDetail() {
     _ctx.wavPeaksIo = WAV_QJS_IO;
     _ctx.setView = setView;
     _ctx.getSlotParam = getSlotParam;
+    /* The knob grid's value rotation: one bulk read per lap (param_pages). */
+    _ctx.getSlotParams = getSlotParamsAligned;
     _ctx.setSlotParam = setSlotParam;
     _ctx.updateFocusedSlot = updateFocusedSlot;
     _ctx.getMasterFxDisplayName = () => getMasterFxDisplayName();
