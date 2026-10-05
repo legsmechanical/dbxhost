@@ -917,12 +917,25 @@ static void seq8_save_state(seq8_instance_t *inst) {
     char tmp_path[sizeof(dest) + 8];
     int _n = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", dest);
     if (_n < 0 || (size_t)_n >= sizeof(tmp_path)) return;
+    /* ⚠ A failure SAYS so. This used to return or remove the temp file with no
+     * trace, so a suspend / quit / project-switch save that never reached the
+     * disk looked exactly like one that did (2026-10-04 review). Only the
+     * failure path logs; the save itself already does file I/O. */
     FILE *fp = fopen(tmp_path, "w");
-    if (!fp) return;
+    if (!fp) {
+        seq8_ilog(inst, "SAVE FAILED: cannot open temp file:");
+        seq8_ilog(inst, tmp_path);
+        return;
+    }
     seq8_do_serialize(inst, fp);
     int ok = (fflush(fp) == 0) && (fsync(fileno(fp)) == 0);
     if (fclose(fp) != 0) ok = 0;
-    if (!ok || rename(tmp_path, dest) != 0) remove(tmp_path);
+    if (!ok || rename(tmp_path, dest) != 0) {
+        remove(tmp_path);
+        seq8_ilog(inst, ok ? "SAVE FAILED: rename onto the project file failed:"
+                           : "SAVE FAILED: write/fsync of the temp file failed:");
+        seq8_ilog(inst, dest);
+    }
 }
 
 /* A load that finds NO project data — no file, an empty one, a Clear Session

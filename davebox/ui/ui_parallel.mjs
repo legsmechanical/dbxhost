@@ -70,7 +70,9 @@ function savePrefs() {
     const ids = Object.keys(p).sort();
     let out = '';
     for (let i = 0; i < ids.length; i++) out += ids[i] + ' ' + p[ids[i]] + '\n';
-    try { host_write_file(PARALLEL_PREF_PATH, out); } catch (e) { /* best effort */ }
+    let wrote = false;
+    try { wrote = !!host_write_file(PARALLEL_PREF_PATH, out); } catch (e) { wrote = false; }
+    if (!wrote) console.log('[parallel] pref write FAILED: ' + PARALLEL_PREF_PATH);   /* a device pref, not the project: log only */
 }
 
 /* The device-wide default for a module id: the user's setting if any, else

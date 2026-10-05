@@ -390,7 +390,8 @@ export function writeSidecar() {
      * why two sessions' work went missing before anyone noticed (2026-09-16). */
     if (!S.currentSetUuid) { noteIdentitylessSave(); return; }
     ensureStateDir(S.currentSetUuid);
-    host_write_file(uuidToUiStatePath(S.currentSetUuid), JSON.stringify(sidecarObject()));
+    if (!host_write_file(uuidToUiStatePath(S.currentSetUuid), JSON.stringify(sidecarObject())))
+        noteWriteFailed('sidecar', uuidToUiStatePath(S.currentSetUuid));
 }
 
 /* The UI sidecar, as an object: everything writeSidecar writes, read off S. */
@@ -562,6 +563,16 @@ export function loadSnapshotManifest(uuid) {
     } catch (e) { return []; }
 }
 
+/* A project write that FAILED says so — on screen and in the log. host_write_file
+ * returns false (disk full, a missing dir, a failed rename), and every caller
+ * here used to discard that, so a failed sidecar, snapshot or clear looked
+ * exactly like a saved one (2026-10-04 review). The deferred DSP save already
+ * reports its own failure (ui_dsp_bridge.mjs). */
+export function noteWriteFailed(what, path) {
+    console.log('[save] WRITE FAILED (' + what + '): ' + path);
+    showActionPopup('SAVE FAILED', 'CHECK STORAGE');
+}
+
 function writeSnapshotManifest(uuid, snaps) {
     return host_write_file(snapManifestPath(uuid),
         JSON.stringify({ v: SNAP_MANIFEST_VER, snaps: snaps }));
@@ -576,7 +587,10 @@ export function commitSnapshot(uuid, id, label) {
     if (!host_file_exists(srcSt)) return false;
     const stContents = host_read_file(srcSt);
     if (!stContents) return false;
-    host_write_file(snapStatePath(uuid, id), stContents);
+    if (!host_write_file(snapStatePath(uuid, id), stContents)) {
+        noteWriteFailed('snapshot', snapStatePath(uuid, id));
+        return false;
+    }
     const srcUi = uuidToUiStatePath(uuid);
     if (host_file_exists(srcUi)) {
         const uiContents = host_read_file(srcUi);
@@ -591,7 +605,7 @@ export function commitSnapshot(uuid, id, label) {
         label: label,
         sv: parseStateVersion(stContents)
     });
-    writeSnapshotManifest(uuid, snaps);
+    if (!writeSnapshotManifest(uuid, snaps)) { noteWriteFailed('snapshot list', snapManifestPath(uuid)); return false; }
     return true;
 }
 
@@ -603,7 +617,10 @@ export function applySnapshotToLive(uuid, id) {
     if (!host_file_exists(snSt)) return false;
     const stContents = host_read_file(snSt);
     if (!stContents) return false;
-    host_write_file(uuidToStatePath(uuid), stContents);
+    if (!host_write_file(uuidToStatePath(uuid), stContents)) {
+        noteWriteFailed('state load', uuidToStatePath(uuid));
+        return false;
+    }
     const snUi = snapUiStatePath(uuid, id);
     if (host_file_exists(snUi)) {
         const uiContents = host_read_file(snUi);
@@ -643,7 +660,9 @@ export function doClearSession() {
     /* No project, nothing to clear — and no fallback to clear instead. */
     if (!S.currentSetUuid) return;
     const sp = uuidToStatePath(S.currentSetUuid);
-    host_write_file(sp, '{"v":0}');
+    /* Nothing was cleared if this failed: say so and stop, rather than reset
+     * the UI and reload a project that still holds everything. */
+    if (!host_write_file(sp, '{"v":0}')) { noteWriteFailed('clear', sp); return; }
     host_write_file(uuidToUiStatePath(S.currentSetUuid), '{"v":0}');
     /* Reset JS-only state not covered by S.pendingSetLoad */
     S.activeBank = 0;
