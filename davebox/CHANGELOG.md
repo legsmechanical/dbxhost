@@ -26,6 +26,12 @@ the section into a versioned heading at release time.
   cancels it.
 
 ### Changed
+- **The screen spends half as long waiting on the engine when nothing is
+  happening.** A stopped, quiet session asked the engine for the same few
+  values on every screen update — the arp's on/latch for the Loop light, the
+  metronome's beat count, and whether there was anything to save. It now asks
+  once per poll, only for what can change. Measured on the Move: idle time
+  spent waiting dropped from about 34% to about 17%.
 - **Removing a step's last note clears its conditions.** Taking the last note
   off a held step with its pad now clears its ratchet, probability and
   iteration, as clearing the step does. They used to stay hidden on the empty

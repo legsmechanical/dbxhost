@@ -152,6 +152,25 @@ step('⭐⭐ the count-in blink RE-PHASES ON THE BEAT — the metronome beat is 
     S.metronomeOn = 0; S.recordCountingIn = false; S.recordArmed = false;
 });
 
+step('⭐ outside a count-in the previous beat follows the SNAPSHOT — the tick does not read it', () => {
+    /* The per-tick beat read runs only during a count-in, so playback moves the
+     * counter unseen; the poll's snapshot (field 52) keeps metroPrevBeat current,
+     * or the next count-in's first tick would take a stale count for a beat. */
+    const prev = globalThis.host_module_get_param;
+    metroBeat += 7;                                    /* playback advanced it */
+    globalThis.host_module_get_param = (k) => {
+        if (String(k) === 'state_snapshot') { const a = new Array(64).fill('0'); a[52] = String(metroBeat); return a.join(' '); }
+        return prev(k);
+    };
+    try {
+        S.playing = false; S.metronomeOn = 1; S.recordCountingIn = false;
+        for (let i = 0; i < 8; i++) globalThis.tick();   /* the tick advances tickCount */
+    } finally { globalThis.host_module_get_param = prev; }
+    if (S.metroPrevBeat !== metroBeat)
+        throw new Error('metroPrevBeat ' + S.metroPrevBeat + ' did not follow the snapshot\'s ' + metroBeat);
+    S.metronomeOn = 0;
+});
+
 /* ---- 3b. THE CALL SITE, not just the helper ------------------------------ */
 step('⭐⭐ a pad pressed during the count-in is stamped with the CLOCK — the helper is only right if it is fed ms', () => {
     /* ⚠ The gate step above drives prerollGateTicks DIRECTLY, so it stays green

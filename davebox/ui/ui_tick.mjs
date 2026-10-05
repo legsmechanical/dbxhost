@@ -562,7 +562,7 @@ export function _tickImpl() {
          * all pads silent until the user happens to gesture a modifier
          * (which retriggers computePadNoteMap). Worst-case stuck pad
          * duration is now ~50ms instead of indefinite. */
-        if ((S.tickCount % 5) === 0) {
+        if ((S.tickCount % POLL_INTERVAL) === 0) {
             const _dspM = dget('pad_dispatch_muted');
             if (_dspM !== null && _dspM !== undefined) {
                 const _dspMi = parseInt(_dspM, 10);
@@ -861,7 +861,7 @@ export function _tickImpl() {
 
     /* Poll every 100 ticks (~0.5s): detect DSP hot-reload via instance nonce. */
     if ((S.tickCount % 100) === 0) {
-        const newInstanceId = host_module_get_param('instance_id');
+        const newInstanceId = dget('instance_id');   /* rides the poll's prefetch */
         if (newInstanceId && S.lastDspInstanceId !== '' && newInstanceId !== S.lastDspInstanceId) {
             pollDSP();
             for (let _t = 0; _t < NUM_TRACKS; _t++)
@@ -1781,8 +1781,9 @@ export function _tickImpl() {
             S.tvDirty = false;
         }
 
-        /* Metro beat detection: checked every tick via dedicated get_param for minimal jitter */
-        if (S.metronomeOn > 0) {
+        /* Metro beat detection, every tick while a record count-in runs (the
+         * prefetch carries the key then) — it re-phases the count-in blink. */
+        if (S.metronomeOn > 0 && S.recordCountingIn) {
             const _mbcRaw = dget('metro_beat_count');
             if (_mbcRaw !== null && _mbcRaw !== undefined) {
                 const _mbc = parseInt(_mbcRaw, 10) | 0;
@@ -1998,9 +1999,10 @@ export function _tickImpl() {
                 let _tarpBlinkActive = false;
                 let _tarpBlinkOn = false;
                 if (!(S.sessionView && S.perfViewLocked) && !_rptLatched) {
-                    const _tarpOn = parseInt(dget('t' + _lt + '_tarp_on'), 10) === 1;
-                    const _tarpLatch = parseInt(dget('t' + _lt + '_tarp_latch'), 10) === 1;
-                    if (_tarpOn && _tarpLatch) {
+                    /* The ARP IN bank's mirror, not a read: Style (0 = off,
+                     * which is how the DSP derives tarp_on) and Latch. */
+                    const _ab = S.trackPadMode[_lt] !== PAD_MODE_DRUM && S.bankParams[_lt] && S.bankParams[_lt][5];
+                    if (_ab && (_ab[0] | 0) !== 0 && (_ab[7] | 0) !== 0) {
                         const _fc = parseInt(host_module_get_param('t' + _lt + '_tarp_fc'), 10) || 0;
                         _tarpBlinkActive = true;
                         _tarpBlinkOn = (_fc % 2) === 0;
