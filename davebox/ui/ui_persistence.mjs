@@ -104,6 +104,11 @@ export function projectDisplayName(uuid) {
 }
 
 /* Device-wide snapshots (item 18): one dir per slot beside the live state. */
+/* The project's snapshots folder, resolved the same way every slot dir is.
+ * The device-snapshot Clear fences its `rm -rf` on THIS prefix — never on a
+ * spelled-out Sets path: since 2026-09-22 a Sets entry is a symlink into
+ * dbx-host/projects/<id>/, so every slot dir resolves outside Sets. */
+export function snapshotsRoot(uuid) { return setStateDir(uuid) + '/snapshots/'; }
 export function deviceSnapDir(uuid, n) { return setStateDir(uuid) + '/snapshots/' + (n | 0); }
 /* The hidden "before" take a recall makes so Undo can return to it (Josh,
  * 2026-09-05: "can we just make recall subject to undo?"). One dir, rewritten
