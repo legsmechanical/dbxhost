@@ -441,7 +441,10 @@ static int sp_track_drum(sp_ctx_t *cx) {
             while (*sp == ' ') sp++;
             if (!strcmp(pfx_key, "pfx_reset") || !strcmp(pfx_key, "pfx_noteFx_reset") ||
                 !strcmp(pfx_key, "pfx_harm_reset") || !strcmp(pfx_key, "pfx_delay_reset"))
-                undo_begin_single(inst, tidx, (int)tr->active_clip);
+                /* The DRUM clip's snapshot (it holds each lane's pfx_params).
+                 * undo_begin_single snapshotted the hidden melodic clip and
+                 * discarded the armed drum undo (2026-10-04 review). */
+                undo_begin_drum_clip(inst, tidx, (int)tr->active_clip);
             drum_pfx_set(inst, tr, &dlane->pfx_params, &tr->drum_lane_pfx[lane_idx], pfx_key, sp);
             rui_mark(inst, tidx, (int)tr->active_clip);
             inst->state_dirty = 1;
@@ -459,7 +462,7 @@ static int sp_track_drum(sp_ctx_t *cx) {
             return 1;
         }
         if (!strcmp(p2, "_pfx_reset")) {
-            undo_begin_single(inst, tidx, (int)tr->active_clip);
+            undo_begin_drum_clip(inst, tidx, (int)tr->active_clip);   /* see the lane pfx_set reset above */
             drum_pfx_set(inst, tr, &dlane->pfx_params, &tr->drum_lane_pfx[lane_idx], "pfx_reset", "1");
             rui_mark(inst, tidx, (int)tr->active_clip);
             inst->state_dirty = 1;
@@ -654,6 +657,10 @@ static int sp_track_drum(sp_ctx_t *cx) {
                 return 1;
             }
             if (!strcmp(q, "_clear")) {
+                /* Undoable, as the melodic step clear is (2026-10-04 review:
+                 * Delete + step on a drum lane said NOTHING TO UNDO, or undid
+                 * an older edit). */
+                undo_begin_drum_clip(inst, tidx, (int)tr->active_clip);
                 dlc->steps[sidx]          = 0;
                 dlc->step_note_count[sidx] = 0;
                 dlc->step_vel[sidx]        = (uint8_t)SEQ_VEL;

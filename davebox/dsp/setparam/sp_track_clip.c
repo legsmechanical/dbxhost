@@ -833,6 +833,8 @@ static int sp_track_clip(sp_ctx_t *cx) {
             int l, s;
             drum_clip_t *dc = tr->drum_clips[cidx];
             if (!dc) return 1;
+            /* Undoable, like _clear / _hard_reset / tN_lL_clear (2026-10-04 review). */
+            undo_begin_drum_clip(inst, tidx, cidx);
             for (l = 0; l < DRUM_LANES; l++) {
                 clip_t *lc = &dc->lanes[l].clip;
                 for (s = 0; s < SEQ_STEPS; s++) {
@@ -870,6 +872,7 @@ static int sp_track_clip(sp_ctx_t *cx) {
             int l;
             drum_clip_t *dc = tr->drum_clips[cidx];
             if (!dc) return 1;
+            undo_begin_drum_clip(inst, tidx, cidx);   /* undoable, as drum_clear */
             silence_track_notes_v2(inst, tr);
             for (l = 0; l < DRUM_LANES; l++) {
                 clip_init(&dc->lanes[l].clip);

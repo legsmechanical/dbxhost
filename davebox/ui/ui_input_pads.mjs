@@ -1498,6 +1498,7 @@ export function _onStepButtons(d1, d2) {
             const t       = S.activeTrack;
             const lane    = S.activeDrumLane[t];
             const absStep = S.drumStepPage[t] * 16 + idx;
+            noteUndoUnit(); S.undoSeqArpSnapshot = null;   /* the DSP snapshots it now (as clearStep, melodic) */
             host_module_set_param('t' + t + '_l' + lane + '_step_' + absStep + '_clear', '1');
             S.drumLaneSteps[t][lane][absStep] = '0';
             S.drumLaneHasNotes[t][lane] = S.drumLaneSteps[t][lane].some(c => c !== '0');
