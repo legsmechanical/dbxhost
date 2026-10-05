@@ -65,7 +65,7 @@ step('melodic: the note clear (the undo snapshot) reaches the DSP BEFORE the loc
     S.trackPadMode[1] = 0; S.trackActiveClip[1] = 0; S.trackCurrentPage[1] = 0;
     S.clipSteps[1][0][3] = 1;
     deleteStep(1, 3);
-    const n = at(/^t1_c0_step_3_clear=/), a = at(/^t1_pa_clear_step=/);
+    const n = at(/^t1_c0_step_3_clear=/), a = at(/^t1_pa_clear_step=/); console.error('ORDER', JSON.stringify(sets.map((x,i)=>i+':'+x.slice(0,40))));
     assert(n >= 0, 'no note clear sent: ' + JSON.stringify(sets));
     assert(a >= 0, 'no lock clear sent: ' + JSON.stringify(sets));
     assert(n < a, 'the lock clear landed first (' + a + ' before ' + n + '): ' + JSON.stringify(sets));
