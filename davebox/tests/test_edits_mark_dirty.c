@@ -7,7 +7,8 @@
  * or kill lost it. Their drum / remote twins already marked it.
  *
  *   - the play-effects catch-all (every NoteFX/Harm/Delay/Quantize/SeqArp knob)
- *   - clip_copy (row_copy, clip_cut, drum_clip_copy all marked it)
+ *   - clip_copy — NOT a bug after all: pa_copy_clip always marked it. Kept as
+ *     a pin so the save never depends on the automation copy alone.
  *   - tN_clip_length, tN_clock_shift, tN_nudge, tN_transpose
  *
  * Track 2 (t1) is used: track 1 (t0) is a DRUM track by default. */
