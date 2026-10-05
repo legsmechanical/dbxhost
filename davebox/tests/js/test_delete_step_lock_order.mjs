@@ -9,7 +9,8 @@ import './_bulk_get_stub.mjs';
  * note back without them. The drum lane's clear is sent at once, so there the
  * order was already right; both are checked.
  *
- * The real gesture: hold Delete, press the step, run the ticks; every write
+ * The real gesture, with writes already waiting in the queue: hold Delete,
+ * press the step, run the ticks; every write
  * the DSP receives, single or bulk, in one ordered list. */
 let failed = 0;
 const ok = (l) => console.log(`  ok   — ${l}`);
@@ -55,6 +56,10 @@ const ticks = (n) => { for (let i = 0; i < n; i++) globalThis.tick(); };
 function deleteStep(t, i) {
     S.activeTrack = t; S.activeBank = 0; S.copyHeld = false; S.shiftHeld = false;
     S.heldStep = -1; S.heldStepBtn = -1; S.pendingDefaultSetParams.length = 0;
+    /* ⚠ A BUSY queue: it drains one write per tick, so anything already in it
+     * holds the note clear back while the automation list flushes at once.
+     * With an empty queue both orders happen to come out right. */
+    for (let k = 0; k < 4; k++) S.pendingDefaultSetParams.push({ key: 't7_noteFX_octave', val: '0' });
     sets.length = 0;
     cc(DELETE, 127); note(STEP(i), 127); note(STEP(i), 0); cc(DELETE, 0);
     ticks(12);
@@ -65,7 +70,7 @@ step('melodic: the note clear (the undo snapshot) reaches the DSP BEFORE the loc
     S.trackPadMode[1] = 0; S.trackActiveClip[1] = 0; S.trackCurrentPage[1] = 0;
     S.clipSteps[1][0][3] = 1;
     deleteStep(1, 3);
-    const n = at(/^t1_c0_step_3_clear=/), a = at(/^t1_pa_clear_step=/); console.error('ORDER', JSON.stringify(sets.map((x,i)=>i+':'+x.slice(0,40))));
+    const n = at(/^t1_c0_step_3_clear=/), a = at(/^t1_pa_clear_step=/);
     assert(n >= 0, 'no note clear sent: ' + JSON.stringify(sets));
     assert(a >= 0, 'no lock clear sent: ' + JSON.stringify(sets));
     assert(n < a, 'the lock clear landed first (' + a + ' before ' + n + '): ' + JSON.stringify(sets));
