@@ -57,7 +57,8 @@ import { sessionHasAnyContent } from './ui_scene.mjs';
  * Keep it that way: no top-level use of anything from this import. */
 import { disarmRecord } from './ui_record.mjs';
 import { followActive } from './ui_prefs.mjs';
-import { dspGet, dspGetInt, dspGetStr, prefetchTrackDigests, releaseTrackDigests } from './ui_dsp_get.mjs';
+import { dspGet, dspGetInt, dspGetStr, prefetchTrackDigests, releaseTrackDigests,
+         prefetchKeys, digestActive } from './ui_dsp_get.mjs';
 
 /* Popup counterpart of the host's warnIfLinkDisabled (src/shadow/shadow_ui.js)
  * for a dAVEBOx screen dAVEBOx never opens (the host's own Link/System page).
@@ -154,13 +155,39 @@ export function resyncDrumTrack(t) {
     refreshDrumLaneBankParams(t, S.activeDrumLane[t]);
 }
 
-export function refreshPerClipBankParams(t) {
+/* The keys refreshPerClipBankParams reads for track t — three per track. */
+function perClipBankKeys(t) {
+    if (S.trackPadMode[t] === PAD_MODE_DRUM) {
+        const l = 't' + t + '_l' + S.activeDrumLane[t];
+        return [l + '_pfx_snapshot', l + '_playback_dir', l + '_playback_audio_reverse'];
+    }
+    return ['t' + t + '_c' + S.trackActiveClip[t] + '_pfx_snapshot',
+            't' + t + '_clip_playback_dir', 't' + t + '_clip_playback_audio_reverse'];
+}
+
+/* Refresh the per-clip bank mirrors of every track in `tracks` on ONE round
+ * trip (three reads per track otherwise, ~2.9 ms each). Inside a standing
+ * prefetch it reads through that one instead. */
+export function refreshPerClipBankParamsFor(tracks) {
+    if (digestActive()) { for (const t of tracks) refreshPerClipBankParamsOne(t); return; }
+    const keys = [];
+    for (const t of tracks) keys.push(...perClipBankKeys(t));
+    prefetchKeys(keys);
+    try {
+        for (const t of tracks) refreshPerClipBankParamsOne(t);
+    } finally {
+        releaseTrackDigests();
+    }
+}
+export function refreshPerClipBankParams(t) { refreshPerClipBankParamsFor([t]); }
+
+function refreshPerClipBankParamsOne(t) {
     if (S.trackPadMode[t] === PAD_MODE_DRUM) {
         refreshDrumLaneBankParams(t, S.activeDrumLane[t]);
         return;
     }
     const ac   = S.trackActiveClip[t];
-    const snap = host_module_get_param('t' + t + '_c' + ac + '_pfx_snapshot');
+    const snap = dspGet('t' + t + '_c' + ac + '_pfx_snapshot');
     if (!snap) return;
     const v = snap.split(' ');
     if (v.length < 17) return;
@@ -205,12 +232,12 @@ export function refreshPerClipBankParams(t) {
     const tpsIdx = TPS_VALUES.indexOf(tps);
     S.bankParams[t][0][0] = tpsIdx >= 0 ? tpsIdx : 1;
     {
-        const _pd = host_module_get_param('t' + t + '_clip_playback_dir');
+        const _pd = dspGet('t' + t + '_clip_playback_dir');
         const _pdv = parseInt(_pd, 10);
         const _pdvi = (isFinite(_pdv) && _pdv >= 0 && _pdv <= 3) ? _pdv : 0;
         S.clipPlaybackDir[t][ac] = _pdvi;
         S.bankParams[t][0][6] = _pdvi;
-        const _par = host_module_get_param('t' + t + '_clip_playback_audio_reverse');
+        const _par = dspGet('t' + t + '_clip_playback_audio_reverse');
         const _parv = parseInt(_par, 10);
         S.clipPlaybackAudioReverse[t][ac] = (isFinite(_parv) && _parv === 1) ? 1 : 0;
     }

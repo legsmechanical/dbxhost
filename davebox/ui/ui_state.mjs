@@ -112,6 +112,9 @@ export function forgetProjectJs() {
         S.drumLastVelZone[t]           = 12;
     }
     S.followPaused = false;
+    /* The engine's edit revision is the last project's: the next poll adopts
+     * the new one instead of reading a change as an edit to re-sync. */
+    S.lastRemoteRev = undefined;
 }
 
 /* True when knob k on the active bank shows its alt (KNOB_ALTS). */

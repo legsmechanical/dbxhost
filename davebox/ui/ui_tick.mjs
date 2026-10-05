@@ -31,6 +31,7 @@ import {
 import { S, standDownBankDisplay, stepRevealAvailable, loopViewActive, endLoopLatch, forgetUndo, forgetProjectJs } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { tickPrefetch, dget, applyNewProjectSeed } from './ui_dsp_bridge.mjs';
+import { dspGet, prefetchKeys, releaseTrackDigests } from './ui_dsp_get.mjs';
 import { daveBoxTick, bannerDaveSync, loadDaveTick } from './ui_daves.mjs';
 import { devSnapOpen, devSnapEnter, devSnapTick, DEVSNAP_HOLD_MS } from './ui_devsnap.mjs';
 import { automationTick, automationPollWarnings } from './ui_automation.mjs';
@@ -56,7 +57,7 @@ import { pollPendingMidiExport } from './ui_midi_export.mjs';
 import { runTemplateSet } from './ui_template.mjs';
 import { drawUI, drawLoadingScreen, sessMixerVisible, refreshInstrAbbrev } from './ui_render.mjs';
 import { pollDSP,
-    refreshPerClipBankParams, refreshDrumLaneBankParams, refreshSeqNotesIfCurrent,
+    refreshPerClipBankParams, refreshPerClipBankParamsFor, refreshDrumLaneBankParams, refreshSeqNotesIfCurrent,
     syncClipsFromDsp, syncClipsTargeted, syncMuteSoloFromDsp, restoreUiSidecar,
     liveSendNote, _drainLiveNotes,
     pendingDrumNoteOffs, _drumRecNoteOns, _drumRecNoteOffs } from './ui_dsp_bridge.mjs';
@@ -879,11 +880,23 @@ export function _tickImpl() {
     if (S.pendingDspSync > 0) {
         S.pendingDspSync--;
         if (S.pendingDspSync === 0) {
+            /* ⭑ ONE full readback per load. The explicit sync below is it, so
+             * the poll first adopts the engine's edit revision rather than
+             * answering a changed one with a full sync of its own — a fresh
+             * engine starts at 0, and an unread digest answers FULL. */
+            S.lastRemoteRev = undefined;
             pollDSP();
             for (let _t = 0; _t < NUM_TRACKS; _t++)
                 S.trackCurrentPage[_t] = Math.max(0, Math.floor(S.trackCurrentStep[_t] / 16));
             syncClipsFromDsp();
             syncMuteSoloFromDsp();
+            /* ...and the reload watcher adopts the engine it just read, or a
+             * fresh one after an in-session switch reads as a hot reload a
+             * second later and the whole readback runs again. */
+            {
+                const _iid = host_module_get_param('instance_id');
+                if (_iid) S.lastDspInstanceId = _iid;
+            }
             /* Restore the Conductor role from DSP. syncClipsFromDsp ->
              * readTrackConfig already reads t<idx>_pad_mode (PAD_MODE_CONDUCT=2
              * preserved, not clamped), but S.conductorTrack is not derived from
@@ -905,10 +918,17 @@ export function _tickImpl() {
                  * 8-char '0'/'1' strings; _cond_oct = 8 space-separated
                  * signed ints. */
                 S.condActiveClip = S.trackActiveClip[_ct] | 0;
+                /* 64 keys, one round trip. */
+                const _ck = [];
+                for (let _c = 0; _c < NUM_CLIPS; _c++)
+                    for (const _s of ['_cond_resp', '_cond_when', '_cond_oct', '_cond_lock'])
+                        _ck.push('t' + _ct + '_c' + _c + _s);
+                prefetchKeys(_ck);
+                try {
                 for (let _c = 0; _c < NUM_CLIPS; _c++) {
-                    const _resp = host_module_get_param('t' + _ct + '_c' + _c + '_cond_resp');
-                    const _when = host_module_get_param('t' + _ct + '_c' + _c + '_cond_when');
-                    const _oct  = host_module_get_param('t' + _ct + '_c' + _c + '_cond_oct');
+                    const _resp = dspGet('t' + _ct + '_c' + _c + '_cond_resp');
+                    const _when = dspGet('t' + _ct + '_c' + _c + '_cond_when');
+                    const _oct  = dspGet('t' + _ct + '_c' + _c + '_cond_oct');
                     if (typeof _resp === 'string' && _resp.length >= NUM_TRACKS) {
                         for (let _k = 0; _k < NUM_TRACKS; _k++)
                             S.condResp[_c][_k] = (_resp.charAt(_k) === '1') ? 1 : 0;
@@ -925,9 +945,10 @@ export function _tickImpl() {
                         }
                     }
                     /* CdLk: single 0/1 per clip. */
-                    const _clk = host_module_get_param('t' + _ct + '_c' + _c + '_cond_lock');
+                    const _clk = dspGet('t' + _ct + '_c' + _c + '_cond_lock');
                     S.condLock[_c] = (_clk === '1' || _clk === 1) ? 1 : 0;
                 }
+                } finally { releaseTrackDigests(); }
             } else {
                 S.conductorTrack = -1;
             }
@@ -936,8 +957,12 @@ export function _tickImpl() {
              * NOTE FX / MIDI DLY random modes, SEQ ARP steps, playback
              * direction: they showed the previous project's (2026-10-02).
              * AFTER the sidecar: it decides each track's active clip and lane. */
-            for (let _t = 0; _t < NUM_TRACKS; _t++)
-                if (S.trackPadMode[_t] !== PAD_MODE_CONDUCT) refreshPerClipBankParams(_t);
+            {
+                const _rt = [];
+                for (let _t = 0; _t < NUM_TRACKS; _t++)
+                    if (S.trackPadMode[_t] !== PAD_MODE_CONDUCT) _rt.push(_t);
+                refreshPerClipBankParamsFor(_rt);       /* one round trip for all of them */
+            }
             computePadNoteMap();
             /* ⭐ AFTER the load, not before it: a brand-new project's random
              * key/scale is applied here because the state load immediately

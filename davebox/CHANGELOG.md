@@ -26,6 +26,11 @@ the section into a versioned heading at release time.
   cancels it.
 
 ### Changed
+- **Opening a project reads it from the engine once.** After a switch within
+  a session the whole project could be read back two or three times, and each
+  track's effect settings one value at a time. Loading a project is also
+  quicker to settle (the longest freeze on the Move went from about 330 ms to
+  about 250 ms).
 - **The screen spends half as long waiting on the engine when nothing is
   happening.** A stopped, quiet session asked the engine for the same few
   values on every screen update — the arp's on/latch for the Loop light, the

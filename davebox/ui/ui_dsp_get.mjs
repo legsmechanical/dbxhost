@@ -96,3 +96,34 @@ export function releaseTrackDigests() {
     _digest = null;
 }
 
+/* True while a prefetch (either kind) is standing — a caller that would set
+ * up its own must not replace one it is running inside. */
+export function digestActive() { return _digest !== null; }
+
+/* Fetch an explicit list of keys in ONE round trip (the host's bulk read) into
+ * the same scoped map. For readers whose keys no digest carries, called in a
+ * loop — a list of N reads costs one frame instead of N. Release it with
+ * releaseTrackDigests(). The bulk wire format is the host's
+ * (`shadow_get_params`): a count, then a length-prefixed item per line. */
+export function prefetchKeys(keys) {
+    let blob = keys.length + '\n';
+    for (const k of keys) blob += k.length + '\n' + k;
+    const res = host_module_get_params(blob);
+    const map = new Map();
+    if (res) {
+        const nl = res.indexOf('\n');
+        const n = parseInt(res.slice(0, nl), 10) || 0;
+        let p = nl + 1;
+        /* A short answer maps nothing: every key falls through to a live read. */
+        for (let i = 0; n === keys.length && i < n; i++) {
+            const e = res.indexOf('\n', p);
+            const len = parseInt(res.slice(p, e), 10) || 0;
+            p = e + 1;
+            map.set(keys[i], res.slice(p, p + len));
+            p += len;
+        }
+    }
+    _digest = map;
+    return map.size;
+}
+
