@@ -2859,6 +2859,16 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
         int i;
         for (i = 0; i < an->gen_count; i++)
             pfx_send(fx, off_s, an->gen_notes[i], 0);
+        /* ⚠ ...and its delay echoes, as a note-off would. The record is
+         * overwritten below, and an echo's note-off is only ever scheduled
+         * from THIS record when the note ends (pfx_sched_delay_offs). Without
+         * this, echoes that had already sounded never got their offs: the
+         * output refcount stayed up, later hits on the pitch were dropped,
+         * and the synth held the note until a panic (2026-10-04 review). With
+         * delay_retrig on, the drain below sends these at once. */
+        pfx_sched_delay_offs(fx, an, an->on_time,
+                             an->gate_override_smp ? an->gate_override_smp
+                                                   : pfx_gate_smp(inst, tr));
     }
 
     /* Delay retrig: when enabled, a new note-on drops in-flight delay echoes.
