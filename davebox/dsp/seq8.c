@@ -2336,10 +2336,15 @@ static void send_panic(seq8_instance_t *inst) {
     for (s = 0; s < SEQ8_CHAIN_SLOTS; s++) {
         play_fx_t *fx = slot_pfx[s];
         if (!fx) continue;
+        /* Straight to the output (pfx_emit), like the CC 123 below: through
+         * pfx_send, a clip with SEQ ARP on diverted every off into the arp's
+         * held list (none was emitted), and under swing 2048 offs were parked
+         * in a 256-slot queue that drops the rest (2026-10-04 review). The
+         * refcounts are zeroed above, so pfx_emit lets every off through. */
         if (fx == route_pfx[ROUTE_SCHWUNG] || slot_hot[s])
             for (ch = 0; ch < 16; ch++)
                 for (n = 0; n < 128; n++)
-                    pfx_send(fx, (uint8_t)(0x80 | ch), (uint8_t)n, 0);
+                    pfx_emit(fx, (uint8_t)(0x80 | ch), (uint8_t)n, 0);
         /* ...and All Notes Off to EVERY routed slot, swept or not (Josh,
          * 2026-09-30: a dspreset voice "Kept sounding after transport stop"
          * though the note-off sweep above reached its slot). Per-note offs
@@ -2356,8 +2361,8 @@ static void send_panic(seq8_instance_t *inst) {
          * CC 120 + 123 per channel silences everything in 32 messages. */
         play_fx_t *fx = route_pfx[ROUTE_EXTERNAL];
         for (ch = 0; ch < 16; ch++) {
-            pfx_send(fx, (uint8_t)(0xB0 | ch), 120, 0); /* All Sound Off */
-            pfx_send(fx, (uint8_t)(0xB0 | ch), 123, 0); /* All Notes Off */
+            pfx_emit(fx, (uint8_t)(0xB0 | ch), 120, 0); /* All Sound Off */
+            pfx_emit(fx, (uint8_t)(0xB0 | ch), 123, 0); /* All Notes Off */
         }
     }
     /* ROUTE_MOVE: skip CC 123 sweep. Move's voice allocator corrupts when
