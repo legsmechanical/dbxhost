@@ -57,6 +57,7 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             if ((int)inst->tracks[dstT].active_clip == dstC)
                 pfx_sync_from_clip(&inst->tracks[dstT]);
             rui_mark(inst, dstT, dstC);   /* only the destination clip changed */
+            inst->state_dirty = 1;        /* row_copy / clip_cut / drum_clip_copy all mark it */
         }
         return 1;
     }
