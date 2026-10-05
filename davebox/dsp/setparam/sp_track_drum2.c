@@ -146,8 +146,11 @@ static int sp_track_drum2(sp_ctx_t *cx) {
         int l_al;
         /* Pre-flight: check all lanes before modifying any */
         for (l_al = 0; l_al < DRUM_LANES; l_al++) {
-            if (clip_stretch_check(&dc_al->lanes[l_al].clip, dir) != 1) {
-                inst->all_lanes_stretch_result = -1;
+            int _can = clip_stretch_check(&dc_al->lanes[l_al].clip, dir);
+            if (_can != 1) {
+                /* -2: a lane has hits past its loop end that ×2 would
+                 * overwrite (CROP FIRST); -1: no room / a collision. */
+                inst->all_lanes_stretch_result = (_can == -2) ? -2 : -1;
                 return 1;
             }
         }

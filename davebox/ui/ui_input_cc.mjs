@@ -3833,6 +3833,12 @@ function applyCrop(isDrum, allLanes) {
 
 /* Clock Shift, Nudge and Beat Stretch x2 need the loop at step 1: say so, and
  * where to go. Not the deferring popup — the knob is still being touched. */
+/* Beat Stretch ×2 would overwrite hits past the loop end (the DSP refuses,
+ * stretch_blocked / all_lanes_stretch_result 2). Same CROP FIRST door. */
+export function refuseNotesPastEnd() {
+    showActionPopupFor(LOOP_NOT_AT_1_MS, 'NOTES PAST', 'THE LOOP END', 'CROP FIRST');
+    forceRedraw();
+}
 function refuseLoopNotAtOne() {
     /* Josh's wording (2026-09-27): "LOOP STARTS AFTER STEP 1 / CROP FIRST".
      * Three lines: the first does not fit the card's width in one. */
@@ -4710,8 +4716,11 @@ function _onCC_knobs(d1, d2) {
                     }
                     host_module_set_param('t' + t + '_l' + lane + '_beat_stretch', String(dir));
                     S.knobLocked[knobIdx] = true;
-                    const blocked = host_module_get_param('t' + t + '_beat_stretch_blocked') === '1';
-                    if (dir === -1 && blocked) {
+                    const _sb = host_module_get_param('t' + t + '_beat_stretch_blocked');
+                    const blocked = _sb === '1';
+                    if (_sb === '2') {
+                        refuseNotesPastEnd();          /* nothing moved */
+                    } else if (dir === -1 && blocked) {
                         S.stretchBlockedEndTick = nowMs() + STRETCH_BLOCKED_MS;
                     } else {
                         S.drumLaneLength[t] = dir === 1 ? len * 2 : Math.floor(len / 2);
@@ -5053,8 +5062,12 @@ function _onCC_knobs(d1, d2) {
                         if (canFire) {
                             host_module_set_param('t' + t + '_' + pm.dspKey, String(dir));
                             S.knobLocked[knobIdx] = true;
-                            /* For compress: check if DSP blocked due to step collision */
-                            if (dir === -1 && host_module_get_param('t' + t + '_beat_stretch_blocked') === '1') {
+                            /* For compress: check if DSP blocked due to step collision;
+                             * for ×2: hits past the loop end it would overwrite. */
+                            const _sb = host_module_get_param('t' + t + '_beat_stretch_blocked');
+                            if (_sb === '2') {
+                                refuseNotesPastEnd();          /* nothing moved */
+                            } else if (dir === -1 && _sb === '1') {
                                 S.stretchBlockedEndTick = nowMs() + STRETCH_BLOCKED_MS;
                             } else {
                                 /* Mirror DSP step rewrite in JS S.clipSteps */

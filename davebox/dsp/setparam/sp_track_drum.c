@@ -310,7 +310,7 @@ static int sp_track_drum(sp_ctx_t *cx) {
             if (dlc->loop_start) return 1;
             int can = clip_stretch_check(dlc, dir == 1 ? 1 : -1);
             if (can == 0) return 1;
-            if (can < 0) { tr->stretch_blocked = 1; return 1; }
+            if (can < 0) { tr->stretch_blocked = (can == -2) ? 2 : 1; return 1; }
             tr->stretch_blocked = 0;
             clip_stretch_window(dlc, dir == 1 ? 1 : -1);
             {

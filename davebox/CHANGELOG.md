@@ -86,6 +86,14 @@ the section into a versioned heading at release time.
   matches 8.
 
 ### Fixed
+- **Beat Stretch ×2 no longer deletes notes hidden past the loop end.** A
+  shortened lane or clip keeps its later notes, silent past the end; doubling
+  the length used to overwrite them without a word. It now says NOTES PAST
+  THE LOOP END / CROP FIRST and changes nothing — crop first if you mean to
+  drop them.
+- **Baking a drum clip keeps every hit on its own lane.** A bake could give
+  hits random pitches — even though drum lanes have no random setting — and
+  then move each hit to the lane that plays that pitch, scattering the clip.
 - **Fewer stuck notes.**
   - Muting or soloing a drum lane silences a long hit at once.
   - Panic reaches the instrument with SEQ ARP or swing on.
