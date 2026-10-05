@@ -2348,7 +2348,8 @@ export function createController(io = {}) {
 
     /* One lap's reads in one bulk round trip — see getParamsBulk. Exactly the
      * keys the stops below ask for: each cell (and its `:base` when a
-     * modulation target holds it), the preset name, the extras, the warm key. */
+     * modulation target holds it), the preset name and the module's focus,
+     * the extras, the warm key. */
     function prefetchRotation(p, extraKeys, warm) {
         const keys = [];
         for (const key of p.keys) {
@@ -2357,6 +2358,10 @@ export function createController(io = {}) {
             keys.push(fullKey(key));
         }
         keys.push(`${s.prefix}:preset_name`);
+        /* The preset stop also asks where the module's focus is
+         * (syncChildIndexFromModule) — a drum kit's current pad. */
+        const idxParam = (p.level && p.childLevel) ? childIndexParam(p.childLevel) : null;
+        if (idxParam) keys.push(`${s.prefix}:${idxParam}`);
         for (const ek of extraKeys) if (ek) keys.push(fullKey(ek));
         if (warm) keys.push(fullKey(warm.key, warm.page));
         rotationCache = null;

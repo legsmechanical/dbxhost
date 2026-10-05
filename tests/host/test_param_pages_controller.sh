@@ -1141,6 +1141,21 @@ Promise.all([
       if (ctl.state.values[k] === undefined) fail("key " + k + " has no value with the bulk read");
     console.log("PASS: a lap costs one bulk read (" + bulks() + " bulk, " + singles.length + " single in " + N + " ticks)");
 
+    /* The focus of a child level (mrdrums: ui_current_pad) rides the lap too. */
+    {
+      const dev = D.createFakeDevice({ id: "mrdrums" });
+      const io = Object.assign({}, dev, {
+        getParams: (keys) => { const n = dev.reads.length; const o = keys.map((k) => dev.getParam(k)); dev.reads.length = n; return o; },
+      });
+      const ctl = C.createController(io);
+      ctl.load({ slot: 0, component: "synth" });
+      for (let i = 0; i < 40; i++) ctl.tick();
+      dev.resetCounters();
+      for (let i = 0; i < 200; i++) ctl.tick();
+      const focus = dev.reads.filter((k) => k === "synth:ui_current_pad");
+      if (focus.length) fail("the module focus was read singly " + focus.length + " times with a bulk read available");
+    }
+
     /* The stale-read rule still holds when the lap is prefetched. */
     {
       const { dev, ctl } = mk({ cutoff: 50 });
