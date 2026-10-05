@@ -31,7 +31,16 @@ static int panic_offs(void (*setup)(hx_t *)) {
     return n;
 }
 static void with_seq_arp(hx_t *h) { hx_set_param(h, "t1_seq_arp_style", "1"); }
-static void with_swing(hx_t *h)   { hx_set_param(h, "swing_amt", "60"); }
+/* Swing defers only while PLAYING, on the swung (every second) step: the delay
+ * is set per step by the render and holds between blocks, so a panic sent then
+ * went into the queue. Play until it is in effect. */
+static void with_swing(hx_t *h) {
+    seq8_instance_t *inst = (seq8_instance_t *)h->inst;
+    hx_set_param(h, "swing_amt", "60");
+    hx_set_param(h, "transport", "play");
+    for (int i = 0; i < 4000 && inst->swing_step_delay == 0; i++) hx_render(h, 1);
+    HX_ASSERT(inst->swing_step_delay > 0, "control: on a swung step");
+}
 
 int main(void) {
     int plain = panic_offs(NULL);
