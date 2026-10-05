@@ -330,12 +330,24 @@ pins it with hand-checkable cases.
   it, and an unread screen is how a null result becomes a false bug report.
 * No golden-frame diffing helpers yet; compare byte counts or assert on
   `pixel()` regions.
-* **Shift+Step does not reach a module IN A SESSION** (2026-09-22). An injected
-  Shift CC arrives (the module logs it) but a step note after it does not, so
-  Shift+Step 1 cannot reopen dAVEBOx's project picker mid-session. The replay
-  path (`schwung_shim.c`, the `test_inject_ui_shm` drain) does publish notes, so
-  the loss is after it. **Workaround:** a FRESH session lands on the picker —
-  exit to stock and relaunch, then drive the picker from there.
+* ~~Shift+Step does not reach a module in a session~~ — **fixed 2026-10-05,
+  and the diagnosis was wrong.** The step note always arrived; the SHIFT did
+  not survive. A module may heal a Shift it believes held against the shim's
+  own view (`shadow_get_shift_held()`, from the hardware buffer) — dAVEBOx does,
+  every tick — and an injected Shift never reached that view, so it was released
+  before the next press. The test-bus drain now mirrors an injected CC 49 into
+  `shift_held`, and Shift+Step 1 opens dAVEBOx's project picker mid-session.
+  Proved with `overtake_midi_log_on` (below) plus a module log line.
+* **To see what the host UI received**, touch `/data/UserData/dbx-host/overtake_midi_log_on`
+  BEFORE launching (read once per process): every MIDI event reaching the
+  overtake module is logged as `MIDI_IN:` in `dbx-host/debug.log`.
+* **A fresh dAVEBOx session lands in SESSION VIEW.** `tap("menu")` is CC 50,
+  which dAVEBOx uses as Note/Session — it toggles the view, it opens no menu.
+* **The Move's clock is not the dev machine's** (measured ~4.3 s behind). Times
+  taken with `time.time()` must be shifted by a measured offset before cutting
+  an OTLP trace window — take it as the midpoint of an ssh `date +%s.%N`.
+* **OTLP tracing in the UI process does not come back** once switched off
+  within one process: a traced run needs a fresh session.
 * **Start the daemon AFTER the session is up, and again after every relaunch.**
   It maps the session's SHM at start; started too early (or left over from a
   previous session) it exits with `shm_open(/dbxhost-control) failed`, and the

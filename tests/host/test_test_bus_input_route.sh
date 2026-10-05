@@ -73,4 +73,12 @@ command grep -q '"INJECT_MIDI_MOVE"' "$cmds" ||
   fail "INJECT_MIDI_MOVE is gone — a co-run/native test has no way to address \
 Move once auto-routing is in place"
 
+# 7. An injected Shift reads as HELD to the shim's own view. A module may heal
+#    a Shift it believes held against shadow_get_shift_held() (dAVEBOx does,
+#    every tick), so without this an injected Shift was released before the
+#    next press arrived and no Shift+ gesture could be driven by the bus.
+command grep -q 'if (shadow_control) shadow_control->shift_held = (uint8_t)shadow_shift_held;' "$shim" ||
+  fail "the test-bus drain no longer mirrors an injected Shift into the shim's \
+shift_held — Shift+Step / Shift+pad gestures from the bus would lose their Shift"
+
 echo "PASS: test-bus input routes to the surface, not through Move's ring"

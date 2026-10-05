@@ -9474,6 +9474,17 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                 if (shadow_ui_midi_shm)
                     shadow_ui_midi_publish(hdr, status, d1, d2);
 
+                /* An injected Shift must read as held to everything that asks
+                 * the shim (shadow_get_shift_held), as a hardware one does.
+                 * Without this the press reached the module, but its stuck-
+                 * Shift heal compared it with the hardware view, found Shift
+                 * up, and released it on the next tick — so no Shift+Step or
+                 * Shift+pad gesture could be driven by the test bus. */
+                if (type == 0xB0 && d1 == 0x31) {
+                    shadow_shift_held = (d2 > 0) ? 1 : 0;
+                    if (shadow_control) shadow_control->shift_held = (uint8_t)shadow_shift_held;
+                }
+
                 if (type == 0x90 || type == 0x80) {
                     uint8_t msg[3] = { status, d1, d2 };
                     if (overtake_dsp_gen && overtake_dsp_gen_inst && overtake_dsp_gen->on_midi)
