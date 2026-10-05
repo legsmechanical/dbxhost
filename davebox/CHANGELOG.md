@@ -70,6 +70,13 @@ the section into a versioned heading at release time.
   matches 8.
 
 ### Fixed
+- **Fewer stuck notes.**
+  - Muting or soloing a drum lane silences a long hit at once.
+  - Panic reaches the instrument with SEQ ARP or swing on.
+  - A note held with the track arpeggiator through a count-in is released.
+  - Restart no longer drops delay-echo note-offs on a track sending MIDI to a
+    Move instrument.
+  - Retriggering a note releases its delay echoes that already sounded.
 - **Clearing a device snapshot really clears it.** A cleared slot could come
   back lit on the next visit and recall the old snapshot.
 - **More edits are autosaved like every other edit.** Play-effects knobs, clip length, clock
