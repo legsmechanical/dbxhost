@@ -414,25 +414,32 @@ static int sp_track_drum2(sp_ctx_t *cx) {
         int l_al, i;
         undo_begin_drum_clip(inst, tidx, (int)tr->active_clip);
         /* Note link: copied forward as the window lane's notes are — steps
-         * [0, len) onto [len, 2 len), loop start ignored as the op ignores it —
-         * and only if that lane is not too long to double. */
+         * [ls, ls + len) onto [ls + len, ls + 2 len) — and only if that lane
+         * fits doubled from its loop start. */
         {
             uint32_t lk_s, lk_l, lk_tps;
             pa_drum_window(tr, (int)tr->active_clip, &lk_s, &lk_l, &lk_tps);
-            if (lk_l && (lk_l / lk_tps) * 2 <= SEQ_STEPS)
-                pa_link_drum_double(inst, tidx, (int)tr->active_clip, lk_l);
+            if (lk_l && (lk_s / lk_tps) + (lk_l / lk_tps) * 2 <= SEQ_STEPS)
+                pa_link_drum_double(inst, tidx, (int)tr->active_clip, lk_s, lk_l);
         }
+        /* ⚠ FROM EACH LANE'S LOOP START, like the single-lane and melodic
+         * twins (both fixed for exactly this). This copied from step 0 and
+         * checked only len * 2, so a lane with loop_start > 0 doubled the wrong
+         * content and its window could end past step 256 — and the recorder
+         * and playhead then index steps[] inside that window. */
         for (l_al = 0; l_al < DRUM_LANES; l_al++) {
             clip_t *dlc = &dc_al->lanes[l_al].clip;
             int len = (int)dlc->length;
-            if (len * 2 > SEQ_STEPS) continue;
+            int ls  = (int)dlc->loop_start;
+            if (ls + len * 2 > SEQ_STEPS) continue;
             for (i = 0; i < len; i++) {
-                dlc->steps[len + i]           = dlc->steps[i];
-                memcpy(dlc->step_notes[len + i], dlc->step_notes[i], 8);
-                dlc->step_note_count[len + i] = dlc->step_note_count[i];
-                dlc->step_vel[len + i]        = dlc->step_vel[i];
-                dlc->step_gate[len + i]       = dlc->step_gate[i];
-                memcpy(dlc->note_tick_offset[len + i], dlc->note_tick_offset[i], 8 * sizeof(int16_t));
+                int src = ls + i, dst = ls + len + i;
+                dlc->steps[dst]           = dlc->steps[src];
+                memcpy(dlc->step_notes[dst], dlc->step_notes[src], 8);
+                dlc->step_note_count[dst] = dlc->step_note_count[src];
+                dlc->step_vel[dst]        = dlc->step_vel[src];
+                dlc->step_gate[dst]       = dlc->step_gate[src];
+                memcpy(dlc->note_tick_offset[dst], dlc->note_tick_offset[src], 8 * sizeof(int16_t));
             }
             dlc->length = (uint16_t)(len * 2);
             {

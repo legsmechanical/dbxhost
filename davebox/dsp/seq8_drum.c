@@ -366,8 +366,10 @@ static void drum_pfx_note_off_imm(seq8_instance_t *inst, seq8_track_t *tr,
 /* Find drum lane by midi_note pitch and call drum_pfx_note_off_imm on its per-lane pfx. */
 static void drum_lane_note_off_imm(seq8_instance_t *inst, seq8_track_t *tr, uint8_t pitch) {
     int l;
+    const drum_clip_t *dc = tr->drum_clips[tr->active_clip];
+    if (!dc) return;   /* an empty slot (a failed allocation): no lane to release */
     for (l = 0; l < DRUM_LANES; l++) {
-        if (tr->drum_clips[tr->active_clip]->lanes[l].midi_note == pitch) {
+        if (dc->lanes[l].midi_note == pitch) {
             drum_pfx_note_off_imm(inst, tr, &tr->drum_lane_pfx[l], pitch);
             return;
         }

@@ -79,6 +79,14 @@ the section into a versioned heading at release time.
 - **A damaged UI settings file no longer resets the project.** It used to be
   treated as a brand-new project and could switch track 1 to drum mode. Now
   only the UI settings reset, the damaged file is kept, and the screen says so.
+- **ALL LANES double-fill doubles each lane's loop.** A lane looping from a
+  later step doubled the wrong steps, and its loop could run past the end of
+  the clip.
+- **A drum track with an empty clip slot no longer crashes the host** when
+  note repeat runs, a pad is recorded or released.
+- **A project file that can't be fully read is never saved over.** It used to
+  open blank or partial and the next edit overwrote the real file; a failed
+  read could even delete it.
 - **The Back button lights only when a tap does something.** It stayed lit on
   an overview resting on any bank but the first (where Back does nothing), and
   stayed dark in TRACK CONFIG, the sound editors, a bank page on screen and the
