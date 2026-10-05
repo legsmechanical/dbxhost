@@ -335,6 +335,7 @@ func loadTemplates() (templateMap, error) {
 		"templates/config.html",
 		"templates/system.html",
 		"templates/help.html",
+		"templates/bug_report.html",
 	}
 
 	m := make(templateMap, len(pages))
@@ -438,6 +439,10 @@ func (app *App) render(w http.ResponseWriter, r *http.Request, name string, data
 	// Inject CSRF token from cookie so forms work without JS.
 	if cookie, err := r.Cookie("csrf_token"); err == nil {
 		data["CSRFToken"] = cookie.Value
+	}
+	// The footer's "Report a bug" link and the System card (test builds only).
+	if _, set := data["BugReport"]; !set {
+		data["BugReport"] = app.hasBugReport()
 	}
 	// Inject mirror enabled state for nav bar.
 	if app.shmConfig() != nil {
@@ -1360,6 +1365,13 @@ func main() {
 	// System.
 	mux.HandleFunc("GET /system", app.handleSystem)
 	mux.HandleFunc("GET /system/logs", app.handleSystemLogs)
+	// Report a bug (test builds: present only when <base>/bug-report.json is).
+	mux.HandleFunc("GET /bug-report", app.handleBugReport)
+	mux.HandleFunc("GET /bug-report/plan", app.handleBugReportPlan)
+	mux.HandleFunc("POST /bug-report/send", app.handleBugReportSend)
+	mux.HandleFunc("GET /bug-report/status/{id}", app.handleBugReportStatus)
+	mux.HandleFunc("GET /bug-report/download/{name}", app.handleBugReportDownload)
+	mux.HandleFunc("GET /bug-report/ping", app.handleBugReportPing)
 
 	// Help.
 	mux.HandleFunc("GET /help", app.handleHelp)

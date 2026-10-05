@@ -85,6 +85,15 @@ printf '%s\n' "$SA_VERSION" > "$P/sa-version.txt"
 # reasonable logging always on (even for testers)"). The log is capped
 # (src/host/unified_log.c), so this cannot fill a user's disk.
 case "$SA_VERSION" in 0.0.*) : > "$P/debug_log_on"; echo "test build $SA_VERSION: debug log on by default" ;; esac
+# A TEST build also carries the web manager's "Report a bug" page: it exists
+# only while bug-report.json does (schwung-manager/bugreport.go). The upload
+# address comes from the release workflow's secret; without one the page is
+# download-only. Releases (≥ 0.1) ship no file, and layout-install.sh removes a
+# test build's copy on upgrade.
+case "$SA_VERSION" in 0.0.*)
+    printf '{"upload_url": "%s", "token": "%s"}\n' "${SA_BUG_REPORT_URL:-}" "${SA_BUG_REPORT_TOKEN:-}" > "$P/bug-report.json"
+    echo "test build $SA_VERSION: bug reports $([ -n "${SA_BUG_REPORT_URL:-}" ] && echo upload || echo download-only)" ;;
+esac
 chmod +x "$P/scripts/"*.sh "$P/bless.sh" 2>/dev/null || true
 
 mkdir -p "$OUT"

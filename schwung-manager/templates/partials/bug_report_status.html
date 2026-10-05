@@ -1,0 +1,17 @@
+{{define "bug_report_status"}}
+{{with .Job}}
+{{if not .Terminal}}
+<div hx-get="/bug-report/status/{{.ID}}" hx-trigger="every 2s" hx-swap="outerHTML">
+    <p>{{if eq .State "zipping"}}Collecting the files…{{else}}Uploading ({{formatBytes .Size}})…{{end}}</p>
+</div>
+{{else if eq .State "done"}}
+<div><p><strong>Sent — thank you.</strong> Report {{.Name}}.</p>
+<p class="hint"><a href="/bug-report/download/{{.Name}}">Download a copy</a></p></div>
+{{else if eq .State "saved"}}
+<div><p><strong>Report ready.</strong> <a href="/bug-report/download/{{.Name}}">Download {{.Name}}</a></p></div>
+{{else}}
+<div><p><strong>Could not send the report:</strong> {{.Err}}</p>
+{{if .HasZip}}<p><a href="/bug-report/download/{{.Name}}">Download the report</a> and send it to the developer another way.</p>{{end}}</div>
+{{end}}
+{{end}}
+{{end}}

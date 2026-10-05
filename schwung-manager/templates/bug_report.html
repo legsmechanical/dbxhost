@@ -1,0 +1,51 @@
+{{template "base" .}}
+
+{{define "title"}}Report a bug - dAVEBOx{{end}}
+
+{{define "content"}}
+<div class="page-header">
+    <h1>Report a bug</h1>
+</div>
+
+<form class="bug-report" hx-post="/bug-report/send" hx-target="#bug-status">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+    <section class="info-card">
+        <h2>What happened?</h2>
+        <textarea name="note" class="settings-textarea" rows="4" maxlength="2000"
+                  placeholder="What you were doing, what you pressed, what went wrong"></textarea>
+    </section>
+
+    <section class="info-card">
+        <h2>Project</h2>
+        <select name="project" hx-get="/bug-report/plan" hx-target="#bug-plan" hx-trigger="change" hx-include="this">
+            {{range .Projects}}
+            <option value="{{.UUID}}"{{if eq .UUID $.OpenUUID}} selected{{end}}>{{.Name}}{{if eq .UUID $.OpenUUID}} (open now){{end}}</option>
+            {{end}}
+            <option value="none"{{if not .OpenUUID}} selected{{end}}>No project — logs only</option>
+        </select>
+        <p class="hint">If a project crashes when it opens, pick it here — it does not need to be open.</p>
+    </section>
+
+    <section class="info-card">
+        <h2>What will be sent</h2>
+        <div id="bug-plan">{{template "bug_report_plan" .}}</div>
+    </section>
+
+    <section class="info-card">
+        <p>Nothing leaves the Move until you press Send. The report goes to the dAVEBOx developer's Google Drive.</p>
+        {{if .CanUpload}}<button type="submit" name="mode" value="send" class="btn btn-primary">Send report</button>{{end}}
+        <button type="submit" name="mode" value="download" class="btn btn-secondary">Download report instead</button>
+        <div id="bug-status" aria-live="polite"></div>
+    </section>
+</form>
+
+{{if .Previous}}
+<section class="info-card">
+    <h2>Reports saved on this Move</h2>
+    <ul>
+        {{range .Previous}}<li><a href="/bug-report/download/{{.}}">{{.}}</a></li>{{end}}
+    </ul>
+</section>
+{{end}}
+{{end}}

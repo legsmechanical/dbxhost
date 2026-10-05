@@ -60,6 +60,10 @@ jobs:
           bash davebox/scripts/build_manual_html.sh "$PWD/dAVEBOx-SA-manual.html"
           ls -la dAVEBOx-SA-manual.html
       - name: Assemble the catalog tarball
+        env:
+          # Test builds (0.0.x) carry the "Report a bug" upload address.
+          SA_BUG_REPORT_URL: ${{ secrets.SA_BUG_REPORT_URL }}
+          SA_BUG_REPORT_TOKEN: ${{ secrets.SA_BUG_REPORT_TOKEN }}
         run: |
           # The manual rides inside as the manager's Help page, too.
           MANUAL_HTML="$PWD/dAVEBOx-SA-manual.html" ./standalone/scripts/build-sa-release.sh .

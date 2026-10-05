@@ -28,12 +28,14 @@ echo "the project name has one home:"
 got="$(git grep --untracked -l -E "[\"']Move-Set-[\"']|[\"']name\.txt[\"']" \
         -- ':!work' ':!*.md' ':!tests' ':!davebox/tests' ':!tools' | sort)"
 want="davebox/ui/ui_persistence.mjs
+schwung-manager/bugreport.go
+schwung-manager/bugreport_test.go
 standalone/scripts/check-config.sh
 standalone/scripts/project_name.py"
 if [ -z "$got" ]; then
     bad "no file spells the literals at all — this check cannot see its subject"
 elif [ "$got" = "$want" ]; then
-    ok "the folder prefix and the name file are spelled only by their owner (+ the JS reader, pinned)"
+    ok "the folder prefix and the name file are spelled only by their owner (+ the JS reader and the manager's Go reader, pinned — both mirror clean())"
 else
     bad "the set of files spelling the name literals changed — import project_name.py instead"
     diff -u <(printf '%s\n' "$want") <(printf '%s\n' "$got") | sed 's/^/    /' >&2
