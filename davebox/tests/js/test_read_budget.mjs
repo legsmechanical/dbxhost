@@ -101,10 +101,26 @@ globalThis.shadow_get_param = (slot, key) => {
         const base = k.slice(0, -':effective'.length);
         if (modulatedKeys.has(base)) return '0.500';
     }
-    return (k in ASSIGN ? ASSIGN[k] : '');
+    if (k in ASSIGN) return ASSIGN[k];
+    /* A real module answers its params with a value. '' for every one made
+     * the rig a module with no readback at all — a path the device's modules
+     * do not take (and the bulk read rightly gives up on). */
+    if (/^synth:[a-z0-9_]+$/i.test(k) && !/^synth:(ui_hierarchy|chain_params|module|preset_name|is_loading|ui_current_pad)$/.test(k)) return '0';
+    return '';
 };
 globalThis.shadow_set_param = (slot, key, val) => { ASSIGN[key] = String(val); return 1; };
-globalThis.shadow_get_params = () => '';
+/* The chain BULK read, as the host serves it: one round trip answering each
+ * key exactly as a single read would. It calls the stub above directly (not
+ * through the meter), so a bulk counts as ONE read — what it costs on device. */
+const _singleGet = globalThis.shadow_get_param;
+globalThis.shadow_get_params = (slot, marker, blob) => {
+    const s = String(blob || ''); const nl = s.indexOf('\n');
+    const n = parseInt(s.slice(0, nl), 10) || 0; let p = nl + 1; const keys = [];
+    for (let i = 0; i < n; i++) { const e = s.indexOf('\n', p); const len = parseInt(s.slice(p, e), 10) || 0; p = e + 1; keys.push(s.slice(p, p + len)); p += len; }
+    let out = keys.length + '\n';
+    for (const k of keys) { const v = String(_singleGet(slot, k) ?? ''); out += v.length + '\n' + v; }
+    return out;
+};
 globalThis.shadow_send_midi_to_dsp = () => {};
 globalThis.set_pixel = () => {};
 globalThis.fill_rect = () => {};
@@ -201,9 +217,17 @@ const CAPS = {
      * gates' per-tick lifetime it saved nothing, because modulation is asked
      * about once per tick already. The lifetime is the fix, not the cache.
      */
-    idleMean: 1.3,     /* measured 1.06 (was 1.78 before the modulation cache) */
+    /*
+     * ⭐ 2026-10-05: the value rotation reads a whole LAP in one bulk round
+     * trip (page_controller getParamsBulk; davebox supplies getSlotParams).
+     * Same rig, only that capability on/off: idle 1.06 → 0.17, two modulated
+     * 1.84 → 0.82, page walk 2.72 → 1.93. On the Move a drum kit's settled
+     * editor had spent 43% of wall time on the one-per-tick reads. Tightened to
+     * hold it: at 1.3 a mutation that turns the bulk read off stays green.
+     */
+    idleMean: 0.3,     /* measured 0.17 (1.06 one read per tick; 1.78 before the modulation cache) */
     idleWorst: 3,      /* measured 2 */
-    walkMean: 5,       /* measured 3.99 — a page change reads its new page's values */
+    walkMean: 2.5,     /* measured 1.93 (2.72 without the lap bulk read) */
     walkWorst: 22,     /* measured 18 — the arrival tick is the expensive one */
 };
 
@@ -347,11 +371,19 @@ step('⭐⭐ marking params MODULATED costs a BOUNDED amount per tick', () => {
      * it, and a cached dot over a frozen number is the worst outcome of this
      * whole change. That is directly observable, so assert it directly.
      */
-    assert(mod.top.some((k) => modulatedKeys.has(k.split('x')[0].replace(/^synth:/, 'synth:'))
-                            || (!k.includes(':modulated') && !k.includes(':base') && k.includes('synth:'))),
+    /* ⚠ RE-ANCHORED 2026-10-05: counted, not read off the worst tick. Once the
+     * value rotation went to one bulk read per lap, the worst tick became the
+     * lap's bulk read and the live re-read dropped out of its top keys while
+     * still happening every tick — the same "cost proxy for a behaviour" trap
+     * the note above describes. The behaviour is the `:effective` reads of the
+     * modulated keys over the measured ticks, so count those. */
+    const liveReads = seenKeys.filter((k) => k.endsWith(':effective') &&
+        modulatedKeys.has(k.slice(0, -':effective'.length))).length;
+    console.log(`         live-value reads of the modulated params: ${liveReads} in ${mod.ticks} ticks`);
+    assert(liveReads >= mod.ticks / 2,
            'control: a modulated param must still have its LIVE VALUE re-read each tick — '
-           + 'a cached dot over a frozen number is worse than the cost it saved. Top: '
-           + mod.top.join(' '));
+           + 'a cached dot over a frozen number is worse than the cost it saved. '
+           + liveReads + ' live reads in ' + mod.ticks + ' ticks');
     /*
      * ⭑ WHY `:effective` IS NOT IN THESE KEYS — asked, traced, and answered, so
      * nobody re-opens it.

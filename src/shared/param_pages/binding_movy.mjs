@@ -360,6 +360,11 @@ function enterParamPages(slot, component, prefix, restorePageName, io, chrome, r
          */
         controller = createController(Object.assign({
             getParam: (key) => ctx.getSlotParam(currentSlot, key),
+            /* A bulk read when the consumer has one: the controller's value
+             * rotation then costs one round trip per lap instead of one per
+             * tick (see getParamsBulk in page_controller.mjs). */
+            getParams: (typeof ctx.getSlotParams === 'function')
+                ? (keys) => ctx.getSlotParams(currentSlot, keys) : undefined,
             setParam: (key, value) => ctx.setSlotParam(currentSlot, key, value),
             announce,
             /* The list editor marks these with "~"; the grid ticks the cell.

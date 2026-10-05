@@ -1102,5 +1102,83 @@ Promise.all([
     console.log("PASS: controller modulation — cached off the read cursor, "
               + "never consulted during a draw, still refreshes");
   }
+
+  /* ---- 10. with a BULK read, a lap costs ONE round trip ------------------ */
+  {
+    /* A device that also answers getParams: each bulk is one round trip. Its
+     * inner reads are taken back out of dev.reads so that list keeps meaning
+     * "single round trips". */
+    const mk = (initial) => {
+      const dev = D.createFakeDevice({ id: "obxd", initial });
+      let bulks = 0;
+      const io = Object.assign({}, dev, {
+        getParams: (keys) => {
+          bulks++;
+          const n = dev.reads.length;
+          const out = keys.map((k) => dev.getParam(k));
+          dev.reads.length = n;
+          return out;
+        },
+      });
+      const ctl = C.createController(io);
+      ctl.load({ slot: 0, component: "synth" });
+      return { dev, ctl, bulks: () => bulks, resetBulks: () => { bulks = 0; } };
+    };
+    const { dev, ctl, bulks, resetBulks } = mk({ cutoff: 50 });
+    for (let i = 0; i < 40; i++) ctl.tick();
+    dev.resetCounters(); resetBulks();
+    const N = 200;
+    for (let i = 0; i < N; i++) ctl.tick();
+    /* A key the device cannot serve (null) is read singly on purpose — the
+     * bulk answer for it is no answer — so only SERVED keys count here. */
+    const read = dev.reads.slice();
+    const served = (k) => { const n = dev.reads.length; const v = dev.getParam(k); dev.reads.length = n; return v !== null; };
+    const singles = read.filter((k) => !/chain_params|ui_hierarchy|is_loading/.test(k) && served(k));
+    if (bulks() === 0) fail("the lap never used the bulk read");
+    if (bulks() > N / ctl.page.keys.length + 1) fail(bulks() + " bulk reads in " + N + " ticks — more than one per lap");
+    if (singles.length > N / 10) fail(singles.length + " single reads in " + N + " ticks with a bulk read available: " + singles.slice(0, 5).join(" "));
+    for (const k of ctl.page.keys)
+      if (ctl.state.values[k] === undefined) fail("key " + k + " has no value with the bulk read");
+    console.log("PASS: a lap costs one bulk read (" + bulks() + " bulk, " + singles.length + " single in " + N + " ticks)");
+
+    /* The focus of a child level (mrdrums: ui_current_pad) rides the lap too. */
+    {
+      const dev = D.createFakeDevice({ id: "mrdrums" });
+      const io = Object.assign({}, dev, {
+        getParams: (keys) => { const n = dev.reads.length; const o = keys.map((k) => dev.getParam(k)); dev.reads.length = n; return o; },
+      });
+      const ctl = C.createController(io);
+      ctl.load({ slot: 0, component: "synth" });
+      for (let i = 0; i < 40; i++) ctl.tick();
+      dev.resetCounters();
+      for (let i = 0; i < 200; i++) ctl.tick();
+      const focus = dev.reads.filter((k) => k === "synth:ui_current_pad");
+      if (focus.length) fail("the module focus was read singly " + focus.length + " times with a bulk read available");
+    }
+
+    /* The stale-read rule still holds when the lap is prefetched. */
+    {
+      const { dev, ctl } = mk({ cutoff: 50 });
+      for (let i = 0; i < 8; i++) ctl.tick();
+      const key = ctl.page.keys[0];
+      dev.lagParam(key, "50", 6);
+      let t = 5000;
+      for (let i = 0; i < 20; i++) ctl.onKnobTurn(0, 1, (t += 30));
+      const turned = Number(ctl.state.values[key]);
+      /* 8 ticks, as case 4: the lap (9 stops) takes its bulk read inside them. */
+      for (let i = 0; i < 8; i++) ctl.tick();
+      const settled = Number(ctl.state.values[key]);
+      if (settled < turned) fail("bulk: a stale read dragged the value back: " + turned + " -> " + settled);
+    }
+    /* And a value that changes on the device arrives within a lap or two. */
+    {
+      const { dev, ctl } = mk({});
+      for (let i = 0; i < 40; i++) ctl.tick();
+      const key = ctl.page.keys[2];
+      dev.setParam("synth:" + key, "0.77");
+      for (let i = 0; i < 40; i++) ctl.tick();
+      if (Number(ctl.state.values[key]) !== 0.77) fail("bulk: an engine-side change never arrived: " + ctl.state.values[key]);
+    }
+  }
 });
 '

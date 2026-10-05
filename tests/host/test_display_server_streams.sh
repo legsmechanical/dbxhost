@@ -100,7 +100,11 @@ check(ev.count("surface") > 5 and ev.count("message") > 5, "frames and surface k
 check(ev.count("hb") >= 2 and ev.count("e16") >= 1, "heartbeat and e16 ride the same stream")
 
 s = stream("/stream-auto?v=2")
-buf, closed = read(s, 9, stall_at=0.5, stall=6.0); s.close()
+# The stall must outlast the drop by a margin: the socket buffers absorb the
+# stream for a while before the server's own queue backs up (its stall clock
+# starts only then), and on macOS that took long enough that a 6 s stall
+# against the 3 s drop failed about one run in two.
+buf, closed = read(s, 11, stall_at=0.5, stall=8.0); s.close()
 check(closed, "a reader stalled past STALL_DROP_MS is dropped")
 
 s = stream("/stream-auto")

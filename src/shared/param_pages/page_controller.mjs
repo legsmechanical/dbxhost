@@ -6,6 +6,9 @@
  * is here instead, pure, with every device call injected:
  *
  *   getParam(fullKey)        -> string|null
+ *   getParams(fullKeys)      -> (string|null)[] | null   (optional bulk read:
+ *                               the value rotation then reads a whole lap in
+ *                               one round trip instead of one key per tick)
  *   setParam(fullKey, value) -> void
  *   announce(text)           -> void          (optional)
  *   isModulated(fullKey)     -> false | true | "auto" | "auto-off"  (optional)
@@ -534,8 +537,34 @@ function pageHasKnobs(p) {
 }
 
 export function createController(io = {}) {
-    const getParam = io.getParam || (() => null);
-    const setParam = io.setParam || (() => {});
+    const getParamLive = io.getParam || (() => null);
+    /*
+     * Optional: a BULK read, `getParams(fullKeys) -> array` aligned with the
+     * keys (an entry null = unanswered), or null when the bulk read failed.
+     *
+     * The value rotation reads one param per tick, so a settled page costs one
+     * round trip on nearly every tick, forever — measured on device, a drum
+     * kit's editor spent 43% of wall time waiting on those reads. With a bulk
+     * read the rotation fetches everything one lap will ask for in ONE round
+     * trip as the lap starts, and each stop answers from that (rotationCache).
+     * The lap's timing and its suppression rules are unchanged; only where a
+     * stop's answer comes from is.
+     */
+    const getParamsBulk = (typeof io.getParams === "function") ? io.getParams : null;
+    /* fullKey -> value fetched at the start of this lap. Each entry answers
+     * ONE read, and the whole map is dropped on any write we make, so a value
+     * read before a knob turn can never land after its settle window. */
+    let rotationCache = null;
+    const getParam = (k) => {
+        if (rotationCache !== null && rotationCache.has(k)) {
+            const v = rotationCache.get(k);
+            rotationCache.delete(k);
+            return v;
+        }
+        return getParamLive(k);
+    };
+    const setParamRaw = io.setParam || (() => {});
+    const setParam = (k, v) => { rotationCache = null; return setParamRaw(k, v); };
     const announce = io.announce || (() => {});
     /* Optional: is this param currently driven by a modulation source? The
      * library cannot answer that — it is host state — so it is injected, and
@@ -2317,6 +2346,34 @@ export function createController(io = {}) {
         return null;
     }
 
+    /* One lap's reads in one bulk round trip — see getParamsBulk. Exactly the
+     * keys the stops below ask for: each cell (and its `:base` when a
+     * modulation target holds it), the preset name and the module's focus,
+     * the extras, the warm key. */
+    function prefetchRotation(p, extraKeys, warm) {
+        const keys = [];
+        for (const key of p.keys) {
+            if (!key) continue;
+            if (s.modCache[key] === true) keys.push(fullKey(key) + ":base");
+            keys.push(fullKey(key));
+        }
+        keys.push(`${s.prefix}:preset_name`);
+        /* The preset stop also asks where the module's focus is
+         * (syncChildIndexFromModule) — a drum kit's current pad. */
+        const idxParam = (p.level && p.childLevel) ? childIndexParam(p.childLevel) : null;
+        if (idxParam) keys.push(`${s.prefix}:${idxParam}`);
+        for (const ek of extraKeys) if (ek) keys.push(fullKey(ek));
+        if (warm) keys.push(fullKey(warm.key, warm.page));
+        rotationCache = null;
+        let vals = null;
+        try { vals = getParamsBulk(keys); } catch (e) { vals = null; }
+        if (!Array.isArray(vals) || vals.length !== keys.length) return;
+        const map = new Map();
+        for (let i = 0; i < keys.length; i++)
+            if (vals[i] !== null && vals[i] !== undefined) map.set(keys[i], vals[i]);
+        rotationCache = map;
+    }
+
     function tick() {
         s.tickCount++;
         flushDueWrites();
@@ -2527,6 +2584,8 @@ export function createController(io = {}) {
         const stops = p.keys.length + 1 + extraKeys.length + (warm ? 1 : 0);
         const at = s.cursor % stops;
         s.cursor = (s.cursor + 1) % stops;
+
+        if (at === 0 && getParamsBulk) prefetchRotation(p, extraKeys, warm);
 
         if (warm && at === stops - 1) {
             /* fullKey resolves a CHILD-level template against the page the key

@@ -76,6 +76,10 @@ export function installPpCtx(members) {
  *   getSlotParam(slot, key) -> raw
  *       Every value the grid shows. -> engineGet(slot, comp, key).
  *
+ *   getSlotParams(slot, fullKeys) -> (raw|null)[] | null
+ *       The value rotation's lap in ONE bulk round trip (the host answers it
+ *       too). -> engineGetChainParams(slot, keys).
+ *
  *   setSlotParam(slot, key, value)
  *       ⚠⚠ MUST NOT be engineSet(). engineSet is a raw fire-and-forget
  *       shadow_set_param: in overtake the host has ~8ms of mailbox patience and
@@ -177,7 +181,7 @@ export function installPpCtx(members) {
  * something it must not.
  */
 export const PP_CTX_MEMBERS = [
-    'getSlotParam', 'setSlotParam', 'isMuteHeld', 'requestRedraw',
+    'getSlotParam', 'getSlotParams', 'setSlotParam', 'isMuteHeld', 'requestRedraw',
     'setView', 'VIEWS', 'getModuleAbbrev',
     'evaluateVisibilityCondition', 'isParamModulated', 'openParamEditor',
     'headerPresetName',

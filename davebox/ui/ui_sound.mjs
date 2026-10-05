@@ -26,7 +26,7 @@ import {
     engineLoadModule, engineLoadedModule, engineGetState, engineSetState,
     engineListUserPresets, engineReadUserPreset,
     engineGetSlotParam, engineSetSlotParam, engineSaveState,
-    engineGetChainParam, engineSetChainParam, engineModuleAbbrev,
+    engineGetChainParam, engineGetChainParams, engineSetChainParam, engineModuleAbbrev,
     engineLoadCardScript, engineCanvasOverlayShared, engineCanvasPageDrawer, engineCanvasPageHook,
     engineCanvasNewVisit, engineCanvasForget,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
@@ -12434,6 +12434,8 @@ installPpCtx({
     /* Bare key straight through: engineGetChainParam does no key building, and
      * the binding's keys are already full. */
     getSlotParam: (slot, key) => engineGetChainParam(slot, key),
+    /* The grid's value rotation reads a whole lap in one round trip. */
+    getSlotParams: (slot, keys) => engineGetChainParams(slot, keys),
 
     /* ⚠⚠ NOT engineSet. engineSet is the raw fire-and-forget shadow_set_param:
      * in overtake the host has ~8 ms of mailbox patience and then STOMPS an

@@ -241,6 +241,10 @@ the screens the controller deliberately does not open:
 ```js
 const ctl = createController({
     getParam: (k) => getSlotParam(slot, k),
+    // optional: a bulk read (aligned array, null = unanswered). With it the
+    // value rotation reads a whole lap in ONE round trip instead of one key per
+    // tick — a settled page then costs ~0.2 reads/tick instead of ~1.
+    getParams: (keys) => getSlotParams(slot, keys),
     setParam: (k, v) => setSlotParam(slot, k, v),
     announce,                                  // shared/screen_reader.mjs
 });
@@ -248,7 +252,7 @@ ctl.load({ slot, component: "synth" });
 
 // once a frame
 ctl.reloadIfChanged();      // cheap; rebuilds only when the contract moved
-ctl.tick();                 // exactly one get_param
+ctl.tick();                 // one get_param (or, with getParams, one bulk read per lap)
 if (needsRedraw) ctl.render(ctx, { title: `S${slot + 1} > ${abbrev}` });
 
 // MIDI
