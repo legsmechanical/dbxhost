@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.12] — 2026-10-05 (test build, not in the Schwung catalog)
 ### Added
 - **Shift + hold Step 11 opens LIVE ARP** (melodic tracks) and holds its page
   up until Back; the knobs stay on LIVE ARP afterwards. A tap still turns LIVE
@@ -25,17 +27,23 @@ the section into a versioned heading at release time.
   (the pad turns white) instead of closing the map; tapping a bank after one
   cancels it.
 
+- **Report a bug (test builds).** The web manager (move.local) has a Report a
+  bug page: describe the problem, pick the project it happened in, and Send —
+  the logs and that project go straight to the developer. If the upload fails,
+  Download gives you the same file to send by hand.
+
 ### Changed
 - **An instrument's editor no longer keeps the screen busy while you look at
   it.** With a sound's parameters on screen, the editor re-read them one at a
   time, one per screen update, for as long as it stayed open — on a drum kit,
   43% of the time was spent waiting on those reads. It now reads a whole page in
   one go, about six times less often.
-- **Opening a project reads it from the engine once.** After a switch within
-  a session the whole project could be read back two or three times, and each
-  track's effect settings one value at a time. Loading a project is also
-  quicker to settle (the longest freeze on the Move went from about 330 ms to
-  about 250 ms).
+- **Opening a project settles sooner.** Each track's per-clip effect settings
+  are now read in one go instead of one value at a time, so the longest freeze
+  while a project loads went from about 330 ms to about 250 ms on the Move.
+- **Switching projects freezes the screen for less time.** The first pause
+  after a switch (reading which instrument sits on each track) dropped from
+  about 1 s to about 0.5 s.
 - **The screen spends half as long waiting on the engine when nothing is
   happening.** A stopped, quiet session asked the engine for the same few
   values on every screen update — the arp's on/latch for the Loop light, the

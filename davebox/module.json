@@ -1,7 +1,7 @@
 {
     "id": "davebox",
     "name": "dAVEBOx Legacy",
-    "version": "0.0.11",
+    "version": "0.0.12",
     "abbrev": "dbxLEG",
     "description": "Creative 8-track MIDI sequencer with per-clip effects chains and live performance modes. Frozen: the successor is dAVEBOx, which runs on its own host. Keep this only for existing seq8 sessions — the two do not share session state.",
     "author": "legsmechanical",
