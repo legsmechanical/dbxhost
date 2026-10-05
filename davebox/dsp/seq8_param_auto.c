@@ -986,9 +986,10 @@ static void pa_link_drum_shift(seq8_instance_t *inst, int track, int clip,
                         .by_step = by_step };
     pa_link_clip(inst, track, clip, &op);
 }
-static void pa_link_drum_double(seq8_instance_t *inst, int track, int clip, uint32_t win) {
+static void pa_link_drum_double(seq8_instance_t *inst, int track, int clip,
+                                uint32_t base, uint32_t win) {
     if (!win) return;
-    pa_link_op_t op = { .op = PA_LINK_COPY, .drum = 1, .src = 0, .dst = win, .span = win,
+    pa_link_op_t op = { .op = PA_LINK_COPY, .drum = 1, .src = base, .dst = base + win, .span = win,
                         .double_cycle = 1 };
     pa_link_clip(inst, track, clip, &op);
 }
