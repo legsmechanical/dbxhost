@@ -100,7 +100,11 @@ static int sp_track_drum(sp_ctx_t *cx) {
             uint32_t bit = 1u << (uint32_t)lane_idx;
             if (my_atoi(val)) {
                 tr->drum_lane_mute |= bit;
-                pfx_note_off(inst, tr, dlane->midi_note);
+                /* ⚠ The LANE's engine, not the track's melodic one: a drum
+                 * hit lives in drum_lane_pfx[lane], so pfx_note_off found
+                 * nothing and a long-gate hit rang on after Mute. Immediate,
+                 * as a mute should be (2026-10-04 review). */
+                drum_pfx_note_off_imm(inst, tr, &tr->drum_lane_pfx[lane_idx], dlane->midi_note);
             } else {
                 tr->drum_lane_mute &= ~bit;
             }
@@ -117,7 +121,7 @@ static int sp_track_drum(sp_ctx_t *cx) {
                 for (ll = 0; ll < DRUM_LANES; ll++) {
                     if (ll == lane_idx) continue;
                     uint8_t n2 = tr->drum_clips[tr->active_clip]->lanes[ll].midi_note;
-                    pfx_note_off(inst, tr, n2);
+                    drum_pfx_note_off_imm(inst, tr, &tr->drum_lane_pfx[ll], n2);   /* see _mute */
                 }
             } else {
                 tr->drum_lane_solo &= ~bit;
