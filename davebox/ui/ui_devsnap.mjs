@@ -35,7 +35,7 @@
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { NUM_TRACKS, DRUM_LANES, STEP_SAVE_FLASH_MS } from './ui_constants.mjs';
-import { showActionPopup, showActionPopupFor, deviceSnapDir, deviceSnapUndoDir, trackSnapDir, trackSnapUndoDir } from './ui_persistence.mjs';
+import { showActionPopup, showActionPopupFor, snapshotsRoot, deviceSnapDir, deviceSnapUndoDir, trackSnapDir, trackSnapUndoDir } from './ui_persistence.mjs';
 import { markSnapshotUndo } from './ui_editops.mjs';
 import { engineGet, engineSet, engineSetSlotParam, moveBusComp,
          moveBusForChannel, engineLoadedModule, engineDescribe, engineGetMany } from './ui_engine.mjs';
@@ -443,10 +443,19 @@ export function devSnapClear(n) {
      * (project-cmd.sh), whose allow-list includes `rm `; so does this one,
      * fenced here to the project's snapshots dir and a safe character set.
      * If the removal fails the old blanking is the fallback — the slot then
-     * reads filled again, which is at least the truth about what is on disk. */
+     * reads filled again, which is at least the truth about what is on disk.
+     *
+     * ⚠ THE FENCE IS THE PROJECT'S OWN snapshots/ FOLDER, resolved like the
+     * slot dir is. It was a spelled-out Sets regex, and since 2026-09-22 every
+     * slot dir resolves through the Sets symlink into dbx-host/projects/<id>/,
+     * so the regex never matched on the device: the clear fell back to the
+     * blank marker and the old snapshot came back lit and recalled — the bug
+     * above, returned. The test rig never resolved the symlink, so it passed. */
     const dir = slotDir(n);
+    const root = snapshotsRoot(S.currentSetUuid);
     let gone = false;
-    if (/^\/data\/UserData\/UserLibrary\/Sets\/[A-Za-z0-9-]+\/dAVEBOx(~[0-9]+)?\/snapshots\/[A-Za-z0-9_\/-]+$/.test(dir) && dir.indexOf('..') < 0) {
+    if (dir.indexOf(root) === 0 && dir.length > root.length
+        && /^\/data\/UserData\/[A-Za-z0-9_.~\/-]+$/.test(dir) && dir.indexOf('..') < 0) {
         try { gone = host_system_cmd('rm -rf ' + dir) === 0; } catch (e) { gone = false; }
     }
     if (!gone || host_file_exists(dir + '/davebox.json')) {

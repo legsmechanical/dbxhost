@@ -1508,8 +1508,24 @@ export function restoreUiSidecar(applyDefaultsNow) {
     if (!S.currentSetUuid) return;   /* no project: nothing to read, nowhere to look */
     const uiSp = uuidToUiStatePath(S.currentSetUuid);
     let us = null;
+    /* ⚠ A sidecar that EXISTS but does not parse is DAMAGED, not new. It used
+     * to fall into the brand-new branch below, which also pushes new-project
+     * defaults at the DSP — track 1 to drum mode, Scale Aware, the metronome —
+     * over a project the DSP has just loaded intact (2026-10-04 review). Now:
+     * the UI-only fields still take fresh defaults (nothing leaks from the
+     * previous project), the DSP is left alone, the damaged file is kept beside
+     * it, and the screen says so. Nothing writes an empty sidecar, so an empty
+     * file counts as damaged too. */
+    let damaged = false;
     if (host_file_exists(uiSp)) {
-        try { us = JSON.parse(host_read_file(uiSp)); } catch (e) {}
+        const _txt = host_read_file(uiSp);
+        try { us = JSON.parse(_txt); } catch (e) { us = null; }
+        if (!us || typeof us !== 'object') {
+            damaged = true; us = null;
+            console.log('[sidecar] UNREADABLE, kept as .damaged; UI settings reset: ' + uiSp);
+            if (_txt) host_write_file(uiSp + '.damaged', _txt);
+            showActionPopup('UI SETTINGS', 'COULD NOT BE READ', 'RESET TO DEFAULTS');
+        }
     }
     /* The preset-record map is REPLACED WHOLESALE on every restore — both
      * branches, before either runs. It is keyed by position (slot:comp), not
@@ -1761,7 +1777,7 @@ export function restoreUiSidecar(applyDefaultsNow) {
             }
         }
     }
-    if (fresh) {
+    if (fresh && !damaged) {
         S.scaleAware   = 1;
         S.metronomeVol = 100;
         S.trackPadMode[0] = PAD_MODE_DRUM;

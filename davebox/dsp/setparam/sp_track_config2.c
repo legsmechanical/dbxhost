@@ -107,6 +107,7 @@ static int sp_track_config2(sp_ctx_t *cx) {
      * (Move-parity performance control) and leaves sequenced notes alone. */
     if (!strcmp(sub, "transpose")) {
         tr->transpose = (int8_t)clamp_i(my_atoi(val), -24, 24);
+        inst->state_dirty = 1;   /* persisted (seq8_state.c) */
         return 1;
     }
     if (!strcmp(sub, "pad_mode")) {

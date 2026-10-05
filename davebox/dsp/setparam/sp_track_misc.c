@@ -30,6 +30,7 @@ static int sp_track_misc(sp_ctx_t *cx) {
             if (tr->current_step < cl->loop_start || tr->current_step >= _le)
                 tr->current_step = cl->loop_start;
         }
+        inst->state_dirty = 1;   /* persisted; the drum twin marks it too */
         rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
         return 1;
     }
@@ -70,6 +71,7 @@ static int sp_track_misc(sp_ctx_t *cx) {
                        dir == 1 ? (int32_t)cl->ticks_per_step : -(int32_t)cl->ticks_per_step,
                        (uint32_t)len * cl->ticks_per_step);
         clip_migrate_to_notes(cl);
+        inst->state_dirty = 1;
         rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
         return 1;
     }
@@ -90,6 +92,7 @@ static int sp_track_misc(sp_ctx_t *cx) {
                        (uint32_t)cl->loop_start * cl->ticks_per_step, dir,
                        (uint32_t)len * cl->ticks_per_step);
         clip_migrate_to_notes(cl);
+        inst->state_dirty = 1;
         rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);
         return 1;
     }
@@ -223,6 +226,11 @@ static int sp_track_misc(sp_ctx_t *cx) {
         undo_begin_single(inst, tidx, (int)tr->active_clip);
     /* All play effects params */
     pfx_set(inst, tr, &tr->clips[tr->active_clip].pfx_params, sub, val);
+    /* Persisted in the clip, so the deferred save must see it. Its remote
+     * (tN_cC_pfx_set) and lane (tN_lL_pfx_set) twins already marked it; this,
+     * the path every device bank knob takes, did not — the edit survived only
+     * a suspend or a project switch. */
+    inst->state_dirty = 1;
     /* pfx values are snapshot-visible (rui_pfx) — every catch-all edit must
      * notify the remote UI (this whole handler previously never bumped:
      * clip_length/dir/clock_shift/nudge/beat_stretch/legato/pfx edits were

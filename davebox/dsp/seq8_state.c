@@ -404,6 +404,11 @@ static void drum_clip_base_geom(const drum_clip_t *dc, int *len, int *ls, int *t
  * init values (drum_lanes_init / drum_pfx_params_init) — NOT against the
  * loader's absent-key defaults, which differ for delay_level (init 127,
  * absent 0): measuring against 0 would write every untouched empty lane. */
+static int steps_any_nonzero(const uint8_t *arr, uint16_t len) {
+    for (int i = 0; i < (int)len; i++) if (arr[i]) return 1;
+    return 0;
+}
+
 static int drum_lane_extras_nondefault(const drum_lane_t *dl, int l) {
     const clip_t *dlc = &dl->clip;
     drum_pfx_params_t d;
@@ -416,7 +421,13 @@ static int drum_lane_extras_nondefault(const drum_lane_t *dl, int l) {
         || p->delay_level != d.delay_level || p->repeat_times != d.repeat_times
         || p->fb_velocity != d.fb_velocity || p->fb_gate_time != d.fb_gate_time
         || p->fb_clock != d.fb_clock || p->delay_retrig != d.delay_retrig
-        || p->note_length_mode != d.note_length_mode;
+        || p->note_length_mode != d.note_length_mode
+        /* Trig conditions: written below only for a lane that is written at
+         * all, and the loader reads them only under that lane's `_g`. A lane
+         * whose notes were cleared but whose conditions remain must count. */
+        || steps_any_nonzero(dlc->step_iter, dlc->length)
+        || steps_any_nonzero(dlc->step_random, dlc->length)
+        || steps_any_nonzero(dlc->step_ratchet, dlc->length);
 }
 
 /* Read up to `n` colon-separated non-negative ints ("64:0:24", or an
@@ -622,16 +633,21 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
                             (int)n->vel, (int)n->gate);
                 }
                 if (wrote) fputc('"', fp);
-                /* v=34 per-step trig conditions (sparse at array level) */
-                {
-                    char k[24];
-                    snprintf(k, sizeof(k), "t%dc%d_si", t, c);
-                    write_step_hex_arr(fp, k, cl->step_iter,    cl->length);
-                    snprintf(k, sizeof(k), "t%dc%d_sr", t, c);
-                    write_step_hex_arr(fp, k, cl->step_random,  cl->length);
-                    snprintf(k, sizeof(k), "t%dc%d_sx", t, c);
-                    write_step_hex_arr(fp, k, cl->step_ratchet, cl->length);
-                }
+            }
+            /* v=34 per-step trig conditions (sparse at array level).
+             * ⚠ Written whether or not the clip has notes: a condition can sit
+             * on an empty step, and this block used to live inside the note
+             * list's `note_count > 0`, so laying out ratchets and clearing the
+             * notes to re-record lost them on the next save. The loader has
+             * always read them unconditionally. */
+            {
+                char k[24];
+                snprintf(k, sizeof(k), "t%dc%d_si", t, c);
+                write_step_hex_arr(fp, k, cl->step_iter,    cl->length);
+                snprintf(k, sizeof(k), "t%dc%d_sr", t, c);
+                write_step_hex_arr(fp, k, cl->step_random,  cl->length);
+                snprintf(k, sizeof(k), "t%dc%d_sx", t, c);
+                write_step_hex_arr(fp, k, cl->step_ratchet, cl->length);
             }
         }
     }
@@ -901,12 +917,25 @@ static void seq8_save_state(seq8_instance_t *inst) {
     char tmp_path[sizeof(dest) + 8];
     int _n = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", dest);
     if (_n < 0 || (size_t)_n >= sizeof(tmp_path)) return;
+    /* ⚠ A failure SAYS so. This used to return or remove the temp file with no
+     * trace, so a suspend / quit / project-switch save that never reached the
+     * disk looked exactly like one that did (2026-10-04 review). Only the
+     * failure path logs; the save itself already does file I/O. */
     FILE *fp = fopen(tmp_path, "w");
-    if (!fp) return;
+    if (!fp) {
+        seq8_ilog(inst, "SAVE FAILED: cannot open temp file:");
+        seq8_ilog(inst, tmp_path);
+        return;
+    }
     seq8_do_serialize(inst, fp);
     int ok = (fflush(fp) == 0) && (fsync(fileno(fp)) == 0);
     if (fclose(fp) != 0) ok = 0;
-    if (!ok || rename(tmp_path, dest) != 0) remove(tmp_path);
+    if (!ok || rename(tmp_path, dest) != 0) {
+        remove(tmp_path);
+        seq8_ilog(inst, ok ? "SAVE FAILED: rename onto the project file failed:"
+                           : "SAVE FAILED: write/fsync of the temp file failed:");
+        seq8_ilog(inst, dest);
+    }
 }
 
 /* A load that finds NO project data — no file, an empty one, a Clear Session
@@ -924,6 +953,12 @@ static void seq8_fresh_project_defaults(seq8_instance_t *inst) {
     inst->tracks[0].pad_mode = PAD_MODE_DRUM;
     drum_clips_alloc(inst, &inst->tracks[0]);
 }
+
+#ifdef SEQ8_TESTING
+/* Test hook: cap the bytes seq8_load_state may read (-1 = no cap), so a short
+ * read can be driven without a faulty disk. */
+static long seq8_test_read_cap = -1;
+#endif
 
 static void seq8_load_state(seq8_instance_t *inst) {
     /* A preview never outlives the project it was previewing in: the clips it
@@ -945,11 +980,34 @@ static void seq8_load_state(seq8_instance_t *inst) {
     long fsz = ftell(fp);
     fseek(fp, 0, SEEK_SET);
     if (fsz <= 0) { fclose(fp); remove(inst->state_path); seq8_fresh_project_defaults(inst); return; }
+    /* ⚠ A file that EXISTS but cannot be read IN FULL is a load that did not
+     * happen — never a brand-new project. These used to return silently on a
+     * malloc failure, accept a short read as the whole file, and treat a
+     * zero-byte read of a non-empty file as empty AND DELETE IT. Each left the
+     * instance (already reset by state_load) blank or partial with saving
+     * armed, so the next edit saved that over the real file (2026-10-04
+     * review). Now: log, re-arm awaiting_select so every save path refuses,
+     * and leave the file alone. */
     char *buf = (char *)malloc((size_t)fsz + 1);
-    if (!buf) { fclose(fp); return; }
-    size_t n = fread(buf, 1, (size_t)fsz, fp);
+    if (!buf) {
+        fclose(fp);
+        seq8_ilog(inst, "LOAD FAILED: no memory for the state file; saving stays off");
+        inst->awaiting_select = 1;
+        return;
+    }
+    size_t want = (size_t)fsz;
+#ifdef SEQ8_TESTING
+    if (seq8_test_read_cap >= 0 && (size_t)seq8_test_read_cap < want) want = (size_t)seq8_test_read_cap;
+#endif
+    size_t n = want ? fread(buf, 1, want, fp) : 0;
     fclose(fp);
-    if (!n) { seq8_load_buf_free(buf); remove(inst->state_path); seq8_fresh_project_defaults(inst); return; }
+    if (n != (size_t)fsz) {
+        seq8_load_buf_free(buf);
+        seq8_ilog(inst, "LOAD FAILED: short read of the state file; saving stays off:");
+        seq8_ilog(inst, inst->state_path);
+        inst->awaiting_select = 1;
+        return;
+    }
     buf[n] = '\0';
     /* One pass, so the ~15k getter lookups below stop rescanning the file. */
     jidx_build(buf);

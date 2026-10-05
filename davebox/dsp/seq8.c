@@ -1835,8 +1835,10 @@ static void merge_place(seq8_instance_t *inst, int row) {
         seq8_track_t *tr = &inst->tracks[t];
         int is_drum = tr->pad_mode == PAD_MODE_DRUM;
         if (is_drum) {
-            /* Empty slot — nullable (clip-copy of an empty source / state
-             * load leave it NULL); allocate before touching lanes. */
+            /* Empty slot — every path that makes a track DRUM allocates all
+             * slots (drum_clips_alloc), and a drum clip copy refuses an empty
+             * side, so NULL here means a failed allocation (verified
+             * 2026-10-04). Retry before touching lanes. */
             if (!tr->drum_clips[row]) drum_clips_alloc(inst, tr);
             if (!tr->drum_clips[row]) { inst->merge_pending_count[t] = 0; continue; }
             /* Wipe lanes for this row, then size + fill from pending pitches. */
@@ -3350,7 +3352,11 @@ static void drum_repeat_tick(seq8_instance_t *inst, seq8_track_t *tr) {
     int fire_at = nudge_ticks >= 0 ? nudge_ticks : (int)rate + nudge_ticks;
 
     if ((int)tr->drum_repeat_phase == fire_at) {
-        if (tr->drum_repeat_gate[lane] & (uint8_t)(1u << step)) {
+        /* The active slot can be EMPTY (NULL) — cleared, or a clip-copy of an
+         * empty source — and the fire below dereferences it. Skip the note;
+         * the phase still advances. */
+        if ((tr->drum_repeat_gate[lane] & (uint8_t)(1u << step))
+                && tr->drum_clips[tr->active_clip]) {
             /* Absolute per-step velocity; Thru (255, the default) passes the
              * held-pad velocity (incl. VelIn) through. */
             int vel = (int)tr->drum_repeat_vel_scale[lane][step];
@@ -3498,6 +3504,7 @@ static void drum_repeat2_tick(seq8_instance_t *inst, seq8_track_t *tr) {
         int fire_at     = nudge_ticks >= 0 ? nudge_ticks : (int)rate + nudge_ticks;
         if ((int)tr->drum_repeat2_phase[l] != fire_at) goto advance_l;
         if (!(tr->drum_repeat_gate[l] & (uint8_t)(1u << step))) goto advance_l;
+        if (!tr->drum_clips[tr->active_clip]) goto advance_l;   /* empty slot: see drum_repeat_tick */
         {
             /* Absolute per-step velocity, Thru = held-pad vel — same rule as Rpt1. */
             int vel = (int)tr->drum_repeat_vel_scale[l][step];
@@ -5758,6 +5765,7 @@ static int drum_pad_event(seq8_instance_t *inst, seq8_track_t *tr,
     int lane = (int)tr->active_drum_lane;
     if (lane < 0 || lane >= DRUM_LANES) return 1;
     drum_clip_t *dc = tr->drum_clips[tr->active_clip];
+    if (!dc) return 1;   /* an empty slot (a failed allocation) */
     uint8_t laneNote = dc->lanes[lane].midi_note;
     if (laneNote == 0xFF) return 1;
 
@@ -6122,7 +6130,8 @@ static void on_midi(void *instance, const uint8_t *msg, int len, int source) {
             int ac = (int)tr->active_clip;
             drum_clip_t *dc = tr->drum_clips[ac];
             int lane = -1;
-            { int l; for (l = 0; l < DRUM_LANES; l++) {
+            /* NULL = an empty slot: nothing to stamp a lane into. */
+            if (dc) { int l; for (l = 0; l < DRUM_LANES; l++) {
                 if (dc->lanes[l].midi_note == pitch) { lane = l; break; }
             }}
             if (lane >= 0) {

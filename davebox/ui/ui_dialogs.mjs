@@ -840,9 +840,12 @@ export function snapshotPickerClick() {
         const id = p.confirm.targetId;
         closeSnapshotPicker();
         if (kind === 'load' && yes) {
-            applySnapshotToLive(S.currentSetUuid, id);
-            S.pendingSetLoad = true;          /* reuse the normal state_load reload path */
-            showActionPopup('STATE', 'LOADED');
+            /* A failed copy has already said SAVE FAILED; reloading would
+             * just reload the project as it was and claim LOADED. */
+            if (applySnapshotToLive(S.currentSetUuid, id)) {
+                S.pendingSetLoad = true;      /* reuse the normal state_load reload path */
+                showActionPopup('STATE', 'LOADED');
+            }
         } else if (kind === 'overwrite' && yes) {
             beginSnapshotSave(id);            /* reuse id → overwrite in place */
             showActionPopup('STATE', 'SAVED');
