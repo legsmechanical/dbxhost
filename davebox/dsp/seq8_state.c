@@ -404,6 +404,11 @@ static void drum_clip_base_geom(const drum_clip_t *dc, int *len, int *ls, int *t
  * init values (drum_lanes_init / drum_pfx_params_init) — NOT against the
  * loader's absent-key defaults, which differ for delay_level (init 127,
  * absent 0): measuring against 0 would write every untouched empty lane. */
+static int steps_any_nonzero(const uint8_t *arr, uint16_t len) {
+    for (int i = 0; i < (int)len; i++) if (arr[i]) return 1;
+    return 0;
+}
+
 static int drum_lane_extras_nondefault(const drum_lane_t *dl, int l) {
     const clip_t *dlc = &dl->clip;
     drum_pfx_params_t d;
@@ -416,7 +421,13 @@ static int drum_lane_extras_nondefault(const drum_lane_t *dl, int l) {
         || p->delay_level != d.delay_level || p->repeat_times != d.repeat_times
         || p->fb_velocity != d.fb_velocity || p->fb_gate_time != d.fb_gate_time
         || p->fb_clock != d.fb_clock || p->delay_retrig != d.delay_retrig
-        || p->note_length_mode != d.note_length_mode;
+        || p->note_length_mode != d.note_length_mode
+        /* Trig conditions: written below only for a lane that is written at
+         * all, and the loader reads them only under that lane's `_g`. A lane
+         * whose notes were cleared but whose conditions remain must count. */
+        || steps_any_nonzero(dlc->step_iter, dlc->length)
+        || steps_any_nonzero(dlc->step_random, dlc->length)
+        || steps_any_nonzero(dlc->step_ratchet, dlc->length);
 }
 
 /* Read up to `n` colon-separated non-negative ints ("64:0:24", or an
@@ -622,16 +633,21 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
                             (int)n->vel, (int)n->gate);
                 }
                 if (wrote) fputc('"', fp);
-                /* v=34 per-step trig conditions (sparse at array level) */
-                {
-                    char k[24];
-                    snprintf(k, sizeof(k), "t%dc%d_si", t, c);
-                    write_step_hex_arr(fp, k, cl->step_iter,    cl->length);
-                    snprintf(k, sizeof(k), "t%dc%d_sr", t, c);
-                    write_step_hex_arr(fp, k, cl->step_random,  cl->length);
-                    snprintf(k, sizeof(k), "t%dc%d_sx", t, c);
-                    write_step_hex_arr(fp, k, cl->step_ratchet, cl->length);
-                }
+            }
+            /* v=34 per-step trig conditions (sparse at array level).
+             * ⚠ Written whether or not the clip has notes: a condition can sit
+             * on an empty step, and this block used to live inside the note
+             * list's `note_count > 0`, so laying out ratchets and clearing the
+             * notes to re-record lost them on the next save. The loader has
+             * always read them unconditionally. */
+            {
+                char k[24];
+                snprintf(k, sizeof(k), "t%dc%d_si", t, c);
+                write_step_hex_arr(fp, k, cl->step_iter,    cl->length);
+                snprintf(k, sizeof(k), "t%dc%d_sr", t, c);
+                write_step_hex_arr(fp, k, cl->step_random,  cl->length);
+                snprintf(k, sizeof(k), "t%dc%d_sx", t, c);
+                write_step_hex_arr(fp, k, cl->step_ratchet, cl->length);
             }
         }
     }
