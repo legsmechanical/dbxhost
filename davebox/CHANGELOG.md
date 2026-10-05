@@ -86,6 +86,9 @@ the section into a versioned heading at release time.
   matches 8.
 
 ### Fixed
+- **Baking a drum clip keeps every hit on its own lane.** A bake could give
+  hits random pitches — even though drum lanes have no random setting — and
+  then move each hit to the lane that plays that pitch, scattering the clip.
 - **Fewer stuck notes.**
   - Muting or soloing a drum lane silences a long hit at once.
   - Panic reaches the instrument with SEQ ARP or swing on.

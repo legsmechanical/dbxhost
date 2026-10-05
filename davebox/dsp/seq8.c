@@ -2787,6 +2787,9 @@ static void pfx_reset(play_fx_t *fx) {
     fx->fb_clock        = 0;
     fx->delay_retrig    = 1;
     fx->quantize        = 0;
+    fx->note_random      = 0;
+    fx->note_random_mode = 2;     /* Walk, as clip_pfx_params_init */
+    fx->note_random_walk = 0;
     arp_init_defaults(&fx->arp);
     memset(fx->pitch_refcount, 0, sizeof(fx->pitch_refcount));
 }
@@ -4057,6 +4060,12 @@ static void silence_muted_tracks(seq8_instance_t *inst) {
 /* ------------------------------------------------------------------ */
 
 static void pfx_init_defaults(play_fx_t *fx) {
+    /* Whole-struct zero FIRST: the bakes build their play_fx_t on the STACK,
+     * and pfx_reset sets only the fields it names — a field it misses keeps
+     * whatever the stack held. note_random was one: a drum bake then gave
+     * every hit a random pitch and routed it to that pitch's lane (device,
+     * 2026-10-05: a baked copy landed on 12 lanes from 5). */
+    memset(fx, 0, sizeof(*fx));
     pfx_reset(fx);                     /* explicit zero of all stages */
     fx->cached_bpm = (double)BPM_DEFAULT;
     fx->rng        = 12345;
