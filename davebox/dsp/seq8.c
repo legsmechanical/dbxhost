@@ -2336,10 +2336,15 @@ static void send_panic(seq8_instance_t *inst) {
     for (s = 0; s < SEQ8_CHAIN_SLOTS; s++) {
         play_fx_t *fx = slot_pfx[s];
         if (!fx) continue;
+        /* Straight to the output (pfx_emit), like the CC 123 below: through
+         * pfx_send, a clip with SEQ ARP on diverted every off into the arp's
+         * held list (none was emitted), and under swing 2048 offs were parked
+         * in a 256-slot queue that drops the rest (2026-10-04 review). The
+         * refcounts are zeroed above, so pfx_emit lets every off through. */
         if (fx == route_pfx[ROUTE_SCHWUNG] || slot_hot[s])
             for (ch = 0; ch < 16; ch++)
                 for (n = 0; n < 128; n++)
-                    pfx_send(fx, (uint8_t)(0x80 | ch), (uint8_t)n, 0);
+                    pfx_emit(fx, (uint8_t)(0x80 | ch), (uint8_t)n, 0);
         /* ...and All Notes Off to EVERY routed slot, swept or not (Josh,
          * 2026-09-30: a dspreset voice "Kept sounding after transport stop"
          * though the note-off sweep above reached its slot). Per-note offs
@@ -2356,8 +2361,8 @@ static void send_panic(seq8_instance_t *inst) {
          * CC 120 + 123 per channel silences everything in 32 messages. */
         play_fx_t *fx = route_pfx[ROUTE_EXTERNAL];
         for (ch = 0; ch < 16; ch++) {
-            pfx_send(fx, (uint8_t)(0xB0 | ch), 120, 0); /* All Sound Off */
-            pfx_send(fx, (uint8_t)(0xB0 | ch), 123, 0); /* All Notes Off */
+            pfx_emit(fx, (uint8_t)(0xB0 | ch), 120, 0); /* All Sound Off */
+            pfx_emit(fx, (uint8_t)(0xB0 | ch), 123, 0); /* All Notes Off */
         }
     }
     /* ROUTE_MOVE: skip CC 123 sweep. Move's voice allocator corrupts when
@@ -2854,6 +2859,16 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
         int i;
         for (i = 0; i < an->gen_count; i++)
             pfx_send(fx, off_s, an->gen_notes[i], 0);
+        /* ⚠ ...and its delay echoes, as a note-off would. The record is
+         * overwritten below, and an echo's note-off is only ever scheduled
+         * from THIS record when the note ends (pfx_sched_delay_offs). Without
+         * this, echoes that had already sounded never got their offs: the
+         * output refcount stayed up, later hits on the pitch were dropped,
+         * and the synth held the note until a panic (2026-10-04 review). With
+         * delay_retrig on, the drain below sends these at once. */
+        pfx_sched_delay_offs(fx, an, an->on_time,
+                             an->gate_override_smp ? an->gate_override_smp
+                                                   : pfx_gate_smp(inst, tr));
     }
 
     /* Delay retrig: when enabled, a new note-on drops in-flight delay echoes.

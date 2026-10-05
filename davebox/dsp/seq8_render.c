@@ -303,6 +303,18 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                     }
                     _tr->tick_in_step       = 0;
                     _tr->note_active        = 0;
+                    /* ⚠ Release the TRACK ARP's sounding note HERE, before the
+                     * sample clock resets: the reset below cleared
+                     * sounding_active with no note-off, so a chord held
+                     * through the count-in left that note stuck (its pitch
+                     * refcount never fell back, so the arp's later hits on it
+                     * were dropped too) (2026-10-04 review). Before the clock
+                     * reset so any delay-echo offs it schedules are re-pegged
+                     * with the rest of the queue just below. */
+                    if (_tr->tarp_on && _tr->tarp.sounding_active) {
+                        pfx_note_off_imm(inst, _tr, _tr->tarp.sounding_pitch);
+                        _tr->tarp.sounding_active = 0;
+                    }
                     _tr->pfx.sample_counter = 0;
                     /* Prime current_clip_tick to match the direction-aware
                      * current_step set above — so the first post-fire
