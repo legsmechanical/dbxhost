@@ -76,17 +76,13 @@ static int sp_globals_transport(sp_ctx_t *cx) {
              * + replay as in play. Single set_param avoids coalescing flakiness. */
             int t;
             for (t = 0; t < NUM_TRACKS; t++) {
-                play_fx_t *fx = &inst->tracks[t].pfx;
-                silence_track_notes_v2(inst, &inst->tracks[t]);
-                if (fx->route == ROUTE_MOVE) {
-                    int ei;
-                    for (ei = 0; ei < fx->event_count; ei++)
-                        fx->events[ei].fire_at = fx->sample_counter;
-                    memset(fx->active_notes, 0, sizeof(fx->active_notes));
-                } else {
-                    fx->event_count = 0;
-                    memset(fx->active_notes, 0, sizeof(fx->active_notes));
-                }
+                /* The one silencer Stop uses (silence_track_from_set_param):
+                 * by EFFECTIVE route, and on a chain / external route the
+                 * queued note-offs go out rather than being dropped. These
+                 * copies tested the track's own route and zeroed the queue, so
+                 * a MIDI-to follower playing into Move lost its offs, and a
+                 * chain note mid-gate hung (2026-10-04 review). */
+                silence_track_from_set_param(inst, &inst->tracks[t]);
                 inst->tracks[t].clips[inst->tracks[t].active_clip].clock_shift_pos = 0;
                 inst->tracks[t].pending_page_stop = 0;
                 inst->tracks[t].record_armed      = 0;
@@ -176,17 +172,13 @@ static int sp_globals_transport(sp_ctx_t *cx) {
             /* Silence / finalize prelude (mirrors restart branch). */
             int t;
             for (t = 0; t < NUM_TRACKS; t++) {
-                play_fx_t *fx = &inst->tracks[t].pfx;
-                silence_track_notes_v2(inst, &inst->tracks[t]);
-                if (fx->route == ROUTE_MOVE) {
-                    int ei;
-                    for (ei = 0; ei < fx->event_count; ei++)
-                        fx->events[ei].fire_at = fx->sample_counter;
-                    memset(fx->active_notes, 0, sizeof(fx->active_notes));
-                } else {
-                    fx->event_count = 0;
-                    memset(fx->active_notes, 0, sizeof(fx->active_notes));
-                }
+                /* The one silencer Stop uses (silence_track_from_set_param):
+                 * by EFFECTIVE route, and on a chain / external route the
+                 * queued note-offs go out rather than being dropped. These
+                 * copies tested the track's own route and zeroed the queue, so
+                 * a MIDI-to follower playing into Move lost its offs, and a
+                 * chain note mid-gate hung (2026-10-04 review). */
+                silence_track_from_set_param(inst, &inst->tracks[t]);
                 inst->tracks[t].clips[inst->tracks[t].active_clip].clock_shift_pos = 0;
                 inst->tracks[t].pending_page_stop = 0;
                 inst->tracks[t].record_armed      = 0;
@@ -310,17 +302,13 @@ static int sp_globals_transport(sp_ctx_t *cx) {
         } else if (!strcmp(val, "panic")) {
             int t;
             for (t = 0; t < NUM_TRACKS; t++) {
-                play_fx_t *fx = &inst->tracks[t].pfx;
-                silence_track_notes_v2(inst, &inst->tracks[t]);
-                if (fx->route == ROUTE_MOVE) {
-                    int ei;
-                    for (ei = 0; ei < fx->event_count; ei++)
-                        fx->events[ei].fire_at = fx->sample_counter;
-                    memset(fx->active_notes, 0, sizeof(fx->active_notes));
-                } else {
-                    fx->event_count = 0;
-                    memset(fx->active_notes, 0, sizeof(fx->active_notes));
-                }
+                /* The one silencer Stop uses (silence_track_from_set_param):
+                 * by EFFECTIVE route, and on a chain / external route the
+                 * queued note-offs go out rather than being dropped. These
+                 * copies tested the track's own route and zeroed the queue, so
+                 * a MIDI-to follower playing into Move lost its offs, and a
+                 * chain note mid-gate hung (2026-10-04 review). */
+                silence_track_from_set_param(inst, &inst->tracks[t]);
                 inst->tracks[t].clips[inst->tracks[t].active_clip].clock_shift_pos = 0;
                 inst->tracks[t].clip_playing      = 0;
                 inst->tracks[t].will_relaunch     = 0;
