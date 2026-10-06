@@ -115,6 +115,19 @@ step('⭐⭐ Track overview resting on DELAY: DARK (it was lit — Back stopped 
     assert(S.activeBank === 3, 'control: a Back tap moved the bank');
 });
 
+step('a lane-jump return crumb lights Back only where a tap would use it', () => {
+    reset();
+    S.activeBank = 3; S.trackActiveBank[2] = 3;
+    S.autoReturn = { track: 2, bank: 3, sel: 0 };
+    assert(lit(), 'control: Back is dark on the bank the jump landed on');
+    /* Another track, same bank number: the tap would only discard the crumb. */
+    S.activeTrack = 4; S.activeBank = 3; S.trackActiveBank[4] = 3;
+    assert(!lit(), 'Back is lit for a crumb that belongs to another track');
+    S.activeTrack = 2; S.activeBank = 1; S.trackActiveBank[2] = 1;
+    assert(!lit(), 'Back is lit for a crumb that belongs to another bank');
+    S.activeBank = 0; S.trackActiveBank[2] = 0; S.autoReturn = null;
+});
+
 step('a clicked-open bank map: lit; Back closes it and the LED goes dark', () => {
     reset();
     press(); release();

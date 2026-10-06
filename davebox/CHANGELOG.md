@@ -14,6 +14,15 @@ the section into a versioned heading at release time.
   clip (or drum lane) played forward after its row was cut and pasted.
 - **A Conductor track turned into a drum track gives the role back.** No other
   track could become the Conductor until the project was reloaded.
+- **Switching projects ends a running Performance Mode loop.** The loop from
+  the project you left kept playing over the one you opened.
+- **Shift + Loop in Session View only toggles the latch.** Letting go of it
+  also dropped the held Performance Mode modifiers and stopped a running loop.
+- **Back no longer lights for a return it can't make.** After jumping to a
+  bank from AUTOMATION and then switching track or bank, Back stayed lit and a
+  tap did nothing.
+- **Web UI: instrument names with `<` or `"` no longer break the session
+  grid.**
 - **Opening dAVEBOx onto a stopped engine no longer acts as if it was
   playing** for a moment (a needless save and a green Play light).
 

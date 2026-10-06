@@ -181,8 +181,29 @@ static int sp_globals_state(sp_ctx_t *cx) {
             inst->cap_select_active = 0;
             inst->playing        = 0;
             inst->count_in_ticks = 0;
+            /* The Performance Mode looper belongs to the project being left:
+             * left LOOPING, its captured events replayed over the one just
+             * opened. Its sounding notes were released above (they are counted
+             * in pitch_refcount), so this is bookkeeping only — no deferred
+             * silence pass, which would run against the new project's tracks. */
+            inst->looper_state              = LOOPER_STATE_IDLE;
+            inst->looper_pending_silence    = 0;
+            inst->looper_stop_was_looping   = 0;
+            inst->looper_event_count        = 0;
+            inst->looper_pos                = 0;
+            inst->looper_play_idx           = 0;
+            inst->looper_capture_ticks      = 0;
+            inst->looper_pending_rate_ticks = 0;
+            inst->looper_cycle              = 0;
+            inst->perf_staccato_count       = 0;
+            inst->perf_drift_offset         = 0;
+            inst->perf_cycle_note_idx       = 0;
+            memset(inst->perf_emitted_pitch, 0xFF, sizeof(inst->perf_emitted_pitch));
+            memset(inst->looper_stop_counts, 0, sizeof(inst->looper_stop_counts));
             for (t2 = 0; t2 < NUM_TRACKS; t2++) {
                 seq8_track_t *tr2 = &inst->tracks[t2];
+                tr2->rec_pending_count   = 0;
+                memset(tr2->drum_rec_pending_active, 0, sizeof(tr2->drum_rec_pending_active));
                 tr2->note_active         = 0;
                 tr2->pending_note_count  = 0;
                 tr2->pfx.event_count     = 0;

@@ -1668,6 +1668,7 @@ function autoLaneJump() {
  * before any press could arrive. A probe that answers at the wrong moment reads
  * exactly like a probe that answered. Only a PRESS can set held true. */
 let _shiftPressSeen = false;
+let _sessLoopShiftPress = false;   /* Session View: this Loop press was Shift+Loop (the latch toggle) */
 
 /* Co-run cedes Shift to Move (ui_corun.mjs), so CC 49 no longer reaches us
  * there. Follow the PHYSICAL Shift instead — the shim reads it from the
@@ -1992,14 +1993,21 @@ function _onCC_buttons(d1, d2) {
             if (S.shiftHeld) {
                 /* Shift+Loop: toggle perf latch mode (mod pads momentary vs sticky). */
                 S.perfLatchMode = !S.perfLatchMode;
+                /* The whole gesture is the toggle: its release must not fall
+                 * into the hold-release below with the LAST press's time —
+                 * that read as a long hold and dropped the held modifiers and
+                 * stopped a running loop. */
+                _sessLoopShiftPress = true;
                 forceRedraw();
                 return;
             }
+            _sessLoopShiftPress = false;
             S.loopPressTick = nowMs();
             S.loopHeld      = true;
             forceRedraw();
             return;
         }
+        if (_sessLoopShiftPress) { _sessLoopShiftPress = false; return; }
         const heldDuration = nowMs() - S.loopPressTick;
         const wasTap       = heldDuration < LOOP_TAP_MS;
 
@@ -2287,7 +2295,15 @@ export function backTapWouldAct() {
      * LED lit on every overview resting on another bank (Josh, 2026-10-04:
      * "Back button needs to light when it's functional"). */
     return S.loopLatched || S.stepIntervalMode || S.altMode || S.knobAlt !== 0 ||
-        !!S.autoReturn || S.bankCardLatched || S.bankSelectTick >= 0 || S.jogTouched;
+        autoReturnLive() || S.bankCardLatched || S.bankSelectTick >= 0 || S.jogTouched;
+}
+
+/* A lane jump's return crumb is honoured only on the track and bank it sent
+ * you to (_backTap). The LED asks the same question, so it never lights for a
+ * crumb a tap would only throw away. */
+function autoReturnLive() {
+    const r = S.autoReturn;
+    return !!r && r.track === S.activeTrack && r.bank === S.activeBank;
 }
 
 /* ⭑⭑ THE NOTE/SESSION LAW (Josh, 2026-09-02; revised 2026-09-30: Note/Session
@@ -2643,8 +2659,9 @@ function _backTap() {
         if (closeDoorScreen()) return;
         if (S.autoReturn) {
             const r = S.autoReturn;
+            const live = autoReturnLive();
             S.autoReturn = null;
-            if (r.track === S.activeTrack && r.bank === S.activeBank) {
+            if (live) {
                 S.activeBank = BANK_AUTOMATION;
                 S.trackActiveBank[r.track] = BANK_AUTOMATION;
                 autoBankRestoreMenu(r.sel);
