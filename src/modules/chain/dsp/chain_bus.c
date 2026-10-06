@@ -733,7 +733,7 @@ static int bus_load_fx(chain_instance_t *inst, slot_bus_t *bus, int pos, const c
     snprintf(path, sizeof(path), "%s/../audio_fx/%s/%s.so", inst->module_dir, name, name);
     snprintf(dir, sizeof(dir), "%s/../audio_fx/%s", inst->module_dir, name);
 
-    void *handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+    void *handle = dlopen(path, MODULE_DLOPEN_FLAGS);
     if (!handle) return -1;
     audio_fx_init_v2_fn init_v2 = (audio_fx_init_v2_fn)dlsym(handle, AUDIO_FX_INIT_V2_SYMBOL);
     if (!init_v2) { dlclose(handle); return -1; }

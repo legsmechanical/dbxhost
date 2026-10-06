@@ -7,6 +7,7 @@
 #include <stdarg.h>
 #include <unistd.h>
 #include <dlfcn.h>
+#include "module_dlopen.h"   /* MODULE_DLOPEN_FLAGS: module code is never unmapped */
 #include <sys/stat.h>
 #include <math.h>
 #include <time.h>
@@ -887,7 +888,7 @@ int shadow_send_fx_slot_load(int bus, int slot, const char *dsp_path) {
 
     shadow_send_fx_slot_unload(bus, slot);
 
-    s->handle = dlopen(dsp_path, RTLD_NOW | RTLD_LOCAL);
+    s->handle = dlopen(dsp_path, MODULE_DLOPEN_FLAGS);
     if (!s->handle) {
         fprintf(stderr, "Send FX[%d][%d]: failed to load %s: %s\n", bus, slot, dsp_path, dlerror());
         return -1;
@@ -1029,7 +1030,7 @@ int shadow_move_fx_slot_load(int slot, int block, const char *dsp_path) {
 
     shadow_move_fx_slot_unload(slot, block);
 
-    s->handle = dlopen(dsp_path, RTLD_NOW | RTLD_LOCAL);
+    s->handle = dlopen(dsp_path, MODULE_DLOPEN_FLAGS);
     if (!s->handle) {
         fprintf(stderr, "Move FX[%d][%d]: failed to load %s: %s\n", slot, block, dsp_path, dlerror());
         return -1;
@@ -1142,7 +1143,7 @@ int shadow_master_fx_slot_load_with_config(int slot, const char *dsp_path, const
 
     shadow_master_fx_slot_unload(slot);
 
-    s->handle = dlopen(dsp_path, RTLD_NOW | RTLD_LOCAL);
+    s->handle = dlopen(dsp_path, MODULE_DLOPEN_FLAGS);
     if (!s->handle) {
         fprintf(stderr, "Shadow master FX[%d]: failed to load %s: %s\n", slot, dsp_path, dlerror());
         return -1;
@@ -1444,7 +1445,7 @@ static void shadow_slot_apply_boot_feedback_hold(int i) {
 int shadow_inprocess_load_chain(void) {
     if (shadow_inprocess_ready) return 0;
 
-    shadow_dsp_handle = dlopen(SHADOW_CHAIN_DSP_PATH, RTLD_NOW | RTLD_LOCAL);
+    shadow_dsp_handle = dlopen(SHADOW_CHAIN_DSP_PATH, MODULE_DLOPEN_FLAGS);
     if (!shadow_dsp_handle) {
         fprintf(stderr, "Shadow inprocess: failed to load %s: %s\n",
                 SHADOW_CHAIN_DSP_PATH, dlerror());

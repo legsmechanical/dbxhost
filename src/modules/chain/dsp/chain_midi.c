@@ -114,7 +114,7 @@ int v2_load_midi_fx_slot(chain_instance_t *inst, int slot, const char *fx_name) 
     v2_chain_log(inst, msg);
 
     /* Open the shared library */
-    void *handle = dlopen(fx_path, RTLD_NOW | RTLD_LOCAL);
+    void *handle = dlopen(fx_path, MODULE_DLOPEN_FLAGS);
     if (!handle) {
         snprintf(msg, sizeof(msg), "dlopen failed: %s", dlerror());
         v2_chain_log(inst, msg);

@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <dlfcn.h>
+#include "host/module_dlopen.h"   /* MODULE_DLOPEN_FLAGS: module code is never unmapped */
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -1662,7 +1663,7 @@ static void shadow_overtake_dsp_load(const char *path) {
 
     if (!path || !path[0]) return;
 
-    overtake_dsp_handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+    overtake_dsp_handle = dlopen(path, MODULE_DLOPEN_FLAGS);
     if (!overtake_dsp_handle) {
         char msg[512];
         snprintf(msg, sizeof(msg), "Overtake DSP: failed to load %s: %s", path, dlerror());
