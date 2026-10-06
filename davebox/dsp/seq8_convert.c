@@ -127,6 +127,11 @@ static void convert_track_melodic_to_drum(seq8_instance_t *inst, int t) {
         clip_init(src);   /* clear source (melodic serialize is not pad_mode-gated) */
     }
 
+    /* The melodic clips' AFTERTOUCH automation goes with their notes: the
+     * render path evaluates clip_at_auto on drum tracks too, so it would play
+     * pressure curves for notes that no longer exist. */
+    for (c = 0; c < NUM_CLIPS; c++) at_auto_reset(&tr->clip_at_auto[c]);
+
     tr->pad_mode = PAD_MODE_DRUM;
 
     /* Reset playheads for the now-drum track. */
@@ -219,6 +224,10 @@ static void convert_track_drum_to_melodic(seq8_instance_t *inst, int t) {
     tr->drum_lane_solo = 0;
     tr->active_drum_lane = 0;
     tr->drum_perform_mode = 0;
+    /* ...and the repeat groove, which the header above promises is
+     * discarded: it is saved whatever the track's type, so left here it came
+     * back if the track was ever a drum track again. */
+    drum_repeat_init_defaults(tr);
 
     {
         clip_t *_cl = &tr->clips[tr->active_clip];

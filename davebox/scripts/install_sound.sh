@@ -118,9 +118,24 @@ if [ "$DO_RESTART" = "1" ]; then
     # on a full stack restart, and a bare `systemctl restart move-launcher` is
     # not enough (KillMode=process leaves the Schwung stack running stale).
     echo "Reloading Move + Schwung stack..."
+    # TERM first, and wait: a SIGKILL'd Move reads as a CRASH — Ableton files a
+    # report and the next boot shows "Move crashed". KILL is the escalation for
+    # a process that ignored TERM for 5 s, never the opening move.
     RESTART_CMD='systemctl stop move-launcher.service 2>/dev/null;
-        for name in MoveOriginal Move MoveMessageDisplay shadow_ui schwung link-subscriber display-server schwung-manager; do
-            pkill -9 -x "$name" 2>/dev/null;
+        NAMES="MoveOriginal Move MoveMessageDisplay shadow_ui schwung link-subscriber display-server schwung-manager";
+        for name in $NAMES; do pkill -TERM -x "$name" 2>/dev/null; done;
+        i=0;
+        while [ $i -lt 10 ]; do
+            alive=0;
+            for name in $NAMES; do pidof "$name" >/dev/null 2>&1 && alive=1; done;
+            [ $alive -eq 0 ] && break;
+            sleep 0.5; i=$((i+1));
+        done;
+        for name in $NAMES; do
+            if pidof "$name" >/dev/null 2>&1; then
+                echo "  $name ignored TERM for 5 s - killing";
+                pkill -KILL -x "$name" 2>/dev/null;
+            fi;
         done;
         sleep 1;
         systemctl start move-launcher.service'

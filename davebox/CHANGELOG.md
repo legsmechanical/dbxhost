@@ -7,12 +7,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.13] — 2026-10-06 (test build, not in the Schwung catalog)
 ### Fixed
 - **A module can no longer crash the Move when you leave its project.** An
   instrument that finishes shutting down in the background (Clementine XT
   does) crashed dAVEBOx every time its project was switched away from — and
   on the next start, if that was the project it opened on. The host now keeps
   a module's code loaded after unloading it.
+- **Changing a track's type takes its hidden data with it.** A melodic
+  track turned into a drum track kept playing its clips' recorded aftertouch;
+  a drum track turned melodic kept its repeat groove, which came back if the
+  track was ever a drum track again.
+- **Baking a clip whose loop doesn't start on page 1 keeps its automation.**
+  The notes moved to the start of the baked clip but the automation was left
+  pointing at the old position, so the parameter sat at one value.
 - **Tap Tempo flashes its pad again.** Every tap set the tempo and then hit an
   error, so the pad never flashed and the screen did not redraw.
 - **Moving a scene row keeps each clip's direction.** A reversed or ping-pong
