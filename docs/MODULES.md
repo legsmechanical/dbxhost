@@ -2262,6 +2262,26 @@ typedef struct host_api_v1 {
 } host_api_v1_t;
 ```
 
+#### Host extensions (`move_plugin_host_ext_v1`)
+
+`host_api_v1_t` cannot grow, so a capability added later is handed to the module by a
+call: after `create_instance`, the host looks up `move_plugin_host_ext_v1` in the module
+and, if the module exports it, calls it once with a `const move_host_ext_v1_t *` that
+stays valid for the life of the host. Store the pointer; check `ext->size` before
+reading a member (the struct grows at its end). A module that does not export the
+symbol is simply not called, and on a host without extensions the pointer stays NULL —
+keep a fallback.
+
+```c
+static const move_host_ext_v1_t *g_ext;
+void move_plugin_host_ext_v1(const move_host_ext_v1_t *ext) { g_ext = ext; }
+```
+
+| Member | What it does |
+|---|---|
+| `int set_slot_param(int slot, const char *key, const char *value)` | Sets one parameter of chain slot `slot` (0-based) **now**, from `render_block` or `set_param` — on the audio thread, in program order with the module's own `midi_send_internal_slot` calls. A value written before a note is sent to the same slot is in place when that note is voiced. `key` is a chain parameter key (`synth:cutoff`, `fx2:mix`, `slot:volume`, `move_fx:1:volume`). Keys that load or replace something (`…:module`, patches, state) are refused. Transient: the slot is not marked edited. Returns 1 if dispatched, 0 if refused. **Only an overtake DSP is offered this** (the slot it would address is another module's). Audio thread rules apply to the caller: no formatting through `printf`-family calls that allocate, and keep the number of writes per block small — each one costs whatever the target module's `set_param` costs. |
+
+
 **Tempo while stopped:** `get_bpm()` retains the last-playing transport's tempo
 after it stops (so a synced LFO that switches from phase-lock to free-run keeps
 the same rate). It updates from emitted clock, so changing an internal

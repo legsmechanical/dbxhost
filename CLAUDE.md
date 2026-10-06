@@ -118,6 +118,10 @@ Keep each isolated in its own commit so it is easy to exclude when cherry-pickin
   `upstream/main`, **not** from `docs/API.md`.
 - **Fork-only param-key namespaces** that no `typeof` check can probe: `fx3:`/`fx4:` and
   `send_fx:a:`/`send_fx:b:`.
+- **One fork-only host EXTENSION for module DSPs:** `move_plugin_host_ext_v1` /
+  `move_host_ext_v1_t.set_slot_param` (`src/host/plugin_api_v1.h`) — an overtake DSP sets a chain-slot
+  parameter from its own render. Handed over by `dlsym` after `create_instance`; `host_api_v1_t`
+  itself stays frozen at upstream's geometry.
 
 → full history and the silent-misbehaviour warning: [`RATIONALE.md`](RATIONALE.md).
 

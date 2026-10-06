@@ -172,6 +172,45 @@ _Static_assert(sizeof(host_api_v1_t) == 184,
                "host_api_v1_t must stay 184 bytes, the same as upstream");
 
 /*
+ * HOST EXTENSIONS — capabilities added after the struct above was frozen.
+ *
+ * The host_api_v1_t geometry cannot grow (see the note at `reserved`), so a new
+ * host capability is handed over by a call the HOST makes into the module:
+ * after create_instance, the host looks up MOVE_PLUGIN_HOST_EXT_V1_SYMBOL in
+ * the module and, if the module exports it, calls it once with a pointer to a
+ * move_host_ext_v1_t that lives as long as the host does. A module that does
+ * not export the symbol is not called; a host that does not know the symbol
+ * never calls it, and the module's stored pointer stays NULL.
+ *
+ * `size` is sizeof the struct the host was built with: a module reads a member
+ * only if it lies inside `size`, so the struct can grow at its end.
+ */
+#define MOVE_PLUGIN_HOST_EXT_V1_SYMBOL "move_plugin_host_ext_v1"
+
+typedef struct move_host_ext_v1 {
+    uint32_t size;
+
+    /* Set one parameter of chain slot `slot` (0-based) NOW, from the caller's
+     * render_block or set_param — i.e. on the audio thread, in program order
+     * with the caller's own midi_send_internal_slot calls. A value written
+     * here before a note is sent to the same slot is in place when that note
+     * is voiced.
+     *
+     * `key` is what a chain parameter write takes ("synth:cutoff",
+     * "fx2:mix", "slot:volume", "move_fx:1:volume"...). Keys that LOAD or
+     * replace anything (a module, a patch, a state blob) are refused: this
+     * moves values, it does not change what is loaded. The write is
+     * transient — it does not mark the slot as edited.
+     *
+     * Returns 1 if the write was dispatched, 0 if it was refused (bad slot,
+     * a key this entry does not carry, key or value too long). A refusal
+     * changes nothing. */
+    int (*set_slot_param)(int slot, const char *key, const char *value);
+} move_host_ext_v1_t;
+
+typedef void (*move_plugin_host_ext_v1_fn)(const move_host_ext_v1_t *ext);
+
+/*
  * Plugin API - implemented by plugin, returned to host
  */
 typedef struct plugin_api_v1 {

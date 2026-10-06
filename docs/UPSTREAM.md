@@ -513,6 +513,7 @@ so the option stays visible.
 | Text-entry function keys no longer overlap the last characters | `02e5ac2d` | Not submitted |
 | One-dispatcher param SET extraction (`shadow_param_apply_set`) + the variable-length param write lane | branch `param-transport` | Not submitted — generic host change, no module named; fixes a real two-dispatcher class of bug (see the 09-05 lesson in `docs/HOST_REFERENCE.md`) |
 | Module code is never unmapped: every loader opens with `MODULE_DLOPEN_FLAGS` (`RTLD_NODELETE`), so a module thread that outlives `destroy_instance` cannot resume in unloaded pages (`src/host/module_dlopen.h`) | 2026-10-06 | Not submitted — generic, no module named. Upstream has the same `destroy_instance` → `dlclose` pairs and the same crash |
+| Host extensions by handshake (`move_plugin_host_ext_v1`), and the first one: `set_slot_param` — an overtake DSP writes a chain-slot parameter from its render, in order with the notes it sends, so a sequencer's per-step parameter value is in place for that step's note | 2026-10-06 | Not submitted — generic, no module named; adds nothing to `host_api_v1_t` |
 | The render pool (`render_pool.h` + the shim restructure) | 2026-09-15 | Not submitted — generic, no module named; `slot:parallel` is a plain slot key. Worth offering once the CM4 A/B exists (upstream's users are all on CM4) |
 
 ⚠ **Identify these by SUBJECT, not by hash.** Upstream rewrites history on every release, and this

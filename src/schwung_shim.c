@@ -48,6 +48,7 @@
 #include "host/timespec_delta.h"
 #include "host/shadow_midi_inject_writer.h"
 #include "host/shadow_param_lane.h"
+#include "host/shadow_param_lane_policy.h"   /* spl_key_eligible: what a module may set from render */
 #include "host/shadow_test_stream.h"
 #include "host/shadow_chain_types.h"
 #include "host/unified_log.h"
@@ -158,6 +159,10 @@ static web_param_set_ring_t *web_param_set_shm = NULL;       /* Web UI → shim 
  * harmless. Cumulative since launch except the two _max trackers, so the
  * difference between two 5 s lines is the rate. */
 static uint64_t param_lane_drained_total  = 0;  /* records applied, all frames */
+/* A value set from a module's render is a number, not a blob. */
+#define OVERTAKE_SLOT_SET_VALUE_MAX 64
+static uint64_t overtake_slot_set_total   = 0;  /* set_slot_param writes dispatched (host ext) */
+static uint32_t overtake_slot_set_refused = 0;  /* ...and refused */
 static uint32_t param_lane_drained_max    = 0;  /* most records in ONE frame */
 static uint32_t param_lane_bytes_max      = 0;  /* highest spl_used seen at drain entry */
 static uint32_t param_lane_apply_errors   = 0;  /* shadow_param_apply_set returned non-zero */
@@ -1465,6 +1470,39 @@ static int overtake_midi_send_internal_slot(int slot, const uint8_t *msg, int le
     return len;
 }
 
+/* Host extension (move_host_ext_v1_t.set_slot_param): an overtake DSP sets one
+ * chain-slot parameter from its own render, in program order with the notes it
+ * sends through overtake_midi_send_internal_slot above. That call is
+ * synchronous into the synth's on_midi, and the synth voices it in the NEXT
+ * frame's render — so a value written here first is in place for that note.
+ * A queue drained in the pre-transfer phase could not give that order: it
+ * would run a frame after the note had already been delivered.
+ *
+ * Lands on shadow_direct_set_param, the same narrower call the `chain:` bulk
+ * SET uses and for the same reason: these are automation values, which must
+ * not activate a slot or load a module. spl_key_eligible refuses the keys
+ * that load — the lane's own definition of a write that may run inline.
+ *
+ * SPI thread only (the caller is inside render_block or set_param). No
+ * logging, no allocation; the counters are plain words read by the timing log. */
+static int overtake_set_slot_param(int slot, const char *key, const char *value) {
+    if (slot < 0 || slot >= SHADOW_CHAIN_INSTANCES || !key || !value ||
+        !spl_key_eligible(key) ||
+        strnlen(key, SHADOW_PARAM_KEY_LEN) >= SHADOW_PARAM_KEY_LEN ||
+        strnlen(value, OVERTAKE_SLOT_SET_VALUE_MAX) >= OVERTAKE_SLOT_SET_VALUE_MAX) {
+        overtake_slot_set_refused++;
+        return 0;
+    }
+    shadow_direct_set_param((uint8_t)slot, key, value);
+    overtake_slot_set_total++;
+    return 1;
+}
+
+static const move_host_ext_v1_t overtake_host_ext = {
+    .size = sizeof(move_host_ext_v1_t),
+    .set_slot_param = overtake_set_slot_param,
+};
+
 /* === Phase 2: Audio-thread-safe ROUTE_EXTERNAL MIDI send =================
  *
  * overtake_midi_send_external() is called from an overtake DSP's audio
@@ -1741,6 +1779,13 @@ static void shadow_overtake_dsp_load(const char *path) {
                     int cl = overtake_dsp_gen->get_param(overtake_dsp_gen_inst,
                                  "remote_snapshot_rt_safe", cap, sizeof(cap));
                     if (cl > 0 && cap[0] == '1') g_snap_rt_safe = 1;
+                }
+                /* Host extensions (plugin_api_v1.h): hand them over if the
+                 * module asks for them by exporting the symbol. */
+                {
+                    move_plugin_host_ext_v1_fn ext_fn = (move_plugin_host_ext_v1_fn)
+                        dlsym(overtake_dsp_handle, MOVE_PLUGIN_HOST_EXT_V1_SYMBOL);
+                    if (ext_fn) ext_fn(&overtake_host_ext);
                 }
                 char msg[256];
                 snprintf(msg, sizeof(msg), "Overtake DSP: loaded generator from %s (snapshot_rt_safe=%d)",
@@ -10043,7 +10088,8 @@ static void *spi_timing_logger_thread(void *arg)
              * Non-RT thread; the counters are SPI-thread-written plain words. */
             unified_log("spi_timing", LOG_LEVEL_DEBUG,
                 "param lane: drained=%llu max/frame=%u bytes_max=%u pending=%u "
-                "errors=%u resyncs=%u budget_frames=%u | mailbox set=%llu get=%llu bulk=%llu",
+"errors=%u resyncs=%u budget_frames=%u | mailbox set=%llu get=%llu bulk=%llu "
+                "| module slot sets=%llu refused=%u",
                 (unsigned long long)param_lane_drained_total,
                 param_lane_drained_max, param_lane_bytes_max,
                 shadow_param_lane_shm
@@ -10054,7 +10100,8 @@ static void *spi_timing_logger_thread(void *arg)
                 param_lane_apply_errors, param_lane_resyncs, param_lane_budget_frames,
                 (unsigned long long)param_mailbox_set_total,
                 (unsigned long long)param_mailbox_get_total,
-                (unsigned long long)param_mailbox_bulk_total);
+                (unsigned long long)param_mailbox_bulk_total,
+                (unsigned long long)overtake_slot_set_total, overtake_slot_set_refused);
             /* THE load line. `total` above is dominated by the blocking ioctl
              * and barely moves with load; this one is the work we actually do
              * and the only one worth judging headroom from. */
