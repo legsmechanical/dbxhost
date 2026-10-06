@@ -3408,10 +3408,16 @@ static void drum_repeat_tick(seq8_instance_t *inst, seq8_track_t *tr) {
                 int ac = (int)tr->active_clip;
                 clip_t *rlc = &tr->drum_clips[ac]->lanes[lane].clip;
                 uint16_t rs = tr->drum_current_step[lane];
-                if (rs < rlc->length) {
+                /* The playhead runs inside the lane's loop window
+                 * [loop_start, loop_start + length): test and wrap against
+                 * that, as the pad recorder does — not against the length. */
+                const uint16_t r_ls = rlc->loop_start;
+                const uint16_t r_le = (uint16_t)(r_ls + rlc->length);
+                if (rs >= r_ls && rs < r_le) {
                     int16_t off = (int16_t)tr->drum_tick_in_step[lane];
                     if (off >= (int16_t)(TICKS_PER_STEP / 2)) {
-                        rs = (rs + 1) % rlc->length;
+                        rs = (uint16_t)(rs + 1);
+                        if (rs >= r_le) rs = r_ls;
                         off -= (int16_t)TICKS_PER_STEP;
                     }
                     /* Sub-feature 3: preserve actual sub-step offset; stack regardless of InQ.
@@ -3546,10 +3552,16 @@ static void drum_repeat2_tick(seq8_instance_t *inst, seq8_track_t *tr) {
                 int ac = (int)tr->active_clip;
                 clip_t *rlc = &tr->drum_clips[ac]->lanes[l].clip;
                 uint16_t rs = tr->drum_current_step[l];
-                if (rs < rlc->length) {
+                /* The playhead runs inside the lane's loop window
+                 * [loop_start, loop_start + length): test and wrap against
+                 * that, as the pad recorder does — not against the length. */
+                const uint16_t r_ls = rlc->loop_start;
+                const uint16_t r_le = (uint16_t)(r_ls + rlc->length);
+                if (rs >= r_ls && rs < r_le) {
                     int16_t off = (int16_t)tr->drum_tick_in_step[l];
                     if (off >= (int16_t)(TICKS_PER_STEP / 2)) {
-                        rs = (rs + 1) % rlc->length;
+                        rs = (uint16_t)(rs + 1);
+                        if (rs >= r_le) rs = r_ls;
                         off -= (int16_t)TICKS_PER_STEP;
                     }
                     /* Sub-feature 3: preserve actual sub-step offset; stack regardless of InQ. */
@@ -4031,11 +4043,12 @@ static void tarp_tick(seq8_instance_t *inst, seq8_track_t *tr) {
                 tarp_fire_step(inst, tr);
             }
         } else {
-            uint32_t total = inst->arp_master_tick - a->master_anchor;
-            if ((total % rate) == 0) {
-                a->pending_first_note = 0;
-                tarp_fire_step(inst, tr);
-            }
+            /* Sync off = FREE: the pattern starts on the press. The anchor is
+             * 0 at a press, so testing (tick - anchor) % rate here was the
+             * Sync-on test again — up to a whole rate interval of latency. */
+            a->master_anchor      = inst->arp_master_tick;
+            a->pending_first_note = 0;
+            tarp_fire_step(inst, tr);
         }
         return;
     }

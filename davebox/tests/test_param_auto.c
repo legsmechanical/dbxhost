@@ -270,6 +270,25 @@ int main(void) {
         pa_list(h, buf, sizeof(buf));
         HX_ASSERT(list_count(buf) == 2, "the owner may automate it in any clip");
         OK("⚠ one target, one track: a second track's write is refused and the owner named");
+
+        /* ...and ownership ends with the automation. A deleted lane is kept as
+         * a retired entry (it remembers the rest value), which nothing lists —
+         * it used to go on owning the target, so another track was refused
+         * "already automated by track 3" with nothing on track 3 to delete. */
+        hx_set_param(h, "t2_pa_clear_key", "0 1:fx1:cutoff");
+        hx_get_param(h, "pa_owner 1:fx1:cutoff", buf, sizeof(buf));
+        HX_ASSERT(!strcmp(buf, "2"), "control: still owned while one of the owner's lanes remains");
+        hx_set_param(h, "t2_pa_clear_key", "7 1:fx1:cutoff");
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(list_count(buf) == 0, "control: both lanes are gone from the list");
+        hx_get_param(h, "pa_owner 1:fx1:cutoff", buf, sizeof(buf));
+        HX_ASSERT(!strcmp(buf, "-1"), "a target whose automation was all deleted has no owner");
+        pa_set(h, 5, 3, "1:fx1:cutoff", 0, 200);
+        pa_list(h, buf, sizeof(buf));
+        HX_ASSERT(list_count(buf) == 1 && strstr(buf, "5 3 "), "another track may now automate it");
+        hx_get_param(h, "pa_owner 1:fx1:cutoff", buf, sizeof(buf));
+        HX_ASSERT(!strcmp(buf, "5"), "and becomes the owner");
+        OK("a deleted lane gives the target up");
         hx_destroy(h);
 
         /* The POINT cap within one entry. */

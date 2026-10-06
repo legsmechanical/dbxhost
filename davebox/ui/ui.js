@@ -263,7 +263,6 @@ globalThis.init = function () {
         });
 
     const p = host_module_get_param('playing');
-    const dspSurvived = (p !== null && p !== undefined);
 
     console.log('SEQ8 init: ' + (p === '1' ? 'RESUMED playing' : 'FRESH/stopped'));
 
@@ -352,7 +351,9 @@ globalThis.init = function () {
         resolveSetLoadDecision();
     }
 
-    S.playing = dspSurvived;
+    /* What the engine ANSWERED, not whether it answered: '0' is a live,
+     * stopped engine. */
+    S.playing = (p === '1');
 
     for (let t = 0; t < NUM_TRACKS; t++) {
         const ac = host_module_get_param('t' + t + '_active_clip');

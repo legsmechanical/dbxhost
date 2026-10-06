@@ -674,8 +674,10 @@ function renderSession(){
       :trk.route===0?(mixKV["chain:"+t+":synth_name"]||mixKV["chain:"+t+":synth_module"]||"Synth")
       :trk.route===1?("Move "+moveBusForChannel(trk.chan))
       :trk.route===2?("MIDI Ch."+trk.chan):null;
-    const lbl=(instShort!=null)?`${t+1} - ${instShort}`:(trk.pm===1?"D":trk.pm===2?"C":"M")+(t+1);
-    const ttl=(instShort!=null)?`Track ${t+1} → ${instShort}`:`track ${t+1}`;
+    /* instShort can be a MODULE's own name and goes into innerHTML and a
+     * title="" attribute: escape it (escMix, web_ui_mix.js). */
+    const lbl=(instShort!=null)?`${t+1} - ${escMix(instShort)}`:(trk.pm===1?"D":trk.pm===2?"C":"M")+(t+1);
+    const ttl=(instShort!=null)?`Track ${t+1} → ${escMix(instShort)}`:`track ${t+1}`;
     /* conductor / responder indicator (rui_cond): "C" on the conductor track,
      * a dot on every non-drum responder track */
     let cind="";

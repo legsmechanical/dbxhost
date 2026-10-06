@@ -7,6 +7,51 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed
+- **Tap Tempo flashes its pad again.** Every tap set the tempo and then hit an
+  error, so the pad never flashed and the screen did not redraw.
+- **Moving a scene row keeps each clip's direction.** A reversed or ping-pong
+  clip (or drum lane) played forward after its row was cut and pasted.
+- **A Conductor track turned into a drum track gives the role back.** No other
+  track could become the Conductor until the project was reloaded.
+- **Switching projects ends a running Performance Mode loop.** The loop from
+  the project you left kept playing over the one you opened.
+- **Shift + Loop in Session View only toggles the latch.** Letting go of it
+  also dropped the held Performance Mode modifiers and stopped a running loop.
+- **Back no longer lights for a return it can't make.** After jumping to a
+  bank from AUTOMATION and then switching track or bank, Back stayed lit and a
+  tap did nothing.
+- **Web UI: instrument names with `<` or `"` no longer break the session
+  grid.**
+- **Deleting a parameter's automation frees it for another track.** The
+  parameter stayed "already automated by track N" with nothing left on that
+  track to delete.
+- **Web UI: editing the effects of a clip that isn't playing no longer changes
+  the sound of the one that is.**
+- **Step velocities reload as you set them.** A drum repeat step at exactly
+  100 came back as Thru, and arp step velocities of 0–4 came back as
+  0/32/64/96/Thru.
+- **Drum Repeat records into a loop that doesn't start at step 1.** With a
+  lane looping steps 9–16, held repeats recorded nothing; with other windows
+  the last hit could land outside the loop.
+- **LIVE ARP with Sync off starts when you press.** It waited for the next
+  grid line, exactly like Sync on.
+- **Track volume no longer jumps between K1 and Shift + Volume.** In the
+  instrument screens, lowering the volume with K1 and then nudging it with
+  Shift + Volume (or the other way round) snapped it back to where the other
+  control had last left it. Re-opening the screens also showed stale levels.
+- **Session Pan / Send pages and the drum NOTE FX page keep their layout
+  after you visit a module editor.** The arcs sat a pixel low and the header
+  line merged into them.
+- **The step velocity knob stops at 1.** It showed 0 for a step that still
+  played at 1.
+- **Module file browsers audition again, and selectors that change a
+  module's controls refresh the page.** A module can ask for samples to play
+  as you scroll its file browser, and for its page to be rebuilt when one
+  control swaps the others; both requests were being dropped for most
+  parameters.
+- **Opening dAVEBOx onto a stopped engine no longer acts as if it was
+  playing** for a moment (a needless save and a green Play light).
 
 ## [0.0.12] — 2026-10-05 (test build, not in the Schwung catalog)
 ### Added

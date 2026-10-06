@@ -385,6 +385,9 @@ function drawStepEditKitPage(title, cells, noteBox, footer, noStepHeld) {
  * slot) has nothing to show, so its cell is BLANK — deliberately distinct from a
  * track sitting at zero, which draws an empty widget. */
 function drawSessionMixerPage() {
+    /* The bank card's map, set explicitly — the kit's layout binding is
+     * whatever the LAST draw chose, and a module editor leaves it on its own. */
+    kitUseLayout('bank');
     const mode = SESS_KNOB_MODES[S.sessKnobMode];
     const cells = sessMixerCells(mode);
     if (mode.widget === 'vbar') { drawSessionFaderRow(cells, mode); return; }
@@ -2348,6 +2351,7 @@ function drawUIBody() {
         {
             const _tch = S.knobTouched;
             const _tcell = _tch >= 0 && cells[_tch] && cells[_tch].name ? cells[_tch] : null;
+            kitUseLayout('bank');   /* see drawSessionMixerPage */
             if (_tcell) drawKitTouchedHeader(_tcell.name);
             else drawBankHeading('NOTE FX', false);
             drawKitCells(cells, _tch);
