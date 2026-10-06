@@ -1409,7 +1409,9 @@ static int pa_owner_of(const seq8_instance_t *inst, int target) {
     if (target < 0) return -1;
     for (int i = 0; i < PA_MAX_ENTRIES; i++) {
         const pa_entry_t *e = &inst->pa_entries[i];
-        if (e->used && e->target == target) return (int)e->track;
+        /* A RETIRED lane (deleted: no points, not kept) is nothing a user can
+         * see or remove, so it owns nothing. */
+        if (e->used && pa_entry_live(e) && e->target == target) return (int)e->track;
     }
     return -1;
 }

@@ -23,6 +23,11 @@ the section into a versioned heading at release time.
   tap did nothing.
 - **Web UI: instrument names with `<` or `"` no longer break the session
   grid.**
+- **Deleting a parameter's automation frees it for another track.** The
+  parameter stayed "already automated by track N" with nothing left on that
+  track to delete.
+- **Web UI: editing the effects of a clip that isn't playing no longer changes
+  the sound of the one that is.**
 - **Opening dAVEBOx onto a stopped engine no longer acts as if it was
   playing** for a moment (a needless save and a green Play light).
 

@@ -677,8 +677,12 @@ static int sp_track_clip(sp_ctx_t *cx) {
             pfx_key[ki] = '\0';
             while (*sp == ' ') sp++;
             pfx_set(inst, tr, &cl->pfx_params, pfx_key, sp);
-            if ((int)tr->active_clip == cidx)
-                pfx_sync_from_clip(tr);
+            /* pfx_set writes the track's LIVE effects as well as this clip's
+             * stored ones. Re-deriving the live set from the ACTIVE clip makes
+             * the edit audible when this is the playing clip — and takes it
+             * back out when it is not (editing clip D's delay used to change
+             * the delay of the clip that was playing). */
+            pfx_sync_from_clip(tr);
             rui_mark(inst, tidx, cidx);
             inst->state_dirty = 1;
             return 1;
