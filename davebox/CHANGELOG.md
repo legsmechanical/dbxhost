@@ -7,6 +7,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed
+- **Tap Tempo flashes its pad again.** Every tap set the tempo and then hit an
+  error, so the pad never flashed and the screen did not redraw.
+- **Moving a scene row keeps each clip's direction.** A reversed or ping-pong
+  clip (or drum lane) played forward after its row was cut and pasted.
+- **A Conductor track turned into a drum track gives the role back.** No other
+  track could become the Conductor until the project was reloaded.
+- **Opening dAVEBOx onto a stopped engine no longer acts as if it was
+  playing** for a moment (a needless save and a green Play light).
 
 ## [0.0.12] — 2026-10-05 (test build, not in the Schwung catalog)
 ### Added

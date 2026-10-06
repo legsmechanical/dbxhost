@@ -129,6 +129,11 @@ static int sp_track_config2(sp_ctx_t *cx) {
             convert_track_melodic_to_drum(inst, tidx);
             rui_mark_rec(inst, tr, tidx, (int)tr->active_clip);   /* content translated */
         }
+        /* Leaving the Conductor role: clear the one-Conductor latch. */
+        if (inst->conductor_track == tidx) {
+            inst->conductor_track = -1;
+            inst->state_dirty = 1;
+        }
         return 1;
     }
     if (!strcmp(sub, "convert_to_melodic")) {

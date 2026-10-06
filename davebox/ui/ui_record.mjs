@@ -144,28 +144,30 @@ export function closeTapTempo() {
 }
 
 export function registerTapTempo(padNote) {
-    const nowMs  = Date.now();
+    /* Wall time for the tap intervals; the flash below is on the UI clock
+     * (nowMs), which is what the LED painter compares against. */
+    const wallMs = Date.now();
     const taps   = S.tapTempoTapTimes;
     const last   = taps.length > 0 ? taps[taps.length - 1] : -1;
-    const intvl  = last >= 0 ? nowMs - last : -1;
+    const intvl  = last >= 0 ? wallMs - last : -1;
 
     /* Inactivity reset: gap exceeds 2s */
     if (intvl > TAP_TEMPO_RESET_MS) {
-        S.tapTempoTapTimes = [nowMs];
+        S.tapTempoTapTimes = [wallMs];
     } else if (intvl > 0 && taps.length >= 2) {
         /* Deviation reset: new interval differs from previous by >~1.8x */
         const prevIntvl = taps[taps.length - 1] - taps[taps.length - 2];
         const ratio     = intvl / prevIntvl;
         if (ratio > 1.8 || ratio < 0.55) {
             /* Tempo change: keep last tap as anchor for new session */
-            S.tapTempoTapTimes = [last, nowMs];
+            S.tapTempoTapTimes = [last, wallMs];
         } else {
-            taps.push(nowMs);
+            taps.push(wallMs);
             /* Sliding window: cap at last 9 taps (8 intervals) */
             if (taps.length > 9) S.tapTempoTapTimes = taps.slice(-9);
         }
     } else {
-        taps.push(nowMs);
+        taps.push(wallMs);
     }
 
     if (S.tapTempoTapTimes.length >= 2) {

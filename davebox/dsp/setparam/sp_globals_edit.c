@@ -235,6 +235,9 @@ static int sp_globals_edit(sp_ctx_t *cx) {
             dst->loop_start     = src->loop_start;
             dst->ticks_per_step = src->ticks_per_step;
             dst->pfx_params     = src->pfx_params;
+            dst->playback_dir   = src->playback_dir;
+            dst->playback_audio_reverse = src->playback_audio_reverse;
+            dst->pp_dir_state   = initial_pp_dir(dst->playback_dir);
             memcpy(dst->steps,            src->steps,            SEQ_STEPS);
             memcpy(dst->step_notes,       src->step_notes,       SEQ_STEPS * 8);
             memcpy(dst->step_note_count,  src->step_note_count,  SEQ_STEPS);
@@ -301,6 +304,9 @@ static int sp_globals_edit(sp_ctx_t *cx) {
                 dc->loop_start     = sc->loop_start;
                 dc->ticks_per_step = sc->ticks_per_step;
                 dc->active         = sc->active;
+                dc->playback_dir   = sc->playback_dir;
+                dc->playback_audio_reverse = sc->playback_audio_reverse;
+                dc->pp_dir_state   = initial_pp_dir(dc->playback_dir);
                 ddst->lanes[l].midi_note = dst_midi_note;
                 clip_migrate_to_notes(dc);
                 pfx_note_off_imm(inst, tr, src_midi_note);
