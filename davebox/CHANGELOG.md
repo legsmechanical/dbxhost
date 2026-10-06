@@ -45,6 +45,11 @@ the section into a versioned heading at release time.
   line merged into them.
 - **The step velocity knob stops at 1.** It showed 0 for a step that still
   played at 1.
+- **Module file browsers audition again, and selectors that change a
+  module's controls refresh the page.** A module can ask for samples to play
+  as you scroll its file browser, and for its page to be rebuilt when one
+  control swaps the others; both requests were being dropped for most
+  parameters.
 - **Opening dAVEBOx onto a stopped engine no longer acts as if it was
   playing** for a moment (a needless save and a green Play light).
 

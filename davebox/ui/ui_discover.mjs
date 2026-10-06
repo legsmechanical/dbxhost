@@ -300,6 +300,17 @@ export function disambiguateLabels(cells, maxLen) {
 
 /* ---- param -> cell descriptor ------------------------------------------ */
 
+/* The flags makeCell reads that are NOT value metadata. Every path that builds
+ * a `meta` by hand goes through this: two of them used to copy the value
+ * fields and leave these out, so a file param lost its audition and a selector
+ * that swaps the knob set never re-discovered. chain_params is the authority;
+ * the hierarchy entry is the fallback, as for every other field. */
+function cellFlags(cp, hierMeta) {
+    const pick = (k) => (cp && cp[k] != null) ? cp[k] : (hierMeta ? hierMeta[k] : undefined);
+    return { live_preview: pick('live_preview'), browser_hooks: pick('browser_hooks'),
+             reload_level: pick('reload_level') };
+}
+
 export function makeCell(key, meta) {
     const label = String(meta.name || meta.label || key);
     const type = meta.type || 'float';
@@ -1299,6 +1310,7 @@ export function discover(slot, comp, opts = {}) {
             short_options: cp.short_options
                 || (hierMeta && hierMeta.short_options) || null,
             root: cp.root, filter: cp.filter, start_path: cp.start_path,
+            ...cellFlags(cp, hierMeta),
         };
         seen[key] = true;
         const cell = makeCell(key, meta);
@@ -1589,6 +1601,7 @@ export function menuCell(key, levels, levelKey, cpMap) {
         root: cp.root  != null ? cp.root  : (hierMeta && hierMeta.root),
         filter: cp.filter != null ? cp.filter : (hierMeta && hierMeta.filter),
         start_path: cp.start_path != null ? cp.start_path : (hierMeta && hierMeta.start_path),
+        ...cellFlags(cp, hierMeta),
     });
 }
 
