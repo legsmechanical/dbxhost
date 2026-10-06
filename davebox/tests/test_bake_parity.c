@@ -68,6 +68,37 @@ int main(void) {
     HX_ASSERT(inst->tracks[1].clips[0].length == 32, "D3: bake did not unroll to 32 steps");
     hx_destroy(h);
 
+    /* ---- D3b: the same, for a clip whose loop is PAGE 2 (steps 17-32). The
+     * bake moves the notes to the start of the clip and resets the loop start,
+     * but the automation's points stay where they were written — at the old
+     * window's ticks (384..767). Pinned with offset 0 the lane then looked in
+     * [0, 384), found nothing, and held one value for the whole clip. The pin
+     * carries the old window's START as well as its length. */
+    for (int loops = 1; loops <= 2; loops++) {
+        char bake[32];
+        h = hx_create(NULL);
+        inst = (seq8_instance_t *)h->inst;
+        hx_set_param(h, "t1_c0_step_16_toggle", "60 100");
+        hx_set_param(h, "t1_c0_loop_set", "1048592");            /* (16 << 16) | 16 */
+        HX_ASSERT(inst->tracks[1].clips[0].loop_start == 16 && inst->tracks[1].clips[0].length == 16,
+                  "D3b rig: the loop window was not set");
+        hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 384 407 8000");
+        snprintf(bake, sizeof bake, "1 0 0 %d 0 0", loops);
+        hx_set_param(h, "bake", bake);
+        HX_ASSERT(inst->tracks[1].clips[0].loop_start == 0, "D3b rig: the bake did not reset the loop start");
+        HX_ASSERT(find_note(&inst->tracks[1].clips[0], 0, -1) >= 0, "D3b rig: the note was not moved to the clip start");
+        {
+            char _pl[4096];
+            hx_get_param(h, "pa_list", _pl, sizeof(_pl));
+            /* pa_list: … target, loop length, rate, scale %, loop START, step */
+            if (!strstr(_pl, "1 0 1 1 1:synth:cutoff 384 0 100 384 ")) {
+                fprintf(stderr, "FAIL: D3b (loops=%d): the automation was not pinned to the old window (384 ticks from 384): %s\n", loops, _pl);
+                return 1;
+            }
+        }
+        hx_destroy(h);
+    }
+
     /* ---- D5 + echo-gate parity: scale-aware delay feedback.
      * C major, primary 60 (C), HARMZ +2 degrees -> copy 64 (E), fb_note +1
      * degree. Live: delta = st(60,+1)-60 = +2 semitones applied to BOTH

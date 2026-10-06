@@ -390,11 +390,12 @@ static void pa_entry_retire(pa_entry_t *e) {
 
 /* BAKE (P7, 2026-09-04): a clip about to be UNROLLED to a new length keeps
  * its automation aligned by pinning every entry that followed the clip
- * (loop_len == 0) to the PRE-bake length, in lane ticks — the same pin the
- * CC lanes get. The store is per (track, clip) and untouched by clip_init,
+ * (loop_len == 0) to the PRE-bake window — its start and its length, in lane
+ * ticks. The store is per (track, clip) and untouched by clip_init,
  * so this is the whole of "automation survives a bake". SPI thread (the
  * bake runs from set_param): takes the writer lock. */
-static void pa_pin_clip_length(seq8_instance_t *inst, int track, int clip, uint32_t old_ticks) {
+static void pa_pin_clip_length(seq8_instance_t *inst, int track, int clip,
+                               uint32_t old_start, uint32_t old_ticks) {
     if (!old_ticks) return;
     pa_lock(inst);
     pa_write_begin(inst);
@@ -403,7 +404,10 @@ static void pa_pin_clip_length(seq8_instance_t *inst, int track, int clip, uint3
         if (e->track != track || e->clip != clip || !pa_entry_live(e)) continue;
         if (e->loop_len) continue;                       /* already its own window */
         e->loop_len = (uint16_t)(old_ticks > 0xFFFFu ? 0xFFFFu : old_ticks);
-        e->loop_off = 0;
+        /* The points stay at the ticks they were written on — the OLD loop
+         * window's. The bake moves the notes to the clip start and resets the
+         * loop start, so the lane's own window has to say where they are. */
+        e->loop_off = (uint16_t)(old_start > 0xFFFFu ? 0xFFFFu : old_start);
         inst->pa_dirty = 1;
     }
     pa_write_end(inst);

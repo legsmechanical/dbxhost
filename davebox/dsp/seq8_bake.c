@@ -741,8 +741,12 @@ static void bake_clip(seq8_instance_t *inst, int t, int c, int loops, int wrap,
      * length BEFORE the length change — a clip-following entry would otherwise
      * stretch across the unrolled clip and lose the note<->automation alignment
      * the user heard. (The old CC lanes that once shared this pin left in P8.) */
-    if (new_length != cl->length)
-        pa_pin_clip_length(inst, t, c, (uint32_t)cl->length * (uint32_t)cl->ticks_per_step);
+    /* ...and whenever the loop did not start at step 1: the length may be
+     * unchanged, but clip_init below resets loop_start and the notes were
+     * rebased to 0, so a clip-following entry would look in the wrong place. */
+    if (new_length != cl->length || cl->loop_start != 0)
+        pa_pin_clip_length(inst, t, c, (uint32_t)cl->loop_start * (uint32_t)cl->ticks_per_step,
+                           (uint32_t)cl->length * (uint32_t)cl->ticks_per_step);
     clip_init(cl);
     cl->ticks_per_step = tps;
     cl->length         = new_length;
