@@ -16,6 +16,7 @@
 #include <math.h>
 #include <ctype.h>
 #include <dlfcn.h>
+#include "host/module_dlopen.h"   /* MODULE_DLOPEN_FLAGS: module code is never unmapped */
 #include <dirent.h>
 #include <limits.h>
 #include <time.h>

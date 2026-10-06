@@ -7,6 +7,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <dlfcn.h>
+#include "module_dlopen.h"   /* MODULE_DLOPEN_FLAGS: module code is never unmapped */
 #include <sys/stat.h>
 #include "module_manager.h"
 
@@ -520,7 +521,7 @@ int mm_load_module(module_manager_t *mm, int index) {
     if (has_dsp) {
         /* Load DSP plugin */
         printf("mm: loading DSP plugin: %s\n", info->dsp_path);
-        mm->dsp_handle = dlopen(info->dsp_path, RTLD_NOW | RTLD_LOCAL);
+        mm->dsp_handle = dlopen(info->dsp_path, MODULE_DLOPEN_FLAGS);
         if (!mm->dsp_handle) {
             printf("mm: dlopen failed: %s\n", dlerror());
             return -1;

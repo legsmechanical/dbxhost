@@ -8,6 +8,11 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Fixed
+- **A module can no longer crash the Move when you leave its project.** An
+  instrument that finishes shutting down in the background (Clementine XT
+  does) crashed dAVEBOx every time its project was switched away from — and
+  on the next start, if that was the project it opened on. The host now keeps
+  a module's code loaded after unloading it.
 - **Tap Tempo flashes its pad again.** Every tap set the tempo and then hit an
   error, so the pad never flashed and the screen did not redraw.
 - **Moving a scene row keeps each clip's direction.** A reversed or ping-pong

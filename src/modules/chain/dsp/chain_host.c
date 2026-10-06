@@ -279,7 +279,7 @@ static int v2_load_audio_fx_slot(chain_instance_t *inst, int slot, const char *f
              inst->module_dir, fx_name, fx_name);
     snprintf(fx_dir, sizeof(fx_dir), "%s/../audio_fx/%s", inst->module_dir, fx_name);
 
-    void *handle = dlopen(fx_path, RTLD_NOW | RTLD_LOCAL);
+    void *handle = dlopen(fx_path, MODULE_DLOPEN_FLAGS);
     if (!handle) {
         snprintf(msg, sizeof(msg), "dlopen failed for FX %s: %s", fx_name, dlerror());
         v2_chain_log(inst, msg);
@@ -453,7 +453,7 @@ int v2_load_synth(chain_instance_t *inst, const char *module_name) {
     v2_chain_log(inst, msg);
 
     /* Open shared library */
-    void *handle = dlopen(dsp_path, RTLD_NOW | RTLD_LOCAL);
+    void *handle = dlopen(dsp_path, MODULE_DLOPEN_FLAGS);
     if (!handle) {
         snprintf(msg, sizeof(msg), "dlopen failed: %s", dlerror());
         v2_chain_log(inst, msg);
@@ -679,7 +679,7 @@ int v2_load_audio_fx(chain_instance_t *inst, const char *fx_name) {
              inst->module_dir, fx_name, fx_name);
     snprintf(fx_dir, sizeof(fx_dir), "%s/../audio_fx/%s", inst->module_dir, fx_name);
 
-    void *handle = dlopen(fx_path, RTLD_NOW | RTLD_LOCAL);
+    void *handle = dlopen(fx_path, MODULE_DLOPEN_FLAGS);
     if (!handle) {
         snprintf(msg, sizeof(msg), "dlopen failed for FX %s: %s", fx_name, dlerror());
         v2_chain_log(inst, msg);
