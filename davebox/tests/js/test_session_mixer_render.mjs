@@ -245,6 +245,25 @@ if (countFaders() === fadersRouted + 1) ok('control: the same track with no dest
 else bad('control: the same track with no destination draws its CC 7 fader instead', `${fadersRouted} -> ${countFaders()}`);
 S.trackRoute[6] = 0; S.trackMidiTo[6] = 0;
 
+/* The Pan / Send grid draws on the BANK layout whatever drew last. The kit's
+ * row map is module state that the last draw call chose; the module editor
+ * leaves it on 'sound', and this page never set its own — so after visiting
+ * an editor the arcs sat a pixel low and the touched header merged into them. */
+{
+    const kit = await import('../../ui/ui_movy.mjs');
+    const shot = () => { fills.length = 0; draw(); return JSON.stringify(fills); };
+    S.sessKnobMode = 1; S.knobTouched = 2; S.jogTouched = false; S.bankSelectTick = -1;
+    S.knobTurnedTick[2] = -1;
+    kit.kitUseLayout('bank');
+    const want = shot();
+    kit.kitUseLayout('sound');
+    const got = shot();
+    if (want.length < 50) bad('the pan page keeps the bank layout', 'rig: the page drew nothing to compare');
+    else if (got === want) ok('the pan page draws the same after a module editor left the kit on its own layout');
+    else bad('the pan page keeps the bank layout', 'the page drew differently with the kit left on the sound layout');
+    kit.kitUseLayout('bank');
+}
+
 if (failed) process.exit(1);
 console.log('test_session_mixer_render: PASS');
 }

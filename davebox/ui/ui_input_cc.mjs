@@ -4238,7 +4238,7 @@ function _onCC_stepedit(d1, d2) {
         } else if (knobIdx === 1) {
             const _sv = ccKnobDelta(d2, knobIdx);   /* unified: cont accel */
             if (_sv === 0) return;
-            S.stepEditVel = Math.max(0, Math.min(127, S.stepEditVel + _sv));
+            S.stepEditVel = Math.max(1, Math.min(127, S.stepEditVel + _sv));   /* the engine floors at 1 */
             host_module_set_param('t' + t + '_l' + lane + '_step_' + S.heldStep + '_vel', String(S.stepEditVel));
         } else if (knobIdx === 2) {
             const _sn = ccKnobDelta(d2, knobIdx);   /* unified: cont accel */
@@ -4335,7 +4335,7 @@ function _onCC_stepedit(d1, d2) {
             /* K4 Vel: velocity 0-127, cont accel */
             const _sv = ccKnobDelta(d2, knobIdx);
             if (_sv === 0) return;
-            S.stepEditVel = Math.max(0, Math.min(127, S.stepEditVel + _sv));
+            S.stepEditVel = Math.max(1, Math.min(127, S.stepEditVel + _sv));   /* the engine floors at 1 */
             host_module_set_param(pfx + '_vel', String(S.stepEditVel));
         } else if (knobIdx === 4) {
             /* K5 Nudge: tick offset ±(TPS-1), cont accel */

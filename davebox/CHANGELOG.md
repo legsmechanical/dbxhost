@@ -40,6 +40,11 @@ the section into a versioned heading at release time.
   instrument screens, lowering the volume with K1 and then nudging it with
   Shift + Volume (or the other way round) snapped it back to where the other
   control had last left it. Re-opening the screens also showed stale levels.
+- **Session Pan / Send pages and the drum NOTE FX page keep their layout
+  after you visit a module editor.** The arcs sat a pixel low and the header
+  line merged into them.
+- **The step velocity knob stops at 1.** It showed 0 for a step that still
+  played at 1.
 - **Opening dAVEBOx onto a stopped engine no longer acts as if it was
   playing** for a moment (a needless save and a green Play light).
 
