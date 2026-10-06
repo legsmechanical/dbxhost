@@ -1402,6 +1402,11 @@ export function soundEnter(track, slot) {
     S.blockNames = [];
     S.pendingAction = { t: 'names' };
     claimVolume(slot);
+    /* The level cache is per VISIT: it is seeded once per "<slot>/<bus>" and
+     * that key is the same on the next entry — after automation, the web UI
+     * or another project moved the levels. Read them again. (Not while a
+     * turn is still owed to the engine: the seed would overwrite it.) */
+    if (!S.levelPending) S.levelSeededFor = '';
     S.dirty = true;
     log('enter: track ' + track + ' slot ' + slot);
 }
@@ -1847,6 +1852,7 @@ export function soundExit() {
     S.padWatchUntil = -1;
     S.padVouchTries = 0;
     S.pollCursor = -1;
+    S.levelSeededFor = '';     /* every door back in reads the levels again (see soundEnter) */
     S.dirty = true;
     log('exit');
 }
@@ -2092,6 +2098,7 @@ function onLevelTurn(idx, delta, bounds) {
     if (!m.fader) v = Math.round(v * 1000) / 1000;
     if (v === prev) return;
     S.levelVals[idx] = v;
+    if (m.key === 'volume') volumeMirror(v, 'level');
     S.levelPending |= (1 << idx);
     S.levelDirtySave = true;
     automationParamEdit(S.track, effectiveClip(S.track), S.slot, levelFullKey(idx), lvWire(m.key, v), lvWire(m.key, prev));
@@ -2266,6 +2273,21 @@ function writeVolLevel(slot, v) {
     else engineSetSlotParam(slot, SLOT_LEVEL_KEY, faderWire(v));
 }
 
+/* ONE VALUE, THREE COPIES. The track / bus volume is held by the level knobs
+ * (S.levelVals[0]), by Shift+Volume (S.volLevel) and by the VOLUME row of the
+ * menu (its r.val). Each is seeded once and steps from its own copy, so a
+ * write through one must tell the other two — or the next turn through
+ * another door jumps back to wherever that copy was left. `from` is the
+ * writer, which already holds the value. */
+function volumeMirror(v, from) {
+    if (from !== 'level' && S.levelSeededFor === levelSeedKey() && levelKnobSpec(0)) S.levelVals[0] = v;
+    if (from !== 'vol') S.volLevel = v;
+    if (from !== 'row') {
+        const r = S.pickRows.find(r => r.kind === 'buslevel' && r.spec.key === 'volume');
+        if (r) r.val = v;
+    }
+}
+
 /* ⚠ Renamed in spirit, 2026-08-24: these no longer touch host_vol_block.
  * The knob CLAIM rides the Shift key globally (ui_input_cc's MoveShift
  * handler) — plain volume is Move's main output everywhere now, and
@@ -2301,6 +2323,7 @@ function onVolumeTurn(delta) {
     if (v > VOL_MAX) v = VOL_MAX;
     if (v === S.volLevel) return;
     S.volLevel = v;
+    volumeMirror(v, 'vol');
     S.volDirtySave = true;
     S.volShownUntil = nowMs() + VOL_SHOW_MS;
     /* Queued, NOT written here — this runs in the MIDI handler and
@@ -3622,6 +3645,7 @@ function busLevelStep(delta) {
     if (v > sp.max) v = sp.max;
     if (v !== r.val) {
         r.val = v;
+        if (sp.key === 'volume') volumeMirror(v, 'row');
         S.busLevelDirty = true;
         /* Queued like every write here — this is the MIDI handler. */
         if (sp.slot) queueSlotCfgWrite(sp.key, v, !!sp.int);

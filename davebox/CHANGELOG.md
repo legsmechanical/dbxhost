@@ -36,6 +36,10 @@ the section into a versioned heading at release time.
   the last hit could land outside the loop.
 - **LIVE ARP with Sync off starts when you press.** It waited for the next
   grid line, exactly like Sync on.
+- **Track volume no longer jumps between K1 and Shift + Volume.** In the
+  instrument screens, lowering the volume with K1 and then nudging it with
+  Shift + Volume (or the other way round) snapped it back to where the other
+  control had last left it. Re-opening the screens also showed stale levels.
 - **Opening dAVEBOx onto a stopped engine no longer acts as if it was
   playing** for a moment (a needless save and a green Play light).
 
