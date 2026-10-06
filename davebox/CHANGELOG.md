@@ -28,6 +28,9 @@ the section into a versioned heading at release time.
   track to delete.
 - **Web UI: editing the effects of a clip that isn't playing no longer changes
   the sound of the one that is.**
+- **Step velocities reload as you set them.** A drum repeat step at exactly
+  100 came back as Thru, and arp step velocities of 0–4 came back as
+  0/32/64/96/Thru.
 - **Opening dAVEBOx onto a stopped engine no longer acts as if it was
   playing** for a moment (a needless save and a green Play light).
 
