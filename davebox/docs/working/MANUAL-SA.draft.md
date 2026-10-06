@@ -1208,9 +1208,15 @@ says **KNB+CLK NUDGE** or **KNB+CLK VELOCITY**, whichever is next.
 
 # 10. Automation
 
-**Anything you can turn, you can automate** — a synth or effect parameter, a
-level, a bank knob, or a MIDI target. There's no lane to arm: the knob that plays a
-parameter records it.
+**Almost anything you can turn in dAVEBOx, you can automate** — a Schwung
+instrument's or effect's parameter, a level, a bank knob, or a MIDI target. There's
+no lane to arm: the knob that plays a parameter records it.
+
+**Not a Move instrument's own parameters.** On a track that plays one of Move's
+instruments (Drift, Wavetable, a drum rack…), its sound is edited in Move's own
+editor, and dAVEBOx can't reach those knobs: holding a step and turning one writes
+no lock, and recording doesn't capture it. The track's **levels**, its **MACROS**
+(Aftertouch, Pitch Bend) and dAVEBOx's own bank knobs still automate there.
 
 ## 10.1 Making it
 
@@ -1231,7 +1237,7 @@ carries through its first steps until the first lock or recorded move comes roun
 A recorded (smooth) move glides from its last value back to its first across the
 loop point.
 
-**What can be automated:** the module editor's pages, the levels on
+**What can be automated:** a Schwung module's editor pages, the levels on
 **MIX** and in the session mixer, the eight **MACROS**, and these
 dAVEBOx bank knobs — CLIP and ALL LANES direction, NOTE FX (all but `LEN>`),
 HARMONY, DELAY, and SEQ ARP (all but `STEPS`). On a drum track, NOTE FX is set per
