@@ -152,6 +152,10 @@ print(f"click-seq8.wav: {frames_out} frames @ 48000 Hz, 16-bit mono (resampled f
 PYEOF
 
 echo "Verifying GLIBC symbol versions (must be <= 2.35)..."
+# NM_BIN is also read further down (the artifact check): an amd64 builder (CI)
+# has only the cross nm, an arm64 one (a Mac) the native.
+NM_BIN="${CROSS_PREFIX}nm"
+command -v "$NM_BIN" >/dev/null 2>&1 || NM_BIN="nm"
 # A real gate now: this used to print the versions and `|| true`.
 scripts/check-glibc.sh "dist/${MODULE_ID}/dsp.so" 2.35 || {
     echo "ERROR: dsp.so would not load on the Move (GLIBC too new, or unreadable)." >&2

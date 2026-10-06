@@ -18,5 +18,12 @@ grep -q 'scripts/check-glibc.sh "dist/${MODULE_ID}/dsp.so"' scripts/build_sound.
     || { echo "FAIL: build_sound.sh does not call the gate" >&2; fail=1; }
 grep -n 'GLIBC' scripts/build_sound.sh | grep -q '|| true' \
     && { echo "FAIL: build_sound.sh still swallows the GLIBC check" >&2; fail=1; }
+# build_sound.sh hands $NM_BIN to the artifact check further down. Replacing the
+# old inline GLIBC lines once dropped its definition: green on an arm64 builder
+# (native nm on PATH), "no nm" on CI's amd64 one — the release build failed.
+def="$(grep -n '^NM_BIN=' scripts/build_sound.sh | head -1 | cut -d: -f1)"
+use="$(grep -n 'check-artifact.sh.*"\$NM_BIN"' scripts/build_sound.sh | head -1 | cut -d: -f1)"
+if [ -z "$use" ]; then echo "FAIL: build_sound.sh no longer passes \$NM_BIN to check-artifact.sh - update this pin" >&2; fail=1
+elif [ -z "$def" ] || [ "$def" -ge "$use" ]; then echo "FAIL: build_sound.sh uses \$NM_BIN (line $use) without defining it first" >&2; fail=1; fi
 [ $fail -eq 0 ] && echo "PASS: the GLIBC gate fails on a too-new symbol and on an unreadable file"
 exit $fail
