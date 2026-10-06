@@ -31,6 +31,11 @@ the section into a versioned heading at release time.
 - **Step velocities reload as you set them.** A drum repeat step at exactly
   100 came back as Thru, and arp step velocities of 0–4 came back as
   0/32/64/96/Thru.
+- **Drum Repeat records into a loop that doesn't start at step 1.** With a
+  lane looping steps 9–16, held repeats recorded nothing; with other windows
+  the last hit could land outside the loop.
+- **LIVE ARP with Sync off starts when you press.** It waited for the next
+  grid line, exactly like Sync on.
 - **Opening dAVEBOx onto a stopped engine no longer acts as if it was
   playing** for a moment (a needless save and a green Play light).
 
