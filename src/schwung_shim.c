@@ -4925,7 +4925,9 @@ static void shadow_drain_param_lane(void) {
                 param_lane_apply_errors++;
             }
         } else {
+            uint64_t pp_t0 = pp_now_us();
             int rc = shadow_param_apply_set((int)s_lane_rec.slot, s_lane_rec.key, s_lane_rec.value);
+            pp_note("cl", (int)s_lane_rec.slot, s_lane_rec.key, pp_t0);
             if (rc != 0) param_lane_apply_errors++;
             /* Same real-time browser echo the mailbox arm gets from
              * shadow_param_publish_response and the web drain pushes by hand. */
