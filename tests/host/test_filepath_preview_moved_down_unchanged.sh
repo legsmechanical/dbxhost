@@ -43,7 +43,9 @@ const swaps = [
     ["import { pathHiddenFromBrowsers } from \x27./session_state.mjs\x27;",
      "const pathHiddenFromBrowsers = () => false; /* not exercised here */"],
     ["import { parseMetaBool } from \x27./param_pages/visibility.mjs\x27;",
-     "import { parseMetaBool } from \x27" + visUrl + "\x27;"]
+     "import { parseMetaBool } from \x27" + visUrl + "\x27;"],
+    ["import { compareNames } from \x27./name_sort.mjs\x27;",
+     "import { compareNames } from \x27" + pathToFileURL("src/shared/name_sort.mjs").href + "\x27;"]
 ];
 for (const [from, to] of swaps) {
     if (src.split(from).length - 1 !== 1) {

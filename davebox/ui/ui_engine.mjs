@@ -382,6 +382,8 @@ export function trackLevelCardText(track, gain) {
 import { MIN_STEP_RANGE_FRAC, ARC_DELTA_SCALE, ENUM_DELTA_DIV, NARROW_RANGE_MAX,
          MID_RANGE_MAX, MID_DELTA_DIV }
     from '/data/UserData/schwung/shared/knob_engine.mjs';
+/* The one order every name list uses: case-insensitive, digits as numbers. */
+import { compareNames } from '/data/UserData/schwung/shared/name_sort.mjs';
 export const PAGE_KNOB = Object.freeze({
     frac: MIN_STEP_RANGE_FRAC * ARC_DELTA_SCALE,      /* of the range, per detent (0.005) */
     positions: Math.round(1 / (MIN_STEP_RANGE_FRAC * ARC_DELTA_SCALE)),   /* 200 */
@@ -834,7 +836,7 @@ export function engineListModules(comp) {
             } catch (e) { /* skip unreadable/!json module dirs */ }
         }
     } catch (e) { /* missing category dir = no modules of this type */ }
-    result.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    result.sort((a, b) => compareNames(a.name, b.name));
     engineNoteModuleAbbrevs(result);   /* the header's mark, learned at the scan */
     return result;
 }
@@ -1411,7 +1413,7 @@ export function engineListUserPresets(moduleId) {
             out.push({ name, path: dir + '/' + entry });
         }
     } catch (e) { /* no folder = this module has no user presets */ }
-    out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    out.sort((a, b) => compareNames(a.name, b.name));
     return out;
 }
 

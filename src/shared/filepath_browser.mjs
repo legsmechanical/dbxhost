@@ -6,6 +6,7 @@
  */
 
 import { pathHiddenFromBrowsers } from './session_state.mjs';
+import { compareNames } from './name_sort.mjs';
 /* ⚠⚠ RELATIVE, and every sibling import in the shared library must be. An
  * absolute `/data/UserData/schwung/...` is an address in the OTHER install —
  * the device carries two complete trees by design — and two specifiers for one
@@ -225,8 +226,8 @@ export function refreshFilepathBrowser(state, fsLike) {
         state.error = 'Unable to read folder';
     }
 
-    dirs.sort((a, b) => a.label.localeCompare(b.label));
-    files.sort((a, b) => a.label.localeCompare(b.label));
+    dirs.sort((a, b) => compareNames(a.label, b.label));
+    files.sort((a, b) => compareNames(a.label, b.label));
     state.items.push(...dirs, ...files);
 
     if (state.selectedPath) {
