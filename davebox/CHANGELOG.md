@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.14] — 2026-10-06 (test build, not in the Schwung catalog)
 ### Fixed
 - **A step's parameter lock lands on its own step.** A lock on a Schwung
   instrument or effect parameter (and on a track or bus level) was heard one
