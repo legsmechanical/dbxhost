@@ -2294,16 +2294,23 @@ static void pfx_emit(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
  * preprocessed TU being byte-identical pre/post (`clang -E -P`). Do not tidy. */
 #include "seq8_looper.c"
 
-/* For every route with at least one track assigned, broadcast a panic on
- * all 16 MIDI channels (not just the channels our tracks happen to use).
- * Each route gets exactly one sweep — one representative pfx per route. */
-static void send_panic(seq8_instance_t *inst) {
+/* Silence every route a track is assigned to.
+ *
+ * `full`: the note-off sweep covers all 16 MIDI channels of a chain slot —
+ * the PANIC gesture and a project clear, where nothing is too thorough.
+ * Otherwise only the channels the tracks playing into that slot send on:
+ * every transport stop runs this, and 16 x 128 note-offs into a synth in one
+ * set_param measured 1.3-1.45 ms on the device against a 0.9 ms frame budget
+ * (more with several slots sounding). All Notes Off still goes to all 16
+ * channels either way. */
+static void send_panic_ex(seq8_instance_t *inst, int full) {
     play_fx_t *route_pfx[3] = { NULL, NULL, NULL };
     /* The Schwung route by SLOT: a panic must reach every chain slot that a
      * track plays into, not the first track's slot only (the sweep used to
      * pick ONE representative per route — a second slot never got it). */
     play_fx_t *slot_pfx[SEQ8_CHAIN_SLOTS] = { 0 };
     uint8_t    slot_hot[SEQ8_CHAIN_SLOTS] = { 0 };   /* a note is (or was) sounding there */
+    uint16_t   slot_chs[SEQ8_CHAIN_SLOTS] = { 0 };   /* channels its tracks send on */
     int t, ch, n, s;
     /* Which chain slots have anything sounding, BEFORE the refcounts are
      * zeroed: those get the full sweep; a silent slot costs nothing. */
@@ -2339,8 +2346,12 @@ static void send_panic(seq8_instance_t *inst) {
         midi_dest_t d = midi_dest_resolve(fx->route, fx->slot, fx->midi_to);
         if (d.emit && d.route < 3 && !route_pfx[d.route])
             route_pfx[d.route] = fx;
-        if (d.emit && d.route == ROUTE_SCHWUNG && d.slot < SEQ8_CHAIN_SLOTS && !slot_pfx[d.slot])
-            slot_pfx[d.slot] = fx;
+        if (d.emit && d.route == ROUTE_SCHWUNG && d.slot < SEQ8_CHAIN_SLOTS) {
+            /* A follower's notes go out on its TARGET's channel (pfx_emit). */
+            uint8_t och = d.channel != MIDI_DEST_KEEP_CH ? d.channel : (uint8_t)(inst->tracks[t].channel & 0x0F);
+            slot_chs[d.slot] |= (uint16_t)(1u << och);
+            if (!slot_pfx[d.slot]) slot_pfx[d.slot] = fx;
+        }
     }
     /* The route's representative always sweeps (the old behaviour, so a stuck
      * note the refcounts never saw still dies); every OTHER slot only when it
@@ -2354,9 +2365,11 @@ static void send_panic(seq8_instance_t *inst) {
          * in a 256-slot queue that drops the rest (2026-10-04 review). The
          * refcounts are zeroed above, so pfx_emit lets every off through. */
         if (fx == route_pfx[ROUTE_SCHWUNG] || slot_hot[s])
-            for (ch = 0; ch < 16; ch++)
+            for (ch = 0; ch < 16; ch++) {
+                if (!full && !(slot_chs[s] & (1u << ch))) continue;
                 for (n = 0; n < 128; n++)
                     pfx_emit(fx, (uint8_t)(0x80 | ch), (uint8_t)n, 0);
+            }
         /* ...and All Notes Off to EVERY routed slot, swept or not (Josh,
          * 2026-09-30: a dspreset voice "Kept sounding after transport stop"
          * though the note-off sweep above reached its slot). Per-note offs
@@ -2383,6 +2396,8 @@ static void send_panic(seq8_instance_t *inst) {
      * per-note note-offs for every sounding voice, so the sweep is
      * redundant here. */
 }
+
+static void send_panic(seq8_instance_t *inst) { send_panic_ex(inst, 0); }
 
 /* ------------------------------------------------------------------ */
 /* BPM and timing                                                       */
@@ -5380,7 +5395,7 @@ static void clip_page_copy(clip_t *cl, int src, int dst, int cut) {
 
 static void seq8_clear_state(seq8_instance_t *inst) {
     int t, c;
-    send_panic(inst);
+    send_panic_ex(inst, 1);
     inst->playing        = 0;
     inst->count_in_ticks = 0;
     for (t = 0; t < NUM_TRACKS; t++) {

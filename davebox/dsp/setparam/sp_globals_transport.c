@@ -325,7 +325,7 @@ static int sp_globals_transport(sp_ctx_t *cx) {
             merge_finalize(inst);
             inst->playing        = 0;
             inst->count_in_ticks = 0;
-            send_panic(inst);
+            send_panic_ex(inst, 1);     /* the PANIC gesture: all 16 channels */
             looper_stop(inst);  /* also queues deferred silence for ROUTE_MOVE looper notes */
             seq8_ilog(inst, "SEQ8 transport: panic");
         } else if (!strcmp(val, "deactivate_all")) {

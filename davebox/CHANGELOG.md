@@ -23,6 +23,10 @@ the section into a versioned heading at release time.
   returns the knob to its resting value.
 
 ### Changed
+- **Stop is lighter on the audio engine.** Stopping the transport sent 2,048
+  note-offs into each sounding instrument in a single audio frame — longer
+  than the frame allows. It now clears only the MIDI channels the tracks use
+  (and still sends All Notes Off everywhere). The panic gesture is unchanged.
 - **Less work for the screen while automation plays.** The screen no longer
   asks the engine for automation values on every update once the engine is
   writing them itself — now also with automated bank knobs in the project. An
