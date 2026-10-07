@@ -101,7 +101,7 @@ const morph = await import('../../ui/ui_snapmorph.mjs');
 const P = await import('../../ui/ui_persistence.mjs');
 const { BANK_MACROS } = await import('../../ui/ui_constants.mjs');
 const await0 = await import('../../ui/ui_engine.mjs');   /* the fader law, for the level assertions */
-auto.automationRegisterSeqApply(snd.soundSeqApply);
+auto.automationRegisterSeqApply(snd.soundSeqMirror);
 auto.automationRegisterMacApply(morph.snapMorphApply);
 
 const T = 2, K = 3;                        /* track 3, knob K4 */

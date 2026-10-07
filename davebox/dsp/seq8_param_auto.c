@@ -182,6 +182,218 @@ static int pa_format_value(const pa_res_t *r, uint16_t val, char *out, int cap) 
     return n;
 }
 
+/* ------------------------------------------------------------------ */
+/* THE SEQUENCER'S OWN BANK KNOBS  ("seq:<track>:<key>")                 */
+/*                                                                      */
+/* These are this engine's parameters, so it applies them itself, at    */
+/* the tick, ahead of the tick's notes. They used to go by the ring to  */
+/* JS and come back as a set_param a tick and a frame later: heard one  */
+/* step late, and every value rewrote the clip's stored setting.        */
+/*                                                                      */
+/* PLAYBACK writes the LIVE surface only (tr->pfx) — the clip keeps the */
+/* setting it had. REST (stop, clip switch, a lane switched off) writes */
+/* live AND stored, and marks the project dirty only if stored moved.   */
+/* The two direction keys have no live copy: the clip field IS the      */
+/* surface, so they write it either way.                                */
+/*                                                                      */
+/* The table is the automatable half of JS's SEQ_AUTO_TARGETS — keys    */
+/* and ranges both (pinned by tests/js/test_automation_seq_mirror.mjs). */
+/* A seq target never reaches the ring: an unknown key, or one whose    */
+/* bank is not on the track's pad mode, is dropped, as JS dropped it.   */
+
+enum { PA_SEQ_MELODIC = 0, PA_SEQ_DRUM = 1 };
+typedef struct { const char *key; int16_t min, max; uint8_t mode; } pa_seq_def_t;
+static const pa_seq_def_t pa_seq_defs[] = {
+    { "clip_playback_dir",         0,    3, PA_SEQ_MELODIC },
+    { "noteFX_octave",            -4,    4, PA_SEQ_MELODIC },
+    { "noteFX_offset",           -24,   24, PA_SEQ_MELODIC },
+    { "noteFX_velocity",        -127,  127, PA_SEQ_MELODIC },
+    { "quantize",                  0,  100, PA_SEQ_MELODIC },
+    { "noteFX_gate",               0,  400, PA_SEQ_MELODIC },
+    { "noteFX_random",             0,   24, PA_SEQ_MELODIC },
+    { "harm_octaver",             -4,    4, PA_SEQ_MELODIC },
+    { "harm_interval1",          -24,   24, PA_SEQ_MELODIC },
+    { "harm_interval2",          -24,   24, PA_SEQ_MELODIC },
+    { "harm_interval3",          -24,   24, PA_SEQ_MELODIC },
+    { "delay_time",                0,   16, PA_SEQ_MELODIC },
+    { "delay_level",               0,  127, PA_SEQ_MELODIC },
+    { "delay_repeats",             0,   16, PA_SEQ_MELODIC },
+    { "delay_vel_fb",           -127,  127, PA_SEQ_MELODIC },
+    { "delay_pitch_fb",          -24,   24, PA_SEQ_MELODIC },
+    { "delay_gate_fb",             0,   10, PA_SEQ_MELODIC },
+    { "delay_retrig",              0,    1, PA_SEQ_MELODIC },
+    { "delay_pitch_random",        0,   24, PA_SEQ_MELODIC },
+    { "delay_clock_fb",         -100,  100, PA_SEQ_MELODIC },
+    { "seq_arp_style",             0,    9, PA_SEQ_MELODIC },
+    { "seq_arp_rate",              0,    9, PA_SEQ_MELODIC },
+    { "seq_arp_octaves",          -4,    4, PA_SEQ_MELODIC },
+    { "seq_arp_gate",              1,  200, PA_SEQ_MELODIC },
+    { "seq_arp_retrigger",         0,    1, PA_SEQ_MELODIC },
+    { "seq_arp_sync",              0,    1, PA_SEQ_MELODIC },
+    { "all_lanes_playback_dir",    0,    3, PA_SEQ_DRUM    },
+};
+#define PA_SEQ_COUNT ((int)(sizeof(pa_seq_defs) / sizeof(pa_seq_defs[0])))
+#define PA_SEQ_IDX_CLIP_DIR  0
+#define PA_SEQ_IDX_LANES_DIR (PA_SEQ_COUNT - 1)
+
+static void pfx_set(seq8_instance_t *inst, seq8_track_t *tr,
+                    clip_pfx_params_t *cp, const char *key, const char *val);
+static void silence_track_from_set_param(seq8_instance_t *inst, seq8_track_t *tr);
+
+/* 1 for any "seq:" target. *idx is -1 when the track or the key is not one
+ * the engine applies — still a seq target, still never the ring's. */
+static int pa_target_is_seq(const char *t, int *track, int *idx) {
+    if (!t || strncmp(t, "seq:", 4)) return 0;
+    if (track) *track = -1;
+    if (idx) *idx = -1;
+    if (t[4] < '0' || t[4] >= '0' + NUM_TRACKS || t[5] != ':') return 1;
+    for (int i = 0; i < PA_SEQ_COUNT; i++)
+        if (!strcmp(t + 6, pa_seq_defs[i].key)) {
+            if (track) *track = t[4] - '0';
+            if (idx) *idx = i;
+            break;
+        }
+    return 1;
+}
+
+/* Is this key's bank on the track's pad mode? */
+static int pa_seq_on_mode(const seq8_track_t *tr, int idx) {
+    if (tr->pad_mode == PAD_MODE_CONDUCT) return 0;
+    return (tr->pad_mode == PAD_MODE_DRUM) == (pa_seq_defs[idx].mode == PA_SEQ_DRUM);
+}
+
+/* The value in force on `clip` of this track, in the knob's own units. */
+static int pa_seq_read(const seq8_track_t *tr, int clip, int idx) {
+    const play_fx_t *fx = &tr->pfx;
+    if (idx == PA_SEQ_IDX_CLIP_DIR) return (int)tr->clips[clip].playback_dir;
+    if (idx == PA_SEQ_IDX_LANES_DIR)
+        return tr->drum_clips[clip] ? (int)tr->drum_clips[clip]->lanes[0].clip.playback_dir : 0;
+    switch (idx) {
+    case 1:  return fx->octave_shift;
+    case 2:  return fx->note_offset;
+    case 3:  return fx->velocity_offset;
+    case 4:  return fx->quantize;
+    case 5:  return fx->gate_time;
+    case 6:  return fx->note_random;
+    case 7:  return fx->octaver;
+    case 8:  return fx->harmonize_1;
+    case 9:  return fx->harmonize_2;
+    case 10: return fx->harmonize_3;
+    case 11: return fx->delay_time_idx;
+    case 12: return fx->delay_level;
+    case 13: return fx->repeat_times;
+    case 14: return fx->fb_velocity;
+    case 15: return fx->fb_note;
+    case 16: return fx->fb_gate_time;
+    case 17: return fx->delay_retrig;
+    case 18: return fx->fb_note_random;
+    case 19: return fx->fb_clock;
+    case 20: return (int)fx->arp.style;
+    case 21: return (int)fx->arp.rate_idx;
+    case 22: return (int)fx->arp.octaves;
+    case 23: return (int)fx->arp.gate_pct;
+    case 24: return (int)fx->arp.retrigger;
+    case 25: return (int)fx->seq_arp_sync;
+    }
+    return 0;
+}
+
+/* AUDIO THREAD. `rest_clip` < 0: a playback value, for the playing clip.
+ * Otherwise the clip whose lane is giving the parameter back. */
+static void pa_seq_apply(seq8_instance_t *inst, int track, int idx, uint16_t val, int rest_clip) {
+    if (track < 0 || track >= NUM_TRACKS || idx < 0 || idx >= PA_SEQ_COUNT) return;
+    seq8_track_t *tr = &inst->tracks[track];
+    const pa_seq_def_t *d = &pa_seq_defs[idx];
+    if (!pa_seq_on_mode(tr, idx)) return;
+    int is_rest = rest_clip >= 0;
+    int clip = is_rest ? rest_clip : (int)tr->active_clip;
+    if (clip < 0 || clip >= NUM_CLIPS) return;
+    int live = clip == (int)tr->active_clip;
+    if (val > PA_VAL_MAX) val = PA_VAL_MAX;
+    int v = (int)pa_round_half_up((double)d->min +
+                                  (double)(d->max - d->min) * (double)val / (double)PA_VAL_MAX);
+
+    if (idx == PA_SEQ_IDX_CLIP_DIR) {
+        clip_t *cl = &tr->clips[clip];
+        if ((int)cl->playback_dir == v) return;
+        cl->playback_dir = (uint8_t)v;
+        cl->pp_dir_state = initial_pp_dir(cl->playback_dir);
+        if (live) silence_track_from_set_param(inst, tr);
+        if (is_rest) { inst->state_dirty = 1; rui_mark_rec(inst, tr, track, clip); }
+        return;
+    }
+    if (idx == PA_SEQ_IDX_LANES_DIR) {
+        drum_clip_t *dc = tr->drum_clips[clip];
+        if (!dc || (int)dc->lanes[0].clip.playback_dir == v) return;
+        for (int l = 0; l < DRUM_LANES; l++) {
+            dc->lanes[l].clip.playback_dir = (uint8_t)v;
+            dc->lanes[l].clip.pp_dir_state = initial_pp_dir((uint8_t)v);
+        }
+        if (live) silence_track_from_set_param(inst, tr);
+        if (is_rest) { inst->state_dirty = 1; rui_mark(inst, track, clip); }
+        return;
+    }
+
+    /* A play-effects key. A clip that is not the playing one has no live
+     * surface, and playback never touched what it stores: nothing to do. */
+    if (!live) return;
+    char buf[8]; int n = 0, a = v < 0 ? -v : v;
+    char tmp[6]; int tn = 0;
+    do { tmp[tn++] = (char)('0' + a % 10); a /= 10; } while (a && tn < 5);
+    if (v < 0) buf[n++] = '-';
+    while (tn) buf[n++] = tmp[--tn];
+    buf[n] = '\0';
+
+    clip_pfx_params_t *stored = &tr->clips[clip].pfx_params;
+    clip_pfx_params_t before;
+    memcpy(&before, stored, sizeof(before));
+    if (is_rest) {
+        pfx_set(inst, tr, stored, d->key, buf);
+        if (memcmp(&before, stored, sizeof(before))) {
+            inst->state_dirty = 1;
+            rui_mark_rec(inst, tr, track, clip);
+        }
+    } else {
+        pfx_set(inst, tr, &before, d->key, buf);      /* the copy takes the stored half */
+    }
+}
+
+/* The live values the engine is holding for every sequencer lane that is
+ * driving a parameter: one "<track> <key> <value>" per line, for the screen. */
+static int pa_seq_vals(const seq8_instance_t *inst, char *out, int out_len) {
+    int n = 0;
+    if (out_len > 0) out[0] = '\0';
+    for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+        const pa_entry_t *e = &inst->pa_entries[i];
+        if (!e->used || !e->count || !(e->flags & PA_FLAG_ACTIVE)) continue;
+        if (e->track >= NUM_TRACKS || e->target >= PA_MAX_TARGETS) continue;
+        const seq8_track_t *tr = &inst->tracks[e->track];
+        if (e->clip != tr->active_clip) continue;
+        int st, si;
+        if (!pa_target_is_seq(inst->pa_targets[e->target], &st, &si)) continue;
+        if (si < 0 || st != (int)e->track || !pa_seq_on_mode(tr, si)) continue;
+        int w = snprintf(out + n, (size_t)(out_len - n), "%d %s %d\n", st,
+                         pa_seq_defs[si].key, pa_seq_read(tr, (int)e->clip, si));
+        if (w < 0 || n + w >= out_len) { out[n] = '\0'; break; }
+        n += w;
+    }
+    return n;
+}
+
+/* The table itself, "<key> <min> <max> <mode>" per line: what a test holds
+ * against JS's own. */
+static int pa_seq_keys(char *out, int out_len) {
+    int n = 0;
+    if (out_len > 0) out[0] = '\0';
+    for (int i = 0; i < PA_SEQ_COUNT; i++) {
+        int w = snprintf(out + n, (size_t)(out_len - n), "%s %d %d %d\n", pa_seq_defs[i].key,
+                         (int)pa_seq_defs[i].min, (int)pa_seq_defs[i].max, (int)pa_seq_defs[i].mode);
+        if (w < 0 || n + w >= out_len) { out[n] = '\0'; break; }
+        n += w;
+    }
+    return n;
+}
+
 /* The engine holds a resolution for this target and a host to write through. */
 static int pa_direct_ok(const seq8_instance_t *inst, uint16_t target) {
     if (target >= PA_MAX_TARGETS || !g_ext || !g_ext->set_slot_param) return 0;
@@ -198,6 +410,11 @@ static void pa_defer_cancel(seq8_instance_t *inst, uint16_t target) {
 /* The one door a non-MIDI automation value leaves by. */
 static void pa_emit_chain(seq8_instance_t *inst, uint16_t target, uint16_t val) {
     pa_defer_cancel(inst, target);
+    int st, si;
+    if (target < PA_MAX_TARGETS && pa_target_is_seq(inst->pa_targets[target], &st, &si)) {
+        pa_seq_apply(inst, st, si, val, -1);       /* ours: applied now, never staged */
+        return;
+    }
     if (target < PA_MAX_TARGETS && g_ext && g_ext->set_slot_param &&
             inst->pa_host_writes < PA_HOST_WRITES_PER_BLOCK) {
         const pa_res_t *r = &inst->pa_res[target];
@@ -215,6 +432,18 @@ static void pa_emit_chain(seq8_instance_t *inst, uint16_t target, uint16_t val) 
     pa_ring_push(inst, target, val);
 }
 
+/* A lane giving its parameter back. A chain parameter has one value wherever
+ * it is; a sequencer one is stored per clip, so the rest names its clip. */
+static void pa_emit_rest(seq8_instance_t *inst, uint16_t target, uint16_t val, int clip) {
+    int st, si;
+    if (target < PA_MAX_TARGETS && pa_target_is_seq(inst->pa_targets[target], &st, &si)) {
+        pa_defer_cancel(inst, target);
+        pa_seq_apply(inst, st, si, val, clip);
+        return;
+    }
+    pa_emit_chain(inst, target, val);
+}
+
 /* SWING. A swung step's notes are not sent at the step's tick: pfx_send parks
  * them `swing_step_delay` samples and the top of a later block fires them. A
  * lock written at the tick would then be up to half a step EARLY — the tail of
@@ -226,7 +455,11 @@ static void pa_emit_chain(seq8_instance_t *inst, uint16_t target, uint16_t val) 
  * the change back is exact. A smooth lane moves every tick; delaying the
  * swung step's ticks and not the next step's would reorder them, and a ramp
  * arriving a few ms early is inaudible anyway. Only for a value the engine
- * writes itself: the ring is a tick late whatever is done here. */
+ * writes itself: the ring is a tick late whatever is done here.
+ *
+ * ⚠ NOT for a sequencer (seq:) target. Those shape the note as it is MADE, at
+ * the tick, before it is parked — holding one back would land it after the
+ * note it belongs to. pa_direct_ok is false for them, so they go at once. */
 static void pa_emit_chain_swung(seq8_instance_t *inst, int track, uint16_t target,
                                 uint16_t val, uint64_t delay) {
     if (!delay || !pa_direct_ok(inst, target)) { pa_emit_chain(inst, target, val); return; }
@@ -1901,6 +2134,18 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
     uint32_t seq0 = pa_read_seq(inst);
     if (seq0 & 1u) return;                   /* a write is in flight; next tick */
 
+    /* The live surface was reloaded from the clip (pfx_sync_from_clip): what
+     * a sequencer lane last sent is no longer what is there. Send again. */
+    if (tr->pa_seq_resync) {
+        tr->pa_seq_resync = 0;
+        for (int i = 0; i < PA_MAX_ENTRIES; i++) {
+            pa_entry_t *e = &inst->pa_entries[i];
+            if (!e->used || e->track != track || e->clip != clip) continue;
+            if (e->target < PA_MAX_TARGETS && pa_target_is_seq(inst->pa_targets[e->target], NULL, NULL))
+                e->last_sent_valid = 0;
+        }
+    }
+
     /* Staged into locals first — see the note above. */
     struct { uint16_t target; uint16_t val; uint8_t midi; uint8_t stepped; int cc; } out[PA_TICK_MAX_STAGE];
     int nout = 0;
@@ -2070,7 +2315,7 @@ static void pa_release_scan(seq8_instance_t *inst, int track, int clip) {
         uint16_t tgt = e->target;
         if (tgt >= PA_MAX_TARGETS) continue;
         if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
-            pa_emit_chain(inst, tgt, back);
+            pa_emit_rest(inst, tgt, back, clip);
     }
 }
 
@@ -2100,7 +2345,7 @@ static void pa_assert_scan(seq8_instance_t *inst, int track, int clip) {
         /* Playback must re-send after this, not believe its cache. */
         e->last_sent_valid = 0;
         if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
-            pa_emit_chain(inst, tgt, back);
+            pa_emit_rest(inst, tgt, back, clip);
     }
 }
 
@@ -2170,7 +2415,7 @@ static void pa_release_service(seq8_instance_t *inst) {
         if (tgt >= PA_MAX_TARGETS || !pa_rest_value(e, &back)) continue;
         e->last_sent_valid = 0;
         if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
-            pa_emit_chain(inst, tgt, back);
+            pa_emit_rest(inst, tgt, back, (int)e->clip);
     }
     /* Release-only requests (a transport stop). */
     uint8_t mask = __atomic_exchange_n(&inst->pa_release_mask, 0, __ATOMIC_ACQ_REL);

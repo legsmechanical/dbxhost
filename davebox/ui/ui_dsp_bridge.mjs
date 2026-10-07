@@ -31,6 +31,7 @@ import {
 } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { automationRefreshPresence, automationInvalidateMeta, automationWantsDrain, automationWantsFlags,
          automationWantsRingCheck, AUTOMATION_RING_KEY,
+         automationWantsSeqVals, AUTOMATION_SEQ_KEY,
          AUTOMATION_FLAG_KEYS, bulkEncode, bulkDecode,
          automationNoteListChangedElsewhere } from './ui_automation.mjs';
 
@@ -410,6 +411,9 @@ export function tickPrefetch() {
         /* ...and, with the per-tick drain closed, whether the engine has
          * staged a value after all (ui_automation: automationWantsRingCheck). */
         if (!drain && automationWantsRingCheck()) keys.push(AUTOMATION_RING_KEY);
+        /* ...and where the engine has the sequencer's own automated bank
+         * knobs, for the screen (it applies them itself). */
+        if (automationWantsSeqVals()) keys.push(AUTOMATION_SEQ_KEY);
         /* The engine-reload watcher (ui_tick, every 100th tick — a poll tick). */
         if ((S.tickCount % 100) === 0) keys.push('instance_id');
         /* The pad-map reconcile (ui_tick) runs on the poll's cadence so it

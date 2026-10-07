@@ -756,6 +756,7 @@ typedef struct {
      * one offset serving both cases. */
     int8_t    transpose;            /* -24..+24 semitones, 0 = off */
     uint8_t   pad_mode;             /* PAD_MODE_MELODIC_SCALE = 0 */
+    uint8_t   pa_seq_resync;        /* tr->pfx was reloaded from the clip: sequencer lanes re-send */
     uint8_t   stretch_blocked;      /* 1 if last compress was blocked by collision */
     uint8_t   recording;            /* 1 = actively recording (overdub) into active clip */
     uint8_t   clip_playing;         /* 1 = clip is actively running */
@@ -4282,6 +4283,7 @@ static void pfx_sync_from_clip(seq8_track_t *tr) {
         return;
     }
     pfx_apply_params(&tr->pfx, &tr->clips[tr->active_clip].pfx_params);
+    tr->pa_seq_resync = 1;      /* a lane's playback value was live-only: it must go out again */
 }
 
 /* Anchor a drum lane's playhead to where it would be if the new clip's lane
@@ -7599,6 +7601,14 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                            __atomic_load_n(&inst->pa_ring_tail, __ATOMIC_ACQUIRE));
         return snprintf(out, out_len, "%d", any);
     }
+    /* pa_seq_vals: what each driving sequencer lane has its bank knob at now
+     * — the engine applies those itself, so this is how the screen follows.
+     * pa_seq_keys: the table it applies them from. */
+    if (!strcmp(key, "pa_seq_vals")) {
+        if (!inst) { if (out_len > 0) out[0] = '\0'; return 0; }
+        return pa_seq_vals(inst, out, out_len);
+    }
+    if (!strcmp(key, "pa_seq_keys")) return pa_seq_keys(out, out_len);
     if (!strcmp(key, "pa_ring_dropped")) {
         int v = inst ? (int)inst->pa_ring_dropped : 0;
         if (inst) inst->pa_ring_dropped = 0;

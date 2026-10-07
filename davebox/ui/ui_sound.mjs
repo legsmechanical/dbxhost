@@ -6042,9 +6042,14 @@ function bankMacroWriteFor(t, m, nv) {
     }
     GS.screenDirty = true;
 }
-/* PLAYBACK of a `seq:` target (and its rest on stop, and a lock): the owner
- * hands us (track, key, value); the write is the bank knob's own. Runs from the
- * owner's tick whether or not sound mode is open.
+/* THE SCREEN'S COPY of an automated bank knob. The ENGINE applies a `seq:`
+ * lane's value itself, at the tick, ahead of the tick's notes; the owner reads
+ * where it has each one (pa_seq_vals, on the poll) and hands us (track, key,
+ * value) to show. So this writes the mirrors the bank cards draw from and
+ * NOTHING ELSE — a set_param from here would be a second, later writer of a
+ * value the engine has already moved past, and would store a playback value
+ * as the clip's own setting. Runs from the owner's tick whether or not sound
+ * mode is open.
  *
  * ⚠⚠ REGISTERED FROM init() (ui.js), NOT from this module's body. It WAS a
  * module-scope `automationRegisterSeqApply(...)` call, and in the shipped
@@ -6055,15 +6060,22 @@ function bankMacroWriteFor(t, m, nv) {
  * 2026-09-11: "the actual values on the sequencer bank oled cells don't change
  * on playback even though they have dots"). A runtime registration cannot
  * depend on module order at all. */
-export function soundSeqApply(track, key, val) {
+export function soundSeqMirror(track, key, val) {
     const st = SEQ_AUTO_TARGETS[key];
     if (!st || track < 0 || track > 7 || !isFinite(val)) return false;
     const nv = Math.max(st.min, Math.min(st.max, val | 0));
     const m = { kind: 'bank', bank: st.bank, k: st.k };
     if (st.alt) m.alt = st.alt;
-    if (!bankMacroOnMode(m.bank, GS.trackPadMode[track])) return false;   /* off-mode: nothing to write */
+    if (!bankMacroOnMode(m.bank, GS.trackPadMode[track])) return false;   /* off-mode: nothing to show */
     if (bankMacroValue(m, track) === nv) return true;
-    bankMacroWriteFor(track, m, nv);
+    if (m.alt === 'clkfb') GS.delayClockFb[track] = nv;
+    else {
+        GS.bankParams[track][m.bank][m.k] = nv;
+        /* The CLIP card's direction also lives per clip, for the clip views. */
+        if (key === 'clip_playback_dir' && GS.clipPlaybackDir && GS.clipPlaybackDir[track])
+            GS.clipPlaybackDir[track][GS.trackActiveClip[track]] = nv;
+    }
+    GS.screenDirty = true;
     return true;
 }
 

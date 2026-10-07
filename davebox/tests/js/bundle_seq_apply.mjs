@@ -8,6 +8,10 @@
  * back... the actual values on the sequencer bank oled cells don't change on
  * playback even though they have dots."
  *
+ * The engine applies a sequencer lane itself now; what this side owes is the
+ * SCREEN — the bank mirror following where the engine has the knob
+ * (pa_seq_vals, on the poll) — and it must not write the value back.
+ *
  * ⚠⚠ WHY A BUNDLE TEST. The applier was registered by a call in ui_sound.mjs's
  * MODULE BODY, and ui_automation.mjs's body holds `let seqApplier = null`. Node
  * evaluates a dependency's body FIRST, so under every ordinary test the
@@ -64,15 +68,22 @@ const fail = (m) => { console.error('  FAIL — ' + m); failed = 1; };
 const modSets = [];
 let staged = '';
 let LIST = '';
+let SEQVALS = '';
+let autoRef = null;
 globalThis.host_module_set_param = (k, v) => { modSets.push(k + '=' + v); };
 globalThis.host_module_set_params = (b) => true;
 globalThis.host_module_get_param = (k) => {
     if (k === 'pa_pending') { const r = staged; staged = ''; return r; }
     if (k === 'pa_list') return LIST;
+    if (k === 'pa_seq_vals') return SEQVALS;
     if (k === 'pa_store_full' || k === 'pa_ring_dropped' || k === 'pa_owner_conflict') return '0';
     return '';
 };
-globalThis.host_module_get_params = () => '';
+/* The bulk read answers through the single-read stub once the bundle is up
+ * (its own codec); before that, nothing — as before. */
+globalThis.host_module_get_params = (blob) => (autoRef
+    ? autoRef.bulkEncode(autoRef.bulkDecode(blob).map(k => String(globalThis.host_module_get_param(k) || '')))
+    : '');
 globalThis.host_read_file = () => '';
 globalThis.host_write_file = () => true;
 globalThis.host_file_exists = () => false;
@@ -125,24 +136,24 @@ S.awaitingProjectSelect = false; S.sessionView = false; S.activeTrack = T;
 S.trackActiveClip[T] = 0;
 LIST = T + ' 0 1 4 seq:' + T + ':noteFX_gate 0 0\n';
 auto.automationRefreshPresence();
-staged = 'seq:' + T + ':noteFX_gate 8191\n';
+autoRef = auto;
+SEQVALS = T + ' noteFX_gate 200\n';
 S.playing = true;
 modSets.length = 0;
 for (let i = 0; i < 6; i++) { S.tickCount++; globalThis.tick(); }
 S.playing = false;
+SEQVALS = '';
+autoRef = null;
+
+if (!(S.bankParams && S.bankParams[T] && S.bankParams[T][1]) || S.bankParams[T][1][5] !== 200)
+    fail('the bundle mirrored NOTHING for a playing sequencer lane — the mirror is not registered '
+         + '(this is the device bug: dots on the cells, values that never move). Got: '
+         + (S.bankParams && S.bankParams[T] && S.bankParams[T][1] ? S.bankParams[T][1][5] : 'no bank'));
+else console.log('  ok   — ⭐ the SHIPPED BUNDLE mirrors a playing sequencer lane: the cell shows 200');
 
 const wrote = modSets.find(x => x.startsWith('t' + T + '_noteFX_gate='));
-if (!wrote)
-    fail('the bundle applied NOTHING for a staged sequencer lane — the applier is not registered '
-         + '(this is the device bug: dots on the cells, values that never move). Writes seen: '
-         + JSON.stringify(modSets.slice(0, 8)));
-else if (wrote !== 't' + T + '_noteFX_gate=200')
-    fail('applied the wrong value: ' + wrote + ' (8191/16383 of 0..400 is 200)');
-else console.log('  ok   — ⭐ the SHIPPED BUNDLE applies a staged sequencer lane: ' + wrote);
-
-if (S.bankParams && S.bankParams[T] && S.bankParams[T][1] && S.bankParams[T][1][5] !== 200)
-    fail('the bank mirror did not follow, so the OLED cell would not move: ' + S.bankParams[T][1][5]);
-else console.log('  ok   — the bank mirror follows, so the cell shows the value');
+if (wrote) fail('the bundle wrote the value back to the engine (' + wrote + ') — the engine applied it already');
+else console.log('  ok   — and writes nothing back: the engine is the one writer');
 
 /* ---- THE SNAPMORPH LANE (18b, 2026-09-13): the same bundle-order hazard, the
  * same runtime registration (automationRegisterMacApply in init). A staged

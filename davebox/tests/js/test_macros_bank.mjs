@@ -186,7 +186,7 @@ const auto = await import('../../ui/ui_automation.mjs');
  * drives the modules directly and never calls init(), so it registers the same
  * function itself; that the BUNDLE does it is pinned by
  * tests/test_seq_lane_playback.sh. */
-auto.automationRegisterSeqApply(snd.soundSeqApply);
+auto.automationRegisterSeqApply(snd.soundSeqMirror);
 const ledsMod = await import('../../ui/ui_leds.mjs');
 const STEP_VOL = SLOT_LEVEL_MAX / 200, STEP_PAN = 1 / 200, STEP_SEND = 1 / 100;
 const { BANKS, BANK_SOUND, BANK_STEP, BANK_MACROS, isSoundBank, PAD_MODE_DRUM, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
@@ -556,19 +556,28 @@ step('⭑ a davebox BANK KNOB as a target: K7 → NOTE FX → Gate Time; the tur
     ticks(1);
     assert(lastWrite('knob_7_clear') === '1', 'no chain form: mirrored as CLEAR');
 });
-step('⭑ PLAYBACK of a seq: target lands through the bank\'s own write path — the DSP stages, JS applies, the mirror follows', () => {
+step('⭑ PLAYBACK of a seq: target: the ENGINE applies it — JS only mirrors where the engine has the knob, and writes nothing back', () => {
     hostSets.length = 0;
     const prevGet = globalThis.host_module_get_param;
-    /* Gate Time 0..400: 8191/16383 ≈ 0.5 → 200. */
-    globalThis.host_module_get_param = (k) => (k === 'pa_pending' ? 'seq:2:noteFX_gate 8191\n' : k === 'pa_list' ? '2 0 1 4 seq:2:noteFX_gate 0 0\n' : prevGet(k));
+    const asked = [];
+    /* The engine says where it has Gate Time (0..400) on the playing clip. */
+    globalThis.host_module_get_param = (k) => {
+        asked.push(k);
+        return k === 'pa_seq_vals' ? '2 noteFX_gate 200\n' : k === 'pa_list' ? '2 0 1 4 seq:2:noteFX_gate 0 0\n' : prevGet(k);
+    };
     auto.automationRefreshPresence();
+    GS.bankParams[2][1][5] = 100;
     GS.playing = true;
-    ticks(4);
+    const tc0 = GS.tickCount;
+    GS.tickCount = Math.ceil((tc0 + 1) / 4) * 4; ticks(4);   /* poll ticks carry it */
     GS.playing = false;
-    globalThis.host_module_get_param = prevGet;
-    assert(hostSets.some(x => x === 't2_noteFX_gate=200'), 'applied as t2_noteFX_gate=200, got ' + JSON.stringify(hostSets));
+    assert(asked.indexOf('pa_seq_vals') >= 0, 'the poll asked the engine for its bank-knob values');
     assert(GS.bankParams[2][1][5] === 200, 'the JS mirror followed, got ' + GS.bankParams[2][1][5]);
+    assert(!hostSets.some(x => x.startsWith('t2_noteFX_gate=')),
+           '⚠ JS wrote the value BACK to the engine — a second, later writer of a value it had already applied: ' + JSON.stringify(hostSets));
     assert(M().drawn[6].auto === 'auto', 'the macro cell shows the automation circle');
+    GS.tickCount = tc0;
+    globalThis.host_module_get_param = prevGet;
     auto.automationRefreshPresence();
 });
 step('⭑ the allow-list is the ruling: NOTE FX offers Gate Time but not Note Length (mode); CLIP offers only Playback Dir', () => {

@@ -107,7 +107,7 @@ let ringAny = '0';
 const baseGetParams = globalThis.host_module_get_params;
 globalThis.host_module_get_params = (blob) => {
     const keys = dec(blob);
-    if (!keys.includes('pa_ring_any')) return baseGetParams(blob);
+    if (!keys.includes('pa_ring_any') && !keys.includes('pa_seq_vals')) return baseGetParams(blob);
     requests.push({ kind: 'get', keys });
     return enc(keys.map(k => (k === 'pa_ring_any' ? ringAny : k === 'pa_pending' ? (() => { const r = staged; staged = ''; return r; })() : '0')));
 };
@@ -192,12 +192,24 @@ function load(targets) {
     check(checks > 0 && checks <= Math.ceil(40 / POLL_INTERVAL) + 1,
           'the engine is asked on the POLL whether anything is waiting (' + checks + ' in 40 ticks)');
 
-    /* control: one target the engine cannot write, and the per-tick read is back */
+    /* a seq: target is the engine's own — applied there, never staged — so
+     * a bank-knob lane does not reopen the per-tick read either */
     load(['2:synth:cutoff', 'seq:2:' + SEQ_KEY]);
+    for (let i = 0; i < 12; i++) tick();
+    check(!automationRingNeededForTest(), 'a seq: lane does not need the ring');
+    requests.length = 0;
+    for (let i = 0; i < 40; i++) tick();
+    check(drains() === 0, '⚠ 40 playing ticks with a seq: lane listed: the ring is not read once (' + drains() + '/40)');
+    const seqReads = requests.filter(r => r.kind === 'get' && r.keys.includes('pa_seq_vals')).length;
+    check(seqReads > 0 && seqReads <= Math.ceil(40 / POLL_INTERVAL) + 1,
+          'its value is read for the screen on the POLL (' + seqReads + ' in 40 ticks)');
+
+    /* control: one target the engine cannot write, and the per-tick read is back */
+    load(['2:synth:cutoff', 'mac:2:3']);
     for (let i = 0; i < 12; i++) tick();
     requests.length = 0;
     for (let i = 0; i < 40; i++) tick();
-    check(drains() === 40, '⚠ control: with a seq: target listed the ring is read every tick again (' + drains() + '/40)');
+    check(drains() === 40, '⚠ control: with a mac: target listed the ring is read every tick again (' + drains() + '/40)');
 }
 
 /* ---- the engine says a value is waiting: the drain reopens -------------- */

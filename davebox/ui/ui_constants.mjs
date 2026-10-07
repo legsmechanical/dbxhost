@@ -678,10 +678,12 @@ export const CONDUCT_LED_BANKS = [BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN];
  * knob macro is `{kind:'bank', bank, k[, alt]}`; its AUTOMATION target is
  * `seq:<track>:<key>` where key is the DSP's own param key (the bank knob's
  * dspKey; the two custom knobs name theirs). The store keeps the value 14-bit
- * normalised over the knob's declared range; the DSP stages every `seq:`
- * change for JS (as it does a chain param), and JS applies it through the
- * bank's own write path — ONE writer for sequencer params, side effects and
- * mirrors included. SEQ_AUTO_TARGETS is that table: key -> range + where. */
+ * normalised over the knob's declared range. On PLAYBACK the engine applies a
+ * `seq:` value itself, at the tick, from its own copy of this table
+ * (pa_seq_defs in dsp/seq8_param_auto.c — pinned equal by
+ * tests/js/test_automation_seq_mirror.mjs); JS only mirrors the result for
+ * the screen. A hand on the knob still writes through the bank's own path.
+ * SEQ_AUTO_TARGETS is that table: key -> range + where. */
 export const BANK_MACRO_ALLOW = [
     { bank: 0, k: 6 },                                              /* Playback Dir */
     { bank: 1, k: 0 }, { bank: 1, k: 1 }, { bank: 1, k: 2 }, { bank: 1, k: 3 },

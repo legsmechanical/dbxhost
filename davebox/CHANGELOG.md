@@ -12,13 +12,22 @@ the section into a versioned heading at release time.
   instrument or effect parameter (and on a track or bus level) was heard one
   hit late: the value reached the instrument just after the step's note had
   been sent. dAVEBOx now sets the parameter itself, ahead of the note — on
-  swung steps too. Locks on dAVEBOx's own bank knobs and on MACROS are
-  unchanged.
+  swung steps too.
+- **A lock on one of dAVEBOx's own bank knobs lands on its own step.** NOTE
+  FX, HARMONIZE, DELAY and SEQ ARP knobs, and the two playback directions,
+  were one step late in the same way. The engine now applies them as it makes
+  the step's notes. Locks on MACROS are unchanged.
+- **Playing an automated bank knob no longer changes the clip's own setting.**
+  Each value playback sent used to be stored as the clip's setting (and marked
+  the project as changed). The clip now keeps the setting it had; Stop still
+  returns the knob to its resting value.
 
 ### Changed
 - **Less work for the screen while automation plays.** The screen no longer
   asks the engine for automation values on every update once the engine is
-  writing them itself.
+  writing them itself — now also with automated bank knobs in the project. An
+  automated bank knob's value on screen follows the sound a few hundredths of
+  a second behind.
 
 ## [0.0.13] — 2026-10-06 (test build, not in the Schwung catalog)
 ### Fixed

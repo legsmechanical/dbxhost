@@ -85,7 +85,7 @@ import { applyBankPick, heldStepJog, bankMapArmable, bankMapBegin, bankMapEnd, b
 import { standDownBankDisplay } from './ui_state.mjs';
 import { _onCCMsg, syncCoRunShift } from './ui_input_cc.mjs';
 import { soundActive, soundOpen, soundResting, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw,
-         installGateMemoInvalidation, soundSeqApply } from './ui_sound.mjs';
+         installGateMemoInvalidation, soundSeqMirror } from './ui_sound.mjs';
 import { soundModeCovered } from './ui_render.mjs';
 import { _tickImpl, applyExtMidiRemap, requestSessionExit } from './ui_tick.mjs';
 
@@ -433,13 +433,13 @@ globalThis.init = function () {
     /* ...and to the binding, for the instance the grid's pump and drawer share
      * — a different one. See pp_ctx.setPpWavPeaksIo. */
     setPpWavPeaksIo(WAV_QJS_IO);
-    /* ⚠⚠ THE SEQUENCER-LANE APPLIER, wired at RUNTIME. As a module-scope
+    /* ⚠⚠ THE SEQUENCER-LANE MIRROR, wired at RUNTIME. As a module-scope
      * registration in ui_sound.mjs it was wiped by ui_automation's own
      * `var seqApplier = null` — esbuild puts ui_sound's body first in the
      * shipped bundle, while node runs the dependency first, so it worked in
      * every test and never once on the device. Registered here, where nothing
      * can run afterwards to undo it. */
-    automationRegisterSeqApply(soundSeqApply);
+    automationRegisterSeqApply(soundSeqMirror);
     /* The SNAPMORPH-lane applier, same rule, same reason. */
     automationRegisterMacApply(snapMorphApply);
     S._origClearScreen = clear_screen;

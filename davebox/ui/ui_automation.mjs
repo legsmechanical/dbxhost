@@ -124,9 +124,14 @@ const STOP_GRACE_TICKS = 3;
 /* parameter lives and how its value scales, which only this side       */
 /* knows (a module's chain_params). So every target that can be         */
 /* described is described to it once (set_param "pa_resolve"); the ring */
-/* and the push below stay for everything that cannot: seq: and mac:    */
-/* targets, a parameter chain_params does not publish, a component      */
-/* whose metadata has not been read yet.                                */
+/* and the push below stay for everything that cannot: mac: targets, a  */
+/* parameter chain_params does not publish, a component whose metadata  */
+/* has not been read yet.                                               */
+/*                                                                      */
+/* A seq: target (davebox's own bank knobs) needs no describing and     */
+/* never takes the ring: those are the engine's own parameters, it      */
+/* applies them at the tick from its own table. This side only MIRRORS  */
+/* them for the screen — see seqMirrorApply.                            */
 /*                                                                      */
 /* `resolved`: target -> the descriptor the engine holds.               */
 /* `unresolvable`: described as far as it can be, and it cannot.        */
@@ -145,6 +150,8 @@ const RESOLVE_RETRY_TICKS = 10;
 let ringHeals = new Map();        /* target -> times a "resolved" target came by the ring */
 const RING_HEAL_MAX = 3;
 let ringNeedCache = { gen: -1, val: true };
+/* A seq: target — the engine's own; neither described nor drained. */
+function isSeqTarget(t) { return String(t).startsWith('seq:'); }
 let resolveGen = 0;
 /* Tests of the RING path — still what every unresolved target takes — drive a
  * stub engine that stages everything and writes nothing itself. They switch
@@ -168,6 +175,7 @@ export function automationResetCaches() {
     listGen++;
     resolved = new Map(); unresolvable = new Set(); ringHeals = new Map();
     resolveStale = false; resolveRetryAt = 0; ringForce = 0; resolveGrace = 0; resolveGen++;
+    seqMirrorGrace = 0; seqListedCache = { gen: -1, val: false };
 }
 
 /* An insert-FX REORDER moved position `from` to `to` (1-based). `scope` is the
@@ -725,7 +733,7 @@ function resolveSlotOf(target) {
 /* How the ENGINE should write `target`: "<slot> <chain key> <kind> <min> <max>
  * <step>" — kind 0 float, 1 int, 2 enum (max = last option index). The same
  * arithmetic as wireValue, stated instead of performed.
- *   null      = cannot be described (seq:, mac:, a key the module does not
+ *   null      = cannot be described (mac:, a key the module does not
  *               publish — wireValue would be guessing 0..1): stays on the ring
  *   undefined = not yet: its component's metadata has not been read
  * `budget.fetch` is how many component reads this call may still make. */
@@ -774,6 +782,7 @@ function resolveTick() {
         if (seen.has(target)) continue;
         seen.add(target);
         if (resolved.has(target) || unresolvable.has(target) || midiTargetIsMidi(target)) continue;
+        if (isSeqTarget(target)) continue;               /* the engine's own: nothing to describe */
         const d = resolveDescriptor(target, budget);
         if (d === undefined) { retry = true; continue; }
         if (d === null) { unresolvable.add(target); continue; }
@@ -798,6 +807,7 @@ function ringNeeded() {
     for (const k of stateByKey.keys()) {
         const target = k.slice(k.lastIndexOf(' ') + 1);
         if (midiTargetIsMidi(target)) continue;          /* the engine emits those */
+        if (isSeqTarget(target)) continue;               /* ...and applies those */
         if (!resolved.has(target)) { need = true; break; }
     }
     ringNeedCache = { gen, val: need };
@@ -815,10 +825,50 @@ export function automationWantsRingCheck() {
 }
 export const AUTOMATION_RING_KEY = 'pa_ring_any';
 
-/* Who applies a staged SEQUENCER value: davebox's bank-param writer
- * (ui_sound registers it) — (track, key, intValue). */
+/* Who MIRRORS a sequencer lane's value on the screen: davebox's bank-knob
+ * mirror (ui_sound registers it) — (track, key, intValue). It writes nothing
+ * to the engine: the engine applied the value itself, at the tick. */
 let seqApplier = null;
 export function automationRegisterSeqApply(fn) { seqApplier = fn; }
+
+/* THE SCREEN FOLLOWS THE ENGINE'S BANK KNOBS (pa_seq_vals).
+ *
+ * A sequencer lane's values used to come by the ring and be WRITTEN from here
+ * — a tick and a frame after the engine worked them out, one step late on
+ * anything a note is made with. The engine applies them now; what is left for
+ * this side is to show them. So while the transport runs (and for a couple of
+ * polls after it stops or a clip changes — the resting values land then) the
+ * POLL carries one key: every driving sequencer lane's current value, on each
+ * track's playing clip. The screen is at most a poll behind the sound; it no
+ * longer costs a read every tick.
+ *
+ * A target under a hand is left alone: the hand's own write is the newer one. */
+export const AUTOMATION_SEQ_KEY = 'pa_seq_vals';
+let seqMirrorGrace = 0;
+const SEQ_MIRROR_GRACE_TICKS = POLL_INTERVAL * 2;
+let seqListedCache = { gen: -1, val: false };
+function seqListed() {
+    if (seqListedCache.gen === listGen) return seqListedCache.val;
+    let any = false;
+    for (const k of stateByKey.keys())
+        if (isSeqTarget(k.slice(k.lastIndexOf(' ') + 1))) { any = true; break; }
+    seqListedCache = { gen: listGen, val: any };
+    return any;
+}
+export function automationWantsSeqVals() {
+    return anyAutomation && (S.playing || seqMirrorGrace > 0) && seqListed();
+}
+function seqMirrorApply(raw) {
+    if (!raw || !seqApplier) return;
+    for (const line of raw.split('\n')) {
+        const m = line.split(' ');
+        if (m.length !== 3) continue;
+        const track = parseInt(m[0], 10), val = parseInt(m[2], 10);
+        if (isNaN(track) || isNaN(val)) continue;
+        if (gestures.has('seq:' + track + ':' + m[1])) continue;        /* touch wins */
+        seqApplier(track, m[1], val);
+    }
+}
 /* ...and a staged SNAPMORPH position: ui_snapmorph's applier — (track, knob,
  * v 0..1). ⚠ Registered from init() like the seq applier, for the same
  * bundle-order reason. */
@@ -917,8 +967,8 @@ function pushPending() {
         const p = pushPair(target, norm);
         if (!p) { pending.delete(target); continue; }
         if (p.seq) {
-            /* Applied at once, in JS: a bank param write is one set_param
-             * with its own side effects and mirrors (applyBankParam). */
+            /* The engine applies these itself and never stages them; one that
+             * turns up here anyway is shown, not written. */
             pending.delete(target);
             if (seqApplier) seqApplier(p.track, p.key, parseInt(p.val, 10));
             continue;
@@ -1015,12 +1065,17 @@ export function automationTick() {
      * running: staging only happens on a playing clip. Both are already-known
      * flags, so the common case costs nothing at all. */
     if (!anyAutomation) { if (pending.size) pending.clear(); return; }
+    const switched = clipChanged();
+    /* The bank-knob mirror: on the poll that carried it. */
+    if (switched || S.playing) seqMirrorGrace = SEQ_MIRROR_GRACE_TICKS;
+    else if (seqMirrorGrace > 0) seqMirrorGrace--;
+    if (tickWants(AUTOMATION_SEQ_KEY)) seqMirrorApply(dget(AUTOMATION_SEQ_KEY));
     /* The stop EDGE stages too — the resting values — and S.playing has
      * already flipped by the time this sees it. Keep draining for a few ticks
      * past the edge so what the stop produced is pushed, not left in the ring
      * for the next Play to find. */
     /* A clip change opens the drain window even when stopped — see clipChanged. */
-    if (clipChanged()) stopGrace = STOP_GRACE_TICKS;
+    if (switched) stopGrace = STOP_GRACE_TICKS;
     if (S.playing) stopGrace = STOP_GRACE_TICKS;
     else if (stopGrace > 0) stopGrace--;
     else if (!pending.size) return;
