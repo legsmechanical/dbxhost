@@ -468,10 +468,15 @@ void shadow_chain_broadcast_realtime(uint8_t status)
     const plugin_api_v2_t *pv2 = *host_plugin_v2;
     if (!pv2 || !pv2->on_midi) return;
     uint8_t msg[1] = { status };
+    /* Start/Continue wakes a parked slot, as the cable-0 tap in the shim does:
+     * a transport-driven synth can start sounding with no note to wake it. */
+    const int wake = (status == 0xFA || status == 0xFB);
     for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {
-        if (host_chain_slots[i].active && host_chain_slots[i].instance)
+        if (host_chain_slots[i].active && host_chain_slots[i].instance) {
+            if (wake) { host_slot_idle[i] = 0; host_slot_silence_frames[i] = 0; }
             pv2->on_midi(host_chain_slots[i].instance, msg, 1,
                          MOVE_MIDI_SOURCE_EXTERNAL);
+        }
     }
 }
 
