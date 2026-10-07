@@ -1305,14 +1305,14 @@ export function soundOnMidiRaw(data) {
     if (!S.active || !isTextEntryActive()) return false;
     /* ONE OWNER PER TAP (see ppAteBackPress in soundOnCC). Back navigates on
      * the RELEASE here, and the keyboard cancels on the PRESS — so a Back that
-     * cancels a keyboard a module's PAGE opened would also step out of that
-     * page a moment later. The keyboard owns this tap; the release is
-     * swallowed. Scoped to the page's keyboard: the Save As / rename
-     * keyboards keep the behaviour they have. */
-    if (canvasKeyboardUp && data && (data[0] & 0xF0) === 0xB0 && data[1] === 51 && data[2] >= 64)
+     * cancelled a keyboard also stepped back in the editor a moment later:
+     * cancel Save As and you were out of the module. The keyboard owns this
+     * tap, whichever keyboard it is (Save As, a rename, a module page's
+     * search); the release is swallowed. */
+    if (data && (data[0] & 0xF0) === 0xB0 && data[1] === 51 && data[2] >= 64)
         ppAteBackPress = true;
     handleTextEntryMidi(data);
-    if (!isTextEntryActive()) { S.ledDirty = true; S.dirty = true; canvasKeyboardUp = false; }
+    if (!isTextEntryActive()) { S.ledDirty = true; S.dirty = true; }
     return true;
 }
 
@@ -4875,7 +4875,6 @@ let mlNamePending = null;   /* { renaming, text, why } */
  * delivered from the tick once the keyboard is down — and only if the editor
  * is still on the module that asked. */
 let canvasTextAnswer = null;   /* { slot, comp, mod, done, text, cancelled } */
-let canvasKeyboardUp = false;  /* the keyboard on screen was opened by a module's page */
 
 function soundTickCanvasTextAnswer() {
     if (!canvasTextAnswer || isTextEntryActive()) return;
@@ -12469,7 +12468,6 @@ function ppIo() {
                         onConfirm: (t) => answer(String(t == null ? '' : t), false),
                         onCancel:  () => answer(null, true),
                     });
-                    canvasKeyboardUp = true;
                     S.dirty = true; S.ledDirty = true;
                 },
             });

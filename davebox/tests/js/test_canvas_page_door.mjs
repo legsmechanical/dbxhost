@@ -354,6 +354,22 @@ step('⭐ confirming answers with the text', () => {
         throw new Error('the page was retired: ' + engineLog.join(' | '));
 });
 
+/* ---- the same rule for the editor's OWN keyboards (Save As, rename) ---------
+ * One tap, one owner: the keyboard cancels on the Back PRESS, and the editor
+ * navigates on the RELEASE — so without a swallow, cancelling Save As also
+ * stepped back out of where you were. */
+step('⭐ Back that cancels the SAVE AS keyboard does not also step back in the editor', () => {
+    if (TE.isTextEntryActive()) throw new Error('rig: a keyboard is already up');
+    const before = JSON.stringify([snd.soundPPForTest().on, pageName()]);
+    snd.soundQueueActionForTest({ t: 'usrsave' }); ticks(2);
+    if (!TE.isTextEntryActive()) throw new Error('rig: Save As did not open the keyboard');
+    cc(51, 127); cc(51, 0); ticks(3);
+    if (TE.isTextEntryActive()) throw new Error('Back did not close the keyboard');
+    const after = JSON.stringify([snd.soundPPForTest().on, pageName()]);
+    if (after !== before)
+        throw new Error('cancelling Save As moved the editor: was ' + before + ', now ' + after);
+});
+
 if (failed) { console.log('FAIL: canvas page door'); process.exit(1); }
 console.log('PASS: an enterable module page is a door in dAVEBOx\'s editor: click enters, the jog and click are the module\'s, Back is the module\'s first');
 }

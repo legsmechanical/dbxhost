@@ -21,6 +21,9 @@ the section into a versioned heading at release time.
 - **An instrument started by a button on its own page responds at once** (it
   could lag up to half a second after a quiet spell).
 - **A module's own page can ask for text** (a search box) in the module editor.
+- **Back on a keyboard only cancels the keyboard.** In the module editor,
+  cancelling Save As or a rename with Back also backed you out of the screen
+  you were on.
 
 ### Changed
 - **Volume, pan and mute glide** instead of stepping: smoother fader and pan
