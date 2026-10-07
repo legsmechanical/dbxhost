@@ -1483,7 +1483,8 @@ Use `type: "canvas"` to open a module-defined fullscreen canvas UI from the hier
 - `canvas_overlay` (optional): Named overlay object selector (aliases: `canvas_target`, `overlay`).
 - `show_footer` (optional): Show/hide footer in canvas view (default `true`; alias `showfooter`).
 - `show_value` (optional): Show/hide parameter value in hierarchy and canvas footer (default `true`; alias `showvalue`).
-- `extra_keys` (optional): Up to four additional parameter values used by an authored canvas page or bounded fullscreen live feed.
+- `page_first` (optional, with `as_page`): Plan this page BEFORE its level's knob grid instead of after it (default `false`). For a module whose drawn page is what you open it for — a browser — so it is the page you land on. It still carries the level's knobs.
+- `extra_keys` (optional): Up to four additional parameter values used by an authored canvas page or bounded fullscreen live feed. An `as_page` canvas reads them on the page's staggered rotation **even when its level has no knobs**, so a knobless canvas page still draws live values.
 - `fullscreen_live_ms` (optional): In fullscreen mode, refresh declared `extra_keys` at this interval and call `onValues(ctx, { values, nowMs })`. Clamped to at least 50 ms; omit it for no fullscreen reads. Keys are read one per tick and delivered together; a read that did not complete is `null`. Same contract as stock 1.5 (upstream #530); dAVEBOx's module canvas honours it.
 
 Behavior notes:
