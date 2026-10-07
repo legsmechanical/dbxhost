@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed
+- **AUTOMATION stays a screen.** With nothing automated in the clip, pressing
+  the jog there closed the list and left the old bare card, which needed
+  another click to get back. Clearing everything from the list's last row did
+  the same. Both now leave you on the screen.
+
 
 ## [0.0.14] — 2026-10-06 (test build, not in the Schwung catalog)
 ### Fixed

@@ -429,6 +429,46 @@ step('⭑ a session strip turn goes through the owner: playing → pa_live on <s
     S.sessionView = false;
 });
 
+/* ---- AUTOMATION IS A SCREEN: nothing leaves you on the bare card ----------
+ * Reached the way a person reaches it — jog click, the AUTO pad on the bank
+ * map. Device, 2026-10-07: "holding jog on the page can put it into the prior
+ * bank page that requires a click to start editing (the 'no automation'
+ * page)". With nothing automated, ANY jog press closed the list. */
+const pad = (n) => { globalThis.onMidiMessageInternal(new Uint8Array([0x90, n, 100])); globalThis.onMidiMessageInternal(new Uint8Array([0x80, n, 0])); };
+const openByMap = () => {
+    for (let i = 0; i < 4 && S.activeBank === BANK_AUTOMATION; i++) { back(); ticks(2); }
+    assert(S.activeBank !== BANK_AUTOMATION, 'rig: could not leave AUTOMATION first');
+    click(); ticks(2);
+    assert(S.bankMapLatched, 'rig: the jog click did not latch the bank map');
+    pad(85); ticks(3);                                   /* CTRL column, second row: AUTO */
+    assert(S.activeBank === BANK_AUTOMATION && menu().menu === true, 'rig: the AUTO pad did not open the screen with its list');
+};
+step('⭐⭐ NOTHING automated: a jog click, and a jog HOLD, leave the list up (it used to close to the bare card)', () => {
+    LIST = ''; AT_HAS = ''; S.clipAtHas[T][C] = false; auto.automationRefreshPresence();
+    openByMap();
+    assert(ab.autoBankRows(T, C).length === 0, 'rig: the clip still lists automation');
+    click(); ticks(2);
+    assert(menu().menu === true, 'a jog CLICK closed the list — the bare card is back');
+    cc(3, 127); ticks(70); cc(3, 0); ticks(2);           /* held well past a click */
+    assert(menu().menu === true, 'a jog HOLD closed the list — the bare card is back');
+    assert(S.activeBank === BANK_AUTOMATION, 'the hold left the screen: bank ' + S.activeBank);
+});
+step('⭐ Clear all from the list\'s last row leaves you ON the screen, list up, now empty', () => {
+    LIST = '0 0 1 8 0:synth:cutoff 0\n'; auto.automationRefreshPresence();
+    openByMap();
+    const n = ab.autoBankRows(T, C).length;
+    assert(n >= 1, 'rig: nothing listed');
+    for (let i = 0; i < n + 2; i++) cc(14, 1);            /* to the last row: Clear all */
+    ticks(1);
+    assert(menu().sel >= n, 'rig: the cursor is not on Clear all (sel ' + menu().sel + ' of ' + n + ')');
+    sets.length = 0;
+    click(); ticks(2);
+    LIST = ''; auto.automationRefreshPresence(); ticks(2);
+    assert(sets.some(x => /pa_clear/.test(x)), 'control: Clear all cleared nothing: ' + JSON.stringify(sets));
+    assert(menu().menu === true, 'Clear all closed the list — the bare card is back');
+    assert(S.activeBank === BANK_AUTOMATION, 'Clear all left the screen');
+});
+
 if (failed) { console.log('FAIL: automation bank'); process.exit(1); }
 console.log('PASS: the AUTOMATION bank — the list, the menu, the ops, Clear all');
 }
