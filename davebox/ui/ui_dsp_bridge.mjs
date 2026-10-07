@@ -30,6 +30,7 @@ import {
     setButtonLED
 } from '/data/UserData/schwung/shared/input_filter.mjs';
 import { automationRefreshPresence, automationInvalidateMeta, automationWantsDrain, automationWantsFlags,
+         automationWantsRingCheck, AUTOMATION_RING_KEY,
          AUTOMATION_FLAG_KEYS, bulkEncode, bulkDecode,
          automationNoteListChangedElsewhere } from './ui_automation.mjs';
 
@@ -406,6 +407,9 @@ export function tickPrefetch() {
         for (const k of POLL_KEYS) keys.push(k);
         /* The automation warnings (ui_tick, this same poll) ride it too. */
         if (!drain && automationWantsFlags()) for (const k of AUTOMATION_FLAG_KEYS) keys.push(k);
+        /* ...and, with the per-tick drain closed, whether the engine has
+         * staged a value after all (ui_automation: automationWantsRingCheck). */
+        if (!drain && automationWantsRingCheck()) keys.push(AUTOMATION_RING_KEY);
         /* The engine-reload watcher (ui_tick, every 100th tick — a poll tick). */
         if ((S.tickCount % 100) === 0) keys.push('instance_id');
         /* The pad-map reconcile (ui_tick) runs on the poll's cadence so it

@@ -206,6 +206,8 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
             inst->tracks[t].drum_lane_pfx[_l].sample_counter += (uint64_t)frames;
     }
 
+    /* Locks held back for a swung step, ahead of the notes parked with them. */
+    pa_defer_fire(inst);
     for (t = 0; t < NUM_TRACKS; t++) {
         int _l;
         pfx_q_fire(&inst->tracks[t].pfx, inst->tracks[t].pfx.sample_counter);

@@ -7,6 +7,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed
+- **A step's parameter lock lands on its own step.** A lock on a Schwung
+  instrument or effect parameter (and on a track or bus level) was heard one
+  hit late: the value reached the instrument just after the step's note had
+  been sent. dAVEBOx now sets the parameter itself, ahead of the note — on
+  swung steps too. Locks on dAVEBOx's own bank knobs and on MACROS are
+  unchanged.
+
+### Changed
+- **Less work for the screen while automation plays.** The screen no longer
+  asks the engine for automation values on every update once the engine is
+  writing them itself.
 
 ## [0.0.13] — 2026-10-06 (test build, not in the Schwung catalog)
 ### Fixed

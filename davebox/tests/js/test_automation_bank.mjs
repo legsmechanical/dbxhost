@@ -62,6 +62,11 @@ const { S } = await import('../../ui/ui_state.mjs');
 const { BANKS, BANK_AUTOMATION, BANK_MACROS, BANK_SOUND, PAD_MODE_DRUM, PAD_MODE_CONDUCT } = await import('../../ui/ui_constants.mjs');
 const { bankCycleForMode, bankListForMode } = await import('../../ui/ui_pure.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
+/* These cases pin the RING path (staged by the engine, pushed here), which every
+ * target the engine cannot write itself still takes. The stub engine below stages
+ * everything, so resolution is off; the direct path has its own test
+ * (test_automation_resolve.mjs). */
+auto.automationResolveOffForTest(true);
 const ab = await import('../../ui/ui_automation_bank.mjs');
 const render = await import('../../ui/ui_render.mjs');
 const { MV_FOOTER_Y } = await import('../../ui/ui_movy.mjs');

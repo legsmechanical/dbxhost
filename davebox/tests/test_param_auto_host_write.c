@@ -194,6 +194,62 @@ int main(void) {
         printf("  ok   — the value strings match the ones JS sends\n");
     }
 
+    /* ---- SWING: a swung step's lock waits for the step's note */
+    {
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *I = (seq8_instance_t *)h->inst;
+        hx_set_param(h, "t1_route", "schwung");
+        hx_set_param(h, "swing_res", "0");                    /* 1/16 pairs: steps 2, 4, 6... swing */
+        hx_set_param(h, "swing_amt", "60");
+        hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
+        hx_set_param(h, "t1_c0_step_1_toggle", "64 100");     /* a swung step */
+        hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 0 23 0");
+        hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 24 47 16383");
+        hx_set_param(h, "pa_resolve", "1:synth:cutoff 1 synth:cutoff 0 0 1 0.01");
+        hx_clear_capture(h);
+        hx_set_param(h, "transport", "play_focus:1:0");
+        int blk_set = -1, blk_note = -1, seen = 0, swung = 0;
+        for (int b = 0; b < 400 && blk_note < 0; b++) {
+            hx_render(h, 1);
+            if (I->swing_step_delay > 0) swung = 1;
+            for (; seen < hx_stub_event_count(); seen++) {
+                const hx_midi_event *e = hx_stub_event(seen);
+                if (e->kind == HX_PARAM_SET && !strcmp(e->value, "1") && blk_set < 0) blk_set = b;
+                if (e->kind == HX_MIDI_INTERNAL && (e->bytes[1] & 0xF0) == 0x90 && e->bytes[2] == 64 && e->bytes[3] > 0) blk_note = b;
+            }
+        }
+        HX_ASSERT(swung, "rig: swing never delayed a step");
+        HX_ASSERT(blk_note >= 0 && blk_set >= 0, "rig: the swung step's note or lock never appeared");
+        int s_hi = find_set("synth:cutoff", "1", 0), n64 = find_note_on(64, 0);
+        HX_ASSERT(s_hi < n64, "the swung step's lock was written after its note");
+        if (blk_set != blk_note) {
+            fprintf(stderr, "FAIL: the swung step's lock was written %d block(s) BEFORE its note (block %d vs %d) — "
+                            "it must wait with the note\n", blk_note - blk_set, blk_set, blk_note);
+            return 1;
+        }
+        hx_destroy(h);
+        printf("  ok   — on a swung step the lock is held back and written with the note\n");
+    }
+
+    /* ---- a value going out now cancels one that was held back */
+    {
+        hx_t *h = hx_create(NULL);
+        seq8_instance_t *I = (seq8_instance_t *)h->inst;
+        hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 0 23 0");
+        hx_set_param(h, "pa_resolve", "1:synth:cutoff 1 synth:cutoff 0 0 1 0.01");
+        int id = pa_target_lookup(I, "1:synth:cutoff");
+        hx_clear_capture(h);
+        I->pa_host_writes = 0;
+        pa_emit_chain_swung(I, 1, (uint16_t)id, 16383, 100000);       /* held back */
+        HX_ASSERT(count_sets() == 0, "a held-back value was written at once");
+        pa_emit_chain(I, (uint16_t)id, 0);                            /* a release: now */
+        hx_render(h, 2000);
+        HX_ASSERT(find_set("synth:cutoff", "1", 0) < 0, "a stale held-back lock was written after the value that replaced it");
+        HX_ASSERT(find_set("synth:cutoff", "0", 0) >= 0, "control: the immediate value was written");
+        hx_destroy(h);
+        printf("  ok   — an immediate value cancels a held-back one for the same parameter\n");
+    }
+
     /* ---- a malformed pa_resolve resolves nothing */
     {
         hx_t *h = hx_create(NULL);

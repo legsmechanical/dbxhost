@@ -50,10 +50,15 @@ globalThis.shadow_set_params = (slot, marker, blob) => {
 
 import { automationParamEdit, automationParamTouch, automationTick, automationResetCaches,
          automationNoteWrite, automationGestureCountForTest, automationPendingSizeForTest,
-         automationModuleWriteCountForTest, automationPresentForTest }
+         automationModuleWriteCountForTest, automationPresentForTest, automationResolveOffForTest }
     from '../../ui/ui_automation.mjs';
 import { S } from '../../ui/ui_state.mjs';
 import { tickPrefetch } from '../../ui/ui_dsp_bridge.mjs';
+/* These cases pin the RING path (staged by the engine, pushed here), which every
+ * target the engine cannot write itself still takes. The stub engine stages
+ * everything, so resolution is off; the direct path has its own test
+ * (test_automation_resolve.mjs). */
+automationResolveOffForTest(true);
 
 let ok = 0, bad = 0;
 const check = (cond, msg) => {

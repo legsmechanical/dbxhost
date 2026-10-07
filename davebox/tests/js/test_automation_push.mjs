@@ -72,6 +72,11 @@ import { automationTick, automationResetCaches, automationPendingSizeForTest,
          automationRefreshPresence, automationNoteWrite, automationPresentForTest,
          automationPollWarnings }
     from '../../ui/ui_automation.mjs';
+/* These cases pin the RING path (staged by the engine, pushed here), which every
+ * target the engine cannot write itself still takes. The stub engine below stages
+ * everything, so resolution is off; the direct path has its own test
+ * (test_automation_resolve.mjs). */
+auto.automationResolveOffForTest(true);
 import { S } from '../../ui/ui_state.mjs';
 import { tickPrefetch } from '../../ui/ui_dsp_bridge.mjs';   /* the drain rides the tick's one read */
 

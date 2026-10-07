@@ -44,6 +44,14 @@
  * Past this the rest of the block's values take the ring: each write costs
  * whatever the target module's set_param costs, on the audio thread. */
 #define PA_HOST_WRITES_PER_BLOCK 32
+/* Direct writes held back to land with a SWUNG step's notes — see
+ * pa_emit_chain_swung. One per target at most; a full queue writes at once. */
+#define PA_DEFER_MAX 16
+typedef struct {
+    uint64_t fire_at;     /* in the owning track's pfx.sample_counter */
+    uint16_t target, val;
+    uint8_t  track, used;
+} pa_defer_t;
 /* A RESOLUTION: where one target lives and how its 14-bit value becomes the
  * string the parameter takes. Only JS has the metadata (a module's
  * chain_params), so JS pushes one of these per target it can describe

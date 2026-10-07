@@ -1371,6 +1371,7 @@ typedef struct {
     char       pa_targets[PA_MAX_TARGETS][PA_TARGET_LEN];
     /* How to write each target's chain parameter directly — see pa_res_t. */
     pa_res_t   pa_res[PA_MAX_TARGETS];
+    pa_defer_t pa_defer[PA_DEFER_MAX];
     uint16_t   pa_host_writes;        /* this render_block's direct writes (capped) */
     uint32_t   pa_host_write_total;   /* direct writes since create (diagnostic) */
     uint8_t    pa_dirty;          /* automation changed since the last save */

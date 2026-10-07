@@ -114,6 +114,44 @@ let anyAutomation = false;
 let stopGrace = 0;
 const STOP_GRACE_TICKS = 3;
 
+/* ------------------------------------------------------------------ */
+/* RESOLUTIONS — the engine writes these targets ITSELF                 */
+/*                                                                      */
+/* A staged value reaches its parameter a tick and a frame after the    */
+/* engine produced it: late enough that a step's lock was heard on the  */
+/* NEXT hit. The engine can write a chain parameter directly, in its    */
+/* render, ahead of the step's notes — but only if it is told where the */
+/* parameter lives and how its value scales, which only this side       */
+/* knows (a module's chain_params). So every target that can be         */
+/* described is described to it once (set_param "pa_resolve"); the ring */
+/* and the push below stay for everything that cannot: seq: and mac:    */
+/* targets, a parameter chain_params does not publish, a component      */
+/* whose metadata has not been read yet.                                */
+/*                                                                      */
+/* `resolved`: target -> the descriptor the engine holds.               */
+/* `unresolvable`: described as far as it can be, and it cannot.        */
+let resolved = new Map();
+let unresolvable = new Set();
+let resolveStale = false;         /* the list or the metadata changed: look again */
+let resolveRetryAt = 0;           /* tick; a component read failed, try later */
+/* Ticks left to keep draining although every target is resolved: a value was
+ * staged before its resolution landed, or the engine says one is waiting. */
+let ringForce = 0;
+const RING_FORCE_TICKS = 4;
+/* Ticks since a description was sent during which a ring value for a
+ * described target is expected (it was staged before the engine heard). */
+let resolveGrace = 0;
+const RESOLVE_RETRY_TICKS = 10;
+let ringHeals = new Map();        /* target -> times a "resolved" target came by the ring */
+const RING_HEAL_MAX = 3;
+let ringNeedCache = { gen: -1, val: true };
+let resolveGen = 0;
+/* Tests of the RING path — still what every unresolved target takes — drive a
+ * stub engine that stages everything and writes nothing itself. They switch
+ * resolution off so their targets stay on the ring, as a seq: target's does. */
+let resolveOff = false;
+export function automationResolveOffForTest(on) { resolveOff = !!on; resolveStale = true; }
+
 export function automationResetCaches() {
     pending = new Map();
     metaCache = new Map();
@@ -128,6 +166,8 @@ export function automationResetCaches() {
     listStale = false;
     stateByKey = new Map();
     listGen++;
+    resolved = new Map(); unresolvable = new Set(); ringHeals = new Map();
+    resolveStale = false; resolveRetryAt = 0; ringForce = 0; resolveGrace = 0; resolveGen++;
 }
 
 /* An insert-FX REORDER moved position `from` to `to` (1-based). `scope` is the
@@ -174,7 +214,20 @@ export function automationFxMoved(scope, from, to) {
  * every slot — must throw it away, or the next push maps into the OLD
  * module's range. No slot given = all of it. */
 export function automationInvalidateMeta(slot) {
-    if (slot === undefined || slot === null) { metaCache = new Map(); return; }
+    const all = (slot === undefined || slot === null);
+    /* The engine forgets with us: what it was told about that slot described
+     * the OLD module. Until the targets are resolved again (resolveTick), their
+     * values take the ring and the push below. */
+    if (resolved.size || unresolvable.size) {
+        const hit = (t) => all || resolveSlotOf(t) === String(slot);
+        let any = false;
+        for (const t of Array.from(resolved.keys())) if (hit(t)) { resolved.delete(t); any = true; }
+        for (const t of Array.from(unresolvable)) if (hit(t)) unresolvable.delete(t);
+        if (any) queueSet('pa_unresolve', all ? 'all' : String(slot));
+        resolveGen++;
+    }
+    resolveStale = true;
+    if (all) { metaCache = new Map(); return; }
     const pfx = String(slot) + ':';
     for (const k of Array.from(metaCache.keys())) if (k.startsWith(pfx)) metaCache.delete(k);
 }
@@ -205,6 +258,7 @@ function parseList(list) {
     if (list === null || list === undefined) { listStale = true; return; }
     stateByKey = new Map();
     listGen++;
+    resolveStale = true;         /* new lanes may need describing to the engine */
     if (!list) return;
     for (const line of list.split('\n')) {
         if (!line.length) continue;
@@ -660,6 +714,107 @@ function pushPair(target, norm) {
     return null;
 }
 
+/* The chain slot a target's value is written to, as a string — what
+ * pa_unresolve takes. Bus levels live on slot 0 (pushPair). null: no slot. */
+function resolveSlotOf(target) {
+    const m = String(target).split(':');
+    if (m[0] === 'bus') return '0';
+    return /^\d+$/.test(m[0]) ? m[0] : null;
+}
+
+/* How the ENGINE should write `target`: "<slot> <chain key> <kind> <min> <max>
+ * <step>" — kind 0 float, 1 int, 2 enum (max = last option index). The same
+ * arithmetic as wireValue, stated instead of performed.
+ *   null      = cannot be described (seq:, mac:, a key the module does not
+ *               publish — wireValue would be guessing 0..1): stays on the ring
+ *   undefined = not yet: its component's metadata has not been read
+ * `budget.fetch` is how many component reads this call may still make. */
+function resolveDescriptor(target, budget) {
+    const m = String(target).split(':');
+    if (m.length < 3 || m[0] === 'seq' || m[0] === 'mac') return null;
+    if (m[0] === 'bus') {
+        const bus = parseInt(m[1], 10);
+        if (isNaN(bus)) return null;
+        /* pushPair: the 0..1 position to four decimals. */
+        return '0 ' + moveBusComp(bus) + ':' + m.slice(2).join(':') + ' 0 0 1 0.0001';
+    }
+    const slot = parseInt(m[0], 10);
+    if (isNaN(slot)) return null;
+    const comp = m.slice(1, -1).join(':');
+    const key  = m[m.length - 1];
+    if (!isLevelComponent(comp) && !metaCache.has(slot + ':' + comp)) {
+        if (budget.fetch <= 0) return undefined;
+        budget.fetch--;
+        componentMeta(slot, comp);                       /* one blocking read, cached if it parsed */
+        if (!metaCache.has(slot + ':' + comp)) return undefined;
+    }
+    const p = paramMeta(slot, comp, key);
+    if (!p) return null;
+    const head = slot + ' ' + comp + ':' + key + ' ';
+    if (p.type === 'enum' && Array.isArray(p.options) && p.options.length)
+        return head + '2 0 ' + (p.options.length - 1) + ' 0';
+    const min = (typeof p.min === 'number') ? p.min : 0;
+    const max = (typeof p.max === 'number') ? p.max : 1;
+    if (!(max >= min)) return null;
+    if (p.type === 'int') return head + '1 ' + min + ' ' + max + ' 0';
+    const step = (typeof p.step === 'number' && p.step > 0) ? p.step : 0.01;
+    return head + '0 ' + min + ' ' + max + ' ' + step;
+}
+
+/* Every listed target the engine could be writing itself, described to it.
+ * Runs only when the list or the metadata changed; at most ONE component read
+ * a tick (each is a blocking round trip). */
+function resolveTick() {
+    if (resolveOff || !resolveStale || S.tickCount < resolveRetryAt) return;
+    const budget = { fetch: 1 };
+    let retry = false, sent = false;
+    const seen = new Set();
+    for (const k of stateByKey.keys()) {
+        const target = k.slice(k.lastIndexOf(' ') + 1);
+        if (seen.has(target)) continue;
+        seen.add(target);
+        if (resolved.has(target) || unresolvable.has(target) || midiTargetIsMidi(target)) continue;
+        const d = resolveDescriptor(target, budget);
+        if (d === undefined) { retry = true; continue; }
+        if (d === null) { unresolvable.add(target); continue; }
+        queueSet('pa_resolve', target + ' ' + d);
+        resolved.set(target, d);
+        sent = true;
+    }
+    resolveGen++;
+    resolveStale = retry;
+    if (retry) resolveRetryAt = S.tickCount + RESOLVE_RETRY_TICKS;
+    /* What was staged before the engine heard this is still in the ring. */
+    if (sent) { ringForce = RING_FORCE_TICKS; resolveGrace = RING_FORCE_TICKS; }
+}
+
+/* Is there anything the ring could be carrying? A listed target the engine
+ * does not write itself, a resolution still owed, or a forced window. */
+function ringNeeded() {
+    if (resolveOff || ringForce > 0 || resolveStale) return true;
+    const gen = listGen * 100003 + resolveGen;
+    if (ringNeedCache.gen === gen) return ringNeedCache.val;
+    let need = false;
+    for (const k of stateByKey.keys()) {
+        const target = k.slice(k.lastIndexOf(' ') + 1);
+        if (midiTargetIsMidi(target)) continue;          /* the engine emits those */
+        if (!resolved.has(target)) { need = true; break; }
+    }
+    ringNeedCache = { gen, val: need };
+    return need;
+}
+export function automationResolvedForTest(target) { return resolved.has(target) ? resolved.get(target) : null; }
+export function automationRingNeededForTest() { return ringNeeded(); }
+
+/* The poll asks the engine whether a staged value is waiting (pa_ring_any)
+ * when the per-tick drain is closed — so the day the engine stages something
+ * we thought it would write (a refusal, its per-block cap), it is found within
+ * a poll instead of never. */
+export function automationWantsRingCheck() {
+    return anyAutomation && !ringNeeded();
+}
+export const AUTOMATION_RING_KEY = 'pa_ring_any';
+
 /* Who applies a staged SEQUENCER value: davebox's bank-param writer
  * (ui_sound registers it) — (track, key, intValue). */
 let seqApplier = null;
@@ -699,7 +854,11 @@ function takeFlags(vals, offset) {
  * instead of making its own. */
 export function automationWantsDrain() {
     if (!anyAutomation) return false;
-    return S.playing || stopGrace > 0 || pending.size > 0;
+    if (!(S.playing || stopGrace > 0 || pending.size > 0)) return false;
+    /* ...and only while the ring can be carrying something: with every target
+     * resolved the engine writes them all itself, and reading an empty ring
+     * every tick is a round trip a playing session does not need. */
+    return pending.size > 0 || ringNeeded();
 }
 
 function drain() {
@@ -719,6 +878,18 @@ function drain() {
         const val = parseInt(line.slice(sp + 1), 10);
         if (isNaN(val)) continue;
         pending.set(target, val);       /* newest wins */
+        /* A target we believe the engine writes itself came by the ring: the
+         * engine does not hold that resolution (it was reset under us), or
+         * refuses the write. Describe it again — a few times, then leave it
+         * to the ring for good rather than re-send on every drain. */
+        if (resolved.has(target) && resolveGrace <= 0) {
+            const n = (ringHeals.get(target) || 0) + 1;
+            ringHeals.set(target, n);
+            resolved.delete(target);
+            if (n >= RING_HEAL_MAX) unresolvable.add(target);
+            else resolveStale = true;
+            resolveGen++;
+        }
     }
 }
 
@@ -816,6 +987,7 @@ export function automationForgetClipsForTest() { lastClipSeen = null; }
 export function automationTick() {
     if (carryPending.length) carryTick();
     gesturesTick();
+    resolveTick();              /* before the flush: its writes go out this tick */
     flushModuleWrites();
     /* ⚠ NOT while a pa-clear write is still queued — see queuedClearOutstanding.
      * The flags stay SET, so the refresh happens on the first tick after the
@@ -853,7 +1025,15 @@ export function automationTick() {
     else if (stopGrace > 0) stopGrace--;
     else if (!pending.size) return;
 
-    drain();
+    /* The engine reports a staged value on the poll while the drain is closed. */
+    if (tickWants(AUTOMATION_RING_KEY) && dget(AUTOMATION_RING_KEY) === '1') ringForce = POLL_INTERVAL + RING_FORCE_TICKS;
+    /* Drain when this tick's prefetch carried the ring (it asked
+     * automationWantsDrain before anything above ran, and the flags it read
+     * clear on read, so a carried answer is always taken) — or when the ring
+     * is needed and nothing carried it (a caller outside the tick). */
+    if (tickWants(DRAIN_KEYS[0]) || ringNeeded()) drain();
+    if (ringForce > 0) ringForce--;
+    if (resolveGrace > 0) resolveGrace--;
     pushPending();
 }
 

@@ -182,8 +182,22 @@ static int pa_format_value(const pa_res_t *r, uint16_t val, char *out, int cap) 
     return n;
 }
 
+/* The engine holds a resolution for this target and a host to write through. */
+static int pa_direct_ok(const seq8_instance_t *inst, uint16_t target) {
+    if (target >= PA_MAX_TARGETS || !g_ext || !g_ext->set_slot_param) return 0;
+    const pa_res_t *r = &inst->pa_res[target];
+    return r->valid && !strcmp(r->name, inst->pa_targets[target]);
+}
+
+/* A value for `target` is going out NOW: one held back for it is stale. */
+static void pa_defer_cancel(seq8_instance_t *inst, uint16_t target) {
+    for (int i = 0; i < PA_DEFER_MAX; i++)
+        if (inst->pa_defer[i].used && inst->pa_defer[i].target == target) inst->pa_defer[i].used = 0;
+}
+
 /* The one door a non-MIDI automation value leaves by. */
 static void pa_emit_chain(seq8_instance_t *inst, uint16_t target, uint16_t val) {
+    pa_defer_cancel(inst, target);
     if (target < PA_MAX_TARGETS && g_ext && g_ext->set_slot_param &&
             inst->pa_host_writes < PA_HOST_WRITES_PER_BLOCK) {
         const pa_res_t *r = &inst->pa_res[target];
@@ -199,6 +213,49 @@ static void pa_emit_chain(seq8_instance_t *inst, uint16_t target, uint16_t val) 
         }
     }
     pa_ring_push(inst, target, val);
+}
+
+/* SWING. A swung step's notes are not sent at the step's tick: pfx_send parks
+ * them `swing_step_delay` samples and the top of a later block fires them. A
+ * lock written at the tick would then be up to half a step EARLY — the tail of
+ * the previous note would change. So a lock on a swung step is held back by
+ * the same delay and fired just ahead of the parked notes (pa_defer_fire runs
+ * before pfx_q_fire).
+ *
+ * Only for a STEPPED lane: its value changes at a step and holds, so holding
+ * the change back is exact. A smooth lane moves every tick; delaying the
+ * swung step's ticks and not the next step's would reorder them, and a ramp
+ * arriving a few ms early is inaudible anyway. Only for a value the engine
+ * writes itself: the ring is a tick late whatever is done here. */
+static void pa_emit_chain_swung(seq8_instance_t *inst, int track, uint16_t target,
+                                uint16_t val, uint64_t delay) {
+    if (!delay || !pa_direct_ok(inst, target)) { pa_emit_chain(inst, target, val); return; }
+    pa_defer_t *slot = NULL;
+    for (int i = 0; i < PA_DEFER_MAX; i++) {
+        pa_defer_t *d = &inst->pa_defer[i];
+        if (d->used && d->target == target) { slot = d; break; }     /* newest wins */
+        if (!d->used && !slot) slot = d;
+    }
+    if (!slot) { pa_emit_chain(inst, target, val); return; }         /* full: now beats never */
+    slot->fire_at = inst->tracks[track].pfx.sample_counter + delay;
+    slot->target = target; slot->val = val;
+    slot->track = (uint8_t)track; slot->used = 1;
+}
+
+/* Top of each block, BEFORE the parked notes fire. */
+static void pa_defer_fire(seq8_instance_t *inst) {
+    for (int i = 0; i < PA_DEFER_MAX; i++) {
+        pa_defer_t *d = &inst->pa_defer[i];
+        if (!d->used) continue;
+        uint64_t now = inst->tracks[d->track % NUM_TRACKS].pfx.sample_counter;
+        /* Due — or its clock was reset under it (a count-in zeroes the
+         * counter): a value held more than a second is not a swing delay. */
+        if (d->fire_at <= now || d->fire_at - now > (uint64_t)MOVE_SAMPLE_RATE) {
+            uint16_t tgt = d->target, v = d->val;
+            d->used = 0;
+            pa_emit_chain(inst, tgt, v);
+        }
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -505,6 +562,7 @@ static void pa_reset_all_locked(seq8_instance_t *inst) {
     memset(inst->pa_entries, 0, sizeof(inst->pa_entries));
     memset(inst->pa_targets, 0, sizeof(inst->pa_targets));
     memset(inst->pa_res, 0, sizeof(inst->pa_res));   /* another project's parameters */
+    memset(inst->pa_defer, 0, sizeof(inst->pa_defer));
     inst->pa_dirty = 0;
 }
 
@@ -1844,7 +1902,7 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
     if (seq0 & 1u) return;                   /* a write is in flight; next tick */
 
     /* Staged into locals first — see the note above. */
-    struct { uint16_t target; uint16_t val; uint8_t midi; int cc; } out[PA_TICK_MAX_STAGE];
+    struct { uint16_t target; uint16_t val; uint8_t midi; uint8_t stepped; int cc; } out[PA_TICK_MAX_STAGE];
     int nout = 0;
 
     /* Where the clip's loop window starts, in the same ticks as `ct` — what a
@@ -1901,6 +1959,7 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
         out[nout].target = tgt;
         out[nout].val    = v;
         out[nout].midi   = (uint8_t)midi;
+        out[nout].stepped = (e->flags & PA_FLAG_SMOOTH) ? 0 : 1;
         out[nout].cc     = cc;
         nout++;
     }
@@ -1931,7 +1990,8 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
         if (out[i].midi) {
             if (emit) emit(tr, out[i].cc, out[i].val);   /* the emitter narrows */
         } else {
-            pa_emit_chain(inst, out[i].target, out[i].val);
+            pa_emit_chain_swung(inst, track, out[i].target, out[i].val,
+                                out[i].stepped ? inst->swing_step_delay : 0);
         }
     }
 }
