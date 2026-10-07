@@ -34,6 +34,9 @@ static inline hx_t *hx_create_raw(const char *json_defaults) {
     hx_stub_reset_capture();
     hx_stub_set_bpm(120.0f);   /* fresh instance => default tempo (capture clears are independent) */
     h.inst = h.api->create_instance(".", json_defaults);
+    /* As the host does after create_instance: hand over its extensions. */
+    hx_stub_ext_refuse(0);
+    if (h.inst) move_plugin_host_ext_v1(hx_stub_ext());
     return h.inst ? &h : NULL;
 }
 

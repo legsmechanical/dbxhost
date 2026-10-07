@@ -40,6 +40,28 @@
 #define PA_UNDO_ENTRIES     16   /* automated params per clip an undo slot can hold */
 #define PA_RING_SLOTS      256   /* staged (target, value) changes awaiting the JS push; > 8 tracks x PA_TICK_MAX_STAGE x a few ticks */
 #define PA_TICK_MAX_STAGE   16   /* changes one tick may stage — see pa_playback_scan */
+/* Chain parameters the engine writes ITSELF, per render_block (pa_emit_chain).
+ * Past this the rest of the block's values take the ring: each write costs
+ * whatever the target module's set_param costs, on the audio thread. */
+#define PA_HOST_WRITES_PER_BLOCK 32
+/* A RESOLUTION: where one target lives and how its 14-bit value becomes the
+ * string the parameter takes. Only JS has the metadata (a module's
+ * chain_params), so JS pushes one of these per target it can describe
+ * (set_param "pa_resolve"); the engine never guesses. Runtime only — never
+ * saved; JS resolves again after a load. `name` is the target it was made
+ * for: an id is reused when its target is freed or renamed, and a resolution
+ * for the old name must not be applied to the new one. */
+#define PA_RES_FLOAT 0   /* min + (max-min)*t, quantised to step            */
+#define PA_RES_INT   1   /* round(min + (max-min)*t)                        */
+#define PA_RES_ENUM  2   /* round(t * (nopt-1)) — an option index           */
+typedef struct {
+    uint8_t valid;
+    uint8_t kind;
+    uint8_t slot;
+    double  min, max, step;          /* ENUM: max = nopt-1, min = 0 */
+    char    key[PA_TARGET_LEN];      /* the chain key: "synth:cutoff", "move_fx:1:volume" */
+    char    name[PA_TARGET_LEN];     /* the target this describes */
+} pa_res_t;
 /* The lane clock RESETS ON PLAY (Josh, 2026-09-03: "reset on play"): a lane
  * slower than x1 spans several clip cycles, and the clip and its lanes must
  * start together — at every transport start (all tracks) and every clip

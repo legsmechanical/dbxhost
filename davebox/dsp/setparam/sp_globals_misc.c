@@ -15,6 +15,58 @@ static int sp_globals_misc(sp_ctx_t *cx) {
     const char *key = cx->key;
     const char *val = cx->val;
 
+    /* pa_resolve "<target> <slot> <chain key> <kind> <min> <max> <step>" — JS
+     * tells the engine where an automated chain parameter lives and how its
+     * value is scaled, so the engine can write it itself (pa_emit_chain).
+     * kind: 0 float, 1 int, 2 enum (max = option count - 1). The target must
+     * already be in the store; an unknown one is ignored (JS resolves from the
+     * automation list, which is the store). Nothing here is saved. */
+    if (!strcmp(key, "pa_resolve")) {
+        char tgt[PA_TARGET_LEN], ck[PA_TARGET_LEN];
+        const char *p = val;
+        int n = 0;
+        while (*p == ' ') p++;
+        while (*p && *p != ' ' && n < PA_TARGET_LEN - 1) tgt[n++] = *p++;
+        tgt[n] = '\0';
+        if (!n || *p != ' ') return 1;
+        while (*p == ' ') p++;
+        int slot = 0, any = 0;
+        while (*p >= '0' && *p <= '9') { slot = slot * 10 + (*p++ - '0'); any = 1; }
+        if (!any || *p != ' ' || slot > 255) return 1;
+        while (*p == ' ') p++;
+        n = 0;
+        while (*p && *p != ' ' && n < PA_TARGET_LEN - 1) ck[n++] = *p++;
+        ck[n] = '\0';
+        if (!n || *p != ' ') return 1;
+        char *end = NULL;
+        long kind = strtol(p, &end, 10);
+        if (end == p || kind < PA_RES_FLOAT || kind > PA_RES_ENUM) return 1;
+        p = end;
+        double mn = strtod(p, &end); if (end == p) return 1; p = end;
+        double mx = strtod(p, &end); if (end == p) return 1; p = end;
+        double st = strtod(p, &end); if (end == p) return 1;
+        if (!(mx >= mn) || !(st >= 0)) return 1;          /* also refuses NaN */
+        int id = pa_target_lookup(inst, tgt);
+        if (id < 0 || id >= PA_MAX_TARGETS) return 1;
+        pa_res_t *r = &inst->pa_res[id];
+        r->valid = 0;                                     /* never half-written and live */
+        r->kind = (uint8_t)kind; r->slot = (uint8_t)slot;
+        r->min = mn; r->max = mx; r->step = st;
+        snprintf(r->key,  sizeof(r->key),  "%s", ck);
+        snprintf(r->name, sizeof(r->name), "%s", tgt);
+        r->valid = 1;
+        return 1;
+    }
+    /* pa_unresolve "<slot>" | "all" — forget how to write that slot's
+     * parameters (its module was swapped or its metadata is being re-read);
+     * their values take the ring and JS until they are resolved again. */
+    if (!strcmp(key, "pa_unresolve")) {
+        int all = !strcmp(val, "all");
+        int slot = all ? -1 : my_atoi(val);
+        for (int i = 0; i < PA_MAX_TARGETS; i++)
+            if (all || inst->pa_res[i].slot == slot) inst->pa_res[i].valid = 0;
+        return 1;
+    }
     if (!strcmp(key, "looper_arm")) {
         int t = clamp_i(my_atoi(val), 1, 65535);
         if (inst->looper_state == LOOPER_STATE_LOOPING) {

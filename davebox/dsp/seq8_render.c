@@ -192,6 +192,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
         memset(out_lr, 0, (size_t)frames * 2 * sizeof(int16_t));
 
     inst->block_count++;
+    inst->pa_host_writes = 0;          /* this block's direct parameter writes (pa_emit_chain) */
     if (frames > 0) inst->rui_frames += (uint64_t)frames;  /* device clock (remote UI) */
     /* Stopped: there is no beat to wait for. */
     if (inst->aud.pending && !inst->playing) aud_apply(inst);
@@ -805,6 +806,38 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                 }
             }
 
+            /* PARAMETER AUTOMATION, BEFORE THIS TICK'S NOTES. A step's lock is
+             * the value its note is meant to be played with, so it has to
+             * reach the instrument first: a chain parameter written here (see
+             * pa_emit_chain) precedes the note-on below in the same render
+             * call, and the synth voices that note with it. Evaluated after
+             * the notes — as this was until 2026-10-06 — the value trailed
+             * its own step. After the launch block above, which decides
+             * active_clip. */
+            if (tr->clip_playing &&
+                (tr->pad_mode != PAD_MODE_DRUM || tr->drum_clips[tr->active_clip])) {
+                clip_t    *_acl = &tr->clips[tr->active_clip];
+                uint32_t   _tps = _acl->ticks_per_step;
+                /* Playhead: melodic uses the track step counter. On drum that is
+                 * frozen (only per-lane counters advance), and automation is one
+                 * timeline for the whole clip — the master clock wrapped to the
+                 * LONGEST LANE's window (pa_drum_clip_tick, the one owner). */
+                uint32_t   _winlen = (uint32_t)_acl->length * _tps;
+                uint32_t   _ct  = (tr->pad_mode == PAD_MODE_DRUM)
+                                  ? pa_drum_clip_tick(inst, tr, (int)tr->active_clip, &_tps, &_winlen)
+                                  : ((uint32_t)tr->current_step * _tps + tr->tick_in_step);
+                /* Per-parameter automation (Front 3). It reads its own store and
+                 * emits the MIDI targets itself, writes the chain parameters it
+                 * has been told how to address, and stages the rest for JS.
+                 * pa_playback_scan is audio-thread safe — it allocates nothing
+                 * and discards any pass a concurrent edit overlapped. */
+                pa_playback_scan(inst, tr, t, (int)tr->active_clip, _ct,
+                                 _winlen, pa_emit_midi);
+                /* And the knobs under a hand while Record is on: written along
+                 * the same playhead, one cell at a time. */
+                pa_record_tick(inst, tr, t, (int)tr->active_clip, _ct, _tps, _winlen);
+            }
+
             /* Note-on: drum and melodic paths share the same note-firing logic but
              * drum iterates all 32 lanes, applying each lane's pfx params before scanning. */
             if (tr->pad_mode == PAD_MODE_DRUM && tr->drum_clips[tr->active_clip]) {
@@ -966,28 +999,17 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
             tarp_tick(inst, tr);
             arp_tick(inst, tr);
 
-            /* Parameter + aftertouch automation playback. */
+            /* Aftertouch automation playback. AFTER the notes, unlike the
+             * parameter automation above: pressure belongs to a note that is
+             * already sounding. */
             if (tr->clip_playing &&
                 (tr->pad_mode != PAD_MODE_DRUM || tr->drum_clips[tr->active_clip])) {
                 clip_t    *_acl = &tr->clips[tr->active_clip];
                 uint32_t   _tps = _acl->ticks_per_step;
-                /* Playhead: melodic uses the track step counter. On drum that is
-                 * frozen (only per-lane counters advance), and automation is one
-                 * timeline for the whole clip — the master clock wrapped to the
-                 * LONGEST LANE's window (pa_drum_clip_tick, the one owner). */
                 uint32_t   _winlen = (uint32_t)_acl->length * _tps;
                 uint32_t   _ct  = (tr->pad_mode == PAD_MODE_DRUM)
                                   ? pa_drum_clip_tick(inst, tr, (int)tr->active_clip, &_tps, &_winlen)
                                   : ((uint32_t)tr->current_step * _tps + tr->tick_in_step);
-                /* Per-parameter automation (Front 3). It reads its own store and
-                 * either emits the MIDI targets itself or stages the rest for
-                 * JS. pa_playback_scan is audio-thread safe — it allocates
-                 * nothing and discards any pass a concurrent edit overlapped. */
-                pa_playback_scan(inst, tr, t, (int)tr->active_clip, _ct,
-                                 _winlen, pa_emit_midi);
-                /* And the knobs under a hand while Record is on: written along
-                 * the same playhead, one cell at a time. */
-                pa_record_tick(inst, tr, t, (int)tr->active_clip, _ct, _tps, _winlen);
 
                 /* Pad-pressure aftertouch automation playback (interpolated;
                  * independent of the live AftTch toggle — recorded AT always

@@ -1369,6 +1369,10 @@ typedef struct {
      * what makes the number not matter, which is the point. */
     pa_entry_t pa_entries[PA_MAX_ENTRIES];
     char       pa_targets[PA_MAX_TARGETS][PA_TARGET_LEN];
+    /* How to write each target's chain parameter directly — see pa_res_t. */
+    pa_res_t   pa_res[PA_MAX_TARGETS];
+    uint16_t   pa_host_writes;        /* this render_block's direct writes (capped) */
+    uint32_t   pa_host_write_total;   /* direct writes since create (diagnostic) */
     uint8_t    pa_dirty;          /* automation changed since the last save */
     uint8_t    pa_store_full;     /* a write was refused; JS reports it and clears */
     /* Store-wide seqlock: odd while a write is in flight. See pa_write_begin. */
@@ -1553,6 +1557,11 @@ static const clip_t *aud_saved_clip(const seq8_instance_t *inst, int t, int c, i
 }
 
 static const host_api_v1_t *g_host = NULL;
+/* Host extensions (plugin_api_v1.h). The host calls this once after
+ * create_instance if it has any; a host that has none never calls it and
+ * g_ext stays NULL — every user of it keeps its fallback. */
+static const move_host_ext_v1_t *g_ext = NULL;
+void move_plugin_host_ext_v1(const move_host_ext_v1_t *ext) { g_ext = ext; }
 static seq8_instance_t     *g_inst = NULL;
 
 /* ------------------------------------------------------------------ */
@@ -7577,6 +7586,18 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
     /* pa_ring_dropped: the staged-change ring overflowed, so some automation
      * value was retired before JS could push it. Visible rather than guessed
      * at; cleared on read. */
+    /* pa_host_writes: chain parameters the engine has written itself since
+     * create (pa_emit_chain) — 0 on a host without the extension. */
+    if (!strcmp(key, "pa_host_writes"))
+        return snprintf(out, out_len, "%u", inst ? (unsigned)inst->pa_host_write_total : 0u);
+    /* pa_ring_any: 1 while a staged value is waiting for JS. On the poll's
+     * cadence, so JS can stop draining every tick when the engine writes
+     * everything itself and still notice the day it does not. */
+    if (!strcmp(key, "pa_ring_any")) {
+        int any = inst && (__atomic_load_n(&inst->pa_ring_head, __ATOMIC_ACQUIRE) !=
+                           __atomic_load_n(&inst->pa_ring_tail, __ATOMIC_ACQUIRE));
+        return snprintf(out, out_len, "%d", any);
+    }
     if (!strcmp(key, "pa_ring_dropped")) {
         int v = inst ? (int)inst->pa_ring_dropped : 0;
         if (inst) inst->pa_ring_dropped = 0;

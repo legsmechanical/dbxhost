@@ -124,6 +124,84 @@ static void pa_ring_pop(seq8_instance_t *inst) {
 }
 
 /* ------------------------------------------------------------------ */
+/* THE DIRECT WRITE                                                      */
+/*                                                                      */
+/* A chain parameter the engine can address is written HERE, in the     */
+/* render call, before the tick's notes go out — so a step's lock is in */
+/* place for that step's note (the synth voices the note on its next    */
+/* frame). Through JS it landed a tick and a frame later: on the next   */
+/* hit, for anything a sound latches when it is triggered.              */
+/*                                                                      */
+/* Everything else still takes the ring and JS: a target with no        */
+/* resolution (seq: and mac: never have one; a module whose metadata JS */
+/* has not read yet), a host without the extension, a refused write, or */
+/* a block that has already made PA_HOST_WRITES_PER_BLOCK of them.      */
+
+/* Math.round: half goes UP (toward +inf), also below zero. No libm. */
+static long long pa_round_half_up(double x) {
+    double y = x + 0.5;
+    long long f = (long long)y;
+    if ((double)f > y) f--;
+    return f;
+}
+
+/* 14-bit value -> the string JS's wireValue would have sent (ui_automation):
+ * an option index, a rounded integer, or a float quantised to the
+ * parameter's step and rounded to six decimals, trailing zeros dropped.
+ * Returns the length; 0 if it does not fit. */
+static int pa_format_value(const pa_res_t *r, uint16_t val, char *out, int cap) {
+    if (cap < 24) return 0;
+    double t = (double)(val > PA_VAL_MAX ? PA_VAL_MAX : val) / (double)PA_VAL_MAX;
+    long long micro;                       /* the value x 1e6 */
+    if (r->kind == PA_RES_ENUM) {
+        micro = pa_round_half_up(t * r->max) * 1000000LL;
+    } else {
+        double v = r->min + (r->max - r->min) * t;
+        if (r->kind == PA_RES_INT) micro = pa_round_half_up(v) * 1000000LL;
+        else {
+            double step = r->step > 0 ? r->step : 0.01;
+            double q = (double)pa_round_half_up((v - r->min) / step) * step + r->min;
+            micro = pa_round_half_up(q * 1e6);
+        }
+    }
+    int n = 0;
+    unsigned long long u = micro < 0 ? (unsigned long long)(-micro) : (unsigned long long)micro;
+    if (micro < 0) out[n++] = '-';
+    unsigned long long ip = u / 1000000ULL, fp = u % 1000000ULL;
+    char tmp[20]; int tn = 0;
+    do { tmp[tn++] = (char)('0' + (ip % 10)); ip /= 10; } while (ip && tn < 19);
+    while (tn) out[n++] = tmp[--tn];
+    if (fp) {
+        char fr[6]; int k;
+        for (k = 5; k >= 0; k--) { fr[k] = (char)('0' + (fp % 10)); fp /= 10; }
+        int last = 5; while (last > 0 && fr[last] == '0') last--;
+        out[n++] = '.';
+        for (k = 0; k <= last; k++) out[n++] = fr[k];
+    }
+    out[n] = '\0';
+    return n;
+}
+
+/* The one door a non-MIDI automation value leaves by. */
+static void pa_emit_chain(seq8_instance_t *inst, uint16_t target, uint16_t val) {
+    if (target < PA_MAX_TARGETS && g_ext && g_ext->set_slot_param &&
+            inst->pa_host_writes < PA_HOST_WRITES_PER_BLOCK) {
+        const pa_res_t *r = &inst->pa_res[target];
+        /* The resolution must be for THIS name: ids are reused. */
+        if (r->valid && !strcmp(r->name, inst->pa_targets[target])) {
+            char buf[32];
+            if (pa_format_value(r, val, buf, (int)sizeof(buf)) &&
+                    g_ext->set_slot_param((int)r->slot, r->key, buf)) {
+                inst->pa_host_writes++;
+                inst->pa_host_write_total++;
+                return;
+            }
+        }
+    }
+    pa_ring_push(inst, target, val);
+}
+
+/* ------------------------------------------------------------------ */
 /* Target interning                                                    */
 
 /* A target is written verbatim into a JSON string in the state file and read
@@ -426,6 +504,7 @@ static void pa_clear_track_clip(seq8_instance_t *inst, int track, int clip) {
 static void pa_reset_all_locked(seq8_instance_t *inst) {
     memset(inst->pa_entries, 0, sizeof(inst->pa_entries));
     memset(inst->pa_targets, 0, sizeof(inst->pa_targets));
+    memset(inst->pa_res, 0, sizeof(inst->pa_res));   /* another project's parameters */
     inst->pa_dirty = 0;
 }
 
@@ -1852,7 +1931,7 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
         if (out[i].midi) {
             if (emit) emit(tr, out[i].cc, out[i].val);   /* the emitter narrows */
         } else {
-            pa_ring_push(inst, out[i].target, out[i].val);
+            pa_emit_chain(inst, out[i].target, out[i].val);
         }
     }
 }
@@ -1931,7 +2010,7 @@ static void pa_release_scan(seq8_instance_t *inst, int track, int clip) {
         uint16_t tgt = e->target;
         if (tgt >= PA_MAX_TARGETS) continue;
         if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
-            pa_ring_push(inst, tgt, back);
+            pa_emit_chain(inst, tgt, back);
     }
 }
 
@@ -1961,7 +2040,7 @@ static void pa_assert_scan(seq8_instance_t *inst, int track, int clip) {
         /* Playback must re-send after this, not believe its cache. */
         e->last_sent_valid = 0;
         if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
-            pa_ring_push(inst, tgt, back);
+            pa_emit_chain(inst, tgt, back);
     }
 }
 
@@ -2031,7 +2110,7 @@ static void pa_release_service(seq8_instance_t *inst) {
         if (tgt >= PA_MAX_TARGETS || !pa_rest_value(e, &back)) continue;
         e->last_sent_valid = 0;
         if (!pa_target_is_midi(inst->pa_targets[tgt], NULL))
-            pa_ring_push(inst, tgt, back);
+            pa_emit_chain(inst, tgt, back);
     }
     /* Release-only requests (a transport stop). */
     uint8_t mask = __atomic_exchange_n(&inst->pa_release_mask, 0, __ATOMIC_ACQ_REL);

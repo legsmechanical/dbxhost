@@ -17,6 +17,7 @@ static void push_event(hx_midi_kind kind, const uint8_t *msg, int len, int slot)
     e->kind = kind;
     e->len = (len > 4) ? 4 : len;
     e->slot = slot;
+    e->key[0] = '\0'; e->value[0] = '\0';
     memset(e->bytes, 0, sizeof(e->bytes));
     memcpy(e->bytes, msg, (size_t)e->len);
 }
@@ -35,6 +36,24 @@ static int   stub_internal_slot(int slot, const uint8_t *m, int n) { push_event(
 static int   stub_external(const uint8_t *m, int n) { push_event(HX_MIDI_EXTERNAL, m, n, -1); return n; }
 static int   stub_inject(const uint8_t *m, int n)   { push_event(HX_MIDI_INJECT,   m, n, -1); return n; }
 static float stub_get_bpm(void) { return g_bpm; }
+
+static int g_ext_refuse;
+static int stub_set_slot_param(int slot, const char *key, const char *value) {
+    if (g_ext_refuse || !key || !value) return 0;
+    if (g_event_count >= HX_CAP_MAX) return 1;
+    hx_midi_event *e = &g_events[g_event_count++];
+    memset(e, 0, sizeof(*e));
+    e->kind = HX_PARAM_SET;
+    e->slot = slot;
+    strncpy(e->key, key, sizeof(e->key) - 1);
+    strncpy(e->value, value, sizeof(e->value) - 1);
+    return 1;
+}
+const move_host_ext_v1_t *hx_stub_ext(void) {
+    static const move_host_ext_v1_t ext = { sizeof(move_host_ext_v1_t), stub_set_slot_param };
+    return &ext;
+}
+void hx_stub_ext_refuse(int on) { g_ext_refuse = on; }
 
 host_api_v1_t *hx_stub_host(void) {
     static host_api_v1_t host;
