@@ -1084,6 +1084,15 @@ export const S = {
      * comes up first, so no note-off lands for a note that never sounded. */
     bankMapSwallow: new Set(),
     bankMapDeferred: null,   /* a MENU pad tapped on a held map, opened on the release */
+    /* THE MAP OVER A SCREEN (Josh, 2026-10-07: "have jog click hold show the
+     * pad map everywhere, even in menus, module editors, and immediately jump
+     * out to whatever is selected"). `jogDeferred` = a jog press was taken
+     * over a screen that owns the click and is still undecided: nothing is
+     * drawn, the owner has not seen it. Let go early and the click is
+     * delivered then; held past JOG_HOLD_MAP_MS the map paints and
+     * `bankMapFromScreen` says a pick must first leave the screen under it. */
+    jogDeferred: false,
+    bankMapFromScreen: false,
     /* Tick of the last picker turn, for the SETTLE fallback. The gesture
      * normally ends with the jog-touch release, but a turn can arrive with no
      * touch at all (the capacitive read can miss a quick flick, and the remote

@@ -352,6 +352,13 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   bank after one and nothing opens. Letting go within half a second without tapping or
   turning counts as a click, so the map stays up. Holding the jog while the map
   is already up and tapping leaves it up.
+- **From inside a screen** — a menu, TRACK CONFIG, a module's editor, the
+  AUTOMATION screen — **hold the jog** for about a third of a second and the
+  same map comes up over it. **Tap a pad** and you leave the screen for that
+  bank; **let go** without tapping and the screen is exactly as you left it.
+  A quick click there is still a click (it lands as you let go). The map does
+  not come up over the on-screen keyboard, over a question that needs an
+  answer, or while Shift, Delete, Copy, Mute or Loop is held.
 - **Turning the jog** does not change the bank.
 - **Touch the jog** to see the current bank's page while your finger rests on it;
   let go and the overview is back. (In Session View it shows the mixer page.)

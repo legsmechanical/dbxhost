@@ -7,6 +7,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **The bank map from anywhere.** Hold the jog inside a menu, TRACK CONFIG, a
+  module's editor or the AUTOMATION screen and the bank map comes up over it;
+  tap a pad to jump straight to that bank, or let go to stay where you were.
+
+### Changed
+- **A jog click inside those screens lands when you let go,** not when you
+  press — that is what lets a hold mean something else. On the overviews and
+  bank pages nothing changes: the map still appears the moment you press.
+
 ### Fixed
 - **AUTOMATION stays a screen.** With nothing automated in the clip, pressing
   the jog there closed the list and left the old bare card, which needed

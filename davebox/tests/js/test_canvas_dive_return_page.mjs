@@ -237,9 +237,10 @@ function diveAndClose() {
     /* The fixture closes on any CC 3 once armed — armed only now, so the
      * release of the click that OPENED it does not close it. */
     globalThis.__closeOnClick = true;
-    cc(3, 127);                                                             /* a row: ctx.close() */
+    /* The click reaches the module on the RELEASE now (a hold there shows the
+     * bank map instead), so the fixture stays armed until the jog is up. */
+    cc(3, 127); cc(3, 0);                                                   /* a row: ctx.close() */
     globalThis.__closeOnClick = false;
-    cc(3, 0);
     ticks(6);
     if (snd.soundViewForTest() === 23) throw new Error('rig: the module did not close its canvas');
 }

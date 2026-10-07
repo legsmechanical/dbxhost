@@ -64,7 +64,7 @@ import { pollDSP,
 import { disarmRecord, _recordingNoteTrack, flushHeldMoveExtNotes, stepRecExit } from './ui_record.mjs';
 import { xposeCancelPreview } from './ui_xpose.mjs';
 import { checkBackHold, backTapWouldAct, applyShiftEdge, raiseExitConfirm, syncCoRunShift, goToSessionOverview,
-    bankMapEnd, checkShiftStep11Hold, refuseNotesPastEnd } from './ui_input_cc.mjs';
+    bankMapEnd, checkShiftStep11Hold, checkJogHold, refuseNotesPastEnd } from './ui_input_cc.mjs';
 import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
          engineGet, engineSet, moveBusForChannel, moveBusComp,
          SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, slotIndex, CHAIN_SLOTS, DAVEBOX_HOST_DIR,
@@ -459,6 +459,7 @@ export function _tickImpl() {
     loadDaveTick();
     checkBackHold();   /* self-managed Back: fire suspend once a held Back crosses the long-press threshold */
     checkShiftStep11Hold(); /* Shift+Step 11: likewise — LIVE ARP's settings */
+    checkJogHold();    /* a jog press held over a screen becomes the bank map */
     /* Note/Session left a co-run: once the host has handed the screen back,
      * land on Session View, its destination everywhere else. */
     if (S.pendingSessionAfterCoRun && S.moveCoRunTrack < 0 && !S.moveSettingsOpen) {

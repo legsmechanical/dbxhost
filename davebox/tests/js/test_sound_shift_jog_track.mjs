@@ -409,7 +409,7 @@ step('⚠ a SESSION bus is not a track sound — a track switch leaves it alone'
     snd.soundExit();
     S.sessionView = true;
     snd.soundEnterBuses();
-    send(3, 127); snd.soundTick(); globalThis.tick();   /* enter the bus */
+    send(3, 127); send(3, 0); snd.soundTick(); globalThis.tick();   /* enter the bus */
     if (!snd.soundIsGlobal()) throw new Error('control: not on a global bus');
     const _before = snd.soundActive();
     editops._switchActiveTrack(5);
@@ -459,7 +459,7 @@ step('⚠ off the menu (slot settings), Shift+jog is NOT the track switch', () =
         turn();
         if (guard === st.kinds.length * 2) throw new Error('never reached the Sound Control row');
     }
-    send(3, 127);                                  /* jog click -> Sound Control */
+    send(3, 127); send(3, 0);                                  /* jog click -> Sound Control */
     snd.soundTick();
     if (snd.soundPickStateForTest().view === st.view)
         throw new Error('the door did not open — still on the menu view');
@@ -480,7 +480,7 @@ step('⚠ INSIDE a global bus (Master FX) Shift+jog does not step a track', () =
      * (VIEW_BUSES), where the VIEW condition already blocks the switch, so
      * deleting !soundIsGlobal() entirely left the test green. */
     snd.soundEnterBuses();
-    send(3, 127);                                  /* jog click -> enter the bus */
+    send(3, 127); send(3, 0);                                  /* jog click -> enter the bus */
     snd.soundTick();
     if (!snd.soundIsGlobal())
         throw new Error('not in a global bus context');

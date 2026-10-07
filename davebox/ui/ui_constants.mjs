@@ -636,6 +636,11 @@ export const BANK_DEFAULT = 0;
  * just puts a peek away (Josh, 2026-10-03: "on release but only if it's
  * between like .5 [s] of the click"). */
 export const JOG_CLICK_MAX_MS = 500;
+/* A jog press held this long OVER A SCREEN (a menu, the module editor, a door
+ * screen) shows the bank pad map instead of clicking. Shorter is the click,
+ * delivered on the release. Not JOG_CLICK_MAX_MS: that one rules whether a
+ * press on the overview latches the map, a different question. */
+export const JOG_HOLD_MAP_MS = 330;
 
 /* JS tick rate on device (~94 Hz measured). Older constants were calibrated
  * against a mistaken 196 Hz assumption — derive new timings from this. */
