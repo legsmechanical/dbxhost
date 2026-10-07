@@ -471,6 +471,114 @@ void chain_mod_clear_source(void *ctx, const char *source_id) {
 }
 
 
+/* The knob's own value, straight into the module — no modulation on top. */
+static void chain_mod_write_base(chain_instance_t *inst, mod_target_state_t *entry) {
+    if (!inst || !entry || !entry->active) return;
+    char val_str[32];
+    if (entry->type == KNOB_TYPE_INT || entry->type == KNOB_TYPE_ENUM)
+        snprintf(val_str, sizeof(val_str), "%d", (int)entry->base_value);
+    else
+        snprintf(val_str, sizeof(val_str), "%.6f", entry->base_value);
+    chain_mod_set_param_string(inst, entry->target, entry->param, val_str);
+}
+
+/*
+ * A `<comp>:state` READ SAVES THE KNOB, WHATEVER IS DRIVING THE PARAM.
+ *
+ * A module serialises what it holds, and a modulated param holds the
+ * modulation: wherever an LFO's swing happened to be. Every save path reads
+ * `<comp>:state` — the slot autosave, a snapshot, a User Preset — so the save
+ * recorded that as the knob, a reload brought it back as the knob, and with an
+ * LFO running the blob changed on every read, so the autosave never settled.
+ *
+ * So around the read (v2_get_param, chain_host.c): put each modulated param's
+ * BASE into the module (swap_in, returns how many), read, and put the
+ * modulation back (swap_out). No render runs between the two, so nothing is
+ * heard. (From upstream #572, 39fdaf06; its swap lived in chain_scene.c, which
+ * this fork does not carry.)
+ */
+int chain_mod_state_swap_in(chain_instance_t *inst, const char *target) {
+    if (!inst || !target) return 0;
+    int n = 0;
+    for (int i = 0; i < inst->mod_target_count && i < MAX_MOD_TARGETS; i++) {
+        mod_target_state_t *e = &inst->mod_targets[i];
+        if (!e->active || !e->enabled || strcmp(e->target, target) != 0) continue;
+        if (!chain_mod_has_active_sources(e)) continue;
+        chain_mod_write_base(inst, e);
+        n++;
+    }
+    return n;
+}
+
+void chain_mod_state_swap_out(chain_instance_t *inst, const char *target) {
+    if (!inst || !target) return;
+    for (int i = 0; i < inst->mod_target_count && i < MAX_MOD_TARGETS; i++) {
+        mod_target_state_t *e = &inst->mod_targets[i];
+        if (!e->active || !e->enabled || strcmp(e->target, target) != 0) continue;
+        if (!chain_mod_has_active_sources(e)) continue;
+        chain_mod_apply_effective_value(inst, e, 1);
+    }
+}
+
+/* "<comp>:<sub>" -> comp into `target` (cap 16), returns sub or NULL. */
+static const char *chain_mod_split_key(const char *key, char *target) {
+    const char *c = key ? strchr(key, ':') : NULL;
+    if (!c) return NULL;
+    const size_t n = (size_t)(c - key);
+    if (n == 0 || n >= 16) return NULL;
+    memcpy(target, key, n);
+    target[n] = '\0';
+    return c + 1;
+}
+
+/* The get_param wrapper's half: a "<comp>:state" read. Returns how many params
+ * were swapped (0 = nothing to undo) and names the component. */
+int chain_mod_state_read_begin(void *ctx, const char *key, char *target) {
+    const char *sub = chain_mod_split_key(key, target);
+    if (!ctx || !sub || strcmp(sub, "state") != 0) return 0;
+    return chain_mod_state_swap_in((chain_instance_t *)ctx, target);
+}
+
+/*
+ * A BULK WRITE landed on a component — a whole state blob, a preset, a file
+ * load — and replaced its knobs wholesale. Every base captured from it is the
+ * knob as it stood BEFORE, so a later release, or the swap above on the next
+ * save, would write the old value back over the one just loaded. Re-read each
+ * modulated param's base from the module — which holds the load, nothing
+ * having re-applied since — and put the modulation back on top of it.
+ */
+static void chain_mod_rebase_target(chain_instance_t *inst, const char *target) {
+    for (int i = 0; i < inst->mod_target_count && i < MAX_MOD_TARGETS; i++) {
+        mod_target_state_t *e = &inst->mod_targets[i];
+        if (!e->active || strcmp(e->target, target) != 0) continue;
+        char vb[64];
+        int len = chain_mod_get_param_string(inst, e->target, e->param, vb, sizeof(vb));
+        if (len > 0) {
+            vb[len < (int)sizeof(vb) ? len : (int)sizeof(vb) - 1] = '\0';
+            chain_param_info_t *pinfo = find_param_by_key(inst, e->target, e->param);
+            float base = e->base_value;
+            if (pinfo) {
+                base = dsp_value_to_float(vb, pinfo, base);
+            } else {
+                char *end = NULL;
+                float v = strtof(vb, &end);
+                if (end && end != vb) base = v;
+            }
+            e->base_value = chain_mod_clampf(base, e->min_val, e->max_val);
+        }
+        chain_mod_apply_effective_value(inst, e, 1);
+    }
+}
+
+/* The set_param wrapper's half: "<component>:<bulk>" rebases that component. */
+void chain_mod_after_set_param(void *ctx, const char *key) {
+    char target[16];
+    const char *sub = chain_mod_split_key(key, target);
+    if (!ctx || !sub) return;
+    if (strcmp(sub, "state") != 0 && strcmp(sub, "preset") != 0 && strcmp(sub, "load") != 0) return;
+    chain_mod_rebase_target((chain_instance_t *)ctx, target);
+}
+
 int chain_mod_refresh_target_param_cache(chain_instance_t *inst, const char *target) {
     if (!inst || !target) return -1;
 

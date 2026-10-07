@@ -780,7 +780,7 @@ void parse_debug_log(const char *msg) {
  * [[build-must-read-its-own-artifact]] */
 static void lfo_tick(chain_instance_t *inst, int frames);
 
-static void v2_set_param(void *instance, const char *key, const char *val) {
+static void v2_set_param_route(void *instance, const char *key, const char *val) {
     chain_instance_t *inst = (chain_instance_t *)instance;
     if (!inst) return;
 
@@ -1512,7 +1512,7 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
  * looks up the index in the param's options list.
  * Returns the float value, or fallback if conversion fails.
  */
-static int v2_get_param(void *instance, const char *key, char *buf, int buf_len) {
+static int v2_get_param_route(void *instance, const char *key, char *buf, int buf_len) {
     chain_instance_t *inst = (chain_instance_t *)instance;
     if (!inst) return -1;
 
@@ -2819,6 +2819,21 @@ static void v2_render_block(void *instance, int16_t *out_interleaved_lr, int fra
 }
 
 /* V2 Plugin API structure */
+/* The plugin's two param entry points are WRAPPERS, so no route can miss what
+ * the modulation bus owes them (chain_mod.c): a state read saves the knob and
+ * not the modulation on top of it, and a bulk write re-captures the bases. */
+static void v2_set_param(void *instance, const char *key, const char *val) {
+    v2_set_param_route(instance, key, val);
+    chain_mod_after_set_param(instance, key);
+}
+static int v2_get_param(void *instance, const char *key, char *buf, int buf_len) {
+    char target[16];
+    const int swapped = chain_mod_state_read_begin(instance, key, target);
+    const int r = v2_get_param_route(instance, key, buf, buf_len);
+    if (swapped) chain_mod_state_swap_out((chain_instance_t *)instance, target);
+    return r;
+}
+
 static plugin_api_v2_t g_plugin_api_v2 = {
     .api_version = MOVE_PLUGIN_API_VERSION_2,
     .create_instance = v2_create_instance,

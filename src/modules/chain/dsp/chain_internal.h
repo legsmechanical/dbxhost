@@ -1228,6 +1228,12 @@ CHAIN_INTERNAL int chain_mod_get_base_for_subkey(chain_instance_t *inst, const c
 CHAIN_INTERNAL int chain_mod_get_modulated_for_subkey(chain_instance_t *inst, const char *target, const char *subkey, char *buf, int buf_len);
 CHAIN_INTERNAL int chain_mod_is_target_active(chain_instance_t *inst, const char *target, const char *param);
 CHAIN_INTERNAL int chain_mod_refresh_target_param_cache(chain_instance_t *inst, const char *target);
+/* A "<comp>:state" read saves the knob, not the modulation; a bulk write
+ * re-captures the bases it replaced. See chain_mod.c. */
+CHAIN_INTERNAL int chain_mod_state_swap_in(chain_instance_t *inst, const char *target);
+CHAIN_INTERNAL void chain_mod_state_swap_out(chain_instance_t *inst, const char *target);
+CHAIN_INTERNAL int chain_mod_state_read_begin(void *ctx, const char *key, char *target);
+CHAIN_INTERNAL void chain_mod_after_set_param(void *ctx, const char *key);
 CHAIN_INTERNAL void chain_mod_update_base_from_set_param(chain_instance_t *inst, const char *target, const char *param, const char *val);
 
 /* chain_midi.c */
