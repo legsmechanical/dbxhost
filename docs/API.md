@@ -282,6 +282,7 @@ host_sampler_is_recording()   // Returns bool - true if currently recording
 // Shadow-mode only functions (available in shadow_ui.js context)
 host_system_cmd(cmd)          // Execute allowlisted system command
 host_wake_all_slots()         // Clear idle flags on all shadow slots
+host_get_move_info()          // Upstream #573's "Move's set" for modules. NOT provided in this fork: always null
 host_mute_move_audio(bool)    // Mute/unmute Move's audio output
 host_http_download_background(url, dest) // Background HTTP download
 host_sampler_set_external_stop(bool)     // Set external stop flag for sampler

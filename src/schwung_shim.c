@@ -1560,6 +1560,17 @@ static int overtake_set_slot_param(int slot, const char *key, const char *value)
     return 1;
 }
 
+/* schwung_move_info(): what Move's own set says, for native modules — NOT
+ * PROVIDED here (upstream #573 fills it from a live model of the set this fork
+ * does not carry). Exported anyway, returning 0 = "this Schwung does not
+ * provide it": a module's reader (upstream's host/move_info.h) looks this
+ * symbol up FIRST and only when it is absent maps the fixed-name
+ * /schwung-move-info segment — which on a device that also runs stock Schwung
+ * is stock's, abandoned at whatever set it last saw. The signature is the
+ * reader's: (move_info_t *out, size_t cap). */
+__attribute__((visibility("default")))
+int schwung_move_info(void *out, size_t cap) { (void)out; (void)cap; return 0; }
+
 static const move_host_ext_v1_t overtake_host_ext = {
     .size = sizeof(move_host_ext_v1_t),
     .set_slot_param = overtake_set_slot_param,

@@ -2915,6 +2915,19 @@ static JSValue js_host_sampler_set_external_stop(JSContext *ctx, JSValueConst th
     return JS_TRUE;
 }
 
+/* host_get_move_info() -> null.
+ *
+ * Upstream (#573) answers this with what Move's own set says, read from a live
+ * model of the set this fork does not carry. The binding exists here so a
+ * module written against it gets the documented "this Schwung does not provide
+ * it" answer instead of a ReferenceError that retires its page hooks. */
+static JSValue js_host_get_move_info(JSContext *ctx, JSValueConst this_val,
+                                     int argc, JSValueConst *argv) {
+    (void)ctx; (void)this_val; (void)argc; (void)argv;
+    return JS_NULL;
+}
+
+
 /* host_wake_all_slots() - clear idle flags on all shadow slots */
 static JSValue js_host_wake_all_slots(JSContext *ctx, JSValueConst this_val,
                                        int argc, JSValueConst *argv) {
@@ -3225,6 +3238,7 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JS_SetPropertyStr(ctx, global_obj, "host_sampler_resume", JS_NewCFunction(ctx, js_host_sampler_resume, "host_sampler_resume", 0));
     JS_SetPropertyStr(ctx, global_obj, "host_sampler_is_paused", JS_NewCFunction(ctx, js_host_sampler_is_paused, "host_sampler_is_paused", 0));
     JS_SetPropertyStr(ctx, global_obj, "host_wake_all_slots", JS_NewCFunction(ctx, js_host_wake_all_slots, "host_wake_all_slots", 0));
+    JS_SetPropertyStr(ctx, global_obj, "host_get_move_info", JS_NewCFunction(ctx, js_host_get_move_info, "host_get_move_info", 0));
 
     JS_SetPropertyStr(ctx, global_obj, "exit", JS_NewCFunction(ctx, js_exit, "exit", 0));
 
