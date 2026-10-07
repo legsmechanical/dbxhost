@@ -1494,6 +1494,16 @@ Behavior notes:
 - The loaded script should expose `globalThis.canvas_overlay` (or `globalThis.canvas_overlays`) with hooks such as `onOpen`, `onMidi`, `onValues`, `tick`, `draw`, `onClose`, `onExit`.
 - Take meter / playhead values from the bounded `onValues` payload rather than reading on the draw path.
 
+**Text from a page (`ctx.openTextEntry`, `onTextEntry`).** From a page's hooks,
+`ctx.openTextEntry({ title, initial })` opens the on-screen keyboard over the page — a search, a
+name. It opens when the hook returns, and the answer comes back through the page's
+**`onTextEntry(ctx, { text, cancelled })`** hook with a fresh `ctx` (so it can `setParam`).
+Cancelling answers too, with `text: null`. It returns `false` (and opens nothing) when a keyboard
+is already up. In dAVEBOx's module editor the keyboard is the shared one (the Save As keyboard) and
+the answer is delivered on the tick after it closes; a Back that cancels it does not also leave the
+page. **`ctx.openFileInTool(path, toolId)`** exists and returns `false` there: a dAVEBOx session has
+no Tools to open a file in.
+
 **A canvas as a page (`as_page: true`).** Instead of a cell you click into, the canvas becomes a
 page in the level's jog rotation carrying that level's own knobs; add `preset_browser: true` and it
 IS the level's preset browser (first page). The host draws the header, touch strip and footer and

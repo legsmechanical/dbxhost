@@ -1170,6 +1170,7 @@ export function engineCanvasPageHook(slotKey, comp, moduleId, canvas, hook, payl
     if (!ov || typeof ov[hook] !== 'function') return undefined;
     const a = access || {};
     const closed = { wanted: false };
+    let textReq = null;             /* ctx.openTextEntry: served after the hook returns */
     /* The same non-drawing surface a dive's hooks get (ui_canvas.mjs makeCtx),
      * so one script serves both routes: a dive script calling shiftHeld() or
      * getValue() from onMidi must not throw -- and be retired -- on a page. */
@@ -1188,9 +1189,32 @@ export function engineCanvasPageHook(slotKey, comp, moduleId, canvas, hook, payl
         now: () => Date.now(),
         random: () => Math.random(),
         close: () => { closed.wanted = true; return true; },
+        /* A page asks for the keyboard — a search, a name (upstream #600). It
+         * opens when the hook RETURNS, and the answer comes back through the
+         * page's onTextEntry(ctx, { text, cancelled }) with a fresh ctx, so it
+         * can setParam. False (and nothing opens) when a keyboard is already
+         * up, a request is already owed, or the editor offers none. */
+        openTextEntry: (opts) => {
+            if (textReq || typeof a.openTextEntry !== 'function') return false;
+            if (typeof a.textEntryActive === 'function' && a.textEntryActive()) return false;
+            const o = opts || {};
+            textReq = { title: String(o.title == null ? '' : o.title),
+                        initial: String(o.initial == null ? '' : o.initial) };
+            return true;
+        },
+        /* Upstream's "open this file in a Tool". A dAVEBOx session has no
+         * Tools to open one in, so this is the API's own "not installed"
+         * answer — false — rather than a missing method that would throw and
+         * retire the page's hooks for the visit. */
+        openFileInTool: () => false,
     };
     try {
         const out = ov[hook](ctx, payload || {});
+        if (textReq) {
+            a.openTextEntry(textReq.title, textReq.initial, (text, cancelled) =>
+                engineCanvasPageHook(slotKey, comp, moduleId, canvas, 'onTextEntry',
+                    { text: cancelled ? null : String(text == null ? '' : text), cancelled: !!cancelled }, access));
+        }
         return closed.wanted ? { close: true } : out;
     } catch (e) {
         pageDisabled.add(key);

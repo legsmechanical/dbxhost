@@ -49,8 +49,16 @@ const PAGE_OK = "\nglobalThis.canvas_overlay.drawPage = function (ctx, payload) 
     + "  ctx.state.n = (ctx.state.n || 0) + 1;\n"
     + "  globalThis.__hooks.push(['onMidi', Array.from(m.data), ctx.state.n]);\n"
     + "  if (m.data[1] === 3 && globalThis.__closeOnClick) ctx.close();\n"
+    + "  if (m.data[1] === 3 && globalThis.__askText) {\n"
+    + "    globalThis.__asked = [ctx.openTextEntry({ title: 'Search', initial: 'ab' }),\n"
+    + "                          ctx.openTextEntry({ title: 'Again' }), ctx.openFileInTool('/data/x.wav', 'waveform-editor')];\n"
+    + "  }\n"
     + "  if (globalThis.__callDiveMethods) globalThis.__dive = [ctx.shiftHeld(), ctx.measureText('abc'),\n"
     + "      ctx.getValue(), typeof ctx.setValue, typeof ctx.random()];\n"
+    + "};\n"
+    + "globalThis.canvas_overlay.onTextEntry = function (ctx, p) {\n"
+    + "  globalThis.__hooks.push(['onTextEntry', p.text, p.cancelled]);\n"
+    + "  if (p.text) ctx.setParam('level', '0.25');\n"
     + "};\n"
     + "globalThis.canvas_overlay.handleBack = function (ctx) {\n"
     + "  globalThis.__hooks.push(['handleBack']);\n"
@@ -287,6 +295,63 @@ step('ctx.close() from the module leaves the door', () => {
     globalThis.__hooks.length = 0;
     cc(14, 1); ticks(3);
     if (midi().length) throw new Error('the door stayed open after ctx.close()');
+});
+
+/* ---- ctx.openTextEntry / ctx.openFileInTool (upstream #600) ----------------
+ * A module whose page is a browser asks for a search string. Calling either
+ * used to THROW here (no such method), which retires the page's hooks for the
+ * visit. The keyboard is dAVEBOx's shared one — the Save As keyboard. */
+const TE = await import('/data/UserData/schwung/shared/text_entry.mjs');
+const textHooks = () => globalThis.__hooks.filter(h => h[0] === 'onTextEntry').map(h => h.slice(1));
+
+step('⭐⭐ a page asks for text: the shared keyboard opens AFTER the hook returns, titled and seeded', () => {
+    jogToCanvasPage();
+    cc(3, 127); cc(3, 0); ticks(2);                     /* enter */
+    if (TE.isTextEntryActive()) throw new Error('rig: a keyboard is already up');
+    globalThis.__askText = true; globalThis.__asked = null; globalThis.__hooks.length = 0;
+    cc(3, 127); cc(3, 0);
+    globalThis.__askText = false;
+    if (!globalThis.__asked) throw new Error('the hook threw before recording — ' + engineLog.slice(-2).join(' | '));
+    if (JSON.stringify(globalThis.__asked) !== JSON.stringify([true, false, false]))
+        throw new Error('openTextEntry / second request / openFileInTool answered ' + JSON.stringify(globalThis.__asked) + ', want [true,false,false]');
+    if (!TE.isTextEntryActive()) throw new Error('the keyboard did not open');
+    if (TE.getTextEntryBuffer() !== 'ab') throw new Error('the keyboard was not seeded with the page\'s text: ' + JSON.stringify(TE.getTextEntryBuffer()));
+    if (engineLog.some(m => m.indexOf('disabled after throw') >= 0))
+        throw new Error('the page was retired: ' + engineLog.join(' | '));
+});
+
+step('⭐ cancelling ANSWERS: onTextEntry gets { text: null, cancelled: true }, once the keyboard is down', () => {
+    globalThis.__hooks.length = 0;
+    cc(51, 127); cc(51, 0);                              /* Back cancels the keyboard */
+    if (TE.isTextEntryActive()) throw new Error('Back did not close the keyboard');
+    ticks(2);
+    if (JSON.stringify(textHooks()) !== JSON.stringify([[null, true]]))
+        throw new Error('onTextEntry got ' + JSON.stringify(textHooks()) + ', want [[null,true]]');
+    /* ⚠ ONE OWNER PER TAP: the keyboard took this Back. The release must not
+     * ALSO be the editor's Back, or cancelling a search throws you out of the
+     * module's page. */
+    if (!onDoor()) throw new Error('cancelling the keyboard left the page: on ' + JSON.stringify(pageName()));
+    globalThis.__hooks.length = 0;
+    cc(14, 1); ticks(2);
+    if (JSON.stringify(midi()) !== JSON.stringify([[0xB0, 14, 1]]))
+        throw new Error('after the cancel the jog is no longer the module\'s: ' + JSON.stringify(globalThis.__hooks));
+});
+
+step('⭐ confirming answers with the text', () => {
+    globalThis.__askText = true; globalThis.__hooks.length = 0;
+    cc(3, 127); cc(3, 0);
+    globalThis.__askText = false;
+    if (!TE.isTextEntryActive()) throw new Error('the keyboard did not open the second time');
+    /* The keyboard's cursor clamps at its last key, OK: slam right, click. */
+    for (let i = 0; i < 120; i++) cc(14, 1);
+    cc(3, 127); cc(3, 0);
+    if (TE.isTextEntryActive()) { TE.closeTextEntry(); throw new Error('rig: could not reach OK by gesture'); }
+    ticks(3);
+    const th = textHooks();
+    if (th.length !== 1 || th[0][1] !== false || th[0][0] !== 'ab')
+        throw new Error('onTextEntry got ' + JSON.stringify(th) + ', want [["ab", false]]');
+    if (engineLog.some(m => m.indexOf('disabled after throw') >= 0))
+        throw new Error('the page was retired: ' + engineLog.join(' | '));
 });
 
 if (failed) { console.log('FAIL: canvas page door'); process.exit(1); }

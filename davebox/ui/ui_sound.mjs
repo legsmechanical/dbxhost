@@ -1303,8 +1303,16 @@ export function soundSlot()  { return S.slot; }
  * to be re-asserted when it closes — see soundConsumeLedDirty. */
 export function soundOnMidiRaw(data) {
     if (!S.active || !isTextEntryActive()) return false;
+    /* ONE OWNER PER TAP (see ppAteBackPress in soundOnCC). Back navigates on
+     * the RELEASE here, and the keyboard cancels on the PRESS — so a Back that
+     * cancels a keyboard a module's PAGE opened would also step out of that
+     * page a moment later. The keyboard owns this tap; the release is
+     * swallowed. Scoped to the page's keyboard: the Save As / rename
+     * keyboards keep the behaviour they have. */
+    if (canvasKeyboardUp && data && (data[0] & 0xF0) === 0xB0 && data[1] === 51 && data[2] >= 64)
+        ppAteBackPress = true;
     handleTextEntryMidi(data);
-    if (!isTextEntryActive()) { S.ledDirty = true; S.dirty = true; }
+    if (!isTextEntryActive()) { S.ledDirty = true; S.dirty = true; canvasKeyboardUp = false; }
     return true;
 }
 
@@ -4862,6 +4870,21 @@ const ML_NAME_MAX_PX = 104;
  * screen vanishes and the user sees a click that did nothing. Same ordering
  * trap as the enum picker's commit-then-null. */
 let mlNamePending = null;   /* { renaming, text, why } */
+
+/* A module page's answer from the keyboard (canvasPageHook's openTextEntry),
+ * delivered from the tick once the keyboard is down — and only if the editor
+ * is still on the module that asked. */
+let canvasTextAnswer = null;   /* { slot, comp, mod, done, text, cancelled } */
+let canvasKeyboardUp = false;  /* the keyboard on screen was opened by a module's page */
+
+function soundTickCanvasTextAnswer() {
+    if (!canvasTextAnswer || isTextEntryActive()) return;
+    const q = canvasTextAnswer;
+    canvasTextAnswer = null;
+    if (S.slot !== q.slot || S.comp !== q.comp || S.moduleId !== q.mod) return;
+    q.done(q.text, q.cancelled);
+    S.dirty = true;
+}
 
 function soundTickListNamePending() {
     if (!mlNamePending || isTextEntryActive()) return;
@@ -10767,6 +10790,7 @@ export function soundTick() {
      * keyboard being DOWN inside the helper: serving it while one is up would
      * close a live edit and reopen it on stale text. */
     soundTickListNamePending();
+    soundTickCanvasTextAnswer();
     /* ⚠⚠ ABOVE EVERY EARLY RETURN, and that is the whole point. Placed after the
      * `S.active` and text-entry guards, "lives exactly one tick" was false: the
      * memo survived a whole Save-As keyboard session and every period sound mode
@@ -12427,6 +12451,27 @@ function ppIo() {
                     return r;
                 },
                 shiftHeld: () => S.shiftHeld === true,
+                /* A page asks for text (ctx.openTextEntry): the SHARED keyboard,
+                 * the one Save As uses. The answer is not handed back from
+                 * inside onConfirm — text_entry.mjs closes the keyboard right
+                 * after that returns, so a page that asked again from its
+                 * answer would lose the second one — but from the next tick
+                 * (soundTickCanvasTextAnswer), once the keyboard is down. */
+                textEntryActive: () => isTextEntryActive(),
+                openTextEntry: (title, initial, done) => {
+                    const mod = S.moduleId;
+                    const answer = (text, cancelled) => {
+                        canvasTextAnswer = { slot, comp, mod, done, text, cancelled };
+                        S.dirty = true;
+                    };
+                    openTextEntry({
+                        title, initialText: initial,
+                        onConfirm: (t) => answer(String(t == null ? '' : t), false),
+                        onCancel:  () => answer(null, true),
+                    });
+                    canvasKeyboardUp = true;
+                    S.dirty = true; S.ledDirty = true;
+                },
             });
         },
     };
