@@ -7,6 +7,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed
+- **Mini-JV plays on every track.** After a project loaded, an instrument that
+  listens on one fixed MIDI channel (Mini-JV, and others that declare one)
+  was silent on every track but the first: the host forwarded notes on the
+  track's own channel. It worked when freshly picked and went silent on the
+  next load.
+- **A saved instrument keeps its knob, not where an LFO had pushed it.** With
+  an LFO running on a parameter, saves (project, snapshot, user preset)
+  recorded the LFO's momentary value as the knob.
+- **A two-way switch flips back when you turn back** without lifting your hand.
+- **A trigger knob held and turned slowly fires once,** not twice.
+- **An instrument started by a button on its own page responds at once** (it
+  could lag up to half a second after a quiet spell).
+- **A module's own page can ask for text** (a search box) in the module editor.
+
+### Changed
+- **Volume, pan and mute glide** instead of stepping: smoother fader and pan
+  moves and automated levels, and a short fade on mute — on instrument tracks
+  and Move tracks, and on the master volume.
+- **A hot mix rounds off instead of popping.** Levels that sum past full scale
+  are soft-clipped once rather than hard-clipped at each stage.
+- **Fewer clicks on Move tracks.** A momentary gap in a Move track's audio is
+  smoothed over instead of played as silence, and out-of-order audio packets
+  are put back in order.
+- **Transpose-type knobs are easier to land on:** integer knobs with 17–48
+  values (±12, ±24) take four detents per value, in the module editor and on
+  macros alike.
+- **Lists sort the way you read them:** file browser, instrument picker and
+  user presets ignore upper/lower case and count "9" before "10".
+- **The screen is sent as whole frames,** so moving graphics no longer tear.
+- **A project switch is picked up sooner.**
+
 
 ## [0.0.14] — 2026-10-06 (test build, not in the Schwung catalog)
 ### Fixed
