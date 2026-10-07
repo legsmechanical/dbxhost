@@ -80,6 +80,7 @@ TARGETS = $(BUILD_DIR)/test_project_path \
           $(BUILD_DIR)/test_forward_channel \
           $(BUILD_DIR)/test_link_audio_backlog_trim \
           $(BUILD_DIR)/test_link_audio_reorder \
+          $(BUILD_DIR)/test_display_pull \
           $(BUILD_DIR)/test_control_layout \
           $(BUILD_DIR)/test_shadow_param_queue \
           $(BUILD_DIR)/test_shadow_param_lane \
@@ -163,6 +164,10 @@ $(BUILD_DIR)/test_overtake_native_led_repaint: test_overtake_native_led_repaint.
 # Header-only unit: link_audio_in_trim_pos lives in link_audio.h, so the
 # DEPFLAGS header tracking above is what keeps this honest when it changes.
 $(BUILD_DIR)/test_link_audio_backlog_trim: test_link_audio_backlog_trim.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $(filter %.c,$^) -o $@ $(LDFLAGS)
+
+# Header-only unit: display_pull_serve lives in display_pull.h.
+$(BUILD_DIR)/test_display_pull: test_display_pull.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $(filter %.c,$^) -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_link_audio_reorder: test_link_audio_reorder.c ../../src/host/link_audio_reorder.h | $(BUILD_DIR)
