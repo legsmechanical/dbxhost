@@ -162,6 +162,33 @@ static uint64_t param_lane_drained_total  = 0;  /* records applied, all frames *
 /* A value set from a module's render is a number, not a blob. */
 #define OVERTAKE_SLOT_SET_VALUE_MAX 64
 static uint64_t overtake_slot_set_total   = 0;  /* set_slot_param writes dispatched (host ext) */
+
+/* PARAM-PHASE PROBE: the slowest single piece of work the param phase did
+ * since the last timing line, and what it was — a sub-phase ("lane", "mbox",
+ * "web", "rui") or one key of a bulk request ("og"/"os" overtake get/set,
+ * "cg"/"cs" chain get/set, with the slot). The phase's own max says THAT a
+ * frame ran long; this says on which request. SPI thread writes, the logger
+ * reads and clears — a torn tag is possible and harmless (a diagnostic). */
+static uint32_t pp_max_us = 0, pp_key_us = 0;       /* slowest sub-phase / slowest one key */
+static char     pp_max_tag[96] = "", pp_key_tag[96] = "";
+static inline uint64_t pp_now_us(void) {
+    struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+    return (uint64_t)t.tv_sec * 1000000ULL + (uint64_t)t.tv_nsec / 1000ULL;
+}
+static void pp_note(const char *kind, int slot, const char *key, uint64_t t0) {
+    uint64_t us = pp_now_us() - t0;
+    int per_key = (kind[0] == 'o' || kind[0] == 'c');
+    uint32_t *mx = per_key ? &pp_key_us : &pp_max_us;
+    char *tag = per_key ? pp_key_tag : pp_max_tag;
+    if (us <= *mx) return;
+    *mx = (uint32_t)us;
+    int n = 0;
+    while (kind[n] && n < 8) { tag[n] = kind[n]; n++; }
+    tag[n++] = (char)('0' + (slot >= 0 && slot <= 9 ? slot : 9));
+    tag[n++] = ':';
+    for (int i = 0; key && key[i] && n < 95; i++) tag[n++] = key[i];
+    tag[n] = '\0';
+}
 static uint32_t overtake_slot_set_refused = 0;  /* ...and refused */
 /* ORDER, measured where it happens. Within ONE render call of the overtake
  * DSP: a parameter written to a slot and THEN a note-on sent to it (the value
@@ -4638,7 +4665,9 @@ static void shim_handle_param_bulk(uint8_t req_type) {
             /* value is NOT NUL-terminated in s_bulk_req; copy into s_bulk_val. */
             if (vlen >= SHADOW_PARAM_VALUE_LEN) continue;
             memcpy(s_bulk_val, v, (size_t)vlen); s_bulk_val[vlen] = '\0';
+            uint64_t pp_t0 = pp_now_us();
             if (api->set_param) api->set_param(inst, keybuf, s_bulk_val);
+            pp_note("os", 0, keybuf, pp_t0);
         }
         shadow_param->error = 0; shadow_param->result_len = 0;
         return;
@@ -4654,7 +4683,9 @@ static void shim_handle_param_bulk(uint8_t req_type) {
         int vlen = 0, resolved = 0;
         if (k && klen > 0 && klen < (int)sizeof keybuf && api->get_param) {
             memcpy(keybuf, k, (size_t)klen); keybuf[klen] = '\0';
+            uint64_t pp_t0 = pp_now_us();
             int r = api->get_param(inst, keybuf, s_bulk_val, SHADOW_PARAM_VALUE_LEN);
+            pp_note("og", 0, keybuf, pp_t0);
             /* ⚠ Same reading as the chain handler: r == 0 is the empty string,
              * an ANSWER; only r < 0 means the key is unknown. This handler had
              * the identical fold and would have gone on reporting an unknown
@@ -4804,7 +4835,9 @@ static int shim_apply_param_bulk_chain_pairs(uint8_t slot, const char *p, const 
         memcpy(keybuf, k, (size_t)klen); keybuf[klen] = '\0';
         if (vlen >= SHADOW_PARAM_VALUE_LEN) continue;
         memcpy(s_bulk_val, v, (size_t)vlen); s_bulk_val[vlen] = '\0';
+        uint64_t pp_t0 = pp_now_us();
         shadow_direct_set_param(slot, keybuf, s_bulk_val);
+        pp_note("cs", slot, keybuf, pp_t0);
     }
     return 0;
 }
@@ -4948,7 +4981,9 @@ static void shim_handle_param_bulk_chain_get(void) {
         const char *k = bulk_next(&p, end, &klen);
         if (k && klen > 0 && klen < (int)sizeof keybuf) {
             memcpy(keybuf, k, (size_t)klen); keybuf[klen] = '\0';
+            uint64_t pp_t0 = pp_now_us();
             int r = shadow_direct_get_param(slot, keybuf, s_bulk_val, SHADOW_PARAM_VALUE_LEN);
+            pp_note("cg", slot, keybuf, pp_t0);
             /*
              * ⚠ r == 0 IS AN ANSWER — the empty string — and only r < 0 means
              * "I do not know this key". Folding the two (the old `if (r > 0)`)
@@ -6372,7 +6407,10 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
      * a mailbox GET; draining here is what makes that write land before that
      * read is answered. Moving this call below the mailbox silently reverses
      * the ordering, so tests/host/test_param_lane_wiring.sh pins the position. */
+    uint64_t pp_t0 = pp_now_us();
     shadow_drain_param_lane();
+    pp_note("lane", 0, "", pp_t0);
+    char pp_key[64]; int pp_slot = 0; pp_key[0] = '\0';
     /* Mailbox requests serviced this frame, by kind — read here because the
      * handler lives in shadow_chain_mgmt.c. A non-zero request_type at this
      * point is a request the call below will service. */
@@ -6381,12 +6419,24 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
         if (rt == 1)      param_mailbox_set_total++;
         else if (rt == 2) param_mailbox_get_total++;
         else if (rt)      param_mailbox_bulk_total++;
+        if (rt) {
+            pp_slot = shadow_param->slot;
+            pp_key[0] = (char)('0' + (rt <= 9 ? rt : 9)); pp_key[1] = ' ';
+            int i = 0; for (; i < 60 && shadow_param->key[i]; i++) pp_key[i + 2] = shadow_param->key[i];
+            pp_key[i + 2] = '\0';
+        }
     }
+    pp_t0 = pp_now_us();
     /* param.serve span is emitted inside the handler, parented to the JS
      * param.get span via the SHM-propagated trace context (Phase 2b). */
     shadow_inprocess_handle_param_request();
+    if (pp_key[0]) pp_note("mbox", pp_slot, pp_key, pp_t0);
+    pp_t0 = pp_now_us();
     shadow_drain_web_param_set();  /* Web UI fire-and-forget param sets */
+    pp_note("web", 0, "", pp_t0);
+    pp_t0 = pp_now_us();
     shadow_overtake_rui_probe();   /* Remote-UI push: overtake rui_poll → notify ring */
+    pp_note("rui", 0, "", pp_t0);
     TIME_SECTION_END(spi_param_req_sum, spi_param_req_max);
 
     /* Forward CC/pitch bend/aftertouch from external MIDI to MIDI_OUT so DSP
@@ -10112,7 +10162,7 @@ static void *spi_timing_logger_thread(void *arg)
             unified_log("spi_timing", LOG_LEVEL_DEBUG,
                 "param lane: drained=%llu max/frame=%u bytes_max=%u pending=%u "
 "errors=%u resyncs=%u budget_frames=%u | mailbox set=%llu get=%llu bulk=%llu "
-"| module slot sets=%llu refused=%u set>note=%u note>set=%u",
+"| module slot sets=%llu refused=%u set>note=%u note>set=%u | slowest=%uus %s key=%uus %s",
                 (unsigned long long)param_lane_drained_total,
                 param_lane_drained_max, param_lane_bytes_max,
                 shadow_param_lane_shm
@@ -10125,7 +10175,9 @@ static void *spi_timing_logger_thread(void *arg)
                 (unsigned long long)param_mailbox_get_total,
                 (unsigned long long)param_mailbox_bulk_total,
                 (unsigned long long)overtake_slot_set_total, overtake_slot_set_refused,
-                overtake_set_then_note, overtake_note_then_set);
+                overtake_set_then_note, overtake_note_then_set,
+                pp_max_us, pp_max_tag, pp_key_us, pp_key_tag);
+            pp_max_us = 0; pp_max_tag[0] = '\0'; pp_key_us = 0; pp_key_tag[0] = '\0';
             /* THE load line. `total` above is dominated by the blocking ioctl
              * and barely moves with load; this one is the work we actually do
              * and the only one worth judging headroom from. */
