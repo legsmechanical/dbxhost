@@ -163,6 +163,17 @@ static uint64_t param_lane_drained_total  = 0;  /* records applied, all frames *
 #define OVERTAKE_SLOT_SET_VALUE_MAX 64
 static uint64_t overtake_slot_set_total   = 0;  /* set_slot_param writes dispatched (host ext) */
 static uint32_t overtake_slot_set_refused = 0;  /* ...and refused */
+/* ORDER, measured where it happens. Within ONE render call of the overtake
+ * DSP: a parameter written to a slot and THEN a note-on sent to it (the value
+ * is in place for the note), versus a note-on and THEN a write (the value
+ * trails its note — what a sequencer's per-step value must never do). Plain
+ * words written on the SPI thread, read by the timing log. */
+static uint32_t overtake_render_seq       = 0;  /* bumped before each overtake render_block */
+static uint8_t  overtake_in_render        = 0;
+static uint32_t overtake_last_set_seq[SHADOW_CHAIN_INSTANCES];
+static uint32_t overtake_last_note_seq[SHADOW_CHAIN_INSTANCES];
+static uint32_t overtake_set_then_note    = 0;
+static uint32_t overtake_note_then_set    = 0;
 static uint32_t param_lane_drained_max    = 0;  /* most records in ONE frame */
 static uint32_t param_lane_bytes_max      = 0;  /* highest spl_used seen at drain entry */
 static uint32_t param_lane_apply_errors   = 0;  /* shadow_param_apply_set returned non-zero */
@@ -1464,6 +1475,11 @@ static int overtake_midi_send_internal_slot(int slot, const uint8_t *msg, int le
     }
     uint8_t cin = (msg[1] >> 4) & 0x0F;
     uint8_t pkt[4] = { cin, msg[1], msg[2], msg[3] };
+    if (overtake_in_render && slot >= 0 && slot < SHADOW_CHAIN_INSTANCES &&
+            (msg[1] & 0xF0) == 0x90 && msg[3] > 0) {
+        if (overtake_last_set_seq[slot] == overtake_render_seq) overtake_set_then_note++;
+        overtake_last_note_seq[slot] = overtake_render_seq;
+    }
     static int midi_log_count = 0;
     int log_on = shadow_midi_out_log_enabled();
     shadow_chain_dispatch_midi_to_slot(slot, pkt, log_on, &midi_log_count);
@@ -1495,6 +1511,10 @@ static int overtake_set_slot_param(int slot, const char *key, const char *value)
     }
     shadow_direct_set_param((uint8_t)slot, key, value);
     overtake_slot_set_total++;
+    if (overtake_in_render) {
+        if (overtake_last_note_seq[slot] == overtake_render_seq) overtake_note_then_set++;
+        overtake_last_set_seq[slot] = overtake_render_seq;
+    }
     return 1;
 }
 
@@ -2253,7 +2273,10 @@ static void shadow_inprocess_render_to_buffer(void) {
         }
         int16_t render_buffer[FRAMES_PER_BLOCK * 2];
         memset(render_buffer, 0, sizeof(render_buffer));
+        overtake_render_seq++;                 /* never 0: the per-slot marks start at 0 */
+        overtake_in_render = 1;
         overtake_dsp_gen->render_block(overtake_dsp_gen_inst, render_buffer, MOVE_FRAMES_PER_BLOCK);
+        overtake_in_render = 0;
         for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
             int32_t mixed = shadow_deferred_dsp_buffer[i] + (int32_t)render_buffer[i];
             if (mixed > 32767) mixed = 32767;
@@ -10089,7 +10112,7 @@ static void *spi_timing_logger_thread(void *arg)
             unified_log("spi_timing", LOG_LEVEL_DEBUG,
                 "param lane: drained=%llu max/frame=%u bytes_max=%u pending=%u "
 "errors=%u resyncs=%u budget_frames=%u | mailbox set=%llu get=%llu bulk=%llu "
-                "| module slot sets=%llu refused=%u",
+"| module slot sets=%llu refused=%u set>note=%u note>set=%u",
                 (unsigned long long)param_lane_drained_total,
                 param_lane_drained_max, param_lane_bytes_max,
                 shadow_param_lane_shm
@@ -10101,7 +10124,8 @@ static void *spi_timing_logger_thread(void *arg)
                 (unsigned long long)param_mailbox_set_total,
                 (unsigned long long)param_mailbox_get_total,
                 (unsigned long long)param_mailbox_bulk_total,
-                (unsigned long long)overtake_slot_set_total, overtake_slot_set_refused);
+                (unsigned long long)overtake_slot_set_total, overtake_slot_set_refused,
+                overtake_set_then_note, overtake_note_then_set);
             /* THE load line. `total` above is dominated by the blocking ioctl
              * and barely moves with load; this one is the work we actually do
              * and the only one worth judging headroom from. */
