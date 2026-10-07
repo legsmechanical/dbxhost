@@ -379,7 +379,8 @@ export function trackLevelCardText(track, gain) {
  * and the session strips. NOT on it: volume (the fader law, "great already"),
  * davebox's own bank pages (the time-divisor curve Josh judged right), the
  * pick/deliberate classes. */
-import { MIN_STEP_RANGE_FRAC, ARC_DELTA_SCALE, ENUM_DELTA_DIV, NARROW_RANGE_MAX }
+import { MIN_STEP_RANGE_FRAC, ARC_DELTA_SCALE, ENUM_DELTA_DIV, NARROW_RANGE_MAX,
+         MID_RANGE_MAX, MID_DELTA_DIV }
     from '/data/UserData/schwung/shared/knob_engine.mjs';
 export const PAGE_KNOB = Object.freeze({
     frac: MIN_STEP_RANGE_FRAC * ARC_DELTA_SCALE,      /* of the range, per detent (0.005) */
@@ -396,10 +397,14 @@ export function pageIntStep(min, max, declared) {
     const d = (declared > 0) ? declared : 1;
     return Math.max(1, Math.round(Math.max(d, (max - min) * MIN_STEP_RANGE_FRAC) * ARC_DELTA_SCALE));
 }
-/* Detents per int step: a narrow range (2..16) is a choice, not a sweep. */
+/* Detents per int step — the engine's detentsPerStep: a narrow range (2..16)
+ * is a choice, and the band above it (17..48: transposes, bend ranges) is a
+ * value you land on, so both take the list's detents; wider is one a detent. */
 export function pageIntDetents(min, max) {
     const r = max - min;
-    return (r >= 2 && r <= NARROW_RANGE_MAX) ? ENUM_DELTA_DIV : 1;
+    if (r >= 2 && r <= NARROW_RANGE_MAX) return ENUM_DELTA_DIV;
+    if (r > NARROW_RANGE_MAX && r <= MID_RANGE_MAX) return MID_DELTA_DIV;
+    return 1;
 }
 
 export const SESS_KNOB_MODES = [

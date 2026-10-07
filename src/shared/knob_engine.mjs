@@ -124,11 +124,39 @@ export const MIN_STEP_RANGE_FRAC = 0.01;
  */
 export const NARROW_RANGE_MAX = 16;
 
+/**
+ * The band above the narrow one: 17..48 values. Transposes (±12, ±24),
+ * pitch-bend ranges, semitone depths, step counts. Every one is a value you
+ * land on, one unit at a time, and at one per detent none of them could be
+ * landed on (the note above NARROW_RANGE_MAX argued the opposite for this
+ * band from the fleet's names; the device said otherwise).
+ *
+ * The full enum gate, not half of it. Half (2 detents) shipped first upstream,
+ * on the theory that these are crossed end to end; on the device it was "still
+ * too hard" to land on a value. Landing is the job. Above 48 (0..127 and
+ * wider) one per detent is already slow enough that a value can be read as it
+ * goes by.
+ *
+ * The same NUMBER as the enum gate, but not the same KIND: only the narrow
+ * band is a choice of N things (isNarrowInt); this band is still a number.
+ */
+export const MID_RANGE_MAX = 48;
+export const MID_DELTA_DIV = ENUM_DELTA_DIV;
+
+/** An int narrow enough to be stepped, and shown, as a choice of N things. */
+export function isNarrowInt(meta) {
+    if (!meta || meta.type !== "int" || meta.knobAcceleration === "wide") return false;
+    const range = meta.max - meta.min;
+    return range >= 2 && range <= NARROW_RANGE_MAX;
+}
+
 /** schwung-movy model/knob-step.ts detentsPerStep, ported. */
 export function detentsPerStep(meta) {
     if (meta.type !== "int" || meta.knobAcceleration === "wide") return 1;
     const range = meta.max - meta.min;
-    return (range >= 2 && range <= NARROW_RANGE_MAX) ? ENUM_DELTA_DIV : 1;
+    if (isNarrowInt(meta)) return ENUM_DELTA_DIV;
+    if (range > NARROW_RANGE_MAX && range <= MID_RANGE_MAX) return MID_DELTA_DIV;
+    return 1;
 }
 
 /** schwung-movy model/knob-step.ts perDetentStep, ported. */
