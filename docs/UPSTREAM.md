@@ -87,6 +87,19 @@ fork splits the shadow UI differently from upstream — there is no `shadow_ui_g
 here, and the settings live in `shadow_ui_settings.mjs` — so "upstream's file is absent" says
 nothing about the capability. Rows below that rest on a filename alone are marked as such.
 
+### Reviewed 2026-10-05 — `v1.5.0` → `v1.7.3`
+
+⚠ Upstream rewrote its history again: `v1.5.0` is `9d58e8f79` there now, not the `66e5a854` the
+previous window recorded. Hashes in this window are the **new** ones.
+
+**Admission rule for this window:** a port is in only if a dAVEBOx SA session executes the changed
+code, or a module dAVEBOx hosts would hit the gap in dAVEBOx's own editor. Host code this fork
+carries but dAVEBOx never drives is left alone, even where upstream fixed a real bug in it.
+
+| Upstream | What | Decision |
+|---|---|---|
+| `488ec18d1` #574 | Auto forwarding: a slot's cached `default_forward_channel` is refreshed on every load, incl. `load_file`, and unconditionally | **Ported** (hand-applied: one helper `shadow_slot_refresh_default_fwd`, five call sites; upstream's test taken whole). Reach traced: dAVEBOx slots are created on Auto (`standalone/scripts/project_template.py`), every note a track sends passes `shadow_chain_remap_channel` (`shadow_midi.c`), and a project's slots are restored by `load_file` — which never queried. A synth that declares a channel (MiniJV: 1) on any track but the first then received on the slot's own channel and ignored every note after a project load. |
+
 ### Reviewed 2026-09-27 — `35260e0b` → `v1.5.0` (226 commits, 13 of them merges)
 
 Every commit in the window has a row (checked by script: 226 hashes, 226 listed). Read from code
