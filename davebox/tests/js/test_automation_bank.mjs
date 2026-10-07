@@ -447,7 +447,12 @@ step('⭐⭐ NOTHING automated: a jog click, and a jog HOLD, leave the list up (
     LIST = ''; AT_HAS = ''; S.clipAtHas[T][C] = false; auto.automationRefreshPresence();
     openByMap();
     assert(ab.autoBankRows(T, C).length === 0, 'rig: the clip still lists automation');
-    click(); ticks(2);
+    S.actionPopupLines = []; S.actionPopupEndTick = -1; sets.length = 0;
+    click();
+    /* ...and the click is not "Clear all" either: nothing is cleared, nothing announced. */
+    assert(!(S.actionPopupLines && S.actionPopupLines.length), 'a click on the empty list announced ' + JSON.stringify(S.actionPopupLines));
+    ticks(2);
+    assert(!sets.some(x => /pa_clear|at_clear|undo_checkpoint/.test(x)), 'a click on the empty list wrote ' + JSON.stringify(sets));
     assert(menu().menu === true, 'a jog CLICK closed the list — the bare card is back');
     cc(3, 127); ticks(70); cc(3, 0); ticks(2);           /* held well past a click */
     assert(menu().menu === true, 'a jog HOLD closed the list — the bare card is back');
