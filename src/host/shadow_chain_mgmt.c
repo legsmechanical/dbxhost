@@ -3824,6 +3824,14 @@ int shadow_param_apply_set_ex(int slot, const char *key, const char *value,
                                     key_copy, value_copy);
         *io_error = 0;
         *io_result_len = 0;
+        /* A write can START sound -- a player's Play/Pause -- and the idle
+         * gate would otherwise hold it back until the next probe frame: up to
+         * ~0.5 s, random, which reads as a press that did not land (and a
+         * second press re-pauses). MIDI already wakes a slot this way. Only
+         * here, the dispatcher an EDIT takes: the bulk `chain:` path
+         * (shadow_direct_set_param) carries automation and must not keep an
+         * idle slot awake. */
+        if (host.wake_slot) host.wake_slot(slot);
 
         if (strcmp(key_copy, "synth:module") == 0) {
             if (value_copy[0] != '\0') {

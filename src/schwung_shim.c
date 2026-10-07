@@ -747,6 +747,21 @@ static int shadow_slot_idle[SHADOW_CHAIN_INSTANCES];
 static int shadow_slot_fx_silence_frames[SHADOW_CHAIN_INSTANCES];
 static int shadow_slot_fx_idle[SHADOW_CHAIN_INSTANCES];
 
+/* A PARAM WRITE wakes a slot exactly as MIDI does.
+ *
+ * Only MIDI used to, so a module that starts making sound because of a write
+ * -- a player's Play -- stayed parked until the next 1-in-172 probe frame: up
+ * to ~0.5 s of silence after "resume", random in length, which reads as a
+ * press that did not land. Plain stores; runs on the SPI callback via
+ * chain_mgmt_host_t.wake_slot. */
+static void shim_wake_slot(int slot) {
+    if (slot < 0 || slot >= SHADOW_CHAIN_INSTANCES) return;
+    shadow_slot_idle[slot] = 0;
+    shadow_slot_silence_frames[slot] = 0;
+    shadow_slot_fx_idle[slot] = 0;
+    shadow_slot_fx_silence_frames[slot] = 0;
+}
+
 /* After a slot's FX chain ran: update its phase-2 idle state from the output.
  * THE ONE PLACE this is decided — there are three FX paths (deferred, the Link
  * Audio rebuild, the inline fallback), and the keep-alive below used to live
@@ -5524,6 +5539,7 @@ static void shim_init_subsystems(void)
             .get_beat_position = shadow_transport_beat_position,
             .on_param_changed = web_param_notify_push,
             .slot_render_in_flight = shim_slot_render_in_flight,
+            .wake_slot = shim_wake_slot,
         };
         chain_mgmt_init(&cm_host);
     }
