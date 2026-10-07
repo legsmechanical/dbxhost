@@ -81,6 +81,7 @@ import { recordNoteOn, recordNoteOff,
     extHeldNotes, extCountInCapture } from './ui_record.mjs';
 import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './ui_input_pads.mjs';
 import { applyBankPick, heldStepJog, bankMapArmable, bankMapBegin, bankMapEnd, bankMapPadTap,
+         bankMapDeferrable, jogDeferBegin, jogDeferTake,
     bankMapTurned, bankMapRelease } from './ui_input_cc.mjs';
 import { standDownBankDisplay } from './ui_state.mjs';
 import { _onCCMsg, syncCoRunShift } from './ui_input_cc.mjs';
@@ -567,8 +568,28 @@ function _onMidiInternalImpl(data) {
             /* A click the map cannot take (a knob touched: touch + click) goes
              * to its owner — and a latched map makes way for what it opens. */
             if (S.bankMapLatched) bankMapEnd();
+            /* A SCREEN owns this click (a menu, the module editor, a door
+             * screen): hold the press back. Let go early and the click is
+             * delivered on the release, below; held, the tick paints the map
+             * over the screen (checkJogHold). */
+            if (bankMapDeferrable()) { jogDeferBegin(); return; }
         }
-        if (d2 !== 127 && S.jogPressMs >= 0) { bankMapRelease(); return; }
+        if (d2 !== 127 && jogDeferTake()) {
+            /* The short click: the owner gets the PRESS now, exactly as it
+             * would have at the press, and then this release (inert for every
+             * jog-click owner — they all act on the press). */
+            _dispatchBelowJogRouter(JOG_PRESS_MSG, 0xB0, MoveMainButton, 127);
+        } else if (d2 !== 127 && S.jogPressMs >= 0) { bankMapRelease(); return; }
+    } else if (S.jogDeferred) {
+        /* Something else happened while the press was undecided — a turn, a
+         * button, a knob, a pad. Then it was a click, and it comes first:
+         * "press, then X" stays "click, then X", as before the deferral.
+         * Releases, pressure and the jog's own cap touch decide nothing. */
+        const _k = status & 0xF0;
+        const _acts = (_k === 0xB0 && (d1 === MoveMainKnob || (d1 >= 71 && d1 <= 79) || d2 === 127)) ||
+                      (_k === 0x90 && d2 > 0 && d1 !== MoveMainTouch);
+        if (_acts && jogDeferTake())
+            _dispatchBelowJogRouter(JOG_PRESS_MSG, 0xB0, MoveMainButton, 127);
     } else if (S.bankMapLatched && S.jogPressMs < 0 && status === 0xB0 && d2 === 127 &&
                [MoveShift, MoveDelete, MoveCopy, MoveMute, MoveLoop, MoveCapture].indexOf(d1) >= 0) {
         /* A latched map gives the pads back for a chord (Shift + pad, Delete +
@@ -602,6 +623,14 @@ function _onMidiInternalImpl(data) {
         }
     }
 
+    _dispatchBelowJogRouter(data, status, d1, d2);
+}
+/* A jog press, for the click delivered late (see the router above). */
+const JOG_PRESS_MSG = new Uint8Array([0xB0, MoveMainButton, 127]);
+/* Everything below the jog router: the modal gates and every owner. Its own
+ * function so a click the router held back can be delivered through the SAME
+ * gates, in the same order, as a press that was never held back. */
+function _dispatchBelowJogRouter(data, status, d1, d2) {
     /* PROJECT DID NOT OPEN is fully modal: nothing else may act while dAVEBOx
      * holds something Move does not. */
     if (S.projectOpenFailed && projectOpenFailedMidi(data)) return;

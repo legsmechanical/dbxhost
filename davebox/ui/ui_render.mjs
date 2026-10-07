@@ -1527,6 +1527,19 @@ export function bankCardVisible() {
     return !!S.bankCardLatched || S.knobTouched >= 0 || autoMenuUp() || autoHoldJumpActive();
 }
 
+/* The same list WITHOUT the global menu and what nests inside it: the layers
+ * a jog hold must never put the bank map over (bankMapDeferrable). */
+export function coveredByMoreThanMenu() {
+    return !!(devSnapOpen() || S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox || miActive() ||
+        S.projectPadPicker || S.pendingSceneBakePicker ||
+        S.mergePlacing || S.mergeNoticePending || S.pendingMergePlacement ||
+        S.tempoSelectActive || S.mergeSoloPlacement >= 0 || S.capturePlaceTrack >= 0 ||
+        S.confirmStateWipe || S.confirmExit || S.confirmTypeChange || S.confirmModuleChange || S.bpmMoveInfo || S.recordBlockedDialog ||
+        S.confirmConvertToDrum || S.confirmConvertToConduct ||
+        S.chordPopupOpen || S.confirmBakeScene || S.confirmBake || S.confirmMacroClear || S.tapTempoOpen ||
+        (S.sessionView && (S.loopHeld || S.perfViewLocked)));
+}
+
 export function soundModeCovered() {
     return !!(devSnapOpen() || S.stepReveal || S.sessionOverlayHeld || S.snapshotPicker || S.daveBox || miActive() ||
         S.projectPadPicker || S.pendingSceneBakePicker ||

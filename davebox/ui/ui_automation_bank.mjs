@@ -244,6 +244,12 @@ export function autoBankClick() {
     const rows = autoBankRows(t, c);
     if (a.ops) { runOp(t, c, a); return; }
     if (!a.menu) { a.menu = true; a.sel = 0; return; }
+    /* NOTHING AUTOMATED: the list is one line, "NO AUTOMATION", and there is no
+     * row to click. This used to fall into the Clear-all branch below (sel 0 is
+     * "past the end" of an empty list), which said NONE and CLOSED the list —
+     * leaving the bare card of the days this was a bank, one more click away
+     * from the screen you were already on. */
+    if (!rows.length) return;
     if (a.sel >= rows.length) { autoBankClearClip(); return; }      /* the Clear all row */
     const r = rows[a.sel];
     a.ops = { rows: opsFor(t, c, r), sel: 0, row: r };
@@ -418,7 +424,10 @@ export function autoBankClearClip() {
      * would make Undo revert an unrelated older edit still in the slot. */
     if (any) noteUndoUnit();
     showActionPopup('AUTOMATION', any ? 'CLIP CLEARED' : 'NONE');
-    a.ops = null; a.menu = false;
+    /* The list stays as it was: AUTOMATION is a screen, and clearing the clip
+     * from its last row leaves you on it (now reading NO AUTOMATION), not on a
+     * closed card that needs a click to come back. */
+    a.ops = null; a.sel = 0;
 }
 /* ---- the step row: the selected lane's steps, blinking ------------------- */
 /* Josh, 2026-09-10: "when scrolling through automation rows, have any p-locks

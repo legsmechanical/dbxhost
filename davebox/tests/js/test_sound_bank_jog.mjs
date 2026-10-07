@@ -367,7 +367,7 @@ step('⭑⭑ the TOP LEVEL keeps THE ONE LAW: bank mode or knob peek, never othe
         throw new Error('the MENU yielded to the overview — it is not a bank, it stays until ' +
                         'dismissed');
     /* And deeper still never yields either: open a row and re-check. */
-    send(3, 127); snd.soundTick(); globalThis.tick();
+    send(3, 127); send(3, 0); snd.soundTick(); globalThis.tick();
     S.tickCount += 200; globalThis.tick();
     if (snd.soundPickStateForTest && snd.soundActive()) {
         if (!snd.soundRender()) throw new Error('a sub-screen yielded to the overview');
@@ -703,7 +703,7 @@ step('⚠ a GLOBAL bus keeps its clamp: left at the top does not exit', () => {
     S.sessionView = true;
     snd.soundEnterBuses(); snd.soundTick();
     /* open the first bus (Master) */
-    send(3, 127); snd.soundTick(); globalThis.tick();
+    send(3, 127); send(3, 0); snd.soundTick(); globalThis.tick();
     if (!snd.soundIsGlobal()) throw new Error('control: not on a global bus');
     for (let i = 0; i < 12; i++) left();
     if (!snd.soundActive()) throw new Error('a global bus exited on a left turn');

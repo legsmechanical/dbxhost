@@ -24,7 +24,7 @@ import {
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG, LGTO_KNOB,
     CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, knobAltFor, ARP_STEPS_KNOB, arpStepsBank, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
-    TICK_HZ, STEP_ITER_LIST, JOG_CLICK_MAX_MS,
+    TICK_HZ, STEP_ITER_LIST, JOG_CLICK_MAX_MS, JOG_HOLD_MAP_MS,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
 import { closeChordPopup, chordEditSlot, chordSlotKnob, chordBankKnob, chordSlotReset } from './ui_chord_pads.mjs';
@@ -73,7 +73,8 @@ import { ensureGlobalMenuFresh, openGlobalMenu, openGlobalMenuAt } from './ui_me
 /* ⚠ one-way: ui_render never imports this module (checked 2026-08-31) —
  * the visibility predicate must be the render's own or the click gate and
  * the screen can disagree. */
-import { bankCardVisible, sessMixerVisible, soundModeCovered, sessMixerCellOpens } from './ui_render.mjs';
+import { bankCardVisible, sessMixerVisible, soundModeCovered, sessMixerCellOpens, coveredByMoreThanMenu } from './ui_render.mjs';
+import { isTextEntryActive } from '/data/UserData/schwung/shared/text_entry.mjs';
 import { closeDaveBox } from './ui_daves.mjs';
 import { miActive, miClose, miOffered } from './ui_midi_import.mjs';
 import { devSnapOpen, devSnapLeave, devSnapUndo, devSnapRedo } from './ui_devsnap.mjs';
@@ -1347,6 +1348,75 @@ export function bankMapArmable() {
     return !soundActive() || soundOnCard();
 }
 
+/* ⭑⭑ THE MAP OVER A SCREEN (Josh, 2026-10-07: "have jog click hold show the
+ * pad map everywhere, even in menus, module editors, and immediately jump out
+ * to whatever is selected").
+ *
+ * Where the map cannot arm on the press because a SCREEN owns the click — the
+ * global menu, TRACK CONFIG and the other sound menus, the module editor, a
+ * door screen, the Session FX editor — the press is held back instead
+ * (S.jogDeferred): let go before JOG_HOLD_MAP_MS and the click is delivered to
+ * its owner THEN, exactly as the press would have been; hold on and the map
+ * paints over the screen. A pad tapped on it leaves the screen and lands on
+ * that bank; letting go without a pick puts the screen back untouched.
+ *
+ * This says where that is allowed. Everything it refuses keeps the click on
+ * the press: chords (Shift / Delete / Copy / Mute / Loop), a touched knob, a
+ * held step, the picker's commit, co-run, the keyboard (it reads the pads),
+ * and every layer in coveredByMoreThanMenu — dialogs that must be answered,
+ * pickers and placements whose pads mean something else. */
+export function bankMapDeferrable() {
+    if (S.shiftHeld || S.deleteHeld || S.copyHeld || S.muteHeld || S.loopHeld) return false;
+    if (S.knobTouched >= 0 || soundKnobTouched() || S.heldStep >= 0 || S.bankPickerSel >= 0 || S.stepIntervalMode) return false;
+    if (S.moveCoRunTrack >= 0 || S.moveSettingsOpen) return false;
+    if (S.awaitingProjectSelect || S.stateLoading) return false;
+    if (S.projectOpenFailed || S.projectListFailed) return false;
+    if (S.backPressTick >= 0) return false;
+    if (isTextEntryActive() || coveredByMoreThanMenu()) return false;
+    if (S.globalMenuOpen) return true;
+    if (S.sessionView) return soundOpen() && !S.perfViewLocked;        /* the Session FX editor */
+    if (bankIsDoor(S.trackPadMode[S.activeTrack], S.activeBank) || autoMenuUp() || doorScreenUp()) return true;
+    return soundActive() && !soundOnCard();
+}
+
+/* The press is taken, undecided: nothing drawn, the owner has not seen it. */
+export function jogDeferBegin() {
+    S.jogPressMs = nowMs();
+    S.jogDeferred = true;
+}
+/* The undecided press is over (a release, or another input): the caller now
+ * delivers the click. */
+export function jogDeferTake() {
+    if (!S.jogDeferred) return false;
+    S.jogDeferred = false;
+    S.jogPressMs = -1;
+    return true;
+}
+/* Tick: a press held long enough over a screen becomes the map. The ORIGINAL
+ * press time stays in jogPressMs, so the release sees the whole hold. */
+export function checkJogHold() {
+    if (!S.jogDeferred || S.clockMs - S.jogPressMs < JOG_HOLD_MAP_MS) return;
+    S.jogDeferred = false;
+    /* The screen changed under the press (a queued action on the tick): this
+     * is no longer the screen the hand aimed at. Drop it — no map, no click. */
+    if (!bankMapDeferrable()) { S.jogPressMs = -1; return; }
+    S.bankMapFromScreen = true;
+    S.bankMapUsed = false;
+    S.bankMapWasLatched = false;
+    S.bankMapKind = S.sessionView ? 'session' : 'track';
+    bankMapArm();
+}
+/* A pick from a map that is up over a screen: leave the screen first, the way
+ * a held Back does — every layer at once, edits flushed, confirms answered No.
+ * A door screen is the exception: the pick itself restores where you came in
+ * from (bankMapPadTap), and tearing it down here would change bank twice. */
+function bankMapLeaveScreen() {
+    if (!S.bankMapFromScreen) return;
+    S.bankMapFromScreen = false;
+    if (doorScreenUp()) return;
+    _tearDownToOverview();
+}
+
 /* ⭑⭑ THE PLAIN CLICK IS THE MAP (Josh, 2026-10-04: "hold jog instantly peek the
  * pad map and jog click instantly pop it up and another jog click close it").
  * Where the map can arm, the jog PRESS paints it at once; the release rules
@@ -1396,6 +1466,8 @@ export function bankMapArm() {
  * ended it). Idempotent. */
 export function bankMapEnd() {
     S.bankMapDeferred = null;
+    S.jogDeferred = false;
+    S.bankMapFromScreen = false;
     if (S.jogPressMs < 0 && !S.bankMapUp && !S.bankMapLatched) return;
     const wasUp = S.bankMapUp;
     S.jogPressMs = -1;
@@ -1418,9 +1490,27 @@ export function bankMapEnd() {
  * locked, have pad tap select bank and exit bank map. tap on momentary bank
  * hold should continue to work as it does now") — a HELD map stays up until
  * the jog is let go, even a hold begun over a latched one. */
+/* Would a tap on this pad of the map do anything? The same lookups the tap
+ * makes, asked first. */
+function bankMapPadActs(note) {
+    const cell = bankMapCellForPad(note);
+    if (!cell || cell.col > 3) return false;
+    if (S.bankMapKind === 'session') {
+        if (cell.col === 0) return SESS_PAD_MAP.mixer.modes[cell.row] !== undefined;
+        if (cell.col === 1) return !!SESS_PAD_MAP.fx.buses[cell.row];
+        return false;
+    }
+    const t = S.activeTrack;
+    if (bankPadMapActionAt(S.trackPadMode[t], cell.col, cell.row) === 'inst') return true;
+    return bankPadMapCellAt(S.trackPadMode[t], t, cell.col, cell.row) !== null;
+}
 export function bankMapPadTap(note) {
     S.bankMapUsed = true;
     S.bankMapSwallow.add(note);
+    /* Only a pad that DOES something leaves the screen under the map: the
+     * right 4x4 and the dark cells are dead, and a dead tap must cost nothing. */
+    if (S.bankMapFromScreen && !bankMapPadActs(note)) return;
+    bankMapLeaveScreen();
     /* From an overview a pick moves the bank underneath (the rest walk); from
      * a shown card the card follows, as a turn there does. */
     const pickRest = S.sessionView ? !sessMixerVisible() : !bankCardVisible();
@@ -1493,6 +1583,7 @@ function bankMapCancelMenu() {
  * opens over one.) */
 function runBankMapMenu(a) {
     const t = S.activeTrack;
+    bankMapLeaveScreen();
     bankMapEnd();
     if (a.kind === 'bus') { soundEnterBusFx(a.bus); return; }
     if (a.kind === 'inst') { openTrackInstrument(); return; }
@@ -2384,6 +2475,13 @@ export function goToSessionOverview() {
  * ⚠ Never touches S.sessionView — the law returns you to the overview of the
  * view you are IN; switching is the button's other meaning, and only from rest. */
 function returnToOverview() {
+    _tearDownToOverview();
+    bankMapEnd();                   /* a latched map is a layer too */
+}
+/* Everything returnToOverview closes EXCEPT the bank map itself — the half a
+ * pick from a map over a screen needs (bankMapLeaveScreen): the map is still
+ * up, and held. */
+function _tearDownToOverview() {
     /* ⭑ CO-RUN CARVE-OUT (Josh ruled 2026-09-02, keeping today's behaviour):
      * leaving co-run returns you where you came in from, which may be a sound
      * screen rather than the overview — exitMoveNativeCoRun re-arms
@@ -2491,7 +2589,6 @@ function returnToOverview() {
     S.altMode           = false;
     S.knobAlt           = 0;
     S.bankCardLatched   = false;
-    bankMapEnd();                   /* a latched map is a layer too */
     closeDoorScreen();              /* a door screen gives its borrowed bank back */
     autoBankReset();                /* an open AUTOMATION menu shows itself (Bank Lock off) */
     standDownBankDisplay(true);

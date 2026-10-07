@@ -7,7 +7,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **The bank map from anywhere.** Hold the jog inside a menu, TRACK CONFIG, a
+  module's editor or the AUTOMATION screen and the bank map comes up over it;
+  tap a pad to jump straight to that bank, or let go to stay where you were.
+
+### Changed
+- **A jog click inside those screens lands when you let go,** not when you
+  press — that is what lets a hold mean something else. On the overviews and
+  bank pages nothing changes: the map still appears the moment you press.
+- **Volume, pan and mute glide** instead of stepping: smoother fader and pan
+  moves and automated levels, and a short fade on mute — on instrument tracks
+  and Move tracks, and on the master volume.
+- **A hot mix rounds off instead of popping.** Levels that sum past full scale
+  are soft-clipped once rather than hard-clipped at each stage.
+- **Fewer clicks on Move tracks.** A momentary gap in a Move track's audio is
+  smoothed over instead of played as silence, and out-of-order audio packets
+  are put back in order.
+- **Transpose-type knobs are easier to land on:** integer knobs with 17–48
+  values (±12, ±24) take four detents per value, in the module editor and on
+  macros alike.
+- **Lists sort the way you read them:** file browser, instrument picker and
+  user presets ignore upper/lower case and count "9" before "10".
+- **The screen is sent as whole frames,** so moving graphics no longer tear.
+- **A project switch is picked up sooner.**
+
 ### Fixed
+- **AUTOMATION stays a screen.** With nothing automated in the clip, pressing
+  the jog there closed the list and left the old bare card, which needed
+  another click to get back. Clearing everything from the list's last row did
+  the same. Both now leave you on the screen.
 - **Mini-JV plays on every track.** After a project loaded, an instrument that
   listens on one fixed MIDI channel (Mini-JV, and others that declare one)
   was silent on every track but the first: the host forwarded notes on the
@@ -25,22 +54,6 @@ the section into a versioned heading at release time.
   cancelling Save As or a rename with Back also backed you out of the screen
   you were on.
 
-### Changed
-- **Volume, pan and mute glide** instead of stepping: smoother fader and pan
-  moves and automated levels, and a short fade on mute — on instrument tracks
-  and Move tracks, and on the master volume.
-- **A hot mix rounds off instead of popping.** Levels that sum past full scale
-  are soft-clipped once rather than hard-clipped at each stage.
-- **Fewer clicks on Move tracks.** A momentary gap in a Move track's audio is
-  smoothed over instead of played as silence, and out-of-order audio packets
-  are put back in order.
-- **Transpose-type knobs are easier to land on:** integer knobs with 17–48
-  values (±12, ±24) take four detents per value, in the module editor and on
-  macros alike.
-- **Lists sort the way you read them:** file browser, instrument picker and
-  user presets ignore upper/lower case and count "9" before "10".
-- **The screen is sent as whole frames,** so moving graphics no longer tear.
-- **A project switch is picked up sooner.**
 
 
 ## [0.0.14] — 2026-10-06 (test build, not in the Schwung catalog)
