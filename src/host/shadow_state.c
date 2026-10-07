@@ -100,6 +100,13 @@ static float clampf(float v, float lo, float hi)
  * shadow_save_state - Write slot state to shadow_chain_config.json
  * ============================================================================ */
 
+static volatile int g_save_requested;
+void shadow_request_save_state(void) { __atomic_store_n(&g_save_requested, 1, __ATOMIC_RELEASE); }
+void shadow_save_state_service(void)
+{
+    if (__atomic_exchange_n(&g_save_requested, 0, __ATOMIC_ACQ_REL)) shadow_save_state();
+}
+
 void shadow_save_state(void)
 {
     /* Read existing config to preserve fields written by shadow_ui.js */

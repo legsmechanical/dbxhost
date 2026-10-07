@@ -739,15 +739,49 @@ void shadow_ui_state_refresh(void) {
  * Mute / Solo
  * ============================================================================ */
 
+/* The mutators below run on the SPI CALLBACK -- the slot:muted / slot:soloed
+ * and move_fx:N:* param serves (a session's mixer), and the Mute+Track combo
+ * -- and shadow_log() is unified_log(), which with debug_log_on armed is
+ * fopen/fprintf/fflush. So they only COUNT a change; the shim worker logs the
+ * resulting state (shadow_mix_log_service), the same split as
+ * shadow_request_save_state / shadow_save_state_service. */
+static volatile uint32_t mix_log_seq = 0;
+static uint32_t mix_log_seen = 0;   /* worker only */
+
+static inline void mix_log_note(void) {
+    __atomic_fetch_add(&mix_log_seq, 1, __ATOMIC_RELEASE);
+}
+
+void shadow_mix_log_service(void) {
+    uint32_t seq = __atomic_load_n(&mix_log_seq, __ATOMIC_ACQUIRE);
+    if (seq == mix_log_seen) return;
+    uint32_t changes = seq - mix_log_seen;
+    mix_log_seen = seq;
+    char mu[SHADOW_CHAIN_INSTANCES + 1], so[SHADOW_CHAIN_INSTANCES + 1];
+    char bmu[MOVE_FX_SLOTS + 1], bso[MOVE_FX_SLOTS + 1];
+    for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {
+        mu[i] = shadow_chain_slots[i].muted ? '1' : '0';
+        so[i] = shadow_chain_slots[i].soloed ? '1' : '0';
+    }
+    mu[SHADOW_CHAIN_INSTANCES] = so[SHADOW_CHAIN_INSTANCES] = '\0';
+    for (int i = 0; i < MOVE_FX_SLOTS; i++) {
+        bmu[i] = shadow_move_fx_strip[i].muted ? '1' : '0';
+        bso[i] = shadow_move_fx_strip[i].soloed ? '1' : '0';
+    }
+    bmu[MOVE_FX_SLOTS] = bso[MOVE_FX_SLOTS] = '\0';
+    char msg[160];
+    snprintf(msg, sizeof(msg), "Mix: slots muted=%s soloed=%s | FX buses muted=%s soloed=%s (%u change%s)",
+             mu, so, bmu, bso, changes, changes == 1 ? "" : "s");
+    shadow_log(msg);
+}
+
 void shadow_apply_mute(int slot, int is_muted) {
     if (slot < 0 || slot >= SHADOW_CHAIN_INSTANCES) return;
     if (is_muted == shadow_chain_slots[slot].muted) return;
     shadow_chain_slots[slot].muted = is_muted;
     shadow_ui_state_update_slot(slot);
-    char msg[64];
-    snprintf(msg, sizeof(msg), "Mute: slot %d %s", slot, is_muted ? "muted" : "unmuted");
-    shadow_log(msg);
-    shadow_save_state();
+    mix_log_note();
+    shadow_request_save_state();
 }
 
 /* Set (not toggle) a chain slot's solo. The single writer for chain solo, so
@@ -772,15 +806,13 @@ void shadow_chain_set_solo(int slot, int is_soloed) {
     for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {
         shadow_ui_state_update_slot(i);
     }
-    char msg[64];
-    snprintf(msg, sizeof(msg), "Solo %s: slot %d", is_soloed ? "on" : "off", slot);
-    shadow_log(msg);
+    mix_log_note();
 }
 
 void shadow_toggle_solo(int slot) {
     if (slot < 0 || slot >= SHADOW_CHAIN_INSTANCES) return;
     shadow_chain_set_solo(slot, !shadow_chain_slots[slot].soloed);
-    shadow_save_state();
+    shadow_request_save_state();
 }
 
 /* Mute an FX bus. The bus follows its own mute only — never the chain slot at
@@ -797,9 +829,7 @@ void shadow_move_fx_apply_mute(int bus, int is_muted) {
     if (bus < 0 || bus >= MOVE_FX_SLOTS) return;
     if ((uint8_t)(is_muted != 0) == shadow_move_fx_strip[bus].muted) return;
     shadow_move_fx_strip[bus].muted = (uint8_t)(is_muted != 0);
-    char msg[64];
-    snprintf(msg, sizeof(msg), "Mute: FX bus %d %s", bus, is_muted ? "muted" : "unmuted");
-    shadow_log(msg);
+    mix_log_note();
 }
 
 /* Solo an FX bus. Exclusive across both families: a chain slot and a bus can
@@ -825,9 +855,7 @@ void shadow_move_fx_set_solo(int bus, int is_soloed) {
     for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {
         shadow_ui_state_update_slot(i);
     }
-    char msg[64];
-    snprintf(msg, sizeof(msg), "Solo %s: FX bus %d", is_soloed ? "on" : "off", bus);
-    shadow_log(msg);
+    mix_log_note();
 }
 
 /* ============================================================================

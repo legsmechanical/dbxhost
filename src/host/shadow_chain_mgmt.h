@@ -229,6 +229,9 @@ extern move_fx_strip_t shadow_move_fx_strip[MOVE_FX_SLOTS];
  * clear any chain-slot solo too (and shadow_toggle_solo clears bus solos). */
 void shadow_move_fx_apply_mute(int bus, int is_muted);
 void shadow_move_fx_set_solo(int bus, int is_soloed);
+/* Worker: log the mix state if a mute/solo changed since the last call. The
+ * mutators only count -- they run on the SPI callback. */
+void shadow_mix_log_service(void);
 
 /* Master FX LFOs */
 #define MASTER_FX_LFO_COUNT 2
