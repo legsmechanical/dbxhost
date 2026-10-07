@@ -222,6 +222,8 @@ typedef struct {
      * shadow_solo_count alongside the chain slots. */
     uint8_t muted;
     uint8_t soloed;
+    /* The gain the mixer ACTUALLY applies for this bus — see mix_glide.h. */
+    mix_glide_t mix;
 } move_fx_strip_t;
 extern move_fx_strip_t shadow_move_fx_strip[MOVE_FX_SLOTS];
 
@@ -340,6 +342,22 @@ static inline float shadow_pan_gain_l(float pan) {
 }
 static inline float shadow_pan_gain_r(float pan) {
     return (pan >= 0.5f) ? 1.0f : 2.0f * pan;
+}
+
+/* Once per block, before a slot's (or a Move FX bus's) mix loop: the level and
+ * balance its gain glides toward. Mute and solo are inside the effective
+ * volume, so they become short fades. See mix_glide.h. */
+static inline mix_glide_t *shadow_mix_targets(int slot) {
+    shadow_chain_slot_t *s = &shadow_chain_slots[slot];
+    mix_glide_target(&s->mix, shadow_effective_volume(slot),
+                     shadow_pan_gain_l(s->pan), shadow_pan_gain_r(s->pan));
+    return &s->mix;
+}
+static inline mix_glide_t *shadow_move_fx_mix_targets(int bus) {
+    move_fx_strip_t *b = &shadow_move_fx_strip[bus];
+    mix_glide_target(&b->mix, shadow_move_fx_effective_volume(bus),
+                     shadow_pan_gain_l(b->pan), shadow_pan_gain_r(b->pan));
+    return &b->mix;
 }
 
 /* Advance the fade envelope by one sample. Call once per stereo frame in mix loop. */

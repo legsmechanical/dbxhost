@@ -23,7 +23,8 @@ grep -q 'same_frame_fx ? shadow_slot_deferred\[s\] : shadow_slot_fallback\[s\]' 
 ! grep -q 'same_frame_fx ? shadow_slot_deferred\[s\] : shadow_deferred_dsp_buffer' "$C" \
     && say "ok   — ...and never the accumulator" || bad "accumulator still used for a slot's silence"
 # the accumulator is still the reduce target (serial today; a pool reduces after the loop)
-grep -q 'int32_t mixed = shadow_deferred_dsp_buffer\[i\] + (int32_t)(render_buffer\[i\] \* vol \* pg);' "$C" \
+# (the pan gain is inside `vol` since the per-frame glide: mix_glide_gain)
+grep -q 'int32_t mixed = shadow_deferred_dsp_buffer\[i\] + (int32_t)(render_buffer\[i\] \* vol);' "$C" \
     && say "ok   — the mix into the accumulator is unchanged (the reduce step a pool would move)" || bad "mix-in changed"
 echo "int16_t render_buffer[FRAMES_PER_BLOCK * 2];" | grep -q 'shadow_slot_fallback' && bad "control: a scratch line passed" || say "ok   — control: a stack scratch does not pass the pin"
 [ $fail = 0 ] && echo "PASS: $(basename "$0")" || { echo "FAIL: $(basename "$0")"; exit 1; }

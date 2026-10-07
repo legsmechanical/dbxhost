@@ -5,6 +5,7 @@
 #define SHADOW_CHAIN_TYPES_H
 
 #include <stdint.h>
+#include "mix_glide.h"
 
 /* Capture rules: bitmaps for which notes/CCs a slot captures */
 typedef struct shadow_capture_rules_t {
@@ -44,6 +45,9 @@ typedef struct shadow_chain_slot_t {
      * signal). Unity by default; nothing changes until a UI drives it. */
     float synth_volume;
     float pan;              /* 0.0 = full left, 0.5 = center, 1.0 = full right */
+    /* The gain the mixer ACTUALLY applies for this slot, gliding per frame
+     * toward the block's target — see mix_glide.h. */
+    mix_glide_t mix;
     float send_a;           /* 0.0 to 1.0, post-fader send level to Send A bus */
     float send_b;           /* 0.0 to 1.0, post-fader send level to Send B bus */
     int muted;              /* 1 = muted (Mute+Track or Move speakerOn sync) */

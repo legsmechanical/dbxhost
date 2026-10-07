@@ -45,6 +45,7 @@
 #include "host/display_pull.h"
 #include "host/link_audio_conceal.h"
 #include "host/mix_soft_clip.h"
+#include "host/mix_glide.h"
 #include "host/surface_live_shm.h"
 #include "host/shadow_ui_midi_policy.h"
 #include "host/ui_midi_ring.h"
@@ -2293,16 +2294,14 @@ static void shadow_inprocess_render_to_buffer(void) {
             for (int s = 0; s < SHADOW_CHAIN_INSTANCES; s++) {
                 if (!shadow_slot_fallback_rendered[s]) continue;
                 const int16_t *render_buffer = shadow_slot_fallback[s];
-                float dfr_pan_l = shadow_pan_gain_l(shadow_chain_slots[s].pan);
-                float dfr_pan_r = shadow_pan_gain_r(shadow_chain_slots[s].pan);
+                mix_glide_t *mg = shadow_mix_targets(s);   /* the loop glides toward these */
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                    float vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
-                    float pg = (i & 1) ? dfr_pan_r : dfr_pan_l;
-                    int32_t mixed = shadow_deferred_dsp_buffer[i] + (int32_t)(render_buffer[i] * vol * pg);
+                    float vol = mix_glide_gain(mg, i) * shadow_chain_slots[s].fade.gain;
+                    int32_t mixed = shadow_deferred_dsp_buffer[i] + (int32_t)(render_buffer[i] * vol);
                     if (mixed > 32767) mixed = 32767;
                     if (mixed < -32768) mixed = -32768;
                     shadow_deferred_dsp_buffer[i] = (int16_t)mixed;
-                    if (i & 1) shadow_fade_advance(s);
+                    if (i & 1) { shadow_fade_advance(s); mix_glide_advance(mg); }
                 }
             }
         }
@@ -2559,6 +2558,14 @@ static void shadow_inprocess_mix_from_buffer(void) {
 
     int16_t *mailbox_audio = (int16_t *)(global_mmap_addr + AUDIO_OUT_OFFSET);
     float mv = shadow_master_volume;
+    /* MASTER VOLUME GLIDES, per frame. mv is read off Move's on-screen volume
+     * bar, so it arrives in coarse jumps; applied as one constant per block it
+     * stepped audibly on every knob detent -- and under Move->Schwung it scales
+     * Move's whole rebuilt mix, not only ours. One ramp per block, shared by
+     * every loop below that applies mv to audio. */
+    static float mv_glide = -1.0f;
+    float mv_ramp[FRAMES_PER_BLOCK];
+    mix_glide_ramp(&mv_glide, mv, mv_ramp, FRAMES_PER_BLOCK);
     (void)shadow_master_fx_chain_active();  /* MFX slots processed unconditionally below */
     MIX_PHASE_BEGIN();
     /* Always build the mix at unity level so sampler/skipback capture audio
@@ -2683,7 +2690,7 @@ static void shadow_inprocess_mix_from_buffer(void) {
         const int16_t *jack_audio = schwung_jack_bridge_read_audio(g_jack_shm);
         if (jack_audio) {
             for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                int32_t scaled_jack = (int32_t)lroundf((float)jack_audio[i] * mv);
+                int32_t scaled_jack = (int32_t)lroundf((float)jack_audio[i] * mv_ramp[i >> 1]);
                 int32_t mixed = (int32_t)mailbox_audio[i] + scaled_jack;
                 if (mixed > 32767) mixed = 32767;
                 if (mixed < -32768) mixed = -32768;
@@ -2832,8 +2839,10 @@ static void shadow_inprocess_mix_from_buffer(void) {
                  * because a solo that left the other family sounding would not
                  * be a solo. */
                 float mvol = shadow_move_fx_effective_volume(s);
-                float bus_pan_l = shadow_pan_gain_l(shadow_move_fx_strip[s].pan);
-                float bus_pan_r = shadow_pan_gain_r(shadow_move_fx_strip[s].pan);
+                /* ...glided into the mix per frame (mix_glide.h): a fader, an
+                 * automated level or a mute on a Move track's bus was a gain
+                 * step every block. The SEND below stays per-block, on mvol. */
+                mix_glide_t *bg = shadow_move_fx_mix_targets(s);
                 /* Publish this bus as the slot's ME channel when no synth owns
                  * the slot's ring. The retired "inactive slot, Move>Slot on"
                  * branch below used to do this and would otherwise take the
@@ -2849,8 +2858,7 @@ static void shadow_inprocess_mix_from_buffer(void) {
                     ? &shadow_pub_audio_shm->slots[s] : NULL;
                 uint32_t bus_wp = bus_ps ? bus_ps->write_pos : 0;
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                    float pg = (i & 1) ? bus_pan_r : bus_pan_l;
-                    int32_t scaled = (int32_t)lroundf((float)msrc[i] * mvol * pg);
+                    int32_t scaled = (int32_t)lroundf((float)msrc[i] * mix_glide_gain(bg, i));
                     la_acc[i] += scaled;
                     me_full[i]  += scaled;
                     me_unity[i] += scaled;
@@ -2861,6 +2869,7 @@ static void shadow_inprocess_mix_from_buffer(void) {
                         bus_ps->ring[bus_wp & LINK_AUDIO_PUB_SHM_RING_MASK] = (int16_t)c;
                         bus_wp++;
                     }
+                    if (i & 1) mix_glide_advance(bg);
                 }
                 if (bus_ps) {
                     __sync_synchronize();
@@ -3067,15 +3076,14 @@ static void shadow_inprocess_mix_from_buffer(void) {
                 }
 
                 /* Add FX output to mailbox */
-                float slot_pan_l = shadow_pan_gain_l(shadow_chain_slots[s].pan);
-                float slot_pan_r = shadow_pan_gain_r(shadow_chain_slots[s].pan);
+                mix_glide_t *mg = shadow_mix_targets(s);   /* the loop glides toward these */
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                    float vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
-                    float pg = (i & 1) ? slot_pan_r : slot_pan_l;
-                    la_acc[i] += (int32_t)lroundf((float)fx_buf[i] * vol * pg);
-                    me_full[i] += (int32_t)lroundf((float)fx_buf[i] * vol * pg);
-                    me_unity[i] += (int32_t)lroundf((float)fx_buf[i] * vol * pg);
-                    if (i & 1) shadow_fade_advance(s);
+                    float vol = mix_glide_gain(mg, i) * shadow_chain_slots[s].fade.gain;
+                    int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol);
+                    la_acc[i] += contrib;
+                    me_full[i] += contrib;
+                    me_unity[i] += contrib;
+                    if (i & 1) { shadow_fade_advance(s); mix_glide_advance(mg); }
                 }
                 accumulate_sends(s, fx_buf, send_accum);
                 accumulate_bus_sends(s, send_accum);
@@ -3116,15 +3124,13 @@ skip_la_rebuild:
                     ps->write_pos = wp;
                 }
 
-                float spn_l = shadow_pan_gain_l(shadow_chain_slots[s].pan);
-                float spn_r = shadow_pan_gain_r(shadow_chain_slots[s].pan);
+                mix_glide_t *mg = shadow_mix_targets(s);   /* the loop glides toward these */
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                    float vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
-                    float pg = (i & 1) ? spn_r : spn_l;
-                    int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol * pg);
+                    float vol = mix_glide_gain(mg, i) * shadow_chain_slots[s].fade.gain;
+                    int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol);
                     me_full[i] += contrib;
                     me_unity[i] += contrib;
-                    if (i & 1) shadow_fade_advance(s);
+                    if (i & 1) { shadow_fade_advance(s); mix_glide_advance(mg); }
                 }
                 accumulate_sends(s, fx_buf, send_accum);
                 accumulate_bus_sends(s, send_accum);
@@ -3165,15 +3171,13 @@ skip_la_rebuild:
                 /* Phase 2 idle (and the continuous-processing keep-alive). */
                 shadow_slot_fx_track_idle(s, fx_buf);
 
-                float fpn_l = shadow_pan_gain_l(shadow_chain_slots[s].pan);
-                float fpn_r = shadow_pan_gain_r(shadow_chain_slots[s].pan);
+                mix_glide_t *mg = shadow_mix_targets(s);   /* the loop glides toward these */
                 for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-                    float vol = shadow_effective_volume(s) * shadow_chain_slots[s].fade.gain;
-                    float pg = (i & 1) ? fpn_r : fpn_l;
-                    int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol * pg);
+                    float vol = mix_glide_gain(mg, i) * shadow_chain_slots[s].fade.gain;
+                    int32_t contrib = (int32_t)lroundf((float)fx_buf[i] * vol);
                     me_full[i] += contrib;
                     me_unity[i] += contrib;
-                    if (i & 1) shadow_fade_advance(s);
+                    if (i & 1) { shadow_fade_advance(s); mix_glide_advance(mg); }
                 }
                 accumulate_sends(s, fx_buf, send_accum);
                 accumulate_bus_sends(s, send_accum);
@@ -3326,7 +3330,7 @@ skip_la_rebuild:
      * Skipped under rebuild_from_la — that path has already composited into mailbox. */
     if (!rebuild_from_la) {
         for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-            int32_t scaled_me = (int32_t)lroundf((float)me_unity_i16[i] * mv);
+            int32_t scaled_me = (int32_t)lroundf((float)me_unity_i16[i] * mv_ramp[i >> 1]);
             int32_t summed = (int32_t)mailbox_audio[i] + scaled_me;
             if (summed > 32767) summed = 32767;
             if (summed < -32768) summed = -32768;
@@ -3369,9 +3373,9 @@ skip_la_rebuild:
     /* Under rebuild_from_la, the mailbox was built at unity (per-slot vol only,
      * no master vol). Apply master volume now so DAC output respects the knob.
      * Non-rebuild path already applied mv in the final ME-sum above. */
-    if (rebuild_from_la && mv < 0.9999f) {
+    if (rebuild_from_la && (mv < 0.9999f || mv_ramp[0] < 0.9999f)) {
         for (int i = 0; i < FRAMES_PER_BLOCK * 2; i++) {
-            float scaled = (float)mailbox_audio[i] * mv;
+            float scaled = (float)mailbox_audio[i] * mv_ramp[i >> 1];
             if (scaled > 32767.0f) scaled = 32767.0f;
             if (scaled < -32768.0f) scaled = -32768.0f;
             mailbox_audio[i] = (int16_t)lroundf(scaled);
