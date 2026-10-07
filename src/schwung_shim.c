@@ -6035,6 +6035,9 @@ static int xmos_log_fd = -1;
 static uint32_t xmos_frame = 0;
 static uint64_t xmos_log_bytes = 0;
 
+/* Frames between looks at the set snapshot the worker publishes (SET DETECTION). */
+#define SET_SNAPSHOT_CONSUME_FRAMES 16
+
 #define TIME_SECTION_START() clock_gettime(CLOCK_MONOTONIC, &spi_section_start)
 #define TIME_SECTION_END(sum_var, max_var) do { \
     clock_gettime(CLOCK_MONOTONIC, &spi_section_end); \
@@ -6338,7 +6341,14 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
     {
         static uint32_t set_poll_counter = 0;
         set_poll_counter++;
-        if (set_poll_counter >= 500) {  /* ~1.5s at 44100/128 */
+        /* ~46 ms. It was 500 (~1.5 s), which on top of the worker's scan made
+         * a project switch wait up to that much longer before anything acted
+         * on it; the consume is two volatile reads and a memcpy, and
+         * shadow_handle_set_loaded drops a repeat of the same set at once.
+         * ⚠ Unmeasured on a device: upstream paired this with a settle check
+         * on its live model, which this fork does not carry — here the
+         * snapshot is only published once the identity is decided. */
+        if (set_poll_counter >= SET_SNAPSHOT_CONSUME_FRAMES) {
             set_poll_counter = 0;
             shadow_set_pages_consume();
         }
