@@ -99,6 +99,8 @@ carries but dAVEBOx never drives is left alone, even where upstream fixed a real
 | Upstream | What | Decision |
 |---|---|---|
 | `488ec18d1` #574 | Auto forwarding: a slot's cached `default_forward_channel` is refreshed on every load, incl. `load_file`, and unconditionally | **Ported** (hand-applied: one helper `shadow_slot_refresh_default_fwd`, five call sites; upstream's test taken whole). Reach traced: dAVEBOx slots are created on Auto (`standalone/scripts/project_template.py`), every note a track sends passes `shadow_chain_remap_channel` (`shadow_midi.c`), and a project's slots are restored by `load_file` — which never queried. A synth that declares a channel (MiniJV: 1) on any track but the first then received on the slot's own channel and ignored every note after a project load. |
+| `7840c27fc` #614 | Link Audio: Move's packets are written to the ring in SEQUENCE order (`BufferHandle::Info::count`), with a one-packet hold for a swapped pair | **Ported** (`link_audio_reorder.h` + `test_link_audio_reorder.c` taken whole; the sidecar's write moved into `la_ring_emit`; upstream's `link_cb_note_continuity` call dropped — this fork has no continuity probe; the reorder counters ride the sidecar's 30 s stats log; header added to the `scripts/build.sh` deps). Reach: every Move track in a session is heard through Link Audio. Not heard on a device yet. |
+
 
 ### Reviewed 2026-09-27 — `35260e0b` → `v1.5.0` (226 commits, 13 of them merges)
 

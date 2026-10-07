@@ -413,7 +413,7 @@ fi
 if [ -d "./libs/link/include/ableton" ]; then
     if needs_rebuild build/link-subscriber \
         src/host/link_subscriber.cpp src/host/arc4random_compat.c src/host/unified_log.c \
-        src/host/link_audio.h src/host/unified_log.h src/host/shadow_constants.h; then
+        src/host/link_audio.h src/host/link_audio_reorder.h src/host/unified_log.h src/host/shadow_constants.h; then
         echo "Building Link Audio subscriber..."
         # Build arc4random compat shim (Move's glibc 2.34 lacks arc4random from 2.36)
         "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -c -g -O0 \

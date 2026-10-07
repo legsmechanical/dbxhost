@@ -40,6 +40,7 @@
 extern "C" {
 #include "link_peer_name.h"
 #include "link_audio.h"
+#include "link_audio_reorder.h"
 }
 
 #include "unified_log.h"
@@ -145,6 +146,47 @@ static link_audio_pub_shm_t *open_pub_shm()
     }
 
     return shm;
+}
+
+/* ---- write one packet into the slot's ring, in sequence order -----------
+ * Called by link_audio_reorder.h's push, 0-2 times per received buffer, on
+ * Link's audio thread. MUST stay realtime-safe: lock-free ring writes and
+ * atomics only. */
+static link_audio_in_shm_t *g_in_shm_for_emit;
+static la_reorder_t g_reorder[LINK_AUDIO_IN_SLOT_COUNT];
+
+static void la_ring_emit(void *ctx, const int16_t *samples, size_t num_frames)
+{
+    const int slot_idx = (int)(intptr_t)ctx;
+    link_audio_in_shm_t *shm = g_in_shm_for_emit;
+    if (!shm) return;
+
+    link_audio_in_slot_t *slot = &shm->slots[slot_idx];
+    const uint32_t to_copy = (uint32_t)(num_frames * 2);   /* samples, stereo */
+    uint32_t wp = slot->write_pos;
+    uint32_t rp = __atomic_load_n(&slot->read_pos, __ATOMIC_ACQUIRE);
+    /* Producer telemetry: count overwrites of un-read data. Diagnostic only;
+     * we still write (matches pre-v2 behavior). */
+    uint32_t pending = wp - rp;
+    if (pending + to_copy > LINK_AUDIO_IN_RING_SAMPLES) {
+        __atomic_fetch_add(&slot->would_overrun_count, 1, __ATOMIC_RELAXED);
+    }
+    /* Use a volatile pointer + explicit memory fence. The non-volatile ring[]
+     * array is otherwise "unobservable" in this TU, so the compiler can (and
+     * does, with -O3) elide the stores as dead. */
+    volatile int16_t *ring = slot->ring;
+    for (uint32_t i = 0; i < to_copy; ++i) {
+        ring[(wp + i) & LINK_AUDIO_IN_RING_MASK] = samples[i];
+    }
+    __sync_synchronize();
+    __atomic_store_n(&slot->write_pos, wp + to_copy, __ATOMIC_RELEASE);
+    __atomic_store_n(&slot->active, 1, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&slot->produced_count, 1, __ATOMIC_RELAXED);
+    uint32_t nframes_u32 = (uint32_t)num_frames;
+    uint32_t prev_max = __atomic_load_n(&slot->max_frames_seen, __ATOMIC_RELAXED);
+    if (nframes_u32 > prev_max) {
+        __atomic_store_n(&slot->max_frames_seen, nframes_u32, __ATOMIC_RELAXED);
+    }
 }
 
 /* Create (or open if already existing) the Move->shim audio SHM segment.
@@ -451,46 +493,12 @@ int main()
                                 if (num_frames == 0) return;
                                 if (!samples) return;
 
-                                link_audio_in_slot_t *slot =
-                                    &in_shm_cap->slots[slot_idx_cap];
-
-                                const uint32_t to_copy =
-                                    (uint32_t)(num_frames * num_channels); /* samples */
-                                uint32_t wp = slot->write_pos;
-                                uint32_t rp = __atomic_load_n(&slot->read_pos,
-                                                              __ATOMIC_ACQUIRE);
-                                /* Producer telemetry: count overwrites of
-                                 * un-read data. Diagnostic only; we still
-                                 * write (matches pre-v2 behavior). */
-                                uint32_t pending = wp - rp;
-                                if (pending + to_copy > LINK_AUDIO_IN_RING_SAMPLES) {
-                                    __atomic_fetch_add(&slot->would_overrun_count,
-                                                       1, __ATOMIC_RELAXED);
-                                }
-                                /* Use a volatile pointer + explicit memory fence.
-                                 * The non-volatile ring[] array is otherwise
-                                 * "unobservable" in this TU, so the compiler can
-                                 * (and does, with -O3) elide the stores as dead. */
-                                volatile int16_t *ring = slot->ring;
-                                for (uint32_t i = 0; i < to_copy; ++i) {
-                                    ring[(wp + i) & LINK_AUDIO_IN_RING_MASK] =
-                                        samples[i];
-                                }
-                                __sync_synchronize();
-                                __atomic_store_n(&slot->write_pos, wp + to_copy,
-                                                 __ATOMIC_RELEASE);
-                                __atomic_store_n(&slot->active, 1,
-                                                 __ATOMIC_RELAXED);
-                                __atomic_fetch_add(&slot->produced_count, 1,
-                                                   __ATOMIC_RELAXED);
-                                uint32_t nframes_u32 = (uint32_t)num_frames;
-                                uint32_t prev_max = __atomic_load_n(
-                                    &slot->max_frames_seen, __ATOMIC_RELAXED);
-                                if (nframes_u32 > prev_max) {
-                                    __atomic_store_n(&slot->max_frames_seen,
-                                                     nframes_u32,
-                                                     __ATOMIC_RELAXED);
-                                }
+                                g_in_shm_for_emit = in_shm_cap;
+                                /* In SEQUENCE order, not arrival order: UDP may
+                                 * swap two packets (link_audio_reorder.h). */
+                                la_reorder_push(&g_reorder[slot_idx_cap], h.info.count,
+                                                samples, num_frames, la_ring_emit,
+                                                (void *)(intptr_t)slot_idx_cap);
                             });
                     } else {
                         /* Non-Move channel (e.g. ME-Ack loopback) — keep the
@@ -629,6 +637,19 @@ int main()
                          (unsigned long long)rx, (unsigned long long)tx);
                 last_rx_count = rx;
                 last_tx_count = tx;
+            }
+            for (int i = 0; i < LINK_AUDIO_IN_SLOT_COUNT; i++) {
+                la_reorder_t *ro = &g_reorder[i];
+                uint32_t re = __atomic_exchange_n(&ro->reordered, 0, __ATOMIC_RELAXED);
+                uint32_t lo = __atomic_exchange_n(&ro->lost, 0, __ATOMIC_RELAXED);
+                uint32_t la = __atomic_exchange_n(&ro->late, 0, __ATOMIC_RELAXED);
+                uint32_t rs = __atomic_exchange_n(&ro->resyncs, 0, __ATOMIC_RELAXED);
+                if (re || lo || la || rs) {
+                    LOG_INFO(LINK_SUB_LOG_SOURCE,
+                             "order slot=%d reordered=%u lost=%u late=%u resyncs=%u "
+                             "-- Move's packets, put back in sequence order",
+                             i, re, lo, la, rs);
+                }
             }
         }
     }

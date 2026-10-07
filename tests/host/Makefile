@@ -79,6 +79,7 @@ TARGETS = $(BUILD_DIR)/test_project_path \
           $(BUILD_DIR)/test_link_peer_name \
           $(BUILD_DIR)/test_forward_channel \
           $(BUILD_DIR)/test_link_audio_backlog_trim \
+          $(BUILD_DIR)/test_link_audio_reorder \
           $(BUILD_DIR)/test_control_layout \
           $(BUILD_DIR)/test_shadow_param_queue \
           $(BUILD_DIR)/test_shadow_param_lane \
@@ -163,6 +164,9 @@ $(BUILD_DIR)/test_overtake_native_led_repaint: test_overtake_native_led_repaint.
 # DEPFLAGS header tracking above is what keeps this honest when it changes.
 $(BUILD_DIR)/test_link_audio_backlog_trim: test_link_audio_backlog_trim.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $(filter %.c,$^) -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_link_audio_reorder: test_link_audio_reorder.c ../../src/host/link_audio_reorder.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_forward_channel: test_forward_channel.c ../../src/host/forward_channel.h ../../src/host/shadow_chain_types.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -o $@ $<
