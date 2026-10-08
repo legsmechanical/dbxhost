@@ -7,19 +7,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.15] — 2026-10-08 (test build, not in the Schwung catalog)
 ### Added
 - **The bank map from anywhere.** Hold the jog inside a menu, TRACK CONFIG, a
   module's editor or the AUTOMATION screen and the bank map comes up over it;
   tap a pad to jump straight to that bank, or let go to stay where you were.
-- **Track pads on the bank map.** While the map is up, the top two rows of
-  the right-hand pads are the eight tracks (1–4, then 5–8), each in its
-  colour with the current one blinking: tap one to switch track — the screen
-  flashes its number and what it plays. Holding the jog, the map stays for a bank tap next;
-  clicked open, it closes on the track.
 - **...including a Move instrument's own editor.** Hold the jog there and the
   map shows over Move's screen; pick a bank to leave for it, or let go and
   Move's editor is back as it was. A short click is still Move's — it lands
   when you let go.
+- **Track pads on the bank map.** While the map is up, the top two rows of
+  the right-hand pads are the eight tracks (1–4, then 5–8), each in its
+  colour with the current one blinking. Tap one to switch track; the screen
+  flashes its number and what it plays. Holding the jog, the map stays up
+  for a bank tap next; clicked open, it closes on the track.
 
 ### Changed
 - **Transpose-type bank knobs feel like their macro.** Note Offset, the Harmony
@@ -62,11 +64,10 @@ the section into a versioned heading at release time.
 - **An instrument started by a button on its own page responds at once** (it
   could lag up to half a second after a quiet spell).
 - **A module's own page can ask for text** (a search box) in the module editor.
+- **Notice text sits in the middle of its box,** not a row high.
 - **Back on a keyboard only cancels the keyboard.** In the module editor,
   cancelling Save As or a rename with Back also backed you out of the screen
   you were on.
-
-
 
 ## [0.0.14] — 2026-10-06 (test build, not in the Schwung catalog)
 ### Fixed
