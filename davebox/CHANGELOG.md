@@ -7,6 +7,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **Bluetooth MIDI, on units that have a Bluetooth radio.** A stock Move has
+  none, and nothing changes there: no new menu row, nothing running. On a Move
+  rebuilt around a board with onboard Bluetooth, a paired Bluetooth LE MIDI
+  device works like one plugged into USB-A — its notes and controllers arrive
+  as external MIDI, and whatever dAVEBOx sends to external MIDI also goes to
+  it. Pairing is done over SSH with `bluetoothctl`; a trusted device reconnects
+  by itself. SysEx is not carried.
+- **Bluetooth On/Off** in the settings menu, after Move Settings (only on a
+  unit with a Bluetooth radio). Off powers the radio down; the choice is
+  remembered across launches.
 
 ## [0.0.16] — 2026-10-08 (test build, not in the Schwung catalog)
 ### Added

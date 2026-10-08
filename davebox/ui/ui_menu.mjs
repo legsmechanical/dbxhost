@@ -24,6 +24,7 @@ import { SCALE_NAMES } from './ui_constants.mjs';
 import { S } from './ui_state.mjs';
 import { keyRootName } from './ui_chord.mjs';
 import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
+import { bluetoothPresent, bluetoothOn, setBluetoothOn } from './ui_bluetooth.mjs';
 import { jogTouchCardOn, setJogTouchCardOn } from './ui_prefs.mjs';
 import { saveState, loadSnapshotManifest } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
@@ -284,6 +285,14 @@ function buildGlobalMenuItems() {
         createAction('Move Settings...', function() {
             enterMoveSettingsCoRun();
         }),
+        /* Bluetooth: the radio itself, for Bluetooth MIDI devices. Off powers
+         * the controller down (paired devices drop); On lets a trusted device
+         * come back by itself. Shown only on a unit that has a controller. */
+        bluetoothPresent() ? createToggle('Bluetooth', {
+            get: function() { return bluetoothOn(); },
+            set: function(v) { setBluetoothOn(v); },
+            onLabel: 'On', offLabel: 'Off'
+        }) : null,
         createDivider(),
         /* The Daves switch (Josh, 2026-09-05): On = a collected Dave scrolls
          * through the session banner while playing; Off = the static wordmark.

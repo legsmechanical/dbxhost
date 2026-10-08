@@ -642,6 +642,12 @@ setsid --wait bash -c '
       "$DBX_DIR/display-server" >/dev/null 2>&1 &
       echo "started display-server ($!)"
     fi
+    # The Bluetooth radio follows the saved menu choice, and the menu row
+    # shows only where a controller exists. Backgrounded: powering the radio
+    # can take a second and nothing here waits on it.
+    if [ -f "$DBX_DIR/scripts/bluetooth-cmd.sh" ]; then
+      sh "$DBX_DIR/scripts/bluetooth-cmd.sh" apply >/dev/null 2>&1 &
+    fi
     # Paired Bluetooth LE MIDI devices <-> external MIDI. Idle
     # until bluetoothd exposes a device as a sequencer port. Kept off core 3.
     if [ -x "$DBX_DIR/seq-midi-bridge" ] && [ -e /dev/snd/seq ]; then

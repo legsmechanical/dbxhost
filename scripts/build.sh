@@ -722,6 +722,9 @@ mkdir -p ./build/scripts
 if [ -d ./standalone ]; then
     cp ./standalone/scripts/quiesce-stock.sh ./build/scripts/
     cp ./standalone/scripts/exit-to-stock.sh ./build/scripts/
+    # bluetooth-cmd.sh: the radio on/off behind the menu's Bluetooth row, and
+    # the launch-time apply. Does nothing on a unit with no controller.
+    cp ./standalone/scripts/bluetooth-cmd.sh ./build/scripts/
     # blank-leds.py: writes every LED dark at launch, through the shadow-UI
     # MIDI-out ring. A runtime dependency of quiesce-stock.sh, which blanks
     # while STOCK still owns the surface — the only window where the write
@@ -796,7 +799,8 @@ if [ -d ./standalone ]; then
     chmod +x ./build/scripts/quiesce-stock.sh ./build/scripts/exit-to-stock.sh \
              ./build/scripts/set-swap.sh ./build/scripts/project-cmd.sh \
              ./build/scripts/select-list.sh ./build/scripts/select-hook.sh \
-             ./build/scripts/move-loaded-set-reader.sh ./build/scripts/reap-session.sh
+             ./build/scripts/move-loaded-set-reader.sh ./build/scripts/reap-session.sh \
+             ./build/scripts/bluetooth-cmd.sh
     # The template project every standalone workspace seeds from (correctly
     # wired at birth — see the generator's header). Generated, not checked in,
     # so the pristine fixture stays the single source.
