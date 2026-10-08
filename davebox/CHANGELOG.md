@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **Sound on the Mirror page.** Recordings made with **Record** now carry the
+  device's sound along with the picture. The page starts muted; **Unmute** plays
+  the sound in the browser too. It is the full mix at a fixed level, so it does
+  not follow the volume knob.
 
 ## [0.0.16] — 2026-10-08 (test build, not in the Schwung catalog)
 ### Added

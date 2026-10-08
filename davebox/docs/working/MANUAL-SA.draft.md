@@ -2379,7 +2379,8 @@ dAVEBOx editor.
 
 - A slim ribbon along the top links to **Mirror** (a live view of the Move's
   screen and controls, with a fading finger on each one as you use it — for
-  videos; the **Fingers** button turns that off), **Files** (upload to and download from the device), **Help** (this
+  videos; the **Fingers** button turns that off. **Record** saves a video with
+  the device's sound, and **Unmute** plays that sound in the browser), **Files** (upload to and download from the device), **Help** (this
   manual and the quick start, one page per chapter, served by the Move), **Config**
   (dAVEBOx's own settings) and **System**. Each opens in a new tab with the same ribbon and an **Editor**
   link back.
