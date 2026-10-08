@@ -110,6 +110,7 @@ const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
 stubParamPagesDevice();
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
+const _selectTrack = (await import('../../ui/ui_input_pads.mjs')).selectTrackFromPad;
 const { BANKS, BANK_AUTOMATION, BANK_SOUND, BANK_MACROS, SEQ_AUTO_TARGETS } = await import('../../ui/ui_constants.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const bank = await import('../../ui/ui_automation_bank.mjs');
@@ -395,7 +396,8 @@ step('⭐ a MOVE-routed track (its lanes on slot 0, by BUS): Volume and an inser
 step('⭐ leaving the track leaves the AUTOMATION menu: back on it, the card shows and a click opens the list', () => {
     openMenuOn(TARGETS.seq); ticks(2);
     assert(S.autoBank.menu, 'rig: menu open');
-    const swap = (t) => { cc(49, 127); shiftHeld = 1; note(68 + t, 127); note(68 + t, 0); cc(49, 0); shiftHeld = 0; ticks(2); };
+    /* The bank map's track pick (Shift + bottom-row pad was retired 2026-10-08). */
+    const swap = (t) => { _selectTrack(t); ticks(2); };
     swap(0);
     assert(S.activeTrack === 0, 'rig: on track 1');
     swap(T);

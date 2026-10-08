@@ -131,7 +131,7 @@ step('the gesture: Shift held, volume turning', () => {
     /* ⚠ Prove the stimulus LANDED before trusting any measurement of it. A null
      * result from a gesture that never happened looks identical to a gesture
      * that costs nothing. */
-    console.log(`     shiftHeld=${S.shiftHeld} shiftTrackLEDActive=${S.shiftTrackLEDActive} ` +
+    console.log(`     shiftHeld=${S.shiftHeld} ` +
                 `route[0]=${S.trackRoute[0]} activeTrack=${S.activeTrack}`);
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 79, 3]));
     console.log(`     after one detent: tvDeltaAcc=${S.tvDeltaAcc}`);

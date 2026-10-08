@@ -406,18 +406,20 @@ step('⭑ co-run: dAVEBOx follows the PHYSICAL Shift (no CC 49 arrives)', () => 
     S.globalMenuOpen = false; S.moveCoRunTrack = -1;
 });
 
-step('⭐ co-run: Shift + a bottom-row pad LEAVES co-run and switches to that track', () => {
+step('co-run: Shift + a bottom-row pad does NOTHING (retired 2026-10-08) — and a Shift still held when co-run ends is told to Move', () => {
     corun.initPrimarySurface();
     S.sessionView = false; S.globalMenuOpen = false;
     S.activeTrack = 2; S.trackRoute[2] = 1; S.trackChannel[2] = 1;
-    corun.enterMoveNativeCoRun(2, 'sound');            /* came in from the Move sound screen */
+    corun.enterMoveNativeCoRun(2, 'sound');
     let closed = 0; const prevClose = globalThis.host_close_service;
     globalThis.host_close_service = () => { closed++; return true; };
     physShift = 1;
     pad(constsS.TRACK_PAD_BASE + 5);
+    if (closed !== 0 || S.activeTrack !== 2 || S.moveCoRunTrack !== 2)
+        throw new Error('Shift + pad still acts in co-run: closed ' + closed + ' track ' + (S.activeTrack + 1));
+    corun.exitMoveNativeCoRun();
     globalThis.host_close_service = prevClose;
     if (closed !== 1) throw new Error('co-run was not closed (' + closed + ')');
-    if (S.activeTrack !== 5) throw new Error('did not switch: track ' + (S.activeTrack + 1));
     const sentToMove = []; const prevInj = globalThis.move_midi_inject_to_move;
     globalThis.move_midi_inject_to_move = (b) => { sentToMove.push(Array.from(b).join()); };
     onReturn('move_native', null);                     /* the host reports the close */
@@ -426,7 +428,6 @@ step('⭐ co-run: Shift + a bottom-row pad LEAVES co-run and switches to that tr
         throw new Error('Move was never told Shift came up (it was ceded to Move, and the release came to us): ' +
                         JSON.stringify(sentToMove));
     if (S.moveCoRunTrack !== -1) throw new Error('still in co-run');
-    if (S.pendingSoundEnterTrack === 2) throw new Error('sent back into the OLD track\'s sound screen');
     if (!S.shiftHeld) throw new Error('a Shift still held after co-run ends was forgotten');
     physShift = 0; ticks(1);
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 49, 0]));

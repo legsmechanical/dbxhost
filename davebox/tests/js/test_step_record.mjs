@@ -63,6 +63,7 @@ globalThis.move_midi_inject_to_move = () => {};
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
+const _selectTrack = (await import('../../ui/ui_input_pads.mjs')).selectTrackFromPad;
 const C = await import('../../ui/ui_constants.mjs');
 /* Button CCs live in the HOST's shared constants (the bundler aliases the
  * device path), not in ui_constants — importing them from the wrong module
@@ -311,7 +312,7 @@ step('⭐ every exit route ends the session: Back, Play, track switch, view swit
         !queued().some(([k]) => k === 'transport'))
         throw new Error('Play was swallowed instead of also starting the transport');
     S.playing = false;
-    enter(); S.shiftHeld = true; padDn(3 <= 7 ? 3 : 0); S.shiftHeld = false;  /* Shift+bottom pad = track switch */
+    enter(); _selectTrack(3);                      /* the bank map's track pad */
     if (S.stepRecActive) throw new Error('a track switch did not exit');
     S.activeTrack = T; computePadNoteMap();
     enter(); S.playing = true; globalThis.tick();

@@ -153,7 +153,7 @@ already know works here.
 
 | On Move | In dAVEBOx |
 |---|---|
-| 4 tracks, chosen with the track buttons | **8 tracks**: tracks 1–4 play Move's instruments, 5–8 Schwung instruments. Choose one with **Shift + jog**, or **Shift + a bottom-row pad** in Track View — see [Selecting a track](#35-selecting-a-track) |
+| 4 tracks, chosen with the track buttons | **8 tracks**: tracks 1–4 play Move's instruments, 5–8 Schwung instruments. Choose one with **Shift + jog**, or a **track pad on the bank map** in Track View — see [Selecting a track](#35-selecting-a-track) |
 | The buttons left of the pads select tracks | They launch the track's clips in Track View, and scenes in Session View |
 | Session Mode: a row per track, a column per scene, 8 clips per track | Session View: a **column** per track, a **row** per scene, **16 clips** per track, 4 rows at a time (**+ / −** scroll) — see [Arranging](#11-arranging) |
 | Slide a finger down a column to play a scene | Press a **side button** or a **step button** — see [Scenes](#112-scenes) |
@@ -306,7 +306,7 @@ There are no dedicated track buttons. Change the active track with:
 | Gesture | Works in |
 |---|---|
 | **Shift + jog turn** | Both views |
-| **Shift + bottom-row pad (1–8)** | Track View |
+| **Hold or click the jog, then tap a track pad** — the top two rows of the right-hand pads on the [bank map](#36-parameter-banks) (1–4, then 5–8) | Track View |
 | **Tap a clip pad** (it also launches or stops that clip), or **Shift + pad** to open the clip in Track View | Session View |
 
 ## 3.6 Parameter banks
@@ -1738,7 +1738,7 @@ View only), and work with it as you would on Move.
   with dAVEBOx, and dAVEBOx's own Shift gestures still work.
 - Press **Back** once you're at the top of Move's editor (the instrument's main
   screen) to come back, **Note/Session** to leave for Session View, or
-  **Shift + a bottom-row pad** to leave and go straight to that track.
+  **hold the jog and tap a track pad** to leave and go straight to that track.
 
 A plain click does nothing on a MIDI channel or a followed track. On a track set to
 **None**, it opens the picker.
@@ -2461,7 +2461,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Shift + top / bottom side button | Scroll the four visible clips up / down one (the same window for every track) |
 | Jog click / hold | The bank map: click to open it (tap a pad to pick and close; click again or Back to close), hold to peek (inside a menu, an editor or Move's editor, hold about a third of a second); the top two rows of the right-hand pads switch track; INST opens the instrument |
 | Knob touch + jog click | Switch that knob to its *Alt* (Zoom, Nudge, Reverse Style, Algo, Clock Feedback) · Arp Steps (knob 5) · RPT GROOVE's page (any knob) · a macro's editor |
-| Shift + jog / Shift + bottom pad | Switch tracks |
+| Shift + jog / a track pad on the bank map | Switch tracks |
 | Loop (hold, or tap to keep it up) / Loop + jog | Loop view / clip length |
 | Loop + step (or two steps) | Set the loop to those pages |
 | Loop + Copy + page → another page (Shift = cut) | Copy a whole page |

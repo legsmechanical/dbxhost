@@ -69,6 +69,7 @@ globalThis.host_ext_midi_remap_enable = () => {};
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
+const _selectTrack = (await import('../../ui/ui_input_pads.mjs')).selectTrackFromPad;
 const snd = await import('../../ui/ui_sound.mjs');
 
 const { BANK_SOUND } = await import('../../ui/ui_constants.mjs');
@@ -358,8 +359,9 @@ step('⭑ Shift+PAD means exactly what Shift+jog means — one rule, every route
      * BANK_SOUND — not a bit beside it.
      *
      * Bottom-row pads are notes TRACK_PAD_BASE(68)+track under Shift. */
-    const padSelect = (t) => globalThis.onMidiMessageInternal(
-        new Uint8Array([0x90, 68 + t, 127]));
+    /* ⚠ Shift + bottom-row pad was retired 2026-10-08; the pad route is the
+     * bank map's track pad now, and this is the function it calls. */
+    const padSelect = (t) => _selectTrack(t);
 
     snd.soundExit();
     for (let t = 0; t < 8; t++) { S.trackRoute[t] = 0; }

@@ -571,7 +571,7 @@ step('held Session map: MASTER waits; a MIXER pad after it cancels it — the re
     S.sessionView = false; tickS(2);
 });
 
-step('⭐ the TRACK overview footer: CLK BANKS · TCH EDIT · SHFT TRK, all drawn; Shift: JOG TRACK · PAD TRACK; no menu-key pair', () => {
+step('⭐ the TRACK overview footer: CLK BANKS · TCH EDIT · SHFT TRK, all drawn; Shift: JOG TRACK alone; no menu-key pair', () => {
     if (snd.soundOpen()) snd.soundExit();
     home(); S.sessionView = false; tickS(2);
     const h = render.overviewHints();
@@ -580,7 +580,7 @@ step('⭐ the TRACK overview footer: CLK BANKS · TCH EDIT · SHFT TRK, all draw
     S.shiftHeld = true;
     const sh = render.overviewHints();
     S.shiftHeld = false;
-    assert(JSON.stringify(sh) === JSON.stringify([['JOG', 'TRACK'], ['PAD', 'TRACK']]), 'Shift: ' + JSON.stringify(sh));
+    assert(JSON.stringify(sh) === JSON.stringify([['JOG', 'TRACK']]), 'Shift: ' + JSON.stringify(sh));
     S.sessionView = true;
     const ses = render.overviewHints();
     S.sessionView = false;
@@ -675,6 +675,19 @@ step('the card\'s second line is what the track PLAYS, in full: the generator\'s
     assert(line2(6, () => { S.trackRoute[6] = 2; S.trackMidiTo[6] = 0; S.trackChannel[6] = 5; }) === 'MIDI Ch 5', 'a MIDI track');
     assert(line2(6, () => { S.trackRoute[6] = 2; S.trackMidiTo[6] = 2; }) === 'Track 2', 'a track routed to a track');
     for (let i = 0; i < 8; i++) { S.trackRoute[i] = 0; S.trackChannel[i] = 1; S.trackMidiTo[i] = 0; }
+});
+
+step('⚠ RETIRED: Shift + a bottom-row pad no longer switches track — and lights no track row', () => {
+    ccm.bankMapEnd(); home(); S.sessionView = false;
+    const at = S.activeTrack, other = at === 6 ? 5 : 6;
+    midi(0xB0, 49, 127); ticks(3);
+    assert(S.shiftHeld, 'rig: Shift did not latch');
+    const row = []; for (let i = 0; i < 8; i++) row.push(led[68 + i] | 0);
+    let trackish = 0; for (let i = 0; i < 8; i++) if (row[i] === C.TRACK_COLORS[i] || row[i] === C.TRACK_DIM_COLORS[i]) trackish++;
+    assert(trackish < 8, 'Shift still paints the bottom row in the eight track colours: ' + JSON.stringify(row));
+    tap(68 + other); ticks(2);
+    assert(S.activeTrack === at, 'Shift + bottom-row pad still switched track: ' + S.activeTrack);
+    midi(0xB0, 49, 0); ticks(2);
 });
 
 step('SESSION map: no track pads — the right grid is dark and dead', () => {

@@ -653,7 +653,7 @@ export function _tickImpl() {
         S.shiftHeld = false; S.deleteHeld = false; S.muteHeld = false;
         S.leftHeld  = false; S.rightHeld  = false;
         S.copyHeld  = false; S.loopHeld  = false; S.loopJogActive = false; endLoopLatch();
-        S.captureHeld = false; S.shiftTrackLEDActive = false;
+        S.captureHeld = false;
         S.heldStep  = -1;    S.heldStepBtn = -1; S.heldStepNotes = []; S.stepReveal = false;
         S.stepWasEmpty = false; S.stepWasHeld = false;
         /* ...and the bank pad map: the jog's release (and any pad's) fired

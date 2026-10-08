@@ -1202,11 +1202,11 @@ function drawOverviewTracks(hints) {
  *                 48 + 38 + 51 - 4 overflows 128; TRK is 41 — measured)
  *   Session View  CLK BANKS · TCH MIX (no CLK BANKS under the Perf lock, which
  *                 keeps the map shut; no SHFT pair — Josh)
- *   Shift held    JOG TRACK · PAD TRACK (Track View — Shift + pad is its track
- *                 pick); JOG TRACK in Session View, where a pad launches. */
+ *   Shift held    JOG TRACK, in both views (Shift + pad's track pick was
+ *                 retired 2026-10-08: the bank map's track pads do it). */
 export function overviewHints() {
     if (devSnapOpen()) return devSnapHints();   /* the snapshot layer (item 18), either view */
-    if (S.shiftHeld) return S.sessionView ? [['JOG', 'TRACK']] : [['JOG', 'TRACK'], ['PAD', 'TRACK']];
+    if (S.shiftHeld) return [['JOG', 'TRACK']];
     /* A held step owns the jog here too (heldStepJog runs ahead of the map):
      * JOG STEP when there is a note to edit, nothing when there is not — and
      * no CLK BANKS, which a held step keeps shut. */

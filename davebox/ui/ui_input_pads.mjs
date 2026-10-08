@@ -176,8 +176,12 @@ function _chordPadRelease(padIdx, slot) {
 }
 
 
-/* A pad picked a track: Shift + a bottom-row pad, or a track pad on the bank
- * map. Everything the switch entails, in one place. */
+/* A pad picked a track: a track pad on the bank map. Everything the switch
+ * entails, in one place.
+ * ⭑ In co-run it LEAVES co-run first (Josh, 2026-09-28): switching only ours
+ * used to split the two — "it shifts tracks on the ui but leaves the move
+ * track on the oled and jog". Lands on the new track's view, never back in the
+ * old track's sound screen (the 'track' origin). */
 export function selectTrackFromPad(padIdx) {
     if (S.moveCoRunTrack >= 0) {
         S.moveCoRunOrigin = 'track';
@@ -667,13 +671,12 @@ function _onPadPressTrackView(status, d1, d2) {
              * so falling through would reach the note path with a map that says
              * nothing is there. Swallowing here says so once, out loud. */
         } else if (S.shiftHeld && padIdx < NUM_TRACKS) {
-            /* Shift + bottom-row pad: select active track.
-             * ⭑ In co-run it LEAVES co-run first (Josh, 2026-09-28): switching
-             * only ours used to split the two — "it shifts tracks on the ui but
-             * leaves the move track on the oled and jog". Lands on the new
-             * track's view, never back in the old track's sound screen (the
-             * 'track' origin), and the row's Shift flash stays honest. */
-            selectTrackFromPad(padIdx);
+            /* ⚠ RETIRED 2026-10-08 (Josh: "take the pad track change shortcuts
+             * off shift+bottom row now that we have them on the jog pad map"):
+             * Shift + a bottom-row pad used to select that track. The bank
+             * map's track pads do it now (bankMapPadTap), and Shift + jog
+             * still walks tracks. An EMPTY branch for the same reason as the
+             * one above: the pads are silent while Shift is held. */
         } else if (!S.shiftHeld) {
             /* Live note — apply per-track octave shift; skip OOB to avoid ghost
              * dispatches of clamped note 0 (or 127) when multiple pads' shifted
@@ -1014,7 +1017,6 @@ export function _onPadPress(status, d1, d2) {
                             _switchActiveTrack(t);
                             refreshPerClipBankParams(t);
                             S.sessionView = false;
-                            S.shiftTrackLEDActive = false;
                             invalidateLEDCache();
                             forceRedraw();
                         } else if (S.trackClipPlaying[t] && isActiveClip) {
@@ -1350,7 +1352,6 @@ export function _onStepButtons(d1, d2) {
      * co-run mask, so swallowing them here contradicted the mask. Steps
      * sequence in co-run exactly as they do outside it. */
     if (S.tapTempoOpen) return;
-    if (d2 > 0 && S.shiftTrackLEDActive) { S.shiftTrackLEDActive = false; S.screenDirty = true; }
     const idx = d1 - 16;
     /* MOVE'S SETTINGS are on the screen (ui_corun.mjs): Shift+Step 2 closes
      * them — the same combo Move opens them with — and lands back in Project

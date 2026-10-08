@@ -359,7 +359,7 @@ function cleanupAfterMoveNativeCoRun() {
     /* Shift is the exception: it is ceded in co-run and followed from the
      * hardware, so ask the hardware — a Shift still held as co-run ends
      * (Shift+pad leaves co-run) stays held, and the next Shift+pad hops on. */
-    S.shiftHeld = !!shadow_get_shift_held(); S.shiftTrackLEDActive = S.shiftHeld;
+    S.shiftHeld = !!shadow_get_shift_held();
     /* ...and Move never saw that release: Shift is ceded to Move only DURING the
      * co-run, so a Shift still held as it ends (the Shift+pad hop) comes up at
      * dAVEBOx. Tell Move, or its Shift stays down under the next thing it is

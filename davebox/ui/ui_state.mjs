@@ -273,7 +273,6 @@ export const S = {
     _altPrevBank: -1,      /* diff-guard mirror for clearing altMode on bank change */
     _altPrevTrack: -1,     /* diff-guard mirror for clearing altMode on track change */
     _altBlinkPhase: -1,    /* tick-driven phase (0/1) for the alt-mode arrow flash */
-    shiftTrackLEDActive: false,
     loopHeld: false,
     /* Track View: a Loop TAP latches the loop-length view (step buttons, jog,
      * the Loop screen) until the next Loop press, Back, or a view change. Only

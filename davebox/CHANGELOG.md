@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Changed
+- **Shift + a bottom-row pad no longer switches track.** The bank map's track
+  pads do that now (hold or click the jog, tap a track); Shift + jog still
+  walks the tracks. The bottom row no longer lights in track colours while
+  Shift is held.
 
 ## [0.0.15] — 2026-10-08 (test build, not in the Schwung catalog)
 ### Added

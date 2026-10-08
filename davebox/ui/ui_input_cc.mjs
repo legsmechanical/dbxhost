@@ -151,7 +151,6 @@ function _finishKeyScaleEdit(label, ev) {
 }
 
 function _onCC_jog(d1, d2) {
-    if (S.shiftTrackLEDActive) { S.shiftTrackLEDActive = false; S.screenDirty = true; }
     /* ⭑⭑ BANK PICKER: the click is the ONLY thing that applies a bank (Josh,
      * 2026-08-25). Everything else abandons — the touch release, the settle
      * timeout, Shift+jog, Back.
@@ -1420,7 +1419,7 @@ function bankMapLeaveScreen() {
     S.bankMapFromScreen = false;
     if (doorScreenUp()) return;
     /* Out of co-run a pick lands where it points — never back in the sound
-     * menu the co-run was entered from (the Shift+pad hop's rule). */
+     * menu the co-run was entered from. */
     if (S.moveCoRunTrack >= 0) S.moveCoRunOrigin = 'track';
     _tearDownToOverview();
 }
@@ -1824,7 +1823,6 @@ export function applyShiftEdge(held) {
     }
     S.shiftHeld = held;
     S.screenDirty = true;      /* the overview footer names the Shift chords while it is held (2026-09-05) */
-    S.shiftTrackLEDActive = held;
         /* Shift IS the volume-knob claim (Josh, 2026-08-24): while held, Move's
          * native main output stands aside and CC 79 becomes the ACTIVE TRACK's
          * volume — in every view. Claimed on the press so the very first detent
@@ -1842,7 +1840,7 @@ export function applyShiftEdge(held) {
          * all-0xFF while Shift is held (suppress pad-shortcut notes) and
          * the real map again on release. See computePadNoteMap mute logic. */
         computePadNoteMap();
-        /* Shift in Track View is a track-switch modifier (Shift+jog / Shift+pad),
+        /* Shift in Track View is a track-switch modifier (Shift+jog),
          * not a param gesture. Cancel any transient param-bank display on BOTH
          * Shift edges so the OLED stays on the track overview while switching —
          * the usual gesture touches the jog (jogTouched→bank view) before pressing
@@ -1867,11 +1865,6 @@ export function applyShiftEdge(held) {
 function _onCC_buttons(d1, d2) {
     if (d1 === MoveShift) {
         applyShiftEdge(d2 === 127);
-    }
-
-    /* Any non-Shift CC button press while Shift overlay is active clears the overlay */
-    if (d1 !== MoveShift && d2 === 127 && S.shiftTrackLEDActive) {
-        S.shiftTrackLEDActive = false;
     }
 
     if (d1 === MoveDelete) {

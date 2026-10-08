@@ -298,16 +298,15 @@ step('⚠ Shift + a TOP-row pad no longer jumps to a bank (retired)', () => {
         throw new Error('Shift+top-pad still moved the bank to ' + S.activeBank);
 });
 
-step('⚠ ...and Shift + a BOTTOM-row pad still selects the track', () => {
-    /* The control for the step above: the pad path is alive, so "nothing
-     * happened" up there is the retirement and not a dead handler. */
+step('⚠ ...and Shift + a BOTTOM-row pad is retired too (2026-10-08): the bank map\'s track pads pick the track', () => {
     reset();
+    const _was = S.activeTrack;
     shift(true);
     globalThis.onMidiMessageInternal(new Uint8Array([0x90, 68 + 5, 127]));  /* track 6 */
     globalThis.tick();
     shift(false); globalThis.tick();
-    if (S.activeTrack !== 5)
-        throw new Error('Shift+bottom-pad did not select the track: ' + S.activeTrack);
+    if (S.activeTrack !== _was)
+        throw new Error('Shift+bottom-pad still selected a track: ' + S.activeTrack);
 });
 
 step('⭑⭑ NO bank header can reach the alt-param arrow, with the track prefix on', () => {
