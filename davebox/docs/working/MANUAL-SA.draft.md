@@ -914,6 +914,13 @@ The pad grid splits in two:
 The left pads show 16 lanes at a time; **+ / −** switches between lane **bank A**
 and **bank B**. The screen shows the active bank.
 
+The pads tell the **DRUM LANE** bank from the rest. On DRUM LANE the selected
+lane is the track's colour (dim if it has no hits), lanes with hits are light
+grey, empty lanes are dark grey, and the velocity pads are dim track colour. On
+every other bank — ALL LANES included — the selected lane is white, lanes with
+hits are the track's colour, and the velocity pads are grey. A muted lane is
+always off.
+
 <img src="img/pads-drum.svg" alt="A drum track's pads: 16 lanes on the left, velocity zones on the right — and, after Shift + Step 8, the right half's Note Repeat rates and gate mask.">
 
 ## 7.1 Placing hits

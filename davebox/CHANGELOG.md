@@ -12,6 +12,10 @@ the section into a versioned heading at release time.
   pads do that now (hold or click the jog, tap a track); Shift + jog still
   walks the tracks. The bottom row no longer lights in track colours while
   Shift is held.
+- **The DRUM LANE bank has its own pad look**, so the pads show whether you are
+  on DRUM LANE or ALL LANES. On DRUM LANE the selected lane is the track's
+  colour, lanes with hits are light grey and empty lanes dark grey, and the
+  velocity pads are dim track colour. Every other bank looks as before.
 
 ## [0.0.15] — 2026-10-08 (test build, not in the Schwung catalog)
 ### Added
