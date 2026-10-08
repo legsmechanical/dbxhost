@@ -620,24 +620,35 @@ step('⭐⭐ HOLD + a track pad: the track switches, the map STAYS and the next 
     tap(TRK(to)); ticks(1);
     assert(S.activeTrack === to, 'the track pad did not switch: active ' + S.activeTrack);
     assert(S.bankMapUp, 'the map went away on a track pick');
+    /* ...and says which: the notice card, over the map, gone in a moment. */
+    assert(JSON.stringify(S.actionPopupLines) === JSON.stringify(['TRACK ' + (to + 1)]) && S.actionPopupCard,
+           'no TRACK n card: ' + JSON.stringify(S.actionPopupLines));
+    const bare = (() => { const keep = S.actionPopupEndTick; S.actionPopupEndTick = -1; const f = frame(); S.actionPopupEndTick = keep; return f; })();
+    const carded = frame();
+    let diff = 0; for (let i = 0; i < carded.length; i++) diff += carded[i] !== bare[i] ? 1 : 0;
+    assert(diff > 40, 'the card is not drawn over the map (' + diff + ' px differ)');
+    const until = S.actionPopupEndTick - S.clockMs;
+    assert(until > 0 && until <= 400, 'the card is not brief: ' + until + ' ms');
+    ticks(Math.ceil(450 / 10.6));
+    let late = 0; const after = frame(); for (let i = 0; i < after.length; i++) late += after[i] !== bare[i] ? 1 : 0;
+    assert(late === 0, 'the card is still up after its window (' + late + ' px)');
     tap(pad(3, 2)); ticks(1);
     assert(S.activeTrack === to && S.activeBank === 3, 'the bank pick did not land on the new track: track ' + S.activeTrack + ' bank ' + S.activeBank);
     holdLong(); release(); ticks(2);
     assert(!S.bankMapUp && !S.bankMapLatched && S.activeTrack === to, 'after release');
 });
 
-step('a LATCHED map keeps too: tap a track, it stays up; the pad of the track you are ON and the lower rows do nothing', () => {
+step('a LATCHED map goes with the track pick — you are on that track; its own pad and the lower rows do nothing', () => {
     ccm.bankMapEnd(); home();
-    const to = S.activeTrack === 0 ? 1 : 0;
+    const at = S.activeTrack, to = at === 0 ? 1 : 0;
     press(); release(); ticks(1);
     assert(S.bankMapLatched && S.bankMapUp, 'rig: the click did not latch the map');
+    tap(TRK(at)); tap(pad(5, 2)); tap(pad(7, 3)); ticks(1);
+    assert(S.activeTrack === at && S.bankMapUp && S.bankMapLatched, 'a dead pad did something');
     tap(TRK(to)); ticks(1);
-    assert(S.activeTrack === to && S.bankMapUp && S.bankMapLatched, 'track pick: active ' + S.activeTrack + ' up ' + S.bankMapUp);
-    tap(TRK(to)); ticks(1);
-    assert(S.activeTrack === to && S.bankMapUp, 'the active track pad did something');
-    tap(pad(5, 2)); tap(pad(7, 3)); ticks(1);
-    assert(S.activeTrack === to && S.bankMapUp, 'a lower-right pad did something');
-    ccm.bankMapEnd();
+    assert(S.activeTrack === to, 'the track pad did not switch: active ' + S.activeTrack);
+    assert(!S.bankMapUp && !S.bankMapLatched, 'a latched map stayed up after a track pick');
+    assert(JSON.stringify(S.actionPopupLines) === JSON.stringify(['TRACK ' + (to + 1)]), 'no TRACK n card');
 });
 
 step('SESSION map: no track pads — the right grid is dark and dead', () => {

@@ -59,7 +59,7 @@ import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankRe
 import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAfterNotes,
          automationCaptureClear, automationClearBanksQueued } from './ui_automation.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
-import { seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi } from './ui_constants.mjs';
+import { BANK_MAP_TRACK_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam } from './ui_sound.mjs';
 import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
@@ -1541,15 +1541,22 @@ export function bankMapPadTap(note) {
     const cell = bankMapCellForPad(note);
     if (!cell) return;
     /* ⭑ A TRACK PAD (Josh, 2026-10-08): the right grid's top two rows switch
-     * track. The map stays — held or latched — and repaints for the new
-     * track, so the bank you wanted there is the next tap. */
+     * track. Like a bank pad: a HELD map stays and repaints for the new track,
+     * so the bank you wanted there is the next tap; a LATCHED map goes with
+     * the pick ("toggle pad map mode should immediately close and take you to
+     * the track"). */
     if (cell.col > 3) {
         const nt = bankMapTrackPick(cell);
         if (nt < 0) return;
         bankMapCancelMenu();
         selectTrackFromPad(nt);
+        /* The map's OLED does not name the track, so say it: the notice card,
+         * over the map, for a glance (Josh, 2026-10-08: "a very brief
+         * 'Track [n]' pop-up"). */
+        showActionPopupFor(BANK_MAP_TRACK_POPUP_MS, 'TRACK ' + (nt + 1));
         invalidateLEDCache();
         forceRedraw();
+        bankMapEndIfLatched();
         return;
     }
     if (S.bankMapKind === 'session') {
