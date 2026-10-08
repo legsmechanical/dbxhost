@@ -500,9 +500,14 @@ function toBank(b, open = true) {
     if (open) { S.bankCardLatched = true; ticks(2); }
 }
 function selectTrack(t) {
-    /* Shift + bottom-row pad (1-8) — Track View's track select. */
-    press(MoveShift); noteOn(PAD(t), 100); noteOff(PAD(t)); release(MoveShift); ticks(3);
-    if (S.activeTrack !== t) throw new Error('Shift+pad did not select track ' + (t + 1));
+    /* The bank map's track pads (the right half's top two rows, 1-4 then 5-8)
+     * — Track View's track select. The active track's own pad does nothing,
+     * and the pick's "TRACK n" card is ticked away so it is not in the shot. */
+    if (S.activeTrack === t) return;
+    mapTap(PURE.bankMapPadForCell(4 + (t % 4), Math.floor(t / 4)));
+    if (S.activeTrack !== t) throw new Error('the map\'s track pad did not select track ' + (t + 1));
+    for (let i = 0; i < 200 && S.tickCount <= S.actionPopupEndTick; i++) ticks(1);
+    ticks(3);
 }
 
 /* ── the screens ─────────────────────────────────────────────────────────── */
