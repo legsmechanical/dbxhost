@@ -157,6 +157,9 @@ static void test_stream_read(void)
 
     /* The writer restarted and its counter is behind the reader's: resync
      * to the head, deliver nothing stale, then follow normally. */
+    for (int i = 0; i < 100; i++) publish(shm, 1);
+    while (seq_bridge_stream_read(shm, &cursor, out, 8) > 0) {}
+    CHECK(cursor == 102);
     shm->write_seq = 2;
     CHECK(seq_bridge_stream_read(shm, &cursor, out, 8) == 0);
     CHECK(cursor == 2);
