@@ -30,8 +30,8 @@
   body { display: flex; flex-direction: column; align-items: center; min-height: 100dvh;
          padding: 12px 16px 24px; gap: 12px; -webkit-user-select: none; user-select: none; }
   #bar { width: 100%; max-width: 920px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  /* The status text changes length every tick (fps digits). Its width must not follow
-     it: basis 0 + fixed min-width means the bar wraps (or not) the same way whatever it
+  /* The status text changes length every tick (fps digits, audio delay). Its width must not
+     follow it: basis 0 + fixed min-width means the bar wraps (or not) the same way whatever it
      says, and a long line is clipped rather than pushing the buttons down. */
   #status { flex: 1 1 0; min-width: 24em; color: var(--dim); white-space: pre;
             overflow: hidden; text-overflow: ellipsis; }
@@ -74,6 +74,7 @@
     <option value="screen">Screen</option>
     <option value="device">Device</option>
   </select>
+  <button id="mute" type="button" title="Hear the device here. Recordings always include its sound.">Unmute</button>
   <button id="png" type="button">Save PNG</button>
   <button id="rec" type="button">Record</button>
   <button id="fingerbtn" type="button" title="Show a finger on every control as it is touched, pressed or turned">Fingers</button>
@@ -202,7 +203,7 @@ function connect() {
   inputSeeded = false;
   lastEvent = Date.now();
   connects++;
-  const src = new EventSource('/stream-auto?v=2');
+  const src = new EventSource('/stream-auto?v=2' + (audioOn ? '&audio=1' : ''));
   es = src;
   src.onopen = () => { if (es === src) { alive(); setStatus('live', 'live'); } };
   src.onerror = () => {
@@ -214,11 +215,13 @@ function connect() {
     if (es !== src) return;
     alive();
     let p; try { p = JSON.parse(e.data); } catch (_) { return; }
-    const raw = atob(p.data || '');
-    if (p.format === 'gray4' || p.format === 'gray4_packed') drawGray4(raw); else drawMono(raw);
-    hctx.putImageData(img, 0, 0);
-    sourceLabel = p.source || p.format || '';
-    frames++; dirty = true;
+    later(() => {
+      const raw = atob(p.data || '');
+      if (p.format === 'gray4' || p.format === 'gray4_packed') drawGray4(raw); else drawMono(raw);
+      hctx.putImageData(img, 0, 0);
+      sourceLabel = p.source || p.format || '';
+      frames++; dirty = true;
+    });
   };
   src.addEventListener('hb', e => {
     if (es !== src) return;
@@ -235,11 +238,14 @@ function connect() {
     if (raw.length < OFF.size) return;
     const u = new Uint8Array(raw.length);
     for (let i = 0; i < raw.length; i++) u[i] = raw.charCodeAt(i);
-    surf = u; surfView = new DataView(u.buffer);
-    curFrame = p.frame || curFrame;
-    trackInput(performance.now());
-    dirty = true; renderLog();
+    later(() => {
+      surf = u; surfView = new DataView(u.buffer);
+      curFrame = p.frame || curFrame;
+      trackInput(performance.now());
+      dirty = true; renderLog();
+    });
   });
+  src.addEventListener('pcm', e => { if (es === src) { alive(); pcmEvent(e.data); } });
   src.addEventListener('e16', e => { if (es === src) { alive(); e16Event(e.data); } });
 }
 
@@ -259,11 +265,13 @@ setInterval(() => {
   if (quiet > WATCHDOG_MS) { reconnectLater(); return; }
   if (es.readyState === EventSource.OPEN) {
     if (quiet > 2500) setStatus('no data for ' + Math.round(quiet / 1000) + ' s', 'stale');
-    else setStatus('live' + (sourceLabel ? ' — ' + sourceLabel : '') + ' — ' + (fps ? String(fps).padStart(2) + ' fps' : 'idle  '), 'live');
+    else setStatus('live' + (sourceLabel ? ' — ' + sourceLabel : '') + ' — ' + (fps ? String(fps).padStart(2) + ' fps' : 'idle  ') +
+                   (audioOn ? ' — audio ' + (audioPrimed ? String(Math.round(audioDelay * 1000)).padStart(4) + ' ms behind' : 'buffering…    ') : ''), 'live');
   }
 }, 500);
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && Date.now() - lastEvent > 2500) connect();
+  if (document.hidden) flushLater();   /* rAF stops now; do not strand the queue */
+  else if (Date.now() - lastEvent > 2500) connect();
 });
 window.addEventListener('online', () => connect());
 window.addEventListener('pageshow', e => { if (e.persisted) connect(); });
@@ -713,6 +721,123 @@ document.getElementById('logbtn').addEventListener('click', e => {
   if (logShown) renderLog(); if (logShown && !surfView) logEl.innerHTML = '<div class="empty">Waiting for the device…</div>';
 });
 
+/* ---------------- sound ----------------
+ * `pcm` events carry the capture mix (audio_live_shm.h): 44.1 kHz stereo
+ * int16, with `pos` the device's frame index so a gap is visible. Each chunk
+ * is scheduled as an AudioBuffer JITTER_S ahead of the context clock, back to
+ * back; a gap is left as silence, an underrun re-primes, an overfull queue
+ * jumps back to the target. Everything VISUAL is then applied that much later
+ * (later() below), so picture and sound line up -- they arrive together on one
+ * stream, and only the sound waits.
+ *
+ * Scheduled buffers, NOT an AudioWorklet: a worklet exists only in a SECURE
+ * context (HTTPS or localhost), and /mirror is plain http on move.local. The
+ * first build used one, worked in a localhost test, and on the device the
+ * button did nothing and recordings silently lost their audio track. */
+const JITTER_S = 0.15;
+
+/* Sound is ALWAYS streamed and recorded; the button only says whether this
+ * browser plays it, and starts muted. A browser will not start audio before a
+ * user gesture, so the first click anywhere on the page (Record included)
+ * starts it, and only then is the stream asked for `pcm`. */
+let audioOn = false, audioBroken = false, actx = null, bus = null, listenGain = null, recDest = null;
+let audioDelay = 0, audioPrimed = false, listening = false;
+let nextTime = 0, expectPos = -1;
+const muteBtn = document.getElementById('mute');
+
+let audioStarting = null;
+function ensureAudio() {
+  if (audioOn || audioBroken) return Promise.resolve(audioOn);
+  if (!audioStarting) audioStarting = startAudio().catch(() => false).then(ok => {
+    audioStarting = null;
+    if (!ok) { audioBroken = true; muteBtn.disabled = true; muteBtn.title = 'This browser cannot play the stream'; return false; }
+    audioOn = true;
+    flushLater();
+    connect();                       /* now ask for `pcm` */
+    return true;
+  });
+  return audioStarting;
+}
+
+async function startAudio() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return false;
+  try { actx = new AC({ sampleRate: 44100, latencyHint: 'interactive' }); } catch (_) { actx = new AC(); }
+  bus = actx.createGain();
+  listenGain = actx.createGain();
+  listenGain.gain.value = listening ? 1 : 0;
+  bus.connect(listenGain).connect(actx.destination);
+  if (actx.createMediaStreamDestination) { recDest = actx.createMediaStreamDestination(); bus.connect(recDest); }
+  await actx.resume();
+  return actx.state === 'running';
+}
+
+muteBtn.addEventListener('click', async () => {
+  listening = !listening;
+  muteBtn.textContent = listening ? 'Mute' : 'Unmute';
+  muteBtn.classList.toggle('on', listening);
+  if (await ensureAudio()) listenGain.gain.value = listening ? 1 : 0;
+});
+for (const ev of ['pointerdown', 'keydown'])
+  window.addEventListener(ev, () => { ensureAudio(); }, { capture: true, passive: true });
+
+function pcmEvent(data) {
+  if (!audioOn || !actx) return;
+  let p; try { p = JSON.parse(data); } catch (_) { return; }
+  const raw = atob(p.d || ''), n = raw.length >> 2;
+  if (!n) return;
+  const rate = p.rate || 44100;
+  const now = actx.currentTime;
+  if (expectPos >= 0 && p.pos !== expectPos) {
+    const gap = p.pos - expectPos;
+    nextTime = (gap > 0 && gap < rate / 2) ? nextTime + gap / rate : 0;   /* small gap: silence */
+  }
+  expectPos = p.pos + n;
+  if (nextTime < now + 0.01) nextTime = now + JITTER_S;                 /* start, or underrun */
+  else if (nextTime > now + JITTER_S + 0.3) nextTime = now + JITTER_S;  /* a burst overfilled it */
+  const buf = actx.createBuffer(2, n, rate);
+  const L = buf.getChannelData(0), R = buf.getChannelData(1);
+  for (let i = 0, o = 0; i < n; i++, o += 4) {
+    let l = raw.charCodeAt(o) | (raw.charCodeAt(o + 1) << 8); if (l & 0x8000) l -= 0x10000;
+    let r = raw.charCodeAt(o + 2) | (raw.charCodeAt(o + 3) << 8); if (r & 0x8000) r -= 0x10000;
+    L[i] = l / 32768; R[i] = r / 32768;
+  }
+  const src = actx.createBufferSource();
+  src.buffer = buf; src.connect(bus); src.start(nextTime);
+  nextTime += n / rate;
+  audioPrimed = true;
+  /* the picture waits as long as this chunk will: scheduled lead + output */
+  const want = (nextTime - n / rate - now) + (actx.baseLatency || 0) + (actx.outputLatency || 0);
+  audioDelay = audioDelay ? audioDelay + (want - audioDelay) * 0.1 : want;
+}
+
+/* Visual updates wait out the sound's buffer while sound is on.
+ *
+ * Only runLater() drains the queue, and it runs from requestAnimationFrame --
+ * which a browser PAUSES in a background tab while EventSource and the
+ * AudioContext keep going. So a hidden tab queued every screen frame and
+ * surface snapshot it received, without bound (~100 MB an hour), and ran them
+ * all in one frame on return. A hidden page has no picture to line up with
+ * the sound, so while hidden an update applies at once; and the queue is
+ * capped anyway, by applying its oldest early rather than dropping anything
+ * (a draw is cheap; an out-of-order or lost one is not). */
+const pending = [];
+const PENDING_MAX = 256;
+function later(fn) {
+  if (!audioOn || !actx || !audioPrimed || document.hidden) { flushLater(); fn(); return; }
+  while (pending.length >= PENDING_MAX) pending.shift()[1]();
+  /* exactly as long as the sound that arrived with it will wait: the lead of
+   * the last scheduled chunk's end, plus the output latency */
+  const lead = Math.max(0, nextTime - actx.currentTime) + (actx.baseLatency || 0) + (actx.outputLatency || 0);
+  const at = performance.now() + lead * 1000;
+  /* never reorder: a visual cannot land before one that arrived earlier */
+  pending.push([pending.length ? Math.max(at, pending[pending.length - 1][0]) : at, fn]);
+}
+function runLater(now) {
+  while (pending.length && pending[0][0] <= now) pending.shift()[1]();
+}
+function flushLater() { while (pending.length) pending.shift()[1](); }
+
 /* ---------------- capture ---------------- */
 const what = document.getElementById('what');
 try { const w = localStorage.getItem('mirror.what'); if (w) what.value = w; } catch (_) {}
@@ -756,15 +881,21 @@ document.getElementById('png').addEventListener('click', () => {
 
 let recorder = null, chunks = [], recKind = 'both';
 const recBtn = document.getElementById('rec');
-recBtn.addEventListener('click', () => {
+recBtn.addEventListener('click', async () => {
   if (recorder) { recorder.stop(); return; }
+  await ensureAudio();               /* recordings always carry the sound */
   if (!window.MediaRecorder || !out.captureStream) { recBtn.textContent = 'Record unsupported'; return; }
   recKind = what.value;
   composite(recKind);
-  const types = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
+  const withAudio = audioOn && recDest;
+  const types = withAudio
+    ? ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+    : ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
   const type = types.find(t => MediaRecorder.isTypeSupported(t)) || '';
+  const stream = out.captureStream(30);
+  if (withAudio) for (const t of recDest.stream.getAudioTracks()) stream.addTrack(t);
   chunks = [];
-  try { recorder = new MediaRecorder(out.captureStream(30), type ? { mimeType: type } : undefined); }
+  try { recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined); }
   catch (_) { recorder = null; recBtn.textContent = 'Record unsupported'; return; }
   recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
   recorder.onstop = () => {
@@ -822,6 +953,7 @@ function e16Event(data) {
 let dirty = true;
 function tick() {
   const now = performance.now();
+  runLater(now);
   if (dirty || animating) {
     dirty = false;
     dctx.setTransform(dpr, 0, 0, dpr, 0, 0);

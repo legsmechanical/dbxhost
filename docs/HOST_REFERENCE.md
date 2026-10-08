@@ -653,6 +653,25 @@ Mirror Display on for the session — this fork's `mirrorOn` wrapper in
   still shows. `src/host/surface_live_shm.h`; always tracked (a few byte
   compares a frame, no store unless something changed). Placement and RT safety
   are pinned by `tests/host/test_surface_live_call_sites.sh`.
+- **Sound rides the same stream and is ALWAYS recorded; Mute only decides
+  whether the browser plays it** (muted by default). The shim appends each block
+  of the CAPTURE mix — `unity_view`, what Skipback records: the full mix at
+  unity, before master volume and the speaker EQ — to the `audio-live` ring
+  (`src/host/audio_live_shm.h`, 371 ms), only while Mirror Display is on: a
+  512-byte copy per block, no syscalls. display-server sends what is new each
+  pass as `event: pcm` (base64 int16, `pos` = device frame index) to clients
+  that asked with `&audio=1`, which the page does once a click has let it start
+  an AudioContext. The Move encodes nothing: the browser's MediaRecorder makes
+  the .mp4/.webm. Hook placement is pinned by
+  `tests/host/test_audio_live_call_sites.sh`.
+- **Picture/sound sync is a DELAY, not a timestamp match.** Both arrive on one
+  stream; only the sound then waits in a 150 ms jitter buffer, so every visual
+  update (screen, LEDs, fingers) is applied as late as the sound that arrived
+  with it will play (`later()` in the page).
+- ⚠ **No secure-context APIs on the page.** `/mirror` is plain http, so an
+  AudioWorklet does not exist there; sound is scheduled AudioBuffers.
+  `tests/host/test_mirror_page_layout.sh` fails on any such API. Test the page
+  from a LAN address, not localhost (localhost counts as secure).
 - ⚠ **An INJECTED press does not show as held.** `schwung-testd`'s
   `press_pad` enters after the raw MIDI_IN tap, so on-device tests see its
   effect (the LEDs dAVEBOx repaints), never the press itself.
