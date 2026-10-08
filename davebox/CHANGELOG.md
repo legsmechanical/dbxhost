@@ -11,6 +11,10 @@ the section into a versioned heading at release time.
 - **The bank map from anywhere.** Hold the jog inside a menu, TRACK CONFIG, a
   module's editor or the AUTOMATION screen and the bank map comes up over it;
   tap a pad to jump straight to that bank, or let go to stay where you were.
+- **Track pads on the bank map.** While the map is up, the top two rows of
+  the right-hand pads are the eight tracks (1–4, then 5–8), each in its
+  colour with the current one blinking: tap one to switch track, then tap a
+  bank on it.
 - **...including a Move instrument's own editor.** Hold the jog there and the
   map shows over Move's screen; pick a bank to leave for it, or let go and
   Move's editor is back as it was. A short click is still Move's — it lands

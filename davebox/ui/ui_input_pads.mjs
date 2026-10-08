@@ -175,6 +175,33 @@ function _chordPadRelease(padIdx, slot) {
     return true;
 }
 
+
+/* A pad picked a track: Shift + a bottom-row pad, or a track pad on the bank
+ * map. Everything the switch entails, in one place. */
+export function selectTrackFromPad(padIdx) {
+    if (S.moveCoRunTrack >= 0) {
+        S.moveCoRunOrigin = 'track';
+        exitMoveNativeCoRun();
+    }
+    extNoteOffAll();
+    handoffRecordingToTrack(padIdx);
+    _switchActiveTrack(padIdx);
+    refreshPerClipBankParams(padIdx);
+    computePadNoteMap();
+    S.seqActiveNotes.clear();
+    S.seqLastStep = -1;
+    S.seqLastClip = -1;
+    /* Sync drum lane metadata for the new track */
+    if (S.trackPadMode[padIdx] === PAD_MODE_DRUM) {
+        /* Fall back from banks hidden on drum tracks */
+        if (S.activeBank === 2 || S.activeBank === 4) S.activeBank = 0;
+        resyncDrumTrack(padIdx);
+    } else {
+        if (S.activeBank === 7) S.activeBank = 0;
+    }
+    S.screenDirty = true;
+}
+
 function _onPadPressTrackView(status, d1, d2) {
 
     if (d1 >= TRACK_PAD_BASE && d1 < TRACK_PAD_BASE + 32) {
@@ -646,27 +673,7 @@ function _onPadPressTrackView(status, d1, d2) {
              * leaves the move track on the oled and jog". Lands on the new
              * track's view, never back in the old track's sound screen (the
              * 'track' origin), and the row's Shift flash stays honest. */
-            if (S.moveCoRunTrack >= 0) {
-                S.moveCoRunOrigin = 'track';
-                exitMoveNativeCoRun();
-            }
-            extNoteOffAll();
-            handoffRecordingToTrack(padIdx);
-            _switchActiveTrack(padIdx);
-            refreshPerClipBankParams(padIdx);
-            computePadNoteMap();
-            S.seqActiveNotes.clear();
-            S.seqLastStep = -1;
-            S.seqLastClip = -1;
-            /* Sync drum lane metadata for the new track */
-            if (S.trackPadMode[padIdx] === PAD_MODE_DRUM) {
-                /* Fall back from banks hidden on drum tracks */
-                if (S.activeBank === 2 || S.activeBank === 4) S.activeBank = 0;
-                resyncDrumTrack(padIdx);
-            } else {
-                if (S.activeBank === 7) S.activeBank = 0;
-            }
-            S.screenDirty = true;
+            selectTrackFromPad(padIdx);
         } else if (!S.shiftHeld) {
             /* Live note — apply per-track octave shift; skip OOB to avoid ghost
              * dispatches of clamped note 0 (or 127) when multiple pads' shifted

@@ -92,6 +92,8 @@ const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const ink = (f, x, y, w, h) => { let n = 0; for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) n += f[j * W + i]; return n; };
 const cellInk = (f, c, r) => { const q = kit.bankMapCellRect(c, r); return ink(f, q.x, q.y, q.w, q.h) / (q.w * q.h); };
 const rightDark = () => { for (let r = 0; r < 4; r++) for (let c = 4; c < 8; c++) if ((led[pad(c, r)] | 0) !== 0) return false; return true; };
+/* The track map lights the right grid's top two rows (the track pads). */
+const lowerRightDark = () => { for (let r = 2; r < 4; r++) for (let c = 4; c < 8; c++) if ((led[pad(c, r)] | 0) !== 0) return false; return true; };
 const ccm = await import('../../ui/ui_input_cc.mjs');
 const home = () => { ccm.bankMapEnd(); S.activeBank = 0; S.trackActiveBank[S.activeTrack] = 0; S.bankCardLatched = false;
     S.bankSelectTick = -1; S.pendingSoundEnterTrack = -1; S.trackPadMode[S.activeTrack] = C.PAD_MODE_MELODIC_SCALE ?? 0; };
@@ -140,7 +142,7 @@ step('⭐⭐ HOLD: the map is on the screen and the pads, the screen is taken; l
            'the screen was not taken: ' + JSON.stringify(updates));
     assert(cellInk(frame(), 3, 2) > 0.05, 'the map is not drawn');
     ticks(1);
-    assert((led[DELAY] | 0) !== 0 && rightDark(), 'the pads do not show the map');
+    assert((led[DELAY] | 0) !== 0 && lowerRightDark(), 'the pads do not show the map');
     release(); ticks(2);
     assert(!S.bankMapUp && !S.bankMapLatched, 'the map stayed up');
     assert(updates.length === 2 && !(updates[1].opts.keep_mask & OLED) && (updates[1].opts.keep_mask & CLICK),
@@ -178,10 +180,22 @@ step('INST on that map is where you already are: nothing closes, and letting go 
     assert(clicks().length === 0, 'Move got a click: ' + clicks());
 });
 
+step('HOLD + a TRACK pad: out of co-run and on that track, the map still up for a bank', () => {
+    enter();
+    press(); holdMap();
+    tap(pad(4 + 1, 1)); ticks(1);                  /* track 6 */
+    assert(closes === 1 && S.moveCoRunTrack < 0, 'the track pick did not leave co-run');
+    assert(S.activeTrack === 5 && S.bankMapUp, 'track ' + S.activeTrack + ' map ' + S.bankMapUp);
+    assert(S.pendingSoundEnterTrack < 0, 'about to be dragged into a sound menu');
+    release(); ticks(3);
+    assert(!S.bankMapUp && S.activeTrack === 5 && clicks().indexOf(127) < 0, 'after release');
+    S.activeTrack = 2;
+});
+
 step('a dead pad picks nothing and co-run stays', () => {
     enter();
     press(); holdMap();
-    tap(pad(6, 1)); ticks(1);
+    tap(pad(6, 3)); ticks(1);
     assert(closes === 0 && S.moveCoRunTrack === 2 && S.bankMapUp, 'a dead pad did something');
     release(); ticks(2);
     assert(!S.bankMapUp && clicks().length === 0, 'after release');

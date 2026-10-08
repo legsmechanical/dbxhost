@@ -36,7 +36,7 @@ import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
          PAGE_KNOB, pageFloatStep, pageIntDetents } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity,
-         bankCycleForMode, bankListForMode, bankIsDoor, bankPadMapCellAt, bankPadMapActionAt, bankMapCellForPad, SESS_PAD_MAP, bankDisplayName } from './ui_pure.mjs';
+         bankCycleForMode, bankListForMode, bankIsDoor, bankPadMapCellAt, bankPadMapActionAt, bankMapCellForPad, bankMapTrackForCell, SESS_PAD_MAP, bankDisplayName } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
          showActionPopupFor, showActionPopupGauge } from './ui_persistence.mjs';
 import {
@@ -91,7 +91,7 @@ import { setTrackMute, setTrackSolo, clearAllMuteSolo,
     copyDrumClip, cutDrumClip, clearRow,
     _switchActiveTrack,
     resetFxBanks, resetBankParams, resetMidiFxChain, resetTarp, resetRptGroove, resetSingleFxBank, applyConductGridKnob, stepHoldCheckpoint , noteUndoUnit } from './ui_editops.mjs';
-import { _resolveLoopGesture, chordApplyRevoice, _onPadRelease } from './ui_input_pads.mjs';
+import { _resolveLoopGesture, chordApplyRevoice, _onPadRelease, selectTrackFromPad } from './ui_input_pads.mjs';
 import { seqFollowOn, setSeqFollowOn } from './ui_prefs.mjs';
 
 /* View lock: double-tap Loop keeps Perf Mode alive after Loop is released.
@@ -1502,9 +1502,18 @@ export function bankMapEnd() {
  * the jog is let go, even a hold begun over a latched one. */
 /* Would a tap on this pad of the map do anything? The same lookups the tap
  * makes, asked first. */
+/* The track a right-grid cell would switch TO on this map, or -1: the track
+ * map only, and never the track already active. */
+function bankMapTrackPick(cell) {
+    if (S.bankMapKind === 'session') return -1;
+    const t = bankMapTrackForCell(cell.col, cell.row);
+    return (t >= 0 && t < NUM_TRACKS && t !== S.activeTrack) ? t : -1;
+}
 function bankMapPadActs(note) {
     const cell = bankMapCellForPad(note);
-    if (!cell || cell.col > 3) return false;
+    if (!cell) return false;
+    /* A track pad acts unless it is the track you are on. */
+    if (cell.col > 3) return bankMapTrackPick(cell) >= 0;
     if (S.bankMapKind === 'session') {
         if (cell.col === 0) return SESS_PAD_MAP.mixer.modes[cell.row] !== undefined;
         if (cell.col === 1) return !!SESS_PAD_MAP.fx.buses[cell.row];
@@ -1530,7 +1539,19 @@ export function bankMapPadTap(note) {
      * a shown card the card follows, as a turn there does. */
     const pickRest = S.sessionView ? !sessMixerVisible() : !bankCardVisible();
     const cell = bankMapCellForPad(note);
-    if (!cell || cell.col > 3) return;
+    if (!cell) return;
+    /* ⭑ A TRACK PAD (Josh, 2026-10-08): the right grid's top two rows switch
+     * track. The map stays — held or latched — and repaints for the new
+     * track, so the bank you wanted there is the next tap. */
+    if (cell.col > 3) {
+        const nt = bankMapTrackPick(cell);
+        if (nt < 0) return;
+        bankMapCancelMenu();
+        selectTrackFromPad(nt);
+        invalidateLEDCache();
+        forceRedraw();
+        return;
+    }
     if (S.bankMapKind === 'session') {
         if (cell.col === 0) {
             const mode = SESS_PAD_MAP.mixer.modes[cell.row];

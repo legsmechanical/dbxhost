@@ -83,6 +83,8 @@ const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const ink = (f, x, y, w, h) => { let n = 0; for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) n += f[j * W + i]; return n; };
 const cellInk = (f, c, r) => { const q = kit.bankMapCellRect(c, r); return ink(f, q.x, q.y, q.w, q.h) / (q.w * q.h); };
 const rightDark = () => { for (let r = 0; r < 4; r++) for (let c = 4; c < 8; c++) if ((led[pad(c, r)] | 0) !== 0) return false; return true; };
+/* The track map lights the right grid's top two rows (the track pads). */
+const lowerRightDark = () => { for (let r = 2; r < 4; r++) for (let c = 4; c < 8; c++) if ((led[pad(c, r)] | 0) !== 0) return false; return true; };
 const ccm = await import('../../ui/ui_input_cc.mjs');
 const home = () => { ccm.bankMapEnd(); S.activeBank = 0; S.trackActiveBank[S.activeTrack] = 0; S.bankCardLatched = false;
     S.bankSelectTick = -1; S.pendingSoundEnterTrack = -1; S.trackPadMode[S.activeTrack] = C.PAD_MODE_MELODIC_SCALE ?? 0; };
@@ -108,7 +110,7 @@ step('…and ON THE PADS: categories coloured, CLIP White, absent and right half
     assert(led[pad(3, 2)] === K.BrightOrange, 'DELAY pad is ' + led[pad(3, 2)]);
     assert(led[pad(0, 1)] === K.Cyan, 'LIVE ARP pad is ' + led[pad(0, 1)]);
     assert((led[pad(2, 2)] | 0) === 0, 'an absent bank pad is lit');
-    assert(rightDark(), 'the right 4x4 is lit');
+    assert(lowerRightDark(), 'the lower right grid is lit');
     const pm = sentParams.filter(([k]) => k === 't2_padmap').pop();
     assert(pm && pm[1].split(' ')[32] === '1', 'the DSP pads were not muted while the map is up: ' + (pm && pm[1]));
 });
@@ -584,6 +586,68 @@ step('⭐ the TRACK overview footer: CLK BANKS · TCH EDIT · SHFT TRK, all draw
     assert(JSON.stringify(ses) === JSON.stringify([['CLK', 'BANKS'], ['TCH', 'MIX']]), 'session overview: ' + JSON.stringify(ses));
     for (const k of ['CLK', 'TCH', 'SHFT', 'JOG', 'PAD'])
         assert(kit.MV_FOOTER_CANON.keys.indexOf(k) >= 0, k + ' is not a canon key');
+});
+
+/* ---- THE TRACK PADS (Josh, 2026-10-08) ----------------------------------
+ * "let's add pad map track switch shortcuts to the right 4x4 grid ... top row
+ * is [tracks] 1-4, next row is 5-8. pads show track colors. current track is
+ * blinking track color. others are dim track color". */
+const TRK = (t) => pad(4 + (t % 4), t >> 2);
+const paintOn = () => { for (let i = 0; i < 80 && !leds.bankMapTrackBlinkOn(S.clockMs); i++) tick(); ticks(1); };
+
+step('⭐ track pads: the other seven DIM in their own colour, the active one BLINKS bright, the lower rows dark', () => {
+    home(); S.sessionView = false;
+    const at = S.activeTrack;
+    press(); holdPast();
+    assert(S.bankMapUp, 'rig: map did not arm');
+    paintOn();
+    for (let t = 0; t < 8; t++) {
+        if (t === at) continue;
+        assert(led[TRK(t)] === C.TRACK_DIM_COLORS[t], 'track ' + (t + 1) + ' pad is ' + led[TRK(t)] + ', wanted dim ' + C.TRACK_DIM_COLORS[t]);
+    }
+    const seen = new Set();
+    for (let i = 0; i < 90; i++) { tick(); seen.add(led[TRK(at)] | 0); }
+    assert(seen.has(C.TRACK_COLORS[at]) && seen.has(0) && seen.size === 2,
+           'the active track pad does not blink bright/off: ' + JSON.stringify([...seen]));
+    assert(lowerRightDark(), 'the lower right rows are lit');
+    release(); ticks(2);
+});
+
+step('⭐⭐ HOLD + a track pad: the track switches, the map STAYS and the next tap is a bank on the NEW track', () => {
+    ccm.bankMapEnd(); home(); S.sessionView = false;
+    const to = S.activeTrack === 5 ? 6 : 5;
+    press(); holdPast();
+    tap(TRK(to)); ticks(1);
+    assert(S.activeTrack === to, 'the track pad did not switch: active ' + S.activeTrack);
+    assert(S.bankMapUp, 'the map went away on a track pick');
+    tap(pad(3, 2)); ticks(1);
+    assert(S.activeTrack === to && S.activeBank === 3, 'the bank pick did not land on the new track: track ' + S.activeTrack + ' bank ' + S.activeBank);
+    holdLong(); release(); ticks(2);
+    assert(!S.bankMapUp && !S.bankMapLatched && S.activeTrack === to, 'after release');
+});
+
+step('a LATCHED map keeps too: tap a track, it stays up; the pad of the track you are ON and the lower rows do nothing', () => {
+    ccm.bankMapEnd(); home();
+    const to = S.activeTrack === 0 ? 1 : 0;
+    press(); release(); ticks(1);
+    assert(S.bankMapLatched && S.bankMapUp, 'rig: the click did not latch the map');
+    tap(TRK(to)); ticks(1);
+    assert(S.activeTrack === to && S.bankMapUp && S.bankMapLatched, 'track pick: active ' + S.activeTrack + ' up ' + S.bankMapUp);
+    tap(TRK(to)); ticks(1);
+    assert(S.activeTrack === to && S.bankMapUp, 'the active track pad did something');
+    tap(pad(5, 2)); tap(pad(7, 3)); ticks(1);
+    assert(S.activeTrack === to && S.bankMapUp, 'a lower-right pad did something');
+    ccm.bankMapEnd();
+});
+
+step('SESSION map: no track pads — the right grid is dark and dead', () => {
+    ccm.bankMapEnd(); home(); S.sessionView = true; S.sessKnobMode = 0;
+    const at = S.activeTrack;
+    press(); holdPast(); ticks(6);
+    assert(S.bankMapKind === 'session' && rightDark(), 'session map lit the right grid');
+    tap(TRK(at === 6 ? 5 : 6)); ticks(1);
+    assert(S.activeTrack === at, 'a session-map pad switched track');
+    holdLong(); release(); ticks(2); S.sessionView = false;
 });
 
 if (failed) { console.error('test_bank_pad_map: FAIL'); process.exit(1); }

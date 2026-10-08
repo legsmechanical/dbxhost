@@ -261,6 +261,12 @@ export const SESS_PAD_MAP = {
 /* Pad note for a map cell: pads run bottom-to-top 68-75 / 76-83 / 84-91 /
  * 92-99, so the TOP row (row 0) is 92. */
 export function bankMapPadForCell(col, row) { return 92 - row * 8 + col; }
+/* The map's TRACK pads (Josh, 2026-10-08: "pad map track switch shortcuts [on]
+ * the right 4x4 grid ... top row is [tracks] 1-4, next row is 5-8"): the track
+ * a cell selects, or -1. The lower two rows of that grid stay dark. */
+export function bankMapTrackForCell(col, row) {
+    return (col >= 4 && col <= 7 && (row === 0 || row === 1)) ? row * 4 + (col - 4) : -1;
+}
 export function bankMapCellForPad(note) {
     const i = note - 68;
     if (i < 0 || i > 31) return null;

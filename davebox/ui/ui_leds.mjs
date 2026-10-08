@@ -9,7 +9,7 @@ import {
 } from './ui_constants.mjs';
 import { trackClipHasContent, updateSceneMapLEDs } from './ui_scene.mjs';
 import { PROJECT_COLORS, projectColorLED } from './ui_dialogs.mjs';
-import { arpVelLevel, drumVelocityToZone, bankPadMapForMode, SESS_PAD_MAP, bankMapPadForCell } from './ui_pure.mjs';
+import { arpVelLevel, drumVelocityToZone, bankPadMapForMode, SESS_PAD_MAP, bankMapPadForCell, bankMapTrackForCell } from './ui_pure.mjs';
 import { knobRingColor, knobRingNorm, ringCellsFor, ringNormOfCell } from './ui_knob_leds.mjs';
 import { automationStateFor } from './ui_automation.mjs';
 import { devSnapOpen, devSnapLedFor } from './ui_devsnap.mjs';
@@ -567,6 +567,8 @@ export function paintProjectPickerSurface() {
  * colour, and CONFIG / MIX / INST wear the track's own colour. */
 const BANK_MAP_COL_COLORS = [Cyan, Violet, VividYellow, BrightOrange];
 const SESS_MAP_COLORS = [VividYellow, Cyan, Violet, Violet];   /* VOLUME, PAN, SEND A, SEND B */
+/* The active track's pad on the bank map: 300 ms on, 150 ms off. */
+export function bankMapTrackBlinkOn(ms) { return (ms % 450) < 300; }
 function paintBankMapPads() {
     const col = new Array(32).fill(LED_OFF);
     const at = (c, r) => bankMapPadForCell(c, r) - TRACK_PAD_BASE;
@@ -586,6 +588,14 @@ function paintBankMapPads() {
             col[at(ci, r)] = on ? White
                 : own ? trackColor(t) : BANK_MAP_COL_COLORS[ci];
         }));
+        /* The track pads: every track dim in its colour, the one you are on
+         * blinking bright. */
+        const blinkOn = bankMapTrackBlinkOn(S.clockMs);
+        for (let r = 0; r < 2; r++) for (let c = 4; c < 8; c++) {
+            const tt = bankMapTrackForCell(c, r);
+            if (tt < 0 || tt >= NUM_TRACKS) continue;
+            col[at(c, r)] = tt !== t ? trackDimColor(tt) : blinkOn ? trackColor(tt) : LED_OFF;
+        }
     }
     for (let i = 0; i < 32; i++) cachedSetLED(TRACK_PAD_BASE + i, col[i]);
 }
