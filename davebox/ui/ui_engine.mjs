@@ -776,10 +776,22 @@ export function engineSetMany(slot, comp, pairs) {
  * ⭑ Cached on first scan of each category, like the host's own
  * moduleAbbrevCache, because the header asks once per redraw. */
 const MODULE_ABBREV = {};
+const MODULE_NAME = {};
 export function engineNoteModuleAbbrevs(list) {
     for (const m of (list || [])) {
         if (m && m.id && m.abbrev) MODULE_ABBREV[String(m.id).toLowerCase()] = m.abbrev;
+        if (m && m.id && m.name) MODULE_NAME[String(m.id).toLowerCase()] = String(m.name);
     }
+}
+/* The name a generator declares (module.json `name`), learned at the same scan
+ * as its mark; the id when it declares none. One scan is made here if none has
+ * run yet this session — a name asked for before any picker was opened. */
+let _genNamesScanned = false;
+export function engineGeneratorName(moduleId) {
+    if (!moduleId) return '';
+    const lower = String(moduleId).toLowerCase();
+    if (!MODULE_NAME[lower] && !_genNamesScanned) { _genNamesScanned = true; engineListModules('synth'); }
+    return MODULE_NAME[lower] || String(moduleId);
 }
 export function engineModuleAbbrev(moduleId) {
     if (!moduleId) return '--';

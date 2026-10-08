@@ -38,7 +38,8 @@ globalThis.host_file_exists = () => false;
 globalThis.host_ensure_dir = () => true; globalThis.host_remove_dir = () => true;
 const sentParams = [];
 globalThis.host_module_set_param = (k, v) => { sentParams.push([String(k), String(v)]); };
-globalThis.host_module_get_param = () => ''; globalThis.shadow_get_param = () => '';
+let loadedGen = '';   /* what every slot's synth:module read answers */
+globalThis.host_module_get_param = () => ''; globalThis.shadow_get_param = (slot, key) => (key === 'synth:module' ? loadedGen : '');
 globalThis.host_module_get_params = () => null;
 globalThis.shadow_set_param = () => 1; globalThis.host_vol_block = () => {};
 globalThis.host_edit_cc_block = () => {};
@@ -593,6 +594,7 @@ step('⭐ the TRACK overview footer: CLK BANKS · TCH EDIT · SHFT TRK, all draw
  * is [tracks] 1-4, next row is 5-8. pads show track colors. current track is
  * blinking track color. others are dim track color". */
 const TRK = (t) => pad(4 + (t % 4), t >> 2);
+const await_eng = await import('../../ui/ui_engine.mjs');
 const paintOn = () => { for (let i = 0; i < 80 && !leds.bankMapTrackBlinkOn(S.clockMs); i++) tick(); ticks(1); };
 
 step('⭐ track pads: the other seven DIM in their own colour, the active one BLINKS bright, the lower rows dark', () => {
@@ -621,7 +623,7 @@ step('⭐⭐ HOLD + a track pad: the track switches, the map STAYS and the next 
     assert(S.activeTrack === to, 'the track pad did not switch: active ' + S.activeTrack);
     assert(S.bankMapUp, 'the map went away on a track pick');
     /* ...and says which: the notice card, over the map, gone in a moment. */
-    assert(JSON.stringify(S.actionPopupLines) === JSON.stringify(['TRACK ' + (to + 1)]) && S.actionPopupCard,
+    assert(JSON.stringify(S.actionPopupLines) === JSON.stringify(['TRACK ' + (to + 1), 'No instrument']) && S.actionPopupCard,
            'no TRACK n card: ' + JSON.stringify(S.actionPopupLines));
     const bare = (() => { const keep = S.actionPopupEndTick; S.actionPopupEndTick = -1; const f = frame(); S.actionPopupEndTick = keep; return f; })();
     const carded = frame();
@@ -648,7 +650,31 @@ step('a LATCHED map goes with the track pick — you are on that track; its own 
     tap(TRK(to)); ticks(1);
     assert(S.activeTrack === to, 'the track pad did not switch: active ' + S.activeTrack);
     assert(!S.bankMapUp && !S.bankMapLatched, 'a latched map stayed up after a track pick');
-    assert(JSON.stringify(S.actionPopupLines) === JSON.stringify(['TRACK ' + (to + 1)]), 'no TRACK n card');
+    assert(S.actionPopupLines[0] === 'TRACK ' + (to + 1), 'no TRACK n card');
+});
+
+step('the card\'s second line is what the track PLAYS, in full: the generator\'s own name, Move n, MIDI Ch n, Track n', () => {
+    const eng = await_eng;
+    eng.engineNoteModuleAbbrevs([{ id: 'moog', name: 'Mini Moog', abbrev: 'MG' }]);
+    const line2 = (t, setup) => {
+        ccm.bankMapEnd(); home(); S.sessionView = false;
+        if (S.activeTrack === t) { S.activeTrack = (t + 1) % 8; home(); }
+        setup();
+        press(); holdPast(); tap(TRK(t)); ticks(1);
+        const l = S.actionPopupLines.slice();
+        holdLong(); release(); ticks(2);
+        assert(l[0] === 'TRACK ' + (t + 1), 'first line: ' + JSON.stringify(l));
+        return l[1];
+    };
+    loadedGen = 'moog';
+    assert(line2(4, () => { S.trackRoute[4] = 0; }) === 'Mini Moog', 'a Schwung track did not name its generator in full');
+    loadedGen = 'nameless';
+    assert(line2(4, () => { S.trackRoute[4] = 0; }) === 'nameless', 'a generator with no declared name did not fall back to its id');
+    loadedGen = '';
+    assert(line2(1, () => { S.trackRoute[1] = 1; S.trackChannel[1] = 2; }) === 'Move 2', 'a Move track');
+    assert(line2(6, () => { S.trackRoute[6] = 2; S.trackMidiTo[6] = 0; S.trackChannel[6] = 5; }) === 'MIDI Ch 5', 'a MIDI track');
+    assert(line2(6, () => { S.trackRoute[6] = 2; S.trackMidiTo[6] = 2; }) === 'Track 2', 'a track routed to a track');
+    for (let i = 0; i < 8; i++) { S.trackRoute[i] = 0; S.trackChannel[i] = 1; S.trackMidiTo[i] = 0; }
 });
 
 step('SESSION map: no track pads — the right grid is dark and dead', () => {

@@ -11,7 +11,7 @@ import { jogTouchCardOn, seqFollowOn } from './ui_prefs.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H, drawDaveLoading } from './ui_daves.mjs';
 import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
-import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev, faderGainToTravel} from './ui_engine.mjs';
+import { SESS_KNOB_MODES, engineLoadedModule, engineModuleAbbrev, engineGeneratorName, faderGainToTravel} from './ui_engine.mjs';
 import { instrValueFor } from './ui_dsp_bridge.mjs';
 import { fontPrint4x5, fontWidth4x5, fit4x5 } from './ui_fonts_pp.mjs';
 import { chordLabel, noteNames, noteLabel, heldInputNotes, keyUsesFlats, keyRootName, fitHeldLabel } from './ui_chord.mjs';
@@ -63,7 +63,7 @@ import {
 import { soundRender, renderTrackGatewayCard, renderConfigCardPeek, renderMacrosPeek } from './ui_sound.mjs';
 import { drawAutomationBankBody, autoBankMenuOpen, autoMenuUp, autoHoldJumpActive, autoHoldJumpStep, autoLaneFocus } from './ui_automation_bank.mjs';
 import { automationStateFor } from './ui_automation.mjs';
-import { seqAutoTargetForKnob } from './ui_constants.mjs';
+import { seqAutoTargetForKnob, fmtInstr } from './ui_constants.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
 import { registerRingCells } from './ui_knob_leds.mjs';
 
@@ -135,6 +135,17 @@ export function refreshInstrAbbrev() {
     else if (v === INSTR_CONDUCT)                            a = 'CNDT';
     S.instrAbbrev = String(a || '--').toUpperCase();
     S.instrAbbrevAt = S.clockMs + 1000;
+}
+
+/* What track `t` plays, in full — the generator's own name on a Schwung track
+ * ("no instrument" when it has none yet), else what the Instmt/Dest row says:
+ * Move 3, MIDI Ch 5, Track 2, Conductor, None. One param read; for a moment
+ * you were just told about, never a draw path. */
+export function trackInstrName(t) {
+    const v = instrValueFor(t) | 0;
+    if (v !== INSTR_SCHWUNG) return fmtInstr(v);
+    const id = moduleIdOf(engineLoadedModule(schSlotForTrack(t), 'synth'));
+    return id ? engineGeneratorName(id) : 'No instrument';
 }
 
 /* The automation circle on a bank card's cell, for a knob on the seq: list. */

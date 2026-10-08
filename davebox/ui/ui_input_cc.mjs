@@ -73,7 +73,7 @@ import { ensureGlobalMenuFresh, openGlobalMenu, openGlobalMenuAt } from './ui_me
 /* ⚠ one-way: ui_render never imports this module (checked 2026-08-31) —
  * the visibility predicate must be the render's own or the click gate and
  * the screen can disagree. */
-import { bankCardVisible, sessMixerVisible, soundModeCovered, sessMixerCellOpens, coveredByMoreThanMenu } from './ui_render.mjs';
+import { bankCardVisible, sessMixerVisible, soundModeCovered, sessMixerCellOpens, coveredByMoreThanMenu, trackInstrName } from './ui_render.mjs';
 import { isTextEntryActive } from '/data/UserData/schwung/shared/text_entry.mjs';
 import { closeDaveBox } from './ui_daves.mjs';
 import { miActive, miClose, miOffered } from './ui_midi_import.mjs';
@@ -1552,8 +1552,9 @@ export function bankMapPadTap(note) {
         selectTrackFromPad(nt);
         /* The map's OLED does not name the track, so say it: the notice card,
          * over the map, for a glance (Josh, 2026-10-08: "a very brief
-         * 'Track [n]' pop-up"). */
-        showActionPopupFor(BANK_MAP_TRACK_POPUP_MS, 'TRACK ' + (nt + 1));
+         * 'Track [n]' pop-up" · "under the track line ... the full name of
+         * the instrument/destination"). */
+        showActionPopupFor(BANK_MAP_TRACK_POPUP_MS, 'TRACK ' + (nt + 1), trackInstrName(nt));
         invalidateLEDCache();
         forceRedraw();
         bankMapEndIfLatched();

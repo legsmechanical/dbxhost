@@ -14,7 +14,7 @@ the section into a versioned heading at release time.
 - **Track pads on the bank map.** While the map is up, the top two rows of
   the right-hand pads are the eight tracks (1–4, then 5–8), each in its
   colour with the current one blinking: tap one to switch track — the screen
-  flashes its number. Holding the jog, the map stays for a bank tap next;
+  flashes its number and what it plays. Holding the jog, the map stays for a bank tap next;
   clicked open, it closes on the track.
 - **...including a Move instrument's own editor.** Hold the jog there and the
   map shows over Move's screen; pick a bank to leave for it, or let go and
