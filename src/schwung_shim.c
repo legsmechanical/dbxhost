@@ -7046,11 +7046,15 @@ static void shim_pre_transfer(void *ctx, uint8_t *shadow, int size)
 
     /* Capture final display to live shm for remote viewer.
      * Shadow mode: copy from shadow display shm (full composited frame).
-     * Native mode: reconstruct from captured slices (written above). */
+     * Native mode: reconstruct from captured slices (written above).
+     * A co-run that hands the OLED to Move firmware is native for this
+     * purpose: the shadow frame is not what the panel shows, and mirroring it
+     * showed the tool's last frame, frozen, for the whole co-run. */
     if (display_live_shm && shadow_control && shadow_control->display_mirror) {
         if (jack_display_composited) {
             memcpy(display_live_shm, composited_jack_display, DISPLAY_BUFFER_SIZE);
-        } else if (shadow_display_mode && shadow_display_shm) {
+        } else if (shadow_display_mode && shadow_display_shm &&
+                   shadow_control->shadow_display_owner != DISPLAY_OWNER_MOVE_FIRMWARE) {
             memcpy(display_live_shm, shadow_display_shm, DISPLAY_BUFFER_SIZE);
         } else {
             static uint8_t live_native[DISPLAY_BUFFER_SIZE];
