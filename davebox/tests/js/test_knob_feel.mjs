@@ -286,25 +286,32 @@ step('a WIDE param sweeps in a comparable gesture, not 3x the travel', () => {
                         ' — a wider param is not being scaled, so it still crawls');
 });
 
-/* A NARROW param must keep a step of exactly 1 — that is what every existing
- * feel was tuned against, and speeding it up would be a regression dressed as a
- * fix. Only ranges WIDER than SWEEP_UNITS are scaled.
+/* ⭑ A VALUE YOU LAND ON counts detents FLAT, at the macro's cost (Josh,
+ * 2026-10-07, Note Offset on its bank knob against the macro pointing at it:
+ * "the macro knob is considerably slower than the direct knob ... i prefer the
+ * macro feel"). NOTE FX K2 = Note Offset, -24..24, declares 8 detents a
+ * semitone: seven move nothing, the eighth moves one, and a fast batch is worth
+ * its detents and no more — no speed curve on a transpose.
  *
- * ⚠ Uses NOTE FX K2 = Note Offset (-24..24), untouched until here, so its knob
- * state is genuinely cold (divisor 1 → exactly one knob unit). Velocity is NOT
- * the anchor despite spanning ±127: its RANGE is 254, wide enough to be scaled.
- * That mistake was in this test first and the assertion caught it. */
-step('a narrow param keeps a step of exactly 1', () => {
-    const RAND_CC = 72;        /* NOTE FX K2 = Note Offset, -24..24 */
-    const before = writes.slice();
-    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, RAND_CC, 1]));
-    ticks(1);
-    const w = writes.slice(before.length).filter((x) => x.indexOf('noteFX_offset') >= 0);
-    if (w.length === 0)
-        throw new Error('the narrow knob wrote nothing: ' + JSON.stringify(writes.slice(before.length).slice(-3)));
-    const v = Math.abs(parseFloat(w[0].trim().split(/[=\s]+/).pop()));
-    if (v !== 1)
-        throw new Error('one cold detent on a narrow param produced ' + v + ' (' + w[0] + '), expected 1');
+ * ⚠ This knob USED to be the "narrow param keeps a step of exactly 1" anchor:
+ * one cold detent moved it a semitone, and a normal turn several. */
+step('a land-on-a-value knob (Note Offset) costs its declared detents, flat', () => {
+    const OFS_CC = 72;
+    const ofs = (from) => writes.slice(from).filter((x) => x.indexOf('noteFX_offset') >= 0)
+        .map((x) => parseFloat(x.trim().split(/[=\s]+/).pop()));
+    park(1, 0);
+    let mark = writes.length;
+    for (let i = 0; i < 7; i++) { globalThis.onMidiMessageInternal(new Uint8Array([0xB0, OFS_CC, 1])); ticks(1); }
+    if (ofs(mark).length) throw new Error('seven detents already moved it: ' + JSON.stringify(ofs(mark)));
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, OFS_CC, 1])); ticks(1);
+    let w = ofs(mark);
+    if (w.length !== 1 || w[0] !== 1) throw new Error('the eighth detent should land on +1, got ' + JSON.stringify(w));
+    /* A fast spin: 4 frames of 6 = 24 detents = exactly 3 semitones more. */
+    mark = writes.length;
+    for (let i = 0; i < 4; i++) { globalThis.onMidiMessageInternal(new Uint8Array([0xB0, OFS_CC, 6])); ticks(1); }
+    w = ofs(mark);
+    if (!w.length || w[w.length - 1] !== 4)
+        throw new Error('24 fast detents from +1 should land on +4, got ' + JSON.stringify(w));
 });
 
 

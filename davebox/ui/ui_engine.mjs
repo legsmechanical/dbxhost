@@ -388,6 +388,7 @@ export const PAGE_KNOB = Object.freeze({
     frac: MIN_STEP_RANGE_FRAC * ARC_DELTA_SCALE,      /* of the range, per detent (0.005) */
     positions: Math.round(1 / (MIN_STEP_RANGE_FRAC * ARC_DELTA_SCALE)),   /* 200 */
     enumDiv: ENUM_DELTA_DIV,                          /* detents per list step / narrow-int unit */
+    midMax: MID_RANGE_MAX,                            /* ...and up to here it is a value you land on */
     narrowMax: NARROW_RANGE_MAX,                      /* an int range this narrow steps like a list */
     fine: 0.1,                                        /* Shift: a tenth of the step */
 });

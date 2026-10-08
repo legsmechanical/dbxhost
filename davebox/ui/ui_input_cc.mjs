@@ -34,7 +34,7 @@ import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay,
 import { nowMs } from './ui_clock.mjs';
 import { SLOT_LEVEL_STEP, SLOT_LEVEL_MAX, SESS_KNOB_KEYS, SESS_KNOB_DEFAULTS,
          SESS_KNOB_MODES, SWEEP_UNITS, engineVolBlock, faderStep, faderWire,
-         PAGE_KNOB, pageFloatStep } from './ui_engine.mjs';
+         PAGE_KNOB, pageFloatStep, pageIntDetents } from './ui_engine.mjs';
 import { scaleNudgeNote, stepEntryVelocity,
          bankCycleForMode, bankListForMode, bankIsDoor, bankPadMapCellAt, bankPadMapActionAt, bankMapCellForPad, SESS_PAD_MAP, bankDisplayName } from './ui_pure.mjs';
 import { saveState, writeSidecar, doClearSession, showActionPopup,
@@ -3985,7 +3985,16 @@ const KNOB_PICK_FMTS = [fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod,
 function knobClass(pm) {
     if (pm.lock || pm.scope === 'action' || pm.fmt === fmtBool) return 'delib';
     if (KNOB_PICK_FMTS.indexOf(pm.fmt) >= 0 || (pm.max - pm.min) <= 16) return 'pick';
+    if ((pm.max - pm.min) <= PAGE_KNOB.midMax) return 'land';
     return 'cont';
+}
+/* ⭑ A VALUE YOU LAND ON (Josh, 2026-10-07, Note Offset on its bank knob against
+ * the macro pointing at it: "i prefer the macro feel"). The band above the
+ * picks — transposes, intervals, pitch feedback — is not swept, it is set: the
+ * bank knob counts detents flat, at the cost the macro pays (bankMacroTravel in
+ * ui_sound.mjs), so the two are one knob. */
+function knobLandNeed(pm) {
+    return (pm.sens && pm.sens > 1) ? pm.sens : pageIntDetents(pm.min, pm.max);
 }
 
 /* ---- Drum NOTE FX (bank 1): the DECLARATIVE half ----------------------------
@@ -4125,6 +4134,7 @@ function applyTableKnob(site, knobIdx, d2, t, lane) {
     const cls = site.cls || knobClass(pm);
     const step = cls === 'cont'
         ? ccKnobDelta(d2, knobIdx, bankStep({ min, max }))
+        : cls === 'land' ? knobPick(knobIdx, decodeDelta(d2), knobLandNeed({ min, max, sens: pm.sens }))
         : knobStep(knobIdx, d2, cls === 'delib' ? KNOB_DELIB : KNOB_PICK);
     if (step !== 0) {
         const cur = site.get(t, lane);
@@ -5140,6 +5150,7 @@ function _onCC_knobs(d1, d2) {
             let _cls = knobClass(pm);
             if (pm.dspKey === 'clock_shift') _cls = 'pick';
             let _delta = _cls === 'cont' ? ccKnobDelta(d2, knobIdx, bankStep(pm))
+                       : _cls === 'land' ? knobPick(knobIdx, decodeDelta(d2), knobLandNeed(pm))
                        : knobPick(knobIdx, decodeDelta(d2), _cls === 'delib' ? KNOB_DELIB : KNOB_PICK);
             /* ⚠ Two consumers cannot take a multi-step delta, so clamp AFTER the
              * accumulator (the remainder is kept either way — clamping the input
