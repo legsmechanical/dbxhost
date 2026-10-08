@@ -58,7 +58,7 @@ globalThis.host_ext_midi_remap_enable = () => {};
 
 /* shadow_constants.h — the authority. Values copied, then PINNED against the
  * header text below so a drift fails here instead of on the device. */
-const GRP = { PADS: 1 << 1, STEPS: 1 << 2, DEAD_TRANSPORT: 1 << 3, JOG: 1 << 4,
+const GRP = { PADS: 1 << 1, STEPS: 1 << 2, DEAD_TRANSPORT: 1 << 3, JOG_TURN: 1 << 4, JOG_CLICK: 1 << 27,
     TRACK: 1 << 5, KNOBS: 1 << 6, MASTER: 1 << 7, SHIFT: 1 << 8, BACK: 1 << 9,
     MENU: 1 << 10, TOUCH: 1 << 11, MUTE: 1 << 12, PLAY: 1 << 13, REC: 1 << 14,
     KEEP_BACK: 1 << 15, SAMPLE: 1 << 16, LOOP: 1 << 17, COPY: 1 << 18, DELETE: 1 << 19 };
@@ -75,6 +75,7 @@ step('header pin: the copied group values match src/host/shadow_constants.h', ()
         ['REC', GRP.REC, 'CORUN_GRP_REC'], ['SAMPLE', GRP.SAMPLE, 'CORUN_GRP_SAMPLE'],
         ['LOOP', GRP.LOOP, 'CORUN_GRP_LOOP'], ['COPY', GRP.COPY, 'CORUN_GRP_COPY'],
         ['DELETE', GRP.DELETE, 'CORUN_GRP_DELETE'], ['MUTE', GRP.MUTE, 'CORUN_GRP_MUTE'],
+        ['JOG_TURN', GRP.JOG_TURN, 'CORUN_GRP_JOG_TURN'], ['JOG_CLICK', GRP.JOG_CLICK, 'CORUN_GRP_JOG_CLICK'],
     ]) {
         const m = h.match(new RegExp(macro + '\\s+\\(1u << (\\d+)\\)'));
         if (!m) throw new Error(macro + ' not found in the header');
@@ -103,11 +104,14 @@ step('move-native declares the ruled split', () => {
      * copy not copying; Delete was his own correction.
      * ⚠ MUTE is still ceded and has the same defect — left as ruled, not
      * reversed unasked. If it ever moves, it moves for this reason. */
+    /* ⭑ The jog CLICK is kept since 2026-10-08 — only to be timed: a short one
+     * is passed on to Move, a held one is the bank map. The TURN is Move's. */
     const mustKeep = ['PADS', 'STEPS', 'MENU', 'TRACK',
-                      'PLAY', 'REC', 'SAMPLE', 'LOOP', 'DELETE'];
-    const mustCede = ['JOG', 'KNOBS', 'MASTER', 'BACK', 'TOUCH', 'MUTE', 'SHIFT'];
+                      'PLAY', 'REC', 'SAMPLE', 'LOOP', 'DELETE', 'JOG_CLICK'];
+    const mustCede = ['JOG_TURN', 'KNOBS', 'MASTER', 'BACK', 'TOUCH', 'MUTE', 'SHIFT'];
     for (const g of mustKeep) if (!(m & GRP[g])) throw new Error('does not keep ' + g);
     for (const g of mustCede) if (m & GRP[g]) throw new Error('keeps ' + g + ' (must cede)');
+    if (m & 1) throw new Error('keeps the OLED with no map up');
     if (m & GRP.DEAD_TRANSPORT)
         throw new Error('the RETIRED transport bit is back in the mask');
     if (!(m & GRP.KEEP_BACK)) throw new Error('lost the framework Back-exit opt-out');
@@ -123,7 +127,8 @@ step('the LED mask matches the keep mask — no lights/input split any more', ()
      * indicator while their PRESSES ceded to Move. Both halves are ours now, so
      * a divergence here would mean a surface we light but cannot operate. */
     const m = opened.opts.led_keep_mask;
-    const inputGroups = opened.opts.keep_mask & ~(1 << 26);   /* the Back-at-top FLAG is not a group */
+    /* the Back-at-top FLAG is not a group, and the jog click has no light */
+    const inputGroups = opened.opts.keep_mask & ~(1 << 26) & ~GRP.JOG_CLICK;
     if (m !== (inputGroups | GRP.TRACK))
         throw new Error('led mask drifted: ' + m + ' vs ' + (inputGroups | GRP.TRACK));
     if (!(opened.opts.keep_mask & GRP.TRACK))

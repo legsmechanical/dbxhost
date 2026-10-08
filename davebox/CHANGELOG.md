@@ -11,8 +11,15 @@ the section into a versioned heading at release time.
 - **The bank map from anywhere.** Hold the jog inside a menu, TRACK CONFIG, a
   module's editor or the AUTOMATION screen and the bank map comes up over it;
   tap a pad to jump straight to that bank, or let go to stay where you were.
+- **...including a Move instrument's own editor.** Hold the jog there and the
+  map shows over Move's screen; pick a bank to leave for it, or let go and
+  Move's editor is back as it was. A short click is still Move's — it lands
+  when you let go.
 
 ### Changed
+- **Transpose-type bank knobs feel like their macro.** Note Offset, the Harmony
+  intervals, Pitch Feedback and Pitch Random step at one steady rate on their
+  own knobs, however fast you turn.
 - **A jog click inside those screens lands when you let go,** not when you
   press — that is what lets a hold mean something else. On the overviews and
   bank pages nothing changes: the map still appears the moment you press.

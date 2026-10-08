@@ -52,7 +52,7 @@ import {
 import { MoveShift, MoveLeft, MoveRight, MoveMute } from '/data/UserData/schwung/shared/constants.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
 import { effectiveClip, invalidateLEDCache, trackColor, forceRedraw, installFlagsWrap, buildLedInitQueue } from './ui_leds.mjs';
-import { initPrimarySurface } from './ui_corun.mjs';
+import { initPrimarySurface, coRunJogClick } from './ui_corun.mjs';
 import { installReadMeter, readMeterTick, readMeterLine, readMeterReset } from './ui_readmeter.mjs';
 /*
  * ⚠⚠ REGISTERED EXPLICITLY, through the SAME specifier the widgets import.
@@ -631,6 +631,10 @@ const JOG_PRESS_MSG = new Uint8Array([0xB0, MoveMainButton, 127]);
  * function so a click the router held back can be delivered through the SAME
  * gates, in the same order, as a press that was never held back. */
 function _dispatchBelowJogRouter(data, status, d1, d2) {
+    /* Co-run: the jog click is kept only so it can be timed for the bank map;
+     * every edge that gets this far is Move's. */
+    if (status === 0xB0 && d1 === MoveMainButton && S.moveCoRunTrack >= 0) { coRunJogClick(d2); return; }
+
     /* PROJECT DID NOT OPEN is fully modal: nothing else may act while dAVEBOx
      * holds something Move does not. */
     if (S.projectOpenFailed && projectOpenFailedMidi(data)) return;

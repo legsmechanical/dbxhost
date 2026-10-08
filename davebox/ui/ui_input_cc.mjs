@@ -52,7 +52,7 @@ import { computePadNoteMap, syncDrumLaneSteps, syncDrumLanesMeta,
     setDrumLanePage } from './ui_drummodel.mjs';
 import { effectiveClip, forceRedraw, invalidateLEDCache,
     bankHasAltParams, clearAllLEDs, removeFlagsWrap, sendPerfMods } from './ui_leds.mjs';
-import { exitMoveNativeCoRun, enterMoveNativeCoRun, exitMoveSettingsCoRun } from './ui_corun.mjs';
+import { exitMoveNativeCoRun, enterMoveNativeCoRun, exitMoveSettingsCoRun, coRunMapScreen } from './ui_corun.mjs';
 import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankReset, autoBankMenuOpen, autoMenuUp,
          autoBankJumpTarget, autoBankRestoreMenu, autoCyclePageStep,
          autoLanePinJump, autoLanePinClear, laneHome } from './ui_automation_bank.mjs';
@@ -1362,13 +1362,18 @@ export function bankMapArmable() {
  *
  * This says where that is allowed. Everything it refuses keeps the click on
  * the press: chords (Shift / Delete / Copy / Mute / Loop), a touched knob, a
- * held step, the picker's commit, co-run, the keyboard (it reads the pads),
- * and every layer in coveredByMoreThanMenu — dialogs that must be answered,
- * pickers and placements whose pads mean something else. */
+ * held step, the picker's commit, Move's Settings, the keyboard (it reads the
+ * pads), and every layer in coveredByMoreThanMenu — dialogs that must be
+ * answered, pickers and placements whose pads mean something else.
+ *
+ * ⭑ MOVE CO-RUN is a screen like the rest (Josh, 2026-10-08): the click is
+ * Move's, so the short one is passed on to Move at the release, and the map
+ * shows over Move's editor (ui_corun.mjs coRunMapScreen). */
 export function bankMapDeferrable() {
     if (S.shiftHeld || S.deleteHeld || S.copyHeld || S.muteHeld || S.loopHeld) return false;
     if (S.knobTouched >= 0 || soundKnobTouched() || S.heldStep >= 0 || S.bankPickerSel >= 0 || S.stepIntervalMode) return false;
-    if (S.moveCoRunTrack >= 0 || S.moveSettingsOpen) return false;
+    if (S.moveSettingsOpen) return false;
+    if (S.moveCoRunTrack >= 0) return true;
     if (S.awaitingProjectSelect || S.stateLoading) return false;
     if (S.projectOpenFailed || S.projectListFailed) return false;
     if (S.backPressTick >= 0) return false;
@@ -1414,6 +1419,9 @@ function bankMapLeaveScreen() {
     if (!S.bankMapFromScreen) return;
     S.bankMapFromScreen = false;
     if (doorScreenUp()) return;
+    /* Out of co-run a pick lands where it points — never back in the sound
+     * menu the co-run was entered from (the Shift+pad hop's rule). */
+    if (S.moveCoRunTrack >= 0) S.moveCoRunOrigin = 'track';
     _tearDownToOverview();
 }
 
@@ -1453,6 +1461,7 @@ export function bankMapRelease() {
 export function bankMapArm() {
     if (S.bankMapUp) return;
     S.bankMapUp = true;
+    coRunMapScreen(true);
     for (const n of Array.from(S.padPhysDown)) {
         _onPadRelease(0x80, n, 0);
         S.bankMapSwallow.add(n);
@@ -1477,6 +1486,7 @@ export function bankMapEnd() {
     S.bankMapLatched = false;
     S.bankMapWasLatched = false;
     if (wasUp) {
+        coRunMapScreen(false);
         computePadNoteMap();
         invalidateLEDCache();
     }
@@ -1510,6 +1520,11 @@ export function bankMapPadTap(note) {
     /* Only a pad that DOES something leaves the screen under the map: the
      * right 4x4 and the dark cells are dead, and a dead tap must cost nothing. */
     if (S.bankMapFromScreen && !bankMapPadActs(note)) return;
+    /* INST in co-run is the screen you are on: nothing to leave for. */
+    if (S.moveCoRunTrack >= 0 && S.bankMapKind !== 'session') {
+        const c = bankMapCellForPad(note);
+        if (c && bankPadMapActionAt(S.trackPadMode[S.activeTrack], c.col, c.row) === 'inst') return;
+    }
     bankMapLeaveScreen();
     /* From an overview a pick moves the bank underneath (the rest walk); from
      * a shown card the card follows, as a turn there does. */

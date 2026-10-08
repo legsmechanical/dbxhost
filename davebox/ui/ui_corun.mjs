@@ -114,7 +114,11 @@ const DAVEBOX_CORUN_KEEP_MASK  = DAVEBOX_CORUN_KEEP_DEFAULT | CORUN_KEEP_BACK_BI
 /* Control-group bits matching Schwung's shadow_constants.h (OLED=0, PADS=1,
  * STEPS=2, TRANSPORT=3, JOG=4, TRACK=5, KNOBS=6, MASTER=7, SHIFT=8, BACK=9,
  * MENU=10, TOUCH=11). */
-const CORUN_GRP_JOG   = 1 << 4;
+/* The jog is two groups (host, 2026-10-08): the turn and the click. */
+const CORUN_GRP_OLED      = 1 << 0;
+const CORUN_GRP_JOG_TURN  = 1 << 4;
+const CORUN_GRP_JOG_CLICK = 1 << 27;
+const CORUN_GRP_JOG       = CORUN_GRP_JOG_TURN | CORUN_GRP_JOG_CLICK;
 const CORUN_GRP_KNOBS = 1 << 6;
 const CORUN_GRP_BACK  = 1 << 9;
 const CORUN_GRP_TOUCH = 1 << 11;
@@ -237,6 +241,31 @@ export function schSlotMasksAllTracks(out) {
  * ROUTE_MOVE rely on the user's trackChannel to address one of Move's
  * 4 tracks — if trackChannel is outside 1-4 we just enter co-run without
  * an auto-tap and let the user pick the Move track manually. */
+/* ⭑ THE BANK MAP IN CO-RUN (Josh, 2026-10-08: "jog-hold map in move co-run").
+ * The jog TURN stays Move's; the CLICK is kept, so it can be timed like a click
+ * on any other screen (bankMapDeferrable): a short one is passed on to Move at
+ * the release (coRunJogClick), a held one is the map — and for as long as the
+ * map is up the SCREEN is kept too, so it shows over Move's editor and Move's
+ * comes back untouched when it goes. */
+function coRunServiceOpts(t, mapUp) {
+    return {
+        track: t,
+        keep_mask: DAVEBOX_CORUN_KEEP_MASK | CORUN_KEEP_BACK_TOP_EXIT | CORUN_GRP_JOG_CLICK |
+                   (mapUp ? CORUN_GRP_OLED : 0),
+        led_keep_mask: DAVEBOX_CORUN_LED_KEEP_MASK,
+    };
+}
+/* The map came up or went away: take the screen, or give it back. */
+export function coRunMapScreen(on) {
+    if (S.moveCoRunTrack < 0) return;
+    host_update_service("move_native", coRunServiceOpts(S.moveCoRunTrack, on));
+}
+/* A jog-click edge that is Move's: every one dAVEBOx sees in co-run and does
+ * not turn into the map. */
+export function coRunJogClick(d2) {
+    move_midi_inject_to_move([0x0B, 0xB0, 3, d2 ? 127 : 0]);
+}
+
 export function enterMoveNativeCoRun(t, origin) {
     /* Track view only (Josh, 2026-08-08) — see openSchwungSlotEditor. */
     if (S.sessionView) {
@@ -278,11 +307,7 @@ export function enterMoveNativeCoRun(t, origin) {
     /* The move_native service's claims carry the whole split, including
      * skip_led_clear (Move's LED passthrough) — derived, and restored by
      * derivation on close. */
-    host_open_service("move_native", {
-        track: t,
-        keep_mask: DAVEBOX_CORUN_KEEP_MASK | CORUN_KEEP_BACK_TOP_EXIT,
-        led_keep_mask: DAVEBOX_CORUN_LED_KEEP_MASK,
-    });
+    host_open_service("move_native", coRunServiceOpts(t, false));
     /* Defer the track-button "press" that lands Move on the device-edit page and
      * makes it repaint its track + knob LEDs. Injecting it immediately fails: Move's
      * repaint lands before the shim's co-run LED passthrough + OLED bypass go live
@@ -341,6 +366,11 @@ function cleanupAfterMoveNativeCoRun() {
      * asked to do (advisor review, 2026-09-29). A release on a Shift that is
      * already up does nothing. */
     move_midi_inject_to_move([0x0B, 0xB0, 49, 0]);
+    /* The jog click is ours to pass on in co-run: a press passed on whose
+     * release now lands outside it must not stay down in Move; and a press
+     * still undecided is nobody's click any more. */
+    move_midi_inject_to_move([0x0B, 0xB0, 3, 0]);
+    if (S.jogDeferred) { S.jogDeferred = false; S.jogPressMs = -1; }
     S.deleteHeld = false; S.muteHeld = false;
     S.copyHeld  = false; S.loopHeld  = false; S.loopJogActive = false; endLoopLatch();
     S.captureHeld = false;
