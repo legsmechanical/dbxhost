@@ -841,6 +841,12 @@ export function updateTrackLEDs() {
             const tc       = trackColor(t);
             const td       = trackDimColor(t);
             const flashDur = 2 * POLL_INTERVAL;
+            /* DRUM LANE (bank 0) wears its own look so it cannot be taken for
+             * ALL LANES: the kit goes grey and only the selected lane keeps
+             * the track's colour, and the velocity pads take the dim track
+             * colour so the two halves still read apart (Josh, 2026-10-08).
+             * Every other bank, ALL LANES included, is unchanged. */
+            const laneLook = S.activeBank === 0 && !_miOv;
             for (let i = 0; i < 32; i++) {
                 const col = i % 8;
                 const row = Math.floor(i / 8);
@@ -863,6 +869,9 @@ export function updateTrackLEDs() {
                         color = isMuted ? DarkGrey : tc;
                     } else if (isMuted) {
                         color = LED_OFF;
+                    } else if (laneLook) {
+                        color = isActive ? (hasHits ? tc : td)
+                                         : (hasHits ? LightGrey : DarkGrey);
                     } else if (isActive) {
                         color = hasHits ? White : DarkGrey;
                     } else if (hasHits) {
@@ -918,7 +927,7 @@ export function updateTrackLEDs() {
                     }
                 } else {
                     const zone = row * 4 + (col - 4);
-                    color = (zone === velZone) ? White : DarkGrey;
+                    color = (zone === velZone) ? White : (laneLook ? td : DarkGrey);
                 }
                 if (_miOv && _miOv[i] != null) color = _miOv[i];
                 cachedSetLED(TRACK_PAD_BASE + i, color);
