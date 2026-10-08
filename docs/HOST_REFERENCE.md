@@ -94,6 +94,30 @@ CC 79 is the host volume knob by default. Modules can claim it via `capabilities
 Pads notes 68–99. Steps notes 16–31. Tracks CCs 40–43 (**reversed**: CC43=Track1, CC40=Track4). Key CCs: 3 (jog click), 14 (jog turn), 49 (shift), 50 (menu), 51 (back), 71–78 (knobs). Notes 0–9: capacitive knob touch (filter if unused).
 
 
+## Bluetooth LE MIDI (`seq-midi-bridge`)
+
+Only where the unit has a Bluetooth controller and BlueZ (a stock Move has neither). `bluetoothd`
+exposes each connected BLE-MIDI device as an ALSA sequencer client; `seq-midi-bridge`
+(`src/host/seq_midi_bridge.c`, started by `standalone/scripts/launch.sh`) owns one duplex sequencer
+port, `Move:External MIDI`, and keeps it subscribed to every client `bluetoothd` owns.
+
+- **Out:** it follows the shim's MIDI_OUT stream (`test-stream-midi-out`, the ring the test daemon
+  reads) with its own cursor and forwards the **cable-2** packets — whatever is leaving on USB-A
+  also leaves over Bluetooth. Readers never write the ring, so the bridge and the test daemon can
+  follow it at once; the bridge re-asserts the ring's `enabled` flag because the daemon clears it.
+- **In:** channel voice messages are pushed into the MIDI inject ring as cable-2 packets through
+  `shadow_midi_inject_push()`, the same entry every other producer uses.
+- Channel voice both ways, plus clock/start/continue/stop outbound. **SysEx is not bridged.**
+- The shim is unchanged. The bridge follows both segments by name and re-attaches when the launcher
+  recreates them; a fresh inject ring is left alone for a second so the shim can initialize it.
+- Pairing is done with `bluetoothctl` on the unit (`scan le`, `pair`, `trust`, `connect`); a trusted
+  device reconnects on its own. `--any-client` bridges every user-space sequencer client, for
+  testing with `aseqdump`/`aplaymidi`.
+
+BLE-MIDI timing follows the connection interval (several milliseconds of jitter): fine for notes
+and controllers, poor as a clock source.
+
+
 ## SPI Protocol
 
 `/dev/ablspi0.0`, 768-byte transfers at 20 MHz, mmap'd to 4096.

@@ -649,6 +649,21 @@ if [ ! -f ./build/host/version.txt ] || [ "$(cat ./build/host/version.txt)" != "
     echo "$BUILD_VERSION" > ./build/host/version.txt
 fi
 
+# Build seq-midi-bridge (external MIDI <-> ALSA sequencer clients, i.e. paired
+# Bluetooth LE MIDI devices). Kernel sequencer UAPI only: no ALSA library.
+if needs_rebuild build/seq-midi-bridge \
+    src/host/seq_midi_bridge.c src/host/seq_midi_bridge.h \
+    src/host/shadow_constants.h src/host/shadow_midi_inject_writer.h; then
+    echo "Building seq-midi-bridge..."
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O2 \
+        src/host/seq_midi_bridge.c \
+        -o build/seq-midi-bridge \
+        -Isrc/host \
+        -lrt || { echo "ERROR: seq-midi-bridge build failed" >&2; exit 1; }
+else
+    echo "Skipping seq-midi-bridge (up to date)"
+fi
+
 # Build display server (live display SSE streaming to browser)
 if needs_rebuild build/display-server \
     src/host/display_server.c src/host/unified_log.c src/host/unified_log.h \
