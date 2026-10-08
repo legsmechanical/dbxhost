@@ -294,9 +294,10 @@ let coRunView = -1;
  * to the editor only when its group CEDES (not kept). The shim owns the same
  * decision for move_native; this mirror is just for the in-process chain editor. */
 const CORUN_GRP_OLED = 1 << 0, CORUN_GRP_PADS = 1 << 1, CORUN_GRP_STEPS = 1 << 2,
-      CORUN_GRP_TRANSPORT = 1 << 3, CORUN_GRP_JOG = 1 << 4, CORUN_GRP_TRACK_BUTTONS = 1 << 5,
+      CORUN_GRP_TRANSPORT = 1 << 3, CORUN_GRP_JOG_TURN = 1 << 4, CORUN_GRP_TRACK_BUTTONS = 1 << 5,
       CORUN_GRP_KNOBS = 1 << 6, CORUN_GRP_MASTER = 1 << 7, CORUN_GRP_SHIFT = 1 << 8,
-      CORUN_GRP_BACK = 1 << 9, CORUN_GRP_MENU = 1 << 10, CORUN_GRP_TOUCH = 1 << 11;
+      CORUN_GRP_BACK = 1 << 9, CORUN_GRP_MENU = 1 << 10, CORUN_GRP_TOUCH = 1 << 11,
+      CORUN_GRP_JOG_CLICK = 1 << 27;   /* the jog is two groups: turn and click */
 const CORUN_KEEP_DEFAULT = CORUN_GRP_PADS | CORUN_GRP_STEPS | CORUN_GRP_TRANSPORT | CORUN_GRP_MENU;
 let coRunKeepMask = 0;  // polled from shadow_control; 0 = default split
 /* True when the tool CEDES this group to the co-run UI (so the editor handles it). */
@@ -663,6 +664,23 @@ globalThis.host_open_service = function(id, opts) {
         runCoRunChainEdit(function() { if (entry.enter) entry.enter(opts); });
         corunOverlayRootView = coRunView;
     }
+    needsRedraw = true;
+    return true;
+};
+
+/* Change the TOP service's opts while it stays open — a session's input split
+ * moving mid-session (a tool taking the screen back for a moment, or one more
+ * control). Fails closed: only the service that is on top, named by id. The
+ * reconcile re-begins the same session with the new masks; nothing is torn
+ * down and onServiceReturn does not fire. */
+globalThis.host_update_service = function(id, opts) {
+    if (!primarySurface || primaryStack.length === 0) return false;
+    const top = primaryStack[primaryStack.length - 1];
+    if (top.id !== id || top.kind !== "session") return false;
+    const entry = PRIMARY_SERVICES[id];
+    top.opts = opts || null;
+    top.claims = (typeof entry.claims === "function") ? entry.claims(opts) : {};
+    reconcilePrimaryClaims();
     needsRedraw = true;
     return true;
 };
@@ -19218,13 +19236,13 @@ globalThis.onMidiMessageInternal = function(data) {
          * editor; at CHAIN_EDIT (the top level) Back is silent so the tool's
          * own exit gesture (e.g. Menu) takes over. */
         if (coRunUiActive() && (status & 0xF0) === 0xB0) {
-            if (d1 === MoveMainKnob && coRunWants(CORUN_GRP_JOG)) {
+            if (d1 === MoveMainKnob && coRunWants(CORUN_GRP_JOG_TURN)) {
                 const delta = decodeDelta(d2);
                 if (delta !== 0) runCoRunChainEdit(function() { handleJog(delta); });
                 needsRedraw = true;
                 return;
             }
-            if (d1 === MoveMainButton && d2 > 0 && coRunWants(CORUN_GRP_JOG)) {
+            if (d1 === MoveMainButton && d2 > 0 && coRunWants(CORUN_GRP_JOG_CLICK)) {
                 /* Mirror the non-overtake Shift+Click handler (line ~15259):
                  * Shift+Click in CHAIN_EDIT → handleShiftSelect (enter
                  * component edit). Plain Click → handleSelect. */

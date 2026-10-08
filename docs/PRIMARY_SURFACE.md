@@ -32,6 +32,7 @@ host_register_primary({        // -> bool: false only on a malformed call
 })
 
 host_open_service(id, opts)    // -> bool: push a host service
+host_update_service(id, opts)  // -> bool; new opts (masks) for the TOP session service, without closing it
 host_close_service(result)     // -> bool: pop the top service; the primary's
                                //   onServiceReturn(id, result) fires
 ```

@@ -39,7 +39,7 @@ framework-reserved as the exit gesture by default; see [Exit gesture](#exit-gest
 | `CORUN_GRP_OLED`  | the screen        | `CORUN_GRP_MUTE`    | Mute (CC 88) |
 | `CORUN_GRP_PADS`  | 32 pads           | `CORUN_GRP_PLAY`    | Play (CC 85) |
 | `CORUN_GRP_STEPS` | 16 step buttons   | `CORUN_GRP_REC`     | Rec (CC 86) |
-| `CORUN_GRP_JOG`   | jog turn + click  | `CORUN_GRP_SAMPLE`  | Record/Sample (CC 118) |
+| `CORUN_GRP_JOG`   | jog turn + click (`CORUN_GRP_JOG_TURN` \| `CORUN_GRP_JOG_CLICK`, keepable separately) | `CORUN_GRP_SAMPLE`  | Record/Sample (CC 118) |
 | `CORUN_GRP_TRACK_BUTTONS` | rows CC 40-43 | `CORUN_GRP_LOOP`  | Loop (CC 58) |
 | `CORUN_GRP_KNOBS` | knobs CC 71-78    | `CORUN_GRP_COPY`    | Copy (CC 60) |
 | `CORUN_GRP_MASTER`| master CC 79      | `CORUN_GRP_DELETE`  | Delete (CC 119) |
@@ -139,6 +139,15 @@ session's whole life. **View addressing** is a layer on top: while a co-run is
 active, a tool can open any **registered** Schwung screen as a temporary
 **overlay** over its current target, and return — without changing `corun.target`,
 so the tool never tears down.
+
+**Taking the screen back inside a `move_native` session.** `CORUN_GRP_OLED` in
+the session's keep mask shows the tool's own frame instead of Move's. A session's
+masks can change while it stays open — `host_update_service('move_native', opts)`
+re-begins the same session with the new masks, nothing torn down — so a tool can
+keep the screen for the length of one gesture and hand it back. The jog is two
+groups for the same reason: keep `CORUN_GRP_JOG_CLICK` and cede
+`CORUN_GRP_JOG_TURN`, and the tool can time the click (and pass a short one on
+with `move_midi_inject_to_move`) while Move keeps scrolling.
 
 Overlays are opened through the primary-surface service stack
 (`host_open_service(id, {keep_mask})` / `host_close_service(result)` — see

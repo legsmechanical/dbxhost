@@ -318,6 +318,10 @@ static JSValue js_shadow_overtake_send_external_async_active(JSContext *ctx, JSV
  *   id       : the target's identity (chain slot or tool track).
  *   keep_mask: bitfield of CORUN_GRP_* the tool KEEPS; the rest cede to the
  *              peer. Omit or 0 = CORUN_KEEP_DEFAULT (default split).
+ *              CORUN_GRP_OLED in a MOVE_NATIVE mask keeps the SCREEN too: the
+ *              tool's frame is shown instead of Move's for as long as the
+ *              bit is set (a re-begin of the same session with a new mask
+ *              takes or returns it without ending the session).
  * Atomicity: keep_mask is written before target so the shim never sees an
  * active target paired with a stale mask. */
 static JSValue js_shadow_corun_begin(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
@@ -346,9 +350,11 @@ static JSValue js_shadow_corun_begin(JSContext *ctx, JSValueConst this_val, int 
         shadow_control->corun.keep_mask = (uint32_t)keep;
         shadow_control->corun.id = (int8_t)id;
         shadow_control->corun.target = CORUN_TARGET_MOVE_NATIVE;
-        /* move_native cedes the OLED to Move firmware. shadow_display_mode
-         * stays armed so MIDI filters remain active. */
-        shadow_control->shadow_display_owner = DISPLAY_OWNER_MOVE_FIRMWARE;
+        /* move_native cedes the OLED to Move firmware unless the tool keeps
+         * it (CORUN_GRP_OLED). shadow_display_mode stays armed so MIDI filters
+         * remain active. */
+        shadow_control->shadow_display_owner = ((uint32_t)keep & CORUN_GRP_OLED)
+            ? DISPLAY_OWNER_SCHWUNG_UI : DISPLAY_OWNER_MOVE_FIRMWARE;
     } else {
         return JS_UNDEFINED;
     }
@@ -3068,6 +3074,8 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JS_SetPropertyStr(ctx, global_obj, "CORUN_GRP_STEPS",         JS_NewInt32(ctx, CORUN_GRP_STEPS));
     JS_SetPropertyStr(ctx, global_obj, "CORUN_GRP_TRANSPORT",     JS_NewInt32(ctx, CORUN_GRP_TRANSPORT));
     JS_SetPropertyStr(ctx, global_obj, "CORUN_GRP_JOG",           JS_NewInt32(ctx, CORUN_GRP_JOG));
+    JS_SetPropertyStr(ctx, global_obj, "CORUN_GRP_JOG_TURN",      JS_NewInt32(ctx, CORUN_GRP_JOG_TURN));
+    JS_SetPropertyStr(ctx, global_obj, "CORUN_GRP_JOG_CLICK",     JS_NewInt32(ctx, CORUN_GRP_JOG_CLICK));
     JS_SetPropertyStr(ctx, global_obj, "CORUN_GRP_TRACK_BUTTONS", JS_NewInt32(ctx, CORUN_GRP_TRACK_BUTTONS));
     JS_SetPropertyStr(ctx, global_obj, "CORUN_GRP_KNOBS",         JS_NewInt32(ctx, CORUN_GRP_KNOBS));
     JS_SetPropertyStr(ctx, global_obj, "CORUN_GRP_MASTER",        JS_NewInt32(ctx, CORUN_GRP_MASTER));

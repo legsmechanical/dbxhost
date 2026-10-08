@@ -45,8 +45,12 @@ static shadow_control_t mk_cede(uint32_t cede_mask, uint8_t extra_flags) {
 
 int main(void) {
     /* ---- 1. Full classifier: every routable input maps to a group ---- */
-    CHECK(corun_group_for_event(CC, 3)   == CORUN_GRP_JOG,           "jog click -> JOG");
-    CHECK(corun_group_for_event(CC, 14)  == CORUN_GRP_JOG,           "jog turn -> JOG");
+    CHECK(corun_group_for_event(CC, 3)   == CORUN_GRP_JOG_CLICK,     "jog click -> JOG_CLICK");
+    CHECK(corun_group_for_event(CC, 14)  == CORUN_GRP_JOG_TURN,      "jog turn -> JOG_TURN");
+    CHECK(CORUN_GRP_JOG == (CORUN_GRP_JOG_TURN | CORUN_GRP_JOG_CLICK), "JOG is both");
+    CHECK(CORUN_GRP_JOG_TURN == (1u << 4), "the turn keeps the bit every older mask used");
+    CHECK((CORUN_GRP_JOG_CLICK & (CORUN_KEEP_BACK | CORUN_KEEP_BACK_TOP_EXIT)) == 0, "click bit is not a flag bit");
+    CHECK(CORUN_GRP_JOG_CLICK < 0x80000000u, "click bit survives a signed JS mask");
     CHECK(corun_group_for_event(CC, 40)  == CORUN_GRP_TRACK_BUTTONS, "row -> TRACK_BUTTONS");
     CHECK(corun_group_for_event(CC, 49)  == CORUN_GRP_SHIFT,         "49 -> SHIFT");
     CHECK(corun_group_for_event(CC, 50)  == CORUN_GRP_MENU,          "50 -> MENU");
@@ -87,6 +91,18 @@ int main(void) {
       CHECK(OWN(c, CC, 88)   == CORUN_OWNER_TOOL, "legacy default: MUTE tool");
       CHECK(OWN(c, CC, 14)   == CORUN_OWNER_PEER, "legacy default: JOG peer");
       CHECK(OWN(c, CC, 71)   == CORUN_OWNER_PEER, "legacy default: KNOBS peer"); }
+    { shadow_control_t c = mk_legacy(0);
+      CHECK(OWN(c, CC, 3)    == CORUN_OWNER_PEER, "legacy default: jog CLICK peer"); }
+    /* 3a'. the jog splits: keep the click, cede the turn — and the reverse */
+    { shadow_control_t c = mk_legacy(CORUN_GRP_PADS | CORUN_GRP_JOG_CLICK);
+      CHECK(OWN(c, CC, 3)    == CORUN_OWNER_TOOL, "keep CLICK: click tool");
+      CHECK(OWN(c, CC, 14)   == CORUN_OWNER_PEER, "keep CLICK: turn peer"); }
+    { shadow_control_t c = mk_legacy(CORUN_GRP_PADS | CORUN_GRP_JOG_TURN);
+      CHECK(OWN(c, CC, 3)    == CORUN_OWNER_PEER, "keep TURN: click peer");
+      CHECK(OWN(c, CC, 14)   == CORUN_OWNER_TOOL, "keep TURN: turn tool"); }
+    { shadow_control_t c = mk_legacy(CORUN_GRP_PADS | CORUN_GRP_JOG);
+      CHECK(OWN(c, CC, 3)    == CORUN_OWNER_TOOL, "keep JOG: click tool");
+      CHECK(OWN(c, CC, 14)   == CORUN_OWNER_TOOL, "keep JOG: turn tool"); }
     /* 3b. legacy explicit keep cedes the unlisted */
     { shadow_control_t c = mk_legacy(CORUN_GRP_PADS | CORUN_GRP_STEPS);
       CHECK(OWN(c, NOTE, 68) == CORUN_OWNER_TOOL, "legacy keep PADS: tool");
@@ -108,6 +124,7 @@ int main(void) {
     /* 4a. cede jog+knobs: those go to peer, everything else (incl. new buttons) kept */
     { shadow_control_t c = mk_cede(CORUN_GRP_JOG | CORUN_GRP_KNOBS, 0);
       CHECK(OWN(c, CC, 14)  == CORUN_OWNER_PEER, "cede {JOG,KNOBS}: JOG peer");
+      CHECK(OWN(c, CC, 3)   == CORUN_OWNER_PEER, "cede {JOG,KNOBS}: jog click peer");
       CHECK(OWN(c, CC, 71)  == CORUN_OWNER_PEER, "cede {JOG,KNOBS}: KNOBS peer");
       CHECK(OWN(c, NOTE,68) == CORUN_OWNER_TOOL, "cede {JOG,KNOBS}: PADS kept");
       CHECK(OWN(c, CC, 50)  == CORUN_OWNER_TOOL, "cede {JOG,KNOBS}: MENU kept");

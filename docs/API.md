@@ -343,6 +343,7 @@ host_send_screenreader(text)  // Same as host_announce_screenreader
 host_register_primary(surface) // -> bool; {id, claims, onServiceReturn}
 host_open_service(id, opts)    // -> bool; push a host service (chain_editor,
                                //    move_native, fx_picker, master_fx, ...)
+host_update_service(id, opts)  // -> bool; new opts (masks) for the TOP session service, without closing it
 host_close_service(result)     // -> bool; pop + onServiceReturn(id, result)
 
 // Shadow control / state queries (shadow_ui only)

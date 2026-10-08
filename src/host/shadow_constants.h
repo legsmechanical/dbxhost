@@ -409,15 +409,22 @@ typedef struct shadow_control_t {
 /* Single discrete buttons each get their own bit; continuous/multi-key surfaces
  * (pads, steps, knobs, touch, the track-button row, jog) are one group each
  * (per-key co-run ownership isn't meaningful). Bit 15 is reserved for the legacy
- * CORUN_KEEP_BACK flag; new button groups skip it and stay <= 25 so the JS-side
- * signed `| 0` coercion never sees a negative mask. */
+ * CORUN_KEEP_BACK flag and bit 26 is CORUN_KEEP_BACK_TOP_EXIT; new groups skip
+ * both and stay <= 30 so the JS-side signed `| 0` coercion never sees a
+ * negative mask. */
 #define CORUN_GRP_OLED          (1u << 0)
 #define CORUN_GRP_PADS          (1u << 1)
 #define CORUN_GRP_STEPS         (1u << 2)
 /* Bit 3 retired: TRANSPORT is now the composite of the real transport buttons
  * (defined below). The old single-bit value is reserved/unused — it was never
  * returned by corun_group_for_event, so nothing routed on it. */
-#define CORUN_GRP_JOG           (1u << 4)  /* jog turn (CC 14) + jog click (CC 3) */
+/* The jog is TWO groups: a tool may keep the click and cede the turn (a click
+ * it wants to time — hold for one thing, tap for another — while the peer keeps
+ * scrolling), or the reverse. CORUN_GRP_JOG is both, and is what every mask
+ * written before the split means: keep it and both stay, omit it and both cede. */
+#define CORUN_GRP_JOG_TURN      (1u << 4)  /* jog turn (CC 14) */
+#define CORUN_GRP_JOG_CLICK     (1u << 27) /* jog click (CC 3) */
+#define CORUN_GRP_JOG           (CORUN_GRP_JOG_TURN | CORUN_GRP_JOG_CLICK)
 #define CORUN_GRP_TRACK_BUTTONS (1u << 5)  /* CC 40-43 */
 #define CORUN_GRP_KNOBS         (1u << 6)  /* CC 71-78 */
 #define CORUN_GRP_MASTER        (1u << 7)  /* CC 79 */
@@ -488,7 +495,8 @@ typedef struct shadow_control_t {
 static inline uint32_t corun_group_for_event(uint8_t type, uint8_t d1) {
     if (type == 0xB0) {
         switch (d1) {
-            case 3:  case 14: return CORUN_GRP_JOG;
+            case 3:  return CORUN_GRP_JOG_CLICK;
+            case 14: return CORUN_GRP_JOG_TURN;
             case 40: case 41: case 42: case 43: return CORUN_GRP_TRACK_BUTTONS;
             case 49: return CORUN_GRP_SHIFT;
             case 50: return CORUN_GRP_MENU;
