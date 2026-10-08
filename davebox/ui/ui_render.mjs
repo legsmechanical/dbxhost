@@ -1074,6 +1074,11 @@ function drawWordmark(mark) {
  * the panel exactly (5 × 11 + 9 = 64). `highlight` is a line index drawn in
  * inverse video — a mode popup's current choice; -1 for none. */
 const CARD_LINE_H = 11, CARD_PAD = 5, CARD_W = 116, CARD_X = 6;
+/* The stock face's capitals are 7 rows on an 11-row line, drawn from the line's
+ * top — so the block sat a row high in its box (4 clear rows above, 6 below).
+ * One row down puts 5 and 5 (Josh, 2026-10-08: "text should be centered
+ * vertically in the pop-up frame"). */
+const CARD_TEXT_DY = 1;
 export function drawNoticeCard(lines, highlight = -1) {
     const n = Math.min(5, lines.length);
     if (!n) return;
@@ -1092,7 +1097,7 @@ export function drawNoticeCard(lines, highlight = -1) {
     for (let i = 0; i < n; i++) {
         const t = String(lines[i]);
         const w = Math.min(CARD_W - 4, text_width(t));
-        const ly = y + CARD_PAD + i * CARD_LINE_H;
+        const ly = y + CARD_PAD + CARD_TEXT_DY + i * CARD_LINE_H;
         const hi = (i === highlight);
         if (hi) fill_rect(CARD_X + 1, ly - 2, CARD_W - 2, CARD_LINE_H, 1);
         print(CARD_X + Math.floor((CARD_W - w) / 2), ly, t, hi ? 0 : 1);
