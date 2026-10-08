@@ -370,6 +370,26 @@ step('⭐ Back that cancels the SAVE AS keyboard does not also step back in the 
         throw new Error('cancelling Save As moved the editor: was ' + before + ', now ' + after);
 });
 
+/* ⚠⚠ THE DEVICE'S ORDER, which the step above cannot produce. On the Move the
+ * keyboard is ONE instance shared with the host, and the host feeds it before
+ * the module: the Back press that cancels the keyboard never reaches dAVEBOx.
+ * Only the release does, with the keyboard already gone — and it was read as a
+ * tap ("back took me from the keyboard to mix bank", device pass 2026-10-07,
+ * reproduced there through the harness). Here the host's half is played by
+ * feeding the keyboard directly. */
+step('⭐⭐ the HOST cancels the keyboard on the press: the lone release that reaches dAVEBOx is not a Back tap', () => {
+    if (TE.isTextEntryActive()) throw new Error('rig: a keyboard is already up');
+    const before = JSON.stringify([snd.soundPPForTest().on, pageName()]);
+    snd.soundQueueActionForTest({ t: 'usrsave' }); ticks(2);
+    if (!TE.isTextEntryActive()) throw new Error('rig: Save As did not open the keyboard');
+    TE.handleTextEntryMidi(new Uint8Array([0xB0, 51, 127]));     /* the host's feed, not ours */
+    if (TE.isTextEntryActive()) throw new Error('rig: the keyboard did not cancel on Back');
+    ticks(8);
+    cc(51, 0); ticks(4);                                         /* all dAVEBOx ever sees */
+    const after = JSON.stringify([snd.soundPPForTest().on, pageName()]);
+    if (after !== before) throw new Error('a Back release with no press left the editor: was ' + before + ', now ' + after);
+});
+
 if (failed) { console.log('FAIL: canvas page door'); process.exit(1); }
 console.log('PASS: an enterable module page is a door in dAVEBOx\'s editor: click enters, the jog and click are the module\'s, Back is the module\'s first');
 }

@@ -10260,9 +10260,22 @@ export function soundOnCC(d1, d2, decodeDelta) {
 
     if (d1 === 51 && d2 < 64) {                        /* back RELEASE = tap */
         const wasHold = GS.backHoldFired;
+        const sawPress = GS.backPressTick >= 0;
         GS.backPressTick = -1;
         GS.backHoldFired = false;
         if (wasHold) return true;                      /* the hold already suspended */
+        /* ⚠⚠ A RELEASE WHOSE PRESS NEVER CAME HERE IS NOT A TAP. On the device
+         * the on-screen keyboard is ONE instance shared with the host, and the
+         * host feeds it first: a Back that cancels the keyboard is consumed
+         * there on the press and this module never sees it — only the release
+         * arrives, with the keyboard already gone. Read as a tap it backed out
+         * of the editor: cancel Save As and you were on the bank you came from
+         * (device, 2026-10-07). The latch in soundOnMidiRaw cannot catch it —
+         * it also needs the press — and no test without the host can either.
+         * Every press this module does see stamps backPressTick (the general
+         * press above, and the editor-layer press), so an unstamped release is
+         * exactly a press somebody else owned. */
+        if (!sawPress) return true;
         /* A hosted canvas gets first refusal on a Back TAP, so its own modal can
          * cancel instead of Back closing the screen out from under an open
          * field. It consumes only when something is open and declines at rest,
