@@ -38,6 +38,9 @@
  * direction to the stream above, and a SEPARATE ring from SHM_SHADOW_MIDI_INJECT
  * on purpose — see the drain in schwung_shim.c's overtake scan. */
 #define SHM_TEST_INJECT_UI SCHWUNG_SHM_PREFIX "test-inject-ui"
+/* Sidecar → shim external MIDI input (ext_midi_in.h). Cable-2 packets that
+ * did not arrive on USB-A, e.g. from a Bluetooth LE MIDI device. */
+#define SHM_EXT_MIDI_IN SCHWUNG_SHM_PREFIX "ext-midi-in"
 #define SHM_DISPLAY_LIVE SCHWUNG_SHM_PREFIX "display-live"    /* Live display for remote viewer */
 #define SHM_SHADOW_PARAM_LANE SCHWUNG_SHM_PREFIX "param-lane"  /* shadow_ui → shim fire-and-forget SET lane (shadow_param_lane.h) */
 #define SHM_WEB_PARAM_SET SCHWUNG_SHM_PREFIX "web-param-set"   /* Web UI → shim param set ring */

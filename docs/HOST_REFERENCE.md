@@ -105,11 +105,15 @@ port, `Move:External MIDI`, and keeps it subscribed to every client `bluetoothd`
   reads) with its own cursor and forwards the **cable-2** packets — whatever is leaving on USB-A
   also leaves over Bluetooth. Readers never write the ring, so the bridge and the test daemon can
   follow it at once; the bridge re-asserts the ring's `enabled` flag because the daemon clears it.
-- **In:** channel voice messages are pushed into the MIDI inject ring as cable-2 packets through
-  `shadow_midi_inject_push()`, the same entry every other producer uses.
+- **In:** channel voice messages are pushed as cable-2 packets into the external MIDI input ring
+  (`ext-midi-in`, `src/host/ext_midi_in.h`). The shim replays each onto the two routes a hardware
+  cable-2 event takes: to the module on screen (the same publish as the hardware scan, so a module
+  receives it as external MIDI), and to Move through the inject ring with the cable-2 channel remap
+  applied — the mailbox MIDI_IN itself cannot be written. Not replayed to chain slots outside
+  overtake.
 - Channel voice both ways, plus clock/start/continue/stop outbound. **SysEx is not bridged.**
-- The shim is unchanged. The bridge follows both segments by name and re-attaches when the launcher
-  recreates them; a fresh inject ring is left alone for a second so the shim can initialize it.
+- The bridge follows both segments by name and re-attaches when the launcher recreates them; a
+  fresh input ring is left alone for a second so the shim can initialize it.
 - Pairing is done with `bluetoothctl` on the unit (`scan le`, `pair`, `trust`, `connect`); a trusted
   device reconnects on its own. `--any-client` bridges every user-space sequencer client, for
   testing with `aseqdump`/`aplaymidi`.

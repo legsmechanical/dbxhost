@@ -8,11 +8,12 @@
  * subscribed to those clients:
  *
  *   out  shim MIDI_OUT stream (cable 2) → sequencer → the device
- *   in   the device → sequencer → MIDI inject ring (cable 2) → MIDI_IN
+ *   in   the device → sequencer → external MIDI input ring (cable 2)
  *
- * It only ever touches shared memory the shim already publishes: it reads
- * the MIDI_OUT stream with a private cursor and pushes into the inject ring
- * through shadow_midi_inject_push(). Nothing here runs on the audio thread.
+ * It only ever touches shared memory the shim publishes: it reads the
+ * MIDI_OUT stream with a private cursor and pushes into the external MIDI
+ * input ring (ext_midi_in.h), which the shim replays to the module on screen
+ * and to Move. Nothing here runs on the audio thread.
  *
  * Talks to /dev/snd/seq directly (kernel UAPI) so the build needs no ALSA
  * library. Linux only.
@@ -43,7 +44,7 @@
 #include "shadow_midi_inject_writer.h"
 
 #define RESCAN_INTERVAL_MS 2000
-#define INJECT_SETTLE_MS   1000   /* a new inject ring is unusable until the shim has initialized it */
+#define INJECT_SETTLE_MS   1000   /* a new input ring is unusable until the shim has initialized it */
 #define POLL_INTERVAL_MS   1
 #define OWNER_COMM         "bluetoothd"
 
@@ -284,7 +285,7 @@ static int seq_event_to_bytes(const struct snd_seq_event *ev, uint8_t out[3])
     }
 }
 
-/* Drain the sequencer fd into the inject ring. */
+/* Drain the sequencer fd into the external MIDI input ring. */
 static void pump_in(shadow_midi_inject_t *inject)
 {
     struct snd_seq_event evs[32];
@@ -346,7 +347,7 @@ int main(int argc, char **argv)
     signal(SIGTERM, on_signal);
 
     shm_ref_t stream_ref = { .name = SHM_TEST_STREAM_MIDI_OUT, .size = sizeof(test_stream_shm_t) };
-    shm_ref_t inject_ref = { .name = SHM_SHADOW_MIDI_INJECT, .size = sizeof(shadow_midi_inject_t) };
+    shm_ref_t inject_ref = { .name = SHM_EXT_MIDI_IN, .size = sizeof(shadow_midi_inject_t) };
 
     if (seq_open() < 0) return 1;
 
