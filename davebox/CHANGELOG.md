@@ -7,6 +7,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.16] — 2026-10-08 (test build, not in the Schwung catalog)
+### Added
+- **Fingers on the Mirror page**, for making videos. The device drawing shows a
+  translucent fingertip on each pad, step, button and knob as it is touched or
+  pressed, fading half a second after you let go. Turning a knob or the jog adds
+  an arrow for the direction; a jog click adds a dot and a spreading ring. The
+  **Fingers** button on the page turns it off.
+
 ### Changed
 - **Shift + a bottom-row pad no longer switches track.** The bank map's track
   pads do that now (hold or click the jog, tap a track); Shift + jog still
