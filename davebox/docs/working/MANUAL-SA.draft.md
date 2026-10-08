@@ -342,8 +342,14 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 - **Click the jog** to open the **bank map**: the left 4×4 pads become a map of
   the track's banks and the screen shows the same map. **Tap a pad** to land on
   that bank, and the map goes. **Click again** (or press **Back**) to put it
-  away without picking. The right 4×4 pads go dark and do nothing while the map
-  is up.
+  away without picking.
+- **The right-hand pads are the tracks** while the map is up (Track View):
+  the top row is tracks 1–4, the next row 5–8, each in its track colour with
+  the track you are on blinking. **Tap one** to switch track — the screen
+  flashes **TRACK n** and what that track plays. On a held map the map stays
+  up, now showing the new track's banks, so the bank you want there is the
+  next tap; on a clicked-open map it closes and you are on the track. The two
+  lower rows are dark and do nothing. Session View's map has no track pads.
 - **Hold the jog** to peek the map instead: it appears the moment you press;
   tap a pad — as many as you like, the map stays while you hold — and **let
   go** to play again. **CONFIG**, **AUTOMATION** and **INST** (and Session
@@ -356,8 +362,10 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
   AUTOMATION screen — **hold the jog** for about a third of a second and the
   same map comes up over it. **Tap a pad** and you leave the screen for that
   bank; **let go** without tapping and the screen is exactly as you left it.
-  A quick click there is still a click (it lands as you let go). The map does
-  not come up over the on-screen keyboard, over a question that needs an
+  A quick click there is still a click (it lands as you let go). This works
+  inside **Move's own editor** for a Move instrument too: the map shows over
+  Move's screen, and Move's editor is back untouched when you let go. The map
+  does not come up over the on-screen keyboard, over a question that needs an
   answer, or while Shift, Delete, Copy, Mute or Loop is held.
 - **Turning the jog** does not change the bank.
 - **Touch the jog** to see the current bank's page while your finger rests on it;
@@ -1723,7 +1731,10 @@ tap **INST** on the bank map — to open Move's own editor for that instrument (
 View only), and work with it as you would on Move.
 
 - Move takes the screen, jog, knobs, **Back**, **Mute** and **Shift** (so
-  **Shift + jog** works in Move's editor); the pads, step buttons and transport stay
+  **Shift + jog** works in Move's editor). **Hold the jog** and the
+  [bank map](#36-parameter-banks) comes up over Move's screen — tap a bank or
+  a track to leave for it, or let go to stay; a quick click is still Move's,
+  landing as you let go; the pads, step buttons and transport stay
   with dAVEBOx, and dAVEBOx's own Shift gestures still work.
 - Press **Back** once you're at the top of Move's editor (the instrument's main
   screen) to come back, **Note/Session** to leave for Session View, or
@@ -2448,7 +2459,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | + / − · Left / Right | Octave · page |
 | Side buttons | Launch the active track's clips (press the playing one to stop it) |
 | Shift + top / bottom side button | Scroll the four visible clips up / down one (the same window for every track) |
-| Jog click / hold | The bank map: click to open it (tap a pad to pick and close; click again or Back to close), hold to peek; INST opens the instrument |
+| Jog click / hold | The bank map: click to open it (tap a pad to pick and close; click again or Back to close), hold to peek (inside a menu, an editor or Move's editor, hold about a third of a second); the top two rows of the right-hand pads switch track; INST opens the instrument |
 | Knob touch + jog click | Switch that knob to its *Alt* (Zoom, Nudge, Reverse Style, Algo, Clock Feedback) · Arp Steps (knob 5) · RPT GROOVE's page (any knob) · a macro's editor |
 | Shift + jog / Shift + bottom pad | Switch tracks |
 | Loop (hold, or tap to keep it up) / Loop + jog | Loop view / clip length |
