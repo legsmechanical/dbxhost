@@ -24,6 +24,13 @@ the section into a versioned heading at release time.
   remembered across launches.
 
 ### Fixed
+- **An exported Live set gives its clips a colour.** Clips were written with no
+  colour, and Live could refuse the bundle with "cannot convert to i: color".
+  Each clip now takes its track's colour.
+- **The quick start matches the device again.** It still described switching
+  track with Shift + a bottom-row pad, opening TRACK CONFIG with Shift +
+  Note/Session, and turning the jog to change bank. All three now go through the
+  bank map.
 - **Capture takes external MIDI on a Move track.** Notes played from an external
   keyboard on a track with a Move instrument were never kept; Capture now takes
   them like notes played on the pads.

@@ -51,16 +51,21 @@ button:
 
 A few things worth knowing before the first lesson:
 
-- **There are no track buttons.** To change the active track, hold **Shift** and
-  turn the **jog wheel**, or in Track View hold **Shift** and tap a pad in the
-  **bottom row** (pads 1–8 = tracks 1–8).
-- **The jog wheel** (the clickable encoder on the left) cycles through *parameter
-  banks* in Track View — this is how you reach the effects and clip settings.
+- **The jog wheel opens the bank map.** In Track View, **click the jog** (the
+  clickable encoder on the left): the left 4×4 pads become a map of the track's
+  *parameter banks* — its effects and clip settings — and the screen shows the
+  same map. **Tap a pad** to go to that bank. Click again, or press **Back**, to
+  put the map away without choosing.
+- **There are no track buttons.** While the bank map is up, the top two rows of
+  the **right-hand pads** are the tracks (1–4, then 5–8), each in its own colour.
+  **Tap one** to switch track. Holding **Shift** and turning the jog also walks
+  through the tracks.
 - **Note/Session is the way home.** From any menu, bank or picker, one press
   brings you back to the view you were in.
 - **Two menus:** **Shift + Step 2** opens **Project Settings** (tempo, key, scale,
-  saving and leaving). **Shift + Note/Session** in Track View opens the active
-  track's **TRACK CONFIG** menu (its instrument, effects and settings).
+  saving and leaving). The active track's **TRACK CONFIG** menu (its instrument,
+  effects and settings) is the **CONFIG** pad on the bank map — the bottom-left
+  pad.
 
 That's enough to begin.
 
@@ -94,8 +99,9 @@ lengths later for polyrhythms. Full detail lives in the manual's
 
 Now let's play some notes on another track.
 
-1. Hold **Shift** and tap the **3rd pad in the bottom row** — you're now on track
-   3, one of Move's polyphonic sounds.
+1. **Click the jog**, then tap the **3rd pad in the top row of the right-hand
+   pads** — you're now on track 3, one of Move's polyphonic sounds. (The screen
+   flashes the track's number and what it plays.)
 2. The pads now play **pitched notes**, snapped to the project's key and scale.
    Tap around to hear them. **+ / −** shifts the octave.
 3. To sequence a note, **hold a pad and tap a step button** — that step gets the
@@ -118,15 +124,16 @@ Every clip carries its own **sequencer effects** — they work on the notes, not
 sound — reached through the parameter banks.
 
 1. Make sure you're on your melodic track (track 3) in Track View.
-2. **Turn the jog wheel** to cycle the banks. Watch the screen header and stop on
-   **DELAY**.
+2. **Click the jog** to open the bank map, and tap the **DELAY** pad — in the
+   **FX** column (the fourth column of pads), third pad down. The screen's map
+   shows which pad is which, and its header then reads **DELAY**.
 3. Turn **knob 3** (*REPTS*) up to **3** — each note now echoes three times.
 4. Turn **knob 5** (*PITFB*) to **+5** — the echoes climb in pitch as they repeat.
 
 These settings belong to *this clip only*. They're non-destructive: they
 transform playback without changing your written notes, so returning a knob to its
 default undoes it cleanly. Explore the other banks (NOTE FX, HARMONY, SEQ ARP) the
-same way — turn the jog, turn the knobs. The
+same way — click the jog, tap a pad, turn the knobs. The
 [Sequencer Effects](MANUAL-SA.md#9-sequencer-effects) chapter covers every one.
 
 ---
@@ -203,8 +210,8 @@ You now know enough to make complete patterns. When you're ready for more:
 - **Choosing sounds** — give tracks 5–8 a Schwung instrument, add audio effects,
   and set levels from each track's TRACK CONFIG menu:
   [Choosing a track's sound](MANUAL-SA.md#38-choosing-a-tracks-sound).
-- **Editing notes precisely** — hold a step and turn the jog right for its note
-  settings (length, velocity, nudge, probability, ratchets):
+- **Editing notes precisely** — hold a step and the knobs act on that step's
+  notes (length, velocity, nudge, probability, ratchets):
   [Editing notes](MANUAL-SA.md#63-editing-notes).
 - **Longer clips and loops** — clips can run up to 256 steps; hold **Loop** in
   Track View to set the loop window: [Clip length & the loop](MANUAL-SA.md#66-clip-length--the-loop).

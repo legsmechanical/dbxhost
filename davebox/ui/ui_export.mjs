@@ -853,6 +853,7 @@ function paStampMixer(mixer, ids) {
     return mixer;
 }
 export function exportStampForTest(mixer, ids) { return paStampMixer(mixer, ids); }
+export function exportTrackForTest(t, ctx) { return buildTrack(t, ctx); }
 /* The test hook is the SAME function the export calls — not a copy of it. A
  * second implementation would pass its pins while the real path drifted. */
 export function exportSchwungNameForTest(mod, internal, rec, patchName, dbName) {
@@ -879,6 +880,11 @@ function buildTrack(t, ctx) {
     const clipSlots = [];
     for (let i = 0; i < EXPORT_SCENES; i++) {
         const clip = isConductor ? null : buildClip(t, i, isDrum, ctx);
+        /* A clip wears its track's colour, as every clip in a set Move writes
+         * does (an integer palette index). It was null, which a real set never
+         * has on a clip -- only on a scene -- and a tester's Live refused the
+         * bundle with "cannot convert to i: color" (2026-10-09). */
+        if (clip) clip.color = r.color;
         if (clip && ctx.paEnvelopes && ctx.paEnvelopes.length) clip.envelopes = ctx.paEnvelopes;
         clipSlots.push({ hasStop: true, clip: clip });
     }
