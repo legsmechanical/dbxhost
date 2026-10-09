@@ -27,7 +27,7 @@ static int sp_track_live(sp_ctx_t *cx) {
     const char *sub = cx->sub;
 
     if (!strcmp(sub, "live_notes")) {
-        /* tN_live_notes "off p ... on p v ... eon p v ... eoff p ..."
+        /* tN_live_notes "off p ... on p v ... eon p v ... eoff p ... con p v ... coff p"
          * Batched live note events processed left-to-right. JS queues all
          * note events from one JS turn into pendingLiveNotes and drains
          * them into a single tN_live_notes payload via a microtask at
@@ -49,13 +49,17 @@ static int sp_track_live(sp_ctx_t *cx) {
          *     reach on_midi — this JS push is the ONLY live path for
          *     them. Always processed, even under inbound. JS only tags
          *     ext for non-ROUTE_MOVE tracks (ROUTE_MOVE ext is played
-         *     natively by Move; the !routeIsMove guards never queue it). */
+         *     natively by Move; the !routeIsMove guards never queue it).
+         *   con/coff — CAPTURE-ONLY. External MIDI on a ROUTE_MOVE track:
+         *     Move sounds it, so the engine must not, but Capture still
+         *     takes it. Goes to the Capture ring and nowhere else. */
         const char *sp = val;
         while (*sp) {
             while (*sp == ' ') sp++;
             if (!*sp) break;
-            int ext = 0;
+            int ext = 0, cap = 0;
             if (sp[0] == 'e') { ext = 1; sp++; }
+            else if (sp[0] == 'c') { cap = 1; sp++; }
             int is_on = -1;
             if (sp[0]=='o' && sp[1]=='n' && (sp[2]==' '||!sp[2]))
                 { is_on = 1; sp += 2; }
@@ -74,10 +78,14 @@ static int sp_track_live(sp_ctx_t *cx) {
                     vel = 0;
                     while (*sp >= '0' && *sp <= '9') { vel = vel * 10 + (*sp++ - '0'); }
                 }
-                if (process)
+                if (cap)
+                    capture_note_only(inst, tr, 1, (uint8_t)pitch, (uint8_t)clamp_i(vel, 1, 127));
+                else if (process)
                     live_note_on(inst, tr, (uint8_t)pitch, (uint8_t)clamp_i(vel, 1, 127));
             } else {
-                if (process)
+                if (cap)
+                    capture_note_only(inst, tr, 0, (uint8_t)pitch, 0);
+                else if (process)
                     live_note_off(inst, tr, (uint8_t)pitch);
             }
         }

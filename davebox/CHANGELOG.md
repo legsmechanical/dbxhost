@@ -23,6 +23,11 @@ the section into a versioned heading at release time.
   unit with a Bluetooth radio). Off powers the radio down; the choice is
   remembered across launches.
 
+### Fixed
+- **Capture takes external MIDI on a Move track.** Notes played from an external
+  keyboard on a track with a Move instrument were never kept; Capture now takes
+  them like notes played on the pads.
+
 ## [0.0.16] — 2026-10-08 (test build, not in the Schwung catalog)
 ### Added
 - **Fingers on the Mirror page**, for making videos. The device drawing shows a

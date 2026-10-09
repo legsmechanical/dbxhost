@@ -1444,8 +1444,9 @@ export function _drainLiveNotes() {
              * never reaches on_midi — the shim blocks non-ROUTE_MOVE cable-2),
              * while plain pad-origin tokens are skipped under dspInboundEnabled
              * (on_midi already dispatched them on the audio thread). */
-            if (e.isOff) parts.push((e.ext ? 'eoff ' : 'off ') + e.pitch);
-            else parts.push((e.ext ? 'eon ' : 'on ') + e.pitch + ' ' + e.vel);
+            const pre = e.cap ? 'c' : e.ext ? 'e' : '';
+            if (e.isOff) parts.push(pre + 'off ' + e.pitch);
+            else parts.push(pre + 'on ' + e.pitch + ' ' + e.vel);
         }
         host_module_set_param('t' + _t + '_live_notes', parts.join(' '));
     }
@@ -1455,6 +1456,13 @@ function queueLiveNoteOn(t, pitch, vel, ext) {
 }
 export function queueLiveNoteOff(t, pitch, ext) {
     pendingLiveNotes[t].push({ isOff: true, pitch, ext: !!ext });
+}
+
+/* A note for the Capture ring ONLY ("con p v" / "coff p"): external MIDI on a
+ * Move-routed track. Move sounds it natively, so it must never go through
+ * liveSendNote -- but Capture takes what was played, whatever played it. */
+export function queueCaptureNote(t, isOff, pitch, vel) {
+    pendingLiveNotes[t].push({ isOff: !!isOff, pitch, vel, cap: true });
 }
 
 /* ext (6th param): true when the note originated from external cable-2 MIDI

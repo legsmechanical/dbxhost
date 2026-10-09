@@ -75,7 +75,7 @@ import { setTrackMute, setTrackSolo, stepHoldCheckpoint } from './ui_editops.mjs
 import { applyTrackConfig,
     refreshSeqNotesIfCurrent,
     syncClipsFromDsp, syncMuteSoloFromDsp, restoreUiSidecar,
-    liveSendNote,
+    liveSendNote, queueCaptureNote,
     _drumRecNoteOns, _drumRecNoteOffs } from './ui_dsp_bridge.mjs';
 import { recordNoteOn, recordNoteOff,
     extHeldNotes, extCountInCapture } from './ui_record.mjs';
@@ -1107,6 +1107,8 @@ function _onMidiExternalImpl(data) {
             S.lastPadVelocity = vel;
             if (!routeIsMove) liveSendNote(t, 0x90, d1, vel, false, true);
             const isSeqEcho = routeIsMove && S.seqActiveNotes.has(d1);
+            /* A Move track sounds the note itself; Capture still takes it. */
+            if (routeIsMove && !isSeqEcho) queueCaptureNote(t, false, d1, vel);
             /* Queue record events regardless of count-in state (pad precedent,
              * ui_input_pads.mjs): the tick flush is gated on !S.recordCountingIn
              * so entries accumulate during count-in and drain at the
@@ -1131,6 +1133,7 @@ function _onMidiExternalImpl(data) {
             const info = extHeldNotes.get(d1);
             const noteTrack = info ? info.track : t;
             if (S.trackRoute[noteTrack] !== 1) liveSendNote(noteTrack, 0x80, d1, 0, false, true);
+            else if (info && !info.echo) queueCaptureNote(noteTrack, true, d1, 0);
             if (info && info.recording && S.recordArmed)
                 _drumRecNoteOffs.push({ track: noteTrack, laneNote: d1, ext: true });
             extHeldNotes.delete(d1);
@@ -1149,6 +1152,8 @@ function _onMidiExternalImpl(data) {
          * for pitches the sequencer is already S.playing — those are echoes, not keyboard input.
          * Preserve any existing recording-active entry so the keyboard gate isn't overwritten. */
         const isSeqEcho = routeIsMove && S.seqActiveNotes.has(d1);
+        /* A Move track sounds the note itself; Capture still takes it. */
+        if (routeIsMove && !isSeqEcho) queueCaptureNote(t, false, d1, vel);
         /* Count-in last-1/8 filter — ext notes never reach the DSP on_midi
          * preroll (Move doesn't echo notes to MIDI_OUT), so gate the capture
          * here; kept notes flush at the count-in->recording transition (~the one). */
@@ -1185,6 +1190,7 @@ function _onMidiExternalImpl(data) {
         const info = extHeldNotes.get(d1);
         const noteTrack = info ? info.track : t;
         if (S.trackRoute[noteTrack] !== 1) liveSendNote(noteTrack, 0x80, d1, 0, false, true);
+        else if (info && !info.echo) queueCaptureNote(noteTrack, true, d1, 0);
         if (info && info.recording) recordNoteOff(d1, true);
         extHeldNotes.delete(d1);
     } else if (msgType === 0xB0 || msgType === 0xD0 || msgType === 0xA0 || msgType === 0xE0) {

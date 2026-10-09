@@ -3711,6 +3711,24 @@ static void live_note_on(seq8_instance_t *inst, seq8_track_t *tr,
     tr->tarp_physical++;
 }
 
+/* A note the engine HEARS but does not play: external MIDI on a Move-routed
+ * track, which Move sounds natively (the engine re-sending it would double the
+ * note and feed the cable-2 echo). It still belongs in the Capture ring --
+ * Capture takes what you just played, whatever played it. Same lane rule as
+ * live_note_on: a drum track keeps only pitches one of its lanes answers to. */
+static void capture_note_only(seq8_instance_t *inst, seq8_track_t *tr,
+                              int is_on, uint8_t pitch, uint8_t vel) {
+    if (tr->pad_mode == PAD_MODE_DRUM) {
+        drum_clip_t *dc = tr->drum_clips[tr->active_clip];
+        if (!dc) return;
+        int l;
+        for (l = 0; l < DRUM_LANES; l++)
+            if (dc->lanes[l].midi_note == pitch) break;
+        if (l == DRUM_LANES) return;
+    }
+    capture_push(inst, tr, is_on ? CAP_EV_NOTE_ON : CAP_EV_NOTE_OFF, pitch, is_on ? vel : 0);
+}
+
 /* Intercept wrapper for live note-off. Removes from TRACK ARP held buffer;
  * when latch=0 and buffer empties, silences arp output. */
 static void live_note_off(seq8_instance_t *inst, seq8_track_t *tr,
