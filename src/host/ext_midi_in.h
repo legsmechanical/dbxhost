@@ -6,13 +6,14 @@
  * hardware cable-2 event takes:
  *
  *   - to the module on screen, through the shadow UI publish, and
- *   - to Move, with the cable-2 channel remap applied.
+ *   - to Move,
+ * both with the cable-2 channel remap applied, as a hardware event has it.
  *
  * Hardware events reach Move in the mailbox itself, which the shim may not
  * write (writing hardware MIDI_IN crashes Move), so the Move leg goes through
- * the MIDI inject ring instead. This header holds the one decision that leg
- * needs — what, if anything, Move should be sent — as a pure function, so it
- * is testable without the shim.
+ * the MIDI inject ring instead. This header holds the decisions the two legs
+ * need — what, if anything, Move should be sent, and on which channel the
+ * module sees the event — as pure functions, testable without the shim.
  *
  * The ring is a shadow_midi_inject_t (shadow_midi_inject_writer.h): producers
  * push, the shim's SPI callback is the single consumer.
@@ -60,6 +61,25 @@ ext_midi_in_for_move(const uint8_t in[4], const schwung_ext_midi_remap_t *remap,
     if (mapped >= 16) return 1;              /* unknown value: passthrough */
     out[1] = (uint8_t)((status & 0xF0) | mapped);
     return 1;
+}
+
+/* What the module on screen should receive for `in`. A hardware event is
+ * published AFTER shim_remap_cable2_channels has rewritten its channel in
+ * place, so a module sees a remapped channel, and the original one only where
+ * the table passes it through or blocks it (a blocked event is left as it
+ * arrived). A sidecar event has to be given the same treatment here, or a
+ * module that filters on the remapped channel — as one does for a track Move
+ * plays — drops every note a Bluetooth keyboard sends while it accepts the
+ * same note from USB. Always fills `out`. */
+static inline void
+ext_midi_in_for_module(const uint8_t in[4], const schwung_ext_midi_remap_t *remap,
+                       int thru_active, uint8_t out[4])
+{
+    out[0] = in[0]; out[1] = in[1]; out[2] = in[2]; out[3] = in[3];
+    if (!remap || !remap->enabled || thru_active) return;
+    uint8_t mapped = remap->remap[in[1] & 0x0F];
+    if (mapped >= 16) return;                /* passthrough, block, unknown */
+    out[1] = (uint8_t)((in[1] & 0xF0) | mapped);
 }
 
 #endif /* EXT_MIDI_IN_H */

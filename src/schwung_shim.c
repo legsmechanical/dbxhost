@@ -9757,10 +9757,10 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
         /* === EXTERNAL MIDI FROM A SIDECAR (ext_midi_in.h) ===
          *
          * Cable-2 packets that did not arrive on USB-A, replayed onto the two
-         * routes a hardware cable-2 event takes. To the module on screen: the
-         * same publish the scan above does, note-ons through the input queue
-         * as there. To Move: through the inject ring with the channel remap
-         * applied, because the mailbox MIDI_IN cannot be written.
+         * routes a hardware cable-2 event takes, each with the channel remap
+         * applied. To the module on screen: the same publish the scan above
+         * does, note-ons through the input queue as there. To Move: through
+         * the inject ring, because the mailbox MIDI_IN cannot be written.
          *
          * Never handed to the overtake DSP as a pad: that is cable 0 only, in
          * the scan above and here.
@@ -9775,17 +9775,22 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                 shadow_midi_inject_pop(ext_midi_in_shm);
                 if (!ext_midi_in_valid(pkt)) continue;
 
+                const schwung_ext_midi_remap_t *remap =
+                    ext_midi_remap_feature_enabled ? ext_midi_remap_shm : NULL;
+
                 if (overtake_mode == 2 && shadow_ui_midi_shm) {
-                    if ((pkt[1] & 0xF0) == 0x90)
-                        shadow_queue_input_led(pkt[0], pkt[1], pkt[2], pkt[3]);
+                    /* On the channel a hardware event would carry by now. */
+                    uint8_t ui[4];
+                    ext_midi_in_for_module(pkt, remap, thru, ui);
+                    if ((ui[1] & 0xF0) == 0x90)
+                        shadow_queue_input_led(ui[0], ui[1], ui[2], ui[3]);
                     else
-                        shadow_ui_midi_publish(pkt[0], pkt[1], pkt[2], pkt[3]);
+                        shadow_ui_midi_publish(ui[0], ui[1], ui[2], ui[3]);
                 }
 
                 uint8_t to_move[4];
                 if (shadow_midi_inject_shm &&
-                    ext_midi_in_for_move(pkt, ext_midi_remap_feature_enabled ? ext_midi_remap_shm : NULL,
-                                         thru, to_move))
+                    ext_midi_in_for_move(pkt, remap, thru, to_move))
                     shadow_midi_inject_push(shadow_midi_inject_shm, to_move);
             }
         }

@@ -108,8 +108,10 @@ port, `Move:External MIDI`, and keeps it subscribed to every client `bluetoothd`
 - **In:** channel voice messages are pushed as cable-2 packets into the external MIDI input ring
   (`ext-midi-in`, `src/host/ext_midi_in.h`). The shim replays each onto the two routes a hardware
   cable-2 event takes: to the module on screen (the same publish as the hardware scan, so a module
-  receives it as external MIDI), and to Move through the inject ring with the cable-2 channel remap
-  applied — the mailbox MIDI_IN itself cannot be written. Not replayed to chain slots outside
+  receives it as external MIDI), and to Move through the inject ring — the mailbox MIDI_IN itself
+  cannot be written. Both legs apply the cable-2 channel remap, because a hardware event is
+  remapped in place before either reader sees it: a module that filters on the remapped channel
+  would otherwise accept a note from USB and drop the same note from Bluetooth. Not replayed to chain slots outside
   overtake.
 - Channel voice both ways, plus clock/start/continue/stop outbound. **SysEx is not bridged.**
 - The bridge follows both segments by name and re-attaches when the launcher recreates them; a

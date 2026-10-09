@@ -84,10 +84,66 @@ static void test_for_move(void)
     CHECK(ext_midi_in_for_move(on, &remap, 0, out) == 1 && out[1] == 0x92);
 }
 
+/* The module must see a sidecar event on the channel a hardware one would
+ * carry by the time it is published: remapped where the table remaps, the
+ * original where it passes through or blocks. */
+static void test_for_module(void)
+{
+    schwung_ext_midi_remap_t remap;
+    memset(&remap, 0, sizeof(remap));
+    memset((void *)remap.remap, EXT_MIDI_REMAP_PASSTHROUGH, 16);
+    uint8_t out[4];
+
+    uint8_t on[4]  = { 0x29, 0x92, 60, 100 };
+    uint8_t off[4] = { 0x28, 0x82, 60, 0 };
+    uint8_t cc[4]  = { 0x2B, 0xB2, 1, 64 };
+
+    /* No table, or a disabled one: unchanged. */
+    ext_midi_in_for_module(on, NULL, 0, out);
+    CHECK(memcmp(out, on, 4) == 0);
+    remap.remap[2] = 5;
+    ext_midi_in_for_module(on, &remap, 0, out);
+    CHECK(memcmp(out, on, 4) == 0);
+
+    /* Enabled: the channel is rewritten, nothing else -- on, off and CC alike. */
+    remap.enabled = 1;
+    ext_midi_in_for_module(on, &remap, 0, out);
+    CHECK(out[0] == 0x29 && out[1] == 0x95 && out[2] == 60 && out[3] == 100);
+    ext_midi_in_for_module(off, &remap, 0, out);
+    CHECK(out[0] == 0x28 && out[1] == 0x85);
+    ext_midi_in_for_module(cc, &remap, 0, out);
+    CHECK(out[1] == 0xB5 && out[2] == 1 && out[3] == 64);
+
+    /* The module and Move agree on the channel of a remapped note. */
+    uint8_t mv[4];
+    ext_midi_in_for_module(on, &remap, 0, out);
+    CHECK(ext_midi_in_for_move(on, &remap, 0, mv) == 1 && mv[1] == out[1]);
+
+    /* MPE passthrough wins, as it does for hardware. */
+    ext_midi_in_for_module(on, &remap, 1, out);
+    CHECK(out[1] == 0x92);
+
+    /* A blocked channel is left as it arrived (hardware leaves it too). */
+    remap.remap[2] = EXT_MIDI_REMAP_BLOCK;
+    ext_midi_in_for_module(on, &remap, 0, out);
+    CHECK(memcmp(out, on, 4) == 0);
+
+    /* A channel the table passes through is untouched. */
+    uint8_t on7[4] = { 0x29, 0x97, 60, 100 };
+    ext_midi_in_for_module(on7, &remap, 0, out);
+    CHECK(out[1] == 0x97);
+
+    /* An unknown table value is a passthrough. */
+    remap.remap[2] = 200;
+    ext_midi_in_for_module(on, &remap, 0, out);
+    CHECK(out[1] == 0x92);
+}
+
 int main(void)
 {
     test_valid();
     test_for_move();
+    test_for_module();
     if (failures) { printf("test_ext_midi_in: %d FAILED\n", failures); return 1; }
     printf("test_ext_midi_in: OK\n");
     return 0;
