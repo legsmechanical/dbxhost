@@ -11,6 +11,7 @@
  *     they cycle through the chord rather than stack on the first tick.
  *  2. the gates are the arp's (each note ends before the next begins), not
  *     the length of the pad hold.
+ *  2b. with latch on, releasing the pads does not cut an arp note short.
  *  3. CONTROL: arp OFF — the same gesture captures the three pad notes.
  *  4. CONTROL: a drum track is not arpeggiated and captures its hit as before.
  */
@@ -77,6 +78,40 @@ int main(void) {
         uint16_t rate = ARP_RATE_TICKS[tr->tarp.rate_idx];
         HX_ASSERT(max_gate <= (uint32_t)rate, "every gate is the arp's, not the length of the pad hold");
         HX_ASSERT(overlap == 0, "each note ends before the next begins");
+    }
+    hx_destroy(h);
+
+    /* ---- 2b. a pad RELEASE does not end an arp note in the take ----
+     * Latch on: the pads come up while the arp plays on. If the release still
+     * fed the ring, its note-off would pair with the arp note of that pitch
+     * sounding at that moment and cut its gate short in the committed clip. */
+    h = rig(1);
+    inst = I(h);
+    tr = &inst->tracks[1];
+    hx_set_param(h, "t1_tarp_latch", "1");
+    HX_ASSERT(tr->tarp_latch, "rig: latch on");
+    live_note_on(inst, tr, 60, 100); live_note_on(inst, tr, 64, 100); live_note_on(inst, tr, 67, 100);
+    {
+        /* Run to the first block where the arp has JUST started a 60. */
+        uint16_t rate = ARP_RATE_TICKS[tr->tarp.rate_idx];
+        uint32_t want_gate = ((uint32_t)rate * (uint32_t)tr->tarp.gate_pct) / 100U;
+        int g = 0, pend0;
+        hx_render(h, 60);
+        while (g++ < 4000 && !(tr->tarp.sounding_active && tr->tarp.sounding_pitch == 60 &&
+                               tr->tarp.gate_remaining + 2 >= want_gate)) hx_render(h, 1);
+        HX_ASSERT(tr->tarp.sounding_active && tr->tarp.sounding_pitch == 60, "rig: caught the arp on a fresh 60");
+        pend0 = capture_pending_for_track(inst, 1);
+        live_note_off(inst, tr, 60); live_note_off(inst, tr, 64); live_note_off(inst, tr, 67);
+        hx_render(h, 200);
+        HX_ASSERT(tr->tarp.held_count == 3, "rig: latch kept the chord after the pads came up");
+        HX_ASSERT(capture_pending_for_track(inst, 1) > pend0, "the arp played on, and Capture kept taking it");
+        hx_set_param(h, "t1_capture_commit", "0");
+        clip_t *c2 = &tr->clips[0];
+        int i, shortest = 1 << 30;
+        for (i = 0; i < c2->note_count; i++)
+            if ((int)c2->notes[i].gate < shortest) shortest = (int)c2->notes[i].gate;
+        HX_ASSERT(c2->note_count > 3, "rig: the take has arp notes");
+        HX_ASSERT(shortest * 2 >= (int)want_gate, "no arp note was cut short by a pad coming up");
     }
     hx_destroy(h);
 
