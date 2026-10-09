@@ -377,6 +377,25 @@ selector, which exec'd our entry, which exec'd the launcher.
   this device does **not** journal, so an earlier failure there left no trace at
   all.
 
+### Quit lands in stock from either door
+
+A boot-door quit execs stock directly (above). A Tools-door quit resumes
+`move-launcher`, whose selector boots the **default** target — stock, unless the
+user picked dAVEBOx in the boot picker, which makes it the default (the picker
+has no boot-once). Then the quit came straight back up in dAVEBOx through the
+boot door: one gesture, two outcomes, depending on how the session had started.
+
+So a Tools-door session dates a marker (`dbx-host/quit-to-stock`) as it ends —
+on a quit and on a refused launch — and a boot-door start that finds one less
+than 30 s old hands its pid to stock's `schwung-entry.sh` instead of starting a
+session. The marker is consumed either way; an old one is only ever stale, so a
+power-on still boots whatever the default says. **The default is never
+written.** `tests/host/test_quit_lands_in_stock.sh` lifts the decision out of
+`launch.sh` and runs it.
+
+⚠ The one cost: choosing dAVEBOx in the picker by hand within 30 s of quitting a
+Tools session lands in stock once. Choosing it again works.
+
 ### The rule that keeps this safe
 
 **Registering never takes the boot.** The installer never writes
