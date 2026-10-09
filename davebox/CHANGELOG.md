@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.17] — 2026-10-09 (test build, not in the Schwung catalog)
 ### Added
 - **Sound on the Mirror page.** Recordings made with **Record** now carry the
   device's sound along with the picture. The page starts muted; **Unmute** plays
@@ -22,6 +24,11 @@ the section into a versioned heading at release time.
 - **Bluetooth On/Off** in the settings menu, after Move Settings (only on a
   unit with a Bluetooth radio). Off powers the radio down; the choice is
   remembered across launches.
+
+### Changed
+- **The launch screen reads "Schwung base: 1.7.3".** It still said 1.5.0, though
+  this build has been brought up to 1.7.3. Modules that ask for a 1.6 or 1.7
+  host now load.
 
 ### Fixed
 - **An exported Live set gives its clips a colour.** Clips were written with no
