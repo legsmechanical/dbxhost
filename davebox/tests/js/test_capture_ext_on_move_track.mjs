@@ -9,7 +9,7 @@ import './_bulk_get_stub.mjs';
  * is read back.
  *   Move track     → "con p v" / "coff p": capture-only, never played.
  *   CONTROL: a Schwung track → "eon" / "eoff": played (and captured) as before.
- *   A note the sequencer is sounding on a Move track is its echo, not playing.
+ *   A note played into a held step is an edit and is not taken.
  */
 let failed = 0;
 function ok(label) { console.log(`  ok   — ${label}`); }
@@ -72,13 +72,22 @@ step('a Move track: a chord arrives as one write, in order', () => {
     is(live(1), 'con 60 100 con 64 90 con 67 80', 'chord');
     ext(0x80, 60, 0); ext(0x80, 64, 0); ext(0x80, 67, 0); ticks(1);
 });
-step('a Move track: a note the sequencer is sounding is its echo — not captured, on or off', () => {
+step('a Move track: a note played in unison with the playing clip is still captured', () => {
     sets.length = 0;
     S.seqActiveNotes.add(72);
     ext(0x90, 72, 100); ticks(1);
     ext(0x80, 72, 0); ticks(1);
     S.seqActiveNotes.delete(72);
-    is(live(1), '', 'echo');
+    is(live(1), 'con 72 100 | coff 72', 'unison');
+});
+step('a Move track: a note played into a HELD step is an edit, not a take', () => {
+    sets.length = 0;
+    S.heldStep = 3; S.shiftHeld = false;
+    ext(0x90, 67, 100); ticks(1);
+    S.heldStep = -1;
+    ext(0x80, 67, 0); ticks(1);
+    is(live(1), '', 'held-step entry');
+    assert(sets.some(([k]) => /_step_3_toggle$/.test(k)), 'control: the note did edit the held step');
 });
 step('a Move track: a pitch a pad is already sounding is not captured a second time', () => {
     sets.length = 0;

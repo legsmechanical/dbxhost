@@ -1074,14 +1074,19 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
 };
 
 
-/* Whether an external note on a Move track goes to the Capture ring. Not when
- * it is the sequencer's own note coming back, not when a pad is already
- * sounding that pitch (the engine has captured that press itself), and not on
- * the armed track -- recording owns that input, the ring would refuse it, and
- * a second write in the same tick is one more thing for the record write to
- * share a buffer with. */
-function extCaptureWanted(t, pitch, isSeqEcho) {
-    if (S.trackRoute[t] !== 1 || isSeqEcho) return false;
+/* Whether an external note on a Move track goes to the Capture ring.
+ *   - Not while a step is held: that note is an EDIT of the step, and taking
+ *     it too would leave the Capture button blinking after every step edit.
+ *   - Not when a pad is already sounding that pitch: the engine captured that
+ *     press itself.
+ *   - Not on the armed track: recording owns that input, and the ring would
+ *     refuse it anyway.
+ * ⚠ No sequencer-echo test here, unlike recording's. Move does not send its
+ * notes back (the engine's on_midi comment records the device diagnosis), so
+ * that test could only ever drop a note played in unison with the clip. */
+function extCaptureWanted(t, pitch) {
+    if (S.trackRoute[t] !== 1) return false;
+    if (S.heldStep >= 0 && !S.shiftHeld && !S.sessionView) return false;
     if (S.liveActiveNotes.has(pitch)) return false;
     return !(S.recordArmed && t === S.recordArmedTrack);
 }
@@ -1119,7 +1124,7 @@ function _onMidiExternalImpl(data) {
             if (!routeIsMove) liveSendNote(t, 0x90, d1, vel, false, true);
             const isSeqEcho = routeIsMove && S.seqActiveNotes.has(d1);
             /* A Move track sounds the note itself; Capture still takes it. */
-            const capOnly = extCaptureWanted(t, d1, isSeqEcho);
+            const capOnly = extCaptureWanted(t, d1);
             if (capOnly) queueCaptureNote(t, false, d1, vel);
             /* Queue record events regardless of count-in state (pad precedent,
              * ui_input_pads.mjs): the tick flush is gated on !S.recordCountingIn
@@ -1165,7 +1170,7 @@ function _onMidiExternalImpl(data) {
          * Preserve any existing recording-active entry so the keyboard gate isn't overwritten. */
         const isSeqEcho = routeIsMove && S.seqActiveNotes.has(d1);
         /* A Move track sounds the note itself; Capture still takes it. */
-        const capOnly = extCaptureWanted(t, d1, isSeqEcho);
+        const capOnly = extCaptureWanted(t, d1);
         if (capOnly) queueCaptureNote(t, false, d1, vel);
         /* Count-in last-1/8 filter — ext notes never reach the DSP on_midi
          * preroll (Move doesn't echo notes to MIDI_OUT), so gate the capture
