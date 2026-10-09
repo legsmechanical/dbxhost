@@ -2044,6 +2044,24 @@ static void capture_push(seq8_instance_t *inst, seq8_track_t *tr,
     }
 }
 
+/* A note whose length is known when it starts -- a Note Repeat hit. Its
+ * note-off is stamped `gate` ticks ahead so the take holds the note at that
+ * length, however long the pad stays down. (The commit pairs an on with the
+ * next off of its pitch, so the off must sit right behind it in the ring.) */
+static void capture_push_gated(seq8_instance_t *inst, seq8_track_t *tr,
+                               uint8_t pitch, uint8_t vel, uint16_t gate) {
+    capture_push(inst, tr, CAP_EV_NOTE_ON, pitch, vel);
+    /* Refused (armed, count-in, tempo selector)? Then the ring's newest event
+     * is not this note, and no off is owed. */
+    if (inst->cap_count == 0) return;
+    cap_ev_t *on = &inst->cap_ring[(inst->cap_head + inst->cap_count - 1) % CAP_MAX_EVENTS];
+    if (on->type != CAP_EV_NOTE_ON || on->a != pitch || on->frame != inst->rui_frames ||
+        on->track != (uint8_t)(tr - inst->tracks)) return;
+    capture_push(inst, tr, CAP_EV_NOTE_OFF, pitch, 0);
+    cap_ev_t *off = &inst->cap_ring[(inst->cap_head + inst->cap_count - 1) % CAP_MAX_EVENTS];
+    if (off->type == CAP_EV_NOTE_OFF && off->a == pitch) off->abs_tick += gate;
+}
+
 /* Count buffered capture events for one track (notes + CC). Drives the
  * Capture-button LED and the JS tap-context decision (capture vs bake). */
 static int capture_pending_for_track(seq8_instance_t *inst, int tidx) {
@@ -3437,6 +3455,12 @@ static void drum_repeat_tick(seq8_instance_t *inst, seq8_track_t *tr) {
               }
             }
             drum_pfx_note_on(inst, tr, &tr->drum_lane_pfx[lane], pitch, (uint8_t)vel);
+            /* NOTE REPEAT IS AN INPUT STAGE, like LIVE ARP (Josh, 2026-10-09:
+             * "drum repeat ... it's also an INPUT modifier"): Capture takes
+             * each repeated hit, as Record does just below. A lane pad held
+             * for a repeat never reaches live_note_on, so without this the
+             * take held nothing at all. Same fixed length Record writes. */
+            capture_push_gated(inst, tr, pitch, (uint8_t)vel, (uint16_t)GATE_TICKS);
             /* Record into sequencer if armed.
              * First fire on a new lane-step this pass: write-once-across-passes
              * (existing semantic). Subsequent fires on the same lane-step
@@ -3588,6 +3612,8 @@ static void drum_repeat2_tick(seq8_instance_t *inst, seq8_track_t *tr) {
               }
             }
             drum_pfx_note_on(inst, tr, &tr->drum_lane_pfx[l], pitch, (uint8_t)vel);
+            /* Capture takes each repeated hit -- see drum_repeat_tick. */
+            capture_push_gated(inst, tr, pitch, (uint8_t)vel, (uint16_t)GATE_TICKS);
             if (tr->recording) {
                 int ac = (int)tr->active_clip;
                 clip_t *rlc = &tr->drum_clips[ac]->lanes[l].clip;

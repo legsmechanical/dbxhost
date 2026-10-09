@@ -801,7 +801,7 @@ dAVEBOx is always listening: play something, then tap **Capture** to keep it.
   into the clip.
 - That includes notes from an external MIDI keyboard or controller.
 - With **LIVE ARP** on, what is kept is the arpeggio you heard, not the pads
-  you held — the same as recording.
+  you held; with **Note Repeat**, each repeated hit — the same as recording.
 - Knob moves are held too, and land as [automation](#10-automation).
 - The Capture button blinks white while there's something to keep.
 

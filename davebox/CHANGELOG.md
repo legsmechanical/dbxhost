@@ -8,9 +8,10 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Fixed
-- **Capture keeps what LIVE ARP played.** With LIVE ARP on, Capture kept the
-  pads you held instead of the arpeggiated notes you heard. It now keeps the
-  arp's notes, as recording already did.
+- **Capture keeps what LIVE ARP and Note Repeat played.** With LIVE ARP on,
+  Capture kept the pads you held instead of the arpeggiated notes you heard,
+  and it kept nothing at all from a drum lane played with Note Repeat. It now
+  keeps the arp's notes and each repeated hit, as recording already did.
 
 ## [0.0.17] — 2026-10-09 (test build, not in the Schwung catalog)
 ### Added
