@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Changed
+- **The launch question looks like dAVEBOx.** Choosing dAVEBOx in Schwung's
+  Tools menu asked "Move will restart" in Schwung's plain overlay. It now uses
+  dAVEBOx's own dialog: a header, the message, and No / Yes buttons. Yes is
+  already highlighted, so one click still launches; turn the jog to No, or
+  press Back, to cancel.
 
 ## [0.0.17] — 2026-10-09 (test build, not in the Schwung catalog)
 ### Added
