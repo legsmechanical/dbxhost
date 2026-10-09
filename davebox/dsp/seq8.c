@@ -2059,7 +2059,15 @@ static void capture_push_gated(seq8_instance_t *inst, seq8_track_t *tr,
         on->track != (uint8_t)(tr - inst->tracks)) return;
     capture_push(inst, tr, CAP_EV_NOTE_OFF, pitch, 0);
     cap_ev_t *off = &inst->cap_ring[(inst->cap_head + inst->cap_count - 1) % CAP_MAX_EVENTS];
-    if (off->type == CAP_EV_NOTE_OFF && off->a == pitch) off->abs_tick += gate;
+    if (off->type == CAP_EV_NOTE_OFF && off->a == pitch) {
+        /* Both clocks: a take made while playing measures in ticks, one made
+         * stopped in frames (that path sets the tempo from them). */
+        double bpm = (double)tr->pfx.cached_bpm;
+        if (bpm < 20.0 || bpm > 400.0) bpm = 120.0;
+        off->abs_tick += gate;
+        off->frame    += (uint64_t)((double)gate * (double)inst->sample_rate * 60.0
+                                    / (bpm * (double)(4 * TICKS_PER_STEP)) + 0.5);
+    }
 }
 
 /* Count buffered capture events for one track (notes + CC). Drives the
