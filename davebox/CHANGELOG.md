@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed
+- **Capture keeps what LIVE ARP played.** With LIVE ARP on, Capture kept the
+  pads you held instead of the arpeggiated notes you heard. It now keeps the
+  arp's notes, as recording already did.
 
 ## [0.0.17] — 2026-10-09 (test build, not in the Schwung catalog)
 ### Added

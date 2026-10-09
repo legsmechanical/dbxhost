@@ -3137,9 +3137,21 @@ static void drum_repeat_init_defaults(seq8_track_t *tr) {
 
 /* Silence TRACK ARP sounding note (via immediate note-off through the chain)
  * and reset runtime state. */
+/* CAPTURE TAKES WHAT LIVE ARP PLAYS, NOT WHAT FEEDS IT (Josh, 2026-10-09:
+ * "capture doesn't actually capture the arpeggiated notes, just what the pads
+ * play"). Record already works that way -- tarp_fire_step writes the arp's own
+ * notes into the clip -- and Capture is Record after the fact, so it has to
+ * agree. With the arp on, the ring is fed from the arp's note-ons and the
+ * moments its notes end (the four places that clear sounding_active), and
+ * live_note_on/off stop feeding it the held pads. */
+static void tarp_capture_off(seq8_instance_t *inst, seq8_track_t *tr) {
+    capture_push(inst, tr, CAP_EV_NOTE_OFF, tr->tarp.sounding_pitch, 0);
+}
+
 static void tarp_silence(seq8_instance_t *inst, seq8_track_t *tr) {
     arp_engine_t *a = &tr->tarp;
     if (a->sounding_active) {
+        tarp_capture_off(inst, tr);
         pfx_note_off_imm(inst, tr, a->sounding_pitch);
         a->sounding_active = 0;
     }
@@ -3191,6 +3203,7 @@ static void tarp_drop_latched(seq8_instance_t *inst, seq8_track_t *tr) {
         /* Physical pads remain → silence current sounding note;
          * tarp_tick re-fires from the compacted buffer next tick. */
         if (a->sounding_active) {
+            tarp_capture_off(inst, tr);
             pfx_note_off_imm(inst, tr, a->sounding_pitch);
             a->sounding_active = 0;
         }
@@ -3658,13 +3671,15 @@ static void live_note_on(seq8_instance_t *inst, seq8_track_t *tr,
         }
         return; /* no matching lane — drop silently */
     }
-    capture_push(inst, tr, CAP_EV_NOTE_ON, pitch, vel);
     if (!tr->tarp_on) {
+        capture_push(inst, tr, CAP_EV_NOTE_ON, pitch, vel);
         inst->emit_bypass_swing = 1;
         pfx_note_on(inst, tr, pitch, vel);
         inst->emit_bypass_swing = 0;
         return;
     }
+    /* LIVE ARP on: Capture takes the arp's notes, not the pads feeding it
+     * (tarp_capture_off has the why). */
     if (tr->tarp_latch && tr->tarp_physical == 0) {
         /* New chord gesture (first pad press after all pads released, latch on).
          * With retrigger on, replace the latched buffer entirely; with retrigger
@@ -3733,7 +3748,9 @@ static void capture_note_only(seq8_instance_t *inst, seq8_track_t *tr,
  * when latch=0 and buffer empties, silences arp output. */
 static void live_note_off(seq8_instance_t *inst, seq8_track_t *tr,
                           uint8_t pitch) {
-    capture_push(inst, tr, CAP_EV_NOTE_OFF, pitch, 0);
+    /* The arp's notes end where the arp ends them, not on the pad release. */
+    if (tr->pad_mode == PAD_MODE_DRUM || !tr->tarp_on)
+        capture_push(inst, tr, CAP_EV_NOTE_OFF, pitch, 0);
     if (tr->pad_mode == PAD_MODE_DRUM) {
         inst->emit_bypass_swing = 1;
         drum_lane_note_off_imm(inst, tr, pitch);
@@ -3939,6 +3956,7 @@ static void tarp_fire_step(seq8_instance_t *inst, seq8_track_t *tr) {
     }
 
     if (a->sounding_active) {
+        tarp_capture_off(inst, tr);
         pfx_note_off_imm(inst, tr, a->sounding_pitch);
         a->sounding_active = 0;
     }
@@ -3968,6 +3986,8 @@ static void tarp_fire_step(seq8_instance_t *inst, seq8_track_t *tr) {
     if (v < 1)   v = 1;
     if (v > 127) v = 127;
 
+    /* Capture takes this note, as Record does below (see tarp_capture_off). */
+    capture_push(inst, tr, CAP_EV_NOTE_ON, pitch, (uint8_t)v);
     /* Emit through pfx chain (NOTE FX → HARMZ → MIDI DLY → SEQ ARP). */
     pfx_note_on(inst, tr, pitch, (uint8_t)v);
 
@@ -4071,6 +4091,7 @@ static void tarp_tick(seq8_instance_t *inst, seq8_track_t *tr) {
     if (a->sounding_active && a->gate_remaining > 0) {
         a->gate_remaining--;
         if (a->gate_remaining == 0) {
+            tarp_capture_off(inst, tr);
             pfx_note_off_imm(inst, tr, a->sounding_pitch);
             a->sounding_active = 0;
         }
