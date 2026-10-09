@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.18] — 2026-10-09 (test build, not in the Schwung catalog)
 ### Changed
 - **The launch question looks like dAVEBOx.** Choosing dAVEBOx in Schwung's
   Tools menu asked "Move will restart" in Schwung's plain overlay. It now uses
