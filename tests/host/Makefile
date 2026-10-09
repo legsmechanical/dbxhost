@@ -62,6 +62,8 @@ TARGETS = $(BUILD_DIR)/test_project_path \
           $(BUILD_DIR)/test_ui_midi_policy \
           $(BUILD_DIR)/test_ui_midi_ring_order \
           $(BUILD_DIR)/test_midi_inject_writer \
+          $(BUILD_DIR)/test_seq_midi_bridge \
+          $(BUILD_DIR)/test_ext_midi_in \
           $(BUILD_DIR)/test_sa_master_volume \
           $(BUILD_DIR)/test_spawn_command \
           $(BUILD_DIR)/test_stipple \
@@ -205,6 +207,12 @@ $(BUILD_DIR)/test_move_clock_setting: test_move_clock_setting.c ../../src/host/m
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_move_settings_text: test_move_settings_text.c ../../src/host/move_settings_text.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_ext_midi_in: test_ext_midi_in.c ../../src/host/ext_midi_in.h ../../src/host/shadow_constants.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_seq_midi_bridge: test_seq_midi_bridge.c ../../src/host/seq_midi_bridge.h ../../src/host/shadow_constants.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) $< -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_corun_back_top: test_corun_back_top.c ../../src/host/corun_back_top.h | $(BUILD_DIR)

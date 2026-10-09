@@ -359,7 +359,7 @@ setsid --wait bash -c '
   # (NOTE for editors: this whole session body is ONE single-quoted bash -c
   # string -- a bare apostrophe anywhere in it, even in a comment, ends the
   # string and the script stops parsing.)
-  SWEEP_NAMES="MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber schwung-manager display-server"
+  SWEEP_NAMES="MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui link-subscriber schwung-manager display-server seq-midi-bridge"
   # ⚠⚠ ENTRY: AT BOOT, MoveLauncher IS OUR OWN SUPERVISOR — NEVER SWEEP IT.
   # The unit is Type=simple / KillMode=process / Restart=on-failure with
   # RestartSec=2s. MoveLauncher is still the unit main process when the selector
@@ -374,7 +374,7 @@ setsid --wait bash -c '
   # `Move` goes too: /opt/move/Move is the selector, our own ancestor image.
   SWEEP_WAIT_NAMES="MoveMessageDisplay MoveLauncher Move MoveOriginal schwung shadow_ui"
   if at_boot; then
-    SWEEP_NAMES="MoveMessageDisplay MoveOriginal schwung shadow_ui link-subscriber schwung-manager display-server"
+    SWEEP_NAMES="MoveMessageDisplay MoveOriginal schwung shadow_ui link-subscriber schwung-manager display-server seq-midi-bridge"
     SWEEP_WAIT_NAMES="MoveMessageDisplay MoveOriginal schwung shadow_ui"
     echo "boot entry: MoveLauncher and Move held OUT of the sweep (they are our own supervisor)"
   fi
@@ -642,6 +642,18 @@ setsid --wait bash -c '
       "$DBX_DIR/display-server" >/dev/null 2>&1 &
       echo "started display-server ($!)"
     fi
+    # The Bluetooth radio follows the saved menu choice, and the menu row
+    # shows only where a controller exists. Backgrounded: powering the radio
+    # can take a second and nothing here waits on it.
+    if [ -f "$DBX_DIR/scripts/bluetooth-cmd.sh" ]; then
+      sh "$DBX_DIR/scripts/bluetooth-cmd.sh" apply >/dev/null 2>&1 &
+    fi
+    # Paired Bluetooth LE MIDI devices <-> external MIDI. Idle
+    # until bluetoothd exposes a device as a sequencer port. Kept off core 3.
+    if [ -x "$DBX_DIR/seq-midi-bridge" ] && [ -e /dev/snd/seq ]; then
+      taskset 0x7 "$DBX_DIR/seq-midi-bridge" >/dev/null 2>&1 &
+      echo "started seq-midi-bridge ($!)"
+    fi
   }
   start_manager
 
@@ -724,12 +736,12 @@ setsid --wait bash -c '
       # Same name list as the session entry above. schwung-manager dies here
       # too — its SHM mappings would otherwise outlive the wipe below and keep
       # pointing at deleted segments; the browser reconnects to the fresh one.
-      for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager display-server; do
+      for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager display-server seq-midi-bridge; do
         pids=$(pidof $name 2>/dev/null || true)
         [ -n "$pids" ] && kill $pids 2>/dev/null || true
       done
       sleep 1
-      for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager display-server; do
+      for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager display-server seq-midi-bridge; do
         pids=$(pidof $name 2>/dev/null || true)
         [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
       done
@@ -843,12 +855,12 @@ setsid --wait bash -c '
   # processes after a session ended via Shift+Back).
   # schwung-manager included: ours must release :7700 (and its SHM mappings)
   # before the stock shim-entrypoint starts the stock manager.
-  for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager display-server; do
+  for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager display-server seq-midi-bridge; do
     pids=$(pidof $name 2>/dev/null || true)
     [ -n "$pids" ] && kill $pids 2>/dev/null || true
   done
   sleep 1
-  for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager display-server; do
+  for name in MoveMessageDisplay Move schwung shadow_ui link-subscriber schwung-manager display-server seq-midi-bridge; do
     pids=$(pidof $name 2>/dev/null || true)
     [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
   done

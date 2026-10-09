@@ -649,6 +649,21 @@ if [ ! -f ./build/host/version.txt ] || [ "$(cat ./build/host/version.txt)" != "
     echo "$BUILD_VERSION" > ./build/host/version.txt
 fi
 
+# Build seq-midi-bridge (external MIDI <-> ALSA sequencer clients, i.e. paired
+# Bluetooth LE MIDI devices). Kernel sequencer UAPI only: no ALSA library.
+if needs_rebuild build/seq-midi-bridge \
+    src/host/seq_midi_bridge.c src/host/seq_midi_bridge.h \
+    src/host/shadow_constants.h src/host/shadow_midi_inject_writer.h; then
+    echo "Building seq-midi-bridge..."
+    "${CROSS_PREFIX}gcc" ${SCHWUNG_CFLAGS} -g -O2 \
+        src/host/seq_midi_bridge.c \
+        -o build/seq-midi-bridge \
+        -Isrc/host \
+        -lrt || { echo "ERROR: seq-midi-bridge build failed" >&2; exit 1; }
+else
+    echo "Skipping seq-midi-bridge (up to date)"
+fi
+
 # Build display server (live display SSE streaming to browser)
 if needs_rebuild build/display-server \
     src/host/display_server.c src/host/unified_log.c src/host/unified_log.h \
@@ -707,6 +722,9 @@ mkdir -p ./build/scripts
 if [ -d ./standalone ]; then
     cp ./standalone/scripts/quiesce-stock.sh ./build/scripts/
     cp ./standalone/scripts/exit-to-stock.sh ./build/scripts/
+    # bluetooth-cmd.sh: the radio on/off behind the menu's Bluetooth row, and
+    # the launch-time apply. Does nothing on a unit with no controller.
+    cp ./standalone/scripts/bluetooth-cmd.sh ./build/scripts/
     # blank-leds.py: writes every LED dark at launch, through the shadow-UI
     # MIDI-out ring. A runtime dependency of quiesce-stock.sh, which blanks
     # while STOCK still owns the surface — the only window where the write
@@ -781,7 +799,8 @@ if [ -d ./standalone ]; then
     chmod +x ./build/scripts/quiesce-stock.sh ./build/scripts/exit-to-stock.sh \
              ./build/scripts/set-swap.sh ./build/scripts/project-cmd.sh \
              ./build/scripts/select-list.sh ./build/scripts/select-hook.sh \
-             ./build/scripts/move-loaded-set-reader.sh ./build/scripts/reap-session.sh
+             ./build/scripts/move-loaded-set-reader.sh ./build/scripts/reap-session.sh \
+             ./build/scripts/bluetooth-cmd.sh
     # The template project every standalone workspace seeds from (correctly
     # wired at birth — see the generator's header). Generated, not checked in,
     # so the pristine fixture stays the single source.

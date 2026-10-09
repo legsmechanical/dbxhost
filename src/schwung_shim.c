@@ -55,6 +55,7 @@
 #include "host/shadow_param_lane.h"
 #include "host/shadow_param_lane_policy.h"   /* spl_key_eligible: what a module may set from render */
 #include "host/shadow_test_stream.h"
+#include "host/ext_midi_in.h"
 #include "host/shadow_chain_types.h"
 #include "host/unified_log.h"
 #include "host/shim_thread.h"
@@ -3577,6 +3578,7 @@ static shadow_midi_inject_t *shadow_midi_inject_shm = NULL;  /* MIDI inject into
  * only below — so with no daemon running it costs one atomic load per frame and
  * changes nothing. */
 static shadow_midi_inject_t *test_inject_ui_shm = NULL;
+static shadow_midi_inject_t *ext_midi_in_shm = NULL;   /* ext_midi_in.h */
 static schwung_ext_midi_remap_t *ext_midi_remap_shm = NULL;  /* Cable-2 channel remap table */
 
 static uint32_t last_screenreader_sequence = 0;  /* Track last spoken message */
@@ -4094,6 +4096,14 @@ static void init_shadow_shm(void)
                                                                 sizeof(shadow_midi_inject_t), 1, 1);
     if (test_inject_ui_shm) {
         shadow_midi_inject_init(test_inject_ui_shm);
+    }
+
+    /* Create/open the external MIDI input ring (sidecar → shim). Same ring
+     * type and one-time init again. */
+    ext_midi_in_shm = (shadow_midi_inject_t *)shadow_shm_map(SHM_EXT_MIDI_IN,
+                                                             sizeof(shadow_midi_inject_t), 1, 1);
+    if (ext_midi_in_shm) {
+        shadow_midi_inject_init(ext_midi_in_shm);
     }
 
     /* Create/open cable-2 channel remap shared memory (active overtake module writes,
@@ -9741,6 +9751,42 @@ static void shim_post_transfer(void *ctx, uint8_t *shadow, const uint8_t *hw, in
                         overtake_dsp_fx->on_midi(overtake_dsp_fx_inst, msg, 3,
                                                  MOVE_MIDI_SOURCE_INTERNAL);
                 }
+            }
+        }
+
+        /* === EXTERNAL MIDI FROM A SIDECAR (ext_midi_in.h) ===
+         *
+         * Cable-2 packets that did not arrive on USB-A, replayed onto the two
+         * routes a hardware cable-2 event takes. To the module on screen: the
+         * same publish the scan above does, note-ons through the input queue
+         * as there. To Move: through the inject ring with the channel remap
+         * applied, because the mailbox MIDI_IN cannot be written.
+         *
+         * Never handed to the overtake DSP as a pad: that is cable 0 only, in
+         * the scan above and here.
+         *
+         * Realtime: as the test-bus drain above — one relaxed load when empty,
+         * lock-free peek/pop/push on preallocated rings, bounded. */
+        if (ext_midi_in_shm) {
+            uint8_t pkt[4];
+            int budget = 16;
+            const int thru = any_thru_slot_active();
+            while (budget-- > 0 && shadow_midi_inject_peek(ext_midi_in_shm, pkt)) {
+                shadow_midi_inject_pop(ext_midi_in_shm);
+                if (!ext_midi_in_valid(pkt)) continue;
+
+                if (overtake_mode == 2 && shadow_ui_midi_shm) {
+                    if ((pkt[1] & 0xF0) == 0x90)
+                        shadow_queue_input_led(pkt[0], pkt[1], pkt[2], pkt[3]);
+                    else
+                        shadow_ui_midi_publish(pkt[0], pkt[1], pkt[2], pkt[3]);
+                }
+
+                uint8_t to_move[4];
+                if (shadow_midi_inject_shm &&
+                    ext_midi_in_for_move(pkt, ext_midi_remap_feature_enabled ? ext_midi_remap_shm : NULL,
+                                         thru, to_move))
+                    shadow_midi_inject_push(shadow_midi_inject_shm, to_move);
             }
         }
 
