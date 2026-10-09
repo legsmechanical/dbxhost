@@ -570,7 +570,7 @@ function trackInput(now) {
     const key = (t === 0x90 ? 'n' : 'c') + d1;
     if (!SPOT[key]) continue;
     seenAt[key] = now;
-    if (key === 'c3' && !isHeld.c3) clickAt = now;
+    if (key === 'c3') clickAt = now;       /* a press event is a press, held before or not */
   }
   lastEvCount = count;
   for (const key of SPOT_KEYS) {
