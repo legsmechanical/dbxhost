@@ -76,6 +76,46 @@ case "${1:-}" in
     *)      echo "unknown argument: $1 (expected --boot or nothing)"; exit 2 ;;
 esac
 
+# ══ QUIT ALWAYS LANDS IN STOCK ═══════════════════════════════════════════════
+#
+# Quitting a Tools-door session resumes move-launcher, whose selector then
+# boots the DEFAULT target. That is stock unless the user has picked dAVEBOx in
+# the boot picker -- which makes it the default, the picker has no boot-once --
+# and then the quit came straight back up in dAVEBOx through this door, while a
+# quit from a boot-door session (which execs stock directly, below) went to
+# Move. Same gesture, two outcomes (Josh, 2026-10-09: "sometimes quit restarts
+# to move and sometimes it restarts to davebox").
+#
+# So a Tools-door session leaves a dated marker as it ends, and a boot-door
+# start that finds a FRESH one is that quit coming round: it hands the pid to
+# stock, exactly as the boot exit at the bottom of this file does, and does not
+# start a session. The marker is consumed either way, and an old one is only
+# ever stale -- a power-on long after still boots whatever the default says.
+#
+# ⚠ The DEFAULT IS NEVER WRITTEN. That file is the user's choice and the
+# selector's to keep; this only declines one start.
+# ⚠ Before the signal-mask pass below: stock gets the process the selector
+# would have given it, nothing of ours applied.
+# QTS-BEGIN
+_qts=/data/UserData/dbx-host/quit-to-stock
+_qts_stock=/data/UserData/schwung/schwung-entry.sh
+_qts_log=/data/UserData/dbx-host/launch.log
+_qts_window=30
+if [ "$_dbx_entry" = boot ] && [ -f "$_qts" ]; then
+    _qts_then="$(head -n 1 "$_qts" 2>/dev/null)"
+    rm -f "$_qts"
+    case "$_qts_then" in ''|*[!0-9]*) _qts_then=0 ;; esac
+    _qts_age=$(( $(date +%s) - _qts_then ))
+    if [ "$_qts_age" -ge 0 ] && [ "$_qts_age" -le "$_qts_window" ] && [ -x "$_qts_stock" ]; then
+        exec >>"$_qts_log" 2>&1
+        echo "$(date +%H:%M:%S) boot entry: a Tools-door quit ${_qts_age}s ago -- handing the pid to stock, not starting a session"
+        exec "$_qts_stock"
+    fi
+elif [ "$_dbx_entry" = tools ]; then
+    rm -f "$_qts"
+fi
+# QTS-END
+
 # ⚠ AN INHERITED SIGNAL MASK THAT BLOCKS TERM. MoveLauncher runs with TERM (and
 # INT, USR1) blocked -- so does the MoveOriginal it starts -- and a blocked mask
 # survives fork AND exec, so at the BOOT door every process below inherited it.
@@ -237,6 +277,9 @@ setsid --wait bash -c '
     # start a SECOND MoveLauncher alongside the one we are running inside.
     # Exiting is the restore path at boot: systemd re-runs the unit and the
     # selector boots the default target.
+    # A refused Tools launch must fall back to stock too, not come round as a
+    # boot-door session: date it like a quit (QUIT ALWAYS LANDS IN STOCK).
+    at_boot || date +%s > "$DBX_DIR/quit-to-stock" 2>/dev/null || true
     unit --resume-launcher || true
     exit 1
   }
@@ -942,6 +985,10 @@ setsid --wait bash -c '
   # ⚠ If dAVEBOx is ever MADE the default, that changes: quitting would boot
   # dAVEBOx again, and the only way out is the ~2 s Back window the selector offers.
   # That is the real cost of defaulting, and it is a separate decision.
+  # A Tools-door session is ending: date the quit, so that if the selector now
+  # starts dAVEBOx (it is the default) the boot door hands on to stock instead.
+  # See QUIT ALWAYS LANDS IN STOCK at the top of this file.
+  at_boot || date +%s > "$DBX_DIR/quit-to-stock" 2>/dev/null || true
   if at_boot; then
     # ENTRY: the body just ends. The OUTER script — the pid MoveLauncher is
     # watching — hands itself back to the selector; see the exec at the very

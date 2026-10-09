@@ -31,6 +31,10 @@ the section into a versioned heading at release time.
   track with Shift + a bottom-row pad, opening TRACK CONFIG with Shift +
   Note/Session, and turning the jog to change bank. All three now go through the
   bank map.
+- **Quit always returns to Move.** With dAVEBOx chosen in the boot picker (which
+  makes it the boot default), quitting a session started from the Tools menu
+  came straight back up in dAVEBOx, while quitting one started at boot went to
+  Move. Both now go to Move. The boot default itself is left alone.
 - **Capture takes external MIDI on a Move track.** Notes played from an external
   keyboard on a track with a Move instrument were never kept; Capture now takes
   them like notes played on the pads.
