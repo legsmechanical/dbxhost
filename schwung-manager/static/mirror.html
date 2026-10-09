@@ -745,40 +745,68 @@ let audioDelay = 0, audioPrimed = false, listening = false;
 let nextTime = 0, expectPos = -1;
 const muteBtn = document.getElementById('mute');
 
-let audioStarting = null;
-function ensureAudio() {
-  if (audioOn || audioBroken) return Promise.resolve(audioOn);
-  if (!audioStarting) audioStarting = startAudio().catch(() => false).then(ok => {
-    audioStarting = null;
-    if (!ok) { audioBroken = true; muteBtn.disabled = true; muteBtn.title = 'This browser cannot play the stream'; return false; }
-    audioOn = true;
-    flushLater();
-    connect();                       /* now ask for `pcm` */
-    return true;
-  });
-  return audioStarting;
-}
-
-async function startAudio() {
+/* Starting the context. On iOS (every browser there is WebKit) a context only
+ * starts from a real activation: `click`, `touchend`, `pointerup`, a key --
+ * NOT `pointerdown`, which fires first. Asked to resume outside one, it stays
+ * suspended and the promise stays pending rather than failing. So nothing
+ * here waits on one attempt or gives up after it: the graph is built once,
+ * every gesture asks again, and the stream is asked for `pcm` when the context
+ * reports that it is running. iOS also suspends it in the background; the
+ * next gesture brings it back the same way. */
+let audioWaiters = [];
+function buildAudio() {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return false;
-  try { actx = new AC({ sampleRate: 44100, latencyHint: 'interactive' }); } catch (_) { actx = new AC(); }
+  try { actx = new AC({ sampleRate: 44100, latencyHint: 'interactive' }); }
+  catch (_) { try { actx = new AC(); } catch (_) { actx = null; return false; } }
   bus = actx.createGain();
   listenGain = actx.createGain();
   listenGain.gain.value = listening ? 1 : 0;
   bus.connect(listenGain).connect(actx.destination);
   if (actx.createMediaStreamDestination) { recDest = actx.createMediaStreamDestination(); bus.connect(recDest); }
-  await actx.resume();
-  return actx.state === 'running';
+  actx.addEventListener('statechange', audioState);
+  return true;
+}
+let audioRan = false;
+function audioState() {
+  if (!actx) return;
+  if (actx.state !== 'running') { audioRan = false; return; }
+  if (!audioRan) { audioRan = true; nextTime = 0; }   /* the queue is stale after a suspend */
+  if (!audioOn) {
+    audioOn = true;
+    flushLater();
+    connect();                           /* now ask for `pcm` */
+  }
+  for (const w of audioWaiters.splice(0)) w(true);
+}
+/* Asks the context to run; safe to call from every gesture. Resolves true if
+ * sound is running, or becomes so within `waitMs`; false otherwise. */
+function ensureAudio(waitMs) {
+  if (audioBroken) return Promise.resolve(false);
+  if (!actx && !buildAudio()) {
+    audioBroken = true; muteBtn.disabled = true; muteBtn.title = 'This browser cannot play the stream';
+    return Promise.resolve(false);
+  }
+  if (actx.state === 'running') { audioState(); return Promise.resolve(true); }
+  try { const r = actx.resume(); if (r && r.then) r.then(audioState, () => {}); } catch (_) {}
+  if (!waitMs) return Promise.resolve(false);   /* asked; audioState() finishes the job */
+  return new Promise(res => {
+    audioWaiters.push(res);
+    setTimeout(() => {
+      const i = audioWaiters.indexOf(res);
+      if (i >= 0) { audioWaiters.splice(i, 1); res(false); }
+    }, waitMs);
+  });
 }
 
-muteBtn.addEventListener('click', async () => {
+muteBtn.addEventListener('click', () => {
   listening = !listening;
   muteBtn.textContent = listening ? 'Mute' : 'Unmute';
   muteBtn.classList.toggle('on', listening);
-  if (await ensureAudio()) listenGain.gain.value = listening ? 1 : 0;
+  ensureAudio();
+  if (listenGain) listenGain.gain.value = listening ? 1 : 0;
 });
-for (const ev of ['pointerdown', 'keydown'])
+for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'])
   window.addEventListener(ev, () => { ensureAudio(); }, { capture: true, passive: true });
 
 function pcmEvent(data) {
@@ -883,7 +911,7 @@ let recorder = null, chunks = [], recKind = 'both';
 const recBtn = document.getElementById('rec');
 recBtn.addEventListener('click', async () => {
   if (recorder) { recorder.stop(); return; }
-  await ensureAudio();               /* recordings always carry the sound */
+  await ensureAudio(600);            /* recordings always carry the sound; never hang on it */
   if (!window.MediaRecorder || !out.captureStream) { recBtn.textContent = 'Record unsupported'; return; }
   recKind = what.value;
   composite(recKind);
