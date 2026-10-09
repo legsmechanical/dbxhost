@@ -80,6 +80,22 @@ step('a Move track: a note the sequencer is sounding is its echo — not capture
     S.seqActiveNotes.delete(72);
     is(live(1), '', 'echo');
 });
+step('a Move track: a pitch a pad is already sounding is not captured a second time', () => {
+    sets.length = 0;
+    S.liveActiveNotes.add(65);
+    ext(0x90, 65, 100); ticks(1);
+    S.liveActiveNotes.delete(65);
+    ext(0x80, 65, 0); ticks(1);
+    is(live(1), '', 'pad-held pitch');
+});
+step('a Move track that is armed: recording owns the input, nothing goes to Capture', () => {
+    sets.length = 0;
+    S.recordArmed = true; S.recordArmedTrack = 1;
+    ext(0x90, 62, 100); ticks(1);
+    ext(0x80, 62, 0); ticks(1);
+    S.recordArmed = false; S.recordArmedTrack = -1;
+    assert(!/con |coff /.test(live(1)), 'capture tokens were sent: "' + live(1) + '"');
+});
 step('CONTROL: a Schwung track plays the note, as before (eon / eoff)', () => {
     S.trackRoute[1] = 0; sets.length = 0;
     ext(0x90, 60, 100); ticks(1);

@@ -1074,6 +1074,17 @@ function _dispatchBelowJogRouter(data, status, d1, d2) {
 };
 
 
+/* Whether an external note on a Move track goes to the Capture ring. Not when
+ * it is the sequencer's own note coming back, not when a pad is already
+ * sounding that pitch (the engine has captured that press itself), and not on
+ * the armed track -- recording owns that input, the ring would refuse it, and
+ * a second write in the same tick is one more thing for the record write to
+ * share a buffer with. */
+function extCaptureWanted(t, pitch, isSeqEcho) {
+    if (S.trackRoute[t] !== 1 || isSeqEcho) return false;
+    if (S.liveActiveNotes.has(pitch)) return false;
+    return !(S.recordArmed && t === S.recordArmedTrack);
+}
 globalThis.onMidiMessageExternal = function (data) { try { _onMidiExternalImpl(data); } catch (e) { captureError('onMidiExternal', e); } };
 function _onMidiExternalImpl(data) {
     const status  = data[0] | 0;
@@ -1108,7 +1119,8 @@ function _onMidiExternalImpl(data) {
             if (!routeIsMove) liveSendNote(t, 0x90, d1, vel, false, true);
             const isSeqEcho = routeIsMove && S.seqActiveNotes.has(d1);
             /* A Move track sounds the note itself; Capture still takes it. */
-            if (routeIsMove && !isSeqEcho) queueCaptureNote(t, false, d1, vel);
+            const capOnly = extCaptureWanted(t, d1, isSeqEcho);
+            if (capOnly) queueCaptureNote(t, false, d1, vel);
             /* Queue record events regardless of count-in state (pad precedent,
              * ui_input_pads.mjs): the tick flush is gated on !S.recordCountingIn
              * so entries accumulate during count-in and drain at the
@@ -1128,12 +1140,12 @@ function _onMidiExternalImpl(data) {
                     S.pendingDrumLaneResyncLane  = recLane;
                 }
             }
-            extHeldNotes.set(d1, { track: t, recording: recCap, echo: isSeqEcho });
+            extHeldNotes.set(d1, { track: t, recording: recCap, echo: isSeqEcho, cap: capOnly });
         } else if (msgType === 0x80 || (msgType === 0x90 && d2 === 0)) {
             const info = extHeldNotes.get(d1);
             const noteTrack = info ? info.track : t;
             if (S.trackRoute[noteTrack] !== 1) liveSendNote(noteTrack, 0x80, d1, 0, false, true);
-            else if (info && !info.echo) queueCaptureNote(noteTrack, true, d1, 0);
+            else if (info && info.cap) queueCaptureNote(noteTrack, true, d1, 0);
             if (info && info.recording && S.recordArmed)
                 _drumRecNoteOffs.push({ track: noteTrack, laneNote: d1, ext: true });
             extHeldNotes.delete(d1);
@@ -1153,7 +1165,8 @@ function _onMidiExternalImpl(data) {
          * Preserve any existing recording-active entry so the keyboard gate isn't overwritten. */
         const isSeqEcho = routeIsMove && S.seqActiveNotes.has(d1);
         /* A Move track sounds the note itself; Capture still takes it. */
-        if (routeIsMove && !isSeqEcho) queueCaptureNote(t, false, d1, vel);
+        const capOnly = extCaptureWanted(t, d1, isSeqEcho);
+        if (capOnly) queueCaptureNote(t, false, d1, vel);
         /* Count-in last-1/8 filter — ext notes never reach the DSP on_midi
          * preroll (Move doesn't echo notes to MIDI_OUT), so gate the capture
          * here; kept notes flush at the count-in->recording transition (~the one). */
@@ -1162,7 +1175,7 @@ function _onMidiExternalImpl(data) {
         if (recCap) recordNoteOn(d1, vel, t, true);
         const prevInfo = extHeldNotes.get(d1);
         if (!prevInfo || !prevInfo.recording || !isSeqEcho) {
-            extHeldNotes.set(d1, { track: t, recording: recCap, echo: isSeqEcho });
+            extHeldNotes.set(d1, { track: t, recording: recCap, echo: isSeqEcho, cap: capOnly });
         }
         if (S.heldStep >= 0 && !S.shiftHeld && !S.sessionView) {
             const ac = effectiveClip(t);
@@ -1190,7 +1203,7 @@ function _onMidiExternalImpl(data) {
         const info = extHeldNotes.get(d1);
         const noteTrack = info ? info.track : t;
         if (S.trackRoute[noteTrack] !== 1) liveSendNote(noteTrack, 0x80, d1, 0, false, true);
-        else if (info && !info.echo) queueCaptureNote(noteTrack, true, d1, 0);
+        else if (info && info.cap) queueCaptureNote(noteTrack, true, d1, 0);
         if (info && info.recording) recordNoteOff(d1, true);
         extHeldNotes.delete(d1);
     } else if (msgType === 0xB0 || msgType === 0xD0 || msgType === 0xA0 || msgType === 0xE0) {
