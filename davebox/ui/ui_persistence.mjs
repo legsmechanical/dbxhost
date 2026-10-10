@@ -1,4 +1,5 @@
 import { chordSidecar } from './ui_chord_pads.mjs';
+import { customSidecar } from './ui_custom_chords.mjs';
 import * as os from 'os';
 import { S } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
@@ -396,6 +397,7 @@ export function writeSidecar() {
 
 /* The UI sidecar, as an object: everything writeSidecar writes, read off S. */
 export function sidecarObject() {
+    const _cus = customSidecar();
     return {
         v: 9, at: S.activeTrack, ac: S.trackActiveClip.slice(), sv: S.sessionView ? 1 : 0,
         dl: S.activeDrumLane.slice(),
@@ -416,6 +418,9 @@ export function sidecarObject() {
         /* The Piano layout (additive on v:9, like pchr). */
         ppno: S.padLayoutPiano.map(function(b) { return b ? 1 : 0; }),
         chd: chordSidecar(),
+        /* The Custom layout (additive on v:9): which tracks are on it, each
+         * track's eight chords, and the chord row's octave. */
+        pcus: _cus.pcus, cch: _cus.cch, cco: _cus.cco,
         /* The macro store, per track: eight MAPPINGS or null (see
          * ui_state.trackMacros) — `{v, legs:[leg,…]}`, a leg being a typed
          * target plus lo/hi. Additive on v:9: absent → unseeded, and ui_sound
@@ -451,7 +456,7 @@ export function sidecarObject() {
  * either KEPT from this project or set to a fresh project's value.
  * tests/js/test_template_sidecar.mjs pins that every field is one or the
  * other, and the defaults against a fresh S. */
-export const TEMPLATE_SIDECAR_KEPT = ['v', 'am', 'pchr', 'pchd', 'ppno', 'mac', 'mcv', 'cpg', 'upr', 'bm'];
+export const TEMPLATE_SIDECAR_KEPT = ['v', 'am', 'pchr', 'pchd', 'ppno', 'pcus', 'mac', 'mcv', 'cpg', 'upr', 'bm'];
 export function sidecarDefaults() {
     const z8 = () => new Array(NUM_TRACKS).fill(0);
     return {
@@ -463,6 +468,8 @@ export function sidecarDefaults() {
         to: new Array(NUM_TRACKS).fill(DEFAULT_TRACK_OCTAVE),
         tab: z8(),
         chd: new Array(NUM_TRACKS).fill(null),
+        cch: new Array(NUM_TRACKS).fill(null),
+        cco: z8(),
     };
 }
 /* A BRAND-NEW project's whole sidecar: what a pristine S writes, field by field
@@ -478,6 +485,7 @@ export function freshSidecar() {
     out.pchr = new Array(NUM_TRACKS).fill(0);
     out.pchd = new Array(NUM_TRACKS).fill(0);
     out.ppno = new Array(NUM_TRACKS).fill(0);
+    out.pcus = new Array(NUM_TRACKS).fill(0);
     out.mac  = new Array(NUM_TRACKS).fill(null);
     out.mcv  = Array.from({ length: NUM_TRACKS }, () => ({}));
     out.cpg  = Array.from({ length: NUM_TRACKS }, () => Array.from({ length: NUM_CLIPS }, () => [-1, -1, -1]));
