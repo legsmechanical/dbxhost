@@ -29,6 +29,15 @@ int    shadow_transport_source(void);                /* active transport_src_t *
  * params (e.g. a free-running LFO) hold the stopped transport's tempo instead
  * of snapping back to the Set/default tempo. bpm 0 / source NONE = never run. */
 float  shadow_transport_last_bpm(void);
+
+/* The internal source's DECLARED tempo: a sequencer that runs its own clock
+ * knows its tempo exactly, and says so, instead of leaving the host to measure
+ * it from block-quantized ticks (which swings a couple of BPM about the true
+ * value) or to know nothing at all while that sequencer is stopped. 0 (or
+ * anything under 20) withdraws it. Applies to the internal source only — a
+ * running Move transport is still measured. Survives stop; cleared by init. */
+void   shadow_transport_declare_bpm(float bpm);
+float  shadow_transport_declared_bpm(void);          /* 0 = none declared */
 int    shadow_transport_last_source(void);
 
 #endif /* SHADOW_TRANSPORT_H */

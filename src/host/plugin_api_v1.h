@@ -206,6 +206,17 @@ typedef struct move_host_ext_v1 {
      * a key this entry does not carry, key or value too long). A refusal
      * changes nothing. */
     int (*set_slot_param)(int slot, const char *key, const char *value);
+
+    /* Declare the caller's own tempo, for a module that runs its own clock
+     * (it sends Start / Clock / Stop through midi_send_internal). get_bpm()
+     * then answers with exactly this — playing or stopped — instead of a
+     * tempo measured from those ticks, which is block-quantized and unknown
+     * until the first Start. Call it when the tempo changes; pass 0 to
+     * withdraw (e.g. while following Move's clock, which the host measures
+     * itself). A running Move transport still takes precedence. Callable from
+     * render_block or set_param; it stores one value. The host withdraws it
+     * when the module is unloaded. */
+    void (*set_tempo)(float bpm);
 } move_host_ext_v1_t;
 
 typedef void (*move_plugin_host_ext_v1_fn)(const move_host_ext_v1_t *ext);

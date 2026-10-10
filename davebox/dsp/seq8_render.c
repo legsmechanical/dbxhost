@@ -102,6 +102,13 @@ static void slot_clock_send(uint8_t rt) {
         g_host->midi_send_internal(msg, 4);
     }
 }
+/* Once per block: tell the host db's tempo when it changes. */
+static inline void slot_tempo_declare(seq8_instance_t *inst) {
+    const float bpm = inst->clock_follow_on ? 0.0f : (float)inst->tracks[0].pfx.cached_bpm;
+    if (bpm == inst->declared_bpm) return;
+    inst->declared_bpm = bpm;
+    if (g_ext && g_ext->set_tempo) g_ext->set_tempo(bpm);
+}
 /* Once per block, before the tick loops: Start on the play edge, Stop on the
  * stop edge (and when follow takes over mid-play). */
 static inline void slot_clock_edges(seq8_instance_t *inst) {
@@ -249,7 +256,8 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
      * done here so the staging ring keeps its one producer. */
     pa_release_service(inst);
 
-    /* The slots' transport follows db's own. */
+    /* The slots' transport follows db's own, and the host knows its tempo. */
+    slot_tempo_declare(inst);
     slot_clock_edges(inst);
 
     /* Clock OUT transport edges (0xFA/0xFC). Emitted once per block from the

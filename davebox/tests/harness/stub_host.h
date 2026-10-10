@@ -40,6 +40,9 @@ int                   hx_stub_count_kind(hx_midi_kind k);
  * HX_PARAM_SET event; hx_stub_ext_refuse(1) makes it return 0 and record
  * nothing, as a host that refused the key would. */
 const move_host_ext_v1_t *hx_stub_ext(void);
+/* set_tempo: the last tempo the module declared (-1 = never), and how often. */
+float hx_stub_ext_tempo(void);
+int   hx_stub_ext_tempo_calls(void);
 void                      hx_stub_ext_refuse(int on);
 
 /* Config + introspection. */

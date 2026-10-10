@@ -1070,6 +1070,11 @@ typedef struct {
      * transport reaches the slots from the host then. */
     uint8_t  slot_clock_phase;        /* 0xF8 divider, as clock_send_phase */
     uint8_t  slot_clock_running;      /* Start sent, Stop not yet */
+    /* db's tempo as last declared to the host (the extension's set_tempo), so
+     * a module asking the host for the tempo gets db's — exactly, and while
+     * stopped too. 0 = none: while following Move (the host measures Move's
+     * clock), and before the first block. */
+    float    declared_bpm;
     /* MovePlay (CC 85) inject state machine — fired from render_block (NOT
      * set_param: a set_param-context inject is unreliable). follow_play_request
      * is the desired Move transport; the drain compares it against

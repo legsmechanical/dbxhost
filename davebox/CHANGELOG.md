@@ -13,6 +13,10 @@ the section into a versioned heading at release time.
   never started, because dAVEBOx sent its Start, clock and Stop only to
   external gear. Pressing Play now starts them, and Stop stops them. Tempo-
   synced LFOs on an instrument follow dAVEBOx's transport the same way.
+- **Instruments and effects sync to dAVEBOx's tempo.** Tempo-synced arps,
+  delays and LFOs inside an instrument (TinyK's arp, Vesper) used the Move
+  Set's tempo instead of dAVEBOx's BPM. They now get dAVEBOx's tempo exactly,
+  whether it is playing or stopped. In Clock Follow they follow Move, as before.
 
 
 ## [0.0.18] — 2026-10-09 (test build, not in the Schwung catalog)

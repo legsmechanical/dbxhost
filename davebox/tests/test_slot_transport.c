@@ -7,7 +7,11 @@
  * through host->midi_send_internal, as [0x0F, status, 0, 0].
  *
  * While db FOLLOWS Move's clock, Move's own transport reaches the slots from
- * the host; db sending too would double it. */
+ * the host; db sending too would double it.
+ *
+ * And db DECLARES its tempo to the host (the extension's set_tempo), so a
+ * module that asks the host for the tempo gets db's exactly — stopped or
+ * playing — instead of one measured from those block-quantized clocks. */
 #include "harness.h"
 
 static int is_rt(const hx_midi_event *e, int status) {
@@ -42,9 +46,21 @@ int main(void) {
     /* Stopped: nothing. A clock with no Start would read as a running
      * transport to the host. */
     hx_clear_capture(h);
+    HX_ASSERT(hx_stub_ext_tempo_calls() == 0, "setup: a tempo was declared before any block");
     hx_render(h, 200);
     HX_ASSERT(count_any_rt() == 0, "transport sent to the slots while stopped");
     printf("  ok   — stopped: no Start, no clock\n");
+
+    /* ...but the host already knows the tempo, and is told once, not per block. */
+    HX_ASSERT(hx_stub_ext_tempo() == 120.0f, "the default tempo was not declared while stopped");
+    HX_ASSERT(hx_stub_ext_tempo_calls() == 1, "the tempo was declared more than once for one value");
+    hx_set_param(h, "bpm", "97");
+    hx_render(h, 1);
+    HX_ASSERT(hx_stub_ext_tempo() == 97.0f, "a tempo change while stopped was not declared");
+    HX_ASSERT(hx_stub_ext_tempo_calls() == 2, "one change, one declaration");
+    hx_set_param(h, "bpm", "120");
+    hx_render(h, 1);
+    printf("  ok   — the host is told db's tempo while stopped, once per change\n");
 
     /* Play: one Start, before any clock; then clock at 24 PPQN.
      * 690 blocks x 128 frames at 44.1 kHz and 120 BPM = 4.005 beats. */
@@ -95,6 +111,11 @@ int main(void) {
         HX_ASSERT(inst->arp_master_tick - tick0 >= 96, "setup: the followed clock did not advance db");
     }
     HX_ASSERT(count_any_rt() == 0, "db sent transport to the slots while following Move");
+    HX_ASSERT(hx_stub_ext_tempo() == 0.0f, "db kept its tempo declared while following Move");
+    ((seq8_instance_t *)h->inst)->playing = 0;
+    hx_set_param(h, "clock_follow_on", "0");
+    hx_render(h, 2);
+    HX_ASSERT(hx_stub_ext_tempo() >= 40.0f, "leaving follow did not declare db's tempo again");
     printf("  ok   — following Move: db sends none of its own\n");
 
     hx_destroy(h);
