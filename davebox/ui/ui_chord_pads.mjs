@@ -247,6 +247,34 @@ export function chordPitchHeld(p, exceptPad) {
     return false;
 }
 
+/* Book a held chord pad that is not a palette slot (the Custom layout's
+ * chords): the same books, so its release, the shared-pitch test and a
+ * re-voice all work as for a slot. `pitches` is what the engine sounded —
+ * empty for a pad that pressed silent. */
+export function bookHeldChord(t, k, pitches) {
+    heldChords.set(k, { t, pitches: pitches.slice(), ever: pitches.slice(), baseInv: 0,
+                        numeral: '', name: '', plain: true, custom: true });
+    S.chordRevoice = 0;
+    S.chordHeldSlots = S.chordHeldSlots.filter((x) => x !== k).concat([k]);
+    S.screenDirty = true;
+}
+
+/* The held chord pad's record ({ t, pitches, custom, ... }), or null. Read only. */
+export function heldChordOf(k) { return heldChords.get(k) || null; }
+
+/* Re-voice held pad k to `after` (pitches as heard, in range, not empty).
+ * Returns { pad, before, after } for the JS books, or null when pad k is not
+ * held on track t. `extra` is merged into its record. */
+export function revoiceHeldTo(t, k, after, extra) {
+    const h = heldChords.get(k);
+    if (!h || h.t !== t || !after.length) return null;
+    host_module_set_param('t' + t + '_chord_revoice', k + ' ' + after.join('+'));
+    const before = h.pitches;
+    const ever = h.ever.concat(after.filter((p) => h.ever.indexOf(p) < 0));
+    heldChords.set(k, Object.assign({}, h, { pitches: after.slice(), ever }, extra || {}));
+    return { pad: k, before, after };
+}
+
 /* Re-voice the most recently held slot to what it would play now. Returns
  * { pad, before, after } for the JS books, or null when nothing is held. */
 function revoiceHeld(t) {
@@ -259,14 +287,11 @@ function revoiceHeld(t) {
     const ch = chordFor(t, k, S.chordRevoice, h.baseInv);
     const sh = octShiftOf(t);
     const after = ch.notes.map((p) => p + sh).filter((p) => p >= 0 && p <= 127);
-    if (!after.length) return null;
-    host_module_set_param('t' + t + '_chord_revoice', k + ' ' + after.join('+'));
-    const before = h.pitches;
-    const ever = h.ever.concat(after.filter((p) => h.ever.indexOf(p) < 0));
-    heldChords.set(k, Object.assign({}, h, { pitches: after, ever, numeral: ch.numeral, name: ch.name, plain: ch.plain }));
+    const rv = revoiceHeldTo(t, k, after, { numeral: ch.numeral, name: ch.name, plain: ch.plain });
+    if (!rv) return null;
     S.chordLast[t] = Object.assign({}, S.chordLast[t] || {}, { slot: k, mods: stackMods(),
         inv: h.baseInv + S.chordRevoice, notes: ch.notes, numeral: ch.numeral, name: ch.name, plain: ch.plain });
-    return { pad: k, before, after };
+    return rv;
 }
 
 /* Row-2 pads physically down (0..7), for the LEDs. */

@@ -7,6 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **Custom chords layout.** A fifth pad layout for melodic tracks (Shift +
+  Step 8, or the Layout row in TRACK CONFIG): the bottom row is eight chords
+  you build yourself, the other three rows are the Scale layout. Hold a chord
+  pad and tap notes to add or remove them, up to six per chord. The chord row
+  and the upper rows each have their own octave — **+ / −** move whichever you
+  touched last — and holding a chord while pressing **+** or **−** moves just
+  that chord. Delete + a chord pad clears it.
 
 ## [0.0.18] — 2026-10-09 (test build, not in the Schwung catalog)
 ### Changed

@@ -630,8 +630,8 @@ too — see [Drum Clips](#7-drum-clips).
 ### Pad layouts
 
 **Shift + Step 8** (or the **Layout** row in the track's TRACK
-CONFIG menu) steps through four layouts, and the screen flashes IN-SCALE,
-CHROMATIC or PIANO:
+CONFIG menu) steps through five layouts, and the screen flashes IN-SCALE,
+CHROMATIC, PIANO or CUSTOM CHORDS:
 
 - **Scale** (default) — only in-scale notes, with the root in the track color. Each
   row starts three scale notes above the row below.
@@ -643,6 +643,8 @@ CHROMATIC or PIANO:
   its two white keys; pads with no black key are dark and silent. The root is in
   the track color and in-scale keys are brighter than the rest.
 - **Chord** — below. Leaving it takes its explainer card with it.
+- **Custom** — chords you build yourself on the bottom row, the Scale layout
+  on the other three. See [The Custom layout](#the-custom-layout).
 
 <img src="img/pads-melodic.svg" alt="The Scale layout in C major at the default octave: each row starts three scale notes above the row below, the root is filled, and Shift turns the bottom row into track select.">
 
@@ -685,6 +687,32 @@ Back to dismiss) and puts the track on its CHORD bank.
     plays the plain chord, and the page says so.
 - While you hold a chord, Track View names it with its numeral: `[vi · AMIN]`.
   Lowercase numerals are minor, ° is diminished.
+- Holding a step and tapping a chord writes the whole chord into the step.
+
+### The Custom layout
+
+The **Custom layout** gives you eight chords of your own on the bottom row. The
+other three rows are the Scale layout, starting from the root at the left of
+row 2. A chord keeps the exact notes you put in it; changing the key or scale
+does not change it. Chords are saved per track.
+
+- **Play:** press a chord pad. A pad with a chord is in the track color; an
+  empty one is dark and silent. Track View names the held chord (`[CMAJ7]`).
+- **Build or edit:** hold a chord pad and tap pads on the upper rows. Each tap
+  adds that note, or removes it if the chord already has it. A chord holds up to
+  **six notes**.
+  - While you hold a chord, its notes are lit white on the upper rows.
+  - Each pad you tap sounds as you tap it. A chord that is already sounding
+    changes as you edit it.
+  - An empty chord stays silent while you fill it; you hear the whole chord the
+    next time you press its pad.
+  - Notes added this way are not written into a recording in progress.
+- **Octaves:** **+ / −** move the part of the pads you touched last. The
+  chord row and the upper rows each have their own octave, and the screen says
+  which one moved (`CHORDS OCTAVE` or `PADS OCTAVE`). Move the upper rows to
+  reach notes in another octave while building a chord.
+- **Move one chord an octave:** hold its pad and press **+** or **−**.
+- **Clear a chord:** Delete + its pad. Undo brings it back.
 - Holding a step and tapping a chord writes the whole chord into the step.
 
 ## 6.2 Several notes on one step
@@ -2266,7 +2294,7 @@ are hidden, so the list is shorter on a MIDI track or a Conductor.
 | Setting | Values | Notes |
 |---|---|---|
 | Mode | Melodic, Drums | [Track type](#41-track-type). Scrolling previews; the click commits |
-| Layout | Scale, Chrom, Piano, Chord | Melodic pad layout ([Chord](#the-chord-layout)); reads `-` on a drum track |
+| Layout | Scale, Chrom, Piano, Chord, Custom | Melodic pad layout ([Chord](#the-chord-layout), [Custom](#the-custom-layout)); reads `-` on a drum track |
 | Transpose | −24…+24 st | Shifts everything the track plays |
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |
 | Looper | On, Off | Feeds [Performance Mode](#13-performance-mode) |
@@ -2531,7 +2559,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | 5 | Tap Tempo | Both |
 | 6 | Metro (Cnt-In ↔ Always) — icon lit while it plays (Play / Always) | Both |
 | 7 | Swing — jump to Swing Amt in Project Settings | Both |
-| 8 | Pad layout (Scale → Chrom → Piano → Chord) / cycle right-pad mode | Track |
+| 8 | Pad layout (Scale → Chrom → Piano → Chord → Custom) / cycle right-pad mode | Track |
 | 9 | Scale — jump to Scale in Project Settings | Both |
 | 10 | VelIn (Live ↔ 100) — icon lit while fixed | Track |
 | 11 | Tap: LIVE ARP on/off — icon lit while on. Hold: LIVE ARP's page, until Back (the knobs stay on LIVE ARP) | Track (melodic) |

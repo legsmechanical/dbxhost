@@ -67,13 +67,13 @@ const lastPadmap = () => {
     return null;
 };
 const oct = () => (S.trackOctave[2] | 0) * 12;
-const layout = () => S.padLayoutChord[2] ? 'chord' : S.padLayoutPiano[2] ? 'piano' : S.padLayoutChromatic[2] ? 'chrom' : 'scale';
+const layout = () => S.padLayoutCustom[2] ? 'custom' : S.padLayoutChord[2] ? 'chord' : S.padLayoutPiano[2] ? 'piano' : S.padLayoutChromatic[2] ? 'chrom' : 'scale';
 const padLeds = () => { leds.invalidateLEDCache(); leds.updateTrackLEDs(); const o = []; for (let i = 0; i < 32; i++) o.push(ledState[C.TRACK_PAD_BASE + i]); return o; };
 
-step('⭐ Shift + Step 8 walks Scale → Chrom → Piano → Chord → Scale', () => {
+step('⭐ Shift + Step 8 walks Scale → Chrom → Piano → Chord → Custom → Scale', () => {
     const seen = [layout()];
-    for (let i = 0; i < 4; i++) { shiftStep8(); seen.push(layout()); if (S.chordPopupOpen) { cc(3, 127); cc(3, 0); ticks(2); } }
-    assert(JSON.stringify(seen) === JSON.stringify(['scale', 'chrom', 'piano', 'chord', 'scale']), 'walk: ' + seen);
+    for (let i = 0; i < 5; i++) { shiftStep8(); seen.push(layout()); if (S.chordPopupOpen) { cc(3, 127); cc(3, 0); ticks(2); } }
+    assert(JSON.stringify(seen) === JSON.stringify(['scale', 'chrom', 'piano', 'chord', 'custom', 'scale']), 'walk: ' + seen);
 });
 
 step('⭐⭐ the Piano pads: two octaves from C, white rows C..C, black keys between the whites, gaps silent; top two rows an octave up', () => {
@@ -105,7 +105,7 @@ step('⭐ the Layout row reads Piano and sets it; Scale from the row clears it',
     const r = rows && rows.find((x) => x.key === 'layout');
     if (!r) throw new Error('no configRowsForTest export or no layout row');
     assert(r.fmt(r.get()) === 'Piano', 'row reads ' + r.fmt(r.get()));
-    assert(JSON.stringify(r.opts) === JSON.stringify([0, 1, 3, 2]), 'options ' + r.opts);
+    assert(JSON.stringify(r.opts) === JSON.stringify([0, 1, 3, 2, 4]), 'options ' + r.opts);
     r.set(0); ticks(1);
     assert(layout() === 'scale', 'row Scale: ' + layout());
     r.set(3); ticks(1);
@@ -127,7 +127,7 @@ step('⭐ leaving Chord takes its explainer with it — by Shift + Step 8 and by
     shiftStep8();
     assert(layout() === 'chord' && S.chordPopupOpen, 'setup: Chord with its card');
     shiftStep8();
-    assert(layout() === 'scale', 'left Chord: ' + layout());
+    assert(layout() === 'custom', 'left Chord: ' + layout());
     assert(!S.chordPopupOpen, 'the Chord card stayed up after leaving Chord');
     const r = snd.configRowsForTest(2).find((x) => x.key === 'layout');
     r.set(2); ticks(1);
