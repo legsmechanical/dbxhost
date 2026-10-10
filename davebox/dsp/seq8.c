@@ -1063,6 +1063,13 @@ typedef struct {
     uint8_t  clock_send_phase;        /* 0xF8 divider: emit every 4th 96-PPQN master tick (24 PPQN) */
     uint8_t  clock_send_was_playing;  /* db transport edge tracker for 0xFA/0xFC emission */
     uint8_t  clock_send_was_active;   /* clock-out enabled edge tracker (handles enable/disable mid-play) */
+    /* Transport to the instrument slots: Start / 24-PPQN clock / Stop sent
+     * through the host while db plays on its own clock, so a slot's
+     * clock-driven MIDI FX (a step generator) and its synced LFOs run with
+     * db's transport. Not a setting. Silent while clock_follow_on — Move's
+     * transport reaches the slots from the host then. */
+    uint8_t  slot_clock_phase;        /* 0xF8 divider, as clock_send_phase */
+    uint8_t  slot_clock_running;      /* Start sent, Stop not yet */
     /* MovePlay (CC 85) inject state machine — fired from render_block (NOT
      * set_param: a set_param-context inject is unreliable). follow_play_request
      * is the desired Move transport; the drain compares it against

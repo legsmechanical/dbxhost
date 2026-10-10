@@ -7,6 +7,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed
+- **Clock-driven MIDI effects now run with dAVEBOx's transport.** Sequencing
+  MIDI effects in a track's instrument (Beat Bank, Euclidrum and the like)
+  never started, because dAVEBOx sent its Start, clock and Stop only to
+  external gear. Pressing Play now starts them, and Stop stops them. Tempo-
+  synced LFOs on an instrument follow dAVEBOx's transport the same way.
+
 
 ## [0.0.18] — 2026-10-09 (test build, not in the Schwung catalog)
 ### Changed
