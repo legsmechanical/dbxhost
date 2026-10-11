@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.19] — 2026-10-10 (test build, not in the Schwung catalog)
 ### Added
 - **Custom chords layout.** A fifth pad layout for melodic tracks (Shift +
   Step 8, or the Layout row in TRACK CONFIG): the bottom row is eight chords
