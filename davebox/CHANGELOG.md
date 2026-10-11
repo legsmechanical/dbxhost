@@ -16,7 +16,8 @@ the section into a versioned heading at release time.
   touched last — and holding a chord while pressing **+** or **−** moves just
   that chord. Delete + a chord pad clears it. You can also hold the notes
   first and tap an empty chord pad to store them, and Copy + chord pad, then
-  another, copies a chord (Shift + Copy moves it). Chord pads are cyan.
+  another, copies a chord (Shift + Copy moves it). Chord pads are cyan, and
+  dim cyan while empty.
 
 ### Fixed
 - **Clock-driven MIDI effects now run with dAVEBOx's transport.** Sequencing

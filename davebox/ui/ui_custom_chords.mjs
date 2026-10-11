@@ -224,7 +224,7 @@ export function customChordOctaveStep(t, dir) {
 
 /* The colour for pad i, or null to let the caller's scale colouring stand.
  * `heard` is the pitch a scale pad sounds (-1 when silent); `c` =
- * { White, Off, chord }. */
+ * { White, Off, chord, chordEmpty }. */
 export function customPadColor(t, i, heard, c) {
     if (i < 8) {
         const h = heldChordOf(i);
@@ -235,7 +235,7 @@ export function customPadColor(t, i, heard, c) {
                 src.track === t && src.slot === i) return c.White;
         /* A colour of their own: the note pads use the track's for the root. */
         const ps = customChordPitches(t, i);
-        return ps.length ? c.chord : c.Off;
+        return ps.length ? c.chord : c.chordEmpty;
     }
     /* While a chord is held, its notes show on the scale rows — as a held
      * step's do. */

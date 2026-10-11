@@ -130,7 +130,7 @@ step('⭐ the Layout row offers Custom last, sets it and reads it; another value
     assert(layout() === 'custom' && !S.padLayoutChord[T] && !S.chordPopupOpen, 'row back to Custom: ' + layout());
 });
 
-step('⭐⭐ a fresh track: the chord row is silent and dark; rows 2-4 are the Scale layout from the root', () => {
+step('⭐⭐ a fresh track: the chord row is silent and dimly lit; rows 2-4 are the Scale layout from the root', () => {
     assert(layout() === 'custom', 'not on Custom');
     ticks(2);
     const pm = lastPadmap();
@@ -138,7 +138,8 @@ step('⭐⭐ a fresh track: the chord row is silent and dark; rows 2-4 are the S
     for (let i = 8; i < 32; i++) assert(pm[i] === String(scalePitch(i)), 'pad ' + i + ': ' + pm[i] + ' want ' + scalePitch(i));
     assert(pm[8] === String((S.padOctave[T] | 0) * 12 + (S.trackOctave[T] | 0) * 12), 'row 2 does not start on the root: ' + pm[8]);
     const L = padLeds();
-    for (let i = 0; i < 8; i++) assert(L[i] === C.LED_OFF, 'empty chord pad ' + i + ' lit: ' + L[i]);
+    /* silent, but dimly lit: the row shows where the chord slots are */
+    for (let i = 0; i < 8; i++) assert(L[i] === 91, 'empty chord pad ' + i + ' is not dim cyan: ' + L[i]);
     assert(L[8] === leds.trackColor(T), 'the root pad is not the track colour: ' + L[8]);
     assert(L[9] !== L[8] && L[9] !== 0, 'a scale pad: ' + L[9]);
 });
@@ -362,6 +363,8 @@ step('⭐ chord pads have a colour of their own — never the root pad\'s, on an
     const L = padLeds();
     assert(L[1] !== L[8], 'a chord pad is the root note pad\'s colour: ' + L[1]);
     assert(L[1] !== L[9] && L[1] !== C.LED_OFF && L[1] !== SC.White, 'a chord pad reads as a plain note / dark / held: ' + L[1]);
+    assert(L[0] !== L[1] && L[0] !== C.LED_OFF && L[0] !== L[8] && L[0] !== L[9] && L[0] !== SC.White, 'an empty chord pad is not its own dim colour: ' + L[0]);
+    for (const col of C.TRACK_COLORS.concat(C.TRACK_DIM_COLORS)) assert(L[0] !== col, 'the empty-pad colour is a track colour: ' + col);
     for (const col of C.TRACK_COLORS) assert(L[1] !== col, 'the chord colour is a track colour: ' + col);
 });
 
