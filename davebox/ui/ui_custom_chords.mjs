@@ -5,6 +5,8 @@
  * actual notes tapped — nothing follows the key.
  *
  *   hold a chord pad + tap a scale pad   add / remove that note (six at most)
+ *   hold notes + tap an EMPTY chord pad  the pad takes the held notes
+ *   Copy + chord pad, + another          copy it there (Shift + Copy: move it)
  *   hold a chord pad + Octave up/down    move that chord an octave
  *   Octave up/down                       move the region last touched: the
  *                                        chord row and the scale rows each
@@ -187,11 +189,27 @@ export function customChordClear(t, k) {
     return was.slice();
 }
 
-/* Put chord k back to `notes` (undo of a clear). */
+/* Make chord k exactly `notes` (as stored): undo of a clear, a paste. */
 export function customChordSet(t, k, notes) {
     ensureCustomState(t);
     S.customChords[t][k] = cleanChord(notes);
     edited();
+}
+
+/* Chord k as stored (a copy), for copy / undo. */
+export function customChordGet(t, k) {
+    ensureCustomState(t);
+    return S.customChords[t][k].slice();
+}
+
+/* Notes held on the scale rows go into chord k (pitches as heard). The
+ * lowest six are kept; a note the chord row's octave puts out of range is
+ * left out. Returns how many were stored. */
+export function customChordFromHeard(t, k, heard) {
+    const sh = chordOct(t);
+    const stored = cleanChord(heard.map((p) => p - sh));
+    customChordSet(t, k, stored);
+    return stored.length;
 }
 
 /* The chord row's octave, one step (dir = +1 / -1). Returns the new value. */
@@ -206,13 +224,18 @@ export function customChordOctaveStep(t, dir) {
 
 /* The colour for pad i, or null to let the caller's scale colouring stand.
  * `heard` is the pitch a scale pad sounds (-1 when silent); `c` =
- * { White, Off, track }. */
+ * { White, Off, chord }. */
 export function customPadColor(t, i, heard, c) {
     if (i < 8) {
         const h = heldChordOf(i);
         if (h && h.custom && h.t === t) return c.White;
+        /* The chord waiting to be pasted, while Copy is held. */
+        const src = S.copySrc;
+        if (S.copyHeld && src && (src.kind === 'custom_chord' || src.kind === 'cut_custom_chord') &&
+                src.track === t && src.slot === i) return c.White;
+        /* A colour of their own: the note pads use the track's for the root. */
         const ps = customChordPitches(t, i);
-        return ps.length ? c.track : c.Off;
+        return ps.length ? c.chord : c.Off;
     }
     /* While a chord is held, its notes show on the scale rows — as a held
      * step's do. */

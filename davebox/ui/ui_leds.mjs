@@ -945,7 +945,7 @@ export function updateTrackLEDs() {
             /* tonic / subdominant / dominant — Josh confirmed these three */
             fn: [Cyan, Mustard, BrightPink] } : null;
         const _customOn = !_chordOn && customLayoutOn(S.activeTrack);
-        const _customC = _customOn ? { White, Off: LED_OFF, track: trackColor(S.activeTrack) } : null;
+        const _customC = _customOn ? { White, Off: LED_OFF, chord: Cyan } : null;
         for (let i = 0; i < 32; i++) {
             let color;
             /* The Custom layout colours its chord row, and shows a held

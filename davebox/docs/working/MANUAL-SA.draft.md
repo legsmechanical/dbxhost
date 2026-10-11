@@ -696,8 +696,9 @@ other three rows are the Scale layout, starting from the root at the left of
 row 2. A chord keeps the exact notes you put in it; changing the key or scale
 does not change it. Chords are saved per track.
 
-- **Play:** press a chord pad. A pad with a chord is in the track color; an
-  empty one is dark and silent. Track View names the held chord (`[CMAJ7]`).
+- **Play:** press a chord pad. A pad with a chord is cyan, so the row stands
+  apart from the note pads; an empty one is dark and silent. Track View names
+  the held chord (`[CMAJ7]`).
 - **Build or edit:** hold a chord pad and tap pads on the upper rows. Each tap
   adds that note, or removes it if the chord already has it. A chord holds up to
   **six notes**.
@@ -707,6 +708,11 @@ does not change it. Chords are saved per track.
   - An empty chord stays silent while you fill it; you hear the whole chord the
     next time you press its pad.
   - Notes added this way are not written into a recording in progress.
+- **Or notes first:** hold the notes on the upper rows and tap an **empty**
+  chord pad — it takes them (the lowest six). A pad that already has a chord
+  just plays, so holding a note over the chords never changes one.
+- **Copy a chord:** hold Copy, tap the chord, then tap each pad that should
+  get it. Shift + Copy moves it instead. Undo takes back the last paste.
 - **Octaves:** **+ / −** move the part of the pads you touched last. The
   chord row and the upper rows each have their own octave, and the screen says
   which one moved (`CHORDS OCTAVE` or `PADS OCTAVE`). Move the upper rows to

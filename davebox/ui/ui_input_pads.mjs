@@ -39,7 +39,8 @@ import { chordLayoutOn, chordRowOf, chordSlotPress, chordSlotRelease, chordModPr
     chordModRelease, chordPitchHeld, padPitches, ROW_SLOTS, ROW_MODS,
     setChordLayout, chordPadHeld } from './ui_chord_pads.mjs';
 import { customLayoutOn, setCustomLayout, customEditTarget, customChordPress, customScalePress,
-    customChordPitches, customChordToggle, customChordClear, customChordSet } from './ui_custom_chords.mjs';
+    customChordPitches, customChordToggle, customChordClear, customChordSet, customChordGet,
+    customChordFromHeard } from './ui_custom_chords.mjs';
 import { handoffRecordingToTrack, recordNoteOn, recordNoteOff,
     openTapTempo, registerTapTempo, extNoteOffAll,
     stepRecPadPress, stepRecPadRelease } from './ui_record.mjs';
@@ -212,6 +213,35 @@ function _customPadPress(padIdx, d2) {
         forceRedraw();
         return true;
     }
+    if (S.copyHeld) {
+        /* Copy + chord pad, then another: the first is the source, each later
+         * one takes its notes. Shift + Copy moves it instead (the source
+         * empties, and the pad it landed on becomes the source). One Undo. */
+        const src = S.copySrc;
+        if (!src) {
+            if (!customChordGet(t, padIdx).length) {
+                showActionPopup('EMPTY CHORD');
+            } else {
+                S.copySrc = { kind: S.shiftHeld ? 'cut_custom_chord' : 'custom_chord', track: t, slot: padIdx };
+                showActionPopup(S.shiftHeld ? 'CUT' : 'COPIED');
+            }
+        } else if ((src.kind === 'custom_chord' || src.kind === 'cut_custom_chord') &&
+                   src.track === t && src.slot !== padIdx) {
+            const from = src.slot, cut = src.kind === 'cut_custom_chord';
+            const notes = customChordGet(t, from), was = customChordGet(t, padIdx);
+            customChordSet(t, padIdx, notes);
+            if (cut) customChordSet(t, from, []);
+            markJsUndo('chord',
+                function () { customChordSet(t, padIdx, was); if (cut) customChordSet(t, from, notes); },
+                function () { customChordSet(t, padIdx, notes); if (cut) customChordSet(t, from, []); });
+            if (cut) S.copySrc = { kind: 'custom_chord', track: t, slot: padIdx };
+            showActionPopup('PASTED');
+        }
+        /* other copy kinds: swallow — don't mix copy types */
+        invalidateLEDCache();
+        forceRedraw();
+        return true;
+    }
     if (S.deleteHeld) {
         /* Delete + chord pad: clear it. One Undo brings it back. */
         const was = customChordClear(t, padIdx);
@@ -236,6 +266,23 @@ function _customPadPress(padIdx, d2) {
         S.stepWasHeld = true;
         forceRedraw();
         return true;
+    }
+    /* Notes held on the upper rows + an EMPTY chord pad: the pad takes them
+     * (as holding notes and pressing a step does). A pad that already has a
+     * chord just plays, so a melody held over the chords never overwrites
+     * one. The notes are sounding from their own pads; the chord's first
+     * sound is its next press. */
+    if (!customChordGet(t, padIdx).length) {
+        const heldNotes = [];
+        for (let i = 8; i < 32; i++) if (padPitch[i] >= 0) heldNotes.push(padPitch[i]);
+        if (heldNotes.length) {
+            /* Booked first, while still empty: held and silent, which is
+             * how the engine pressed it. */
+            customChordPress(t, padIdx);
+            customChordFromHeard(t, padIdx, heldNotes);
+            forceRedraw();
+            return true;
+        }
     }
     const pitches = customChordPress(t, padIdx);
     for (const p of pitches) {
@@ -698,7 +745,7 @@ function _onPadPressTrackView(status, d1, d2) {
         } else if (!S.shiftHeld && padIdx < 16 && chordLayoutOn(S.activeTrack) &&
                    _chordPadPress(padIdx, d2)) {
             /* The Chord layout's slot and modifier rows (handled above). */
-        } else if (!S.shiftHeld && customLayoutOn(S.activeTrack) && _customPadPress(padIdx, d2)) {
+        } else if ((!S.shiftHeld || S.copyHeld) && customLayoutOn(S.activeTrack) && _customPadPress(padIdx, d2)) {
             /* The Custom layout's chord row, and a tap that edits a held chord. */
         } else if (S.heldStep >= 0 && !S.shiftHeld) {
             /* Step edit: tap pad to toggle note assignment for held step */
