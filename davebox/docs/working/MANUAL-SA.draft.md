@@ -697,7 +697,7 @@ row 2. A chord keeps the exact notes you put in it; changing the key or scale
 does not change it. Chords are saved per track.
 
 - **Play:** press a chord pad. A pad with a chord is cyan, so the row stands
-  apart from the note pads; an empty one is dim grey and silent. Track View
+  apart from the note pads; an empty one is dark and silent. Track View
   names the held chord (`[CMAJ7]`).
 - **Build or edit:** hold a chord pad and tap pads on the upper rows. Each tap
   adds that note, or removes it if the chord already has it. A chord holds up to

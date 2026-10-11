@@ -945,10 +945,9 @@ export function updateTrackLEDs() {
             /* tonic / subdominant / dominant — Josh confirmed these three */
             fn: [Cyan, Mustard, BrightPink] } : null;
         const _customOn = !_chordOn && customLayoutOn(S.activeTrack);
-        /* An EMPTY chord pad is dim grey, a stored one Cyan (Josh, 2026-10-10:
-         * "dim gray empty, cyan has notes"; a dimmer cyan read as the same
-         * colour on the device). */
-        const _customC = _customOn ? { White, Off: LED_OFF, chord: Cyan, chordEmpty: DarkGrey } : null;
+        /* An EMPTY chord pad is dark, a stored one Cyan. (Lit empties were
+         * tried: dim cyan read as the stored colour, dim grey as a note pad.) */
+        const _customC = _customOn ? { White, Off: LED_OFF, chord: Cyan } : null;
         for (let i = 0; i < 32; i++) {
             let color;
             /* The Custom layout colours its chord row, and shows a held
