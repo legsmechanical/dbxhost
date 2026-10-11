@@ -98,7 +98,7 @@ const scalePitch = (i) => {
     return (S.padOctave[T] | 0) * 12 + Math.floor(deg / 7) * 12 + MAJ[deg % 7] + (S.trackOctave[T] | 0) * 12;
 };
 afterStep = () => {
-    cc(SC.MoveDelete, 0);
+    cc(SC.MoveDelete, 0); cc(SC.MoveCopy, 0); cc(49, 0);
     for (let i = 0; i < 32; i++) pad(i, false);
     ticks(60);            /* past any notice's window */
 };
@@ -165,7 +165,7 @@ step('⭐⭐ hold a chord pad + tap three scale pads builds the chord; the empty
     pad(2, false); ticks(3);
     assert(lastPadmap()[2] === want.join('+'), 'padmap token: ' + lastPadmap()[2]);
     assert(S.liveActiveNotes.size === 0, 'notes left held: ' + [...S.liveActiveNotes]);
-    assert(padLeds()[2] === leds.trackColor(T), 'a filled chord pad is not the track colour');
+    assert(padLeds()[2] === SC.Cyan, 'a filled chord pad is not the chord colour: ' + padLeds()[2]);
     assert(padLeds()[8] !== SC.White, 'the chord\'s notes stayed lit after release');
 });
 
@@ -291,6 +291,79 @@ step('⭐ Delete + chord pad clears it, says so, and Undo brings it back', () =>
     cc(SC.MoveUndo, 127); cc(SC.MoveUndo, 0); ticks(3);
     assert(eq(S.customChords[T][3], [60, 63, 67]), 'undo: ' + S.customChords[T][3]);
     assert(lastPadmap()[3] === '60+63+67', 'padmap after undo: ' + lastPadmap()[3]);
+});
+
+step('⭐⭐ hold notes + tap an EMPTY chord pad stores them; a FILLED pad just plays and keeps its chord', () => {
+    clearAll(); sets.length = 0;
+    pad(8, true); pad(10, true); pad(12, true);      /* C E G held on the upper rows */
+    pad(4, true);
+    const want = [scalePitch(8), scalePitch(10), scalePitch(12)];
+    assert(eq(S.customChords[T][4], want), 'stored: ' + S.customChords[T][4] + ' want ' + want);
+    assert(revoices().length === 0, 'a pad that pressed silent was re-voiced');
+    assert(padLeds()[4] === SC.White, 'the pad being held is not white');
+    pad(4, false);
+    assert(eq([...S.liveActiveNotes].sort((x, y) => x - y), want), 'letting go of the chord pad dropped notes still held: ' + [...S.liveActiveNotes]);
+    pad(8, false); pad(10, false); pad(12, false); ticks(3);
+    assert(lastPadmap()[4] === want.join('+'), 'padmap: ' + lastPadmap()[4]);
+    assert(S.liveActiveNotes.size === 0, 'notes left held');
+    /* a filled pad: a held melody note must not overwrite it */
+    pad(14, true);
+    pad(4, true);
+    assert(eq(S.customChords[T][4], want), 'a filled chord was overwritten by a held note: ' + S.customChords[T][4]);
+    assert(S.liveActiveNotes.has(want[0]) && S.liveActiveNotes.has(scalePitch(14)), 'the chord did not play over the held note');
+    pad(4, false); pad(14, false);
+    /* more than six held notes: the lowest six */
+    S.customChords[T][5] = []; ticks(2);
+    for (const i of [8, 9, 10, 11, 12, 13, 14]) pad(i, true);
+    pad(5, true);
+    assert(eq(S.customChords[T][5], [8, 9, 10, 11, 12, 13].map(scalePitch)), 'seven held: ' + S.customChords[T][5]);
+});
+
+step('⭐⭐ Copy + chord pad then another pastes it; Shift + Copy moves it; Undo takes the paste back', () => {
+    clearAll();
+    S.customChords[T][0] = [60, 64, 67]; S.customChords[T][2] = [50, 57]; ticks(2);
+    cc(SC.MoveCopy, 127);
+    pad(0, true); pad(0, false);
+    assert(popup() === 'COPIED', 'notice: "' + popup() + '"');
+    assert(S.liveActiveNotes.size === 0, 'the copied pad booked notes');
+    assert(padLeds()[0] === SC.White, 'the copy source is not marked');
+    pad(2, true); pad(2, false);
+    assert(popup() === 'PASTED', 'notice: "' + popup() + '"');
+    assert(eq(S.customChords[T][2], [60, 64, 67]) && eq(S.customChords[T][0], [60, 64, 67]), 'paste: ' + JSON.stringify(S.customChords[T].slice(0, 3)));
+    pad(3, true); pad(3, false);
+    assert(eq(S.customChords[T][3], [60, 64, 67]), 'a second paste from the same source: ' + S.customChords[T][3]);
+    S.customChords[T][3].push(72);
+    assert(eq(S.customChords[T][0], [60, 64, 67]), 'a paste shares its notes with the source');
+    cc(SC.MoveCopy, 0); ticks(3);
+    assert(padLeds()[0] !== SC.White, 'the source stayed marked after Copy was let go');
+    assert(lastPadmap()[2] === '60+64+67', 'padmap: ' + lastPadmap()[2]);
+    /* undo the last paste only */
+    cc(SC.MoveUndo, 127); cc(SC.MoveUndo, 0); ticks(3);
+    assert(eq(S.customChords[T][3], []), 'undo of the paste: ' + S.customChords[T][3]);
+    /* an empty pad is not a source */
+    cc(SC.MoveCopy, 127);
+    pad(6, true); pad(6, false);
+    assert(!S.copySrc && popup() === 'EMPTY CHORD', 'an empty pad became the copy source: ' + JSON.stringify(S.copySrc) + ' "' + popup() + '"');
+    cc(SC.MoveCopy, 0); ticks(60);
+    /* move: Shift + Copy */
+    cc(49, 127); cc(SC.MoveCopy, 127);
+    pad(2, true); pad(2, false);
+    assert(popup() === 'CUT', 'notice: "' + popup() + '"');
+    pad(7, true); pad(7, false);
+    assert(eq(S.customChords[T][7], [60, 64, 67]) && eq(S.customChords[T][2], []), 'move: ' + JSON.stringify([S.customChords[T][2], S.customChords[T][7]]));
+    cc(SC.MoveCopy, 0); cc(49, 0); ticks(3);
+    cc(SC.MoveUndo, 127); cc(SC.MoveUndo, 0); ticks(3);
+    assert(eq(S.customChords[T][7], []) && eq(S.customChords[T][2], [60, 64, 67]), 'undo of the move: ' + JSON.stringify([S.customChords[T][2], S.customChords[T][7]]));
+});
+
+step('⭐ chord pads have a colour of their own — never the root pad\'s, on any track colour', () => {
+    clearAll();
+    S.customChords[T][1] = [60, 64, 67]; ticks(2);
+    const L = padLeds();
+    assert(L[1] !== L[8], 'a chord pad is the root note pad\'s colour: ' + L[1]);
+    assert(L[1] !== L[9] && L[1] !== C.LED_OFF && L[1] !== SC.White, 'a chord pad reads as a plain note / dark / held: ' + L[1]);
+    assert(L[0] === C.LED_OFF, 'an empty chord pad is lit: ' + L[0]);
+    for (const col of C.TRACK_COLORS) assert(L[1] !== col, 'the chord colour is a track colour: ' + col);
 });
 
 step('⭐ hold a step + tap a chord pad writes the chord into the step, and edits nothing', () => {

@@ -14,7 +14,9 @@ the section into a versioned heading at release time.
   pad and tap notes to add or remove them, up to six per chord. The chord row
   and the upper rows each have their own octave — **+ / −** move whichever you
   touched last — and holding a chord while pressing **+** or **−** moves just
-  that chord. Delete + a chord pad clears it.
+  that chord. Delete + a chord pad clears it. You can also hold the notes
+  first and tap an empty chord pad to store them, and Copy + chord pad, then
+  another, copies a chord (Shift + Copy moves it). Chord pads are cyan.
 
 ### Fixed
 - **Clock-driven MIDI effects now run with dAVEBOx's transport.** Sequencing
