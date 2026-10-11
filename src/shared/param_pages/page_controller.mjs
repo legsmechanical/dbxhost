@@ -3087,9 +3087,10 @@ export function createController(io = {}) {
         const p = page();
         const st = presetState(p);
         if (!st || !p || st.count <= 0) return false;
-        let next = st.index + delta;
-        if (next < 0) next = st.count - 1;
-        if (next >= st.count) next = 0;
+        /* Stops at the first and the last preset: no list wraps (the same rule
+         * as every menu, picker and enum). A turn past either end does nothing
+         * — no write, no re-read. */
+        const next = Math.max(0, Math.min(st.count - 1, st.index + delta));
         if (next === st.index) return false;
         st.index = next;
         /*

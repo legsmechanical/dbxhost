@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Changed
+- **A module's preset list no longer wraps.** In the module editor's preset
+  page, turning the jog past the last preset jumped to the first, and back from
+  the first to the last. It now stops at both ends, like every other list.
 
 ## [0.0.19] — 2026-10-10 (test build, not in the Schwung catalog)
 ### Added

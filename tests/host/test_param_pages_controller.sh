@@ -836,18 +836,17 @@ Promise.all([
       ctl.setLayout(R.LAYOUT_DIAL);
     }
 
-    /* ---- wrapping, both ends -------------------------------------------
-     * A full cycle returns you where you started, from WHEREVER you started —
-     * asserting an absolute index here just encodes the order of the tests
-     * above it. */
+    /* ---- stopping, both ends --------------------------------------------
+     * No list wraps. More turns than there are presets land on the LAST one
+     * and stay; as many back land on the FIRST and stay — from wherever the
+     * tests above left the index. */
     ctl.onClick(-1);
-    const startIdx = index;
-    for (let i = 0; i < names.length; i++) ctl.onJog(1);
-    if (index !== startIdx)
-      fail("a full cycle forward should return to " + startIdx + ", got " + index);
-    ctl.onJog(-1);
-    if (index !== (startIdx + names.length - 1) % names.length)
-      fail("the browser should wrap backwards, got " + index);
+    for (let i = 0; i < names.length + 2; i++) ctl.onJog(1);
+    if (index !== names.length - 1)
+      fail("turning on past the last preset should stop on it (" + (names.length - 1) + "), got " + index);
+    for (let i = 0; i < names.length + 2; i++) ctl.onJog(-1);
+    if (index !== 0)
+      fail("turning back past the first preset should stop on it, got " + index);
   }
 
   /* ---- an ITEMS page is a door with a real list ------------------------
