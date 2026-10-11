@@ -139,7 +139,9 @@ step('⭐⭐ a fresh track: the chord row is silent and dimly lit; rows 2-4 are 
     assert(pm[8] === String((S.padOctave[T] | 0) * 12 + (S.trackOctave[T] | 0) * 12), 'row 2 does not start on the root: ' + pm[8]);
     const L = padLeds();
     /* silent, but dimly lit: the row shows where the chord slots are */
-    for (let i = 0; i < 8; i++) assert(L[i] === 91, 'empty chord pad ' + i + ' is not dim cyan: ' + L[i]);
+    for (let i = 0; i < 8; i++) assert(L[i] === 107, 'empty chord pad ' + i + ' is not dim purple: ' + L[i]);
+    /* not a shade of the stored-chord colour (Cyan 14, its dims 91 / 92) */
+    assert([14, 91, 92].indexOf(L[0]) < 0, 'an empty pad is a shade of the stored colour');
     assert(L[8] === leds.trackColor(T), 'the root pad is not the track colour: ' + L[8]);
     assert(L[9] !== L[8] && L[9] !== 0, 'a scale pad: ' + L[9]);
 });
