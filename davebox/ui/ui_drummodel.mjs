@@ -11,6 +11,7 @@ import { PAD_MODE_DRUM, PAD_MODE_MELODIC_SCALE, DRUM_LANES, DRUM_BASE_NOTE, NUM_
 import { SCALE_INTERVALS } from './ui_pure.mjs';
 import { dspGet } from './ui_dsp_get.mjs';
 import { chordLayoutOn, fillChordPadMap, padToken } from './ui_chord_pads.mjs';
+import { customLayoutOn, fillCustomPadMap, padOctShift } from './ui_custom_chords.mjs';
 import { miActive } from './ui_midi_import.mjs';
 
 /* PHASE-1: helper for the pad-dispatch mute condition. Modal sources:
@@ -63,9 +64,10 @@ export function padmapSig(payload) {
  * black key over the white key to its right (C# over D); -1 = no key. */
 const PIANO_WHITE = [0, 2, 4, 5, 7, 9, 11, 12];
 const PIANO_BLACK = [-1, 1, 3, -1, 6, 8, 10, -1];
-/* A Keys track on the Piano layout (and not on Chord, which wins). */
+/* A Keys track on the Piano layout (and not on Chord or Custom, which win). */
 export function pianoLayoutOn(t) {
-    return !!S.padLayoutPiano[t] && S.trackPadMode[t] === PAD_MODE_MELODIC_SCALE && !chordLayoutOn(t);
+    return !!S.padLayoutPiano[t] && S.trackPadMode[t] === PAD_MODE_MELODIC_SCALE && !chordLayoutOn(t) &&
+        !customLayoutOn(t);
 }
 
 export function computePadNoteMap() {
@@ -108,6 +110,10 @@ export function computePadNoteMap() {
             /* The Chord layout: slots, modifiers, strum and scale rows
              * (ui_chord_pads.mjs). Slot pads carry whole chords. */
             fillChordPadMap(t, effKey, effScale);
+        } else if (customLayoutOn(t)) {
+            /* The Custom layout: the user's chords on the bottom row, the
+             * Scale layout on the other three (ui_custom_chords.mjs). */
+            fillCustomPadMap(t, effKey, effScale);
         } else if (pianoLayoutOn(t)) {
             /* The Piano layout (Josh, 2026-09-26: "lays the pads out like to 2
              * piano octaves. Top 2 pad rows are higher octave, bottom two are
@@ -172,9 +178,10 @@ export function computePadNoteMap() {
          * [[project-modal-pad-interception-regression]]. */
         const padDispatchMuted = _padDispatchMutedNow();
         const isDrum = S.trackPadMode[t] === PAD_MODE_DRUM;
-        const octShift = isDrum ? 0 : ((S.trackOctave[t] | 0) * 12);
         let payload = '';
         for (let i = 0; i < 32; i++) {
+            /* Per pad: the Custom layout's chord row has an octave of its own. */
+            const octShift = isDrum ? 0 : padOctShift(t, i);
             let out;
             if (padDispatchMuted && S.sessionView) {
                 out = 0xFF;

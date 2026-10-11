@@ -358,6 +358,18 @@ float sampler_get_bpm(tempo_source_t *source) {
         return sampler_measured_bpm;
     }
 
+    /* 1a. An internal sequencer's DECLARED tempo, whether or not it is
+     * playing: it is the session's tempo before its first Start and after a
+     * tempo change made while stopped — neither of which any clock carries.
+     * Below a running Move clock (above), which is the tempo when it runs. */
+    if (shadow_transport_source() != TRANSPORT_SRC_MOVE) {
+        float dbpm = shadow_transport_declared_bpm();
+        if (dbpm >= 20.0f) {
+            if (source) *source = TEMPO_SOURCE_LAST_CLOCK;
+            return dbpm;
+        }
+    }
+
     /* 1b. Internal transport's last tempo (movy sequencer stopped). Keep synced
      * params at movy's tempo instead of snapping back to the Set/default tempo,
      * so a synced LFO free-runs at the rate it was locked to. Ranks below an

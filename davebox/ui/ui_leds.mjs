@@ -23,6 +23,7 @@ import {
 } from '/data/UserData/schwung/shared/constants.mjs';
 import { chordLayoutOn, chordPadColor } from './ui_chord_pads.mjs';
 import { pianoLayoutOn } from './ui_drummodel.mjs';
+import { customLayoutOn, customPadColor } from './ui_custom_chords.mjs';
 import { setLED, setButtonLED } from '/data/UserData/schwung/shared/input_filter.mjs';
 
 const lastSentNoteLED   = new Array(128).fill(-1);
@@ -943,8 +944,18 @@ export function updateTrackLEDs() {
             track: trackColor(S.activeTrack), trackDim: trackDimColor(S.activeTrack),
             /* tonic / subdominant / dominant — Josh confirmed these three */
             fn: [Cyan, Mustard, BrightPink] } : null;
+        const _customOn = !_chordOn && customLayoutOn(S.activeTrack);
+        const _customC = _customOn ? { White, Off: LED_OFF, track: trackColor(S.activeTrack) } : null;
         for (let i = 0; i < 32; i++) {
             let color;
+            /* The Custom layout colours its chord row, and shows a held
+             * chord's notes on the scale rows; the rest is scale colouring. */
+            if (_customOn) {
+                const _p = S.padNoteMap[i];
+                const _h = (i < 8 || _p === 0xFF) ? -1 : _p + S.trackOctave[S.activeTrack] * 12;
+                const _cc = customPadColor(S.activeTrack, i, (_h >= 0 && _h <= 127) ? _h : -1, _customC);
+                if (_cc !== null) { cachedSetLED(TRACK_PAD_BASE + i, _cc); continue; }
+            }
             /* The Chord layout colours its slot, modifier and strum rows by
              * what they are; the scale row falls through to the scale colours. */
             if (_chordOn) {

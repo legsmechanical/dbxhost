@@ -7,6 +7,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **Custom chords layout.** A fifth pad layout for melodic tracks (Shift +
+  Step 8, or the Layout row in TRACK CONFIG): the bottom row is eight chords
+  you build yourself, the other three rows are the Scale layout. Hold a chord
+  pad and tap notes to add or remove them, up to six per chord. The chord row
+  and the upper rows each have their own octave — **+ / −** move whichever you
+  touched last — and holding a chord while pressing **+** or **−** moves just
+  that chord. Delete + a chord pad clears it.
+
+### Fixed
+- **Clock-driven MIDI effects now run with dAVEBOx's transport.** Sequencing
+  MIDI effects in a track's instrument (Beat Bank, Euclidrum and the like)
+  never started, because dAVEBOx sent its Start, clock and Stop only to
+  external gear. Pressing Play now starts them, and Stop stops them. Tempo-
+  synced LFOs on an instrument follow dAVEBOx's transport the same way.
+- **Instruments and effects sync to dAVEBOx's tempo.** Tempo-synced arps,
+  delays and LFOs inside an instrument (TinyK's arp, Vesper) used the Move
+  Set's tempo instead of dAVEBOx's BPM. They now get dAVEBOx's tempo exactly,
+  whether it is playing or stopped. In Clock Follow they follow Move, as before.
 
 ## [0.0.18] — 2026-10-09 (test build, not in the Schwung catalog)
 ### Changed

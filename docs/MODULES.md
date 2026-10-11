@@ -2291,12 +2291,15 @@ void move_plugin_host_ext_v1(const move_host_ext_v1_t *ext) { g_ext = ext; }
 | Member | What it does |
 |---|---|
 | `int set_slot_param(int slot, const char *key, const char *value)` | Sets one parameter of chain slot `slot` (0-based) **now**, from `render_block` or `set_param` — on the audio thread, in program order with the module's own `midi_send_internal_slot` calls. A value written before a note is sent to the same slot is in place when that note is voiced. `key` is a chain parameter key (`synth:cutoff`, `fx2:mix`, `slot:volume`, `move_fx:1:volume`). Keys that load or replace something (`…:module`, patches, state) are refused. Transient: the slot is not marked edited. Returns 1 if dispatched, 0 if refused. **Only an overtake DSP is offered this** (the slot it would address is another module's). Audio thread rules apply to the caller: no formatting through `printf`-family calls that allocate, and keep the number of writes per block small — each one costs whatever the target module's `set_param` costs. |
+| `void set_tempo(float bpm)` | For a module that runs its own clock (it sends Start / Clock / Stop through `midi_send_internal`): declares its tempo, so `get_bpm()` answers with exactly that value — while it plays, while it is stopped, and before its first Start — instead of a tempo measured from its block-quantized clock ticks. Call it when the tempo changes; pass `0` to withdraw (for example while following Move's clock, which the host measures itself). A running Move transport still takes precedence. Callable from `render_block` or `set_param`. The host withdraws it when the module is unloaded. |
 
 
 **Tempo while stopped:** `get_bpm()` retains the last-playing transport's tempo
 after it stops (so a synced LFO that switches from phase-lock to free-run keeps
 the same rate). It updates from emitted clock, so changing an internal
-sequencer's tempo while it is *stopped* is not reflected until it plays again.
+sequencer's tempo while it is *stopped* is not reflected until it plays again —
+unless that sequencer declares its tempo with the `set_tempo` host extension
+(below), which `get_bpm()` then returns exactly, stopped or playing.
 
 ## Audio Specifications
 

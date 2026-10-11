@@ -47,10 +47,32 @@
 /* Track 0's route is ROUTE_MOVE -> emissions are HX_MIDI_INJECT (kind 2);
  * so are tracks 1..7 by default. Every musical note below is inject-kind. */
 
+/* The slots' transport (Start / clock / Stop, sent while db plays) is not
+ * musical emission and runs through every scenario at 24 PPQN; it is left out
+ * of the goldens and pinned by tests/test_slot_transport.c instead. */
+static int is_slot_transport(const hx_midi_event *e) {
+    return e->kind == HX_MIDI_INTERNAL && e->bytes[0] == 0x0F && e->bytes[1] >= 0xF8;
+}
+/* The i-th captured event that is not slot transport, or NULL. */
+static const hx_midi_event *golden_event(int i) {
+    int k;
+    for (k = 0; k < hx_stub_event_count(); k++) {
+        const hx_midi_event *e = hx_stub_event(k);
+        if (is_slot_transport(e)) continue;
+        if (i-- == 0) return e;
+    }
+    return NULL;
+}
+static int golden_event_count(void) {
+    int k, n = 0;
+    for (k = 0; k < hx_stub_event_count(); k++) if (!is_slot_transport(hx_stub_event(k))) n++;
+    return n;
+}
+
 static void dump_capture(FILE *f) {
     int i;
-    for (i = 0; i < hx_stub_event_count(); i++) {
-        const hx_midi_event *e = hx_stub_event(i);
+    for (i = 0; i < golden_event_count(); i++) {
+        const hx_midi_event *e = golden_event(i);
         /* bytes[0] (USB cable|CIN) included so a Phase 3 split that re-emits
          * on a different cable fails, not just payload changes. */
         fprintf(f, "%d %02X %02X %02X %02X\n", (int)e->kind,
@@ -72,7 +94,7 @@ static void check_golden(const char *name) {
     if (!f) { fprintf(stderr, "FAIL: missing golden %s (run UPDATE_GOLDENS=1 once)\n", path); exit(1); }
     char want[64]; int i = 0;
     while (fgets(want, sizeof(want), f)) {
-        const hx_midi_event *e = hx_stub_event(i);
+        const hx_midi_event *e = golden_event(i);
         char got[64];
         if (!e) { fprintf(stderr, "FAIL: %s: capture shorter than golden (line %d)\n", name, i + 1); exit(1); }
         snprintf(got, sizeof(got), "%d %02X %02X %02X %02X\n", (int)e->kind,
@@ -84,9 +106,9 @@ static void check_golden(const char *name) {
         i++;
     }
     fclose(f);
-    if (i != hx_stub_event_count()) {
+    if (i != golden_event_count()) {
         fprintf(stderr, "FAIL: %s: capture longer than golden (%d vs %d)\n",
-                name, hx_stub_event_count(), i);
+                name, golden_event_count(), i);
         exit(1);
     }
 }

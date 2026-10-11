@@ -9,7 +9,7 @@
  */
 
 import { miOpen, miTick, miAnimating, miActive } from './ui_midi_import.mjs';
-import { chordLayoutOn } from './ui_chord_pads.mjs';
+import { chordPadsOn } from './ui_custom_chords.mjs';
 import { triggerFlashing } from './ui_trigger.mjs';
 import {
     MoveShift, MovePlay, MoveLeft, MoveRight, MoveUp, MoveDown, MoveMute, MoveDelete,
@@ -574,7 +574,7 @@ export function _tickImpl() {
             /* The Chord layout re-bakes the map on every chord (the strum row
              * follows it), so pad 0 alone proves nothing there: compare the
              * whole map's checksum instead — the same one read, not two. */
-            const _chordSig = chordLayoutOn(S.activeTrack);
+            const _chordSig = chordPadsOn(S.activeTrack);
             if (_chordSig) {
                 const _sig = dget('padmap_sig');
                 if (_sig !== null && _sig !== undefined && _sig !== '' &&

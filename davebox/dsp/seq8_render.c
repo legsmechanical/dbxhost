@@ -92,6 +92,41 @@ static inline void clock_send_f8_tick(seq8_instance_t *inst) {
     }
 }
 
+/* Transport to the instrument slots. The host broadcasts a realtime status
+ * sent this way to every slot and counts it as the internal transport, which
+ * is where a slot's MIDI FX and synced LFOs read Start, clock and Stop from.
+ * Same message form as a note ([type, status, d1, d2]). Audio thread only. */
+static void slot_clock_send(uint8_t rt) {
+    if (g_host && g_host->midi_send_internal) {
+        const uint8_t msg[4] = { 0x0F, rt, 0, 0 };
+        g_host->midi_send_internal(msg, 4);
+    }
+}
+/* Once per block: tell the host db's tempo when it changes. */
+static inline void slot_tempo_declare(seq8_instance_t *inst) {
+    const float bpm = inst->clock_follow_on ? 0.0f : (float)inst->tracks[0].pfx.cached_bpm;
+    if (bpm == inst->declared_bpm) return;
+    inst->declared_bpm = bpm;
+    if (g_ext && g_ext->set_tempo) g_ext->set_tempo(bpm);
+}
+/* Once per block, before the tick loops: Start on the play edge, Stop on the
+ * stop edge (and when follow takes over mid-play). */
+static inline void slot_clock_edges(seq8_instance_t *inst) {
+    const uint8_t run = (inst->playing && !inst->clock_follow_on) ? 1 : 0;
+    if (run == inst->slot_clock_running) return;
+    slot_clock_send(run ? 0xFA : 0xFC);
+    inst->slot_clock_phase = 0;
+    inst->slot_clock_running = run;
+}
+/* Per master tick while playing: 96 PPQN / 4 = 24 PPQN. */
+static inline void slot_clock_f8_tick(seq8_instance_t *inst) {
+    if (!inst->slot_clock_running) return;
+    if (++inst->slot_clock_phase >= 4) {
+        inst->slot_clock_phase = 0;
+        slot_clock_send(0xF8);
+    }
+}
+
 /* Clock-follow housekeeping run once per block from render_block: advance the
  * staleness time base, drain the MovePlay inject toward the desired Move
  * transport, and apply the start-timeout fallback. RT-safe (no alloc / IO). */
@@ -220,6 +255,10 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
     /* Transport-stop automation releases, requested from either thread and
      * done here so the staging ring keeps its one producer. */
     pa_release_service(inst);
+
+    /* The slots' transport follows db's own, and the host knows its tempo. */
+    slot_tempo_declare(inst);
+    slot_clock_edges(inst);
 
     /* Clock OUT transport edges (0xFA/0xFC). Emitted once per block from the
      * audio thread (single producer for the shim ext ring) on the db transport
@@ -1116,6 +1155,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
         }
         inst->arp_master_tick++;
         clock_send_f8_tick(inst);  /* continuous 24-PPQN clock out while playing (free-run master) */
+        slot_clock_f8_tick(inst);  /* ...and the slots' clock, only while playing */
     }
 
 mix_click:

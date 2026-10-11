@@ -1599,9 +1599,14 @@ static int overtake_set_slot_param(int slot, const char *key, const char *value)
 __attribute__((visibility("default")))
 int schwung_move_info(void *out, size_t cap) { (void)out; (void)cap; return 0; }
 
+/* Host extension (move_host_ext_v1_t.set_tempo): an overtake DSP that runs
+ * its own clock declares its exact tempo to the transport service. */
+static void overtake_set_tempo(float bpm) { shadow_transport_declare_bpm(bpm); }
+
 static const move_host_ext_v1_t overtake_host_ext = {
     .size = sizeof(move_host_ext_v1_t),
     .set_slot_param = overtake_set_slot_param,
+    .set_tempo = overtake_set_tempo,
 };
 
 /* === Phase 2: Audio-thread-safe ROUTE_EXTERNAL MIDI send =================
@@ -1925,6 +1930,8 @@ static void shadow_overtake_dsp_load(const char *path) {
 
 static void shadow_overtake_dsp_unload(void) {
     if (!overtake_dsp_handle) return;
+    /* Its declared tempo goes with it. */
+    shadow_transport_declare_bpm(0.0f);
     shadow_overtake_rui_reset();
 
     /* Stop new off-RT snapshot reads and drain any in flight before freeing. */

@@ -28,6 +28,7 @@ import {
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
 import { closeChordPopup, chordEditSlot, chordSlotKnob, chordBankKnob, chordSlotReset } from './ui_chord_pads.mjs';
+import { customLayoutOn, customEditTarget, customChordTranspose, customChordOctaveStep } from './ui_custom_chords.mjs';
 import { triggerFire } from './ui_trigger.mjs';
 import { S, conductorTrackIdx, armBankDisplay, standDownBankDisplay,
          markJsUndoPatch, stepRevealAvailable, loopViewActive, endLoopLatch, knobAltOn } from './ui_state.mjs';
@@ -59,7 +60,7 @@ import { autoBankClick, autoBankJog, autoBankBack, autoBankClearClip, autoBankRe
 import { automationParamEdit, automationCaptureCommit, automationCaptureCommitAfterNotes,
          automationCaptureClear, automationClearBanksQueued } from './ui_automation.mjs';
 import { sessStripTargets } from './ui_engine.mjs';
-import { BANK_MAP_TRACK_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi } from './ui_constants.mjs';
+import { BANK_MAP_TRACK_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam } from './ui_sound.mjs';
 import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
@@ -3576,6 +3577,8 @@ function _onCC_transport(d1, d2) {
             syncDrumLaneSteps(S.activeTrack, S.activeDrumLane[S.activeTrack]);
             computePadNoteMap();  /* PHASE-1: drum page change shifts lane mapping; re-push */
             forceRedraw();
+        } else if (_customOctavePress(1)) {
+            /* The Custom layout: a held chord, or the chord row's own octave. */
         } else {
         for (const p of S.liveActiveNotes) queueLiveNoteOff(S.activeTrack, p);
         S.liveActiveNotes.clear();
@@ -3583,6 +3586,7 @@ function _onCC_transport(d1, d2) {
         computePadNoteMap();  /* PHASE-1: re-bake octave offset into DSP padmap */
         S.screenDirty = true;
         if (S.heldStep >= 0) forceRedraw();
+        _customPadsOctaveNotice();
         }
     }
     if (d1 === MoveDown && d2 > 0 && !S.sessionView && !S.sessionOverlayHeld) {
@@ -3592,6 +3596,8 @@ function _onCC_transport(d1, d2) {
             syncDrumLaneSteps(S.activeTrack, S.activeDrumLane[S.activeTrack]);
             computePadNoteMap();  /* PHASE-1: drum page change shifts lane mapping; re-push */
             forceRedraw();
+        } else if (_customOctavePress(-1)) {
+            /* The Custom layout: a held chord, or the chord row's own octave. */
         } else {
         for (const p of S.liveActiveNotes) queueLiveNoteOff(S.activeTrack, p);
         S.liveActiveNotes.clear();
@@ -3599,6 +3605,7 @@ function _onCC_transport(d1, d2) {
         computePadNoteMap();  /* PHASE-1: re-bake octave offset into DSP padmap */
         S.screenDirty = true;
         if (S.heldStep >= 0) forceRedraw();
+        _customPadsOctaveNotice();
         }
     }
 
@@ -4005,6 +4012,34 @@ function lanesOffGrid(t) {
 
 /* After a slot or CHORD bank edit: re-bake the pads now when asked (the tick
  * does it otherwise). The palette is sidecar state, saved with the rest of it. */
+/* ---- the octave buttons on the Custom layout ------------------------------
+ * A held chord pad: the buttons move THAT chord an octave. Otherwise they
+ * move the region a pad was last pressed in — the chord row has an octave of
+ * its own; the scale rows keep the track's (the caller's path). Each says
+ * which it moved. Returns true when the press was taken here. */
+function _octLabel(v) { return v > 0 ? '+' + v : String(v); }
+function _customOctavePress(dir) {
+    const t = S.activeTrack;
+    if (!customLayoutOn(t)) return false;
+    const k = customEditTarget(t);
+    if (k >= 0) {
+        const r = customChordTranspose(t, k, dir);
+        if (r.ok) chordApplyRevoice(r.rv, { record: false });
+        else if (r.why === 'range') showActionPopup('OUT OF RANGE');
+        forceRedraw();
+        return true;
+    }
+    if (S.customOctRegion[t] !== 1) return false;
+    showActionPopup('CHORDS OCTAVE', _octLabel(customChordOctaveStep(t, dir)));
+    computePadNoteMap();
+    forceRedraw();
+    return true;
+}
+function _customPadsOctaveNotice() {
+    const t = S.activeTrack;
+    if (customLayoutOn(t)) showActionPopup('PADS OCTAVE', _octLabel((S.trackOctave[t] | 0) - DEFAULT_TRACK_OCTAVE));
+}
+
 function _chordEdited() {
     /* An edit to a HELD chord re-voiced it: book what it lost and gained. */
     if (S.chordPendingRevoice) { chordApplyRevoice(S.chordPendingRevoice); S.chordPendingRevoice = null; }

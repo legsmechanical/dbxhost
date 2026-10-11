@@ -88,6 +88,43 @@ int main(void) {
     if (shadow_transport_beat_position() < 0.0) fail("bare clock runs unanchored");
     expect_near((double)shadow_transport_bpm(), 125.0, 2.5, "bpm from bare clock");
 
+    /* --- a DECLARED tempo is exact: the internal source's bpm is what it said,
+     * not the block-quantized measurement (which the 2.5 BPM tolerances above
+     * exist to forgive) --- */
+    shadow_transport_init(44100);
+    if (shadow_transport_declared_bpm() != 0.0f) fail("init clears the declared tempo");
+    shadow_transport_declare_bpm(125.0f);
+    expect_near((double)shadow_transport_declared_bpm(), 125.0, 1e-6, "declared tempo readable while stopped");
+    if (shadow_transport_bpm() != 0.0f) fail("no active transport = bpm 0, declared or not");
+    shadow_transport_on_realtime(TRANSPORT_SRC_INTERNAL, 0xFA);
+    shadow_transport_on_realtime(TRANSPORT_SRC_INTERNAL, 0xF8);
+    run_ticks(TRANSPORT_SRC_INTERNAL, 24);
+    expect_near((double)shadow_transport_bpm(), 125.0, 1e-4, "declared tempo is the internal bpm, exactly");
+    expect_near(shadow_transport_beat_position(), 1.0, 0.02, "beat position still tick-driven");
+    /* a tempo change is in force at once — no ticks needed to learn it */
+    shadow_transport_declare_bpm(90.0f);
+    expect_near((double)shadow_transport_bpm(), 90.0, 1e-4, "a new declared tempo applies immediately");
+    shadow_transport_on_realtime(TRANSPORT_SRC_INTERNAL, 0xFC);
+    shadow_transport_advance_block(128);
+    expect_near((double)shadow_transport_last_bpm(), 90.0, 1e-4, "last bpm after stop is the declared one");
+    /* a running Move transport is measured, never the internal declaration */
+    shadow_transport_declare_bpm(60.0f);
+    run_ticks(TRANSPORT_SRC_MOVE, 26);
+    /* (measured: the swing is wider here than above, the EMA having only just
+     * started — what matters is that it is nowhere near the declared 60) */
+    expect_near((double)shadow_transport_bpm(), 125.0, 5.0, "Move's clock is measured despite a declared tempo");
+    /* withdrawn / out of range = none: back to measuring */
+    shadow_transport_init(44100);
+    shadow_transport_declare_bpm(125.0f);
+    shadow_transport_declare_bpm(0.0f);
+    if (shadow_transport_declared_bpm() != 0.0f) fail("0 withdraws the declared tempo");
+    shadow_transport_declare_bpm(5.0f);
+    if (shadow_transport_declared_bpm() != 0.0f) fail("an out-of-range tempo is not a declaration");
+    shadow_transport_on_realtime(TRANSPORT_SRC_INTERNAL, 0xFA);
+    shadow_transport_on_realtime(TRANSPORT_SRC_INTERNAL, 0xF8);
+    run_ticks(TRANSPORT_SRC_INTERNAL, 24);
+    expect_near((double)shadow_transport_bpm(), 125.0, 2.5, "withdrawn: measured again");
+
     printf("PASS: test_shadow_transport\n");
     return 0;
 }

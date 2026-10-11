@@ -29,6 +29,7 @@ static uint32_t g_sample_rate = 44100;
 static unsigned long long g_stale_samples;
 /* Last actively-measured tempo + its source, retained after stop. */
 static float g_last_bpm;
+static float g_declared_bpm;   /* internal source's exact tempo; 0 = none (one word, any thread) */
 static int g_last_bpm_source;
 
 static transport_source_state_t *transport_active(int *which);
@@ -46,6 +47,27 @@ void shadow_transport_init(uint32_t sample_rate) {
     g_stale_samples = (unsigned long long)(TRANSPORT_STALE_SEC * g_sample_rate);
     g_last_bpm = 0.0f;
     g_last_bpm_source = TRANSPORT_SRC_NONE;
+    g_declared_bpm = 0.0f;
+}
+
+void shadow_transport_declare_bpm(float bpm) {
+    g_declared_bpm = (bpm >= 20.0f && bpm <= 999.0f) ? bpm : 0.0f;
+    /* The retained tempo follows a change made while that source is stopped. */
+    if (g_declared_bpm > 0.0f && g_last_bpm_source == TRANSPORT_SRC_INTERNAL)
+        g_last_bpm = g_declared_bpm;
+}
+
+float shadow_transport_declared_bpm(void) {
+    return g_declared_bpm;
+}
+
+/* Samples per tick for source `which`: the declared tempo's exact interval
+ * for the internal source, else the measured one (0 = unknown). */
+static double transport_interval(const transport_source_state_t *s, int which) {
+    float d = g_declared_bpm;
+    if (which == TRANSPORT_SRC_INTERNAL && d > 0.0f)
+        return (60.0 * g_sample_rate) / ((double)d * TRANSPORT_PPQN);
+    return s->tick_interval;
 }
 
 void shadow_transport_advance_block(int frames) {
@@ -62,8 +84,9 @@ void shadow_transport_advance_block(int frames) {
      * free-running LFO keeps the rate it was locked to. */
     int which = TRANSPORT_SRC_NONE;
     transport_source_state_t *a = transport_active(&which);
-    if (a && a->tick_interval > 0.0) {
-        g_last_bpm = (float)((60.0 * g_sample_rate) / (a->tick_interval * TRANSPORT_PPQN));
+    double iv = a ? transport_interval(a, which) : 0.0;
+    if (iv > 0.0) {
+        g_last_bpm = (float)((60.0 * g_sample_rate) / (iv * TRANSPORT_PPQN));
         g_last_bpm_source = which;
     }
 }
@@ -133,11 +156,13 @@ static transport_source_state_t *transport_active(int *which) {
 }
 
 double shadow_transport_beat_position(void) {
-    transport_source_state_t *s = transport_active(0);
+    int which = TRANSPORT_SRC_NONE;
+    transport_source_state_t *s = transport_active(&which);
     if (!s) return -1.0;
     double frac = 0.0;
-    if (s->tick_interval > 0.0) {
-        frac = (double)(g_now - s->last_tick_at) / s->tick_interval;
+    double iv = transport_interval(s, which);
+    if (iv > 0.0) {
+        frac = (double)(g_now - s->last_tick_at) / iv;
         /* Never run past the next expected tick: a late tick freezes phase
          * instead of overshooting and snapping back. */
         if (frac > 1.0) frac = 1.0;
@@ -147,9 +172,11 @@ double shadow_transport_beat_position(void) {
 }
 
 float shadow_transport_bpm(void) {
-    transport_source_state_t *s = transport_active(0);
-    if (!s || s->tick_interval <= 0.0) return 0.0f;
-    return (float)((60.0 * g_sample_rate) / (s->tick_interval * TRANSPORT_PPQN));
+    int which = TRANSPORT_SRC_NONE;
+    transport_source_state_t *s = transport_active(&which);
+    double iv = s ? transport_interval(s, which) : 0.0;
+    if (iv <= 0.0) return 0.0f;
+    return (float)((60.0 * g_sample_rate) / (iv * TRANSPORT_PPQN));
 }
 
 int shadow_transport_source(void) {

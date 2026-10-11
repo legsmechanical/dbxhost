@@ -1154,6 +1154,20 @@ export const S = {
     /* The Chord layout (per track). Wins over padLayoutChromatic while set;
      * turning it off lands back on whichever of Scale/Chrom was chosen. */
     padLayoutChord: new Array(8).fill(false),
+    /* The Custom layout (per track): the bottom row is eight chords the user
+     * builds by holding a chord pad and tapping notes; the other three rows
+     * are the Scale layout (ui_custom_chords.mjs). The setters keep the four
+     * layout flags exclusive. */
+    padLayoutCustom: new Array(8).fill(false),
+    /* Per track: null, or eight note lists (sorted, at most six notes each) —
+     * actual pitches, as heard with the chord row's octave at 0. */
+    customChords: new Array(8).fill(null),
+    /* Per track: the chord row's own octave (-4..4); the scale rows keep
+     * trackOctave. Saved. */
+    customChordOctave: new Array(8).fill(0),
+    /* Per track: which region the octave buttons move — the one a pad was
+     * last pressed in (0 = scale rows, 1 = chord row). Not saved. */
+    customOctRegion: new Array(8).fill(0),
     /* Per track: eight chord slots ({deg, stack, inv, spread, bass, oct} —
      * scale positions, never notes) and the CHORD bank's settings. Filled by
      * ui_chord_pads.mjs at load; saved in the UI sidecar. */

@@ -25,7 +25,8 @@
  * Extracted from ui.js (Phase 6a of the modularity refactor, increment 1).
  */
 
-import { restoreChordSidecar, resetChordTransient, clearHeldChords, chordLayoutOn } from './ui_chord_pads.mjs';
+import { restoreChordSidecar, resetChordTransient, clearHeldChords } from './ui_chord_pads.mjs';
+import { chordPadsOn, restoreCustomSidecar } from './ui_custom_chords.mjs';
 import {
     setButtonLED
 } from '/data/UserData/schwung/shared/input_filter.mjs';
@@ -418,7 +419,7 @@ export function tickPrefetch() {
         if ((S.tickCount % 100) === 0) keys.push('instance_id');
         /* The pad-map reconcile (ui_tick) runs on the poll's cadence so it
          * rides this read rather than making a bulk read of its own. */
-        keys.push('pad_dispatch_muted', chordLayoutOn(lt) ? 'padmap_sig' : 'pad_note_map_0');
+        keys.push('pad_dispatch_muted', chordPadsOn(lt) ? 'padmap_sig' : 'pad_note_map_0');
         if (S.activeBank === BANK_AUTOMATION) keys.push('t' + lt + '_c' + effectiveClip(lt) + '_at_has');
         /* A drum track's lane playhead is read every poll (pollDSP). */
         if (S.trackPadMode[lt] === PAD_MODE_DRUM) keys.push('t' + lt + '_l' + S.activeDrumLane[lt] + '_current_step');
@@ -1728,6 +1729,9 @@ export function restoreUiSidecar(applyDefaultsNow) {
         for (let _t = 0; _t < NUM_TRACKS; _t++)
             S.padLayoutPiano[_t] = Array.isArray(us.ppno) ? !!us.ppno[_t] : false;
         restoreChordSidecar(us.chd);
+        /* The Custom layout (additive on v:9): absent → no track on it, no
+         * chords, the chord row's octave at 0. */
+        restoreCustomSidecar(us);
         resetChordTransient();
         clearHeldChords();
         for (let _t = 0; _t < NUM_TRACKS; _t++) {
@@ -1850,6 +1854,7 @@ export function restoreUiSidecar(applyDefaultsNow) {
         /* ...and on the default pad octave, never the last project's. */
         for (let _t = 0; _t < NUM_TRACKS; _t++) S.trackOctave[_t] = DEFAULT_TRACK_OCTAVE;
         restoreChordSidecar(null);
+        restoreCustomSidecar(null);
         resetChordTransient();
         /* Sync t0's drum lane data + drumClipNonEmpty from the freshly-reset
          * DSP. syncClipsFromDsp already ran earlier in the post-DSP-sync

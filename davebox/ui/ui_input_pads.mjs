@@ -12,7 +12,7 @@ import {
     PAD_MODE_DRUM, PAD_MODE_CONDUCT, BANKS,
     NO_NOTE_FLASH_MS
 } from './ui_constants.mjs';
-import { S, loopViewActive } from './ui_state.mjs';
+import { S, loopViewActive, markJsUndo } from './ui_state.mjs';
 import { autoHoldJumpBegin, autoHoldJumpEnd } from './ui_automation_bank.mjs';
 import { nowMs } from './ui_clock.mjs';
 import { automationClearStep } from './ui_automation.mjs';
@@ -38,6 +38,8 @@ import { soundVouchLivePress } from './ui_sound.mjs';
 import { chordLayoutOn, chordRowOf, chordSlotPress, chordSlotRelease, chordModPress,
     chordModRelease, chordPitchHeld, padPitches, ROW_SLOTS, ROW_MODS,
     setChordLayout, chordPadHeld } from './ui_chord_pads.mjs';
+import { customLayoutOn, setCustomLayout, customEditTarget, customChordPress, customScalePress,
+    customChordPitches, customChordToggle, customChordClear, customChordSet } from './ui_custom_chords.mjs';
 import { handoffRecordingToTrack, recordNoteOn, recordNoteOff,
     openTapTempo, registerTapTempo, extNoteOffAll,
     stepRecPadPress, stepRecPadRelease } from './ui_record.mjs';
@@ -88,12 +90,16 @@ function _pitchHeldElsewhere(p, exceptPad) {
  * held notes, the recorder and step record. The engine stamped both edges
  * itself (pad_revoice), so the recorder finds them. Exported for the slot
  * card's knobs, which re-voice a held chord too. */
-export function chordApplyRevoice(rv) {
+export function chordApplyRevoice(rv, opts) {
     if (!rv) return;
     const t = S.activeTrack;
+    /* record: false — an EDIT of the chord (the Custom layout), not playing:
+     * the held notes follow it, the recorders do not. */
+    const rec = !(opts && opts.record === false);
     for (const p of rv.before) {
         if (rv.after.indexOf(p) >= 0 || _pitchHeldElsewhere(p, rv.pad)) continue;
         S.liveActiveNotes.delete(p);
+        if (!rec) continue;
         if (S.stepRecActive) stepRecPadRelease(p);
         if (S.recordArmed) recordNoteOff(p);
     }
@@ -101,7 +107,7 @@ export function chordApplyRevoice(rv) {
         if (rv.before.indexOf(p) >= 0) continue;
         const had = S.liveActiveNotes.has(p);
         S.liveActiveNotes.add(p);
-        if (had) continue;
+        if (had || !rec) continue;
         if (S.stepRecActive) stepRecPadPress(p, stepEntryVelocity(t, S.lastPadVelocity, false));
         if (S.recordArmed && t === S.recordArmedTrack) recordNoteOn(p, S.lastPadVelocity, S.recordArmedTrack);
     }
@@ -175,6 +181,74 @@ function _chordPadRelease(padIdx, slot) {
     return true;
 }
 
+
+/* ---- the Custom layout's chord row ----------------------------------------
+ * The bottom row plays the user's chords from the engine, like a Chord-layout
+ * slot. Holding one turns a tap on the scale rows into an edit of that chord
+ * (the held-step gesture). Returns true when the press was handled; the scale
+ * rows otherwise take the normal one-note paths. */
+function _customPadPress(padIdx, d2) {
+    const t = S.activeTrack;
+    const vel = effectiveVelocity(d2);
+    if (padIdx >= 8) {
+        const k = S.heldStep < 0 ? customEditTarget(t) : -1;
+        if (k < 0) { if (S.heldStep < 0) customScalePress(t); return false; }
+        /* Hold a chord + tap a note: add it to the chord, or take it out. */
+        const base = S.padNoteMap[padIdx];
+        if (base === 0xFF) return true;
+        const pitch = base + S.trackOctave[t] * 12;
+        if (pitch < 0 || pitch > 127) return true;
+        const r = customChordToggle(t, k, pitch);
+        if (!r.ok) {
+            if (r.why === 'full') showActionPopup('CHORD FULL', '6 NOTES MAX');
+            else showActionPopup('OUT OF RANGE');
+        }
+        /* The tapped pad sounds itself (the engine plays it from the pad
+         * map) — a preview, as for a held step: booked, never recorded. */
+        padPitch[padIdx] = pitch;
+        S.liveActiveNotes.add(pitch);
+        if (!S.dspInboundEnabled) liveSendNote(t, 0x90, pitch, vel);
+        chordApplyRevoice(r.rv, { record: false });
+        forceRedraw();
+        return true;
+    }
+    if (S.deleteHeld) {
+        /* Delete + chord pad: clear it. One Undo brings it back. */
+        const was = customChordClear(t, padIdx);
+        if (was) {
+            markJsUndo('chord',
+                function () { customChordSet(t, padIdx, was); },
+                function () { customChordClear(t, padIdx); });
+            showActionPopup('CHORD CLEARED');
+        }
+        forceRedraw();
+        return true;
+    }
+    if (S.heldStep >= 0) {
+        /* Hold a step + tap a chord: the chord goes into the step. */
+        const pitches = customChordPitches(t, padIdx);
+        if (!pitches.length) return true;
+        const ac = effectiveClip(t);
+        S.pendingChordToStep = { t, ac, step: S.heldStep,
+            wasEmpty: S.clipSteps[t][ac][S.heldStep] === 0, pitches,
+            vel: stepEntryVelocity(t, vel, false) };
+        S.stepBtnPressedTick[S.heldStepBtn] = -1;
+        S.stepWasHeld = true;
+        forceRedraw();
+        return true;
+    }
+    const pitches = customChordPress(t, padIdx);
+    for (const p of pitches) {
+        S.liveActiveNotes.add(p);
+        if (!S.dspInboundEnabled) liveSendNote(t, 0x90, p, vel);
+        if (S.stepRecActive) stepRecPadPress(p, stepEntryVelocity(t, vel, false));
+        if (S.recordArmed && t === S.recordArmedTrack) recordNoteOn(p, vel, S.recordArmedTrack);
+    }
+    if (pitches.length) { S.lastPlayedNote = pitches[0]; S.lastPadVelocity = vel; }
+    else showActionPopup('EMPTY CHORD', 'HOLD + TAP NOTES');
+    forceRedraw();
+    return true;
+}
 
 /* A pad picked a track: a track pad on the bank map. Everything the switch
  * entails, in one place.
@@ -624,6 +698,8 @@ function _onPadPressTrackView(status, d1, d2) {
         } else if (!S.shiftHeld && padIdx < 16 && chordLayoutOn(S.activeTrack) &&
                    _chordPadPress(padIdx, d2)) {
             /* The Chord layout's slot and modifier rows (handled above). */
+        } else if (!S.shiftHeld && customLayoutOn(S.activeTrack) && _customPadPress(padIdx, d2)) {
+            /* The Custom layout's chord row, and a tap that edits a held chord. */
         } else if (S.heldStep >= 0 && !S.shiftHeld) {
             /* Step edit: tap pad to toggle note assignment for held step */
             if (S.padNoteMap[padIdx] === 0xFF) return; /* OOB pad — no note to toggle */
@@ -1541,12 +1617,15 @@ export function _onStepButtons(d1, d2) {
                     ['Velocity', 'Repeat Play (Rpt1)', 'Repeat Set (Rpt2)'],
                     S.drumPerformMode[t]);
             } else {
-                /* Scale → Chrom → Piano → Chord → Scale. Landing on Chord
-                 * raises its explainer instead of the one-word popup. */
-                if (S.padLayoutChord[t]) {
+                /* Scale → Chrom → Piano → Chord → Custom → Scale. Landing on
+                 * Chord raises its explainer instead of the one-word popup. */
+                if (S.padLayoutCustom[t]) {
+                    setCustomLayout(t, false);
+                } else if (S.padLayoutChord[t]) {
                     setChordLayout(t, false);
                     S.padLayoutChromatic[t] = false;
                     S.padLayoutPiano[t] = false;
+                    setCustomLayout(t, true);
                 } else if (S.padLayoutPiano[t]) {
                     setChordLayout(t, true);
                 } else if (S.padLayoutChromatic[t]) {
@@ -1557,7 +1636,7 @@ export function _onStepButtons(d1, d2) {
                 }
                 computePadNoteMap();
                 if (!S.padLayoutChord[t])
-                    showActionPopup(S.padLayoutPiano[t] ? 'PIANO' : S.padLayoutChromatic[t] ? 'CHROMATIC' : 'IN-SCALE');
+                    showActionPopup(S.padLayoutCustom[t] ? 'CUSTOM CHORDS' : S.padLayoutPiano[t] ? 'PIANO' : S.padLayoutChromatic[t] ? 'CHROMATIC' : 'IN-SCALE');
             }
         } else if (idx === 9) {
             /* Step 10: toggle VelIn between Live and 100 */
@@ -2075,6 +2154,9 @@ export function _onPadRelease(status, d1, d2) {
          * track or the layout changed under the finger. */
         if (padIdx < 8 && chordPadHeld(padIdx)) { _chordPadRelease(padIdx, true); return; }
         if (padIdx < 16 && !S.sessionView && chordLayoutOn(S.activeTrack) && _chordPadRelease(padIdx)) return;
+        /* A Custom-layout chord pad that booked nothing (a clear, a step
+         * entry) has nothing to release. */
+        if (padIdx < 8 && !S.sessionView && padPitch[padIdx] < 0 && customLayoutOn(S.activeTrack)) return;
         const pitch = padPitch[padIdx] >= 0 ? padPitch[padIdx] : S.padNoteMap[padIdx];
         if (pitch === 0xFF) return; /* OOB pad — press was skipped, nothing to release */
         /* A strum pad re-strikes a note a held chord slot also holds; that
