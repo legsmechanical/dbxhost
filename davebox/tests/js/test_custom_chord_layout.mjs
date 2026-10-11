@@ -139,7 +139,7 @@ step('⭐⭐ a fresh track: the chord row is silent and dimly lit; rows 2-4 are 
     assert(pm[8] === String((S.padOctave[T] | 0) * 12 + (S.trackOctave[T] | 0) * 12), 'row 2 does not start on the root: ' + pm[8]);
     const L = padLeds();
     /* silent, but dimly lit: the row shows where the chord slots are */
-    for (let i = 0; i < 8; i++) assert(L[i] === 107, 'empty chord pad ' + i + ' is not dim purple: ' + L[i]);
+    for (let i = 0; i < 8; i++) assert(L[i] === SC.DarkGrey, 'empty chord pad ' + i + ' is not dim grey: ' + L[i]);
     /* not a shade of the stored-chord colour (Cyan 14, its dims 91 / 92) */
     assert([14, 91, 92].indexOf(L[0]) < 0, 'an empty pad is a shade of the stored colour');
     assert(L[8] === leds.trackColor(T), 'the root pad is not the track colour: ' + L[8]);
@@ -365,8 +365,7 @@ step('⭐ chord pads have a colour of their own — never the root pad\'s, on an
     const L = padLeds();
     assert(L[1] !== L[8], 'a chord pad is the root note pad\'s colour: ' + L[1]);
     assert(L[1] !== L[9] && L[1] !== C.LED_OFF && L[1] !== SC.White, 'a chord pad reads as a plain note / dark / held: ' + L[1]);
-    assert(L[0] !== L[1] && L[0] !== C.LED_OFF && L[0] !== L[8] && L[0] !== L[9] && L[0] !== SC.White, 'an empty chord pad is not its own dim colour: ' + L[0]);
-    for (const col of C.TRACK_COLORS.concat(C.TRACK_DIM_COLORS)) assert(L[0] !== col, 'the empty-pad colour is a track colour: ' + col);
+    assert(L[0] === SC.DarkGrey && L[0] !== L[1], 'an empty chord pad is not dim grey beside a cyan one: ' + L[0]);
     for (const col of C.TRACK_COLORS) assert(L[1] !== col, 'the chord colour is a track colour: ' + col);
 });
 
