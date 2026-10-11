@@ -11,6 +11,10 @@ the section into a versioned heading at release time.
 - **A module's preset list no longer wraps.** In the module editor's preset
   page, turning the jog past the last preset jumped to the first, and back from
   the first to the last. It now stops at both ends, like every other list.
+- **Two-value knobs have a direction.** An Off/On or two-choice knob (Mix /
+  Reverb) used to flip whichever way you turned it. Now right is On (or the
+  second choice) and left is Off (or the first), and it does not wrap. It takes
+  the same short turn as any other choice knob.
 
 ## [0.0.19] — 2026-10-10 (test build, not in the Schwung catalog)
 ### Added
