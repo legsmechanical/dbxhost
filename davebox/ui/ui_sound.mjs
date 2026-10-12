@@ -8986,17 +8986,84 @@ function hostedNote(status, d1, d2) {
  * batched stream made a geared-down knob look dead (a whole sweep is a handful
  * of frames), and every other knob slow and uneven.
  *
+ * ⚠ ON A BUDGET, because the batch exists for a reason: a canvas may do real
+ * work per detent (Beat Bank re-reads ~20 values on every pattern change, and
+ * a read is a few ms), and five of those stacked in one handler is a stall
+ * long enough to drop a button release. So detents are handed over until
+ * CANVAS_DETENT_BUDGET_MS has gone by, and the rest wait for the next ticks
+ * (soundTick drains them) — every detent still counts, and a heavy handler
+ * is spread out the way stock's one-message-per-detent stream spreads it. A
+ * cheap handler never reaches the budget and sees the whole frame at once.
+ *
+ *   - a REVERSAL drops what is still waiting the other way;
+ *   - the wait is capped (CANVAS_DETENT_BACKLOG_MAX), so a long spin over a
+ *     slow handler cannot keep running on for seconds after the hand stops;
+ *   - leaving the screen drops it.
+ *
  * Knobs 1-8 and the jog are relative encoders; everything else (a button's
- * 127 / 0) goes through as it came. Capped like the editor's expansion:
- * decodeDelta spans +-63.
+ * 127 / 0) goes through as it came.
  */
-function encoderDetents(d1, d2, decodeDelta, send) {
+const CANVAS_DETENT_BUDGET_MS = 6;
+const CANVAS_DETENT_BACKLOG_MAX = 48;
+const canvasBacklog = new Map();          /* CC -> detents still owed, signed */
+let canvasClock = function () { return Date.now(); };
+export function soundCanvasClockForTest(fn) { canvasClock = fn || function () { return Date.now(); }; }
+export function soundCanvasBacklogForTest() { return Array.from(canvasBacklog.entries()); }
+
+/* Where a module screen's input goes right now, or null when none is up. */
+function canvasSink() {
+    if (S.view === VIEW_CANVAS && canvasEditActive())
+        return function (d1, v) { canvasEditOnMidi(0xB0, d1, v); return true; };
+    if (S.hosted && S.view === VIEW_EDIT)
+        return function (d1, v) { return hostedTakes(d1, v); };
+    return null;
+}
+
+/* Hand over what is owed on CC d1, inside the budget. At least one detent
+ * goes every call, so a handler slower than the budget still advances.
+ * Returns true if the screen took any of it. */
+function canvasDrain(d1, sink, t0) {
+    let owed = canvasBacklog.get(d1) | 0, took = false;
+    while (owed !== 0) {
+        const dir = owed > 0 ? 1 : -1;
+        if (sink(d1, dir > 0 ? 1 : 127)) took = true;
+        owed -= dir;
+        if (canvasClock() - t0 >= CANVAS_DETENT_BUDGET_MS) break;
+    }
+    if (owed === 0) canvasBacklog.delete(d1); else canvasBacklog.set(d1, owed);
+    return took;
+}
+
+/* One CC for a module's screen. Returns true if the screen took it. */
+function canvasSend(d1, d2, decodeDelta) {
+    const sink = canvasSink();
+    if (!sink) return false;
     const encoder = d1 === 14 || (d1 >= 71 && d1 <= 78);
     const n = encoder ? decodeDelta(d2) : 0;
-    if (!encoder || n === 0 || n === 1 || n === -1) { send(d2); return; }
-    const unit = n > 0 ? 1 : 127;                    /* +1 / -1, re-encoded */
-    const count = Math.min(Math.abs(n), 63);
-    for (let i = 0; i < count; i++) send(unit);
+    if (!encoder || n === 0) return sink(d1, d2);
+    let owed = canvasBacklog.get(d1) | 0;
+    if (owed !== 0 && (owed > 0) !== (n > 0)) owed = 0;          /* a reversal */
+    owed = Math.max(-CANVAS_DETENT_BACKLOG_MAX, Math.min(CANVAS_DETENT_BACKLOG_MAX, owed + n));
+    canvasBacklog.set(d1, owed);
+    const took = canvasDrain(d1, sink, canvasClock());
+    /* A hosted screen that DECLINED the knob gets no more of it: the CC is
+     * dAVEBOx's own, whole, on this pass. */
+    if (!took) canvasBacklog.delete(d1);
+    return took;
+}
+
+/* Once per tick: more of what is owed, or nothing is owed any more because
+ * the screen has gone. */
+function canvasDrainTick() {
+    if (!canvasBacklog.size) return;
+    const sink = canvasSink();
+    if (!sink) { canvasBacklog.clear(); return; }
+    const t0 = canvasClock();
+    for (const d1 of Array.from(canvasBacklog.keys())) {
+        canvasDrain(d1, sink, t0);
+        if (canvasClock() - t0 >= CANVAS_DETENT_BUDGET_MS) break;
+    }
+    S.dirty = true;
 }
 
 function hostedTakes(d1, d2) {
@@ -9162,13 +9229,9 @@ export function soundOnCC(d1, d2, decodeDelta) {
      * bypasses the gate in ui.js. The test enters through onMidiMessageInternal.
      * → [[wired-is-not-reachable]] */
 
-    /* A module's own screen gets its encoders ONE DETENT PER MESSAGE, as under
-     * stock (encoderDetents). */
-    {
-        let took = false;
-        encoderDetents(d1, d2, decodeDelta, function (v) { if (hostedTakes(d1, v)) took = true; });
-        if (took) { S.dirty = true; return true; }
-    }
+    /* A hosted module screen gets its encoders ONE DETENT PER MESSAGE, as under
+     * stock, on a budget (canvasSend). */
+    if (S.hosted && S.view === VIEW_EDIT && canvasSend(d1, d2, decodeDelta)) { S.dirty = true; return true; }
 
     /*
      * ⭐ A DIVED CANVAS OWNS THE INPUT, because it owns the screen.
@@ -9215,7 +9278,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
     if (S.view === VIEW_CANVAS && canvasEditActive() &&
         d1 !== 49 && d1 !== 88 && d1 !== 79 && d1 !== 50 && d1 !== 51 &&
         d1 !== 85 && d1 !== 86) {
-        encoderDetents(d1, d2, decodeDelta, function (v) { canvasEditOnMidi(0xB0, d1, v); });
+        canvasSend(d1, d2, decodeDelta);
         if (canvasEditTakeClose()) closeCanvasScreen();
         S.dirty = true;
         return true;
@@ -10840,6 +10903,9 @@ export function soundTick() {
      * close a live edit and reopen it on stale text. */
     soundTickListNamePending();
     soundTickCanvasTextAnswer();
+    /* Encoder detents a module's screen is still owed (canvasSend). Above
+     * every early return, like the rest of this block. */
+    canvasDrainTick();
     /* ⚠⚠ ABOVE EVERY EARLY RETURN, and that is the whole point. Placed after the
      * `S.active` and text-entry guards, "lives exactly one tick" was false: the
      * memo survived a whole Save-As keyboard session and every period sound mode

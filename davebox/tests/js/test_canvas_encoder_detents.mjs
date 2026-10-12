@@ -11,6 +11,11 @@ import { openTrackConfigViaMap } from './_map_config.mjs';
  *
  * Driven through the real input path (onMidiMessageInternal), against a
  * canvas that counts the way Beat Bank's does.
+ *
+ * ON A BUDGET: the batch exists so a fast turn is not one expensive call per
+ * detent. A canvas that does real work per detent (Beat Bank re-reads ~20
+ * values per pattern change) gets its detents a few ms' worth per tick, the
+ * rest carried to the next ticks — none lost, none stacked into one stall.
  */
 import './_bulk_get_stub.mjs';
 
@@ -52,10 +57,15 @@ async function main() {
      * message, a genre every 24. */
     const got = [];
     let accum = 0, genre = 0;
+    /* The clock the budget reads, and what each handler call costs on it.
+     * 0 = a handler too cheap to measure: the budget is never reached. */
+    let clock = 0, cost = 0;
+    snd.soundCanvasClockForTest(() => clock);
     const overlay = {
         onMidi: (ctx, msg) => {
             const d = msg.data;
             got.push([d[0], d[1], d[2]]);
+            clock += cost;
             if ((d[0] & 0xF0) !== 0xB0 || d[2] === 0 || d[1] !== 78) return;
             accum += d[2] < 64 ? 1 : -1;
             while (accum >= 24) { genre++; accum -= 24; }
@@ -114,6 +124,56 @@ async function main() {
         assert(clicks.length === 2 && clicks[0][2] === 127 && clicks[1][2] === 0, JSON.stringify(clicks));
     });
 
+    /* ---- the budget ---------------------------------------------------- */
+    const n14 = () => got.filter((m) => m[1] === 14).length;
+
+    step('⭐⭐ a SLOW handler gets one detent now and the rest over the next ticks — none lost, none stacked', () => {
+        got.length = 0; cost = 60;                    /* 60 ms per call: ten budgets */
+        cc(14, 5);
+        assert(n14() === 1, 'a 5-detent frame over a 60 ms handler ran it ' + n14() + ' times in one go');
+        assert(JSON.stringify(snd.soundCanvasBacklogForTest()) === JSON.stringify([[14, 4]]), 'owed: ' + JSON.stringify(snd.soundCanvasBacklogForTest()));
+        ticks(1); assert(n14() === 2, 'the next tick handed over ' + (n14() - 1) + ', want 1');
+        ticks(3); assert(n14() === 5, 'after four ticks: ' + n14() + ' of 5');
+        ticks(3); assert(n14() === 5 && snd.soundCanvasBacklogForTest().length === 0, 'more than was turned: ' + n14());
+        assert(got.filter((m) => m[1] === 14).every((m) => m[2] === 1), 'direction lost on the way');
+    });
+
+    step('⭐ a handler inside the budget gets several per tick (2 ms each: three before the 6 ms line)', () => {
+        got.length = 0; cost = 2;
+        cc(14, 7);
+        assert(n14() === 3, 'first pass: ' + n14());
+        ticks(1); assert(n14() === 6, 'second pass: ' + n14());
+        ticks(1); assert(n14() === 7, 'third pass: ' + n14());
+    });
+
+    step('⭐ turning back drops what was still owed the other way', () => {
+        got.length = 0; cost = 60;
+        cc(14, 6);                                     /* 1 delivered, 5 owed right */
+        cc(14, 127);                                   /* one detent left */
+        const ms = got.filter((m) => m[1] === 14).map((m) => m[2]);
+        assert(JSON.stringify(ms) === JSON.stringify([1, 127]), 'delivered ' + JSON.stringify(ms));
+        ticks(4);
+        assert(n14() === 2, 'the dropped right-turn detents arrived anyway: ' + n14());
+    });
+
+    step('⭐ a long spin over a slow handler cannot run on for seconds: what is owed is capped', () => {
+        got.length = 0; cost = 60;
+        for (let i = 0; i < 10; i++) cc(14, 30);       /* 300 detents */
+        const owed = snd.soundCanvasBacklogForTest();
+        assert(owed.length === 1 && owed[0][1] <= 48, 'owed ' + JSON.stringify(owed));
+    });
+
+    step('⭐ leaving the screen drops what is owed', () => {
+        assert(snd.soundCanvasBacklogForTest().length === 1, 'setup: nothing owed');
+        got.length = 0;
+        cc(14, 1); cc(49, 127); cc(14, 1); cc(49, 0);  /* Shift + jog: the escape hatch */
+        ticks(3);
+        assert(snd.soundCanvasBacklogForTest().length === 0, 'still owed after leaving: ' + JSON.stringify(snd.soundCanvasBacklogForTest()));
+        const after = got.length; ticks(5);
+        assert(got.length === after, 'the closed screen was still being fed');
+    });
+
+    snd.soundCanvasClockForTest(null);
     if (failed) { console.error('test_canvas_encoder_detents: FAIL'); process.exit(1); }
     console.log('test_canvas_encoder_detents: PASS');
 }
