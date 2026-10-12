@@ -42,17 +42,27 @@ static inline void chain_clock_init(chain_clock_state_t *c) {
     atomic_store_explicit(&c->next_refresh_ms, 0, memory_order_relaxed);
 }
 
-/* One realtime byte from any slot. Tick stamps; Start/Continue run (and stamp
- * if no tick was ever seen, so a transport with clock arriving late still
- * reads RUNNING); Stop halts. Anything else is ignored. */
+/* One realtime byte from any slot. Tick stamps; Start/Continue run AND stamp;
+ * Stop halts. Anything else is ignored.
+ *
+ * ⚠ A Start is clock activity. The first tick of a transport arrives one clock
+ * interval AFTER its Start (20 ms at 120 BPM), and until 2026-10-11 a Start
+ * stamped only when no tick had EVER been seen. So from the second play on —
+ * the old stamp long stale — the status read STOPPED for that first interval.
+ * A plugin that checks the status every block and takes STOPPED as "the clock
+ * went away" (a step sequencer's tick does exactly that) stood itself down
+ * before the first tick, then ignored every tick after it: it started only on
+ * the first play, or when Play followed a Stop inside the stale window. The
+ * stamp only ever moves forward. */
 static inline void chain_clock_on_realtime(chain_clock_state_t *c, uint8_t status, uint64_t now_ms) {
     if (status == 0xF8) {
         atomic_store_explicit(&c->last_tick_ms, now_ms, memory_order_release);
     } else if (status == 0xFA || status == 0xFB) {
         atomic_store_explicit(&c->transport_running, 1, memory_order_release);
-        uint64_t zero = 0;
-        atomic_compare_exchange_strong_explicit(&c->last_tick_ms, &zero, now_ms,
-                                                memory_order_acq_rel, memory_order_relaxed);
+        uint64_t last = atomic_load_explicit(&c->last_tick_ms, memory_order_acquire);
+        while (now_ms > last &&
+               !atomic_compare_exchange_weak_explicit(&c->last_tick_ms, &last, now_ms,
+                                                      memory_order_acq_rel, memory_order_acquire)) { }
     } else if (status == 0xFC) {
         atomic_store_explicit(&c->transport_running, 0, memory_order_release);
     }

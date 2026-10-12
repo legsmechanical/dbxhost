@@ -57,7 +57,7 @@ int main(void) {
     OK(chain_clock_status(&g, 1100, 750) == MOVE_CLOCK_STATUS_STOPPED, "a tick without Start: STOPPED");
     chain_clock_on_realtime(&g, 0xFA, 1100);
     OK(chain_clock_status(&g, 1200, 750) == MOVE_CLOCK_STATUS_RUNNING, "Start with a live tick: RUNNING");
-    OK(chain_clock_status(&g, 1000 + 751, 750) == MOVE_CLOCK_STATUS_STOPPED, "ticks gone stale: STOPPED even though Start was seen");
+    OK(chain_clock_status(&g, 1100 + 751, 750) == MOVE_CLOCK_STATUS_STOPPED, "no clock after Start for the stale window: STOPPED even though Start was seen");
     chain_clock_on_realtime(&g, 0xF8, 2000);
     OK(chain_clock_status(&g, 2100, 750) == MOVE_CLOCK_STATUS_RUNNING, "...a fresh tick brings RUNNING back");
     chain_clock_on_realtime(&g, 0xFC, 2100);
@@ -67,9 +67,26 @@ int main(void) {
     OK(atomic_load(&g.last_tick_ms) == 500 && chain_clock_status(&g, 600, 750) == MOVE_CLOCK_STATUS_RUNNING,
        "Continue before any tick stamps the tick time (transport with clock arriving late reads RUNNING)");
     chain_clock_on_realtime(&g, 0xFB, 900);
-    OK(atomic_load(&g.last_tick_ms) == 500, "...but a second Start does not move an existing stamp");
+    OK(atomic_load(&g.last_tick_ms) == 900, "a later Start moves the stamp forward: a Start is clock activity");
+    chain_clock_on_realtime(&g, 0xFA, 700);
+    OK(atomic_load(&g.last_tick_ms) == 900, "...and never backward");
     chain_clock_on_realtime(&g, 0xFE, 1000);
-    OK(atomic_load(&g.last_tick_ms) == 500 && atomic_load(&g.transport_running) == 1, "an unrelated realtime byte changes nothing");
+    OK(atomic_load(&g.last_tick_ms) == 900 && atomic_load(&g.transport_running) == 1, "an unrelated realtime byte changes nothing");
+
+    /* ---- THE SECOND PLAY: Stop, a long silence, Start — and the first tick
+     * only one clock interval later. Between the two the status must already
+     * read RUNNING, or a plugin that polls it every block stands itself down
+     * before the first tick arrives. ---- */
+    chain_clock_init(&g);
+    chain_clock_on_realtime(&g, 0xFA, 1000);
+    chain_clock_on_realtime(&g, 0xF8, 1020);
+    chain_clock_on_realtime(&g, 0xFC, 1040);
+    OK(chain_clock_status(&g, 9000, 750) == MOVE_CLOCK_STATUS_STOPPED, "stopped, long after the last tick: STOPPED");
+    chain_clock_on_realtime(&g, 0xFA, 9000);
+    OK(chain_clock_status(&g, 9000, 750) == MOVE_CLOCK_STATUS_RUNNING, "second play: RUNNING at the Start itself");
+    OK(chain_clock_status(&g, 9003, 750) == MOVE_CLOCK_STATUS_RUNNING, "second play: RUNNING in the blocks before the first tick");
+    chain_clock_on_realtime(&g, 0xF8, 9021);
+    OK(chain_clock_status(&g, 9100, 750) == MOVE_CLOCK_STATUS_RUNNING, "...and on through the ticks");
 
     /* ---- several slots writing, a sub-plugin reading, concurrently ---- */
     chain_clock_init(&g);

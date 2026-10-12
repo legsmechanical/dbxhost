@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Fixed
+- **Clock-driven MIDI effects start every time.** Beat Bank (and other
+  sequencing MIDI effects) started on the first Play of a session and then only
+  now and then. They now start on every Play.
+
 ### Changed
 - **A module's preset list no longer wraps.** In the module editor's preset
   page, turning the jog past the last preset jumped to the first, and back from
