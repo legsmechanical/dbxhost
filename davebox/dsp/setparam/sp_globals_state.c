@@ -291,8 +291,7 @@ static int sp_globals_state(sp_ctx_t *cx) {
         inst->midi_in_channel = 0;
         inst->metro_on        = 1;
         inst->metro_vol       = 80;
-        inst->swing_amt       = 0;
-        inst->swing_res       = 0;
+        groove_reset(&inst->groove);
         memset(inst->mute, 0, NUM_TRACKS);
         memset(inst->solo, 0, NUM_TRACKS);
         inst->conductor_track = -1;

@@ -193,7 +193,10 @@ Key prefixes:
 - VelIn — `t%d_tvo` (sparse, missing = 0 = Live)
 - Note Repeat gate — `t%dl%drg` (sparse, default 255); vel scale `t%dl%dvs%d`; nudge `t%dl%dnd%d`
 - Drum lane mute/solo — `t%ddlm` / `t%ddls`
-- Swing — `_swa` (0–100) / `_swr` (0 = 1/16, 1 = 1/8), sparse, default 0
+- Groove — `_gk` kind (0 Off, 1 Swing 1/16, 2 Swing 1/8; written when not 1), `_ga` amount 0–100,
+  `_gt` Timing (written when not 100), `_gq` / `_gr` / `_gv` Quantize / Random / Velocity; all
+  sparse. `_swa` (0–100) / `_swr` (0 = 1/16, 1 = 1/8) are the two swings under their old keys:
+  still written beside the new ones, and read when a file has no `_gk` / `_ga`
 
 `state_load` calls `drum_track_init` + `drum_repeat_init_defaults` before applying saved values.
 

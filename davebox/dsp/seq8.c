@@ -271,6 +271,73 @@ static const uint32_t QUANT_STEPS[6] = {1, 1, 2, 4, 8, 16};
 /* Play effects structs (direct port from NoteTwist)                   */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* Groove: the one global timing feel. Two built-in swings and a table. */
+/* ------------------------------------------------------------------ */
+
+#define GROOVE_OFF        0
+#define GROOVE_SWING_16   1   /* every other 1/16 late */
+#define GROOVE_SWING_8    2   /* every other 1/8 late */
+#define GROOVE_TABLE      3   /* per-slot offsets */
+#define GROOVE_MAX_SLOTS  128
+#define GROOVE_FINE       16  /* table offsets are in 1/16ths of a tick */
+
+typedef struct {
+    uint8_t  kind;                     /* GROOVE_* */
+    uint8_t  amt;                      /* 0-100. Swings: 50%-75% of the pair (0=straight) */
+    uint8_t  timing;                   /* 0-100: how much of the timing is applied (default 100) */
+    uint8_t  quantize;                 /* 0-100 */
+    uint8_t  random;                   /* 0-100 */
+    uint8_t  velocity;                 /* 0-100 */
+    uint8_t  base;                     /* table: slot length in ticks */
+    uint8_t  n_slots;                  /* table: slots before it repeats */
+    int16_t  off[GROOVE_MAX_SLOTS];    /* table: offset per slot, fine ticks; <0 = early */
+    uint8_t  vel[GROOVE_MAX_SLOTS];    /* table: velocity per slot; 0 = leave alone */
+    char     name[24];
+} groove_t;
+
+/* A project starts with a groove chosen and nothing applied: straight. */
+static inline void groove_reset(groove_t *g) {
+    memset(g, 0, sizeof(*g));
+    g->kind   = GROOVE_SWING_16;
+    g->timing = 100;
+}
+
+static inline int groove_is_swing(const groove_t *g) {
+    return g->kind == GROOVE_SWING_16 || g->kind == GROOVE_SWING_8;
+}
+
+/* Amount actually applied to timing. Exactly `amt` while timing is 100. */
+static inline uint32_t groove_eff_amt(const groove_t *g) {
+    return (uint32_t)g->amt * (uint32_t)g->timing / 100u;
+}
+
+/* How often the per-slot delay is re-derived, in ticks. */
+static inline uint32_t groove_slot_ticks(const groove_t *g) {
+    return (g->kind == GROOVE_TABLE && g->base > 0) ? (uint32_t)g->base : 24u;
+}
+
+/* Swings: whole ticks an offbeat step is late. INTEGER truncation is the
+ * behaviour — it is what every existing project's swing sounds like. */
+static inline uint32_t groove_swing_off_ticks(const groove_t *g) {
+    uint32_t pair_ticks = (g->kind == GROOVE_SWING_16) ? 24u * 2 : 24u * 4;
+    return groove_eff_amt(g) * pair_ticks / 400;
+}
+
+static inline int groove_swing_offbeat(const groove_t *g, uint64_t step) {
+    return (g->kind == GROOVE_SWING_16) ? (int)(step % 2 == 1)
+                                        : (int)((step / 2) % 2 == 1);
+}
+
+/* Table: how late (fine ticks) the slot holding `tick` is. Early slots read
+ * as on-time here — nothing is played ahead of its tick yet. */
+static inline uint32_t groove_table_late_fine(const groove_t *g, uint64_t tick) {
+    if (g->kind != GROOVE_TABLE || g->base == 0 || g->n_slots == 0) return 0;
+    int32_t off = (int32_t)g->off[(tick / g->base) % g->n_slots];
+    if (off <= 0) return 0;
+    return (uint32_t)off * groove_eff_amt(g) / 100u;
+}
+
 #define PFX_EV_BYPASS_SWING 0x01  /* event already swing-deferred; route directly, skip pfx_send */
 
 typedef struct {
@@ -1168,8 +1235,7 @@ typedef struct {
     uint8_t  xpose_preview_scale;   /* candidate scale 0-13 during preview */
     uint8_t  xpose_lut[128];        /* per-pitch remap, rebuilt from the 4-val descriptor */
     uint8_t  launch_quant;          /* 0=Now,1=1/16,2=1/8,3=1/4,4=1/2,5=1-bar; default 5 */
-    uint8_t  swing_amt;             /* 0-100 UI; maps to 50%-75% of pair (0=straight, 100=75%) */
-    uint8_t  swing_res;             /* 0=1/16 pairs, 1=1/8 pairs */
+    groove_t groove;                /* the global groove; swing is two of its kinds */
     uint64_t swing_step_delay;      /* samples to defer notes in current even step; 0=no defer */
 
     /* Conductor live transposition offset — transient: NOT serialized. Set from
@@ -2507,8 +2573,14 @@ static uint64_t swing_offset_for_fire_at(seq8_instance_t *inst,
                                          uint64_t fx_sample_counter,
                                          uint64_t fire_at) {
     if (!inst) return 0;
-    if (inst->swing_amt == 0) return 0;
-    if (inst->swing_step_delay_offbeat == 0) return 0;
+    const groove_t *g = &inst->groove;
+    int swing = groove_is_swing(g);
+    if (swing) {
+        if (g->amt == 0) return 0;
+        if (inst->swing_step_delay_offbeat == 0) return 0;
+    } else if (g->kind != GROOVE_TABLE || groove_eff_amt(g) == 0) {
+        return 0;
+    }
     if (inst->tick_delta == 0) return 0;
     double spt = (double)MOVE_FRAMES_PER_BLOCK
                  * (double)inst->tick_threshold / (double)inst->tick_delta;
@@ -2517,11 +2589,33 @@ static uint64_t swing_offset_for_fire_at(seq8_instance_t *inst,
     int64_t target_tick   = (int64_t)inst->arp_master_tick
                             + (int64_t)((double)delta_samples / spt);
     if (target_tick < 0) return 0;
+    if (!swing)
+        return (uint64_t)(groove_table_late_fine(g, (uint64_t)target_tick) * spt
+                          / (double)GROOVE_FINE + 0.5);
     uint64_t target_step = (uint64_t)target_tick / (uint64_t)TICKS_PER_STEP;
-    int offbeat = (inst->swing_res == 0)
-        ? (int)(target_step % 2 == 1)
-        : (int)((target_step / 2) % 2 == 1);
-    return offbeat ? inst->swing_step_delay_offbeat : (uint64_t)0;
+    return groove_swing_offbeat(g, target_step) ? inst->swing_step_delay_offbeat : (uint64_t)0;
+}
+
+/* Re-derive how late the slot starting at master `tick` plays. Called on each
+ * slot boundary, playing or stopped. */
+static void groove_recompute_step_delay(seq8_instance_t *inst, uint64_t tick) {
+    const groove_t *g = &inst->groove;
+    inst->swing_step_delay         = 0;
+    inst->swing_step_delay_offbeat = 0;
+    if (groove_is_swing(g)) {
+        if (g->amt == 0) return;
+        uint32_t off_ticks = groove_swing_off_ticks(g);
+        double spt = (double)MOVE_FRAMES_PER_BLOCK
+                     * (double)inst->tick_threshold / (double)inst->tick_delta;
+        inst->swing_step_delay_offbeat = (uint64_t)(off_ticks * spt + 0.5);
+        if (groove_swing_offbeat(g, tick / (uint64_t)TICKS_PER_STEP))
+            inst->swing_step_delay = inst->swing_step_delay_offbeat;
+    } else if (g->kind == GROOVE_TABLE && inst->tick_delta > 0) {
+        double spt = (double)MOVE_FRAMES_PER_BLOCK
+                     * (double)inst->tick_threshold / (double)inst->tick_delta;
+        inst->swing_step_delay = (uint64_t)(groove_table_late_fine(g, tick) * spt
+                                            / (double)GROOVE_FINE + 0.5);
+    }
 }
 
 static void pfx_q_fire(play_fx_t *fx, uint64_t now) {
@@ -5816,6 +5910,7 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
     inst->pad_key      = 9;   /* A */
     inst->pad_scale    = 1;   /* Minor */
     inst->launch_quant = 0;   /* Now */
+    groove_reset(&inst->groove);
     inst->metro_on     = 1;    /* default: Count (count-in only) */
     inst->metro_vol    = 80;
     inst->metro_wav_fd    = -1;
@@ -7125,7 +7220,8 @@ static int pfx_get(seq8_track_t *tr, const char *key, char *out, int out_len) {
 /*   rui_play  = "on:tick:bpm"                                           */
 /*   rui_sel   = "track:clip:lane"   (lane=-1 melodic)                   */
 /*   rui_clip  = "len:tps:loop_start:dir"   (selected clip)             */
-/*   rui_glob  = "key:scale:swing_amt:swing_res:launch_quant:scale_aware" */
+/*   rui_glob  = "key:scale:swing_amt:swing_res:launch_quant:scale_aware:  */
+/*                groove_kind:groove_amt"                                 */
 /*   rui_scale = 12 pitch-class in-scale bits (pc0..11 absolute)          */
 /*   rui_index = per-track "pm:ac:qc:pl:<16 has-bits>", joined by ';'     */
 /*   rui_notes = "tick:pitch:vel:gate;" list for the selected clip       */
@@ -7218,10 +7314,14 @@ static int seq8_remote_snapshot(seq8_instance_t *inst, char *out, int out_len) {
     APP(",\"rui_clip\":\"%d:%d:%d:%d\"",
         (int)gcl->length, (int)gcl->ticks_per_step, (int)gcl->loop_start,
         (int)gcl->playback_dir);
-    /* global params: key:scale:swing_amt:swing_res:launch_quant:scale_aware (bpm in rui_play) */
-    APP(",\"rui_glob\":\"%d:%d:%d:%d:%d:%d\"",
-        (int)inst->pad_key, (int)inst->pad_scale, (int)inst->swing_amt,
-        (int)inst->swing_res, (int)inst->launch_quant, (int)inst->scale_aware);
+    /* global params: key:scale:swing_amt:swing_res:launch_quant:scale_aware:
+     * groove_kind:groove_amt (bpm in rui_play). New fields are appended. */
+    APP(",\"rui_glob\":\"%d:%d:%d:%d:%d:%d:%d:%d\"",
+        (int)inst->pad_key, (int)inst->pad_scale,
+        groove_is_swing(&inst->groove) ? (int)inst->groove.amt : 0,
+        (int)(inst->groove.kind == GROOVE_SWING_8),
+        (int)inst->launch_quant, (int)inst->scale_aware,
+        (int)inst->groove.kind, (int)inst->groove.amt);
     /* rui_scale: 12 pitch-class bits (pc 0..11 absolute, key applied) — which
      * notes are in the current key+scale, so the piano roll can shade rows. */
     APP(",\"rui_scale\":\"");
@@ -7840,10 +7940,25 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         return snprintf(out, out_len, "%d", inst ? (int)inst->metro_beat_count : 0);
     if (!strcmp(key, "launch_quant"))
         return snprintf(out, out_len, "%d", inst ? (int)inst->launch_quant : 0);
+    /* swing_amt / swing_res: the two swing grooves under their old names. */
     if (!strcmp(key, "swing_amt"))
-        return snprintf(out, out_len, "%d", inst ? (int)inst->swing_amt : 0);
+        return snprintf(out, out_len, "%d",
+                        (inst && groove_is_swing(&inst->groove)) ? (int)inst->groove.amt : 0);
     if (!strcmp(key, "swing_res"))
-        return snprintf(out, out_len, "%d", inst ? (int)inst->swing_res : 0);
+        return snprintf(out, out_len, "%d",
+                        (inst && inst->groove.kind == GROOVE_SWING_8) ? 1 : 0);
+    if (!strcmp(key, "groove_kind"))
+        return snprintf(out, out_len, "%d", inst ? (int)inst->groove.kind : 0);
+    if (!strcmp(key, "groove_amt"))
+        return snprintf(out, out_len, "%d", inst ? (int)inst->groove.amt : 0);
+    if (!strcmp(key, "groove_timing"))
+        return snprintf(out, out_len, "%d", inst ? (int)inst->groove.timing : 0);
+    if (!strcmp(key, "groove_quantize"))
+        return snprintf(out, out_len, "%d", inst ? (int)inst->groove.quantize : 0);
+    if (!strcmp(key, "groove_random"))
+        return snprintf(out, out_len, "%d", inst ? (int)inst->groove.random : 0);
+    if (!strcmp(key, "groove_velocity"))
+        return snprintf(out, out_len, "%d", inst ? (int)inst->groove.velocity : 0);
     if (!strcmp(key, "version"))
         return snprintf(out, out_len, "6");
     /* Host capability: the remote-UI "state" snapshot is read-only and ALL

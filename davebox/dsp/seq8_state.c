@@ -855,8 +855,19 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
     fprintf(fp, ",\"mic\":%d", (int)inst->midi_in_channel);
     if (inst->metro_on != 1)   fprintf(fp, ",\"metro_on\":%d", (int)inst->metro_on);
     if (inst->metro_vol != 80) fprintf(fp, ",\"metro_vol\":%d", (int)inst->metro_vol);
-    if (inst->swing_amt != 0)  fprintf(fp, ",\"_swa\":%d", (int)inst->swing_amt);
-    if (inst->swing_res != 0)  fprintf(fp, ",\"_swr\":%d", (int)inst->swing_res);
+    /* Groove. _swa/_swr are the two swings under their old keys, still written
+     * so a build from before the groove reads the same feel. */
+    {
+        const groove_t *g = &inst->groove;
+        if (groove_is_swing(g) && g->amt != 0) fprintf(fp, ",\"_swa\":%d", (int)g->amt);
+        if (g->kind == GROOVE_SWING_8)         fprintf(fp, ",\"_swr\":1");
+        if (g->kind != GROOVE_SWING_16) fprintf(fp, ",\"_gk\":%d", (int)g->kind);
+        if (g->amt != 0)      fprintf(fp, ",\"_ga\":%d", (int)g->amt);
+        if (g->timing != 100) fprintf(fp, ",\"_gt\":%d", (int)g->timing);
+        if (g->quantize != 0) fprintf(fp, ",\"_gq\":%d", (int)g->quantize);
+        if (g->random != 0)   fprintf(fp, ",\"_gr\":%d", (int)g->random);
+        if (g->velocity != 0) fprintf(fp, ",\"_gv\":%d", (int)g->velocity);
+    }
     if (inst->clock_follow_on)  fprintf(fp, ",\"_cf\":%d", (int)inst->clock_follow_on);
     if (inst->clock_send_on)    fprintf(fp, ",\"_cs\":%d", (int)inst->clock_send_on);
     /* Per-parameter automation. Sparse: a project with none writes no key, so
@@ -1664,8 +1675,23 @@ static void seq8_load_state(seq8_instance_t *inst) {
     inst->midi_in_channel = (uint8_t)clamp_i(json_get_int(buf, "mic", 0), 0, 16);
     inst->metro_on  = (uint8_t)clamp_i(json_get_int(buf, "metro_on", 1), 0, 3);
     inst->metro_vol = (uint8_t)clamp_i(json_get_int(buf, "metro_vol", 80), 0, 150);
-    inst->swing_amt = (uint8_t)clamp_i(json_get_int(buf, "_swa", 0), 0, 100);
-    inst->swing_res = (uint8_t)clamp_i(json_get_int(buf, "_swr", 0), 0, 1);
+    /* Groove. A project saved before the groove has only _swa/_swr; reading
+     * them as the matching swing IS the migration. */
+    {
+        groove_t *g = &inst->groove;
+        int gk = json_get_int(buf, "_gk", -1);
+        int ga = json_get_int(buf, "_ga", -1);
+        groove_reset(g);
+        /* no table is stored yet, so a table kind has nothing to play */
+        if (gk < 0) g->kind = clamp_i(json_get_int(buf, "_swr", 0), 0, 1) ? GROOVE_SWING_8 : GROOVE_SWING_16;
+        else        g->kind = (uint8_t)clamp_i(gk, GROOVE_OFF, GROOVE_SWING_8);
+        if (ga < 0) ga = json_get_int(buf, "_swa", 0);
+        g->amt = (uint8_t)clamp_i(ga, 0, 100);
+        g->timing   = (uint8_t)clamp_i(json_get_int(buf, "_gt", 100), 0, 100);
+        g->quantize = (uint8_t)clamp_i(json_get_int(buf, "_gq", 0), 0, 100);
+        g->random   = (uint8_t)clamp_i(json_get_int(buf, "_gr", 0), 0, 100);
+        g->velocity = (uint8_t)clamp_i(json_get_int(buf, "_gv", 0), 0, 100);
+    }
     /* Clock-follow persists, but never auto-drives Move on load: ext_transport_*
      * stay zero (cleared at create), so nothing injects until transport runs.
      * Fall back to the legacy "_csl" key for sets saved during early dev. */

@@ -481,24 +481,8 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
             /* Free-running swing parity: derive step parity from arp_master_tick
              * so ARP IN, SEQ ARP, and drum Rpt1/Rpt2 pick up swing even with
              * transport off. Mirrors the playing-block computation below. */
-            if ((inst->arp_master_tick % (uint32_t)TICKS_PER_STEP) == 0) {
-                if (inst->swing_amt > 0) {
-                    uint32_t step_counter = inst->arp_master_tick / (uint32_t)TICKS_PER_STEP;
-                    int sw_even = (inst->swing_res == 0)
-                        ? (int)(step_counter % 2 == 1)
-                        : (int)((step_counter / 2) % 2 == 1);
-                    uint32_t pair_ticks = (inst->swing_res == 0)
-                        ? (uint32_t)TICKS_PER_STEP * 2 : (uint32_t)TICKS_PER_STEP * 4;
-                    uint32_t off_ticks = (uint32_t)inst->swing_amt * pair_ticks / 400;
-                    double spt = (double)MOVE_FRAMES_PER_BLOCK
-                                 * (double)inst->tick_threshold / (double)inst->tick_delta;
-                    inst->swing_step_delay_offbeat = (uint64_t)(off_ticks * spt + 0.5);
-                    inst->swing_step_delay = sw_even ? inst->swing_step_delay_offbeat : (uint64_t)0;
-                } else {
-                    inst->swing_step_delay         = 0;
-                    inst->swing_step_delay_offbeat = 0;
-                }
-            }
+            if ((inst->arp_master_tick % groove_slot_ticks(&inst->groove)) == 0)
+                groove_recompute_step_delay(inst, (uint64_t)inst->arp_master_tick);
             looper_tick(inst);
             for (t = 0; t < NUM_TRACKS; t++) {
                 seq8_track_t *tr_s = &inst->tracks[t];
@@ -538,22 +522,11 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
 
         /* Swing: recompute step delay at each 1/16 boundary. Even steps get a
          * sample-domain delay applied in pfx_send; odd steps get no delay. */
-        if (inst->master_tick_in_step == 0 && inst->tick_delta > 0) {
-            if (inst->swing_amt > 0) {
-                int sw_even = (inst->swing_res == 0)
-                    ? (int)(inst->global_tick % 2 == 1)
-                    : (int)((inst->global_tick / 2) % 2 == 1);
-                uint32_t pair_ticks = (inst->swing_res == 0)
-                    ? (uint32_t)TICKS_PER_STEP * 2 : (uint32_t)TICKS_PER_STEP * 4;
-                uint32_t off_ticks = (uint32_t)inst->swing_amt * pair_ticks / 400;
-                double spt = (double)MOVE_FRAMES_PER_BLOCK
-                             * (double)inst->tick_threshold / (double)inst->tick_delta;
-                inst->swing_step_delay_offbeat = (uint64_t)(off_ticks * spt + 0.5);
-                inst->swing_step_delay = sw_even ? inst->swing_step_delay_offbeat : (uint64_t)0;
-            } else {
-                inst->swing_step_delay         = 0;
-                inst->swing_step_delay_offbeat = 0;
-            }
+        if (inst->tick_delta > 0) {
+            uint64_t mt = (uint64_t)inst->global_tick * (uint64_t)TICKS_PER_STEP
+                          + (uint64_t)inst->master_tick_in_step;
+            if (mt % groove_slot_ticks(&inst->groove) == 0)
+                groove_recompute_step_delay(inst, mt);
         }
 
         /* Merge: ARMED → CAPTURING at first step boundary; STOPPING → finalize at

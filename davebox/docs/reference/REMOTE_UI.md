@@ -101,7 +101,7 @@ parser is tolerant of missing/short forms.
 | `rui_play` | `on:tick:bpm[:devms]` | `on` 0/1; `tick` = playhead via `rui_playhead_tick()` (melodic: `current_clip_tick`; drum: the DISPLAYED lane's own clock — `rui_sel_lane`, else lane 0 — audible-mapped; u32, wraps in the **loop window**); `bpm` int; `devms` (PLAYING only) = device-clock ms (`rui_frames*1000/44100`, free-running, resets only on re-instantiation) — the browser time-bases playhead corrections on it so delivery latency cancels. |
 | `rui_sel` | `track:clip:lane` | Selection. `lane` = −1 melodic, else drum lane index. |
 | `rui_clip` | `len:tps:loop_start:dir` | Grid-reference clip (drum → active drum clip lane 0; melodic → selected clip). Steps + ticks/step. |
-| `rui_glob` | `key:scale:swing_amt:swing_res:launch_quant:scale_aware` | Globals, all ints. |
+| `rui_glob` | `key:scale:swing_amt:swing_res:launch_quant:scale_aware:groove_kind:groove_amt` | Globals, all ints. `swing_amt`/`swing_res` are the groove seen as a swing (0 when the groove is not one). New fields are only ever appended. |
 | `rui_scale` | 12 chars `010…` | Pitch-class membership (key applied); shades roll rows / folds. |
 | `rui_pfx` | 29 colon-sep ints, or `""` | Per-clip FX (Note FX + delay + seq-arp). Order defined at the emit site. Drum → selected lane's pfx. |
 | `rui_lane` | `len:tps:loop_start:dir`, or `""` | Selected **drum lane** geometry. |

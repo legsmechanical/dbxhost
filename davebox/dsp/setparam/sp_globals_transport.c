@@ -471,17 +471,39 @@ static int sp_globals_transport(sp_ctx_t *cx) {
         inst->state_dirty = 1;
         return 1;
     }
+    /* swing_amt / swing_res: the old names for the two swing grooves. Setting
+     * either one selects a swing. */
     if (!strcmp(key, "swing_amt")) {
-        inst->swing_amt = (uint8_t)clamp_i(my_atoi(val), 0, 100);
+        if (!groove_is_swing(&inst->groove)) inst->groove.kind = GROOVE_SWING_16;
+        inst->groove.amt = (uint8_t)clamp_i(my_atoi(val), 0, 100);
         rui_touch(inst);   /* rui_glob swing_amt */
         inst->state_dirty = 1;
         return 1;
     }
     if (!strcmp(key, "swing_res")) {
-        inst->swing_res = (uint8_t)clamp_i(my_atoi(val), 0, 1);
+        inst->groove.kind = clamp_i(my_atoi(val), 0, 1) ? GROOVE_SWING_8 : GROOVE_SWING_16;
         rui_touch(inst);   /* rui_glob swing_res */
         inst->state_dirty = 1;
         return 1;
+    }
+    if (!strncmp(key, "groove_", 7)) {
+        groove_t *g = &inst->groove;
+        const char *k = key + 7;
+        uint8_t *dst = NULL;
+        int hi = 100;
+        /* a table kind is only ever entered by loading a table */
+        if      (!strcmp(k, "kind"))     { dst = &g->kind; hi = GROOVE_SWING_8; }
+        else if (!strcmp(k, "amt"))      dst = &g->amt;
+        else if (!strcmp(k, "timing"))   dst = &g->timing;
+        else if (!strcmp(k, "quantize")) dst = &g->quantize;
+        else if (!strcmp(k, "random"))   dst = &g->random;
+        else if (!strcmp(k, "velocity")) dst = &g->velocity;
+        if (dst) {
+            *dst = (uint8_t)clamp_i(my_atoi(val), 0, hi);
+            rui_touch(inst);   /* rui_glob groove_kind / groove_amt */
+            inst->state_dirty = 1;
+            return 1;
+        }
     }
     if (!strcmp(key, "midi_in_channel")) {
         inst->midi_in_channel = (uint8_t)clamp_i(my_atoi(val), 0, 16);
