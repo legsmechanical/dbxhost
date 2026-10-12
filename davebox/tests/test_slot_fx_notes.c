@@ -193,8 +193,9 @@ int main(void) {
         fx(h, 0, 0x90, p0, 110);
         HX_ASSERT(l0->note_count == 1, "drum: the hit did not land in the lane that plays its note");
         fx(h, 0, 0x80, p0, 0);
-        fx(h, 0, 0x90, p0, 110);                       /* the next lap, same step */
+        fx(h, 0, 0x90, p0, 50);                        /* the next lap, same step, played softer */
         HX_ASSERT(l0->note_count == 1, "drum: an occupied step took the hit again");
+        HX_ASSERT(l0->notes[0].vel == 110, "drum: a later lap overwrote the hit already on the step");
         fx(h, 0, 0x90, p3, 80);
         HX_ASSERT(l3->note_count == 1, "drum: a second lane's hit on the same step was refused");
         hx_render(h, 120);
