@@ -1731,7 +1731,7 @@ the rows it has:
 | **Buses** | Voice groups, on instruments that can split their voices — see [Presets, LFOs and buses](#145-presets-lfos-and-buses) |
 | **LFOs** | Two LFOs for the track |
 | **Presets** | Save and load the whole chain |
-| **Mode, Layout, Transpose, VelIn, Looper, AftTch, Export to MIDI, Parallel** | The track's own settings — see [Track settings](#174-track-settings) |
+| **Mode, Layout, Transpose, VelIn, Looper, Groove, AftTch, Export to MIDI, Parallel** | The track's own settings — see [Track settings](#174-track-settings) |
 
 On the Instmt/Dest and effect rows, a hint band at the foot of the menu says what
 the click and the Shift chord do.
@@ -2323,6 +2323,7 @@ are hidden, so the list is shorter on a MIDI track or a Conductor.
 | Transpose | −24…+24 st | Shifts everything the track plays |
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |
 | Looper | On, Off | Feeds [Performance Mode](#13-performance-mode) |
+| Groove | On, Off | Off = this track ignores the project's Swing and plays straight |
 | Export to MIDI | (click) | Saves the clip you are on, as it plays, as a MIDI file — see [Export a clip as a MIDI file](#165-export-a-clip-as-a-midi-file) |
 | AftTch | Off, Poly, Chan | Pad-pressure aftertouch (melodic; a Move track offers Off and Poly) |
 | Parallel | On, Off | Schwung tracks with an instrument: whether it may render on another core — set per instrument, device-wide |

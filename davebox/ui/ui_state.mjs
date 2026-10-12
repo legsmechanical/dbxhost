@@ -483,6 +483,9 @@ export const S = {
      * Held by the DSP (tN_transpose); this is the UI mirror. */
     trackTranspose: new Array(8).fill(0),
     trackLooper: new Array(8).fill(1),
+    /* Per-track Groove switch: 0 = the track ignores the global groove. Held
+     * by the DSP (tN_groove_on); this is the UI mirror. */
+    trackGroove: new Array(8).fill(1),
     /* Per-track pad-pressure (aftertouch) send mode: 0=Off, 1=Poly (0xA0), 2=Channel (0xD0).
      * Move route supports 0/1 only; Schwung/External support 0/1/2. Persisted in UI sidecar (am). */
     trackAtMode: new Array(8).fill(0),

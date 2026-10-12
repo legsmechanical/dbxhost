@@ -238,5 +238,13 @@ static int sp_track_config(sp_ctx_t *cx) {
         return 1;
     }
 
+    /* tN_groove_on: 0 = this track ignores the global groove and plays straight */
+    if (!strcmp(sub, "groove_on")) {
+        uint8_t go = (uint8_t)(my_atoi(val) ? 1 : 0);
+        tr->pfx.groove_on = go;   /* drum lanes read this too (drum_groove_on) */
+        inst->state_dirty = 1;
+        return 1;
+    }
+
     return 0;
 }

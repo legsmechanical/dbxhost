@@ -568,6 +568,7 @@ typedef struct {
     /* Global MIDI Looper: 1 = this track's post-fx output is captured by the
      * looper and silenced during playback; 0 = bypass entirely. Default 1. */
     uint8_t      looper_on;
+    uint8_t      groove_on;  /* 0 = this track ignores the global groove and plays straight */
     uint8_t      track_idx;  /* 0..NUM_TRACKS-1; back-pointer for looper events */
     /* Output-pitch refcount: counts how many distinct chain sources (input pads
      * × HARMZ copies + delay echoes + arp emits) are currently sounding each
@@ -2354,7 +2355,7 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
      * bypass via emit_bypass_swing so they never feel laggy. Events re-entering
      * from a queue drain (in_queue_drain) skip swing here — schedule-time swing
      * already baked their fire_at, so re-queueing would scramble pair order. */
-    if (g_inst && g_inst->swing_step_delay > 0
+    if (g_inst && g_inst->swing_step_delay > 0 && fx->groove_on
             && !g_inst->emit_bypass_swing
             && !g_inst->in_queue_drain) {
         uint8_t st = status & 0xF0;
@@ -2703,6 +2704,7 @@ static void groove_scan_early(seq8_instance_t *inst) {
  * is waiting: a note played ahead of its tick could belong to a pass that the
  * launch then replaces. Such a track plays its early slots on time. */
 static inline int groove_track_early_n(const seq8_instance_t *inst, const seq8_track_t *tr) {
+    if (!tr->pfx.groove_on) return 0;                 /* this track plays straight */
     if (tr->queued_clip >= 0 || tr->pending_page_stop) return 0;
     return (int)inst->groove_early_n;
 }
@@ -2711,6 +2713,7 @@ static inline int groove_track_early_n(const seq8_instance_t *inst, const seq8_t
  * leads a note that is being played on time. */
 static inline uint32_t groove_track_lead(const seq8_instance_t *inst, const seq8_track_t *tr,
                                          uint64_t *delay) {
+    if (!tr->pfx.groove_on) { *delay = 0; return 0; }
     if (inst->groove_lead == 0 || tr->queued_clip >= 0 || tr->pending_page_stop)
         { *delay = inst->swing_step_delay; return 0; }
     *delay = inst->groove_lead_delay;
@@ -2719,8 +2722,14 @@ static inline uint32_t groove_track_lead(const seq8_instance_t *inst, const seq8
 
 /* How long a note-on made right now is parked, for a table groove: its
  * note-off waits the same, so the groove moves a note and never resizes it. */
-static inline uint64_t groove_note_park(const seq8_instance_t *inst) {
-    if (inst->groove.kind != GROOVE_TABLE) return 0;
+/* A drum lane has no flag of its own: it asks its track, so the two cannot
+ * drift apart across a lane re-init. */
+static inline int drum_groove_on(const drum_pfx_t *px) {
+    return g_inst ? (int)g_inst->tracks[px->track_idx % NUM_TRACKS].pfx.groove_on : 1;
+}
+
+static inline uint64_t groove_note_park(const seq8_instance_t *inst, int groove_on) {
+    if (inst->groove.kind != GROOVE_TABLE || !groove_on) return 0;
     if (inst->emit_bypass_swing || inst->in_queue_drain) return 0;
     return inst->swing_step_delay;
 }
@@ -3191,7 +3200,7 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
     an->active        = 1;
     an->channel       = ch;
     an->on_time       = now;
-    an->on_delay      = groove_note_park(inst);
+    an->on_delay      = groove_note_park(inst, fx->groove_on);
     an->orig_velocity = (uint8_t)v;
     an->gen_count     = gc;
     memcpy(an->gen_notes, gen, (size_t)gc);
@@ -3309,7 +3318,8 @@ static void pfx_note_off(seq8_instance_t *inst, seq8_track_t *tr,
             pfx_send(fx, off_s, an->gen_notes[i], 0);
         } else {
             uint64_t ft = off_time + (keep ? an->on_delay
-                                           : swing_offset_for_fire_at(g_inst, now, off_time));
+                                      : fx->groove_on ? swing_offset_for_fire_at(g_inst, now, off_time)
+                                      : 0);
             pfx_q_insert(fx, ft, off_s, an->gen_notes[i], 0, 0);
         }
     }
@@ -6090,6 +6100,7 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
         memset(inst->tracks[t].at_last_sent, 0xFF, AT_MAX_LANES);
         inst->tracks[t].at_last_clip = 0xFF;
         inst->tracks[t].pfx.looper_on = 1;
+        inst->tracks[t].pfx.groove_on = 1;
         inst->tracks[t].pfx.track_idx = (uint8_t)t;
         /* Plays its OWN instrument. Explicit rather than left to the zeroed
          * allocation: this is a routing default, and a routing default that is
@@ -7222,6 +7233,8 @@ static int pfx_get(seq8_track_t *tr, const char *key, char *out, int out_len) {
 
     if (!strcmp(key, "track_looper"))
         return snprintf(out, out_len, "%d", (int)fx->looper_on);
+    if (!strcmp(key, "groove_on"))
+        return snprintf(out, out_len, "%d", (int)fx->groove_on);
 
     /* Batch read: per-clip pfx params. Fields 0-16: NOTE FX K0-K4, HARMZ K0-K3,
      * MIDI DLY K0-K7 (legacy 17). Fields 17-23: SEQ ARP K1-K7 (style/rate/
@@ -8428,7 +8441,7 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
         if (!strcmp(sub, "digest")) {
             static const char *TRACK_KEYS[] = {
                 "active_clip", "pad_octave", "transpose", "channel", "diq", "midi_to",
-                "pad_mode", "route", "track_looper", "track_vel_override",
+                "pad_mode", "route", "track_looper", "groove_on", "track_vel_override",
                 "tarp_si", "tarp_sll", "tarp_sv", "drum_r2rt",
                 "delay_clock_fb", "drum_meta",
                 /* The knob banks. These are the bulk of a track's readback —

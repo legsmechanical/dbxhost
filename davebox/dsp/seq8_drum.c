@@ -168,7 +168,7 @@ static void drum_pfx_send(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2
      * Rpt1/Rpt2 swing while stopped; live drum taps bypass via emit_bypass_swing.
      * Events re-entering from the drum drain skip swing — schedule-time swing
      * already baked their fire_at, so re-queueing would scramble pair order. */
-    if (g_inst && g_inst->swing_step_delay > 0
+    if (g_inst && g_inst->swing_step_delay > 0 && drum_groove_on(px)
             && !g_inst->emit_bypass_swing
             && !g_inst->in_queue_drain) {
         uint8_t st = status & 0xF0;
@@ -250,7 +250,7 @@ static void drum_pfx_sched_delay_ons(drum_pfx_t *px, pfx_active_t *an,
         an->reps[i].cumul_delay = (uint64_t)(cumul + 0.5);
         {
             uint64_t ft = base_time + an->reps[i].cumul_delay;
-            ft += swing_offset_for_fire_at(g_inst, px->sample_counter, ft);
+            if (drum_groove_on(px)) ft += swing_offset_for_fire_at(g_inst, px->sample_counter, ft);
             drum_pfx_q_insert(px, ft, on_s, note, (uint8_t)rep_vel, 0);
         }
         cur_delay *= (1.0 + px->fb_clock / 100.0);
@@ -269,7 +269,7 @@ static void drum_pfx_sched_delay_offs(drum_pfx_t *px, pfx_active_t *an,
             : -an->reps[i].gate_factor;
         if (rg < 1.0) rg = 1.0;
         uint64_t off = base_time + an->reps[i].cumul_delay + (uint64_t)(rg + 0.5);
-        off += swing_offset_for_fire_at(g_inst, px->sample_counter, off);
+        if (drum_groove_on(px)) off += swing_offset_for_fire_at(g_inst, px->sample_counter, off);
         drum_pfx_q_insert(px, off, off_s, note, 0, 0);
     }
 }
@@ -322,7 +322,7 @@ static void drum_pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
     an->active        = 1;
     an->channel       = ch;
     an->on_time       = now;
-    an->on_delay      = groove_note_park(inst);
+    an->on_delay      = groove_note_park(inst, drum_groove_on(px));
     an->orig_velocity = (uint8_t)v;
     an->gen_count     = 1;
     an->gen_notes[0]  = pitch;

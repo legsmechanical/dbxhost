@@ -212,7 +212,7 @@ static void pfx_sched_delay_ons(seq8_instance_t *inst, int scale_aware,
         an->reps[i].cumul_delay = (uint64_t)(cumul + 0.5);
 
         uint64_t ft   = base_time + an->reps[i].cumul_delay;
-        ft += swing_offset_for_fire_at(g_inst, fx->sample_counter, ft);
+        if (fx->groove_on) ft += swing_offset_for_fire_at(g_inst, fx->sample_counter, ft);
 
         uint8_t  on_s = (uint8_t)(0x90 | an->channel);
         int j;
@@ -239,7 +239,7 @@ static void pfx_sched_delay_offs(play_fx_t *fx, pfx_active_t *an,
             : -an->reps[i].gate_factor;
         if (rg < 1.0) rg = 1.0;
         uint64_t off = base_time + an->reps[i].cumul_delay + (uint64_t)(rg + 0.5);
-        off += swing_offset_for_fire_at(g_inst, fx->sample_counter, off);
+        if (fx->groove_on) off += swing_offset_for_fire_at(g_inst, fx->sample_counter, off);
         int j;
         for (j = 0; j < an->gen_count; j++) {
             int note = (int)an->gen_notes[j] + an->reps[i].pitch_offset;

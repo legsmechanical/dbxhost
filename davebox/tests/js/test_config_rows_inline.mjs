@@ -101,7 +101,7 @@ step('setup: three Schwung tracks and a MIDI one', () => {
     GS.playing = false;
 });
 
-step('⭐ the config rows sit in their ruled groups at the foot (Josh, 2026-09-24): Mode Layout | Transpose VelIn AftTch | Looper | Export to MIDI | Parallel', () => {
+step('⭐ the config rows sit in their ruled groups at the foot (Josh, 2026-09-24): Mode Layout | Transpose VelIn AftTch | Looper Groove | Export to MIDI | Parallel', () => {
     snd.soundExit(); snd.soundEnter(0, 0); ticks(3); snd.soundShowMenu(); ticks(2);
     const k = kinds();
     const firstCfg = k.indexOf('cfg');
@@ -109,7 +109,7 @@ step('⭐ the config rows sit in their ruled groups at the foot (Josh, 2026-09-2
     assert(k[firstCfg - 1] === 'div', 'no rule above the config rows: ' + k.join(','));
     const st = snd.soundPickStateForTest();
     const tail = st.kinds.slice(firstCfg).map((x, i) => x === 'div' ? '---' : st.labels[firstCfg + i]).join('|');
-    assert(/^Mode\|Layout\|---\|Transpose\|VelIn(\|AftTch)?\|---\|Looper\|---\|Export to MIDI\|---\|Parallel$/.test(tail),
+    assert(/^Mode\|Layout\|---\|Transpose\|VelIn(\|AftTch)?\|---\|Looper\|Groove\|---\|Export to MIDI\|---\|Parallel$/.test(tail),
            'the foot is not in the ruled order: ' + tail);
     assert(!k.includes('config'), 'the CONFIG door is still there: ' + k.join(','));
     /* The doors it used to sit with are still above it, in their old order. */
@@ -254,11 +254,35 @@ step('⭐⭐ an edit is dropped when its row is no longer under the cursor', () 
     assert(velin.get() === before, 'VelIn was changed by a jog aimed elsewhere: ' + velin.get());
 });
 
+/* ⭐ THE GESTURE for the per-track Groove switch: jog to the row at the foot of
+ * the track's sound menu, click, turn, click — and the engine is told. */
+step('⭐ Groove: jog to the row, click, turn, click → the track is switched off the global groove', () => {
+    gotoRow(0, 'groove');
+    const spec = snd.soundCfgRowForTest('groove');
+    /* This rig's engine answers "0" to every read, so the mirror arrives Off.
+     * Put it where a real project starts (ui_state: On for every track). */
+    GS.trackGroove[0] = 1; GS.trackGroove[1] = 1;
+    assert(spec.get() === 1, 'the row does not read the mirror: ' + spec.get());
+    assert(spec.fmt(1) === 'On' && spec.fmt(0) === 'Off', 'the row does not read On / Off');
+    SENT.length = 0;
+    click(); ticks(1);
+    assert(edit().editing && edit().key === 'groove', 'the click did not open an edit on Groove');
+    jog(-1); ticks(1);
+    click(); ticks(2);
+    assert(spec.get() === 0, 'Groove did not turn Off: ' + spec.get());
+    assert(GS.trackGroove[0] === 0, 'the mirror was not updated');
+    assert(SENT.some((x) => x === 't0_groove_on=0'), 'the engine was never told: ' + SENT.join(' '));
+    assert(GS.trackGroove[1] === 1, 'another track was switched too');
+    /* and back */
+    click(); ticks(1); jog(1); ticks(1); click(); ticks(2);
+    assert(spec.get() === 1 && SENT.some((x) => x === 't0_groove_on=1'), 'Groove did not turn back On');
+});
+
 step('a MIDI track carries its own shorter set, and no Parallel row', () => {
     snd.soundExit(); GS.activeTrack = 4; snd.soundEnter(4, 4); ticks(3);
     snd.soundShowMenu(); ticks(2);
     const keys = cfgKeys();
-    for (const want of ['mode', 'transpose', 'velin', 'looper'])
+    for (const want of ['mode', 'transpose', 'velin', 'looper', 'groove'])
         assert(keys.includes(want), 'MIDI track is missing ' + want + ': ' + keys.join(','));
     assert(!keys.includes('parallel'), 'a MIDI track has no chain to parallelise: ' + keys.join(','));
 });

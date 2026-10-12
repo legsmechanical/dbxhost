@@ -485,6 +485,9 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
     for (t = 0; t < NUM_TRACKS; t++)
         if (inst->tracks[t].pfx.looper_on != 1)
             fprintf(fp, ",\"t%d_lp\":%d", t, (int)inst->tracks[t].pfx.looper_on);
+    for (t = 0; t < NUM_TRACKS; t++)
+        if (inst->tracks[t].pfx.groove_on != 1)
+            fprintf(fp, ",\"t%d_gon\":0", t);
     /* TRACK ARP — per-track, sparse (only non-default values) */
     for (t = 0; t < NUM_TRACKS; t++) {
         const seq8_track_t *tr2 = &inst->tracks[t];
@@ -1132,6 +1135,9 @@ static void seq8_load_state(seq8_instance_t *inst) {
 
         snprintf(key, sizeof(key), "t%d_lp", t);
         inst->tracks[t].pfx.looper_on = (uint8_t)(json_get_int(buf, key, 1) ? 1 : 0);
+
+        snprintf(key, sizeof(key), "t%d_gon", t);
+        inst->tracks[t].pfx.groove_on = (uint8_t)(json_get_int(buf, key, 1) ? 1 : 0);
 
         for (c = 0; c < NUM_CLIPS; c++) {
             clip_t *cl = &inst->tracks[t].clips[c];

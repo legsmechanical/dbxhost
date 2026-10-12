@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **Groove On/Off per track.** A new **Groove** row at the foot of each track's
+  sound menu. Off makes that track ignore the project's Swing and play
+  straight — useful for a hi-hat or a bass line that should stay on the grid
+  while everything else swings.
 
 ## [0.0.20] — 2026-10-12 (test build, not in the Schwung catalog)
 ### Added

@@ -566,6 +566,12 @@ function configRows(t) {
         opts: [0, 1], fmt: (v) => (v ? 'On' : 'Off'),
         get: () => (GS.trackLooper[t] !== 0 ? 1 : 0),
         set: (v) => applyTrackConfig(t, 'track_looper', v ? 1 : 0) });
+    /* The groove is global; this is the one thing a track can say about it:
+     * Off = this track plays straight whatever the global groove is. */
+    rows.push({ key: 'groove', label: 'Groove',
+        opts: [0, 1], fmt: (v) => (v ? 'On' : 'Off'),
+        get: () => (GS.trackGroove[t] !== 0 ? 1 : 0),
+        set: (v) => applyTrackConfig(t, 'groove_on', v ? 1 : 0) });
     /* Pad pressure: owned by the repeat-velocity system on drum tracks, so the
      * row is hidden there. Move takes poly AT only. */
     if (GS.trackPadMode[t] !== PMD) {
@@ -3369,7 +3375,7 @@ const TRACK_MENU_GROUPS = [
     ['LFOs'],
     ['Mode', 'Layout'],
     ['Transpose', 'VelIn', 'AftTch'],
-    ['Looper'],
+    ['Looper', 'Groove'],
     ['Export to MIDI'],
     ['Parallel'],
 ];
