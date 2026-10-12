@@ -222,6 +222,30 @@ typedef struct move_host_ext_v1 {
 typedef void (*move_plugin_host_ext_v1_fn)(const move_host_ext_v1_t *ext);
 
 /*
+ * SLOT MIDI — a chain slot's generated MIDI FX output, delivered to a module.
+ *
+ * The other direction from the extension above: not a service the module
+ * calls, but something the host DELIVERS, like on_midi. A module that wants it
+ * exports MOVE_PLUGIN_SLOT_MIDI_V1_SYMBOL; the host looks it up once after
+ * create_instance, and a module that does not export it is never called.
+ *
+ * What arrives: the channel-voice messages a slot's MIDI FX GENERATED (from
+ * the clock or from its per-block tick — never a transform of a note the slot
+ * was sent), for every slot whose chain key `midi_fx_to_host` is 1. They have
+ * already sounded on that slot's synth: this is a copy for a sequencer to
+ * RECORD, not something to play.
+ *
+ * Called on the audio thread, once per message, right AFTER the module's own
+ * render_block for the frame — never during it, whichever thread or call
+ * stack the slot produced the message on. `slot` is 0-based; `msg` is 2 or 3
+ * bytes. Realtime-safe code only.
+ */
+#define MOVE_PLUGIN_SLOT_MIDI_V1_SYMBOL "move_plugin_slot_midi_v1"
+
+typedef void (*move_plugin_slot_midi_v1_fn)(void *instance, int slot,
+                                            const uint8_t *msg, int len);
+
+/*
  * Plugin API - implemented by plugin, returned to host
  */
 typedef struct plugin_api_v1 {

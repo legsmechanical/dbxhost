@@ -188,6 +188,19 @@ extern int (*shadow_chain_take_midi_tick_wake)(void *instance);
 extern int (*shadow_chain_midi_fx_apply)(void *instance, const uint8_t *msg, int len,
                                          uint8_t out_msgs[][3], int *out_lens,
                                          int max_out);
+
+/* Generated MIDI FX output, on its way from the slots to the overtake DSP
+ * (chain key `midi_fx_to_host`; see shadow_chain_mgmt.c).
+ *
+ * shadow_chain_fx_out_drain: hand every queued message to `deliver`, oldest
+ * first, and return how many. SPI thread only (it is the ring's one consumer).
+ * A NULL `deliver` discards — which is what keeps the ring from filling when
+ * nothing wants the notes.
+ * shadow_chain_fx_out_reset: empty the ring. Only when no producer can be
+ * running (the caller's rule, as for the other rings reset at unload). */
+typedef void (*shadow_fx_out_deliver_fn)(int slot, const uint8_t *msg, int len);
+int  shadow_chain_fx_out_drain(shadow_fx_out_deliver_fn deliver);
+void shadow_chain_fx_out_reset(void);
 extern host_api_v1_t shadow_host_api;
 extern int shadow_inprocess_ready;
 /* 1 when the booted set had its own slot config; see shadow_chain_mgmt.c. */

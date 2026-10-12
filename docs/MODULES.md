@@ -2228,6 +2228,29 @@ The chain passes the notes to a sink the host registers
 (`chain_set_midi_fx_sink`, an optional export of the chain DSP). With no sink
 registered the key is inert.
 
+#### Receiving them in a module (`move_plugin_slot_midi_v1`)
+
+An overtake DSP — a sequencer that wants to record what a slot's MIDI FX
+generates — exports one function:
+
+```c
+void move_plugin_slot_midi_v1(void *instance, int slot, const uint8_t *msg, int len);
+```
+
+The host looks the symbol up once, after `create_instance`; a module that does
+not export it is never called, and on a host without the feature the export is
+simply dead. It is called on the audio thread, once per message, **after** the
+module's own `render_block` for that frame and never during it — whichever
+thread or call stack the slot produced the message on (a render-pool lane for
+tick output; inside the module's own render, when the module is the clock the
+generator runs from). `slot` is 0-based, `msg` is two or three bytes of
+channel-voice MIDI. The notes have already sounded on the slot's synth: record
+them, do not play them. Realtime rules apply.
+
+Between the slot and the module the host queues (a 64-entry multi-producer
+ring); if it fills, the newest message is dropped. With no module taking the
+notes the host discards them every frame.
+
 ### MIDI FX module.json Example
 
 ```json
