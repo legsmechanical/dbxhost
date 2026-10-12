@@ -197,6 +197,55 @@ int main(void) {
         printf("  ok   — an offset finer than a tick is honoured\n");
     }
 
+    /* ---- a note held back until the wrap is back for the pass after it ---- */
+    {
+        cap_t *caps[2] = { &A, &B };
+        for (int g = 0; g < 2; g++) {
+            hx_t *h = begin();
+            melodic16(h, 12);
+            if (g) table(h, 0, -6 * GROOVE_FINE);
+            hx_clear_capture(h);
+            hx_set_param(h, "transport", "play_focus:1:0");
+            hx_render(h, bars(1) / 2);
+            {   /* what recording over a step does to it */
+                clip_t *cl = &((seq8_instance_t *)h->inst)->tracks[1].clips[0];
+                int hit = 0;
+                for (int i = 0; i < cl->note_count; i++)
+                    if (cl->notes[i].pitch == 48) { cl->notes[i].suppress_until_wrap = 1; hit = 1; }
+                HX_ASSERT(hit, "rig: the first step's note was not found");
+            }
+            hx_render(h, bars(2) - bars(1) / 2);
+            hx_set_param(h, "transport", "stop");
+            hx_render(h, 200);
+            collect(caps[g]);
+            hx_destroy(h);
+        }
+        HX_ASSERT(count(&A, 1, 48) == 2 && count(&B, 1, 48) == 2, "rig: the held-back step plays again after the wrap");
+        int d = nth(&A, 1, 48, 1) - nth(&B, 1, 48, 1);
+        HX_ASSERT(d >= EARLY_LO && d <= EARLY_HI,
+                  "a step held back until the wrap is played ahead of the wrap, like any other");
+    }
+    printf("  ok   — a step held back until the wrap is early again on the next pass\n");
+
+    /* ---- the groove changing under a note that was already played ahead ---- */
+    for (int at = 100; at < 190; at += 2) {
+        hx_t *h = begin();
+        melodic16(h, 12);
+        table(h, 1, -6 * GROOVE_FINE);
+        hx_clear_capture(h);
+        hx_set_param(h, "transport", "play_focus:1:0");
+        hx_render(h, at);
+        hx_set_param(h, "groove_amt", "50");             /* six ticks early becomes three */
+        hx_render(h, bars(3) - at);
+        hx_set_param(h, "transport", "stop");
+        hx_render(h, 200);
+        collect(&B);
+        hx_destroy(h);
+        for (int sidx = 0; sidx < 16; sidx++)
+            HX_ASSERT(count(&B, 1, 48 + sidx) == 3, "changing the amount played a note twice, or not at all");
+    }
+    printf("  ok   — changing the amount mid-bar plays every note exactly once\n");
+
     /* ---- a drum lane ---- */
     both(s_drum, 3, 1, -6 * GROOVE_FINE, &A, &B);
     HX_ASSERT(count(&A, 1, -1) == 48, "rig: three bars of a drum lane");
@@ -206,7 +255,14 @@ int main(void) {
         if (i % 2) HX_ASSERT(d >= EARLY_LO && d <= EARLY_HI, "a drum hit in the early slot is six ticks early");
         else       HX_ASSERT(d == 0, "a drum hit in the other slot does not move");
     }
-    printf("  ok   — drum lanes play early slots early\n");
+    both(s_drum, 2, 1, 6 * GROOVE_FINE, &A, &B);
+    for (int i = 0; i < 31; i++) {
+        int la = nth(&A, 0, -1, i) - nth(&A, 1, -1, i);
+        int lb = nth(&B, 0, -1, i) - nth(&B, 1, -1, i);
+        HX_ASSERT(la > 0, "rig: a drum hit has a length");
+        HX_ASSERT(lb - la >= -1 && lb - la <= 1, "a drum hit in a table groove keeps its length");
+    }
+    printf("  ok   — drum lanes play early slots early, and keep each hit's length\n");
 
     /* ---- Iter: the pass a note belongs to decides, not the pass it fires in ---- */
     both(s_iter, 4, 0, -6 * GROOVE_FINE, &A, &B);
@@ -303,6 +359,31 @@ int main(void) {
         HX_ASSERT(sets[1] == sets[0], "the lock was written, taken back and written again");
     }
     printf("  ok   — an early step's lock arrives with its note, once\n");
+
+    /* ---- a lock late INSIDE an early step is not taken back before its tick ---- */
+    {
+        int sets[2] = { 0, 0 };
+        for (int g = 0; g < 2; g++) {
+            hx_t *h = begin();
+            hx_set_param(h, "t1_route", "schwung");
+            hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
+            hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 0 43 0");
+            hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 44 95 16383");   /* 4 ticks before step 3 */
+            hx_set_param(h, "pa_resolve", "1:synth:cutoff 1 synth:cutoff 0 0 1 0.01");
+            if (g) table(h, 1, -6 * GROOVE_FINE);
+            hx_clear_capture(h);
+            hx_set_param(h, "transport", "play_focus:1:0");
+            hx_render(h, 150);
+            for (int i = 0; i < hx_stub_event_count(); i++) {
+                const hx_midi_event *e = hx_stub_event(i);
+                if (e->kind == HX_PARAM_SET && !strcmp(e->key, "synth:cutoff")) sets[g]++;
+            }
+            hx_destroy(h);
+        }
+        HX_ASSERT(sets[0] == 2, "rig: straight, the value is written low then high");
+        HX_ASSERT(sets[1] == 2, "a lock inside an early step was written, taken back and written again");
+    }
+    printf("  ok   — a lock inside an early step is written once\n");
 
     printf("PASS: test_groove_early\n");
     return 0;
