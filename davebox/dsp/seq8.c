@@ -772,6 +772,12 @@ typedef struct {
     /* Note-centric recording: in-flight note-ons awaiting note-off for gate capture */
     struct { uint8_t pitch; uint32_t tick_at_on; } rec_pending[10];
     uint8_t  rec_pending_count;
+    /* Open notes recorded from the instrument's MIDI effect (slot_fx_note),
+     * waiting for their note-off to set the length. Its own table, never
+     * rec_pending: that one is closed by PITCH when a pad is released, and a
+     * pad and a generated note can share a pitch. */
+    struct { uint8_t pitch; uint32_t tick_at_on; } fx_pending[16];
+    uint8_t  fx_pending_count;
     /* Note-centric playback: per-note gate countdown (render state, not persisted) */
     struct { uint8_t pitch; uint16_t ticks_remaining; uint8_t lane_idx; uint8_t src_pitch; } play_pending[32];
     uint8_t  play_pending_count;
@@ -4682,6 +4688,224 @@ static int clip_insert_note(clip_t *cl, uint32_t tick, uint16_t gate,
     }
 #endif
     return idx;
+}
+
+/* ------------------------------------------------------------------ */
+/* Notes the instrument's MIDI effect generated  (slot_fx_note)         */
+/* ------------------------------------------------------------------ */
+/*
+ * A track's instrument can carry a MIDI effect that GENERATES notes — a drum
+ * pattern from the clock, an arpeggio from its own tick. With "Notes to Seq"
+ * on for that effect (the chain key `midi_fx_to_host`), the host hands each
+ * generated note here, after this module's render for the frame
+ * (move_plugin_slot_midi_v1, below).
+ *
+ * They are treated as LIVE INPUT on the track that owns the instrument:
+ *
+ *   recording (or in the count-in's last eighth)  ->  written into the clip
+ *   otherwise, and only on the ACTIVE track        ->  kept by Capture
+ *
+ * ⚠ NEVER EMITTED. The note has already sounded — it came from the
+ * instrument. Nothing here may reach live_note_on / pfx_note_on or any other
+ * send: that would play it a second time, into the effect that made it.
+ *
+ * ⚠ Not pad input: LIVE ARP on the track, the pad mute and VelIn do not apply.
+ * The pattern's own velocities are kept.
+ *
+ * ⚠ NO DUPLICATES. A generator repeats its bar for as long as it runs, and a
+ * take usually spans several laps of the clip. Melodic: a pitch already on a
+ * step is not added again. Drum: a hit is written only to an EMPTY step, the
+ * rule Note Repeat recording already follows.
+ *
+ * ⚠ Capture is the active track's only. The ring is one ring for the whole
+ * engine, wiped when the active track changes and cleared by "latest pass
+ * wins"; a generator on another track must not be able to do either to what
+ * the user just played.
+ *
+ * Timing: the note is stamped with the clip position at the hand-off, at
+ * most one audio block (2.9 ms) after it sounded — well inside a step.
+ */
+
+/* The track whose instrument is chain slot `slot`, or NULL. */
+static seq8_track_t *slot_owner_track(seq8_instance_t *inst, int slot) {
+    int t;
+    for (t = 0; t < NUM_TRACKS; t++) {
+        seq8_track_t *tr = &inst->tracks[t];
+        if (tr->pfx.route == ROUTE_SCHWUNG && (int)tr->pfx.slot == slot) return tr;
+    }
+    return NULL;
+}
+
+static void slot_fx_record_melodic_on(seq8_instance_t *inst, seq8_track_t *tr,
+                                      int preroll, uint8_t pitch, uint8_t vel) {
+    clip_t  *cl         = &tr->clips[tr->active_clip];
+    uint16_t tps        = cl->ticks_per_step;
+    uint32_t clip_ticks = (uint32_t)cl->length * tps;
+    if (clip_ticks == 0) return;
+    /* Window-anchored, as every recorder is. Count-in: the window's start. */
+    uint32_t abs_tick = preroll ? (uint32_t)cl->loop_start * tps : tr->current_clip_tick;
+    /* The track's own Input Quantize, as for a pad. */
+    if (tr->drum_inp_quant > 0) {
+        uint32_t qt = (uint32_t)DRUM_INQ_TICKS[tr->drum_inp_quant];
+        abs_tick = ((abs_tick + qt / 2) / qt) * qt;
+    }
+    uint16_t sidx = note_step(abs_tick, cl->length, tps);
+    /* Already there from an earlier lap? */
+    {
+        uint16_t ni;
+        for (ni = 0; ni < cl->note_count; ni++) {
+            const note_t *n = &cl->notes[ni];
+            if (n->active && n->pitch == pitch && note_step(n->tick, cl->length, tps) == sidx) return;
+        }
+    }
+    int rni = clip_insert_note(cl, abs_tick, (uint16_t)GATE_TICKS, pitch, vel);
+    if (rni < 0) return;
+    cl->notes[rni].suppress_until_wrap = 1;
+    if (tr->fx_pending_count < 16) {
+        tr->fx_pending[tr->fx_pending_count].pitch      = pitch;
+        tr->fx_pending[tr->fx_pending_count].tick_at_on = abs_tick;
+        tr->fx_pending_count++;
+    }
+    /* The step mirror, rounded with note_step() like its readers. */
+    if (sidx < SEQ_STEPS) {
+        int16_t off = (int16_t)((int32_t)abs_tick - (int32_t)sidx * tps);
+        if (!cl->steps[sidx] && cl->step_note_count[sidx] > 0) {
+            int si;
+            for (si = 0; si < 8; si++) {
+                cl->step_notes[sidx][si]       = 0;
+                cl->note_tick_offset[sidx][si] = 0;
+            }
+            cl->step_note_count[sidx] = 0;
+            cl->step_vel[sidx]  = (uint8_t)SEQ_VEL;
+            cl->step_gate[sidx] = (uint16_t)GATE_TICKS;
+        }
+        if (cl->step_note_count[sidx] < 8) {
+            int ni2 = (int)cl->step_note_count[sidx];
+            if (ni2 == 0) {
+                cl->step_vel[sidx]  = vel;
+                cl->step_gate[sidx] = (uint16_t)GATE_TICKS;
+            }
+            cl->step_notes[sidx][ni2]       = pitch;
+            cl->note_tick_offset[sidx][ni2] = off;
+            cl->step_note_count[sidx]++;
+            cl->steps[sidx] = 1;
+            cl->active      = 1;
+            LRS_SET(tr, sidx);
+        }
+    }
+    rui_content(inst);
+}
+
+/* The generated note ended: its length is the distance to here. */
+static void slot_fx_record_melodic_off(seq8_track_t *tr, uint8_t pitch) {
+    clip_t  *cl         = &tr->clips[tr->active_clip];
+    uint16_t tps        = cl->ticks_per_step;
+    uint32_t clip_ticks = (uint32_t)cl->length * tps;
+    int ri;
+    for (ri = 0; ri < (int)tr->fx_pending_count; ri++)
+        if (tr->fx_pending[ri].pitch == pitch) break;
+    if (ri >= (int)tr->fx_pending_count) return;
+    uint32_t on_tick = tr->fx_pending[ri].tick_at_on;
+    tr->fx_pending[ri] = tr->fx_pending[--tr->fx_pending_count];
+    if (clip_ticks == 0) return;
+    uint32_t off_tick   = tr->current_clip_tick;
+    uint32_t gate_ticks = (off_tick >= on_tick) ? off_tick - on_tick
+                                                : clip_ticks - on_tick + off_tick;
+    uint32_t gmax = (uint32_t)SEQ_STEPS * tps;
+    if (gmax > 65535) gmax = 65535;
+    if (gate_ticks < 1) gate_ticks = 1;
+    if (gate_ticks > gmax) gate_ticks = gmax;
+    uint16_t ni;
+    for (ni = (uint16_t)(cl->note_count > 0 ? cl->note_count - 1 : 0); ni < cl->note_count; ni--) {
+        note_t *n = &cl->notes[ni];
+        if (n->active && n->pitch == pitch && n->tick == on_tick) {
+            n->gate = (uint16_t)gate_ticks;
+            break;
+        }
+        if (ni == 0) break;
+    }
+    {
+        uint16_t sidx = note_step(on_tick, cl->length, tps);
+        if (sidx < SEQ_STEPS && cl->steps[sidx] && cl->step_notes[sidx][0] == pitch)
+            cl->step_gate[sidx] = (uint16_t)gate_ticks;
+    }
+}
+
+/* Drum track: the hit goes to the lane that answers to its note, on the step
+ * the lane's playhead is nearest — and only if that step is empty. */
+static void slot_fx_record_drum_on(seq8_instance_t *inst, seq8_track_t *tr,
+                                   int preroll, uint8_t pitch, uint8_t vel) {
+    drum_clip_t *dc = tr->drum_clips[tr->active_clip];
+    int lane;
+    if (!dc) return;
+    for (lane = 0; lane < DRUM_LANES; lane++)
+        if (dc->lanes[lane].midi_note == pitch) break;
+    if (lane == DRUM_LANES) return;                 /* no lane plays this note */
+    clip_t *rlc = &dc->lanes[lane].clip;
+    const uint16_t r_ls = rlc->loop_start;
+    const uint16_t r_le = (uint16_t)(r_ls + rlc->length);
+    uint16_t rs  = preroll ? r_ls : tr->drum_current_step[lane];
+    int16_t  off = preroll ? 0 : (int16_t)tr->drum_tick_in_step[lane];
+    if (rs < r_ls || rs >= r_le || rs >= SEQ_STEPS) return;
+    if (off >= (int16_t)(TICKS_PER_STEP / 2)) {     /* past the middle: the next step */
+        rs = (uint16_t)(rs + 1);
+        if (rs >= r_le) rs = r_ls;
+        off -= (int16_t)TICKS_PER_STEP;
+    }
+    if (tr->drum_inp_quant > 0) off = 0;            /* Input Quantize on: on the grid */
+    if (rs >= SEQ_STEPS || rlc->step_note_count[rs] != 0) return;
+    rlc->step_notes[rs][0]       = pitch;
+    rlc->note_tick_offset[rs][0] = off;
+    rlc->step_vel[rs]  = vel;
+    rlc->step_gate[rs] = (uint16_t)GATE_TICKS;
+    rlc->step_note_count[rs] = 1;
+    rlc->steps[rs] = 1;
+    rlc->active    = 1;
+    clip_migrate_to_notes(rlc);
+    /* It has just sounded, from the instrument: the lane must not play it
+     * again before the clip comes round (as for a recorded pad hit). */
+    {
+        const int32_t rec_tick = (int32_t)rs * (int32_t)rlc->ticks_per_step + (int32_t)off;
+        uint16_t ni;
+        for (ni = 0; ni < rlc->note_count; ni++)
+            if ((int32_t)rlc->notes[ni].tick == rec_tick) rlc->notes[ni].suppress_until_wrap = 1;
+    }
+    rui_content(inst);
+}
+
+static void slot_fx_note(seq8_instance_t *inst, int slot, uint8_t status, uint8_t d1, uint8_t d2) {
+    const uint8_t type = (uint8_t)(status & 0xF0);
+    const int is_on  = (type == 0x90 && d2 > 0);
+    const int is_off = (type == 0x80 || (type == 0x90 && d2 == 0));
+    if ((!is_on && !is_off) || d1 > 127) return;
+    seq8_track_t *tr = slot_owner_track(inst, slot);
+    if (!tr) return;
+    const int tidx = (int)(tr - inst->tracks);
+    const int drum = (tr->pad_mode == PAD_MODE_DRUM);
+    /* The count-in's last eighth, as for every other recorder. */
+    const int preroll = (!tr->recording && inst->count_in_ticks > 0 &&
+                         inst->count_in_ticks <= (int32_t)(PPQN / 2) &&
+                         (int)inst->count_in_track == tidx);
+    if (tr->recording || preroll) {
+        if (drum) {
+            if (is_on) slot_fx_record_drum_on(inst, tr, preroll, d1, d2);
+        } else if (is_on) {
+            slot_fx_record_melodic_on(inst, tr, preroll, d1, d2);
+        } else if (tr->recording) {
+            slot_fx_record_melodic_off(tr, d1);
+        }
+        return;
+    }
+    if (tidx != (int)inst->active_track) return;
+    capture_note_only(inst, tr, is_on, d1, d2);
+}
+
+/* The host's entry (plugin_api_v1.h, MOVE_PLUGIN_SLOT_MIDI_V1_SYMBOL): called
+ * on the audio thread after render_block, once per generated message. */
+void move_plugin_slot_midi_v1(void *instance, int slot, const uint8_t *msg, int len) {
+    seq8_instance_t *inst = (seq8_instance_t *)instance;
+    if (!inst || !msg || len < 3 || slot < 0 || slot >= SEQ8_CHAIN_SLOTS) return;
+    slot_fx_note(inst, slot, msg[0], msg[1], msg[2]);
 }
 
 /* ------------------------------------------------------------------ */

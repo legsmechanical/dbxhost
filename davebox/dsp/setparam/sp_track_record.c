@@ -102,6 +102,8 @@ static int sp_track_record(sp_ctx_t *cx) {
              * first fire on each lane-step is treated as new (preserves the
              * write-once-across-passes semantic for Rpt1/Rpt2 recording). */
             memset(tr->drum_last_rec_step, 0xFF, sizeof(tr->drum_last_rec_step));
+            /* ...and no open generated note (slot_fx_note) from an earlier take. */
+            tr->fx_pending_count = 0;
             /* Clear any tarp notes held before recording started — their note-offs
              * can't reach live_note_off once activelyRecording=true in JS.
              * Skip when transport is already running: TARP is already firing
@@ -139,6 +141,8 @@ static int sp_track_record(sp_ctx_t *cx) {
             }
         } else {
             finalize_pending_notes(&tr->clips[tr->active_clip], tr);
+            /* Generated notes (slot_fx_note) still open keep the default length. */
+            tr->fx_pending_count = 0;
             clip_clear_suppress(&tr->clips[tr->active_clip]);
             tr->recording              = 0;
             tr->record_armed           = 0;
