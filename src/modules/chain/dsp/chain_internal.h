@@ -366,6 +366,7 @@ typedef struct {
     int receive_channel;   /* PATCH_CHANNEL_UNSET=absent, 0=All, 1-16=specific channel */
     int forward_channel;   /* PATCH_CHANNEL_UNSET=absent, -2=passthrough, -1=auto, 0-15=channel */
     int midi_fx_pre_mode;  /* 0 = Post (default), 1 = Pre (additive inject to Move MIDI_IN) */
+    int midi_fx_to_host;   /* 0 = off (default), 1 = generated MIDI FX output also goes to the host's sink */
     lfo_state_t lfos[LFO_COUNT];  /* LFO configuration */
     bus_config_t buses[SLOT_BUSES];
     int main_sends[BUS_MIX_SENDS];
@@ -682,6 +683,16 @@ typedef struct chain_instance {
      * native instrument on the slot's forward_channel plays it additively).
      * Only meaningful when a MIDI FX is loaded. */
     int midi_fx_pre_mode;
+
+    /* Hand the MIDI FX's GENERATED output to the host as well: 0 = off
+     * (default), 1 = every note the FX emits on its own — from the clock or
+     * from its per-block tick, never a transform of a note it was sent — is
+     * also passed to the sink the host registered (chain_set_midi_fx_sink),
+     * for a host-side sequencer to record. A different axis from
+     * midi_fx_pre_mode (which injects into Move's MIDI_IN): the two do not
+     * interact. Reset when the MIDI FX is unloaded — it is a statement about
+     * that effect. Inert with no sink registered. */
+    int midi_fx_to_host;
 
     /* Cached "pre_capable" hint from the loaded MIDI FX module.json.
      * Informs the Shadow UI default on first placement; does not gate the
@@ -1282,5 +1293,18 @@ CHAIN_INTERNAL int v2_update_patch(chain_instance_t *inst, int index, const char
  * ⚠ At most 3 bytes in; returns the message count, 0 on refusal. */
 int chain_midi_fx_apply(void *instance, const uint8_t *msg, int len,
                         uint8_t out_msgs[][3], int *out_lens, int max_out);
+
+/* Exported: the host registers where a slot's GENERATED MIDI FX output goes
+ * when that slot's `midi_fx_to_host` is on (see the field's comment). The sink
+ * is called with the chain instance and one channel-voice message, on
+ * whichever thread produced it — the SPI thread for clock-driven output, a
+ * render-pool lane for tick output — so it must be realtime-safe and safe to
+ * call from several threads at once. NULL = none (the default): nothing is
+ * handed over. One sink for every instance; it identifies the slot by the
+ * instance pointer. Defined in chain_midi.c.
+ * ⚠ Declared here for the same reason as chain_midi_fx_apply: the shim
+ * resolves it by dlsym with a hand-written cast. */
+typedef void (*chain_midi_fx_sink_fn)(void *instance, const uint8_t *msg, int len);
+void chain_set_midi_fx_sink(chain_midi_fx_sink_fn sink);
 
 #endif /* CHAIN_INTERNAL_H */

@@ -25,6 +25,7 @@
 #include "shadow_dbus.h"
 #include "shadow_state.h"
 #include "shadow_midi.h"
+#include "shadow_midi_inject_writer.h"  /* the MPSC ring type, reused process-locally */
 #include "unified_log.h"
 #include "host/schwung_paths.h"
 #include "schwung_trace.h"   /* Phase 2b: emit param.serve as a child of the JS param.get span */
@@ -70,17 +71,74 @@ int (*shadow_chain_midi_fx_apply)(void *instance, const uint8_t *msg, int len,
                                   int max_out) = NULL;
 host_api_v1_t shadow_host_api;
 
+/* The slot (0-based) that owns a chain plugin instance, or -1. */
+static int shadow_chain_slot_index_of(void *instance) {
+    if (!instance) return -1;
+    for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {
+        if (shadow_chain_slots[i].instance == instance) return i;
+    }
+    return -1;
+}
+
 /* Look up the slot owning a chain plugin instance and return its live
  * receive channel. Used by chain MIDI FX in Pre mode to address Move
  * tracks via the recv channel (not the synth-internal forward_channel). */
 static int shadow_chain_slot_recv_channel(void *instance) {
-    if (!instance) return -2;
-    for (int i = 0; i < SHADOW_CHAIN_INSTANCES; i++) {
-        if (shadow_chain_slots[i].instance == instance) {
-            return shadow_chain_slots[i].channel;
-        }
+    int i = shadow_chain_slot_index_of(instance);
+    return i < 0 ? -2 : shadow_chain_slots[i].channel;
+}
+
+/* ============================================================================
+ * Generated MIDI FX output -> the overtake DSP   (chain key `midi_fx_to_host`)
+ * ============================================================================
+ *
+ * A slot whose `midi_fx_to_host` is on hands the notes its MIDI FX GENERATES
+ * to shadow_chain_midi_fx_sink below (registered with the chain through its
+ * optional export chain_set_midi_fx_sink). The overtake DSP — a sequencer that
+ * wants to record them — must not be called from there:
+ *
+ *   - tick-path output is produced on a RENDER-POOL lane, possibly a helper
+ *     thread, possibly several at once;
+ *   - clock-path output is produced on the SPI thread, but when the overtake
+ *     DSP runs its own clock that is from INSIDE its own render_block (it
+ *     sends the clock, the slot's FX answers synchronously) — a direct call
+ *     would re-enter a DSP that is mid-render.
+ *
+ * So the sink only queues, and the shim drains after the overtake render
+ * (schwung_shim.c). The ring is the MPSC type the MIDI inject path already
+ * uses (several producers, one consumer; a helper still running after a pool
+ * bail just lands its entry on a later drain).
+ *
+ * Entry = 4 bytes: [slot, status, d1, d2]. Full ring: the newest is dropped
+ * and counted — no log, this is the audio path. */
+static shadow_midi_inject_t shadow_fx_out_ring;
+static volatile int shadow_fx_out_drops = 0;
+
+static void shadow_chain_midi_fx_sink(void *instance, const uint8_t *msg, int len) {
+    int slot = shadow_chain_slot_index_of(instance);
+    if (slot < 0 || !msg || len < 2 || len > 3) return;
+    const uint8_t pkt[4] = { (uint8_t)slot, msg[0], msg[1], (uint8_t)(len > 2 ? msg[2] : 0) };
+    if (shadow_midi_inject_push(&shadow_fx_out_ring, pkt) != 0) shadow_fx_out_drops++;
+}
+
+int shadow_chain_fx_out_drain(shadow_fx_out_deliver_fn deliver) {
+    uint8_t pkt[4];
+    int n = 0;
+    /* Bounded by the ring's size: a producer that keeps pushing while we
+     * drain cannot hold the SPI thread here. */
+    while (n < (int)SHADOW_MIDI_INJECT_SLOTS && shadow_midi_inject_peek(&shadow_fx_out_ring, pkt)) {
+        shadow_midi_inject_pop(&shadow_fx_out_ring);
+        n++;
+        if (!deliver) continue;
+        /* Program change and channel pressure are two bytes; the rest three. */
+        uint8_t type = pkt[1] & 0xF0u;
+        deliver((int)pkt[0], &pkt[1], (type == 0xC0u || type == 0xD0u) ? 2 : 3);
     }
-    return -2;
+    return n;
+}
+
+void shadow_chain_fx_out_reset(void) {
+    shadow_midi_inject_init(&shadow_fx_out_ring);
 }
 int shadow_inprocess_ready = 0;
 /* Set at boot when the current set supplied its own slot settings. Read by
@@ -1555,6 +1613,17 @@ int shadow_inprocess_load_chain(void) {
         dlsym(shadow_dsp_handle, "chain_take_midi_tick_wake");
     shadow_chain_midi_fx_apply = (int (*)(void *, const uint8_t *, int, uint8_t (*)[3], int *, int))
         dlsym(shadow_dsp_handle, "chain_midi_fx_apply");
+    /* Generated MIDI FX output (midi_fx_to_host): give the chain our sink.
+     * ⚠ NULL-CHECK IT, like the exports above: stock's chain DSP does not
+     * export it, and then nothing is ever queued. */
+    {
+        void (*set_sink)(void (*)(void *, const uint8_t *, int)) =
+            (void (*)(void (*)(void *, const uint8_t *, int)))
+            dlsym(shadow_dsp_handle, "chain_set_midi_fx_sink");
+        shadow_chain_fx_out_reset();
+        if (set_sink) set_sink(shadow_chain_midi_fx_sink);
+        unified_log("shim", LOG_LEVEL_INFO, "chain dlsym: midi_fx_sink=%p", (void *)set_sink);
+    }
 
     unified_log("shim", LOG_LEVEL_INFO, "chain dlsym: inject=%p ext_fx_mode=%p process_fx=%p same_frame=%d keep_alive=%p midi_wake=%p midi_fx_apply=%p",
             (void*)shadow_chain_set_inject_audio,

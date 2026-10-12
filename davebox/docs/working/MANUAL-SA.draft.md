@@ -836,6 +836,8 @@ dAVEBOx is always listening: play something, then tap **Capture** to keep it.
 - That includes notes from an external MIDI keyboard or controller.
 - With **LIVE ARP** on, what is kept is the arpeggio you heard, not the pads
   you held; with **Note Repeat**, each repeated hit — the same as recording.
+- Notes a generating MIDI effect plays are kept too, when its **Notes to Seq**
+  is on (see [Editing a module](#144-editing-a-module)).
 - Knob moves are held too, and land as [automation](#10-automation).
 - The Capture button blinks white while there's something to keep.
 
@@ -1812,6 +1814,23 @@ The last two pages are the same for every module:
   (when the instrument can split its voices — the same screen as the Sound menu's
   Buses row), **Swap Module** and **Remove Module** (the way to empty an effect slot). Swapping or
   removing asks first if macros or automation would be left behind.
+  - On a MIDI effect that makes notes of its own — a drum-pattern or step
+    generator — the page also has **Notes to Seq** (Off / On). See below.
+
+**Notes to Seq — recording what a MIDI effect generates.** A generating MIDI
+effect normally plays only its own instrument, so the sequencer never sees its
+notes. Turn **Notes to Seq** on and they count as playing on that track:
+
+- **Record** writes them into the clip. On a drum track each note goes to the
+  lane that plays it; notes no lane plays are left out.
+- With Record off, **Capture** keeps them (on the track you are on).
+- A repeating pattern is recorded once, however many times the clip goes round.
+- Once the pattern is in the clip, bypass or remove the effect (or turn the
+  switch off and stop it) — otherwise the clip and the effect both play it.
+- Only notes the effect makes on its own are taken, not notes it changes on the
+  way through, so it is offered only on effects built to generate.
+- The setting is saved with the project and goes back to Off when the effect is
+  swapped or removed.
 
 **How the knobs feel** — in a module's editor, on MACROS, and for pan and the
 sends on MIX and in the session mixer:

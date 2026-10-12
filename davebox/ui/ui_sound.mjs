@@ -26,7 +26,7 @@ import {
     engineLoadModule, engineLoadedModule, engineGetState, engineSetState,
     engineListUserPresets, engineReadUserPreset,
     engineGetSlotParam, engineSetSlotParam, engineSaveState,
-    engineGetChainParam, engineGetChainParams, engineSetChainParam, engineModuleAbbrev,
+    engineGetChainParam, engineGetChainParams, engineSetChainParam, engineModuleAbbrev, engineModuleCaps,
     engineLoadCardScript, engineCanvasOverlayShared, engineCanvasPageDrawer, engineCanvasPageHook,
     engineCanvasNewVisit, engineCanvasForget,
     SLOT_LEVEL_KEY, SLOT_LEVEL_STEP, SLOT_LEVEL_MAX,
@@ -718,6 +718,9 @@ const S = {
     sections: [],
     bankIdx: 0,
     moduleId: '',
+    /* "Notes to Seq" for the MIDI effect on screen (fxToSeqOffered): read once
+     * at discovery, flipped by its row. The instrument holds the truth. */
+    fxToSeq: false,
 
     /* Hosting: a module that DECLARES `capabilities.host_canvas_ui` draws
      * itself through its own bank_editor, and `banks` stays as the fallback.
@@ -7829,6 +7832,8 @@ function runDiscovery() {
      * time you glance at another param) but never a module swap. */
     if (id !== S.moduleId) { wavEditCloseIfOpen(); canvasCloseIfOpen(); wavForgetComponent(S.comp, S.slot); ppWidgetsForget(); }
     S.moduleId = id;
+    /* "Notes to Seq": one read, and only for an effect that offers the row. */
+    S.fxToSeq = fxToSeqOffered() ? (engineGetChainParam(S.slot, FX_TO_SEQ_KEY) === '1') : false;
     if (!id) { S.banks = []; S.banksDeferred = false; S.sections = []; S.dirty = true; return; }
     /* The page grid will draw this module, so the flat banks -- davebox's own
      * editor, its FALLBACK -- are not built now (DR32's 32 pads made
@@ -12309,6 +12314,42 @@ export function soundWidgetsForTest() {
 }
 export function soundWidgetsEnableForTest(on) { ppWidgetsEnabled = !!on; }
 
+/* ---- NOTES TO SEQ ---------------------------------------------------------
+ *
+ * A MIDI effect that GENERATES notes — a drum pattern from the clock, an
+ * arpeggio — plays them on its own instrument and nowhere else. With this row
+ * on, they also reach the sequencer as if played on the track: Record writes
+ * them into the clip, Capture keeps them (the engine's slot_fx_note; the
+ * chain key `midi_fx_to_host`). They are never played a second time.
+ *
+ * Offered on the effect's own Module page, and only where it means something:
+ * a track's MIDI FX block holding a module that declares
+ * `capabilities.pre_capable` — the module's own statement that it generates
+ * notes. One MIDI effect per instrument here, so one row is the whole setting.
+ *
+ * The instrument stores it (saved with the project, cleared when the effect
+ * is swapped or removed). The row shows a cached copy, read once when the
+ * editor discovers the module — trailingMenus() runs on every plan and must
+ * not read the device. */
+const FX_TO_SEQ_KEY = 'midi_fx_to_host';
+const FX_TO_SEQ_LABEL = 'Notes to Seq';
+function fxToSeqOffered() {
+    if (S.comp !== 'midi_fx1' || S.slot < 0 || !S.moduleId || soundIsGlobal()) return false;
+    const caps = engineModuleCaps(S.comp, S.moduleId);
+    return !!(caps && caps.pre_capable);
+}
+function toggleFxToSeq() {
+    if (!fxToSeqOffered()) return;
+    S.fxToSeq = !S.fxToSeq;
+    queueChainWrite(FX_TO_SEQ_KEY, S.fxToSeq ? 1 : 0);
+    /* Saved at once, like a slot setting: a switch that reverted on the next
+     * launch would be worse than none. */
+    S.pendingAction = { t: 'slotsave' };
+    if (ppOn) paramPagesRefreshTrailing();
+    S.dirty = true;
+}
+export function soundFxToSeqForTest() { return { offered: fxToSeqOffered(), on: S.fxToSeq }; }
+
 /* Re-read the user presets and rebuild the trailing pages from them.
  *
  * ⚠ THE DISK SCAN LIVES HERE AND NOWHERE ELSE. trailingMenus() runs on every
@@ -12439,6 +12480,12 @@ function ppIo() {
                      * only a module that splits its voices offers it. */
                     ...(ModBus.modBusDoorState(S.modBus) === 'open'
                         ? [{ label: ModBus.MODBUS_LABEL, action: 'module_buses' }] : []),
+                    /* ⭑ NOTES TO SEQ: the notes this effect GENERATES also go to
+                     * the sequencer — Record writes them into the clip, Capture
+                     * keeps them (fxToSeqOffered). The value is the cached one:
+                     * nothing is read from the device in here. */
+                    ...(fxToSeqOffered()
+                        ? [{ label: FX_TO_SEQ_LABEL, value: S.fxToSeq ? 'On' : 'Off', action: 'fx_to_seq' }] : []),
                     { label: 'Swap Module', action: 'swap_module' },
                     /* ⭑ REMOVE IS THE `[ none ]` PICK, reached through the same
                      * applyModulePick — not a second way to clear a slot. */
@@ -12514,6 +12561,7 @@ function ppIo() {
              * looking at. */
             else if (action === 'up_save') { overwriteUserPreset(); ppRefreshPresets(); }
             else if (action === 'up_delete') { deleteRecordedPreset(); ppRefreshPresets(); }
+            else if (action === 'fx_to_seq') toggleFxToSeq();
             else if (action === 'remove_module') requestModulePick({ id: '', name: '[ none ]' });
             else if (action === 'up_save_as') startSaveFlow();
             else if (action === 'swap_module') { openBrowse(S.comp); ppErrandView = S.view; }

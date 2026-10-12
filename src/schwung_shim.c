@@ -1609,6 +1609,15 @@ static const move_host_ext_v1_t overtake_host_ext = {
     .set_tempo = overtake_set_tempo,
 };
 
+/* Slot MIDI (plugin_api_v1.h, MOVE_PLUGIN_SLOT_MIDI_V1_SYMBOL): the overtake
+ * DSP's entry for a slot's generated MIDI FX output, if it exports one. Looked
+ * up at load, cleared at unload; called only from the drain after its render. */
+static move_plugin_slot_midi_v1_fn overtake_slot_midi_fn = NULL;
+
+static void overtake_fx_out_deliver(int slot, const uint8_t *msg, int len) {
+    overtake_slot_midi_fn(overtake_dsp_gen_inst, slot, msg, len);
+}
+
 /* === Phase 2: Audio-thread-safe ROUTE_EXTERNAL MIDI send =================
  *
  * overtake_midi_send_external() is called from an overtake DSP's audio
@@ -1893,6 +1902,10 @@ static void shadow_overtake_dsp_load(const char *path) {
                         dlsym(overtake_dsp_handle, MOVE_PLUGIN_HOST_EXT_V1_SYMBOL);
                     if (ext_fn) ext_fn(&overtake_host_ext);
                 }
+                /* Slot MIDI: where a slot's generated MIDI FX output goes, if
+                 * the module exports the entry. */
+                overtake_slot_midi_fn = (move_plugin_slot_midi_v1_fn)
+                    dlsym(overtake_dsp_handle, MOVE_PLUGIN_SLOT_MIDI_V1_SYMBOL);
                 char msg[256];
                 snprintf(msg, sizeof(msg), "Overtake DSP: loaded generator from %s (snapshot_rt_safe=%d)",
                          path, g_snap_rt_safe);
@@ -1932,6 +1945,10 @@ static void shadow_overtake_dsp_unload(void) {
     if (!overtake_dsp_handle) return;
     /* Its declared tempo goes with it. */
     shadow_transport_declare_bpm(0.0f);
+    /* ...and so does its entry for the slots' generated MIDI FX output: it
+     * lives in the instance about to be destroyed. First, before anything is
+     * torn down; the drain then discards. */
+    overtake_slot_midi_fn = NULL;
     shadow_overtake_rui_reset();
 
     /* Stop new off-RT snapshot reads and drain any in flight before freeing. */
@@ -2370,6 +2387,15 @@ static void shadow_inprocess_render_to_buffer(void) {
             shadow_deferred_dsp_buffer[i] = (int16_t)mixed;
         }
     }
+
+    /* Generated MIDI FX output the slots queued this frame (chain key
+     * `midi_fx_to_host`): to the overtake DSP now — AFTER its render, so both
+     * what the pool lanes produced before the join and what a slot produced
+     * re-entrantly while the overtake DSP was sending its own clock arrive in
+     * this same frame, and never inside its render_block. With nobody to take
+     * them they are discarded, so the ring cannot fill. */
+    shadow_chain_fx_out_drain((overtake_slot_midi_fn && overtake_dsp_gen_inst)
+                              ? overtake_fx_out_deliver : NULL);
 
     /* Preview player: mix file preview audio into the deferred buffer */
     preview_render(shadow_deferred_dsp_buffer, MOVE_FRAMES_PER_BLOCK);

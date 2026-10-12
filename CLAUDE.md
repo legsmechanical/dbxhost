@@ -123,6 +123,12 @@ Keep each isolated in its own commit so it is easy to exclude when cherry-pickin
   chain-slot parameter from its own render) and `set_tempo` (an overtake DSP that runs its own clock
   declares its exact tempo, which `get_bpm()` then answers with). Handed over by `dlsym` after
   `create_instance`; `host_api_v1_t` itself stays frozen at upstream's geometry.
+- **One fork-only module EXPORT the host calls, and the chain key behind it:**
+  `move_plugin_slot_midi_v1` (`src/host/plugin_api_v1.h`) — a slot whose chain key `midi_fx_to_host`
+  is 1 hands the notes its MIDI FX GENERATES to an overtake DSP that exports it. Chain side:
+  `chain_set_midi_fx_sink` (optional export). ⚠ The hand-off is a QUEUE drained after the overtake
+  render, never a direct call: tick output is produced on a render-pool lane, and clock output can
+  be produced from inside the overtake DSP's own render. `tests/host/test_midi_fx_to_host_wiring.sh`.
 
 → full history and the silent-misbehaviour warning: [`RATIONALE.md`](RATIONALE.md).
 
