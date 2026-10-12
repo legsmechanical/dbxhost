@@ -278,6 +278,34 @@ int main(void) {
     }
     printf("  ok   — changing the amount mid-bar plays every note exactly once\n");
 
+    /* ---- an early pass does not leak its park into the rest of the tick ---- */
+    {
+        /* Step 1 is six ticks LATE and ratchets x4 (hits at ticks 0, 6, 12,
+         * 18); step 2 is six and a half ticks EARLY, so it fires at tick 17
+         * with half a tick of park. The fourth ratchet hit, one tick later,
+         * must still get step 1's six ticks. */
+        hx_t *h = begin();
+        hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
+        hx_set_param(h, "t1_c0_step_0_ratch", "4");
+        hx_set_param(h, "t1_c0_step_1_toggle", "72 100");
+        table(h, 1, -6 * GROOVE_FINE - 8);
+        ((seq8_instance_t *)h->inst)->groove.off[0] = 6 * GROOVE_FINE;
+        hx_clear_capture(h);
+        hx_set_param(h, "transport", "play_focus:1:0");
+        hx_render(h, 120);
+        hx_set_param(h, "transport", "stop");
+        hx_render(h, 200);
+        collect(&B);
+        hx_destroy(h);
+        HX_ASSERT(count(&B, 1, 60) == 4, "rig: the step ratchets four times");
+        int gap23 = nth(&B, 1, 60, 2) - nth(&B, 1, 60, 1);
+        int gap34 = nth(&B, 1, 60, 3) - nth(&B, 1, 60, 2);
+        HX_ASSERT(gap23 >= 10 && gap23 <= 12, "rig: ratchet hits are six ticks apart");
+        HX_ASSERT(gap34 >= gap23 - 1 && gap34 <= gap23 + 1,
+                  "an early note's park was left behind and moved the notes after it");
+    }
+    printf("  ok   — an early pass puts the tick's own park back\n");
+
     /* ---- a drum lane ---- */
     both(s_drum, 3, 1, -6 * GROOVE_FINE, &A, &B);
     HX_ASSERT(count(&A, 1, -1) == 48, "rig: three bars of a drum lane");
