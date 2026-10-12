@@ -1690,7 +1690,7 @@ static void seq8_load_state(seq8_instance_t *inst) {
         groove_reset(g);
         /* no table is stored yet, so a table kind has nothing to play */
         if (gk < 0) g->kind = clamp_i(json_get_int(buf, "_swr", 0), 0, 1) ? GROOVE_SWING_8 : GROOVE_SWING_16;
-        else        g->kind = (uint8_t)clamp_i(gk, GROOVE_OFF, GROOVE_SWING_8);
+        else        g->kind = (gk == GROOVE_SWING_16 || gk == GROOVE_SWING_8) ? (uint8_t)gk : GROOVE_OFF;
         if (ga < 0) ga = json_get_int(buf, "_swa", 0);
         g->amt = (uint8_t)clamp_i(ga, 0, 100);
         g->timing   = (uint8_t)clamp_i(json_get_int(buf, "_gt", 100), 0, 100);

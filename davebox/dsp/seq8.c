@@ -335,7 +335,9 @@ static inline uint32_t groove_table_late_fine(const groove_t *g, uint64_t tick) 
     if (g->kind != GROOVE_TABLE || g->base == 0 || g->n_slots == 0) return 0;
     int32_t off = (int32_t)g->off[(tick / g->base) % g->n_slots];
     if (off <= 0) return 0;
-    return (uint32_t)off * groove_eff_amt(g) / 100u;
+    uint32_t late = (uint32_t)off * groove_eff_amt(g) / 100u;
+    uint32_t cap  = (uint32_t)g->base * GROOVE_FINE / 2;      /* half a slot, like early */
+    return late > cap ? cap : late;
 }
 
 /* The most a slot can be played ahead of its tick: half a slot, and never
@@ -855,7 +857,7 @@ typedef struct {
     uint8_t   pending_page_stop;    /* 1 = stop at next main clock bar boundary (global_tick%16==0) */
     /* Groove: notes already played AHEAD of their tick, so the tick itself
      * does not play them again. `due` is the master tick they belong to. */
-    struct { uint32_t due; uint16_t ni; uint8_t lane; } early_tok[GROOVE_TOK_MAX];
+    struct { uint32_t due; uint16_t ni; uint8_t lane; uint8_t clip; } early_tok[GROOVE_TOK_MAX];
     uint8_t   early_tok_n;
     uint8_t   record_armed;         /* 1 = set recording=1 atomically when queued clip launches */
     uint8_t   recording_pending_page; /* 1 = set recording=1 at next bar boundary (global_tick%16==0) */
@@ -886,6 +888,8 @@ typedef struct {
         uint16_t ticks_until_fire;
         uint16_t gate;
         uint8_t  lane_idx;
+        uint8_t  has_park;   /* table groove: sub-hits wait as long as the step's first hit did */
+        uint64_t park;
     } ratchet_pending[24];
     uint8_t  ratchet_pending_count;
     /* Per-track tick position within current step; wraps at cl->ticks_per_step */
@@ -1268,6 +1272,8 @@ typedef struct {
     groove_early_t groove_early[GROOVE_EARLY_PASSES];
     uint8_t  groove_early_n;
     uint8_t  groove_kmax;           /* longest early offset in the table, whole ticks; 0 = none */
+    uint8_t  groove_ahead;          /* while an early pass fires a note: how many ticks ahead of the clock that note belongs */
+    uint32_t groove_last_mt;        /* the master tick last scanned; going backwards drops every claim */
     uint8_t  groove_lead;           /* ticks a stepped automation lane reads ahead */
     uint64_t groove_lead_delay;     /* ...and how long its value is then held */
     uint64_t swing_step_delay;      /* samples to defer notes in current even step; 0=no defer */
@@ -2315,7 +2321,9 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
         if (g_inst->merge_solo_track != 0xFF && tri != g_inst->merge_solo_track)
             st = 0;   /* fails the note filter below — event not captured */
         if (tri < NUM_TRACKS && (st == 0x90 || st == 0x80)) {
-            uint32_t abs_now = g_inst->global_tick * TICKS_PER_STEP
+            /* + groove_ahead: a note played ahead of its tick is captured
+             * at the tick it belongs to, not the one it was fired on */
+            uint32_t abs_now = (uint32_t)g_inst->groove_ahead + g_inst->global_tick * TICKS_PER_STEP
                                + g_inst->master_tick_in_step;
             uint32_t rel = abs_now > g_inst->merge_start_abs
                            ? abs_now - g_inst->merge_start_abs : 0;
@@ -2677,6 +2685,16 @@ static void groove_scan_early(seq8_instance_t *inst) {
     inst->groove_early_n    = 0;
     inst->groove_lead       = 0;
     inst->groove_lead_delay = 0;
+    /* The master clock went back (transport restarted): a claim made for a
+     * tick of the last run must not be honoured in this one. */
+    {
+        uint32_t now = groove_master_tick(inst);
+        if (now < inst->groove_last_mt) {
+            int t;
+            for (t = 0; t < NUM_TRACKS; t++) inst->tracks[t].early_tok_n = 0;
+        }
+        inst->groove_last_mt = now;
+    }
     const groove_t *g = &inst->groove;
     if (g->kind != GROOVE_TABLE || inst->groove_kmax == 0 || inst->tick_delta == 0) return;
     double spt = (double)MOVE_FRAMES_PER_BLOCK
@@ -2714,7 +2732,11 @@ static inline int groove_track_early_n(const seq8_instance_t *inst, const seq8_t
 static inline uint32_t groove_track_lead(const seq8_instance_t *inst, const seq8_track_t *tr,
                                          uint64_t *delay) {
     if (!tr->pfx.groove_on) { *delay = 0; return 0; }
-    if (inst->groove_lead == 0 || tr->queued_clip >= 0 || tr->pending_page_stop)
+    /* A melodic clip not playing Forward plays its early slots on time, so
+     * its locks must too. (A drum track's automation runs on the master
+     * clock, which only goes forward.) */
+    int fwd = (tr->pad_mode == PAD_MODE_DRUM) || tr->clips[tr->active_clip].playback_dir == 0;
+    if (inst->groove_lead == 0 || !fwd || tr->queued_clip >= 0 || tr->pending_page_stop)
         { *delay = inst->swing_step_delay; return 0; }
     *delay = inst->groove_lead_delay;
     return inst->groove_lead;
@@ -9364,6 +9386,7 @@ typedef struct {
     uint64_t park;      /* how long this pass's notes are parked */
     uint64_t saved;     /* the tick's own park, put back after the pass */
     uint8_t  early;
+    uint8_t  ahead;     /* early pass: ticks between now and the notes' own tick */
     uint8_t  crossed;   /* early pass: the tick is past the loop wrap */
 } groove_pass_t;
 
@@ -9371,7 +9394,7 @@ static int groove_pass(seq8_instance_t *inst, const clip_t *cl,
                        uint16_t step, uint16_t tick_in_step, int pass, groove_pass_t *p) {
     p->saved = p->park = inst->swing_step_delay;
     p->cycle = (uint32_t)cl->loop_cycle;
-    p->due = 0; p->early = 0; p->crossed = 0;
+    p->due = 0; p->early = 0; p->crossed = 0; p->ahead = 0;
     if (pass == 0) { p->cct = playback_audible_cct(cl, step, tick_in_step); return 1; }
 
     /* Only a clip playing Forward can be read ahead. Every other direction
@@ -9391,6 +9414,7 @@ static int groove_pass(seq8_instance_t *inst, const clip_t *cl,
     p->cct   = pos;
     p->early = 1;
     p->park  = e->delay;
+    p->ahead = e->k;
     p->due   = groove_master_tick(inst) + (uint32_t)e->k;
     return 1;
 }
@@ -9408,8 +9432,10 @@ static int groove_pass_claims(seq8_instance_t *inst, seq8_track_t *tr,
     for (i = 0; i < (int)tr->early_tok_n; i++) {
         uint32_t ahead = tr->early_tok[i].due - now;          /* wraps for the past */
         if (ahead > (uint32_t)GROOVE_MAX_EARLY_TICKS) continue;   /* stale: drop */
+        /* the clip too: a claim made in the clip that was playing says
+         * nothing about the one launched over it */
         if (tr->early_tok[i].due == want && tr->early_tok[i].ni == ni
-                && tr->early_tok[i].lane == lane) {
+                && tr->early_tok[i].lane == lane && tr->early_tok[i].clip == tr->active_clip) {
             found = 1;
             if (!p->early) continue;                          /* the tick takes its claim */
         }
@@ -9421,6 +9447,7 @@ static int groove_pass_claims(seq8_instance_t *inst, seq8_track_t *tr,
     tr->early_tok[k].due  = p->due;
     tr->early_tok[k].ni   = ni;
     tr->early_tok[k].lane = lane;
+    tr->early_tok[k].clip = tr->active_clip;
     tr->early_tok_n = (uint8_t)(k + 1);
     return 1;
 }

@@ -134,7 +134,7 @@ static void drum_pfx_send(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2
         uint8_t st  = status & 0xF0;
         uint8_t tri = px->track_idx;
         if (tri < NUM_TRACKS && (st == 0x90 || st == 0x80)) {
-            uint32_t abs_now = g_inst->global_tick * TICKS_PER_STEP
+            uint32_t abs_now = (uint32_t)g_inst->groove_ahead + g_inst->global_tick * TICKS_PER_STEP
                                + g_inst->master_tick_in_step;
             uint32_t rel = abs_now > g_inst->merge_start_abs
                            ? abs_now - g_inst->merge_start_abs : 0;

@@ -406,6 +406,104 @@ int main(void) {
     }
     printf("  ok   — a queued launch: nothing of the outgoing pass is played ahead\n");
 
+    /* ---- a launch queued AFTER the outgoing clip's first step was played ahead ---- */
+    {
+        /* The bar line is at block 692; the old clip's first step goes out
+         * six ticks (11 blocks) before it, at 681. Queue the new clip in between: its
+         * own first step — the same note index, on the same tick — must play. */
+        hx_t *h = begin();
+        melodic16(h, 12);
+        hx_set_param(h, "t1_c1_step_0_toggle", "90 100");
+        hx_set_param(h, "launch_quant", "5");
+        table(h, 0, -6 * GROOVE_FINE);
+        hx_clear_capture(h);
+        hx_set_param(h, "transport", "play_focus:1:0");
+        hx_render(h, 685);
+        hx_set_param(h, "t1_launch_clip", "1");
+        hx_render(h, 300);
+        hx_set_param(h, "transport", "stop");
+        hx_render(h, 200);
+        collect(&B);
+        hx_destroy(h);
+        HX_ASSERT(count(&B, 1, 48) == 2, "rig: the old clip's first step had already gone out ahead of the bar line");
+        HX_ASSERT(count(&B, 1, 90) == 1, "the launched clip's first step was swallowed by the old clip's claim");
+    }
+    printf("  ok   — a clip launched over an early note still plays its own first step\n");
+
+    /* ---- stop and play again at once: nothing of the last run is remembered ---- */
+    {
+        hx_t *h = begin();
+        melodic16(h, 12);
+        table(h, 0, -6 * GROOVE_FINE);
+        hx_set_param(h, "transport", "play_focus:1:0");
+        hx_render(h, 77);                        /* the third step has just gone out ahead of its tick */
+        hx_set_param(h, "transport", "stop");
+        hx_clear_capture(h);
+        hx_set_param(h, "transport", "play_focus:1:0");
+        hx_render(h, bars(1));
+        hx_set_param(h, "transport", "stop");
+        hx_render(h, 200);
+        collect(&B);
+        hx_destroy(h);
+        for (int sidx = 0; sidx < 16; sidx++)
+            HX_ASSERT(count(&B, 1, 48 + sidx) == 1, "a claim from before the stop swallowed a note after it");
+    }
+    printf("  ok   — a restart forgets the claims of the run before\n");
+
+    /* ---- an early step that ratchets: the sub-hits keep the step's timing ---- */
+    {
+        /* Step 2 is ten ticks early and ratchets x4 (six ticks apart), so its
+         * second hit fires inside step 1 — which is six ticks LATE. */
+        hx_t *h = begin();
+        hx_set_param(h, "t1_c0_step_1_toggle", "72 100");
+        hx_set_param(h, "t1_c0_step_1_ratch", "4");
+        table(h, 1, -10 * GROOVE_FINE);
+        ((seq8_instance_t *)h->inst)->groove.off[0] = 6 * GROOVE_FINE;
+        hx_clear_capture(h);
+        hx_set_param(h, "transport", "play_focus:1:0");
+        hx_render(h, 140);
+        hx_set_param(h, "transport", "stop");
+        hx_render(h, 200);
+        collect(&B);
+        hx_destroy(h);
+        HX_ASSERT(count(&B, 1, 72) == 4, "rig: the early step ratchets four times");
+        for (int i = 0; i < 3; i++) {
+            int gap = nth(&B, 1, 72, i + 1) - nth(&B, 1, 72, i);
+            HX_ASSERT(gap >= 10 && gap <= 12, "an early step's ratchet hits are not evenly spaced");
+        }
+    }
+    printf("  ok   — an early step's ratchet keeps its spacing\n");
+
+    /* ---- Backward: a lock is not read ahead of a note that plays on time ---- */
+    {
+        int blk[2] = { -1, -1 }, sets[2] = { 0, 0 };
+        for (int g = 0; g < 2; g++) {
+            hx_t *h = begin();
+            hx_set_param(h, "t1_route", "schwung");
+            hx_set_param(h, "t1_c0_step_0_toggle", "60 100");
+            hx_set_param(h, "t1_c0_step_15_toggle", "64 100");
+            hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 0 359 0");
+            hx_set_param(h, "t1_pa_set2", "0 1:synth:cutoff 360 383 16383");   /* step 16: an early slot */
+            hx_set_param(h, "pa_resolve", "1:synth:cutoff 1 synth:cutoff 0 0 1 0.01");
+            hx_set_param(h, "t1_clip_playback_dir", "1");
+            if (g) table(h, 1, -6 * GROOVE_FINE);
+            hx_clear_capture(h);
+            hx_set_param(h, "transport", "play_focus:1:0");
+            hx_render(h, 150);
+            for (int i = 0; i < hx_stub_event_count(); i++) {
+                const hx_midi_event *e = hx_stub_event(i);
+                if (e->kind != HX_PARAM_SET || strcmp(e->key, "synth:cutoff")) continue;
+                sets[g]++;
+                if (!strcmp(e->value, "0") && blk[g] < 0) blk[g] = e->block;
+            }
+            hx_destroy(h);
+        }
+        HX_ASSERT(sets[0] >= 2 && blk[0] >= 0, "rig: backward, the value goes high then low");
+        HX_ASSERT(sets[1] == sets[0] && blk[1] == blk[0],
+                  "on a Backward clip a lock was read ahead of its on-time note");
+    }
+    printf("  ok   — Backward: locks stay with their on-time notes\n");
+
     /* ---- a step's lock is written with its early note ---- */
     {
         int blk_note[2] = { -1, -1 }, blk_set[2] = { -1, -1 }, sets[2] = { 0, 0 };

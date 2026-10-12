@@ -656,7 +656,13 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                                 break;
                             }
                         }
-                        /* Fire note-on (melodic/drum split by lane_idx) */
+                        /* Fire note-on (melodic/drum split by lane_idx). Under a
+                         * table groove the sub-hit waits as long as the step's
+                         * first hit did, not as long as the slot it happens to
+                         * fire in says. */
+                        uint64_t _rp_held = inst->swing_step_delay;
+                        if (tr->ratchet_pending[rp].has_park && inst->groove.kind == GROOVE_TABLE)
+                            inst->swing_step_delay = tr->ratchet_pending[rp].park;
                         if (_rp_lane != 0xFF)
                             drum_pfx_note_on(inst, tr, &tr->drum_lane_pfx[_rp_lane], _rp_pitch, _rp_vel);
                         else {
@@ -664,6 +670,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                             tr->pfx.active_notes[_rp_pitch].gate_override_smp =
                                 pfx_ticks_to_smp(inst, tr, (uint32_t)_rp_gate);
                         }
+                        inst->swing_step_delay = _rp_held;
                         /* Push to play_pending for the sub-hit's own gate countdown */
                         if (tr->play_pending_count < 32) {
                             int _pi = (int)tr->play_pending_count;
@@ -883,7 +890,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                             /* v=34 trig conditions (Iter + Random) — per-note */
                             uint16_t _sidx = note_step(n->tick, dlc->length, dlc->ticks_per_step);
                             if (!step_trig_pass(dlc, _sidx, _g.cycle, &dpx->rng)) continue;
-                            inst->swing_step_delay = _g.park;
+                            inst->swing_step_delay = _g.park; inst->groove_ahead = _g.ahead;
                             { int pp; for (pp = 0; pp < (int)tr->play_pending_count; pp++) {
                                 if (tr->play_pending[pp].pitch == lane_note) {
                                     drum_pfx_note_off(inst, tr, dpx, lane_note);
@@ -926,10 +933,12 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                                     tr->ratchet_pending[_ri].ticks_until_fire = (uint16_t)(_k * _sub_gate);
                                     tr->ratchet_pending[_ri].gate             = _sub_gate;
                                     tr->ratchet_pending[_ri].lane_idx         = (uint8_t)l;
+                                    tr->ratchet_pending[_ri].has_park = (uint8_t)(inst->groove.kind == GROOVE_TABLE);
+                                    tr->ratchet_pending[_ri].park     = inst->swing_step_delay;
                                 }
                             }
                         }
-                        inst->swing_step_delay = _g.saved;
+                        inst->swing_step_delay = _g.saved; inst->groove_ahead = 0;
                         }
                     }
                 }
@@ -950,7 +959,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                         /* v=34 trig conditions (Iter + Random) — per-note */
                         uint16_t _sidx = note_step(n->tick, cl->length, cl->ticks_per_step);
                         if (!step_trig_pass(cl, _sidx, _g.cycle, &tr->pfx.rng)) continue;
-                        inst->swing_step_delay = _g.park;
+                        inst->swing_step_delay = _g.park; inst->groove_ahead = _g.ahead;
                         /* Transpose preview: emit the remapped pitch, but key the
                          * "kill the previous instance of this note" check on the RAW
                          * source pitch (stable across LUT changes) and turn off the
@@ -1008,10 +1017,12 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                                 tr->ratchet_pending[_ri].ticks_until_fire = (uint16_t)(_k * _sub_gate);
                                 tr->ratchet_pending[_ri].gate             = _sub_gate;
                                 tr->ratchet_pending[_ri].lane_idx         = 0xFF;
+                                    tr->ratchet_pending[_ri].has_park = (uint8_t)(inst->groove.kind == GROOVE_TABLE);
+                                    tr->ratchet_pending[_ri].park     = inst->swing_step_delay;
                             }
                         }
                     }
-                    inst->swing_step_delay = _g.saved;
+                    inst->swing_step_delay = _g.saved; inst->groove_ahead = 0;
                     }
                 }
             }

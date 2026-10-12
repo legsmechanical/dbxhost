@@ -91,6 +91,7 @@ static void s_table_like_swing(hx_t *h) { table_two_slots(h, 12 * GROOVE_FINE); 
 static void s_table_early(hx_t *h)      { table_two_slots(h, -12 * GROOVE_FINE); }
 static void s_table_half_amt(hx_t *h)   { table_two_slots(h, 24 * GROOVE_FINE);
                                           ((seq8_instance_t *)h->inst)->groove.amt = 50; }
+static void s_table_too_late(hx_t *h)   { table_two_slots(h, 20 * GROOVE_FINE); }
 static void s_table_empty(hx_t *h) {
     groove_t *g = &((seq8_instance_t *)h->inst)->groove;
     g->kind = GROOVE_TABLE; g->amt = 100;   /* no slots: nothing to play */
@@ -176,6 +177,24 @@ int main(void) {
                   "the four amounts survive a save and load");
         hx_destroy(h);
 
+        /* (a2) a table kind with no table to go with it opens Off, not as a swing */
+        {
+            static char t3[65536];
+            strcpy(t3, blob);
+            char *p = strstr(t3, "\"_gk\":2");
+            HX_ASSERT(p, "rig: _gk");
+            p[6] = '3';
+            wf = fopen(tmp, "w");
+            HX_ASSERT(wf && fwrite(t3, 1, strlen(t3), wf) == strlen(t3), "tmp write failed");
+            fclose(wf);
+            h = hx_create(NULL);
+            inst = (seq8_instance_t *)h->inst;
+            strncpy(inst->state_path, tmp, sizeof(inst->state_path) - 1);
+            seq8_load_state(inst);
+            HX_ASSERT(geti(h, "groove_kind") == GROOVE_OFF, "a table kind with no table opens Off");
+            hx_destroy(h);
+        }
+
         /* (b) the same file with the new keys cut out: what an older build wrote */
         const char *cut[] = { ",\"_gk\":2", ",\"_ga\":42", ",\"_gt\":80", ",\"_gq\":11",
                               ",\"_gr\":22", ",\"_gv\":33" };
@@ -220,6 +239,8 @@ int main(void) {
     HX_ASSERT(timing_of(s_table_early) != straight && timing_of(s_table_early) != sw16,
               "an early slot plays neither on time nor late");
     HX_ASSERT(timing_of(s_table_empty) == straight, "a table with no slots plays straight");
+    HX_ASSERT(timing_of(s_table_too_late) == sw16,
+              "a slot is never more than half a slot late (20 ticks in a 24-tick slot plays as 12)");
 
     printf("PASS: test_groove_engine\n");
     return 0;
