@@ -2115,9 +2115,14 @@ typedef void (*pa_midi_emit_fn)(seq8_track_t *tr, int cc, uint16_t val);
 void (*pa_test_midscan_hook)(seq8_instance_t *inst) = 0;
 #endif
 
-static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
-                             int clip, uint32_t ct, uint32_t clip_ticks,
-                             pa_midi_emit_fn emit) {
+/* `lead`: ticks a STEPPED lane reads ahead of the playhead, and `hold` how
+ * long its value is then held — a groove playing a step early plays that
+ * step's lock early with it (groove_track_lead). With no early slot due,
+ * lead is 0 and hold is the tick's own swing delay. */
+static void pa_playback_scan_lead(seq8_instance_t *inst, seq8_track_t *tr, int track,
+                                  int clip, uint32_t ct, uint32_t clip_ticks,
+                                  uint32_t lead, uint64_t hold,
+                                  pa_midi_emit_fn emit) {
     /* The lane clock's cycle count: the clip tick wrapped since last tick. */
     if (ct < tr->pa_last_ct) tr->pa_cycle++;
     tr->pa_last_ct = ct;
@@ -2187,7 +2192,25 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
         uint16_t v;
         uint32_t ws, wl;
         pa_lane_window(tr, e, clip_start, clip_ticks, &ws, &wl);
-        uint32_t lt = pa_lane_tick(inst, tr, e, ct, clip_ticks, tr->pa_cycle);
+        uint32_t lt;
+        if (lead && !(e->flags & PA_FLAG_SMOOTH)) {
+            if (pa_lane_cycled(tr, e)) {
+                /* a drum cycle runs on the master clock: read it `lead` on */
+                uint64_t abs = pa_lane_abs(inst, tr) + lead;
+                if (e->resolution) {
+                    uint32_t mul, div;
+                    pa_rate(e->resolution, &mul, &div);
+                    abs = abs * mul / div;
+                }
+                lt = (uint32_t)e->loop_off + (uint32_t)(abs % e->loop_len);
+            } else {
+                uint32_t lct = ct + lead, lcyc = tr->pa_cycle;
+                if (clip_ticks && lct >= clip_start + clip_ticks) { lct -= clip_ticks; lcyc++; }
+                lt = pa_entry_tick(e, lct, clip_ticks, lcyc);
+            }
+        } else {
+            lt = pa_lane_tick(inst, tr, e, ct, clip_ticks, tr->pa_cycle);
+        }
         int ev = (e->flags & PA_FLAG_PUNCH) ? pa_eval_punch(e, lt, ws, wl, pa_lane_step(tr, e, step_ticks), &v)
                                             : pa_eval_window(e, lt, ws, wl, &v);
         if (!ev) continue;
@@ -2236,9 +2259,17 @@ static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
             if (emit) emit(tr, out[i].cc, out[i].val);   /* the emitter narrows */
         } else {
             pa_emit_chain_swung(inst, track, out[i].target, out[i].val,
-                                out[i].stepped ? inst->swing_step_delay : 0);
+                                out[i].stepped ? hold : 0);
         }
     }
+}
+
+/* The scan with no read-ahead: every lane at the playhead. */
+static void pa_playback_scan(seq8_instance_t *inst, seq8_track_t *tr, int track,
+                             int clip, uint32_t ct, uint32_t clip_ticks,
+                             pa_midi_emit_fn emit) {
+    pa_playback_scan_lead(inst, tr, track, clip, ct, clip_ticks, 0,
+                          inst->swing_step_delay, emit);
 }
 
 /* SPI THREAD: write one value at one cell of a target's lane — the recorder's

@@ -10,8 +10,8 @@
  *   - a new project has a groove chosen and nothing applied
  *   - Off plays straight whatever the amount says
  *   - Timing scales the amount
- *   - a TABLE groove delays the slots it says to, by what it says, and a slot
- *     marked early plays on time (nothing is played ahead of its tick yet)
+ *   - a TABLE groove delays the slots it says to, by what it says (early
+ *     slots: test_groove_early.c)
  *
  * Timing is compared as a hash of (render block, packet) per event — the same
  * capture the sweep uses. */
@@ -216,7 +216,9 @@ int main(void) {
               "a table with slot 2 twelve ticks late plays as Swing 1/16 at full");
     HX_ASSERT(timing_of(s_table_half_amt) == sw16,
               "a table's amount scales its offsets (24 ticks at 50 = 12 ticks)");
-    HX_ASSERT(timing_of(s_table_early) == straight, "an early slot plays on time, not late");
+    /* early slots: test_groove_early.c. Here only that early is not late. */
+    HX_ASSERT(timing_of(s_table_early) != straight && timing_of(s_table_early) != sw16,
+              "an early slot plays neither on time nor late");
     HX_ASSERT(timing_of(s_table_empty) == straight, "a table with no slots plays straight");
 
     printf("PASS: test_groove_engine\n");

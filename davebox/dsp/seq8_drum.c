@@ -322,6 +322,7 @@ static void drum_pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
     an->active        = 1;
     an->channel       = ch;
     an->on_time       = now;
+    an->on_delay      = groove_note_park(inst);
     an->orig_velocity = (uint8_t)v;
     an->gen_count     = 1;
     an->gen_notes[0]  = pitch;
@@ -342,10 +343,16 @@ static void drum_pfx_note_off(seq8_instance_t *inst, seq8_track_t *tr,
     uint64_t off_time = an->on_time + gate_smp;
     uint8_t  off_s    = (uint8_t)(0x80 | an->channel);
 
+    /* A table groove's note-off waits as long as its note-on did (see
+     * pfx_note_off). */
+    int      keep = (inst->groove.kind == GROOVE_TABLE);
+    uint64_t held = inst->swing_step_delay;
+    if (keep) inst->swing_step_delay = an->on_delay;
     if (off_time <= now)
         drum_pfx_send(px, off_s, an->gen_notes[0], 0);
     else
-        drum_pfx_q_insert(px, off_time, off_s, an->gen_notes[0], 0, 0);
+        drum_pfx_q_insert(px, off_time + (keep ? an->on_delay : 0), off_s, an->gen_notes[0], 0, 0);
+    inst->swing_step_delay = held;
 
     drum_pfx_sched_delay_offs(px, an, an->on_time, gate_smp);
     an->active = 0;

@@ -528,6 +528,7 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
             if (mt % groove_slot_ticks(&inst->groove) == 0)
                 groove_recompute_step_delay(inst, mt);
         }
+        groove_scan_early(inst);
 
         /* Merge: ARMED → CAPTURING at first step boundary; STOPPING → finalize at
          * next 16-step page boundary so the captured clip is an exact page length. */
@@ -845,8 +846,10 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                  * has been told how to address, and stages the rest for JS.
                  * pa_playback_scan is audio-thread safe — it allocates nothing
                  * and discards any pass a concurrent edit overlapped. */
-                pa_playback_scan(inst, tr, t, (int)tr->active_clip, _ct,
-                                 _winlen, pa_emit_midi);
+                uint64_t _hold;
+                uint32_t _lead = groove_track_lead(inst, tr, &_hold);
+                pa_playback_scan_lead(inst, tr, t, (int)tr->active_clip, _ct,
+                                      _winlen, _lead, _hold, pa_emit_midi);
                 /* And the knobs under a hand while Record is on: written along
                  * the same playhead, one cell at a time. */
                 pa_record_tick(inst, tr, t, (int)tr->active_clip, _ct, _tps, _winlen);
@@ -863,16 +866,24 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                         drum_pfx_t  *dpx  = &tr->drum_lane_pfx[l];
                         if (dlc->note_count == 0) continue;
                         if (effective_drum_mute(tr, l)) continue;
-                        uint32_t cct = playback_audible_cct(dlc, tr->drum_current_step[l], tr->drum_tick_in_step[l]);
                         uint8_t  lane_note = lane->midi_note;
+                        int _gp, _gn = groove_track_early_n(inst, tr);
+                        for (_gp = 0; _gp <= _gn; _gp++) {
+                        groove_pass_t _g;
+                        if (!groove_pass(inst, dlc, tr->drum_current_step[l], tr->drum_tick_in_step[l], _gp, &_g)) continue;
+                        uint32_t cct = _g.cct;
                         uint16_t ni2;
                         for (ni2 = 0; ni2 < dlc->note_count; ni2++) {
                             note_t *n = &dlc->notes[ni2];
-                            if (!n->active || n->suppress_until_wrap) continue;
+                            /* a suppressed note comes back at the wrap; an
+                             * early pass past the wrap is already there */
+                            if (!n->active || (n->suppress_until_wrap && !_g.crossed)) continue;
                             if (note_audio_reverse_cmp_tick(n, dlc, lane->pfx_params.quantize) != cct) continue;
+                            if (!groove_pass_claims(inst, tr, &_g, (uint8_t)l, ni2)) continue;
                             /* v=34 trig conditions (Iter + Random) — per-note */
                             uint16_t _sidx = note_step(n->tick, dlc->length, dlc->ticks_per_step);
-                            if (!step_trig_pass(dlc, _sidx, (uint32_t)dlc->loop_cycle, &dpx->rng)) continue;
+                            if (!step_trig_pass(dlc, _sidx, _g.cycle, &dpx->rng)) continue;
+                            inst->swing_step_delay = _g.park;
                             { int pp; for (pp = 0; pp < (int)tr->play_pending_count; pp++) {
                                 if (tr->play_pending[pp].pitch == lane_note) {
                                     drum_pfx_note_off(inst, tr, dpx, lane_note);
@@ -918,20 +929,28 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                                 }
                             }
                         }
+                        inst->swing_step_delay = _g.saved;
+                        }
                     }
                 }
             } else {
                 /* Melodic note-centric note-on: scan active clip's notes[]. */
                 if (tr->clip_playing && !effective_mute(inst, t)) {
-                    uint32_t cct = playback_audible_cct(cl, tr->current_step, tr->tick_in_step);
+                    int _gp, _gn = groove_track_early_n(inst, tr);
+                    for (_gp = 0; _gp <= _gn; _gp++) {
+                    groove_pass_t _g;
+                    if (!groove_pass(inst, cl, tr->current_step, tr->tick_in_step, _gp, &_g)) continue;
+                    uint32_t cct = _g.cct;
                     uint16_t ni2;
                     for (ni2 = 0; ni2 < cl->note_count; ni2++) {
                         note_t *n = &cl->notes[ni2];
-                        if (!n->active || n->suppress_until_wrap) continue;
+                        if (!n->active || (n->suppress_until_wrap && !_g.crossed)) continue;
                         if (note_audio_reverse_cmp_tick(n, cl, tr->pfx.quantize) != cct) continue;
+                        if (!groove_pass_claims(inst, tr, &_g, 0xFF, ni2)) continue;
                         /* v=34 trig conditions (Iter + Random) — per-note */
                         uint16_t _sidx = note_step(n->tick, cl->length, cl->ticks_per_step);
-                        if (!step_trig_pass(cl, _sidx, (uint32_t)cl->loop_cycle, &tr->pfx.rng)) continue;
+                        if (!step_trig_pass(cl, _sidx, _g.cycle, &tr->pfx.rng)) continue;
+                        inst->swing_step_delay = _g.park;
                         /* Transpose preview: emit the remapped pitch, but key the
                          * "kill the previous instance of this note" check on the RAW
                          * source pitch (stable across LUT changes) and turn off the
@@ -991,6 +1010,8 @@ static void render_block(void *instance, int16_t *out_lr, int frames) {
                                 tr->ratchet_pending[_ri].lane_idx         = 0xFF;
                             }
                         }
+                    }
+                    inst->swing_step_delay = _g.saved;
                     }
                 }
             }
