@@ -23,6 +23,12 @@ typedef struct {
                            HX_PARAM_SET: the slot written */
     char key[64];       /* HX_PARAM_SET only */
     char value[32];     /* HX_PARAM_SET only */
+    int block;          /* the render block this was emitted in (hx_render counts
+                           them; an event sent outside a render carries the
+                           count so far). The capture's only clock: one block
+                           is the engine's emission granularity, so a timing
+                           change of a block or more shows here and nowhere
+                           else. */
 } hx_midi_event;
 
 /* Returns a configured, process-global host (sample_rate, log, all MIDI
@@ -31,6 +37,9 @@ host_api_v1_t *hx_stub_host(void);
 
 /* Capture control + queries (ordered across all three MIDI channels). */
 void                  hx_stub_reset_capture(void);
+/* The block clock behind hx_midi_event.block: hx_render bumps it before each
+ * render_block; reset to 0 with the capture. */
+void                  hx_stub_next_block(void);
 int                   hx_stub_event_count(void);
 const hx_midi_event  *hx_stub_event(int i);      /* NULL if out of range */
 int                   hx_stub_count_kind(hx_midi_kind k);

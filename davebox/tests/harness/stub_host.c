@@ -10,11 +10,13 @@ static int           g_event_count;
 static char          g_log[HX_LOG_MAX];
 static size_t        g_log_len;
 static float         g_bpm = 120.0f;
+static int           g_block;
 
 static void push_event(hx_midi_kind kind, const uint8_t *msg, int len, int slot) {
     if (g_event_count >= HX_CAP_MAX) return;
     hx_midi_event *e = &g_events[g_event_count++];
     e->kind = kind;
+    e->block = g_block;
     e->len = (len > 4) ? 4 : len;
     e->slot = slot;
     e->key[0] = '\0'; e->value[0] = '\0';
@@ -44,6 +46,7 @@ static int stub_set_slot_param(int slot, const char *key, const char *value) {
     hx_midi_event *e = &g_events[g_event_count++];
     memset(e, 0, sizeof(*e));
     e->kind = HX_PARAM_SET;
+    e->block = g_block;
     e->slot = slot;
     strncpy(e->key, key, sizeof(e->key) - 1);
     strncpy(e->value, value, sizeof(e->value) - 1);
@@ -75,7 +78,8 @@ host_api_v1_t *hx_stub_host(void) {
     return &host;
 }
 
-void                 hx_stub_reset_capture(void) { g_event_count = 0; g_log_len = 0; g_log[0] = '\0'; }
+void                 hx_stub_reset_capture(void) { g_event_count = 0; g_block = 0; g_log_len = 0; g_log[0] = '\0'; }
+void                 hx_stub_next_block(void)    { g_block++; }
 int                  hx_stub_event_count(void)   { return g_event_count; }
 const hx_midi_event *hx_stub_event(int i)        { return (i >= 0 && i < g_event_count) ? &g_events[i] : NULL; }
 int                  hx_stub_count_kind(hx_midi_kind k) {

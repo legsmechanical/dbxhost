@@ -71,8 +71,10 @@ static inline int hx_get_param(hx_t *h, const char *key, char *buf, int len) {
 static int16_t hx_last_block[MOVE_FRAMES_PER_BLOCK * 2];
 
 static inline void hx_render(hx_t *h, int n_blocks) {
-    for (int i = 0; i < n_blocks; i++)
+    for (int i = 0; i < n_blocks; i++) {
+        hx_stub_next_block();
         h->api->render_block(h->inst, hx_last_block, MOVE_FRAMES_PER_BLOCK);
+    }
 }
 /* Pointer to the most recently rendered stereo-interleaved block
  * ([L0,R0,...,L127,R127]); valid after at least one hx_render(). */
