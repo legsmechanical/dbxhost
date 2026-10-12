@@ -304,6 +304,28 @@ int main(void) {
         HX_ASSERT(gap34 >= gap23 - 1 && gap34 <= gap23 + 1,
                   "an early note's park was left behind and moved the notes after it");
     }
+    {   /* the same on a drum lane: one pitch, so read it off the last hit.
+         * Sounding order: ratchet hits at 6, 12 ticks, the early step at
+         * 17.5, then ratchet hits at 18 and 24. */
+        hx_t *h = begin();
+        hx_set_param(h, "t0_l0_step_0_toggle", "100");
+        hx_set_param(h, "t0_l0_step_0_ratch", "4");
+        hx_set_param(h, "t0_l0_step_1_toggle", "100");
+        arm(h, 0);
+        table(h, 1, -6 * GROOVE_FINE - 8);
+        ((seq8_instance_t *)h->inst)->groove.off[0] = 6 * GROOVE_FINE;
+        hx_clear_capture(h);
+        hx_set_param(h, "transport", "play_focus:1:0");
+        hx_render(h, 120);
+        hx_set_param(h, "transport", "stop");
+        hx_render(h, 200);
+        collect(&B);
+        hx_destroy(h);
+        HX_ASSERT(count(&B, 1, -1) == 5, "rig: four ratchet hits and the next step");
+        int span = nth(&B, 1, -1, 4) - nth(&B, 1, -1, 0);
+        HX_ASSERT(span >= 31 && span <= 34,
+                  "on a drum lane an early hit's park was left behind and moved the hit after it");
+    }
     printf("  ok   — an early pass puts the tick's own park back\n");
 
     /* ---- a drum lane ---- */
