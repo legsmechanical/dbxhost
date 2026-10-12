@@ -8975,6 +8975,30 @@ function hostedNote(status, d1, d2) {
     }
 }
 
+/*
+ * ⭐ A MODULE'S SCREEN GETS ITS ENCODERS ONE DETENT PER MESSAGE.
+ *
+ * The same shape difference the generated editor already corrects for (see
+ * "ONE DETENT PER CALL" in soundOnCC): under stock the shadow UI hands a
+ * module's canvas one CC per detent; a TOOL gets one batched CC per knob per
+ * frame carrying that frame's whole detent count. A canvas written against
+ * stock counts MESSAGES — "one genre per 24 detents" is 24 messages — so the
+ * batched stream made a geared-down knob look dead (a whole sweep is a handful
+ * of frames), and every other knob slow and uneven.
+ *
+ * Knobs 1-8 and the jog are relative encoders; everything else (a button's
+ * 127 / 0) goes through as it came. Capped like the editor's expansion:
+ * decodeDelta spans +-63.
+ */
+function encoderDetents(d1, d2, decodeDelta, send) {
+    const encoder = d1 === 14 || (d1 >= 71 && d1 <= 78);
+    const n = encoder ? decodeDelta(d2) : 0;
+    if (!encoder || n === 0 || n === 1 || n === -1) { send(d2); return; }
+    const unit = n > 0 ? 1 : 127;                    /* +1 / -1, re-encoded */
+    const count = Math.min(Math.abs(n), 63);
+    for (let i = 0; i < count; i++) send(unit);
+}
+
 function hostedTakes(d1, d2) {
     if (!S.hosted || S.view !== VIEW_EDIT) return false;
     /* Shift, Mute — and the VOLUME knob (2026-09-04): Shift+Volume is the
@@ -9138,7 +9162,13 @@ export function soundOnCC(d1, d2, decodeDelta) {
      * bypasses the gate in ui.js. The test enters through onMidiMessageInternal.
      * → [[wired-is-not-reachable]] */
 
-    if (hostedTakes(d1, d2)) { S.dirty = true; return true; }
+    /* A module's own screen gets its encoders ONE DETENT PER MESSAGE, as under
+     * stock (encoderDetents). */
+    {
+        let took = false;
+        encoderDetents(d1, d2, decodeDelta, function (v) { if (hostedTakes(d1, v)) took = true; });
+        if (took) { S.dirty = true; return true; }
+    }
 
     /*
      * ⭐ A DIVED CANVAS OWNS THE INPUT, because it owns the screen.
@@ -9185,7 +9215,7 @@ export function soundOnCC(d1, d2, decodeDelta) {
     if (S.view === VIEW_CANVAS && canvasEditActive() &&
         d1 !== 49 && d1 !== 88 && d1 !== 79 && d1 !== 50 && d1 !== 51 &&
         d1 !== 85 && d1 !== 86) {
-        canvasEditOnMidi(0xB0, d1, d2);
+        encoderDetents(d1, d2, decodeDelta, function (v) { canvasEditOnMidi(0xB0, d1, v); });
         if (canvasEditTakeClose()) closeCanvasScreen();
         S.dirty = true;
         return true;

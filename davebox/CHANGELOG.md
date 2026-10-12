@@ -11,6 +11,10 @@ the section into a versioned heading at release time.
 - **Clock-driven MIDI effects start every time.** Beat Bank (and other
   sequencing MIDI effects) started on the first Play of a session and then only
   now and then. They now start on every Play.
+- **Knobs on a module's own screen respond as they do in Schwung.** On screens
+  a module draws itself (Beat Bank's pattern screen, for example), a knob that
+  is geared down — Beat Bank's knob 8, which switches genre — barely moved or
+  did nothing, and the others were slow and uneven. Each detent now counts.
 
 ### Changed
 - **A module's preset list no longer wraps.** In the module editor's preset
