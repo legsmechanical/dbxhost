@@ -3035,6 +3035,18 @@ export function soundEnterMove(track) {
  * the one moment worth persisting (saving is a synchronous file write). */
 export function soundVolGestureEnd() { if (S.active) flushVolumeSave(); }
 
+/* Sound mode's own copy of Shift follows EVERY edge davebox applies, not only
+ * the CC 49 that reaches soundOnCC. That handler is one route among several: a
+ * release dropped by the input ring is applied by the tick's reconcile, and a
+ * release under a screen covering sound mode goes straight to davebox — either
+ * way this copy stayed held, and the next plain click read as Shift+click
+ * (Josh, 2026-10-12: Shift+click a block, then the module picker opened the
+ * Lists menu instead of loading). */
+export function soundShiftEdge(held) {
+    if (S.shiftHeld !== held) { S.shiftHeld = held; S.dirty = true; }
+}
+export function soundShiftHeld() { return S.shiftHeld === true; }
+
 /* Open a track's GENERATOR editor in one press — sound mode, then straight into
  * the generator's own canvas UI, without walking the block picker.
  *

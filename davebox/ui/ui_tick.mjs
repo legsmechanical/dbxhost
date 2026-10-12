@@ -72,7 +72,7 @@ import { engineGetSlotParam, engineSetSlotParam, engineSaveState,
 import { soundHasPendingAction, soundActive, soundOpen, soundResting, soundEnter, soundEnterMove, soundExit,
     soundTick, soundDirty, soundTrack, soundRetarget, soundIsGlobal,
     soundEnteredInSession, soundConsumeLedDirty,
-    soundConsumeCoRunRequest, soundShowMenu, soundSetBank, midiVal, midiSendValue } from './ui_sound.mjs';
+    soundConsumeCoRunRequest, soundShowMenu, soundSetBank, midiVal, midiSendValue, soundShiftHeld } from './ui_sound.mjs';
 import { enterMoveNativeCoRun, moveSettingsTick } from './ui_corun.mjs';
 import { openGlobalMenuAt } from './ui_menu.mjs';
 import { heldIndicatorChanged } from './ui_chord.mjs';
@@ -415,7 +415,10 @@ export function _tickImpl() {
      * the pad map exactly as a real release would. */
     /* In co-run, Shift is followed from the hardware in BOTH directions. */
     syncCoRunShift();
-    if (S.shiftHeld && !shadow_get_shift_held()) {
+    /* Sound mode's copy counts as held too: it can outlive the global (a modal
+     * picker or a resume clears the global directly), and applyShiftEdge lifts
+     * both. */
+    if ((S.shiftHeld || soundShiftHeld()) && !shadow_get_shift_held()) {
         console.log('stuck Shift healed — release was dropped by the input ring');
         applyShiftEdge(false);
     }

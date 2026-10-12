@@ -63,7 +63,7 @@ import { sessStripTargets } from './ui_engine.mjs';
 import { BANK_MAP_TRACK_POPUP_MS, seqAutoTargetForKnob, SEQ_AUTO_TARGETS, midiTargetIsMidi, DEFAULT_TRACK_OCTAVE } from './ui_constants.mjs';
 import { bankKnobLockTurn, performTypeChange, cancelTypeChange,
          performModuleChange, cancelModuleChange, soundJumpToParam } from './ui_sound.mjs';
-import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundOpenGenerator, soundOpenInstrPicker,
+import { soundActive, soundOpen, soundExit, soundSetBank, soundIsGlobal, soundVolGestureEnd, soundShiftEdge, soundOpenGenerator, soundOpenInstrPicker,
     soundAtBlockRoot, soundGestureReturn, soundShowMenu,
     soundViewForTest, macroClearConfirmAnswer,
     macroClearConfirmReset, macroClearConfirmOpen, soundKnobCardClick, soundEnterSendFromSessionMixer,
@@ -1823,6 +1823,7 @@ export function applyShiftEdge(held) {
         console.log('dbx: SHIFT PRESS reached the module');
     }
     S.shiftHeld = held;
+    soundShiftEdge(held);      /* sound mode's own copy: it sees the CC only when it is steering */
     S.screenDirty = true;      /* the overview footer names the Shift chords while it is held (2026-09-05) */
         /* Shift IS the volume-knob claim (Josh, 2026-08-24): while held, Move's
          * native main output stands aside and CC 79 becomes the ACTIVE TRACK's
