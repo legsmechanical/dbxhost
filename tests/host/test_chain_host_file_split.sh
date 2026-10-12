@@ -103,13 +103,17 @@ done
 #    the design. An exported delegate that sends nothing is the smallest surface.
 #    ⓘ It has NO caller yet, deliberately — see test_chain_midi_fx_apply.sh,
 #    which pins that count so adding the first one has to be a conscious edit.
+#    ⭑ chain_set_midi_fx_sink (2026-10-12): the host registers where a slot's
+#    GENERATED MIDI FX output goes (chain key `midi_fx_to_host`). It is an
+#    export because the direction is chain -> host and host_api_v1_t, the only
+#    table the chain is handed, is frozen. tests/host/test_midi_fx_to_host_wiring.sh.
 so="build/modules/chain/dsp.so"
 if [ -f "$so" ] && command -v nm >/dev/null 2>&1; then
   got=$(nm -D --defined-only "$so" 2>/dev/null | awk '{print $NF}' | sort)
   want=$(printf '%s\n' \
     chain_drain_sends chain_fx_requires_continuous chain_process_fx \
     chain_set_external_fx_mode chain_set_inject_audio \
-    chain_take_midi_tick_wake chain_midi_fx_apply move_plugin_init_v2 \
+    chain_take_midi_tick_wake chain_midi_fx_apply chain_set_midi_fx_sink move_plugin_init_v2 \
     chain_synth_requires_continuous \
     unified_log unified_log_crash unified_log_enabled unified_log_important \
     unified_log_init unified_log_shutdown unified_log_v | sort)
