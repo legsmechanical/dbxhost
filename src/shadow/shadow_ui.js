@@ -5628,7 +5628,7 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
      * single reads — see getSlotParamsBulk). `pre(key)` answers from it, and
      * reads singly when the bulk failed or did not carry the key, so the
      * document is byte-identical to the one the single reads built. */
-    const preKeys = ["slot:receive_channel", "slot:forward_channel", "midi_fx_pre_mode",
+    const preKeys = ["slot:receive_channel", "slot:forward_channel", "midi_fx_pre_mode", "midi_fx_to_host",
                      "knob_mappings", "buses:config", "lfo_config"];
     for (const [c, k] of [[cfg.synth, "synth"], [cfg.midiFx, "midi_fx1"], [cfg.fx1, "fx1"],
                           [cfg.fx2, "fx2"], [cfg.fx3, "fx3"], [cfg.fx4, "fx4"]]) {
@@ -5814,6 +5814,9 @@ function buildSlotPatchJson(slotIndex, name, forAutosave, moduleChanged) {
     /* Include MIDI FX placement (Pre/Post) */
     const preMode = pre("midi_fx_pre_mode");
     if (preMode !== null) patch.midi_fx_pre_mode = parseInt(preMode) ? 1 : 0;
+    /* ...and whether its generated notes also go to the host's sequencer. */
+    const toHost = pre("midi_fx_to_host");
+    if (toHost !== null) patch.midi_fx_to_host = parseInt(toHost) ? 1 : 0;
 
     /* Include knob mappings */
     const knobMappingsJson = pre("knob_mappings");

@@ -11,6 +11,7 @@
  * nature (one Move transport) and ATOMIC since 2026-09-05: written from every
  * slot's on_midi, read from any sub-plugin's render; see chain_clock_state.h. */
 #include "chain_clock_state.h"
+#include "chain_fx_to_host.h"
 static chain_clock_state_t g_clock = CHAIN_CLOCK_STATE_INIT;
 
 /* The host api handed to init lives in chain_host.c; a fixture that compiles
@@ -244,6 +245,8 @@ void v2_unload_midi_fx_slot(chain_instance_t *inst, int slot) {
     inst->midi_fx_ui_hierarchy[slot][0] = '\0';
     inst->midi_fx_pre_capable[slot] = 0;
     inst->midi_fx_bypassed[slot] = 0;
+    /* "Hand this effect's notes to the host" goes with the effect. */
+    inst->midi_fx_to_host = 0;
 
     /* Stale refcount entries from a now-unloaded MIDI FX would orphan future
      * note-ons. Reset with the FX, along with the pad-held tracker — whichever
@@ -343,6 +346,20 @@ static int v2_process_midi_fx(chain_instance_t *inst,
     return out_count;
 }
 
+/* The host's sink for generated MIDI FX output (chain_set_midi_fx_sink). One
+ * word, written once by the host at load, read from any render thread. */
+static chain_midi_fx_sink_fn g_midi_fx_sink = NULL;
+
+void chain_set_midi_fx_sink(chain_midi_fx_sink_fn sink) { g_midi_fx_sink = sink; }
+
+/* Hand one generated MIDI FX message to the host, if this slot asks for it.
+ * No allocation, no logging: the tick path calls this from a render lane. */
+static inline void midi_fx_to_host_emit(chain_instance_t *inst, const uint8_t *msg, int len) {
+    chain_midi_fx_sink_fn sink = g_midi_fx_sink;
+    if (sink && chain_fx_to_host_should_emit(inst->midi_fx_to_host, msg, len))
+        sink((void *)inst, msg, len);
+}
+
 /* Exported: run a message through THIS slot's MIDI FX and hand the result back
  * to the caller, sending it nowhere.
  *
@@ -434,6 +451,9 @@ int v2_tick_midi_fx(chain_instance_t *inst, int frames) {
                 delivered = 1;
             }
         }
+
+        /* midi_fx_to_host: tick output is the FX's own — also to the host. */
+        for (int i = 0; i < count; i++) midi_fx_to_host_emit(inst, out_msgs[i], out_lens[i]);
 
         /* Pre mode: also inject into Move's MIDI_IN so Move's native
          * instrument on the slot's recv channel plays it additively. We
@@ -781,6 +801,15 @@ void v2_on_midi(void *instance, const uint8_t *msg, int len, int source) {
      * pre_mode_track_inject still guards the cable-2 loopback. */
     int clock_gen = (len == 1 && (msg[0] == 0xF8u || msg[0] == 0xFAu ||
                                   msg[0] == 0xFBu || msg[0] == 0xFCu));
+
+    /* midi_fx_to_host: what the FX generated from the CLOCK also goes to the
+     * host. Never the output of a note it was sent (len >= 2): that is a
+     * transform of someone's playing — and when a host-side sequencer plays
+     * its own clip into this slot, an echo of what it already holds. Not tied
+     * to Pre mode, and nothing here reaches Move. */
+    if (chain_fx_input_is_clock(msg, len)) {
+        for (int i = 0; i < out_count; i++) midi_fx_to_host_emit(inst, out_msgs[i], out_lens[i]);
+    }
     if (inst->midi_fx_pre_mode && inst->host && inst->host->midi_inject_to_move
         && (len >= 2 || clock_gen)) {
         int recv_ch = -2;

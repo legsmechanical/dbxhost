@@ -64,7 +64,7 @@ function makeWorld() {
         { name: "Full", instance: true, keys: { ...sig(["obxd", "arp", "freeverb", "delay"]), dirty: "1",
             "synth:state": JSON.stringify({ patch: 7, name: "héllo" }), "midi_fx1:state": "{\"rate\":3}",
             "fx1:state": "mix=0.3;size=0.9", "fx2:state": "", "fx1:bypassed": "1", "synth:bypassed": "0",
-            "midi_fx1:bypassed": "0", "fx2:bypassed": "0", midi_fx_pre_mode: "1",
+            "midi_fx1:bypassed": "0", "fx2:bypassed": "0", midi_fx_pre_mode: "1", midi_fx_to_host: "1",
             knob_mappings: JSON.stringify([{ knob: 1, target: "synth", param: "cutoff" }]),
             lfo_config: JSON.stringify([{ enabled: 1, shape: 2 }]), "buses:config": BUSES,
             "bus1:fx1:state": "{\"depth\":0.4}" } },
@@ -202,7 +202,7 @@ for (const forSnapshot of [false, true]) {
     const d0 = doc(0), d2 = doc(2);
     ok(d0 && d0.synth.bypassed === 0 && d0.audio_fx[0].bypassed === 1 && d0.audio_fx[1].bypassed === 0 &&
        d0.midi_fx[0].bypassed === 0 && d0.receive_channel === 1 && d0.forward_channel === -1 &&
-       d0.midi_fx_pre_mode === 1 && d0.knob_mappings[0].param === "cutoff" && d0.lfos[0].shape === 2 &&
+       d0.midi_fx_pre_mode === 1 && d0.midi_fx_to_host === 1 && d0.knob_mappings[0].param === "cutoff" && d0.lfos[0].shape === 2 &&
        d0.buses[0].fx[0].state.depth === 0.4 && d0.main_sends[1] === 0.25 &&
        d0.synth.config.state.name === "héllo" && d0.audio_fx[0].params.state === "mix=0.3;size=0.9",
        "slot 0 document does not carry the served values: " + JSON.stringify(d0));
@@ -214,6 +214,8 @@ for (const forSnapshot of [false, true]) {
     ok(base.writes.some(([p, c]) => p === "/set/slot_3.json" && c === "{}\n"), "control: the empty slot did not write its marker");
     ok(base.writes.some(([p, c]) => p === "/set/slot_1.json" && c.includes("\"midi_fx_pre_mode\": 0")),
        "control: an unresolved midi_fx_pre_mode did not serialise as 0 (the `?` -> \"\" mapping is untested)");
+    ok(base.writes.some(([p, c]) => p === "/set/slot_1.json" && c.includes("\"midi_fx_to_host\": 0")),
+       "an unresolved midi_fx_to_host did not serialise as 0");
 }
 
 if (fails.length) { for (const f of fails) console.error("FAIL: " + f); process.exit(1); }

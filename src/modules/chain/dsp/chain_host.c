@@ -924,6 +924,7 @@ static void v2_set_param_route(void *instance, const char *key, const char *val)
             inst->loaded_receive_channel = temp_patch->receive_channel;
             inst->loaded_forward_channel = temp_patch->forward_channel;
             inst->midi_fx_pre_mode = temp_patch->midi_fx_pre_mode ? 1 : 0;
+            inst->midi_fx_to_host = temp_patch->midi_fx_to_host ? 1 : 0;
             /* Check for "modified" field to restore dirty state */
             FILE *mf = fopen(val, "r");
             if (mf) {
@@ -998,6 +999,13 @@ static void v2_set_param_route(void *instance, const char *key, const char *val)
         inst->current_patch = -1;
         inst->dirty = 0;
         malloc_trim(0);
+    }
+    else if (strcmp(key, "midi_fx_to_host") == 0) {
+        int on = (val && atoi(val)) ? 1 : 0;
+        if (on != inst->midi_fx_to_host) {
+            inst->midi_fx_to_host = on;
+            inst->dirty = 1;
+        }
     }
     else if (strcmp(key, "midi_fx_pre_mode") == 0) {
         int new_mode = (val && atoi(val)) ? 1 : 0;
@@ -1582,6 +1590,9 @@ static int v2_get_param_route(void *instance, const char *key, char *buf, int bu
     }
     if (strcmp(key, "midi_fx_pre_mode") == 0) {
         return snprintf(buf, buf_len, "%d", inst->midi_fx_pre_mode ? 1 : 0);
+    }
+    if (strcmp(key, "midi_fx_to_host") == 0) {
+        return snprintf(buf, buf_len, "%d", inst->midi_fx_to_host ? 1 : 0);
     }
     if (strcmp(key, "midi_fx:pre_capable") == 0) {
         /* Hint from the loaded MIDI FX's module.json. Aggregated as OR
