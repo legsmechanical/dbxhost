@@ -198,20 +198,21 @@ int main(void) {
     }
 
     /* ---- a note held back until the wrap is back for the pass after it ---- */
-    {
+    for (int drum = 0; drum < 2; drum++) {
         cap_t *caps[2] = { &A, &B };
         for (int g = 0; g < 2; g++) {
             hx_t *h = begin();
-            melodic16(h, 12);
+            if (drum) s_drum(h); else melodic16(h, 12);
             if (g) table(h, 0, -6 * GROOVE_FINE);
             hx_clear_capture(h);
             hx_set_param(h, "transport", "play_focus:1:0");
             hx_render(h, bars(1) / 2);
             {   /* what recording over a step does to it */
-                clip_t *cl = &((seq8_instance_t *)h->inst)->tracks[1].clips[0];
+                seq8_track_t *tr = &((seq8_instance_t *)h->inst)->tracks[drum ? 0 : 1];
+                clip_t *cl = drum ? &tr->drum_clips[0]->lanes[0].clip : &tr->clips[0];
                 int hit = 0;
                 for (int i = 0; i < cl->note_count; i++)
-                    if (cl->notes[i].pitch == 48) { cl->notes[i].suppress_until_wrap = 1; hit = 1; }
+                    if (cl->notes[i].tick == 0) { cl->notes[i].suppress_until_wrap = 1; hit = 1; }
                 HX_ASSERT(hit, "rig: the first step's note was not found");
             }
             hx_render(h, bars(2) - bars(1) / 2);
@@ -220,12 +221,43 @@ int main(void) {
             collect(caps[g]);
             hx_destroy(h);
         }
-        HX_ASSERT(count(&A, 1, 48) == 2 && count(&B, 1, 48) == 2, "rig: the held-back step plays again after the wrap");
-        int d = nth(&A, 1, 48, 1) - nth(&B, 1, 48, 1);
+        /* the 17th note-on is the first step's second pass */
+        HX_ASSERT(count(&A, 1, -1) == 32 && count(&B, 1, -1) == 32, "rig: two bars, the held-back step included");
+        int d = nth(&A, 1, -1, 16) - nth(&B, 1, -1, 16);
         HX_ASSERT(d >= EARLY_LO && d <= EARLY_HI,
                   "a step held back until the wrap is played ahead of the wrap, like any other");
     }
-    printf("  ok   — a step held back until the wrap is early again on the next pass\n");
+    printf("  ok   — a step held back until the wrap is early again on the next pass (melodic, drum)\n");
+
+    /* ---- claims nobody took do not pile up ---- */
+    {
+        cap_t *caps[2] = { &A, &B };
+        for (int g = 0; g < 2; g++) {
+            hx_t *h = begin();
+            melodic16(h, 12);
+            if (g) {
+                table(h, 1, -6 * GROOVE_FINE);
+                /* a full list of claims for ticks long gone (a muted track
+                 * leaves these: it never reaches the tick to take them) */
+                seq8_track_t *tr = &((seq8_instance_t *)h->inst)->tracks[1];
+                for (int i = 0; i < GROOVE_TOK_MAX; i++) {
+                    tr->early_tok[i].due = 0xFFFFF000u + (uint32_t)i;
+                    tr->early_tok[i].ni = (uint16_t)i; tr->early_tok[i].lane = 0xFF;
+                }
+                tr->early_tok_n = GROOVE_TOK_MAX;
+            }
+            hx_clear_capture(h);
+            hx_set_param(h, "transport", "play_focus:1:0");
+            hx_render(h, bars(1));
+            hx_set_param(h, "transport", "stop");
+            hx_render(h, 200);
+            collect(caps[g]);
+            hx_destroy(h);
+        }
+        int d = nth(&A, 1, 49, 0) - nth(&B, 1, 49, 0);
+        HX_ASSERT(d >= EARLY_LO && d <= EARLY_HI, "stale claims filled the list and early notes stopped being early");
+    }
+    printf("  ok   — claims that were never taken are dropped\n");
 
     /* ---- the groove changing under a note that was already played ahead ---- */
     for (int at = 100; at < 190; at += 2) {
