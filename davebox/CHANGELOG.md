@@ -7,6 +7,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+
+## [0.0.20] — 2026-10-12 (test build, not in the Schwung catalog)
 ### Added
 - **Record what a MIDI effect generates (Notes to Seq).** MIDI effects that make
   their own notes — Beat Bank, Euclidrum and other pattern generators — now have
