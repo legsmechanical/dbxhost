@@ -7,6 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com). Add entries to
 the section into a versioned heading at release time.
 
 ## [Unreleased]
+### Added
+- **Record what a MIDI effect generates (Notes to Seq).** MIDI effects that make
+  their own notes — Beat Bank, Euclidrum and other pattern generators — now have
+  a **Notes to Seq** switch on their Module page. With it on, the notes they play
+  count as playing on that track: Record writes them into the clip and Capture
+  keeps them. A repeating pattern is recorded once. When the pattern is in the
+  clip, bypass or remove the effect so it isn't played twice.
+
 ### Fixed
 - **Clock-driven MIDI effects start every time.** Beat Bank (and other
   sequencing MIDI effects) started on the first Play of a session and then only
