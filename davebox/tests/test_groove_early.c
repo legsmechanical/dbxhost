@@ -436,7 +436,7 @@ int main(void) {
         melodic16(h, 12);
         table(h, 0, -6 * GROOVE_FINE);
         hx_set_param(h, "transport", "play_focus:1:0");
-        hx_render(h, 77);                        /* the third step has just gone out ahead of its tick */
+        hx_render(h, 83);                        /* the third step has just gone out ahead of its tick (block 78; the tick itself is block 88) */
         hx_set_param(h, "transport", "stop");
         hx_clear_capture(h);
         hx_set_param(h, "transport", "play_focus:1:0");
