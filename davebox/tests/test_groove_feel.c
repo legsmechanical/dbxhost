@@ -70,6 +70,7 @@ static void s_vel_early(hx_t *h) { groove_t *g = tab(h); g->vel[1] = 64; g->velo
 static void s_swing_vel(hx_t *h) { groove_t *g = tab(h); g->vel[1] = 64; g->velocity = 100; g->kind = GROOVE_SWING_16; g->amt = 0; }
 static void s_rnd_full(hx_t *h)  { groove_t *g = tab(h); g->random = 100; }
 static void s_rnd_half(hx_t *h)  { groove_t *g = tab(h); g->random = 50; }
+static void s_rnd_amt(hx_t *h)   { groove_t *g = tab(h); g->random = 100; g->amt = 50; }
 static void s_rnd_off(hx_t *h)   { s_rnd_full(h); hx_set_param(h, "t1_groove_on", "0"); }
 static void s_rnd_swing(hx_t *h) { groove_t *g = tab(h); g->random = 100; g->kind = GROOVE_SWING_16; g->amt = 0; }
 
@@ -144,6 +145,11 @@ int main(void) {
             if (d) moved++;
         }
         HX_ASSERT(moved >= 6, "Random 50 moved almost nothing");
+        run(s_rnd_amt, &B);
+        for (int s = 0; s < 16; s++) {
+            int d = B.ev[find(&B, 1, 48 + s, 1)].block - A.ev[find(&A, 1, 48 + s, 1)].block;
+            HX_ASSERT(d >= -12 && d <= 12, "the groove's amount scales Random's reach too");
+        }
         run(s_rnd_off, &B);
         HX_ASSERT(same_timing(&A, &B), "a track with Groove off is not randomised");
         run(s_rnd_swing, &B);
