@@ -5359,11 +5359,11 @@ static void slot_fx_record_melodic_off(seq8_track_t *tr, uint8_t pitch) {
         if (tr->fx_pending[ri].pitch == pitch) break;
     if (ri >= (int)tr->fx_pending_count) return;
     uint32_t on_tick = tr->fx_pending[ri].tick_at_on;
+    int32_t  shift   = (int32_t)tr->fx_pending[ri].groove_shift;   /* read before the slot is reused */
     tr->fx_pending[ri] = tr->fx_pending[--tr->fx_pending_count];
     if (clip_ticks == 0) return;
     /* the release moves with an un-grooved note-on, so the note keeps its length */
-    uint32_t off_tick   = groove_shift_clip_tick(cl, tr->current_clip_tick,
-                                                 (int32_t)tr->fx_pending[ri].groove_shift);
+    uint32_t off_tick   = groove_shift_clip_tick(cl, tr->current_clip_tick, shift);
     uint32_t gate_ticks = (off_tick >= on_tick) ? off_tick - on_tick
                                                 : clip_ticks - on_tick + off_tick;
     uint32_t gmax = (uint32_t)SEQ_STEPS * tps;

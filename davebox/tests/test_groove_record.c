@@ -189,6 +189,32 @@ int main(void) {
     }
     printf("  ok   — the drum pad recorder: the hit un-grooved, the held length kept\n");
 
+    /* ---- notes a MIDI effect generates (Notes to Seq): un-grooved, length kept ----
+     * Two are sounding at once: one that began in a late slot (moved 12 ticks
+     * sooner) and one that began on time (not moved). Each release takes ITS
+     * note's move, whichever ends first. */
+    for (int first = 0; first < 2; first++) {
+        clip_t *cl = &tr->clips[tr->active_clip];
+        swing(GROOVE_SWING_16, 100);
+        tr->recording = 1; tr->drum_inp_quant = 0; tr->fx_pending_count = 0;
+        uint8_t late = (uint8_t)(80 + first * 2), ontime = (uint8_t)(81 + first * 2);
+        at(24 + 14); tr->current_clip_tick = 24 + 14;
+        slot_fx_record_melodic_on(I, tr, 0, late, 100);
+        at(48 + 4); tr->current_clip_tick = 48 + 4;
+        slot_fx_record_melodic_on(I, tr, 0, ontime, 100);
+        note_t *nl = find_note(cl, late), *no = find_note(cl, ontime);
+        HX_ASSERT(nl && no, "rig: the generated notes were not recorded");
+        HX_ASSERT(nl->tick == 24 + 2 && no->tick == 48 + 4, "a generated note is stored where the groove will play it back");
+        at(96 + 6); tr->current_clip_tick = 96 + 6;
+        if (first == 0) { slot_fx_record_melodic_off(tr, late); slot_fx_record_melodic_off(tr, ontime); }
+        else            { slot_fx_record_melodic_off(tr, ontime); slot_fx_record_melodic_off(tr, late); }
+        nl = find_note(cl, late); no = find_note(cl, ontime);
+        HX_ASSERT(nl->gate == (96 + 6) - (24 + 14), "the moved note keeps the length it sounded for");
+        HX_ASSERT(no->gate == (96 + 6) - (48 + 4), "…and the note beside it, which was not moved, keeps its own");
+        tr->recording = 0;
+    }
+    printf("  ok   — generated notes: un-grooved, each keeping its own length when two overlap\n");
+
     hx_destroy(h);
     printf("PASS: test_groove_record\n");
     return 0;
