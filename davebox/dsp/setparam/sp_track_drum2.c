@@ -727,9 +727,19 @@ static int sp_track_drum2(sp_ctx_t *cx) {
                     base_step = tr->drum_current_step[lane];
                     base_off  = (int16_t)tr->drum_tick_in_step[lane];
                 }
+                uint8_t  diq  = tr->drum_inp_quant;
+                if (diq == 0) {
+                    /* Input Quantize off: store the hit where the groove will
+                     * play it back at the moment it was struck. */
+                    uint32_t win = (uint32_t)dlc->length * (uint32_t)TICKS_PER_STEP;
+                    uint32_t ago = groove_ticks_since(
+                        (uint32_t)tr->drum_current_step[lane] * TICKS_PER_STEP + tr->drum_tick_in_step[lane],
+                        (uint32_t)base_step * TICKS_PER_STEP + (uint32_t)(base_off > 0 ? base_off : 0), win);
+                    groove_shift_drum_pos(dlc, &base_step, &base_off,
+                        groove_record_shift(inst, tr, groove_master_tick(inst) - ago));
+                }
                 uint16_t step = base_step;
                 int16_t  off  = base_off;
-                uint8_t  diq  = tr->drum_inp_quant;
                 /* Window-aware wrap: base_step lives in
                  * [loop_start, loop_start+length); wrapping past the
                  * window end must return to loop_start, not 0. */

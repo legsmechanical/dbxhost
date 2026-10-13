@@ -2258,6 +2258,11 @@ see [Track settings](#174-track-settings) below.
 | Host Settings... | dAVEBOx's copy of Schwung's settings (display, audio and more), over the top of dAVEBOx — see [§17.6](#176-davebox-and-official-schwung) | action | — |
 | Move Settings... | Move's own settings menu (Link, MIDI sync, inputs and more), dAVEBOx's copy — see below | action | — |
 
+Recording under Swing: with Input Quantize off, what you play is stored so that
+Swing plays it back at the moment you played it — it is not swung a second
+time. With Input Quantize on, the note snaps to the grid and Swing moves it
+from there.
+
 - The menu groups these with a line between each group, in this order.
 - A new project starts in a random key and scale.
 - **Host Settings...** and **Move Settings...** apply to every project, not just this one.

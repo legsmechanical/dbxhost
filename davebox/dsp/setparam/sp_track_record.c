@@ -223,6 +223,7 @@ static int sp_track_record(sp_ctx_t *cx) {
              * Stock Schwung (inbound off) falls back to current_clip_tick
              * (no slots written). */
             uint32_t abs_tick;
+            int32_t  rec_shift = 0;
             if (inst->dsp_inbound_enabled) {
                 if (inst->on_midi_press_active[tidx][pitch]) {
                     abs_tick = inst->on_midi_press_tick[tidx][pitch];
@@ -242,6 +243,12 @@ static int sp_track_record(sp_ctx_t *cx) {
             if (tr->drum_inp_quant > 0) {
                 uint32_t qt = (uint32_t)DRUM_INQ_TICKS[tr->drum_inp_quant];
                 abs_tick = ((abs_tick + qt / 2) / qt) * qt;
+            } else {
+                /* Input Quantize off: store the note where the groove will
+                 * play it back at the moment it was pressed. */
+                uint32_t ago = groove_ticks_since(fallback_tick, abs_tick, clip_ticks);
+                rec_shift = groove_record_shift(inst, tr, groove_master_tick(inst) - ago);
+                abs_tick  = groove_shift_clip_tick(cl, abs_tick, rec_shift);
             }
 
             /* Audio-reverse recording: in audio mode + reverse motion the
@@ -278,6 +285,7 @@ static int sp_track_record(sp_ctx_t *cx) {
                     int ri = (int)tr->rec_pending_count;
                     tr->rec_pending[ri].pitch      = (uint8_t)pitch;
                     tr->rec_pending[ri].tick_at_on = abs_tick;
+                    tr->rec_pending[ri].groove_shift = (int16_t)rec_shift;
                     tr->rec_pending_count++;
                 }
             }
@@ -387,6 +395,9 @@ static int sp_track_record(sp_ctx_t *cx) {
             if (ri >= (int)tr->rec_pending_count) continue;
 
             uint32_t on_tick = tr->rec_pending[ri].tick_at_on;
+            /* the note-on was moved to where the groove plays it; the release
+             * moves with it, so the note keeps the length it was held for */
+            off_tick = groove_shift_clip_tick(cl, off_tick, (int32_t)tr->rec_pending[ri].groove_shift);
 
             uint32_t gate_ticks;
             if (off_tick >= on_tick)

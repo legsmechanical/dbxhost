@@ -13,6 +13,13 @@ the section into a versioned heading at release time.
   straight — useful for a hi-hat or a bass line that should stay on the grid
   while everything else swings.
 
+### Changed
+- **Recording under Swing plays back what you played.** With Input Quantize
+  off, a note you record is now stored so that Swing plays it back at the
+  moment you played it. Before, Swing moved it a second time, so a part played
+  with a swung feel came back swung twice. With Input Quantize on nothing
+  changes: the note snaps to the grid and Swing moves it from there.
+
 ## [0.0.20] — 2026-10-12 (test build, not in the Schwung catalog)
 ### Added
 - **Record what a MIDI effect generates (Notes to Seq).** MIDI effects that make
