@@ -167,6 +167,28 @@ int main(void) {
     }
     printf("  ok   — the pad recorder: un-grooved with Input Quantize off, snapped with it on\n");
 
+    /* ---- the drum pad recorder: the hit is moved, its length is not ---- */
+    {
+        seq8_track_t *dt = &I->tracks[0];
+        drum_clip_t *dc = dt->drum_clips[dt->active_clip];
+        HX_ASSERT(dc, "rig: track 0 is not a drum track");
+        clip_t *dlc = &dc->lanes[0].clip;
+        char v[32];
+        swing(GROOVE_SWING_16, 100);
+        dt->recording = 1; dt->drum_inp_quant = 0;
+        at(24 + 14); dt->drum_current_step[0] = 1; dt->drum_tick_in_step[0] = 14;
+        snprintf(v, sizeof(v), "e%d 100", dc->lanes[0].midi_note);
+        hx_set_param(h, "t0_drum_record_note_on", v);
+        HX_ASSERT(dlc->steps[1] == 1 && dlc->step_note_count[1] == 1, "rig: the hit was not recorded in step 2");
+        HX_ASSERT(dlc->note_tick_offset[1][0] == 2, "a drum hit struck in a swung step is stored where swing will play it back");
+        at(24 + 14 + 30); dt->drum_current_step[0] = 2; dt->drum_tick_in_step[0] = 20;
+        snprintf(v, sizeof(v), "e%d", dc->lanes[0].midi_note);
+        hx_set_param(h, "t0_drum_record_note_off", v);
+        HX_ASSERT(dlc->step_gate[1] == 30, "…and keeps the length it was held for, not that plus the move");
+        dt->recording = 0;
+    }
+    printf("  ok   — the drum pad recorder: the hit un-grooved, the held length kept\n");
+
     hx_destroy(h);
     printf("PASS: test_groove_record\n");
     return 0;
