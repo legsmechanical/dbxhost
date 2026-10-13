@@ -601,6 +601,9 @@ export const S = {
     /* THE CLOCK (ui_clock.mjs): ms at the top of this tick, and the test switch. */
     clockMs: 0,
     clockFollowTicks: false,
+    /* How long a knob / jog touch release waits before it counts, so a light
+     * finger's drop-outs never reach the handlers (ui_touch_hold.mjs). 0 = off. */
+    touchHoldMs: 100,
     /* THE REVEAL (spec §2): while a step is held, a jog turn right shows the
      * STEP bank's page for that step on top of whatever screen was up — the
      * editor, a bank card, the overview — and a turn left (or the release)

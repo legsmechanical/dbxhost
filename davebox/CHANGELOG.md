@@ -33,6 +33,10 @@ the section into a versioned heading at release time.
   moment you played it. Before, swing moved it a second time, so a part played
   with a swung feel came back swung twice. With Input Quantize on nothing
   changes: the note snaps to the grid and the groove moves it from there.
+- **A light touch on a knob or the jog wheel no longer flickers.** Resting a
+  finger lightly could make the touch drop out and come back, and the knob's
+  page or the bank card blinked with it. A touch now has to be gone for a tenth
+  of a second before it counts as let go.
 
 ## [0.0.20] — 2026-10-12 (test build, not in the Schwung catalog)
 ### Added

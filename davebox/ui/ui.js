@@ -33,6 +33,7 @@ import {
 
 import { S, knobAltOn } from './ui_state.mjs';
 import { nowMs } from './ui_clock.mjs';
+import { touchHoldTake, touchHoldFlush } from './ui_touch_hold.mjs';
 import { DAVEBOX_HOST_DIR } from './ui_engine.mjs';
 import { clipHasContent, effectiveVelocity } from './ui_pure.mjs';
 import { showActionPopup, hostIdentity, projectDisplayName, resolveSetLoadDecision } from './ui_persistence.mjs';
@@ -462,6 +463,8 @@ globalThis.tick = function () {
         console.log(readMeterLine());
         readMeterReset();
     }
+    /* Touch releases whose hold has run out (ui_touch_hold.mjs). */
+    try { touchHoldFlush(_onMidiInternalImpl); } catch (e) { captureError('onMidiInternal', e); }
     try { _tickImpl(); } catch (e) { captureError('tick', e); }
 };
 
@@ -476,7 +479,7 @@ globalThis.onSessionExitRequest = function () {
 /* MIDI input                                                           */
 /* ------------------------------------------------------------------ */
 
-globalThis.onMidiMessageInternal = function (data) { try { _onMidiInternalImpl(data); } catch (e) { captureError('onMidiInternal', e); } };
+globalThis.onMidiMessageInternal = function (data) { try { if (!touchHoldTake(data, _onMidiInternalImpl)) _onMidiInternalImpl(data); } catch (e) { captureError('onMidiInternal', e); } };
 /* Letting go of the jog wheel.
  *
  * ⭑ This is where the bank picker COMMITS (Josh, 2026-08-25): you have to be

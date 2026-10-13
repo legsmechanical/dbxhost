@@ -73,6 +73,9 @@ globalThis.host_ext_midi_remap_enable = () => {};
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
+/* This rig lets go and looks in the same instant; the release hold has its
+ * own test (test_touch_hold.mjs). */
+S.touchHoldMs = 0;
 const { BANKS, BANK_AUTOMATION } = await import('../../ui/ui_constants.mjs');
 const auto = await import('../../ui/ui_automation.mjs');
 const render = await import('../../ui/ui_render.mjs');

@@ -63,6 +63,9 @@ globalThis.host_ext_midi_remap_enable = () => {};
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
+/* This rig lets go and looks in the same instant; the release hold has its
+ * own test (test_touch_hold.mjs). */
+S.touchHoldMs = 0;
 const { BANKS, PAD_MODE_DRUM } = await import('../../ui/ui_constants.mjs');
 const sets = [];
 const _dec = (blob) => { const out = []; if (!blob) return out; let nl = blob.indexOf('\n'); const n = parseInt(blob.slice(0, nl), 10) || 0; let p = nl + 1; for (let i = 0; i < n; i++) { const e = blob.indexOf('\n', p); const len = parseInt(blob.slice(p, e), 10) || 0; p = e + 1; out.push(blob.slice(p, p + len)); p += len; } return out; };

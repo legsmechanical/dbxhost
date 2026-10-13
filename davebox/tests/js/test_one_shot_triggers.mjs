@@ -35,6 +35,9 @@ const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
 stubParamPagesDevice();
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
+/* This rig lets go and looks in the same instant; the release hold has its
+ * own test (test_touch_hold.mjs). */
+S.touchHoldMs = 0;
 const { BANKS, PAD_MODE_DRUM } = await import('../../ui/ui_constants.mjs');
 const render = await import('../../ui/ui_render.mjs');
 const fonts = await import('../../ui/ui_fonts_pp.mjs');

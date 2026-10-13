@@ -47,6 +47,9 @@ globalThis.host_state_subdir = () => 'dAVEBOx';
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
+/* This rig lets go and looks in the same instant; the release hold has its
+ * own test (test_touch_hold.mjs). */
+S.touchHoldMs = 0;
 const { BANKS, BANK_SOUND } = await import('../../ui/ui_constants.mjs');
 const snd = await import('../../ui/ui_sound.mjs');
 const render = await import('../../ui/ui_render.mjs');

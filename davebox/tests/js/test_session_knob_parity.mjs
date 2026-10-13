@@ -83,6 +83,9 @@ globalThis.shadow_get_shift_held = () => 0;
 async function main() {
 await import('../../ui/ui.js');
 const { S } = await import('../../ui/ui_state.mjs');
+/* This rig lets go and looks in the same instant; the release hold has its
+ * own test (test_touch_hold.mjs). */
+S.touchHoldMs = 0;
 const A = await import('../../ui/ui_automation.mjs');
 const L = await import('../../ui/ui_leds.mjs');
 const cc   = (d1, d2) => globalThis.onMidiMessageInternal(new Uint8Array([0xB0, d1, d2]));
