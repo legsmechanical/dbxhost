@@ -68,7 +68,8 @@ function buildGlobalMenuItems() {
          * throughout, and a 'Global' rule with nothing above it labels nothing.
          *
          * ⭑ ORDER AND GROUPS ruled by Josh, 2026-09-24 (laid out with the menu
-         * arranger): tempo + swing / metronome / clock / key / launch + beat
+         * arranger): tempo / metronome / clock / groove (2026-10-13: its own
+         * group, between the clock and the key) / key / launch + beat
          * marks / MIDI in / projects / snapshots / export / exits / host / Daves.
          * Tap Tempo left the menu — Shift + Step 5 is its door. Suspend and Quit
          * now sit together in one group, replacing the 09-19 rule between them. */
@@ -86,7 +87,57 @@ function buildGlobalMenuItems() {
             min: 40, max: 250, step: 1,
             format: function(v) { return S.clockFollowOn ? 'Move' : String(Math.round(v)); }
         }),
-        /* THE GROOVE (replaces Swing Amt / Swing Res). One row picks it — Off,
+        createDivider(),
+        createEnum('Metro', {
+            get: function() { return S.metronomeOn; },
+            set: function(v) {
+                S.metronomeOn = v | 0;
+                host_module_set_param('metro_on', String(S.metronomeOn));
+            },
+            options: [0, 1, 2, 3],
+            format: function(v) {
+                return ['Off', 'Cnt-In', 'Play', 'Always'][v | 0];
+            }
+        }),
+        createValue('Metro Vol', {
+            get: function() { return S.metronomeVol; },
+            set: function(v) {
+                S.metronomeVol = v | 0;
+                host_module_set_param('metro_vol', String(S.metronomeVol));
+            },
+            min: 0, max: 150, step: 1,
+            format: function(v) { return String(v | 0) + '%'; }
+        }),
+        createDivider(),
+        /* Clock Follow: follow Move's MIDI clock + transport. Default off =
+         * unchanged internal free-run. When on, BPM is read-only (EXT) and Play
+         * drives Move (single source of truth). */
+        createToggle('Clock Follow', {
+            get: function() { return S.clockFollowOn === true; },
+            set: function(v) {
+                S.clockFollowOn = v ? true : false;
+                host_module_set_param('clock_follow_on', S.clockFollowOn ? '1' : '0');
+            },
+            onLabel: 'Move', offLabel: 'Off'
+        }),
+        /* Clock Out: db emits MIDI clock (start/stop + 24-PPQN) to external gear
+         * over USB-A when free-running (db is master at its own tempo). Suppressed
+         * while Clock Follow = Move (Move's own MIDI Clock Out owns external sync,
+         * so db relaying would double the clock on the shared port). The toggle
+         * stays a stored preference even while following; the value shows "—"
+         * then. Uses createEnum (not createToggle) so the "—" format applies. */
+        createEnum('Clock Out', {
+            get: function() { return S.clockSendOn ? 1 : 0; },
+            set: function(v) {
+                S.clockSendOn = v ? true : false;
+                host_module_set_param('clock_send_on', S.clockSendOn ? '1' : '0');
+            },
+            options: [0, 1],
+            format: function(v) { return S.clockFollowOn ? '—' : (v ? 'On' : 'Off'); }
+        }),
+        createDivider(),
+        /* THE GROOVE (replaces Swing Amt / Swing Res) — a group of its own,
+         * between the clock and the key (Josh, 2026-10-13). One row picks it — Off,
          * Browse... (straight to the file list: a click there loads a MIDI
          * file or an Ableton groove), the two swings, and the project's own
          * loaded groove — and one says how much of it is applied. The swings
@@ -136,54 +187,6 @@ function buildGlobalMenuItems() {
             set: function(v) { S.grooveRandom = v; host_module_set_param('groove_random', String(v)); },
             min: 0, max: 100, format: function(v) { return Math.round(v) + '%'; }
         }) : null,
-        createDivider(),
-        createEnum('Metro', {
-            get: function() { return S.metronomeOn; },
-            set: function(v) {
-                S.metronomeOn = v | 0;
-                host_module_set_param('metro_on', String(S.metronomeOn));
-            },
-            options: [0, 1, 2, 3],
-            format: function(v) {
-                return ['Off', 'Cnt-In', 'Play', 'Always'][v | 0];
-            }
-        }),
-        createValue('Metro Vol', {
-            get: function() { return S.metronomeVol; },
-            set: function(v) {
-                S.metronomeVol = v | 0;
-                host_module_set_param('metro_vol', String(S.metronomeVol));
-            },
-            min: 0, max: 150, step: 1,
-            format: function(v) { return String(v | 0) + '%'; }
-        }),
-        createDivider(),
-        /* Clock Follow: follow Move's MIDI clock + transport. Default off =
-         * unchanged internal free-run. When on, BPM is read-only (EXT) and Play
-         * drives Move (single source of truth). */
-        createToggle('Clock Follow', {
-            get: function() { return S.clockFollowOn === true; },
-            set: function(v) {
-                S.clockFollowOn = v ? true : false;
-                host_module_set_param('clock_follow_on', S.clockFollowOn ? '1' : '0');
-            },
-            onLabel: 'Move', offLabel: 'Off'
-        }),
-        /* Clock Out: db emits MIDI clock (start/stop + 24-PPQN) to external gear
-         * over USB-A when free-running (db is master at its own tempo). Suppressed
-         * while Clock Follow = Move (Move's own MIDI Clock Out owns external sync,
-         * so db relaying would double the clock on the shared port). The toggle
-         * stays a stored preference even while following; the value shows "—"
-         * then. Uses createEnum (not createToggle) so the "—" format applies. */
-        createEnum('Clock Out', {
-            get: function() { return S.clockSendOn ? 1 : 0; },
-            set: function(v) {
-                S.clockSendOn = v ? true : false;
-                host_module_set_param('clock_send_on', S.clockSendOn ? '1' : '0');
-            },
-            options: [0, 1],
-            format: function(v) { return S.clockFollowOn ? '—' : (v ? 'On' : 'Off'); }
-        }),
         createDivider(),
         /* Key/Scale: turning the knob previews a transpose of all melodic clips
          * (live, uncommitted); the click commits behind a confirm (see the

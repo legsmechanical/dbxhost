@@ -153,12 +153,14 @@ async function main() {
     }
     const onRow = (st, label) => { st.idx = st.items.findIndex(i => i.label === label); assert(st.idx >= 0, 'rig: no "' + label + '" row'); };
 
-    step('Project Settings: Groove and Groove Amt stand where Swing Amt and Swing Res stood', () => {
+    step('Project Settings: Groove and Groove Amt are a group of their own between Clock Out and Key', () => {
         openOn('Groove');
         const labels = S.globalMenuItems.map(i => i && (i.type === 'divider' ? '---' : i.label));
-        const at = labels.indexOf('BPM');
-        assert(JSON.stringify(labels.slice(at, at + 4)) === JSON.stringify(['BPM', 'Groove', 'Groove Amt', '---']),
-               'the tempo group reads: ' + labels.slice(at, at + 5).join(' | '));
+        /* a group of its own, between the clock and the key (Josh, 2026-10-13) */
+        const at = labels.indexOf('Clock Out');
+        assert(JSON.stringify(labels.slice(at, at + 6)) === JSON.stringify(['Clock Out', '---', 'Groove', 'Groove Amt', '---', 'Key']),
+               'the groove group reads: ' + labels.slice(at, at + 7).join(' | '));
+        assert(labels[labels.indexOf('BPM') + 1] === '---', 'BPM no longer stands alone: ' + labels.slice(0, 4).join(' | '));
         assert(labels.indexOf('Swing Amt') < 0 && labels.indexOf('Swing Res') < 0 && labels.indexOf('Make Groove...') < 0,
                'a row that should be gone is in the menu');
     });
@@ -313,10 +315,10 @@ async function main() {
         S.grooveKind = 3; S.grooveName = 'hat'; S.grooveTiming = 80; S.grooveVelocity = 30; S.grooveRandom = 0;
         openOn('Groove');
         let labels = S.globalMenuItems.map(i => i && (i.type === 'divider' ? '---' : i.label));
-        const at = labels.indexOf('BPM');
-        assert(JSON.stringify(labels.slice(at, at + 7)) === JSON.stringify(
-            ['BPM', 'Groove', 'Groove Amt', 'Grv Timing', 'Grv Velocity', 'Grv Random', '---']),
-            'the tempo group reads: ' + labels.slice(at, at + 8).join(' | '));
+        const at = labels.indexOf('Clock Out');
+        assert(JSON.stringify(labels.slice(at, at + 9)) === JSON.stringify(
+            ['Clock Out', '---', 'Groove', 'Groove Amt', 'Grv Timing', 'Grv Velocity', 'Grv Random', '---', 'Key']),
+            'the groove group reads: ' + labels.slice(at, at + 10).join(' | '));
         const row = openOn('Grv Velocity');
         assert(row.get() === 30 && row.format(30) === '30%', 'Grv Velocity reads ' + row.format(row.get()));
         row.set(55);
