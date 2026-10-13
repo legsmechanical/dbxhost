@@ -7,7 +7,7 @@
  */
 
 import { S, PERF_FACTORY_PRESETS, stepRevealAvailable, stepHoldEstablished, loopViewActive, knobAltOn } from './ui_state.mjs';
-import { jogTouchCardOn, seqFollowOn } from './ui_prefs.mjs';
+import { seqFollowOn } from './ui_prefs.mjs';
 import { drawDaveBox, drawBannerDave, BANNER_H, drawDaveLoading } from './ui_daves.mjs';
 import { devSnapOpen, devSnapHints, devSnapTitle } from './ui_devsnap.mjs';
 /* ui_engine imports only `os`, so this edge creates no cycle. */
@@ -594,14 +594,14 @@ function drawSessionFaderRow(cells, mode) {
  * ⭑⭑ EVERY PAIR NAMES A GESTURE THE INPUT CODE ACTUALLY IMPLEMENTS, and the
  * two conditional ones are conditional because the gesture is:
  *
- *   CLK  BANKS   a plain jog click opens the bank pad map (bankMapBegin) —
+ *   HLD  BANKS   holding the jog shows the bank pad map (bankMapBegin) —
  *                not while a knob is touched (bankMapArmable), and never on a
  *                door bank. The jog TURN walks nothing since 2026-10-04.
  *   CLK  STEPS   while the Steps knob (K5) is touched on SEQ ARP / LIVE ARP:
  *                touch + click opens the Arp Steps editor (2026-10-04).
  *   KNB+CLK NUDGE / VELOCITY   drum RPT GROOVE, on both pages: touch ANY
  *                knob and click for the other page (bankHasAltParams). First,
- *                so the fit rule drops CLK BANKS rather than it.
+ *                so the fit rule drops HLD BANKS rather than it.
  *   CLK ZOOM ... the single-knob alts (Zoom, Nudge, Revrs, Algo, ClkFb) flip
  *                on touch + click and say so while their knob is touched.
  *                No plain jog click has a bank meaning here any more.
@@ -611,7 +611,7 @@ function drawSessionFaderRow(cells, mode) {
  *                words for different destinations.
  *
  * ⚠ THE WORDS ARE CUT TO THE 86px FLOW BUDGET (see hintPairWidth). KNB+CLK
- * NUDGE is 67 and KNB+CLK VELOCITY 78, so beside either CLK BANKS does not
+ * NUDGE is 67 and KNB+CLK VELOCITY 78, so beside either HLD BANKS does not
  * fit and is the pair dropped.
  *
  * ⭑ SHFT TRK WAS DROPPED 2026-08-30 (Josh): Shift+jog steps the active track in
@@ -621,18 +621,18 @@ function drawSessionFaderRow(cells, mode) {
  * rule.
  *
  * ⚠ NOT HINTED, deliberately, though they exist: Delete+jog (bank resets),
- * Shift+Delete+jog, the held-jog map peek. They are destructive or
+ * Shift+Delete+jog. They are destructive or
  * modal-adjacent chords, the row holds three pairs before BACK claims the
  * right edge, and a hint that has to be dropped by the fit rule is worse than
  * one never offered. Most-important-first is the ordering contract; these are
  * not the most important three.
  *
  * ⚠ The row is CHROME. Nothing here reads or changes input state. */
-/* CLK BANKS where a plain click would open the bank map: no knob touched (a
+/* HLD BANKS where the held jog would show the bank map: no knob touched (a
  * touched knob owns the click) and not a door bank (its screen owns it). */
 function mapClickHints(bank) {
     if (S.knobTouched >= 0 || S.sessionView || bankIsDoor(S.trackPadMode[S.activeTrack], bank)) return [];
-    return [['CLK', 'BANKS']];
+    return [['HLD', 'BANKS']];
 }
 export function bankPageHints(bank) {
     /* A touched TRIGGER knob says how to fire it, as stock's footer does. */
@@ -651,12 +651,12 @@ export function bankPageHints(bank) {
     }
     /* ⭑ While a step is HELD the jog means something else (spec §2): on any
      * other bank a right turn REVEALS the step's page — so the pair says so,
-     * in the same slot, and CLK BANKS (which the hold suspends) is not shown.
+     * in the same slot, and HLD BANKS (which the hold suspends) is not shown.
      * On the STEP bank itself the jog does nothing under a hold: no pair. */
     const held = stepHoldEstablished();
     const hints = held ? (stepRevealAvailable() ? [['JOG', 'STEP']] : []) : mapClickHints(bank);
     /* RPT GROOVE: any knob + click goes to the other page — said on BOTH
-     * pages, and FIRST, so the fit rule drops CLK BANKS rather than this. */
+     * pages, and FIRST, so the fit rule drops HLD BANKS rather than this. */
     if (bankHasAltParams(S.activeTrack, bank)) hints.unshift(['KNB+CLK', S.altMode ? 'VELOCITY' : 'NUDGE']);
     hints.push(['BACK', 'OUT']);
     return hints;
@@ -1198,9 +1198,9 @@ function drawOverviewTracks(hints) {
  * true HERE (the canon). Josh, 2026-10-04: "get rid of the session/track
  * footer hints (that's self explanatory). Add to track overview "Touch=Edit"
  * and shift=track. when shift is held, show jog=track pad=track."
- *   Track View    CLK BANKS · TCH EDIT · SHFT TRK   (SHFT TRACK would not fit:
+ *   Track View    HLD BANKS · TCH EDIT · SHFT TRK   (SHFT TRACK would not fit:
  *                 48 + 38 + 51 - 4 overflows 128; TRK is 41 — measured)
- *   Session View  CLK BANKS · TCH MIX (no CLK BANKS under the Perf lock, which
+ *   Session View  HLD BANKS · TCH MIX (no HLD BANKS under the Perf lock, which
  *                 keeps the map shut; no SHFT pair — Josh)
  *   Shift held    JOG TRACK, in both views (Shift + pad's track pick was
  *                 retired 2026-10-08: the bank map's track pads do it). */
@@ -1209,12 +1209,12 @@ export function overviewHints() {
     if (S.shiftHeld) return [['JOG', 'TRACK']];
     /* A held step owns the jog here too (heldStepJog runs ahead of the map):
      * JOG STEP when there is a note to edit, nothing when there is not — and
-     * no CLK BANKS, which a held step keeps shut. */
+     * no HLD BANKS, which a held step keeps shut. */
     if (stepHoldEstablished() && !S.sessionView)
         return stepRevealAvailable() ? [['JOG', 'STEP']] : [];
     /* Josh, 2026-10-04: "session should get touch-mix no shift track hint". */
-    if (S.sessionView) return (S.perfViewLocked ? [] : [['CLK', 'BANKS']]).concat([['TCH', 'MIX']]);
-    return [['CLK', 'BANKS'], ['TCH', 'EDIT'], ['SHFT', 'TRK']];
+    if (S.sessionView) return (S.perfViewLocked ? [] : [['HLD', 'BANKS']]).concat([['TCH', 'MIX']]);
+    return [['HLD', 'BANKS'], ['TCH', 'EDIT'], ['SHFT', 'TRK']];
 }
 
 function drawTrackRow(y) {
@@ -1505,14 +1505,14 @@ export function sessMixerVisible() {
  * timeout decay. bankSelectTick lives on only as plumbing other features
  * stamp; it no longer drives this screen. */
 /* ⭑ WHAT THE SCREEN SHOWS vs WHAT THE MODE IS. The jog-touch reveal (Josh,
- * 2026-09-30, a global switch, default On) SHOWS the card while a finger rests
- * on the jog, but it is not bank mode: bankCardVisible()/sessMixerVisible()
- * stay the gates every INPUT reads (the click that latches, the gateway click,
+ * 2026-09-30; always on since 2026-10-13, its global switch retired) SHOWS
+ * the card while a finger rests on the jog, but it is not bank mode:
+ * bankCardVisible()/sessMixerVisible() stay the gates every INPUT reads (the click that latches, the gateway click,
  * sound-mode entry, the mixer's level follow), so a click on a touch-revealed
  * card still latches it, exactly as from the overview. Only the render reads
  * these two. Shift stands the reveal down, as it does the card. */
 function jogTouchReveals() {
-    return !!S.jogTouched && !S.shiftHeld && jogTouchCardOn();
+    return !!S.jogTouched && !S.shiftHeld;
 }
 export function bankCardShown() {
     return bankCardVisible() || (!S.sessionView && jogTouchReveals());

@@ -433,17 +433,17 @@ step('⭑ a session strip turn goes through the owner: playing → pa_live on <s
 });
 
 /* ---- AUTOMATION IS A SCREEN: nothing leaves you on the bare card ----------
- * Reached the way a person reaches it — jog click, the AUTO pad on the bank
- * map. Device, 2026-10-07: "holding jog on the page can put it into the prior
+ * Reached the way a person reaches it — jog held, the AUTO pad on the bank
+ * map, jog let go. Device, 2026-10-07: "holding jog on the page can put it into the prior
  * bank page that requires a click to start editing (the 'no automation'
  * page)". With nothing automated, ANY jog press closed the list. */
 const pad = (n) => { globalThis.onMidiMessageInternal(new Uint8Array([0x90, n, 100])); globalThis.onMidiMessageInternal(new Uint8Array([0x80, n, 0])); };
 const openByMap = () => {
     for (let i = 0; i < 4 && S.activeBank === BANK_AUTOMATION; i++) { back(); ticks(2); }
     assert(S.activeBank !== BANK_AUTOMATION, 'rig: could not leave AUTOMATION first');
-    click(); ticks(2);
-    assert(S.bankMapLatched, 'rig: the jog click did not latch the bank map');
-    pad(85); ticks(3);                                   /* CTRL column, second row: AUTO */
+    cc(3, 127); ticks(2);                                /* jog down: the map */
+    assert(S.bankMapUp, 'rig: holding the jog did not show the bank map');
+    pad(85); cc(3, 0); ticks(3);                         /* CTRL column, second row: AUTO; it opens on the release */
     assert(S.activeBank === BANK_AUTOMATION && menu().menu === true, 'rig: the AUTO pad did not open the screen with its list');
 };
 step('⭐⭐ NOTHING automated: a jog click, and a jog HOLD, leave the list up (it used to close to the bare card)', () => {

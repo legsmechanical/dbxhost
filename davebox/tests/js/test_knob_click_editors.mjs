@@ -104,12 +104,10 @@ for (const [bank, name] of [[5, 'LIVE ARP'], [4, 'SEQ ARP']]) {
         const f = frame();
         assert(bracketed(f, C.ARP_STEPS_KNOB), 'K5 is not bracketed');
         assert(!bracketed(f, 0) && !bracketed(f, 5), 'another knob is bracketed');
-        assert(!kit.kitHintsForTest().some((h) => h[0] === 'CLK' && h[1] !== 'BANKS'), 'untouched footer offers a knob CLK: ' + drawnHints());
-        assert(kit.kitHintsForTest().some((h) => h[0] === 'CLK' && h[1] === 'BANKS'), 'untouched footer does not offer the map: ' + drawnHints());
+        assert(!kit.kitHintsForTest().some((h) => h[0] === 'CLK'), 'untouched footer offers a knob CLK: ' + drawnHints());
+        assert(kit.kitHintsForTest().some((h) => h[0] === 'HLD' && h[1] === 'BANKS'), 'untouched footer does not offer the map: ' + drawnHints());
         click();
-        assert(!S.stepIntervalMode && S.bankMapLatched, 'a plain click opened Arp Steps, or not the map');
-        click();
-        assert(!S.bankMapUp, 'setup: the second click did not close the map');
+        assert(!S.stepIntervalMode && !S.bankMapUp, 'a plain click opened Arp Steps, or left the map up');
         for (const k of [0, 3, 7]) {
             touchClick(k);
             assert(!S.stepIntervalMode, 'touch K' + (k + 1) + ' + click opened Arp Steps (only Steps, K5, does)');
@@ -157,9 +155,7 @@ step('⭐⭐ RPT GROOVE: the footer says KNB+CLK NUDGE on the Velocity page — 
     let nums = 0; for (let y = 48; y < 53; y++) for (let x = 0; x < 128; x++) nums += f[y * W + x];
     assert(nums > 0, 'the step numbers are not on their row (48) above the footer');
     click();
-    assert(!S.altMode && S.bankMapLatched, 'a plain click flipped the page, or did not open the map');
-    click();
-    assert(!S.bankMapUp, 'setup: the second click did not close the map');
+    assert(!S.altMode && !S.bankMapUp, 'a plain click flipped the page, or left the map up');
 });
 
 step('⭐⭐ RPT GROOVE: touch ANY knob + click flips to Nudge; the footer says KNB+CLK VELOCITY; and back', () => {
@@ -177,26 +173,27 @@ step('⭐⭐ RPT GROOVE: touch ANY knob + click flips to Nudge; the footer says 
 });
 
 /* MIX and MACROS are sound mode's cards: their footers name the bank map
- * (CLK BANKS) while no knob is touched — the jog turn walks nothing since
+ * (HLD BANKS) while no knob is touched — the jog turn walks nothing since
  * 2026-10-04 — and a touched knob's own click instead. */
 const pure = await import('../../ui/ui_pure.mjs');
 for (const [bank, name, want] of [[C.BANK_SOUND, 'MIX', null], [C.BANK_MACROS, 'MACROS', 'ASSIGN']]) {
-    step('⭐ ' + name + ' card: CLK BANKS untouched, never JOG BANK; a touched knob takes the CLK', () => {
+    step('⭐ ' + name + ' card: HLD BANKS untouched, never JOG BANK; a touched knob takes the CLK', () => {
         home();
         let pad = -1;
         for (let c = 0; c < 4 && pad < 0; c++) for (let r = 0; r < 4; r++)
             if (pure.bankPadMapCellAt(S.trackPadMode[2], 2, c, r) === bank) { pad = pure.bankMapPadForCell(c, r); break; }
-        click();
-        midi(0x90, pad, 100); midi(0x80, pad, 0); ticks(4);
+        midi(0xB0, 3, 127);
+        midi(0x90, pad, 100); midi(0x80, pad, 0);
+        midi(0xB0, 3, 0); ticks(4);
         assert(S.activeBank === bank && !S.bankMapUp, 'setup: not on ' + name + ' (' + S.activeBank + '), map up ' + S.bankMapUp);
         S.bankCardLatched = true; ticks(4);
         assert(render.bankCardVisible(), 'setup: ' + name + '\'s card is not up: open ' + snd.soundOpen() + ' pending ' + S.pendingSoundEnterTrack + ' route ' + S.trackRoute[2]);
         let h = (frame(), kit.kitHintsForTest());
-        assert(h.some((p) => p[0] === 'CLK' && p[1] === 'BANKS') && !h.some((p) => p[0] === 'JOG'),
+        assert(h.some((p) => p[0] === 'HLD' && p[1] === 'BANKS') && !h.some((p) => p[0] === 'JOG'),
                name + ' untouched: ' + JSON.stringify(h));
         touch(5);
         h = (frame(), kit.kitHintsForTest());
-        assert(!h.some((p) => p[0] === 'CLK' && p[1] === 'BANKS'), name + ' touched still offers the map: ' + JSON.stringify(h));
+        assert(!h.some((p) => p[1] === 'BANKS'), name + ' touched still offers the map: ' + JSON.stringify(h));
         if (want) assert(h.some((p) => p[0] === 'CLK' && p[1] === want), name + ' touched: ' + JSON.stringify(h));
         untouch(5);
         back(); back(); ticks(2);

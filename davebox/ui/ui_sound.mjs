@@ -2272,11 +2272,11 @@ export function soundEnterSendFromSessionMixer(key) {
     return true;
 }
 
-/* A sound bank card's jog pair: JOG STEP under a held step, else CLK BANKS
+/* A sound bank card's jog pair: JOG STEP under a held step, else HLD BANKS
  * (the map) unless a knob is touched. */
 function cardJogHints(knobTouched) {
     if (GS.heldStep >= 0) return [['JOG', 'STEP']];
-    return knobTouched ? [] : [['CLK', 'BANKS']];
+    return knobTouched ? [] : [['HLD', 'BANKS']];
 }
 function levelCardHints() {
     /* MIX is no door (2026-09-26): a click opens the bank map — or, with a

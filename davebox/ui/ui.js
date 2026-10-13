@@ -83,7 +83,7 @@ import { recordNoteOn, recordNoteOff,
 import { _onPadPress, _onPadRelease, _onPadAftertouch, _onStepButtons } from './ui_input_pads.mjs';
 import { applyBankPick, heldStepJog, bankMapArmable, bankMapBegin, bankMapEnd, bankMapPadTap,
          bankMapDeferrable, jogDeferBegin, jogDeferTake,
-    bankMapTurned, bankMapRelease } from './ui_input_cc.mjs';
+    bankMapRelease } from './ui_input_cc.mjs';
 import { standDownBankDisplay } from './ui_state.mjs';
 import { _onCCMsg, syncCoRunShift } from './ui_input_cc.mjs';
 import { soundActive, soundOpen, soundResting, soundExit, soundOnCC, soundOnNote, soundOnMidiRaw,
@@ -539,7 +539,7 @@ function _onMidiInternalImpl(data) {
     if (status === 0xB0 && d1 === MoveRight) S.rightHeld = d2 === 127;
     /* The JOG TOUCH release, the same way: a screen that takes the jog (the
      * MIDI browser, the project picker) swallowed it, the flag stayed set,
-     * and once Jog Touch Card could draw from it the card stayed up after
+     * and once the jog-touch card could draw from it the card stayed up after
      * the screen closed — reading as a locked card view (Josh, 2026-09-30).
      * Not consumed: the owner still gets the message. The normal release
      * below is guarded on the flag, so it cannot run twice. */
@@ -556,10 +556,9 @@ function _onMidiInternalImpl(data) {
     }
 
     /* THE BANK PAD MAP (Josh, 2026-10-02; 2026-10-04: "hold jog instantly peek
-     * the pad map and jog click instantly pop it up and another jog click
-     * close it"). Where the map can arm, the PRESS paints it at once and is
-     * the map's alone; the RELEASE rules (bankMapRelease): a click toggles the
-     * latch, a hold is a peek. Both edges live here, above every modal gate:
+     * the pad map"; hold only since 2026-10-13). Where the map can arm, the
+     * PRESS paints it at once and is the map's alone; the RELEASE puts it
+     * away (bankMapRelease). Both edges live here, above every modal gate:
      * a release swallowed by a screen would strand the hold (the jog-touch
      * lesson above). Elsewhere the press goes on to its owner as before. */
     if (status === 0xB0 && d1 === MoveMainButton) {
@@ -569,8 +568,7 @@ function _onMidiInternalImpl(data) {
             if (S.jogPressMs >= 0) bankMapEnd();
             if (bankMapArmable()) { bankMapBegin(); return; }
             /* A click the map cannot take (a knob touched: touch + click) goes
-             * to its owner — and a latched map makes way for what it opens. */
-            if (S.bankMapLatched) bankMapEnd();
+             * to its owner. */
             /* A SCREEN owns this click (a menu, the module editor, a door
              * screen): hold the press back. Let go early and the click is
              * delivered on the release, below; held, the tick paints the map
@@ -593,24 +591,12 @@ function _onMidiInternalImpl(data) {
                       (_k === 0x90 && d2 > 0 && d1 !== MoveMainTouch);
         if (_acts && jogDeferTake())
             _dispatchBelowJogRouter(JOG_PRESS_MSG, 0xB0, MoveMainButton, 127);
-    } else if (S.bankMapLatched && S.jogPressMs < 0 && status === 0xB0 && d2 === 127 &&
-               [MoveShift, MoveDelete, MoveCopy, MoveMute, MoveLoop, MoveCapture].indexOf(d1) >= 0) {
-        /* A latched map gives the pads back for a chord (Shift + pad, Delete +
-         * pad, Loop + step...): the map goes and the button goes on. Play,
-         * Record and the arrows leave it up; Back closes it in _backTap. */
+    } else if (S.jogPressMs >= 0 && status === 0xB0 && d2 === 127 &&
+               d1 !== MoveMainKnob && !(d1 >= 71 && d1 <= 79)) {
+        /* Another button while held (Shift, Delete, Back...): the gesture is
+         * something else now. The map goes and the button goes on to its
+         * owner. A jog turn, a knob or a step leave the map up. */
         bankMapEnd();
-    } else if (S.jogPressMs >= 0) {
-        if (status === 0xB0 && d1 === MoveMainKnob) {
-            bankMapTurned();                  /* the turn still walks, below */
-        } else if (status === 0xB0 && d2 === 127 && !(d1 >= 71 && d1 <= 79)) {
-            /* Another button while held (Shift, Delete, Back...): the gesture
-             * is something else now. The map goes, no click fires, and the
-             * button goes on to its owner. */
-            bankMapEnd();
-        } else if (!((status & 0xF0) !== 0xB0 && d1 >= 68 && d1 <= 99) &&
-                   !((status & 0xF0) !== 0xB0 && d1 === MoveMainTouch)) {
-            S.bankMapUsed = true;            /* a knob turn / touch, a step: no click */
-        }
     }
     if (d1 >= 68 && d1 <= 99) {
         const _k = status & 0xF0;

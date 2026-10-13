@@ -121,7 +121,7 @@ step('⭐⭐ HOLD on a menu: the map paints over it; letting go WITHOUT a pick l
     assert(S.globalMenuOpen, 'the menu was closed just by SHOWING the map');
     assert(cellInk(frame(), 3, 2) > 0.05, 'the map is not on screen');
     release(); ticks(2);
-    assert(!S.bankMapUp && !S.bankMapLatched, 'the map stayed after the jog came up');
+    assert(!S.bankMapUp, 'the map stayed after the jog came up');
     assert(menuSnap() === before, 'the menu changed under a hold that picked nothing');
 });
 
@@ -188,9 +188,9 @@ step('⚠ the on-screen keyboard keeps the jog: it reads the pads itself, so no 
 /* ---- TRACK CONFIG (sound mode's menu), reached by the map's own pad ------ */
 step('⭐⭐ in TRACK CONFIG: hold shows the map, and a bank pick LEAVES sound mode for that bank', () => {
     home();
-    press(); release(); ticks(1);                        /* click: the map latches */
-    assert(S.bankMapLatched, 'rig: the overview click did not latch the map');
-    tap(CONFIG); ticks(4);
+    press(); ticks(1);                                   /* hold: the map */
+    assert(S.bankMapUp, 'rig: holding the jog on the overview did not show the map');
+    tap(CONFIG); release(); ticks(4);
     assert(snd.soundActive() && !snd.soundOnCard(), 'rig: TRACK CONFIG did not open (active ' + snd.soundActive() + ')');
     press();
     assert(S.jogDeferred && !S.bankMapUp, 'the press in TRACK CONFIG was not held back');
@@ -204,7 +204,7 @@ step('⭐⭐ in TRACK CONFIG: hold shows the map, and a bank pick LEAVES sound m
 });
 step('…and letting go without a pick leaves you IN TRACK CONFIG', () => {
     home();
-    press(); release(); ticks(1); tap(CONFIG); ticks(4);
+    press(); ticks(1); tap(CONFIG); release(); ticks(4);
     assert(snd.soundActive(), 'rig: TRACK CONFIG did not open');
     const view = snd.soundViewForTest();
     press(); holdMap(); release(); ticks(2);
@@ -215,7 +215,7 @@ step('…and letting go without a pick leaves you IN TRACK CONFIG', () => {
 /* ---- the AUTOMATION screen ---------------------------------------------- */
 step('⭐⭐ on the AUTOMATION screen: hold shows the map; a pick lands on the bank and the screen is gone; no pick, still there', () => {
     home();
-    press(); release(); ticks(1); tap(AUTO); ticks(3);
+    press(); ticks(1); tap(AUTO); release(); ticks(3);
     assert(S.activeBank === C.BANK_AUTOMATION && ccm.doorScreenUp(), 'rig: the AUTOMATION screen did not open');
     press(); holdMap();
     assert(S.bankMapUp, 'the hold did not paint the map over AUTOMATION');

@@ -516,7 +516,6 @@ export const S = {
     flashSixteenth: false,
     masterPos: 0,
     pendingSessionAfterCoRun: false, /* Note/Session left a co-run: land on Session View once it has ended (ui_tick) */
-    jogTouchCardOn: null, /* Jog Touch Card (global menu, ui_prefs): a bare jog touch shows the current bank card. null = not yet read; absent file = on. */
     midiMuted: null,     /* MIDI browser preview muted (ui_prefs). null = not yet read */
     midiMap: null,       /* MIDI browser drum Map: off | gm | move (ui_prefs). null = not yet read */
     seqFollowOn: null,   /* Seq Follow (ui_prefs): one device-wide switch. null = not yet read; absent file = on. */
@@ -1077,22 +1076,15 @@ export const S = {
      * Transient: the gesture ends with the Shift release that commits it. */
     bankPickerSel: -1,
     /* THE BANK PAD MAP (Josh, 2026-10-02: hold the jog, the left 4x4 pads pick
-     * the bank; 2026-10-04: "hold jog instantly peek the pad map and jog click
-     * instantly pop it up and another jog click close it"). `jogPressMs` =
-     * nowMs() of a jog press while the map is up from it, -1 otherwise; set
-     * only where the map can arm, so -1 means every click went straight to its
-     * owner. `bankMapUp` = the map is painted (OLED + pads) — while held OR
-     * latched; `bankMapLatched` = it stays up with the jog let go (a click
-     * opened it); `bankMapWasLatched` = the latch at the press, for the
-     * release's ruling. `bankMapUsed` = a pad was tapped or the jog turned
-     * during the hold, so the release is no click. `bankMapKind` 'track' |
+     * the bank; hold only since 2026-10-13 — no click leaves it up).
+     * `jogPressMs` = nowMs() of a jog press while the map is up from it, -1
+     * otherwise; set only where the map can arm, so -1 means every click went
+     * straight to its owner. `bankMapUp` = the map is painted (OLED + pads),
+     * which is exactly while the jog is held. `bankMapKind` 'track' |
      * 'session', taken at the press. */
     jogPressMs: -1,
     bankMapUp: false,
-    bankMapUsed: false,
     bankMapKind: null,
-    bankMapLatched: false,
-    bankMapWasLatched: false,
     /* Pads physically down (notes 68-99), recorded above every modal gate,
      * so the map can let go of each one when it paints. */
     padPhysDown: new Set(),

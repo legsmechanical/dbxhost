@@ -24,7 +24,7 @@ import {
     BANKS, PAD_MODE_DRUM, PAD_MODE_CONDUCT,
     BANK_RESPONDER, BANK_OCTAVE, BANK_WHEN, BANK_SOUND, BANK_STEP, BANK_MACROS, BANK_AUTOMATION, BANK_CHORD, BANK_CONFIG, LGTO_KNOB,
     CROP_KNOB, ALL_LANES_CROP_KNOB, IMPORT_KNOB, knobAltFor, ARP_STEPS_KNOB, arpStepsBank, LOOP_NOT_AT_1_MS, isSoundBank, STEP_REVEAL_DEBOUNCE_MS,
-    TICK_HZ, STEP_ITER_LIST, JOG_CLICK_MAX_MS, JOG_HOLD_MAP_MS,
+    TICK_HZ, STEP_ITER_LIST, JOG_HOLD_MAP_MS,
     fmtRes, fmtDiq, fmtPlayDir, fmtLen, fmtGateMod, fmtDly,
     fmtArpStyle, fmtArpRate, fmtArpSteps, fmtArpOct, fmtBool, ROUTE_NONE } from './ui_constants.mjs';
 import { closeChordPopup, chordEditSlot, chordSlotKnob, chordBankKnob, chordSlotReset } from './ui_chord_pads.mjs';
@@ -934,7 +934,7 @@ function modalDialogUp() {
         return;
     }
     /* (The plain click's bank-card latch and Bank Lock's overview click
-     * retired 2026-10-04: the plain click is the bank map — bankMapBegin —
+     * retired 2026-10-04: the jog press is the bank map — bankMapBegin —
      * and a bank page shows only while a knob or the jog is touched.) */
     /* (The plain click's Arp Steps toggle on SEQ ARP / LIVE ARP retired
      * 2026-10-04: the editor opens from the Steps knob, touch + click, above.
@@ -1326,12 +1326,13 @@ export function sessWalkTo(mode, rest) {
     forceRedraw();
 }
 
-/* ---- THE BANK PAD MAP (Josh, 2026-10-02; click/hold 2026-10-04) ----
+/* ---- THE BANK PAD MAP (Josh, 2026-10-02; hold only since 2026-10-13) ----
  * Hold the jog and the left 4x4 pads are the banks — tap one to land on it,
- * let go to play again; click it and the map stays up until another click or
- * Back. Everywhere the map cannot arm — dialogs, menus, pickers, the module
- * editor, a door screen, Shift / Delete chords, a touched knob — the click
- * goes to its owner on the press, untouched.
+ * let go to play again. The map is up exactly as long as the jog is down:
+ * there is no click that leaves it up. Everywhere the map cannot arm —
+ * dialogs, menus, pickers, the module editor, a door screen, Shift / Delete
+ * chords, a touched knob — the click goes to its owner on the press,
+ * untouched.
  *
  * Where the map may arm: the overviews and the bank pages. */
 export function bankMapArmable() {
@@ -1406,8 +1407,6 @@ export function checkJogHold() {
      * is no longer the screen the hand aimed at. Drop it — no map, no click. */
     if (!bankMapDeferrable()) { S.jogPressMs = -1; return; }
     S.bankMapFromScreen = true;
-    S.bankMapUsed = false;
-    S.bankMapWasLatched = false;
     S.bankMapKind = S.sessionView ? 'session' : 'track';
     bankMapArm();
 }
@@ -1425,35 +1424,25 @@ function bankMapLeaveScreen() {
     _tearDownToOverview();
 }
 
-/* ⭑⭑ THE PLAIN CLICK IS THE MAP (Josh, 2026-10-04: "hold jog instantly peek the
- * pad map and jog click instantly pop it up and another jog click close it").
- * Where the map can arm, the jog PRESS paints it at once; the release rules
- * (bankMapRelease): a click opens the latch, or closes it; a hold that picked
- * or lingered puts a peek away and leaves a latch up. In an armable context
- * the plain click has no other meaning — every click owner ahead of the old
- * overview latch (pickers, confirms, menus, dialogs, AUTOMATION, the Delete
- * chords, a touched knob) is excluded by bankMapArmable. */
+/* ⭑⭑ THE JOG HELD IS THE MAP (Josh, 2026-10-04: "hold jog instantly peek the
+ * pad map"; 2026-10-13: the hold is the only way in — the click that left it
+ * up is retired). Where the map can arm, the jog PRESS paints it at once and
+ * the release puts it away (bankMapRelease). In an armable context the plain
+ * click has no other meaning — every click owner (pickers, confirms, menus,
+ * dialogs, AUTOMATION, the Delete chords, a touched knob) is excluded by
+ * bankMapArmable. */
 export function bankMapBegin() {
     S.jogPressMs = nowMs();
-    S.bankMapUsed = false;
-    S.bankMapWasLatched = S.bankMapLatched;
     S.bankMapKind = S.sessionView ? 'session' : 'track';
     bankMapArm();
 }
 
-/* The jog let go: click (quick, nothing picked, no turn) toggles the latch;
- * anything else is a peek, which a latch outlives. */
+/* The jog let go: the map goes, however short the hold was. */
 export function bankMapRelease() {
     /* A MENU pad tapped during the hold opens now, on the release. */
     const menu = S.bankMapDeferred;
     if (menu) { S.bankMapDeferred = null; runBankMapMenu(menu); return; }
-    const click = !S.bankMapUsed && nowMs() - S.jogPressMs < JOG_CLICK_MAX_MS;
-    const was = S.bankMapWasLatched;
-    S.jogPressMs = -1;
-    S.bankMapUsed = false;
-    if (click && !was && bankMapArmable()) { S.bankMapLatched = true; forceRedraw(); }
-    else if (!click && was) { forceRedraw(); }
-    else bankMapEnd();
+    bankMapEnd();
 }
 
 /* Paint the map: OLED + pads. Every pad still down is let go through the real
@@ -1471,20 +1460,16 @@ export function bankMapArm() {
     forceRedraw();
 }
 
-/* The map goes (a click on a latched map, a peek let go, Back, or something
- * ended it). Idempotent. */
+/* The map goes (the jog let go, or something ended the hold). Idempotent. */
 export function bankMapEnd() {
     S.bankMapDeferred = null;
     S.jogDeferred = false;
     S.bankMapFromScreen = false;
-    if (S.jogPressMs < 0 && !S.bankMapUp && !S.bankMapLatched) return;
+    if (S.jogPressMs < 0 && !S.bankMapUp) return;
     const wasUp = S.bankMapUp;
     S.jogPressMs = -1;
     S.bankMapUp = false;
-    S.bankMapUsed = false;
     S.bankMapKind = null;
-    S.bankMapLatched = false;
-    S.bankMapWasLatched = false;
     if (wasUp) {
         coRunMapScreen(false);
         computePadNoteMap();
@@ -1493,13 +1478,9 @@ export function bankMapEnd() {
     forceRedraw();
 }
 
-/* A pad pressed while the map is up (held or latched): a map tap. The right
- * 4x4 and dark pads do nothing — but still count as "used", so a hold's
- * release is no click.
- * ⭑ A LATCHED map goes with the pick (Josh, 2026-10-04: "when pad bank map is
- * locked, have pad tap select bank and exit bank map. tap on momentary bank
- * hold should continue to work as it does now") — a HELD map stays up until
- * the jog is let go, even a hold begun over a latched one. */
+/* A pad pressed while the map is up: a map tap. The dark pads do nothing.
+ * The map stays up until the jog is let go, so several picks can follow one
+ * another under one hold. */
 /* Would a tap on this pad of the map do anything? The same lookups the tap
  * makes, asked first. */
 /* The track a right-grid cell would switch TO on this map, or -1: the track
@@ -1524,7 +1505,6 @@ function bankMapPadActs(note) {
     return bankPadMapCellAt(S.trackPadMode[t], t, cell.col, cell.row) !== null;
 }
 export function bankMapPadTap(note) {
-    S.bankMapUsed = true;
     S.bankMapSwallow.add(note);
     /* Only a pad that DOES something leaves the screen under the map: the
      * right 4x4 and the dark cells are dead, and a dead tap must cost nothing. */
@@ -1541,10 +1521,8 @@ export function bankMapPadTap(note) {
     const cell = bankMapCellForPad(note);
     if (!cell) return;
     /* ⭑ A TRACK PAD (Josh, 2026-10-08): the right grid's top two rows switch
-     * track. Like a bank pad: a HELD map stays and repaints for the new track,
-     * so the bank you wanted there is the next tap; a LATCHED map goes with
-     * the pick ("toggle pad map mode should immediately close and take you to
-     * the track"). */
+     * track. Like a bank pad: the map stays and repaints for the new track,
+     * so the bank you wanted there is the next tap. */
     if (cell.col > 3) {
         const nt = bankMapTrackPick(cell);
         if (nt < 0) return;
@@ -1557,13 +1535,12 @@ export function bankMapPadTap(note) {
         showActionPopupFor(BANK_MAP_TRACK_POPUP_MS, 'TRACK ' + (nt + 1), trackInstrName(nt));
         invalidateLEDCache();
         forceRedraw();
-        bankMapEndIfLatched();
         return;
     }
     if (S.bankMapKind === 'session') {
         if (cell.col === 0) {
             const mode = SESS_PAD_MAP.mixer.modes[cell.row];
-            if (mode !== undefined) { bankMapCancelMenu(); sessWalkTo(mode, pickRest); bankMapEndIfLatched(); }
+            if (mode !== undefined) { bankMapCancelMenu(); sessWalkTo(mode, pickRest); }
         } else if (cell.col === 1) {
             const bus = SESS_PAD_MAP.fx.buses[cell.row];
             if (bus) bankMapMenuTap({ kind: 'bus', bus, col: cell.col, row: cell.row });
@@ -1595,27 +1572,19 @@ export function bankMapPadTap(note) {
     }
     S.bankPickerSel = bankListFor(t).indexOf(b);
     applyBankPick(rest);
-    bankMapEndIfLatched();
-}
-function bankMapEndIfLatched() {
-    if (S.bankMapLatched && S.jogPressMs < 0) bankMapEnd();
 }
 
 /* ⭑ MENU PADS — CONFIG, AUTOMATION, INST, and Session View's MASTER / SEND A /
- * SEND B — open a SCREEN, which takes the OLED and ends the map. On a HELD map
- * they wait for the jog's release (Josh, 2026-10-04: "when pad bank map is
- * momentary, can we hold the menu entries ... until release of jog to allow
- * ALL pads to be tapped through without exiting map"): the tap only marks the
- * pad (White, the filled box), a later tap replaces it — a bank tap cancels
- * it — and letting go opens it. On a clicked-open map they open at once. */
+ * SEND B — open a SCREEN, which takes the OLED and ends the map. They wait for
+ * the jog's release (Josh, 2026-10-04: "when pad bank map is momentary, can we
+ * hold the menu entries ... until release of jog to allow ALL pads to be
+ * tapped through without exiting map"): the tap only marks the pad (White,
+ * the filled box), a later tap replaces it — a bank tap cancels it — and
+ * letting go opens it. */
 function bankMapMenuTap(a) {
-    if (S.jogPressMs >= 0) {
-        S.bankMapDeferred = a;
-        invalidateLEDCache();
-        forceRedraw();
-        return;
-    }
-    runBankMapMenu(a);
+    S.bankMapDeferred = a;
+    invalidateLEDCache();
+    forceRedraw();
 }
 function bankMapCancelMenu() {
     if (!S.bankMapDeferred) return;
@@ -1640,12 +1609,6 @@ function runBankMapMenu(a) {
     } else {
         openDoorScreen(a.bank);      /* AUTOMATION's menu */
     }
-}
-
-/* A turn while the jog is held walks as always, and counts as "used". */
-export function bankMapTurned() {
-    if (S.jogPressMs < 0) return;
-    S.bankMapUsed = true;
 }
 
 /* A bank knob's turn, heard by the automation owner as its seq: target — a
@@ -2404,7 +2367,6 @@ export function backTapWouldAct() {
     }
     if (S.daveBox) return true;
     if (S.stepRecActive) return true;
-    if (S.bankMapLatched) return true;
     /* Sound mode's own screens (TRACK CONFIG, the editors, MIX / MACROS up):
      * Back always steps out a level there. At rest it is not up. */
     if (soundActive()) return true;
@@ -2492,7 +2454,7 @@ export function atOverview() {
      * is not "at the overview" — Note/Session must close it rather than treat
      * the press as a view switch underneath it. */
     if (S.confirmConvertToDrum || S.confirmConvertToConduct)        return false;
-    if (S.bankCardLatched || S.bankMapLatched)                      return false;
+    if (S.bankCardLatched)                                          return false;
     if (S.sessionView) return !S.perfViewLocked;
     return !(S.loopLatched || S.stepIntervalMode || S.altMode || S.knobAlt !== 0);
 }
@@ -2515,7 +2477,7 @@ export function goToSessionOverview() {
  * view you are IN; switching is the button's other meaning, and only from rest. */
 function returnToOverview() {
     _tearDownToOverview();
-    bankMapEnd();                   /* a latched map is a layer too */
+    bankMapEnd();                   /* a held map is a layer too */
 }
 /* Everything returnToOverview closes EXCEPT the bank map itself — the half a
  * pick from a map over a screen needs (bankMapLeaveScreen): the map is still
@@ -2668,8 +2630,6 @@ function _backTap() {
         stepRecExit();
         return;
     }
-    /* A map a click put up: Back takes it down, the bank stays where picked. */
-    if (S.bankMapLatched) { bankMapEnd(); return; }
     if (S.daveBox) {
         /* Back leaves the album for the menu it was opened from. */
         closeDaveBox();

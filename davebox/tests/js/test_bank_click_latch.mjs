@@ -4,10 +4,11 @@ import './_bulk_get_stub.mjs';   /* the bulk read, derived from this test's sing
  * peek the pad map and jog click instantly pop it up and another jog click
  * close it"; "Touch only; drop Bank Lock"; Session "same as Track View"):
  *
- *   - the click opens the BANK MAP (Session View: the Session map), never a
- *     bank page; a second click or Back closes it
- *   - a bank page shows only while a knob is touched (or the jog, with Jog
- *     Touch Card) — nothing locks one by a click
+ *   - the jog HELD shows the BANK MAP (Session View: the Session map), never
+ *     a bank page, and letting go puts it away — a click leaves nothing up
+ *     (2026-10-13: the click that left the map up is retired)
+ *   - a bank page shows only while a knob or the jog is touched — nothing
+ *     locks one by a click
  *   - Shift + jog click stays retired — only the picker-abandon survives
  *   - the session walk is the four mixer modes (no FX gateway); the map's FX
  *     pads open the buses
@@ -63,20 +64,30 @@ function rest() {
     S.jogTouched = false; S.shiftHeld = false; S.tickCount += 10;
 }
 
-step('⭐ the plain click from the overview opens the MAP — never a bank page; a second click closes it', () => {
+step('⭐⭐ the jog HELD on the overview shows the MAP — never a bank page; letting go puts it away', () => {
     rest(); S.activeBank = 1;
-    click();
-    if (!S.bankMapLatched || !S.bankMapUp) throw new Error('the click did not open the map');
-    if (S.bankCardLatched || bankCardVisible()) throw new Error('the click locked a bank page');
-    click();
-    if (S.bankMapUp) throw new Error('the second click did not close the map');
+    cc(3, 127);
+    if (!S.bankMapUp) throw new Error('the press did not show the map');
+    if (S.bankCardLatched || bankCardVisible()) throw new Error('the press locked a bank page');
+    cc(3, 0);
+    if (S.bankMapUp) throw new Error('the release did not put the map away');
 });
 
-step('⭐ Back closes a map the click opened; the bank stays', () => {
+step('⭐⭐ a plain CLICK leaves nothing up: no map, no bank page, the bank where it was', () => {
     rest(); S.activeBank = 1;
     click();
+    if (S.bankMapUp || S.jogPressMs >= 0) throw new Error('the click left the map up');
+    if (S.bankCardLatched || bankCardVisible()) throw new Error('the click locked a bank page');
+    if (S.activeBank !== 1) throw new Error('the click moved the bank: ' + S.activeBank);
+});
+
+step('⭐ Back while the jog is held puts the map away; the bank stays', () => {
+    rest(); S.activeBank = 1;
+    cc(3, 127);
     cc(51, 127); cc(51, 0);
-    if (S.bankMapUp || S.bankMapLatched) throw new Error('Back did not close the map');
+    if (S.bankMapUp) throw new Error('Back did not put the map away');
+    cc(3, 0);
+    if (S.bankMapUp || S.jogPressMs >= 0) throw new Error('the late jog release brought something back');
     if (S.activeBank !== 1 || bankCardVisible()) throw new Error('Back moved the bank or showed a card');
 });
 
@@ -112,15 +123,15 @@ step('⭐ the ONE LAW: a held page shows the card; a knob touch PEEKS it; nothin
     S.bankCardLatched = false;
 });
 
-step('⭐ SESSION: a turn walks no mixer mode (retired 2026-10-04); the click opens the Session MAP', () => {
+step('⭐ SESSION: a turn walks no mixer mode (retired 2026-10-04); the jog held shows the Session MAP', () => {
     rest(); S.sessionView = true; S.sessKnobMode = 0;
     cc(14, 1); cc(14, 1);
     if (S.sessKnobMode !== 0) throw new Error('a turn walked the mixer mode: ' + S.sessKnobMode);
-    click();
-    if (!S.bankMapLatched || S.bankMapKind !== 'session') throw new Error('the session click did not open the Session map');
-    if (renderMod.sessMixerVisible()) throw new Error('the click showed the mixer page');
-    click();
-    if (S.bankMapUp) throw new Error('the second click did not close it');
+    cc(3, 127);
+    if (!S.bankMapUp || S.bankMapKind !== 'session') throw new Error('the session press did not show the Session map');
+    if (renderMod.sessMixerVisible()) throw new Error('the press showed the mixer page');
+    cc(3, 0);
+    if (S.bankMapUp) throw new Error('the release did not put it away');
     S.knobTouched = 2;
     if (!renderMod.sessMixerVisible()) throw new Error('a knob touch did not show the mixer page');
     S.knobTouched = -1;
@@ -129,15 +140,17 @@ step('⭐ SESSION: a turn walks no mixer mode (retired 2026-10-04); the click op
 
 step('⭐ a VIEW SWITCH closes a map — each view opens on its overview; the remembered bank survives', () => {
     rest(); S.activeBank = 1;
-    click();
-    if (!S.bankMapLatched) throw new Error('setup: no map');
+    cc(3, 127);
+    if (!S.bankMapUp) throw new Error('setup: no map');
     cc(50, 127); cc(50, 0);                      /* Note/Session -> session overview */
     if (!S.sessionView) throw new Error('the escape did not go to session view');
-    if (S.bankMapUp || S.bankMapLatched) throw new Error('the view switch did not close the map');
-    click();
-    if (!S.bankMapLatched) throw new Error('setup: no session map');
+    if (S.bankMapUp) throw new Error('the view switch did not close the map');
+    cc(3, 0);
+    cc(3, 127);
+    if (!S.bankMapUp) throw new Error('setup: no session map');
     cc(50, 127); cc(50, 0);
     if (S.bankMapUp) throw new Error('the escape did not close the session map');
+    cc(3, 0);
     if (S.sessionView) { cc(50, 127); cc(50, 0); }
     if (S.sessionView) throw new Error('setup: did not switch back');
     if (bankCardVisible()) throw new Error('track view did not open on its overview');
@@ -146,8 +159,9 @@ step('⭐ a VIEW SWITCH closes a map — each view opens on its overview; the re
 
 step('⭐ MASTER from the Session map opens its effects; Back walks out to the overview', () => {
     rest(); S.sessionView = true;
-    click();                                     /* the Session map */
+    cc(3, 127);                                  /* the Session map */
     note(pureMod.bankMapPadForCell(1, 0), 100); note(pureMod.bankMapPadForCell(1, 0), 0);   /* MASTER */
+    cc(3, 0);                                    /* it opens on the release */
     for (let i = 0; i < 4; i++) { sndMod.soundTick(); globalThis.tick(); }
     if (!sndMod.soundActive() || !sndMod.soundIsGlobal()) throw new Error('MASTER did not open its effects');
     if (S.bankMapUp) throw new Error('the map stayed up over the effects');

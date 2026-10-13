@@ -1,6 +1,6 @@
-/* tests/js/test_jog_touch_card.mjs — JOG TOUCH CARD (Josh, 2026-09-30: "Add
- * global menu option for touch jog to show current bank card ... Showing the
- * bank card should be the default.") and, since 2026-10-04, the jog TURN that
+/* tests/js/test_jog_touch_card.mjs — THE JOG TOUCH CARD (Josh, 2026-09-30:
+ * a bare jog touch shows the current bank card; 2026-10-13: always, its
+ * global menu switch retired) and, since 2026-10-04, the jog TURN that
  * no longer switches banks (Josh: "i want to retire jog to switch banks and the
  * bank column overlay"). Through the real input path; judged on the FRAME.
  * (Split out of test_bank_nav_overlay, which pinned the retired column.)
@@ -64,17 +64,10 @@ const holdTicks = 12;
 const settle = () => { S.tickCount += holdTicks; globalThis.tick(); };
 const frame = () => { fb.fill(0); render.drawUI(); return fb.slice(); };
 const menu = await import('../../ui/ui_menu.mjs');
-const prefs = await import('../../ui/ui_prefs.mjs');
-const written = {};
-const _hwf = globalThis.host_write_file;
-globalThis.host_write_file = (p, b) => { written[p] = String(b); return _hwf(p, b); };
 const menuItems = () => { menu.openGlobalMenu(); const it = S.globalMenuItems; S.globalMenuOpen = false; return it; };
-/* ⭐⭐ JOG TOUCH CARD (Josh, 2026-09-30: "Add global menu option for touch jog
- * to show current bank card ... Showing the bank card should be the default.
- * Turning should still show the bank navigation overlay, but it shows over the
- * cards."). Judged on the FRAME: a touch must draw what the bank view draws. */
+/* ⭐⭐ THE JOG TOUCH CARD. Judged on the FRAME: a touch must draw what the
+ * bank view draws. */
 const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
-const jtItem = () => menuItems().find((it) => it && it.label === 'Jog Touch Card');
 const cardFrames = () => {
     S.sessionView = false; S.activeBank = 1; S.trackActiveBank[2] = 1;
     S.bankCardLatched = false; S.jogTouched = false; settle();
@@ -82,14 +75,12 @@ const cardFrames = () => {
     S.bankCardLatched = true; const latched = frame(); S.bankCardLatched = false;
     return { rest, latched };
 };
-step('the global menu has Jog Touch Card, right under Beat Marks, On by default', () => {
-    const items = menuItems(), i = items.findIndex((it) => it && it.label === 'Jog Touch Card');
-    assert(i > 0, 'no Jog Touch Card item');
-    assert(items[i - 1].label === 'Beat Marks', 'not under Beat Marks: ' + items[i - 1].label);
-    S.jogTouchCardOn = null;
-    assert(prefs.jogTouchCardOn() === true, 'default is not On');
+step('the global menu has no Jog Touch Card switch — the card is not optional', () => {
+    const items = menuItems();
+    assert(items.some((it) => it && it.label === 'Beat Marks'), 'control: the menu rows were not read');
+    assert(!items.some((it) => it && /jog touch/i.test(String(it.label))), 'a Jog Touch row is in the menu');
 });
-step('⭐⭐ ON: a bare jog touch draws the current bank card, and the release takes it away', () => {
+step('⭐⭐ a bare jog touch draws the current bank card, and the release takes it away', () => {
     const { rest, latched } = cardFrames();
     assert(!same(rest, latched), 'control: the overview and the bank card draw the same frame');
     touchJog(); tick();
@@ -111,7 +102,7 @@ step('⭐⭐ the jog TURN no longer switches banks — on the overview or under 
     assert(S.sessKnobMode === 1, 'the session turn walked the mixer mode to ' + S.sessKnobMode);
     S.sessionView = false; S.activeBank = 0; S.trackActiveBank[2] = 0;
 });
-step('⭐ ON: a touch in session view draws the mixer page', () => {
+step('⭐ a touch in session view draws the mixer page', () => {
     S.sessionView = true; S.sessKnobMode = 0; settle();
     const rest = frame();
     assert(!render.sessMixerShown(), 'control: the mixer page shows untouched');
@@ -120,25 +111,15 @@ step('⭐ ON: a touch in session view draws the mixer page', () => {
     releaseJog(); settle();
     S.sessionView = false;
 });
-step('⭐⭐ OFF: a bare touch shows nothing, and the switch persists', () => {
-    jtItem().set(false);
-    assert(written[prefs.JOG_TOUCH_CARD_PATH] === '0\n', 'Off not persisted: ' + JSON.stringify(written));
-    const { rest } = cardFrames();
+step('⭐⭐ a leftover Off file from the retired switch changes nothing: the touch still draws the card', () => {
+    globalThis.host_file_exists = () => true;
+    globalThis.host_read_file = () => '0\n';
+    const { rest, latched } = cardFrames();
     touchJog(); tick();
-    assert(same(frame(), rest), 'the touch drew something with the switch Off');
+    assert(same(frame(), latched) && !same(frame(), rest), 'the touch did not draw the bank card');
     releaseJog(); settle();
-    jtItem().set(true);
-    assert(written[prefs.JOG_TOUCH_CARD_PATH] === '1\n', 'On not persisted');
-    S.activeBank = 0; S.trackActiveBank[2] = 0;
-});
-step('the Jog Touch Card switch is read from its file at launch (0 = off, absent = on)', () => {
-    globalThis.host_file_exists = (p) => p === prefs.JOG_TOUCH_CARD_PATH;
-    globalThis.host_read_file = (p) => (p === prefs.JOG_TOUCH_CARD_PATH ? '0\n' : '');
-    S.jogTouchCardOn = null;
-    assert(prefs.jogTouchCardOn() === false, 'a 0 file reads as on');
     globalThis.host_file_exists = () => false; globalThis.host_read_file = () => '';
-    S.jogTouchCardOn = null;
-    assert(prefs.jogTouchCardOn() === true, 'no file reads as off');
+    S.activeBank = 0; S.trackActiveBank[2] = 0;
 });
 
 if (failed) { console.log('FAIL: jog touch card'); process.exit(1); }

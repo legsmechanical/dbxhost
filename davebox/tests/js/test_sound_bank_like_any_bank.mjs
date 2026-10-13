@@ -79,9 +79,9 @@ const jog   = (d) => cc(14, d > 0 ? 1 : 127);
 const click = () => { cc(3, 127); cc(3, 0); };
 const back  = () => { cc(51, 127); cc(51, 0); };
 /* The menu and the instrument are bank map pads (Shift + Note/Session retired
- * 2026-10-04): click the jog, tap CONFIG (note 68) or INST (note 70). */
-const mapPad = (note) => { click(); globalThis.onMidiMessageInternal(new Uint8Array([0x90, note, 100]));
-    globalThis.onMidiMessageInternal(new Uint8Array([0x80, note, 0])); };
+ * 2026-10-04): hold the jog, tap CONFIG (note 68) or INST (note 70), let go. */
+const mapPad = (note) => { cc(3, 127); globalThis.onMidiMessageInternal(new Uint8Array([0x90, note, 100]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0x80, note, 0])); cc(3, 0); };
 const configPad = () => { mapPad(68); ticks(4); };
 const instPad   = () => { mapPad(70); ticks(4); };
 const VIEW_BLOCKS = 0, VIEW_PROMPT = 18, VIEW_MACROS = 19;

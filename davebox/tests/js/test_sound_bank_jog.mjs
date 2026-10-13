@@ -326,21 +326,14 @@ step('⭑⭑ the TOP LEVEL keeps THE ONE LAW: bank mode or knob peek, never othe
     if (!snd.soundOpen()) throw new Error('yielding must not EXIT sound mode');
     S.tickCount += 200; globalThis.tick();
     if (snd.soundRender()) throw new Error('card came back with no driver at all');
-    /* Jog touch is a display driver again, behind the Jog Touch Card switch
-     * (Josh, 2026-09-30, default On): it SHOWS the card while held and is not
-     * bank mode; with the switch Off it shows nothing (the 2026-08-31 law). */
-    S.jogTouchCardOn = true;
+    /* Jog touch is a display driver (Josh, 2026-09-30; always on since
+     * 2026-10-13): it SHOWS the card while held and is not bank mode. */
     jogTouch(true);
     if (!S.jogTouched) throw new Error('control: jog touch not tracked');
-    if (!snd.soundRender()) throw new Error('jog touch (switch On) did not show the card');
+    if (!snd.soundRender()) throw new Error('jog touch did not show the card');
     if (S.bankCardLatched) throw new Error('jog touch LATCHED bank mode — it only shows');
     jogTouch(false);
     if (snd.soundRender()) throw new Error('the card outlived the jog touch');
-    S.jogTouchCardOn = false;
-    jogTouch(true);
-    if (snd.soundRender()) throw new Error('jog touch showed the card with the switch Off');
-    jogTouch(false);
-    S.jogTouchCardOn = true;
     /* The transient window (armed by a dozen actions) is retired as a display
      * driver too: arm it directly and the card must stay down. */
     S.bankSelectTick = S.tickCount;
@@ -695,9 +688,9 @@ step('⭑⭑ the session FX list is a SCREEN: it draws with nothing touched and 
     if (snd.soundRender() !== true) throw new Error('the FX list stood down with nothing touched');
     S.tickCount += 200; globalThis.tick();
     if (snd.soundRender() !== true) throw new Error('the FX list yielded after a while');
-    S.jogTouchCardOn = false; S.jogTouched = true;
-    if (snd.soundRender() !== true) throw new Error('a jog touch (switch Off) hid the FX list');
-    S.jogTouchCardOn = true; S.jogTouched = false;
+    S.jogTouched = true;
+    if (snd.soundRender() !== true) throw new Error('a jog touch hid the FX list');
+    S.jogTouched = false;
     snd.soundExit(); S.sessionView = false;
 });
 

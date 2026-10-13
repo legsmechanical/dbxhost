@@ -27,6 +27,15 @@ the section into a versioned heading at release time.
   **Grv Velocity** and **Grv Random** can be set per track the same way.
 
 ### Changed
+- **The bank map is hold-only.** Hold the jog and the map is up; let go and it
+  is gone. A click no longer leaves the map on screen, so there is nothing to
+  close afterwards. Tap as many pads as you like under one hold. The footer
+  reads **HLD BANKS** where it said CLK BANKS.
+- **Touching the jog always shows the current bank's page.** The **Jog Touch
+  Card** switch is gone from the global menu.
+- **New projects get a name of their own.** A project made on an empty pad is
+  named with two plain words — *Quiet Harbor*, *Amber Finch* — instead of
+  Project 7. Rename works as before.
 - **Swing Amt and Swing Res are now Groove and Groove Amt.** Existing projects
   open with the same swing. Shift + Step 7 jumps to Groove Amt.
 - **Recording under a groove plays back what you played.** With Input Quantize

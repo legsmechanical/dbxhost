@@ -291,13 +291,13 @@ The Track View overview, top to bottom:
 - **Page bar:** one segment per page of the clip's loop — solid for the page you're
   viewing, outlined for the page playing, with a tick for the playhead. A small mark
   at either end means there are notes outside the loop.
-- **Footer:** what the controls do here — `CLK BANKS` (click for the
+- **Footer:** what the controls do here — `HLD BANKS` (hold the jog for the
   [bank map](#36-parameter-banks)), `TCH EDIT` (touch a knob or the jog to see
   the bank's page and edit it) and `SHFT TRK` (Shift picks the track). Hold
   **Shift** and it reads `JOG TRACK` `PAD TRACK`: turn the jog, or tap a pad,
-  for the track. In Session View the footer is `CLK BANKS` `TCH MIX` (touch a knob or
+  for the track. In Session View the footer is `HLD BANKS` `TCH MIX` (touch a knob or
   the jog for the mixer page). A bank page says
-  `CLK BANKS` too while no knob is touched.
+  `HLD BANKS` too while no knob is touched.
 
 ## 3.5 Selecting a track
 
@@ -306,13 +306,13 @@ There are no dedicated track buttons. Change the active track with:
 | Gesture | Works in |
 |---|---|
 | **Shift + jog turn** | Both views |
-| **Hold or click the jog, then tap a track pad** — the top two rows of the right-hand pads on the [bank map](#36-parameter-banks) (1–4, then 5–8) | Track View |
+| **Hold the jog and tap a track pad** — the top two rows of the right-hand pads on the [bank map](#36-parameter-banks) (1–4, then 5–8) | Track View |
 | **Tap a clip pad** (it also launches or stops that clip), or **Shift + pad** to open the clip in Track View | Session View |
 
 ## 3.6 Parameter banks
 
 In Track View, the eight knobs control a **bank** of parameters, and the **bank
-map** — click or hold the jog — picks which bank. Each track has its own banks,
+map** — hold the jog — picks which bank. Each track has its own banks,
 in this order:
 
 | Track | Banks, in order |
@@ -339,25 +339,22 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 [CONFIG, MIX and MACROS](#14-sound--track-config), and
 [AUTOMATION](#10-automation).
 
-- **Click the jog** to open the **bank map**: the left 4×4 pads become a map of
-  the track's banks and the screen shows the same map. **Tap a pad** to land on
-  that bank, and the map goes. **Click again** (or press **Back**) to put it
-  away without picking.
+- **Hold the jog** for the **bank map**: it appears the moment you press. The
+  left 4×4 pads become a map of the track's banks and the screen shows the same
+  map. **Tap a pad** to land on that bank — as many as you like, the map stays
+  while you hold — and **let go** to play again. Letting go without tapping
+  changes nothing. The map is up only while the jog is down; a click leaves
+  nothing on screen.
 - **The right-hand pads are the tracks** while the map is up (Track View):
   the top row is tracks 1–4, the next row 5–8, each in its track colour with
   the track you are on blinking. **Tap one** to switch track — the screen
-  flashes **TRACK n** and what that track plays. On a held map the map stays
-  up, now showing the new track's banks, so the bank you want there is the
-  next tap; on a clicked-open map it closes and you are on the track. The two
+  flashes **TRACK n** and what that track plays. The map stays up, now showing
+  the new track's banks, so the bank you want there is the next tap. The two
   lower rows are dark and do nothing. Session View's map has no track pads.
-- **Hold the jog** to peek the map instead: it appears the moment you press;
-  tap a pad — as many as you like, the map stays while you hold — and **let
-  go** to play again. **CONFIG**, **AUTOMATION** and **INST** (and Session
-  View's **MASTER**, **SEND A** and **SEND B**) open a screen, so on a held map
-  they wait: the pad turns white, and the screen opens when you let go. Tap a
-  bank after one and nothing opens. Letting go within half a second without tapping or
-  turning counts as a click, so the map stays up. Holding the jog while the map
-  is already up and tapping leaves it up.
+- **CONFIG**, **AUTOMATION** and **INST** (and Session View's **MASTER**,
+  **SEND A** and **SEND B**) open a screen, so they wait: the pad turns white,
+  and the screen opens when you let go of the jog. Tap a bank after one and
+  nothing opens.
 - **From inside a screen** — a menu, TRACK CONFIG, a module's editor, the
   AUTOMATION screen — **hold the jog** for about a third of a second and the
   same map comes up over it. **Tap a pad** and you leave the screen for that
@@ -370,7 +367,6 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 - **Turning the jog** does not change the bank.
 - **Touch the jog** to see the current bank's page while your finger rests on it;
   let go and the overview is back. (In Session View it shows the mixer page.)
-  Turn it off with **Jog Touch Card** in the global menu.
 - **Touch a knob** to see the bank's page while you touch it — nothing holds a
   bank page on screen by itself. (Pages you open on purpose — Shift + hold Step
   11's LIVE ARP page, the editors, AUTOMATION, TRACK CONFIG — stay until Back.)
@@ -432,7 +428,7 @@ The banks are covered where they belong: [Clip Timing & Grid](#8-clip-timing--gr
 **In Session View** the knobs are the mixer, and the jog's map is the **Session
 map**:
 
-- **Click or hold the jog**: the **MIXER** column is Volume, Pan, Send A and
+- **Hold the jog**: the **MIXER** column is Volume, Pan, Send A and
   Send B; beside it, the **FX** column opens the **Master**, **Send A** and
   **Send B** effects directly, each next to its level. The sends share a color.
   As on a track, a tap on a clicked-open map picks and puts the map away. The
@@ -466,7 +462,7 @@ a **Shift + Step** shortcut (see the [Quick Reference](#19-quick-reference)).
 
 Each track's sound is set in its own menu, **TRACK CONFIG**:
 
-1. Click the jog and tap the **CONFIG** pad (bottom-left of the bank map).
+1. Hold the jog, tap the **CONFIG** pad (bottom-left of the bank map) and let go.
 2. **Shift + click** the top row, **Instmt/Dest**, to choose what the track plays:
    one of Move's four instruments, a Schwung instrument, a MIDI channel, and more.
 3. **Click** Instmt/Dest to edit the instrument. On a Move track this opens Move's
@@ -1979,7 +1975,7 @@ and **SEND FX B** — each with four effect blocks, edited exactly like a track'
   share one reverb or delay. Each send's **Return** level sets how much comes back
   into the mix.
 
-To reach them, click or hold the jog in Session View and tap **MASTER**, **SEND A** or **SEND B** on the Session map. **Back** from an effect bus's top level returns to the Session overview.
+To reach them, hold the jog in Session View, tap **MASTER**, **SEND A** or **SEND B** on the Session map and let go. **Back** from an effect bus's top level returns to the Session overview.
 
 ---
 
@@ -2250,7 +2246,6 @@ see [Track settings](#174-track-settings) below.
 | Scale Aware | Whether scale-aware params move by scale degree (On) or semitone (Off) | On, Off | On |
 | Launch | When a launched clip or scene actually starts — at once (Now) or on the next boundary. At 1-bar it starts from its beginning; otherwise in step with the song ([§11.1](#111-launching-clips)) | Now, 1/16, 1/8, 1/4, 1/2, 1-bar | Now |
 | Beat Marks | Dim markers on the step buttons at 1, 5, 9, 13 | On, Off | On |
-| Jog Touch Card | Whether touching the jog shows the current bank's page (the mixer page in Session View) until you let go — see [§3.6](#36-parameter-banks) | On, Off | On |
 | MIDI In | Channel filter for external input — All, or one channel | All, 1–16 | All |
 | Projects... | The project picker — see [Projects](#175-projects) | action | — |
 | Save state / Load state | Save or restore a named snapshot — see [§17.3](#173-snapshots) | action | — |
@@ -2402,7 +2397,9 @@ project, 32 slots:
     open project. Two projects can't share a name (**NAME TAKEN**).
   - **Color** lists the palette: the jog moves through it and the pad previews
     each color live; click sets it.
-- **Tap an empty pad** and confirm to create a new project. It opens when you
+- **Tap an empty pad** and confirm to create a new project. It is given a
+  two-word name of its own (**Quiet Harbor**, **Amber Finch**) — rename it
+  whenever you like. It opens when you
   choose Load.
 - **Shift + tap** loads a project at once; on an empty pad it creates the project
   and opens it in the same press.
@@ -2571,7 +2568,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | + / − · Left / Right | Octave · page |
 | Side buttons | Launch the active track's clips (press the playing one to stop it) |
 | Shift + top / bottom side button | Scroll the four visible clips up / down one (the same window for every track) |
-| Jog click / hold | The bank map: click to open it (tap a pad to pick and close; click again or Back to close), hold to peek (inside a menu, an editor or Move's editor, hold about a third of a second); the top two rows of the right-hand pads switch track; INST opens the instrument |
+| Jog hold | The bank map, while you hold: tap a pad to pick, let go to play again (inside a menu, an editor or Move's editor, hold about a third of a second); the top two rows of the right-hand pads switch track; INST opens the instrument |
 | Knob touch + jog click | Switch that knob to its *Alt* (Zoom, Nudge, Reverse Style, Algo, Clock Feedback) · Arp Steps (knob 5) · RPT GROOVE's page (any knob) · a macro's editor |
 | Shift + jog / a track pad on the bank map | Switch tracks |
 | Loop (hold, or tap to keep it up) / Loop + jog | Loop view / clip length |
@@ -2650,7 +2647,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | Shift + side button | Launch at the end of the page |
 | + / − | Scroll rows |
 | Knobs 1–8 | Each track's Volume / Pan / Send A / Send B |
-| Jog click / hold | The Session map: what the knobs set (Volume, Pan, Send A, Send B) and the Master & Send FX |
+| Jog hold | The Session map: what the knobs set (Volume, Pan, Send A, Send B) and the Master & Send FX |
 | Touch a knob or the jog | Show the mixer page |
 | Mute + touch knob / Shift + Mute + touch knob | Mute / solo that track |
 | Delete + Mute | Clear every mute and solo |

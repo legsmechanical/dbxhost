@@ -126,11 +126,9 @@ step('…the other knobs are untouched: K3 still turns Clock Shift, and its touc
     assert(wrote(/^t2_clock_shift=/) && !wrote(/^t2_nudge=[^0]/), 'K3 turn wrote ' + JSON.stringify(sets.slice(0, 6)));
 });
 
-step('a plain click with no knob touched flips nothing (it opens the map; a second click closes it)', () => {
+step('a plain click with no knob touched flips nothing, and leaves no map up', () => {
     click();
-    assert(S.knobAlt === 1 && !S.altMode && S.bankMapLatched, 'knobAlt ' + S.knobAlt + ' altMode ' + S.altMode + ' map ' + S.bankMapLatched);
-    click();
-    assert(!S.bankMapUp, 'the second click did not close the map');
+    assert(S.knobAlt === 1 && !S.altMode && !S.bankMapUp, 'knobAlt ' + S.knobAlt + ' altMode ' + S.altMode + ' map ' + S.bankMapUp);
 });
 
 step('CLIP K3 and K7 flip too: Nudge and Reverse Style', () => {
@@ -251,10 +249,10 @@ step('a plain click on RPT GROOVE flips nothing, page or knob', () => {
     S.trackPadMode[2] = C.PAD_MODE_MELODIC_SCALE;
 });
 
-step('CLIP untouched offers no knob CLK pair — only CLK BANKS (a plain click opens the map)', () => {
+step('CLIP untouched offers no CLK pair — only HLD BANKS (the held jog shows the map)', () => {
     latch(0);
-    const clk = render.bankPageHints(0).filter((h) => h[0] === 'CLK');
-    assert(clk.length === 1 && clk[0][1] === 'BANKS', 'CLIP untouched hints ' + hints(0));
+    const h = render.bankPageHints(0);
+    assert(!h.some((p) => p[0] === 'CLK') && h.some((p) => p[0] === 'HLD' && p[1] === 'BANKS'), 'CLIP untouched hints ' + hints(0));
 });
 
 if (failed) process.exit(1);

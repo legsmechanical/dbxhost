@@ -104,15 +104,16 @@ const VIEW_BLOCKS = 0, VIEW_PROMPT = 18;
  * now available through the pad map"). Its two destinations are bank map pads:
  *   CONFIG (bottom-left)    -> the track's TRACK CONFIG menu   (was the tap)
  *   INST   (right of MIX)   -> the track's instrument           (was the hold)
- * Driven as the hardware does it: click the jog (the map opens), tap the pad.
- * The map opens from an overview or a card — never from inside a menu, where
- * the click is the menu's — so these refuse rather than reach through one. */
+ * Driven as the hardware does it: hold the jog (the map shows), tap the pad,
+ * let go (a menu pad opens on the release). The map paints on the press from
+ * an overview or a card — never from inside a menu, where a short press is
+ * the menu's click — so these refuse rather than reach through one. */
 const INST_PAD = 70;                       /* col 2, row 3 */
 function instPad() {
     globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 3, 127]));
-    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 3, 0]));
     globalThis.onMidiMessageInternal(new Uint8Array([0x90, INST_PAD, 100]));
     globalThis.onMidiMessageInternal(new Uint8Array([0x80, INST_PAD, 0]));
+    globalThis.onMidiMessageInternal(new Uint8Array([0xB0, 3, 0]));
 }
 const configPad = () => openTrackConfigViaMap();
 function shiftNote(heldTicks) {

@@ -130,12 +130,12 @@ step('a lane-jump return crumb lights Back only where a tap would use it', () =>
     S.activeBank = 0; S.trackActiveBank[2] = 0; S.autoReturn = null;
 });
 
-step('a clicked-open bank map: lit; Back closes it and the LED goes dark', () => {
+step('a jog click leaves no map up, so nothing for Back to close: dark', () => {
     reset();
-    press(); release();
-    assert(S.bankMapLatched && lit(), 'Back is dark over a clicked-open map');
-    backTap();
-    assert(!S.bankMapUp && !lit(), 'after Back: map ' + S.bankMapUp + ', LED lit ' + lit());
+    press();
+    assert(S.bankMapUp, 'control: the press did not show the map');
+    release();
+    assert(!S.bankMapUp && !lit(), 'after a click: map ' + S.bankMapUp + ', LED lit ' + lit());
 });
 
 step('⭐ a bank PAGE held on screen (Shift + hold Step 11 / any latched card): lit; Back dismisses it, dark', () => {
@@ -148,7 +148,7 @@ step('⭐ a bank PAGE held on screen (Shift + hold Step 11 / any latched card): 
 
 step('⭐ TRACK CONFIG (sound mode, from the CONFIG pad): lit; Back out to the overview, dark', () => {
     reset();
-    press(); release(); tap(pad(0, 3)); tickS(6);
+    press(); tap(pad(0, 3)); release(); tickS(6);
     assert(snd.soundActive(), 'rig: TRACK CONFIG did not open');
     assert(lit(), 'Back is dark inside TRACK CONFIG');
     for (let i = 0; i < 4 && snd.soundActive(); i++) backTap();
@@ -157,7 +157,7 @@ step('⭐ TRACK CONFIG (sound mode, from the CONFIG pad): lit; Back out to the o
 
 step('⭐ the instrument editor from the INST pad on the OVERVIEW (no bank page held): lit; Back retraces, dark', () => {
     reset();
-    press(); release(); tap(pad(2, 3)); tickS(4);
+    press(); tap(pad(2, 3)); release(); tickS(4);
     S.tickCount += 400; tickS(4);                 /* past any bank-display window */
     assert(snd.soundActive(), 'rig: the instrument editor did not open');
     assert(!S.bankCardLatched && S.bankSelectTick < 0 && !S.jogTouched, 'rig: a bank page is held too — the case would not isolate sound mode');
@@ -168,7 +168,7 @@ step('⭐ the instrument editor from the INST pad on the OVERVIEW (no bank page 
 
 step('⭐ the AUTOMATION screen (from its pad): lit; Back dismisses it, dark', () => {
     reset();
-    press(); release(); tap(pad(1, 1)); tickS(3);
+    press(); tap(pad(1, 1)); release(); tickS(3);
     assert(ab.autoBankMenuOpen(), 'rig: AUTOMATION did not open');
     assert(lit(), 'Back is dark over the AUTOMATION screen');
     for (let i = 0; i < 3 && (ab.autoBankMenuOpen() || render.bankCardVisible()); i++) backTap();

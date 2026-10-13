@@ -621,7 +621,7 @@ async function main() {
 
     /* ⭐⭐ A K8 touch+click is a TRIGGER, never the click that locks the card
      * (Josh, 2026-09-30: "leaving midi import puts me back on locked card view
-     * instead of the overview" — with Jog Touch Card on, a finger on the jog to
+     * instead of the overview" — a finger on the jog to
      * click reveals the card). Whatever the order of the touches and when they
      * let go, leaving the browser must land on the OVERVIEW: no latch, no card. */
     for (const jogFirst of [false, true]) for (const lateRelease of [false, true]) for (const browse of [false, true]) {
@@ -629,7 +629,6 @@ async function main() {
                      (browse ? ', browsed with the jog' : '');
         step('⭐⭐ leaving the browser opened by K8 touch+click lands on the OVERVIEW (' + name + ')', () => {
             MI.miClose(); snd.soundExit(); ticks(2);
-            S.jogTouchCardOn = true;
             S.activeTrack = 1; S.activeBank = 0; S.trackActiveBank[1] = 0; S.bankCardLatched = false;
             ticks(2);
             if (jogFirst) { note(0x90, 9, 127); ticks(3); touch(7, true); }

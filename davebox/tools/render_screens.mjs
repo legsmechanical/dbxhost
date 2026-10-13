@@ -173,9 +173,9 @@ const bankCells = (bank, overrides = {}) =>
  * instrument no longer gives. Keep them in step by hand until a parity test
  * exists (test_cellkind_parity.mjs is the pattern for one). */
 /* Untouched, every bank card says the same since 2026-10-04: a click opens
- * the bank map (CLK BANKS); the jog turn walks nothing, and the alts and Arp
+ * the bank map (HLD BANKS); the jog turn walks nothing, and the alts and Arp
  * Steps answer a knob TOUCH + click, said only while that knob is touched. */
-const F_MAP = ['CLK', 'BANKS'], F_BACK = ['BACK', 'OUT'];
+const F_MAP = ['HLD', 'BANKS'], F_BACK = ['BACK', 'OUT'];
 const hintsPlain = [F_MAP, F_BACK];
 const hintsAlt   = hintsPlain;
 const hintsSteps = hintsPlain;

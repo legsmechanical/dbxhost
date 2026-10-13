@@ -51,11 +51,11 @@ button:
 
 A few things worth knowing before the first lesson:
 
-- **The jog wheel opens the bank map.** In Track View, **click the jog** (the
-  clickable encoder on the left): the left 4×4 pads become a map of the track's
-  *parameter banks* — its effects and clip settings — and the screen shows the
-  same map. **Tap a pad** to go to that bank. Click again, or press **Back**, to
-  put the map away without choosing.
+- **The jog wheel shows the bank map.** In Track View, **press and hold the
+  jog** (the clickable encoder on the left): the left 4×4 pads become a map of
+  the track's *parameter banks* — its effects and clip settings — and the screen
+  shows the same map. **Tap a pad** to go to that bank, then **let go** of the
+  jog. Letting go without tapping puts the map away without choosing.
 - **There are no track buttons.** While the bank map is up, the top two rows of
   the **right-hand pads** are the tracks (1–4, then 5–8), each in its own colour.
   **Tap one** to switch track. Holding **Shift** and turning the jog also walks
@@ -99,8 +99,8 @@ lengths later for polyrhythms. Full detail lives in the manual's
 
 Now let's play some notes on another track.
 
-1. **Click the jog**, then tap the **3rd pad in the top row of the right-hand
-   pads** — you're now on track 3, one of Move's polyphonic sounds. (The screen
+1. **Hold the jog**, tap the **3rd pad in the top row of the right-hand
+   pads** and let go — you're now on track 3, one of Move's polyphonic sounds. (The screen
    flashes the track's number and what it plays.)
 2. The pads now play **pitched notes**, snapped to the project's key and scale.
    Tap around to hear them. **+ / −** shifts the octave.
@@ -124,7 +124,7 @@ Every clip carries its own **sequencer effects** — they work on the notes, not
 sound — reached through the parameter banks.
 
 1. Make sure you're on your melodic track (track 3) in Track View.
-2. **Click the jog** to open the bank map, and tap the **DELAY** pad — in the
+2. **Hold the jog** for the bank map, and tap the **DELAY** pad — in the
    **FX** column (the fourth column of pads), third pad down. The screen's map
    shows which pad is which, and its header then reads **DELAY**.
 3. Turn **knob 3** (*REPTS*) up to **3** — each note now echoes three times.
@@ -133,7 +133,7 @@ sound — reached through the parameter banks.
 These settings belong to *this clip only*. They're non-destructive: they
 transform playback without changing your written notes, so returning a knob to its
 default undoes it cleanly. Explore the other banks (NOTE FX, HARMONY, SEQ ARP) the
-same way — click the jog, tap a pad, turn the knobs. The
+same way — hold the jog, tap a pad, let go, turn the knobs. The
 [Sequencer Effects](MANUAL-SA.md#9-sequencer-effects) chapter covers every one.
 
 ---

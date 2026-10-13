@@ -589,8 +589,8 @@ for (const [b, slug, section, title, caption] of MEL_BANKS)
     screen(slug, section, title, caption, () => { toBank(b); });
 
 screen('bank-overview-walk', '3.6 Parameter banks', 'The bank pad map',
-    'Click (or hold) the jog: the left 4×4 pads become the track\'s banks, one column per group, and the screen draws the same map; the current bank is filled.',
-    () => { toBank(3, false); click(); ticks(2); if (!S.bankMapLatched) throw new Error('the click did not open the map'); });
+    'Hold the jog: the left 4×4 pads become the track\'s banks, one column per group, and the screen draws the same map; the current bank is filled. Let go and the pads play again.',
+    () => { toBank(3, false); press(3); ticks(2); if (!S.bankMapUp) throw new Error('holding the jog did not show the map'); });
 screen('bank-clip-alt', '8.1 CLIP bank', 'CLIP bank — alternate parameters',
     'Touch a knob and click the jog to switch it to its alternate: here Res is Zoom, Shift is Nudge and Dir is Reverse Style.',
     () => { toBank(0); for (const k of [0, 2, 6]) { knobTouch(k); click(); knobRelease(k); } ticks(2);
@@ -746,7 +746,7 @@ function stopTransport() {
 }
 const toSession = () => { tap(MoveNoteSession); ticks(3); if (!S.sessionView) throw new Error('no session view'); };
 /* A mixer mode from the Session map's MIXER column (hold the jog, tap, let
- * go), then the page as a jog touch shows it (Jog Touch Card, default On). */
+ * go), then the page as a jog touch shows it. */
 const toMixer = (mode) => {
     if (S.sessKnobMode !== mode) mapTap(PURE.bankMapPadForCell(0, mode));
     if (S.sessKnobMode !== mode) throw new Error('the Session map did not pick mode ' + mode + ' (at ' + S.sessKnobMode + ')');
@@ -767,8 +767,8 @@ screen('session-mixer-senda', '3.6 Parameter banks', 'Session mixer — Send A',
     'The Send A page: how much of each track feeds the first send bus.',
     () => { toSession(); toMixer(2); });
 screen('session-bank-map', '14.8 Master FX and the sends', 'The Session map',
-    'In Session View click (or hold) the jog: the mixer modes down the left, MASTER, SEND A and SEND B effects beside them — tap one to open it.',
-    () => { toSession(); click(); ticks(2); if (!S.bankMapLatched) throw new Error('the click did not open the Session map'); });
+    'In Session View hold the jog: the mixer modes down the left, MASTER, SEND A and SEND B effects beside them — tap one and let go to open it.',
+    () => { toSession(); press(3); ticks(2); if (!S.bankMapUp) throw new Error('holding the jog did not show the Session map'); });
 
 /* 12.3 — mute & solo, seen on the track row */
 screen('session-muted', '11.3 Mute & solo', 'A muted track',

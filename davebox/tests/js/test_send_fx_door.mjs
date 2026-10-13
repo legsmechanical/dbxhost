@@ -180,9 +180,10 @@ step('⚠ a bus LEVEL edited just before the jump is SAVED, not dropped — and 
 step('⭐⭐ the Session map\'s MASTER pad lands IN Master FX (Shift + Note/Session retired 2026-10-04)', () => {
     snd.soundExit(); ticks(2);
     S.sessionView = true; ticks(2);
-    click();                                            /* the Session map */
+    cc(3, 127);                                         /* jog down: the Session map */
     globalThis.onMidiMessageInternal(new Uint8Array([0x90, 93, 100]));   /* MASTER: col 1, top row */
     globalThis.onMidiMessageInternal(new Uint8Array([0x80, 93, 0]));
+    cc(3, 0);                                           /* jog up: it opens */
     ticks(4);
     const bus = snd.soundBusForTest();
     if (!bus) throw new Error('no bus opened, view ' + view());

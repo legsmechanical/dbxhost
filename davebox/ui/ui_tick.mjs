@@ -1292,7 +1292,7 @@ export function _tickImpl() {
             standDownBankDisplay();
             S.screenDirty = true;
         }
-        /* THE BANK PAD MAP: the view changed under a held or latched map. */
+        /* THE BANK PAD MAP: the view changed under a held map. */
         if (S.bankMapUp && (S.bankMapKind === 'session') !== !!S.sessionView)
             bankMapEnd();
         /* Overlay expiry: clear timer here so drawUI() can gate on flag alone */

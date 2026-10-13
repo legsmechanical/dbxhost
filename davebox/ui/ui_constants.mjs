@@ -630,16 +630,10 @@ export function isSoundBank(b) { return b === BANK_SOUND || b === BANK_MACROS ||
  * CONDUCT on a Conductor. All three are index 0: the bank a track is on when a
  * session is first created, and where Back lands from any other bank. */
 export const BANK_DEFAULT = 0;
-/* The bank pad map paints on the jog PRESS (2026-10-04: "instantly"). A
- * release within this of the press is a CLICK (unless a pad was tapped or the
- * jog turned), and a click toggles the map's latch. Held longer, letting go
- * just puts a peek away (Josh, 2026-10-03: "on release but only if it's
- * between like .5 [s] of the click"). */
-export const JOG_CLICK_MAX_MS = 500;
 /* A jog press held this long OVER A SCREEN (a menu, the module editor, a door
  * screen) shows the bank pad map instead of clicking. Shorter is the click,
- * delivered on the release. Not JOG_CLICK_MAX_MS: that one rules whether a
- * press on the overview latches the map, a different question. */
+ * delivered on the release. (On the overviews and bank pages the map paints
+ * on the press itself and goes on the release — no timing involved.) */
 export const JOG_HOLD_MAP_MS = 330;
 
 /* JS tick rate on device (~94 Hz measured). Older constants were calibrated

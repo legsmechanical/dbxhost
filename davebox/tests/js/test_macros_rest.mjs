@@ -102,12 +102,12 @@ step('⭑ a knob touch PEEKS the LIVE page (assignments shown), and the release 
     note(0, 0); ticks(1);
     assert(!render.bankCardVisible(), 'stood down');
 });
-step('⭑ the jog CLICK at rest opens the bank MAP (2026-10-04), never the MACROS page; a second click closes it', () => {
-    cc(3, 127); cc(3, 0); ticks(1);
-    assert(S.bankMapLatched && !S.bankCardLatched, 'map ' + S.bankMapLatched + ' card ' + S.bankCardLatched);
-    assert(snd.soundResting(), 'the click woke sound mode, view ' + snd.soundViewForTest());
-    cc(3, 127); cc(3, 0); ticks(1);
-    assert(!S.bankMapUp, 'the second click did not close the map');
+step('⭑ the jog HELD at rest shows the bank MAP, never the MACROS page; letting go puts it away', () => {
+    cc(3, 127); ticks(1);
+    assert(S.bankMapUp && !S.bankCardLatched, 'map ' + S.bankMapUp + ' card ' + S.bankCardLatched);
+    assert(snd.soundResting(), 'the press woke sound mode, view ' + snd.soundViewForTest());
+    cc(3, 0); ticks(1);
+    assert(!S.bankMapUp && !S.bankCardLatched && snd.soundResting(), 'the release left something up: map ' + S.bankMapUp);
 });
 step('after Back the track STAYS on MACROS and the mode rests again (Back never changes the bank)', () => {
     ticks(3);

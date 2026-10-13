@@ -119,11 +119,13 @@ step('from a locked DELAY card the hold switches to LIVE ARP, and Back stays the
 step('touch K5 (Steps) + click on it opens Arp Steps (a plain click does not); Back closes that first, then the page', () => {
     home();
     hold(); s11Up(); shiftUp(); ticks(2);
-    midi(0xB0, 3, 127); midi(0xB0, 3, 0); ticks(2);
-    assert(!S.stepIntervalMode && S.bankMapLatched, 'a plain click opened Arp Steps, or not the map');
-    /* Touch K5 + click with the map up: the map makes way, Arp Steps opens. */
+    midi(0xB0, 3, 127);
+    assert(S.bankMapUp, 'control: the plain press did not show the map');
+    midi(0xB0, 3, 0); ticks(2);
+    assert(!S.stepIntervalMode && !S.bankMapUp, 'a plain click opened Arp Steps, or left the map up');
+    /* Touch K5 + click: the click is the knob's, Arp Steps opens. */
     midi(0x90, 4, 127); midi(0xB0, 3, 127); midi(0xB0, 3, 0); midi(0x90, 4, 0); ticks(2);
-    assert(S.stepIntervalMode && !S.bankMapUp, 'touch K5 + click did not open Arp Steps over the map: ' + S.stepIntervalMode + ' map ' + S.bankMapUp);
+    assert(S.stepIntervalMode && !S.bankMapUp, 'touch K5 + click did not open Arp Steps: ' + S.stepIntervalMode + ' map ' + S.bankMapUp);
     back();
     assert(!S.stepIntervalMode && S.activeBank === 5 && S.bankCardLatched, 'first Back: ' + S.activeBank);
     back();

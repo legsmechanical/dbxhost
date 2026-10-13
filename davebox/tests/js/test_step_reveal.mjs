@@ -180,6 +180,7 @@ function holdStep6() { note(STEP(6), 127); S.tickCount += 25; globalThis.tick();
 function release6() { note(STEP(6), 0); globalThis.tick(); }
 const jogPair = (h) => (h.find(p => p[0] === 'JOG') || [])[1] || null;
 const clkPair = (h) => (h.find(p => p[0] === 'CLK') || [])[1] || null;
+const hldPair = (h) => (h.find(p => p[0] === 'HLD') || [])[1] || null;
 step('⚠ an EMPTY held step: jog right reveals nothing, no card, and the bank footer offers no jog', () => {
     fresh(1); holdStep6();
     assert(S.heldStep === 6 && S.heldStepNotes.length === 0, 'control: step 6 held and empty');
@@ -199,8 +200,8 @@ step('⚠ TRACK OVERVIEW (no bank card up): holding a filled step says JOG STEP,
     fresh(1); S.bankCardLatched = false;
     const REF = S.tickCount + 250;               /* past the card's window: the footer is what is read */
     const idle = partsAt(REF);
-    assert(jogPair(rnd.overviewHints()) === null && clkPair(rnd.overviewHints()) === 'BANKS',
-           'control: idle overview says CLK BANKS and no jog pair: ' + JSON.stringify(rnd.overviewHints()));
+    assert(jogPair(rnd.overviewHints()) === null && hldPair(rnd.overviewHints()) === 'BANKS',
+           'control: idle overview says HLD BANKS and no jog pair: ' + JSON.stringify(rnd.overviewHints()));
     holdStep5();
     assert(jogPair(rnd.overviewHints()) === 'STEP', 'held overview says ' + JSON.stringify(rnd.overviewHints()));
     const held = partsAt(REF);
@@ -209,19 +210,19 @@ step('⚠ TRACK OVERVIEW (no bank card up): holding a filled step says JOG STEP,
     assert(S.stepReveal === true, 'and the jog does open the step page from the overview');
     release();
 });
-step('TRACK OVERVIEW + an EMPTY held step: no jog pair, and no CLK BANKS (the hold keeps the map shut)', () => {
+step('TRACK OVERVIEW + an EMPTY held step: no jog pair, and no HLD BANKS (the hold keeps the map shut)', () => {
     fresh(1); S.bankCardLatched = false; holdStep6();
-    assert(jogPair(rnd.overviewHints()) === null && clkPair(rnd.overviewHints()) === null, 'got ' + JSON.stringify(rnd.overviewHints()));
+    assert(jogPair(rnd.overviewHints()) === null && clkPair(rnd.overviewHints()) === null && hldPair(rnd.overviewHints()) === null, 'got ' + JSON.stringify(rnd.overviewHints()));
     release6();
 });
-step('⚠ the PRESS before it is a hold: both footers still say CLK BANKS (a tap must not flicker them), then JOG STEP once it is a hold', () => {
+step('⚠ the PRESS before it is a hold: both footers still say HLD BANKS (a tap must not flicker them), then JOG STEP once it is a hold', () => {
     /* Device, 2026-09-22: for the first 250 ms of a hold the footer had NO jog
      * pair — a melodic step's notes are only read at the hold threshold. */
     fresh(1); S.bankCardLatched = false;
     note(STEP(5), 127); S.tickCount += 2; globalThis.tick();
     assert(S.heldStep === 5 && S.stepBtnPressedTick[S.heldStepBtn] >= 0, 'control: still inside the tap window');
-    assert(clkPair(rnd.overviewHints()) === 'BANKS', 'overview in the press window: ' + JSON.stringify(rnd.overviewHints()));
-    assert(clkPair(rnd.bankPageHints(1)) === 'BANKS', 'bank page in the press window: ' + JSON.stringify(rnd.bankPageHints(1)));
+    assert(hldPair(rnd.overviewHints()) === 'BANKS', 'overview in the press window: ' + JSON.stringify(rnd.overviewHints()));
+    assert(hldPair(rnd.bankPageHints(1)) === 'BANKS', 'bank page in the press window: ' + JSON.stringify(rnd.bankPageHints(1)));
     S.tickCount += 25; globalThis.tick();
     assert(jogPair(rnd.overviewHints()) === 'STEP', 'overview once held: ' + JSON.stringify(rnd.overviewHints()));
     assert(jogPair(rnd.bankPageHints(1)) === 'STEP', 'bank page once held: ' + JSON.stringify(rnd.bankPageHints(1)));
@@ -274,7 +275,7 @@ step('⚠ from MIX (sound mode active): the reveal draws over it, and left retur
     globalThis.tick(); globalThis.tick();
     assert(snd.soundActive(), 'control: sound mode opened');
     const REF = 7000;
-    /* The BODY: MIX's footer names the jog (CLK BANKS, JOG STEP while a step is
+    /* The BODY: MIX's footer names the jog (HLD BANKS, JOG STEP while a step is
      * held), so the footer differs by design once the step is down. */
     const card = partsAt(REF).body;
     holdStep5();
