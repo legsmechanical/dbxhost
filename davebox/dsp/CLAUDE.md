@@ -200,7 +200,9 @@ Key prefixes:
 - Groove table — `_gtab` `"base n o0 v0 o1 v1 …"` (slot length in ticks, slot count, then per slot an
   offset in 1/16 ticks and a velocity, 0 = none) and `_gn` its name; written whenever a table is
   loaded, also while a swing is selected. `_gk` 3 selects it; a missing or damaged table loads as Off
-- Per-track Groove switch — `t%d_gon`, written only when 0 (Off); default On
+- Per-track groove amounts — `t%d_goa` / `_got` / `_gov` / `_gor` (Amount / Timing / Velocity /
+  Random, 0–100), each written only when the track has its own; absent = follows the global one.
+  `t%d_gon` 0 (the switch these replaced) is read as amount 0
 
 `state_load` calls `drum_track_init` + `drum_repeat_init_defaults` before applying saved values.
 

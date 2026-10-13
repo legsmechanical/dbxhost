@@ -115,11 +115,11 @@ int main(void) {
         hx_set_param(h, "bpm", "120");          /* something to save */
         int n = hx_get_param(h, "state_full", blob, (int)sizeof(blob));
         HX_ASSERT(n > 0, "state_full"); blob[n] = '\0';
-        HX_ASSERT(!strstr(blob, "_gon"), "Groove on is the default and is not written");
+        HX_ASSERT(!strstr(blob, "_gon") && !strstr(blob, "_goa"), "following the global groove is the default and is not written");
         hx_set_param(h, "t2_groove_on", "0");
         n = hx_get_param(h, "state_full", blob, (int)sizeof(blob));
         HX_ASSERT(n > 0, "state_full"); blob[n] = '\0';
-        HX_ASSERT(strstr(blob, "\"t2_gon\":0"), "Groove off is written");
+        HX_ASSERT(strstr(blob, "\"t2_goa\":0"), "Groove off is written, as the track's own amount of 0");
         hx_destroy(h);
 
         char tmp[256];

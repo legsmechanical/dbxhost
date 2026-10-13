@@ -1731,7 +1731,7 @@ the rows it has:
 | **Buses** | Voice groups, on instruments that can split their voices — see [Presets, LFOs and buses](#145-presets-lfos-and-buses) |
 | **LFOs** | Two LFOs for the track |
 | **Presets** | Save and load the whole chain |
-| **Mode, Layout, Transpose, VelIn, Looper, Groove, AftTch, Export to MIDI, Parallel** | The track's own settings — see [Track settings](#174-track-settings) |
+| **Mode, Layout, Transpose, VelIn, Looper, Grv Amt, AftTch, Export to MIDI, Parallel** | The track's own settings — see [Track settings](#174-track-settings) |
 
 On the Instmt/Dest and effect rows, a hint band at the foot of the menu says what
 the click and the Shift chord do.
@@ -2287,8 +2287,13 @@ says how much of it you hear — at none, everything is on the grid.
 The groove you load is saved inside the project, so the project keeps its feel
 even if the file is later removed.
 
-Each track can opt out: **Groove** Off in a track's
-[settings](#174-track-settings) makes that track play straight.
+Each track follows the project's amounts until you give it its own. In a
+track's [settings](#174-track-settings), **Grv Amt** reads Global; turn it and
+that track takes its own amount instead — more than the rest, less, or 0 % to
+play straight. With a loaded groove, **Grv Timing**, **Grv Velocity** and
+**Grv Random** work the same way, so a hi-hat can wander while the kick stays
+put, or one track can take the groove's accents and another ignore them. Turn
+a row back down to Global and the track follows again.
 
 Recording under a groove: with Input Quantize off, what you play is stored so
 that the groove plays it back at the moment you played it — it is not grooved
@@ -2360,7 +2365,8 @@ are hidden, so the list is shorter on a MIDI track or a Conductor.
 | Transpose | −24…+24 st | Shifts everything the track plays |
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |
 | Looper | On, Off | Feeds [Performance Mode](#13-performance-mode) |
-| Groove | On, Off | Off = this track ignores the project's [groove](#the-groove) and plays straight |
+| Grv Amt | Global, 0–100 % | How much of the project's [groove](#the-groove) this track takes. Global follows Project Settings; 0 % plays straight |
+| Grv Timing, Grv Velocity, Grv Random | Global, 0–100 % | Shown for a loaded groove: this track's own setting for each, or Global to follow Project Settings |
 | Export to MIDI | (click) | Saves the clip you are on, as it plays, as a MIDI file — see [Export a clip as a MIDI file](#165-export-a-clip-as-a-midi-file) |
 | AftTch | Off, Poly, Chan | Pad-pressure aftertouch (melodic; a Move track offers Off and Poly) |
 | Parallel | On, Off | Schwung tracks with an instrument: whether it may render on another core — set per instrument, device-wide |

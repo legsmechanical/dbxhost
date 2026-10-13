@@ -1241,8 +1241,11 @@ function readTrackConfig(t) {
     if (trn !== null && trn !== undefined) S.trackTranspose[t] = parseInt(trn, 10) | 0;
     const lpr = dspGet('t' + t + '_track_looper');
     if (lpr !== null && lpr !== undefined) S.trackLooper[t] = parseInt(lpr, 10) | 0;
-    const gon = dspGet('t' + t + '_groove_on');
-    if (gon !== null && gon !== undefined) S.trackGroove[t] = parseInt(gon, 10) | 0;
+    const gov = dspGet('t' + t + '_groove_ovr');
+    if (gov !== null && gov !== undefined) {
+        const p = String(gov).trim().split(/\s+/).map((x) => parseInt(x, 10));
+        if (p.length === 4 && p.every((x) => !isNaN(x))) S.trackGrooveOvr[t] = p.map((x) => (x < 0 ? -1 : Math.min(100, x)));
+    }
     const diq = dspGet('t' + t + '_diq');
     if (diq !== null && diq !== undefined) {
         S.drumInpQuant[t] = Math.max(0, Math.min(8, parseInt(diq, 10) | 0));
@@ -1366,7 +1369,10 @@ export function applyTrackConfig(t, key, val) {
     else if (key === 'track_vel_override') S.trackVelOverride[t] = val;
     else if (key === 'transpose')       S.trackTranspose[t] = val;
     else if (key === 'track_looper')    S.trackLooper[t] = val;
-    else if (key === 'groove_on')       S.trackGroove[t] = val;
+    else if (key === 'groove_amt')      S.trackGrooveOvr[t][0] = val;
+    else if (key === 'groove_timing')   S.trackGrooveOvr[t][1] = val;
+    else if (key === 'groove_velocity') S.trackGrooveOvr[t][2] = val;
+    else if (key === 'groove_random')   S.trackGrooveOvr[t][3] = val;
 }
 
 /* Send a single param change to DSP and apply any JS-side side-effects. */

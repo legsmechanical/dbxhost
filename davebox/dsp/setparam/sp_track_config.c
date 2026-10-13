@@ -238,12 +238,25 @@ static int sp_track_config(sp_ctx_t *cx) {
         return 1;
     }
 
-    /* tN_groove_on: 0 = this track ignores the global groove and plays straight */
-    if (!strcmp(sub, "groove_on")) {
-        uint8_t go = (uint8_t)(my_atoi(val) ? 1 : 0);
-        tr->pfx.groove_on = go;   /* drum lanes read this too (drum_groove_on) */
-        inst->state_dirty = 1;
-        return 1;
+    /* tN_groove_amt / _timing / _velocity / _random: this track's own say over
+     * the global groove's amounts. -1 (or anything below 0) = follow the
+     * global setting; 0..100 = its own. tN_groove_on is the old switch: 0 sets
+     * the track's amount to 0, 1 puts it back to following. */
+    if (!strncmp(sub, "groove_", 7)) {
+        const char *k = sub + 7;
+        int v = my_atoi(val);
+        int8_t ov = (int8_t)(v < 0 ? -1 : v > 100 ? 100 : v);
+        int8_t *dst = NULL;
+        if      (!strcmp(k, "amt"))      dst = &tr->pfx.g_amt;
+        else if (!strcmp(k, "timing"))   dst = &tr->pfx.g_timing;
+        else if (!strcmp(k, "velocity")) dst = &tr->pfx.g_velocity;
+        else if (!strcmp(k, "random"))   dst = &tr->pfx.g_random;
+        else if (!strcmp(k, "on"))     { dst = &tr->pfx.g_amt; ov = (int8_t)(v ? -1 : 0); }
+        if (dst) {
+            *dst = ov;
+            inst->state_dirty = 1;
+            return 1;
+        }
     }
 
     return 0;

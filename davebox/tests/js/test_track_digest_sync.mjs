@@ -38,7 +38,7 @@ const TRACK_KEYS = {
     pad_mode: (t) => (t === 1 ? 1 : 0),   /* track 1 is a DRUM track */
     route: () => 'schwung',
     track_looper: () => 0,
-    groove_on: () => 1,
+    groove_ovr: () => '-1 -1 -1 -1',
     track_vel_override: () => 0,
     tarp_si: () => 0,
     tarp_sll: () => 0,

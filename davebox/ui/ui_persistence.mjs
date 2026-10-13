@@ -681,7 +681,7 @@ export function doClearSession() {
     for (let _t = 0; _t < NUM_TRACKS; _t++) {
         S.trackChannel[_t] = 1; S.trackRoute[_t] = 0; S.trackPadMode[_t] = 0;
         S.trackMidiTo[_t] = 0;   /* plays its own instrument */
-        S.trackVelOverride[_t] = 0; S.trackLooper[_t] = 1; S.trackGroove[_t] = 1;
+        S.trackVelOverride[_t] = 0; S.trackLooper[_t] = 1; S.trackGrooveOvr[_t] = [-1, -1, -1, -1];
         S.trackOctave[_t] = DEFAULT_TRACK_OCTAVE;
         S.drumVelZoneArmed[_t] = false;
         for (let _b = 3; _b <= 4; _b++) {

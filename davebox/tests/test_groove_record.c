@@ -13,15 +13,16 @@ static void at(uint32_t mt) {
     I->global_tick = mt / TICKS_PER_STEP;
     I->master_tick_in_step = (uint8_t)(mt % TICKS_PER_STEP);
 }
-static void swing(int kind, int amt) { groove_reset(&I->groove); I->groove.kind = (uint8_t)kind; I->groove.amt = (uint8_t)amt; }
+static void swing(int kind, int amt) { groove_reset(&I->groove); I->groove.kind = (uint8_t)kind; I->groove.amt = (uint8_t)amt; groove_sync_tracks(I); }
 static void table2(int off0_ticks, int off1_ticks) {
     groove_reset(&I->groove);
     I->groove.kind = GROOVE_TABLE; I->groove.base = 24; I->groove.n_slots = 2; I->groove.amt = 100;
     I->groove.off[0] = (int16_t)(off0_ticks * GROOVE_FINE);
     I->groove.off[1] = (int16_t)(off1_ticks * GROOVE_FINE);
+    groove_sync_tracks(I);
 }
 /* Where a note stored at master tick `m` is played. */
-static int32_t plays_at(uint32_t m) { return (int32_t)m + groove_off_ticks(I, m); }
+static int32_t plays_at(uint32_t m) { return (int32_t)m + groove_off_ticks(&I->tgroove[1], m); }
 
 static note_t *find_note(clip_t *cl, uint8_t pitch) {
     for (int i = 0; i < cl->note_count; i++)
@@ -89,11 +90,11 @@ int main(void) {
     HX_ASSERT(groove_record_shift_late(I, tr, 24 + 2) == 6,
               "a step fired in an early slot was heard on time, and is stored so it plays back there");
 
-    tr->pfx.groove_on = 0;
+    tr->pfx.g_amt = 0;                                  /* this track's own amount: none */
     swing(GROOVE_SWING_16, 100);
     HX_ASSERT(groove_record_shift(I, tr, 24 + 14) == 0 && groove_record_shift_late(I, tr, 24 + 20) == 0,
               "a track with Groove off stores what the clock said");
-    tr->pfx.groove_on = 1;
+    tr->pfx.g_amt = -1; groove_sync_tracks(I);
     printf("  ok   — the shift: exact where a slot can reach, nearest tick where it cannot\n");
 
     /* ---- positions: kept inside the loop window ---- */
@@ -156,13 +157,13 @@ int main(void) {
         hx_set_param(h, "t1_record_note_off", "e65");
         tr->drum_inp_quant = 0;
 
-        hx_set_param(h, "t1_groove_on", "0");
+        hx_set_param(h, "t1_groove_on", "0"); groove_sync_tracks(I);
         at(72 + 14); tr->current_clip_tick = 72 + 14;
         hx_set_param(h, "t1_record_note_on", "e66 100");
         n = find_note(cl, 66);
         HX_ASSERT(n && n->tick == 72 + 14, "a track with Groove off records what the clock said");
         hx_set_param(h, "t1_record_note_off", "e66");
-        hx_set_param(h, "t1_groove_on", "1");
+        hx_set_param(h, "t1_groove_on", "1"); groove_sync_tracks(I);
     }
     printf("  ok   — the pad recorder: un-grooved with Input Quantize off, snapped with it on\n");
 

@@ -485,9 +485,14 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
     for (t = 0; t < NUM_TRACKS; t++)
         if (inst->tracks[t].pfx.looper_on != 1)
             fprintf(fp, ",\"t%d_lp\":%d", t, (int)inst->tracks[t].pfx.looper_on);
-    for (t = 0; t < NUM_TRACKS; t++)
-        if (inst->tracks[t].pfx.groove_on != 1)
-            fprintf(fp, ",\"t%d_gon\":0", t);
+    /* A track's own groove amounts, each only when it has one. */
+    for (t = 0; t < NUM_TRACKS; t++) {
+        const play_fx_t *gfx = &inst->tracks[t].pfx;
+        if (gfx->g_amt      >= 0) fprintf(fp, ",\"t%d_goa\":%d", t, (int)gfx->g_amt);
+        if (gfx->g_timing   >= 0) fprintf(fp, ",\"t%d_got\":%d", t, (int)gfx->g_timing);
+        if (gfx->g_velocity >= 0) fprintf(fp, ",\"t%d_gov\":%d", t, (int)gfx->g_velocity);
+        if (gfx->g_random   >= 0) fprintf(fp, ",\"t%d_gor\":%d", t, (int)gfx->g_random);
+    }
     /* TRACK ARP — per-track, sparse (only non-default values) */
     for (t = 0; t < NUM_TRACKS; t++) {
         const seq8_track_t *tr2 = &inst->tracks[t];
@@ -1148,8 +1153,20 @@ static void seq8_load_state(seq8_instance_t *inst) {
         snprintf(key, sizeof(key), "t%d_lp", t);
         inst->tracks[t].pfx.looper_on = (uint8_t)(json_get_int(buf, key, 1) ? 1 : 0);
 
-        snprintf(key, sizeof(key), "t%d_gon", t);
-        inst->tracks[t].pfx.groove_on = (uint8_t)(json_get_int(buf, key, 1) ? 1 : 0);
+        {
+            play_fx_t *gfx = &inst->tracks[t].pfx;
+            snprintf(key, sizeof(key), "t%d_goa", t);
+            gfx->g_amt      = (int8_t)clamp_i(json_get_int(buf, key, -1), -1, 100);
+            snprintf(key, sizeof(key), "t%d_got", t);
+            gfx->g_timing   = (int8_t)clamp_i(json_get_int(buf, key, -1), -1, 100);
+            snprintf(key, sizeof(key), "t%d_gov", t);
+            gfx->g_velocity = (int8_t)clamp_i(json_get_int(buf, key, -1), -1, 100);
+            snprintf(key, sizeof(key), "t%d_gor", t);
+            gfx->g_random   = (int8_t)clamp_i(json_get_int(buf, key, -1), -1, 100);
+            /* the switch this replaced: Groove Off was written as tN_gon 0 */
+            snprintf(key, sizeof(key), "t%d_gon", t);
+            if (gfx->g_amt < 0 && json_get_int(buf, key, 1) == 0) gfx->g_amt = 0;
+        }
 
         for (c = 0; c < NUM_CLIPS; c++) {
             clip_t *cl = &inst->tracks[t].clips[c];

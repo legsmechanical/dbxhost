@@ -39,25 +39,25 @@ int main(void) {
         if (!drum) {
             play_fx_t *fx = &tr->pfx;
             fx->sample_counter = 10000;
-            in->swing_step_delay = 2000;                 /* an off-beat: the on parks */
+            in->swing_step_delay = 2000; in->park_explicit = 1;                 /* an off-beat: the on parks */
             pfx_note_on(in, tr, 60, 100);
             HX_ASSERT(fx->event_count == 1 && (fx->events[0].flags & PFX_EV_BYPASS_SWING), "rig: the note-on did not park");
             fx->sample_counter += 10;
             pfx_note_off(in, tr, 60);                    /* gate not elapsed: the off QUEUES */
             HX_ASSERT(fx->event_count == 2, "rig: the gate-off did not queue");
-            in->swing_step_delay = 0;                    /* on-beat: nothing defers now */
+            in->swing_step_delay = 0; in->park_explicit = 1;                    /* on-beat: nothing defers now */
             pfx_note_on(in, tr, 64, 100);                /* the drain runs */
             fx->sample_counter += 1000000;
             pfx_q_fire(fx, fx->sample_counter);          /* everything queued fires */
         } else {
             drum_pfx_t *px = &tr->drum_lane_pfx[0];
             px->sample_counter = 10000;
-            in->swing_step_delay = 2000;
+            in->swing_step_delay = 2000; in->park_explicit = 1;
             drum_pfx_note_on(in, tr, px, 60, 100);
             HX_ASSERT(px->event_count >= 1, "rig: the drum note-on did not park");
             px->sample_counter += 10;
             drum_pfx_note_off(in, tr, px, 60);
-            in->swing_step_delay = 0;
+            in->swing_step_delay = 0; in->park_explicit = 1;
             drum_pfx_note_on(in, tr, px, 60, 90);        /* the lane retriggers: the drain runs */
             px->sample_counter += 1000000;
             drum_pfx_q_fire(px, px->sample_counter);

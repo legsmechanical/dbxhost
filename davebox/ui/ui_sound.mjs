@@ -566,12 +566,24 @@ function configRows(t) {
         opts: [0, 1], fmt: (v) => (v ? 'On' : 'Off'),
         get: () => (GS.trackLooper[t] !== 0 ? 1 : 0),
         set: (v) => applyTrackConfig(t, 'track_looper', v ? 1 : 0) });
-    /* The groove is global; this is the one thing a track can say about it:
-     * Off = this track plays straight whatever the global groove is. */
-    rows.push({ key: 'groove', label: 'Groove',
-        opts: [0, 1], fmt: (v) => (v ? 'On' : 'Off'),
-        get: () => (GS.trackGroove[t] !== 0 ? 1 : 0),
-        set: (v) => applyTrackConfig(t, 'groove_on', v ? 1 : 0) });
+    /* THE GROOVE, per track (Josh, 2026-10-13: "have them follow global
+     * settings by default but allow them to be overridden"). There is one
+     * groove; each track follows its amounts until it is given its own. A row
+     * reads Global while it follows, and turning it down from there walks
+     * 100%..0% — 0% Amount is the track playing straight. Timing, Velocity and
+     * Random belong to a loaded groove, so their rows show only for one. */
+    const GRV_OPTS = [-1];
+    for (let _p = 0; _p <= 100; _p += 5) GRV_OPTS.push(_p);
+    const grvRow = (key, label, idx, dspKey) => rows.push({ key, label,
+        opts: GRV_OPTS, fmt: (v) => (v < 0 ? 'Global' : v + '%'),
+        get: () => { const v = GS.trackGrooveOvr[t][idx]; return v < 0 ? -1 : Math.round(v / 5) * 5; },
+        set: (v) => applyTrackConfig(t, dspKey, v) });
+    grvRow('grvamt', 'Grv Amt', 0, 'groove_amt');
+    if (GS.grooveKind === 3) {
+        grvRow('grvtiming', 'Grv Timing', 1, 'groove_timing');
+        grvRow('grvvel', 'Grv Velocity', 2, 'groove_velocity');
+        grvRow('grvrandom', 'Grv Random', 3, 'groove_random');
+    }
     /* Pad pressure: owned by the repeat-velocity system on drum tracks, so the
      * row is hidden there. Move takes poly AT only. */
     if (GS.trackPadMode[t] !== PMD) {
@@ -3375,7 +3387,8 @@ const TRACK_MENU_GROUPS = [
     ['LFOs'],
     ['Mode', 'Layout'],
     ['Transpose', 'VelIn', 'AftTch'],
-    ['Looper', 'Groove'],
+    ['Looper'],
+    ['Grv Amt', 'Grv Timing', 'Grv Velocity', 'Grv Random'],
     ['Export to MIDI'],
     ['Parallel'],
 ];

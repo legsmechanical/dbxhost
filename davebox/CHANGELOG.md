@@ -19,10 +19,11 @@ the section into a versioned heading at release time.
   you hear it as soon as the jog rests on it; click to keep it, or Back to
   return to the groove you had. The list reopens in the folder you last used. The groove is saved
   with the project.
-- **Groove On/Off per track.** A new **Groove** row at the foot of each track's
-  sound menu. Off makes that track ignore the project's groove and play
-  straight — useful for a hi-hat or a bass line that should stay on the grid
-  while everything else swings.
+- **Groove per track.** Each track follows the project's groove amounts until
+  you give it its own. **Grv Amt** at the foot of a track's sound menu reads
+  Global; turn it and that track takes more of the groove than the rest, less,
+  or none (0 % plays straight). With a loaded groove, **Grv Timing**,
+  **Grv Velocity** and **Grv Random** can be set per track the same way.
 
 ### Changed
 - **Swing Amt and Swing Res are now Groove and Groove Amt.** Existing projects
