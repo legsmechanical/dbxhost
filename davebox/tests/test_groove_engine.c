@@ -32,6 +32,7 @@ typedef void (*setup_fn)(hx_t *h);
 
 /* Track 1, a note on every 1/16 with a short gate, two bars at 120. Returns a
  * hash of when every packet left. */
+static int g_ons_only;   /* hash note-ons alone: a table groove ends its notes by another rule than the swings */
 static uint64_t timing_of(setup_fn setup) {
     char k[48], v[48];
     hx_t *h = hx_create(NULL);
@@ -55,6 +56,7 @@ static uint64_t timing_of(setup_fn setup) {
     for (int i = 0; i < total; i++) {
         const hx_midi_event *e = hx_stub_event(i);
         if (is_slot_transport(e)) continue;
+        if (g_ons_only && !((e->bytes[1] & 0xF0) == 0x90 && e->bytes[3] > 0)) continue;
         uint8_t rec[8];
         rec[0] = (uint8_t)(e->block & 0xFF); rec[1] = (uint8_t)((e->block >> 8) & 0xFF);
         rec[2] = (uint8_t)((e->block >> 16) & 0xFF); rec[3] = (uint8_t)e->kind;
@@ -62,7 +64,7 @@ static uint64_t timing_of(setup_fn setup) {
         for (int b = 0; b < 8; b++) { hsh ^= rec[b]; hsh *= 1099511628211ULL; }
         n++;
     }
-    HX_ASSERT(n >= 60, "the pattern produced almost no events — the comparison means nothing");
+    HX_ASSERT(n >= 30, "the pattern produced almost no events — the comparison means nothing");
     hx_set_param(h, "transport", "stop");
     hx_destroy(h);
     return hsh;
@@ -231,16 +233,24 @@ int main(void) {
     HX_ASSERT(timing_of(s_off_100) == straight, "Off plays straight whatever the amount");
     HX_ASSERT(timing_of(s_timing_half) == sw16half, "Timing 50 at amount 100 plays as amount 50");
 
-    HX_ASSERT(timing_of(s_table_like_swing) == sw16,
-              "a table with slot 2 twelve ticks late plays as Swing 1/16 at full");
-    HX_ASSERT(timing_of(s_table_half_amt) == sw16,
-              "a table's amount scales its offsets (24 ticks at 50 = 12 ticks)");
+    /* A table's note-ONS against the swing's: a table groove keeps every
+     * note's length, the swings re-time note-offs by where they land. */
+    g_ons_only = 1;
+    {
+        uint64_t sw16_on = timing_of(s_swing16_100), straight_on = timing_of(s_straight);
+        HX_ASSERT(sw16_on != straight_on, "control: note-ons alone tell swing from straight");
+        HX_ASSERT(timing_of(s_table_like_swing) == sw16_on,
+                  "a table with slot 2 twelve ticks late starts its notes as Swing 1/16 at full does");
+        HX_ASSERT(timing_of(s_table_half_amt) == sw16_on,
+                  "a table's amount scales its offsets (24 ticks at 50 = 12 ticks)");
+        HX_ASSERT(timing_of(s_table_too_late) == sw16_on,
+                  "a slot is never more than half a slot late (20 ticks in a 24-tick slot plays as 12)");
+        HX_ASSERT(timing_of(s_table_empty) == straight_on, "a table with no slots plays straight");
+    }
+    g_ons_only = 0;
     /* early slots: test_groove_early.c. Here only that early is not late. */
     HX_ASSERT(timing_of(s_table_early) != straight && timing_of(s_table_early) != sw16,
               "an early slot plays neither on time nor late");
-    HX_ASSERT(timing_of(s_table_empty) == straight, "a table with no slots plays straight");
-    HX_ASSERT(timing_of(s_table_too_late) == sw16,
-              "a slot is never more than half a slot late (20 ticks in a 24-tick slot plays as 12)");
 
     printf("PASS: test_groove_engine\n");
     return 0;

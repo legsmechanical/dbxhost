@@ -308,6 +308,11 @@ static void drum_pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
             pfx_event_t *ev = &px->events[qi];
             uint8_t st = ev->msg[0] & 0xF0;
             if (ev->flags & PFX_EV_BYPASS_SWING) { px->events[k++] = *ev; continue; }
+            /* see the melodic flush in pfx_note_on */
+            if ((ev->flags & PFX_EV_KEEP)
+                    && ev->fire_at <= now + groove_note_park(inst, drum_groove_on(px))) {
+                px->events[k++] = *ev; continue;
+            }
             if (st == 0x90 || st == 0x80) {
                 offs[no][0] = (uint8_t)(0x80 | (ev->msg[0] & 0x0F));
                 offs[no][1] = ev->msg[1];
@@ -351,7 +356,7 @@ static void drum_pfx_note_off(seq8_instance_t *inst, seq8_track_t *tr,
     if (off_time <= now)
         drum_pfx_send(px, off_s, an->gen_notes[0], 0);
     else
-        drum_pfx_q_insert(px, off_time + (keep ? an->on_delay : 0), off_s, an->gen_notes[0], 0, 0);
+        drum_pfx_q_insert(px, off_time + (keep ? an->on_delay : 0), off_s, an->gen_notes[0], 0, keep ? PFX_EV_KEEP : 0);
     inst->swing_step_delay = held;
 
     drum_pfx_sched_delay_offs(px, an, an->on_time, gate_smp);

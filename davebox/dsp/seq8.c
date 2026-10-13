@@ -329,31 +329,50 @@ static inline int groove_swing_offbeat(const groove_t *g, uint64_t step) {
                                         : (int)((step / 2) % 2 == 1);
 }
 
-/* Table: how late (fine ticks) the slot holding `tick` is. Early slots read
- * as on-time here — nothing is played ahead of its tick yet. */
-static inline uint32_t groove_table_late_fine(const groove_t *g, uint64_t tick) {
+/* Table: the offset of the slot holding `tick`, in fine ticks: + late,
+ * - early. Scaled by the amount and never more than half a slot either way. */
+static inline int32_t groove_slot_off(const groove_t *g, uint64_t tick) {
     if (g->kind != GROOVE_TABLE || g->base == 0 || g->n_slots == 0) return 0;
     int32_t off = (int32_t)g->off[(tick / g->base) % g->n_slots];
-    if (off <= 0) return 0;
-    uint32_t late = (uint32_t)off * groove_eff_amt(g) / 100u;
-    uint32_t cap  = (uint32_t)g->base * GROOVE_FINE / 2;      /* half a slot, like early */
-    return late > cap ? cap : late;
+    int32_t cap = (int32_t)g->base * GROOVE_FINE / 2;
+    off = off * (int32_t)groove_eff_amt(g) / 100;
+    return off > cap ? cap : off < -cap ? -cap : off;
 }
 
-/* The most a slot can be played ahead of its tick: half a slot, and never
- * more than this many ticks (the per-tick lookahead is this long). */
+/* Table: Random's reach, in fine ticks. A sequenced note lands anywhere from
+ * this much before its grooved position to this much after: half a slot each
+ * way at Random 100 and full amount. */
+static inline uint32_t groove_rand_fine(const groove_t *g) {
+    if (g->kind != GROOVE_TABLE || g->random == 0) return 0;
+    return (uint32_t)g->base * GROOVE_FINE / 2 * (uint32_t)g->random / 100u
+           * (uint32_t)g->amt / 100u;
+}
+
+/* How late (fine ticks) the slot holding `tick` is, for everything that is
+ * only ever played late: arps, repeats, echoes, the looper. */
+static inline uint32_t groove_table_late_fine(const groove_t *g, uint64_t tick) {
+    int32_t off = groove_slot_off(g, tick);
+    return off > 0 ? (uint32_t)off : 0;
+}
+
+/* The most a slot can be played ahead of its tick, in ticks (the per-tick
+ * lookahead is this long). */
 #define GROOVE_MAX_EARLY_TICKS 48
 
-/* Table: how EARLY (fine ticks, as a positive number) the slot holding `tick`
- * is. 0 for an on-time or late slot. */
+/* For a SEQUENCED note: the earliest it can sound, as fine ticks before its
+ * tick — the slot's own earliness plus Random's reach. 0 when even the
+ * earliest is on or after the tick. */
 static inline uint32_t groove_table_early_fine(const groove_t *g, uint64_t tick) {
-    if (g->kind != GROOVE_TABLE || g->base == 0 || g->n_slots == 0) return 0;
-    int32_t off = (int32_t)g->off[(tick / g->base) % g->n_slots];
-    if (off >= 0) return 0;
-    uint32_t e   = (uint32_t)(-off) * groove_eff_amt(g) / 100u;
-    uint32_t cap = (uint32_t)g->base * GROOVE_FINE / 2;
-    if (cap > GROOVE_MAX_EARLY_TICKS * GROOVE_FINE) cap = GROOVE_MAX_EARLY_TICKS * GROOVE_FINE;
-    return e > cap ? cap : e;
+    int32_t e = (int32_t)groove_rand_fine(g) - groove_slot_off(g, tick);
+    if (e <= 0) return 0;
+    if (e > GROOVE_MAX_EARLY_TICKS * GROOVE_FINE) e = GROOVE_MAX_EARLY_TICKS * GROOVE_FINE;
+    return (uint32_t)e;
+}
+
+/* ...and when that earliest is after the tick: how long after. */
+static inline uint32_t groove_table_seq_late_fine(const groove_t *g, uint64_t tick) {
+    int32_t l = groove_slot_off(g, tick) - (int32_t)groove_rand_fine(g);
+    return l > 0 ? (uint32_t)l : 0;
 }
 
 /* One slot that is due NOW although its tick is `k` ticks away: sequenced
@@ -362,6 +381,7 @@ typedef struct { uint8_t k; uint64_t delay; } groove_early_t;
 #define GROOVE_EARLY_PASSES 2   /* a half-slot lookahead spans two slots at most */
 #define GROOVE_TOK_MAX      48
 
+#define PFX_EV_KEEP         0x02  /* a table groove's own note-off, timed from its note-on: a later note-on's echo flush may bring it forward, never push it back */
 #define PFX_EV_BYPASS_SWING 0x01  /* event already swing-deferred; route directly, skip pfx_send */
 
 typedef struct {
@@ -1272,6 +1292,7 @@ typedef struct {
     groove_early_t groove_early[GROOVE_EARLY_PASSES];
     uint8_t  groove_early_n;
     uint8_t  groove_kmax;           /* longest early offset in the table, whole ticks; 0 = none */
+    uint32_t groove_rng;            /* Random's own generator, seeded from the clock: every run differs */
     uint8_t  groove_ahead;          /* while an early pass fires a note: how many ticks ahead of the clock that note belongs */
     uint32_t groove_last_mt;        /* the master tick last scanned; going backwards drops every claim */
     uint8_t  groove_lead;           /* ticks a stepped automation lane reads ahead */
@@ -3200,6 +3221,19 @@ static void pfx_note_on(seq8_instance_t *inst, seq8_track_t *tr,
             pfx_event_t *ev = &fx->events[qi];
             uint8_t st = ev->msg[0] & 0xF0;
             if (ev->flags & PFX_EV_BYPASS_SWING) { fx->events[k++] = *ev; continue; }
+            /* A table groove's own note-off stays where its note-on put
+             * it — flushing it would re-time it to THIS note's park and
+             * resize the note it ends. Except when this note plays the same
+             * pitch and the off would land after it: then it is brought
+             * forward, as ever, so it cannot cut the new note short. */
+            if (ev->flags & PFX_EV_KEEP) {
+                int same = 0, gi;
+                for (gi = 0; gi < gc; gi++) if (gen[gi] == ev->msg[1]) same = 1;
+                if (!same || !g_inst
+                        || ev->fire_at <= now + groove_note_park(g_inst, fx->groove_on)) {
+                    fx->events[k++] = *ev; continue;
+                }
+            }
             if (st == 0x90 || st == 0x80) {
                 offs[no][0] = (uint8_t)(0x80 | (ev->msg[0] & 0x0F));
                 offs[no][1] = ev->msg[1];
@@ -3342,7 +3376,7 @@ static void pfx_note_off(seq8_instance_t *inst, seq8_track_t *tr,
             uint64_t ft = off_time + (keep ? an->on_delay
                                       : fx->groove_on ? swing_offset_for_fire_at(g_inst, now, off_time)
                                       : 0);
-            pfx_q_insert(fx, ft, off_s, an->gen_notes[i], 0, 0);
+            pfx_q_insert(fx, ft, off_s, an->gen_notes[i], 0, keep ? PFX_EV_KEEP : 0);
         }
     }
     if (keep) g_inst->swing_step_delay = held;
@@ -6058,6 +6092,11 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
     inst->pad_scale    = 1;   /* Minor */
     inst->launch_quant = 0;   /* Now */
     groove_reset(&inst->groove);
+    {   /* the clock, and a count so two instances made in one second differ */
+        static uint32_t made;
+        inst->groove_rng = ((uint32_t)time(NULL) * 2654435761u) ^ (++made * 0x9E3779B9u);
+    }
+    if (!inst->groove_rng) inst->groove_rng = 1;
     inst->metro_on     = 1;    /* default: Count (count-in only) */
     inst->metro_vol    = 80;
     inst->metro_wav_fd    = -1;
@@ -9395,7 +9434,19 @@ static int groove_pass(seq8_instance_t *inst, const clip_t *cl,
     p->saved = p->park = inst->swing_step_delay;
     p->cycle = (uint32_t)cl->loop_cycle;
     p->due = 0; p->early = 0; p->crossed = 0; p->ahead = 0;
-    if (pass == 0) { p->cct = playback_audible_cct(cl, step, tick_in_step); return 1; }
+    if (pass == 0) {
+        p->cct = playback_audible_cct(cl, step, tick_in_step);
+        /* Random reaches back as far as forward, so a sequenced note's park
+         * starts that much sooner than the slot's (which arps and echoes use). */
+        if (inst->groove.kind == GROOVE_TABLE && inst->groove.random && inst->tick_delta > 0) {
+            double spt = (double)MOVE_FRAMES_PER_BLOCK
+                         * (double)inst->tick_threshold / (double)inst->tick_delta;
+            p->park = (uint64_t)((double)groove_table_seq_late_fine(&inst->groove,
+                                     (uint64_t)groove_master_tick(inst))
+                                 * spt / (double)GROOVE_FINE + 0.5);
+        }
+        return 1;
+    }
 
     /* Only a clip playing Forward can be read ahead. Every other direction
      * plays its early slots on time. */
@@ -9417,6 +9468,43 @@ static int groove_pass(seq8_instance_t *inst, const clip_t *cl,
     p->ahead = e->k;
     p->due   = groove_master_tick(inst) + (uint32_t)e->k;
     return 1;
+}
+
+/* What the groove does to ONE sequenced note as it is fired: how long it is
+ * parked (the pass's park plus Random's roll) and what velocity it plays at.
+ * A table slot with a velocity pulls the note towards it by the Velocity
+ * amount; a slot with none leaves it alone. Nothing for a track whose Groove
+ * is off, or for the swings. */
+static uint8_t groove_note(seq8_instance_t *inst, const seq8_track_t *tr,
+                           const groove_pass_t *p, uint8_t vel, uint64_t *park) {
+    const groove_t *g = &inst->groove;
+    *park = p->park;
+    if (g->kind != GROOVE_TABLE || !tr->pfx.groove_on) return vel;
+    uint32_t reach = groove_rand_fine(g);
+    if (reach && inst->tick_delta > 0) {
+        uint32_t x = inst->groove_rng;
+        x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+        inst->groove_rng = x ? x : 1;
+        double spt = (double)MOVE_FRAMES_PER_BLOCK
+                     * (double)inst->tick_threshold / (double)inst->tick_delta;
+        /* A note fired on its own tick although its slot reaches back before
+         * it (the clip launched on top of it) has only the forward half left. */
+        uint32_t span = 2u * reach;
+        if (!p->early && groove_table_early_fine(g, (uint64_t)groove_master_tick(inst)) > 0)
+            span = reach;
+        *park += (uint64_t)((double)(x % (span + 1u)) * spt / (double)GROOVE_FINE + 0.5);
+    }
+    if (g->velocity && g->base && g->n_slots) {
+        uint64_t tick = (uint64_t)groove_master_tick(inst) + p->ahead;
+        int gv = (int)g->vel[(tick / g->base) % g->n_slots];
+        if (gv > 0) {
+            /* v x (1 + k x (gv/127 - 1)), k = Velocity x Amount */
+            int k = (int)g->velocity * (int)g->amt;                 /* 0..10000 */
+            int v = (int)vel + (int)vel * (gv - 127) * k / (127 * 10000);
+            vel = (uint8_t)(v < 1 ? 1 : v > 127 ? 127 : v);
+        }
+    }
+    return vel;
 }
 
 /* Does this pass play note `ni` of `lane` (0xFF = melodic)? An early pass
