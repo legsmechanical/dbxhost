@@ -19,7 +19,7 @@ import re, sys
 sys.path.insert(0, "standalone/scripts")
 import project_name as pn
 for words in (pn.ADJECTIVES, pn.NOUNS):
-    assert len(words) >= 48, len(words)
+    assert len(words) >= 100, len(words)
     assert len(set(words)) == len(words), "a word appears twice"
     for w in words:
         assert re.fullmatch(r"[A-Z][a-z]{2,5}", w), w
