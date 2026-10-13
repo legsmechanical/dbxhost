@@ -224,6 +224,9 @@ const detentGap = () => { WALL += 40; };
 await import('../tests/js/_bulk_get_stub.mjs');
 await import('../ui/ui.js');
 const { S } = await import('../ui/ui_state.mjs');
+/* The gestures here are scripted, touch and release in one breath: no hold on
+ * a release, or the next touch of the same knob reads as a flicker. */
+S.touchHoldMs = 0;
 const R = await import('../ui/ui_render.mjs');
 const T = await import('../ui/ui_tick.mjs');
 const C = await import('../ui/ui_constants.mjs');
