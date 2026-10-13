@@ -657,6 +657,9 @@ typedef struct {
      * the global setting (the default), 0..100 = its own. Amount 0 is the old
      * "Groove Off": the track plays straight. */
     int8_t       g_amt, g_timing, g_velocity, g_random;
+    /* Table groove: how long each pitch's last note-on was parked (+1; 0 =
+     * none on record). Its note-off waits the same — see pfx_send. */
+    uint32_t     on_park[128];
     uint8_t      track_idx;  /* 0..NUM_TRACKS-1; back-pointer for looper events */
     /* Output-pitch refcount: counts how many distinct chain sources (input pads
      * × HARMZ copies + delay echoes + arp emits) are currently sounding each
@@ -775,6 +778,7 @@ typedef struct {
     uint8_t      slot;      /* 0-based chain slot for ROUTE_SCHWUNG; mirrored from track pfx */
     uint8_t      midi_to;   /* see play_fx_t.midi_to; mirrored from track pfx */
     uint8_t      looper_on;
+    uint32_t     on_park;   /* table groove: the lane's last note-on park, +1 (see pfx_send) */
     uint8_t      track_idx;
     uint8_t      lane_idx;
 } drum_pfx_t;
@@ -2481,6 +2485,22 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
      * from a queue drain (in_queue_drain) skip swing here — schedule-time swing
      * already baked their fire_at, so re-queueing would scramble pair order. */
     uint64_t _park = g_inst ? groove_park_now(g_inst, (int)fx->track_idx) : 0;
+    /* A TABLE GROOVE'S NOTE-OFF WAITS AS LONG AS ITS NOTE-ON DID. Slots differ
+     * in how late they are, so an arp or repeat step whose note-on was held in
+     * a late slot and whose note-off fell in the next, on-time one came out
+     * off-first: a stuck note (Josh, on the device, 2026-10-13, the input arp
+     * under a groove). The park each pitch's note-on was given is kept, and
+     * its note-off takes that instead of its own slot's. The two swings are
+     * left as they are: a swung step and its note-off share a slot. */
+    if (g_inst && g_inst->groove.kind == GROOVE_TABLE && d1 < 128
+            && !g_inst->emit_bypass_swing && !g_inst->in_queue_drain) {
+        uint8_t _st = status & 0xF0;
+        if (_st == 0x90 && d2 > 0) {
+            fx->on_park[d1] = (uint32_t)(_park > 0xFFFFFFFEull ? 0xFFFFFFFEull : _park) + 1u;
+        } else if (_st == 0x80 || _st == 0x90) {
+            if (fx->on_park[d1]) { _park = (uint64_t)fx->on_park[d1] - 1u; fx->on_park[d1] = 0; }
+        }
+    }
     if (g_inst && _park > 0
             && !g_inst->emit_bypass_swing
             && !g_inst->in_queue_drain) {

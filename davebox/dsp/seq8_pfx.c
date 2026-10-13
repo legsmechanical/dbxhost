@@ -238,8 +238,12 @@ static void pfx_sched_delay_offs(play_fx_t *fx, pfx_active_t *an,
             ? (double)gate_smp * an->reps[i].gate_factor
             : -an->reps[i].gate_factor;
         if (rg < 1.0) rg = 1.0;
-        uint64_t off = base_time + an->reps[i].cumul_delay + (uint64_t)(rg + 0.5);
-        off += swing_offset_for_fire_at(g_inst, (int)fx->track_idx, fx->sample_counter, off);
+        uint64_t on_t = base_time + an->reps[i].cumul_delay;
+        uint64_t off  = on_t + (uint64_t)(rg + 0.5);
+        /* a table groove: the echo's note-off is as late as its note-on was,
+         * not as late as the slot it lands in — or it could come out first */
+        off += swing_offset_for_fire_at(g_inst, (int)fx->track_idx, fx->sample_counter,
+                   (g_inst && g_inst->groove.kind == GROOVE_TABLE) ? on_t : off);
         int j;
         for (j = 0; j < an->gen_count; j++) {
             int note = (int)an->gen_notes[j] + an->reps[i].pitch_offset;

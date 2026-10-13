@@ -169,6 +169,16 @@ static void drum_pfx_send(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2
      * Events re-entering from the drum drain skip swing — schedule-time swing
      * already baked their fire_at, so re-queueing would scramble pair order. */
     uint64_t _park = g_inst ? groove_park_now(g_inst, (int)px->track_idx) : 0;
+    /* a table groove's note-off waits as long as its note-on did (pfx_send) */
+    if (g_inst && g_inst->groove.kind == GROOVE_TABLE
+            && !g_inst->emit_bypass_swing && !g_inst->in_queue_drain) {
+        uint8_t _st = status & 0xF0;
+        if (_st == 0x90 && d2 > 0) {
+            px->on_park = (uint32_t)(_park > 0xFFFFFFFEull ? 0xFFFFFFFEull : _park) + 1u;
+        } else if (_st == 0x80 || _st == 0x90) {
+            if (px->on_park) { _park = (uint64_t)px->on_park - 1u; px->on_park = 0; }
+        }
+    }
     if (g_inst && _park > 0
             && !g_inst->emit_bypass_swing
             && !g_inst->in_queue_drain) {
@@ -269,8 +279,10 @@ static void drum_pfx_sched_delay_offs(drum_pfx_t *px, pfx_active_t *an,
             ? (double)gate_smp * an->reps[i].gate_factor
             : -an->reps[i].gate_factor;
         if (rg < 1.0) rg = 1.0;
-        uint64_t off = base_time + an->reps[i].cumul_delay + (uint64_t)(rg + 0.5);
-        off += swing_offset_for_fire_at(g_inst, (int)px->track_idx, px->sample_counter, off);
+        uint64_t on_t = base_time + an->reps[i].cumul_delay;
+        uint64_t off  = on_t + (uint64_t)(rg + 0.5);
+        off += swing_offset_for_fire_at(g_inst, (int)px->track_idx, px->sample_counter,
+                   (g_inst && g_inst->groove.kind == GROOVE_TABLE) ? on_t : off);
         drum_pfx_q_insert(px, off, off_s, note, 0, 0);
     }
 }
