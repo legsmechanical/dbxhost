@@ -67,8 +67,16 @@ int main(void) {
     /* ---- out-of-range pieces are clamped or ignored, never written past the table ---- */
     hx_set_param(h, "groove_begin", "24 2 100 0 0 0 Two");
     hx_set_param(h, "groove_slots_0", "1 1 2 2 3 3 4 4 5 5");      /* five pairs into two slots */
-    hx_set_param(h, "groove_slots_500", "7 7");
-    hx_set_param(h, "groove_slots_-3", "7 7");
+    HX_ASSERT(inst->groove_stage.off[2] == 0 && inst->groove_stage.vel[2] == 0,
+              "a piece wrote past the table's own slot count");
+    {
+        /* a guard word after the staging copy would not survive a write past it */
+        groove_t before = inst->groove_stage;
+        hx_set_param(h, "groove_slots_100", "7 7");                /* inside the array, past this table */
+        hx_set_param(h, "groove_slots_-3", "7 7");
+        HX_ASSERT(!memcmp(&before, &inst->groove_stage, sizeof(before)),
+                  "a piece addressed outside the table was written");
+    }
     hx_set_param(h, "groove_commit", "");
     HX_ASSERT(!strcmp(gets_(h, "groove_table"), "24 2 1 1 2 2"), "extra or out-of-range slots were not dropped");
     hx_set_param(h, "groove_begin", "0 900 100 0 0 0 x\"y}z");
