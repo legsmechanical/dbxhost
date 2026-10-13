@@ -367,17 +367,24 @@ function agrFromBinary(b) {
      * slot that still gives every note a slot of its own. */
     const lastTick = Math.max.apply(null, notes.map(n => n.tick));
     const beats = Math.max(1, Math.ceil(lastTick / GROOVE_PPQN + 0.001));
-    /* ...the coarsest of the usual grids on which every note is nearer its
-     * own line than any other note is. */
-    let base = 12;
-    const times = [...new Set(notes.map(n => Math.round(n.tick)))].sort((x, y) => x - y);
-    let minGap = Infinity;
-    for (let k = 1; k < times.length; k++) minGap = Math.min(minGap, times[k] - times[k - 1]);
-    for (const cand of [96, 48, 32, 24, 16, 12]) {
-        if (Math.round(beats * GROOVE_PPQN / cand) >= times.length && cand <= minGap * 2) { base = cand; break; }
-    }
+    const base = grooveGuessBase(notes, beats * GROOVE_PPQN, 0);
     const t = grooveTableFromNotes(notes, base, beats * GROOVE_PPQN);
     return { ...t, name: '', timing: 100, quantize: 0, random: 0, velocity: 0, guessed: true };
+}
+
+/* The grid a set of notes was played on, when nothing says: the coarsest of
+ * the usual ones (1/4 … 1/32, in ticks) that still gives every hit a slot of
+ * its own. Hits within `together` ticks of each other count as one (a chord, a
+ * flam, two drums on the same beat). */
+export function grooveGuessBase(notes, lengthTicks, together) {
+    const all = notes.map(n => Math.round(n.tick)).sort((x, y) => x - y);
+    const times = [];
+    for (const t of all) if (!times.length || t - times[times.length - 1] > (together | 0)) times.push(t);
+    let minGap = Infinity;
+    for (let k = 1; k < times.length; k++) minGap = Math.min(minGap, times[k] - times[k - 1]);
+    for (const cand of [96, 48, 32, 24, 16, 12])
+        if (Math.round(lengthTicks / cand) >= times.length && cand <= minGap * 2) return cand;
+    return 12;
 }
 
 /* Bytes of an .agr → a groove ({ base, n, off, vel, name, timing, quantize,

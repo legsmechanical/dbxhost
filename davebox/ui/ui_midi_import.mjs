@@ -66,7 +66,7 @@ import {
 } from './ui_movy.mjs';
 import { buildFilepathBrowserState, refreshFilepathBrowser } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { smfParse, SMF_MAX_BYTES, SMF_EXTENSIONS } from './ui_midifile.mjs';
-import { agrParse, isGrooveFileName, grooveTableFromNotes, GROOVE_EXTENSIONS } from './ui_groove_core.mjs';
+import { agrParse, isGrooveFileName, grooveTableFromNotes, grooveGuessBase, GROOVE_EXTENSIONS } from './ui_groove_core.mjs';
 import { grooveSend } from './ui_groove.mjs';
 import {
     STRETCH_STEPS, STRETCH_DEFAULT, OCT_MIN, OCT_MAX, SEMI_MIN, SEMI_MAX, MN_MAX_SOUNDS, MAP_MODES,
@@ -241,8 +241,16 @@ export function miOpenGroove() {
     GS.screenDirty = true;
     return true;
 }
-/* One slot a 1/16: the grid a groove made from MIDI is read on. */
-const GROOVE_MIDI_BASE = 24;
+/* A MIDI part as a groove. A MIDI file names no grid, so it is worked out
+ * from the notes (an 1/8 pattern is read on 1/8s, triplets on triplets); hits
+ * a 1/64 or less apart are one hit. */
+const GROOVE_MIDI_TOGETHER = 6;
+function grooveOfPart(part, timeSig) {
+    const len = partBarsOf(part, timeSig) * barTicks(timeSig);
+    const notes = part.notes.map(n => ({ tick: n.t, vel: n.v }));
+    const t = grooveTableFromNotes(notes, grooveGuessBase(notes, len, GROOVE_MIDI_TOGETHER), len);
+    return { ...t, timing: 100, quantize: 0, random: 0, velocity: 0 };
+}
 /* The groove a list row stands for: { g, name, key } — or { error } — or null
  * for a row that is no groove (a folder, a file of several parts). */
 function grooveOfRow(it) {
@@ -257,10 +265,8 @@ function grooveOfRow(it) {
 }
 function grooveOfRowNow(it) {
     if (it.kind === 'part') {
-        const res = MI.file.res, part = res.parts[it.part];
-        const len = partBarsOf(part, res.timeSig) * barTicks(res.timeSig);
-        const t = grooveTableFromNotes(part.notes.map(n => ({ tick: n.t, vel: n.v })), GROOVE_MIDI_BASE, len);
-        return { g: { ...t, timing: 100, quantize: 0, random: 0, velocity: 0 },
+        const res = MI.file.res;
+        return { g: grooveOfPart(res.parts[it.part], res.timeSig),
                  name: MI.file.name + ' ' + it.label, key: MI.file.path + '#' + it.part };
     }
     if (it.kind !== 'file') return null;
@@ -268,10 +274,7 @@ function grooveOfRowNow(it) {
     if (e.error) return { error: e.error };
     if (e.groove) return { g: e.groove, name: it.label, key: it.path };
     if (e.res.parts.length > 1) return null;
-    const part = e.res.parts[0];
-    const len = partBarsOf(part, e.res.timeSig) * barTicks(e.res.timeSig);
-    const t = grooveTableFromNotes(part.notes.map(n => ({ tick: n.t, vel: n.v })), GROOVE_MIDI_BASE, len);
-    return { g: { ...t, timing: 100, quantize: 0, random: 0, velocity: 0 }, name: it.label, key: it.path };
+    return { g: grooveOfPart(e.res.parts[0], e.res.timeSig), name: it.label, key: it.path };
 }
 /* A table goes to the engine in pieces that share their keys, and the
  * transport keeps only the LAST write to a key that has not drained yet — so

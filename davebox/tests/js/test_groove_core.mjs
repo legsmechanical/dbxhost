@@ -8,7 +8,7 @@
 import zlib from 'node:zlib';
 import {
     grooveTableFromNotes, grooveMessages, grooveToJson, grooveFromJson, grooveCleanName,
-    inflateRaw, gunzip, agrParse, isGrooveFileName, grooveBaseName, GROOVE_FINE,
+    inflateRaw, gunzip, agrParse, isGrooveFileName, grooveBaseName, grooveGuessBase, GROOVE_FINE,
 } from '../../ui/ui_groove_core.mjs';
 
 let failed = 0;
@@ -235,6 +235,31 @@ step('.agr binary with a coarser pattern gets a coarser grid; disabled notes are
     const g = agrParse(binGroove([[0, 100], [0.52, 70], [1, 90], [1.25, 60, false], [1.5, 80]]));
     assertEq([g.base, g.n], [48, 4], '1/8, two beats');
     assertEq(g.vel, [100, 70, 90, 80], 'the disabled note left no mark');
+});
+
+step('⭐ a MIDI file names no grid: it is worked out from the notes — 1/16s, swung 1/8s, triplets', () => {
+    const at = (ts) => ts.map(t => ({ tick: t, vel: 100 }));
+    const bar = 384;
+    const six = []; for (let i = 0; i < 16; i++) six.push(i * 24 + (i % 2 ? 3 : 0));
+    assert(grooveGuessBase(at(six), bar, 6) === 24, '1/16s read as ' + grooveGuessBase(at(six), bar, 6));
+    const eig = []; for (let i = 0; i < 8; i++) eig.push(i * 48 + (i % 2 ? 9 : 0));
+    assert(grooveGuessBase(at(eig), bar, 6) === 48, 'swung 1/8s read as ' + grooveGuessBase(at(eig), bar, 6));
+    const tri = []; for (let i = 0; i < 12; i++) tri.push(i * 32);
+    assert(grooveGuessBase(at(tri), bar, 6) === 32, '1/8 triplets read as ' + grooveGuessBase(at(tri), bar, 6));
+    const q = [0, 96, 192, 288];
+    assert(grooveGuessBase(at(q), bar, 6) === 96, '1/4s read as ' + grooveGuessBase(at(q), bar, 6));
+    const t32 = []; for (let i = 0; i < 32; i++) t32.push(i * 12);
+    assert(grooveGuessBase(at(t32), bar, 6) === 12, '1/32s read as ' + grooveGuessBase(at(t32), bar, 6));
+    /* the swung 1/8s land in their own slots, nine ticks late */
+    const g = grooveTableFromNotes(at(eig), 48, bar);
+    assert(g.n === 8 && g.off[1] === 9 * 16 && g.off[0] === 0, 'the 1/8 table: ' + JSON.stringify(g.off));
+});
+
+step('⚠ a chord, a flam or two drums on one beat are ONE hit — they do not force a finer grid', () => {
+    const eig = []; for (let i = 0; i < 8; i++) eig.push({ tick: i * 48, vel: 100 });
+    const flam = eig.concat([{ tick: 0, vel: 90 }, { tick: 98, vel: 60 }, { tick: 196, vel: 60 }]);
+    assert(grooveGuessBase(flam, 384, 6) === 48, 'with the flams folded: ' + grooveGuessBase(flam, 384, 6));
+    assert(grooveGuessBase(flam, 384, 0) === 12, 'CONTROL — unfolded they force the finest: ' + grooveGuessBase(flam, 384, 0));
 });
 
 step('what is not a groove is refused with a reason, never thrown', () => {
