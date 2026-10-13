@@ -219,13 +219,19 @@ export function miOpen(track) {
 }
 
 /* BROWSE GROOVES (Groove > Browse... in Project Settings). The list only:
- * nothing is previewed on the track and nothing is written to it. A click on
- * a file LOADS it as the project's groove and the list stays, so the next one
- * is a jog and a click away; Back leaves. It opens in the folder the last
+ * nothing is previewed on the track and nothing is written to it.
+ *
+ * A groove is HEARD when the jog rests on it (the same rest as a MIDI file's
+ * preview): it is sent to the engine as a trial, which plays it and keeps the
+ * groove from before. A click KEEPS the one playing and the list stays, so
+ * the next is a jog away; Back leaves, and if the last thing heard was never
+ * kept, the groove from before comes back. It opens in the folder the last
  * groove was loaded from — on this device, in any project. */
 export function miOpenGroove() {
     MQ.key = null;
     MI = freshState(GS.activeTrack, true);
+    MI.gTrial = null;                                   /* list key of the trial playing, or null */
+    MI.gBefore = { kind: GS.grooveKind, name: GS.grooveName };
     const dir = grooveBrowseDir();
     enterDir(dir && dir.startsWith(MI_ROOT) && isDirPath(dir) ? dir : MI_ROOT, '');
     GS.screenDirty = true;
@@ -233,18 +239,60 @@ export function miOpenGroove() {
 }
 /* One slot a 1/16: the grid a groove made from MIDI is read on. */
 const GROOVE_MIDI_BASE = 24;
-function grooveDone(g, name) {
-    grooveSetBrowseDir(MI.B.currentDir);
-    const named = { ...g, name: name || g.name };   /* the name on the list, which is what was clicked */
-    grooveSend(named);
-    GS.screenDirty = true;
-    showActionPopup('GROOVE', String(GS.grooveName || name || '').toUpperCase());
+/* The groove a list row stands for: { g, name, key } — or { error } — or null
+ * for a row that is no groove (a folder, a file of several parts). */
+function grooveOfRow(it) {
+    if (!it) return null;
+    if (it.kind === 'part') {
+        const res = MI.file.res, part = res.parts[it.part];
+        const len = partBarsOf(part, res.timeSig) * barTicks(res.timeSig);
+        const t = grooveTableFromNotes(part.notes.map(n => ({ tick: n.t, vel: n.v })), GROOVE_MIDI_BASE, len);
+        return { g: { ...t, timing: 100, quantize: 0, random: 0, velocity: 0 },
+                 name: MI.file.name + ' ' + it.label, key: MI.file.path + '#' + it.part };
+    }
+    if (it.kind !== 'file') return null;
+    const e = parsed(it.path);
+    if (e.error) return { error: e.error };
+    if (e.groove) return { g: e.groove, name: it.label, key: it.path };
+    if (e.res.parts.length > 1) return null;
+    const part = e.res.parts[0];
+    const len = partBarsOf(part, e.res.timeSig) * barTicks(e.res.timeSig);
+    const t = grooveTableFromNotes(part.notes.map(n => ({ tick: n.t, vel: n.v })), GROOVE_MIDI_BASE, len);
+    return { g: { ...t, timing: 100, quantize: 0, random: 0, velocity: 0 }, name: it.label, key: it.path };
 }
-function grooveFromPart(res, partIdx, name) {
-    const part = res.parts[partIdx];
-    const len = partBarsOf(part, res.timeSig) * barTicks(res.timeSig);
-    const g = grooveTableFromNotes(part.notes.map(n => ({ tick: n.t, vel: n.v })), GROOVE_MIDI_BASE, len);
-    grooveDone({ ...g, timing: 100, quantize: 0, random: 0, velocity: 0 }, name);
+/* The jog has rested on a row: hear it. */
+function grooveAudition() {
+    const it = MI.items[MI.idx];
+    const r = grooveOfRow(it);
+    if (!r || r.error || MI.gTrial === r.key) return;   /* nothing to hear, or already playing */
+    grooveSend({ ...r.g, name: r.name || r.g.name }, true);
+    MI.gTrial = r.key;
+    GS.screenDirty = true;
+}
+/* A click: the row's groove is the project's. */
+function grooveChoose() {
+    const it = MI.items[MI.idx];
+    const r = grooveOfRow(it);
+    if (!r) return false;
+    if (r.error) { showActionPopup(r.error, String(it.label).toUpperCase()); return true; }
+    MI.pending = null;
+    if (MI.gTrial === r.key) host_module_set_param('groove_keep', '1');   /* it is already playing */
+    else grooveSend({ ...r.g, name: r.name || r.g.name }, false);
+    MI.gTrial = null;
+    MI.gBefore = { kind: GS.grooveKind, name: GS.grooveName };
+    grooveSetBrowseDir(MI.B.currentDir);
+    GS.screenDirty = true;
+    showActionPopup('GROOVE', String(GS.grooveName || '').toUpperCase());
+    return true;
+}
+/* Leaving: a trial nobody kept gives way to the groove from before. */
+function grooveLeave() {
+    if (MI.gTrial) {
+        host_module_set_param('groove_revert', '1');
+        GS.grooveKind = MI.gBefore.kind; GS.grooveName = MI.gBefore.name;
+    }
+    MI = null;
+    GS.screenDirty = true;
 }
 
 /* Leave without writing: the preview ends and the track plays what it had. */
@@ -252,7 +300,7 @@ export function miClose() {
     if (!MI) return;
     /* (the folder remembered is the last LOADED groove's — Back steps up a
      * folder at a time, so where the list was closed is always the top) */
-    if (MI.groove) { MI = null; GS.screenDirty = true; return; }
+    if (MI.groove) { grooveLeave(); return; }
     remember();
     stopPreview();
     MI = null;
@@ -309,9 +357,10 @@ function goUp() {
  * delay), then plays; a part plays at once (its file is already read). */
 function land() {
     MI.cur = null; MI.plan = null; MI.pending = null; MI.held = -1; MI.mask = null;
-    if (MI.groove) return;                    /* nothing is heard from this list */
     const it = MI.items[MI.idx];
     if (!it) return;
+    /* a groove is heard once the jog rests (miTick); nothing of the track's */
+    if (MI.groove) { if (it.kind === 'file' || it.kind === 'part') MI.pending = { at: nowMs() }; return; }
     if (it.kind === 'part') { setCur(MI.file.res, it.part, it.label, MI.file.path); return; }
     if (it.kind === 'file') MI.pending = { at: nowMs() };
 }
@@ -679,12 +728,9 @@ export function miOnClick(shift) {
     if (it.kind === 'up') { goUp(); return; }
     if (it.kind === 'dir') { enterDir(it.path, ''); return; }
     if (MI.groove) {
-        if (it.kind === 'part') { grooveFromPart(MI.file.res, it.part, MI.file.name + ' ' + it.label); return; }
-        const e = parsed(it.path);
-        if (e.error) { showActionPopup(e.error, it.label.toUpperCase()); return; }
-        if (e.groove) { grooveDone(e.groove, it.label); return; }
-        if (e.res.parts.length > 1) { enterFile(it.path, e.res); return; }
-        grooveFromPart(e.res, 0, it.label);
+        if (grooveChoose()) return;
+        const e = parsed(it.path);                       /* a file of several parts: open it */
+        if (!e.error && e.res && e.res.parts.length > 1) enterFile(it.path, e.res);
         return;
     }
     if (it.kind === 'file' && (!MI.cur || MI.cur.path !== it.path)) {
@@ -772,7 +818,10 @@ export function miTick() {
     if (loadSync) loadSyncTick();
     if (!MI) return;
     /* The track, its kind or the view changed under us: leave. */
-    if (MI.groove) return;                    /* a list and nothing else: no reads, no preview, no clock */
+    if (MI.groove) {                          /* no clip preview, no clock: only the rest that hears a groove */
+        if (MI.pending && nowMs() - MI.pending.at >= PREVIEW_DELAY_MS) { MI.pending = null; grooveAudition(); }
+        return;
+    }
     if (GS.activeTrack !== MI.track || isDrumTrack(MI.track) !== MI.drum || GS.sessionView || GS.recordArmed) {
         miClose();
         return;
@@ -924,7 +973,7 @@ function footer(shift) {
     if (MI.groove) {
         const git = MI.items[MI.idx];
         const gopen = git && (git.kind === 'up' || git.kind === 'dir');
-        return [['CLK', gopen ? 'OPEN' : 'LOAD'], ['JOG', 'FILE'], ['BACK', 'DONE']];
+        return [['CLK', gopen ? 'OPEN' : 'KEEP'], ['JOG', 'HEAR'], ['BACK', 'DONE']];
     }
     if (shift) return [['CLK', verb]];
     if (MI.layer === 'list') {

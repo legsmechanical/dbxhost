@@ -535,14 +535,38 @@ static int sp_globals_transport(sp_ctx_t *cx) {
         }
         return 1;
     }
+    /* groove_commit "a" is a TRIAL (the list's cursor rests on a groove): it
+     * plays, the groove before it is kept for groove_revert, and nothing is
+     * marked to save. Any other value is the choice itself.
+     *   groove_keep   the trial playing is the choice
+     *   groove_revert the groove from before the trial comes back */
     if (!strcmp(key, "groove_commit")) {
+        int trial = (val && val[0] == 'a');
         if (inst->groove_stage_open && groove_has_table(&inst->groove_stage)) {
+            if (trial && !inst->groove_backup_valid) {
+                inst->groove_backup = inst->groove;
+                inst->groove_backup_valid = 1;
+            }
             inst->groove_stage.amt = inst->groove.amt;
             inst->groove = inst->groove_stage;
             rui_touch(inst);
-            inst->state_dirty = 1;
+            if (!trial) { inst->groove_backup_valid = 0; inst->state_dirty = 1; }
         }
         inst->groove_stage_open = 0;
+        return 1;
+    }
+    if (!strcmp(key, "groove_keep")) {
+        if (inst->groove_backup_valid) { inst->groove_backup_valid = 0; inst->state_dirty = 1; }
+        return 1;
+    }
+    if (!strcmp(key, "groove_revert")) {
+        if (inst->groove_backup_valid) {
+            uint8_t amt = inst->groove.amt;          /* the amount is not part of a trial */
+            inst->groove = inst->groove_backup;
+            inst->groove.amt = amt;
+            inst->groove_backup_valid = 0;
+            rui_touch(inst);
+        }
         return 1;
     }
     if (!strncmp(key, "groove_", 7)) {

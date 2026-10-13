@@ -861,7 +861,10 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
     /* Groove. _swa/_swr are the two swings under their old keys, still written
      * so a build from before the groove reads the same feel. */
     {
-        const groove_t *g = &inst->groove;
+        /* while a trial plays, the groove that was CHOSEN is the one saved */
+        groove_t gsave = inst->groove_backup_valid ? inst->groove_backup : inst->groove;
+        gsave.amt = inst->groove.amt;
+        const groove_t *g = &gsave;
         if (groove_is_swing(g) && g->amt != 0) fprintf(fp, ",\"_swa\":%d", (int)g->amt);
         if (g->kind == GROOVE_SWING_8)         fprintf(fp, ",\"_swr\":1");
         if (g->kind != GROOVE_SWING_16) fprintf(fp, ",\"_gk\":%d", (int)g->kind);
@@ -1697,6 +1700,8 @@ static void seq8_load_state(seq8_instance_t *inst) {
         int gk = json_get_int(buf, "_gk", -1);
         int ga = json_get_int(buf, "_ga", -1);
         groove_reset(g);
+        inst->groove_backup_valid = 0;
+        inst->groove_stage_open   = 0;
         {
             const char *tp = strstr(buf, "\"_gtab\":\"");
             if (tp && !groove_table_parse(g, tp + 9)) { g->base = 0; g->n_slots = 0; }

@@ -15,8 +15,8 @@ the section into a versioned heading at release time.
   velocities.
 - **Load a groove from a MIDI file or an Ableton groove.** **Browse...** in
   the Groove list opens your files; click a MIDI file or an Ableton `.agr` and
-  it becomes the project's groove at once. The list stays open so you can try
-  the next one, and reopens in the folder you last used. The groove is saved
+  you hear it as soon as the jog rests on it; click to keep it, or Back to
+  return to the groove you had. The list reopens in the folder you last used. The groove is saved
   with the project.
 - **Groove On/Off per track.** A new **Groove** row at the foot of each track's
   sound menu. Off makes that track ignore the project's groove and play

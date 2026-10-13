@@ -4,7 +4,8 @@
  * Project Settings has a Groove row — a picker: Off, Browse..., the two
  * swings, and the project's own loaded groove — and a Groove Amt row. Browse...
  * opens the file list on MIDI files and Ableton grooves; a click on one loads
- * it as the project's groove, straight from the file, and the list stays for
+ * hears it when the jog rests (a trial), a click keeps it, Back without a
+ * click puts the old groove back; the list stays for
  * the next. The list reopens in the folder the last groove came from. Asserted on what
  * the engine is sent, in what order.
  * → a green pin says "wired", only the gesture says "reachable".
@@ -195,49 +196,78 @@ async function main() {
         assert(MI.miHintsForTest(false).footer[0][1] === 'OPEN', 'on a folder the click opens');
     });
 
-    step('nothing is heard or read while the jog moves through the list', () => {
+    step('⭐ a groove is HEARD when the jog rests on it: sent as a trial, and not before the rest', () => {
         const st = MI.miStateForTest();
-        onRow(st, 'UserLibrary');
-        jog(1); ticks(40);
-        assert(st.items[st.idx].label === 'broken' && !st.pending && !st.cur, 'the list is previewing');
-        assert(MI.miHintsForTest(false).footer[0][1] === 'LOAD', 'on a file the click loads');
-        assert(sets.length === 0, 'the engine was sent something by a list: ' + JSON.stringify(sets));
-    });
-
-    step('a file that is no groove says so; nothing is sent and the list stays', () => {
-        click();
-        assert(MI.miActive(), 'the list closed on a file it could not read');
-        assert(sets.length === 0, 'something was sent: ' + JSON.stringify(sets));
-    });
-
-    step('⭐ a click on an .agr LOADS it: sent to the engine under the name on the list, and the list stays for the next', () => {
-        const st = MI.miStateForTest();
-        onRow(st, 'Hand');
-        click();
+        onRow(st, 'broken');
+        jog(1);                                        /* onto Hand.agr */
+        assert(st.items[st.idx].label === 'Hand', 'rig: not on Hand');
+        ticks(3);
+        assert(sets.length === 0, 'it was sent before the jog rested: ' + JSON.stringify(sets));
+        ticks(30);
         assert(JSON.stringify(sets) === JSON.stringify([
-            ['groove_begin', '24 4 80 0 0 30 Hand'], ['groove_slots_0', '0 100 0 0 0 90 48 60'], ['groove_commit', '1']]),
+            ['groove_begin', '24 4 80 0 0 30 Hand'], ['groove_slots_0', '0 100 0 0 0 90 48 60'], ['groove_commit', 'a']]),
             'the engine was sent: ' + JSON.stringify(sets));
         assert(S.grooveKind === 3 && S.grooveName === 'Hand', 'the mirror: ' + S.grooveKind + ' ' + S.grooveName);
-        assert(MI.miActive(), 'the list closed: the next groove should be a jog and a click away');
-        assert(!Object.keys(FILES).some(k => /\.json$/.test(k) && k !== GDIR + '/Lazy.json' && k !== GDIR + '/Torn.json'),
-               'a copy was written somewhere: ' + Object.keys(FILES).join(' | '));
+        ticks(60);
+        assert(sets.length === 3, 'it was sent again while the jog sat still: ' + sets.length);
+        assert(MI.miHintsForTest(false).footer[0][1] === 'KEEP', 'on a groove the click keeps');
     });
 
-    step('⭐ ...and the next one: a MIDI file, read a slot a 1/16', () => {
+    step('⭐ moving on hears the next one; a file that is no groove is passed over in silence', () => {
         sets.length = 0;
-        const st = MI.miStateForTest();
-        onRow(st, 'hat');
-        click();
+        jog(1); ticks(30);                             /* hat.mid */
         assert(JSON.stringify(keys()) === JSON.stringify(['groove_begin', 'groove_slots_0', 'groove_slots_8', 'groove_commit']),
                'the engine was sent: ' + JSON.stringify(keys()));
-        assert(sets[0][1] === '24 16 100 0 0 0 hat', 'begin: ' + sets[0][1]);
+        assert(sets[0][1] === '24 16 100 0 0 0 hat' && sets[3][1] === 'a', 'a trial of hat: ' + sets[0][1] + ' / ' + sets[3][1]);
         assert(sets[1][1] === '0 100 48 70 0 100 48 70 0 100 48 70 0 100 48 70', 'every other 1/16 three ticks late: ' + sets[1][1]);
-        assert(S.grooveName === 'hat', 'playing ' + S.grooveName);
+        sets.length = 0;
+        const st = MI.miStateForTest();
+        onRow(st, 'Hand'); jog(-1); ticks(30);         /* broken.agr */
+        assert(st.items[st.idx].label === 'broken', 'rig: not on broken');
+        assert(sets.length === 0, 'something was sent for a file that is no groove: ' + JSON.stringify(sets));
+        assert(S.grooveName === 'hat', 'the groove being heard changed');
     });
 
-    step('Back leaves the list; the row shows the loaded groove, and it is offered again while a swing plays', () => {
+    step('⭐ Back without a click: the groove from before the browse comes back', () => {
+        sets.length = 0;
         back(); ticks(1);
         assert(!MI.miActive(), 'Back did not leave');
+        assert(JSON.stringify(sets) === JSON.stringify([['groove_revert', '1']]), 'the engine was sent: ' + JSON.stringify(sets));
+        assert(S.grooveKind === 2 && S.grooveName === '', 'the mirror was not put back: ' + S.grooveKind + ' "' + S.grooveName + '"');
+    });
+
+    step('⭐ a click KEEPS the groove playing — one write, no resend — and the list stays for the next', () => {
+        const st = browse();
+        onRow(st, 'broken'); jog(1); ticks(30);        /* hear Hand */
+        sets.length = 0;
+        click();
+        assert(JSON.stringify(sets) === JSON.stringify([['groove_keep', '1']]), 'the engine was sent: ' + JSON.stringify(sets));
+        assert(MI.miActive(), 'the list closed: the next groove should be a jog away');
+        assert(S.grooveName === 'Hand', 'playing ' + S.grooveName);
+        sets.length = 0;
+        back(); ticks(1);
+        assert(sets.length === 0, 'leaving after a keep reverted it: ' + JSON.stringify(sets));
+        assert(S.grooveKind === 3 && S.grooveName === 'Hand', 'the kept groove did not stay');
+    });
+
+    step('a click before the jog has rested still chooses the groove, outright', () => {
+        const st = browse();
+        onRow(st, 'Hand'); jog(1);                     /* hat, no rest */
+        click();
+        assert(sets[sets.length - 1][0] === 'groove_commit' && sets[sets.length - 1][1] === '1',
+               'not chosen outright: ' + JSON.stringify(sets[sets.length - 1]));
+        assert(S.grooveName === 'hat', 'playing ' + S.grooveName);
+        sets.length = 0;
+        ticks(40);
+        assert(sets.length === 0, 'the rest that followed sent it again as a trial: ' + JSON.stringify(sets));
+        click();                                       /* and a click on a file that is no groove says so */
+        onRow(st, 'broken'); sets.length = 0; click();
+        assert(MI.miActive() && sets.length === 0, 'a file that is no groove was sent or closed the list');
+        back(); ticks(1);
+        assert(S.grooveName === 'hat', 'the chosen groove did not stay');
+    });
+
+    step('the row shows the loaded groove, and it is offered again while a swing plays', () => {
         const row = openOn('Groove');
         assert(row.format(row.get()) === 'hat', 'the row shows ' + row.format(row.get()));
         const labels = pickGroove('Swing 1/16');

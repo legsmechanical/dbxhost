@@ -63,8 +63,8 @@ export function grooveLabel() {
 
 /* Hand a table to the engine and select it. The amount is the engine's to
  * keep; the table brings its own Timing / Quantize / Random / Velocity. */
-export function grooveSend(g) {
-    for (const [k, v] of grooveMessages(g)) host_module_set_param(k, v);
+export function grooveSend(g, trial) {
+    for (const [k, v] of grooveMessages(g, trial)) host_module_set_param(k, v);
     S.grooveKind = GROOVE_TABLE;
     S.grooveName = grooveCleanName(g.name);
     S.screenDirty = true;

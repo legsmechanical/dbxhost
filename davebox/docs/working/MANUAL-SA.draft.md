@@ -2267,9 +2267,10 @@ says how much of it you hear — at none, everything is on the grid.
   Swing Amt and Swing Res of earlier versions, and a project made with them
   opens sounding the same.
 - **Browse...** opens a file list showing MIDI files and Ableton groove files
-  (`.agr`). Click one and it is loaded as the project's groove, straight from
-  the file; the list stays open, so trying the next is a jog and a click. Back
-  leaves. The list opens in the folder you last loaded a groove from. A MIDI
+  (`.agr`). Rest the jog on one and you hear it at once, over whatever is
+  playing; click to keep it. The list stays open, so the next is a jog away.
+  Back leaves — and if you never clicked, the groove you had comes back. The
+  list opens in the folder you last kept a groove from. A MIDI
   file is read one position per 1/16 over its whole length (up to 128
   positions); a file with several parts asks which. An Ableton groove brings
   its own grid, length and amounts.

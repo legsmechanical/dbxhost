@@ -94,6 +94,58 @@ int main(void) {
     HX_ASSERT(geti(h, "groove_kind") == GROOVE_TABLE && !strcmp(gets_(h, "groove_table"), TAB16),
               "the table was lost by choosing a swing");
 
+    /* ---- a TRIAL: heard, not chosen ---- */
+    {
+        static char blob[65536];
+        hx_set_param(h, "groove_kind", "2");                 /* Swing 1/8 is what was chosen */
+        hx_set_param(h, "groove_amt", "40");
+        hx_set_param(h, "groove_begin", "24 2 100 0 0 0 Trial One");
+        hx_set_param(h, "groove_slots_0", "0 0 9 90");
+        hx_set_param(h, "groove_commit", "a");
+        HX_ASSERT(geti(h, "groove_kind") == GROOVE_TABLE && !strcmp(gets_(h, "groove_name"), "Trial One"),
+                  "a trial does not play");
+        HX_ASSERT(geti(h, "groove_amt") == 40, "a trial changed the amount");
+        int n = hx_get_param(h, "state_full", blob, (int)sizeof(blob));
+        HX_ASSERT(n > 0, "state_full"); blob[n] = '\0';
+        HX_ASSERT(strstr(blob, "\"_gk\":2") && !strstr(blob, "Trial One"),
+                  "a save while a trial plays stored the trial, not the groove that was chosen");
+        /* a second trial over the first: the groove from BEFORE the first is still the one kept */
+        hx_set_param(h, "groove_begin", "24 2 100 0 0 0 Trial Two");
+        hx_set_param(h, "groove_slots_0", "0 0 5 90");
+        hx_set_param(h, "groove_commit", "a");
+        hx_set_param(h, "groove_amt", "55");                 /* the amount moved while browsing */
+        hx_set_param(h, "groove_revert", "1");
+        HX_ASSERT(geti(h, "groove_kind") == GROOVE_SWING_8, "revert did not bring back the groove from before the trials");
+        HX_ASSERT(geti(h, "groove_amt") == 55, "revert undid an amount change, which is not part of a trial");
+        hx_set_param(h, "groove_revert", "1");
+        HX_ASSERT(geti(h, "groove_kind") == GROOVE_SWING_8, "a second revert did something");
+
+        /* keep: the trial is the choice, and it is what is saved */
+        hx_set_param(h, "groove_begin", "24 2 100 0 0 0 Trial Three");
+        hx_set_param(h, "groove_slots_0", "0 0 7 90");
+        hx_set_param(h, "groove_commit", "a");
+        hx_set_param(h, "groove_keep", "1");
+        hx_set_param(h, "groove_revert", "1");
+        HX_ASSERT(geti(h, "groove_kind") == GROOVE_TABLE && !strcmp(gets_(h, "groove_name"), "Trial Three"),
+                  "a kept trial was reverted");
+        n = hx_get_param(h, "state_full", blob, (int)sizeof(blob));
+        HX_ASSERT(n > 0, "state_full"); blob[n] = '\0';
+        HX_ASSERT(strstr(blob, "Trial Three"), "a kept trial is not what is saved");
+
+        /* an ordinary commit over a trial ends it: there is nothing to go back to */
+        hx_set_param(h, "groove_begin", "24 2 100 0 0 0 Trial Four");
+        hx_set_param(h, "groove_slots_0", "0 0 7 90");
+        hx_set_param(h, "groove_commit", "a");
+        hx_set_param(h, "groove_begin", "24 2 100 0 0 0 Chosen");
+        hx_set_param(h, "groove_slots_0", "0 0 3 90");
+        hx_set_param(h, "groove_commit", "1");
+        hx_set_param(h, "groove_revert", "1");
+        HX_ASSERT(!strcmp(gets_(h, "groove_name"), "Chosen"), "a revert undid a groove that was chosen outright");
+        send16(h, "Lazy");                                   /* what the next section saves */
+        hx_set_param(h, "groove_amt", "0");
+    }
+    printf("  ok   — a trial plays without being chosen: revert restores, keep chooses, a save stores the choice\n");
+
     /* ---- it travels with the project ---- */
     {
         static char blob[65536];

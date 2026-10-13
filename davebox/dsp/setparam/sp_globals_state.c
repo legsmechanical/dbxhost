@@ -293,6 +293,8 @@ static int sp_globals_state(sp_ctx_t *cx) {
         inst->metro_on        = 1;
         inst->metro_vol       = 80;
         groove_reset(&inst->groove);
+        inst->groove_backup_valid = 0;
+        inst->groove_stage_open   = 0;
         memset(inst->mute, 0, NUM_TRACKS);
         memset(inst->solo, 0, NUM_TRACKS);
         inst->conductor_track = -1;

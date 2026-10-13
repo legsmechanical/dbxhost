@@ -125,7 +125,7 @@ export function grooveTableFromNotes(notes, base, lengthTicks) {
 /* The pieces the engine takes a table in (see groove_begin in
  * dsp/setparam/sp_globals_transport.c): [key, value] pairs, in order. Eight
  * slots a piece keeps each value far under the transport's 256 bytes. */
-export function grooveMessages(g) {
+export function grooveMessages(g, trial) {
     const amt = (v, d) => Math.max(0, Math.min(100, Math.round(v === undefined ? d : v)));
     const out = [['groove_begin', [g.base, g.n, amt(g.timing, 100), amt(g.quantize, 0), amt(g.random, 0),
                                    amt(g.velocity, 0), grooveCleanName(g.name)].join(' ')]];
@@ -134,7 +134,8 @@ export function grooveMessages(g) {
         for (let j = i; j < Math.min(g.n, i + 8); j++) part.push(g.off[j] | 0, g.vel[j] | 0);
         out.push(['groove_slots_' + i, part.join(' ')]);
     }
-    out.push(['groove_commit', '1']);
+    /* 'a': a trial — the engine keeps the groove before it, for a revert */
+    out.push(['groove_commit', trial ? 'a' : '1']);
     return out;
 }
 

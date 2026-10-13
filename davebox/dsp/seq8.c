@@ -1344,6 +1344,12 @@ typedef struct {
     groove_t groove;                /* the global groove; swing is two of its kinds */
     groove_t groove_stage;          /* a table arriving from the UI in pieces; swapped in whole on commit */
     uint8_t  groove_stage_open;
+    /* AUDITION. While the UI's groove list is open, the groove under the
+     * cursor is committed as a trial: the groove that was playing is kept
+     * here, and comes back on groove_revert. It is also what is SAVED while a
+     * trial plays, so a save mid-browse never stores a groove nobody chose. */
+    groove_t groove_backup;
+    uint8_t  groove_backup_valid;
     /* Re-derived every tick while playing — see groove_scan_early. */
     groove_early_t groove_early[GROOVE_EARLY_PASSES];
     uint8_t  groove_early_n;
