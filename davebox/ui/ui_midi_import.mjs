@@ -231,7 +231,7 @@ export function miOpenGroove() {
     MQ.key = null;
     MI = freshState(GS.activeTrack, true);
     MI.gTrial = null;                                   /* list key of the trial playing, or null */
-    MI.gBefore = { kind: GS.grooveKind, name: GS.grooveName };
+    MI.gBefore = { kind: GS.grooveKind, name: GS.grooveName, timing: GS.grooveTiming, velocity: GS.grooveVelocity, random: GS.grooveRandom };
     const dir = grooveBrowseDir();
     enterDir(dir && dir.startsWith(MI_ROOT) && isDirPath(dir) ? dir : MI_ROOT, '');
     GS.screenDirty = true;
@@ -279,7 +279,7 @@ function grooveChoose() {
     if (MI.gTrial === r.key) host_module_set_param('groove_keep', '1');   /* it is already playing */
     else grooveSend({ ...r.g, name: r.name || r.g.name }, false);
     MI.gTrial = null;
-    MI.gBefore = { kind: GS.grooveKind, name: GS.grooveName };
+    MI.gBefore = { kind: GS.grooveKind, name: GS.grooveName, timing: GS.grooveTiming, velocity: GS.grooveVelocity, random: GS.grooveRandom };
     grooveSetBrowseDir(MI.B.currentDir);
     GS.screenDirty = true;
     showActionPopup('GROOVE', String(GS.grooveName || '').toUpperCase());
@@ -290,6 +290,7 @@ function grooveLeave() {
     if (MI.gTrial) {
         host_module_set_param('groove_revert', '1');
         GS.grooveKind = MI.gBefore.kind; GS.grooveName = MI.gBefore.name;
+        GS.grooveTiming = MI.gBefore.timing; GS.grooveVelocity = MI.gBefore.velocity; GS.grooveRandom = MI.gBefore.random;
     }
     MI = null;
     GS.screenDirty = true;

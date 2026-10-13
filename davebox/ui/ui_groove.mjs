@@ -67,6 +67,9 @@ export function grooveSend(g, trial) {
     for (const [k, v] of grooveMessages(g, trial)) host_module_set_param(k, v);
     S.grooveKind = GROOVE_TABLE;
     S.grooveName = grooveCleanName(g.name);
+    /* a table brings its own amounts (the same clamps the pieces were sent with) */
+    const pct = (v, d) => Math.max(0, Math.min(100, Math.round(v === undefined ? d : v)));
+    S.grooveTiming = pct(g.timing, 100); S.grooveVelocity = pct(g.velocity, 0); S.grooveRandom = pct(g.random, 0);
     S.screenDirty = true;
 }
 

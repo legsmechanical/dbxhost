@@ -34,7 +34,7 @@ import { requestExport } from './ui_export.mjs';
 import { requestSetTemplate, requestClearTemplate, hasTemplate } from './ui_template.mjs';
 import { xposePreviewSet } from './ui_xpose.mjs';
 import { grooveOptions, grooveCurrentIndex, grooveSelect, grooveLabel,
-         GROOVE_SWING_16, GROOVE_SWING_8 } from './ui_groove.mjs';
+         GROOVE_SWING_16, GROOVE_SWING_8, GROOVE_TABLE } from './ui_groove.mjs';
 
 /* ------------------------------------------------------------------ */
 /* Global menu items                                                    */
@@ -103,6 +103,7 @@ function buildGlobalMenuItems() {
                         return;
                     }
                     grooveSelect(opts[i]);
+                    S.globalMenuBuiltForTrack = -1;      /* the rows below depend on the groove: rebuild */
                 },
                 options: opts.map(function(_o, i) { return i; }),
                 format: function(i) { return opts[i] ? opts[i].label : grooveLabel(); }
@@ -117,6 +118,24 @@ function buildGlobalMenuItems() {
                     ? Math.round(50 + v * 0.25) + '%' : Math.round(v) + '%';
             }
         }),
+        /* A loaded groove's own three amounts — how much of its timing, of
+         * its velocities, and how much each note wanders. Shown only while
+         * one is selected: the swings have no velocities and no random. */
+        S.grooveKind === GROOVE_TABLE ? createValue('Grv Timing', {
+            get: function() { return S.grooveTiming; },
+            set: function(v) { S.grooveTiming = v; host_module_set_param('groove_timing', String(v)); },
+            min: 0, max: 100, format: function(v) { return Math.round(v) + '%'; }
+        }) : null,
+        S.grooveKind === GROOVE_TABLE ? createValue('Grv Velocity', {
+            get: function() { return S.grooveVelocity; },
+            set: function(v) { S.grooveVelocity = v; host_module_set_param('groove_velocity', String(v)); },
+            min: 0, max: 100, format: function(v) { return Math.round(v) + '%'; }
+        }) : null,
+        S.grooveKind === GROOVE_TABLE ? createValue('Grv Random', {
+            get: function() { return S.grooveRandom; },
+            set: function(v) { S.grooveRandom = v; host_module_set_param('groove_random', String(v)); },
+            min: 0, max: 100, format: function(v) { return Math.round(v) + '%'; }
+        }) : null,
         createDivider(),
         createEnum('Metro', {
             get: function() { return S.metronomeOn; },

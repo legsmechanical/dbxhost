@@ -12,7 +12,8 @@ the section into a versioned heading at release time.
   picks the project's timing feel — Off, Swing 1/16, Swing 1/8, or a groove
   loaded from a file — and **Groove Amt** sets how much of it you hear. A
   loaded groove can move notes early as well as late and shape their
-  velocities.
+  velocities; **Grv Timing**, **Grv Velocity** and **Grv Random** appear for
+  it, to set how much of each you want.
 - **Load a groove from a MIDI file or an Ableton groove.** **Browse...** in
   the Groove list opens your files; click a MIDI file or an Ableton `.agr` and
   you hear it as soon as the jog rests on it; click to keep it, or Back to

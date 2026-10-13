@@ -2106,6 +2106,12 @@ function _syncClipsFromDspInner() {
     if (gkRaw !== null) S.grooveKind = gkRaw;
     const gaRaw = dspGetInt('groove_amt');
     if (gaRaw !== null) S.grooveAmt = gaRaw;
+    const gtRaw = dspGetInt('groove_timing');
+    if (gtRaw !== null) S.grooveTiming = gtRaw;
+    const gvRaw = dspGetInt('groove_velocity');
+    if (gvRaw !== null) S.grooveVelocity = gvRaw;
+    const grRaw = dspGetInt('groove_random');
+    if (grRaw !== null) S.grooveRandom = grRaw;
     const gnRaw = dspGet('groove_name');
     if (gnRaw !== null && gnRaw !== undefined) S.grooveName = String(gnRaw);
 }

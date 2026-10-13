@@ -262,6 +262,10 @@ export const S = {
     grooveKind: 1,
     grooveAmt: 0,
     grooveName: '',
+    /* A loaded groove's own amounts (the engine's; mirrors). */
+    grooveTiming: 100,
+    grooveVelocity: 0,
+    grooveRandom: 0,
     pendingGrooveMakeOpen: false, /* Groove > Browse... picked in the menu; the tick opens the list (a folder listing) */
     inpQuant: false,
     midiInChannel: 0,

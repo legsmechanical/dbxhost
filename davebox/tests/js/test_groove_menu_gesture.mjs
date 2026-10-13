@@ -278,6 +278,39 @@ async function main() {
                'going back to the project\'s groove needs no file: ' + JSON.stringify(sets));
     });
 
+    step('⭐ a loaded groove shows its own Timing, Velocity and Random rows; a swing does not', () => {
+        S.grooveKind = 3; S.grooveName = 'hat'; S.grooveTiming = 80; S.grooveVelocity = 30; S.grooveRandom = 0;
+        openOn('Groove');
+        let labels = S.globalMenuItems.map(i => i && (i.type === 'divider' ? '---' : i.label));
+        const at = labels.indexOf('BPM');
+        assert(JSON.stringify(labels.slice(at, at + 7)) === JSON.stringify(
+            ['BPM', 'Groove', 'Groove Amt', 'Grv Timing', 'Grv Velocity', 'Grv Random', '---']),
+            'the tempo group reads: ' + labels.slice(at, at + 8).join(' | '));
+        const row = openOn('Grv Velocity');
+        assert(row.get() === 30 && row.format(30) === '30%', 'Grv Velocity reads ' + row.format(row.get()));
+        row.set(55);
+        assert(JSON.stringify(sets) === JSON.stringify([['groove_velocity', '55']]), 'the engine was sent: ' + JSON.stringify(sets));
+        openOn('Grv Timing').set(70); openOn('Grv Random').set(15);
+        assert(S.grooveTiming === 70 && S.grooveRandom === 15, 'the mirrors did not follow');
+        /* picking a swing takes the rows away without leaving the menu */
+        pickGroove('Swing 1/16');
+        menu.ensureGlobalMenuFresh();
+        labels = S.globalMenuItems.map(i => i && i.label);
+        assert(labels.indexOf('Grv Timing') < 0 && labels.indexOf('Grv Random') < 0, 'a swing still shows the groove\'s rows');
+        pickGroove('hat');
+        menu.ensureGlobalMenuFresh();
+        assert(S.globalMenuItems.some(i => i && i.label === 'Grv Timing'), 'the rows did not come back with the groove');
+    });
+
+    step('a groove heard in the list brings its amounts; Back puts the old ones back', () => {
+        S.grooveKind = 2; S.grooveName = ''; S.grooveTiming = 100; S.grooveVelocity = 0;
+        const st = browse();
+        onRow(st, 'broken'); jog(1); ticks(30);        /* hear Hand: Timing 80, Velocity 30 */
+        assert(S.grooveTiming === 80 && S.grooveVelocity === 30, 'the trial\'s amounts: ' + S.grooveTiming + ' ' + S.grooveVelocity);
+        back(); ticks(1);
+        assert(S.grooveTiming === 100 && S.grooveVelocity === 0 && S.grooveKind === 2, 'Back left the trial\'s amounts in the mirrors');
+    });
+
     step('⭐ the browser reopens in the folder the last groove was loaded from — kept on the device, and not undone by backing out', () => {
         let st = browse();
         onRow(st, 'Grooves');

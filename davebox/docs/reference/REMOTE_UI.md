@@ -126,7 +126,8 @@ should pin (see §9).
 All writes are `R.setParam(P+key, value)` (P = `"overtake_dsp:"`), each followed by
 `afterEdit()` and usually `pullSoon()`. Full signatures in [`DAVEBOX_API.md`](DAVEBOX_API.md).
 
-- **Global:** `bpm`, `key`, `scale`, `swing_amt`/`swing_res`, `launch_quant`, `scale_aware`,
+- **Global:** `bpm`, `key`, `scale`, `swing_amt`/`swing_res` (the groove seen as a swing; the groove's own
+  keys — `groove_kind`, `groove_amt`, … — are in `DAVEBOX_API.md`), `launch_quant`, `scale_aware`,
   `transport` (`play`/`stop`/`restart`/`play_focus:T:C`), `launch_scene`, `mute_all_clear`,
   `undo_restore`/`redo_restore`, `bake`, `clip_copy`/`drum_clip_copy`.
   > ⚠️ **New global keys are silently dropped by the host** (see repo CLAUDE.md). Only

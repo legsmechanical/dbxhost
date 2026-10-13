@@ -725,6 +725,7 @@ export function doClearSession() {
     S.grooveKind           = 1;
     S.grooveAmt            = 0;
     S.grooveName           = '';
+    S.grooveTiming = 100; S.grooveVelocity = 0; S.grooveRandom = 0;
     S.launchQuant          = 0;
     S.midiInChannel        = 0;
     S.metronomeOn          = 1;

@@ -2238,6 +2238,9 @@ see [Track settings](#174-track-settings) below.
 | BPM | Tempo | 40–250 | — |
 | Groove | The project's timing feel — see [The groove](#the-groove) | Off, Browse..., Swing 1/16, Swing 1/8, the loaded groove | Swing 1/16 |
 | Groove Amt | How much of the groove is applied. For the two swings it reads as swing depth: 50 % is straight, 66 % is triplet swing | 0–100 % (50–75 % for a swing) | none |
+| Grv Timing | Shown for a loaded groove: how much of its timing shifts are applied | 0–100 % | the groove's own |
+| Grv Velocity | Shown for a loaded groove: how far notes are pulled towards its velocities | 0–100 % | the groove's own |
+| Grv Random | Shown for a loaded groove: how much each note wanders from its place, differently every time | 0–100 % | the groove's own |
 | Metro | When the metronome sounds — never, during the count-in, while playing, or always | Off, Cnt-In, Play, Always | Cnt-In |
 | Metro Vol | Metronome level | 0–150 % | 100 % |
 | Clock Follow | Lock to Move's transport and tempo — see [§15.3](#153-clock-follow) | Off, Move | Off |
