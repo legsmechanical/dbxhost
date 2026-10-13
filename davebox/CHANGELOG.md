@@ -18,7 +18,8 @@ the section into a versioned heading at release time.
   the Groove list opens your files; click a MIDI file or an Ableton `.agr` and
   you hear it as soon as the jog rests on it; click to keep it and return to Project Settings, or
   Back to return to the groove you had. The list opens on the file the
-  project's groove came from. The groove is saved with the project.
+  project's groove came from. The groove is saved with the project. A MIDI file is
+  read on the grid its notes were played on — 1/8s, triplets, 1/16s or 1/32s.
 - **Groove per track.** Each track follows the project's groove amounts until
   you give it its own. **Grv Amt** at the foot of a track's sound menu reads
   Global; turn it and that track takes more of the groove than the rest, less,
@@ -37,6 +38,12 @@ the section into a versioned heading at release time.
   finger lightly could make the touch drop out and come back, and the knob's
   page or the bank card blinked with it. A touch now has to be gone for a tenth
   of a second before it counts as let go.
+
+### Fixed
+- **Notes to Seq under a groove: overlapping notes keep their own lengths.**
+  With a groove on, a note a MIDI effect generated could be recorded up to a
+  position too long or too short when another generated note was still
+  sounding.
 
 ## [0.0.20] — 2026-10-12 (test build, not in the Schwung catalog)
 ### Added

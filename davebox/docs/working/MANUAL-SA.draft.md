@@ -2276,8 +2276,9 @@ says how much of it you hear — at none, everything is on the grid.
   anything — the groove you had comes back. The list opens on the file the
   project's groove was loaded from, or at the top of your files when the
   project has none. A MIDI
-  file is read one position per 1/16 over its whole length (up to 128
-  positions); a file with several parts asks which. An Ableton groove brings
+  file is read over its whole length, on the grid its notes were played on —
+  1/16s for a 1/16 pattern, 1/8s for swung 1/8s, triplets for triplets — up
+  to 128 positions; a file with several parts asks which. An Ableton groove brings
   its own grid, length and amounts.
 - **A loaded groove** is a pattern of small timing shifts — some notes a little
   late, some a little early — and velocities, one per grid position, that
