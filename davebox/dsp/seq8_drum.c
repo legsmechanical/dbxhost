@@ -179,6 +179,24 @@ static void drum_pfx_send(drum_pfx_t *px, uint8_t status, uint8_t d1, uint8_t d2
             if (px->on_park) { _park = (uint64_t)px->on_park - 1u; px->on_park = 0; }
         }
     }
+    /* a note-off never overtakes its own parked note-on (see pfx_send) */
+    if (g_inst && !g_inst->in_queue_drain) {
+        uint8_t _st = status & 0xF0;
+        if (_st == 0x80 || (_st == 0x90 && d2 == 0)) {
+            uint64_t _at = 0, _own = px->sample_counter + (g_inst->emit_bypass_swing ? 0 : _park);
+            int _i;
+            for (_i = 0; _i < px->event_count; _i++)
+                if ((px->events[_i].flags & PFX_EV_BYPASS_SWING)
+                        && px->events[_i].msg[0] == (uint8_t)(0x90 | (status & 0x0F))
+                        && px->events[_i].msg[1] == d1 && px->events[_i].msg[2] > 0
+                        && px->events[_i].fire_at > _at)
+                    _at = px->events[_i].fire_at;
+            if (_at && _at >= _own) {
+                drum_pfx_q_insert(px, _at, (uint8_t)(0x80 | (status & 0x0F)), d1, 0, PFX_EV_BYPASS_SWING);
+                return;
+            }
+        }
+    }
     if (g_inst && _park > 0
             && !g_inst->emit_bypass_swing
             && !g_inst->in_queue_drain) {

@@ -2501,6 +2501,24 @@ static void pfx_send(play_fx_t *fx, uint8_t status, uint8_t d1, uint8_t d2) {
             if (fx->on_park[d1]) { _park = (uint64_t)fx->on_park[d1] - 1u; fx->on_park[d1] = 0; }
         }
     }
+    /* A NOTE-OFF NEVER OVERTAKES ITS OWN PARKED NOTE-ON. A note-on held back
+     * by swing or a groove is still in the queue; a note-off for it that is
+     * not held as long — sent on an on-time step, or at once because a hand
+     * let go (the input arp silenced on pad release is the case that left
+     * notes stuck on the device, 2026-10-13, and it predates the groove) —
+     * went out first, and the note-on after it rang for ever. It waits behind
+     * the note-on instead: same time, and the queue puts it after. */
+    if (g_inst && !g_inst->in_queue_drain) {
+        uint8_t _st = status & 0xF0;
+        if (_st == 0x80 || (_st == 0x90 && d2 == 0)) {
+            uint64_t _at  = pfx_parked_on_at(fx->events, fx->event_count, (uint8_t)(status & 0x0F), d1);
+            uint64_t _own = fx->sample_counter + (g_inst->emit_bypass_swing ? 0 : _park);
+            if (_at && _at >= _own) {
+                pfx_q_insert(fx, _at, (uint8_t)(0x80 | (status & 0x0F)), d1, 0, PFX_EV_BYPASS_SWING);
+                return;
+            }
+        }
+    }
     if (g_inst && _park > 0
             && !g_inst->emit_bypass_swing
             && !g_inst->in_queue_drain) {
