@@ -38,17 +38,42 @@ step('the loop wraps: a note just before the end belongs to the first slot', () 
     assertEq(t.vel, [90, 0, 0, 0], 'velocity on slot 0');
 });
 
-step('a note exactly half way between two grid lines belongs to the LATER one, as its early edge', () => {
+step('a note exactly half way between two grid lines belongs to the EARLIER one, as its late note', () => {
     const t = grooveTableFromNotes([{ tick: 12, vel: 70 }], 24, 96);
-    assertEq(t.off, [0, -12 * GROOVE_FINE, 0, 0], 'slot 1, half a slot early');
-    assertEq(t.vel, [0, 70, 0, 0], 'and nowhere else: one note never fills two slots');
+    assertEq(t.off, [12 * GROOVE_FINE, 0, 0, 0], 'slot 0, half a slot late');
+    assertEq(t.vel, [70, 0, 0, 0], 'and nowhere else: one note never fills two slots');
 });
 
-step('two notes near one grid line: the nearer wins; on a dead heat, the earlier', () => {
-    let t = grooveTableFromNotes([{ tick: 5, vel: 50 }, { tick: 2, vel: 99 }], 24, 96);
-    assertEq([t.off[0], t.vel[0]], [2 * GROOVE_FINE, 99], 'the nearer');
-    t = grooveTableFromNotes([{ tick: 4, vel: 50 }, { tick: 92, vel: 99 }], 24, 96);
-    assertEq([t.off[0], t.vel[0]], [-4 * GROOVE_FINE, 99], 'the earlier');
+/* ⭐ THE HARD SWING. A 74% swing of 1/16ths puts every off-beat note 11.5 to
+ * 12 ticks late — half a slot, as near the next line as its own. Matching the
+ * nearest note to each line gave those notes away (the first cut of this made
+ * a table with three late slots in two bars out of exactly this). In order,
+ * every off-beat line gets its note. */
+step('⭐ a hard swing: every off-beat slot is late, none is lost to the next line', () => {
+    const notes = [];
+    for (let beat = 0; beat < 4; beat++)
+        notes.push({ tick: beat * 96 + 0.01, vel: 127 }, { tick: beat * 96 + 36.01, vel: 100 },
+                   { tick: beat * 96 + 48, vel: 127 }, { tick: beat * 96 + 84, vel: 100 });
+    const t = grooveTableFromNotes(notes, 24, 384);
+    assertEq(t.n, 16, 'sixteen slots');
+    assertEq(t.off.map(o => Math.round(o / GROOVE_FINE)), [0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12], 'every other slot twelve ticks late');
+    assertEq(t.vel, [127, 100, 127, 100, 127, 100, 127, 100, 127, 100, 127, 100, 127, 100, 127, 100], 'each with its own velocity');
+});
+
+step('later than half a slot is still its own line\'s, up to a whole slot', () => {
+    /* an 1/8 swing read on a 1/8 grid at 74%: 23 ticks late in a 48-tick slot,
+     * and a 1/16 line whose note is 20 ticks late in a 24-tick slot */
+    assertEq(grooveTableFromNotes([{ tick: 0, vel: 90 }, { tick: 71, vel: 90 }], 48, 96).off, [0, 23 * GROOVE_FINE], '23 late');
+    assertEq(grooveTableFromNotes([{ tick: 0, vel: 90 }, { tick: 44, vel: 80 }, { tick: 48, vel: 90 }], 24, 96).off,
+             [0, 20 * GROOVE_FINE, 0, 0], '20 late, with the next line taken by its own note');
+});
+
+step('two notes for one line: the nearer has it and the other finds the line it can; chords are one note', () => {
+    let t = grooveTableFromNotes([{ tick: 2, vel: 99 }, { tick: 5, vel: 50 }], 24, 96);
+    assertEq([t.off[0], t.vel[0]], [2 * GROOVE_FINE, 99], 'the nearer has line 0');
+    assertEq(t.vel[1], 0, 'and the other is not pushed 19 ticks early onto line 1');
+    t = grooveTableFromNotes([{ tick: 24, vel: 50 }, { tick: 24.5, vel: 99 }], 24, 96);
+    assertEq([t.off[1], t.vel[1]], [24 * GROOVE_FINE - 24 * GROOVE_FINE, 99], 'struck together: one note, the louder');
 });
 
 step('a silent note is no note; the slot count follows the length, capped at 128', () => {

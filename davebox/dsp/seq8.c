@@ -380,13 +380,17 @@ static inline int groove_swing_offbeat(const groove_t *g, uint64_t step) {
 }
 
 /* Table: the offset of the slot holding `tick`, in fine ticks: + late,
- * - early. Scaled by the amount and never more than half a slot either way. */
+ * - early. Scaled by the amount. Never more than half a slot early (the
+ * lookahead is that long) and never a whole slot late: a hard swing puts its
+ * off-beat note past the half-way mark, and a slot that reached the next
+ * line would play after the note that belongs there. */
 static inline int32_t groove_slot_off(const groove_t *g, uint64_t tick) {
     if (g->kind != GROOVE_TABLE || g->base == 0 || g->n_slots == 0) return 0;
     int32_t off = (int32_t)g->off[(tick / g->base) % g->n_slots];
-    int32_t cap = (int32_t)g->base * GROOVE_FINE / 2;
+    int32_t early = (int32_t)g->base * GROOVE_FINE / 2;
+    int32_t late  = (int32_t)g->base * GROOVE_FINE - 1;
     off = off * (int32_t)groove_eff_amt(g) / 100;
-    return off > cap ? cap : off < -cap ? -cap : off;
+    return off > late ? late : off < -early ? -early : off;
 }
 
 /* Table: Random's reach, in fine ticks. A sequenced note lands anywhere from

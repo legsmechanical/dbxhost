@@ -52,29 +52,72 @@ export function grooveCleanName(s) {
 /* ---- notes → table ---- */
 
 /* notes: [{ tick, vel }] in ticks (fractions allowed); base: slot length in
- * ticks; lengthTicks: the template's loop length. */
+ * ticks; lengthTicks: the template's loop length.
+ *
+ * The template's notes are matched to grid lines IN ORDER — the first note to
+ * the first line it can belong to, and so on — choosing the matching that
+ * moves the notes least. Not "the nearest note to each line": a hard swing
+ * puts its off-beat note half a slot late or more, where it is as near the
+ * NEXT line as its own, and nearest-first hands it to the wrong one (or to
+ * none). In order, a note may sit up to a whole slot late and half a slot
+ * early and still be its own line's. */
 export function grooveTableFromNotes(notes, base, lengthTicks) {
     const b = Math.max(1, Math.round(base));
     const n = Math.max(1, Math.min(GROOVE_MAX_SLOTS, Math.round(Math.max(b, lengthTicks) / b)));
     const loop = n * b;
     const off = new Array(n).fill(0), vel = new Array(n).fill(0);
-    const half = b / 2;
-    for (let i = 0; i < n; i++) {
-        const g = i * b;
-        let best = null, bestAbs = Infinity;
-        for (const nt of notes || []) {
-            if (!(nt.vel > 0)) continue;
-            /* signed distance from the grid line, the short way round the loop */
-            let d = ((nt.tick - g) % loop + loop) % loop;
-            if (d > loop / 2) d -= loop;
-            const a = Math.abs(d);
-            if (a > half || (a === half && d > 0)) continue;       /* the next slot's, on a tie */
-            if (a < bestAbs || (a === bestAbs && d < best.d)) { best = { d, v: nt.vel }; bestAbs = a; }
+
+    /* in time order; notes struck together are one (the loudest) */
+    const src = (notes || []).filter(x => x.vel > 0 && isFinite(x.tick))
+        .map(x => ({ t: ((x.tick % loop) + loop) % loop, v: x.vel }))
+        .sort((x, y) => x.t - y.t);
+    const ns = [];
+    for (const x of src) {
+        const last = ns[ns.length - 1];
+        if (last && x.t - last.t < 1) { if (x.v > last.v) last.v = x.v; } else ns.push({ t: x.t, v: x.v });
+        if (ns.length >= 1024) break;
+    }
+    const m = ns.length;
+    if (!m) return { base: b, n, off, vel };
+
+    /* Lines 0..n: line n is the loop's end, which is line 0 again (a note
+     * just before the end is the first line's, early). d = note - line. */
+    const LATE = b - 1 / GROOVE_FINE, EARLY = b / 2;
+    const fits = (d) => d <= LATE && d >= -EARLY;
+    const SKIP = b * 4;                         /* leaving a note out costs more than any fit */
+    const W = n + 2;
+    const cost = new Float64Array((m + 1) * W), took = new Uint8Array((m + 1) * W);
+    /* cost[i][j]: the first i notes placed on lines before j */
+    for (let i = 1; i <= m; i++) cost[i * W] = i * SKIP;
+    for (let i = 0; i <= m; i++) {
+        for (let j = 1; j <= n + 1; j++) {
+            let best = cost[i * W + (j - 1)], how = 0;                    /* line j-1 left empty */
+            if (i > 0) {
+                const d = ns[i - 1].t - (j - 1) * b;
+                if (fits(d)) {
+                    /* a dead heat goes to the EARLIER line, as its late note */
+                    const c = cost[(i - 1) * W + (j - 1)] + (d >= 0 ? d : 0.001 - d);
+                    if (c < best) { best = c; how = 1; }                  /* note i-1 on line j-1 */
+                }
+                const c2 = cost[(i - 1) * W + j] + SKIP;
+                if (c2 < best) { best = c2; how = 2; }                    /* note i-1 left out */
+            }
+            cost[i * W + j] = best; took[i * W + j] = how;
         }
-        if (best) {
-            off[i] = Math.max(-b * GROOVE_FINE / 2, Math.min(b * GROOVE_FINE / 2, Math.round(best.d * GROOVE_FINE)));
-            vel[i] = Math.max(1, Math.min(127, Math.round(best.v)));
-        }
+    }
+    let i = m, j = n + 1;
+    const put = [];
+    while (j > 0) {
+        const how = took[i * W + j];
+        if (how === 1) { put.push({ line: j - 1, d: ns[i - 1].t - (j - 1) * b, v: ns[i - 1].v }); i--; j--; }
+        else if (how === 2) i--;
+        else j--;
+    }
+    for (const p of put) {
+        const slot = p.line % n;                 /* the loop's end is the first line */
+        if (vel[slot] && p.line === n) continue; /* the first line already has its own note */
+        off[slot] = Math.round(p.d * GROOVE_FINE);
+        vel[slot] = Math.max(1, Math.min(127, Math.round(p.v)));
     }
     return { base: b, n, off, vel };
 }
@@ -320,16 +363,14 @@ function agrFromBinary(b) {
      * slot that still gives every note a slot of its own. */
     const lastTick = Math.max.apply(null, notes.map(n => n.tick));
     const beats = Math.max(1, Math.ceil(lastTick / GROOVE_PPQN + 0.001));
+    /* ...the coarsest of the usual grids on which every note is nearer its
+     * own line than any other note is. */
     let base = 12;
+    const times = [...new Set(notes.map(n => Math.round(n.tick)))].sort((x, y) => x - y);
+    let minGap = Infinity;
+    for (let k = 1; k < times.length; k++) minGap = Math.min(minGap, times[k] - times[k - 1]);
     for (const cand of [96, 48, 32, 24, 16, 12]) {
-        const seen = new Set();
-        let clash = false;
-        for (const n of notes) {
-            const s = Math.round(n.tick / cand) % Math.max(1, Math.round(beats * GROOVE_PPQN / cand));
-            if (seen.has(s)) { clash = true; break; }
-            seen.add(s);
-        }
-        if (!clash) { base = cand; break; }
+        if (Math.round(beats * GROOVE_PPQN / cand) >= times.length && cand <= minGap * 2) { base = cand; break; }
     }
     const t = grooveTableFromNotes(notes, base, beats * GROOVE_PPQN);
     return { ...t, name: '', timing: 100, quantize: 0, random: 0, velocity: 0, guessed: true };

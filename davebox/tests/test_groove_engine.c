@@ -93,7 +93,9 @@ static void s_table_like_swing(hx_t *h) { table_two_slots(h, 12 * GROOVE_FINE); 
 static void s_table_early(hx_t *h)      { table_two_slots(h, -12 * GROOVE_FINE); }
 static void s_table_half_amt(hx_t *h)   { table_two_slots(h, 24 * GROOVE_FINE);
                                           ((seq8_instance_t *)h->inst)->groove.amt = 50; }
-static void s_table_too_late(hx_t *h)   { table_two_slots(h, 20 * GROOVE_FINE); }
+static void s_table_too_late(hx_t *h)   { table_two_slots(h, 60 * GROOVE_FINE); }
+static void s_table_23(hx_t *h)         { table_two_slots(h, 24 * GROOVE_FINE - 1); }
+static void s_table_20(hx_t *h)         { table_two_slots(h, 20 * GROOVE_FINE); }
 static void s_table_empty(hx_t *h) {
     groove_t *g = &((seq8_instance_t *)h->inst)->groove;
     g->kind = GROOVE_TABLE; g->amt = 100;   /* no slots: nothing to play */
@@ -243,8 +245,11 @@ int main(void) {
                   "a table with slot 2 twelve ticks late starts its notes as Swing 1/16 at full does");
         HX_ASSERT(timing_of(s_table_half_amt) == sw16_on,
                   "a table's amount scales its offsets (24 ticks at 50 = 12 ticks)");
-        HX_ASSERT(timing_of(s_table_too_late) == sw16_on,
-                  "a slot is never more than half a slot late (20 ticks in a 24-tick slot plays as 12)");
+        /* past half a slot (a hard swing's off-beat) and up to a whole one */
+        HX_ASSERT(timing_of(s_table_20) != sw16_on, "a slot twenty ticks late was cut back to twelve");
+        HX_ASSERT(timing_of(s_table_too_late) == timing_of(s_table_23),
+                  "a slot is never a whole slot late (60 ticks in a 24-tick slot plays as just under 24)");
+        HX_ASSERT(timing_of(s_table_20) != timing_of(s_table_23), "control: 20 and 24 ticks late are told apart");
         HX_ASSERT(timing_of(s_table_empty) == straight_on, "a table with no slots plays straight");
     }
     g_ons_only = 0;
