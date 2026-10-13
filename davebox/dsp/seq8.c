@@ -388,7 +388,9 @@ static inline int32_t groove_slot_off(const groove_t *g, uint64_t tick) {
     if (g->kind != GROOVE_TABLE || g->base == 0 || g->n_slots == 0) return 0;
     int32_t off = (int32_t)g->off[(tick / g->base) % g->n_slots];
     int32_t early = (int32_t)g->base * GROOVE_FINE / 2;
-    int32_t late  = (int32_t)g->base * GROOVE_FINE - 1;
+    /* two ticks short of the next line: its parked notes and its held lock
+     * must be out before the next slot's tick writes its own */
+    int32_t late  = g->base > 4 ? ((int32_t)g->base - 2) * GROOVE_FINE : early;
     off = off * (int32_t)groove_eff_amt(g) / 100;
     return off > late ? late : off < -early ? -early : off;
 }
@@ -406,6 +408,13 @@ static inline uint32_t groove_rand_fine(const groove_t *g) {
  * only ever played late: arps, repeats, echoes, the looper. */
 static inline uint32_t groove_table_late_fine(const groove_t *g, uint64_t tick) {
     int32_t off = groove_slot_off(g, tick);
+    /* Never more than HALF a slot for these: their note-ons and note-offs are
+     * each delayed by the slot they land in, so a note-on held nearly a whole
+     * slot could come out after its own note-off from the next, on-time slot.
+     * A sequenced note carries its delay to its note-off and may take the full
+     * offset (groove_table_seq_late_fine). */
+    int32_t half = (int32_t)g->base * GROOVE_FINE / 2;
+    if (off > half) off = half;
     return off > 0 ? (uint32_t)off : 0;
 }
 
@@ -947,7 +956,7 @@ typedef struct {
      * waiting for their note-off to set the length. Its own table, never
      * rec_pending: that one is closed by PITCH when a pad is released, and a
      * pad and a generated note can share a pitch. */
-    struct { uint8_t pitch; uint32_t tick_at_on; } fx_pending[16];
+    struct { uint8_t pitch; uint32_t tick_at_on; int16_t groove_shift; } fx_pending[16];
     uint8_t  fx_pending_count;
     /* Note-centric playback: per-note gate countdown (render state, not persisted) */
     struct { uint8_t pitch; uint16_t ticks_remaining; uint8_t lane_idx; uint8_t src_pitch; } play_pending[32];
@@ -2819,8 +2828,18 @@ static inline uint32_t groove_track_lead(const seq8_instance_t *inst, const seq8
      * its locks must too. (A drum track's automation runs on the master
      * clock, which only goes forward.) */
     int fwd = (tr->pad_mode == PAD_MODE_DRUM) || tr->clips[tr->active_clip].playback_dir == 0;
-    if (inst->groove_lead == 0 || !fwd || tr->queued_clip >= 0 || tr->pending_page_stop)
-        { *delay = inst->swing_step_delay; return 0; }
+    if (inst->groove_lead == 0 || !fwd || tr->queued_clip >= 0 || tr->pending_page_stop) {
+        *delay = inst->swing_step_delay;
+        /* a table: the lock waits as long as the step's sequenced note does */
+        if (inst->groove.kind == GROOVE_TABLE && inst->tick_delta > 0) {
+            double spt = (double)MOVE_FRAMES_PER_BLOCK
+                         * (double)inst->tick_threshold / (double)inst->tick_delta;
+            *delay = (uint64_t)((double)groove_table_seq_late_fine(&inst->groove,
+                                    (uint64_t)groove_master_tick(inst))
+                                * spt / (double)GROOVE_FINE + 0.5);
+        }
+        return 0;
+    }
     *delay = inst->groove_lead_delay;
     return inst->groove_lead;
 }
@@ -2886,8 +2905,11 @@ static uint32_t groove_shift_clip_tick(const clip_t *cl, uint32_t tick, int32_t 
     uint32_t tps = cl->ticks_per_step, win = (uint32_t)cl->length * tps;
     if (!shift || !win) return tick;
     int64_t ws = (int64_t)cl->loop_start * tps, t = (int64_t)tick + shift;
-    while (t < ws) t += win;
-    while (t >= ws + win) t -= win;
+    /* Not across the loop's edge: a note moved past the end would be played
+     * again as soon as the loop wraps, one moved back before the start would
+     * sit silent through the next pass — and a count-in note belongs on the
+     * first tick. Such a note stays where the clock put it. */
+    if (t < ws || t >= ws + (int64_t)win) return tick;
     return (uint32_t)t;
 }
 
@@ -2897,8 +2919,9 @@ static void groove_shift_drum_pos(const clip_t *dlc, uint16_t *step, int16_t *of
     if (!shift || dlc->length == 0) return;
     int32_t ls = dlc->loop_start, le = ls + dlc->length;
     int32_t s = *step, o = (int32_t)*off + shift;
-    while (o >= TICKS_PER_STEP)  { o -= TICKS_PER_STEP; if (++s >= le) s = ls; }
-    while (o < -(TICKS_PER_STEP / 2)) { o += TICKS_PER_STEP; if (--s < ls) s = le - 1; }
+    while (o >= TICKS_PER_STEP)  { o -= TICKS_PER_STEP; s++; }
+    while (o < -(TICKS_PER_STEP / 2)) { o += TICKS_PER_STEP; s--; }
+    if (s < ls || s >= le) return;               /* not across the loop's edge: see groove_shift_clip_tick */
     *step = (uint16_t)s; *off = (int16_t)o;
 }
 
@@ -3925,9 +3948,9 @@ static void drum_repeat_tick(seq8_instance_t *inst, seq8_track_t *tr) {
                 const uint16_t r_le = (uint16_t)(r_ls + rlc->length);
                 if (rs >= r_ls && rs < r_le) {
                     int16_t off = (int16_t)tr->drum_tick_in_step[lane];
-                    /* a repeat is only ever delayed by the groove */
-                    groove_shift_drum_pos(rlc, &rs, &off,
-                        groove_record_shift_late(inst, tr, groove_master_tick(inst)));
+                    /* (Not un-grooved: a repeat is only ever DELAYED by the groove,
+                     * and stored where the clock stood it plays back with the same
+                     * delay. Stored later, it would also play on this very pass.) */
                     if (off >= (int16_t)(TICKS_PER_STEP / 2)) {
                         rs = (uint16_t)(rs + 1);
                         if (rs >= r_le) rs = r_ls;
@@ -4074,9 +4097,9 @@ static void drum_repeat2_tick(seq8_instance_t *inst, seq8_track_t *tr) {
                 const uint16_t r_le = (uint16_t)(r_ls + rlc->length);
                 if (rs >= r_ls && rs < r_le) {
                     int16_t off = (int16_t)tr->drum_tick_in_step[l];
-                    /* a repeat is only ever delayed by the groove */
-                    groove_shift_drum_pos(rlc, &rs, &off,
-                        groove_record_shift_late(inst, tr, groove_master_tick(inst)));
+                    /* (Not un-grooved: a repeat is only ever DELAYED by the groove,
+                     * and stored where the clock stood it plays back with the same
+                     * delay. Stored later, it would also play on this very pass.) */
                     if (off >= (int16_t)(TICKS_PER_STEP / 2)) {
                         rs = (uint16_t)(rs + 1);
                         if (rs >= r_le) rs = r_ls;
@@ -5176,12 +5199,15 @@ static void slot_fx_record_melodic_on(seq8_instance_t *inst, seq8_track_t *tr,
     /* Window-anchored, as every recorder is. Count-in: the window's start. */
     uint32_t abs_tick = preroll ? (uint32_t)cl->loop_start * tps : tr->current_clip_tick;
     /* The track's own Input Quantize, as for a pad. */
+    int32_t rec_shift = 0;
     if (tr->drum_inp_quant > 0) {
         uint32_t qt = (uint32_t)DRUM_INQ_TICKS[tr->drum_inp_quant];
         abs_tick = ((abs_tick + qt / 2) / qt) * qt;
     } else if (!preroll) {
-        abs_tick = groove_shift_clip_tick(cl, abs_tick,
-                       groove_record_shift(inst, tr, groove_master_tick(inst)));
+        uint32_t was = abs_tick;
+        abs_tick  = groove_shift_clip_tick(cl, abs_tick,
+                        groove_record_shift(inst, tr, groove_master_tick(inst)));
+        rec_shift = (int32_t)abs_tick - (int32_t)was;
     }
     uint16_t sidx = note_step(abs_tick, cl->length, tps);
     /* Already there from an earlier lap? */
@@ -5198,6 +5224,7 @@ static void slot_fx_record_melodic_on(seq8_instance_t *inst, seq8_track_t *tr,
     if (tr->fx_pending_count < 16) {
         tr->fx_pending[tr->fx_pending_count].pitch      = pitch;
         tr->fx_pending[tr->fx_pending_count].tick_at_on = abs_tick;
+        tr->fx_pending[tr->fx_pending_count].groove_shift = (int16_t)rec_shift;
         tr->fx_pending_count++;
     }
     /* The step mirror, rounded with note_step() like its readers. */
@@ -5242,7 +5269,9 @@ static void slot_fx_record_melodic_off(seq8_track_t *tr, uint8_t pitch) {
     uint32_t on_tick = tr->fx_pending[ri].tick_at_on;
     tr->fx_pending[ri] = tr->fx_pending[--tr->fx_pending_count];
     if (clip_ticks == 0) return;
-    uint32_t off_tick   = tr->current_clip_tick;
+    /* the release moves with an un-grooved note-on, so the note keeps its length */
+    uint32_t off_tick   = groove_shift_clip_tick(cl, tr->current_clip_tick,
+                                                 (int32_t)tr->fx_pending[ri].groove_shift);
     uint32_t gate_ticks = (off_tick >= on_tick) ? off_tick - on_tick
                                                 : clip_ticks - on_tick + off_tick;
     uint32_t gmax = (uint32_t)SEQ_STEPS * tps;
@@ -9604,9 +9633,10 @@ static int groove_pass(seq8_instance_t *inst, const clip_t *cl,
     p->due = 0; p->early = 0; p->crossed = 0; p->ahead = 0;
     if (pass == 0) {
         p->cct = playback_audible_cct(cl, step, tick_in_step);
-        /* Random reaches back as far as forward, so a sequenced note's park
-         * starts that much sooner than the slot's (which arps and echoes use). */
-        if (inst->groove.kind == GROOVE_TABLE && inst->groove.random && inst->tick_delta > 0) {
+        /* A sequenced note's own park, not the slot's (which arps and echoes
+         * use): it may be later than half a slot, and Random reaches back as
+         * far as forward, so it starts that much sooner. */
+        if (inst->groove.kind == GROOVE_TABLE && inst->tick_delta > 0) {
             double spt = (double)MOVE_FRAMES_PER_BLOCK
                          * (double)inst->tick_threshold / (double)inst->tick_delta;
             p->park = (uint64_t)((double)groove_table_seq_late_fine(&inst->groove,

@@ -231,9 +231,13 @@ export function miOpenGroove() {
     MQ.key = null;
     MI = freshState(GS.activeTrack, true);
     MI.gTrial = null;                                   /* list key of the trial playing, or null */
+    MI.gRow = null;                                     /* the last row's groove, kept: { key, r } */
+    MI.gSentAt = -1e9;                                  /* when a table was last sent */
+    MI.gWant = null;                                    /* a send waiting its turn: { r, trial } */
     MI.gBefore = { kind: GS.grooveKind, name: GS.grooveName, timing: GS.grooveTiming, velocity: GS.grooveVelocity, random: GS.grooveRandom };
     const dir = grooveBrowseDir();
     enterDir(dir && dir.startsWith(MI_ROOT) && isDirPath(dir) ? dir : MI_ROOT, '');
+    computePadNoteMap();          /* as the import list does: the pads are this screen's while it is up */
     GS.screenDirty = true;
     return true;
 }
@@ -243,6 +247,15 @@ const GROOVE_MIDI_BASE = 24;
  * for a row that is no groove (a folder, a file of several parts). */
 function grooveOfRow(it) {
     if (!it) return null;
+    /* the matcher is not free: a row is worked out once, for the rest and the click */
+    const ck = it.kind === 'part' ? MI.file.path + '#' + it.part : it.kind === 'file' ? it.path : null;
+    if (ck === null) return null;
+    if (MI.gRow && MI.gRow.key === ck) return MI.gRow.r;
+    const r = grooveOfRowNow(it);
+    MI.gRow = { key: ck, r };
+    return r;
+}
+function grooveOfRowNow(it) {
     if (it.kind === 'part') {
         const res = MI.file.res, part = res.parts[it.part];
         const len = partBarsOf(part, res.timeSig) * barTicks(res.timeSig);
@@ -260,14 +273,31 @@ function grooveOfRow(it) {
     const t = grooveTableFromNotes(part.notes.map(n => ({ tick: n.t, vel: n.v })), GROOVE_MIDI_BASE, len);
     return { g: { ...t, timing: 100, quantize: 0, random: 0, velocity: 0 }, name: it.label, key: it.path };
 }
+/* A table goes to the engine in pieces that share their keys, and the
+ * transport keeps only the LAST write to a key that has not drained yet — so
+ * two tables sent back to back could arrive as one made of both. They are
+ * sent at least this far apart; the later one waits its turn in the tick. */
+const GROOVE_SEND_GAP_MS = 120;
+function grooveSendSoon(r, trial) {
+    MI.gWant = { r, trial };
+    grooveSendDue();
+}
+function grooveSendDue() {
+    if (!MI.gWant || nowMs() - MI.gSentAt < GROOVE_SEND_GAP_MS) return;
+    const { r, trial } = MI.gWant;
+    MI.gWant = null;
+    MI.gSentAt = nowMs();
+    grooveSend({ ...r.g, name: r.name || r.g.name }, trial);
+    MI.gTrial = trial ? r.key : null;
+    if (!trial) MI.gBefore = { kind: GS.grooveKind, name: GS.grooveName, timing: GS.grooveTiming, velocity: GS.grooveVelocity, random: GS.grooveRandom };
+    GS.screenDirty = true;
+}
 /* The jog has rested on a row: hear it. */
 function grooveAudition() {
     const it = MI.items[MI.idx];
     const r = grooveOfRow(it);
     if (!r || r.error || MI.gTrial === r.key) return;   /* nothing to hear, or already playing */
-    grooveSend({ ...r.g, name: r.name || r.g.name }, true);
-    MI.gTrial = r.key;
-    GS.screenDirty = true;
+    grooveSendSoon(r, true);
 }
 /* A click: the row's groove is the project's. */
 function grooveChoose() {
@@ -276,23 +306,31 @@ function grooveChoose() {
     if (!r) return false;
     if (r.error) { showActionPopup(r.error, String(it.label).toUpperCase()); return true; }
     MI.pending = null;
-    if (MI.gTrial === r.key) host_module_set_param('groove_keep', '1');   /* it is already playing */
-    else grooveSend({ ...r.g, name: r.name || r.g.name }, false);
-    MI.gTrial = null;
-    MI.gBefore = { kind: GS.grooveKind, name: GS.grooveName, timing: GS.grooveTiming, velocity: GS.grooveVelocity, random: GS.grooveRandom };
+    if (MI.gTrial === r.key && !MI.gWant) {             /* it is already playing: keep it */
+        host_module_set_param('groove_keep', '1');
+        MI.gTrial = null;
+        MI.gBefore = { kind: GS.grooveKind, name: GS.grooveName, timing: GS.grooveTiming, velocity: GS.grooveVelocity, random: GS.grooveRandom };
+    } else grooveSendSoon(r, false);
     grooveSetBrowseDir(MI.B.currentDir);
     GS.screenDirty = true;
-    showActionPopup('GROOVE', String(GS.grooveName || '').toUpperCase());
+    showActionPopup('GROOVE', String(r.name || r.g.name || '').toUpperCase());
     return true;
 }
 /* Leaving: a trial nobody kept gives way to the groove from before. */
 function grooveLeave() {
+    if (MI.gWant && !MI.gWant.trial) {                  /* a choice still waiting its turn: it goes now */
+        const w = MI.gWant;
+        MI.gWant = null;
+        grooveSend({ ...w.r.g, name: w.r.name || w.r.g.name }, false);
+        MI.gTrial = null;
+    }
     if (MI.gTrial) {
         host_module_set_param('groove_revert', '1');
         GS.grooveKind = MI.gBefore.kind; GS.grooveName = MI.gBefore.name;
         GS.grooveTiming = MI.gBefore.timing; GS.grooveVelocity = MI.gBefore.velocity; GS.grooveRandom = MI.gBefore.random;
     }
     MI = null;
+    computePadNoteMap();
     GS.screenDirty = true;
 }
 
@@ -821,6 +859,7 @@ export function miTick() {
     /* The track, its kind or the view changed under us: leave. */
     if (MI.groove) {                          /* no clip preview, no clock: only the rest that hears a groove */
         if (MI.pending && nowMs() - MI.pending.at >= PREVIEW_DELAY_MS) { MI.pending = null; grooveAudition(); }
+        grooveSendDue();
         return;
     }
     if (GS.activeTrack !== MI.track || isDrumTrack(MI.track) !== MI.drum || GS.sessionView || GS.recordArmed) {
@@ -846,7 +885,7 @@ export function miTick() {
     if (MI.layer === 'list' && MQ.over > 0 && marqueeOffset(now) !== MQ.off) GS.screenDirty = true;
 }
 
-export function miAnimating() { return !!(MI && (MI.pmode || MI.pending || !MI.hear)); }
+export function miAnimating() { return !!(MI && (MI.groove ? (MI.pending || MI.gWant) : (MI.pmode || MI.pending || !MI.hear))); }
 
 /* ---- the knob rings: the card's cells, dark where a knob does nothing ---- */
 

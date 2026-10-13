@@ -83,6 +83,16 @@ step('a silent note is no note; the slot count follows the length, capped at 128
     assertEq(grooveTableFromNotes([], 32, 96).n, 3, 'a triplet grid: three slots a beat');
 });
 
+step('a template longer than 128 slots is cut at the end of the table, not folded over itself', () => {
+    /* 16 bars of 1/16ths: straight for the first 8, every note 6 ticks late after */
+    const notes = [];
+    for (let i = 0; i < 256; i++) notes.push({ tick: i * 24 + (i >= 128 ? 6 : 0), vel: i >= 128 ? 40 : 100 });
+    const t = grooveTableFromNotes(notes, 24, 256 * 24);
+    assertEq(t.n, 128, 'capped at 128 slots');
+    assert(t.off.every(o => o === 0) && t.vel.every(v => v === 100), 'the second half leaked into the first: '
+        + JSON.stringify([t.off.filter(o => o).length, t.vel.filter(v => v !== 100).length]));
+});
+
 /* ---- the pieces sent to the engine ---- */
 
 step('a table is sent as begin, eight slots a piece under their own keys, commit', () => {

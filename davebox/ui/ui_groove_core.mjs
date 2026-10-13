@@ -68,7 +68,10 @@ export function grooveTableFromNotes(notes, base, lengthTicks) {
     const off = new Array(n).fill(0), vel = new Array(n).fill(0);
 
     /* in time order; notes struck together are one (the loudest) */
-    const src = (notes || []).filter(x => x.vel > 0 && isFinite(x.tick))
+    /* A template longer than the table holds is CUT at the table's end — not
+     * folded back on itself, which would lay its second half over its first. */
+    const whole = lengthTicks <= loop + b / 2;
+    const src = (notes || []).filter(x => x.vel > 0 && isFinite(x.tick) && (whole || (x.tick >= 0 && x.tick < loop)))
         .map(x => ({ t: ((x.tick % loop) + loop) % loop, v: x.vel }))
         .sort((x, y) => x.t - y.t);
     const ns = [];

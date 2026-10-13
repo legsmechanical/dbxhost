@@ -267,6 +267,37 @@ async function main() {
         assert(S.grooveName === 'hat', 'the chosen groove did not stay');
     });
 
+    step('⭐ two tables are never sent back to back: a click right after a trial went out waits its turn, then goes whole', () => {
+        const st = browse();
+        onRow(st, 'broken'); jog(1);                   /* Hand */
+        let n = 0;
+        while (sets.length === 0 && n++ < 40) ticks(1);
+        assert(sets.length === 3 && sets[2][1] === 'a', 'rig: the trial of Hand did not go out: ' + JSON.stringify(keys()));
+        sets.length = 0;
+        jog(1); click();                               /* hat, chosen at once */
+        assert(sets.length === 0, 'the second table was sent on top of the first: ' + JSON.stringify(keys()));
+        ticks(14);
+        assert(JSON.stringify(keys()) === JSON.stringify(['groove_begin', 'groove_slots_0', 'groove_slots_8', 'groove_commit']),
+               'it never went: ' + JSON.stringify(keys()));
+        assert(sets[0][1].endsWith(' hat') && sets[3][1] === '1', 'not hat, chosen: ' + sets[0][1] + ' / ' + sets[3][1]);
+        sets.length = 0;
+        back(); ticks(1);
+        assert(sets.length === 0 && S.grooveName === 'hat', 'leaving undid the choice: ' + JSON.stringify(sets));
+    });
+
+    step('a choice still waiting its turn when the list is left goes out on the way', () => {
+        const st = browse();
+        onRow(st, 'broken'); jog(1);
+        let n = 0;
+        while (sets.length === 0 && n++ < 40) ticks(1);
+        sets.length = 0;
+        jog(1); click(); back();                       /* hat chosen, and out, inside the gap */
+        assert(sets.length === 4 && sets[3][0] === 'groove_commit' && sets[3][1] === '1',
+               'the choice was lost: ' + JSON.stringify(keys()));
+        assert(!keys().includes('groove_revert'), 'and then reverted');
+        ticks(1);
+    });
+
     step('the row shows the loaded groove, and it is offered again while a swing plays', () => {
         const row = openOn('Groove');
         assert(row.format(row.get()) === 'hat', 'the row shows ' + row.format(row.get()));

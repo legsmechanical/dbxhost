@@ -100,17 +100,34 @@ int main(void) {
     {
         clip_t *cl = &tr->clips[0];                    /* 16 steps from 0 */
         HX_ASSERT(groove_shift_clip_tick(cl, 30, -12) == 18, "a clip tick moves by the shift");
-        HX_ASSERT(groove_shift_clip_tick(cl, 4, -12) == 16 * 24 - 8, "…and wraps to the end of the window");
-        HX_ASSERT(groove_shift_clip_tick(cl, 16 * 24 - 2, 6) == 4, "…or round to its start");
+        /* never across the loop's edge: past the end it would play again at
+         * the wrap, before the start it would sit silent through a pass */
+        HX_ASSERT(groove_shift_clip_tick(cl, 4, -12) == 4, "a note is not moved back across the loop's start");
+        HX_ASSERT(groove_shift_clip_tick(cl, 16 * 24 - 2, 6) == 16 * 24 - 2, "…nor on across its end");
+        HX_ASSERT(groove_shift_clip_tick(cl, 16 * 24 - 8, 6) == 16 * 24 - 2, "…but right up to it");
         uint16_t st = 1; int16_t off = 2;
         groove_shift_drum_pos(cl, &st, &off, 6);
         HX_ASSERT(st == 1 && off == 8, "a drum position moves inside its step");
         st = 1; off = 2; groove_shift_drum_pos(cl, &st, &off, -20);
         HX_ASSERT(st == 0 && off == 6, "…and back into the step before");
         st = 0; off = -2; groove_shift_drum_pos(cl, &st, &off, -12);
-        HX_ASSERT(st == 15 && off == 10, "…wrapping to the last step of the window");
+        HX_ASSERT(st == 0 && off == -2, "…but not back across the loop's start");
         st = 15; off = 20; groove_shift_drum_pos(cl, &st, &off, 6);
-        HX_ASSERT(st == 0 && off == 2, "…or on to the first");
+        HX_ASSERT(st == 15 && off == 20, "…nor on across its end");
+    }
+
+    /* ---- a note the count-in put on the first tick stays there ---- */
+    {
+        clip_t *cl = &tr->clips[tr->active_clip];
+        table2(8, 0);                                  /* the first slot is eight ticks late */
+        tr->recording = 1;
+        at(0); tr->current_clip_tick = 0;
+        hx_set_param(h, "t1_record_note_on", "e70 100");
+        note_t *n = find_note(cl, 70);
+        HX_ASSERT(n && n->tick == 0, "a note on the loop's first tick was moved to its end");
+        hx_set_param(h, "t1_record_note_off", "e70");
+        tr->recording = 0;
+        swing(GROOVE_SWING_16, 100);
     }
     printf("  ok   — a moved position stays inside the loop window\n");
 

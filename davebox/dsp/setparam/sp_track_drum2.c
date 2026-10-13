@@ -728,6 +728,10 @@ static int sp_track_drum2(sp_ctx_t *cx) {
                     base_off  = (int16_t)tr->drum_tick_in_step[lane];
                 }
                 uint8_t  diq  = tr->drum_inp_quant;
+                /* the press as it was struck: the gate is measured from this,
+                 * against a release that is not moved either */
+                const uint16_t raw_step = base_step;
+                const int16_t  raw_off  = base_off;
                 if (diq == 0) {
                     /* Input Quantize off: store the hit where the groove will
                      * play it back at the moment it was struck. */
@@ -796,8 +800,8 @@ static int sp_track_drum2(sp_ctx_t *cx) {
                     /* Store pending state so drum_record_note_off can close the gate.
                      * PHASE-1: use the snapshot (base_step, base_off) so the gate
                      * compares like-for-like against the release snapshot. */
-                    tr->drum_rec_pending_tick[lane]   = (uint32_t)base_step * TICKS_PER_STEP
-                                                        + (uint32_t)base_off;
+                    tr->drum_rec_pending_tick[lane]   = (uint32_t)raw_step * TICKS_PER_STEP
+                                                        + (uint32_t)raw_off;
                     tr->drum_rec_pending_step[lane]   = step;
                     tr->drum_rec_pending_active[lane] = 1;
                 }
