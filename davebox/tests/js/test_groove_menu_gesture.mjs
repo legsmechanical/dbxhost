@@ -3,11 +3,11 @@
  *
  * Project Settings has a Groove row — a picker: Off, Browse..., the two
  * swings, and the project's own loaded groove — and a Groove Amt row. Browse...
- * opens the file list on MIDI files and Ableton grooves; a click on one loads
- * hears it when the jog rests (a trial), a click keeps it, Back without a
- * click puts the old groove back; the list stays for
- * the next. The list reopens in the folder the last groove came from. Asserted on what
- * the engine is sent, in what order.
+ * opens the file list on MIDI files and Ableton grooves; a groove is heard
+ * when the jog rests on it (a trial), a click keeps it and leaves the list,
+ * Back without a click puts the old groove back. The list opens on the file
+ * the project's groove came from, or at the top. Asserted on what the engine
+ * is sent, in what order.
  * → a green pin says "wired", only the gesture says "reachable".
  */
 import './_bulk_get_stub.mjs';
@@ -141,7 +141,6 @@ async function main() {
         return labels;
     }
 
-    const PREF = '/data/UserData/dbx-host/groove-browse-dir.txt';
     /* Pick Browse... in the Groove picker and let the tick open the list. */
     function browse() {
         pickGroove('Browse...');
@@ -238,18 +237,17 @@ async function main() {
         assert(S.grooveKind === 2 && S.grooveName === '', 'the mirror was not put back: ' + S.grooveKind + ' "' + S.grooveName + '"');
     });
 
-    step('⭐ a click KEEPS the groove playing — one write, no resend — and the list stays for the next', () => {
+    step('⭐ a click KEEPS the groove playing — one write, no resend — and leaves the list', () => {
         const st = browse();
         onRow(st, 'broken'); jog(1); ticks(30);        /* hear Hand */
         sets.length = 0;
         click();
         assert(JSON.stringify(sets) === JSON.stringify([['groove_keep', '1']]), 'the engine was sent: ' + JSON.stringify(sets));
-        assert(MI.miActive(), 'the list closed: the next groove should be a jog away');
-        assert(S.grooveName === 'Hand', 'playing ' + S.grooveName);
-        sets.length = 0;
-        back(); ticks(1);
-        assert(sets.length === 0, 'leaving after a keep reverted it: ' + JSON.stringify(sets));
+        assert(!MI.miActive(), 'the list stayed up after a groove was chosen');
+        ticks(3);
+        assert(sets.length === 1, 'leaving after a keep sent more: ' + JSON.stringify(sets));
         assert(S.grooveKind === 3 && S.grooveName === 'Hand', 'the kept groove did not stay');
+        assert(S.grooveFile === '/data/UserData/Hand.agr', 'the file it came from was not kept: ' + S.grooveFile);
     });
 
     step('a click before the jog has rested still chooses the groove, outright', () => {
@@ -259,14 +257,18 @@ async function main() {
         assert(sets[sets.length - 1][0] === 'groove_commit' && sets[sets.length - 1][1] === '1',
                'not chosen outright: ' + JSON.stringify(sets[sets.length - 1]));
         assert(S.grooveName === 'hat', 'playing ' + S.grooveName);
+        assert(!MI.miActive(), 'the list stayed up');
         sets.length = 0;
         ticks(40);
-        assert(sets.length === 0, 'the rest that followed sent it again as a trial: ' + JSON.stringify(sets));
-        click();                                       /* and a click on a file that is no groove says so */
+        assert(sets.length === 0, 'something more was sent after the choice: ' + JSON.stringify(sets));
+    });
+
+    step('a click on a file that is no groove says so: nothing sent, the list stays, the groove stays', () => {
+        const st = browse();
         onRow(st, 'broken'); sets.length = 0; click();
         assert(MI.miActive() && sets.length === 0, 'a file that is no groove was sent or closed the list');
         back(); ticks(1);
-        assert(S.grooveName === 'hat', 'the chosen groove did not stay');
+        assert(!MI.miActive() && S.grooveName === 'hat' && S.grooveFile === '/data/UserData/hat.mid', 'the chosen groove did not stay');
     });
 
     step('⭐ two tables are never sent back to back: a click right after a trial went out waits its turn, then goes whole', () => {
@@ -278,7 +280,10 @@ async function main() {
         sets.length = 0;
         jog(1); click();                               /* hat, chosen at once */
         assert(sets.length === 0, 'the second table was sent on top of the first: ' + JSON.stringify(keys()));
+        assert(MI.miActive(), 'the list left before the choice had gone');
+        jog(-1); click();                              /* and nothing more is taken meanwhile */
         ticks(14);
+        assert(!MI.miActive(), 'the list did not leave once the choice had gone');
         assert(JSON.stringify(keys()) === JSON.stringify(['groove_begin', 'groove_slots_0', 'groove_slots_8', 'groove_commit']),
                'it never went: ' + JSON.stringify(keys()));
         assert(sets[0][1].endsWith(' hat') && sets[3][1] === '1', 'not hat, chosen: ' + sets[0][1] + ' / ' + sets[3][1]);
@@ -344,21 +349,31 @@ async function main() {
         assert(S.grooveTiming === 100 && S.grooveVelocity === 0 && S.grooveKind === 2, 'Back left the trial\'s amounts in the mirrors');
     });
 
-    step('⭐ the browser reopens in the folder the last groove was loaded from — kept on the device, and not undone by backing out', () => {
+    step('⭐ the browser opens on the file the project\'s groove came from — and at the top for a project with none', () => {
         let st = browse();
         onRow(st, 'Grooves');
         click();
         assert(st.B.currentDir === '/data/UserData/Grooves', 'rig: did not enter the folder');
         onRow(st, 'Deep');
         click();
-        assert(S.grooveName === 'Deep', 'rig: Deep was not loaded');
-        back(); back(); back(); ticks(1);
-        assert(!MI.miActive(), 'rig: the list did not close');
-        assert((FILES[PREF] || '').trim() === '/data/UserData/Grooves', 'the folder was not kept: ' + FILES[PREF]);
+        assert(S.grooveName === 'Deep' && !MI.miActive(), 'rig: Deep was not loaded');
+        assert(S.grooveFile === '/data/UserData/Grooves/Deep.agr', 'the file was not kept: ' + S.grooveFile);
         st = browse();
         assert(st.B.currentDir === '/data/UserData/Grooves', 'reopened in ' + st.B.currentDir);
-        assert(st.items.some(i => i.label === 'Deep'), 'the folder\'s files are not listed');
+        assert(st.items[st.idx].label === 'Deep', 'not on the groove\'s own row: ' + st.items[st.idx].label);
         back(); back(); ticks(1);
+        assert(!MI.miActive(), 'rig: the list did not close');
+        /* a file that has since gone: the top */
+        S.grooveFile = '/data/UserData/Gone/x.agr';
+        st = browse();
+        assert(st.B.currentDir === '/data/UserData', 'a folder that is gone opened ' + st.B.currentDir);
+        back(); ticks(1);
+        /* another project, with no loaded groove: the top, wherever this one was */
+        S.grooveFile = '';
+        st = browse();
+        assert(st.B.currentDir === '/data/UserData', 'a project with no groove opened in ' + st.B.currentDir);
+        back(); ticks(1);
+        S.grooveFile = '/data/UserData/Grooves/Deep.agr';
     });
 
     step('⚠ CONTROL: the ordinary MIDI import list still does not show groove files', () => {

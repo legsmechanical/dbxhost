@@ -262,6 +262,7 @@ export const S = {
     grooveKind: 1,
     grooveAmt: 0,
     grooveName: '',
+    grooveFile: '',        /* the file the project's loaded groove came from (the sidecar's); the browser opens on it */
     /* A loaded groove's own amounts (the engine's; mirrors). */
     grooveTiming: 100,
     grooveVelocity: 0,

@@ -55,7 +55,7 @@ import { White, VividYellow, Cyan, NeonPink, BrightOrange, NeonGreen, ElectricVi
 import { drawDialogYesNoRow } from '/data/UserData/schwung/shared/menu_layout.mjs';
 import { syncClipsTargeted } from './ui_dsp_bridge.mjs';
 import { computePadNoteMap } from './ui_drummodel.mjs';
-import { showActionPopup } from './ui_persistence.mjs';
+import { showActionPopup, writeSidecar } from './ui_persistence.mjs';
 import { automationClearClipQueued } from './ui_automation.mjs';
 import { midiMuted, setMidiMuted, midiMap, setMidiMap } from './ui_prefs.mjs';
 import { ccKnobDelta, knobPick, KNOB_PICK, KNOB_DELIB } from './ui_input_cc.mjs';
@@ -67,7 +67,7 @@ import {
 import { buildFilepathBrowserState, refreshFilepathBrowser } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { smfParse, SMF_MAX_BYTES, SMF_EXTENSIONS } from './ui_midifile.mjs';
 import { agrParse, isGrooveFileName, grooveTableFromNotes, GROOVE_EXTENSIONS } from './ui_groove_core.mjs';
-import { grooveSend, grooveBrowseDir, grooveSetBrowseDir } from './ui_groove.mjs';
+import { grooveSend } from './ui_groove.mjs';
 import {
     STRETCH_STEPS, STRETCH_DEFAULT, OCT_MIN, OCT_MAX, SEMI_MIN, SEMI_MAX, MN_MAX_SOUNDS, MAP_MODES,
     mapPitch, planNotes, maxBarsAt, partBarsOf, barTicks, drumVoices, defaultAssign, drumLaneNotes,
@@ -223,10 +223,9 @@ export function miOpen(track) {
  *
  * A groove is HEARD when the jog rests on it (the same rest as a MIDI file's
  * preview): it is sent to the engine as a trial, which plays it and keeps the
- * groove from before. A click KEEPS the one playing and the list stays, so
- * the next is a jog away; Back leaves, and if the last thing heard was never
- * kept, the groove from before comes back. It opens in the folder the last
- * groove was loaded from — on this device, in any project. */
+ * groove from before. A click KEEPS the one playing and leaves; Back leaves
+ * too, and the groove from before comes back. It opens on the file the
+ * project's groove was loaded from, or at the top when it has none. */
 export function miOpenGroove() {
     MQ.key = null;
     MI = freshState(GS.activeTrack, true);
@@ -235,8 +234,9 @@ export function miOpenGroove() {
     MI.gSentAt = -1e9;                                  /* when a table was last sent */
     MI.gWant = null;                                    /* a send waiting its turn: { r, trial } */
     MI.gBefore = { kind: GS.grooveKind, name: GS.grooveName, timing: GS.grooveTiming, velocity: GS.grooveVelocity, random: GS.grooveRandom };
-    const dir = grooveBrowseDir();
-    enterDir(dir && dir.startsWith(MI_ROOT) && isDirPath(dir) ? dir : MI_ROOT, '');
+    const from = String(GS.grooveFile || ''), dir = from.replace(/\/[^/]*$/, '');
+    if (dir.startsWith(MI_ROOT) && isDirPath(dir)) enterDir(dir, from);
+    else enterDir(MI_ROOT, '');
     computePadNoteMap();          /* as the import list does: the pads are this screen's while it is up */
     GS.screenDirty = true;
     return true;
@@ -311,9 +311,14 @@ function grooveChoose() {
         MI.gTrial = null;
         MI.gBefore = { kind: GS.grooveKind, name: GS.grooveName, timing: GS.grooveTiming, velocity: GS.grooveVelocity, random: GS.grooveRandom };
     } else grooveSendSoon(r, false);
-    grooveSetBrowseDir(MI.B.currentDir);
+    GS.grooveFile = it.kind === 'part' ? MI.file.path : it.path;
+    writeSidecar();
     GS.screenDirty = true;
     showActionPopup('GROOVE', String(r.name || r.g.name || '').toUpperCase());
+    /* chosen: the list is done — once the table has gone (it may be waiting
+     * its turn behind a trial, see GROOVE_SEND_GAP_MS; the tick leaves then) */
+    MI.gDone = true;
+    if (!MI.gWant) grooveLeave();
     return true;
 }
 /* Leaving: a trial nobody kept gives way to the groove from before. */
@@ -337,8 +342,6 @@ function grooveLeave() {
 /* Leave without writing: the preview ends and the track plays what it had. */
 export function miClose() {
     if (!MI) return;
-    /* (the folder remembered is the last LOADED groove's — Back steps up a
-     * folder at a time, so where the list was closed is always the top) */
     if (MI.groove) { grooveLeave(); return; }
     remember();
     stopPreview();
@@ -742,7 +745,7 @@ export function miOnKnob(k, d2) {
 export function miJogTouch() {}
 
 export function miOnJog(delta) {
-    if (!MI || !delta) return;
+    if (!MI || !delta || MI.gDone) return;
     if (MI.layer === 'confirm') { MI.confirm.yes = delta > 0; GS.screenDirty = true; return; }
     if (MI.layer === 'card') { openList(); return; }
     if (!MI.items.length) return;
@@ -753,7 +756,7 @@ export function miOnJog(delta) {
 }
 
 export function miOnClick(shift) {
-    if (!MI) return;
+    if (!MI || MI.gDone) return;
     if (MI.layer === 'confirm') { answer(MI.confirm.yes); return; }
     if (shift && !MI.groove) {
         MI.hear = !MI.hear;
@@ -786,6 +789,7 @@ export function miOnClick(shift) {
  * layer at a time. */
 export function miOnBack() {
     if (!MI) return;
+    if (MI.gDone) { grooveLeave(); return; }      /* a groove chosen and still going out: it goes now */
     if (MI.layer === 'confirm') { answer(false); return; }
     if (MI.layer === 'list') {
         /* Back steps UP — out of a multi-part file, then a folder at a time —
@@ -860,6 +864,7 @@ export function miTick() {
     if (MI.groove) {                          /* no clip preview, no clock: only the rest that hears a groove */
         if (MI.pending && nowMs() - MI.pending.at >= PREVIEW_DELAY_MS) { MI.pending = null; grooveAudition(); }
         grooveSendDue();
+        if (MI.gDone && !MI.gWant) grooveLeave();
         return;
     }
     if (GS.activeTrack !== MI.track || isDrumTrack(MI.track) !== MI.drum || GS.sessionView || GS.recordArmed) {

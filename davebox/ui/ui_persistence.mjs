@@ -438,7 +438,10 @@ export function sidecarObject() {
          * sidecars → no records, which is exactly what session-lived meant.
          * Serialized as held; entries only ever enter through setPresetRecord,
          * so there is nothing to filter here. */
-        upr: S.presetRec
+        upr: S.presetRec,
+        /* The file the loaded groove was read from, so Browse... opens on it
+         * (additive on v:9; the groove itself is in the engine's state). */
+        grf: S.grooveFile
     };
 }
 
@@ -456,7 +459,7 @@ export function sidecarObject() {
  * either KEPT from this project or set to a fresh project's value.
  * tests/js/test_template_sidecar.mjs pins that every field is one or the
  * other, and the defaults against a fresh S. */
-export const TEMPLATE_SIDECAR_KEPT = ['v', 'am', 'pchr', 'pchd', 'ppno', 'pcus', 'mac', 'mcv', 'cpg', 'upr', 'bm'];
+export const TEMPLATE_SIDECAR_KEPT = ['v', 'am', 'pchr', 'pchd', 'ppno', 'pcus', 'mac', 'mcv', 'cpg', 'upr', 'bm', 'grf'];
 export function sidecarDefaults() {
     const z8 = () => new Array(NUM_TRACKS).fill(0);
     return {
@@ -491,6 +494,7 @@ export function freshSidecar() {
     out.cpg  = Array.from({ length: NUM_TRACKS }, () => Array.from({ length: NUM_CLIPS }, () => [-1, -1, -1]));
     out.upr  = {};
     out.bm   = 1;
+    out.grf  = '';
     return out;
 }
 export function templateSidecar() {
@@ -725,6 +729,7 @@ export function doClearSession() {
     S.grooveKind           = 1;
     S.grooveAmt            = 0;
     S.grooveName           = '';
+    S.grooveFile           = '';
     S.grooveTiming = 100; S.grooveVelocity = 0; S.grooveRandom = 0;
     S.launchQuant          = 0;
     S.midiInChannel        = 0;

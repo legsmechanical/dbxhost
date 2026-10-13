@@ -1642,6 +1642,7 @@ export function restoreUiSidecar(applyDefaultsNow) {
         for (let _t = 0; _t < NUM_TRACKS; _t++)
             host_module_set_param('t' + _t + '_drum_lane_page', String(S.drumLanePage[_t]));
         if (typeof us.bm === 'number') S.beatMarkersEnabled = us.bm !== 0;
+        S.grooveFile = (typeof us.grf === 'string') ? us.grf : '';
         if (us.v >= 2) {
             if (typeof us.pm === 'number') S.perfModsToggled = us.pm & 0xFFFFFF;
             S.perfLatchMode = us.lm === 1;

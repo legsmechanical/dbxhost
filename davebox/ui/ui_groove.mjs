@@ -6,33 +6,13 @@
  * the Groove picker, and from then on it is saved inside the project, so the
  * project does not need the file again.
  *
- * This module lists the picker's choices, sends a table to the engine, and
- * remembers the folder the browser was last in (the reading itself is
- * ui_groove_core.mjs, which is pure).
+ * This module lists the picker's choices and sends a table to the engine (the
+ * reading itself is ui_groove_core.mjs, which is pure).
  */
 import { S } from './ui_state.mjs';
 import { grooveMessages, grooveCleanName } from './ui_groove_core.mjs';
 
 export const GROOVE_OFF = 0, GROOVE_SWING_16 = 1, GROOVE_SWING_8 = 2, GROOVE_TABLE = 3;
-/* Where the browser was last left: device-wide, so it opens there in every
- * project and after a restart. */
-const GROOVE_DIR_PREF = '/data/UserData/dbx-host/groove-browse-dir.txt';
-let browseDir = null;
-export function grooveBrowseDir() {
-    if (browseDir === null) {
-        let t = '';
-        try { t = String(host_read_file(GROOVE_DIR_PREF) || ''); } catch (e) { t = ''; }
-        browseDir = t.replace(/[\r\n]+$/, '');
-    }
-    return browseDir;
-}
-export function grooveSetBrowseDir(dir) {
-    const d = String(dir || '');
-    if (d === grooveBrowseDir()) return;
-    browseDir = d;
-    try { host_write_file(GROOVE_DIR_PREF, d + '\n'); } catch (e) { /* remembered for this run only */ }
-}
-
 /* Every choice the Groove picker offers, in order: Off, Browse... (the file
  * list), the two swings — and, when the project carries a table, that table
  * under its own name (also while a swing plays: the engine keeps it, so going
