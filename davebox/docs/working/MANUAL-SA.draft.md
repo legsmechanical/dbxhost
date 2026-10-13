@@ -146,7 +146,7 @@ already know works here.
   knob sets a value for that step. Holding Mute lights automated knobs red.
 - **Copy, Delete and Undo** work on steps and clips the same way.
 - **Shift + Step shortcuts** mostly sit where Move puts them: 1 your projects, 2
-  settings, 5 tempo, 6 metronome, 7 swing, 9 key & scale, 10 fixed velocity,
+  settings, 5 tempo, 6 metronome, 7 groove, 9 key & scale, 10 fixed velocity,
   11 arpeggiator, 15 double the loop, 16 quantize.
 
 **Where dAVEBOx differs:**
@@ -1139,7 +1139,7 @@ Everything runs one chain — the live modifier first, then the effects:
  SEQUENCED NOTES ──────────────────────────┘
 ```
 
-Global [swing](#171-project-settings) is applied after the chain;
+The global [groove](#the-groove) is applied after the chain;
 [Performance Mode](#13-performance-mode) comes last.
 
 ## 9.1 NOTE FX
@@ -2236,8 +2236,9 @@ see [Track settings](#174-track-settings) below.
 | Setting | What it does | Values | Default |
 |---|---|---|---|
 | BPM | Tempo | 40–250 | — |
-| Swing Amt | Swing depth — 50 % is straight, 66 % is triplet swing | 50–75 % | 50 % |
-| Swing Res | Which grid positions get the swing | 1/16, 1/8 | 1/16 |
+| Groove | The project's timing feel — see [The groove](#the-groove) | Off, Swing 1/16, Swing 1/8, your grooves | Swing 1/16 |
+| Groove Amt | How much of the groove is applied. For the two swings it reads as swing depth: 50 % is straight, 66 % is triplet swing | 0–100 % (50–75 % for a swing) | none |
+| Make Groove... | Make a groove from a MIDI file or an Ableton groove file | (click) | — |
 | Metro | When the metronome sounds — never, during the count-in, while playing, or always | Off, Cnt-In, Play, Always | Cnt-In |
 | Metro Vol | Metronome level | 0–150 % | 100 % |
 | Clock Follow | Lock to Move's transport and tempo — see [§15.3](#153-clock-follow) | Off, Move | Off |
@@ -2258,10 +2259,38 @@ see [Track settings](#174-track-settings) below.
 | Host Settings... | dAVEBOx's copy of Schwung's settings (display, audio and more), over the top of dAVEBOx — see [§17.6](#176-davebox-and-official-schwung) | action | — |
 | Move Settings... | Move's own settings menu (Link, MIDI sync, inputs and more), dAVEBOx's copy — see below | action | — |
 
-Recording under Swing: with Input Quantize off, what you play is stored so that
-Swing plays it back at the moment you played it — it is not swung a second
-time. With Input Quantize on, the note snaps to the grid and Swing moves it
-from there.
+#### The groove
+
+One groove plays for the whole project. **Groove** picks it and **Groove Amt**
+says how much of it you hear — at none, everything is on the grid.
+
+- **Swing 1/16** and **Swing 1/8** delay every other 1/16 or 1/8. These are the
+  Swing Amt and Swing Res of earlier versions, and a project made with them
+  opens sounding the same.
+- **Your own grooves** follow in the list. A groove is a pattern of small
+  timing shifts — some notes a little late, some a little early — and
+  velocities, one per grid position, that repeats. Notes the sequencer plays
+  are moved both ways; arps, repeats, delay echoes and the looper are only ever
+  moved later.
+- **Off** plays straight whatever Groove Amt says.
+
+**Make Groove...** opens a file list showing MIDI files and Ableton groove
+files (`.agr`). Click one and it becomes a groove: it is kept in the
+`dAVEBOx Grooves` folder beside your MIDI exports, added to the Groove list, and
+selected. A MIDI file is read one position per 1/16 over its whole length (up
+to 128 positions); a file with several parts asks which. An Ableton groove
+brings its own grid, length and amounts.
+
+The groove you pick is saved inside the project, so the project keeps its feel
+even if the groove's file is later removed.
+
+Each track can opt out: **Groove** Off in a track's
+[settings](#174-track-settings) makes that track play straight.
+
+Recording under a groove: with Input Quantize off, what you play is stored so
+that the groove plays it back at the moment you played it — it is not grooved
+a second time. With Input Quantize on, the note snaps to the grid and the
+groove moves it from there.
 
 - The menu groups these with a line between each group, in this order.
 - A new project starts in a random key and scale.
@@ -2328,7 +2357,7 @@ are hidden, so the list is shorter on a MIDI track or a Conductor.
 | Transpose | −24…+24 st | Shifts everything the track plays |
 | VelIn | Live, 1–127 | Fixed value overrides input velocity |
 | Looper | On, Off | Feeds [Performance Mode](#13-performance-mode) |
-| Groove | On, Off | Off = this track ignores the project's Swing and plays straight |
+| Groove | On, Off | Off = this track ignores the project's [groove](#the-groove) and plays straight |
 | Export to MIDI | (click) | Saves the clip you are on, as it plays, as a MIDI file — see [Export a clip as a MIDI file](#165-export-a-clip-as-a-midi-file) |
 | AftTch | Off, Poly, Chan | Pad-pressure aftertouch (melodic; a Move track offers Off and Poly) |
 | Parallel | On, Off | Schwung tracks with an instrument: whether it may render on another core — set per instrument, device-wide |
@@ -2589,7 +2618,7 @@ return to the sequencer. The browser's back button steps between views (`#seq` /
 | 2 | Project Settings | Both |
 | 5 | Tap Tempo | Both |
 | 6 | Metro (Cnt-In ↔ Always) — icon lit while it plays (Play / Always) | Both |
-| 7 | Swing — jump to Swing Amt in Project Settings | Both |
+| 7 | Groove — jump to Groove Amt in Project Settings | Both |
 | 8 | Pad layout (Scale → Chrom → Piano → Chord → Custom) / cycle right-pad mode | Track |
 | 9 | Scale — jump to Scale in Project Settings | Both |
 | 10 | VelIn (Live ↔ 100) — icon lit while fixed | Track |

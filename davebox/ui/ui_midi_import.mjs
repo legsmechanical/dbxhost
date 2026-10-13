@@ -66,6 +66,8 @@ import {
 } from './ui_movy.mjs';
 import { buildFilepathBrowserState, refreshFilepathBrowser } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { smfParse, SMF_MAX_BYTES, SMF_EXTENSIONS } from './ui_midifile.mjs';
+import { agrParse, isGrooveFileName, grooveTableFromNotes, GROOVE_EXTENSIONS } from './ui_groove_core.mjs';
+import { grooveKeep } from './ui_groove.mjs';
 import {
     STRETCH_STEPS, STRETCH_DEFAULT, OCT_MIN, OCT_MAX, SEMI_MIN, SEMI_MAX, MN_MAX_SOUNDS, MAP_MODES,
     mapPitch, planNotes, maxBarsAt, partBarsOf, barTicks, drumVoices, defaultAssign, drumLaneNotes,
@@ -133,12 +135,31 @@ function readFile(path) {
     if (!res.error && (!res.parts || !res.parts.length)) return { error: 'NO NOTES' };
     return res;
 }
+function readGrooveFile(path) {
+    const st = statOf(path);
+    if (!st) return { error: 'CAN\'T READ FILE' };
+    const size = st.size | 0;
+    if (size > SMF_MAX_BYTES * 4) return { error: 'FILE TOO BIG' };
+    const f = std.open(path, 'rb');
+    if (!f) return { error: 'CAN\'T READ FILE' };
+    const buf = new ArrayBuffer(size);
+    let got = 0;
+    try { got = f.read(buf, 0, size); } finally { f.close(); }
+    return agrParse(new Uint8Array(buf, 0, Math.max(0, got | 0)));
+}
 function metaOfRes(r) {
     return r && !r.error ? { parts: r.parts.length, bars: partBarsOf(r.parts[0], r.timeSig), drum: !!r.parts[0].drum } : null;
 }
 /* A file's parse, cached; its list counts are kept apart, for good. */
 function parsed(path) {
     if (CACHE.has(path)) { const e = CACHE.get(path); CACHE.delete(path); CACHE.set(path, e); return e; }
+    if (isGrooveFileName(path)) {             /* an Ableton groove: a table, not parts */
+        const g = readGrooveFile(path);
+        const ge = g.error ? { error: g.error } : { groove: g };
+        CACHE.set(path, ge);
+        META.set(path, null);
+        return ge;
+    }
     const r = readFile(path);
     const e = r.error ? { error: r.error } : { res: r };
     CACHE.set(path, e);
@@ -153,10 +174,15 @@ const noExt = (n) => String(n).replace(/\.[^.]+$/, '');
 
 function isDrumTrack(t) { return GS.trackPadMode[t] === PAD_MODE_DRUM; }
 
-function freshState(track) {
+function freshState(track, groove) {
     return {
         track, drum: isDrumTrack(track), layer: 'list', confirm: null,
-        B: buildFilepathBrowserState({ root: MI_ROOT, filter: SMF_EXTENSIONS, name: 'Import MIDI' }, ''),
+        /* MAKE GROOVE: the same list, with Ableton grooves in it too; a click
+         * on a file or a part makes a groove of it instead of opening the card */
+        groove: !!groove,
+        B: buildFilepathBrowserState(groove
+            ? { root: MI_ROOT, filter: SMF_EXTENSIONS.concat(GROOVE_EXTENSIONS), name: 'Make Groove' }
+            : { root: MI_ROOT, filter: SMF_EXTENSIONS, name: 'Import MIDI' }, ''),
         sizes: {}, file: null, items: [], idx: 0,
         pending: null, sel: null, cur: null, plan: null,
         startBar: 1, bars: 1, grid: GRID_DEFAULT, stretch: STRETCH_DEFAULT, oct: 0, semi: 0, scaleOn: true,
@@ -192,9 +218,38 @@ export function miOpen(track) {
     return true;
 }
 
+/* MAKE GROOVE (the global menu). The list only: nothing is previewed on the
+ * track and nothing is written to it. It reopens in the folder it was left in. */
+let GROOVE_DIR_MEM = '';
+export function miOpenGroove() {
+    MQ.key = null;
+    MI = freshState(GS.activeTrack, true);
+    enterDir(GROOVE_DIR_MEM && isDirPath(GROOVE_DIR_MEM) ? GROOVE_DIR_MEM : MI_ROOT, '');
+    GS.screenDirty = true;
+    return true;
+}
+/* One slot a 1/16: the grid a groove made from MIDI is read on. */
+const GROOVE_MIDI_BASE = 24;
+function grooveDone(g, name) {
+    GROOVE_DIR_MEM = MI.B.currentDir;
+    const kept = grooveKeep(g, g.name || name);
+    const shown = (kept || g.name || name || 'GROOVE').toUpperCase();
+    MI = null;
+    GS.screenDirty = true;
+    if (kept) showActionPopup('GROOVE', shown);
+    else showActionPopup('GROOVE NOT SAVED', 'PLAYING: ' + shown);
+}
+function grooveFromPart(res, partIdx, name) {
+    const part = res.parts[partIdx];
+    const len = partBarsOf(part, res.timeSig) * barTicks(res.timeSig);
+    const g = grooveTableFromNotes(part.notes.map(n => ({ tick: n.t, vel: n.v })), GROOVE_MIDI_BASE, len);
+    grooveDone({ ...g, timing: 100, quantize: 0, random: 0, velocity: 0 }, name);
+}
+
 /* Leave without writing: the preview ends and the track plays what it had. */
 export function miClose() {
     if (!MI) return;
+    if (MI.groove) { GROOVE_DIR_MEM = MI.B.currentDir; MI = null; GS.screenDirty = true; return; }
     remember();
     stopPreview();
     MI = null;
@@ -251,6 +306,7 @@ function goUp() {
  * delay), then plays; a part plays at once (its file is already read). */
 function land() {
     MI.cur = null; MI.plan = null; MI.pending = null; MI.held = -1; MI.mask = null;
+    if (MI.groove) return;                    /* nothing is heard from this list */
     const it = MI.items[MI.idx];
     if (!it) return;
     if (it.kind === 'part') { setCur(MI.file.res, it.part, it.label, MI.file.path); return; }
@@ -608,7 +664,7 @@ export function miOnJog(delta) {
 export function miOnClick(shift) {
     if (!MI) return;
     if (MI.layer === 'confirm') { answer(MI.confirm.yes); return; }
-    if (shift) {
+    if (shift && !MI.groove) {
         MI.hear = !MI.hear;
         setMidiMuted(!MI.hear);
         GS.screenDirty = true;
@@ -619,6 +675,15 @@ export function miOnClick(shift) {
     if (!it) return;
     if (it.kind === 'up') { goUp(); return; }
     if (it.kind === 'dir') { enterDir(it.path, ''); return; }
+    if (MI.groove) {
+        if (it.kind === 'part') { grooveFromPart(MI.file.res, it.part, MI.file.name + ' ' + it.label); return; }
+        const e = parsed(it.path);
+        if (e.error) { showActionPopup(e.error, it.label.toUpperCase()); return; }
+        if (e.groove) { grooveDone(e.groove, it.label); return; }
+        if (e.res.parts.length > 1) { enterFile(it.path, e.res); return; }
+        grooveFromPart(e.res, 0, it.label);
+        return;
+    }
     if (it.kind === 'file' && (!MI.cur || MI.cur.path !== it.path)) {
         MI.pending = null;
         const e = parsed(it.path);
@@ -704,6 +769,7 @@ export function miTick() {
     if (loadSync) loadSyncTick();
     if (!MI) return;
     /* The track, its kind or the view changed under us: leave. */
+    if (MI.groove) return;                    /* a list and nothing else: no reads, no preview, no clock */
     if (GS.activeTrack !== MI.track || isDrumTrack(MI.track) !== MI.drum || GS.sessionView || GS.recordArmed) {
         miClose();
         return;
@@ -768,7 +834,7 @@ function fmtSize(n) {
 function listTitle() {
     if (MI.file) return MI.file.name.toUpperCase() + ' >';
     const d = MI.B.currentDir;
-    return d === MI_ROOT ? 'IMPORT MIDI' : baseName(d).toUpperCase() + '/';
+    return d === MI_ROOT ? (MI.groove ? 'MAKE GROOVE' : 'IMPORT MIDI') : baseName(d).toUpperCase() + '/';
 }
 
 function topCells() {
@@ -852,6 +918,11 @@ function drawLowCells(touched) {
 }
 function footer(shift) {
     const verb = MI.hear ? 'MUTE' : 'HEAR';
+    if (MI.groove) {
+        const git = MI.items[MI.idx];
+        const gopen = git && (git.kind === 'up' || git.kind === 'dir');
+        return [['CLK', gopen ? 'OPEN' : 'MAKE'], ['JOG', 'FILE']];
+    }
     if (shift) return [['CLK', verb]];
     if (MI.layer === 'list') {
         const it = MI.items[MI.idx];

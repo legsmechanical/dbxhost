@@ -8,17 +8,27 @@ the section into a versioned heading at release time.
 
 ## [Unreleased]
 ### Added
+- **Groove.** Swing has grown into a groove. In Project Settings, **Groove**
+  picks the project's timing feel — Off, Swing 1/16, Swing 1/8, or a groove of
+  your own — and **Groove Amt** sets how much of it you hear. Your own grooves
+  can move notes early as well as late and shape their velocities.
+- **Make a groove from a MIDI file or an Ableton groove.** **Make Groove...**
+  in Project Settings lists MIDI files and Ableton `.agr` files; click one and
+  it becomes a groove, kept in the `dAVEBOx Grooves` folder and added to the
+  list. The groove you pick is saved with the project.
 - **Groove On/Off per track.** A new **Groove** row at the foot of each track's
-  sound menu. Off makes that track ignore the project's Swing and play
+  sound menu. Off makes that track ignore the project's groove and play
   straight — useful for a hi-hat or a bass line that should stay on the grid
   while everything else swings.
 
 ### Changed
-- **Recording under Swing plays back what you played.** With Input Quantize
-  off, a note you record is now stored so that Swing plays it back at the
-  moment you played it. Before, Swing moved it a second time, so a part played
+- **Swing Amt and Swing Res are now Groove and Groove Amt.** Existing projects
+  open with the same swing. Shift + Step 7 jumps to Groove Amt.
+- **Recording under a groove plays back what you played.** With Input Quantize
+  off, a note you record is now stored so that the groove plays it back at the
+  moment you played it. Before, swing moved it a second time, so a part played
   with a swung feel came back swung twice. With Input Quantize on nothing
-  changes: the note snaps to the grid and Swing moves it from there.
+  changes: the note snaps to the grid and the groove moves it from there.
 
 ## [0.0.20] — 2026-10-12 (test build, not in the Schwung catalog)
 ### Added

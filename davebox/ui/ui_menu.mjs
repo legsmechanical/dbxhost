@@ -26,13 +26,15 @@ import { keyRootName } from './ui_chord.mjs';
 import { openDaveBox, daveWindowOn, setDaveWindowOn } from './ui_daves.mjs';
 import { bluetoothPresent, bluetoothOn, setBluetoothOn } from './ui_bluetooth.mjs';
 import { jogTouchCardOn, setJogTouchCardOn } from './ui_prefs.mjs';
-import { saveState, loadSnapshotManifest } from './ui_persistence.mjs';
+import { saveState, loadSnapshotManifest, showActionPopup } from './ui_persistence.mjs';
 import { openLoadSnapshot, openProjectPadPicker } from './ui_dialogs.mjs';
 import { forceRedraw } from './ui_leds.mjs';
 import { exitMoveNativeCoRun, DAVEBOX_PICKER_KEEP_MASK, enterMoveSettingsCoRun } from './ui_corun.mjs';
 import { requestExport } from './ui_export.mjs';
 import { requestSetTemplate, requestClearTemplate, hasTemplate } from './ui_template.mjs';
 import { xposePreviewSet } from './ui_xpose.mjs';
+import { grooveOptions, grooveCurrentIndex, grooveSelect, grooveLabel,
+         GROOVE_SWING_16, GROOVE_SWING_8 } from './ui_groove.mjs';
 
 /* ------------------------------------------------------------------ */
 /* Global menu items                                                    */
@@ -84,17 +86,36 @@ function buildGlobalMenuItems() {
             min: 40, max: 250, step: 1,
             format: function(v) { return S.clockFollowOn ? 'Move' : String(Math.round(v)); }
         }),
-        createValue('Swing Amt', {
-            get: function() { return S.swingAmt; },
-            set: function(v) { S.swingAmt = v; host_module_set_param('swing_amt', String(v)); },
+        /* THE GROOVE (replaces Swing Amt / Swing Res). One row picks it —
+         * Off, the two swings, then the user's own grooves — and one says how
+         * much of it is applied. The swings read as they always have: 50% is
+         * straight, 66% a triplet. */
+        (function() {
+            const opts = grooveOptions();
+            return createEnum('Groove', {
+                get: function() { return grooveCurrentIndex(opts); },
+                set: function(i) {
+                    const err = grooveSelect(opts[i]);
+                    if (err) showActionPopup(err);
+                },
+                options: opts.map(function(_o, i) { return i; }),
+                format: function(i) { return opts[i] ? opts[i].label : grooveLabel(); }
+            });
+        })(),
+        createValue('Groove Amt', {
+            get: function() { return S.grooveAmt; },
+            set: function(v) { S.grooveAmt = v; host_module_set_param('groove_amt', String(v)); },
             min: 0, max: 100,
-            format: function(v) { return Math.round(50 + v * 0.25) + '%'; }
+            format: function(v) {
+                return (S.grooveKind === GROOVE_SWING_16 || S.grooveKind === GROOVE_SWING_8)
+                    ? Math.round(50 + v * 0.25) + '%' : Math.round(v) + '%';
+            }
         }),
-        createEnum('Swing Res', {
-            get: function() { return S.swingRes; },
-            set: function(v) { S.swingRes = v; host_module_set_param('swing_res', String(v)); },
-            options: [0, 1],
-            format: function(v) { return ['1/16','1/8'][v] || '1/16'; }
+        /* A new groove from a MIDI file or an Ableton .agr: the file list. */
+        createAction('Make Groove...', function() {
+            S.globalMenuOpen = false;
+            S.pendingGrooveMakeOpen = true;
+            S.screenDirty = true;
         }),
         createDivider(),
         createEnum('Metro', {

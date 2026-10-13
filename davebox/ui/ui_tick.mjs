@@ -8,7 +8,7 @@
  * see docs/superpowers/plans/2026-07-10-refactor-phase6b-map.md).
  */
 
-import { miOpen, miTick, miAnimating, miActive } from './ui_midi_import.mjs';
+import { miOpen, miOpenGroove, miTick, miAnimating, miActive } from './ui_midi_import.mjs';
 import { chordPadsOn } from './ui_custom_chords.mjs';
 import { triggerFlashing } from './ui_trigger.mjs';
 import {
@@ -2194,6 +2194,11 @@ export function _tickImpl() {
             const _mt = S.pendingMidiImportOpen;
             S.pendingMidiImportOpen = -1;
             if (_mt === S.activeTrack && !S.sessionView) { miOpen(_mt); S.screenDirty = true; }
+        }
+        if (S.pendingGrooveMakeOpen) {
+            S.pendingGrooveMakeOpen = false;
+            miOpenGroove();
+            S.screenDirty = true;
         }
         miTick();
         if (miAnimating()) S.screenDirty = true;

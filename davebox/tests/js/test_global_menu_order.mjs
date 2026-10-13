@@ -45,7 +45,7 @@ S.bankParams = Array.from({ length: 8 }, () => Array.from({ length: 16 }, () => 
 let failed = 0;
 menu.openGlobalMenu();
 const got = (S.globalMenuItems || []).map((it) => it.type === 'divider' ? '---' : it.label);
-const want = ['BPM', 'Swing Amt', 'Swing Res', '---', 'Metro', 'Metro Vol', '---',
+const want = ['BPM', 'Groove', 'Groove Amt', 'Make Groove...', '---', 'Metro', 'Metro Vol', '---',
     'Clock Follow', 'Clock Out', '---', 'Key', 'Scale', 'Scale Aware', '---',
     'Launch', 'Beat Marks', 'Jog Touch Card', '---', 'MIDI In', '---', 'Projects...', 'Set as Template', '---',
     'Save state', 'Load state', 'Clear Sess', '---', 'Export to Ableton', '---',

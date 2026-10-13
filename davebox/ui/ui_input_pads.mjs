@@ -1226,7 +1226,7 @@ function _doShiftStepCommon(idx) {
         host_module_set_param('metro_on', String(S.metronomeOn));
         showActionPopup(['Off', 'Cnt-In', 'Play', 'Always'][S.metronomeOn]);
     }
-    else if (idx === 6) _jumpToMenuLabel('Swing Amt');
+    else if (idx === 6) _jumpToMenuLabel('Groove Amt');
     else if (idx === 8) _jumpToMenuLabel('Scale');
     /* NOTE: Shift+Step 13 is NOT a dAVEBOx shortcut — the Schwung host reserves it
      * (opens the Tools menu; the shim consumes it before the module sees it). Suspend

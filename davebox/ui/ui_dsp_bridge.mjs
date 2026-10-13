@@ -2102,10 +2102,12 @@ function _syncClipsFromDspInner() {
     }
     const mvolRaw = dspGetInt('metro_vol');
     if (mvolRaw !== null) S.metronomeVol = mvolRaw;
-    const swaRaw = dspGetInt('swing_amt');
-    if (swaRaw !== null) S.swingAmt = swaRaw;
-    const swrRaw = dspGetInt('swing_res');
-    if (swrRaw !== null) S.swingRes = swrRaw;
+    const gkRaw = dspGetInt('groove_kind');
+    if (gkRaw !== null) S.grooveKind = gkRaw;
+    const gaRaw = dspGetInt('groove_amt');
+    if (gaRaw !== null) S.grooveAmt = gaRaw;
+    const gnRaw = dspGet('groove_name');
+    if (gnRaw !== null && gnRaw !== undefined) S.grooveName = String(gnRaw);
 }
 
 /* Targeted re-sync after undo/redo: re-read only the affected clips rather than all 64.

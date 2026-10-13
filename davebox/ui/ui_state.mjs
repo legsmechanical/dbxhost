@@ -257,8 +257,12 @@ export const PERF_FACTORY_PRESETS = [
 ];
 
 export const S = {
-    swingAmt: 0,
-    swingRes: 0,
+    /* The global groove (the engine's; these mirror it). Kind: 0 Off,
+     * 1 Swing 1/16, 2 Swing 1/8, 3 a table. Name: a table's. */
+    grooveKind: 1,
+    grooveAmt: 0,
+    grooveName: '',
+    pendingGrooveMakeOpen: false, /* Make Groove clicked in the menu; the tick opens the list (a folder listing) */
     inpQuant: false,
     midiInChannel: 0,
     beatMarkersEnabled: true,

@@ -722,8 +722,9 @@ export function doClearSession() {
     S.perfLatchMode        = true;
     S.perfRecalledSlot     = -1;
     for (let _i = 8; _i < 16; _i++) S.perfSnapshots[_i] = 0;
-    S.swingAmt             = 0;
-    S.swingRes             = 0;
+    S.grooveKind           = 1;
+    S.grooveAmt            = 0;
+    S.grooveName           = '';
     S.launchQuant          = 0;
     S.midiInChannel        = 0;
     S.metronomeOn          = 1;
