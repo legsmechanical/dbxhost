@@ -870,6 +870,15 @@ static void seq8_do_serialize(seq8_instance_t *inst, FILE *fp) {
         if (g->quantize != 0) fprintf(fp, ",\"_gq\":%d", (int)g->quantize);
         if (g->random != 0)   fprintf(fp, ",\"_gr\":%d", (int)g->random);
         if (g->velocity != 0) fprintf(fp, ",\"_gv\":%d", (int)g->velocity);
+        /* The table travels WITH the project, so it survives the groove file
+         * it came from being renamed or deleted. Kept while a swing is
+         * selected too: switching back needs no file. */
+        if (groove_has_table(g)) {
+            char tab[2 + 8 + GROOVE_MAX_SLOTS * 12];
+            groove_table_print(g, tab, (int)sizeof(tab));
+            fprintf(fp, ",\"_gtab\":\"%s\"", tab);
+            if (g->name[0]) fprintf(fp, ",\"_gn\":\"%s\"", g->name);
+        }
     }
     if (inst->clock_follow_on)  fprintf(fp, ",\"_cf\":%d", (int)inst->clock_follow_on);
     if (inst->clock_send_on)    fprintf(fp, ",\"_cs\":%d", (int)inst->clock_send_on);
@@ -1688,8 +1697,21 @@ static void seq8_load_state(seq8_instance_t *inst) {
         int gk = json_get_int(buf, "_gk", -1);
         int ga = json_get_int(buf, "_ga", -1);
         groove_reset(g);
-        /* no table is stored yet, so a table kind has nothing to play */
+        {
+            const char *tp = strstr(buf, "\"_gtab\":\"");
+            if (tp && !groove_table_parse(g, tp + 9)) { g->base = 0; g->n_slots = 0; }
+            const char *np = strstr(buf, "\"_gn\":\"");
+            if (np && groove_has_table(g)) {
+                char nm[sizeof(g->name)];
+                size_t k = 0;
+                for (np += 7; *np && *np != '"' && k + 1 < sizeof(nm); np++) nm[k++] = *np;
+                nm[k] = '\0';
+                groove_set_name(g, nm);
+            }
+        }
+        /* a table kind with no table to go with it has nothing to play */
         if (gk < 0) g->kind = clamp_i(json_get_int(buf, "_swr", 0), 0, 1) ? GROOVE_SWING_8 : GROOVE_SWING_16;
+        else if (gk == GROOVE_TABLE && groove_has_table(g)) g->kind = GROOVE_TABLE;
         else        g->kind = (gk == GROOVE_SWING_16 || gk == GROOVE_SWING_8) ? (uint8_t)gk : GROOVE_OFF;
         if (ga < 0) ga = json_get_int(buf, "_swa", 0);
         g->amt = (uint8_t)clamp_i(ga, 0, 100);

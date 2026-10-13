@@ -197,6 +197,9 @@ Key prefixes:
   `_gt` Timing (written when not 100), `_gq` / `_gr` / `_gv` Quantize / Random / Velocity; all
   sparse. `_swa` (0–100) / `_swr` (0 = 1/16, 1 = 1/8) are the two swings under their old keys:
   still written beside the new ones, and read when a file has no `_gk` / `_ga`
+- Groove table — `_gtab` `"base n o0 v0 o1 v1 …"` (slot length in ticks, slot count, then per slot an
+  offset in 1/16 ticks and a velocity, 0 = none) and `_gn` its name; written whenever a table is
+  loaded, also while a swing is selected. `_gk` 3 selects it; a missing or damaged table loads as Off
 - Per-track Groove switch — `t%d_gon`, written only when 0 (Off); default On
 
 `state_load` calls `drum_track_init` + `drum_repeat_init_defaults` before applying saved values.

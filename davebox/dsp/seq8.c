@@ -296,6 +296,56 @@ typedef struct {
     char     name[24];
 } groove_t;
 
+static inline int groove_has_table(const groove_t *g) { return g->base > 0 && g->n_slots > 0; }
+
+/* A table as text — "base n o0 v0 o1 v1 ..." — the one form it travels in:
+ * saved in the project and read back for the UI. Returns the length written. */
+static int groove_table_print(const groove_t *g, char *out, int cap) {
+    int pos = snprintf(out, (size_t)cap, "%d %d", (int)g->base, (int)g->n_slots);
+    for (int i = 0; i < (int)g->n_slots && pos < cap - 12; i++)
+        pos += snprintf(out + pos, (size_t)(cap - pos), " %d %d", (int)g->off[i], (int)g->vel[i]);
+    return pos < cap ? pos : cap - 1;
+}
+
+/* ...and back. Reads up to the first character that is not part of a number
+ * list. Returns 1 when a whole, sane table was read. */
+static int groove_table_parse(groove_t *g, const char *p) {
+    long v[2 + 2 * GROOVE_MAX_SLOTS];
+    int n = 0;
+    while (n < (int)(sizeof(v) / sizeof(v[0]))) {
+        while (*p == ' ') p++;
+        if (!(*p == '-' || (*p >= '0' && *p <= '9'))) break;
+        int neg = (*p == '-'); if (neg) p++;
+        long x = 0;
+        if (!(*p >= '0' && *p <= '9')) return 0;
+        while (*p >= '0' && *p <= '9') { x = x * 10 + (*p - '0'); if (x > 100000) return 0; p++; }
+        v[n++] = neg ? -x : x;
+    }
+    if (n < 4 || v[0] < 1 || v[0] > 255 || v[1] < 1 || v[1] > GROOVE_MAX_SLOTS) return 0;
+    if (n != 2 + 2 * (int)v[1]) return 0;
+    g->base = (uint8_t)v[0]; g->n_slots = (uint8_t)v[1];
+    for (int i = 0; i < (int)v[1]; i++) {
+        long o = v[2 + 2 * i], ve = v[3 + 2 * i];
+        g->off[i] = (int16_t)(o > 32767 ? 32767 : o < -32767 ? -32767 : o);
+        g->vel[i] = (uint8_t)(ve < 0 ? 0 : ve > 127 ? 127 : ve);
+    }
+    return 1;
+}
+
+/* A groove's name: letters, digits, space and - _ . only — it is written
+ * between quotes in the project file. */
+static void groove_set_name(groove_t *g, const char *s) {
+    size_t k = 0;
+    while (*s == ' ') s++;
+    for (; *s && k + 1 < sizeof(g->name); s++) {
+        char c = *s;
+        int ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                 || c == ' ' || c == '-' || c == '_' || c == '.' || c == '/';
+        g->name[k++] = ok ? c : '_';
+    }
+    g->name[k] = '\0';
+}
+
 /* A project starts with a groove chosen and nothing applied: straight. */
 static inline void groove_reset(groove_t *g) {
     memset(g, 0, sizeof(*g));
@@ -1288,6 +1338,8 @@ typedef struct {
     uint8_t  xpose_lut[128];        /* per-pitch remap, rebuilt from the 4-val descriptor */
     uint8_t  launch_quant;          /* 0=Now,1=1/16,2=1/8,3=1/4,4=1/2,5=1-bar; default 5 */
     groove_t groove;                /* the global groove; swing is two of its kinds */
+    groove_t groove_stage;          /* a table arriving from the UI in pieces; swapped in whole on commit */
+    uint8_t  groove_stage_open;
     /* Re-derived every tick while playing — see groove_scan_early. */
     groove_early_t groove_early[GROOVE_EARLY_PASSES];
     uint8_t  groove_early_n;
@@ -8237,6 +8289,13 @@ static int get_param(void *instance, const char *key, char *out, int out_len) {
                         (inst && inst->groove.kind == GROOVE_SWING_8) ? 1 : 0);
     if (!strcmp(key, "groove_kind"))
         return snprintf(out, out_len, "%d", inst ? (int)inst->groove.kind : 0);
+    if (!strcmp(key, "groove_name"))
+        return snprintf(out, out_len, "%s", inst ? inst->groove.name : "");
+    /* the loaded table, "base n o0 v0 ..." (empty when there is none) */
+    if (!strcmp(key, "groove_table")) {
+        if (!inst || !groove_has_table(&inst->groove) || out_len < 16) { if (out_len > 0) out[0] = '\0'; return 0; }
+        return groove_table_print(&inst->groove, out, out_len);
+    }
     if (!strcmp(key, "groove_amt"))
         return snprintf(out, out_len, "%d", inst ? (int)inst->groove.amt : 0);
     if (!strcmp(key, "groove_timing"))

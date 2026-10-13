@@ -486,13 +486,76 @@ static int sp_globals_transport(sp_ctx_t *cx) {
         inst->state_dirty = 1;
         return 1;
     }
+    /* A table arrives in pieces — the transport carries under 256 bytes a
+     * write, and two writes to one key before it drains keep only the last,
+     * so each piece has its own key:
+     *   groove_begin     "base n timing quantize random velocity name"
+     *   groove_slots_<i> "o v o v ..."   offsets (fine ticks) and velocities from slot i
+     *   groove_commit    ""              the staged table becomes the groove
+     * Nothing plays from the staging copy; a commit with a slot count that
+     * does not add up is dropped. The amount is left where it is. */
+    if (!strcmp(key, "groove_begin")) {
+        groove_t *st = &inst->groove_stage;
+        const char *p = val;
+        int f[6], i;
+        for (i = 0; i < 6; i++) {
+            while (*p == ' ') p++;
+            f[i] = my_atoi(p);
+            while (*p && *p != ' ') p++;
+        }
+        groove_reset(st);
+        st->kind     = GROOVE_TABLE;
+        st->base     = (uint8_t)clamp_i(f[0], 1, 255);
+        st->n_slots  = (uint8_t)clamp_i(f[1], 1, GROOVE_MAX_SLOTS);
+        st->timing   = (uint8_t)clamp_i(f[2], 0, 100);
+        st->quantize = (uint8_t)clamp_i(f[3], 0, 100);
+        st->random   = (uint8_t)clamp_i(f[4], 0, 100);
+        st->velocity = (uint8_t)clamp_i(f[5], 0, 100);
+        groove_set_name(st, p);
+        inst->groove_stage_open = 1;
+        return 1;
+    }
+    if (!strncmp(key, "groove_slots_", 13)) {
+        groove_t *st = &inst->groove_stage;
+        int i = my_atoi(key + 13);
+        const char *p = val;
+        if (!inst->groove_stage_open || i < 0) return 1;
+        while (i < (int)st->n_slots) {
+            while (*p == ' ') p++;
+            if (!*p) break;
+            int o = my_atoi(p);
+            while (*p && *p != ' ') p++;
+            while (*p == ' ') p++;
+            if (!*p) break;
+            int ve = my_atoi(p);
+            while (*p && *p != ' ') p++;
+            st->off[i] = (int16_t)clamp_i(o, -32767, 32767);
+            st->vel[i] = (uint8_t)clamp_i(ve, 0, 127);
+            i++;
+        }
+        return 1;
+    }
+    if (!strcmp(key, "groove_commit")) {
+        if (inst->groove_stage_open && groove_has_table(&inst->groove_stage)) {
+            inst->groove_stage.amt = inst->groove.amt;
+            inst->groove = inst->groove_stage;
+            rui_touch(inst);
+            inst->state_dirty = 1;
+        }
+        inst->groove_stage_open = 0;
+        return 1;
+    }
     if (!strncmp(key, "groove_", 7)) {
         groove_t *g = &inst->groove;
         const char *k = key + 7;
         uint8_t *dst = NULL;
         int hi = 100;
-        /* a table kind is only ever entered by loading a table */
-        if      (!strcmp(k, "kind"))     { dst = &g->kind; hi = GROOVE_SWING_8; }
+        /* the table kind only when there is a table to play — asked for
+         * without one, the groove is left as it is (not clamped to a swing) */
+        if      (!strcmp(k, "kind")) {
+            if (my_atoi(val) >= GROOVE_TABLE && !groove_has_table(g)) return 1;
+            dst = &g->kind; hi = GROOVE_TABLE;
+        }
         else if (!strcmp(k, "amt"))      dst = &g->amt;
         else if (!strcmp(k, "timing"))   dst = &g->timing;
         else if (!strcmp(k, "quantize")) dst = &g->quantize;
