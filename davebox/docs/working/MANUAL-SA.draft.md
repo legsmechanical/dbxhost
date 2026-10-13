@@ -2271,7 +2271,8 @@ says how much of it you hear — at none, everything is on the grid.
   opens sounding the same.
 - **Browse...** opens a file list showing MIDI files and Ableton groove files
   (`.agr`). Rest the jog on one and you hear it at once, over whatever is
-  playing; click to keep it and leave the list. Back leaves without keeping
+  playing; click to keep it and return to
+  Project Settings. Back leaves without keeping
   anything — the groove you had comes back. The list opens on the file the
   project's groove was loaded from, or at the top of your files when the
   project has none. A MIDI

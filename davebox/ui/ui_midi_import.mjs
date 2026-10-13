@@ -334,6 +334,7 @@ function grooveLeave() {
         GS.grooveKind = MI.gBefore.kind; GS.grooveName = MI.gBefore.name;
         GS.grooveTiming = MI.gBefore.timing; GS.grooveVelocity = MI.gBefore.velocity; GS.grooveRandom = MI.gBefore.random;
     }
+    if (MI.gDone) GS.pendingGrooveMenuReturn = true;    /* chosen: back to the row it was picked from */
     MI = null;
     computePadNoteMap();
     GS.screenDirty = true;

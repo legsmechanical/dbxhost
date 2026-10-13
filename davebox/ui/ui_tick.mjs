@@ -2201,6 +2201,10 @@ export function _tickImpl() {
             S.screenDirty = true;
         }
         miTick();
+        if (S.pendingGrooveMenuReturn) {
+            S.pendingGrooveMenuReturn = false;
+            if (!miActive()) openGlobalMenuAt('Groove');
+        }
         if (miAnimating()) S.screenDirty = true;
 
         /* ALL LANES blink: mark dirty when "ALL" blink toggles (bank header + loop-held overlay) */

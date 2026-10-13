@@ -231,8 +231,9 @@ async function main() {
 
     step('⭐ Back without a click: the groove from before the browse comes back', () => {
         sets.length = 0;
-        back(); ticks(1);
+        back(); ticks(3);
         assert(!MI.miActive(), 'Back did not leave');
+        assert(!S.globalMenuOpen, 'Back reopened Project Settings: only a choice does');
         assert(JSON.stringify(sets) === JSON.stringify([['groove_revert', '1']]), 'the engine was sent: ' + JSON.stringify(sets));
         assert(S.grooveKind === 2 && S.grooveName === '', 'the mirror was not put back: ' + S.grooveKind + ' "' + S.grooveName + '"');
     });
@@ -245,6 +246,11 @@ async function main() {
         assert(JSON.stringify(sets) === JSON.stringify([['groove_keep', '1']]), 'the engine was sent: ' + JSON.stringify(sets));
         assert(!MI.miActive(), 'the list stayed up after a groove was chosen');
         ticks(3);
+        /* and it lands back on the row it was picked from, showing the choice */
+        assert(S.globalMenuOpen, 'Project Settings did not come back');
+        const row = S.globalMenuItems[S.globalMenuState.selectedIndex];
+        assert(row && row.label === 'Groove' && row.format(row.get()) === 'Hand',
+               'not on the Groove row showing Hand: ' + (row && row.label + ' = ' + row.format(row.get())));
         assert(sets.length === 1, 'leaving after a keep sent more: ' + JSON.stringify(sets));
         assert(S.grooveKind === 3 && S.grooveName === 'Hand', 'the kept groove did not stay');
         assert(S.grooveFile === '/data/UserData/Hand.agr', 'the file it came from was not kept: ' + S.grooveFile);

@@ -16,7 +16,7 @@ the section into a versioned heading at release time.
   it, to set how much of each you want.
 - **Load a groove from a MIDI file or an Ableton groove.** **Browse...** in
   the Groove list opens your files; click a MIDI file or an Ableton `.agr` and
-  you hear it as soon as the jog rests on it; click to keep it and leave, or
+  you hear it as soon as the jog rests on it; click to keep it and return to Project Settings, or
   Back to return to the groove you had. The list opens on the file the
   project's groove came from. The groove is saved with the project.
 - **Groove per track.** Each track follows the project's groove amounts until

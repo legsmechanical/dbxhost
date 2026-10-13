@@ -267,6 +267,7 @@ export const S = {
     grooveTiming: 100,
     grooveVelocity: 0,
     grooveRandom: 0,
+    pendingGrooveMenuReturn: false, /* a groove was chosen in the list: the tick reopens Project Settings on Groove */
     pendingGrooveMakeOpen: false, /* Groove > Browse... picked in the menu; the tick opens the list (a folder listing) */
     inpQuant: false,
     midiInChannel: 0,
