@@ -67,7 +67,7 @@ import {
 import { buildFilepathBrowserState, refreshFilepathBrowser } from '/data/UserData/schwung/shared/filepath_browser.mjs';
 import { smfParse, SMF_MAX_BYTES, SMF_EXTENSIONS } from './ui_midifile.mjs';
 import { agrParse, isGrooveFileName, grooveTableFromNotes, GROOVE_EXTENSIONS } from './ui_groove_core.mjs';
-import { grooveKeep } from './ui_groove.mjs';
+import { grooveSend, grooveBrowseDir, grooveSetBrowseDir } from './ui_groove.mjs';
 import {
     STRETCH_STEPS, STRETCH_DEFAULT, OCT_MIN, OCT_MAX, SEMI_MIN, SEMI_MAX, MN_MAX_SOUNDS, MAP_MODES,
     mapPitch, planNotes, maxBarsAt, partBarsOf, barTicks, drumVoices, defaultAssign, drumLaneNotes,
@@ -177,11 +177,11 @@ function isDrumTrack(t) { return GS.trackPadMode[t] === PAD_MODE_DRUM; }
 function freshState(track, groove) {
     return {
         track, drum: isDrumTrack(track), layer: 'list', confirm: null,
-        /* MAKE GROOVE: the same list, with Ableton grooves in it too; a click
-         * on a file or a part makes a groove of it instead of opening the card */
+        /* BROWSE GROOVES: the same list, with Ableton grooves in it too; a click
+         * on a file or a part loads it as the groove instead of opening the card */
         groove: !!groove,
         B: buildFilepathBrowserState(groove
-            ? { root: MI_ROOT, filter: SMF_EXTENSIONS.concat(GROOVE_EXTENSIONS), name: 'Make Groove' }
+            ? { root: MI_ROOT, filter: SMF_EXTENSIONS.concat(GROOVE_EXTENSIONS), name: 'Grooves' }
             : { root: MI_ROOT, filter: SMF_EXTENSIONS, name: 'Import MIDI' }, ''),
         sizes: {}, file: null, items: [], idx: 0,
         pending: null, sel: null, cur: null, plan: null,
@@ -218,26 +218,27 @@ export function miOpen(track) {
     return true;
 }
 
-/* MAKE GROOVE (the global menu). The list only: nothing is previewed on the
- * track and nothing is written to it. It reopens in the folder it was left in. */
-let GROOVE_DIR_MEM = '';
+/* BROWSE GROOVES (Groove > Browse... in Project Settings). The list only:
+ * nothing is previewed on the track and nothing is written to it. A click on
+ * a file LOADS it as the project's groove and the list stays, so the next one
+ * is a jog and a click away; Back leaves. It opens in the folder the last
+ * groove was loaded from — on this device, in any project. */
 export function miOpenGroove() {
     MQ.key = null;
     MI = freshState(GS.activeTrack, true);
-    enterDir(GROOVE_DIR_MEM && isDirPath(GROOVE_DIR_MEM) ? GROOVE_DIR_MEM : MI_ROOT, '');
+    const dir = grooveBrowseDir();
+    enterDir(dir && dir.startsWith(MI_ROOT) && isDirPath(dir) ? dir : MI_ROOT, '');
     GS.screenDirty = true;
     return true;
 }
 /* One slot a 1/16: the grid a groove made from MIDI is read on. */
 const GROOVE_MIDI_BASE = 24;
 function grooveDone(g, name) {
-    GROOVE_DIR_MEM = MI.B.currentDir;
-    const kept = grooveKeep(g, g.name || name);
-    const shown = (kept || g.name || name || 'GROOVE').toUpperCase();
-    MI = null;
+    grooveSetBrowseDir(MI.B.currentDir);
+    const named = { ...g, name: name || g.name };   /* the name on the list, which is what was clicked */
+    grooveSend(named);
     GS.screenDirty = true;
-    if (kept) showActionPopup('GROOVE', shown);
-    else showActionPopup('GROOVE NOT SAVED', 'PLAYING: ' + shown);
+    showActionPopup('GROOVE', String(GS.grooveName || name || '').toUpperCase());
 }
 function grooveFromPart(res, partIdx, name) {
     const part = res.parts[partIdx];
@@ -249,7 +250,9 @@ function grooveFromPart(res, partIdx, name) {
 /* Leave without writing: the preview ends and the track plays what it had. */
 export function miClose() {
     if (!MI) return;
-    if (MI.groove) { GROOVE_DIR_MEM = MI.B.currentDir; MI = null; GS.screenDirty = true; return; }
+    /* (the folder remembered is the last LOADED groove's — Back steps up a
+     * folder at a time, so where the list was closed is always the top) */
+    if (MI.groove) { MI = null; GS.screenDirty = true; return; }
     remember();
     stopPreview();
     MI = null;
@@ -834,7 +837,7 @@ function fmtSize(n) {
 function listTitle() {
     if (MI.file) return MI.file.name.toUpperCase() + ' >';
     const d = MI.B.currentDir;
-    return d === MI_ROOT ? (MI.groove ? 'MAKE GROOVE' : 'IMPORT MIDI') : baseName(d).toUpperCase() + '/';
+    return d === MI_ROOT ? (MI.groove ? 'GROOVES' : 'IMPORT MIDI') : baseName(d).toUpperCase() + '/';
 }
 
 function topCells() {
@@ -921,7 +924,7 @@ function footer(shift) {
     if (MI.groove) {
         const git = MI.items[MI.idx];
         const gopen = git && (git.kind === 'up' || git.kind === 'dir');
-        return [['CLK', gopen ? 'OPEN' : 'MAKE'], ['JOG', 'FILE']];
+        return [['CLK', gopen ? 'OPEN' : 'LOAD'], ['JOG', 'FILE'], ['BACK', 'DONE']];
     }
     if (shift) return [['CLK', verb]];
     if (MI.layer === 'list') {

@@ -86,17 +86,23 @@ function buildGlobalMenuItems() {
             min: 40, max: 250, step: 1,
             format: function(v) { return S.clockFollowOn ? 'Move' : String(Math.round(v)); }
         }),
-        /* THE GROOVE (replaces Swing Amt / Swing Res). One row picks it —
-         * Off, the two swings, then the user's own grooves — and one says how
-         * much of it is applied. The swings read as they always have: 50% is
-         * straight, 66% a triplet. */
+        /* THE GROOVE (replaces Swing Amt / Swing Res). One row picks it — Off,
+         * Browse... (straight to the file list: a click there loads a MIDI
+         * file or an Ableton groove), the two swings, and the project's own
+         * loaded groove — and one says how much of it is applied. The swings
+         * read as they always have: 50% is straight, 66% a triplet. */
         (function() {
             const opts = grooveOptions();
             return createEnum('Groove', {
                 get: function() { return grooveCurrentIndex(opts); },
                 set: function(i) {
-                    const err = grooveSelect(opts[i]);
-                    if (err) showActionPopup(err);
+                    if (opts[i] && opts[i].id === 'browse') {
+                        S.globalMenuOpen = false;
+                        S.pendingGrooveMakeOpen = true;   /* the tick opens it: it lists a folder */
+                        S.screenDirty = true;
+                        return;
+                    }
+                    grooveSelect(opts[i]);
                 },
                 options: opts.map(function(_o, i) { return i; }),
                 format: function(i) { return opts[i] ? opts[i].label : grooveLabel(); }
@@ -110,12 +116,6 @@ function buildGlobalMenuItems() {
                 return (S.grooveKind === GROOVE_SWING_16 || S.grooveKind === GROOVE_SWING_8)
                     ? Math.round(50 + v * 0.25) + '%' : Math.round(v) + '%';
             }
-        }),
-        /* A new groove from a MIDI file or an Ableton .agr: the file list. */
-        createAction('Make Groove...', function() {
-            S.globalMenuOpen = false;
-            S.pendingGrooveMakeOpen = true;
-            S.screenDirty = true;
         }),
         createDivider(),
         createEnum('Metro', {

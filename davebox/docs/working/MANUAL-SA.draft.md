@@ -2236,9 +2236,8 @@ see [Track settings](#174-track-settings) below.
 | Setting | What it does | Values | Default |
 |---|---|---|---|
 | BPM | Tempo | 40–250 | — |
-| Groove | The project's timing feel — see [The groove](#the-groove) | Off, Swing 1/16, Swing 1/8, your grooves | Swing 1/16 |
+| Groove | The project's timing feel — see [The groove](#the-groove) | Off, Browse..., Swing 1/16, Swing 1/8, the loaded groove | Swing 1/16 |
 | Groove Amt | How much of the groove is applied. For the two swings it reads as swing depth: 50 % is straight, 66 % is triplet swing | 0–100 % (50–75 % for a swing) | none |
-| Make Groove... | Make a groove from a MIDI file or an Ableton groove file | (click) | — |
 | Metro | When the metronome sounds — never, during the count-in, while playing, or always | Off, Cnt-In, Play, Always | Cnt-In |
 | Metro Vol | Metronome level | 0–150 % | 100 % |
 | Clock Follow | Lock to Move's transport and tempo — see [§15.3](#153-clock-follow) | Off, Move | Off |
@@ -2267,22 +2266,22 @@ says how much of it you hear — at none, everything is on the grid.
 - **Swing 1/16** and **Swing 1/8** delay every other 1/16 or 1/8. These are the
   Swing Amt and Swing Res of earlier versions, and a project made with them
   opens sounding the same.
-- **Your own grooves** follow in the list. A groove is a pattern of small
-  timing shifts — some notes a little late, some a little early — and
-  velocities, one per grid position, that repeats. Notes the sequencer plays
-  are moved both ways; arps, repeats, delay echoes and the looper are only ever
-  moved later.
+- **Browse...** opens a file list showing MIDI files and Ableton groove files
+  (`.agr`). Click one and it is loaded as the project's groove, straight from
+  the file; the list stays open, so trying the next is a jog and a click. Back
+  leaves. The list opens in the folder you last loaded a groove from. A MIDI
+  file is read one position per 1/16 over its whole length (up to 128
+  positions); a file with several parts asks which. An Ableton groove brings
+  its own grid, length and amounts.
+- **A loaded groove** is a pattern of small timing shifts — some notes a little
+  late, some a little early — and velocities, one per grid position, that
+  repeats. Notes the sequencer plays are moved both ways; arps, repeats, delay
+  echoes and the looper are only ever moved later. It appears at the foot of
+  the list under its name, so you can go to a swing and come back.
 - **Off** plays straight whatever Groove Amt says.
 
-**Make Groove...** opens a file list showing MIDI files and Ableton groove
-files (`.agr`). Click one and it becomes a groove: it is kept in the
-`dAVEBOx Grooves` folder beside your MIDI exports, added to the Groove list, and
-selected. A MIDI file is read one position per 1/16 over its whole length (up
-to 128 positions); a file with several parts asks which. An Ableton groove
-brings its own grid, length and amounts.
-
-The groove you pick is saved inside the project, so the project keeps its feel
-even if the groove's file is later removed.
+The groove you load is saved inside the project, so the project keeps its feel
+even if the file is later removed.
 
 Each track can opt out: **Groove** Off in a track's
 [settings](#174-track-settings) makes that track play straight.

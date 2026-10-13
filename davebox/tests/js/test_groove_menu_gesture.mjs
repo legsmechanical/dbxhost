@@ -1,11 +1,12 @@
 /* tests/js/test_groove_menu_gesture.mjs — the global groove, through the real
  * gestures.
  *
- * Project Settings has a Groove row (a picker: Off, the two swings, then the
- * user's own grooves), a Groove Amt row, and Make Groove..., which opens the
- * file list on MIDI files and Ableton grooves; a click on one makes a groove of
- * it, keeps it in the grooves folder and plays it. Asserted on what the engine
- * is sent, in what order, and on what lands in the folder.
+ * Project Settings has a Groove row — a picker: Off, Browse..., the two
+ * swings, and the project's own loaded groove — and a Groove Amt row. Browse...
+ * opens the file list on MIDI files and Ableton grooves; a click on one loads
+ * it as the project's groove, straight from the file, and the list stays for
+ * the next. The list reopens in the folder the last groove came from. Asserted on what
+ * the engine is sent, in what order.
  * → a green pin says "wired", only the gesture says "reachable".
  */
 import './_bulk_get_stub.mjs';
@@ -79,8 +80,10 @@ globalThis.__stubStat = {
     '/data/UserData/hat.mid': { mode: REG, size: HAT.length },
     '/data/UserData/Hand.agr': { mode: REG, size: AGR.length },
     '/data/UserData/broken.agr': { mode: REG, size: 40 },
+    '/data/UserData/Grooves': { mode: DIR, size: 0 },
+    '/data/UserData/Grooves/Deep.agr': { mode: REG, size: AGR.length },
 };
-globalThis.__stubStdBinFiles = { '/data/UserData/hat.mid': HAT, '/data/UserData/Hand.agr': AGR,
+globalThis.__stubStdBinFiles = { '/data/UserData/hat.mid': HAT, '/data/UserData/Hand.agr': AGR, '/data/UserData/Grooves/Deep.agr': AGR,
                                  '/data/UserData/broken.agr': Uint8Array.from(ascii('this is not a groove file at all......')) };
 FILES[GDIR + '/Lazy.json'] = JSON.stringify({ v: 1, name: 'x', base: 24, n: 2, timing: 90, quantize: 0, random: 5,
                                               velocity: 40, off: [0, 48], vel: [0, 80] });
@@ -90,7 +93,8 @@ async function main() {
     const { stubParamPagesDevice } = await import('./stubs/param_pages_device.mjs');
     stubParamPagesDevice();
     const osStub = await import('os');
-    const listing = { '/data/UserData': ['UserLibrary', 'hat.mid', 'Hand.agr', 'broken.agr', 'notes.txt'],
+    const listing = { '/data/UserData': ['UserLibrary', 'Grooves', 'hat.mid', 'Hand.agr', 'broken.agr', 'notes.txt'],
+                      '/data/UserData/Grooves': ['Deep.agr'],
                       '/data/UserData/UserLibrary': [], [GDIR]: ['Lazy.json', 'Torn.json', '.hidden.json', 'readme.txt'] };
     osStub.__setReaddir(listing);
     await import('../../ui/ui.js');
@@ -136,146 +140,133 @@ async function main() {
         return labels;
     }
 
+    const PREF = '/data/UserData/dbx-host/groove-browse-dir.txt';
+    /* Pick Browse... in the Groove picker and let the tick open the list. */
+    function browse() {
+        pickGroove('Browse...');
+        assert(!S.globalMenuOpen, 'the menu stayed up');
+        assert(!MI.miActive(), 'the list opened from the click, not the tick (it lists a folder)');
+        ticks(2);
+        assert(MI.miActive() && MI.miStateForTest().groove, 'the list did not open');
+        return MI.miStateForTest();
+    }
+    const onRow = (st, label) => { st.idx = st.items.findIndex(i => i.label === label); assert(st.idx >= 0, 'rig: no "' + label + '" row'); };
+
     step('Project Settings: Groove and Groove Amt stand where Swing Amt and Swing Res stood', () => {
         openOn('Groove');
         const labels = S.globalMenuItems.map(i => i && (i.type === 'divider' ? '---' : i.label));
         const at = labels.indexOf('BPM');
-        assert(JSON.stringify(labels.slice(at, at + 5)) === JSON.stringify(['BPM', 'Groove', 'Groove Amt', 'Make Groove...', '---']),
-               'the tempo group reads: ' + labels.slice(at, at + 6).join(' | '));
-        assert(labels.indexOf('Swing Amt') < 0 && labels.indexOf('Swing Res') < 0, 'a Swing row is still in the menu');
+        assert(JSON.stringify(labels.slice(at, at + 4)) === JSON.stringify(['BPM', 'Groove', 'Groove Amt', '---']),
+               'the tempo group reads: ' + labels.slice(at, at + 5).join(' | '));
+        assert(labels.indexOf('Swing Amt') < 0 && labels.indexOf('Swing Res') < 0 && labels.indexOf('Make Groove...') < 0,
+               'a row that should be gone is in the menu');
     });
 
-    step('⭐ the Groove picker: Off, the swings, then the grooves in the folder — and a swing is one write', () => {
-        S.grooveKind = 1;
+    step('⭐ the Groove picker: Off, Browse..., the two swings — and a swing is one write', () => {
+        S.grooveKind = 1; S.grooveName = '';
         const labels = pickGroove('Swing 1/8');
-        assert(JSON.stringify(labels) === JSON.stringify(['Off', 'Swing 1/16', 'Swing 1/8', 'Lazy', 'Torn']),
+        assert(JSON.stringify(labels) === JSON.stringify(['Off', 'Browse...', 'Swing 1/16', 'Swing 1/8']),
                'the picker lists: ' + labels.join(' | '));
         assert(JSON.stringify(sets) === JSON.stringify([['groove_kind', '2']]), 'the engine was sent: ' + JSON.stringify(sets));
         assert(S.grooveKind === 2, 'the mirror did not follow');
-        assert(S.globalMenuItems.find(i => i && i.label === 'Groove').format(
-               S.globalMenuItems.find(i => i && i.label === 'Groove').get()) === 'Swing 1/8', 'the row does not show the choice');
-    });
-
-    step('⭐ picking a groove of your own sends its table: begin, slots, commit — in that order', () => {
-        pickGroove('Lazy');
-        assert(JSON.stringify(sets) === JSON.stringify([
-            ['groove_begin', '24 2 90 0 5 40 Lazy'], ['groove_slots_0', '0 0 48 80'], ['groove_commit', '1']]),
-            'the engine was sent: ' + JSON.stringify(sets));
-        assert(S.grooveKind === 3 && S.grooveName === 'Lazy', 'the mirror: ' + S.grooveKind + ' ' + S.grooveName);
-        const row = openOn('Groove');
-        assert(row.format(row.get()) === 'Lazy', 'the row shows ' + row.format(row.get()));
-    });
-
-    step('a damaged groove file says so, and the groove that was playing stays', () => {
-        pickGroove('Torn');
-        assert(sets.length === 0, 'something was sent for a file that could not be read: ' + JSON.stringify(sets));
-        assert(S.grooveKind === 3 && S.grooveName === 'Lazy', 'the groove changed');
+        const row = S.globalMenuItems.find(i => i && i.label === 'Groove');
+        assert(row.format(row.get()) === 'Swing 1/8', 'the row does not show the choice');
+        pickGroove('Off');
+        assert(S.grooveKind === 0 && sets[0][1] === '0', 'Off was not sent');
     });
 
     step('Groove Amt: a plain percentage for a groove, the old swing read-out for a swing', () => {
         const row = openOn('Groove Amt');
+        S.grooveKind = 3;
         assert(row.format(40) === '40%', 'a table reads ' + row.format(40));
         S.grooveKind = 1;
         assert(row.format(64) === '66%' && row.format(0) === '50%', 'a swing reads ' + row.format(64));
         row.set(64);
         assert(JSON.stringify(sets) === JSON.stringify([['groove_amt', '64']]), 'the engine was sent: ' + JSON.stringify(sets));
-        S.grooveKind = 3;
     });
 
-    step('a project that plays a groove whose file is gone still shows it, and can go back to it', () => {
-        S.grooveKind = 3; S.grooveName = 'From Elsewhere';
-        const labels = pickGroove('Swing 1/16');
-        assert(labels[labels.length - 1] === 'From Elsewhere', 'the project\'s own groove is not offered: ' + labels.join(' | '));
-        S.grooveName = 'From Elsewhere';                 /* the engine keeps the table while a swing plays */
-        const again = pickGroove('From Elsewhere');
-        assert(again.indexOf('From Elsewhere') >= 0, 'gone once a swing was chosen');
-        assert(JSON.stringify(sets) === JSON.stringify([['groove_kind', '3']]),
-               'going back to it needs no file: ' + JSON.stringify(sets));
-    });
-
-    step('⭐ Make Groove...: the click leaves the menu and the tick opens the file list, MIDI and .agr together', () => {
-        openOn('Make Groove...');
-        click();
-        assert(!S.globalMenuOpen, 'the menu stayed up');
-        assert(!MI.miActive(), 'the list opened from the click, not the tick (it lists a folder)');
-        ticks(2);
-        assert(MI.miActive() && MI.miStateForTest().groove, 'the list did not open');
-        const st = MI.miStateForTest();
+    step('⭐ Browse... leaves the menu, changes nothing, and the tick opens the file list — MIDI and .agr together', () => {
+        S.grooveKind = 2;
+        const st = browse();
+        assert(sets.length === 0 && S.grooveKind === 2, 'picking Browse... changed the groove: ' + JSON.stringify(sets));
         const names = st.items.map(i => i.kind + ':' + i.label);
-        assert(JSON.stringify(names) === JSON.stringify(['dir:UserLibrary', 'file:broken', 'file:Hand', 'file:hat']),
+        assert(JSON.stringify(names) === JSON.stringify(['dir:Grooves', 'dir:UserLibrary', 'file:broken', 'file:Hand', 'file:hat']),
                'the list shows: ' + names.join(' | '));
         assert(MI.miHintsForTest(false).footer[0][1] === 'OPEN', 'on a folder the click opens');
     });
 
     step('nothing is heard or read while the jog moves through the list', () => {
         const st = MI.miStateForTest();
+        onRow(st, 'UserLibrary');
         jog(1); ticks(40);
-        assert(st.idx === 1 && !st.pending && !st.cur, 'the list is previewing: ' + JSON.stringify({ p: !!st.pending, c: !!st.cur }));
-        assert(MI.miHintsForTest(false).footer[0][1] === 'MAKE', 'on a file the click makes');
+        assert(st.items[st.idx].label === 'broken' && !st.pending && !st.cur, 'the list is previewing');
+        assert(MI.miHintsForTest(false).footer[0][1] === 'LOAD', 'on a file the click loads');
         assert(sets.length === 0, 'the engine was sent something by a list: ' + JSON.stringify(sets));
     });
 
-    step('a file that is no groove says so and the list stays', () => {
+    step('a file that is no groove says so; nothing is sent and the list stays', () => {
         click();
         assert(MI.miActive(), 'the list closed on a file it could not read');
-        assert(sets.length === 0 && !FILES[GDIR + '/broken.json'], 'something was made of it');
-    });
-
-    step('⭐ a click on an .agr makes a groove of it: kept in the folder under its own name, and sent', () => {
-        jog(1);
-        assert(MI.miStateForTest().items[MI.miStateForTest().idx].label === 'Hand', 'rig: not on Hand.agr');
-        click();
-        assert(!MI.miActive(), 'the list did not close');
-        const kept = JSON.parse(FILES[GDIR + '/Hand Made.json'] || 'null');
-        assert(kept, 'nothing was kept: ' + Object.keys(FILES).join(' | '));
-        assert(kept.base === 24 && kept.n === 4 && kept.timing === 80 && kept.velocity === 30,
-               'kept as: ' + JSON.stringify(kept));
-        assert(JSON.stringify(kept.off) === JSON.stringify([0, 0, 0, 48]) && JSON.stringify(kept.vel) === JSON.stringify([100, 0, 90, 60]),
-               'its slots: ' + JSON.stringify([kept.off, kept.vel]));
-        assert(DIRS.indexOf(GDIR) >= 0, 'the grooves folder was never made');
-        assert(JSON.stringify(keys()) === JSON.stringify(['groove_begin', 'groove_slots_0', 'groove_commit']),
-               'the engine was sent: ' + JSON.stringify(keys()));
-        assert(sets[0][1] === '24 4 80 0 0 30 Hand Made', 'begin: ' + sets[0][1]);
-        assert(S.grooveKind === 3 && S.grooveName === 'Hand Made', 'the mirror: ' + S.grooveName);
-    });
-
-    step('⭐ a click on a MIDI file makes a groove from its notes, a slot a 1/16', () => {
-        listing[GDIR] = ['Lazy.json', 'Torn.json', 'Hand Made.json'];
-        openOn('Make Groove...'); click(); ticks(2);
-        const st = MI.miStateForTest();
-        st.idx = st.items.findIndex(i => i.label === 'hat');
-        assert(st.idx >= 0, 'rig: hat.mid is not listed');
-        click();
-        assert(!MI.miActive(), 'the list did not close');
-        const kept = JSON.parse(FILES[GDIR + '/hat.json'] || 'null');
-        assert(kept && kept.base === 24 && kept.n === 16, 'kept as: ' + JSON.stringify(kept));
-        assert(kept.off.every((o, i) => o === (i % 2 ? 48 : 0)), 'every other 1/16 three ticks late: ' + JSON.stringify(kept.off));
-        assert(kept.vel.every((v, i) => v === (i % 2 ? 70 : 100)), 'velocities: ' + JSON.stringify(kept.vel));
-        assert(JSON.stringify(keys()) === JSON.stringify(['groove_begin', 'groove_slots_0', 'groove_slots_8', 'groove_commit']),
-               'the engine was sent: ' + JSON.stringify(keys()));
-    });
-
-    step('a second groove of the same name is kept beside the first, never over it', () => {
-        listing[GDIR] = ['Lazy.json', 'Torn.json', 'Hand Made.json', 'hat.json'];
-        const first = FILES[GDIR + '/hat.json'];
-        openOn('Make Groove...'); click(); ticks(2);
-        const st = MI.miStateForTest();
-        st.idx = st.items.findIndex(i => i.label === 'hat');
-        click();
-        assert(FILES[GDIR + '/hat.json'] === first, 'the first was overwritten');
-        assert(FILES[GDIR + '/hat 2.json'], 'no "hat 2": ' + Object.keys(FILES).join(' | '));
-        assert(S.grooveName === 'hat 2', 'playing ' + S.grooveName);
-    });
-
-    step('Back leaves the list without making anything', () => {
-        openOn('Make Groove...'); click(); ticks(2);
-        assert(MI.miActive(), 'rig: the list is not open');
-        back(); ticks(1);
-        assert(!MI.miActive(), 'Back did not leave');
         assert(sets.length === 0, 'something was sent: ' + JSON.stringify(sets));
     });
 
+    step('⭐ a click on an .agr LOADS it: sent to the engine under the name on the list, and the list stays for the next', () => {
+        const st = MI.miStateForTest();
+        onRow(st, 'Hand');
+        click();
+        assert(JSON.stringify(sets) === JSON.stringify([
+            ['groove_begin', '24 4 80 0 0 30 Hand'], ['groove_slots_0', '0 100 0 0 0 90 48 60'], ['groove_commit', '1']]),
+            'the engine was sent: ' + JSON.stringify(sets));
+        assert(S.grooveKind === 3 && S.grooveName === 'Hand', 'the mirror: ' + S.grooveKind + ' ' + S.grooveName);
+        assert(MI.miActive(), 'the list closed: the next groove should be a jog and a click away');
+        assert(!Object.keys(FILES).some(k => /\.json$/.test(k) && k !== GDIR + '/Lazy.json' && k !== GDIR + '/Torn.json'),
+               'a copy was written somewhere: ' + Object.keys(FILES).join(' | '));
+    });
+
+    step('⭐ ...and the next one: a MIDI file, read a slot a 1/16', () => {
+        sets.length = 0;
+        const st = MI.miStateForTest();
+        onRow(st, 'hat');
+        click();
+        assert(JSON.stringify(keys()) === JSON.stringify(['groove_begin', 'groove_slots_0', 'groove_slots_8', 'groove_commit']),
+               'the engine was sent: ' + JSON.stringify(keys()));
+        assert(sets[0][1] === '24 16 100 0 0 0 hat', 'begin: ' + sets[0][1]);
+        assert(sets[1][1] === '0 100 48 70 0 100 48 70 0 100 48 70 0 100 48 70', 'every other 1/16 three ticks late: ' + sets[1][1]);
+        assert(S.grooveName === 'hat', 'playing ' + S.grooveName);
+    });
+
+    step('Back leaves the list; the row shows the loaded groove, and it is offered again while a swing plays', () => {
+        back(); ticks(1);
+        assert(!MI.miActive(), 'Back did not leave');
+        const row = openOn('Groove');
+        assert(row.format(row.get()) === 'hat', 'the row shows ' + row.format(row.get()));
+        const labels = pickGroove('Swing 1/16');
+        assert(JSON.stringify(labels) === JSON.stringify(['Off', 'Browse...', 'Swing 1/16', 'Swing 1/8', 'hat']),
+               'the picker lists: ' + labels.join(' | '));
+        pickGroove('hat');
+        assert(JSON.stringify(sets) === JSON.stringify([['groove_kind', '3']]),
+               'going back to the project\'s groove needs no file: ' + JSON.stringify(sets));
+    });
+
+    step('⭐ the browser reopens in the folder the last groove was loaded from — kept on the device, and not undone by backing out', () => {
+        let st = browse();
+        onRow(st, 'Grooves');
+        click();
+        assert(st.B.currentDir === '/data/UserData/Grooves', 'rig: did not enter the folder');
+        onRow(st, 'Deep');
+        click();
+        assert(S.grooveName === 'Deep', 'rig: Deep was not loaded');
+        back(); back(); back(); ticks(1);
+        assert(!MI.miActive(), 'rig: the list did not close');
+        assert((FILES[PREF] || '').trim() === '/data/UserData/Grooves', 'the folder was not kept: ' + FILES[PREF]);
+        st = browse();
+        assert(st.B.currentDir === '/data/UserData/Grooves', 'reopened in ' + st.B.currentDir);
+        assert(st.items.some(i => i.label === 'Deep'), 'the folder\'s files are not listed');
+        back(); back(); ticks(1);
+    });
+
     step('⚠ CONTROL: the ordinary MIDI import list still does not show groove files', () => {
+        if (MI.miActive()) MI.miClose();
         MI.miOpen(0);
         const st = MI.miStateForTest();
         assert(st && !st.groove, 'rig: the import list did not open');

@@ -9,13 +9,15 @@ the section into a versioned heading at release time.
 ## [Unreleased]
 ### Added
 - **Groove.** Swing has grown into a groove. In Project Settings, **Groove**
-  picks the project's timing feel — Off, Swing 1/16, Swing 1/8, or a groove of
-  your own — and **Groove Amt** sets how much of it you hear. Your own grooves
-  can move notes early as well as late and shape their velocities.
-- **Make a groove from a MIDI file or an Ableton groove.** **Make Groove...**
-  in Project Settings lists MIDI files and Ableton `.agr` files; click one and
-  it becomes a groove, kept in the `dAVEBOx Grooves` folder and added to the
-  list. The groove you pick is saved with the project.
+  picks the project's timing feel — Off, Swing 1/16, Swing 1/8, or a groove
+  loaded from a file — and **Groove Amt** sets how much of it you hear. A
+  loaded groove can move notes early as well as late and shape their
+  velocities.
+- **Load a groove from a MIDI file or an Ableton groove.** **Browse...** in
+  the Groove list opens your files; click a MIDI file or an Ableton `.agr` and
+  it becomes the project's groove at once. The list stays open so you can try
+  the next one, and reopens in the folder you last used. The groove is saved
+  with the project.
 - **Groove On/Off per track.** A new **Groove** row at the foot of each track's
   sound menu. Off makes that track ignore the project's groove and play
   straight — useful for a hi-hat or a bass line that should stay on the grid

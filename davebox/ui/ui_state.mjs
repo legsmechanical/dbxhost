@@ -262,7 +262,7 @@ export const S = {
     grooveKind: 1,
     grooveAmt: 0,
     grooveName: '',
-    pendingGrooveMakeOpen: false, /* Make Groove clicked in the menu; the tick opens the list (a folder listing) */
+    pendingGrooveMakeOpen: false, /* Groove > Browse... picked in the menu; the tick opens the list (a folder listing) */
     inpQuant: false,
     midiInChannel: 0,
     beatMarkersEnabled: true,
