@@ -452,6 +452,12 @@ set_project_name() { # project-dir name
     python3 -c 'import os,sys; sys.path.insert(0, os.environ["DBX_PY_DIR"]); import project_name as pn
 pn.set_name(sys.argv[1], sys.argv[2])' "$1" "$2"
 }
+# The name a project is born with when the caller gives none: two plain words
+# no other project in the store is showing (project_name.py owns the words).
+random_project_name() {
+    python3 -c 'import os,sys; sys.path.insert(0, os.environ["DBX_PY_DIR"]); import project_name as pn
+print(pn.random_name(pn.names_in(sys.argv[1])))' "$PROJECTS_DIR"
+}
 
 do_list() {
     python3 - "$PROJECTS_DIR" "$SETTINGS_JSON" "$OUT_JSON" <<'PYEOF'
@@ -897,7 +903,10 @@ do_new_at() { # index [name]
     _src="$(find "$TEMPLATE_DIR" -name Song.abl | head -n 1)"
     [ -n "$_src" ] || die "template has no Song.abl"
     _uuid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())')"
-    _name="${2:-Project $(($1 + 1))}"
+    # Before the project's own folder exists, so the store it reads is the
+    # other projects. A name is never worth failing a creation over.
+    _name="${2:-$(random_project_name 2>/dev/null || true)}"
+    [ -n "$_name" ] || _name="Project $(($1 + 1))"
     _song="$PROJECTS_DIR/$_uuid/$(song_folder_for "$_uuid")"
     # FROM A TEMPLATE (the caller sets DBX_TEMPLATE, the module's state-file
     # prefix DBX_STATE_PREFIX, and optionally DBX_HAVE_MODULES / DBX_MISSING_OUT):

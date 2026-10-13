@@ -25,6 +25,7 @@ change were disposable (Josh, 2026-09-22: "we don't need to save any current
 projects"), so there is exactly ONE shape to be right about.
 """
 import os
+import random
 
 import state_subdir as ss
 
@@ -95,4 +96,56 @@ def set_name(project_dir, name):
         os.fsync(f.fileno())
     os.replace(tmp, dst)
     _fsync_dir(d)
+    return n
+
+
+# ---- the name a new project is BORN with ------------------------------------
+# Two plain words, "<Adjective> <Noun>". The words are everyday and neutral on
+# purpose: a name has to be easy to keep in your head and tell apart from the
+# one beside it, and must say nothing about the music — no mood, no genre, no
+# joke. Each word is six letters or fewer, so a name fits one line of the
+# picker without being cut.
+ADJECTIVES = (
+    "Amber", "Blue", "Brave", "Bright", "Brisk", "Broad", "Calm", "Clear",
+    "Cool", "Crisp", "Dry", "Dusty", "Early", "Even", "Faint", "Fair",
+    "Fresh", "Gentle", "Glad", "Gold", "Green", "Hazy", "Idle", "Kind",
+    "Late", "Level", "Light", "Little", "Lucky", "Mellow", "Mild", "Mint",
+    "Misty", "Mossy", "Neat", "Noble", "Odd", "Open", "Pale", "Plain",
+    "Proud", "Quick", "Quiet", "Rapid", "Round", "Rusty", "Sandy", "Sharp",
+    "Shy", "Silver", "Simple", "Slow", "Small", "Smooth", "Snug", "Soft",
+    "Steady", "Still", "Sunny", "Swift", "Tall", "Tidy", "Warm", "Wide",
+)
+NOUNS = (
+    "Acorn", "Anchor", "Apple", "Arch", "Barn", "Basin", "Beach", "Bell",
+    "Birch", "Boat", "Bridge", "Brook", "Button", "Cabin", "Candle", "Canoe",
+    "Cedar", "Cloud", "Clover", "Coast", "Comet", "Creek", "Dune", "Fern",
+    "Field", "Finch", "Garden", "Grove", "Harbor", "Heron", "Hill", "Island",
+    "Kettle", "Kite", "Ladder", "Lake", "Lamp", "Leaf", "Maple", "Marble",
+    "Meadow", "Moss", "Otter", "Path", "Pebble", "Pine", "Pocket", "Pond",
+    "Porch", "Quill", "Rain", "Reed", "Ridge", "River", "Robin", "Shell",
+    "Shore", "Spruce", "Stone", "Stream", "Tulip", "Valley", "Willow", "Wren",
+)
+
+
+def names_in(store):
+    """Every name shown for a project in this store."""
+    try:
+        entries = sorted(os.listdir(store))
+    except OSError:
+        return set()
+    return {name_of(os.path.join(store, e)) for e in entries
+            if os.path.isdir(os.path.join(store, e))}
+
+
+def random_name(taken=(), rng=None):
+    """A fresh "<Adjective> <Noun>" that is not in `taken` (compared without
+    case). After a few tries it gives up on being new — two projects may share
+    a name, they are told apart by pad — rather than fail to name one."""
+    rng = rng or random.SystemRandom()
+    have = {str(t).lower() for t in taken}
+    n = ""
+    for _ in range(40):
+        n = rng.choice(ADJECTIVES) + " " + rng.choice(NOUNS)
+        if n.lower() not in have:
+            break
     return n

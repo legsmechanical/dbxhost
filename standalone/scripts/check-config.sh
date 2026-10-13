@@ -84,7 +84,7 @@ check "set-swap calls the umount verb" "$HERE/scripts/set-swap.sh"  "--umount-se
 check "project-cmd store root"         "$HERE/scripts/project-cmd.sh"  'PROJECTS_DIR="${PROJECTS_DIR:-$DBX_DIR/projects}"'
 check "select-list store root"         "$HERE/scripts/select-list.sh"  'PROJECTS_DIR="${PROJECTS_DIR:-$DBX_DIR/projects}"'
 check "select-hook library root"       "$HERE/scripts/select-hook.sh"  'LIBRARY_DIR="${LIBRARY_DIR:-$DBX_DIR/sets/library}"'
-check "launch.sh seeds via new-at"     "$HERE/scripts/launch.sh"       'project-cmd.sh" new-at 0 "Project 1"'
+check "launch.sh seeds via new-at"     "$HERE/scripts/launch.sh"       'project-cmd.sh" new-at 0 ||'
 check "project-cmd library root"       "$HERE/scripts/project-cmd.sh"  'LIBRARY_DIR="${LIBRARY_DIR:-$DBX_DIR/sets/library}"'
 check "project-cmd imports the slots"  "$HERE/scripts/project-cmd.sh"  "import library_slots as sl"
 check "launch.sh syncs the library"    "$HERE/scripts/launch.sh"       'project-cmd.sh" library-sync'

@@ -579,7 +579,7 @@ setsid --wait bash -c '
       # clears Full Velocity, and that must land in the session copy (absent on
       # a first launch; set-swap seeds it with Full Velocity off).
       SETTINGS_JSON="$DBX_DIR/settings/Settings.json" \
-        sh "$DBX_DIR/scripts/project-cmd.sh" new-at 0 "Project 1" || \
+        sh "$DBX_DIR/scripts/project-cmd.sh" new-at 0 || \
         echo "WARNING: could not seed the first project — continuing"
       echo "seeded first project on pad 0 from template"
     fi

@@ -452,7 +452,7 @@ run exit
 rm -rf "$T"
 # ...and the launcher's first-project seed, which runs BEFORE enter binds the
 # settings, is pointed at the session's copy rather than Move's default path.
-grep -B1 'project-cmd.sh" new-at 0 "Project 1"' standalone/scripts/launch.sh | head -n 1 \
+grep -B1 'project-cmd.sh" new-at 0 ||' standalone/scripts/launch.sh | head -n 1 \
     | grep -qF 'SETTINGS_JSON="$DBX_DIR/settings/Settings.json"'
 check "9d launch.sh seeds the first project against the session's settings" test $? = 0
 
