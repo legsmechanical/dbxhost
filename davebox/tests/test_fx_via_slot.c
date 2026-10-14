@@ -104,6 +104,9 @@ int main(void) {
     HX_ASSERT(seen(HX_MIDI_INJECT, -1, (uint8_t)(0x80 | CH), 66) == 1, "the last off closes it");
     back(h, T, 0x80, 70, 0);
     HX_ASSERT(seen(HX_MIDI_INJECT, -1, (uint8_t)(0x80 | CH), 70) == 0, "an off for a note it never played is dropped");
+    back(h, T, 0x90, 70, 90);                           /* ...and leaves that pitch playable */
+    HX_ASSERT(seen(HX_MIDI_INJECT, -1, (uint8_t)(0x90 | CH), 70) == 1, "after a stray off the pitch still sounds (the count did not wrap)");
+    back(h, T, 0x80, 70, 0);
     back(h, T, 0xB0, 1, 64);
     HX_ASSERT(seen(HX_MIDI_INJECT, -1, (uint8_t)(0xB0 | CH), 1) == 1, "a CC passes through, re-addressed");
 
